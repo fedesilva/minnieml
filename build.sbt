@@ -38,11 +38,11 @@ lazy val mmlclib =
     )
     .settings(
       libraryDependencies ++= Dependencies.mmlclib,
-      jacocoExcludes in Test := Seq(s"$antlrPackageName.*")
+      //jacocoExcludes in Test := Seq(s"$antlrPackageName.*")
     )
     .settings(
       antlr4PackageName in Antlr4 := Some(antlrPackageName),
-      // I can walk myself, if you don't mind
+      // I can walk by myself, if you don't mind
       antlr4GenVisitor  in Antlr4 := false,
       antlr4GenListener in Antlr4 := false,
       antlr4Version     in Antlr4 := "4.7.2"

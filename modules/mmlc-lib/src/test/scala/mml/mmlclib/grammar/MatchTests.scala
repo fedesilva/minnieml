@@ -132,6 +132,17 @@ class MatchTests extends BaseFunSuite {
     )
   }
 
+  test("reference the matched pattern besides its components"){
+    modNotFailed(
+      """
+        let name =
+          person match
+            p @ Person{ name } if name == "fede" = p.lastName
+          | _ = "unknown"
+        ;
+      """)
+  }
+
   
 }
 

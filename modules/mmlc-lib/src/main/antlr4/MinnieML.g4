@@ -27,7 +27,6 @@ lexical: Lexical;
 module:
   (doc)? (visibility)? (Module moduleId Eq)? (moduleExports)? (member)+ EOF ;
 
-
 nestedModule:
   (doc)? (visibility)? Module moduleId Eq (moduleExports)? (member)+ End;
 
@@ -86,7 +85,7 @@ selection: ( id | moduleId ) Dot (id | moduleId) (Dot (id | moduleId) )*;
 //
 
 matchBody: matchCase ( '|' matchCase )*;
-matchCase: patt ( If exp )? Eq fnExp ;
+matchCase: (id '@')? patt ( If exp )? Eq fnExp ;
 
 patt: lit         |
       idMWT       |
@@ -176,7 +175,7 @@ tpSpec:
 
 // Data types ----------------------------------------------------------------------
 
-dtField: (doc)? idMWT ;
+dtField: (doc)? idMWT;
 
 dt: (doc)? Data tpId (typeArgs)? LCurly (dtField)+ RCurly (End)?;
 
@@ -203,9 +202,13 @@ tupleDecon: Lpar idOrMeh ',' idOrMeh ( ',' idOrMeh )*  Rpar;
 
 variant: enumV | unionV;
 
+// Union  -------------------------------------------------------------------
+
 unionMbr: tpId (tpSpec)?;
 
 unionV: (doc)? Union tpId (typeArgs)? Eq unionMbr  ( '|' unionMbr )+ End;
+
+// Enum -------------------------------------------------------------------
 
 enumV:  (doc)? Enum tpId Eq tpId ( '|' tpId)+ End;
 
@@ -223,7 +226,6 @@ litLong: LitLong;
 
 litFloat:  LitFloat;
 litDouble: LitDouble;
-
 
 litBoolean: (litTrue | litFalse);
 litTrue: LitTrue;
