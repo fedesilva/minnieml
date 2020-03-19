@@ -63,20 +63,22 @@ exp:
 
 flatExp:
     (
+      lit       |
       id        |
       opId      |
       tpId      |
       moduleId  |
       fnLit     |
       tuple     |
-      lit       |
       group     |
       selection |
       cond      |
       dtCons    |
-      Hole
+      hole
     )+
 ;
+
+hole: Hole;
 
 selection: ( id | moduleId ) Dot (id | moduleId) (Dot (id | moduleId) )*;
 
@@ -134,9 +136,11 @@ fnLit: fnSig TArrow fnExp;
 
 op: binOp | prefixOp | postfixOp;
 
-binOp:       (doc)? Op opId (typeArgs)? idMWT idMWT (returnTp)?    Eq fnExp End;
-prefixOp:     (doc)? Op opId (typeArgs)? Dot idMWT (returnTp)?      Eq fnExp End;
-postfixOp:    (doc)? Op (typeArgs)? Dot opId idMWT (returnTp)?      Eq fnExp End;
+binOp:        (doc)? Op (opPrecedence)? opId (typeArgs)? idMWT idMWT (returnTp)?    Eq fnExp End;
+prefixOp:     (doc)? Op (opPrecedence)? opId Dot (typeArgs)? idMWT (returnTp)?      Eq fnExp End;
+postfixOp:    (doc)? Op (opPrecedence)?  Dot opId (typeArgs)? idMWT (returnTp)?      Eq fnExp End;
+
+opPrecedence: LitPrec;
 
 // Conditional expression ----------------------------------------------------------------------
 
@@ -221,7 +225,7 @@ lit: litStr | litInt | litLong | litFloat | litDouble | litUnit | litBoolean;
 
 litStr: LitStr;
 
-litInt:  LitInt;
+litInt:  LitPrec | LitInt;
 litLong: LitLong;
 
 litFloat:  LitFloat;
@@ -256,6 +260,7 @@ opId:     OpId;
 
 // Literals
 LitStr:   '"' .*? '"';
+LitPrec: [0-5];
 LitInt:   [0-9]+;
 LitLong:  [0-9]+'L';
 LitFloat: [0-9]*'.'[0-9]+;
@@ -263,7 +268,6 @@ LitDouble: [0-9]*'.'[0-9]+'D';
 LitTrue:  'true';
 LitFalse: 'false';
 LitUnit : '()';
-
 
 // Keywords
 Type :      'type';
@@ -322,7 +326,7 @@ TpArgId : [']FirstUpId;
 FirstLowId: [a-z][A-Za-z0-9_]*;
 FirstUpId : [A-Z][A-Za-z0-9]* ;
 
-OpId : ( '/' | '*' | '+' | '-' | '>' | '<' | '=' | ':' | '|' | '%' | '\\' | '^' | '!' | '~' )+;
+OpId : ( '/' | '*' | '+' | '-' | '>' | '<' | '=' | ':' | '|' | '%' | '\\' | '^' | '!' | '~' | '?'  )+;
 
 // Whitespace
 Newline : ('\r\n' | '\n')   -> channel(1);

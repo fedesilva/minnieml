@@ -70,6 +70,30 @@ class OpTests extends BaseFunSuite {
       """.stripMargin
     )
   }
+
+  test("Can provide precedence for infix op"){
+    modNotFailed(
+      """
+         op 1 + a b = ???;
+      """
+    )
+  }
+
+  test("Can provide precedence for prefix op"){
+    modNotFailed(
+      """
+         op 1 +. b = ???;
+      """
+    )
+  }
+
+  test("Can provide precedence for postfix op"){
+    modNotFailed(
+      """
+         op 1 .!  b = ???;
+      """
+    )
+  }
   
 }
 

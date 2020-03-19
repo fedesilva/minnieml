@@ -11,15 +11,7 @@ Proceed at your own risk.
 
 * Review syntax
 
-  - Match
-    - reference to deconstructed exp itself (id '@' exp)
-
-    
   - Exports tests
-    
-  - op needs syntax for:
-    - precedence syntax 
-    - associativity 
 
 * protocols 
   * grammar
