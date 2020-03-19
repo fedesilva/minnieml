@@ -33,8 +33,10 @@ nestedModule:
 exportSelection: (id | tpId | moduleId | selection);
 exportReSpec: (idMWT | tpId | moduleId);
 
+exportedItem: (doc)? (exportSelection) ( '=' exportReSpec  )?;
+
 moduleExports:
-  (doc)? Exports Eq ( (doc)? (exportSelection)+ ( '=' exportReSpec  )? )+ End;
+  (doc)? Exports Eq ( exportedItem )+ End;
 
 member: ( decl | comm );
 
