@@ -20,8 +20,42 @@ class ExportsTests extends BaseFunSuite {
       """)
   }
 
-  // export and rename id
-  // export and types to the alias
+  test("export names renaming"){
+    modNotFailed(
+      """
+        module A =
+
+          exports =
+            x = equis
+            a = dos
+          ;
+
+          let x = 1;
+          let a = 2;
+
+      """)
+  }
+
+
+
+  // export and type the alias
+
+  test("export with type ascription"){
+    modNotFailed(
+      """
+        module A =
+
+          exports =
+            x = equis : Int
+            a = dos: String
+          ;
+
+          let x = 1;
+          let a = "2";
+
+      """)
+  }
+
   // export selection
   
 }
