@@ -18,7 +18,7 @@ object ErrorChecker {
    */
   def failures[T <: ParserRuleContext](ctx: ParseContext[T]): Seq[ParseError] = {
 
-    import collection.JavaConverters._
+    import scala.jdk.CollectionConverters._
 
     @tailrec
     def loop(trees: List[ParseTree], errors: Seq[ParseError]): Seq[ParseError] =

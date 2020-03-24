@@ -4,7 +4,7 @@ lazy val commonSettings =
   Seq(
     organization  := "minnie-ml",
     version       := "0.1.0-SNAPSHOT",
-    scalaVersion  := "2.12.8",
+    scalaVersion  := "2.13.1",
     maintainer    := "fede.silva@gmail.com"
   ) ++
   Seq(
@@ -45,7 +45,7 @@ lazy val mmlclib =
       // I can walk by myself, if you don't mind
       antlr4GenVisitor  in Antlr4 := false,
       antlr4GenListener in Antlr4 := false,
-      antlr4Version     in Antlr4 := "4.7.2"
+      antlr4Version     in Antlr4 := "4.8-1"
     )
     .settings(
       buildInfoKeys     := Seq[BuildInfoKey](name, version, scalaVersion, sbtVersion),

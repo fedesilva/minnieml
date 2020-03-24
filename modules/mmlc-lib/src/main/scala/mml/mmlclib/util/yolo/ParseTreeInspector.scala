@@ -18,7 +18,7 @@ object ParseTreeInspector {
 
   def flatten(tree: ParseTree): Nodes = {
 
-    import collection.JavaConverters._
+    import scala.jdk.CollectionConverters._
 
     //noinspection ScalaUnnecessaryParentheses
     @tailrec

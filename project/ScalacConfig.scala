@@ -5,7 +5,7 @@ object ScalacConfig {
   
   lazy val plugins = 
     Seq(
-      addCompilerPlugin("org.scalamacros" %% "paradise" % "2.1.1" cross CrossVersion.full)
+      //addCompilerPlugin("org.scalamacros" %% "paradise" % "2.1.1" cross CrossVersion.full)
     )
 
   lazy val opts: Seq[String] =
@@ -20,9 +20,9 @@ object ScalacConfig {
       "-unchecked",                        // Enable additional warnings where generated code depends on assumptions.
       "-Xcheckinit",                       // Wrap field accessors to throw an exception on uninitialized access.
       "-Xfatal-warnings",                  // Fail the compilation if there are any warnings.
-      "-Xfuture",                          // Turn on future language features.
+//      "-Xfuture",                          // Turn on future language features.
       "-Xlint:adapted-args",               // Warn if an argument list is modified to match the receiver.
-      "-Xlint:by-name-right-associative",  // By-name parameter of right associative operator.
+      //"-Xlint:by-name-right-associative",  // By-name parameter of right associative operator.
       "-Xlint:constant",                   // Evaluation of a constant arithmetic expression results in an error.
       "-Xlint:delayedinit-select",         // Selecting member of DelayedInit.
       "-Xlint:doc-detached",               // A Scaladoc comment appears to be detached from its element.
@@ -37,16 +37,16 @@ object ScalacConfig {
       "-Xlint:private-shadow",             // A private field (or class parameter) shadows a superclass field.
       "-Xlint:stars-align",                // Pattern sequence wildcard must align with sequence component.
       "-Xlint:type-parameter-shadow",      // A local type parameter shadows a type already in scope.
-      "-Xlint:unsound-match",              // Pattern match may not be typesafe.
-      "-Yno-adapted-args",                 // Do not adapt an argument list (either by inserting () or creating a tuple) to match the receiver.
+//      "-Xlint:unsound-match",              // Pattern match may not be typesafe.
+      //"-Yno-adapted-args",                 // Do not adapt an argument list (either by inserting () or creating a tuple) to match the receiver.
       // "-Yno-imports",                      // No predef or default imports
-      "-Ypartial-unification",             // Enable partial unification in type constructor inference
+      //"-Ypartial-unification",             // Enable partial unification in type constructor inference
       "-Ywarn-dead-code",                  // Warn when dead code is identified.
       "-Ywarn-extra-implicit",             // Warn when more than one implicit parameter section is defined.
-      "-Ywarn-inaccessible",               // Warn about inaccessible types in method signatures.
-      "-Ywarn-infer-any",                  // Warn when a type argument is inferred to be `Any`.
-      "-Ywarn-nullary-override",           // Warn when non-nullary `def f()' overrides nullary `def f'.
-      "-Ywarn-nullary-unit",               // Warn when nullary methods return Unit.
+      //"-Ywarn-inaccessible",               // Warn about inaccessible types in method signatures.
+      //"-Ywarn-infer-any",                  // Warn when a type argument is inferred to be `Any`.
+      //"-Ywarn-nullary-override",           // Warn when non-nullary `def f()' overrides nullary `def f'.
+      //"-Ywarn-nullary-unit",               // Warn when nullary methods return Unit.
       "-Ywarn-numeric-widen",              // Warn when numerics are widened.
       "-Ywarn-unused:implicits",           // Warn if an implicit parameter is unused.
       "-Ywarn-unused:imports",             // Warn if an import selector is not referenced.

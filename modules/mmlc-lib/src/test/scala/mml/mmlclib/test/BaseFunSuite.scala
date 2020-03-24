@@ -3,12 +3,14 @@ package mml.mmlclib.test
 import mml.mmlclib.api.ParserApi
 import mml.mmlclib.util.parser.ErrorChecker
 import org.scalactic.source.Position
-import org.scalatest.{Assertion, FunSuite, Matchers}
+import org.scalatest.funsuite.AnyFunSuite
+import org.scalatest.Assertion
+import org.scalatest.matchers.should.Matchers
 
 /**
   *  Base trait for `FunSuite` tests; adds common `Matchers` and some MML specific assertions.
   */
-trait BaseFunSuite extends FunSuite with Matchers {
+trait BaseFunSuite extends AnyFunSuite with  Matchers {
 
   def modNotFailed(source: String, msg: Option[String] = None)(
     implicit pos: Position
