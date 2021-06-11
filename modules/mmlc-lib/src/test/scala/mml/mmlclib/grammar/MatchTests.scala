@@ -5,44 +5,44 @@ import mml.mmlclib.test.BaseFunSuite
 class MatchTests extends BaseFunSuite {
 
   test("match all the things") {
-    modNotFailed(
-      """
-        |let a: String =
-        |    x match
-        |        1                 = "1"
-        |      | 2                 = "2"
-        |      | (a, _)            = "tuple"
-        |      | Person { name }   = name
-        |      | {name}            = name
-        |      | a: String         = a
-        |      | Monday            = "monday"
-        |;
-      """.stripMargin)
+    
+    modNotFailed("""
+        let a: String =
+            x match
+                1                 = "1"
+              | 2                 = "2"
+              | (a, _)            = "tuple"
+              | Person { name }   = name
+              | {name}            = name
+              | a: String         = a
+              | Monday            = "monday"
+        ;
+      """)
   }
-  
+
   test("match function") {
     modNotFailed(
       """
-        |fn x match
-        |     A = "a"
-        |  |  B = "b"
-        |;
-      """.stripMargin
+        fn x match
+             A = "a"
+          |  B = "b"
+        ;
+      """
     )
   }
-  
+
   test("match function with function type pattern") {
     modNotFailed(
       """
-        |fn x match
-        |   A = "a"
-        | | f: B -> C -> X = "b"
-        |;
-      """.stripMargin
+        fn x match
+           A = "a"
+         | f: B -> C -> X = "b"
+        ;
+      """
     )
   }
-  
-  test("match function with return type"){
+
+  test("match function with return type") {
     modNotFailed(
       """
         |fn x : String match
@@ -52,8 +52,8 @@ class MatchTests extends BaseFunSuite {
       """.stripMargin
     )
   }
-  
-  test("match fn with fnLet"){
+
+  test("match fn with fnLet") {
     modNotFailed(
       """
         |(** lalala *)
@@ -70,7 +70,7 @@ class MatchTests extends BaseFunSuite {
     )
   }
 
-  test("match union"){
+  test("match union") {
     modNotFailed(
       """
       let name =
@@ -82,7 +82,7 @@ class MatchTests extends BaseFunSuite {
     )
   }
 
-  test("match union with if"){
+  test("match union with if") {
     modNotFailed(
       """
       let name =
@@ -94,8 +94,8 @@ class MatchTests extends BaseFunSuite {
       """
     )
   }
-  
-  test("structural match"){
+
+  test("structural match") {
     modNotFailed(
       """
       let name =
@@ -106,8 +106,8 @@ class MatchTests extends BaseFunSuite {
       """
     )
   }
-  
-  test("structural match with if"){
+
+  test("structural match with if") {
     modNotFailed(
       """
       let name =
@@ -119,8 +119,10 @@ class MatchTests extends BaseFunSuite {
       """
     )
   }
+
   
-  test("reference the full matched expression"){
+  // FIXME wat
+  test("reference the full matched expression") {
     modNotFailed(
       """
       let name =
@@ -132,9 +134,8 @@ class MatchTests extends BaseFunSuite {
     )
   }
 
-  test("reference the matched pattern besides its components"){
-    modNotFailed(
-      """
+  test("reference the matched pattern besides its components") {
+    modNotFailed("""
         let name =
           person match
             p @ Person{ name } if name == "fede" = p.lastName
@@ -143,6 +144,4 @@ class MatchTests extends BaseFunSuite {
       """)
   }
 
-  
 }
-

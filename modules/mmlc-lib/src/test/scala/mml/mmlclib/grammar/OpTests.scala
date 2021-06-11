@@ -74,7 +74,7 @@ class OpTests extends BaseFunSuite {
   test("Can provide precedence for infix op"){
     modNotFailed(
       """
-         op 1 + a b = ???;
+         op + '1 a b = ???;
       """
     )
   }
@@ -82,7 +82,7 @@ class OpTests extends BaseFunSuite {
   test("Can provide precedence for prefix op"){
     modNotFailed(
       """
-         op 1 +. b = ???;
+         op +. '1 b = ???;
       """
     )
   }
@@ -90,7 +90,7 @@ class OpTests extends BaseFunSuite {
   test("Can provide precedence for postfix op"){
     modNotFailed(
       """
-         op 1 .!  b = ???;
+         op  .! '1  b = ???;
       """
     )
   }

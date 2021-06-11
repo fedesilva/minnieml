@@ -4,7 +4,7 @@ lazy val commonSettings =
   Seq(
     organization  := "minnie-ml",
     version       := "0.1.0-SNAPSHOT",
-    scalaVersion  := "2.13.1",
+    scalaVersion  := "2.13.3",
     maintainer    := "fede.silva@gmail.com"
   ) ++
   Seq(

@@ -1,51 +1,65 @@
-
+    
 # Todo
 
 Warning, there be dragons here.
-(meaning this is a brain dump, and as people that know me know (!?), I tend to 
-  leave phrases unfin ... among other weirdness)
+
+Meaning this is a brain dump, and as people that know me know (!?), I tend to 
+  leave phrases unfin ... among other weirdness.
 
 Proceed at your own risk.
 
 ## Syntax/Grammar 
 
-* Review syntax
+* make use of tree matching (see below in testing)
+  - it has happened to me several times that somethig parses but the resulting tree makes no sense.
+  - use tree matchers (antlr thingie) so that shape expectations can be asserted
 
-  - Exports tests
 
-* protocols 
+* protocols
   * grammar
     * definition
     * impl
 
+
+* tests
+  
+  - cover more cases for grammar tests
+    - union types
+    - more patterns
+    - more tpSpecs
+    - more type parameters
+    
+
 * `open`
     - Pods (external references) are `open`d
-    - `use` declares what we use fom any opened pod
-        - `use package.package2.Module`
       
     - you `open` a pod, then you're able to `use` it's exports         
 
-            
-              open MML.Std {
+
+              open MML.Std use
                 #  ^^^^^^^ this is the pod
                 # Stuff inside is relative to the pod
-                Math
-                Console.println
-              }
+                Math                  # A full module
+                Console.println       # A single name from the module
+              ;
 
 
 * Pod syntax
-  - multiple pods can be nested, like modules
-  - components:
+    
+  - members:
     - export
+        - same as in module
     - native
+        - same as in module
     - canon
+        - declare an impl for a type canonical, can't be redefined
     - pragmas
+        - compiler flags
     - dependencies
-
+        - module names and versions
 
 * Modules
-  - native modifier, include clause
+  - native modifier, include clause 
        
        module native A = 
          include = "stdio.h";
@@ -60,6 +74,7 @@ Proceed at your own risk.
       - type ascription
     - how do we refine types in runtime? (like `refinedMV`)
       - pattern matching on the type (must have at least two branches)
+        - example! I don't understand myself two years later.
  
  
 
@@ -84,11 +99,8 @@ Proceed at your own risk.
       
   * Merge Hidden Tokens
     
-  * State ADT to pass to stages
-    * recover the hidden tokens
-    * lexing error reporting 
-  
-  * better typed view of the tokens?
+  * graph db
+    * walk the parse tree and generate a graph
 
 ### Test
 

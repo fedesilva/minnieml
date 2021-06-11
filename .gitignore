@@ -10,3 +10,4 @@ scripts
 .antlr
 .vscode
 .idea
+/project/metals.sbt

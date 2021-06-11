@@ -60,15 +60,20 @@ decl:
 group: Lpar ( exp )+ Rpar;
 
 exp:
-  flatExp                     #flatExpL    |
-  left = exp Match matchBody #matchExpL  ;
+  flatExp                     #flatExpL   |
+  left = exp Match matchBody  #matchExpL  ;
 
+
+//
+// FIXME add tags (#thingie)
+// Add application and type construction
+//
 flatExp:
     (
       lit       |
+      tpSpec    |
       id        |
       opId      |
-      tpId      |
       moduleId  |
       fnLit     |
       tuple     |
@@ -92,8 +97,9 @@ matchBody: matchCase ( '|' matchCase )*;
 matchCase: (id '@')? patt ( If exp )? Eq fnExp ;
 
 patt: lit         |
+      fnLit       |
       idMWT       |
-      tpId        |
+      tpSpec      |
       tupleDecon  |
       dtDecon     |
       structDecon ;
@@ -138,11 +144,11 @@ fnLit: fnSig TArrow fnExp;
 
 op: binOp | prefixOp | postfixOp;
 
-binOp:        (doc)? Op (opPrecedence)? opId (typeArgs)? idMWT idMWT (returnTp)?    Eq fnExp End;
-prefixOp:     (doc)? Op (opPrecedence)? opId Dot (typeArgs)? idMWT (returnTp)?      Eq fnExp End;
-postfixOp:    (doc)? Op (opPrecedence)?  Dot opId (typeArgs)? idMWT (returnTp)?      Eq fnExp End;
+binOp:        (doc)? Op opId (opPrecedence)? (typeArgs)? idMWT idMWT (returnTp)?    Eq fnExp End;
+prefixOp:     (doc)? Op opId Dot  (opPrecedence)?  (typeArgs)? idMWT (returnTp)?      Eq fnExp End;
+postfixOp:    (doc)? Op Dot opId  (opPrecedence)? (typeArgs)? idMWT (returnTp)?     Eq fnExp End;
 
-opPrecedence: LitPrec;
+opPrecedence:  LitPrec;
 
 // Conditional expression ----------------------------------------------------------------------
 
@@ -154,7 +160,6 @@ cndElse: Else fnExp;
 // TYPES ---------------------------------------------------------------------------------------
 
 // Type alias
-
 tpAlias: Type tpId (typeArgs)? Eq tpSpec End;
 
 // General type declaration related rules
@@ -164,13 +169,13 @@ typeArgs: tpArgId typeArgs | tpArgId;
 tpArgId: TpArgId | tpArgId TpAsc tpSpec;
 
 tpSpec:
-    Lpar (tpSpec)+ Rpar                           #grpSpec              |
+    Lpar (tpSpec)+ Rpar                           #groupSpec            |
     tpId                                          #nameSpec             |
     tpArgId                                       #argSpec              |
     left = tpSpec ( '&' tpSpec )+                 #intersectSpec        |
     left = tpSpec ( '|' tpSpec )+                 #unionSpec            |
     left = tpSpec (TArrow left = tpSpec)+         #fnSpec               |
-    LCurly (dtField)+ RCurly                      #structSpec           |
+    LCurly dtField (dtField)* RCurly              #structSpec           |
     Lpar tpSpec (',' tpSpec)+  Rpar               #tupleSpec            |
     left = tpSpec ( tpSpec )+                     #tpAppSpec            ;
 
@@ -183,7 +188,7 @@ tpSpec:
 
 dtField: (doc)? idMWT;
 
-dt: (doc)? Data tpId (typeArgs)? LCurly (dtField)+ RCurly (End)?;
+dt: (doc)? Data tpId (typeArgs)? LCurly dtField (dtField)* RCurly (End)?;
 
 dtNamedAssign: Id Eq exp;
 
@@ -210,13 +215,16 @@ variant: enumV | unionV;
 
 // Union  -------------------------------------------------------------------
 
-unionMbr: tpId (tpSpec)?;
+unionV: (doc)? Union tpId (typeArgs)? Eq unionMbr ( '|'  unionMbr )+ End;
 
-unionV: (doc)? Union tpId (typeArgs)? Eq unionMbr  ( '|' unionMbr )+ End;
+unionMbr:  (doc)? tpId ( TpAsc tpSpec)?;
+
 
 // Enum -------------------------------------------------------------------
 
-enumV:  (doc)? Enum tpId Eq tpId ( '|' tpId)+ End;
+enumV:  (doc)? Enum tpId Eq enumMbr ( '|' enumMbr)+ End;
+
+enumMbr:  (doc)? tpId;
 
 
 //
@@ -226,8 +234,7 @@ enumV:  (doc)? Enum tpId Eq tpId ( '|' tpId)+ End;
 lit: litStr | litInt | litLong | litFloat | litDouble | litUnit | litBoolean;
 
 litStr: LitStr;
-
-litInt:  LitPrec | LitInt;
+litInt:  LitInt;
 litLong: LitLong;
 
 litFloat:  LitFloat;
@@ -262,7 +269,6 @@ opId:     OpId;
 
 // Literals
 LitStr:   '"' .*? '"';
-LitPrec: [0-5];
 LitInt:   [0-9]+;
 LitLong:  [0-9]+'L';
 LitFloat: [0-9]*'.'[0-9]+;
@@ -270,6 +276,7 @@ LitDouble: [0-9]*'.'[0-9]+'D';
 LitTrue:  'true';
 LitFalse: 'false';
 LitUnit : '()';
+LitPrec: '\'' [1-10];
 
 // Keywords
 Type :      'type';
@@ -293,6 +300,8 @@ Union:      'union';
 Data:       'data';
 Match:      'match';
 Lazy:       'lazy';
+Or:         'or';
+And:        'and';
 TArrow:     '->';
 Op:         'op';
 End :       ';';
@@ -317,17 +326,16 @@ OrElse:     '~>';
 
 // Identifiers
 
+// a value binding id starts with a lowercase letter
 Id : FirstLowId;
 
-// Singleton type parameter (a value lifted to the type system)
-TpValArgId : [']FirstLowId;
-// Literal Singleton type
-// A type parameter
+// A type parameter starts with a ' and an upper case letter
 TpArgId : [']FirstUpId;
 
 FirstLowId: [a-z][A-Za-z0-9_]*;
 FirstUpId : [A-Z][A-Za-z0-9]* ;
 
+// Operators have symbolic names and are limited to combinations of this
 OpId : ( '/' | '*' | '+' | '-' | '>' | '<' | '=' | ':' | '|' | '%' | '\\' | '^' | '!' | '~' | '?'  )+;
 
 // Whitespace
