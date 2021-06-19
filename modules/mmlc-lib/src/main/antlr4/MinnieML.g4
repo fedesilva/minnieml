@@ -96,9 +96,10 @@ selection: ( id | moduleId ) Dot (id | moduleId) (Dot (id | moduleId) )*;
 matchBody: matchCase ( '|' matchCase )*;
 matchCase: (id '@')? patt ( If exp )? Eq fnExp ;
 
-patt: lit         |
+patt:
+      lit         |
       fnLit       |
-      idMWT       |
+      idOrMeh     |
       tpSpec      |
       tupleDecon  |
       dtDecon     |
@@ -258,11 +259,11 @@ mlComm: MLComm;
 
 // Ids ----------------------------------------------------------------------
 
-id:       Meh | Id;
+id:       Id;
 idMWT:    id (TpAsc tpSpec)?;
-idOrMeh:  idMWT | Meh;
+idOrMeh:  Meh | idMWT;
 moduleId: FirstUpId;
-tpId:     FirstUpId ;
+tpId:     FirstUpId;
 opId:     OpId;
 
 // Lexer Rules ----------------------------------------------------------------------

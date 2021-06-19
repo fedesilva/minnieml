@@ -5,7 +5,7 @@ import mml.mmlclib.test.BaseFunSuite
 class MatchTests extends BaseFunSuite {
 
   test("match all the things") {
-    
+
     modNotFailed("""
         let a: String =
             x match
@@ -21,6 +21,7 @@ class MatchTests extends BaseFunSuite {
   }
 
   test("match function") {
+  
     modNotFailed(
       """
         fn x match
@@ -29,9 +30,11 @@ class MatchTests extends BaseFunSuite {
         ;
       """
     )
+  
   }
 
   test("match function with function type pattern") {
+  
     modNotFailed(
       """
         fn x match
@@ -40,6 +43,7 @@ class MatchTests extends BaseFunSuite {
         ;
       """
     )
+  
   }
 
   test("match function with return type") {
@@ -82,19 +86,6 @@ class MatchTests extends BaseFunSuite {
     )
   }
 
-  test("match union with if") {
-    modNotFailed(
-      """
-      let name =
-        person match
-            Person { name } if name == "fede" = name
-          | (name, _)                         = name
-          | _ = "unknown"
-        ;
-      """
-    )
-  }
-
   test("structural match") {
     modNotFailed(
       """
@@ -112,15 +103,14 @@ class MatchTests extends BaseFunSuite {
       """
       let name =
         person match
-            { name } if name == "fede" = name
-          | (name, _)                  = name
-          | _ = "unknown"
+            { name } if name == "fede"  = name
+          | (name, _)                   = name
+          | _                           = "unknown"
       ;
       """
     )
   }
 
-  
   // FIXME wat
   test("reference the full matched expression") {
     modNotFailed(
