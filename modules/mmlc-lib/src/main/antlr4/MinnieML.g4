@@ -177,7 +177,7 @@ tpSpec:
     left = tpSpec ( '|' tpSpec )+                 #unionSpec            |
     left = tpSpec (TArrow left = tpSpec)+         #fnSpec               |
     LCurly dtField (dtField)* RCurly              #structSpec           |
-    Lpar tpSpec (',' tpSpec)+  Rpar               #tupleSpec            |
+    tpSpec (',' tpSpec)+                          #tupleSpec            |
     left = tpSpec ( tpSpec )+                     #tpAppSpec            ;
 
 
