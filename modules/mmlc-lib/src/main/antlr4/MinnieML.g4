@@ -271,13 +271,13 @@ opId:     OpId;
 // Literals
 LitStr:   '"' .*? '"';
 LitInt:   [0-9]+;
-LitLong:  [0-9]+'L';
 LitFloat: [0-9]*'.'[0-9]+;
+LitLong:  [0-9]+'L';
 LitDouble: [0-9]*'.'[0-9]+'D';
 LitTrue:  'true';
 LitFalse: 'false';
 LitUnit : '()';
-LitPrec: '\'' [1-10];
+LitPrec: '[' [1-10] ']';
 
 // Keywords
 Type :      'type';

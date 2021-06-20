@@ -31,42 +31,42 @@ class OpTests extends BaseFunSuite {
   test("Can NOT define binop with one arg"){
     modFailed(
       """
-        |op + a = sum a
+        op + a = sum a
       """.stripMargin)
   }
   
   test("Can NOT define binop with No arg"){
     modFailed(
       """
-        |op + = 1
+        op + = 1
       """.stripMargin)
   }
   
   test("Can NOT define prefix without arg"){
     modFailed(
       """
-        |op .+ = ???
+        op .+ = ???
       """.stripMargin)
   }
   
   test("Cant define prefix with arg in incorrect position "){
     modFailed(
       """
-        |op a .+ = sum a
+        op a .+ = sum a
       """.stripMargin)
   }
   
   test("Cant define postfix with NO arg"){
     modFailed(
       """
-        |op +. = 1
+        op +. = 1
       """.stripMargin)
   }
   
   test("Can define multichar operator"){
     modNotFailed(
       """
-        |op => a b = doSomething a b; # applied as `a => b`
+        op => a b = doSomething a b; # applied as `a => b`
       """.stripMargin
     )
   }
@@ -74,7 +74,7 @@ class OpTests extends BaseFunSuite {
   test("Can provide precedence for infix op"){
     modNotFailed(
       """
-         op + '1 a b = ???;
+       op + [1] a b = ???;
       """
     )
   }
@@ -82,7 +82,7 @@ class OpTests extends BaseFunSuite {
   test("Can provide precedence for prefix op"){
     modNotFailed(
       """
-         op +. '1 b = ???;
+         op +. [1] b = ???;
       """
     )
   }
@@ -90,7 +90,7 @@ class OpTests extends BaseFunSuite {
   test("Can provide precedence for postfix op"){
     modNotFailed(
       """
-         op  .! '1  b = ???;
+         op .! [1]  b = ???;
       """
     )
   }
