@@ -7,7 +7,7 @@ class LambdaExprTests extends BaseFunSuite {
   test("Simple lambda expr") {
     modNotFailed(
       """
-        let dup = a -> * a 2;
+        let dup = a -> a * 2;
       """
     )
   }

@@ -70,12 +70,12 @@ exp:
 //
 flatExp:
     (
+      fnLit     |
+      id        |
       lit       |
       tpSpec    |
-      id        |
       opId      |
       moduleId  |
-      fnLit     |
       tuple     |
       group     |
       selection |

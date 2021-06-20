@@ -125,7 +125,7 @@ class BasicTests extends BaseFunSuite {
     modNotFailed(
       """
         |let a =
-        |  if >= a 0 then
+        |  if a >= 0 then
         |    a
         |  else if x <= 45 then
         |    let b = 2
@@ -140,7 +140,7 @@ class BasicTests extends BaseFunSuite {
   
   test("impossible to define unbalanced if exp"){
     modFailed(
-      """ # Y U NO FAIL
+      """
         |let a = if x then b;
       """.stripMargin)
   }

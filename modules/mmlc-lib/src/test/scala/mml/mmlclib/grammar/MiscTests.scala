@@ -2,11 +2,11 @@ package mml.mmlclib.grammar
 
 import mml.mmlclib.test.BaseFunSuite
 
-/** Randomly formatted and maybe complex calls and other things that exercise the lexer/parser.
-  *
-  * Mostly things I make up when playing with the grammar, put into a test.
-  *
-  */
+/** Randomly formatted stuff.
+ *
+ * Mostly things I make up when playing with the grammar, put into a test.
+ *
+ */
 class MiscTests extends BaseFunSuite {
 
   test("let and many comments") {
