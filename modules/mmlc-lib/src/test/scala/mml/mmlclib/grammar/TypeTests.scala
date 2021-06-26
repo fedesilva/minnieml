@@ -79,32 +79,35 @@ class TypeTests extends BaseFunSuite {
       """
         module A =
         
-        (** Represents a person *)
-        data Person {
-          (** The name *)
-          name: String
-          (** The age must be a natural number *)
-          age : Natural
-        }
-        
-        (** We only care about the name of the Pet *)
-        data Pet { name: String }
-        
-        (*
-           Explicit return type, parameter is in a group so the type is not assigned to it,
-         but to the function itself.
-        
-         Type of p: { name: String }
-        
-        *)
-        fn nameOf (p) : String = p.name;
-        
-        let fede = Person "Fede" 15; (* ¬¬ *)
-        
-        let fido = Pet "fido";
-        
-        let namePerson = nameOf fede;
-        let namePet    = nameOf fido;
+          (** Represents a person *)
+          data Person {
+          
+            (** The name *)
+            name: String
+            
+            (** The age must be a natural number *)
+            age : Natural
+            
+          }
+          
+          (** We only care about the name of the Pet *)
+          data Pet { name: String }
+          
+          (*
+             Explicit return type, parameter is in a group so the type is not assigned to it,
+           but to the function itself.
+          
+           Type of p: { name: String }
+          
+          *)
+          fn nameOf (p) : String = p.name;
+          
+          let fede = Person "Fede" 35; (* ¬¬ *)
+          
+          let fido = Pet "fido";
+          
+          let nameOfPerson = nameOf fede;
+          let nameOfPet    = nameOf fido;
         
       """
     )
@@ -123,7 +126,7 @@ class TypeTests extends BaseFunSuite {
         (** A union of random rubish *)
         union X =
             A
-          | B: (Int, Int)
+          | B: Int, Int
           | C: { name: String age: Int }
           | D: String -> String
           | E: Real

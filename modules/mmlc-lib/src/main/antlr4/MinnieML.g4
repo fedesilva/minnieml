@@ -264,7 +264,7 @@ idMWT:    id (TpAsc tpSpec)?;
 idOrMeh:  Meh | idMWT;
 moduleId: FirstUpId;
 tpId:     FirstUpId;
-opId:     OpId;
+opId:     Id | SymId;
 
 // Lexer Rules ----------------------------------------------------------------------
 
@@ -336,8 +336,14 @@ TpArgId : [']FirstUpId;
 FirstLowId: [a-z][A-Za-z0-9_]*;
 FirstUpId : [A-Z][A-Za-z0-9]* ;
 
+SymId : ( '/' | '*' | '+' | '-' | '>' | '<' | '=' | ':' | '|' | '%' | '\\' | '^' | '!' | '~' | '?'  )+;
+
 // Operators have symbolic names and are limited to combinations of this
-OpId : ( '/' | '*' | '+' | '-' | '>' | '<' | '=' | ':' | '|' | '%' | '\\' | '^' | '!' | '~' | '?'  )+;
+//OpId :  FirstLowId | ( '/' | '*' | '+' | '-' | '>' | '<' | '=' | ':' | '|' | '%' | '\\' | '^' | '!' | '~' | '?'  )+
+//        ;
+//OpId :  FirstLowId* | SymId;
+
+
 
 // Whitespace
 Newline : ('\r\n' | '\n')   -> channel(1);
