@@ -7,7 +7,7 @@ class SyntaxErrorAccumulator extends BaseErrorListener {
 
   private[this] val errors = collection.mutable.ListBuffer[SyntaxError]()
 
-  override def syntaxError(
+override def syntaxError(
     recognizer:         Recognizer[_, _],
     offendingSymbol:    Any,
     line:               Int,

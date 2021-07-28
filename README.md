@@ -21,7 +21,7 @@ Here's a small syntax showcase
     let a = 1;
     let b = 2;
     // Abstraction
-    fn times a b = a + b;
+    fn times a b = a * b;
     // Application
     times 1 2;
     times a b;
@@ -35,15 +35,16 @@ This is not at all connected to my employer's IP, work, interests, opinions or a
 
     "El que avisa no traiciona"
 
-    Spanish for "He who warns you, does not betray you".
+      -- Spanish for "He who warns you, does not betray you".
+
+    "Forewarned is forearmed" is the correct 
+  
 
 
 I'm only working on the grammar at this point and when I move on, it might take 
 ages for me to complete the next stage.
 
 This is not something you want to use, I'm making this public to share with friends, so if you continue, hello friend!
-
-And remember, this is _my_ hobby and learning sandbox, no more, no less. 
 
 ## (Intended) Features
 

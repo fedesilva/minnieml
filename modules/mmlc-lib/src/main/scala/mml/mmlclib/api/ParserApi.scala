@@ -51,6 +51,7 @@ object ParserApi {
   type ParseTree <: ParserRuleContext
 
   def apply(): ParserApi = new ParserApi()
+  
 }
 
 /**
@@ -88,6 +89,7 @@ class ParserApi() {
       module,
       errors
     )
+    
   }
 
   def parseScriptString(source: String): ParseContext[ScriptContext] =
@@ -102,7 +104,7 @@ class ParserApi() {
 
     parser.removeErrorListeners()
     parser.removeParseListeners()
-
+    
     // The syntax error accumulator can only be queried for errors once.
     val syntaxErrorAccumulator = new SyntaxErrorAccumulator
     parser.addErrorListener(syntaxErrorAccumulator)

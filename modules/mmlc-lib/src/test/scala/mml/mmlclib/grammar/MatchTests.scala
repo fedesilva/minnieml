@@ -49,27 +49,27 @@ class MatchTests extends BaseFunSuite {
   test("match function with return type") {
     modNotFailed(
       """
-        |fn x : String match
-        |  A               = "a" |
-        |  f: 'T -> String = f z
-        |;
-      """.stripMargin
+        fn x : String match
+          A               = "a" |
+          f: 'T -> String = f z
+        ;
+      """
     )
   }
 
   test("match fn with fnLet") {
     modNotFailed(
       """
-        |(** lalala *)
-        |fn x : String match
-        |  A               = "a"  |
-        |  f: 'T -> String = f z  |
-        |  x               =
-        |    let str = show x,
-        |        otr = "other"
-        |    in
-        |      upperCase (concat str otr)
-        |;
+        (** lalala *)
+        fn x : String match
+            A               = "a"
+          | f: 'T -> String = f z
+          | x               =
+            let str = show x,
+                otr = "other"
+            in
+              upperCase (concat str otr)
+        ;
       """.stripMargin
     )
   }
@@ -103,7 +103,8 @@ class MatchTests extends BaseFunSuite {
       """
       let name =
         person match
-            { name } if name == "fede"  = name
+            { name } if name == "fede"  = "grosso"
+          | { name }                    = name
           | (name, _)                   = name
           | _                           = "unknown"
       ;
@@ -133,5 +134,33 @@ class MatchTests extends BaseFunSuite {
         ;
       """)
   }
+  
+  test("match lambda literal, passed as a value on application ") {
+    modNotFailed(
+      """
+        fn apply v f = f v;
+
+        # Lambda is disambiguated by using parens, else it looks like a match on `2`
+        let x =
+          apply 2 (
+            match
+                1 = "Uno"
+              | _ = "No Uno"
+            )
+        ;
+      """)
+  }
+  
+  test("match lambda, bound to a name") {
+    modNotFailed(
+      """
+        let z =
+          match
+              1 = "Uno"
+            | _ = "No Uno"
+        ;
+      """)
+  }
+  
 
 }

@@ -25,10 +25,10 @@ protd:   Protd;
 lexical: Lexical;
 
 module:
-  (doc)? (visibility)? (Module moduleId Eq)? (moduleExports)? (member)+ EOF ;
+  (doc)? (visibility)? (Module moduleId Def)? (moduleExports)? (member)+ EOF ;
 
 nestedModule:
-  (doc)? (visibility)? Module moduleId Eq (moduleExports)? (member)+ End;
+  (doc)? (visibility)? Module moduleId Def (moduleExports)? (member)+ End;
 
 exportSelection: (id | tpId | moduleId | selection);
 exportReSpec: (idMWT | tpId | moduleId);
@@ -36,7 +36,7 @@ exportReSpec: (idMWT | tpId | moduleId);
 exportedItem: (doc)? (exportSelection) ( '=' exportReSpec  )?;
 
 moduleExports:
-  (doc)? Exports Eq ( exportedItem )+ End;
+  (doc)? Exports Def ( exportedItem )+ End;
 
 member: ( decl | comm );
 
@@ -60,12 +60,13 @@ decl:
 group: Lpar ( exp )+ Rpar;
 
 exp:
-  flatExp                     #flatExpL   |
-  left = exp Match matchBody  #matchExpL  ;
+  flatExp                        #flatExpL      |
+  fnMatchLit                    #fnMatchLitL  |
+  left = exp Match matchBody    #matchExpL    ;
 
 
 //
-// FIXME add tags (#thingie)
+// FIXME add tags (#thingie) (me, later: why?)
 // Add application and type construction
 //
 flatExp:
@@ -94,10 +95,9 @@ selection: ( id | moduleId ) Dot (id | moduleId) (Dot (id | moduleId) )*;
 //
 
 matchBody: matchCase ( '|' matchCase )*;
-matchCase: (id '@')? patt ( If exp )? Eq fnExp ;
+matchCase: (id '@')? patt ( If exp )? Def fnExp ;
 
-patt:
-      lit         |
+patt: lit         |
       fnLit       |
       idOrMeh     |
       tpSpec      |
@@ -116,10 +116,10 @@ cnst: Const;
 // ----------------------------------------------------------------------
 // Bindings
 
-bnd:  idMWT         Eq exp  |
-      tupleDecon    Eq exp  |
-      dtDecon       Eq exp  |
-      structDecon   Eq exp  ;
+bnd:  idMWT         Def exp  |
+      tupleDecon    Def exp  |
+      dtDecon       Def exp  |
+      structDecon   Def exp  ;
 
 letBnd: (doc)? Let (lazy|cnst)? (rec)? (doc)? bnd (',' (doc)? bnd)* End ;
 
@@ -136,18 +136,19 @@ formalArgs: idMWT* | '(' idMWT* ')';
 
 returnTp: TpAsc tpSpec;
 
-fn:    (doc)? Fn (rec)? id fnSig Eq fnExp End ;
+fn:    (doc)? Fn (rec)? id fnSig Def fnExp End ;
 fnM:   (doc)? Fn (rec)? id (returnTp)? Match matchBody End ;
 
 fnLit: fnSig TArrow fnExp;
+fnMatchLit: Match matchBody;
 
 // Operators ----------------------------------------------------------------------
 
 op: binOp | prefixOp | postfixOp;
 
-binOp:        (doc)? Op opId (opPrecedence)? (typeArgs)? idMWT idMWT (returnTp)?    Eq fnExp End;
-prefixOp:     (doc)? Op opId Dot  (opPrecedence)?  (typeArgs)? idMWT (returnTp)?      Eq fnExp End;
-postfixOp:    (doc)? Op Dot opId  (opPrecedence)? (typeArgs)? idMWT (returnTp)?     Eq fnExp End;
+binOp:        (doc)? Op opId (opPrecedence)? (typeArgs)? idMWT idMWT (returnTp)?    Def fnExp End;
+prefixOp:     (doc)? Op opId Dot  (opPrecedence)?  (typeArgs)? idMWT (returnTp)?    Def fnExp End;
+postfixOp:    (doc)? Op Dot opId  (opPrecedence)? (typeArgs)? idMWT (returnTp)?     Def fnExp End;
 
 opPrecedence:  LitPrec;
 
@@ -161,7 +162,7 @@ cndElse: Else fnExp;
 // TYPES ---------------------------------------------------------------------------------------
 
 // Type alias
-tpAlias: Type tpId (typeArgs)? Eq tpSpec End;
+tpAlias: Type tpId (typeArgs)? Def tpSpec End;
 
 // General type declaration related rules
 
@@ -191,7 +192,7 @@ dtField: (doc)? idMWT;
 
 dt: (doc)? Data tpId (typeArgs)? LCurly dtField (dtField)* RCurly (End)?;
 
-dtNamedAssign: Id Eq exp;
+dtNamedAssign: Id Def exp;
 
 dtCons: tpId ( dtNamedAssign | exp )+;
 
@@ -216,14 +217,14 @@ variant: enumV | unionV;
 
 // Union  -------------------------------------------------------------------
 
-unionV: (doc)? Union tpId (typeArgs)? Eq unionMbr ( '|'  unionMbr )+ End;
+unionV: (doc)? Union tpId (typeArgs)? Def unionMbr ( '|'  unionMbr )+ End;
 
 unionMbr:  (doc)? tpId ( TpAsc tpSpec)?;
 
 
 // Enum -------------------------------------------------------------------
 
-enumV:  (doc)? Enum tpId Eq enumMbr ( '|' enumMbr)+ End;
+enumV:  (doc)? Enum tpId Def enumMbr ( '|' enumMbr)+ End;
 
 enumMbr:  (doc)? tpId;
 
@@ -264,7 +265,7 @@ idMWT:    id (TpAsc tpSpec)?;
 idOrMeh:  Meh | idMWT;
 moduleId: FirstUpId;
 tpId:     FirstUpId;
-opId:     Id | SymId;
+opId:     SymId | Id;
 
 // Lexer Rules ----------------------------------------------------------------------
 
@@ -306,7 +307,7 @@ And:        'and';
 TArrow:     '->';
 Op:         'op';
 End :       ';';
-Eq :        '=';
+Def :       '=';
 Dot:        '.';
 Lpar :      '(';
 Rpar :      ')';
@@ -317,12 +318,9 @@ RBrac:      ']';
 Derives:    '<:';
 Hole:       '???';
 Meh:        '_';
-UnsafeP:    '!>';
-UnsafePaT:  '<!>';
-Rescue:     '!~>';
 Compose:    '<|';
 AndThen:    '|>';
-OrElse:     '~>';
+
 
 
 // Identifiers
@@ -337,13 +335,6 @@ FirstLowId: [a-z][A-Za-z0-9_]*;
 FirstUpId : [A-Z][A-Za-z0-9]* ;
 
 SymId : ( '/' | '*' | '+' | '-' | '>' | '<' | '=' | ':' | '|' | '%' | '\\' | '^' | '!' | '~' | '?'  )+;
-
-// Operators have symbolic names and are limited to combinations of this
-//OpId :  FirstLowId | ( '/' | '*' | '+' | '-' | '>' | '<' | '=' | ':' | '|' | '%' | '\\' | '^' | '!' | '~' | '?'  )+
-//        ;
-//OpId :  FirstLowId* | SymId;
-
-
 
 // Whitespace
 Newline : ('\r\n' | '\n')   -> channel(1);

@@ -25,21 +25,29 @@ class UnderlineErrorListener extends BaseErrorListener {
     line:           Int,
     charPositionInLine: Int
   ): Unit = {
-    val tokens = recognizer.getInputStream.asInstanceOf[CommonTokenStream]
-    val input = tokens.getTokenSource.getInputStream.toString
-    val lines = input.split("\n")
+
+    val tokens    = recognizer.getInputStream.asInstanceOf[CommonTokenStream]
+    val input     = tokens.getTokenSource.getInputStream.toString
+    val lines     = input.split("\n")
     val errorLine = lines(line - 1)
+    
     println(errorLine)
+    
     (0 until charPositionInLine).foreach { _ =>
       print(" ")
     }
+    
     val start = offendingToken.getStartIndex
     val stop  = offendingToken.getStopIndex
+    
     if (start >= 0 && stop >= 0) {
       (start until stop) foreach { _ =>
         print("^")
       }
     }
+
     println()
+
   }
+
 }
