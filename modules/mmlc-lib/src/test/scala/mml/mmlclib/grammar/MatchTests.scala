@@ -39,7 +39,7 @@ class MatchTests extends BaseFunSuite {
       """
         fn x match
            A = "a"
-         | f: B -> C -> X = "b"
+         | f @ B -> C -> X = "b"
         ;
       """
     )
@@ -51,7 +51,7 @@ class MatchTests extends BaseFunSuite {
       """
         fn x : String match
           A               = "a" |
-          f: 'T -> String = f z
+          f @ 'T -> String = f z
         ;
       """
     )
@@ -62,9 +62,9 @@ class MatchTests extends BaseFunSuite {
       """
         (** lalala *)
         fn x : String match
-            A               = "a"
-          | f: 'T -> String = f z
-          | x               =
+            A                 = "a"
+          | f @ 'T -> String  = f z
+          | x                 =
             let str = show x,
                 otr = "other"
             in
