@@ -95,7 +95,9 @@ selection: ( id | moduleId ) Dot (id | moduleId) (Dot (id | moduleId) )*;
 //
 
 matchBody: matchCase ( '|' matchCase )*;
-matchCase: (id '@')? patt ( If exp )? def fnExp ;
+matchCase: matchBnd? patt ( If exp )? def fnExp ;
+matchBnd: (id '@');
+
 
 patt: lit         |
       idOrMeh     |
