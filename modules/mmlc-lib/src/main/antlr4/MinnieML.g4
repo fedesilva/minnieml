@@ -25,10 +25,10 @@ protd:   Protd;
 lexical: Lexical;
 
 module:
-  (doc)? (visibility)? (Module moduleId Def)? (moduleExports)? (member)+ EOF ;
+  (doc)? (visibility)? (Module moduleId def)? (moduleExports)? (member)+ EOF ;
 
 nestedModule:
-  (doc)? (visibility)? Module moduleId Def (moduleExports)? (member)+ End;
+  (doc)? (visibility)? Module moduleId def (moduleExports)? (member)+ End;
 
 exportSelection: (id | tpId | moduleId | selection);
 exportReSpec: (idMWT | tpId | moduleId);
@@ -36,7 +36,7 @@ exportReSpec: (idMWT | tpId | moduleId);
 exportedItem: (doc)? (exportSelection) ( '=' exportReSpec  )?;
 
 moduleExports:
-  (doc)? Exports Def ( exportedItem )+ End;
+  (doc)? Exports def ( exportedItem )+ End;
 
 member: ( decl | comm );
 
@@ -95,10 +95,9 @@ selection: ( id | moduleId ) Dot (id | moduleId) (Dot (id | moduleId) )*;
 //
 
 matchBody: matchCase ( '|' matchCase )*;
-matchCase: (id '@')? patt ( If exp )? Def fnExp ;
+matchCase: (id '@')? patt ( If exp )? def fnExp ;
 
 patt: lit         |
-      fnLit       |
       idOrMeh     |
       tpSpec      |
       tupleDecon  |
@@ -116,10 +115,10 @@ cnst: Const;
 // ----------------------------------------------------------------------
 // Bindings
 
-bnd:  idMWT         Def exp  |
-      tupleDecon    Def exp  |
-      dtDecon       Def exp  |
-      structDecon   Def exp  ;
+bnd:  idMWT         def exp  |
+      tupleDecon    def exp  |
+      dtDecon       def exp  |
+      structDecon   def exp  ;
 
 letBnd: (doc)? Let (lazy|cnst)? (rec)? (doc)? bnd (',' (doc)? bnd)* End ;
 
@@ -136,7 +135,7 @@ formalArgs: idMWT* | '(' idMWT* ')';
 
 returnTp: TpAsc tpSpec;
 
-fn:    (doc)? Fn (rec)? id fnSig Def fnExp End ;
+fn:    (doc)? Fn (rec)? id fnSig def fnExp End ;
 fnM:   (doc)? Fn (rec)? id (returnTp)? Match matchBody End ;
 
 fnLit: fnSig TArrow fnExp;
@@ -146,9 +145,9 @@ fnMatchLit: Match matchBody;
 
 op: binOp | prefixOp | postfixOp;
 
-binOp:        (doc)? Op opId (opPrecedence)? (typeArgs)? idMWT idMWT (returnTp)?    Def fnExp End;
-prefixOp:     (doc)? Op opId Dot  (opPrecedence)?  (typeArgs)? idMWT (returnTp)?    Def fnExp End;
-postfixOp:    (doc)? Op Dot opId  (opPrecedence)? (typeArgs)? idMWT (returnTp)?     Def fnExp End;
+binOp:       (doc)? Op opId (opPrecedence)? (typeArgs)? idMWT idMWT (returnTp)?    def fnExp End;
+prefixOp:     (doc)? Op opId Dot  (opPrecedence)?  (typeArgs)? idMWT (returnTp)?    def fnExp End;
+postfixOp:    (doc)? Op Dot opId  (opPrecedence)? (typeArgs)? idMWT (returnTp)?     def fnExp End;
 
 opPrecedence:  LitPrec;
 
@@ -162,7 +161,7 @@ cndElse: Else fnExp;
 // TYPES ---------------------------------------------------------------------------------------
 
 // Type alias
-tpAlias: Type tpId (typeArgs)? Def tpSpec End;
+tpAlias: Type tpId (typeArgs)? def tpSpec End;
 
 // General type declaration related rules
 
@@ -192,7 +191,7 @@ dtField: (doc)? idMWT;
 
 dt: (doc)? Data tpId (typeArgs)? LCurly dtField (dtField)* RCurly (End)?;
 
-dtNamedAssign: Id Def exp;
+dtNamedAssign: Id def exp;
 
 dtCons: tpId ( dtNamedAssign | exp )+;
 
@@ -217,16 +216,20 @@ variant: enumV | unionV;
 
 // Union  -------------------------------------------------------------------
 
-unionV: (doc)? Union tpId (typeArgs)? Def unionMbr ( '|'  unionMbr )+ End;
+unionV: (doc)? Union tpId (typeArgs)? def unionMbr ( '|'  unionMbr )+ End;
 
 unionMbr:  (doc)? tpId ( TpAsc tpSpec)?;
 
 
 // Enum -------------------------------------------------------------------
 
-enumV:  (doc)? Enum tpId Def enumMbr ( '|' enumMbr)+ End;
+enumV:  (doc)? Enum tpId def enumMbr ( '|' enumMbr)+ End;
 
 enumMbr:  (doc)? tpId;
+
+// Misc Convenience nodes
+
+def: Def;
 
 
 //
