@@ -80,15 +80,6 @@ Proceed at your own risk.
 
 ## Tools
 
-### Replacing IDEA now
-
-  * Tool to display trees
-    - java fx
-      - with a webview and d3js or something like that
-      - feed it from outside
-      - provide a view with a text or a "callable view" so we can use it from the console
-
-
 ## Compiler 
 
   * ParserApi  
@@ -101,6 +92,8 @@ Proceed at your own risk.
     
   * graph db
     * walk the parse tree and generate a graph
+      - Walk the tree from a module, creating nodes
+        - make node walkers
 
 ### Test
 
