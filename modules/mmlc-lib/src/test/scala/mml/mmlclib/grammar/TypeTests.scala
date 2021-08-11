@@ -24,6 +24,7 @@ class TypeTests extends BaseFunSuite {
   test("simple fn with full param type declaration and return type") {
     modNotFailed(
       """
+        # type: Int -> Int -> Real
         fn sum a: Int b: Int : Real =
           a + b
         ;
@@ -34,6 +35,8 @@ class TypeTests extends BaseFunSuite {
   test("simple fun with paren disambiguating return type") {
     modNotFailed(
       """
+        # since there is not way to know that Real is the return type, 
+        #   the parens group the formal arguments.        
         fn sum (a b) : Real = a + b;
       """
     )

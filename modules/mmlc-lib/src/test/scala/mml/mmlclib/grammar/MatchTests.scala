@@ -70,7 +70,7 @@ class MatchTests extends BaseFunSuite {
             in
               upperCase (concat str otr)
         ;
-      """.stripMargin
+      """
     )
   }
 
@@ -162,5 +162,4 @@ class MatchTests extends BaseFunSuite {
       """)
   }
   
-
 }
