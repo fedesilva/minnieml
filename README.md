@@ -35,10 +35,8 @@ This is not at all connected to my employer's IP, work, interests, opinions or a
 
     "El que avisa no traiciona"
 
-      -- Spanish for "He who warns you, does not betray you".
-
-    "Forewarned is forearmed" is the correct 
-  
+      -- Spanish for "Forewarned is forearmed" 
+              (or literally "He who warns you, does not betray you".)
 
 
 I'm only working on the grammar at this point and when I move on, it might take 
@@ -69,12 +67,12 @@ This is not something you want to use, I'm making this public to share with frie
       - have constructors
     - enums  
       - no constructors
-      - bit sized by default 
-      - the compiler will pick the smallest integer possible to represent them
+      - generally byte sized
+        - but the compiler will pick the smallest integer possible to represent them
   - Cells
-    - mutable memory locations (see effects below)
+    - mutable memory locations (see resources and effects below)
       - serializable write access (CAS)
-      - concurrent read
+      - concurrent reads
   - Arrays
     - contigous fixed size memory blocks
 
@@ -91,12 +89,12 @@ This is not something you want to use, I'm making this public to share with frie
 - Pattern matching and destructuring
 
   - for data types
-  - primitives
-  - match on any type
+  - primitive literals
+  - match on type
   - can be used in bindings (let (a,b) = (1,2))
   - match functions
     - functions defined in terms of pattern matching
-      - compiled to multiple functions, dispatch on parameters (overloading)
+      - compiled to multiple functions, dispatch on parameters
       - if possible, inline at use site
   - binary pattern matching
   - structural pattern matching
@@ -108,55 +106,48 @@ This is not something you want to use, I'm making this public to share with frie
     - private by default, design your apis, don't just leak them
     - export tables or access modifiers or both
     - circular deps are an error
-    - memory management unit (see below).
+    - memory management unit 
     - first class modules
-      - take parameters (mandatory)
+      - take parameters (mandatory, else it's just a normal problem)
       - define module templates, 
       - make instances at runtime
       - pass them around
-  - can be composed
-    - prototype modules
-      - a module can mix in prototypes
-      - not subtyping
-        - (EXPLORE) if subtyping problems don't exist maybe enable row polymorphism
-          - but uninclined
-    - (EXPLORE)
-      - dot calculus
+    
+      
     
   
     
 
 - Resources, Handlers and Effects
 
+  - Resources
+    - Types that cause indeterminism when accessing them
+      - acquired
+      - released
+      - unique
   - Handlers: protocols that operate on resources.
   - the type of any expression operating on resources is "tainted" by an effect
     - so an effect is the result of applying a handler to a resource.
-  - resources 
+  - resources might be
     - os resources 
       - processes 
       - io (stdin/stdout)
       - sockets
-      - network      
+      - network            
     - mutable cells 
     - Native Interface 
-        (if you think about it, NI is the source of all effects)
-          - all stdlib os resources are backed by NI
-    - uniqueness tracking
-      - automatic or explicit
-      - Effect is a protocol, so you can derive it.      
-        - defines
-          - acquisition
-          - release
-      - built in implementations  for above mentioned resources, canonical
-  - effect boundaries
-    - using a resource means crossing a boundary, 
-      - which enables some interesting avenues for the typesystem to enforce and or optimize things,
-        like who cares about uniqueness for something that is not mutable for example
-        you can read it no problem if it's in scope.
-    - mutually exclusive effects can be tracked
-    - composable effects can be composed
-    - irrelevant effects can be ignored
-    
+        - native values (pointers?)
+
+  - Resource is a protocol, 
+    - so you can provide custom implementations
+      - but there are built in resources
+        - for native
+        - what else? can native subsume everything?
+    - defines
+      - acquisition
+      - release
+  - Effect is a 
+  - built in implementations  for above mentioned resources, canonical
         
 
 - Native Interface
