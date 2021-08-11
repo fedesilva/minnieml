@@ -40,7 +40,7 @@ object ParseTreeInspector {
           loop(children ++ tail, nodes :+ NodeInfo(depth, cls, t))
 
         case (t: TerminalNode) :: tail =>
-          val cls = t.getClass.getSimpleName() + " " + t.getSymbol
+          val cls = t.getClass.getSimpleName()
           val depth = parentDepth(t) + 1
 
           loop(tail, nodes :+ NodeInfo(depth, cls, t))
@@ -74,7 +74,7 @@ object ParseTreeInspector {
       println(s" ${" " * depth} $cls : ${t.getText()}")
 
     case NodeInfo(depth, cls, t: TerminalNode) =>
-      println(s" ${" " * depth} $cls, ${t.getSymbol.getText()}")
+      println(s" ${" " * depth} ${t.getSymbol.getText()} ${t.getSymbol}")
 
     case NodeInfo(depth, cls, t: IdContext) =>
       println(s" ${" " * depth} $cls : ${t.getRuleContext().getText()}")
