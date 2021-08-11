@@ -71,6 +71,7 @@ exp:
 
 flatExp:
     (
+      group     |
       fnLit     |
       lit       |
       id        |
@@ -78,7 +79,6 @@ flatExp:
       opId      |
       moduleId  |
       tuple     |
-      group     |
       selection |
       cond      |
       dtCons    |
