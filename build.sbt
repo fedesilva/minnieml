@@ -20,7 +20,7 @@ lazy val commonSettings =
       resolvers ++= Dependencies.resolvers
     )
 
-val antlrPackageName = "mml.mmlclib.antlr.parser"
+val antlrPackageName = "mml.mmlclib.parser.antlr"
 
 lazy val mml =
   project

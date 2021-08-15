@@ -5,7 +5,7 @@ import org.antlr.v4.runtime.ParserRuleContext
 import org.antlr.v4.runtime.tree.{ParseTree, TerminalNode, ErrorNode}
 
 import scala.annotation.tailrec
-import mml.mmlclib.antlr.parser.MinnieMLParser.{IdContext, TpIdContext}
+import mml.mmlclib.parser.antlr.MinnieMLParser.{IdContext, TpIdContext}
 
 object ParseTreeInspector {
 
@@ -21,9 +21,9 @@ object ParseTreeInspector {
 
     import scala.jdk.CollectionConverters._
 
-    //noinspection ScalaUnnecessaryParentheses
     @tailrec
     def loop(trees: List[ParseTree], nodes: Nodes): Nodes =
+      
       trees match {
 
         case (t: ParserRuleContext) :: tail if t.getChildCount == 0 =>

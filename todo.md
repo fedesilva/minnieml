@@ -93,7 +93,20 @@ Proceed at your own risk.
   * graph db
     * walk the parse tree and generate a graph
       - Walk the tree from a module, creating nodes
-        - make node walkers
+        - start at module          
+          - walk members
+            * letBnd        |
+            * fn          
+            * fnM         
+            * op          
+            * nestedModule
+            * dt          
+            * variant     
+            * tpAlias     
+          - walk imports
+          - walk exports
+
+
 
 ### Test
 

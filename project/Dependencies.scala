@@ -24,8 +24,8 @@ object Dependencies {
   lazy val mmlclib: Seq[ModuleID] =
     Seq(
       "org.bytedeco.javacpp-presets" % "llvm-platform" % "7.0.1-1.4.4",
-      "com.sksamuel.avro4s"         %% "avro4s-core"   % "3.0.9",
-      "io.github.myui"               % "btree4j"       % "0.9.1",
+      // "com.sksamuel.avro4s"         %% "avro4s-core"   % "3.0.9",
+      // "io.github.myui"               % "btree4j"       % "0.9.1",
       "org.neo4j"                    % "neo4j"         % neo4jVersion
     ) ++ commonDependencies ++ testDeps
 

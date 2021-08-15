@@ -1,4 +1,4 @@
-package mml.mmlclib.api.parser.antlr.listeners
+package mml.mmlclib.util.parser
 
 import mml.mmlclib.api.ParseError.SyntaxError
 import org.antlr.v4.runtime._

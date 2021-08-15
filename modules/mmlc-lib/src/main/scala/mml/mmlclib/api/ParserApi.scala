@@ -1,11 +1,10 @@
 package mml.mmlclib.api
 
 import java.nio.file.Path
-
-import mml.mmlclib.antlr.parser.MinnieMLParser.{ModuleContext, ScriptContext}
-import mml.mmlclib.antlr.parser._
-import mml.mmlclib.api.parser.antlr.listeners.SyntaxErrorAccumulator
+import mml.mmlclib.parser.antlr.MinnieMLParser._
+import mml.mmlclib.parser.antlr._
 import mml.mmlclib.util._
+import mml.mmlclib.util.parser.SyntaxErrorAccumulator
 import org.antlr.v4.runtime._
 import org.antlr.v4.runtime.atn.PredictionMode
 import org.antlr.v4.runtime.tree.ErrorNode

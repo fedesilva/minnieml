@@ -142,10 +142,10 @@ class MatchTests extends BaseFunSuite {
 
         # Lambda is disambiguated by using parens, else it looks like a match on `2`
         let x =
-          apply 2 (
-            match
-                1 = "Uno"
-              | _ = "No Uno"
+          apply 2
+            ( _ match
+                  1 = "Uno"
+                | _ = "No Uno"
             )
         ;
       """)
@@ -155,7 +155,7 @@ class MatchTests extends BaseFunSuite {
     modNotFailed(
       """
         let z =
-          match
+          _ match
               1 = "Uno"
             | _ = "No Uno"
         ;

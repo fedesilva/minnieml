@@ -15,8 +15,8 @@ class TypeTests extends BaseFunSuite {
   test("multibind let with types") {
     modNotFailed(
       """
-        let  a:  Int     = 1,
-             b : String  = "b";
+        let  a: Int     = 1,
+             b: String  = "b";
       """
     )
   }
@@ -35,8 +35,8 @@ class TypeTests extends BaseFunSuite {
   test("simple fun with paren disambiguating return type") {
     modNotFailed(
       """
-        # since there is not way to know that Real is the return type, 
-        #   the parens group the formal arguments.        
+        #   since there is not way to know that Real is the return type, 
+        # instead of the type of the last param, the parens group the formal arguments.        
         fn sum (a b) : Real = a + b;
       """
     )
@@ -50,7 +50,7 @@ class TypeTests extends BaseFunSuite {
     )
   }
 
-  test("let tuple decon with full declaration") {
+  test("let tuple decon with full type declaration") {
     modNotFailed(
       """
         let ( a :Int , b: Int ) = (1,2);
@@ -71,7 +71,7 @@ class TypeTests extends BaseFunSuite {
       """
         data Person {
           name: String
-          age: Number & Real
+          age:  Number & Real
         }
       """
     )
@@ -82,7 +82,7 @@ class TypeTests extends BaseFunSuite {
       """
         module A =
         
-          (** Represents a person *)
+          (** Represents a person, duh *)
           data Person {
           
             (** The name *)

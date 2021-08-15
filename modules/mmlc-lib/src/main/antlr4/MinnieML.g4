@@ -64,10 +64,9 @@ decl:
 group: Lpar ( exp )+ Rpar;
 
 exp:
-  flatExp                        #flatExpL      |
   fnMatchLit                    #fnMatchLitL  |
+  flatExp                       #flatExpL     |
   left = exp Match matchBody    #matchExpL    ;
-
 
 flatExp:
     (
@@ -111,7 +110,6 @@ patt: lit         |
 
 rec:  Rec;
 lazy: Lazy;
-
 cnst: Const;
 
 // ----------------------------------------------------------------------
@@ -127,8 +125,8 @@ letBnd: (doc)? Let (lazy|cnst)? (rec)? (doc)? bnd (',' (doc)? bnd)* End ;
 // ----------------------------------------------------------------------
 // Functions
 
-fnLet:  (doc)? Let bnd (',' bnd)* In fnExp (Where fnLetWhere (',' fnLetWhere)*  )? ;
-fnLetWhere: (rec)? id fnSig Def fnExp;
+fnLet:  (doc)? Let bnd (',' bnd)* In fnExp (Where fnLetWhereFn (',' fnLetWhereFn)*  )? ;
+fnLetWhereFn: (rec)? id fnSig Def fnExp;
 
 fnExp: exp | fnLet;
  
@@ -141,16 +139,16 @@ returnTp: TpAsc tpSpec;
 fn:    (doc)? Fn (rec)? id fnSig Def fnExp End ;
 fnM:   (doc)? Fn (rec)? id (returnTp)? Match matchBody End ;
 
-fnLit: fnSig TArrow fnExp;
-fnMatchLit: Match matchBody;
+fnLit:      fnSig TArrow fnExp;
+fnMatchLit: Meh Match matchBody;
 
 // Operators ----------------------------------------------------------------------
 
 op: binOp | prefixOp | postfixOp;
 
-binOp:       (doc)? Op opId (opPrecedence)? (typeArgs)? idMWT idMWT (returnTp)?    Def fnExp End;
-prefixOp:     (doc)? Op opId Dot  (opPrecedence)?  (typeArgs)? idMWT (returnTp)?    Def fnExp End;
-postfixOp:    (doc)? Op Dot opId  (opPrecedence)? (typeArgs)? idMWT (returnTp)?     Def fnExp End;
+binOp:       (doc)? Op opId (opPrecedence)? (typeArgs)? idMWT idMWT (returnTp)? Def fnExp End;
+prefixOp:    (doc)? Op opId Dot (opPrecedence)? (typeArgs)? idMWT (returnTp)?   Def fnExp End;
+postfixOp:   (doc)? Op Dot opId (opPrecedence)? (typeArgs)? idMWT (returnTp)?   Def fnExp End;
 
 opPrecedence:  LitPrec;
 
@@ -323,8 +321,6 @@ Hole:       '???';
 Meh:        '_';
 Compose:    '<|';
 AndThen:    '|>';
-
-
 
 // Identifiers
 
