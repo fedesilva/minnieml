@@ -45,9 +45,9 @@ lazy val mmlclib =
     .settings(
       antlr4PackageName in Antlr4 := Some(antlrPackageName),
       // I can walk by myself, if you don't mind
-      antlr4GenVisitor in Antlr4  := false,
+      antlr4GenVisitor  in Antlr4 := false,
       antlr4GenListener in Antlr4 := false,
-      antlr4Version in Antlr4     := "4.8-1"
+      antlr4Version     in Antlr4 := "4.8-1"
     )
     .settings(
       buildInfoKeys    := Seq[BuildInfoKey](name, version, scalaVersion, sbtVersion),

@@ -10,7 +10,7 @@ import org.antlr.v4.runtime.atn.PredictionMode
 import org.antlr.v4.runtime.tree.ErrorNode
 
 case class ParseContext[T <: ParserRuleContext](
-  tree: T,
+  tree:   T,
   errors: List[ParseError]
 )
 
@@ -19,11 +19,11 @@ sealed trait ParseError
 object ParseError {
 
   case class SyntaxError(
-    offendingSymbol: String,
-    line: Int,
+    offendingSymbol:    String,
+    line:               Int,
     charPositionInLine: Int,
-    msg: String,
-    errorO: Option[Throwable]
+    msg:                String,
+    errorO:             Option[Throwable]
   ) extends ParseError
 
   case class TreeError(
@@ -50,11 +50,10 @@ object ParserApi {
   type ParseTree <: ParserRuleContext
 
   def apply(): ParserApi = new ParserApi()
-  
+
 }
 
-/**
-  * Created by f on 4/1/16.
+/** Created by f on 4/1/16.
   */
 class ParserApi() {
 
@@ -88,7 +87,7 @@ class ParserApi() {
       module,
       errors
     )
-    
+
   }
 
   def parseScriptString(source: String): ParseContext[ScriptContext] =
@@ -103,13 +102,12 @@ class ParserApi() {
 
     parser.removeErrorListeners()
     parser.removeParseListeners()
-    
+
     // The syntax error accumulator can only be queried for errors once.
     val syntaxErrorAccumulator = new SyntaxErrorAccumulator
     parser.addErrorListener(syntaxErrorAccumulator)
 
-    parser
-      .getInterpreter
+    parser.getInterpreter
       .setPredictionMode(
         PredictionMode.LL_EXACT_AMBIG_DETECTION
       )
