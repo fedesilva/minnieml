@@ -10,7 +10,7 @@ class BasicTests extends BaseFunSuite {
         let a = 1;
         let b = 2;
         let c = "tres";
-      """.stripMargin
+      """
     )
 
   }
@@ -22,7 +22,7 @@ class BasicTests extends BaseFunSuite {
         let a = 1;
         let b = 2;
         let c = a + b;
-      """.stripMargin
+      """
     )
 
   }
@@ -31,7 +31,7 @@ class BasicTests extends BaseFunSuite {
     modNotFailed(
       """
         fn sum a b = a + b;
-      """.stripMargin
+      """
     )
   }
   
@@ -40,7 +40,7 @@ class BasicTests extends BaseFunSuite {
       """
         let a = b + 3;
         
-      """.stripMargin
+      """
     )
   }
 
@@ -52,7 +52,7 @@ class BasicTests extends BaseFunSuite {
         fn sum a b = a + b;
         let x = sum a b;
         
-      """.stripMargin
+      """
     )
   }
 
@@ -68,7 +68,7 @@ class BasicTests extends BaseFunSuite {
           where 
             double x = x * 2 
         ;
-      """.stripMargin
+      """
     )
     
   }
@@ -86,7 +86,7 @@ class BasicTests extends BaseFunSuite {
             double x = x * 2,
             triple x = x * 3 
         ;
-      """.stripMargin
+      """
     )
     
   }
@@ -95,7 +95,7 @@ class BasicTests extends BaseFunSuite {
     modNotFailed(
       """
         fn a = 1;
-      """.stripMargin
+      """
     )
   }
 
@@ -103,7 +103,7 @@ class BasicTests extends BaseFunSuite {
     modNotFailed(
       """
         let a = ( 2 + 2 ) / 2;
-      """.stripMargin
+      """
     )
   }
   
@@ -118,7 +118,7 @@ class BasicTests extends BaseFunSuite {
           )
           -  4;
         
-      """.stripMargin
+      """
     )
   }
   
@@ -127,7 +127,7 @@ class BasicTests extends BaseFunSuite {
       """
         let a = 1,
             b = 2;
-      """.stripMargin)
+      """)
   }
   
   test("let expression with multiple bindings #2") {
@@ -140,7 +140,7 @@ class BasicTests extends BaseFunSuite {
           in
              x + (a * b)
         ;
-      """.stripMargin)
+      """)
   }
   
   test("if expressions #1") {
@@ -152,7 +152,7 @@ class BasicTests extends BaseFunSuite {
          else
            0
         ;
-      """.stripMargin
+      """
     )
   }
   
@@ -168,7 +168,7 @@ class BasicTests extends BaseFunSuite {
           else
             0
         ;
-      """.stripMargin
+      """
     )
     
   }
@@ -177,7 +177,7 @@ class BasicTests extends BaseFunSuite {
     modFailed(
       """
         let a = if x then b;
-      """.stripMargin)
+      """)
   }
 
 }
