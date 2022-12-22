@@ -71,7 +71,7 @@ object ParseTreeInspector {
   def print(nodes: Nodes): Unit = nodes foreach {
 
     case NodeInfo(depth, cls, t: ErrorNode) =>
-      println(s" ${" " * depth} $cls : ${t.getText()}")
+      println(s" ${" " * depth} $cls : ${t.getText()} - ${t.getPayload().toString()} ")
 
     case NodeInfo(depth, cls, t: TerminalNode) =>
       println(s" ${" " * depth} ${t.getSymbol.getText()} ${t.getSymbol}")
@@ -88,7 +88,12 @@ object ParseTreeInspector {
   }
 
   def flattenAndPrint[T <: ParserRuleContext](ctx: ParseContext[T]): Unit =
-    flatten(ctx.tree) |> print
+    if(ctx.errors.isEmpty)
+      flatten(ctx.tree) |> print
+    else {
+      flatten(ctx.tree) |> print
+      ctx.errors foreach println
+    }
 
   /** Apply an effectful partial function to the list of nodes `orElse` use a default
     *

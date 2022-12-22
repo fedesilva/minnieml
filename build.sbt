@@ -12,8 +12,7 @@ lazy val commonSettings =
       // because for tests, yolo.
       scalacOptions in (Compile, console) --= Seq("-Ywarn-unused:imports", "-Xfatal-warnings"),
       scalacOptions in (Test, console) --= Seq("-Ywarn-unused:imports", "-Xfatal-warnings"),
-      scalacOptions in Test --= Seq("-Ywarn-dead-code", "-Ywarn-unused:locals", "-Xfatal-warnings"),
-      fork in test := true
+      scalacOptions in Test --= Seq("-Ywarn-dead-code", "-Ywarn-unused:locals", "-Xfatal-warnings")
     ) ++
     ScalacConfig.plugins ++
     Seq(

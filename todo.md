@@ -4,7 +4,7 @@
 Warning, there be dragons here.
 
 Meaning this is a brain dump, and as people that know me know (!?), I tend to 
-  leave phrases unfin ... among other weirdness.
+  leave phrases unfin
 
 Proceed at your own risk.
 
@@ -14,12 +14,10 @@ Proceed at your own risk.
   - it has happened to me several times that somethig parses but the resulting tree makes no sense.
   - use tree matchers (antlr thingie) so that shape expectations can be asserted
 
-
 * protocols
   * grammar
     * definition
     * impl
-
 
 * tests
   
@@ -73,14 +71,15 @@ Proceed at your own risk.
     - how do we create constants of this type? (like `refinedM`)
       - type ascription
     - how do we refine types in runtime? (like `refinedMV`)
-      - pattern matching on the type (must have at least two branches)
-        - example! I don't understand myself two years later.
- 
- 
+      - pattern matching on the type 
+        - must have at least two branches
+        - one branch representing the ok case
+          - at least, more if granted, of course.
+        - one branch representing the not ok case
 
 ## Tools
 
-## Compiler 
+### Compiler 
 
   * ParserApi  
     - OK make them classes 
@@ -90,12 +89,12 @@ Proceed at your own risk.
       
   * Merge Hidden Tokens
     
-  * graph db
+  * --> graph db
     * walk the parse tree and generate a graph
       - Walk the tree from a module, creating nodes
         - start at module          
           - walk members
-            * letBnd        |
+            * letBnd   
             * fn          
             * fnM         
             * op          
@@ -106,18 +105,13 @@ Proceed at your own risk.
           - walk imports
           - walk exports
 
-
-
-### Test
-
-
+##Test
 
 * parse tree matchers
   * so tree shape expectations can be asserted.
     - create a new tool in parser
-      - 
+       
 
- 
 ## Post parse 
 
 * Ast creation
@@ -142,14 +136,14 @@ Proceed at your own risk.
 
 * Symbol table 
   * Name finding
-  * `_` (meh) does not allocate a symbol   
-  * Lift simple types (see Typer1)
+  * `_` (meh) does not allocate a source accesible symbol
+  * Ascribe simple types (see Typer1)
 
 
 ## Type checker
 
 * Typer 1 (run mixed with previous processes?)
-  * might not be able to type all expressions
+  * not able to type all expressions
   * function 
     * arity count
     * explicitly typed params  

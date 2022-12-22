@@ -26,8 +26,8 @@ class ExportsTests extends BaseFunSuite {
         module A =
 
           exports =
-            x = equis
-            a = dos
+            equis = x
+            dos   = a
           ;
 
           let x = 1;
@@ -46,8 +46,8 @@ class ExportsTests extends BaseFunSuite {
         module A =
 
           exports =
-            x = equis : Int
-            a = dos: String
+            equis : Int = x
+            dos: String = a
           ;
 
           let x = 1;

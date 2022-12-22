@@ -11,12 +11,21 @@ class TypeTests extends BaseFunSuite {
       """
     )
   }
+  
+  test("simple let with type inference") {
+    modNotFailed(
+      """
+         let c = "I know thish ish a shtring, mkay";
+      """
+    )
+  }
 
   test("multibind let with types") {
     modNotFailed(
       """
         let  a: Int     = 1,
-             b: String  = "b";
+             b: String  = "b"
+        ;
       """
     )
   }
@@ -31,11 +40,22 @@ class TypeTests extends BaseFunSuite {
       """
     )
   }
+  
+  test("simple fn with full type inference") {
+    modNotFailed(
+      """
+        # type: 'T1 -> 'T2 -> 'R
+        fn sum a b =
+          a + b
+        ;
+      """
+    )
+  }
 
   test("simple fun with paren disambiguating return type") {
     modNotFailed(
       """
-        #   since there is not way to know that Real is the return type, 
+        # since there is not way to know that Real is the return type,
         # instead of the type of the last param, the parens group the formal arguments.        
         fn sum (a b) : Real = a + b;
       """
@@ -45,7 +65,8 @@ class TypeTests extends BaseFunSuite {
   test("simple fn with partial type declaration") {
     modNotFailed(
       """
-        fn sum a: Int b: Int = a + b;
+        fn sum a: Int b: Int =
+          a + b;
       """
     )
   }
@@ -62,7 +83,7 @@ class TypeTests extends BaseFunSuite {
     modNotFailed(
       """
         let (a, b: Int) = (1,2);
-      """.strip
+      """
     )
   }
 
@@ -101,6 +122,8 @@ class TypeTests extends BaseFunSuite {
            but to the function itself.
           
            Type of p: { name: String }
+           
+           Type of nameOf: 'T { name: String } -> String
           
           *)
           fn nameOf (p) : String = p.name;
@@ -126,7 +149,7 @@ class TypeTests extends BaseFunSuite {
   test("union") {
     modNotFailed(
       """
-        (** A union of random rubish *)
+        (** A union of random rubbish *)
         union X =
             A
           | B: Int, Int
@@ -142,7 +165,9 @@ class TypeTests extends BaseFunSuite {
   test("grouped type declarations #1") {
     modNotFailed(
       """
-        fn apply val fun : ((String & AllUp) -> Int) -> Int = ???;
+        fn apply val fun : ((String & AllCaps) -> Int) -> Int =
+          ???
+        ;
       """
     )
   }
@@ -150,7 +175,7 @@ class TypeTests extends BaseFunSuite {
   test("grouped type declarations #2") {
     modNotFailed(
       """
-        let fun : ((String & AllUp) -> Int) -> Int = z;
+        let fun : ((String & AllCaps) -> Int) -> Int = ???;
       """
     )
   }
@@ -158,7 +183,7 @@ class TypeTests extends BaseFunSuite {
   test("grouped type declarations #3") {
     modNotFailed(
       """
-        fn apply val fun : ( (String & AllUp) -> Int ) -> Int : O = fun val;
+        fn apply val fun : ( (String & AllCaps) -> Int ) -> Int : O = fun val;
       """
     )
   }
@@ -175,7 +200,7 @@ class TypeTests extends BaseFunSuite {
     modNotFailed(
       """
         fn p
-          'T1: AllUp
+          'T1: AllCaps
           a: 'T1
           b: 'T1 = ???;
       """
@@ -185,7 +210,7 @@ class TypeTests extends BaseFunSuite {
   test("data type with type parameters") {
     modNotFailed(
       """
-         data Data 'T1: Num {
+        data Data 'T1: Num {
            a:  'T1
            b:  Data
         }
@@ -198,7 +223,7 @@ class TypeTests extends BaseFunSuite {
       """
        union BinaryTree 'T1: Num =
            Leaf: 'T1
-         | Branch:  (Tree, Tree)
+         | Branch:  (BinaryTree, BinaryTree)
        ;
       """
     )
@@ -209,7 +234,7 @@ class TypeTests extends BaseFunSuite {
       """
         union BinaryTree 'T1: Num & MidiValue =
             Leaf: 'T1
-          | Branch:  (Tree, Tree)
+          | Branch:  (BinaryTree, BinaryTree)
         ;
       """
     )

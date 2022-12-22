@@ -2,18 +2,21 @@ grammar MinnieML;
 
 // Parser Rules ----------------------------------------------------------------------
 
-// Script ----------------------------------------------------------------------
+// Script Rules ----------------------------------------------------------------------
 
 //
 // `Script` represents a scripting session's syntax. Not used by normal compiler.
 // Scripts are a bit more lenient.
+// Syntactically you can write an expression that does not bind it's result, a statement.
 //
 script: ( stat | member )* EOF;
 
+// A statement ignores results if any and evaluates effects immediately
+// Scripts dont enforce effectful segregation
 stat: exp End;
 
 // ----------------------------------------------------------------------
-// Normal compiler rules follow
+// Full language rules follow
 // ----------------------------------------------------------------------
 
 // Modules --------------------------------------------------------------
@@ -37,7 +40,7 @@ exportReSpec:
   (idMWT | tpId | moduleId);
 
 exportedMember: 
-  (doc)? (exportSelection) ( '=' exportReSpec  )?;
+  (doc)? ( exportReSpec '=' )? (exportSelection);
 
 moduleExports:
   (doc)? Exports Def ( exportedMember )+ End;
@@ -64,9 +67,9 @@ decl:
 group: Lpar ( exp )+ Rpar;
 
 exp:
-  fnMatchLit                    #fnMatchLitL  |
-  flatExp                       #flatExpL     |
-  left = exp Match matchBody    #matchExpL    ;
+  flatExp                     #flatExpL       |
+  fnMatchLit                  #fnMatchLitL    |
+  left = exp Match matchBody  #matchExpL      ;
 
 flatExp:
     (
@@ -98,12 +101,12 @@ matchCase: matchBnd? patt ( If exp )? Def fnExp ;
 matchBnd: (id '@');
 
 
-patt: lit         |
-      idOrMeh     |
-      tpSpec      |
-      tupleDecon  |
-      dtDecon     |
-      structDecon ;
+patt: lit           |
+      idOrMeh       |
+      tpSpec        |
+      tupleDecon    |
+      nominalDecon  |
+      structDecon   ;
 
 // ----------------------------------------------------------------------
 // Function and/or binding modifiers
@@ -117,10 +120,10 @@ cnst: Const;
 
 bnd:  idMWT         Def exp  |
       tupleDecon    Def exp  |
-      dtDecon       Def exp  |
+      nominalDecon  Def exp  |
       structDecon   Def exp  ;
 
-letBnd: (doc)? Let (lazy|cnst)? (rec)? (doc)? bnd (',' (doc)? bnd)* End ;
+letBnd: (doc)? Let (lazy|cnst)? (rec)? (doc)? bnd (',' (doc)? bnd)* (End)? ;
 
 // ----------------------------------------------------------------------
 // Functions
@@ -136,8 +139,8 @@ formalArgs: idMWT* | '(' idMWT* ')';
 
 returnTp: TpAsc tpSpec;
 
-fn:    (doc)? Fn (rec)? id fnSig Def fnExp End ;
-fnM:   (doc)? Fn (rec)? id (returnTp)? Match matchBody End ;
+fn:    (doc)? Fn (rec)? id fnSig Def fnExp (End)?;
+fnM:   (doc)? Fn (rec)? id ( (typeArgs)? | Lpar (typeArgs)? Rpar )  (returnTp)? Match matchBody End ;
 
 fnLit:      fnSig TArrow fnExp;
 fnMatchLit: Meh Match matchBody;
@@ -196,7 +199,7 @@ dtNamedAssign: Id Def exp;
 
 dtCons: tpId ( dtNamedAssign | exp )+;
 
-dtDecon: tpId LCurly (idMWT)+ RCurly;
+nominalDecon: tpId LCurly (idMWT)+ RCurly;
 
 structDecon: LCurly idMWT RCurly;
 

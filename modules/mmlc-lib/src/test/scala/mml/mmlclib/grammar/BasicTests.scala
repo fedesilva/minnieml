@@ -147,7 +147,7 @@ class BasicTests extends BaseFunSuite {
     modNotFailed(
       """
         let a =
-          if >= a 0 then
+          if a >= 0 then
            a
          else
            0

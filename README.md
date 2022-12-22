@@ -146,8 +146,8 @@ This is not something you want to use, I'm making this public to share with frie
     - defines
       - acquisition
       - release
-  - Effect is a 
-  - built in implementations  for above mentioned resources, canonical
+  - Effect is a ...
+  - built in implementations for above mentioned resources, canonical
         
 
 - Native Interface
@@ -232,10 +232,11 @@ This is not something you want to use, I'm making this public to share with frie
         - write your own packing instructions, per platform even.
   - you can also explicitly declare things like uniqueness and borrowing
     - so you can control precisely how memory is used, when and where it's copied.
-      - and enables you to hint the memory management inference algorithm
+      - and enables you to tweak the memory management inference algorithm
         - enforce not escaping, not sharing, etc
 
 - Pod and Module system
+  - pods are distribution units
   - pods are top level modules
   - canon, like modules    
   - native exports (to compile to c libraries) need to specify specialization rules for parametric types
@@ -278,14 +279,12 @@ Not important for now, I'm still working on the grammar and the initial post par
 
 ### Running
 
-No.
+No, not, yet.
 
-Not, yet.
+But soon, now, really.
 
 ...
 
-Soon, now. Really.
-
 No, I don't mean that last thing.
 
-Forever.
+It might take forever.

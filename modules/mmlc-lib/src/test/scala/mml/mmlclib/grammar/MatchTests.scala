@@ -11,9 +11,9 @@ class MatchTests extends BaseFunSuite {
             x match
                 1                 = "1"
               | 2                 = "2"
-              | (a, _)            = "tuple"
-              | Person { name }   = name
-              | {name}            = name
+              | (a, _)            = a
+              | Person { name }   = name     # nominal
+              | {name}            = name     # structural
               | a: String         = a
               | Monday            = "monday"
         ;
@@ -49,9 +49,9 @@ class MatchTests extends BaseFunSuite {
   test("match function with return type") {
     modNotFailed(
       """
-        fn x : String match
-          A               = "a" |
-          f @ 'T -> String = f z
+        fn  x 'T  : String match
+          A                 = "a" |
+          f @ 'T -> String  = f z
         ;
       """
     )
@@ -61,20 +61,20 @@ class MatchTests extends BaseFunSuite {
     modNotFailed(
       """
         (** lalala *)
-        fn x : String match
+        fn x ('T: Real) : String match
             A                 = "a"
           | f @ 'T -> String  = f z
-          | x                 =
-            let str = show x,
-                otr = "other"
-            in
-              upperCase (concat str otr)
+          | s =
+              let str = show s,
+                  otr = "other"
+              in
+                upperCase (concat str otr)
         ;
       """
     )
   }
 
-  test("match union") {
+  test("nominal match union") {
     modNotFailed(
       """
       let name =
@@ -91,19 +91,19 @@ class MatchTests extends BaseFunSuite {
       """
       let name =
         person match
-            { name }    = name
+            { name } = name
           | _ = "unknown"
       ;
       """
     )
   }
 
-  test("structural match with if") {
+  test("structural match with if, a tuple and meh case") {
     modNotFailed(
       """
       let name =
         person match
-            { name } if name == "fede"  = "grosso"
+            { name } if name == "fede"  = "große"
           | { name }                    = name
           | (name, _)                   = name
           | _                           = "unknown"
@@ -112,7 +112,7 @@ class MatchTests extends BaseFunSuite {
     )
   }
 
-  // FIXME wat
+
   test("reference the full matched expression") {
     modNotFailed(
       """

@@ -4,7 +4,7 @@ import mml.mmlclib.test.BaseFunSuite
 
 class OpTests extends BaseFunSuite {
 
-  test("simple binary op") {
+  test("simple infix binary op") {
     modNotFailed(
       """
         op + a b = sum a b;
@@ -90,7 +90,7 @@ class OpTests extends BaseFunSuite {
   test("Can define multichar operator"){
     modNotFailed(
       """
-        op => a b = doSomething a b; # applied as `a => b`
+        op => a b = doSomething a b; # written  `a => b`
       """.trim
     )
   }
