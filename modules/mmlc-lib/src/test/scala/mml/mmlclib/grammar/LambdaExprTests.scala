@@ -2,7 +2,7 @@ package mml.mmlclib.grammar
 
 import mml.mmlclib.test.BaseFunSuite
 
-class LambdaExprTests extends BaseFunSuite {
+class LambdaExprTests extends BaseFunSuite:
 
   test("Simple lambda expr") {
     modNotFailed(
@@ -38,4 +38,3 @@ class LambdaExprTests extends BaseFunSuite {
     )
   }
 
-}

@@ -7,7 +7,7 @@ import mml.mmlclib.test.BaseFunSuite
  * Mostly things I make up when playing with the grammar, put into a test.
  *
  */
-class MiscTests extends BaseFunSuite {
+class MiscTests extends BaseFunSuite:
 
   test("let and many comments") {
     modNotFailed(
@@ -42,5 +42,4 @@ class MiscTests extends BaseFunSuite {
       """.stripMargin)
   }
   
-}
 

@@ -2,7 +2,7 @@ package mml.mmlclib.grammar
 
 import mml.mmlclib.test.BaseFunSuite
 
-class ExportsTests extends BaseFunSuite {
+class ExportsTests extends BaseFunSuite:
 
   test("export names verbatim"){
     modNotFailed(
@@ -58,5 +58,4 @@ class ExportsTests extends BaseFunSuite {
 
   // export selection
   
-}
 

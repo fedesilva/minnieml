@@ -18,7 +18,7 @@ object Dependencies {
     )
 
   lazy val testDeps: Seq[ModuleID] = Seq(
-    "org.scalatest" %% "scalatest" % "3.1.1"
+    "org.scalatest" %% "scalatest" % "3.2.14"
   ).map(_ % Test)
 
   lazy val mmlclib: Seq[ModuleID] =
@@ -31,7 +31,7 @@ object Dependencies {
 
   lazy val mmlc: Seq[ModuleID] =
     Seq(
-      "com.github.scopt" %% "scopt" % "4.0.0-RC2"
+      "com.github.scopt" %% "scopt" % "4.1.0"
     ) ++ commonDependencies ++ testDeps
 
   lazy val resolvers =

@@ -2,7 +2,7 @@ package mml.mmlclib.grammar
 
 import mml.mmlclib.test.BaseFunSuite
 
-class MatchTests extends BaseFunSuite {
+class MatchTests extends BaseFunSuite:
 
   test("match all the things") {
 
@@ -162,4 +162,3 @@ class MatchTests extends BaseFunSuite {
       """)
   }
   
-}

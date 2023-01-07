@@ -1,8 +1,8 @@
-package mml.mmlclib.util.parser
+package mml.mmlclib.parser
 
 import org.antlr.v4.runtime._
 
-class UnderlineErrorListener extends BaseErrorListener {
+class UnderlineErrorListener extends BaseErrorListener:
 
   override def syntaxError(
     recognizer:         Recognizer[_, _],
@@ -11,20 +11,19 @@ class UnderlineErrorListener extends BaseErrorListener {
     charPositionInLine: Int,
     msg:                String,
     e:                  RecognitionException
-  ): Unit = {
+  ): Unit =
     
     val eO = Option(e)
     println("line " + line + ":" + charPositionInLine + " " + msg + " ex: " + eO)
     underlineError(recognizer, offendingSymbol.asInstanceOf[Token], line, charPositionInLine)
     
-  }
   
   protected def underlineError(
     recognizer:     Recognizer[_, _],
     offendingToken: Token,
     line:           Int,
     charPositionInLine: Int
-  ): Unit = {
+  ): Unit =
 
     val tokens    = recognizer.getInputStream.asInstanceOf[CommonTokenStream]
     val input     = tokens.getTokenSource.getInputStream.toString
@@ -40,14 +39,11 @@ class UnderlineErrorListener extends BaseErrorListener {
     val start = offendingToken.getStartIndex
     val stop  = offendingToken.getStopIndex
     
-    if (start >= 0 && stop >= 0) {
+    if start >= 0 && stop >= 0 then
       (start until stop) foreach { _ =>
         print("^")
       }
-    }
 
     println()
 
-  }
 
-}

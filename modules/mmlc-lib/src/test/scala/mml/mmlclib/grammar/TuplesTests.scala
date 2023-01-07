@@ -2,7 +2,7 @@ package mml.mmlclib.grammar
 
 import mml.mmlclib.test.BaseFunSuite
 
-class TuplesTests extends BaseFunSuite {
+class TuplesTests extends BaseFunSuite:
 
   test("simple tuple") {
     modNotFailed(
@@ -67,5 +67,4 @@ class TuplesTests extends BaseFunSuite {
       """.stripMargin)
   }
   
-}
 

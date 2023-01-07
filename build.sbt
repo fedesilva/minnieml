@@ -4,17 +4,16 @@ lazy val commonSettings =
   Seq(
     organization := "minnie-ml",
     version      := "0.1.0-SNAPSHOT",
-    scalaVersion := "2.13.6",
-    maintainer   := "fede.silva@gmail.com"
+    scalaVersion := "3.2.1"
   ) ++
     Seq(
       scalacOptions ++= ScalacConfig.opts,
       // because for tests, yolo.
-      scalacOptions in (Compile, console) --= Seq("-Ywarn-unused:imports", "-Xfatal-warnings"),
-      scalacOptions in (Test, console) --= Seq("-Ywarn-unused:imports", "-Xfatal-warnings"),
-      scalacOptions in Test --= Seq("-Ywarn-dead-code", "-Ywarn-unused:locals", "-Xfatal-warnings")
+      Compile / scalacOptions --= Seq("-Ywarn-unused:imports", "-Xfatal-warnings"),
+      Test    / scalacOptions --= Seq("-Ywarn-unused:imports", "-Xfatal-warnings"),
+      Test    / scalacOptions --= Seq("-Ywarn-dead-code", "-Ywarn-unused:locals", "-Xfatal-warnings"),
+      Global / onChangedBuildSource := ReloadOnSourceChanges
     ) ++
-    ScalacConfig.plugins ++
     Seq(
       resolvers ++= Dependencies.resolvers
     )
@@ -42,11 +41,11 @@ lazy val mmlclib =
       //jacocoExcludes in Test := Seq(s"$antlrPackageName.*")
     )
     .settings(
-      antlr4PackageName in Antlr4 := Some(antlrPackageName),
+      Antlr4 / antlr4PackageName := Some(antlrPackageName),
       // I can walk by myself, if you don't mind
-      antlr4GenVisitor  in Antlr4 := false,
-      antlr4GenListener in Antlr4 := false,
-      antlr4Version     in Antlr4 := "4.8-1"
+      Antlr4 / antlr4GenVisitor   := false,
+      Antlr4 / antlr4GenListener  := false,
+      Antlr4 / antlr4Version      := "4.8-1"
     )
     .settings(
       buildInfoKeys    := Seq[BuildInfoKey](name, version, scalaVersion, sbtVersion),

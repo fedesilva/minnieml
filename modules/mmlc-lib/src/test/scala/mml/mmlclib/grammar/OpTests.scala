@@ -2,7 +2,7 @@ package mml.mmlclib.grammar
 
 import mml.mmlclib.test.BaseFunSuite
 
-class OpTests extends BaseFunSuite {
+class OpTests extends BaseFunSuite:
 
   test("simple infix binary op") {
     modNotFailed(
@@ -62,7 +62,7 @@ class OpTests extends BaseFunSuite {
   test("Can NOT define binop with No arg"){
     modFailed(
       """
-        op + = 1
+        op + = 1;
       """.trim)
   }
   
@@ -120,5 +120,4 @@ class OpTests extends BaseFunSuite {
   }
   
   
-}
 

@@ -2,7 +2,7 @@ package mml.mmlclib.grammar
 
 import mml.mmlclib.test.BaseFunSuite
 
-class CommentTests extends BaseFunSuite {
+class CommentTests extends BaseFunSuite:
   
   test("single line comments are ignored") {
     modNotFailed(
@@ -141,4 +141,3 @@ class CommentTests extends BaseFunSuite {
         """.stripMargin)
     }
   
-}

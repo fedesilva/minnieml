@@ -1,4 +1,4 @@
-package mml.mmlclib.util.parser
+package mml.mmlclib.parser
 
 import org.antlr.v4.runtime.ParserRuleContext
 
@@ -11,18 +11,18 @@ import scala.annotation.tailrec
 // import org.antlr.v4.runtime.tree.{ParseTree, TerminalNode, ErrorNode}
 // import mml.mmlclib.parser.antlr.MinnieMLParser.{IdContext, TpIdContext}
 
-object ParseTreeWalker {
+object ParseTreeWalker:
 
   type Nodes = Seq[ParseTreeInspector.NodeInfo]
 
-  def walk(tree: ParseTree): Nodes = {
+  def walk(tree: ParseTree): Nodes =
 
     import scala.jdk.CollectionConverters._
 
     @tailrec
-    def loop(trees: List[ParseTree], nodes: Nodes): Nodes = {
+    def loop(trees: List[ParseTree], nodes: Nodes): Nodes =
 
-      trees match {
+      trees match
 
         case (t: ParserRuleContext) :: tail if t.getChildCount == 0 =>
           val cls   = t.getClass.getSimpleName
@@ -47,12 +47,8 @@ object ParseTreeWalker {
 
         case Nil => nodes
 
-      }
-
-    }
+    
 
     loop(List(tree), Vector())
 
-  }
 
-}

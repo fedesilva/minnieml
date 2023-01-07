@@ -2,7 +2,7 @@ package mml.mmlclib.grammar
 
 import mml.mmlclib.test.BaseFunSuite
 
-class ModuleTests extends BaseFunSuite {
+class ModuleTests extends BaseFunSuite:
   
   test("Simple Module") {
     modNotFailed(
@@ -91,4 +91,3 @@ class ModuleTests extends BaseFunSuite {
     )
   }
   
-}

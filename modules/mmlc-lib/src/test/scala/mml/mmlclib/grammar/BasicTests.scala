@@ -2,7 +2,7 @@ package mml.mmlclib.grammar
 
 import mml.mmlclib.test.BaseFunSuite
 
-class BasicTests extends BaseFunSuite {
+class BasicTests extends BaseFunSuite:
 
   test("simple let") {
   
@@ -180,5 +180,4 @@ class BasicTests extends BaseFunSuite {
       """)
   }
 
-}
 

@@ -2,7 +2,7 @@ package mml.mmlclib.grammar
 
 import mml.mmlclib.test.BaseFunSuite
 
-class TypeTests extends BaseFunSuite {
+class TypeTests extends BaseFunSuite:
 
   test("simple let with type") {
     modNotFailed(
@@ -270,4 +270,3 @@ class TypeTests extends BaseFunSuite {
     )
   }
 
-}

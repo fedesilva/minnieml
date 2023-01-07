@@ -5,9 +5,10 @@ grammar MinnieML;
 // Script Rules ----------------------------------------------------------------------
 
 //
-// `Script` represents a scripting session's syntax. Not used by normal compiler.
-// Scripts are a bit more lenient.
+// `Script` represents a scripting session's syntax. 
+//  Not used by normal compiler, scripts are a bit more lenient.
 // Syntactically you can write an expression that does not bind it's result, a statement.
+// The effects system is far more lenient, too.
 //
 script: ( stat | member )* EOF;
 
@@ -21,17 +22,24 @@ stat: exp End;
 
 // Modules --------------------------------------------------------------
 
-visibility: pub | protd | lexical;
+modVisibility: pub | protd | lexical;
 
-pub:     Pub;
-protd:   Protd;
+// Public modules are accessible from everywhere
+// Default for top level modules unless specified otherwise
+pub: Pub;
+
+// Protected modules are only accesible from siblings and parent
+// default if not specified otherwise
+protd: Protd;
+
+// Lexically visible modules are accesible by children of the declaring module.
 lexical: Lexical;
 
 module:
-  (doc)? (visibility)? (Module moduleId Def)? (moduleExports)? (member)+ EOF ;
+  (doc)? (modVisibility)? (Module moduleId Def)? (moduleExports)? (member)+ EOF ;
 
 nestedModule:
-  (doc)? (visibility)? Module moduleId Def (moduleExports)? (member)+ End;
+  (doc)? (modVisibility)? Module moduleId Def (moduleExports)? (member)+ End;
 
 exportSelection: 
   (id | tpId | moduleId | selection);
@@ -67,9 +75,9 @@ decl:
 group: Lpar ( exp )+ Rpar;
 
 exp:
-  flatExp                     #flatExpL       |
-  fnMatchLit                  #fnMatchLitL    |
-  left = exp Match matchBody  #matchExpL      ;
+  flatExp                        #flatExpL        |
+  fnMatchLit                    #fnMatchLitL    |
+  left = exp Match matchBody    #matchExpL      ;
 
 flatExp:
     (

@@ -2,7 +2,7 @@ package mml.mmlclib.grammar
 
 import mml.mmlclib.test.BaseFunSuite
 
-class MultiLineTests extends BaseFunSuite {
+class MultiLineTests extends BaseFunSuite:
 
   test("multi let") {
     val src =
@@ -44,4 +44,3 @@ class MultiLineTests extends BaseFunSuite {
     modNotFailed(src)
   }
 
-}
