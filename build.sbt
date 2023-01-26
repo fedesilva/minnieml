@@ -9,7 +9,6 @@ lazy val commonSettings =
     Seq(
       scalacOptions ++= ScalacConfig.opts,
       // because for tests, yolo.
-      Compile / scalacOptions --= Seq("-Ywarn-unused:imports", "-Xfatal-warnings"),
       Test    / scalacOptions --= Seq("-Ywarn-unused:imports", "-Xfatal-warnings"),
       Test    / scalacOptions --= Seq("-Ywarn-dead-code", "-Ywarn-unused:locals", "-Xfatal-warnings"),
       Global / onChangedBuildSource := ReloadOnSourceChanges
