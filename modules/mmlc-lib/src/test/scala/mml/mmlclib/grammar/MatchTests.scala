@@ -9,7 +9,7 @@ class MatchTests extends BaseFunSuite:
     modNotFailed("""
         let a: String =
             x match
-                1                 = "1"
+              | 1                 = "1"
               | 2                 = "2"
               | (a, _)            = a
               | Person { name }   = name     # nominal
@@ -25,7 +25,7 @@ class MatchTests extends BaseFunSuite:
     modNotFailed(
       """
         fn x match
-             A = "a"
+          |  A = "a"
           |  B = "b"
         ;
       """
@@ -38,7 +38,7 @@ class MatchTests extends BaseFunSuite:
     modNotFailed(
       """
         fn x match
-           A = "a"
+         |  A = "a"
          | f @ B -> C -> X = "b"
         ;
       """
@@ -50,8 +50,8 @@ class MatchTests extends BaseFunSuite:
     modNotFailed(
       """
         fn  x 'T  : String match
-          A                 = "a" |
-          f @ 'T -> String  = f z
+          | A                 = "a"
+          | f @ 'T -> String  = f z
         ;
       """
     )
@@ -62,7 +62,7 @@ class MatchTests extends BaseFunSuite:
       """
         (** lalala *)
         fn x ('T: Real) : String match
-            A                 = "a"
+          |  A                 = "a"
           | f @ 'T -> String  = f z
           | s =
               let str = show s,
@@ -79,7 +79,7 @@ class MatchTests extends BaseFunSuite:
       """
       let name =
         person match
-          Person { name } = name
+        |  Person { name } = name
         | _ = "unknown"
       ;
       """
@@ -91,7 +91,7 @@ class MatchTests extends BaseFunSuite:
       """
       let name =
         person match
-            { name } = name
+          |  { name } = name
           | _ = "unknown"
       ;
       """
@@ -103,7 +103,7 @@ class MatchTests extends BaseFunSuite:
       """
       let name =
         person match
-            { name } if name == "fede"  = "große"
+          | { name } if name == "fede"  = "große"
           | { name }                    = name
           | (name, _)                   = name
           | _                           = "unknown"
@@ -118,7 +118,7 @@ class MatchTests extends BaseFunSuite:
       """
       let name =
         person match
-            { name } if name == "fede" = name
+          |  { name } if name == "fede" = name
           | _ = "unknown"
       ;
       """
@@ -129,7 +129,7 @@ class MatchTests extends BaseFunSuite:
     modNotFailed("""
         let name =
           person match
-            p @ Person{ name } if name == "fede" = p.lastName
+          |  p @ Person{ name } if name == "fede" = p.lastName
           | _ = "unknown"
         ;
       """)
@@ -144,7 +144,7 @@ class MatchTests extends BaseFunSuite:
         let x =
           apply 2
             ( _ match
-                  1 = "Uno"
+                | 1 = "Uno"
                 | _ = "No Uno"
             )
         ;
@@ -156,7 +156,7 @@ class MatchTests extends BaseFunSuite:
       """
         let z =
           _ match
-              1 = "Uno"
+            | 1 = "Uno"
             | _ = "No Uno"
         ;
       """)

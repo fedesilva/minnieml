@@ -14,7 +14,7 @@ script: ( stat | member )* EOF;
 
 // A statement ignores results if any and evaluates effects immediately
 // Scripts dont enforce effectful segregation
-stat: exp End;
+stat: exp(End)?;
 
 // ----------------------------------------------------------------------
 // Full language rules follow
@@ -39,7 +39,7 @@ module:
   (doc)? (modVisibility)? (Module moduleId Def)? (moduleExports)? (member)+ EOF ;
 
 nestedModule:
-  (doc)? (modVisibility)? Module moduleId Def (moduleExports)? (member)+ End;
+  (doc)? (modVisibility)? Module moduleId Def (moduleExports)? (member)+(End)?;
 
 exportSelection: 
   (id | tpId | moduleId | selection);
@@ -51,7 +51,7 @@ exportedMember:
   (doc)? ( exportReSpec '=' )? (exportSelection);
 
 moduleExports:
-  (doc)? Exports Def ( exportedMember )+ End;
+  (doc)? Exports Def ( exportedMember )+(End)?;
 
 member: ( decl | comm );
 
@@ -75,7 +75,7 @@ decl:
 group: Lpar ( exp )+ Rpar;
 
 exp:
-  flatExp                        #flatExpL        |
+  flatExp                       #flatExpL       |
   fnMatchLit                    #fnMatchLitL    |
   left = exp Match matchBody    #matchExpL      ;
 
@@ -104,8 +104,8 @@ hole: Hole;
 // Pattern matching ----------------------------------------------------
 //
 
-matchBody: matchCase ( '|' matchCase )*;
-matchCase: matchBnd? patt ( If exp )? Def fnExp ;
+matchBody: matchCase ( matchCase )*;
+matchCase: '|' matchBnd? patt ( If exp )? Def fnExp ;
 matchBnd: (id '@');
 
 
@@ -157,9 +157,9 @@ fnMatchLit: Meh Match matchBody;
 
 op: binOp | prefixOp | postfixOp;
 
-binOp:       (doc)? Op opId (opPrecedence)? (typeArgs)? idMWT idMWT (returnTp)? Def fnExp End;
-prefixOp:    (doc)? Op opId Dot (opPrecedence)? (typeArgs)? idMWT (returnTp)?   Def fnExp End;
-postfixOp:   (doc)? Op Dot opId (opPrecedence)? (typeArgs)? idMWT (returnTp)?   Def fnExp End;
+binOp:       (doc)? Op opId (opPrecedence)? (typeArgs)? idMWT idMWT (returnTp)? Def fnExp(End)?;
+prefixOp:    (doc)? Op opId Dot (opPrecedence)? (typeArgs)? idMWT (returnTp)?   Def fnExp(End)?;
+postfixOp:   (doc)? Op Dot opId (opPrecedence)? (typeArgs)? idMWT (returnTp)?   Def fnExp(End)?;
 
 opPrecedence:  LitPrec;
 
@@ -173,7 +173,7 @@ cndElse: Else fnExp;
 // TYPES ---------------------------------------------------------------------------------------
 
 // Type alias
-tpAlias: Type tpId (typeArgs)? Def tpSpec End;
+tpAlias: Type tpId (typeArgs)? Def tpSpec(End)?;
 
 // General type declaration related rules
 
