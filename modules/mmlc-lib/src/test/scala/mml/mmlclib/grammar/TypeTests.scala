@@ -141,7 +141,7 @@ class TypeTests extends BaseFunSuite:
   test("enum") {
     modNotFailed(
       """
-        enum ABCD = A | B | C | D;
+        enum ABCD = | A | B | C | D;
       """
     )
   }
@@ -151,7 +151,7 @@ class TypeTests extends BaseFunSuite:
       """
         (** A union of random rubbish *)
         union X =
-            A
+          | A
           | B: Int, Int
           | C: { name: String age: Int }
           | D: String -> String
@@ -222,7 +222,7 @@ class TypeTests extends BaseFunSuite:
     modNotFailed(
       """
        union BinaryTree 'T1: Num =
-           Leaf: 'T1
+         | Leaf: 'T1
          | Branch:  (BinaryTree, BinaryTree)
        ;
       """
@@ -233,7 +233,7 @@ class TypeTests extends BaseFunSuite:
     modNotFailed(
       """
         union BinaryTree 'T1: Num & MidiValue =
-            Leaf: 'T1
+          | Leaf: 'T1
           | Branch:  (BinaryTree, BinaryTree)
         ;
       """
@@ -258,7 +258,7 @@ class TypeTests extends BaseFunSuite:
     modNotFailed(
       """
         union NumBTree 'T1: Num =
-            Leaf: 'T1
+          | Leaf: 'T1
           | Branch:  (NumBTree, NumBTree)
         ;
         

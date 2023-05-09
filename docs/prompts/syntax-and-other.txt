@@ -1,3 +1,16 @@
+Given the antlr 4 grammar ( presented below between BEGIN_GRAMMAR and END_GRAMMAR markers ),
+assume there are types 
+
+* String which is a string representation, and all string literals should have this type
+* Int which is corresponponds to a 64 bit integer (use llvm i64 as a reference)
+* Float which corresponds to a 64 bit floating point (use a corresponding llvm type)
+
+And assume a hindley milner type checker.
+
+Wait for questions.
+
+BEGIN_GRAMMAR
+
 grammar MinnieML;
 
 // Parser Rules ----------------------------------------------------------------------
@@ -190,7 +203,8 @@ tpSpec:
     left = tpSpec (TArrow left = tpSpec)+         #fnSpec               |
     LCurly dtField (dtField)* RCurly              #structSpec           |
     tpSpec (',' tpSpec)+                          #tupleSpec            |
-    left = tpSpec ( tpSpec )+                     #tpAppSpec            ;
+    left = tpSpec ( tpSpec )+                     #tpAppSpec
+;
 
 
 // -----------------------------------------------------------------------------
@@ -228,16 +242,16 @@ variant: enumV | unionV;
 
 // Union  -------------------------------------------------------------------
 
-unionV: (doc)? Union tpId (typeArgs)? Def unionMbr ( unionMbr )+ (End)?;
+unionV: (doc)? Union tpId (typeArgs)? Def unionMbr ( '|'  unionMbr )+ End;
 
-unionMbr:  (doc)?  '|'  tpId ( TpAsc tpSpec)?;
+unionMbr:  (doc)? tpId ( TpAsc tpSpec)?;
 
 
 // Enum -------------------------------------------------------------------
 
-enumV:  (doc)? Enum tpId Def enumMbr ( enumMbr)+ (End)?;
+enumV:  (doc)? Enum tpId Def enumMbr ( '|' enumMbr)+ End;
 
-enumMbr:  (doc)? '|' tpId;
+enumMbr:  (doc)? tpId;
 
 
 //
@@ -354,3 +368,5 @@ WS      : [\t ]+            -> channel(1);
 Doc     : '(**' (Doc|MLComm|.)*? '*)';
 MLComm  : '(*' (MLComm|Doc|.)*? '*)'        -> channel(2);
 HComm   : '#' .*? ('\r\n' | '\n' | EOF)     -> channel(2);
+
+END_GRAMMAR
