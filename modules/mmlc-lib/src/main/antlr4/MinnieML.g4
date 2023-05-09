@@ -114,6 +114,7 @@ patt: lit           |
       tpSpec        |
       tupleDecon    |
       nominalDecon  |
+      tpId id       |
       structDecon   ;
 
 // ----------------------------------------------------------------------
