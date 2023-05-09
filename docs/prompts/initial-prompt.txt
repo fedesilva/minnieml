@@ -1,4 +1,4 @@
-Given the antlr 4 grammar ( presented below after BEGIN_GRAMMAR),
+Given the antlr 4 grammar ( presented below between BEGIN_GRAMMAR and END_GRAMMAR) for a language called MinnieML (mml for short)
 assume there are types 
 
 * String which is a string representation, and all string literals should have this type
@@ -11,7 +11,6 @@ assume there are types
 
 Assume a hindley milner type checker.
 
-Wait for questions, and when you provide MinnieML (mml for short) code, use the same indentation style as the examples provided
 
 Predefined types:
 
@@ -157,7 +156,9 @@ decl:
   nestedModule  |
   dt            |
   variant       |
-  tpAlias       ;
+  tpAlias       |
+  protocol      |
+  instance      ;
 
 // ----------------------------------------------------------------------
 // Expressions
@@ -195,6 +196,18 @@ selection: ( id | moduleId ) Dot (id | moduleId) (Dot (id | moduleId) )*;
 hole: Hole;
 
 //
+// Protocols ----------------------------------------------------
+//
+
+protocol: Protocol tpId typeArgs LCurly protocolBody RCurly;
+protocolBody: ( id '=' fnSig )+;
+
+instance:  Instance tpId tpSpec LCurly instanceBody RCurly;
+instanceBody: ( id '=' fnSig Def fnExp )+;
+
+
+
+//
 // Pattern matching ----------------------------------------------------
 //
 
@@ -208,6 +221,7 @@ patt: lit           |
       tpSpec        |
       tupleDecon    |
       nominalDecon  |
+      tpId id       |
       structDecon   ;
 
 // ----------------------------------------------------------------------
@@ -426,6 +440,8 @@ Hole:       '???';
 Meh:        '_';
 Compose:    '<|';
 AndThen:    '|>';
+Protocol:   'protocol';
+Instance:   'instance';
 
 // Identifiers
 
@@ -451,3 +467,7 @@ Doc     : '(**' (Doc|MLComm|.)*? '*)';
 MLComm  : '(*' (MLComm|Doc|.)*? '*)'        -> channel(2);
 // Line comment
 HComm   : '#' .*? ('\r\n' | '\n' | EOF)     -> channel(2);
+
+END_GRAMMAR
+
+Wait for questions, and when you provide MinnieML (mml for short) code, use the same indentation style as the examples provided, and  strictly follow the provided grammar

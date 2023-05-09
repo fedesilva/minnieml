@@ -48,7 +48,7 @@ exportReSpec:
   (idMWT | tpId | moduleId);
 
 exportedMember: 
-  (doc)? ( exportReSpec '=' )? (exportSelection);
+  (doc)? (canon)? ( exportReSpec '=' )? (exportSelection);
 
 moduleExports:
   (doc)? Exports Def ( exportedMember )+(End)?;
@@ -63,7 +63,9 @@ decl:
   nestedModule  |
   dt            |
   variant       |
-  tpAlias       ;
+  tpAlias       |
+  protocol      |
+  instance      ;
 
 // ----------------------------------------------------------------------
 // Expressions
@@ -99,6 +101,22 @@ flatExp:
 selection: ( id | moduleId ) Dot (id | moduleId) (Dot (id | moduleId) )*;
 
 hole: Hole;
+
+//
+// Protocols ----------------------------------------------------
+//
+
+protocol: Protocol tpId typeArgs LCurly protocolBody RCurly;
+protocolBody: ( id '=' fnSig )+;
+
+
+// When an instance is defined as canonical,
+// it's the only instance possible within the module
+// it is defined on and it's children.
+canon: Canon;
+
+instance:  (canon)? Instance tpId tpSpec LCurly instanceBody RCurly;
+instanceBody: ( id '=' fnSig Def fnExp )+;
 
 //
 // Pattern matching ----------------------------------------------------
@@ -333,6 +351,9 @@ Hole:       '???';
 Meh:        '_';
 Compose:    '<|';
 AndThen:    '|>';
+Protocol:   'protocol';
+Instance:   'instance';
+Canon:      'canonical';
 
 // Identifiers
 
