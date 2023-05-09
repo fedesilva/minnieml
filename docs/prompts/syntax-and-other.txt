@@ -1,13 +1,94 @@
-Given the antlr 4 grammar ( presented below between BEGIN_GRAMMAR and END_GRAMMAR markers ),
+Given the antlr 4 grammar ( presented below after BEGIN_GRAMMAR),
 assume there are types 
 
 * String which is a string representation, and all string literals should have this type
 * Int which is corresponponds to a 64 bit integer (use llvm i64 as a reference)
 * Float which corresponds to a 64 bit floating point (use a corresponding llvm type)
+* Maybe which encodes optional types defined under the "Predefined tyoes" sections below.
+* Result which encodes the possibility of having a successful or a failed result of a computation
+* LocalDate similar to java's new date types
+* Interval similar to java's new data tupes
 
-And assume a hindley milner type checker.
+Assume a hindley milner type checker.
 
-Wait for questions.
+Wait for questions, and when you provide MinnieML (mml for short) code, use the same indentation style as the examples provided
+
+Predefined types:
+
+union Maybe 'T =
+  | One: 'T
+  | None
+
+union Result 'T 'E =
+  | Ok: 'T
+  | Err: 'E
+
+Examples of code:
+
+# A Semigroup is a type with an associative binary operation.
+data Semigroup 'T {
+  assoc: ('T 'T) -> 'T
+}
+
+# A Monoid is a Semigroup with an identity element.
+data Monoid 'T {
+  semigroup: Semigroup 'T
+  id: 'T
+}
+
+# A Group is a Monoid with an inverse operation.
+data Group 'T {
+  monoid: Monoid 'T
+  inverse: 'T -> 'T
+}
+
+# An AbelianGroup is a Group with a commutative binary operation.
+data AbelianGroup 'T {
+  group: Group 'T
+}
+
+# A Ring is a type with two binary operations (addition and multiplication) that satisfy some laws.
+data Ring 'T  {
+  additiveMonoid: Monoid 'T
+  multiplicationSemigroup: Semigroup 'T
+  zero: 'T
+  one: 'T
+  negation: 'T -> 'T
+}
+
+# A Field is a Ring with multiplicative inverses.
+data Field 'T {
+  ring: Ring 'T
+  inverse: 'T -> 'T
+}
+
+
+data Person {
+    name : String
+    age : Int
+    pet : OptionalPet
+}
+
+enum Species = | Cat | Doc | Parrot
+
+data Pet {
+    petName : String
+    species : Species
+}
+
+union OptionalPet =
+    | NoPet
+    | SomePet : Pet
+
+let p = Person "Fede" 50 OptionalPet.NoPet
+
+let c = Pet "Zur" Species.Cat
+
+fn nameOf(x): String = x.name
+
+let nameOfPerson = nameOf p
+let nameOfCat = nameOf c
+
 
 BEGIN_GRAMMAR
 
@@ -18,7 +99,7 @@ grammar MinnieML;
 // Script Rules ----------------------------------------------------------------------
 
 //
-// `Script` represents a scripting session's syntax. 
+// `Script` represents a scripting session's syntax.
 //  Not used by normal compiler, scripts are a bit more lenient.
 // Syntactically you can write an expression that does not bind it's result, a statement.
 // The effects system is far more lenient, too.
@@ -27,7 +108,7 @@ script: ( stat | member )* EOF;
 
 // A statement ignores results if any and evaluates effects immediately
 // Scripts dont enforce effectful segregation
-stat: exp End;
+stat: exp(End)?;
 
 // ----------------------------------------------------------------------
 // Full language rules follow
@@ -52,19 +133,19 @@ module:
   (doc)? (modVisibility)? (Module moduleId Def)? (moduleExports)? (member)+ EOF ;
 
 nestedModule:
-  (doc)? (modVisibility)? Module moduleId Def (moduleExports)? (member)+ End;
+  (doc)? (modVisibility)? Module moduleId Def (moduleExports)? (member)+(End)?;
 
-exportSelection: 
+exportSelection:
   (id | tpId | moduleId | selection);
 
-exportReSpec: 
+exportReSpec:
   (idMWT | tpId | moduleId);
 
-exportedMember: 
+exportedMember:
   (doc)? ( exportReSpec '=' )? (exportSelection);
 
 moduleExports:
-  (doc)? Exports Def ( exportedMember )+ End;
+  (doc)? Exports Def ( exportedMember )+(End)?;
 
 member: ( decl | comm );
 
@@ -88,7 +169,7 @@ decl:
 group: Lpar ( exp )+ Rpar;
 
 exp:
-  flatExp                        #flatExpL        |
+  flatExp                       #flatExpL       |
   fnMatchLit                    #fnMatchLitL    |
   left = exp Match matchBody    #matchExpL      ;
 
@@ -117,8 +198,8 @@ hole: Hole;
 // Pattern matching ----------------------------------------------------
 //
 
-matchBody: matchCase ( '|' matchCase )*;
-matchCase: matchBnd? patt ( If exp )? Def fnExp ;
+matchBody: matchCase ( matchCase )*;
+matchCase: '|' matchBnd? patt ( If exp )? Def fnExp ;
 matchBnd: (id '@');
 
 
@@ -153,7 +234,7 @@ fnLet:  (doc)? Let bnd (',' bnd)* In fnExp (Where fnLetWhereFn (',' fnLetWhereFn
 fnLetWhereFn: (rec)? id fnSig Def fnExp;
 
 fnExp: exp | fnLet;
- 
+
 fnSig: (typeArgs)? formalArgs (returnTp)?;
 
 formalArgs: idMWT* | '(' idMWT* ')';
@@ -170,9 +251,9 @@ fnMatchLit: Meh Match matchBody;
 
 op: binOp | prefixOp | postfixOp;
 
-binOp:       (doc)? Op opId (opPrecedence)? (typeArgs)? idMWT idMWT (returnTp)? Def fnExp End;
-prefixOp:    (doc)? Op opId Dot (opPrecedence)? (typeArgs)? idMWT (returnTp)?   Def fnExp End;
-postfixOp:   (doc)? Op Dot opId (opPrecedence)? (typeArgs)? idMWT (returnTp)?   Def fnExp End;
+binOp:       (doc)? Op opId (opPrecedence)? (typeArgs)? idMWT idMWT (returnTp)? Def fnExp(End)?;
+prefixOp:    (doc)? Op opId Dot (opPrecedence)? (typeArgs)? idMWT (returnTp)?   Def fnExp(End)?;
+postfixOp:   (doc)? Op Dot opId (opPrecedence)? (typeArgs)? idMWT (returnTp)?   Def fnExp(End)?;
 
 opPrecedence:  LitPrec;
 
@@ -186,7 +267,7 @@ cndElse: Else fnExp;
 // TYPES ---------------------------------------------------------------------------------------
 
 // Type alias
-tpAlias: Type tpId (typeArgs)? Def tpSpec End;
+tpAlias: Type tpId (typeArgs)? Def tpSpec(End)?;
 
 // General type declaration related rules
 
@@ -203,8 +284,7 @@ tpSpec:
     left = tpSpec (TArrow left = tpSpec)+         #fnSpec               |
     LCurly dtField (dtField)* RCurly              #structSpec           |
     tpSpec (',' tpSpec)+                          #tupleSpec            |
-    left = tpSpec ( tpSpec )+                     #tpAppSpec
-;
+    left = tpSpec ( tpSpec )+                     #tpAppSpec            ;
 
 
 // -----------------------------------------------------------------------------
@@ -242,16 +322,16 @@ variant: enumV | unionV;
 
 // Union  -------------------------------------------------------------------
 
-unionV: (doc)? Union tpId (typeArgs)? Def unionMbr ( '|'  unionMbr )+ End;
+unionV: (doc)? Union tpId (typeArgs)? Def unionMbr ( unionMbr )+ (End)?;
 
-unionMbr:  (doc)? tpId ( TpAsc tpSpec)?;
+unionMbr:  (doc)?  '|'  tpId ( TpAsc tpSpec)?;
 
 
 // Enum -------------------------------------------------------------------
 
-enumV:  (doc)? Enum tpId Def enumMbr ( '|' enumMbr)+ End;
+enumV:  (doc)? Enum tpId Def enumMbr ( enumMbr)+ (End)?;
 
-enumMbr:  (doc)? tpId;
+enumMbr:  (doc)? '|' tpId;
 
 
 //
@@ -365,8 +445,9 @@ Newline : ('\r\n' | '\n')   -> channel(1);
 WS      : [\t ]+            -> channel(1);
 
 // Comments
+// Doc comment
 Doc     : '(**' (Doc|MLComm|.)*? '*)';
+// Multiline comment
 MLComm  : '(*' (MLComm|Doc|.)*? '*)'        -> channel(2);
+// Line comment
 HComm   : '#' .*? ('\r\n' | '\n' | EOF)     -> channel(2);
-
-END_GRAMMAR

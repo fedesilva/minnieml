@@ -351,6 +351,10 @@ Newline : ('\r\n' | '\n')   -> channel(1);
 WS      : [\t ]+            -> channel(1);
 
 // Comments
+// Doc comment
 Doc     : '(**' (Doc|MLComm|.)*? '*)';
+// Multiline comment
 MLComm  : '(*' (MLComm|Doc|.)*? '*)'        -> channel(2);
+// Line comment
 HComm   : '#' .*? ('\r\n' | '\n' | EOF)     -> channel(2);
+
