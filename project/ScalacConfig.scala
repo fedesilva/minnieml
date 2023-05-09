@@ -24,7 +24,7 @@ object ScalacConfig {
       "-explain",
       "-new-syntax",                       // Enforce new syntax 
       // "-indent",
-      // "-rewrite"
+      "-rewrite"
     )
   
 }
