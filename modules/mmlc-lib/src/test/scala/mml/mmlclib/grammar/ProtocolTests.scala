@@ -9,26 +9,26 @@ class ProtocolTests extends BaseFunSuite :
       """
         # Define a protocol / type class
         protocol Num 'T {
-          add       =  (s1: 'T s2: 'T): 'T
-          subtract  =  (s1: 'T s2: 'T): 'T
-          multiply  =  (s1: 'T s2: 'T): 'T
-          divide    =  (s1: 'T s2: 'T): 'T
+          add       =  (a: 'T b: 'T): 'T
+          subtract  =  (a: 'T b: 'T): 'T
+          multiply  =  (a: 'T b: 'T): 'T
+          divide    =  (a: 'T b: 'T): 'T
         }
         
         # Define an instance for a concrete type: Int
         instance Num Int {
-          add       = (s1: 'T s2: 'T): 'T = ???
-          substract = (s1: 'T s2: 'T): 'T = ???
-          multiple  = (s1: 'T s2: 'T): 'T = ???
-          divide    = (s1: 'T s2: 'T): 'T = ???
+          add       = (a: 'T b: 'T): 'T = ???
+          substract = (a: 'T b: 'T): 'T = ???
+          multiple  = (a: 'T b: 'T): 'T = ???
+          divide    = (a: 'T b: 'T): 'T = ???
         }
         
         # Define an instance for a concrete type: Float
         instance Num Float {
-          add       = (s1: 'T s2: 'T): 'T = ???
-          substract = (s1: 'T s2: 'T): 'T = ???
-          multiple  = (s1: 'T s2: 'T): 'T = ???
-          divide    = (s1: 'T s2: 'T): 'T = ???
+          add       = (a: 'T b: 'T): 'T = ???
+          substract = (a: 'T b: 'T): 'T = ???
+          multiple  = (a: 'T b: 'T): 'T = ???
+          divide    = (a: 'T b: 'T): 'T = ???
         }
         
         fn sum 'N: Num ( x: 'N y: 'N ): N = Num.add(x, y)
