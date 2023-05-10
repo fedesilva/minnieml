@@ -16,6 +16,7 @@ class MatchTests extends BaseFunSuite:
               | {name}            = name     # structural
               | a: String         = a
               | Monday            = "monday"
+              | Numbr a           = num2String a
         ;
       """)
   }
@@ -113,7 +114,7 @@ class MatchTests extends BaseFunSuite:
   }
 
 
-  test("reference the full matched expression") {
+  test("match record with a guard on member") {
     modNotFailed(
       """
       let name =

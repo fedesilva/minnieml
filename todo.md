@@ -11,10 +11,13 @@ Proceed at your own risk.
 ## Syntax/Grammar 
 
 
-* remove `data`?
-  * we can define type X = {};
-  * removes duplication.
-  * at the same time, it does help knowing that 
+* remove enum 
+* review type constructors
+  * on unions
+    
+      union Maybe 'T =
+        | Ok : 'T
+        | None
 
 
 * native syntax for type aliases
