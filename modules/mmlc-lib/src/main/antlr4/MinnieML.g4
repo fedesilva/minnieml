@@ -218,7 +218,7 @@ tpSpec:
 
 // Data types ----------------------------------------------------------------------
 
-dtField: (doc)? idMWT;
+dtField: (doc)? idWT;
 
 dt: (doc)? Data tpId (typeArgs)? LCurly dtField (dtField)* RCurly (End)?;
 
@@ -291,6 +291,7 @@ mlComm: MLComm;
 // Ids ----------------------------------------------------------------------
 
 id:       Id;
+idWT:     id TpAsc tpSpec;
 idMWT:    id (TpAsc tpSpec)?;
 idOrMeh:  Meh | idMWT;
 moduleId: FirstUpId;
