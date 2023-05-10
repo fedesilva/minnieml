@@ -27,6 +27,46 @@ Here's a small syntax showcase
     times a b;
 ```
 
+a more complex example
+
+```
+
+
+union Maybe 'T =
+  | Ok : 'T
+  | None
+
+union Species =
+  | Cat
+  | Dog
+  | Bird
+  | GoldFish
+
+type Pet = {
+  name: String
+  species: Species
+}
+
+type Person = {
+  name: String
+  pet: Maybe Pet
+}
+
+let zur   = Pet "Zur" Species.Cat
+let fede  = Person "fede" (Maybe.One zur)
+
+fn empty 'T maybe =
+  maybe match
+    | None  = true
+    | _     = false
+
+fn hasPet(p) =
+  ! empty p.pet
+
+
+
+```
+
 #### Legalese
 
 This is not at all connected to my employer's IP, work, interests, opinions or anything else.
@@ -120,34 +160,7 @@ This is not something you want to use, I'm making this public to share with frie
 
 - Resources, Handlers and Effects
 
-  - Resources
-    - Types that cause indeterminism when accessing them
-      - acquired
-      - released
-      - unique
-  - Handlers: protocols that operate on resources.
-  - the type of any expression operating on resources is "tainted" by an effect
-    - so an effect is the result of applying a handler to a resource.
-  - resources might be
-    - os resources 
-      - processes 
-      - io (stdin/stdout)
-      - sockets
-      - network            
-    - mutable cells 
-    - Native Interface 
-        - native values (pointers?)
-
-  - Resource is a protocol, 
-    - so you can provide custom implementations
-      - but there are built in resources
-        - for native
-        - what else? can native subsume everything?
-    - defines
-      - acquisition
-      - release
-  - Effect is a ...
-  - built in implementations for above mentioned resources, canonical
+ 
         
 
 - Native Interface
