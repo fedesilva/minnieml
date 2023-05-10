@@ -10,22 +10,21 @@ Proceed at your own risk.
 
 ## Syntax/Grammar 
 
+* native syntax for type aliases
+  * @i32 
+  * the @ denotes a reference to an llvm primitive
+* 
+
 * make use of tree matching (see below in testing)
   - it has happened to me several times that somethig parses but the resulting tree makes no sense.
   - use tree matchers (antlr thingie) so that shape expectations can be asserted
 
-* protocols
+~~* protocols
   * grammar
     * definition
-    * impl
+    * impl~~
 
-* tests
-  
-  - cover more cases for grammar tests
-    - union types
-    - more patterns
-    - more tpSpecs
-    - more type parameters
+
     
 
 * `open`
@@ -40,6 +39,14 @@ Proceed at your own risk.
                 Math                  # A full module
                 Console.println       # A single name from the module
               ;
+
+* tests
+
+  - cover more cases for grammar tests
+    - union types
+    - more patterns
+    - more tpSpecs
+    - more type parameters
 
 
 * Pod syntax

@@ -48,7 +48,7 @@ exportReSpec:
   (idMWT | tpId | moduleId);
 
 exportedMember: 
-  (doc)? (canon)? ( exportReSpec '=' )? (exportSelection);
+  (doc)? ( exportReSpec '=' )? (exportSelection);
 
 moduleExports:
   (doc)? Exports Def ( exportedMember )+(End)?;
