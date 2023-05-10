@@ -90,7 +90,7 @@ class TypeTests extends BaseFunSuite:
   test("type declaration") {
     modNotFailed(
       """
-        data Person {
+        type Person = {
           name: String
           age:  Number & Real
         }
@@ -104,7 +104,7 @@ class TypeTests extends BaseFunSuite:
         module A =
         
           (** Represents a person, duh *)
-          data Person {
+          type Person = {
           
             (** The name *)
             name: String
@@ -115,7 +115,7 @@ class TypeTests extends BaseFunSuite:
           }
           
           (** We only care about the name of the Pet *)
-          data Pet { name: String }
+          type Pet =  { name: String }
           
           (*
              Explicit return type, parameter is in a group so the type is not assigned to it,
@@ -210,10 +210,10 @@ class TypeTests extends BaseFunSuite:
   test("data type with type parameters") {
     modNotFailed(
       """
-        data Data 'T1: Num {
-           a:  'T1
-           b:  Data
-        }
+       type Data 'T1: Num = {
+         a:  'T1
+         b:  Data
+      }
       """
     )
   }

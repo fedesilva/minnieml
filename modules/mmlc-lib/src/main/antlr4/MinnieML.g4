@@ -61,9 +61,8 @@ decl:
   fnM           |
   op            |
   nestedModule  |
-  dt            |
   variant       |
-  tpAlias       |
+  tpDef         |
   protocol      |
   instance      ;
 
@@ -191,8 +190,8 @@ cndElse: Else fnExp;
 
 // TYPES ---------------------------------------------------------------------------------------
 
-// Type alias
-tpAlias: Type tpId (typeArgs)? Def tpSpec(End)?;
+// Type def
+tpDef: (doc)? Type tpId (typeArgs)? Def tpSpec(End)?;
 
 // General type declaration related rules
 
@@ -220,7 +219,7 @@ tpSpec:
 
 dtField: (doc)? idWT;
 
-dt: (doc)? Data tpId (typeArgs)? LCurly dtField (dtField)* RCurly (End)?;
+
 
 dtNamedAssign: Id Def exp;
 
