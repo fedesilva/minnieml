@@ -10,16 +10,6 @@ Proceed at your own risk.
 
 ## Syntax/Grammar 
 
-
-* remove enum 
-* review type constructors
-  * on unions
-    
-      union Maybe 'T =
-        | Ok : 'T
-        | None
-
-
 * native syntax for type aliases
   * @i32 
   * the @ denotes a reference to an llvm primitive

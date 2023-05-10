@@ -141,7 +141,7 @@ class TypeTests extends BaseFunSuite:
   test("enum") {
     modNotFailed(
       """
-        enum ABCD = | A | B | C | D;
+        union ABCD = | A | B | C | D;
       """
     )
   }

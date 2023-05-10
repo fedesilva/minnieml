@@ -86,6 +86,7 @@ flatExp:
       fnLit     |
       lit       |
       id        |
+      tpCons    |
       tpId      |
       opId      |
       moduleId  |
@@ -131,7 +132,7 @@ patt: lit           |
       tpSpec        |
       tupleDecon    |
       nominalDecon  |
-      tpId id       |
+      tpDecon       |
       structDecon   ;
 
 // ----------------------------------------------------------------------
@@ -210,6 +211,10 @@ tpSpec:
     tpSpec (',' tpSpec)+                          #tupleSpec            |
     left = tpSpec ( tpSpec )+                     #tpAppSpec            ;
 
+expSeq: (exp)+;
+tpCons: tpId expSeq | tpId;
+tpDecon: tpId (idOrMeh)+;
+
 
 // -----------------------------------------------------------------------------
 // Product types ---------------------------------------------------------------
@@ -218,8 +223,6 @@ tpSpec:
 // Data types ----------------------------------------------------------------------
 
 dtField: (doc)? idWT;
-
-
 
 dtNamedAssign: Id Def exp;
 
@@ -242,7 +245,7 @@ tupleDecon: Lpar idOrMeh ',' idOrMeh ( ',' idOrMeh )*  Rpar;
 
 // Variants  -------------------------------------------------------------------
 
-variant: enumV | unionV;
+variant: unionV;
 
 // Union  -------------------------------------------------------------------
 
@@ -250,12 +253,6 @@ unionV: (doc)? Union tpId (typeArgs)? Def unionMbr ( unionMbr )+ (End)?;
 
 unionMbr:  (doc)?  '|'  tpId ( TpAsc tpSpec)?;
 
-
-// Enum -------------------------------------------------------------------
-
-enumV:  (doc)? Enum tpId Def enumMbr ( enumMbr)+ (End)?;
-
-enumMbr:  (doc)? '|' tpId;
 
 
 //

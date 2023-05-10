@@ -1,0 +1,31 @@
+
+union Maybe 'T =
+  | Ok : 'T
+  | None
+
+union Species =
+  | Cat
+  | Dog
+  | Bird
+  | GoldFish
+
+type Pet = {
+  name: String
+  species: Species
+}
+
+type Person = {
+  name: String
+  pet: Maybe Pet
+}
+
+let zur   = Pet "Zur" Species.Cat
+let fede  = Person "fede" (Maybe.One zur)
+
+fn empty 'T maybe =
+  maybe match
+    | None  = true
+    | _     = false
+
+fn hasPet(p) =
+  ! empty p.pet
