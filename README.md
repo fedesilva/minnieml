@@ -100,7 +100,7 @@ This is not something you want to use, I'm making this public to share with frie
       - everything that is supported by llvm
   - Tuples (product types)
   - Data types (product types, labeled)
-  - Enums (sum types, homogeneous member types, no constructors, only names)
+
   - Variants (sum types, heterogeneous member types)
     - unions 
       - use as much memory as the largest type.
@@ -114,7 +114,7 @@ This is not something you want to use, I'm making this public to share with frie
       - serializable write access (CAS)
       - concurrent reads
   - Arrays
-    - contigous fixed size memory blocks
+    - contiguous fixed size memory blocks
 
 
 - Refinement types
@@ -158,7 +158,7 @@ This is not something you want to use, I'm making this public to share with frie
   
     
 
-- Resources, Handlers and Effects
+- Effects
 
  
         

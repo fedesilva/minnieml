@@ -10,6 +10,13 @@ Proceed at your own risk.
 
 ## Syntax/Grammar 
 
+
+* use syntax
+  * so you can avoid Maybe.One
+    * in let assignements
+    * top of a module
+  
+
 * native syntax for type aliases
   * @i32 
   * the @ denotes a reference to an llvm primitive
