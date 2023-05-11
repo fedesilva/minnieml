@@ -2,11 +2,12 @@ package mml.mmlclib.grammar
 
 import mml.mmlclib.test.BaseFunSuite
 
-class MatchTests extends BaseFunSuite:
-
+class MatchTests extends BaseFunSuite :
+  
   test("match all the things") {
-
-    modNotFailed("""
+    
+    modNotFailed(
+      """
         let a: String =
             x match
               | 1                 = "1"
@@ -20,9 +21,9 @@ class MatchTests extends BaseFunSuite:
         ;
       """)
   }
-
-  test("match function") {
   
+  test("match function") {
+    
     modNotFailed(
       """
         fn x match
@@ -31,11 +32,11 @@ class MatchTests extends BaseFunSuite:
         ;
       """
     )
-  
+    
   }
-
-  test("match function with function type pattern") {
   
+  test("match function with function type pattern") {
+    
     modNotFailed(
       """
         fn x match
@@ -44,9 +45,9 @@ class MatchTests extends BaseFunSuite:
         ;
       """
     )
-  
+    
   }
-
+  
   test("match function with return type") {
     modNotFailed(
       """
@@ -57,7 +58,7 @@ class MatchTests extends BaseFunSuite:
       """
     )
   }
-
+  
   test("match fn with fnLet") {
     modNotFailed(
       """
@@ -74,7 +75,7 @@ class MatchTests extends BaseFunSuite:
       """
     )
   }
-
+  
   test("nominal match union") {
     modNotFailed(
       """
@@ -86,7 +87,7 @@ class MatchTests extends BaseFunSuite:
       """
     )
   }
-
+  
   test("structural match") {
     modNotFailed(
       """
@@ -98,7 +99,7 @@ class MatchTests extends BaseFunSuite:
       """
     )
   }
-
+  
   test("structural match with if, a tuple and meh case") {
     modNotFailed(
       """
@@ -112,8 +113,8 @@ class MatchTests extends BaseFunSuite:
       """
     )
   }
-
-
+  
+  
   test("match record with a guard on member") {
     modNotFailed(
       """
@@ -125,9 +126,10 @@ class MatchTests extends BaseFunSuite:
       """
     )
   }
-
+  
   test("reference the matched pattern besides its components") {
-    modNotFailed("""
+    modNotFailed(
+      """
         let name =
           person match
           |  p @ Person{ name } if name == "fede" = p.lastName
@@ -159,7 +161,22 @@ class MatchTests extends BaseFunSuite:
           _ match
             | 1 = "Uno"
             | _ = "No Uno"
-        ;
+        
       """)
+  }
+  
+  test("match seqs") {
+    modNotFailed(
+      """
+        let x = []
+        
+        let a =
+          x match
+            | [] = "empty"
+            | [a] = a
+            | [a b] = a + b
+            | [ a :: tail ] = a
+          
+        """)
   }
   

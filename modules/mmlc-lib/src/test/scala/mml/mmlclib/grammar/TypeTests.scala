@@ -269,4 +269,14 @@ class TypeTests extends BaseFunSuite:
       """
     )
   }
+  
+  test("function type with unit as type") {
+    
+    modNotFailed(
+      """
+         let b: (Int -> 'T -> ()) = ???
+      """
+    )
+    
+  }
 

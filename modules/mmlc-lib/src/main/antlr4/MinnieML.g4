@@ -211,7 +211,11 @@ tpSpec:
     left = tpSpec (TArrow left = tpSpec)+         #fnSpec               |
     LCurly dtField (dtField)* RCurly              #structSpec           |
     tpSpec (',' tpSpec)+                          #tupleSpec            |
-    left = tpSpec ( tpSpec )+                     #tpAppSpec            ;
+    left = tpSpec ( tpSpec )+                     #tpAppSpec            |
+    unit                                          #tpUnit
+    ;
+
+unit: LitUnit;
 
 expSeq: (exp)+;
 tpCons: tpId expSeq | tpId;
