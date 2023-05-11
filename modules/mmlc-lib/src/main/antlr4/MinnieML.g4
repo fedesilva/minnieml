@@ -5,7 +5,7 @@ grammar MinnieML;
 // Script Rules ----------------------------------------------------------------------
 
 //
-// `Script` represents a scripting session's syntax. 
+// `Script` represents a scripting session's syntax.
 //  Not used by normal compiler, scripts are a bit more lenient.
 // Syntactically you can write an expression that does not bind it's result, a statement.
 // The effects system is far more lenient, too.
@@ -41,13 +41,13 @@ module:
 nestedModule:
   (doc)? (modVisibility)? Module moduleId Def (moduleExports)? (member)+(End)?;
 
-exportSelection: 
+exportSelection:
   (id | tpId | moduleId | selection);
 
-exportReSpec: 
+exportReSpec:
   (idMWT | tpId | moduleId);
 
-exportedMember: 
+exportedMember:
   (doc)? ( exportReSpec '=' )? (exportSelection);
 
 moduleExports:
@@ -133,7 +133,9 @@ patt: lit           |
       tupleDecon    |
       nominalDecon  |
       tpDecon       |
-      structDecon   ;
+      structDecon   |
+      seqDeconT     |
+      seqDeconLit   ;
 
 // ----------------------------------------------------------------------
 // Function and/or binding modifiers
@@ -159,7 +161,7 @@ fnLet:  (doc)? Let bnd (',' bnd)* In fnExp (Where fnLetWhereFn (',' fnLetWhereFn
 fnLetWhereFn: (rec)? id fnSig Def fnExp;
 
 fnExp: exp | fnLet;
- 
+
 fnSig: (typeArgs)? formalArgs (returnTp)?;
 
 formalArgs: idMWT* | '(' idMWT* ')';
@@ -259,7 +261,7 @@ unionMbr:  (doc)?  '|'  tpId ( TpAsc tpSpec)?;
 // Literals ----------------------------------------------------------------------
 //
 
-lit: litStr | litInt | litLong | litFloat | litDouble | litUnit | litBoolean;
+lit: litStr | litInt | litLong | litFloat | litDouble | litUnit | litBoolean |  litEmptySeq | litSeq ;
 
 litStr: LitStr;
 litInt:  LitInt;
@@ -273,6 +275,11 @@ litTrue: LitTrue;
 litFalse: LitFalse;
 
 litUnit: LitUnit;
+
+litSeq: LBrac (id|lit)* RBrac;
+litEmptySeq: LBrac RBrac;
+seqDeconLit: LBrac (id)* RBrac;
+seqDeconT: LBrac (id '::' id) RBrac;
 
 // Comments  ----------------------------------------------------------------------
 
@@ -351,6 +358,7 @@ AndThen:    '|>';
 Protocol:   'protocol';
 Instance:   'instance';
 Canon:      'canonical';
+SeqCons:    '::';
 
 // Identifiers
 

@@ -25,29 +25,29 @@ union Result 'T 'E =
 Examples of code:
 
 # A Semigroup is a type with an associative binary operation.
-data Semigroup 'T {
+type Semigroup 'T = {
   assoc: ('T 'T) -> 'T
 }
 
 # A Monoid is a Semigroup with an identity element.
-data Monoid 'T {
+type Monoid 'T = {
   semigroup: Semigroup 'T
   id: 'T
 }
 
 # A Group is a Monoid with an inverse operation.
-data Group 'T {
+type Group 'T = {
   monoid: Monoid 'T
   inverse: 'T -> 'T
 }
 
 # An AbelianGroup is a Group with a commutative binary operation.
-data AbelianGroup 'T {
+type AbelianGroup 'T = {
   group: Group 'T
 }
 
 # A Ring is a type with two binary operations (addition and multiplication) that satisfy some laws.
-data Ring 'T  {
+type Ring 'T  = {
   additiveMonoid: Monoid 'T
   multiplicationSemigroup: Semigroup 'T
   zero: 'T
@@ -56,13 +56,13 @@ data Ring 'T  {
 }
 
 # A Field is a Ring with multiplicative inverses.
-data Field 'T {
+type Field 'T = {
   ring: Ring 'T
   inverse: 'T -> 'T
 }
 
 
-data Person {
+type Person = {
     name : String
     age : Int
     pet : OptionalPet
@@ -70,7 +70,7 @@ data Person {
 
 enum Species = | Cat | Doc | Parrot
 
-data Pet {
+type Pet = {
     petName : String
     species : Species
 }
@@ -154,9 +154,8 @@ decl:
   fnM           |
   op            |
   nestedModule  |
-  dt            |
   variant       |
-  tpAlias       |
+  tpDef         |
   protocol      |
   instance      ;
 
@@ -180,6 +179,7 @@ flatExp:
       fnLit     |
       lit       |
       id        |
+      tpCons    |
       tpId      |
       opId      |
       moduleId  |
@@ -202,10 +202,14 @@ hole: Hole;
 protocol: Protocol tpId typeArgs LCurly protocolBody RCurly;
 protocolBody: ( id '=' fnSig )+;
 
-instance:  Instance tpId tpSpec LCurly instanceBody RCurly;
+
+// When an instance is defined as canonical,
+// it's the only instance possible within the module
+// it is defined on and it's children.
+canon: Canon;
+
+instance:  (canon)? Instance tpId tpSpec LCurly instanceBody RCurly;
 instanceBody: ( id '=' fnSig Def fnExp )+;
-
-
 
 //
 // Pattern matching ----------------------------------------------------
@@ -221,8 +225,10 @@ patt: lit           |
       tpSpec        |
       tupleDecon    |
       nominalDecon  |
-      tpId id       |
-      structDecon   ;
+      tpDecon       |
+      structDecon   |
+      seqDeconT     |
+      seqDeconLit   ;
 
 // ----------------------------------------------------------------------
 // Function and/or binding modifiers
@@ -280,8 +286,8 @@ cndElse: Else fnExp;
 
 // TYPES ---------------------------------------------------------------------------------------
 
-// Type alias
-tpAlias: Type tpId (typeArgs)? Def tpSpec(End)?;
+// Type def
+tpDef: (doc)? Type tpId (typeArgs)? Def tpSpec(End)?;
 
 // General type declaration related rules
 
@@ -300,6 +306,10 @@ tpSpec:
     tpSpec (',' tpSpec)+                          #tupleSpec            |
     left = tpSpec ( tpSpec )+                     #tpAppSpec            ;
 
+expSeq: (exp)+;
+tpCons: tpId expSeq | tpId;
+tpDecon: tpId (idOrMeh)+;
+
 
 // -----------------------------------------------------------------------------
 // Product types ---------------------------------------------------------------
@@ -307,9 +317,7 @@ tpSpec:
 
 // Data types ----------------------------------------------------------------------
 
-dtField: (doc)? idMWT;
-
-dt: (doc)? Data tpId (typeArgs)? LCurly dtField (dtField)* RCurly (End)?;
+dtField: (doc)? idWT;
 
 dtNamedAssign: Id Def exp;
 
@@ -332,7 +340,7 @@ tupleDecon: Lpar idOrMeh ',' idOrMeh ( ',' idOrMeh )*  Rpar;
 
 // Variants  -------------------------------------------------------------------
 
-variant: enumV | unionV;
+variant: unionV;
 
 // Union  -------------------------------------------------------------------
 
@@ -341,18 +349,12 @@ unionV: (doc)? Union tpId (typeArgs)? Def unionMbr ( unionMbr )+ (End)?;
 unionMbr:  (doc)?  '|'  tpId ( TpAsc tpSpec)?;
 
 
-// Enum -------------------------------------------------------------------
-
-enumV:  (doc)? Enum tpId Def enumMbr ( enumMbr)+ (End)?;
-
-enumMbr:  (doc)? '|' tpId;
-
 
 //
 // Literals ----------------------------------------------------------------------
 //
 
-lit: litStr | litInt | litLong | litFloat | litDouble | litUnit | litBoolean;
+lit: litStr | litInt | litLong | litFloat | litDouble | litUnit | litBoolean |  litEmptySeq | litSeq ;
 
 litStr: LitStr;
 litInt:  LitInt;
@@ -367,6 +369,11 @@ litFalse: LitFalse;
 
 litUnit: LitUnit;
 
+litSeq: LBrac (id|lit)* RBrac;
+litEmptySeq: LBrac RBrac;
+seqDeconLit: LBrac (id)* RBrac;
+seqDeconT: LBrac (id '::' id) RBrac;
+
 // Comments  ----------------------------------------------------------------------
 
 doc: Doc;
@@ -380,6 +387,7 @@ mlComm: MLComm;
 // Ids ----------------------------------------------------------------------
 
 id:       Id;
+idWT:     id TpAsc tpSpec;
 idMWT:    id (TpAsc tpSpec)?;
 idOrMeh:  Meh | idMWT;
 moduleId: FirstUpId;
@@ -442,6 +450,8 @@ Compose:    '<|';
 AndThen:    '|>';
 Protocol:   'protocol';
 Instance:   'instance';
+Canon:      'canonical';
+SeqCons:    '::';
 
 // Identifiers
 
@@ -467,6 +477,10 @@ Doc     : '(**' (Doc|MLComm|.)*? '*)';
 MLComm  : '(*' (MLComm|Doc|.)*? '*)'        -> channel(2);
 // Line comment
 HComm   : '#' .*? ('\r\n' | '\n' | EOF)     -> channel(2);
+
+
+
+
 
 END_GRAMMAR
 

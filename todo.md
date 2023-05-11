@@ -10,6 +10,9 @@ Proceed at your own risk.
 
 ## Syntax/Grammar 
 
+* seq syntax
+  * constructor (literal)
+  * decon (for matching)
 
 * use syntax
   * so you can avoid Maybe.One
