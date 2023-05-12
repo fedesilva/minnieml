@@ -21,7 +21,7 @@ class MiscTests extends BaseFunSuite:
         |      lalala I lala you
         |    *)
         |    ) -  (* Jaimico *)
-        |    4;
+        |    4
         |
         |    (* random comment *)
         |
@@ -37,7 +37,7 @@ class MiscTests extends BaseFunSuite:
         |         #colocolocolo
         |    *)
         |
-        | fn main args = 0;
+        | fn main args = 0
         |
       """.stripMargin)
   }

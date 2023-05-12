@@ -10,15 +10,15 @@ class MatchTests extends BaseFunSuite :
       """
         let a: String =
             x match
-              | 1                 = "1"
-              | 2                 = "2"
-              | (a, _)            = a
-              | Person { name }   = name     # nominal
-              | {name}            = name     # structural
-              | a: String         = a
-              | Monday            = "monday"
-              | Numbr a           = num2String a
-        ;
+              | 1                 -> "1"
+              | 2                 -> "2"
+              | (a, _)            -> a
+              | Person { name }   -> name     # nominal
+              | {name}            -> name     # structural
+              | a: String         -> a
+              | Monday            -> "monday"
+              | Numbr a           -> num2String a
+        
       """)
   }
   
@@ -27,9 +27,9 @@ class MatchTests extends BaseFunSuite :
     modNotFailed(
       """
         fn x match
-          |  A = "a"
-          |  B = "b"
-        ;
+          |  A -> "a"
+          |  B -> "b"
+        
       """
     )
     
@@ -40,9 +40,9 @@ class MatchTests extends BaseFunSuite :
     modNotFailed(
       """
         fn x match
-         |  A = "a"
-         | f @ B -> C -> X = "b"
-        ;
+         |  A -> "a"
+         | f @ B -> C -> X -> "b"
+        
       """
     )
     
@@ -52,9 +52,9 @@ class MatchTests extends BaseFunSuite :
     modNotFailed(
       """
         fn  x 'T  : String match
-          | A                 = "a"
-          | f @ 'T -> String  = f z
-        ;
+          | A                 -> "a"
+          | f @ 'T -> String  -> f z
+        
       """
     )
   }
@@ -64,14 +64,14 @@ class MatchTests extends BaseFunSuite :
       """
         (** lalala *)
         fn x ('T: Real) : String match
-          |  A                 = "a"
-          | f @ 'T -> String  = f z
-          | s =
+          |  A                 -> "a"
+          | f @ 'T -> String  -> f z
+          | s ->
               let str = show s,
                   otr = "other"
               in
                 upperCase (concat str otr)
-        ;
+        
       """
     )
   }
@@ -81,9 +81,9 @@ class MatchTests extends BaseFunSuite :
       """
       let name =
         person match
-        |  Person { name } = name
-        | _ = "unknown"
-      ;
+        | Person { name } -> name
+        | _               -> "unknown"
+      
       """
     )
   }
@@ -93,9 +93,9 @@ class MatchTests extends BaseFunSuite :
       """
       let name =
         person match
-          |  { name } = name
-          | _ = "unknown"
-      ;
+          |  { name } -> name
+          | _         -> "unknown"
+      
       """
     )
   }
@@ -105,11 +105,11 @@ class MatchTests extends BaseFunSuite :
       """
       let name =
         person match
-          | { name } if name == "fede"  = "große"
-          | { name }                    = name
-          | (name, _)                   = name
-          | _                           = "unknown"
-      ;
+          | { name } if name == "fede"  -> "große"
+          | { name }                    -> name
+          | (name, _)                   -> name
+          | _                           -> "unknown"
+      
       """
     )
   }
@@ -120,9 +120,9 @@ class MatchTests extends BaseFunSuite :
       """
       let name =
         person match
-          |  { name } if name == "fede" = name
-          | _ = "unknown"
-      ;
+          |  { name } if name == "fede" -> name
+          | _                           -> "unknown"
+      
       """
     )
   }
@@ -132,25 +132,25 @@ class MatchTests extends BaseFunSuite :
       """
         let name =
           person match
-          |  p @ Person{ name } if name == "fede" = p.lastName
-          | _ = "unknown"
-        ;
+          |  p @ Person{ name } if name == "fede" -> p.lastName
+          | _                                     -> "unknown"
+        
       """)
   }
   
   test("match lambda literal, passed as a value on application ") {
     modNotFailed(
       """
-        fn apply v f = f v;
+        fn apply v f = f v
 
         # Lambda is disambiguated by using parens, else it looks like a match on `2`
         let x =
           apply 2
             ( _ match
-                | 1 = "Uno"
-                | _ = "No Uno"
+                | 1 -> "Uno"
+                | _ -> "No Uno"
             )
-        ;
+        
       """)
   }
   
@@ -159,8 +159,8 @@ class MatchTests extends BaseFunSuite :
       """
         let z =
           _ match
-            | 1 = "Uno"
-            | _ = "No Uno"
+            | 1 -> "Uno"
+            | _ -> "No Uno"
         
       """)
   }
@@ -172,10 +172,10 @@ class MatchTests extends BaseFunSuite :
         
         let a =
           x match
-            | [] = "empty"
-            | [a] = a
-            | [a b] = a + b
-            | [ a :: tail ] = a
+            | []            -> "empty"
+            | [a]           -> a
+            | [a b]         -> a + b
+            | [ a :: tail ] -> a
           
         """)
   }

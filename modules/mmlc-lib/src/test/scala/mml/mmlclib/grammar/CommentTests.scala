@@ -8,7 +8,7 @@ class CommentTests extends BaseFunSuite:
     modNotFailed(
       """
         |# a comment
-        |let a = 1;
+        |let a = 1
       """.stripMargin)
   }
   
@@ -21,7 +21,7 @@ class CommentTests extends BaseFunSuite:
         |   2 # te
         |   + # va,
         |   a # che
-        |;
+        |
       """.stripMargin
     )
   }
@@ -35,7 +35,7 @@ class CommentTests extends BaseFunSuite:
         |
         |*)
         |
-        |let a = 1;
+        |let a = 1
       """.stripMargin)
   }
   
@@ -48,7 +48,7 @@ class CommentTests extends BaseFunSuite:
         |
         |*)
         |
-        |let a = 1;
+        |let a = 1
       """.stripMargin)
   }
   
@@ -61,7 +61,7 @@ class CommentTests extends BaseFunSuite:
         |
         |*)
         |
-        |fn a = 1;
+        |fn a = 1
       """.stripMargin
     )
   }
@@ -69,7 +69,7 @@ class CommentTests extends BaseFunSuite:
   test("multiline doc comments are invalid if not in a binding or a definition.") {
     modFailed(
       """
-        |let a = 1;
+        |let a = 1
         |(**
         |
         |This is a not a let
@@ -88,7 +88,7 @@ class CommentTests extends BaseFunSuite:
         |           2 # te
         |           + # va,
         |           a # che
-        |        ;
+        |        
       """.stripMargin
     )
   }
@@ -96,7 +96,7 @@ class CommentTests extends BaseFunSuite:
   test("comments interleaved #2"){
     modNotFailed(
       """
-        |let (* a is a parameter *) a = (*now we bind*) 1;
+        |let (* a is a parameter *) a = (*now we bind*) 1
       """.stripMargin
     )
   }
@@ -111,7 +111,7 @@ class CommentTests extends BaseFunSuite:
           |  (** lalala *)
           |
           |*)
-          |let a = 1;
+          |let a = 1
         """.stripMargin)
     }
 
@@ -124,7 +124,7 @@ class CommentTests extends BaseFunSuite:
           |  (* lalala *)
           |
           |*)
-          |let a = 1;
+          |let a = 1
         """.stripMargin)
     }
 
@@ -137,7 +137,7 @@ class CommentTests extends BaseFunSuite:
           |  (** lalala *)
           |
           |*)
-          |let a = 1;
+          |let a = 1
         """.stripMargin)
     }
   

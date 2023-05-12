@@ -7,9 +7,9 @@ class BasicTests extends BaseFunSuite:
   test("simple let") {
   
     modNotFailed("""
-        let a = 1;
-        let b = 2;
-        let c = "tres";
+        let a = 1
+        let b = 2
+        let c = "tres"
       """
     )
 
@@ -19,9 +19,9 @@ class BasicTests extends BaseFunSuite:
   
     modNotFailed(
       """
-        let a = 1;
-        let b = 2;
-        let c = a + b;
+        let a = 1
+        let b = 2
+        let c = a + b
       """
     )
 
@@ -30,7 +30,7 @@ class BasicTests extends BaseFunSuite:
   test("simple fn") {
     modNotFailed(
       """
-        fn sum a b = a + b;
+        fn sum a b = a + b
       """
     )
   }
@@ -38,7 +38,7 @@ class BasicTests extends BaseFunSuite:
   test("app with id and lit") {
     modNotFailed(
       """
-        let a = b + 3;
+        let a = b + 3
         
       """
     )
@@ -47,10 +47,10 @@ class BasicTests extends BaseFunSuite:
   test("fn and let") {
     modNotFailed(
       """
-        let a = 1;
-        let b = 2;
-        fn sum a b = a + b;
-        let x = sum a b;
+        let a = 1
+        let b = 2
+        fn sum a b = a + b
+        let x = sum a b
         
       """
     )
@@ -67,7 +67,7 @@ class BasicTests extends BaseFunSuite:
             doubleB + doubleA
           where 
             double x = x * 2 
-        ;
+        
       """
     )
     
@@ -85,7 +85,7 @@ class BasicTests extends BaseFunSuite:
           where 
             double x = x * 2,
             triple x = x * 3 
-        ;
+        
       """
     )
     
@@ -94,7 +94,7 @@ class BasicTests extends BaseFunSuite:
   test("0-arity fn") {
     modNotFailed(
       """
-        fn a = 1;
+        fn a = 1
       """
     )
   }
@@ -102,7 +102,7 @@ class BasicTests extends BaseFunSuite:
   test("let with group") {
     modNotFailed(
       """
-        let a = ( 2 + 2 ) / 2;
+        let a = ( 2 + 2 ) / 2
       """
     )
   }
@@ -116,7 +116,7 @@ class BasicTests extends BaseFunSuite:
                 (8 / 2)
                 + 4
           )
-          -  4;
+          -  4
         
       """
     )
@@ -126,7 +126,7 @@ class BasicTests extends BaseFunSuite:
     modNotFailed(
       """
         let a = 1,
-            b = 2;
+            b = 2
       """)
   }
   
@@ -139,7 +139,7 @@ class BasicTests extends BaseFunSuite:
             b = 2 * x
           in
              x + (a * b)
-        ;
+        
       """)
   }
   
@@ -151,7 +151,7 @@ class BasicTests extends BaseFunSuite:
            a
          else
            0
-        ;
+        
       """
     )
   }
@@ -167,7 +167,7 @@ class BasicTests extends BaseFunSuite:
              in 4 * b
           else
             0
-        ;
+        
       """
     )
     
@@ -176,7 +176,7 @@ class BasicTests extends BaseFunSuite:
   test("impossible to define unbalanced if exp"){
     modFailed(
       """
-        let a = if x then b;
+        let a = if x then b
       """)
   }
 

@@ -8,7 +8,7 @@ class ModuleTests extends BaseFunSuite:
     modNotFailed(
       """
         # a comment
-        let a = 1;
+        let a = 1
       """)
   }
   
@@ -17,7 +17,7 @@ class ModuleTests extends BaseFunSuite:
       """
         module MyModule =
           # a comment
-          let a = 1;
+          let a = 1
       """)
   }
   
@@ -25,12 +25,13 @@ class ModuleTests extends BaseFunSuite:
     modNotFailed(
       """
         # a comment
-        let a = 1;
+        let a = 1
         
         module Nested =
           # another comment
-          let b = 1;
+          let b = 1
         ;
+        
         
       """)
   }
@@ -40,12 +41,14 @@ class ModuleTests extends BaseFunSuite:
       """
         module ATopLevelModule =
         # a comment
-        let a = 1;
+        let a = 1
         
-        module Nested =
-          # another comment
-          let b = 1;
-        ;
+          module Nested =
+            # another comment
+            let b = 1
+          ;
+          
+        
         
       """)
   }
@@ -54,15 +57,17 @@ class ModuleTests extends BaseFunSuite:
     modNotFailed(
       """
         module F =
+          
           exports =
             a
             Module
             Type
           ;
+          
         
-          let a = true;
-          fn pr = 9;
-        ;
+          let a = true
+          fn pr = 9
+        
       """
     )
   }
@@ -80,12 +85,14 @@ class ModuleTests extends BaseFunSuite:
         
           (** A module is nested and public *)
           pub module A =
-            let a = 1;
+            let a = 1
           ;
+          
         
           protected module B =
-            fn sum a b = a + b;
+            fn sum a b = a + b
           ;
+          
         
       """
     )

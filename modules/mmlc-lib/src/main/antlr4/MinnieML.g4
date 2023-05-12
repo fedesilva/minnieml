@@ -14,7 +14,7 @@ script: ( stat | member )* EOF;
 
 // A statement ignores results if any and evaluates effects immediately
 // Scripts dont enforce effectful segregation
-stat: exp(End)?;
+stat: exp;
 
 // ----------------------------------------------------------------------
 // Full language rules follow
@@ -36,10 +36,10 @@ protd: Protd;
 lexical: Lexical;
 
 module:
-  (doc)? (modVisibility)? (Module moduleId Def)? (moduleExports)? (member)+ EOF ;
+  (doc)? (modVisibility)? (Module moduleId Def)? (moduleExports)? (member)+ (EOF);
 
 nestedModule:
-  (doc)? (modVisibility)? Module moduleId Def (moduleExports)? (member)+(End)?;
+  (doc)? (modVisibility)? Module moduleId Def (moduleExports)? (member)+ End;
 
 exportSelection:
   (id | tpId | moduleId | selection);
@@ -51,7 +51,7 @@ exportedMember:
   (doc)? ( exportReSpec '=' )? (exportSelection);
 
 moduleExports:
-  (doc)? Exports Def ( exportedMember )+(End)?;
+  (doc)? Exports Def ( exportedMember )+ End;
 
 member: ( decl | comm );
 
@@ -94,6 +94,7 @@ flatExp:
       selection |
       cond      |
       dtCons    |
+      tpCons    |
       hole
     )+
 ;
@@ -106,8 +107,8 @@ hole: Hole;
 // Protocols ----------------------------------------------------
 //
 
-protocol: Protocol tpId typeArgs LCurly protocolBody RCurly;
-protocolBody: ( id '=' fnSig )+;
+protocol: Protocol tpId typeArgs ( IsA tpSpec (',' tpSpec)* )? Def LCurly (protocolMember)+ RCurly ;
+protocolMember:  (id | binOpId | prefixOpId | postfixOpId) Def ( tpSpec );
 
 
 // When an instance is defined as canonical,
@@ -115,15 +116,14 @@ protocolBody: ( id '=' fnSig )+;
 // it is defined on and it's children.
 canon: Canon;
 
-instance:  (canon)? Instance tpId tpSpec LCurly instanceBody RCurly;
-instanceBody: ( id '=' fnSig Def fnExp )+;
-
+instance:  (canon)? Instance tpId tpSpec Def LCurly (instanceMember)+ RCurly ;
+instanceMember:  ( letBnd | fn | fnM | op | nestedModule | variant | tpDef )+;
 //
 // Pattern matching ----------------------------------------------------
 //
 
 matchBody: matchCase ( matchCase )*;
-matchCase: '|' matchBnd? patt ( If exp )? Def fnExp ;
+matchCase: '|' matchBnd? patt ( If exp )? TArrow fnExp ;
 matchBnd: (id '@');
 
 
@@ -152,7 +152,7 @@ bnd:  idMWT         Def exp  |
       nominalDecon  Def exp  |
       structDecon   Def exp  ;
 
-letBnd: (doc)? Let (lazy|cnst)? (rec)? (doc)? bnd (',' (doc)? bnd)* (End)? ;
+letBnd: (doc)? Let (lazy|cnst)? (rec)? (doc)? bnd (',' (doc)? bnd)*  ;
 
 // ----------------------------------------------------------------------
 // Functions
@@ -168,8 +168,8 @@ formalArgs: idMWT* | '(' idMWT* ')';
 
 returnTp: TpAsc tpSpec;
 
-fn:    (doc)? Fn (rec)? id fnSig Def fnExp (End)?;
-fnM:   (doc)? Fn (rec)? id ( (typeArgs)? | Lpar (typeArgs)? Rpar )  (returnTp)? Match matchBody End ;
+fn:    (doc)? Fn (rec)? id fnSig Def fnExp ;
+fnM:   (doc)? Fn (rec)? id ( (typeArgs)? | Lpar (typeArgs)? Rpar )  (returnTp)? Match matchBody ;
 
 fnLit:      fnSig TArrow fnExp;
 fnMatchLit: Meh Match matchBody;
@@ -178,9 +178,13 @@ fnMatchLit: Meh Match matchBody;
 
 op: binOp | prefixOp | postfixOp;
 
-binOp:       (doc)? Op opId (opPrecedence)? (typeArgs)? idMWT idMWT (returnTp)? Def fnExp(End)?;
-prefixOp:    (doc)? Op opId Dot (opPrecedence)? (typeArgs)? idMWT (returnTp)?   Def fnExp(End)?;
-postfixOp:   (doc)? Op Dot opId (opPrecedence)? (typeArgs)? idMWT (returnTp)?   Def fnExp(End)?;
+binOpId: opId (opPrecedence)?;
+prefixOpId: opId Dot (opPrecedence)?;
+postfixOpId: Dot opId (opPrecedence)?;
+
+binOp:       (doc)? Op binOpId      (typeArgs)? idMWT idMWT (returnTp)? Def fnExp;
+prefixOp:    (doc)? Op prefixOpId   (typeArgs)? idMWT (returnTp)?   Def fnExp;
+postfixOp:   (doc)? Op postfixOpId  (typeArgs)? idMWT (returnTp)?   Def fnExp;
 
 opPrecedence:  LitPrec;
 
@@ -194,7 +198,7 @@ cndElse: Else fnExp;
 // TYPES ---------------------------------------------------------------------------------------
 
 // Type def
-tpDef: (doc)? Type tpId (typeArgs)? Def tpSpec(End)?;
+tpDef: (doc)? Type tpId (typeArgs)? Def tpSpec;
 
 // General type declaration related rules
 
@@ -206,8 +210,8 @@ tpSpec:
     Lpar (tpSpec)+ Rpar                           #groupSpec            |
     tpId                                          #nameSpec             |
     tpArgId                                       #argSpec              |
-    left = tpSpec ( '&' tpSpec )+                 #intersectSpec        |
-    left = tpSpec ( '|' tpSpec )+                 #unionSpec            |
+    left = tpSpec ( '&' tpSpec )+                 #intersectSpec        | // Intersection types
+    left = tpSpec ( '|' tpSpec )+                 #unionSpec            | // Union types
     left = tpSpec (TArrow left = tpSpec)+         #fnSpec               |
     LCurly dtField (dtField)* RCurly              #structSpec           |
     tpSpec (',' tpSpec)+                          #tupleSpec            |
@@ -218,7 +222,7 @@ tpSpec:
 unit: LitUnit;
 
 expSeq: (exp)+;
-tpCons: tpId expSeq | tpId;
+tpCons: tpId expSeq | tpId | tpSpec;
 tpDecon: tpId (idOrMeh)+;
 
 
@@ -255,7 +259,7 @@ variant: unionV;
 
 // Union  -------------------------------------------------------------------
 
-unionV: (doc)? Union tpId (typeArgs)? Def unionMbr ( unionMbr )+ (End)?;
+unionV: (doc)? Union tpId (typeArgs)? Def unionMbr ( unionMbr )+ ;
 
 unionMbr:  (doc)?  '|'  tpId ( TpAsc tpSpec)?;
 
@@ -354,7 +358,7 @@ LCurly:     '{';
 RCurly:     '}';
 LBrac:      '[';
 RBrac:      ']';
-Derives:    '<:';
+IsA:        '<:';
 Hole:       '???';
 Meh:        '_';
 Compose:    '<|';

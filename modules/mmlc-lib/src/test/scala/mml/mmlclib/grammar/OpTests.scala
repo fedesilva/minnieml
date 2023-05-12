@@ -7,7 +7,7 @@ class OpTests extends BaseFunSuite:
   test("simple infix binary op") {
     modNotFailed(
       """
-        op + a b = sum a b;
+        op + a b = sum a b
       """.trim
     )
   }
@@ -15,7 +15,7 @@ class OpTests extends BaseFunSuite:
   test("simple prefix unary op") {
     modNotFailed(
       """
-        op +. a = positive a;
+        op +. a = positive a
       """.trim
     )
   }
@@ -23,7 +23,7 @@ class OpTests extends BaseFunSuite:
   test("simple suffix unary op") {
     modNotFailed(
       """
-        op .! a = factorial a;
+        op .! a = factorial a
       """.trim
     )
   }
@@ -31,7 +31,7 @@ class OpTests extends BaseFunSuite:
   test("alphanum simple binary op") {
     modNotFailed(
       """
-        op plus a b = ???;
+        op plus a b = ???
       """.trim
     )
   }
@@ -39,7 +39,7 @@ class OpTests extends BaseFunSuite:
   test("alphanum simple prefix unary op") {
     modNotFailed(
       """
-        op positive. a = ???;
+        op positive. a = ???
       """.trim
     )
   }
@@ -47,7 +47,7 @@ class OpTests extends BaseFunSuite:
   test("alphanum simple suffix unary op") {
     modNotFailed(
       """
-        op .fact a = ???;
+        op .fact a = ???
       """.trim
     )
   }
@@ -62,7 +62,7 @@ class OpTests extends BaseFunSuite:
   test("Can NOT define binop with No arg"){
     modFailed(
       """
-        op + = 1;
+        op + = 1
       """.trim)
   }
   
@@ -90,7 +90,7 @@ class OpTests extends BaseFunSuite:
   test("Can define multichar operator"){
     modNotFailed(
       """
-        op => a b = doSomething a b; # written  `a => b`
+        op => a b = doSomething a b # written  `a => b`
       """.trim
     )
   }
@@ -98,7 +98,7 @@ class OpTests extends BaseFunSuite:
   test("Can provide precedence for infix op"){
     modNotFailed(
       """
-       op + [1] a b = ???;
+       op + [1] a b = ???
       """
     )
   }
@@ -106,7 +106,7 @@ class OpTests extends BaseFunSuite:
   test("Can provide precedence for prefix op"){
     modNotFailed(
       """
-         op +. [1] b = ???;
+         op +. [1] b = ???
       """
     )
   }
@@ -114,7 +114,7 @@ class OpTests extends BaseFunSuite:
   test("Can provide precedence for postfix op"){
     modNotFailed(
       """
-         op .! [1]  b = ???;
+         op .! [1]  b = ???
       """
     )
   }

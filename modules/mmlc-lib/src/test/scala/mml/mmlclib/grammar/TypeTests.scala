@@ -7,7 +7,7 @@ class TypeTests extends BaseFunSuite:
   test("simple let with type") {
     modNotFailed(
       """
-         let c: String = "tres";
+         let c: String = "tres"
       """
     )
   }
@@ -15,7 +15,7 @@ class TypeTests extends BaseFunSuite:
   test("simple let with type inference") {
     modNotFailed(
       """
-         let c = "I know thish ish a shtring, mkay";
+         let c = "I know thish ish a shtring, mkay"
       """
     )
   }
@@ -25,7 +25,7 @@ class TypeTests extends BaseFunSuite:
       """
         let  a: Int     = 1,
              b: String  = "b"
-        ;
+        
       """
     )
   }
@@ -36,7 +36,7 @@ class TypeTests extends BaseFunSuite:
         # type: Int -> Int -> Real
         fn sum a: Int b: Int : Real =
           a + b
-        ;
+        
       """
     )
   }
@@ -47,7 +47,7 @@ class TypeTests extends BaseFunSuite:
         # type: 'T1 -> 'T2 -> 'R
         fn sum a b =
           a + b
-        ;
+        
       """
     )
   }
@@ -57,7 +57,7 @@ class TypeTests extends BaseFunSuite:
       """
         # since there is not way to know that Real is the return type,
         # instead of the type of the last param, the parens group the formal arguments.        
-        fn sum (a b) : Real = a + b;
+        fn sum (a b) : Real = a + b
       """
     )
   }
@@ -66,7 +66,7 @@ class TypeTests extends BaseFunSuite:
     modNotFailed(
       """
         fn sum a: Int b: Int =
-          a + b;
+          a + b
       """
     )
   }
@@ -74,7 +74,7 @@ class TypeTests extends BaseFunSuite:
   test("let tuple decon with full type declaration") {
     modNotFailed(
       """
-        let ( a :Int , b: Int ) = (1,2);
+        let ( a :Int , b: Int ) = (1,2)
       """
     )
   }
@@ -82,7 +82,7 @@ class TypeTests extends BaseFunSuite:
   test("let tuple decon with partial type declaration") {
     modNotFailed(
       """
-        let (a, b: Int) = (1,2);
+        let (a, b: Int) = (1,2)
       """
     )
   }
@@ -126,14 +126,14 @@ class TypeTests extends BaseFunSuite:
            Type of nameOf: 'T { name: String } -> String
           
           *)
-          fn nameOf (p) : String = p.name;
+          fn nameOf (p) : String = p.name
           
-          let fede = Person "Fede" 35; (* ¬¬ *)
+          let fede = Person "Fede" 35 (* ¬¬ *)
           
-          let fido = Pet "fido";
+          let fido = Pet "fido"
           
-          let nameOfPerson = nameOf fede;
-          let nameOfPet    = nameOf fido;
+          let nameOfPerson = nameOf fede
+          let nameOfPet    = nameOf fido
         
       """
     )
@@ -141,7 +141,7 @@ class TypeTests extends BaseFunSuite:
   test("enum") {
     modNotFailed(
       """
-        union ABCD = | A | B | C | D;
+        union ABCD = | A | B | C | D
       """
     )
   }
@@ -157,7 +157,7 @@ class TypeTests extends BaseFunSuite:
           | D: String -> String
           | E: Real
           | F: { allCaps: String & AllCaps }
-        ;
+        
     """
     )
   }
@@ -167,7 +167,7 @@ class TypeTests extends BaseFunSuite:
       """
         fn apply val fun : ((String & AllCaps) -> Int) -> Int =
           ???
-        ;
+        
       """
     )
   }
@@ -175,7 +175,7 @@ class TypeTests extends BaseFunSuite:
   test("grouped type declarations #2") {
     modNotFailed(
       """
-        let fun : ((String & AllCaps) -> Int) -> Int = ???;
+        let fun : ((String & AllCaps) -> Int) -> Int = ???
       """
     )
   }
@@ -183,7 +183,7 @@ class TypeTests extends BaseFunSuite:
   test("grouped type declarations #3") {
     modNotFailed(
       """
-        fn apply val fun : ( (String & AllCaps) -> Int ) -> Int : O = fun val;
+        fn apply val fun : ( (String & AllCaps) -> Int ) -> Int : O = fun val
       """
     )
   }
@@ -191,7 +191,7 @@ class TypeTests extends BaseFunSuite:
   test("functional type, with hole expression") {
     modNotFailed(
       """
-        let fun : String -> String -> String = ???;
+        let fun : String -> String -> String = ???
       """
     )
   }
@@ -202,7 +202,7 @@ class TypeTests extends BaseFunSuite:
         fn p
           'T1: AllCaps
           a: 'T1
-          b: 'T1 = ???;
+          b: 'T1 = ???
       """
     )
   }
@@ -224,7 +224,7 @@ class TypeTests extends BaseFunSuite:
        union BinaryTree 'T1: Num =
          | Leaf: 'T1
          | Branch:  (BinaryTree, BinaryTree)
-       ;
+       
       """
     )
   }
@@ -235,7 +235,7 @@ class TypeTests extends BaseFunSuite:
         union BinaryTree 'T1: Num & MidiValue =
           | Leaf: 'T1
           | Branch:  (BinaryTree, BinaryTree)
-        ;
+        
       """
     )
   }
@@ -247,7 +247,7 @@ class TypeTests extends BaseFunSuite:
            'T1: Num
            a:   'T1
            b:   'T1 = ???
-       ;
+       
       """
     )
   }
@@ -260,12 +260,12 @@ class TypeTests extends BaseFunSuite:
         union NumBTree 'T1: Num =
           | Leaf: 'T1
           | Branch:  (NumBTree, NumBTree)
-        ;
+        
         
         # assume Real derives Num
-        type RealBtree = NumBTree Real;
+        type RealBtree = NumBTree Real
         
-        let t : RealBTree = Branch (Leaf 1) (Leaf 2);
+        let t : RealBTree = Branch (Leaf 1) (Leaf 2)
       """
     )
   }

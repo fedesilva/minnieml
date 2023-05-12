@@ -13,9 +13,11 @@ class ExportsTests extends BaseFunSuite:
             x
             a
           ;
+          
+          
 
-          let x = 1;
-          let a = 2;
+          let x = 1
+          let a = 2
 
       """)
   }
@@ -29,9 +31,11 @@ class ExportsTests extends BaseFunSuite:
             equis = x
             dos   = a
           ;
+          
+          
 
-          let x = 1;
-          let a = 2;
+          let x = 1
+          let a = 2
 
       """)
   }
@@ -49,9 +53,10 @@ class ExportsTests extends BaseFunSuite:
             equis : Int = x
             dos: String = a
           ;
+          
 
-          let x = 1;
-          let a = "2";
+          let x = 1
+          let a = "2"
 
       """)
   }

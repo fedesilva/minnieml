@@ -8,13 +8,13 @@ class MultiLineTests extends BaseFunSuite:
     val src =
       """
         let a =
-         2;
+         2
         let
         b
         =
-        3;
+        3
         let c = 2
-        ;
+        
       """
     modNotFailed(src)
   }
@@ -22,15 +22,15 @@ class MultiLineTests extends BaseFunSuite:
   test("multi let and fn ") {
     val src =
       """
-        let a = 1;
-        let b = 2;
+        let a = 1
+        let b = 2
         fn sum a b =
-        a + b;
+        a + b
         let x =
         sum
         a
         b
-        ;
+        
         fn
         times
         a
@@ -39,7 +39,7 @@ class MultiLineTests extends BaseFunSuite:
         a
         *
         b
-        ;
+        
       """.stripMargin
     modNotFailed(src)
   }

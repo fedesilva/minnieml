@@ -24,43 +24,19 @@ union Result 'T 'E =
 
 Examples of code:
 
-# A Semigroup is a type with an associative binary operation.
-type Semigroup 'T = {
-  assoc: ('T 'T) -> 'T
+# Protocols example
+protocol Semigroup 'T = {
+  assoc = 'T -> 'T ->  'T
 }
 
 # A Monoid is a Semigroup with an identity element.
-type Monoid 'T = {
-  semigroup: Semigroup 'T
-  id: 'T
+# <: read as "depends on" ensures that there are instances of the types
+# declared to the right
+# in this case we have a dependency from Monoid of 'T on Semigroup of 'T
+# Semigroup members can be used by selecting its members on the Monoid instance
+protocol Monoid 'T <: Semigroup 'T = {
+  id =  'T
 }
-
-# A Group is a Monoid with an inverse operation.
-type Group 'T = {
-  monoid: Monoid 'T
-  inverse: 'T -> 'T
-}
-
-# An AbelianGroup is a Group with a commutative binary operation.
-type AbelianGroup 'T = {
-  group: Group 'T
-}
-
-# A Ring is a type with two binary operations (addition and multiplication) that satisfy some laws.
-type Ring 'T  = {
-  additiveMonoid: Monoid 'T
-  multiplicationSemigroup: Semigroup 'T
-  zero: 'T
-  one: 'T
-  negation: 'T -> 'T
-}
-
-# A Field is a Ring with multiplicative inverses.
-type Field 'T = {
-  ring: Ring 'T
-  inverse: 'T -> 'T
-}
-
 
 type Person = {
     name : String
@@ -187,6 +163,7 @@ flatExp:
       selection |
       cond      |
       dtCons    |
+      tpCons    |
       hole
     )+
 ;
@@ -199,8 +176,8 @@ hole: Hole;
 // Protocols ----------------------------------------------------
 //
 
-protocol: Protocol tpId typeArgs LCurly protocolBody RCurly;
-protocolBody: ( id '=' fnSig )+;
+protocol: Protocol tpId typeArgs ( IsA tpSpec (',' tpSpec)* )? Def LCurly (protocolMember)+ RCurly (End)?;
+protocolMember:  (id | binOpId | prefixOpId | postfixOpId) Def ( tpSpec );
 
 
 // When an instance is defined as canonical,
@@ -208,15 +185,14 @@ protocolBody: ( id '=' fnSig )+;
 // it is defined on and it's children.
 canon: Canon;
 
-instance:  (canon)? Instance tpId tpSpec LCurly instanceBody RCurly;
-instanceBody: ( id '=' fnSig Def fnExp )+;
-
+instance:  (canon)? Instance tpId tpSpec Def LCurly (instanceMember)+ RCurly (End)?;
+instanceMember:  ( letBnd | fn | fnM | op | nestedModule | variant | tpDef )+;
 //
 // Pattern matching ----------------------------------------------------
 //
 
 matchBody: matchCase ( matchCase )*;
-matchCase: '|' matchBnd? patt ( If exp )? Def fnExp ;
+matchCase: '|' matchBnd? patt ( If exp )? TArrow fnExp ;
 matchBnd: (id '@');
 
 
@@ -271,9 +247,13 @@ fnMatchLit: Meh Match matchBody;
 
 op: binOp | prefixOp | postfixOp;
 
-binOp:       (doc)? Op opId (opPrecedence)? (typeArgs)? idMWT idMWT (returnTp)? Def fnExp(End)?;
-prefixOp:    (doc)? Op opId Dot (opPrecedence)? (typeArgs)? idMWT (returnTp)?   Def fnExp(End)?;
-postfixOp:   (doc)? Op Dot opId (opPrecedence)? (typeArgs)? idMWT (returnTp)?   Def fnExp(End)?;
+binOpId: opId (opPrecedence)?;
+prefixOpId: opId Dot (opPrecedence)?;
+postfixOpId: Dot opId (opPrecedence)?;
+
+binOp:       (doc)? Op binOpId      (typeArgs)? idMWT idMWT (returnTp)? Def fnExp(End)?;
+prefixOp:    (doc)? Op prefixOpId   (typeArgs)? idMWT (returnTp)?   Def fnExp(End)?;
+postfixOp:   (doc)? Op postfixOpId  (typeArgs)? idMWT (returnTp)?   Def fnExp(End)?;
 
 opPrecedence:  LitPrec;
 
@@ -299,15 +279,19 @@ tpSpec:
     Lpar (tpSpec)+ Rpar                           #groupSpec            |
     tpId                                          #nameSpec             |
     tpArgId                                       #argSpec              |
-    left = tpSpec ( '&' tpSpec )+                 #intersectSpec        |
-    left = tpSpec ( '|' tpSpec )+                 #unionSpec            |
+    left = tpSpec ( '&' tpSpec )+                 #intersectSpec        | // Intersection types
+    left = tpSpec ( '|' tpSpec )+                 #unionSpec            | // Union types
     left = tpSpec (TArrow left = tpSpec)+         #fnSpec               |
     LCurly dtField (dtField)* RCurly              #structSpec           |
     tpSpec (',' tpSpec)+                          #tupleSpec            |
-    left = tpSpec ( tpSpec )+                     #tpAppSpec            ;
+    left = tpSpec ( tpSpec )+                     #tpAppSpec            |
+    unit                                          #tpUnit
+    ;
+
+unit: LitUnit;
 
 expSeq: (exp)+;
-tpCons: tpId expSeq | tpId;
+tpCons: tpId expSeq | tpId | tpSpec;
 tpDecon: tpId (idOrMeh)+;
 
 
@@ -443,7 +427,7 @@ LCurly:     '{';
 RCurly:     '}';
 LBrac:      '[';
 RBrac:      ']';
-Derives:    '<:';
+IsA:        '<:';
 Hole:       '???';
 Meh:        '_';
 Compose:    '<|';
