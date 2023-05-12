@@ -483,7 +483,7 @@ Compose:    '<|';
 AndThen:    '|>';
 Protocol:   'protocol';
 Instance:   'instance';
-Canon:      'canonical';
+Canon:      'canon';
 SeqCons:    '::';
 
 // Identifiers
@@ -510,7 +510,6 @@ Doc     : '(**' (Doc|MLComm|.)*? '*)';
 MLComm  : '(*' (MLComm|Doc|.)*? '*)'        -> channel(2);
 // Line comment
 HComm   : '#' .*? ('\r\n' | '\n' | EOF)     -> channel(2);
-
 
 
 
