@@ -108,7 +108,7 @@ hole: Hole;
 //
 
 protocol: Protocol tpId typeArgs ( IsA tpSpec (',' tpSpec)* )? Def LCurly (protocolMember)+ RCurly ;
-protocolMember:  (id | binOpId | prefixOpId | postfixOpId) Def ( tpSpec );
+protocolMember:  (id | binOpId | prefixOpId | postfixOpId) TpAsc ( tpSpec );
 
 
 // When an instance is defined as canonical,

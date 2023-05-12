@@ -5,7 +5,9 @@ assume there are types
 * Int which is corresponponds to a 64 bit integer (use llvm i64 as a reference)
 * Float which corresponds to a 64 bit floating point (use a corresponding llvm type)
 * Maybe which encodes optional types defined under the "Predefined tyoes" sections below.
+  - see below
 * Result which encodes the possibility of having a successful or a failed result of a computation
+  - see below
 * LocalDate similar to java's new date types
 * Interval similar to java's new data tupes
 
@@ -26,17 +28,28 @@ Examples of code:
 
 # Protocols example
 protocol Semigroup 'T = {
-  assoc = 'T -> 'T ->  'T
+  assoc: 'T -> 'T -> 'T
 }
 
+
+# <: read as "implies", means that it is impled that there are instances of the types
+# declared to the right. Absence of them is a compilation error.
+# in this case we see that there is a dependency of Monoid of 'T on Semigroup of 'T
+
 # A Monoid is a Semigroup with an identity element.
-# <: read as "depends on" ensures that there are instances of the types
-# declared to the right
-# in this case we have a dependency from Monoid of 'T on Semigroup of 'T
-# Semigroup members can be used by selecting its members on the Monoid instance
 protocol Monoid 'T <: Semigroup 'T = {
-  id =  'T
+  id:  'T
 }
+
+instance Semigroup Int =
+  {
+    fn assoc a b = a + b
+  }
+
+instance Monoid Int = {
+  fn id = 0
+}
+
 
 type Person = {
     name : String
@@ -83,7 +96,7 @@ script: ( stat | member )* EOF;
 
 // A statement ignores results if any and evaluates effects immediately
 // Scripts dont enforce effectful segregation
-stat: exp(End)?;
+stat: exp;
 
 // ----------------------------------------------------------------------
 // Full language rules follow
@@ -105,10 +118,10 @@ protd: Protd;
 lexical: Lexical;
 
 module:
-  (doc)? (modVisibility)? (Module moduleId Def)? (moduleExports)? (member)+ EOF ;
+  (doc)? (modVisibility)? (Module moduleId Def)? (moduleExports)? (member)+ (EOF);
 
 nestedModule:
-  (doc)? (modVisibility)? Module moduleId Def (moduleExports)? (member)+(End)?;
+  (doc)? (modVisibility)? Module moduleId Def (moduleExports)? (member)+ End;
 
 exportSelection:
   (id | tpId | moduleId | selection);
@@ -120,7 +133,7 @@ exportedMember:
   (doc)? ( exportReSpec '=' )? (exportSelection);
 
 moduleExports:
-  (doc)? Exports Def ( exportedMember )+(End)?;
+  (doc)? Exports Def ( exportedMember )+ End;
 
 member: ( decl | comm );
 
@@ -176,8 +189,8 @@ hole: Hole;
 // Protocols ----------------------------------------------------
 //
 
-protocol: Protocol tpId typeArgs ( IsA tpSpec (',' tpSpec)* )? Def LCurly (protocolMember)+ RCurly (End)?;
-protocolMember:  (id | binOpId | prefixOpId | postfixOpId) Def ( tpSpec );
+protocol: Protocol tpId typeArgs ( IsA tpSpec (',' tpSpec)* )? Def LCurly (protocolMember)+ RCurly ;
+protocolMember:  (id | binOpId | prefixOpId | postfixOpId) TpAsc ( tpSpec );
 
 
 // When an instance is defined as canonical,
@@ -185,7 +198,7 @@ protocolMember:  (id | binOpId | prefixOpId | postfixOpId) Def ( tpSpec );
 // it is defined on and it's children.
 canon: Canon;
 
-instance:  (canon)? Instance tpId tpSpec Def LCurly (instanceMember)+ RCurly (End)?;
+instance:  (canon)? Instance tpId tpSpec Def LCurly (instanceMember)+ RCurly ;
 instanceMember:  ( letBnd | fn | fnM | op | nestedModule | variant | tpDef )+;
 //
 // Pattern matching ----------------------------------------------------
@@ -221,7 +234,7 @@ bnd:  idMWT         Def exp  |
       nominalDecon  Def exp  |
       structDecon   Def exp  ;
 
-letBnd: (doc)? Let (lazy|cnst)? (rec)? (doc)? bnd (',' (doc)? bnd)* (End)? ;
+letBnd: (doc)? Let (lazy|cnst)? (rec)? (doc)? bnd (',' (doc)? bnd)*  ;
 
 // ----------------------------------------------------------------------
 // Functions
@@ -237,8 +250,8 @@ formalArgs: idMWT* | '(' idMWT* ')';
 
 returnTp: TpAsc tpSpec;
 
-fn:    (doc)? Fn (rec)? id fnSig Def fnExp (End)?;
-fnM:   (doc)? Fn (rec)? id ( (typeArgs)? | Lpar (typeArgs)? Rpar )  (returnTp)? Match matchBody End ;
+fn:    (doc)? Fn (rec)? id fnSig Def fnExp ;
+fnM:   (doc)? Fn (rec)? id ( (typeArgs)? | Lpar (typeArgs)? Rpar )  (returnTp)? Match matchBody ;
 
 fnLit:      fnSig TArrow fnExp;
 fnMatchLit: Meh Match matchBody;
@@ -251,9 +264,9 @@ binOpId: opId (opPrecedence)?;
 prefixOpId: opId Dot (opPrecedence)?;
 postfixOpId: Dot opId (opPrecedence)?;
 
-binOp:       (doc)? Op binOpId      (typeArgs)? idMWT idMWT (returnTp)? Def fnExp(End)?;
-prefixOp:    (doc)? Op prefixOpId   (typeArgs)? idMWT (returnTp)?   Def fnExp(End)?;
-postfixOp:   (doc)? Op postfixOpId  (typeArgs)? idMWT (returnTp)?   Def fnExp(End)?;
+binOp:       (doc)? Op binOpId      (typeArgs)? idMWT idMWT (returnTp)? Def fnExp;
+prefixOp:    (doc)? Op prefixOpId   (typeArgs)? idMWT (returnTp)?   Def fnExp;
+postfixOp:   (doc)? Op postfixOpId  (typeArgs)? idMWT (returnTp)?   Def fnExp;
 
 opPrecedence:  LitPrec;
 
@@ -267,7 +280,7 @@ cndElse: Else fnExp;
 // TYPES ---------------------------------------------------------------------------------------
 
 // Type def
-tpDef: (doc)? Type tpId (typeArgs)? Def tpSpec(End)?;
+tpDef: (doc)? Type tpId (typeArgs)? Def tpSpec;
 
 // General type declaration related rules
 
@@ -328,7 +341,7 @@ variant: unionV;
 
 // Union  -------------------------------------------------------------------
 
-unionV: (doc)? Union tpId (typeArgs)? Def unionMbr ( unionMbr )+ (End)?;
+unionV: (doc)? Union tpId (typeArgs)? Def unionMbr ( unionMbr )+ ;
 
 unionMbr:  (doc)?  '|'  tpId ( TpAsc tpSpec)?;
 
@@ -461,7 +474,6 @@ Doc     : '(**' (Doc|MLComm|.)*? '*)';
 MLComm  : '(*' (MLComm|Doc|.)*? '*)'        -> channel(2);
 // Line comment
 HComm   : '#' .*? ('\r\n' | '\n' | EOF)     -> channel(2);
-
 
 
 

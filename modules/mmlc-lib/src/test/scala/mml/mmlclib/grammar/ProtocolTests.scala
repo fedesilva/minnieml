@@ -9,16 +9,16 @@ class ProtocolTests extends BaseFunSuite:
       """
         # Define a protocol / type class
         protocol Num 'T = {
-          add       =  'T -> 'T -> 'T
-          subtract  =  'T -> 'T -> 'T
-          multiply  =  'T -> 'T -> 'T
-          divide    =  'T -> 'T -> 'T
+          add      :  'T -> 'T -> 'T
+          subtract :  'T -> 'T -> 'T
+          multiply :  'T -> 'T -> 'T
+          divide   :  'T -> 'T -> 'T
         }
         
         # Define an instance for a concrete type: Int
         instance Num Int = {
           fn add a b        = ???
-          fn substract a b  = ???
+          fn subtract a b   = ???
           fn multiple a b   = ???
           fn divide a b     = ???
         }
@@ -26,7 +26,7 @@ class ProtocolTests extends BaseFunSuite:
         # Define an instance for a concrete type: Float
         instance Num Float = {
           fn add a b        = ???
-          fn substract a b  = ???
+          fn subtract a b   = ???
           fn multiple a b   = ???
           fn divide a b     = ???
         }
@@ -45,17 +45,22 @@ class ProtocolTests extends BaseFunSuite:
     modNotFailed(
       """
         protocol Semigroup 'T = {
-          assoc = 'T -> 'T ->  'T
+          assoc: 'T -> 'T ->  'T
         }
         
         # A Monoid is a Semigroup with an identity element.
         protocol Monoid 'T <: Semigroup 'T = {
-          id =  'T
+          id:  'T
         }
         
         instance Semigroup Int = {
           fn assoc a b = a + b
         }
+        
+        instance Monoid Int = {
+          fn id = 0
+        }
+        
       """
     )
   }

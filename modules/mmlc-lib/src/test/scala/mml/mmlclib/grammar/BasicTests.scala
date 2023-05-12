@@ -177,7 +177,8 @@ class BasicTests extends BaseFunSuite:
     modFailed(
       """
         let a = if x then b
-      """)
+      """
+    )
   }
 
 
