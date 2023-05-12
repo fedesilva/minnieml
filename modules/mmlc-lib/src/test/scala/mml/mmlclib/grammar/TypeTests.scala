@@ -141,17 +141,17 @@ class TypeTests extends BaseFunSuite:
   test("enum") {
     modNotFailed(
       """
-        union ABCD = | A | B | C | D
+        type ABCD = A | B | C | D
       """
     )
   }
 
-  test("union") {
+  test("big misc enum") {
     modNotFailed(
       """
-        (** A union of random rubbish *)
-        union X =
-          | A
+        (** A enum of random rubbish *)
+        enum X =
+          |  A
           | B: Int, Int
           | C: { name: String age: Int }
           | D: String -> String
@@ -218,10 +218,10 @@ class TypeTests extends BaseFunSuite:
     )
   }
 
-  test("union with type parameter") {
+  test("enum with type parameter") {
     modNotFailed(
       """
-       union BinaryTree 'T1: Num =
+       enum BinaryTree 'T1: Num =
          | Leaf: 'T1
          | Branch:  (BinaryTree, BinaryTree)
        
@@ -229,10 +229,10 @@ class TypeTests extends BaseFunSuite:
     )
   }
 
-  test("union with intersection type parameter") {
+  test("enum with intersection type parameter") {
     modNotFailed(
       """
-        union BinaryTree 'T1: Num & MidiValue =
+        enum BinaryTree 'T1: Num & MidiValue =
           | Leaf: 'T1
           | Branch:  (BinaryTree, BinaryTree)
         
@@ -253,11 +253,11 @@ class TypeTests extends BaseFunSuite:
   }
 
   test(
-    "union type with type params, type alias refines a type, type application and constructed type usage"
+    "enum type with type params, type alias refines a type, type application and constructed type usage"
   ) {
     modNotFailed(
       """
-        union NumBTree 'T1: Num =
+        enum NumBTree 'T1: Num =
           | Leaf: 'T1
           | Branch:  (NumBTree, NumBTree)
         

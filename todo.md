@@ -10,12 +10,6 @@ Proceed at your own risk.
 
 ## Syntax/Grammar 
 
-* protocols
-  * redefine the syntax for function protocol members
-    * no need for value names
-  * depends on ( <: )
-    * ability to declare dependencies
-      * Monoid depends on Semigroup
 
 * use syntax
   * so you can avoid Maybe.One

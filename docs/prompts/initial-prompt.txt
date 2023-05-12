@@ -1,81 +1,122 @@
 Given the antlr 4 grammar ( presented below between BEGIN_GRAMMAR and END_GRAMMAR) for a language called MinnieML (mml for short)
-assume there are types 
+assume there are types like
 
 * String which is a string representation, and all string literals should have this type
-* Int which is corresponponds to a 64 bit integer (use llvm i64 as a reference)
-* Float which corresponds to a 64 bit floating point (use a corresponding llvm type)
+* numeric protocols in the spirit of scala's spire that support the following number types
+* Int and Long which is corresponponds to 32 and 64 bit integers
+* Float and Double which correspond to 32 and 64 bit floating point numbers
+* BigDecimal and BigInteger implemented  using record types
+* A protocol and adt library in the spirit of Scala Cats, monads, monoids, functors, etc.
+  * for now minus the async core.
 * Maybe which encodes optional types defined under the "Predefined tyoes" sections below.
   - see below
 * Result which encodes the possibility of having a successful or a failed result of a computation
   - see below
-* LocalDate similar to java's new date types
-* Interval similar to java's new data tupes
+* LocalDate, LocalDateTime, ZoneDate and ZonedDateTime, Instant  port of java's new date types and all associated operations
 
-Assume a hindley milner type checker.
+Assume a hindley milner type checker with extensions for the types defined in the grammar,
+perticularly under the tpSpec rules, protocols (protocols are types) and enums.
 
+Assume that enum members can be imported into scope (undefine syntax as of yet but assume they can be)
+so that they can be referenced directly (None, instead of Maybe.none)
 
 Predefined types:
 
-union Maybe 'T =
+enum Maybe 'T =
   | One: 'T
   | None
 
-union Result 'T 'E =
+enum Result 'T 'E =
   | Ok: 'T
   | Err: 'E
 
 Examples of code:
 
 # Protocols example
-protocol Semigroup 'T = {
+protocol Semigroup 'T =
   assoc: 'T -> 'T -> 'T
-}
+;
 
 
 # <: read as "implies", means that it is impled that there are instances of the types
 # declared to the right. Absence of them is a compilation error.
 # in this case we see that there is a dependency of Monoid of 'T on Semigroup of 'T
 
-# A Monoid is a Semigroup with an identity element.
-protocol Monoid 'T <: Semigroup 'T = {
-  id:  'T
+# A Monoid is a Semigroup with an identity (zero) element.
+protocol Monoid 'T <: Semigroup 'T =
+  zero:  'T
+;
+
+instance Monoid Int =
+  fn zero = 0
+;
+
+
+# Maybe could be a type def
+# `type Maybe 'T = 'T | ()`
+# but enums are more flexible
+# with an enum when you say One x, inference is precise.
+# you know it is a Maybe 'T for whatever 'T.
+# with a union type it will be frequently infered as
+# either unit or the concrete type
+# see usage below
+
+enum Maybe 'T =
+  | One: 'T
+  | None
+
+# empty :: Maybe 'T -> Boolean
+fn empty match
+    | None -> true
+    | _  -> false
+
+let maybeString = One "fede"
+
+# empty :: Maybe 'T -> Boolean
+fn nonEmpty maybe =
+  ! empty maybe
+
+
+type Species =
+    Cat
+  | Doc
+  | Bird
+  | Fish
+  | Reptile
+
+type Pet =
+{
+  name:     String
+  species:  Species
 }
 
-instance Semigroup Int =
-  {
-    fn assoc a b = a + b
-  }
-
-instance Monoid Int = {
-  fn id = 0
+type Person =
+{
+  name: String
+  pet:  Maybe Pet
 }
 
+# hasPet :: 'T : { pet: Maybe Pet } -> Boolean
+fn hasPet p =
+  nonEmpty p.pet
 
-type Person = {
-    name : String
-    age : Int
-    pet : OptionalPet
-}
+# nameOf :: 'T : { name: String } -> String
+fn nameOf (p): String =
+  p.name
 
-enum Species = | Cat | Doc | Parrot
+let zur     = Pet     "Zur"     Species.Cat
+let fede    = Person  "Fede"    (Maybe.One zur)
+let victor  = Person  "Victor"  Maybe.None
 
-type Pet = {
-    petName : String
-    species : Species
-}
+let pv = hasPet victor # false
+let pf = hasPet fede   # true
 
-union OptionalPet =
-    | NoPet
-    | SomePet : Pet
+# does not compile
+# let pz = hasPet zur
 
-let p = Person "Fede" 50 OptionalPet.NoPet
 
-let c = Pet "Zur" Species.Cat
 
-fn nameOf(x): String = x.name
 
-let nameOfPerson = nameOf p
-let nameOfCat = nameOf c
 
 
 BEGIN_GRAMMAR
@@ -143,7 +184,7 @@ decl:
   fnM           |
   op            |
   nestedModule  |
-  variant       |
+  enumDef          |
   tpDef         |
   protocol      |
   instance      ;
@@ -189,17 +230,16 @@ hole: Hole;
 // Protocols ----------------------------------------------------
 //
 
-protocol: Protocol tpId typeArgs ( IsA tpSpec (',' tpSpec)* )? Def LCurly (protocolMember)+ RCurly ;
+protocol: Protocol (canon)? tpId typeArgs ( Implies tpSpec (',' tpSpec)* )? Def (protocolMember)+ End;
 protocolMember:  (id | binOpId | prefixOpId | postfixOpId) TpAsc ( tpSpec );
-
 
 // When an instance is defined as canonical,
 // it's the only instance possible within the module
 // it is defined on and it's children.
 canon: Canon;
 
-instance:  (canon)? Instance tpId tpSpec Def LCurly (instanceMember)+ RCurly ;
-instanceMember:  ( letBnd | fn | fnM | op | nestedModule | variant | tpDef )+;
+instance: (canon)? Instance tpId tpSpec Def (instanceMember)+ End;
+instanceMember:  ( letBnd | fn | fnM | op | nestedModule | enumDef | tpDef )+;
 //
 // Pattern matching ----------------------------------------------------
 //
@@ -288,6 +328,7 @@ typeArgs: tpArgId typeArgs | tpArgId;
 
 tpArgId: TpArgId | tpArgId TpAsc tpSpec;
 
+
 tpSpec:
     Lpar (tpSpec)+ Rpar                           #groupSpec            |
     tpId                                          #nameSpec             |
@@ -299,14 +340,13 @@ tpSpec:
     tpSpec (',' tpSpec)+                          #tupleSpec            |
     left = tpSpec ( tpSpec )+                     #tpAppSpec            |
     unit                                          #tpUnit
-    ;
+;
 
 unit: LitUnit;
 
 expSeq: (exp)+;
 tpCons: tpId expSeq | tpId | tpSpec;
 tpDecon: tpId (idOrMeh)+;
-
 
 // -----------------------------------------------------------------------------
 // Product types ---------------------------------------------------------------
@@ -335,15 +375,12 @@ tupleDecon: Lpar idOrMeh ',' idOrMeh ( ',' idOrMeh )*  Rpar;
 // -----------------------------------------------------------------------------
 
 
-// Variants  -------------------------------------------------------------------
+// Variants (discriminated unions)  -------------------------------------------------------------------
+// enum  -------------------------------------------------------------------
 
-variant: unionV;
+enumDef: (doc)? Enum tpId (typeArgs)? Def enumMbr ( enumMbr )+ ;
 
-// Union  -------------------------------------------------------------------
-
-unionV: (doc)? Union tpId (typeArgs)? Def unionMbr ( unionMbr )+ ;
-
-unionMbr:  (doc)?  '|'  tpId ( TpAsc tpSpec)?;
+enumMbr:  (doc)?  '|'  tpId ( TpAsc tpSpec)?;
 
 
 
@@ -423,7 +460,6 @@ Lexical:    'lexical';
 Exports:    'exports';
 Use:        'use';
 Enum:       'enum';
-Union:      'union';
 Data:       'data';
 Match:      'match';
 Lazy:       'lazy';
@@ -440,7 +476,7 @@ LCurly:     '{';
 RCurly:     '}';
 LBrac:      '[';
 RBrac:      ']';
-IsA:        '<:';
+Implies:    '<:';
 Hole:       '???';
 Meh:        '_';
 Compose:    '<|';
@@ -474,6 +510,7 @@ Doc     : '(**' (Doc|MLComm|.)*? '*)';
 MLComm  : '(*' (MLComm|Doc|.)*? '*)'        -> channel(2);
 // Line comment
 HComm   : '#' .*? ('\r\n' | '\n' | EOF)     -> channel(2);
+
 
 
 

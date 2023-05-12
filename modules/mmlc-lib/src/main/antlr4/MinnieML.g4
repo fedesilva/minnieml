@@ -61,7 +61,7 @@ decl:
   fnM           |
   op            |
   nestedModule  |
-  variant       |
+  enumDef          |
   tpDef         |
   protocol      |
   instance      ;
@@ -107,17 +107,16 @@ hole: Hole;
 // Protocols ----------------------------------------------------
 //
 
-protocol: Protocol tpId typeArgs ( IsA tpSpec (',' tpSpec)* )? Def LCurly (protocolMember)+ RCurly ;
+protocol: Protocol (canon)? tpId typeArgs ( Implies tpSpec (',' tpSpec)* )? Def (protocolMember)+ End;
 protocolMember:  (id | binOpId | prefixOpId | postfixOpId) TpAsc ( tpSpec );
-
 
 // When an instance is defined as canonical,
 // it's the only instance possible within the module
 // it is defined on and it's children.
 canon: Canon;
 
-instance:  (canon)? Instance tpId tpSpec Def LCurly (instanceMember)+ RCurly ;
-instanceMember:  ( letBnd | fn | fnM | op | nestedModule | variant | tpDef )+;
+instance: (canon)? Instance tpId tpSpec Def (instanceMember)+ End;
+instanceMember:  ( letBnd | fn | fnM | op | nestedModule | enumDef | tpDef )+;
 //
 // Pattern matching ----------------------------------------------------
 //
@@ -206,6 +205,7 @@ typeArgs: tpArgId typeArgs | tpArgId;
 
 tpArgId: TpArgId | tpArgId TpAsc tpSpec;
 
+
 tpSpec:
     Lpar (tpSpec)+ Rpar                           #groupSpec            |
     tpId                                          #nameSpec             |
@@ -217,14 +217,13 @@ tpSpec:
     tpSpec (',' tpSpec)+                          #tupleSpec            |
     left = tpSpec ( tpSpec )+                     #tpAppSpec            |
     unit                                          #tpUnit
-    ;
+;
 
 unit: LitUnit;
 
 expSeq: (exp)+;
 tpCons: tpId expSeq | tpId | tpSpec;
 tpDecon: tpId (idOrMeh)+;
-
 
 // -----------------------------------------------------------------------------
 // Product types ---------------------------------------------------------------
@@ -253,15 +252,12 @@ tupleDecon: Lpar idOrMeh ',' idOrMeh ( ',' idOrMeh )*  Rpar;
 // -----------------------------------------------------------------------------
 
 
-// Variants  -------------------------------------------------------------------
+// Variants (discriminated unions)  -------------------------------------------------------------------
+// enum  -------------------------------------------------------------------
 
-variant: unionV;
+enumDef: (doc)? Enum tpId (typeArgs)? Def enumMbr ( enumMbr )+ ;
 
-// Union  -------------------------------------------------------------------
-
-unionV: (doc)? Union tpId (typeArgs)? Def unionMbr ( unionMbr )+ ;
-
-unionMbr:  (doc)?  '|'  tpId ( TpAsc tpSpec)?;
+enumMbr:  (doc)?  '|'  tpId ( TpAsc tpSpec)?;
 
 
 
@@ -341,7 +337,6 @@ Lexical:    'lexical';
 Exports:    'exports';
 Use:        'use';
 Enum:       'enum';
-Union:      'union';
 Data:       'data';
 Match:      'match';
 Lazy:       'lazy';
@@ -358,14 +353,14 @@ LCurly:     '{';
 RCurly:     '}';
 LBrac:      '[';
 RBrac:      ']';
-IsA:        '<:';
+Implies:    '<:';
 Hole:       '???';
 Meh:        '_';
 Compose:    '<|';
 AndThen:    '|>';
 Protocol:   'protocol';
 Instance:   'instance';
-Canon:      'canonical';
+Canon:      'canon';
 SeqCons:    '::';
 
 // Identifiers

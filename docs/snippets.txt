@@ -1,43 +1,62 @@
 
-union Maybe 'T =
+# Maybe could be a type def
+# `type Maybe 'T = 'T | ()`
+# but enums are more flexible
+# with an enum when you say One x, inference is precise.
+# you know it is a Maybe 'T for whatever 'T.
+# with a union type it will be frequently infered as
+# either unit or the concrete type
+
+enum Maybe 'T =
   | One: 'T
   | None
 
 # empty :: Maybe 'T -> Boolean
 fn empty match
-    | None  = true
-    | _     = false
+    | None -> true
+    | _  -> false
 
 # empty :: Maybe 'T -> Boolean
 fn nonEmpty maybe =
   ! empty maybe
 
-union Species =
-  | Cat
-  | Dog
+
+type Species =
+    Cat
+  | Doc
   | Bird
-  | GoldFish
+  | Fish
+  | Reptile
 
 type Pet =
-  {
-    name: String
-    species: Species
-  }
+{
+  name:     String
+  species:  Species
+}
 
 type Person =
-  {
-    name: String
-    pet: Maybe Pet
-  }
+{
+  name: String
+  pet:  Maybe Pet
+}
 
 # hasPet :: 'T : { pet: Maybe Pet } -> Boolean
 fn hasPet p =
   nonEmpty p.pet
 
+# nameOf :: 'T : { name: String } -> String
+fn nameOf (p): String =
+  p.name
+
 let zur     = Pet     "Zur"     Species.Cat
 let fede    = Person  "Fede"    (Maybe.One zur)
 let victor  = Person  "Victor"  Maybe.None
 
+let pv = hasPet victor # false
+let pf = hasPet fede   # true
+
+# does not compile
+# let pz = hasPet zur
 
 
 

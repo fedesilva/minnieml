@@ -13,10 +13,6 @@ It's all about the fun and learning and exploring ideas.
 Here's a small syntax showcase
 
 ```
-    // Literal Number
-    1;
-    // Literal String
-    "string";
     // Let Binding
     let a = 1;
     let b = 2;
@@ -29,41 +25,60 @@ Here's a small syntax showcase
 
 a more complex example
 
+* types start with an upercase letter, mandatory from grammar (Maybe, String, Int)
+* type variables start with a ' and an uppercase letter ('T, 'R, 'In, 'Out)
+* `#` is a line comment
+
 ```
 
+type Maybe 'T = 'T | ()
 
-union Maybe 'T =
-  | Ok : 'T
-  | None
+# empty :: Maybe 'T -> Boolean
+fn empty x =
+  x match
+    | () -> true
+    | _  -> false
 
-union Species =
+# empty :: Maybe 'T -> Boolean
+fn nonEmpty maybe =
+  ! empty maybe
+
+enum Species =
   | Cat
   | Dog
   | Bird
-  | GoldFish
+  | Fish
+  | Reptile
 
-type Pet = {
-  name: String
-  species: Species
+type Pet =
+{
+  name:     String
+  species:  Species
 }
 
-type Person = {
+type Person =
+{
   name: String
-  pet: Maybe Pet
+  pet:  Maybe Pet
 }
 
-let zur   = Pet "Zur" Species.Cat
-let fede  = Person "fede" (Maybe.One zur)
+# hasPet :: 'T : { pet: Maybe Pet } -> Boolean
+fn hasPet p =
+  nonEmpty p.pet
+  
+# nameOf :: 'T : { name: String }
+fn nameOf (p): String =
+  p.name
 
-fn empty 'T maybe =
-  maybe match
-    | None  = true
-    | _     = false
+let zur     = Pet     "Zur"     Species.Cat
+let fede    = Person  "Fede"    zur
+let victor  = Person  "Victor"  ()
 
-fn hasPet(p) =
-  ! empty p.pet
+let pv = hasPet victor # false
+let pf = hasPet fede   # true
 
-
+# does not compile
+# let pz = hasPet zur
 
 ```
 
@@ -88,7 +103,7 @@ This is not something you want to use, I'm making this public to share with frie
 
 - Everything is an expression or a binding, ... mostly.
 - Functional, strict (lazy semantics are opt in), pure (of sorts, no one is)
-- Statically typed with \*ML style inference
+- Statically typed with ML style inference
 - Protocols
   - type parametric overloading
   - type classes-ish, without the class in the name, tho, :)
@@ -96,8 +111,6 @@ This is not something you want to use, I'm making this public to share with frie
 - Common types
 
   - The primitives we all love, Int, Long, String, etc.
-    - More specific lower level types, too.
-      - everything that is supported by llvm
   - Tuples (product types)
   - Data types (product types, labeled)
 
@@ -105,39 +118,29 @@ This is not something you want to use, I'm making this public to share with frie
     - unions 
       - use as much memory as the largest type.
       - have constructors
-    - enums  
-      - no constructors
-      - generally byte sized
-        - but the compiler will pick the smallest integer possible to represent them
+    
   - Cells
     - mutable memory locations (see resources and effects below)
       - serializable write access (CAS)
       - concurrent reads
+      
   - Arrays
     - contiguous fixed size memory blocks
+  
+  - Lists and other collections
 
-
-- Refinement types
-  - primitives with a predicate attached
-  - defined in terms of patten matching
-
-- Type level functions and values
-  - singleton values
-  - any value can be lifted to type level
-    - even functions if pure
 
 - Pattern matching and destructuring
 
   - for data types
   - primitive literals
-  - match on type
-  - can be used in bindings (let (a,b) = (1,2))
-  - match functions
-    - functions defined in terms of pattern matching
-      - compiled to multiple functions, dispatch on parameters
-      - if possible, inline at use site
-  - binary pattern matching
   - structural pattern matching
+  - nominal pattern matching
+  - Sequence matching (like list cons matching)
+  - can be used in bindings (let (a,b) = (1,2))
+  - binary pattern matching
+  
+  
 
 - Modules
   - container of declarations
@@ -152,29 +155,25 @@ This is not something you want to use, I'm making this public to share with frie
       - define module templates, 
       - make instances at runtime
       - pass them around
-    
-      
-    
-  
-    
+
+
+- HM style type system with extensions
+
+- Refinement types
+  - primitives with a predicate attached
+  - defined in terms of patten matching    
+
+- Type level functions and values
+  - singleton values
+  - any value can be lifted to type level
+    - even functions if pure
 
 - Effects
 
  
         
 
-- Native Interface
 
-  - leverage clang+llvm to interact with c as transparently as possible
-    - c abi exports
-  - Integrated with effects system
-    - as resources and handlers
-    - since everything not pure comes from "outside" this is natural.
-  - Platform Tracking
-    - protocols implementations and handlers can be annotated to denote platform specific implementations
-    - type system tracks this
-    - integrated with effect tracking 
-      - when compiling to native this will be enforced
 
 - Compiler 
   - Staged compilation model
