@@ -1,7 +1,16 @@
 
 union Maybe 'T =
-  | Ok : 'T
+  | One: 'T
   | None
+
+# empty :: Maybe 'T -> Boolean
+fn empty match
+    | None  = true
+    | _     = false
+
+# empty :: Maybe 'T -> Boolean
+fn nonEmpty maybe =
+  ! empty maybe
 
 union Species =
   | Cat
@@ -9,23 +18,26 @@ union Species =
   | Bird
   | GoldFish
 
-type Pet = {
-  name: String
-  species: Species
-}
+type Pet =
+  {
+    name: String
+    species: Species
+  }
 
-type Person = {
-  name: String
-  pet: Maybe Pet
-}
+type Person =
+  {
+    name: String
+    pet: Maybe Pet
+  }
 
-let zur   = Pet "Zur" Species.Cat
-let fede  = Person "fede" (Maybe.One zur)
+# hasPet :: 'T : { pet: Maybe Pet } -> Boolean
+fn hasPet p =
+  nonEmpty p.pet
 
-fn empty 'T maybe =
-  maybe match
-    | None  = true
-    | _     = false
+let zur     = Pet     "Zur"     Species.Cat
+let fede    = Person  "Fede"    (Maybe.One zur)
+let victor  = Person  "Victor"  Maybe.None
 
-fn hasPet(p) =
-  ! empty p.pet
+
+
+
