@@ -1,0 +1,13 @@
+
+# refinement types
+type IntChico = Int ${ i -> i <= 5 }
+
+let a: IntChico = 3 # OK
+
+#does not type check
+#let b: IntChico = 20
+
+#can also use the new type constructor
+let b = IntChico 5
+
+fn chico a = IntChico a

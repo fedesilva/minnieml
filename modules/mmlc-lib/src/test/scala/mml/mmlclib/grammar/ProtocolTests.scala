@@ -17,11 +17,18 @@ class ProtocolTests extends BaseFunSuite:
         
         # Define an instance for a concrete type: Int
         instance Num Int =
-          fn add a b        = ???
+          fn add a b        = a + b
           fn subtract a b   = ???
           fn multiple a b   = ???
           fn divide a b     = ???
         ;
+        
+        instance Num Float =
+         fn add a b        = a + b
+         fn subtract a b   = ???
+         fn multiple a b   = ???
+         fn divide a b     = ???
+       ;
         
         fn sum 'N: Num ( x: 'N y: 'N ): N = Num.add(x, y)
             

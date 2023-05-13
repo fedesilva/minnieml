@@ -10,7 +10,7 @@ grammar MinnieML;
 // Syntactically you can write an expression that does not bind it's result, a statement.
 // The effects system is far more lenient, too.
 //
-script: ( stat | member )* EOF;
+script: (open)* (use)* ( stat | member )* EOF;
 
 // A statement ignores results if any and evaluates effects immediately
 // Scripts dont enforce effectful segregation
@@ -36,7 +36,7 @@ protd: Protd;
 lexical: Lexical;
 
 module:
-  (doc)? (modVisibility)? (Module moduleId Def)? (moduleExports)? (member)+ (EOF);
+  (doc)? (modVisibility)? (Module moduleId Def)? (open)* (moduleExports)? (member)+ (EOF);
 
 nestedModule:
   (doc)? (modVisibility)? Module moduleId Def (moduleExports)? (member)+ End;
@@ -53,7 +53,13 @@ exportedMember:
 moduleExports:
   (doc)? Exports Def ( exportedMember )+ End;
 
-member: ( decl | comm );
+member: ( decl | comm |  use  );
+
+open: Open moduleId (openUses)? ;
+openUses: (use)+ End;
+
+use: Use (selection) (selection)*;
+
 
 decl:
   letBnd        |
@@ -61,7 +67,7 @@ decl:
   fnM           |
   op            |
   nestedModule  |
-  enumDef          |
+  enumDef       |
   tpDef         |
   protocol      |
   instance      ;
@@ -78,6 +84,7 @@ group: Lpar ( exp )+ Rpar;
 exp:
   flatExp                       #flatExpL       |
   fnMatchLit                    #fnMatchLitL    |
+//  left = Lpar exp Rpar          #gr
   left = exp Match matchBody    #matchExpL      ;
 
 flatExp:
@@ -99,7 +106,7 @@ flatExp:
     )+
 ;
 
-selection: ( id | moduleId ) Dot (id | moduleId) (Dot (id | moduleId) )*;
+selection: ( id | moduleId )  (Dot (id | moduleId) )* (Dot '_')? ;
 
 hole: Hole;
 
@@ -108,7 +115,7 @@ hole: Hole;
 //
 
 protocol: Protocol (canon)? tpId typeArgs ( Implies tpSpec (',' tpSpec)* )? Def (protocolMember)+ End;
-protocolMember:  (id | binOpId | prefixOpId | postfixOpId) TpAsc ( tpSpec );
+protocolMember:  (id | binOpId | prefixOpId | postfixOpId) (TpArgId)* TpAsc ( tpSpec );
 
 // When an instance is defined as canonical,
 // it's the only instance possible within the module
@@ -197,7 +204,7 @@ cndElse: Else fnExp;
 // TYPES ---------------------------------------------------------------------------------------
 
 // Type def
-tpDef: (doc)? Type tpId (typeArgs)? Def tpSpec;
+tpDef: (doc)? Type tpId (typeArgs)? Def tpSpec (tpRefinement)?  ;
 
 // General type declaration related rules
 
@@ -205,19 +212,22 @@ typeArgs: tpArgId typeArgs | tpArgId;
 
 tpArgId: TpArgId | tpArgId TpAsc tpSpec;
 
+tpRefinement: '$'  LCurly (id TArrow )?exp RCurly;
 
 tpSpec:
     Lpar (tpSpec)+ Rpar                           #groupSpec            |
+    left = tpSpec ( tpSpec )+                     #tpAppSpec            |
     tpId                                          #nameSpec             |
     tpArgId                                       #argSpec              |
     left = tpSpec ( '&' tpSpec )+                 #intersectSpec        | // Intersection types
     left = tpSpec ( '|' tpSpec )+                 #unionSpec            | // Union types
     left = tpSpec (TArrow left = tpSpec)+         #fnSpec               |
     LCurly dtField (dtField)* RCurly              #structSpec           |
-    tpSpec (',' tpSpec)+                          #tupleSpec            |
-    left = tpSpec ( tpSpec )+                     #tpAppSpec            |
-    unit                                          #tpUnit
-;
+    tpSpec ( ',' tpSpec )+                        #tupleSpec            |
+    tpRefinement                                  #refinementSpec       |
+    unit                                          #tpUnit               |
+    litEmptySeq                                   #tpSeq                ;
+
 
 unit: LitUnit;
 
@@ -280,7 +290,7 @@ litFalse: LitFalse;
 
 litUnit: LitUnit;
 
-litSeq: LBrac (id|lit)* RBrac;
+litSeq: LBrac (exp)* RBrac;
 litEmptySeq: LBrac RBrac;
 seqDeconLit: LBrac (id)* RBrac;
 seqDeconT: LBrac (id '::' id) RBrac;
@@ -335,6 +345,7 @@ Pub:        'pub';
 Protd:      'protected';
 Lexical:    'lexical';
 Exports:    'exports';
+Open:       'open';
 Use:        'use';
 Enum:       'enum';
 Data:       'data';
@@ -361,7 +372,8 @@ AndThen:    '|>';
 Protocol:   'protocol';
 Instance:   'instance';
 Canon:      'canon';
-SeqCons:    '::';
+//SeqCons:    '::';
+
 
 // Identifiers
 

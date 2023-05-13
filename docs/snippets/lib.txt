@@ -1,0 +1,98 @@
+# Semigroup represents an associative binary operation.
+protocol Semigroup 'T =
+  combine: 'T -> 'T -> 'T
+;
+
+# Monoid is a semigroup with an identity (zero) element.
+protocol Monoid 'T <: Semigroup 'T =
+  empty:  'T
+;
+
+# Functor represents a structure that can be mapped over.
+protocol Functor 'F =
+  map  'A 'B : ('A -> 'B) -> ('F 'A) -> ('F 'B)
+;
+
+# Monad is a functor that can flatten nested structures and create new ones.
+protocol Monad 'M <: Functor 'M =
+  flatMap: 'A 'B -> ('A -> 'M 'B) -> 'M 'A -> 'M 'B
+  pure: 'A -> 'M 'A
+;
+
+# Int is a semigroup under addition.
+instance Semigroup Int =
+  fn combine x y = x + y
+;
+
+# Int is a monoid under addition.
+instance Monoid Int =
+  fn empty = 0
+;
+
+# Maybe is a functor.
+instance Functor Maybe =
+  fn map 'A 'B f maybe = maybe match
+    | One x -> One (f x)
+    | None   -> None
+  ;
+
+# Maybe is a monad.
+instance Monad Maybe =
+  fn flatMap 'A 'B f maybe = maybe match
+    | One x -> f x
+    | None   -> None
+  fn pure 'A x = One x
+;
+
+# Apply represents a structure that can apply functions.
+protocol Apply 'F <: Functor 'F =
+  ap: 'A 'B -> 'F ('A -> 'B) -> 'F 'A -> 'F 'B
+;
+
+# FlatMap is a Functor that also can flatten and map in one operation.
+protocol FlatMap 'F <: Functor 'F =
+  flatMap: 'A 'B -> ('A -> 'F 'B) -> 'F 'A -> 'F 'B
+;
+
+# Applicative is a Functor that also can lift a value and apply functions.
+protocol Applicative 'F <: Apply 'F =
+  pure: 'A -> 'F 'A
+;
+
+# Maybe is an Apply.
+instance Apply Maybe =
+  fn ap 'A 'B f maybe = maybe match
+    | One g -> map g maybe
+    | None   -> None
+  ;
+
+# Maybe is a FlatMap.
+instance FlatMap Maybe =
+  fn flatMap 'A 'B f maybe = maybe match
+    | One x -> f x
+    | None   -> None
+  ;
+
+# Maybe is an Applicative.
+instance Applicative Maybe =
+  fn pure 'A x = One x
+;
+
+# Define a function wrapped in Maybe.
+let maybeFn = One (x -> x + 1)
+
+# Define a value wrapped in Maybe.
+let maybeVal = One 3
+
+# Apply the function to the value using Apply's ap.
+let result = Apply.ap maybeFn maybeVal
+
+# Define two functions that can fail.
+let tryDivideByTwo = x -> if x % 2 == 0 then One (x / 2) else None
+let tryAddOne =  x -> if x >= 0 then One (x + 1) else None
+
+# Define a value to operate on.
+let value = 4
+
+# Use flatMap to sequence the operations.
+let result = FlatMap.flatMap tryDivideByTwo (FlatMap.flatMap tryAddOne value)

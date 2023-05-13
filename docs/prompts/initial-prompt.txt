@@ -30,26 +30,122 @@ enum Result 'T 'E =
   | Ok: 'T
   | Err: 'E
 
+enum LinkedList 'T =
+  | Nil
+  | Cons: 'T , (LinkedList 'T)
+
+
+# give me a function from A to B and an A inside an F and
+#    I'll give you a B inside an F
+protocol Functor 'F =
+  map  'A 'B : ('A -> 'B) -> ('F 'A) -> ('F 'B)
+;
+
+# semigroups are things that can be combined ussing an associative operation
+protocol Semigroup 'T =
+  combine: 'T -> 'T -> 'T
+;
+
+# Monoid is a semigroup with an identity (zero) element.
+protocol Monoid 'T <: Semigroup 'T =
+  empty:  'T
+;
+
+enum LinkedList 'T =
+  | Empty
+  | Cons: 'T , (LinkedList 'T)
+
+instance Functor (LinkedList 'T) =
+  fn map f xs =
+      xs match
+        | Nil -> Nil
+        | [ head :: tail ] -> Cons (f head) (map f tail)
+;
+
+instance Semigroup LinkedList 'T =
+  fn combine xs ys =
+   xs match
+    | Nil -> ys
+    | Cons head tail ->  Cons head (combine tail ys)
+;
+
+instance Monoid LinkedList 'T =
+  let zero = Nil
+;
+
+
 Examples of code:
 
-# Protocols example
-protocol Semigroup 'T =
-  assoc: 'T -> 'T -> 'T
-;
+
+# refinement types
+type IntChico = Int ${ i -> i <= 5 }
+
+let a: IntChico = 3 # OK
+
+#does not type check
+#let b: IntChico = 20
+
+#can also use the new type constructor
+let b = IntChico 5
+
+fn chico a = IntChico a
 
 
-# <: read as "implies", means that it is impled that there are instances of the types
-# declared to the right. Absence of them is a compilation error.
-# in this case we see that there is a dependency of Monoid of 'T on Semigroup of 'T
 
-# A Monoid is a Semigroup with an identity (zero) element.
-protocol Monoid 'T <: Semigroup 'T =
-  zero:  'T
-;
 
-instance Monoid Int =
-  fn zero = 0
-;
+# brings map to the current scope
+# allowing us to avoid writing Functor.map
+# Since Monoid is a semigroup, no need to import it, too
+use Functor._
+    Monoid._
+
+let xs = [ 1 2 3 ]
+
+fn double x = x * 2
+
+# [ 2 4 6 ]
+let doubled = map double xs
+
+# curryfication!
+# doubler: LinkedList 'T -> LinkedList 'T
+let doubler = map double
+
+# [ 4 8 12 ]
+let twice = doubler doubled
+
+# [ 2 3 4 ]
+let incremented = map (x -> x + 1) xs
+
+# [ 1 2 3 2 3 4 ]
+let combined = combine xs incremented
+
+# sequence syntax
+# sequence literals  are desugared to Arrays (contigous memory, fixed size)
+# but if a LinkedList is infered it is def
+
+#empty array literal
+# type
+let x0 = []
+
+# this desugars to `let ns = Cons 1 (Cons 2 (Cons 3 Nil))`
+let ns: List Int = [ 1 2 3 ]
+
+
+# x : Seq String
+let x = ["f" "e" "d" "e"]
+
+# also x : Seq String
+# the ??? thing lets compilation continue without a body if types check. the type of ??? is Bottom (the bottom type)
+let x : [] String = ???
+
+# the cons ([::]) pattern match, takes the first element of the list and the tail.
+fn matchList l =
+  l match
+    | []            -> "empty"
+    | [a]           -> a
+    | [a b]         -> a + b
+    | [ a :: tail ] -> a
+
 
 
 # Maybe could be a type def
@@ -84,12 +180,14 @@ type Species =
   | Fish
   | Reptile
 
+# record type
 type Pet =
 {
   name:     String
   species:  Species
 }
 
+# record type
 type Person =
 {
   name: String
@@ -133,7 +231,7 @@ grammar MinnieML;
 // Syntactically you can write an expression that does not bind it's result, a statement.
 // The effects system is far more lenient, too.
 //
-script: ( stat | member )* EOF;
+script: (open)* (use)* ( stat | member )* EOF;
 
 // A statement ignores results if any and evaluates effects immediately
 // Scripts dont enforce effectful segregation
@@ -159,7 +257,7 @@ protd: Protd;
 lexical: Lexical;
 
 module:
-  (doc)? (modVisibility)? (Module moduleId Def)? (moduleExports)? (member)+ (EOF);
+  (doc)? (modVisibility)? (Module moduleId Def)? (open)* (moduleExports)? (member)+ (EOF);
 
 nestedModule:
   (doc)? (modVisibility)? Module moduleId Def (moduleExports)? (member)+ End;
@@ -176,7 +274,13 @@ exportedMember:
 moduleExports:
   (doc)? Exports Def ( exportedMember )+ End;
 
-member: ( decl | comm );
+member: ( decl | comm |  use  );
+
+open: Open moduleId (openUses)? ;
+openUses: (use)+ End;
+
+use: Use (selection) (selection)*;
+
 
 decl:
   letBnd        |
@@ -184,7 +288,7 @@ decl:
   fnM           |
   op            |
   nestedModule  |
-  enumDef          |
+  enumDef       |
   tpDef         |
   protocol      |
   instance      ;
@@ -201,6 +305,7 @@ group: Lpar ( exp )+ Rpar;
 exp:
   flatExp                       #flatExpL       |
   fnMatchLit                    #fnMatchLitL    |
+//  left = Lpar exp Rpar          #gr
   left = exp Match matchBody    #matchExpL      ;
 
 flatExp:
@@ -222,7 +327,7 @@ flatExp:
     )+
 ;
 
-selection: ( id | moduleId ) Dot (id | moduleId) (Dot (id | moduleId) )*;
+selection: ( id | moduleId )  (Dot (id | moduleId) )* (Dot '_')? ;
 
 hole: Hole;
 
@@ -231,7 +336,7 @@ hole: Hole;
 //
 
 protocol: Protocol (canon)? tpId typeArgs ( Implies tpSpec (',' tpSpec)* )? Def (protocolMember)+ End;
-protocolMember:  (id | binOpId | prefixOpId | postfixOpId) TpAsc ( tpSpec );
+protocolMember:  (id | binOpId | prefixOpId | postfixOpId) (TpArgId)* TpAsc ( tpSpec );
 
 // When an instance is defined as canonical,
 // it's the only instance possible within the module
@@ -320,7 +425,7 @@ cndElse: Else fnExp;
 // TYPES ---------------------------------------------------------------------------------------
 
 // Type def
-tpDef: (doc)? Type tpId (typeArgs)? Def tpSpec;
+tpDef: (doc)? Type tpId (typeArgs)? Def tpSpec (tpRefinement)?  ;
 
 // General type declaration related rules
 
@@ -328,19 +433,22 @@ typeArgs: tpArgId typeArgs | tpArgId;
 
 tpArgId: TpArgId | tpArgId TpAsc tpSpec;
 
+tpRefinement: '$'  LCurly (id TArrow )?exp RCurly;
 
 tpSpec:
     Lpar (tpSpec)+ Rpar                           #groupSpec            |
+    left = tpSpec ( tpSpec )+                     #tpAppSpec            |
     tpId                                          #nameSpec             |
     tpArgId                                       #argSpec              |
     left = tpSpec ( '&' tpSpec )+                 #intersectSpec        | // Intersection types
     left = tpSpec ( '|' tpSpec )+                 #unionSpec            | // Union types
     left = tpSpec (TArrow left = tpSpec)+         #fnSpec               |
     LCurly dtField (dtField)* RCurly              #structSpec           |
-    tpSpec (',' tpSpec)+                          #tupleSpec            |
-    left = tpSpec ( tpSpec )+                     #tpAppSpec            |
-    unit                                          #tpUnit
-;
+    tpSpec ( ',' tpSpec )+                        #tupleSpec            |
+    tpRefinement                                  #refinementSpec       |
+    unit                                          #tpUnit               |
+    litEmptySeq                                   #tpSeq                ;
+
 
 unit: LitUnit;
 
@@ -403,7 +511,7 @@ litFalse: LitFalse;
 
 litUnit: LitUnit;
 
-litSeq: LBrac (id|lit)* RBrac;
+litSeq: LBrac (exp)* RBrac;
 litEmptySeq: LBrac RBrac;
 seqDeconLit: LBrac (id)* RBrac;
 seqDeconT: LBrac (id '::' id) RBrac;
@@ -458,6 +566,7 @@ Pub:        'pub';
 Protd:      'protected';
 Lexical:    'lexical';
 Exports:    'exports';
+Open:       'open';
 Use:        'use';
 Enum:       'enum';
 Data:       'data';
@@ -484,7 +593,8 @@ AndThen:    '|>';
 Protocol:   'protocol';
 Instance:   'instance';
 Canon:      'canon';
-SeqCons:    '::';
+//SeqCons:    '::';
+
 
 // Identifiers
 
@@ -516,4 +626,7 @@ HComm   : '#' .*? ('\r\n' | '\n' | EOF)     -> channel(2);
 
 END_GRAMMAR
 
-Wait for questions, and when you provide MinnieML (mml for short) code, use the same indentation style as the examples provided, and  strictly follow the provided grammar
+Wait for questions,
+and when you provide code snippets all should be using MinnieML (mml for short) code unless otherwise directed,
+use the same indentation style as the examples provided,
+and  strictly follow the provided grammar, not doing so induces great stress on me

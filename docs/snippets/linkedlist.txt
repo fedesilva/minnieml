@@ -1,0 +1,64 @@
+# give me a function from A to B and an A inside an F and
+#    I'll give you a B inside an F
+protocol Functor 'F =
+  map  'A 'B : ('A -> 'B) -> ('F 'A) -> ('F 'B)
+;
+
+# semigroups are things that can be combined ussing an associative operation
+protocol Semigroup 'T =
+  combine: 'T -> 'T -> 'T
+;
+
+# Monoid is a semigroup with an identity (zero) element.
+protocol Monoid 'T <: Semigroup 'T =
+  empty:  'T
+;
+
+enum LinkedList 'T =
+  | Empty
+  | Cons: 'T , (LinkedList 'T)
+
+instance Functor (LinkedList 'T) =
+  fn map f xs =
+      xs match
+        | Nil -> Nil
+        | [ head :: tail ] -> Cons (f head) (map f tail)
+;
+
+instance Semigroup LinkedList 'T =
+  fn combine xs ys =
+   xs match
+    | Nil -> ys
+    | Cons head tail ->  Cons head (combine tail ys)
+;
+
+instance Monoid LinkedList 'T =
+  let zero = Nil
+;
+
+
+# brings map to the current scope
+# allowing us to avoid writing Functor.map
+# Since Monoid is a semigroup, no need to import it, too
+use Functor._
+    Monoid._
+
+let xs = [ 1 2 3 ]
+
+fn double x = x * 2
+
+# [ 2 4 6 ]
+let doubled = map double xs
+
+# curryfication!
+# doubler: LinkedList 'T -> LinkedList 'T
+let doubler = map double
+
+# [ 4 8 12 ]
+let twice = doubler doubled
+
+# [ 2 3 4 ]
+let incremented = map (x -> x + 1) xs
+
+# [ 1 2 3 2 3 4 ]
+let combined = combine xs incremented
