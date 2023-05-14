@@ -81,10 +81,11 @@ protocol Sequence 'F: Foldable =
    rules of desugaring
 
  Trigger Clause:
-  A type constructor is applied to a sequence for a type that does not take an array.
+  A Sequence is used or a type constructor is applied to a sequence for a type that does not take an array
 
   Default Case:
-    If the type constructor does not have a Type Constructor Reference:
+    If the type constructor name matches but it does not take an array :
+      Meaning there is a t
       The inferred type is Array 'T, where 'T is the type of the elements.
 
       Example: let xs = [1 2 3] (Desugars to Array Int).
@@ -100,13 +101,15 @@ protocol Sequence 'F: Foldable =
   Type Constructor Reference without Sequence Case: 
     If the type constructor refers to a type without an instance of Sequence:
     The desugared type is Array 'T, where 'T is the type of the annotation.
+
     Example: let xs = Int [] (Desugars to Array Int).
 
 
   Type Constructor Reference with Sequence Case:
     If the type constructor refers to a type with an instance of Sequence:
       The container type is the type with a Sequence instance.
-      Rules 2 and 3 apply within the context of the Sequence type.
+      Rules 2, 3  and 4 apply within the context of the Sequence type.
+
       Example: let xs = List [1 2 3] (Desugars to List Int).
       Example: let ys = Vector [1 2 3] (Desugars to Vector Int).
       Example: let zs = Vector Int [] (Desugars to Vector Int with an empty list).
