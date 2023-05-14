@@ -1,0 +1,6 @@
+
+enum LinkedList 'T =
+  | Nil
+  | Cons: 'T , (LinkedList 'T)
+
+

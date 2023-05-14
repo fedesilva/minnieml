@@ -1,13 +1,21 @@
 
 # refinement types
-type IntChico = Int ${ i -> i <= 5 }
+type IntChico = Int { i | i <= 5 }
 
+# generic refinement for all types T that
+# have defined the <= op with an Int on the rhs
+type TChico 'T = 'T  { i | i <= 5 }
+
+# ascription and literal type checks ok
 let a: IntChico = 3 # OK
 
 #does not type check
 #let b: IntChico = 20
 
-#can also use the new type constructor
+#can also use the newtype constructor
 let b = IntChico 5
 
+# operators or functions as smart constructors are
+# a nice thing to define
+# chico 'T : 'T  -> IntChico
 fn chico a = IntChico a

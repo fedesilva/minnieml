@@ -1,0 +1,38 @@
+
+use Maybe._
+
+# despite type X = A | B being available, it is not idiomatic
+# and is less powerful, and generally is prefered to use it to describe
+# alternate result types or is used by the compiler to express diverging types.
+#
+# enum is the preferred way to define adts and variants
+enum Species = | Cat | Doc | Bird | Fish | Reptile
+
+# record type
+type Pet = {
+  name:     String
+  species:  Species
+}
+
+# record type
+type Person = {
+  name: String
+  pet:  Maybe Pet
+}
+
+# hasPet :: 'T : { pet: Maybe Pet } -> Boolean
+fn hasPet p =
+  nonEmpty p.pet
+
+fn nameOf (p): String =
+  p.name
+
+let zur     = Pet     "Zur"     Species.Cat
+let fede    = Person  "Fede"    (One zur)
+let victor  = Person  "Victor"  None
+
+let pv = hasPet victor # false
+let pf = hasPet fede   # true
+
+# does not compile
+# let pz = hasPet zur

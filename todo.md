@@ -10,12 +10,25 @@ Proceed at your own risk.
 
 ## Syntax/Grammar 
 
+esto no parsea
+- type args like args should  be groupable ( ... )
 
-* use syntax
-  * so you can avoid Maybe.One
-    * in let assignements
-    * top of a module
-  
+      fn fun ('A 'B) : 'T -> 'T = ???
+
+esto deberia ui
+
+      protocol X 'T =
+        fun 'A 'B : 'T -> 'T
+      ;
+
+
+
+
+* tests for 
+  * use
+  * open use
+  * refinements
+  * sequence
 
 * native syntax for type aliases
   * @i32 

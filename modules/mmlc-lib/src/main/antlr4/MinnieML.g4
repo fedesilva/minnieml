@@ -58,7 +58,7 @@ member: ( decl | comm |  use  );
 open: Open moduleId (openUses)? ;
 openUses: (use)+ End;
 
-use: Use (selection) (selection)*;
+use: Use (selection) (',' selection)*;
 
 
 decl:
@@ -84,7 +84,6 @@ group: Lpar ( exp )+ Rpar;
 exp:
   flatExp                       #flatExpL       |
   fnMatchLit                    #fnMatchLitL    |
-//  left = Lpar exp Rpar          #gr
   left = exp Match matchBody    #matchExpL      ;
 
 flatExp:
@@ -115,7 +114,7 @@ hole: Hole;
 //
 
 protocol: Protocol (canon)? tpId typeArgs ( Implies tpSpec (',' tpSpec)* )? Def (protocolMember)+ End;
-protocolMember:  (id | binOpId | prefixOpId | postfixOpId) (TpArgId)* TpAsc ( tpSpec );
+protocolMember:  (id | binOpId | prefixOpId | postfixOpId) (typeArgs)* TpAsc ( tpSpec );
 
 // When an instance is defined as canonical,
 // it's the only instance possible within the module
@@ -208,11 +207,11 @@ tpDef: (doc)? Type tpId (typeArgs)? Def tpSpec (tpRefinement)?  ;
 
 // General type declaration related rules
 
-typeArgs: tpArgId typeArgs | tpArgId;
+typeArgs: tpArgId typeArgs | tpArgId | LPar typeArgs Rpar;
 
 tpArgId: TpArgId | tpArgId TpAsc tpSpec;
 
-tpRefinement: '$'  LCurly (id TArrow )?exp RCurly;
+tpRefinement:  LCurly  (id) ? '|' exp RCurly;
 
 tpSpec:
     Lpar (tpSpec)+ Rpar                           #groupSpec            |
@@ -232,7 +231,8 @@ tpSpec:
 unit: LitUnit;
 
 expSeq: (exp)+;
-tpCons: tpId expSeq | tpId | tpSpec;
+//tpCons: tpId expSeq | tpId | tpSpec;
+tpCons: tpId expSeq ;
 tpDecon: tpId (idOrMeh)+;
 
 // -----------------------------------------------------------------------------
