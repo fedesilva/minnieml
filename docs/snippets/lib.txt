@@ -25,7 +25,7 @@ fn empty x =
     | None -> true
     | _    -> false
 
-# empty :: Maybe 'T -> Boolean
+# nonEmpty :: Maybe 'T -> Boolean
 fn nonEmpty maybe =
   ! empty maybe
 
