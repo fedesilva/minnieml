@@ -22,8 +22,8 @@ use Maybe._
 # empty :: Maybe 'T -> Boolean
 fn empty x =
   x match
-    | () -> true
-    | _  -> false
+    | None -> true
+    | _    -> false
 
 # empty :: Maybe 'T -> Boolean
 fn nonEmpty maybe =
