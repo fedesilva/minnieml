@@ -89,6 +89,7 @@ exp:
 flatExp:
     (
       group     |
+      tpCons    |
       fnLit     |
       lit       |
       id        |
@@ -100,7 +101,6 @@ flatExp:
       selection |
       cond      |
       dtCons    |
-      tpCons    |
       hole
     )+
 ;
@@ -142,6 +142,8 @@ patt: lit           |
       seqDeconT     |
       seqDeconLit   ;
 
+
+
 // ----------------------------------------------------------------------
 // Function and/or binding modifiers
 
@@ -167,14 +169,14 @@ fnLetWhereFn: (rec)? id fnSig Def fnExp;
 
 fnExp: exp | fnLet;
 
-fnSig: (typeArgs)? formalArgs (returnTp)?;
+fnSig: (Lpar typeArgs Rpar | typeArgs)? (Lpar formalArgs Rpar | formalArgs) (returnTp)?;
 
 formalArgs: idMWT* | '(' idMWT* ')';
 
 returnTp: TpAsc tpSpec;
 
 fn:    (doc)? Fn (rec)? id fnSig Def fnExp ;
-fnM:   (doc)? Fn (rec)? id ( (typeArgs)? | Lpar (typeArgs)? Rpar )  (returnTp)? Match matchBody ;
+fnM:   (doc)? Fn (rec)? id  (Lpar typeArgs Rpar | typeArgs)?  (returnTp)? Match matchBody ;
 
 fnLit:      fnSig TArrow fnExp;
 fnMatchLit: Meh Match matchBody;
@@ -207,7 +209,23 @@ tpDef: (doc)? Type tpId (typeArgs)? Def tpSpec (tpRefinement)?  ;
 
 // General type declaration related rules
 
-typeArgs: tpArgId typeArgs | tpArgId | LPar typeArgs Rpar;
+tpCons: tpId expSeq;
+expSeq: (exp)+;
+
+
+tpDecon: tpId tpDeconExp;
+tpDeconExp:
+(
+  tpDeconGroup  |
+  lit           |
+  id            |
+  tpId          |
+  meh
+)+ ;
+
+tpDeconGroup: Lpar ( tpDeconExp )+ Rpar;
+
+typeArgs:  tpArgId typeArgs | tpArgId;
 
 tpArgId: TpArgId | tpArgId TpAsc tpSpec;
 
@@ -224,16 +242,10 @@ tpSpec:
     LCurly dtField (dtField)* RCurly              #structSpec           |
     tpSpec ( ',' tpSpec )+                        #tupleSpec            |
     tpRefinement                                  #refinementSpec       |
-    unit                                          #tpUnit               |
+    litUnit                                       #tpUnit               |
     litEmptySeq                                   #tpSeq                ;
 
 
-unit: LitUnit;
-
-expSeq: (exp)+;
-//tpCons: tpId expSeq | tpId | tpSpec;
-tpCons: tpId expSeq ;
-tpDecon: tpId (idOrMeh)+;
 
 // -----------------------------------------------------------------------------
 // Product types ---------------------------------------------------------------
@@ -266,10 +278,11 @@ tupleDecon: Lpar idOrMeh ',' idOrMeh ( ',' idOrMeh )*  Rpar;
 // enum  -------------------------------------------------------------------
 
 enumDef: (doc)? Enum tpId (typeArgs)? Def enumMbr ( enumMbr )+ ;
-
 enumMbr:  (doc)?  '|'  tpId ( TpAsc tpSpec)?;
 
 
+// Misc helper nodes
+meh: Meh;
 
 //
 // Literals ----------------------------------------------------------------------

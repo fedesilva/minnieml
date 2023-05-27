@@ -72,7 +72,7 @@ fn matchList l =
 # then passes the array to the desugar function
 # of the appropriate instance for a types
 # the type 'T is the element type
-protocol Sequence 'F: Foldable =
+protocol SeqDesugar 'F =
   desugar 'T: (Array 'T) -> ('F 'T)
 ;
 
@@ -81,11 +81,11 @@ protocol Sequence 'F: Foldable =
    rules of desugaring
 
  Trigger Clause:
-  A Sequence is used or a type constructor is applied to a sequence for a type that does not take an array
 
-  Default Case:
-    If the type constructor name matches but it does not take an array :
-      Meaning there is a t
+  A sequence literal is used in an expression.
+
+  Simple sequence Case:
+    Simple sequence with literal elements
       The inferred type is Array 'T, where 'T is the type of the elements.
 
       Example: let xs = [1 2 3] (Desugars to Array Int).
@@ -95,29 +95,36 @@ protocol Sequence 'F: Foldable =
       The type is Array 'I, where 'I is the inferred type.
 
       Example: let xs: Array Int = [] (Desugars to Array Int).
-      Example: let ys = [] (If used later with a monomorphic or unifiable type).
+      Example: let ys = [] ++ [1, 2, 3] (Desugars to Array Int for both)
 
 
-  Type Constructor Reference without Sequence Case: 
-    If the type constructor refers to a type without an instance of Sequence:
+  Empty sequence with type annotation Case:
+
     The desugared type is Array 'T, where 'T is the type of the annotation.
 
-    Example: let xs = Int [] (Desugars to Array Int).
+    Example: let xs = [] Int (Desugars to Array Int).
 
 
   Type Constructor Reference with Sequence Case:
-    If the type constructor refers to a type with an instance of Sequence:
-      The container type is the type with a Sequence instance.
-      Rules 2, 3  and 4 apply within the context of the Sequence type.
+    If the type constructor refers to a type with an instance of SeqDesugar:
+      The container type is the type with a SeqDesugar instance.
+      Rules 1, 2 and 3 apply within the context of the Sequence type.
 
       Example: let xs = List [1 2 3] (Desugars to List Int).
       Example: let ys = Vector [1 2 3] (Desugars to Vector Int).
       Example: let zs = Vector Int [] (Desugars to Vector Int with an empty list).
 
-  Untypable Empty Sequence  Case:
+
+   Untypeable Sequence in a Polymorphic Capable Scope Case:
+    if an empty sequence or a sequence where the elements are not typeable
+      and the usage happens within a polymorphic capable context
+
+
+
+  Untypable Empty Sequence Case:
     If an empty sequence is encountered and the type of the element can't be inferred:
       The desugared type is Array Nothing.
-      This raises a Warning indicating an empty sequence with no type hint.
+      This raises a warning indicating an empty sequence with no type hint.
       The warning can be configured to result in a fatal compile error.
 
 *)

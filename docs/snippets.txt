@@ -64,9 +64,6 @@ fn lookupTree (index: Int, tree: Tree ('A * 'A)): 'A =
                                 | _ ->
 
 
-
-
-
 # collection protocols
 protocol Sequence 'T <: Functor, Foldable =
   length: () -> Int

@@ -18,6 +18,7 @@ class MatchTests extends BaseFunSuite :
               | a: String         -> a
               | Monday            -> "monday"
               | Numbr a           -> num2String a
+              | One _             -> "true"
         
       """)
   }

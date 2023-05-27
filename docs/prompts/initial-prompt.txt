@@ -2,7 +2,9 @@ This is  the antlr 4 grammar  for a language called MinnieML (mml for short).
 Don't summarize unless I ask, I will provide a series of prompts with more context and sample code
 before asking more questions
 
-this is a language in development
+this is a language in development by myself.
+
+This is reference for future conversation, wait for more examples and notes.
 
 ---------------------------------------------------------------------------------------------------------------------------------------------------
 
@@ -30,16 +32,19 @@ instances, protocols, modules nested modules and export tables have to be closed
 
 always provide samples of code using the grammar and the following examples as reference.
 
-When I am finished with the series of prompts with examples I will say "Done init".
+When I am finished with the series of prompts with examples I will say I'm finished.
+
+stand by for more
 
 ---------------------------------------------------------------------------------------------------------------------------------------------------
 
 for reference for further conversation here are some definitions with commentary  and some examples of usage
 
 
-use Functor.map,
-         Maybe._,
-         Semigroup.combine
+use
+  Functor.map,
+  Maybe._,
+  Semigroup.combine
 
 let xs = LinkedList [ 1 2 3 ]
 
@@ -97,6 +102,57 @@ let value = 4
 
 # Use flatMap to sequence the operations.
 let result = FlatMap.flatMap tryDivideByTwo (FlatMap.flatMap tryAddOne value)
+
+
+
+# Random examples
+
+let name =
+  person match
+    | Person { name } -> name
+    | p @ Person      -> nameOf p
+    | _               -> "unknown"
+
+
+
+(** lalala *)
+fn matcher ('T: Num) : String match
+  | A                 -> "a"
+  | f @ 'T -> String  -> f z
+  | s ->
+      let str = show s,
+          otr = "other"
+      in
+        upperCase (concat str otr)
+
+
+let a: String =
+  x match
+    | 1                 -> "1"
+    | 2                 -> "2"
+    | (a, _)            -> a
+    | Person { name }   -> name     # nominal
+    | {name}            -> name     # structural
+    | a: String         -> a
+    | Monday            -> "monday"
+    | Numbr a           -> num2String a
+    | One _             -> "one"
+
+
+# type arguments and normal arguments can be grouped (separately)
+fn sum ('A: Num 'B: Num) (a: 'A b: 'B): Num =
+  a + b
+
+# grouping avoids ambiguities,
+# here we are saying that the function returns an String,
+# otherwise, this
+# fn matcher 'T : String match ...
+# would mean that the type argument 'T has a String constraint.
+fn matcher ('T) : String match
+  | A                 -> "a"
+  | f @ 'T -> String  -> f z
+
+
 
 
 

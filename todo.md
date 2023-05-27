@@ -2,29 +2,12 @@
 # Todo
 
 Warning, there be dragons here.
-
-Meaning this is a brain dump, and as people that know me know (!?), I tend to 
-  leave phrases unfin
-
 Proceed at your own risk.
 
-## Syntax/Grammar 
+## Syntax/Grammar
 
-esto no parsea
-- type args like args should  be groupable ( ... )
-
-      fn fun ('A 'B) : 'T -> 'T = ???
-
-esto deberia ui
-
-      protocol X 'T =
-        fun 'A 'B : 'T -> 'T
-      ;
-
-
-
-
-* tests for 
+* tests for
+  *  
   * use
   * open use
   * refinements
