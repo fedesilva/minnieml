@@ -3,13 +3,12 @@ package mml.mmlclib.api
 import java.nio.file.Path
 import mml.mmlclib.parser.antlr.MinnieMLParser._
 import mml.mmlclib.parser.antlr._
-import mml.mmlclib.util._
 import mml.mmlclib.parser.SyntaxErrorAccumulator
 import org.antlr.v4.runtime._
 import org.antlr.v4.runtime.atn.PredictionMode
 import org.antlr.v4.runtime.tree.ErrorNode
+import cats.effect.IO
 
-import mml.mmlclib.api.|>
 case class ParseContext[T <: ParserRuleContext](
   tree:   T,
   errors: List[ParseError]
@@ -35,69 +34,41 @@ object ParserApi:
 
   type ParseTree <: ParserRuleContext
 
-  def apply(): ParserApi = new ParserApi()
+  private def parseModuleTokens(tokens: CommonTokenStream): IO[ParseContext[ModuleContext]] =
+    makeParser(tokens).map { case (parser, errorAccumulator) =>
+      val module = parser.module()
+      ParseContext(module, errorAccumulator.errorList)
+    }
 
+  def parseModuleString(source: String): IO[ParseContext[ModuleContext]] =
+    LexerApi.tokenizeString(source).flatMap(parseModuleTokens)
 
-/** Created by f on 4/1/16.
-  */
-class ParserApi():
+  def parseModuleFile(path: Path): IO[ParseContext[ModuleContext]] =
+    LexerApi.tokenizeFile(path).flatMap(parseModuleTokens)
 
-  def parseModuleTokens(tokens: CommonTokenStream): ParseContext[ModuleContext] =
+  private def parseScriptTokens(tokens: CommonTokenStream): IO[ParseContext[ScriptContext]] =
+    makeParser(tokens).map { case (parser, errorAccumulator) =>
+      val script = parser.script()
+      ParseContext(script, errorAccumulator.errorList)
+    }
 
-    val (parser, errorAccumulator) = makeParser(tokens)
+  def parseScriptString(source: String): IO[ParseContext[ScriptContext]] =
+    LexerApi.tokenizeString(source).flatMap(parseScriptTokens)
 
-    val module = parser.module()
-    val errors = errorAccumulator.errorList
+  def parseScriptFile(path: Path): IO[ParseContext[ScriptContext]] =
+    LexerApi.tokenizeFile(path).flatMap(parseScriptTokens)
 
-    ParseContext(
-      module,
-      errors
-    )
+  private def makeParser(tokens: CommonTokenStream): IO[(MinnieMLParser, SyntaxErrorAccumulator)] =
+    IO {
+      val parser = new MinnieMLParser(tokens)
+      parser.removeErrorListeners()
+      parser.removeParseListeners()
 
-  def parseModuleString(source: String): ParseContext[ModuleContext] =
-    LexerApi.tokenizeString(source) |> parseModuleTokens
+      val syntaxErrorAccumulator = new SyntaxErrorAccumulator
+      parser.addErrorListener(syntaxErrorAccumulator)
 
-  def parseModuleFile(path: Path): ParseContext[ModuleContext] =
-    LexerApi.tokenizeFile(path) |> parseModuleTokens
+      parser.getInterpreter
+        .setPredictionMode(PredictionMode.LL_EXACT_AMBIG_DETECTION)
 
-
-  def parseScriptTokens(tokens: CommonTokenStream): ParseContext[ScriptContext] =
-
-    val (parser, errorAccumulator) = makeParser(tokens)
-    
-    val module = parser.script()
-    // The syntax error accumulator can only be queried for errors once.
-    val errors = errorAccumulator.errorList
-
-    ParseContext(
-      module,
-      errors
-    )
-
-  def parseScriptString(source: String): ParseContext[ScriptContext] =
-    LexerApi.tokenizeString(source) |> parseScriptTokens
-
-  def parseScriptFile(path: Path): ParseContext[ScriptContext] =
-    LexerApi.tokenizeFile(path) |> parseScriptTokens
-
-
-  def makeParser(tokens: CommonTokenStream): (MinnieMLParser, SyntaxErrorAccumulator) =
-
-    val parser = new MinnieMLParser(tokens)
-
-    parser.removeErrorListeners()
-    parser.removeParseListeners()
-
-    // The syntax error accumulator can only be queried for errors once.
-    val syntaxErrorAccumulator = new SyntaxErrorAccumulator
-    parser.addErrorListener(syntaxErrorAccumulator)
-
-    parser
-      .getInterpreter
-      .setPredictionMode(
-        PredictionMode.LL_EXACT_AMBIG_DETECTION
-      )
-
-    (parser, syntaxErrorAccumulator)
-
-
+      (parser, syntaxErrorAccumulator)
+    }

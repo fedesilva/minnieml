@@ -5,10 +5,10 @@ import org.antlr.v4.runtime._
 
 class SyntaxErrorAccumulator extends BaseErrorListener:
 
-  private[this] val errors = collection.mutable.ListBuffer[SyntaxError]()
+  private val errors = collection.mutable.ListBuffer[SyntaxError]()
 
   override def syntaxError(
-    recognizer:         Recognizer[_, _],
+    recognizer:         Recognizer[?, ?],
     offendingSymbol:    Any,
     line:               Int,
     charPositionInLine: Int,

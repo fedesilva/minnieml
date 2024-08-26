@@ -5,7 +5,7 @@ import org.antlr.v4.runtime._
 class UnderlineErrorListener extends BaseErrorListener:
 
   override def syntaxError(
-    recognizer:         Recognizer[_, _],
+    recognizer:         Recognizer[?, ?],
     offendingSymbol:    Any,
     line:               Int,
     charPositionInLine: Int,
@@ -19,7 +19,7 @@ class UnderlineErrorListener extends BaseErrorListener:
     
   
   protected def underlineError(
-    recognizer:     Recognizer[_, _],
+    recognizer:     Recognizer[?, ?],
     offendingToken: Token,
     line:           Int,
     charPositionInLine: Int

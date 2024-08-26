@@ -265,7 +265,7 @@ class TypeTests extends BaseFunSuite:
         # assume Real derives Num
         type RealBtree = NumBTree Real
         
-        let t : RealBTree = Branch (Leaf 1) (Leaf 2)
+        let t = Branch (Leaf 1) (Leaf 2)
       """
     )
   }

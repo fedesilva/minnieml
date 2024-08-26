@@ -4,18 +4,23 @@ lazy val commonSettings =
   Seq(
     organization := "minnie-ml",
     version      := "0.1.0-SNAPSHOT",
-    scalaVersion := "3.2.1"
+    scalaVersion := "3.5.0"
   ) ++
     Seq(
       scalacOptions ++= ScalacConfig.opts,
       // because for tests, yolo.
       Test    / scalacOptions --= Seq("-Ywarn-unused:imports", "-Xfatal-warnings"),
       Test    / scalacOptions --= Seq("-Ywarn-dead-code", "-Ywarn-unused:locals", "-Xfatal-warnings"),
-      Global / onChangedBuildSource := ReloadOnSourceChanges
+      // Global / onChangedBuildSource := ReloadOnSourceChanges
     ) ++
     Seq(
       resolvers ++= Dependencies.resolvers
+    ) ++ 
+    Seq(
+      // add the sbt plugin to the build
+      notifyOn(Compile / compile)
     )
+
 
 val antlrPackageName = "mml.mmlclib.parser.antlr"
 
@@ -31,6 +36,7 @@ lazy val mmlclib =
     .in(file("modules/mmlc-lib"))
     .enablePlugins(Antlr4Plugin)
     .enablePlugins(BuildInfoPlugin)
+    .enablePlugins(NotificationsPlugin)
     .settings(
       name := "mmlc-lib",
       commonSettings
@@ -56,6 +62,7 @@ lazy val mmlc =
     .in(file("modules/mmlc"))
     .enablePlugins(JavaAppPackaging)
     .enablePlugins(BuildInfoPlugin)
+    .enablePlugins(NotificationsPlugin)
     .settings(
       name := "mmlc",
       commonSettings

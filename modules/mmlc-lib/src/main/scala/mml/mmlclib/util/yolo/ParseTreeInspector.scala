@@ -1,12 +1,12 @@
 package mml.mmlclib.util.yolo
 
-
-import mml.mmlclib.api.*
+import mml.mmlclib.api._
 import org.antlr.v4.runtime.ParserRuleContext
 import org.antlr.v4.runtime.tree.{ParseTree, TerminalNode, ErrorNode}
 
 import scala.annotation.tailrec
 import mml.mmlclib.parser.antlr.MinnieMLParser.{IdContext, TpIdContext}
+import cats.effect.IO
 
 object ParseTreeInspector:
 
@@ -18,13 +18,16 @@ object ParseTreeInspector:
 
   type Nodes = Seq[NodeInfo]
 
+  private def simpleClassName(t: ParseTree) =
+    t.getClass.getSimpleName
+
   def flatten(tree: ParseTree): Nodes =
 
     import scala.jdk.CollectionConverters._
 
     @tailrec
     def loop(trees: List[ParseTree], nodes: Nodes): Nodes =
-      
+
       trees match
 
         case (t: ParserRuleContext) :: tail if t.getChildCount == 0 =>
@@ -47,7 +50,7 @@ object ParseTreeInspector:
           loop(tail, nodes :+ NodeInfo(depth, cls, t))
 
         case t :: tail =>
-          val cls = t.getClass.getSimpleName
+          val cls = simpleClassName(t)
           val depth = parentDepth(t) + 1
 
           loop(tail, nodes :+ NodeInfo(depth, cls, t))
@@ -63,40 +66,35 @@ object ParseTreeInspector:
         case None => 0
 
     loop(List(tree), Vector())
- 
 
-  def print(nodes: Nodes): Unit = nodes foreach {
 
-    case NodeInfo(depth, cls, t: ErrorNode) =>
-      println(s" ${" " * depth} $cls : ${t.getText} - ${t.getPayload.toString} ")
+  def print(nodes: Nodes): IO[Unit] = IO {
+    nodes foreach {
 
-    case NodeInfo(depth, cls, t: TerminalNode) =>
-      println(s" ${" " * depth} ${t.getSymbol.getText} ${t.getSymbol}")
+      case NodeInfo(depth, cls, t: ErrorNode) =>
+        println(s" ${" " * depth} $cls : ${t.getText} - ${t.getPayload.toString} ")
 
-    case NodeInfo(depth, cls, t: IdContext) =>
-      println(s" ${" " * depth} $cls : ${t.getRuleContext().getText}")
+      case NodeInfo(depth, cls, t: TerminalNode) =>
+        println(s" ${" " * depth} ${t.getSymbol.getText} ${t.getSymbol}")
 
-    case NodeInfo(depth, cls, t: TpIdContext) =>
-      println(s" ${" " * depth} $cls : ${t.getRuleContext().getText}")
+      case NodeInfo(depth, cls, t: IdContext) =>
+        println(s" ${" " * depth} $cls : ${t.getRuleContext().getText}")
 
-    case NodeInfo(depth, cls, _) =>
-      println(s" ${" " * depth} $cls")
+      case NodeInfo(depth, cls, t: TpIdContext) =>
+        println(s" ${" " * depth} $cls : ${t.getRuleContext().getText}")
 
+      case NodeInfo(depth, cls, _) =>
+        println(s" ${" " * depth} $cls")
+    }
   }
 
-  def flattenAndPrint[T <: ParserRuleContext](ctx: ParseContext[T]): Unit =
-    if ctx.errors.isEmpty then
-      flatten(ctx.tree) |> print
-    else
-      flatten(ctx.tree) |> print
-      ctx.errors foreach println
+  def flattenAndPrint[T <: ParserRuleContext](ctx: ParseContext[T]): IO[Unit] =
+    for
+      _ <- flatten(ctx.tree) |> print
+      _ <- IO(ctx.errors foreach println)
+    yield ()
 
-  /** Apply an effectful partial function to the list of nodes `orElse` use a default
-    *
-    * @param nodes
-    * @param pf
-    */
-  def inspectCustom(nodes: Nodes)(pf: PartialFunction[NodeInfo, Unit]): Unit =
+  def inspectCustom(nodes: Nodes)(pf: PartialFunction[NodeInfo, Unit]): IO[Unit] = IO {
 
     val default: PartialFunction[NodeInfo, Unit] =
 
@@ -109,9 +107,8 @@ object ParseTreeInspector:
       case NodeInfo(depth, cls, _) =>
         println(s" ${" " * depth}  $depth -> $cls")
 
-
     val processor = pf orElse default
 
     nodes foreach processor
-
-
+    
+  }
