@@ -27,36 +27,34 @@ object ParseTreeInspector:
 
     @tailrec
     def loop(trees: List[ParseTree], nodes: Nodes): Nodes =
-
       trees match
 
         case (t: ParserRuleContext) :: tail if t.getChildCount == 0 =>
-          val cls = t.getClass.getSimpleName
+          val cls   = t.getClass.getSimpleName
           val depth = t.getRuleContext().depth
 
           loop(tail, nodes :+ NodeInfo(depth, cls, t))
 
         case (t: ParserRuleContext) :: tail if t.getChildCount > 0 =>
-          val cls = t.getClass.getSimpleName
-          val depth = t.getRuleContext().depth
+          val cls      = t.getClass.getSimpleName
+          val depth    = t.getRuleContext().depth
           val children = t.children.asScala.toList
 
           loop(children ++ tail, nodes :+ NodeInfo(depth, cls, t))
 
         case (t: TerminalNode) :: tail =>
-          val cls = t.getClass.getSimpleName
+          val cls   = t.getClass.getSimpleName
           val depth = parentDepth(t) + 1
 
           loop(tail, nodes :+ NodeInfo(depth, cls, t))
 
         case t :: tail =>
-          val cls = simpleClassName(t)
+          val cls   = simpleClassName(t)
           val depth = parentDepth(t) + 1
 
           loop(tail, nodes :+ NodeInfo(depth, cls, t))
 
         case Nil => nodes
-
 
     @tailrec
     def parentDepth(current: ParseTree): Int =
@@ -66,7 +64,6 @@ object ParseTreeInspector:
         case None => 0
 
     loop(List(tree), Vector())
-
 
   def print(nodes: Nodes): IO[Unit] = IO {
     nodes foreach {
@@ -110,5 +107,5 @@ object ParseTreeInspector:
     val processor = pf orElse default
 
     nodes foreach processor
-    
+
   }

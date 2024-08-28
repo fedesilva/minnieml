@@ -20,5 +20,3 @@ object LexerApi:
 
   def tokenizeString(source: String): IO[CommonTokenStream] =
     IO.pure(CharStreams.fromString(source)).flatMap(tokenize)
-
-    

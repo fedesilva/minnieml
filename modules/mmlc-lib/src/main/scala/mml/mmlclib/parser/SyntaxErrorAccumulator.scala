@@ -27,6 +27,4 @@ class SyntaxErrorAccumulator extends BaseErrorListener:
 
     errors.append(re)
 
-
   lazy val errorList: List[SyntaxError] = errors.toList
-

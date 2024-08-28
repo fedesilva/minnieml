@@ -29,6 +29,6 @@ trait BaseFunSuite extends AnyFunSuite with Matchers:
 
     val errors =
       ErrorChecker.failures(
-        ParserApi().parseModuleString(source)
+        ParserApi.parseModuleString(source)
       )
     assert(errors.nonEmpty, msg.getOrElse(""))

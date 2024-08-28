@@ -7,10 +7,6 @@ import org.antlr.v4.runtime.tree.ParseTree
 
 import scala.annotation.tailrec
 
-// import mml.mmlclib.api.ParseContext
-// import org.antlr.v4.runtime.tree.{ParseTree, TerminalNode, ErrorNode}
-// import mml.mmlclib.parser.antlr.MinnieMLParser.{IdContext, TpIdContext}
-
 object ParseTreeWalker:
 
   type Nodes = Seq[ParseTreeInspector.NodeInfo]
@@ -21,7 +17,6 @@ object ParseTreeWalker:
 
     @tailrec
     def loop(trees: List[ParseTree], nodes: Nodes): Nodes =
-
       trees match
 
         case (t: ParserRuleContext) :: tail if t.getChildCount == 0 =>
@@ -31,7 +26,6 @@ object ParseTreeWalker:
           loop(tail, nodes :+ ParseTreeInspector.NodeInfo(depth, cls, t))
 
         case (t: ParserRuleContext) :: tail if t.getChildCount > 0 =>
-          
           val cls      = t.getClass.getSimpleName
           val depth    = t.getRuleContext().depth
           val children = t.children.asScala.toList
@@ -39,7 +33,6 @@ object ParseTreeWalker:
           loop(children ++ tail, nodes :+ ParseTreeInspector.NodeInfo(depth, cls, t))
 
         case t :: tail =>
-          
           val cls   = t.getClass.getSimpleName
           val depth = 1
 
@@ -47,8 +40,4 @@ object ParseTreeWalker:
 
         case Nil => nodes
 
-    
-
     loop(List(tree), Vector())
-
-

@@ -12,16 +12,15 @@ class UnderlineErrorListener extends BaseErrorListener:
     msg:                String,
     e:                  RecognitionException
   ): Unit =
-    
+
     val eO = Option(e)
     println("line " + line + ":" + charPositionInLine + " " + msg + " ex: " + eO)
     underlineError(recognizer, offendingSymbol.asInstanceOf[Token], line, charPositionInLine)
-    
-  
-  protected def underlineError(
-    recognizer:     Recognizer[?, ?],
-    offendingToken: Token,
-    line:           Int,
+
+  private def underlineError(
+    recognizer:         Recognizer[?, ?],
+    offendingToken:     Token,
+    line:               Int,
     charPositionInLine: Int
   ): Unit =
 
@@ -29,21 +28,19 @@ class UnderlineErrorListener extends BaseErrorListener:
     val input     = tokens.getTokenSource.getInputStream.toString
     val lines     = input.split("\n")
     val errorLine = lines(line - 1)
-    
+
     println(errorLine)
-    
+
     (0 until charPositionInLine).foreach { _ =>
       print(" ")
     }
-    
+
     val start = offendingToken.getStartIndex
     val stop  = offendingToken.getStopIndex
-    
+
     if start >= 0 && stop >= 0 then
       (start until stop) foreach { _ =>
         print("^")
       }
 
     println()
-
-
