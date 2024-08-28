@@ -8,6 +8,5 @@ scripts
 **/.bloop
 **/.bsp
 .antlr
-.vscode
 .idea
 /project/metals.sbt
