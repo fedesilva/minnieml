@@ -14,7 +14,7 @@ def printModuleAst(source: String): Unit = {
 
   val translator = AntlrTranslator.moduleTranslator[IO]
   ParserApi
-    .parseModuleString(source)    
+    .parseModuleString(source)
     .flatMap(ctx => translator.translate(ctx.tree))
     .map(ast => println(s"Parsed AST: $ast"))
     .unsafeRunSync()
