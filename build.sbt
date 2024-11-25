@@ -1,4 +1,4 @@
-import sbt._
+import sbt.*
 
 lazy val commonSettings =
   Seq(
@@ -34,22 +34,16 @@ lazy val mmlclib =
     .enablePlugins(NotificationsPlugin)
     .settings(
       name := "mmlc-lib",
-      commonSettings
-    )
-    .settings(
-      libraryDependencies ++= Dependencies.mmlclib
+      commonSettings,
+      libraryDependencies ++= Dependencies.mmlclib,
       // jacocoExcludes in Test := Seq(s"$antlrPackageName.*")
-    )
-    .settings(
       Antlr4 / antlr4PackageName := Some(antlrPackageName),
       // I can walk by myself, if you don't mind
       Antlr4 / antlr4GenVisitor  := false,
       Antlr4 / antlr4GenListener := false,
-      Antlr4 / antlr4Version     := "4.8-1"
-    )
-    .settings(
-      buildInfoKeys    := Seq[BuildInfoKey](name, version, scalaVersion, sbtVersion),
-      buildInfoPackage := "mml.mmlclib"
+      Antlr4 / antlr4Version     := "4.8-1",
+      buildInfoKeys              := Seq[BuildInfoKey](name, version, scalaVersion, sbtVersion),
+      buildInfoPackage           := "mml.mmlclib"
     )
 
 lazy val mmlc =
@@ -60,12 +54,8 @@ lazy val mmlc =
     .enablePlugins(NotificationsPlugin)
     .settings(
       name := "mmlc",
-      commonSettings
-    )
-    .settings(
-      libraryDependencies ++= Dependencies.mmlc
-    )
-    .settings(
+      commonSettings,
+      libraryDependencies ++= Dependencies.mmlc,
       buildInfoKeys    := Seq[BuildInfoKey](name, version, scalaVersion, sbtVersion),
       buildInfoPackage := "mml.mmlc"
     )
