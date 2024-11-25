@@ -9,7 +9,7 @@ import org.antlr.v4.runtime.atn.PredictionMode
 import org.antlr.v4.runtime.tree.ErrorNode
 import cats.effect.IO
 
-case class ParseContext[T <: ParserRuleContext](
+case class ParseResult[T <: ParserRuleContext](
   tree:   T,
   errors: List[ParseError]
 )
@@ -34,28 +34,28 @@ object ParserApi:
 
   type ParseTree <: ParserRuleContext
 
-  private def parseModuleTokens(tokens: CommonTokenStream): IO[ParseContext[ModuleContext]] =
+  private def parseModuleTokens(tokens: CommonTokenStream): IO[ParseResult[ModuleContext]] =
     makeParser(tokens).map { case (parser, errorAccumulator) =>
       val module = parser.module()
-      ParseContext(module, errorAccumulator.errorList)
+      ParseResult(module, errorAccumulator.errorList)
     }
 
-  def parseModuleString(source: String): IO[ParseContext[ModuleContext]] =
+  def parseModuleString(source: String): IO[ParseResult[ModuleContext]] =
     LexerApi.tokenizeString(source).flatMap(parseModuleTokens)
 
-  def parseModuleFile(path: Path): IO[ParseContext[ModuleContext]] =
+  def parseModuleFile(path: Path): IO[ParseResult[ModuleContext]] =
     LexerApi.tokenizeFile(path).flatMap(parseModuleTokens)
 
-  private def parseScriptTokens(tokens: CommonTokenStream): IO[ParseContext[ScriptContext]] =
+  private def parseScriptTokens(tokens: CommonTokenStream): IO[ParseResult[ScriptContext]] =
     makeParser(tokens).map { case (parser, errorAccumulator) =>
       val script = parser.script()
-      ParseContext(script, errorAccumulator.errorList)
+      ParseResult(script, errorAccumulator.errorList)
     }
 
-  def parseScriptString(source: String): IO[ParseContext[ScriptContext]] =
+  def parseScriptString(source: String): IO[ParseResult[ScriptContext]] =
     LexerApi.tokenizeString(source).flatMap(parseScriptTokens)
 
-  def parseScriptFile(path: Path): IO[ParseContext[ScriptContext]] =
+  def parseScriptFile(path: Path): IO[ParseResult[ScriptContext]] =
     LexerApi.tokenizeFile(path).flatMap(parseScriptTokens)
 
   private def makeParser(tokens: CommonTokenStream): IO[(MinnieMLParser, SyntaxErrorAccumulator)] =

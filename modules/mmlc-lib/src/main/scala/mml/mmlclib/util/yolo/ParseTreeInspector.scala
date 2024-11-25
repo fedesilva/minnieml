@@ -85,7 +85,7 @@ object ParseTreeInspector:
     }
   }
 
-  def flattenAndPrint[T <: ParserRuleContext](ctx: ParseContext[T]): IO[Unit] =
+  def flattenAndPrint[T <: ParserRuleContext](ctx: ParseResult[T]): IO[Unit] =
     for
       _ <- flatten(ctx.tree) |> print
       _ <- IO(ctx.errors foreach println)

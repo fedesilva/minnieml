@@ -2,12 +2,11 @@ package mml.mmlclib.grammar
 
 import mml.mmlclib.test.BaseFunSuite
 
-class MatchTests extends BaseFunSuite :
-  
+class MatchTests extends BaseFunSuite:
+
   test("match all the things") {
-    
-    modNotFailed(
-      """
+
+    modNotFailed("""
         let a: String =
             x match
               | 1                 -> "1"
@@ -22,9 +21,9 @@ class MatchTests extends BaseFunSuite :
         
       """)
   }
-  
+
   test("match function") {
-    
+
     modNotFailed(
       """
         fn x match
@@ -33,11 +32,11 @@ class MatchTests extends BaseFunSuite :
         
       """
     )
-    
+
   }
-  
+
   test("match function with function type pattern") {
-    
+
     modNotFailed(
       """
         fn x match
@@ -46,9 +45,9 @@ class MatchTests extends BaseFunSuite :
         
       """
     )
-    
+
   }
-  
+
   test("match function with return type") {
     modNotFailed(
       """
@@ -59,7 +58,7 @@ class MatchTests extends BaseFunSuite :
       """
     )
   }
-  
+
   test("match fn with fnLet") {
     modNotFailed(
       """
@@ -76,7 +75,7 @@ class MatchTests extends BaseFunSuite :
       """
     )
   }
-  
+
   test("nominal match union") {
     modNotFailed(
       """
@@ -88,7 +87,7 @@ class MatchTests extends BaseFunSuite :
       """
     )
   }
-  
+
   test("structural match") {
     modNotFailed(
       """
@@ -100,7 +99,7 @@ class MatchTests extends BaseFunSuite :
       """
     )
   }
-  
+
   test("structural match with if, a tuple and meh case") {
     modNotFailed(
       """
@@ -114,8 +113,7 @@ class MatchTests extends BaseFunSuite :
       """
     )
   }
-  
-  
+
   test("match record with a guard on member") {
     modNotFailed(
       """
@@ -127,10 +125,9 @@ class MatchTests extends BaseFunSuite :
       """
     )
   }
-  
+
   test("reference the matched pattern besides its components") {
-    modNotFailed(
-      """
+    modNotFailed("""
         let name =
           person match
           |  p @ Person{ name } if name == "fede" -> p.lastName
@@ -138,10 +135,9 @@ class MatchTests extends BaseFunSuite :
         
       """)
   }
-  
+
   test("match lambda literal, passed as a value on application ") {
-    modNotFailed(
-      """
+    modNotFailed("""
         fn apply v f = f v
 
         # Lambda is disambiguated by using parens, else it looks like a match on `2`
@@ -154,10 +150,9 @@ class MatchTests extends BaseFunSuite :
         
       """)
   }
-  
+
   test("match lambda, bound to a name") {
-    modNotFailed(
-      """
+    modNotFailed("""
         let z =
           _ match
             | 1 -> "Uno"
@@ -165,10 +160,9 @@ class MatchTests extends BaseFunSuite :
         
       """)
   }
-  
+
   test("match seqs") {
-    modNotFailed(
-      """
+    modNotFailed("""
         let x = []
         
         let a =
@@ -180,4 +174,3 @@ class MatchTests extends BaseFunSuite :
           
         """)
   }
-  

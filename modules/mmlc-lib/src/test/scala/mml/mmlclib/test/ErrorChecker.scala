@@ -1,7 +1,7 @@
 package mml.mmlclib.test
 
 import mml.mmlclib.api.ParseError.TreeError
-import mml.mmlclib.api.{ParseContext, ParseError}
+import mml.mmlclib.api.{ParseResult, ParseError}
 
 import org.antlr.v4.runtime.ParserRuleContext
 import org.antlr.v4.runtime.tree.{ErrorNode, ParseTree}
@@ -10,13 +10,13 @@ import scala.annotation.tailrec
 
 object ErrorChecker:
 
-  def isFailed[T <: ParserRuleContext](ctx: ParseContext[T]): Boolean =
+  def isFailed[T <: ParserRuleContext](ctx: ParseResult[T]): Boolean =
     failures(ctx).nonEmpty
 
   /** Walks the parse tree in search of error nodes and adds them to the syntax errors
    *   present in the context.
    */
-  def failures[T <: ParserRuleContext](ctx: ParseContext[T]): Seq[ParseError] =
+  def failures[T <: ParserRuleContext](ctx: ParseResult[T]): Seq[ParseError] =
 
     import scala.jdk.CollectionConverters._
 

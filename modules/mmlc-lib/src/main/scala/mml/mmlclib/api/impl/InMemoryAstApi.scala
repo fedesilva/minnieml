@@ -1,8 +1,8 @@
-package mml.mmlclib.api.impl.ast
+package mml.mmlclib.api.impl
 
-import mml.mmlclib.ast.*
 import cats.effect.*
 import mml.mmlclib.api.AstApi
+import mml.mmlclib.ast.*
 
 object InMemoryAstApi extends AstApi[IO]:
 
