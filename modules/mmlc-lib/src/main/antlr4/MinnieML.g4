@@ -209,8 +209,9 @@ tpDef: (doc)? Type tpId (typeArgs)? Def tpSpec (tpRefinement)?  ;
 
 // General type declaration related rules
 
-tpCons: tpId expSeq;
-expSeq: (exp)+;
+tpCons: tpId (exp)+;
+//tpCons: tpId expSeq;
+//expSeq: (exp)+;
 
 
 tpDecon: tpId tpDeconExp;
