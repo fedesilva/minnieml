@@ -3,7 +3,8 @@ package mml.mmlclib.util.yolo
 import org.antlr.v4.runtime.tree.{ParseTree, TerminalNode}
 import org.antlr.v4.runtime.{ParserRuleContext, Token}
 import cats.effect.IO
-import mml.mmlclib.api.ParserApi
+import mml.mmlclib.api.{ParseResult, ParserApi}
+import mml.mmlclib.parser.antlr.MinnieMLParser
 
 import scala.annotation.tailrec
 
@@ -50,9 +51,10 @@ object ImprovedParseTreeWalker {
     }
   }
 
-  def walkAndPrint(tree: ParseTree): IO[Unit] = IO {
-    val rootNode = walk(tree)
+  def walkAndPrint[T <: ParserRuleContext](ctx: ParseResult[T]): IO[Unit] = IO {
+    val rootNode = walk(ctx.tree)
     println(prettyPrint(rootNode))
+    println(s"Errors: ${ctx.errors}")
   }
 
 }
@@ -61,5 +63,5 @@ def printModuleParseTree(source: String): Unit =
   import cats.effect.unsafe.implicits.global
   ParserApi
     .parseModuleString(source)
-    .flatMap(ctx => ImprovedParseTreeWalker.walkAndPrint(ctx.tree))
+    .flatMap(ctx => ImprovedParseTreeWalker.walkAndPrint(ctx))
     .unsafeRunSync()

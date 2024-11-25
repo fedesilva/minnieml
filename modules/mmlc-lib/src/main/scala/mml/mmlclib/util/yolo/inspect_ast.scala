@@ -14,8 +14,8 @@ def printModuleAst(source: String): Unit = {
 
   val translator = AntlrTranslator.moduleTranslator[IO]
   ParserApi
-    .parseModuleString(source)
-    .flatMap(ctx => translator.translate(ctx.tree))
-    .map(ast => println(s"Parsed AST: $ast"))
-    .unsafeRunSync()
+    .parseModuleString(source) // type: IO[ParseResult[ModuleContext]]
+    .flatMap(ctx => translator.translate(ctx.tree)) // type: IO[AstNode]
+    .map(ast => println(s"Parsed AST: $ast - errors: ")) // type: IO[Unit]
+    .unsafeRunSync() // type: Unit
 }

@@ -36,7 +36,7 @@ protd: Protd;
 lexical: Lexical;
 
 module:
-  (doc)? (modVisibility)? (Module moduleId Def)? (open)* (moduleExports)? (member)+ (EOF);
+  (doc)? (modVisibility)? (Module moduleId Def)? (open)* (moduleExports)? (member)+;
 
 nestedModule:
   (doc)? (modVisibility)? Module moduleId Def (moduleExports)? (member)+ End;
