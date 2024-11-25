@@ -4,7 +4,14 @@
 Warning, there be dragons here.
 Proceed at your own risk.
 
+
+## chores 
+
+* migrate to MUnit
+
 ## Syntax/Grammar
+
+BROKEN: EOF error
 
 * tests for
   *  
@@ -12,6 +19,7 @@ Proceed at your own risk.
   * open use
   * refinements
   * sequence
+
 
 * native syntax for type aliases
   * @i32 
