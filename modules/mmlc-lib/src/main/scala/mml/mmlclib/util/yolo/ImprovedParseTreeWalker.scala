@@ -15,7 +15,7 @@ object ImprovedParseTreeWalker {
   }
 
   case class Branch(name: String, children: List[TreeNode], position: Position) extends TreeNode
-  case class Leaf(name: String, text: String, position: Position) extends TreeNode
+  case class Leaf(name: String, text: String, position: Position)               extends TreeNode
 
   private def getPosition(tree: ParseTree): Position = tree match {
     case ctx: ParserRuleContext if ctx.getStart != null =>
@@ -25,30 +25,18 @@ object ImprovedParseTreeWalker {
     case _ => Position(0, 0) // fallback for nodes without position info
   }
 
-  def walk(tree: ParseTree): TreeNode = {
-    @tailrec
-    def walkHelper(stack: List[ParseTree], acc: TreeNode): TreeNode = stack match {
-      case Nil => acc
-      case (node: ParserRuleContext) :: rest =>
-        val name      = node.getClass.getSimpleName.replaceAll("Context$", "")
-        val position  = getPosition(node)
-        val children  = (0 until node.getChildCount).map(node.getChild).toList
-        val newBranch = Branch(name, List(), position)
-        walkHelper(children ++ rest, addChild(acc, newBranch))
-      case (leaf: TerminalNode) :: rest =>
-        val newLeaf = Leaf(leaf.getClass.getSimpleName, leaf.getText, getPosition(leaf))
-        walkHelper(rest, addChild(acc, newLeaf))
-      case node :: rest =>
-        val newLeaf = Leaf(node.getClass.getSimpleName, node.getText, getPosition(node))
-        walkHelper(rest, addChild(acc, newLeaf))
-    }
+  def walk(tree: ParseTree): TreeNode = tree match {
+    case ctx: ParserRuleContext =>
+      val name     = ctx.getClass.getSimpleName.replaceAll("Context$", "")
+      val position = getPosition(ctx)
+      val children = (0 until ctx.getChildCount).map(ctx.getChild).map(walk).toList
+      Branch(name, children, position)
 
-    def addChild(parent: TreeNode, child: TreeNode): TreeNode = parent match {
-      case Branch(name, children, pos) => Branch(name, children :+ child, pos)
-      case leaf => leaf // This case should not occur in practice
-    }
+    case terminal: TerminalNode =>
+      Leaf("TerminalNode", terminal.getText, getPosition(terminal))
 
-    walkHelper(List(tree), Branch("Root", List(), Position(0, 0)))
+    case _ =>
+      Leaf("UnknownNode", tree.getText, getPosition(tree))
   }
 
   def prettyPrint(node: TreeNode, indent: String = ""): String = {
@@ -66,14 +54,12 @@ object ImprovedParseTreeWalker {
     val rootNode = walk(tree)
     println(prettyPrint(rootNode))
   }
+
 }
 
-def improvedPrintModuleString(source: String): Unit = {
-  import ImprovedParseTreeWalker._
-  import cats.effect.unsafe.implicits.global  // Import the global executor
-
+def printModuleParseTree(source: String): Unit =
+  import cats.effect.unsafe.implicits.global
   ParserApi
     .parseModuleString(source)
-    .flatMap(ctx => walkAndPrint(ctx.tree))
+    .flatMap(ctx => ImprovedParseTreeWalker.walkAndPrint(ctx.tree))
     .unsafeRunSync()
-}
