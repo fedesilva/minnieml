@@ -35,7 +35,8 @@ object AntlrTranslator:
   def translateModule[F[_]: Monad](ctx: MinnieMLParser.ModuleContext)(using
     api: AstApi[F]
   ): F[AstNode] =
-    val name = Option(ctx.moduleId().getText).getOrElse("unnamed")
+    val name = Option(ctx.moduleId()).map(_.getText).getOrElse("unnamed")
+    println(s"Translating module $name")
     for
       children <- ctx.member().asScala.toList.flatTraverse(walkTree[F])
       members = children.collect { case m: Member => m }
