@@ -23,6 +23,7 @@ def printScriptString(source: String): Unit =
     .unsafeRunSync()
 
 def printScriptFile(source: Path): Unit =
+  import cats.effect.unsafe.implicits.global
   ParserApi
     .parseScriptFile(source)
     .flatMap(ParseTreeInspector.flattenAndPrint)
