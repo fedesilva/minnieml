@@ -80,16 +80,17 @@ object AntlrTranslator:
           case Some(id) => translateId(id)
           case None => api.createLiteralString("Unimplemented flat expression").widen
 
-  def translateLiteral[F[_]: Monad](ctx: MinnieMLParser.LitContext)(using
-    api: AstApi[F]
-  ): F[AstNode] =
-    Option(ctx.litInt()) match
-      case Some(litInt) => api.createLiteralInt(litInt.getText.toInt).widen
-      case None =>
-        Option(ctx.litStr()) match
-          case Some(litStr) =>
-            api.createLiteralString(litStr.getText.stripPrefix("\"").stripSuffix("\"")).widen
-          case None =>
-            Option(ctx.litBoolean()) match
-              case Some(litBool) => api.createLiteralBool(litBool.getText.toBoolean).widen
-              case None => api.createLiteralString(s"Unimplemented literal: ${ctx.getText}").widen
+def translateLiteral[F[_]: Monad](ctx: MinnieMLParser.LitContext)(using
+  api: AstApi[F]
+): F[AstNode] =
+  Option(ctx.litInt())
+    .map(_.getText.toInt)
+    .map(api.createLiteralInt)
+    .orElse(
+      Option(ctx.litStr())
+        .map(_.getText.stripPrefix("\"").stripSuffix("\""))
+        .map(api.createLiteralString)
+    )
+    .orElse(Option(ctx.litBoolean()).map(_.getText.toBoolean).map(api.createLiteralBool))
+    .getOrElse(api.createLiteralString(s"Unimplemented literal: ${ctx.getText}"))
+    .widen
