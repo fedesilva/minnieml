@@ -9,18 +9,13 @@ lazy val commonSettings =
     Seq(
       scalacOptions ++= ScalacConfig.opts,
       // because for tests, yolo.
-      Test    / scalacOptions --= Seq("-Ywarn-unused:imports", "-Xfatal-warnings"),
-      Test    / scalacOptions --= Seq("-Ywarn-dead-code", "-Ywarn-unused:locals", "-Xfatal-warnings"),
+      Test / scalacOptions --= Seq("-Ywarn-unused:imports", "-Xfatal-warnings"),
+      Test / scalacOptions --= Seq("-Ywarn-dead-code", "-Ywarn-unused:locals", "-Xfatal-warnings"),
       // Global / onChangedBuildSource := ReloadOnSourceChanges
-    ) ++
-    Seq(
-      resolvers ++= Dependencies.resolvers
-    ) ++ 
-    Seq(
+      resolvers ++= Dependencies.resolvers,
       // add the sbt plugin to the build
       notifyOn(Compile / compile)
     )
-
 
 val antlrPackageName = "mml.mmlclib.parser.antlr"
 
@@ -43,14 +38,14 @@ lazy val mmlclib =
     )
     .settings(
       libraryDependencies ++= Dependencies.mmlclib
-      //jacocoExcludes in Test := Seq(s"$antlrPackageName.*")
+      // jacocoExcludes in Test := Seq(s"$antlrPackageName.*")
     )
     .settings(
       Antlr4 / antlr4PackageName := Some(antlrPackageName),
       // I can walk by myself, if you don't mind
-      Antlr4 / antlr4GenVisitor   := false,
-      Antlr4 / antlr4GenListener  := false,
-      Antlr4 / antlr4Version      := "4.8-1"
+      Antlr4 / antlr4GenVisitor  := false,
+      Antlr4 / antlr4GenListener := false,
+      Antlr4 / antlr4Version     := "4.8-1"
     )
     .settings(
       buildInfoKeys    := Seq[BuildInfoKey](name, version, scalaVersion, sbtVersion),
