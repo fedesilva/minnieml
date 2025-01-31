@@ -10,3 +10,5 @@ scripts
 .antlr
 .idea
 /project/metals.sbt
+
+/.vscode/extensions.json
