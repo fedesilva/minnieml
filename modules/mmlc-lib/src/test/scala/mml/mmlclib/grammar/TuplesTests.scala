@@ -1,8 +1,8 @@
 package mml.mmlclib.grammar
 
-import mml.mmlclib.test.BaseFunSuite
+import mml.mmlclib.test.BaseEffFunSuite
 
-class TuplesTests extends BaseFunSuite:
+class TuplesTests extends BaseEffFunSuite:
 
   test("simple tuple") {
     modNotFailed(

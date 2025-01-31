@@ -1,8 +1,8 @@
 package mml.mmlclib.grammar
 
-import mml.mmlclib.test.BaseFunSuite
+import mml.mmlclib.test.BaseEffFunSuite
 
-class MatchTests extends BaseFunSuite:
+class MatchTests extends BaseEffFunSuite:
 
   test("match all the things") {
 

@@ -1,8 +1,8 @@
 package mml.mmlclib.grammar
 
-import mml.mmlclib.test.BaseFunSuite
+import mml.mmlclib.test.BaseEffFunSuite
 
-class ProtocolTests extends BaseFunSuite:
+class ProtocolTests extends BaseEffFunSuite:
 
   test("protocol, instance and functions") {
     modNotFailed(

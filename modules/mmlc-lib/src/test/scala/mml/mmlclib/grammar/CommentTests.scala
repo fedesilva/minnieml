@@ -1,8 +1,8 @@
 package mml.mmlclib.grammar
 
-import mml.mmlclib.test.BaseFunSuite
+import mml.mmlclib.test.BaseEffFunSuite
 
-class CommentTests extends BaseFunSuite:
+class CommentTests extends BaseEffFunSuite:
   
   test("single line comments are ignored") {
     modNotFailed(

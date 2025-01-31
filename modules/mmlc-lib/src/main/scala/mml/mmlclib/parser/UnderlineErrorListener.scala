@@ -31,7 +31,7 @@ class UnderlineErrorListener extends BaseErrorListener:
 
     println(errorLine)
 
-    (0 until charPositionInLine).foreach { _ =>
+    (0 until charPositionInLine) foreach { _ =>
       print(" ")
     }
 

@@ -1,8 +1,8 @@
 package mml.mmlclib.grammar
 
-import mml.mmlclib.test.BaseFunSuite
+import mml.mmlclib.test.BaseEffFunSuite
 
-class MultiLineTests extends BaseFunSuite:
+class MultiLineTests extends BaseEffFunSuite:
 
   test("multi let") {
     val src =

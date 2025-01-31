@@ -1,8 +1,8 @@
 package mml.mmlclib.grammar
 
-import mml.mmlclib.test.BaseFunSuite
+import mml.mmlclib.test.BaseEffFunSuite
 
-class LambdaExprTests extends BaseFunSuite:
+class LambdaExprTests extends BaseEffFunSuite:
 
   test("Simple lambda expr") {
     modNotFailed(

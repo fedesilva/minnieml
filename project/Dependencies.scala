@@ -21,7 +21,7 @@ object Dependencies {
 
   lazy val testDeps: Seq[ModuleID] = Seq(
     "org.scalatest" %% "scalatest"         % "3.2.19",
-    "org.scalameta" %% "munit"             % "1.0.2",
+    "org.scalameta" %% "munit"             % "1.1.0",
     "org.typelevel" %% "munit-cats-effect" % "2.0.0"
   ).map(_ % Test)
 

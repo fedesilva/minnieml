@@ -1,8 +1,8 @@
 package mml.mmlclib.grammar
 
-import mml.mmlclib.test.BaseFunSuite
+import mml.mmlclib.test.BaseEffFunSuite
 
-class ModuleTests extends BaseFunSuite:
+class ModuleTests extends BaseEffFunSuite:
   
   test("Simple Module") {
     modNotFailed(

@@ -1,8 +1,8 @@
 package mml.mmlclib.grammar
 
-import mml.mmlclib.test.BaseFunSuite
+import mml.mmlclib.test.BaseEffFunSuite
 
-class ExportsTests extends BaseFunSuite:
+class ExportsTests extends BaseEffFunSuite:
 
   test("export names verbatim"){
     modNotFailed(

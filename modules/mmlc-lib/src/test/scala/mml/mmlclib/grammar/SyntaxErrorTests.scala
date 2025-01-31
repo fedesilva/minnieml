@@ -1,8 +1,8 @@
 package mml.mmlclib.grammar
 
-import mml.mmlclib.test.BaseFunSuite
+import mml.mmlclib.test.BaseEffFunSuite
 
-class SyntaxErrorTests extends BaseFunSuite:
+class SyntaxErrorTests extends BaseEffFunSuite:
 
   test("let keyword is an invalid id. # 1") {
     modFailed("let let = 1")

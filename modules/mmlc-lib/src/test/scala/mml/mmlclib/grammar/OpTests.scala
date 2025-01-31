@@ -1,8 +1,8 @@
 package mml.mmlclib.grammar
 
-import mml.mmlclib.test.BaseFunSuite
+import mml.mmlclib.test.BaseEffFunSuite
 
-class OpTests extends BaseFunSuite:
+class OpTests extends BaseEffFunSuite:
 
   test("simple infix binary op") {
     modNotFailed(
