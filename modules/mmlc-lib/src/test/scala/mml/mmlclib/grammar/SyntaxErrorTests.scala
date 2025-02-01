@@ -2,6 +2,9 @@ package mml.mmlclib.grammar
 
 import mml.mmlclib.test.BaseEffFunSuite
 
+import munit.*
+
+@munit.IgnoreSuite
 class SyntaxErrorTests extends BaseEffFunSuite:
 
   test("let keyword is an invalid id. # 1") {

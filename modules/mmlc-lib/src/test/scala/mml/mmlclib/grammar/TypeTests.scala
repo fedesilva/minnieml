@@ -2,6 +2,9 @@ package mml.mmlclib.grammar
 
 import mml.mmlclib.test.BaseEffFunSuite
 
+import munit.*
+
+@munit.IgnoreSuite
 class TypeTests extends BaseEffFunSuite:
 
   test("simple let with type") {

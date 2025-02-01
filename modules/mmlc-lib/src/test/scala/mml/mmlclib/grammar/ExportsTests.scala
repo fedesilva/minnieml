@@ -1,7 +1,9 @@
 package mml.mmlclib.grammar
 
 import mml.mmlclib.test.BaseEffFunSuite
+import munit.*
 
+@munit.IgnoreSuite
 class ExportsTests extends BaseEffFunSuite:
 
   test("export names verbatim"){

@@ -10,5 +10,7 @@ addSbtPlugin("com.eed3si9n" % "sbt-buildinfo" % "0.12.0")
 
 addSbtPlugin("laughedelic" % "sbt-notifications" % "0.1.0")
 
+addSbtPlugin("ch.epfl.scala" % "sbt-scalafix" % "0.14.0")
+
 
 
