@@ -16,25 +16,11 @@ enum ModVisibility:
   case Protected
   case Lexical
 
-// **Modules**
-// A module Antlr4
-//
-//     module:
-//      (doc)? (modVisibility)? (Module moduleId Def)?  (member)+ End;
-//
-//      Def :       '=';
-//      Module: 'module';
-//      End: ';';
-//
-//
-// Example
-//
-//   module A =
-//     let a = 1;
-//
-//
-//
-case class Module(name: String, visibility: ModVisibility, members: List[Member]) extends AstNode
+case class Module(
+  name:       String,
+  visibility: ModVisibility,
+  members:    List[Member]
+) extends AstNode
 
 // **Members**
 sealed trait Member extends AstNode
