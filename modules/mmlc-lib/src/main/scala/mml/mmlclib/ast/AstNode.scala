@@ -60,11 +60,8 @@ case class Expr(terms: List[Term], typeSpec: Option[TypeSpec] = None) extends Te
 
 // **Terms of an expression**
 
-/** Points to a Bnd declared elsewhere */
-case class BndRef(name: String, typeSpec: Option[TypeSpec]) extends Term
-
-/** Points to a Fn defined elsewhere */
-case class FnRef(name: String, typeSpec: Option[TypeSpec]) extends Term
+/** Points to a something declared elsewhere */
+case class Ref(name: String, typeSpec: Option[TypeSpec]) extends Term
 
 // **Literals**
 sealed trait LiteralValue extends Term

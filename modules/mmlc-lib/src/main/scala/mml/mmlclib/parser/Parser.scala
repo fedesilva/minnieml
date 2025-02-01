@@ -2,7 +2,17 @@ package mml.mmlclib.parser
 
 import fastparse._, MultiLineWhitespace._
 import mml.mmlclib.api.AstApi
-import mml.mmlclib.ast.{Module, ModVisibility, Member}
+import mml.mmlclib.ast.{
+  Module,
+  ModVisibility,
+  Member,
+  Term,
+  Expr,
+  LiteralInt,
+  LiteralString,
+  LiteralBool,
+  Ref
+}
 import cats.Monad
 import cats.syntax.all._
 
@@ -14,21 +24,31 @@ object Parser:
   def typeId[$: P]: P[String] =
     P(CharIn("A-Z") ~ CharsWhileIn("a-zA-Z0-9", 0)).!
 
-  def number[$: P]: P[Int] =
-    P(CharsWhileIn("0-9")).!.map(_.toInt)
+  def lit[$: P]: P[String] =
+    P(LitString | LitInt | LitBoolean)
+
+  def LitString[$: P]:  P[String] = P("\"" ~/ CharsWhile(_ != '"', 0).! ~ "\"")
+  def LitInt[$: P]:     P[String] = P(CharsWhileIn("0-9").!)
+  def LitBoolean[$: P]: P[String] = P("true" | "false").!
 
   def defAs[$: P]:    P[Unit] = P("=")
   def end[$: P]:      P[Unit] = P(";")
   def moduleKw[$: P]: P[Unit] = P("module")
 
+  def term[F[_]](api: AstApi[F])(using P[Any], Monad[F]): P[F[Term]] =
+    P(LitString).map(s => api.createLiteralString(s).widen[Term]) |
+      P(LitInt).map(n => api.createLiteralInt(n.toInt).widen[Term]) |
+      P(LitBoolean).map(b => api.createLiteralBool(b.toBoolean).widen[Term]) |
+      P(bindingId).map(name => Monad[F].pure(Ref(name, None)).widen[Term])
+
+  def expr[F[_]](api: AstApi[F])(using P[Any], Monad[F]): P[F[Expr]] =
+    P(term(api).rep(1)).map { terms =>
+      terms.toList.sequence.map(ts => Expr(ts))
+    }
+
   def letBinding[F[_]](api: AstApi[F])(using P[Any], Monad[F]): P[F[Member]] =
-    P("let" ~ bindingId ~ defAs ~ number ~ end).map { (id: String, n: Int) =>
-      api.createLiteralInt(n).flatMap { lit =>
-        api.createExpr(List(lit)).flatMap { expr =>
-          // Using widen to upcast F[Bnd] to F[Member]
-          api.createLet(id, expr).widen[Member]
-        }
-      }
+    P("let" ~ bindingId ~ defAs ~ expr(api) ~ end).map { case (id, exprF) =>
+      exprF.flatMap(expr => api.createLet(id, expr).widen[Member])
     }
 
   def memberParser[F[_]](api: AstApi[F])(using P[Any], Monad[F]): P[F[Member]] =
