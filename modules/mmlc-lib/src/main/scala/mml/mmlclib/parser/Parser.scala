@@ -24,7 +24,7 @@ object Parser:
   def WS[$: P]: P[Unit] = P(CharsWhileIn(" \n\r", 1))
 
   def letBinding[F[_]](api: AstApi[F])(using P[Any], Monad[F]): P[F[Member]] =
-    P("let" ~ WS ~ bindingId ~ WS ~ defAs ~ WS ~ number ~ end).map { (id: String, n: Int) =>
+    P("let" ~ bindingId ~ defAs ~ number ~ end).map { (id: String, n: Int) =>
       api.createLiteralInt(n).flatMap { lit =>
         api.createExpr(List(lit)).flatMap { expr =>
           // Using widen to upcast F[Bnd] to F[Member]
@@ -38,12 +38,12 @@ object Parser:
 
   def moduleParser[F[_]](api: AstApi[F], punct: P[Any])(using Monad[F]): P[F[Module]] =
     given P[Any] = punct
-    val modName:  P[String]         = moduleKw ~ WS ~ typeId.!
-    val membersP: P[Seq[F[Member]]] = WS ~ defAs ~ WS ~ letBinding(api).rep(1) ~ WS ~ end
-    P(Start ~ modName ~ membersP).map { case (name, membersF) =>
-      membersF.toList.sequence.flatMap { members =>
-        api.createModule(name, ModVisibility.Public, members)
-      }
+
+    P(Start ~ moduleKw ~ typeId.! ~ defAs ~ memberParser(api).rep ~ end).map {
+      case (name, membersF) =>
+        membersF.toList.sequence.flatMap { members =>
+          api.createModule(name, ModVisibility.Public, members)
+        }
     }
 
   def parseModule[F[_]: AstApi: Monad](source: String): F[Either[String, Module]] =
