@@ -26,23 +26,26 @@ object Parser:
   def end[$: P]:      P[Unit] = P(";")
   def moduleKw[$: P]: P[Unit] = P("module")
 
-  def term[F[_]](api: AstApi[F])(using P[Any], Monad[F]): P[F[Term]] =
+  def term[F[_]: Monad: AstApi](using P[Any]): P[F[Term]] =
+    val api = summon[AstApi[F]]
     P(LitString).map(s => api.createLiteralString(s).widen[Term]) |
       P(LitInt).map(n => api.createLiteralInt(n.toInt).widen[Term]) |
       P(LitBoolean).map(b => api.createLiteralBool(b.toBoolean).widen[Term]) |
       P(bindingId).map(name => api.createRef(name, none).widen[Term])
 
-  def expr[F[_]](api: AstApi[F])(using P[Any], Monad[F]): P[F[Expr]] =
-    P(term(api).rep(1)).map { terms =>
+  def expr[F[_]: Monad: AstApi](using P[Any]): P[F[Expr]] =
+    P(term[F].rep(1)).map { terms =>
       terms.toList.sequence.map(ts => Expr(ts))
     }
 
-  def letBinding[F[_]](api: AstApi[F])(using P[Any], Monad[F]): P[F[Member]] =
-    P("let" ~ bindingId ~ defAs ~ expr(api) ~ end).map { case (id, exprF) =>
+  def letBinding[F[_]: Monad: AstApi](using P[Any]): P[F[Member]] =
+    val api = summon[AstApi[F]]
+    P("let" ~ bindingId ~ defAs ~ expr ~ end).map { case (id, exprF) =>
       exprF.flatMap(expr => api.createLet(id, expr).widen[Member])
     }
 
-  def failedMember[F[_]](src: String, api: AstApi[F])(using P[Any], Monad[F]): P[F[Member]] =
+  def failedMember[F[_]: Monad: AstApi](src: String)(using P[Any]): P[F[Member]] =
+    val api = summon[AstApi[F]]
     P(Index ~ CharsWhile(_ != ';').! ~ end ~ Index).map { case (idx, failed, endIdx) =>
       val start = indexToSourcePoint(idx, src)
       val end   = indexToSourcePoint(endIdx, src)
@@ -63,16 +66,16 @@ object Parser:
     val col       = if lines.isEmpty then index else lines.last.length + 1
     SourcePoint(line, col)
 
-  def fnParser[F[_]](api: AstApi[F])(using P[Any], Monad[F]): P[F[Member]] =
-    P("fn" ~ bindingId ~ bindingId.rep(1) ~ defAs ~ expr(api) ~ end).map {
-      case (id, params, exprF) =>
-        exprF.flatMap(expr => api.createFunction(id, params.toList, expr).widen[Member])
+  def fnParser[F[_]: Monad: AstApi](using P[Any]): P[F[Member]] =
+    val api = summon[AstApi[F]]
+    P("fn" ~ bindingId ~ bindingId.rep(1) ~ defAs ~ expr ~ end).map { case (id, params, exprF) =>
+      exprF.flatMap(expr => api.createFunction(id, params.toList, expr).widen[Member])
     }
 
-  def memberParser[F[_]](src: String, api: AstApi[F])(using P[Any], Monad[F]): P[F[Member]] =
+  def memberParser[F[_]: Monad: AstApi](src: String)(using P[Any]): P[F[Member]] =
     P(
-      letBinding(api) |
-        fnParser(api) | failedMember(src, api)
+      letBinding |
+        fnParser | failedMember(src)
     )
 
   def modVisibility[$: P]: P[ModVisibility] =
@@ -80,9 +83,10 @@ object Parser:
       P("protected").map(_ => ModVisibility.Protected) |
       P("lexical").map(_ => ModVisibility.Lexical)
 
-  def moduleParser[F[_]](src: String, api: AstApi[F], punct: P[Any])(using Monad[F]): P[F[Module]] =
+  def moduleParser[F[_]: Monad: AstApi](src: String, punct: P[Any]): P[F[Module]] =
     given P[Any] = punct
-    P(Start ~ moduleKw ~ modVisibility.? ~ typeId.! ~ defAs ~ memberParser(src, api).rep ~ end)
+    val api      = summon[AstApi[F]]
+    P(Start ~ moduleKw ~ modVisibility.? ~ typeId.! ~ defAs ~ memberParser(src).rep ~ end)
       .map { case (vis, name, membersF) =>
         membersF.toList.sequence.flatMap(members =>
           api.createModule(name, vis.getOrElse(ModVisibility.Public), members)
@@ -91,6 +95,6 @@ object Parser:
 
   def parseModule[F[_]: AstApi: Monad](source: String): F[Either[String, Module]] =
     val api = summon[AstApi[F]]
-    parse(source.trim, moduleParser[F](source, api, _)) match
+    parse(source.trim, moduleParser[F](source, _)) match
       case Parsed.Success(result, _) => result.map(_.asRight)
       case f: Parsed.Failure => f.trace().longMsg.asLeft.pure[F]
