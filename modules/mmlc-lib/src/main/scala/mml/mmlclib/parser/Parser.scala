@@ -4,7 +4,7 @@ import fastparse._, MultiLineWhitespace._
 import mml.mmlclib.api.AstApi
 import mml.mmlclib.ast.*
 import cats.Monad
-import cats.syntax.all._
+import cats.syntax.all.*
 
 object Parser:
 
@@ -41,8 +41,14 @@ object Parser:
       exprF.flatMap(expr => api.createLet(id, expr).widen[Member])
     }
 
+  def failedMember[F[_]](api: AstApi[F])(using P[Any], Monad[F]): P[F[Member]] =
+    P(Index ~ CharsWhile(_ != ';').! ~ end).map { case (idx, failed) =>
+      val error = MemberSyntaxError(0, 0, s"Failed to parse member: $failed", Some(failed))
+      error.pure[F]
+    }
+
   def memberParser[F[_]](api: AstApi[F])(using P[Any], Monad[F]): P[F[Member]] =
-    letBinding(api)
+    P(letBinding(api) | failedMember(api))
 
   def modVisibility[$: P]: P[ModVisibility] =
     P("pub").map(_ => ModVisibility.Public) |
@@ -51,7 +57,6 @@ object Parser:
 
   def moduleParser[F[_]](api: AstApi[F], punct: P[Any])(using Monad[F]): P[F[Module]] =
     given P[Any] = punct
-
     P(Start ~ moduleKw ~ modVisibility.? ~ typeId.! ~ defAs ~ memberParser(api).rep ~ end).map {
       case (vis, name, membersF) =>
         membersF.toList.sequence.flatMap(members =>
