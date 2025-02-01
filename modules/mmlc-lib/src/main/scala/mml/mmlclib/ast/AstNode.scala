@@ -2,28 +2,128 @@ package mml.mmlclib.ast
 
 sealed trait AstNode
 
-case class Module(name: String, members: List[Member]) extends AstNode
+sealed trait Typeable extends AstNode {
+  def typeSpec: Option[TypeSpec]
+}
 
-case class Comment(text: String) extends Member
+enum ModVisibility:
+  case Public
+  case Protected
+  case Private
 
-// Represents different kinds of members within a module
+// **Modules**
+// A module Antlr4
+//
+//     module:
+//      (doc)? (modVisibility)? (Module moduleId Def)?  (member)+ End;
+//
+//      Def :       '=';
+//      Module: 'module';
+//      End: ';';
+//
+//
+// Example
+//
+//   module A =
+//     let a = 1;
+//
+//
+//
+case class Module(name: String, visibility: ModVisibility, members: List[Member]) extends AstNode
+
+// **Members**
 sealed trait Member extends AstNode
 
-// Represents expressions (can be expanded later)
-sealed trait Expression extends AstNode
+// **Comments**
+case class Comment(text: String) extends Member
 
-case class Binding(name: String, value: Expression) extends Member
+sealed trait Decl extends AstNode, Typeable
 
-sealed trait Literal extends Expression
+case class FnDef(
+  name:     String,
+  params:   List[String],
+  body:     Expr,
+  typeSpec: Option[TypeSpec] = None
+) extends Decl
 
-case class LiteralInt(value: Int) extends Literal
-case class LiteralString(value: String) extends Literal
-case class LiteralBool(value: Boolean) extends Literal
+case class Bnd(
+  name:     String,
+  value:    Expr,
+  typeSpec: Option[TypeSpec] = None
+) extends Decl
 
+// **Expressions and Terms**
 
-// Represents type specifications
-// TODO, expand this to include more complex types
-case class TypeSpec(name: String) extends AstNode
+sealed trait Term extends AstNode, Typeable
 
+case class Expr(terms: List[Term], typeSpec: Option[TypeSpec] = None) extends Term
 
+// **Terms of an expression**
 
+/** Points to a Bnd declared elsewhere */
+case class BndRef(name: String, typeSpec: Option[TypeSpec]) extends Term
+
+/** Points to a Fn defined elsewhere */
+case class FnRef(name: String, typeSpec: Option[TypeSpec]) extends Term
+
+// **Literals**
+sealed trait LiteralValue extends Term
+case class LiteralInt(value: Int) extends LiteralValue {
+  final val typeSpec: Option[TypeSpec] = Some(LiteralIntType)
+}
+case class LiteralString(value: String) extends LiteralValue {
+  final val typeSpec: Option[TypeSpec] = Some(LiteralStringType)
+}
+case class LiteralBool(value: Boolean) extends LiteralValue {
+  final val typeSpec: Option[TypeSpec] = Some(LiteralBoolType)
+}
+
+// **Type Specifications**
+sealed trait TypeSpec extends AstNode
+
+/** A type by name */
+case class TypeName(name: String) extends TypeSpec
+
+/** A type application, ie:  `List Int, Map String Int` */
+case class TypeApplication(base: TypeSpec, args: List[TypeSpec]) extends TypeSpec
+
+/** The type of a Fn `String => Int` */
+case class TypeFn(paramTypes: List[TypeSpec], returnType: TypeSpec) extends TypeSpec
+
+/** A tuple type: `(1, "uno") : (Int, String)` */
+case class TypeTuple(elements: List[TypeSpec]) extends TypeSpec
+
+/** Structural type `{ name: String, age: Int }` */
+case class TypeStruct(fields: List[(String, TypeSpec)]) extends TypeSpec
+
+/** Refine types with a predicate `Int {i => i < 100 && i > 0 }` */
+case class TypeRefinement(id: Option[String], expr: Expr) extends TypeSpec
+
+/** Union types  `Int | None` */
+case class Union(types: List[TypeSpec]) extends TypeSpec
+
+/** Intersection Types `Readable & Writable` */
+case class Intersection(types: List[TypeSpec]) extends TypeSpec
+
+/** The unit type `()` */
+case object TypeUnit extends TypeSpec
+
+/** Type Sequences `[Int], [String], [T]` */
+case class TypeSeq(inner: TypeSpec) extends TypeSpec
+
+/** A grouping of types, mostly for deambiguation: `Map String (List Int)` */
+case class TypeGroup(types: List[TypeSpec]) extends TypeSpec
+
+/** Helpers to represent know types */
+sealed trait LiteralType extends TypeSpec {
+  def typeName: String
+}
+case object LiteralIntType extends LiteralType {
+  final val typeName = "Int"
+}
+case object LiteralStringType extends LiteralType {
+  final val typeName = "String"
+}
+case object LiteralBoolType extends LiteralType {
+  final val typeName = "Bool"
+}

@@ -16,7 +16,10 @@ object Dependencies {
       "ch.qos.logback" % "logback-classic" % logBackVersion,
       // "core" module - IO, IOApp, schedulers
       // This pulls in the kernel and std modules automatically.
-      "org.typelevel" %% "cats-effect" % catsEffectVersion
+      "org.typelevel" %% "cats-effect"    % catsEffectVersion,
+      "eu.timepit"    %% "refined"        % "0.11.3",
+      "eu.timepit"    %% "refined-cats"   % "0.11.3", // optional
+      "edu.gemini"    %% "lucuma-refined" % "0.1.3"
     )
 
   lazy val testDeps: Seq[ModuleID] = Seq(
@@ -28,6 +31,7 @@ object Dependencies {
   lazy val mmlclib: Seq[ModuleID] =
     Seq(
       "org.bytedeco.javacpp-presets" % "llvm-platform" % "7.0.1-1.4.4",
+      "com.lihaoyi"                 %% "fastparse"     % "3.1.1",
       // "io.github.myui"               % "btree4j"       % "0.9.1",
       "org.neo4j" % "neo4j" % neo4jVersion
     ) ++ commonDependencies ++ testDeps

@@ -1,14 +1,24 @@
 package mml.mmlclib.api
 
-import mml.mmlclib.ast.*
+import mml.mmlclib.ast._
 
 trait AstApi[F[_]]:
 
-  def createModule(name:  String, members:    List[Member]): F[Module]
-  def createBinding(name: String, expression: Expression):   F[Binding]
+  // **Modules & Bindings**
+  def createModule(name: String, visibility: ModVisibility, members: List[Member]): F[Module]
 
+  // **Comments**
   def createComment(text: String): F[Comment]
 
-  def createLiteralInt(value:    Int):     F[Literal]
-  def createLiteralString(value: String):  F[Literal]
-  def createLiteralBool(value:   Boolean): F[Literal]
+  // **Expressions**
+  def createExpr(terms: List[Term]): F[Expr]
+
+  // **Declarations**
+
+  def createLet(name:      String, value:  Expr): F[Bnd]
+  def createFunction(name: String, params: List[String], body: Expr): F[FnDef]
+
+  // **Literals**
+  def createLiteralInt(value:    Int):     F[LiteralInt]
+  def createLiteralString(value: String):  F[LiteralString]
+  def createLiteralBool(value:   Boolean): F[LiteralBool]
