@@ -13,6 +13,13 @@ trait AstApi[F[_]]:
   // **Expressions**
   def createExpr(terms: List[Term]): F[Expr]
 
+  def createMemberError(
+    start:      SourcePoint,
+    end:        SourcePoint,
+    message:    String,
+    failedCode: Option[String]
+  ): F[MemberError]
+
   // **Declarations**
 
   def createLet(name:      String, value:  Expr): F[Bnd]

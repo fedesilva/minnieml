@@ -1,9 +1,10 @@
 package mml.mmlclib.parser
 
-import fastparse._, MultiLineWhitespace._
+import fastparse.*
+import MultiLineWhitespace.*
 import mml.mmlclib.api.AstApi
 import mml.mmlclib.ast.*
-import cats.Monad
+import cats.{Monad, Semigroup}
 import cats.syntax.all.*
 
 object Parser:
@@ -41,31 +42,48 @@ object Parser:
       exprF.flatMap(expr => api.createLet(id, expr).widen[Member])
     }
 
-  def failedMember[F[_]](api: AstApi[F])(using P[Any], Monad[F]): P[F[Member]] =
-    P(Index ~ CharsWhile(_ != ';').! ~ end).map { case (idx, failed) =>
-      val error = MemberSyntaxError(0, 0, s"Failed to parse member: $failed", Some(failed))
-      error.pure[F]
+  def failedMember[F[_]](src: String, api: AstApi[F])(using P[Any], Monad[F]): P[F[Member]] =
+    P(Index ~ CharsWhile(_ != ';').! ~ end ~ Index).map { case (idx, failed, endIdx) =>
+      // make this part of the AstApi.
+      val start = indexToSourcePoint(idx, src)
+      val end   = indexToSourcePoint(endIdx, src)
+      api
+        .createMemberError(
+          start,
+          end,
+          s"Failed to parse member: $failed",
+          Some(failed)
+        )
+        .widen[Member]
     }
 
-  def memberParser[F[_]](api: AstApi[F])(using P[Any], Monad[F]): P[F[Member]] =
-    P(letBinding(api) | failedMember(api))
+  def indexToSourcePoint(index: Int, source: String): SourcePoint =
+
+    val upToIndex = source.substring(0, index)
+    val lines     = upToIndex.split("\n")
+    val line      = lines.length
+    val col       = if lines.isEmpty then index else lines.last.length + 1
+    SourcePoint(line, col)
+
+  def memberParser[F[_]](src: String, api: AstApi[F])(using P[Any], Monad[F]): P[F[Member]] =
+    P(letBinding(api) | failedMember(src, api))
 
   def modVisibility[$: P]: P[ModVisibility] =
     P("pub").map(_ => ModVisibility.Public) |
       P("protected").map(_ => ModVisibility.Protected) |
       P("lexical").map(_ => ModVisibility.Lexical)
 
-  def moduleParser[F[_]](api: AstApi[F], punct: P[Any])(using Monad[F]): P[F[Module]] =
+  def moduleParser[F[_]](src: String, api: AstApi[F], punct: P[Any])(using Monad[F]): P[F[Module]] =
     given P[Any] = punct
-    P(Start ~ moduleKw ~ modVisibility.? ~ typeId.! ~ defAs ~ memberParser(api).rep ~ end).map {
-      case (vis, name, membersF) =>
+    P(Start ~ moduleKw ~ modVisibility.? ~ typeId.! ~ defAs ~ memberParser(src, api).rep ~ end)
+      .map { case (vis, name, membersF) =>
         membersF.toList.sequence.flatMap(members =>
           api.createModule(name, vis.getOrElse(ModVisibility.Public), members)
         )
-    }
+      }
 
   def parseModule[F[_]: AstApi: Monad](source: String): F[Either[String, Module]] =
     val api = summon[AstApi[F]]
-    parse(source.trim, moduleParser[F](api, _)) match
+    parse(source.trim, moduleParser[F](source, api, _)) match
       case Parsed.Success(result, _) => result.map(_.asRight)
       case f: Parsed.Failure => f.trace().longMsg.asLeft.pure[F]

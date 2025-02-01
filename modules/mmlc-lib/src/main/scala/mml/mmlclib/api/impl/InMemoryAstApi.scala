@@ -13,6 +13,16 @@ object InMemoryAstApi extends AstApi[IO]:
   ): IO[Module] =
     IO.pure(Module(name, visibility, members))
 
+  def createMemberError(
+    start:      SourcePoint,
+    end:        SourcePoint,
+    message:    String,
+    failedCode: Option[String]
+  ): IO[MemberError] =
+    IO.pure(
+      MemberError(start, end, message, failedCode)
+    )
+
   override def createComment(text: String): IO[Comment] =
     IO.pure(Comment(text))
 

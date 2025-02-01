@@ -1,5 +1,10 @@
 package mml.mmlclib.ast
 
+final case class SourcePoint(
+  line: Int,
+  col:  Int
+)
+
 sealed trait AstNode
 
 sealed trait Typeable extends AstNode {
@@ -34,9 +39,9 @@ case class Module(name: String, visibility: ModVisibility, members: List[Member]
 // **Members**
 sealed trait Member extends AstNode
 
-case class MemberSyntaxError(
-  line:       Int,
-  col:        Int,
+case class MemberError(
+  start:      SourcePoint,
+  end:        SourcePoint,
   message:    String,
   failedCode: Option[String]
 ) extends Member
