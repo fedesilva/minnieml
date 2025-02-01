@@ -2,17 +2,7 @@ package mml.mmlclib.parser
 
 import fastparse._, MultiLineWhitespace._
 import mml.mmlclib.api.AstApi
-import mml.mmlclib.ast.{
-  Module,
-  ModVisibility,
-  Member,
-  Term,
-  Expr,
-  LiteralInt,
-  LiteralString,
-  LiteralBool,
-  Ref
-}
+import mml.mmlclib.ast.*
 import cats.Monad
 import cats.syntax.all._
 
@@ -39,7 +29,7 @@ object Parser:
     P(LitString).map(s => api.createLiteralString(s).widen[Term]) |
       P(LitInt).map(n => api.createLiteralInt(n.toInt).widen[Term]) |
       P(LitBoolean).map(b => api.createLiteralBool(b.toBoolean).widen[Term]) |
-      P(bindingId).map(name => Monad[F].pure(Ref(name, None)).widen[Term])
+      P(bindingId).map(name => Monad[F].pure(Ref(name, none)).widen[Term])
 
   def expr[F[_]](api: AstApi[F])(using P[Any], Monad[F]): P[F[Expr]] =
     P(term(api).rep(1)).map { terms =>
@@ -54,18 +44,23 @@ object Parser:
   def memberParser[F[_]](api: AstApi[F])(using P[Any], Monad[F]): P[F[Member]] =
     letBinding(api)
 
+  def modVisibility[$: P]: P[ModVisibility] =
+    P("pub").map(_ => ModVisibility.Public) |
+      P("protected").map(_ => ModVisibility.Protected) |
+      P("lexical").map(_ => ModVisibility.Lexical)
+
   def moduleParser[F[_]](api: AstApi[F], punct: P[Any])(using Monad[F]): P[F[Module]] =
     given P[Any] = punct
 
-    P(Start ~ moduleKw ~ typeId.! ~ defAs ~ memberParser(api).rep ~ end).map {
-      case (name, membersF) =>
-        membersF.toList.sequence.flatMap { members =>
-          api.createModule(name, ModVisibility.Public, members)
-        }
+    P(Start ~ moduleKw ~ modVisibility.? ~ typeId.! ~ defAs ~ memberParser(api).rep ~ end).map {
+      case (vis, name, membersF) =>
+        membersF.toList.sequence.flatMap(members =>
+          api.createModule(name, vis.getOrElse(ModVisibility.Public), members)
+        )
     }
 
   def parseModule[F[_]: AstApi: Monad](source: String): F[Either[String, Module]] =
     val api = summon[AstApi[F]]
     parse(source.trim, moduleParser[F](api, _)) match
-      case Parsed.Success(result, _) => result.map(module => Right(module))
-      case f: Parsed.Failure => Monad[F].pure(Left(f.trace().longMsg))
+      case Parsed.Success(result, _) => result.map(_.asRight)
+      case f: Parsed.Failure => f.trace().longMsg.asLeft.pure[F]

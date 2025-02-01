@@ -9,7 +9,7 @@ sealed trait Typeable extends AstNode {
 enum ModVisibility:
   case Public
   case Protected
-  case Private
+  case Lexical
 
 // **Modules**
 // A module Antlr4
@@ -33,6 +33,13 @@ case class Module(name: String, visibility: ModVisibility, members: List[Member]
 
 // **Members**
 sealed trait Member extends AstNode
+
+case class MemberSyntaxError(
+  line:       Int,
+  col:        Int,
+  message:    String,
+  failedCode: Option[String]
+) extends Member
 
 // **Comments**
 case class Comment(text: String) extends Member
