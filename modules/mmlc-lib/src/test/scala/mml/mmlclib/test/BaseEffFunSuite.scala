@@ -4,7 +4,7 @@ import cats.effect.IO
 import mml.mmlclib.api.ParserApi
 import munit.CatsEffectSuite
 
-/** Base trait for `CatsEffectSuite` tests; adds common MML specific assertions. */
+/** Base trait for effectful tests; adds common MML specific assertions. */
 trait BaseEffFunSuite extends CatsEffectSuite {
 
   def modNotFailed(source: String, msg: Option[String] = None): IO[Unit] = {

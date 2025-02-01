@@ -39,7 +39,6 @@ class BasicTests extends BaseEffFunSuite:
     modNotFailed(
       """
         let a = b + 3
-        
       """
     )
   }
@@ -51,7 +50,6 @@ class BasicTests extends BaseEffFunSuite:
         let b = 2
         fn sum a b = a + b
         let x = sum a b
-        
       """
     )
   }
@@ -67,7 +65,6 @@ class BasicTests extends BaseEffFunSuite:
             doubleB + doubleA
           where 
             double x = x * 2 
-        
       """
     )
     
@@ -79,9 +76,9 @@ class BasicTests extends BaseEffFunSuite:
         fn func a b = 
           let 
             doubleA = double a,
-            doubleB = triple b
+            tripleB = triple b
           in
-            doubleB + doubleA
+            tripleB + doubleA
           where 
             double x = x * 2,
             triple x = x * 3 
