@@ -1,11 +1,11 @@
 package mml.mmlclib.parser
 
+import cats.Monad
+import cats.syntax.all.*
 import fastparse.*
-import MultiLineWhitespace.*
+import fastparse.MultiLineWhitespace.*
 import mml.mmlclib.api.AstApi
 import mml.mmlclib.ast.*
-import cats.{Monad, Semigroup}
-import cats.syntax.all.*
 
 object Parser:
 
@@ -30,7 +30,7 @@ object Parser:
     P(LitString).map(s => api.createLiteralString(s).widen[Term]) |
       P(LitInt).map(n => api.createLiteralInt(n.toInt).widen[Term]) |
       P(LitBoolean).map(b => api.createLiteralBool(b.toBoolean).widen[Term]) |
-      P(bindingId).map(name => Monad[F].pure(Ref(name, none)).widen[Term])
+      P(bindingId).map(name => api.createRef(name, none).widen[Term])
 
   def expr[F[_]](api: AstApi[F])(using P[Any], Monad[F]): P[F[Expr]] =
     P(term(api).rep(1)).map { terms =>
@@ -50,7 +50,7 @@ object Parser:
         .createMemberError(
           start,
           end,
-          s"Failed to parse member: $failed",
+          s"Failed to parse member",
           Some(failed)
         )
         .widen[Member]
@@ -63,8 +63,17 @@ object Parser:
     val col       = if lines.isEmpty then index else lines.last.length + 1
     SourcePoint(line, col)
 
+  def fnParser[F[_]](api: AstApi[F])(using P[Any], Monad[F]): P[F[Member]] =
+    P("fn" ~ bindingId ~ bindingId.rep(1) ~ defAs ~ expr(api) ~ end).map {
+      case (id, params, exprF) =>
+        exprF.flatMap(expr => api.createFunction(id, params.toList, expr).widen[Member])
+    }
+
   def memberParser[F[_]](src: String, api: AstApi[F])(using P[Any], Monad[F]): P[F[Member]] =
-    P(letBinding(api) | failedMember(src, api))
+    P(
+      letBinding(api) |
+        fnParser(api) | failedMember(src, api)
+    )
 
   def modVisibility[$: P]: P[ModVisibility] =
     P("pub").map(_ => ModVisibility.Public) |

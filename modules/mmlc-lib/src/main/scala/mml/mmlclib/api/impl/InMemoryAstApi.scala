@@ -2,7 +2,7 @@ package mml.mmlclib.api.impl
 
 import cats.effect.*
 import mml.mmlclib.api.AstApi
-import mml.mmlclib.ast.*
+import mml.mmlclib.ast.{Ref, *}
 
 object InMemoryAstApi extends AstApi[IO]:
 
@@ -43,3 +43,6 @@ object InMemoryAstApi extends AstApi[IO]:
 
   override def createLiteralBool(value: Boolean): IO[LiteralBool] =
     IO.pure(LiteralBool(value))
+
+  override def createRef(name: String, typeSpec: Option[TypeSpec]): IO[Ref] =
+    IO.pure(Ref(name, typeSpec))

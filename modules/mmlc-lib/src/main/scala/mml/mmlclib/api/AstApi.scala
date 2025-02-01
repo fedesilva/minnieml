@@ -29,3 +29,5 @@ trait AstApi[F[_]]:
   def createLiteralInt(value:    Int):     F[LiteralInt]
   def createLiteralString(value: String):  F[LiteralString]
   def createLiteralBool(value:   Boolean): F[LiteralBool]
+
+  def createRef(name: String, typeSpec: Option[TypeSpec]): F[Ref]
