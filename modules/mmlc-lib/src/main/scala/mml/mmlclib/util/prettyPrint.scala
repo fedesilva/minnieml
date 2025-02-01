@@ -13,7 +13,7 @@ def prettyPrintAst(astNode: AstNode, indent: Int = 2): String =
 def prettyPrintModule(module: Module, indent: Int = 2): String = {
   val indentStr  = "  " * indent
   val header     = s"${indentStr}Module ${module.name} ${module.visibility}"
-  val membersStr = module.members.map(prettyPrintMember(_, indent + 1)).mkString("\n")
+  val membersStr = module.members.map(prettyPrintMember(_, indent + 2)).mkString("\n")
   s"$header\n$membersStr"
 }
 
@@ -32,18 +32,18 @@ def prettyPrintMember(member: Member, indent: Int): String = {
       s"${indentStr}FnDef ${fn.name}\n" +
         s"${indentStr}  typeSpec: ${fn.typeSpec.getOrElse("None")}\n" +
         s"${indentStr}  params: [${fn.params.mkString(", ")}]\n" +
-        prettyPrintExpr(fn.body, indent + 1)
+        prettyPrintExpr(fn.body, indent + 2)
 
     case bnd: Bnd =>
       s"${indentStr}Bnd ${bnd.name}\n" +
         s"${indentStr}  typeSpec: ${bnd.typeSpec.getOrElse("None")}\n" +
-        prettyPrintExpr(bnd.value, indent + 1)
+        prettyPrintExpr(bnd.value, indent + 2)
   }
 }
 
 def prettyPrintExpr(expr: Expr, indent: Int): String = {
   val indentStr = "  " * indent
-  val termsStr  = expr.terms.map(prettyPrintTerm(_, indent + 1)).mkString("\n")
+  val termsStr  = expr.terms.map(prettyPrintTerm(_, indent + 2)).mkString("\n")
   s"${indentStr}Expr\n${indentStr}  typeSpec: ${expr.typeSpec.getOrElse("None")}\n$termsStr"
 }
 
