@@ -1,38 +1,53 @@
 package mml.mmlclib.parser
 
-import fastparse._, MultiLineWhitespace._ // Changed from AnyWhitespace
+import fastparse._, MultiLineWhitespace._
 import mml.mmlclib.api.AstApi
-import mml.mmlclib.ast.Module
-import mml.mmlclib.ast.ModVisibility
+import mml.mmlclib.ast.{Module, ModVisibility, Member}
+import cats.Monad
+import cats.syntax.all._
 
 object Parser:
-  // Identifiers
+
   def bindingId[$: P]: P[String] =
     P(CharIn("a-z") ~ CharsWhileIn("a-zA-Z0-9_", 0)).!
 
   def typeId[$: P]: P[String] =
     P(CharIn("A-Z") ~ CharsWhileIn("a-zA-Z0-9", 0)).!
 
-  def typeVarId[$: P]: P[String] =
-    P("'" ~ CharIn("A-Z") ~ CharsWhileIn("a-zA-Z0-9", 0)).!
-
   def number[$: P]: P[Int] =
     P(CharsWhileIn("0-9")).!.map(_.toInt)
 
-  // Core tokens
   def defAs[$: P]:    P[Unit] = P("=")
-  def semi[$: P]:     P[Unit] = P(";")
+  def end[$: P]:      P[Unit] = P(";")
   def moduleKw[$: P]: P[Unit] = P("module")
 
-  // Module parser
-  def moduleParser[F[_]]: (AstApi[F], P[?]) => P[F[Module]] = (api, punct) =>
-    implicit val ctx = punct
-    P(Start ~ moduleKw ~ typeId ~ defAs ~ semi).map { case name =>
-      api.createModule(name, ModVisibility.Public, List.empty)
+  def WS[$: P]: P[Unit] = P(CharsWhileIn(" \n\r", 1))
+
+  def letBinding[F[_]](api: AstApi[F])(using P[Any], Monad[F]): P[F[Member]] =
+    P("let" ~ WS ~ bindingId ~ WS ~ defAs ~ WS ~ number ~ end).map { (id: String, n: Int) =>
+      api.createLiteralInt(n).flatMap { lit =>
+        api.createExpr(List(lit)).flatMap { expr =>
+          // Using widen to upcast F[Bnd] to F[Member]
+          api.createLet(id, expr).widen[Member]
+        }
+      }
     }
 
-  def parseModule[F[_]: AstApi](source: String): Either[String, F[Module]] =
+  def memberParser[F[_]](api: AstApi[F])(using P[Any], Monad[F]): P[F[Member]] =
+    letBinding(api)
+
+  def moduleParser[F[_]](api: AstApi[F], punct: P[Any])(using Monad[F]): P[F[Module]] =
+    given P[Any] = punct
+    val modName:  P[String]         = moduleKw ~ WS ~ typeId.!
+    val membersP: P[Seq[F[Member]]] = WS ~ defAs ~ WS ~ letBinding(api).rep(1) ~ WS ~ end
+    P(Start ~ modName ~ membersP).map { case (name, membersF) =>
+      membersF.toList.sequence.flatMap { members =>
+        api.createModule(name, ModVisibility.Public, members)
+      }
+    }
+
+  def parseModule[F[_]: AstApi: Monad](source: String): F[Either[String, Module]] =
     val api = summon[AstApi[F]]
     parse(source.trim, moduleParser[F](api, _)) match
-      case Parsed.Success(result, _) => Right(result)
-      case f: Parsed.Failure => Left(f.trace().longMsg)
+      case Parsed.Success(result, _) => result.map(module => Right(module))
+      case f: Parsed.Failure => Monad[F].pure(Left(f.trace().longMsg))

@@ -37,7 +37,7 @@ sealed trait Member extends AstNode
 // **Comments**
 case class Comment(text: String) extends Member
 
-sealed trait Decl extends AstNode, Typeable
+sealed trait Decl extends Member, Typeable
 
 case class FnDef(
   name:     String,
