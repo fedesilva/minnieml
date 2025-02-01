@@ -1,43 +1,77 @@
 package mml.mmlclib.grammar
 
+import mml.mmlclib.ast.{Bnd, FnDef}
 import mml.mmlclib.test.BaseEffFunSuite
 import munit.*
+import org.neo4j.internal.helpers.Strings.prettyPrint
 
-@munit.IgnoreSuite
+//@munit.IgnoreSuite
 class BasicTests extends BaseEffFunSuite:
 
   test("simple let") {
-  
-    modNotFailed("""
-        let a = 1
-        let b = 2
-        let c = "tres"
-      """
-    )
+
+    val moduleF = modNotFailed("""
+      module A = 
+        let a = 1;
+        let b = 2;
+        let c = "tres";
+      ;
+      """)
+
+    moduleF.map(m => assert(m.members.size == 3))
 
   }
 
   test("let with app") {
-  
+
     modNotFailed(
       """
-        let a = 1
-        let b = 2
-        let c = a + b
+      module A =
+        let a = 1;
+        let b = 2;
+        let c = a sum b;
+      ;
       """
-    )
+    ).map { m =>
+      assert(m.members.size == 3)
+      m.members.last
+    }.map { case bnd: Bnd =>
+      assert(
+        bnd.value.terms.size == 3,
+        s"Expected 3 terms but got ${bnd.value.terms.size} : ${prettyPrint(bnd)}"
+      )
+    }
 
   }
 
   test("simple fn") {
     modNotFailed(
       """
-        fn sum a b = a + b
+        module A =
+          fn sum a b = a sum b;
+        ;
       """
-    )
+    ).map { m =>
+      {
+        assert(m.members.size == 1)
+        m.members.head
+      }
+    }.map {
+      case fn: FnDef => {
+        assert(
+          fn.params.size == 2,
+          s"Expected 2 params but got ${fn.params.size}: ${prettyPrint(fn)} "
+        )
+        assert(
+          fn.body.terms.size == 3,
+          s"Expected 3 terms but got ${fn.body.terms.size}: ${prettyPrint(fn)} "
+        )
+      }
+      case _ => fail("Expected a function")
+    }
   }
-  
-  test("app with id and lit") {
+
+  test("app with id and lit".ignore) {
     modNotFailed(
       """
         let a = b + 3
@@ -45,7 +79,7 @@ class BasicTests extends BaseEffFunSuite:
     )
   }
 
-  test("fn and let") {
+  test("fn and let".ignore) {
     modNotFailed(
       """
         let a = 1
@@ -56,7 +90,7 @@ class BasicTests extends BaseEffFunSuite:
     )
   }
 
-  test("fn let in where 1") {
+  test("fn let in where 1".ignore) {
     modNotFailed(
       """
         fn func a b = 
@@ -69,10 +103,10 @@ class BasicTests extends BaseEffFunSuite:
             double x = x * 2 
       """
     )
-    
+
   }
 
-  test("fn let in where 2") {
+  test("fn let in where 2".ignore) {
     modNotFailed(
       """
         fn func a b = 
@@ -87,10 +121,10 @@ class BasicTests extends BaseEffFunSuite:
         
       """
     )
-    
+
   }
 
-  test("0-arity fn") {
+  test("0-arity fn".ignore) {
     modNotFailed(
       """
         fn a = 1
@@ -98,15 +132,15 @@ class BasicTests extends BaseEffFunSuite:
     )
   }
 
-  test("let with group") {
+  test("let with group".ignore) {
     modNotFailed(
       """
         let a = ( 2 + 2 ) / 2
       """
     )
   }
-  
-  test("let with multiple expressions and groupings #1"){
+
+  test("let with multiple expressions and groupings #1".ignore) {
     modNotFailed(
       """
         let a =
@@ -120,18 +154,16 @@ class BasicTests extends BaseEffFunSuite:
       """
     )
   }
-  
-  test("let expression with multiple bindings #1") {
-    modNotFailed(
-      """
+
+  test("let expression with multiple bindings #1".ignore) {
+    modNotFailed("""
         let a = 1,
             b = 2
       """)
   }
-  
-  test("let expression with multiple bindings #2") {
-    modNotFailed(
-      """
+
+  test("let expression with multiple bindings #2".ignore) {
+    modNotFailed("""
         fn algo x =
           let 
             a = 1,
@@ -141,8 +173,8 @@ class BasicTests extends BaseEffFunSuite:
         
       """)
   }
-  
-  test("if expressions #1") {
+
+  test("if expressions #1".ignore) {
     modNotFailed(
       """
         let a =
@@ -154,8 +186,8 @@ class BasicTests extends BaseEffFunSuite:
       """
     )
   }
-  
-  test("if expressions #2 (else if") {
+
+  test("if expressions #2 (else if".ignore) {
     modNotFailed(
       """
         let a =
@@ -169,15 +201,13 @@ class BasicTests extends BaseEffFunSuite:
         
       """
     )
-    
+
   }
-  
-  test("impossible to define unbalanced if exp"){
+
+  test("impossible to define unbalanced if exp".ignore) {
     modFailed(
       """
         let a = if x then b
       """
     )
   }
-
-
