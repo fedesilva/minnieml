@@ -21,8 +21,6 @@ object Parser:
   def end[$: P]:      P[Unit] = P(";")
   def moduleKw[$: P]: P[Unit] = P("module")
 
-  def WS[$: P]: P[Unit] = P(CharsWhileIn(" \n\r", 1))
-
   def letBinding[F[_]](api: AstApi[F])(using P[Any], Monad[F]): P[F[Member]] =
     P("let" ~ bindingId ~ defAs ~ number ~ end).map { (id: String, n: Int) =>
       api.createLiteralInt(n).flatMap { lit =>
