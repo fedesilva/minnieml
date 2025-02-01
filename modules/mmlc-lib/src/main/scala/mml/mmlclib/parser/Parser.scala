@@ -44,7 +44,6 @@ object Parser:
 
   def failedMember[F[_]](src: String, api: AstApi[F])(using P[Any], Monad[F]): P[F[Member]] =
     P(Index ~ CharsWhile(_ != ';').! ~ end ~ Index).map { case (idx, failed, endIdx) =>
-      // make this part of the AstApi.
       val start = indexToSourcePoint(idx, src)
       val end   = indexToSourcePoint(endIdx, src)
       api
@@ -58,7 +57,6 @@ object Parser:
     }
 
   def indexToSourcePoint(index: Int, source: String): SourcePoint =
-
     val upToIndex = source.substring(0, index)
     val lines     = upToIndex.split("\n")
     val line      = lines.length
