@@ -44,6 +44,21 @@ trait BaseEffFunSuite extends CatsEffectSuite {
     }
   }
 
+  test("debugging end") {
+    val result = ParserApi.parseModuleString[IO]("""
+    module A =
+      let a = 1
+      let b = 2
+  """.stripMargin)
+
+    result.map {
+      case Left(error) =>
+        println("❌ Parsing failed!\n" + error)
+      case Right(module) =>
+        println("✅ Parsing succeeded!\nParsed module: " + module)
+    }
+  }
+
   def modFailed(
     source: String,
     name:   Option[String] = None,

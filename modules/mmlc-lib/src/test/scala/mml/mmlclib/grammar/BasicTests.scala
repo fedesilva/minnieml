@@ -243,6 +243,18 @@ class BasicTests extends BaseEffFunSuite:
     )
   }
 
+  test("optional semicolon for members".only) {
+    modNotFailed(
+      """
+       module A =
+         let a = 1
+         let b = 2
+       """.stripMargin
+    ).map { m =>
+      println(s"Parsed module: ${m}")
+    }
+  }
+
   test("fn and let".ignore) {
     modNotFailed(
       """

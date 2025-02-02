@@ -30,8 +30,12 @@ object Parser:
   def LitInt[$: P]:     P[String] = P(CharsWhileIn("0-9").!)
   def LitBoolean[$: P]: P[String] = P("true" | "false").!
 
-  def defAs[$: P]:     P[Unit] = P("=")
-  def end[$: P]:       P[Unit] = P(";")
+  def defAs[$: P]: P[Unit] = P("=")
+  //  def end[$: P]:   P[Unit] = P(";" | &(("let" | "fn")) | End)
+  def end[$: P]: P[Unit] =
+    P(";" | (CharsWhileIn(" \t").? ~ "\n".rep(1) ~ CharsWhileIn(" \t").? ~ &(("let" | "fn" | End))))
+      .log()
+
   def moduleEnd[$: P]: P[Unit] = P(";".? | End)
   def moduleKw[$: P]:  P[Unit] = P("module")
 
