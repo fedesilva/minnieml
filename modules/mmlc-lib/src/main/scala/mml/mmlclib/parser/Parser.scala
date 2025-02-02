@@ -10,9 +10,17 @@ import mml.mmlclib.ast.*
 object Parser:
 
   def bindingId[$: P]: P[String] =
+    // DO NOT allow spaces within an id
+    import fastparse.NoWhitespace.*
     P(CharIn("a-z") ~ CharsWhileIn("a-zA-Z0-9_", 0)).!
 
+  def operatorId[$: P]: P[String] =
+    import fastparse.NoWhitespace.*
+    P(CharIn("!@#$%^&*-+<>?/\\|").rep(1).!).log("operatorId")
+
   def typeId[$: P]: P[String] =
+    // DO NOT allow spaces within an id
+    import fastparse.NoWhitespace.*
     P(CharIn("A-Z") ~ CharsWhileIn("a-zA-Z0-9", 0)).!
 
   def lit[$: P]: P[String] =
@@ -28,20 +36,28 @@ object Parser:
 
   def term[F[_]: Monad: AstApi](using P[Any]): P[F[Term]] =
     val api = summon[AstApi[F]]
-    P(LitString).map(s => api.createLiteralString(s).widen[Term]) |
-      P(LitInt).map(n => api.createLiteralInt(n.toInt).widen[Term]) |
-      P(LitBoolean).map(b => api.createLiteralBool(b.toBoolean).widen[Term]) |
-      P(bindingId).map(name => api.createRef(name, none).widen[Term])
+    P(
+      LitString.map(s => api.createLiteralString(s).widen[Term]) |
+        LitInt.map(n => api.createLiteralInt(n.toInt).widen[Term]) |
+        LitBoolean.map(b => api.createLiteralBool(b.toBoolean).widen[Term]) |
+        operatorId.map(op => api.createRef(op, none).widen[Term]) |
+        bindingId.map(name => api.createRef(name, none).widen[Term])
+    )
 
   def expr[F[_]: Monad: AstApi](using P[Any]): P[F[Expr]] =
     P(term[F].rep(1)).map { terms =>
-      terms.toList.sequence.map(ts => Expr(ts))
+      terms.toList.sequence.map { ts =>
+        if ts.size == 1 then Expr(ts, ts.head.typeSpec)
+        else Expr(ts)
+      }
     }
 
   def letBinding[F[_]: Monad: AstApi](using P[Any]): P[F[Member]] =
     val api = summon[AstApi[F]]
     P("let" ~ bindingId ~ defAs ~ expr ~ end).map { case (id, exprF) =>
-      exprF.flatMap(expr => api.createLet(id, expr).widen[Member])
+      exprF.flatMap { expr =>
+        api.createLet(id, expr).widen[Member]
+      }
     }
 
   def failedMember[F[_]: Monad: AstApi](src: String)(using P[Any]): P[F[Member]] =

@@ -109,7 +109,7 @@ case class TypeSeq(inner: TypeSpec) extends TypeSpec
 /** A grouping of types, mostly for deambiguation: `Map String (List Int)` */
 case class TypeGroup(types: List[TypeSpec]) extends TypeSpec
 
-/** Helpers to represent know types */
+/** Helpers to represent known types */
 sealed trait LiteralType extends TypeSpec {
   def typeName: String
 }
