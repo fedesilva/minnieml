@@ -27,7 +27,7 @@ trait AstApi[F[_]]:
 
   // **Declarations**
 
-  def createLet(name:      String, value:  Expr): F[Bnd]
+  def createLet(name:      String, value:  Expr, typeSpec:     Option[TypeSpec] = None): F[Bnd]
   def createFunction(name: String, params: List[String], body: Expr): F[FnDef]
 
   // **Literals**

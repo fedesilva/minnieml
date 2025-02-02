@@ -30,8 +30,8 @@ object InMemoryAstApi extends AstApi[IO]:
   override def createExpr(terms: List[Term]): IO[Expr] =
     IO.pure(Expr(terms))
 
-  override def createLet(name: String, value: Expr): IO[Bnd] =
-    IO.pure(Bnd(name, value))
+  override def createLet(name: String, value: Expr, typeSpec: Option[TypeSpec] = None): IO[Bnd] =
+    IO.pure(Bnd(name, value, typeSpec))
 
   override def createFunction(name: String, params: List[String], body: Expr): IO[FnDef] =
     IO.pure(FnDef(name, params, body))

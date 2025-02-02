@@ -60,7 +60,7 @@ object Parser:
     val api = summon[AstApi[F]]
     P("let" ~ bindingId ~ defAs ~ expr ~ end).map { case (id, exprF) =>
       exprF.flatMap { expr =>
-        api.createLet(id, expr).widen[Member]
+        api.createLet(id, expr, expr.typeSpec).widen[Member]
       }
     }
 
