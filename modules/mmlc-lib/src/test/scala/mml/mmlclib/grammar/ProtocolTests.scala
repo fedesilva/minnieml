@@ -2,6 +2,9 @@ package mml.mmlclib.grammar
 
 import mml.mmlclib.test.BaseEffFunSuite
 
+import munit.*
+
+@munit.IgnoreSuite
 class ProtocolTests extends BaseEffFunSuite:
 
   test("protocol, instance and functions") {

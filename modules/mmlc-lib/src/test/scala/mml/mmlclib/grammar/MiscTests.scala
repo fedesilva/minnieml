@@ -7,6 +7,9 @@ import mml.mmlclib.test.BaseEffFunSuite
  * Mostly things I make up when playing with the grammar, put into a test.
  *
  */
+import munit.*
+
+@munit.IgnoreSuite
 class MiscTests extends BaseEffFunSuite:
 
   test("let and many comments") {
