@@ -6,6 +6,7 @@ import mml.mmlclib.api.{AstApi, ParserApi}
 import mml.mmlclib.ast.{Member, MemberError, Module}
 import mml.mmlclib.util.prettyPrintAst
 import munit.CatsEffectSuite
+import cats.syntax.all.*
 
 /** Base trait for effectful tests; adds common MML specific assertions. */
 trait BaseEffFunSuite extends CatsEffectSuite {
@@ -23,8 +24,13 @@ trait BaseEffFunSuite extends CatsEffectSuite {
     checkMembers(module.members)
   }
 
-  def modNotFailed(source: String, msg: Option[String] = None): IO[Module] = {
-    ParserApi.parseModuleString[IO](source).map {
+  def modNotFailed(
+    source: String,
+    name:   Option[String] = None,
+    msg:    Option[String] = None
+  ): IO[Module] = {
+
+    ParserApi.parseModuleString[IO](source, name).map {
       case Right(module) =>
         assert(
           !containsMemberError(module),
@@ -38,8 +44,12 @@ trait BaseEffFunSuite extends CatsEffectSuite {
     }
   }
 
-  def modFailed(source: String, msg: Option[String] = None): IO[Unit] = {
-    ParserApi.parseModuleString[IO](source).map {
+  def modFailed(
+    source: String,
+    name:   Option[String] = None,
+    msg:    Option[String] = None
+  ): IO[Unit] = {
+    ParserApi.parseModuleString[IO](source, name).map {
       case Right(module) =>
         assert(
           containsMemberError(module),

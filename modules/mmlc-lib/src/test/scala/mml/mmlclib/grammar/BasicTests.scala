@@ -4,6 +4,7 @@ import mml.mmlclib.ast.{Bnd, FnDef}
 import mml.mmlclib.test.BaseEffFunSuite
 import munit.*
 import org.neo4j.internal.helpers.Strings.prettyPrint
+import cats.syntax.all.*
 
 //@munit.IgnoreSuite
 class BasicTests extends BaseEffFunSuite:
@@ -154,6 +155,28 @@ class BasicTests extends BaseEffFunSuite:
 
   }
 
+  test("let with app with symbolic ref mixture") {
+
+    modNotFailed(
+      """
+                module A =
+                  let c = 5! + 3;
+                ;
+                """
+    ).map { m =>
+      assert(m.members.size == 1)
+      m.members.last
+    }.map {
+      case bnd: Bnd =>
+        assert(
+          bnd.value.terms.size == 4,
+          s"Expected 2 terms but got ${bnd.value.terms.size} : ${prettyPrint(bnd)}"
+        )
+      case _ => fail("Expected a let")
+    }
+
+  }
+
   test("simple fn") {
     modNotFailed(
       """
@@ -179,6 +202,47 @@ class BasicTests extends BaseEffFunSuite:
       }
       case _ => fail("Expected a function")
     }
+  }
+
+  test("explicit module, name pased") {
+    modNotFailed(
+      """
+      module A =
+        let a = 1;
+      ;
+      """,
+      "IgnoreThisName".some
+    )
+  }
+
+  test("implicit module, name pased") {
+    modNotFailed(
+      """
+        let a = 1;
+      """,
+      "TestModule".some
+    )
+  }
+
+  test("fail: implicit module, name NOT  pased") {
+    modFailed(
+      """
+          let a = 1;
+        """
+    )
+  }
+
+  test("fn and let".ignore) {
+    modNotFailed(
+      """
+       module A = 
+         let a = 1;
+         let b = 2;
+         fn sum a b = a + b;
+         let x = sum a b;
+       ;
+       """
+    )
   }
 
   test("app with id and lit".ignore) {

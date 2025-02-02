@@ -16,7 +16,7 @@ object Parser:
 
   def operatorId[$: P]: P[String] =
     import fastparse.NoWhitespace.*
-    P(CharIn("!@#$%^&*-+<>?/\\|").rep(1).!).log("operatorId")
+    P(CharIn("!@#$%^&*-+<>?/\\|").rep(1).!)
 
   def typeId[$: P]: P[String] =
     // DO NOT allow spaces within an id
@@ -99,7 +99,7 @@ object Parser:
       P("protected").map(_ => ModVisibility.Protected) |
       P("lexical").map(_ => ModVisibility.Lexical)
 
-  def moduleParser[F[_]: Monad: AstApi](src: String, punct: P[Any]): P[F[Module]] =
+  def explicitModuleParser[F[_]: Monad: AstApi](src: String, punct: P[Any]): P[F[Module]] =
     given P[Any] = punct
     val api      = summon[AstApi[F]]
     P(Start ~ moduleKw ~ modVisibility.? ~ typeId.! ~ defAs ~ memberParser(src).rep ~ end)
@@ -109,8 +109,41 @@ object Parser:
         )
       }
 
-  def parseModule[F[_]: AstApi: Monad](source: String): F[Either[String, Module]] =
+  def implicitModuleParser[F[_]: Monad: AstApi](
+    src:   String,
+    name:  String,
+    punct: P[Any]
+  ): P[F[Module]] =
+    given P[Any] = punct
+
     val api = summon[AstApi[F]]
-    parse(source.trim, moduleParser[F](source, _)) match
+    P(Start ~ memberParser(src).rep ~ End)
+      .map { case (membersF) =>
+        membersF.toList.sequence.flatMap(members =>
+          api.createModule(name, ModVisibility.Public, members)
+        )
+      }
+
+  def moduleParser[F[_]: Monad: AstApi](
+    src:   String,
+    name:  Option[String],
+    punct: P[Any]
+  ): P[F[Module]] =
+    given P[Any] = punct
+    name.fold(
+      explicitModuleParser(src, punct)
+    )(n =>
+      P(
+        explicitModuleParser(src, punct) |
+          implicitModuleParser(src, n, punct)
+      )
+    )
+
+  def parseModule[F[_]: AstApi: Monad](
+    source: String,
+    name:   Option[String] = None
+  ): F[Either[String, Module]] =
+    val api = summon[AstApi[F]]
+    parse(source, moduleParser[F](source, name, _)) match
       case Parsed.Success(result, _) => result.map(_.asRight)
       case f: Parsed.Failure => f.trace().longMsg.asLeft.pure[F]
