@@ -5,7 +5,12 @@ import mml.mmlclib.ast._
 trait AstApi[F[_]]:
 
   // **Modules & Bindings**
-  def createModule(name: String, visibility: ModVisibility, members: List[Member]): F[Module]
+  def createModule(
+    name:       String,
+    visibility: ModVisibility,
+    members:    List[Member],
+    isImplicit: Boolean = false
+  ): F[Module]
 
   // **Comments**
   def createComment(text: String): F[Comment]

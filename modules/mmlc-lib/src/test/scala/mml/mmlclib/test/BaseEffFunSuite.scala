@@ -26,8 +26,8 @@ trait BaseEffFunSuite extends CatsEffectSuite {
 
   def modNotFailed(
     source: String,
-    name:   Option[String] = None,
-    msg:    Option[String] = "Test".some
+    name:   Option[String] = "Test".some,
+    msg:    Option[String] = None
   ): IO[Module] = {
 
     ParserApi.parseModuleString[IO](source, name).map {
@@ -35,34 +35,19 @@ trait BaseEffFunSuite extends CatsEffectSuite {
         assert(
           !containsMemberError(module),
           msg.getOrElse(
-            s"Expected no errors, but found MemberError nodes:\n ${prettyPrintAst(module)}"
+            s"Failed: found MemberError nodes:\n ${prettyPrintAst(module)}"
           )
         )
         module
       case Left(error) =>
-        fail(msg.getOrElse("Expected successful parsing but got errors.") + s"\n$error")
-    }
-  }
-
-  test("debugging end") {
-    val result = ParserApi.parseModuleString[IO]("""
-    module A =
-      let a = 1
-      let b = 2
-  """.stripMargin)
-
-    result.map {
-      case Left(error) =>
-        println("❌ Parsing failed!\n" + error)
-      case Right(module) =>
-        println("✅ Parsing succeeded!\nParsed module: " + module)
+        fail(msg.getOrElse("Parser Failed: .") + s"\n$error")
     }
   }
 
   def modFailed(
     source: String,
-    name:   Option[String] = None,
-    msg:    Option[String] = "TestFail".some
+    name:   Option[String] = "TestFail".some,
+    msg:    Option[String] = None
   ): IO[Unit] = {
     ParserApi.parseModuleString[IO](source, name).map {
       case Right(module) =>

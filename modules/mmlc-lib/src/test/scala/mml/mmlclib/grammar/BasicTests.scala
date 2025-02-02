@@ -11,15 +11,13 @@ class BasicTests extends BaseEffFunSuite:
 
   test("simple let") {
 
-    val moduleF = modNotFailed("""
+    modNotFailed("""
       module A = 
         let a = 1;
         let b = 2;
         let c = "tres";
       ;
-      """)
-
-    moduleF.map(m => assert(m.members.size == 3))
+      """).map(m => assert(m.members.size == 3))
 
   }
 
@@ -115,10 +113,10 @@ class BasicTests extends BaseEffFunSuite:
 
     modNotFailed(
       """
-            module A =
-              let c = +b;
-            ;
-            """
+        module A =
+          let c = +b;
+        ;
+      """
     ).map { m =>
       assert(m.members.size == 1)
       m.members.last
@@ -137,10 +135,10 @@ class BasicTests extends BaseEffFunSuite:
 
     modNotFailed(
       """
-              module A =
-                let c = b!;
-              ;
-              """
+        module A =
+          let c = b!;
+        ;
+      """
     ).map { m =>
       assert(m.members.size == 1)
       m.members.last
@@ -155,14 +153,13 @@ class BasicTests extends BaseEffFunSuite:
 
   }
 
-  test("let with app with symbolic ref mixture") {
-
+  test("let with app with symbolic ref mix") {
     modNotFailed(
       """
-                module A =
-                  let c = 5! + 3;
-                ;
-                """
+        module A =
+          let c = 5! + 3;
+        ;
+      """
     ).map { m =>
       assert(m.members.size == 1)
       m.members.last
@@ -174,7 +171,6 @@ class BasicTests extends BaseEffFunSuite:
         )
       case _ => fail("Expected a let")
     }
-
   }
 
   test("simple fn") {
@@ -190,7 +186,7 @@ class BasicTests extends BaseEffFunSuite:
         m.members.head
       }
     }.map {
-      case fn: FnDef => {
+      case fn: FnDef =>
         assert(
           fn.params.size == 2,
           s"Expected 2 params but got ${fn.params.size}: ${prettyPrint(fn)} "
@@ -199,12 +195,11 @@ class BasicTests extends BaseEffFunSuite:
           fn.body.terms.size == 3,
           s"Expected 3 terms but got ${fn.body.terms.size}: ${prettyPrint(fn)} "
         )
-      }
       case _ => fail("Expected a function")
     }
   }
 
-  test("explicit module, name pased, ignored") {
+  test("explicit module. name passed, ignored") {
     modNotFailed(
       """
       module A =
@@ -212,23 +207,30 @@ class BasicTests extends BaseEffFunSuite:
       ;
       """,
       "IgnoreThisName".some
-    ).map(m => assert(m.name == "A"))
+    ).map { m =>
+      assert(m.name == "A")
+      assert(!m.isImplicit)
+    }
   }
 
-  test("implicit module, name pased") {
+  test("implicit module, name passed") {
     modNotFailed(
       """
         let a = 1;
       """,
       "TestModule".some
-    ).map(m => assert(m.name == "TestModule"))
+    ).map(m => {
+      assert(m.name == "TestModule")
+      assert(m.isImplicit)
+    })
   }
 
   test("fail: implicit module, name NOT  passed") {
     modFailed(
       """
-          let a = 1;
-        """
+        let a = 1;
+      """,
+      None
     )
   }
 
@@ -251,7 +253,7 @@ class BasicTests extends BaseEffFunSuite:
          let b = 2
        """.stripMargin
     ).map { m =>
-      println(s"Parsed module: ${m}")
+      println(s"Parsed module: $m")
     }
   }
 
@@ -268,7 +270,7 @@ class BasicTests extends BaseEffFunSuite:
     )
   }
 
-  test("app with id and lit".ignore) {
+  test("app with id and lit") {
     modNotFailed(
       """
         let a = b + 3
@@ -276,7 +278,7 @@ class BasicTests extends BaseEffFunSuite:
     )
   }
 
-  test("fn and let".ignore) {
+  test("fn and let") {
     modNotFailed(
       """
         let a = 1
@@ -301,32 +303,6 @@ class BasicTests extends BaseEffFunSuite:
       """
     )
 
-  }
-
-  test("fn let in where 2".ignore) {
-    modNotFailed(
-      """
-        fn func a b = 
-          let 
-            doubleA = double a,
-            tripleB = triple b
-          in
-            tripleB + doubleA
-          where 
-            double x = x * 2,
-            triple x = x * 3 
-        
-      """
-    )
-
-  }
-
-  test("0-arity fn".ignore) {
-    modNotFailed(
-      """
-        fn a = 1
-      """
-    )
   }
 
   test("let with group".ignore) {
@@ -384,7 +360,7 @@ class BasicTests extends BaseEffFunSuite:
     )
   }
 
-  test("if expressions #2 (else if".ignore) {
+  test("if expressions #2 (else if)".ignore) {
     modNotFailed(
       """
         let a =

@@ -9,9 +9,10 @@ object InMemoryAstApi extends AstApi[IO]:
   override def createModule(
     name:       String,
     visibility: ModVisibility,
-    members:    List[Member]
+    members:    List[Member],
+    isImplicit: Boolean = false
   ): IO[Module] =
-    IO.pure(Module(name, visibility, members))
+    IO.pure(Module(name, visibility, members, isImplicit))
 
   def createMemberError(
     start:      SourcePoint,

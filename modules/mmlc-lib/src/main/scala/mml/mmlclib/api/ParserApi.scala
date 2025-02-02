@@ -19,7 +19,9 @@ object ParserApi:
 
   def parseModuleFile[F[_]: AstApi: Sync](path: Path): F[Either[String, Module]] = {
     val parentName = sanitizeModuleName(path.getParent.getFileName.toString)
-    Sync[F].blocking(Files.readString(path)).flatMap(src => Parser.parseModule[F](src))
+    Sync[F]
+      .blocking(Files.readString(path))
+      .flatMap(src => Parser.parseModule[F](src, parentName.some))
   }
 
   private def sanitizeModuleName(dirName: String): String = {

@@ -19,7 +19,8 @@ enum ModVisibility:
 case class Module(
   name:       String,
   visibility: ModVisibility,
-  members:    List[Member]
+  members:    List[Member],
+  isImplicit: Boolean = false
 ) extends AstNode
 
 // **Members**
