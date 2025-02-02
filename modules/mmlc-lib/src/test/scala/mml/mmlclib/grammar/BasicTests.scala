@@ -224,7 +224,7 @@ class BasicTests extends BaseEffFunSuite:
     )
   }
 
-  test("fail: implicit module, name NOT  pased") {
+  test("fail: implicit module, name NOT  passed") {
     modFailed(
       """
           let a = 1;

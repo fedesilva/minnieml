@@ -27,7 +27,7 @@ trait BaseEffFunSuite extends CatsEffectSuite {
   def modNotFailed(
     source: String,
     name:   Option[String] = None,
-    msg:    Option[String] = None
+    msg:    Option[String] = "Test".some
   ): IO[Module] = {
 
     ParserApi.parseModuleString[IO](source, name).map {
@@ -47,7 +47,7 @@ trait BaseEffFunSuite extends CatsEffectSuite {
   def modFailed(
     source: String,
     name:   Option[String] = None,
-    msg:    Option[String] = None
+    msg:    Option[String] = "TestFail".some
   ): IO[Unit] = {
     ParserApi.parseModuleString[IO](source, name).map {
       case Right(module) =>
