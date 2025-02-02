@@ -30,9 +30,10 @@ object Parser:
   def LitInt[$: P]:     P[String] = P(CharsWhileIn("0-9").!)
   def LitBoolean[$: P]: P[String] = P("true" | "false").!
 
-  def defAs[$: P]:    P[Unit] = P("=")
-  def end[$: P]:      P[Unit] = P(";")
-  def moduleKw[$: P]: P[Unit] = P("module")
+  def defAs[$: P]:     P[Unit] = P("=")
+  def end[$: P]:       P[Unit] = P(";")
+  def moduleEnd[$: P]: P[Unit] = P(";".? | End)
+  def moduleKw[$: P]:  P[Unit] = P("module")
 
   def term[F[_]: Monad: AstApi](using P[Any]): P[F[Term]] =
     val api = summon[AstApi[F]]
@@ -102,7 +103,7 @@ object Parser:
   def explicitModuleParser[F[_]: Monad: AstApi](src: String, punct: P[Any]): P[F[Module]] =
     given P[Any] = punct
     val api      = summon[AstApi[F]]
-    P(Start ~ moduleKw ~ modVisibility.? ~ typeId.! ~ defAs ~ memberParser(src).rep ~ end)
+    P(Start ~ moduleKw ~ modVisibility.? ~ typeId.! ~ defAs ~ memberParser(src).rep ~ moduleEnd)
       .map { case (vis, name, membersF) =>
         membersF.toList.sequence.flatMap(members =>
           api.createModule(name, vis.getOrElse(ModVisibility.Public), members)

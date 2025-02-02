@@ -232,6 +232,17 @@ class BasicTests extends BaseEffFunSuite:
     )
   }
 
+  test("optional semicolon closing module") {
+    modNotFailed(
+      """
+      module A =
+        let a = 1;
+        let b = 2;
+      
+      """.stripMargin
+    )
+  }
+
   test("fn and let".ignore) {
     modNotFailed(
       """
