@@ -51,13 +51,9 @@ case class Bnd(
   typeSpec: Option[TypeSpec] = None
 ) extends Decl
 
-// **Expressions and Terms**
-
 sealed trait Term extends AstNode, Typeable
 
 case class Expr(terms: List[Term], typeSpec: Option[TypeSpec] = None) extends Term
-
-// **Terms of an expression**
 
 /** Points to a something declared elsewhere */
 case class Ref(name: String, typeSpec: Option[TypeSpec]) extends Term
@@ -107,7 +103,7 @@ case object TypeUnit extends TypeSpec
 /** Type Sequences `[Int], [String], [T]` */
 case class TypeSeq(inner: TypeSpec) extends TypeSpec
 
-/** A grouping of types, mostly for deambiguation: `Map String (List Int)` */
+/** A grouping of types, mostly for disambiguation: `Map String (List Int)` */
 case class TypeGroup(types: List[TypeSpec]) extends TypeSpec
 
 /** Helpers to represent known types */

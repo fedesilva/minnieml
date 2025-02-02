@@ -1,12 +1,12 @@
 package mml.mmlclib.grammar
 
-import mml.mmlclib.ast.{Bnd, FnDef}
+import cats.syntax.all.*
+import mml.mmlclib.ast.*
 import mml.mmlclib.test.BaseEffFunSuite
+import mml.mmlclib.util.prettyPrintAst
 import munit.*
 import org.neo4j.internal.helpers.Strings.prettyPrint
-import cats.syntax.all.*
 
-//@munit.IgnoreSuite
 class BasicTests extends BaseEffFunSuite:
 
   test("simple let") {
@@ -278,4 +278,37 @@ class BasicTests extends BaseEffFunSuite:
     )
   }
 
-  
+  test("String Literal has correct typespec") {
+    modNotFailed(
+      """
+        let a = "hello";
+      """.stripMargin
+    ).map { m =>
+      prettyPrintAst(m)
+      assert(m.members.head.isInstanceOf[Bnd])
+      m.members.head
+    }.map { case bnd: Bnd =>
+      bnd.value.terms.head.typeSpec match
+        case Some(_: LiteralStringType.type) =>
+        case other =>
+          fail(s"Expected `Some(LiteralStringType)`, got $other")
+
+    }
+  }
+
+  test("Int Literal has correct typespec") {
+    modNotFailed(
+      """
+          let a = 1;
+      """.stripMargin
+    ).map { m =>
+      assert(m.members.head.isInstanceOf[Bnd])
+      m.members.head
+    }.map { case bnd: Bnd =>
+      bnd.value.terms.head.typeSpec match
+        case Some(_: LiteralIntType.type) =>
+        case other =>
+          fail(s"Expected `Some(LiteralIntType)`, got $other")
+
+    }
+  }
