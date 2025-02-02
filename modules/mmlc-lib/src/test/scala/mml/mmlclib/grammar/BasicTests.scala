@@ -216,7 +216,7 @@ class BasicTests extends BaseEffFunSuite:
   test("implicit module, name passed") {
     modNotFailed(
       """
-        let a = 1;
+        let a = 1
       """,
       "TestModule".some
     ).map(m => {
@@ -228,7 +228,7 @@ class BasicTests extends BaseEffFunSuite:
   test("fail: implicit module, name NOT  passed") {
     modFailed(
       """
-        let a = 1;
+        let a = 1
       """,
       None
     )
@@ -240,7 +240,6 @@ class BasicTests extends BaseEffFunSuite:
       module A =
         let a = 1;
         let b = 2;
-      
       """.stripMargin
     )
   }
@@ -250,6 +249,18 @@ class BasicTests extends BaseEffFunSuite:
       """
        module A =
          let a = 1
+         let b = 2
+       """.stripMargin
+    ).map { m =>
+      println(s"Parsed module: $m")
+    }
+  }
+
+  test("mixed optional semicolon for members") {
+    modNotFailed(
+      """
+       module A =
+         let a = 1;
          let b = 2
        """.stripMargin
     ).map { m =>
