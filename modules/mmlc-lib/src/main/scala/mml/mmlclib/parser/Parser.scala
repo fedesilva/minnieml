@@ -147,7 +147,6 @@ object Parser:
     source: String,
     name:   Option[String] = None
   ): F[Either[String, Module]] =
-    val api = summon[AstApi[F]]
     parse(source, moduleParser[F](source, name, _)) match
       case Parsed.Success(result, _) => result.map(_.asRight)
       case f: Parsed.Failure => f.trace().longMsg.asLeft.pure[F]
