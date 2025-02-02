@@ -216,12 +216,14 @@ class BasicTests extends BaseEffFunSuite:
   test("implicit module, name passed") {
     modNotFailed(
       """
-        let a = 1
+        let a = 1;
       """,
       "TestModule".some
     ).map(m => {
       assert(m.name == "TestModule")
       assert(m.isImplicit)
+      assert(m.members.size == 1)
+      assert(m.members.head.isInstanceOf[Bnd])
     })
   }
 
@@ -244,29 +246,7 @@ class BasicTests extends BaseEffFunSuite:
     )
   }
 
-  test("optional semicolon for members") {
-    modNotFailed(
-      """
-       module A =
-         let a = 1
-         let b = 2
-       """.stripMargin
-    ).map { m =>
-      println(s"Parsed module: $m")
-    }
-  }
-
-  test("mixed optional semicolon for members") {
-    modNotFailed(
-      """
-       module A =
-         let a = 1;
-         let b = 2
-       """.stripMargin
-    ).map { m =>
-      println(s"Parsed module: $m")
-    }
-  }
+  
 
   test("fn and let") {
     modNotFailed(

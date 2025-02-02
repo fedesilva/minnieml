@@ -31,9 +31,9 @@ object Parser:
   def LitBoolean[$: P]: P[String] = P("true" | "false").!
 
   def defAs[$: P]: P[Unit] = P("=")
+  def end[$: P]:   P[Unit] = P(";")
   // Trickery: tries to infer the end if a ';' is missing after a member. fails for the most part.
-  def end[$: P]: P[Unit] =
-    P(";" | (CharsWhileIn(" \t").? ~ "\n".rep(1) ~ CharsWhileIn(" \t").? ~ &("let" | "fn" | End)))
+  // P(";" | (CharsWhileIn(" \t").? ~ "\n".rep(1) ~ CharsWhileIn(" \t").? ~ &("let" | "fn" | End)))
 
   def moduleEnd[$: P]: P[Unit] = P(";".? | End)
   def moduleKw[$: P]:  P[Unit] = P("module")
