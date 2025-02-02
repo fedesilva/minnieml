@@ -246,8 +246,6 @@ class BasicTests extends BaseEffFunSuite:
     )
   }
 
-  
-
   test("fn and let") {
     modNotFailed(
       """
@@ -280,98 +278,4 @@ class BasicTests extends BaseEffFunSuite:
     )
   }
 
-  test("fn let in where 1".ignore) {
-    modNotFailed(
-      """
-        fn func a b = 
-          let 
-            doubleA = double a,
-            doubleB = double b
-          in
-            doubleB + doubleA
-          where 
-            double x = x * 2 
-      """
-    )
-
-  }
-
-  test("let with group".ignore) {
-    modNotFailed(
-      """
-        let a = ( 2 + 2 ) / 2
-      """
-    )
-  }
-
-  test("let with multiple expressions and groupings #1".ignore) {
-    modNotFailed(
-      """
-        let a =
-          (
-                2 +
-                (8 / 2)
-                + 4
-          )
-          -  4
-        
-      """
-    )
-  }
-
-  test("let expression with multiple bindings #1".ignore) {
-    modNotFailed("""
-        let a = 1,
-            b = 2
-      """)
-  }
-
-  test("let expression with multiple bindings #2".ignore) {
-    modNotFailed("""
-        fn algo x =
-          let 
-            a = 1,
-            b = 2 * x
-          in
-             x + (a * b)
-        
-      """)
-  }
-
-  test("if expressions #1".ignore) {
-    modNotFailed(
-      """
-        let a =
-          if a >= 0 then
-           a
-         else
-           0
-        
-      """
-    )
-  }
-
-  test("if expressions #2 (else if)".ignore) {
-    modNotFailed(
-      """
-        let a =
-          if a >= 0 then
-            a
-          else if x <= 45 then
-            let b = 2
-             in 4 * b
-          else
-            0
-        
-      """
-    )
-
-  }
-
-  test("impossible to define unbalanced if exp".ignore) {
-    modFailed(
-      """
-        let a = if x then b
-      """
-    )
-  }
+  
