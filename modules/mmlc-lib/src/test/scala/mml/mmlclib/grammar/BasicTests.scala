@@ -204,7 +204,7 @@ class BasicTests extends BaseEffFunSuite:
     }
   }
 
-  test("explicit module, name pased") {
+  test("explicit module, name pased, ignored") {
     modNotFailed(
       """
       module A =
@@ -212,7 +212,7 @@ class BasicTests extends BaseEffFunSuite:
       ;
       """,
       "IgnoreThisName".some
-    )
+    ).map(m => assert(m.name == "A"))
   }
 
   test("implicit module, name pased") {
@@ -221,7 +221,7 @@ class BasicTests extends BaseEffFunSuite:
         let a = 1;
       """,
       "TestModule".some
-    )
+    ).map(m => assert(m.name == "TestModule"))
   }
 
   test("fail: implicit module, name NOT  passed") {
@@ -243,7 +243,7 @@ class BasicTests extends BaseEffFunSuite:
     )
   }
 
-  test("optional semicolon for members".only) {
+  test("optional semicolon for members") {
     modNotFailed(
       """
        module A =
@@ -255,7 +255,7 @@ class BasicTests extends BaseEffFunSuite:
     }
   }
 
-  test("fn and let".ignore) {
+  test("fn and let") {
     modNotFailed(
       """
        module A = 
