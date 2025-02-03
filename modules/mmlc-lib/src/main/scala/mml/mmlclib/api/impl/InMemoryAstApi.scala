@@ -45,5 +45,10 @@ object InMemoryAstApi extends AstApi[IO]:
   override def createLiteralBool(value: Boolean): IO[LiteralBool] =
     IO.pure(LiteralBool(value))
 
+  override def createLiteralUnit(): IO[LiteralUnit.type] = IO.pure(LiteralUnit)
+
+  override def createLiteralFloat(value: Float): IO[LiteralFloat] =
+    IO.pure(LiteralFloat(value))
+
   override def createRef(name: String, typeSpec: Option[TypeSpec]): IO[Ref] =
     IO.pure(Ref(name, typeSpec))

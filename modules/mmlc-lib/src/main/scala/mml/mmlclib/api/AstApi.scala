@@ -1,6 +1,6 @@
 package mml.mmlclib.api
 
-import mml.mmlclib.ast._
+import mml.mmlclib.ast.*
 
 trait AstApi[F[_]]:
 
@@ -34,5 +34,8 @@ trait AstApi[F[_]]:
   def createLiteralInt(value:    Int):     F[LiteralInt]
   def createLiteralString(value: String):  F[LiteralString]
   def createLiteralBool(value:   Boolean): F[LiteralBool]
+
+  def createLiteralUnit(): F[LiteralUnit.type]
+  def createLiteralFloat(value: Float): F[LiteralFloat]
 
   def createRef(name: String, typeSpec: Option[TypeSpec]): F[Ref]

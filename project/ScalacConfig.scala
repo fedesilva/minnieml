@@ -3,11 +3,6 @@ import sbt.*
 
 object ScalacConfig {
 
-//  lazy val plugins =
-//    Seq(
-//      //addCompilerPlugin("org.scalamacros" %% "paradise" % "2.1.1" cross CrossVersion.full)
-//    )
-
   lazy val opts: Seq[String] =
     Seq(
       "-deprecation", // Emit warning and location for usages of deprecated APIs.
@@ -25,7 +20,7 @@ object ScalacConfig {
       // "-explain",
       "-new-syntax" // Enforce new syntax
 //      "-indent"
-//      "-rewrite"
+//      "-rewrite",
     )
 
 }

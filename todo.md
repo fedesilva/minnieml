@@ -7,14 +7,12 @@ Proceed at your own risk.
 
 ## chores 
 
-* migrate to MUnit
 
 ## Syntax/Grammar
 
-BROKEN: EOF error
 
-* tests for
-  *  
+
+* tests for 
   * use
   * open use
   * refinements

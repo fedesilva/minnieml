@@ -25,7 +25,7 @@ Here's a small syntax showcase
 
 a more complex example
 
-* types start with an upercase letter, mandatory from grammar (Maybe, String, Int)
+* types start with an uppercase letter, mandatory (Maybe, String, Int)
 * type variables start with a ' and an uppercase letter ('T, 'R, 'In, 'Out)
 * `#` is a line comment
 

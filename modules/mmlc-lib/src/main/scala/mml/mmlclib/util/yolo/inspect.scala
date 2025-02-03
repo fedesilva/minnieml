@@ -8,11 +8,8 @@ import mml.mmlclib.api.{AstApi, ParserApi}
 import mml.mmlclib.util.prettyPrintAst
 
 def printModuleAst(source: String, name: Option[String] = None): Unit =
-  given Monad[IO]  = cats.effect.IO.asyncForIO
-  given AstApi[IO] = InMemoryAstApi
-
   ParserApi
-    .parseModuleString[IO](source, name)
+    .parseModuleString(source, name)
     .map {
       case Right(ast) => println(s"Parsed AST:\n  ${prettyPrintAst(ast)}")
       case Left(error) => println(s"Parse error:\n  $error")

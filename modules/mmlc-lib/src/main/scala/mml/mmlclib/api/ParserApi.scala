@@ -2,26 +2,28 @@ package mml.mmlclib.api
 
 import java.nio.file.{Files, Path}
 import cats.Monad
-import cats.effect.Sync
-import cats.syntax.all._
+import cats.effect.{IO, Sync}
+import cats.syntax.all.*
 import mml.mmlclib.ast.Module
 import mml.mmlclib.parser.Parser
 import mml.mmlclib.api.AstApi
 
 object ParserApi:
-  def parseModuleString[F[_]: AstApi: Monad](
+  def parseModuleString(
     source: String,
     name:   Option[String] = None
-  ): F[Either[String, Module]] = {
+  ): IO[Either[String, Module]] = {
     val n = name.map(sanitizeModuleName)
-    Parser.parseModule[F](source, n)
+    IO.pure(
+      Parser.parseModule(source, n)
+    )
   }
 
-  def parseModuleFile[F[_]: AstApi: Sync](path: Path): F[Either[String, Module]] = {
+  def parseModuleFile(path: Path): IO[Either[String, Module]] = {
     val parentName = sanitizeModuleName(path.getParent.getFileName.toString)
-    Sync[F]
+    Sync[IO]
       .blocking(Files.readString(path))
-      .flatMap(src => Parser.parseModule[F](src, parentName.some))
+      .flatMap(src => Sync[IO].pure(Parser.parseModule(src, parentName.some)))
   }
 
   private def sanitizeModuleName(dirName: String): String = {

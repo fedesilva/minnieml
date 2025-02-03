@@ -1,13 +1,14 @@
 package mml.mmlclib.parser
 
-import cats.Monad
-import cats.syntax.all.*
-import fastparse.*
-import fastparse.MultiLineWhitespace.*
-import mml.mmlclib.api.AstApi
-import mml.mmlclib.ast.*
+import fastparse._
+import fastparse.MultiLineWhitespace._
+import mml.mmlclib.ast._
 
 object Parser:
+
+  // -----------------------------------------------------------------------------
+  // Basic Low-Level Parsers
+  // -----------------------------------------------------------------------------
 
   def bindingId[$: P]: P[String] =
     // DO NOT allow spaces within an id
@@ -23,130 +24,131 @@ object Parser:
     import fastparse.NoWhitespace.*
     P(CharIn("A-Z") ~ CharsWhileIn("a-zA-Z0-9", 0)).!
 
-  def lit[$: P]: P[String] =
-    P(LitString | LitInt | LitBoolean)
-
-  def LitString[$: P]:  P[String] = P("\"" ~/ CharsWhile(_ != '"', 0).! ~ "\"")
-  def LitInt[$: P]:     P[String] = P(CharsWhileIn("0-9").!)
-  def LitBoolean[$: P]: P[String] = P("true" | "false").!
+  def litString[$: P]: P[String] = P("\"" ~/ CharsWhile(_ != '"', 0).! ~ "\"")
+  def listInt[$: P]:   P[String] = P(CharsWhileIn("0-9").!)
+  def litBool[$: P]:   P[String] = P("true" | "false").!
+  def litFloat[$: P]:  P[String] = P(CharsWhileIn("0-9.").!)
+  def litUnit[$: P]:   P[Unit]   = P("()")
 
   def defAs[$: P]: P[Unit] = P("=")
   def end[$: P]:   P[Unit] = P(";")
-  // Trickery: tries to infer the end if a ';' is missing after a member. fails for the most part.
-  // P(";" | (CharsWhileIn(" \t").? ~ "\n".rep(1) ~ CharsWhileIn(" \t").? ~ &("let" | "fn" | End)))
 
+  // Accept optional semicolon or end-of-input as module terminator
   def moduleEnd[$: P]: P[Unit] = P(";".? | End)
   def moduleKw[$: P]:  P[Unit] = P("module")
 
-  def term[F[_]: Monad: AstApi](using P[Any]): P[F[Term]] =
-    val api = summon[AstApi[F]]
+  // -----------------------------------------------------------------------------
+  // Term & Expression Parsers
+  // -----------------------------------------------------------------------------
+
+  def term(using P[Any]): P[Term] =
     P(
-      LitString.map(s => api.createLiteralString(s).widen[Term]) |
-        LitInt.map(n => api.createLiteralInt(n.toInt).widen[Term]) |
-        LitBoolean.map(b => api.createLiteralBool(b.toBoolean).widen[Term]) |
-        operatorId.map(op => api.createRef(op, none).widen[Term]) |
-        bindingId.map(name => api.createRef(name, none).widen[Term])
+      litString.map(s => LiteralString(s)) |
+        listInt.map(n => LiteralInt(n.toInt)) |
+        litBool.map(b => LiteralBool(b.toBoolean)) |
+        operatorId.map(op => Ref(op, None)) |
+        litUnit.map(_ => LiteralUnit) |
+        litFloat.map(f => LiteralFloat(f.toFloat)) |
+        bindingId.map(name => Ref(name, None))
     )
 
-  def expr[F[_]: Monad: AstApi](using P[Any]): P[F[Expr]] =
-    P(term[F].rep(1)).map { terms =>
-      terms.toList.sequence.map { ts =>
-        if ts.size == 1 then Expr(ts, ts.head.typeSpec)
-        else Expr(ts)
-      }
+  def expr(using P[Any]): P[Expr] =
+    P(term.rep(1)).map { ts =>
+      val termsList = ts.toList
+      // If there's exactly one term, the Expr inherits that term's typeSpec:
+      val typeSpec =
+        if termsList.size == 1 then termsList.head.typeSpec
+        else None
+      Expr(termsList, typeSpec)
     }
 
-  def letBinding[F[_]: Monad: AstApi](using P[Any]): P[F[Member]] =
-    val api = summon[AstApi[F]]
-    P("let" ~ bindingId ~ defAs ~ expr ~ end).map { case (id, exprF) =>
-      exprF.flatMap { expr =>
-        api.createLet(id, expr, expr.typeSpec).widen[Member]
-      }
+  // -----------------------------------------------------------------------------
+  // Let Bindings, Fn Declarations, etc.
+  // -----------------------------------------------------------------------------
+
+  def letBinding(using P[Any]): P[Member] =
+    P("let" ~ bindingId ~ defAs ~ expr ~ end).map { case (id, e) =>
+      Bnd(id, e, e.typeSpec)
     }
 
-  def failedMember[F[_]: Monad: AstApi](src: String)(using P[Any]): P[F[Member]] =
-    val api = summon[AstApi[F]]
-    P(Index ~ CharsWhile(_ != ';').! ~ end ~ Index).map { case (idx, failed, endIdx) =>
-      val start = indexToSourcePoint(idx, src)
-      val end   = indexToSourcePoint(endIdx, src)
-      api
-        .createMemberError(
-          start,
-          end,
-          s"Failed to parse member",
-          Some(failed)
-        )
-        .widen[Member]
+  def fnParser(using P[Any]): P[Member] =
+    P("fn" ~ bindingId ~ bindingId.rep(1) ~ defAs ~ expr ~ end).map {
+      case (fnName, params, bodyExpr) =>
+        FnDef(fnName, params.toList, bodyExpr, None)
     }
 
-  def indexToSourcePoint(index: Int, source: String): SourcePoint =
+  // -----------------------------------------------------------------------------
+  // Error Capture for Partial Parsers
+  // -----------------------------------------------------------------------------
+
+  def failedMember(src: String)(using P[Any]): P[Member] =
+    P(Index ~ CharsWhile(_ != ';').! ~ end ~ Index).map { case (startIdx, snippet, endIdx) =>
+      val start = indexToSourcePoint(startIdx, src)
+      val stop  = indexToSourcePoint(endIdx, src)
+      MemberError(
+        start      = start,
+        end        = stop,
+        message    = "Failed to parse member",
+        failedCode = Some(snippet)
+      )
+    }
+
+  private def indexToSourcePoint(index: Int, source: String): SourcePoint =
     val upToIndex = source.substring(0, index)
-    val lines     = upToIndex.split("\n")
+    val lines     = upToIndex.split('\n')
     val line      = lines.length
     val col       = if lines.isEmpty then index else lines.last.length + 1
     SourcePoint(line, col)
 
-  def fnParser[F[_]: Monad: AstApi](using P[Any]): P[F[Member]] =
-    val api = summon[AstApi[F]]
-    P("fn" ~ bindingId ~ bindingId.rep(1) ~ defAs ~ expr ~ end).map { case (id, params, exprF) =>
-      exprF.flatMap(expr => api.createFunction(id, params.toList, expr).widen[Member])
-    }
+  // -----------------------------------------------------------------------------
+  // Single `memberParser` Combining All Member Rules
+  // -----------------------------------------------------------------------------
 
-  def memberParser[F[_]: Monad: AstApi](src: String)(using P[Any]): P[F[Member]] =
+  def memberParser(src: String)(using P[Any]): P[Member] =
     P(
       letBinding |
-        fnParser | failedMember(src)
+        fnParser |
+        failedMember(src)
     )
+
+  // -----------------------------------------------------------------------------
+  // Module Parsers (Implicit / Explicit)
+  // -----------------------------------------------------------------------------
 
   def modVisibility[$: P]: P[ModVisibility] =
     P("pub").map(_ => ModVisibility.Public) |
       P("protected").map(_ => ModVisibility.Protected) |
       P("lexical").map(_ => ModVisibility.Lexical)
 
-  def explicitModuleParser[F[_]: Monad: AstApi](src: String, punct: P[Any]): P[F[Module]] =
-    given P[Any] = punct
-    val api      = summon[AstApi[F]]
+  def explicitModuleParser(src: String)(using P[Any]): P[Module] =
     P(Start ~ moduleKw ~ modVisibility.? ~ typeId.! ~ defAs ~ memberParser(src).rep ~ moduleEnd)
-      .map { case (vis, name, membersF) =>
-        membersF.toList.sequence.flatMap(members =>
-          api.createModule(name, vis.getOrElse(ModVisibility.Public), members)
-        )
+      .map { case (maybeVis, moduleName, members) =>
+        Module(moduleName, maybeVis.getOrElse(ModVisibility.Public), members.toList, false)
       }
 
-  def implicitModuleParser[F[_]: Monad: AstApi](
-    src:   String,
-    name:  String,
-    punct: P[Any]
-  ): P[F[Module]] =
-    given P[Any] = punct
-
-    val api = summon[AstApi[F]]
+  def implicitModuleParser(src: String, name: String)(using P[Any]): P[Module] =
     P(Start ~ memberParser(src).rep ~ moduleEnd)
-      .map { membersF =>
-        membersF.toList.sequence.flatMap(members =>
-          api.createModule(name, ModVisibility.Public, members, true)
-        )
+      .map { members =>
+        Module(name, ModVisibility.Public, members.toList, true)
       }
 
-  def moduleParser[F[_]: Monad: AstApi](
-    src:   String,
-    name:  Option[String],
-    punct: P[Any]
-  ): P[F[Module]] =
+  def moduleParser(src: String, name: Option[String], punct: P[Any]): P[Module] =
     given P[Any] = punct
     name.fold(
-      explicitModuleParser(src, punct)
-    )(n =>
-      P(
-        explicitModuleParser(src, punct) |
-          implicitModuleParser(src, n, punct)
-      )
-    )
+      // If no name => parse explicit module
+      explicitModuleParser(src)
+    ) { n =>
+      // If a name is provided => either explicit or implicit
+      P(explicitModuleParser(src) | implicitModuleParser(src, n))
+    }
 
-  def parseModule[F[_]: AstApi: Monad](
-    source: String,
-    name:   Option[String] = None
-  ): F[Either[String, Module]] =
-    parse(source, moduleParser[F](source, name, _)) match
-      case Parsed.Success(result, _) => result.map(_.asRight)
-      case f: Parsed.Failure => f.trace().longMsg.asLeft.pure[F]
+  // -----------------------------------------------------------------------------
+  // Top-Level Function to Parse a Module
+  // -----------------------------------------------------------------------------
+
+  def parseModule(source: String, name: Option[String] = None): Either[String, Module] =
+    parse(source, moduleParser(source, name, _)) match
+      case Parsed.Success(result, _) =>
+        Right(result)
+      case f: Parsed.Failure =>
+        Left(f.trace().longMsg)

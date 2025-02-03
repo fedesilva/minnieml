@@ -70,6 +70,14 @@ case class LiteralBool(value: Boolean) extends LiteralValue {
   final val typeSpec: Option[TypeSpec] = Some(LiteralBoolType)
 }
 
+case object LiteralUnit extends LiteralValue {
+  final val typeSpec: Option[TypeSpec] = Some(LiteralUnitType)
+}
+
+case class LiteralFloat(value: Float) extends LiteralValue {
+  final val typeSpec: Option[TypeSpec] = Some(LIteralFloatType)
+}
+
 // **Type Specifications**
 sealed trait TypeSpec extends AstNode
 
@@ -118,4 +126,12 @@ case object LiteralStringType extends LiteralType {
 }
 case object LiteralBoolType extends LiteralType {
   final val typeName = "Bool"
+}
+
+case object LiteralUnitType extends LiteralType {
+  final val typeName = "Unit"
+}
+
+case object LIteralFloatType extends LiteralType {
+  final val typeName = "Float"
 }

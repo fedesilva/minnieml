@@ -5,14 +5,11 @@ import mml.mmlclib.api.impl.InMemoryAstApi
 import mml.mmlclib.api.{AstApi, ParserApi}
 import mml.mmlclib.ast.{Member, MemberError, Module}
 import mml.mmlclib.util.prettyPrintAst
-import munit.CatsEffectSuite
+
 import cats.syntax.all.*
 
 /** Base trait for effectful tests; adds common MML specific assertions. */
-trait BaseEffFunSuite extends CatsEffectSuite {
-
-//  given Monad[IO]  = cats.effect.IO.asyncForIO
-  given AstApi[IO] = InMemoryAstApi
+trait BaseEffFunSuite extends munit.FunSuite {
 
   private def containsMemberError(module: Module): Boolean = {
     def checkMembers(members: List[Member]): Boolean =
@@ -30,7 +27,7 @@ trait BaseEffFunSuite extends CatsEffectSuite {
     msg:    Option[String] = None
   ): IO[Module] = {
 
-    ParserApi.parseModuleString[IO](source, name).map {
+    ParserApi.parseModuleString(source, name).map {
       case Right(module) =>
         assert(
           !containsMemberError(module),
@@ -49,7 +46,7 @@ trait BaseEffFunSuite extends CatsEffectSuite {
     name:   Option[String] = "TestFail".some,
     msg:    Option[String] = None
   ): IO[Unit] = {
-    ParserApi.parseModuleString[IO](source, name).map {
+    ParserApi.parseModuleString(source, name).map {
       case Right(module) =>
         assert(
           containsMemberError(module),
