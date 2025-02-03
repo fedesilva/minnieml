@@ -55,6 +55,9 @@ sealed trait Term extends AstNode, Typeable
 
 case class Expr(terms: List[Term], typeSpec: Option[TypeSpec] = None) extends Term
 
+case class GroupTerm(inner: Expr) extends Term:
+  def typeSpec: Option[TypeSpec] = inner.typeSpec
+
 /** Points to a something declared elsewhere */
 case class Ref(name: String, typeSpec: Option[TypeSpec]) extends Term
 
@@ -75,7 +78,7 @@ case object LiteralUnit extends LiteralValue {
 }
 
 case class LiteralFloat(value: Float) extends LiteralValue {
-  final val typeSpec: Option[TypeSpec] = Some(LIteralFloatType)
+  final val typeSpec: Option[TypeSpec] = Some(LiteralFloatType)
 }
 
 // **Type Specifications**
@@ -132,6 +135,6 @@ case object LiteralUnitType extends LiteralType {
   final val typeName = "Unit"
 }
 
-case object LIteralFloatType extends LiteralType {
+case object LiteralFloatType extends LiteralType {
   final val typeName = "Float"
 }

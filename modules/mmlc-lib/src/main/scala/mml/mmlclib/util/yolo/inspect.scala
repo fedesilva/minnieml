@@ -1,13 +1,11 @@
 package mml.mmlclib.util.yolo
 
-import cats.Monad
-import cats.effect.IO
 import cats.effect.unsafe.implicits.global
-import mml.mmlclib.api.impl.InMemoryAstApi
-import mml.mmlclib.api.{AstApi, ParserApi}
+import cats.syntax.option.*
+import mml.mmlclib.api.ParserApi
 import mml.mmlclib.util.prettyPrintAst
 
-def printModuleAst(source: String, name: Option[String] = None): Unit =
+def printModuleAst(source: String, name: Option[String]): Unit =
   ParserApi
     .parseModuleString(source, name)
     .map {

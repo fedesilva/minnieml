@@ -3,6 +3,7 @@ package mml.mmlclib.parser
 import fastparse._
 import fastparse.MultiLineWhitespace._
 import mml.mmlclib.ast._
+import cats.syntax.option.*
 
 object Parser:
 
@@ -25,10 +26,18 @@ object Parser:
     P(CharIn("A-Z") ~ CharsWhileIn("a-zA-Z0-9", 0)).!
 
   def litString[$: P]: P[String] = P("\"" ~/ CharsWhile(_ != '"', 0).! ~ "\"")
-  def listInt[$: P]:   P[String] = P(CharsWhileIn("0-9").!)
   def litBool[$: P]:   P[String] = P("true" | "false").!
-  def litFloat[$: P]:  P[String] = P(CharsWhileIn("0-9.").!)
   def litUnit[$: P]:   P[Unit]   = P("()")
+
+  def numericLit[$: P]: P[LiteralValue] =
+    P(
+      // Try float patterns first
+      (CharIn("0-9").rep(1) ~ "." ~ CharIn("0-9").rep(1)).!.map(s => LiteralFloat(s.toFloat)) |
+        ("." ~ CharIn("0-9").rep(1)).!.map(s => LiteralFloat(s.toFloat)) |
+
+        // If there's no dot at all, parse as integer
+        CharIn("0-9").rep(1).!.map(s => LiteralInt(s.toInt))
+    )
 
   def defAs[$: P]: P[Unit] = P("=")
   def end[$: P]:   P[Unit] = P(";")
@@ -41,14 +50,19 @@ object Parser:
   // Term & Expression Parsers
   // -----------------------------------------------------------------------------
 
+  def groupTerm(using P[Any]): P[Term] =
+    P("(" ~ expr ~ ")").map { innerExpr =>
+      GroupTerm(innerExpr)
+    }
+
   def term(using P[Any]): P[Term] =
     P(
       litString.map(s => LiteralString(s)) |
-        listInt.map(n => LiteralInt(n.toInt)) |
         litBool.map(b => LiteralBool(b.toBoolean)) |
         operatorId.map(op => Ref(op, None)) |
         litUnit.map(_ => LiteralUnit) |
-        litFloat.map(f => LiteralFloat(f.toFloat)) |
+        groupTerm |
+        numericLit |
         bindingId.map(name => Ref(name, None))
     )
 
@@ -123,13 +137,13 @@ object Parser:
   def explicitModuleParser(src: String)(using P[Any]): P[Module] =
     P(Start ~ moduleKw ~ modVisibility.? ~ typeId.! ~ defAs ~ memberParser(src).rep ~ moduleEnd)
       .map { case (maybeVis, moduleName, members) =>
-        Module(moduleName, maybeVis.getOrElse(ModVisibility.Public), members.toList, false)
+        Module(moduleName, maybeVis.getOrElse(ModVisibility.Public), members.toList)
       }
 
   def implicitModuleParser(src: String, name: String)(using P[Any]): P[Module] =
     P(Start ~ memberParser(src).rep ~ moduleEnd)
       .map { members =>
-        Module(name, ModVisibility.Public, members.toList, true)
+        Module(name, ModVisibility.Public, members.toList, isImplicit = true)
       }
 
   def moduleParser(src: String, name: Option[String], punct: P[Any]): P[Module] =
@@ -146,7 +160,7 @@ object Parser:
   // Top-Level Function to Parse a Module
   // -----------------------------------------------------------------------------
 
-  def parseModule(source: String, name: Option[String] = None): Either[String, Module] =
+  def parseModule(source: String, name: Option[String] = "Anon".some): Either[String, Module] =
     parse(source, moduleParser(source, name, _)) match
       case Parsed.Success(result, _) =>
         Right(result)

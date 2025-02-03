@@ -12,7 +12,7 @@ def prettyPrintAst(astNode: AstNode, indent: Int = 2): String =
 
 def prettyPrintModule(module: Module, indent: Int = 2): String = {
   val indentStr  = "  " * indent
-  val header     = s"${indentStr}Module ${module.name} ${module.visibility}"
+  val header     = s"${indentStr}${module.visibility} Module ${module.name}"
   val membersStr = module.members.map(prettyPrintMember(_, indent + 2)).mkString("\n")
   s"$header\n$membersStr"
 }
@@ -61,6 +61,15 @@ def prettyPrintTerm(term: Term, indent: Int): String = {
 
     case LiteralBool(value) =>
       s"${indentStr}LiteralBool $value"
+
+    case LiteralFloat(value) =>
+      s"${indentStr}LiteralFloat $value"
+
+    case GroupTerm(inner) =>
+      s"${indentStr}GroupTerm\n${prettyPrintExpr(inner, indent + 2)}"
+
+    case lit if lit eq LiteralUnit =>
+      s"${indentStr}LiteralUnit"
 
     case _ => s"${indentStr}UnknownTerm"
   }

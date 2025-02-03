@@ -1,6 +1,5 @@
 package mml.mmlclib.grammar
 
-import cats.syntax.all.*
 import mml.mmlclib.ast.*
 import mml.mmlclib.test.BaseFunSuite
 import mml.mmlclib.util.prettyPrintAst
@@ -57,9 +56,9 @@ class LiteralTests extends BaseFunSuite:
     }.map {
       case bnd: Bnd =>
         bnd.value.terms.head.typeSpec match
-          case Some(_: LiteralIntType.type) =>
+          case Some(_: LiteralFloatType.type) =>
           case other =>
-            fail(s"Expected `Some(LiteralIntType)`, got $other")
+            fail(s"Expected `Some(LiteralIntType)`, got $other \n ${prettyPrintAst(bnd)} ")
       case _ => fail("Expected a let")
     }
   }
@@ -97,5 +96,24 @@ class LiteralTests extends BaseFunSuite:
           case other =>
             fail(s"Expected `Some(LiteralUnitType)`, got $other")
       case _ => fail("Expected a let")
+    }
+  }
+
+  test("parses floats correctly") {
+    modNotFailed(
+      """
+        let a = 1.0;
+      """
+    ).map { m =>
+      assert(m.members.size == 1)
+      m.members.head
+    }.map {
+      case bnd: Bnd =>
+        assert(
+          clue(bnd.value.terms.size) == clue(1),
+          s"Expected 1 term but got ${bnd.value.terms.size}: ${prettyPrint(bnd)}"
+        )
+        assert(bnd.value.terms.head.isInstanceOf[LiteralFloat])
+      case _ => fail("Expected a binding")
     }
   }

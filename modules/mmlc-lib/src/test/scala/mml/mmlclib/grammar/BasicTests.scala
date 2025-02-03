@@ -230,3 +230,21 @@ class BasicTests extends BaseFunSuite:
       """
     )
   }
+
+  test("grouped expression") {
+    modNotFailed(
+      """
+        let a = (1 + 2) * 3;
+      """
+    ).map { m =>
+      assert(m.members.size == 1)
+      m.members.head
+    }.map {
+      case bnd: Bnd =>
+        assert(
+          bnd.value.terms.size == 3,
+          s"Expected 3 terms but got ${bnd.value.terms.size}: ${prettyPrint(bnd)}"
+        )
+      case _ => fail("Expected a binding")
+    }
+  }

@@ -5,9 +5,10 @@ import cats.syntax.all.*
 import mml.mmlclib.api.ParserApi
 import mml.mmlclib.ast.{Member, MemberError, Module}
 import mml.mmlclib.util.prettyPrintAst
+import munit.CatsEffectSuite
 
 /** Base trait for effectful tests; adds common MML specific assertions. */
-trait BaseFunSuite extends munit.FunSuite {
+trait BaseFunSuite extends CatsEffectSuite {
 
   private def containsMemberError(module: Module): Boolean = {
     def checkMembers(members: List[Member]): Boolean =
