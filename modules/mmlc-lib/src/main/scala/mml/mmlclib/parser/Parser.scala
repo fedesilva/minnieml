@@ -69,7 +69,7 @@ object Parser:
   def exprP(using P[Any]): P[Expr] =
     P(termP.rep(1)).map { ts =>
       val termsList = ts.toList
-      // If there's exactly one term, the Expr inherits that term's typeSpec:
+      // If there's exactly one term, the Expr inherits that term's typeSpec
       val typeSpec =
         if termsList.size == 1 then termsList.head.typeSpec
         else None

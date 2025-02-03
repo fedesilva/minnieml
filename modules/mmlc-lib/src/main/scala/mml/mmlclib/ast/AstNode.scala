@@ -33,10 +33,7 @@ case class MemberError(
   failedCode: Option[String]
 ) extends Member
 
-sealed trait Comment                extends AstNode
-case class SLComment(text: String)  extends Comment, Member
-case class MLComment(text: String)  extends Comment, Member
-case class DocComment(text: String) extends Comment, Member
+case class DocComment(text: String) extends AstNode
 
 sealed trait Decl extends Member, Typeable
 

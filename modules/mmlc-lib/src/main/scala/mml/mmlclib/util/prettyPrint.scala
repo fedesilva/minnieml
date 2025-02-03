@@ -25,15 +25,6 @@ def prettyPrintMember(member: Member, indent: Int): String = {
         s"""$indentStr  "$message"""".stripMargin +
         failedCode.map(code => s"${indentStr}  $code").getOrElse("")
 
-    case SLComment(text) =>
-      s"""${indentStr}Comment "$text""""
-
-    case MLComment(text) =>
-      s"""${indentStr}MLComment "$text""""
-
-    case DocComment(text) =>
-      s"${indentStr}DocComment \"$text\""
-
     case fn: FnDef =>
       s"${indentStr}FnDef ${fn.name}\n" +
         s"${indentStr}  typeSpec: ${fn.typeSpec.getOrElse("None")}\n" +
