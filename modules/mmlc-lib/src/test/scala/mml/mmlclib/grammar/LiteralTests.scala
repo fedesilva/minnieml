@@ -1,12 +1,12 @@
 package mml.mmlclib.grammar
 
 import mml.mmlclib.ast.*
-import mml.mmlclib.test.BaseFunSuite
+import mml.mmlclib.test.BaseEffFunSuite
 import mml.mmlclib.util.prettyPrintAst
 import munit.*
 import org.neo4j.internal.helpers.Strings.prettyPrint
 
-class LiteralTests extends BaseFunSuite:
+class LiteralTests extends BaseEffFunSuite:
 
   test("String Literal has correct typespec") {
     modNotFailed(

@@ -1,8 +1,8 @@
 package mml.mmlclib.parser
 
 import fastparse._
-import fastparse.MultiLineWhitespace._
-import mml.mmlclib.ast._
+import MmlWhitespace.*
+import mml.mmlclib.ast.*
 import cats.syntax.option.*
 
 object Parser:

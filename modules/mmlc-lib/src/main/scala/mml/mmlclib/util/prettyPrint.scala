@@ -22,11 +22,17 @@ def prettyPrintMember(member: Member, indent: Int): String = {
   member match {
     case MemberError(start, end, message, failedCode) =>
       s"${indentStr}MemberError ${start.line}:${start.col} -> ${end.line}:${end.col}\n" +
-        s"${indentStr}  \"$message\"\n" +
+        s"""$indentStr  "$message"""".stripMargin +
         failedCode.map(code => s"${indentStr}  $code").getOrElse("")
 
-    case Comment(text) =>
-      s"${indentStr}Comment \"$text\""
+    case SLComment(text) =>
+      s"""${indentStr}Comment "$text""""
+
+    case MLComment(text) =>
+      s"""${indentStr}MLComment "$text""""
+
+    case DocComment(text) =>
+      s"${indentStr}DocComment \"$text\""
 
     case fn: FnDef =>
       s"${indentStr}FnDef ${fn.name}\n" +
@@ -38,6 +44,7 @@ def prettyPrintMember(member: Member, indent: Int): String = {
       s"${indentStr}Bnd ${bnd.name}\n" +
         s"${indentStr}  typeSpec: ${bnd.typeSpec.getOrElse("None")}\n" +
         prettyPrintExpr(bnd.value, indent + 2)
+
   }
 }
 

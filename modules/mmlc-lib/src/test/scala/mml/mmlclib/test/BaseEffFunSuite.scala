@@ -8,7 +8,7 @@ import mml.mmlclib.util.prettyPrintAst
 import munit.CatsEffectSuite
 
 /** Base trait for effectful tests; adds common MML specific assertions. */
-trait BaseFunSuite extends CatsEffectSuite {
+trait BaseEffFunSuite extends CatsEffectSuite {
 
   private def containsMemberError(module: Module): Boolean = {
     def checkMembers(members: List[Member]): Boolean =

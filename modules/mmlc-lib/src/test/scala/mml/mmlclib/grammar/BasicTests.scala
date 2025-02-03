@@ -2,12 +2,12 @@ package mml.mmlclib.grammar
 
 import cats.syntax.all.*
 import mml.mmlclib.ast.*
-import mml.mmlclib.test.BaseFunSuite
+import mml.mmlclib.test.BaseEffFunSuite
 import mml.mmlclib.util.prettyPrintAst
 import munit.*
 import org.neo4j.internal.helpers.Strings.prettyPrint
 
-class BasicTests extends BaseFunSuite:
+class BasicTests extends BaseEffFunSuite:
 
   test("simple let") {
 
