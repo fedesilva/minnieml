@@ -11,25 +11,25 @@ object Parser:
   // Basic Low-Level Parsers
   // -----------------------------------------------------------------------------
 
-  def bindingIdP[$: P]: P[String] =
+  private def bindingIdP[$: P]: P[String] =
     // DO NOT allow spaces within an id
     import fastparse.NoWhitespace.*
     P(CharIn("a-z") ~ CharsWhileIn("a-zA-Z0-9_", 0)).!
 
-  def operatorIdP[$: P]: P[String] =
+  private def operatorIdP[$: P]: P[String] =
     import fastparse.NoWhitespace.*
     P(CharIn("!@#$%^&*-+<>?/\\|").rep(1).!)
 
-  def typeIdP[$: P]: P[String] =
+  private def typeIdP[$: P]: P[String] =
     // DO NOT allow spaces within an id
     import fastparse.NoWhitespace.*
     P(CharIn("A-Z") ~ CharsWhileIn("a-zA-Z0-9", 0)).!
 
-  def litStringP[$: P]: P[String] = P("\"" ~/ CharsWhile(_ != '"', 0).! ~ "\"")
-  def litBoolP[$: P]:   P[String] = P("true" | "false").!
-  def litUnitP[$: P]:   P[Unit]   = P("()")
+  private def litStringP[$: P]: P[String] = P("\"" ~/ CharsWhile(_ != '"', 0).! ~ "\"")
+  private def litBoolP[$: P]:   P[String] = P("true" | "false").!
+  private def litUnitP[$: P]:   P[Unit]   = P("()")
 
-  def numericLitP[$: P]: P[LiteralValue] =
+  private def numericLitP[$: P]: P[LiteralValue] =
     P(
       // Try float patterns first
       (CharIn("0-9").rep(1) ~ "." ~ CharIn("0-9").rep(1)).!.map(s => LiteralFloat(s.toFloat)) |
@@ -39,23 +39,23 @@ object Parser:
         CharIn("0-9").rep(1).!.map(s => LiteralInt(s.toInt))
     )
 
-  def defAsKw[$: P]: P[Unit] = P("=")
-  def endKw[$: P]:   P[Unit] = P(";")
+  private def defAsKw[$: P]: P[Unit] = P("=")
+  private def endKw[$: P]:   P[Unit] = P(";")
 
   // Accept optional semicolon or end-of-input as module terminator
-  def moduleEndKw[$: P]: P[Unit] = P(";".? | End)
-  def moduleKw[$: P]:    P[Unit] = P("module")
+  private def moduleEndKw[$: P]: P[Unit] = P(";".? | End)
+  private def moduleKw[$: P]:    P[Unit] = P("module")
 
   // -----------------------------------------------------------------------------
   // Term & Expression Parsers
   // -----------------------------------------------------------------------------
 
-  def groupTermP(using P[Any]): P[Term] =
+  private def groupTermP(using P[Any]): P[Term] =
     P("(" ~ exprP ~ ")").map { innerExpr =>
       GroupTerm(innerExpr)
     }
 
-  def termP(using P[Any]): P[Term] =
+  private def termP(using P[Any]): P[Term] =
     P(
       litStringP.map(s => LiteralString(s)) |
         litBoolP.map(b => LiteralBool(b.toBoolean)) |
@@ -66,7 +66,7 @@ object Parser:
         bindingIdP.map(name => Ref(name, None))
     )
 
-  def exprP(using P[Any]): P[Expr] =
+  private def exprP(using P[Any]): P[Expr] =
     P(termP.rep(1)).map { ts =>
       val termsList = ts.toList
       // If there's exactly one term, the Expr inherits that term's typeSpec
@@ -80,7 +80,7 @@ object Parser:
   // Let Bindings, Fn Declarations, etc.
   // -----------------------------------------------------------------------------
 
-  def letBindingP(using P[Any]): P[Member] =
+  private def letBindingP(using P[Any]): P[Member] =
     P("let" ~ bindingIdP ~ defAsKw ~ exprP ~ endKw).map { case (id, e) =>
       Bnd(id, e, e.typeSpec)
     }
@@ -95,7 +95,7 @@ object Parser:
   // Error Capture for Partial Parsers
   // -----------------------------------------------------------------------------
 
-  def failedMemberP(src: String)(using P[Any]): P[Member] =
+  private def failedMemberP(src: String)(using P[Any]): P[Member] =
     P(Index ~ CharsWhile(_ != ';').! ~ endKw ~ Index).map { case (startIdx, snippet, endIdx) =>
       val start = indexToSourcePoint(startIdx, src)
       val stop  = indexToSourcePoint(endIdx, src)
@@ -118,7 +118,7 @@ object Parser:
   // Single `memberParser` Combining All Member Rules
   // -----------------------------------------------------------------------------
 
-  def membersP(src: String)(using P[Any]): P[Member] =
+  private def membersP(src: String)(using P[Any]): P[Member] =
     P(
       letBindingP |
         fnParserP |
@@ -129,24 +129,24 @@ object Parser:
   // Module Parsers (Implicit / Explicit)
   // -----------------------------------------------------------------------------
 
-  def modVisibilityP[$: P]: P[ModVisibility] =
+  private def modVisibilityP[$: P]: P[ModVisibility] =
     P("pub").map(_ => ModVisibility.Public) |
       P("protected").map(_ => ModVisibility.Protected) |
       P("lexical").map(_ => ModVisibility.Lexical)
 
-  def explicitModuleP(src: String)(using P[Any]): P[Module] =
+  private def explicitModuleP(src: String)(using P[Any]): P[Module] =
     P(Start ~ moduleKw ~ modVisibilityP.? ~ typeIdP.! ~ defAsKw ~ membersP(src).rep ~ moduleEndKw)
       .map { case (maybeVis, moduleName, members) =>
         Module(moduleName, maybeVis.getOrElse(ModVisibility.Public), members.toList)
       }
 
-  def implicitModuleP(src: String, name: String)(using P[Any]): P[Module] =
+  private def implicitModuleP(src: String, name: String)(using P[Any]): P[Module] =
     P(Start ~ membersP(src).rep ~ moduleEndKw)
       .map { members =>
         Module(name, ModVisibility.Public, members.toList, isImplicit = true)
       }
 
-  def moduleP(src: String, name: Option[String], p: P[Any]): P[Module] =
+  private def moduleP(src: String, name: Option[String], p: P[Any]): P[Module] =
     given P[Any] = p
     name.fold(
       explicitModuleP(src)
