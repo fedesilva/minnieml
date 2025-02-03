@@ -1,15 +1,13 @@
 package mml.mmlclib.test
 
 import cats.effect.IO
-import mml.mmlclib.api.impl.InMemoryAstApi
-import mml.mmlclib.api.{AstApi, ParserApi}
+import cats.syntax.all.*
+import mml.mmlclib.api.ParserApi
 import mml.mmlclib.ast.{Member, MemberError, Module}
 import mml.mmlclib.util.prettyPrintAst
 
-import cats.syntax.all.*
-
 /** Base trait for effectful tests; adds common MML specific assertions. */
-trait BaseEffFunSuite extends munit.FunSuite {
+trait BaseFunSuite extends munit.FunSuite {
 
   private def containsMemberError(module: Module): Boolean = {
     def checkMembers(members: List[Member]): Boolean =
