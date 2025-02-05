@@ -33,7 +33,7 @@ class CommentsTests extends BaseEffFunSuite:
     }
   }
 
-  test("multiline comment before declaration") {
+  test("doc comment before let declaration") {
     modNotFailed(
       """
         #-
@@ -41,18 +41,6 @@ class CommentsTests extends BaseEffFunSuite:
         It spans multiple lines
         -#
         let x = 42;
-      """
-    ).map { m =>
-      assertEquals(m.members.size, 1)
-    }
-  }
-
-  test("multiline comment between tokens") {
-    modNotFailed(
-      """
-        let x = #-
-        This is an inline multiline comment
-        -# 10;
       """
     ).map { m =>
       assertEquals(m.members.size, 1)
@@ -72,22 +60,133 @@ class CommentsTests extends BaseEffFunSuite:
     }
   }
 
-  test("comments should not interfere with parsing multiple declarations") {
+  test("doc comments on multiple declarations") {
     modNotFailed(
       """
-        let x = 3;  #- Comment at the end of a line -#
+        #- Comment on x -#
+        let x = 3;
+        #- Comment on y -#
         let y = 5;  # Another inline comment
       """
     ).map { m =>
       assertEquals(m.members.size, 2)
+      m.members.foreach {
+        case d: Decl => assert(d.docComment.isDefined)
+        case _ => fail("there should be only declarations")
+      }
     }
   }
 
-  test("unclosed multiline comment should fail") {
+  test("unclosed doc should fail ") {
+    modFailed(
+      """
+         #- This is an unclosed comment
+          let x = 42;
+        """
+    )
+  }
+
+  test("unclosed doc - no module ; - end of the file") {
+    modFailed(
+      """
+      module Test =
+          let x = 42;
+          #- This is an unclosed comment
+      """
+    )
+  }
+
+  test("unclosed doc - implicit module - end of the file") {
     modFailed(
       """
         let x = 42;
         #- This is an unclosed comment
       """
     )
+  }
+
+  test("doc comments") {
+    modNotFailed(
+      """
+        #- This is a doc comment -#
+        let x = 42;
+      """
+    ).map { m =>
+      assertEquals(m.members.size, 1)
+    }
+  }
+
+  test("doc comments in fn") {
+    modNotFailed(
+      """
+         #- This is a doc comment -#
+         fn func x = 42;
+       """
+    ).map { m =>
+      assertEquals(m.members.size, 1)
+    }
+  }
+
+  test("module with doc comment") {
+    modNotFailed(
+      """
+        #-
+        This is a doc comment
+        -#
+        module Test =
+          let x = 42;
+      """
+    ).map { m =>
+      assertEquals(m.members.size, 1)
+      assert(m.docComment.isDefined)
+      m.docComment.foreach { doc =>
+        assert(
+          doc.text.contains("This is a doc comment"),
+          s"""
+             | Expected doc comment to contain "This is a doc comment"
+             | Actual doc comment: ${doc.text}
+             | ${prettyPrintAst(m)}
+             |""".stripMargin
+        )
+      }
+
+    }
+  }
+
+  test("doc comments with # margin - remove margin") {
+    modNotFailed(
+      """
+        #-
+        #
+        # This is a doc comment
+        #
+        -#
+        let x = 42;
+      """
+    ).map { m =>
+      assertEquals(m.members.size, 1)
+      m.members.foreach {
+        case d: Decl =>
+          assert(d.docComment.isDefined)
+          d.docComment.foreach { doc =>
+            assert(
+              !doc.text.contains("#"),
+              s"""
+                 | Expected doc comment to NOT contain "#"
+                 | Actual doc comment: ${doc.text}
+                 | ${prettyPrintAst(d)}
+                 |""".stripMargin
+            )
+            assert(
+              doc.text.contains("This is a doc comment"),
+              s"""
+                 | Expected doc comment to contain "This is a doc comment"
+                 | Actual doc comment: ${doc.text}
+                 | ${prettyPrintAst(d)}
+                 |""".stripMargin
+            )
+          }
+        case _ => fail("there should be only declarations")
+      }
+    }
   }

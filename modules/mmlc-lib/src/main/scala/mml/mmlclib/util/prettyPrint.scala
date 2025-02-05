@@ -20,8 +20,8 @@ def prettyPrintModule(module: Module, indent: Int = 2): String = {
 def prettyPrintMember(member: Member, indent: Int): String = {
   val indentStr = "  " * indent
   member match {
-    case MemberError(start, end, message, failedCode) =>
-      s"${indentStr}MemberError ${start.line}:${start.col} -> ${end.line}:${end.col}\n" +
+    case MemberError(span, message, failedCode) =>
+      s"${indentStr}MemberError ${span.start.line}:${span.start.col} -> ${span.end.line}:${span.end.col}\n" +
         s"""$indentStr  "$message"""".stripMargin +
         failedCode.map(code => s"${indentStr}  $code").getOrElse("")
 

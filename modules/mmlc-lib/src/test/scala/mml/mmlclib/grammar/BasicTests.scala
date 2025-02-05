@@ -215,7 +215,7 @@ class BasicTests extends BaseEffFunSuite:
   test("app with id and lit") {
     modNotFailed(
       """
-        let a = b + 3
+        let a = b + 3;
       """
     )
   }
@@ -223,10 +223,10 @@ class BasicTests extends BaseEffFunSuite:
   test("fn and let") {
     modNotFailed(
       """
-        let a = 1
-        let b = 2
-        fn sum a b = a + b
-        let x = sum a b
+        let a = 1;
+        let b = 2;
+        fn sum a b = a + b;
+        let x = sum a b;
       """
     )
   }

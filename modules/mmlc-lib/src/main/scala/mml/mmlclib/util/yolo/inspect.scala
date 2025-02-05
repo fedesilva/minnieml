@@ -5,7 +5,7 @@ import cats.syntax.option.*
 import mml.mmlclib.api.ParserApi
 import mml.mmlclib.util.prettyPrintAst
 
-def printModuleAst(source: String, name: Option[String]): Unit =
+def printModuleAst(source: String, name: Option[String] = "Anon".some): Unit =
   ParserApi
     .parseModuleString(source, name)
     .map {

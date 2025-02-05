@@ -49,10 +49,13 @@ trait BaseEffFunSuite extends CatsEffectSuite {
       case Right(module) =>
         assert(
           containsMemberError(module),
-          msg.getOrElse("Expected MemberError nodes but found none.")
+          msg.getOrElse(s"Expected MemberError nodes but found none. ${prettyPrintAst(module)} ")
         )
       case Left(error) =>
-        assert(error.nonEmpty, msg.getOrElse("Expected errors, but got none."))
+        assert(
+          error.nonEmpty,
+          msg.getOrElse(s"Expected errors, but got none.")
+        )
     }
   }
 }

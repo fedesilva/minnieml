@@ -5,6 +5,11 @@ final case class SourcePoint(
   col:  Int
 )
 
+final case class SourceSpan(
+  start: SourcePoint,
+  end:   SourcePoint
+)
+
 sealed trait AstNode
 
 sealed trait Typeable extends AstNode {
@@ -20,34 +25,38 @@ case class Module(
   name:       String,
   visibility: ModVisibility,
   members:    List[Member],
-  isImplicit: Boolean = false
+  isImplicit: Boolean            = false,
+  docComment: Option[DocComment] = None
 ) extends AstNode
 
 // **Members**
 sealed trait Member extends AstNode
 
 case class MemberError(
-  start:      SourcePoint,
-  end:        SourcePoint,
+  span:       SourceSpan,
   message:    String,
   failedCode: Option[String]
 ) extends Member
 
 case class DocComment(text: String) extends AstNode
 
-sealed trait Decl extends Member, Typeable
+sealed trait Decl extends Member, Typeable {
+  def docComment: Option[DocComment]
+}
 
 case class FnDef(
-  name:     String,
-  params:   List[String],
-  body:     Expr,
-  typeSpec: Option[TypeSpec] = None
+  name:       String,
+  params:     List[String],
+  body:       Expr,
+  typeSpec:   Option[TypeSpec]   = None,
+  docComment: Option[DocComment] = None
 ) extends Decl
 
 case class Bnd(
-  name:     String,
-  value:    Expr,
-  typeSpec: Option[TypeSpec] = None
+  name:       String,
+  value:      Expr,
+  typeSpec:   Option[TypeSpec]   = None,
+  docComment: Option[DocComment] = None
 ) extends Decl
 
 sealed trait Term extends AstNode, Typeable

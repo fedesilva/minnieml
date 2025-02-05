@@ -101,3 +101,7 @@ feature-branches = "rebase"
 # The only updates they receive are additional commits
 # made to their tracking branch somewhere else.
 perennial-branches = "rebase"
+
+[ship]
+
+strategy = "squash-merge"
