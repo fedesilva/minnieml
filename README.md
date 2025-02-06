@@ -181,7 +181,7 @@ This is not something you want to use, I'm making this public to share with frie
     - Pod
       - Multi Platform binary file
       - non executable by itself (basically an ast, so interpretable)
-      - share like a java jar, link to in FL land.
+      - share like a java jar, link to in MML land.
       - pods can reference native libs and can be compiled to native
     - Native
       - when compiling to native, optimization starts before passing to llvm even
@@ -211,7 +211,7 @@ This is not something you want to use, I'm making this public to share with frie
   - by default, mix of gc and ref counted arenas
     - but this can be changed
     - arenas are basically scopes.
-      - in fact, modules are mapped 1-1 to arenas
+      - in fact, modules are mapped 1-1 to scopes.
         - which are fused on optimization - if possible.
         - function level, we only allocate in the stack.
           - and performa escape analysis to find out 
