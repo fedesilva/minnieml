@@ -16,8 +16,8 @@ object ScalacConfig {
       "-unchecked", // Enable additional warnings where generated code depends on assumptions.
       "-Xfatal-warnings", // Fail the compilation if there are any warnings.
       "-language:strictEquality",
-      "-new-syntax" // Enforce new syntax
-      // "-explain",
+      "-new-syntax", // Enforce new syntax
+      "-explain"
     )
 
 }
