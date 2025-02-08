@@ -1,8 +1,11 @@
 package mml.mmlclib.parser
 
-import fastparse.{ParsingRun, Whitespace}
-import fastparse.internal.Util
+import fastparse.ParsingRun
+import fastparse.Whitespace
 import fastparse.internal.Msgs
+import fastparse.internal.Util
+import mml.mmlclib.ast.SourceSpan
+
 import scala.annotation.tailrec
 
 object MmlWhitespace {
@@ -17,7 +20,9 @@ object MmlWhitespace {
           ctx.freshSuccessUnit(current)
         else
           val currentChar = input(current)
+
           state match
+
             // **State 0: Normal Whitespace Handling**
             case 0 =>
               if currentChar == ' ' || currentChar == '\t' || currentChar == '\n' || currentChar == '\r'

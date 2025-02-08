@@ -1,9 +1,10 @@
 package mml.mmlclib.parser
 
-import fastparse.*
 import cats.syntax.option.*
-import MmlWhitespace.*
+import fastparse.*
 import mml.mmlclib.ast.*
+
+import MmlWhitespace.*
 
 object Parser:
 
@@ -38,7 +39,6 @@ object Parser:
   private def andKw[$: P]:   P[Unit] = P("and")
   private def orKw[$: P]:    P[Unit] = P("or")
   private def notKw[$: P]:   P[Unit] = P("not")
-//  private def moduleEndKw[$: P]: P[Unit] = P(";".? ~ End)
   private def moduleEndKw[$: P]: P[Unit] =
     P(";".? ~ CharsWhile(c => c == ' ' || c == '\t' || c == '\r' || c == '\n', 0) ~ End)
 

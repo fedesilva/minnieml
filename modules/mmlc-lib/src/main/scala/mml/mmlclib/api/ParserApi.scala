@@ -1,11 +1,13 @@
 package mml.mmlclib.api
 
-import cats.effect.{IO, Sync}
+import cats.effect.IO
+import cats.effect.Sync
 import cats.syntax.all.*
 import mml.mmlclib.ast.Module
 import mml.mmlclib.parser.Parser
 
-import java.nio.file.{Files, Path}
+import java.nio.file.Files
+import java.nio.file.Path
 
 object ParserApi:
   def parseModuleString(
