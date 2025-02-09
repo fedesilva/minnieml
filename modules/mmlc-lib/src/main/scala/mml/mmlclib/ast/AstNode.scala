@@ -114,6 +114,9 @@ case class Ref(
 
 case class MehRef(span: SourceSpan, typeSpec: Option[TypeSpec]) extends Term, FromSource
 
+case class Hole(span: SourceSpan) extends Term, FromSource:
+  final val typeSpec: Option[TypeSpec] = None
+
 // **Literals**
 
 sealed trait LiteralValue extends Term, FromSource

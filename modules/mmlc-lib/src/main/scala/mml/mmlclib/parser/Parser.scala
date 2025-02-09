@@ -52,6 +52,7 @@ object Parser:
   private def defAsKw[$: P]: P[Unit] = P("=")
   private def endKw[$: P]:   P[Unit] = P(";")
   private def mehKw[$: P]:   P[Unit] = P("_")
+  private def holekw[$: P]:  P[Unit] = P("???")
 
   private def moduleEndKw[$: P]: P[Unit] =
     P(";".? ~ CharsWhile(c => c.isWhitespace, 0) ~ End)
@@ -68,6 +69,7 @@ object Parser:
         defAsKw |
         mehKw |
         letKw |
+        holekw |
         fnKw
     )
 
@@ -151,6 +153,12 @@ object Parser:
     P(spP(source) ~ mehKw ~ spP(source))
       .map { case (start, end) =>
         MehRef(span(start, end), None)
+      }
+
+  private def holeP(source: String)(using P[Any]): P[Term] =
+    P(spP(source) ~ holekw ~ spP(source))
+      .map { case (start, end) =>
+        Hole(span(start, end))
       }
 
   private def termP(source: String)(using P[Any]): P[Term] =

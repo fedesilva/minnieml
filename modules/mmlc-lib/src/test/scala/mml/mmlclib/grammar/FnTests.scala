@@ -5,7 +5,6 @@ import mml.mmlclib.ast.*
 import mml.mmlclib.test.BaseEffFunSuite
 import mml.mmlclib.util.prettyPrintAst
 import munit.*
-import org.neo4j.internal.helpers.Strings.prettyPrint
 
 class FnTests extends BaseEffFunSuite:
 
@@ -23,11 +22,11 @@ class FnTests extends BaseEffFunSuite:
       case fn: FnDef =>
         assert(
           fn.params.size == 2,
-          s"Expected 2 params but got ${fn.params.size}: ${prettyPrint(fn)} "
+          s"Expected 2 params but got ${fn.params.size}: ${prettyPrintAst(fn)} "
         )
         assert(
           fn.body.terms.size == 3,
-          s"Expected 3 terms but got ${fn.body.terms.size}: ${prettyPrint(fn)} "
+          s"Expected 3 terms but got ${fn.body.terms.size}: ${prettyPrintAst(fn)} "
         )
       case _ => fail("Expected a function")
     }
@@ -62,6 +61,24 @@ class FnTests extends BaseEffFunSuite:
     )
   }
 
+  test("fn with hole for body") {
+    modNotFailed(
+      """
+        fn hole (h) = ???;
+      """
+    ).map { m =>
+      assert(m.members.size == 1)
+      m.members.last
+    }.map {
+      case fn: FnDef =>
+        assert(
+          fn.body.terms.size == 1,
+          s"Expected 1 term but got ${fn.body.terms.size} : ${prettyPrintAst(fn)}"
+        )
+      case _ => fail("Expected a FnDef")
+    }
+  }
+
   test("fn with type spec") {
     modNotFailed(
       """
@@ -74,18 +91,18 @@ class FnTests extends BaseEffFunSuite:
       case fn: FnDef =>
         assert(
           fn.params.size == 2,
-          s"Expected 2 params but got ${fn.params.size}: ${prettyPrint(fn)} "
+          s"Expected 2 params but got ${fn.params.size}: ${prettyPrintAst(fn)} "
         )
         assert(
           fn.body.terms.size == 3,
-          s"Expected 3 terms but got ${fn.body.terms.size}: ${prettyPrint(fn)} "
+          s"Expected 3 terms but got ${fn.body.terms.size}: ${prettyPrintAst(fn)} "
         )
         fn.params
       case _ => fail("Expected a function")
     }.map { params =>
       assert(
         params.forall(_.typeSpec.isDefined),
-        s"Expected all params to have a type spec: ${params.map(prettyPrint)}"
+        s"Expected all params to have a type spec: ${params.map(p => prettyPrintAst(p))}"
       )
     }
   }
@@ -102,7 +119,7 @@ class FnTests extends BaseEffFunSuite:
       case bnd: FnDef =>
         assert(
           bnd.body.terms.size == 3,
-          s"Expected a body with 3 terms but got ${bnd.body.terms.size}: ${prettyPrint(bnd)}"
+          s"Expected a body with 3 terms but got ${bnd.body.terms.size}: ${prettyPrintAst(bnd)}"
         )
       case _ => fail("Expected a binding")
     }

@@ -173,6 +173,24 @@ class LetBndTests extends BaseEffFunSuite:
     }
   }
 
+  test("let with hole for body") {
+    modNotFailed(
+      """
+        let c = ???;
+      """
+    ).map { m =>
+      assert(m.members.size == 1)
+      m.members.last
+    }.map {
+      case bnd: Bnd =>
+        assert(
+          bnd.value.terms.size == 1,
+          s"Expected 1 term but got ${bnd.value.terms.size} : ${prettyPrint(bnd)}"
+        )
+      case _ => fail("Expected a let")
+    }
+  }
+
   test("app with id and lit") {
     modNotFailed(
       """
