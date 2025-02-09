@@ -8,6 +8,9 @@ import mml.mmlclib.ast.SourceSpan
 
 import scala.annotation.tailrec
 
+/** Whitespace syntax that supports # line-comments, as in the case in programming languages such as
+  * Bash, Ruby, or Python but leaves the `#-` and `-#` tokens untouched for the doc-comment parser.
+  */
 object MmlWhitespace {
   implicit object whitespace extends Whitespace {
     def apply(ctx: ParsingRun[?]): ParsingRun[Unit] = {

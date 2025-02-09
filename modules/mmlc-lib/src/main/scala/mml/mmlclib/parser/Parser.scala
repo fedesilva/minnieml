@@ -9,19 +9,19 @@ import MmlWhitespace.*
 object Parser:
 
   // -----------------------------------------------------------------------------
-  // Error Handling for Partial Parsers
+  // Public API
   // -----------------------------------------------------------------------------
 
-  private def failedMemberP(src: String)(using P[Any]): P[Member] =
-    P(Index ~ CharsWhile(_ != ';').! ~ endKw ~ Index).map { case (startIdx, snippet, endIdx) =>
-      val start = indexToSourcePoint(startIdx, src)
-      val stop  = indexToSourcePoint(endIdx, src)
-      MemberError(
-        span       = SourceSpan(start, stop),
-        message    = "Failed to parse member",
-        failedCode = Some(snippet)
-      )
-    }
+  def parseModule(source: String, name: Option[String] = "Anon".some): Either[String, Module] =
+    parse(source, moduleP(name, source, _)) match
+      case Parsed.Success(result, _) =>
+        Right(result)
+      case f: Parsed.Failure =>
+        Left(f.trace().longMsg)
+
+  // -----------------------------------------------------------------------------
+  // Helpers
+  // -----------------------------------------------------------------------------
 
   private def indexToSourcePoint(index: Int, source: String): SourcePoint =
     val upToIndex = source.substring(0, index)
@@ -30,22 +30,36 @@ object Parser:
     val col       = if lines.isEmpty then index else lines.last.length + 1
     SourcePoint(line, col)
 
+  private def span(start: SourcePoint, end: SourcePoint): SourceSpan =
+    SourceSpan(start, end)
+
+  private def point(line: Int, col: Int): SourcePoint =
+    SourcePoint(line, col)
+
+  // -----------------------------------------------------------------------------
+  // Parser for SourcePoint (spP)
+  // -----------------------------------------------------------------------------
+
+  private def spP[$: P](source: String): P[SourcePoint] =
+    P(Index).map(index => indexToSourcePoint(index, source))
+
   // -----------------------------------------------------------------------------
   // Keywords
   // -----------------------------------------------------------------------------
+
+  private def letkW[$: P]:   P[Unit] = P("let")
   private def defAsKw[$: P]: P[Unit] = P("=")
   private def endKw[$: P]:   P[Unit] = P(";")
   private def mehKw[$: P]:   P[Unit] = P("_")
   private def andKw[$: P]:   P[Unit] = P("and")
   private def orKw[$: P]:    P[Unit] = P("or")
   private def notKw[$: P]:   P[Unit] = P("not")
+
   private def moduleEndKw[$: P]: P[Unit] =
-    P(";".? ~ CharsWhile(c => c == ' ' || c == '\t' || c == '\r' || c == '\n', 0) ~ End)
+    P(";".? ~ CharsWhile(c => c.isWhitespace, 0) ~ End)
 
   private def moduleKw[$: P]: P[Unit] = P("module")
 
-  // all keywords in a sequence to be used later when parsing
-  // to check when an identifier is a keyword
   private def keywords[$: P]: P[Unit] = P(
     moduleKw |
       endKw |
@@ -53,7 +67,8 @@ object Parser:
       mehKw |
       andKw |
       orKw |
-      notKw
+      notKw |
+      letkW
   )
 
   // -----------------------------------------------------------------------------
@@ -61,7 +76,6 @@ object Parser:
   // -----------------------------------------------------------------------------
 
   private def bindingIdP[$: P]: P[String] =
-    // DO NOT allow spaces within an id
     import fastparse.NoWhitespace.*
     P(CharIn("a-z") ~ CharsWhileIn("a-zA-Z0-9_", 0)).!
 
@@ -70,7 +84,6 @@ object Parser:
     P(CharIn("!@#$%^&*-+<>?/\\|~").rep(1).!)
 
   private def typeIdP[$: P]: P[String] =
-    // DO NOT allow spaces within an id
     import fastparse.NoWhitespace.*
     P(CharIn("A-Z") ~ CharsWhileIn("a-zA-Z0-9", 0)).!
 
@@ -78,86 +91,156 @@ object Parser:
   // Literals
   // -----------------------------------------------------------------------------
 
-  private def litStringP[$: P]: P[String] = P("\"" ~/ CharsWhile(_ != '"', 0).! ~ "\"")
-  private def litBoolP[$: P]:   P[String] = P("true" | "false").!
-  private def litUnitP[$: P]:   P[Unit]   = P("()")
+  private def litStringP(source: String)(using P[Any]): P[LiteralString] =
+    P(spP(source) ~ "\"" ~/ CharsWhile(_ != '"', 0).! ~ "\"" ~ spP(source))
+      .map { case (start, s, end) => LiteralString(span(start, end), s) }
 
-  private def numericLitP[$: P]: P[LiteralValue] =
+  private def litBoolP(source: String)(using P[Any]): P[LiteralBool] =
+    P(spP(source) ~ ("true" | "false").! ~ spP(source))
+      .map { (start, b, end) =>
+        LiteralBool(span(start, end), b.toBoolean)
+      }
+
+  private def numericLitP(source: String)(using P[Any]): P[LiteralValue] =
     P(
       // Try float patterns first
-      (CharIn("0-9").rep(1) ~ "." ~ CharIn("0-9").rep(1)).!.map(s => LiteralFloat(s.toFloat)) |
-        ("." ~ CharIn("0-9").rep(1)).!.map(s => LiteralFloat(s.toFloat)) |
+      // N.N
+      (spP(source) ~ CharIn("0-9").rep(1) ~ "." ~ CharIn("0-9").rep(1).! ~ spP(source)).map {
+        case (start, s, end) =>
+          LiteralFloat(span(start, end), s.toFloat)
+      } |
+        // .N
+        (spP(source) ~ "." ~ CharIn("0-9").rep(1).! ~ spP(source)).map { case (start, s, end) =>
+          LiteralFloat(span(start, end), s.toFloat)
+        } |
 
-        // If there's no dot at all, parse as integer
-        CharIn("0-9").rep(1).!.map(s => LiteralInt(s.toInt))
+        // If there's no dot, parse as integer
+        P(spP(source) ~ CharIn("0-9").rep(1).! ~ spP(source)).map { case (start, s, end) =>
+          LiteralInt(span(start, end), s.toInt)
+        }
     )
+
+  private def litUnitP(source: String)(using P[Any]): P[LiteralUnit] =
+    P(spP(source) ~ "()" ~ spP(source)).map { case (start, end) =>
+      LiteralUnit(span(start, end))
+    }
 
   // -----------------------------------------------------------------------------
   // Term & Expression Parsers
   // -----------------------------------------------------------------------------
 
-  private def groupTermP(using P[Any]): P[Term] =
-    P("(" ~ exprP ~ ")").map { innerExpr =>
-      GroupTerm(innerExpr)
-    }
-
-  private def termP(using P[Any]): P[Term] =
-    P(
-      litStringP.map(s => LiteralString(s)) |
-        litBoolP.map(b => LiteralBool(b.toBoolean)) |
-        operatorIdP.map(op => Ref(op, None)) |
-        litUnitP.map(_ => LiteralUnit) |
-        groupTermP |
-        numericLitP |
-        bindingIdP.map(name => Ref(name, None))
-    )
-
-  private def exprP(using P[Any]): P[Expr] =
-    P(termP.rep(1)).map { ts =>
-      val termsList = ts.toList
-      // If there's exactly one term, the Expr inherits that term's typeSpec
-      val typeSpec =
-        if termsList.size == 1 then termsList.head.typeSpec
-        else None
-      Expr(termsList, typeSpec)
-    }
-
-  // -----------------------------------------------------------------------------
-  // Let Bindings, Fn Declarations, doc comments
-  // -----------------------------------------------------------------------------
-
-  private def docCommentP[$: P]: P[Option[DocComment]] = {
-    import fastparse.NoWhitespace.*
-    def comment:     P[String] = P("#-" ~ commentBody ~ "-#")
-    def commentBody: P[String] = P((comment | (!("-#") ~ AnyChar).!).rep).map(_.mkString)
-    comment.?.map(_.map(s => DocComment(s.stripMargin('#'))))
-  }
-
-  private def letBindingP(using P[Any]): P[Member] =
-    P(docCommentP ~ "let" ~ bindingIdP ~ defAsKw ~ exprP ~ endKw)
-      .map { case (doc, id, e) =>
-        Bnd(id, e, e.typeSpec, doc)
+  private def groupTermP(source: String)(using P[Any]): P[Term] =
+    P(spP(source) ~ "(" ~ exprP(source) ~ ")" ~ spP(source))
+      .map { case (start, expr, end) =>
+        GroupTerm(span(start, end), expr)
       }
 
-  def fnParserP(using P[Any]): P[Member] =
-    P(docCommentP ~ "fn" ~ bindingIdP ~ bindingIdP.rep(1) ~ defAsKw ~ exprP ~ endKw).map {
-      case (doc, fnName, params, bodyExpr) =>
-        FnDef(fnName, params.toList, bodyExpr, None, doc)
+  private def refP(source: String)(using P[Any]): P[Term] =
+    P(spP(source) ~ bindingIdP ~ spP(source))
+      .map { case (start, id, end) =>
+        Ref(span(start, end), id, None)
+      }
+
+  private def opRefP(source: String)(using P[Any]): P[Term] =
+    P(spP(source) ~ operatorIdP ~ spP(source))
+      .map { case (start, id, end) =>
+        Ref(span(start, end), id, None)
+      }
+
+  private def termP(source: String)(using P[Any]): P[Term] =
+    P(
+      litStringP(source) |
+        numericLitP(source) |
+        litBoolP(source) |
+        litUnitP(source) |
+        groupTermP(source) |
+        refP(source) |
+        opRefP(source)
+    )
+
+  private def exprP(source: String)(using P[Any]): P[Expr] =
+    P(spP(source) ~ termP(source).rep(1) ~ spP(source))
+      .map { case (start, ts, end) =>
+        val termsList = ts.toList
+        // If there's exactly one term, the Expr inherits that term's typeSpec
+        val typeSpec =
+          if termsList.size == 1 then termsList.head.typeSpec
+          else None
+        Expr(span(start, end), termsList, typeSpec)
+      }
+
+  // -----------------------------------------------------------------------------
+  // Error Handling for Partial Parsers
+  // -----------------------------------------------------------------------------
+
+  private def failedMemberP(source: String)(using P[Any]): P[Member] =
+    P(spP(source) ~ CharsWhile(_ != ';').! ~ endKw ~ spP(source))
+      .map { case (start, snippet, end) =>
+        MemberError(
+          span       = SourceSpan(start, end),
+          message    = "Failed to parse member",
+          failedCode = Some(snippet)
+        )
+      }
+
+  // -----------------------------------------------------------------------------
+  // Doc Comment Parser
+  // -----------------------------------------------------------------------------
+
+  private def docCommentP[$: P](src: String): P[Option[DocComment]] = {
+    import fastparse.NoWhitespace.*
+    def comment: P[String] = P("#-" ~ commentBody ~ "-#")
+    def commentBody: P[String] =
+      P((comment | (!("-#") ~ AnyChar).!).rep).map(_.mkString.stripMargin('#'))
+    P(spP(src) ~ comment.! ~ spP(src)).?.map {
+      case Some(start, s, end) =>
+        DocComment(span(start, end), s).some
+      case None => None
+    }
+  }
+
+// -----------------------------------------------------------------------------
+// Let Bindings & Fn Declarations
+// -----------------------------------------------------------------------------
+
+  private def letBindingP(source: String)(using P[Any]): P[Member] =
+    P(
+      spP(source) ~ docCommentP(source) ~ letkW ~ bindingIdP ~ defAsKw ~ exprP(
+        source
+      ) ~ endKw ~ spP(source)
+    )
+      .map { case (start, doc, id, e, end) =>
+        Bnd(span(start, end), id, e, e.typeSpec, doc)
+      }
+
+  private def fnParserP(source: String)(using P[Any]): P[Member] =
+    P(
+      spP(source) ~ docCommentP(source) ~ "fn" ~ bindingIdP ~
+        bindingIdP.rep(1) ~ defAsKw ~ exprP(source) ~ endKw ~ spP(source)
+    ).map { case (start, doc, fnName, params, bodyExpr, end) =>
+      FnDef(
+        span       = span(start, end),
+        name       = fnName,
+        params     = params.toList,
+        body       = bodyExpr,
+        typeSpec   = bodyExpr.typeSpec,
+        docComment = doc
+      )
     }
 
   // -----------------------------------------------------------------------------
-  // Single `memberParser` Combining All Member Rules
+  // Single Member Parser
   // -----------------------------------------------------------------------------
 
-  private def membersP(src: String)(using P[Any]): P[Member] =
+  private def membersP(source: String)(using P[Any]): P[Member] =
     P(
-      letBindingP |
-        fnParserP |
-        failedMemberP(src)
+      letBindingP(source) |
+        fnParserP(source) |
+        failedMemberP(source)
     )
 
   // -----------------------------------------------------------------------------
-  // Module Parsers (Implicit / Explicit)
+  // Module Parsers (Explicit / Implicit)
   // -----------------------------------------------------------------------------
 
   private def modVisibilityP[$: P]: P[ModVisibility] =
@@ -165,36 +248,45 @@ object Parser:
       P("protected").map(_ => ModVisibility.Protected) |
       P("lexical").map(_ => ModVisibility.Lexical)
 
-  private def explicitModuleP(src: String)(using P[Any]): P[Module] =
+  private def explicitModuleP(source: String)(using P[Any]): P[Module] =
     P(
-      Start ~ docCommentP ~ moduleKw ~ modVisibilityP.? ~ typeIdP.! ~ defAsKw ~ membersP(
-        src
-      ).rep ~ moduleEndKw
-    ).map { case (doc, maybeVis, moduleName, members) =>
-      Module(moduleName, maybeVis.getOrElse(ModVisibility.Public), members.toList, false, doc)
+      Start
+        ~ spP(source)
+        ~ docCommentP(source)
+        ~ moduleKw
+        ~ modVisibilityP.?
+        ~ typeIdP.!
+        ~ defAsKw
+        ~ membersP(source).rep
+        ~ moduleEndKw ~
+        spP(source)
+    ).map { case (start, doc, maybeVis, moduleName, members, end) =>
+      Module(
+        span       = span(start, end),
+        name       = moduleName,
+        visibility = maybeVis.getOrElse(ModVisibility.Public),
+        members    = members.toList,
+        isImplicit = false,
+        docComment = doc
+      )
     }
 
-  private def implicitModuleP(src: String, name: String)(using P[Any]): P[Module] =
-    P(Start ~ membersP(src).rep ~ moduleEndKw)
-      .map { members =>
-        Module(name, ModVisibility.Public, members.toList, isImplicit = true)
+  private def implicitModuleP(name: String, source: String)(using P[Any]): P[Module] =
+    P(Start ~ spP(source) ~ membersP(source).rep ~ moduleEndKw ~ spP(source))
+      .map { case (start, members, end) =>
+        Module(
+          span       = span(start, end),
+          name       = name,
+          visibility = ModVisibility.Public,
+          members    = members.toList,
+          isImplicit = true
+        )
       }
 
-  private def moduleP(src: String, name: Option[String], p: P[Any]): P[Module] =
+  private def moduleP(name: Option[String], source: String, p: P[Any]): P[Module] =
     given P[Any] = p
     name.fold(
-      explicitModuleP(src)
+      explicitModuleP(source)
     ) { n =>
-      P(explicitModuleP(src) | implicitModuleP(src, n))
+      P(explicitModuleP(source) | implicitModuleP(n, source))
     }
-
-  // -----------------------------------------------------------------------------
-  // Top-Level Function to Parse a Module
-  // -----------------------------------------------------------------------------
-
-  def parseModule(source: String, name: Option[String] = "Anon".some): Either[String, Module] =
-    parse(source, moduleP(source, name, _)) match
-      case Parsed.Success(result, _) =>
-        Right(result)
-      case f: Parsed.Failure =>
-        Left(f.trace().longMsg)
