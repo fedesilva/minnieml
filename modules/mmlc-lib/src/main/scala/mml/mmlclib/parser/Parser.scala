@@ -47,11 +47,11 @@ object Parser:
   // Keywords
   // -----------------------------------------------------------------------------
 
-  private def letkW[$: P]:   P[Unit] = P("let")
+  private def letKw[$: P]:   P[Unit] = P("let")
+  private def fnKw[$: P]:    P[Unit] = P("fn")
   private def defAsKw[$: P]: P[Unit] = P("=")
   private def endKw[$: P]:   P[Unit] = P(";")
   private def mehKw[$: P]:   P[Unit] = P("_")
-
 
   private def moduleEndKw[$: P]: P[Unit] =
     P(";".? ~ CharsWhile(c => c.isWhitespace, 0) ~ End)
@@ -61,16 +61,15 @@ object Parser:
   /** Keywords for the language, put in a single parser for easy inclusion in other parsers. Of
     * particular interest is disallowing keywords as identifiers.
     */
-  private def keywords[$: P]: P[Unit] = P(
-    moduleKw |
-      endKw |
-      defAsKw |
-      mehKw |
-      andKw |
-      orKw |
-      notKw |
-      letkW
-  )
+  private def keywords[$: P]: P[Unit] =
+    P(
+      moduleKw |
+        endKw |
+        defAsKw |
+        mehKw |
+        letKw |
+        fnKw
+    )
 
   // -----------------------------------------------------------------------------
   // Identifiers
@@ -148,6 +147,12 @@ object Parser:
         Ref(span(start, end), id, None)
       }
 
+  private def mehP(source: String)(using P[Any]): P[Term] =
+    P(spP(source) ~ mehKw ~ spP(source))
+      .map { case (start, end) =>
+        MehRef(span(start, end), None)
+      }
+
   private def termP(source: String)(using P[Any]): P[Term] =
     P(
       litStringP(source) |
@@ -156,7 +161,8 @@ object Parser:
         litUnitP(source) |
         groupTermP(source) |
         refP(source) |
-        opRefP(source)
+        opRefP(source) |
+        mehP(source)
     )
 
   private def exprP(source: String)(using P[Any]): P[Expr] =
@@ -206,18 +212,41 @@ object Parser:
 
   private def letBindingP(source: String)(using P[Any]): P[Member] =
     P(
-      spP(source) ~ docCommentP(source) ~ letkW ~ bindingIdP ~ defAsKw ~ exprP(
+      spP(source) ~ docCommentP(source) ~ letKw ~ bindingIdP ~ defAsKw ~ exprP(
         source
       ) ~ endKw ~ spP(source)
     )
-      .map { case (start, doc, id, e, end) =>
-        Bnd(span(start, end), id, e, e.typeSpec, doc)
+      .map { case (start, doc, name, expr, end) =>
+        Bnd(span(start, end), name, expr, expr.typeSpec, doc)
       }
+
+  private def fnParamP(source: String)(using P[Any]): P[FnParam] =
+    P(
+      spP(source) ~ docCommentP(source) ~ bindingIdP ~ (":" ~ typeIdP).? ~ spP(
+        source
+      )
+    ).map { case (start, doc, name, t, end) =>
+      FnParam(
+        span       = span(start, end),
+        name       = name,
+        typeSpec   = t.map(TypeName(span(start, end), _)),
+        docComment = doc
+      )
+    }
 
   private def fnParserP(source: String)(using P[Any]): P[Member] =
     P(
-      spP(source) ~ docCommentP(source) ~ "fn" ~ bindingIdP ~
-        bindingIdP.rep(1) ~ defAsKw ~ exprP(source) ~ endKw ~ spP(source)
+      spP(source)
+        ~ docCommentP(source)
+        ~ fnKw
+        ~ bindingIdP
+        ~ "("
+        ~ fnParamP(source).rep
+        ~ ")"
+        ~ defAsKw
+        ~ exprP(source)
+        ~ endKw
+        ~ spP(source)
     ).map { case (start, doc, fnName, params, bodyExpr, end) =>
       FnDef(
         span       = span(start, end),

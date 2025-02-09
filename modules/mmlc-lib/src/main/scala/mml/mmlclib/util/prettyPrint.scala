@@ -32,27 +32,48 @@ def prettyPrintMember(member: Member, indent: Int): String =
 
     case fn: FnDef =>
       s"${indentStr}FnDef ${fn.name}${printSourceSpan(fn.span)}  \n" +
-        s"${indentStr}  typeSpec: ${fn.typeSpec.getOrElse("None")}\n" +
-        s"${indentStr}  params: [${fn.params.mkString(", ")}]\n" +
+        s"${indentStr}  typeSpec: ${prettyPrintTypeSpec(fn.typeSpec, indent + 2)}\n" +
+        s"${indentStr}  params:\n${prettyPrintParams(fn.params, indent + 2)}\n" +
         prettyPrintExpr(fn.body, indent + 2)
 
     case bnd: Bnd =>
       s"${indentStr}Bnd ${bnd.name}${printSourceSpan(bnd.span)}\n" +
-        s"${indentStr}  typeSpec: ${bnd.typeSpec.getOrElse("None")}\n" +
+        s"${indentStr}  typeSpec: ${prettyPrintTypeSpec(bnd.typeSpec, indent + 2)}\n" +
         prettyPrintExpr(bnd.value, indent + 2)
 
   }
 
+def prettyPrintTypeSpec(typeSpec: Option[TypeSpec], indent: Int): String =
+  val indentStr = "  " * indent
+  typeSpec match
+    case Some(TypeName(sp, name)) =>
+      s"TypeName $name ${printSourceSpan(sp)}"
+    case Some(lt: LiteralType) => s"Literal: ${lt.typeName}"
+    case Some(ts: FromSource) => f"UnknownTypeSpec(${ts})"
+    case None => "None"
+
+def prettyPrintParams(params: Seq[FnParam], indent: Int): String =
+  val indentStr = "  " * indent
+  params
+    .map { case FnParam(span, name, typeSpec, doc) =>
+      s"${indentStr}${name}${printSourceSpan(span)} : ${prettyPrintTypeSpec(typeSpec, indent + 2)}"
+    }
+    .mkString("\n")
+
 def prettyPrintExpr(expr: Expr, indent: Int): String =
   val indentStr = "  " * indent
   val termsStr  = expr.terms.map(prettyPrintTerm(_, indent + 2)).mkString("\n")
-  s"${indentStr}Expr\n${indentStr}  typeSpec: ${expr.typeSpec.getOrElse("None")}\n$termsStr"
+  s"${indentStr}Expr\n${indentStr}  typeSpec: ${prettyPrintTypeSpec(expr.typeSpec, indent + 2)}\n$termsStr"
 
 def prettyPrintTerm(term: Term, indent: Int): String =
   val indentStr = "  " * indent
   term match {
+
+    case MehRef(sp, typeSpec) =>
+      s"${indentStr}MehRef ${printSourceSpan(sp)} \n${indentStr}  typeSpec: ${prettyPrintTypeSpec(typeSpec, indent + 2)}"
+
     case Ref(sp, name, typeSpec) =>
-      s"${indentStr}Ref $name\n${indentStr}  typeSpec: ${typeSpec.getOrElse("None")}"
+      s"${indentStr}Ref $name ${printSourceSpan(sp)} \n${indentStr}  typeSpec: ${prettyPrintTypeSpec(typeSpec, indent + 2)}"
 
     case LiteralInt(sp, value) =>
       s"${indentStr}LiteralInt $value"

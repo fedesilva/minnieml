@@ -10,6 +10,7 @@ import java.nio.file.Files
 import java.nio.file.Path
 
 object ParserApi:
+
   def parseModuleString(
     source: String,
     name:   Option[String] = None
@@ -20,14 +21,14 @@ object ParserApi:
     )
   }
 
-  def parseModuleFile(path: Path): IO[Either[String, Module]] = {
-    val parentName = sanitizeModuleName(path.getParent.getFileName.toString)
-    Sync[IO]
-      .blocking(Files.readString(path))
-      .flatMap(src => Sync[IO].pure(Parser.parseModule(src, parentName.some)))
-  }
+def parseModuleFile(path: Path): IO[Either[String, Module]] = {
+  val parentName = sanitizeModuleName(path.getParent.getFileName.toString)
+  Sync[IO]
+    .blocking(Files.readString(path))
+    .flatMap(src => Sync[IO].pure(Parser.parseModule(src, parentName.some)))
+}
 
-  private def sanitizeModuleName(dirName: String): String = {
-    val words = dirName.split("[-_ ]+").filter(_.nonEmpty)
-    words.head.capitalize + words.tail.map(_.capitalize).mkString("")
-  }
+private def sanitizeModuleName(dirName: String): String = {
+  val words = dirName.split("[-_ ]+").filter(_.nonEmpty)
+  words.head.capitalize + words.tail.map(_.capitalize).mkString("")
+}

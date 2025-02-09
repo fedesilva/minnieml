@@ -62,10 +62,18 @@ sealed trait Decl extends Member, Typeable {
   def docComment: Option[DocComment]
 }
 
+case class FnParam(
+  span:       SourceSpan,
+  name:       String,
+  typeSpec:   Option[TypeSpec]   = None,
+  docComment: Option[DocComment] = None
+) extends AstNode,
+      FromSource
+
 case class FnDef(
   span:       SourceSpan,
   name:       String,
-  params:     List[String],
+  params:     List[FnParam],
   body:       Expr,
   typeSpec:   Option[TypeSpec]   = None,
   docComment: Option[DocComment] = None
@@ -104,32 +112,35 @@ case class Ref(
 ) extends Term,
       FromSource
 
+case class MehRef(span: SourceSpan, typeSpec: Option[TypeSpec]) extends Term, FromSource
+
 // **Literals**
+
 sealed trait LiteralValue extends Term, FromSource
 
 case class LiteralInt(
   span:  SourceSpan,
   value: Int
 ) extends LiteralValue {
-  final val typeSpec: Option[TypeSpec] = Some(LiteralIntType)
+  final val typeSpec: Option[TypeSpec] = Some(LiteralIntType(span))
 }
 case class LiteralString(span: SourceSpan, value: String) extends LiteralValue {
-  final val typeSpec: Option[TypeSpec] = Some(LiteralStringType)
+  final val typeSpec: Option[TypeSpec] = Some(LiteralStringType(span))
 }
 case class LiteralBool(span: SourceSpan, value: Boolean) extends LiteralValue {
-  final val typeSpec: Option[TypeSpec] = Some(LiteralBoolType)
+  final val typeSpec: Option[TypeSpec] = Some(LiteralBoolType(span))
 }
 
 case class LiteralUnit(span: SourceSpan) extends LiteralValue {
-  final val typeSpec: Option[TypeSpec] = Some(LiteralUnitType)
+  final val typeSpec: Option[TypeSpec] = Some(LiteralUnitType(span))
 }
 
 case class LiteralFloat(span: SourceSpan, value: Float) extends LiteralValue {
-  final val typeSpec: Option[TypeSpec] = Some(LiteralFloatType)
+  final val typeSpec: Option[TypeSpec] = Some(LiteralFloatType(span))
 }
 
 // **Type Specifications**
-sealed trait TypeSpec extends AstNode
+sealed trait TypeSpec extends AstNode, FromSource
 
 /** A type by name */
 case class TypeName(span: SourceSpan, name: String) extends TypeSpec
@@ -169,20 +180,20 @@ case class TypeGroup(span: SourceSpan, types: List[TypeSpec]) extends TypeSpec
 sealed trait LiteralType extends TypeSpec {
   def typeName: String
 }
-case object LiteralIntType extends LiteralType {
+case class LiteralIntType(span: SourceSpan) extends LiteralType {
   final val typeName = "Int"
 }
-case object LiteralStringType extends LiteralType {
+case class LiteralStringType(span: SourceSpan) extends LiteralType {
   final val typeName = "String"
 }
-case object LiteralBoolType extends LiteralType {
+case class LiteralBoolType(span: SourceSpan) extends LiteralType {
   final val typeName = "Bool"
 }
 
-case object LiteralUnitType extends LiteralType {
+case class LiteralUnitType(span: SourceSpan) extends LiteralType {
   final val typeName = "Unit"
 }
 
-case object LiteralFloatType extends LiteralType {
+case class LiteralFloatType(span: SourceSpan) extends LiteralType {
   final val typeName = "Float"
 }

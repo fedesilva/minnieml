@@ -120,7 +120,7 @@ class CommentsTests extends BaseEffFunSuite:
     modNotFailed(
       """
          #- This is a doc comment -#
-         fn func x = 42;
+         fn func (x) = 42;
        """
     ).map { m =>
       assertEquals(m.members.size, 1)

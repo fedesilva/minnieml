@@ -20,7 +20,8 @@ class LiteralTests extends BaseEffFunSuite:
     }.map {
       case bnd: Bnd =>
         bnd.value.terms.head.typeSpec match
-          case Some(_: LiteralStringType.type) =>
+          case Some(LiteralStringType(_)) =>
+          // pass
           case other =>
             fail(s"Expected `Some(LiteralStringType)`, got $other")
       case _ => fail("Expected a let")
@@ -30,7 +31,7 @@ class LiteralTests extends BaseEffFunSuite:
   test("Int Literal has correct typespec") {
     modNotFailed(
       """
-          let a = 1;
+        let a = 1;
       """.stripMargin
     ).map { m =>
       assert(m.members.head.isInstanceOf[Bnd])
@@ -38,7 +39,8 @@ class LiteralTests extends BaseEffFunSuite:
     }.map {
       case bnd: Bnd =>
         bnd.value.terms.head.typeSpec match
-          case Some(_: LiteralIntType.type) =>
+          case Some(LiteralIntType(_)) =>
+          // pass
           case other =>
             fail(s"Expected `Some(LiteralIntType)`, got $other")
       case _ => fail("Expected a let")
@@ -48,7 +50,7 @@ class LiteralTests extends BaseEffFunSuite:
   test("Float literal has correct typespec") {
     modNotFailed(
       """
-       let f = 1.0;
+        let f = 1.0;
       """.stripMargin
     ).map { m =>
       assert(m.members.head.isInstanceOf[Bnd])
@@ -56,7 +58,7 @@ class LiteralTests extends BaseEffFunSuite:
     }.map {
       case bnd: Bnd =>
         bnd.value.terms.head.typeSpec match
-          case Some(_: LiteralFloatType.type) =>
+          case Some(LiteralFloatType(_)) =>
           case other =>
             fail(s"Expected `Some(LiteralIntType)`, got $other \n ${prettyPrintAst(bnd)} ")
       case _ => fail("Expected a let")
@@ -74,7 +76,7 @@ class LiteralTests extends BaseEffFunSuite:
     }.map {
       case bnd: Bnd =>
         bnd.value.terms.head.typeSpec match
-          case Some(_: LiteralBoolType.type) =>
+          case Some(LiteralBoolType(_)) =>
           case other =>
             fail(s"Expected `Some(LiteralBoolType)`, got $other")
       case _ => fail("Expected a let")
@@ -92,7 +94,7 @@ class LiteralTests extends BaseEffFunSuite:
     }.map {
       case bnd: Bnd =>
         bnd.value.terms.head.typeSpec match
-          case Some(_: LiteralUnitType.type) =>
+          case Some(LiteralUnitType(_)) =>
           case other =>
             fail(s"Expected `Some(LiteralUnitType)`, got $other")
       case _ => fail("Expected a let")

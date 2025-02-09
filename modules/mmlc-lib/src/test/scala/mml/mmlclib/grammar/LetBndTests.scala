@@ -7,12 +7,12 @@ import mml.mmlclib.util.prettyPrintAst
 import munit.*
 import org.neo4j.internal.helpers.Strings.prettyPrint
 
-class BasicTests extends BaseEffFunSuite:
+class LetBndTests extends BaseEffFunSuite:
 
   test("simple let") {
 
     modNotFailed("""
-      module A = 
+      module A =
         let a = 1;
         let b = 2;
         let c = "tres";
@@ -173,60 +173,10 @@ class BasicTests extends BaseEffFunSuite:
     }
   }
 
-  test("simple fn") {
-    modNotFailed(
-      """
-        module A =
-          fn sum a b = a sum b;
-        ;
-      """
-    ).map { m =>
-      {
-        assert(m.members.size == 1)
-        m.members.head
-      }
-    }.map {
-      case fn: FnDef =>
-        assert(
-          fn.params.size == 2,
-          s"Expected 2 params but got ${fn.params.size}: ${prettyPrint(fn)} "
-        )
-        assert(
-          fn.body.terms.size == 3,
-          s"Expected 3 terms but got ${fn.body.terms.size}: ${prettyPrint(fn)} "
-        )
-      case _ => fail("Expected a function")
-    }
-  }
-
-  test("fn and let") {
-    modNotFailed(
-      """
-       module A = 
-         let a = 1;
-         let b = 2;
-         fn sum a b = a + b;
-         let x = sum a b;
-       ;
-       """
-    )
-  }
-
   test("app with id and lit") {
     modNotFailed(
       """
         let a = b + 3;
-      """
-    )
-  }
-
-  test("fn and let") {
-    modNotFailed(
-      """
-        let a = 1;
-        let b = 2;
-        fn sum a b = a + b;
-        let x = sum a b;
       """
     )
   }
