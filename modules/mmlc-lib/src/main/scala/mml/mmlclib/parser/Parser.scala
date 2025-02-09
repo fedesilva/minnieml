@@ -51,15 +51,16 @@ object Parser:
   private def defAsKw[$: P]: P[Unit] = P("=")
   private def endKw[$: P]:   P[Unit] = P(";")
   private def mehKw[$: P]:   P[Unit] = P("_")
-  private def andKw[$: P]:   P[Unit] = P("and")
-  private def orKw[$: P]:    P[Unit] = P("or")
-  private def notKw[$: P]:   P[Unit] = P("not")
+
 
   private def moduleEndKw[$: P]: P[Unit] =
     P(";".? ~ CharsWhile(c => c.isWhitespace, 0) ~ End)
 
   private def moduleKw[$: P]: P[Unit] = P("module")
 
+  /** Keywords for the language, put in a single parser for easy inclusion in other parsers. Of
+    * particular interest is disallowing keywords as identifiers.
+    */
   private def keywords[$: P]: P[Unit] = P(
     moduleKw |
       endKw |
@@ -179,7 +180,7 @@ object Parser:
         MemberError(
           span       = SourceSpan(start, end),
           message    = "Failed to parse member",
-          failedCode = Some(snippet)
+          failedCode = snippet.some
         )
       }
 
