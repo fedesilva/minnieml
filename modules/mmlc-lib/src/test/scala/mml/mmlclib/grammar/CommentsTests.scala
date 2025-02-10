@@ -90,8 +90,8 @@ class CommentsTests extends BaseEffFunSuite:
     modFailed(
       """
       module Test =
-          let x = 42;
-          #- This is an unclosed comment
+        let x = 42;
+        #- This is an unclosed comment
       """
     )
   }
