@@ -1,36 +1,66 @@
 # MinnieML
 
-A statically typed, functional language, with an ML inspired syntax,
+A statically typed, functional language, with an ML inspired syntax, managed effects in delimited contexts,
 declarative low level capabilities and first class native interface.
 
-I loathe the notion of domain specific languages, I'd like to learn a lang, its stdlib and use
-it to build webservers, websites, microservices, monoliths, kernel modules, wikis, embedded systems, mobile apps, desktop apps, shell scripts, etc. A list is a list, a string is a string, some platforms might not understand what a file or a thread is - the language and build tool need to know about this and help me.
+## Fair warning
 
-From edge to cloud, from mobile to homes, and when you are sitting with your laptop - one lang to rule them all.
+    "El que avisa no traiciona"
 
-It's all about the fun and learning and exploring ideas.
+      -- Spanish for "Forewarned is forearmed"
+
+    Or literally "He who warns you, does not betray you". Alternatively, "I told you!"
+
+This is not something you want to use, I'm making this public to share with friends, so if you continue, hello friend!
+
+## Legalese
+
+This is not at all connected to my employer's IP, work, interests, opinions or anything else.
+
+## Status
+
+At this time, I am only parsing a subset of the language, there is no typechecker, and expressions are a flat
+sequence of literals and identifiers.
+The is only a very rudimentary interpreter and a simplistic lllvm ir emitter, plus a shell script to **try** and compile that ir, after a bit of copy pasting.
+
+I am using Scala 3 and Fast Parse 2.
+
+## Documentation
+
+There is, of course, no documentation.
+
+For a while I was using antlr4, and while I am moving out
+of it, [that grammar](modules/mmlc-lib/src/main/antlr4/MinnieML.g4) remains the reference for now.
+
+:shrugs:
+
+## Synopsis
 
 Here's a small syntax showcase
 
-```
-    // Let Binding
+```rust
+    # Value Binding
     let a = 1;
     let b = 2;
-    // Abstraction
-    fn times a b = a * b;
-    // Application
-    times 1 2;
-    times a b;
+    # Abstraction
+    fn times (a b) = a * b;
+    # Application
+    let t1 = times 1 2;
+    let t2 = times a b;
 ```
 
-a more complex example
+Note the semi colons. For now they are mandatory - they keep the parser fast and simple
+because they avoid some backtracking. I am thinking if I should add significant indentation in some cases.
 
-* types start with an uppercase letter, mandatory (Maybe, String, Int)
-* type variables start with a ' and an uppercase letter ('T, 'R, 'In, 'Out)
-* `#` is a line comment
+A more complex example:
 
-```
+- types start with an uppercase letter, mandatory (Maybe, String, Int)
+- type variables start with a ' and an uppercase letter ('T, 'R, 'In, 'Out)
+- `#` is a line comment
+- `()` reads as `unit`; it's like void ... (ish)
+- note the infered types in the comments
 
+```rust
 type Maybe 'T = 'T | ()
 
 # empty :: Maybe 'T -> Boolean
@@ -39,7 +69,7 @@ fn empty x =
     | () -> true
     | _  -> false
 
-# empty :: Maybe 'T -> Boolean
+# nonEmpty :: Maybe 'T -> Boolean
 fn nonEmpty maybe =
   ! empty maybe
 
@@ -50,14 +80,12 @@ enum Species =
   | Fish
   | Reptile
 
-type Pet =
-{
+type Pet = {
   name:     String
   species:  Species
 }
 
-type Person =
-{
+type Person = {
   name: String
   pet:  Maybe Pet
 }
@@ -65,8 +93,8 @@ type Person =
 # hasPet :: 'T : { pet: Maybe Pet } -> Boolean
 fn hasPet p =
   nonEmpty p.pet
-  
-# nameOf :: 'T : { name: String }
+
+# nameOf :: 'T : { name: String } -> String
 fn nameOf (p): String =
   p.name
 
@@ -79,224 +107,121 @@ let pf = hasPet fede   # true
 
 # does not compile
 # let pz = hasPet zur
-
 ```
 
-#### Legalese
+## Why
 
-This is not at all connected to my employer's IP, work, interests, opinions or anything else.
+I loathe the notion of domain specific languages, I'd like to learn a lang, its stdlib and use
+it to build webservers, websites, microservices, monoliths, kernel modules, wikis, embedded systems, mobile apps, desktop apps, shell scripts, etc.
 
-#### Fair warning
+A list is a list, a string is a string, some platforms might not understand what a file or a thread is - the language and build tool need to know about this and help me.
 
-    "El que avisa no traiciona"
+From edge to cloud, from mobile to homes, and when you are sitting with your laptop - one lang to rule them all.
 
-      -- Spanish for "Forewarned is forearmed" 
-              (or literally "He who warns you, does not betray you".)
+I want a very high level language that gives me declarative(ish?) access to low level stuff IF I need it, but does not force it on every little program.
 
+It's all about the fun and learning and exploring ideas.
 
-I'm only working on the grammar at this point and when I move on, it might take 
-ages for me to complete the next stage.
-
-This is not something you want to use, I'm making this public to share with friends, so if you continue, hello friend!
-
-## (Intended) Features
-
-- Everything is an expression or a binding, ... mostly.
-- Functional, strict (lazy semantics are opt in), pure (of sorts, no one is)
-- Statically typed with ML style inference
-- Protocols
-  - type parametric overloading
-  - type classes-ish, without the class in the name, tho, :)
-
-- Common types
-
-  - The primitives we all love, Int, Long, String, etc.
-  - Tuples (product types)
-  - Data types (product types, labeled)
-
-  - Variants (sum types, heterogeneous member types)
-    - unions 
-      - use as much memory as the largest type.
-      - have constructors
-    
-  - Cells
-    - mutable memory locations (see resources and effects below)
-      - serializable write access (CAS)
-      - concurrent reads
-      
-  - Arrays
-    - contiguous fixed size memory blocks
-  
-  - Lists and other collections
-
-
-- Pattern matching and destructuring
-
-  - for data types
-  - primitive literals
-  - structural pattern matching
-  - nominal pattern matching
-  - Sequence matching (like list cons matching)
-  - can be used in bindings (let (a,b) = (1,2))
-  - binary pattern matching
-  
-  
-
-- Modules
-  - container of declarations
-  - entry point for low level capabilities (see below)
-  - clear and explicit export rules
-    - private by default, design your apis, don't just leak them
-    - export tables or access modifiers or both
-    - circular deps are an error
-    - memory management unit 
-    - first class modules
-      - take parameters (mandatory, else it's just a normal problem)
-      - define module templates, 
-      - make instances at runtime
-      - pass them around
-
-
-- HM style type system with extensions
-
-- Refinement types
-  - primitives with a predicate attached
-  - defined in terms of patten matching    
-
-- Type level functions and values
-  - singleton values
-  - any value can be lifted to type level
-    - even functions if pure
-
-- Effects
-
- 
-        
-
-
-
-- Compiler 
-  - Staged compilation model
-
-    - Pod
-      - Multi Platform binary file
-      - non executable by itself (basically an ast, so interpretable)
-      - share like a java jar, link to in MML land.
-      - pods can reference native libs and can be compiled to native
-    - Native
-      - when compiling to native, optimization starts before passing to llvm even
-      - native lib.
-      - native executable.
-
-  - Graph DB based AST
-    - After parsing  the compiler traverses the parse tree
-      - and "loads" it into graph db
-      - instead of having several ast models 
-      - work with annotated vertex and edges      
-      - write traversals - queries and mutations - with a single dsl
-      - use indexing for fast access
-        - adjacency lists
-      - parquet storage for modules for fast reads
-      - keep db around (unless `clean`ed) 
-        - fast incremental compilation
-        - keep build "warm" even when closing tools
-          - no need to forever reindex
-      - can build tooling around.
-        - expose some query mechanisms
-        - as a lib
-        - and from command line tool (using lib)
-
-- Memory Management
-
-  - by default, mix of gc and ref counted arenas
-    - but this can be changed
-    - arenas are basically scopes.
-      - in fact, modules are mapped 1-1 to scopes.
-        - which are fused on optimization - if possible.
-        - function level, we only allocate in the stack.
-          - and performa escape analysis to find out 
-    - gc for long lived arenas, specially the global one - the main heap - to avoid fragmentation.
-    - gc is opt out
-    - infered arenas 
-      - tree of allocators, module based
-      - escape analysis used to select correct arena
-
-  - whenever posible, use columnar representation of arrays of data types
-  - programmer control is possible via declarative means
-  - declarative arenas and allocation strategies
-    - you are in command, but must comply with rules
-    - defined at the module level (each module IS an arena)
-    - with type granularity
-    - write your own allocators and declare where and when they are to be used.
-      - in collaboration with the type and module systems
-      - and the small runtime allocation framework (central book keeper)
-    - ability to lift memory management into an observable effect
-      - opt in
-      - using this and bit pattern matching you can write very low level code
-        including allocator/destructors, while keeping safety.
-
-- Lower level capabilities
-
-  - the compiler makes memory management transparent but:
-    - you can integrate (see above) declaratively
-      - with the allocator
-      - even with the machinery to encode/decode chunks of memory into data types
-        - write your own packing instructions, per platform even.
-  - you can also explicitly declare things like uniqueness and borrowing
-    - so you can control precisely how memory is used, when and where it's copied.
-      - and enables you to tweak the memory management inference algorithm
-        - enforce not escaping, not sharing, etc
-
-- Pod and Module system
-  - pods are distribution units
-  - pods are top level modules
-  - canon, like modules    
-  - native exports (to compile to c libraries) need to specify specialization rules for parametric types
-    - can compile to .h and .o so c programs can use.
-      - allows c users to specify to which type you want to specialize
-  - higher order modules
-    - modules can be instanced with params and passed around
-    - like objects without subtyping,
-      - Native Interface uses this to map to c++ classes (maybe objc)
-
-* A scripting interpreter
-
-  - compiles fast to ast then interpret.
-  - a bit more relaxed, particularly about resources and effects
-  - expose interface, usable for debugging, and runtime inspection during development.
-  - also to write and run scripts (as in shell scripts, but with a real language)
-  - so usable as a library and as an executable
-
-* Tooling
-  - every bit is a library, compiler, repl, interpreter, etc.
-  - so we can implement a language server, build tool and refactoring tools by using the same
-    code the compiler uses.
-
-### Docs
-
-TBD (some day, not "mucho" to document now)
-
-### How
-
-For now writen in Scala using Antlr4, and sbt-antlr4.
-
-When the time comes to generate code I'll see how to `llvm` from java/scala.
-
-For now the near term strategy is to write an interpreter - and maybe the interpreter can call c, then use that until bootstraping is achieved. Or else just continue to the codegen phase and use that.
-
-I really want to have an interpreter, which will of course be slower but will allow debugging,
-shell scripting, and an early implementation before I have fully grokked llvm and the memory allocation system.
-
-Not important for now, I'm still working on the grammar and the initial post parse IR.
-
-### Running
+## Running
 
 No, not, yet.
 
-But soon, now, really.
+But soon, now. Really.
 
 ...
 
-No, I don't mean that last thing.
+## Typechecking the Person/Pet example.
 
-It might take forever.
+```
+
+# Let's begin type-checking `fn empty x = x match { | () -> true | _ -> false }`.
+# We see that `x match` has two cases:
+#   1) If x is the constructor `()`, return `true`.
+#   2) Otherwise `_`, return `false`.
+# Recall that `type Maybe 'T = 'T | ()`.
+# So `()` here aligns with the "nothing" variant of Maybe.
+# This means `x` must be a value of type `Maybe 'T` for some type variable `'T`.
+# Both branches return a Bool, so the result of `empty` is Bool.
+#
+# Hence: empty :: Maybe 'T -> Bool
+fn empty x =
+  x match
+    | () -> true
+    | _  -> false
+
+
+# Next, `fn nonEmpty maybe = ! empty maybe`.
+# `empty maybe` must return a Bool, so `maybe` must be the same type that `empty` expects:
+# namely `Maybe 'T` for some type variable `'T`.
+# Then we apply '!' (logical not) to that Bool, so the result is also a Bool.
+#
+# Hence: nonEmpty :: Maybe 'T -> Bool
+fn nonEmpty maybe =
+  ! empty maybe
+
+
+enum Species =
+  | Cat
+  | Dog
+  | Bird
+  | Fish
+  | Reptile
+
+type Pet = {
+  name:     String
+  species:  Species
+}
+
+type Person = {
+  name: String
+  pet:  Maybe Pet
+}
+
+
+# Now let's look at `fn hasPet p = nonEmpty p.pet`.
+# We see p.pet must be a `Maybe Pet`, so `p` must be of type `Person` (since Person defines a `pet: Maybe Pet`).
+# Then we feed `p.pet` to `nonEmpty`, returning Bool.
+#
+# Hence: hasPet :: Person -> Bool
+fn hasPet p =
+  nonEmpty p.pet
+
+
+# Now `fn nameOf (p): String = p.name`.
+# We have an explicit annotation for the return type: `: String`.
+# The only requirement for `p` is that it has a field `.name` of type String.
+# In many HM + row-polymorphism systems, we could say
+#    nameOf :: { name: String | r } -> String
+# for some row `r`.
+# But if we assume the simplest usage (and possibly no direct row-polymorphic syntax),
+# we can say `p` is at least a record with a `name: String`.
+# If you want it strictly for `Person`, you can say `Person -> String`.
+# In a more general row-polymorphic sense: `{ name: String, ... } -> String`.
+#
+# We'll show the row-polymorphic style in the comment which is the way we are going.
+# In practice this will be shown as `{ name: String }`, the row will be implicit.
+#
+# nameOf :: { name: String | 'R } -> String
+fn nameOf (p): String =
+  p.name
+
+
+# Let us examine the rest:
+let zur     = Pet     "Zur"     Species.Cat      # zur :: Pet
+let fede    = Person  "Fede"    zur              # fede :: Person
+let victor  = Person  "Victor"  ()               # victor :: Person
+
+let pv = hasPet victor  # pv :: Bool  (evaluates to false)
+let pf = hasPet fede    # pf :: Bool  (evaluates to true)
+
+# Finally, `let pz = hasPet zur` would fail to compile
+# because `hasPet` expects a Person, but `zur` is a Pet.
+#
+# Summary of inferred types:
+# empty    :: Maybe 'T -> Bool
+# nonEmpty :: Maybe 'T -> Bool
+# hasPet   :: Person -> Bool
+# nameOf   :: { name: String | 'R } -> String   # row-polymorphic variant
+#              (or simply Person -> String if you want to fix it)
+
+```
