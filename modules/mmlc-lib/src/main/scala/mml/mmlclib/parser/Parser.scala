@@ -89,7 +89,7 @@ object Parser:
     P(!keywords ~ CharIn("a-z") ~ CharsWhileIn("a-zA-Z0-9_", 0)).!
 
   private def operatorIdP[$: P]: P[String] =
-    // import fastparse.NoWhitespace.*
+    import fastparse.NoWhitespace.*
     // Define the allowed operator characters in a string
     val opChars = "!@#$%^&*+<>?/\\|~-"
     // Use CharsWhile to accept one or more characters that are in opChars.
