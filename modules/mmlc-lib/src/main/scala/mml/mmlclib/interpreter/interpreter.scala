@@ -20,7 +20,10 @@ class Environment(val parent: Option[Environment] = None):
   def define(name: String, value: Value): Unit = bindings(name) = value
   def get(name: String): Option[Value] = bindings.get(name).orElse(parent.flatMap(_.get(name)))
 
-/** MML Interpreter */
+/** MML Interpreter
+ * This is both rudimentary and incomplete, but it should be enough to get us started.
+ * It is very mutable and probably not thread-safe, but that's fine for now.
+ */
 class Interpreter:
   private var globalEnv = new Environment()
 
