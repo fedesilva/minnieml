@@ -5,18 +5,15 @@ import mml.mmlclib.ast.*
 import mml.mmlclib.test.BaseEffFunSuite
 import mml.mmlclib.util.prettyPrintAst
 import munit.*
-import org.neo4j.internal.helpers.Strings.prettyPrint
 
 class LetBndTests extends BaseEffFunSuite:
 
   test("simple let") {
 
     modNotFailed("""
-      module A =
         let a = 1;
         let b = 2;
         let c = "tres";
-      ;
       """).map(m => assert(m.members.size == 3))
 
   }
@@ -36,7 +33,7 @@ class LetBndTests extends BaseEffFunSuite:
       case bnd: Bnd =>
         assert(
           bnd.value.terms.size == 3,
-          s"Expected 3 terms but got ${bnd.value.terms.size} : ${prettyPrint(bnd)}"
+          s"Expected 3 terms but got ${bnd.value.terms.size} : ${prettyPrintAst(bnd)}"
         )
       case _ => fail("Expected a let")
     }
@@ -58,7 +55,7 @@ class LetBndTests extends BaseEffFunSuite:
       case bnd: Bnd =>
         assert(
           bnd.value.terms.size == 3,
-          s"Expected 3 terms but got ${bnd.value.terms.size} : ${prettyPrint(bnd)}"
+          s"Expected 3 terms but got ${bnd.value.terms.size} : ${prettyPrintAst(bnd)}"
         )
       case _ => fail("Expected a let")
     }
@@ -80,7 +77,7 @@ class LetBndTests extends BaseEffFunSuite:
       case bnd: Bnd =>
         assert(
           bnd.value.terms.size == 3,
-          s"Expected 3 terms but got ${bnd.value.terms.size} : ${prettyPrint(bnd)}"
+          s"Expected 3 terms but got ${bnd.value.terms.size} : ${prettyPrintAst(bnd)}"
         )
       case _ => fail("Expected a let")
     }
@@ -102,7 +99,7 @@ class LetBndTests extends BaseEffFunSuite:
       case bnd: Bnd =>
         assert(
           bnd.value.terms.size == 3,
-          s"Expected 3 terms but got ${bnd.value.terms.size} : ${prettyPrint(bnd)}"
+          s"Expected 3 terms but got ${bnd.value.terms.size} : ${prettyPrintAst(bnd)}"
         )
       case _ => fail("Expected a let")
     }
@@ -124,7 +121,7 @@ class LetBndTests extends BaseEffFunSuite:
       case bnd: Bnd =>
         assert(
           bnd.value.terms.size == 2,
-          s"Expected 2 terms but got ${bnd.value.terms.size} : ${prettyPrint(bnd)}"
+          s"Expected 2 terms but got ${bnd.value.terms.size} : ${prettyPrintAst(bnd)}"
         )
       case _ => fail("Expected a let")
     }
@@ -146,7 +143,7 @@ class LetBndTests extends BaseEffFunSuite:
       case bnd: Bnd =>
         assert(
           bnd.value.terms.size == 2,
-          s"Expected 2 terms but got ${bnd.value.terms.size} : ${prettyPrint(bnd)}"
+          s"Expected 2 terms but got ${bnd.value.terms.size} : ${prettyPrintAst(bnd)}"
         )
       case _ => fail("Expected a let")
     }
@@ -167,7 +164,7 @@ class LetBndTests extends BaseEffFunSuite:
       case bnd: Bnd =>
         assert(
           bnd.value.terms.size == 4,
-          s"Expected 2 terms but got ${bnd.value.terms.size} : ${prettyPrint(bnd)}"
+          s"Expected 2 terms but got ${bnd.value.terms.size} : ${prettyPrintAst(bnd)}"
         )
       case _ => fail("Expected a let")
     }
@@ -185,7 +182,7 @@ class LetBndTests extends BaseEffFunSuite:
       case bnd: Bnd =>
         assert(
           bnd.value.terms.size == 1,
-          s"Expected 1 term but got ${bnd.value.terms.size} : ${prettyPrint(bnd)}"
+          s"Expected 1 term but got ${bnd.value.terms.size} : ${prettyPrintAst(bnd)}"
         )
       case _ => fail("Expected a let")
     }
@@ -211,7 +208,7 @@ class LetBndTests extends BaseEffFunSuite:
       case bnd: Bnd =>
         assert(
           bnd.value.terms.size == 3,
-          s"Expected 3 terms but got ${bnd.value.terms.size}: ${prettyPrint(bnd)}"
+          s"Expected 3 terms but got ${bnd.value.terms.size}: ${prettyPrintAst(bnd)}"
         )
       case _ => fail("Expected a binding")
     }
@@ -224,4 +221,44 @@ class LetBndTests extends BaseEffFunSuite:
       )
     }
 
+  }
+
+  test("let with type name ascription") {
+    modNotFailed(
+      """
+        let a: Int = 1;
+      """
+    ).map { m =>
+      assert(m.members.size == 1)
+      m.members.head
+    }.map {
+      case bnd: Bnd =>
+        assert(
+          bnd.value.terms.size == 1,
+          s"Expected 1 term but got ${bnd.value.terms.size}: ${prettyPrintAst(bnd)}"
+        )
+        bnd.typeAsc match
+          case Some(ts: TypeName) => assert(clue(ts.name) == clue("Int"))
+          case _ => fail("Expected a type ascription but got ${prettyPrintAst(bnd.typeAsc)}")
+
+      case x => fail(s"Expected a binding but got: ${prettyPrintAst(x)}")
+    }
+  }
+
+  test("let with 2 minus 2".only) {
+    modNotFailed(
+      """
+        let a = 2 - 2;
+      """
+    ).map { m =>
+      assert(m.members.size == 1)
+      m.members.head
+    }.map {
+      case bnd: Bnd =>
+        assert(
+          bnd.value.terms.size == 3,
+          s"Expected 3 terms but got ${bnd.value.terms.size}:\n ${prettyPrintAst(bnd)}"
+        )
+      case _ => fail("Expected a binding")
+    }
   }

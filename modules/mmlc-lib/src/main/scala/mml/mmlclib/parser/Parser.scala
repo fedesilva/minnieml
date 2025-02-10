@@ -52,9 +52,9 @@ object Parser:
   private def defAsKw[$: P]: P[Unit] = P("=")
   private def endKw[$: P]:   P[Unit] = P(";")
   private def mehKw[$: P]:   P[Unit] = P("_")
-  private def holekw[$: P]:  P[Unit] = P("???")
+  private def holeKw[$: P]:  P[Unit] = P("???")
 
-  private def ifkW[$: P]:   P[Unit] = P("if")
+  private def ifKw[$: P]:   P[Unit] = P("if")
   private def elseKw[$: P]: P[Unit] = P("else")
   private def thenKw[$: P]: P[Unit] = P("then")
 
@@ -73,8 +73,8 @@ object Parser:
         defAsKw |
         mehKw |
         letKw |
-        holekw |
-        ifkW |
+        holeKw |
+        ifKw |
         elseKw |
         thenKw |
         fnKw
@@ -89,8 +89,11 @@ object Parser:
     P(!keywords ~ CharIn("a-z") ~ CharsWhileIn("a-zA-Z0-9_", 0)).!
 
   private def operatorIdP[$: P]: P[String] =
-    import fastparse.NoWhitespace.*
-    P(CharIn("!@#$%^&*-+<>?/\\|~").rep(1).!)
+    // import fastparse.NoWhitespace.*
+    // Define the allowed operator characters in a string
+    val opChars = "!@#$%^&*+<>?/\\|~-"
+    // Use CharsWhile to accept one or more characters that are in opChars.
+    P(CharsWhile(c => opChars.indexOf(c) >= 0, min = 1).!)
 
   private def typeIdP[$: P]: P[String] =
     import fastparse.NoWhitespace.*
@@ -111,6 +114,7 @@ object Parser:
       }
 
   private def numericLitP(source: String)(using P[Any]): P[LiteralValue] =
+    import fastparse.NoWhitespace.*
     P(
       // Try float patterns first
       // N.N
@@ -140,7 +144,7 @@ object Parser:
 
   private def ifExprP(source: String)(using P[Any]): P[Term] =
     P(
-      spP(source) ~ ifkW ~/ exprP(source) ~ thenKw ~/ exprP(source) ~ elseKw ~/ exprP(
+      spP(source) ~ ifKw ~/ exprP(source) ~ thenKw ~/ exprP(source) ~ elseKw ~/ exprP(
         source
       ) ~ spP(source)
     )
@@ -160,6 +164,7 @@ object Parser:
         Ref(span(start, end), id, None)
       }
 
+  // Keep source point handling only in opRefP
   private def opRefP(source: String)(using P[Any]): P[Term] =
     P(spP(source) ~ operatorIdP ~ spP(source))
       .map { case (start, id, end) =>
@@ -173,7 +178,7 @@ object Parser:
       }
 
   private def holeP(source: String)(using P[Any]): P[Term] =
-    P(spP(source) ~ holekw ~ spP(source))
+    P(spP(source) ~ holeKw ~ spP(source))
       .map { case (start, end) =>
         Hole(span(start, end))
       }
@@ -182,18 +187,18 @@ object Parser:
     P(
       ifExprP(source) |
         holeP(source) |
+        opRefP(source) |
         litStringP(source) |
         numericLitP(source) |
         litBoolP(source) |
         litUnitP(source) |
         groupTermP(source) |
         refP(source) |
-        opRefP(source) |
         mehP(source)
     )
 
   private def exprP(source: String)(using P[Any]): P[Expr] =
-    P(spP(source) ~ termP(source).rep(1) ~ spP(source))
+    P(spP(source) ~ termP(source).rep ~ spP(source))
       .map { case (start, ts, end) =>
         val termsList = ts.toList
         // If there's exactly one term, the Expr inherits that term's typeSpec
@@ -217,6 +222,22 @@ object Parser:
         )
       }
 
+  // -------------------------------------------------------------------------------
+  // Types
+  // -------------------------------------------------------------------------------
+
+  private def typeNameP(source: String)(using P[Any]): P[TypeSpec] =
+    P(spP(source) ~ typeIdP ~ spP(source))
+      .map { case (start, id, end) =>
+        TypeName(span(start, end), id)
+      }
+
+  private def typeSpecP(source: String)(using P[Any]): P[TypeSpec] =
+    P(typeNameP(source))
+
+  private def typeAscP(source: String)(using P[Any]): P[Option[TypeSpec]] =
+    P(":" ~/ typeSpecP(source)).?
+
   // -----------------------------------------------------------------------------
   // Doc Comment Parser
   // -----------------------------------------------------------------------------
@@ -239,24 +260,30 @@ object Parser:
 
   private def letBindingP(source: String)(using P[Any]): P[Member] =
     P(
-      spP(source) ~ docCommentP(source) ~ letKw ~ bindingIdP ~ defAsKw ~ exprP(
-        source
-      ) ~ endKw ~ spP(source)
+      spP(source)
+        ~ docCommentP(source)
+        ~ letKw
+        ~ bindingIdP
+        ~ typeAscP(source)
+        ~ defAsKw
+        ~ exprP(source)
+        ~ endKw
+        ~ spP(source)
     )
-      .map { case (start, doc, name, expr, end) =>
-        Bnd(span(start, end), name, expr, expr.typeSpec, doc)
+      .map { case (start, doc, name, typeAsc, expr, end) =>
+        Bnd(span(start, end), name, expr, expr.typeSpec, typeAsc, doc)
       }
 
   private def fnParamP(source: String)(using P[Any]): P[FnParam] =
     P(
-      spP(source) ~ docCommentP(source) ~ bindingIdP ~ (":" ~ typeIdP).? ~ spP(
+      spP(source) ~ docCommentP(source) ~ bindingIdP ~ typeAscP(source) ~ spP(
         source
       )
     ).map { case (start, doc, name, t, end) =>
       FnParam(
         span       = span(start, end),
         name       = name,
-        typeSpec   = t.map(TypeName(span(start, end), _)),
+        typeAsc    = t,
         docComment = doc
       )
     }

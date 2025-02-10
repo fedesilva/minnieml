@@ -14,14 +14,11 @@ final case class SourceSpan(
   end:   SourcePoint
 )
 
-/** Represents a node in the abstract syntax tree (AST).
-  */
 sealed trait AstNode
 
-/** Represents a node that can be typed.
-  */
 sealed trait Typeable extends AstNode {
   def typeSpec: Option[TypeSpec]
+  def typeAsc:  Option[TypeSpec]
 }
 
 sealed trait FromSource extends AstNode {
@@ -66,9 +63,11 @@ case class FnParam(
   span:       SourceSpan,
   name:       String,
   typeSpec:   Option[TypeSpec]   = None,
+  typeAsc:    Option[TypeSpec]   = None,
   docComment: Option[DocComment] = None
 ) extends AstNode,
-      FromSource
+      FromSource,
+      Typeable
 
 case class FnDef(
   span:       SourceSpan,
@@ -76,6 +75,7 @@ case class FnDef(
   params:     List[FnParam],
   body:       Expr,
   typeSpec:   Option[TypeSpec]   = None,
+  typeAsc:    Option[TypeSpec]   = None,
   docComment: Option[DocComment] = None
 ) extends Decl,
       FromSource
@@ -85,6 +85,7 @@ case class Bnd(
   name:       String,
   value:      Expr,
   typeSpec:   Option[TypeSpec]   = None,
+  typeAsc:    Option[TypeSpec]   = None,
   docComment: Option[DocComment] = None
 ) extends Decl,
       FromSource
@@ -94,7 +95,8 @@ sealed trait Term extends AstNode, Typeable, FromSource
 case class Expr(
   span:     SourceSpan,
   terms:    List[Term],
-  typeSpec: Option[TypeSpec] = None
+  typeSpec: Option[TypeSpec] = None,
+  typeAsc:  Option[TypeSpec] = None
 ) extends Term
 
 case class Cond(
@@ -102,12 +104,14 @@ case class Cond(
   cond:     Expr,
   ifTrue:   Expr,
   ifFalse:  Expr,
-  typeSpec: Option[TypeSpec] = None
+  typeSpec: Option[TypeSpec] = None,
+  typeAsc:  Option[TypeSpec] = None
 ) extends Term
 
 case class GroupTerm(
-  span:  SourceSpan,
-  inner: Expr
+  span:    SourceSpan,
+  inner:   Expr,
+  typeAsc: Option[TypeSpec] = None
 ) extends Term,
       FromSource:
   def typeSpec: Option[TypeSpec] = inner.typeSpec
@@ -116,14 +120,24 @@ case class GroupTerm(
 case class Ref(
   span:     SourceSpan,
   name:     String,
-  typeSpec: Option[TypeSpec]
+  typeSpec: Option[TypeSpec],
+  typeAsc:  Option[TypeSpec] = None
 ) extends Term,
       FromSource
 
-case class MehRef(span: SourceSpan, typeSpec: Option[TypeSpec]) extends Term, FromSource
+case class MehRef(
+  span:     SourceSpan,
+  typeSpec: Option[TypeSpec],
+  typeAsc:  Option[TypeSpec] = None
+) extends Term,
+      FromSource
 
-case class Hole(span: SourceSpan) extends Term, FromSource:
-  final val typeSpec: Option[TypeSpec] = None
+case class Hole(
+  span:     SourceSpan,
+  typeSpec: Option[TypeSpec] = None,
+  typeAsc:  Option[TypeSpec] = None
+) extends Term,
+      FromSource
 
 // **Literals**
 
@@ -132,23 +146,25 @@ sealed trait LiteralValue extends Term, FromSource
 case class LiteralInt(
   span:  SourceSpan,
   value: Int
-) extends LiteralValue {
+) extends LiteralValue:
   final val typeSpec: Option[TypeSpec] = Some(LiteralIntType(span))
-}
-case class LiteralString(span: SourceSpan, value: String) extends LiteralValue {
+  final val typeAsc:  Option[TypeSpec] = None
+
+case class LiteralString(span: SourceSpan, value: String) extends LiteralValue:
   final val typeSpec: Option[TypeSpec] = Some(LiteralStringType(span))
-}
-case class LiteralBool(span: SourceSpan, value: Boolean) extends LiteralValue {
+  final val typeAsc:  Option[TypeSpec] = None
+
+case class LiteralBool(span: SourceSpan, value: Boolean) extends LiteralValue:
   final val typeSpec: Option[TypeSpec] = Some(LiteralBoolType(span))
-}
+  final val typeAsc:  Option[TypeSpec] = None
 
-case class LiteralUnit(span: SourceSpan) extends LiteralValue {
+case class LiteralUnit(span: SourceSpan) extends LiteralValue:
   final val typeSpec: Option[TypeSpec] = Some(LiteralUnitType(span))
-}
+  final val typeAsc:  Option[TypeSpec] = None
 
-case class LiteralFloat(span: SourceSpan, value: Float) extends LiteralValue {
+case class LiteralFloat(span: SourceSpan, value: Float) extends LiteralValue:
   final val typeSpec: Option[TypeSpec] = Some(LiteralFloatType(span))
-}
+  final val typeAsc:  Option[TypeSpec] = None
 
 // **Type Specifications**
 sealed trait TypeSpec extends AstNode, FromSource

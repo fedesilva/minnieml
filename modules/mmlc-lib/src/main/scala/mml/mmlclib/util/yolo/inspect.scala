@@ -13,3 +13,12 @@ def printModuleAst(source: String, name: Option[String] = "Anon".some): Unit =
       case Left(error) => println(s"Parse error:\n  $error")
     }
     .unsafeRunSync()
+
+def printModuleAstSimple(source: String, name: Option[String] = "Anon".some): Unit =
+  ParserApi
+    .parseModuleString(source, name)
+    .map {
+      case Right(ast) => println(s"Parsed AST:\n  $ast")
+      case Left(error) => println(s"Parse error:\n  $error")
+    }
+    .unsafeRunSync()

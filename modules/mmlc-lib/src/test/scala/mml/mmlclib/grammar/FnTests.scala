@@ -101,7 +101,7 @@ class FnTests extends BaseEffFunSuite:
       case _ => fail("Expected a function")
     }.map { params =>
       assert(
-        params.forall(_.typeSpec.isDefined),
+        params.forall(_.typeAsc.isDefined),
         s"Expected all params to have a type spec: ${params.map(p => prettyPrintAst(p))}"
       )
     }
@@ -123,4 +123,12 @@ class FnTests extends BaseEffFunSuite:
         )
       case _ => fail("Expected a binding")
     }
+  }
+
+  test("cant use a keyword as a name") {
+    modFailed(
+      """
+        fn let (a) = 1;
+      """
+    )
   }

@@ -32,19 +32,20 @@ def prettyPrintMember(member: Member, indent: Int): String =
 
     case fn: FnDef =>
       s"${indentStr}FnDef ${fn.name}${printSourceSpan(fn.span)}  \n" +
-        s"${indentStr}  typeSpec: ${prettyPrintTypeSpec(fn.typeSpec, indent + 2)}\n" +
+        s"${indentStr}  typeSpec: ${prettyPrintTypeSpec(fn.typeSpec)}\n" +
+        s"${indentStr}  typeAsc: ${prettyPrintTypeSpec(fn.typeAsc)}\n" +
         s"${indentStr}  params:\n${prettyPrintParams(fn.params, indent + 2)}\n" +
         prettyPrintExpr(fn.body, indent + 2)
 
     case bnd: Bnd =>
       s"${indentStr}Bnd ${bnd.name}${printSourceSpan(bnd.span)}\n" +
-        s"${indentStr}  typeSpec: ${prettyPrintTypeSpec(bnd.typeSpec, indent + 2)}\n" +
+        s"${indentStr}  typeSpec: ${prettyPrintTypeSpec(bnd.typeSpec)}\n" +
+        s"${indentStr}  typeAsc: ${prettyPrintTypeSpec(bnd.typeAsc)}\n" +
         prettyPrintExpr(bnd.value, indent + 2)
 
   }
 
-def prettyPrintTypeSpec(typeSpec: Option[TypeSpec], indent: Int): String =
-  val indentStr = "  " * indent
+def prettyPrintTypeSpec(typeSpec: Option[TypeSpec]): String =
   typeSpec match
     case Some(TypeName(sp, name)) =>
       s"TypeName $name ${printSourceSpan(sp)}"
@@ -55,25 +56,25 @@ def prettyPrintTypeSpec(typeSpec: Option[TypeSpec], indent: Int): String =
 def prettyPrintParams(params: Seq[FnParam], indent: Int): String =
   val indentStr = "  " * indent
   params
-    .map { case FnParam(span, name, typeSpec, doc) =>
-      s"${indentStr}${name}${printSourceSpan(span)} : ${prettyPrintTypeSpec(typeSpec, indent + 2)}"
+    .map { case FnParam(span, name, typeSpec, typeAsc, doc) =>
+      s"${indentStr}${name}${printSourceSpan(span)} : ${prettyPrintTypeSpec(typeSpec)}"
     }
     .mkString("\n")
 
 def prettyPrintExpr(expr: Expr, indent: Int): String =
   val indentStr = "  " * indent
   val termsStr  = expr.terms.map(prettyPrintTerm(_, indent + 2)).mkString("\n")
-  s"${indentStr}Expr\n${indentStr}  typeSpec: ${prettyPrintTypeSpec(expr.typeSpec, indent + 2)}\n$termsStr"
+  s"${indentStr}Expr\n${indentStr}  typeSpec: ${prettyPrintTypeSpec(expr.typeSpec)}\n$termsStr"
 
 def prettyPrintTerm(term: Term, indent: Int): String =
   val indentStr = "  " * indent
   term match {
 
-    case MehRef(sp, typeSpec) =>
-      s"${indentStr}MehRef ${printSourceSpan(sp)} \n${indentStr}  typeSpec: ${prettyPrintTypeSpec(typeSpec, indent + 2)}"
+    case MehRef(sp, typeSpec, typeAsc) =>
+      s"${indentStr}MehRef ${printSourceSpan(sp)} \n${indentStr}  typeSpec: ${prettyPrintTypeSpec(typeSpec)}"
 
-    case Ref(sp, name, typeSpec) =>
-      s"${indentStr}Ref $name ${printSourceSpan(sp)} \n${indentStr}  typeSpec: ${prettyPrintTypeSpec(typeSpec, indent + 2)}"
+    case Ref(sp, name, typeSpec, typeAsc) =>
+      s"${indentStr}Ref $name ${printSourceSpan(sp)} \n${indentStr}  typeSpec: ${prettyPrintTypeSpec(typeSpec)}"
 
     case LiteralInt(sp, value) =>
       s"${indentStr}LiteralInt $value"
@@ -87,12 +88,12 @@ def prettyPrintTerm(term: Term, indent: Int): String =
     case LiteralFloat(sp, value) =>
       s"${indentStr}LiteralFloat $value"
 
-    case GroupTerm(sp, inner) =>
+    case GroupTerm(sp, inner, typeAsc) =>
       s"${indentStr}GroupTerm\n${prettyPrintExpr(inner, indent + 2)}"
 
-    case Cond(sp, cond, ifTrue, ifFalse, typeSpec) =>
+    case Cond(sp, cond, ifTrue, ifFalse, typeSpec, typAsc) =>
       s"${indentStr}Cond ${printSourceSpan(sp)} ${{ printSourceSpan(sp) }}  \n" +
-        s"${indentStr}  typeSpec: ${prettyPrintTypeSpec(typeSpec, indent + 2)}\n" +
+        s"${indentStr}  typeSpec: ${prettyPrintTypeSpec(typeSpec)}\n" +
         s"${indentStr}  cond:\n${prettyPrintExpr(cond, indent + 2)}\n" +
         s"${indentStr}  ifTrue:\n${prettyPrintExpr(ifTrue, indent + 2)}\n" +
         s"${indentStr}  ifFalse:\n${prettyPrintExpr(ifFalse, indent + 2)}"

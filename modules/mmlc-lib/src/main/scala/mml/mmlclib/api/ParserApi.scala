@@ -21,12 +21,12 @@ object ParserApi:
     )
   }
 
-def parseModuleFile(path: Path): IO[Either[String, Module]] = {
-  val parentName = sanitizeModuleName(path.getParent.getFileName.toString)
-  Sync[IO]
-    .blocking(Files.readString(path))
-    .flatMap(src => Sync[IO].pure(Parser.parseModule(src, parentName.some)))
-}
+  def parseModuleFile(path: Path): IO[Either[String, Module]] = {
+    val parentName = sanitizeModuleName(path.getParent.getFileName.toString)
+    Sync[IO]
+      .blocking(Files.readString(path))
+      .flatMap(src => Sync[IO].pure(Parser.parseModule(src, parentName.some)))
+  }
 
 private def sanitizeModuleName(dirName: String): String = {
   val words = dirName.split("[-_ ]+").filter(_.nonEmpty)
