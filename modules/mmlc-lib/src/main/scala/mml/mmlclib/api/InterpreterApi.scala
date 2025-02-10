@@ -10,13 +10,13 @@ import java.nio.file.Files
 import java.nio.file.Path
 
 object InterpreterApi:
-  private val interpreter = new Interpreter()
 
   def interpretModuleString(
     source:     String,
-    name:       Option[String] = None,
+    name:       Option[String] = "Anon".some,
     entryPoint: String         = "main"
   ): IO[Either[String, Value]] =
+    val interpreter = new Interpreter()
     for
       parsedModule <- ParserApi.parseModuleString(source, name)
       result <- parsedModule match
@@ -35,6 +35,7 @@ object InterpreterApi:
     path:       Path,
     entryPoint: String = "main"
   ): IO[Either[String, Value]] =
+    val interpreter = new Interpreter()
     for
       parsedModule <- ParserApi.parseModuleFile(path)
       result <- parsedModule match
