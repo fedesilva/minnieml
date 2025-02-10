@@ -2,24 +2,25 @@ package mml.mmlclib.codegen
 
 import mml.mmlclib.ast.*
 
-/** LLVM IR Printer for MML
-  */
+/** LLVM IR Printer for MML */
 object LlvmIrPrinter:
   /** Represents the state of code generation */
   case class CodeGenState(
     nextRegister:    Int              = 0,
     nextLabel:       Int              = 0,
     stringConstants: Map[String, Int] = Map.empty,
+    globalInits:     List[String]     = List.empty,
     output:          List[String]     = List.empty
   ):
     def withRegister(reg: Int): CodeGenState = copy(nextRegister = reg)
     def withLabel(label: Int):  CodeGenState = copy(nextLabel = label)
     def withString(str: String, idx: Int): CodeGenState =
       copy(stringConstants = stringConstants + (str -> idx))
+    def withGlobalInit(init: String): CodeGenState =
+      copy(globalInits = init :: globalInits)
     def emit(line: String):           CodeGenState = copy(output = line :: output)
     def emitAll(lines: List[String]): CodeGenState = copy(output = lines.reverse ::: output)
-
-    def result: String = output.reverse.mkString("\n")
+    def result:                       String       = output.reverse.mkString("\n")
 
   /** Result of an expression or term compilation */
   case class CompileResult(register: Int, state: CodeGenState)
@@ -116,7 +117,7 @@ object LlvmIrPrinter:
 
     case Ref(_, name, _, _) =>
       val reg  = state.nextRegister
-      val line = s"  %$reg = load ${llvmType(term.typeSpec)}, ${llvmType(term.typeSpec)}* %$name"
+      val line = s"  %$reg = load ${llvmType(term.typeSpec)}, ${llvmType(term.typeSpec)}* @$name"
       CompileResult(reg, state.withRegister(reg + 1).emit(line))
 
     case GroupTerm(_, expr, _) =>
@@ -209,23 +210,77 @@ object LlvmIrPrinter:
 
   /** Print binding */
   private def compileBinding(bnd: Bnd, state: CodeGenState): CodeGenState =
-    val CompileResult(valueReg, state1) = compileExpr(bnd.value, state)
-    state1.emit(s"@${bnd.name} = global ${llvmType(bnd.typeSpec)} %$valueReg")
+    val varType = llvmType(bnd.typeSpec)
+
+    bnd.value.terms match {
+      case List(LiteralString(_, value)) =>
+        val CompileResult(strIdx, state1) = addStringConstant(value, state)
+        state1.emit(s"@${bnd.name} = global [${value.length + 1} x i8]* @str.$strIdx")
+
+      case List(LiteralInt(_, value)) =>
+        state.emit(s"@${bnd.name} = global i32 $value")
+
+      case List(LiteralFloat(_, value)) =>
+        state.emit(s"@${bnd.name} = global float ${value}f")
+
+      case List(LiteralBool(_, value)) =>
+        state.emit(s"@${bnd.name} = global i1 ${if value then 1 else 0}")
+
+      case _ =>
+        // For complex expressions, we need to create a global initializer function
+        val initFnName                      = s"__init_global_${bnd.name}"
+        val CompileResult(valueReg, state1) = compileExpr(bnd.value, state)
+
+        // Create global with a default value
+        val state2 = state1.emit(s"@${bnd.name} = global $varType 0")
+
+        // Create initializer function
+        val initLines = List(
+          s"define internal void @$initFnName() {",
+          s"  entry:",
+          s"  store $varType %$valueReg, $varType* @${bnd.name}",
+          s"  ret void",
+          s"}"
+        )
+
+        // Add to global constructors
+        val state3 = state2.emitAll(initLines)
+        state3.withGlobalInit(s"  call void @$initFnName()")
+    }
 
   /** Print module */
   def printModule(module: Module): String =
     val moduleHeader = List(
       s"; ModuleID = '${module.name}'",
+      "target triple = \"x86_64-unknown-unknown\"",
       ""
     )
 
     val initialState = CodeGenState().emitAll(moduleHeader)
 
-    val finalState = module.members.foldLeft(initialState) {
+    // First emit all globals and functions
+    val state1 = module.members.foldLeft(initialState) {
       case (state, fn: FnDef) => compileFunction(fn, state)
       case (state, bnd: Bnd) => compileBinding(bnd, state)
-      case (state, _) => state // Skip other members
+      case (state, _) => state
     }
+
+    // If we have global initializations, create a global constructor
+    val finalState = if state1.globalInits.nonEmpty then
+      val initLines = List(
+        "",
+        "@llvm.global_ctors = appending global [1 x { i32, void ()*, i8* }] [",
+        "  { i32, void ()*, i8* } { i32 65535, void ()* @__global_init, i8* null }",
+        "]",
+        "",
+        "define internal void @__global_init() {",
+        "  entry:"
+      ) ++ state1.globalInits ++ List(
+        "  ret void",
+        "}"
+      )
+      state1.emitAll(initLines)
+    else state1
 
     finalState.result
 
