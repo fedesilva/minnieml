@@ -3,7 +3,6 @@ tmp/
 modules/mmlc-lib/src/main/antlr4/*java
 modules/mmlc-lib/src/main/antlr4/*interp
 modules/mmlc-lib/src/main/antlr4/*.tokens
-scripts
 **/.metals
 **/.bloop
 **/.bsp
@@ -12,3 +11,4 @@ scripts
 /project/metals.sbt
 
 /.vscode/extensions.json
+out/
