@@ -51,11 +51,12 @@ object InterpreterApi:
     yield result
 
   /** Helper method to get the string representation of a value */
-  def valueToString(value: Value): String = value match
-    case Value.IntV(v) => v.toString
-    case Value.FloatV(v) => v.toString
-    case Value.StringV(v) => v
-    case Value.BoolV(v) => v.toString
-    case Value.UnitV => "()"
-    case Value.FunctionV(_, _, _) => "<function>"
-    case Value.NativeFunctionV(name, _) => s"<native function: $name>"
+  def valueToString(value: Value): String =
+    value match
+      case Value.IntV(v) => v.toString
+      case Value.FloatV(v) => v.toString
+      case Value.StringV(v) => v
+      case Value.BoolV(v) => v.toString
+      case Value.UnitV => "()"
+      case Value.FunctionV(_, _, _) => "<function>"
+      case Value.NativeFunctionV(name, _) => s"<native function: $name>"

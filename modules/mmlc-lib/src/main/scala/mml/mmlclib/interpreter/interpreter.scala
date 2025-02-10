@@ -27,7 +27,7 @@ class Interpreter:
   // Initialize built-in functions and operators
   locally:
     def defineOp(name: String, op: (Value, Value) => Value) =
-      globalEnv.define(name, Value.NativeFunctionV(name, args => 
+      globalEnv.define(name, Value.NativeFunctionV(name, args =>
         if args.length != 2 then throw InterpretError(s"Operator $name requires exactly 2 arguments")
         op(args(0), args(1))
       ))
@@ -49,18 +49,18 @@ class Interpreter:
     numericOp("/", _ / _, _ / _)
 
     // Print functions
-    globalEnv.define("print", Value.NativeFunctionV("print", args => 
+    globalEnv.define("print", Value.NativeFunctionV("print", args =>
       args.foreach(v => print(valueToString(v)))
       Value.UnitV
     ))
-    globalEnv.define("println", Value.NativeFunctionV("println", args => 
+    globalEnv.define("println", Value.NativeFunctionV("println", args =>
       args.foreach(v => print(valueToString(v)))
       println()
       Value.UnitV
     ))
 
   /** Interpret a module by finding and executing a specific function */
-  def interpret(module: Module, functionName: String = "main"): Value =
+  def interpret(module: Module, entryPoint: String = "main"): Value =
     // First pass: declare all module members to handle forward references
     for member <- module.members do
       declareMember(member, globalEnv)
@@ -70,12 +70,12 @@ class Interpreter:
       interpretNode(member, globalEnv)
 
     // Find and execute the requested function
-    globalEnv.get(functionName) match
+    globalEnv.get(entryPoint) match
       case Some(Value.FunctionV(params, body, closure)) =>
-        if params.nonEmpty then throw InterpretError(s"Function $functionName must take no parameters")
+        if params.nonEmpty then throw InterpretError(s"Function $entryPoint must take no parameters")
         interpretNode(body, closure)
-      case Some(_) => throw InterpretError(s"$functionName is not a function")
-      case None => throw InterpretError(s"Function $functionName not found in module ${module.name}")
+      case Some(_) => throw InterpretError(s"$entryPoint is not a function")
+      case None => throw InterpretError(s"Function $entryPoint not found in module ${module.name}")
 
   private def declareMember(member: Member, env: Environment): Unit = member match
     case fn: FnDef =>
