@@ -215,4 +215,13 @@ class LetBndTests extends BaseEffFunSuite:
         )
       case _ => fail("Expected a binding")
     }
+
+    test("cant use a keyword as a name") {
+      modFailed(
+        """
+          let let = 1;
+        """
+      )
+    }
+
   }

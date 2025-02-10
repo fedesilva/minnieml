@@ -54,6 +54,10 @@ object Parser:
   private def mehKw[$: P]:   P[Unit] = P("_")
   private def holekw[$: P]:  P[Unit] = P("???")
 
+  private def ifkW[$: P]:   P[Unit] = P("if")
+  private def elseKw[$: P]: P[Unit] = P("else")
+  private def thenKw[$: P]: P[Unit] = P("then")
+
   private def moduleEndKw[$: P]: P[Unit] =
     P(";".? ~ CharsWhile(c => c.isWhitespace, 0) ~ End)
 
@@ -70,6 +74,9 @@ object Parser:
         mehKw |
         letKw |
         holekw |
+        ifkW |
+        elseKw |
+        thenKw |
         fnKw
     )
 
@@ -79,7 +86,7 @@ object Parser:
 
   private def bindingIdP[$: P]: P[String] =
     import fastparse.NoWhitespace.*
-    P(CharIn("a-z") ~ CharsWhileIn("a-zA-Z0-9_", 0)).!
+    P(!keywords ~ CharIn("a-z") ~ CharsWhileIn("a-zA-Z0-9_", 0)).!
 
   private def operatorIdP[$: P]: P[String] =
     import fastparse.NoWhitespace.*
@@ -131,6 +138,16 @@ object Parser:
   // Term & Expression Parsers
   // -----------------------------------------------------------------------------
 
+  private def ifExprP(source: String)(using P[Any]): P[Term] =
+    P(
+      spP(source) ~ ifkW ~/ exprP(source) ~ thenKw ~/ exprP(source) ~ elseKw ~/ exprP(
+        source
+      ) ~ spP(source)
+    )
+      .map { case (start, cond, ifTrue, ifFalse, end) =>
+        Cond(span(start, end), cond, ifTrue, ifFalse)
+      }
+
   private def groupTermP(source: String)(using P[Any]): P[Term] =
     P(spP(source) ~ "(" ~ exprP(source) ~ ")" ~ spP(source))
       .map { case (start, expr, end) =>
@@ -163,7 +180,9 @@ object Parser:
 
   private def termP(source: String)(using P[Any]): P[Term] =
     P(
-      litStringP(source) |
+      ifExprP(source) |
+        holeP(source) |
+        litStringP(source) |
         numericLitP(source) |
         litBoolP(source) |
         litUnitP(source) |

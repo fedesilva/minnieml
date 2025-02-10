@@ -90,6 +90,13 @@ def prettyPrintTerm(term: Term, indent: Int): String =
     case GroupTerm(sp, inner) =>
       s"${indentStr}GroupTerm\n${prettyPrintExpr(inner, indent + 2)}"
 
+    case Cond(sp, cond, ifTrue, ifFalse, typeSpec) =>
+      s"${indentStr}Cond ${printSourceSpan(sp)} ${{ printSourceSpan(sp) }}  \n" +
+        s"${indentStr}  typeSpec: ${prettyPrintTypeSpec(typeSpec, indent + 2)}\n" +
+        s"${indentStr}  cond:\n${prettyPrintExpr(cond, indent + 2)}\n" +
+        s"${indentStr}  ifTrue:\n${prettyPrintExpr(ifTrue, indent + 2)}\n" +
+        s"${indentStr}  ifFalse:\n${prettyPrintExpr(ifFalse, indent + 2)}"
+
     case LiteralUnit(sp) =>
       s"${indentStr}LiteralUnit"
 

@@ -89,11 +89,19 @@ case class Bnd(
 ) extends Decl,
       FromSource
 
-sealed trait Term extends AstNode, Typeable
+sealed trait Term extends AstNode, Typeable, FromSource
 
 case class Expr(
   span:     SourceSpan,
   terms:    List[Term],
+  typeSpec: Option[TypeSpec] = None
+) extends Term
+
+case class Cond(
+  span:     SourceSpan,
+  cond:     Expr,
+  ifTrue:   Expr,
+  ifFalse:  Expr,
   typeSpec: Option[TypeSpec] = None
 ) extends Term
 
