@@ -113,7 +113,7 @@ For a while I was using antlr4, and while I am moving away from it, [that gramma
 There [are also some notes and draft code](docs) in an approximation of the syntax
 that might give you an idea of where this is going.
 
-You can also look at the [tests](modules/mmlc-lib/src/test/scala/mml/mmlclib/grammar) and [current ast](modules/mmlc-lib/src/main/scala/mml/mmlclib/ast) and [parser](modules/mmlc-lib/src/main/scala/mml/mmlclib/parser) source code.
+Finally, you can look at the [tests](modules/mmlc-lib/src/test/scala/mml/mmlclib/grammar) and [current ast](modules/mmlc-lib/src/main/scala/mml/mmlclib/ast) and [parser](modules/mmlc-lib/src/main/scala/mml/mmlclib/parser) source code.
 
 :shrugs:
 
