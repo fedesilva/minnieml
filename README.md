@@ -23,7 +23,7 @@ At this time, I am only parsing a subset of the language, there is no typechecke
 sequence of literals and identifiers.
 The is only a very rudimentary interpreter and a simplistic lllvm ir emitter, plus a shell script to **try** and compile that ir, after a bit of copy pasting.
 
-I am using Scala 3 and Fast Parse 2, until we have reach self hosting.
+I am using Scala 3 and Fast Parse 2, until have reach self hosting ;) .
 
 ## Synopsis
 
