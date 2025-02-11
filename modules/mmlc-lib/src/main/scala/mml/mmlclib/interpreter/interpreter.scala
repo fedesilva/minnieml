@@ -64,6 +64,13 @@ class Interpreter:
 
   /** Interpret a module by finding and executing a specific function */
   def interpret(module: Module, entryPoint: String = "main"): Value =
+
+    // TODO: Implement script mode
+    // When we get to script mode, we should collect all the top-level
+    // statements (as opposed to declarations) and fuse them into a single
+    // function that we can call as the entry point.
+    
+
     // First pass: declare all module members to handle forward references
     for member <- module.members do
       declareMember(member, globalEnv)
