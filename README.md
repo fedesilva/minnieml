@@ -21,9 +21,11 @@ This is not at all connected to my employer's IP, work, interests, opinions or a
 
 At this time, I am only parsing a subset of the language, there is no typechecker, and expressions are a flat
 sequence of literals and identifiers.
-The is only a very rudimentary interpreter and a simplistic llvm ir emitter, plus a shell script to **try** and compile that ir, after a bit of copy pasting.
+There is only a very rudimentary interpreter and a simplistic llvm ir emitter, plus a shell script to **try** and compile that ir, after a bit of copy pasting.
 
 I am using Scala 3 and Fast Parse 2, until I reach self hosting ;) .
+
+While I don't even have half of the grammar nailed, I have built a [full vertical slice](https://gist.github.com/fedesilva/d8ba764114553a6736a5b22c154bb067), even if tied with wire and duct tape.
 
 ## Synopsis
 
@@ -111,7 +113,7 @@ For a while I was using antlr4, and while I am moving away from it, [that gramma
 There [are also some notes and draft code](docs) in an approximation of the syntax
 that might give you an idea of where this is going.
 
-You can also look at the [tests](modules/mmlc-lib/src/test/scala/mml/mmlclib/grammar) and [current ast](modules/mmlc-lib/src/main/scala/mml/mmlclib/ast) and [parser](modules/mmlc-lib/src/main/scala/mml/mmlclib/parser) source code
+You can also look at the [tests](modules/mmlc-lib/src/test/scala/mml/mmlclib/grammar) and [current ast](modules/mmlc-lib/src/main/scala/mml/mmlclib/ast) and [parser](modules/mmlc-lib/src/main/scala/mml/mmlclib/parser) source code.
 
 :shrugs:
 
