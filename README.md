@@ -21,9 +21,9 @@ This is not at all connected to my employer's IP, work, interests, opinions or a
 
 At this time, I am only parsing a subset of the language, there is no typechecker, and expressions are a flat
 sequence of literals and identifiers.
-The is only a very rudimentary interpreter and a simplistic lllvm ir emitter, plus a shell script to **try** and compile that ir, after a bit of copy pasting.
+The is only a very rudimentary interpreter and a simplistic llvm ir emitter, plus a shell script to **try** and compile that ir, after a bit of copy pasting.
 
-I am using Scala 3 and Fast Parse 2, until have reach self hosting ;) .
+I am using Scala 3 and Fast Parse 2, until I reach self hosting ;) .
 
 ## Synopsis
 
