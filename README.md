@@ -43,6 +43,8 @@ Here's a small syntax showcase
 Note the semi colons. For now they are mandatory - they keep the parser fast and simple
 because they avoid some backtracking. I am thinking if I should add significant indentation in some cases.
 
+## Person/Pet example
+
 A more complex example:
 
 - types start with an uppercase letter, mandatory (Maybe, String, Int)
