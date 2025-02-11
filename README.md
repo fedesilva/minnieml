@@ -23,16 +23,7 @@ At this time, I am only parsing a subset of the language, there is no typechecke
 sequence of literals and identifiers.
 The is only a very rudimentary interpreter and a simplistic lllvm ir emitter, plus a shell script to **try** and compile that ir, after a bit of copy pasting.
 
-I am using Scala 3 and Fast Parse 2.
-
-## Documentation
-
-There is, of course, no documentation.
-
-For a while I was using antlr4, and while I am moving out
-of it, [that grammar](modules/mmlc-lib/src/main/antlr4/MinnieML.g4) remains the reference for now.
-
-:shrugs:
+I am using Scala 3 and Fast Parse 2, until we have reach self hosting.
 
 ## Synopsis
 
@@ -109,6 +100,27 @@ let pf = hasPet fede   # true
 # let pz = hasPet zur
 ```
 
+## Documentation
+
+There is, of course, no documentation.
+
+For a while I was using antlr4, and while I am moving away from it, [that grammar](modules/mmlc-lib/src/main/antlr4/MinnieML.g4) remains the reference for now.
+
+There [are also some notes and draft code](docs) in an approximation of the syntax
+that might give you an idea of where this is going.
+
+You can also look at the [tests][modules/mmlc-lib/src/test/scala/mml/mmlclib/grammar] and [current ast](modules/mmlc-lib/src/main/scala/mml/mmlclib/ast) and [parser](modules/mmlc-lib/src/main/scala/mml/mmlclib/parser) source code
+
+:shrugs:
+
+## Running
+
+No, not, yet.
+
+But soon, now. Really.
+
+...
+
 ## Why
 
 I loathe the notion of domain specific languages, I'd like to learn a lang, its stdlib and use
@@ -121,14 +133,6 @@ From edge to cloud, from mobile to homes, and when you are sitting with your lap
 I want a very high level language that gives me declarative(ish?) access to low level stuff IF I need it, but does not force it on every little program.
 
 It's all about the fun and learning and exploring ideas.
-
-## Running
-
-No, not, yet.
-
-But soon, now. Really.
-
-...
 
 ## Typechecking the Person/Pet example.
 
