@@ -25,7 +25,7 @@ There is only a very rudimentary interpreter and a simplistic llvm ir emitter, p
 
 I am using Scala 3 and Fast Parse 2, until I reach self hosting ;) .
 
-While I don't even have half of the grammar nailed, I have built a [full vertical slice](https://gist.github.com/fedesilva/d8ba764114553a6736a5b22c154bb067), even if tied with wire and duct tape.
+While I don't even have half of the grammar nailed, I have built a [full vertical slice](https://gist.github.com/fedesilva/d8ba764114553a6736a5b22c154bb067).
 
 ## Synopsis
 
