@@ -4,18 +4,16 @@ lazy val commonSettings =
   Seq(
     organization := "minnie-ml",
     version      := "0.1.0-SNAPSHOT",
-    scalaVersion := "3.5.0"
-  ) ++
-    Seq(
-      scalacOptions ++= ScalacConfig.opts,
-      // because for tests, yolo.
-      Test / scalacOptions --= Seq("-Ywarn-unused:imports", "-Xfatal-warnings"),
-      Test / scalacOptions --= Seq("-Ywarn-dead-code", "-Ywarn-unused:locals", "-Xfatal-warnings"),
-      // Global / onChangedBuildSource := ReloadOnSourceChanges
-      resolvers ++= Dependencies.resolvers,
-      // add the sbt plugin to the build
-      notifyOn(Compile / compile)
-    )
+    scalaVersion := "3.5.0",
+    scalacOptions ++= ScalacConfig.opts,
+    // because for tests, yolo.
+    Test / scalacOptions --= Seq("-Ywarn-unused:imports", "-Xfatal-warnings"),
+    Test / scalacOptions --= Seq("-Ywarn-dead-code", "-Ywarn-unused:locals", "-Xfatal-warnings"),
+    // Global / onChangedBuildSource := ReloadOnSourceChanges
+    resolvers ++= Dependencies.resolvers,
+    // add the sbt plugin to the build
+    notifyOn(Compile / compile)
+  )
 
 val antlrPackageName = "mml.mmlclib.parser.antlr"
 
