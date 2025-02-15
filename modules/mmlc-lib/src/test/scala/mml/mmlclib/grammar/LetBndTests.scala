@@ -245,7 +245,7 @@ class LetBndTests extends BaseEffFunSuite:
     }
   }
 
-  test("let with 2 minus 2".only) {
+  test("let with 2 minus 2") {
     modNotFailed(
       """
         let a = 2 - 2;

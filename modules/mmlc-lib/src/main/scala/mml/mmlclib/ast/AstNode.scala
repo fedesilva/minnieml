@@ -1,10 +1,13 @@
 package mml.mmlclib.ast
 
+import cats.data.NonEmptyList
+
 /* Represents a point in the source code, with a line and column number.
  */
 final case class SourcePoint(
-  line: Int,
-  col:  Int
+  line:  Int,
+  col:   Int,
+  index: Int
 )
 
 /* Represents a span of source code, with a start and end point.
@@ -43,11 +46,18 @@ case class Module(
 /** Represents a top level member of a module. */
 sealed trait Member extends AstNode
 
+sealed trait Error extends AstNode {
+  def span:       SourceSpan
+  def message:    String
+  def failedCode: Option[String]
+}
+
 case class MemberError(
   span:       SourceSpan,
   message:    String,
   failedCode: Option[String]
-) extends Member
+) extends Member,
+      Error
 
 case class DocComment(
   span: SourceSpan,
@@ -92,6 +102,15 @@ case class Bnd(
 
 sealed trait Term extends AstNode, Typeable, FromSource
 
+case class TermError(
+  span:       SourceSpan,
+  message:    String,
+  failedCode: Option[String]
+) extends Term,
+      Error:
+  final val typeSpec: Option[TypeSpec] = None
+  final val typeAsc:  Option[TypeSpec] = None
+
 case class Expr(
   span:     SourceSpan,
   terms:    List[Term],
@@ -115,6 +134,13 @@ case class GroupTerm(
 ) extends Term,
       FromSource:
   def typeSpec: Option[TypeSpec] = inner.typeSpec
+
+case class Tuple(
+  span:     SourceSpan,
+  elements: NonEmptyList[Expr],
+  typeSpec: Option[TypeSpec] = None,
+  typeAsc:  Option[TypeSpec] = None
+) extends Term
 
 /** Points to something declared elsewhere */
 case class Ref(

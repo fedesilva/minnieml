@@ -5,6 +5,7 @@ import fastparse.*
 import mml.mmlclib.ast.*
 
 import MmlWhitespace.*
+import cats.data.NonEmptyList
 
 object Parser:
 
@@ -191,16 +192,34 @@ object Parser:
   private def termP(source: String)(using P[Any]): P[Term] =
     P(
       ifExprP(source) |
+        litUnitP(source) |
         holeP(source) |
         opRefP(source) |
         litStringP(source) |
         numericLitP(source) |
         litBoolP(source) |
-        litUnitP(source) |
         groupTermP(source) |
+        tupleP(source) |
         refP(source) |
         mehP(source)
     )
+
+  private def tupleP(source: String)(using P[Any]): P[Term] =
+    P(spP(source) ~ "(" ~ exprP(source).rep(sep = ",") ~ ")" ~ spP(source))
+      .map { case (start, exprs, end) =>
+        NonEmptyList
+          .fromList(exprs.toList)
+          .fold(
+            TermError(
+              span       = span(start, end),
+              message    = "Tuple must have at least one element",
+              failedCode = source.substring(start.index, end.index).some
+            )
+          ) { elements =>
+            Tuple(span(start, end), elements)
+          }
+
+      }
 
   private def ifExprP(source: String)(using P[Any]): P[Term] =
     P(
@@ -372,10 +391,10 @@ object Parser:
     val lines     = upToIndex.split('\n')
     val line      = lines.length
     val col       = if lines.isEmpty then index else lines.last.length + 1
-    SourcePoint(line, col)
+    SourcePoint(line, col, index)
 
   private def span(start: SourcePoint, end: SourcePoint): SourceSpan =
     SourceSpan(start, end)
 
-  private def point(line: Int, col: Int): SourcePoint =
-    SourcePoint(line, col)
+  // private def point(line: Int, col: Int): SourcePoint =
+  //   SourcePoint(line, col)
