@@ -59,13 +59,6 @@ popd > /dev/null
 
 echo "Program executed with exit code: ${exit_code}"
 
-# Alternative methods (commented out by default)
-# echo "Alternative: Direct compile without .s"
-# clang -target "${TARGET_TRIPLE}" "out/${program_name}_opt.bc" -o "out/${program_name}_alt"
-
-# echo "Alternative: Run bitcode without compilation"
-# lli "out/${program_name}.bc"
-
 # List generated files
 echo -e "\nGenerated files in ./out/:"
 ls -l out/
