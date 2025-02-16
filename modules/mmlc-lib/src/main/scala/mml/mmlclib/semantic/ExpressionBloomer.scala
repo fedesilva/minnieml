@@ -34,36 +34,24 @@ object ExpressionBloomer:
     }
 
     def rewriteExpr(expr: Expr): Expr =
-      def getPrecedence(term: Term): Option[Int] = term match
-        case Ref(_, name, _, _) => operators.get(name)
-        case _ => None
+      def precedence(term: Term): Int = term match
+        case Ref(_, name, _, _) => operators.getOrElse(name, 0)
+        case _ => 0
 
-      def groupTerms(terms: List[Term], precedence: Int): List[Term] =
-        if terms.length < 3 then terms
-        else
-          val indices = terms.zipWithIndex.collect {
-            case (op @ Ref(_, name, _, _), idx) if operators.get(name).contains(precedence) => idx
-          }
-
-          indices.foldLeft(terms) { (currentTerms, idx) =>
-            if idx > 0 && idx < currentTerms.length - 1 then
-              val (before, rest) = currentTerms.splitAt(idx - 1)
-              val leftOperand    = rest.head
-              val op             = rest(1)
-              val rightOperand   = rest(2)
-              val after          = rest.drop(3)
-
-              val grouped = GroupTerm(
-                SourceSpan(leftOperand.span.start, rightOperand.span.end),
-                Expr(expr.span, List(leftOperand, op, rightOperand))
-              )
-              before ++ List(grouped) ++ after
-            else currentTerms
-          }
+      def groupAtPrecedence(terms: List[Term], targetPrec: Int): List[Term] =
+        terms match
+          case left :: op :: right :: rest if precedence(op) == targetPrec =>
+            val grouped = GroupTerm(
+              SourceSpan(left.span.start, right.span.end),
+              Expr(expr.span, List(left, op, right))
+            )
+            groupAtPrecedence(grouped :: rest, targetPrec)
+          case t :: rest => t :: groupAtPrecedence(rest, targetPrec)
+          case Nil => Nil
 
       val allPrecedences = operators.values.toSet.toList.sorted
       val rewrittenTerms = allPrecedences.foldLeft(expr.terms) { (terms, prec) =>
-        groupTerms(terms, prec)
+        groupAtPrecedence(terms, prec)
       }
 
       Expr(expr.span, rewrittenTerms, expr.typeSpec)
