@@ -115,9 +115,10 @@ object LlvmIrPrinter:
     case LiteralUnit(_) =>
       CompileResult(-1, state) // void type doesn't need a register
 
-    case Ref(_, name, _, _) =>
-      val reg  = state.nextRegister
-      val line = s"  %$reg = load ${llvmType(term.typeSpec)}, ${llvmType(term.typeSpec)}* @$name"
+    case ref: Ref =>
+      val reg = state.nextRegister
+      val line =
+        s"  %$reg = load ${llvmType(term.typeSpec)}, ${llvmType(term.typeSpec)}* @$ref.name"
       CompileResult(reg, state.withRegister(reg + 1).emit(line))
 
     case GroupTerm(_, expr, _) =>
@@ -131,13 +132,13 @@ object LlvmIrPrinter:
     case List(term) =>
       compileTerm(term, state)
 
-    case left :: Ref(_, op, _, _) :: right :: Nil =>
+    case left :: Ref(_, op, _, _, _) :: right :: Nil =>
       compileBinaryOp(op, left, right, state)
 
     case fn :: args =>
       // Function call
       val fnName = fn match
-        case Ref(_, name, _, _) => name
+        case Ref(_, name, _, _, _) => name
         case _ => throw CodeGenError("Function reference expected")
 
       val (argRegs, finalState) = args.foldLeft((List.empty[Int], state)) {

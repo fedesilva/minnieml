@@ -12,3 +12,4 @@ modules/mmlc-lib/src/main/antlr4/*.tokens
 
 /.vscode/extensions.json
 out/
+scratch

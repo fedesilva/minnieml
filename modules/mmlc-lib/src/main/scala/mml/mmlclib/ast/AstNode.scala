@@ -94,16 +94,11 @@ enum Associativity derives CanEqual:
   case Left
   case Right
 
-/*
- *    precedence table
- *    0 - special/reserved
- *    1 - application
- *    2 - div/mul
- *    3 - sum/substr
- *
- */
 sealed trait OpDef extends Decl, FromSource {
+  def name:       String
   def precedence: Int
+  def assoc:      Associativity
+  def body:       Expr
 }
 
 case class BinOpDef(
@@ -112,6 +107,7 @@ case class BinOpDef(
   param1:     FnParam,
   param2:     FnParam,
   precedence: Int,
+  assoc:      Associativity,
   body:       Expr,
   typeSpec:   Option[TypeSpec]   = None,
   typeAsc:    Option[TypeSpec]   = None,
@@ -184,10 +180,11 @@ case class Tuple(
 
 /** Points to something declared elsewhere */
 case class Ref(
-  span:     SourceSpan,
-  name:     String,
-  typeSpec: Option[TypeSpec],
-  typeAsc:  Option[TypeSpec] = None
+  span:       SourceSpan,
+  name:       String,
+  typeSpec:   Option[TypeSpec],
+  typeAsc:    Option[TypeSpec] = None,
+  resolvedAs: Option[Member]   = None
 ) extends Term,
       FromSource
 

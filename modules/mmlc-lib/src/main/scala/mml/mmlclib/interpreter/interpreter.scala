@@ -139,7 +139,7 @@ class Interpreter:
         interpretNode(term, env)
 
       // Handle infix operator expressions
-      case left :: Ref(_, opName, _, _) :: right :: Nil =>
+      case left :: Ref(_, opName, _, _, _) :: right :: Nil =>
         env.get(opName) match
           case Some(Value.NativeFunctionV(_, op)) =>
             val leftVal = interpretNode(left, env)

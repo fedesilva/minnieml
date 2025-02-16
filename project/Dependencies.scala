@@ -19,7 +19,9 @@ object Dependencies {
       "org.typelevel" %% "cats-effect"    % catsEffectVersion,
       "eu.timepit"    %% "refined"        % "0.11.3",
       "eu.timepit"    %% "refined-cats"   % "0.11.3", // optional
-      "edu.gemini"    %% "lucuma-refined" % "0.1.3"
+      "edu.gemini"    %% "lucuma-refined" % "0.1.3",
+      "dev.optics"    %% "monocle-core"   % "3.1.0",
+      "dev.optics"    %% "monocle-macro"  % "3.1.0"
     )
 
   lazy val testDeps: Seq[ModuleID] = Seq(
