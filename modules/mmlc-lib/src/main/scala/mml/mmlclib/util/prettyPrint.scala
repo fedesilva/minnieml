@@ -43,6 +43,23 @@ def prettyPrintMember(member: Member, indent: Int): String =
         s"${indentStr}  typeAsc: ${prettyPrintTypeSpec(bnd.typeAsc)}\n" +
         prettyPrintExpr(bnd.value, indent + 2)
 
+    case BinOpDef(span, name, param1, param2, precedence, body, typeSpec, typeAsc, docComment) =>
+      s"${indentStr}BinOpDef $name ${printSourceSpan(span)}  \n" +
+        s"${indentStr}  typeSpec: ${prettyPrintTypeSpec(typeSpec)}\n" +
+        s"${indentStr}  typeAsc: ${prettyPrintTypeSpec(typeAsc)}\n" +
+        s"${indentStr}  param1: ${prettyPrintParams(Seq(param1), indent)}\n" +
+        s"${indentStr}  param2: ${prettyPrintParams(Seq(param2), indent)}\n" +
+        s"${indentStr}  precedence: $precedence\n" +
+        prettyPrintExpr(body, indent + 2)
+
+    case UnaryOpDef(span, name, param, precedence, assoc, body, typeSpec, typeAsc, docComment) =>
+      s"${indentStr}UnaryOpDef $name ${printSourceSpan(span)}  \n" +
+        s"${indentStr}  typeSpec: ${prettyPrintTypeSpec(typeSpec)}\n" +
+        s"${indentStr}  typeAsc: ${prettyPrintTypeSpec(typeAsc)}\n" +
+        s"${indentStr}  param: ${prettyPrintParams(Seq(param), indent)}\n" +
+        s"${indentStr}  assoc: $assoc\n" +
+        prettyPrintExpr(body, indent + 2)
+
   }
 
 def prettyPrintTypeSpec(typeSpec: Option[TypeSpec]): String =

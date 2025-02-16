@@ -17,7 +17,7 @@ final case class SourceSpan(
   end:   SourcePoint
 )
 
-sealed trait AstNode
+sealed trait AstNode derives CanEqual
 
 sealed trait Typeable extends AstNode {
   def typeSpec: Option[TypeSpec]
@@ -89,6 +89,46 @@ case class FnDef(
   docComment: Option[DocComment] = None
 ) extends Decl,
       FromSource
+
+enum Associativity derives CanEqual:
+  case Left
+  case Right
+
+/*
+ *    precedence table
+ *    0 - special/reserved
+ *    1 - application
+ *    2 - div/mul
+ *    3 - sum/substr
+ *
+ */
+sealed trait OpDef extends Decl, FromSource {
+  def precedence: Int
+}
+
+case class BinOpDef(
+  span:       SourceSpan,
+  name:       String,
+  param1:     FnParam,
+  param2:     FnParam,
+  precedence: Int,
+  body:       Expr,
+  typeSpec:   Option[TypeSpec]   = None,
+  typeAsc:    Option[TypeSpec]   = None,
+  docComment: Option[DocComment] = None
+) extends OpDef
+
+case class UnaryOpDef(
+  span:       SourceSpan,
+  name:       String,
+  param:      FnParam,
+  precedence: Int,
+  assoc:      Associativity,
+  body:       Expr,
+  typeSpec:   Option[TypeSpec]   = None,
+  typeAsc:    Option[TypeSpec]   = None,
+  docComment: Option[DocComment] = None
+) extends OpDef
 
 case class Bnd(
   span:       SourceSpan,
