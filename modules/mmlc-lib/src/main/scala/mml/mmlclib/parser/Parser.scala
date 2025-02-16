@@ -483,6 +483,3 @@ object Parser:
 
   private def span(start: SourcePoint, end: SourcePoint): SourceSpan =
     SourceSpan(start, end)
-
-  // private def point(line: Int, col: Int): SourcePoint =
-  //   SourcePoint(line, col)

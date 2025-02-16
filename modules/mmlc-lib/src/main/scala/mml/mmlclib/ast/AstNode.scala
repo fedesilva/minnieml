@@ -103,7 +103,9 @@ enum Associativity derives CanEqual:
  *
  */
 sealed trait OpDef extends Decl, FromSource {
+  def name:       String
   def precedence: Int
+  def body:       Expr
 }
 
 case class BinOpDef(
