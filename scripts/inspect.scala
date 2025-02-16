@@ -2,7 +2,7 @@ import mml.mmlclib.api.*
 import mml.mmlclib.util.yolo.*
 import cats.syntax.all.*
 
-val src =
+val src_roto =
   """module A =
     |  let roto =
     |  let a = 1;
