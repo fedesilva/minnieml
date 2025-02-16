@@ -34,32 +34,36 @@ object ExpressionBloomer:
     }
 
     def rewriteExpr(expr: Expr): Expr =
-      def findNextOperator(terms: List[Term], precedence: Int): Option[(Int, Term)] =
-        terms.zipWithIndex.collect {
-          case (op @ Ref(_, name, _, _), idx) if operators.get(name).contains(precedence) =>
-            (idx, op)
-        }.headOption
+      def getPrecedence(term: Term): Option[Int] = term match
+        case Ref(_, name, _, _) => operators.get(name)
+        case _ => None
 
-      def groupAtPrecedence(terms: List[Term], precedence: Int): List[Term] =
-        findNextOperator(terms, precedence) match
-          case None => terms
-          case Some((idx, op)) if idx > 0 && idx < terms.length - 1 =>
-            val (before, rest) = terms.splitAt(idx)
-            val leftOperand    = before.last
-            val rightOperand   = rest.tail.head
-            val afterGroup     = rest.drop(2)
+      def groupTerms(terms: List[Term], precedence: Int): List[Term] =
+        if terms.length < 3 then terms
+        else
+          val indices = terms.zipWithIndex.collect {
+            case (op @ Ref(_, name, _, _), idx) if operators.get(name).contains(precedence) => idx
+          }
 
-            val grouped = GroupTerm(
-              SourceSpan(leftOperand.span.start, rightOperand.span.end),
-              Expr(expr.span, List(leftOperand, op, rightOperand))
-            )
+          indices.foldLeft(terms) { (currentTerms, idx) =>
+            if idx > 0 && idx < currentTerms.length - 1 then
+              val (before, rest) = currentTerms.splitAt(idx - 1)
+              val leftOperand    = rest.head
+              val op             = rest(1)
+              val rightOperand   = rest(2)
+              val after          = rest.drop(3)
 
-            groupAtPrecedence(before.dropRight(1) ++ List(grouped) ++ afterGroup, precedence)
-          case _ => terms
+              val grouped = GroupTerm(
+                SourceSpan(leftOperand.span.start, rightOperand.span.end),
+                Expr(expr.span, List(leftOperand, op, rightOperand))
+              )
+              before ++ List(grouped) ++ after
+            else currentTerms
+          }
 
       val allPrecedences = operators.values.toSet.toList.sorted
       val rewrittenTerms = allPrecedences.foldLeft(expr.terms) { (terms, prec) =>
-        groupAtPrecedence(terms, prec)
+        groupTerms(terms, prec)
       }
 
       Expr(expr.span, rewrittenTerms, expr.typeSpec)
