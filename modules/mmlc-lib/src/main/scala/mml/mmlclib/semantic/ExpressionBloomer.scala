@@ -9,43 +9,64 @@ object ExpressionBloomer:
     case UndefinedRef(ref: Ref, member: Member)
     case UndefinedOperator(ref: Ref)
 
-  // Top-level: rewrite members (Bnd, FnDef and OpDef) in a module.
-  // We will start with simple operations on expressions.
-  // TODO
-  //  - Implement rewriteBnd
-  //  - Implement binary operators
-  //  - Implement prefix operators
-  //  - Implement postfix operators
-  //  - Implement function calls (same as prefix operators)
-  //  - Implement rewriteFnDef
-  //  - Implement rewriteOpDef
   def rewriteModule(module: Module): Either[List[RewriteError], Module] =
-
     val newModule = injectStandardOperators(module)
 
-    // Validate all references in the module.
     val badRefs = validateAllRefs(newModule)
     if badRefs.nonEmpty then badRefs.asLeft
     else
       val newMembers = newModule.members.map {
-        case bnd: Bnd => rewriteBnd(bnd)
-        // case fnDef: FnDef => rewriteFnDef(fnDef)
-        // case opDef: OpDef => rewriteOpDef(opDef)
+        case bnd: Bnd => rewriteBnd(bnd, newModule)
         case other => other
       }
-      ???
+      newModule.copy(members = newMembers).asRight
 
-  // Rewrite a binding.
-  def rewriteBnd(bnd: Bnd): Bnd =
-    // A binding is a simple expression, so we can rewrite it directly.
-    // We will start by rewriting the expression.
-    ???
+  def rewriteBnd(bnd: Bnd, module: Module): Bnd =
+    bnd.copy(value = rewriteExpr(bnd.value, module))
 
-  // Rewrite an expression.
-  def rewriteExpr(expr: Expr): Expr =
-    // An expression is a list of terms, so we can rewrite each term.
-    // We will start by rewriting the terms.
-    ???
+  def rewriteExpr(expr: Expr, module: Module): Expr =
+    // Get all operators with their positions
+    val ops = expr.terms.zipWithIndex.collect {
+      case (r: Ref, idx) if isRefOp(r, module).isDefined =>
+        (r, idx, isRefOp(r, module).get)
+    }
+
+    if ops.isEmpty then return expr
+
+    // Precedence from 10 down to 1
+    val currPrec = (10 to 1 by -1).find(p => ops.exists(_._3.precedence == p)).getOrElse(0)
+
+    if currPrec == 0 then return expr
+
+    // Find all operators at this precedence level
+    val opsAtPrec = ops.filter(_._3.precedence == currPrec)
+
+    // For right associative, take rightmost. For left associative, take leftmost
+    val op = opsAtPrec.head._3.assoc match {
+      case Associativity.Left => opsAtPrec.head
+      case Associativity.Right => opsAtPrec.last
+    }
+
+    // Create the group with this operator
+    val (ref, pos, opDef) = op
+    val left              = expr.terms.slice(0, pos)
+    val right             = expr.terms.slice(pos + 1, expr.terms.length)
+
+    // Create new expression with the group
+    val newGroup = GroupTerm(
+      span = expr.span,
+      inner = Expr(
+        span = expr.span,
+        terms = List(
+          Expr(expr.span, left),
+          ref,
+          Expr(expr.span, right)
+        )
+      )
+    )
+
+    // Continue rewriting
+    Expr(expr.span, List(newGroup))
 
   def validateAllRefs(module: Module): List[RewriteError] =
     module.members.flatMap {
@@ -55,33 +76,33 @@ object ExpressionBloomer:
         collectBadRefs(fnDef.body, module).map(RewriteError.UndefinedRef(_, fnDef))
       case opDef: OpDef =>
         collectBadRefs(opDef.body, module).map(RewriteError.UndefinedRef(_, opDef))
+      case _ => List.empty
     }
 
   def collectBadRefs(expr: Expr, module: Module): List[Ref] =
     expr.terms.foldLeft(List.empty[Ref]) {
       case (acc, ref: Ref) =>
-        if lookupRef(ref, module).isDefined then ref :: acc
-        else acc
+        if lookupRef(ref, module).isDefined then acc
+        else ref :: acc
       case (acc, group: GroupTerm) =>
         acc ++ collectBadRefs(group.inner, module)
       case (acc, expr: Expr) =>
         acc ++ collectBadRefs(expr, module)
+      case (acc, _) => acc
     }
 
   def isRefOp(ref: Ref, module: Module): Option[OpDef] =
     lookupRef(ref, module) match {
-      case o: OpDef => o.some
+      case Some(o: OpDef) => Some(o)
       case _ => None
     }
 
   def isRefFn(ref: Ref, module: Module): Option[FnDef] =
     lookupRef(ref, module) match {
-      case f: FnDef => f.some
+      case Some(f: FnDef) => Some(f)
       case _ => None
     }
 
-  // a ref is undefined if the name is not part of the modules members
-  // TODO when we have imports, look there, too.
   def lookupRef(term: Ref, module: Module): Option[Member] =
     module.members.find {
       case bnd:   Bnd => bnd.name == term.name
@@ -90,14 +111,14 @@ object ExpressionBloomer:
       case _ => false
     }
 
-  // Prepend standard operator definitions to the module.
   def injectStandardOperators(module: Module): Module =
     val standardOps = List(
-      ("+", 3),
-      ("-", 3),
-      ("*", 2),
-      ("/", 2)
-    ).map { case (name, prec) =>
+      ("^", 10, Associativity.Right),
+      ("*", 8, Associativity.Left),
+      ("/", 8, Associativity.Left),
+      ("+", 6, Associativity.Left),
+      ("-", 6, Associativity.Left)
+    ).map { case (name, prec, assoc) =>
       val dummySpan = SourceSpan(SourcePoint(0, 0, 0), SourcePoint(0, 0, 0))
       BinOpDef(
         span       = dummySpan,
@@ -105,7 +126,7 @@ object ExpressionBloomer:
         param1     = FnParam(dummySpan, "a"),
         param2     = FnParam(dummySpan, "b"),
         precedence = prec,
-        assoc      = Associativity.Left,
+        assoc      = assoc,
         body       = Expr(dummySpan, List(Hole(dummySpan))),
         typeSpec   = None,
         typeAsc    = None,

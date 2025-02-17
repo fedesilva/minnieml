@@ -81,8 +81,7 @@ object Parser:
       letBindingP(source) |
         fnParserP(source) |
         binOpDefP(source) |
-        rightAssocUnaryOp(source) |
-        leftAssocUnaryOp(source) |
+        unaryOpP(source) |
         failedMemberP(source)
     )
 
@@ -144,6 +143,9 @@ object Parser:
       )
     }
 
+  private def assocP[$: P]: P[Associativity] =
+    P("left").map(_ => Associativity.Left) | P("right").map(_ => Associativity.Right)
+
   private def binOpDefP(source: String)(using P[Any]): P[Member] =
     P(
       spP(source)
@@ -155,24 +157,26 @@ object Parser:
         ~ fnParamP(source)
         ~ fnParamP(source)
         ~ ")"
+        ~ assocP.?
         ~ defAsKw
         ~ exprP(source)
         ~ endKw
         ~ spP(source)
-    ).map { case (start, doc, opName, precedence, param1, param2, bodyExpr, end) =>
+    ).map { case (start, doc, opName, precedence, param1, param2, assoc, bodyExpr, end) =>
       BinOpDef(
         span       = span(start, end),
         name       = opName,
         param1     = param1,
         param2     = param2,
         precedence = precedence.map(_.toInt).getOrElse(3),
+        assoc      = assoc.getOrElse(Associativity.Left),
         body       = bodyExpr,
         typeSpec   = bodyExpr.typeSpec,
         docComment = doc
       )
     }
 
-  private def rightAssocUnaryOp(source: String)(using P[Any]): P[Member] =
+  private def unaryOpP(source: String)(using P[Any]): P[Member] =
     P(
       spP(source)
         ~ docCommentP(source)
@@ -182,46 +186,18 @@ object Parser:
         ~ "("
         ~ fnParamP(source)
         ~ ")"
-        ~ "."
+        ~ assocP.?
         ~ defAsKw
         ~ exprP(source)
         ~ endKw
         ~ spP(source)
-    ).map { case (start, doc, opName, precedence, param, bodyExpr, end) =>
+    ).map { case (start, doc, opName, precedence, param, assoc, bodyExpr, end) =>
       UnaryOpDef(
         span       = span(start, end),
         name       = opName,
         param      = param,
         precedence = precedence.map(_.toInt).getOrElse(3),
-        assoc      = Associativity.Right,
-        body       = bodyExpr,
-        typeSpec   = bodyExpr.typeSpec,
-        docComment = doc
-      )
-    }
-
-  private def leftAssocUnaryOp(source: String)(using P[Any]): P[Member] =
-    P(
-      spP(source)
-        ~ docCommentP(source)
-        ~ opKw
-        ~ operatorIdP
-        ~ P("[" ~ CharIn("0-9").rep(1).! ~ "]").?
-        ~ "."
-        ~ "("
-        ~ fnParamP(source)
-        ~ ")"
-        ~ defAsKw
-        ~ exprP(source)
-        ~ endKw
-        ~ spP(source)
-    ).map { case (start, doc, opName, precedence, param, bodyExpr, end) =>
-      UnaryOpDef(
-        span       = span(start, end),
-        name       = opName,
-        param      = param,
-        precedence = precedence.map(_.toInt).getOrElse(3),
-        assoc      = Associativity.Left,
+        assoc      = assoc.getOrElse(Associativity.Right),
         body       = bodyExpr,
         typeSpec   = bodyExpr.typeSpec,
         docComment = doc
