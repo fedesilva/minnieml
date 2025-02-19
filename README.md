@@ -56,17 +56,19 @@ A more complex example:
 - note the infered types in the comments
 
 ```rust
-type Maybe 'T = 'T | ()
+enum Maybe 'T =
+  | One 'T
+  | None
 
 # empty :: Maybe 'T -> Boolean
-fn empty x =
+fn empty (x) =
   x match
-    | () -> true
-    | _  -> false
+    | None  -> true
+    | _     -> false
 
 # nonEmpty :: Maybe 'T -> Boolean
-fn nonEmpty maybe =
-  ! empty maybe
+fn nonEmpty (maybe) =
+  not empty maybe
 
 enum Species =
   | Cat
@@ -86,7 +88,7 @@ type Person = {
 }
 
 # hasPet :: 'T : { pet: Maybe Pet } -> Boolean
-fn hasPet p =
+fn hasPet (p) =
   nonEmpty p.pet
 
 # nameOf :: 'T : { name: String } -> String
@@ -94,8 +96,8 @@ fn nameOf (p): String =
   p.name
 
 let zur     = Pet     "Zur"     Species.Cat
-let fede    = Person  "Fede"    zur
-let victor  = Person  "Victor"  ()
+let fede    = Person  "Fede"    One zur
+let victor  = Person  "Victor"  None
 
 let pv = hasPet victor # false
 let pf = hasPet fede   # true
@@ -152,9 +154,9 @@ It's all about the fun and learning and exploring ideas.
 # Both branches return a Bool, so the result of `empty` is Bool.
 #
 # Hence: empty :: Maybe 'T -> Bool
-fn empty x =
+fn empty (x) =
   x match
-    | () -> true
+    | None -> true
     | _  -> false
 
 
@@ -164,7 +166,7 @@ fn empty x =
 # Then we apply '!' (logical not) to that Bool, so the result is also a Bool.
 #
 # Hence: nonEmpty :: Maybe 'T -> Bool
-fn nonEmpty maybe =
+fn nonEmpty (maybe) =
   ! empty maybe
 
 
@@ -191,7 +193,7 @@ type Person = {
 # Then we feed `p.pet` to `nonEmpty`, returning Bool.
 #
 # Hence: hasPet :: Person -> Bool
-fn hasPet p =
+fn hasPet (p) =
   nonEmpty p.pet
 
 
@@ -216,8 +218,8 @@ fn nameOf (p): String =
 
 # Let us examine the rest:
 let zur     = Pet     "Zur"     Species.Cat      # zur :: Pet
-let fede    = Person  "Fede"    zur              # fede :: Person
-let victor  = Person  "Victor"  ()               # victor :: Person
+let fede    = Person  "Fede"    One zur          # fede :: Person
+let victor  = Person  "Victor"  None             # victor :: Person
 
 let pv = hasPet victor  # pv :: Bool  (evaluates to false)
 let pf = hasPet fede    # pf :: Bool  (evaluates to true)
