@@ -39,7 +39,7 @@ process_resource_files() {
   # Check if the directory exists
   if [ -d "$dir" ]; then
     # Find all .conf, .html, and .js files excluding certain generated directories (e.g., dist, out, target)
-    find "$dir" -type f \( -name "*.conf" -o -name "*.html" -o -name "*.js" -o -name "*.g4" -o -name "*.sbt" \) \
+    find "$dir" -type f \( -name "*.conf" -o -name "*.html" -o -name "*.js" -o -name "*.g4" -o -name "*.sbt" -o -name "*.md" \) \
       -not -path "*/dist/*" -not -path "*/out/*" -not -path "*/target/*" | while read -r file; do
       # Get the relative path from the base directory
       relative_path="${file#$base_dir/}"
