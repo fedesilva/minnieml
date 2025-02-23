@@ -1,5 +1,14 @@
 # Design Summary: A Static, Type-Directed Effect System with Controlled Continuations
 
+# WARNING WARNING
+
+a lot of the stuff here makes NO SENSE.
+
+Ok, continue.
+
+---------------------------------------------------------------------------------------------------------------------------
+
+
 This design proposes a unified, statically-checked system for handling effects, combining ideas from protocols/type classes and row polymorphism while keeping advanced control flow hidden from the user. Below is a synopsis of the key design decisions and the intended syntax.
 
 ## Key Design Decisions
@@ -7,8 +16,9 @@ This design proposes a unified, statically-checked system for handling effects, 
 ### Static Effect Tracking:
 
 #### Explicit or Inferred Types:
-Types (including effect annotations) can be explicitly declared (e.g., open_file (name: String) -> FFI Int) or inferred by the compiler. This ensures that effects are first-class citizens in the type system.
-Unified Effects & Protocols:
+Just like types, effects can be explicitly declared (e.g., open_file (name: String) -> {FFI} Int) or inferred by the compiler. This ensures that effects are first-class citizens in the type system.
+
+#### Unified Effects & Protocols:
 
 Effects are defined similarly to protocols. For example, you might declare an effect as:
 
@@ -19,10 +29,8 @@ effect FileIO <: FFI =
    # Additional file I/O operations...
 }
 ```
-
-
-
-Handlers (instances) are provided for different platforms (e.g., glibc-x86, js-browser), ensuring that the concrete implementation is resolved via static instance resolution.
+ 
+Handlers for some effects need to be provided for different platforms (e.g., glibc-x86, js-browser), ensuring that the concrete implementation is resolved via static instance resolution.
 
 
 #### Row Polymorphism
@@ -63,7 +71,7 @@ type Error = String;
 
 # Effect Declaration (similar to a protocol)
 # Effect types are identified by the {},
-# this way `{IO} List String` is clearer thatn `IO List String`.
+# this way `{IO} List String` is clearer than `IO List String`.
 # Effects, if written explicitely, are listed within {}
 effect FileIO <: FFI, Throw  =
    fn open_file(path: String): Int    | Error         # Sugar for {FileIO & Throw} Int | Error
@@ -77,8 +85,8 @@ type Config = {
 }
 
 #-
-Referentially transparent, aka pure function: just takes a string and returns a Config.
-Same input, same output
+    Referentially transparent, aka pure function: just takes a string and returns a Config.
+    Same input, same output
 -#
 fn parseStringConfig(path: String): Config = ???;
 
@@ -105,20 +113,21 @@ fn try_reading_file(path: String): {FileIO & Throw & Cell} String | Error = do
    # check the count; if too big, throw
    if count > 3 then
       # breaks to outermost `do`
-      throw Error "Too many tries"
+      throw error "too many tries"
    else
       open_file(path) match
-         # breaks to last `:=`
+           # breaks to last `:=`
          | Error s -> break incr counterMut;
-         | # ok here we continue
+           # ok here we continue
            # and read the file into a string
-           ???
+         | _ -> ???
    ;
 ;
 ```
 
 
-Summary
+## Summary
+
 This design leverages static, type-directed effect tracking with row polymorphism to maintain clarity, modularity, and safety.
 
 Effects are made explicit in types (either inferred or annotated), and a unified system allows for both pure protocols and effectful
@@ -128,3 +137,5 @@ Advanced control flow is managed within delimited do blocks—using := for effec
 
 The resulting system minimizes boilerplate and the complexity of monadic stacks while providing robust,
 developer-friendly error reporting and safe effect management.
+
+
