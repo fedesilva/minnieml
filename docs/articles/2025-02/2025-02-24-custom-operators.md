@@ -28,6 +28,10 @@ know yet what the references point to and what the attributes of the operators a
 
 At this point, the parsing is done and we move to the first semantic phases.
 
+Technically for now on, it's not "the parser" anymore, but we will continue
+to use the terms "the parser", "parses as", etc, though no tokens are involved in 
+the rest of the process.
+
 ### Semantic Analysis Passes
 
 The semantic pipeline, so far, consists of three passes that transform the initial flat 
