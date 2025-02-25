@@ -1,13 +1,12 @@
-# MML Operator Precedence Documentation
+# MinnieML Operator Precedence and Associativity
 
-This document explains how operator precedence and associativity work in MinnieML, with examples showing the expected AST structure for various expression patterns.
+This document explains how operator precedence and associativity work in MinnieML, 
+with examples showing the expected AST structure for various expression patterns.
 
-## Document status
+## Compiler status
 
-This is a living document. 
-
-We are still missing function application which
-will be treated as a weird unary operator that consumes it's arity of arguments.
+We are still missing function application which will be treated as a prefix n-ary operator
+with the highest precedence and left associativity.
 
 Once that is done, we might revisit the way we treat operators and might
 rewrite them as application, too.
@@ -15,7 +14,9 @@ rewrite them as application, too.
 After that, we will be close enough to the TLIR (typed lambda intermediate representation)
 which will be the core language of the compiler.
 
-## A note on the architecture
+## Pipeline Overview
+
+### Parser
 
 The parser itself is based on parser combinators and there is no separate lexer.
 As we parse the input, we immediately build an abstract syntax tree (ast) that represents 
@@ -24,18 +25,86 @@ the structure of the input.
 Since we allow for custom operators, we parse expressions as flat structures consisting of 
 terms which can be literals, or references to functions, bindings or operators.
 
-After the ast is built, we run a pass to resolve the references to the actual definitions.
-This pass uses context information to resolve the references to the correct definitions;
-it can identify the correct operator based on the position and associativity of the operator.
+At this point, the parsing is done and we move to the first semantic phases.
 
-Once the references are resolved, we run a pass to rewrite the flat expresions
-into a tree structure that represents the precedence and associativity of the operators.
-This is based on the Pratt operator climbing algorithm but it operates on ast nodes 
-instead of tokens.
+### Semantic Analysis Passes
 
-Finally, since the precedence climbing algorithm wraps nodes in expression that don't
-actually need to be wrapped, we run a pass to unwrap the nodes that don't 
-need to be wrapped - the simplifer pass.
+The parsing pipeline consists of three passes that transform the initial flat 
+expression into a semantically resolved and structured representation.
+
+#### Reference Resolution
+
+The `RefResolver` is responsible for resolving references in the abstract syntax tree (AST). Its key features include:
+
+1. **Context-Aware Reference Resolution**
+   * Tracks whether the parser is expecting an operand or an operator
+   * In operand position:
+      * First tries to resolve to non-operator values (bindings, functions)
+      * Falls back to prefix unary operators (right-associative)
+   * In operator position:
+      * Tries to resolve to binary operators
+      * Falls back to postfix unary operators (left-associative)
+
+2. **Smart Disambiguation**
+   * Handles complex scenarios like chained prefix operators
+   * Identifies the correct type of reference based on context
+   * Produces semantic errors for unresolvable references
+
+#### Precedence Climbing
+
+Using a modified Pratt parsing algorithm that operates directly on AST nodes instead of tokens. Unlike traditional Pratt parsers that work at the lexical level, this implementation:
+
+- Processes fully resolved AST nodes
+- Supports complex operator definitions with custom precedence and associativity
+- Allows dynamic resolution of operator context
+- Climbs precedence based on node metadata rather than token characteristics
+
+The `PrecedenceClimbing` component implements the actual operator precedence and associativity rules:
+
+1. **Parsing Strategy**
+   * Uses a recursive descent parsing technique
+   * Implements the Pratt parsing algorithm adapted for AST nodes
+   * Handles prefix, infix, and postfix operators dynamically
+
+2. **Key Parsing Steps**
+   * `parseAtom()`: Parses individual terms or prefix operators
+   * `parseOps()`: Handles operator chaining and precedence
+   * Respects operator precedence through a minimum precedence parameter
+   * Supports left and right associativity
+
+3. **Advanced Features**
+   * Correctly handles nested expressions
+   * Manages different operator types (unary, binary)
+   * Supports arbitrary operator precedence levels
+
+#### Simplification Pass
+
+The `Simplifier` serves as the final pass in the semantic analysis pipeline, responsible for cleaning up the Abstract Syntax Tree (AST):
+
+1. **Purpose**
+   * Removes unnecessary expression wrappers
+   * Eliminates redundant AST nodes
+   * Creates a compact, semantically precise representation
+
+2. **Simplification Strategies**
+   * Recursively traverses module members
+   * Unwraps single-term expressions
+   * Dissolves group term artifacts
+   * Preserves original source span information
+
+3. **Key Transformations**
+   * Removes nested expression layers
+   * Simplifies redundant structural elements
+   * Prepares AST for typed lambda intermediate representation (TLIR)
+
+The combination of `RefResolver`, `PrecedenceClimbing`, and `Simplifier` allows MinnieML to:
+* Resolve references contextually
+* Parse complex expressions with custom operators
+* Maintain precise control over operator behavior
+* Create a clean, minimal AST representation
+
+This approach is more sophisticated than traditional parsing techniques, 
+yielding a flexible syntax for custom operators and complex expressions.
 
 ## Operator Definitions
 
@@ -463,11 +532,16 @@ let a = 4!!;
 
 **Result: Semantic Error**
 
-This is invalid because postfix operators cannot be applied consecutively without parentheses. The parser should correctly identify and report this as an error.
+This is invalid because postfix operators cannot be applied consecutively without parentheses. 
+The parser correctly identifes and reports this as an error.
 
-## Additional Test Cases to Consider
+## Additional Work
 
-The following test cases would further strengthen the test suite:
+As mentioned above, the current implementation does not yet handle function application 
+since we are focusing on operators, but we will revisit the handling of operators soon, to
+add it.
+
+Before doing that the following test cases will further strengthen the test suite:
 
 1. **Mixed associativity without parentheses**
    ```mml
@@ -510,3 +584,4 @@ The following test cases would further strengthen the test suite:
    ```mml
    let a = 10 / 5 * 2;  // Should parse as: ((10 / 5) * 2)
    ```
+
