@@ -19,7 +19,7 @@ class OpTests extends BaseEffFunSuite:
   test("let with left assoc unary op") {
     modNotFailed(
       """
-        op - .(a) = neg a;
+        op - (a) left = neg a;
       """
     ).map { m =>
       assert(
@@ -44,7 +44,7 @@ class OpTests extends BaseEffFunSuite:
   test("let with right assoc unary op") {
     modNotFailed(
       """
-        op - (a). = neg a right;
+        op - (a) right = neg a right;
       """
     ).map { m =>
       assert(
@@ -69,7 +69,7 @@ class OpTests extends BaseEffFunSuite:
   test("unary right assoc with precedence") {
     modNotFailed(
       """
-        op - [2](a). = neg a;
+        op - (a) 2 right = neg a;
       """
     ).map { m =>
       assert(
@@ -98,7 +98,7 @@ class OpTests extends BaseEffFunSuite:
   test("unary left assoc with precedence") {
     modNotFailed(
       """
-          op - [2].(a) = neg a;
+          op - (a) 2 left  = neg a;
         """
     ).map { m =>
       assert(

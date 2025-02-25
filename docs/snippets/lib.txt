@@ -71,8 +71,8 @@ protocol Applicative 'F <: Apply 'F =
 ;
 
 protocol Foldable 'F =
-  foldLeft: 'A 'B : ('B -> 'A -> 'B) -> 'B -> 'F 'A -> 'B
-  foldRight: 'A 'B : ('A -> 'B -> 'B) -> 'B -> 'F 'A -> 'B
+  foldLeft 'A 'B : ('B -> 'A -> 'B) -> 'B -> 'F 'A -> 'B
+  foldRight 'A 'B : ('A -> 'B -> 'B) -> 'B -> 'F 'A -> 'B
 ;
 
 

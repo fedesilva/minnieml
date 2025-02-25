@@ -8,6 +8,7 @@ import mml.mmlclib.interpreter.{Interpreter, Value, InterpretError}
 
 import java.nio.file.Files
 import java.nio.file.Path
+import mml.mmlclib.parser.ParserError
 
 object InterpreterApi:
 
@@ -28,7 +29,12 @@ object InterpreterApi:
               case Left(e: InterpretError) => Left(e.getMessage)
               case Left(e) => Left(s"Unexpected error: ${e.getMessage}")
             }
-        case Left(error) => IO.pure(Left(error))
+        case Left(error) =>
+          IO.pure {
+            error match
+              case ParserError.Failure(msg) => Left(msg)
+              case _ => Left("Unknown error")
+          }
     yield result
 
   def interpretModuleFile(
@@ -47,7 +53,12 @@ object InterpreterApi:
               case Left(e: InterpretError) => Left(e.getMessage)
               case Left(e) => Left(s"Unexpected error: ${e.getMessage}")
             }
-        case Left(error) => IO.pure(Left(error))
+        case Left(error) =>
+          IO.pure {
+            error match
+              case ParserError.Failure(msg) => Left(msg)
+              case _ => Left("Unknown error")
+          }
     yield result
 
   /** Helper method to get the string representation of a value */

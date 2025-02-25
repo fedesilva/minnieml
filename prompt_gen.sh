@@ -1,13 +1,5 @@
 #!/bin/bash
 
-# Print instructions at the beginning of the script
-echo "this is my codebase, I will ask questions and request fixes."
-echo " always provide full files for me to copy and paste if I ask for fixes"
-echo " also provide after full file, if there is only one change, the specific change"
-echo " always use scala 3 new syntax"
-echo " if providing a fix and file is not new syntax, rewrite it to be"
-echo " stand by for further queries"
-echo
 
 # Function to process Scala files
 process_scala_files() {

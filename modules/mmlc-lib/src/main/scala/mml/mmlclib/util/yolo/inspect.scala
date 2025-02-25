@@ -3,6 +3,7 @@ package mml.mmlclib.util.yolo
 import cats.effect.unsafe.implicits.global
 import cats.syntax.option.*
 import mml.mmlclib.api.ParserApi
+import mml.mmlclib.ast.*
 import mml.mmlclib.util.prettyPrintAst
 
 def printModuleAst(source: String, name: Option[String] = "Anon".some): Unit =
@@ -20,5 +21,14 @@ def printModuleAstSimple(source: String, name: Option[String] = "Anon".some): Un
     .map {
       case Right(ast) => println(s"Parsed AST:\n  $ast")
       case Left(error) => println(s"Parse error:\n  $error")
+    }
+    .unsafeRunSync()
+
+def parseModule(source: String, name: Option[String] = "Anon".some): Option[Module] =
+  ParserApi
+    .parseModuleString(source, name)
+    .map {
+      case Right(ast) => ast.some
+      case Left(_) => none
     }
     .unsafeRunSync()

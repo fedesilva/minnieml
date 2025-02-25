@@ -1,287 +1,351 @@
 package mml.mmlclib.codegen
 
+import cats.syntax.all.*
 import mml.mmlclib.ast.*
+import mml.mmlclib.semantic.*
 
-/** LLVM IR Printer for MML */
+/** Represents an error that occurred during code generation. */
+case class CodeGenError(message: String)
+
+/** LLVM IR Printer for MML.
+  *
+  * Traverses our nested AST and generates corresponding LLVM IR. Handles constant folding,
+  * binary/unary operations, and binding initialization.
+  */
 object LlvmIrPrinter:
-  /** Represents the state of code generation */
+
+  /** Represents the state during code generation.
+    *
+    * @param nextRegister
+    *   the next available register number
+    * @param output
+    *   the list of emitted LLVM IR lines (in reverse order)
+    * @param initializers
+    *   list of initializer function names for global ctors
+    */
   case class CodeGenState(
-    nextRegister:    Int              = 0,
-    nextLabel:       Int              = 0,
-    stringConstants: Map[String, Int] = Map.empty,
-    globalInits:     List[String]     = List.empty,
-    output:          List[String]     = List.empty
+    nextRegister: Int          = 0,
+    output:       List[String] = List.empty,
+    initializers: List[String] = List.empty
   ):
-    def withRegister(reg: Int): CodeGenState = copy(nextRegister = reg)
-    def withLabel(label: Int):  CodeGenState = copy(nextLabel = label)
-    def withString(str: String, idx: Int): CodeGenState =
-      copy(stringConstants = stringConstants + (str -> idx))
-    def withGlobalInit(init: String): CodeGenState =
-      copy(globalInits = init :: globalInits)
-    def emit(line: String):           CodeGenState = copy(output = line :: output)
-    def emitAll(lines: List[String]): CodeGenState = copy(output = lines.reverse ::: output)
-    def result:                       String       = output.reverse.mkString("\n")
+    /** Returns a new state with an updated register counter. */
+    def withRegister(reg: Int): CodeGenState =
+      copy(nextRegister = reg)
 
-  /** Result of an expression or term compilation */
-  case class CompileResult(register: Int, state: CodeGenState)
+    /** Emits a single line of LLVM IR code, returning the updated state. */
+    def emit(line: String): CodeGenState =
+      copy(output = line :: output)
 
-  /** Convert MML type to LLVM type string */
-  private def llvmType(typeSpec: Option[TypeSpec]): String =
-    typeSpec match
-      case Some(LiteralIntType(_)) => "i32"
-      case Some(LiteralFloatType(_)) => "float"
-      case Some(LiteralBoolType(_)) => "i1"
-      case Some(LiteralStringType(_)) => "i8*"
-      case Some(LiteralUnitType(_)) => "void"
-      case Some(TypeName(_, name)) => "i32" // Default to i32 for now
-      case None => "i32" // Default type
-      case _ => throw CodeGenError(s"Unsupported type: $typeSpec")
+    /** Emits multiple lines of LLVM IR code at once. */
+    def emitAll(lines: List[String]): CodeGenState =
+      copy(output = lines.reverse ::: output)
 
-  /** Print string constant and return its index */
-  private def addStringConstant(str: String, state: CodeGenState): CompileResult =
-    state.stringConstants.get(str) match
-      case Some(idx) => CompileResult(idx, state)
-      case None =>
-        val idx     = state.stringConstants.size
-        val escaped = escapeString(str)
-        val declaration =
-          s"@str.$idx = private unnamed_addr constant [${str.length + 1} x i8] c\"$escaped\\00\""
-        CompileResult(idx, state.withString(str, idx).emit(declaration))
+    /** Adds an initializer function to the list. */
+    def addInitializer(fnName: String): CodeGenState =
+      copy(initializers = fnName :: initializers)
 
-  /** Escape string for LLVM IR */
-  private def escapeString(str: String): String =
-    str.flatMap {
-      case '\n' => "\\0A"
-      case '\r' => "\\0D"
-      case '\t' => "\\09"
-      case '\"' => "\\22"
-      case '\\' => "\\\\"
-      case c if c.isControl => f"\\${c.toInt}%02X"
-      case c => c.toString
-    }
+    /** Returns the complete LLVM IR as a single string. */
+    def result: String =
+      output.reverse.mkString("\n")
 
-  /** Print binary operation */
+  /** Represents the result of compiling a term or expression.
+    *
+    * @param register
+    *   the register holding the result (or literal value)
+    * @param state
+    *   the updated code generation state
+    * @param isLiteral
+    *   indicates whether the result is a literal value
+    */
+  case class CompileResult(register: Int, state: CodeGenState, isLiteral: Boolean = false)
+
+  /** Compiles a binary operation.
+    *
+    * Compiles left and right operands and then emits the appropriate LLVM IR instruction. Performs
+    * constant folding when both operands are literals.
+    *
+    * @param op
+    *   the operator (e.g. "+", "-", "*", "/")
+    * @param left
+    *   the left operand term
+    * @param right
+    *   the right operand term
+    * @param state
+    *   the current code generation state
+    * @return
+    *   Either a CodeGenError or a CompileResult with the updated state.
+    */
   private def compileBinaryOp(
     op:    String,
     left:  Term,
     right: Term,
     state: CodeGenState
-  ): CompileResult =
-    val CompileResult(leftReg, state1)  = compileTerm(left, state)
-    val CompileResult(rightReg, state2) = compileTerm(right, state1)
-    val resultReg                       = state2.nextRegister
+  ): Either[CodeGenError, CompileResult] =
+    for
+      leftRes <- compileTerm(left, state)
+      rightRes <- compileTerm(right, leftRes.state)
+      result <-
+        if leftRes.isLiteral && rightRes.isLiteral then
+          op match
+            case "+" =>
+              CompileResult(leftRes.register + rightRes.register, rightRes.state, true).asRight
+            case "-" =>
+              CompileResult(leftRes.register - rightRes.register, rightRes.state, true).asRight
+            case "*" =>
+              CompileResult(leftRes.register * rightRes.register, rightRes.state, true).asRight
+            case "/" =>
+              CompileResult(leftRes.register / rightRes.register, rightRes.state, true).asRight
+            case "^" => CodeGenError("Power operator not yet implemented").asLeft
+            case _ => CodeGenError(s"Unknown operator: $op").asLeft
+        else
+          op match
+            case "+" =>
+              val resultReg = rightRes.state.nextRegister
+              val leftOp =
+                if leftRes.isLiteral then leftRes.register.toString else s"%${leftRes.register}"
+              val rightOp =
+                if rightRes.isLiteral then rightRes.register.toString else s"%${rightRes.register}"
+              val line = s"  %$resultReg = add i32 $leftOp, $rightOp"
+              CompileResult(
+                resultReg,
+                rightRes.state.withRegister(resultReg + 1).emit(line),
+                false
+              ).asRight
+            case "-" =>
+              val resultReg = rightRes.state.nextRegister
+              val leftOp =
+                if leftRes.isLiteral then leftRes.register.toString else s"%${leftRes.register}"
+              val rightOp =
+                if rightRes.isLiteral then rightRes.register.toString else s"%${rightRes.register}"
+              val line = s"  %$resultReg = sub i32 $leftOp, $rightOp"
+              CompileResult(
+                resultReg,
+                rightRes.state.withRegister(resultReg + 1).emit(line),
+                false
+              ).asRight
+            case "*" =>
+              val resultReg = rightRes.state.nextRegister
+              val leftOp =
+                if leftRes.isLiteral then leftRes.register.toString else s"%${leftRes.register}"
+              val rightOp =
+                if rightRes.isLiteral then rightRes.register.toString else s"%${rightRes.register}"
+              val line = s"  %$resultReg = mul i32 $leftOp, $rightOp"
+              CompileResult(
+                resultReg,
+                rightRes.state.withRegister(resultReg + 1).emit(line),
+                false
+              ).asRight
+            case "/" =>
+              val resultReg = rightRes.state.nextRegister
+              val leftOp =
+                if leftRes.isLiteral then leftRes.register.toString else s"%${leftRes.register}"
+              val rightOp =
+                if rightRes.isLiteral then rightRes.register.toString else s"%${rightRes.register}"
+              val line = s"  %$resultReg = sdiv i32 $leftOp, $rightOp"
+              CompileResult(
+                resultReg,
+                rightRes.state.withRegister(resultReg + 1).emit(line),
+                false
+              ).asRight
+            case "^" =>
+              CodeGenError("Power operator not yet implemented").asLeft
+            case _ =>
+              CodeGenError(s"Unknown operator: $op").asLeft
+    yield result
 
-    val leftType  = llvmType(left.typeSpec)
-    val rightType = llvmType(right.typeSpec)
+  /** Compiles a unary operation.
+    *
+    * Compiles the operand and emits the corresponding LLVM IR instruction. Applies constant folding
+    * if the operand is a literal.
+    *
+    * @param op
+    *   the operator (e.g. "-", "+", "!")
+    * @param arg
+    *   the operand term
+    * @param state
+    *   the current code generation state
+    * @return
+    *   Either a CodeGenError or a CompileResult with the updated state.
+    */
+  private def compileUnaryOp(
+    op:    String,
+    arg:   Term,
+    state: CodeGenState
+  ): Either[CodeGenError, CompileResult] =
+    for
+      argRes <- compileTerm(arg, state)
+      result <-
+        if argRes.isLiteral then
+          op match
+            case "-" => CompileResult(-argRes.register, argRes.state, true).asRight
+            case "+" => CompileResult(argRes.register, argRes.state, true).asRight
+            case "!" =>
+              CompileResult(if argRes.register == 0 then 1 else 0, argRes.state, true).asRight
+            case _ => CodeGenError(s"Unknown unary operator: $op").asLeft
+        else
+          op match
+            case "-" =>
+              val resultReg = argRes.state.nextRegister
+              val argOp =
+                if argRes.isLiteral then argRes.register.toString else s"%${argRes.register}"
+              val line = s"  %$resultReg = sub i32 0, $argOp"
+              CompileResult(
+                resultReg,
+                argRes.state.withRegister(resultReg + 1).emit(line),
+                false
+              ).asRight
+            case "+" =>
+              val resultReg = argRes.state.nextRegister
+              val argOp =
+                if argRes.isLiteral then argRes.register.toString else s"%${argRes.register}"
+              val line = s"  %$resultReg = add i32 $argOp, 0"
+              CompileResult(
+                resultReg,
+                argRes.state.withRegister(resultReg + 1).emit(line),
+                false
+              ).asRight
+            case "!" =>
+              val resultReg = argRes.state.nextRegister
+              val argOp =
+                if argRes.isLiteral then argRes.register.toString else s"%${argRes.register}"
+              val line = s"  %$resultReg = xor i32 1, $argOp"
+              CompileResult(
+                resultReg,
+                argRes.state.withRegister(resultReg + 1).emit(line),
+                false
+              ).asRight
+            case _ =>
+              CodeGenError(s"Unknown unary operator: $op").asLeft
+    yield result
 
-    val instruction = (op, leftType) match
-      case ("+", "float") => "fadd"
-      case ("-", "float") => "fsub"
-      case ("*", "float") => "fmul"
-      case ("/", "float") => "fdiv"
-      case ("+", _) => "add"
-      case ("-", _) => "sub"
-      case ("*", _) => "mul"
-      case ("/", _) => "sdiv"
-      case _ => throw CodeGenError(s"Unknown operator: $op")
+  /** Compiles a term (the smallest unit in an expression).
+    *
+    * Terms include literals, references, grouped expressions, or nested expressions.
+    *
+    * @param term
+    *   the term to compile
+    * @param state
+    *   the current code generation state
+    * @return
+    *   Either a CodeGenError or a CompileResult for the term.
+    */
+  private def compileTerm(term: Term, state: CodeGenState): Either[CodeGenError, CompileResult] =
+    term match
+      case LiteralInt(_, value) =>
+        CompileResult(value, state, true).asRight
+      case ref: Ref =>
+        val reg  = state.nextRegister
+        val line = s"  %$reg = load i32, i32* @${ref.name}"
+        CompileResult(reg, state.withRegister(reg + 1).emit(line), false).asRight
+      case GroupTerm(_, expr, _) =>
+        compileExpr(expr, state)
+      case e: Expr =>
+        compileExpr(e, state)
+      case other =>
+        CodeGenError(s"Unsupported term: $other").asLeft
 
-    val line = s"  %$resultReg = $instruction $leftType %$leftReg, %$rightReg"
-    CompileResult(resultReg, state2.withRegister(resultReg + 1).emit(line))
-
-  /** Print term (atomic expression) */
-  private def compileTerm(term: Term, state: CodeGenState): CompileResult = term match
-    case LiteralInt(_, value) =>
-      val reg  = state.nextRegister
-      val line = s"  %$reg = add i32 $value, 0"
-      CompileResult(reg, state.withRegister(reg + 1).emit(line))
-
-    case LiteralFloat(_, value) =>
-      val reg  = state.nextRegister
-      val line = s"  %$reg = fadd float ${value}f, 0.0"
-      CompileResult(reg, state.withRegister(reg + 1).emit(line))
-
-    case LiteralBool(_, value) =>
-      val reg  = state.nextRegister
-      val line = s"  %$reg = add i1 ${if value then 1 else 0}, 0"
-      CompileResult(reg, state.withRegister(reg + 1).emit(line))
-
-    case LiteralString(_, value) =>
-      val CompileResult(strIdx, state1) = addStringConstant(value, state)
-      val reg                           = state1.nextRegister
-      val line =
-        s"  %$reg = getelementptr [${value.length + 1} x i8], [${value.length + 1} x i8]* @str.$strIdx, i64 0, i64 0"
-      CompileResult(reg, state1.withRegister(reg + 1).emit(line))
-
-    case LiteralUnit(_) =>
-      CompileResult(-1, state) // void type doesn't need a register
-
-    case Ref(_, name, _, _) =>
-      val reg  = state.nextRegister
-      val line = s"  %$reg = load ${llvmType(term.typeSpec)}, ${llvmType(term.typeSpec)}* @$name"
-      CompileResult(reg, state.withRegister(reg + 1).emit(line))
-
-    case GroupTerm(_, expr, _) =>
-      compileExpr(expr, state)
-
-    case other =>
-      throw CodeGenError(s"Unsupported term: $other")
-
-  /** Print expression */
-  private def compileExpr(expr: Expr, state: CodeGenState): CompileResult = expr.terms match
-    case List(term) =>
-      compileTerm(term, state)
-
-    case left :: Ref(_, op, _, _) :: right :: Nil =>
-      compileBinaryOp(op, left, right, state)
-
-    case fn :: args =>
-      // Function call
-      val fnName = fn match
-        case Ref(_, name, _, _) => name
-        case _ => throw CodeGenError("Function reference expected")
-
-      val (argRegs, finalState) = args.foldLeft((List.empty[Int], state)) {
-        case ((regs, st), arg) =>
-          val CompileResult(reg, newState) = compileTerm(arg, st)
-          (reg :: regs, newState)
-      }
-
-      val returnType = llvmType(expr.typeSpec)
-      val resultReg  = finalState.nextRegister
-
-      val argList = argRegs.reverse
-        .zip(args)
-        .map { case (reg, arg) =>
-          s"${llvmType(arg.typeSpec)} %$reg"
-        }
-        .mkString(", ")
-
-      if returnType != "void" then
-        val line = s"  %$resultReg = call $returnType @$fnName($argList)"
-        CompileResult(resultReg, finalState.withRegister(resultReg + 1).emit(line))
-      else
-        val line = s"  call $returnType @$fnName($argList)"
-        CompileResult(-1, finalState.emit(line))
-
-    case Nil =>
-      throw CodeGenError("Empty expression")
-
-  /** Print conditional expression */
-  private def compileCond(cond: Cond, state: CodeGenState): CompileResult =
-    val CompileResult(condReg, state1) = compileExpr(cond.cond, state)
-    val thenLabel                      = state1.nextLabel
-    val elseLabel                      = thenLabel + 1
-    val endLabel                       = elseLabel + 1
-
-    val branchLine = s"  br i1 %$condReg, label %then$thenLabel, label %else$elseLabel"
-    val state2     = state1.withLabel(endLabel + 1).emit(branchLine)
-
-    val state3                         = state2.emit(s"then$thenLabel:")
-    val CompileResult(thenReg, state4) = compileExpr(cond.ifTrue, state3)
-    val state5                         = state4.emit(s"  br label %end$endLabel")
-
-    val state6                         = state5.emit(s"else$elseLabel:")
-    val CompileResult(elseReg, state7) = compileExpr(cond.ifFalse, state6)
-    val state8                         = state7.emit(s"  br label %end$endLabel")
-
-    val state9     = state8.emit(s"end$endLabel:")
-    val resultReg  = state9.nextRegister
-    val resultType = llvmType(cond.typeSpec)
-    val phiLine =
-      s"  %$resultReg = phi $resultType [ %$thenReg, %then$thenLabel ], [ %$elseReg, %else$elseLabel ]"
-
-    CompileResult(resultReg, state9.withRegister(resultReg + 1).emit(phiLine))
-
-  /** Print function definition */
-  private def compileFunction(fn: FnDef, state: CodeGenState): CodeGenState =
-    val returnType = llvmType(fn.typeSpec)
-    val params     = fn.params.map(p => s"${llvmType(p.typeSpec)} %${p.name}").mkString(", ")
-
-    val header = s"define $returnType @${fn.name}($params) {"
-    val state1 = state.withRegister(fn.params.length).emit(header).emit("entry:")
-
-    val CompileResult(resultReg, state2) = compileExpr(fn.body, state1)
-
-    val returnLine =
-      if returnType != "void" then s"  ret $returnType %$resultReg"
-      else "  ret void"
-
-    state2.emitAll(List(returnLine, "}"))
-
-  /** Print binding */
-  private def compileBinding(bnd: Bnd, state: CodeGenState): CodeGenState =
-    val varType = llvmType(bnd.typeSpec)
-
-    bnd.value.terms match {
-      case List(LiteralString(_, value)) =>
-        val CompileResult(strIdx, state1) = addStringConstant(value, state)
-        state1.emit(s"@${bnd.name} = global [${value.length + 1} x i8]* @str.$strIdx")
-
-      case List(LiteralInt(_, value)) =>
-        state.emit(s"@${bnd.name} = global i32 $value")
-
-      case List(LiteralFloat(_, value)) =>
-        state.emit(s"@${bnd.name} = global float ${value}f")
-
-      case List(LiteralBool(_, value)) =>
-        state.emit(s"@${bnd.name} = global i1 ${if value then 1 else 0}")
-
+  /** Compiles an expression.
+    *
+    * Dispatches based on the structure of the expression:
+    *   - A single-term expression is compiled directly.
+    *   - A binary operation (with exactly three terms: left, operator, right) is handled via
+    *     compileBinaryOp.
+    *   - A unary operation (with two terms: operator and argument) is handled via compileUnaryOp.
+    *
+    * @param expr
+    *   the expression to compile
+    * @param state
+    *   the current code generation state
+    * @return
+    *   Either a CodeGenError or a CompileResult for the expression.
+    */
+  private def compileExpr(expr: Expr, state: CodeGenState): Either[CodeGenError, CompileResult] =
+    expr.terms match
+      case List(term) =>
+        compileTerm(term, state)
+      case List(left, op: Ref, right) if op.resolvedAs.exists(_.isInstanceOf[BinOpDef]) =>
+        compileBinaryOp(op.name, left, right, state)
+      case List(op: Ref, arg) if op.resolvedAs.exists(_.isInstanceOf[UnaryOpDef]) =>
+        compileUnaryOp(op.name, arg, state)
       case _ =>
-        // For complex expressions, we need to create a global initializer function
-        val initFnName                      = s"__init_global_${bnd.name}"
-        val CompileResult(valueReg, state1) = compileExpr(bnd.value, state)
+        CodeGenError(s"Invalid expression structure: ${expr.terms}").asLeft
 
-        // Create global with a default value
-        val state2 = state1.emit(s"@${bnd.name} = global $varType 0")
-
-        // Create initializer function
-        val initLines = List(
-          s"define internal void @$initFnName() {",
-          s"  entry:",
-          s"  store $varType %$valueReg, $varType* @${bnd.name}",
-          s"  ret void",
-          s"}"
-        )
-
-        // Add to global constructors
-        val state3 = state2.emitAll(initLines)
-        state3.withGlobalInit(s"  call void @$initFnName()")
+  /** Compiles a binding (variable declaration).
+    *
+    * For literal initializations, emits a direct global assignment. For non-literal
+    * initializations, emits a global initializer function.
+    *
+    * IMPORTANT: To avoid duplicating computation at the top level, if the binding is non-literal,
+    * we discard the instructions produced by the first compile of the expression and recompile it
+    * within the initializer function.
+    *
+    * @param bnd
+    *   the binding to compile
+    * @param state
+    *   the current code generation state (before compiling the binding)
+    * @return
+    *   Either a CodeGenError or the updated CodeGenState.
+    */
+  private def compileBinding(bnd: Bnd, state: CodeGenState): Either[CodeGenError, CodeGenState] =
+    val origState = state
+    compileExpr(bnd.value, state).flatMap { compileRes =>
+      if compileRes.isLiteral then
+        Right(compileRes.state.emit(s"@${bnd.name} = global i32 ${compileRes.register}"))
+      else
+        // Discard the instructions from the initial compilation by using the original state.
+        val initFnName = s"_init_global_${bnd.name}"
+        val state2 = origState
+          .emit(s"@${bnd.name} = global i32 0")
+          .emit(s"define internal void @$initFnName() {")
+          .emit(s"entry:")
+        compileExpr(bnd.value, state2.withRegister(0)).map { compileRes2 =>
+          compileRes2.state
+            .emit(s"  store i32 %${compileRes2.register}, i32* @${bnd.name}")
+            .emit("  ret void")
+            .emit("}")
+            .emit("")
+            .addInitializer(initFnName)
+        }
     }
 
-  /** Print module */
-  def printModule(module: Module): String =
+  /** Compiles an entire module into LLVM IR.
+    *
+    * Emits the module header (module ID and target triple) first, then compiles each binding.
+    *
+    * @param module
+    *   the module containing definitions and bindings
+    * @return
+    *   Either a CodeGenError or the complete LLVM IR as a String.
+    */
+  def printModule(module: Module): Either[CodeGenError, String] =
     val moduleHeader = List(
       s"; ModuleID = '${module.name}'",
       "target triple = \"x86_64-unknown-unknown\"",
       ""
     )
-
     val initialState = CodeGenState().emitAll(moduleHeader)
-
-    // First emit all globals and functions
-    val state1 = module.members.foldLeft(initialState) {
-      case (state, fn: FnDef) => compileFunction(fn, state)
-      case (state, bnd: Bnd) => compileBinding(bnd, state)
-      case (state, _) => state
-    }
-
-    // If we have global initializations, create a global constructor
-    val finalState = if state1.globalInits.nonEmpty then
-      val initLines = List(
-        "",
-        "@llvm.global_ctors = appending global [1 x { i32, void ()*, i8* }] [",
-        "  { i32, void ()*, i8* } { i32 65535, void ()* @__global_init, i8* null }",
-        "]",
-        "",
-        "define internal void @__global_init() {",
-        "  entry:"
-      ) ++ state1.globalInits ++ List(
-        "  ret void",
-        "}"
-      )
-      state1.emitAll(initLines)
-    else state1
-
-    finalState.result
-
-case class CodeGenError(message: String) extends Exception(message)
+    module.members
+      .foldLeft(initialState.asRight[CodeGenError]) { (stateE, member) =>
+        stateE.flatMap { state =>
+          member match
+            case bnd: Bnd => compileBinding(bnd, state)
+            case _ => state.asRight
+        }
+      }
+      .map { finalState =>
+        // Add the global ctors array with all initializers if any exist
+        if finalState.initializers.nonEmpty then
+          val initSize = finalState.initializers.size
+          val initializerLines =
+            s"@llvm.global_ctors = appending global [$initSize x { i32, void ()*, i8* }] [" ::
+              finalState.initializers.reverse
+                .map { fnName =>
+                  s"  { i32, void ()*, i8* } { i32 65535, void ()* @$fnName, i8* null }"
+                }
+                .mkString(",\n") ::
+              "]" ::
+              "" ::
+              Nil
+          finalState.emitAll(initializerLines).result
+        else finalState.result
+      }

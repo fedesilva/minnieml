@@ -8,7 +8,7 @@ import org.neo4j.internal.helpers.Strings.prettyPrint
 
 class CondTests extends BaseEffFunSuite:
 
-  test("simple cond".only) {
+  test("simple cond") {
     modNotFailed(
       """
           let a = 
@@ -20,13 +20,12 @@ class CondTests extends BaseEffFunSuite:
         """.stripMargin
     ).map { m =>
       assert(m.members.size == 1)
-      m.members.head
-    }.map {
-      case bnd: Bnd =>
-        assert(bnd.name == "a")
-        assert(bnd.value.terms.head.isInstanceOf[Cond])
-      // pass
-      case other =>
-        fail(s"Expected Bnd, got $other")
+      m.members.head match
+        case bnd: Bnd =>
+          assert(bnd.name == "a")
+          assert(bnd.value.terms.head.isInstanceOf[Cond])
+        // pass
+        case other =>
+          fail(s"Expected Bnd, got $other")
     }
   }
