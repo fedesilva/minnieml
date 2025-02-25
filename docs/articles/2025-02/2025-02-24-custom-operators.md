@@ -1,6 +1,6 @@
 # MinnieML Operator Precedence and Associativity
 
-This document explains how operator precedence and associativity work in MinnieML, 
+This article explains how operator precedence and associativity work in MinnieML, 
 with examples showing the expected AST structure for various expression patterns.
 
 ## Compiler status
@@ -27,10 +27,17 @@ terms which can be literals, or references to functions, bindings or operators.
 
 At this point, the parsing is done and we move to the first semantic phases.
 
+Technically for now on, it's not "the parser" anymore, but we will continue
+to use the terms "the parser", "parses as", etc, though no tokens are involved in 
+the rest of the process.
+
 ### Semantic Analysis Passes
 
-The parsing pipeline consists of three passes that transform the initial flat 
-expression into a semantically resolved and structured representation.
+The semantic pipeline, so far, consists of three passes that transform the initial flat 
+expressions into a referentially resolved and structured representation.
+
+These phases work on the ast. Handwaving a bit, the phases are functions that take a module
+and return a module, modified per the phase's role.
 
 #### Reference Resolution
 
@@ -52,18 +59,12 @@ The `RefResolver` is responsible for resolving references in the abstract syntax
 
 #### Precedence Climbing
 
-Using a modified Pratt parsing algorithm that operates directly on AST nodes instead of tokens. Unlike traditional Pratt parsers that work at the lexical level, this implementation:
-
-- Processes fully resolved AST nodes
-- Supports complex operator definitions with custom precedence and associativity
-- Allows dynamic resolution of operator context
-- Climbs precedence based on node metadata rather than token characteristics
-
 The `PrecedenceClimbing` component implements the actual operator precedence and associativity rules:
 
 1. **Parsing Strategy**
    * Uses a recursive descent parsing technique
    * Implements the Pratt parsing algorithm adapted for AST nodes
+    * Using metadata collected during the reference resolution phase 
    * Handles prefix, infix, and postfix operators dynamically
 
 2. **Key Parsing Steps**
@@ -79,7 +80,8 @@ The `PrecedenceClimbing` component implements the actual operator precedence and
 
 #### Simplification Pass
 
-The `Simplifier` serves as the final pass in the semantic analysis pipeline, responsible for cleaning up the Abstract Syntax Tree (AST):
+The `Simplifier` serves as the final pass in the expression rewriting pipeline, 
+responsible for cleaning up the ast:
 
 1. **Purpose**
    * Removes unnecessary expression wrappers
@@ -103,24 +105,47 @@ The combination of `RefResolver`, `PrecedenceClimbing`, and `Simplifier` allows 
 * Maintain precise control over operator behavior
 * Create a clean, minimal AST representation
 
-This approach is more sophisticated than traditional parsing techniques, 
-yielding a flexible syntax for custom operators and complex expressions.
+This approach is a bit different than traditional parsing techniques, 
+yielding a flexible syntax that supports full control over operator definitions,
+with custom precedence and associativity.
+
+
+## Future work and problems
+
+When we introduce support for protocols and polymorphism, we will have to revisit the way
+we resolve references. 
+
+We will loose the ability to resolve references to a single definition in favor of 
+multiple potential candidates, and we will have to limit the resolution so that it fails
+if different associativities or precedences are found for the same name and type of operator
+because that would force us to create multiple variations of the same 
+expression each rewritten differently depending on the attributes of the resolved operators.
+
+In short within a scope, same name operators with different attributes are not going to be allowed.
+
+In general for common operators, the Prelude will setup a reasonable set of operators,
+which will serve as a framework for the rest of the program..
+
+Once there is enough type information we will we be able to drop invalid candidates.
+This could be as early as the resolver phase, if there are type annotations or enough
+literals.
+
+We will also collect constraints and invariants based on types known early in the process
+so that they are fed into the type inference engine.
 
 ## Operator Definitions
-
-Users can define custom operators with different symbols, associativity, and precedence.
 
 All examples assume the following standard operators are defined:
 
 ```mml
-op ^ (a b) 90 right = ???;  // Exponentiation: right-associative, precedence 90
-op * (a b) 80 left  = ???;  // Multiplication: left-associative, precedence 80
-op / (a b) 80 left  = ???;  // Division: left-associative, precedence 80
-op + (a b) 60 left  = ???;  // Addition: left-associative, precedence 60
-op - (a b) 60 left  = ???;  // Subtraction: left-associative, precedence 60
-op - (a)   95 right = ???;  // Unary minus: right-associative, precedence 95
-op + (a)   95 right = ???;  // Unary plus: right-associative, precedence 95
-op ! (a)   95 left  = ???;  // Factorial: left-associative (postfix), precedence 95
+    op ^ (a b) 90 right = ???;  # Exponentiation: right-associative, precedence 90
+    op * (a b) 80 left  = ???;  # Multiplication: left-associative, precedence 80
+    op / (a b) 80 left  = ???;  # Division: left-associative, precedence 80
+    op + (a b) 60 left  = ???;  # Addition: left-associative, precedence 60
+    op - (a b) 60 left  = ???;  # Subtraction: left-associative, precedence 60
+    op - (a)   95 right = ???;  # Unary minus: right-associative, precedence 95
+    op + (a)   95 right = ???;  # Unary plus: right-associative, precedence 95
+    op ! (a)   95 left  = ???;  # Factorial: left-associative (postfix), precedence 95
 ```
 
 ## Basic Binary Operations
@@ -380,7 +405,7 @@ Bnd(a,
 )
 ```
 
-The parser correctly disambiguates between unary and binary uses of the same operator `-` based on context. This parses as `(-3) - (-2)`.
+The parser correctly disambiguates between unary and binary uses of the same operator name `-` based on context. This parses as `(-3) - (-2)`.
 
 ### Complex Mixed Operators
 
