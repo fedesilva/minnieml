@@ -18,6 +18,7 @@ which will be the core language of the compiler.
 ### Parser
 
 The parser itself is based on parser combinators so there is no separate lexer.
+
 As we parse the input, we immediately build an abstract syntax tree (ast) that represents 
 the structure of the input.
 
