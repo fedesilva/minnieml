@@ -102,9 +102,18 @@ Let's analyze how each part of the MML code translates to LLVM IR:
    @y = global i32 120   ; 4*30 evaluated at compile time
    ```
 
+   Nothing too complex, but laying the groundwork for more complex optimizations;
+   we rely on LLVM to handle more complex cases, anyway.
+
+   Eventually, we will perform more complex optimizations using language-specific knowledge. 
+
+   For now, the code generator is simple and straightforward, and we can focus on continuously 
+   building the language.
+
 2. **Complex Expression for `z`**
    ```mml
-   let z = 2 * y * x;
+   # (2 * y) * x
+   let z = 2 * y * x; 
    ```
 
    This requires runtime calculation because it references other variables:
@@ -137,7 +146,7 @@ Let's analyze how each part of the MML code translates to LLVM IR:
    define internal void @_init_global_a() {
      entry:
        %0 = load i32, i32* @y    ; Load the value of y
-       %1 = sdiv i32 3, %0       ; Divide 3 by y (3/y)
+       %1 = sdiv i32 3, %0       ; 
        %2 = load i32, i32* @x    ; Load the value of x
        %3 = mul i32 %1, %2       ; Multiply (3/y) by x
        %4 = add i32 2, %3        ; Add 2 to the result (1*2 simplified to 2)
