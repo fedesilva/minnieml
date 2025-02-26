@@ -2,9 +2,6 @@ package mml.mmlclib.util
 
 import mml.mmlclib.ast.*
 import org.neo4j.dbms.api.DatabaseManagementServiceBuilder
-import org.neo4j.driver.AuthTokens
-import org.neo4j.driver.GraphDatabase
-import org.neo4j.driver.Session
 
 import java.nio.file.Paths
 import scala.jdk.CollectionConverters.*

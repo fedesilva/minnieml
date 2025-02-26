@@ -71,6 +71,24 @@ entry:
 
 ### Breaking Down the Generated IR
 
+#### LLVM IR Primer
+
+LLVR IR is a low-level, typed assembly language that LLVM uses as an intermediate representation.
+It is designed to be easy to analyze and transform, making it suitable for optimization.
+
+In this example, the IR includes:
+
+    - global variable declarations: `@x`, `@y`, `@z`, and `@a`
+    - initialization functions for `@z` and `@a`
+    - a global constructor array to manage initialization order
+    - inside functions
+        - `load` instructions to read variable values
+        - `mul`, `sdiv`, and `add` instructions for arithmetic operations
+        - `%N` registers to hold intermediate results
+        - `store` instructions to write results back to global variables
+        - `ret` instructions to return from functions
+        - `@llvm.global_ctors` to manage initialization order
+
 Let's analyze how each part of the MML code translates to LLVM IR:
 
 1. **Simple Constant Expressions**
@@ -78,34 +96,46 @@ Let's analyze how each part of the MML code translates to LLVM IR:
    let x = 3*3;
    let y = 4*30;
    ```
-   These expressions are constant-folded during compilation:
+   These expressions are constant-folded by mml during compilation:
    ```llvm
    @x = global i32 9     ; 3*3 evaluated at compile time
    @y = global i32 120   ; 4*30 evaluated at compile time
    ```
 
+   Nothing too complex, but laying the groundwork for more complex optimizations;
+   we rely on LLVM to handle more complex cases, anyway.
+
+   Eventually, we will perform more complex optimizations using language-specific knowledge. 
+
+   For now, the code generator is simple and straightforward, and we can focus on continuously 
+   building the language.
+
 2. **Complex Expression for `z`**
    ```mml
-   let z = 2 * y * x;
+   # (2 * y) * x
+   let z = 2 * y * x; 
    ```
    This requires runtime calculation because it references other variables:
    ```llvm
    @z = global i32 0     ; Initial value is 0
    define internal void @_init_global_z() {
      entry:
-       %0 = load i32, i32* @y    ; Load the value of y
-       %1 = mul i32 2, %0        ; Multiply 2 by y
-       %2 = load i32, i32* @x    ; Load the value of x
-       %3 = mul i32 %1, %2       ; Multiply (2*y) by x
-       store i32 %3, i32* @z     ; Store result in z
+       %0 = load i32, i32* @y    ; Load the value of y into %0
+       %1 = mul i32 2, %0        ; (2 * y) -> (2 * %0) -> %1
+       %2 = load i32, i32* @x    ; Load the value of x into %2
+       %3 = mul i32 %1, %2       ; (2 * y) * x -> (%1 * %2) -> %3
+       store i32 %3, i32* @z     ; Store result in z - let z = %3
        ret void
    }
    ```
    
-   Note how MML's operator precedence is respected: the expression is evaluated as `(2 * y) * x` since `*` is left-associative, which directly maps to the sequence of operations in the IR.
+   Note how MML's operator precedence is respected: 
+   the expression is evaluated as `(2 * y) * x` since `*` is left-associative, 
+   which directly maps to the sequence of operations in the IR.
 
 3. **Complex Expression for `a`**
    ```mml
+   # (1 * 2) + ((3 / y) * x)
    let a = 1 * 2 + 3 / y * x;
    ```
    This requires careful handling of operator precedence:
@@ -114,7 +144,7 @@ Let's analyze how each part of the MML code translates to LLVM IR:
    define internal void @_init_global_a() {
      entry:
        %0 = load i32, i32* @y    ; Load the value of y
-       %1 = sdiv i32 3, %0       ; Divide 3 by y (3/y)
+       %1 = sdiv i32 3, %0       ; 
        %2 = load i32, i32* @x    ; Load the value of x
        %3 = mul i32 %1, %2       ; Multiply (3/y) by x
        %4 = add i32 2, %3        ; Add 2 to the result (1*2 simplified to 2)

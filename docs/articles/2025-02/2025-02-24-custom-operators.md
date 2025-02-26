@@ -1,15 +1,14 @@
 # MinnieML Operator Precedence and Associativity
 
 This article explains how operator precedence and associativity work in MinnieML, 
-with examples showing the expected AST structure for various expression patterns.
+with examples showing the expected ast structure for various expression patterns.
 
 ## Compiler status
 
-We are still missing function application which will be treated as a prefix n-ary operator
+We still need to implement function application, which we plan to treat as a prefix n-ary operator
 with the highest precedence and left associativity.
 
-Once that is done, we might revisit the way we treat operators and might
-rewrite them as application, too.
+Once that is done, we will revisit the way we treat operators and rewrite them as application, too.
 
 After that, we will be close enough to the TLIR (typed lambda intermediate representation)
 which will be the core language of the compiler.
@@ -18,35 +17,33 @@ which will be the core language of the compiler.
 
 ### Parser
 
-The parser itself is based on parser combinators and there is no separate lexer.
+The parser itself is based on parser combinators so there is no separate lexer.
 As we parse the input, we immediately build an abstract syntax tree (ast) that represents 
 the structure of the input.
 
 Since we allow for custom operators, we parse expressions as flat structures consisting of 
-terms which can be literals, or references to functions, bindings or operators.
+terms which can be literals, or references to functions, bindings or operators as we don't
+know yet what the references point to and what the attributes of the operators are.
 
 At this point, the parsing is done and we move to the first semantic phases.
-
-Technically for now on, it's not "the parser" anymore, but we will continue
-to use the terms "the parser", "parses as", etc, though no tokens are involved in 
-the rest of the process.
 
 ### Semantic Analysis Passes
 
 The semantic pipeline, so far, consists of three passes that transform the initial flat 
 expressions into a referentially resolved and structured representation.
 
-These phases work on the ast. Handwaving a bit, the phases are functions that take a module
-and return a module, modified per the phase's role.
+These phases work on the ast. The phases are functions that take a module
+and return a module, modified per the rules of the phase.
 
 #### Reference Resolution
 
-The `RefResolver` is responsible for resolving references in the abstract syntax tree (AST). Its key features include:
+The `RefResolver` is responsible for resolving operator references in the ast. 
+Its key features include:
 
 1. **Context-Aware Reference Resolution**
-   * Tracks whether the parser is expecting an operand or an operator
+   * Tracks whether the compiler is expecting an operand or an operator
    * In operand position:
-      * First tries to resolve to non-operator values (bindings, functions)
+      * First tries to resolve to non-operator values (literals, bindings, functions)
       * Falls back to prefix unary operators (right-associative)
    * In operator position:
       * Tries to resolve to binary operators
@@ -54,29 +51,45 @@ The `RefResolver` is responsible for resolving references in the abstract syntax
 
 2. **Smart Disambiguation**
    * Handles complex scenarios like chained prefix operators
-   * Identifies the correct type of reference based on context
+   * Identifies the correct type of reference based on position
    * Produces semantic errors for unresolvable references
+
+The information collected during this phase is used by the next phase to build 
+a structured expression tree.
 
 #### Precedence Climbing
 
 The `PrecedenceClimbing` component implements the actual operator precedence and associativity rules:
 
-1. **Parsing Strategy**
-   * Uses a recursive descent parsing technique
-   * Implements the Pratt parsing algorithm adapted for AST nodes
-    * Using metadata collected during the reference resolution phase 
-   * Handles prefix, infix, and postfix operators dynamically
-
-2. **Key Parsing Steps**
-   * `parseAtom()`: Parses individual terms or prefix operators
-   * `parseOps()`: Handles operator chaining and precedence
-   * Respects operator precedence through a minimum precedence parameter
-   * Supports left and right associativity
+1. **Rewriting Strategy**
+   * Recursively walks the ast to re write it as a structured expression tree
+   * Handles prefix, infix, and postfix operators using the reference information 
+     collected by the `RefResolver`
+   * Groups terms based on operator precedence and associativity using 
+     a precedence climbing algorithm.
 
 3. **Advanced Features**
    * Correctly handles nested expressions
-   * Manages different operator types (unary, binary)
+   * Manages different operator types (unary, binary) even with the same symbol 
+     in the same expression.
    * Supports arbitrary operator precedence levels
+   * Supports left and right associativity
+
+
+##### Pratt Parsing 
+
+MinnieML uses a Pratt-style approach to convert flat expressions into a structured tree. 
+In Pratt parsing, expressions are grouped according to each operator’s precedence and associativity, 
+ensuring the correct evaluation order without relying on a rigid grammar hierarchy.
+
+Unlike a typical token-based Pratt parser, MinnieML operates on the ast, 
+where the operators in an expression are references to the operator definitions. 
+Each reference node already knows its operator’s precedence and associativity, 
+eliminating the need for dynamic operator detection. 
+
+This allows MinnieML to handle custom operators seamlessly, 
+regardless of type, position, arity, or precedence.
+
 
 #### Simplification Pass
 
@@ -85,28 +98,22 @@ responsible for cleaning up the ast:
 
 1. **Purpose**
    * Removes unnecessary expression wrappers
-   * Eliminates redundant AST nodes
+   * Eliminates redundant ast nodes
    * Creates a compact, semantically precise representation
+   * Each expression has enough operands to be evaluated, but no more.
 
 2. **Simplification Strategies**
    * Recursively traverses module members
    * Unwraps single-term expressions
    * Dissolves group term artifacts
-   * Preserves original source span information
-
-3. **Key Transformations**
-   * Removes nested expression layers
-   * Simplifies redundant structural elements
-   * Prepares AST for typed lambda intermediate representation (TLIR)
 
 The combination of `RefResolver`, `PrecedenceClimbing`, and `Simplifier` allows MinnieML to:
 * Resolve references contextually
 * Parse complex expressions with custom operators
 * Maintain precise control over operator behavior
-* Create a clean, minimal AST representation
+* Create a clean, minimal ast representation
 
-This approach is a bit different than traditional parsing techniques, 
-yielding a flexible syntax that supports full control over operator definitions,
+This approach yields a flexible syntax that supports full control over operator definitions,
 with custom precedence and associativity.
 
 
@@ -115,27 +122,21 @@ with custom precedence and associativity.
 When we introduce support for protocols and polymorphism, we will have to revisit the way
 we resolve references. 
 
-We will loose the ability to resolve references to a single definition in favor of 
+We will lose the ability to resolve references to a single definition like we do now, in favor of 
 multiple potential candidates, and we will have to limit the resolution so that it fails
-if different associativities or precedences are found for the same name and type of operator
-because that would force us to create multiple variations of the same 
-expression each rewritten differently depending on the attributes of the resolved operators.
-
-In short within a scope, same name operators with different attributes are not going to be allowed.
+if different associativities or precedences are found for the same name and type of operator.
+If we failed to do that, we would have to create multiple variations of the same 
+expression, each rewritten differently depending on the attributes of the resolved operators.
 
 In general for common operators, the Prelude will setup a reasonable set of operators,
 which will serve as a framework for the rest of the program..
 
-Once there is enough type information we will we be able to drop invalid candidates.
-This could be as early as the resolver phase, if there are type annotations or enough
-literals.
-
-We will also collect constraints and invariants based on types known early in the process
-so that they are fed into the type inference engine.
+Once there is enough type information we will be able to drop invalid candidates.
 
 ## Operator Definitions
 
-All examples assume the following standard operators are defined:
+All examples assume the following standard operators are defined, here defined using 
+the actual mml syntax.
 
 ```mml
     op ^ (a b) 90 right = ???;  # Exponentiation: right-associative, precedence 90
@@ -150,7 +151,7 @@ All examples assume the following standard operators are defined:
 
 ## Basic Binary Operations
 
-The AST shown in the examples is a simplified representation of the actual AST structure. It omits stuff like types and source spans for brevity.
+The ast shown in the examples is a simplified representation of the actual ast structure. It omits stuff like types and source spans for brevity.
 
 ### Simple Binary Operation
 
@@ -158,7 +159,7 @@ The AST shown in the examples is a simplified representation of the actual AST s
 let a = 1 + 1;
 ```
 
-**Expected AST:**
+**Expected ast:**
 ```
 Bnd(a,
   Expr[
@@ -177,7 +178,7 @@ The expression is a flat list of three terms: left operand, operator, right oper
 let a = 1 + 1 * 2;
 ```
 
-**Expected AST:**
+**Expected ast:**
 ```
 Bnd(a,
   Expr[
@@ -200,7 +201,7 @@ Since multiplication has higher precedence (80) than addition (60), the expressi
 let a = 1 - 2 - 3;
 ```
 
-**Expected AST:**
+**Expected ast:**
 ```
 Bnd(a,
   Expr[
@@ -223,7 +224,7 @@ For left-associative operators of equal precedence like `-`, the operations are 
 let a = 1 + 1 * 2 / 3;
 ```
 
-**Expected AST:**
+**Expected ast:**
 ```
 Bnd(a,
   Expr[
@@ -253,7 +254,7 @@ This parses as `1 + ((1 * 2) / 3)` because:
 let a = 1 + 1 * 2 ^ 3;
 ```
 
-**Expected AST:**
+**Expected ast:**
 ```
 Bnd(a,
   Expr[
@@ -283,7 +284,7 @@ This parses as `1 + (1 * (2 ^ 3))` because:
 let a = 2 ^ 3 ^ 2;
 ```
 
-**Expected AST:**
+**Expected ast:**
 ```
 Bnd(a,
   Expr[
@@ -308,7 +309,7 @@ Since `^` is right-associative, this expression parses as `2 ^ (3 ^ 2)` rather t
 let a = 4!;
 ```
 
-**Expected AST:**
+**Expected ast:**
 ```
 Bnd(a,
   Expr[
@@ -326,7 +327,7 @@ The postfix operator `!` is applied directly to the preceding value.
 let a = -3;
 ```
 
-**Expected AST:**
+**Expected ast:**
 ```
 Bnd(a,
   Expr[
@@ -344,7 +345,7 @@ The prefix operator `-` is applied to the following value.
 let a = - - 3;
 ```
 
-**Expected AST:**
+**Expected ast:**
 ```
 Bnd(a,
   Expr[
@@ -365,7 +366,7 @@ Multiple prefix operators can be chained, with each applying to the result of th
 let a = + - 3;
 ```
 
-**Expected AST:**
+**Expected ast:**
 ```
 Bnd(a,
   Expr[
@@ -388,7 +389,7 @@ Different prefix operators can be combined, with the leftmost operator applying 
 let a = -3 - -2;
 ```
 
-**Expected AST:**
+**Expected ast:**
 ```
 Bnd(a,
   Expr[
@@ -413,7 +414,7 @@ The parser correctly disambiguates between unary and binary uses of the same ope
 let a = +4! - 2!;
 ```
 
-**Expected AST:**
+**Expected ast:**
 ```
 Bnd(a,
   Expr[
@@ -446,7 +447,7 @@ The expression parses as `((+4!) - (2!))`.
 let a = -2 ^ 2;
 ```
 
-**Expected AST:**
+**Expected ast:**
 ```
 Bnd(a,
   Expr[
@@ -470,7 +471,7 @@ Even though unary `-` has higher precedence (95) than `^` (90), the expression p
 let a = (1 + 2) * 3;
 ```
 
-**Expected AST:**
+**Expected ast:**
 ```
 Bnd(a,
   Expr[
@@ -493,7 +494,7 @@ Parentheses override normal precedence rules. Here, `(1 + 2)` is evaluated as a 
 let a = (1 + 2) * (3 - 4) / 5;
 ```
 
-**Expected AST:**
+**Expected ast:**
 ```
 Bnd(a,
   Expr[
@@ -531,7 +532,7 @@ op -- (a b) = ???;
 let a = 3 -- -4;
 ```
 
-**Expected AST:**
+**Expected ast:**
 ```
 Bnd(a,
   Expr[
@@ -560,53 +561,15 @@ let a = 4!!;
 This is invalid because postfix operators cannot be applied consecutively without parentheses. 
 The parser correctly identifes and reports this as an error.
 
-## Additional Work
+### Unresolvable reference
 
-As mentioned above, the current implementation does not yet handle function application 
-since we are focusing on operators, but we will revisit the handling of operators soon, to
-add it.
+```mml    
+    let a = -x ^ 2;
+```
 
-Before doing that the following test cases will further strengthen the test suite:
+**Result: Semantic Error**
 
-1. **Mixed associativity without parentheses**
-   ```mml
-   let a = 1 + 2 ^ 3 + 4;  // Should parse as: 1 + (2 ^ 3) + 4
-   ```
+The compiler cannot resolve `x` to a valid reference, resulting in an error.
+Same thing would happen if there was a reference to an operator that is not defined.
 
-2. **Operators with same symbol but different arity**
-   ```mml
-   op ++ (a) = a + 1;
-   op ++ (a b) = a + b;
-   let a = 1 ++ 2;  // Binary usage
-   let b = ++1;     // Unary prefix usage
-   ```
-
-3. **Custom operators overriding standard precedence**
-   ```mml
-   op @* (a b) 100 left = a * b;  // Higher precedence than standard *
-   let a = 1 + 2 @* 3;  // Should parse as: 1 + (2 @* 3)
-   ```
-
-4. **Operators with unusual symbols**
-   ```mml
-   op <$> (a b) 65 left = a + b;
-   op <*> (a b) 70 left = a * b;
-   let a = f <$> x <*> y;  // Should parse as: (f <$> x) <*> y
-   ```
-
-5. **Multiple identical operators with right associativity**
-   ```mml
-   let a = 2 ^ 2 ^ 2 ^ 2;  // Should parse as: 2 ^ (2 ^ (2 ^ 2))
-   ```
-
-6. **Unary operators with different precedence**
-   ```mml
-   op $ (a) 97 right = a;  // Higher precedence than -
-   let a = -$3;  // Should parse as: -($ 3)
-   ```
-
-7. **Chained binary operators with same precedence**
-   ```mml
-   let a = 10 / 5 * 2;  // Should parse as: ((10 / 5) * 2)
-   ```
 
