@@ -24,7 +24,7 @@ def rewrite(src: String): Unit =
       val result = for
         resolvedModule <- RefResolver.rewriteModule(moduleWithOps)
         _ = println(s"\n \n resolvedModule \n ${prettyPrintAst(resolvedModule)}")
-        bloomedModule <- PrecedenceClimbing.rewriteModule(resolvedModule)
+        bloomedModule <- PrecedenceClimber.rewriteModule(resolvedModule)
         _ = println(s"\n \n Precedence Climbed \n ${prettyPrintAst(bloomedModule)}")
         simplifiedModule <- Simplifier.rewriteModule(bloomedModule)
       yield simplifiedModule

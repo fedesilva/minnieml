@@ -47,7 +47,8 @@ object RefResolver:
     *     right associativity) and **remain expecting an operand**.
     *
     *   - In **operator position** we first try for a binary operator. Otherwise, we try a *postfix*
-    *     unary operator (one with left associativity) and then stop expecting an operand.
+    *     unary operator (one with left associativity). If neither is found, we check for any valid
+    *     binding, function or other member that can be used as an argument.
     */
   private def resolveExpr(
     expr:   Expr,
@@ -93,6 +94,7 @@ object RefResolver:
             else
               // In operator position: first try a binary operator,
               // otherwise allow a postfix unary operator (with left associativity).
+              // If neither, check for any valid reference that can be used as an argument.
               candidates.collect { case op: BinOpDef => op } match
                 case binOp :: _ =>
                   (acc :+ ref.copy(resolvedAs = Some(binOp)), true, errs)
@@ -103,7 +105,13 @@ object RefResolver:
                     case unaryOp :: _ =>
                       (acc :+ ref.copy(resolvedAs = Some(unaryOp)), false, errs)
                     case Nil =>
-                      (acc :+ ref, false, errs :+ SemanticError.UndefinedRef(ref, owner))
+                      // Check for any other valid reference (binding, function, etc.)
+                      // that can be used as an argument
+                      candidates.headOption match
+                        case Some(member) =>
+                          (acc :+ ref.copy(resolvedAs = Some(member)), false, errs)
+                        case None =>
+                          (acc :+ ref, false, errs :+ SemanticError.UndefinedRef(ref, owner))
           case group: GroupTerm =>
             // A group is an expression by itself; its inner expression starts expecting an operand.
             resolveExpr(group.inner, module, owner) match

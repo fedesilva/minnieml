@@ -106,7 +106,15 @@ def prettyPrintTerm(term: Term, indent: Int): String =
     case Ref(sp, name, typeSpec, typeAsc, resolvedAs) =>
       s"${indentStr}Ref $name ${printSourceSpan(sp)}\n" +
         s"${indentStr}  typeSpec: ${prettyPrintTypeSpec(typeSpec)}\n" +
-        s"${indentStr}  typeAsc: ${prettyPrintTypeSpec(typeAsc)}"
+        s"${indentStr}  typeAsc: ${prettyPrintTypeSpec(typeAsc)}\n" +
+        s"${indentStr}  resolvedAs: ${resolvedAs.fold("None")(m =>
+            m.getClass.getSimpleName + "(" + (m match {
+              case fn:  FnDef => fn.name
+              case bnd: Bnd => bnd.name
+              case op:  OpDef => op.name
+              case other => other.toString
+            }) + ")"
+          )}"
 
     case Hole(sp, typeSpec, typeAsc) =>
       s"${indentStr}Hole ${printSourceSpan(sp)}\n" +
@@ -134,6 +142,15 @@ def prettyPrintTerm(term: Term, indent: Int): String =
         s"${indentStr}  typeAsc: ${prettyPrintTypeSpec(typeAsc)}\n" +
         elements.toList.map(e => prettyPrintExpr(e, indent + 2)).mkString("\n")
 
+    case AppN(sp, fn, args, typeSpec, typeAsc) =>
+      val fnName = fn match {
+        case Ref(_, name, _, _, _) => name
+      }
+      s"${indentStr}AppN $fnName ${printSourceSpan(sp)}\n" +
+        s"${indentStr}  typeSpec: ${prettyPrintTypeSpec(typeSpec)}\n" +
+        s"${indentStr}  typeAsc: ${prettyPrintTypeSpec(typeAsc)}\n" +
+        args.map(arg => prettyPrintExpr(arg, indent + 2)).mkString("\n")
+
     // Literal values
     case LiteralInt(sp, value) =>
       s"${indentStr}LiteralInt ${printSourceSpan(sp)} $value"
@@ -155,7 +172,6 @@ def prettyPrintTerm(term: Term, indent: Int): String =
         s"""${indentStr}  "$message"""" +
         failedCode.map(code => s"\n${indentStr}  $code").getOrElse("")
 
-    case x => s"${indentStr}Unknown term: $x"
   }
 
 def prettyPrintTypeSpec(typeSpec: Option[TypeSpec]): String =
