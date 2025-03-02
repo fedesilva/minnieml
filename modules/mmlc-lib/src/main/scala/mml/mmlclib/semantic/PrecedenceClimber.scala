@@ -57,7 +57,8 @@ object PrecedenceClimber:
             SemanticError.InvalidExpression(Expr(span, Nil), s"Expected an atom, got: $ts")
           ).asLeft
 
-    // Rewrite a function application: collect exactly the number of arguments declared.
+    // Rewrite a function application: collect exactly the number of arguments declared,
+    // unless we are at the end of the expression (in which case we do not require any more).
     def rewriteFunctionApplication(
       fnRef:    Ref,
       fnDef:    FnDef,
@@ -137,8 +138,8 @@ object PrecedenceClimber:
     def unapply(term: Term): Option[(Ref, OpDef, Int, Associativity)] = term match
       case ref: Ref =>
         ref.resolvedAs match
-          case Some(op: BinOpDef) => Some((ref, op, op.precedence, op.assoc))
-          case Some(op: UnaryOpDef) => Some((ref, op, op.precedence, op.assoc))
+          case Some(op: BinOpDef) => (ref, op, op.precedence, op.assoc).some
+          case Some(op: UnaryOpDef) => (ref, op, op.precedence, op.assoc).some
           case _ => None
       case _ => None
 
