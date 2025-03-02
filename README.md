@@ -143,12 +143,11 @@ It's all about the fun and learning and exploring ideas.
 ## Typechecking the Person/Pet example.
 
 ```
-
-# Let's begin type-checking `fn empty x = x match { | () -> true | _ -> false }`.
+# Let's begin type-checking `fn empty x = x match | () -> true | _ -> false`.
 # We see that `x match` has two cases:
 #   1) If x is the constructor `()`, return `true`.
 #   2) Otherwise `_`, return `false`.
-# Recall that `type Maybe 'T = 'T | ()`.
+# Recall that `type Maybe 'T = One 'T | None;`
 # So `()` here aligns with the "nothing" variant of Maybe.
 # This means `x` must be a value of type `Maybe 'T` for some type variable `'T`.
 # Both branches return a Bool, so the result of `empty` is Bool.
@@ -235,3 +234,4 @@ let pf = hasPet fede    # pf :: Bool  (evaluates to true)
 #              (or simply Person -> String if you want to fix it)
 
 ```
+

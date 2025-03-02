@@ -80,7 +80,7 @@ object RefResolver:
                       // Keep expecting an operand so that additional prefix operators can chain.
                       (acc :+ ref.copy(resolvedAs = Some(unaryOp)), true, errs)
                     case Nil =>
-                      // Fallback: if a binary operator exists (unlikely here) or nothing found.
+                      // Fallback: if a binary operator exists or nothing found.
                       candidates.collect { case op: BinOpDef => op } match
                         case binOp :: _ =>
                           (

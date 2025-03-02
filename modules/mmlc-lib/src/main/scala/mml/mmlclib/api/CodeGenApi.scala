@@ -56,3 +56,14 @@ object CodeGenApi:
           // Wrap compiler errors as a CompilerErrors branch.
           IO.pure(CodeGenApiError.CompilerErrors(List(error)).asLeft)
     yield result
+
+  /** Generate LLVM IR from an existing module */
+  def generateFromModule(module: Module): IO[Either[CodeGenApiError, String]] =
+    IO.blocking(LlvmIrPrinter.printModule(module))
+      .attempt
+      .map {
+        case Right(innerEither) =>
+          innerEither.leftMap(e => CodeGenApiError.CodeGenErrors(List(e)))
+        case Left(throwable) =>
+          CodeGenApiError.Unknown(throwable.getMessage).asLeft
+      }

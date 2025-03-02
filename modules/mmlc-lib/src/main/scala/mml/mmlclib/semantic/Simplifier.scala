@@ -41,7 +41,6 @@ object Simplifier:
           case many =>
             // Otherwise, rebuild the expression with the simplified list.
             Expr(e.span, many)
-      // TODO: not sure about this one. will need to run tests to see if it works
       case group: GroupTerm =>
         // Remove the GroupTerm wrapper by simplifying its inner expression.
         simplifyTerm(group.inner)

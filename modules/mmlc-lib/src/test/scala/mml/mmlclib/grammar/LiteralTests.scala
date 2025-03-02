@@ -4,7 +4,6 @@ import mml.mmlclib.ast.*
 import mml.mmlclib.test.BaseEffFunSuite
 import mml.mmlclib.util.prettyPrintAst
 import munit.*
-import org.neo4j.internal.helpers.Strings.prettyPrint
 
 class LiteralTests extends BaseEffFunSuite:
 
@@ -113,7 +112,7 @@ class LiteralTests extends BaseEffFunSuite:
       case bnd: Bnd =>
         assert(
           clue(bnd.value.terms.size) == clue(1),
-          s"Expected 1 term but got ${bnd.value.terms.size}: ${prettyPrint(bnd)}"
+          s"Expected 1 term but got ${bnd.value.terms.size}: ${prettyPrintAst(bnd)}"
         )
         assert(bnd.value.terms.head.isInstanceOf[LiteralFloat])
       case _ => fail("Expected a binding")

@@ -22,7 +22,7 @@ object SemanticApi:
       // may leave some unnecessary exprs in the tree.
       val result = for {
         resolvedModule <- RefResolver.rewriteModule(moduleWithOps)
-        bloomedModule <- PrecedenceClimbing.rewriteModule(resolvedModule)
+        bloomedModule <- PrecedenceClimber.rewriteModule(resolvedModule)
         finalModule <- Simplifier.rewriteModule(bloomedModule)
       } yield finalModule
       result match

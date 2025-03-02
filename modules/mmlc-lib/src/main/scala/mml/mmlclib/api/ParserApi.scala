@@ -16,14 +16,13 @@ object ParserApi:
   def parseModuleString(
     source: String,
     name:   Option[String] = None
-  ): IO[ParserResult] = {
+  ): IO[ParserResult] =
     val n = name.map(sanitizeModuleName)
     IO.pure(
       Parser.parseModule(source, n)
     )
-  }
 
-  def parseModuleFile(path: Path): IO[ParserResult] = {
+  def parseModuleFile(path: Path): IO[ParserResult] =
     val parentName = sanitizeModuleName(path.getParent.getFileName.toString)
     Sync[IO]
       .blocking(Files.readString(path))
@@ -32,9 +31,7 @@ object ParserApi:
           Parser.parseModule(src, parentName.some)
         )
       )
-  }
 
-private def sanitizeModuleName(dirName: String): String = {
-  val words = dirName.split("[-_ ]+").filter(_.nonEmpty)
-  words.head.capitalize + words.tail.map(_.capitalize).mkString("")
-}
+  def sanitizeModuleName(dirName: String): String =
+    val words = dirName.split("[-_ ]+").filter(_.nonEmpty)
+    words.head.capitalize + words.tail.map(_.capitalize).mkString("")

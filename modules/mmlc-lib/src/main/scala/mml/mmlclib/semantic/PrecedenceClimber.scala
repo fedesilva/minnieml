@@ -3,7 +3,7 @@ package mml.mmlclib.semantic
 import cats.syntax.all.*
 import mml.mmlclib.ast.*
 
-object PrecedenceClimbing:
+object PrecedenceClimber:
 
   val MinPrecedence = 1
 
@@ -32,9 +32,9 @@ object PrecedenceClimbing:
         .asRight
 
   def rewriteExpr(expr: Expr): Either[List[SemanticError], Expr] =
-    parseSubExpr(expr.terms, MinPrecedence, expr.span).map(_._1)
+    rewriteSubExpr(expr.terms, MinPrecedence, expr.span).map(_._1)
 
-  private def parseSubExpr(
+  private def rewriteSubExpr(
     terms:   List[Term],
     minPrec: Int,
     span:    SourceSpan
@@ -43,14 +43,15 @@ object PrecedenceClimbing:
     def parseAtom(ts: List[Term]): Either[List[SemanticError], (Expr, List[Term])] =
       ts match
         case (g: GroupTerm) :: rest =>
-          parseSubExpr(g.inner.terms, MinPrecedence, g.span).flatMap { case (subExpr, remaining) =>
-            (Expr(g.span, List(subExpr)), rest).asRight
+          rewriteSubExpr(g.inner.terms, MinPrecedence, g.span).flatMap {
+            case (subExpr, remaining) =>
+              (Expr(g.span, List(subExpr)), rest).asRight
           }
         case IsOp(ref, opDef, prec, assoc) :: rest
             if isUnary(opDef) && (assoc == Associativity.Right) =>
           // Prefix unary operator: parse its operand with operator's precedence,
           // then continue processing trailing operators with the outer minPrec.
-          parseSubExpr(rest, prec, span).flatMap { case (operand, remaining) =>
+          rewriteSubExpr(rest, prec, span).flatMap { case (operand, remaining) =>
             val combined = Expr(span, List(ref, operand))
             parseOps(combined, remaining, minPrec)
           }
@@ -72,7 +73,7 @@ object PrecedenceClimbing:
           opDef match
             case bin: BinOpDef =>
               val nextMinPrec = if assoc == Associativity.Left then prec + 1 else prec
-              parseSubExpr(rest, nextMinPrec, span).flatMap { case (rhs, remaining) =>
+              rewriteSubExpr(rest, nextMinPrec, span).flatMap { case (rhs, remaining) =>
                 val combined = Expr(span, List(lhs, ref, rhs))
                 parseOps(combined, remaining, currentMinPrec)
               }
@@ -87,8 +88,9 @@ object PrecedenceClimbing:
                 SemanticError.InvalidExpression(lhs, s"Operator ${ref.name} not supported here")
               ).asLeft
         case (g: GroupTerm) :: rest =>
-          parseSubExpr(g.inner.terms, MinPrecedence, g.span).flatMap { case (subExpr, remaining) =>
-            (Expr(g.span, List(subExpr)), remaining).asRight
+          rewriteSubExpr(g.inner.terms, MinPrecedence, g.span).flatMap {
+            case (subExpr, remaining) =>
+              (Expr(g.span, List(subExpr)), remaining).asRight
           }
         case _ =>
           (lhs, ts).asRight

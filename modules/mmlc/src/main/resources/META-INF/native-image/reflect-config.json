@@ -1,0 +1,20 @@
+[
+  {
+    "name": "scopt.OParser$",
+    "allDeclaredFields": true,
+    "allDeclaredMethods": true,
+    "allDeclaredConstructors": true
+  },
+  {
+    "name": "scopt.OParserBuilder",
+    "allDeclaredFields": true,
+    "allDeclaredMethods": true,
+    "allDeclaredConstructors": true
+  },
+  {
+    "name": "sun.misc.SignalHandler",
+    "allDeclaredConstructors": true,
+    "allDeclaredMethods": true
+  }
+]
+

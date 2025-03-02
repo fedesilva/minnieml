@@ -15,7 +15,6 @@ lazy val commonSettings =
     notifyOn(Compile / compile)
   )
 
-val antlrPackageName = "mml.mmlclib.parser.antlr"
 
 lazy val mml =
   project
@@ -27,19 +26,11 @@ lazy val mml =
 lazy val mmlclib =
   project
     .in(file("modules/mmlc-lib"))
-    .enablePlugins(Antlr4Plugin)
-    .enablePlugins(BuildInfoPlugin)
-    .enablePlugins(NotificationsPlugin)
+    .enablePlugins(BuildInfoPlugin, NotificationsPlugin)
     .settings(
       name := "mmlc-lib",
       commonSettings,
       libraryDependencies ++= Dependencies.mmlclib,
-      // jacocoExcludes in Test := Seq(s"$antlrPackageName.*")
-      Antlr4 / antlr4PackageName := Some(antlrPackageName),
-      // I can walk by myself, if you don't mind
-      Antlr4 / antlr4GenVisitor  := false,
-      Antlr4 / antlr4GenListener := false,
-      Antlr4 / antlr4Version     := "4.8-1",
       buildInfoKeys              := Seq[BuildInfoKey](name, version, scalaVersion, sbtVersion),
       buildInfoPackage           := "mml.mmlclib"
     )
@@ -47,14 +38,31 @@ lazy val mmlclib =
 lazy val mmlc =
   project
     .in(file("modules/mmlc"))
-    .enablePlugins(JavaAppPackaging)
-    .enablePlugins(BuildInfoPlugin)
-    .enablePlugins(NotificationsPlugin)
+    // .enablePlugins(JavaAppPackaging)
+    .enablePlugins(
+      NativeImagePlugin,
+      BuildInfoPlugin,
+      NotificationsPlugin
+    )
     .settings(
       name := "mmlc",
       commonSettings,
       libraryDependencies ++= Dependencies.mmlc,
       buildInfoKeys    := Seq[BuildInfoKey](name, version, scalaVersion, sbtVersion),
-      buildInfoPackage := "mml.mmlc"
+      buildInfoPackage := "mml.mmlc",
+      // Native image settings
+      // we need to manually install `sdk install java 23.3.3-graalce`
+      // not sure how to tell the plugin to use a more recent version.
+      nativeImageCommand := List("native-image"),
+      nativeImageOptions ++= Seq(
+        "-H:+UnlockExperimentalVMOptions",
+        "--no-fallback",               // Remove JVM fallback, reducing size
+        "-H:+RemoveUnusedSymbols",     // Strip unused symbols
+        "-O3",                          // Enable maximum optimization level
+      ),
+      Compile / mainClass := Some("mml.mmlc.Main")
     )
     .dependsOn(mmlclib)
+
+
+

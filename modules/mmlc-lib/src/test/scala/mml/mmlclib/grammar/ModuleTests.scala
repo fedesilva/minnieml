@@ -5,7 +5,6 @@ import mml.mmlclib.ast.*
 import mml.mmlclib.test.BaseEffFunSuite
 import mml.mmlclib.util.prettyPrintAst
 import munit.*
-import org.neo4j.internal.helpers.Strings.prettyPrint
 
 class ModuleTests extends BaseEffFunSuite:
 

@@ -11,9 +11,8 @@ object Dependencies {
 
   lazy val commonDependencies: Seq[ModuleID] =
     Seq(
-      "org.slf4j"      % "slf4j-api"       % slf4jVersion,
-      "org.slf4j"      % "slf4j-nop"       % slf4jVersion,
-      "ch.qos.logback" % "logback-classic" % logBackVersion,
+      "ch.qos.reload4j" % "reload4j"        % "1.2.26",
+      "ch.qos.logback"  % "logback-classic" % logBackVersion,
       // "core" module - IO, IOApp, schedulers
       // This pulls in the kernel and std modules automatically.
       "org.typelevel" %% "cats-effect"    % catsEffectVersion,
@@ -33,9 +32,9 @@ object Dependencies {
   lazy val mmlclib: Seq[ModuleID] =
     Seq(
       "org.bytedeco.javacpp-presets" % "llvm-platform" % "7.0.1-1.4.4",
-      "com.lihaoyi"                 %% "fastparse"     % "3.1.1",
+      "com.lihaoyi"                 %% "fastparse"     % "3.1.1"
       // "io.github.myui"               % "btree4j"       % "0.9.1",
-      "org.neo4j" % "neo4j" % neo4jVersion
+      // "org.neo4j" % "neo4j" % neo4jVersion
     ) ++ commonDependencies ++ testDeps
 
   lazy val mmlc: Seq[ModuleID] =

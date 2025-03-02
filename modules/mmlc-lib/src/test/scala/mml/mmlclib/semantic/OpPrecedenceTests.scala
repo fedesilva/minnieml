@@ -8,10 +8,6 @@ import munit.*
 
 class OpPrecedenceTests extends BaseEffFunSuite:
 
-  // Remember that at this point - semantic rewriting - we have extra members
-  // in the module that represent the operators.
-  // Don't assume your member is the only one present.
-  //
   //
   // All the tests here assume that the following operators are defined:
   //  module Prelude =
@@ -735,6 +731,46 @@ class OpPrecedenceTests extends BaseEffFunSuite:
 // let a = 1 + 2 ^ 3 + 4;  // Should parse as: 1 + (2 ^ 3) + 4
 // Verifies correct handling of mixed left and right associative operators in sequence
 
+  test("mixed associativity without parentheses: 1 + 2 ^ 3 + 4") {
+    semNotFailed(
+      """
+       let a = 1 + 2 ^ 3 + 4;
+      """
+    ).map { m =>
+      val memberBnd = lookupNames("a", m).headOption.getOrElse(
+        fail(s"Member `a` not found in module: ${prettyPrintAst(m)}")
+      )
+
+      // println(prettyPrintAst(memberBnd))
+
+      memberBnd match
+        case bnd: Bnd =>
+          assert(clue(bnd.value.terms.size) == clue(3))
+          bnd.value.terms match
+            case (expr: Expr) :: (op: Ref) ::(LiteralInt(_, x)) :: Nil if op.name == "+" =>
+              expr.terms match
+                case (LiteralInt(_, y)) :: (op2: Ref) :: (expr: Expr) :: Nil if op2.name == "+" =>
+                  assert(clue(y) == clue(1))
+                  expr.terms match
+                    case (LiteralInt(_, z)) :: (op3: Ref) ::(LiteralInt(_, w)) :: Nil
+                        if op3.name == "^" =>
+                      assert(clue(z) == clue(2))
+                      assert(clue(w) == clue(3))
+                    case x =>
+                      fail(
+                        s"Expected right term to be an expression of form [LiteralInt, '^', LiteralInt], got: $x"
+                      )
+                case x =>
+                  fail(
+                    s"Expected left term to be an expression of form [LiteralInt, '^', Expr], got: $x"
+                  )
+            case _ =>
+              fail(s"Expected expression to be of form [Expr, '+', LiteralInt], got: ${bnd.value}")
+        case x =>
+          fail(s"Expected a Bnd, got: ${prettyPrintAst(x)}")
+    }
+  }
+
 // Test operators with the same symbol but different arity
 // op ++ (a) = a + 1;
 // op ++ (a b) = a + b;
@@ -742,6 +778,52 @@ class OpPrecedenceTests extends BaseEffFunSuite:
 // let b = ++1;     // Unary prefix usage
 // Verifies disambiguation between unary and binary variants of the same operator
 
+  test("Test operators with the same symbol but different arity") {
+    semNotFailed(
+      """
+       op ++ (a) = a + 1;
+       op ++ (a b) = a + b;
+       let a = 1 ++ 2;
+       let b = ++1;
+      """
+    ).map { m =>
+
+      val memberBndA = lookupNames("a", m).headOption.getOrElse(
+        fail(s"Member `a` not found in module: ${prettyPrintAst(m)}")
+      )
+
+      val memberBndB = lookupNames("b", m).headOption.getOrElse(
+        fail(s"Member `b` not found in module: ${prettyPrintAst(m)}")
+      )
+
+      // println(prettyPrintAst(memberBndA))
+
+      memberBndA match
+        case bnd: Bnd =>
+          assert(clue(bnd.value.terms.size) == clue(3))
+          bnd.value.terms match
+            case (LiteralInt(_, x)) :: (op: Ref) ::(LiteralInt(_, y)) :: Nil if op.name == "++" =>
+              assert(clue(x) == clue(1))
+              assert(clue(y) == clue(2))
+            case x =>
+              fail(s"Expected expression to be of form [LiteralInt, '+', LiteralInt], got: $x")
+        case x =>
+          fail(s"Expected a Bnd, got: $x")
+
+      memberBndB match
+        case bnd: Bnd =>
+          assert(clue(bnd.value.terms.size) == clue(2))
+          bnd.value.terms match
+            case (op: Ref) ::(LiteralInt(_, x)) :: Nil if op.name == "++" =>
+              assert(clue(x) == clue(1))
+            case x =>
+              fail(s"Expected expression to be of form ['++', LiteralInt], got: $x")
+        case x =>
+          fail(s"Expected a Bnd, got: $x")
+
+    }
+  }
+//
 // Test custom operators that override precedence of standard ones
 // op @* (a b) 100 left = a * b;  // Higher precedence than standard *
 // let a = 1 + 2 @* 3;  // Should parse as: 1 + (2 @* 3)
