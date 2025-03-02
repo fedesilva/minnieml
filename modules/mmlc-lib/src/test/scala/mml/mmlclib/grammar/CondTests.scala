@@ -8,7 +8,7 @@ import munit.*
 class CondTests extends BaseEffFunSuite:
 
   test("simple cond") {
-    modNotFailed(
+    parseNotFailed(
       """
           let a = 
             if true then 

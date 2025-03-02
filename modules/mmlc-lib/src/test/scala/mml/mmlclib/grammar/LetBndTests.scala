@@ -10,7 +10,7 @@ class LetBndTests extends BaseEffFunSuite:
 
   test("simple let") {
 
-    modNotFailed("""
+    parseNotFailed("""
         let a = 1;
         let b = 2;
         let c = "tres";
@@ -20,7 +20,7 @@ class LetBndTests extends BaseEffFunSuite:
 
   test("let with app") {
 
-    modNotFailed(
+    parseNotFailed(
       """
       module A =
         let c = a sum b;
@@ -42,7 +42,7 @@ class LetBndTests extends BaseEffFunSuite:
 
   test("let with app with symbolic ref") {
 
-    modNotFailed(
+    parseNotFailed(
       """
         module A =
           let c = a + b;
@@ -64,7 +64,7 @@ class LetBndTests extends BaseEffFunSuite:
 
   test("let with app with symbolic ref and NO SPACES") {
 
-    modNotFailed(
+    parseNotFailed(
       """
           module A =
             let c = a+b;
@@ -86,7 +86,7 @@ class LetBndTests extends BaseEffFunSuite:
 
   test("let with symbolic ref multichar and no spaces") {
 
-    modNotFailed(
+    parseNotFailed(
       """
             module A =
               let c = a++b;
@@ -108,7 +108,7 @@ class LetBndTests extends BaseEffFunSuite:
 
   test("let with app with symbolic ref prefix") {
 
-    modNotFailed(
+    parseNotFailed(
       """
         module A =
           let c = +b;
@@ -130,7 +130,7 @@ class LetBndTests extends BaseEffFunSuite:
 
   test("let with app with symbolic ref postfix") {
 
-    modNotFailed(
+    parseNotFailed(
       """
         module A =
           let c = b!;
@@ -151,7 +151,7 @@ class LetBndTests extends BaseEffFunSuite:
   }
 
   test("let with app with symbolic ref mix") {
-    modNotFailed(
+    parseNotFailed(
       """
         module A =
           let c = 5! + 3;
@@ -171,7 +171,7 @@ class LetBndTests extends BaseEffFunSuite:
   }
 
   test("let with hole for body") {
-    modNotFailed(
+    parseNotFailed(
       """
         let c = ???;
       """
@@ -189,7 +189,7 @@ class LetBndTests extends BaseEffFunSuite:
   }
 
   test("app with id and lit") {
-    modNotFailed(
+    parseNotFailed(
       """
         let a = b + 3;
       """
@@ -197,7 +197,7 @@ class LetBndTests extends BaseEffFunSuite:
   }
 
   test("grouped expression") {
-    modNotFailed(
+    parseNotFailed(
       """
         let a = (1 + 2) * 3;
       """
@@ -214,7 +214,7 @@ class LetBndTests extends BaseEffFunSuite:
     }
 
     test("cant use a keyword as a name") {
-      modFailed(
+      parseFailed(
         """
           let let = 1;
         """
@@ -224,7 +224,7 @@ class LetBndTests extends BaseEffFunSuite:
   }
 
   test("let with type name ascription") {
-    modNotFailed(
+    parseNotFailed(
       """
         let a: Int = 1;
       """
@@ -246,7 +246,7 @@ class LetBndTests extends BaseEffFunSuite:
   }
 
   test("let with 2 minus 2") {
-    modNotFailed(
+    parseNotFailed(
       """
         let a = 2 - 2;
       """

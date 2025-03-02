@@ -23,7 +23,7 @@ trait BaseEffFunSuite extends CatsEffectSuite:
     checkMembers(module.members)
   }
 
-  def modNotFailed(
+  def parseNotFailed(
     source: String,
     name:   Option[String] = "Test".some,
     msg:    Option[String] = None
@@ -43,7 +43,7 @@ trait BaseEffFunSuite extends CatsEffectSuite:
     }
   }
 
-  def modFailed(
+  def parseFailed(
     source: String,
     name:   Option[String] = "TestFail".some,
     msg:    Option[String] = None

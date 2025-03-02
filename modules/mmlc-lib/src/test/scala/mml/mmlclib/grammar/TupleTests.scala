@@ -9,7 +9,7 @@ import munit.*
 class TupleTests extends BaseEffFunSuite:
 
   test("let with tuple") {
-    modNotFailed(
+    parseNotFailed(
       """
         let a = (2,2);
       """
@@ -35,7 +35,7 @@ class TupleTests extends BaseEffFunSuite:
   }
 
   test("let with tuple - 3 elem") {
-    modNotFailed(
+    parseNotFailed(
       """
           let a = (2, 2, 3);
         """
@@ -61,7 +61,7 @@ class TupleTests extends BaseEffFunSuite:
   }
 
   test("let with tuple - 3 elem - mixed types") {
-    modNotFailed(
+    parseNotFailed(
       """
             let a = (2, "2", 3);
           """

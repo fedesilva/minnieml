@@ -9,7 +9,7 @@ import munit.*
 class OpTests extends BaseEffFunSuite:
 
   test("let with simple binop") {
-    modNotFailed(
+    parseNotFailed(
       """
         op + (a b) = sum a b;
       """
@@ -17,7 +17,7 @@ class OpTests extends BaseEffFunSuite:
   }
 
   test("let with left assoc unary op") {
-    modNotFailed(
+    parseNotFailed(
       """
         op - (a) left = neg a;
       """
@@ -42,7 +42,7 @@ class OpTests extends BaseEffFunSuite:
   }
 
   test("let with right assoc unary op") {
-    modNotFailed(
+    parseNotFailed(
       """
         op - (a) right = neg a right;
       """
@@ -67,7 +67,7 @@ class OpTests extends BaseEffFunSuite:
   }
 
   test("unary right assoc with precedence") {
-    modNotFailed(
+    parseNotFailed(
       """
         op - (a) 2 right = neg a;
       """
@@ -96,7 +96,7 @@ class OpTests extends BaseEffFunSuite:
   }
 
   test("unary left assoc with precedence") {
-    modNotFailed(
+    parseNotFailed(
       """
           op - (a) 2 left  = neg a;
         """
