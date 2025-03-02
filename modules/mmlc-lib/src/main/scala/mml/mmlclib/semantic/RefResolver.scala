@@ -30,13 +30,34 @@ object RefResolver:
       case _ =>
         Right(member)
 
-  /** Returns all members (bindings, functions, operators) whose name matches the reference. */
-  private def lookupRefs(ref: Ref, module: Module): List[Member] =
-    module.members.collect {
-      case bnd:   Bnd if bnd.name == ref.name => bnd
-      case fnDef: FnDef if fnDef.name == ref.name => fnDef
-      case opDef: OpDef if opDef.name == ref.name => opDef
+  /** Returns all members (bindings, functions, operators) whose name matches the reference.
+    */
+  private def lookupRefs(ref: Ref, member: Member, module: Module): List[Resolvable] =
+
+    def collectMembers =
+      module.members
+        .filter(_ != member)
+        .collect {
+          case bnd:   Bnd if bnd.name == ref.name => bnd
+          case fnDef: FnDef if fnDef.name == ref.name => fnDef
+          case opDef: OpDef if opDef.name == ref.name => opDef
+        }
+
+    val params = member match {
+      case fnDef: FnDef =>
+        fnDef.params.filter(_.name == ref.name)
+      case opDef: OpDef =>
+        opDef match {
+          case bin: BinOpDef =>
+            List(bin.param1, bin.param2).filter(_.name == ref.name)
+          case unary: UnaryOpDef if unary.param.name == ref.name =>
+            List(unary.param)
+          case _ => Nil
+        }
+      case _ => Nil
     }
+
+    if params.nonEmpty then params else collectMembers
 
   /** Resolve references in an expression.
     *
@@ -62,12 +83,13 @@ object RefResolver:
       expr.terms.foldLeft(initial) { case ((acc, expectOperand, errs), term) =>
         term match
           case ref: Ref =>
-            val candidates = lookupRefs(ref, module)
+            val candidates = lookupRefs(ref, owner, module)
             if expectOperand then
               // In operand position, try non‑operator value first.
               candidates.find {
                 case _: Bnd => true
                 case _: FnDef => true
+                case _: FnParam => true
                 case _ => false
               } match
                 case Some(member) =>

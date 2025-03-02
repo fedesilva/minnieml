@@ -159,5 +159,6 @@ object PrecedenceClimber:
       case ref: Ref if ref.resolvedAs.isDefined =>
         ref.resolvedAs match
           case Some(_: Bnd) => Some(ref)
+          case Some(_: FnParam) => Some(ref)
           case _ => None
       case x => Some(x)

@@ -46,11 +46,13 @@ case class Module(
 /** Represents a top level member of a module. */
 sealed trait Member extends AstNode
 
-sealed trait Error extends AstNode {
+sealed trait Resolvable:
+  def name: String
+
+sealed trait Error extends AstNode:
   def span:       SourceSpan
   def message:    String
   def failedCode: Option[String]
-}
 
 case class MemberError(
   span:       SourceSpan,
@@ -65,9 +67,8 @@ case class DocComment(
 ) extends AstNode,
       FromSource
 
-sealed trait Decl extends Member, Typeable {
+sealed trait Decl extends Member, Typeable, Resolvable:
   def docComment: Option[DocComment]
-}
 
 case class FnParam(
   span:       SourceSpan,
@@ -77,7 +78,8 @@ case class FnParam(
   docComment: Option[DocComment] = None
 ) extends AstNode,
       FromSource,
-      Typeable
+      Typeable,
+      Resolvable
 
 case class FnDef(
   span:       SourceSpan,
@@ -191,8 +193,8 @@ case class Ref(
   span:       SourceSpan,
   name:       String,
   typeSpec:   Option[TypeSpec],
-  typeAsc:    Option[TypeSpec] = None,
-  resolvedAs: Option[Member]   = None
+  typeAsc:    Option[TypeSpec]   = None,
+  resolvedAs: Option[Resolvable] = None
 ) extends Term,
       FromSource
 
