@@ -34,8 +34,13 @@ object Parser:
   private def moduleP(name: Option[String], source: String, p: P[Any]): P[Module] =
     given P[Any] = p
     name.fold(
+      // If the module name is not provided, we assume it's an explicit module,
+      // that is, the name is declared in the first line of the file.
       explicitModuleP(source)
     ) { n =>
+      // If the module name is provided, we first try the explicit module parser,
+      // and if that fails, we try the implicit module parser using the
+      // provided name.
       P(explicitModuleP(source) | implicitModuleP(n, source))
     }
 
@@ -135,17 +140,19 @@ object Parser:
         ~ "("
         ~ fnParamP(source).rep
         ~ ")"
+        ~ typeAscP(source)
         ~ defAsKw
         ~ exprP(source)
         ~ endKw
         ~ spP(source)
-    ).map { case (start, doc, fnName, params, bodyExpr, end) =>
+    ).map { case (start, doc, fnName, params, typeAsc, bodyExpr, end) =>
       FnDef(
         span       = span(start, end),
         name       = fnName,
         params     = params.toList,
         body       = bodyExpr,
         typeSpec   = bodyExpr.typeSpec,
+        typeAsc    = typeAsc,
         docComment = doc
       )
     }
