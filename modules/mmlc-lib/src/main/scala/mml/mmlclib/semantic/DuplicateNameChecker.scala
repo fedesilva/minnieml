@@ -25,13 +25,13 @@ object DuplicateNameChecker:
     }
 
     // Global duplicate check for top-level declarations (excluding parameters)
-    def loop(
+    def memberDuplicates(
       resolvables: List[Resolvable],
       state:       Map[(String, String), List[Resolvable]]
     ): Map[(String, String), List[Resolvable]] = resolvables match {
       case res :: rest =>
         val key = resolvableKey(res)
-        loop(
+        memberDuplicates(
           rest,
           state.updatedWith(key) {
             case Some(existing) => Some(res :: existing)
@@ -41,7 +41,7 @@ object DuplicateNameChecker:
       case Nil => state
     }
 
-    val topLevelMap = loop(decls, Map.empty)
+    val topLevelMap = memberDuplicates(decls, Map.empty)
     val topLevelErrors = topLevelMap.collect {
       case ((name, _), items) if items.size > 1 =>
         SemanticError.DuplicateName(name, items)
