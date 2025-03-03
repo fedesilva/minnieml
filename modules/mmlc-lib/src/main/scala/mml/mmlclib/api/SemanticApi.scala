@@ -21,12 +21,13 @@ object SemanticApi:
       // simplify the module since the precedence climbing algorithm
       // may leave some unnecessary exprs in the tree.
       val result = for {
-        resolvedModule <- RefResolver.rewriteModule(moduleWithOps)
+        noDupesModule <- DuplicateNameChecker.checkModule(moduleWithOps)
+        resolvedModule <- RefResolver.rewriteModule(noDupesModule)
         bloomedModule <- PrecedenceClimber.rewriteModule(resolvedModule)
         finalModule <- Simplifier.rewriteModule(bloomedModule)
       } yield finalModule
       result match
-        case Right(mod) => Right(mod)
+        case Right(mod) => mod.asRight
         case Left(errors) =>
           CompilerError.SemanticErrors(errors).asLeft
     }

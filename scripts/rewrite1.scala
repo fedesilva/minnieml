@@ -22,7 +22,9 @@ def rewrite(src: String): Unit =
       // Simplify the module, since precedence rewriting
       // may have introduced redundant Expr nodes
       val result = for
-        resolvedModule <- RefResolver.rewriteModule(moduleWithOps)
+        dedupedModule <- DuplicateNameChecker.checkModule(moduleWithOps)
+        _ = println(s"\n \n dedupedModule \n ${prettyPrintAst(dedupedModule)}")
+        resolvedModule <- RefResolver.rewriteModule(dedupedModule)
         _ = println(s"\n \n resolvedModule \n ${prettyPrintAst(resolvedModule)}")
         bloomedModule <- PrecedenceClimber.rewriteModule(resolvedModule)
         _ = println(s"\n \n Precedence Climbed \n ${prettyPrintAst(bloomedModule)}")

@@ -4,6 +4,7 @@ import mml.mmlclib.ast.*
 
 enum SemanticError:
   case UndefinedRef(ref: Ref, member: Member)
+  case DuplicateName(name: String, duplicates: List[Resolvable])
   case InvalidExpression(expr: Expr, message: String)
 
 /** This is required because we don't have multiple file, cross module capabilities */

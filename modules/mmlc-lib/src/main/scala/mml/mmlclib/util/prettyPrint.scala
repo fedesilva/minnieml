@@ -95,6 +95,10 @@ def prettyPrintExpr(expr: Expr, indent: Int): String =
     s"${indentStr}  typeAsc: ${prettyPrintTypeSpec(expr.typeAsc)}\n" +
     expr.terms.map(prettyPrintTerm(_, indent + 2)).mkString("\n")
 
+def prettyPrintResolvable(r: Resolvable, indent: Int): String =
+  val indentStr = "  " * indent
+  s"${indentStr} ${r.getClass.getSimpleName} ${r.name}"
+
 def prettyPrintTerm(term: Term, indent: Int): String =
   val indentStr = "  " * indent
   term match {
@@ -103,18 +107,11 @@ def prettyPrintTerm(term: Term, indent: Int): String =
         s"${indentStr}  typeSpec: ${prettyPrintTypeSpec(typeSpec)}\n" +
         s"${indentStr}  typeAsc: ${prettyPrintTypeSpec(typeAsc)}"
 
-    case Ref(sp, name, typeSpec, typeAsc, resolvedAs) =>
+    case Ref(sp, name, typeAsc, typeSpec, resolvedAs) =>
       s"${indentStr}Ref $name ${printSourceSpan(sp)}\n" +
         s"${indentStr}  typeSpec: ${prettyPrintTypeSpec(typeSpec)}\n" +
         s"${indentStr}  typeAsc: ${prettyPrintTypeSpec(typeAsc)}\n" +
-        s"${indentStr}  resolvedAs: ${resolvedAs.fold("None")(m =>
-            m.getClass.getSimpleName + "(" + (m match {
-              case fn:  FnDef => fn.name
-              case bnd: Bnd => bnd.name
-              case op:  OpDef => op.name
-              case other => other.toString
-            }) + ")"
-          )}"
+        s"${indentStr}  resolvedAs: ${resolvedAs.fold("None")(m => prettyPrintResolvable(m, 0))}"
 
     case Hole(sp, typeSpec, typeAsc) =>
       s"${indentStr}Hole ${printSourceSpan(sp)}\n" +
@@ -153,16 +150,16 @@ def prettyPrintTerm(term: Term, indent: Int): String =
 
     // Literal values
     case LiteralInt(sp, value) =>
-      s"${indentStr}LiteralInt ${printSourceSpan(sp)} $value"
+      s"${indentStr}LiteralInt $value ${printSourceSpan(sp)}"
 
     case LiteralString(sp, value) =>
-      s"""${indentStr}LiteralString ${printSourceSpan(sp)} "$value""""
+      s"""${indentStr}LiteralString "$value" ${printSourceSpan(sp)} """
 
     case LiteralBool(sp, value) =>
-      s"${indentStr}LiteralBool ${printSourceSpan(sp)} $value"
+      s"${indentStr}LiteralBool $value ${printSourceSpan(sp)}"
 
     case LiteralFloat(sp, value) =>
-      s"${indentStr}LiteralFloat ${printSourceSpan(sp)} $value"
+      s"${indentStr}LiteralFloat $value ${printSourceSpan(sp)}"
 
     case LiteralUnit(sp) =>
       s"${indentStr}LiteralUnit ${printSourceSpan(sp)}"

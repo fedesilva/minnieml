@@ -1,7 +1,7 @@
 package mml.mmlclib.parser
 
 import cats.data.NonEmptyList
-import cats.syntax.option.*
+import cats.syntax.all.*
 import fastparse.*
 import mml.mmlclib.ast.*
 
@@ -176,13 +176,14 @@ object Parser:
         ~ fnParamP(source)
         ~ fnParamP(source)
         ~ ")"
+        ~ typeAscP(source)
         ~ precedenceP.?
         ~ assocP.?
         ~ defAsKw
         ~ exprP(source)
         ~ endKw
         ~ spP(source)
-    ).map { case (start, doc, opName, param1, param2, precedence, assoc, bodyExpr, end) =>
+    ).map { case (start, doc, opName, param1, param2, typeAsc, precedence, assoc, bodyExpr, end) =>
       BinOpDef(
         span       = span(start, end),
         name       = opName,
@@ -192,6 +193,7 @@ object Parser:
         assoc      = assoc.getOrElse(Associativity.Left),
         body       = bodyExpr,
         typeSpec   = bodyExpr.typeSpec,
+        typeAsc    = typeAsc,
         docComment = doc
       )
     }
@@ -266,10 +268,10 @@ object Parser:
       .map { case (start, ts, end) =>
         val termsList = ts.toList
         // If there's exactly one term, the Expr inherits that term's typeSpec
-        val typeSpec =
-          if termsList.size == 1 then termsList.head.typeSpec
-          else None
-        Expr(span(start, end), termsList, typeSpec)
+        val (typeSpec, typeAsc) =
+          if termsList.size == 1 then (termsList.head.typeSpec, termsList.head.typeAsc)
+          else (None, None)
+        Expr(span(start, end), termsList, typeAsc, typeSpec)
       }
 
   private def termP(source: String)(using P[Any]): P[Term] =
@@ -321,9 +323,9 @@ object Parser:
       }
 
   private def refP(source: String)(using P[Any]): P[Term] =
-    P(spP(source) ~ bindingIdP ~ spP(source))
-      .map { case (start, id, end) =>
-        Ref(span(start, end), id, None)
+    P(spP(source) ~ bindingIdP ~ typeAscP(source) ~ spP(source))
+      .map { case (start, id, typeAsc, end) =>
+        Ref(span(start, end), id, typeAsc = typeAsc)
       }
 
   private def opRefP(source: String)(using P[Any]): P[Term] =

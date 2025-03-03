@@ -46,7 +46,7 @@ case class Module(
 /** Represents a top level member of a module. */
 sealed trait Member extends AstNode
 
-sealed trait Resolvable:
+sealed trait Resolvable extends AstNode:
   def name: String
 
 sealed trait Error extends AstNode:
@@ -152,8 +152,8 @@ case class TermError(
 case class Expr(
   span:     SourceSpan,
   terms:    List[Term],
-  typeSpec: Option[TypeSpec] = None,
-  typeAsc:  Option[TypeSpec] = None
+  typeAsc:  Option[TypeSpec] = None,
+  typeSpec: Option[TypeSpec] = None
 ) extends Term
 
 case class Cond(
@@ -169,8 +169,8 @@ case class AppN(
   span:     SourceSpan,
   fn:       Ref,
   args:     List[Expr],
-  typeSpec: Option[TypeSpec] = None,
-  typeAsc:  Option[TypeSpec] = None
+  typeAsc:  Option[TypeSpec] = None,
+  typeSpec: Option[TypeSpec] = None
 ) extends Term
 
 case class GroupTerm(
@@ -184,16 +184,16 @@ case class GroupTerm(
 case class Tuple(
   span:     SourceSpan,
   elements: NonEmptyList[Expr],
-  typeSpec: Option[TypeSpec] = None,
-  typeAsc:  Option[TypeSpec] = None
+  typeAsc:  Option[TypeSpec] = None,
+  typeSpec: Option[TypeSpec] = None
 ) extends Term
 
 /** Points to something declared elsewhere */
 case class Ref(
   span:       SourceSpan,
   name:       String,
-  typeSpec:   Option[TypeSpec],
   typeAsc:    Option[TypeSpec]   = None,
+  typeSpec:   Option[TypeSpec]   = None,
   resolvedAs: Option[Resolvable] = None
 ) extends Term,
       FromSource
@@ -207,8 +207,8 @@ case class MehRef(
 
 case class Hole(
   span:     SourceSpan,
-  typeSpec: Option[TypeSpec] = None,
-  typeAsc:  Option[TypeSpec] = None
+  typeAsc:  Option[TypeSpec] = None,
+  typeSpec: Option[TypeSpec] = None
 ) extends Term,
       FromSource
 

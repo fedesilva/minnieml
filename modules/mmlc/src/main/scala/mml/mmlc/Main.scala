@@ -52,11 +52,15 @@ object Main extends IOApp:
                 cgResult <-
                   if codeGen then CodeGenApi.generateFromModule(module) else IO.pure(Right(""))
                 _ <- cgResult match
-                  case Right(ir) if codeGen => IO.println("\nGenerated LLVM IR:\n" + ir)
-                  case Left(error) if codeGen => IO.println(s"Code Generation failed: $error")
-                  case _ => IO.unit
-              yield ExitCode.Success
+                  case Right(ir) if codeGen =>
+                    IO.println("\nGenerated LLVM IR:\n" + ir)
 
+                  case Left(error) if codeGen =>
+                    IO.println(s"Code Generation failed: $error")
+
+                  case _ =>
+                    IO.unit
+              yield ExitCode.Success
             case Left(error) =>
               IO.println(s"Compilation failed: $error").as(ExitCode.Error)
         yield exitCode
