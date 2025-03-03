@@ -95,7 +95,8 @@ object RefResolver:
                 case Some(member) =>
                   (acc :+ ref.copy(resolvedAs = Some(member)), false, errs)
                 case None =>
-                  // Otherwise, try resolving as a prefix unary operator (only accept those with right associativity).
+                  // Otherwise, try resolving as a prefix unary operator
+                  // (only accept those with right associativity).
                   candidates.collect {
                     case op: UnaryOpDef if op.assoc == Associativity.Right => op
                   } match

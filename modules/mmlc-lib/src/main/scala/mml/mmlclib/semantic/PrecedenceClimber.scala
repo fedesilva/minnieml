@@ -132,7 +132,7 @@ object PrecedenceClimber:
       case _: UnaryOpDef => true
       case _ => false
 
-  // --- Extractors for pattern matching ---
+  // --- Extractors to cleanup pattern matching ---
 
   private object IsOp:
     def unapply(term: Term): Option[(Ref, OpDef, Int, Associativity)] = term match
