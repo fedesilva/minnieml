@@ -4,6 +4,7 @@ import cats.effect.ExitCode
 import cats.effect.IO
 import cats.effect.IOApp
 import cats.syntax.all.*
+import mml.mmlclib.BuildInfo
 import mml.mmlclib.api.CodeGenApi
 import mml.mmlclib.api.CompilerApi
 import mml.mmlclib.api.ParserApi
@@ -27,7 +28,7 @@ object Main extends IOApp:
     import builder.*
     OParser.sequence(
       programName("mmlc"),
-      head("mmlc", "0.1"),
+      head("mmlc", BuildInfo.version),
       arg[String]("<source-file>")
         .action((file, config) => config.copy(file = Some(Paths.get(file))))
         .text("Path to the source file"),
@@ -40,36 +41,51 @@ object Main extends IOApp:
   def run(args: List[String]): IO[ExitCode] =
     OParser.parse(parser, args, Config()) match
       case Some(Config(Some(path), codeGen)) =>
-        // if the module has an expicit name, use it; otherwise, use the file name
+        // if the module has an explicit name, use it; otherwise, use the file name
         val moduleName = sanitizeFileName(path)
         for
-          content <- readFile(path)
-          result <- CompilerApi.compileString(content, Some(moduleName))
-          exitCode <- result match
-            case Right(module) =>
-              for
-                _ <- IO.println(prettyPrintAst(module))
-                cgResult <-
-                  if codeGen then CodeGenApi.generateFromModule(module) else IO.pure(Right(""))
-                _ <- cgResult match
-                  case Right(ir) if codeGen =>
-                    IO.println("\nGenerated LLVM IR:\n" + ir)
-
-                  case Left(error) if codeGen =>
-                    IO.println(s"Code Generation failed: $error")
-
-                  case _ =>
-                    IO.unit
-              yield ExitCode.Success
+          contentResult <- readFile(path)
+          exitCode <- contentResult match
             case Left(error) =>
-              IO.println(s"Compilation failed: $error").as(ExitCode.Error)
-        yield exitCode
+              IO.println(s"""
+                            |
+                            | Error reading file: ${error.getMessage}
+                            |
+                """.stripMargin)
+                .as(ExitCode.Error)
 
+            case Right(content) =>
+              for
+                result <- CompilerApi.compileString(content, Some(moduleName))
+                exitCode <- result match
+                  case Left(error) =>
+                    IO
+                      .println(s"Compilation failed: $error")
+                      .as(ExitCode.Error)
+
+                  case Right(module) =>
+                    for
+                      _ <- IO.println(prettyPrintAst(module))
+                      cgResult <-
+                        if codeGen then CodeGenApi.generateFromModule(module)
+                        else IO.pure(Right(""))
+                      _ <- cgResult match
+                        case Right(ir) if codeGen =>
+                          IO.println("\nGenerated LLVM IR:\n" + ir)
+                        case Left(error) if codeGen =>
+                          IO.println(s"Code Generation failed: $error")
+                        case _ =>
+                          IO.unit
+                    yield ExitCode.Success
+              yield exitCode
+        yield exitCode
       case _ =>
         IO.println("Usage: mmlc <source-file> [--code-gen]").as(ExitCode(1))
 
-  private def readFile(path: Path): IO[String] =
-    IO.blocking(Files.readString(path))
+  private def readFile(path: Path): IO[Either[Throwable, String]] =
+    IO
+      .blocking(Files.readString(path))
+      .attempt
 
   private def sanitizeFileName(path: Path): String =
     val fileName = path.getFileName.toString

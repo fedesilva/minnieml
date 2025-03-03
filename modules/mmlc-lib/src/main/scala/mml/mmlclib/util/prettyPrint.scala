@@ -45,7 +45,7 @@ def prettyPrintMember(member: Member, indent: Int): String =
         fn.docComment.map(doc => s"${prettyPrintDocComment(doc, indent + 2)}\n").getOrElse("") +
         s"${indentStr}  typeSpec: ${prettyPrintTypeSpec(fn.typeSpec)}\n" +
         s"${indentStr}  typeAsc: ${prettyPrintTypeSpec(fn.typeAsc)}\n" +
-        s"${indentStr}  params:\n${prettyPrintParams(fn.params, indent + 2)}\n" +
+        s"${indentStr}  params: ${prettyPrintParams(fn.params, indent + 2)}\n" +
         prettyPrintExpr(fn.body, indent + 2)
 
     case bnd: Bnd =>
@@ -82,7 +82,7 @@ def prettyPrintParams(params: Seq[FnParam], indent: Int): String =
   params
     .map { case FnParam(span, name, typeSpec, typeAsc, doc) =>
       val docStr = doc.map(d => s"\n${prettyPrintDocComment(d, indent + 2)}").getOrElse("")
-      s"${indentStr}${name}${printSourceSpan(span)}$docStr\n" +
+      s"\n${indentStr} ${name}${printSourceSpan(span)}$docStr\n" +
         s"${indentStr}  typeSpec: ${prettyPrintTypeSpec(typeSpec)}\n" +
         s"${indentStr}  typeAsc: ${prettyPrintTypeSpec(typeAsc)}"
     }
