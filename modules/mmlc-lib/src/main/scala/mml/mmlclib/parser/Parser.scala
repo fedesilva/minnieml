@@ -86,7 +86,7 @@ object Parser:
   private def membersP(source: String)(using P[Any]): P[Member] =
     P(
       letBindingP(source) |
-        fnParserP(source) |
+        fnDefP(source) |
         binOpDefP(source) |
         unaryOpP(source) |
         failedMemberP(source)
@@ -126,7 +126,7 @@ object Parser:
       )
     }
 
-  private def fnParserP(source: String)(using P[Any]): P[Member] =
+  private def fnDefP(source: String)(using P[Any]): P[Member] =
     P(
       spP(source)
         ~ docCommentP(source)
@@ -457,11 +457,6 @@ object Parser:
     *
     * A more efficient way would be to pass a `SourceInfo` around that has all the line breaks
     * indexed and then use that to calculate the source point.
-    *
-    * When we do this, we need to review the indexes we are lifting when we parse the source because
-    * some are not in the right place.
-    *
-    * :shrug:
     */
   private def indexToSourcePoint(index: Int, source: String): SourcePoint =
     val upToIndex = source.substring(0, index)
