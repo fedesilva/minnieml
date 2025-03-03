@@ -12,5 +12,6 @@ addSbtPlugin("laughedelic" % "sbt-notifications" % "0.1.0")
 
 addSbtPlugin("ch.epfl.scala" % "sbt-scalafix" % "0.14.0")
 
+addSbtPlugin("com.timushev.sbt" % "sbt-updates" % "0.5.3")
 
 
