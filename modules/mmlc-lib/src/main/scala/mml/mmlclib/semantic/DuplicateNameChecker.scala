@@ -50,11 +50,17 @@ object DuplicateNameChecker:
     // Now, for each function, check its parameters for duplicates locally.
     val paramErrors =
       decls
-        .collect { case fn: FnDef =>
-          fn.params.groupBy(_.name).collect {
-            case (name, ps) if ps.size > 1 =>
-              SemanticError.DuplicateName(name, ps)
-          }
+        .collect {
+          case fn: FnDef =>
+            fn.params.groupBy(_.name).collect {
+              case (name, ps) if ps.size > 1 =>
+                SemanticError.DuplicateName(name, ps)
+            }
+          case op: BinOpDef =>
+            List(op.param1, op.param2).groupBy(_.name).collect {
+              case (name, ps) if ps.size > 1 =>
+                SemanticError.DuplicateName(name, ps)
+            }
         }
         .flatten
         .toList

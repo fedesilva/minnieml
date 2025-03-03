@@ -12,12 +12,8 @@ object SemanticApi:
   def rewriteModule(module: Module): IO[Either[CompilerError, Module]] =
     IO.delay {
       // Inject standard operators into the module
-      // TODO: This should be done as a separate step.
-      //       So when we have a proper prelude, we can remove that step
-      //       and also so that we can have tests that don't rely on the prelude,
-      //       but we define the operators in the test itself.
       val moduleWithOps = injectStandardOperators(module)
-      // Resolve references, apply precedence rewriting and
+      // Flag duplicates, resolve references, apply precedence rewriting and
       // simplify the module since the precedence climbing algorithm
       // may leave some unnecessary exprs in the tree.
       val result = for {
