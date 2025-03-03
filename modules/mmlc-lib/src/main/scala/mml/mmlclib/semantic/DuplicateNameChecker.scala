@@ -47,7 +47,7 @@ object DuplicateNameChecker:
         SemanticError.DuplicateName(name, items)
     }.toList
 
-    // Now, for each function, check its parameters for duplicates locally.
+    // Now, for each function or operator, check its parameters for duplicates locally.
     val paramErrors =
       decls
         .collect {
