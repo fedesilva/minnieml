@@ -1,0 +1,4 @@
+
+fn mult (a b) = a * b;
+
+let a = mult 2 2;

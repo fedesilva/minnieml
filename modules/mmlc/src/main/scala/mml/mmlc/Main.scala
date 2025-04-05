@@ -1,75 +1,95 @@
 package mml.mmlc
 
-import cats.effect.ExitCode
-import cats.effect.IO
-import cats.effect.IOApp
+import cats.effect.{ExitCode, IO, IOApp}
 import cats.syntax.all.*
-import mml.mmlclib.api.CodeGenApi
-import mml.mmlclib.api.CompilerApi
-import mml.mmlclib.api.ParserApi
-import mml.mmlclib.util.prettyPrintAst
+import mml.mmlc.CommandLineConfig.{Command, Config}
+import mml.mmlclib.codegen.LlvmOrchestrator
 import scopt.OParser
-
-import java.nio.file.Files
-import java.nio.file.Path
-import java.nio.file.Paths
 
 object Main extends IOApp:
 
-  case class Config(
-    file:    Option[Path] = None,
-    codeGen: Boolean      = false
-  )
-
-  private val builder = OParser.builder[Config]
-
-  private val parser = {
-    import builder.*
-    OParser.sequence(
-      programName("mmlc"),
-      head("mmlc", "0.1"),
-      arg[String]("<source-file>")
-        .action((file, config) => config.copy(file = Some(Paths.get(file))))
-        .text("Path to the source file"),
-      opt[Unit]("code-gen")
-        .action((_, config) => config.copy(codeGen = true))
-        .text("Generate LLVM IR after compiling the source")
-    )
-  }
+  // Centralized function to print version information
+  private def printVersionInfo: IO[Unit] =
+    IO.println(s"""
+                  |mmlc ${MmlcBuildInfo.version} 
+                  |(build: ${MmlcBuildInfo.build}-${MmlcBuildInfo.gitSha})
+                  |(${MmlcBuildInfo.os}-${MmlcBuildInfo.arch})
+      """.stripMargin.replaceAll("\n", " ").trim)
 
   def run(args: List[String]): IO[ExitCode] =
-    OParser.parse(parser, args, Config()) match
-      case Some(Config(Some(path), codeGen)) =>
-        // if the module has an expicit name, use it; otherwise, use the file name
-        val moduleName = sanitizeFileName(path)
-        for
-          content <- readFile(path)
-          result <- CompilerApi.compileString(content, Some(moduleName))
-          exitCode <- result match
-            case Right(module) =>
-              for
-                _ <- IO.println(prettyPrintAst(module))
-                cgResult <-
-                  if codeGen then CodeGenApi.generateFromModule(module) else IO.pure(Right(""))
-                _ <- cgResult match
-                  case Right(ir) if codeGen => IO.println("\nGenerated LLVM IR:\n" + ir)
-                  case Left(error) if codeGen => IO.println(s"Code Generation failed: $error")
-                  case _ => IO.unit
-              yield ExitCode.Success
+    parseAndProcessArgs(args)
 
-            case Left(error) =>
-              IO.println(s"Compilation failed: $error").as(ExitCode.Error)
-        yield exitCode
+  private def parseAndProcessArgs(args: List[String]): IO[ExitCode] =
+    OParser.parse(CommandLineConfig.createParser, args, Config()) match
+      case Some(config) =>
+        config.command match
+          case bin: Command.Bin =>
+            bin.file.fold(
+              IO.println("Error: Source file is required for bin command").as(ExitCode(1))
+            )(path =>
+              val moduleName = FileOperations.sanitizeFileName(path)
+              CompilationPipeline.processBinary(path, moduleName, bin)
+            )
+
+          case lib: Command.Lib =>
+            lib.file.fold(
+              IO.println("Error: Source file is required for lib command").as(ExitCode(1))
+            )(path =>
+              val moduleName = FileOperations.sanitizeFileName(path)
+              CompilationPipeline.processLibrary(path, moduleName, lib)
+            )
+
+          case ast: Command.Ast =>
+            ast.file.fold(
+              IO.println("Error: Source file is required for ast command").as(ExitCode(1))
+            )(path =>
+              val moduleName = FileOperations.sanitizeFileName(path)
+              CompilationPipeline.processAstOnly(path, moduleName, ast)
+            )
+
+          case ir: Command.Ir =>
+            ir.file.fold(
+              IO.println("Error: Source file is required for ir command").as(ExitCode(1))
+            )(path =>
+              val moduleName = FileOperations.sanitizeFileName(path)
+              CompilationPipeline.processIrOnly(path, moduleName, ir)
+            )
+
+          case clean: Command.Clean =>
+            FileOperations.cleanOutputDir(clean.outputDir)
+
+          case i: Command.Info =>
+            printVersionInfo *>
+              printToolInfo(i.diagnostics) *>
+              IO.println(
+                "Use `mmlc --help` or `mmlc -h` for more information on available commands."
+              ).as(ExitCode(0))
 
       case _ =>
-        IO.println("Usage: mmlc <source-file> [--code-gen]").as(ExitCode(1))
+        // Return success for help command
+        if args.contains("--help") || args.contains("-h") then IO.pure(ExitCode.Success)
+        else IO.pure(ExitCode(1))
 
-  private def readFile(path: Path): IO[String] =
-    IO.blocking(Files.readString(path))
+  def printToolInfo(printDiagnostics: Boolean): IO[Unit] =
+    if !printDiagnostics then IO.unit
+    else
+      LlvmOrchestrator.collectLlvmToolVersions.flatMap { info =>
+        val printVersions =
+          if info.versions.nonEmpty then
+            IO.println(s"${Console.CYAN}LLVM Tool Versions:${Console.RESET}") *>
+              info.versions.toList.traverse_ { case (tool, version) =>
+                IO.println(s"  ${Console.YELLOW}$tool:${Console.RESET} $version")
+              }
+          else IO.println(s"${Console.RED}No LLVM tools found.${Console.RESET}")
 
-  private def sanitizeFileName(path: Path): String =
-    val fileName = path.getFileName.toString
-    val nameWithoutExt = fileName.lastIndexOf('.') match
-      case -1 => fileName
-      case idx => fileName.substring(0, idx)
-    ParserApi.sanitizeModuleName(nameWithoutExt)
+        val printMissing =
+          if info.missing.nonEmpty then
+            IO.println(s"${Console.RED}Missing LLVM Tools:${Console.RESET}") *>
+              info.missing.toList.traverse_ { tool =>
+                IO.println(s"  ${Console.YELLOW}$tool${Console.RESET}")
+              } *> IO.println(LlvmOrchestrator.llvmInstallInstructions.stripMargin)
+          else IO.unit
+
+        // Sequence both operations
+        printVersions *> printMissing
+      }

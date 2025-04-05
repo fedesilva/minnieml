@@ -1,7 +1,7 @@
 package mml.mmlclib.parser
 
 import cats.data.NonEmptyList
-import cats.syntax.option.*
+import cats.syntax.all.*
 import fastparse.*
 import mml.mmlclib.ast.*
 
@@ -34,8 +34,13 @@ object Parser:
   private def moduleP(name: Option[String], source: String, p: P[Any]): P[Module] =
     given P[Any] = p
     name.fold(
+      // If the module name is not provided, we assume it's an explicit module,
+      // that is, the name is declared in the first line of the file.
       explicitModuleP(source)
     ) { n =>
+      // If the module name is provided, we first try the explicit module parser,
+      // and if that fails, we try the implicit module parser using the
+      // provided name.
       P(explicitModuleP(source) | implicitModuleP(n, source))
     }
 
@@ -86,7 +91,7 @@ object Parser:
   private def membersP(source: String)(using P[Any]): P[Member] =
     P(
       letBindingP(source) |
-        fnParserP(source) |
+        fnDefP(source) |
         binOpDefP(source) |
         unaryOpP(source) |
         failedMemberP(source)
@@ -126,7 +131,7 @@ object Parser:
       )
     }
 
-  private def fnParserP(source: String)(using P[Any]): P[Member] =
+  private def fnDefP(source: String)(using P[Any]): P[Member] =
     P(
       spP(source)
         ~ docCommentP(source)
@@ -135,17 +140,19 @@ object Parser:
         ~ "("
         ~ fnParamP(source).rep
         ~ ")"
+        ~ typeAscP(source)
         ~ defAsKw
         ~ exprP(source)
         ~ endKw
         ~ spP(source)
-    ).map { case (start, doc, fnName, params, bodyExpr, end) =>
+    ).map { case (start, doc, fnName, params, typeAsc, bodyExpr, end) =>
       FnDef(
         span       = span(start, end),
         name       = fnName,
         params     = params.toList,
         body       = bodyExpr,
         typeSpec   = bodyExpr.typeSpec,
+        typeAsc    = typeAsc,
         docComment = doc
       )
     }
@@ -169,13 +176,14 @@ object Parser:
         ~ fnParamP(source)
         ~ fnParamP(source)
         ~ ")"
+        ~ typeAscP(source)
         ~ precedenceP.?
         ~ assocP.?
         ~ defAsKw
         ~ exprP(source)
         ~ endKw
         ~ spP(source)
-    ).map { case (start, doc, opName, param1, param2, precedence, assoc, bodyExpr, end) =>
+    ).map { case (start, doc, opName, param1, param2, typeAsc, precedence, assoc, bodyExpr, end) =>
       BinOpDef(
         span       = span(start, end),
         name       = opName,
@@ -185,6 +193,7 @@ object Parser:
         assoc      = assoc.getOrElse(Associativity.Left),
         body       = bodyExpr,
         typeSpec   = bodyExpr.typeSpec,
+        typeAsc    = typeAsc,
         docComment = doc
       )
     }
@@ -259,10 +268,10 @@ object Parser:
       .map { case (start, ts, end) =>
         val termsList = ts.toList
         // If there's exactly one term, the Expr inherits that term's typeSpec
-        val typeSpec =
-          if termsList.size == 1 then termsList.head.typeSpec
-          else None
-        Expr(span(start, end), termsList, typeSpec)
+        val (typeSpec, typeAsc) =
+          if termsList.size == 1 then (termsList.head.typeSpec, termsList.head.typeAsc)
+          else (None, None)
+        Expr(span(start, end), termsList, typeAsc, typeSpec)
       }
 
   private def termP(source: String)(using P[Any]): P[Term] =
@@ -310,13 +319,13 @@ object Parser:
   private def groupTermP(source: String)(using P[Any]): P[Term] =
     P(spP(source) ~ "(" ~ exprP(source) ~ ")" ~ spP(source))
       .map { case (start, expr, end) =>
-        GroupTerm(span(start, end), expr)
+        TermGroup(span(start, end), expr)
       }
 
   private def refP(source: String)(using P[Any]): P[Term] =
-    P(spP(source) ~ bindingIdP ~ spP(source))
-      .map { case (start, id, end) =>
-        Ref(span(start, end), id, None)
+    P(spP(source) ~ bindingIdP ~ typeAscP(source) ~ spP(source))
+      .map { case (start, id, typeAsc, end) =>
+        Ref(span(start, end), id, typeAsc = typeAsc)
       }
 
   private def opRefP(source: String)(using P[Any]): P[Term] =
@@ -383,7 +392,7 @@ object Parser:
     P(spP(source) ~ CharsWhile(_ != ';').! ~ endKw ~ spP(source))
       .map { case (start, snippet, end) =>
         MemberError(
-          span       = SourceSpan(start, end),
+          span       = SrcSpan(start, end),
           message    = "Failed to parse member",
           failedCode = snippet.some
         )
@@ -398,8 +407,8 @@ object Parser:
     P(!keywords ~ CharIn("a-z") ~ CharsWhileIn("a-zA-Z0-9_", 0)).!
 
   private def operatorIdP[$: P]: P[String] =
-    import fastparse.NoWhitespace.*
-    val opChars = "!@#$%^&*+<>?/\\|~-"
+    // import fastparse.NoWhitespace.*
+    val opChars = "=!@#$%^&*+<>?/\\|~-"
     P(CharsWhile(c => opChars.indexOf(c) >= 0, min = 1).!)
 
   private def typeIdP[$: P]: P[String] =
@@ -445,7 +454,7 @@ object Parser:
   // Parser for SourcePoint (spP)
   // -----------------------------------------------------------------------------
 
-  private def spP[$: P](source: String): P[SourcePoint] =
+  private def spP[$: P](source: String): P[SrcPoint] =
     P(Index).map(index => indexToSourcePoint(index, source))
 
   // -----------------------------------------------------------------------------
@@ -457,18 +466,13 @@ object Parser:
     *
     * A more efficient way would be to pass a `SourceInfo` around that has all the line breaks
     * indexed and then use that to calculate the source point.
-    *
-    * When we do this, we need to review the indexes we are lifting when we parse the source because
-    * some are not in the right place.
-    *
-    * :shrug:
     */
-  private def indexToSourcePoint(index: Int, source: String): SourcePoint =
+  private def indexToSourcePoint(index: Int, source: String): SrcPoint =
     val upToIndex = source.substring(0, index)
     val lines     = upToIndex.split('\n')
     val line      = lines.length
     val col       = if lines.isEmpty then index else lines.last.length + 1
-    SourcePoint(line, col, index)
+    SrcPoint(line, col, index)
 
-  private def span(start: SourcePoint, end: SourcePoint): SourceSpan =
-    SourceSpan(start, end)
+  private def span(start: SrcPoint, end: SrcPoint): SrcSpan =
+    SrcSpan(start, end)

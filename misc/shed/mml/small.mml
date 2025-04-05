@@ -1,0 +1,6 @@
+module Small = 
+
+  let a = 1;
+  let b = 2;
+
+  fn main() = a + b ^ 2;

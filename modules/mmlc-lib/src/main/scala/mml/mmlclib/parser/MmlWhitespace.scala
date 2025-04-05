@@ -1,9 +1,7 @@
 package mml.mmlclib.parser
 
-import fastparse.ParsingRun
-import fastparse.Whitespace
 import fastparse.internal.Msgs
-import mml.mmlclib.ast.SourceSpan
+import fastparse.{ParsingRun, Whitespace}
 
 import scala.annotation.tailrec
 
@@ -26,8 +24,8 @@ object MmlWhitespace {
             // State 0: Normal whitespace handling.
             case 0 =>
               if (
-                currentChar == ' ' || currentChar == '\t' || currentChar == '\n' || currentChar == '\r'
-              )
+                  currentChar == ' ' || currentChar == '\t' || currentChar == '\n' || currentChar == '\r'
+                )
               then rec(current + 1, state)
               else if (currentChar == '#') then
                 if (input.isReachable(current + 1) && input(current + 1) == '-') then

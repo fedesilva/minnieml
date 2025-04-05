@@ -1,0 +1,11 @@
+services:
+  mml:
+    image: ubuntu-graal-sbt
+    build:
+      context: ./packaging/docker
+    volumes:
+      - .:/workspace
+    working_dir: /workspace
+    tty: true
+    stdin_open: true
+    command: bash

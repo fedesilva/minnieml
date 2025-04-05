@@ -1,15 +1,14 @@
 package mml.mmlclib.grammar
 
-import cats.syntax.all.*
 import mml.mmlclib.ast.*
 import mml.mmlclib.test.BaseEffFunSuite
-import mml.mmlclib.util.prettyPrintAst
+import mml.mmlclib.util.prettyprint.ast.prettyPrintAst
 import munit.*
 
 class TupleTests extends BaseEffFunSuite:
 
   test("let with tuple") {
-    modNotFailed(
+    parseNotFailed(
       """
         let a = (2,2);
       """
@@ -35,7 +34,7 @@ class TupleTests extends BaseEffFunSuite:
   }
 
   test("let with tuple - 3 elem") {
-    modNotFailed(
+    parseNotFailed(
       """
           let a = (2, 2, 3);
         """
@@ -61,7 +60,7 @@ class TupleTests extends BaseEffFunSuite:
   }
 
   test("let with tuple - 3 elem - mixed types") {
-    modNotFailed(
+    parseNotFailed(
       """
             let a = (2, "2", 3);
           """

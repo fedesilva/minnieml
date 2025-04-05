@@ -1,15 +1,14 @@
 package mml.mmlclib.grammar
 
-import cats.syntax.all.*
 import mml.mmlclib.ast.*
 import mml.mmlclib.test.BaseEffFunSuite
-import mml.mmlclib.util.prettyPrintAst
+import mml.mmlclib.util.prettyprint.ast.prettyPrintAst
 import munit.*
 
 class CommentsTests extends BaseEffFunSuite:
 
   test("line comment before declaration") {
-    modNotFailed(
+    parseNotFailed(
       """
         # line comment
         let a = 1;
@@ -20,7 +19,7 @@ class CommentsTests extends BaseEffFunSuite:
   }
 
   test("line comments between tokens") {
-    modNotFailed(
+    parseNotFailed(
       """
         let # comment between tokens
         x   # another comment
@@ -34,7 +33,7 @@ class CommentsTests extends BaseEffFunSuite:
   }
 
   test("doc comment before let declaration") {
-    modNotFailed(
+    parseNotFailed(
       """
         #-
         This is a multiline comment
@@ -48,7 +47,7 @@ class CommentsTests extends BaseEffFunSuite:
   }
 
   test("nested multiline comments") {
-    modNotFailed(
+    parseNotFailed(
       """
         #- Outer comment
         #- Nested comment #- inside -# outer -#
@@ -61,7 +60,7 @@ class CommentsTests extends BaseEffFunSuite:
   }
 
   test("doc comments on multiple declarations") {
-    modNotFailed(
+    parseNotFailed(
       """
         #- Comment on x -#
         let x = 3;
@@ -78,7 +77,7 @@ class CommentsTests extends BaseEffFunSuite:
   }
 
   test("unclosed doc should fail ") {
-    modFailed(
+    parseFailed(
       """
          #- This is an unclosed comment
           let x = 42;
@@ -87,7 +86,7 @@ class CommentsTests extends BaseEffFunSuite:
   }
 
   test("unclosed doc - no module ; - end of the file") {
-    modFailed(
+    parseFailed(
       """
       module Test =
         let x = 42;
@@ -97,7 +96,7 @@ class CommentsTests extends BaseEffFunSuite:
   }
 
   test("unclosed doc - implicit module - end of the file") {
-    modFailed(
+    parseFailed(
       """
         let x = 42;
         #- This is an unclosed comment
@@ -106,7 +105,7 @@ class CommentsTests extends BaseEffFunSuite:
   }
 
   test("doc comments") {
-    modNotFailed(
+    parseNotFailed(
       """
         #- This is a doc comment -#
         let x = 42;
@@ -117,7 +116,7 @@ class CommentsTests extends BaseEffFunSuite:
   }
 
   test("doc comments in fn") {
-    modNotFailed(
+    parseNotFailed(
       """
          #- This is a doc comment -#
          fn func (x) = 42;
@@ -128,7 +127,7 @@ class CommentsTests extends BaseEffFunSuite:
   }
 
   test("module with doc comment") {
-    modNotFailed(
+    parseNotFailed(
       """
         #-
         This is a doc comment
@@ -154,7 +153,7 @@ class CommentsTests extends BaseEffFunSuite:
   }
 
   test("doc comments with # margin - remove margin".ignore) {
-    modNotFailed(
+    parseNotFailed(
       """
         #-
         #

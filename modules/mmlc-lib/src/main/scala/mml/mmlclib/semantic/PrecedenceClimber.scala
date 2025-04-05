@@ -5,11 +5,9 @@ import mml.mmlclib.ast.*
 
 object PrecedenceClimber:
 
-  val MinPrecedence = 1
+  val MinPrecedence: Int = 1
+  val FnPrecedence:  Int = 100 // Function application has highest precedence
 
-  /** Rewrite a module by applying precedence climbing to all expressions. Assumes that all
-    * references have been resolved.
-    */
   def rewriteModule(module: Module): Either[List[SemanticError], Module] =
     val rewrittenMembers = module.members.map {
       case bnd: Bnd =>
@@ -24,12 +22,7 @@ object PrecedenceClimber:
     }
     val errors = rewrittenMembers.collect { case Left(errs) => errs }.flatten
     if errors.nonEmpty then errors.asLeft
-    else
-      module
-        .copy(
-          members = rewrittenMembers.collect { case Right(member) => member }
-        )
-        .asRight
+    else module.copy(members = rewrittenMembers.collect { case Right(member) => member }).asRight
 
   def rewriteExpr(expr: Expr): Either[List[SemanticError], Expr] =
     rewriteSubExpr(expr.terms, MinPrecedence, expr.span).map(_._1)
@@ -37,23 +30,22 @@ object PrecedenceClimber:
   private def rewriteSubExpr(
     terms:   List[Term],
     minPrec: Int,
-    span:    SourceSpan
+    span:    SrcSpan
   ): Either[List[SemanticError], (Expr, List[Term])] =
-    // Parse a single atom or prefix operator application.
-    def parseAtom(ts: List[Term]): Either[List[SemanticError], (Expr, List[Term])] =
+    // Process one "atom" (a literal, group, or prefix application)
+    def rewriteAtom(ts: List[Term]): Either[List[SemanticError], (Expr, List[Term])] =
       ts match
-        case (g: GroupTerm) :: rest =>
-          rewriteSubExpr(g.inner.terms, MinPrecedence, g.span).flatMap {
-            case (subExpr, remaining) =>
-              (Expr(g.span, List(subExpr)), rest).asRight
+        case (g: TermGroup) :: rest =>
+          // A parenthesized group is handled as a single atom.
+          rewriteSubExpr(g.inner.terms, MinPrecedence, g.span).map { case (subExpr, _) =>
+            (Expr(g.span, List(subExpr)), rest)
           }
-        case IsOp(ref, opDef, prec, assoc) :: rest
-            if isUnary(opDef) && (assoc == Associativity.Right) =>
-          // Prefix unary operator: parse its operand with operator's precedence,
-          // then continue processing trailing operators with the outer minPrec.
+        case IsPrefixOpRef(ref, opDef, prec, assoc) :: rest =>
+          // Prefix unary operator - set resolvedAs to the UnaryOpDef
+          val resolvedRef = ref.copy(resolvedAs = opDef.some)
           rewriteSubExpr(rest, prec, span).flatMap { case (operand, remaining) =>
-            val combined = Expr(span, List(ref, operand))
-            parseOps(combined, remaining, minPrec)
+            val combined = Expr(span, List(resolvedRef, operand))
+            rewriteOps(combined, remaining, minPrec)
           }
         case IsAtom(atom) :: rest =>
           (Expr(atom.span, List(atom)), rest).asRight
@@ -62,73 +54,35 @@ object PrecedenceClimber:
             SemanticError.InvalidExpression(Expr(span, Nil), s"Expected an atom, got: $ts")
           ).asLeft
 
-    // Parse left-hand side combined with trailing operators.
-    def parseOps(
+    // Process trailing operators on an expression.
+    def rewriteOps(
       lhs:            Expr,
       ts:             List[Term],
       currentMinPrec: Int
     ): Either[List[SemanticError], (Expr, List[Term])] =
       ts match
-        case IsOp(ref, opDef, prec, assoc) :: rest if prec >= currentMinPrec =>
-          opDef match
-            case bin: BinOpDef =>
-              val nextMinPrec = if assoc == Associativity.Left then prec + 1 else prec
-              rewriteSubExpr(rest, nextMinPrec, span).flatMap { case (rhs, remaining) =>
-                val combined = Expr(span, List(lhs, ref, rhs))
-                parseOps(combined, remaining, currentMinPrec)
-              }
-
-            case unary: UnaryOpDef if assoc == Associativity.Left =>
-              // Postfix operator case.
-              val combined = Expr(span, List(lhs, ref))
-              parseOps(combined, rest, currentMinPrec)
-
-            case _ =>
-              List(
-                SemanticError.InvalidExpression(lhs, s"Operator ${ref.name} not supported here")
-              ).asLeft
-        case (g: GroupTerm) :: rest =>
+        case IsBinOpRef(ref, opDef, prec, assoc) :: rest if prec >= currentMinPrec =>
+          // Binary operator - set resolvedAs to the BinOpDef
+          val resolvedRef = ref.copy(resolvedAs = opDef.some)
+          val nextMinPrec = if assoc == Associativity.Left then prec + 1 else prec
+          rewriteSubExpr(rest, nextMinPrec, span).flatMap { case (rhs, remaining) =>
+            val combined = Expr(span, List(lhs, resolvedRef, rhs))
+            rewriteOps(combined, remaining, currentMinPrec)
+          }
+        case IsPostfixOpRef(ref, opDef, prec, _) :: rest if prec >= currentMinPrec =>
+          // Postfix unary operator - set resolvedAs to the UnaryOpDef
+          val resolvedRef = ref.copy(resolvedAs = opDef.some)
+          val combined    = Expr(span, List(lhs, resolvedRef))
+          rewriteOps(combined, rest, currentMinPrec)
+        case (g: TermGroup) :: rest =>
           rewriteSubExpr(g.inner.terms, MinPrecedence, g.span).flatMap {
             case (subExpr, remaining) =>
-              (Expr(g.span, List(subExpr)), remaining).asRight
+              rewriteOps(Expr(g.span, List(subExpr)), rest, currentMinPrec)
           }
         case _ =>
           (lhs, ts).asRight
 
     for
-      (atom, tsAfterAtom) <- parseAtom(terms)
-      result <- parseOps(atom, tsAfterAtom, minPrec)
+      (atom, tsAfterAtom) <- rewriteAtom(terms)
+      result <- rewriteOps(atom, tsAfterAtom, minPrec)
     yield result
-
-  private def isUnary(op: OpDef): Boolean =
-    op match
-      case _: UnaryOpDef => true
-      case _ => false
-
-  // ---- Extractors abstract pattern matching away ----
-
-  private object IsOp:
-    def unapply(ref: Ref): Option[(Ref, OpDef, Int, Associativity)] =
-      ref.resolvedAs match
-        case Some(op: BinOpDef) => (ref, op, op.precedence, op.assoc).some
-        case Some(op: UnaryOpDef) => (ref, op, op.precedence, op.assoc).some
-        case _ => None
-
-  private object IsFn:
-    def unapply(ref: Ref): Option[(Ref, FnDef, Int, Associativity)] =
-      ref.resolvedAs match
-        case Some(fn: FnDef) => (ref, fn, MinPrecedence, Associativity.Left).some
-        case _ => None
-
-  /** Extracts terms that behave like values (bindings or literals) */
-  private object IsAtom:
-    def unapply(term: Term): Option[Term] =
-      term match
-        case v:     LiteralValue => v.some // Literals are always values
-        case group: GroupTerm => group.some
-        case h:     Hole => h.some
-        case ref:   Ref if ref.resolvedAs.isDefined =>
-          ref.resolvedAs match
-            case Some(_: Bnd) => ref.some
-            case _ => None
-        case x => x.some

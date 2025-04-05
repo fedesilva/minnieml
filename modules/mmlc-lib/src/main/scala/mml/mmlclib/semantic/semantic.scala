@@ -1,10 +1,13 @@
 package mml.mmlclib.semantic
 
+import cats.syntax.all.*
 import mml.mmlclib.ast.*
 
 enum SemanticError:
   case UndefinedRef(ref: Ref, member: Member)
+  case DuplicateName(name: String, duplicates: List[Resolvable])
   case InvalidExpression(expr: Expr, message: String)
+  case DanglingTerms(terms: List[Term], message: String)
 
 /** This is required because we don't have multiple file, cross module capabilities */
 def injectStandardOperators(module: Module): Module =
@@ -14,9 +17,17 @@ def injectStandardOperators(module: Module): Module =
       ("*", 80, Associativity.Left),
       ("/", 80, Associativity.Left),
       ("+", 60, Associativity.Left),
-      ("-", 60, Associativity.Left)
+      ("-", 60, Associativity.Left),
+      ("==", 50, Associativity.Left),
+      ("!=", 50, Associativity.Left),
+      ("<", 50, Associativity.Left),
+      (">", 50, Associativity.Left),
+      ("<=", 50, Associativity.Left),
+      (">=", 50, Associativity.Left),
+      ("&&", 40, Associativity.Left),
+      ("||", 30, Associativity.Left)
     ).map { case (name, prec, assoc) =>
-      val dummySpan = SourceSpan(SourcePoint(0, 0, 0), SourcePoint(0, 0, 0))
+      val dummySpan = SrcSpan(SrcPoint(0, 0, 0), SrcPoint(0, 0, 0))
       BinOpDef(
         span       = dummySpan,
         name       = name,
@@ -37,7 +48,7 @@ def injectStandardOperators(module: Module): Module =
       ("+", 95, Associativity.Right),
       ("!", 95, Associativity.Left)
     ).map { case (name, prec, assoc) =>
-      val dummySpan = SourceSpan(SourcePoint(0, 0, 0), SourcePoint(0, 0, 0))
+      val dummySpan = SrcSpan(SrcPoint(0, 0, 0), SrcPoint(0, 0, 0))
       UnaryOpDef(
         span       = dummySpan,
         name       = name,
@@ -60,7 +71,7 @@ def collectBadRefs(expr: Expr, module: Module): List[Ref] =
     case (acc, ref: Ref) =>
       if lookupRef(ref, module).isDefined then acc
       else ref :: acc
-    case (acc, group: GroupTerm) =>
+    case (acc, group: TermGroup) =>
       acc ++ collectBadRefs(group.inner, module)
     case (acc, expr: Expr) =>
       acc ++ collectBadRefs(expr, module)
@@ -81,3 +92,57 @@ def lookupNames(name: String, module: Module): Seq[Member] =
     case fnDef: FnDef if fnDef.name == name => fnDef
     case opDef: OpDef if opDef.name == name => opDef
   }
+
+// --- Extractors to cleanup pattern matching ---
+//
+object IsOpRef:
+  def unapply(term: Term): Option[(Ref, OpDef, Int, Associativity)] = term match
+    case ref: Ref =>
+      ref.candidates.collectFirst {
+        case op: BinOpDef => (ref, op, op.precedence, op.assoc)
+        case op: UnaryOpDef => (ref, op, op.precedence, op.assoc)
+      }
+    case _ => None
+
+object IsBinOpRef:
+  def unapply(term: Term): Option[(Ref, BinOpDef, Int, Associativity)] = term match
+    case ref: Ref =>
+      ref.candidates.collectFirst { case op: BinOpDef =>
+        (ref, op, op.precedence, op.assoc)
+      }
+    case _ => None
+
+object IsPrefixOpRef:
+  def unapply(term: Term): Option[(Ref, UnaryOpDef, Int, Associativity)] = term match
+    case ref: Ref =>
+      ref.candidates.collectFirst {
+        case op: UnaryOpDef if op.assoc == Associativity.Right =>
+          (ref, op, op.precedence, op.assoc)
+      }
+    case _ => None
+
+object IsPostfixOpRef:
+  def unapply(term: Term): Option[(Ref, UnaryOpDef, Int, Associativity)] = term match
+    case ref: Ref =>
+      ref.candidates.collectFirst {
+        case op: UnaryOpDef if op.assoc == Associativity.Left =>
+          (ref, op, op.precedence, op.assoc)
+      }
+    case _ => None
+
+object IsFnRef:
+  def unapply(term: Term): Option[(Ref, FnDef)] = term match
+    case ref: Ref =>
+      ref.candidates.collectFirst { case fn: FnDef =>
+        (ref, fn)
+      }
+    case _ => None
+
+object IsAtom:
+  def unapply(term: Term): Option[Term] = term match
+    case v:   LiteralValue => v.some
+    case g:   TermGroup => g.some
+    case h:   Hole => h.some
+    case ref: Ref if ref.candidates.exists(c => c.isInstanceOf[Bnd] || c.isInstanceOf[FnParam]) =>
+      ref.some
+    case x => x.some

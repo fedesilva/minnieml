@@ -2,7 +2,6 @@ package mml.mmlclib.codegen
 
 import cats.syntax.all.*
 import mml.mmlclib.ast.*
-import mml.mmlclib.semantic.*
 
 /** Represents an error that occurred during code generation. */
 case class CodeGenError(message: String)
@@ -237,7 +236,7 @@ object LlvmIrPrinter:
         val reg  = state.nextRegister
         val line = s"  %$reg = load i32, i32* @${ref.name}"
         CompileResult(reg, state.withRegister(reg + 1).emit(line), false).asRight
-      case GroupTerm(_, expr, _) =>
+      case TermGroup(_, expr, _) =>
         compileExpr(expr, state)
       case e: Expr =>
         compileExpr(e, state)

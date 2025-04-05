@@ -1,15 +1,14 @@
 package mml.mmlclib.grammar
 
-import cats.syntax.all.*
 import mml.mmlclib.ast.*
 import mml.mmlclib.test.BaseEffFunSuite
-import mml.mmlclib.util.prettyPrintAst
+import mml.mmlclib.util.prettyprint.ast.prettyPrintAst
 import munit.*
 
 class FnTests extends BaseEffFunSuite:
 
   test("simple fn") {
-    modNotFailed(
+    parseNotFailed(
       """
           fn sum (a b) = a sum b;
       """
@@ -33,7 +32,7 @@ class FnTests extends BaseEffFunSuite:
   }
 
   test("fn and let") {
-    modNotFailed(
+    parseNotFailed(
       """
        module A =
          let a = 1;
@@ -46,7 +45,7 @@ class FnTests extends BaseEffFunSuite:
   }
 
   test("app with id and lit") {
-    modNotFailed(
+    parseNotFailed(
       """        
         fn sum (a b) = b + 3;
       """
@@ -54,7 +53,7 @@ class FnTests extends BaseEffFunSuite:
   }
 
   test("Meh is accepted as a term") {
-    modNotFailed(
+    parseNotFailed(
       """        
           fn plusA (a) = sum a _;
         """
@@ -62,7 +61,7 @@ class FnTests extends BaseEffFunSuite:
   }
 
   test("fn with hole for body") {
-    modNotFailed(
+    parseNotFailed(
       """
         fn hole (h) = ???;
       """
@@ -80,7 +79,7 @@ class FnTests extends BaseEffFunSuite:
   }
 
   test("fn with type spec") {
-    modNotFailed(
+    parseNotFailed(
       """
         fn sum (a: Int b: Int) = a + b;
       """
@@ -108,7 +107,7 @@ class FnTests extends BaseEffFunSuite:
   }
 
   test("grouped expression") {
-    modNotFailed(
+    parseNotFailed(
       """
         fn compute (a b) = 1 + (2 * 3);
       """
@@ -126,7 +125,7 @@ class FnTests extends BaseEffFunSuite:
   }
 
   test("cant use a keyword as a name") {
-    modFailed(
+    parseFailed(
       """
         fn let (a) = 1;
       """

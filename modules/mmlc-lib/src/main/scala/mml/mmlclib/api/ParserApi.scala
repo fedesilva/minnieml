@@ -1,36 +1,45 @@
 package mml.mmlclib.api
 
-import cats.effect.IO
-import cats.effect.Sync
+import cats.data.EitherT
+import cats.effect.{IO, Sync}
 import cats.syntax.all.*
+import mml.mmlclib.api.ParserEffect
 import mml.mmlclib.ast.Module
 import mml.mmlclib.parser.Parser
-import mml.mmlclib.parser.ParserError
-import mml.mmlclib.parser.ParserResult
 
-import java.nio.file.Files
-import java.nio.file.Path
+import java.nio.file.{Files, Path}
 
 object ParserApi:
-
+  /** Parse a source string into a Module
+    *
+    * @param source
+    *   the source string to parse
+    * @param name
+    *   an optional name for the module
+    * @return
+    *   a ParserEffect that, when run, yields either a ParserError or a Module
+    */
   def parseModuleString(
     source: String,
     name:   Option[String] = None
-  ): IO[ParserResult] =
+  ): ParserEffect[Module] =
     val n = name.map(sanitizeModuleName)
-    IO.pure(
-      Parser.parseModule(source, n)
-    )
+    EitherT(IO.pure(Parser.parseModule(source, n)))
 
-  def parseModuleFile(path: Path): IO[ParserResult] =
+  /** Parse a file into a Module
+    *
+    * @param path
+    *   the path to the file to parse
+    * @return
+    *   a ParserEffect that, when run, yields either a ParserError or a Module
+    */
+  def parseModuleFile(path: Path): ParserEffect[Module] =
     val parentName = sanitizeModuleName(path.getParent.getFileName.toString)
-    Sync[IO]
-      .blocking(Files.readString(path))
-      .flatMap(src =>
-        Sync[IO].pure(
-          Parser.parseModule(src, parentName.some)
-        )
-      )
+    EitherT(
+      Sync[IO]
+        .blocking(Files.readString(path))
+        .map(src => Parser.parseModule(src, parentName.some))
+    )
 
   def sanitizeModuleName(dirName: String): String =
     val words = dirName.split("[-_ ]+").filter(_.nonEmpty)

@@ -3,13 +3,12 @@ package mml.mmlclib.grammar
 import cats.syntax.all.*
 import mml.mmlclib.ast.*
 import mml.mmlclib.test.BaseEffFunSuite
-import mml.mmlclib.util.prettyPrintAst
 import munit.*
 
 class ModuleTests extends BaseEffFunSuite:
 
   test("explicit module. name passed, ignored") {
-    modNotFailed(
+    parseNotFailed(
       """
       module A =
         let a = 1;
@@ -23,7 +22,7 @@ class ModuleTests extends BaseEffFunSuite:
   }
 
   test("implicit module, name passed") {
-    modNotFailed(
+    parseNotFailed(
       """
         let a = 1;
       """,
@@ -37,7 +36,7 @@ class ModuleTests extends BaseEffFunSuite:
   }
 
   test("fail: implicit module, name NOT  passed") {
-    modFailed(
+    parseFailed(
       """
         let a = 1
       """,
@@ -46,7 +45,7 @@ class ModuleTests extends BaseEffFunSuite:
   }
 
   test("optional semicolon closing module") {
-    modNotFailed(
+    parseNotFailed(
       """
       module A =
         let a = 1;

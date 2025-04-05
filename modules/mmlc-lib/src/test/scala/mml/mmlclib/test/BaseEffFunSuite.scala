@@ -2,12 +2,9 @@ package mml.mmlclib.test
 
 import cats.effect.IO
 import cats.syntax.all.*
-import mml.mmlclib.api.CompilerApi
-import mml.mmlclib.api.ParserApi
-import mml.mmlclib.ast.Member
-import mml.mmlclib.ast.MemberError
-import mml.mmlclib.ast.Module
-import mml.mmlclib.util.prettyPrintAst
+import mml.mmlclib.api.{CompilerApi, ParserApi}
+import mml.mmlclib.ast.{Member, MemberError, Module}
+import mml.mmlclib.util.prettyprint.ast.prettyPrintAst
 import munit.CatsEffectSuite
 
 /** Base trait for effectful tests; adds common MML specific assertions. */
@@ -23,13 +20,13 @@ trait BaseEffFunSuite extends CatsEffectSuite:
     checkMembers(module.members)
   }
 
-  def modNotFailed(
+  def parseNotFailed(
     source: String,
     name:   Option[String] = "Test".some,
     msg:    Option[String] = None
   ): IO[Module] = {
 
-    ParserApi.parseModuleString(source, name).map {
+    ParserApi.parseModuleString(source, name).value.map {
       case Right(module) =>
         assert(
           !containsMemberError(module),
@@ -43,12 +40,12 @@ trait BaseEffFunSuite extends CatsEffectSuite:
     }
   }
 
-  def modFailed(
+  def parseFailed(
     source: String,
     name:   Option[String] = "TestFail".some,
     msg:    Option[String] = None
   ): IO[Unit] = {
-    ParserApi.parseModuleString(source, name).map {
+    ParserApi.parseModuleString(source, name).value.map {
       case Right(module) =>
         assert(
           containsMemberError(module),
@@ -64,7 +61,7 @@ trait BaseEffFunSuite extends CatsEffectSuite:
     name:   Option[String] = "Test".some,
     msg:    Option[String] = None
   ): IO[Module] =
-    CompilerApi.compileString(source, name).map {
+    CompilerApi.compileString(source, name).value.map {
       case Right(module) =>
         assert(
           !containsMemberError(module),
@@ -82,7 +79,7 @@ trait BaseEffFunSuite extends CatsEffectSuite:
     name:   Option[String] = "TestFail".some,
     msg:    Option[String] = None
   ): IO[Unit] =
-    CompilerApi.compileString(source, name).map {
+    CompilerApi.compileString(source, name).value.map {
       case Right(module) =>
         assert(
           containsMemberError(module),

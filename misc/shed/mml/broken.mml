@@ -1,0 +1,4 @@
+module A = 
+
+ let a = 1;
+ let b = `fede`;

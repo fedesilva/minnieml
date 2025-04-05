@@ -1,32 +1,42 @@
 package mml.mmlclib.api
-
+import cats.data.EitherT
 import cats.effect.IO
-import cats.syntax.all.*
-import mml.mmlclib.api.ParserApi
+import mml.mmlclib.api.CompilerEffect
 import mml.mmlclib.ast.Module
-import mml.mmlclib.parser.ParserError
 import mml.mmlclib.semantic.*
+import mml.mmlclib.util.pipe.*
 
 object SemanticApi:
+  /** Rewrite a Module with semantic transforms
+    *
+    * This function applies several semantic transformations to a module:
+    *   - Injects standard operators
+    *   - Checks for duplicate names
+    *   - Resolves references
+    *   - Rewrites expressions with function applications and operators
+    *   - Simplifies the AST
+    *
+    * @param module
+    *   the module to rewrite
+    * @return
+    *   a CompilerEffect that, when run, yields either a CompilerError or a rewritten Module
+    */
+  def rewriteModule(module: Module): CompilerEffect[Module] =
+    EitherT
+      .liftF(IO.delay {
+        val result = module
+        // Inject standard operators into the module
+        // This is a temporary solution until we have a proper module system
+          |> injectStandardOperators
+          |> DuplicateNameChecker.checkModule
+          |> RefResolver.rewriteModule
+          // Handle expression rewriting (function applications and operator precedence)
+          |> ExpressionRewriter.rewriteModule
+          |> Simplifier.rewriteModule
 
-  def rewriteModule(module: Module): IO[Either[CompilerError, Module]] =
-    IO.delay {
-      // Inject standard operators into the module
-      // TODO: This should be done as a separate step.
-      //       So when we have a proper prelude, we can remove that step
-      //       and also so that we can have tests that don't rely on the prelude,
-      //       but we define the operators in the test itself.
-      val moduleWithOps = injectStandardOperators(module)
-      // Resolve references, apply precedence rewriting and
-      // simplify the module since the precedence climbing algorithm
-      // may leave some unnecessary exprs in the tree.
-      val result = for {
-        resolvedModule <- RefResolver.rewriteModule(moduleWithOps)
-        bloomedModule <- PrecedenceClimber.rewriteModule(resolvedModule)
-        finalModule <- Simplifier.rewriteModule(bloomedModule)
-      } yield finalModule
-      result match
-        case Right(mod) => Right(mod)
-        case Left(errors) =>
-          CompilerError.SemanticErrors(errors).asLeft
-    }
+        result
+      })
+      .flatMap {
+        case Right(mod) => EitherT.rightT[IO, CompilerError](mod)
+        case Left(errors) => EitherT.leftT[IO, Module](CompilerError.SemanticErrors(errors))
+      }

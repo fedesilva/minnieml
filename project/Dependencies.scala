@@ -2,12 +2,11 @@ import sbt.*
 
 object Dependencies {
 
-  val logBackVersion    = "1.2.3"
+  val logBackVersion    = "1.5.18"
   val monocleVersion    = "3.3.0"
   val catsVersion       = "2.12.0"
-  val catsEffectVersion = "3.5.4"
-  val slf4jVersion      = "1.7.30"
-  val neo4jVersion      = "2025.01.0"
+  val catsEffectVersion = "3.6.0"
+  val refinedVersion    = "0.11.3"
 
   lazy val commonDependencies: Seq[ModuleID] =
     Seq(
@@ -16,25 +15,21 @@ object Dependencies {
       // "core" module - IO, IOApp, schedulers
       // This pulls in the kernel and std modules automatically.
       "org.typelevel" %% "cats-effect"    % catsEffectVersion,
-      "eu.timepit"    %% "refined"        % "0.11.3",
-      "eu.timepit"    %% "refined-cats"   % "0.11.3", // optional
+      "eu.timepit"    %% "refined"        % refinedVersion,
+      "eu.timepit"    %% "refined-cats"   % refinedVersion,
       "edu.gemini"    %% "lucuma-refined" % "0.1.3",
-      "dev.optics"    %% "monocle-core"   % "3.1.0",
-      "dev.optics"    %% "monocle-macro"  % "3.1.0"
+      "dev.optics"    %% "monocle-core"   % monocleVersion,
+      "dev.optics"    %% "monocle-macro"  % monocleVersion
     )
 
   lazy val testDeps: Seq[ModuleID] = Seq(
-    "org.scalatest" %% "scalatest"         % "3.2.19",
     "org.scalameta" %% "munit"             % "1.1.0",
     "org.typelevel" %% "munit-cats-effect" % "2.0.0"
   ).map(_ % Test)
 
   lazy val mmlclib: Seq[ModuleID] =
     Seq(
-      "org.bytedeco.javacpp-presets" % "llvm-platform" % "7.0.1-1.4.4",
-      "com.lihaoyi"                 %% "fastparse"     % "3.1.1"
-      // "io.github.myui"               % "btree4j"       % "0.9.1",
-      // "org.neo4j" % "neo4j" % neo4jVersion
+      "com.lihaoyi" %% "fastparse" % "3.1.1"
     ) ++ commonDependencies ++ testDeps
 
   lazy val mmlc: Seq[ModuleID] =

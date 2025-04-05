@@ -35,7 +35,7 @@ fn appendTree (tree: Tree ('A * 'A), list: RList (Tree ('A * 'A))): RList (Tree 
     | Empty               -> Single tree
     | Single t            -> Deep (digitToList tree, Empty, digitToList t)
     | Deep (front, mid, rear) ->
-        match front with
+        front match
           | One a          -> Deep (Two a tree, mid, rear)
           | Two a b        -> Deep (Three a b tree, mid, rear)
           | Three a b c    -> Deep (Four a b c tree, mid, rear)
@@ -46,7 +46,7 @@ fn prependTree (tree: Tree ('A * 'A), list: RList (Tree ('A * 'A))): RList (Tree
     | Empty               -> Single tree
     | Single t            -> Deep (digitToList t, Empty, digitToList tree)
     | Deep (front, mid, rear) ->
-        match rear with
+        rear match
           | One d           -> Deep (front, mid, Two tree d)
           | Two c d         -> Deep (front, mid, Three tree c d)
           | Three b c d     -> Deep (front, mid, Four tree b c d)
@@ -55,13 +55,13 @@ fn prependTree (tree: Tree ('A * 'A), list: RList (Tree ('A * 'A))): RList (Tree
 fn lookupTree (index: Int, tree: Tree ('A * 'A)): 'A =
   let rec lookupDigit (index: Int, digit: Digit 'A): 'A =
     digit match
-      | One a               -> a
-      | Two a b             -> if index == 0 then a else b
-      | Three a b c         -> match index with
-                                | 0 -> a
-                                | 1 -> b
-                                | 2 -> c
-                                | _ ->
+      | One a       -> a
+      | Two a b     -> if index == 0 then a else b
+      | Three a b c -> index match
+                         | 0 -> a
+                         | 1 -> b
+                         | 2 -> c
+                         | _ ->
 
 
 # collection protocols

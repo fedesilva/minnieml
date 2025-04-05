@@ -13,3 +13,10 @@ modules/mmlc-lib/src/main/antlr4/*.tokens
 /.vscode/extensions.json
 out/
 scratch
+claude-memory.md
+build
+project/metals.sbt
+
+project/project/metals.sbt
+
+project/project/project/metals.sbt

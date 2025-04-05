@@ -2,13 +2,13 @@ package mml.mmlclib.grammar
 
 import mml.mmlclib.ast.*
 import mml.mmlclib.test.BaseEffFunSuite
-import mml.mmlclib.util.prettyPrintAst
+import mml.mmlclib.util.prettyprint.ast.prettyPrintAst
 import munit.*
 
 class LiteralTests extends BaseEffFunSuite:
 
   test("String Literal has correct typespec") {
-    modNotFailed(
+    parseNotFailed(
       """
         let a = "hello";
       """.stripMargin
@@ -28,7 +28,7 @@ class LiteralTests extends BaseEffFunSuite:
   }
 
   test("Int Literal has correct typespec") {
-    modNotFailed(
+    parseNotFailed(
       """
         let a = 1;
       """.stripMargin
@@ -47,7 +47,7 @@ class LiteralTests extends BaseEffFunSuite:
   }
 
   test("Float literal has correct typespec") {
-    modNotFailed(
+    parseNotFailed(
       """
         let f = 1.0;
       """.stripMargin
@@ -65,7 +65,7 @@ class LiteralTests extends BaseEffFunSuite:
   }
 
   test("Bool literal has correct typespec") {
-    modNotFailed(
+    parseNotFailed(
       """
         let a = true;
       """.stripMargin
@@ -83,7 +83,7 @@ class LiteralTests extends BaseEffFunSuite:
   }
 
   test("Unit literal has correct typespec") {
-    modNotFailed(
+    parseNotFailed(
       """
         let a = ();
       """.stripMargin
@@ -101,7 +101,7 @@ class LiteralTests extends BaseEffFunSuite:
   }
 
   test("parses floats correctly") {
-    modNotFailed(
+    parseNotFailed(
       """
         let a = 1.0;
       """

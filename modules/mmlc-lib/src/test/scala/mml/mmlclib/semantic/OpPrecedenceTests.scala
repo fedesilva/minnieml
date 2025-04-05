@@ -1,9 +1,8 @@
 package mml.mmlclib.semantic
 
-import cats.syntax.all.*
 import mml.mmlclib.ast.*
 import mml.mmlclib.test.BaseEffFunSuite
-import mml.mmlclib.util.prettyPrintAst
+import mml.mmlclib.util.prettyprint.ast.prettyPrintAst
 import munit.*
 
 class OpPrecedenceTests extends BaseEffFunSuite:
@@ -747,12 +746,12 @@ class OpPrecedenceTests extends BaseEffFunSuite:
         case bnd: Bnd =>
           assert(clue(bnd.value.terms.size) == clue(3))
           bnd.value.terms match
-            case (expr: Expr) :: (op: Ref) ::(LiteralInt(_, x)) :: Nil if op.name == "+" =>
+            case (expr: Expr) :: (op: Ref) :: (LiteralInt(_, x)) :: Nil if op.name == "+" =>
               expr.terms match
                 case (LiteralInt(_, y)) :: (op2: Ref) :: (expr: Expr) :: Nil if op2.name == "+" =>
                   assert(clue(y) == clue(1))
                   expr.terms match
-                    case (LiteralInt(_, z)) :: (op3: Ref) ::(LiteralInt(_, w)) :: Nil
+                    case (LiteralInt(_, z)) :: (op3: Ref) :: (LiteralInt(_, w)) :: Nil
                         if op3.name == "^" =>
                       assert(clue(z) == clue(2))
                       assert(clue(w) == clue(3))
@@ -796,13 +795,13 @@ class OpPrecedenceTests extends BaseEffFunSuite:
         fail(s"Member `b` not found in module: ${prettyPrintAst(m)}")
       )
 
-      // println(prettyPrintAst(memberBndA))
+      // println(prettyPrintAst(m))
 
       memberBndA match
         case bnd: Bnd =>
           assert(clue(bnd.value.terms.size) == clue(3))
           bnd.value.terms match
-            case (LiteralInt(_, x)) :: (op: Ref) ::(LiteralInt(_, y)) :: Nil if op.name == "++" =>
+            case (LiteralInt(_, x)) :: (op: Ref) :: (LiteralInt(_, y)) :: Nil if op.name == "++" =>
               assert(clue(x) == clue(1))
               assert(clue(y) == clue(2))
             case x =>
@@ -814,7 +813,7 @@ class OpPrecedenceTests extends BaseEffFunSuite:
         case bnd: Bnd =>
           assert(clue(bnd.value.terms.size) == clue(2))
           bnd.value.terms match
-            case (op: Ref) ::(LiteralInt(_, x)) :: Nil if op.name == "++" =>
+            case (op: Ref) :: (LiteralInt(_, x)) :: Nil if op.name == "++" =>
               assert(clue(x) == clue(1))
             case x =>
               fail(s"Expected expression to be of form ['++', LiteralInt], got: $x")

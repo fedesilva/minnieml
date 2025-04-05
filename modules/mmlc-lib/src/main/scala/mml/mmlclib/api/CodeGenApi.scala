@@ -1,15 +1,11 @@
 package mml.mmlclib.api
 
+import cats.data.EitherT
 import cats.effect.IO
-import cats.effect.Sync
 import cats.syntax.all.*
+import mml.mmlclib.api.CodeGenEffect
 import mml.mmlclib.ast.Module
-import mml.mmlclib.codegen.CodeGenError
-import mml.mmlclib.codegen.LlvmIrPrinter
-import mml.mmlclib.parser.ParserError
-
-import java.nio.file.Files
-import java.nio.file.Path
+import mml.mmlclib.codegen.{CodeGenError, LlvmIrPrinter}
 
 // Define the errors that can occur during code generation.
 enum CodeGenApiError:
@@ -23,47 +19,40 @@ object CodeGenApi:
   /** Generate LLVM IR from a source string.
     *
     * This function first attempts to compile the source into a Module via CompilerApi. If
-    * successful, it then runs the LLVM IR printer. All errors are captured in an Either.
+    * successful, it then runs the LLVM IR printer. All errors are captured in an EitherT.
     *
     * @param source
     *   the source code to compile
     * @param name
     *   an optional name for the module (defaults to "Anon")
     * @return
-    *   an IO that, when run, yields either a CodeGenApiError or the generated LLVM IR string.
+    *   a CodeGenEffect that, when run, yields either a CodeGenApiError or the generated LLVM IR
+    *   string.
     */
   def generateFromString(
     source: String,
     name:   Option[String] = "Anon".some
-  ): IO[Either[CodeGenApiError, String]] =
+  ): CodeGenEffect[String] =
     for
-      parsedModule <- CompilerApi.compileString(source, name)
-      result <- parsedModule match
-        case Right(module) =>
-          // LlvmIrPrinter.printModule returns Either[CodeGenError, String].
-          // We run it in a blocking IO and use .attempt to capture any thrown errors.
-          IO.blocking(LlvmIrPrinter.printModule(module))
-            .attempt
-            .map {
-              case Right(innerEither) =>
-                // innerEither is Either[CodeGenError, String]; map any CodeGenError into our API error type.
-                innerEither.leftMap(e => CodeGenApiError.CodeGenErrors(List(e)))
-              case Left(throwable) =>
-                // Wrap all thrown errors as Unknown using the throwable's message.
-                CodeGenApiError.Unknown(throwable.getMessage).asLeft
-            }
-        case Left(error) =>
-          // Wrap compiler errors as a CompilerErrors branch.
-          IO.pure(CodeGenApiError.CompilerErrors(List(error)).asLeft)
+      // Convert CompilerEffect to CodeGenEffect by mapping errors
+      parsedModule <- CompilerApi
+        .compileString(source, name)
+        .leftMap(error => CodeGenApiError.CompilerErrors(List(error)))
+      // Run LLVM IR printer and handle potential errors
+      result <- generateFromModule(parsedModule)
     yield result
 
   /** Generate LLVM IR from an existing module */
-  def generateFromModule(module: Module): IO[Either[CodeGenApiError, String]] =
-    IO.blocking(LlvmIrPrinter.printModule(module))
-      .attempt
-      .map {
-        case Right(innerEither) =>
-          innerEither.leftMap(e => CodeGenApiError.CodeGenErrors(List(e)))
-        case Left(throwable) =>
-          CodeGenApiError.Unknown(throwable.getMessage).asLeft
-      }
+  def generateFromModule(module: Module): CodeGenEffect[String] =
+    EitherT(
+      IO.blocking(LlvmIrPrinter.printModule(module))
+        .attempt
+        .map {
+          case Right(innerEither) =>
+            // Map CodeGenError to CodeGenApiError
+            innerEither.leftMap(e => CodeGenApiError.CodeGenErrors(List(e)))
+          case Left(throwable) =>
+            // Wrap thrown errors as Unknown
+            CodeGenApiError.Unknown(throwable.getMessage).asLeft
+        }
+    )

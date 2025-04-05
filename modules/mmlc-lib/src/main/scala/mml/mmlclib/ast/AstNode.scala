@@ -4,7 +4,7 @@ import cats.data.NonEmptyList
 
 /* Represents a point in the source code, with a line and column number.
  */
-final case class SourcePoint(
+final case class SrcPoint(
   line:  Int,
   col:   Int,
   index: Int
@@ -12,9 +12,9 @@ final case class SourcePoint(
 
 /* Represents a span of source code, with a start and end point.
  */
-final case class SourceSpan(
-  start: SourcePoint,
-  end:   SourcePoint
+final case class SrcSpan(
+  start: SrcPoint,
+  end:   SrcPoint
 )
 
 sealed trait AstNode derives CanEqual
@@ -25,7 +25,7 @@ sealed trait Typeable extends AstNode {
 }
 
 sealed trait FromSource extends AstNode {
-  def span: SourceSpan
+  def span: SrcSpan
 }
 
 enum ModVisibility:
@@ -34,7 +34,7 @@ enum ModVisibility:
   case Lexical
 
 case class Module(
-  span:       SourceSpan,
+  span:       SrcSpan,
   name:       String,
   visibility: ModVisibility,
   members:    List[Member],
@@ -46,41 +46,43 @@ case class Module(
 /** Represents a top level member of a module. */
 sealed trait Member extends AstNode
 
-sealed trait Error extends AstNode {
-  def span:       SourceSpan
+sealed trait Resolvable extends AstNode:
+  def name: String
+
+sealed trait Error extends AstNode:
+  def span:       SrcSpan
   def message:    String
   def failedCode: Option[String]
-}
 
 case class MemberError(
-  span:       SourceSpan,
+  span:       SrcSpan,
   message:    String,
   failedCode: Option[String]
 ) extends Member,
       Error
 
 case class DocComment(
-  span: SourceSpan,
+  span: SrcSpan,
   text: String
 ) extends AstNode,
       FromSource
 
-sealed trait Decl extends Member, Typeable {
+sealed trait Decl extends Member, Typeable, Resolvable:
   def docComment: Option[DocComment]
-}
 
 case class FnParam(
-  span:       SourceSpan,
+  span:       SrcSpan,
   name:       String,
   typeSpec:   Option[TypeSpec]   = None,
   typeAsc:    Option[TypeSpec]   = None,
   docComment: Option[DocComment] = None
 ) extends AstNode,
       FromSource,
-      Typeable
+      Typeable,
+      Resolvable
 
 case class FnDef(
-  span:       SourceSpan,
+  span:       SrcSpan,
   name:       String,
   params:     List[FnParam],
   body:       Expr,
@@ -102,7 +104,7 @@ sealed trait OpDef extends Decl, FromSource {
 }
 
 case class BinOpDef(
-  span:       SourceSpan,
+  span:       SrcSpan,
   name:       String,
   param1:     FnParam,
   param2:     FnParam,
@@ -115,7 +117,7 @@ case class BinOpDef(
 ) extends OpDef
 
 case class UnaryOpDef(
-  span:       SourceSpan,
+  span:       SrcSpan,
   name:       String,
   param:      FnParam,
   precedence: Int,
@@ -127,7 +129,7 @@ case class UnaryOpDef(
 ) extends OpDef
 
 case class Bnd(
-  span:       SourceSpan,
+  span:       SrcSpan,
   name:       String,
   value:      Expr,
   typeSpec:   Option[TypeSpec]   = None,
@@ -139,7 +141,7 @@ case class Bnd(
 sealed trait Term extends AstNode, Typeable, FromSource
 
 case class TermError(
-  span:       SourceSpan,
+  span:       SrcSpan,
   message:    String,
   failedCode: Option[String]
 ) extends Term,
@@ -148,14 +150,14 @@ case class TermError(
   final val typeAsc:  Option[TypeSpec] = None
 
 case class Expr(
-  span:     SourceSpan,
+  span:     SrcSpan,
   terms:    List[Term],
-  typeSpec: Option[TypeSpec] = None,
-  typeAsc:  Option[TypeSpec] = None
+  typeAsc:  Option[TypeSpec] = None,
+  typeSpec: Option[TypeSpec] = None
 ) extends Term
 
 case class Cond(
-  span:     SourceSpan,
+  span:     SrcSpan,
   cond:     Expr,
   ifTrue:   Expr,
   ifFalse:  Expr,
@@ -163,16 +165,16 @@ case class Cond(
   typeAsc:  Option[TypeSpec] = None
 ) extends Term
 
-case class AppN(
-  span:     SourceSpan,
-  fn:       Ref,
-  args:     List[Expr],
-  typeSpec: Option[TypeSpec] = None,
-  typeAsc:  Option[TypeSpec] = None
+case class App(
+  span:     SrcSpan,
+  fn:       Ref | App,
+  arg:      Expr,
+  typeAsc:  Option[TypeSpec] = None,
+  typeSpec: Option[TypeSpec] = None
 ) extends Term
 
-case class GroupTerm(
-  span:    SourceSpan,
+case class TermGroup(
+  span:    SrcSpan,
   inner:   Expr,
   typeAsc: Option[TypeSpec] = None
 ) extends Term,
@@ -180,33 +182,34 @@ case class GroupTerm(
   def typeSpec: Option[TypeSpec] = inner.typeSpec
 
 case class Tuple(
-  span:     SourceSpan,
+  span:     SrcSpan,
   elements: NonEmptyList[Expr],
-  typeSpec: Option[TypeSpec] = None,
-  typeAsc:  Option[TypeSpec] = None
+  typeAsc:  Option[TypeSpec] = None,
+  typeSpec: Option[TypeSpec] = None
 ) extends Term
 
 /** Points to something declared elsewhere */
 case class Ref(
-  span:       SourceSpan,
+  span:       SrcSpan,
   name:       String,
-  typeSpec:   Option[TypeSpec],
-  typeAsc:    Option[TypeSpec] = None,
-  resolvedAs: Option[Member]   = None
+  typeAsc:    Option[TypeSpec]   = None,
+  typeSpec:   Option[TypeSpec]   = None,
+  resolvedAs: Option[Resolvable] = None,
+  candidates: List[Resolvable]   = Nil
 ) extends Term,
       FromSource
 
 case class MehRef(
-  span:     SourceSpan,
+  span:     SrcSpan,
   typeSpec: Option[TypeSpec],
   typeAsc:  Option[TypeSpec] = None
 ) extends Term,
       FromSource
 
 case class Hole(
-  span:     SourceSpan,
-  typeSpec: Option[TypeSpec] = None,
-  typeAsc:  Option[TypeSpec] = None
+  span:     SrcSpan,
+  typeAsc:  Option[TypeSpec] = None,
+  typeSpec: Option[TypeSpec] = None
 ) extends Term,
       FromSource
 
@@ -215,25 +218,25 @@ case class Hole(
 sealed trait LiteralValue extends Term, FromSource
 
 case class LiteralInt(
-  span:  SourceSpan,
+  span:  SrcSpan,
   value: Int
 ) extends LiteralValue:
   final val typeSpec: Option[TypeSpec] = Some(LiteralIntType(span))
   final val typeAsc:  Option[TypeSpec] = None
 
-case class LiteralString(span: SourceSpan, value: String) extends LiteralValue:
+case class LiteralString(span: SrcSpan, value: String) extends LiteralValue:
   final val typeSpec: Option[TypeSpec] = Some(LiteralStringType(span))
   final val typeAsc:  Option[TypeSpec] = None
 
-case class LiteralBool(span: SourceSpan, value: Boolean) extends LiteralValue:
+case class LiteralBool(span: SrcSpan, value: Boolean) extends LiteralValue:
   final val typeSpec: Option[TypeSpec] = Some(LiteralBoolType(span))
   final val typeAsc:  Option[TypeSpec] = None
 
-case class LiteralUnit(span: SourceSpan) extends LiteralValue:
+case class LiteralUnit(span: SrcSpan) extends LiteralValue:
   final val typeSpec: Option[TypeSpec] = Some(LiteralUnitType(span))
   final val typeAsc:  Option[TypeSpec] = None
 
-case class LiteralFloat(span: SourceSpan, value: Float) extends LiteralValue:
+case class LiteralFloat(span: SrcSpan, value: Float) extends LiteralValue:
   final val typeSpec: Option[TypeSpec] = Some(LiteralFloatType(span))
   final val typeAsc:  Option[TypeSpec] = None
 
@@ -241,57 +244,57 @@ case class LiteralFloat(span: SourceSpan, value: Float) extends LiteralValue:
 sealed trait TypeSpec extends AstNode, FromSource
 
 /** A type by name */
-case class TypeName(span: SourceSpan, name: String) extends TypeSpec
+case class TypeName(span: SrcSpan, name: String) extends TypeSpec
 
 /** A type application, ie:  `List Int, Map String Int` */
-case class TypeApplication(span: SourceSpan, base: TypeSpec, args: List[TypeSpec]) extends TypeSpec
+case class TypeApplication(span: SrcSpan, base: TypeSpec, args: List[TypeSpec]) extends TypeSpec
 
 /** The type of a Fn `String => Int` */
-case class TypeFn(span: SourceSpan, paramTypes: List[TypeSpec], returnType: TypeSpec)
-    extends TypeSpec
+case class TypeFn(span: SrcSpan, paramTypes: List[TypeSpec], returnType: TypeSpec) extends TypeSpec
 
 /** A tuple type: `(1, "uno") : (Int, String)` */
-case class TypeTuple(span: SourceSpan, elements: List[TypeSpec]) extends TypeSpec
+case class TypeTuple(span: SrcSpan, elements: List[TypeSpec]) extends TypeSpec
 
 /** Structural type `{ name: String, age: Int }` */
-case class TypeStruct(span: SourceSpan, fields: List[(String, TypeSpec)]) extends TypeSpec
+case class TypeStruct(span: SrcSpan, fields: List[(String, TypeSpec)]) extends TypeSpec
 
 /** Refine types with a predicate `Int {i => i < 100 && i > 0 }` */
-case class TypeRefinement(span: SourceSpan, id: Option[String], expr: Expr) extends TypeSpec
+case class TypeRefinement(span: SrcSpan, id: Option[String], expr: Expr) extends TypeSpec
 
 /** Union types  `Int | None` */
-case class Union(span: SourceSpan, types: List[TypeSpec]) extends TypeSpec
+// TODO: this is a Tuple2, not a list. remove 'types' and use tp1 and tp2
+case class Union(span: SrcSpan, types: List[TypeSpec]) extends TypeSpec
 
 /** Intersection Types `Readable & Writable` */
-case class Intersection(span: SourceSpan, types: List[TypeSpec]) extends TypeSpec
+case class Intersection(span: SrcSpan, types: List[TypeSpec]) extends TypeSpec
 
 /** The unit type `()` */
-case class TypeUnit(span: SourceSpan) extends TypeSpec
+case class TypeUnit(span: SrcSpan) extends TypeSpec
 
 /** Type Sequences `[Int], [String], [T]` */
-case class TypeSeq(span: SourceSpan, inner: TypeSpec) extends TypeSpec
+case class TypeSeq(span: SrcSpan, inner: TypeSpec) extends TypeSpec
 
 /** A grouping of types, mostly for disambiguation: `Map String (List Int)` */
-case class TypeGroup(span: SourceSpan, types: List[TypeSpec]) extends TypeSpec
+case class TypeGroup(span: SrcSpan, types: List[TypeSpec]) extends TypeSpec
 
 /** Helpers to represent known types */
 sealed trait LiteralType extends TypeSpec {
   def typeName: String
 }
-case class LiteralIntType(span: SourceSpan) extends LiteralType {
-  final val typeName = "Int"
+case class LiteralIntType(span: SrcSpan) extends LiteralType {
+  final val typeName: "Int" = "Int"
 }
-case class LiteralStringType(span: SourceSpan) extends LiteralType {
-  final val typeName = "String"
+case class LiteralStringType(span: SrcSpan) extends LiteralType {
+  final val typeName: "String" = "String"
 }
-case class LiteralBoolType(span: SourceSpan) extends LiteralType {
-  final val typeName = "Bool"
-}
-
-case class LiteralUnitType(span: SourceSpan) extends LiteralType {
-  final val typeName = "Unit"
+case class LiteralBoolType(span: SrcSpan) extends LiteralType {
+  final val typeName: "Bool" = "Bool"
 }
 
-case class LiteralFloatType(span: SourceSpan) extends LiteralType {
-  final val typeName = "Float"
+case class LiteralUnitType(span: SrcSpan) extends LiteralType {
+  final val typeName: "Unit" = "Unit"
+}
+
+case class LiteralFloatType(span: SrcSpan) extends LiteralType {
+  final val typeName: "Float" = "Float"
 }

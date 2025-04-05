@@ -59,16 +59,19 @@ A more complex example:
 enum Maybe 'T =
   | One 'T
   | None
+;
 
 # empty :: Maybe 'T -> Boolean
 fn empty (x) =
   x match
     | None  -> true
     | _     -> false
+;
 
 # nonEmpty :: Maybe 'T -> Boolean
 fn nonEmpty (maybe) =
   not empty maybe
+;
 
 enum Species =
   | Cat
@@ -76,31 +79,34 @@ enum Species =
   | Bird
   | Fish
   | Reptile
+;
 
 type Pet = {
   name:     String
   species:  Species
-}
+};
 
 type Person = {
   name: String
   pet:  Maybe Pet
-}
+};
 
 # hasPet :: 'T : { pet: Maybe Pet } -> Boolean
 fn hasPet (p) =
   nonEmpty p.pet
+;
 
 # nameOf :: 'T : { name: String } -> String
 fn nameOf (p): String =
   p.name
+;
 
-let zur     = Pet     "Zur"     Species.Cat
-let fede    = Person  "Fede"    One zur
-let victor  = Person  "Victor"  None
+let zur     = Pet     "Zur"     Species.Cat;
+let fede    = Person  "Fede"    One zur;
+let victor  = Person  "Victor"  None;
 
-let pv = hasPet victor # false
-let pf = hasPet fede   # true
+let pv = hasPet victor; # false
+let pf = hasPet fede;   # true
 
 # does not compile
 # let pz = hasPet zur
@@ -157,6 +163,7 @@ fn empty (x) =
   x match
     | None -> true
     | _  -> false
+;
 
 
 # Next, `fn nonEmpty maybe = ! empty maybe`.
@@ -167,6 +174,7 @@ fn empty (x) =
 # Hence: nonEmpty :: Maybe 'T -> Bool
 fn nonEmpty (maybe) =
   ! empty maybe
+;
 
 
 enum Species =
@@ -175,16 +183,17 @@ enum Species =
   | Bird
   | Fish
   | Reptile
+;
 
 type Pet = {
   name:     String
   species:  Species
-}
+};
 
 type Person = {
   name: String
   pet:  Maybe Pet
-}
+};
 
 
 # Now let's look at `fn hasPet p = nonEmpty p.pet`.
@@ -194,6 +203,7 @@ type Person = {
 # Hence: hasPet :: Person -> Bool
 fn hasPet (p) =
   nonEmpty p.pet
+;
 
 
 # Now `fn nameOf (p): String = p.name`.
@@ -213,15 +223,16 @@ fn hasPet (p) =
 # nameOf :: { name: String | 'R } -> String
 fn nameOf (p): String =
   p.name
+;
 
 
 # Let us examine the rest:
-let zur     = Pet     "Zur"     Species.Cat      # zur :: Pet
-let fede    = Person  "Fede"    One zur          # fede :: Person
-let victor  = Person  "Victor"  None             # victor :: Person
+let zur     = Pet     "Zur"     Species.Cat;      # zur :: Pet
+let fede    = Person  "Fede"    One zur;          # fede :: Person
+let victor  = Person  "Victor"  None;             # victor :: Person
 
-let pv = hasPet victor  # pv :: Bool  (evaluates to false)
-let pf = hasPet fede    # pf :: Bool  (evaluates to true)
+let pv = hasPet victor;  # pv :: Bool  (evaluates to false)
+let pf = hasPet fede;    # pf :: Bool  (evaluates to true)
 
 # Finally, `let pz = hasPet zur` would fail to compile
 # because `hasPet` expects a Person, but `zur` is a Pet.
