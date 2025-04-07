@@ -1,7 +1,7 @@
 package mml.mmlclib.codegen.opmap
 
-/** Maps MML operator symbols to their corresponding LLVM instructions.
-  * Supports arithmetic, comparison, and logical operators.
+/** Maps MML operator symbols to their corresponding LLVM instructions. Supports arithmetic,
+  * comparison, and logical operators.
   */
 case class OperatorMapping(
   mmlOperator:     String,
@@ -18,7 +18,7 @@ object OperatorMappings {
     "-" -> OperatorMapping("-", "sub"),
     "*" -> OperatorMapping("*", "mul"),
     "/" -> OperatorMapping("/", "sdiv"),
-    
+
     // Comparison operators
     "==" -> OperatorMapping("==", "icmp eq"),
     "!=" -> OperatorMapping("!=", "icmp ne"),
@@ -26,7 +26,7 @@ object OperatorMappings {
     ">" -> OperatorMapping(">", "icmp sgt"),
     "<=" -> OperatorMapping("<=", "icmp sle"),
     ">=" -> OperatorMapping(">=", "icmp sge"),
-    
+
     // Logical operators
     "&&" -> OperatorMapping("&&", "and"),
     "||" -> OperatorMapping("||", "or")

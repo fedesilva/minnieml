@@ -30,7 +30,6 @@ object SemanticApi:
           |> injectStandardOperators
           |> DuplicateNameChecker.checkModule
           |> RefResolver.rewriteModule
-          // Handle expression rewriting (function applications and operator precedence)
           |> ExpressionRewriter.rewriteModule
           |> Simplifier.rewriteModule
 
