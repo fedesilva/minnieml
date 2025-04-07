@@ -23,16 +23,11 @@ def rewrite(src: String): Unit =
         resolvedModule <- RefResolver.rewriteModule(dedupedModule)
         _ = println(s"\n \n resolvedModule \n ${prettyPrintAst(resolvedModule)}")
 
-        // Original separate phases
-        // appRewrittenModule <- AppRewriter.rewriteModule(resolvedModule)
-        // _ = println(s"\n \n appRewrittenModule \n ${prettyPrintAst(appRewrittenModule)}")
-        // bloomedModule <- PrecedenceClimber.rewriteModule(appRewrittenModule)
-        // _ = println(s"\n \n Precedence Climbed \n ${prettyPrintAst(bloomedModule)}")
-        
+        // Apply the new unified expression rewriting
         // New unified phase
-        unifiedModule <- UnifiedExprRewriter.rewriteModule(resolvedModule)
+        unifiedModule <- ExpressionRewriter.rewriteModule(resolvedModule)
         _ = println(s"\n \n Unified Rewriting \n ${prettyPrintAst(unifiedModule)}")
-        
+
         simplifiedModule <- Simplifier.rewriteModule(unifiedModule)
       yield simplifiedModule
 
