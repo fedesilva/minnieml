@@ -280,8 +280,6 @@ object LlvmOrchestrator:
     targetDir:        String,
     verbose:          Boolean
   ): IO[Either[LlvmCompilationError, Int]] =
-    import cats.data.EitherT
-
     val targetDirPath = Paths.get(targetDir).toAbsolutePath
     if !Files.exists(targetDirPath) then {
       logDebug(s"Creating target directory: $targetDirPath", verbose)
@@ -289,22 +287,23 @@ object LlvmOrchestrator:
     }
 
     val finalExecutablePath = targetDirPath.resolve(s"$programName-$targetTriple").toString
+    val inputFile = Paths.get(outputDir).resolve(s"$programName.s").toAbsolutePath.toString
 
-    (for
-      _ <- EitherT({
-        val inputFile = Paths.get(outputDir).resolve(s"$programName.s").toAbsolutePath.toString
-        logPhase(s"Compiling and linking")
-        logDebug(s"Input file: $inputFile", verbose)
-        logDebug(s"Output file: $finalExecutablePath", verbose)
-        executeCommand(
-          s"clang -target $targetTriple $inputFile -o $finalExecutablePath",
-          "Failed to compile and link",
-          workingDirectory,
-          verbose
-        )
-      })
-      exitCode <- EitherT(runExecutable(finalExecutablePath, verbose))
-    yield exitCode).value
+    logPhase(s"Compiling and linking")
+    logDebug(s"Input file: $inputFile", verbose)
+    logDebug(s"Output file: $finalExecutablePath", verbose)
+
+    executeCommand(
+      s"clang -target $targetTriple $inputFile -o $finalExecutablePath",
+      "Failed to compile and link",
+      workingDirectory,
+      verbose
+    ).map {
+      case Left(error) => error.asLeft
+      case Right(_) =>
+        logInfo(s"Native code generation successful. Exit code: 0")
+        0.asRight
+    }
 
   private def compileLibrary(
     programName:      String,
@@ -411,17 +410,6 @@ object LlvmOrchestrator:
           else IO.pure(result)
         }
       }
-    }
-
-  private def runExecutable(path: String, verbose: Boolean): IO[Either[LlvmCompilationError, Int]] =
-    IO {
-      logPhase("Running executable")
-      val exitCode = Process(path).!
-      logDebug(s"Program executed with exit code: $exitCode", verbose)
-      if exitCode != 0 then {
-        logError(s"Execution failed with exit code: $exitCode")
-        LlvmCompilationError.ExecutableRunError(path, exitCode).asLeft
-      } else exitCode.asRight
     }
 
   private def checkLlvmTools(

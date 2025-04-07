@@ -1,7 +1,6 @@
 package mml.mmlclib.semantic
 
 import mml.mmlclib.ast.*
-import mml.mmlclib.api.{CompilerApi, CompilerError}
 import mml.mmlclib.test.BaseEffFunSuite
 import mml.mmlclib.util.prettyprint.ast.prettyPrintAst
 import munit.*
