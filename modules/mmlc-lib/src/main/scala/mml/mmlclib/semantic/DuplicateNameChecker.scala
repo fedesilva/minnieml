@@ -3,21 +3,16 @@ package mml.mmlclib.semantic
 import cats.syntax.all.*
 import mml.mmlclib.ast.*
 
-// TODO: checks missing
-// * multiple operators in each kind are possible but,
-//  * they all need to have the same precedence and associativity
-// * multiple functions with the same name are possible but,
-//  * they all need to have the same arity
-
 object DuplicateNameChecker:
 
   /** Check for duplicate names in a module. Returns either a list of errors or the module if no
     * duplicates are found.
     */
   def checkModule(module: Module): Either[List[SemanticError], Module] =
-    val errors = checkMembers(module.members.collect { case m: Decl =>
-      m
-    })
+    val errors =
+      checkMembers(module.members.collect { case m: Decl =>
+        m
+      })
     if errors.nonEmpty then errors.asLeft
     else module.asRight
 
