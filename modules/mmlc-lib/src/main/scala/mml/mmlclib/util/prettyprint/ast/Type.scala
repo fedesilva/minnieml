@@ -24,7 +24,7 @@ def prettyPrintTypeSpec(typeSpec: Option[TypeSpec]): String =
           .mkString("\n")
     case Some(TypeRefinement(sp, id, expr)) =>
       s"TypeRefinement ${printSourceSpan(sp)}${id.map(i => s" ($i)").getOrElse("")}\n" +
-        prettyPrintExpr(expr, 2)
+        prettyPrintExpr(expr, 1)
     case Some(Union(sp, types)) =>
       s"Union ${printSourceSpan(sp)}\n" +
         types.map(t => prettyPrintTypeSpec(Some(t))).mkString(" | ")

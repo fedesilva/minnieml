@@ -25,9 +25,9 @@ def prettyPrintMember(
         else ""
 
       s"${indentStr}FnDef ${fn.name}$spanStr$typeStr\n" +
-        fn.docComment.map(doc => s"${prettyPrintDocComment(doc, indent + 2)}\n").getOrElse("") +
-        s"${indentStr}  params: ${prettyPrintParams(fn.params, indent + 2, showSourceSpans, showTypes)}\n" +
-        prettyPrintExpr(fn.body, indent + 2, showSourceSpans, showTypes)
+        fn.docComment.map(doc => s"${prettyPrintDocComment(doc, indent + 1)}\n").getOrElse("") +
+        s"${indentStr}  params: ${prettyPrintParams(fn.params, indent + 1, showSourceSpans, showTypes)}\n" +
+        prettyPrintExpr(fn.body, indent + 1, showSourceSpans, showTypes)
 
     case bnd: Bnd =>
       val spanStr = if showSourceSpans then printSourceSpan(bnd.span) else ""

@@ -12,9 +12,13 @@ def prettyPrintExpr(
   val spanStr   = if showSourceSpans then printSourceSpan(expr.span) else ""
   val typeStr =
     if showTypes then
-      s"\n${indentStr}  typeSpec: ${prettyPrintTypeSpec(expr.typeSpec)}\n" +
+      s"${indentStr}  typeSpec: ${prettyPrintTypeSpec(expr.typeSpec)}\n" +
         s"${indentStr}  typeAsc: ${prettyPrintTypeSpec(expr.typeAsc)}"
     else ""
 
-  s"${indentStr}Expr$spanStr$typeStr\n" +
-    expr.terms.map(prettyPrintTerm(_, indent + 2, showSourceSpans, showTypes)).mkString("\n")
+  val termsStr =
+    expr.terms.map(prettyPrintTerm(_, indent + 1, showSourceSpans, showTypes)).mkString("\n")
+
+  s"${indentStr}Expr$spanStr\n" +
+    (if typeStr.nonEmpty then s"$typeStr\n" else "") +
+    (if termsStr.nonEmpty then s"$termsStr" else "")

@@ -63,7 +63,7 @@ def prettyPrintTerm(
         if showTypes then s"\n${indentStr}  typeAsc: ${prettyPrintTypeSpec(typeAsc)}" else ""
 
       s"${indentStr}GroupTerm$spanStr$typeStr\n" +
-        prettyPrintExpr(inner, indent + 2, showSourceSpans, showTypes)
+        prettyPrintExpr(inner, indent + 1, showSourceSpans, showTypes)
 
     case Cond(sp, cond, ifTrue, ifFalse, typeSpec, typeAsc) =>
       val spanStr = if showSourceSpans then printSourceSpan(sp) else ""
