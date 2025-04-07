@@ -1,4 +1,4 @@
-# MinnieML
+    # MinnieML
 
 A statically typed, functional language, with an ML inspired syntax, managed effects in delimited contexts,
 declarative low level capabilities and first class native interface.
