@@ -21,12 +21,11 @@ object CompilationPipeline:
         case Left(error) =>
           IO.pure(Left(s"Error reading file: ${error.getMessage}"))
         case Right(content) =>
-          // Set current source file for error snippet extraction
-          IO(ErrorPrinter.setCurrentSourceFile(path.toString)) *>
-            CompilerApi.compileString(content, Some(moduleName)).value.map {
-              case Left(compilerError) => Left(ErrorPrinter.prettyPrint(compilerError))
-              case Right(module) => Right(module)
-            }
+          // Pass source code directly to error printer instead of setting current file
+          CompilerApi.compileString(content, Some(moduleName)).value.map {
+            case Left(compilerError) => Left(ErrorPrinter.prettyPrint(compilerError, Some(content)))
+            case Right(module) => Right(module)
+          }
     yield result
 
   def processBinary(path: Path, moduleName: String, config: Command.Bin): IO[ExitCode] =

@@ -8,8 +8,10 @@ enum SemanticError:
   case DuplicateName(name: String, duplicates: List[Resolvable])
   case InvalidExpression(expr: Expr, message: String)
   case DanglingTerms(terms: List[Term], message: String)
+  case MemberErrorFound(error: MemberError)
 
-/** This is required because we don't have multiple file, cross module capabilities */
+/** This is required because we don't have multiple file, cross module capabilities
+  */
 def injectStandardOperators(module: Module): Module =
   val binOps =
     List(

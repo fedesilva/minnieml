@@ -28,6 +28,8 @@ object SemanticApi:
         // Inject standard operators into the module
         // This is a temporary solution until we have a proper module system
           |> injectStandardOperators
+          // Now check for any MemberError instances
+          |> MemberErrorChecker.checkModule
           |> DuplicateNameChecker.checkModule
           |> RefResolver.rewriteModule
           |> ExpressionRewriter.rewriteModule

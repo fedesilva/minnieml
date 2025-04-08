@@ -492,6 +492,7 @@ object LlvmOrchestrator:
         case e: Exception =>
           logError(s"Failed to archive LLVM tools marker: ${e.getMessage}")
           try Files.deleteIfExists(currentMarker)
+          // TODO: do not swallow exceptions
           catch { case _: Exception => }
       }
     }

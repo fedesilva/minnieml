@@ -1,0 +1,2 @@
+fn mult (a b) = a * b;
+let a  ;

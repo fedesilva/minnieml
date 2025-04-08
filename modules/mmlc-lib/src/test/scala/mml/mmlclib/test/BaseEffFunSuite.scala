@@ -88,3 +88,25 @@ trait BaseEffFunSuite extends CatsEffectSuite:
       case Left(error) =>
       // pass
     }
+
+  /** Parse source code without asserting on MemberErrors Useful for testing phases that
+    * specifically deal with MemberErrors
+    *
+    * @param source
+    *   the source code to parse
+    * @param name
+    *   optional module name
+    * @param msg
+    *   optional message for failure case
+    * @return
+    *   the parsed module, which may contain MemberError nodes
+    */
+  def justParse(
+    source: String,
+    name:   Option[String] = "Test".some,
+    msg:    Option[String] = None
+  ): IO[Module] =
+    ParserApi.parseModuleString(source, name).value.map {
+      case Right(module) => module
+      case Left(error) => fail(msg.getOrElse("Parser Failed: ") + s"\n$error")
+    }

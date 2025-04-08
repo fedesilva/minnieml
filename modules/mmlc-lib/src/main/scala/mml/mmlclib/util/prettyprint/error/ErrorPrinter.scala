@@ -6,119 +6,69 @@ import mml.mmlclib.codegen.{CodeGenError, LlvmCompilationError}
 import mml.mmlclib.parser.ParserError
 import mml.mmlclib.semantic.SemanticError
 
-import scala.io.Source
-import scala.util.Try
-
 /** Simple error printer for compiler errors */
 object ErrorPrinter:
-  // Source code access for error reporting
-  private val sourceFileCache = scala.collection.mutable.Map.empty[String, Array[String]]
-  private var currentSourceFile: Option[String] = None
-
-  /** Set current source file being processed */
-  def setCurrentSourceFile(path: String): Unit =
-    currentSourceFile = Some(path)
-    if !sourceFileCache.contains(path) then
-      Try {
-        val lines = Source.fromFile(path).getLines().toArray
-        sourceFileCache.put(path, lines)
-      }.recover { case _ => /* Silent failure */
-      }
-
-  /** Set source code for error reporting from a string (useful for tests) */
-  def setSourceFromString(source: String, virtualPath: String = "<string>"): Unit =
-    currentSourceFile = Some(virtualPath)
-    val lines = source.trim.split("\n").map(_.stripTrailing())
-    sourceFileCache.put(virtualPath, lines)
-
   /** Format a location as line:col-line:col */
   def formatLocation(span: SrcSpan): String =
     s"[${span.start.line}:${span.start.col}]-[${span.end.line}:${span.end.col}]"
 
   /** Pretty print any compiler error */
-  def prettyPrint(error: Any): String = error match
-    case CompilerError.SemanticErrors(errors) => prettyPrintSemanticErrors(errors)
+  def prettyPrint(error: Any, sourceCode: Option[String] = None): String = error match
+    case CompilerError.SemanticErrors(errors) => prettyPrintSemanticErrors(errors, sourceCode)
     case CompilerError.ParserErrors(errors) => prettyPrintParserErrors(errors)
     case CompilerError.Unknown(msg) => s"Unknown error: $msg"
     case CodeGenApiError.CodeGenErrors(errors) => prettyPrintCodeGenErrors(errors)
-    case CodeGenApiError.CompilerErrors(errors) => errors.map(prettyPrint).mkString("\n")
+    case CodeGenApiError.CompilerErrors(errors) =>
+      errors.map(err => prettyPrint(err, sourceCode)).mkString("\n")
     case CodeGenApiError.Unknown(msg) => s"Unknown code generation error: $msg"
-    case NativeEmitterError.CompilationErrors(errors) => errors.map(prettyPrint).mkString("\n")
-    case NativeEmitterError.CodeGenErrors(errors) => errors.map(prettyPrint).mkString("\n")
+    case NativeEmitterError.CompilationErrors(errors) =>
+      errors.map(err => prettyPrint(err, sourceCode)).mkString("\n")
+    case NativeEmitterError.CodeGenErrors(errors) =>
+      errors.map(err => prettyPrint(err, sourceCode)).mkString("\n")
     case NativeEmitterError.LlvmErrors(errors) => prettyPrintLlvmErrors(errors)
     case NativeEmitterError.Unknown(msg) => s"Unknown native emitter error: $msg"
     case _ => error.toString
 
   /** Pretty print semantic errors */
-  private def prettyPrintSemanticErrors(errors: List[SemanticError]): String =
+  private def prettyPrintSemanticErrors(
+    errors:     List[SemanticError],
+    sourceCode: Option[String]
+  ): String =
     if errors.isEmpty then "No errors"
     else
-      val messages = errors.map(prettyPrintSemanticError)
+      val messages = errors.map(err => prettyPrintSemanticError(err, sourceCode))
       s"Semantic errors:\n${messages.mkString("\n\n")}"
 
   /** Pretty print a single semantic error */
-  private def prettyPrintSemanticError(error: SemanticError): String = error match
-    case SemanticError.DuplicateName(name, duplicates) =>
-      val locations = duplicates
-        .collect { case d: FromSource => formatLocation(d.span) }
-        .mkString(", ")
+  private def prettyPrintSemanticError(error: SemanticError, sourceCode: Option[String]): String =
+    val baseMessage = error match
+      case SemanticError.DuplicateName(name, duplicates) =>
+        val locations = duplicates
+          .collect { case d: FromSource => formatLocation(d.span) }
+          .mkString(", ")
 
-      val snippets = currentSourceFile
-        .flatMap { file =>
-          sourceFileCache.get(file).map { lines =>
-            // Show code snippets for each duplicate
-            val codeSnippets = duplicates.collect { case d: FromSource =>
-              // Get line range for this span - ensure we don't go below 0
-              val startLineIdx = math.max(0, d.span.start.line - 1) // 0-based index, minimum 0
-              val endLineIdx = math.min(
-                lines.length - 1,
-                d.span.end.line - 1
-              ) // 0-based index, maximum is last line
+        s"Duplicate name '$name' defined at: $locations"
 
-              // Build snippet with all relevant lines
-              if startLineIdx < lines.length then
-                val relevantLines = (startLineIdx to endLineIdx).map(i => lines(i)).mkString("\n")
-                s"At ${formatLocation(d.span)}:\n$relevantLines"
-              else s"At ${formatLocation(d.span)}: <source line not available>"
-            }
-            codeSnippets.mkString("\n\n")
-          }
-        }
-        .getOrElse("")
+      case SemanticError.UndefinedRef(ref, member) =>
+        s"Undefined reference '${ref.name}' at ${formatLocation(ref.span)}"
 
-      s"Duplicate name '$name' defined at: $locations\n$snippets"
+      case SemanticError.InvalidExpression(expr, message) =>
+        s"Invalid expression at ${formatLocation(expr.span)}: $message"
 
-    case SemanticError.UndefinedRef(ref, member) =>
-      s"Undefined reference '${ref.name}' at ${formatLocation(ref.span)}"
+      case SemanticError.MemberErrorFound(error) =>
+        val location = formatLocation(error.span)
+        s"Parser error at $location: ${error.message}"
 
-    case SemanticError.InvalidExpression(expr, message) =>
-      s"Invalid expression at ${formatLocation(expr.span)}: $message"
+      case SemanticError.DanglingTerms(terms, message) =>
+        val locations = terms.map(t => formatLocation(t.span)).mkString(", ")
+        s"$message at $locations"
 
-    case SemanticError.DanglingTerms(terms, message) =>
-      val locations = terms.map(t => formatLocation(t.span)).mkString(", ")
-
-      // Get source code snippets if available
-      val snippets = currentSourceFile
-        .flatMap { file =>
-          sourceFileCache.get(file).map { lines =>
-            // Show code snippets for each dangling term
-            val codeSnippets = terms.map { term =>
-              // Get line range for this span
-              val startLineIdx = math.max(0, term.span.start.line - 1)
-              val endLineIdx   = math.min(lines.length - 1, term.span.end.line - 1)
-
-              // Build snippet with all relevant lines
-              if startLineIdx < lines.length then
-                val relevantLines = (startLineIdx to endLineIdx).map(i => lines(i)).mkString("\n")
-                s"At ${formatLocation(term.span)}:\n$relevantLines"
-              else s"At ${formatLocation(term.span)}: <source line not available>"
-            }
-            codeSnippets.mkString("\n\n")
-          }
-        }
-        .getOrElse("")
-
-      s"$message at $locations\n$snippets"
+    // Add source code snippet if available
+    sourceCode match
+      case Some(src) =>
+        val codeSnippet = SourceCodeExtractor.extractSnippetsFromError(src, error)
+        s"$baseMessage\n$codeSnippet"
+      case None => baseMessage
 
   /** Pretty print parser errors */
   private def prettyPrintParserErrors(errors: List[ParserError]): String =

@@ -18,7 +18,9 @@ def rewrite(src: String): Unit =
       // Apply unified expression rewriting (replaces AppRewriter and PrecedenceClimber)
       // Simplify the module, since rewriting may have introduced redundant Expr nodes
       val result = for
-        dedupedModule <- DuplicateNameChecker.checkModule(moduleWithOps)
+        // Check for MemberError instances
+        checkedModule <- MemberErrorChecker.checkModule(moduleWithOps)
+        dedupedModule <- DuplicateNameChecker.checkModule(checkedModule)
         _ = println(s"\n \n dedupedModule \n ${prettyPrintAst(dedupedModule)}")
         resolvedModule <- RefResolver.rewriteModule(dedupedModule)
         _ = println(s"\n \n resolvedModule \n ${prettyPrintAst(resolvedModule)}")
