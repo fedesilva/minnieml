@@ -344,7 +344,7 @@ This hierarchy ensures that:
 The beauty of this approach is that we don't need parentheses or special syntax rules to represent boolean logic - the same unified expression rewriting mechanism handles boolean operations just like any other operators in the system. Alphabetic operators like `and`, `or`, and `not` are treated identically to symbolic operators, with their behavior defined by their precedence and associativity values.
 
 Because the language will provide a well defined set of operators with standard definitions,
-and because the compiler will reject overrides ( no duplicates allowed ), the user will - unless they mess
+and because the compiler will reject overrides ( no duplicates allowed ), the user will have - unless they mess
 with the prelude - a sane operator set, working as they expect.
 
 ## Implementation Details
