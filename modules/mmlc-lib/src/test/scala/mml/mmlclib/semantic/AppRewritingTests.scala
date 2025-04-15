@@ -36,7 +36,7 @@ class AppRewritingTests extends BaseEffFunSuite:
 
     }
   }
-  
+
   test("function with dangling terms should fail") {
     // This should fail semantic analysis due to dangling terms
     semFailed(
@@ -46,7 +46,7 @@ class AppRewritingTests extends BaseEffFunSuite:
       """
     )
   }
-  
+
   test("grouped function applications should work correctly") {
     semNotFailed(
       """
@@ -66,12 +66,12 @@ class AppRewritingTests extends BaseEffFunSuite:
         case bnd: Bnd =>
           // Test passes if we get here with no errors
           assert(true)
-        
+
         case other =>
           fail(s"Expected Bnd, got: $other")
     }
   }
-  
+
   test("curried function application should work without boundaries") {
     semNotFailed(
       """
@@ -99,17 +99,17 @@ class AppRewritingTests extends BaseEffFunSuite:
                 case nestedApp: App =>
                   // There should be at least one level of nesting for the first two arguments
                   assert(true, "Found nested App structure")
-                case other => 
+                case other =>
                   fail(s"Expected nested App in fn position, got: ${prettyPrintAst(other)}")
-            
+
             case other =>
               fail(s"Expected a nested App structure, got: \n${prettyPrintAst(bnd.value)}")
-        
+
         case other =>
           fail(s"Expected Bnd, got: ${prettyPrintAst(other)}")
     }
   }
-  
+
   test("function application with operators should work") {
     semNotFailed(
       """
@@ -129,7 +129,7 @@ class AppRewritingTests extends BaseEffFunSuite:
       assert(true, "Expression with operators and function application parsed successfully")
     }
   }
-  
+
   test("complex nested function applications with operators should work") {
     semNotFailed(
       """

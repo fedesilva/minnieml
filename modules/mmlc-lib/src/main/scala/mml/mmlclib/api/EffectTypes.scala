@@ -2,7 +2,7 @@ package mml.mmlclib.api
 
 import cats.data.EitherT
 import cats.effect.IO
-import mml.mmlclib.codegen.CodeGenError
+import mml.mmlclib.codegen.emitter.CodeGenError
 import mml.mmlclib.parser.ParserError
 import mml.mmlclib.semantic.SemanticError
 

@@ -1,0 +1,3 @@
+let a = "fede";
+
+fn main() = a;

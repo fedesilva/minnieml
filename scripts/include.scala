@@ -6,7 +6,7 @@ import mml.mmlclib.util.prettyprint.ast.prettyPrintAst
 import cats.syntax.all.*
 import mml.mmlclib.semantic.*
 
-def rewrite(src: String): Unit =
+def rewrite(src: String, showTypes: Boolean = false): Unit =
   parseModule(src) match
     case Some(module) =>
       println(s"Original module: \n${prettyPrintAst(module)} ")
@@ -19,9 +19,7 @@ def rewrite(src: String): Unit =
       // Simplify the module, since rewriting may have introduced redundant Expr nodes
       val result = for
         // Check for MemberError instances
-        checkedModule <- MemberErrorChecker.checkModule(moduleWithOps)
-        dedupedModule <- DuplicateNameChecker.checkModule(checkedModule)
-        _ = println(s"\n \n dedupedModule \n ${prettyPrintAst(dedupedModule)}")
+        dedupedModule <- DuplicateNameChecker.checkModule(moduleWithOps)
         resolvedModule <- RefResolver.rewriteModule(dedupedModule)
         _ = println(s"\n \n resolvedModule \n ${prettyPrintAst(resolvedModule)}")
 
@@ -29,13 +27,13 @@ def rewrite(src: String): Unit =
         // New unified phase
         unifiedModule <- ExpressionRewriter.rewriteModule(resolvedModule)
         _ = println(s"\n \n Unified Rewriting \n ${prettyPrintAst(unifiedModule)}")
-
-        simplifiedModule <- Simplifier.rewriteModule(unifiedModule)
+        checkedModule <- MemberErrorChecker.checkModule(unifiedModule)
+        simplifiedModule <- Simplifier.rewriteModule(checkedModule)
       yield simplifiedModule
 
       result match
         case Right(mod) =>
-          println(s"Rewritten module: \n${prettyPrintAst(mod)} ")
+          println(s"Simplified module: \n${prettyPrintAst(mod, showTypes = showTypes)} ")
           println(s"Original source: \n$src")
         case Left(errors) => println(s"Errors: $errors")
 

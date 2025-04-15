@@ -11,6 +11,10 @@ import java.nio.file.Path
 
 object CompilationPipeline:
 
+  def compilationFailed(error: String): String =
+    s"${Console.RED}Compilation failed:${Console.RESET}\n" +
+      s"${Console.YELLOW} $error${Console.RESET}"
+
   private def compileModule(
     path:       Path,
     moduleName: String
@@ -23,7 +27,8 @@ object CompilationPipeline:
         case Right(content) =>
           // Pass source code directly to error printer instead of setting current file
           CompilerApi.compileString(content, Some(moduleName)).value.map {
-            case Left(compilerError) => Left(ErrorPrinter.prettyPrint(compilerError, Some(content)))
+            case Left(compilerError) =>
+              Left(ErrorPrinter.prettyPrint(compilerError, Some(content)))
             case Right(module) => Right(module)
           }
     yield result
@@ -33,7 +38,7 @@ object CompilationPipeline:
       moduleResult <- compileModule(path, moduleName)
       exitCode <- moduleResult match
         case Left(error) =>
-          IO.println(s"Compilation failed: $error").as(ExitCode.Error)
+          IO.println(compilationFailed(error)).as(ExitCode.Error)
         case Right(module) =>
           processBinaryModule(module, config)
     yield exitCode
@@ -58,7 +63,7 @@ object CompilationPipeline:
       moduleResult <- compileModule(path, moduleName)
       exitCode <- moduleResult match
         case Left(error) =>
-          IO.println(s"Compilation failed: $error").as(ExitCode.Error)
+          IO.println(compilationFailed(error)).as(ExitCode.Error)
         case Right(module) =>
           processLibraryModule(module, config)
     yield exitCode
@@ -83,7 +88,7 @@ object CompilationPipeline:
       moduleResult <- compileModule(path, moduleName)
       exitCode <- moduleResult match
         case Left(error) =>
-          IO.println(s"Compilation failed: $error").as(ExitCode.Error)
+          IO.println(compilationFailed(error)).as(ExitCode.Error)
         case Right(module) =>
           // Write AST to file and exit
           FileOperations.writeAstToFile(module, config.outputDir).as(ExitCode.Success)
@@ -94,7 +99,7 @@ object CompilationPipeline:
       moduleResult <- compileModule(path, moduleName)
       exitCode <- moduleResult match
         case Left(error) =>
-          IO.println(s"Compilation failed: $error").as(ExitCode.Error)
+          IO.println(compilationFailed(error)).as(ExitCode.Error)
         case Right(module) =>
           processIrModule(module, config)
     yield exitCode

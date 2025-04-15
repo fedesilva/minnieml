@@ -58,6 +58,28 @@ lazy val mml: Project =
         )
         IO.chmod("rwxr-xr-x", scriptTarget)
 
+        // Copy samples directory
+        val samplesSource = file(sys.props("user.dir")) / "mml" / "samples"
+        val samplesTarget = packageDir / "samples"
+        IO.createDirectory(samplesTarget)
+        IO.copyDirectory(
+          source               = samplesSource,
+          target               = samplesTarget,
+          preserveLastModified = true
+        )
+        println(s"Samples copied to ${samplesTarget.getAbsolutePath}")
+
+        // Copy tooling/vscode directory
+        val toolingSource = file(sys.props("user.dir")) / "tooling" / "vscode"
+        val toolingTarget = packageDir / "tooling" / "vscode"
+        IO.createDirectory(packageDir / "tooling") // Ensure parent 'tooling' dir exists
+        IO.copyDirectory(
+          source               = toolingSource,
+          target               = toolingTarget,
+          preserveLastModified = true
+        )
+        println(s"VSCode tooling copied to ${toolingTarget.getAbsolutePath}")
+
         println(s"Distribution package created at ${packageDir.getAbsolutePath}")
         packageDir
       },
@@ -124,7 +146,7 @@ lazy val mmlc =
       },
 
       // Native image settings
-      nativeImageCommand := List ("native-image"),
+      nativeImageCommand := List("native-image"),
       nativeImageOptions ++= Seq(
         "-H:+UnlockExperimentalVMOptions",
         "--no-fallback", // Remove JVM fallback, reducing size
@@ -252,4 +274,3 @@ def readSha: String = {
   sha.take(8)
 }
 // TODO: abstract the os and arch functions here, too. as opposed of computing them inline
-

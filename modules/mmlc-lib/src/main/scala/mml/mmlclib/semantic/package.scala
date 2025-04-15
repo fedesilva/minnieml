@@ -13,6 +13,9 @@ enum SemanticError:
 /** This is required because we don't have multiple file, cross module capabilities
   */
 def injectStandardOperators(module: Module): Module =
+
+  val dummySpan = SrcSpan(SrcPoint(0, 0, 0), SrcPoint(0, 0, 0))
+
   val binOps =
     List(
       ("^", 90, Associativity.Right),
@@ -26,10 +29,9 @@ def injectStandardOperators(module: Module): Module =
       (">", 50, Associativity.Left),
       ("<=", 50, Associativity.Left),
       (">=", 50, Associativity.Left),
-      ("&&", 40, Associativity.Left),
-      ("||", 30, Associativity.Left)
+      ("and", 40, Associativity.Left),
+      ("or", 30, Associativity.Left)
     ).map { case (name, prec, assoc) =>
-      val dummySpan = SrcSpan(SrcPoint(0, 0, 0), SrcPoint(0, 0, 0))
       BinOpDef(
         span       = dummySpan,
         name       = name,
@@ -48,9 +50,9 @@ def injectStandardOperators(module: Module): Module =
     List(
       ("-", 95, Associativity.Right),
       ("+", 95, Associativity.Right),
-      ("!", 95, Associativity.Left)
+      ("!", 95, Associativity.Left),
+      ("not", 95, Associativity.Right)
     ).map { case (name, prec, assoc) =>
-      val dummySpan = SrcSpan(SrcPoint(0, 0, 0), SrcPoint(0, 0, 0))
       UnaryOpDef(
         span       = dummySpan,
         name       = name,

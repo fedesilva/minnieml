@@ -1,6 +1,6 @@
 package mml.mmlclib.util.prettyprint.error
 
-import mml.mmlclib.codegen.CodeGenError
+import mml.mmlclib.codegen.emitter.CodeGenError
 
 /** Pretty printer for code generation errors */
 object CodeGenErrorPrinter:

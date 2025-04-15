@@ -1,5 +1,6 @@
 #-
   Factorial function implementation using a unary postfix operator.
+  
   This defines the factorial operation as a postfix '!' operator
   with precedence 95 and left associativity.
   

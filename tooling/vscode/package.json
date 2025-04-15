@@ -1,0 +1,36 @@
+{
+    "name": "mml-language",
+    "displayName": "MinnieML Language",
+    "description": "Syntax highlighting for MinnieML language",
+    "version": "0.1.0",
+    "engines": {
+        "vscode": "^1.60.0"
+    },
+    "publisher": "mml",
+    "categories": [
+        "Programming Languages"
+    ],
+    "contributes": {
+        "languages": [
+            {
+                "id": "mml",
+                "aliases": [
+                    "MinnieML",
+                    "MML",
+                    "mml"
+                ],
+                "extensions": [
+                    ".mml"
+                ],
+                "configuration": "./language-configuration.json"
+            }
+        ],
+        "grammars": [
+            {
+                "language": "mml",
+                "scopeName": "source.mml",
+                "path": "./syntaxes/mml.tmLanguage.json"
+            }
+        ]
+    }
+}

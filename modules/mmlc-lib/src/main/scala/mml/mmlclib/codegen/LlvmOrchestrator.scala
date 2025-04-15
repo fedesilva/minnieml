@@ -3,8 +3,8 @@ package mml.mmlclib.codegen
 import cats.effect.IO
 import cats.syntax.all.*
 
-import java.io.File
-import java.nio.file.{Files, Paths}
+import java.io.{File, InputStream}
+import java.nio.file.{Files, Paths, StandardCopyOption}
 import scala.sys.process.{Process, ProcessLogger}
 
 case class ToolInfo(versions: Map[String, String], missing: List[String])
@@ -19,6 +19,7 @@ enum LlvmCompilationError derives CanEqual:
   case CommandExecutionError(command: String, errorMessage: String, exitCode: Int)
   case ExecutableRunError(path: String, exitCode: Int)
   case LlvmNotInstalled(missingTools: List[String])
+  case RuntimeResourceError(message: String)
 
 object LlvmOrchestrator:
 
@@ -272,6 +273,137 @@ object LlvmOrchestrator:
     case CompilationMode.Library =>
       compileLibrary(programName, targetTriple, workingDirectory, outputDir, targetDir, verbose)
 
+  /** Path to the MML runtime file in resources */
+  private val mmlRuntimeResourcePath = "mml_runtime.c"
+
+  /** Filename for the MML runtime file */
+  private val mmlRuntimeFilename = "mml_runtime.c"
+
+  /** Filename for the compiled MML runtime object */
+  private val mmlRuntimeObjectFilename = "mml_runtime.o"
+
+  /** Extracts the MML runtime source from resources to the output directory.
+    *
+    * @param outputDir
+    *   The directory where the runtime source should be extracted
+    * @param verbose
+    *   Enable verbose logging
+    * @return
+    *   Either an error or the path to the extracted source file
+    */
+  private def extractRuntimeResource(
+    outputDir: String,
+    verbose:   Boolean
+  ): IO[Either[LlvmCompilationError, String]] = IO.defer {
+    val sourcePath = Paths.get(outputDir).resolve(mmlRuntimeFilename).toAbsolutePath.toString
+
+    if Files.exists(Paths.get(sourcePath)) then
+      logDebug(s"Runtime source already exists at $sourcePath", verbose)
+      IO.pure(sourcePath.asRight)
+    else
+      IO {
+        try {
+          logPhase("Extracting MML runtime source")
+          logDebug(s"Destination: $sourcePath", verbose)
+
+          // Try different class loaders and resource paths
+          val resourceStream = {
+            val classLoader = getClass.getClassLoader
+
+            // Try various resource paths
+            val paths = List(
+              mmlRuntimeResourcePath,
+              s"/${mmlRuntimeResourcePath}",
+              s"modules/mmlc-lib/src/main/resources/${mmlRuntimeResourcePath}",
+              s"/modules/mmlc-lib/src/main/resources/${mmlRuntimeResourcePath}"
+            )
+
+            val stream = paths.foldLeft[Option[InputStream]](None) { (acc, path) =>
+              acc.orElse {
+                val s = Option(classLoader.getResourceAsStream(path))
+                if s.isDefined then logDebug(s"Found resource at path: $path", verbose)
+                s
+              }
+            }
+
+            stream.getOrElse {
+              // If we can't find it in resources, try reading it directly from the file system
+              val localPath =
+                Paths.get("modules/mmlc-lib/src/main/resources", mmlRuntimeResourcePath)
+              logDebug(s"Trying to read from file system at: $localPath", verbose)
+
+              if Files.exists(localPath) then
+                logDebug(s"Found file at: $localPath", verbose)
+                Files.newInputStream(localPath)
+              else
+                throw new Exception(
+                  s"Could not find resource: $mmlRuntimeResourcePath (tried multiple paths)"
+                )
+            }
+          }
+
+          Files.copy(
+            resourceStream,
+            Paths.get(sourcePath),
+            StandardCopyOption.REPLACE_EXISTING
+          )
+          resourceStream.close()
+
+          logDebug(s"Successfully extracted runtime source to: $sourcePath", verbose)
+          sourcePath.asRight
+        } catch {
+          case e: Exception =>
+            val error = LlvmCompilationError.RuntimeResourceError(
+              s"Failed to extract runtime source: ${e.getMessage}"
+            )
+            logError(error.toString)
+            error.asLeft
+        }
+      }
+  }
+
+  /** Compiles the MML runtime source to an object file if it doesn't already exist.
+    *
+    * @param outputDir
+    *   The directory where the runtime files should be placed
+    * @param verbose
+    *   Enable verbose logging
+    * @return
+    *   Either an error or the path to the compiled object file
+    */
+  private def compileRuntime(
+    outputDir: String,
+    verbose:   Boolean
+  ): IO[Either[LlvmCompilationError, String]] = IO.defer {
+    val objPath = Paths.get(outputDir).resolve(mmlRuntimeObjectFilename).toAbsolutePath.toString
+
+    logPhase("Compiling runtime")
+    if Files.exists(Paths.get(objPath)) then
+      logInfo(s"Runtime object already exists at $objPath, skipping compilation")
+      IO.pure(objPath.asRight)
+    else
+      for
+        sourceResult <- extractRuntimeResource(outputDir, verbose)
+        result <- sourceResult match
+          case Left(error) => IO.pure(error.asLeft)
+          case Right(sourcePath) =>
+            logPhase("Compiling MML runtime")
+            logDebug(s"Input file: $sourcePath", verbose)
+            logDebug(s"Output file: $objPath", verbose)
+
+            val cmd = s"clang -c -std=c11 -O2 -fPIC -o $objPath $sourcePath"
+            executeCommand(
+              cmd,
+              "Failed to compile MML runtime",
+              new File(outputDir).getParent, // Use the parent of outputDir as the working directory
+              verbose
+            ).map {
+              case Left(error) => error.asLeft
+              case Right(_) => objPath.asRight
+            }
+      yield result
+  }
+
   private def compileBinary(
     programName:      String,
     targetTriple:     String,
@@ -289,21 +421,28 @@ object LlvmOrchestrator:
     val finalExecutablePath = targetDirPath.resolve(s"$programName-$targetTriple").toString
     val inputFile = Paths.get(outputDir).resolve(s"$programName.s").toAbsolutePath.toString
 
-    logPhase(s"Compiling and linking")
-    logDebug(s"Input file: $inputFile", verbose)
-    logDebug(s"Output file: $finalExecutablePath", verbose)
+    for
+      runtimeResult <- compileRuntime(outputDir, verbose)
+      result <- runtimeResult match
+        case Left(error) => IO.pure(error.asLeft)
+        case Right(runtimePath) =>
+          logPhase(s"Compiling and linking with MML runtime")
+          logDebug(s"Input file: $inputFile", verbose)
+          logDebug(s"Runtime: $runtimePath", verbose)
+          logDebug(s"Output file: $finalExecutablePath", verbose)
 
-    executeCommand(
-      s"clang -target $targetTriple $inputFile -o $finalExecutablePath",
-      "Failed to compile and link",
-      workingDirectory,
-      verbose
-    ).map {
-      case Left(error) => error.asLeft
-      case Right(_) =>
-        logInfo(s"Native code generation successful. Exit code: 0")
-        0.asRight
-    }
+          executeCommand(
+            s"clang -target $targetTriple $inputFile $runtimePath -o $finalExecutablePath",
+            "Failed to compile and link",
+            workingDirectory,
+            verbose
+          ).map {
+            case Left(error) => error.asLeft
+            case Right(_) =>
+              logInfo(s"Native code generation successful. Exit code: 0")
+              0.asRight
+          }
+    yield result
 
   private def compileLibrary(
     programName:      String,
@@ -320,21 +459,50 @@ object LlvmOrchestrator:
     }
 
     val finalLibraryPath = targetDirPath.resolve(s"$programName-$targetTriple.o").toString
-    {
-      val inputFile = Paths.get(outputDir).resolve(s"$programName.s").toAbsolutePath.toString
-      logPhase(s"Compiling library object")
-      logDebug(s"Input file: $inputFile", verbose)
-      logDebug(s"Output file: $finalLibraryPath", verbose)
-      executeCommand(
-        s"clang -target $targetTriple -c $inputFile -o $finalLibraryPath",
-        "Failed to compile library object",
-        workingDirectory,
-        verbose
-      )
-    }.map {
-      case Left(error) => error.asLeft
-      case Right(_) => 0.asRight
-    }
+    val inputFile        = Paths.get(outputDir).resolve(s"$programName.s").toAbsolutePath.toString
+
+    for
+      runtimeResult <- compileRuntime(outputDir, verbose)
+      result <- runtimeResult match
+        case Left(error) => IO.pure(error.asLeft)
+        case Right(runtimePath) =>
+          logPhase(s"Compiling library object with MML runtime")
+          logDebug(s"Input file: $inputFile", verbose)
+          logDebug(s"Runtime: $runtimePath", verbose)
+          logDebug(s"Output file: $finalLibraryPath", verbose)
+
+          // For a library, we just compile the assembly to an object file
+          // The runtime is included separately but should be linked by the user
+          executeCommand(
+            s"clang -target $targetTriple -c $inputFile -o $finalLibraryPath",
+            "Failed to compile library object",
+            workingDirectory,
+            verbose
+          ).map {
+            case Left(error) => error.asLeft
+            case Right(_) =>
+              // Copy the runtime object to the target directory as well for easy access
+              val runtimeTargetPath = targetDirPath.resolve(mmlRuntimeObjectFilename).toString
+              logInfo(s"Copying runtime to $runtimeTargetPath")
+              try
+                // Convert the runtime path string to a Path object
+                Files.copy(
+                  Paths.get(runtimePath),
+                  Paths.get(runtimeTargetPath),
+                  StandardCopyOption.REPLACE_EXISTING
+                )
+                logInfo(s"Library object generation successful. Exit code: 0")
+                logInfo(s"Note: Link with $mmlRuntimeObjectFilename when using this library.")
+                0.asRight
+              catch
+                case e: Exception =>
+                  val error = LlvmCompilationError.RuntimeResourceError(
+                    s"Failed to copy runtime object to target: ${e.getMessage}"
+                  )
+                  logError(error.toString)
+                  error.asLeft
+          }
+    yield result
 
   private def createOutputDir(outputDir: String): IO[Unit] =
     IO {

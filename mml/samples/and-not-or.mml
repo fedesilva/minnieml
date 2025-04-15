@@ -1,0 +1,9 @@
+let flag1 = false;
+let flag2 = true;
+
+let result =
+  if not flag1 or not flag1 and not flag2 then
+    "NADA"
+  else
+    "ALGO"
+;

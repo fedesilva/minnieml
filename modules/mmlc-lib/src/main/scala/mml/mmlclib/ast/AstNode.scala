@@ -29,9 +29,20 @@ sealed trait FromSource extends AstNode {
 }
 
 enum ModVisibility:
+  // Everyone
   case Public
-  case Protected
+  // Everyone in the same and below modules
   case Lexical
+  // Only within the same module
+  case Protected
+
+enum MemberVisibility derives CanEqual:
+  // Everyone
+  case Public
+  // Only siblings of the conatianer
+  case Protected
+  // Inside the module that contains the member
+  case Private
 
 case class Module(
   span:       SrcSpan,
@@ -69,6 +80,7 @@ case class DocComment(
 
 sealed trait Decl extends Member, Typeable, Resolvable:
   def docComment: Option[DocComment]
+  def visibility: MemberVisibility
 
 case class FnParam(
   span:       SrcSpan,
@@ -82,6 +94,7 @@ case class FnParam(
       Resolvable
 
 case class FnDef(
+  visibility: MemberVisibility   = MemberVisibility.Protected,
   span:       SrcSpan,
   name:       String,
   params:     List[FnParam],
@@ -104,19 +117,28 @@ sealed trait OpDef extends Decl, FromSource {
 }
 
 case class BinOpDef(
+  visibility: MemberVisibility = MemberVisibility.Public,
   span:       SrcSpan,
   name:       String,
   param1:     FnParam,
   param2:     FnParam,
   precedence: Int,
   assoc:      Associativity,
-  body:       Expr,
-  typeSpec:   Option[TypeSpec]   = None,
+  /** Expression that is evaluated when the operator is used.
+    */
+  body: Expr,
+  /** Type specification for the operator.
+    *
+    * If `None` type is unknown
+    */
+  typeSpec: Option[TypeSpec] = None,
+  /** */
   typeAsc:    Option[TypeSpec]   = None,
   docComment: Option[DocComment] = None
 ) extends OpDef
 
 case class UnaryOpDef(
+  visibility: MemberVisibility   = MemberVisibility.Protected,
   span:       SrcSpan,
   name:       String,
   param:      FnParam,
@@ -129,6 +151,7 @@ case class UnaryOpDef(
 ) extends OpDef
 
 case class Bnd(
+  visibility: MemberVisibility   = MemberVisibility.Protected,
   span:       SrcSpan,
   name:       String,
   value:      Expr,
@@ -277,6 +300,17 @@ case class TypeSeq(span: SrcSpan, inner: TypeSpec) extends TypeSpec
 /** A grouping of types, mostly for disambiguation: `Map String (List Int)` */
 case class TypeGroup(span: SrcSpan, types: List[TypeSpec]) extends TypeSpec
 
+case class TypeAlias(
+  visibility: MemberVisibility   = MemberVisibility.Protected,
+  span:       SrcSpan,
+  name:       String,
+  typeRef:    TypeSpec,
+  typeSpec:   Option[TypeSpec]   = None,
+  typeAsc:    Option[TypeSpec]   = None,
+  docComment: Option[DocComment] = None
+) extends Decl,
+      FromSource
+
 /** Helpers to represent known types */
 sealed trait LiteralType extends TypeSpec {
   def typeName: String
@@ -298,3 +332,18 @@ case class LiteralUnitType(span: SrcSpan) extends LiteralType {
 case class LiteralFloatType(span: SrcSpan) extends LiteralType {
   final val typeName: "Float" = "Float"
 }
+
+sealed trait Native extends AstNode
+
+case class NativeTypeImpl(
+  span: SrcSpan
+) extends TypeSpec,
+      Native,
+      FromSource
+
+case class NativeImpl(
+  span:     SrcSpan,
+  typeSpec: Option[TypeSpec] = None,
+  typeAsc:  Option[TypeSpec] = None
+) extends Native,
+      Term

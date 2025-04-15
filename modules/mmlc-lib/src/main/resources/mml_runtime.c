@@ -6,8 +6,6 @@
 #include <sys/wait.h>
 #include <unistd.h>
 
-//  clang -c -std=c11 -O2 -fPIC -o mml_runtime.o modules/mmlc-lib/src/main/c/mml_runtime.h
-
 // --- String Struct ---
 typedef struct
 {
@@ -128,6 +126,42 @@ String substring(String s, size_t start, size_t len)
     memcpy(new_data, s.data + start, len);
     new_data[len] = '\0';
     return (String){len, new_data};
+}
+
+// --- Free String Memory ---
+void free_string(String str)
+{
+    if (str.data)
+    {
+        free(str.data);
+    }
+}
+
+// --- String Concatenation ---
+String concat(String a, String b)
+{
+    // Return empty string if either input is invalid
+    if (!a.data && !b.data)
+        return (String){0, NULL};
+
+    // If one string is empty, return a copy of the other
+    if (!a.data)
+        return substring(b, 0, b.length);
+    if (!b.data)
+        return substring(a, 0, a.length);
+
+    // Allocate memory for the combined string
+    size_t total_length = a.length + b.length;
+    char *new_data = (char *)malloc(total_length + 1);
+    if (!new_data)
+        return (String){0, NULL};
+
+    // Copy both strings
+    memcpy(new_data, a.data, a.length);
+    memcpy(new_data + a.length, b.data, b.length);
+    new_data[total_length] = '\0';
+
+    return (String){total_length, new_data};
 }
 
 // --- File Handling ---

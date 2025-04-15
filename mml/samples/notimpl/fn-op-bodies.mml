@@ -1,0 +1,57 @@
+# Loooking at function (and op) design
+# a) a single complex expression
+#   This aligns with ocaml and the old mml vision
+#
+# b) multiple expressions and declarations
+#    this aligns with rust and fsharp
+#
+#
+
+fn letExpression (a) = 
+  let 
+     b = 1, 
+     c = 2, 
+     d = a * b * c,
+     e = 
+       if d > 8 then
+         3
+       else
+         4 
+   in
+     a + b + c
+;
+
+fn exprAndDecl1  () =
+
+  let a=1;
+  let b=2;
+  
+  a+b
+
+;
+
+fn exprAndDecl2 () = 
+
+  let
+    flag1 = false, 
+    flag2 = true
+  ;
+
+  let 
+    a = 1,
+    b = 2,
+    c = 3
+
+  let z = 
+    if a > 1 then
+      a + b
+    else
+      a - b
+
+  if not flag1 then
+    a * b + c
+  else
+    a - b - c
+  ( a * b + c ) / z
+;
+  

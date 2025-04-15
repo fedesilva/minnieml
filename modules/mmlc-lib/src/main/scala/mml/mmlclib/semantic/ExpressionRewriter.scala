@@ -35,23 +35,24 @@ object ExpressionRewriter:
   /** Rewrite an expression using precedence climbing for both operators and function application
     */
   def rewriteExpr(expr: Expr): Either[List[SemanticError], Expr] =
-    parsePrecedenceExpr(expr.terms, MinPrecedence, expr.span).flatMap { case (result, remaining) =>
-      if remaining.isEmpty then
-        // All terms processed successfully
-        result.asRight
-      else
-        // Remaining terms after expression - this means they're dangling
-        List(
-          SemanticError.DanglingTerms(
-            remaining,
-            "Unexpected terms outside expression context"
-          )
-        ).asLeft
+    rewritePrecedenceExpr(expr.terms, MinPrecedence, expr.span).flatMap {
+      case (result, remaining) =>
+        if remaining.isEmpty then
+          // All terms processed successfully
+          result.asRight
+        else
+          // Remaining terms after expression - this means they're dangling
+          List(
+            SemanticError.DanglingTerms(
+              remaining,
+              "Unexpected terms outside expression context"
+            )
+          ).asLeft
     }
 
-  /** Parse an expression using precedence climbing
+  /** Rewrite an expression using precedence climbing
     */
-  private def parsePrecedenceExpr(
+  private def rewritePrecedenceExpr(
     terms:   List[Term],
     minPrec: Int,
     span:    SrcSpan
@@ -60,16 +61,16 @@ object ExpressionRewriter:
       // First, rewrite any inner expressions in each term
       rewrittenTerms <- terms.traverse(rewriteTerm)
 
-      // Parse the first atom in the expression
-      (lhs, restAfterAtom) <- parseAtom(rewrittenTerms, span)
+      // Rewrite the first atom in the expression
+      (lhs, restAfterAtom) <- rewriteAtom(rewrittenTerms, span)
 
-      // Parse any operations with sufficient precedence
-      result <- parseOps(lhs, restAfterAtom, minPrec, span)
+      // Rewrite any operations with sufficient precedence
+      result <- rewriteOps(lhs, restAfterAtom, minPrec, span)
     yield result
 
-  /** Parse the first atom in a list of terms
+  /** Rewrite the first atom in a list of terms
     */
-  private def parseAtom(
+  private def rewriteAtom(
     terms: List[Term],
     span:  SrcSpan
   ): Either[List[SemanticError], (Expr, List[Term])] =
@@ -85,7 +86,7 @@ object ExpressionRewriter:
       case (g: TermGroup) :: rest =>
         // Process a parenthesized group - treat as a bounded expression
         // We process the full inner expression and ignore any remaining terms inside the group
-        parsePrecedenceExpr(g.inner.terms, MinPrecedence, g.span).map { case (innerExpr, _) =>
+        rewritePrecedenceExpr(g.inner.terms, MinPrecedence, g.span).map { case (innerExpr, _) =>
           (Expr(g.span, List(innerExpr)), rest)
         }
 
@@ -94,7 +95,7 @@ object ExpressionRewriter:
         val resolvedRef = ref.copy(resolvedAs = opDef.some)
         val nextMinPrec = if assoc == Associativity.Left then prec + 1 else prec
 
-        parsePrecedenceExpr(rest, nextMinPrec, span).map { case (operand, remaining) =>
+        rewritePrecedenceExpr(rest, nextMinPrec, span).map { case (operand, remaining) =>
           (Expr(span, List(resolvedRef, operand)), remaining)
         }
 
@@ -128,7 +129,7 @@ object ExpressionRewriter:
 
   /** Process operations using precedence climbing
     */
-  private def parseOps(
+  private def rewriteOps(
     lhs:     Expr,
     terms:   List[Term],
     minPrec: Int,
@@ -140,16 +141,16 @@ object ExpressionRewriter:
         val resolvedRef = ref.copy(resolvedAs = opDef.some)
         val nextMinPrec = if assoc == Associativity.Left then prec + 1 else prec
 
-        parsePrecedenceExpr(rest, nextMinPrec, span).flatMap { case (rhs, remaining) =>
+        rewritePrecedenceExpr(rest, nextMinPrec, span).flatMap { case (rhs, remaining) =>
           val combined = Expr(span, List(lhs, resolvedRef, rhs))
-          parseOps(combined, remaining, minPrec, span)
+          rewriteOps(combined, remaining, minPrec, span)
         }
 
       case IsPostfixOpRef(ref, opDef, prec, _) :: rest if prec >= minPrec =>
         // Postfix unary operator with sufficient precedence
         val resolvedRef = ref.copy(resolvedAs = opDef.some)
         val combined    = Expr(span, List(lhs, resolvedRef))
-        parseOps(combined, rest, minPrec, span)
+        rewriteOps(combined, rest, minPrec, span)
 
       case (g: TermGroup) :: rest =>
         // A group after a complete expression is invalid - expected operator
@@ -186,6 +187,7 @@ object ExpressionRewriter:
       // First rewrite the argument
       rewriteTerm(argTerm).flatMap { rewrittenArg =>
         // Then convert to an expression if needed
+        // TODO: I think this is redunt. term to expression just rewrites!
         termToExpr(rewrittenArg).flatMap { argExpr =>
           // Then build the application node
           buildSingleApp(accFn, argExpr, span)
@@ -201,8 +203,8 @@ object ExpressionRewriter:
     span: SrcSpan
   ): Either[List[SemanticError], Term] =
     fn match
-      case r: Ref => App(span, r, arg, typeAsc = None, typeSpec = None).asRight
-      case a: App => App(span, a, arg, typeAsc = None, typeSpec = None).asRight
+      case ref: Ref => App(span, ref, arg, typeAsc = None, typeSpec = None).asRight
+      case app: App => App(span, app, arg, typeAsc = None, typeSpec = None).asRight
       case _ =>
         // Term that's not a function or application can't be applied to
         List(

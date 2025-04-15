@@ -1,0 +1,151 @@
+{
+    "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+    "name": "MinnieML",
+    "patterns": [
+        {
+            "include": "#comments"
+        },
+        {
+            "include": "#docComments"
+        },
+        {
+            "include": "#keywords"
+        },
+        {
+            "include": "#operators"
+        },
+        {
+            "include": "#literals"
+        },
+        {
+            "include": "#types"
+        },
+        {
+            "include": "#identifiers"
+        },
+        {
+            "include": "#native"
+        }
+    ],
+    "repository": {
+        "comments": {
+            "patterns": [
+                {
+                    "name": "comment.line.number-sign.mml",
+                    "match": "#[^\\-].*$"
+                }
+            ]
+        },
+        "docComments": {
+            "name": "comment.block.documentation.mml",
+            "begin": "(#-)",
+            "beginCaptures": {
+                "1": {
+                    "name": "punctuation.definition.comment.begin.mml"
+                }
+            },
+            "end": "(-#)",
+            "endCaptures": {
+                "1": {
+                    "name": "punctuation.definition.comment.end.mml"
+                }
+            }
+        },
+        "keywords": {
+            "patterns": [
+                {
+                    "name": "keyword.control.mml",
+                    "match": "\\b(if|then|else)\\b"
+                },
+                {
+                    "name": "keyword.other.mml",
+                    "match": "\\b(module|fn|let|op|end|pub|protected|lexical|type)\\b"
+                },
+                {
+                    "name": "keyword.operator.mml",
+                    "match": "\\b(left|right)\\b"
+                },
+                {
+                    "name": "constant.language.mml",
+                    "match": "\\b(true|false)\\b"
+                },
+                {
+                    "name": "constant.language.mml",
+                    "match": "\\(\\)"
+                },
+                {
+                    "name": "constant.language.mml",
+                    "match": "\\b(\\?\\?\\?|\\_)\\b"
+                }
+            ]
+        },
+        "operators": {
+            "patterns": [
+                {
+                    "name": "keyword.operator.assignment.mml",
+                    "match": "="
+                },
+                {
+                    "name": "punctuation.terminator.mml",
+                    "match": ";"
+                },
+                {
+                    "name": "keyword.operator.type.mml",
+                    "match": ":"
+                },
+                {
+                    "name": "keyword.operator.mml",
+                    "match": "[=!#$%^&*+<>?/\\\\|~\\-]+"
+                }
+            ]
+        },
+        "literals": {
+            "patterns": [
+                {
+                    "name": "string.quoted.double.mml",
+                    "begin": "\"",
+                    "end": "\"",
+                    "patterns": [
+                        {
+                            "name": "constant.character.escape.mml",
+                            "match": "\\\\."
+                        }
+                    ]
+                },
+                {
+                    "name": "constant.numeric.integer.mml",
+                    "match": "\\b[0-9]+\\b"
+                },
+                {
+                    "name": "constant.numeric.float.mml",
+                    "match": "\\b[0-9]*\\.[0-9]+\\b"
+                }
+            ]
+        },
+        "types": {
+            "patterns": [
+                {
+                    "name": "storage.type.mml",
+                    "match": "\\b[A-Z][a-zA-Z0-9]*\\b"
+                }
+            ]
+        },
+        "identifiers": {
+            "patterns": [
+                {
+                    "name": "variable.parameter.mml",
+                    "match": "\\b[a-z][a-zA-Z0-9_]*\\b"
+                }
+            ]
+        },
+        "native": {
+            "patterns": [
+                {
+                    "name": "entity.name.tag.mml",
+                    "match": "@native"
+                }
+            ]
+        }
+    },
+    "scopeName": "source.mml"
+}

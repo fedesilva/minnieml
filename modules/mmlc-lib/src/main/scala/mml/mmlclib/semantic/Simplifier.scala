@@ -17,73 +17,82 @@ object Simplifier:
           case un:  UnaryOpDef => un.copy(body = simplifyExpr(un.body))
       case other => other
 
-  /** Simplify an expression by removing any unnecessary Expr wrappers. */
-  def simplifyExpr(expr: Expr): Expr =
-    // First, simplify all subterms
-    val simplifiedTerms = expr.terms.map(simplifyTerm)
+  // Helper to ensure a Term is an Expr, wrapping if necessary
+  private def ensureExpr(term: Term): Expr = term match {
+    case e: Expr => e // Already an Expr
+    case other => Expr(other.span, List(other)) // Wrap non-Expr in Expr
+  }
 
-    // Then apply additional simplifications if possible
-    simplifiedTerms match
-      case single :: Nil =>
-        // If there's only a single term, potentially unwrap it
-        single match
-          case e: Expr =>
-            // Unwrap nested Expr - this may happen during preceding climbing
-            e
-          case app: App =>
-            // Simplify App argument
-            val simplifiedArg = simplifyExpr(app.arg)
-            val simplifiedFn  = simplifyTerm(app.fn)
-            Expr(
-              expr.span,
-              List(app.copy(fn = simplifiedFn.asInstanceOf[Ref | App], arg = simplifiedArg))
-            )
-          case _ =>
-            // Single non-Expr term, keep the Expr wrapper but with simplified term
-            Expr(expr.span, List(single), expr.typeSpec, expr.typeAsc)
-      case many =>
-        // Otherwise, rebuild with simplified terms
-        Expr(expr.span, many, expr.typeSpec, expr.typeAsc)
+  /** Simplifies an expression that must remain an Expr (e.g., member body, cond branch). */
+  def simplifyTopLevelExpr(expr: Expr): Expr = {
+    val simplifiedTerm = simplifyTerm(expr)
+    ensureExpr(simplifiedTerm)
+  }
+
+  /** Simplify the terms within an expression. Does not unwrap the expression itself. */
+  def simplifyExpr(expr: Expr): Expr =
+    // Simplify all subterms recursively using simplifyTerm
+    val simplifiedTerms = expr.terms.map(simplifyTerm)
+    // Always rebuild the Expr with the simplified terms
+    Expr(expr.span, simplifiedTerms, expr.typeSpec, expr.typeAsc)
 
   /** Recursively simplify a term.
-    *   - For an Expr: simplify all subterms and, if exactly one subterm remains, unwrap the
-    *     expression.
-    *   - For a GroupTerm: simplify its inner expression.
-    *   - For AppN: simplify all arguments
+    *   - For an Expr: simplify its contents, then unwrap if only one term remains.
+    *   - For a GroupTerm: simplify its inner expression and remove the group wrapper.
+    *   - For AppN: simplify arguments
+    *   - For Cond: simplify branches using simplifyTopLevelExpr.
     *   - Other terms are returned unchanged.
     */
-  def simplifyTerm(term: Term): Term =
-    term match
+  def simplifyTerm(term: Term): Term = {
+    val result = term match {
       case e: Expr =>
-        val simplified = simplifyExpr(e)
-        // If simplified expression has exactly one term, extract it to reduce nesting
-        simplified.terms match
-          case single :: Nil => single
-          case _ => simplified
+        // Simplify the inside first using simplifyExpr (which calls simplifyTerm)
+        val simplifiedExpr = simplifyExpr(e)
+        // Check if the simplified expression should be unwrapped
+        simplifiedExpr.terms match {
+          // If only a single term remains, return it directly.
+          case single :: Nil => single // Return the single term
+          case _ => simplifiedExpr // Keep Expr with multiple terms
+        }
 
       case group: TermGroup =>
-        // Simplify inner expression
-        val simplifiedInner = simplifyExpr(group.inner)
-        // If inner expression has only one term, extract it
-        simplifiedInner.terms match
-          case single :: Nil =>
-            // Return the single term with the type ascription from the group
-            single match
-              case ref: Ref =>
-                ref.copy(typeAsc = group.typeAsc.orElse(ref.typeAsc))
-              case lit: LiteralValue =>
-                lit // Literals have fixed types, ignore type ascription
-              case other =>
-                // Keep the GroupTerm but with simplified inner
-                group.copy(inner = simplifiedInner)
-          case _ =>
-            // Inner has multiple terms, keep the GroupTerm
-            group.copy(inner = simplifiedInner)
+        // Simplify the inner expression using simplifyExpr
+        val simplifiedInnerExpr = simplifyExpr(group.inner)
+        // Recursively simplify the result (which must be an Expr) using simplifyTerm
+        val finalTerm = simplifyTerm(simplifiedInnerExpr) // Simplify the Expr result
+        // Discard the group wrapper, transferring type ascription if present
+        if group.typeAsc.isDefined then
+          // Attempt to apply typeAsc; might need refinement depending on Term types
+          finalTerm match {
+            case ex: Expr => ex.copy(typeAsc = group.typeAsc.orElse(ex.typeAsc))
+            // TODO: How to apply typeAsc to non-Expr terms? For now, ignore if not Expr.
+            case other => other
+          }
+        else finalTerm
 
       case app: App =>
-        // Simplify the function and argument
-        val simplifiedArg = simplifyExpr(app.arg)
-        val simplifiedFn  = simplifyTerm(app.fn)
+        // Simplify the function and argument (simplifyExpr calls simplifyTerm)
+        val simplifiedArg = simplifyExpr(app.arg) // Use simplifyExpr for args
+        val simplifiedFn  = simplifyTerm(app.fn) // Use simplifyTerm for fn part
         app.copy(fn = simplifiedFn.asInstanceOf[Ref | App], arg = simplifiedArg)
 
-      case other => other
+      // --- Modify Cond Case ---
+      case c: Cond =>
+        // Use simplifyTopLevelExpr for branches as they must remain Expr
+        c.copy(
+          cond    = simplifyTopLevelExpr(c.cond),
+          ifTrue  = simplifyTopLevelExpr(c.ifTrue),
+          ifFalse = simplifyTopLevelExpr(c.ifFalse)
+        )
+      // -------------------------
+
+      // --- Add Case for Tuple ---
+      case t: Tuple =>
+        // Simplify each element, ensuring they remain Expr
+        t.copy(elements = t.elements.map(simplifyTopLevelExpr))
+      // --------------------------
+
+      case other => other // Keep other terms as is
+    } // End of term match
+    result // Return the result of the match
+  } // End of simplifyTerm function

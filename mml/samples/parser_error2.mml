@@ -1,0 +1,3 @@
+fn mult (a b) = ???;
+let a  ;
+let b = mult 2 2;

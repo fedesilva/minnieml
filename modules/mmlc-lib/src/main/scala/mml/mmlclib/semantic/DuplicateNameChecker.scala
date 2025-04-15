@@ -35,18 +35,36 @@ object DuplicateNameChecker:
         memberDuplicates(
           rest,
           state.updatedWith(key) {
-            case Some(existing) => Some(res :: existing)
-            case None => Some(List(res))
+            case Some(existing) => (res :: existing).some
+            case None => List(res).some
           }
         )
       case Nil => state
     }
 
+    // First, collect all operator names
+    val operatorNames = decls.collect { case op: OpDef =>
+      op.name
+    }.toSet
+
     val topLevelMap = memberDuplicates(decls, Map.empty)
-    val topLevelErrors = topLevelMap.collect {
+
+    // Check for duplicates within the same category (bin, unary, other)
+    val sameTypeErrors = topLevelMap.collect {
       case ((name, _), items) if items.size > 1 =>
         SemanticError.DuplicateName(name, items)
     }.toList
+
+    // Check for functions with names that match operator names
+    // (operators have precedence, so we flag the functions as duplicates)
+    val functionOpErrors = decls.collect {
+      case fn: FnDef if operatorNames.contains(fn.name) =>
+        // Find all declarations with this name (including the operators)
+        val allWithSameName = decls.filter(_.name == fn.name)
+        SemanticError.DuplicateName(fn.name, allWithSameName)
+    }
+
+    val topLevelErrors = sameTypeErrors ++ functionOpErrors
 
     // Now, for each function or operator, check its parameters for duplicates locally.
     val paramErrors =

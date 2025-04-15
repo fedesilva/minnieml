@@ -36,3 +36,5 @@ object LlvmErrorPrinter:
       s"Executable run failed (exit code $exitCode): $path"
     case LlvmCompilationError.LlvmNotInstalled(missingTools) =>
       s"LLVM tools not installed: ${missingTools.mkString(", ")}"
+    case LlvmCompilationError.RuntimeResourceError(message) =>
+      s"MML runtime resource error: $message"

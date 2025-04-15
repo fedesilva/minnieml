@@ -5,7 +5,8 @@ import cats.effect.IO
 import cats.syntax.all.*
 import mml.mmlclib.api.CodeGenEffect
 import mml.mmlclib.ast.Module
-import mml.mmlclib.codegen.{CodeGenError, LlvmIrPrinter}
+import mml.mmlclib.codegen.LlvmIrEmitter
+import mml.mmlclib.codegen.emitter.CodeGenError
 
 // Define the errors that can occur during code generation.
 enum CodeGenApiError:
@@ -45,7 +46,7 @@ object CodeGenApi:
   /** Generate LLVM IR from an existing module */
   def generateFromModule(module: Module): CodeGenEffect[String] =
     EitherT(
-      IO.blocking(LlvmIrPrinter.printModule(module))
+      IO.blocking(LlvmIrEmitter.module(module))
         .attempt
         .map {
           case Right(innerEither) =>

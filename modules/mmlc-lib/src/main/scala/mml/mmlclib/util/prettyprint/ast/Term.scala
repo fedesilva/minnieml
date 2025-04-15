@@ -86,9 +86,33 @@ def prettyPrintTerm(
             s"${indentStr}  typeAsc: ${prettyPrintTypeSpec(typeAsc)}"
         else ""
 
-      s"${indentStr}Tuple $spanStr$typeStr\n" +
-        elements.toList
-          .map(e => prettyPrintExpr(e, indent + 2, showSourceSpans, showTypes))
+      val tupleIndentStr          = "  " * indent // Indent for the Tuple line itself
+      val elementContentIndentStr = "  " * (indent + 1) // Indent for content *within* the Expr
+
+      s"${tupleIndentStr}Tuple $spanStr$typeStr\n" +
+        elements.toList.zipWithIndex
+          .map { case (e, i) =>
+            // Generate the expression string with indent + 1 so children are indented correctly
+            val exprStrRaw = prettyPrintExpr(e, indent + 1, showSourceSpans, showTypes)
+            val lines      = exprStrRaw.linesIterator.toList
+
+            if lines.isEmpty then s"${tupleIndentStr} $i:<empty expr>" // Handle empty case
+            else
+              // First line from prettyPrintExpr starts with elementContentIndentStr
+              val firstLineRaw = lines.head
+              val restOfLines  = lines.tail
+
+              // Remove the elementContentIndentStr prefix from the first line
+              // Example: "      Expr[...]" becomes "Expr[...]"
+              val strippedFirstLine = firstLineRaw.stripPrefix(elementContentIndentStr)
+
+              // Prepend the index marker using the tuple's indent level
+              // Example: "    " + " 0:" + "Expr[...]" becomes "     0:Expr[...]"
+              val finalFirstLine = s"${tupleIndentStr} $i:$strippedFirstLine"
+
+              // Join back with the rest of the lines (which are already correctly indented)
+              (finalFirstLine :: restOfLines).mkString("\n")
+          }
           .mkString("\n")
 
     case App(sp, fn, arg, typeSpec, typeAsc) =>
@@ -125,6 +149,16 @@ def prettyPrintTerm(
     case LiteralUnit(sp) =>
       val spanStr = if showSourceSpans then printSourceSpan(sp) else ""
       s"${indentStr}LiteralUnit $spanStr"
+
+    case NativeImpl(sp, typeSpec, typeAsc) =>
+      val spanStr = if showSourceSpans then printSourceSpan(sp) else ""
+      val typeStr =
+        if showTypes then
+          s"\n${indentStr}  typeSpec: ${prettyPrintTypeSpec(typeSpec)}\n" +
+            s"${indentStr}  typeAsc: ${prettyPrintTypeSpec(typeAsc)}"
+        else ""
+
+      s"${indentStr}NativeImpl $spanStr$typeStr"
 
     case TermError(sp, message, failedCode) =>
       val spanStr = if showSourceSpans then printSourceSpan(sp) else ""

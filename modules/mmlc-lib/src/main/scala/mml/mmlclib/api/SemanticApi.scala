@@ -24,20 +24,18 @@ object SemanticApi:
   def rewriteModule(module: Module): CompilerEffect[Module] =
     EitherT
       .liftF(IO.delay {
-        val result = module
+        module
         // Inject standard operators into the module
         // This is a temporary solution until we have a proper module system
           |> injectStandardOperators
           // Now check for any MemberError instances
-          |> MemberErrorChecker.checkModule
           |> DuplicateNameChecker.checkModule
           |> RefResolver.rewriteModule
           |> ExpressionRewriter.rewriteModule
+          |> MemberErrorChecker.checkModule
           |> Simplifier.rewriteModule
-
-        result
       })
       .flatMap {
-        case Right(mod) => EitherT.rightT[IO, CompilerError](mod)
+        case Right(res) => EitherT.rightT[IO, CompilerError](res)
         case Left(errors) => EitherT.leftT[IO, Module](CompilerError.SemanticErrors(errors))
       }

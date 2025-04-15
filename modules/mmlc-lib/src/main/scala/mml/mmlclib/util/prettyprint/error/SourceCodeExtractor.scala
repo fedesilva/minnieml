@@ -3,6 +3,8 @@ package mml.mmlclib.util.prettyprint.error
 import mml.mmlclib.ast.{FromSource, SrcSpan}
 import mml.mmlclib.semantic.SemanticError
 
+import scala.math.Ordering // Added Ordering import
+
 /** Utility for extracting source code snippets for error reporting */
 object SourceCodeExtractor:
 
@@ -20,19 +22,19 @@ object SourceCodeExtractor:
 
     error match
       case SemanticError.DuplicateName(name, duplicates) =>
-        // For duplicates, we have multiple spans. Find their source lines and show each one
-        val snippets = duplicates.collect { case d: FromSource =>
+        // Sort duplicates by their starting index
+        val sortedDuplicates =
+          duplicates.collect { case d: FromSource => d }.sortBy(_.span.start.index) // Sort by index
+
+        // Iterate over sorted duplicates
+        val snippets = sortedDuplicates.map { d => // Use sorted list
           val location = LocationPrinter.printSpan(d.span)
 
-          // Find the line where this duplicate is defined (1-based)
-          val lineNumber = d.span.start.line
-
-          // Generate a snippet focused on this specific line
-          val snippet = if lineNumber > 0 && lineNumber <= sourceLines.length then
-            val line        = sourceLines(lineNumber - 1) // Convert to 0-based
-            val highlighted = formatLineWithHighlight(line, name, lineNumber)
-            highlighted
-          else "Source line not available"
+          // Use extractSnippet with the specific span of the duplicate name
+          // Use default contextLines=1, highlightExpr=false to highlight just the name span
+          val snippet =
+            extractSnippet(sourceCode, d.span, highlightExpr = false) // Use extractSnippet
+              .getOrElse("Source line not available")
 
           s"\nAt ${Console.YELLOW}$location${Console.RESET}:\n$snippet"
         }
@@ -70,48 +72,6 @@ object SourceCodeExtractor:
           s"\nAt ${Console.YELLOW}$location${Console.RESET}:\n$snippet"
         }
         snippets.mkString("\n")
-
-  /** Format a line with a highlighted identifier
-    *
-    * @param line
-    *   The source line to format
-    * @param name
-    *   The name to highlight
-    * @param lineNum
-    *   The line number (1-based)
-    * @return
-    *   Formatted lines with highlighting and underline
-    */
-  private def formatLineWithHighlight(line: String, name: String, lineNum: Int): String =
-    // Find where the name appears in the line
-    val index = line.indexOf(name)
-    if index >= 0 then
-      // Format the line number
-      val numStr     = lineNum.toString.reverse.padTo(4, ' ').reverse
-      val lineNumStr = s"${Console.CYAN}$numStr |${Console.RESET}"
-
-      // Split the line into three parts: before, target, after
-      val beforeText = line.substring(0, index)
-      val targetText = line.substring(index, index + name.length)
-      val afterText  = line.substring(index + name.length)
-
-      // Format with highlight
-      val highlightedText = s"${Console.RED}${Console.BOLD}$targetText${Console.RESET}"
-      val formattedLine   = s"$lineNumStr $beforeText$highlightedText$afterText"
-
-      // Add an underline
-      val indentSize = lineNumStr.length + 1 + index
-      val underline = " " * indentSize +
-        s"${Console.GREEN}${Console.BOLD}" +
-        "^" * name.length +
-        Console.RESET
-
-      s"$formattedLine\n$underline"
-    else
-      // If we can't find the name, just show the line normally
-      val numStr     = lineNum.toString.reverse.padTo(4, ' ').reverse
-      val lineNumStr = s"${Console.CYAN}$numStr |${Console.RESET}"
-      s"$lineNumStr $line"
 
   /** Extract a source code snippet around a source span
     *
@@ -192,33 +152,60 @@ object SourceCodeExtractor:
     val result = List.newBuilder[String]
 
     for (((line, num), idx) <- codeLines.zip(lineNumbers).zipWithIndex) {
-      val lineNum = idx + startLine + 1 // 1-based line number
+      val currentLineNum = idx + startLine + 1 // 1-based line number
 
-      // Check if this is a line with a highlight
-      val isHighlightLine = lineNum == highlightSpan.start.line
+      // Check if the current line is within the highlight span's line range
+      val isWithinHighlightLines =
+        currentLineNum >= highlightSpan.start.line && currentLineNum <= highlightSpan.end.line
 
-      if isHighlightLine then
-        if highlightExpr then
-          // Highlight entire line
-          val highlightedLine = s"$num ${Console.RED}$line${Console.RESET}"
-          result += highlightedLine
-        else
-          // Highlight just the specific identifier
-          val (beforeText, targetText, afterText) = splitLineAtSpan(line, highlightSpan)
+      if isWithinHighlightLines then
+        // Determine the columns to highlight on this specific line
+        val highlightStartCol =
+          if currentLineNum == highlightSpan.start.line then highlightSpan.start.col
+          else 1 // Start at col 1 for subsequent lines
+        val highlightEndCol =
+          if currentLineNum == highlightSpan.end.line then highlightSpan.end.col
+          else line.length + 1 // Go to end of line for preceding/middle lines
+
+        // Adjust for 0-based indexing and ensure bounds are valid
+        val startIdx = math.max(0, highlightStartCol - 1)
+        // Use endCol - 1 for substring's exclusive end index. Clamp to line length.
+        val endIdx = math.min(line.length, highlightEndCol - 1)
+
+        // Ensure startIdx is not beyond line length and startIdx is before endIdx
+        if startIdx < line.length && startIdx < endIdx then
+          val beforeText = line.substring(0, startIdx)
+          val targetText = line.substring(startIdx, endIdx)
+          val afterText  = line.substring(endIdx)
+
+          // Apply highlighting (RED for the text)
+          // Use highlightExpr flag - if true, highlight whole span, else just the specific part (though for duplicates, the span IS the specific part)
+          // For simplicity now, let's always highlight the calculated targetText red.
           val highlightedText = s"${Console.RED}${Console.BOLD}$targetText${Console.RESET}"
           val formattedLine   = s"$num $beforeText$highlightedText$afterText"
           result += formattedLine
 
-          // Add an underline below the highlighted text
-          val indentSize = num.length + 1 + (highlightSpan.start.col - 1)
-          val underline = " " * indentSize +
-            s"${Console.GREEN}${Console.BOLD}" +
-            "^" * targetText.length +
-            Console.RESET
-          result += underline
+          // Add underline (squiggle - GREEN)
+          val lineNumPrefixWidth = 7 // "XXXX | "
+          val indentSize         = lineNumPrefixWidth + startIdx
+          val underlineLength    = targetText.length
+
+          // Only add underline if length is positive
+          if underlineLength > 0 then
+            val underline = " " * indentSize +
+              s"${Console.GREEN}${Console.BOLD}" +
+              "^" * underlineLength +
+              Console.RESET
+            result += underline
+          // No else needed for underline
+        else
+          // Span doesn't actually cover anything visible on this line (e.g., empty line, or span ends at col 1)
+          result += s"$num $line"
+        // End of inner if
       else
-        // Regular line without highlighting
+        // Regular line outside the highlight span
         result += s"$num $line"
+      // End of outer if
     }
 
     result.result()

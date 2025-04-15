@@ -23,9 +23,10 @@ object Parser:
   def parseModule(source: String, name: Option[String] = "Anon".some): ParserResult =
     parse(source, moduleP(name, source, _)) match
       case Parsed.Success(result, _) =>
-        Right(result)
+        result.asRight
       case f: Parsed.Failure =>
-        Left(ParserError.Failure(f.trace().longMsg))
+        // TODO:
+        ParserError.Failure(f.trace().longMsg).asLeft
 
   // -----------------------------------------------------------------------------
   // Module Parsers (Explicit / Implicit)
@@ -81,8 +82,13 @@ object Parser:
 
   private def modVisibilityP[$: P]: P[ModVisibility] =
     P("pub").map(_ => ModVisibility.Public) |
-      P("protected").map(_ => ModVisibility.Protected) |
-      P("lexical").map(_ => ModVisibility.Lexical)
+      P("prot").map(_ => ModVisibility.Protected) |
+      P("lex").map(_ => ModVisibility.Lexical)
+
+  private def memberVisibilityP[$: P]: P[MemberVisibility] =
+    P("pub").map(_ => MemberVisibility.Public) |
+      P("prot").map(_ => MemberVisibility.Protected) |
+      P("priv").map(_ => MemberVisibility.Private)
 
   // -----------------------------------------------------------------------------
   // Single Member Parser
@@ -90,10 +96,12 @@ object Parser:
 
   private def membersP(source: String)(using P[Any]): P[Member] =
     P(
-      letBindingP(source) |
-        fnDefP(source) |
+      Pass ~
         binOpDefP(source) |
         unaryOpP(source) |
+        letBindingP(source) |
+        fnDefP(source) |
+        typeAliasP(source) |
         failedMemberP(source)
     )
 
@@ -103,25 +111,37 @@ object Parser:
 
   private def letBindingP(source: String)(using P[Any]): P[Member] =
     P(
-      spP(source)
-        ~ docCommentP(source)
+      Pass ~
+        // Implicit whitespace consumption happens here
+        docCommentP(source)
+        ~ memberVisibilityP.?
         ~ letKw
+        ~ spP(source) // Offset 4 chars back "let ".
         ~ bindingIdP
         ~ typeAscP(source)
         ~ defAsKw
         ~ exprP(source)
         ~ endKw
-        ~ spP(source)
+        ~ spP(source) // Capture end point *after* ';'
     )
-      .map { case (start, doc, name, typeAsc, expr, end) =>
-        Bnd(span(start, end), name, expr, expr.typeSpec, typeAsc, doc)
+      .map { case (doc, vis, startPoint, name, typeAsc, expr, endPoint) =>
+        Bnd(
+          visibility = vis.getOrElse(MemberVisibility.Protected),
+          span(startPoint, endPoint),
+          name,
+          expr,
+          expr.typeSpec,
+          typeAsc,
+          doc
+        )
       }
 
   private def fnParamP(source: String)(using P[Any]): P[FnParam] =
     P(
-      spP(source) ~ docCommentP(source) ~ bindingIdP ~ typeAscP(source) ~ spP(
-        source
-      )
+      Pass ~
+        spP(source) ~ docCommentP(source) ~ bindingIdP ~ typeAscP(source) ~ spP(
+          source
+        )
     ).map { case (start, doc, name, t, end) =>
       FnParam(
         span       = span(start, end),
@@ -133,9 +153,11 @@ object Parser:
 
   private def fnDefP(source: String)(using P[Any]): P[Member] =
     P(
-      spP(source)
-        ~ docCommentP(source)
+      Pass ~
+        docCommentP(source)
+        ~ memberVisibilityP.?
         ~ fnKw
+        ~ spP(source) // Offset 3 chars back "fn ".
         ~ bindingIdP
         ~ "("
         ~ fnParamP(source).rep
@@ -144,10 +166,11 @@ object Parser:
         ~ defAsKw
         ~ exprP(source)
         ~ endKw
-        ~ spP(source)
-    ).map { case (start, doc, fnName, params, typeAsc, bodyExpr, end) =>
+        ~ spP(source) // Capture end point *after* ';'
+    ).map { case (doc, vis, startPoint, fnName, params, typeAsc, bodyExpr, endPoint) =>
       FnDef(
-        span       = span(start, end),
+        visibility = vis.getOrElse(MemberVisibility.Protected),
+        span       = span(startPoint, endPoint),
         name       = fnName,
         params     = params.toList,
         body       = bodyExpr,
@@ -168,9 +191,12 @@ object Parser:
 
   private def binOpDefP(source: String)(using P[Any]): P[Member] =
     P(
-      spP(source)
-        ~ docCommentP(source)
+      // Implicit whitespace consumption happens here
+      Pass ~
+        docCommentP(source)
+        ~ memberVisibilityP.?
         ~ opKw
+        ~ spP(source) // Offset 3 chars back "op ".
         ~ operatorIdP
         ~ "("
         ~ fnParamP(source)
@@ -182,27 +208,44 @@ object Parser:
         ~ defAsKw
         ~ exprP(source)
         ~ endKw
-        ~ spP(source)
-    ).map { case (start, doc, opName, param1, param2, typeAsc, precedence, assoc, bodyExpr, end) =>
-      BinOpDef(
-        span       = span(start, end),
-        name       = opName,
-        param1     = param1,
-        param2     = param2,
-        precedence = precedence.getOrElse(50),
-        assoc      = assoc.getOrElse(Associativity.Left),
-        body       = bodyExpr,
-        typeSpec   = bodyExpr.typeSpec,
-        typeAsc    = typeAsc,
-        docComment = doc
-      )
+        ~ spP(source) // Capture end point *after* ';'
+    ).map {
+      case (
+            doc,
+            vis,
+            startPoint,
+            opName,
+            param1,
+            param2,
+            typeAsc,
+            precedence,
+            assoc,
+            bodyExpr,
+            endPoint
+          ) =>
+        BinOpDef(
+          visibility = vis.getOrElse(MemberVisibility.Protected),
+          span       = span(startPoint, endPoint),
+          name       = opName,
+          param1     = param1,
+          param2     = param2,
+          precedence = precedence.getOrElse(50),
+          assoc      = assoc.getOrElse(Associativity.Left),
+          body       = bodyExpr,
+          typeSpec   = bodyExpr.typeSpec,
+          typeAsc    = typeAsc,
+          docComment = doc
+        )
     }
 
   private def unaryOpP(source: String)(using P[Any]): P[Member] =
     P(
-      spP(source)
-        ~ docCommentP(source)
+      // Implicit whitespace consumption happens here
+      Pass ~
+        docCommentP(source)
+        ~ memberVisibilityP.?
         ~ opKw
+        ~ spP(source) // Offset 3 chars back "op ".
         ~ operatorIdP
         ~ "("
         ~ fnParamP(source)
@@ -212,10 +255,11 @@ object Parser:
         ~ defAsKw
         ~ exprP(source)
         ~ endKw
-        ~ spP(source)
-    ).map { case (start, doc, opName, param, precedence, assoc, bodyExpr, end) =>
+        ~ spP(source) // Capture end point *after* ';'
+    ).map { case (doc, vis, startPoint, opName, param, precedence, assoc, bodyExpr, endPoint) =>
       UnaryOpDef(
-        span       = span(start, end),
+        visibility = vis.getOrElse(MemberVisibility.Protected),
+        span       = span(startPoint, endPoint),
         name       = opName,
         param      = param,
         precedence = precedence.getOrElse(50),
@@ -239,8 +283,10 @@ object Parser:
 
     P(spP(src) ~ comment.! ~ spP(src)).?.map {
       case Some(start, s, end) =>
-        DocComment(span(start, end), s).some
-      case None => None
+        // remove markers
+        val clean = s.replaceAll("#-", "").replaceAll("-#", "").trim
+        DocComment(span(start, end), clean).some
+      case None => none
     }
 
   // -------------------------------------------------------------------------------
@@ -251,12 +297,44 @@ object Parser:
     P(":" ~/ typeSpecP(source)).?
 
   private def typeSpecP(source: String)(using P[Any]): P[TypeSpec] =
-    P(typeNameP(source))
+    P(
+      typeNameP(source)
+    )
 
   private def typeNameP(source: String)(using P[Any]): P[TypeSpec] =
     P(spP(source) ~ typeIdP ~ spP(source))
       .map { case (start, id, end) =>
         TypeName(span(start, end), id)
+      }
+
+  private def nativeTypeImplP(source: String)(using P[Any]): P[TypeSpec] =
+    P(spP(source) ~ "@native" ~ spP(source))
+      .map { case (start, end) =>
+        NativeTypeImpl(span(start, end))
+      }
+
+  private def typeAliasP(source: String)(using P[Any]): P[TypeAlias] =
+
+    def aliasOrNativeRefP: P[TypeSpec] =
+      P(
+        typeSpecP(source) |
+          nativeTypeImplP(source)
+      )
+
+    P(
+      spP(
+        source
+      ) ~ memberVisibilityP.? ~ "type" ~ typeIdP ~ defAsKw ~ aliasOrNativeRefP ~ endKw ~ spP(
+        source
+      )
+    )
+      .map { case (start, vis, id, typeSpec, end) =>
+        TypeAlias(
+          visibility = vis.getOrElse(MemberVisibility.Protected),
+          span(start, end),
+          id,
+          typeSpec
+        )
       }
 
   // -----------------------------------------------------------------------------
@@ -274,15 +352,22 @@ object Parser:
         Expr(span(start, end), termsList, typeAsc, typeSpec)
       }
 
+  private def nativeImplP(source: String)(using P[Any]): P[NativeImpl] =
+    P(spP(source) ~ "@native" ~ spP(source))
+      .map { case (start, end) =>
+        NativeImpl(span(start, end))
+      }
+
   private def termP(source: String)(using P[Any]): P[Term] =
     P(
-      ifExprP(source) |
+      litBoolP(source) |
+        nativeImplP(source) |
+        ifExprP(source) |
         litUnitP(source) |
         holeP(source) |
-        opRefP(source) |
         litStringP(source) |
+        opRefP(source) |
         numericLitP(source) |
-        litBoolP(source) |
         groupTermP(source) |
         tupleP(source) |
         refP(source) |
@@ -331,7 +416,7 @@ object Parser:
   private def opRefP(source: String)(using P[Any]): P[Term] =
     P(spP(source) ~ operatorIdP ~ spP(source))
       .map { case (start, id, end) =>
-        Ref(span(start, end), id, None)
+        Ref(span(start, end), id)
       }
 
   private def mehP(source: String)(using P[Any]): P[Term] =
@@ -355,9 +440,10 @@ object Parser:
     P(
       // Try float patterns first
       // N.N
-      (spP(source) ~ CharIn("0-9").rep(1) ~ "." ~ CharIn("0-9").rep(1).! ~ spP(source)).map {
-        case (start, s, end) =>
-          LiteralFloat(span(start, end), s.toFloat)
+      (spP(source) ~ CharIn("0-9").rep(1) ~ "." ~ CharIn("0-9").rep(1).! ~ spP(
+        source
+      )).map { case (start, s, end) =>
+        LiteralFloat(span(start, end), s.toFloat)
       } |
         // .N
         (spP(source) ~ "." ~ CharIn("0-9").rep(1).! ~ spP(source)).map { case (start, s, end) =>
@@ -402,14 +488,20 @@ object Parser:
   // Identifiers
   // -----------------------------------------------------------------------------
 
+  /** All bindings (let or fn, alpha ops) share this rule.
+    */
   private def bindingIdP[$: P]: P[String] =
     import fastparse.NoWhitespace.*
     P(!keywords ~ CharIn("a-z") ~ CharsWhileIn("a-zA-Z0-9_", 0)).!
 
   private def operatorIdP[$: P]: P[String] =
-    // import fastparse.NoWhitespace.*
-    val opChars = "=!@#$%^&*+<>?/\\|~-"
-    P(CharsWhile(c => opChars.indexOf(c) >= 0, min = 1).!)
+
+    // Symbolic operators
+    val opChars    = "=!#$%^&*+<>?/\\|~-"
+    val symbolicOp = P(CharsWhile(c => opChars.indexOf(c) >= 0, min = 1).!)
+
+    // Parse either a symbolic or alphabetic operator
+    P(symbolicOp | bindingIdP)
 
   private def typeIdP[$: P]: P[String] =
     import fastparse.NoWhitespace.*
@@ -456,6 +548,7 @@ object Parser:
 
   private def spP[$: P](source: String): P[SrcPoint] =
     P(Index).map(index => indexToSourcePoint(index, source))
+    // P(Index).map(index => indexToSourcePoint(index, source))
 
   // -----------------------------------------------------------------------------
   // Helpers
@@ -471,7 +564,7 @@ object Parser:
     val upToIndex = source.substring(0, index)
     val lines     = upToIndex.split('\n')
     val line      = lines.length
-    val col       = if lines.isEmpty then index else lines.last.length + 1
+    val col       = if lines.isEmpty then index + 1 else lines.last.length + 1
     SrcPoint(line, col, index)
 
   private def span(start: SrcPoint, end: SrcPoint): SrcSpan =

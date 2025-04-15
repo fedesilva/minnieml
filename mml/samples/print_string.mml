@@ -1,0 +1,11 @@
+/**
+ *
+ */ 
+type String = @native;
+
+fn print (a: String) = @native;
+fn println (a: String) = @native;
+
+fn main() = 
+  println "fede"
+;

@@ -5,5 +5,11 @@
     "extensions.closeExtensionDetailsOnViewChange": true,
     "metals.testUserInterface": "Test Explorer",
     "editor.formatOnPaste": true,
-    "editor.formatOnSave": true
+    "editor.formatOnSave": true,
+    "github.copilot.enable": {
+        "*": true,
+        "plaintext": false,
+        "markdown": false,
+        "scminput": false
+    }
 }
