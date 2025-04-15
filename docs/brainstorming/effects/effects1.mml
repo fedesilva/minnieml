@@ -1,0 +1,26 @@
+module EffectsSamples = 
+
+  fn try_reading_file
+        {FileIO & Throw & Cell}
+        (path: String):  String | Error = do
+    
+    # mutable cell, also an effect
+    let counterMut := mut 0;
+
+    # unpacking the counter sets an effect boundary `:=`,
+    # break will jump back here
+    let count := get counterMut;
+
+    # check the count; if too big, throw
+    if count > 3 then
+        # breaks to end of outermost `do`
+        throw error "too many tries"
+    else
+        open_file(path) match
+            # breaks to last `:=`
+          | Error s -> break incr counterMut;
+            # ok here we continue
+            # and read the file into a string
+          | _ -> ???
+    
+  ;
