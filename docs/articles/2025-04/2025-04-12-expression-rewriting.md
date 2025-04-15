@@ -344,16 +344,12 @@ This hierarchy ensures that:
 The beauty of this approach is that we don't need parentheses or special syntax rules to represent boolean logic - the same unified expression rewriting mechanism handles boolean operations just like any other operators in the system. Alphabetic operators like `and`, `or`, and `not` are treated identically to symbolic operators, with their behavior defined by their precedence and associativity values.
 
 Because the language will provide a well defined set of operators with standard definitions,
-and because the compiler will reject overrides ( no duplicates allowed )
+and because the compiler will reject overrides ( no duplicates allowed ), the user will - unless they mess
+with the prelude - a sane operator set, working as they expect.
 
 ## Implementation Details
 
-1. **Pattern Matching Extractors**:
-
-   - `IsOpRef`, `IsBinOpRef`, `IsPrefixOpRef`, etc. in `package.scala`
-   - Used to select the appropriate interpretation of references
-
-2. **Precedence Levels**:
+1. **Precedence Levels**:
 
    - Function application: 100 (highest)
    - Unary operators: 95
@@ -363,7 +359,7 @@ and because the compiler will reject overrides ( no duplicates allowed )
    - Comparisons: 50
    - Logical operators: 30-40
 
-3. **Application Chains**:
+2. **Application Chains**:
    - Function applications are built as left-associative chains
    - Multiple arguments are interpreted as nested applications
    - For example, `f a b c` becomes `((f a) b) c` in the AST
@@ -395,7 +391,7 @@ op or (a b) 30 left  = ???; # Logical OR
 ```mml
 op - (a) 95 right = ???;  # Unary minus
 op + (a) 95 right = ???;  # Unary plus
-op ! (a) 95 left  = ???;  # Factorial/NOT (postfix)
+op ! (a) 95 left  = ???;  # Factorial (postfix)
 op not (a) 95 right = ???; # Logical NOT (prefix)
 ```
 
