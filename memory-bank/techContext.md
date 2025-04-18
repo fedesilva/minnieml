@@ -63,6 +63,9 @@ These tools enable cross-platform compilation without requiring a dedicated Linu
 
 ## Compiler CLI (`mmlc`)
 
+The compiler cli is not available in the console you have access to.
+Nor are the llvm tools.
+
 The `mmlc` command-line tool provides the following commands:
 
 - `mmlc info [-d|--diagnostics]`: Displays version and build information. `-d` adds diagnostics. (Default command)
@@ -100,3 +103,8 @@ Follow the `.scalafmt.conf` settings for formatting. Keep code clean and modular
 - In scala 3 functions do not need to be forward referenced, if there are no cyclic references which are themselves a bad code smell.
 
 - When running sbt commands DO NOT append the subproject, the top level project is configured to aggregate the children's commands.
+
+- DO NOT tolerate compiler warning. fix them all. if running scalafix
+  does not fix them, you need to edit the code and run all the tools again.
+
+- DO NOT ever consider a task finished if you did not follow this instructions (code quality tools, review compiler output)

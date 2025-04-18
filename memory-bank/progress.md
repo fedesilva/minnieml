@@ -51,7 +51,7 @@ The following tasks are planned, prioritized as immediate and subsequent:
 ### Immediate Tasks:
 
 - Parser and semantic tests for:
-  - App rewriting
+  - ~~App rewriting~~ (Completed 2025-04-15)
   - Alpha ops
 
 ### Subsequent Tasks:

@@ -26,6 +26,7 @@ Recent developments in the project:
   - Refined the semantic analysis pipeline order and improved logic in `ExpressionRewriter`, `Simplifier`, and `DuplicateNameChecker`
   - Improved duplicate name checking, especially for functions vs. operators
   - Enhanced error reporting with more AST context and improved source code snippet highlighting/formatting
+  - Added and fixed semantic tests for function application rewriting (`AppRewritingTests.scala`)
 
 - **Runtime & Build:**
 
@@ -48,7 +49,7 @@ _(Code review on 2025-04-12 confirmed the implementation matches the documented 
 
 - **Parser and semantic tests** :
 
-  - for App rewriting
+  - ~~for App rewriting~~ (Completed 2025-04-15)
   - for Alpha ops
 
 - **Cross-Compilation Support**: Implement target specification to allow building MinnieML programs for different platforms (Darwin x86_64, Darwin aarch64, Linux x86_64) from a single host. This is very important and needs to be done soon. See `docs/brainstorming/cross-compiling-project.md` for implementation details.
