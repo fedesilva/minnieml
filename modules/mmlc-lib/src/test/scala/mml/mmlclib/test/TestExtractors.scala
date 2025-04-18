@@ -38,7 +38,7 @@ object TestExtractors:
 
       term match
         // Start collection only if the input is an App
-        case app @ App(_, _, _, _, _) =>
+        case app: App =>
           collect(app, Nil)
             .flatMap { // flatMap to handle potential None from collect (though unlikely with current @tailrec impl)
               case (ref: Ref, args) => // Check if the base term is a Ref

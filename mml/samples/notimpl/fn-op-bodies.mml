@@ -41,6 +41,7 @@ fn exprAndDecl2 () =
     a = 1,
     b = 2,
     c = 3
+  ;
 
   let z = 
     if a > 1 then
@@ -48,10 +49,17 @@ fn exprAndDecl2 () =
     else
       a - b
 
-  if not flag1 then
-    a * b + c
-  else
-    a - b - c
-  ( a * b + c ) / z
+  let y = 
+    if not flag1 then
+      a * b + c
+    else
+      a - b - c
+  ;
+
+  if flag2 then
+    (a + b + c) / y
+  else   
+    ( a * b + c ) / z
+    
 ;
   

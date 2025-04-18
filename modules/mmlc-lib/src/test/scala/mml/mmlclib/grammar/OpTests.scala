@@ -65,6 +65,14 @@ class OpTests extends BaseEffFunSuite:
     }
   }
 
+  test("alphabetic operators: and, or, not") {
+    parseNotFailed(
+      """
+        let x = not a or b and c;
+      """
+    ) // Just check if it parses without error
+  }
+
   test("unary right assoc with precedence") {
     parseNotFailed(
       """

@@ -108,3 +108,6 @@ Follow the `.scalafmt.conf` settings for formatting. Keep code clean and modular
   does not fix them, you need to edit the code and run all the tools again.
 
 - DO NOT ever consider a task finished if you did not follow this instructions (code quality tools, review compiler output)
+
+Do not ever leave comments like "removed this, fixed that."
+Comments should only describe the code, they are not your notepad.

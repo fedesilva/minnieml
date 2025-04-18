@@ -822,36 +822,3 @@ class OpPrecedenceTests extends BaseEffFunSuite:
 
     }
   }
-//
-// Test custom operators that override precedence of standard ones
-// op @* (a b) 100 left = a * b;  // Higher precedence than standard *
-// let a = 1 + 2 @* 3;  // Should parse as: 1 + (2 @* 3)
-// Tests that user-defined precedence is respected even when similar to built-in operators
-
-// Test deeply nested expressions with mixed operators
-// let a = 1 + (2 * (3 ^ (4 + 5)));
-// Verifies that complex nested structures are preserved correctly
-
-// Test operators with multiple characters and unusual symbols
-// op <$> (a b) 65 left = a + b;
-// op <*> (a b) 70 left = a * b;
-// let a = f <$> x <*> y;  // Should parse as: (f <$> x) <*> y
-// Tests handling of non-standard operator symbols and names
-
-// Test mixing custom and standard operators
-// op <$> (a b) 65 left = a + b;
-// let a = 1 + 2 <$> 3 * 4;  // Should parse as: 1 + ((2 <$> 3) * 4)
-// Verifies proper interaction between custom and built-in operators
-
-// Test associativity with multiple identical operators
-// let a = 2 ^ 2 ^ 2 ^ 2;  // Should parse as: 2 ^ (2 ^ (2 ^ 2)) for right-associative
-// Tests correct associativity handling with multiple occurrences of the same operator
-
-// Test unary operators with different precedence
-// op $ (a) 97 right = a;  // Higher precedence than -
-// let a = -$3;  // Should parse as: -($ 3)
-// Tests precedence relationships between different unary operators
-
-// Test chained mixed binary operators with same precedence
-// let a = 10 / 5 * 2;  // Should parse as: ((10 / 5) * 2) for left-associative
-// Tests left-associativity with multiple operators of equal precedence

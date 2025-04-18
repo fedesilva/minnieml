@@ -71,7 +71,9 @@ object RefResolver:
     member: Member,
     module: Module
   ): Either[List[SemanticError], Expr] =
+
     expr.terms.traverse {
+
       case ref: Ref =>
         val candidates = lookupRefs(ref, member, module)
         if candidates.isEmpty then List(SemanticError.UndefinedRef(ref, member)).asLeft
@@ -99,6 +101,7 @@ object RefResolver:
 
       case term =>
         term.asRight[List[SemanticError]]
+
     } map { updatedTerms =>
       expr.copy(terms = updatedTerms)
     }
