@@ -29,10 +29,8 @@ PB --> TC[techContext.md]
 
 2. `productContext.md`
 
-   - Why this project exists
-   - Problems it solves
-   - How it should work
-   - User experience goals
+   We don't want or need this.
+   Read the why section in the README.md
 
 3. `activeContext.md`
 
@@ -122,9 +120,14 @@ Start[Update Process]
 
     Start --> Process
 
-Remember to also read the `Readme.md` file at the top of the repository.
+I MUST remember to also read the `Readme.md` file at the top of the repository.
 
 Note: When triggered by **update memory bank**, I MUST review every memory bank file, even if some don't require updates. Focus particularly on activeContext.md and progress.md as they track current state.
+
+I must keep the files to a minimum size.
+
+Do not modify tech context or system pattern files, if not strictly necessary
+since the user has modified them himself.
 
 REMEMBER: After every memory reset, I begin completely fresh. The Memory Bank is my only link to previous work. It must be maintained with precision and clarity, as my effectiveness depends entirely on its accuracy.
 
@@ -132,9 +135,9 @@ REMEMBER: After every memory reset, I begin completely fresh. The Memory Bank is
 
 VERY IMPORTANT
 
-If I say something that seems contradictory, stop and ask.
+If the user say something that seems contradictory, stop and ask.
 
-It's _critically_ important that you _break your work into blocks_ and wait for me to review and understand your changes after finishing each block and before proceeding with the next, _I appreciate it you taking this request seriously_.
+It's _critically_ important that I _break your work into blocks_ and wait for the user to review and understand your changes after finishing each block and before proceeding with the next, _they appreciate me taking this request seriously_.
 
 Always make small changes, then check things compile, pass tests.
 After that, proceed.
