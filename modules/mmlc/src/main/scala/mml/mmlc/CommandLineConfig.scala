@@ -8,16 +8,18 @@ object CommandLineConfig:
 
   enum Command:
     case Bin(
-      file:      Option[Path] = None,
-      outputDir: String       = "build",
-      outputAst: Boolean      = false,
-      verbose:   Boolean      = false
+      file:         Option[Path]   = None,
+      outputDir:    String         = "build",
+      outputAst:    Boolean        = false,
+      verbose:      Boolean        = false,
+      targetTriple: Option[String] = None
     )
     case Lib(
-      file:      Option[Path] = None,
-      outputDir: String       = "build",
-      outputAst: Boolean      = false,
-      verbose:   Boolean      = false
+      file:         Option[Path]   = None,
+      outputDir:    String         = "build",
+      outputAst:    Boolean        = false,
+      verbose:      Boolean        = false,
+      targetTriple: Option[String] = None
     )
     case Ast(
       file:      Option[Path] = None,
@@ -34,7 +36,8 @@ object CommandLineConfig:
       outputDir: String = "build"
     )
     case Info(
-      diagnostics: Boolean = false
+      diagnostics: Boolean = false,
+      showTriples: Boolean = false
     )
 
   case class Config(
@@ -56,6 +59,9 @@ object CommandLineConfig:
 
     val astOpt = opt[Unit]('a', "ast")
       .text("Output the AST to a file in addition to other compilation")
+
+    val targetOpt = opt[String]('t', "target")
+      .text("Target triple for cross-compilation (e.g., x86_64-pc-linux-gnu)")
 
     // Binary executable command
     val binCommand =
@@ -84,6 +90,12 @@ object CommandLineConfig:
           verboseOpt.action((_, config) =>
             config.copy(command = config.command match {
               case bin: Command.Bin => bin.copy(verbose = true)
+              case cmd => cmd
+            })
+          ),
+          targetOpt.action((triple, config) =>
+            config.copy(command = config.command match {
+              case bin: Command.Bin => bin.copy(targetTriple = Some(triple))
               case cmd => cmd
             })
           )
@@ -116,6 +128,12 @@ object CommandLineConfig:
           verboseOpt.action((_, config) =>
             config.copy(command = config.command match {
               case lib: Command.Lib => lib.copy(verbose = true)
+              case cmd => cmd
+            })
+          ),
+          targetOpt.action((triple, config) =>
+            config.copy(command = config.command match {
+              case lib: Command.Lib => lib.copy(targetTriple = Some(triple))
               case cmd => cmd
             })
           )
@@ -205,7 +223,15 @@ object CommandLineConfig:
                 case cmd => cmd
               })
             )
-            .text("Display diagnostics information")
+            .text("Display diagnostics information"),
+          opt[Unit]('t', "triples")
+            .action((_, config) =>
+              config.copy(command = config.command match {
+                case info: Command.Info => info.copy(showTriples = true)
+                case cmd => cmd
+              })
+            )
+            .text("Display supported target triples")
         )
 
     OParser.sequence(

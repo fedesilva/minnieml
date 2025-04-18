@@ -30,6 +30,8 @@ object LlvmErrorPrinter:
       s"Failed to create temporary file: $message"
     case LlvmCompilationError.UnsupportedOperatingSystem(osName) =>
       s"Unsupported operating system: $osName"
+    case LlvmCompilationError.UnsupportedArchitecture(archName) =>
+      s"Unsupported architecture: $archName"
     case LlvmCompilationError.CommandExecutionError(command, errorMessage, exitCode) =>
       s"Command execution failed (exit code $exitCode): $command\n$errorMessage"
     case LlvmCompilationError.ExecutableRunError(path, exitCode) =>

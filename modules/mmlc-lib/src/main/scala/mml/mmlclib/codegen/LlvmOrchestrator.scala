@@ -16,6 +16,7 @@ enum CompilationMode derives CanEqual:
 enum LlvmCompilationError derives CanEqual:
   case TemporaryFileCreationError(message: String)
   case UnsupportedOperatingSystem(osName: String)
+  case UnsupportedArchitecture(archName: String)
   case CommandExecutionError(command: String, errorMessage: String, exitCode: Int)
   case ExecutableRunError(path: String, exitCode: Int)
   case LlvmNotInstalled(missingTools: List[String])
@@ -66,7 +67,8 @@ object LlvmOrchestrator:
     moduleName:       String,
     workingDirectory: String,
     mode:             CompilationMode = CompilationMode.Binary,
-    verbose:          Boolean         = false
+    verbose:          Boolean         = false,
+    targetTriple:     Option[String]  = None
   ): IO[Either[LlvmCompilationError, Int]] =
     for
       _ <- IO(logPhase(s"Compiling module $moduleName"))
@@ -95,7 +97,8 @@ object LlvmOrchestrator:
             }
             result <- inputFileResult match
               case Left(error) => IO.pure(error.asLeft)
-              case Right(inputFile) => processLlvmFile(inputFile, workingDirectory, mode, verbose)
+              case Right(inputFile) =>
+                processLlvmFile(inputFile, workingDirectory, mode, verbose, targetTriple)
           yield result
     yield result
 
@@ -103,26 +106,35 @@ object LlvmOrchestrator:
     inputFile:        File,
     workingDirectory: String,
     mode:             CompilationMode,
-    verbose:          Boolean
+    verbose:          Boolean,
+    targetTriple:     Option[String] = None
   ): IO[Either[LlvmCompilationError, Int]] =
-    val programName = inputFile.getName.stripSuffix(".ll")
-    val outputDir   = s"$workingDirectory/out"
-    val targetDir   = s"$workingDirectory/target"
+    val programName   = inputFile.getName.stripSuffix(".ll")
+    val baseOutputDir = s"$workingDirectory/out"
+    val targetDir     = s"$workingDirectory/target"
 
     for
-      _ <- createOutputDir(outputDir)
-      _ <- createOutputDir(targetDir)
-      targetTripleResult <- detectOsTargetTriple()
-      result <- processWithTargetTriple(
-        targetTripleResult,
-        inputFile,
-        programName,
-        workingDirectory,
-        outputDir,
-        targetDir,
-        mode,
-        verbose
-      )
+      targetTripleResult <- detectOsTargetTriple(targetTriple)
+      result <- targetTripleResult match
+        case Left(error) =>
+          IO(logError(s"Error detecting target triple: $error")) *>
+            IO.pure(error.asLeft)
+        case Right(triple) =>
+          val outputDir = s"$baseOutputDir/$triple"
+          for
+            _ <- createOutputDir(outputDir)
+            _ <- createOutputDir(targetDir)
+            result <- processWithTargetTriple(
+              Right(triple),
+              inputFile,
+              programName,
+              workingDirectory,
+              outputDir,
+              targetDir,
+              mode,
+              verbose
+            )
+          yield result
     yield result
 
   private def processWithTargetTriple(
@@ -279,8 +291,9 @@ object LlvmOrchestrator:
   /** Filename for the MML runtime file */
   private val mmlRuntimeFilename = "mml_runtime.c"
 
-  /** Filename for the compiled MML runtime object */
-  private val mmlRuntimeObjectFilename = "mml_runtime.o"
+  /** Get the filename for the compiled MML runtime object for a specific target */
+  private def mmlRuntimeObjectFilename(targetTriple: String): String =
+    s"mml_runtime-$targetTriple.o"
 
   /** Extracts the MML runtime source from resources to the output directory.
     *
@@ -372,10 +385,12 @@ object LlvmOrchestrator:
     *   Either an error or the path to the compiled object file
     */
   private def compileRuntime(
-    outputDir: String,
-    verbose:   Boolean
+    outputDir:    String,
+    verbose:      Boolean,
+    targetTriple: String
   ): IO[Either[LlvmCompilationError, String]] = IO.defer {
-    val objPath = Paths.get(outputDir).resolve(mmlRuntimeObjectFilename).toAbsolutePath.toString
+    val runtimeFilename = mmlRuntimeObjectFilename(targetTriple)
+    val objPath         = Paths.get(outputDir).resolve(runtimeFilename).toAbsolutePath.toString
 
     logPhase("Compiling runtime")
     if Files.exists(Paths.get(objPath)) then
@@ -391,7 +406,7 @@ object LlvmOrchestrator:
             logDebug(s"Input file: $sourcePath", verbose)
             logDebug(s"Output file: $objPath", verbose)
 
-            val cmd = s"clang -c -std=c17 -O2 -fPIC -o $objPath $sourcePath"
+            val cmd = s"clang -target $targetTriple -c -std=c17 -O2 -fPIC -o $objPath $sourcePath"
             executeCommand(
               cmd,
               "Failed to compile MML runtime",
@@ -422,7 +437,7 @@ object LlvmOrchestrator:
     val inputFile = Paths.get(outputDir).resolve(s"$programName.s").toAbsolutePath.toString
 
     for
-      runtimeResult <- compileRuntime(outputDir, verbose)
+      runtimeResult <- compileRuntime(outputDir, verbose, targetTriple)
       result <- runtimeResult match
         case Left(error) => IO.pure(error.asLeft)
         case Right(runtimePath) =>
@@ -462,7 +477,7 @@ object LlvmOrchestrator:
     val inputFile        = Paths.get(outputDir).resolve(s"$programName.s").toAbsolutePath.toString
 
     for
-      runtimeResult <- compileRuntime(outputDir, verbose)
+      runtimeResult <- compileRuntime(outputDir, verbose, targetTriple)
       result <- runtimeResult match
         case Left(error) => IO.pure(error.asLeft)
         case Right(runtimePath) =>
@@ -482,7 +497,8 @@ object LlvmOrchestrator:
             case Left(error) => error.asLeft
             case Right(_) =>
               // Copy the runtime object to the target directory as well for easy access
-              val runtimeTargetPath = targetDirPath.resolve(mmlRuntimeObjectFilename).toString
+              val runtimeTargetPath =
+                targetDirPath.resolve(mmlRuntimeObjectFilename(targetTriple)).toString
               logInfo(s"Copying runtime to $runtimeTargetPath")
               try
                 // Convert the runtime path string to a Path object
@@ -492,7 +508,9 @@ object LlvmOrchestrator:
                   StandardCopyOption.REPLACE_EXISTING
                 )
                 logInfo(s"Library object generation successful. Exit code: 0")
-                logInfo(s"Note: Link with $mmlRuntimeObjectFilename when using this library.")
+                logInfo(
+                  s"Note: Link with ${mmlRuntimeObjectFilename(targetTriple)} when using this library."
+                )
                 0.asRight
               catch
                 case e: Exception =>
@@ -513,12 +531,23 @@ object LlvmOrchestrator:
       }
     }
 
-  private def detectOsTargetTriple(): IO[Either[LlvmCompilationError, String]] =
+  private def detectOsTargetTriple(
+    userProvidedTriple: Option[String] = None
+  ): IO[Either[LlvmCompilationError, String]] =
     IO {
-      val os = System.getProperty("os.name")
-      if os.startsWith("Mac") then "x86_64-apple-macosx".asRight
-      else if os.startsWith("Linux") then "x86_64-pc-linux-gnu".asRight
-      else LlvmCompilationError.UnsupportedOperatingSystem(os).asLeft
+      userProvidedTriple match
+        case Some(triple) => triple.asRight
+        case None =>
+          val os   = System.getProperty("os.name")
+          val arch = System.getProperty("os.arch").toLowerCase
+
+          if os.startsWith("Mac") then
+            if arch == "aarch64" || arch == "arm64" then "aarch64-apple-macosx".asRight
+            else "x86_64-apple-macosx".asRight
+          else if os.startsWith("Linux") then
+            if arch == "aarch64" || arch == "arm64" then "aarch64-pc-linux-gnu".asRight
+            else "x86_64-pc-linux-gnu".asRight
+          else LlvmCompilationError.UnsupportedOperatingSystem(os).asLeft
     }
 
   private def executeCommand(
