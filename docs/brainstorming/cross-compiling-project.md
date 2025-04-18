@@ -75,10 +75,10 @@ To support multiple targets without conflicts, we need to adjust build artifact 
 
    ```scala
    // Current compilation command
-   val cmd = s"clang -c -std=c11 -O2 -fPIC -o $objPath $sourcePath"
+   val cmd = s"clang -c -std=c17 -O2 -fPIC -o $objPath $sourcePath"
 
    // Updated compilation command with target triple
-   val cmd = s"clang -target $targetTriple -c -std=c11 -O2 -fPIC -o $objPath $sourcePath"
+   val cmd = s"clang -target $targetTriple -c -std=c17 -O2 -fPIC -o $objPath $sourcePath"
    ```
 
 Note: The LlvmOrchestrator already handles target-specific naming for final artifacts:
