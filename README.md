@@ -186,5 +186,8 @@ even without features like pattern matching or type inference.
 * Basic type checking (requires explicit types, resolves type definitions)
 * Convert operator expressions to curried function calls.
 * Some form of basic memory management.
-* Improve codegen to integrate with the @native annotations.
 * Module support: ability to compile separate files and reference them.
+    * Only the Prelude for now.
+* Add a basic standard library with some useful functions.
+* Improve codegen to work with the curried function calls for operators.
+* Remove hardcoded types and assumptions from the codegen, using the @native keyword and type annotations. 
