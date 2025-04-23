@@ -8,7 +8,7 @@ declarative low level capabilities and first class native interface.
 This is an experiment to build a high-level functional language that compiles quickly into fast executables 
 with strong machine empathy, and good, modern tooling.
 
-This is about exploring ideas and having fun while learning.
+It's all about exploring ideas and having fun while learning.
 
 ## Fair warning
 
