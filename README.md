@@ -3,6 +3,13 @@
 A statically typed, functional language, with an ML inspired syntax, managed effects in delimited contexts,
 declarative low level capabilities and first class native interface.
 
+## Why
+
+This is an experiment to build a high-level functional language that compiles quickly into fast executables 
+with strong machine empathy, and good, modern tooling.
+
+This is about exploring ideas and having fun while learning.
+
 ## Fair warning
 
     "El que avisa no traiciona"
@@ -71,12 +78,12 @@ enum Species =
   | Reptile
 ;
 
-type Pet = {
+data Pet {
   name:     String
   species:  Species
 };
 
-type Person = {
+data Person {
   name: String
   pet:  Maybe Pet
 };
@@ -101,6 +108,26 @@ let pf = hasPet fede;   # true
 # does not compile
 # let pz = hasPet zur
 ```
+
+
+## Status
+
+At this time, MinnieML's parser handles a subset of the planned syntax, including function definitions, operators (symbolic and alphabetic like 'and'), and basic expressions. The semantic analysis phase includes a unified expression rewriting system that handles precedence and associativity for both custom operators and ML-style curried function application (e.g., `f a b` is rewriten as `(f a) b`). This phase also performs reference resolution, contextual disambiguation, and basic error checking.
+
+The compiler integrates with native C code via `@native` annotations, linking against a small runtime library.
+
+The focus right now is on getting the minimal set of features working so that we can compile simple but useful programs, 
+even without features like pattern matching or type inference.
+
+* Basic type checking (requires explicit types, resolves type definitions)
+* Convert operator expressions to curried function calls.
+* Some form of basic memory management.
+* Module support: ability to compile separate files and reference them.
+    * Only the Prelude for now.
+* Add a basic standard library with some useful functions.
+* Introduce tail call detection, have the codegen annotate the ir so llvm optimizes them.
+* Improve codegen to work with the curried function calls for operators.
+* Remove hardcoded types and assumptions from the codegen, using the @native keyword and type annotations. 
 
 ## Documentation
 
@@ -162,33 +189,3 @@ or run
 
 There are some samples under `mml/samples`.
 
-## Why
-
-I want one language with a good standard library that works everywhere: webservers, websites, microservices, monoliths, kernel modules, wikis, embedded systems, mobile apps, desktop apps, and shell scripts.
-
-I want a high-level language that lets me access low-level functionality when necessary without forcing it on every program.
-
-When platforms don't understand certain concepts (files, threads), the language and build tools should handle that complexity for me.
-
-This is an experiment to build a high-level functional language that compiles quickly into fast executables with strong machine empathy, and good, modern tooling.
-
-This is about exploring ideas and having fun while learning.
-
-## Status
-
-At this time, MinnieML's parser handles a subset of the planned syntax, including function definitions, operators (symbolic and alphabetic like 'and'), and basic expressions. The semantic analysis phase includes a unified expression rewriting system that handles precedence and associativity for both custom operators and ML-style curried function application (e.g., `f a b` is rewriten as `(f a) b`). This phase also performs reference resolution, contextual disambiguation, and basic error checking.
-
-The compiler integrates with native C code via `@native` annotations, linking against a small runtime library.
-
-The focus right now is on getting the minimal set of features working so that we can compile simple but useful programs, 
-even without features like pattern matching or type inference.
-
-* Basic type checking (requires explicit types, resolves type definitions)
-* Convert operator expressions to curried function calls.
-* Some form of basic memory management.
-* Module support: ability to compile separate files and reference them.
-    * Only the Prelude for now.
-* Add a basic standard library with some useful functions.
-* Introduce tail call detection, have the codegen annotate the ir so llvm optimizes them.
-* Improve codegen to work with the curried function calls for operators.
-* Remove hardcoded types and assumptions from the codegen, using the @native keyword and type annotations. 
