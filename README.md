@@ -189,5 +189,6 @@ even without features like pattern matching or type inference.
 * Module support: ability to compile separate files and reference them.
     * Only the Prelude for now.
 * Add a basic standard library with some useful functions.
+* Introduce tail call detection, have the codegen annotate the ir so llvm optimizes them.
 * Improve codegen to work with the curried function calls for operators.
 * Remove hardcoded types and assumptions from the codegen, using the @native keyword and type annotations. 
