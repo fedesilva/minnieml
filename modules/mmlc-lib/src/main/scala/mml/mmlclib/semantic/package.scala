@@ -50,7 +50,6 @@ def injectStandardOperators(module: Module): Module =
     List(
       ("-", 95, Associativity.Right),
       ("+", 95, Associativity.Right),
-      ("!", 95, Associativity.Left),
       ("not", 95, Associativity.Right)
     ).map { case (name, prec, assoc) =>
       UnaryOpDef(

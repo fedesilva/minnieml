@@ -19,6 +19,19 @@ object Main extends IOApp:
   def run(args: List[String]): IO[ExitCode] =
     parseAndProcessArgs(args)
 
+  def printSupportedTriples: IO[Unit] =
+    IO.println(s"\n${Console.CYAN}Example Target Triples:${Console.RESET}") *>
+      IO.println(s"  ${Console.RED}Cross compilation might not work${Console.RESET}") *>
+      IO.println(s"  ${Console.YELLOW}macOS:${Console.RESET}") *>
+      IO.println(s"    x86_64-apple-macosx     (Intel Mac)") *>
+      IO.println(s"    aarch64-apple-macosx    (Apple Silicon)") *>
+      IO.println(s"  ${Console.YELLOW}Linux:${Console.RESET}") *>
+      IO.println(s"    x86_64-pc-linux-gnu     (x86_64 Linux)") *>
+      IO.println(s"    aarch64-pc-linux-gnu    (ARM64 Linux)") *>
+      IO.println(s"  ${Console.YELLOW}WebAssembly:${Console.RESET}") *>
+      IO.println(s"    wasm32-unknown-unknown  (WebAssembly)") *>
+      IO.println(s"\n  Use with: mmlc bin --target <triple> <source-file>")
+
   private def parseAndProcessArgs(args: List[String]): IO[ExitCode] =
     OParser.parse(CommandLineConfig.createParser, args, Config()) match
       case Some(config) =>
@@ -61,6 +74,7 @@ object Main extends IOApp:
           case i: Command.Info =>
             printVersionInfo *>
               printToolInfo(i.diagnostics) *>
+              (if i.showTriples then printSupportedTriples else IO.unit) *>
               IO.println(
                 "Use `mmlc --help` or `mmlc -h` for more information on available commands."
               ).as(ExitCode(0))

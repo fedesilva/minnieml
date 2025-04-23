@@ -137,6 +137,7 @@ object ErrorPrinter:
     case LlvmCompilationError.TemporaryFileCreationError(msg) =>
       s"Failed to create temporary file: $msg"
     case LlvmCompilationError.UnsupportedOperatingSystem(os) => s"Unsupported operating system: $os"
+    case LlvmCompilationError.UnsupportedArchitecture(arch) => s"Unsupported architecture: $arch"
     case LlvmCompilationError.CommandExecutionError(cmd, msg, code) =>
       s"Command execution failed (exit code $code): $cmd\n$msg"
     case LlvmCompilationError.ExecutableRunError(path, code) =>

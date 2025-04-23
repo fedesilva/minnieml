@@ -9,10 +9,11 @@ import mml.mmlclib.util.prettyprint.error.ErrorPrinter
 object CodeGeneration:
 
   def generateNativeOutput(
-    module:    Module,
-    outputDir: String,
-    mode:      CompilationMode = CompilationMode.Binary,
-    verbose:   Boolean         = false
+    module:       Module,
+    outputDir:    String,
+    mode:         CompilationMode = CompilationMode.Binary,
+    verbose:      Boolean         = false,
+    targetTriple: Option[String]  = None
   ): IO[ExitCode] =
     for
       // Generate LLVM IR directly from the module
@@ -23,7 +24,7 @@ object CodeGeneration:
         case Right(llvmIr) =>
           // Compile the generated LLVM IR, passing the module name
           LlvmOrchestrator
-            .compile(llvmIr, module.name, outputDir, mode, verbose)
+            .compile(llvmIr, module.name, outputDir, mode, verbose, targetTriple)
             .map {
               case Right(exitCode) => Right(exitCode)
               case Left(error) => Left(NativeEmitterError.LlvmErrors(List(error)))

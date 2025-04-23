@@ -54,7 +54,8 @@ object CompilationPipeline:
         module,
         config.outputDir,
         CompilationMode.Binary,
-        config.verbose
+        config.verbose,
+        config.targetTriple
       )
     yield exitCode
 
@@ -79,7 +80,8 @@ object CompilationPipeline:
         module,
         config.outputDir,
         CompilationMode.Library,
-        config.verbose
+        config.verbose,
+        config.targetTriple
       )
     yield exitCode
 

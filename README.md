@@ -180,25 +180,11 @@ At this time, MinnieML's parser handles a subset of the planned syntax, includin
 
 The compiler integrates with native C code via `@native` annotations, linking against a small runtime library.
 
-I have also introduced the ability to build a self contained native image of the compiler and have a decent cli
-given the current functionality - ie single file, limited programs.
+The focus right now is on getting the minimal set of features working so that we can compile simple but useful programs, 
+even without features like pattern matching or type inference.
 
-Work is ongoing to solidify core language features. Immediate next steps involve adding parser and semantic tests for expression rewriting and alphabetic operators.
-
-Next comes rewriting operator expressions as chains of function application and improving the native integration story.
-
-For the first, expresions like `2 + 2` will be rewritten the same as functions, as chains of curried app nodes: `((+ 2) 2)`. This will simplify the codegen strategy and pave the way for unified optimization and typechecking tactics.
-
-For the second, I will add the ability to point to specific llvm types and the ability to point functions or operators to specific llvm intrinsic ops.
-
-```rust
-type Int = @native[t:i64]
-op + (a b) = @native[op:add]
-
-# translates to llvm ir-ish: `add i64 2 2`.
-let a = 2 + 2;
-```
-
-This will remove a bunch of hardcoded strings and assumptions in the codegen and make the system much more flexible.
-
-Following that, the focus will shift towards enhancing LLVM code generation to align with the unified expression strategy, implementing recursion detection, records, allowing complex function bodies, and introducing initial type system components (`TypeRef` resolution) and optionally some form of heap management. The near-term goal is to enable the compilation of programs involving conditionals and loops.
+* Basic type checking (requires explicit types, resolves type definitions)
+* Convert operator expressions to curried function calls.
+* Some form of basic memory management.
+* Improve codegen to integrate with the @native annotations.
+* Module support: ability to compile separate files and reference them.
