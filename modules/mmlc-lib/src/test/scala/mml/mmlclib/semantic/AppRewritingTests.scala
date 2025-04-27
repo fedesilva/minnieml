@@ -14,7 +14,7 @@ class AppRewritingTests extends BaseEffFunSuite:
       fn mult (a b) = ???;
       let a = mult 2 2;
       """
-    ).map { m => // Start of .map block
+    ).map { m =>
       val memberBnd =
         lookupNames("a", m).headOption
           .getOrElse(
@@ -46,7 +46,7 @@ class AppRewritingTests extends BaseEffFunSuite:
         case x =>
           fail(s"Expected a Bnd, got: ${prettyPrintAst(x)}")
       }
-    } // End of .map block
+    }
   }
 
   test("function with dangling terms should fail") {
@@ -66,7 +66,7 @@ class AppRewritingTests extends BaseEffFunSuite:
       fn apply (f x) = ???;
       let a = apply (func 1) 2;
       """
-    ).map { m => // Start of .map block
+    ).map { m =>
       val memberBnd =
         lookupNames("a", m).headOption
           .getOrElse(
@@ -112,7 +112,7 @@ class AppRewritingTests extends BaseEffFunSuite:
         case other =>
           fail(s"Expected Bnd, got: ${prettyPrintAst(other)}")
       }
-    } // End of .map block
+    }
   }
 
   test("curried function application should work without boundaries") {
@@ -121,7 +121,7 @@ class AppRewritingTests extends BaseEffFunSuite:
       fn func (a b) = ???;
       let a = func 1 2 3 4;
       """
-    ).map { m => // Start of .map block
+    ).map { m =>
       val memberBnd =
         lookupNames("a", m).headOption
           .getOrElse(
@@ -155,7 +155,7 @@ class AppRewritingTests extends BaseEffFunSuite:
         case other =>
           fail(s"Expected Bnd, got: ${prettyPrintAst(other)}")
       }
-    } // End of .map block
+    }
   }
 
   test("function application with operators should work") {
@@ -164,7 +164,7 @@ class AppRewritingTests extends BaseEffFunSuite:
       fn func (a b) = ???;
       let a = (func 1 1) + 3 - func 1 2 3;
       """
-    ).map { m => // Start of .map block
+    ).map { m =>
       val memberBnd =
         lookupNames("a", m).headOption
           .getOrElse(
@@ -259,7 +259,7 @@ class AppRewritingTests extends BaseEffFunSuite:
         case other =>
           fail(s"Expected Bnd, got: ${prettyPrintAst(other)}")
       }
-    } // End of .map block
+    }
   }
 
   test("complex nested function applications with operators should work") {
@@ -271,7 +271,7 @@ class AppRewritingTests extends BaseEffFunSuite:
       
       let a = apply (func 1) 2 + compose func func 3 4 5;
       """
-    ).map { m => // Start of .map block
+    ).map { m =>
       val memberBnd =
         lookupNames("a", m).headOption
           .getOrElse(
@@ -377,7 +377,7 @@ class AppRewritingTests extends BaseEffFunSuite:
         case other =>
           fail(s"Expected Bnd, got: ${prettyPrintAst(other)}")
       }
-    } // End of .map block
+    }
   }
 
   test("zero-arity function") {
@@ -386,7 +386,7 @@ class AppRewritingTests extends BaseEffFunSuite:
       fn func () = ???;
       let a = func ();
       """
-    ).map { m => // Start of .map block
+    ).map { m =>
       val memberBnd = lookupNames("a", m).headOption
         .getOrElse(fail(s"Member `a` not found in module: ${prettyPrintAst(m)}"))
 
@@ -403,7 +403,7 @@ class AppRewritingTests extends BaseEffFunSuite:
           }
         case other => fail(s"Expected Bnd, got: ${prettyPrintAst(other)}")
       }
-    } // End of .map block
+    }
   }
 
   test("function application within if/else") {
@@ -413,7 +413,7 @@ class AppRewritingTests extends BaseEffFunSuite:
       let cond = true;
       let a = if cond then func 1 else func 2;
       """
-    ).map { m => // Start of .map block
+    ).map { m =>
       val memberBnd = lookupNames("a", m).headOption
         .getOrElse(fail(s"Member `a` not found in module: ${prettyPrintAst(m)}"))
 
@@ -468,7 +468,7 @@ class AppRewritingTests extends BaseEffFunSuite:
             case None => fail("Expected Cond structure as the only term, got: None")
         case other => fail(s"Expected Bnd, got: ${prettyPrintAst(other)}")
       }
-    } // End of .map block
+    }
   }
 
   test("nested function applications with operators") {
@@ -478,7 +478,7 @@ class AppRewritingTests extends BaseEffFunSuite:
       fn func2 (b) = ???;
       let a = func1 (func2 1) + 2;
       """
-    ).map { m => // Start of .map block
+    ).map { m =>
       val memberBnd = lookupNames("a", m).headOption
         .getOrElse(fail(s"Member `a` not found in module: ${prettyPrintAst(m)}"))
 
@@ -533,7 +533,7 @@ class AppRewritingTests extends BaseEffFunSuite:
             case None => fail("Expected TXApp structure at top level, got: None")
         case other => fail(s"Expected Bnd, got: ${prettyPrintAst(other)}")
       }
-    } // End of .map block
+    }
   }
 
   test("single-argument function") {
@@ -542,7 +542,7 @@ class AppRewritingTests extends BaseEffFunSuite:
       fn func (a) = ???;
       let a = func 1;
       """
-    ).map { m => // Start of .map block
+    ).map { m =>
       val memberBnd = lookupNames("a", m).headOption
         .getOrElse(fail(s"Member `a` not found in module: ${prettyPrintAst(m)}"))
 
@@ -561,5 +561,5 @@ class AppRewritingTests extends BaseEffFunSuite:
           }
         case other => fail(s"Expected Bnd, got: ${prettyPrintAst(other)}")
       }
-    } // End of .map block
+    }
   }

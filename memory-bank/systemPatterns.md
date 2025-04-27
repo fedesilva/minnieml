@@ -22,6 +22,12 @@ The compiler is structured into multiple modules:
 - Error handling is done through `Either[CompilationError, T]` for functional error propagation
 - Cats and Cats Effect are used for functional programming patterns
 
+### Code Style and Comments
+
+- Comments should ONLY describe functionality, not implementation mechanics
+- Avoid inane comments like "start of block" or "end of block" markers
+- Keep code clean and avoid distracting structural comments that add no value
+
 ### Language Features
 
 - ML-inspired syntax with functional programming paradigm
