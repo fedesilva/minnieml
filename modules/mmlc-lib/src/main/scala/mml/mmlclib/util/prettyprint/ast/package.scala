@@ -8,6 +8,18 @@ def printSourcePoint(sp: SrcPoint): String =
 def printSourceSpan(span: SrcSpan): String =
   s"[${printSourcePoint(span.start)}, ${printSourcePoint(span.end)}]"
 
+/** Helper function to pretty print a list of AST nodes
+  */
+def prettyPrintList[T <: AstNode](
+  nodes:           List[T],
+  indent:          Int     = 2,
+  showSourceSpans: Boolean = false,
+  showTypes:       Boolean = false
+): String =
+  nodes
+    .map(node => prettyPrintAst(node, indent, showSourceSpans, showTypes))
+    .mkString("[", ", ", "]")
+
 def prettyPrintAst(
   astNode:         AstNode,
   indent:          Int     = 2,

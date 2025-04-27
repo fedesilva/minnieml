@@ -6,6 +6,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - ALWAYS read README.md to understand the project's purpose and current status
 - ALWAYS read ALL files in the memory-bank directory, as they contain critical context
 - THINK DEEPLY about the information in these files before proceeding with any task
+- Do not start making changes until you are told to do so. Always present a plan before proceeding and ask for explicit approval
+- Follow instructions faithfully and to the t. If you find instructions are contradictory or impossible to follow, stop, think and explain your problem.
+- When you are working and you are stopped by the user and asked a question, answer and DO NOT CONTINUE UNTIL YOU ARE TOLD TO DO SO. This is critical.
 
 ## Build and Test Commands
 - Build project: `sbt compile`

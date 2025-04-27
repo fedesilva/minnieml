@@ -33,8 +33,6 @@ object TestExtractors:
             Some(
               (baseTerm, accumulatedArgs)
             ) // Base case: return the non-App term and collected args
-          // If the structure is not App(..., App | Ref, Expr, ...) this initial match might fail,
-          // but the outer match handles non-App inputs returning None.
 
       term match
         // Start collection only if the input is an App

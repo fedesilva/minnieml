@@ -85,7 +85,6 @@ object ExpressionRewriter:
 
       case (g: TermGroup) :: rest =>
         // Process a parenthesized group - treat as a bounded expression
-        // We process the full inner expression and ignore any remaining terms inside the group
         rewritePrecedenceExpr(g.inner.terms, MinPrecedence, g.span).map { case (innerExpr, _) =>
           (Expr(g.span, List(innerExpr)), rest)
         }
@@ -96,14 +95,16 @@ object ExpressionRewriter:
         val nextMinPrec = if assoc == Associativity.Left then prec + 1 else prec
 
         rewritePrecedenceExpr(rest, nextMinPrec, span).map { case (operand, remaining) =>
-          (Expr(span, List(resolvedRef, operand)), remaining)
+          // Transform prefix operator to function application
+          val opApp = App(span, resolvedRef, operand)
+          (Expr(span, List(opApp)), remaining)
         }
 
       case IsFnRef(ref, fnDef) :: rest =>
         // Function reference - handle as potential function application
         val resolvedRef = ref.copy(resolvedAs = fnDef.some)
 
-        // In ML languages, collect all juxtaposed terms until finding an operator
+        // Collect all juxtaposed terms until finding an operator
         // These will be treated as a chain of function applications
         val nonOpArgs = rest.takeWhile(term => !isOperator(term))
         val opTerms   = rest.drop(nonOpArgs.length)
@@ -142,14 +143,18 @@ object ExpressionRewriter:
         val nextMinPrec = if assoc == Associativity.Left then prec + 1 else prec
 
         rewritePrecedenceExpr(rest, nextMinPrec, span).flatMap { case (rhs, remaining) =>
-          val combined = Expr(span, List(lhs, resolvedRef, rhs))
+          // Transform operator expression to function application
+          val opApp    = App(span, App(span, resolvedRef, lhs), rhs)
+          val combined = Expr(span, List(opApp))
           rewriteOps(combined, remaining, minPrec, span)
         }
 
       case IsPostfixOpRef(ref, opDef, prec, _) :: rest if prec >= minPrec =>
         // Postfix unary operator with sufficient precedence
         val resolvedRef = ref.copy(resolvedAs = opDef.some)
-        val combined    = Expr(span, List(lhs, resolvedRef))
+        // Transform postfix operator to function application
+        val opApp    = App(span, resolvedRef, lhs)
+        val combined = Expr(span, List(opApp))
         rewriteOps(combined, rest, minPrec, span)
 
       case (g: TermGroup) :: rest =>
@@ -187,7 +192,6 @@ object ExpressionRewriter:
       // First rewrite the argument
       rewriteTerm(argTerm).flatMap { rewrittenArg =>
         // Then convert to an expression if needed
-        // TODO: I think this is redunt. term to expression just rewrites!
         termToExpr(rewrittenArg).flatMap { argExpr =>
           // Then build the application node
           buildSingleApp(accFn, argExpr, span)

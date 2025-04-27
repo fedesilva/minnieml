@@ -13,8 +13,6 @@
 
 ## What's Left to Build
 
-- Parser and semantic tests for Alpha ops
-- Appify operator expressions and update codegen for unified strategy
 - Detect recursion in app chains
 - Support for function bodies with complex expressions
 - TypeRef and TypeRef Resolver
@@ -27,6 +25,11 @@
 ## Current Status
 
 The compiler successfully parses a substantial subset of the intended language syntax with unified expression rewriting for both operators and function applications. The semantic phase handles complex mixed expressions with proper precedence and associativity. Ready for upcoming type checking phase and transition to Typed Lambda Intermediate Representation (TLIR).
+
+- Modified ExpressionRewriter.scala to transform operator expressions into function applications (branch 142-operator-as-app)
+- Updated all tests in OpPrecedenceTests.scala to use TXApp extractors for validating operator-as-app transformation 
+- Added prettyPrintList helper in prettyprint/ast/package.scala for improved error diagnostics
+- Ensured all error messages properly use pretty printing for AST nodes and collections
 
 ## Known Issues
 

@@ -173,56 +173,89 @@ class AppRewritingTests extends BaseEffFunSuite:
 
       memberBnd match {
         case bnd: Bnd =>
-          // Expect: Expr(_, List( Expr(_, List(AssertApp(Ref("func"), List(Lit(1), Lit(1))), Ref("+"), Lit(3)), _, _), Ref("-"), AssertApp(Ref("func"), List(Lit(1), Lit(2), Lit(3))) ), _, _)
-          bnd.value match {
-            case Expr(
-                  _,
-                  List(
-                    Expr(
-                      _,
-                      List(
-                        TXApp(
-                          ref1,
-                          _,
-                          List(
-                            Expr(_, List(LiteralInt(_, a11Val)), _, _),
-                            Expr(_, List(LiteralInt(_, a12Val)), _, _)
-                          )
-                        ),
-                        Ref(_, op1, _, _, _, _),
-                        LiteralInt(_, a13Val)
-                      ),
-                      _,
-                      _
-                    ),
-                    Ref(_, op2, _, _, _, _),
-                    TXApp(
-                      ref2,
-                      _,
-                      List(
-                        Expr(_, List(LiteralInt(_, a21Val)), _, _),
-                        Expr(_, List(LiteralInt(_, a22Val)), _, _),
-                        Expr(_, List(LiteralInt(_, a23Val)), _, _)
-                      )
-                    )
-                  ),
-                  _,
-                  _
-                ) =>
-              assertEquals(clue(ref1.name), "func", "Func 1 name")
-              assertEquals(clue(a11Val), 1, "Func 1 Arg 1")
-              assertEquals(clue(a12Val), 1, "Func 1 Arg 2")
-              assertEquals(clue(op1), "+", "Operator 1")
-              assertEquals(clue(a13Val), 3, "Literal 3")
-              assertEquals(clue(op2), "-", "Operator 2")
-              assertEquals(clue(ref2.name), "func", "Func 2 name")
-              assertEquals(clue(a21Val), 1, "Func 2 Arg 1")
-              assertEquals(clue(a22Val), 2, "Func 2 Arg 2")
-              assertEquals(clue(a23Val), 3, "Func 2 Arg 3")
+          // The value is now an Expr with App nodes due to operator transformation
+          bnd.value.terms.headOption match
+            case Some(TXApp(minusRef, _, List(plusExpr, funcExpr))) =>
+              // Top level is minus operation
+              assertEquals(clue(minusRef.name), "-", "Should be minus operation")
 
-            case other =>
-              fail(s"Expected complex Expr structure, got: \n${prettyPrintAst(other)}")
-          }
+              // Verify right side is func 1 2 3
+              funcExpr.terms.headOption match
+                case Some(TXApp(funcRef2, _, funcArgs)) =>
+                  assertEquals(clue(funcRef2.name), "func", "Func 2 name")
+                  assertEquals(clue(funcArgs.length), 3, "Func 2 should have 3 args")
+
+                  // Check all arguments are correct literals
+                  funcArgs(0).terms.headOption match
+                    case Some(LiteralInt(_, arg1Val)) =>
+                      assertEquals(clue(arg1Val), 1, "Func 2 Arg 1")
+                    case Some(other) =>
+                      fail(s"Expected literal 1 for arg1, got: ${prettyPrintAst(other)}")
+                    case None => fail("Expected literal 1 for arg1, got: None")
+
+                  funcArgs(1).terms.headOption match
+                    case Some(LiteralInt(_, arg2Val)) =>
+                      assertEquals(clue(arg2Val), 2, "Func 2 Arg 2")
+                    case Some(other) =>
+                      fail(s"Expected literal 2 for arg2, got: ${prettyPrintAst(other)}")
+                    case None => fail("Expected literal 2 for arg2, got: None")
+
+                  funcArgs(2).terms.headOption match
+                    case Some(LiteralInt(_, arg3Val)) =>
+                      assertEquals(clue(arg3Val), 3, "Func 2 Arg 3")
+                    case Some(other) =>
+                      fail(s"Expected literal 3 for arg3, got: ${prettyPrintAst(other)}")
+                    case None => fail("Expected literal 3 for arg3, got: None")
+
+                case Some(other) =>
+                  fail(s"Expected TXApp in right side of minus, got: ${prettyPrintAst(other)}")
+                case None => fail("Expected TXApp in right side of minus, got: None")
+
+              // Check left side (plus operation)
+              plusExpr.terms.headOption match
+                case Some(TXApp(plusRef, _, plusArgs)) =>
+                  assertEquals(clue(plusRef.name), "+", "Should be plus operation")
+                  assertEquals(clue(plusArgs.length), 2, "+ should have 2 args")
+
+                  // Right side of plus should be literal 3
+                  plusArgs(1).terms.headOption match
+                    case Some(LiteralInt(_, litVal)) =>
+                      assertEquals(clue(litVal), 3, "Literal value")
+                    case Some(other) => fail(s"Expected literal 3, got: ${prettyPrintAst(other)}")
+                    case None => fail("Expected literal 3, got: None")
+
+                  // Left side should be func 1 1
+                  plusArgs(0).terms.headOption match
+                    case Some(TXApp(funcRef1, _, funcArgs)) =>
+                      assertEquals(clue(funcRef1.name), "func", "Func 1 name")
+                      assertEquals(clue(funcArgs.length), 2, "Func 1 should have 2 args")
+
+                      // Check both args are literal 1
+                      funcArgs(0).terms.headOption match
+                        case Some(LiteralInt(_, arg1Val)) =>
+                          assertEquals(clue(arg1Val), 1, "Func 1 Arg 1")
+                        case Some(other) =>
+                          fail(s"Expected literal 1 for arg1, got: ${prettyPrintAst(other)}")
+                        case None => fail("Expected literal 1 for arg1, got: None")
+
+                      funcArgs(1).terms.headOption match
+                        case Some(LiteralInt(_, arg2Val)) =>
+                          assertEquals(clue(arg2Val), 1, "Func 1 Arg 2")
+                        case Some(other) =>
+                          fail(s"Expected literal 1 for arg2, got: ${prettyPrintAst(other)}")
+                        case None => fail("Expected literal 1 for arg2, got: None")
+
+                    case Some(other) =>
+                      fail(s"Expected TXApp(func, [1, 1]), got: ${prettyPrintAst(other)}")
+                    case None => fail("Expected TXApp(func, [1, 1]), got: None")
+
+                case Some(other) =>
+                  fail(s"Expected TXApp for plus operation, got: ${prettyPrintAst(other)}")
+                case None => fail("Expected TXApp for plus operation, got: None")
+
+            case Some(other) =>
+              fail(s"Expected TXApp structure at top level, got: ${prettyPrintAst(other)}")
+            case None => fail("Expected TXApp structure at top level, got: None")
         case other =>
           fail(s"Expected Bnd, got: ${prettyPrintAst(other)}")
       }
@@ -247,72 +280,100 @@ class AppRewritingTests extends BaseEffFunSuite:
 
       memberBnd match {
         case bnd: Bnd =>
-          // Expect: Expr(_, List( AssertApp(Ref("apply"), List(Expr(App(Ref("func"), Lit(1))), Lit(2))), Ref("+"), AssertApp(Ref("compose"), List(Ref("func"), Ref("func"), Lit(3), Lit(4), Lit(5))) ), _, _)
-          bnd.value match {
-            case Expr(
-                  _,
-                  List(
-                    TXApp(
-                      applyRef,
-                      _,
-                      List(
-                        Expr(
-                          _,
-                          List(
-                            App(
-                              _,
-                              Ref(_, funcFn, _, _, _, _),
-                              Expr(_, List(LiteralInt(_, argF1Val)), _, _),
-                              _,
-                              _
-                            )
-                          ),
-                          _,
-                          _
-                        ),
-                        Expr(_, List(LiteralInt(_, argA2Val)), _, _)
-                      )
-                    ),
-                    Ref(_, op, _, _, _, _),
-                    TXApp(
-                      composeRef,
-                      _,
-                      List(
-                        Expr(_, List(Ref(_, argC1Name, _, _, _, _)), _, _),
-                        Expr(_, List(Ref(_, argC2Name, _, _, _, _)), _, _),
-                        Expr(_, List(LiteralInt(_, argC3Val)), _, _),
-                        Expr(_, List(LiteralInt(_, argC4Val)), _, _),
-                        Expr(_, List(LiteralInt(_, argC5Val)), _, _)
-                      )
-                    )
-                  ),
-                  _,
-                  _
-                ) =>
-              // Check left side
-              assertEquals(clue(applyRef.name), "apply", "Apply fn name")
-              assertEquals(
-                clue(funcFn),
-                "func",
-                "Func fn name"
-              ) // Still need to check inner App structure
-              assertEquals(clue(argF1Val), 1, "Func arg 1")
-              assertEquals(clue(argA2Val), 2, "Apply arg 2")
-              // Check operator
-              assertEquals(clue(op), "+", "Operator")
-              // Check right side
-              assertEquals(clue(composeRef.name), "compose", "Compose fn name")
-              assertEquals(clue(argC1Name), "func", "Compose arg 1 (func)")
-              assertEquals(clue(argC2Name), "func", "Compose arg 2 (func)")
-              assertEquals(clue(argC3Val), 3, "Compose arg 3")
-              assertEquals(clue(argC4Val), 4, "Compose arg 4")
-              assertEquals(clue(argC5Val), 5, "Compose arg 5")
+          bnd.value.terms.headOption match
+            case Some(TXApp(plusRef, _, plusArgs)) =>
+              assertEquals(clue(plusRef.name), "+", "Top operation should be +")
+              assertEquals(clue(plusArgs.length), 2, "+ should have 2 args")
 
-            case other =>
-              fail(
-                s"Expected complex Expr structure with nested Apps, got: \n${prettyPrintAst(other)}"
-              )
-          }
+              // Right side should be compose function call
+              plusArgs(1).terms.headOption match
+                case Some(TXApp(composeRef, _, composeArgs)) =>
+                  assertEquals(clue(composeRef.name), "compose", "Compose function name")
+                  assertEquals(clue(composeArgs.length), 5, "Compose should have 5 args")
+
+                  // First arg should be func reference
+                  composeArgs(0).terms.headOption match
+                    case Some(Ref(_, funcName1, _, _, _, _)) =>
+                      assertEquals(clue(funcName1), "func", "First compose arg should be func")
+                    case Some(other) =>
+                      fail(
+                        s"Expected func reference as first compose arg, got: ${prettyPrintAst(other)}"
+                      )
+                    case None => fail("Expected func reference as first compose arg, got: None")
+
+                  // Second arg should be func reference
+                  composeArgs(1).terms.headOption match
+                    case Some(Ref(_, funcName2, _, _, _, _)) =>
+                      assertEquals(clue(funcName2), "func", "Second compose arg should be func")
+                    case Some(other) =>
+                      fail(
+                        s"Expected func reference as second compose arg, got: ${prettyPrintAst(other)}"
+                      )
+                    case None => fail("Expected func reference as second compose arg, got: None")
+
+                  // Third arg should be literal 3
+                  composeArgs(2).terms.headOption match
+                    case Some(LiteralInt(_, val3)) =>
+                      assertEquals(clue(val3), 3, "Third compose arg should be 3")
+                    case Some(other) =>
+                      fail(
+                        s"Expected literal 3 as third compose arg, got: ${prettyPrintAst(other)}"
+                      )
+                    case None => fail("Expected literal 3 as third compose arg, got: None")
+
+                  // Fourth arg should be literal 4
+                  composeArgs(3).terms.headOption match
+                    case Some(LiteralInt(_, val4)) =>
+                      assertEquals(clue(val4), 4, "Fourth compose arg should be 4")
+                    case Some(other) =>
+                      fail(
+                        s"Expected literal 4 as fourth compose arg, got: ${prettyPrintAst(other)}"
+                      )
+                    case None => fail("Expected literal 4 as fourth compose arg, got: None")
+
+                  // Fifth arg should be literal 5
+                  composeArgs(4).terms.headOption match
+                    case Some(LiteralInt(_, val5)) =>
+                      assertEquals(clue(val5), 5, "Fifth compose arg should be 5")
+                    case Some(other) =>
+                      fail(
+                        s"Expected literal 5 as fifth compose arg, got: ${prettyPrintAst(other)}"
+                      )
+                    case None => fail("Expected literal 5 as fifth compose arg, got: None")
+
+                case Some(other) =>
+                  fail(s"Expected TXApp for compose function, got: ${prettyPrintAst(other)}")
+                case None => fail("Expected TXApp for compose function, got: None")
+
+              // Left side should be apply function
+              plusArgs(0).terms.headOption match
+                case Some(TXApp(applyRef, _, applyArgs)) =>
+                  assertEquals(clue(applyRef.name), "apply", "Apply function name")
+                  assertEquals(clue(applyArgs.length), 2, "Apply should have 2 args")
+
+                  // First arg should be (func 1)
+                  applyArgs(0).terms.headOption match
+                    case Some(TXApp(funcRef, _, funcArgs)) =>
+                      assertEquals(clue(funcRef.name), "func", "Inner function name")
+                      assertEquals(clue(funcArgs.length), 1, "Func should have 1 arg")
+
+                      // The arg should be literal 1
+                      funcArgs(0).terms.headOption match
+                        case Some(LiteralInt(_, val1)) =>
+                          assertEquals(clue(val1), 1, "func arg should be 1")
+                        case _ => fail("Expected literal 1 as func arg")
+
+                    case _ => fail("Expected expression with func application")
+
+                  // Second arg should be literal 2
+                  applyArgs(1).terms.headOption match
+                    case Some(LiteralInt(_, val2)) =>
+                      assertEquals(clue(val2), 2, "Second apply arg should be 2")
+                    case _ => fail("Expected literal 2 as second apply arg")
+
+                case _ => fail("Expected TXApp for apply function")
+
+            case other => fail("Expected TXApp structure at top level")
         case other =>
           fail(s"Expected Bnd, got: ${prettyPrintAst(other)}")
       }
@@ -358,42 +419,53 @@ class AppRewritingTests extends BaseEffFunSuite:
 
       memberBnd match {
         case bnd: Bnd =>
-          // Expect: Expr(_, List(Cond(..., Expr(..., Ref(...)), Expr(..., AssertApp(...)), Expr(..., AssertApp(...)))) :: Nil
-          // Note: The Ref("cond") check assumes 'true' resolves to a Ref named "cond". This might need adjustment based on actual resolution.
-          bnd.value.terms match { // Match on terms list
-            case Cond( // Match Cond inside the list
-                  _,
-                  Expr(_, List(Ref(_, condName, _, _, _, _)), _, _), // cond
-                  Expr(
-                    _,
-                    List(
-                      TXApp(thenRef, _, List(Expr(_, List(LiteralInt(_, thenArgVal)), _, _)))
-                    ),
-                    _,
-                    _
-                  ), // ifTrue uses AssertApp
-                  Expr(
-                    _,
-                    List(
-                      TXApp(elseRef, _, List(Expr(_, List(LiteralInt(_, elseArgVal)), _, _)))
-                    ),
-                    _,
-                    _
-                  ), // ifFalse uses AssertApp
-                  _,
-                  _
-                ) :: Nil => // Ensure Cond is the only element in the list
-              assertEquals(clue(condName), "cond", "Condition name mismatch")
-              assertEquals(clue(thenRef.name), "func", "Then branch function name")
-              assertEquals(clue(thenArgVal), 1, "Then branch argument")
-              assertEquals(clue(elseRef.name), "func", "Else branch function name")
-              assertEquals(clue(elseArgVal), 2, "Else branch argument")
-            case other =>
-              // Print the list content for better debugging
-              fail(
-                s"Expected Cond structure as the only term, got: ${other.map(t => prettyPrintAst(t, 0, false, false)).mkString(", ")}" // Use prettyPrintAst on each term 't'
-              )
-          }
+          // Expect: Expr(_, List(Cond(..., Expr(..., Ref(...)), Expr(..., TXApp(...)), Expr(..., TXApp(...)))) :: Nil
+          bnd.value.terms.headOption match
+            case Some(Cond(_, condExpr, thenExpr, elseExpr, _, _)) =>
+              // Verify condition is a reference to "cond"
+              condExpr.terms.headOption match
+                case Some(Ref(_, condName, _, _, _, _)) =>
+                  assertEquals(clue(condName), "cond", "Condition name mismatch")
+                case Some(other) =>
+                  fail(s"Expected Ref in condition expression, got: ${prettyPrintAst(other)}")
+                case None => fail("Expected Ref in condition expression, got: None")
+
+              // Verify then branch is func 1
+              thenExpr.terms.headOption match
+                case Some(TXApp(thenRef, _, thenArgs)) =>
+                  assertEquals(clue(thenRef.name), "func", "Then branch function name")
+                  assertEquals(clue(thenArgs.length), 1, "Then branch should have 1 arg")
+
+                  // Check argument is literal 1
+                  thenArgs(0).terms.headOption match
+                    case Some(LiteralInt(_, thenArgVal)) =>
+                      assertEquals(clue(thenArgVal), 1, "Then branch argument")
+                    case Some(other) =>
+                      fail(s"Expected literal 1 in then branch, got: ${prettyPrintAst(other)}")
+                    case None => fail("Expected literal 1 in then branch, got: None")
+                case Some(other) =>
+                  fail(s"Expected TXApp in then branch, got: ${prettyPrintAst(other)}")
+                case None => fail("Expected TXApp in then branch, got: None")
+
+              // Verify else branch is func 2
+              elseExpr.terms.headOption match
+                case Some(TXApp(elseRef, _, elseArgs)) =>
+                  assertEquals(clue(elseRef.name), "func", "Else branch function name")
+                  assertEquals(clue(elseArgs.length), 1, "Else branch should have 1 arg")
+
+                  // Check argument is literal 2
+                  elseArgs(0).terms.headOption match
+                    case Some(LiteralInt(_, elseArgVal)) =>
+                      assertEquals(clue(elseArgVal), 2, "Else branch argument")
+                    case Some(other) =>
+                      fail(s"Expected literal 2 in else branch, got: ${prettyPrintAst(other)}")
+                    case None => fail("Expected literal 2 in else branch, got: None")
+                case Some(other) =>
+                  fail(s"Expected TXApp in else branch, got: ${prettyPrintAst(other)}")
+                case None => fail("Expected TXApp in else branch, got: None")
+            case Some(other) =>
+              fail(s"Expected Cond structure as the only term, got: ${prettyPrintAst(other)}")
+            case None => fail("Expected Cond structure as the only term, got: None")
         case other => fail(s"Expected Bnd, got: ${prettyPrintAst(other)}")
       }
     } // End of .map block
@@ -412,40 +484,53 @@ class AppRewritingTests extends BaseEffFunSuite:
 
       memberBnd match {
         case bnd: Bnd =>
-          // Expect: Expr(_, List( AssertApp(Ref("func1"), List(Expr(AssertApp(Ref("func2"), Lit(1))))), Ref("+"), Lit(2) ), _, _)
-          bnd.value match {
-            // Use AssertApp for the outer application, and check inner AssertApp within the argument list
-            case Expr(
-                  _,
-                  List(
-                    TXApp(
-                      ref1,
-                      _,
-                      List(
-                        Expr(
-                          _,
-                          List(
-                            TXApp(ref2, _, List(Expr(_, List(LiteralInt(_, arg1Val)), _, _)))
-                          ),
-                          _,
-                          _
-                        )
+          // Expression with operator-as-app transformation
+          bnd.value.terms.headOption match
+            case Some(TXApp(plusRef, _, plusArgs)) =>
+              assertEquals(clue(plusRef.name), "+", "Top operation should be +")
+              assertEquals(clue(plusArgs.length), 2, "+ should have 2 args")
+
+              // Check the right side (literal 2)
+              plusArgs(1).terms.headOption match
+                case Some(LiteralInt(_, lit2Val)) =>
+                  assertEquals(clue(lit2Val), 2, "Right side should be literal 2")
+                case Some(other) =>
+                  fail(s"Expected literal 2 on right side, got: ${prettyPrintAst(other)}")
+                case None => fail("Expected literal 2 on right side, got: None")
+
+              // Check left side (func1 call)
+              plusArgs(0).terms.headOption match
+                case Some(TXApp(func1Ref, _, func1Args)) =>
+                  assertEquals(clue(func1Ref.name), "func1", "Outer function name")
+                  assertEquals(clue(func1Args.length), 1, "func1 should have 1 arg")
+
+                  // The arg should be (func2 1)
+                  func1Args(0).terms.headOption match
+                    case Some(TXApp(func2Ref, _, func2Args)) =>
+                      assertEquals(clue(func2Ref.name), "func2", "Inner function name")
+                      assertEquals(clue(func2Args.length), 1, "func2 should have 1 arg")
+
+                      // The arg should be literal 1
+                      func2Args(0).terms.headOption match
+                        case Some(LiteralInt(_, lit1Val)) =>
+                          assertEquals(clue(lit1Val), 1, "func2 arg should be 1")
+                        case Some(other) =>
+                          fail(s"Expected literal 1 as func2 arg, got: ${prettyPrintAst(other)}")
+                        case None => fail("Expected literal 1 as func2 arg, got: None")
+
+                    case Some(other) =>
+                      fail(
+                        s"Expected expression with func2 application, got: ${prettyPrintAst(other)}"
                       )
-                    ),
-                    Ref(_, op, _, _, _, _),
-                    LiteralInt(_, arg2Val)
-                  ),
-                  _,
-                  _
-                ) =>
-              assertEquals(clue(ref1.name), "func1", "Outer function name")
-              assertEquals(clue(ref2.name), "func2", "Inner function name")
-              assertEquals(clue(arg1Val), 1, "Inner argument")
-              assertEquals(clue(op), "+", "Operator")
-              assertEquals(clue(arg2Val), 2, "Outer argument")
-            case other =>
-              fail(s"Expected Expr structure with nested Apps, got: ${prettyPrintAst(other)}")
-          }
+                    case None => fail("Expected expression with func2 application, got: None")
+
+                case Some(other) =>
+                  fail(s"Expected TXApp for func1 call, got: ${prettyPrintAst(other)}")
+                case None => fail("Expected TXApp for func1 call, got: None")
+
+            case Some(other) =>
+              fail(s"Expected TXApp structure at top level, got: ${prettyPrintAst(other)}")
+            case None => fail("Expected TXApp structure at top level, got: None")
         case other => fail(s"Expected Bnd, got: ${prettyPrintAst(other)}")
       }
     } // End of .map block
