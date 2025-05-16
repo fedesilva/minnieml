@@ -1,6 +1,6 @@
 # MinnieML
 
-A statically typed, functional language, with an ML inspired syntax, managed effects in delimited contexts,
+A statically typed, functional language, with an ML inspired syntax, a rich type system,
 declarative low level capabilities and first class native interface.
 
 ## Why
