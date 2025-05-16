@@ -5,7 +5,7 @@ declarative low level capabilities and first class native interface.
 
 ## Why
 
-This is an experiment to build a high-level functional language that compiles quickly into fast executables 
+This is an experiment to find out if I can build a high-level functional language that compiles quickly into fast executables 
 with strong machine empathy, and good, modern tooling.
 
 It's all about exploring ideas and having fun while learning.
