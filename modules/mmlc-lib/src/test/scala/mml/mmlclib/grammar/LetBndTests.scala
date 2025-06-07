@@ -237,7 +237,7 @@ class LetBndTests extends BaseEffFunSuite:
           s"Expected 1 term but got ${bnd.value.terms.size}: ${prettyPrintAst(bnd)}"
         )
         bnd.typeAsc match
-          case Some(ts: TypeName) => assert(clue(ts.name) == clue("Int"))
+          case Some(ts: TypeRef) => assert(clue(ts.name) == clue("Int"))
           case _ => fail("Expected a type ascription but got ${prettyPrintAst(bnd.typeAsc)}")
 
       case x => fail(s"Expected a binding but got: ${prettyPrintAst(x)}")

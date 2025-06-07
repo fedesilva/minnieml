@@ -304,7 +304,7 @@ object Parser:
   private def typeNameP(source: String)(using P[Any]): P[TypeSpec] =
     P(spP(source) ~ typeIdP ~ spP(source))
       .map { case (start, id, end) =>
-        TypeName(span(start, end), id)
+        TypeRef(span(start, end), id)
       }
 
   private def nativeTypeImplP(source: String)(using P[Any]): P[TypeSpec] =

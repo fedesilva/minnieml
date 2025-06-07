@@ -8,9 +8,9 @@ def prettyPrintTypeSpec(
   showTypes:       Boolean = false
 ): String =
   typeSpec match {
-    case Some(TypeName(sp, name)) =>
+    case Some(TypeRef(sp, name, resolvedAs)) =>
       val spanStr = if showSourceSpans then s" ${printSourceSpan(sp)}" else ""
-      s"TypeName $name$spanStr"
+      s"TypeName $name$spanStr: ${resolvedAs.map(x => x.).getOrElse("None")}"
     case Some(TypeApplication(sp, base, args)) =>
       val spanStr = if showSourceSpans then s" ${printSourceSpan(sp)}" else ""
       s"TypeApplication$spanStr\n" +
