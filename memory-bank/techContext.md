@@ -10,6 +10,8 @@
   - The external API are IO based.
   - We use EitherT and others
   - always use cats.syntax.all.\*
+- Git Town
+  - for git workflow management
 
 ## Build/Test Commands
 

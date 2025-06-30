@@ -22,10 +22,11 @@ def rewrite(src: String, showTypes: Boolean = false): Unit =
         dedupedModule <- DuplicateNameChecker.checkModule(moduleWithOps)
         resolvedModule <- RefResolver.rewriteModule(dedupedModule)
         _ = println(s"\n \n resolvedModule \n ${prettyPrintAst(resolvedModule)}")
-
+        typesResolvedModule <- TypeResolver.rewriteModule(resolvedModule)
+        _ = println(s"\n \n typesResolvedModule \n ${prettyPrintAst(typesResolvedModule)}")
         // Apply the new unified expression rewriting
         // New unified phase
-        unifiedModule <- ExpressionRewriter.rewriteModule(resolvedModule)
+        unifiedModule <- ExpressionRewriter.rewriteModule(typesResolvedModule)
         _ = println(s"\n \n Unified Rewriting \n ${prettyPrintAst(unifiedModule)}")
         checkedModule <- MemberErrorChecker.checkModule(unifiedModule)
         simplifiedModule <- Simplifier.rewriteModule(checkedModule)

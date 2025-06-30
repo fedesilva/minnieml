@@ -1,5 +1,6 @@
 package mml.mmlclib.semantic
 
+import cats.data.NonEmptyList as NEL
 import cats.syntax.all.*
 import mml.mmlclib.ast.*
 
@@ -17,13 +18,13 @@ object ExpressionRewriter:
   def rewriteModule(module: Module): Either[List[SemanticError], Module] =
     val rewrittenMembers: List[Either[List[SemanticError], Member]] = module.members.map {
       case bnd: Bnd =>
-        rewriteExpr(bnd.value).map(updatedExpr => bnd.copy(value = updatedExpr))
+        rewriteExpr(bnd.value).map(updatedExpr => bnd.copy(value = updatedExpr)).leftMap(_.toList)
       case fn: FnDef =>
-        rewriteExpr(fn.body).map(updatedExpr => fn.copy(body = updatedExpr))
+        rewriteExpr(fn.body).map(updatedExpr => fn.copy(body = updatedExpr)).leftMap(_.toList)
       case op: BinOpDef =>
-        rewriteExpr(op.body).map(updatedExpr => op.copy(body = updatedExpr))
+        rewriteExpr(op.body).map(updatedExpr => op.copy(body = updatedExpr)).leftMap(_.toList)
       case op: UnaryOpDef =>
-        rewriteExpr(op.body).map(updatedExpr => op.copy(body = updatedExpr))
+        rewriteExpr(op.body).map(updatedExpr => op.copy(body = updatedExpr)).leftMap(_.toList)
       case other =>
         other.asRight
     }
@@ -34,7 +35,7 @@ object ExpressionRewriter:
 
   /** Rewrite an expression using precedence climbing for both operators and function application
     */
-  def rewriteExpr(expr: Expr): Either[List[SemanticError], Expr] =
+  def rewriteExpr(expr: Expr): Either[NEL[SemanticError], Expr] =
     rewritePrecedenceExpr(expr.terms, MinPrecedence, expr.span).flatMap {
       case (result, remaining) =>
         if remaining.isEmpty then
@@ -42,12 +43,14 @@ object ExpressionRewriter:
           result.asRight
         else
           // Remaining terms after expression - this means they're dangling
-          List(
-            SemanticError.DanglingTerms(
-              remaining,
-              "Unexpected terms outside expression context"
+          NEL
+            .one(
+              SemanticError.DanglingTerms(
+                remaining,
+                "Unexpected terms outside expression context"
+              )
             )
-          ).asLeft
+            .asLeft
     }
 
   /** Rewrite an expression using precedence climbing
@@ -56,7 +59,7 @@ object ExpressionRewriter:
     terms:   List[Term],
     minPrec: Int,
     span:    SrcSpan
-  ): Either[List[SemanticError], (Expr, List[Term])] =
+  ): Either[NEL[SemanticError], (Expr, List[Term])] =
     for
       // First, rewrite any inner expressions in each term
       rewrittenTerms <- terms.traverse(rewriteTerm)
@@ -73,15 +76,17 @@ object ExpressionRewriter:
   private def rewriteAtom(
     terms: List[Term],
     span:  SrcSpan
-  ): Either[List[SemanticError], (Expr, List[Term])] =
+  ): Either[NEL[SemanticError], (Expr, List[Term])] =
     terms match
       case Nil =>
-        List(
-          SemanticError.InvalidExpression(
-            Expr(span, Nil),
-            "Expected an expression, got empty terms"
+        NEL
+          .one(
+            SemanticError.InvalidExpression(
+              Expr(span, Nil),
+              "Expected an expression, got empty terms"
+            )
           )
-        ).asLeft
+          .asLeft
 
       case (g: TermGroup) :: rest =>
         // Process a parenthesized group - treat as a bounded expression
@@ -124,9 +129,11 @@ object ExpressionRewriter:
 
       case terms =>
         // Invalid expression structure
-        List(
-          SemanticError.InvalidExpression(Expr(span, terms), "Invalid expression structure")
-        ).asLeft
+        NEL
+          .one(
+            SemanticError.InvalidExpression(Expr(span, terms), "Invalid expression structure")
+          )
+          .asLeft
 
   /** Process operations using precedence climbing
     */
@@ -135,7 +142,7 @@ object ExpressionRewriter:
     terms:   List[Term],
     minPrec: Int,
     span:    SrcSpan
-  ): Either[List[SemanticError], (Expr, List[Term])] =
+  ): Either[NEL[SemanticError], (Expr, List[Term])] =
     terms match
       case IsBinOpRef(ref, opDef, prec, assoc) :: rest if prec >= minPrec =>
         // Binary operator with sufficient precedence
@@ -160,22 +167,26 @@ object ExpressionRewriter:
       case (g: TermGroup) :: rest =>
         // A group after a complete expression is invalid - expected operator
         // For example: expr (term) is invalid without an operator between them
-        List(
-          SemanticError.DanglingTerms(
-            List(g),
-            "Unexpected group after expression - expected an operator"
+        NEL
+          .one(
+            SemanticError.DanglingTerms(
+              List(g),
+              "Unexpected group after expression - expected an operator"
+            )
           )
-        ).asLeft
+          .asLeft
 
       case term :: rest if !isOperator(term) && !canBeApplied(lhs) =>
         // Non-operator term after an expression that can't be applied to
         // For example: literal juxtaposed with other term, like 1 2
-        List(
-          SemanticError.DanglingTerms(
-            List(term),
-            "Unexpected term after expression - expected an operator"
+        NEL
+          .one(
+            SemanticError.DanglingTerms(
+              List(term),
+              "Unexpected term after expression - expected an operator"
+            )
           )
-        ).asLeft
+          .asLeft
 
       case _ =>
         // No more operations with sufficient precedence
@@ -187,7 +198,7 @@ object ExpressionRewriter:
     fn:   Term,
     args: List[Term],
     span: SrcSpan
-  ): Either[List[SemanticError], Term] =
+  ): Either[NEL[SemanticError], Term] =
     args.foldLeftM(fn) { (accFn, argTerm) =>
       // First rewrite the argument
       rewriteTerm(argTerm).flatMap { rewrittenArg =>
@@ -205,18 +216,20 @@ object ExpressionRewriter:
     fn:   Term,
     arg:  Expr,
     span: SrcSpan
-  ): Either[List[SemanticError], Term] =
+  ): Either[NEL[SemanticError], Term] =
     fn match
       case ref: Ref => App(span, ref, arg, typeAsc = None, typeSpec = None).asRight
       case app: App => App(span, app, arg, typeAsc = None, typeSpec = None).asRight
       case _ =>
         // Term that's not a function or application can't be applied to
-        List(
-          SemanticError.DanglingTerms(
-            arg.terms,
-            "These terms cannot be applied to a non-function"
+        NEL
+          .one(
+            SemanticError.DanglingTerms(
+              arg.terms,
+              "These terms cannot be applied to a non-function"
+            )
           )
-        ).asLeft
+          .asLeft
 
   /** Check if an expression can have arguments applied to it
     */
@@ -229,14 +242,14 @@ object ExpressionRewriter:
 
   /** Convert a term to an expression
     */
-  private def termToExpr(term: Term): Either[List[SemanticError], Expr] =
+  private def termToExpr(term: Term): Either[NEL[SemanticError], Expr] =
     term match
       case e: Expr => e.asRight
       case _ => rewriteTerm(term).map(t => Expr(t.span, List(t)))
 
   /** Rewrite a term by recursively processing inner expressions
     */
-  private def rewriteTerm(term: Term): Either[List[SemanticError], Term] =
+  private def rewriteTerm(term: Term): Either[NEL[SemanticError], Term] =
     term match
       case e: Expr =>
         rewriteExpr(e)

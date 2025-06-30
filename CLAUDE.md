@@ -32,3 +32,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - Keep code simple and understandable for less experienced developers
 - Prefer val over var for immutability
 - Follow existing naming conventions in the codebase
+
+## Tools
+
+* To analyze code, always prefer the metals mcp interface.
+

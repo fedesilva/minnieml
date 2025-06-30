@@ -8,6 +8,16 @@ def memberVisibilityToString(visibility: MemberVisibility): String =
     case MemberVisibility.Protected => "prot"
     case MemberVisibility.Private => "priv"
 
+/** Extract a simple name representation from a TypeSpec */
+def typeSpecToSimpleName(typeSpec: TypeSpec): String =
+  typeSpec match
+    case TypeRef(_, name, _) => name
+    case NativeTypeImpl(_) => "@native"
+    case TypeUnit(_) => "()"
+    case TypeFn(_, params, ret) => s"(${params.map(typeSpecToSimpleName).mkString(" -> ")}) -> ${typeSpecToSimpleName(ret)}"
+    case TypeTuple(_, elems) => s"(${elems.map(typeSpecToSimpleName).mkString(", ")})"
+    case _ => typeSpec.getClass.getSimpleName
+
 def prettyPrintMember(
   member:          Member,
   indent:          Int,
@@ -99,13 +109,28 @@ def prettyPrintMember(
       val typeStr =
         if showTypes then
           s"\n${indentStr}  typeSpec: ${prettyPrintTypeSpec(ta.typeSpec)}\n" +
-            s"${indentStr}  typeAsc: ${prettyPrintTypeSpec(ta.typeAsc)}"
+            s"${indentStr}  typeAsc: ${prettyPrintTypeSpec(ta.typeAsc)}\n" +
+            s"${indentStr}  typeRef: ${prettyPrintTypeSpec(Some(ta.typeRef))}"
         else ""
       val visStr = memberVisibilityToString(ta.visibility)
+      val targetName = typeSpecToSimpleName(ta.typeRef)
 
-      s"${indentStr}TypeAlias $visStr ${ta.name}$spanStr$typeStr\n" +
-        // ta.docComment.map(doc => s"${prettyPrintDocComment(doc, indent + 2)}\n").getOrElse("") +
-        s"${indentStr}  typeRef: ${prettyPrintTypeSpec(Some(ta.typeRef))}"
+      s"${indentStr}TypeAlias $visStr ${ta.name} -> $targetName$spanStr$typeStr"
+
+    case td @ TypeDef(_, _, _, _, _, _) =>
+      val spanStr = if showSourceSpans then printSourceSpan(td.span) else ""
+      val typeStr =
+        if showTypes then
+          s"\n${indentStr}  typeSpec: ${prettyPrintTypeSpec(td.typeSpec)}\n" +
+            s"${indentStr}  typeAsc: ${prettyPrintTypeSpec(td.typeAsc)}"
+        else ""
+      val visStr = memberVisibilityToString(td.visibility)
+      val nativeStr = td.typeSpec match
+        case Some(NativeTypeImpl(_)) => " @native"
+        case _ => ""
+
+      s"${indentStr}TypeDef $visStr ${td.name}$nativeStr$spanStr$typeStr"
+    // td.docComment.map(doc => s"\n${prettyPrintDocComment(doc, indent + 2)}").getOrElse("")
   }
 
 def prettyPrintParams(

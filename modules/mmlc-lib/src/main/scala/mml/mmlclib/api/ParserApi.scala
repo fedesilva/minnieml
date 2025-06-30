@@ -20,6 +20,7 @@ object ParserApi:
     source: String,
     name:   Option[String] = None
   ): ParserEffect[Module] =
+
     val n = name.map(sanitizeModuleName)
     EitherT(IO.pure(Parser.parseModule(source, n)))
 

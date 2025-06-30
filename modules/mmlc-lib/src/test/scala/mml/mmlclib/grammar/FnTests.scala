@@ -52,7 +52,7 @@ class FnTests extends BaseEffFunSuite:
     )
   }
 
-  test("Meh is accepted as a term") {
+  test("Placeholder is accepted as a term") {
     parseNotFailed(
       """        
           fn plusA (a) = sum a _;

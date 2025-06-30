@@ -14,7 +14,7 @@ def prettyPrintTerm(
 ): String =
   val indentStr = "  " * indent
   term match {
-    case MehRef(sp, typeSpec, typeAsc) =>
+    case Placeholder(sp, typeSpec, typeAsc) =>
       val spanStr = if showSourceSpans then printSourceSpan(sp) else ""
       val typeStr =
         if showTypes then
@@ -22,7 +22,7 @@ def prettyPrintTerm(
             s"${indentStr}  typeAsc: ${prettyPrintTypeSpec(typeAsc)}"
         else ""
 
-      s"${indentStr}MehRef $spanStr$typeStr"
+      s"${indentStr}Placeholder $spanStr$typeStr"
 
     case ref: Ref =>
       val spanStr = if showSourceSpans then printSourceSpan(ref.span) else ""

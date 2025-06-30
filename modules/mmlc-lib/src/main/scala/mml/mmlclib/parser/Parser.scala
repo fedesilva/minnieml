@@ -102,6 +102,7 @@ object Parser:
         letBindingP(source) |
         fnDefP(source) |
         typeAliasP(source) |
+        nativeTypeDefP(source) |
         failedMemberP(source)
     )
 
@@ -304,7 +305,7 @@ object Parser:
   private def typeNameP(source: String)(using P[Any]): P[TypeSpec] =
     P(spP(source) ~ typeIdP ~ spP(source))
       .map { case (start, id, end) =>
-        TypeName(span(start, end), id)
+        TypeRef(span(start, end), id)
       }
 
   private def nativeTypeImplP(source: String)(using P[Any]): P[TypeSpec] =
@@ -313,29 +314,33 @@ object Parser:
         NativeTypeImpl(span(start, end))
       }
 
-  private def typeAliasP(source: String)(using P[Any]): P[TypeAlias] =
-
-    def aliasOrNativeRefP: P[TypeSpec] =
-      P(
-        typeSpecP(source) |
-          nativeTypeImplP(source)
-      )
-
+  private def nativeTypeDefP(source: String)(using P[Any]): P[TypeDef] =
     P(
-      spP(
-        source
-      ) ~ memberVisibilityP.? ~ "type" ~ typeIdP ~ defAsKw ~ aliasOrNativeRefP ~ endKw ~ spP(
-        source
+      spP(source)
+        ~ memberVisibilityP.? ~ typeKw ~ typeIdP ~ defAsKw ~ nativeTypeP(source) ~ endKw
+        ~ spP(source)
+    ).map { case (start, vis, id, typeSpec, end) =>
+      TypeDef(
+        visibility = vis.getOrElse(MemberVisibility.Protected),
+        span(start, end),
+        id,
+        typeSpec.some
       )
-    )
-      .map { case (start, vis, id, typeSpec, end) =>
-        TypeAlias(
-          visibility = vis.getOrElse(MemberVisibility.Protected),
-          span(start, end),
-          id,
-          typeSpec
-        )
-      }
+    }
+
+  private def typeAliasP(source: String)(using P[Any]): P[TypeAlias] =
+    P(
+      spP(source)
+        ~ memberVisibilityP.? ~ typeKw ~ typeIdP ~ defAsKw ~ typeSpecP(source) ~ endKw
+        ~ spP(source)
+    ).map { case (start, vis, id, typeSpec, end) =>
+      TypeAlias(
+        visibility = vis.getOrElse(MemberVisibility.Protected),
+        span(start, end),
+        id,
+        typeSpec
+      )
+    }
 
   // -----------------------------------------------------------------------------
   // Term & Expression Parsers
@@ -358,6 +363,12 @@ object Parser:
         NativeImpl(span(start, end))
       }
 
+  private def nativeTypeP(source: String)(using P[Any]): P[NativeTypeImpl] =
+    P(spP(source) ~ "@native" ~ spP(source))
+      .map { case (start, end) =>
+        NativeTypeImpl(span(start, end))
+      }
+
   private def termP(source: String)(using P[Any]): P[Term] =
     P(
       litBoolP(source) |
@@ -371,7 +382,7 @@ object Parser:
         groupTermP(source) |
         tupleP(source) |
         refP(source) |
-        mehP(source)
+        phP(source)
     )
 
   private def tupleP(source: String)(using P[Any]): P[Term] =
@@ -419,10 +430,10 @@ object Parser:
         Ref(span(start, end), id)
       }
 
-  private def mehP(source: String)(using P[Any]): P[Term] =
+  private def phP(source: String)(using P[Any]): P[Term] =
     P(spP(source) ~ mehKw ~ spP(source))
       .map { case (start, end) =>
-        MehRef(span(start, end), None)
+        Placeholder(span(start, end), None)
       }
 
   private def holeP(source: String)(using P[Any]): P[Term] =
@@ -518,6 +529,7 @@ object Parser:
   private def endKw[$: P]:   P[Unit] = P(";")
   private def mehKw[$: P]:   P[Unit] = P("_")
   private def holeKw[$: P]:  P[Unit] = P("???")
+  private def typeKw[$: P]:  P[Unit] = P("type")
 
   private def ifKw[$: P]:   P[Unit] = P("if")
   private def elseKw[$: P]: P[Unit] = P("else")
@@ -527,6 +539,8 @@ object Parser:
     P(";".? ~ CharsWhile(c => c.isWhitespace, 0) ~ End)
 
   private def moduleKw[$: P]: P[Unit] = P("module")
+
+  private def nativeKw[$: P]: P[Unit] = P("@native")
 
   private def keywords[$: P]: P[Unit] =
     P(
@@ -539,6 +553,8 @@ object Parser:
         ifKw |
         elseKw |
         thenKw |
+        typeKw |
+        nativeKw |
         fnKw
     )
 
@@ -548,7 +564,6 @@ object Parser:
 
   private def spP[$: P](source: String): P[SrcPoint] =
     P(Index).map(index => indexToSourcePoint(index, source))
-    // P(Index).map(index => indexToSourcePoint(index, source))
 
   // -----------------------------------------------------------------------------
   // Helpers

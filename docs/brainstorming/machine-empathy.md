@@ -1,6 +1,7 @@
-# Machine Empathy 
+# Machine Empathy
 
 ### Native Operation Integration
+
 ```
 # Direct LLVM IR operation integration
 # this will lower to llvm ir as `mul i64 %0, %1`
@@ -11,6 +12,7 @@ fn println(s: String) = @native;
 ```
 
 ### Types
+
 ```
 # Signed integers
 type I8 = @native[t:i8]
@@ -30,9 +32,10 @@ type F64 = @native[t:double]
 ```
 
 ### Protocol-Based Operations
+
 ```
 # Generic numeric protocol
-protocol Num 'T = 
+protocol Num 'T =
       op + (a: 'T, b: 'T): 'T;
       op - (a: 'T, b: 'T): 'T;
       op * (a: 'T, b: 'T): 'T;
@@ -44,7 +47,7 @@ protocol Num 'T =
 ;
 
 # Implementation for unsigned integers
-instance Num U64 = 
+instance Num U64 =
       op + (a: U64, b: U64): U64 = @native[op:add, flags:nuw];
       op * (a: U64, b: U64): U64 = @native[op:mul, flags:nuw];
       op / (a: U64, b: U64): U64 = @native[op:udiv];
@@ -54,7 +57,7 @@ instance Num U64 =
 ;
 
 # Implementation for signed integers
-instance Num I64 = 
+instance Num I64 =
       op + (a: I64, b: I64): I64 = @native[op:add, flags:nsw];
       op * (a: I64, b: I64): I64 = @native[op:mul, flags:nsw];
       op / (a: I64, b: I64): I64 = @native[op:sdiv];
@@ -66,34 +69,34 @@ instance Num I64 =
 
 ## Region-Based Memory Management
 
-While the compiler will aggresively use stack allocation or static allocations when possible, 
+While the compiler will aggresively use stack allocation or static allocations when possible,
 for heap allocation, the language uses a region-based memory management system.
 
-Regions: 
-* are lexically scoped and nested
-* are declared at function level
-* are bump allocated
-* are divided into typed lanes
-* can be annonymous or named 
-* are first class and can be passed around as arguments
-* can have specialized memory layout strategies per lane
-    * this gives control over the memory layout of the lane
-    * allows strategies like soa (structure of arrays) or aof (array of structures)
-* are not garbage collected, but can be freed manually or by going out of scope
+Regions:
 
-While the compiler will infer regions, the user might 
+- are lexically scoped and nested
+- are declared at function level
+- are bump allocated
+- are divided into typed lanes
+- can be annonymous or named
+- are first class and can be passed around as arguments
+- can have specialized memory layout strategies per lane
+  - this gives control over the memory layout of the lane
+  - allows strategies like soa (structure of arrays) or aof (array of structures)
+- are not garbage collected, but can be freed manually or by going out of scope
+
+While the compiler will infer regions, the user might
 want to specify them explicilty for performance or architectural reasons.
 
 ### Typed lanes
 
 In each region, types are allocated in lanes.
-This allows the compiler to use different memory layouts for different types; for example, 
+This allows the compiler to use different memory layouts for different types; for example,
 a region can be declared to use a structure of arrays (SoA) layout for a specific type.
 
 This also mitigates fragmentation since all the values in the same lane take
 the same space, so the compiler can reuse the space of freed values without
 leaving holes.
-
 
 ### Lifetimes of regions and values associated with them
 
@@ -102,12 +105,13 @@ Similarly, the lifetimes of values are determined by the region they are in.
 
 Access vioations will result in compile time errors.
 
-If a function and its caller do not share a region 
+If a function and its caller do not share a region
 return values are moved to the caller's region.
 
 There are several ways to control or avoid return value copying:
-* do not declare a region and the caller's will be used.
-* design functions to take regions as arguments.
+
+- do not declare a region and the caller's will be used.
+- design functions to take regions as arguments.
 
 Users will place regions strategically to avoid copying values,
 and create children regions for short lived values.
@@ -115,17 +119,15 @@ and create children regions for short lived values.
 If the compiler is left to infer regions, it will try to minimize copying
 by pruning regions to the mininum possible by using escape analysis.
 
-
 ### Anon local region
 
-This function creates a local region for its operations. 
+This function creates a local region for its operations.
 The region is anonymous and scoped to the function.
 
 ```
-fn persons(names: Array String): Array Person 
+fn persons(names: Array String): Array Person
   region =
     map to_person (filter ( s -> s == "fede" ) names)
-  
 ;
 ```
 
@@ -138,38 +140,58 @@ Later you will see another use of with.
 
 ```
 fn explicit_region(r: Region s1: String s2: String): String =
-  region x = 
+  region with r =
     ???
-   with r
-;  
+
+;
 ```
 
 ### Named local region
 
+Here the region is named so it can be referenced and passed to
+the `explicit_region` function.
+
 ```
-fn named_region (s1 s2) = 
+fn named_region (s1 s2) =
   region r =
-    explicit_region r s1 s2 
+    explicit_region r s1 s2
 ;
 ```
 
-### Type driven layout 
+### Named and with
+
+Here the function takes a region as an argument, installs it via the with
+keyword and names it locally (kind of an alias).
+
+Note: this seems a bit contrived, because why change the name, but
+given that the region can be tuned (see next example), this might
+prove useful.
+
+This might go away, tbd.
+
+```
+fn named_and_with(r: Region) =
+  region rr with r =
+    ???
+;
+```
+
+### Type driven layout
 
 A list of type to layout strategy (a protocol) can be provided to the with clause.
 This states that for any instance of Person, the SoA layout should be used
 in its lane.
 
-
 ```
 fn with_lane_layout ( data ): Array User =
-  region r = 
+  region r with [
+    Person -> SoA
+  ] =
     # This will use the soa lane layout for Person in this region
     map to_user data
-  with [
-    Person -> SoA
-  ]
+
 ```
-     
+
 ## Practical Region Usage Patterns
 
 While region inference is the end goal, explicit region control remains valuable for expressing architectural intent. Consider this example of a web server's memory organization:
@@ -181,7 +203,7 @@ WebServer (top-level region)
 ├── RequestHandler Region
 │   ├── Request1 Region (short-lived)
 │   ├── Request2 Region (short-lived)
-│   └── ... 
+│   └── ...
 ├── Metrics Region
 └── Observability Region
 ```
@@ -196,7 +218,6 @@ Even with sophisticated region inference, these architectural decisions would be
 
 Region inference would focus on optimizing lower-level allocations while preserving these higher-level architectural boundaries that the developer has explicitly defined.
 
-
 ## Type-Based Alias Analysis (TBAA)
 
 Type-Based Alias Analysis (TBAA) is a powerful optimization technique that allows the compiler to understand how different types interact with each other in memory. By annotating types with metadata about their aliasing behavior, the compiler can make more informed decisions about optimizations like reordering loads and stores, which can lead to significant performance improvements.
@@ -210,4 +231,3 @@ For each module we compile, we will generate a TBAA hierarchy that describes the
 3. **Type-safe memory management** through lexically-scoped regions
 4. **Machine-level control** through explicit type representations and operation flags
 5. **Performance optimizations** through specialized memory layouts and TBAA metadata
-

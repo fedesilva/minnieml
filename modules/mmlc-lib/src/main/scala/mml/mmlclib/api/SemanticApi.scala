@@ -31,6 +31,7 @@ object SemanticApi:
           // Now check for any MemberError instances
           |> DuplicateNameChecker.checkModule
           |> RefResolver.rewriteModule
+          |> TypeResolver.rewriteModule
           |> ExpressionRewriter.rewriteModule
           |> MemberErrorChecker.checkModule
           |> Simplifier.rewriteModule

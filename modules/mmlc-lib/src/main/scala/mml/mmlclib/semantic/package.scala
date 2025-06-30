@@ -5,6 +5,7 @@ import mml.mmlclib.ast.*
 
 enum SemanticError:
   case UndefinedRef(ref: Ref, member: Member)
+  case UndefinedTypeRef(typeRef: TypeRef, member: Member)
   case DuplicateName(name: String, duplicates: List[Resolvable])
   case InvalidExpression(expr: Expr, message: String)
   case DanglingTerms(terms: List[Term], message: String)

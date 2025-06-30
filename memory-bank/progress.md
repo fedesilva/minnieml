@@ -15,7 +15,7 @@
 
 - Detect recursion in app chains
 - Support for function bodies with complex expressions
-- TypeRef and TypeRef Resolver
+- Type Checker (basic type checking)
 - Manual Region Allocators
 - Improved error handling and continuation after errors
 - Cross-compilation support for multiple platforms

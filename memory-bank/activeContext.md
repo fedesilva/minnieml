@@ -12,11 +12,13 @@ Ability to compile simple programs:
 
 ## Recent Changes
 
-Convert operator expressions to curried applciations chains
+* Implemented TypeResolver following RefResolver pattern
+* TypeRef now has single `resolvedAs: Option[ResolvableType]` field (no candidates)
+* TypeResolver integrated into semantic pipeline after RefResolver
+* Resolves type references in bindings, function parameters/returns, and type aliases
+* Reports UndefinedTypeRef errors for missing types
+* Improved pretty printing: TypeDef shows @native, TypeAlias uses arrow notation, TypeRef shows resolution status
 
 ## Next Steps
 
-
-Pending: finish op precedence tests
-Pending: think about the fact that we do not check that the ref of an app is a function:
-    * maybe we should allow it since a bnd could be bound to a lambda.
+* design a very simple type checker

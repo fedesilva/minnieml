@@ -222,7 +222,7 @@ case class Ref(
 ) extends Term,
       FromSource
 
-case class MehRef(
+case class Placeholder(
   span:     SrcSpan,
   typeSpec: Option[TypeSpec],
   typeAsc:  Option[TypeSpec] = None
@@ -263,16 +263,50 @@ case class LiteralFloat(span: SrcSpan, value: Float) extends LiteralValue:
   final val typeSpec: Option[TypeSpec] = Some(LiteralFloatType(span))
   final val typeAsc:  Option[TypeSpec] = None
 
+  /** A type definition, which is a new named type, as opposed to a type alias. */
+case class TypeDef(
+  visibility: MemberVisibility   = MemberVisibility.Protected,
+  span:       SrcSpan,
+  name:       String,
+  typeSpec:   Option[TypeSpec],
+  docComment: Option[DocComment] = None,
+  typeAsc:    Option[TypeSpec]   = None
+) extends Decl,
+      FromSource
+
+/** A type alias, which is a new name for an existing type, NOT a new type */
+case class TypeAlias(
+  visibility: MemberVisibility   = MemberVisibility.Protected,
+  span:       SrcSpan,
+  name:       String,
+  typeRef:    TypeSpec,
+  typeSpec:   Option[TypeSpec]   = None,
+  typeAsc:    Option[TypeSpec]   = None,
+  docComment: Option[DocComment] = None
+) extends Decl,
+      FromSource
+
 // **Type Specifications**
 sealed trait TypeSpec extends AstNode, FromSource
 
-/** A type by name */
-case class TypeName(span: SrcSpan, name: String) extends TypeSpec
+type ResolvableType = TypeAlias | TypeDef
+
+/** References a type by name */
+case class TypeRef(
+  span:       SrcSpan,
+  name:       String,
+  resolvedAs: Option[ResolvableType] = None
+) extends TypeSpec
+
+case class NativeType(
+  span:       SrcSpan,
+  attributes: Map[String, String] = Map()
+) extends TypeSpec
 
 /** A type application, ie:  `List Int, Map String Int` */
 case class TypeApplication(span: SrcSpan, base: TypeSpec, args: List[TypeSpec]) extends TypeSpec
 
-/** The type of a Fn `String => Int` */
+/** The type of a Fn `String -> Int` */
 case class TypeFn(span: SrcSpan, paramTypes: List[TypeSpec], returnType: TypeSpec) extends TypeSpec
 
 /** A tuple type: `(1, "uno") : (Int, String)` */
@@ -299,17 +333,6 @@ case class TypeSeq(span: SrcSpan, inner: TypeSpec) extends TypeSpec
 
 /** A grouping of types, mostly for disambiguation: `Map String (List Int)` */
 case class TypeGroup(span: SrcSpan, types: List[TypeSpec]) extends TypeSpec
-
-case class TypeAlias(
-  visibility: MemberVisibility   = MemberVisibility.Protected,
-  span:       SrcSpan,
-  name:       String,
-  typeRef:    TypeSpec,
-  typeSpec:   Option[TypeSpec]   = None,
-  typeAsc:    Option[TypeSpec]   = None,
-  docComment: Option[DocComment] = None
-) extends Decl,
-      FromSource
 
 /** Helpers to represent known types */
 sealed trait LiteralType extends TypeSpec {
