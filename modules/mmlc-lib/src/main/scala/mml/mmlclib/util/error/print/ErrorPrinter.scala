@@ -1,4 +1,4 @@
-package mml.mmlclib.util.prettyprint.error
+package mml.mmlclib.util.error.print
 
 import mml.mmlclib.api.{CodeGenApiError, CompilerError, NativeEmitterError}
 import mml.mmlclib.ast.{FromSource, SrcSpan}
@@ -89,6 +89,9 @@ object ErrorPrinter:
 
       case SemanticError.UndefinedRef(ref, member) =>
         s"${Console.RED}Undefined reference '${ref.name}' at ${formatLocation(ref.span)}${Console.RESET}"
+
+      case SemanticError.UndefinedTypeRef(typeRef, member) =>
+        s"${Console.RED}Undefined type reference '${typeRef.name}' at ${formatLocation(typeRef.span)}${Console.RESET}"
 
       case SemanticError.InvalidExpression(expr, message) =>
         s"${Console.RED}Invalid expression at ${formatLocation(expr.span)}: $message${Console.RESET}"

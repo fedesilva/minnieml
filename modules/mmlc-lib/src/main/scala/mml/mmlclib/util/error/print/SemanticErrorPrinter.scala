@@ -1,4 +1,4 @@
-package mml.mmlclib.util.prettyprint.error
+package mml.mmlclib.util.error.print
 
 import mml.mmlclib.ast.{Decl, FromSource}
 import mml.mmlclib.semantic.SemanticError
@@ -78,6 +78,13 @@ object SemanticErrorPrinter:
           case d: Decl => d.name
           case _ => "unknown"
         s"${Console.RED}Undefined reference '${ref.name}' at $location in $memberName${Console.RESET}"
+
+      case SemanticError.UndefinedTypeRef(typeRef, member) =>
+        val location = LocationPrinter.printSpan(typeRef.span)
+        val memberName = member match
+          case d: Decl => d.name
+          case _ => "unknown"
+        s"${Console.RED}Undefined type reference '${typeRef.name}' at $location in $memberName${Console.RESET}"
 
       case SemanticError.DuplicateName(name, duplicates) =>
         // Sort duplicates by their starting index using sortBy

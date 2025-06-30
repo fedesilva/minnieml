@@ -16,6 +16,14 @@ object DuplicateNameChecker:
     if errors.nonEmpty then errors.asLeft
     else module.asRight
 
+  /** Check for duplicate names in a module, accumulating errors in the state. */
+  def checkModule(state: SemanticPhaseState): SemanticPhaseState =
+    val errors =
+      checkMembers(state.module.members.collect { case m: Decl =>
+        m
+      })
+    state.addErrors(errors)
+
   private def checkMembers(decls: List[Decl]): List[SemanticError] =
 
     // Create a key that distinguishes binop vs unary vs other

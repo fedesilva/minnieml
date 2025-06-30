@@ -1,4 +1,4 @@
-package mml.mmlclib.util.prettyprint.error
+package mml.mmlclib.util.error.print
 
 import mml.mmlclib.ast.{FromSource, SrcSpan}
 import mml.mmlclib.semantic.SemanticError
@@ -42,6 +42,11 @@ object SourceCodeExtractor:
 
       case SemanticError.UndefinedRef(ref, _) =>
         extractSnippet(sourceCode, ref.span, nameHighlightSpan = Some(ref.span))
+          .map(s => s"\n$s")
+          .getOrElse("")
+
+      case SemanticError.UndefinedTypeRef(typeRef, _) =>
+        extractSnippet(sourceCode, typeRef.span, nameHighlightSpan = Some(typeRef.span))
           .map(s => s"\n$s")
           .getOrElse("")
 

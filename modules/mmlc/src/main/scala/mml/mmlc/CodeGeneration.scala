@@ -4,7 +4,7 @@ import cats.effect.{ExitCode, IO}
 import mml.mmlclib.api.{CodeGenApi, NativeEmitterError}
 import mml.mmlclib.ast.Module
 import mml.mmlclib.codegen.{CompilationMode, LlvmOrchestrator}
-import mml.mmlclib.util.prettyprint.error.ErrorPrinter
+import mml.mmlclib.util.error.print.ErrorPrinter
 
 object CodeGeneration:
 

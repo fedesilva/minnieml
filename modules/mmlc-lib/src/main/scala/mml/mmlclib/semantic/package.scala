@@ -2,14 +2,32 @@ package mml.mmlclib.semantic
 
 import cats.syntax.all.*
 import mml.mmlclib.ast.*
+import mml.mmlclib.errors.CompilationError
 
-enum SemanticError:
+enum SemanticError extends CompilationError:
   case UndefinedRef(ref: Ref, member: Member)
   case UndefinedTypeRef(typeRef: TypeRef, member: Member)
   case DuplicateName(name: String, duplicates: List[Resolvable])
   case InvalidExpression(expr: Expr, message: String)
   case DanglingTerms(terms: List[Term], message: String)
   case MemberErrorFound(error: MemberError)
+
+/** State that threads through semantic phases, accumulating errors while transforming the module */
+case class SemanticPhaseState(
+  module: Module,
+  errors: Vector[SemanticError]
+):
+  /** Add errors to the state */
+  def addErrors(newErrors: List[SemanticError]): SemanticPhaseState =
+    copy(errors = errors ++ newErrors)
+
+  /** Add a single error to the state */
+  def addError(error: SemanticError): SemanticPhaseState =
+    copy(errors = errors :+ error)
+
+  /** Update the module in the state */
+  def withModule(newModule: Module): SemanticPhaseState =
+    copy(module = newModule)
 
 /** This is required because we don't have multiple file, cross module capabilities
   */
@@ -40,7 +58,7 @@ def injectStandardOperators(module: Module): Module =
         param2     = FnParam(dummySpan, "b"),
         precedence = prec,
         assoc      = assoc,
-        body       = Expr(dummySpan, List(Hole(dummySpan))),
+        body       = Expr(dummySpan, List(NativeImpl(dummySpan))),
         typeSpec   = None,
         typeAsc    = None,
         docComment = None
@@ -59,7 +77,7 @@ def injectStandardOperators(module: Module): Module =
         param      = FnParam(dummySpan, "a"),
         precedence = prec,
         assoc      = assoc,
-        body       = Expr(dummySpan, List(Hole(dummySpan))),
+        body       = Expr(dummySpan, List(NativeImpl(dummySpan))),
         typeSpec   = None,
         typeAsc    = None,
         docComment = None

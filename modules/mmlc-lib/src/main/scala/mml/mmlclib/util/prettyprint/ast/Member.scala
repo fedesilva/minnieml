@@ -14,7 +14,8 @@ def typeSpecToSimpleName(typeSpec: TypeSpec): String =
     case TypeRef(_, name, _) => name
     case NativeTypeImpl(_) => "@native"
     case TypeUnit(_) => "()"
-    case TypeFn(_, params, ret) => s"(${params.map(typeSpecToSimpleName).mkString(" -> ")}) -> ${typeSpecToSimpleName(ret)}"
+    case TypeFn(_, params, ret) =>
+      s"(${params.map(typeSpecToSimpleName).mkString(" -> ")}) -> ${typeSpecToSimpleName(ret)}"
     case TypeTuple(_, elems) => s"(${elems.map(typeSpecToSimpleName).mkString(", ")})"
     case _ => typeSpec.getClass.getSimpleName
 
@@ -112,7 +113,7 @@ def prettyPrintMember(
             s"${indentStr}  typeAsc: ${prettyPrintTypeSpec(ta.typeAsc)}\n" +
             s"${indentStr}  typeRef: ${prettyPrintTypeSpec(Some(ta.typeRef))}"
         else ""
-      val visStr = memberVisibilityToString(ta.visibility)
+      val visStr     = memberVisibilityToString(ta.visibility)
       val targetName = typeSpecToSimpleName(ta.typeRef)
 
       s"${indentStr}TypeAlias $visStr ${ta.name} -> $targetName$spanStr$typeStr"

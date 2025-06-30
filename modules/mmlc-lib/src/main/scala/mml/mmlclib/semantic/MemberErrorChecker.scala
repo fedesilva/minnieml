@@ -25,3 +25,10 @@ object MemberErrorChecker:
 
     if errors.nonEmpty then errors.asLeft
     else module.asRight
+
+  /** Check for MemberError instances in a module, accumulating errors in the state. */
+  def checkModule(state: SemanticPhaseState): SemanticPhaseState =
+    val errors = state.module.members.collect { case error: MemberError =>
+      SemanticError.MemberErrorFound(error)
+    }
+    state.addErrors(errors)

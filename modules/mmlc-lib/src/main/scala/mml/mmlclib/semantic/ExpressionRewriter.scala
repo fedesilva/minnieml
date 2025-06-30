@@ -33,6 +33,32 @@ object ExpressionRewriter:
     if errors.nonEmpty then errors.asLeft
     else module.copy(members = rewrittenMembers.collect { case Right(member) => member }).asRight
 
+  /** Rewrite a module, accumulating errors in the state. */
+  def rewriteModule(state: SemanticPhaseState): SemanticPhaseState =
+    val (errors, members) =
+      state.module.members.foldLeft((List.empty[SemanticError], List.empty[Member])) {
+        case ((accErrors, accMembers), member) =>
+          val result = member match
+            case bnd: Bnd =>
+              rewriteExpr(bnd.value)
+                .map(updatedExpr => bnd.copy(value = updatedExpr))
+                .leftMap(_.toList)
+            case fn: FnDef =>
+              rewriteExpr(fn.body).map(updatedExpr => fn.copy(body = updatedExpr)).leftMap(_.toList)
+            case op: BinOpDef =>
+              rewriteExpr(op.body).map(updatedExpr => op.copy(body = updatedExpr)).leftMap(_.toList)
+            case op: UnaryOpDef =>
+              rewriteExpr(op.body).map(updatedExpr => op.copy(body = updatedExpr)).leftMap(_.toList)
+            case other =>
+              other.asRight
+
+          result match
+            case Left(errs) =>
+              (accErrors ++ errs, accMembers :+ member) // Keep original member on error
+            case Right(updated) => (accErrors, accMembers :+ updated)
+      }
+    state.addErrors(errors).withModule(state.module.copy(members = members))
+
   /** Rewrite an expression using precedence climbing for both operators and function application
     */
   def rewriteExpr(expr: Expr): Either[NEL[SemanticError], Expr] =

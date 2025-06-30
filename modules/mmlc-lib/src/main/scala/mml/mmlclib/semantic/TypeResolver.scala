@@ -16,6 +16,18 @@ object TypeResolver:
     if errors.nonEmpty then errors.asLeft
     else module.copy(members = updatedMembers.collect { case Right(member) => member }).asRight
 
+  /** Resolve all type references in a module, accumulating errors in the state. */
+  def rewriteModule(state: SemanticPhaseState): SemanticPhaseState =
+    val (errors, members) =
+      state.module.members.foldLeft((List.empty[SemanticError], List.empty[Member])) {
+        case ((accErrors, accMembers), member) =>
+          resolveMember(member, state.module) match
+            case Left(errs) =>
+              (accErrors ++ errs, accMembers :+ member) // Keep original member on error
+            case Right(updated) => (accErrors, accMembers :+ updated)
+      }
+    state.addErrors(errors).withModule(state.module.copy(members = members))
+
   /** Resolve type references in a module member. */
   private def resolveMember(member: Member, module: Module): Either[List[SemanticError], Member] =
     member match
