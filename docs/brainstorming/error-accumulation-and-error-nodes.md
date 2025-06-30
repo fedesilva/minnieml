@@ -43,6 +43,18 @@ case class InvalidType(
   span: SrcSpan,
   originalType: TypeSpec
 ) extends TypeSpec, InvalidNode
+
+case class DuplicateMember(
+  span: SrcSpan,
+  originalMember: Member,
+  firstOccurrence: Member
+) extends Member, InvalidNode
+
+case class InvalidMember(
+  span: SrcSpan,
+  originalMember: Member,
+  reason: String
+) extends Member, InvalidNode
 ```
 
 The `InvalidNode` trait allows:
@@ -154,6 +166,51 @@ This ensures:
 - Other code can use `MyType` even though its definition is invalid
 - The type system can partially reason about `MyType`
 
+#### DuplicateNameChecker Changes
+
+When encountering duplicate members:
+```scala
+case duplicates if duplicates.length > 1 =>
+  val (first :: rest) = duplicates
+  // Keep the first occurrence as-is (referenceable)
+  val validMembers = List(first)
+  
+  // Convert all subsequent duplicates to DuplicateMember nodes
+  val invalidMembers = rest.map { duplicate =>
+    DuplicateMember(
+      duplicate.span,
+      duplicate,
+      first
+    )
+  }
+  
+  validMembers ++ invalidMembers
+```
+
+For duplicate parameter names within functions/operators:
+```scala
+case fn: FnDef if hasDuplicateParams(fn.params) =>
+  // Convert the entire function to InvalidMember
+  InvalidMember(
+    fn.span,
+    fn,
+    s"Duplicate parameter names in function ${fn.name}"
+  )
+  
+case op: OpDef if hasDuplicateParams(op.params) =>
+  // Convert the entire operator to InvalidMember
+  InvalidMember(
+    op.span,
+    op,
+    s"Duplicate parameter names in operator ${op.name}"
+  )
+```
+
+This approach ensures:
+- The first occurrence of a duplicate member remains referenceable
+- Subsequent duplicates are marked but not referenceable
+- Functions/operators with duplicate parameters become entirely invalid
+
 #### ExpressionRewriter Detection
 
 ExpressionRewriter will detect and report invalid expressions from earlier phases:
@@ -190,6 +247,7 @@ case inv: InvalidExpression =>
 
 - [x] Error accumulation via SemanticPhaseState
 - [ ] InvalidNode trait and implementations
+- [ ] DuplicateNameChecker error recovery
 - [ ] RefResolver error recovery
 - [ ] TypeResolver error recovery
 - [ ] ExpressionRewriter detection
