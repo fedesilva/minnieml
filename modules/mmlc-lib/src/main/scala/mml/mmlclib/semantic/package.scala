@@ -5,12 +5,13 @@ import mml.mmlclib.ast.*
 import mml.mmlclib.errors.CompilationError
 
 enum SemanticError extends CompilationError:
-  case UndefinedRef(ref: Ref, member: Member)
-  case UndefinedTypeRef(typeRef: TypeRef, member: Member)
-  case DuplicateName(name: String, duplicates: List[Resolvable])
-  case InvalidExpression(expr: Expr, message: String)
-  case DanglingTerms(terms: List[Term], message: String)
-  case MemberErrorFound(error: MemberError)
+  case UndefinedRef(ref: Ref, member: Member, phase: String)
+  case UndefinedTypeRef(typeRef: TypeRef, member: Member, phase: String)
+  case DuplicateName(name: String, duplicates: List[Resolvable], phase: String)
+  case InvalidExpression(expr: Expr, message: String, phase: String)
+  case DanglingTerms(terms: List[Term], message: String, phase: String)
+  case MemberErrorFound(error: MemberError, phase: String)
+  case InvalidExpressionFound(invalidExpr: mml.mmlclib.ast.InvalidExpression, phase: String)
 
 /** State that threads through semantic phases, accumulating errors while transforming the module */
 case class SemanticPhaseState(

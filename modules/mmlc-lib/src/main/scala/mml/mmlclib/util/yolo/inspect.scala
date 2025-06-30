@@ -51,7 +51,7 @@ def rewrite(src: String, showTypes: Boolean = false): Unit =
       val initialState = SemanticPhaseState(moduleWithOps, Vector.empty)
 
       // Thread state through all phases with debug output
-      val state1 = DuplicateNameChecker.checkModule(initialState)
+      val state1 = DuplicateNameChecker.rewriteModule(initialState)
 
       val state2 = RefResolver.rewriteModule(state1)
       println(s"\n \n resolvedModule \n ${prettyPrintAst(state2.module)}")

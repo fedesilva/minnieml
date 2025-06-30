@@ -132,6 +132,23 @@ def prettyPrintMember(
 
       s"${indentStr}TypeDef $visStr ${td.name}$nativeStr$spanStr$typeStr"
     // td.docComment.map(doc => s"\n${prettyPrintDocComment(doc, indent + 2)}").getOrElse("")
+
+    case dup: DuplicateMember =>
+      val spanStr = if showSourceSpans then printSourceSpan(dup.span) else ""
+      s"${indentStr}DuplicateMember $spanStr\n" +
+        s"${indentStr}  firstOccurrence: ${dup.firstOccurrence.getClass.getSimpleName} ${dup.firstOccurrence match {
+          case d: Decl => d.name
+          case _ => "<unnamed>"
+        }}\n" +
+        s"${indentStr}  original:\n" +
+        prettyPrintMember(dup.originalMember, indent + 2, showSourceSpans, showTypes)
+
+    case inv: InvalidMember =>
+      val spanStr = if showSourceSpans then printSourceSpan(inv.span) else ""
+      s"${indentStr}InvalidMember $spanStr\n" +
+        s"""${indentStr}  reason: "${inv.reason}"\n""" +
+        s"${indentStr}  original:\n" +
+        prettyPrintMember(inv.originalMember, indent + 2, showSourceSpans, showTypes)
   }
 
 def prettyPrintParams(

@@ -30,7 +30,7 @@ object SemanticApi:
 
         // Thread state through all phases
         val finalState = initialState
-          |> DuplicateNameChecker.checkModule
+          |> DuplicateNameChecker.rewriteModule
           |> RefResolver.rewriteModule
           |> TypeResolver.rewriteModule
           |> ExpressionRewriter.rewriteModule

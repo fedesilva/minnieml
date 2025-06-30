@@ -10,25 +10,11 @@ import mml.mmlclib.ast.*
   */
 object MemberErrorChecker:
 
-  /** Check for MemberError instances in a module. Returns either a list of errors or the module if
-    * no MemberError instances are found.
-    *
-    * @param module
-    *   the module to check
-    * @return
-    *   either a list of errors or the module if no MemberError instances are found
-    */
-  def checkModule(module: Module): Either[List[SemanticError], Module] =
-    val errors = module.members.collect { case error: MemberError =>
-      SemanticError.MemberErrorFound(error)
-    }
-
-    if errors.nonEmpty then errors.asLeft
-    else module.asRight
+  private val phaseName = "mml.mmlclib.semantic.MemberErrorChecker"
 
   /** Check for MemberError instances in a module, accumulating errors in the state. */
   def checkModule(state: SemanticPhaseState): SemanticPhaseState =
     val errors = state.module.members.collect { case error: MemberError =>
-      SemanticError.MemberErrorFound(error)
+      SemanticError.MemberErrorFound(error, phaseName)
     }
     state.addErrors(errors)
