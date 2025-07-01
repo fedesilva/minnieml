@@ -22,17 +22,22 @@ Ability to compile simple programs:
 * Fixed Error trait to extend InvalidNode - all error AST nodes now properly categorized as invalid constructs
 
 ## Next Steps
-* udpdate codegen
-    * injectStandardOperators 
-        * add types to the definitions
-            * add op= to the @native parser
-                * so we can say @native[op=mult] for example, to guide the codegen.
-    * create a function like injectStandarOperators
-        * injectBasicTypes (Int -> i64, String -> @native, Bool -> i1, ...)    
-        *  (all the types that can be represented as literals)
-    * use types from the source (do not assume, missing types are a fatal error)
-    * operators now are app (lambda application), should be treated like functions
-        * but we will end up using the llvm intrinsic operations (via op=)
 
-        
+### Codegen Update (Ticket #156) - IN PROGRESS
+* Created doc/brainstorming/codegen-update.md with implementation plan
+* Need to implement:
+    * @native attribute parsing for 'op' and 't' parameters
+        * Example: @native[op=add], @native[t=i64]
+    * injectBasicTypes function 
+        * Int → @native[t=i64]
+        * String → @native[t=%String]
+        * Bool → @native[t=i1]
+    * Update injectStandardOperators with type annotations and op attributes
+    * Refactor codegen to use types from AST (no assumptions)
+        * Currently hardcodes i32, i64, %String
+        * Must fail if types are missing
+    * Treat operators as function applications
+        * Use LLVM intrinsics via op= attribute
+
+### Future work        
 * design a very simple type checker
