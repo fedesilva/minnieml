@@ -22,7 +22,18 @@ Ability to compile simple programs:
 
 ## Next Steps
 
-* fix 
-    * tests that do not work any more after recent changes
-    * write tests for the new error propagation and error node rewriting
+* Error ast node needs to be subclass of InvalidNode
+* udpdate codegen
+    * injectStandardOperators 
+        * add types to the definitions
+            * add op= to the @native parser
+                * so we can say @native[op=mult] for example, to guide the codegen.
+    * create a function like injectStandarOperators
+        * injectBasicTypes (Int -> i64, String -> @native, Bool -> i1, ...)    
+        *  (all the types that can be represented as literals)
+    * use types from the source (do not assume, missing types are a fatal error)
+    * operators now are app (lambda application), should be treated like functions
+        * but we will end up using the llvm intrinsic operations (via op=)
+
+        
 * design a very simple type checker
