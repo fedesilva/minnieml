@@ -19,10 +19,9 @@ Ability to compile simple programs:
 * Resolves type references in bindings, function parameters/returns, and type aliases
 * Reports UndefinedTypeRef errors for missing types
 * Improved pretty printing: TypeDef shows @native, TypeAlias uses arrow notation, TypeRef shows resolution status
+* Fixed Error trait to extend InvalidNode - all error AST nodes now properly categorized as invalid constructs
 
 ## Next Steps
-
-* Error ast node needs to be subclass of InvalidNode
 * udpdate codegen
     * injectStandardOperators 
         * add types to the definitions

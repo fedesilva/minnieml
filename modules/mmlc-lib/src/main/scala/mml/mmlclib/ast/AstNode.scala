@@ -60,7 +60,13 @@ sealed trait Member extends AstNode
 sealed trait Resolvable extends AstNode:
   def name: String
 
-sealed trait Error extends AstNode:
+/** Marker trait for nodes that represent invalid/error constructs. These nodes allow the compiler
+  * to continue processing even when errors are encountered, enabling better LSP support and partial
+  * compilation.
+  */
+sealed trait InvalidNode extends AstNode
+
+sealed trait Error extends AstNode, InvalidNode:
   def span:       SrcSpan
   def message:    String
   def failedCode: Option[String]
@@ -372,12 +378,6 @@ case class NativeImpl(
       Term
 
 // **Invalid Nodes for Error Recovery**
-
-/** Marker trait for nodes that represent invalid/error constructs. These nodes allow the compiler
-  * to continue processing even when errors are encountered, enabling better LSP support and partial
-  * compilation.
-  */
-sealed trait InvalidNode extends AstNode
 
 /** Represents an expression that could not be resolved or is otherwise invalid. Preserves the
   * original expression for debugging and error reporting.
