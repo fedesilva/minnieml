@@ -57,12 +57,6 @@ PB --> TC[techContext.md]
   - Dependencies
   - Tool usage patterns
 
-- `progress.md`
-  - What works
-  - What's left to build
-  - Current status
-  - Known issues
-  - Evolution of project decisions
 
 ### Additional Context
 
@@ -122,7 +116,7 @@ Start[Update Process]
 
 I MUST remember to also read the `Readme.md` file at the top of the repository.
 
-Note: When triggered by **update memory bank**, I MUST review every memory bank file, even if some don't require updates. Focus particularly on activeContext.md and progress.md as they track current state.
+Note: When triggered by **update memory bank**, I MUST review every memory bank file, even if some don't require updates. Focus particularly on activeContext.md  as it tracks current state.
 
 I must keep the files to a minimum size.
 

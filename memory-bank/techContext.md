@@ -63,21 +63,6 @@ These tools enable cross-platform compilation without requiring a dedicated Linu
   - Provides syntax highlighting for `.mml` files
   - Installation script available at `tooling/install-vscode-extension.sh`
 
-## Compiler CLI (`mmlc`)
-
-The compiler cli is not available in the console you have access to.
-Nor are the llvm tools.
-
-The `mmlc` command-line tool provides the following commands:
-
-- `mmlc info [-d|--diagnostics]`: Displays version and build information. `-d` adds diagnostics. (Default command)
-- `mmlc bin <source-file> [-o <dir>] [-a] [-v]`: Compiles `<source-file>` to a binary executable in `<dir>` (default: `build`). `-a` also outputs AST, `-v` enables verbose logging.
-- `mmlc lib <source-file> [-o <dir>] [-a] [-v]`: Compiles `<source-file>` to a library in `<dir>` (default: `build`). `-a` also outputs AST, `-v` enables verbose logging.
-- `mmlc ast <source-file> [-o <dir>] [-v]`: Parses `<source-file>` and outputs the AST to `<dir>` (default: `build`). `-v` enables verbose logging.
-- `mmlc ir <source-file> [-o <dir>] [-a] [-v]`: Compiles `<source-file>` to LLVM IR in `<dir>` (default: `build`). `-a` also outputs AST, `-v` enables verbose logging.
-- `mmlc clean [-o <dir>]`: Removes the output directory (default: `build`).
-- `mmlc help [-h|--help]`: Displays the help message.
-
 ## Coding Style
 
 - **Scala Version**: 3 with strict `-new-syntax`
@@ -97,7 +82,7 @@ Follow the `.scalafmt.conf` settings for formatting. Keep code clean and modular
 
 - When you finish making changes, before your job is done, you are required to run scalafmt and scalafix. Think deeply about this every time. We want clean code.
 
-- If there are exhaustivity errors, fix them. If you think something covers it, you are wrong, the compiler knows better.
+- If there are exhaustivity errors, fix them, you are wrong, the compiler knows better.
 
 - In scala 3 we dont use if (), we use if-then-else.
 - In scala 3 we can and should use top level function, no need to create objects just to contain them, unless we want to avoid clashes.
@@ -112,4 +97,4 @@ Follow the `.scalafmt.conf` settings for formatting. Keep code clean and modular
 - DO NOT ever consider a task finished if you did not follow this instructions (code quality tools, review compiler output)
 
 Do not ever leave comments like "removed this, fixed that."
-Comments should only describe the code, they are not your notepad.
+Comments should only describe the code.
