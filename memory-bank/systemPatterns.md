@@ -42,83 +42,111 @@ The compiler is structured into multiple modules:
 - FastParse for parser combinators
 - LLVM IR as the compilation target for portability and optimization
 
-### Future Considerations (from Brainstorming)
+### Current Implementation Notes
 
-- **Error Handling:** While currently using `Either` via `CompilerEffect`, brainstorming suggests exploring error accumulation using validation techniques to report multiple errors instead of failing on the first one.
-- **Multi-Module Compilation:** A proposed strategy involves parallel parsing, using a shared language database (`lang db`) for symbol tables and references, and performing multiple resolution passes to handle inter-module dependencies before rewriting.
+- **Error Handling:** The compiler accumulates errors through semantic phases using `SemanticPhaseState`, reporting multiple errors instead of failing on the first one
+- **Type Resolution:** TypeResolver follows RefResolver pattern, resolving type references throughout the AST
+- **Expression Rewriting:** Unified system treats operators and function application uniformly, rewriting operators as curried function applications
 
-TODO: Add more specific architectural decisions that shaped the system
+## Codebase Structure
 
-## Component Relationships
+### Module Organization
+
+**Compiler Frontend** (`modules/mmlc/`)
+- `Main.scala` - Entry point, CLI handling
+- `CommandLineConfig.scala` - Command-line argument definitions
+- `CompilationPipeline.scala` - Orchestrates the full compilation process
+- `CodeGeneration.scala` - Native code generation coordination
+- `FileOperations.scala` - File I/O utilities
+
+**Core Compiler Library** (`modules/mmlc-lib/`)
+
+#### AST (`ast/`)
+- `AstNode.scala` - All AST node definitions (Module, Member, Expr, Term, TypeSpec, etc.)
+
+#### Parser (`parser/`)
+- `Parser.scala` - FastParse-based parser implementation
+- `MmlWhitespace.scala` - Custom whitespace handling for significant indentation
+
+#### Semantic Analysis (`semantic/`)
+- `package.scala` - `SemanticPhaseState` for error accumulation
+- `DuplicateNameChecker.scala` - First phase, checks for duplicate definitions
+- `RefResolver.scala` - Collects candidate definitions for each reference
+- `TypeResolver.scala` - Resolves type references to type definitions
+- `ExpressionRewriter.scala` - Unified precedence-based expression restructuring
+- `MemberErrorChecker.scala` - Reports parser errors that made it through
+- `Simplifier.scala` - Final AST simplification before codegen
+
+#### Code Generation (`codegen/`)
+- `LlvmIrEmitter.scala` - Main LLVM IR generation
+- `LlvmOrchestrator.scala` - Coordinates LLVM toolchain, runtime linking
+- `emitter/` - Specialized emitters:
+  - `ExpressionCompiler.scala` - Expression to LLVM IR
+  - `FunctionEmitter.scala` - Function definitions
+  - `OperatorEmitter.scala` - Operator definitions
+  - `Module.scala` - Module-level emission
+
+#### APIs (`api/`)
+- `EffectTypes.scala` - `CompilerEffect[T]` type alias
+- `ParserApi.scala` - Parsing API
+- `SemanticApi.scala` - Semantic analysis pipeline
+- `CompilerApi.scala` - Combined parsing + semantic
+- `CodeGenApi.scala` - Code generation API
+- `NativeEmitterApi.scala` - Native binary emission
+
+#### Errors (`errors/`)
+- Error type definitions for each compilation phase
+
+#### Utilities (`util/`)
+- `prettyprint/ast/` - AST pretty printing for debugging
+- `error/print/` - Error formatting and display
+- `pipe/` - Functional pipeline operator
+- `yolo/` - Quick debugging utilities
+
+### Test Structure
+
+**Grammar Tests** (`modules/mmlc-lib/src/test/scala/mml/mmlclib/grammar/`)
+- Parser-focused tests for each language construct
+- `BaseParserSuite` - Common test utilities
+
+**Semantic Tests** (`modules/mmlc-lib/src/test/scala/mml/mmlclib/semantic/`)
+- Tests for each semantic analysis phase
+- Integration tests for the full semantic pipeline
+
+**Test Helpers** (`modules/mmlc-lib/src/test/scala/mml/mmlclib/test/`)
+- `BaseEffFunSuite` - Base class for effect-based tests
+- Common test utilities and assertions
+
+### Key Patterns
+
+- **Functional Core**: Pure functions with explicit error handling via `Either`
+- **Effect Separation**: IO effects isolated to API layer using `CompilerEffect`
+- **Phase Architecture**: Each semantic phase is a separate module with clear input/output
+- **Error Accumulation**: Semantic phases collect errors while continuing analysis
+- **AST Rewriting**: Multiple passes transform the AST incrementally
+
+## Compilation Flow
 
 ```mermaid
 flowchart TD
-    SourceCode[Source Code] --> Parser
-    Parser --> AST[Abstract Syntax Tree]
-    AST --> SemanticAnalysis
-    SemanticAnalysis --> SimplifiedAST[Simplified AST]
-    SimplifiedAST --> CodeGen[Code Generation]
-    CodeGen --> LLVMIR[LLVM IR]
-    LLVMIR --> NativeCompiler[Native Compiler]
-    NativeCompiler --> Executable
+    Source[Source Code] --> Parser[Parser]
+    Parser --> AST[AST]
+    AST --> DC[DuplicateNameChecker]
+    DC --> RR[RefResolver]
+    RR --> TR[TypeResolver]
+    TR --> ER[ExpressionRewriter]
+    ER --> MEC[MemberErrorChecker]
+    MEC --> S[Simplifier]
+    S --> CG[CodeGen/LlvmIrEmitter]
+    CG --> LLVM[LLVM IR]
+    LLVM --> LO[LlvmOrchestrator]
+    LO --> Binary[Native Binary]
 ```
 
-### Key Components
+### Entry Points for Understanding
 
-1. **Parser** (`Parser.scala`, `MMLWhitespace.scala`)
-
-   - Handles parsing of MML source code into AST
-   - Uses FastParse library with custom whitespace handling
-
-2. **AST** (`AstNode.scala`)
-
-   - Defines the structure for representing MML programs
-   - Includes expressions, functions, operators, and more
-
-3. **Semantic Analysis**
-
-   - `DuplicateNameChecker.scala`: Ensures no duplicate definitions exist
-   - `RefResolver.scala`: Focuses solely on collecting candidate definitions for each reference
-   - `ExpressionRewriter.scala`: Handles all expression structuring in a single pass using precedence climbing. Treats both operators and function applications with the same mechanism. Function application is implemented as juxtaposition with currying (ML-style), where `f a b c` becomes `((f a) b) c` in the AST, with function application having the highest precedence (100). Uses pattern matching extractors (e.g., `IsBinOpRef`, `IsFnRef`) for contextual disambiguation based on candidates from `RefResolver` and term position.
-   - `Simplifier.scala`: Simplifies the AST for code generation
-   - `MemberErrorChecker.scala`: Validates member references
-
-   Read articles:
-
-   - `docs/articles/2025-02/2025-02-24-custom-operators.md` - Basic operator precedence approach (now outdated)
-   - `docs/articles/2025-02/2025-04-12-expression-rewriting.md` - Current unified approach to expression rewriting that treats function application as an implicit high-precedence juxtaposition operator
-
-4. **Code Generation**
-
-   - `LlvmIrEmitter.scala`: Emits LLVM IR from the AST
-   - `LlvmOrchestrator.scala`: Coordinates the LLVM code generation process, including:
-     - Extracting and compiling the C runtime library for native functions
-     - Linking the compiled program with the runtime
-     - Supporting both binary and library output modes
-   - Native function integration:
-     - Functions marked with `@native` annotation are linked to C implementations
-     - Types marked with `@native` are mapped to appropriate runtime types (e.g., String)
-     - The `mml_runtime.c` provides implementations for standard library functions
-
-5. **CLI Interface** (`Main.scala` and `CommandLineConfig.scala`)
-
-   - Processes command-line arguments
-   - Controls the compilation process based on user commands
-
-6. **API** (`mml.mmlclib.api.*` package)
-   - Provides external-facing, IO-based APIs built upon each other, threading modules through compilation phases.
-   - `ParserApi`: Handles parsing source text into an AST (`CompilerEffect[Module]`).
-   - `SemanticApi`: Performs semantic analysis and rewrites on the AST (`CompilerEffect[Module]`).
-   - `CompilerApi`: Orchestrates parsing and semantic analysis (`compileString` function), composing `ParserApi` and `SemanticApi`.
-   - `CodeGenApi`, `NativeEmitterApi`: Likely handle later stages (details TBD).
-   - Uses `CompilerEffect[T]` (an alias for `EitherT[IO, CompilerError, T]`) to manage IO effects and propagate errors functionally using `Either`.
-
-TODO: Add more details about component interactions and dependencies
-
-## Critical Implementation Paths
-
-- **Compilation Pipeline**: The main path from source to executable through the `CompilationPipeline` object
-- **Parser to AST**: The translation of source code into structured representation
-- **AST to LLVM IR**: The representation of MML constructs in LLVM IR
-
-TODO: Document additional critical paths relevant to understanding the system
+1. **Language Syntax**: Start with `Parser.scala` and example `.mml` files in `mml/samples/`
+2. **AST Structure**: Read `AstNode.scala` for all node types
+3. **Compilation Pipeline**: Follow `CompilationPipeline.scala` → `SemanticApi.scala`
+4. **Error Handling**: See `SemanticPhaseState` in `semantic/package.scala`
+5. **Code Generation**: Start with `LlvmIrEmitter.scala`, then specialized emitters
