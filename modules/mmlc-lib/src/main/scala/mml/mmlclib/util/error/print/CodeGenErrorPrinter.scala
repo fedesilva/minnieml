@@ -1,4 +1,4 @@
-package mml.mmlclib.util.prettyprint.error
+package mml.mmlclib.util.error.print
 
 import mml.mmlclib.codegen.emitter.CodeGenError
 

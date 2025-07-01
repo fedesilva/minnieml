@@ -7,6 +7,9 @@ object Simplifier:
   def rewriteModule(module: Module): Either[List[SemanticError], Module] =
     module.copy(members = module.members.map(simplifyMember)).asRight[List[SemanticError]]
 
+  def rewriteModule(state: SemanticPhaseState): SemanticPhaseState =
+    state.withModule(state.module.copy(members = state.module.members.map(simplifyMember)))
+
   def simplifyMember(member: Member): Member =
     member match
       case b:  Bnd => b.copy(value = simplifyExpr(b.value))

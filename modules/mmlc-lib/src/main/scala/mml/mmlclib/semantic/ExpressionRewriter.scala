@@ -10,8 +10,10 @@ import mml.mmlclib.ast.*
   */
 object ExpressionRewriter:
 
-  val MinPrecedence: Int = 1
-  val AppPrecedence: Int = 100 // Function application has highest precedence
+  private val phaseName = "mml.mmlclib.semantic.ExpressionRewriter"
+
+  private val MinPrecedence: Int = 1
+  private val AppPrecedence: Int = 100 // Function application has highest precedence
 
   /** Rewrite a module, handling all expression transformations in a single pass
     */
@@ -33,9 +35,35 @@ object ExpressionRewriter:
     if errors.nonEmpty then errors.asLeft
     else module.copy(members = rewrittenMembers.collect { case Right(member) => member }).asRight
 
+  /** Rewrite a module, accumulating errors in the state. */
+  def rewriteModule(state: SemanticPhaseState): SemanticPhaseState =
+    val (errors, members) =
+      state.module.members.foldLeft((List.empty[SemanticError], List.empty[Member])) {
+        case ((accErrors, accMembers), member) =>
+          val result = member match
+            case bnd: Bnd =>
+              rewriteExpr(bnd.value)
+                .map(updatedExpr => bnd.copy(value = updatedExpr))
+                .leftMap(_.toList)
+            case fn: FnDef =>
+              rewriteExpr(fn.body).map(updatedExpr => fn.copy(body = updatedExpr)).leftMap(_.toList)
+            case op: BinOpDef =>
+              rewriteExpr(op.body).map(updatedExpr => op.copy(body = updatedExpr)).leftMap(_.toList)
+            case op: UnaryOpDef =>
+              rewriteExpr(op.body).map(updatedExpr => op.copy(body = updatedExpr)).leftMap(_.toList)
+            case other =>
+              other.asRight
+
+          result match
+            case Left(errs) =>
+              (accErrors ++ errs, accMembers :+ member) // Keep original member on error
+            case Right(updated) => (accErrors, accMembers :+ updated)
+      }
+    state.addErrors(errors).withModule(state.module.copy(members = members))
+
   /** Rewrite an expression using precedence climbing for both operators and function application
     */
-  def rewriteExpr(expr: Expr): Either[NEL[SemanticError], Expr] =
+  private def rewriteExpr(expr: Expr): Either[NEL[SemanticError], Expr] =
     rewritePrecedenceExpr(expr.terms, MinPrecedence, expr.span).flatMap {
       case (result, remaining) =>
         if remaining.isEmpty then
@@ -47,7 +75,8 @@ object ExpressionRewriter:
             .one(
               SemanticError.DanglingTerms(
                 remaining,
-                "Unexpected terms outside expression context"
+                "Unexpected terms outside expression context",
+                phaseName
               )
             )
             .asLeft
@@ -83,7 +112,8 @@ object ExpressionRewriter:
           .one(
             SemanticError.InvalidExpression(
               Expr(span, Nil),
-              "Expected an expression, got empty terms"
+              "Expected an expression, got empty terms",
+              phaseName
             )
           )
           .asLeft
@@ -131,7 +161,8 @@ object ExpressionRewriter:
         // Invalid expression structure
         NEL
           .one(
-            SemanticError.InvalidExpression(Expr(span, terms), "Invalid expression structure")
+            SemanticError
+              .InvalidExpression(Expr(span, terms), "Invalid expression structure", phaseName)
           )
           .asLeft
 
@@ -171,7 +202,8 @@ object ExpressionRewriter:
           .one(
             SemanticError.DanglingTerms(
               List(g),
-              "Unexpected group after expression - expected an operator"
+              "Unexpected group after expression - expected an operator",
+              phaseName
             )
           )
           .asLeft
@@ -183,7 +215,8 @@ object ExpressionRewriter:
           .one(
             SemanticError.DanglingTerms(
               List(term),
-              "Unexpected term after expression - expected an operator"
+              "Unexpected term after expression - expected an operator",
+              phaseName
             )
           )
           .asLeft
@@ -226,7 +259,8 @@ object ExpressionRewriter:
           .one(
             SemanticError.DanglingTerms(
               arg.terms,
-              "These terms cannot be applied to a non-function"
+              "These terms cannot be applied to a non-function",
+              phaseName
             )
           )
           .asLeft
@@ -251,6 +285,9 @@ object ExpressionRewriter:
     */
   private def rewriteTerm(term: Term): Either[NEL[SemanticError], Term] =
     term match
+      case inv: InvalidExpression =>
+        // Report that we found an invalid expression from an earlier phase
+        NEL.one(SemanticError.InvalidExpressionFound(inv, phaseName)).asLeft
       case e: Expr =>
         rewriteExpr(e)
       case c: Cond =>

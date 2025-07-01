@@ -1,0 +1,23 @@
+let 0 = 0;
+
+let a = 1;
+
+let b = 2;
+
+let z = call_me 1;
+
+let c = "some text";
+
+let d = true;
+
+let a = 2;
+
+let y = 1 1;
+
+let x;
+
+let e = false;
+
+let f = "fin!";
+
+let a = "otra vez";

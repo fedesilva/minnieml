@@ -5,18 +5,69 @@ import mml.mmlclib.ast.*
 
 object RefResolver:
 
-  /** Resolve all references in a module. Returns either a list of errors or a new module with
-    * resolved references.
-    *
-    * This phase assumes that all references are checked by the duplicate name checker.
-    *
-    * TODO: if we find a duplicate or malformed reference just bail with a semantic error.
-    */
-  def rewriteModule(module: Module): Either[List[SemanticError], Module] =
-    val updatedMembers = module.members.map(member => resolveMember(member, module))
-    val errors         = updatedMembers.collect { case Left(errs) => errs }.flatten
-    if errors.nonEmpty then errors.asLeft
-    else module.copy(members = updatedMembers.collect { case Right(member) => member }).asRight
+  private val phaseName = "mml.mmlclib.semantic.RefResolver"
+
+  /** Resolve all references in a module, accumulating errors in the state. */
+  def rewriteModule(state: SemanticPhaseState): SemanticPhaseState =
+    val (errors, members) =
+      state.module.members.foldLeft((List.empty[SemanticError], List.empty[Member])) {
+        case ((accErrors, accMembers), member) =>
+          resolveMember(member, state.module) match
+            case Left(errs) =>
+              // Important: Use the rewritten member with InvalidExpression nodes, not the original
+              val rewrittenMember = rewriteMemberWithInvalidExpressions(member, state.module)
+              (accErrors ++ errs, accMembers :+ rewrittenMember)
+            case Right(updated) => (accErrors, accMembers :+ updated)
+      }
+    state.addErrors(errors).withModule(state.module.copy(members = members))
+
+  /** Rewrite a member to use InvalidExpression nodes for undefined references */
+  private def rewriteMemberWithInvalidExpressions(member: Member, module: Module): Member =
+    member match
+      case bnd: Bnd =>
+        bnd.copy(value = rewriteExprWithInvalidExpressions(bnd.value, bnd, module))
+      case fnDef: FnDef =>
+        fnDef.copy(body = rewriteExprWithInvalidExpressions(fnDef.body, fnDef, module))
+      case bin: BinOpDef =>
+        bin.copy(body = rewriteExprWithInvalidExpressions(bin.body, bin, module))
+      case unary: UnaryOpDef =>
+        unary.copy(body = rewriteExprWithInvalidExpressions(unary.body, unary, module))
+      case _ => member
+
+  /** Rewrite expression to use InvalidExpression for undefined references */
+  private def rewriteExprWithInvalidExpressions(expr: Expr, member: Member, module: Module): Expr =
+    val rewrittenTerms = expr.terms.map {
+      case ref: Ref =>
+        val candidates = lookupRefs(ref, member, module)
+        if candidates.isEmpty then
+          // Create InvalidExpression wrapping the undefined ref
+          InvalidExpression(
+            span         = ref.span,
+            originalExpr = Expr(ref.span, List(ref)),
+            typeSpec     = ref.typeSpec,
+            typeAsc      = ref.typeAsc
+          )
+        else ref.copy(candidates = candidates)
+
+      case group: TermGroup =>
+        group.copy(inner = rewriteExprWithInvalidExpressions(group.inner, member, module))
+
+      case e: Expr =>
+        rewriteExprWithInvalidExpressions(e, member, module)
+
+      case t: Tuple =>
+        t.copy(elements = t.elements.map(e => rewriteExprWithInvalidExpressions(e, member, module)))
+
+      case cond: Cond =>
+        cond.copy(
+          cond    = rewriteExprWithInvalidExpressions(cond.cond, member, module),
+          ifTrue  = rewriteExprWithInvalidExpressions(cond.ifTrue, member, module),
+          ifFalse = rewriteExprWithInvalidExpressions(cond.ifFalse, member, module)
+        )
+
+      case term => term
+    }
+    expr.copy(terms = rewrittenTerms)
 
   /** Resolve references in a module member. */
   private def resolveMember(member: Member, module: Module): Either[List[SemanticError], Member] =
@@ -76,7 +127,7 @@ object RefResolver:
 
       case ref: Ref =>
         val candidates = lookupRefs(ref, member, module)
-        if candidates.isEmpty then List(SemanticError.UndefinedRef(ref, member)).asLeft
+        if candidates.isEmpty then List(SemanticError.UndefinedRef(ref, member, phaseName)).asLeft
         else ref.copy(candidates = candidates).asRight
 
       case group: TermGroup =>

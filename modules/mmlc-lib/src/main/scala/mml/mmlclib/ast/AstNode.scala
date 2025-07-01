@@ -370,3 +370,55 @@ case class NativeImpl(
   typeAsc:  Option[TypeSpec] = None
 ) extends Native,
       Term
+
+// **Invalid Nodes for Error Recovery**
+
+/** Marker trait for nodes that represent invalid/error constructs. These nodes allow the compiler
+  * to continue processing even when errors are encountered, enabling better LSP support and partial
+  * compilation.
+  */
+sealed trait InvalidNode extends AstNode
+
+/** Represents an expression that could not be resolved or is otherwise invalid. Preserves the
+  * original expression for debugging and error reporting.
+  */
+case class InvalidExpression(
+  span:         SrcSpan,
+  originalExpr: Expr,
+  typeSpec:     Option[TypeSpec] = None,
+  typeAsc:      Option[TypeSpec] = None
+) extends Term,
+      InvalidNode,
+      FromSource
+
+/** Represents a type specification that could not be resolved. Preserves the original type for
+  * debugging and error reporting.
+  */
+case class InvalidType(
+  span:         SrcSpan,
+  originalType: TypeSpec
+) extends TypeSpec,
+      InvalidNode,
+      FromSource
+
+/** Represents a duplicate member declaration. The first occurrence remains valid and referenceable,
+  * subsequent duplicates are wrapped in this node.
+  */
+case class DuplicateMember(
+  span:            SrcSpan,
+  originalMember:  Member,
+  firstOccurrence: Member
+) extends Member,
+      InvalidNode,
+      FromSource
+
+/** Represents a member that is invalid for reasons other than being a duplicate. For example,
+  * functions with duplicate parameter names.
+  */
+case class InvalidMember(
+  span:           SrcSpan,
+  originalMember: Member,
+  reason:         String
+) extends Member,
+      InvalidNode,
+      FromSource

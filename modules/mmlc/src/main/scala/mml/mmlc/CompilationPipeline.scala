@@ -5,7 +5,7 @@ import mml.mmlc.CommandLineConfig.Command
 import mml.mmlclib.api.CompilerApi
 import mml.mmlclib.ast.Module
 import mml.mmlclib.codegen.CompilationMode
-import mml.mmlclib.util.prettyprint.error.ErrorPrinter
+import mml.mmlclib.util.error.print.ErrorPrinter
 
 import java.nio.file.Path
 

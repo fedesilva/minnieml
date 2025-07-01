@@ -1,87 +1,123 @@
 package mml.mmlclib.semantic
 
-import cats.syntax.all.*
 import mml.mmlclib.ast.*
 
 object DuplicateNameChecker:
 
-  /** Check for duplicate names in a module. Returns either a list of errors or the module if no
-    * duplicates are found.
+  private val phaseName = "mml.mmlclib.semantic.DuplicateNameChecker"
+
+  /** Rewrite module to replace duplicate members with invalid nodes, accumulating errors in the
+    * state.
     */
-  def checkModule(module: Module): Either[List[SemanticError], Module] =
-    val errors =
-      checkMembers(module.members.collect { case m: Decl =>
-        m
-      })
-    if errors.nonEmpty then errors.asLeft
-    else module.asRight
+  def rewriteModule(state: SemanticPhaseState): SemanticPhaseState =
+    val (rewrittenMembers, errors) = processMembers(state.module.members)
+    state
+      .withModule(state.module.copy(members = rewrittenMembers))
+      .addErrors(errors)
 
-  private def checkMembers(decls: List[Decl]): List[SemanticError] =
+  private def processMembers(members: List[Member]): (List[Member], List[SemanticError]) =
+    val errors = scala.collection.mutable.ListBuffer[SemanticError]()
 
-    // Create a key that distinguishes binop vs unary vs other
-    def resolvableKey(r: Resolvable): (String, String) = r match {
-      case _: BinOpDef => (r.name, "bin")
-      case _: UnaryOpDef => (r.name, "unary")
-      case _ => (r.name, "other")
-    }
+    // Partition members into declarations and other nodes (like MemberError)
+    val (decls, otherMembers) = members.partition(_.isInstanceOf[Decl])
 
-    // Global duplicate check for top-level declarations (excluding parameters)
-    def memberDuplicates(
-      resolvables: List[Resolvable],
-      state:       Map[(String, String), List[Resolvable]]
-    ): Map[(String, String), List[Resolvable]] = resolvables match {
-      case res :: rest =>
-        val key = resolvableKey(res)
-        memberDuplicates(
-          rest,
-          state.updatedWith(key) {
-            case Some(existing) => (res :: existing).some
-            case None => List(res).some
-          }
+    // First, handle duplicate member names on declarations only
+    val membersByKey = groupMembersByKey(decls)
+    val membersAfterDuplicates = membersByKey.flatMap { case (key, items) =>
+      if items.size > 1 then
+        // Report error
+        errors += SemanticError.DuplicateName(
+          key._1,
+          items.collect { case d: Decl => d },
+          phaseName
         )
-      case Nil => state
-    }
-
-    // First, collect all operator names
-    val operatorNames = decls.collect { case op: OpDef =>
-      op.name
-    }.toSet
-
-    val topLevelMap = memberDuplicates(decls, Map.empty)
-
-    // Check for duplicates within the same category (bin, unary, other)
-    val sameTypeErrors = topLevelMap.collect {
-      case ((name, _), items) if items.size > 1 =>
-        SemanticError.DuplicateName(name, items)
+        // Keep first valid, convert rest to DuplicateMember
+        items match
+          case first :: rest =>
+            first :: rest.map { duplicate =>
+              DuplicateMember(
+                span = duplicate match {
+                  case m: FromSource => m.span
+                  case _ => SrcSpan(SrcPoint(0, 0, 0), SrcPoint(0, 0, 0))
+                },
+                originalMember  = duplicate,
+                firstOccurrence = first
+              )
+            }
+          case _ => items // This should never happen due to size > 1 check
+      else items
     }.toList
 
-    // Check for functions with names that match operator names
-    // (operators have precedence, so we flag the functions as duplicates)
-    val functionOpErrors = decls.collect {
-      case fn: FnDef if operatorNames.contains(fn.name) =>
-        // Find all declarations with this name (including the operators)
-        val allWithSameName = decls.filter(_.name == fn.name)
-        SemanticError.DuplicateName(fn.name, allWithSameName)
+    // Then, check for duplicate parameters and convert to InvalidMember if needed
+    val finalDecls = membersAfterDuplicates.map {
+      case fn: FnDef if hasDuplicateParams(fn.params) =>
+        val duplicateParamNames =
+          fn.params.groupBy(_.name).filter(_._2.size > 1).keys.mkString(", ")
+        errors += SemanticError.DuplicateName(
+          s"${fn.name} parameters: $duplicateParamNames",
+          fn.params.filter(p => fn.params.count(_.name == p.name) > 1),
+          phaseName
+        )
+        InvalidMember(
+          span           = fn.span,
+          originalMember = fn,
+          reason         = s"Duplicate parameter names: $duplicateParamNames"
+        )
+
+      case op: BinOpDef if op.param1.name == op.param2.name =>
+        errors += SemanticError.DuplicateName(
+          s"${op.name} parameters: ${op.param1.name}",
+          List(op.param1, op.param2),
+          phaseName
+        )
+        InvalidMember(
+          span           = op.span,
+          originalMember = op,
+          reason         = s"Duplicate parameter name: ${op.param1.name}"
+        )
+
+      case op: UnaryOpDef =>
+        // Unary ops have only one parameter, no duplicates possible
+        op
+
+      case other => other
     }
 
-    val topLevelErrors = sameTypeErrors ++ functionOpErrors
+    // Also check for functions that conflict with operators
+    val operatorNames = decls.collect { case op: OpDef => op.name }.toSet
+    decls.collect {
+      case fn: FnDef if operatorNames.contains(fn.name) =>
+        val allWithSameName = decls
+          .filter {
+            case d: Decl => d.name == fn.name
+            case _ => false
+          }
+          .collect { case d: Decl => d }
+        errors += SemanticError.DuplicateName(fn.name, allWithSameName, phaseName)
+    }
 
-    // Now, for each function or operator, check its parameters for duplicates locally.
-    val paramErrors =
-      decls
-        .collect {
-          case fn: FnDef =>
-            fn.params.groupBy(_.name).collect {
-              case (name, ps) if ps.size > 1 =>
-                SemanticError.DuplicateName(name, ps)
-            }
-          case op: BinOpDef =>
-            List(op.param1, op.param2).groupBy(_.name).collect {
-              case (name, ps) if ps.size > 1 =>
-                SemanticError.DuplicateName(name, ps)
-            }
-        }
-        .flatten
-        .toList
+    (finalDecls ++ otherMembers, errors.toList)
 
-    topLevelErrors ++ paramErrors
+  private def groupMembersByKey(members: List[Member]): Map[(String, String), List[Member]] =
+    members
+      .foldLeft(Map.empty[(String, String), List[Member]]) { (acc, member) =>
+        member match
+          case d: Decl =>
+            val key = resolvableKey(d)
+            acc.updatedWith(key) {
+              case Some(existing) => Some(member :: existing)
+              case None => Some(List(member))
+            }
+          case _ => acc
+      }
+      .view
+      .mapValues(_.reverse)
+      .toMap
+
+  private def resolvableKey(r: Resolvable): (String, String) = r match
+    case _: BinOpDef => (r.name, "bin")
+    case _: UnaryOpDef => (r.name, "unary")
+    case _ => (r.name, "other")
+
+  private def hasDuplicateParams(params: List[FnParam]): Boolean =
+    params.groupBy(_.name).exists(_._2.size > 1)

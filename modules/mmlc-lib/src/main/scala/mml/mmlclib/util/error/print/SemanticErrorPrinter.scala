@@ -1,4 +1,4 @@
-package mml.mmlclib.util.prettyprint.error
+package mml.mmlclib.util.error.print
 
 import mml.mmlclib.ast.{Decl, FromSource}
 import mml.mmlclib.semantic.SemanticError
@@ -34,7 +34,7 @@ object SemanticErrorPrinter:
   private def prettyPrintSingle(error: SemanticError, sourceCode: Option[String]): String =
     // Extract AST information when applicable
     val astInfo = error match
-      case SemanticError.UndefinedRef(ref, _) =>
+      case SemanticError.UndefinedRef(ref, _, _) =>
         val resolved = ref.resolvedAs
           .map(r => s"Resolved as: ${r.getClass.getSimpleName}(${r.name})")
           .getOrElse("Not resolved")
@@ -47,7 +47,7 @@ object SemanticErrorPrinter:
           }
         s"Info: '$resolved', $candidates"
 
-      case SemanticError.DanglingTerms(terms, _) =>
+      case SemanticError.DanglingTerms(terms, _, _) =>
         val termInfos = terms
           .map {
             case ref: mml.mmlclib.ast.Ref =>
@@ -72,14 +72,21 @@ object SemanticErrorPrinter:
 
     // Generate the base error message without source code snippets
     val baseMessage = error match
-      case SemanticError.UndefinedRef(ref, member) =>
+      case SemanticError.UndefinedRef(ref, member, phase) =>
         val location = LocationPrinter.printSpan(ref.span)
         val memberName = member match
           case d: Decl => d.name
           case _ => "unknown"
-        s"${Console.RED}Undefined reference '${ref.name}' at $location in $memberName${Console.RESET}"
+        s"${Console.RED}Undefined reference '${ref.name}' at $location in $memberName [phase: $phase]${Console.RESET}"
 
-      case SemanticError.DuplicateName(name, duplicates) =>
+      case SemanticError.UndefinedTypeRef(typeRef, member, phase) =>
+        val location = LocationPrinter.printSpan(typeRef.span)
+        val memberName = member match
+          case d: Decl => d.name
+          case _ => "unknown"
+        s"${Console.RED}Undefined type reference '${typeRef.name}' at $location in $memberName [phase: $phase]${Console.RESET}"
+
+      case SemanticError.DuplicateName(name, duplicates, phase) =>
         // Sort duplicates by their starting index using sortBy
         val sortedDuplicates = duplicates
           .collect { case d: FromSource => d }
@@ -87,20 +94,24 @@ object SemanticErrorPrinter:
         val locations = sortedDuplicates // Use sorted list
           .map(d => LocationPrinter.printSpan(d.span))
           .mkString(" ") // Use space separator
-        s"${Console.RED}Duplicate name '$name' defined at: $locations${Console.RESET}"
+        s"${Console.RED}Duplicate name '$name' defined at: $locations [phase: $phase]${Console.RESET}"
 
-      case SemanticError.InvalidExpression(expr, message) =>
+      case SemanticError.InvalidExpression(expr, message, phase) =>
         val location = LocationPrinter.printSpan(expr.span)
-        s"${Console.RED}Invalid expression at $location: $message${Console.RESET}"
+        s"${Console.RED}Invalid expression at $location: $message [phase: $phase]${Console.RESET}"
 
-      case SemanticError.MemberErrorFound(error) =>
+      case SemanticError.MemberErrorFound(error, phase) =>
         val location = LocationPrinter.printSpan(error.span)
         val snippet  = error.failedCode.getOrElse("<no code available>")
-        s"${Console.RED}Parser error at $location: ${error.message}\n$snippet${Console.RESET}"
+        s"${Console.RED}Parser error at $location: ${error.message} [phase: $phase]\n$snippet${Console.RESET}"
 
-      case SemanticError.DanglingTerms(terms, message) =>
+      case SemanticError.DanglingTerms(terms, message, phase) =>
         val locations = terms.map(t => LocationPrinter.printSpan(t.span)).mkString(", ")
-        s"${Console.RED}$message at $locations${Console.RESET}"
+        s"${Console.RED}$message at $locations [phase: $phase]${Console.RESET}"
+
+      case SemanticError.InvalidExpressionFound(invalidExpr, phase) =>
+        val location = LocationPrinter.printSpan(invalidExpr.span)
+        s"${Console.RED}Invalid expression found at $location [phase: $phase]${Console.RESET}"
 
     // Add AST info and source code snippets if source code is available
     sourceCode match

@@ -14,7 +14,8 @@ def typeSpecToSimpleName(typeSpec: TypeSpec): String =
     case TypeRef(_, name, _) => name
     case NativeTypeImpl(_) => "@native"
     case TypeUnit(_) => "()"
-    case TypeFn(_, params, ret) => s"(${params.map(typeSpecToSimpleName).mkString(" -> ")}) -> ${typeSpecToSimpleName(ret)}"
+    case TypeFn(_, params, ret) =>
+      s"(${params.map(typeSpecToSimpleName).mkString(" -> ")}) -> ${typeSpecToSimpleName(ret)}"
     case TypeTuple(_, elems) => s"(${elems.map(typeSpecToSimpleName).mkString(", ")})"
     case _ => typeSpec.getClass.getSimpleName
 
@@ -112,7 +113,7 @@ def prettyPrintMember(
             s"${indentStr}  typeAsc: ${prettyPrintTypeSpec(ta.typeAsc)}\n" +
             s"${indentStr}  typeRef: ${prettyPrintTypeSpec(Some(ta.typeRef))}"
         else ""
-      val visStr = memberVisibilityToString(ta.visibility)
+      val visStr     = memberVisibilityToString(ta.visibility)
       val targetName = typeSpecToSimpleName(ta.typeRef)
 
       s"${indentStr}TypeAlias $visStr ${ta.name} -> $targetName$spanStr$typeStr"
@@ -131,6 +132,23 @@ def prettyPrintMember(
 
       s"${indentStr}TypeDef $visStr ${td.name}$nativeStr$spanStr$typeStr"
     // td.docComment.map(doc => s"\n${prettyPrintDocComment(doc, indent + 2)}").getOrElse("")
+
+    case dup: DuplicateMember =>
+      val spanStr = if showSourceSpans then printSourceSpan(dup.span) else ""
+      s"${indentStr}DuplicateMember $spanStr\n" +
+        s"${indentStr}  firstOccurrence: ${dup.firstOccurrence.getClass.getSimpleName} ${dup.firstOccurrence match {
+            case d: Decl => d.name
+            case _ => "<unnamed>"
+          }}\n" +
+        s"${indentStr}  original:\n" +
+        prettyPrintMember(dup.originalMember, indent + 2, showSourceSpans, showTypes)
+
+    case inv: InvalidMember =>
+      val spanStr = if showSourceSpans then printSourceSpan(inv.span) else ""
+      s"${indentStr}InvalidMember $spanStr\n" +
+        s"""${indentStr}  reason: "${inv.reason}"\n""" +
+        s"${indentStr}  original:\n" +
+        prettyPrintMember(inv.originalMember, indent + 2, showSourceSpans, showTypes)
   }
 
 def prettyPrintParams(

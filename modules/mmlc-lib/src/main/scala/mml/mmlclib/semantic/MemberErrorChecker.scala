@@ -1,27 +1,16 @@
 package mml.mmlclib.semantic
 
-import cats.syntax.all.*
 import mml.mmlclib.ast.*
 
 /** Checks for MemberError instances in a module.
-  *
-  * This checker should be the first in the semantic pipeline to catch parsing errors before
-  * spending time on other semantic transformations.
   */
 object MemberErrorChecker:
 
-  /** Check for MemberError instances in a module. Returns either a list of errors or the module if
-    * no MemberError instances are found.
-    *
-    * @param module
-    *   the module to check
-    * @return
-    *   either a list of errors or the module if no MemberError instances are found
-    */
-  def checkModule(module: Module): Either[List[SemanticError], Module] =
-    val errors = module.members.collect { case error: MemberError =>
-      SemanticError.MemberErrorFound(error)
-    }
+  private val phaseName = "mml.mmlclib.semantic.MemberErrorChecker"
 
-    if errors.nonEmpty then errors.asLeft
-    else module.asRight
+  /** Check for MemberError instances in a module, accumulating errors in the state. */
+  def checkModule(state: SemanticPhaseState): SemanticPhaseState =
+    val errors = state.module.members.collect { case error: MemberError =>
+      SemanticError.MemberErrorFound(error, phaseName)
+    }
+    state.addErrors(errors)

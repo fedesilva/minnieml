@@ -78,6 +78,18 @@ def prettyPrintTypeSpec(
       val spanStr = if showSourceSpans then s" ${printSourceSpan(sp)}" else ""
       s"NativeTypeImpl$spanStr"
 
+    case Some(inv: InvalidType) =>
+      val spanStr = if showSourceSpans then s" ${printSourceSpan(inv.span)}" else ""
+      s"InvalidType$spanStr\n" +
+        s"  original: ${prettyPrintTypeSpec(Some(inv.originalType), showSourceSpans, showTypes)}"
+
+    case Some(NativeType(sp, attrs)) =>
+      val spanStr = if showSourceSpans then s" ${printSourceSpan(sp)}" else ""
+      val attrsStr =
+        if attrs.nonEmpty then s" {${attrs.map { case (k, v) => s"$k: $v" }.mkString(", ")}}"
+        else ""
+      s"NativeType$spanStr$attrsStr"
+
     case None =>
       "None"
   }

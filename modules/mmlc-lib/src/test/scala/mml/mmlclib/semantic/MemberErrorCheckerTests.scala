@@ -39,54 +39,54 @@ class MemberErrorCheckerTests extends BaseEffFunSuite:
       ;
       """
     ).map { module =>
-      MemberErrorChecker.checkModule(module) match {
-        case Right(m) => assertNoDiff(m.toString, module.toString)
-        case Left(errors) => fail(s"Expected Right but got Left($errors)")
-      }
+      val state = SemanticPhaseState(module, Vector.empty)
+      val result = MemberErrorChecker.checkModule(state)
+      assert(result.errors.isEmpty)
+      assertNoDiff(result.module.toString, module.toString)
     }
   }
 
   test("MemberErrorChecker should catch member errors as shown in the example") {
-    justParse(
+    semWithState(
       """
-      module Anon =
-        fn mult(a b) = a * b;
-        let a  ;
+      module TestPartial =
+        fn valid(a b) = a + b;
+        let a  ; # Missing expression after =
       ;
       """
-    ).map { module =>
-      MemberErrorChecker.checkModule(module) match {
-        case Left(errors) =>
-          assert(errors.size == 1)
-          errors.head match {
-            case SemanticError.MemberErrorFound(error) =>
-              assert(error.message == "Failed to parse member")
-              assert(error.failedCode.exists(_.contains("let a")))
-            case other => fail(s"Expected MemberErrorFound but got $other")
-          }
-        case Right(_) => fail("Expected Left with errors but got Right")
+    ).map { result =>
+
+      // println(prettyPrintAst(result.module))
+
+      assert(clue(result.errors.size) == clue(1))
+
+      result.errors.head match {
+        case SemanticError.MemberErrorFound(error, phase) =>
+          assert(error.message == "Failed to parse member")
+          assert(error.failedCode.exists(_.contains("let a")))
+          assert(phase == "mml.mmlclib.semantic.MemberErrorChecker")
+        case e => fail(s"Expected MemberErrorFound error, got $e")
       }
     }
   }
 
-  test("MemberErrorChecker should report multiple member errors") {
-    justParse(
+  test("MemberErrorChecker should catch multiple member errors") {
+    semWithState(
       """
-      module Anon =
-        fn mult(a b) = a * b;
-        let a  ;
-        let b  ;
+      module TestPartial =
+        fn valid(a b) = a + b;
+        let a  ; // Missing expression after =
+        bnd noLet = 5; # Invalid syntax - 'bnd' instead of 'let'
       ;
       """
-    ).map { module =>
-      MemberErrorChecker.checkModule(module) match {
-        case Left(errors) =>
-          assert(errors.size == 2)
-          assert(errors.forall {
-            case SemanticError.MemberErrorFound(_) => true
-            case _ => false
-          })
-        case Right(_) => fail("Expected Left with errors but got Right")
-      }
+    ).map { result =>
+
+      // println(prettyPrintAst(result.module))
+
+      assert(clue(result.errors.size) == clue(2))
+      assert(result.errors.forall {
+        case SemanticError.MemberErrorFound(_, _) => true
+        case _ => false
+      })
     }
   }

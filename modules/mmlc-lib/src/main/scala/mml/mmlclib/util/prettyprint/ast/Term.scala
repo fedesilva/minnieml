@@ -165,4 +165,15 @@ def prettyPrintTerm(
       s"${indentStr}TermError $spanStr\n" +
         s"""${indentStr}  "$message"""" +
         failedCode.map(code => s"\n${indentStr}  $code").getOrElse("")
+
+    case inv: InvalidExpression =>
+      val spanStr = if showSourceSpans then printSourceSpan(inv.span) else ""
+      val typeStr =
+        if showTypes then
+          s"\n${indentStr}  typeSpec: ${prettyPrintTypeSpec(inv.typeSpec)}\n" +
+            s"${indentStr}  typeAsc: ${prettyPrintTypeSpec(inv.typeAsc)}"
+        else ""
+      s"${indentStr}InvalidExpression $spanStr$typeStr\n" +
+        s"${indentStr}  original:\n" +
+        prettyPrintExpr(inv.originalExpr, indent + 2, showSourceSpans, showTypes)
   }

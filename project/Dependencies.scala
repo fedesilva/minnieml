@@ -2,17 +2,17 @@ import sbt.*
 
 object Dependencies {
 
-  val logBackVersion       = "1.5.18"
-  val monocleVersion       = "3.3.0"
-  val catsVersion          = "2.12.0"
-  val catsEffectVersion    = "3.6.1"
-  val refinedVersion       = "0.11.3"
-  val reload4jVersion      = "1.2.26"
-  val lucumaRefinedVersion = "0.1.4"
-  val munitVersion         = "1.1.0"
-  val munitCatsVersion     = "2.1.0"
-  val fastparseVersion     = "3.1.1"
-  val scoptVersion         = "4.1.0"
+  val logBackVersion:       String = "1.5.18"
+  val monocleVersion:       String = "3.3.0"
+  val catsVersion:          String = "2.12.0"
+  val catsEffectVersion:    String = "3.6.1"
+  val refinedVersion:       String = "0.11.3"
+  val reload4jVersion:      String = "1.2.26"
+  val lucumaRefinedVersion: String = "0.1.4"
+  val munitVersion:         String = "1.1.1"
+  val munitCatsVersion:     String = "2.1.0"
+  val fastparseVersion:     String = "3.1.1"
+  val scoptVersion:         String = "4.1.0"
 
   lazy val commonDependencies: Seq[ModuleID] =
     Seq(
@@ -43,7 +43,7 @@ object Dependencies {
       "com.github.scopt" %% "scopt" % scoptVersion
     ) ++ commonDependencies ++ testDeps
 
-  lazy val resolvers =
+  lazy val resolvers: Seq[MavenRepository] =
     Seq(
       "fede-github" at "https://raw.githubusercontent.com/fedesilva/fede-maven/master/"
     )

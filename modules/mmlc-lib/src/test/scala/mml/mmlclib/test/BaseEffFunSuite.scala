@@ -89,17 +89,8 @@ trait BaseEffFunSuite extends CatsEffectSuite:
       // pass
     }
 
-  /** Parse source code without asserting on MemberErrors Useful for testing phases that
+  /** Parse source code without asserting on MemberErrors. Useful for testing phases that
     * specifically deal with MemberErrors
-    *
-    * @param source
-    *   the source code to parse
-    * @param name
-    *   optional module name
-    * @param msg
-    *   optional message for failure case
-    * @return
-    *   the parsed module, which may contain MemberError nodes
     */
   def justParse(
     source: String,
@@ -109,4 +100,25 @@ trait BaseEffFunSuite extends CatsEffectSuite:
     ParserApi.parseModuleString(source, name).value.map {
       case Right(module) => module
       case Left(error) => fail(msg.getOrElse("Parser Failed: ") + s"\n$error")
+    }
+
+  def semWithState(
+    source: String,
+    name:   Option[String] = "Test".some,
+    msg:    Option[String] = None
+  ): IO[mml.mmlclib.semantic.SemanticPhaseState] =
+    import mml.mmlclib.semantic.*
+    import mml.mmlclib.util.pipe.*
+
+    justParse(source, name, msg).map { module =>
+      val moduleWithOps = injectStandardOperators(module)
+      val initialState  = SemanticPhaseState(moduleWithOps, Vector.empty)
+
+      initialState
+        |> DuplicateNameChecker.rewriteModule
+        |> RefResolver.rewriteModule
+        |> TypeResolver.rewriteModule
+        |> ExpressionRewriter.rewriteModule
+        |> MemberErrorChecker.checkModule
+        |> Simplifier.rewriteModule
     }

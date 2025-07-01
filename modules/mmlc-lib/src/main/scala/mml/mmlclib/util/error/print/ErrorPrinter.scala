@@ -1,4 +1,4 @@
-package mml.mmlclib.util.prettyprint.error
+package mml.mmlclib.util.error.print
 
 import mml.mmlclib.api.{CodeGenApiError, CompilerError, NativeEmitterError}
 import mml.mmlclib.ast.{FromSource, SrcSpan}
@@ -43,7 +43,7 @@ object ErrorPrinter:
   private def prettyPrintSemanticError(error: SemanticError, sourceCode: Option[String]): String =
     // Extract AST information when applicable
     val astInfo = error match
-      case SemanticError.UndefinedRef(ref, _) =>
+      case SemanticError.UndefinedRef(ref, _, _) =>
         val resolved = ref.resolvedAs
           .map(r => s"Resolved as: ${r.getClass.getSimpleName}(${r.name})")
           .getOrElse("Not resolved")
@@ -56,7 +56,7 @@ object ErrorPrinter:
           }
         s"Info: '$resolved', $candidates"
 
-      case SemanticError.DanglingTerms(terms, _) =>
+      case SemanticError.DanglingTerms(terms, _, _) =>
         val termInfos = terms
           .map {
             case ref: mml.mmlclib.ast.Ref =>
@@ -80,26 +80,32 @@ object ErrorPrinter:
       case _ => "" // No special AST info for other error types
 
     val baseMessage = error match
-      case SemanticError.DuplicateName(name, duplicates) =>
+      case SemanticError.DuplicateName(name, duplicates, _) =>
         val locations = duplicates
           .collect { case d: FromSource => formatLocation(d.span) }
           .mkString(", ")
 
         s"${Console.RED}Duplicate name '$name' defined at: $locations${Console.RESET}"
 
-      case SemanticError.UndefinedRef(ref, member) =>
+      case SemanticError.UndefinedRef(ref, member, _) =>
         s"${Console.RED}Undefined reference '${ref.name}' at ${formatLocation(ref.span)}${Console.RESET}"
 
-      case SemanticError.InvalidExpression(expr, message) =>
+      case SemanticError.UndefinedTypeRef(typeRef, member, _) =>
+        s"${Console.RED}Undefined type reference '${typeRef.name}' at ${formatLocation(typeRef.span)}${Console.RESET}"
+
+      case SemanticError.InvalidExpression(expr, message, _) =>
         s"${Console.RED}Invalid expression at ${formatLocation(expr.span)}: $message${Console.RESET}"
 
-      case SemanticError.MemberErrorFound(error) =>
+      case SemanticError.MemberErrorFound(error, _) =>
         val location = formatLocation(error.span)
         s"${Console.RED}Parser error at $location: ${error.message}${Console.RESET}"
 
-      case SemanticError.DanglingTerms(terms, message) =>
+      case SemanticError.DanglingTerms(terms, message, _) =>
         val locations = terms.map(t => formatLocation(t.span)).mkString(", ")
         s"${Console.RED}$message at $locations${Console.RESET}"
+
+      case SemanticError.InvalidExpressionFound(invalidExpr, _) =>
+        s"${Console.RED}Invalid expression found at ${formatLocation(invalidExpr.span)}${Console.RESET}"
 
     // Add AST info and source code snippets if source code is available
     sourceCode match

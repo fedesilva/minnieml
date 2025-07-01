@@ -1,4 +1,4 @@
-package mml.mmlclib.util.prettyprint.error
+package mml.mmlclib.util.error.print
 
 import mml.mmlclib.ast.{FromSource, SrcSpan}
 import mml.mmlclib.semantic.SemanticError
@@ -21,7 +21,7 @@ object SourceCodeExtractor:
     val sourceLines = sourceCode.split("\n")
 
     error match
-      case SemanticError.DuplicateName(name, duplicates) =>
+      case SemanticError.DuplicateName(name, duplicates, _) =>
         // Sort duplicates by their starting index
         val sortedDuplicates =
           duplicates.collect { case d: FromSource => d }.sortBy(_.span.start.index) // Sort by index
@@ -40,21 +40,26 @@ object SourceCodeExtractor:
         }
         snippets.mkString("\n")
 
-      case SemanticError.UndefinedRef(ref, _) =>
+      case SemanticError.UndefinedRef(ref, _, _) =>
         extractSnippet(sourceCode, ref.span, nameHighlightSpan = Some(ref.span))
           .map(s => s"\n$s")
           .getOrElse("")
 
-      case SemanticError.InvalidExpression(expr, _) =>
+      case SemanticError.UndefinedTypeRef(typeRef, _, _) =>
+        extractSnippet(sourceCode, typeRef.span, nameHighlightSpan = Some(typeRef.span))
+          .map(s => s"\n$s")
+          .getOrElse("")
+
+      case SemanticError.InvalidExpression(expr, _, _) =>
         extractSnippet(sourceCode, expr.span, highlightExpr = true)
           .map(s => s"\n$s")
           .getOrElse("")
 
-      case SemanticError.MemberErrorFound(error) =>
+      case SemanticError.MemberErrorFound(error, _) =>
         // For member errors, just return the failed code directly
         error.failedCode.getOrElse("Source code not available")
 
-      case SemanticError.DanglingTerms(terms, _) =>
+      case SemanticError.DanglingTerms(terms, _, _) =>
         // Extract snippets for each dangling term
         val snippets = terms.collect { case term: FromSource =>
           val location = LocationPrinter.printSpan(term.span)
@@ -72,6 +77,11 @@ object SourceCodeExtractor:
           s"\nAt ${Console.YELLOW}$location${Console.RESET}:\n$snippet"
         }
         snippets.mkString("\n")
+
+      case SemanticError.InvalidExpressionFound(invalidExpr, _) =>
+        extractSnippet(sourceCode, invalidExpr.span, highlightExpr = true)
+          .map(s => s"\n$s")
+          .getOrElse("")
 
   /** Extract a source code snippet around a source span
     *

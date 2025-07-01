@@ -1,2 +1,5 @@
 fn mult (a b) = a * b;
 let a  ;
+let b = 1;
+let c = ;
+let d = "ok";

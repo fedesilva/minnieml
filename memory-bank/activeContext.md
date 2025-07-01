@@ -4,6 +4,7 @@
 
 Ability to compile simple programs:
 * basic types
+* error accumulation
 * explicit types
 * recursion (tco)
 * codegen app chains
@@ -21,4 +22,7 @@ Ability to compile simple programs:
 
 ## Next Steps
 
+* fix 
+    * tests that do not work any more after recent changes
+    * write tests for the new error propagation and error node rewriting
 * design a very simple type checker
