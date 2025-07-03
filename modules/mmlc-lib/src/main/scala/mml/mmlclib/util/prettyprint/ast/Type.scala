@@ -74,7 +74,7 @@ def prettyPrintTypeSpec(
     case Some(lt: LiteralType) =>
       s"LiteralType: ${lt.typeName}"
 
-    case Some(NativeTypeImpl(sp)) =>
+    case Some(NativeTypeImpl(sp, _)) =>
       val spanStr = if showSourceSpans then s" ${printSourceSpan(sp)}" else ""
       s"NativeTypeImpl$spanStr"
 
@@ -83,12 +83,10 @@ def prettyPrintTypeSpec(
       s"InvalidType$spanStr\n" +
         s"  original: ${prettyPrintTypeSpec(Some(inv.originalType), showSourceSpans, showTypes)}"
 
-    case Some(NativeType(sp, attrs)) =>
+    case Some(NativeType(sp, nativeType)) =>
       val spanStr = if showSourceSpans then s" ${printSourceSpan(sp)}" else ""
-      val attrsStr =
-        if attrs.nonEmpty then s" {${attrs.map { case (k, v) => s"$k: $v" }.mkString(", ")}}"
-        else ""
-      s"NativeType$spanStr$attrsStr"
+      val typeStr = nativeType.map(t => s" ($t)").getOrElse("")
+      s"NativeType$spanStr$typeStr"
 
     case None =>
       "None"

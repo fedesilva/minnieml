@@ -64,7 +64,7 @@
      ```scala
      type Int = @native[t=i64]
      type Bool = @native[t=i1]
-     type String = @native[t=%String]  // or decide on string representation
+     type String = @native[t=String]  // this will point to a struct
      ```
    - Should run early in compilation pipeline
 
@@ -97,7 +97,7 @@
 ### Phase 4: Error Handling
 
 1. **Add type checking**
-   - Fail compilation if types are not ascribed
+   - Fail compilation if types are not ascribed.
    - Clear error messages for missing type information
 
 2. **Validate native attributes**
@@ -108,10 +108,18 @@
 
 ### Attribute Syntax
 ```
-@native[op=add, t=i32]
+@native[op=add]
+@native[t=i32]
 @native[t=%String]
 @native[op=fcmp_oeq]
 ```
+
+**Note** there are two types of @native:
+* native impl for the body of a `fn` or an `op`.
+* native type, typedefs an mml type as an llvm type.
+
+op and t are used in those contexts respectively.
+op for functions and operators, t for typedefs.
 
 ### Type Resolution Flow
 1. Parser creates AST with @native attributes
@@ -146,8 +154,8 @@ val line = emitBinaryOp(resultReg, llvmType, op, leftOp, rightOp)
 ## Implementation Tasks
 
 1. **Add @native attribute parsing for 'op' and 't' parameters** (high priority)
-   - Extend parser to support @native[key=value] syntax
-   - Store attributes in AST nodes
+   - Extend parser to support specific keys (o and t), do not allow free form attributes.
+   - Store attributes in AST nodes (both nodes NativeImpl and NativeTypeImpl have a map to store attrs)
 
 2. **Create injectBasicTypes function to map MML types to LLVM types** (high priority)
    - Define Int → @native[t=i64]

@@ -306,7 +306,7 @@ case class TypeRef(
 
 case class NativeType(
   span:       SrcSpan,
-  attributes: Map[String, String] = Map()
+  nativeType: Option[String] = None
 ) extends TypeSpec
 
 /** A type application, ie:  `List Int, Map String Int` */
@@ -365,7 +365,8 @@ case class LiteralFloatType(span: SrcSpan) extends LiteralType {
 sealed trait Native extends AstNode
 
 case class NativeTypeImpl(
-  span: SrcSpan
+  span:       SrcSpan,
+  nativeType: Option[String] = None
 ) extends TypeSpec,
       Native,
       FromSource
@@ -373,7 +374,8 @@ case class NativeTypeImpl(
 case class NativeImpl(
   span:     SrcSpan,
   typeSpec: Option[TypeSpec] = None,
-  typeAsc:  Option[TypeSpec] = None
+  typeAsc:  Option[TypeSpec] = None,
+  nativeOp: Option[String]   = None
 ) extends Native,
       Term
 

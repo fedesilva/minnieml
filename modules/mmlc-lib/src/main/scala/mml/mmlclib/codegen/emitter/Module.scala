@@ -155,7 +155,7 @@ private def emitBinding(bnd: Bnd, state: CodeGenState): Either[CodeGenError, Cod
 private def emitFnDef(fn: FnDef, state: CodeGenState): Either[CodeGenError, CodeGenState] = {
   // Check if this is a native function implementation
   fn.body.terms match {
-    case List(NativeImpl(_, _, _)) => {
+    case List(NativeImpl(_, _, _, _)) => {
       // Determine parameter and return types
       val returnType = fn.typeSpec
         .map(t => getNativeType(t.toString(), state))

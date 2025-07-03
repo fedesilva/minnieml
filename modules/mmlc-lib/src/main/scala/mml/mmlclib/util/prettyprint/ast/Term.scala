@@ -150,7 +150,7 @@ def prettyPrintTerm(
       val spanStr = if showSourceSpans then printSourceSpan(sp) else ""
       s"${indentStr}LiteralUnit $spanStr"
 
-    case NativeImpl(sp, typeSpec, typeAsc) =>
+    case NativeImpl(sp, typeSpec, typeAsc, _) =>
       val spanStr = if showSourceSpans then printSourceSpan(sp) else ""
       val typeStr =
         if showTypes then

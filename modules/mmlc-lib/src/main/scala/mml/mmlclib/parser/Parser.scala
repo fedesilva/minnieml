@@ -353,15 +353,23 @@ object Parser:
       }
 
   private def nativeImplP(source: String)(using P[Any]): P[NativeImpl] =
-    P(spP(source) ~ "@native" ~ spP(source))
-      .map { case (start, end) =>
-        NativeImpl(span(start, end))
+
+    def nativeOpP: P[Option[String]] =
+      P("[" ~ "op" ~ "=" ~ CharsWhileIn("a-zA-Z0-9_", 1).! ~ "]").?
+
+    P(spP(source) ~ nativeKw ~ nativeOpP ~ spP(source))
+      .map { case (start, op, end) =>
+        NativeImpl(span(start, end), nativeOp = op)
       }
 
   private def nativeTypeP(source: String)(using P[Any]): P[NativeTypeImpl] =
-    P(spP(source) ~ "@native" ~ spP(source))
-      .map { case (start, end) =>
-        NativeTypeImpl(span(start, end))
+
+    def nativeTypeP: P[Option[String]] =
+          P("[" ~ "t" ~ "=" ~ CharsWhileIn("a-zA-Z0-9_", 1).! ~ "]").?
+
+    P(spP(source) ~ nativeKw ~ nativeTypeP  ~ spP(source))
+      .map { case (start, nativeType, end) =>
+        NativeTypeImpl(span(start, end), nativeType)
       }
 
   private def termP(source: String)(using P[Any]): P[Term] =

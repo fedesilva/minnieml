@@ -12,7 +12,7 @@ def memberVisibilityToString(visibility: MemberVisibility): String =
 def typeSpecToSimpleName(typeSpec: TypeSpec): String =
   typeSpec match
     case TypeRef(_, name, _) => name
-    case NativeTypeImpl(_) => "@native"
+    case NativeTypeImpl(_, _) => "@native"
     case TypeUnit(_) => "()"
     case TypeFn(_, params, ret) =>
       s"(${params.map(typeSpecToSimpleName).mkString(" -> ")}) -> ${typeSpecToSimpleName(ret)}"
@@ -127,7 +127,7 @@ def prettyPrintMember(
         else ""
       val visStr = memberVisibilityToString(td.visibility)
       val nativeStr = td.typeSpec match
-        case Some(NativeTypeImpl(_)) => " @native"
+        case Some(NativeTypeImpl(_, _)) => " @native"
         case _ => ""
 
       s"${indentStr}TypeDef $visStr ${td.name}$nativeStr$spanStr$typeStr"
