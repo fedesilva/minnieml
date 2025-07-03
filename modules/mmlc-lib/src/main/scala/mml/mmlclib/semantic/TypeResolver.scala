@@ -58,6 +58,10 @@ object TypeResolver:
         )
       case alias: TypeAlias =>
         alias.copy(typeRef = rewriteTypeSpecWithInvalidTypes(alias.typeRef, module))
+      case typeDef: TypeDef =>
+        typeDef.copy(
+          typeSpec = typeDef.typeSpec.map(rewriteTypeSpecWithInvalidTypes(_, module))
+        )
       case _ => member
 
   /** Rewrite type spec to use InvalidType for undefined references */
@@ -77,6 +81,13 @@ object TypeResolver:
           case multiple =>
             // Also use InvalidType for ambiguous references
             InvalidType(typeRef.span, typeRef)
+      case ns: NativeStruct =>
+        // Recursively handle struct fields
+        val rewrittenFields = ns.fields.map { case (fieldName, fieldType) =>
+          fieldName -> rewriteTypeSpecWithInvalidTypes(fieldType, module)
+        }
+        ns.copy(fields = rewrittenFields)
+
       case other =>
         // For now, other type specs don't contain TypeRefs that need resolution
         other
@@ -170,6 +181,12 @@ object TypeResolver:
           alias.copy(typeRef = updatedTypeRef)
         )
 
+      case typeDef: TypeDef =>
+        // Resolve type references within the TypeDef's typeSpec (e.g., for NativeStruct fields)
+        typeDef.typeSpec
+          .traverse(resolveTypeSpec(_, member, module))
+          .map(updatedTypeSpec => typeDef.copy(typeSpec = updatedTypeSpec))
+
       case _ =>
         member.asRight[List[SemanticError]]
 
@@ -210,6 +227,14 @@ object TypeResolver:
           case multiple =>
             // This shouldn't happen with proper duplicate checking, but let's be defensive
             List(SemanticError.DuplicateName(typeRef.name, multiple, phaseName)).asLeft
+
+      case ns: NativeStruct =>
+        // Resolve TypeSpecs in all struct fields
+        ns.fields.toList
+          .traverse { case (fieldName, fieldType) =>
+            resolveTypeSpec(fieldType, member, module).map(fieldName -> _)
+          }
+          .map(resolvedFields => ns.copy(fields = resolvedFields.toMap))
 
       case other =>
         // For now, other type specs don't contain TypeRefs that need resolution

@@ -93,17 +93,15 @@ class NativeTypeTests extends BaseEffFunSuite:
               assertEquals(typeDef.name, "MyStruct")
               typeDef.typeSpec match
                 case Some(NativeStruct(_, fields)) =>
-                  assertEquals(fields.length, 2)
-                  val (name1, type1) = fields(0)
-                  val (name2, type2) = fields(1)
-                  assertEquals(name1, "length")
-                  assertEquals(name2, "data")
-                  type1 match
+                  assertEquals(fields.size, 2)
+                  assert(fields.contains("length"), "Expected field 'length'")
+                  assert(fields.contains("data"), "Expected field 'data'")
+                  fields("length") match
                     case TypeRef(_, "SomeType", _) => // good
-                    case _ => fail(s"Expected TypeRef to SomeType, got: $type1")
-                  type2 match
+                    case _ => fail(s"Expected TypeRef to SomeType, got: ${fields("length")}")
+                  fields("data") match
                     case TypeRef(_, "AnotherType", _) => // good
-                    case _ => fail(s"Expected TypeRef to AnotherType, got: $type2")
+                    case _ => fail(s"Expected TypeRef to AnotherType, got: ${fields("data")}")
                 case Some(other) =>
                   fail(s"Expected NativeStruct, got: $other")
                 case None =>
@@ -212,8 +210,8 @@ class NativeTypeTests extends BaseEffFunSuite:
             case Some(typeDef) =>
               typeDef.typeSpec match
                 case Some(NativeStruct(_, fields)) =>
-                  assertEquals(fields.length, 4)
-                  assertEquals(fields.map(_._1), List("field1", "field2", "ptr", "nested"))
+                  assertEquals(fields.size, 4)
+                  assertEquals(fields.keySet, Set("field1", "field2", "ptr", "nested"))
                   // Verify the field types are parsed as TypeRefs
                   fields.foreach { case (name, typeSpec) =>
                     typeSpec match

@@ -89,7 +89,7 @@ def prettyPrintTypeSpec(
 
     case Some(NativeStruct(sp, fields)) =>
       val spanStr = if showSourceSpans then s" ${printSourceSpan(sp)}" else ""
-      s"@native$spanStr {\n" +
+      s"NativeStruct$spanStr {\n" +
         fields
           .map { case (name, tp) =>
             s"  $name: ${prettyPrintTypeSpec(Some(tp), showSourceSpans, showTypes)}"

@@ -47,6 +47,7 @@ The compiler is structured into multiple modules:
 - **Error Handling:** The compiler accumulates errors through semantic phases using `SemanticPhaseState`, reporting multiple errors instead of failing on the first one
 - **Type Resolution:** TypeResolver follows RefResolver pattern, resolving type references throughout the AST
 - **Expression Rewriting:** Unified system treats operators and function application uniformly, rewriting operators as curried function applications
+- **Predefined Types:** The semantic package automatically injects common types (String, CharPtr, SizeT, Int64, Float64, Bool, etc.) into every module. When writing tests or examples, use unique names to avoid conflicts with these predefined types
 
 ## Codebase Structure
 
@@ -116,6 +117,10 @@ The compiler is structured into multiple modules:
 **Test Helpers** (`modules/mmlc-lib/src/test/scala/mml/mmlclib/test/`)
 - `BaseEffFunSuite` - Base class for effect-based tests
 - Common test utilities and assertions
+- IMPORTANT: the prettyPrintAst function and the yolo.inspect.rewrite functions
+  SHOULD be used in failing tests to inspect the ast and its changes
+  across phases. 
+
 
 ### Key Patterns
 
@@ -150,3 +155,4 @@ flowchart TD
 3. **Compilation Pipeline**: Follow `CompilationPipeline.scala` → `SemanticApi.scala`
 4. **Error Handling**: See `SemanticPhaseState` in `semantic/package.scala`
 5. **Code Generation**: Start with `LlvmIrEmitter.scala`, then specialized emitters
+6. **Misc Debugging tools**: rewrrite in the yolo package. also the prettyprinter.

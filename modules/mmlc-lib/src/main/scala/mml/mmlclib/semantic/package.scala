@@ -64,7 +64,7 @@ def injectBasicTypes(module: Module): Module =
       typeSpec = Some(
         NativeStruct(
           dummySpan,
-          List(("length", TypeRef(dummySpan, "Int64")), ("data", TypeRef(dummySpan, "CharPtr")))
+          Map("length" -> TypeRef(dummySpan, "Int64"), "data" -> TypeRef(dummySpan, "CharPtr"))
         )
       )
     ),
@@ -93,8 +93,7 @@ def injectBasicTypes(module: Module): Module =
   )
 
   module.copy(
-    members    = basicTypes ++ module.members,
-    isImplicit = module.isImplicit
+    members = basicTypes ++ module.members
   )
 
 /** This is required because we don't have multiple file, cross module capabilities

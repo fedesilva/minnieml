@@ -13,6 +13,11 @@ Ability to compile simple programs:
 
 ## Recent Changes
 
+* **(2025-07-03)** Completed Block 2 of codegen update (#156): TypeResolver now properly handles NativeStruct definitions
+  - Changed NativeStruct fields from `List[(String, TypeSpec)]` to `Map[String, TypeSpec]` for uniqueness and O(1) lookup
+  - Fixed TypeResolver to process TypeDef members and resolve TypeRefs inside NativeStruct fields
+  - Added comprehensive tests for TypeResolver with NativeStruct
+  - Updated parser to use Map for NativeStruct fields (duplicate fields handled by Map semantics - last wins)
 * **(2025-07-03)** Completed Block 1 of codegen update (#156): AST and parser now support new `@native:` syntax for primitives, pointers, and structs
 * **(2025-07-03)** Rewrote and unified the design for native type interoperability in `doc/brainstorming/codegen-update.md`. The new design is now the single plan of record.
 * Implemented TypeResolver following RefResolver pattern
@@ -30,7 +35,7 @@ Ability to compile simple programs:
 The implementation plan has been updated and is detailed in `doc/brainstorming/codegen-update.md`. The work is divided into four blocks:
 
 *   **Block 1: AST & Parser Changes:** ✓ COMPLETED - AST and parser support new `@native:` syntax
-*   **Block 2: Semantic Analysis Changes:** Update `TypeResolver` to handle native struct definitions
+*   **Block 2: Semantic Analysis Changes:** ✓ COMPLETED - TypeResolver now handles native struct definitions
 *   **Block 3: Codegen - LLVM Type Emission:** Implement the logic to generate LLVM `type` definitions from the AST
 *   **Block 4: Codegen - Expression Compiler Refactoring:** Remove all hardcoded types from the expression compiler and use the new type information from the AST
 

@@ -322,7 +322,7 @@ case class NativePointer(
 
 case class NativeStruct(
   span:   SrcSpan,
-  fields: List[(String, TypeSpec)]
+  fields: Map[String, TypeSpec]
 ) extends NativeType
 
 /** A type application, ie:  `List Int, Map String Int` */
