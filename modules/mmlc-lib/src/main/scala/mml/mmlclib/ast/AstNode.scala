@@ -20,7 +20,9 @@ final case class SrcSpan(
 sealed trait AstNode derives CanEqual
 
 sealed trait Typeable extends AstNode {
+  /** This is the computed type */
   def typeSpec: Option[TypeSpec]
+  /** This is the type the user declares. */
   def typeAsc:  Option[TypeSpec]
 }
 

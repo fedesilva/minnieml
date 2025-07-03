@@ -83,7 +83,7 @@ When rendering LLVM IR:
      type Float64 = @native[t=f64]  // TypeDef with native mapping (for future protocols)
      type Float = Float64           // TypeAlias pointing to native type (for future protocols)
      type Bool = @native[t=i1]      // Direct native mapping
-     type String = @native          // No t attribute, points to struct
+     type String = @native          // No t attribute, points to struct ( see change of design below )
      ```
    - Should run before injectStandardOperators
 
@@ -119,7 +119,7 @@ When rendering LLVM IR:
      // Unary logical (Bool -> Bool)
      op not (a: Bool): Bool -> Bool = @native[op=not]
      ```
-   - **Note**: Float operator types will be implemented with protocols system
+   - **Note**: Float operator types will be implemented with protocols system down the line.
 
 ### Phase 3: Codegen Refactoring
 
@@ -140,7 +140,7 @@ When rendering LLVM IR:
 ### Phase 4: Error Handling
 
 1. **Add simple type sanity check**
-   - Fail compilation if types are not ascribed.
+   - Fail compilation if types are not ascribed or resolved.
    - Clear error messages for missing type information
 
 2. **Validate native attributes**
@@ -192,7 +192,7 @@ val line = emitBinaryOp(resultReg, llvmType, op, leftOp, rightOp)
 - Type aliases can map to different LLVM representations
 - Potential for platform-specific type mappings
 
-### Proposed AST Changes (for review)
+### Proposed AST Changes (for review, approved!)
 
 To support the declarative native struct syntax, the following change to `AstNode.scala` is required. This change evolves `NativeType` into a `sealed trait` to handle both simple aliases and struct definitions, without requiring any changes to the `TypeDef` node itself.
 
@@ -222,15 +222,21 @@ case class NativeStruct(
 
 ## Revised Plan: Declarative Native Structs with Opaque Pointers (2025-07-02)
 
-During planning, a significant design improvement was proposed. The initial plan was flawed because it wasn't scalable. The new approach is to make MML code the source of truth by allowing external C structs to be mirrored declaratively.
+During planning, a significant design improvement was proposed. 
+The initial plan was flawed because it wasn't scalable. The new approach is to make MML code provide information to the codegen 
+by allowing external C structs to be mirrored declaratively.
 
 For the initial implementation, we will adopt a minimalist "Opaque Pointer" approach to handle pointers for C interop.
+
+The key distinction is that the MML `type String = @native { ... }` definition provides a complete, 
+non-opaque mirror of the C struct, which is necessary for the compiler to generate correct getelementptr instructions. 
+
 
 ### The "Struct Mirroring" and "Opaque Pointer" Concepts
 
 The goal is to generate LLVM IR that is structurally compatible with types defined in external C code. If our generated LLVM IR defines a type with the same name and memory layout as the one compiled from C, the linker will safely merge them.
 
-This is achieved with a two-step process in a prelude file:
+This is achieved with a two-step process in a prelude file (inject type function for now):
 
 **1. Bridge Primitive and Opaque Pointer Types:** Define MML types that map to C/LLVM types. Any type defined with a `*` in its `@native[t=...]` attribute is treated as an **opaque pointer** from MML's perspective.
 
@@ -238,7 +244,7 @@ This is achieved with a two-step process in a prelude file:
 // prelude.mml
 type SizeT   = @native[t=i64]
 type Char    = @native[t=i8]
-type CharPtr = @native[t="i8*"] // This is an opaque pointer type in MML
+type CharPtr = @native[t=i8*] // This is an opaque pointer type in MML
 ```
 
 **2. Mirror the C Struct in MML:** Use these MML types to define the C struct's layout.
@@ -263,6 +269,9 @@ The implementation will follow these blocks:
 **Block 1: Parser & AST Changes**
 - Update `Parser.scala` to parse the new `@native { field: Type, ... }` syntax.
 - Update `AstNode.scala` with a new node (e.g., `NativeStructDef`) to represent this structure in the AST.
+   - make `NativeType` a trait, 
+      - abstract it's current functionality into a subclass `NativePrimitiveAlias`
+      - `NativeStructDef` is also a subclass 
 
 **Block 2: Semantic Analysis**
 - Update `TypeResolver` to handle `NativeStructDef` and recursively resolve the types of its fields.
@@ -271,7 +280,9 @@ The implementation will follow these blocks:
 - Add a new pass to `LlvmIrEmitter` to iterate over all `NativeStructDef`s and generate the corresponding LLVM `type` definitions (e.g., `%String = type { i64, i8* }`) before any other code is generated.
 
 **Block 4: Codegen - Refactor `ExpressionCompiler`**
-- Implement a `getLlvmType` helper that can look up these new struct definitions.
+- Implement a `getLlvmType` helper that can look up 
+   - these new struct definitions.
+   - and primitive references
 - Refactor `compileTerm` (especially for `LiteralString`), `compileApp`, and remove the old operator logic. The refactoring will use the rich type information from the AST, treating pointer fields as opaque.
 
 ## Implementation Tasks
