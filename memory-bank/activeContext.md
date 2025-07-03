@@ -35,11 +35,7 @@ Ability to compile simple programs:
     * Update injectStandardOperators with type annotations and op attributes
     * Refactor codegen to use types from AST (no assumptions)
         * Currently hardcodes i32, i64, %String
-        * Must fail if types are missing
-                
-
-            
-            
+        * Must fail if types are missin            
 
     * Treat operators as function applications
         * Use LLVM intrinsics via op= attribute
