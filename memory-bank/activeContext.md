@@ -20,6 +20,7 @@ Ability to compile simple programs:
 * Reports UndefinedTypeRef errors for missing types
 * Improved pretty printing: TypeDef shows @native, TypeAlias uses arrow notation, TypeRef shows resolution status
 * Fixed Error trait to extend InvalidNode - all error AST nodes now properly categorized as invalid constructs
+* **(2025-07-02)** Pivoted design for native type handling. Decided to implement declarative native structs (`@native { ... }`) to make the system scalable. Updated `doc/brainstorming/codegen-update.md` with the new design.
 
 ## Next Steps
 
@@ -36,6 +37,7 @@ Ability to compile simple programs:
   * ✓ Error handling already in place
   * ✓ Fixed test conflicts, all tests passing (98 passing, 0 failing)
 * **REMAINING WORK**:
+  * **Note**: The implementation plan has been significantly revised. See the "Revised Plan: Declarative Native Structs" section in `doc/brainstorming/codegen-update.md` for the new block-based implementation strategy.
   * **Phase 3**: Refactor codegen to use types from AST (no hardcoded assumptions)
     - Currently hardcodes i32, i64, %String in ExpressionCompiler.scala
     - Need to read 't' attribute from type definitions
@@ -46,4 +48,3 @@ Ability to compile simple programs:
 * design a very simple type checker
 * recursion 
 * modules
-

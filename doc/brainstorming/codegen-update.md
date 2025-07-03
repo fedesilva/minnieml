@@ -63,8 +63,7 @@ When rendering LLVM IR:
 
 ### Phase 1: Parser Updates
 
-1. **Extend @native annotation parser**
-   - Add support for attributes: `@native[key=value, ...]`
+1. **Extend @native annotation parser**   
    - Support `op` attribute for operations
    - Support `t` attribute for type mappings
    - Location: Grammar parser files
@@ -193,6 +192,60 @@ val line = emitBinaryOp(resultReg, llvmType, op, leftOp, rightOp)
 - Type aliases can map to different LLVM representations
 - Potential for platform-specific type mappings
 
+## Revised Plan: Declarative Native Structs with Opaque Pointers (2025-07-02)
+
+During planning, a significant design improvement was proposed. The initial plan was flawed because it wasn't scalable. The new approach is to make MML code the source of truth by allowing external C structs to be mirrored declaratively.
+
+For the initial implementation, we will adopt a minimalist "Opaque Pointer" approach to handle pointers for C interop.
+
+### The "Struct Mirroring" and "Opaque Pointer" Concepts
+
+The goal is to generate LLVM IR that is structurally compatible with types defined in external C code. If our generated LLVM IR defines a type with the same name and memory layout as the one compiled from C, the linker will safely merge them.
+
+This is achieved with a two-step process in a prelude file:
+
+**1. Bridge Primitive and Opaque Pointer Types:** Define MML types that map to C/LLVM types. Any type defined with a `*` in its `@native[t=...]` attribute is treated as an **opaque pointer** from MML's perspective.
+
+```mml
+// prelude.mml
+type SizeT   = @native[t=i64]
+type Char    = @native[t=i8]
+type CharPtr = @native[t="i8*"] // This is an opaque pointer type in MML
+```
+
+**2. Mirror the C Struct in MML:** Use these MML types to define the C struct's layout.
+
+```mml
+// prelude.mml
+type String = @native {
+  length: SizeT,
+  data:   CharPtr
+}
+```
+
+**Implications for MML:**
+- **Safe by Default:** MML cannot perform pointer arithmetic or dereferencing on opaque pointer types like `CharPtr`. They are simply handles that can be received from and passed to native C functions.
+- **Sufficient for Interop:** This is sufficient for the immediate goal of interacting with the C runtime's `String` struct.
+- **Incremental Design:** More advanced pointer features and array types can be added in future iterations without breaking this initial design.
+
+## Revised Implementation Plan
+
+The implementation will follow these blocks:
+
+**Block 1: Parser & AST Changes**
+- Update `Parser.scala` to parse the new `@native { field: Type, ... }` syntax.
+- Update `AstNode.scala` with a new node (e.g., `NativeStructDef`) to represent this structure in the AST.
+
+**Block 2: Semantic Analysis**
+- Update `TypeResolver` to handle `NativeStructDef` and recursively resolve the types of its fields.
+
+**Block 3: Codegen - LLVM Type Emission**
+- Add a new pass to `LlvmIrEmitter` to iterate over all `NativeStructDef`s and generate the corresponding LLVM `type` definitions (e.g., `%String = type { i64, i8* }`) before any other code is generated.
+
+**Block 4: Codegen - Refactor `ExpressionCompiler`**
+- Implement a `getLlvmType` helper that can look up these new struct definitions.
+- Refactor `compileTerm` (especially for `LiteralString`), `compileApp`, and remove the old operator logic. The refactoring will use the rich type information from the AST, treating pointer fields as opaque.
+
 ## Implementation Tasks
 
 1. **Add @native attribute parsing for 'op' and 't' parameters** (high priority)
@@ -223,9 +276,12 @@ val line = emitBinaryOp(resultReg, llvmType, op, leftOp, rightOp)
 ## Current Todo List
 
 - [x] Create doc/brainstorming/codegen-update.md with implementation plan
-- [ ] Add @native attribute parsing for 'op' and 't' parameters
-- [ ] Create injectBasicTypes function to map MML types to LLVM types
-- [ ] Update injectStandardOperators to add type annotations
-- [ ] Refactor codegen to use types from AST instead of hardcoded assumptions
-- [ ] Refactor operators to be treated as function applications
-- [ ] Add error handling for missing type information
+- [ ] **(Block 1)** Update parser for `@native { ... }` syntax.
+- [ ] **(Block 1)** Update AST with `NativeStructDef` node.
+- [ ] **(Block 2)** Update `TypeResolver` for `NativeStructDef`.
+- [ ] **(Block 3)** Implement LLVM `type` definition emission in `LlvmIrEmitter`.
+- [ ] **(Block 4)** Refactor `ExpressionCompiler` to use new type info from the AST.
+- [ ] **(Block 4)** Update `injectBasicTypes` to include `SizeT`, `Char`, `CharPtr`.
+- [ ] **(Original Task)** Refactor codegen to use types from AST instead of hardcoded assumptions.
+- [ ] **(Original Task)** Refactor operators to be treated as function applications.
+- [ ] **(Original Task)** Add error handling for missing type information.
