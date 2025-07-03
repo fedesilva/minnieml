@@ -13,6 +13,7 @@ Ability to compile simple programs:
 
 ## Recent Changes
 
+* **(2025-07-03)** Rewrote and unified the design for native type interoperability in `doc/brainstorming/codegen-update.md`. The new design is now the single plan of record.
 * Implemented TypeResolver following RefResolver pattern
 * TypeRef now has single `resolvedAs: Option[ResolvableType]` field (no candidates)
 * TypeResolver integrated into semantic pipeline after RefResolver
@@ -25,23 +26,12 @@ Ability to compile simple programs:
 ## Next Steps
 
 ### Codegen Update (Ticket #156) - IN PROGRESS
-* Created doc/brainstorming/codegen-update.md with implementation plan
-* **COMPLETED**:
-  * ✓ @native attribute parsing for 'op' and 't' parameters
-  * ✓ injectBasicTypes function with TypeDef + TypeAlias pattern:
-    - Int64 = @native, Int = Int64
-    - Float64 = @native, Float = Float64  
-    - Bool = @native, String = @native
-  * ✓ Updated injectStandardOperators with type annotations and op attributes
-  * ✓ Operators already rewritten as function applications in semantic phase
-  * ✓ Error handling already in place
-  * ✓ Fixed test conflicts, all tests passing (98 passing, 0 failing)
-* **REMAINING WORK**:
-  * **Note**: The implementation plan has been significantly revised. See the "Revised Plan: Declarative Native Structs" section in `doc/brainstorming/codegen-update.md` for the new block-based implementation strategy.
-  * **Phase 3**: Refactor codegen to use types from AST (no hardcoded assumptions)
-    - Currently hardcodes i32, i64, %String in ExpressionCompiler.scala
-    - Need to read 't' attribute from type definitions
-    - At codegen level: use 'op' attribute for LLVM intrinsics
+The implementation plan has been updated and is detailed in `doc/brainstorming/codegen-update.md`. The work is divided into four blocks:
+
+*   **Block 1: AST & Parser Changes:** Update `AstNode.scala` and `Parser.scala` to support the new `@native:` syntax.
+*   **Block 2: Semantic Analysis Changes:** Update `TypeResolver` to handle native struct definitions.
+*   **Block 3: Codegen - LLVM Type Emission:** Implement the logic to generate LLVM `type` definitions from the AST.
+*   **Block 4: Codegen - Expression Compiler Refactoring:** Remove all hardcoded types from the expression compiler and use the new type information from the AST.
 
 ### Future work        
 * implement protocols 
