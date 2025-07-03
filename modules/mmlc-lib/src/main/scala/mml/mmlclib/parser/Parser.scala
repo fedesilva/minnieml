@@ -365,9 +365,9 @@ object Parser:
   private def nativeTypeP(source: String)(using P[Any]): P[NativeTypeImpl] =
 
     def nativeTypeP: P[Option[String]] =
-          P("[" ~ "t" ~ "=" ~ CharsWhileIn("a-zA-Z0-9_", 1).! ~ "]").?
+      P("[" ~ "t" ~ "=" ~ CharsWhileIn("a-zA-Z0-9_", 1).! ~ "]").?
 
-    P(spP(source) ~ nativeKw ~ nativeTypeP  ~ spP(source))
+    P(spP(source) ~ nativeKw ~ nativeTypeP ~ spP(source))
       .map { case (start, nativeType, end) =>
         NativeTypeImpl(span(start, end), nativeType)
       }

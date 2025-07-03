@@ -23,30 +23,35 @@ object DuplicateNameChecker:
 
     // First, handle duplicate member names on declarations only
     val membersByKey = groupMembersByKey(decls)
-    val membersAfterDuplicates = membersByKey.flatMap { case (key, items) =>
-      if items.size > 1 then
-        // Report error
-        errors += SemanticError.DuplicateName(
-          key._1,
-          items.collect { case d: Decl => d },
-          phaseName
-        )
-        // Keep first valid, convert rest to DuplicateMember
-        items match
-          case first :: rest =>
-            first :: rest.map { duplicate =>
+
+    // Process declarations in original order to preserve member ordering
+    val membersAfterDuplicates = decls.map { member =>
+      member match
+        case d: Decl =>
+          val key              = resolvableKey(d)
+          val itemsWithSameKey = membersByKey(key)
+          if itemsWithSameKey.size > 1 then
+            // Report error only once per duplicate group (when we encounter the first occurrence)
+            if itemsWithSameKey.head == member then
+              errors += SemanticError.DuplicateName(
+                key._1,
+                itemsWithSameKey.collect { case d: Decl => d },
+                phaseName
+              )
+            // Keep first valid, convert rest to DuplicateMember
+            if itemsWithSameKey.head == member then member // First occurrence stays as-is
+            else
               DuplicateMember(
-                span = duplicate match {
+                span = member match {
                   case m: FromSource => m.span
                   case _ => SrcSpan(SrcPoint(0, 0, 0), SrcPoint(0, 0, 0))
                 },
-                originalMember  = duplicate,
-                firstOccurrence = first
+                originalMember  = member,
+                firstOccurrence = itemsWithSameKey.head
               )
-            }
-          case _ => items // This should never happen due to size > 1 check
-      else items
-    }.toList
+          else member
+        case other => other
+    }
 
     // Then, check for duplicate parameters and convert to InvalidMember if needed
     val finalDecls = membersAfterDuplicates.map {
@@ -117,6 +122,10 @@ object DuplicateNameChecker:
   private def resolvableKey(r: Resolvable): (String, String) = r match
     case _: BinOpDef => (r.name, "bin")
     case _: UnaryOpDef => (r.name, "unary")
+    case _: TypeDef => (r.name, "typedef")
+    case _: TypeAlias => (r.name, "typealias")
+    case _: FnDef => (r.name, "fn")
+    case _: Bnd => (r.name, "bnd")
     case _ => (r.name, "other")
 
   private def hasDuplicateParams(params: List[FnParam]): Boolean =

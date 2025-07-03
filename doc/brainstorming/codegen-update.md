@@ -5,8 +5,24 @@
 ### 1. Add attributes parsing for native impls
 
 **Requirement**: Add `op` attribute to functions/binary ops to specify LLVM intrinsic operations
-- Example: `@native[op=mult]` for multiplication
+- Example: `op * = @native[op=mult]` for multiplication
 - Will be useful for protocols implementation
+
+**Requirement**: Add `t` attribute to type defs to specify LLVM intrinsic types (or a struct)
+- Example types:
+   - `type Int = @native[t=i64]`
+   - `type String = @native`
+
+When rendering LLVM IR:
+
+   * if a type has an attribute: 
+            * t=XXX, XXX is a llvm native type (i32, i64, f64, etc)
+        * if not, render as a forward reference to a struct 
+            - think: 
+                - could this be problematic?
+                - is there any type that we could reference that is not a struct?
+                - if we want primitives, we use the `t`
+                - if not, it's either a struct defined in a header or ... what else?
 
 **Current State**: 
 - No attribute parsing exists for @native annotations
@@ -61,21 +77,23 @@
 
 1. **Create `injectBasicTypes` function**
    - Map basic types to native representations:
-     ```scala
+   (pseudo code, not valid mml)
+     ```
      type Int = @native[t=i64]
      type Bool = @native[t=i1]
-     type String = @native[t=String]  // this will point to a struct
+     type String = @native // no attributes, this will point to a struct
      ```
-   - Should run early in compilation pipeline
+   - Should run when injectStandardOperators runs
 
 2. **Update `injectStandardOperators`**
    - Add type annotations to operator definitions
    - Add `op` attributes for LLVM intrinsics:
-     ```scala
-     def + : Int -> Int -> Int = @native[op=add]
-     def - : Int -> Int -> Int = @native[op=sub]
-     def * : Int -> Int -> Int = @native[op=mul]
-     def / : Int -> Int -> Int = @native[op=sdiv]
+    (pseudo code, not valid mml)
+     ```
+     op + : Int -> Int -> Int = @native[op=add]
+     op - : Int -> Int -> Int = @native[op=sub]
+     op * : Int -> Int -> Int = @native[op=mul]
+     op / : Int -> Int -> Int = @native[op=sdiv]
      ```
 
 ### Phase 3: Codegen Refactoring
@@ -96,7 +114,7 @@
 
 ### Phase 4: Error Handling
 
-1. **Add type checking**
+1. **Add simple type sanity check**
    - Fail compilation if types are not ascribed.
    - Clear error messages for missing type information
 
@@ -108,10 +126,8 @@
 
 ### Attribute Syntax
 ```
-@native[op=add]
-@native[t=i32]
-@native[t=%String]
-@native[op=fcmp_oeq]
+op + ... = @native[op=add]
+type Int = @native[t=i32]
 ```
 
 **Note** there are two types of @native:
