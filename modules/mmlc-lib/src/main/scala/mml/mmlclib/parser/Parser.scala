@@ -247,7 +247,7 @@ object Parser:
         docCommentP(source)
         ~ memberVisibilityP.?
         ~ opKw
-        ~ spP(source) // Offset 3 chars back "op ".
+        ~ spP(source)
         ~ operatorIdP
         ~ "("
         ~ fnParamP(source)
@@ -362,15 +362,58 @@ object Parser:
         NativeImpl(span(start, end), nativeOp = op)
       }
 
-  private def nativeTypeP(source: String)(using P[Any]): P[NativeTypeImpl] =
-
-    def nativeTypeP: P[Option[String]] =
-      P("[" ~ "t" ~ "=" ~ CharsWhileIn("a-zA-Z0-9_", 1).! ~ "]").?
-
-    P(spP(source) ~ nativeKw ~ nativeTypeP ~ spP(source))
-      .map { case (start, nativeType, end) =>
-        NativeTypeImpl(span(start, end), nativeType)
+  private def nativeTypeP(source: String)(using P[Any]): P[NativeType] =
+    P(spP(source) ~ nativeKw ~ ":" ~/ nativeTypeBodyP(source) ~ spP(source))
+      .map { case (start, body, end) =>
+        body match {
+          case p: NativePrimitive => p.copy(span = span(start, end))
+          case p: NativePointer => p.copy(span = span(start, end))
+          case s: NativeStruct => s.copy(span = span(start, end))
+        }
       }
+
+  private def nativeTypeBodyP(source: String)(using P[Any]): P[NativeType] =
+    P(nativeStructP(source) | nativePointerP(source) | nativePrimitiveP(source))
+
+  private def nativePrimitiveP(source: String)(using P[Any]): P[NativePrimitive] =
+    P(spP(source) ~ llvmPrimitiveTypeP ~ spP(source))
+      .map { case (start, llvmType, end) =>
+        NativePrimitive(span(start, end), llvmType)
+      }
+
+  private def nativePointerP(source: String)(using P[Any]): P[NativePointer] =
+    P(spP(source) ~ "*" ~ llvmPrimitiveTypeP ~ spP(source))
+      .map { case (start, llvmType, end) =>
+        NativePointer(span(start, end), llvmType)
+      }
+
+  private def nativeStructP(source: String)(using P[Any]): P[NativeStruct] =
+    P(spP(source) ~ "{" ~/ nativeFieldListP(source) ~ "}" ~ spP(source))
+      .map { case (start, fields, end) =>
+        NativeStruct(span(start, end), fields)
+      }
+
+  private def nativeFieldListP(source: String)(using P[Any]): P[List[(String, TypeSpec)]] =
+    P(nativeFieldP(source).rep(sep = ","))
+      .map(_.toList)
+
+  private def nativeFieldP(source: String)(using P[Any]): P[(String, TypeSpec)] =
+    P(bindingIdP ~ ":" ~/ typeSpecP(source))
+
+  private def llvmPrimitiveTypeP(using P[Any]): P[String] =
+    P(
+      ("i" ~ CharIn("0-9").rep(1)).!.flatMap { t =>
+        val bits = t.drop(1).toIntOption.getOrElse(0)
+        if bits == 1 || bits == 8 || bits == 16 || bits == 32 || bits == 64 || bits == 128 then
+          Pass(t)
+        else Fail
+      } |
+        "half".! |
+        "bfloat".! |
+        "float".! |
+        "double".! |
+        "fp128".!
+    )
 
   private def termP(source: String)(using P[Any]): P[Term] =
     P(
@@ -434,7 +477,7 @@ object Parser:
       }
 
   private def phP(source: String)(using P[Any]): P[Term] =
-    P(spP(source) ~ mehKw ~ spP(source))
+    P(spP(source) ~ placeholderKw ~ spP(source))
       .map { case (start, end) =>
         Placeholder(span(start, end), None)
       }
@@ -525,14 +568,14 @@ object Parser:
   // Keywords
   // -----------------------------------------------------------------------------
 
-  private def letKw[$: P]:   P[Unit] = P("let")
-  private def fnKw[$: P]:    P[Unit] = P("fn")
-  private def opKw[$: P]:    P[Unit] = P("op")
-  private def defAsKw[$: P]: P[Unit] = P("=")
-  private def endKw[$: P]:   P[Unit] = P(";")
-  private def mehKw[$: P]:   P[Unit] = P("_")
-  private def holeKw[$: P]:  P[Unit] = P("???")
-  private def typeKw[$: P]:  P[Unit] = P("type")
+  private def letKw[$: P]:         P[Unit] = P("let")
+  private def fnKw[$: P]:          P[Unit] = P("fn")
+  private def opKw[$: P]:          P[Unit] = P("op")
+  private def defAsKw[$: P]:       P[Unit] = P("=")
+  private def endKw[$: P]:         P[Unit] = P(";")
+  private def placeholderKw[$: P]: P[Unit] = P("_")
+  private def holeKw[$: P]:        P[Unit] = P("???")
+  private def typeKw[$: P]:        P[Unit] = P("type")
 
   private def ifKw[$: P]:   P[Unit] = P("if")
   private def elseKw[$: P]: P[Unit] = P("else")
@@ -550,7 +593,7 @@ object Parser:
       moduleKw |
         endKw |
         defAsKw |
-        mehKw |
+        placeholderKw |
         letKw |
         holeKw |
         ifKw |

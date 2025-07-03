@@ -46,7 +46,7 @@ def rewrite(src: String, showTypes: Boolean = false): Unit =
 
       // Inject basic types and standard operators first
       val moduleWithTypes = injectBasicTypes(module)
-      val moduleWithOps = injectStandardOperators(moduleWithTypes)
+      val moduleWithOps   = injectStandardOperators(moduleWithTypes)
 
       // Create initial state
       val initialState = SemanticPhaseState(moduleWithOps, Vector.empty)

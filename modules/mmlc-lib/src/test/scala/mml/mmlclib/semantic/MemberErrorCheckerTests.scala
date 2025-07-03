@@ -39,7 +39,7 @@ class MemberErrorCheckerTests extends BaseEffFunSuite:
       ;
       """
     ).map { module =>
-      val state = SemanticPhaseState(module, Vector.empty)
+      val state  = SemanticPhaseState(module, Vector.empty)
       val result = MemberErrorChecker.checkModule(state)
       assert(result.errors.isEmpty)
       assertNoDiff(result.module.toString, module.toString)

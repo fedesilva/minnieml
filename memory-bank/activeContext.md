@@ -13,6 +13,7 @@ Ability to compile simple programs:
 
 ## Recent Changes
 
+* **(2025-07-03)** Completed Block 1 of codegen update (#156): AST and parser now support new `@native:` syntax for primitives, pointers, and structs
 * **(2025-07-03)** Rewrote and unified the design for native type interoperability in `doc/brainstorming/codegen-update.md`. The new design is now the single plan of record.
 * Implemented TypeResolver following RefResolver pattern
 * TypeRef now has single `resolvedAs: Option[ResolvableType]` field (no candidates)
@@ -28,10 +29,10 @@ Ability to compile simple programs:
 ### Codegen Update (Ticket #156) - IN PROGRESS
 The implementation plan has been updated and is detailed in `doc/brainstorming/codegen-update.md`. The work is divided into four blocks:
 
-*   **Block 1: AST & Parser Changes:** Update `AstNode.scala` and `Parser.scala` to support the new `@native:` syntax.
-*   **Block 2: Semantic Analysis Changes:** Update `TypeResolver` to handle native struct definitions.
-*   **Block 3: Codegen - LLVM Type Emission:** Implement the logic to generate LLVM `type` definitions from the AST.
-*   **Block 4: Codegen - Expression Compiler Refactoring:** Remove all hardcoded types from the expression compiler and use the new type information from the AST.
+*   **Block 1: AST & Parser Changes:** ✓ COMPLETED - AST and parser support new `@native:` syntax
+*   **Block 2: Semantic Analysis Changes:** Update `TypeResolver` to handle native struct definitions
+*   **Block 3: Codegen - LLVM Type Emission:** Implement the logic to generate LLVM `type` definitions from the AST
+*   **Block 4: Codegen - Expression Compiler Refactoring:** Remove all hardcoded types from the expression compiler and use the new type information from the AST
 
 ### Future work        
 * implement protocols 

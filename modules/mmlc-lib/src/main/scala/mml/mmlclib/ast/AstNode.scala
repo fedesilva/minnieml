@@ -20,10 +20,12 @@ final case class SrcSpan(
 sealed trait AstNode derives CanEqual
 
 sealed trait Typeable extends AstNode {
+
   /** This is the computed type */
   def typeSpec: Option[TypeSpec]
+
   /** This is the type the user declares. */
-  def typeAsc:  Option[TypeSpec]
+  def typeAsc: Option[TypeSpec]
 }
 
 sealed trait FromSource extends AstNode {
@@ -306,10 +308,22 @@ case class TypeRef(
   resolvedAs: Option[ResolvableType] = None
 ) extends TypeSpec
 
-case class NativeType(
-  span:       SrcSpan,
-  nativeType: Option[String] = None
-) extends TypeSpec
+sealed trait NativeType extends TypeSpec
+
+case class NativePrimitive(
+  span:     SrcSpan,
+  llvmType: String
+) extends NativeType
+
+case class NativePointer(
+  span:     SrcSpan,
+  llvmType: String
+) extends NativeType
+
+case class NativeStruct(
+  span:   SrcSpan,
+  fields: List[(String, TypeSpec)]
+) extends NativeType
 
 /** A type application, ie:  `List Int, Map String Int` */
 case class TypeApplication(span: SrcSpan, base: TypeSpec, args: List[TypeSpec]) extends TypeSpec
@@ -365,13 +379,6 @@ case class LiteralFloatType(span: SrcSpan) extends LiteralType {
 }
 
 sealed trait Native extends AstNode
-
-case class NativeTypeImpl(
-  span:       SrcSpan,
-  nativeType: Option[String] = None
-) extends TypeSpec,
-      Native,
-      FromSource
 
 case class NativeImpl(
   span:     SrcSpan,

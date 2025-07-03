@@ -7,7 +7,7 @@ class TypeResolverTests extends BaseEffFunSuite:
 
   test("TypeResolver should resolve simple type references in bindings"):
     val code = """
-      type TestInt = @native;
+      type TestInt = @native:i32;
       let x: TestInt = 42;
     """
 
@@ -26,7 +26,7 @@ class TypeResolverTests extends BaseEffFunSuite:
 
   test("TypeResolver should resolve type references in function parameters"):
     val code = """
-      type TestString = @native;
+      type TestString = @native:*i8;
       fn greet(name: TestString) = name;
     """
 
@@ -46,7 +46,7 @@ class TypeResolverTests extends BaseEffFunSuite:
 
   test("TypeResolver should resolve type references in function return types"):
     val code = """
-      type TestBool = @native;
+      type TestBool = @native:i1;
       fn isTrue(): TestBool = true;
     """
 
@@ -65,15 +65,15 @@ class TypeResolverTests extends BaseEffFunSuite:
 
   test("TypeResolver should resolve type aliases"):
     val code = """
-      type TestInt = @native;
+      type TestInt = @native:i32;
       type TestNumber = TestInt;
       let x: TestNumber = 42;
     """
 
     semNotFailed(code).map { module =>
       // Find the TestNumber type alias (not the injected Int -> Int64 alias)
-      val typeAlias = module.members.collectFirst { 
-        case t: TypeAlias if t.name == "TestNumber" => t 
+      val typeAlias = module.members.collectFirst {
+        case t: TypeAlias if t.name == "TestNumber" => t
       }.get
 
       // Check that the type reference in the alias has been resolved

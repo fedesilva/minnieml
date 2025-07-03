@@ -30,8 +30,8 @@ case class SemanticPhaseState(
   def withModule(newModule: Module): SemanticPhaseState =
     copy(module = newModule)
 
-/** Inject basic types with native mappings into the module.
-  * Uses TypeDef + TypeAlias pattern for extensibility.
+/** Inject basic types with native mappings into the module. Uses TypeDef + TypeAlias pattern for
+  * extensibility.
   */
 def injectBasicTypes(module: Module): Module =
   val dummySpan = SrcSpan(SrcPoint(0, 0, 0), SrcPoint(0, 0, 0))
@@ -41,24 +41,44 @@ def injectBasicTypes(module: Module): Module =
     TypeDef(
       span     = dummySpan,
       name     = "Int64",
-      typeSpec = Some(NativeTypeImpl(dummySpan, Some("i64")))
+      typeSpec = Some(NativePrimitive(dummySpan, "i64"))
     ),
     TypeDef(
       span     = dummySpan,
       name     = "Float64",
-      typeSpec = Some(NativeTypeImpl(dummySpan, Some("f64")))
+      typeSpec = Some(NativePrimitive(dummySpan, "double"))
     ),
     TypeDef(
       span     = dummySpan,
       name     = "Bool",
-      typeSpec = Some(NativeTypeImpl(dummySpan, Some("i1")))
+      typeSpec = Some(NativePrimitive(dummySpan, "i1"))
     ),
     TypeDef(
       span     = dummySpan,
-      name     = "String",
-      typeSpec = Some(NativeTypeImpl(dummySpan, None)) // No t attribute = struct reference
+      name     = "CharPtr",
+      typeSpec = Some(NativePointer(dummySpan, "i8"))
     ),
-    
+    TypeDef(
+      span = dummySpan,
+      name = "String",
+      typeSpec = Some(
+        NativeStruct(
+          dummySpan,
+          List(("length", TypeRef(dummySpan, "Int64")), ("data", TypeRef(dummySpan, "CharPtr")))
+        )
+      )
+    ),
+    TypeDef(
+      span     = dummySpan,
+      name     = "SizeT",
+      typeSpec = Some(NativePrimitive(dummySpan, "i64"))
+    ),
+    TypeDef(
+      span     = dummySpan,
+      name     = "Char",
+      typeSpec = Some(NativePrimitive(dummySpan, "i8"))
+    ),
+
     // Type aliases pointing to native types
     TypeAlias(
       span    = dummySpan,
@@ -72,7 +92,10 @@ def injectBasicTypes(module: Module): Module =
     )
   )
 
-  module.copy(members = basicTypes ++ module.members)
+  module.copy(
+    members    = basicTypes ++ module.members,
+    isImplicit = module.isImplicit
+  )
 
 /** This is required because we don't have multiple file, cross module capabilities
   */
@@ -81,7 +104,7 @@ def injectStandardOperators(module: Module): Module =
   val dummySpan = SrcSpan(SrcPoint(0, 0, 0), SrcPoint(0, 0, 0))
 
   // Helper function to create TypeRef for basic types
-  def intType = TypeRef(dummySpan, "Int")
+  def intType  = TypeRef(dummySpan, "Int")
   def boolType = TypeRef(dummySpan, "Bool")
 
   // Arithmetic operators: Int -> Int -> Int
@@ -183,7 +206,8 @@ def injectStandardOperators(module: Module): Module =
     )
   }
 
-  val standardOps = arithmeticOps ++ comparisonOps ++ logicalOps ++ unaryArithmeticOps ++ unaryLogicalOps
+  val standardOps =
+    arithmeticOps ++ comparisonOps ++ logicalOps ++ unaryArithmeticOps ++ unaryLogicalOps
 
   module.copy(members = standardOps ++ module.members)
 
