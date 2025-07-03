@@ -192,6 +192,34 @@ val line = emitBinaryOp(resultReg, llvmType, op, leftOp, rightOp)
 - Type aliases can map to different LLVM representations
 - Potential for platform-specific type mappings
 
+### Proposed AST Changes (for review)
+
+To support the declarative native struct syntax, the following change to `AstNode.scala` is required. This change evolves `NativeType` into a `sealed trait` to handle both simple aliases and struct definitions, without requiring any changes to the `TypeDef` node itself.
+
+```diff
+------- SEARCH
+case class NativeType(
+  span:       SrcSpan,
+  nativeType: Option[String] = None
+) extends TypeSpec
+=======
+sealed trait NativeType extends TypeSpec
+
+/** A native type alias, ie: `type SizeT = @native[t=i64]` */
+case class NativeAlias(
+  span:       SrcSpan,
+  nativeType: String
+) extends NativeType
+
+/** A native struct definition, ie: `type String = @native { length: SizeT }`
+  */
+case class NativeStruct(
+  span:   SrcSpan,
+  fields: List[(String, TypeSpec)]
+) extends NativeType
++++++++ REPLACE
+```
+
 ## Revised Plan: Declarative Native Structs with Opaque Pointers (2025-07-02)
 
 During planning, a significant design improvement was proposed. The initial plan was flawed because it wasn't scalable. The new approach is to make MML code the source of truth by allowing external C structs to be mirrored declaratively.
