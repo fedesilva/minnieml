@@ -42,4 +42,8 @@ Ability to compile simple programs:
     - At codegen level: use 'op' attribute for LLVM intrinsics
 
 ### Future work        
+* implement protocols 
 * design a very simple type checker
+* recursion 
+* modules
+
