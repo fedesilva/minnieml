@@ -398,11 +398,7 @@ object Parser:
       .map { fields =>
         val fieldList = fields.toList
         val fieldMap  = fieldList.toMap
-        if fieldMap.size != fieldList.size then
-          // Duplicate field names detected - parser will handle this as an error
-          // For now, we just return the map (last occurrence wins)
-          fieldMap
-        else fieldMap
+        fieldMap
       }
 
   private def nativeFieldP(source: String)(using P[Any]): P[(String, TypeSpec)] =

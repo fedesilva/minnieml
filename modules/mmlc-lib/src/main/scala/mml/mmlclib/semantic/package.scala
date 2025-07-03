@@ -45,7 +45,12 @@ def injectBasicTypes(module: Module): Module =
     ),
     TypeDef(
       span     = dummySpan,
-      name     = "Float64",
+      name     = "Float",
+      typeSpec = Some(NativePrimitive(dummySpan, "float"))
+    ),
+    TypeDef(
+      span     = dummySpan,
+      name     = "Double",
       typeSpec = Some(NativePrimitive(dummySpan, "double"))
     ),
     TypeDef(
@@ -84,11 +89,6 @@ def injectBasicTypes(module: Module): Module =
       span    = dummySpan,
       name    = "Int",
       typeRef = TypeRef(dummySpan, "Int64")
-    ),
-    TypeAlias(
-      span    = dummySpan,
-      name    = "Float",
-      typeRef = TypeRef(dummySpan, "Float64")
     )
   )
 

@@ -1,7 +1,7 @@
 package mml.mmlclib.codegen.emitter
 
 import cats.syntax.all.*
-import mml.mmlclib.ast.{Bnd, FnDef, Module, NativeImpl}
+import mml.mmlclib.ast.{Bnd, FnDef, Module, NativeImpl, NativeType, TypeDef}
 
 /** Helper for string escaping */
 private def escapeString(str: String): String = {
@@ -20,24 +20,45 @@ private def escapeString(str: String): String = {
   * Provides module-level code emission functionality.
   */
 def emitModule(module: Module): Either[CodeGenError, String] = {
-  // Setup the initial state with the module header and native type definition
-  // We don't emit these directly - instead we add them to our state tracking
+  // Setup the initial state with the module header
   val initialState = CodeGenState()
     .withModuleHeader(module.name)
-    .withNativeType("String")
-  // Function declarations will come from @native functions in the module
 
-  // Process all members using the initialState that tracks declarations
-  val processedState = module.members
-    .foldLeft(initialState.asRight[CodeGenError]) { (stateE, member) =>
-      stateE.flatMap { state =>
-        member match {
-          case bnd: Bnd => emitBinding(bnd, state)
-          case fn:  FnDef => emitFnDef(fn, state)
-          case _ => state.asRight
-        }
+  // Collect all TypeDef members with native type specifications
+  // Currently we only emit LLVM type definitions for native types
+  // Future: Add handlers for enums, records, and other MML type constructs
+  val typeDefs = module.members.collect {
+    case td: TypeDef if td.typeSpec.exists(_.isInstanceOf[NativeType]) => td
+  }
+
+  // Generate LLVM type definitions for all native types
+  val stateWithTypes = typeDefs.foldLeft(initialState.asRight[CodeGenError]) { (stateE, typeDef) =>
+    stateE.flatMap { state =>
+      typeDef.typeSpec match {
+        case Some(nativeType: NativeType) =>
+          nativeTypeToLlvmDef(typeDef.name, nativeType, state).map { llvmTypeDef =>
+            state.copy(nativeTypes = state.nativeTypes + (typeDef.name -> llvmTypeDef))
+          }
+        case _ =>
+          // This shouldn't happen due to the filter above
+          state.asRight
       }
     }
+  }
+
+  // Process all members using the state that includes type definitions
+  val processedState = stateWithTypes.flatMap { stateWithTypeDefs =>
+    module.members
+      .foldLeft(stateWithTypeDefs.asRight[CodeGenError]) { (stateE, member) =>
+        stateE.flatMap { state =>
+          member match {
+            case bnd: Bnd => emitBinding(bnd, state)
+            case fn:  FnDef => emitFnDef(fn, state)
+            case _ => state.asRight
+          }
+        }
+      }
+  }
 
   // Construct the final output with all components in the proper order
   processedState.map { finalState =>

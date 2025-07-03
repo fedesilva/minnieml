@@ -124,8 +124,8 @@ def prettyPrintMember(
       val spanStr = if showSourceSpans then printSourceSpan(td.span) else ""
       val typeStr =
         if showTypes then
-          s"\n${indentStr}  typeSpec: ${prettyPrintTypeSpec(td.typeSpec)}\n" +
-            s"${indentStr}  typeAsc: ${prettyPrintTypeSpec(td.typeAsc)}"
+          s"\n${indentStr}  typeSpec: ${prettyPrintTypeSpec(td.typeSpec, showSourceSpans, showTypes, indent + 1)}\n" +
+            s"${indentStr}  typeAsc: ${prettyPrintTypeSpec(td.typeAsc, showSourceSpans, showTypes, indent + 1)}"
         else ""
       val visStr = memberVisibilityToString(td.visibility)
       val nativeStr = td.typeSpec match

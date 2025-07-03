@@ -12,14 +12,34 @@ object TypeResolver:
     val (errors, members) =
       state.module.members.foldLeft((List.empty[SemanticError], List.empty[Member])) {
         case ((accErrors, accMembers), member) =>
-          resolveMember(member, state.module) match
+          // Create a temporary module with accumulated members for lookups
+          val currentModule =
+            state.module.copy(members = accMembers ++ state.module.members.dropWhile(_ != member))
+          resolveMember(member, currentModule) match
             case Left(errs) =>
               // Important: Use the rewritten member with InvalidType nodes, not the original
-              val rewrittenMember = rewriteMemberWithInvalidTypes(member, state.module)
+              val rewrittenMember = rewriteMemberWithInvalidTypes(member, currentModule)
               (accErrors ++ errs, accMembers :+ rewrittenMember)
             case Right(updated) => (accErrors, accMembers :+ updated)
       }
     state.addErrors(errors).withModule(state.module.copy(members = members))
+
+  /** Compute the typeSpec for a TypeAlias by following the resolved typeRef chain */
+  private def computeTypeSpecForAlias(typeRef: TypeSpec, module: Module): Option[TypeSpec] =
+    typeRef match
+      case tr: TypeRef if tr.resolvedAs.isDefined =>
+        tr.resolvedAs.get match
+          case td: TypeDef => td.typeSpec
+          case ta: TypeAlias =>
+            ta.typeSpec match
+              case Some(spec) => Some(spec)
+              case None =>
+                // If the alias doesn't have a typeSpec yet, try to follow its typeRef
+                ta.typeRef match
+                  case innerRef: TypeRef => computeTypeSpecForAlias(innerRef, module)
+                  case _ => None
+          case _ => None
+      case _ => None
 
   /** Rewrite a member to use InvalidType nodes for undefined type references */
   private def rewriteMemberWithInvalidTypes(member: Member, module: Module): Member =
@@ -57,7 +77,9 @@ object TypeResolver:
           typeAsc = unary.typeAsc.map(rewriteTypeSpecWithInvalidTypes(_, module))
         )
       case alias: TypeAlias =>
-        alias.copy(typeRef = rewriteTypeSpecWithInvalidTypes(alias.typeRef, module))
+        val rewrittenTypeRef = rewriteTypeSpecWithInvalidTypes(alias.typeRef, module)
+        val computedTypeSpec = computeTypeSpecForAlias(rewrittenTypeRef, module)
+        alias.copy(typeRef = rewrittenTypeRef, typeSpec = computedTypeSpec)
       case typeDef: TypeDef =>
         typeDef.copy(
           typeSpec = typeDef.typeSpec.map(rewriteTypeSpecWithInvalidTypes(_, module))
@@ -177,9 +199,11 @@ object TypeResolver:
             )
 
       case alias: TypeAlias =>
-        resolveTypeSpec(alias.typeRef, member, module).map(updatedTypeRef =>
-          alias.copy(typeRef = updatedTypeRef)
-        )
+        resolveTypeSpec(alias.typeRef, member, module).map { updatedTypeRef =>
+          // Compute the typeSpec by following the resolved typeRef chain
+          val computedTypeSpec = computeTypeSpecForAlias(updatedTypeRef, module)
+          alias.copy(typeRef = updatedTypeRef, typeSpec = computedTypeSpec)
+        }
 
       case typeDef: TypeDef =>
         // Resolve type references within the TypeDef's typeSpec (e.g., for NativeStruct fields)
