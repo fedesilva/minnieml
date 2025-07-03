@@ -35,6 +35,6 @@ The implementation plan has been updated and is detailed in `doc/brainstorming/c
 
 ### Future work        
 * implement protocols 
-* design a very simple type checker
 * recursion 
+* design a very simple type checker
 * modules
