@@ -76,25 +76,51 @@ When rendering LLVM IR:
 ### Phase 2: Type System Updates
 
 1. **Create `injectBasicTypes` function**
-   - Map basic types to native representations:
+   - Map basic types to native representations using TypeDef + TypeAlias pattern:
    (pseudo code, not valid mml)
      ```
-     type Int = @native[t=i64]
-     type Bool = @native[t=i1]
-     type String = @native // no attributes, this will point to a struct
+     type Int64 = @native[t=i64]    // TypeDef with native mapping
+     type Int = Int64               // TypeAlias pointing to native type
+     type Float64 = @native[t=f64]  // TypeDef with native mapping (for future protocols)
+     type Float = Float64           // TypeAlias pointing to native type (for future protocols)
+     type Bool = @native[t=i1]      // Direct native mapping
+     type String = @native          // No t attribute, points to struct
      ```
-   - Should run when injectStandardOperators runs
+   - Should run before injectStandardOperators
 
 2. **Update `injectStandardOperators`**
-   - Add type annotations to operator definitions
+   - Add complete type specifications to operator definitions
+   - Type both individual parameters AND overall function signatures
    - Add `op` attributes for LLVM intrinsics:
     (pseudo code, not valid mml)
      ```
-     op + : Int -> Int -> Int = @native[op=add]
-     op - : Int -> Int -> Int = @native[op=sub]
-     op * : Int -> Int -> Int = @native[op=mul]
-     op / : Int -> Int -> Int = @native[op=sdiv]
+     // Arithmetic operators (Int -> Int -> Int)
+     op + (a: Int) (b: Int): Int -> Int -> Int = @native[op=add]
+     op - (a: Int) (b: Int): Int -> Int -> Int = @native[op=sub]
+     op * (a: Int) (b: Int): Int -> Int -> Int = @native[op=mul]
+     op / (a: Int) (b: Int): Int -> Int -> Int = @native[op=sdiv]
+     op ^ (a: Int) (b: Int): Int -> Int -> Int = @native[op=pow]
+     
+     // Comparison operators (Int -> Int -> Bool)
+     op == (a: Int) (b: Int): Int -> Int -> Bool = @native[op=icmp_eq]
+     op != (a: Int) (b: Int): Int -> Int -> Bool = @native[op=icmp_ne]
+     op < (a: Int) (b: Int): Int -> Int -> Bool = @native[op=icmp_slt]
+     op > (a: Int) (b: Int): Int -> Int -> Bool = @native[op=icmp_sgt]
+     op <= (a: Int) (b: Int): Int -> Int -> Bool = @native[op=icmp_sle]
+     op >= (a: Int) (b: Int): Int -> Int -> Bool = @native[op=icmp_sge]
+     
+     // Logical operators (Bool -> Bool -> Bool)
+     op and (a: Bool) (b: Bool): Bool -> Bool -> Bool = @native[op=and]
+     op or (a: Bool) (b: Bool): Bool -> Bool -> Bool = @native[op=or]
+     
+     // Unary arithmetic (Int -> Int)
+     op - (a: Int): Int -> Int = @native[op=neg]
+     op + (a: Int): Int -> Int = @native[op=nop]
+     
+     // Unary logical (Bool -> Bool)
+     op not (a: Bool): Bool -> Bool = @native[op=not]
      ```
+   - **Note**: Float operator types will be implemented with protocols system
 
 ### Phase 3: Codegen Refactoring
 

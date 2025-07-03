@@ -44,8 +44,9 @@ def rewrite(src: String, showTypes: Boolean = false): Unit =
     case Some(module) =>
       println(s"Original module: \n${prettyPrintAst(module)} ")
 
-      // Inject standard operators first
-      val moduleWithOps = injectStandardOperators(module)
+      // Inject basic types and standard operators first
+      val moduleWithTypes = injectBasicTypes(module)
+      val moduleWithOps = injectStandardOperators(moduleWithTypes)
 
       // Create initial state
       val initialState = SemanticPhaseState(moduleWithOps, Vector.empty)

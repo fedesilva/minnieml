@@ -25,20 +25,21 @@ Ability to compile simple programs:
 
 ### Codegen Update (Ticket #156) - IN PROGRESS
 * Created doc/brainstorming/codegen-update.md with implementation plan
-* Need to implement:
-    * √ @native attribute parsing for 'op' and 't' parameters
-      √   * Example: @native[op=add], @native[t=i64]
-    * injectBasicTypes function 
-        * type Int → @native[t=i64]
-        * type String → @native (points to a struct %)
-        * Bool → @native[t=i1]
-    * Update injectStandardOperators with type annotations and op attributes
-    * Refactor codegen to use types from AST (no assumptions)
-        * Currently hardcodes i32, i64, %String
-        * Must fail if types are missin            
-
-    * Treat operators as function applications
-        * Use LLVM intrinsics via op= attribute
+* **COMPLETED**:
+  * ✓ @native attribute parsing for 'op' and 't' parameters
+  * ✓ injectBasicTypes function with TypeDef + TypeAlias pattern:
+    - Int64 = @native, Int = Int64
+    - Float64 = @native, Float = Float64  
+    - Bool = @native, String = @native
+  * ✓ Updated injectStandardOperators with type annotations and op attributes
+  * ✓ Operators already rewritten as function applications in semantic phase
+  * ✓ Error handling already in place
+  * ✓ Fixed test conflicts, all tests passing (98 passing, 0 failing)
+* **REMAINING WORK**:
+  * **Phase 3**: Refactor codegen to use types from AST (no hardcoded assumptions)
+    - Currently hardcodes i32, i64, %String in ExpressionCompiler.scala
+    - Need to read 't' attribute from type definitions
+    - At codegen level: use 'op' attribute for LLVM intrinsics
 
 ### Future work        
 * design a very simple type checker

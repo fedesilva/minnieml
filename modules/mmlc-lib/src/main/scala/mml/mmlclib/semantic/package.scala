@@ -30,62 +30,160 @@ case class SemanticPhaseState(
   def withModule(newModule: Module): SemanticPhaseState =
     copy(module = newModule)
 
+/** Inject basic types with native mappings into the module.
+  * Uses TypeDef + TypeAlias pattern for extensibility.
+  */
+def injectBasicTypes(module: Module): Module =
+  val dummySpan = SrcSpan(SrcPoint(0, 0, 0), SrcPoint(0, 0, 0))
+
+  val basicTypes = List(
+    // Native type definitions with LLVM mappings
+    TypeDef(
+      span     = dummySpan,
+      name     = "Int64",
+      typeSpec = Some(NativeTypeImpl(dummySpan, Some("i64")))
+    ),
+    TypeDef(
+      span     = dummySpan,
+      name     = "Float64",
+      typeSpec = Some(NativeTypeImpl(dummySpan, Some("f64")))
+    ),
+    TypeDef(
+      span     = dummySpan,
+      name     = "Bool",
+      typeSpec = Some(NativeTypeImpl(dummySpan, Some("i1")))
+    ),
+    TypeDef(
+      span     = dummySpan,
+      name     = "String",
+      typeSpec = Some(NativeTypeImpl(dummySpan, None)) // No t attribute = struct reference
+    ),
+    
+    // Type aliases pointing to native types
+    TypeAlias(
+      span    = dummySpan,
+      name    = "Int",
+      typeRef = TypeRef(dummySpan, "Int64")
+    ),
+    TypeAlias(
+      span    = dummySpan,
+      name    = "Float",
+      typeRef = TypeRef(dummySpan, "Float64")
+    )
+  )
+
+  module.copy(members = basicTypes ++ module.members)
+
 /** This is required because we don't have multiple file, cross module capabilities
   */
 def injectStandardOperators(module: Module): Module =
 
   val dummySpan = SrcSpan(SrcPoint(0, 0, 0), SrcPoint(0, 0, 0))
 
-  val binOps =
-    List(
-      ("^", 90, Associativity.Right),
-      ("*", 80, Associativity.Left),
-      ("/", 80, Associativity.Left),
-      ("+", 60, Associativity.Left),
-      ("-", 60, Associativity.Left),
-      ("==", 50, Associativity.Left),
-      ("!=", 50, Associativity.Left),
-      ("<", 50, Associativity.Left),
-      (">", 50, Associativity.Left),
-      ("<=", 50, Associativity.Left),
-      (">=", 50, Associativity.Left),
-      ("and", 40, Associativity.Left),
-      ("or", 30, Associativity.Left)
-    ).map { case (name, prec, assoc) =>
-      BinOpDef(
-        span       = dummySpan,
-        name       = name,
-        param1     = FnParam(dummySpan, "a"),
-        param2     = FnParam(dummySpan, "b"),
-        precedence = prec,
-        assoc      = assoc,
-        body       = Expr(dummySpan, List(NativeImpl(dummySpan))),
-        typeSpec   = None,
-        typeAsc    = None,
-        docComment = None
-      )
-    }
+  // Helper function to create TypeRef for basic types
+  def intType = TypeRef(dummySpan, "Int")
+  def boolType = TypeRef(dummySpan, "Bool")
 
-  val unaryOps =
-    List(
-      ("-", 95, Associativity.Right),
-      ("+", 95, Associativity.Right),
-      ("not", 95, Associativity.Right)
-    ).map { case (name, prec, assoc) =>
-      UnaryOpDef(
-        span       = dummySpan,
-        name       = name,
-        param      = FnParam(dummySpan, "a"),
-        precedence = prec,
-        assoc      = assoc,
-        body       = Expr(dummySpan, List(NativeImpl(dummySpan))),
-        typeSpec   = None,
-        typeAsc    = None,
-        docComment = None
-      )
-    }
+  // Arithmetic operators: Int -> Int -> Int
+  val arithmeticOps = List(
+    ("^", 90, Associativity.Right, "pow"),
+    ("*", 80, Associativity.Left, "mul"),
+    ("/", 80, Associativity.Left, "sdiv"),
+    ("+", 60, Associativity.Left, "add"),
+    ("-", 60, Associativity.Left, "sub")
+  ).map { case (name, prec, assoc, llvmOp) =>
+    BinOpDef(
+      span       = dummySpan,
+      name       = name,
+      param1     = FnParam(dummySpan, "a", typeSpec = Some(intType)),
+      param2     = FnParam(dummySpan, "b", typeSpec = Some(intType)),
+      precedence = prec,
+      assoc      = assoc,
+      body       = Expr(dummySpan, List(NativeImpl(dummySpan, nativeOp = Some(llvmOp)))),
+      typeSpec   = Some(TypeFn(dummySpan, List(intType, intType), intType)),
+      typeAsc    = None,
+      docComment = None
+    )
+  }
 
-  val standardOps = binOps ++ unaryOps
+  // Comparison operators: Int -> Int -> Bool
+  val comparisonOps = List(
+    ("==", 50, Associativity.Left, "icmp_eq"),
+    ("!=", 50, Associativity.Left, "icmp_ne"),
+    ("<", 50, Associativity.Left, "icmp_slt"),
+    (">", 50, Associativity.Left, "icmp_sgt"),
+    ("<=", 50, Associativity.Left, "icmp_sle"),
+    (">=", 50, Associativity.Left, "icmp_sge")
+  ).map { case (name, prec, assoc, llvmOp) =>
+    BinOpDef(
+      span       = dummySpan,
+      name       = name,
+      param1     = FnParam(dummySpan, "a", typeSpec = Some(intType)),
+      param2     = FnParam(dummySpan, "b", typeSpec = Some(intType)),
+      precedence = prec,
+      assoc      = assoc,
+      body       = Expr(dummySpan, List(NativeImpl(dummySpan, nativeOp = Some(llvmOp)))),
+      typeSpec   = Some(TypeFn(dummySpan, List(intType, intType), boolType)),
+      typeAsc    = None,
+      docComment = None
+    )
+  }
+
+  // Logical operators: Bool -> Bool -> Bool
+  val logicalOps = List(
+    ("and", 40, Associativity.Left, "and"),
+    ("or", 30, Associativity.Left, "or")
+  ).map { case (name, prec, assoc, llvmOp) =>
+    BinOpDef(
+      span       = dummySpan,
+      name       = name,
+      param1     = FnParam(dummySpan, "a", typeSpec = Some(boolType)),
+      param2     = FnParam(dummySpan, "b", typeSpec = Some(boolType)),
+      precedence = prec,
+      assoc      = assoc,
+      body       = Expr(dummySpan, List(NativeImpl(dummySpan, nativeOp = Some(llvmOp)))),
+      typeSpec   = Some(TypeFn(dummySpan, List(boolType, boolType), boolType)),
+      typeAsc    = None,
+      docComment = None
+    )
+  }
+
+  // Unary arithmetic operators: Int -> Int
+  val unaryArithmeticOps = List(
+    ("-", 95, Associativity.Right, "neg"),
+    ("+", 95, Associativity.Right, "nop")
+  ).map { case (name, prec, assoc, llvmOp) =>
+    UnaryOpDef(
+      span       = dummySpan,
+      name       = name,
+      param      = FnParam(dummySpan, "a", typeSpec = Some(intType)),
+      precedence = prec,
+      assoc      = assoc,
+      body       = Expr(dummySpan, List(NativeImpl(dummySpan, nativeOp = Some(llvmOp)))),
+      typeSpec   = Some(TypeFn(dummySpan, List(intType), intType)),
+      typeAsc    = None,
+      docComment = None
+    )
+  }
+
+  // Unary logical operators: Bool -> Bool
+  val unaryLogicalOps = List(
+    ("not", 95, Associativity.Right, "not")
+  ).map { case (name, prec, assoc, llvmOp) =>
+    UnaryOpDef(
+      span       = dummySpan,
+      name       = name,
+      param      = FnParam(dummySpan, "a", typeSpec = Some(boolType)),
+      precedence = prec,
+      assoc      = assoc,
+      body       = Expr(dummySpan, List(NativeImpl(dummySpan, nativeOp = Some(llvmOp)))),
+      typeSpec   = Some(TypeFn(dummySpan, List(boolType), boolType)),
+      typeAsc    = None,
+      docComment = None
+    )
+  }
+
+  val standardOps = arithmeticOps ++ comparisonOps ++ logicalOps ++ unaryArithmeticOps ++ unaryLogicalOps
 
   module.copy(members = standardOps ++ module.members)
 
