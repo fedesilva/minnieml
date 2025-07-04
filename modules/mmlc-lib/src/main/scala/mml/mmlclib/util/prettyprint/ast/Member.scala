@@ -39,8 +39,8 @@ def prettyPrintMember(
       val spanStr = if showSourceSpans then printSourceSpan(fn.span) else ""
       val typeStr =
         if showTypes then
-          s"\n${indentStr}  typeSpec: ${prettyPrintTypeSpec(fn.typeSpec)}\n" +
-            s"${indentStr}  typeAsc: ${prettyPrintTypeSpec(fn.typeAsc)}"
+          s"\n${indentStr}  typeSpec: ${prettyPrintTypeSpec(fn.typeSpec, showSourceSpans, showTypes, indent + 1)}\n" +
+            s"${indentStr}  typeAsc: ${prettyPrintTypeSpec(fn.typeAsc, showSourceSpans, showTypes, indent + 1)}"
         else ""
       val visStr = memberVisibilityToString(fn.visibility)
 
@@ -53,8 +53,8 @@ def prettyPrintMember(
       val spanStr = if showSourceSpans then printSourceSpan(bnd.span) else ""
       val typeStr =
         if showTypes then
-          s"\n${indentStr}  typeSpec: ${prettyPrintTypeSpec(bnd.typeSpec)}\n" +
-            s"${indentStr}  typeAsc: ${prettyPrintTypeSpec(bnd.typeAsc)}"
+          s"\n${indentStr}  typeSpec: ${prettyPrintTypeSpec(bnd.typeSpec, showSourceSpans, showTypes, indent + 1)}\n" +
+            s"${indentStr}  typeAsc: ${prettyPrintTypeSpec(bnd.typeAsc, showSourceSpans, showTypes, indent + 1)}"
         else ""
       val visStr = memberVisibilityToString(bnd.visibility)
 
@@ -78,8 +78,8 @@ def prettyPrintMember(
       val spanStr = if showSourceSpans then printSourceSpan(span) else ""
       val typeStr =
         if showTypes then
-          s"\n${indentStr}  typeSpec: ${prettyPrintTypeSpec(typeSpec)}\n" +
-            s"${indentStr}  typeAsc: ${prettyPrintTypeSpec(typeAsc)}"
+          s"\n${indentStr}  typeSpec: ${prettyPrintTypeSpec(typeSpec, showSourceSpans, showTypes, indent + 1)}\n" +
+            s"${indentStr}  typeAsc: ${prettyPrintTypeSpec(typeAsc, showSourceSpans, showTypes, indent + 1)}"
         else ""
       val visStr = memberVisibilityToString(visibility)
 
@@ -95,8 +95,8 @@ def prettyPrintMember(
       val spanStr = if showSourceSpans then printSourceSpan(unop.span) else ""
       val typeStr =
         if showTypes then
-          s"\n${indentStr}  typeSpec: ${prettyPrintTypeSpec(unop.typeSpec)}\n" +
-            s"${indentStr}  typeAsc: ${prettyPrintTypeSpec(unop.typeAsc)}"
+          s"\n${indentStr}  typeSpec: ${prettyPrintTypeSpec(unop.typeSpec, showSourceSpans, showTypes, indent + 1)}\n" +
+            s"${indentStr}  typeAsc: ${prettyPrintTypeSpec(unop.typeAsc, showSourceSpans, showTypes, indent + 1)}"
         else ""
       val visStr = memberVisibilityToString(unop.visibility)
 
