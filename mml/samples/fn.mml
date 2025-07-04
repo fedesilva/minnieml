@@ -1,3 +1,2 @@
 
-
-fn double(a: Byte b: Byte): Word = 5;
+fn double(a: Int): Int =  a * 2;
