@@ -14,9 +14,6 @@ class FunctionSignatureTest extends BaseEffFunSuite:
       """
 
     compileAndGenerate(source).map { llvmIr =>
-      println("-"*100)
-      println(llvmIr)
-      println("-"*100)
       assert(llvmIr.contains("declare void @print(%String)"), "print declaration")
       assert(llvmIr.contains("declare void @println(%String)"), "println declaration")
       assert(llvmIr.contains("declare %String @concat(%String, %String)"), "concat declaration")

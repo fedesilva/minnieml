@@ -15,7 +15,6 @@ class NativeTypeEmissionTest extends BaseEffFunSuite:
       """
 
     compileAndGenerate(source).map { llvmIr =>
-      println(s"Generated LLVM IR for struct test:\n$llvmIr")      
       // Fields are in declaration order: length, data
       assert(llvmIr.contains("%MyString = type { i64, i8* }"))
     }
@@ -51,7 +50,18 @@ class NativeTypeEmissionTest extends BaseEffFunSuite:
     }
   }
 
-  test("handles type alias to native type correctly".ignore) {
-    
-  }
+  test("handles type alias to native type correctly") {
+    val source = """
+      type BaseInt = @native:i32;
+      type MyInt = BaseInt;
+      
+      type MyStruct = @native:{
+        value: MyInt
+      };
+    """
 
+    compileAndGenerate(source).map { llvmIr =>
+      // Should emit the struct with the resolved native type (i32, not MyInt)
+      assert(llvmIr.contains("%MyStruct = type { i32 }"))
+    }
+  }
