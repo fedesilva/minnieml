@@ -13,7 +13,7 @@ Ability to compile simple programs:
 
 ## Recent Changes
 
-* **(2025-07-03)** COMPLETED Block 4 of codegen update (#156): Fixed function signature derivation from AST type annotations
+* **(2025-07-03)** UPDATED Block 4 of codegen update (#156): Fixed function signature derivation from AST type annotations
   - **RESOLVED: Code emission validity issues - function signatures now correctly derived from AST**
   - Fixed hardcoded i32 return types: Native and regular functions now derive LLVM signatures from AST type annotations
   - Unit type `()` correctly converted to `void` in LLVM IR (e.g., `define void @main()` instead of `define i32 @main()`)
@@ -33,7 +33,7 @@ Ability to compile simple programs:
   - Added comprehensive tests for TypeResolver with NativeStruct
   - Updated parser to use Map for NativeStruct fields (duplicate fields handled by Map semantics - last wins)
 * **(2025-07-03)** Completed Block 1 of codegen update (#156): AST and parser now support new `@native:` syntax for primitives, pointers, and structs
-* **(2025-07-03)** Rewrote and unified the design for native type interoperability in `doc/brainstorming/codegen-update.md`. The new design is now the single plan of record.
+* **(2025-07-03)** Rewrote and unified the design for native type interoperability in `memory-bank/specs/codegen-update.md`. The new design is now the single plan of record.
 * Implemented TypeResolver following RefResolver pattern
 * TypeRef now has single `resolvedAs: Option[ResolvableType]` field (no candidates)
 * TypeResolver integrated into semantic pipeline after RefResolver
@@ -41,22 +41,26 @@ Ability to compile simple programs:
 * Reports UndefinedTypeRef errors for missing types
 * Improved pretty printing: TypeDef shows @native, TypeAlias uses arrow notation, TypeRef shows resolution status
 * Fixed Error trait to extend InvalidNode - all error AST nodes now properly categorized as invalid constructs
-* **(2025-07-02)** Pivoted design for native type handling. Decided to implement declarative native structs (`@native { ... }`) to make the system scalable. Updated `doc/brainstorming/codegen-update.md` with the new design.
+* **(2025-07-02)** Pivoted design for native type handling. Decided to implement declarative native structs (`@native { ... }`) to make the system scalable. Updated `memory-bank/specs/codegen-update.md` with the new design.
 
 ## Next Steps
 
 ### Codegen Update (Ticket #156) - IN PROGRESS  
-The implementation plan is detailed in `doc/brainstorming/codegen-update.md`. Progress on the four blocks:
+The implementation plan is detailed in `memory-bank/specs/codegen-update.md`. Progress on the four blocks:
 
 *   **Block 1: AST & Parser Changes:** ✓ COMPLETED - AST and parser support new `@native:` syntax
 *   **Block 2: Semantic Analysis Changes:** ✓ COMPLETED - TypeResolver now handles native struct definitions
 *   **Block 3: Codegen - LLVM Type Emission:** ✓ COMPLETED - LLVM type emission works for native types
-*   **Block 4: Codegen - Expression Compiler Refactoring:** PARTIALLY COMPLETED
+*   **Block 4: Codegen - Expression Compiler Refactoring:** IN PROGRESS
     - ✓ Fixed function signature derivation from AST type annotations (no more hardcoded i32 returns)
     - ✓ Unit type `()` correctly converted to `void` in LLVM IR
+    - ❌ **Function calls use hardcoded i32 instead of actual types**
+      - Issue found in `concat_print_string.mml`: LLVM compilation fails with type mismatches
+      - ExpressionCompiler hardcodes `i32` types instead of using actual parameter types from AST
+      - Complete analysis: `memory-bank/bugs/hardcoded-i32.md`
+    - ❌ **REMAINING: Replace all hardcoded types in `compileTerm`/`compileApp` with `getLlvmType` helper**
     - ❌ **REMAINING: Operators rewritten to curried app need to use the `op=` attribute**
     - ❌ **REMAINING: Remove special cases for `BinOpDef` and `UnaryOpDef` in `compileExpr`**
-    - ❌ **REMAINING: Replace all hardcoded types in `compileTerm`/`compileApp` with `getLlvmType` helper**
 
 ### Future work        
 * implement protocols 

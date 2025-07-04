@@ -156,3 +156,16 @@ flowchart TD
 4. **Error Handling**: See `SemanticPhaseState` in `semantic/package.scala`
 5. **Code Generation**: Start with `LlvmIrEmitter.scala`, then specialized emitters
 6. **Misc Debugging tools**: rewrrite in the yolo package. also the prettyprinter.
+
+
+## How to compile and run samples
+
+* exmaple file to compile: `mml/samples/concat_print_string.mml`
+* to compile: `sbt "run bin mml/samples/concat_print_string.mml"`
+* to inspect ast: `sbt "run ast mml/samples/concat_print_string.mml"`
+* you can clean by running: `sbt "run clean"`
+* the compiler working direactory (output ) is `build/`
+* run the executable: `./build/target/ConcatPrintString-x86_64-apple-macosx`
+
+Remember that the bin command wants to compile an executable and will fail if there is no main.
+If there is no main, the use the `lib` command, just replace `bin` in the examples above.
