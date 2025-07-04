@@ -11,7 +11,6 @@ class OpPrecedenceTests extends BaseEffFunSuite:
   //
   // All the tests here assume that the following operators are defined:
   //  module Prelude =
-  //    op ^ (a b) 90 right = ???;
   //    op * (a b) 80 left  = ???;
   //    op / (a b) 80 left  = ???;
   //    op + (a b) 60 left  = ???;
@@ -224,7 +223,8 @@ class OpPrecedenceTests extends BaseEffFunSuite:
     // expect: 1 + (1 * (2 ^ 3))
     semNotFailed(
       """
-       let a = 1 + 1 * 2 ^ 3;
+        op ^ (a b) 90 right = ???;
+        let a = 1 + 1 * 2 ^ 3;
       """
     ).map { m =>
 
@@ -775,7 +775,8 @@ class OpPrecedenceTests extends BaseEffFunSuite:
   test("right-associativity of exponentiation: 2 ^ 3 ^ 2") {
     semNotFailed(
       """
-       let a = 2 ^ 3 ^ 2;
+        op ^ (a b) 90 right = ???;
+        let a = 2 ^ 3 ^ 2;
       """
     ).map { m =>
       val memberBnd = lookupNames("a", m).headOption.getOrElse(
@@ -843,7 +844,8 @@ class OpPrecedenceTests extends BaseEffFunSuite:
   test("unary minus with exponentiation: -2 ^ 2") {
     semNotFailed(
       """
-       let a = -2 ^ 2;
+        op ^ (a b) 90 right = ???;
+        let a = -2 ^ 2;
       """
     ).map { m =>
       val memberBnd = lookupNames("a", m).headOption.getOrElse(
@@ -1207,6 +1209,7 @@ class OpPrecedenceTests extends BaseEffFunSuite:
   test("mixed associativity without parentheses: 1 + 2 ^ 3 + 4") {
     semNotFailed(
       """
+      op ^ (a b) 90 right = ???;
        let a = 1 + 2 ^ 3 + 4;
       """
     ).map { m =>
