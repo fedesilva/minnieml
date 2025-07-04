@@ -45,7 +45,7 @@ def compileBinding(bnd: Bnd, state: CodeGenState): Either[CodeGenError, CodeGenS
           }
       }
     case Some(Left(err)) => Left(err)
-    case None            => Left(CodeGenError(s"Type annotation missing for binding '${bnd.name}'"))
+    case None => Left(CodeGenError(s"Type annotation missing for binding '${bnd.name}'"))
 
 /** Compiles a function definition into LLVM IR.
   *
@@ -63,7 +63,12 @@ def compileBinding(bnd: Bnd, state: CodeGenState): Either[CodeGenError, CodeGenS
   * @return
   *   Either a CodeGenError or the updated CodeGenState.
   */
-def compileFnDef(fn: FnDef, state: CodeGenState, returnType: String, paramTypes: List[String]): Either[CodeGenError, CodeGenState] =
+def compileFnDef(
+  fn:         FnDef,
+  state:      CodeGenState,
+  returnType: String,
+  paramTypes: List[String]
+): Either[CodeGenError, CodeGenState] =
   // Generate function declaration with parameters
   val paramDecls = paramTypes.zipWithIndex
     .map { case (typ, idx) => s"$typ %$idx" }
@@ -79,8 +84,10 @@ def compileFnDef(fn: FnDef, state: CodeGenState, returnType: String, paramTypes:
     .withRegister(0) // Reset register counter for local function scope
 
   // Create a scope map for function parameters
-  val paramScope = fn.params.zip(paramTypes).zipWithIndex.map {
-    case ((param, typ), idx) =>
+  val paramScope = fn.params
+    .zip(paramTypes)
+    .zipWithIndex
+    .map { case ((param, typ), idx) =>
       val regNum    = idx
       val allocLine = s"  %${param.name}_ptr = alloca $typ"
       val storeLine = s"  store $typ %$idx, $typ* %${param.name}_ptr"
@@ -90,7 +97,8 @@ def compileFnDef(fn: FnDef, state: CodeGenState, returnType: String, paramTypes:
       bodyState.emit(allocLine).emit(storeLine).emit(loadLine)
 
       (param.name, regNum)
-  }.toMap
+    }
+    .toMap
 
   // Register count starts after parameter setup
   val updatedState = bodyState.withRegister(fn.params.size)
@@ -101,7 +109,8 @@ def compileFnDef(fn: FnDef, state: CodeGenState, returnType: String, paramTypes:
     val returnLine =
       if returnType == "void" then "  ret void"
       else
-        val returnOp = if bodyRes.isLiteral then bodyRes.register.toString else s"%${bodyRes.register}"
+        val returnOp =
+          if bodyRes.isLiteral then bodyRes.register.toString else s"%${bodyRes.register}"
         s"  ret $returnType $returnOp"
 
     // Close function and add empty line

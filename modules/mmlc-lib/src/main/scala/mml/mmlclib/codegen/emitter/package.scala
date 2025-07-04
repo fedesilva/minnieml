@@ -270,8 +270,8 @@ def getLlvmType(
                   // Follow through to get the actual LLVM type
                   nativeType match
                     case NativePrimitive(_, llvmType) => Right(llvmType)
-                    case NativePointer(_, llvmType)   => Right(s"$llvmType*")
-                    case _: NativeStruct              => Right(s"%$name") // Structs use % prefix
+                    case NativePointer(_, llvmType) => Right(s"$llvmType*")
+                    case _: NativeStruct => Right(s"%$name") // Structs use % prefix
                 case _ =>
                   // Non-native types cannot be translated to LLVM yet
                   Left(CodeGenError(s"Cannot determine LLVM type for non-native type: $name"))
@@ -280,9 +280,6 @@ def getLlvmType(
               typeAlias.typeSpec match
                 case Some(spec) => getLlvmType(spec, state)
                 case None       => getLlvmType(typeAlias.typeRef, state)
-            case _ =>
-              // Other resolved types
-              Left(CodeGenError(s"Cannot determine LLVM type for: $name"))
         case None =>
           // Unresolved type - this should have been caught by TypeResolver
           Left(CodeGenError(s"Unresolved type reference: $name"))

@@ -1,15 +1,7 @@
 package mml.mmlclib.codegen.emitter
 
 import cats.syntax.all.*
-import mml.mmlclib.ast.{
-  Bnd,
-  FnDef,
-  Module,
-  NativeImpl,
-  NativeStruct,
-  NativeType,
-  TypeDef
-}
+import mml.mmlclib.ast.{Bnd, FnDef, Module, NativeImpl, NativeStruct, NativeType, TypeDef}
 
 /** Helper for string escaping */
 private def escapeString(str: String): String = {

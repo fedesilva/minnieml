@@ -24,7 +24,7 @@ def prettyPrintTypeSpec(
         s"  args: ${args.map(arg => prettyPrintTypeSpec(Some(arg), showSourceSpans, showTypes, indent)).mkString(", ")}"
 
     case Some(TypeFn(sp, paramTypes, returnType)) =>
-      val spanStr = if showSourceSpans then s" ${printSourceSpan(sp)}" else ""
+      val spanStr   = if showSourceSpans then s" ${printSourceSpan(sp)}" else ""
       val indentStr = "  " * (indent + 1)
       s"TypeFn$spanStr\n" +
         s"${indentStr}params: ${paramTypes.map(p => prettyPrintTypeSpec(Some(p), showSourceSpans, showTypes, indent + 1)).mkString(", ")}\n" +

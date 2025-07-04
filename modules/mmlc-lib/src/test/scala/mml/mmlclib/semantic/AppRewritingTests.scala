@@ -285,61 +285,55 @@ class AppRewritingTests extends BaseEffFunSuite:
               assertEquals(clue(plusRef.name), "+", "Top operation should be +")
               assertEquals(clue(plusArgs.length), 2, "+ should have 2 args")
 
-              // Right side should be compose function call
+              // Right side should be compose function call: compose (func (func 3 4 5))
               plusArgs(1).terms.headOption match
                 case Some(TXApp(composeRef, _, composeArgs)) =>
                   assertEquals(clue(composeRef.name), "compose", "Compose function name")
-                  assertEquals(clue(composeArgs.length), 5, "Compose should have 5 args")
+                  assertEquals(
+                    clue(composeArgs.length),
+                    1,
+                    "Compose should have 1 argument (the result of the rest of the chain)"
+                  )
 
-                  // First arg should be func reference
-                  composeArgs(0).terms.headOption match
-                    case Some(Ref(_, funcName1, _, _, _, _)) =>
-                      assertEquals(clue(funcName1), "func", "First compose arg should be func")
-                    case Some(other) =>
-                      fail(
-                        s"Expected func reference as first compose arg, got: ${prettyPrintAst(other)}"
-                      )
-                    case None => fail("Expected func reference as first compose arg, got: None")
+                  // Check the single argument: func (func 3 4 5)
+                  composeArgs.head.terms.headOption match
+                    case Some(TXApp(func1Ref, _, func1Args)) =>
+                      assertEquals(clue(func1Ref.name), "func", "Argument to compose should be func")
+                      assertEquals(clue(func1Args.length), 1, "func should have 1 argument")
 
-                  // Second arg should be func reference
-                  composeArgs(1).terms.headOption match
-                    case Some(Ref(_, funcName2, _, _, _, _)) =>
-                      assertEquals(clue(funcName2), "func", "Second compose arg should be func")
-                    case Some(other) =>
-                      fail(
-                        s"Expected func reference as second compose arg, got: ${prettyPrintAst(other)}"
-                      )
-                    case None => fail("Expected func reference as second compose arg, got: None")
+                      // Check the argument to the first func: func 3 4 5
+                      func1Args.head.terms.headOption match
+                        case Some(TXApp(func2Ref, _, func2Args)) =>
+                          assertEquals(
+                            clue(func2Ref.name),
+                            "func",
+                            "Argument to func should be another func"
+                          )
+                          assertEquals(
+                            clue(func2Args.length),
+                            3,
+                            "Innermost func should have 3 arguments"
+                          )
 
-                  // Third arg should be literal 3
-                  composeArgs(2).terms.headOption match
-                    case Some(LiteralInt(_, val3)) =>
-                      assertEquals(clue(val3), 3, "Third compose arg should be 3")
-                    case Some(other) =>
-                      fail(
-                        s"Expected literal 3 as third compose arg, got: ${prettyPrintAst(other)}"
-                      )
-                    case None => fail("Expected literal 3 as third compose arg, got: None")
+                          // Check the arguments to the innermost func
+                          func2Args(0).terms.headOption match
+                            case Some(LiteralInt(_, 3)) => ()
+                            case other => fail(s"Expected literal 3, got $other")
+                          func2Args(1).terms.headOption match
+                            case Some(LiteralInt(_, 4)) => ()
+                            case other => fail(s"Expected literal 4, got $other")
+                          func2Args(2).terms.headOption match
+                            case Some(LiteralInt(_, 5)) => ()
+                            case other => fail(s"Expected literal 5, got $other")
 
-                  // Fourth arg should be literal 4
-                  composeArgs(3).terms.headOption match
-                    case Some(LiteralInt(_, val4)) =>
-                      assertEquals(clue(val4), 4, "Fourth compose arg should be 4")
-                    case Some(other) =>
+                        case other =>
+                          fail(
+                            s"Expected inner TXApp for func 3 4 5, got ${prettyPrintAst(other.get)}"
+                          )
+                    case other =>
                       fail(
-                        s"Expected literal 4 as fourth compose arg, got: ${prettyPrintAst(other)}"
+                        s"Expected TXApp for func (func ...), got ${prettyPrintAst(other.get)}"
                       )
-                    case None => fail("Expected literal 4 as fourth compose arg, got: None")
-
-                  // Fifth arg should be literal 5
-                  composeArgs(4).terms.headOption match
-                    case Some(LiteralInt(_, val5)) =>
-                      assertEquals(clue(val5), 5, "Fifth compose arg should be 5")
-                    case Some(other) =>
-                      fail(
-                        s"Expected literal 5 as fifth compose arg, got: ${prettyPrintAst(other)}"
-                      )
-                    case None => fail("Expected literal 5 as fifth compose arg, got: None")
 
                 case Some(other) =>
                   fail(s"Expected TXApp for compose function, got: ${prettyPrintAst(other)}")

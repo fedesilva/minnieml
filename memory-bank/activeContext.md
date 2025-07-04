@@ -13,6 +13,12 @@ Ability to compile simple programs:
 
 ## Recent Changes
 
+* **(2025-07-04)** Fixed critical expression rewriter bug that caused incorrect function application associativity.
+  - **RESOLVED: `println concat "a" "b"` now correctly parses as `(println (concat "a" "b"))` instead of `(((println concat) "a") "b")`.**
+  - Implemented a recursive `buildAppChain` method in `ExpressionRewriter` to correctly handle precedence of nested function calls.
+  - The new logic correctly distinguishes between left-associative application (`f x y`) and grouped application for function chains (`f g x`).
+  - Updated the `AppRewritingTests` suite to reflect the correct, nested AST structure for function chains, ensuring tests align with the fix.
+  - All tests in `AppRewritingTests` now pass.
 * **(2025-07-03)** UPDATED Block 4 of codegen update (#156): Fixed function signature derivation from AST type annotations
   - **RESOLVED: Code emission validity issues - function signatures now correctly derived from AST**
   - Fixed hardcoded i32 return types: Native and regular functions now derive LLVM signatures from AST type annotations
@@ -45,14 +51,7 @@ Ability to compile simple programs:
 
 ## Next Steps
 
-### High Priority - Expression Rewriting Bug
-* **ExpressionRewriter incorrectly associates function applications** - CRITICAL
-  - Bug: `println concat "Fede" "Silva"` generates `(((println concat) "Fede") "Silva")` instead of `(println ((concat "Fede") "Silva"))`
-  - Prevents correct compilation of curried function calls
-  - See detailed analysis: `memory-bank/bugs/app-rewriting-assoc-bug.md`
-  - Blocks correct codegen for many functional patterns
-
-### Codegen Update (Ticket #156) - IN PROGRESS  
+### Codegen Update (Ticket #156) - IN PROGRESS
 The implementation plan is detailed in `memory-bank/specs/codegen-update.md`. Progress on the four blocks:
 
 *   **Block 1: AST & Parser Changes:** ✓ COMPLETED - AST and parser support new `@native:` syntax
@@ -61,11 +60,9 @@ The implementation plan is detailed in `memory-bank/specs/codegen-update.md`. Pr
 *   **Block 4: Codegen - Expression Compiler Refactoring:** IN PROGRESS
     - ✓ Fixed function signature derivation from AST type annotations (no more hardcoded i32 returns)
     - ✓ Unit type `()` correctly converted to `void` in LLVM IR
-    - - ❌ **Expression rewriter bug: curried fn app detection faulty**
-      - see above.
-      - hinders codegen rewrite efforts.      
+    - ✓ **Expression rewriter bug: curried fn app detection faulty**
     - ❌ **Function calls use hardcoded i32 instead of actual types**
-      - Issue found in `concat_print_string.mml`: LLVM compilation fails with type mismatches        
+      - Issue found in `concat_print_string.mml`: LLVM compilation fails with type mismatches
       - ExpressionCompiler hardcodes `i32` types instead of using actual parameter types from AST
       - Complete analysis: `memory-bank/bugs/hardcoded-i32.md`
     - ❌ **REMAINING: Replace all hardcoded types in `compileTerm`/`compileApp` with `getLlvmType` helper**

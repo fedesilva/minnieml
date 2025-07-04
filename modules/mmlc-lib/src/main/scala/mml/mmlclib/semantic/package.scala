@@ -133,7 +133,6 @@ def injectStandardOperators(module: Module): Module =
 
   // Arithmetic operators: Int -> Int -> Int
   val arithmeticOps = List(
-    
     ("*", 80, Associativity.Left, "mul"),
     ("/", 80, Associativity.Left, "sdiv"),
     ("+", 60, Associativity.Left, "add"),
