@@ -45,6 +45,13 @@ Ability to compile simple programs:
 
 ## Next Steps
 
+### High Priority - Expression Rewriting Bug
+* **ExpressionRewriter incorrectly associates function applications** - CRITICAL
+  - Bug: `println concat "Fede" "Silva"` generates `(((println concat) "Fede") "Silva")` instead of `(println ((concat "Fede") "Silva"))`
+  - Prevents correct compilation of curried function calls
+  - See detailed analysis: `memory-bank/bugs/app-rewriting-assoc-bug.md`
+  - Blocks correct codegen for many functional patterns
+
 ### Codegen Update (Ticket #156) - IN PROGRESS  
 The implementation plan is detailed in `memory-bank/specs/codegen-update.md`. Progress on the four blocks:
 
@@ -54,8 +61,11 @@ The implementation plan is detailed in `memory-bank/specs/codegen-update.md`. Pr
 *   **Block 4: Codegen - Expression Compiler Refactoring:** IN PROGRESS
     - ✓ Fixed function signature derivation from AST type annotations (no more hardcoded i32 returns)
     - ✓ Unit type `()` correctly converted to `void` in LLVM IR
+    - - ❌ **Expression rewriter bug: curried fn app detection faulty**
+      - see above.
+      - hinders codegen rewrite efforts.      
     - ❌ **Function calls use hardcoded i32 instead of actual types**
-      - Issue found in `concat_print_string.mml`: LLVM compilation fails with type mismatches
+      - Issue found in `concat_print_string.mml`: LLVM compilation fails with type mismatches        
       - ExpressionCompiler hardcodes `i32` types instead of using actual parameter types from AST
       - Complete analysis: `memory-bank/bugs/hardcoded-i32.md`
     - ❌ **REMAINING: Replace all hardcoded types in `compileTerm`/`compileApp` with `getLlvmType` helper**
