@@ -45,6 +45,21 @@ def injectBasicTypes(module: Module): Module =
     ),
     TypeDef(
       span     = dummySpan,
+      name     = "Int32",
+      typeSpec = Some(NativePrimitive(dummySpan, "i32"))
+    ),
+    TypeDef(
+      span     = dummySpan,
+      name     = "Int16",
+      typeSpec = Some(NativePrimitive(dummySpan, "i16"))
+    ),
+    TypeDef(
+      span     = dummySpan,
+      name     = "Int8",
+      typeSpec = Some(NativePrimitive(dummySpan, "i8"))
+    ),
+    TypeDef(
+      span     = dummySpan,
       name     = "Float",
       typeSpec = Some(NativePrimitive(dummySpan, "float"))
     ),
@@ -89,6 +104,16 @@ def injectBasicTypes(module: Module): Module =
       span    = dummySpan,
       name    = "Int",
       typeRef = TypeRef(dummySpan, "Int64")
+    ),
+    TypeAlias(
+      span    = dummySpan,
+      name    = "Byte",
+      typeRef = TypeRef(dummySpan, "Int8")
+    ),
+    TypeAlias(
+      span    = dummySpan,
+      name    = "Word",
+      typeRef = TypeRef(dummySpan, "Int8")
     )
   )
 

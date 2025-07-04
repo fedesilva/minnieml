@@ -122,3 +122,18 @@ trait BaseEffFunSuite extends CatsEffectSuite:
         |> MemberErrorChecker.checkModule
         |> Simplifier.rewriteModule
     }
+
+  protected def compileAndGenerate(
+    source: String,
+    name:   Option[String] = "Test".some
+  ): IO[String] =
+    import mml.mmlclib.api.CodeGenApi
+    CompilerApi.compileString(source, name).value.flatMap {
+      case Right(compiled) =>
+        CodeGenApi.generateFromModule(compiled).value.map {
+          case Right(llvmIr) => llvmIr
+          case Left(error)   => fail(s"CodeGen failed: $error")
+        }
+      case Left(error) =>
+        fail(s"Compilation failed: $error")
+    }

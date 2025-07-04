@@ -26,7 +26,8 @@ object Parser:
       case Parsed.Success(result, _) =>
         result.asRight
       case f: Parsed.Failure =>
-        // TODO:
+        // TODO: this is normally not enough, we need to inject error
+        //    nodes precisely where we fail and continue
         ParserError.Failure(f.trace().longMsg).asLeft
 
   // -----------------------------------------------------------------------------
@@ -303,11 +304,24 @@ object Parser:
       typeNameP(source)
     )
 
+  private def typeUnitP(source: String)(using P[Any]): P[TypeSpec] =
+    P(spP(source) ~ "()" ~ spP(source)).map { case (start, end) =>
+      TypeUnit(span(start, end))
+    }
+
   private def typeNameP(source: String)(using P[Any]): P[TypeSpec] =
-    P(spP(source) ~ typeIdP ~ spP(source))
-      .map { case (start, id, end) =>
-        TypeRef(span(start, end), id)
-      }
+    P(
+      P(spP(source) ~ typeIdP ~ spP(source))
+        .map { case (start, id, end) =>
+          TypeRef(span(start, end), id)
+        }
+    ) |
+      P(
+        P(typeUnitP(source))
+          .map { case unit =>
+            unit
+          }
+      )
 
   private def nativeTypeDefP(source: String)(using P[Any]): P[TypeDef] =
     P(

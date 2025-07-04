@@ -13,13 +13,20 @@ Ability to compile simple programs:
 
 ## Recent Changes
 
+* **(2025-07-03)** COMPLETED Block 4 of codegen update (#156): Fixed function signature derivation from AST type annotations
+  - **RESOLVED: Code emission validity issues - function signatures now correctly derived from AST**
+  - Fixed hardcoded i32 return types: Native and regular functions now derive LLVM signatures from AST type annotations
+  - Unit type `()` correctly converted to `void` in LLVM IR (e.g., `define void @main()` instead of `define i32 @main()`)
+  - Added strict type annotation requirements: Functions must have explicit return and parameter type annotations
+  - Clear error messages for missing type annotations: "Missing return type annotation for function 'X'" and "Missing type for param 'Y' in fn 'Z'"
+  - Updated sample files (e.g., `print_string.mml`) with proper type annotations
+  - Added comprehensive test coverage for error handling with missing type annotations
+  - **RESULT: Generated LLVM IR now has correct function signatures (e.g., `declare void @println(%String)` from `fn println (a: String): ()`)**
 * **(2025-07-03)** Fixed critical TypeResolver bug and completed Block 3 of codegen update (#156)
-  - **IMPORTANT: Code emission validity is under question - needs investigation**
   - Fixed TypeResolver bug where TypeRefs inside NativeStruct fields were resolving to outdated TypeAlias instances
   - The fix: TypeResolver now creates temporary module with accumulated members for type lookups
   - Completed Block 3: LLVM type emission now works for native types, including type aliases
   - Test "handles type alias to native type correctly" now passes
-  - **WARNING: The emitted LLVM type definitions (e.g., `%Int64 = type i64`) may not be valid LLVM IR - requires investigation**
 * **(2025-07-03)** Completed Block 2 of codegen update (#156): TypeResolver now properly handles NativeStruct definitions
   - Changed NativeStruct fields from `List[(String, TypeSpec)]` to `Map[String, TypeSpec]` for uniqueness and O(1) lookup
   - Fixed TypeResolver to process TypeDef members and resolve TypeRefs inside NativeStruct fields
@@ -38,16 +45,18 @@ Ability to compile simple programs:
 
 ## Next Steps
 
-### Codegen Update (Ticket #156) - IN PROGRESS
-The implementation plan has been updated and is detailed in `doc/brainstorming/codegen-update.md`. The work is divided into four blocks:
+### Codegen Update (Ticket #156) - IN PROGRESS  
+The implementation plan is detailed in `doc/brainstorming/codegen-update.md`. Progress on the four blocks:
 
 *   **Block 1: AST & Parser Changes:** ✓ COMPLETED - AST and parser support new `@native:` syntax
 *   **Block 2: Semantic Analysis Changes:** ✓ COMPLETED - TypeResolver now handles native struct definitions
-*   **Block 3: Codegen - LLVM Type Emission:** IN PROGRESS - Basic emission implemented but has bugs
-    - **⚠️ CRITICAL: Validity of emitted LLVM IR is questionable - needs investigation**
-    - Currently emitting definitions like `%Int64 = type i64` which may not be valid LLVM
-    - Tests pass but the generated code needs review
-*   **Block 4: Codegen - Expression Compiler Refactoring:** Remove all hardcoded types from the expression compiler and use the new type information from the AST
+*   **Block 3: Codegen - LLVM Type Emission:** ✓ COMPLETED - LLVM type emission works for native types
+*   **Block 4: Codegen - Expression Compiler Refactoring:** PARTIALLY COMPLETED
+    - ✓ Fixed function signature derivation from AST type annotations (no more hardcoded i32 returns)
+    - ✓ Unit type `()` correctly converted to `void` in LLVM IR
+    - ❌ **REMAINING: Operators rewritten to curried app need to use the `op=` attribute**
+    - ❌ **REMAINING: Remove special cases for `BinOpDef` and `UnaryOpDef` in `compileExpr`**
+    - ❌ **REMAINING: Replace all hardcoded types in `compileTerm`/`compileApp` with `getLlvmType` helper**
 
 ### Future work        
 * implement protocols 
