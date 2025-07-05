@@ -51,6 +51,19 @@ Ability to compile simple programs:
 
 ## Next Steps
 
+
+### (#133) Simple Type Checker
+
+We need to provide a simplistic type checker to prevent empty type specs
+reaching the codegen. This blocks (#156).
+
+see `memory-bank/specs/133-simple-typecheker.md`
+
+* First we need to review and iterate over the spec.
+* Clarify any remaining question, challenge any impractical desicion.
+* Create an execution plan.
+ * keep it focused, we just need to unblock #156. 
+
 ### Codegen Update (Ticket #156) - IN PROGRESS
 The implementation plan is detailed in `memory-bank/specs/codegen-update.md`. Progress on the four blocks:
 
