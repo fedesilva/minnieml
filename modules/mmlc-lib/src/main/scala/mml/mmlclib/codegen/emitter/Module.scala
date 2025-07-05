@@ -136,6 +136,7 @@ private def emitBinding(bnd: Bnd, state: CodeGenState): Either[CodeGenError, Cod
     if compileRes.isLiteral then {
       // Check for string literals
       if compileRes.typeName == "String" then {
+        // FIXME: harcoded use of string, should be resolved by the 
         val stringType = state.llvmTypeForNative("String")
         val stringData = compileRes.register.toString
         Right(compileRes.state.emit(emitGlobalVariable(bnd.name, stringType, stringData)))
@@ -204,9 +205,3 @@ private def emitFnDef(fn: FnDef, state: CodeGenState): Either[CodeGenError, Code
   }
 }
 
-/** Helper to get the LLVM IR type from a native type name */
-private def getNativeType(typeName: String, state: CodeGenState): String = {
-  // Extract the actual type name from things like "String" or "String => String"
-  val baseType = typeName.trim.split("[ =]").head
-  state.llvmTypeForNative(baseType)
-}

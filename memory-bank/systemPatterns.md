@@ -160,12 +160,13 @@ flowchart TD
 
 ## How to compile and run samples
 
-* exmaple file to compile: `mml/samples/concat_print_string.mml`
-* to compile: `sbt "run bin mml/samples/concat_print_string.mml"`
-* to inspect ast: `sbt "run ast mml/samples/concat_print_string.mml"`
-* you can clean by running: `sbt "run clean"`
-* the compiler working direactory (output ) is `build/`
+* example file to compile: `mml/samples/concat_print_string.mml`
+* clean compiler workdir by running: `sbt "run clean"` 
+* compile: `sbt "run bin mml/samples/concat_print_string.mml"`
+* inspect ast: `sbt "run ast mml/samples/concat_print_string.mml"`
+* the compiler working directory (output) is `build/`
 * run the executable: `./build/target/ConcatPrintString-x86_64-apple-macosx`
 
 Remember that the bin command wants to compile an executable and will fail if there is no main.
-If there is no main, the use the `lib` command, just replace `bin` in the examples above.
+If there is no main, just replace `bin` in the examples above with `lib`, which will generate 
+a native library.
