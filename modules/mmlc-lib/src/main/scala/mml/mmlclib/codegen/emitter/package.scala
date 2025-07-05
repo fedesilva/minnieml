@@ -1,6 +1,7 @@
 package mml.mmlclib.codegen.emitter
 
 import cats.syntax.all.*
+import mml.mmlclib.ast.*
 
 /** Helper for generating syntactically correct LLVM IR type definitions */
 def emitTypeDefinition(typeName: String, fields: List[String]): String =
@@ -221,7 +222,6 @@ def nativeTypeToLlvmDef(
   nativeType: mml.mmlclib.ast.NativeType,
   state:      CodeGenState
 ): Either[CodeGenError, String] =
-  import mml.mmlclib.ast.*
   nativeType match
     case NativePrimitive(_, llvmType) =>
       Right(s"%$typeName = type $llvmType")
@@ -258,7 +258,7 @@ def getLlvmType(
   typeSpec: mml.mmlclib.ast.TypeSpec,
   state:    CodeGenState
 ): Either[CodeGenError, String] =
-  import mml.mmlclib.ast.*
+  
   typeSpec match
     case TypeRef(_, name, resolvedOpt) =>
       resolvedOpt match
