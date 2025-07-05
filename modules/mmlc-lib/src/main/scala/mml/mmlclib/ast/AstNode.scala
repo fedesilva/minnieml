@@ -254,23 +254,23 @@ case class LiteralInt(
   span:  SrcSpan,
   value: Int
 ) extends LiteralValue:
-  final val typeSpec: Option[TypeSpec] = Some(LiteralIntType(span))
+  final val typeSpec: Option[TypeSpec] = Some(TypeRef(span, "Int"))
   final val typeAsc:  Option[TypeSpec] = None
 
 case class LiteralString(span: SrcSpan, value: String) extends LiteralValue:
-  final val typeSpec: Option[TypeSpec] = Some(LiteralStringType(span))
+  final val typeSpec: Option[TypeSpec] = Some(TypeRef(span, "String"))
   final val typeAsc:  Option[TypeSpec] = None
 
 case class LiteralBool(span: SrcSpan, value: Boolean) extends LiteralValue:
-  final val typeSpec: Option[TypeSpec] = Some(LiteralBoolType(span))
+  final val typeSpec: Option[TypeSpec] = Some(TypeRef(span, "Bool"))
   final val typeAsc:  Option[TypeSpec] = None
 
 case class LiteralUnit(span: SrcSpan) extends LiteralValue:
-  final val typeSpec: Option[TypeSpec] = Some(LiteralUnitType(span))
+  final val typeSpec: Option[TypeSpec] = Some(TypeRef(span, "Unit"))
   final val typeAsc:  Option[TypeSpec] = None
 
 case class LiteralFloat(span: SrcSpan, value: Float) extends LiteralValue:
-  final val typeSpec: Option[TypeSpec] = Some(LiteralFloatType(span))
+  final val typeSpec: Option[TypeSpec] = Some(TypeRef(span, "Float"))
   final val typeAsc:  Option[TypeSpec] = None
 
   /** A type definition, which is a new named type, as opposed to a type alias. */
@@ -308,7 +308,7 @@ case class TypeRef(
   resolvedAs: Option[ResolvableType] = None
 ) extends TypeSpec
 
-sealed trait NativeType extends TypeSpec
+sealed trait NativeType extends TypeSpec, Native
 
 case class NativePrimitive(
   span:     SrcSpan,
@@ -356,27 +356,6 @@ case class TypeSeq(span: SrcSpan, inner: TypeSpec) extends TypeSpec
 /** A grouping of types, mostly for disambiguation: `Map String (List Int)` */
 case class TypeGroup(span: SrcSpan, types: List[TypeSpec]) extends TypeSpec
 
-/** Helpers to represent known types */
-sealed trait LiteralType extends TypeSpec {
-  def typeName: String
-}
-case class LiteralIntType(span: SrcSpan) extends LiteralType {
-  final val typeName: "Int" = "Int"
-}
-case class LiteralStringType(span: SrcSpan) extends LiteralType {
-  final val typeName: "String" = "String"
-}
-case class LiteralBoolType(span: SrcSpan) extends LiteralType {
-  final val typeName: "Bool" = "Bool"
-}
-
-case class LiteralUnitType(span: SrcSpan) extends LiteralType {
-  final val typeName: "Unit" = "Unit"
-}
-
-case class LiteralFloatType(span: SrcSpan) extends LiteralType {
-  final val typeName: "Float" = "Float"
-}
 
 sealed trait Native extends AstNode
 

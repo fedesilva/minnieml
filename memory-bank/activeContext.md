@@ -13,6 +13,12 @@ Ability to compile simple programs:
 
 ## Recent Changes
 
+* **(2025-07-05)** Completed Block 1 of Simple Type Checker (#133): Unified literal types in the AST.
+  - **RESOLVED: All literal AST nodes now use `TypeRef` for their type representation, eliminating the special `LiteralType` hierarchy.**
+  - Modified `AstNode.scala` to change `LiteralInt`, `LiteralString`, etc., to use `TypeRef("Int")`, `TypeRef("String")`, etc.
+  - Removed the `LiteralType` sealed trait and its subclasses entirely from the AST.
+  - Updated the pretty-printer in `util/prettyprint/ast/Type.scala` to remove handling for the obsolete `LiteralType`.
+  - The project compiles successfully after these changes.
 * **(2025-07-04)** Fixed critical expression rewriter bug that caused incorrect function application associativity.
   - **RESOLVED: `println concat "a" "b"` now correctly parses as `(println (concat "a" "b"))` instead of `(((println concat) "a") "b")`.**
   - Implemented a recursive `buildAppChain` method in `ExpressionRewriter` to correctly handle precedence of nested function calls.
@@ -54,15 +60,20 @@ Ability to compile simple programs:
 
 ### (#133) Simple Type Checker (high priority, IN PROGRESS)
 
-We need to provide a simplistic type checker to prevent empty type specs
-reaching the codegen. This blocks (#156).
+This task is to implement a simple, forward-propagating type checker to unblock the codegen update (#156). The full specification is in `memory-bank/specs/133-simple-typechecker.md`.
 
-see `memory-bank/specs/133-simple-typecheker.md`
+**Execution Plan:**
 
-* First we need to review and iterate over the spec.
-* Clarify any remaining question, challenge any impractical desicion.
-* Create an execution plan.
- * keep it focused, we just need to unblock #156. 
+*   **Block 1: Update AST Literals:** ✓ COMPLETED
+    -   Modified `AstNode.scala` to replace the `LiteralType` hierarchy with direct usage of `TypeRef` for all literal nodes.
+    -   Removed the `LiteralType` sealed trait and all its subclasses.
+    -   Cleaned up any remaining usages of `LiteralType` across the codebase.
+*   **Block 2: Implement Core Type Checker Logic:** IN PROGRESS
+    -   Define new `SemanticError` cases for the type checker.
+    -   Create `TypeChecker.scala` and implement the core logic for validation and inference.
+*   **Block 3: Integrate and Test:**
+    -   Integrate the new `TypeChecker` into the `SemanticApi.scala` pipeline.
+    -   Create a comprehensive test suite in `TypeCheckerTests.scala` to validate all specified behaviors.
 
 ### Codegen Update (Ticket #156) - IN PROGRESS
 The implementation plan is detailed in `memory-bank/specs/codegen-update.md`. Progress on the four blocks:
@@ -72,8 +83,7 @@ The implementation plan is detailed in `memory-bank/specs/codegen-update.md`. Pr
 *   **Block 3: Codegen - LLVM Type Emission:** ✓ COMPLETED - LLVM type emission works for native types
 *   **Block 4: Codegen - Expression Compiler Refactoring:** IN PROGRESS
     - ✓ Fixed function signature derivation from AST type annotations (no more hardcoded i32 returns)
-    - ✓ Unit type `()` correctly converted to `void` in LLVM IR
-    - ✓ **Expression rewriter bug: curried fn app detection faulty**
+    - ✓ Unit type `()` correctly converted to `void` in LLVM IR    
     - ❌ **Function calls use hardcoded i32 instead of actual types**
       - Issue found in `concat_print_string.mml`: LLVM compilation fails with type mismatches
       - ExpressionCompiler hardcodes `i32` types instead of using actual parameter types from AST

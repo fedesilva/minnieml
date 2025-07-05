@@ -79,9 +79,6 @@ def prettyPrintTypeSpec(
           .map(t => prettyPrintTypeSpec(Some(t), showSourceSpans, showTypes, indent))
           .mkString(", ")
 
-    case Some(lt: LiteralType) =>
-      s"LiteralType: ${lt.typeName}"
-
     case Some(inv: InvalidType) =>
       val spanStr = if showSourceSpans then s" ${printSourceSpan(inv.span)}" else ""
       s"InvalidType$spanStr\n" +
