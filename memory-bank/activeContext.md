@@ -52,7 +52,7 @@ Ability to compile simple programs:
 ## Next Steps
 
 
-### (#133) Simple Type Checker
+### (#133) Simple Type Checker (high priority, IN PROGRESS)
 
 We need to provide a simplistic type checker to prevent empty type specs
 reaching the codegen. This blocks (#156).
