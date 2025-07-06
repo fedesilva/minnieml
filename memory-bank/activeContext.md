@@ -55,9 +55,15 @@ This task is to implement a simple, forward-propagating type checker to unblock 
         - The core logic in `checkApplication` was updated to collect all arguments in a chain before validation.
         - This fixed direct multi-argument function calls, but issues remain with operator applications, which are rewritten into `App` chains.
         - **Remaining:** The type checker still fails on many operator-related tests, indicating the fix was not sufficient for all cases.
-    
 
-            
+#### Focus on bugs/133-typechecker-current-issues.md
+
+This file has a description of the current problem I am trying to solve.
+There is an associated dump, if the need arises for more information or to 
+confirm the bug report.
+
+Focus on fixing the specific test mentioned in the bug report.
+    
 
 ### Codegen Update (Ticket #156) - IN PROGRESS
 The implementation plan is detailed in `memory-bank/specs/codegen-update.md`. Progress on the four blocks:

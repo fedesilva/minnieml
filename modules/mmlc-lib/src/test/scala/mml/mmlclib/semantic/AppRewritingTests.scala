@@ -9,7 +9,7 @@ import mml.mmlclib.util.*
 
 class AppRewritingTests extends BaseEffFunSuite:
 
-  test("2 arity function".only) {
+  test("2 arity function") {
 
     val code  = 
     """
@@ -20,8 +20,8 @@ class AppRewritingTests extends BaseEffFunSuite:
     semNotFailed(code).map { m =>
 
       // dump the raw module
-    println("dumping raw module")
-      println(m)
+    // println("dumping raw module")
+    // println(m)
 
       val memberBnd =
         lookupNames("a", m).headOption

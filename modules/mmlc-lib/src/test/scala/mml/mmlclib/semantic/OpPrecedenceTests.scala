@@ -1298,7 +1298,7 @@ class OpPrecedenceTests extends BaseEffFunSuite:
 // let b = ++1;     // Unary prefix usage
 // Verifies disambiguation between unary and binary variants of the same operator
 
-  test("Test operators with the same symbol but different arity") {
+  test("Test operators with the same symbol but different arity".only) {
     semNotFailed(
       """
        op ++ (a: Int b: Int): Int = a + b;
