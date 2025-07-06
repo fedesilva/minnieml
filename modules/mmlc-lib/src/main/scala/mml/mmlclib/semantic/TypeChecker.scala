@@ -2,7 +2,6 @@ package mml.mmlclib.semantic
 
 import cats.implicits.*
 import mml.mmlclib.ast.*
-import mml.mmlclib.errors.CompilationError
 
 object TypeChecker:
   private val phaseName = "mml.mmlclib.semantic.TypeChecker"
@@ -168,7 +167,6 @@ object TypeChecker:
           // The type of the expression is the type of the last term
           val exprType = checkedTerms.lastOption.flatMap {
             case t: Typeable => t.typeSpec
-            case _ => None
           }
           expr.copy(terms = checkedTerms, typeSpec = exprType)
         }
@@ -252,117 +250,99 @@ object TypeChecker:
             Right(ref.copy(typeSpec = Some(t)))
           case None => Left(List(TypeError.UnresolvableType(TypeRef(ref.span, ref.name), ref, phaseName)))
       case Some(decl: Decl) => 
-        // The resolved declaration should already have its typeSpec computed in the first pass
-        // Use it directly instead of looking it up again
-        decl.typeSpec match
-          case Some(t) => 
-            Right(ref.copy(typeSpec = Some(t)))
-          case None => 
-            // If no typeSpec on the resolved decl, look it up in the current module
-            // For operators, we need to match the specific variant (unary vs binary)
-            module.members.find {
-              case candidate: UnaryOpDef if decl.isInstanceOf[UnaryOpDef] => 
-                candidate.name == decl.name
-              case candidate: BinOpDef if decl.isInstanceOf[BinOpDef] => 
-                candidate.name == decl.name
-              case candidate: Decl if !decl.isInstanceOf[OpDef] => 
-                candidate.name == decl.name
-              case _ => false
-            } match
-              case Some(updatedDecl: Decl) if updatedDecl.typeSpec.isDefined =>
-                Right(ref.copy(typeSpec = updatedDecl.typeSpec))
-              case _ => 
-                Left(List(TypeError.UnresolvableType(TypeRef(ref.span, ref.name), ref, phaseName)))
+        // Look up the declaration in the current module (which has lowered typeSpecs)
+        val updatedDecl = module.members.find {
+          case candidate: UnaryOpDef if decl.isInstanceOf[UnaryOpDef] => 
+            candidate.name == decl.name
+          case candidate: BinOpDef if decl.isInstanceOf[BinOpDef] => 
+            candidate.name == decl.name
+          case candidate: FnDef if decl.isInstanceOf[FnDef] => 
+            candidate.name == decl.name
+          case candidate: Bnd if decl.isInstanceOf[Bnd] => 
+            candidate.name == decl.name
+          case _ => false
+        }
+        
+        updatedDecl match
+          case Some(d: Decl) if d.typeSpec.isDefined =>
+            Right(ref.copy(typeSpec = d.typeSpec))
+          case _ => 
+            // Fallback to the resolved declaration's typeSpec if available
+            decl.typeSpec match
+              case Some(t) => Right(ref.copy(typeSpec = Some(t)))
+              case None => Left(List(TypeError.UnresolvableType(TypeRef(ref.span, ref.name), ref, phaseName)))
       case _ => Left(List(TypeError.UnresolvableType(TypeRef(ref.span, ref.name), ref, phaseName)))
 
   /** Check function applications with parameter context */
   private def checkApplicationWithContext(app: App, module: Module, paramContext: Map[String, FnParam]): Either[List[TypeError], App] =
-    // 1. Collect all arguments and the root function from the App chain
-    val (fnTerm, args) = collectArgsAndFunction(app)
-
-    // 2. Check the root function and all arguments individually
-    val checkedFnEither = checkTermWithContext(fnTerm, module, paramContext)
-    val checkedArgsEither = args.traverse(checkExprWithContext(_, module, paramContext))
-
+    // Two-phase approach:
+    // Phase 1: Recursively check and type all sub-nodes
+    val checkedFnEither = app.fn match
+      case innerApp: App => checkApplicationWithContext(innerApp, module, paramContext)
+      case other => checkTermWithContext(other, module, paramContext)
+    
+    val checkedArgEither = checkExprWithContext(app.arg, module, paramContext)
+    
     for
       checkedFn <- checkedFnEither
-      checkedArgs <- checkedArgsEither
-      result <- checkApplicationLogic(app, checkedFn, checkedArgs, module)
-    yield result
-
+      checkedArg <- checkedArgEither
+      // Phase 2: Determine the type of this specific application
+      appType <- determineApplicationType(app, checkedFn, module)
+      // Ensure checkedFn is the right type for App.fn
+      validFn <- checkedFn match
+        case ref: Ref => Right(ref)
+        case innerApp: App => Right(innerApp)
+        case other => Left(List(TypeError.InvalidApplication(app, TypeRef(app.span, "invalid-fn"), TypeRef(app.span, "unknown"), phaseName)))
+    yield app.copy(fn = validFn, arg = checkedArg, typeSpec = Some(appType))
+    
+  /** Determine the type of an application based on its function and argument */
+  private def determineApplicationType(app: App, checkedFn: Term, module: Module): Either[List[TypeError], TypeSpec] =
+    checkedFn match
+      case ref: Ref if ref.resolvedAs.isDefined =>
+        ref.resolvedAs.get match
+          case fnDef: FnDef =>
+            // Look up the function in the module to get its lowered typeSpec
+            val updatedFn = module.members.collectFirst {
+              case fn: FnDef if fn.name == fnDef.name => fn
+            }
+            val fnTypeSpec = updatedFn.flatMap(_.typeSpec).orElse(fnDef.typeSpec)
+            
+            // Functions always return their result type, regardless of partial application
+            fnTypeSpec.toRight(List(TypeError.UnresolvableType(TypeRef(app.span, fnDef.name), app, phaseName)))
+              
+          case binOp: BinOpDef =>
+            // Look up the operator in the module to get its lowered typeSpec
+            val updatedOp = module.members.collectFirst {
+              case op: BinOpDef if op.name == binOp.name => op
+            }
+            val opTypeSpec = updatedOp.flatMap(_.typeSpec).orElse(binOp.typeSpec)
+            
+            // Binary operators always return their result type, regardless of partial application
+            opTypeSpec.toRight(List(TypeError.UnresolvableType(TypeRef(app.span, binOp.name), app, phaseName)))
+              
+          case unaryOp: UnaryOpDef =>
+            // Look up the operator in the module to get its lowered typeSpec
+            val updatedOp = module.members.collectFirst {
+              case op: UnaryOpDef if op.name == unaryOp.name => op
+            }
+            val opTypeSpec = updatedOp.flatMap(_.typeSpec).orElse(unaryOp.typeSpec)
+            
+            // Unary operators always return their result type
+            opTypeSpec.toRight(List(TypeError.UnresolvableType(TypeRef(app.span, unaryOp.name), app, phaseName)))
+            
+          case _ =>
+            Left(List(TypeError.InvalidApplication(app, TypeRef(app.span, "unknown"), TypeRef(app.span, "unknown"), phaseName)))
+            
+      case innerApp: App if innerApp.typeSpec.isDefined =>
+        // The inner application already has a type (from partial application)
+        Right(innerApp.typeSpec.get)
+        
+      case _ =>
+        Left(List(TypeError.InvalidApplication(app, TypeRef(app.span, "unknown"), TypeRef(app.span, "unknown"), phaseName)))
+        
   /** Check function applications by collecting all arguments in a chain */
   private def checkApplication(app: App, module: Module): Either[List[TypeError], App] =
     checkApplicationWithContext(app, module, Map.empty)
-    
-  /** Common application checking logic */
-  private def checkApplicationLogic(app: App, checkedFn: Term, checkedArgs: List[Expr], module: Module): Either[List[TypeError], App] =
-    for
-      // Get parameter types and return type from the function
-      (paramTypes, returnType) <- checkedFn match
-        case ref: Ref if ref.resolvedAs.isDefined => 
-          // Look up the updated declaration in the module (with lowered typeSpec)
-          val resolvedDecl = ref.resolvedAs.get
-          val updatedDecl = module.members.find {
-            case candidate: FnDef if resolvedDecl.isInstanceOf[FnDef] => 
-              candidate.name == resolvedDecl.name
-            case candidate: UnaryOpDef if resolvedDecl.isInstanceOf[UnaryOpDef] => 
-              candidate.name == resolvedDecl.name
-            case candidate: BinOpDef if resolvedDecl.isInstanceOf[BinOpDef] => 
-              candidate.name == resolvedDecl.name
-            case _ => false
-          }
-          
-          updatedDecl match
-            case Some(fnDef: FnDef) =>
-              val params = fnDef.params.flatMap(_.typeSpec)
-              val ret = fnDef.typeSpec
-              if params.length == fnDef.params.length && ret.isDefined then
-                Right((params, ret.get))
-              else
-                Left(List(TypeError.UnresolvableType(TypeRef(ref.span, ref.name), ref, phaseName)))
-            case Some(opDef: BinOpDef) =>
-              val params = List(opDef.param1.typeSpec, opDef.param2.typeSpec).flatten
-              val ret = opDef.typeSpec
-              if params.length == 2 && ret.isDefined then
-                Right((params, ret.get))
-              else
-                Left(List(TypeError.UnresolvableType(TypeRef(ref.span, ref.name), ref, phaseName)))
-            case Some(opDef: UnaryOpDef) =>
-              val params = opDef.param.typeSpec.toList
-              val ret = opDef.typeSpec
-              if params.length == 1 && ret.isDefined then
-                Right((params, ret.get))
-              else
-                Left(List(TypeError.UnresolvableType(TypeRef(ref.span, ref.name), ref, phaseName)))
-            case _ =>
-              Left(List(TypeError.InvalidApplication(app, TypeRef(ref.span, ref.name), TypeRef(app.span, "unknown"), phaseName)))
-        case _ =>
-          Left(List(TypeError.InvalidApplication(app, TypeRef(app.span, "unknown"), TypeRef(app.span, "unknown"), phaseName)))
-
-      // 4. Validate argument count
-      _ <- if paramTypes.length == checkedArgs.length then Right(())
-           else if paramTypes.length < checkedArgs.length then Left(List(TypeError.OversaturatedApplication(app, paramTypes.length, checkedArgs.length, phaseName)))
-           else Left(List(TypeError.UndersaturatedApplication(app, paramTypes.length, checkedArgs.length, phaseName)))
-
-      // 5. Validate argument types
-      _ <- paramTypes.zip(checkedArgs).traverse {
-        case (expected, actual) =>
-          actual.typeSpec match
-            case Some(actualType) if areTypesCompatible(expected, actualType, module) => Right(())
-            case Some(actualType) => Left(List(TypeError.TypeMismatch(actual, expected, actualType, phaseName)))
-            case None => Left(List(TypeError.UnresolvableType(TypeRef(actual.span, "unknown"), actual, phaseName)))
-      }
-
-    yield 
-      app.copy(typeSpec = Some(returnType))
-
-  /** Helper to recursively collect arguments from a nested App chain */
-  private def collectArgsAndFunction(app: App): (Term, List[Expr]) =
-    def go(current: App, acc: List[Expr]): (Term, List[Expr]) =
-      current.fn match
-        case nextApp: App => go(nextApp, current.arg :: acc)
-        case fn => (fn, current.arg :: acc)
-    go(app, Nil)
 
   /** Validate type ascription against computed type */
   private def validateTypeAscription(node: Typeable, module: Module): List[TypeError] =

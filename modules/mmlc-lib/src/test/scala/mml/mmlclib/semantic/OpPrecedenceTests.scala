@@ -954,7 +954,7 @@ class OpPrecedenceTests extends BaseEffFunSuite:
   // Complex grouping with multiple binops:
   // let a = (1 + 2) * (3 - 4) / 5;
   // (Verifies that grouping changes the default precedence.)
-  test("complex grouping with multiple binops: (1 + 2) * (3 - 4) / 5".only) {
+  test("complex grouping with multiple binops: (1 + 2) * (3 - 4) / 5") {
     semNotFailed(
       """
        let a = (1 + 2) * (3 - 4) / 5;
