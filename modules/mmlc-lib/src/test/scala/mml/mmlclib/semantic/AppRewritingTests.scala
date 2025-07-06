@@ -5,16 +5,24 @@ import mml.mmlclib.test.BaseEffFunSuite
 import mml.mmlclib.test.TestExtractors.*
 import mml.mmlclib.util.prettyprint.ast.prettyPrintAst
 import munit.*
+import mml.mmlclib.util.* 
 
 class AppRewritingTests extends BaseEffFunSuite:
 
-  test("2 arity function") {
-    semNotFailed(
-      """
+  test("2 arity function".only) {
+
+    val code  = 
+    """
       fn mult (a: Int b: Int): Int = ???;
       let a = mult 2 2;
-      """
-    ).map { m =>
+    """
+
+    semNotFailed(code).map { m =>
+
+      // dump the raw module
+    println("dumping raw module")
+      println(m)
+
       val memberBnd =
         lookupNames("a", m).headOption
           .getOrElse(

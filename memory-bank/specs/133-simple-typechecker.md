@@ -393,6 +393,53 @@ def countApplicationChain(app: App): (Term, Int) =
   go(app, 1)  // Start with 1 for the current App's argument
 ```
 
+### 4.1 Multi-Argument Function Application Issue (DISCOVERED 2025-07-05)
+
+**Current Behavior**: The TypeChecker expects currying behavior - it tries to apply arguments one at a time, treating each application as potentially returning a function.
+
+**The Problem**: 
+- MinnieML uses multi-parameter functions: `fn mult(a: Int b: Int): Int = ...`
+- Parser creates nested Apps: `mult 2 2` → `App(App(Ref(mult), 2), 2)`
+- TypeChecker checks `App(Ref(mult), 2)` first
+- Since `mult: (Int, Int) -> Int` isn't a curried function, it can't return a function after one argument
+- `getReturnType` returns `None`, triggering `InvalidApplication` error
+
+**Required Fix**: TypeChecker needs to:
+1. Walk down the entire App chain to collect ALL arguments
+2. Check if the collected arguments match the function's full parameter list
+3. Apply all arguments at once to get the return type
+
+**Implementation Approach**:
+```scala
+def checkApplication(app: App, module: Module): Either[List[TypeError], App] =
+  // Collect all arguments from nested App chain
+  def collectArgsAndFunction(app: App, args: List[Expr] = Nil): (Term, List[Expr]) =
+    app.fn match
+      case nestedApp: App => collectArgsAndFunction(nestedApp, app.arg :: args)
+      case fnTerm => (fnTerm, app.arg :: args)
+  
+  val (fnTerm, allArgs) = collectArgsAndFunction(app)
+  
+  // Check function type and validate against all collected arguments
+  for
+    checkedFn <- checkTerm(fnTerm, module)
+    fnType <- checkedFn.typeSpec.toRight(...)
+    paramTypes = getParameterTypes(fnType)
+    _ <- validateArgCount(paramTypes.length, allArgs.length, app)
+    checkedArgs <- allArgs.traverse(checkExpr(_, module))
+    _ <- validateArgTypes(paramTypes, checkedArgs.map(_.typeSpec), app)
+    returnType <- getReturnType(fnType).toRight(...)
+  yield app.copy(typeSpec = Some(returnType))
+```
+
+**Test Case**:
+```scala
+fn mult(a: Int b: Int): Int = ???;
+let x = mult 2 2;  // Currently fails, should succeed after fix
+```
+
+**Impact**: This issue is blocking tests in `AppRewritingTests` and `OpPrecedenceTests`. The tests expect multi-argument functions to work correctly.
+
 ### 5. Type Check References
 
 ```scala

@@ -9,47 +9,77 @@ object TypeChecker:
 
   /** Main entry point - process module and accumulate errors */
   def rewriteModule(state: SemanticPhaseState): SemanticPhaseState =
+    // First pass: compute signatures for all functions and operators
+    val (signatureErrors, membersWithSignatures) = computeSignatures(state.module)
+    
+    // Second pass: check all members with signatures available
+    val moduleWithSignatures = state.module.copy(members = membersWithSignatures)
     val initialState = (Vector.empty[TypeError], Vector.empty[Member])
-    val (errors, newMembers) = state.module.members.foldLeft(initialState) {
+    val (checkErrors, checkedMembers) = membersWithSignatures.foldLeft(initialState) {
       case ((accErrors, accMembers), member) =>
-        val currentModule = state.module.copy(members = accMembers.toList)
+        val currentModule = moduleWithSignatures.copy(members = accMembers.toList ++ membersWithSignatures.dropWhile(_ != member))
         checkMember(member, currentModule) match
           case Left(errs) => (accErrors ++ errs, accMembers :+ member)
           case Right(newMember) => (accErrors, accMembers :+ newMember)
     }
 
-    val allErrors = errors.map(SemanticError.TypeCheckingError.apply)
-    state.addErrors(allErrors.toList).withModule(state.module.copy(members = newMembers.toList))
+    val allErrors = (signatureErrors ++ checkErrors).map(SemanticError.TypeCheckingError.apply)
+    state.addErrors(allErrors.toList).withModule(state.module.copy(members = checkedMembers.toList))
+    
+  /** First pass: compute type signatures for all declarations */
+  private def computeSignatures(module: Module): (Vector[TypeError], List[Member]) =
+    val (errors, members) = module.members.foldLeft((Vector.empty[TypeError], Vector.empty[Member])) {
+      case ((accErrors, accMembers), member) =>
+        member match
+          case fnDef: FnDef =>
+            validateMandatoryAscriptions(fnDef) match
+              case Nil =>
+                computeFunctionType(fnDef) match
+                  case Right(fnType) => (accErrors, accMembers :+ fnDef.copy(typeSpec = Some(fnType)))
+                  case Left(errs) => (accErrors ++ errs, accMembers :+ fnDef)
+              case errs => (accErrors ++ errs, accMembers :+ fnDef)
+              
+          case opDef: OpDef =>
+            validateMandatoryAscriptions(opDef) match
+              case Nil =>
+                computeOperatorType(opDef) match
+                  case Right(opType) =>
+                    val newOp = opDef match
+                      case b: BinOpDef => b.copy(typeSpec = Some(opType))
+                      case u: UnaryOpDef => u.copy(typeSpec = Some(opType))
+                    (accErrors, accMembers :+ newOp)
+                  case Left(errs) => (accErrors ++ errs, accMembers :+ opDef)
+              case errs => (accErrors ++ errs, accMembers :+ opDef)
+              
+          case other =>
+            // Other members don't need signature computation
+            (accErrors, accMembers :+ other)
+    }
+    (errors, members.toList)
 
   /** Validate and compute types for a member */
   private def checkMember(member: Member, module: Module): Either[List[TypeError], Member] = member match
     case fnDef: FnDef =>
-      validateMandatoryAscriptions(fnDef) match
-        case Nil =>
-          for
-            fnType <- computeFunctionType(fnDef)
-            checkedBody <- checkExpr(fnDef.body, module, fnDef.typeAsc)
-            _ <- (fnDef.typeAsc, checkedBody.typeSpec) match
-              case (Some(expected), Some(actual)) if areTypesCompatible(expected, actual, module) => Right(())
-              case (Some(expected), Some(actual)) => Left(List(TypeError.TypeMismatch(fnDef, expected, actual, phaseName)))
-              case _ => Right(()) // Should be caught by other checks
-          yield fnDef.copy(body = checkedBody, typeSpec = Some(fnType))
-        case errors => Left(errors)
+      // Type signature already computed in first pass, just check the body
+      for
+        checkedBody <- checkExpr(fnDef.body, module, fnDef.typeAsc)
+        _ <- (fnDef.typeAsc, checkedBody.typeSpec) match
+          case (Some(expected), Some(actual)) if areTypesCompatible(expected, actual, module) => Right(())
+          case (Some(expected), Some(actual)) => Left(List(TypeError.TypeMismatch(fnDef, expected, actual, phaseName)))
+          case _ => Right(()) // Should be caught by other checks
+      yield fnDef.copy(body = checkedBody)
 
     case opDef: OpDef =>
-      validateMandatoryAscriptions(opDef) match
-        case Nil =>
-          for
-            opType <- computeOperatorType(opDef)
-            checkedBody <- checkExpr(opDef.body, module, opDef.typeAsc)
-            _ <- (opDef.typeAsc, checkedBody.typeSpec) match
-              case (Some(expected), Some(actual)) if areTypesCompatible(expected, actual, module) => Right(())
-              case (Some(expected), Some(actual)) => Left(List(TypeError.TypeMismatch(opDef, expected, actual, phaseName)))
-              case _ => Right(()) // Should be caught by other checks
-          yield opDef match
-            case b: BinOpDef => b.copy(body = checkedBody, typeSpec = Some(opType))
-            case u: UnaryOpDef => u.copy(body = checkedBody, typeSpec = Some(opType))
-        case errors => Left(errors)
+      // Type signature already computed in first pass, just check the body
+      for
+        checkedBody <- checkExpr(opDef.body, module, opDef.typeAsc)
+        _ <- (opDef.typeAsc, checkedBody.typeSpec) match
+          case (Some(expected), Some(actual)) if areTypesCompatible(expected, actual, module) => Right(())
+          case (Some(expected), Some(actual)) => Left(List(TypeError.TypeMismatch(opDef, expected, actual, phaseName)))
+          case _ => Right(()) // Should be caught by other checks
+      yield opDef match
+        case b: BinOpDef => b.copy(body = checkedBody)
+        case u: UnaryOpDef => u.copy(body = checkedBody)
 
     case bnd: Bnd =>
       for {
@@ -145,9 +175,16 @@ object TypeChecker:
       Right(lit)
 
     case ref: Ref =>
-      // Resolve the reference and get its type
+      // Look up the declaration in the current module to get the computed typeSpec
       ref.resolvedAs match
-        case Some(decl: Decl) => Right(ref.copy(typeSpec = decl.typeSpec))
+        case Some(decl: Decl) => 
+          // Find the member in the current module which has the computed typeSpec
+          module.members.find(m => m.isInstanceOf[Decl] && m.asInstanceOf[Decl].name == decl.name) match
+            case Some(updatedDecl: Decl) => 
+              updatedDecl.typeSpec match
+                case Some(t) => Right(ref.copy(typeSpec = Some(t)))
+                case None => Left(List(TypeError.UnresolvableType(TypeRef(ref.span, "unknown"), ref, phaseName)))
+            case _ => Left(List(TypeError.UnresolvableType(TypeRef(ref.span, ref.name), ref, phaseName)))
         case _ => Left(List(TypeError.UnresolvableType(TypeRef(ref.span, ref.name), ref, phaseName)))
 
     case app: App =>

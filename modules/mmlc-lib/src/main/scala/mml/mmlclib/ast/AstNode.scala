@@ -252,26 +252,77 @@ sealed trait LiteralValue extends Term, FromSource
 
 case class LiteralInt(
   span:  SrcSpan,
-  value: Int
-) extends LiteralValue:
-  final val typeSpec: Option[TypeSpec] = Some(TypeRef(span, "Int"))
-  final val typeAsc:  Option[TypeSpec] = None
+  value: Int,
+  typeSpec: Option[TypeSpec],
+  typeAsc:  Option[TypeSpec] = None
+) extends LiteralValue
 
-case class LiteralString(span: SrcSpan, value: String) extends LiteralValue:
-  final val typeSpec: Option[TypeSpec] = Some(TypeRef(span, "String"))
-  final val typeAsc:  Option[TypeSpec] = None
+object LiteralInt {
+  def apply(span: SrcSpan, value: Int): LiteralInt = 
+    new LiteralInt(span, value, Some(TypeRef(span, "Int")), None)
+    
+  def unapply(lit: LiteralInt): Option[(SrcSpan, Int)] = 
+    Some((lit.span, lit.value))
+}
 
-case class LiteralBool(span: SrcSpan, value: Boolean) extends LiteralValue:
-  final val typeSpec: Option[TypeSpec] = Some(TypeRef(span, "Bool"))
-  final val typeAsc:  Option[TypeSpec] = None
+case class LiteralString(
+  span: SrcSpan,
+  value: String,
+  typeSpec: Option[TypeSpec],
+  typeAsc: Option[TypeSpec] = None
+) extends LiteralValue
 
-case class LiteralUnit(span: SrcSpan) extends LiteralValue:
-  final val typeSpec: Option[TypeSpec] = Some(TypeRef(span, "Unit"))
-  final val typeAsc:  Option[TypeSpec] = None
+object LiteralString {
+  def apply(span: SrcSpan, value: String): LiteralString = 
+    new LiteralString(span, value, Some(TypeRef(span, "String")), None)
+    
+  def unapply(lit: LiteralString): Option[(SrcSpan, String)] = 
+    Some((lit.span, lit.value))
+}
 
-case class LiteralFloat(span: SrcSpan, value: Float) extends LiteralValue:
-  final val typeSpec: Option[TypeSpec] = Some(TypeRef(span, "Float"))
-  final val typeAsc:  Option[TypeSpec] = None
+case class LiteralBool(
+  span: SrcSpan,
+  value: Boolean,
+  typeSpec: Option[TypeSpec],
+  typeAsc: Option[TypeSpec] = None
+) extends LiteralValue
+
+object LiteralBool {
+  def apply(span: SrcSpan, value: Boolean): LiteralBool = 
+    new LiteralBool(span, value, Some(TypeRef(span, "Bool")), None)
+    
+  def unapply(lit: LiteralBool): Option[(SrcSpan, Boolean)] = 
+    Some((lit.span, lit.value))
+}
+
+case class LiteralUnit(
+  span: SrcSpan,
+  typeSpec: Option[TypeSpec],
+  typeAsc: Option[TypeSpec] = None
+) extends LiteralValue
+
+object LiteralUnit {
+  def apply(span: SrcSpan): LiteralUnit = 
+    new LiteralUnit(span, Some(TypeRef(span, "Unit")), None)
+    
+  def unapply(lit: LiteralUnit): Option[SrcSpan] = 
+    Some(lit.span)
+}
+
+case class LiteralFloat(
+  span: SrcSpan,
+  value: Float,
+  typeSpec: Option[TypeSpec],
+  typeAsc: Option[TypeSpec] = None
+) extends LiteralValue
+
+object LiteralFloat {
+  def apply(span: SrcSpan, value: Float): LiteralFloat = 
+    new LiteralFloat(span, value, Some(TypeRef(span, "Float")), None)
+    
+  def unapply(lit: LiteralFloat): Option[(SrcSpan, Float)] = 
+    Some((lit.span, lit.value))
+}
 
   /** A type definition, which is a new named type, as opposed to a type alias. */
 case class TypeDef(
