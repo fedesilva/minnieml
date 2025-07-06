@@ -4,7 +4,7 @@
 
 Analysis of semantic errors in MML compiler reveals two distinct bugs in different compiler phases:
 
-1. **TypeResolver Phase**: Parameter reference resolution failure within operator definition scopes
+1. **RefResolver Phase**: Fails to set `resolvedAs` for unambiguous references (single candidate)
 2. **TypeChecker Phase**: Inconsistent arity checking that ignores symbol resolution results
 
 ## Source Code Under Analysis
@@ -29,11 +29,26 @@ and an ast pretty print.
 
 ---
 
-## Issue 1: TypeResolver Phase - Parameter Reference Resolution
+## Issue 1: RefResolver Phase - Unambiguous Reference Resolution
 
 ### Problem Description
 
-The TypeResolver correctly processes parameter declarations but fails to resolve parameter references within operator definition bodies.
+RefResolver correctly finds candidates for references but fails to set the `resolvedAs` field when there is only one candidate, leaving unambiguous references unresolved.
+
+### Division of Labor in Reference Resolution
+
+The MML compiler uses a two-phase approach for reference resolution:
+
+1. **RefResolver Phase**: 
+   - Finds ALL candidates for each reference
+   - Populates the `candidates` list
+   - **Should set `resolvedAs` when there's only ONE candidate**
+   - Defers resolution when multiple candidates exist (e.g., operators with same symbol but different arities)
+
+2. **ExpressionRewriter Phase**:
+   - Disambiguates operators based on syntactic position (prefix vs infix)
+   - Sets `resolvedAs` for operator references that have multiple candidates
+   - Example: `+1 +1` → first `+` resolved to UnaryOpDef, second to BinOpDef
 
 ### Evidence from AST
 
@@ -66,11 +81,22 @@ Ref(
 
 ### Root Cause
 
-The TypeResolver phase has a **scope management bug** in operator definitions:
+RefResolver has a **resolution strategy bug**:
 
-1. **Scope Creation**: Parameter scopes may not be properly established for operator definition bodies
-2. **Scope Search**: Symbol lookup may not be searching the correct scope chain when resolving parameter references
-3. **Binding Logic**: The binding mechanism may not be correctly linking parameter names to their declarations
+1. **Current Behavior**: 
+   - Collects all candidates
+   - Never sets `resolvedAs`, even for unambiguous cases
+   - All resolution deferred to later phases
+
+2. **Expected Behavior**:
+   - Collect all candidates
+   - **If `candidates.size == 1` → set `resolvedAs = Some(candidates.head)`**
+   - If multiple candidates → leave `resolvedAs = None` for ExpressionRewriter
+
+3. **Why This Matters**:
+   - Parameter references always have exactly one candidate (within their scope)
+   - No context-based or type-based disambiguation needed
+   - RefResolver has all information needed to resolve immediately
 
 ### Error Manifestation
 
@@ -84,11 +110,20 @@ TypeCheckingError(
 )
 ```
 
+Note: The error mentions `TypeRef` but this appears to be an error reporting issue - the actual problem is with the unresolved `Ref`.
+
 ### Required Fix
 
-**Location**: `mml.mmlclib.semantic.TypeResolver`
+**Location**: `mml.mmlclib.semantic.RefResolver`
 
-**Action**: Fix scope management for operator definitions to ensure parameter references can resolve to their declarations.
+**Action**: Implement the simple resolution strategy:
+```scala
+if (candidates.size == 1) {
+  ref.copy(candidates = candidates, resolvedAs = Some(candidates.head))
+} else {
+  ref.copy(candidates = candidates)  // Leave for ExpressionRewriter
+}
+```
 
 ---
 
@@ -173,7 +208,7 @@ def checkArity(app: App): Unit = {
 
 | Issue | Phase | Component | Problem | Fix Required |
 |-------|-------|-----------|---------|--------------|
-| 1 | TypeResolver | Scope Management | Parameter references unresolved in operator bodies | Fix symbol scope creation/lookup |
+| 1 | RefResolver | Resolution Logic | Single candidates not resolved to `resolvedAs` | Set `resolvedAs` when unambiguous |
 | 2 | TypeChecker | Arity Checking | Ignoring symbol resolution results | Use `resolvedAs` field for arity determination |
 
 Both issues represent fundamental compiler infrastructure problems rather than language design issues. The AST structure and parsing are correct - the bugs are in the semantic analysis pipeline.

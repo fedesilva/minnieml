@@ -179,6 +179,11 @@ object TypeChecker:
     case ref: Ref =>
       // Look up the declaration in the current module to get the computed typeSpec
       ref.resolvedAs match
+        case Some(param: FnParam) =>
+          // For parameters, use their type ascription directly
+          param.typeAsc match
+            case Some(t) => Right(ref.copy(typeSpec = Some(t)))
+            case None => Left(List(TypeError.UnresolvableType(TypeRef(ref.span, ref.name), ref, phaseName)))
         case Some(decl: Decl) => 
           // Find the member in the current module which has the computed typeSpec
           module.members.find(m => m.isInstanceOf[Decl] && m.asInstanceOf[Decl].name == decl.name) match
