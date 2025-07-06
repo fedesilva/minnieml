@@ -62,7 +62,8 @@
 - **Framework**: Use `munit.CatsEffectSuite` with `BaseEffFunSuite` helpers
 - **Test methods**: Use `*Failed` or `*notFailed` helper methods
 - **Test organization**: Follow existing patterns in the test suite
-- **Always use existing tools** defined in the 
+- **Always use existing tools** defined in the `BaseEffFunSuite` base class.
+- **Read the docs*** this is how you filter tests with sbt and munit: `https://scalameta.org/munit/docs/filtering.html`
 
 ### Comments and Documentation
 - **Purpose**: Comment complex logic, use doc-comments for public API

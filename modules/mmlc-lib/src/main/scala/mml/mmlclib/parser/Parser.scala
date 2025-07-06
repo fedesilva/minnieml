@@ -98,7 +98,6 @@ object Parser:
 
   private def membersP(source: String)(using P[Any]): P[Member] =
     P(
-      Pass ~
         binOpDefP(source) |
         unaryOpP(source) |
         letBindingP(source) |
@@ -141,7 +140,6 @@ object Parser:
 
   private def fnParamP(source: String)(using P[Any]): P[FnParam] =
     P(
-      Pass ~
         spP(source) ~ docCommentP(source) ~ bindingIdP ~ typeAscP(source) ~ spP(
           source
         )
@@ -195,7 +193,6 @@ object Parser:
   private def binOpDefP(source: String)(using P[Any]): P[Member] =
     P(
       // Implicit whitespace consumption happens here
-      Pass ~
         docCommentP(source)
         ~ memberVisibilityP.?
         ~ opKw
@@ -210,8 +207,8 @@ object Parser:
         ~ assocP.?
         ~ defAsKw
         ~ exprP(source)
+        ~ spP(source)
         ~ endKw
-        ~ spP(source) // Capture end point *after* ';'
     ).map {
       case (
             doc,
@@ -243,8 +240,6 @@ object Parser:
 
   private def unaryOpP(source: String)(using P[Any]): P[Member] =
     P(
-      // Implicit whitespace consumption happens here
-      Pass ~
         docCommentP(source)
         ~ memberVisibilityP.?
         ~ opKw
@@ -253,24 +248,27 @@ object Parser:
         ~ "("
         ~ fnParamP(source)
         ~ ")"
+        ~ typeAscP(source)
         ~ precedenceP.?
         ~ assocP.?
         ~ defAsKw
         ~ exprP(source)
         ~ endKw
         ~ spP(source) // Capture end point *after* ';'
-    ).map { case (doc, vis, startPoint, opName, param, precedence, assoc, bodyExpr, endPoint) =>
-      UnaryOpDef(
-        visibility = vis.getOrElse(MemberVisibility.Protected),
-        span       = span(startPoint, endPoint),
-        name       = opName,
-        param      = param,
-        precedence = precedence.getOrElse(50),
-        assoc      = assoc.getOrElse(Associativity.Right),
-        body       = bodyExpr,
-        typeSpec   = bodyExpr.typeSpec,
-        docComment = doc
-      )
+    ).map {
+      case (doc, vis, startPoint, opName, param, typeAsc, precedence, assoc, bodyExpr, endPoint) =>
+        UnaryOpDef(
+          visibility = vis.getOrElse(MemberVisibility.Protected),
+          span       = span(startPoint, endPoint),
+          name       = opName,
+          param      = param,
+          precedence = precedence.getOrElse(50),
+          assoc      = assoc.getOrElse(Associativity.Right),
+          body       = bodyExpr,
+          typeAsc    = typeAsc,
+          typeSpec   = bodyExpr.typeSpec,
+          docComment = doc
+        )
     }
 
   // -----------------------------------------------------------------------------
@@ -297,7 +295,7 @@ object Parser:
   // -------------------------------------------------------------------------------
 
   private def typeAscP(source: String)(using P[Any]): P[Option[TypeSpec]] =
-    P(":" ~/ typeSpecP(source)).?
+    P(":" ~ typeSpecP(source)).?
 
   private def typeSpecP(source: String)(using P[Any]): P[TypeSpec] =
     P(

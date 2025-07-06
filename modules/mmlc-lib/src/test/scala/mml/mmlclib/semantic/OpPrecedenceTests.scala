@@ -1301,8 +1301,8 @@ class OpPrecedenceTests extends BaseEffFunSuite:
   test("Test operators with the same symbol but different arity") {
     semNotFailed(
       """
-       op ++ (a: Int): Int = a + 1;
        op ++ (a: Int b: Int): Int = a + b;
+       op ++ (a: Int): Int = a + 1;
        let a = 1 ++ 2;
        let b = ++1;
       """

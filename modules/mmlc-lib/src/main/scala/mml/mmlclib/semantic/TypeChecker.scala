@@ -158,15 +158,17 @@ object TypeChecker:
 
   /** Type check expressions using forward propagation */
   private def checkExpr(expr: Expr, module: Module, expectedType: Option[TypeSpec] = None): Either[List[TypeError], Expr] =
-    val checkedTermsEither = expr.terms.traverse(checkTerm(_, module, expectedType))
-
-    checkedTermsEither.flatMap { checkedTerms =>
-      // After checking individual terms, handle application chains
-      // For now, we just pass the type of the last term up.
-      // A more sophisticated check for application chains will be added.
-      val newTypeSpec = checkedTerms.lastOption.flatMap(_.typeSpec)
-      Right(expr.copy(terms = checkedTerms, typeSpec = newTypeSpec))
-    }
+    expr.terms match
+      case List(singleTerm) =>
+        checkTerm(singleTerm, module, expectedType).map { checkedTerm =>
+          expr.copy(terms = List(checkedTerm), typeSpec = checkedTerm.typeSpec)
+        }
+      case terms =>
+        // This is an application chain. The `App` nodes are checked recursively.
+        // We only need to check the root of the application.
+        checkTerm(terms.last, module, expectedType).map { checkedApp =>
+          expr.copy(terms = terms.dropRight(1) :+ checkedApp, typeSpec = checkedApp.typeSpec)
+        }
 
   /** Type check individual terms */
   private def checkTerm(term: Term, module: Module, expectedType: Option[TypeSpec] = None): Either[List[TypeError], Term] = term match
@@ -215,19 +217,50 @@ object TypeChecker:
       // Other term types do not require type checking at this stage
       Right(other)
 
-  /** Check function applications */
+  /** Check function applications by collecting all arguments in a chain */
   private def checkApplication(app: App, module: Module): Either[List[TypeError], App] =
-    checkTerm(app.fn, module).flatMap {
-      case checkedFn: (Ref | App) =>
-        for
-          checkedArg <- checkExpr(app.arg, module)
-          fnType <- checkedFn.typeSpec.toRight(List(TypeError.UnresolvableType(TypeRef(checkedFn.span, "unknown"), checkedFn, phaseName)))
-          argType <- checkedArg.typeSpec.toRight(List(TypeError.UnresolvableType(TypeRef(checkedArg.span, "unknown"), checkedArg, phaseName)))
-          returnType <- getReturnType(fnType).toRight(List(TypeError.InvalidApplication(app, fnType, argType, phaseName)))
-        yield app.copy(fn = checkedFn, arg = checkedArg, typeSpec = Some(returnType))
-      case other =>
-        Left(List(TypeError.InvalidApplication(app, TypeRef(other.span, "Invalid function"), other.typeSpec.get, phaseName)))
-    }
+
+    // 1. Collect all arguments and the root function from the App chain
+    val (fnTerm, args) = collectArgsAndFunction(app)
+
+    // 2. Check the root function and all arguments individually
+    val checkedFnEither = checkTerm(fnTerm, module)
+    val checkedArgsEither = args.traverse(checkExpr(_, module))
+
+    for
+      checkedFn <- checkedFnEither
+      checkedArgs <- checkedArgsEither
+      fnType <- checkedFn.typeSpec.toRight(List(TypeError.UnresolvableType(TypeRef(checkedFn.span, "unknown"), checkedFn, phaseName)))
+      
+      // 3. Get parameter types from the function's signature
+      paramTypes = getParameterTypes(fnType)
+
+      // 4. Validate argument count
+      _ <- if paramTypes.length == checkedArgs.length then Right(())
+           else if paramTypes.length < checkedArgs.length then Left(List(TypeError.OversaturatedApplication(app, paramTypes.length, checkedArgs.length, phaseName)))
+           else Left(List(TypeError.UndersaturatedApplication(app, paramTypes.length, checkedArgs.length, phaseName)))
+
+      // 5. Validate argument types
+      _ <- paramTypes.zip(checkedArgs).traverse {
+        case (expected, actual) =>
+          actual.typeSpec match
+            case Some(actualType) if areTypesCompatible(expected, actualType, module) => Right(())
+            case Some(actualType) => Left(List(TypeError.TypeMismatch(actual, expected, actualType, phaseName)))
+            case None => Left(List(TypeError.UnresolvableType(TypeRef(actual.span, "unknown"), actual, phaseName)))
+      }
+
+      // 6. Get the return type
+      returnType <- getReturnType(fnType).toRight(List(TypeError.InvalidApplication(app, fnType, TypeRef(app.span, "unknown"), phaseName)))
+
+    yield app.copy(typeSpec = Some(returnType))
+
+  /** Helper to recursively collect arguments from a nested App chain */
+  private def collectArgsAndFunction(app: App): (Term, List[Expr]) =
+    def go(current: App, acc: List[Expr]): (Term, List[Expr]) =
+      current.fn match
+        case nextApp: App => go(nextApp, current.arg :: acc)
+        case fn => (fn, current.arg :: acc)
+    go(app, Nil)
 
   /** Validate type ascription against computed type */
   private def validateTypeAscription(node: Typeable, module: Module): List[TypeError] =
