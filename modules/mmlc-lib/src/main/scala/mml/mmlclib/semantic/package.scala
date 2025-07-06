@@ -161,7 +161,6 @@ def injectStandardOperators(module: Module): Module =
     ("+", 60, Associativity.Left, "add"),
     ("-", 60, Associativity.Left, "sub")
   ).map { case (name, prec, assoc, llvmOp) =>
-    val opType = TypeFn(dummySpan, List(intType, intType), intType)
     BinOpDef(
       span       = dummySpan,
       name       = name,
@@ -171,7 +170,7 @@ def injectStandardOperators(module: Module): Module =
       assoc      = assoc,
       body       = Expr(dummySpan, List(NativeImpl(dummySpan, nativeOp = Some(llvmOp)))),
       typeSpec   = None,
-      typeAsc    = Some(opType),
+      typeAsc    = Some(intType),
       docComment = None
     )
   }
@@ -185,7 +184,6 @@ def injectStandardOperators(module: Module): Module =
     ("<=", 50, Associativity.Left, "icmp_sle"),
     (">=", 50, Associativity.Left, "icmp_sge")
   ).map { case (name, prec, assoc, llvmOp) =>
-    val opType = TypeFn(dummySpan, List(intType, intType), boolType)
     BinOpDef(
       span       = dummySpan,
       name       = name,
@@ -195,7 +193,7 @@ def injectStandardOperators(module: Module): Module =
       assoc      = assoc,
       body       = Expr(dummySpan, List(NativeImpl(dummySpan, nativeOp = Some(llvmOp)))),
       typeSpec   = None,
-      typeAsc    = Some(opType),
+      typeAsc    = Some(boolType),
       docComment = None
     )
   }
@@ -205,7 +203,6 @@ def injectStandardOperators(module: Module): Module =
     ("and", 40, Associativity.Left, "and"),
     ("or", 30, Associativity.Left, "or")
   ).map { case (name, prec, assoc, llvmOp) =>
-    val opType = TypeFn(dummySpan, List(boolType, boolType), boolType)
     BinOpDef(
       span       = dummySpan,
       name       = name,
@@ -215,7 +212,7 @@ def injectStandardOperators(module: Module): Module =
       assoc      = assoc,
       body       = Expr(dummySpan, List(NativeImpl(dummySpan, nativeOp = Some(llvmOp)))),
       typeSpec   = None,
-      typeAsc    = Some(opType),
+      typeAsc    = Some(boolType),
       docComment = None
     )
   }
@@ -225,7 +222,6 @@ def injectStandardOperators(module: Module): Module =
     ("-", 95, Associativity.Right, "neg"),
     ("+", 95, Associativity.Right, "nop")
   ).map { case (name, prec, assoc, llvmOp) =>
-    val opType = TypeFn(dummySpan, List(intType), intType)
     UnaryOpDef(
       span       = dummySpan,
       name       = name,
@@ -234,7 +230,7 @@ def injectStandardOperators(module: Module): Module =
       assoc      = assoc,
       body       = Expr(dummySpan, List(NativeImpl(dummySpan, nativeOp = Some(llvmOp)))),
       typeSpec   = None,
-      typeAsc    = Some(opType),
+      typeAsc    = Some(intType),
       docComment = None
     )
   }
@@ -243,7 +239,6 @@ def injectStandardOperators(module: Module): Module =
   val unaryLogicalOps = List(
     ("not", 95, Associativity.Right, "not")
   ).map { case (name, prec, assoc, llvmOp) =>
-    val opType = TypeFn(dummySpan, List(boolType), boolType)
     UnaryOpDef(
       span       = dummySpan,
       name       = name,
@@ -252,7 +247,7 @@ def injectStandardOperators(module: Module): Module =
       assoc      = assoc,
       body       = Expr(dummySpan, List(NativeImpl(dummySpan, nativeOp = Some(llvmOp)))),
       typeSpec   = None,
-      typeAsc    = Some(opType),
+      typeAsc    = Some(boolType),
       docComment = None
     )
   }

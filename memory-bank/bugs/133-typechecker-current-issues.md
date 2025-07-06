@@ -1,53 +1,63 @@
-# 133-type-checker-current-issues
+# TypeChecker Current Issues
 
-## Current Status (2025-07-06)
+## Overview
+The TypeChecker has been significantly refactored to properly handle type checking without higher-order functions.
 
-### ✅ Fixed Issues
+## Current Status
+Most of the TypeChecker functionality is working correctly:
+- Reference resolution works for all types of references (FnParam, Decl, etc.)
+- Operator precedence and expression rewriting work correctly
+- The semantic pipeline order is correct (TypeResolver → RefResolver → ExpressionRewriter → TypeChecker)
+- Type ascription to spec lowering is properly implemented
+- Parameter context is correctly threaded through function/operator body checking
 
-1. **RefResolver** - Now properly sets `resolvedAs` for single candidates
-2. **TypeChecker** - Now handles FnParam references correctly  
-3. **Operator Arity** - TypeChecker correctly uses resolved operator variant
-4. **Injected Operators** - Now only set `typeAsc`, not `typeSpec`
-5. **Pipeline Order** - TypeResolver now runs before RefResolver
+## Fixed Issues
 
-### ❌ Remaining Issues
+### Issue 1: Operator Type Validation Logic (FIXED)
+**Problem**: Injected operators had `typeAsc` set to a full TypeFn instead of just the return type.
 
-#### Issue 1: Operator Type Validation Logic (NEW)
+**Root Cause**: 
+- In `injectStandardOperators`, operators were created with `typeAsc = Some(TypeFn(...))`
+- This is wrong because `typeAsc` on an operator/function should be the return type only
 
-The TypeChecker is comparing incompatible type categories when validating operators:
+**Fix Applied**: 
+- Changed injected operators to have `typeAsc = Some(intType)` or `Some(boolType)` as appropriate
+- Test "Test operators with the same symbol but different arity" now passes
 
-```scala
-// In TypeChecker.scala, lines 75-78
-checkedBody <- checkExpr(opDef.body, module, opDef.typeAsc)
-_ <- (opDef.typeAsc, checkedBody.typeSpec) match
-  case (Some(expected), Some(actual)) if areTypesCompatible(expected, actual, module) => Right(())
-  case (Some(expected), Some(actual)) => Left(List(TypeError.TypeMismatch(opDef, expected, actual, phaseName)))
-```
+### Issue 2: TypeFn Assignment (FIXED)
+**Problem**: TypeChecker was creating and assigning TypeFn to function/operator `typeSpec`.
 
-**Problem**: 
-- `opDef.typeAsc` is a `TypeFn` (the complete function signature)
-- Should be comparing just the return types
-- Currently comparing `TypeFn(List(Int, Int), Int)` vs `Int`
+**Root Cause**:
+- Without higher-order functions, no value should ever have TypeFn as its type
+- TypeFn should never be assigned to any node's `typeSpec`
 
-**Fix**: Extract return type from the operator's TypeFn before comparison
+**Fix Applied**:
+- Removed all TypeFn creation from TypeChecker
+- First pass now lowers type ascriptions to specs:
+  - Function/operator `typeSpec` = their return type ascription
+  - Parameter `typeSpec` = their type ascription
+- Applications get parameter types directly from the declaration's parameters
+- Clean separation: ascriptions are input, specs are what type checker uses
 
-#### Issue 2: Recursive Type Alias Resolution
+### Issue 3: Parameter References in Operator Bodies (FIXED)
+**Problem**: References to parameters in operator bodies weren't getting their typeSpec set.
 
-TypeResolver only resolves one level of type aliases:
-- `Int` → `Int64` ✓
-- But `Int64` → `i64` ✗
+**Root Cause**:
+- RefResolver sets `resolvedAs` to point to the OLD parameters (before TypeChecker lowering)
+- When checking operator body, parameter refs had no typeSpec
 
-**Required**: 
-- Recursive resolution stopping at TypeDef
-- Walk back assigning typeSpec from the TypeDef
+**Fix Applied**:
+- Added parameter context threading through expression checking
+- When checking function/operator bodies, pass parameters with lowered typeSpecs as context
+- Parameter references look up in context first before using `resolvedAs`
 
-## Test Case
+## Remaining Issues
 
-```mml
-op ++ (a: Int b: Int): Int = a + b;
-op ++ (a: Int): Int = a + 1;
-let a = 1 ++ 2;
-let b = ++1;
-```
+### Issue 4: Complex Expression Type Checking
+Some complex expressions (e.g., `(1 + 2) * 3`) are failing with UnresolvableType.
 
-Run: `sbt "mmlclib/testOnly mml.mmlclib.semantic.OpPrecedenceTests"`
+**Symptom**: The entire expression gets UnresolvableType error
+
+**Possible Cause**: 
+- Expression checking might not be properly handling all terms in complex expressions
+- Need to investigate how ExpressionRewriter structures these expressions

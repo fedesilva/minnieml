@@ -954,7 +954,7 @@ class OpPrecedenceTests extends BaseEffFunSuite:
   // Complex grouping with multiple binops:
   // let a = (1 + 2) * (3 - 4) / 5;
   // (Verifies that grouping changes the default precedence.)
-  test("complex grouping with multiple binops: (1 + 2) * (3 - 4) / 5") {
+  test("complex grouping with multiple binops: (1 + 2) * (3 - 4) / 5".only) {
     semNotFailed(
       """
        let a = (1 + 2) * (3 - 4) / 5;
@@ -1298,7 +1298,7 @@ class OpPrecedenceTests extends BaseEffFunSuite:
 // let b = ++1;     // Unary prefix usage
 // Verifies disambiguation between unary and binary variants of the same operator
 
-  test("Test operators with the same symbol but different arity".only) {
+  test("Test operators with the same symbol but different arity") {
     semNotFailed(
       """
        op ++ (a: Int b: Int): Int = a + b;

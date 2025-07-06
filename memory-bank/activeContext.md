@@ -19,10 +19,19 @@ Ability to compile simple programs:
   - **RESOLVED:** Fixed operator arity checking - TypeChecker now correctly uses the resolved operator variant (unary vs binary)
   - **RESOLVED:** Fixed injected operators to only set `typeAsc`, not `typeSpec` (typeSpec should be computed by TypeChecker)
   - **RESOLVED:** Swapped RefResolver and TypeResolver order in semantic pipeline (TypeResolver now runs first)
-  - **REMAINING ISSUE:** TypeResolver only resolves one level of type aliases - needs recursive resolution
-    - Type alias resolution MUST be recursive and stop at a TypeDef
-    - Then walk back assigning the typeSpec of each alias to that of the TypeDef's typeSpec
-    - Example: Int -> Int64 -> i64 (currently only Int -> Int64 is resolved)
+  - **RESOLVED:** Fixed operator type validation bug - injected operators had incorrect `typeAsc` set to TypeFn instead of just return type
+    - Arithmetic operators now have `typeAsc = Some(intType)` 
+    - Comparison operators now have `typeAsc = Some(boolType)`
+    - Logical operators now have `typeAsc = Some(boolType)`
+    - Test "Test operators with the same symbol but different arity" now passes
+  - **MAJOR REFACTOR COMPLETED:** TypeChecker now works correctly without higher-order functions
+    - TypeFn is never created or assigned to any node
+    - First pass lowers mandatory ascriptions to specs for functions/operators
+    - Type checker only works with typeSpec fields, never reads typeAsc (except for validation)
+    - Parameter context properly threaded through body checking
+  - **REMAINING ISSUES:** 
+    - Some complex expressions like `(1 + 2) * 3` fail with UnresolvableType
+    - Mixed associativity test also failing
 
 * **(2025-07-05)** Made progress on Type Checker (#133), but issues remain.
   - **IN PROGRESS:** The `TypeChecker` still fails on many operator-related tests. The logic for handling multi-argument function application was improved, but this was not sufficient to resolve the type errors that occur after operators are rewritten into `App` chains.
@@ -61,6 +70,9 @@ This task is to implement a simple, forward-propagating type checker to unblock 
   - CRITICAL: Type alias resolution MUST be recursive, stopping at a TypeDef
   - CRITICAL: Must walk back the chain assigning typeSpec from the TypeDef
   - This causes TypeMismatch errors when comparing types with different levels of resolution
+
+the test "complex grouping with multiple binops: (1 + 2) * (3 - 4) / 5".only 
+has been marked to be the only to run. we can work on fixing this one.
 
 **Execution Plan:**
 
