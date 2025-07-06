@@ -33,8 +33,8 @@ object SemanticApi:
         val finalState =
           initialState
             |> DuplicateNameChecker.rewriteModule
-            |> RefResolver.rewriteModule
             |> TypeResolver.rewriteModule
+            |> RefResolver.rewriteModule
             |> ExpressionRewriter.rewriteModule
             |> TypeChecker.rewriteModule
             |> MemberErrorChecker.checkModule

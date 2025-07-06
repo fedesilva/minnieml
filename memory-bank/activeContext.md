@@ -13,6 +13,17 @@ Ability to compile simple programs:
 
 ## Recent Changes
 
+* **(2025-07-06)** Major progress on Type Checker (#133) - Fixed critical bugs in RefResolver and TypeChecker
+  - **RESOLVED:** RefResolver now properly sets `resolvedAs` for single candidates (was leaving unambiguous references unresolved)
+  - **RESOLVED:** TypeChecker now handles FnParam references correctly (was only handling Decl types)
+  - **RESOLVED:** Fixed operator arity checking - TypeChecker now correctly uses the resolved operator variant (unary vs binary)
+  - **RESOLVED:** Fixed injected operators to only set `typeAsc`, not `typeSpec` (typeSpec should be computed by TypeChecker)
+  - **RESOLVED:** Swapped RefResolver and TypeResolver order in semantic pipeline (TypeResolver now runs first)
+  - **REMAINING ISSUE:** TypeResolver only resolves one level of type aliases - needs recursive resolution
+    - Type alias resolution MUST be recursive and stop at a TypeDef
+    - Then walk back assigning the typeSpec of each alias to that of the TypeDef's typeSpec
+    - Example: Int -> Int64 -> i64 (currently only Int -> Int64 is resolved)
+
 * **(2025-07-05)** Made progress on Type Checker (#133), but issues remain.
   - **IN PROGRESS:** The `TypeChecker` still fails on many operator-related tests. The logic for handling multi-argument function application was improved, but this was not sufficient to resolve the type errors that occur after operators are rewritten into `App` chains.
   - **NEXT:** The immediate next step is to fix the remaining test failures in `OpPrecedenceTests` by correctly handling the type checking of rewritten operator expressions.
@@ -38,23 +49,26 @@ Ability to compile simple programs:
 
 This task is to implement a simple, forward-propagating type checker to unblock the codegen update (#156). The full specification is in `memory-bank/specs/133-simple-typechecker.md`.
 
+**What Works:**
+- ✓ RefResolver correctly resolves references and sets `resolvedAs` for unambiguous cases
+- ✓ TypeChecker handles FnParam references (parameters)
+- ✓ TypeChecker correctly identifies operator arity based on resolved operator
+- ✓ Injected operators properly use only `typeAsc` (not `typeSpec`)
+- ✓ Semantic pipeline order corrected (TypeResolver before RefResolver)
+
+**What Doesn't Work:**
+- ❌ TypeResolver only resolves one level of type aliases (not recursive)
+  - CRITICAL: Type alias resolution MUST be recursive, stopping at a TypeDef
+  - CRITICAL: Must walk back the chain assigning typeSpec from the TypeDef
+  - This causes TypeMismatch errors when comparing types with different levels of resolution
+
 **Execution Plan:**
 
 *   **Block 1: Update AST Literals:** ✓ COMPLETED
-    -   Modified `AstNode.scala` to replace the `LiteralType` hierarchy with direct usage of `TypeRef` for all literal nodes.
-    -   Removed the `LiteralType` sealed trait and all its subclasses.
-    -   Cleaned up any remaining usages of `LiteralType` across the codebase.
 *   **Block 2: Implement Core Type Checker Logic:** ✓ COMPLETED
-    -   Defined new `TypeError` and `SemanticError` cases.
-    -   Created `TypeChecker.scala` and implemented the core logic, including state-threading, alias resolution, and initial `Hole` typing.
 *   **Block 3: Integrate and Test:** IN PROGRESS
-    -   Integrated the new `TypeChecker` into the `SemanticApi.scala` pipeline.
-    -   Created `TypeCheckerTests.scala` and updated other test suites (`LiteralTests`, `AppRewritingTests`, `OpPrecedenceTests`) to align with the new, stricter typing rules.
-    -   **Remaining:** Numerous test failures still exist, primarily in `OpPrecedenceTests` and `AppRewritingTests`, due to the new type checker - specifically, the tested code does not have the required type annotations. The next step is to fix these tests.
-    -   **PARTIALLY RESOLVED (2025-07-05)**: TypeChecker incorrectly handles multi-argument function applications.
-        - The core logic in `checkApplication` was updated to collect all arguments in a chain before validation.
-        - This fixed direct multi-argument function calls, but issues remain with operator applications, which are rewritten into `App` chains.
-        - **Remaining:** The type checker still fails on many operator-related tests, indicating the fix was not sufficient for all cases.
+    -   Most core functionality working
+    -   **CRITICAL REMAINING:** Fix recursive type alias resolution in TypeResolver
 
 #### Focus on bugs/133-typechecker-current-issues.md
 

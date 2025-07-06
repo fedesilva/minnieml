@@ -54,11 +54,11 @@ def rewrite(src: String, showTypes: Boolean = false, dumpRawState: Boolean = fal
       // Thread state through all phases with debug output
       val state1 = DuplicateNameChecker.rewriteModule(initialState)
 
-      val state2 = RefResolver.rewriteModule(state1)
-      println(s"\n \n resolvedModule \n ${prettyPrintAst(state2.module)}")
+      val state2 = TypeResolver.rewriteModule(state1)
+      println(s"\n \n typesResolvedModule \n ${prettyPrintAst(state2.module)}")
 
-      val state3 = TypeResolver.rewriteModule(state2)
-      println(s"\n \n typesResolvedModule \n ${prettyPrintAst(state3.module)}")
+      val state3 = RefResolver.rewriteModule(state2)
+      println(s"\n \n resolvedModule \n ${prettyPrintAst(state3.module)}")
 
       val state4 = ExpressionRewriter.rewriteModule(state3)
       println(s"\n \n Unified Rewriting \n ${prettyPrintAst(state4.module)}")

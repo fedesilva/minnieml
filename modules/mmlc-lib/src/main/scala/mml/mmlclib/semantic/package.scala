@@ -170,7 +170,7 @@ def injectStandardOperators(module: Module): Module =
       precedence = prec,
       assoc      = assoc,
       body       = Expr(dummySpan, List(NativeImpl(dummySpan, nativeOp = Some(llvmOp)))),
-      typeSpec   = Some(opType),
+      typeSpec   = None,
       typeAsc    = Some(opType),
       docComment = None
     )
@@ -194,7 +194,7 @@ def injectStandardOperators(module: Module): Module =
       precedence = prec,
       assoc      = assoc,
       body       = Expr(dummySpan, List(NativeImpl(dummySpan, nativeOp = Some(llvmOp)))),
-      typeSpec   = Some(opType),
+      typeSpec   = None,
       typeAsc    = Some(opType),
       docComment = None
     )
@@ -214,7 +214,7 @@ def injectStandardOperators(module: Module): Module =
       precedence = prec,
       assoc      = assoc,
       body       = Expr(dummySpan, List(NativeImpl(dummySpan, nativeOp = Some(llvmOp)))),
-      typeSpec   = Some(opType),
+      typeSpec   = None,
       typeAsc    = Some(opType),
       docComment = None
     )
@@ -233,7 +233,7 @@ def injectStandardOperators(module: Module): Module =
       precedence = prec,
       assoc      = assoc,
       body       = Expr(dummySpan, List(NativeImpl(dummySpan, nativeOp = Some(llvmOp)))),
-      typeSpec   = Some(opType),
+      typeSpec   = None,
       typeAsc    = Some(opType),
       docComment = None
     )
@@ -251,7 +251,7 @@ def injectStandardOperators(module: Module): Module =
       precedence = prec,
       assoc      = assoc,
       body       = Expr(dummySpan, List(NativeImpl(dummySpan, nativeOp = Some(llvmOp)))),
-      typeSpec   = Some(opType),
+      typeSpec   = None,
       typeAsc    = Some(opType),
       docComment = None
     )

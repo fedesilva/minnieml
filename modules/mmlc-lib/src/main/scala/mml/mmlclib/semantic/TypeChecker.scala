@@ -185,13 +185,27 @@ object TypeChecker:
             case Some(t) => Right(ref.copy(typeSpec = Some(t)))
             case None => Left(List(TypeError.UnresolvableType(TypeRef(ref.span, ref.name), ref, phaseName)))
         case Some(decl: Decl) => 
-          // Find the member in the current module which has the computed typeSpec
-          module.members.find(m => m.isInstanceOf[Decl] && m.asInstanceOf[Decl].name == decl.name) match
-            case Some(updatedDecl: Decl) => 
-              updatedDecl.typeSpec match
-                case Some(t) => Right(ref.copy(typeSpec = Some(t)))
-                case None => Left(List(TypeError.UnresolvableType(TypeRef(ref.span, "unknown"), ref, phaseName)))
-            case _ => Left(List(TypeError.UnresolvableType(TypeRef(ref.span, ref.name), ref, phaseName)))
+          // The resolved declaration should already have its typeSpec computed in the first pass
+          // Use it directly instead of looking it up again
+          decl.typeSpec match
+            case Some(t) => Right(ref.copy(typeSpec = Some(t)))
+            case None => 
+              // If no typeSpec on the resolved decl, it might be from a different module (e.g., Prelude)
+              // In that case, look it up in the current module
+              // For operators, we need to match the specific variant (unary vs binary)
+              module.members.find {
+                case candidate: UnaryOpDef if decl.isInstanceOf[UnaryOpDef] => 
+                  candidate.name == decl.name
+                case candidate: BinOpDef if decl.isInstanceOf[BinOpDef] => 
+                  candidate.name == decl.name  
+                case candidate: Decl if !decl.isInstanceOf[OpDef] => 
+                  candidate.name == decl.name
+                case _ => false
+              } match
+                case Some(updatedDecl: Decl) if updatedDecl.typeSpec.isDefined =>
+                  Right(ref.copy(typeSpec = updatedDecl.typeSpec))
+                case _ => 
+                  Left(List(TypeError.UnresolvableType(TypeRef(ref.span, ref.name), ref, phaseName)))
         case _ => Left(List(TypeError.UnresolvableType(TypeRef(ref.span, ref.name), ref, phaseName)))
 
     case app: App =>
