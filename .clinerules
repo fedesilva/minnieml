@@ -119,11 +119,13 @@ Start[Update Process]
 
 I MUST remember to also read the `Readme.md` file at the top of the repository.
 
+Check name of branch and git history **if needed** for context.
+
 Note: When triggered by **update memory bank**, I MUST review every memory bank file, even if some don't require updates. Focus particularly on activeContext.md  as it tracks current state.
 
 I must keep the files to a minimum size.
 
-1. __Don't remove old updates:__ The "Recent Changes" section is a log. I should not delete its history.
+1. __Don't remove old updates:__ The "Recent Changes" section is a log. I should not delete its history unless I hit the threshold below.
 2. __Garbage Collection:__ I should only remove entries from "Recent Changes" if there are more than 20.
 3. __Updating Process:__ To update the status, I should move completed items from "Next Steps" to "Recent Changes".
 4. __Don't touch:__ I must not modify the "Current Focus" or "Future work" sections.

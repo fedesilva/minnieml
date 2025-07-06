@@ -75,6 +75,33 @@ This task is to implement a simple, forward-propagating type checker to unblock 
     -   Integrated the new `TypeChecker` into the `SemanticApi.scala` pipeline.
     -   Created `TypeCheckerTests.scala` and updated other test suites (`LiteralTests`, `AppRewritingTests`, `OpPrecedenceTests`) to align with the new, stricter typing rules.
     -   **Remaining:** Numerous test failures still exist, primarily in `OpPrecedenceTests` and `AppRewritingTests`, due to the new type checker - specifically, the tested code does not have the required type annotations. The next step is to fix these tests. 
+    -   **Possible bug** The printed ast is weird, see `memory-bank/bugs/133-typechecker-ast-needs-checking.txt`
+           - I see operators defined where the Bool type is resolved and then later it's not.
+           - check the injection definition.
+           - check how we resolve aliases again, it might be that for some types we don't?
+           - this is not limited to Bool. 
+           - examples
+           ```
+            UnaryOpDef prot +
+              typeSpec: TypeFn
+                params: TypeRef Int => TypeAlias(Int)
+                return: TypeFn
+                  params: TypeRef Int(unresolved)
+                  return: TypeRef Int(unresolved)
+            ```
+
+
+            ```
+             UnaryOpDef prot not
+              typeSpec: TypeFn
+                params: TypeRef Bool => TypeDef(Bool)
+                return: TypeFn
+                  params: TypeRef Bool(unresolved)
+                  return: TypeRef Bool(unresolved)
+            ```
+
+
+            
 
 ### Codegen Update (Ticket #156) - IN PROGRESS
 The implementation plan is detailed in `memory-bank/specs/codegen-update.md`. Progress on the four blocks:
