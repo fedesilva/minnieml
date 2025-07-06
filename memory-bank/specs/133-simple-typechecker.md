@@ -69,18 +69,7 @@ case class LiteralFloat(span: SrcSpan, value: Float) extends LiteralValue:
 
 ### 2. TypeChecker Runs After ExpressionRewriter
 
-**Problem**: Need to handle both operators and function applications.
-
-**Current Pipeline in `SemanticApi.scala`:**
-```scala
-initialState
-  |> DuplicateNameChecker.rewriteModule
-  |> RefResolver.rewriteModule
-  |> TypeResolver.rewriteModule
-  |> ExpressionRewriter.rewriteModule  // Converts ops and fn calls to Apps, creates App chains
-  |> MemberErrorChecker.checkModule
-  |> Simplifier.rewriteModule
-```
+**Problem**: Need to handle both operators and function applications, and ensure that type information is available as it is computed.
 
 **Proposed Pipeline:**
 ```scala
@@ -94,10 +83,13 @@ initialState
   |> Simplifier.rewriteModule
 ```
 
+**Implementation Note:** The `TypeChecker` must be implemented as a state-threading pass using `foldLeft` over the module members. This ensures that each member being checked has access to the updated, type-annotated versions of the members that came before it in the file, preventing stale reference issues.
+
 **Benefits:**
-- TypeChecker only sees unified function applications
-- No special handling for `BinOpDef`/`UnaryOpDef` needed
-- Operators are already rewritten as `App(App(Ref("+"), a), b)`
+- TypeChecker only sees unified function applications.
+- No special handling for `BinOpDef`/`UnaryOpDef` needed.
+- Operators are already rewritten as `App(App(Ref("+"), a), b)`.
+- Type information is correctly propagated between members.
 
 ### 3. Mixed Mandatory/Optional Type Ascriptions
 
@@ -138,6 +130,11 @@ let z: String = 42;      // ERROR: type mismatch
 
 ### Conditional Expressions
 Both branches of `if cond then a else b` must have the same type. Simple type checking - no union types.
+
+### Hole (`???`) Typing
+- A `Hole` term (`???`) inherits its type from the surrounding context.
+- If a `Hole` is found in a function body, its `typeSpec` will be set to the function's return type.
+- If a `Hole` is found in a `let` binding without a type ascription, it is a `TypeError`.
 
 ### Type Alias Compatibility
 Follow alias chains to find the concrete type:
@@ -220,21 +217,34 @@ let z = 42;              // OK: no ascription, use inferred TypeRef("Int")
 
 **File:** `modules/mmlc-lib/src/main/scala/mml/mmlclib/semantic/package.scala`
 
+A new `TypeError` enum will be created to encapsulate all type-related errors. `SemanticError` will then have a case to wrap `TypeError`.
+
 ```scala
+enum TypeError extends CompilationError:
+  // Function and Operator Definition Errors
+  case MissingParameterType(param: FnParam, fnDef: FnDef, phase: String)
+  case MissingReturnType(fnDef: FnDef, phase: String)
+  case MissingOperatorParameterType(param: FnParam, opDef: OpDef, phase: String)
+  case MissingOperatorReturnType(opDef: OpDef, phase: String)
+
+  // Expression and Application Errors
+  case TypeMismatch(node: Typeable, expected: TypeSpec, actual: TypeSpec, phase: String)
+  case UndersaturatedApplication(app: App, expectedArgs: Int, actualArgs: Int, phase: String)
+  case OversaturatedApplication(app: App, expectedArgs: Int, actualArgs: Int, phase: String)
+  case InvalidApplication(app: App, fnType: TypeSpec, argType: TypeSpec, phase: String)
+
+  // Conditional Errors
+  case ConditionalBranchTypeMismatch(cond: Cond, trueType: TypeSpec, falseType: TypeSpec, phase: String)
+  case ConditionalBranchTypeUnknown(cond: Cond, phase: String)
+
+  // General Type Errors
+  case UnresolvableType(typeRef: TypeRef, node: Typeable, phase: String)
+  case IncompatibleTypes(node: AstNode, type1: TypeSpec, type2: TypeSpec, context: String, phase: String)
+  case UntypedHoleInBinding(bnd: Bnd, phase: String)
+
 enum SemanticError extends CompilationError:
   // ... existing errors ...
-  case MissingParameterType(param: FnParam, fnName: String, phase: String)
-  case MissingReturnType(fnName: String, phase: String)
-  case MissingOperatorParameterType(param: FnParam, opName: String, phase: String)
-  case MissingOperatorReturnType(opName: String, phase: String)
-  case TypeMismatch(expected: TypeSpec, actual: TypeSpec, node: Typeable, phase: String)
-  case UndersaturatedApplication(expectedArgs: Int, actualArgs: Int, app: App, phase: String)
-  case OversaturatedApplication(expectedArgs: Int, actualArgs: Int, app: App, phase: String)
-  case InvalidApplication(fnType: TypeSpec, argType: TypeSpec, app: App, phase: String)
-  case ConditionalBranchTypeMismatch(trueType: TypeSpec, falseType: TypeSpec, cond: Cond, phase: String)
-  case ConditionalBranchTypeUnknown(cond: Cond, phase: String)
-  case UnresolvableType(typeRef: TypeRef, node: Typeable, phase: String)
-  case IncompatibleTypes(type1: TypeSpec, type2: TypeSpec, context: String, phase: String)
+  case TypeCheckingError(error: TypeError)
 ```
 
 ### Phase 3: Implement TypeChecker Core

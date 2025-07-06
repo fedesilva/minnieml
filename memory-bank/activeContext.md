@@ -68,12 +68,13 @@ This task is to implement a simple, forward-propagating type checker to unblock 
     -   Modified `AstNode.scala` to replace the `LiteralType` hierarchy with direct usage of `TypeRef` for all literal nodes.
     -   Removed the `LiteralType` sealed trait and all its subclasses.
     -   Cleaned up any remaining usages of `LiteralType` across the codebase.
-*   **Block 2: Implement Core Type Checker Logic:** IN PROGRESS
-    -   Define new `SemanticError` cases for the type checker.
-    -   Create `TypeChecker.scala` and implement the core logic for validation and inference.
-*   **Block 3: Integrate and Test:**
-    -   Integrate the new `TypeChecker` into the `SemanticApi.scala` pipeline.
-    -   Create a comprehensive test suite in `TypeCheckerTests.scala` to validate all specified behaviors.
+*   **Block 2: Implement Core Type Checker Logic:** ✓ COMPLETED
+    -   Defined new `TypeError` and `SemanticError` cases.
+    -   Created `TypeChecker.scala` and implemented the core logic, including state-threading, alias resolution, and initial `Hole` typing.
+*   **Block 3: Integrate and Test:** IN PROGRESS
+    -   Integrated the new `TypeChecker` into the `SemanticApi.scala` pipeline.
+    -   Created `TypeCheckerTests.scala` and updated other test suites (`LiteralTests`, `AppRewritingTests`, `OpPrecedenceTests`) to align with the new, stricter typing rules.
+    -   **Remaining:** Numerous test failures still exist, primarily in `OpPrecedenceTests` and `AppRewritingTests`, due to the new type checker - specifically, the tested code does not have the required type annotations. The next step is to fix these tests. 
 
 ### Codegen Update (Ticket #156) - IN PROGRESS
 The implementation plan is detailed in `memory-bank/specs/codegen-update.md`. Progress on the four blocks:

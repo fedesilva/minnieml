@@ -39,7 +39,7 @@ def parseModule(source: String, name: Option[String] = "Anon".some): Option[Modu
     }
     .unsafeRunSync()
 
-def rewrite(src: String, showTypes: Boolean = false): Unit =
+def rewrite(src: String, showTypes: Boolean = false, dumpRawState: Boolean = false): Unit =
   parseModule(src) match
     case Some(module) =>
       println(s"Original module: \n${prettyPrintAst(module)} ")
@@ -63,9 +63,12 @@ def rewrite(src: String, showTypes: Boolean = false): Unit =
       val state4 = ExpressionRewriter.rewriteModule(state3)
       println(s"\n \n Unified Rewriting \n ${prettyPrintAst(state4.module)}")
 
-      val state5 = MemberErrorChecker.checkModule(state4)
+      val state5 = TypeChecker.rewriteModule(state4)
+      println(s"\n \n Type Checked \n ${prettyPrintAst(state5.module, showTypes = true)}")
 
-      val finalState = Simplifier.rewriteModule(state5)
+      val state6 = MemberErrorChecker.checkModule(state5)
+
+      val finalState = Simplifier.rewriteModule(state6)
 
       // Always print the final module
       println(
@@ -76,6 +79,11 @@ def rewrite(src: String, showTypes: Boolean = false): Unit =
       // Print error status
       if finalState.errors.isEmpty then println("No errors")
       else println(s"Errors: ${finalState.errors.toList}")
+
+      if dumpRawState then
+        println("-"*80)
+        println(finalState)
+        println("-"*80)
 
     case None =>
       println("Failed to parse module")

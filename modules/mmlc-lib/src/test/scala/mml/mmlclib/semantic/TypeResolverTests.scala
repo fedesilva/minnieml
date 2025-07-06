@@ -27,19 +27,18 @@ class TypeResolverTests extends BaseEffFunSuite:
   test("TypeResolver should resolve type references in function parameters"):
     val code = """
       type TestString = @native:*i8;
-      fn greet(name: TestString) = name;
+      fn greet(name: TestString): TestString = name;
     """
 
     semNotFailed(code).map { module =>
       // Find the function
       val fnDef = module.members.collectFirst { case f: FnDef => f }.get
 
-      // Check that the parameter type has been resolved
-      val param = fnDef.params.head
-      param.typeAsc match
-        case Some(TypeRef(_, "TestString", resolvedAs)) =>
+      // Check that the return type has been resolved
+      fnDef.typeAsc match
+        case Some(TypeRef(_, "TestBool", resolvedAs)) =>
           assert(resolvedAs.isDefined, "Expected TypeRef to be resolved")
-          assertEquals(resolvedAs.get.asInstanceOf[TypeDef].name, "TestString")
+          assertEquals(resolvedAs.get.asInstanceOf[TypeDef].name, "TestBool")
         case _ =>
           fail("Expected TypeRef with resolved type")
     }

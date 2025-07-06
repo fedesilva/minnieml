@@ -4,6 +4,28 @@ import cats.syntax.all.*
 import mml.mmlclib.ast.*
 import mml.mmlclib.errors.CompilationError
 
+enum TypeError extends CompilationError:
+  // Function and Operator Definition Errors
+  case MissingParameterType(param: FnParam, fnDef: FnDef, phase: String)
+  case MissingReturnType(fnDef: FnDef, phase: String)
+  case MissingOperatorParameterType(param: FnParam, opDef: OpDef, phase: String)
+  case MissingOperatorReturnType(opDef: OpDef, phase: String)
+
+  // Expression and Application Errors
+  case TypeMismatch(node: Typeable, expected: TypeSpec, actual: TypeSpec, phase: String)
+  case UndersaturatedApplication(app: App, expectedArgs: Int, actualArgs: Int, phase: String)
+  case OversaturatedApplication(app: App, expectedArgs: Int, actualArgs: Int, phase: String)
+  case InvalidApplication(app: App, fnType: TypeSpec, argType: TypeSpec, phase: String)
+
+  // Conditional Errors
+  case ConditionalBranchTypeMismatch(cond: Cond, trueType: TypeSpec, falseType: TypeSpec, phase: String)
+  case ConditionalBranchTypeUnknown(cond: Cond, phase: String)
+
+  // General Type Errors
+  case UnresolvableType(typeRef: TypeRef, node: Typeable, phase: String)
+  case IncompatibleTypes(node: AstNode, type1: TypeSpec, type2: TypeSpec, context: String, phase: String)
+  case UntypedHoleInBinding(bnd: Bnd, phase: String)
+
 enum SemanticError extends CompilationError:
   case UndefinedRef(ref: Ref, member: Member, phase: String)
   case UndefinedTypeRef(typeRef: TypeRef, member: Member, phase: String)
@@ -12,6 +34,7 @@ enum SemanticError extends CompilationError:
   case DanglingTerms(terms: List[Term], message: String, phase: String)
   case MemberErrorFound(error: MemberError, phase: String)
   case InvalidExpressionFound(invalidExpr: mml.mmlclib.ast.InvalidExpression, phase: String)
+  case TypeCheckingError(error: TypeError)
 
 /** State that threads through semantic phases, accumulating errors while transforming the module */
 case class SemanticPhaseState(
@@ -138,16 +161,17 @@ def injectStandardOperators(module: Module): Module =
     ("+", 60, Associativity.Left, "add"),
     ("-", 60, Associativity.Left, "sub")
   ).map { case (name, prec, assoc, llvmOp) =>
+    val opType = TypeFn(dummySpan, List(intType, intType), intType)
     BinOpDef(
       span       = dummySpan,
       name       = name,
-      param1     = FnParam(dummySpan, "a", typeSpec = Some(intType)),
-      param2     = FnParam(dummySpan, "b", typeSpec = Some(intType)),
+      param1     = FnParam(dummySpan, "a", typeAsc = Some(intType)),
+      param2     = FnParam(dummySpan, "b", typeAsc = Some(intType)),
       precedence = prec,
       assoc      = assoc,
       body       = Expr(dummySpan, List(NativeImpl(dummySpan, nativeOp = Some(llvmOp)))),
-      typeSpec   = Some(TypeFn(dummySpan, List(intType, intType), intType)),
-      typeAsc    = None,
+      typeSpec   = Some(opType),
+      typeAsc    = Some(opType),
       docComment = None
     )
   }
@@ -161,16 +185,17 @@ def injectStandardOperators(module: Module): Module =
     ("<=", 50, Associativity.Left, "icmp_sle"),
     (">=", 50, Associativity.Left, "icmp_sge")
   ).map { case (name, prec, assoc, llvmOp) =>
+    val opType = TypeFn(dummySpan, List(intType, intType), boolType)
     BinOpDef(
       span       = dummySpan,
       name       = name,
-      param1     = FnParam(dummySpan, "a", typeSpec = Some(intType)),
-      param2     = FnParam(dummySpan, "b", typeSpec = Some(intType)),
+      param1     = FnParam(dummySpan, "a", typeAsc = Some(intType)),
+      param2     = FnParam(dummySpan, "b", typeAsc = Some(intType)),
       precedence = prec,
       assoc      = assoc,
       body       = Expr(dummySpan, List(NativeImpl(dummySpan, nativeOp = Some(llvmOp)))),
-      typeSpec   = Some(TypeFn(dummySpan, List(intType, intType), boolType)),
-      typeAsc    = None,
+      typeSpec   = Some(opType),
+      typeAsc    = Some(opType),
       docComment = None
     )
   }
@@ -180,16 +205,17 @@ def injectStandardOperators(module: Module): Module =
     ("and", 40, Associativity.Left, "and"),
     ("or", 30, Associativity.Left, "or")
   ).map { case (name, prec, assoc, llvmOp) =>
+    val opType = TypeFn(dummySpan, List(boolType, boolType), boolType)
     BinOpDef(
       span       = dummySpan,
       name       = name,
-      param1     = FnParam(dummySpan, "a", typeSpec = Some(boolType)),
-      param2     = FnParam(dummySpan, "b", typeSpec = Some(boolType)),
+      param1     = FnParam(dummySpan, "a", typeAsc = Some(boolType)),
+      param2     = FnParam(dummySpan, "b", typeAsc = Some(boolType)),
       precedence = prec,
       assoc      = assoc,
       body       = Expr(dummySpan, List(NativeImpl(dummySpan, nativeOp = Some(llvmOp)))),
-      typeSpec   = Some(TypeFn(dummySpan, List(boolType, boolType), boolType)),
-      typeAsc    = None,
+      typeSpec   = Some(opType),
+      typeAsc    = Some(opType),
       docComment = None
     )
   }
@@ -199,15 +225,16 @@ def injectStandardOperators(module: Module): Module =
     ("-", 95, Associativity.Right, "neg"),
     ("+", 95, Associativity.Right, "nop")
   ).map { case (name, prec, assoc, llvmOp) =>
+    val opType = TypeFn(dummySpan, List(intType), intType)
     UnaryOpDef(
       span       = dummySpan,
       name       = name,
-      param      = FnParam(dummySpan, "a", typeSpec = Some(intType)),
+      param      = FnParam(dummySpan, "a", typeAsc = Some(intType)),
       precedence = prec,
       assoc      = assoc,
       body       = Expr(dummySpan, List(NativeImpl(dummySpan, nativeOp = Some(llvmOp)))),
-      typeSpec   = Some(TypeFn(dummySpan, List(intType), intType)),
-      typeAsc    = None,
+      typeSpec   = Some(opType),
+      typeAsc    = Some(opType),
       docComment = None
     )
   }
@@ -216,15 +243,16 @@ def injectStandardOperators(module: Module): Module =
   val unaryLogicalOps = List(
     ("not", 95, Associativity.Right, "not")
   ).map { case (name, prec, assoc, llvmOp) =>
+    val opType = TypeFn(dummySpan, List(boolType), boolType)
     UnaryOpDef(
       span       = dummySpan,
       name       = name,
-      param      = FnParam(dummySpan, "a", typeSpec = Some(boolType)),
+      param      = FnParam(dummySpan, "a", typeAsc = Some(boolType)),
       precedence = prec,
       assoc      = assoc,
       body       = Expr(dummySpan, List(NativeImpl(dummySpan, nativeOp = Some(llvmOp)))),
-      typeSpec   = Some(TypeFn(dummySpan, List(boolType), boolType)),
-      typeAsc    = None,
+      typeSpec   = Some(opType),
+      typeAsc    = Some(opType),
       docComment = None
     )
   }

@@ -11,7 +11,7 @@ class AppRewritingTests extends BaseEffFunSuite:
   test("2 arity function") {
     semNotFailed(
       """
-      fn mult (a b) = ???;
+      fn mult (a: Int b: Int): Int = ???;
       let a = mult 2 2;
       """
     ).map { m =>
@@ -53,7 +53,7 @@ class AppRewritingTests extends BaseEffFunSuite:
     // This should fail semantic analysis due to dangling terms
     semFailed(
       """
-      fn func (a b) = ???;
+      fn func (a: Int b: Int): Int = ???;
       let a = 2 + (func 1) 3;
       """
     )
@@ -62,8 +62,8 @@ class AppRewritingTests extends BaseEffFunSuite:
   test("grouped function applications should work correctly") {
     semNotFailed(
       """
-      fn func (a) = ???;
-      fn apply (f x) = ???;
+      fn func (a: Int): Int = ???;
+      fn apply (f: Int, x: Int): Int = ???;
       let a = apply (func 1) 2;
       """
     ).map { m =>
@@ -118,7 +118,7 @@ class AppRewritingTests extends BaseEffFunSuite:
   test("curried function application should work without boundaries") {
     semNotFailed(
       """
-      fn func (a b) = ???;
+      fn func (a: Int, b: Int, c: Int, d: Int): Int = ???;
       let a = func 1 2 3 4;
       """
     ).map { m =>
@@ -161,7 +161,7 @@ class AppRewritingTests extends BaseEffFunSuite:
   test("function application with operators should work") {
     semNotFailed(
       """
-      fn func (a b) = ???;
+      fn func (a: Int, b: Int): Int = ???;
       let a = (func 1 1) + 3 - func 1 2 3;
       """
     ).map { m =>
@@ -265,10 +265,10 @@ class AppRewritingTests extends BaseEffFunSuite:
   test("complex nested function applications with operators should work") {
     semNotFailed(
       """
-      fn func (a b) = ???;
-      fn apply (f x) = ???;
-      fn compose (f g x) = ???;
-      
+      fn func (a: Int, b: Int): Int = ???;
+      fn apply (f: Int, x: Int): Int = ???;
+      fn compose (f: Int, g: Int, x: Int): Int = ???;
+
       let a = apply (func 1) 2 + compose func func 3 4 5;
       """
     ).map { m =>
@@ -377,7 +377,7 @@ class AppRewritingTests extends BaseEffFunSuite:
   test("zero-arity function") {
     semNotFailed(
       """
-      fn func () = ???;
+      fn func (): Int = ???;
       let a = func ();
       """
     ).map { m =>
@@ -403,7 +403,7 @@ class AppRewritingTests extends BaseEffFunSuite:
   test("function application within if/else") {
     semNotFailed(
       """
-      fn func (a) = ???;
+      fn func (a: Int): Int = ???;
       let cond = true;
       let a = if cond then func 1 else func 2;
       """
@@ -468,8 +468,8 @@ class AppRewritingTests extends BaseEffFunSuite:
   test("nested function applications with operators") {
     semNotFailed(
       """
-      fn func1 (a) = ???;
-      fn func2 (b) = ???;
+      fn func1 (a: Int): Int = ???;
+      fn func2 (b: Int): Int = ???;
       let a = func1 (func2 1) + 2;
       """
     ).map { m =>
@@ -533,7 +533,7 @@ class AppRewritingTests extends BaseEffFunSuite:
   test("single-argument function") {
     semNotFailed(
       """
-      fn func (a) = ???;
+      fn func (a: Int): Int = ???;
       let a = func 1;
       """
     ).map { m =>

@@ -36,6 +36,7 @@ object SemanticApi:
             |> RefResolver.rewriteModule
             |> TypeResolver.rewriteModule
             |> ExpressionRewriter.rewriteModule
+            |> TypeChecker.rewriteModule
             |> MemberErrorChecker.checkModule
             |> Simplifier.rewriteModule
 
