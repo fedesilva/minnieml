@@ -63,6 +63,15 @@ PB --> TC[techContext.md]
 
 ### Additional Context
 
+There are two sub directories under `memory-bank`:
+* `specs` contains detailed descriptions of problems and/or tasks.
+    - normally new functionality and related work is specified here.
+* `bugs` containes data or bug reports and specs.
+    - things that should work but don't. no new functionality.
+
+Only read these files if required, or referenced elsewhere, otherwise 
+ignore to maintain tight focus.
+
 If requested, create additional files/folders within docs/brainstorming/ when they help organize:
 
 - Complex feature documentation
@@ -145,3 +154,9 @@ It's _critically_ important that I _break work into blocks_ and wait for the use
 
 Always make small changes, then check things compile, pass tests.
 After that, proceed, unless I am told explicitely otherwise; for example in some cases the user might want to do manual verification.
+
+
+## Tools for code interaction
+
+While you can use grep like tools if you need, **YOU ALWAYS MUST** first try to use the scala 
+metals MCP before, since it will be cheaper and easier and probably more accurate.
