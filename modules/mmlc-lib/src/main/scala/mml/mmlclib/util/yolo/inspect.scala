@@ -42,7 +42,8 @@ def parseModule(source: String, name: Option[String] = "Anon".some): Option[Modu
 def rewrite(src: String, showTypes: Boolean = false, dumpRawState: Boolean = false): Unit =
   parseModule(src) match
     case Some(module) =>
-      println(s"Original module: \n${prettyPrintAst(module)} ")
+      println("-"*80)
+      println(s"As parsed module: \n${prettyPrintAst(module)} ")
 
       // Inject basic types and standard operators first
       val moduleWithTypes = injectBasicTypes(module)
@@ -50,31 +51,44 @@ def rewrite(src: String, showTypes: Boolean = false, dumpRawState: Boolean = fal
 
       // Create initial state
       val initialState = SemanticPhaseState(moduleWithOps, Vector.empty)
+      println("-"*80)
+      println(s"\n \n Synthetic members injected: \n $initialState")
 
       // Thread state through all phases with debug output
       val state1 = DuplicateNameChecker.rewriteModule(initialState)
 
       val state2 = TypeResolver.rewriteModule(state1)
-      println(s"\n \n typesResolvedModule \n ${prettyPrintAst(state2.module)}")
+      println("-"*80)
+      println(s"\n \n Type Resolver phase:  \n ${prettyPrintAst(state2.module)}")
 
       val state3 = RefResolver.rewriteModule(state2)
-      println(s"\n \n resolvedModule \n ${prettyPrintAst(state3.module)}")
+      println("-"*80)
+      println(s"\n \n Reference Resolver phase: \n ${prettyPrintAst(state3.module)}")
 
       val state4 = ExpressionRewriter.rewriteModule(state3)
-      println(s"\n \n Unified Rewriting \n ${prettyPrintAst(state4.module)}")
+      println("-"*80)
+      println(s"\n \n Expression Rewriting phase: \n ${prettyPrintAst(state4.module)}")
 
       val state5 = TypeChecker.rewriteModule(state4)
-      println(s"\n \n Type Checked \n ${prettyPrintAst(state5.module, showTypes = true)}")
+      println("-"*80)
+      println(s"\n \n Type Checker phase \n ${prettyPrintAst(state5.module, showTypes = true)}")
 
       val state6 = MemberErrorChecker.checkModule(state5)
 
       val finalState = Simplifier.rewriteModule(state6)
 
       // Always print the final module
+      println("-"*80)
       println(
-        s"Simplified module: \n${prettyPrintAst(finalState.module, showTypes = showTypes)} "
+        s"Simplifier: \n${prettyPrintAst(finalState.module, showTypes = showTypes)} "
       )
-      println(s"Original source: \n$src")
+
+
+      println("-"*80)
+      println("Original source")
+      println("="*80)
+      println(s"$src")
+      println("="*80)
 
       // Print error status
       if finalState.errors.isEmpty then println("No errors")

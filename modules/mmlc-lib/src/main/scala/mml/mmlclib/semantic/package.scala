@@ -121,6 +121,11 @@ def injectBasicTypes(module: Module): Module =
       name     = "Char",
       typeSpec = Some(NativePrimitive(dummySpan, "i8"))
     ),
+    TypeDef(
+      span     = dummySpan,
+      name     = "Unit", 
+      typeSpec = Some(NativePrimitive(dummySpan, "void"))
+    ),
 
     // Type aliases pointing to native types
     TypeAlias(

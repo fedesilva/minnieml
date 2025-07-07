@@ -6,6 +6,8 @@ import mml.mmlclib.api.{CompilerApi, ParserApi}
 import mml.mmlclib.ast.{Member, MemberError, Module}
 import mml.mmlclib.util.prettyprint.ast.prettyPrintAst
 import munit.CatsEffectSuite
+import mml.mmlclib.semantic.*
+  import mml.mmlclib.util.pipe.*
 
 /** Base trait for effectful tests; adds common MML specific assertions. */
 trait BaseEffFunSuite extends CatsEffectSuite:
@@ -107,11 +109,12 @@ trait BaseEffFunSuite extends CatsEffectSuite:
     name:   Option[String] = "Test".some,
     msg:    Option[String] = None
   ): IO[mml.mmlclib.semantic.SemanticPhaseState] =
-    import mml.mmlclib.semantic.*
-    import mml.mmlclib.util.pipe.*
+    
 
     justParse(source, name, msg).map { module =>
-      val moduleWithOps = injectStandardOperators(module)
+      val moduleWithTypes = injectBasicTypes(module)
+      val moduleWithOps = injectStandardOperators(moduleWithTypes)
+      
       val initialState  = SemanticPhaseState(moduleWithOps, Vector.empty)
 
       initialState

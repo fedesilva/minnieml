@@ -6,9 +6,8 @@ import mml.mmlclib.test.BaseEffFunSuite
 class TypeResolverTests extends BaseEffFunSuite:
 
   test("TypeResolver should resolve simple type references in bindings"):
-    val code = """
-      type TestInt = @native:i32;
-      let x: TestInt = 42;
+    val code = """      
+      let x: Int = 42;
     """
 
     semNotFailed(code).map { module =>
@@ -17,36 +16,34 @@ class TypeResolverTests extends BaseEffFunSuite:
 
       // Check that the type ascription has been resolved
       binding.typeAsc match
-        case Some(TypeRef(_, "TestInt", resolvedAs)) =>
+        case Some(TypeRef(_, "Int", resolvedAs)) =>
           assert(resolvedAs.isDefined, "Expected TypeRef to be resolved")
-          assertEquals(resolvedAs.get.asInstanceOf[TypeDef].name, "TestInt")
+          assertEquals(resolvedAs.get.asInstanceOf[TypeAlias].name, "Int")
         case _ =>
           fail("Expected TypeRef with resolved type")
     }
 
   test("TypeResolver should resolve type references in function parameters"):
-    val code = """
-      type TestString = @native:*i8;
-      fn greet(name: TestString): TestString = name;
+    val code = """      
+      fn greet(name: String): String = name;
     """
 
     semNotFailed(code).map { module =>
       // Find the function
       val fnDef = module.members.collectFirst { case f: FnDef => f }.get
 
-      // Check that the return type has been resolved
-      fnDef.typeAsc match
-        case Some(TypeRef(_, "TestBool", resolvedAs)) =>
+      // Check that the parameter type has been resolved
+      fnDef.params.head.typeAsc match
+        case Some(TypeRef(_, "String", resolvedAs)) =>
           assert(resolvedAs.isDefined, "Expected TypeRef to be resolved")
-          assertEquals(resolvedAs.get.asInstanceOf[TypeDef].name, "TestBool")
+          assertEquals(resolvedAs.get.asInstanceOf[TypeDef].name, "String")
         case _ =>
           fail("Expected TypeRef with resolved type")
     }
 
   test("TypeResolver should resolve type references in function return types"):
     val code = """
-      type TestBool = @native:i1;
-      fn isTrue(): TestBool = true;
+      fn isTrue(): Bool = true;
     """
 
     semNotFailed(code).map { module =>
@@ -55,17 +52,16 @@ class TypeResolverTests extends BaseEffFunSuite:
 
       // Check that the return type has been resolved
       fnDef.typeAsc match
-        case Some(TypeRef(_, "TestBool", resolvedAs)) =>
+        case Some(TypeRef(_, "Bool", resolvedAs)) =>
           assert(resolvedAs.isDefined, "Expected TypeRef to be resolved")
-          assertEquals(resolvedAs.get.asInstanceOf[TypeDef].name, "TestBool")
+          assertEquals(resolvedAs.get.asInstanceOf[TypeDef].name, "Bool")
         case _ =>
           fail("Expected TypeRef with resolved type")
     }
 
   test("TypeResolver should resolve type aliases"):
-    val code = """
-      type TestInt = @native:i32;
-      type TestNumber = TestInt;
+    val code = """      
+      type TestNumber = Int64;
       let x: TestNumber = 42;
     """
 
@@ -77,9 +73,9 @@ class TypeResolverTests extends BaseEffFunSuite:
 
       // Check that the type reference in the alias has been resolved
       typeAlias.typeRef match
-        case TypeRef(_, "TestInt", resolvedAs) =>
-          assert(resolvedAs.isDefined, "Expected TypeRef to be resolved")
-          assertEquals(resolvedAs.get.asInstanceOf[TypeDef].name, "TestInt")
+        case TypeRef(_, "Int64", resolvedAs) =>
+          assert(resolvedAs.isDefined, "Expected Int64 to be resolved")
+          assertEquals(resolvedAs.get.asInstanceOf[TypeDef].name, "Int64")
         case _ =>
           fail("Expected TypeRef with resolved type")
 

@@ -4,8 +4,9 @@ import mml.mmlclib.ast.*
 import mml.mmlclib.test.BaseEffFunSuite
 import mml.mmlclib.test.TestExtractors.*
 import mml.mmlclib.util.prettyprint.ast.prettyPrintAst
+import mml.mmlclib.semantic.lookupNames
 import munit.*
-import mml.mmlclib.util.* 
+import mml.mmlclib.util.*
 
 class AppRewritingTests extends BaseEffFunSuite:
 
@@ -71,7 +72,7 @@ class AppRewritingTests extends BaseEffFunSuite:
     semNotFailed(
       """
       fn func (a: Int): Int = ???;
-      fn apply (f: Int, x: Int): Int = ???;
+      fn apply (f: Int x: Int): Int = ???;
       let a = apply (func 1) 2;
       """
     ).map { m =>
@@ -126,7 +127,7 @@ class AppRewritingTests extends BaseEffFunSuite:
   test("curried function application should work without boundaries") {
     semNotFailed(
       """
-      fn func (a: Int, b: Int, c: Int, d: Int): Int = ???;
+      fn func (a: Int b: Int c: Int d: Int): Int = ???;
       let a = func 1 2 3 4;
       """
     ).map { m =>
@@ -169,7 +170,7 @@ class AppRewritingTests extends BaseEffFunSuite:
   test("function application with operators should work") {
     semNotFailed(
       """
-      fn func (a: Int, b: Int): Int = ???;
+      fn func (a: Int b: Int): Int = ???;
       let a = (func 1 1) + 3 - func 1 2 3;
       """
     ).map { m =>
@@ -273,9 +274,9 @@ class AppRewritingTests extends BaseEffFunSuite:
   test("complex nested function applications with operators should work") {
     semNotFailed(
       """
-      fn func (a: Int, b: Int): Int = ???;
-      fn apply (f: Int, x: Int): Int = ???;
-      fn compose (f: Int, g: Int, x: Int): Int = ???;
+      fn func (a: Int b: Int): Int = ???;
+      fn apply (f: Int x: Int): Int = ???;
+      fn compose (f: Int g: Int x: Int): Int = ???;
 
       let a = apply (func 1) 2 + compose func func 3 4 5;
       """

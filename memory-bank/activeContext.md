@@ -61,6 +61,16 @@ This task was to implement a simple, forward-propagating type checker to unblock
     -   Complex expression type inference implemented
     -   Test "complex grouping with multiple binops: (1 + 2) * (3 - 4) / 5" now passes
 
+
+### Corrections needed:
+
+* when resolving type aliases we are propagating the type: correct, BUT.
+  * but we are propagating the native type and that is incorrect.
+  * we only typecheck down to TypeDef.
+  * if a type def is a native type we don't care. that is a codegen thing.
+
+  
+
 ### Remaining Test Failures (Not Part of #133)
 
 The test suite revealed other pre-existing issues not related to the Type Checker implementation:

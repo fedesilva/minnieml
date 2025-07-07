@@ -9,7 +9,7 @@ class MemberErrorCheckerTests extends BaseEffFunSuite:
     semNotFailed(
       """
       module TestPipeline =
-        fn valid(a b) = a + b;
+        fn valid(a: Int b: Int): Int = a + b;
         let x = 42;
       ;
       """
@@ -23,7 +23,7 @@ class MemberErrorCheckerTests extends BaseEffFunSuite:
     semFailed(
       """
       module TestPipeline =
-        fn valid(a b) = a + b;
+        fn valid(a: Int b: Int): Int = a + b;
         let x  ; // Missing expression after =
       ;
       """
@@ -34,7 +34,7 @@ class MemberErrorCheckerTests extends BaseEffFunSuite:
     justParse(
       """
       module Test =
-        fn valid(a b) = a + b;
+        fn valid(a: Int b: Int): Int = a + b;
         let x = 42;
       ;
       """
@@ -50,7 +50,7 @@ class MemberErrorCheckerTests extends BaseEffFunSuite:
     semWithState(
       """
       module TestPartial =
-        fn valid(a b) = a + b;
+        fn valid(a: Int b: Int): Int = a + b;
         let a  ; # Missing expression after =
       ;
       """
@@ -58,7 +58,10 @@ class MemberErrorCheckerTests extends BaseEffFunSuite:
 
       // println(prettyPrintAst(result.module))
 
-      assert(clue(result.errors.size) == clue(1))
+      // if result.errors.nonEmpty then
+      //   println(result.errors)
+
+      assert(clue(result.errors.size) == clue(1))      
 
       result.errors.head match {
         case SemanticError.MemberErrorFound(error, phase) =>
@@ -74,7 +77,7 @@ class MemberErrorCheckerTests extends BaseEffFunSuite:
     semWithState(
       """
       module TestPartial =
-        fn valid(a b) = a + b;
+        fn valid(a: Int b: Int): Int = a + b;
         let a  ; // Missing expression after =
         bnd noLet = 5; # Invalid syntax - 'bnd' instead of 'let'
       ;
