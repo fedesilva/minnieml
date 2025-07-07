@@ -449,7 +449,7 @@ object TypeResolver:
             }
           case None => Right(lit)
         }
-        
+
       case _ =>
         // Other terms don't have type ascriptions that need resolution
         term.asRight[List[SemanticError]]

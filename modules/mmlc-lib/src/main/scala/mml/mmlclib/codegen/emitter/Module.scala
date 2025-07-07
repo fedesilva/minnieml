@@ -136,7 +136,7 @@ private def emitBinding(bnd: Bnd, state: CodeGenState): Either[CodeGenError, Cod
     if compileRes.isLiteral then {
       // Check for string literals
       if compileRes.typeName == "String" then {
-        // FIXME: harcoded use of string, should be resolved by the 
+        // FIXME: harcoded use of string, should be resolved by the
         val stringType = state.llvmTypeForNative("String")
         val stringData = compileRes.register.toString
         Right(compileRes.state.emit(emitGlobalVariable(bnd.name, stringType, stringData)))
@@ -204,4 +204,3 @@ private def emitFnDef(fn: FnDef, state: CodeGenState): Either[CodeGenError, Code
     }
   }
 }
-

@@ -251,80 +251,80 @@ case class Hole(
 sealed trait LiteralValue extends Term, FromSource
 
 case class LiteralInt(
-  span:  SrcSpan,
-  value: Int,
+  span:     SrcSpan,
+  value:    Int,
   typeSpec: Option[TypeSpec],
   typeAsc:  Option[TypeSpec] = None
 ) extends LiteralValue
 
 object LiteralInt {
-  def apply(span: SrcSpan, value: Int): LiteralInt = 
+  def apply(span: SrcSpan, value: Int): LiteralInt =
     new LiteralInt(span, value, Some(TypeRef(span, "Int")), None)
-    
-  def unapply(lit: LiteralInt): Option[(SrcSpan, Int)] = 
+
+  def unapply(lit: LiteralInt): Option[(SrcSpan, Int)] =
     Some((lit.span, lit.value))
 }
 
 case class LiteralString(
-  span: SrcSpan,
-  value: String,
+  span:     SrcSpan,
+  value:    String,
   typeSpec: Option[TypeSpec],
-  typeAsc: Option[TypeSpec] = None
+  typeAsc:  Option[TypeSpec] = None
 ) extends LiteralValue
 
 object LiteralString {
-  def apply(span: SrcSpan, value: String): LiteralString = 
+  def apply(span: SrcSpan, value: String): LiteralString =
     new LiteralString(span, value, Some(TypeRef(span, "String")), None)
-    
-  def unapply(lit: LiteralString): Option[(SrcSpan, String)] = 
+
+  def unapply(lit: LiteralString): Option[(SrcSpan, String)] =
     Some((lit.span, lit.value))
 }
 
 case class LiteralBool(
-  span: SrcSpan,
-  value: Boolean,
+  span:     SrcSpan,
+  value:    Boolean,
   typeSpec: Option[TypeSpec],
-  typeAsc: Option[TypeSpec] = None
+  typeAsc:  Option[TypeSpec] = None
 ) extends LiteralValue
 
 object LiteralBool {
-  def apply(span: SrcSpan, value: Boolean): LiteralBool = 
+  def apply(span: SrcSpan, value: Boolean): LiteralBool =
     new LiteralBool(span, value, Some(TypeRef(span, "Bool")), None)
-    
-  def unapply(lit: LiteralBool): Option[(SrcSpan, Boolean)] = 
+
+  def unapply(lit: LiteralBool): Option[(SrcSpan, Boolean)] =
     Some((lit.span, lit.value))
 }
 
 case class LiteralUnit(
-  span: SrcSpan,
+  span:     SrcSpan,
   typeSpec: Option[TypeSpec],
-  typeAsc: Option[TypeSpec] = None
+  typeAsc:  Option[TypeSpec] = None
 ) extends LiteralValue
 
 object LiteralUnit {
-  def apply(span: SrcSpan): LiteralUnit = 
+  def apply(span: SrcSpan): LiteralUnit =
     new LiteralUnit(span, Some(TypeRef(span, "Unit")), None)
-    
-  def unapply(lit: LiteralUnit): Option[SrcSpan] = 
+
+  def unapply(lit: LiteralUnit): Option[SrcSpan] =
     Some(lit.span)
 }
 
 case class LiteralFloat(
-  span: SrcSpan,
-  value: Float,
+  span:     SrcSpan,
+  value:    Float,
   typeSpec: Option[TypeSpec],
-  typeAsc: Option[TypeSpec] = None
+  typeAsc:  Option[TypeSpec] = None
 ) extends LiteralValue
 
 object LiteralFloat {
-  def apply(span: SrcSpan, value: Float): LiteralFloat = 
+  def apply(span: SrcSpan, value: Float): LiteralFloat =
     new LiteralFloat(span, value, Some(TypeRef(span, "Float")), None)
-    
-  def unapply(lit: LiteralFloat): Option[(SrcSpan, Float)] = 
+
+  def unapply(lit: LiteralFloat): Option[(SrcSpan, Float)] =
     Some((lit.span, lit.value))
 }
 
-  /** A type definition, which is a new named type, as opposed to a type alias. */
+/** A type definition, which is a new named type, as opposed to a type alias. */
 case class TypeDef(
   visibility: MemberVisibility   = MemberVisibility.Protected,
   span:       SrcSpan,
@@ -406,7 +406,6 @@ case class TypeSeq(span: SrcSpan, inner: TypeSpec) extends TypeSpec
 
 /** A grouping of types, mostly for disambiguation: `Map String (List Int)` */
 case class TypeGroup(span: SrcSpan, types: List[TypeSpec]) extends TypeSpec
-
 
 sealed trait Native extends AstNode
 

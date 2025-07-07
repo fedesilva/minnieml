@@ -12,8 +12,8 @@ class AppRewritingTests extends BaseEffFunSuite:
 
   test("2 arity function") {
 
-    val code  = 
-    """
+    val code =
+      """
       fn mult (a: Int, b: Int): Int = ???;
       let a = mult 2 2;
     """
@@ -21,8 +21,8 @@ class AppRewritingTests extends BaseEffFunSuite:
     semNotFailed(code).map { m =>
 
       // dump the raw module
-    // println("dumping raw module")
-    // println(m)
+      // println("dumping raw module")
+      // println(m)
 
       val memberBnd =
         lookupNames("a", m).headOption
@@ -307,7 +307,11 @@ class AppRewritingTests extends BaseEffFunSuite:
                   // Check the single argument: func (func 3 4 5)
                   composeArgs.head.terms.headOption match
                     case Some(TXApp(func1Ref, _, func1Args)) =>
-                      assertEquals(clue(func1Ref.name), "func", "Argument to compose should be func")
+                      assertEquals(
+                        clue(func1Ref.name),
+                        "func",
+                        "Argument to compose should be func"
+                      )
                       assertEquals(clue(func1Args.length), 1, "func should have 1 argument")
 
                       // Check the argument to the first func: func 3 4 5

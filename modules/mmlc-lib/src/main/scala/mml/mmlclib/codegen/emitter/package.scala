@@ -258,7 +258,7 @@ def getLlvmType(
   typeSpec: mml.mmlclib.ast.TypeSpec,
   state:    CodeGenState
 ): Either[CodeGenError, String] =
-  
+
   typeSpec match
     case TypeRef(_, name, resolvedOpt) =>
       resolvedOpt match
@@ -279,7 +279,7 @@ def getLlvmType(
               // Use the computed typeSpec if available, otherwise follow the typeRef
               typeAlias.typeSpec match
                 case Some(spec) => getLlvmType(spec, state)
-                case None       => getLlvmType(typeAlias.typeRef, state)
+                case None => getLlvmType(typeAlias.typeRef, state)
         case None =>
           // Unresolved type - this should have been caught by TypeResolver
           Left(CodeGenError(s"Unresolved type reference: $name"))

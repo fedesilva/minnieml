@@ -109,13 +109,12 @@ trait BaseEffFunSuite extends CatsEffectSuite:
     name:   Option[String] = "Test".some,
     msg:    Option[String] = None
   ): IO[mml.mmlclib.semantic.SemanticPhaseState] =
-    
 
     justParse(source, name, msg).map { module =>
       val moduleWithTypes = injectBasicTypes(module)
-      val moduleWithOps = injectStandardOperators(moduleWithTypes)
-      
-      val initialState  = SemanticPhaseState(moduleWithOps, Vector.empty)
+      val moduleWithOps   = injectStandardOperators(moduleWithTypes)
+
+      val initialState = SemanticPhaseState(moduleWithOps, Vector.empty)
 
       initialState
         |> DuplicateNameChecker.rewriteModule
@@ -135,7 +134,7 @@ trait BaseEffFunSuite extends CatsEffectSuite:
       case Right(compiled) =>
         CodeGenApi.generateFromModule(compiled).value.map {
           case Right(llvmIr) => llvmIr
-          case Left(error)   => fail(s"CodeGen failed: $error")
+          case Left(error) => fail(s"CodeGen failed: $error")
         }
       case Left(error) =>
         fail(s"Compilation failed: $error")

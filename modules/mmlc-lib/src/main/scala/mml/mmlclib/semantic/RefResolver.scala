@@ -47,7 +47,8 @@ object RefResolver:
             typeSpec     = ref.typeSpec,
             typeAsc      = ref.typeAsc
           )
-        else if candidates.length == 1 then ref.copy(candidates = candidates, resolvedAs = Some(candidates.head))
+        else if candidates.length == 1 then
+          ref.copy(candidates    = candidates, resolvedAs = Some(candidates.head))
         else ref.copy(candidates = candidates)
 
       case group: TermGroup =>
@@ -125,7 +126,8 @@ object RefResolver:
       case ref: Ref =>
         val candidates = lookupRefs(ref, member, module)
         if candidates.isEmpty then List(SemanticError.UndefinedRef(ref, member, phaseName)).asLeft
-        else if candidates.length == 1 then ref.copy(candidates = candidates, resolvedAs = Some(candidates.head)).asRight
+        else if candidates.length == 1 then
+          ref.copy(candidates = candidates, resolvedAs = Some(candidates.head)).asRight
         else ref.copy(candidates = candidates).asRight
 
       case group: TermGroup =>

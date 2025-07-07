@@ -61,12 +61,12 @@ class ParsingErrorCheckerTests extends BaseEffFunSuite:
       // if result.errors.nonEmpty then
       //   println(result.errors)
 
-      assert(clue(result.errors.size) == clue(1))      
+      assert(clue(result.errors.size) == clue(1))
 
       result.errors.head match {
         case SemanticError.MemberErrorFound(error, phase) =>
           assert(error.message == "Failed to parse member")
-          assert(error.failedCode.exists(_.contains("let a")))          
+          assert(error.failedCode.exists(_.contains("let a")))
         case e => fail(s"Expected MemberErrorFound error, got $e")
       }
     }

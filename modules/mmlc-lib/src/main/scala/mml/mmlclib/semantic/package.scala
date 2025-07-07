@@ -18,12 +18,23 @@ enum TypeError extends CompilationError:
   case InvalidApplication(app: App, fnType: TypeSpec, argType: TypeSpec, phase: String)
 
   // Conditional Errors
-  case ConditionalBranchTypeMismatch(cond: Cond, trueType: TypeSpec, falseType: TypeSpec, phase: String)
+  case ConditionalBranchTypeMismatch(
+    cond:      Cond,
+    trueType:  TypeSpec,
+    falseType: TypeSpec,
+    phase:     String
+  )
   case ConditionalBranchTypeUnknown(cond: Cond, phase: String)
 
   // General Type Errors
   case UnresolvableType(typeRef: TypeRef, node: Typeable, phase: String)
-  case IncompatibleTypes(node: AstNode, type1: TypeSpec, type2: TypeSpec, context: String, phase: String)
+  case IncompatibleTypes(
+    node:    AstNode,
+    type1:   TypeSpec,
+    type2:   TypeSpec,
+    context: String,
+    phase:   String
+  )
   case UntypedHoleInBinding(bnd: Bnd, phase: String)
 
 enum SemanticError extends CompilationError:
@@ -123,7 +134,7 @@ def injectBasicTypes(module: Module): Module =
     ),
     TypeDef(
       span     = dummySpan,
-      name     = "Unit", 
+      name     = "Unit",
       typeSpec = Some(NativePrimitive(dummySpan, "void"))
     ),
 

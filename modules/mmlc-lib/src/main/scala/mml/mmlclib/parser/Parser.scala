@@ -98,7 +98,7 @@ object Parser:
 
   private def membersP(source: String)(using P[Any]): P[Member] =
     P(
-        binOpDefP(source) |
+      binOpDefP(source) |
         unaryOpP(source) |
         letBindingP(source) |
         fnDefP(source) |
@@ -140,9 +140,9 @@ object Parser:
 
   private def fnParamP(source: String)(using P[Any]): P[FnParam] =
     P(
-        spP(source) ~ docCommentP(source) ~ bindingIdP ~ typeAscP(source) ~ spP(
-          source
-        )
+      spP(source) ~ docCommentP(source) ~ bindingIdP ~ typeAscP(source) ~ spP(
+        source
+      )
     ).map { case (start, doc, name, t, end) =>
       FnParam(
         span       = span(start, end),
@@ -196,7 +196,7 @@ object Parser:
   private def binOpDefP(source: String)(using P[Any]): P[Member] =
     P(
       // Implicit whitespace consumption happens here
-        docCommentP(source)
+      docCommentP(source)
         ~ memberVisibilityP.?
         ~ opKw
         ~ spP(source) // Offset 3 chars back "op ".
@@ -244,7 +244,7 @@ object Parser:
 
   private def unaryOpP(source: String)(using P[Any]): P[Member] =
     P(
-        docCommentP(source)
+      docCommentP(source)
         ~ memberVisibilityP.?
         ~ opKw
         ~ spP(source)
