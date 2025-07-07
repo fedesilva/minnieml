@@ -155,7 +155,14 @@ object TypeChecker:
     expr.terms match
       case List(singleTerm) =>
         checkTermWithContext(singleTerm, module, paramContext, expectedType).map { checkedTerm =>
-          expr.copy(terms = List(checkedTerm), typeSpec = checkedTerm.typeSpec)
+          val finalTerm = checkedTerm match {
+            case app: App if app.typeSpec.isEmpty && app.typeAsc.isDefined =>
+              // This is the error condition. If we are here, it means checkApplicationWithContext
+              // is returning a malformed App node. We correct it immediately.
+              app.copy(typeSpec = app.typeAsc, typeAsc = None)
+            case other => other
+          }
+          expr.copy(terms = List(finalTerm), typeSpec = finalTerm.typeSpec)
         }
       case terms =>
         // Check all terms in the expression
@@ -283,7 +290,7 @@ object TypeChecker:
     
     val checkedArgEither = checkExprWithContext(app.arg, module, paramContext)
     
-    for
+    val resultEither = for
       checkedFn <- checkedFnEither
       checkedArg <- checkedArgEither
       // Phase 2: Determine the type of this specific application
@@ -294,6 +301,8 @@ object TypeChecker:
         case innerApp: App => Right(innerApp)
         case other => Left(List(TypeError.InvalidApplication(app, TypeRef(app.span, "invalid-fn"), TypeRef(app.span, "unknown"), phaseName)))
     yield app.copy(fn = validFn, arg = checkedArg, typeSpec = Some(appType))
+
+    resultEither
     
   /** Determine the type of an application based on its function and argument */
   private def determineApplicationType(app: App, checkedFn: Term, module: Module): Either[List[TypeError], TypeSpec] =
@@ -411,4 +420,3 @@ object TypeChecker:
   /** Check conditional expressions (both branches must match) */
   private def checkConditional(cond: Cond, module: Module): Either[List[TypeError], Cond] =
     checkConditionalWithContext(cond, module, Map.empty)
-

@@ -115,7 +115,7 @@ def prettyPrintTerm(
           }
           .mkString("\n")
 
-    case App(sp, fn, arg, typeSpec, typeAsc) =>
+    case App(sp, fn, arg, typeAsc, typeSpec) =>
       val spanStr = if showSourceSpans then printSourceSpan(sp) else ""
       val typeStr =
         if showTypes then
