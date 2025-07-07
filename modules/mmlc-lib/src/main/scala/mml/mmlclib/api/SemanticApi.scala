@@ -36,9 +36,9 @@ object SemanticApi:
             |> TypeResolver.rewriteModule
             |> RefResolver.rewriteModule
             |> ExpressionRewriter.rewriteModule
-            |> TypeChecker.rewriteModule
             |> ParsingErrorChecker.checkModule
             |> Simplifier.rewriteModule
+            |> TypeChecker.rewriteModule
 
         // Convert back to Either for compatibility
         if finalState.errors.isEmpty then Right(finalState.module)

@@ -52,7 +52,7 @@ def rewrite(src: String, showTypes: Boolean = false, dumpRawState: Boolean = fal
       // Create initial state
       val initialState = SemanticPhaseState(moduleWithOps, Vector.empty)
       println("-"*80)
-      println(s"\n \n Synthetic members injected: \n $initialState")
+      println(s"\n \n Synthetic members injected: \n ${prettyPrintAst(initialState.module)}")
 
       // Thread state through all phases with debug output
       val state1 = DuplicateNameChecker.rewriteModule(initialState)
@@ -69,18 +69,18 @@ def rewrite(src: String, showTypes: Boolean = false, dumpRawState: Boolean = fal
       println("-"*80)
       println(s"\n \n Expression Rewriting phase: \n ${prettyPrintAst(state4.module)}")
 
-      val state5 = TypeChecker.rewriteModule(state4)
+      val state5 = ParsingErrorChecker.checkModule(state4)
+
+      val state6 = Simplifier.rewriteModule(state5)
       println("-"*80)
-      println(s"\n \n Type Checker phase \n ${prettyPrintAst(state5.module, showTypes = true)}")
+      println(s"\n \n Simplifier phase: \n ${prettyPrintAst(state6.module)}")
 
-      val state6 = ParsingErrorChecker.checkModule(state5)
-
-      val finalState = Simplifier.rewriteModule(state6)
+      val finalState = TypeChecker.rewriteModule(state6)
 
       // Always print the final module
       println("-"*80)
       println(
-        s"Simplifier: \n${prettyPrintAst(finalState.module, showTypes = showTypes)} "
+        s"Type Checker phase \n${prettyPrintAst(finalState.module, showTypes = true)}"
       )
 
 
