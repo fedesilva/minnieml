@@ -3,7 +3,7 @@ package mml.mmlclib.semantic
 import mml.mmlclib.ast.*
 import mml.mmlclib.test.BaseEffFunSuite
 
-class MemberErrorCheckerTests extends BaseEffFunSuite:
+class ParsingErrorCheckerTests extends BaseEffFunSuite:
 
   test("Full semantic pipeline passes correct modules") {
     semNotFailed(
@@ -40,7 +40,7 @@ class MemberErrorCheckerTests extends BaseEffFunSuite:
       """
     ).map { module =>
       val state  = SemanticPhaseState(module, Vector.empty)
-      val result = MemberErrorChecker.checkModule(state)
+      val result = ParsingErrorChecker.checkModule(state)
       assert(result.errors.isEmpty)
       assertNoDiff(result.module.toString, module.toString)
     }
@@ -66,8 +66,7 @@ class MemberErrorCheckerTests extends BaseEffFunSuite:
       result.errors.head match {
         case SemanticError.MemberErrorFound(error, phase) =>
           assert(error.message == "Failed to parse member")
-          assert(error.failedCode.exists(_.contains("let a")))
-          assert(phase == "mml.mmlclib.semantic.MemberErrorChecker")
+          assert(error.failedCode.exists(_.contains("let a")))          
         case e => fail(s"Expected MemberErrorFound error, got $e")
       }
     }

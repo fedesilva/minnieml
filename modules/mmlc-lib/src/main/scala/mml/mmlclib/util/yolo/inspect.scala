@@ -73,7 +73,7 @@ def rewrite(src: String, showTypes: Boolean = false, dumpRawState: Boolean = fal
       println("-"*80)
       println(s"\n \n Type Checker phase \n ${prettyPrintAst(state5.module, showTypes = true)}")
 
-      val state6 = MemberErrorChecker.checkModule(state5)
+      val state6 = ParsingErrorChecker.checkModule(state5)
 
       val finalState = Simplifier.rewriteModule(state6)
 

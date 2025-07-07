@@ -4,13 +4,13 @@ import mml.mmlclib.ast.*
 
 /** Checks for MemberError instances in a module.
   */
-object MemberErrorChecker:
+object ParsingErrorChecker:
 
-  private val phaseName = "mml.mmlclib.semantic.MemberErrorChecker"
+  private val phaseName = "mml.mmlclib.semantic.ParsingErrorChecker"
 
   /** Check for MemberError instances in a module, accumulating errors in the state. */
   def checkModule(state: SemanticPhaseState): SemanticPhaseState =
-    val errors = state.module.members.collect { case error: MemberError =>
+    val errors = state.module.members.collect { case error: ParsingMemberError =>
       SemanticError.MemberErrorFound(error, phaseName)
     }
     state.addErrors(errors)

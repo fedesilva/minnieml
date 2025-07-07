@@ -550,7 +550,7 @@ object Parser:
   private def failedMemberP(source: String)(using P[Any]): P[Member] =
     P(spP(source) ~ CharsWhile(_ != ';').! ~ endKw ~ spP(source))
       .map { case (start, snippet, end) =>
-        MemberError(
+        ParsingMemberError(
           span       = SrcSpan(start, end),
           message    = "Failed to parse member",
           failedCode = snippet.some

@@ -37,7 +37,7 @@ object SemanticApi:
             |> RefResolver.rewriteModule
             |> ExpressionRewriter.rewriteModule
             |> TypeChecker.rewriteModule
-            |> MemberErrorChecker.checkModule
+            |> ParsingErrorChecker.checkModule
             |> Simplifier.rewriteModule
 
         // Convert back to Either for compatibility

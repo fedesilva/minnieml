@@ -32,7 +32,7 @@ enum SemanticError extends CompilationError:
   case DuplicateName(name: String, duplicates: List[Resolvable], phase: String)
   case InvalidExpression(expr: Expr, message: String, phase: String)
   case DanglingTerms(terms: List[Term], message: String, phase: String)
-  case MemberErrorFound(error: MemberError, phase: String)
+  case MemberErrorFound(error: ParsingMemberError, phase: String)
   case InvalidExpressionFound(invalidExpr: mml.mmlclib.ast.InvalidExpression, phase: String)
   case TypeCheckingError(error: TypeError)
 

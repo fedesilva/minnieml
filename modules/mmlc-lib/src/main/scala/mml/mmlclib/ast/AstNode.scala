@@ -75,7 +75,7 @@ sealed trait Error extends AstNode, InvalidNode:
   def message:    String
   def failedCode: Option[String]
 
-case class MemberError(
+case class ParsingMemberError(
   span:       SrcSpan,
   message:    String,
   failedCode: Option[String]

@@ -3,7 +3,7 @@ package mml.mmlclib.test
 import cats.effect.IO
 import cats.syntax.all.*
 import mml.mmlclib.api.{CompilerApi, ParserApi}
-import mml.mmlclib.ast.{Member, MemberError, Module}
+import mml.mmlclib.ast.{Member, ParsingMemberError, Module}
 import mml.mmlclib.util.prettyprint.ast.prettyPrintAst
 import munit.CatsEffectSuite
 import mml.mmlclib.semantic.*
@@ -15,7 +15,7 @@ trait BaseEffFunSuite extends CatsEffectSuite:
   private def containsMemberError(module: Module): Boolean = {
     def checkMembers(members: List[Member]): Boolean =
       members.exists {
-        case _: MemberError => true
+        case _: ParsingMemberError => true
         case _ => false
       }
 
@@ -122,7 +122,7 @@ trait BaseEffFunSuite extends CatsEffectSuite:
         |> RefResolver.rewriteModule
         |> TypeResolver.rewriteModule
         |> ExpressionRewriter.rewriteModule
-        |> MemberErrorChecker.checkModule
+        |> ParsingErrorChecker.checkModule
         |> Simplifier.rewriteModule
     }
 

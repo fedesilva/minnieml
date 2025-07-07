@@ -29,7 +29,7 @@ def prettyPrintMember(
 ): String =
   val indentStr = "  " * indent
   member match {
-    case MemberError(span, message, failedCode) =>
+    case ParsingMemberError(span, message, failedCode) =>
       val spanStr = if showSourceSpans then printSourceSpan(span) else ""
       s"${indentStr}MemberError $spanStr\n" +
         s"""${indentStr}  "$message"""".stripMargin +
