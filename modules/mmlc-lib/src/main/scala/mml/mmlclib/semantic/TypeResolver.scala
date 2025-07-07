@@ -38,7 +38,6 @@ object TypeResolver:
                 ta.typeRef match
                   case innerRef: TypeRef => computeTypeSpecForAlias(innerRef, module)
                   case _ => None
-          case _ => None
       case _ => None
 
   /** Rewrite a member to use InvalidType nodes for undefined type references */
