@@ -8,7 +8,7 @@ class TypeCheckerTests extends BaseEffFunSuite:
   test("should correctly type a multi-argument function application") {
     val code =
       """
-        fn mult(a: Int b: Int): Int = ???;
+        fn mult(a: Int, b: Int): Int = ???;
         let x = mult 2 2;
       """
     semNotFailed(code).map { module =>

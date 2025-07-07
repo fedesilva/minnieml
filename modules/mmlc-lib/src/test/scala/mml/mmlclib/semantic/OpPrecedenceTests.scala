@@ -223,7 +223,7 @@ class OpPrecedenceTests extends BaseEffFunSuite:
     // expect: 1 + (1 * (2 ^ 3))
     semNotFailed(
       """
-        op ^ (a: Int b: Int): Int 90 right = ???;
+        op ^ (a: Int, b: Int): Int 90 right = ???;
         let a = 1 + 1 * 2 ^ 3;
       """
     ).map { m =>
@@ -775,7 +775,7 @@ class OpPrecedenceTests extends BaseEffFunSuite:
   test("right-associativity of exponentiation: 2 ^ 3 ^ 2") {
     semNotFailed(
       """
-        op ^ (a: Int b: Int): Int 90 right = ???;
+        op ^ (a: Int, b: Int): Int 90 right = ???;
         let a = 2 ^ 3 ^ 2;
       """
     ).map { m =>
@@ -844,7 +844,7 @@ class OpPrecedenceTests extends BaseEffFunSuite:
   test("unary minus with exponentiation: -2 ^ 2") {
     semNotFailed(
       """
-        op ^ (a: Int b: Int): Int 90 right = ???;
+        op ^ (a: Int, b: Int): Int 90 right = ???;
         let a = -2 ^ 2;
       """
     ).map { m =>
@@ -1152,7 +1152,7 @@ class OpPrecedenceTests extends BaseEffFunSuite:
   test("multi-character binary operator: 3 -- -4") {
     semNotFailed(
       """
-       op -- (a: Int b: Int): Int = ???;
+       op -- (a: Int, b: Int): Int = ???;
        let a = 3 -- -4;
       """
     ).map { m =>
@@ -1209,7 +1209,7 @@ class OpPrecedenceTests extends BaseEffFunSuite:
   test("mixed associativity without parentheses: 1 + 2 ^ 3 + 4") {
     semNotFailed(
       """
-      op ^ (a: Int b: Int): Int 90 right = ???;
+      op ^ (a: Int, b: Int): Int 90 right = ???;
        let a = 1 + 2 ^ 3 + 4;
       """
     ).map { m =>
@@ -1301,7 +1301,7 @@ class OpPrecedenceTests extends BaseEffFunSuite:
   test("Test operators with the same symbol but different arity") {
     semNotFailed(
       """
-       op ++ (a: Int b: Int): Int = a + b;
+       op ++ (a: Int, b: Int): Int = a + b;
        op ++ (a: Int): Int = a + 1;
        let a = 1 ++ 2;
        let b = ++1;

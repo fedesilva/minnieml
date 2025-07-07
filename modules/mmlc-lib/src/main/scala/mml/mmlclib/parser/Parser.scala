@@ -152,6 +152,9 @@ object Parser:
       )
     }
 
+  private def fnParamListP(source: String)(using P[Any]): P[List[FnParam]] =
+    P(fnParamP(source).rep(sep = ",")).map(_.toList)
+
   private def fnDefP(source: String)(using P[Any]): P[Member] =
     P(
       Pass ~
@@ -161,7 +164,7 @@ object Parser:
         ~ spP(source) // Offset 3 chars back "fn ".
         ~ bindingIdP
         ~ "("
-        ~ fnParamP(source).rep
+        ~ fnParamListP(source)
         ~ ")"
         ~ typeAscP(source)
         ~ defAsKw
@@ -173,7 +176,7 @@ object Parser:
         visibility = vis.getOrElse(MemberVisibility.Protected),
         span       = span(startPoint, endPoint),
         name       = fnName,
-        params     = params.toList,
+        params     = params,
         body       = bodyExpr,
         typeSpec   = bodyExpr.typeSpec,
         typeAsc    = typeAsc,
@@ -200,6 +203,7 @@ object Parser:
         ~ operatorIdP
         ~ "("
         ~ fnParamP(source)
+        ~ ","
         ~ fnParamP(source)
         ~ ")"
         ~ typeAscP(source)

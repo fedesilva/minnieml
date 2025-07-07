@@ -14,7 +14,7 @@ class AppRewritingTests extends BaseEffFunSuite:
 
     val code  = 
     """
-      fn mult (a: Int b: Int): Int = ???;
+      fn mult (a: Int, b: Int): Int = ???;
       let a = mult 2 2;
     """
 
@@ -62,7 +62,7 @@ class AppRewritingTests extends BaseEffFunSuite:
     // This should fail semantic analysis due to dangling terms
     semFailed(
       """
-      fn func (a: Int b: Int): Int = ???;
+      fn func (a: Int, b: Int): Int = ???;
       let a = 2 + (func 1) 3;
       """
     )
@@ -72,7 +72,7 @@ class AppRewritingTests extends BaseEffFunSuite:
     semNotFailed(
       """
       fn func (a: Int): Int = ???;
-      fn apply (f: Int x: Int): Int = ???;
+      fn apply (f: Int, x: Int): Int = ???;
       let a = apply (func 1) 2;
       """
     ).map { m =>
@@ -127,7 +127,7 @@ class AppRewritingTests extends BaseEffFunSuite:
   test("curried function application should work without boundaries") {
     semNotFailed(
       """
-      fn func (a: Int b: Int c: Int d: Int): Int = ???;
+      fn func (a: Int, b: Int, c: Int, d: Int): Int = ???;
       let a = func 1 2 3 4;
       """
     ).map { m =>
@@ -170,7 +170,7 @@ class AppRewritingTests extends BaseEffFunSuite:
   test("function application with operators should work") {
     semNotFailed(
       """
-      fn func (a: Int b: Int): Int = ???;
+      fn func (a: Int, b: Int): Int = ???;
       let a = (func 1 1) + 3 - func 1 2 3;
       """
     ).map { m =>
@@ -274,9 +274,9 @@ class AppRewritingTests extends BaseEffFunSuite:
   test("complex nested function applications with operators should work") {
     semNotFailed(
       """
-      fn func (a: Int b: Int): Int = ???;
-      fn apply (f: Int x: Int): Int = ???;
-      fn compose (f: Int g: Int x: Int): Int = ???;
+      fn func (a: Int, b: Int): Int = ???;
+      fn apply (f: Int, x: Int): Int = ???;
+      fn compose (f: Int, g: Int, x: Int): Int = ???;
 
       let a = apply (func 1) 2 + compose func func 3 4 5;
       """

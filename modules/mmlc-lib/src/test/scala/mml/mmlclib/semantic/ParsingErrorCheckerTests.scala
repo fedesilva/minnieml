@@ -9,7 +9,7 @@ class ParsingErrorCheckerTests extends BaseEffFunSuite:
     semNotFailed(
       """
       module TestPipeline =
-        fn valid(a: Int b: Int): Int = a + b;
+        fn valid(a: Int, b: Int): Int = a + b;
         let x = 42;
       ;
       """
@@ -23,7 +23,7 @@ class ParsingErrorCheckerTests extends BaseEffFunSuite:
     semFailed(
       """
       module TestPipeline =
-        fn valid(a: Int b: Int): Int = a + b;
+        fn valid(a: Int, b: Int): Int = a + b;
         let x  ; // Missing expression after =
       ;
       """
@@ -34,7 +34,7 @@ class ParsingErrorCheckerTests extends BaseEffFunSuite:
     justParse(
       """
       module Test =
-        fn valid(a: Int b: Int): Int = a + b;
+        fn valid(a: Int, b: Int): Int = a + b;
         let x = 42;
       ;
       """
@@ -50,7 +50,7 @@ class ParsingErrorCheckerTests extends BaseEffFunSuite:
     semWithState(
       """
       module TestPartial =
-        fn valid(a: Int b: Int): Int = a + b;
+        fn valid(a: Int, b: Int): Int = a + b;
         let a  ; # Missing expression after =
       ;
       """
@@ -76,7 +76,7 @@ class ParsingErrorCheckerTests extends BaseEffFunSuite:
     semWithState(
       """
       module TestPartial =
-        fn valid(a: Int b: Int): Int = a + b;
+        fn valid(a: Int, b: Int): Int = a + b;
         let a  ; // Missing expression after =
         bnd noLet = 5; # Invalid syntax - 'bnd' instead of 'let'
       ;

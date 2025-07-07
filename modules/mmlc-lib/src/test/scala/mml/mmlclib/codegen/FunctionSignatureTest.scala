@@ -9,7 +9,7 @@ class FunctionSignatureTest extends BaseEffFunSuite:
       """
         fn print (a: String): () = @native;
         fn println (a: String): () = @native;
-        fn concat(a: String b: String): String = @native;
+        fn concat(a: String, b: String): String = @native;
         fn main(): () = println "Fede";
       """
 

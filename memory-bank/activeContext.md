@@ -13,6 +13,14 @@ Ability to compile simple programs:
 
 ## Recent Changes
 
+* **(2025-07-07)** **COMPLETED:** Implemented comma-separated parameter syntax for functions and operators
+  - **Parser Changes:** Added `fnParamListP` helper and updated `fnDefP`/`binOpDefP` to require commas
+  - **Syntax Change:** `fn concat(a: String b: String)` → `fn concat(a: String, b: String)`
+  - **Breaking Change:** All multi-parameter functions and binary operators now require comma separation
+  - **Files Updated:** Parser implementation, 6 sample files, 8 test files (23 total test changes)
+  - **Result:** All 116 tests pass, syntax is more familiar and consistent with other languages
+  - **Unary operators unchanged:** Single-parameter functions still work without commas
+
 * **(2025-07-06)** **RESOLVED:** Fixed critical AST pretty-printing bug that was masking correct TypeChecker behavior
   - **Issue:** App node pattern match in `Term.scala` had wrong parameter order: `App(sp, fn, arg, typeSpec, typeAsc)` 
   - **Fix:** Corrected to match case class definition: `App(sp, fn, arg, typeAsc, typeSpec)`
