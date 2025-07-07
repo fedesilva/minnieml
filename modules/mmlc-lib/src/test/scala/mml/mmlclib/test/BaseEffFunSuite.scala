@@ -3,11 +3,11 @@ package mml.mmlclib.test
 import cats.effect.IO
 import cats.syntax.all.*
 import mml.mmlclib.api.{CompilerApi, ParserApi}
-import mml.mmlclib.ast.{Member, ParsingMemberError, Module}
+import mml.mmlclib.ast.{Member, Module, ParsingMemberError}
+import mml.mmlclib.semantic.*
+import mml.mmlclib.util.pipe.*
 import mml.mmlclib.util.prettyprint.ast.prettyPrintAst
 import munit.CatsEffectSuite
-import mml.mmlclib.semantic.*
-  import mml.mmlclib.util.pipe.*
 
 /** Base trait for effectful tests; adds common MML specific assertions. */
 trait BaseEffFunSuite extends CatsEffectSuite:
