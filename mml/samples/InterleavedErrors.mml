@@ -1,0 +1,13 @@
+
+type Failed = Fsck;
+
+type Int64Alias = Int64;
+let xa:Int64Alias = 1;
+
+type TestInt = @native:i64;
+let x: TestInt = "2";
+let y: TestInt = 1;
+
+let z = ;
+
+let zz = 2;
