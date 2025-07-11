@@ -77,27 +77,56 @@ This task was to implement a simple, forward-propagating type checker to unblock
   * we only typecheck down to TypeDef.
   * if a type def is a native type we don't care. that is a codegen thing.
 
-  
+In this example, X is an alias of Int, which is in turn an alias of Int64, 
+which in turn is natively represented as an llvm i64.
 
-### Remaining Test Failures (Not Part of #133)
+The typechecker does not know about the native representation.
+`        typeSpec: @native:i64   <- wrong`
+it should be
+`        typeSpec: Int64   <- GOODE`
 
-The test suite revealed other pre-existing issues not related to the Type Checker implementation:
+Int64 is a MML type. i64 is it's native representation and no one but the 
+codegen needs to know about it. (well, except the coder that mandate it)
 
-1. **Mandatory Type Annotations**: Many tests fail because functions now require explicit type annotations (as per spec)
-   - Tests were written before this requirement
-   - Need to update test cases to include type annotations
+```
+  TypeAlias prot X -> Int
+        typeSpec: @native:i64   <- wrong
+        typeAsc: None
+        typeRef: TypeRef Int => TypeAlias(Int)
+  --------------------------------------------------------------------------------
+  Original source
+  ================================================================================
 
-2. **TypeResolver Unit Type Issue**: TypeResolver fails on `Unit` type references
-   - Error: `UndefinedTypeRef(TypeRef(..., Unit, None))`
-   - Unit is a special case that may need different handling
+  type X = Int;
 
-3. **Affected Test Suites**:
-   - AppRewritingTests - missing type annotations
-   - TypeResolverTests - Unit type resolution
-   - MissingTypeAnnotationTest - expects old behavior
-   - MemberErrorCheckerTests - missing type annotations
-   - AlphaOpTests - missing type annotations
-    
+  ================================================================================
+```
+
+
+* let is not failing and we can't infer the type.
+  in short: typeSpec = None is an error
+
+  ```
+    Bnd prot c
+          typeSpec: None
+          typeAsc: None
+            Expr
+              typeSpec: None
+              typeAsc: None
+              NativeImpl
+                typeSpec: None
+                typeAsc: None
+  --------------------------------------------------------------------------------
+  Original source
+  ================================================================================
+
+  fn func (a: Int, b: Int): Int = ???;
+  let a = func 1;
+  let c = @native;
+  ```
+
+  Besides the typechecker not doing it's job (flagging the error), 
+  we need a @native rules enforcer, to validate it's not used.
 
 ### Codegen Update (Ticket #156) - IN PROGRESS
 The implementation plan is detailed in `memory-bank/specs/codegen-update.md`. Progress on the four blocks:
@@ -118,154 +147,9 @@ The implementation plan is detailed in `memory-bank/specs/codegen-update.md`. Pr
 
 ## Next Session Plan:
 
-
-### Fix misuse of ascription (should be spec)
-
-
-**Priority**: Fix bug in asc vs spec.
-
-#### Context
-
-* Please read the Typeable trait documentation, in source, 
-to understand the difference between ascription and specification.
-
-* The specifications are calculated by the type checker.
-* The ascriptions are written by the user.
-
-* functions and ops get mandatory type ascriptions (for now)
-  * these ascriptions are immediately lowered to type spec.
-  * expressions specs are inferred and then compared with the
-    ascriptions and if they do not match, this is an error. (we do this now, ok)
-
-#### The problem
-
-see this ast:
-
-```
- Bnd prot a
-        typeSpec: TypeRef Int => TypeAlias(Int)
-        typeAsc: None
-          Expr
-            typeSpec: None
-            typeAsc: TypeRef Int => TypeAlias(Int)
-            App
-              typeSpec: None
-              typeAsc: TypeRef Int => TypeAlias(Int)
-              fn:
-                App
-                  typeSpec: None
-                  typeAsc: TypeRef Int => TypeAlias(Int)
-                  fn:
-                    Ref /
-                      typeSpec: TypeRef Int => TypeAlias(Int)
-                      typeAsc: None
-                      resolvedAs: BinOpDef /
-                      candidates: [BinOpDef /]
-                  arg:
-                    Expr
-                      typeSpec: None
-                      typeAsc: TypeRef Int => TypeAlias(Int)
-                      App
-                        typeSpec: None
-                        typeAsc: TypeRef Int => TypeAlias(Int)
-                        fn:
-                          App
-                            typeSpec: None
-                            typeAsc: TypeRef Int => TypeAlias(Int)
-                            fn:
-                              Ref *
-                                typeSpec: TypeRef Int => TypeAlias(Int)
-                                typeAsc: None
-                                resolvedAs: BinOpDef *
-                                candidates: [BinOpDef *]
-                            arg:
-                              Expr
-                                typeSpec: None
-                                typeAsc: None
-                                App
-                                  typeSpec: None
-                                  typeAsc: None
-                                  fn:
-                                    App
-                                      typeSpec: None
-                                      typeAsc: None
-                                      fn:
-                                        Ref +
-                                          typeSpec: None
-                                          typeAsc: None
-                                          resolvedAs: BinOpDef +
-                                          candidates: [BinOpDef +, UnaryOpDef +]
-                                      arg:
-                                        Expr
-                                          typeSpec: None
-                                          typeAsc: None
-                                          LiteralInt 1
-                                  arg:
-                                    Expr
-                                      typeSpec: None
-                                      typeAsc: None
-                                      LiteralInt 2
-                        arg:
-                          Expr
-                            typeSpec: None
-                            typeAsc: None
-                            App
-                              typeSpec: None
-                              typeAsc: None
-                              fn:
-                                App
-                                  typeSpec: None
-                                  typeAsc: None
-                                  fn:
-                                    Ref -
-                                      typeSpec: None
-                                      typeAsc: None
-                                      resolvedAs: BinOpDef -
-                                      candidates: [BinOpDef -, UnaryOpDef -]
-                                  arg:
-                                    Expr
-                                      typeSpec: None
-                                      typeAsc: None
-                                      LiteralInt 3
-                              arg:
-                                Expr
-                                  typeSpec: None
-                                  typeAsc: None
-                                  LiteralInt 4
-              arg:
-                Expr
-                  typeSpec: None
-                  typeAsc: TypeRef Int => TypeAlias(Int)
-                  LiteralInt 5
-Original source:
-
-let a = (1 + 2) * (3 - 4) / 5;
-```
-
-app nodes should get the spec populated by the typechecker.
-this are synthetic nodes created by the expression rewriter.
-the type checker succesully computes the types it needs, 
-but it is using the wrong field.
+For
 
 
-### Fix Test Suite Issues
-
-**Priority**: Fix failing tests to validate Type Checker implementation
-
-**Tasks**:
-1. **Add Unit Type Definition**
-   - Update `semantic/package.scala` to inject Unit type into every module
-   - Ensure TypeResolver can handle Unit references
-
-2. **Fix Test Syntax Issues**
-   - Update all tests to use correct parameter syntax (space-separated, not comma-separated)
-   - Add mandatory type annotations to all test functions
-
-3. **Validate Type Checker**
-   - Once tests pass, ensure Type Checker implementation is fully validated
-   - Check for any edge cases revealed by the fixed tests
-
-See `memory-bank/bugs/test-suite-issues.md` for detailed analysis and solutions.
 
 ### Future work        
 * implement protocols 
