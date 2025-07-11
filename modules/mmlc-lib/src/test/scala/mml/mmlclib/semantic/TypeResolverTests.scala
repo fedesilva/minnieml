@@ -99,3 +99,28 @@ class TypeResolverTests extends BaseEffFunSuite:
     semFailed(code).map { _ =>
       // The test passes if semFailed succeeds (meaning semantic analysis failed as expected)
     }
+
+  test("TypeResolver should resolve type alias chains to MML types, not native types"):
+    val code = """
+      type X = Int;
+      let test: X = 42;
+    """
+
+    semNotFailed(code).map { module =>
+      // Find the X type alias
+      val typeAlias = module.members.collectFirst {
+        case t: TypeAlias if t.name == "X" => t
+      }.get
+
+      // Check that the typeSpec resolves to Int64 (the MML type), not @native:i64
+      typeAlias.typeSpec match
+        case Some(TypeRef(_, "Int64", Some(td: TypeDef))) =>
+          assertEquals(td.name, "Int64")
+          // Verify that Int64 itself has the native type, but that's not propagated to X
+          assert(td.typeSpec.isDefined, "Int64 should have a native typeSpec")
+          td.typeSpec match
+            case Some(NativePrimitive(_, "i64")) => // correct
+            case other => fail(s"Expected Int64 to have @native:i64, got $other")
+        case other =>
+          fail(s"Expected X to resolve to TypeRef(Int64), got $other")
+    }

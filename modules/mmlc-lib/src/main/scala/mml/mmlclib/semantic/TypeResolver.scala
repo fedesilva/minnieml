@@ -29,7 +29,10 @@ object TypeResolver:
     typeRef match
       case tr: TypeRef if tr.resolvedAs.isDefined =>
         tr.resolvedAs.get match
-          case td: TypeDef => td.typeSpec
+          case td: TypeDef => 
+            // Return TypeRef to the TypeDef, not its native typeSpec
+            // This ensures type aliases resolve to MML types rather than native representations
+            Some(TypeRef(tr.span, td.name, Some(td)))
           case ta: TypeAlias =>
             ta.typeSpec match
               case Some(spec) => Some(spec)

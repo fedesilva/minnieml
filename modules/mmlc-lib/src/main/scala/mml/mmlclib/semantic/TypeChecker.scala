@@ -469,7 +469,9 @@ object TypeChecker:
               case Some(resolvedSpec) => resolvedSpec
               case None => resolveAliasChain(ta.typeRef, module)
           case td: TypeDef if td.name == name =>
-            td.typeSpec.getOrElse(tr)
+            // Return TypeRef to the TypeDef, not its native typeSpec
+            // This ensures type aliases resolve to MML types rather than native representations
+            TypeRef(tr.span, td.name, Some(td))
         }
         .getOrElse(tr)
     case other => other

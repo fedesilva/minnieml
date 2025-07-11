@@ -3,17 +3,7 @@ package mml.mmlclib.codegen.emitter
 import cats.syntax.all.*
 import mml.mmlclib.ast.{Bnd, FnDef, Module, NativeImpl, NativeStruct, NativeType, TypeDef}
 
-/** Helper for string escaping */
-private def escapeString(str: String): String = {
-  str.flatMap {
-    case '"' => "\\\""
-    case '\\' => "\\\\"
-    case '\n' => "\\n"
-    case '\r' => "\\r"
-    case '\t' => "\\t"
-    case c => c.toString
-  }
-}
+
 
 /** Main entry point for LLVM IR emission.
   *
