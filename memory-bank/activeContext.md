@@ -59,7 +59,7 @@ Ability to compile simple programs:
 
 This task was to implement a simple, forward-propagating type checker to unblock the codegen update (#156). The full specification is in `memory-bank/specs/133-simple-typechecker.md`.
 
-**Status: ✓ COMPLETED**
+**Status: ✓ IN PROGRESS**
 
 **Execution Plan Results:**
 *   **Block 1: Update AST Literals:** ✓ COMPLETED
@@ -72,35 +72,6 @@ This task was to implement a simple, forward-propagating type checker to unblock
 
 ### Corrections needed:
 
-* when resolving type aliases we are propagating the type: correct, BUT.
-  * but we are propagating the native type and that is incorrect.
-  * we only typecheck down to TypeDef.
-  * if a type def is a native type we don't care. that is a codegen thing.
-
-In this example, X is an alias of Int, which is in turn an alias of Int64, 
-which in turn is natively represented as an llvm i64.
-
-The typechecker does not know about the native representation.
-`        typeSpec: @native:i64   <- wrong`
-it should be
-`        typeSpec: Int64   <- GOODE`
-
-Int64 is a MML type. i64 is it's native representation and no one but the 
-codegen needs to know about it. (well, except the coder that mandate it)
-
-```
-  TypeAlias prot X -> Int
-        typeSpec: @native:i64   <- wrong
-        typeAsc: None
-        typeRef: TypeRef Int => TypeAlias(Int)
-  --------------------------------------------------------------------------------
-  Original source
-  ================================================================================
-
-  type X = Int;
-
-  ================================================================================
-```
 
 
 * let is not failing and we can't infer the type.
