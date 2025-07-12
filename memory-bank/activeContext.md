@@ -54,6 +54,10 @@ Ability to compile simple programs:
 
 ## Next Steps
 
+### (#168) Improve Parser Error Hanlding
+
+See `./specs/168-improve-parsing-error.md` 
+
 
 ### (#133) Simple Type Checker (COMPLETED)
 
@@ -69,35 +73,7 @@ This task was to implement a simple, forward-propagating type checker to unblock
     -   Complex expression type inference implemented
     -   Test "complex grouping with multiple binops: (1 + 2) * (3 - 4) / 5" now passes
 
-
-### Corrections needed:
-
-
-
-* let is not failing and we can't infer the type.
-  in short: typeSpec = None is an error
-
-  ```
-    Bnd prot c
-          typeSpec: None
-          typeAsc: None
-            Expr
-              typeSpec: None
-              typeAsc: None
-              NativeImpl
-                typeSpec: None
-                typeAsc: None
-  --------------------------------------------------------------------------------
-  Original source
-  ================================================================================
-
-  fn func (a: Int, b: Int): Int = ???;
-  let a = func 1;
-  let c = @native;
-  ```
-
-  Besides the typechecker not doing it's job (flagging the error), 
-  we need a @native rules enforcer, to validate it's not used.
+**Awaiting validation and general tire kicking**
 
 ### Codegen Update (Ticket #156) - IN PROGRESS
 The implementation plan is detailed in `memory-bank/specs/codegen-update.md`. Progress on the four blocks:

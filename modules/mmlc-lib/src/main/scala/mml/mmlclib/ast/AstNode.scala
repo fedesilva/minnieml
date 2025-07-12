@@ -408,6 +408,11 @@ case class NativeImpl(
   */
 sealed trait InvalidNode extends AstNode
 
+sealed trait Error extends AstNode, InvalidNode:
+  def span:       SrcSpan
+  def message:    String
+  def failedCode: Option[String]
+
 /** Represents an expression that could not be resolved or is otherwise invalid. Preserves the
   * original expression for debugging and error reporting.
   */
@@ -460,10 +465,7 @@ case class InvalidMember(
 
 
 
-sealed trait Error extends AstNode, InvalidNode:
-  def span:       SrcSpan
-  def message:    String
-  def failedCode: Option[String]
+
 
 case class ParsingMemberError(
   span:       SrcSpan,
