@@ -32,11 +32,11 @@ object SemanticApi:
         // Thread state through all phases
         val finalState =
           initialState
+            |> ParsingErrorChecker.checkModule
             |> DuplicateNameChecker.rewriteModule
             |> TypeResolver.rewriteModule
             |> RefResolver.rewriteModule
             |> ExpressionRewriter.rewriteModule
-            |> ParsingErrorChecker.checkModule
             |> Simplifier.rewriteModule
             |> TypeChecker.rewriteModule
 

@@ -54,8 +54,12 @@ def rewrite(src: String, showTypes: Boolean = false, dumpRawState: Boolean = fal
       println("-" * 80)
       println(s"\n \n Synthetic members injected: \n ${prettyPrintAst(initialState.module)}")
 
+      val state0 = ParsingErrorChecker.checkModule(initialState)
+      println("-" * 80)
+      println(s"\n \n Checking Parser Errors: \n ${prettyPrintAst(state0.module)}")
+
       // Thread state through all phases with debug output
-      val state1 = DuplicateNameChecker.rewriteModule(initialState)
+      val state1 = DuplicateNameChecker.rewriteModule(state0)
 
       val state2 = TypeResolver.rewriteModule(state1)
       println("-" * 80)
@@ -69,13 +73,11 @@ def rewrite(src: String, showTypes: Boolean = false, dumpRawState: Boolean = fal
       println("-" * 80)
       println(s"\n \n Expression Rewriting phase: \n ${prettyPrintAst(state4.module)}")
 
-      val state5 = ParsingErrorChecker.checkModule(state4)
-
-      val state6 = Simplifier.rewriteModule(state5)
+      val state5 = Simplifier.rewriteModule(state4)
       println("-" * 80)
-      println(s"\n \n Simplifier phase: \n ${prettyPrintAst(state6.module)}")
+      println(s"\n \n Simplifier phase: \n ${prettyPrintAst(state5.module)}")
 
-      val finalState = TypeChecker.rewriteModule(state6)
+      val finalState = TypeChecker.rewriteModule(state5)
 
       // Always print the final module
       println("-" * 80)
