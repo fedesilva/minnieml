@@ -34,3 +34,6 @@ def prettyPrintAst(
     case d: DocComment => prettyPrintDocComment(d, indent)
     case t: TypeSpec => prettyPrintTypeSpec(Some(t))
     case p: FnParam => prettyPrintParams(Seq(p), indent, showSourceSpans, showTypes)
+    case InvalidIdentifier(span, failedCode, message) =>
+      val spanStr = if showSourceSpans then s" ${printSourceSpan(span)}" else ""
+      s"InvalidIdentifier$spanStr: $message${failedCode.fold("")(c => s" ($c)")}"

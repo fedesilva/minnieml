@@ -113,29 +113,38 @@ object Parser:
 
   private def letBindingP(source: String)(using P[Any]): P[Member] =
     P(
-      Pass ~
         // Implicit whitespace consumption happens here
         docCommentP(source)
         ~ memberVisibilityP.?
         ~ letKw
         ~ spP(source) // Offset 4 chars back "let ".
-        ~ bindingIdP
+        ~ bindingIdOrError
         ~ typeAscP(source)
         ~ defAsKw
         ~ exprP(source)
         ~ endKw
         ~ spP(source) // Capture end point *after* ';'
     )
-      .map { case (doc, vis, startPoint, name, typeAsc, expr, endPoint) =>
-        Bnd(
-          visibility = vis.getOrElse(MemberVisibility.Protected),
-          span(startPoint, endPoint),
-          name,
-          expr,
-          expr.typeSpec,
-          typeAsc,
-          doc
-        )
+      .map { case (doc, vis, startPoint, idOrError, typeAsc, expr, endPoint) =>
+        idOrError match
+          case Left(invalidId) =>
+            ParsingIdError(
+              span = span(startPoint, endPoint),
+              message =
+                s"Invalid identifier '$invalidId'. Identifiers must start with a lowercase letter (a-z) followed by letters, digits, or underscores",
+              failedCode = Some(invalidId),
+              invalidId  = invalidId
+            )
+          case Right(name) =>
+            Bnd(
+              visibility = vis.getOrElse(MemberVisibility.Protected),
+              span(startPoint, endPoint),
+              name,
+              expr,
+              expr.typeSpec,
+              typeAsc,
+              doc
+            )
       }
 
   private def fnParamP(source: String)(using P[Any]): P[FnParam] =
@@ -157,7 +166,6 @@ object Parser:
 
   private def fnDefP(source: String)(using P[Any]): P[Member] =
     P(
-      Pass ~
         docCommentP(source)
         ~ memberVisibilityP.?
         ~ fnKw
@@ -571,7 +579,6 @@ object Parser:
     import fastparse.NoWhitespace.*
     P(!keywords ~ CharIn("a-z") ~ CharsWhileIn("a-zA-Z0-9_", 0)).!
 
-    
   private def operatorIdP[$: P]: P[String] =
 
     // Symbolic operators
@@ -584,6 +591,54 @@ object Parser:
   private def typeIdP[$: P]: P[String] =
     import fastparse.NoWhitespace.*
     P(CharIn("A-Z") ~ CharsWhileIn("a-zA-Z0-9", 0)).!
+
+  // -----------------------------------------------------------------------------
+  // Identifier wrapper parsers for error handling
+  // -----------------------------------------------------------------------------
+
+  private def bindingIdOrError[$: P]: P[Either[String, String]] =
+    import fastparse.NoWhitespace.*
+    // First try to capture any identifier-like token
+    P((!keywords ~ CharsWhileIn("a-zA-Z0-9_", 1)).!).map { captured =>
+      // Validate it matches binding rules
+      if captured.headOption.exists(_.isLower) && captured.forall(c =>
+          c.isLetterOrDigit || c == '_'
+        )
+      then Right(captured)
+      else Left(captured)
+    }
+
+  // TODO: Will be used when implementing fnDefP, binOpDefP, unaryOpDefP
+  /*
+  private def typeIdOrError[$: P]: P[Either[String, String]] =
+    import fastparse.NoWhitespace.*
+    // Try to capture any identifier-like token
+    P(CharsWhileIn("a-zA-Z0-9", 1).!).map { captured =>
+      // Validate it matches type rules
+      if captured.headOption.exists(_.isUpper) && captured.forall(_.isLetterOrDigit) then
+        Right(captured)
+      else
+        Left(captured)
+    }
+
+  private def operatorIdOrError[$: P]: P[Either[String, String]] =
+    import fastparse.NoWhitespace.*
+    val opChars = "=!#$%^&*+<>?/\\|~-"
+    
+    // Try symbolic operator first
+    val symbolicOp = P(CharsWhile(c => opChars.indexOf(c) >= 0, min = 1).!)
+    
+    P(symbolicOp | CharsWhileIn("a-zA-Z0-9_", 1).!).map { captured =>
+      // Check if it's a valid symbolic operator
+      if captured.forall(c => opChars.indexOf(c) >= 0) then
+        Right(captured)
+      // Check if it's a valid alphabetic operator (binding identifier rules)
+      else if captured.headOption.exists(_.isLower) && captured.forall(c => c.isLetterOrDigit || c == '_') then
+        Right(captured)
+      else
+        Left(captured)
+    }
+   */
 
   // -----------------------------------------------------------------------------
   // Keywords

@@ -35,6 +35,12 @@ def prettyPrintMember(
         s"""${indentStr}  "$message"""".stripMargin +
         failedCode.map(code => s"\n${indentStr}  $code").getOrElse("")
 
+    case ParsingIdError(span, message, failedCode, invalidId) =>
+      val spanStr = if showSourceSpans then printSourceSpan(span) else ""
+      s"${indentStr}IdError $spanStr\n" +
+        s"""${indentStr}  "$message"""".stripMargin +
+        failedCode.map(code => s"\n${indentStr}  $code").getOrElse("")
+
     case fn: FnDef =>
       val spanStr = if showSourceSpans then printSourceSpan(fn.span) else ""
       val typeStr =

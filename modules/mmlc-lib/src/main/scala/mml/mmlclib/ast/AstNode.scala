@@ -64,7 +64,6 @@ sealed trait Member extends AstNode
 sealed trait Resolvable extends AstNode:
   def name: String
 
-
 case class DocComment(
   span: SrcSpan,
   text: String
@@ -436,9 +435,9 @@ case class InvalidType(
       FromSource
 
 case class InvalidIdentifier(
-  span: SrcSpan,
+  span:       SrcSpan,
   failedCode: Option[String],
-  message: String
+  message:    String
 ) extends Error
 
 /** Represents a duplicate member declaration. The first occurrence remains valid and referenceable,
@@ -463,13 +462,17 @@ case class InvalidMember(
       InvalidNode,
       FromSource
 
-
-
-
-
 case class ParsingMemberError(
   span:       SrcSpan,
   message:    String,
   failedCode: Option[String]
+) extends Member,
+      Error
+
+case class ParsingIdError(
+  span:       SrcSpan,
+  message:    String,
+  failedCode: Option[String],
+  invalidId:  String
 ) extends Member,
       Error

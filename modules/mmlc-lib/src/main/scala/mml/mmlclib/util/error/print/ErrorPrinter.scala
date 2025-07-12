@@ -107,6 +107,9 @@ object ErrorPrinter:
       case SemanticError.InvalidExpressionFound(invalidExpr, _) =>
         s"${Console.RED}Invalid expression found at ${formatLocation(invalidExpr.span)}${Console.RESET}"
 
+      case SemanticError.TypeCheckingError(error) =>
+        s"${Console.RED}Type checking error: ${error.toString}${Console.RESET}"
+
     // Add AST info and source code snippets if source code is available
     sourceCode match
       case Some(src) =>

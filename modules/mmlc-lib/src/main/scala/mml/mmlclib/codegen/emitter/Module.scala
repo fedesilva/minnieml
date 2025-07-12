@@ -3,8 +3,6 @@ package mml.mmlclib.codegen.emitter
 import cats.syntax.all.*
 import mml.mmlclib.ast.{Bnd, FnDef, Module, NativeImpl, NativeStruct, NativeType, TypeDef}
 
-
-
 /** Main entry point for LLVM IR emission.
   *
   * Provides module-level code emission functionality.
