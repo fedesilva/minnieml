@@ -64,23 +64,6 @@ sealed trait Member extends AstNode
 sealed trait Resolvable extends AstNode:
   def name: String
 
-/** Marker trait for nodes that represent invalid/error constructs. These nodes allow the compiler
-  * to continue processing even when errors are encountered, enabling better LSP support and partial
-  * compilation.
-  */
-sealed trait InvalidNode extends AstNode
-
-sealed trait Error extends AstNode, InvalidNode:
-  def span:       SrcSpan
-  def message:    String
-  def failedCode: Option[String]
-
-case class ParsingMemberError(
-  span:       SrcSpan,
-  message:    String,
-  failedCode: Option[String]
-) extends Member,
-      Error
 
 case class DocComment(
   span: SrcSpan,
@@ -419,6 +402,12 @@ case class NativeImpl(
 
 // **Invalid Nodes for Error Recovery**
 
+/** Marker trait for nodes that represent invalid/error constructs. These nodes allow the compiler
+  * to continue processing even when errors are encountered, enabling better LSP support and partial
+  * compilation.
+  */
+sealed trait InvalidNode extends AstNode
+
 /** Represents an expression that could not be resolved or is otherwise invalid. Preserves the
   * original expression for debugging and error reporting.
   */
@@ -441,6 +430,12 @@ case class InvalidType(
       InvalidNode,
       FromSource
 
+case class InvalidIdentifier(
+  span: SrcSpan,
+  failedCode: Option[String],
+  message: String
+) extends Error
+
 /** Represents a duplicate member declaration. The first occurrence remains valid and referenceable,
   * subsequent duplicates are wrapped in this node.
   */
@@ -462,3 +457,17 @@ case class InvalidMember(
 ) extends Member,
       InvalidNode,
       FromSource
+
+
+
+sealed trait Error extends AstNode, InvalidNode:
+  def span:       SrcSpan
+  def message:    String
+  def failedCode: Option[String]
+
+case class ParsingMemberError(
+  span:       SrcSpan,
+  message:    String,
+  failedCode: Option[String]
+) extends Member,
+      Error

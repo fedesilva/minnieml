@@ -571,6 +571,7 @@ object Parser:
     import fastparse.NoWhitespace.*
     P(!keywords ~ CharIn("a-z") ~ CharsWhileIn("a-zA-Z0-9_", 0)).!
 
+    
   private def operatorIdP[$: P]: P[String] =
 
     // Symbolic operators
