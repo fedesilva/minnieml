@@ -166,7 +166,7 @@ def compileTerm(
       } yield CompileResult(resultReg, finalState, false)
     }
 
-    case NativeImpl(_, _, _) => {
+    case NativeImpl(_, _, _, _) => {
       // Native implementation - handled at function level
       CompileResult(0, state, false).asRight
     }

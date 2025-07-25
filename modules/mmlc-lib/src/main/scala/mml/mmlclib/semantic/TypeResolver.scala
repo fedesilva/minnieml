@@ -12,14 +12,36 @@ object TypeResolver:
     val (errors, members) =
       state.module.members.foldLeft((List.empty[SemanticError], List.empty[Member])) {
         case ((accErrors, accMembers), member) =>
-          resolveMember(member, state.module) match
+          // Create a temporary module with accumulated members for lookups
+          val currentModule =
+            state.module.copy(members = accMembers ++ state.module.members.dropWhile(_ != member))
+          resolveMember(member, currentModule) match
             case Left(errs) =>
               // Important: Use the rewritten member with InvalidType nodes, not the original
-              val rewrittenMember = rewriteMemberWithInvalidTypes(member, state.module)
+              val rewrittenMember = rewriteMemberWithInvalidTypes(member, currentModule)
               (accErrors ++ errs, accMembers :+ rewrittenMember)
             case Right(updated) => (accErrors, accMembers :+ updated)
       }
     state.addErrors(errors).withModule(state.module.copy(members = members))
+
+  /** Compute the typeSpec for a TypeAlias by following the resolved typeRef chain */
+  private def computeTypeSpecForAlias(typeRef: TypeSpec, module: Module): Option[TypeSpec] =
+    typeRef match
+      case tr: TypeRef if tr.resolvedAs.isDefined =>
+        tr.resolvedAs.get match
+          case td: TypeDef =>
+            // Return TypeRef to the TypeDef, not its native typeSpec
+            // This ensures type aliases resolve to MML types rather than native representations
+            Some(TypeRef(tr.span, td.name, Some(td)))
+          case ta: TypeAlias =>
+            ta.typeSpec match
+              case Some(spec) => Some(spec)
+              case None =>
+                // If the alias doesn't have a typeSpec yet, try to follow its typeRef
+                ta.typeRef match
+                  case innerRef: TypeRef => computeTypeSpecForAlias(innerRef, module)
+                  case _ => None
+      case _ => None
 
   /** Rewrite a member to use InvalidType nodes for undefined type references */
   private def rewriteMemberWithInvalidTypes(member: Member, module: Module): Member =
@@ -57,7 +79,13 @@ object TypeResolver:
           typeAsc = unary.typeAsc.map(rewriteTypeSpecWithInvalidTypes(_, module))
         )
       case alias: TypeAlias =>
-        alias.copy(typeRef = rewriteTypeSpecWithInvalidTypes(alias.typeRef, module))
+        val rewrittenTypeRef = rewriteTypeSpecWithInvalidTypes(alias.typeRef, module)
+        val computedTypeSpec = computeTypeSpecForAlias(rewrittenTypeRef, module)
+        alias.copy(typeRef = rewrittenTypeRef, typeSpec = computedTypeSpec)
+      case typeDef: TypeDef =>
+        typeDef.copy(
+          typeSpec = typeDef.typeSpec.map(rewriteTypeSpecWithInvalidTypes(_, module))
+        )
       case _ => member
 
   /** Rewrite type spec to use InvalidType for undefined references */
@@ -77,8 +105,54 @@ object TypeResolver:
           case multiple =>
             // Also use InvalidType for ambiguous references
             InvalidType(typeRef.span, typeRef)
+      case ns: NativeStruct =>
+        // Recursively handle struct fields
+        val rewrittenFields = ns.fields.map { case (fieldName, fieldType) =>
+          fieldName -> rewriteTypeSpecWithInvalidTypes(fieldType, module)
+        }
+        ns.copy(fields = rewrittenFields)
+
+      case tf: TypeFn =>
+        // Recursively handle parameter types and return type
+        val rewrittenParams = tf.paramTypes.map(rewriteTypeSpecWithInvalidTypes(_, module))
+        val rewrittenReturn = rewriteTypeSpecWithInvalidTypes(tf.returnType, module)
+        tf.copy(paramTypes = rewrittenParams, returnType = rewrittenReturn)
+
+      case ta: TypeApplication =>
+        // Recursively handle base type and type arguments
+        val rewrittenBase = rewriteTypeSpecWithInvalidTypes(ta.base, module)
+        val rewrittenArgs = ta.args.map(rewriteTypeSpecWithInvalidTypes(_, module))
+        ta.copy(base = rewrittenBase, args = rewrittenArgs)
+
+      case tt: TypeTuple =>
+        // Recursively handle element types
+        val rewrittenElements = tt.elements.map(rewriteTypeSpecWithInvalidTypes(_, module))
+        tt.copy(elements = rewrittenElements)
+
+      case ts: TypeStruct =>
+        // Recursively handle field types
+        val rewrittenFields = ts.fields.map { case (fieldName, fieldType) =>
+          fieldName -> rewriteTypeSpecWithInvalidTypes(fieldType, module)
+        }
+        ts.copy(fields = rewrittenFields)
+
+      case u: Union =>
+        // Recursively handle union member types
+        val rewrittenTypes = u.types.map(rewriteTypeSpecWithInvalidTypes(_, module))
+        u.copy(types = rewrittenTypes)
+
+      case i: Intersection =>
+        // Recursively handle intersection member types
+        val rewrittenTypes = i.types.map(rewriteTypeSpecWithInvalidTypes(_, module))
+        i.copy(types = rewrittenTypes)
+
+      case tg: TypeGroup =>
+        // Recursively handle grouped types
+        val rewrittenTypes = tg.types.map(rewriteTypeSpecWithInvalidTypes(_, module))
+        tg.copy(types = rewrittenTypes)
+
       case other =>
-        // For now, other type specs don't contain TypeRefs that need resolution
+        // TypeUnit, TypeRefinement (contains Expr, not TypeSpec), and others don't need rewriting
         other
 
   /** Rewrite expression to handle type ascriptions with invalid types */
@@ -122,6 +196,16 @@ object TypeResolver:
         hole.copy(typeAsc = hole.typeAsc.map(rewriteTypeSpecWithInvalidTypes(_, module)))
       case native: NativeImpl =>
         native.copy(typeAsc = native.typeAsc.map(rewriteTypeSpecWithInvalidTypes(_, module)))
+      case lit: LiteralValue =>
+        // Rewrite typeSpec for literals with invalid types
+        val rewrittenTypeSpec = lit.typeSpec.map(rewriteTypeSpecWithInvalidTypes(_, module))
+        lit match {
+          case l: LiteralInt => l.copy(typeSpec = rewrittenTypeSpec)
+          case l: LiteralString => l.copy(typeSpec = rewrittenTypeSpec)
+          case l: LiteralBool => l.copy(typeSpec = rewrittenTypeSpec)
+          case l: LiteralUnit => l.copy(typeSpec = rewrittenTypeSpec)
+          case l: LiteralFloat => l.copy(typeSpec = rewrittenTypeSpec)
+        }
       case _ => term
 
   /** Resolve type references in a module member. */
@@ -166,9 +250,17 @@ object TypeResolver:
             )
 
       case alias: TypeAlias =>
-        resolveTypeSpec(alias.typeRef, member, module).map(updatedTypeRef =>
-          alias.copy(typeRef = updatedTypeRef)
-        )
+        resolveTypeSpec(alias.typeRef, member, module).map { updatedTypeRef =>
+          // Compute the typeSpec by following the resolved typeRef chain
+          val computedTypeSpec = computeTypeSpecForAlias(updatedTypeRef, module)
+          alias.copy(typeRef = updatedTypeRef, typeSpec = computedTypeSpec)
+        }
+
+      case typeDef: TypeDef =>
+        // Resolve type references within the TypeDef's typeSpec (e.g., for NativeStruct fields)
+        typeDef.typeSpec
+          .traverse(resolveTypeSpec(_, member, module))
+          .map(updatedTypeSpec => typeDef.copy(typeSpec = updatedTypeSpec))
 
       case _ =>
         member.asRight[List[SemanticError]]
@@ -211,8 +303,62 @@ object TypeResolver:
             // This shouldn't happen with proper duplicate checking, but let's be defensive
             List(SemanticError.DuplicateName(typeRef.name, multiple, phaseName)).asLeft
 
+      case ns: NativeStruct =>
+        // Resolve TypeSpecs in all struct fields
+        ns.fields.toList
+          .traverse { case (fieldName, fieldType) =>
+            resolveTypeSpec(fieldType, member, module).map(fieldName -> _)
+          }
+          .map(resolvedFields => ns.copy(fields = resolvedFields.toMap))
+
+      case tf: TypeFn =>
+        // Resolve TypeSpecs in parameter types and return type
+        for
+          resolvedParams <- tf.paramTypes.traverse(resolveTypeSpec(_, member, module))
+          resolvedReturn <- resolveTypeSpec(tf.returnType, member, module)
+        yield tf.copy(paramTypes = resolvedParams, returnType = resolvedReturn)
+
+      case ta: TypeApplication =>
+        // Resolve base type and type arguments
+        for
+          resolvedBase <- resolveTypeSpec(ta.base, member, module)
+          resolvedArgs <- ta.args.traverse(resolveTypeSpec(_, member, module))
+        yield ta.copy(base = resolvedBase, args = resolvedArgs)
+
+      case tt: TypeTuple =>
+        // Resolve element types
+        tt.elements
+          .traverse(resolveTypeSpec(_, member, module))
+          .map(resolvedElements => tt.copy(elements = resolvedElements))
+
+      case ts: TypeStruct =>
+        // Resolve field types
+        ts.fields
+          .traverse { case (fieldName, fieldType) =>
+            resolveTypeSpec(fieldType, member, module).map(fieldName -> _)
+          }
+          .map(resolvedFields => ts.copy(fields = resolvedFields))
+
+      case u: Union =>
+        // Resolve union member types
+        u.types
+          .traverse(resolveTypeSpec(_, member, module))
+          .map(resolvedTypes => u.copy(types = resolvedTypes))
+
+      case i: Intersection =>
+        // Resolve intersection member types
+        i.types
+          .traverse(resolveTypeSpec(_, member, module))
+          .map(resolvedTypes => i.copy(types = resolvedTypes))
+
+      case tg: TypeGroup =>
+        // Resolve grouped types
+        tg.types
+          .traverse(resolveTypeSpec(_, member, module))
+          .map(resolvedTypes => tg.copy(types = resolvedTypes))
+
       case other =>
-        // For now, other type specs don't contain TypeRefs that need resolution
+        // TypeUnit, TypeRefinement (contains Expr, not TypeSpec), and others don't need resolution
         other.asRight[List[SemanticError]]
 
   /** Resolve type references in an expression.
@@ -290,6 +436,22 @@ object TypeResolver:
           .traverse(resolveTypeSpec(_, member, module))
           .map(updatedTypeAsc => native.copy(typeAsc = updatedTypeAsc))
 
+      case lit: LiteralValue =>
+        // Resolve typeSpec for literals
+        lit.typeSpec match {
+          case Some(ts) =>
+            resolveTypeSpec(ts, member, module).map { resolvedTypeSpec =>
+              lit match {
+                case l: LiteralInt => l.copy(typeSpec = Some(resolvedTypeSpec))
+                case l: LiteralString => l.copy(typeSpec = Some(resolvedTypeSpec))
+                case l: LiteralBool => l.copy(typeSpec = Some(resolvedTypeSpec))
+                case l: LiteralUnit => l.copy(typeSpec = Some(resolvedTypeSpec))
+                case l: LiteralFloat => l.copy(typeSpec = Some(resolvedTypeSpec))
+              }
+            }
+          case None => Right(lit)
+        }
+
       case _ =>
-        // Literals don't have type ascriptions that need resolution
+        // Other terms don't have type ascriptions that need resolution
         term.asRight[List[SemanticError]]

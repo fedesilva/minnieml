@@ -26,7 +26,8 @@ object Parser:
       case Parsed.Success(result, _) =>
         result.asRight
       case f: Parsed.Failure =>
-        // TODO:
+        // TODO: this is normally not enough, we need to inject error
+        //    nodes precisely where we fail and continue
         ParserError.Failure(f.trace().longMsg).asLeft
 
   // -----------------------------------------------------------------------------
@@ -97,8 +98,7 @@ object Parser:
 
   private def membersP(source: String)(using P[Any]): P[Member] =
     P(
-      Pass ~
-        binOpDefP(source) |
+      binOpDefP(source) |
         unaryOpP(source) |
         letBindingP(source) |
         fnDefP(source) |
@@ -113,37 +113,48 @@ object Parser:
 
   private def letBindingP(source: String)(using P[Any]): P[Member] =
     P(
-      Pass ~
         // Implicit whitespace consumption happens here
         docCommentP(source)
         ~ memberVisibilityP.?
         ~ letKw
         ~ spP(source) // Offset 4 chars back "let ".
-        ~ bindingIdP
+        ~ bindingIdOrError
         ~ typeAscP(source)
         ~ defAsKw
         ~ exprP(source)
         ~ endKw
         ~ spP(source) // Capture end point *after* ';'
     )
-      .map { case (doc, vis, startPoint, name, typeAsc, expr, endPoint) =>
-        Bnd(
-          visibility = vis.getOrElse(MemberVisibility.Protected),
-          span(startPoint, endPoint),
-          name,
-          expr,
-          expr.typeSpec,
-          typeAsc,
-          doc
-        )
+      .map { case (doc, vis, startPoint, idOrError, typeAsc, expr, endPoint) =>
+        idOrError match
+          case Left(invalidId) =>
+            ParsingIdError(
+              span = span(startPoint, endPoint),
+              message =
+                s"Invalid identifier '$invalidId'. Identifiers must start with a lowercase letter (a-z) followed by letters, digits, or underscores",
+              // #168
+              // This is total bullshit
+              // Failed
+              failedCode = Some(invalidId),
+              invalidId  = invalidId
+            )
+          case Right(name) =>
+            Bnd(
+              visibility = vis.getOrElse(MemberVisibility.Protected),
+              span(startPoint, endPoint),
+              name,
+              expr,
+              expr.typeSpec,
+              typeAsc,
+              doc
+            )
       }
 
   private def fnParamP(source: String)(using P[Any]): P[FnParam] =
     P(
-      Pass ~
-        spP(source) ~ docCommentP(source) ~ bindingIdP ~ typeAscP(source) ~ spP(
-          source
-        )
+      spP(source) ~ docCommentP(source) ~ bindingIdP ~ typeAscP(source) ~ spP(
+        source
+      )
     ).map { case (start, doc, name, t, end) =>
       FnParam(
         span       = span(start, end),
@@ -153,16 +164,18 @@ object Parser:
       )
     }
 
+  private def fnParamListP(source: String)(using P[Any]): P[List[FnParam]] =
+    P(fnParamP(source).rep(sep = ",")).map(_.toList)
+
   private def fnDefP(source: String)(using P[Any]): P[Member] =
     P(
-      Pass ~
         docCommentP(source)
         ~ memberVisibilityP.?
         ~ fnKw
         ~ spP(source) // Offset 3 chars back "fn ".
         ~ bindingIdP
         ~ "("
-        ~ fnParamP(source).rep
+        ~ fnParamListP(source)
         ~ ")"
         ~ typeAscP(source)
         ~ defAsKw
@@ -174,7 +187,7 @@ object Parser:
         visibility = vis.getOrElse(MemberVisibility.Protected),
         span       = span(startPoint, endPoint),
         name       = fnName,
-        params     = params.toList,
+        params     = params,
         body       = bodyExpr,
         typeSpec   = bodyExpr.typeSpec,
         typeAsc    = typeAsc,
@@ -194,14 +207,14 @@ object Parser:
   private def binOpDefP(source: String)(using P[Any]): P[Member] =
     P(
       // Implicit whitespace consumption happens here
-      Pass ~
-        docCommentP(source)
+      docCommentP(source)
         ~ memberVisibilityP.?
         ~ opKw
         ~ spP(source) // Offset 3 chars back "op ".
         ~ operatorIdP
         ~ "("
         ~ fnParamP(source)
+        ~ ","
         ~ fnParamP(source)
         ~ ")"
         ~ typeAscP(source)
@@ -209,8 +222,8 @@ object Parser:
         ~ assocP.?
         ~ defAsKw
         ~ exprP(source)
+        ~ spP(source)
         ~ endKw
-        ~ spP(source) // Capture end point *after* ';'
     ).map {
       case (
             doc,
@@ -242,34 +255,35 @@ object Parser:
 
   private def unaryOpP(source: String)(using P[Any]): P[Member] =
     P(
-      // Implicit whitespace consumption happens here
-      Pass ~
-        docCommentP(source)
+      docCommentP(source)
         ~ memberVisibilityP.?
         ~ opKw
-        ~ spP(source) // Offset 3 chars back "op ".
+        ~ spP(source)
         ~ operatorIdP
         ~ "("
         ~ fnParamP(source)
         ~ ")"
+        ~ typeAscP(source)
         ~ precedenceP.?
         ~ assocP.?
         ~ defAsKw
         ~ exprP(source)
         ~ endKw
         ~ spP(source) // Capture end point *after* ';'
-    ).map { case (doc, vis, startPoint, opName, param, precedence, assoc, bodyExpr, endPoint) =>
-      UnaryOpDef(
-        visibility = vis.getOrElse(MemberVisibility.Protected),
-        span       = span(startPoint, endPoint),
-        name       = opName,
-        param      = param,
-        precedence = precedence.getOrElse(50),
-        assoc      = assoc.getOrElse(Associativity.Right),
-        body       = bodyExpr,
-        typeSpec   = bodyExpr.typeSpec,
-        docComment = doc
-      )
+    ).map {
+      case (doc, vis, startPoint, opName, param, typeAsc, precedence, assoc, bodyExpr, endPoint) =>
+        UnaryOpDef(
+          visibility = vis.getOrElse(MemberVisibility.Protected),
+          span       = span(startPoint, endPoint),
+          name       = opName,
+          param      = param,
+          precedence = precedence.getOrElse(50),
+          assoc      = assoc.getOrElse(Associativity.Right),
+          body       = bodyExpr,
+          typeAsc    = typeAsc,
+          typeSpec   = bodyExpr.typeSpec,
+          docComment = doc
+        )
     }
 
   // -----------------------------------------------------------------------------
@@ -296,18 +310,31 @@ object Parser:
   // -------------------------------------------------------------------------------
 
   private def typeAscP(source: String)(using P[Any]): P[Option[TypeSpec]] =
-    P(":" ~/ typeSpecP(source)).?
+    P(":" ~ typeSpecP(source)).?
 
   private def typeSpecP(source: String)(using P[Any]): P[TypeSpec] =
     P(
       typeNameP(source)
     )
 
+  private def typeUnitP(source: String)(using P[Any]): P[TypeSpec] =
+    P(spP(source) ~ "()" ~ spP(source)).map { case (start, end) =>
+      TypeUnit(span(start, end))
+    }
+
   private def typeNameP(source: String)(using P[Any]): P[TypeSpec] =
-    P(spP(source) ~ typeIdP ~ spP(source))
-      .map { case (start, id, end) =>
-        TypeRef(span(start, end), id)
-      }
+    P(
+      P(spP(source) ~ typeIdP ~ spP(source))
+        .map { case (start, id, end) =>
+          TypeRef(span(start, end), id)
+        }
+    ) |
+      P(
+        P(typeUnitP(source))
+          .map { case unit =>
+            unit
+          }
+      )
 
   private def nativeTypeDefP(source: String)(using P[Any]): P[TypeDef] =
     P(
@@ -353,16 +380,71 @@ object Parser:
       }
 
   private def nativeImplP(source: String)(using P[Any]): P[NativeImpl] =
-    P(spP(source) ~ "@native" ~ spP(source))
-      .map { case (start, end) =>
-        NativeImpl(span(start, end))
+
+    def nativeOpP: P[Option[String]] =
+      P("[" ~ "op" ~ "=" ~ CharsWhileIn("a-zA-Z0-9_", 1).! ~ "]").?
+
+    P(spP(source) ~ nativeKw ~ nativeOpP ~ spP(source))
+      .map { case (start, op, end) =>
+        NativeImpl(span(start, end), nativeOp = op)
       }
 
-  private def nativeTypeP(source: String)(using P[Any]): P[NativeTypeImpl] =
-    P(spP(source) ~ "@native" ~ spP(source))
-      .map { case (start, end) =>
-        NativeTypeImpl(span(start, end))
+  private def nativeTypeP(source: String)(using P[Any]): P[NativeType] =
+    P(spP(source) ~ nativeKw ~ ":" ~/ nativeTypeBodyP(source) ~ spP(source))
+      .map { case (start, body, end) =>
+        body match {
+          case p: NativePrimitive => p.copy(span = span(start, end))
+          case p: NativePointer => p.copy(span = span(start, end))
+          case s: NativeStruct => s.copy(span = span(start, end))
+        }
       }
+
+  private def nativeTypeBodyP(source: String)(using P[Any]): P[NativeType] =
+    P(nativeStructP(source) | nativePointerP(source) | nativePrimitiveP(source))
+
+  private def nativePrimitiveP(source: String)(using P[Any]): P[NativePrimitive] =
+    P(spP(source) ~ llvmPrimitiveTypeP ~ spP(source))
+      .map { case (start, llvmType, end) =>
+        NativePrimitive(span(start, end), llvmType)
+      }
+
+  private def nativePointerP(source: String)(using P[Any]): P[NativePointer] =
+    P(spP(source) ~ "*" ~ llvmPrimitiveTypeP ~ spP(source))
+      .map { case (start, llvmType, end) =>
+        NativePointer(span(start, end), llvmType)
+      }
+
+  private def nativeStructP(source: String)(using P[Any]): P[NativeStruct] =
+    P(spP(source) ~ "{" ~/ nativeFieldListP(source) ~ "}" ~ spP(source))
+      .map { case (start, fields, end) =>
+        NativeStruct(span(start, end), fields)
+      }
+
+  private def nativeFieldListP(source: String)(using P[Any]): P[Map[String, TypeSpec]] =
+    P(nativeFieldP(source).rep(sep = ","))
+      .map { fields =>
+        val fieldList = fields.toList
+        val fieldMap  = fieldList.toMap
+        fieldMap
+      }
+
+  private def nativeFieldP(source: String)(using P[Any]): P[(String, TypeSpec)] =
+    P(bindingIdP ~ ":" ~/ typeSpecP(source))
+
+  private def llvmPrimitiveTypeP(using P[Any]): P[String] =
+    P(
+      ("i" ~ CharIn("0-9").rep(1)).!.flatMap { t =>
+        val bits = t.drop(1).toIntOption.getOrElse(0)
+        if bits == 1 || bits == 8 || bits == 16 || bits == 32 || bits == 64 || bits == 128 then
+          Pass(t)
+        else Fail
+      } |
+        "half".! |
+        "bfloat".! |
+        "float".! |
+        "double".! |
+        "fp128".!
+    )
 
   private def termP(source: String)(using P[Any]): P[Term] =
     P(
@@ -426,7 +508,7 @@ object Parser:
       }
 
   private def phP(source: String)(using P[Any]): P[Term] =
-    P(spP(source) ~ mehKw ~ spP(source))
+    P(spP(source) ~ placeholderKw ~ spP(source))
       .map { case (start, end) =>
         Placeholder(span(start, end), None)
       }
@@ -483,7 +565,7 @@ object Parser:
   private def failedMemberP(source: String)(using P[Any]): P[Member] =
     P(spP(source) ~ CharsWhile(_ != ';').! ~ endKw ~ spP(source))
       .map { case (start, snippet, end) =>
-        MemberError(
+        ParsingMemberError(
           span       = SrcSpan(start, end),
           message    = "Failed to parse member",
           failedCode = snippet.some
@@ -514,17 +596,67 @@ object Parser:
     P(CharIn("A-Z") ~ CharsWhileIn("a-zA-Z0-9", 0)).!
 
   // -----------------------------------------------------------------------------
+  // Identifier wrapper parsers for error handling
+  // -----------------------------------------------------------------------------
+
+  // #168
+  // this is total bullshit, we already have // bindingIdP
+  private def bindingIdOrError[$: P]: P[Either[String, String]] =
+    import fastparse.NoWhitespace.*
+    // First try to capture any identifier-like token
+    P((!keywords ~ CharsWhileIn("a-zA-Z0-9_", 1)).!).map { captured =>
+      // Validate it matches binding rules
+      if captured.headOption.exists(_.isLower) && captured.forall(c =>
+          c.isLetterOrDigit || c == '_'
+        )
+      then Right(captured)
+      else Left(captured)
+    }
+
+  // TODO: Will be used when implementing fnDefP, binOpDefP, unaryOpDefP
+  /*
+  private def typeIdOrError[$: P]: P[Either[String, String]] =
+    import fastparse.NoWhitespace.*
+    // Try to capture any identifier-like token
+    P(CharsWhileIn("a-zA-Z0-9", 1).!).map { captured =>
+      // Validate it matches type rules
+      if captured.headOption.exists(_.isUpper) && captured.forall(_.isLetterOrDigit) then
+        Right(captured)
+      else
+        Left(captured)
+    }
+
+  private def operatorIdOrError[$: P]: P[Either[String, String]] =
+    import fastparse.NoWhitespace.*
+    val opChars = "=!#$%^&*+<>?/\\|~-"
+    
+    // Try symbolic operator first
+    val symbolicOp = P(CharsWhile(c => opChars.indexOf(c) >= 0, min = 1).!)
+    
+    P(symbolicOp | CharsWhileIn("a-zA-Z0-9_", 1).!).map { captured =>
+      // Check if it's a valid symbolic operator
+      if captured.forall(c => opChars.indexOf(c) >= 0) then
+        Right(captured)
+      // Check if it's a valid alphabetic operator (binding identifier rules)
+      else if captured.headOption.exists(_.isLower) && captured.forall(c => c.isLetterOrDigit || c == '_') then
+        Right(captured)
+      else
+        Left(captured)
+    }
+   */
+
+  // -----------------------------------------------------------------------------
   // Keywords
   // -----------------------------------------------------------------------------
 
-  private def letKw[$: P]:   P[Unit] = P("let")
-  private def fnKw[$: P]:    P[Unit] = P("fn")
-  private def opKw[$: P]:    P[Unit] = P("op")
-  private def defAsKw[$: P]: P[Unit] = P("=")
-  private def endKw[$: P]:   P[Unit] = P(";")
-  private def mehKw[$: P]:   P[Unit] = P("_")
-  private def holeKw[$: P]:  P[Unit] = P("???")
-  private def typeKw[$: P]:  P[Unit] = P("type")
+  private def letKw[$: P]:         P[Unit] = P("let")
+  private def fnKw[$: P]:          P[Unit] = P("fn")
+  private def opKw[$: P]:          P[Unit] = P("op")
+  private def defAsKw[$: P]:       P[Unit] = P("=")
+  private def endKw[$: P]:         P[Unit] = P(";")
+  private def placeholderKw[$: P]: P[Unit] = P("_")
+  private def holeKw[$: P]:        P[Unit] = P("???")
+  private def typeKw[$: P]:        P[Unit] = P("type")
 
   private def ifKw[$: P]:   P[Unit] = P("if")
   private def elseKw[$: P]: P[Unit] = P("else")
@@ -542,7 +674,7 @@ object Parser:
       moduleKw |
         endKw |
         defAsKw |
-        mehKw |
+        placeholderKw |
         letKw |
         holeKw |
         ifKw |

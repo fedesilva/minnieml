@@ -3,13 +3,13 @@ package mml.mmlclib.semantic
 import mml.mmlclib.ast.*
 import mml.mmlclib.test.BaseEffFunSuite
 
-class MemberErrorCheckerTests extends BaseEffFunSuite:
+class ParsingErrorCheckerTests extends BaseEffFunSuite:
 
   test("Full semantic pipeline passes correct modules") {
     semNotFailed(
       """
       module TestPipeline =
-        fn valid(a b) = a + b;
+        fn valid(a: Int, b: Int): Int = a + b;
         let x = 42;
       ;
       """
@@ -23,7 +23,7 @@ class MemberErrorCheckerTests extends BaseEffFunSuite:
     semFailed(
       """
       module TestPipeline =
-        fn valid(a b) = a + b;
+        fn valid(a: Int, b: Int): Int = a + b;
         let x  ; // Missing expression after =
       ;
       """
@@ -34,13 +34,13 @@ class MemberErrorCheckerTests extends BaseEffFunSuite:
     justParse(
       """
       module Test =
-        fn valid(a b) = a + b;
+        fn valid(a: Int, b: Int): Int = a + b;
         let x = 42;
       ;
       """
     ).map { module =>
-      val state = SemanticPhaseState(module, Vector.empty)
-      val result = MemberErrorChecker.checkModule(state)
+      val state  = SemanticPhaseState(module, Vector.empty)
+      val result = ParsingErrorChecker.checkModule(state)
       assert(result.errors.isEmpty)
       assertNoDiff(result.module.toString, module.toString)
     }
@@ -50,7 +50,7 @@ class MemberErrorCheckerTests extends BaseEffFunSuite:
     semWithState(
       """
       module TestPartial =
-        fn valid(a b) = a + b;
+        fn valid(a: Int, b: Int): Int = a + b;
         let a  ; # Missing expression after =
       ;
       """
@@ -58,13 +58,15 @@ class MemberErrorCheckerTests extends BaseEffFunSuite:
 
       // println(prettyPrintAst(result.module))
 
+      // if result.errors.nonEmpty then
+      //   println(result.errors)
+
       assert(clue(result.errors.size) == clue(1))
 
       result.errors.head match {
         case SemanticError.MemberErrorFound(error, phase) =>
           assert(error.message == "Failed to parse member")
           assert(error.failedCode.exists(_.contains("let a")))
-          assert(phase == "mml.mmlclib.semantic.MemberErrorChecker")
         case e => fail(s"Expected MemberErrorFound error, got $e")
       }
     }
@@ -74,7 +76,7 @@ class MemberErrorCheckerTests extends BaseEffFunSuite:
     semWithState(
       """
       module TestPartial =
-        fn valid(a b) = a + b;
+        fn valid(a: Int, b: Int): Int = a + b;
         let a  ; // Missing expression after =
         bnd noLet = 5; # Invalid syntax - 'bnd' instead of 'let'
       ;

@@ -34,3 +34,4 @@ def prettyPrintAst(
     case d: DocComment => prettyPrintDocComment(d, indent)
     case t: TypeSpec => prettyPrintTypeSpec(Some(t))
     case p: FnParam => prettyPrintParams(Seq(p), indent, showSourceSpans, showTypes)
+    

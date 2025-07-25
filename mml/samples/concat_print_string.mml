@@ -5,5 +5,5 @@ fn println (a: String): () = @native;
 fn concat( a: String, b: String): String = @native;
 
 fn main(): () = 
-  println "Fede"
+  println concat "Fede" "Silva"
 ;

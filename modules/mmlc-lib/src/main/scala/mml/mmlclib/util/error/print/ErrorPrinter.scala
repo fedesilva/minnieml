@@ -100,12 +100,19 @@ object ErrorPrinter:
         val location = formatLocation(error.span)
         s"${Console.RED}Parser error at $location: ${error.message}${Console.RESET}"
 
+      case SemanticError.ParsingIdErrorFound(error, _) =>
+        val location = formatLocation(error.span)
+        s"${Console.RED}Invalid identifier at $location: ${error.message}${Console.RESET}"
+
       case SemanticError.DanglingTerms(terms, message, _) =>
         val locations = terms.map(t => formatLocation(t.span)).mkString(", ")
         s"${Console.RED}$message at $locations${Console.RESET}"
 
       case SemanticError.InvalidExpressionFound(invalidExpr, _) =>
         s"${Console.RED}Invalid expression found at ${formatLocation(invalidExpr.span)}${Console.RESET}"
+
+      case SemanticError.TypeCheckingError(error) =>
+        s"${Console.RED}Type checking error: ${error.toString}${Console.RESET}"
 
     // Add AST info and source code snippets if source code is available
     sourceCode match

@@ -10,7 +10,7 @@ class OpTests extends BaseEffFunSuite:
   test("let with simple binop") {
     parseNotFailed(
       """
-        op + (a b) = sum a b;
+        op + (a, b) = sum a b;
       """
     )
   }

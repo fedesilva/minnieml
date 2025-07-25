@@ -1,5 +1,5 @@
 #- there is a function mult -#
-fn mult (a b) = ???;
+fn mult (a: Int, b: Int): Int = ???;
 
 # this works because mult is in application
 # position

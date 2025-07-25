@@ -105,6 +105,11 @@ object SemanticErrorPrinter:
         val snippet  = error.failedCode.getOrElse("<no code available>")
         s"${Console.RED}Parser error at $location: ${error.message} [phase: $phase]\n$snippet${Console.RESET}"
 
+      case SemanticError.ParsingIdErrorFound(error, phase) =>
+        val location = LocationPrinter.printSpan(error.span)
+        val snippet  = error.failedCode.getOrElse("<no code available>")
+        s"${Console.RED}Invalid identifier at $location: ${error.message} [phase: $phase]\n$snippet${Console.RESET}"
+
       case SemanticError.DanglingTerms(terms, message, phase) =>
         val locations = terms.map(t => LocationPrinter.printSpan(t.span)).mkString(", ")
         s"${Console.RED}$message at $locations [phase: $phase]${Console.RESET}"
@@ -112,6 +117,9 @@ object SemanticErrorPrinter:
       case SemanticError.InvalidExpressionFound(invalidExpr, phase) =>
         val location = LocationPrinter.printSpan(invalidExpr.span)
         s"${Console.RED}Invalid expression found at $location [phase: $phase]${Console.RESET}"
+
+      case SemanticError.TypeCheckingError(error) =>
+        s"${Console.RED}Type checking error: ${error.toString}${Console.RESET}"
 
     // Add AST info and source code snippets if source code is available
     sourceCode match
