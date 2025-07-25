@@ -44,6 +44,7 @@ enum SemanticError extends CompilationError:
   case InvalidExpression(expr: Expr, message: String, phase: String)
   case DanglingTerms(terms: List[Term], message: String, phase: String)
   case MemberErrorFound(error: ParsingMemberError, phase: String)
+  case ParsingIdErrorFound(error: ParsingIdError, phase: String)
   case InvalidExpressionFound(invalidExpr: mml.mmlclib.ast.InvalidExpression, phase: String)
   case TypeCheckingError(error: TypeError)
 

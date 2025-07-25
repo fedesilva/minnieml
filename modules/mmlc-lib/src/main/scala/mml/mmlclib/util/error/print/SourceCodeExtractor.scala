@@ -59,6 +59,12 @@ object SourceCodeExtractor:
         // For member errors, just return the failed code directly
         error.failedCode.getOrElse("Source code not available")
 
+      case SemanticError.ParsingIdErrorFound(error, _) =>
+        // For identifier errors, extract snippet with the invalid identifier highlighted
+        extractSnippet(sourceCode, error.span, highlightExpr = true)
+          .map(s => s"\n$s")
+          .getOrElse("")
+
       case SemanticError.DanglingTerms(terms, _, _) =>
         // Extract snippets for each dangling term
         val snippets = terms.collect { case term: FromSource =>

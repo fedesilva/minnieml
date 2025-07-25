@@ -13,6 +13,15 @@ Ability to compile simple programs:
 
 ## Recent Changes
 
+* **(2025-07-12)** **COMPLETED:** Implemented parsing error handling for invalid identifiers (#168)
+  - **Parser Enhancement:** Added `bindingIdOrError` wrapper parser that validates identifiers and continues parsing on errors
+  - **AST Changes:** `ParsingIdError` extends `Member, Error` for proper semantic phase integration
+  - **Error Flow:** Invalid identifiers create error nodes instead of failing parse completely
+  - **Semantic Integration:** Added `SemanticError.ParsingIdErrorFound` and updated `ParsingErrorChecker`
+  - **Error Reporting:** Updated all error printers to handle identifier errors with proper source highlighting
+  - **Testing:** Enhanced `BaseEffFunSuite` with `parseFailedWithErrors()` helper and comprehensive test coverage
+  - **Result:** Parser now gracefully handles `let 123invalid = 5;` by creating error nodes while continuing to parse
+
 * **(2025-07-07)** **COMPLETED:** Implemented comma-separated parameter syntax for functions and operators
   - **Parser Changes:** Added `fnParamListP` helper and updated `fnDefP`/`binOpDefP` to require commas
   - **Syntax Change:** `fn concat(a: String b: String)` → `fn concat(a: String, b: String)`
@@ -54,7 +63,20 @@ Ability to compile simple programs:
 
 ## Next Steps
 
-### (#168) Improve Parser Error Hanlding
+### (#168) Improve Parser Error Handling - IN PROGRESS
+
+**Status: ✓ PARTIAL COMPLETION**
+
+**Completed:**
+- ✓ Proof of concept for let bindings (`letBindingP`)
+- ✓ `ParsingIdError` AST node and semantic integration
+- ✓ Enhanced testing framework with `parseFailedWithErrors()`
+- ✓ Error reporting and source code highlighting
+
+**Pending:**
+- ❌ Update remaining member parsers (`fnDefP`, `binOpDefP`, `unaryOpDefP`)
+- ❌ Complete test suite for all identifier types
+- ❌ Full spec implementation beyond proof of concept
 
 See `./specs/168-improve-parsing-error.md` 
 

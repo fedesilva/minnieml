@@ -132,6 +132,9 @@ object Parser:
               span = span(startPoint, endPoint),
               message =
                 s"Invalid identifier '$invalidId'. Identifiers must start with a lowercase letter (a-z) followed by letters, digits, or underscores",
+              // #168
+              // This is total bullshit
+              // Failed
               failedCode = Some(invalidId),
               invalidId  = invalidId
             )
@@ -596,6 +599,8 @@ object Parser:
   // Identifier wrapper parsers for error handling
   // -----------------------------------------------------------------------------
 
+  // #168
+  // this is total bullshit, we already have // bindingIdP
   private def bindingIdOrError[$: P]: P[Either[String, String]] =
     import fastparse.NoWhitespace.*
     // First try to capture any identifier-like token

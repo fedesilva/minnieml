@@ -434,11 +434,6 @@ case class InvalidType(
       InvalidNode,
       FromSource
 
-case class InvalidIdentifier(
-  span:       SrcSpan,
-  failedCode: Option[String],
-  message:    String
-) extends Error
 
 /** Represents a duplicate member declaration. The first occurrence remains valid and referenceable,
   * subsequent duplicates are wrapped in this node.
