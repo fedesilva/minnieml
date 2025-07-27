@@ -1,4 +1,5 @@
 #include <fcntl.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -162,6 +163,55 @@ String concat(String a, String b)
     new_data[total_length] = '\0';
 
     return (String){total_length, new_data};
+}
+
+// --- Integer to String Conversion ---
+String to_string(int64_t value)
+{
+    // Handle special case of 0
+    if (value == 0)
+    {
+        char *data = (char *)malloc(2);
+        if (!data)
+            return (String){0, NULL};
+        data[0] = '0';
+        data[1] = '\0';
+        return (String){1, data};
+    }
+
+    // Determine sign and make value positive for processing
+    int is_negative = (value < 0);
+    int64_t abs_value = is_negative ? -value : value;
+
+    // Calculate number of digits needed
+    int digit_count = 0;
+    int64_t temp = abs_value;
+    while (temp > 0)
+    {
+        digit_count++;
+        temp /= 10;
+    }
+
+    // Allocate memory: digits + potential minus sign + null terminator
+    size_t total_length = digit_count + (is_negative ? 1 : 0);
+    char *data = (char *)malloc(total_length + 1);
+    if (!data)
+        return (String){0, NULL};
+
+    // Fill in digits from right to left
+    data[total_length] = '\0';
+    int pos = total_length - 1;
+    while (abs_value > 0)
+    {
+        data[pos--] = '0' + (abs_value % 10);
+        abs_value /= 10;
+    }
+
+    // Add minus sign if negative
+    if (is_negative)
+        data[0] = '-';
+
+    return (String){total_length, data};
 }
 
 // --- File Handling ---

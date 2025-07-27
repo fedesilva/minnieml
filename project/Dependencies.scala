@@ -5,7 +5,7 @@ object Dependencies {
   val logBackVersion:       String = "1.5.18"
   val monocleVersion:       String = "3.3.0"
   val catsVersion:          String = "2.12.0"
-  val catsEffectVersion:    String = "3.6.1"
+  val catsEffectVersion:    String = "3.6.3"
   val refinedVersion:       String = "0.11.3"
   val reload4jVersion:      String = "1.2.26"
   val lucumaRefinedVersion: String = "0.1.4"

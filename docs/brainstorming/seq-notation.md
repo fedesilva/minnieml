@@ -5,7 +5,7 @@
 Sequence literals in MinnieML (seq notation) provide a concise way to define fixed-length collections. By default, they create Arrays with contiguous memory storage:
 
 ```
-let a1 = [ 1 ]  # Creates an Array Int with one element
+let a1 = [1];  # Creates an Array Int with one element
 ```
 
 ## Empty Arrays and Type Inference
@@ -13,30 +13,33 @@ let a1 = [ 1 ]  # Creates an Array Int with one element
 Empty arrays require type information since the compiler cannot infer the element type:
 
 ```
-let x0 = []  # Warning: Type becomes Array Nothing (bottom type)
-             # This is usually a mistake and can trigger a fatal error
+let x0 = [];  # Warning: Type becomes Array Nothing (bottom type)
+              # This is usually a mistake and can trigger a fatal error if `--fatal-warnings1 is on.
 ```
 
 MinnieML offers two solutions:
 
 1. **Explicit type annotation:**
    ```
-   let x0 : Array Int = []
+   let x0 : Array Int = [];
    ```
 
 2. **Type notation (idiomatic):**
    ```
-   let x1 = Int []
+   let x1 = Int [];
    ```
+
+You read this as `Int Array`, compiles to `Array Int`
+
 
 ## Alternative Container Types
 
 While Arrays are the default, other container types can be specified:
 
 ```
-let x2 = List [ 1 ]         # Creates a List Int
-let ns: List Int = [ 1 2 3 ] # Type annotation makes this a List
-let ns = List [ 1 2 3 ]     # Explicitly creates a List Int
+let x2 = List [1];         # Creates a List Int
+let ns: List Int = [1, 2, 3]; # Type annotation makes this a List
+let ns = List [1, 2, 3];     # Explicitly creates a List Int
 ```
 
 ## Pattern Matching
@@ -65,7 +68,7 @@ MinnieML transforms sequence literals through a two-step process:
 Container types must implement the `SeqDesugar` protocol:
 
 ```
-protocol SeqDesugar 'C =
+protocol SeqDesugar 'C : Monad =
   fn desugar 'T: (Array 'T) -> ('C 'T)
 ;
 ```
@@ -80,7 +83,7 @@ A sequence literal is used in an expression.
 ### Simple Sequence Case:
 Simple sequence with literal elements: The inferred type is `Array 'T`, where `'T` is the type of the elements.
 
-Example: `let xs = [1 2 3]` (Desugars to Array Int).
+Example: `let xs = [1 2 3];` (Desugars to Array Int).
 
 ### Inference Case:
 If the type of the elements can be inferred (ascription, flow, or unification): The type is `Array 'I`, where `'I` is the inferred type.
@@ -100,10 +103,7 @@ If the type constructor refers to a type with an instance of SeqDesugar:
 
 Example: `let xs = List [1 2 3]` (Desugars to List Int).
 Example: `let ys = Vector [1 2 3]` (Desugars to Vector Int).
-Example: `let zs = Vector Int []` (Desugars to Vector Int with an empty list).
-
-### Untypeable Sequence in a Polymorphic Capable Scope Case:
-If an empty sequence or a sequence where the elements are not typeable, and the usage happens within a polymorphic capable context.
+Example: `let zs = Vector Int []` (Desugars to Vector Int with an empty list).          
 
 ### Untypable Empty Sequence Case:
 If an empty sequence is encountered and the type of the element can't be inferred:
@@ -111,12 +111,3 @@ If an empty sequence is encountered and the type of the element can't be inferre
 - This raises a warning indicating an empty sequence with no type hint.
 - The warning can be configured to result in a fatal compile error.
 
-## Development Features
-
-The `???` operator allows compilation with incomplete implementations:
-
-```
-let x : [] String = ???  # Type checks but has no implementation
-```
-
-This supports type-driven development by letting programmers define structure before implementation.

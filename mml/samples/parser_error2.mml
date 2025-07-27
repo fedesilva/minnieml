@@ -1,3 +1,3 @@
-fn mult (a b) = ???;
+fn mult (a: Int, b: Int): Int = ???;
 let a  ;
 let b = mult 2 2;

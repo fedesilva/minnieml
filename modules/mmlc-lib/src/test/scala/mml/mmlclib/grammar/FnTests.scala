@@ -10,7 +10,7 @@ class FnTests extends BaseEffFunSuite:
   test("simple fn") {
     parseNotFailed(
       """
-          fn sum (a b) = a sum b;
+          fn sum (a, b) = a sum b;
       """
     ).map { m =>
       {
@@ -37,7 +37,7 @@ class FnTests extends BaseEffFunSuite:
        module A =
          let a = 1;
          let b = 2;
-         fn sum (a b) = a + b;
+         fn sum (a, b) = a + b;
          let x = sum a b;
        ;
        """
@@ -47,7 +47,7 @@ class FnTests extends BaseEffFunSuite:
   test("app with id and lit") {
     parseNotFailed(
       """        
-        fn sum (a b) = b + 3;
+        fn sum (a, b) = b + 3;
       """
     )
   }
@@ -81,7 +81,7 @@ class FnTests extends BaseEffFunSuite:
   test("fn with type spec") {
     parseNotFailed(
       """
-        fn sum (a: Int b: Int) = a + b;
+        fn sum (a: Int, b: Int) = a + b;
       """
     ).map { m =>
       assert(m.members.size == 1)
@@ -109,7 +109,7 @@ class FnTests extends BaseEffFunSuite:
   test("grouped expression") {
     parseNotFailed(
       """
-        fn compute (a b) = 1 + (2 * 3);
+        fn compute (a, b) = 1 + (2 * 3);
       """
     ).map { m =>
       assert(m.members.size == 1)
@@ -130,4 +130,19 @@ class FnTests extends BaseEffFunSuite:
         fn let (a) = 1;
       """
     )
+  }
+
+  test("fn with invalid name") {
+    parseFailedWithErrors(
+      """
+        fn 123invalid (a) = a;
+      """
+    ).map { errors =>
+      assert(errors.size == 1, s"Expected 1 error but got ${errors.size}")
+      errors.head match {
+        case e: ParsingIdError =>
+          assertEquals(e.invalidId, "123invalid")
+        case e => fail(s"Expected a ParsingIdError but got $e")
+      }
+    }
   }

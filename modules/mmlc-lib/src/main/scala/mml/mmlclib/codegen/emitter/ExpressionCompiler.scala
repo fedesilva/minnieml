@@ -106,10 +106,20 @@ def compileTerm(
           // Reference to a function parameter
           CompileResult(paramReg, state, false).asRight
         case None =>
-          // Global reference
-          val reg  = state.nextRegister
-          val line = emitLoad(reg, "i32", s"@${ref.name}")
-          CompileResult(reg, state.withRegister(reg + 1).emit(line), false).asRight
+          // Global reference - get actual type from typeSpec
+          ref.typeSpec match {
+            case Some(typeSpec) =>
+              getLlvmType(typeSpec, state) match {
+                case Right(llvmType) =>
+                  val reg  = state.nextRegister
+                  val line = emitLoad(reg, llvmType, s"@${ref.name}")
+                  CompileResult(reg, state.withRegister(reg + 1).emit(line), false).asRight
+                case Left(err) =>
+                  Left(err)
+              }
+            case None =>
+              Left(CodeGenError(s"Missing type information for global reference '${ref.name}' - TypeChecker should have provided this"))
+          }
       }
     }
 
@@ -166,7 +176,7 @@ def compileTerm(
       } yield CompileResult(resultReg, finalState, false)
     }
 
-    case NativeImpl(_, _, _) => {
+    case NativeImpl(_, _, _, _) => {
       // Native implementation - handled at function level
       CompileResult(0, state, false).asRight
     }
@@ -452,35 +462,49 @@ def compileApp(
   // Extract the function reference and all arguments
   val (fnRef, allArgs) = collectArgsAndFunction(app)
 
-  // Detect if this is a call to a native function like 'print'
-  val isNativeFunction =
-    fnRef.name == "print" || fnRef.name == "println" || fnRef.name == "readline"
-
   // Compile all arguments
   allArgs
     .foldLeft((List.empty[(String, String)], state).asRight[CodeGenError]) {
       case (Right((compiledArgs, currentState)), arg) =>
-        compileExpr(arg, currentState, functionScope).map { argRes =>
+        compileExpr(arg, currentState, functionScope).flatMap { argRes =>
           val argOp =
             if argRes.isLiteral then argRes.register.toString else s"%${argRes.register}"
-          val argType = if argRes.typeName == "String" then "%String" else "i32"
-          (compiledArgs :+ (argOp, argType), argRes.state)
+          
+          // Get the actual LLVM type from the argument's typeSpec
+          arg.typeSpec match {
+            case Some(typeSpec) =>
+              getLlvmType(typeSpec, argRes.state) match {
+                case Right(llvmType) =>
+                  Right((compiledArgs :+ (argOp, llvmType), argRes.state))
+                case Left(err) =>
+                  Left(err)
+              }
+            case None =>
+              Left(CodeGenError(s"Missing type information for function argument - TypeChecker should have provided this"))
+          }
         }
       case (Left(err), _) => Left(err)
     }
     .flatMap { case (compiledArgs, finalState) =>
       val resultReg = finalState.nextRegister
 
-      // If this is a native function, use appropriate types
-      if isNativeFunction then {
+      // Get function return type from the reference's typeSpec
+      val fnReturnTypeResult = fnRef.typeSpec match {
+        case Some(typeSpec) =>
+          getLlvmType(typeSpec, finalState)
+        case None => 
+          Left(CodeGenError(s"Missing return type information for function reference '${fnRef.name}' - TypeChecker should have provided this"))
+      }
 
-        // Check which native function we're calling to determine return type
-        if fnRef.name == "print" || fnRef.name == "println" then {
-          // Void functions - call without assigning to a register
-          val args     = compiledArgs.map { case (value, typ) => (typ, value) }
+      fnReturnTypeResult.flatMap { fnReturnType =>
+        // Generate function call with proper types
+        val args = compiledArgs.map { case (value, typ) => (typ, value) }
+        
+        if fnReturnType == "void" then {
+          // Unit functions - call without assigning to a register
           val callLine = emitCall(None, None, fnRef.name, args)
 
-          // Return a constant 0 for all void function calls
+          // Return a constant 0 for all Unit function calls
           val constReg = resultReg
           val loadZero = emitAdd(constReg, "i32", "0", "0")
 
@@ -489,36 +513,23 @@ def compileApp(
               constReg,
               finalState.withRegister(constReg + 1).emit(callLine).emit(loadZero),
               false,
-              "Int" // Return type is Int for void functions (we return 0)
+              "Int" // Return type is Int for Unit functions (we return 0)
             )
           )
         } else {
-          // Other native functions (like readline) with actual return types
-          val returnType = "%String" // For readline
-          val args       = compiledArgs.map { case (value, typ) => (typ, value) }
-          val callLine   = emitCall(Some(resultReg), Some(returnType), fnRef.name, args)
+          // Non-Unit functions - assign result to register
+          val callLine = emitCall(Some(resultReg), Some(fnReturnType), fnRef.name, args)
 
           Right(
             CompileResult(
               resultReg,
               finalState.withRegister(resultReg + 1).emit(callLine),
               false,
-              "String" // Return type is String for readline
+              // Determine typeName from LLVM type for backward compatibility
+              if fnReturnType == "%String" then "String" else "Int"
             )
           )
         }
-      } else {
-        // Regular function call (non-native)
-        val args     = compiledArgs.map { case (value, _) => ("i32", value) }
-        val callLine = emitCall(Some(resultReg), Some("i32"), fnRef.name, args)
-
-        Right(
-          CompileResult(
-            resultReg,
-            finalState.withRegister(resultReg + 1).emit(callLine),
-            false
-          )
-        )
       }
     }
 }

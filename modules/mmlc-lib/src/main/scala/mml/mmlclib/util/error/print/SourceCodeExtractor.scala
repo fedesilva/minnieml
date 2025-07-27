@@ -1,7 +1,7 @@
 package mml.mmlclib.util.error.print
 
 import mml.mmlclib.ast.{FromSource, SrcSpan}
-import mml.mmlclib.semantic.SemanticError
+import mml.mmlclib.semantic.{SemanticError, TypeError}
 
 import scala.math.Ordering // Added Ordering import
 
@@ -59,6 +59,12 @@ object SourceCodeExtractor:
         // For member errors, just return the failed code directly
         error.failedCode.getOrElse("Source code not available")
 
+      case SemanticError.ParsingIdErrorFound(error, _) =>
+        // For identifier errors, extract snippet with the invalid identifier highlighted
+        extractSnippet(sourceCode, error.span, highlightExpr = true)
+          .map(s => s"\n$s")
+          .getOrElse("")
+
       case SemanticError.DanglingTerms(terms, _, _) =>
         // Extract snippets for each dangling term
         val snippets = terms.collect { case term: FromSource =>
@@ -80,6 +86,82 @@ object SourceCodeExtractor:
 
       case SemanticError.InvalidExpressionFound(invalidExpr, _) =>
         extractSnippet(sourceCode, invalidExpr.span, highlightExpr = true)
+          .map(s => s"\n$s")
+          .getOrElse("")
+
+      case SemanticError.TypeCheckingError(error) =>
+        extractTypeErrorSnippet(sourceCode, error)
+
+  /** Extract source code snippet for a type checking error */
+  private def extractTypeErrorSnippet(sourceCode: String, error: TypeError): String =
+    error match
+      case TypeError.MissingParameterType(param, fnDef, _) =>
+        extractSnippet(sourceCode, param.span, highlightExpr = true)
+          .map(s => s"\n$s")
+          .getOrElse("")
+
+      case TypeError.MissingReturnType(fnDef, _) =>
+        extractSnippet(sourceCode, fnDef.span, highlightExpr = true)
+          .map(s => s"\n$s")
+          .getOrElse("")
+
+      case TypeError.MissingOperatorParameterType(param, opDef, _) =>
+        extractSnippet(sourceCode, param.span, highlightExpr = true)
+          .map(s => s"\n$s")
+          .getOrElse("")
+
+      case TypeError.MissingOperatorReturnType(opDef, _) =>
+        extractSnippet(sourceCode, opDef.span, highlightExpr = true)
+          .map(s => s"\n$s")
+          .getOrElse("")
+
+      case TypeError.TypeMismatch(node, _, _, _) =>
+        node match
+          case fs: FromSource =>
+            extractSnippet(sourceCode, fs.span, highlightExpr = true)
+              .map(s => s"\n$s")
+              .getOrElse("")
+
+      case TypeError.UndersaturatedApplication(app, _, _, _) =>
+        extractSnippet(sourceCode, app.span, highlightExpr = true)
+          .map(s => s"\n$s")
+          .getOrElse("")
+
+      case TypeError.OversaturatedApplication(app, _, _, _) =>
+        extractSnippet(sourceCode, app.span, highlightExpr = true)
+          .map(s => s"\n$s")
+          .getOrElse("")
+
+      case TypeError.InvalidApplication(app, _, _, _) =>
+        extractSnippet(sourceCode, app.span, highlightExpr = true)
+          .map(s => s"\n$s")
+          .getOrElse("")
+
+      case TypeError.ConditionalBranchTypeMismatch(cond, _, _, _) =>
+        extractSnippet(sourceCode, cond.span, highlightExpr = true)
+          .map(s => s"\n$s")
+          .getOrElse("")
+
+      case TypeError.ConditionalBranchTypeUnknown(cond, _) =>
+        extractSnippet(sourceCode, cond.span, highlightExpr = true)
+          .map(s => s"\n$s")
+          .getOrElse("")
+
+      case TypeError.UnresolvableType(typeRef, node, _) =>
+        extractSnippet(sourceCode, typeRef.span, highlightExpr = true)
+          .map(s => s"\n$s")
+          .getOrElse("")
+
+      case TypeError.IncompatibleTypes(node, _, _, _, _) =>
+        node match
+          case fs: FromSource =>
+            extractSnippet(sourceCode, fs.span, highlightExpr = true)
+              .map(s => s"\n$s")
+              .getOrElse("")
+          case _ => ""
+
+      case TypeError.UntypedHoleInBinding(bnd, _) =>
+        extractSnippet(sourceCode, bnd.span, highlightExpr = true)
           .map(s => s"\n$s")
           .getOrElse("")
 

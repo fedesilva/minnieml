@@ -1,0 +1,9 @@
+
+fn print (a: String): () = @native;
+fn println (a: String): () = @native;
+fn concat (a: String, b: String): String = @native;
+fn to_string (a: Int): String = @native;
+
+fn main(): () = 
+  println (concat "Number: " (to_string 42))
+;

@@ -10,7 +10,7 @@ class OpTests extends BaseEffFunSuite:
   test("let with simple binop") {
     parseNotFailed(
       """
-        op + (a b) = sum a b;
+        op + (a, b) = sum a b;
       """
     )
   }
@@ -62,6 +62,36 @@ class OpTests extends BaseEffFunSuite:
           )
         case x =>
           fail(s"Expected UnaryOpDef, got: ${prettyPrintAst(x)}")
+    }
+  }
+
+  test("unary op with invalid name") {
+    parseFailedWithErrors(
+      """
+        op 123invalid (a) = a;
+      """
+    ).map { errors =>
+      assert(errors.size == 1, s"Expected 1 error but got ${errors.size}")
+      errors.head match {
+        case e: ParsingIdError =>
+          assertEquals(e.invalidId, "123invalid")
+        case e => fail(s"Expected a ParsingIdError but got $e")
+      }
+    }
+  }
+
+  test("binop with invalid name") {
+    parseFailedWithErrors(
+      """
+        op 123invalid (a, b) = a;
+      """
+    ).map { errors =>
+      assert(errors.size == 1, s"Expected 1 error but got ${errors.size}")
+      errors.head match {
+        case e: ParsingIdError =>
+          assertEquals(e.invalidId, "123invalid")
+        case e => fail(s"Expected a ParsingIdError but got $e")
+      }
     }
   }
 

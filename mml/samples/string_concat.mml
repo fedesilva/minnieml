@@ -1,4 +1,0 @@
-type String = @native;
-fn print (a: String) = @native;
-fn concat (a: String, b: String): String = @native;
-fn main() = print (concat "Hello, " "world!")

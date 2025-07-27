@@ -57,10 +57,22 @@ PB --> TC[techContext.md]
   - Dependencies
   - Tool usage patterns
 
+- Additional files may be mentioned in activeContext.md that contain
+  focused context.
+
 
 ### Additional Context
 
-Create additional files/folders within memory-bank/ when they help organize:
+There are two sub directories under `memory-bank`:
+* `specs` contains detailed descriptions of problems and/or tasks.
+    - normally new functionality and related work is specified here.
+* `bugs` containes data or bug reports and specs.
+    - things that should work but don't. no new functionality.
+
+Only read these files if required, or referenced elsewhere, otherwise 
+ignore to maintain tight focus.
+
+If requested, create additional files/folders within docs/brainstorming/ when they help organize:
 
 - Complex feature documentation
 - Integration specifications
@@ -116,9 +128,16 @@ Start[Update Process]
 
 I MUST remember to also read the `Readme.md` file at the top of the repository.
 
+Check name of branch and git history **if needed** for context.
+
 Note: When triggered by **update memory bank**, I MUST review every memory bank file, even if some don't require updates. Focus particularly on activeContext.md  as it tracks current state.
 
 I must keep the files to a minimum size.
+
+1. __Don't remove old updates:__ The "Recent Changes" section is a log. I should not delete its history unless I hit the threshold below.
+2. __Garbage Collection:__ I should only remove entries from "Recent Changes" if there are more than 20.
+3. __Updating Process:__ To update the status, I should move completed items from "Next Steps" to "Recent Changes".
+4. __Don't touch:__ I must not modify the "Current Focus" or "Future work" sections.
 
 Do not modify tech context or system pattern files, if not strictly necessary
 since the user has modified them himself.
@@ -135,3 +154,9 @@ It's _critically_ important that I _break work into blocks_ and wait for the use
 
 Always make small changes, then check things compile, pass tests.
 After that, proceed, unless I am told explicitely otherwise; for example in some cases the user might want to do manual verification.
+
+
+## Tools for code interaction
+
+While you can use grep like tools if you need, **YOU ALWAYS MUST** first try to use the scala 
+metals MCP before, since it will be cheaper and easier and probably more accurate.
