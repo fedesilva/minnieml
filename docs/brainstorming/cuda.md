@@ -2,7 +2,7 @@
 
 ## Overview
 
-This document summarizes the design considerations for MML around GPU/CPU/platform genericity.
+This document summarizes the design considerations for MML around GPU/CPU/platform specialization.
 
 ## Key Design Decisions
 
@@ -39,13 +39,13 @@ linker → final executable
 
 **Platform as a specialization parameter**
 
-* Everything is platform agnostic, unless annotated with  \<platform>.
+* Everything is platform agnostic, unless annotated with  <platform>.
 * Functions, protocol instances or effect handlers can be annotated.
 * Same source code compiles to different execution models based on platform instantiation
 
-  \\
 
-Within any function, handler, or protocol instance that selects a platform, that choice applies to the entire body and its transitive callees. Every effect, function, and protocol used must be platform‑agnostic or have an instance for that platform; otherwise compilation fails.
+Within any function, handler, or protocol instance that selects a platform, that choice applies to the entire body and 
+its transitive callees. Every effect, function, and protocol used must be platform‑agnostic or have an instance for that platform; otherwise compilation fails.
 
 **Example:**
 
