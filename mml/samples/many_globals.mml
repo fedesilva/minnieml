@@ -1,9 +1,13 @@
-let a = "Fede";
-let b = "Fede";
-
 fn print (a: String): () = @native;
+fn println (a: String): () = @native;
 fn concat (a: String, b: String): String = @native;
 
+
+let a = "Fede";
+let b = "Fede";
+let c = concat a b;
+
+
 fn main(): () = 
-  print (concat a b)
+  println c
 ;

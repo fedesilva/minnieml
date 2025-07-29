@@ -118,7 +118,11 @@ def compileTerm(
                   Left(err)
               }
             case None =>
-              Left(CodeGenError(s"Missing type information for global reference '${ref.name}' - TypeChecker should have provided this"))
+              Left(
+                CodeGenError(
+                  s"Missing type information for global reference '${ref.name}' - TypeChecker should have provided this"
+                )
+              )
           }
       }
     }
@@ -469,7 +473,7 @@ def compileApp(
         compileExpr(arg, currentState, functionScope).flatMap { argRes =>
           val argOp =
             if argRes.isLiteral then argRes.register.toString else s"%${argRes.register}"
-          
+
           // Get the actual LLVM type from the argument's typeSpec
           arg.typeSpec match {
             case Some(typeSpec) =>
@@ -480,7 +484,11 @@ def compileApp(
                   Left(err)
               }
             case None =>
-              Left(CodeGenError(s"Missing type information for function argument - TypeChecker should have provided this"))
+              Left(
+                CodeGenError(
+                  s"Missing type information for function argument - TypeChecker should have provided this"
+                )
+              )
           }
         }
       case (Left(err), _) => Left(err)
@@ -492,28 +500,28 @@ def compileApp(
       val fnReturnTypeResult = fnRef.typeSpec match {
         case Some(typeSpec) =>
           getLlvmType(typeSpec, finalState)
-        case None => 
-          Left(CodeGenError(s"Missing return type information for function reference '${fnRef.name}' - TypeChecker should have provided this"))
+        case None =>
+          Left(
+            CodeGenError(
+              s"Missing return type information for function reference '${fnRef.name}' - TypeChecker should have provided this"
+            )
+          )
       }
 
       fnReturnTypeResult.flatMap { fnReturnType =>
         // Generate function call with proper types
         val args = compiledArgs.map { case (value, typ) => (typ, value) }
-        
+
         if fnReturnType == "void" then {
           // Unit functions - call without assigning to a register
           val callLine = emitCall(None, None, fnRef.name, args)
 
-          // Return a constant 0 for all Unit function calls
-          val constReg = resultReg
-          val loadZero = emitAdd(constReg, "i32", "0", "0")
-
           Right(
             CompileResult(
-              constReg,
-              finalState.withRegister(constReg + 1).emit(callLine).emit(loadZero),
+              0, // No meaningful register for Unit expressions
+              finalState.emit(callLine),
               false,
-              "Int" // Return type is Int for Unit functions (we return 0)
+              "Unit" // Proper type name for Unit functions
             )
           )
         } else {

@@ -127,7 +127,7 @@ case class CodeGenState(
     // Check if this content already exists
     stringConstants.find(_._2 == content) match {
       case Some((existingId, _)) => (this, existingId)
-      case None => 
+      case None =>
         val stringId = s"str.${nextStringId}"
         (
           copy(
@@ -185,7 +185,6 @@ case class CodeGenState(
     else
       val declaration = emitFunctionDeclaration(name, returnType, paramTypes)
       copy(functionDeclarations = functionDeclarations + (name -> declaration))
-
 
 /** Represents the result of compiling a term or expression.
   *
