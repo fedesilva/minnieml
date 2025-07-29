@@ -603,7 +603,16 @@ object Parser:
   // -----------------------------------------------------------------------------
 
   private def failedMemberP(source: String)(using P[Any]): P[Member] =
-    // Try to parse content ending with semicolon first
+    // Handle extra semicolons specifically
+    P(spP(source) ~ ";".! ~ spP(source))
+      .map { case (start, snippet, end) =>
+        ParsingMemberError(
+          span       = SrcSpan(start, end),
+          message    = "Extra semicolon",
+          failedCode = snippet.some
+        )
+      } |
+    // Try to parse content ending with semicolon
     P(spP(source) ~ CharsWhile(_ != ';').! ~ endKw ~ spP(source))
       .map { case (start, snippet, end) =>
         ParsingMemberError(
@@ -618,7 +627,7 @@ object Parser:
         ParsingMemberError(
           span       = SrcSpan(start, SrcPoint(source.length, 0, 0)),
           message    = "Failed to parse member at end of file",
-          failedCode = snippet.some
+          failedCode = if snippet.nonEmpty then snippet.some else None
         )
       }
 
