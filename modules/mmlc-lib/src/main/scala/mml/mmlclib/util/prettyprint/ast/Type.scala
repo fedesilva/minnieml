@@ -104,6 +104,15 @@ def prettyPrintTypeSpec(
           .mkString(",\n")
         s"@native:{\n$fieldStrs\n${"  " * indent}}$spanStr"
 
+    case Some(TypeVariable(sp, name)) =>
+      val spanStr = if showSourceSpans then s" ${printSourceSpan(sp)}" else ""
+      s"$name$spanStr"
+
+    case Some(TypeScheme(sp, vars, bodyType)) =>
+      val spanStr = if showSourceSpans then s" ${printSourceSpan(sp)}" else ""
+      val varsStr = if vars.nonEmpty then s"∀${vars.mkString(" ")}. " else ""
+      s"$varsStr${prettyPrintTypeSpec(Some(bodyType), showSourceSpans, showTypes, indent)}$spanStr"
+
     case None =>
       "None"
   }
