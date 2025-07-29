@@ -186,12 +186,6 @@ case class CodeGenState(
       val declaration = emitFunctionDeclaration(name, returnType, paramTypes)
       copy(functionDeclarations = functionDeclarations + (name -> declaration))
 
-  /** Returns the LLVM type representation for a native type. */
-  def llvmTypeForNative(typeName: String): String = typeName match
-    case "Int" => "i32"
-    case "Boolean" => "i1"
-    case "String" => "%String" // Custom struct type
-    case _ => "i32" // Default fallback
 
 /** Represents the result of compiling a term or expression.
   *

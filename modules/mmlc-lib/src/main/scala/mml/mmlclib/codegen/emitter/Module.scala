@@ -1,7 +1,7 @@
 package mml.mmlclib.codegen.emitter
 
 import cats.syntax.all.*
-import mml.mmlclib.ast.{Bnd, FnDef, Module, NativeImpl, NativeStruct, NativeType, TypeDef}
+import mml.mmlclib.ast.{Bnd, FnDef, LiteralBool, LiteralInt, LiteralString, LiteralUnit, Module, NativeImpl, NativeStruct, NativeType, TypeDef}
 
 /** Main entry point for LLVM IR emission.
   *
@@ -119,41 +119,102 @@ def emitModule(module: Module): Either[CodeGenError, String] = {
   *   Either a CodeGenError or the updated CodeGenState.
   */
 private def emitBinding(bnd: Bnd, state: CodeGenState): Either[CodeGenError, CodeGenState] = {
-  val origState = state
-  compileExpr(bnd.value, state).flatMap { compileRes =>
-    if compileRes.isLiteral then {
-      // Check for string literals
-      if compileRes.typeName == "String" then {
-        // FIXME: harcoded use of string, should be resolved by the
-        val stringType = state.llvmTypeForNative("String")
-        val stringData = compileRes.register.toString
-        Right(compileRes.state.emit(emitGlobalVariable(bnd.name, stringType, stringData)))
-      } else
-        Right(
-          compileRes.state.emit(emitGlobalVariable(bnd.name, "i32", compileRes.register.toString))
-        )
-    } else {
-      // Discard the instructions from the initial compilation by using the original state.
-      val initFnName = s"_init_global_${bnd.name}"
-      // Determine the correct LLVM type based on the expression's type
-      val (llvmType, initValue) = if compileRes.typeName == "String" then {
-        (state.llvmTypeForNative("String"), "zeroinitializer")
-      } else {
-        ("i32", "0")
-      }
-      val state2 = origState
-        .emit(emitGlobalVariable(bnd.name, llvmType, initValue))
-        .emit(s"define internal void @$initFnName() {")
-        .emit(s"entry:")
-      compileExpr(bnd.value, state2.withRegister(0)).map { compileRes2 =>
-        compileRes2.state
-          .emit(emitStore(s"%${compileRes2.register}", llvmType, s"@${bnd.name}"))
-          .emit("  ret void")
-          .emit("}")
-          .emit("")
-          .addInitializer(initFnName)
-      }
+  // Check if binding value is a direct literal at AST level
+  bnd.value.terms match {
+    case List(term) => term match {
+      case lit: LiteralString =>
+        // Generate static String global: @a = global %String { i64 4, ptr @str.0 }
+        val (newState, constName) = state.addStringConstant(lit.value)
+        val llvmTypeE = lit.typeSpec match {
+          case Some(typeSpec) => getLlvmType(typeSpec, newState)
+          case None => Left(CodeGenError(s"Missing type specification for string literal in binding '${bnd.name}'"))
+        }
+        llvmTypeE.map { llvmType =>
+          val staticValue = s"{ i64 ${lit.value.length}, ptr @$constName }"
+          newState.emit(emitGlobalVariable(bnd.name, llvmType, staticValue))
+        }
+        
+      case lit: LiteralInt =>
+        // Generate static int global: @a = global i64 42
+        val llvmTypeE = lit.typeSpec match {
+          case Some(typeSpec) => getLlvmType(typeSpec, state)
+          case None => Left(CodeGenError(s"Missing type specification for int literal in binding '${bnd.name}'"))
+        }
+        llvmTypeE.map { llvmType =>
+          state.emit(emitGlobalVariable(bnd.name, llvmType, lit.value.toString))
+        }
+        
+      case lit: LiteralBool =>
+        // Generate static bool global: @a = global i1 true
+        val llvmTypeE = lit.typeSpec match {
+          case Some(typeSpec) => getLlvmType(typeSpec, state)
+          case None => Left(CodeGenError(s"Missing type specification for bool literal in binding '${bnd.name}'"))
+        }
+        llvmTypeE.map { llvmType =>
+          val staticValue = if lit.value then "true" else "false"
+          state.emit(emitGlobalVariable(bnd.name, llvmType, staticValue))
+        }
+        
+      case lit: LiteralUnit =>
+        // Unit literals don't generate globals, they're compile-time only
+        Right(state)
+        
+      case _ =>
+        // Fall back to existing runtime initialization logic for complex expressions
+        val origState = state
+        compileExpr(bnd.value, state).flatMap { compileRes =>
+          // For non-literal expressions, always use runtime initialization
+          val initFnName = s"_init_global_${bnd.name}"
+          // Get the binding's type specification for proper LLVM type
+          val llvmTypeE = bnd.typeSpec match {
+            case Some(typeSpec) => getLlvmType(typeSpec, origState)
+            case None => Left(CodeGenError(s"Missing type specification for binding '${bnd.name}'"))
+          }
+          
+          llvmTypeE.flatMap { llvmType =>
+            val initValue = "zeroinitializer" // Safe default for all types
+            val state2 = origState
+              .emit(emitGlobalVariable(bnd.name, llvmType, initValue))
+              .emit(s"define internal void @$initFnName() {")
+              .emit(s"entry:")
+            compileExpr(bnd.value, state2.withRegister(0)).map { compileRes2 =>
+              compileRes2.state
+                .emit(emitStore(s"%${compileRes2.register}", llvmType, s"@${bnd.name}"))
+                .emit("  ret void")
+                .emit("}")
+                .emit("")
+                .addInitializer(initFnName)
+            }
+          }
+        }
     }
+    
+    case _ =>
+      // Multiple terms - not a simple literal, use runtime initialization
+      val origState = state
+      compileExpr(bnd.value, state).flatMap { compileRes =>
+        val initFnName = s"_init_global_${bnd.name}"
+        val llvmTypeE = bnd.typeSpec match {
+          case Some(typeSpec) => getLlvmType(typeSpec, origState)
+          case None => Left(CodeGenError(s"Missing type specification for binding '${bnd.name}'"))
+        }
+        
+        llvmTypeE.flatMap { llvmType =>
+          val initValue = "zeroinitializer"
+          val state2 = origState
+            .emit(emitGlobalVariable(bnd.name, llvmType, initValue))
+            .emit(s"define internal void @$initFnName() {")
+            .emit(s"entry:")
+          compileExpr(bnd.value, state2.withRegister(0)).map { compileRes2 =>
+            compileRes2.state
+              .emit(emitStore(s"%${compileRes2.register}", llvmType, s"@${bnd.name}"))
+              .emit("  ret void")
+              .emit("}")
+              .emit("")
+              .addInitializer(initFnName)
+          }
+        }
+      }
   }
 }
 
