@@ -126,7 +126,6 @@ Start[Update Process]
 
     Start --> Process
 
-I MUST remember to also read the `Readme.md` file at the top of the repository.
 
 Check name of branch and git history **if needed** for context.
 
