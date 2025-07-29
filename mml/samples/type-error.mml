@@ -1,0 +1,3 @@
+let a = Pepe 1 2;
+let b: String = 1;
+let c = ;

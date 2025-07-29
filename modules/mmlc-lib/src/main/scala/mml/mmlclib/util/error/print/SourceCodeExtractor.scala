@@ -56,8 +56,10 @@ object SourceCodeExtractor:
           .getOrElse("")
 
       case SemanticError.MemberErrorFound(error, _) =>
-        // For member errors, just return the failed code directly
-        error.failedCode.getOrElse("Source code not available")
+        // For member errors, extract snippet with the error span highlighted
+        extractSnippet(sourceCode, error.span, highlightExpr = true)
+          .map(s => s"\n$s")
+          .getOrElse("")
 
       case SemanticError.ParsingIdErrorFound(error, _) =>
         // For identifier errors, extract snippet with the invalid identifier highlighted

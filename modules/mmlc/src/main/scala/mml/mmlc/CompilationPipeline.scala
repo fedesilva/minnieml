@@ -12,8 +12,8 @@ import java.nio.file.Path
 object CompilationPipeline:
 
   def compilationFailed(error: String): String =
-    s"${Console.RED}Compilation failed:${Console.RESET}\n" +
-      s"${Console.YELLOW} $error${Console.RESET}"
+    s"\n${Console.RED}Compilation failed:${Console.RESET}\n\n" +
+      s"${Console.YELLOW}$error${Console.RESET}\n"
 
   private def compileModule(
     path:       Path,
