@@ -27,6 +27,8 @@ object LlvmOrchestrator:
   /** List of required LLVM tools */
   private val requiredLlvmTools = List("llvm-as", "opt", "llc", "clang")
 
+  private val optLevel = "O3"
+
   /** Marker file name to cache successful LLVM tool checks */
   private val llvmCheckMarkerFile = "llvm-check-ok"
 
@@ -228,7 +230,7 @@ object LlvmOrchestrator:
     logDebug(s"Input file: $inputFile", verbose)
     logDebug(s"Output file: $outputFile", verbose)
     executeCommand(
-      s"opt -O2 $inputFile -o $outputFile",
+      s"opt -$optLevel $inputFile -o $outputFile",
       "Failed to optimize IR",
       workingDirectory,
       verbose
@@ -246,7 +248,7 @@ object LlvmOrchestrator:
     logDebug(s"Input file: $inputFile", verbose)
     logDebug(s"Output file: $outputFile", verbose)
     executeCommand(
-      s"opt -O2 -S $inputFile -o $outputFile",
+      s"opt -$optLevel -S $inputFile -o $outputFile",
       "Failed to generate optimized IR",
       workingDirectory,
       verbose
@@ -406,7 +408,7 @@ object LlvmOrchestrator:
             logDebug(s"Input file: $sourcePath", verbose)
             logDebug(s"Output file: $objPath", verbose)
 
-            val cmd = s"clang -target $targetTriple -c -std=c17 -O2 -fPIC -o $objPath $sourcePath"
+            val cmd = s"clang -target $targetTriple -c -std=c17 -$optLevel -fPIC -o $objPath $sourcePath"
             executeCommand(
               cmd,
               "Failed to compile MML runtime",
@@ -447,7 +449,7 @@ object LlvmOrchestrator:
           logDebug(s"Output file: $finalExecutablePath", verbose)
 
           executeCommand(
-            s"clang -target $targetTriple $inputFile $runtimePath -o $finalExecutablePath",
+            s"clang -target $targetTriple -$optLevel  $inputFile $runtimePath -o $finalExecutablePath",
             "Failed to compile and link",
             workingDirectory,
             verbose
