@@ -1,0 +1,9 @@
+let a = "Fede";
+let b = "Fede";
+
+fn print (a: String): () = @native;
+fn concat (a: String, b: String): String = @native;
+
+fn main(): () = 
+  print (concat a b)
+;

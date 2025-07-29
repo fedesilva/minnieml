@@ -135,13 +135,19 @@ private def emitBinding(bnd: Bnd, state: CodeGenState): Either[CodeGenError, Cod
     } else {
       // Discard the instructions from the initial compilation by using the original state.
       val initFnName = s"_init_global_${bnd.name}"
+      // Determine the correct LLVM type based on the expression's type
+      val (llvmType, initValue) = if compileRes.typeName == "String" then {
+        (state.llvmTypeForNative("String"), "zeroinitializer")
+      } else {
+        ("i32", "0")
+      }
       val state2 = origState
-        .emit(emitGlobalVariable(bnd.name, "i32", "0"))
+        .emit(emitGlobalVariable(bnd.name, llvmType, initValue))
         .emit(s"define internal void @$initFnName() {")
         .emit(s"entry:")
       compileExpr(bnd.value, state2.withRegister(0)).map { compileRes2 =>
         compileRes2.state
-          .emit(emitStore(s"%${compileRes2.register}", "i32", s"@${bnd.name}"))
+          .emit(emitStore(s"%${compileRes2.register}", llvmType, s"@${bnd.name}"))
           .emit("  ret void")
           .emit("}")
           .emit("")
