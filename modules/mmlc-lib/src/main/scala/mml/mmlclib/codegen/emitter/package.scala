@@ -124,14 +124,19 @@ case class CodeGenState(
 
   /** Adds a string constant to the state and returns the name of the constant. */
   def addStringConstant(content: String): (CodeGenState, String) =
-    val stringId = s"str.${nextStringId}"
-    (
-      copy(
-        stringConstants = stringConstants + (stringId -> content),
-        nextStringId    = nextStringId + 1
-      ),
-      stringId
-    )
+    // Check if this content already exists
+    stringConstants.find(_._2 == content) match {
+      case Some((existingId, _)) => (this, existingId)
+      case None => 
+        val stringId = s"str.${nextStringId}"
+        (
+          copy(
+            stringConstants = stringConstants + (stringId -> content),
+            nextStringId    = nextStringId + 1
+          ),
+          stringId
+        )
+    }
 
   /** Sets the module header if not already set.
     *
