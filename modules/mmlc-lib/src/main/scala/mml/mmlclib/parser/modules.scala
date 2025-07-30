@@ -8,15 +8,15 @@ import MmlWhitespace.*
 private[parser] def moduleP(name: Option[String], source: String, p: P[Any]): P[Module] =
   given P[Any] = p
   name.fold(
-    explicitModuleP(source)
+    // Needs to be a named module, we
+    namedModuleP(source)
   ) { n =>
-    P(explicitModuleP(source) | implicitModuleP(n, source))
+    P(Start ~ (namedModuleP(source) | anonModuleP(n, source)) )
   }
 
-private[parser] def explicitModuleP(source: String)(using P[Any]): P[Module] =
+private[parser] def namedModuleP(source: String)(using P[Any]): P[Module] =
   P(
-    Start
-      ~ spP(source)
+    spP(source)
       ~ docCommentP(source)
       ~ modVisibilityP.?
       ~ moduleKw
@@ -36,8 +36,13 @@ private[parser] def explicitModuleP(source: String)(using P[Any]): P[Module] =
     )
   }
 
-private[parser] def implicitModuleP(name: String, source: String)(using P[Any]): P[Module] =
-  P(Start ~ spP(source) ~ membersP(source).rep ~ moduleEndKw ~ spP(source))
+private[parser] def anonModuleP(name: String, source: String)(using P[Any]): P[Module] =
+  P(
+    spP(source) ~
+      membersP(source).rep ~
+      moduleEndKw ~
+      spP(source)
+  )
     .map { case (start, members, end) =>
       Module(
         span       = span(start, end),
