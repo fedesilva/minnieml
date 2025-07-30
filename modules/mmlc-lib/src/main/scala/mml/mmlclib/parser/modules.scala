@@ -37,7 +37,7 @@ private[parser] def explicitModuleP(source: String)(using P[Any]): P[Module] =
   }
 
 private[parser] def implicitModuleP(name: String, source: String)(using P[Any]): P[Module] =
-  P(Start ~ spP(source) ~ membersP(source).rep ~ End ~ spP(source))
+  P(Start ~ spP(source) ~ membersP(source).rep ~ moduleEndKw ~ spP(source))
     .map { case (start, members, end) =>
       Module(
         span       = span(start, end),

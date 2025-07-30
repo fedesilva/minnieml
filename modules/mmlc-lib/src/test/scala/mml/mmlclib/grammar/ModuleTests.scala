@@ -53,3 +53,5 @@ class ModuleTests extends BaseEffFunSuite:
       """.stripMargin
     )
   }
+
+  test

@@ -227,14 +227,6 @@ private[parser] def unaryOpP(source: String)(using P[Any]): P[Member] =
   }
 
 private[parser] def failedMemberP(source: String)(using P[Any]): P[Member] =
-  P(spP(source) ~ ";".! ~ spP(source))
-    .map { case (start, snippet, end) =>
-      ParsingMemberError(
-        span       = SrcSpan(start, end),
-        message    = "Extra semicolon",
-        failedCode = snippet.some
-      )
-    } |
   P(spP(source) ~ CharsWhile(_ != ';').! ~ endKw ~ spP(source))
     .map { case (start, snippet, end) =>
       ParsingMemberError(
@@ -242,12 +234,4 @@ private[parser] def failedMemberP(source: String)(using P[Any]): P[Member] =
         message    = "Failed to parse member",
         failedCode = snippet.some
       )
-    } |
-  P(spP(source) ~ CharsWhile(_ => true).! ~ End)
-    .map { case (start, snippet) =>
-      ParsingMemberError(
-        span       = SrcSpan(start, SrcPoint(source.length, 0, 0)),
-        message    = "Failed to parse member at end of file",
-        failedCode = if snippet.nonEmpty then snippet.some else None
-      )
-    }
+    } 
