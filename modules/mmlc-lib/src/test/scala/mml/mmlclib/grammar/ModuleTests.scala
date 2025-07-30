@@ -54,4 +54,4 @@ class ModuleTests extends BaseEffFunSuite:
     )
   }
 
-  test
+
