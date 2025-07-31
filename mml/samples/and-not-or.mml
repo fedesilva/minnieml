@@ -1,3 +1,6 @@
+
+fn println(s:String): () = @native;
+
 let flag1 = false;
 let flag2 = true;
 
@@ -6,4 +9,8 @@ let result =
     "NADA"
   else
     "ALGO"
+;
+
+fn main(): () = 
+  println result;
 ;

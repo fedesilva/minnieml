@@ -146,36 +146,56 @@ def compileTerm(
         elseBB  = thenBB + 1
         mergeBB = elseBB + 1
 
-        // Compare condition against 0 (false)
-        compareReg   = mergeBB
-        compareState = condRes.state.withRegister(mergeBB + 1)
+        // Handle condition based on its type
         condOp = if condRes.isLiteral then condRes.register.toString else s"%${condRes.register}"
-        _      = compareState.emit(s"  %$compareReg = icmp ne i32 $condOp, 0")
+        
+        // Check if condition result is boolean (from boolean operations) or integer
+        (stateAfterCondition, branchCondition) = 
+          // Boolean operations (and, or, not) have nativeOp attributes and return i1 type
+          // This is a temporary fix until the broader hardcoded i32 issue is resolved
+          if condRes.register > 0 && !condRes.isLiteral then {
+            // Non-literal result - likely from boolean operation, use directly as i1
+            (condRes.state, condOp)
+          } else {
+            // Literal or other - compare with 0 as i32
+            val compareReg = mergeBB
+            val compareState = condRes.state.withRegister(mergeBB + 1)
+            val stateAfterCompare = compareState.emit(s"  %$compareReg = icmp ne i32 $condOp, 0")
+            (stateAfterCompare, s"%$compareReg")
+          }
 
         // Branch based on condition
-        _ = compareState.emit(s"  br i1 %$compareReg, label %then$thenBB, label %else$elseBB")
+        stateAfterBranch = stateAfterCondition.emit(s"  br i1 $branchCondition, label %then$thenBB, label %else$elseBB")
 
         // Then block
-        thenState = compareState.emit(s"then$thenBB:")
+        thenState = stateAfterBranch.emit(s"then$thenBB:")
         thenRes <- compileExpr(ifTrue, thenState, functionScope)
         thenValue =
           if thenRes.isLiteral then thenRes.register.toString else s"%${thenRes.register}"
-        _ = thenRes.state.emit(s"  br label %merge$mergeBB")
+        stateAfterThenBranch = thenRes.state.emit(s"  br label %merge$mergeBB")
 
         // Else block
-        elseState = thenRes.state.emit(s"else$elseBB:")
+        elseState = stateAfterThenBranch.emit(s"else$elseBB:")
         elseRes <- compileExpr(ifFalse, elseState, functionScope)
         elseValue =
           if elseRes.isLiteral then elseRes.register.toString else s"%${elseRes.register}"
-        _ = elseRes.state.emit(s"  br label %merge$mergeBB")
+        stateAfterElseBranch = elseRes.state.emit(s"  br label %merge$mergeBB")
 
         // Merge block with phi node
-        resultReg = elseRes.state.nextRegister
-        finalState = elseRes.state
+        resultReg = stateAfterElseBranch.nextRegister
+        
+        // Get the type from the then branch result (both branches should have same type)
+        phiType <- ifTrue.typeSpec match {
+          case Some(typeSpec) => getLlvmType(typeSpec, stateAfterElseBranch)
+          case None => 
+            Left(CodeGenError("Missing type information for conditional expression - TypeChecker should have provided this"))
+        }
+        
+        finalState = stateAfterElseBranch
           .withRegister(resultReg + 1)
           .emit(s"merge$mergeBB:")
           .emit(
-            s"  %$resultReg = phi i32 [ $thenValue, %then$thenBB ], [ $elseValue, %else$elseBB ]"
+            s"  %$resultReg = phi $phiType [ $thenValue, %then$thenBB ], [ $elseValue, %else$elseBB ]"
           )
       } yield CompileResult(resultReg, finalState, false)
     }

@@ -114,7 +114,30 @@ Initial Meassure of Success:
       - `print_string_concat.mml` should now compile (was failing due to hardcoded types)
       
     - ❌ **REMAINING: Replace all hardcoded types in `compileTerm`/`compileApp` with `getLlvmType` helper**
-    - ❌ **REMAINING: Operators rewritten to curried app need to use the `op=` attribute**
+    - ❌ **CURRENT ISSUE: Operators rewritten to curried app need to use native LLVM instructions**
+      
+      **Problem:** Boolean operators generate function calls instead of native LLVM instructions. `compileApp` treats operator App chains as regular function calls, generating `call i1 @and(...)` instead of native `and i1` instructions.
+      
+      **Root Cause:** Operators get rewritten to App chains (e.g., `not flag1 or flag2` → `App(App(Ref or, App(Ref not, Ref flag1)), Ref flag2)`) where each `Ref` resolves to `BinOpDef`/`UnaryOpDef` with `NativeImpl` body, but `compileApp` doesn't check for native operations.
+      
+      **Evidence from AST:**
+      ```
+      BinOpDef pub and
+        Expr
+          NativeImpl
+      
+      App
+        fn: Ref or (resolvedAs: BinOpDef or)
+        arg: ...
+      ```
+      
+      **Commands to reproduce:**
+      - Compile: `sbt "run bin mml/samples/and-not-or.mml"`
+      - See AST: `sbt "run ast mml/samples/and-not-or.mml"` then `cat build/AndNotOr.ast`
+      - Error: `llvm-as: error: use of undefined value '@and'`
+      
+      **Solution:** In `compileApp`, check if `fnRef.resolvedAs` is `BinOpDef`/`UnaryOpDef` with `NativeImpl` body and generate native LLVM instructions (`and i1`, `or i1`, `xor i1`) instead of function calls.
+      
     - ❌ **REMAINING: Remove special cases for `BinOpDef` and `UnaryOpDef` in `compileExpr`**
 
 ## Issues 
