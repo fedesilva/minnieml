@@ -42,30 +42,6 @@ Ability to compile simple programs:
   - **Impact:** TypeChecker was actually working correctly all along - the bug was only in debug output display
   - **Result:** All OpPrecedenceTests now pass (20/20), confirming TypeChecker implementation is solid
 
-* **(2025-07-06)** **COMPLETED:** Type Checker implementation for complex expressions (#133)
-  - TypeChecker now properly assigns types to all App and Expr nodes in complex expressions
-  - Complex expressions like `(1 + 2) * (3 - 4) / 5` now type-check correctly  
-  - Implementation includes:
-    - Recursive type-checking for nested App nodes via `checkApplicationWithContext`
-    - Return type extraction from resolved operators/functions via `determineApplicationType`
-    - Proper type propagation through expression trees
-    - First pass lowering of type ascriptions to specs for functions/operators
-    - Parameter context threading through body checking
-
-* **(2025-07-05)** Completed Block 1 of Simple Type Checker (#133): Unified literal types in the AST.
-  - **RESOLVED: All literal AST nodes now use `TypeRef` for their type representation, eliminating the special `LiteralType` hierarchy.**
-* **(2025-07-04)** Fixed critical expression rewriter bug that caused incorrect function application associativity.
-  - **RESOLVED: `println concat "a" "b"` now correctly parses as `(println (concat "a" "b"))` instead of `(((println concat) "a") "b")`.**
-* **(2025-07-03)** UPDATED Block 4 of codegen update (#156): Fixed function signature derivation from AST type annotations
-  - **RESOLVED: Code emission validity issues - function signatures now correctly derived from AST**
-* **(2025-07-03)** Fixed critical TypeResolver bug and completed Block 3 of codegen update (#156)
-  - **RESOLVED: LLVM type emission now works for native types, including type aliases**
-* **(2025-07-03)** Completed Block 2 of codegen update (#156): TypeResolver now properly handles NativeStruct definitions
-* **(2025-07-03)** Completed Block 1 of codegen update (#156): AST and parser now support new `@native:` syntax for primitives, pointers, and structs
-* **(2025-07-03)** Rewrote and unified the design for native type interoperability in `memory-bank/specs/codegen-update.md`.
-* Implemented TypeResolver following RefResolver pattern
-* Fixed Error trait to extend InvalidNode
-* **(2025-07-02)** Pivoted design for native type handling to use declarative native structs.
 
 ## Next Steps
 
