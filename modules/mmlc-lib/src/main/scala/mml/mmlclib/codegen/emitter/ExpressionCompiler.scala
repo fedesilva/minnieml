@@ -481,11 +481,15 @@ private def getNativeOperator(resolvedAs: Option[Resolvable]): Option[String] = 
 /** Helper function to generate native LLVM instructions for binary operations.
   *
   * @param nativeOp
-  *   the native operation name ("and", "or", etc.)
+  *   the native operation name ("add", "sub", "mul", "sdiv", "and", "or", "icmp_*", etc.)
   * @param leftOp
   *   the left operand
   * @param rightOp
   *   the right operand
+  * @param operandType
+  *   the LLVM type of the operands
+  * @param resultType
+  *   the LLVM type of the result
   * @param resultReg
   *   the result register
   * @param state
@@ -494,22 +498,23 @@ private def getNativeOperator(resolvedAs: Option[Resolvable]): Option[String] = 
   *   Either an error or the updated state with the instruction
   */
 private def generateNativeBinaryInstruction(
-  nativeOp:  String,
-  leftOp:    String,
-  rightOp:   String,
-  resultReg: Int,
-  state:     CodeGenState
+  nativeOp:     String,
+  leftOp:       String,
+  rightOp:      String,
+  operandType:  String,
+  resultType:   String,
+  resultReg:    Int,
+  state:        CodeGenState
 ): Either[CodeGenError, CodeGenState] = {
-  nativeOp match {
-    case "and" =>
-      val line = s"  %$resultReg = and i1 $leftOp, $rightOp"
-      Right(state.withRegister(resultReg + 1).emit(line))
-    case "or" =>
-      val line = s"  %$resultReg = or i1 $leftOp, $rightOp"
-      Right(state.withRegister(resultReg + 1).emit(line))
-    case other =>
-      Left(CodeGenError(s"Unsupported native binary operation: $other"))
+  // Handle icmp operations specially (they have icmp_ prefix but need to be converted to "icmp <op>")
+  val line = if nativeOp.startsWith("icmp_") then {
+    val cmpOp = nativeOp.stripPrefix("icmp_")
+    s"  %$resultReg = icmp $cmpOp $operandType $leftOp, $rightOp"
+  } else {
+    s"  %$resultReg = $nativeOp $operandType $leftOp, $rightOp"
   }
+  
+  Right(state.withRegister(resultReg + 1).emit(line))
 }
 
 /** Helper function to generate native LLVM instructions for unary operations.
@@ -518,6 +523,10 @@ private def generateNativeBinaryInstruction(
   *   the native operation name ("not", etc.)
   * @param operand
   *   the operand
+  * @param operandType
+  *   the LLVM type of the operand
+  * @param resultType
+  *   the LLVM type of the result
   * @param resultReg
   *   the result register
   * @param state
@@ -526,19 +535,27 @@ private def generateNativeBinaryInstruction(
   *   Either an error or the updated state with the instruction
   */
 private def generateNativeUnaryInstruction(
-  nativeOp:  String,
-  operand:   String,
-  resultReg: Int,
-  state:     CodeGenState
+  nativeOp:     String,
+  operand:      String,
+  operandType:  String,
+  resultType:   String,
+  resultReg:    Int,
+  state:        CodeGenState
 ): Either[CodeGenError, CodeGenState] = {
-  nativeOp match {
+  // Handle special unary operations
+  val line = nativeOp match {
     case "not" =>
       // Boolean NOT implemented as XOR with 1
-      val line = s"  %$resultReg = xor i1 1, $operand"
-      Right(state.withRegister(resultReg + 1).emit(line))
-    case other =>
-      Left(CodeGenError(s"Unsupported native unary operation: $other"))
+      s"  %$resultReg = xor $operandType 1, $operand"
+    case "neg" =>
+      // Negation as subtraction from 0
+      s"  %$resultReg = sub $operandType 0, $operand"
+    case _ =>
+      // Direct operation (shouldn't happen with current operators)
+      s"  %$resultReg = $nativeOp $operandType $operand"
   }
+  
+  Right(state.withRegister(resultReg + 1).emit(line))
 }
 
 /** Compiles a function application.
@@ -590,15 +607,31 @@ def compileApp(
               if leftRes.isLiteral then leftRes.register.toString else s"%${leftRes.register}"
             rightOp =
               if rightRes.isLiteral then rightRes.register.toString else s"%${rightRes.register}"
+            
+            // Get operand type from the left argument (both should have same type)
+            operandType <- leftArg.typeSpec match {
+              case Some(typeSpec) => 
+                getLlvmType(typeSpec, rightRes.state) match {
+                  case Right(llvmType) => Right(llvmType)
+                  case Left(_) => Right("i64") // Fallback to i64 if type resolution fails
+                }
+              case None => Right("i64") // Default to i64 for integer operations
+            }
+            
+            // Determine result type - comparison operations return i1, others return same as operands
+            resultType = if nativeOp.startsWith("icmp_") then "i1" else operandType
+            
             resultReg = rightRes.state.nextRegister
             finalState <- generateNativeBinaryInstruction(
               nativeOp,
               leftOp,
               rightOp,
+              operandType,
+              resultType,
               resultReg,
               rightRes.state
             )
-          } yield CompileResult(resultReg, finalState, false, "Bool")
+          } yield CompileResult(resultReg, finalState, false, if resultType == "i1" then "Bool" else "Int")
 
         case List(operandArg) =>
           // Unary native operator
@@ -607,14 +640,30 @@ def compileApp(
             operandOp =
               if operandRes.isLiteral then operandRes.register.toString
               else s"%${operandRes.register}"
+            
+            // Get operand type from the argument
+            operandType <- operandArg.typeSpec match {
+              case Some(typeSpec) => 
+                getLlvmType(typeSpec, operandRes.state) match {
+                  case Right(llvmType) => Right(llvmType)
+                  case Left(_) => Right("i1") // Fallback to i1 if type resolution fails
+                }
+              case None => Right("i1") // Default to i1 for boolean operations
+            }
+            
+            // For now, assume unary operations return same type as operand
+            resultType = operandType
+            
             resultReg = operandRes.state.nextRegister
             finalState <- generateNativeUnaryInstruction(
               nativeOp,
               operandOp,
+              operandType,
+              resultType,
               resultReg,
               operandRes.state
             )
-          } yield CompileResult(resultReg, finalState, false, "Bool")
+          } yield CompileResult(resultReg, finalState, false, if resultType == "i1" then "Bool" else "Int")
 
         case _ =>
           Left(

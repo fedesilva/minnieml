@@ -36,7 +36,13 @@ Ability to compile simple programs:
 ### Codegen Update (Ticket #156) - NEARING COMPLETION
 The implementation plan is detailed in `memory-bank/specs/codegen-update.md`. Progress:
 
-**Goal:** Compile `mml/samples/print_string.mml` and `mml/samples/print_string_concat.mml`
+**Goal:** 
+Compile 
+
+* √ `mml/samples/print_string.mml` 
+* √ `mml/samples/print_string_concat.mml`
+* `mml/samples/test_to_string.mml`
+* `mml/samples/test_print_add.mml`
 
 *   **Block 1: AST & Parser Changes:** ✓ COMPLETED - AST and parser support new `@native:` syntax
 *   **Block 2: Semantic Analysis Changes:** ✓ COMPLETED - TypeResolver now handles native struct definitions  
@@ -53,6 +59,25 @@ The implementation plan is detailed in `memory-bank/specs/codegen-update.md`. Pr
 
 
 ### High priority
+
+* **CRITICAL BLOCKING ISSUE - Hardcoded Types in ExpressionCompiler.scala** - **CLINE'S FAULT**
+  - **Problem:** Multiple functions in ExpressionCompiler.scala still contain hardcoded LLVM types ("i32", "i64", "i1") instead of extracting types from AST, despite the Int64 type having proper native i64 representation in semantic package
+  - **Culprit:** Cline repeatedly implemented hardcoded fallbacks and ignored available type information from AST `typeSpec` fields
+  - **Affected Functions:** 
+    - `applyBinaryOp` (lines ~310-380): ALL emit calls hardcode "i32" - `emitAdd(resultReg, "i32", leftOp, rightOp)`
+    - `applyUnaryOp` (lines ~380-420): ALL emit calls hardcode "i32" - `emitSub(resultReg, "i32", "0", argOp)`
+    - Conditional compilation (line ~150): hardcodes "i32" in `icmp ne i32 $condOp, 0`
+    - Native operator fallbacks use hardcoded "i64"/"i1" instead of proper error handling
+  - **Consequence:** Causes "Unresolved type reference: Int64" errors when compiling `test_print_add.mml`                      
+  - **Required Fix Draft Plan:** 
+    1. Modify `applyBinaryOp`/`applyUnaryOp` signatures to accept original AST terms (left/right/arg)
+    2. Extract LLVM types using `getLlvmType(term.typeSpec)` for each operand
+    3. Remove ALL hardcoded type strings ("i32", "i64", "i1") from emit calls
+    4. Remove hardcoded fallbacks - return proper errors if type resolution fails
+    5. Fix conditional compilation to extract actual condition type from AST
+  - **Status:** IMPERATIVE TO FIX - This is blocking core compilation functionality
+  - **Multiple failed attempts by Cline:** 2025-07-31
+
 * **TypeChecker Bug - Missing Type Validation**: TypeChecker incorrectly allows `println (5 + 3)` where `println` expects `String` but receives `Int`. This should fail during semantic analysis with a proper type mismatch error, but currently passes with "No errors". The TypeChecker is not properly validating function argument types against parameter types.
   - Issue first observed: 2025-07-27
   - Test case: `fn main(): () = println (5 + 3);` should fail but doesn't
@@ -112,8 +137,7 @@ such that the codegen does not need to try to resolve the typespec of the ref?
 
 ## Next Session Plan:
 
-Restart #156. We now have a small working typechecker.
-Project might need to be reviewed.
+Review the rest of the 
 
 
 
