@@ -408,7 +408,8 @@ object LlvmOrchestrator:
             logDebug(s"Input file: $sourcePath", verbose)
             logDebug(s"Output file: $objPath", verbose)
 
-            val cmd = s"clang -target $targetTriple -c -std=c17 -$optLevel -fPIC -o $objPath $sourcePath"
+            val cmd =
+              s"clang -target $targetTriple -c -std=c17 -$optLevel -fPIC -o $objPath $sourcePath"
             executeCommand(
               cmd,
               "Failed to compile MML runtime",

@@ -11,7 +11,8 @@ class NativeTypeTests extends BaseEffFunSuite:
       type Int = @native:i32;
     """
 
-    Parser.parseModule(code, Some("test"))
+    Parser
+      .parseModule(code, Some("test"))
       .fold(
         e => fail(s"Parser failed: $e"),
         module => {
@@ -30,7 +31,8 @@ class NativeTypeTests extends BaseEffFunSuite:
       type Float32 = @native:float;
     """
 
-    Parser.parseModule(code, Some("test"))
+    Parser
+      .parseModule(code, Some("test"))
       .fold(
         e => fail(s"Parser failed: $e"),
         module => {
@@ -49,7 +51,8 @@ class NativeTypeTests extends BaseEffFunSuite:
       type CharPtr = @native:*i8;
     """
 
-    Parser.parseModule(code, Some("test"))
+    Parser
+      .parseModule(code, Some("test"))
       .fold(
         e => fail(s"Parser failed: $e"),
         module => {
@@ -71,7 +74,8 @@ class NativeTypeTests extends BaseEffFunSuite:
       };
     """
 
-    Parser.parseModule(code, Some("test"))
+    Parser
+      .parseModule(code, Some("test"))
       .fold(
         e => fail(s"Parser failed: $e"),
         module => {
@@ -190,7 +194,8 @@ class NativeTypeTests extends BaseEffFunSuite:
       };
     """
 
-    Parser.parseModule(code, Some("test"))
+    Parser
+      .parseModule(code, Some("test"))
       .fold(
         e => fail(s"Parser failed: $e"),
         module => {

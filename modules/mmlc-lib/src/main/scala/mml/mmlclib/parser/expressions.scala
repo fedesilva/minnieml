@@ -4,6 +4,7 @@ import cats.data.NonEmptyList
 import cats.syntax.all.*
 import fastparse.*
 import mml.mmlclib.ast.*
+
 import MmlWhitespace.*
 
 private[parser] def exprP(source: String)(using P[Any]): P[Expr] =

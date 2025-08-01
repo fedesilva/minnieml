@@ -148,9 +148,9 @@ def compileTerm(
 
         // Handle condition based on its type
         condOp = if condRes.isLiteral then condRes.register.toString else s"%${condRes.register}"
-        
+
         // Check if condition result is boolean (from boolean operations) or integer
-        (stateAfterCondition, branchCondition) = 
+        (stateAfterCondition, branchCondition) =
           // Boolean operations (and, or, not) have nativeOp attributes and return i1 type
           // This is a temporary fix until the broader hardcoded i32 issue is resolved
           if condRes.register > 0 && !condRes.isLiteral then {
@@ -158,14 +158,16 @@ def compileTerm(
             (condRes.state, condOp)
           } else {
             // Literal or other - compare with 0 as i32
-            val compareReg = mergeBB
-            val compareState = condRes.state.withRegister(mergeBB + 1)
+            val compareReg        = mergeBB
+            val compareState      = condRes.state.withRegister(mergeBB + 1)
             val stateAfterCompare = compareState.emit(s"  %$compareReg = icmp ne i32 $condOp, 0")
             (stateAfterCompare, s"%$compareReg")
           }
 
         // Branch based on condition
-        stateAfterBranch = stateAfterCondition.emit(s"  br i1 $branchCondition, label %then$thenBB, label %else$elseBB")
+        stateAfterBranch = stateAfterCondition.emit(
+          s"  br i1 $branchCondition, label %then$thenBB, label %else$elseBB"
+        )
 
         // Then block
         thenState = stateAfterBranch.emit(s"then$thenBB:")
@@ -183,14 +185,18 @@ def compileTerm(
 
         // Merge block with phi node
         resultReg = stateAfterElseBranch.nextRegister
-        
+
         // Get the type from the then branch result (both branches should have same type)
         phiType <- ifTrue.typeSpec match {
           case Some(typeSpec) => getLlvmType(typeSpec, stateAfterElseBranch)
-          case None => 
-            Left(CodeGenError("Missing type information for conditional expression - TypeChecker should have provided this"))
+          case None =>
+            Left(
+              CodeGenError(
+                "Missing type information for conditional expression - TypeChecker should have provided this"
+              )
+            )
         }
-        
+
         finalState = stateAfterElseBranch
           .withRegister(resultReg + 1)
           .emit(s"merge$mergeBB:")
@@ -451,6 +457,90 @@ private def applyUnaryOp(
   }
 }
 
+/** Helper function to check if a resolved reference is a native operator.
+  *
+  * @param resolvedAs
+  *   the resolved AST node
+  * @return
+  *   Some(nativeOp) if it's a native operator, None otherwise
+  */
+private def getNativeOperator(resolvedAs: Option[Resolvable]): Option[String] = {
+  resolvedAs match {
+    case Some(binOp: BinOpDef) =>
+      binOp.body.terms.collectFirst { case NativeImpl(_, _, _, Some(nativeOp)) =>
+        nativeOp
+      }
+    case Some(unaryOp: UnaryOpDef) =>
+      unaryOp.body.terms.collectFirst { case NativeImpl(_, _, _, Some(nativeOp)) =>
+        nativeOp
+      }
+    case _ => None
+  }
+}
+
+/** Helper function to generate native LLVM instructions for binary operations.
+  *
+  * @param nativeOp
+  *   the native operation name ("and", "or", etc.)
+  * @param leftOp
+  *   the left operand
+  * @param rightOp
+  *   the right operand
+  * @param resultReg
+  *   the result register
+  * @param state
+  *   the current state
+  * @return
+  *   Either an error or the updated state with the instruction
+  */
+private def generateNativeBinaryInstruction(
+  nativeOp:  String,
+  leftOp:    String,
+  rightOp:   String,
+  resultReg: Int,
+  state:     CodeGenState
+): Either[CodeGenError, CodeGenState] = {
+  nativeOp match {
+    case "and" =>
+      val line = s"  %$resultReg = and i1 $leftOp, $rightOp"
+      Right(state.withRegister(resultReg + 1).emit(line))
+    case "or" =>
+      val line = s"  %$resultReg = or i1 $leftOp, $rightOp"
+      Right(state.withRegister(resultReg + 1).emit(line))
+    case other =>
+      Left(CodeGenError(s"Unsupported native binary operation: $other"))
+  }
+}
+
+/** Helper function to generate native LLVM instructions for unary operations.
+  *
+  * @param nativeOp
+  *   the native operation name ("not", etc.)
+  * @param operand
+  *   the operand
+  * @param resultReg
+  *   the result register
+  * @param state
+  *   the current state
+  * @return
+  *   Either an error or the updated state with the instruction
+  */
+private def generateNativeUnaryInstruction(
+  nativeOp:  String,
+  operand:   String,
+  resultReg: Int,
+  state:     CodeGenState
+): Either[CodeGenError, CodeGenState] = {
+  nativeOp match {
+    case "not" =>
+      // Boolean NOT implemented as XOR with 1
+      val line = s"  %$resultReg = xor i1 1, $operand"
+      Right(state.withRegister(resultReg + 1).emit(line))
+    case other =>
+      Left(CodeGenError(s"Unsupported native unary operation: $other"))
+  }
+}
+
 /** Compiles a function application.
   *
   * Handles function calls in MML, including nested applications for curried functions. For example,
@@ -486,78 +576,128 @@ def compileApp(
   // Extract the function reference and all arguments
   val (fnRef, allArgs) = collectArgsAndFunction(app)
 
-  // Compile all arguments
-  allArgs
-    .foldLeft((List.empty[(String, String)], state).asRight[CodeGenError]) {
-      case (Right((compiledArgs, currentState)), arg) =>
-        compileExpr(arg, currentState, functionScope).flatMap { argRes =>
-          val argOp =
-            if argRes.isLiteral then argRes.register.toString else s"%${argRes.register}"
+  // Check if this is a native operator first
+  getNativeOperator(fnRef.resolvedAs) match {
+    case Some(nativeOp) =>
+      // Handle native operators with special LLVM instructions
+      allArgs match {
+        case List(leftArg, rightArg) =>
+          // Binary native operator
+          for {
+            leftRes <- compileExpr(leftArg, state, functionScope)
+            rightRes <- compileExpr(rightArg, leftRes.state, functionScope)
+            leftOp =
+              if leftRes.isLiteral then leftRes.register.toString else s"%${leftRes.register}"
+            rightOp =
+              if rightRes.isLiteral then rightRes.register.toString else s"%${rightRes.register}"
+            resultReg = rightRes.state.nextRegister
+            finalState <- generateNativeBinaryInstruction(
+              nativeOp,
+              leftOp,
+              rightOp,
+              resultReg,
+              rightRes.state
+            )
+          } yield CompileResult(resultReg, finalState, false, "Bool")
 
-          // Get the actual LLVM type from the argument's typeSpec
-          arg.typeSpec match {
-            case Some(typeSpec) =>
-              getLlvmType(typeSpec, argRes.state) match {
-                case Right(llvmType) =>
-                  Right((compiledArgs :+ (argOp, llvmType), argRes.state))
-                case Left(err) =>
-                  Left(err)
+        case List(operandArg) =>
+          // Unary native operator
+          for {
+            operandRes <- compileExpr(operandArg, state, functionScope)
+            operandOp =
+              if operandRes.isLiteral then operandRes.register.toString
+              else s"%${operandRes.register}"
+            resultReg = operandRes.state.nextRegister
+            finalState <- generateNativeUnaryInstruction(
+              nativeOp,
+              operandOp,
+              resultReg,
+              operandRes.state
+            )
+          } yield CompileResult(resultReg, finalState, false, "Bool")
+
+        case _ =>
+          Left(
+            CodeGenError(
+              s"Native operator '$nativeOp' called with wrong number of arguments: ${allArgs.length}"
+            )
+          )
+      }
+
+    case None =>
+      // Regular function call - compile all arguments and generate call
+      allArgs
+        .foldLeft((List.empty[(String, String)], state).asRight[CodeGenError]) {
+          case (Right((compiledArgs, currentState)), arg) =>
+            compileExpr(arg, currentState, functionScope).flatMap { argRes =>
+              val argOp =
+                if argRes.isLiteral then argRes.register.toString else s"%${argRes.register}"
+
+              // Get the actual LLVM type from the argument's typeSpec
+              arg.typeSpec match {
+                case Some(typeSpec) =>
+                  getLlvmType(typeSpec, argRes.state) match {
+                    case Right(llvmType) =>
+                      Right((compiledArgs :+ (argOp, llvmType), argRes.state))
+                    case Left(err) =>
+                      Left(err)
+                  }
+                case None =>
+                  Left(
+                    CodeGenError(
+                      s"Missing type information for function argument - TypeChecker should have provided this"
+                    )
+                  )
               }
+            }
+          case (Left(err), _) => Left(err)
+        }
+        .flatMap { case (compiledArgs, finalState) =>
+          val resultReg = finalState.nextRegister
+
+          // Get function return type from the reference's typeSpec
+          val fnReturnTypeResult = fnRef.typeSpec match {
+            case Some(typeSpec) =>
+              getLlvmType(typeSpec, finalState)
             case None =>
               Left(
                 CodeGenError(
-                  s"Missing type information for function argument - TypeChecker should have provided this"
+                  s"Missing return type information for function reference '${fnRef.name}' - TypeChecker should have provided this"
                 )
               )
           }
+
+          fnReturnTypeResult.flatMap { fnReturnType =>
+            // Generate function call with proper types
+            val args = compiledArgs.map { case (value, typ) => (typ, value) }
+
+            if fnReturnType == "void" then {
+              // Unit functions - call without assigning to a register
+              val callLine = emitCall(None, None, fnRef.name, args)
+
+              Right(
+                CompileResult(
+                  0, // No meaningful register for Unit expressions
+                  finalState.emit(callLine),
+                  false,
+                  "Unit" // Proper type name for Unit functions
+                )
+              )
+            } else {
+              // Non-Unit functions - assign result to register
+              val callLine = emitCall(Some(resultReg), Some(fnReturnType), fnRef.name, args)
+
+              Right(
+                CompileResult(
+                  resultReg,
+                  finalState.withRegister(resultReg + 1).emit(callLine),
+                  false,
+                  // Determine typeName from LLVM type for backward compatibility
+                  if fnReturnType == "%String" then "String" else "Int"
+                )
+              )
+            }
+          }
         }
-      case (Left(err), _) => Left(err)
-    }
-    .flatMap { case (compiledArgs, finalState) =>
-      val resultReg = finalState.nextRegister
-
-      // Get function return type from the reference's typeSpec
-      val fnReturnTypeResult = fnRef.typeSpec match {
-        case Some(typeSpec) =>
-          getLlvmType(typeSpec, finalState)
-        case None =>
-          Left(
-            CodeGenError(
-              s"Missing return type information for function reference '${fnRef.name}' - TypeChecker should have provided this"
-            )
-          )
-      }
-
-      fnReturnTypeResult.flatMap { fnReturnType =>
-        // Generate function call with proper types
-        val args = compiledArgs.map { case (value, typ) => (typ, value) }
-
-        if fnReturnType == "void" then {
-          // Unit functions - call without assigning to a register
-          val callLine = emitCall(None, None, fnRef.name, args)
-
-          Right(
-            CompileResult(
-              0, // No meaningful register for Unit expressions
-              finalState.emit(callLine),
-              false,
-              "Unit" // Proper type name for Unit functions
-            )
-          )
-        } else {
-          // Non-Unit functions - assign result to register
-          val callLine = emitCall(Some(resultReg), Some(fnReturnType), fnRef.name, args)
-
-          Right(
-            CompileResult(
-              resultReg,
-              finalState.withRegister(resultReg + 1).emit(callLine),
-              false,
-              // Determine typeName from LLVM type for backward compatibility
-              if fnReturnType == "%String" then "String" else "Int"
-            )
-          )
-        }
-      }
-    }
+  }
 }

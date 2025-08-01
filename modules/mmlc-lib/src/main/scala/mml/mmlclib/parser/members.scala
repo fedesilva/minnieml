@@ -1,8 +1,9 @@
 package mml.mmlclib.parser
 
+import cats.syntax.all.*
 import fastparse.*
 import mml.mmlclib.ast.*
-import cats.syntax.all.*
+
 import MmlWhitespace.*
 
 private[parser] def membersP(source: String)(using P[Any]): P[Member] =
@@ -234,4 +235,4 @@ private[parser] def failedMemberP(source: String)(using P[Any]): P[Member] =
         message    = "Failed to parse member",
         failedCode = snippet.some
       )
-    } 
+    }

@@ -1,8 +1,9 @@
 package mml.mmlclib.parser
 
+import cats.syntax.all.*
 import fastparse.*
 import mml.mmlclib.ast.*
-import cats.syntax.all.*
+
 import MmlWhitespace.*
 
 private[parser] def moduleP(name: Option[String], source: String, p: P[Any]): P[Module] =
@@ -11,7 +12,7 @@ private[parser] def moduleP(name: Option[String], source: String, p: P[Any]): P[
     // Needs to be a named module, we
     namedModuleP(source)
   ) { n =>
-    P(Start ~ (namedModuleP(source) | anonModuleP(n, source)) )
+    P(Start ~ (namedModuleP(source) | anonModuleP(n, source)))
   }
 
 private[parser] def namedModuleP(source: String)(using P[Any]): P[Module] =

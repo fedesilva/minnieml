@@ -1,8 +1,9 @@
 package mml.mmlclib.parser
 
+import cats.syntax.all.*
 import fastparse.*
 import mml.mmlclib.ast.*
-import cats.syntax.all.*
+
 import MmlWhitespace.*
 
 private[parser] def numericLitP(source: String)(using P[Any]): P[LiteralValue] =

@@ -168,9 +168,9 @@ object SemanticErrorPrinter:
         s"${Console.RED}Missing return type for operator '${opDef.name}' at $location${Console.RESET}\n${Console.YELLOW}Phase: $phase${Console.RESET}"
 
       case TypeError.TypeMismatch(node, expected, actual, phase) =>
-        val location = LocationPrinter.printSpan(node.asInstanceOf[FromSource].span)
+        val location    = LocationPrinter.printSpan(node.asInstanceOf[FromSource].span)
         val expectedStr = formatTypeSpec(expected)
-        val actualStr = formatTypeSpec(actual)
+        val actualStr   = formatTypeSpec(actual)
         s"${Console.RED}Type mismatch at $location: expected '$expectedStr', got '$actualStr'${Console.RESET}\n${Console.YELLOW}Phase: $phase${Console.RESET}"
 
       case TypeError.UndersaturatedApplication(app, expectedArgs, actualArgs, phase) =>
@@ -182,14 +182,14 @@ object SemanticErrorPrinter:
         s"${Console.RED}Over-saturated function application at $location: expected $expectedArgs arguments, got $actualArgs${Console.RESET}\n${Console.YELLOW}Phase: $phase${Console.RESET}"
 
       case TypeError.InvalidApplication(app, fnType, argType, phase) =>
-        val location = LocationPrinter.printSpan(app.span)
-        val fnTypeStr = formatTypeSpec(fnType)
+        val location   = LocationPrinter.printSpan(app.span)
+        val fnTypeStr  = formatTypeSpec(fnType)
         val argTypeStr = formatTypeSpec(argType)
         s"${Console.RED}Invalid function application at $location: cannot apply function of type '$fnTypeStr' to argument of type '$argTypeStr'${Console.RESET}\n${Console.YELLOW}Phase: $phase${Console.RESET}"
 
       case TypeError.ConditionalBranchTypeMismatch(cond, trueType, falseType, phase) =>
-        val location = LocationPrinter.printSpan(cond.span)
-        val trueTypeStr = formatTypeSpec(trueType)
+        val location     = LocationPrinter.printSpan(cond.span)
+        val trueTypeStr  = formatTypeSpec(trueType)
         val falseTypeStr = formatTypeSpec(falseType)
         s"${Console.RED}Conditional branch type mismatch at $location: 'then' branch has type '$trueTypeStr', 'else' branch has type '$falseTypeStr'${Console.RESET}\n${Console.YELLOW}Phase: $phase${Console.RESET}"
 

@@ -18,15 +18,13 @@ private[parser] def typeIdP[$: P]: P[String] =
 private[parser] def bindingIdOrError[$: P]: P[Either[String, String]] =
   import fastparse.NoWhitespace.*
   P((!keywords ~ CharsWhileIn("a-zA-Z0-9_", 1)).!).map { captured =>
-    if captured.headOption.exists(_.isLower) && captured.forall(c =>
-        c.isLetterOrDigit || c == '_'
-      )
+    if captured.headOption.exists(_.isLower) && captured.forall(c => c.isLetterOrDigit || c == '_')
     then Right(captured)
     else Left(captured)
   }
 
 private[parser] def operatorIdOrError[$: P]: P[Either[String, String]] =
-  val opChars = "=!#$%^&*+<>?/\\|~-"
+  val opChars    = "=!#$%^&*+<>?/\\|~-"
   val symbolicOp = P(CharsWhile(c => opChars.indexOf(c) >= 0, min = 1).!)
 
   P(symbolicOp | CharsWhileIn("a-zA-Z0-9_", 1).!).map { captured =>

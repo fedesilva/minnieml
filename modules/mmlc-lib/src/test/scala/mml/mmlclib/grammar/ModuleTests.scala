@@ -60,16 +60,16 @@ class ModuleTests extends BaseEffFunSuite:
         let a = 1;
         rubbish-at-the-end
       """
-    )  
+    )
   }
 
   test("module with rubbish at the end should not abort".ignore) {
-      parseNotFailed(
-        """
+    parseNotFailed(
+      """
         module A = 
           let a = 1;
           rubbish-at-the-end
         ;
         """
-      )  
-    }
+    )
+  }

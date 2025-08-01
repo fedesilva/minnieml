@@ -32,41 +32,57 @@ object ErrorPrinter:
   /** Extract source position from error for sorting */
   private def getErrorSourcePosition(error: SemanticError): (Int, Int) = error match
     case SemanticError.UndefinedRef(ref, _, _) => (ref.span.start.line, ref.span.start.col)
-    case SemanticError.UndefinedTypeRef(typeRef, _, _) => (typeRef.span.start.line, typeRef.span.start.col)
+    case SemanticError.UndefinedTypeRef(typeRef, _, _) =>
+      (typeRef.span.start.line, typeRef.span.start.col)
     case SemanticError.DuplicateName(_, duplicates, _) =>
-      duplicates.collect { case d: FromSource => d }
+      duplicates
+        .collect { case d: FromSource => d }
         .minByOption(_.span.start.index)
         .map(d => (d.span.start.line, d.span.start.col))
         .getOrElse((Int.MaxValue, Int.MaxValue))
     case SemanticError.InvalidExpression(expr, _, _) => (expr.span.start.line, expr.span.start.col)
     case SemanticError.MemberErrorFound(error, _) => (error.span.start.line, error.span.start.col)
-    case SemanticError.ParsingIdErrorFound(error, _) => (error.span.start.line, error.span.start.col)
+    case SemanticError.ParsingIdErrorFound(error, _) =>
+      (error.span.start.line, error.span.start.col)
     case SemanticError.DanglingTerms(terms, _, _) =>
-      terms.minByOption(_.span.start.index)
+      terms
+        .minByOption(_.span.start.index)
         .map(t => (t.span.start.line, t.span.start.col))
         .getOrElse((Int.MaxValue, Int.MaxValue))
-    case SemanticError.InvalidExpressionFound(invalidExpr, _) => (invalidExpr.span.start.line, invalidExpr.span.start.col)
-    case SemanticError.TypeCheckingError(error) => 
+    case SemanticError.InvalidExpressionFound(invalidExpr, _) =>
+      (invalidExpr.span.start.line, invalidExpr.span.start.col)
+    case SemanticError.TypeCheckingError(error) =>
       // For type errors, we need to extract the position from the nested error
       // This is a bit hacky, but avoids code duplication
       error match
-        case mml.mmlclib.semantic.TypeError.MissingParameterType(param, _, _) => (param.span.start.line, param.span.start.col)
-        case mml.mmlclib.semantic.TypeError.MissingReturnType(fnDef, _) => (fnDef.span.start.line, fnDef.span.start.col)
-        case mml.mmlclib.semantic.TypeError.MissingOperatorParameterType(param, _, _) => (param.span.start.line, param.span.start.col)
-        case mml.mmlclib.semantic.TypeError.MissingOperatorReturnType(opDef, _) => (opDef.span.start.line, opDef.span.start.col)
-        case mml.mmlclib.semantic.TypeError.TypeMismatch(node, _, _, _) => 
+        case mml.mmlclib.semantic.TypeError.MissingParameterType(param, _, _) =>
+          (param.span.start.line, param.span.start.col)
+        case mml.mmlclib.semantic.TypeError.MissingReturnType(fnDef, _) =>
+          (fnDef.span.start.line, fnDef.span.start.col)
+        case mml.mmlclib.semantic.TypeError.MissingOperatorParameterType(param, _, _) =>
+          (param.span.start.line, param.span.start.col)
+        case mml.mmlclib.semantic.TypeError.MissingOperatorReturnType(opDef, _) =>
+          (opDef.span.start.line, opDef.span.start.col)
+        case mml.mmlclib.semantic.TypeError.TypeMismatch(node, _, _, _) =>
           val fs = node.asInstanceOf[FromSource]
           (fs.span.start.line, fs.span.start.col)
-        case mml.mmlclib.semantic.TypeError.UndersaturatedApplication(app, _, _, _) => (app.span.start.line, app.span.start.col)
-        case mml.mmlclib.semantic.TypeError.OversaturatedApplication(app, _, _, _) => (app.span.start.line, app.span.start.col)
-        case mml.mmlclib.semantic.TypeError.InvalidApplication(app, _, _, _) => (app.span.start.line, app.span.start.col)
-        case mml.mmlclib.semantic.TypeError.ConditionalBranchTypeMismatch(cond, _, _, _) => (cond.span.start.line, cond.span.start.col)
-        case mml.mmlclib.semantic.TypeError.ConditionalBranchTypeUnknown(cond, _) => (cond.span.start.line, cond.span.start.col)
-        case mml.mmlclib.semantic.TypeError.UnresolvableType(typeRef, _, _) => (typeRef.span.start.line, typeRef.span.start.col)
-        case mml.mmlclib.semantic.TypeError.IncompatibleTypes(node, _, _, _, _) => 
+        case mml.mmlclib.semantic.TypeError.UndersaturatedApplication(app, _, _, _) =>
+          (app.span.start.line, app.span.start.col)
+        case mml.mmlclib.semantic.TypeError.OversaturatedApplication(app, _, _, _) =>
+          (app.span.start.line, app.span.start.col)
+        case mml.mmlclib.semantic.TypeError.InvalidApplication(app, _, _, _) =>
+          (app.span.start.line, app.span.start.col)
+        case mml.mmlclib.semantic.TypeError.ConditionalBranchTypeMismatch(cond, _, _, _) =>
+          (cond.span.start.line, cond.span.start.col)
+        case mml.mmlclib.semantic.TypeError.ConditionalBranchTypeUnknown(cond, _) =>
+          (cond.span.start.line, cond.span.start.col)
+        case mml.mmlclib.semantic.TypeError.UnresolvableType(typeRef, _, _) =>
+          (typeRef.span.start.line, typeRef.span.start.col)
+        case mml.mmlclib.semantic.TypeError.IncompatibleTypes(node, _, _, _, _) =>
           val fs = node.asInstanceOf[FromSource]
           (fs.span.start.line, fs.span.start.col)
-        case mml.mmlclib.semantic.TypeError.UntypedHoleInBinding(bnd, _) => (bnd.span.start.line, bnd.span.start.col)
+        case mml.mmlclib.semantic.TypeError.UntypedHoleInBinding(bnd, _) =>
+          (bnd.span.start.line, bnd.span.start.col)
 
   /** Pretty print semantic errors */
   private def prettyPrintSemanticErrors(
@@ -77,7 +93,7 @@ object ErrorPrinter:
     else
       // Sort errors by source line and column position
       val sortedErrors = errors.sortBy(getErrorSourcePosition)
-      val messages = sortedErrors.map(err => prettyPrintSemanticError(err, sourceCode))
+      val messages     = sortedErrors.map(err => prettyPrintSemanticError(err, sourceCode))
       s"${messages.mkString("\n\n")}"
 
   /** Pretty print a single semantic error */
@@ -167,7 +183,6 @@ object ErrorPrinter:
       case None =>
         if astInfo.nonEmpty then s"$baseMessage\n$astInfo"
         else baseMessage
-
 
   /** Pretty print parser errors */
   private def prettyPrintParserErrors(errors: List[ParserError]): String =

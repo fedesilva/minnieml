@@ -392,22 +392,22 @@ case class TypeGroup(span: SrcSpan, types: List[TypeSpec]) extends TypeSpec
 /** A type variable (like 'T, 'R in the type system) */
 case class TypeVariable(
   span: SrcSpan,
-  name: String  // "'T", "'R", "'A", etc.
+  name: String // "'T", "'R", "'A", etc.
 ) extends TypeSpec
 
 /** A type scheme: ∀'T 'R 'A. Type
-  * 
+  *
   * This represents both polymorphic and monomorphic types uniformly.
-  * 
+  *
   * Examples:
-  * - ∀'T. 'T → 'T (identity function)
-  * - ∀'A 'B. 'A → 'B → 'A (const function)  
-  * - Int → Int (monomorphic, vars = Nil)
+  *   - ∀'T. 'T → 'T (identity function)
+  *   - ∀'A 'B. 'A → 'B → 'A (const function)
+  *   - Int → Int (monomorphic, vars = Nil)
   */
 case class TypeScheme(
-  span: SrcSpan,
-  vars: List[String],      // ["'T", "'R"] - the quantified variables  
-  bodyType: TypeSpec       // The actual type with variables
+  span:     SrcSpan,
+  vars:     List[String], // ["'T", "'R"] - the quantified variables
+  bodyType: TypeSpec // The actual type with variables
 ) extends TypeSpec
 
 sealed trait Native extends AstNode
