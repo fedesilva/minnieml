@@ -65,12 +65,25 @@ Compile
     - ✓ Fixed native operator code generation for boolean operators (`and`, `or`, `not`)
     - ❌ **REMAINING:** Replace hardcoded `i32` types in `compileApp` and `compileTerm` with proper type resolution using `getLlvmType` helper
       - Complete analysis in: `memory-bank/bugs/hardcoded-i32.md`
-      - Should enable `print_string_concat.mml` to compile successfully
+        - NEEDS Attention:
+          * This might be already fixed, OR there might still be hiddens instances
+          * **inspect and list them before commiting to a change.**
+      - ✓ Should enable `print_string_concat.mml` to compile successfully
+
+
+#### Pending
+
+  * Strings are treated specially.
+  * Strings are just native structs, they should ALL be compiled in a general way.
+    * The `ExpressionCompiler.scala` file has notes on the literal String compiler function.
+    * it hardcodes a bunch of types, too. those should be picked up from the ast.
+  * *We need to write a small spec for this before commiting to specific changes.*
 
 ## Issues 
 
 
 ### High priority
+
 
 
 * **TypeChecker Bug - Missing Type Validation**: TypeChecker incorrectly allows `println (5 + 3)` where `println` expects `String` but receives `Int`. This should fail during semantic analysis with a proper type mismatch error, but currently passes with "No errors". The TypeChecker is not properly validating function argument types against parameter types.
@@ -84,14 +97,11 @@ Compile
 
 ### Medium Priority
 
-## Next Session Plan:
-
-Review the rest of the 
 
 
 
 ### Future work        
+
 * implement protocols 
 * recursion 
-* design a very simple type checker (in progress)
 * modules
