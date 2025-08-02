@@ -280,7 +280,8 @@ def getLlvmType(
                 case None => getLlvmType(typeAlias.typeRef, state)
         case None =>
           // Unresolved type - this should have been caught by TypeResolver
-          Left(CodeGenError(s"Unresolved type reference: $name"))
+          // Add debug info to understand what's happening
+          Left(CodeGenError(s"Unresolved type reference: $name (TypeRef with no resolvedAs)"))
     case TypeUnit(_) =>
       Right("void")
     case np: NativePrimitive =>
@@ -293,4 +294,4 @@ def getLlvmType(
       Left(CodeGenError("Unexpected inline native struct"))
     case other =>
       // No LLVM type mapping for this TypeSpec
-      Left(CodeGenError(s"No LLVM type mapping for TypeSpec: ${other.getClass.getSimpleName}"))
+      Left(CodeGenError(s"No LLVM type mapping for TypeSpec: ${other.getClass.getSimpleName} - $other"))

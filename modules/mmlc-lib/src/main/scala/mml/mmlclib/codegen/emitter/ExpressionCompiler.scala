@@ -2,6 +2,7 @@ package mml.mmlclib.codegen.emitter
 
 import cats.syntax.all.*
 import mml.mmlclib.ast.*
+import mml.mmlclib.codegen.NativeOpRegistry
 
 /** Handles code generation for expressions, terms, and operators. */
 
@@ -152,15 +153,25 @@ def compileTerm(
         // Check if condition result is boolean (from boolean operations) or integer
         (stateAfterCondition, branchCondition) =
           // Boolean operations (and, or, not) have nativeOp attributes and return i1 type
-          // This is a temporary fix until the broader hardcoded i32 issue is resolved
           if condRes.register > 0 && !condRes.isLiteral then {
             // Non-literal result - likely from boolean operation, use directly as i1
             (condRes.state, condOp)
           } else {
-            // Literal or other - compare with 0 as i32
-            val compareReg        = mergeBB
-            val compareState      = condRes.state.withRegister(mergeBB + 1)
-            val stateAfterCompare = compareState.emit(s"  %$compareReg = icmp ne i32 $condOp, 0")
+            // Literal or other - compare with 0 using actual type from condition
+            val compareReg = mergeBB
+            val compareState = condRes.state.withRegister(mergeBB + 1)
+            
+            // Get the actual LLVM type from the condition's typeSpec
+            val condType = cond.typeSpec match {
+              case Some(typeSpec) => 
+                getLlvmType(typeSpec, compareState) match {
+                  case Right(llvmType) => llvmType
+                  case Left(_) => "i32" // Temporary fallback only if type resolution fails
+                }
+              case None => "i32" // Temporary fallback for missing type information
+            }
+            
+            val stateAfterCompare = compareState.emit(s"  %$compareReg = icmp ne $condType $condOp, 0")
             (stateAfterCompare, s"%$compareReg")
           }
 
@@ -275,7 +286,7 @@ def compileBinaryOp(
   for {
     leftCompileResult <- compileTerm(left, state, functionScope)
     rightCompileResult <- compileTerm(right, leftCompileResult.state, functionScope)
-    result <- applyBinaryOp(op, leftCompileResult, rightCompileResult)
+    result <- applyBinaryOp(op, left, right, leftCompileResult, rightCompileResult)
   } yield result
 }
 
@@ -300,7 +311,7 @@ def compileUnaryOp(
 ): Either[CodeGenError, CompileResult] = {
   for {
     argCompileResult <- compileTerm(arg, state, functionScope)
-    result <- applyUnaryOp(op, argCompileResult)
+    result <- applyUnaryOp(op, arg, argCompileResult)
   } yield result
 }
 
@@ -317,9 +328,12 @@ def compileUnaryOp(
   */
 private def applyBinaryOp(
   op:       String,
+  left:     Term,
+  right:    Term,
   leftRes:  CompileResult,
   rightRes: CompileResult
 ): Either[CodeGenError, CompileResult] = {
+  // For literal operands, perform constant folding
   if leftRes.isLiteral && rightRes.isLiteral then {
     op match {
       case "+" =>
@@ -334,63 +348,49 @@ private def applyBinaryOp(
       case _ => CodeGenError(s"Unknown operator: $op").asLeft
     }
   } else {
-    op match {
-      case "+" => {
+    // For non-literal operands, we need the native operator selector
+    // This is a temporary fallback - in the full implementation, we'll get the selector
+    // from the operator definition's @native[op=selector] annotation
+    val selector = op match {
+      case "+" => "add"
+      case "-" => "sub" 
+      case "*" => "mul"
+      case "/" => "sdiv"
+      case _ => return CodeGenError(s"Unknown operator: $op").asLeft
+    }
+    
+    // Look up the native operation descriptor
+    NativeOpRegistry.getBinaryOp(selector) match {
+      case Some(descriptor) =>
         val resultReg = rightRes.state.nextRegister
-        val leftOp =
-          if leftRes.isLiteral then leftRes.register.toString else s"%${leftRes.register}"
-        val rightOp =
-          if rightRes.isLiteral then rightRes.register.toString else s"%${rightRes.register}"
-        val line = emitAdd(resultReg, "i32", leftOp, rightOp)
-        CompileResult(
-          resultReg,
-          rightRes.state.withRegister(resultReg + 1).emit(line),
-          false
-        ).asRight
-      }
-      case "-" => {
-        val resultReg = rightRes.state.nextRegister
-        val leftOp =
-          if leftRes.isLiteral then leftRes.register.toString else s"%${leftRes.register}"
-        val rightOp =
-          if rightRes.isLiteral then rightRes.register.toString else s"%${rightRes.register}"
-        val line = emitSub(resultReg, "i32", leftOp, rightOp)
-        CompileResult(
-          resultReg,
-          rightRes.state.withRegister(resultReg + 1).emit(line),
-          false
-        ).asRight
-      }
-      case "*" => {
-        val resultReg = rightRes.state.nextRegister
-        val leftOp =
-          if leftRes.isLiteral then leftRes.register.toString else s"%${leftRes.register}"
-        val rightOp =
-          if rightRes.isLiteral then rightRes.register.toString else s"%${rightRes.register}"
-        val line = emitMul(resultReg, "i32", leftOp, rightOp)
-        CompileResult(
-          resultReg,
-          rightRes.state.withRegister(resultReg + 1).emit(line),
-          false
-        ).asRight
-      }
-      case "/" => {
-        val resultReg = rightRes.state.nextRegister
-        val leftOp =
-          if leftRes.isLiteral then leftRes.register.toString else s"%${leftRes.register}"
-        val rightOp =
-          if rightRes.isLiteral then rightRes.register.toString else s"%${rightRes.register}"
-        val line = emitSDiv(resultReg, "i32", leftOp, rightOp)
-        CompileResult(
-          resultReg,
-          rightRes.state.withRegister(resultReg + 1).emit(line),
-          false
-        ).asRight
-      }
-      case "^" =>
-        CodeGenError("Power operator not yet implemented").asLeft
-      case _ =>
-        CodeGenError(s"Unknown operator: $op").asLeft
+        val leftOp = if leftRes.isLiteral then leftRes.register.toString else s"%${leftRes.register}"
+        val rightOp = if rightRes.isLiteral then rightRes.register.toString else s"%${rightRes.register}"
+        
+        // Get the LLVM type from the left operand's typeSpec
+        left.typeSpec match {
+          case Some(typeSpec) =>
+            getLlvmType(typeSpec, rightRes.state) match {
+              case Right(llvmType) =>
+                // Substitute template variables with actual values
+                val instruction = descriptor.template
+                  .replace("%result", s"%$resultReg")
+                  .replace("%type", llvmType)
+                  .replace("%left", leftOp)
+                  .replace("%right", rightOp)
+                
+                val line = s"  $instruction"
+                CompileResult(
+                  resultReg,
+                  rightRes.state.withRegister(resultReg + 1).emit(line),
+                  false
+                ).asRight
+              case Left(err) => Left(err)
+            }
+          case None =>
+            Left(CodeGenError(s"Missing type information for binary operator operand - TypeChecker should have provided this"))
+        }
+      case None =>
+        Left(CodeGenError(s"Native operation '$selector' not found in registry"))
     }
   }
 }
@@ -406,8 +406,10 @@ private def applyBinaryOp(
   */
 private def applyUnaryOp(
   op:     String,
+  arg:    Term,
   argRes: CompileResult
 ): Either[CodeGenError, CompileResult] = {
+  // For literal operands, perform constant folding
   if argRes.isLiteral then {
     op match {
       case "-" => CompileResult(-argRes.register, argRes.state, true).asRight
@@ -417,42 +419,46 @@ private def applyUnaryOp(
       case _ => CodeGenError(s"Unknown unary operator: $op").asLeft
     }
   } else {
-    op match {
-      case "-" => {
+    // For non-literal operands, we need the native operator selector
+    // This is a temporary fallback - in the full implementation, we'll get the selector
+    // from the operator definition's @native[op=selector] annotation
+    val selector = op match {
+      case "-" => "neg"
+      case "!" => "not"
+      case "+" => return CompileResult(argRes.register, argRes.state, false).asRight // Unary + is identity
+      case _ => return CodeGenError(s"Unknown unary operator: $op").asLeft
+    }
+    
+    // Look up the native operation descriptor
+    NativeOpRegistry.getUnaryOp(selector) match {
+      case Some(descriptor) =>
         val resultReg = argRes.state.nextRegister
-        val argOp =
-          if argRes.isLiteral then argRes.register.toString else s"%${argRes.register}"
-        val line = emitSub(resultReg, "i32", "0", argOp)
-        CompileResult(
-          resultReg,
-          argRes.state.withRegister(resultReg + 1).emit(line),
-          false
-        ).asRight
-      }
-      case "+" => {
-        val resultReg = argRes.state.nextRegister
-        val argOp =
-          if argRes.isLiteral then argRes.register.toString else s"%${argRes.register}"
-        val line = emitAdd(resultReg, "i32", argOp, "0")
-        CompileResult(
-          resultReg,
-          argRes.state.withRegister(resultReg + 1).emit(line),
-          false
-        ).asRight
-      }
-      case "!" => {
-        val resultReg = argRes.state.nextRegister
-        val argOp =
-          if argRes.isLiteral then argRes.register.toString else s"%${argRes.register}"
-        val line = emitXor(resultReg, "i32", "1", argOp)
-        CompileResult(
-          resultReg,
-          argRes.state.withRegister(resultReg + 1).emit(line),
-          false
-        ).asRight
-      }
-      case _ =>
-        CodeGenError(s"Unknown unary operator: $op").asLeft
+        val argOp = if argRes.isLiteral then argRes.register.toString else s"%${argRes.register}"
+        
+        // Get the LLVM type from the operand's typeSpec
+        arg.typeSpec match {
+          case Some(typeSpec) =>
+            getLlvmType(typeSpec, argRes.state) match {
+              case Right(llvmType) =>
+                // Substitute template variables with actual values
+                val instruction = descriptor.template
+                  .replace("%result", s"%$resultReg")
+                  .replace("%type", llvmType)
+                  .replace("%operand", argOp)
+                
+                val line = s"  $instruction"
+                CompileResult(
+                  resultReg,
+                  argRes.state.withRegister(resultReg + 1).emit(line),
+                  false
+                ).asRight
+              case Left(err) => Left(err)
+            }
+          case None =>
+            Left(CodeGenError(s"Missing type information for unary operator operand - TypeChecker should have provided this"))
+        }
+      case None =>
+        Left(CodeGenError(s"Native operation '$selector' not found in registry"))
     }
   }
 }
