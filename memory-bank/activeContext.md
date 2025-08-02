@@ -72,88 +72,17 @@ Compile
 
 ### High priority
 
-* **Hardcoded Types in ExpressionCompiler.scala** 
-  - **Problem:** Multiple functions in ExpressionCompiler.scala still contain hardcoded LLVM types ("i32", "i64", "i1") instead of extracting types from AST, despite the Int64 type having proper native i64 representation in semantic package  
-  - **Affected Functions:** 
-    - `applyBinaryOp` (lines ~310-380): ALL emit calls hardcode "i32" - `emitAdd(resultReg, "i32", leftOp, rightOp)`
-    - `applyUnaryOp` (lines ~380-420): ALL emit calls hardcode "i32" - `emitSub(resultReg, "i32", "0", argOp)`
-    - Conditional compilation (line ~150): hardcodes "i32" in `icmp ne i32 $condOp, 0`
-    - Native operator fallbacks use hardcoded "i64"/"i1" instead of proper error handling
-    - NativeOpDescriptor
-      - fields
-        - the string for the codegen
-        - the op selector (a string usually the name of the op)
-      - used in a semantic phase to validate selectors.
-      - used by codegen to select string to generate
-      - removes the need for emitAdd/emit*/**.
-
-  - **Current State:** 
-    - NativeOpDescriptor system is fully implemented and ready to use
-    - `applyBinaryOp`/`applyUnaryOp` have been updated to use the NativeOpDescriptor system
-    - The blocking TypeResolver bug has been FIXED (see Recent Changes 2025-08-01)
-  - **Remaining Work:**
-    1. Remove remaining hardcoded fallbacks in conditional compilation (lines ~169-171)
-    2. Update string literal handling to use proper type resolution instead of hardcoded "i64"
-    3. Complete transition to fully type-driven code generation
-  - **Status:** Ready to complete now that TypeResolver bug is fixed
-  
 
 * **TypeChecker Bug - Missing Type Validation**: TypeChecker incorrectly allows `println (5 + 3)` where `println` expects `String` but receives `Int`. This should fail during semantic analysis with a proper type mismatch error, but currently passes with "No errors". The TypeChecker is not properly validating function argument types against parameter types.
-  - Issue first observed: 2025-07-27
   - Test case: `fn main(): () = println (5 + 3);` should fail but doesn't
+  - file `mml/samples/should-fail.mml`
+  - should make a unit test
 
-* **Potential typechecker Bug - Type Alias Resolution**: 
-  it seems that type aliases do not get a typespec. confirm
-
-  TypeAlias(
-  visibility = Protected,
-  span = SrcSpan(SrcPoint(0,2,1), SrcPoint(2,22,23)),
-  name = "TestI64",
-  typeRef = TypeRef(
-    span = SrcSpan(SrcPoint(2,16,16), SrcPoint(2,21,21)),
-    name = "Int64",
-    resolvedAs = Some(TypeDef(
-      visibility = Protected,
-      span = SrcSpan(SrcPoint(0,0,0), SrcPoint(0,0,0)),
-      name = "Int64",
-      typeSpec = Some(NativePrimitive(
-        span = SrcSpan(SrcPoint(0,0,0), SrcPoint(0,0,0)),
-        llvmType = "i64"
-      )),
-      docComment = None,
-      typeAsc = None
-    ))
-  ),
-  typeSpec = Some(TypeRef(
-    span = SrcSpan(SrcPoint(2,16,16), SrcPoint(2,21,21)),
-    name = "Int64",
-    resolvedAs = Some(TypeDef(
-      visibility = Protected,
-      span = SrcSpan(SrcPoint(0,0,0), SrcPoint(0,0,0)),
-      name = "Int64",
-      typeSpec = Some(NativePrimitive(
-        span = SrcSpan(SrcPoint(0,0,0), SrcPoint(0,0,0)),
-        llvmType = "i64"
-      )),
-      docComment = None,
-      typeAsc = None
-    ))
-  )),
-  typeAsc = None,
-  docComment = None
-)
-
-question: should the typechecker resolve the typeSpec of the type alias to the typeSpec of the ref?
-such that the codegen does not need to try to resolve the typespec of the ref?
+* 🐞 **Nullary Function Call Is Not Lowered to IR Call**
+  see `memory-bank/bugs/nullary-function-bug.md` 
 
 
 ### Medium Priority
-
-* **Complex nested concatenation with to_string fails**: The file `mml/samples/failing_to_string_complex.mml` compiles successfully but outputs "Error" instead of the expected concatenated string. Simple `to_string` works (e.g., `to_string 123` outputs "123"), but complex nested concatenations fail at runtime. This may be related to:
-  - String memory management issues in the C runtime
-  - LLVM IR generation for deeply nested function calls
-  - Potential stack overflow or memory allocation problems
-  - Issue first observed: 2025-07-27
 
 ## Next Session Plan:
 
