@@ -1,8 +1,8 @@
 fn println (a: String): () = @native;
-fn to_string (a: Int): String = @native;
+fn concat (a: String, b: String): String = @native;
 
 let a = "fede";
 
-fn main(): () = 
+fn main() = 
   println (concat "hola, " "fede")
 ;

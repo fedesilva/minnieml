@@ -15,6 +15,8 @@ Ability to compile simple programs:
 
 ### High priority
 
+* **IMMEDIATE** Typechecker Test
+
 * **TypeChecker Bug - Missing Type Validation**: TypeChecker incorrectly allows `println (5 + 3)` where `println` expects `String` but receives `Int`. This should fail during semantic analysis with a proper type mismatch error, but currently passes with "No errors". The TypeChecker is not properly validating function argument types against parameter types.
   - Test case: `fn main(): () = println (5 + 3);` should fail but doesn't
   - file `mml/samples/should-fail.mml`
@@ -32,6 +34,16 @@ Ability to compile simple programs:
 
 ## Infer return types
 see `specs/infer-return-type.md`
+
+**Progress:**
+- **TypeChecker:** Updated to infer return types for functions and operators when not explicitly provided. It now correctly skips validation for `NativeImpl` bodies.
+- **CodeGen:**
+  - `Module.scala`: `emitFnDef` now uses the inferred `fn.typeSpec` for the return type.
+  - `ExpressionCompiler.scala`: `compileApp` now uses the inferred `app.typeSpec` for the return type of function applications.
+- **Testing:** Added a new test case to `TypeCheckerTests.scala` to validate the inference logic. All tests are passing.
+- **Validation:** The user has confirmed that `mml/samples/simple_string.mml` now compiles successfully.
+
+The task is now awaiting final approval from the user.
 
 ## NativeOpDescriptor Validation
 

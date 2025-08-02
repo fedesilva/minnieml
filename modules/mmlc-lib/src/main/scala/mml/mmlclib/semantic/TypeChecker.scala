@@ -70,6 +70,14 @@ object TypeChecker:
       }
     (errors, members.toList)
 
+  /** Check if an expression contains a NativeImpl */
+  private def hasNativeImpl(expr: Expr): Boolean =
+    expr.terms.exists {
+      case _:          NativeImpl => true
+      case nestedExpr: Expr => hasNativeImpl(nestedExpr)
+      case _ => false
+    }
+
   /** Validate and compute types for a member */
   private def checkMember(member: Member, module: Module): Either[List[TypeError], Member] =
     member match
@@ -79,13 +87,36 @@ object TypeChecker:
         val paramContext = fnDef.params.map(p => p.name -> p).toMap
         for
           checkedBody <- checkExprWithContext(fnDef.body, module, paramContext, fnDef.typeSpec)
-          _ <- (fnDef.typeSpec, checkedBody.typeSpec) match
-            case (Some(expected), Some(actual)) if areTypesCompatible(expected, actual, module) =>
-              Right(())
-            case (Some(expected), Some(actual)) =>
-              Left(List(TypeError.TypeMismatch(fnDef, expected, actual, phaseName)))
-            case _ => Right(()) // Should be caught by other checks
-        yield fnDef.copy(body = checkedBody)
+          finalTypeSpec <- fnDef.typeSpec match {
+            case Some(explicitType) =>
+              // Check if this is a native implementation - can't validate those
+              if hasNativeImpl(fnDef.body) then
+                // For native implementations, trust the explicit type since we can't validate
+                Right(explicitType)
+              else
+                // For regular functions, validate explicit type matches body type
+                checkedBody.typeSpec match
+                  case Some(actualType) if areTypesCompatible(explicitType, actualType, module) =>
+                    Right(explicitType)
+                  case Some(actualType) =>
+                    Left(List(TypeError.TypeMismatch(fnDef, explicitType, actualType, phaseName)))
+                  case None =>
+                    Left(
+                      List(
+                        TypeError.UnresolvableType(TypeRef(fnDef.span, "body"), fnDef, phaseName)
+                      )
+                    )
+            case None =>
+              // No explicit return type - infer from body
+              checkedBody.typeSpec match {
+                case Some(inferredType) => Right(inferredType)
+                case None =>
+                  Left(
+                    List(TypeError.UnresolvableType(TypeRef(fnDef.span, "body"), fnDef, phaseName))
+                  )
+              }
+          }
+        yield fnDef.copy(body = checkedBody, typeSpec = Some(finalTypeSpec))
 
       case opDef: OpDef =>
         // Type spec already lowered in first pass, just check the body
@@ -96,15 +127,38 @@ object TypeChecker:
           case u: UnaryOpDef => Map(u.param.name -> u.param)
         for
           checkedBody <- checkExprWithContext(opDef.body, module, paramContext, opDef.typeSpec)
-          _ <- (opDef.typeSpec, checkedBody.typeSpec) match
-            case (Some(expected), Some(actual)) if areTypesCompatible(expected, actual, module) =>
-              Right(())
-            case (Some(expected), Some(actual)) =>
-              Left(List(TypeError.TypeMismatch(opDef, expected, actual, phaseName)))
-            case _ => Right(()) // Should be caught by other checks
+          finalTypeSpec <- opDef.typeSpec match {
+            case Some(explicitType) =>
+              // Check if this is a native implementation - can't validate those
+              if hasNativeImpl(opDef.body) then
+                // For native implementations, trust the explicit type since we can't validate
+                Right(explicitType)
+              else
+                // For regular operators, validate explicit type matches body type
+                checkedBody.typeSpec match
+                  case Some(actualType) if areTypesCompatible(explicitType, actualType, module) =>
+                    Right(explicitType)
+                  case Some(actualType) =>
+                    Left(List(TypeError.TypeMismatch(opDef, explicitType, actualType, phaseName)))
+                  case None =>
+                    Left(
+                      List(
+                        TypeError.UnresolvableType(TypeRef(opDef.span, "body"), opDef, phaseName)
+                      )
+                    )
+            case None =>
+              // No explicit return type - infer from body
+              checkedBody.typeSpec match {
+                case Some(inferredType) => Right(inferredType)
+                case None =>
+                  Left(
+                    List(TypeError.UnresolvableType(TypeRef(opDef.span, "body"), opDef, phaseName))
+                  )
+              }
+          }
         yield opDef match
-          case b: BinOpDef => b.copy(body = checkedBody)
-          case u: UnaryOpDef => u.copy(body = checkedBody)
+          case b: BinOpDef => b.copy(body = checkedBody, typeSpec = Some(finalTypeSpec))
+          case u: UnaryOpDef => u.copy(body = checkedBody, typeSpec = Some(finalTypeSpec))
 
       case bnd: Bnd =>
         for {
@@ -130,10 +184,8 @@ object TypeChecker:
         case param if param.typeAsc.isEmpty =>
           TypeError.MissingParameterType(param, fnDef, phaseName)
       }
-      val returnError = fnDef.typeAsc match
-        case None => List(TypeError.MissingReturnType(fnDef, phaseName))
-        case Some(_) => Nil
-      paramErrors ++ returnError
+      // Return type inference: no longer require explicit return types
+      paramErrors
 
     case opDef: BinOpDef =>
       val param1Error = opDef.param1.typeAsc match
@@ -142,19 +194,15 @@ object TypeChecker:
       val param2Error = opDef.param2.typeAsc match
         case None => List(TypeError.MissingOperatorParameterType(opDef.param2, opDef, phaseName))
         case Some(_) => Nil
-      val returnError = opDef.typeAsc match
-        case None => List(TypeError.MissingOperatorReturnType(opDef, phaseName))
-        case Some(_) => Nil
-      param1Error ++ param2Error ++ returnError
+      // Return type inference: no longer require explicit return types
+      param1Error ++ param2Error
 
     case opDef: UnaryOpDef =>
       val paramError = opDef.param.typeAsc match
         case None => List(TypeError.MissingOperatorParameterType(opDef.param, opDef, phaseName))
         case Some(_) => Nil
-      val returnError = opDef.typeAsc match
-        case None => List(TypeError.MissingOperatorReturnType(opDef, phaseName))
-        case Some(_) => Nil
-      paramError ++ returnError
+      // Return type inference: no longer require explicit return types
+      paramError
 
     case _ =>
       Nil

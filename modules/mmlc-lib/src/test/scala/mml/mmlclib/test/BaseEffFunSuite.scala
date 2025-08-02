@@ -119,6 +119,23 @@ trait BaseEffFunSuite extends CatsEffectSuite:
       // pass
     }
 
+    // We need to change the underlying api
+    // to pass the errors so we can use them in assertions
+    // def semFailedWithErrors(
+    //   source: String,
+    //       name:   Option[String] = "TestFail".some,
+    //       msg:    Option[String] = None
+    //     ): IO[Option[]] =
+    //       CompilerApi.compileString(source, name).value.map {
+    //         case Right(module) =>
+    //           assert(
+    //             containsErrorNode(module),
+    //             msg.getOrElse(s"Expected Error nodes but found none. ${prettyPrintAst(module)} ")
+    //           )
+    //         case Left(error) =>
+
+    //       }
+
   /** Parse source code without asserting on MemberErrors. Useful for testing phases that
     * specifically deal with MemberErrors
     */

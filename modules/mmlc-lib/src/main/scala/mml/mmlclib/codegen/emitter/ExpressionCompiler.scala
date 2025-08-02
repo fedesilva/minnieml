@@ -643,14 +643,14 @@ def compileApp(
         .flatMap { case (compiledArgs, finalState) =>
           val resultReg = finalState.nextRegister
 
-          // Get function return type from the reference's typeSpec
-          val fnReturnTypeResult = fnRef.typeSpec match {
+          // Get function return type from the application's typeSpec
+          val fnReturnTypeResult = app.typeSpec match {
             case Some(typeSpec) =>
               getLlvmType(typeSpec, finalState)
             case None =>
               Left(
                 CodeGenError(
-                  s"Missing return type information for function reference '${fnRef.name}' - TypeChecker should have provided this"
+                  s"Missing return type information for function application '${fnRef.name}' - TypeChecker should have provided this"
                 )
               )
           }

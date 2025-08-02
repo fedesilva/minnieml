@@ -28,7 +28,8 @@ def emitModule(module: Module): Either[CodeGenError, String] = {
   // Currently we only emit LLVM type definitions for native types
   // Future: Add handlers for enums, records, and other MML type constructs
   val typeDefs = module.members.collect {
-    case td: TypeDef if td.typeSpec.exists(_.isInstanceOf[NativeType]) => td
+    case td: TypeDef if td.typeSpec.exists(_.isInstanceOf[NativeType]) =>
+      td
   }
 
   // Generate LLVM type definitions for all native structs.
@@ -138,7 +139,7 @@ private def emitBinding(bnd: Bnd, state: CodeGenState): Either[CodeGenError, Cod
         case lit: LiteralString =>
           // Generate static String global: @a = global %String { i64 4, ptr @str.0 }
           val (newState, constName) = state.addStringConstant(lit.value)
-          val llvmTypeE = lit.typeSpec match {
+          val llvmTypeE = bnd.typeSpec match {
             case Some(typeSpec) => getLlvmType(typeSpec, newState)
             case None =>
               Left(
@@ -154,7 +155,7 @@ private def emitBinding(bnd: Bnd, state: CodeGenState): Either[CodeGenError, Cod
 
         case lit: LiteralInt =>
           // Generate static int global: @a = global i64 42
-          val llvmTypeE = lit.typeSpec match {
+          val llvmTypeE = bnd.typeSpec match {
             case Some(typeSpec) => getLlvmType(typeSpec, state)
             case None =>
               Left(
@@ -167,7 +168,7 @@ private def emitBinding(bnd: Bnd, state: CodeGenState): Either[CodeGenError, Cod
 
         case lit: LiteralBool =>
           // Generate static bool global: @a = global i1 true
-          val llvmTypeE = lit.typeSpec match {
+          val llvmTypeE = bnd.typeSpec match {
             case Some(typeSpec) => getLlvmType(typeSpec, state)
             case None =>
               Left(
@@ -259,14 +260,14 @@ private def emitBinding(bnd: Bnd, state: CodeGenState): Either[CodeGenError, Cod
   */
 private def emitFnDef(fn: FnDef, state: CodeGenState): Either[CodeGenError, CodeGenState] = {
   // Get the return type from the function's type annotation (required)
-  val returnTypeE = fn.typeAsc
+  val returnTypeE = fn.typeSpec
     .map(getLlvmType(_, state))
     .getOrElse(Left(CodeGenError(s"Missing return type annotation for function '${fn.name}'")))
 
   returnTypeE.flatMap { returnType =>
     // Get parameter types
     val paramTypesE = fn.params.traverse { param =>
-      param.typeAsc
+      param.typeSpec
         .map(getLlvmType(_, state))
         .getOrElse(Left(CodeGenError(s"Missing type for param '${param.name}' in fn '${fn.name}'")))
     }

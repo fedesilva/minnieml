@@ -43,7 +43,7 @@ object FileOperations:
       astFileName = s"$outputDir/${module.name}.ast"
       _ <- IO.blocking {
         val writer = new java.io.PrintWriter(new java.io.File(astFileName))
-        try writer.write(prettyPrintAst(module))
+        try writer.write(prettyPrintAst(module, 2, false, true))
         finally writer.close()
       }
       _ <- IO.println(s"AST written to $astFileName")

@@ -34,6 +34,5 @@ object CompilerApi:
       parsedModule <- ParserApi
         .parseModuleString(source, name)
         .leftMap(error => CompilerError.ParserErrors(List(error)))
-      // SemanticApi already returns CompilerEffect[Module]
       module <- SemanticApi.rewriteModule(parsedModule)
     yield module
