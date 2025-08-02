@@ -40,18 +40,20 @@ def compileTerm(
     case LiteralInt(_, value) =>
       CompileResult(value, state, true).asRight
 
+    // FIXME: Generalize, String is just a native record
+    // FIXME: Uses so many hardcoded types!
     case LiteralString(_, value) => {
       // Add the string to the constants (to be emitted at the module level later)
       val (newState, constName) = state.addStringConstant(value)
       val strLen                = value.length
 
       // Emit code for string length
-      val lengthReg       = newState.nextRegister
-      val lengthLine      = emitAdd(lengthReg, "i64", "0", strLen.toString)
-      val stateWithLength = newState.withRegister(lengthReg + 1).emit(lengthLine)
+      // val lengthReg       = newState.nextRegister
+      // val lengthLine      = emitAdd(lengthReg, "i64", "0", strLen.toString)
+      // val stateWithLength = newState.withRegister(lengthReg + 1).emit(lengthLine)
 
       // Emit GEP instruction to get a pointer to the string data
-      val ptrReg = stateWithLength.nextRegister
+      val ptrReg = newState.nextRegister
       val gepLine = emitGetElementPtr(
         ptrReg,
         s"[$strLen x i8]",
@@ -59,7 +61,7 @@ def compileTerm(
         s"@$constName",
         List(("i64", "0"), ("i64", "0"))
       )
-      val stateWithPtr = stateWithLength.withRegister(ptrReg + 1).emit(gepLine)
+      val stateWithPtr = newState.withRegister(ptrReg + 1).emit(gepLine)
 
       // Allocate and initialize a String struct
       val allocReg       = stateWithPtr.nextRegister
@@ -76,7 +78,7 @@ def compileTerm(
         List(("i32", "0"), ("i32", "0"))
       )
       val stateWithLenPtr   = stateWithAlloc.withRegister(lenPtrReg + 1).emit(lenPtrLine)
-      val lenStoreLine      = emitStore(s"%$lengthReg", "i64", s"%$lenPtrReg")
+      val lenStoreLine      = emitStore(s"$strLen", "i64", s"%$lenPtrReg")
       val stateWithLenStore = stateWithLenPtr.emit(lenStoreLine)
 
       // Store the data field
@@ -158,20 +160,21 @@ def compileTerm(
             (condRes.state, condOp)
           } else {
             // Literal or other - compare with 0 using actual type from condition
-            val compareReg = mergeBB
+            val compareReg   = mergeBB
             val compareState = condRes.state.withRegister(mergeBB + 1)
-            
+
             // Get the actual LLVM type from the condition's typeSpec
             val condType = cond.typeSpec match {
-              case Some(typeSpec) => 
+              case Some(typeSpec) =>
                 getLlvmType(typeSpec, compareState) match {
                   case Right(llvmType) => llvmType
                   case Left(_) => "i32" // Temporary fallback only if type resolution fails
                 }
               case None => "i32" // Temporary fallback for missing type information
             }
-            
-            val stateAfterCompare = compareState.emit(s"  %$compareReg = icmp ne $condType $condOp, 0")
+
+            val stateAfterCompare =
+              compareState.emit(s"  %$compareReg = icmp ne $condType $condOp, 0")
             (stateAfterCompare, s"%$compareReg")
           }
 
@@ -253,9 +256,9 @@ def compileExpr(
     case List(term) =>
       compileTerm(term, state, functionScope)
     case List(left, op: Ref, right) if op.resolvedAs.exists(_.isInstanceOf[BinOpDef]) =>
-      compileBinaryOp(op.name, left, right, state, functionScope)
+      compileBinaryOp(op, left, right, state, functionScope)
     case List(op: Ref, arg) if op.resolvedAs.exists(_.isInstanceOf[UnaryOpDef]) =>
-      compileUnaryOp(op.name, arg, state, functionScope)
+      compileUnaryOp(op, arg, state, functionScope)
     case _ =>
       CodeGenError(s"Invalid expression structure: ${expr.terms}").asLeft
   }
@@ -263,8 +266,8 @@ def compileExpr(
 
 /** Compiles a binary operation by evaluating both sides and then applying the operation.
   *
-  * @param op
-  *   the operator (e.g. "+", "-", "*", "/")
+  * @param opRef
+  *   the operator reference containing AST resolution information
   * @param left
   *   the left operand term
   * @param right
@@ -277,7 +280,7 @@ def compileExpr(
   *   Either a CodeGenError or a CompileResult with the updated state.
   */
 def compileBinaryOp(
-  op:            String,
+  opRef:         Ref,
   left:          Term,
   right:         Term,
   state:         CodeGenState,
@@ -286,14 +289,14 @@ def compileBinaryOp(
   for {
     leftCompileResult <- compileTerm(left, state, functionScope)
     rightCompileResult <- compileTerm(right, leftCompileResult.state, functionScope)
-    result <- applyBinaryOp(op, left, right, leftCompileResult, rightCompileResult)
+    result <- applyBinaryOp(opRef, left, right, leftCompileResult, rightCompileResult)
   } yield result
 }
 
 /** Compiles a unary operation by evaluating the argument and then applying the operation.
   *
-  * @param op
-  *   the operator (e.g. "-", "+", "!")
+  * @param opRef
+  *   the operator reference containing AST resolution information
   * @param arg
   *   the operand term
   * @param state
@@ -304,21 +307,25 @@ def compileBinaryOp(
   *   Either a CodeGenError or a CompileResult with the updated state.
   */
 def compileUnaryOp(
-  op:            String,
+  opRef:         Ref,
   arg:           Term,
   state:         CodeGenState,
   functionScope: Map[String, Int] = Map.empty
 ): Either[CodeGenError, CompileResult] = {
   for {
     argCompileResult <- compileTerm(arg, state, functionScope)
-    result <- applyUnaryOp(op, arg, argCompileResult)
+    result <- applyUnaryOp(opRef, arg, argCompileResult)
   } yield result
 }
 
 /** Applies a binary operation on compiled operands.
   *
-  * @param op
-  *   the operator (e.g. "+", "-", "*", "/")
+  * @param opRef
+  *   the operator reference containing AST resolution information
+  * @param left
+  *   the left operand term
+  * @param right
+  *   the right operand term
   * @param leftRes
   *   the compiled left operand
   * @param rightRes
@@ -327,139 +334,123 @@ def compileUnaryOp(
   *   Either a CodeGenError or a CompileResult with the updated state.
   */
 private def applyBinaryOp(
-  op:       String,
+  opRef:    Ref,
   left:     Term,
   right:    Term,
   leftRes:  CompileResult,
   rightRes: CompileResult
 ): Either[CodeGenError, CompileResult] = {
-  // For literal operands, perform constant folding
-  if leftRes.isLiteral && rightRes.isLiteral then {
-    op match {
-      case "+" =>
-        CompileResult(leftRes.register + rightRes.register, rightRes.state, true).asRight
-      case "-" =>
-        CompileResult(leftRes.register - rightRes.register, rightRes.state, true).asRight
-      case "*" =>
-        CompileResult(leftRes.register * rightRes.register, rightRes.state, true).asRight
-      case "/" =>
-        CompileResult(leftRes.register / rightRes.register, rightRes.state, true).asRight
-      case "^" => CodeGenError("Power operator not yet implemented").asLeft
-      case _ => CodeGenError(s"Unknown operator: $op").asLeft
-    }
-  } else {
-    // For non-literal operands, we need the native operator selector
-    // This is a temporary fallback - in the full implementation, we'll get the selector
-    // from the operator definition's @native[op=selector] annotation
-    val selector = op match {
-      case "+" => "add"
-      case "-" => "sub" 
-      case "*" => "mul"
-      case "/" => "sdiv"
-      case _ => return CodeGenError(s"Unknown operator: $op").asLeft
-    }
-    
-    // Look up the native operation descriptor
-    NativeOpRegistry.getBinaryOp(selector) match {
-      case Some(descriptor) =>
-        val resultReg = rightRes.state.nextRegister
-        val leftOp = if leftRes.isLiteral then leftRes.register.toString else s"%${leftRes.register}"
-        val rightOp = if rightRes.isLiteral then rightRes.register.toString else s"%${rightRes.register}"
-        
-        // Get the LLVM type from the left operand's typeSpec
-        left.typeSpec match {
-          case Some(typeSpec) =>
-            getLlvmType(typeSpec, rightRes.state) match {
-              case Right(llvmType) =>
-                // Substitute template variables with actual values
-                val instruction = descriptor.template
-                  .replace("%result", s"%$resultReg")
-                  .replace("%type", llvmType)
-                  .replace("%left", leftOp)
-                  .replace("%right", rightOp)
-                
-                val line = s"  $instruction"
-                CompileResult(
-                  resultReg,
-                  rightRes.state.withRegister(resultReg + 1).emit(line),
-                  false
-                ).asRight
-              case Left(err) => Left(err)
-            }
-          case None =>
-            Left(CodeGenError(s"Missing type information for binary operator operand - TypeChecker should have provided this"))
-        }
-      case None =>
-        Left(CodeGenError(s"Native operation '$selector' not found in registry"))
-    }
+  // Extract native operation from AST resolution
+  getNativeOperator(opRef.resolvedAs) match {
+    case Some(nativeOp) =>
+      // Look up the native operation descriptor
+      NativeOpRegistry.getBinaryOp(nativeOp) match {
+        case Some(descriptor) =>
+          val resultReg = rightRes.state.nextRegister
+          val leftOp =
+            if leftRes.isLiteral then leftRes.register.toString else s"%${leftRes.register}"
+          val rightOp =
+            if rightRes.isLiteral then rightRes.register.toString else s"%${rightRes.register}"
+
+          // Get the LLVM type from the left operand's typeSpec
+          left.typeSpec match {
+            case Some(typeSpec) =>
+              getLlvmType(typeSpec, rightRes.state) match {
+                case Right(llvmType) =>
+                  // Substitute template variables with actual values
+                  val instruction = descriptor.template
+                    .replace("%result", s"%$resultReg")
+                    .replace("%type", llvmType)
+                    .replace("%left", leftOp)
+                    .replace("%right", rightOp)
+
+                  val line = s"  $instruction"
+                  CompileResult(
+                    resultReg,
+                    rightRes.state.withRegister(resultReg + 1).emit(line),
+                    false
+                  ).asRight
+                case Left(err) => Left(err)
+              }
+            case None =>
+              Left(
+                CodeGenError(
+                  s"Missing type information for binary operator operand - TypeChecker should have provided this"
+                )
+              )
+          }
+        case None =>
+          Left(CodeGenError(s"Native operation '$nativeOp' not found in registry"))
+      }
+    case None =>
+      Left(
+        CodeGenError(
+          s"No native operation found for binary operator '${opRef.name}' - operator definition should have @native annotation"
+        )
+      )
   }
 }
 
 /** Applies a unary operation on a compiled operand.
   *
-  * @param op
-  *   the operator (e.g. "-", "+", "!")
+  * @param opRef
+  *   the operator reference containing AST resolution information
+  * @param arg
+  *   the operand term
   * @param argRes
   *   the compiled operand
   * @return
   *   Either a CodeGenError or a CompileResult with the updated state.
   */
 private def applyUnaryOp(
-  op:     String,
+  opRef:  Ref,
   arg:    Term,
   argRes: CompileResult
 ): Either[CodeGenError, CompileResult] = {
-  // For literal operands, perform constant folding
-  if argRes.isLiteral then {
-    op match {
-      case "-" => CompileResult(-argRes.register, argRes.state, true).asRight
-      case "+" => CompileResult(argRes.register, argRes.state, true).asRight
-      case "!" =>
-        CompileResult(if argRes.register == 0 then 1 else 0, argRes.state, true).asRight
-      case _ => CodeGenError(s"Unknown unary operator: $op").asLeft
-    }
-  } else {
-    // For non-literal operands, we need the native operator selector
-    // This is a temporary fallback - in the full implementation, we'll get the selector
-    // from the operator definition's @native[op=selector] annotation
-    val selector = op match {
-      case "-" => "neg"
-      case "!" => "not"
-      case "+" => return CompileResult(argRes.register, argRes.state, false).asRight // Unary + is identity
-      case _ => return CodeGenError(s"Unknown unary operator: $op").asLeft
-    }
-    
-    // Look up the native operation descriptor
-    NativeOpRegistry.getUnaryOp(selector) match {
-      case Some(descriptor) =>
-        val resultReg = argRes.state.nextRegister
-        val argOp = if argRes.isLiteral then argRes.register.toString else s"%${argRes.register}"
-        
-        // Get the LLVM type from the operand's typeSpec
-        arg.typeSpec match {
-          case Some(typeSpec) =>
-            getLlvmType(typeSpec, argRes.state) match {
-              case Right(llvmType) =>
-                // Substitute template variables with actual values
-                val instruction = descriptor.template
-                  .replace("%result", s"%$resultReg")
-                  .replace("%type", llvmType)
-                  .replace("%operand", argOp)
-                
-                val line = s"  $instruction"
-                CompileResult(
-                  resultReg,
-                  argRes.state.withRegister(resultReg + 1).emit(line),
-                  false
-                ).asRight
-              case Left(err) => Left(err)
-            }
-          case None =>
-            Left(CodeGenError(s"Missing type information for unary operator operand - TypeChecker should have provided this"))
-        }
-      case None =>
-        Left(CodeGenError(s"Native operation '$selector' not found in registry"))
-    }
+  // Extract native operation from AST resolution
+  getNativeOperator(opRef.resolvedAs) match {
+    case Some(nativeOp) =>
+      // Look up the native operation descriptor
+      NativeOpRegistry.getUnaryOp(nativeOp) match {
+        case Some(descriptor) =>
+          val resultReg = argRes.state.nextRegister
+          val argOp = if argRes.isLiteral then argRes.register.toString else s"%${argRes.register}"
+
+          // Get the LLVM type from the operand's typeSpec
+          arg.typeSpec match {
+            case Some(typeSpec) =>
+              getLlvmType(typeSpec, argRes.state) match {
+                case Right(llvmType) =>
+                  // Substitute template variables with actual values
+                  val instruction = descriptor.template
+                    .replace("%result", s"%$resultReg")
+                    .replace("%type", llvmType)
+                    .replace("%operand", argOp)
+
+                  val line = s"  $instruction"
+                  CompileResult(
+                    resultReg,
+                    argRes.state.withRegister(resultReg + 1).emit(line),
+                    false
+                  ).asRight
+                case Left(err) => Left(err)
+              }
+            case None =>
+              Left(
+                CodeGenError(
+                  s"Missing type information for unary operator operand - TypeChecker should have provided this"
+                )
+              )
+          }
+        case None =>
+          Left(CodeGenError(s"Native operation '$nativeOp' not found in registry"))
+      }
+    case None =>
+      Left(
+        CodeGenError(
+          s"No native operation found for unary operator '${opRef.name}' - operator definition should have @native annotation"
+        )
+      )
   }
 }
 
@@ -482,86 +473,6 @@ private def getNativeOperator(resolvedAs: Option[Resolvable]): Option[String] = 
       }
     case _ => None
   }
-}
-
-/** Helper function to generate native LLVM instructions for binary operations.
-  *
-  * @param nativeOp
-  *   the native operation name ("add", "sub", "mul", "sdiv", "and", "or", "icmp_*", etc.)
-  * @param leftOp
-  *   the left operand
-  * @param rightOp
-  *   the right operand
-  * @param operandType
-  *   the LLVM type of the operands
-  * @param resultType
-  *   the LLVM type of the result
-  * @param resultReg
-  *   the result register
-  * @param state
-  *   the current state
-  * @return
-  *   Either an error or the updated state with the instruction
-  */
-private def generateNativeBinaryInstruction(
-  nativeOp:     String,
-  leftOp:       String,
-  rightOp:      String,
-  operandType:  String,
-  resultType:   String,
-  resultReg:    Int,
-  state:        CodeGenState
-): Either[CodeGenError, CodeGenState] = {
-  // Handle icmp operations specially (they have icmp_ prefix but need to be converted to "icmp <op>")
-  val line = if nativeOp.startsWith("icmp_") then {
-    val cmpOp = nativeOp.stripPrefix("icmp_")
-    s"  %$resultReg = icmp $cmpOp $operandType $leftOp, $rightOp"
-  } else {
-    s"  %$resultReg = $nativeOp $operandType $leftOp, $rightOp"
-  }
-  
-  Right(state.withRegister(resultReg + 1).emit(line))
-}
-
-/** Helper function to generate native LLVM instructions for unary operations.
-  *
-  * @param nativeOp
-  *   the native operation name ("not", etc.)
-  * @param operand
-  *   the operand
-  * @param operandType
-  *   the LLVM type of the operand
-  * @param resultType
-  *   the LLVM type of the result
-  * @param resultReg
-  *   the result register
-  * @param state
-  *   the current state
-  * @return
-  *   Either an error or the updated state with the instruction
-  */
-private def generateNativeUnaryInstruction(
-  nativeOp:     String,
-  operand:      String,
-  operandType:  String,
-  resultType:   String,
-  resultReg:    Int,
-  state:        CodeGenState
-): Either[CodeGenError, CodeGenState] = {
-  // Handle special unary operations
-  val line = nativeOp match {
-    case "not" =>
-      // Boolean NOT implemented as XOR with 1
-      s"  %$resultReg = xor $operandType 1, $operand"
-    case "neg" =>
-      // Negation as subtraction from 0
-      s"  %$resultReg = sub $operandType 0, $operand"
-    case _ =>
-      // Direct operation (shouldn't happen with current operators)
-      s"  %$resultReg = $nativeOp $operandType $operand"
-  }
-  
-  Right(state.withRegister(resultReg + 1).emit(line))
 }
 
 /** Compiles a function application.
@@ -605,71 +516,93 @@ def compileApp(
       // Handle native operators with special LLVM instructions
       allArgs match {
         case List(leftArg, rightArg) =>
-          // Binary native operator
+          // Binary native operator - use same template-based approach as applyBinaryOp
           for {
             leftRes <- compileExpr(leftArg, state, functionScope)
             rightRes <- compileExpr(rightArg, leftRes.state, functionScope)
+
+            // Look up the native operation descriptor
+            descriptor <- NativeOpRegistry.getBinaryOp(nativeOp) match {
+              case Some(desc) => Right(desc)
+              case None => Left(CodeGenError(s"Native operation '$nativeOp' not found in registry"))
+            }
+
+            resultReg = rightRes.state.nextRegister
             leftOp =
               if leftRes.isLiteral then leftRes.register.toString else s"%${leftRes.register}"
             rightOp =
               if rightRes.isLiteral then rightRes.register.toString else s"%${rightRes.register}"
-            
-            // Get operand type from the left argument (both should have same type)
-            operandType <- leftArg.typeSpec match {
-              case Some(typeSpec) => 
-                getLlvmType(typeSpec, rightRes.state) match {
-                  case Right(llvmType) => Right(llvmType)
-                  case Left(_) => Right("i64") // Fallback to i64 if type resolution fails
-                }
-              case None => Right("i64") // Default to i64 for integer operations
+
+            // Get the LLVM type from the left operand's typeSpec
+            llvmType <- leftArg.typeSpec match {
+              case Some(typeSpec) =>
+                getLlvmType(typeSpec, rightRes.state)
+              case None =>
+                Left(
+                  CodeGenError(
+                    s"Missing type information for binary operator operand - TypeChecker should have provided this"
+                  )
+                )
             }
-            
-            // Determine result type - comparison operations return i1, others return same as operands
-            resultType = if nativeOp.startsWith("icmp_") then "i1" else operandType
-            
-            resultReg = rightRes.state.nextRegister
-            finalState <- generateNativeBinaryInstruction(
-              nativeOp,
-              leftOp,
-              rightOp,
-              operandType,
-              resultType,
-              resultReg,
-              rightRes.state
-            )
-          } yield CompileResult(resultReg, finalState, false, if resultType == "i1" then "Bool" else "Int")
+
+            // Substitute template variables with actual values
+            instruction = descriptor.template
+              .replace("%result", s"%$resultReg")
+              .replace("%type", llvmType)
+              .replace("%left", leftOp)
+              .replace("%right", rightOp)
+
+            line       = s"  $instruction"
+            finalState = rightRes.state.withRegister(resultReg + 1).emit(line)
+          } yield CompileResult(
+            resultReg,
+            finalState,
+            false,
+            if nativeOp.startsWith("icmp_") then "Bool" else "Int"
+          )
 
         case List(operandArg) =>
-          // Unary native operator
+          // Unary native operator - use same template-based approach as applyUnaryOp
           for {
             operandRes <- compileExpr(operandArg, state, functionScope)
+
+            // Look up the native operation descriptor
+            descriptor <- NativeOpRegistry.getUnaryOp(nativeOp) match {
+              case Some(desc) => Right(desc)
+              case None => Left(CodeGenError(s"Native operation '$nativeOp' not found in registry"))
+            }
+
+            resultReg = operandRes.state.nextRegister
             operandOp =
               if operandRes.isLiteral then operandRes.register.toString
               else s"%${operandRes.register}"
-            
-            // Get operand type from the argument
-            operandType <- operandArg.typeSpec match {
-              case Some(typeSpec) => 
-                getLlvmType(typeSpec, operandRes.state) match {
-                  case Right(llvmType) => Right(llvmType)
-                  case Left(_) => Right("i1") // Fallback to i1 if type resolution fails
-                }
-              case None => Right("i1") // Default to i1 for boolean operations
+
+            // Get the LLVM type from the operand's typeSpec
+            llvmType <- operandArg.typeSpec match {
+              case Some(typeSpec) =>
+                getLlvmType(typeSpec, operandRes.state)
+              case None =>
+                Left(
+                  CodeGenError(
+                    s"Missing type information for unary operator operand - TypeChecker should have provided this"
+                  )
+                )
             }
-            
-            // For now, assume unary operations return same type as operand
-            resultType = operandType
-            
-            resultReg = operandRes.state.nextRegister
-            finalState <- generateNativeUnaryInstruction(
-              nativeOp,
-              operandOp,
-              operandType,
-              resultType,
-              resultReg,
-              operandRes.state
-            )
-          } yield CompileResult(resultReg, finalState, false, if resultType == "i1" then "Bool" else "Int")
+
+            // Substitute template variables with actual values
+            instruction = descriptor.template
+              .replace("%result", s"%$resultReg")
+              .replace("%type", llvmType)
+              .replace("%operand", operandOp)
+
+            line       = s"  $instruction"
+            finalState = operandRes.state.withRegister(resultReg + 1).emit(line)
+          } yield CompileResult(
+            resultReg,
+            finalState,
+            false,
+            if llvmType == "i1" then "Bool" else "Int"
+          )
 
         case _ =>
           Left(

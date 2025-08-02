@@ -10,6 +10,10 @@ def emitTypeDefinition(typeName: String, fields: List[String]): String =
 def emitPointerTypeDefinition(typeName: String, pointeeType: String): String =
   s"%$typeName = type $pointeeType*"
 
+/** Helper for generating syntactically correct LLVM IR constant assignment */
+def emitConstant(result: Int, typ: String, value: String): String =
+  s"  %$result = $typ $value"
+
 /** Helper for generating syntactically correct LLVM IR add instruction */
 def emitAdd(result: Int, typ: String, left: String, right: String): String =
   s"  %$result = add $typ $left, $right"
@@ -294,4 +298,6 @@ def getLlvmType(
       Left(CodeGenError("Unexpected inline native struct"))
     case other =>
       // No LLVM type mapping for this TypeSpec
-      Left(CodeGenError(s"No LLVM type mapping for TypeSpec: ${other.getClass.getSimpleName} - $other"))
+      Left(
+        CodeGenError(s"No LLVM type mapping for TypeSpec: ${other.getClass.getSimpleName} - $other")
+      )

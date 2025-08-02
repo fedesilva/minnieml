@@ -11,31 +11,32 @@ object TypeResolver:
   def rewriteModule(state: SemanticPhaseState): SemanticPhaseState =
     // Phase 1: Build an initial type map from all TypeDef and TypeAlias members
     val initialTypeMap = buildTypeMap(state.module.members)
-    
+
     // Phase 2: Resolve the type definitions themselves using the initial map
     // This ensures that TypeAlias objects in the map have resolved typeRefs
     val resolvedTypeMap = resolveTypeMap(initialTypeMap)
-    
+
     // Phase 3: Resolve all members using the resolved type map
     val (errors, members) =
       state.module.members.map { member =>
         resolveMemberWithMap(member, resolvedTypeMap) match
           case Left(errs) =>
             // Important: Use the rewritten member with InvalidType nodes, not the original
-            val rewrittenMember = rewriteMemberWithInvalidTypes(member, state.module.copy(members = Nil))
+            val rewrittenMember =
+              rewriteMemberWithInvalidTypes(member, state.module.copy(members = Nil))
             (errs, rewrittenMember)
           case Right(updated) => (Nil, updated)
       }.unzip
-    
+
     state.addErrors(errors.flatten).withModule(state.module.copy(members = members))
-  
+
   /** Build a map of all type names to their definitions */
   private def buildTypeMap(members: List[Member]): Map[String, ResolvableType] =
     members.collect {
       case td: TypeDef => td.name -> td
       case ta: TypeAlias => ta.name -> ta
     }.toMap
-  
+
   /** Resolve type references within the type map itself */
   private def resolveTypeMap(
     typeMap: Map[String, ResolvableType]
@@ -48,10 +49,11 @@ object TypeResolver:
             resolveTypeSpecWithMap(spec, td, typeMap).toOption
           }
           name -> td.copy(typeSpec = resolvedTypeSpec)
-          
+
         case ta: TypeAlias =>
           // Resolve the TypeAlias's typeRef and compute its typeSpec
-          val resolvedTypeRef = resolveTypeSpecWithMap(ta.typeRef, ta, typeMap).toOption.getOrElse(ta.typeRef)
+          val resolvedTypeRef =
+            resolveTypeSpecWithMap(ta.typeRef, ta, typeMap).toOption.getOrElse(ta.typeRef)
           val computedTypeSpec = computeTypeSpecForAliasWithMap(resolvedTypeRef, typeMap)
           name -> ta.copy(typeRef = resolvedTypeRef, typeSpec = computedTypeSpec)
       }
@@ -75,9 +77,12 @@ object TypeResolver:
                   case innerRef: TypeRef => computeTypeSpecForAlias(innerRef, module)
                   case _ => None
       case _ => None
-  
+
   /** Compute the typeSpec for a TypeAlias using pre-built type map */
-  private def computeTypeSpecForAliasWithMap(typeRef: TypeSpec, typeMap: Map[String, ResolvableType]): Option[TypeSpec] =
+  private def computeTypeSpecForAliasWithMap(
+    typeRef: TypeSpec,
+    typeMap: Map[String, ResolvableType]
+  ): Option[TypeSpec] =
     typeRef match
       case tr: TypeRef if tr.resolvedAs.isDefined =>
         tr.resolvedAs.get match
@@ -261,7 +266,10 @@ object TypeResolver:
       case _ => term
 
   /** Resolve type references in a module member using pre-built type map. */
-  private def resolveMemberWithMap(member: Member, typeMap: Map[String, ResolvableType]): Either[List[SemanticError], Member] =
+  private def resolveMemberWithMap(
+    member:  Member,
+    typeMap: Map[String, ResolvableType]
+  ): Either[List[SemanticError], Member] =
     member match
       case bnd: Bnd =>
         for
@@ -317,11 +325,10 @@ object TypeResolver:
       case _ =>
         member.asRight[List[SemanticError]]
 
-  
   /** Resolve type references in a function parameter using pre-built type map. */
   private def resolveParamWithMap(
-    param:  FnParam,
-    member: Member,
+    param:   FnParam,
+    member:  Member,
     typeMap: Map[String, ResolvableType]
   ): Either[List[SemanticError], FnParam] =
     param.typeAsc
@@ -423,19 +430,19 @@ object TypeResolver:
 
   /** Resolve type references in an expression using the type map. */
   private def resolveExpr(
-    expr:   Expr,
-    member: Member,
+    expr:    Expr,
+    member:  Member,
     typeMap: Map[String, ResolvableType]
   ): Either[List[SemanticError], Expr] =
     for
       updatedTerms <- expr.terms.traverse(resolveTerm(_, member, typeMap))
       updatedTypeAsc <- expr.typeAsc.traverse(resolveTypeSpecWithMap(_, member, typeMap))
     yield expr.copy(terms = updatedTerms, typeAsc = updatedTypeAsc)
-  
+
   /** Resolve type references in a term using the type map. */
   private def resolveTerm(
-    term:   Term,
-    member: Member,
+    term:    Term,
+    member:  Member,
     typeMap: Map[String, ResolvableType]
   ): Either[List[SemanticError], Term] =
     term match
