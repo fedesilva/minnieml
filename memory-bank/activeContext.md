@@ -45,6 +45,17 @@ Ability to compile simple programs:
 
 ## Next Steps
 
+## Infer return types
+see `specs/infer-return-type.md`
+
+## NativeOpDescriptor Validation
+
+ * We have the new `NativeOpDescriptor` machinery in place.
+ * We now need a semantic phase that walks the ast and validates:
+  * that op selectors are known
+  * that only operators use the op=selector field
+
+
 ### Codegen Update (Ticket #156) - NEARING COMPLETION
 The implementation plan is detailed in `memory-bank/specs/codegen-update.md`. Progress:
 
