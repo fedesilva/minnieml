@@ -148,24 +148,25 @@ object LlvmOrchestrator:
     targetDir:          String,
     mode:               CompilationMode,
     verbose:            Boolean
-  ): IO[Either[LlvmCompilationError, Int]] = targetTripleResult match
-    case Left(error) =>
-      IO(logError(s"Error detecting target triple: $error")) *>
-        IO.pure(error.asLeft)
-    case Right(targetTriple) =>
-      logPhase(s"Using target triple: $targetTriple")
-      logInfo(s"Compilation mode: $mode")
-      logPhase(s"Starting LLVM compilation pipeline for $programName")
-      runCompilationPipeline(
-        inputFile,
-        programName,
-        targetTriple,
-        workingDirectory,
-        outputDir,
-        targetDir,
-        mode,
-        verbose
-      )
+  ): IO[Either[LlvmCompilationError, Int]] =
+    targetTripleResult match
+      case Left(error) =>
+        IO(logError(s"Error detecting target triple: $error")) *>
+          IO.pure(error.asLeft)
+      case Right(targetTriple) =>
+        logPhase(s"Starting LLVM compilation pipeline for $programName")
+        logInfo(s"Compilation mode: $mode")
+        logInfo(s"Using target triple: $targetTriple")
+        runCompilationPipeline(
+          inputFile,
+          programName,
+          targetTriple,
+          workingDirectory,
+          outputDir,
+          targetDir,
+          mode,
+          verbose
+        )
 
   private def runCompilationPipeline(
     inputFile:        File,
