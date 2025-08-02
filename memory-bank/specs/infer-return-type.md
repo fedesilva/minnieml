@@ -37,20 +37,6 @@ This same mechanism should extend to functions and operators.
 
 ### Phase 1: Parser Changes
 
-Make return type annotations optional for functions and operators by modifying `members.scala`:
-
-**Current parser patterns:**
-```scala
-// fnDefP - currently requires return type  
-~ typeAscP(source)  // Returns Option[TypeSpec]
-
-// binOpDefP - currently requires return type
-~ typeAscP(source)  // Returns Option[TypeSpec]  
-
-// unaryOpP - currently requires return type
-~ typeAscP(source)  // Returns Option[TypeSpec]
-```
-
 **No changes needed** - the parser already handles optional type ascriptions through `typeAscP(source)` returning `Option[TypeSpec]`. The issue is that the TypeChecker currently rejects `None` values.
 
 ### Phase 2: TypeChecker Changes
@@ -77,6 +63,8 @@ case fnDef: FnDef =>
       // No return type - infer from body expression (like let bindings)
       inferReturnTypeFromBody(fnDef)
 ```
+
+Do this for FnDef and OpDef (both binary and unary)
 
 **Implementation approach:**
 
