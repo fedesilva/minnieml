@@ -13,6 +13,18 @@ Ability to compile simple programs:
 
 ## Recent Changes
 
+* **(2025-08-01)** **COMPLETED:** Fixed TypeResolver bug - TypeAlias resolution with nested TypeRefs
+  - **Issue:** TypeRef nodes inside TypeAlias objects were not being resolved, causing "Unresolved type reference: Int64" errors
+  - **Root Cause:** When TypeRefs pointed to TypeAlias objects, they pointed to the original TypeAlias that still contained unresolved internal TypeRefs
+  - **Solution:** Implemented three-phase resolution strategy:
+    1. Build initial type map from all TypeDef/TypeAlias members
+    2. Resolve type definitions themselves to ensure TypeAlias objects have resolved internal TypeRefs
+    3. Resolve all members using the fully resolved type map
+  - **Implementation:** Modified `rewriteModule` to use `resolveTypeMap`, added missing TypeSpec cases (TypeSeq, TypeScheme, InvalidType)
+  - **Result:** All TypeRef nodes throughout the AST are now properly resolved
+  - **Verification:** `mml/samples/test_print_add.mml` compiles successfully and outputs "8"
+  - **Testing:** All 121 tests pass with no regressions
+
 * **(2025-07-31)** **COMPLETED:** Fixed native boolean operator code generation (Codegen Update #156)
   - **Issue:** Boolean operators (`and`, `or`, `not`) generated function calls instead of native LLVM instructions
   - **Root Cause:** `compileApp` treated operator App chains as regular function calls, generating `call i1 @and(...)` instead of native `and i1` instructions
@@ -42,7 +54,7 @@ Compile
 * √ `mml/samples/print_string.mml` 
 * √ `mml/samples/print_string_concat.mml`
 * `mml/samples/test_to_string.mml`
-* `mml/samples/test_print_add.mml`
+* √ `mml/samples/test_print_add.mml`
 
 *   **Block 1: AST & Parser Changes:** ✓ COMPLETED - AST and parser support new `@native:` syntax
 *   **Block 2: Semantic Analysis Changes:** ✓ COMPLETED - TypeResolver now handles native struct definitions  
@@ -60,12 +72,6 @@ Compile
 
 ### High priority
 
-
-
-**Type Resolver Bug**: Some type aliases are not resolves
-* Blocks the issue after this one.
-see `memory-bank/bugs/type-alias-bug.md`
-
 * **Hardcoded Types in ExpressionCompiler.scala** 
   - **Problem:** Multiple functions in ExpressionCompiler.scala still contain hardcoded LLVM types ("i32", "i64", "i1") instead of extracting types from AST, despite the Int64 type having proper native i64 representation in semantic package  
   - **Affected Functions:** 
@@ -81,38 +87,15 @@ see `memory-bank/bugs/type-alias-bug.md`
       - used by codegen to select string to generate
       - removes the need for emitAdd/emit*/**.
 
-  - **Consequence:** Causes "Unresolved type reference: Int64" errors when compiling `test_print_add.mml`                      
-  - **Required Fix Draft Plan:** 
-    1. Modify `applyBinaryOp`/`applyUnaryOp` signatures to accept original AST terms (left/right/arg)
-    2. Extract LLVM types using `getLlvmType(term.typeSpec)` for each operand
-    3. Remove ALL hardcoded type strings ("i32", "i64", "i1") from emit calls
-    4. Remove hardcoded fallbacks - return proper errors if type resolution fails
-    5. Fix conditional compilation to extract actual condition type from AST
-  - **Status:** IMPERATIVE TO FIX - This is blocking core compilation functionality
-
-
-  We attempted to fix the "Unresolved type reference: Int64" error by:
-
-  1. Created NativeOpDescriptor system - Built a registry-based approach in /modules/mmlc-lib/src/main/scala/mml/mmlclib/codegen/NativeOpDescriptor.scala with:
-    - NativeOpDescriptor case class containing selector and LLVM instruction template
-    - NativeOpRegistry with lookup tables for binary/unary operations (add, sub, mul, etc.)
-    - Template-based code generation using placeholders (%result, %type, %left, %right)
-  2. Modified applyBinaryOp/applyUnaryOp - Updated signatures to accept original AST terms and replaced hardcoded emitAdd(resultReg, "i32", leftOp, rightOp) calls with:
-    - Registry lookup: NativeOpRegistry.getBinaryOp(selector)
-    - Template substitution using actual types from getLlvmType(term.typeSpec)
-    - Removed all hardcoded "i32" strings
-  3. Enhanced error messages - Added debugging to getLlvmType to trace the exact failure point
-  4. Identified root cause - The error "Unresolved type reference: Int64 (TypeRef with no resolvedAs)" occurs when getLlvmType() encounters TypeRef("Int64", resolvedAs=None)
-
-  Key Discovery: The NativeOpDescriptor system works correctly, but the hardcoded types issue is actually a symptom of a deeper TypeResolver bug. While user-defined TypeAlias nodes and top-level injected TypeAlias nodes are properly resolved, embedded TypeAlias instances inside operator
-  parameter types remain unresolved (typeRef.resolvedAs = None).
-
-  Evidence: Comparison of AST output shows:
-  - ✅ User TypeAlias XInt → Int64: Both typeRef and typeSpec have resolvedAs = Some(TypeDef)
-  - ✅ Top-level injected TypeAlias Int → Int64: Both fields properly resolved
-  - ❌ Embedded TypeAlias in operator parameters: typeRef.resolvedAs = None
-
-  Conclusion: The TypeResolver is not recursively updating all instances of TypeAlias nodes throughout the AST, leaving some references unresolved. The NativeOpDescriptor system is ready to use once the TypeResolver bug is fixed.
+  - **Current State:** 
+    - NativeOpDescriptor system is fully implemented and ready to use
+    - `applyBinaryOp`/`applyUnaryOp` have been updated to use the NativeOpDescriptor system
+    - The blocking TypeResolver bug has been FIXED (see Recent Changes 2025-08-01)
+  - **Remaining Work:**
+    1. Remove remaining hardcoded fallbacks in conditional compilation (lines ~169-171)
+    2. Update string literal handling to use proper type resolution instead of hardcoded "i64"
+    3. Complete transition to fully type-driven code generation
+  - **Status:** Ready to complete now that TypeResolver bug is fixed
   
 
 * **TypeChecker Bug - Missing Type Validation**: TypeChecker incorrectly allows `println (5 + 3)` where `println` expects `String` but receives `Int`. This should fail during semantic analysis with a proper type mismatch error, but currently passes with "No errors". The TypeChecker is not properly validating function argument types against parameter types.

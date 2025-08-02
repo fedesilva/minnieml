@@ -258,7 +258,7 @@ def getLlvmType(
 ): Either[CodeGenError, String] =
 
   typeSpec match
-    case TypeRef(_, name, resolvedOpt) =>
+    case typeRef @ TypeRef(_, name, resolvedOpt) =>
       resolvedOpt match
         case Some(resolved) =>
           resolved match

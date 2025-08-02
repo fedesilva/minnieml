@@ -9,20 +9,53 @@ object TypeResolver:
 
   /** Resolve all type references in a module, accumulating errors in the state. */
   def rewriteModule(state: SemanticPhaseState): SemanticPhaseState =
+    // Phase 1: Build an initial type map from all TypeDef and TypeAlias members
+    val initialTypeMap = buildTypeMap(state.module.members)
+    
+    // Phase 2: Resolve the type definitions themselves using the initial map
+    // This ensures that TypeAlias objects in the map have resolved typeRefs
+    val resolvedTypeMap = resolveTypeMap(initialTypeMap)
+    
+    // Phase 3: Resolve all members using the resolved type map
     val (errors, members) =
-      state.module.members.foldLeft((List.empty[SemanticError], List.empty[Member])) {
-        case ((accErrors, accMembers), member) =>
-          // Create a temporary module with accumulated members for lookups
-          val currentModule =
-            state.module.copy(members = accMembers ++ state.module.members.dropWhile(_ != member))
-          resolveMember(member, currentModule) match
-            case Left(errs) =>
-              // Important: Use the rewritten member with InvalidType nodes, not the original
-              val rewrittenMember = rewriteMemberWithInvalidTypes(member, currentModule)
-              (accErrors ++ errs, accMembers :+ rewrittenMember)
-            case Right(updated) => (accErrors, accMembers :+ updated)
+      state.module.members.map { member =>
+        resolveMemberWithMap(member, resolvedTypeMap) match
+          case Left(errs) =>
+            // Important: Use the rewritten member with InvalidType nodes, not the original
+            val rewrittenMember = rewriteMemberWithInvalidTypes(member, state.module.copy(members = Nil))
+            (errs, rewrittenMember)
+          case Right(updated) => (Nil, updated)
+      }.unzip
+    
+    state.addErrors(errors.flatten).withModule(state.module.copy(members = members))
+  
+  /** Build a map of all type names to their definitions */
+  private def buildTypeMap(members: List[Member]): Map[String, ResolvableType] =
+    members.collect {
+      case td: TypeDef => td.name -> td
+      case ta: TypeAlias => ta.name -> ta
+    }.toMap
+  
+  /** Resolve type references within the type map itself */
+  private def resolveTypeMap(
+    typeMap: Map[String, ResolvableType]
+  ): Map[String, ResolvableType] =
+    typeMap.map { case (name, resolvable) =>
+      resolvable match {
+        case td: TypeDef =>
+          // Resolve TypeDef's typeSpec if it contains TypeRefs (e.g., in NativeStruct fields)
+          val resolvedTypeSpec = td.typeSpec.flatMap { spec =>
+            resolveTypeSpecWithMap(spec, td, typeMap).toOption
+          }
+          name -> td.copy(typeSpec = resolvedTypeSpec)
+          
+        case ta: TypeAlias =>
+          // Resolve the TypeAlias's typeRef and compute its typeSpec
+          val resolvedTypeRef = resolveTypeSpecWithMap(ta.typeRef, ta, typeMap).toOption.getOrElse(ta.typeRef)
+          val computedTypeSpec = computeTypeSpecForAliasWithMap(resolvedTypeRef, typeMap)
+          name -> ta.copy(typeRef = resolvedTypeRef, typeSpec = computedTypeSpec)
       }
-    state.addErrors(errors).withModule(state.module.copy(members = members))
+    }
 
   /** Compute the typeSpec for a TypeAlias by following the resolved typeRef chain */
   private def computeTypeSpecForAlias(typeRef: TypeSpec, module: Module): Option[TypeSpec] =
@@ -40,6 +73,25 @@ object TypeResolver:
                 // If the alias doesn't have a typeSpec yet, try to follow its typeRef
                 ta.typeRef match
                   case innerRef: TypeRef => computeTypeSpecForAlias(innerRef, module)
+                  case _ => None
+      case _ => None
+  
+  /** Compute the typeSpec for a TypeAlias using pre-built type map */
+  private def computeTypeSpecForAliasWithMap(typeRef: TypeSpec, typeMap: Map[String, ResolvableType]): Option[TypeSpec] =
+    typeRef match
+      case tr: TypeRef if tr.resolvedAs.isDefined =>
+        tr.resolvedAs.get match
+          case td: TypeDef =>
+            // Return TypeRef to the TypeDef, not its native typeSpec
+            // This ensures type aliases resolve to MML types rather than native representations
+            Some(TypeRef(tr.span, td.name, Some(td)))
+          case ta: TypeAlias =>
+            ta.typeSpec match
+              case Some(spec) => Some(spec)
+              case None =>
+                // If the alias doesn't have a typeSpec yet, try to follow its typeRef
+                ta.typeRef match
+                  case innerRef: TypeRef => computeTypeSpecForAliasWithMap(innerRef, typeMap)
                   case _ => None
       case _ => None
 
@@ -208,30 +260,30 @@ object TypeResolver:
         }
       case _ => term
 
-  /** Resolve type references in a module member. */
-  private def resolveMember(member: Member, module: Module): Either[List[SemanticError], Member] =
+  /** Resolve type references in a module member using pre-built type map. */
+  private def resolveMemberWithMap(member: Member, typeMap: Map[String, ResolvableType]): Either[List[SemanticError], Member] =
     member match
       case bnd: Bnd =>
         for
-          updatedValue <- resolveExpr(bnd.value, member, module)
-          updatedTypeAsc <- bnd.typeAsc.traverse(resolveTypeSpec(_, member, module))
+          updatedValue <- resolveExpr(bnd.value, member, typeMap)
+          updatedTypeAsc <- bnd.typeAsc.traverse(resolveTypeSpecWithMap(_, member, typeMap))
         yield bnd.copy(value = updatedValue, typeAsc = updatedTypeAsc)
 
       case fnDef: FnDef =>
         for
-          updatedParams <- fnDef.params.traverse(resolveParam(_, member, module))
-          updatedBody <- resolveExpr(fnDef.body, member, module)
-          updatedTypeAsc <- fnDef.typeAsc.traverse(resolveTypeSpec(_, member, module))
+          updatedParams <- fnDef.params.traverse(resolveParamWithMap(_, member, typeMap))
+          updatedBody <- resolveExpr(fnDef.body, member, typeMap)
+          updatedTypeAsc <- fnDef.typeAsc.traverse(resolveTypeSpecWithMap(_, member, typeMap))
         yield fnDef.copy(params = updatedParams, body = updatedBody, typeAsc = updatedTypeAsc)
 
       case opDef: OpDef =>
         opDef match
           case bin: BinOpDef =>
             for
-              updatedParam1 <- resolveParam(bin.param1, member, module)
-              updatedParam2 <- resolveParam(bin.param2, member, module)
-              updatedBody <- resolveExpr(bin.body, member, module)
-              updatedTypeAsc <- bin.typeAsc.traverse(resolveTypeSpec(_, member, module))
+              updatedParam1 <- resolveParamWithMap(bin.param1, member, typeMap)
+              updatedParam2 <- resolveParamWithMap(bin.param2, member, typeMap)
+              updatedBody <- resolveExpr(bin.body, member, typeMap)
+              updatedTypeAsc <- bin.typeAsc.traverse(resolveTypeSpecWithMap(_, member, typeMap))
             yield bin.copy(
               param1  = updatedParam1,
               param2  = updatedParam2,
@@ -240,9 +292,9 @@ object TypeResolver:
             )
           case unary: UnaryOpDef =>
             for
-              updatedParam <- resolveParam(unary.param, member, module)
-              updatedBody <- resolveExpr(unary.body, member, module)
-              updatedTypeAsc <- unary.typeAsc.traverse(resolveTypeSpec(_, member, module))
+              updatedParam <- resolveParamWithMap(unary.param, member, typeMap)
+              updatedBody <- resolveExpr(unary.body, member, typeMap)
+              updatedTypeAsc <- unary.typeAsc.traverse(resolveTypeSpecWithMap(_, member, typeMap))
             yield unary.copy(
               param   = updatedParam,
               body    = updatedBody,
@@ -250,29 +302,30 @@ object TypeResolver:
             )
 
       case alias: TypeAlias =>
-        resolveTypeSpec(alias.typeRef, member, module).map { updatedTypeRef =>
+        resolveTypeSpecWithMap(alias.typeRef, member, typeMap).map { updatedTypeRef =>
           // Compute the typeSpec by following the resolved typeRef chain
-          val computedTypeSpec = computeTypeSpecForAlias(updatedTypeRef, module)
+          val computedTypeSpec = computeTypeSpecForAliasWithMap(updatedTypeRef, typeMap)
           alias.copy(typeRef = updatedTypeRef, typeSpec = computedTypeSpec)
         }
 
       case typeDef: TypeDef =>
         // Resolve type references within the TypeDef's typeSpec (e.g., for NativeStruct fields)
         typeDef.typeSpec
-          .traverse(resolveTypeSpec(_, member, module))
+          .traverse(resolveTypeSpecWithMap(_, member, typeMap))
           .map(updatedTypeSpec => typeDef.copy(typeSpec = updatedTypeSpec))
 
       case _ =>
         member.asRight[List[SemanticError]]
 
-  /** Resolve type references in a function parameter. */
-  private def resolveParam(
+  
+  /** Resolve type references in a function parameter using pre-built type map. */
+  private def resolveParamWithMap(
     param:  FnParam,
     member: Member,
-    module: Module
+    typeMap: Map[String, ResolvableType]
   ): Either[List[SemanticError], FnParam] =
     param.typeAsc
-      .traverse(resolveTypeSpec(_, member, module))
+      .traverse(resolveTypeSpecWithMap(_, member, typeMap))
       .map(updatedTypeAsc => param.copy(typeAsc = updatedTypeAsc))
 
   /** Returns all type declarations (TypeDef, TypeAlias) whose name matches the type reference.
@@ -283,132 +336,135 @@ object TypeResolver:
       case typeAlias: TypeAlias if typeAlias.name == typeRef.name => typeAlias
     }
 
-  /** Resolve type references in a type specification.
-    *
-    * Currently only handles TypeRef nodes, as that's all the parser produces. In the future, this
-    * will need to handle other TypeSpec variants recursively.
-    */
-  private def resolveTypeSpec(
+  /** Resolve type references in a type specification using pre-built type map. */
+  private def resolveTypeSpecWithMap(
     typeSpec: TypeSpec,
     member:   Member,
-    module:   Module
+    typeMap:  Map[String, ResolvableType]
   ): Either[List[SemanticError], TypeSpec] =
     typeSpec match
       case typeRef: TypeRef =>
-        val candidates = lookupTypeRefs(typeRef, module)
-        candidates match
-          case Nil => List(SemanticError.UndefinedTypeRef(typeRef, member, phaseName)).asLeft
-          case single :: Nil => typeRef.copy(resolvedAs = Some(single)).asRight
-          case multiple =>
-            // This shouldn't happen with proper duplicate checking, but let's be defensive
-            List(SemanticError.DuplicateName(typeRef.name, multiple, phaseName)).asLeft
+        typeMap.get(typeRef.name) match
+          case None => List(SemanticError.UndefinedTypeRef(typeRef, member, phaseName)).asLeft
+          case Some(resolved) => typeRef.copy(resolvedAs = Some(resolved)).asRight
 
       case ns: NativeStruct =>
         // Resolve TypeSpecs in all struct fields
         ns.fields.toList
           .traverse { case (fieldName, fieldType) =>
-            resolveTypeSpec(fieldType, member, module).map(fieldName -> _)
+            resolveTypeSpecWithMap(fieldType, member, typeMap).map(fieldName -> _)
           }
           .map(resolvedFields => ns.copy(fields = resolvedFields.toMap))
 
       case tf: TypeFn =>
         // Resolve TypeSpecs in parameter types and return type
         for
-          resolvedParams <- tf.paramTypes.traverse(resolveTypeSpec(_, member, module))
-          resolvedReturn <- resolveTypeSpec(tf.returnType, member, module)
+          resolvedParams <- tf.paramTypes.traverse(resolveTypeSpecWithMap(_, member, typeMap))
+          resolvedReturn <- resolveTypeSpecWithMap(tf.returnType, member, typeMap)
         yield tf.copy(paramTypes = resolvedParams, returnType = resolvedReturn)
 
       case ta: TypeApplication =>
         // Resolve base type and type arguments
         for
-          resolvedBase <- resolveTypeSpec(ta.base, member, module)
-          resolvedArgs <- ta.args.traverse(resolveTypeSpec(_, member, module))
+          resolvedBase <- resolveTypeSpecWithMap(ta.base, member, typeMap)
+          resolvedArgs <- ta.args.traverse(resolveTypeSpecWithMap(_, member, typeMap))
         yield ta.copy(base = resolvedBase, args = resolvedArgs)
 
       case tt: TypeTuple =>
         // Resolve element types
         tt.elements
-          .traverse(resolveTypeSpec(_, member, module))
+          .traverse(resolveTypeSpecWithMap(_, member, typeMap))
           .map(resolvedElements => tt.copy(elements = resolvedElements))
 
       case ts: TypeStruct =>
         // Resolve field types
         ts.fields
           .traverse { case (fieldName, fieldType) =>
-            resolveTypeSpec(fieldType, member, module).map(fieldName -> _)
+            resolveTypeSpecWithMap(fieldType, member, typeMap).map(fieldName -> _)
           }
           .map(resolvedFields => ts.copy(fields = resolvedFields))
 
       case u: Union =>
         // Resolve union member types
         u.types
-          .traverse(resolveTypeSpec(_, member, module))
+          .traverse(resolveTypeSpecWithMap(_, member, typeMap))
           .map(resolvedTypes => u.copy(types = resolvedTypes))
 
       case i: Intersection =>
         // Resolve intersection member types
         i.types
-          .traverse(resolveTypeSpec(_, member, module))
+          .traverse(resolveTypeSpecWithMap(_, member, typeMap))
           .map(resolvedTypes => i.copy(types = resolvedTypes))
 
       case tg: TypeGroup =>
         // Resolve grouped types
         tg.types
-          .traverse(resolveTypeSpec(_, member, module))
+          .traverse(resolveTypeSpecWithMap(_, member, typeMap))
           .map(resolvedTypes => tg.copy(types = resolvedTypes))
 
+      case ts: TypeSeq =>
+        // Resolve inner type
+        resolveTypeSpecWithMap(ts.inner, member, typeMap)
+          .map(resolvedInner => ts.copy(inner = resolvedInner))
+
+      case scheme: TypeScheme =>
+        // Resolve body type (type variables don't need resolution)
+        resolveTypeSpecWithMap(scheme.bodyType, member, typeMap)
+          .map(resolvedBody => scheme.copy(bodyType = resolvedBody))
+
+      case inv: InvalidType =>
+        // Try to resolve the original type
+        resolveTypeSpecWithMap(inv.originalType, member, typeMap)
+          .map(resolvedOriginal => inv.copy(originalType = resolvedOriginal))
+
       case other =>
-        // TypeUnit, TypeRefinement (contains Expr, not TypeSpec), and others don't need resolution
+        // TypeUnit, TypeVariable, TypeRefinement (contains Expr, not TypeSpec), NativePrimitive, NativePointer don't need resolution
         other.asRight[List[SemanticError]]
 
-  /** Resolve type references in an expression.
-    *
-    * This includes type ascriptions on terms and nested expressions.
-    */
+  /** Resolve type references in an expression using the type map. */
   private def resolveExpr(
     expr:   Expr,
     member: Member,
-    module: Module
+    typeMap: Map[String, ResolvableType]
   ): Either[List[SemanticError], Expr] =
     for
-      updatedTerms <- expr.terms.traverse(resolveTerm(_, member, module))
-      updatedTypeAsc <- expr.typeAsc.traverse(resolveTypeSpec(_, member, module))
+      updatedTerms <- expr.terms.traverse(resolveTerm(_, member, typeMap))
+      updatedTypeAsc <- expr.typeAsc.traverse(resolveTypeSpecWithMap(_, member, typeMap))
     yield expr.copy(terms = updatedTerms, typeAsc = updatedTypeAsc)
-
-  /** Resolve type references in a term.
-    */
+  
+  /** Resolve type references in a term using the type map. */
   private def resolveTerm(
     term:   Term,
     member: Member,
-    module: Module
+    typeMap: Map[String, ResolvableType]
   ): Either[List[SemanticError], Term] =
     term match
       case ref: Ref =>
         ref.typeAsc
-          .traverse(resolveTypeSpec(_, member, module))
+          .traverse(resolveTypeSpecWithMap(_, member, typeMap))
           .map(updatedTypeAsc => ref.copy(typeAsc = updatedTypeAsc))
 
       case group: TermGroup =>
         for
-          updatedInner <- resolveExpr(group.inner, member, module)
-          updatedTypeAsc <- group.typeAsc.traverse(resolveTypeSpec(_, member, module))
+          updatedInner <- resolveExpr(group.inner, member, typeMap)
+          updatedTypeAsc <- group.typeAsc.traverse(resolveTypeSpecWithMap(_, member, typeMap))
         yield group.copy(inner = updatedInner, typeAsc = updatedTypeAsc)
 
       case e: Expr =>
-        resolveExpr(e, member, module)
+        resolveExpr(e, member, typeMap)
 
       case t: Tuple =>
         for
-          updatedElements <- t.elements.traverse(resolveExpr(_, member, module))
-          updatedTypeAsc <- t.typeAsc.traverse(resolveTypeSpec(_, member, module))
+          updatedElements <- t.elements.traverse(resolveExpr(_, member, typeMap))
+          updatedTypeAsc <- t.typeAsc.traverse(resolveTypeSpecWithMap(_, member, typeMap))
         yield t.copy(elements = updatedElements, typeAsc = updatedTypeAsc)
 
       case cond: Cond =>
         for
-          updatedCond <- resolveExpr(cond.cond, member, module)
-          updatedIfTrue <- resolveExpr(cond.ifTrue, member, module)
-          updatedIfFalse <- resolveExpr(cond.ifFalse, member, module)
-          updatedTypeAsc <- cond.typeAsc.traverse(resolveTypeSpec(_, member, module))
+          updatedCond <- resolveExpr(cond.cond, member, typeMap)
+          updatedIfTrue <- resolveExpr(cond.ifTrue, member, typeMap)
+          updatedIfFalse <- resolveExpr(cond.ifFalse, member, typeMap)
+          updatedTypeAsc <- cond.typeAsc.traverse(resolveTypeSpecWithMap(_, member, typeMap))
         yield cond.copy(
           cond    = updatedCond,
           ifTrue  = updatedIfTrue,
@@ -418,29 +474,29 @@ object TypeResolver:
 
       case app: App =>
         app.typeAsc
-          .traverse(resolveTypeSpec(_, member, module))
+          .traverse(resolveTypeSpecWithMap(_, member, typeMap))
           .map(updatedTypeAsc => app.copy(typeAsc = updatedTypeAsc))
 
       case placeholder: Placeholder =>
         placeholder.typeAsc
-          .traverse(resolveTypeSpec(_, member, module))
+          .traverse(resolveTypeSpecWithMap(_, member, typeMap))
           .map(updatedTypeAsc => placeholder.copy(typeAsc = updatedTypeAsc))
 
       case hole: Hole =>
         hole.typeAsc
-          .traverse(resolveTypeSpec(_, member, module))
+          .traverse(resolveTypeSpecWithMap(_, member, typeMap))
           .map(updatedTypeAsc => hole.copy(typeAsc = updatedTypeAsc))
 
       case native: NativeImpl =>
         native.typeAsc
-          .traverse(resolveTypeSpec(_, member, module))
+          .traverse(resolveTypeSpecWithMap(_, member, typeMap))
           .map(updatedTypeAsc => native.copy(typeAsc = updatedTypeAsc))
 
       case lit: LiteralValue =>
         // Resolve typeSpec for literals
         lit.typeSpec match {
           case Some(ts) =>
-            resolveTypeSpec(ts, member, module).map { resolvedTypeSpec =>
+            resolveTypeSpecWithMap(ts, member, typeMap).map { resolvedTypeSpec =>
               lit match {
                 case l: LiteralInt => l.copy(typeSpec = Some(resolvedTypeSpec))
                 case l: LiteralString => l.copy(typeSpec = Some(resolvedTypeSpec))
