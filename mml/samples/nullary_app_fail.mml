@@ -3,7 +3,7 @@ fn println (a: String): () = @native;
 fn concat (a: String, b: String): String = @native;
 fn to_string (a: Int): String = @native;
 
-let concat_results = 
+fn make_test_results(): String = 
   concat 
     (concat "Zero: " (concat (to_string 0) ", "))
     (concat 
@@ -11,4 +11,4 @@ let concat_results =
       (concat "Large: " (to_string 1234567890))
     );
 
-fn main(): () = println concat_results;
+fn main(): () = println (make_test_results);

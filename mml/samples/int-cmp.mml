@@ -1,0 +1,17 @@
+fn print (a: String): () = @native;
+fn println (a: String): () = @native;
+fn concat (a: String, b: String): String = @native;
+fn to_string (a: Int): String = @native;
+
+let a = 1;
+let b = 2;
+let c = 
+  if a > b then
+    "A"
+  else
+    "B"
+;
+
+fn main(): () =
+  println (concat "Resultado: " c)
+;
