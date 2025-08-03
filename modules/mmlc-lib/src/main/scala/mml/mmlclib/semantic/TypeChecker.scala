@@ -500,6 +500,8 @@ object TypeChecker:
         e1.length == e2.length &&
         e1.zip(e2).forall { case (et1, et2) => areTypesCompatible(et1, et2, module) }
       case (TypeUnit(_), TypeUnit(_)) => true
+      case (TypeUnit(_), TypeRef(_, "Unit", _)) => true
+      case (TypeRef(_, "Unit", _), TypeUnit(_)) => true
       case _ => false
 
   /** Follow alias chain to concrete type and update typeSpec along the way */

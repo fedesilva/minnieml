@@ -24,10 +24,11 @@ object SemanticApi:
   def rewriteModule(module: Module): CompilerEffect[Module] =
     EitherT
       .liftF(IO.delay {
-        // Create initial state with injected basic types and standard operators
+        // Create initial state with injected basic types, standard operators, and common functions
         val moduleWithTypes = injectBasicTypes(module)
         val moduleWithOps   = injectStandardOperators(moduleWithTypes)
-        val initialState    = SemanticPhaseState(moduleWithOps, Vector.empty)
+        val moduleWithFns = injectCommonFunctions(moduleWithOps)
+        val initialState    = SemanticPhaseState(moduleWithFns, Vector.empty)
 
         // Thread state through all phases
         val finalState =

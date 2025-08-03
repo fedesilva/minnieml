@@ -1,4 +1,1 @@
-fn println (a: String): () = @native;
-fn to_string (a: Int): String = @native;
-
 fn main(): () = println (to_string 123);

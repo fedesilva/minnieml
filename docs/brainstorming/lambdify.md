@@ -108,8 +108,3 @@ Native functions work exactly as before:
 
 - Error messages should use `syntax` to show familiar function syntax
 - Operator metadata (precedence/associativity) preserved in `syntax`
-
-## Open Questions
-
-1. Should we handle currying now or later?
-2. Impact on code generation - lambdas vs direct functions?

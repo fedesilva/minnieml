@@ -48,9 +48,10 @@ def rewrite(src: String, showTypes: Boolean = false, dumpRawState: Boolean = fal
       // Inject basic types and standard operators first
       val moduleWithTypes = injectBasicTypes(module)
       val moduleWithOps   = injectStandardOperators(moduleWithTypes)
+      val moduleWithCommon = injectCommonFunctions(moduleWithOps)
 
       // Create initial state
-      val initialState = SemanticPhaseState(moduleWithOps, Vector.empty)
+      val initialState = SemanticPhaseState(moduleWithCommon, Vector.empty)
       println("-" * 80)
       println(s"\n \n Synthetic members injected: \n ${prettyPrintAst(initialState.module)}")
 

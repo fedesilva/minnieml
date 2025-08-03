@@ -3,19 +3,16 @@
 ## Current Focus
 
 Ability to compile simple programs:
-* basic types
-* error accumulation
-* explicit types
-* recursion (tco)
-* codegen app chains
-* type resolver (error if all types are not resolved)
+ - finalize simple type checker
+ - normalize tree a bit (fndef -> let fn)
+ - tail recursion
 
 
 ## Issues
 
 ### High priority
 
-* **IMMEDIATE** Typechecker Test
+* **IMMEDIATE** Typechecker Tests broken
 
 * **TypeChecker Bug - Missing Type Validation**: TypeChecker incorrectly allows `println (5 + 3)` where `println` expects `String` but receives `Int`. This should fail during semantic analysis with a proper type mismatch error, but currently passes with "No errors". The TypeChecker is not properly validating function argument types against parameter types.
   - Test case: `fn main(): () = println (5 + 3);` should fail but doesn't
@@ -28,9 +25,10 @@ Ability to compile simple programs:
 
 ### Medium Priority
 
-
-
 ## Next Steps
+
+BROKEN TESTS IN THE PROJECT, FIX ASAP.
+
 
 ## Infer return types
 see `specs/infer-return-type.md`
@@ -45,40 +43,23 @@ see `specs/infer-return-type.md`
 
 The task is now awaiting final approval from the user.
 
-## NativeOpDescriptor Validation
+## `()` in type position should generate a ref to Unit. 
 
- * We have the new `NativeOpDescriptor` machinery in place.
- * We now need a semantic phase that walks the ast and validates:
-  * that op selectors are known
-  * that only operators use the op=selector field
+ * () should be treated like a literal when in value pos (I think this works, verify)
+ * 
+ * update all the samples and tests that might use it.
+ * We will just write `Unit` for the unit type.
+
 
 
 ### Codegen Update (Ticket #156) - NEARING COMPLETION
 The implementation plan is detailed in `memory-bank/specs/codegen-update.md`. Progress:
 
 **Goal:** 
-Compile 
 
-* √ `mml/samples/print_string.mml` 
-* √ `mml/samples/print_string_concat.mml`
-* `mml/samples/test_to_string.mml`
-* √ `mml/samples/test_print_add.mml`
+**Remove hardcoded stuff completely***
 
-*   **Block 1: AST & Parser Changes:** ✓ COMPLETED - AST and parser support new `@native:` syntax
-*   **Block 2: Semantic Analysis Changes:** ✓ COMPLETED - TypeResolver now handles native struct definitions  
-*   **Block 3: Codegen - LLVM Type Emission:** ✓ COMPLETED - LLVM type emission works for native types
-*   **Block 4: Codegen - Expression Compiler Refactoring:** MOSTLY COMPLETED
-    - ✓ Fixed function signature derivation from AST type annotations
-    - ✓ Unit type `()` correctly converted to `void` in LLVM IR
-    - ✓ Fixed native operator code generation for boolean operators (`and`, `or`, `not`)
-    - ❌ **REMAINING:** Replace hardcoded `i32` types in `compileApp` and `compileTerm` with proper type resolution using `getLlvmType` helper
-      - Complete analysis in: `memory-bank/bugs/hardcoded-i32.md`
-        - NEEDS Attention:
-          * This might be already fixed, OR there might still be hiddens instances
-          * **inspect and list them before commiting to a change.**
-      - ✓ Should enable `print_string_concat.mml` to compile successfully
-
-#### Pending
+#### Strings hardcoded logic, should be common for native structs
 
   * Strings are treated specially.
   * Strings are just native structs, they should ALL be compiled in a general way.
@@ -89,7 +70,7 @@ Compile
 
 ### Infer fn/op as FnType and rewrite them as bnd to FnType
 
-* needs a spec
+* see `docs/brainstorming/lambdify.md`
 
 
 ## Recent Changes

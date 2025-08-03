@@ -1,8 +1,3 @@
-fn print (a: String): () = @native;
-fn println (a: String): () = @native;
-fn concat (a: String, b: String): String = @native;
-fn to_string (a: Int): String = @native;
-
 fn make_test_results(): String = 
   concat 
     (concat "Zero: " (concat (to_string 0) ", "))

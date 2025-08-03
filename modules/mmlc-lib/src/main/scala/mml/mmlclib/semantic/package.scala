@@ -274,6 +274,61 @@ def injectStandardOperators(module: Module): Module =
 
   module.copy(members = standardOps ++ module.members)
 
+/** Inject common native functions that are repeatedly defined across samples.
+  * Includes print, println, concat, and to_string functions.
+  */
+def injectCommonFunctions(module: Module): Module =
+  val dummySpan = SrcSpan(SrcPoint(0, 0, 0), SrcPoint(0, 0, 0))
+
+  // Helper function to create TypeRef for basic types
+  def stringType = TypeRef(dummySpan, "String")
+  def intType = TypeRef(dummySpan, "Int")
+  def unitType = TypeRef(dummySpan, "Unit")
+
+  val commonFunctions = List(
+    FnDef(
+      span = dummySpan,
+      name = "print",
+      params = List(FnParam(dummySpan, "a", typeAsc = Some(stringType))),
+      body = Expr(dummySpan, List(NativeImpl(dummySpan))),
+      typeSpec = None,
+      typeAsc = Some(unitType),
+      docComment = None
+    ),
+    FnDef(
+      span = dummySpan,
+      name = "println",
+      params = List(FnParam(dummySpan, "a", typeAsc = Some(stringType))),
+      body = Expr(dummySpan, List(NativeImpl(dummySpan))),
+      typeSpec = None,
+      typeAsc = Some(unitType),
+      docComment = None
+    ),
+    FnDef(
+      span = dummySpan,
+      name = "concat",
+      params = List(
+        FnParam(dummySpan, "a", typeAsc = Some(stringType)),
+        FnParam(dummySpan, "b", typeAsc = Some(stringType))
+      ),
+      body = Expr(dummySpan, List(NativeImpl(dummySpan))),
+      typeSpec = None,
+      typeAsc = Some(stringType),
+      docComment = None
+    ),
+    FnDef(
+      span = dummySpan,
+      name = "to_string",
+      params = List(FnParam(dummySpan, "a", typeAsc = Some(intType))),
+      body = Expr(dummySpan, List(NativeImpl(dummySpan))),
+      typeSpec = None,
+      typeAsc = Some(stringType),
+      docComment = None
+    )
+  )
+
+  module.copy(members = commonFunctions ++ module.members)
+
 def collectBadRefs(expr: Expr, module: Module): List[Ref] =
   expr.terms.foldLeft(List.empty[Ref]) {
     case (acc, ref: Ref) =>

@@ -72,13 +72,6 @@ There are two sub directories under `memory-bank`:
 Only read these files if required, or referenced elsewhere, otherwise 
 ignore to maintain tight focus.
 
-If requested, create additional files/folders within docs/brainstorming/ when they help organize:
-
-- Complex feature documentation
-- Integration specifications
-- API documentation
-- Testing strategies
-- Deployment procedures
 
 ## Core Workflows
 

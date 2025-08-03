@@ -35,8 +35,8 @@ class TypeResolverTests extends BaseEffFunSuite:
       // Check that the parameter type has been resolved
       fnDef.params.head.typeAsc match
         case Some(TypeRef(_, "String", resolvedAs)) =>
-          assert(resolvedAs.isDefined, "Expected TypeRef to be resolved")
-          assertEquals(resolvedAs.get.asInstanceOf[TypeDef].name, "String")
+          assert(clue(resolvedAs.isDefined), "Expected TypeRef to be resolved")
+          assertEquals(clue(resolvedAs.get.asInstanceOf[TypeDef].name), "String")
         case _ =>
           fail("Expected TypeRef with resolved type")
     }
