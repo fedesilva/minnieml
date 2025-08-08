@@ -19,7 +19,7 @@ Ability to compile simple programs:
   - file `mml/samples/should-fail.mml`
   - should make a unit test
 
-* 🐞 **Nullary Function Call Is Not Lowered to IR Call**
+* **Nullary Function Call Is Not Lowered to IR Call**
   see `memory-bank/bugs/nullary-function-bug.md` 
 
 
