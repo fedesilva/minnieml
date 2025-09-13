@@ -12,7 +12,6 @@ Ability to compile simple programs:
 
 ### High priority
 
-* **IMMEDIATE** Typechecker Tests broken
 
 * **TypeChecker Bug - Missing Type Validation**: TypeChecker incorrectly allows `println (5 + 3)` where `println` expects `String` but receives `Int`. This should fail during semantic analysis with a proper type mismatch error, but currently passes with "No errors". The TypeChecker is not properly validating function argument types against parameter types.
   - Test case: `fn main(): () = println (5 + 3);` should fail but doesn't
@@ -27,7 +26,6 @@ Ability to compile simple programs:
 
 ## Next Steps
 
-BROKEN TESTS IN THE PROJECT, FIX ASAP.
 
 
 ## Infer return types
@@ -75,6 +73,15 @@ The implementation plan is detailed in `memory-bank/specs/codegen-update.md`. Pr
 
 ## Recent Changes
 
+* **(2025-09-13)** **COMPLETED:** Fixed failing test in TypeResolverTests (function return type resolution)
+  - **Issue:** Test selected an injected common function instead of the function defined in the test code.
+  - **Root Cause:** SemanticApi injects common functions (print, println, concat, to_string) at the beginning of the module; the test used `collectFirst { case f: FnDef => f }` and matched an injected `FnDef`.
+  - **Change:** Updated tests to select functions by name:
+    - Parameters test: select `greet`
+    - Return type test: select `isTrue`
+  - **Files:** `modules/mmlc-lib/src/test/scala/mml/mmlclib/semantic/TypeResolverTests.scala`
+  - **Verification:** `sbt test` passed — Total 125, Failed 0, Errors 0, Ignored 6
+
 * **(2025-08-01)** **COMPLETED:** Fixed TypeResolver bug - TypeAlias resolution with nested TypeRefs
   - **Issue:** TypeRef nodes inside TypeAlias objects were not being resolved, causing "Unresolved type reference: Int64" errors
   - **Root Cause:** When TypeRefs pointed to TypeAlias objects, they pointed to the original TypeAlias that still contained unresolved internal TypeRefs
@@ -103,12 +110,6 @@ The implementation plan is detailed in `memory-bank/specs/codegen-update.md`. Pr
 * **(2025-07-07)** **COMPLETED:** Implemented comma-separated parameter syntax for functions and operators
   - **Syntax Change:** `fn concat(a: String b: String)` → `fn concat(a: String, b: String)`
   - **Result:** All tests pass, syntax is more familiar and consistent with other languages
-
-
-
-
-
-
 
 
 ### Future work        

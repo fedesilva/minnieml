@@ -30,7 +30,7 @@ class TypeResolverTests extends BaseEffFunSuite:
 
     semNotFailed(code).map { module =>
       // Find the function
-      val fnDef = module.members.collectFirst { case f: FnDef => f }.get
+      val fnDef = module.members.collectFirst { case f: FnDef if f.name == "greet" => f }.get
 
       // Check that the parameter type has been resolved
       fnDef.params.head.typeAsc match
@@ -48,7 +48,7 @@ class TypeResolverTests extends BaseEffFunSuite:
 
     semNotFailed(code).map { module =>
       // Find the function
-      val fnDef = module.members.collectFirst { case f: FnDef => f }.get
+      val fnDef = module.members.collectFirst { case f: FnDef if f.name == "isTrue" => f }.get
 
       // Check that the return type has been resolved
       fnDef.typeAsc match
@@ -66,7 +66,7 @@ class TypeResolverTests extends BaseEffFunSuite:
     """
 
     semNotFailed(code).map { module =>
-      // Find the TestNumber type alias (not the injected Int -> Int64 alias)
+      // Find the TestNumber type alias 
       val typeAlias = module.members.collectFirst {
         case t: TypeAlias if t.name == "TestNumber" => t
       }.get
@@ -96,9 +96,7 @@ class TypeResolverTests extends BaseEffFunSuite:
       let x: Unknown = 42;
     """
 
-    semFailed(code).map { _ =>
-      // The test passes if semFailed succeeds (meaning semantic analysis failed as expected)
-    }
+    semFailed(code)
 
   test("TypeResolver should resolve type alias chains to MML types, not native types"):
     val code = """
@@ -107,6 +105,7 @@ class TypeResolverTests extends BaseEffFunSuite:
     """
 
     semNotFailed(code).map { module =>
+      
       // Find the X type alias
       val typeAlias = module.members.collectFirst {
         case t: TypeAlias if t.name == "X" => t
