@@ -5,18 +5,16 @@
 Ability to compile simple programs:
  - finalize simple type checker
  - normalize tree a bit (fndef -> let fn)
- - tail recursion
-
-
+ - recursion
+ 
 ## Issues
 
 ### High priority
 
-
 * **TypeChecker Bug - Missing Type Validation**: TypeChecker incorrectly allows `println (5 + 3)` where `println` expects `String` but receives `Int`. This should fail during semantic analysis with a proper type mismatch error, but currently passes with "No errors". The TypeChecker is not properly validating function argument types against parameter types.
   - Test case: `fn main(): () = println (5 + 3);` should fail but doesn't
-  - file `mml/samples/should-fail.mml`
-  - should make a unit test
+    - there is a unit test case, currently failing.  
+  
 
 * **Nullary Function Call Is Not Lowered to IR Call**
   see `memory-bank/bugs/nullary-function-bug.md` 
@@ -25,8 +23,6 @@ Ability to compile simple programs:
 ### Medium Priority
 
 ## Next Steps
-
-
 
 ## Infer return types
 see `specs/infer-return-type.md`
@@ -41,13 +37,12 @@ see `specs/infer-return-type.md`
 
 The task is now awaiting final approval from the user.
 
-## `()` in type position should generate a ref to Unit. 
+## `()` vs `Unit`. 
 
+ * `Unit` is the type, `()` is the only inhabitant of that type. 
  * () should be treated like a literal when in value pos (I think this works, verify)
- * 
  * update all the samples and tests that might use it.
  * We will just write `Unit` for the unit type.
-
 
 
 ### Codegen Update (Ticket #156) - NEARING COMPLETION
@@ -114,6 +109,8 @@ The implementation plan is detailed in `memory-bank/specs/codegen-update.md`. Pr
 
 ### Future work        
 
-* implement protocols 
-* recursion 
 * modules
+* recursion 
+* protocols 
+* lang db
+* full type checker.

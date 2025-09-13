@@ -43,13 +43,19 @@ class TypeCheckerTests extends BaseEffFunSuite:
     }
   }
 
-  test("should fail on missing function return type".pending) {}
-
   test("should fail on missing function parameter type".pending) {}
 
-  test("should fail on type mismatch in function application") {}
 
   test("should fail on type mismatch in let binding".pending) {}
+
+  test("should fail on type mismatch in function application") {
+    // FIXME see BaseFunSuite for instructions on how to improve 
+    //       test tooling.  
+    semFailed("""
+      fn main(): () = println (5 + 3);
+    """)
+
+  }
 
   test("should correctly type a conditional expression") {
     val code = "let x = if true then 1 else 2;"
@@ -60,6 +66,8 @@ class TypeCheckerTests extends BaseEffFunSuite:
         case other => fail(s"Expected Some(TypeRef(\"Int\")), got $other")
     }
   }
+
+  
 
   // test("should fail on mismatched types in conditional branches") {
   //   val code = "let x = if true then 1 else \"hello\""
