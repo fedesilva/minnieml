@@ -1,12 +1,9 @@
 # MinnieML
 
 A statically typed, functional language, with an ML inspired syntax, a rich type system,
-declarative low level capabilities and first class native interface.
+and strong machine empathy.
 
 ## Why
-
-This is an experiment to find out if I can build a high-level functional language that compiles quickly into fast executables 
-with strong machine empathy, and good, modern tooling.
 
 It's all about exploring ideas and having fun while learning.
 
@@ -43,13 +40,14 @@ Here's a small syntax showcase
 
 A more complex example:
 
-- types start with an uppercase letter, mandatory (Maybe, String, Int)
-- type variables start with a ' and an uppercase letter ('T, 'R, 'In, 'Out)
+- types start with an uppercase letter, mandatory (`Maybe`, `String`, `Int`)
+- type variables start with a ' and an uppercase letter (`'T`, `'R`, `'In`, `'Out`)
 - `#` is a line comment
 - `()` reads as `unit`; it's like void ... (ish)
+- the `Maybe` type denotes we can have one value of type `'T` or None.
 - note the infered types in the comments
 
-Note that this examples might not be possible to compile currently.
+This examples might not be possible to compile currently, depending on when you read this.
 See the STATUS entry below.
 
 ```rust
@@ -88,7 +86,7 @@ data Person {
   pet:  Maybe Pet
 };
 
-# hasPet :: 'T : { pet: Maybe Pet } -> Boolean
+# hasPet :: 'T: { pet: Maybe 'P } -> Boolean
 fn hasPet (p) =
   nonEmpty p.pet
 ;
@@ -112,22 +110,14 @@ let pf = hasPet fede;   # true
 
 ## Status
 
-At this time, MinnieML's parser handles a subset of the planned syntax, including function definitions, operators (symbolic and alphabetic like 'and'), and basic expressions. The semantic analysis phase includes a unified expression rewriting system that handles precedence and associativity for both custom operators and ML-style curried function application (e.g., `f a b` is rewriten as `(f a) b`). This phase also performs reference resolution, contextual disambiguation, and basic error checking.
+At this time, MinnieML's parser handles a subset of the planned syntax, including function definitions, operators (symbolic and alphabetic like 'and'), and basic expressions. 
+
+The semantic analysis phase includes a unified expression rewriting system that handles precedence and associativity for both custom operators and ML-style curried function application (e.g., `f a b` is rewriten as `(f a) b`). This phase also performs reference resolution, contextual disambiguation, and basic type checking.
 
 The compiler integrates with native C code via `@native` annotations, linking against a small runtime library.
 
-The focus right now is on getting the minimal set of features working so that we can compile simple but useful programs, 
-even without features like pattern matching or type inference.
 
-* Basic type checking (requires explicit types, resolves type definitions)
-* Convert operator expressions to curried function calls.
-* Some form of basic memory management.
-* Module support: ability to compile separate files and reference them.
-    * Only the Prelude for now.
-* Add a basic standard library with some useful functions.
-* Introduce tail call detection, have the codegen annotate the ir so llvm optimizes them.
-* Improve codegen to work with the curried function calls for operators.
-* Remove hardcoded types and assumptions from the codegen, using the @native keyword and type annotations. 
+The focus right now is on getting the minimal set of features working so that we can compile simple but useful programs,  even without features like pattern matching or type inference.
 
 ## Documentation
 
@@ -143,7 +133,7 @@ that might give you an idea of where this is going.
 
 Finally, you can look at the [tests](modules/mmlc-lib/src/test/scala/mml/mmlclib) and [current ast](modules/mmlc-lib/src/main/scala/mml/mmlclib/ast) and [parser](modules/mmlc-lib/src/main/scala/mml/mmlclib/parser) source code.
 
-:shrugs:
+:shrug:
 
 ## Setup
 
@@ -168,12 +158,21 @@ In mac os you will need `llvm` and `clang`.
 I get `llvm` with `homebrew` so install that if you don't have it.
 The compiler will guide you and ask you to install llvm when it needs it.
 
-I think mac os will ask you to install the `xcode` command line tools
-if I try to use them. You can google how to if that does not work.
+You will need to install clang via MacOS dev tools.
 
-`sbt "run --help"` if you want to run from sources.
+MacOS will ask you to install the `xcode` command line tools if you try to use clang for the first time. 
 
-Or build the native image:
+
+You can then compile programs 
+
+```bash
+sbt "run bin mml/samples/hello.mml"
+./build/target/Hello-x86_64-apple-macosx
+```
+
+`sbt "run --help"` if you want to run from source.
+
+You can build the native image, which has faster startup times:
 
 `sbt "mmlcDistro"`
 

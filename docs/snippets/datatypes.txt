@@ -9,13 +9,13 @@ use Maybe._
 enum Species = | Cat | Doc | Bird | Fish | Reptile
 
 # record type
-type Pet = {
+data Pet = {
   name:     String
   species:  Species
 }
 
 # record type
-type Person = {
+data Person = {
   name: String
   pet:  Maybe Pet
 }
