@@ -2,51 +2,58 @@
 
 ## Current Focus
 
-- TypeChecker multi-argument validation overhaul in progress; core fix merged, semantic app rewriting tests need alignment with new typing.
+- module parsing is fragile
+- TypeFn for all
+- Improve module system
+    - parse nested module
+    - better scope management
+
 ## Issues
 
 ### High priority
-
-**Multi-Argument Function Type-Checking Bug** (TypeChecker.scala:421)
-
-**Problem**: `determineApplicationType` only validates the first parameter of multi-argument functions and immediately returns the final return type, instead of returning a function type for the remaining parameters. This causes subsequent arguments to bypass type validation entirely.
-
-**Example**:
-```mml
-fn mult(a: Int, b: Int): Int = ???;
-let bad = mult 1 "oops";  # Should fail but passes
-```
-
-**Root Cause**:
-1. When checking `mult 1` (where `mult: (Int, Int) → Int`):
-   - Code checks first param: `Int` matches `1` ✓
-   - **BUG**: Returns `Int` (final return type) instead of `Int → Int` (remaining function type)
-
-2. When checking `(mult 1) "oops"`:
-   - Inner app has `typeSpec = Int` from step 1
-   - Hits catch-all case at line 541: returns `Int` without validating `"oops"`
-
-**Location**: `TypeChecker.scala:421-451` (FnDef case) and line 541-543 (innerApp case)
-
-**Impact**: Multi-argument functions accept arguments of any type after the first parameter, breaking type safety.
-
 ### Medium Priority
 
 ## Next Steps
 
-### Fix Multi-Argument Type Checking
+ - #174 module parsing is fragile
 
-1. **FnDef application typing** ✅:
-   - Remaining-parameter TypeFn construction added; multi-argument calls now validate each argument and return reduced function types until all params are consumed.
+    This code fails:
 
-2. **Nested application handling** ✅:
-   - Inner apps unpack TypeFn results, validate the next argument, and propagate updated function or return types.
+    ```
+        let a = 1;
+        rubbish-at-the-end
+    ```
 
-3. **Operator parity** ⏳:
-   - BinOp partial application returns remaining function type; update Unary/Bin tests and verify native operator paths.
+    and it should, but it fails with a parsing error, and that is unnacceptable.
 
-4. **Regression coverage** ✅/⏳:
-   - Added TypeChecker tests for wrong later-argument types and partial applications. AppRewritingTests now fail because semantics surface new TypeErrors—update expectations or fixtures before rerunning suite.
+    ```
+        sbt:mml> console
+        [info] compiling 1 Scala source to /Users/f/Workshop/mine/mml/mml/modules/mmlc/target/scala-3.6.4/classes ...
+        Welcome to Scala 3.6.4 (21.0.6, Java Java HotSpot(TM) 64-Bit Server VM).
+        Type in expressions for evaluation. Or try :help.
+
+        scala> :load scripts/include.scala
+
+        scala> rewrite("""
+             | let a = 1;
+             | rubbish-at-the-end
+             | """)
+        Parse error:
+          Failure(Expected moduleP:1:1 / (namedModuleP | anonModuleP):2:1, found "let a = 1;")
+        Failed to parse module
+
+        scala>
+    ```
+
+    this one fails, too.
+
+    ```
+    let a = 1;;;
+    ```
+
+    So for some reason when we fail to parse the module itself, we can't recover.
+
+    We need to investigate, and fix this issue.
 
 ## Recent Changes
 
