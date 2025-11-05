@@ -19,10 +19,10 @@ class LiteralTests extends BaseEffFunSuite:
     }.map {
       case bnd: Bnd =>
         bnd.value.terms.head.typeSpec match
-          case Some(LiteralStringType(_)) =>
+          case Some(TypeRef(_, "String", _)) =>
           // pass
           case other =>
-            fail(s"Expected `Some(LiteralStringType)`, got $other")
+            fail(s"Expected `Some(TypeRef(\"String\"))`, got $other")
       case _ => fail("Expected a let")
     }
   }
@@ -38,10 +38,10 @@ class LiteralTests extends BaseEffFunSuite:
     }.map {
       case bnd: Bnd =>
         bnd.value.terms.head.typeSpec match
-          case Some(LiteralIntType(_)) =>
+          case Some(TypeRef(_, "Int", _)) =>
           // pass
           case other =>
-            fail(s"Expected `Some(LiteralIntType)`, got $other")
+            fail(s"Expected `Some(TypeRef(\"Int\"))`, got $other")
       case _ => fail("Expected a let")
     }
   }
@@ -57,9 +57,9 @@ class LiteralTests extends BaseEffFunSuite:
     }.map {
       case bnd: Bnd =>
         bnd.value.terms.head.typeSpec match
-          case Some(LiteralFloatType(_)) =>
+          case Some(TypeRef(_, "Float", _)) =>
           case other =>
-            fail(s"Expected `Some(LiteralIntType)`, got $other \n ${prettyPrintAst(bnd)} ")
+            fail(s"Expected `Some(TypeRef(\"Float\"))`, got $other \n ${prettyPrintAst(bnd)} ")
       case _ => fail("Expected a let")
     }
   }
@@ -75,9 +75,9 @@ class LiteralTests extends BaseEffFunSuite:
     }.map {
       case bnd: Bnd =>
         bnd.value.terms.head.typeSpec match
-          case Some(LiteralBoolType(_)) =>
+          case Some(TypeRef(_, "Bool", _)) =>
           case other =>
-            fail(s"Expected `Some(LiteralBoolType)`, got $other")
+            fail(s"Expected `Some(TypeRef(\"Bool\"))`, got $other")
       case _ => fail("Expected a let")
     }
   }
@@ -93,9 +93,9 @@ class LiteralTests extends BaseEffFunSuite:
     }.map {
       case bnd: Bnd =>
         bnd.value.terms.head.typeSpec match
-          case Some(LiteralUnitType(_)) =>
+          case Some(TypeRef(_, "Unit", _)) =>
           case other =>
-            fail(s"Expected `Some(LiteralUnitType)`, got $other")
+            fail(s"Expected `Some(TypeRef(\"Unit\"))`, got $other")
       case _ => fail("Expected a let")
     }
   }

@@ -1,3 +1,5 @@
 let a = "fede";
 
-fn main() = a;
+fn main() = 
+  println (concat "hola, " "fede")
+;

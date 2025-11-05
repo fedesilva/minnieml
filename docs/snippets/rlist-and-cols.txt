@@ -66,7 +66,7 @@ fn lookupTree (index: Int, tree: Tree ('A * 'A)): 'A =
 
 # collection protocols
 protocol Sequence 'T <: Functor, Foldable =
-  length: () -> Int
+  length: Unit -> Int
   get: Int -> Maybe 'T
   prepend: 'T -> Sequence 'T
   append: 'T -> Sequence 'T
@@ -78,7 +78,7 @@ protocol Sequence 'T <: Functor, Foldable =
 ;
 
 protocol Set 'T =
-  size: () -> Int
+  size: Unit -> Int
   contains: 'T -> Boolean
   add: 'T -> Set 'T
   remove: 'T -> Set 'T
@@ -88,12 +88,11 @@ protocol Set 'T =
 ;
 
 protocol Map 'K 'V =
-  size: () -> Int
+  size: Unit -> Int
   containsKey: 'K -> Boolean
   get: 'K -> Maybe 'V
   put: 'K -> 'V -> Map 'K 'V
   remove: 'K -> Map 'K 'V
-  keys: () -> Sequence 'K
-  values: () -> Sequence 'V
+  keys: Unit -> Sequence 'K
+  values: Unit -> Sequence 'V
 ;
-

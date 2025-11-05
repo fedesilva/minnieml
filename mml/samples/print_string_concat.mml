@@ -1,0 +1,4 @@
+
+fn main() = 
+print (concat "Hello, " "world!")
+;

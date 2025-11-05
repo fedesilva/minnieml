@@ -1,0 +1,4 @@
+fn println (a: String): Unit = @native;
+fn to_string (a: Int): String = @native;
+
+fn main() = println (to_string(5 + 3));

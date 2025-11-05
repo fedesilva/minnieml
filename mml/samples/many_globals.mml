@@ -1,0 +1,13 @@
+
+
+let a = "Fede";
+let b = "Fede";
+let c = concat a b;
+
+fn join(a: String, b: String) =
+  concat a b
+;
+
+fn main() = 
+  println (join a b)
+;

@@ -10,7 +10,7 @@ class AlphaOpTests extends BaseEffFunSuite:
   test("custom binary alphabetic operator: xor") {
     semNotFailed(
       """
-       op xor (a b) 35 left = ???;
+       op xor (a: Bool, b: Bool): Bool 35 left = ???;
        let a = true;
        let b = false;
        let c = true;
@@ -85,7 +85,7 @@ class AlphaOpTests extends BaseEffFunSuite:
   test("custom unary alphabetic operator: negate") {
     semNotFailed(
       """
-       op negate (a) 96 right = ???;
+       op negate (a: Bool): Bool 96 right = ???;
        let a = true;
        let b = false;
        let x = negate a and not b;
@@ -144,7 +144,7 @@ class AlphaOpTests extends BaseEffFunSuite:
   test("operator with only precedence specified") {
     semNotFailed(
       """
-       op implies (a b) 45 = ???;
+       op implies (a: Bool, b: Bool): Bool 45 = ???;
        let a = true;
        let b = false;
        let x = a implies b;
@@ -199,7 +199,7 @@ class AlphaOpTests extends BaseEffFunSuite:
   test("operator with only associativity specified") {
     semNotFailed(
       """
-       op unless (a b) right = ???;
+       op unless (a: Bool, b: Bool): Bool right = ???;
        let a = true;
        let b = false;
        let x = a unless b;
@@ -251,8 +251,8 @@ class AlphaOpTests extends BaseEffFunSuite:
   test("mixed custom and built-in alphabetic operators") {
     semNotFailed(
       """
-       op xor (a b) 35 left = ???;
-       op negate (a) 96 right = ???;
+       op xor (a: Bool, b: Bool): Bool 35 left = ???;
+       op negate (a: Bool): Bool 96 right = ???;
        let a = true;
        let b = false;
        let c = true;

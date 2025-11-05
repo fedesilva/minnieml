@@ -12,7 +12,9 @@ def memberVisibilityToString(visibility: MemberVisibility): String =
 def typeSpecToSimpleName(typeSpec: TypeSpec): String =
   typeSpec match
     case TypeRef(_, name, _) => name
-    case NativeTypeImpl(_) => "@native"
+    case NativePrimitive(_, llvmType) => s"@native:$llvmType"
+    case NativePointer(_, llvmType) => s"@native:*$llvmType"
+    case NativeStruct(_, fields) => s"@native{${fields.size} fields}"
     case TypeUnit(_) => "()"
     case TypeFn(_, params, ret) =>
       s"(${params.map(typeSpecToSimpleName).mkString(" -> ")}) -> ${typeSpecToSimpleName(ret)}"
@@ -27,9 +29,15 @@ def prettyPrintMember(
 ): String =
   val indentStr = "  " * indent
   member match {
-    case MemberError(span, message, failedCode) =>
+    case ParsingMemberError(span, message, failedCode) =>
       val spanStr = if showSourceSpans then printSourceSpan(span) else ""
       s"${indentStr}MemberError $spanStr\n" +
+        s"""${indentStr}  "$message"""".stripMargin +
+        failedCode.map(code => s"\n${indentStr}  $code").getOrElse("")
+
+    case ParsingIdError(span, message, failedCode, invalidId) =>
+      val spanStr = if showSourceSpans then printSourceSpan(span) else ""
+      s"${indentStr}IdError $spanStr\n" +
         s"""${indentStr}  "$message"""".stripMargin +
         failedCode.map(code => s"\n${indentStr}  $code").getOrElse("")
 
@@ -37,8 +45,8 @@ def prettyPrintMember(
       val spanStr = if showSourceSpans then printSourceSpan(fn.span) else ""
       val typeStr =
         if showTypes then
-          s"\n${indentStr}  typeSpec: ${prettyPrintTypeSpec(fn.typeSpec)}\n" +
-            s"${indentStr}  typeAsc: ${prettyPrintTypeSpec(fn.typeAsc)}"
+          s"\n${indentStr}  typeSpec: ${prettyPrintTypeSpec(fn.typeSpec, showSourceSpans, showTypes, indent + 1)}\n" +
+            s"${indentStr}  typeAsc: ${prettyPrintTypeSpec(fn.typeAsc, showSourceSpans, showTypes, indent + 1)}"
         else ""
       val visStr = memberVisibilityToString(fn.visibility)
 
@@ -51,8 +59,8 @@ def prettyPrintMember(
       val spanStr = if showSourceSpans then printSourceSpan(bnd.span) else ""
       val typeStr =
         if showTypes then
-          s"\n${indentStr}  typeSpec: ${prettyPrintTypeSpec(bnd.typeSpec)}\n" +
-            s"${indentStr}  typeAsc: ${prettyPrintTypeSpec(bnd.typeAsc)}"
+          s"\n${indentStr}  typeSpec: ${prettyPrintTypeSpec(bnd.typeSpec, showSourceSpans, showTypes, indent + 1)}\n" +
+            s"${indentStr}  typeAsc: ${prettyPrintTypeSpec(bnd.typeAsc, showSourceSpans, showTypes, indent + 1)}"
         else ""
       val visStr = memberVisibilityToString(bnd.visibility)
 
@@ -76,8 +84,8 @@ def prettyPrintMember(
       val spanStr = if showSourceSpans then printSourceSpan(span) else ""
       val typeStr =
         if showTypes then
-          s"\n${indentStr}  typeSpec: ${prettyPrintTypeSpec(typeSpec)}\n" +
-            s"${indentStr}  typeAsc: ${prettyPrintTypeSpec(typeAsc)}"
+          s"\n${indentStr}  typeSpec: ${prettyPrintTypeSpec(typeSpec, showSourceSpans, showTypes, indent + 1)}\n" +
+            s"${indentStr}  typeAsc: ${prettyPrintTypeSpec(typeAsc, showSourceSpans, showTypes, indent + 1)}"
         else ""
       val visStr = memberVisibilityToString(visibility)
 
@@ -93,8 +101,8 @@ def prettyPrintMember(
       val spanStr = if showSourceSpans then printSourceSpan(unop.span) else ""
       val typeStr =
         if showTypes then
-          s"\n${indentStr}  typeSpec: ${prettyPrintTypeSpec(unop.typeSpec)}\n" +
-            s"${indentStr}  typeAsc: ${prettyPrintTypeSpec(unop.typeAsc)}"
+          s"\n${indentStr}  typeSpec: ${prettyPrintTypeSpec(unop.typeSpec, showSourceSpans, showTypes, indent + 1)}\n" +
+            s"${indentStr}  typeAsc: ${prettyPrintTypeSpec(unop.typeAsc, showSourceSpans, showTypes, indent + 1)}"
         else ""
       val visStr = memberVisibilityToString(unop.visibility)
 
@@ -122,12 +130,12 @@ def prettyPrintMember(
       val spanStr = if showSourceSpans then printSourceSpan(td.span) else ""
       val typeStr =
         if showTypes then
-          s"\n${indentStr}  typeSpec: ${prettyPrintTypeSpec(td.typeSpec)}\n" +
-            s"${indentStr}  typeAsc: ${prettyPrintTypeSpec(td.typeAsc)}"
+          s"\n${indentStr}  typeSpec: ${prettyPrintTypeSpec(td.typeSpec, showSourceSpans, showTypes, indent + 1)}\n" +
+            s"${indentStr}  typeAsc: ${prettyPrintTypeSpec(td.typeAsc, showSourceSpans, showTypes, indent + 1)}"
         else ""
       val visStr = memberVisibilityToString(td.visibility)
       val nativeStr = td.typeSpec match
-        case Some(NativeTypeImpl(_)) => " @native"
+        case Some(_: NativeType) => " @native"
         case _ => ""
 
       s"${indentStr}TypeDef $visStr ${td.name}$nativeStr$spanStr$typeStr"

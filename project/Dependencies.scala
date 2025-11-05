@@ -2,14 +2,14 @@ import sbt.*
 
 object Dependencies {
 
-  val logBackVersion:       String = "1.5.18"
+  val logBackVersion:       String = "1.5.19"
   val monocleVersion:       String = "3.3.0"
   val catsVersion:          String = "2.12.0"
-  val catsEffectVersion:    String = "3.6.1"
+  val catsEffectVersion:    String = "3.6.3"
   val refinedVersion:       String = "0.11.3"
   val reload4jVersion:      String = "1.2.26"
   val lucumaRefinedVersion: String = "0.1.4"
-  val munitVersion:         String = "1.1.1"
+  val munitVersion:         String = "1.2.0"
   val munitCatsVersion:     String = "2.1.0"
   val fastparseVersion:     String = "3.1.1"
   val scoptVersion:         String = "4.1.0"

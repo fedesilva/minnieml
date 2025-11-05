@@ -20,8 +20,12 @@ final case class SrcSpan(
 sealed trait AstNode derives CanEqual
 
 sealed trait Typeable extends AstNode {
+
+  /** This is the computed type */
   def typeSpec: Option[TypeSpec]
-  def typeAsc:  Option[TypeSpec]
+
+  /** This is the type the user declares. */
+  def typeAsc: Option[TypeSpec]
 }
 
 sealed trait FromSource extends AstNode {
@@ -59,24 +63,6 @@ sealed trait Member extends AstNode
 
 sealed trait Resolvable extends AstNode:
   def name: String
-
-/** Marker trait for nodes that represent invalid/error constructs. These nodes allow the compiler
-  * to continue processing even when errors are encountered, enabling better LSP support and partial
-  * compilation.
-  */
-sealed trait InvalidNode extends AstNode
-
-sealed trait Error extends AstNode, InvalidNode:
-  def span:       SrcSpan
-  def message:    String
-  def failedCode: Option[String]
-
-case class MemberError(
-  span:       SrcSpan,
-  message:    String,
-  failedCode: Option[String]
-) extends Member,
-      Error
 
 case class DocComment(
   span: SrcSpan,
@@ -163,7 +149,8 @@ case class Bnd(
   value:      Expr,
   typeSpec:   Option[TypeSpec]   = None,
   typeAsc:    Option[TypeSpec]   = None,
-  docComment: Option[DocComment] = None
+  docComment: Option[DocComment] = None,
+  syntax:     Option[Decl]       = None
 ) extends Decl,
       FromSource
 
@@ -202,12 +189,19 @@ case class App(
   typeSpec: Option[TypeSpec] = None
 ) extends Term
 
+case class Lambda(
+  span:     SrcSpan,
+  params:   List[FnParam],
+  body:     Expr,
+  typeSpec: Option[TypeSpec] = None,
+  typeAsc:  Option[TypeSpec] = None
+) extends Term
+
 case class TermGroup(
   span:    SrcSpan,
   inner:   Expr,
   typeAsc: Option[TypeSpec] = None
-) extends Term,
-      FromSource:
+) extends Term:
   def typeSpec: Option[TypeSpec] = inner.typeSpec
 
 case class Tuple(
@@ -247,29 +241,80 @@ case class Hole(
 sealed trait LiteralValue extends Term, FromSource
 
 case class LiteralInt(
-  span:  SrcSpan,
-  value: Int
-) extends LiteralValue:
-  final val typeSpec: Option[TypeSpec] = Some(LiteralIntType(span))
-  final val typeAsc:  Option[TypeSpec] = None
+  span:     SrcSpan,
+  value:    Int,
+  typeSpec: Option[TypeSpec],
+  typeAsc:  Option[TypeSpec] = None
+) extends LiteralValue
 
-case class LiteralString(span: SrcSpan, value: String) extends LiteralValue:
-  final val typeSpec: Option[TypeSpec] = Some(LiteralStringType(span))
-  final val typeAsc:  Option[TypeSpec] = None
+object LiteralInt {
+  def apply(span: SrcSpan, value: Int): LiteralInt =
+    new LiteralInt(span, value, Some(TypeRef(span, "Int")), None)
 
-case class LiteralBool(span: SrcSpan, value: Boolean) extends LiteralValue:
-  final val typeSpec: Option[TypeSpec] = Some(LiteralBoolType(span))
-  final val typeAsc:  Option[TypeSpec] = None
+  def unapply(lit: LiteralInt): Option[(SrcSpan, Int)] =
+    Some((lit.span, lit.value))
+}
 
-case class LiteralUnit(span: SrcSpan) extends LiteralValue:
-  final val typeSpec: Option[TypeSpec] = Some(LiteralUnitType(span))
-  final val typeAsc:  Option[TypeSpec] = None
+case class LiteralString(
+  span:     SrcSpan,
+  value:    String,
+  typeSpec: Option[TypeSpec],
+  typeAsc:  Option[TypeSpec] = None
+) extends LiteralValue
 
-case class LiteralFloat(span: SrcSpan, value: Float) extends LiteralValue:
-  final val typeSpec: Option[TypeSpec] = Some(LiteralFloatType(span))
-  final val typeAsc:  Option[TypeSpec] = None
+object LiteralString {
+  def apply(span: SrcSpan, value: String): LiteralString =
+    new LiteralString(span, value, Some(TypeRef(span, "String")), None)
 
-  /** A type definition, which is a new named type, as opposed to a type alias. */
+  def unapply(lit: LiteralString): Option[(SrcSpan, String)] =
+    Some((lit.span, lit.value))
+}
+
+case class LiteralBool(
+  span:     SrcSpan,
+  value:    Boolean,
+  typeSpec: Option[TypeSpec],
+  typeAsc:  Option[TypeSpec] = None
+) extends LiteralValue
+
+object LiteralBool {
+  def apply(span: SrcSpan, value: Boolean): LiteralBool =
+    new LiteralBool(span, value, Some(TypeRef(span, "Bool")), None)
+
+  def unapply(lit: LiteralBool): Option[(SrcSpan, Boolean)] =
+    Some((lit.span, lit.value))
+}
+
+case class LiteralUnit(
+  span:     SrcSpan,
+  typeSpec: Option[TypeSpec],
+  typeAsc:  Option[TypeSpec] = None
+) extends LiteralValue
+
+object LiteralUnit {
+  def apply(span: SrcSpan): LiteralUnit =
+    new LiteralUnit(span, Some(TypeRef(span, "Unit")), None)
+
+  def unapply(lit: LiteralUnit): Option[SrcSpan] =
+    Some(lit.span)
+}
+
+case class LiteralFloat(
+  span:     SrcSpan,
+  value:    Float,
+  typeSpec: Option[TypeSpec],
+  typeAsc:  Option[TypeSpec] = None
+) extends LiteralValue
+
+object LiteralFloat {
+  def apply(span: SrcSpan, value: Float): LiteralFloat =
+    new LiteralFloat(span, value, Some(TypeRef(span, "Float")), None)
+
+  def unapply(lit: LiteralFloat): Option[(SrcSpan, Float)] =
+    Some((lit.span, lit.value))
+}
+
+/** A type definition, which is a new named type, as opposed to a type alias. */
 case class TypeDef(
   visibility: MemberVisibility   = MemberVisibility.Protected,
   span:       SrcSpan,
@@ -304,10 +349,22 @@ case class TypeRef(
   resolvedAs: Option[ResolvableType] = None
 ) extends TypeSpec
 
-case class NativeType(
-  span:       SrcSpan,
-  attributes: Map[String, String] = Map()
-) extends TypeSpec
+sealed trait NativeType extends TypeSpec, Native
+
+case class NativePrimitive(
+  span:     SrcSpan,
+  llvmType: String
+) extends NativeType
+
+case class NativePointer(
+  span:     SrcSpan,
+  llvmType: String
+) extends NativeType
+
+case class NativeStruct(
+  span:   SrcSpan,
+  fields: Map[String, TypeSpec]
+) extends NativeType
 
 /** A type application, ie:  `List Int, Map String Int` */
 case class TypeApplication(span: SrcSpan, base: TypeSpec, args: List[TypeSpec]) extends TypeSpec
@@ -340,44 +397,49 @@ case class TypeSeq(span: SrcSpan, inner: TypeSpec) extends TypeSpec
 /** A grouping of types, mostly for disambiguation: `Map String (List Int)` */
 case class TypeGroup(span: SrcSpan, types: List[TypeSpec]) extends TypeSpec
 
-/** Helpers to represent known types */
-sealed trait LiteralType extends TypeSpec {
-  def typeName: String
-}
-case class LiteralIntType(span: SrcSpan) extends LiteralType {
-  final val typeName: "Int" = "Int"
-}
-case class LiteralStringType(span: SrcSpan) extends LiteralType {
-  final val typeName: "String" = "String"
-}
-case class LiteralBoolType(span: SrcSpan) extends LiteralType {
-  final val typeName: "Bool" = "Bool"
-}
+/** A type variable (like 'T, 'R in the type system) */
+case class TypeVariable(
+  span: SrcSpan,
+  name: String // "'T", "'R", "'A", etc.
+) extends TypeSpec
 
-case class LiteralUnitType(span: SrcSpan) extends LiteralType {
-  final val typeName: "Unit" = "Unit"
-}
-
-case class LiteralFloatType(span: SrcSpan) extends LiteralType {
-  final val typeName: "Float" = "Float"
-}
+/** A type scheme: ∀'T 'R 'A. Type
+  *
+  * This represents both polymorphic and monomorphic types uniformly.
+  *
+  * Examples:
+  *   - ∀'T. 'T → 'T (identity function)
+  *   - ∀'A 'B. 'A → 'B → 'A (const function)
+  *   - Int → Int (monomorphic, vars = Nil)
+  */
+case class TypeScheme(
+  span:     SrcSpan,
+  vars:     List[String], // ["'T", "'R"] - the quantified variables
+  bodyType: TypeSpec // The actual type with variables
+) extends TypeSpec
 
 sealed trait Native extends AstNode
-
-case class NativeTypeImpl(
-  span: SrcSpan
-) extends TypeSpec,
-      Native,
-      FromSource
 
 case class NativeImpl(
   span:     SrcSpan,
   typeSpec: Option[TypeSpec] = None,
-  typeAsc:  Option[TypeSpec] = None
+  typeAsc:  Option[TypeSpec] = None,
+  nativeOp: Option[String]   = None
 ) extends Native,
       Term
 
 // **Invalid Nodes for Error Recovery**
+
+/** Marker trait for nodes that represent invalid/error constructs. These nodes allow the compiler
+  * to continue processing even when errors are encountered, enabling better LSP support and partial
+  * compilation.
+  */
+sealed trait InvalidNode extends AstNode
+
+sealed trait Error extends AstNode, InvalidNode:
+  def span:       SrcSpan
+  def message:    String
+  def failedCode: Option[String]
 
 /** Represents an expression that could not be resolved or is otherwise invalid. Preserves the
   * original expression for debugging and error reporting.
@@ -422,3 +484,18 @@ case class InvalidMember(
 ) extends Member,
       InvalidNode,
       FromSource
+
+case class ParsingMemberError(
+  span:       SrcSpan,
+  message:    String,
+  failedCode: Option[String]
+) extends Member,
+      Error
+
+case class ParsingIdError(
+  span:       SrcSpan,
+  message:    String,
+  failedCode: Option[String],
+  invalidId:  String
+) extends Member,
+      Error

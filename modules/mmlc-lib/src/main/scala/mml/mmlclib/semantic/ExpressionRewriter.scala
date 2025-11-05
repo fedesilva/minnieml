@@ -13,7 +13,6 @@ object ExpressionRewriter:
   private val phaseName = "mml.mmlclib.semantic.ExpressionRewriter"
 
   private val MinPrecedence: Int = 1
-  private val AppPrecedence: Int = 100 // Function application has highest precedence
 
   /** Rewrite a module, handling all expression transformations in a single pass
     */
@@ -138,20 +137,9 @@ object ExpressionRewriter:
       case IsFnRef(ref, fnDef) :: rest =>
         // Function reference - handle as potential function application
         val resolvedRef = ref.copy(resolvedAs = fnDef.some)
-
-        // Collect all juxtaposed terms until finding an operator
-        // These will be treated as a chain of function applications
-        val nonOpArgs = rest.takeWhile(term => !isOperator(term))
-        val opTerms   = rest.drop(nonOpArgs.length)
-
-        if nonOpArgs.isEmpty then
-          // No arguments, just return the function reference
-          (Expr(ref.span, List(resolvedRef)), opTerms).asRight
-        else
-          // Build a chain of function applications with all arguments
-          buildAppChain(resolvedRef, nonOpArgs, span).map { appChain =>
-            (Expr(span, List(appChain)), opTerms)
-          }
+        // This is the entry point for an application chain.
+        // We recursively build the application chain from left to right.
+        buildAppChain(resolvedRef, rest, span)
 
       case IsAtom(atom) :: rest =>
         // Simple atom (literal, variable, etc.)
@@ -225,23 +213,73 @@ object ExpressionRewriter:
         // No more operations with sufficient precedence
         (lhs, terms).asRight
 
-  /** Build a chain of function applications
+  /** Check if a function reference is to a nullary (zero-parameter) function
+    */
+  private def isNullaryFunction(term: Term): Boolean =
+    term match
+      case ref: Ref =>
+        ref.resolvedAs match
+          case Some(fnDef: FnDef) => fnDef.params.isEmpty
+          case _ => false
+      case _ => false
+
+  /** Build a chain of function applications recursively.
+    *
+    * This function handles the left-associativity of application (`f x y` -> `((f x) y)`) and also
+    * the correct grouping for nested function calls (`f g x` -> `(f (g x))`).
+    *
+    * It works by parsing one argument, applying it to the current function (`fn`), and then
+    * recursively calling itself with the new application as the function.
+    *
+    * Special case: For nullary functions in value position (no arguments following), automatically
+    * wraps them in an App node with a unit argument to ensure proper code generation.
     */
   private def buildAppChain(
-    fn:   Term,
-    args: List[Term],
-    span: SrcSpan
-  ): Either[NEL[SemanticError], Term] =
-    args.foldLeftM(fn) { (accFn, argTerm) =>
-      // First rewrite the argument
-      rewriteTerm(argTerm).flatMap { rewrittenArg =>
-        // Then convert to an expression if needed
-        termToExpr(rewrittenArg).flatMap { argExpr =>
-          // Then build the application node
-          buildSingleApp(accFn, argExpr, span)
+    fn:    Term,
+    terms: List[Term],
+    span:  SrcSpan
+  ): Either[NEL[SemanticError], (Expr, List[Term])] =
+    terms match
+      case Nil =>
+        // No more arguments. Check if this is a nullary function in value position.
+        if isNullaryFunction(fn) then
+          // Auto-wrap nullary function with unit argument to ensure it's called
+          fn match
+            case ref: Ref =>
+              val unitLit  = LiteralUnit(fn.span)
+              val unitExpr = Expr(fn.span, List(unitLit))
+              val app      = App(fn.span, ref, unitExpr, typeAsc = None, typeSpec = None)
+              (Expr(fn.span, List(app)), terms).asRight
+            case _ =>
+              // This shouldn't happen since isNullaryFunction checks for Ref
+              (Expr(fn.span, List(fn)), terms).asRight
+        else
+          // Not a nullary function, just return the function reference
+          (Expr(fn.span, List(fn)), terms).asRight
+      case t :: _ if isOperator(t) =>
+        // An operator ends the application chain.
+        // Check if this is a nullary function that should be auto-wrapped
+        if isNullaryFunction(fn) then
+          fn match
+            case ref: Ref =>
+              val unitLit  = LiteralUnit(fn.span)
+              val unitExpr = Expr(fn.span, List(unitLit))
+              val app      = App(fn.span, ref, unitExpr, typeAsc = None, typeSpec = None)
+              (Expr(fn.span, List(app)), terms).asRight
+            case _ =>
+              (Expr(fn.span, List(fn)), terms).asRight
+        else (Expr(fn.span, List(fn)), terms).asRight
+      case _ =>
+        // The next terms are arguments. Parse one argument expression.
+        // `rewriteAtom` will correctly parse a simple term, a group, or a nested application.
+        rewriteAtom(terms, span).flatMap { case (argExpr, remainingTerms) =>
+          // Build the application of the current function to the parsed argument.
+          buildSingleApp(fn, argExpr, span).flatMap { app =>
+            // Continue building the chain with the new application as the function.
+            // This creates the left-associative structure.
+            buildAppChain(app, remainingTerms, span)
+          }
         }
-      }
-    }
 
   /** Build a single application node
     */
@@ -273,13 +311,6 @@ object ExpressionRewriter:
       case _: App => true
       case _ => false
     }
-
-  /** Convert a term to an expression
-    */
-  private def termToExpr(term: Term): Either[NEL[SemanticError], Expr] =
-    term match
-      case e: Expr => e.asRight
-      case _ => rewriteTerm(term).map(t => Expr(t.span, List(t)))
 
   /** Rewrite a term by recursively processing inner expressions
     */

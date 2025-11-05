@@ -47,6 +47,8 @@ object RefResolver:
             typeSpec     = ref.typeSpec,
             typeAsc      = ref.typeAsc
           )
+        else if candidates.length == 1 then
+          ref.copy(candidates    = candidates, resolvedAs = Some(candidates.head))
         else ref.copy(candidates = candidates)
 
       case group: TermGroup =>
@@ -112,10 +114,6 @@ object RefResolver:
   /** Resolve references in an expression.
     *
     * Returns either a list of errors or a new expression with resolved references.
-    *
-    * Because there can be multiple symbols with the same name in the module, we need to collect all
-    * candidates and store them in the reference. Later, during type checking, we will resolve the
-    * reference to the correct symbol based on the context.
     */
   private def resolveExpr(
     expr:   Expr,
@@ -128,6 +126,8 @@ object RefResolver:
       case ref: Ref =>
         val candidates = lookupRefs(ref, member, module)
         if candidates.isEmpty then List(SemanticError.UndefinedRef(ref, member, phaseName)).asLeft
+        else if candidates.length == 1 then
+          ref.copy(candidates = candidates, resolvedAs = Some(candidates.head)).asRight
         else ref.copy(candidates = candidates).asRight
 
       case group: TermGroup =>

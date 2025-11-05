@@ -53,3 +53,23 @@ class ModuleTests extends BaseEffFunSuite:
       """.stripMargin
     )
   }
+
+  test("anon module with rubbish at the end should not abort".ignore) {
+    parseNotFailed(
+      """
+        let a = 1;
+        rubbish-at-the-end
+      """
+    )
+  }
+
+  test("module with rubbish at the end should not abort".ignore) {
+    parseNotFailed(
+      """
+        module A = 
+          let a = 1;
+          rubbish-at-the-end
+        ;
+        """
+    )
+  }

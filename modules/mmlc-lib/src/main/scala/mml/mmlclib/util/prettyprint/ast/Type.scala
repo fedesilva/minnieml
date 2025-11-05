@@ -5,7 +5,8 @@ import mml.mmlclib.ast.*
 def prettyPrintTypeSpec(
   typeSpec:        Option[TypeSpec],
   showSourceSpans: Boolean = false,
-  showTypes:       Boolean = false
+  showTypes:       Boolean = false,
+  indent:          Int     = 0
 ): String =
   typeSpec match {
     case Some(TypeRef(sp, name, resolvedAs)) =>
@@ -19,26 +20,27 @@ def prettyPrintTypeSpec(
     case Some(TypeApplication(sp, base, args)) =>
       val spanStr = if showSourceSpans then s" ${printSourceSpan(sp)}" else ""
       s"TypeApplication$spanStr\n" +
-        s"  base: ${prettyPrintTypeSpec(Some(base), showSourceSpans, showTypes)}\n" +
-        s"  args: ${args.map(arg => prettyPrintTypeSpec(Some(arg), showSourceSpans, showTypes)).mkString(", ")}"
+        s"  base: ${prettyPrintTypeSpec(Some(base), showSourceSpans, showTypes, indent)}\n" +
+        s"  args: ${args.map(arg => prettyPrintTypeSpec(Some(arg), showSourceSpans, showTypes, indent)).mkString(", ")}"
 
     case Some(TypeFn(sp, paramTypes, returnType)) =>
-      val spanStr = if showSourceSpans then s" ${printSourceSpan(sp)}" else ""
+      val spanStr   = if showSourceSpans then s" ${printSourceSpan(sp)}" else ""
+      val indentStr = "  " * (indent + 1)
       s"TypeFn$spanStr\n" +
-        s"  params: ${paramTypes.map(p => prettyPrintTypeSpec(Some(p), showSourceSpans, showTypes)).mkString(", ")}\n" +
-        s"  return: ${prettyPrintTypeSpec(Some(returnType), showSourceSpans, showTypes)}"
+        s"${indentStr}params: ${paramTypes.map(p => prettyPrintTypeSpec(Some(p), showSourceSpans, showTypes, indent + 1)).mkString(", ")}\n" +
+        s"${indentStr}return: ${prettyPrintTypeSpec(Some(returnType), showSourceSpans, showTypes, indent + 1)}"
 
     case Some(TypeTuple(sp, elements)) =>
       val spanStr = if showSourceSpans then s" ${printSourceSpan(sp)}" else ""
       s"TypeTuple$spanStr\n" +
-        s"  elements: ${elements.map(e => prettyPrintTypeSpec(Some(e), showSourceSpans, showTypes)).mkString(", ")}"
+        s"  elements: ${elements.map(e => prettyPrintTypeSpec(Some(e), showSourceSpans, showTypes, indent)).mkString(", ")}"
 
     case Some(TypeStruct(sp, fields)) =>
       val spanStr = if showSourceSpans then s" ${printSourceSpan(sp)}" else ""
       s"TypeStruct$spanStr\n" +
         fields
           .map { case (name, tp) =>
-            s"  $name: ${prettyPrintTypeSpec(Some(tp), showSourceSpans, showTypes)}"
+            s"  $name: ${prettyPrintTypeSpec(Some(tp), showSourceSpans, showTypes, indent)}"
           }
           .mkString("\n")
 
@@ -50,12 +52,16 @@ def prettyPrintTypeSpec(
     case Some(Union(sp, types)) =>
       val spanStr = if showSourceSpans then s" ${printSourceSpan(sp)}" else ""
       s"Union$spanStr\n" +
-        types.map(t => prettyPrintTypeSpec(Some(t), showSourceSpans, showTypes)).mkString(" | ")
+        types
+          .map(t => prettyPrintTypeSpec(Some(t), showSourceSpans, showTypes, indent))
+          .mkString(" | ")
 
     case Some(Intersection(sp, types)) =>
       val spanStr = if showSourceSpans then s" ${printSourceSpan(sp)}" else ""
       s"Intersection$spanStr\n" +
-        types.map(t => prettyPrintTypeSpec(Some(t), showSourceSpans, showTypes)).mkString(" & ")
+        types
+          .map(t => prettyPrintTypeSpec(Some(t), showSourceSpans, showTypes, indent))
+          .mkString(" & ")
 
     case Some(TypeUnit(sp)) =>
       val spanStr = if showSourceSpans then s" ${printSourceSpan(sp)}" else ""
@@ -64,31 +70,48 @@ def prettyPrintTypeSpec(
     case Some(TypeSeq(sp, inner)) =>
       val spanStr = if showSourceSpans then s" ${printSourceSpan(sp)}" else ""
       s"TypeSeq$spanStr\n" +
-        s"  inner: ${prettyPrintTypeSpec(Some(inner), showSourceSpans, showTypes)}"
+        s"  inner: ${prettyPrintTypeSpec(Some(inner), showSourceSpans, showTypes, indent)}"
 
     case Some(TypeGroup(sp, types)) =>
       val spanStr = if showSourceSpans then s" ${printSourceSpan(sp)}" else ""
       s"TypeGroup$spanStr\n" +
-        types.map(t => prettyPrintTypeSpec(Some(t), showSourceSpans, showTypes)).mkString(", ")
-
-    case Some(lt: LiteralType) =>
-      s"LiteralType: ${lt.typeName}"
-
-    case Some(NativeTypeImpl(sp)) =>
-      val spanStr = if showSourceSpans then s" ${printSourceSpan(sp)}" else ""
-      s"NativeTypeImpl$spanStr"
+        types
+          .map(t => prettyPrintTypeSpec(Some(t), showSourceSpans, showTypes, indent))
+          .mkString(", ")
 
     case Some(inv: InvalidType) =>
       val spanStr = if showSourceSpans then s" ${printSourceSpan(inv.span)}" else ""
       s"InvalidType$spanStr\n" +
-        s"  original: ${prettyPrintTypeSpec(Some(inv.originalType), showSourceSpans, showTypes)}"
+        s"  original: ${prettyPrintTypeSpec(Some(inv.originalType), showSourceSpans, showTypes, indent)}"
 
-    case Some(NativeType(sp, attrs)) =>
+    case Some(NativePrimitive(sp, llvmType)) =>
       val spanStr = if showSourceSpans then s" ${printSourceSpan(sp)}" else ""
-      val attrsStr =
-        if attrs.nonEmpty then s" {${attrs.map { case (k, v) => s"$k: $v" }.mkString(", ")}}"
-        else ""
-      s"NativeType$spanStr$attrsStr"
+      s"@native:$llvmType$spanStr"
+
+    case Some(NativePointer(sp, llvmType)) =>
+      val spanStr = if showSourceSpans then s" ${printSourceSpan(sp)}" else ""
+      s"@native:*$llvmType$spanStr"
+
+    case Some(NativeStruct(sp, fields)) =>
+      val spanStr = if showSourceSpans then s" ${printSourceSpan(sp)}" else ""
+      if fields.isEmpty then s"@native:{}$spanStr"
+      else
+        val indentStr = "  " * (indent + 1)
+        val fieldStrs = fields
+          .map { case (name, tp) =>
+            s"$indentStr$name: ${prettyPrintTypeSpec(Some(tp), showSourceSpans, showTypes, indent + 1)}"
+          }
+          .mkString(",\n")
+        s"@native:{\n$fieldStrs\n${"  " * indent}}$spanStr"
+
+    case Some(TypeVariable(sp, name)) =>
+      val spanStr = if showSourceSpans then s" ${printSourceSpan(sp)}" else ""
+      s"$name$spanStr"
+
+    case Some(TypeScheme(sp, vars, bodyType)) =>
+      val spanStr = if showSourceSpans then s" ${printSourceSpan(sp)}" else ""
+      val varsStr = if vars.nonEmpty then s"∀${vars.mkString(" ")}. " else ""
+      s"$varsStr${prettyPrintTypeSpec(Some(bodyType), showSourceSpans, showTypes, indent)}$spanStr"
 
     case None =>
       "None"

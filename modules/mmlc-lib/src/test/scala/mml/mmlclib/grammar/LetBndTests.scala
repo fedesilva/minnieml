@@ -261,3 +261,30 @@ class LetBndTests extends BaseEffFunSuite:
       case _ => fail("Expected a binding")
     }
   }
+
+  test("let with invalid identifier should create ParsingIdError") {
+    parseFailedWithErrors(
+      """
+        let 123invalid = 5;
+      """
+    ).map { errors =>
+      assert(errors.size == 1, s"Expected 1 error but got ${errors.size}")
+      errors.head match {
+        case error: ParsingIdError =>
+          assert(
+            error.invalidId == "123invalid",
+            s"Expected '123invalid' but got '${error.invalidId}'"
+          )
+          assert(
+            error.message.contains("Invalid identifier"),
+            s"Error message should explain the rules: ${error.message}"
+          )
+          assert(
+            error.message.contains("lowercase letter"),
+            s"Error message should explain binding rules: ${error.message}"
+          )
+        case other =>
+          fail(s"Expected ParsingIdError but got: ${other.getClass.getSimpleName}")
+      }
+    }
+  }

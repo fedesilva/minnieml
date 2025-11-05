@@ -1,0 +1,11 @@
+
+let s = "
+   soy 
+   la
+   comadreja
+   ";
+
+
+fn main() = 
+  println(s);
+;

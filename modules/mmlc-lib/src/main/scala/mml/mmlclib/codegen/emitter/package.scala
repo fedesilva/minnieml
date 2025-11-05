@@ -1,10 +1,18 @@
 package mml.mmlclib.codegen.emitter
 
 import cats.syntax.all.*
+import mml.mmlclib.ast.*
 
 /** Helper for generating syntactically correct LLVM IR type definitions */
 def emitTypeDefinition(typeName: String, fields: List[String]): String =
   s"%$typeName = type { ${fields.mkString(", ")} }"
+
+def emitPointerTypeDefinition(typeName: String, pointeeType: String): String =
+  s"%$typeName = type $pointeeType*"
+
+/** Helper for generating syntactically correct LLVM IR constant assignment */
+def emitConstant(result: Int, typ: String, value: String): String =
+  s"  %$result = $typ $value"
 
 /** Helper for generating syntactically correct LLVM IR add instruction */
 def emitAdd(result: Int, typ: String, left: String, right: String): String =
@@ -120,14 +128,19 @@ case class CodeGenState(
 
   /** Adds a string constant to the state and returns the name of the constant. */
   def addStringConstant(content: String): (CodeGenState, String) =
-    val stringId = s"str.${nextStringId}"
-    (
-      copy(
-        stringConstants = stringConstants + (stringId -> content),
-        nextStringId    = nextStringId + 1
-      ),
-      stringId
-    )
+    // Check if this content already exists
+    stringConstants.find(_._2 == content) match {
+      case Some((existingId, _)) => (this, existingId)
+      case None =>
+        val stringId = s"str.${nextStringId}"
+        (
+          copy(
+            stringConstants = stringConstants + (stringId -> content),
+            nextStringId    = nextStringId + 1
+          ),
+          stringId
+        )
+    }
 
   /** Sets the module header if not already set.
     *
@@ -147,18 +160,14 @@ case class CodeGenState(
     *
     * @param typeName
     *   the name of the native type
+    * @param llvmTypeDef
+    *   the LLVM type definition string
     * @return
     *   updated CodeGenState with the native type added
     */
-  def withNativeType(typeName: String): CodeGenState =
+  def withNativeType(typeName: String, llvmTypeDef: String): CodeGenState =
     if nativeTypes.contains(typeName) then this
-    else
-      typeName match
-        case "String" =>
-          val typeDef = emitTypeDefinition("String", List("i64", "i8*"))
-          copy(nativeTypes = nativeTypes + (typeName -> typeDef))
-        // Add other types as needed
-        case _ => this
+    else copy(nativeTypes = nativeTypes + (typeName -> llvmTypeDef))
 
   /** Adds a function declaration if not already declared.
     *
@@ -181,17 +190,6 @@ case class CodeGenState(
       val declaration = emitFunctionDeclaration(name, returnType, paramTypes)
       copy(functionDeclarations = functionDeclarations + (name -> declaration))
 
-  /** Maintains backward compatibility with existing code that uses declareNativeType */
-  def declareNativeType(typeName: String): CodeGenState =
-    withNativeType(typeName)
-
-  /** Returns the LLVM type representation for a native type. */
-  def llvmTypeForNative(typeName: String): String = typeName match
-    case "Int" => "i32"
-    case "Boolean" => "i1"
-    case "String" => "%String" // Custom struct type
-    case _ => "i32" // Default fallback
-
 /** Represents the result of compiling a term or expression.
   *
   * @param register
@@ -209,3 +207,97 @@ case class CompileResult(
   isLiteral: Boolean = false,
   typeName:  String  = "Int" // Default to Int for backward compatibility
 )
+
+/** Convert a NativeType AST node to LLVM type definition string.
+  *
+  * @param typeName
+  *   the name of the type being defined
+  * @param nativeType
+  *   the native type specification from the AST
+  * @param state
+  *   the current code generation state
+  * @return
+  *   Either an error or the LLVM type definition string
+  */
+def nativeTypeToLlvmDef(
+  typeName:   String,
+  nativeType: mml.mmlclib.ast.NativeType,
+  state:      CodeGenState
+): Either[CodeGenError, String] =
+  nativeType match
+    case NativePrimitive(_, llvmType) =>
+      Right(s"%$typeName = type $llvmType")
+    case NativePointer(_, llvmType) =>
+      Right(emitPointerTypeDefinition(typeName, llvmType))
+    case NativeStruct(_, fields) =>
+      // Convert each field's TypeSpec to LLVM type
+      val fieldResults = fields.toList.map { case (fieldName, typeSpec) =>
+        getLlvmType(typeSpec, state).map((fieldName, _))
+      }
+      // Check for errors
+      val errors = fieldResults.collect { case Left(err) => err }
+      if errors.nonEmpty then
+        Left(
+          CodeGenError(s"Failed to resolve struct fields: ${errors.map(_.message).mkString(", ")}")
+        )
+      else
+        val llvmFields = fieldResults.collect { case Right((_, t)) => t }
+        Right(emitTypeDefinition(typeName, llvmFields))
+
+/** Convert any TypeSpec to LLVM type string.
+  *
+  * This is a basic implementation for Block 3. It will be expanded in Block 4 to handle all type
+  * specifications properly.
+  *
+  * @param typeSpec
+  *   the type specification to convert
+  * @param state
+  *   the current code generation state
+  * @return
+  *   Either an error or the LLVM type string
+  */
+def getLlvmType(
+  typeSpec: mml.mmlclib.ast.TypeSpec,
+  state:    CodeGenState
+): Either[CodeGenError, String] =
+
+  typeSpec match
+    case typeRef @ TypeRef(_, name, resolvedOpt) =>
+      resolvedOpt match
+        case Some(resolved) =>
+          resolved match
+            case typeDef: TypeDef =>
+              typeDef.typeSpec match
+                case Some(nativeType: NativeType) =>
+                  // Follow through to get the actual LLVM type
+                  nativeType match
+                    case NativePrimitive(_, llvmType) => Right(llvmType)
+                    case NativePointer(_, llvmType) => Right(s"$llvmType*")
+                    case _: NativeStruct => Right(s"%$name") // Structs use % prefix
+                case _ =>
+                  // Non-native types cannot be translated to LLVM yet
+                  Left(CodeGenError(s"Cannot determine LLVM type for non-native type: $name"))
+            case typeAlias: TypeAlias =>
+              // Use the computed typeSpec if available, otherwise follow the typeRef
+              typeAlias.typeSpec match
+                case Some(spec) => getLlvmType(spec, state)
+                case None => getLlvmType(typeAlias.typeRef, state)
+        case None =>
+          // Unresolved type - this should have been caught by TypeResolver
+          // Add debug info to understand what's happening
+          Left(CodeGenError(s"Unresolved type reference: $name (TypeRef with no resolvedAs)"))
+    case TypeUnit(_) =>
+      Right("void")
+    case np: NativePrimitive =>
+      // Direct primitive type (shouldn't normally happen at this level)
+      Right(np.llvmType)
+    case ptr: NativePointer =>
+      // Direct pointer type (shouldn't normally happen at this level)
+      Right(ptr.llvmType)
+    case _: NativeStruct =>
+      Left(CodeGenError("Unexpected inline native struct"))
+    case other =>
+      // No LLVM type mapping for this TypeSpec
+      Left(
+        CodeGenError(s"No LLVM type mapping for TypeSpec: ${other.getClass.getSimpleName} - $other")
+      )

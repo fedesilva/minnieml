@@ -1,18 +1,18 @@
 package mml.mmlclib.codegen.emitter
 
 import cats.syntax.all.*
-import mml.mmlclib.ast.{Bnd, FnDef, Module, NativeImpl}
-
-/** Helper for string escaping */
-private def escapeString(str: String): String = {
-  str.flatMap {
-    case '"' => "\\\""
-    case '\\' => "\\\\"
-    case '\n' => "\\n"
-    case '\r' => "\\r"
-    case '\t' => "\\t"
-    case c => c.toString
-  }
+import mml.mmlclib.ast.{
+  Bnd,
+  FnDef,
+  LiteralBool,
+  LiteralInt,
+  LiteralString,
+  LiteralUnit,
+  Module,
+  NativeImpl,
+  NativeStruct,
+  NativeType,
+  TypeDef
 }
 
 /** Main entry point for LLVM IR emission.
@@ -20,24 +20,47 @@ private def escapeString(str: String): String = {
   * Provides module-level code emission functionality.
   */
 def emitModule(module: Module): Either[CodeGenError, String] = {
-  // Setup the initial state with the module header and native type definition
-  // We don't emit these directly - instead we add them to our state tracking
+  // Setup the initial state with the module header
   val initialState = CodeGenState()
     .withModuleHeader(module.name)
-    .withNativeType("String")
-  // Function declarations will come from @native functions in the module
 
-  // Process all members using the initialState that tracks declarations
-  val processedState = module.members
-    .foldLeft(initialState.asRight[CodeGenError]) { (stateE, member) =>
-      stateE.flatMap { state =>
-        member match {
-          case bnd: Bnd => emitBinding(bnd, state)
-          case fn:  FnDef => emitFnDef(fn, state)
-          case _ => state.asRight
-        }
+  // Collect all TypeDef members with native type specifications
+  // Currently we only emit LLVM type definitions for native types
+  // Future: Add handlers for enums, records, and other MML type constructs
+  val typeDefs = module.members.collect {
+    case td: TypeDef if td.typeSpec.exists(_.isInstanceOf[NativeType]) =>
+      td
+  }
+
+  // Generate LLVM type definitions for all native structs.
+  // Primitives and pointers do not require forward declarations.
+  val stateWithTypes = typeDefs.foldLeft(initialState.asRight[CodeGenError]) { (stateE, typeDef) =>
+    stateE.flatMap { state =>
+      typeDef.typeSpec match {
+        // Only emit definitions for native structs
+        case Some(nativeStruct: NativeStruct) =>
+          nativeTypeToLlvmDef(typeDef.name, nativeStruct, state).map { llvmTypeDef =>
+            state.copy(nativeTypes = state.nativeTypes + (typeDef.name -> llvmTypeDef))
+          }
+        // Other native types (primitives, pointers) are ignored here
+        case _ => state.asRight
       }
     }
+  }
+
+  // Process all members using the state that includes type definitions
+  val processedState = stateWithTypes.flatMap { stateWithTypeDefs =>
+    module.members
+      .foldLeft(stateWithTypeDefs.asRight[CodeGenError]) { (stateE, member) =>
+        stateE.flatMap { state =>
+          member match {
+            case bnd: Bnd => emitBinding(bnd, state)
+            case fn:  FnDef => emitFnDef(fn, state)
+            case _ => state.asRight
+          }
+        }
+      }
+  }
 
   // Construct the final output with all components in the proper order
   processedState.map { finalState =>
@@ -109,34 +132,117 @@ def emitModule(module: Module): Either[CodeGenError, String] = {
   *   Either a CodeGenError or the updated CodeGenState.
   */
 private def emitBinding(bnd: Bnd, state: CodeGenState): Either[CodeGenError, CodeGenState] = {
-  val origState = state
-  compileExpr(bnd.value, state).flatMap { compileRes =>
-    if compileRes.isLiteral then {
-      // Check for string literals
-      if compileRes.typeName == "String" then {
-        val stringType = state.llvmTypeForNative("String")
-        val stringData = compileRes.register.toString
-        Right(compileRes.state.emit(emitGlobalVariable(bnd.name, stringType, stringData)))
-      } else
-        Right(
-          compileRes.state.emit(emitGlobalVariable(bnd.name, "i32", compileRes.register.toString))
-        )
-    } else {
-      // Discard the instructions from the initial compilation by using the original state.
-      val initFnName = s"_init_global_${bnd.name}"
-      val state2 = origState
-        .emit(emitGlobalVariable(bnd.name, "i32", "0"))
-        .emit(s"define internal void @$initFnName() {")
-        .emit(s"entry:")
-      compileExpr(bnd.value, state2.withRegister(0)).map { compileRes2 =>
-        compileRes2.state
-          .emit(emitStore(s"%${compileRes2.register}", "i32", s"@${bnd.name}"))
-          .emit("  ret void")
-          .emit("}")
-          .emit("")
-          .addInitializer(initFnName)
+  // Check if binding value is a direct literal at AST level
+  bnd.value.terms match {
+    case List(term) =>
+      term match {
+        case lit: LiteralString =>
+          // Generate static String global: @a = global %String { i64 4, ptr @str.0 }
+          val (newState, constName) = state.addStringConstant(lit.value)
+          val llvmTypeE = bnd.typeSpec match {
+            case Some(typeSpec) => getLlvmType(typeSpec, newState)
+            case None =>
+              Left(
+                CodeGenError(
+                  s"Missing type specification for string literal in binding '${bnd.name}'"
+                )
+              )
+          }
+          llvmTypeE.map { llvmType =>
+            val staticValue = s"{ i64 ${lit.value.length}, ptr @$constName }"
+            newState.emit(emitGlobalVariable(bnd.name, llvmType, staticValue))
+          }
+
+        case lit: LiteralInt =>
+          // Generate static int global: @a = global i64 42
+          val llvmTypeE = bnd.typeSpec match {
+            case Some(typeSpec) => getLlvmType(typeSpec, state)
+            case None =>
+              Left(
+                CodeGenError(s"Missing type specification for int literal in binding '${bnd.name}'")
+              )
+          }
+          llvmTypeE.map { llvmType =>
+            state.emit(emitGlobalVariable(bnd.name, llvmType, lit.value.toString))
+          }
+
+        case lit: LiteralBool =>
+          // Generate static bool global: @a = global i1 true
+          val llvmTypeE = bnd.typeSpec match {
+            case Some(typeSpec) => getLlvmType(typeSpec, state)
+            case None =>
+              Left(
+                CodeGenError(
+                  s"Missing type specification for bool literal in binding '${bnd.name}'"
+                )
+              )
+          }
+          llvmTypeE.map { llvmType =>
+            val staticValue = if lit.value then "true" else "false"
+            state.emit(emitGlobalVariable(bnd.name, llvmType, staticValue))
+          }
+
+        case lit: LiteralUnit =>
+          // Unit literals don't generate globals, they're compile-time only
+          Right(state)
+
+        case _ =>
+          // Fall back to existing runtime initialization logic for complex expressions
+          val origState = state
+          compileExpr(bnd.value, state).flatMap { compileRes =>
+            // For non-literal expressions, always use runtime initialization
+            val initFnName = s"_init_global_${bnd.name}"
+            // Get the binding's type specification for proper LLVM type
+            val llvmTypeE = bnd.typeSpec match {
+              case Some(typeSpec) => getLlvmType(typeSpec, origState)
+              case None =>
+                Left(CodeGenError(s"Missing type specification for binding '${bnd.name}'"))
+            }
+
+            llvmTypeE.flatMap { llvmType =>
+              val initValue = "zeroinitializer" // Safe default for all types
+              val state2 = origState
+                .emit(emitGlobalVariable(bnd.name, llvmType, initValue))
+                .emit(s"define internal void @$initFnName() {")
+                .emit(s"entry:")
+              compileExpr(bnd.value, state2.withRegister(0)).map { compileRes2 =>
+                compileRes2.state
+                  .emit(emitStore(s"%${compileRes2.register}", llvmType, s"@${bnd.name}"))
+                  .emit("  ret void")
+                  .emit("}")
+                  .emit("")
+                  .addInitializer(initFnName)
+              }
+            }
+          }
       }
-    }
+
+    case _ =>
+      // Multiple terms - not a simple literal, use runtime initialization
+      val origState = state
+      compileExpr(bnd.value, state).flatMap { compileRes =>
+        val initFnName = s"_init_global_${bnd.name}"
+        val llvmTypeE = bnd.typeSpec match {
+          case Some(typeSpec) => getLlvmType(typeSpec, origState)
+          case None => Left(CodeGenError(s"Missing type specification for binding '${bnd.name}'"))
+        }
+
+        llvmTypeE.flatMap { llvmType =>
+          val initValue = "zeroinitializer"
+          val state2 = origState
+            .emit(emitGlobalVariable(bnd.name, llvmType, initValue))
+            .emit(s"define internal void @$initFnName() {")
+            .emit(s"entry:")
+          compileExpr(bnd.value, state2.withRegister(0)).map { compileRes2 =>
+            compileRes2.state
+              .emit(emitStore(s"%${compileRes2.register}", llvmType, s"@${bnd.name}"))
+              .emit("  ret void")
+              .emit("}")
+              .emit("")
+              .addInitializer(initFnName)
+          }
+        }
+      }
   }
 }
 
@@ -153,88 +259,31 @@ private def emitBinding(bnd: Bnd, state: CodeGenState): Either[CodeGenError, Cod
   *   Either a CodeGenError or the updated CodeGenState.
   */
 private def emitFnDef(fn: FnDef, state: CodeGenState): Either[CodeGenError, CodeGenState] = {
-  // Check if this is a native function implementation
-  fn.body.terms match {
-    case List(NativeImpl(_, _, _)) => {
-      // Determine parameter and return types
-      val returnType = fn.typeSpec
-        .map(t => getNativeType(t.toString(), state))
-        .orElse(fn.typeAsc.map(t => getNativeType(t.toString(), state)))
-        .getOrElse("i32")
+  // Get the return type from the function's type annotation (required)
+  val returnTypeE = fn.typeSpec
+    .map(getLlvmType(_, state))
+    .getOrElse(Left(CodeGenError(s"Missing return type annotation for function '${fn.name}'")))
 
-      val paramTypes = fn.params.map { param =>
-        param.typeSpec
-          .map(t => getNativeType(t.toString(), state))
-          .orElse(param.typeAsc.map(t => getNativeType(t.toString(), state)))
-          .getOrElse("i32")
-      }
-
-      // Add the function declaration to state rather than emitting it directly
-      // This ensures each declaration happens exactly once
-      Right(state.withFunctionDeclaration(fn.name, returnType, paramTypes))
+  returnTypeE.flatMap { returnType =>
+    // Get parameter types
+    val paramTypesE = fn.params.traverse { param =>
+      param.typeSpec
+        .map(getLlvmType(_, state))
+        .getOrElse(Left(CodeGenError(s"Missing type for param '${param.name}' in fn '${fn.name}'")))
     }
 
-    case _ => {
-      // For normal functions, emit the full definition
-      // For now, we'll assume i32 return type and i32 parameters for simplicity
-      // In a more complete implementation, we would derive types from typeSpec/typeAsc
+    paramTypesE.flatMap { paramTypes =>
+      // Check if this is a native function implementation
+      fn.body.terms match {
+        case List(NativeImpl(_, _, _, _)) =>
+          // Add the function declaration to state rather than emitting it directly
+          // This ensures each declaration happens exactly once
+          Right(state.withFunctionDeclaration(fn.name, returnType, paramTypes))
 
-      // Generate function declaration with parameters
-      val paramDecls = fn.params.zipWithIndex
-        .map { case (param, idx) =>
-          s"i32 %${idx}"
-        }
-        .mkString(", ")
-
-      val functionDecl = s"define i32 @${fn.name}($paramDecls) {"
-      val entryLine    = "entry:"
-
-      // Setup function body state with initial lines
-      val bodyState = state
-        .emit(functionDecl)
-        .emit(entryLine)
-        .withRegister(0) // Reset register counter for local function scope
-
-      // Create a scope map for function parameters
-      val paramScope = fn.params.zipWithIndex.map { case (param, idx) =>
-        val regNum    = idx
-        val allocLine = s"  %${param.name}_ptr = alloca i32"
-        val storeLine = s"  store i32 %${idx}, i32* %${param.name}_ptr"
-        val loadLine  = s"  %${regNum} = load i32, i32* %${param.name}_ptr"
-
-        // We'll emit the alloca/store/load sequence for each parameter
-        bodyState.emit(allocLine).emit(storeLine).emit(loadLine)
-
-        (param.name, regNum)
-      }.toMap
-
-      // Register count starts after parameter setup
-      val updatedState = bodyState.withRegister(fn.params.size)
-
-      // Emit the function body with the parameter scope
-      compileExpr(fn.body, updatedState, paramScope).flatMap { bodyRes =>
-        // Add return instruction with the result of the function body
-        val returnOp =
-          if bodyRes.isLiteral then bodyRes.register.toString
-          else s"%${bodyRes.register}"
-
-        val returnLine = s"  ret i32 ${returnOp}"
-
-        // Close function and add empty line
-        Right(
-          bodyRes.state
-            .emit(returnLine)
-            .emit("}")
-            .emit("")
-        )
+        case _ =>
+          // For normal functions, delegate to the FunctionEmitter
+          compileFnDef(fn, state, returnType, paramTypes)
       }
     }
   }
-}
-
-/** Helper to get the LLVM IR type from a native type name */
-private def getNativeType(typeName: String, state: CodeGenState): String = {
-  // Extract the actual type name from things like "String" or "String => String"
-  val baseType = typeName.trim.split("[ =]").head
-  state.llvmTypeForNative(baseType)
 }

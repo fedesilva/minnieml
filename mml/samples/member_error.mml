@@ -1,4 +1,4 @@
-fn mult (a b) = a * b;
+fn mult (a: Int, b: Int): Int = a * b;
 let a  ;
 let b = 1;
 let c = ;

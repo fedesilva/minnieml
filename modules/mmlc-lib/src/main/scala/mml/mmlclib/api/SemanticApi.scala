@@ -24,22 +24,27 @@ object SemanticApi:
   def rewriteModule(module: Module): CompilerEffect[Module] =
     EitherT
       .liftF(IO.delay {
-        // Create initial state with injected standard operators
-        val moduleWithOps = injectStandardOperators(module)
-        val initialState  = SemanticPhaseState(moduleWithOps, Vector.empty)
+        // Create initial state with injected basic types, standard operators, and common functions
+        // This is a workaround for current the lack of a real module system, with imports, etc.
+        val moduleWithTypes = injectBasicTypes(module)
+        val moduleWithOps   = injectStandardOperators(moduleWithTypes)
+        val moduleWithFns   = injectCommonFunctions(moduleWithOps)
+        val initialState    = SemanticPhaseState(moduleWithFns, Vector.empty)
 
         // Thread state through all phases
         val finalState =
           initialState
+            |> ParsingErrorChecker.checkModule
             |> DuplicateNameChecker.rewriteModule
-            |> RefResolver.rewriteModule
             |> TypeResolver.rewriteModule
+            |> RefResolver.rewriteModule
             |> ExpressionRewriter.rewriteModule
-            |> MemberErrorChecker.checkModule
             |> Simplifier.rewriteModule
+            |> TypeChecker.rewriteModule
 
         // Convert back to Either for compatibility
-        if finalState.errors.isEmpty then Right(finalState.module)
+        if finalState.errors.isEmpty
+        then Right(finalState.module)
         else Left(finalState.errors.toList)
       })
       .flatMap {

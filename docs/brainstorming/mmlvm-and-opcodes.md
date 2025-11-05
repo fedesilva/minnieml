@@ -111,7 +111,7 @@ end
 MinnieML:
 
 ```mml
-fn print(s: String): () = ~[native];  # External function (builtin)
+fn print(s: String): Unit = ~[native];  # External function (builtin)
 
 let s = "mmlvm!";
 
@@ -121,18 +121,18 @@ fn main() = print s;
 MMLVM:
 
 ```mml
-extern @print(String): ()
+extern @print(String): Unit
 
 global @s: String = "mmlvm!"
 
-fn @main(): ()
+fn @main(): Unit
   %0 = load @s
   call @print, %0
   ret
 end
 ```
 
-- **`extern @print(String): ()`** declares a function **not in this module**.
+- **`extern @print(String): Unit`** declares a function **not in this module**.
 - `call @print, %0` calls the external function with argument `%0`.
 
 ---

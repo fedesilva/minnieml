@@ -115,7 +115,7 @@ def prettyPrintTerm(
           }
           .mkString("\n")
 
-    case App(sp, fn, arg, typeSpec, typeAsc) =>
+    case App(sp, fn, arg, typeAsc, typeSpec) =>
       val spanStr = if showSourceSpans then printSourceSpan(sp) else ""
       val typeStr =
         if showTypes then
@@ -129,28 +129,47 @@ def prettyPrintTerm(
         s"${indentStr}  fn:\n$fnStr\n" +
         s"${indentStr}  arg:\n$argStr"
 
+    case Lambda(sp, params, body, typeSpec, typeAsc) =>
+      val spanStr = if showSourceSpans then printSourceSpan(sp) else ""
+      val typeStr =
+        if showTypes then
+          s"\n${indentStr}  typeSpec: ${prettyPrintTypeSpec(typeSpec)}\n" +
+            s"${indentStr}  typeAsc: ${prettyPrintTypeSpec(typeAsc)}"
+        else ""
+      val paramsStr =
+        if params.isEmpty then s"${indentStr}  params: []"
+        else
+          s"${indentStr}  params:\n" +
+            params
+              .map(p => s"${indentStr}    ${p.name}: ${prettyPrintTypeSpec(p.typeSpec)}")
+              .mkString("\n")
+      val bodyStr = prettyPrintExpr(body, indent + 2, showSourceSpans, showTypes)
+      s"${indentStr}Lambda $spanStr$typeStr\n" +
+        s"$paramsStr\n" +
+        s"${indentStr}  body:\n$bodyStr"
+
     // Literal values
-    case LiteralInt(sp, value) =>
-      val spanStr = if showSourceSpans then printSourceSpan(sp) else ""
-      s"${indentStr}LiteralInt $value $spanStr"
+    case lit: LiteralInt =>
+      val spanStr = if showSourceSpans then printSourceSpan(lit.span) else ""
+      s"${indentStr}LiteralInt ${lit.value} $spanStr"
 
-    case LiteralString(sp, value) =>
-      val spanStr = if showSourceSpans then printSourceSpan(sp) else ""
-      s"""${indentStr}LiteralString "$value" $spanStr"""
+    case lit: LiteralString =>
+      val spanStr = if showSourceSpans then printSourceSpan(lit.span) else ""
+      s"""${indentStr}LiteralString "${lit.value}" $spanStr"""
 
-    case LiteralBool(sp, value) =>
-      val spanStr = if showSourceSpans then printSourceSpan(sp) else ""
-      s"${indentStr}LiteralBool $value $spanStr"
+    case lit: LiteralBool =>
+      val spanStr = if showSourceSpans then printSourceSpan(lit.span) else ""
+      s"${indentStr}LiteralBool ${lit.value} $spanStr"
 
-    case LiteralFloat(sp, value) =>
-      val spanStr = if showSourceSpans then printSourceSpan(sp) else ""
-      s"${indentStr}LiteralFloat $value $spanStr"
+    case lit: LiteralFloat =>
+      val spanStr = if showSourceSpans then printSourceSpan(lit.span) else ""
+      s"${indentStr}LiteralFloat ${lit.value} $spanStr"
 
-    case LiteralUnit(sp) =>
-      val spanStr = if showSourceSpans then printSourceSpan(sp) else ""
+    case lit: LiteralUnit =>
+      val spanStr = if showSourceSpans then printSourceSpan(lit.span) else ""
       s"${indentStr}LiteralUnit $spanStr"
 
-    case NativeImpl(sp, typeSpec, typeAsc) =>
+    case NativeImpl(sp, typeSpec, typeAsc, _) =>
       val spanStr = if showSourceSpans then printSourceSpan(sp) else ""
       val typeStr =
         if showTypes then

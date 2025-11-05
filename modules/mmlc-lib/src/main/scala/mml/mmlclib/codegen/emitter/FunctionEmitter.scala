@@ -23,25 +23,29 @@ import mml.mmlclib.codegen.emitter.compileExpr
   */
 def compileBinding(bnd: Bnd, state: CodeGenState): Either[CodeGenError, CodeGenState] =
   val origState = state
-  compileExpr(bnd.value, state).flatMap { compileRes =>
-    if compileRes.isLiteral then
-      Right(compileRes.state.emit(s"@${bnd.name} = global i32 ${compileRes.register}"))
-    else
-      // Discard the instructions from the initial compilation by using the original state.
-      val initFnName = s"_init_global_${bnd.name}"
-      val state2 = origState
-        .emit(s"@${bnd.name} = global i32 0")
-        .emit(s"define internal void @$initFnName() {")
-        .emit(s"entry:")
-      compileExpr(bnd.value, state2.withRegister(0)).map { compileRes2 =>
-        compileRes2.state
-          .emit(s"  store i32 %${compileRes2.register}, i32* @${bnd.name}")
-          .emit("  ret void")
-          .emit("}")
-          .emit("")
-          .addInitializer(initFnName)
+  bnd.typeAsc.map(getLlvmType(_, state)) match
+    case Some(Right(llvmType)) =>
+      compileExpr(bnd.value, state).flatMap { compileRes =>
+        if compileRes.isLiteral then
+          Right(compileRes.state.emit(s"@${bnd.name} = global $llvmType ${compileRes.register}"))
+        else
+          // Discard the instructions from the initial compilation by using the original state.
+          val initFnName = s"_init_global_${bnd.name}"
+          val state2 = origState
+            .emit(s"@${bnd.name} = global $llvmType 0")
+            .emit(s"define internal void @$initFnName() {")
+            .emit(s"entry:")
+          compileExpr(bnd.value, state2.withRegister(0)).map { compileRes2 =>
+            compileRes2.state
+              .emit(s"  store $llvmType %${compileRes2.register}, $llvmType* @${bnd.name}")
+              .emit("  ret void")
+              .emit("}")
+              .emit("")
+              .addInitializer(initFnName)
+          }
       }
-  }
+    case Some(Left(err)) => Left(err)
+    case None => Left(CodeGenError(s"Type annotation missing for binding '${bnd.name}'"))
 
 /** Compiles a function definition into LLVM IR.
   *
@@ -52,21 +56,25 @@ def compileBinding(bnd: Bnd, state: CodeGenState): Either[CodeGenError, CodeGenS
   *   the function definition to compile
   * @param state
   *   the current code generation state
+  * @param returnType
+  *   the pre-calculated LLVM return type
+  * @param paramTypes
+  *   the pre-calculated LLVM parameter types
   * @return
   *   Either a CodeGenError or the updated CodeGenState.
   */
-def compileFnDef(fn: FnDef, state: CodeGenState): Either[CodeGenError, CodeGenState] =
-  // For now, we'll assume i32 return type and i32 parameters for simplicity
-  // In a more complete implementation, we would derive types from typeSpec/typeAsc
-
+def compileFnDef(
+  fn:         FnDef,
+  state:      CodeGenState,
+  returnType: String,
+  paramTypes: List[String]
+): Either[CodeGenError, CodeGenState] =
   // Generate function declaration with parameters
-  val paramDecls = fn.params.zipWithIndex
-    .map { case (param, idx) =>
-      s"i32 %${idx}"
-    }
+  val paramDecls = paramTypes.zipWithIndex
+    .map { case (typ, idx) => s"$typ %$idx" }
     .mkString(", ")
 
-  val functionDecl = s"define i32 @${fn.name}($paramDecls) {"
+  val functionDecl = s"define $returnType @${fn.name}($paramDecls) {"
   val entryLine    = "entry:"
 
   // Setup function body state with initial lines
@@ -76,17 +84,21 @@ def compileFnDef(fn: FnDef, state: CodeGenState): Either[CodeGenError, CodeGenSt
     .withRegister(0) // Reset register counter for local function scope
 
   // Create a scope map for function parameters
-  val paramScope = fn.params.zipWithIndex.map { case (param, idx) =>
-    val regNum    = idx
-    val allocLine = s"  %${param.name}_ptr = alloca i32"
-    val storeLine = s"  store i32 %${idx}, i32* %${param.name}_ptr"
-    val loadLine  = s"  %${regNum} = load i32, i32* %${param.name}_ptr"
+  val paramScope = fn.params
+    .zip(paramTypes)
+    .zipWithIndex
+    .map { case ((param, typ), idx) =>
+      val regNum    = idx
+      val allocLine = s"  %${param.name}_ptr = alloca $typ"
+      val storeLine = s"  store $typ %$idx, $typ* %${param.name}_ptr"
+      val loadLine  = s"  %${regNum} = load $typ, $typ* %${param.name}_ptr"
 
-    // We'll emit the alloca/store/load sequence for each parameter
-    bodyState.emit(allocLine).emit(storeLine).emit(loadLine)
+      // We'll emit the alloca/store/load sequence for each parameter
+      bodyState.emit(allocLine).emit(storeLine).emit(loadLine)
 
-    (param.name, regNum)
-  }.toMap
+      (param.name, regNum)
+    }
+    .toMap
 
   // Register count starts after parameter setup
   val updatedState = bodyState.withRegister(fn.params.size)
@@ -94,11 +106,12 @@ def compileFnDef(fn: FnDef, state: CodeGenState): Either[CodeGenError, CodeGenSt
   // Compile the function body with the parameter scope
   compileExpr(fn.body, updatedState, paramScope).flatMap { bodyRes =>
     // Add return instruction with the result of the function body
-    val returnOp =
-      if bodyRes.isLiteral then bodyRes.register.toString
-      else s"%${bodyRes.register}"
-
-    val returnLine = s"  ret i32 ${returnOp}"
+    val returnLine =
+      if returnType == "void" then "  ret void"
+      else
+        val returnOp =
+          if bodyRes.isLiteral then bodyRes.register.toString else s"%${bodyRes.register}"
+        s"  ret $returnType $returnOp"
 
     // Close function and add empty line
     Right(

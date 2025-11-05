@@ -16,7 +16,7 @@ object ScalacConfig {
       "-language:implicitConversions", // Allow definition of implicit functions called views
       "-unchecked", // Enable additional warnings where generated code depends on assumptions.
       "-Wunused:all",
-      // "-Xfatal-warnings", // Fail the compilation if there are any warnings.
+      "-Xfatal-warnings", // Fail the compilation if there are any warnings.
       "-language:strictEquality",
       "-new-syntax" // Enforce new syntax
     )

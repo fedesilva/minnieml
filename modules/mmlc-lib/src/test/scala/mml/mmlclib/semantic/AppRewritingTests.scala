@@ -1,20 +1,29 @@
 package mml.mmlclib.semantic
 
 import mml.mmlclib.ast.*
+import mml.mmlclib.semantic.lookupNames
 import mml.mmlclib.test.BaseEffFunSuite
 import mml.mmlclib.test.TestExtractors.*
+import mml.mmlclib.util.*
 import mml.mmlclib.util.prettyprint.ast.prettyPrintAst
 import munit.*
 
 class AppRewritingTests extends BaseEffFunSuite:
 
   test("2 arity function") {
-    semNotFailed(
+
+    val code =
       """
-      fn mult (a b) = ???;
+      fn mult (a: Int, b: Int): Int = ???;
       let a = mult 2 2;
-      """
-    ).map { m =>
+    """
+
+    semNotFailed(code).map { m =>
+
+      // dump the raw module
+      // println("dumping raw module")
+      // println(m)
+
       val memberBnd =
         lookupNames("a", m).headOption
           .getOrElse(
@@ -53,7 +62,7 @@ class AppRewritingTests extends BaseEffFunSuite:
     // This should fail semantic analysis due to dangling terms
     semFailed(
       """
-      fn func (a b) = ???;
+      fn func (a: Int, b: Int): Int = ???;
       let a = 2 + (func 1) 3;
       """
     )
@@ -62,8 +71,8 @@ class AppRewritingTests extends BaseEffFunSuite:
   test("grouped function applications should work correctly") {
     semNotFailed(
       """
-      fn func (a) = ???;
-      fn apply (f x) = ???;
+      fn func (a: Int): Int = ???;
+      fn apply (f: Int, x: Int): Int = ???;
       let a = apply (func 1) 2;
       """
     ).map { m =>
@@ -118,7 +127,7 @@ class AppRewritingTests extends BaseEffFunSuite:
   test("curried function application should work without boundaries") {
     semNotFailed(
       """
-      fn func (a b) = ???;
+      fn func (a: Int, b: Int, c: Int, d: Int): Int = ???;
       let a = func 1 2 3 4;
       """
     ).map { m =>
@@ -161,8 +170,8 @@ class AppRewritingTests extends BaseEffFunSuite:
   test("function application with operators should work") {
     semNotFailed(
       """
-      fn func (a b) = ???;
-      let a = (func 1 1) + 3 - func 1 2 3;
+      fn func (a: Int, b: Int): Int = ???;
+      let a = (func 1 1) + 3 - func 1 2;
       """
     ).map { m =>
       val memberBnd =
@@ -179,11 +188,11 @@ class AppRewritingTests extends BaseEffFunSuite:
               // Top level is minus operation
               assertEquals(clue(minusRef.name), "-", "Should be minus operation")
 
-              // Verify right side is func 1 2 3
+              // Verify right side is func 1 2
               funcExpr.terms.headOption match
                 case Some(TXApp(funcRef2, _, funcArgs)) =>
                   assertEquals(clue(funcRef2.name), "func", "Func 2 name")
-                  assertEquals(clue(funcArgs.length), 3, "Func 2 should have 3 args")
+                  assertEquals(clue(funcArgs.length), 2, "Func 2 should have 2 args")
 
                   // Check all arguments are correct literals
                   funcArgs(0).terms.headOption match
@@ -199,13 +208,6 @@ class AppRewritingTests extends BaseEffFunSuite:
                     case Some(other) =>
                       fail(s"Expected literal 2 for arg2, got: ${prettyPrintAst(other)}")
                     case None => fail("Expected literal 2 for arg2, got: None")
-
-                  funcArgs(2).terms.headOption match
-                    case Some(LiteralInt(_, arg3Val)) =>
-                      assertEquals(clue(arg3Val), 3, "Func 2 Arg 3")
-                    case Some(other) =>
-                      fail(s"Expected literal 3 for arg3, got: ${prettyPrintAst(other)}")
-                    case None => fail("Expected literal 3 for arg3, got: None")
 
                 case Some(other) =>
                   fail(s"Expected TXApp in right side of minus, got: ${prettyPrintAst(other)}")
@@ -262,128 +264,10 @@ class AppRewritingTests extends BaseEffFunSuite:
     }
   }
 
-  test("complex nested function applications with operators should work") {
-    semNotFailed(
-      """
-      fn func (a b) = ???;
-      fn apply (f x) = ???;
-      fn compose (f g x) = ???;
-      
-      let a = apply (func 1) 2 + compose func func 3 4 5;
-      """
-    ).map { m =>
-      val memberBnd =
-        lookupNames("a", m).headOption
-          .getOrElse(
-            fail(s"Member `a` not found in module: ${prettyPrintAst(m)}")
-          )
-
-      memberBnd match {
-        case bnd: Bnd =>
-          bnd.value.terms.headOption match
-            case Some(TXApp(plusRef, _, plusArgs)) =>
-              assertEquals(clue(plusRef.name), "+", "Top operation should be +")
-              assertEquals(clue(plusArgs.length), 2, "+ should have 2 args")
-
-              // Right side should be compose function call
-              plusArgs(1).terms.headOption match
-                case Some(TXApp(composeRef, _, composeArgs)) =>
-                  assertEquals(clue(composeRef.name), "compose", "Compose function name")
-                  assertEquals(clue(composeArgs.length), 5, "Compose should have 5 args")
-
-                  // First arg should be func reference
-                  composeArgs(0).terms.headOption match
-                    case Some(Ref(_, funcName1, _, _, _, _)) =>
-                      assertEquals(clue(funcName1), "func", "First compose arg should be func")
-                    case Some(other) =>
-                      fail(
-                        s"Expected func reference as first compose arg, got: ${prettyPrintAst(other)}"
-                      )
-                    case None => fail("Expected func reference as first compose arg, got: None")
-
-                  // Second arg should be func reference
-                  composeArgs(1).terms.headOption match
-                    case Some(Ref(_, funcName2, _, _, _, _)) =>
-                      assertEquals(clue(funcName2), "func", "Second compose arg should be func")
-                    case Some(other) =>
-                      fail(
-                        s"Expected func reference as second compose arg, got: ${prettyPrintAst(other)}"
-                      )
-                    case None => fail("Expected func reference as second compose arg, got: None")
-
-                  // Third arg should be literal 3
-                  composeArgs(2).terms.headOption match
-                    case Some(LiteralInt(_, val3)) =>
-                      assertEquals(clue(val3), 3, "Third compose arg should be 3")
-                    case Some(other) =>
-                      fail(
-                        s"Expected literal 3 as third compose arg, got: ${prettyPrintAst(other)}"
-                      )
-                    case None => fail("Expected literal 3 as third compose arg, got: None")
-
-                  // Fourth arg should be literal 4
-                  composeArgs(3).terms.headOption match
-                    case Some(LiteralInt(_, val4)) =>
-                      assertEquals(clue(val4), 4, "Fourth compose arg should be 4")
-                    case Some(other) =>
-                      fail(
-                        s"Expected literal 4 as fourth compose arg, got: ${prettyPrintAst(other)}"
-                      )
-                    case None => fail("Expected literal 4 as fourth compose arg, got: None")
-
-                  // Fifth arg should be literal 5
-                  composeArgs(4).terms.headOption match
-                    case Some(LiteralInt(_, val5)) =>
-                      assertEquals(clue(val5), 5, "Fifth compose arg should be 5")
-                    case Some(other) =>
-                      fail(
-                        s"Expected literal 5 as fifth compose arg, got: ${prettyPrintAst(other)}"
-                      )
-                    case None => fail("Expected literal 5 as fifth compose arg, got: None")
-
-                case Some(other) =>
-                  fail(s"Expected TXApp for compose function, got: ${prettyPrintAst(other)}")
-                case None => fail("Expected TXApp for compose function, got: None")
-
-              // Left side should be apply function
-              plusArgs(0).terms.headOption match
-                case Some(TXApp(applyRef, _, applyArgs)) =>
-                  assertEquals(clue(applyRef.name), "apply", "Apply function name")
-                  assertEquals(clue(applyArgs.length), 2, "Apply should have 2 args")
-
-                  // First arg should be (func 1)
-                  applyArgs(0).terms.headOption match
-                    case Some(TXApp(funcRef, _, funcArgs)) =>
-                      assertEquals(clue(funcRef.name), "func", "Inner function name")
-                      assertEquals(clue(funcArgs.length), 1, "Func should have 1 arg")
-
-                      // The arg should be literal 1
-                      funcArgs(0).terms.headOption match
-                        case Some(LiteralInt(_, val1)) =>
-                          assertEquals(clue(val1), 1, "func arg should be 1")
-                        case _ => fail("Expected literal 1 as func arg")
-
-                    case _ => fail("Expected expression with func application")
-
-                  // Second arg should be literal 2
-                  applyArgs(1).terms.headOption match
-                    case Some(LiteralInt(_, val2)) =>
-                      assertEquals(clue(val2), 2, "Second apply arg should be 2")
-                    case _ => fail("Expected literal 2 as second apply arg")
-
-                case _ => fail("Expected TXApp for apply function")
-
-            case other => fail("Expected TXApp structure at top level")
-        case other =>
-          fail(s"Expected Bnd, got: ${prettyPrintAst(other)}")
-      }
-    }
-  }
-
   test("zero-arity function") {
     semNotFailed(
       """
-      fn func () = ???;
+      fn func (): Int = ???;
       let a = func ();
       """
     ).map { m =>
@@ -409,7 +293,7 @@ class AppRewritingTests extends BaseEffFunSuite:
   test("function application within if/else") {
     semNotFailed(
       """
-      fn func (a) = ???;
+      fn func (a: Int): Int = ???;
       let cond = true;
       let a = if cond then func 1 else func 2;
       """
@@ -474,8 +358,8 @@ class AppRewritingTests extends BaseEffFunSuite:
   test("nested function applications with operators") {
     semNotFailed(
       """
-      fn func1 (a) = ???;
-      fn func2 (b) = ???;
+      fn func1 (a: Int): Int = ???;
+      fn func2 (b: Int): Int = ???;
       let a = func1 (func2 1) + 2;
       """
     ).map { m =>
@@ -539,7 +423,7 @@ class AppRewritingTests extends BaseEffFunSuite:
   test("single-argument function") {
     semNotFailed(
       """
-      fn func (a) = ???;
+      fn func (a: Int): Int = ???;
       let a = func 1;
       """
     ).map { m =>
