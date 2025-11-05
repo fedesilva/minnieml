@@ -228,11 +228,11 @@ private[parser] def unaryOpP(source: String)(using P[Any]): P[Member] =
   }
 
 private[parser] def failedMemberP(source: String)(using P[Any]): P[Member] =
-  P(spP(source) ~ CharsWhile(_ != ';').! ~ endKw ~ spP(source))
+  P(spP(source) ~ CharsWhile(_ != ';', 0).! ~ endKw ~ spP(source))
     .map { case (start, snippet, end) =>
       ParsingMemberError(
         span       = SrcSpan(start, end),
         message    = "Failed to parse member",
-        failedCode = snippet.some
+        failedCode = if snippet.trim.nonEmpty then snippet.some else None
       )
     }

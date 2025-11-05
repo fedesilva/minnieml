@@ -27,11 +27,15 @@ private[parser] def namedModuleP(source: String)(using P[Any]): P[Module] =
       ~ moduleEndKw
       ~ spP(source)
   ).map { case (start, doc, maybeVis, moduleName, members, end) =>
+    val membersList = members.toList
+    val filteredMembers = membersList.lastOption match
+      case Some(ParsingMemberError(_, _, None)) => membersList.dropRight(1)
+      case _ => membersList
     Module(
       span       = span(start, end),
       name       = moduleName,
       visibility = maybeVis.getOrElse(ModVisibility.Public),
-      members    = members.toList,
+      members    = filteredMembers,
       isImplicit = false,
       docComment = doc
     )
