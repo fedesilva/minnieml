@@ -7,8 +7,8 @@ import mml.mmlclib.ast.*
 
 import MmlWhitespace.*
 
-private[parser] def exprP(source: String)(using P[Any]): P[Expr] =
-  P(spP(source) ~ termP(source).rep ~ spP(source))
+private[parser] def exprP(info: SourceInfo)(using P[Any]): P[Expr] =
+  P(spP(info) ~ termP(info).rep ~ spP(info))
     .map { case (start, ts, end) =>
       val termsList = ts.toList
       val (typeSpec, typeAsc) =
@@ -17,24 +17,24 @@ private[parser] def exprP(source: String)(using P[Any]): P[Expr] =
       Expr(span(start, end), termsList, typeAsc, typeSpec)
     }
 
-private[parser] def termP(source: String)(using P[Any]): P[Term] =
+private[parser] def termP(info: SourceInfo)(using P[Any]): P[Term] =
   P(
-    litBoolP(source) |
-      nativeImplP(source) |
-      ifExprP(source) |
-      litUnitP(source) |
-      holeP(source) |
-      litStringP(source) |
-      opRefP(source) |
-      numericLitP(source) |
-      groupTermP(source) |
-      tupleP(source) |
-      refP(source) |
-      phP(source)
+    litBoolP(info) |
+      nativeImplP(info) |
+      ifExprP(info) |
+      litUnitP(info) |
+      holeP(info) |
+      litStringP(info) |
+      opRefP(info) |
+      numericLitP(info) |
+      groupTermP(info) |
+      tupleP(info) |
+      refP(info) |
+      phP(info)
   )
 
-private[parser] def tupleP(source: String)(using P[Any]): P[Term] =
-  P(spP(source) ~ "(" ~ exprP(source).rep(sep = ",") ~ ")" ~ spP(source))
+private[parser] def tupleP(info: SourceInfo)(using P[Any]): P[Term] =
+  P(spP(info) ~ "(" ~ exprP(info).rep(sep = ",") ~ ")" ~ spP(info))
     .map { case (start, exprs, end) =>
       NonEmptyList
         .fromList(exprs.toList)
@@ -42,7 +42,7 @@ private[parser] def tupleP(source: String)(using P[Any]): P[Term] =
           TermError(
             span       = span(start, end),
             message    = "Tuple must have at least one element",
-            failedCode = source.substring(start.index, end.index).some
+            failedCode = info.slice(start.index, end.index).some
           )
         ) { elements =>
           Tuple(span(start, end), elements)
@@ -50,52 +50,52 @@ private[parser] def tupleP(source: String)(using P[Any]): P[Term] =
 
     }
 
-private[parser] def ifExprP(source: String)(using P[Any]): P[Term] =
+private[parser] def ifExprP(info: SourceInfo)(using P[Any]): P[Term] =
   P(
-    spP(source) ~ ifKw ~/ exprP(source) ~ thenKw ~/ exprP(source) ~ elseKw ~/ exprP(
-      source
-    ) ~ spP(source)
+    spP(info) ~ ifKw ~/ exprP(info) ~ thenKw ~/ exprP(info) ~ elseKw ~/ exprP(info) ~ spP(
+      info
+    )
   )
     .map { case (start, cond, ifTrue, ifFalse, end) =>
       Cond(span(start, end), cond, ifTrue, ifFalse)
     }
 
-private[parser] def groupTermP(source: String)(using P[Any]): P[Term] =
-  P(spP(source) ~ "(" ~ exprP(source) ~ ")" ~ spP(source))
+private[parser] def groupTermP(info: SourceInfo)(using P[Any]): P[Term] =
+  P(spP(info) ~ "(" ~ exprP(info) ~ ")" ~ spP(info))
     .map { case (start, expr, end) =>
       TermGroup(span(start, end), expr)
     }
 
-private[parser] def refP(source: String)(using P[Any]): P[Term] =
-  P(spP(source) ~ bindingIdP ~ typeAscP(source) ~ spP(source))
+private[parser] def refP(info: SourceInfo)(using P[Any]): P[Term] =
+  P(spP(info) ~ bindingIdP ~ typeAscP(info) ~ spP(info))
     .map { case (start, id, typeAsc, end) =>
       Ref(span(start, end), id, typeAsc = typeAsc)
     }
 
-private[parser] def opRefP(source: String)(using P[Any]): P[Term] =
-  P(spP(source) ~ operatorIdP ~ spP(source))
+private[parser] def opRefP(info: SourceInfo)(using P[Any]): P[Term] =
+  P(spP(info) ~ operatorIdP ~ spP(info))
     .map { case (start, id, end) =>
       Ref(span(start, end), id)
     }
 
-private[parser] def phP(source: String)(using P[Any]): P[Term] =
-  P(spP(source) ~ placeholderKw ~ spP(source))
+private[parser] def phP(info: SourceInfo)(using P[Any]): P[Term] =
+  P(spP(info) ~ placeholderKw ~ spP(info))
     .map { case (start, end) =>
       Placeholder(span(start, end), None)
     }
 
-private[parser] def holeP(source: String)(using P[Any]): P[Term] =
-  P(spP(source) ~ holeKw ~ spP(source))
+private[parser] def holeP(info: SourceInfo)(using P[Any]): P[Term] =
+  P(spP(info) ~ holeKw ~ spP(info))
     .map { case (start, end) =>
       Hole(span(start, end))
     }
 
-private[parser] def nativeImplP(source: String)(using P[Any]): P[NativeImpl] =
+private[parser] def nativeImplP(info: SourceInfo)(using P[Any]): P[NativeImpl] =
 
   def nativeOpP: P[Option[String]] =
     P("[" ~ "op" ~ "=" ~ CharsWhileIn("a-zA-Z0-9_", 1).! ~ "]").?
 
-  P(spP(source) ~ nativeKw ~ nativeOpP ~ spP(source))
+  P(spP(info) ~ nativeKw ~ nativeOpP ~ spP(info))
     .map { case (start, op, end) =>
       NativeImpl(span(start, end), nativeOp = op)
     }

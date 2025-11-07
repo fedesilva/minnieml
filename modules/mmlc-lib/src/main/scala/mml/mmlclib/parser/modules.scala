@@ -5,12 +5,12 @@ import mml.mmlclib.ast.*
 
 import MmlWhitespace.*
 
-private[parser] def topLevelModuleP(name: String, source: String)(using P[Any]): P[Module] =
+private[parser] def topLevelModuleP(name: String, info: SourceInfo)(using P[Any]): P[Module] =
   P(
-    spP(source) ~
-      membersP(source).rep ~
+    spP(info) ~
+      membersP(info).rep ~
       End ~
-      spP(source)
+      spP(info)
   ).map { case (start, members, end) =>
     val membersList = members.toList
     val filteredMembers = membersList.lastOption match

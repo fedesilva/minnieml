@@ -6,22 +6,22 @@ import mml.mmlclib.ast.*
 
 import MmlWhitespace.*
 
-private[parser] def typeAscP(source: String)(using P[Any]): P[Option[TypeSpec]] =
-  P(":" ~ typeSpecP(source)).?
+private[parser] def typeAscP(info: SourceInfo)(using P[Any]): P[Option[TypeSpec]] =
+  P(":" ~ typeSpecP(info)).?
 
-private[parser] def typeSpecP(source: String)(using P[Any]): P[TypeSpec] =
+private[parser] def typeSpecP(info: SourceInfo)(using P[Any]): P[TypeSpec] =
   P(
-    P(spP(source) ~ typeIdP ~ spP(source))
+    P(spP(info) ~ typeIdP ~ spP(info))
       .map { case (start, id, end) =>
         TypeRef(span(start, end), id)
       }
   )
 
-private[parser] def nativeTypeDefP(source: String)(using P[Any]): P[TypeDef] =
+private[parser] def nativeTypeDefP(info: SourceInfo)(using P[Any]): P[TypeDef] =
   P(
-    spP(source)
-      ~ memberVisibilityP.? ~ typeKw ~ typeIdP ~ defAsKw ~ nativeTypeP(source) ~ endKw
-      ~ spP(source)
+    spP(info)
+      ~ memberVisibilityP.? ~ typeKw ~ typeIdP ~ defAsKw ~ nativeTypeP(info) ~ endKw
+      ~ spP(info)
   ).map { case (start, vis, id, typeSpec, end) =>
     TypeDef(
       visibility = vis.getOrElse(MemberVisibility.Protected),
@@ -31,11 +31,11 @@ private[parser] def nativeTypeDefP(source: String)(using P[Any]): P[TypeDef] =
     )
   }
 
-private[parser] def typeAliasP(source: String)(using P[Any]): P[TypeAlias] =
+private[parser] def typeAliasP(info: SourceInfo)(using P[Any]): P[TypeAlias] =
   P(
-    spP(source)
-      ~ memberVisibilityP.? ~ typeKw ~ typeIdP ~ defAsKw ~ typeSpecP(source) ~ endKw
-      ~ spP(source)
+    spP(info)
+      ~ memberVisibilityP.? ~ typeKw ~ typeIdP ~ defAsKw ~ typeSpecP(info) ~ endKw
+      ~ spP(info)
   ).map { case (start, vis, id, typeSpec, end) =>
     TypeAlias(
       visibility = vis.getOrElse(MemberVisibility.Protected),
@@ -45,8 +45,8 @@ private[parser] def typeAliasP(source: String)(using P[Any]): P[TypeAlias] =
     )
   }
 
-private[parser] def nativeTypeP(source: String)(using P[Any]): P[NativeType] =
-  P(spP(source) ~ nativeKw ~ ":" ~/ nativeTypeBodyP(source) ~ spP(source))
+private[parser] def nativeTypeP(info: SourceInfo)(using P[Any]): P[NativeType] =
+  P(spP(info) ~ nativeKw ~ ":" ~/ nativeTypeBodyP(info) ~ spP(info))
     .map { case (start, body, end) =>
       body match {
         case p: NativePrimitive => p.copy(span = span(start, end))
@@ -55,37 +55,37 @@ private[parser] def nativeTypeP(source: String)(using P[Any]): P[NativeType] =
       }
     }
 
-private[parser] def nativeTypeBodyP(source: String)(using P[Any]): P[NativeType] =
-  P(nativeStructP(source) | nativePointerP(source) | nativePrimitiveP(source))
+private[parser] def nativeTypeBodyP(info: SourceInfo)(using P[Any]): P[NativeType] =
+  P(nativeStructP(info) | nativePointerP(info) | nativePrimitiveP(info))
 
-private[parser] def nativePrimitiveP(source: String)(using P[Any]): P[NativePrimitive] =
-  P(spP(source) ~ llvmPrimitiveTypeP ~ spP(source))
+private[parser] def nativePrimitiveP(info: SourceInfo)(using P[Any]): P[NativePrimitive] =
+  P(spP(info) ~ llvmPrimitiveTypeP ~ spP(info))
     .map { case (start, llvmType, end) =>
       NativePrimitive(span(start, end), llvmType)
     }
 
-private[parser] def nativePointerP(source: String)(using P[Any]): P[NativePointer] =
-  P(spP(source) ~ "*" ~ llvmPrimitiveTypeP ~ spP(source))
+private[parser] def nativePointerP(info: SourceInfo)(using P[Any]): P[NativePointer] =
+  P(spP(info) ~ "*" ~ llvmPrimitiveTypeP ~ spP(info))
     .map { case (start, llvmType, end) =>
       NativePointer(span(start, end), llvmType)
     }
 
-private[parser] def nativeStructP(source: String)(using P[Any]): P[NativeStruct] =
-  P(spP(source) ~ "{" ~/ nativeFieldListP(source) ~ "}" ~ spP(source))
+private[parser] def nativeStructP(info: SourceInfo)(using P[Any]): P[NativeStruct] =
+  P(spP(info) ~ "{" ~/ nativeFieldListP(info) ~ "}" ~ spP(info))
     .map { case (start, fields, end) =>
       NativeStruct(span(start, end), fields)
     }
 
-private[parser] def nativeFieldListP(source: String)(using P[Any]): P[Map[String, TypeSpec]] =
-  P(nativeFieldP(source).rep(sep = ","))
+private[parser] def nativeFieldListP(info: SourceInfo)(using P[Any]): P[Map[String, TypeSpec]] =
+  P(nativeFieldP(info).rep(sep = ","))
     .map { fields =>
       val fieldList = fields.toList
       val fieldMap  = fieldList.toMap
       fieldMap
     }
 
-private[parser] def nativeFieldP(source: String)(using P[Any]): P[(String, TypeSpec)] =
-  P(bindingIdP ~ ":" ~/ typeSpecP(source))
+private[parser] def nativeFieldP(info: SourceInfo)(using P[Any]): P[(String, TypeSpec)] =
+  P(bindingIdP ~ ":" ~/ typeSpecP(info))
 
 private[parser] def llvmPrimitiveTypeP(using P[Any]): P[String] =
   P(

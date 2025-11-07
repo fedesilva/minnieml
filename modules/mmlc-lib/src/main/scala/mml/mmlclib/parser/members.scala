@@ -6,29 +6,29 @@ import mml.mmlclib.ast.*
 
 import MmlWhitespace.*
 
-private[parser] def membersP(source: String)(using P[Any]): P[Member] =
+private[parser] def membersP(info: SourceInfo)(using P[Any]): P[Member] =
   P(
-    binOpDefP(source) |
-      unaryOpP(source) |
-      letBindingP(source) |
-      fnDefP(source) |
-      typeAliasP(source) |
-      nativeTypeDefP(source) |
-      failedMemberP(source)
+    binOpDefP(info) |
+      unaryOpP(info) |
+      letBindingP(info) |
+      fnDefP(info) |
+      typeAliasP(info) |
+      nativeTypeDefP(info) |
+      failedMemberP(info)
   )
 
-private[parser] def letBindingP(source: String)(using P[Any]): P[Member] =
+private[parser] def letBindingP(info: SourceInfo)(using P[Any]): P[Member] =
   P(
-    docCommentP(source)
+    docCommentP(info)
       ~ memberVisibilityP.?
       ~ letKw
-      ~ spP(source)
+      ~ spP(info)
       ~ bindingIdOrError
-      ~ typeAscP(source)
+      ~ typeAscP(info)
       ~ defAsKw
-      ~ exprP(source)
+      ~ exprP(info)
       ~ endKw
-      ~ spP(source)
+      ~ spP(info)
   )
     .map { case (doc, vis, startPoint, idOrError, typeAsc, expr, endPoint) =>
       idOrError match
@@ -52,10 +52,10 @@ private[parser] def letBindingP(source: String)(using P[Any]): P[Member] =
           )
     }
 
-private[parser] def fnParamP(source: String)(using P[Any]): P[FnParam] =
+private[parser] def fnParamP(info: SourceInfo)(using P[Any]): P[FnParam] =
   P(
-    spP(source) ~ docCommentP(source) ~ bindingIdP ~ typeAscP(source) ~ spP(
-      source
+    spP(info) ~ docCommentP(info) ~ bindingIdP ~ typeAscP(info) ~ spP(
+      info
     )
   ).map { case (start, doc, name, t, end) =>
     FnParam(
@@ -66,24 +66,24 @@ private[parser] def fnParamP(source: String)(using P[Any]): P[FnParam] =
     )
   }
 
-private[parser] def fnParamListP(source: String)(using P[Any]): P[List[FnParam]] =
-  P(fnParamP(source).rep(sep = ",")).map(_.toList)
+private[parser] def fnParamListP(info: SourceInfo)(using P[Any]): P[List[FnParam]] =
+  P(fnParamP(info).rep(sep = ",")).map(_.toList)
 
-private[parser] def fnDefP(source: String)(using P[Any]): P[Member] =
+private[parser] def fnDefP(info: SourceInfo)(using P[Any]): P[Member] =
   P(
-    docCommentP(source)
+    docCommentP(info)
       ~ memberVisibilityP.?
       ~ fnKw
-      ~ spP(source)
+      ~ spP(info)
       ~ bindingIdOrError
       ~ "("
-      ~ fnParamListP(source)
+      ~ fnParamListP(info)
       ~ ")"
-      ~ typeAscP(source)
+      ~ typeAscP(info)
       ~ defAsKw
-      ~ exprP(source)
+      ~ exprP(info)
       ~ endKw
-      ~ spP(source)
+      ~ spP(info)
   ).map { case (doc, vis, startPoint, idOrError, params, typeAsc, bodyExpr, endPoint) =>
     idOrError match
       case Left(invalidId) =>
@@ -113,24 +113,24 @@ private[parser] def assocP[$: P]: P[Associativity] =
 private[parser] def precedenceP[$: P]: P[Int] =
   P(CharIn("0-9").rep(1).!).map(_.toInt)
 
-private[parser] def binOpDefP(source: String)(using P[Any]): P[Member] =
+private[parser] def binOpDefP(info: SourceInfo)(using P[Any]): P[Member] =
   P(
-    docCommentP(source)
+    docCommentP(info)
       ~ memberVisibilityP.?
       ~ opKw
-      ~ spP(source)
+      ~ spP(info)
       ~ operatorIdOrError
       ~ "("
-      ~ fnParamP(source)
+      ~ fnParamP(info)
       ~ ","
-      ~ fnParamP(source)
+      ~ fnParamP(info)
       ~ ")"
-      ~ typeAscP(source)
+      ~ typeAscP(info)
       ~ precedenceP.?
       ~ assocP.?
       ~ defAsKw
-      ~ exprP(source)
-      ~ spP(source)
+      ~ exprP(info)
+      ~ spP(info)
       ~ endKw
   ).map {
     case (
@@ -172,23 +172,23 @@ private[parser] def binOpDefP(source: String)(using P[Any]): P[Member] =
       }
   }
 
-private[parser] def unaryOpP(source: String)(using P[Any]): P[Member] =
+private[parser] def unaryOpP(info: SourceInfo)(using P[Any]): P[Member] =
   P(
-    docCommentP(source)
+    docCommentP(info)
       ~ memberVisibilityP.?
       ~ opKw
-      ~ spP(source)
+      ~ spP(info)
       ~ operatorIdOrError
       ~ "("
-      ~ fnParamP(source)
+      ~ fnParamP(info)
       ~ ")"
-      ~ typeAscP(source)
+      ~ typeAscP(info)
       ~ precedenceP.?
       ~ assocP.?
       ~ defAsKw
-      ~ exprP(source)
+      ~ exprP(info)
       ~ endKw
-      ~ spP(source)
+      ~ spP(info)
   ).map {
     case (
           doc,
@@ -227,15 +227,15 @@ private[parser] def unaryOpP(source: String)(using P[Any]): P[Member] =
       }
   }
 
-private[parser] def failedMemberP(source: String)(using P[Any]): P[Member] =
+private[parser] def failedMemberP(info: SourceInfo)(using P[Any]): P[Member] =
   P(
-    spP(source) ~
+    spP(info) ~
       CharsWhile(_ != '\n', min = 1).! ~
-      ("\n" ~ spP(source)).?
+      ("\n" ~ spP(info)).?
   ).map { case (start, raw, maybeEndPoint) =>
     val endPoint = maybeEndPoint.getOrElse {
       val endIndex = start.index + raw.length
-      indexToSourcePoint(endIndex, source)
+      info.pointAt(endIndex)
     }
 
     val trimmed = raw.trim
