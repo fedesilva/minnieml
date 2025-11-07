@@ -53,6 +53,10 @@ for sbt)
 
 ## Commands
     
+  - when told to `load context` read all the context files as per above instructions and
+        pay particular attention to current work specified in the active context document.
+    - read any code related to the current task, acknowledge, summarize and wait for instructions.
+
   - when told to `reload context` read the context
     - even if you already did it, there might be updates.
 

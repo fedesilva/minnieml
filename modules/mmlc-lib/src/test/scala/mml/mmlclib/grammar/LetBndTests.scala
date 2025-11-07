@@ -21,9 +21,7 @@ class LetBndTests extends BaseEffFunSuite:
 
     parseNotFailed(
       """
-      module A =
         let c = a sum b;
-      ;
       """
     ).map { m =>
       assert(m.members.size == 1)
@@ -43,9 +41,7 @@ class LetBndTests extends BaseEffFunSuite:
 
     parseNotFailed(
       """
-        module A =
           let c = a + b;
-        ;
         """
     ).map { m =>
       assert(m.members.size == 1)
@@ -65,9 +61,7 @@ class LetBndTests extends BaseEffFunSuite:
 
     parseNotFailed(
       """
-          module A =
             let c = a+b;
-          ;
           """
     ).map { m =>
       assert(m.members.size == 1)
@@ -87,9 +81,7 @@ class LetBndTests extends BaseEffFunSuite:
 
     parseNotFailed(
       """
-            module A =
               let c = a++b;
-            ;
             """
     ).map { m =>
       assert(m.members.size == 1)
@@ -109,9 +101,7 @@ class LetBndTests extends BaseEffFunSuite:
 
     parseNotFailed(
       """
-        module A =
           let c = +b;
-        ;
       """
     ).map { m =>
       assert(m.members.size == 1)
@@ -131,9 +121,7 @@ class LetBndTests extends BaseEffFunSuite:
 
     parseNotFailed(
       """
-        module A =
           let c = b!;
-        ;
       """
     ).map { m =>
       assert(m.members.size == 1)
@@ -152,9 +140,7 @@ class LetBndTests extends BaseEffFunSuite:
   test("let with app with symbolic ref mix") {
     parseNotFailed(
       """
-        module A =
           let c = 5! + 3;
-        ;
       """
     ).map { m =>
       assert(m.members.size == 1)
@@ -211,15 +197,14 @@ class LetBndTests extends BaseEffFunSuite:
         )
       case _ => fail("Expected a binding")
     }
+  }
 
-    test("cant use a keyword as a name") {
-      parseFailed(
-        """
-          let let = 1;
-        """
-      )
-    }
-
+  test("cant use a keyword as a name") {
+    parseFailed(
+      """
+        let let = 1;
+      """
+    )
   }
 
   test("let with type name ascription") {

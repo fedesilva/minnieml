@@ -25,14 +25,14 @@ object CodeGenApi:
     * @param source
     *   the source code to compile
     * @param name
-    *   an optional name for the module (defaults to "Anon")
+    *   the module name to associate with the parsed members
     * @return
     *   a CodeGenEffect that, when run, yields either a CodeGenApiError or the generated LLVM IR
     *   string.
     */
   def generateFromString(
     source: String,
-    name:   Option[String] = "Anon".some
+    name:   String
   ): CodeGenEffect[String] =
     for
       // Convert CompilerEffect to CodeGenEffect by mapping errors

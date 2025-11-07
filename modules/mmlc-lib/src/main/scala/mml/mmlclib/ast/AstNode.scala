@@ -53,7 +53,6 @@ case class Module(
   name:       String,
   visibility: ModVisibility,
   members:    List[Member],
-  isImplicit: Boolean            = false,
   docComment: Option[DocComment] = None
 ) extends AstNode,
       FromSource

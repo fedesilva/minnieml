@@ -228,11 +228,23 @@ private[parser] def unaryOpP(source: String)(using P[Any]): P[Member] =
   }
 
 private[parser] def failedMemberP(source: String)(using P[Any]): P[Member] =
-  P(spP(source) ~ CharsWhile(_ != ';', 0).! ~ endKw ~ spP(source))
-    .map { case (start, snippet, end) =>
-      ParsingMemberError(
-        span       = SrcSpan(start, end),
-        message    = "Failed to parse member",
-        failedCode = if snippet.trim.nonEmpty then snippet.some else None
-      )
+  P(
+    spP(source) ~
+      CharsWhile(_ != '\n', min = 1).! ~
+      ("\n" ~ spP(source)).?
+  ).map { case (start, raw, maybeEndPoint) =>
+    val endPoint = maybeEndPoint.getOrElse {
+      val endIndex = start.index + raw.length
+      indexToSourcePoint(endIndex, source)
     }
+
+    val trimmed = raw.trim
+    val failedSnippet =
+      if trimmed.isEmpty then None else Some(trimmed)
+
+    ParsingMemberError(
+      span       = SrcSpan(start, endPoint),
+      message    = "Failed to parse member",
+      failedCode = failedSnippet
+    )
+  }

@@ -30,7 +30,7 @@ object NativeEmitterApi:
     * @param mode
     *   Whether to compile to an executable binary or a library
     * @param moduleName
-    *   Optional name for the module (defaults to "Anon")
+    *   Module name for the compilation
     * @return
     *   An EmitterEffect that, when run, yields either a NativeEmitterError or the exit code of the
     *   compilation
@@ -39,7 +39,7 @@ object NativeEmitterApi:
     source:           String,
     workingDirectory: String,
     mode:             CompilationMode = CompilationMode.Binary,
-    moduleName:       Option[String]  = "Anon".some
+    moduleName:       String
   ): EmitterEffect[Int] =
     for
       // Step 1: Generate LLVM IR with CodeGenApi
@@ -48,7 +48,7 @@ object NativeEmitterApi:
         .leftMap(error => NativeEmitterError.CodeGenErrors(List(error)))
 
       // Step 2: Compile LLVM IR to native code
-      exitCode <- compileLlvmIR(llvmIr, moduleName.getOrElse("Anon"), workingDirectory, mode)
+      exitCode <- compileLlvmIR(llvmIr, moduleName, workingDirectory, mode)
     yield exitCode
 
   /** Compile MML source code to Llvm IR and save it to a file
@@ -58,14 +58,14 @@ object NativeEmitterApi:
     * @param outputPath
     *   Path where the Llvm IR file will be saved
     * @param moduleName
-    *   Optional name for the module (defaults to "Anon")
+    *   Module name for the compilation
     * @return
     *   An EmitterEffect that, when run, yields either a NativeEmitterError or a success message
     */
   def emitLlvmIR(
     source:     String,
     outputPath: String,
-    moduleName: Option[String] = "Anon".some
+    moduleName: String
   ): EmitterEffect[String] =
     for
       // Generate LLVM IR

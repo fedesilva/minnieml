@@ -1,7 +1,6 @@
 package mml.mmlclib.test
 
 import cats.effect.IO
-import cats.syntax.all.*
 import mml.mmlclib.api.{CompilerApi, ParserApi}
 import mml.mmlclib.ast.{Error, Member, Module}
 import mml.mmlclib.semantic.*
@@ -30,7 +29,7 @@ trait BaseEffFunSuite extends CatsEffectSuite:
 
   def parseNotFailed(
     source: String,
-    name:   Option[String] = "Test".some,
+    name:   String         = "Test",
     msg:    Option[String] = None
   ): IO[Module] = {
 
@@ -50,7 +49,7 @@ trait BaseEffFunSuite extends CatsEffectSuite:
 
   def parseFailed(
     source: String,
-    name:   Option[String] = "TestFail".some,
+    name:   String         = "TestFail",
     msg:    Option[String] = None
   ): IO[Unit] = {
     ParserApi.parseModuleString(source, name).value.map {
@@ -66,12 +65,15 @@ trait BaseEffFunSuite extends CatsEffectSuite:
 
   def parseFailedWithErrors(
     source: String,
-    name:   Option[String] = "TestErrors".some,
+    name:   String         = "TestErrors",
     msg:    Option[String] = None
   ): IO[List[Error]] = {
     ParserApi.parseModuleString(source, name).value.map {
       case Right(module) =>
         val errors = collectErrors(module)
+        if errors.isEmpty then
+          import mml.mmlclib.util.prettyprint.ast.*
+          prettyPrintAst(module)
         assert(
           errors.nonEmpty,
           msg.getOrElse(s"Expected Error nodes but found none. ${prettyPrintAst(module)}")
@@ -88,7 +90,7 @@ trait BaseEffFunSuite extends CatsEffectSuite:
 
   def semNotFailed(
     source: String,
-    name:   Option[String] = "Test".some,
+    name:   String         = "Test",
     msg:    Option[String] = None
   ): IO[Module] =
     CompilerApi.compileString(source, name).value.map {
@@ -106,7 +108,7 @@ trait BaseEffFunSuite extends CatsEffectSuite:
 
   def semFailed(
     source: String,
-    name:   Option[String] = "TestFail".some,
+    name:   String         = "TestFail",
     msg:    Option[String] = None
   ): IO[Unit] =
     CompilerApi.compileString(source, name).value.map {
@@ -141,7 +143,7 @@ trait BaseEffFunSuite extends CatsEffectSuite:
     */
   def justParse(
     source: String,
-    name:   Option[String] = "Test".some,
+    name:   String         = "Test",
     msg:    Option[String] = None
   ): IO[Module] =
     ParserApi.parseModuleString(source, name).value.map {
@@ -151,7 +153,7 @@ trait BaseEffFunSuite extends CatsEffectSuite:
 
   def semWithState(
     source: String,
-    name:   Option[String] = "Test".some,
+    name:   String         = "Test",
     msg:    Option[String] = None
   ): IO[mml.mmlclib.semantic.SemanticPhaseState] =
 
@@ -172,7 +174,7 @@ trait BaseEffFunSuite extends CatsEffectSuite:
 
   protected def compileAndGenerate(
     source: String,
-    name:   Option[String] = "Test".some
+    name:   String = "Test"
   ): IO[String] =
     import mml.mmlclib.api.CodeGenApi
     CompilerApi.compileString(source, name).value.flatMap {

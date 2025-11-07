@@ -1,75 +1,93 @@
 package mml.mmlclib.grammar
 
-import cats.syntax.all.*
 import mml.mmlclib.ast.*
 import mml.mmlclib.test.BaseEffFunSuite
 import munit.*
 
 class ModuleTests extends BaseEffFunSuite:
 
-  test("explicit module. name passed, ignored") {
+  test("top-level module uses provided name") {
     parseNotFailed(
       """
-      module A =
         let a = 1;
-      ;
       """,
-      "IgnoreThisName".some
+      "TopLevel"
     ).map { m =>
-      assert(m.name == "A")
-      assert(!m.isImplicit)
+      assertEquals(m.name, "TopLevel")
+      assertEquals(m.members.size, 1)
+      assert(m.members.head.isInstanceOf[Bnd])
     }
   }
 
-  test("implicit module, name passed") {
+  test("top-level modules can have multiple members") {
     parseNotFailed(
       """
-        let a = 1;
-      """,
-      "TestModule".some
-    ).map(m => {
-      assert(clue(m.name) == clue("TestModule"))
-      assert(m.isImplicit)
-      assert(m.members.size == 1)
-      assert(m.members.head.isInstanceOf[Bnd])
-    })
-  }
-
-  test("fail: implicit module, name NOT  passed") {
-    parseFailed(
-      """
-        let a = 1
-      """,
-      None
-    )
-  }
-
-  test("optional semicolon closing module") {
-    parseNotFailed(
-      """
-      module A =
         let a = 1;
         let b = 2;
-      """.stripMargin
-    )
+      """,
+      "ManyMembers"
+    ).map { m =>
+      assertEquals(m.members.count(_.isInstanceOf[Bnd]), 2)
+    }
   }
 
-  test("anon module with rubbish at the end should not abort".ignore) {
-    parseNotFailed(
+  test("top-level module tolerates rubbish at the end without aborting") {
+    parseFailedWithErrors(
       """
         let a = 1;
         rubbish-at-the-end
-      """
-    )
+      """,
+      "Rubbish"
+    ).map { errors =>
+      errors.lastOption match
+        case Some(_: ParsingMemberError) => ()
+        case other => fail(s"Expected trailing ParsingMemberError, got $other")
+    }
   }
 
-  test("module with rubbish at the end should not abort".ignore) {
-    parseNotFailed(
+  test("malformed module should be detected, not abort parsing: 1") {
+    parseFailedWithErrors(
       """
-        module A = 
-          let a = 1;
-          rubbish-at-the-end
-        ;
-        """
-    )
+     let a = 1;
+
+    ;
+ 
+    """
+    ).map { errors =>
+      assert(!errors.isEmpty)
+    }
+  }
+
+  test("malformed module should be detected, not abort parsing: 2") {
+    parseFailedWithErrors(
+      """
+      let a = 1;
+
+      ,
+
+      ;
+      ;
+      ;
+      ;
+      ;
+      ;
+ 
+    """
+    ).map { errors =>
+      assert(!errors.isEmpty)
+    }
+  }
+
+  test("malformed module should be detected, not abort parsing: 3") {
+    parseFailedWithErrors(
+      """
+      let a = 1;;
+
+      let b = "y u no work?";;;;;;
+
+      let c = true;
+      """
+    ).map { errors =>
+      assert(!errors.isEmpty)
+    }
   }

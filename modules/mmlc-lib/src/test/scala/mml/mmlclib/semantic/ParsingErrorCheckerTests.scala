@@ -8,10 +8,8 @@ class ParsingErrorCheckerTests extends BaseEffFunSuite:
   test("Full semantic pipeline passes correct modules") {
     semNotFailed(
       """
-      module TestPipeline =
-        fn valid(a: Int, b: Int): Int = a + b;
-        let x = 42;
-      ;
+      fn valid(a: Int, b: Int): Int = a + b;
+      let x = 42;
       """
     ).map { module =>
       // Successfully passes through the semantic pipeline
@@ -22,10 +20,8 @@ class ParsingErrorCheckerTests extends BaseEffFunSuite:
   test("Full semantic pipeline integration with MemberErrorChecker") {
     semFailed(
       """
-      module TestPipeline =
-        fn valid(a: Int, b: Int): Int = a + b;
-        let x  ; // Missing expression after =
-      ;
+      fn valid(a: Int, b: Int): Int = a + b;
+      let x  ; // Missing expression after =
       """
     )
   }
@@ -33,10 +29,8 @@ class ParsingErrorCheckerTests extends BaseEffFunSuite:
   test("MemberErrorChecker should pass a module with no errors") {
     justParse(
       """
-      module Test =
-        fn valid(a: Int, b: Int): Int = a + b;
-        let x = 42;
-      ;
+      fn valid(a: Int, b: Int): Int = a + b;
+      let x = 42;
       """
     ).map { module =>
       val state  = SemanticPhaseState(module, Vector.empty)
@@ -49,10 +43,8 @@ class ParsingErrorCheckerTests extends BaseEffFunSuite:
   test("MemberErrorChecker should catch member errors as shown in the example") {
     semWithState(
       """
-      module TestPartial =
-        fn valid(a: Int, b: Int): Int = a + b;
-        let a  ; # Missing expression after =
-      ;
+      fn valid(a: Int, b: Int): Int = a + b;
+      let a  ; # Missing expression after =
       """
     ).map { result =>
 
@@ -75,14 +67,13 @@ class ParsingErrorCheckerTests extends BaseEffFunSuite:
   test("MemberErrorChecker should catch multiple member errors") {
     semWithState(
       """
-      module TestPartial =
-        fn valid(a: Int, b: Int): Int = a + b;
-        let a  ; // Missing expression after =
-        bnd noLet = 5; # Invalid syntax - 'bnd' instead of 'let'
-      ;
+      fn valid(a: Int, b: Int): Int = a + b;
+      let a  ; # Missing expression after =
+      bnd noLet = 5; # Invalid syntax - 'bnd' instead of 'let'
       """
     ).map { result =>
 
+      // import mml.mmlclib.util.prettyprint.ast.*
       // println(prettyPrintAst(result.module))
 
       assert(clue(result.errors.size) == clue(2))

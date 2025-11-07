@@ -88,7 +88,6 @@ class CommentsTests extends BaseEffFunSuite:
   test("unclosed doc - no module ; - end of the file") {
     parseFailed(
       """
-      module Test =
         let x = 42;
         #- This is an unclosed comment
       """
@@ -126,29 +125,29 @@ class CommentsTests extends BaseEffFunSuite:
     }
   }
 
-  test("module with doc comment") {
+  test("file-level doc comment attaches to first member") {
     parseNotFailed(
       """
         #-
         This is a doc comment
         -#
-        module Test =
-          let x = 42;
+        let x = 42;
       """
     ).map { m =>
       assertEquals(m.members.size, 1)
-      assert(m.docComment.isDefined)
-      m.docComment.foreach { doc =>
-        assert(
-          doc.text.contains("This is a doc comment"),
-          s"""
-             | Expected doc comment to contain "This is a doc comment"
-             | Actual doc comment: ${doc.text}
-             | ${prettyPrintAst(m)}
-             |""".stripMargin
-        )
-      }
-
+      assert(m.docComment.isEmpty)
+      m.members.head match
+        case decl: Decl =>
+          val doc = decl.docComment.getOrElse(fail("expected doc comment on first member"))
+          assert(
+            doc.text.contains("This is a doc comment"),
+            s"""
+               | Expected doc comment to contain "This is a doc comment"
+               | Actual doc comment: ${doc.text}
+               | ${prettyPrintAst(decl)}
+               |""".stripMargin
+          )
+        case other => fail(s"expected declaration, got $other")
     }
   }
 

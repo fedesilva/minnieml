@@ -12,7 +12,7 @@ class NativeTypeTests extends BaseEffFunSuite:
     """
 
     Parser
-      .parseModule(code, Some("test"))
+      .parseModule(code, "Test")
       .fold(
         e => fail(s"Parser failed: $e"),
         module => {
@@ -32,7 +32,7 @@ class NativeTypeTests extends BaseEffFunSuite:
     """
 
     Parser
-      .parseModule(code, Some("test"))
+      .parseModule(code, "Test")
       .fold(
         e => fail(s"Parser failed: $e"),
         module => {
@@ -52,7 +52,7 @@ class NativeTypeTests extends BaseEffFunSuite:
     """
 
     Parser
-      .parseModule(code, Some("test"))
+      .parseModule(code, "Test")
       .fold(
         e => fail(s"Parser failed: $e"),
         module => {
@@ -75,7 +75,7 @@ class NativeTypeTests extends BaseEffFunSuite:
     """
 
     Parser
-      .parseModule(code, Some("test"))
+      .parseModule(code, "Test")
       .fold(
         e => fail(s"Parser failed: $e"),
         module => {
@@ -119,7 +119,7 @@ class NativeTypeTests extends BaseEffFunSuite:
       """
 
       Parser
-        .parseModule(code, Some("test"))
+        .parseModule(code, "Test")
         .fold(
           e => fail(s"Parser failed for $floatType: $e"),
           module => {
@@ -142,7 +142,7 @@ class NativeTypeTests extends BaseEffFunSuite:
       """
 
       Parser
-        .parseModule(code, Some("test"))
+        .parseModule(code, "Test")
         .fold(
           e => fail(s"Parser failed for i$bits: $e"),
           module => {
@@ -164,7 +164,7 @@ class NativeTypeTests extends BaseEffFunSuite:
         type Test = @native:i$bits;
       """
 
-      Parser.parseModule(code, Some("test")) match
+      Parser.parseModule(code, "Test") match
         case Left(err) =>
           // Good - parser completely failed
           assert(err.toString.contains("Failure"), s"Expected parse failure for i$bits")
@@ -195,7 +195,7 @@ class NativeTypeTests extends BaseEffFunSuite:
     """
 
     Parser
-      .parseModule(code, Some("test"))
+      .parseModule(code, "Test")
       .fold(
         e => fail(s"Parser failed: $e"),
         module => {

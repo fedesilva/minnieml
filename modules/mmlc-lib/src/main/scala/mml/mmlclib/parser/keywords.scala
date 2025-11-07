@@ -2,8 +2,6 @@ package mml.mmlclib.parser
 
 import fastparse.*
 
-import MmlWhitespace.*
-
 private[parser] def letKw[$: P]:         P[Unit] = P("let")
 private[parser] def fnKw[$: P]:          P[Unit] = P("fn")
 private[parser] def opKw[$: P]:          P[Unit] = P("op")
@@ -16,9 +14,6 @@ private[parser] def typeKw[$: P]:        P[Unit] = P("type")
 private[parser] def ifKw[$: P]:   P[Unit] = P("if")
 private[parser] def elseKw[$: P]: P[Unit] = P("else")
 private[parser] def thenKw[$: P]: P[Unit] = P("then")
-
-private[parser] def moduleEndKw[$: P]: P[Unit] =
-  P(";".? ~ CharsWhile(c => c.isWhitespace, 0) ~ End)
 
 private[parser] def moduleKw[$: P]: P[Unit] = P("module")
 

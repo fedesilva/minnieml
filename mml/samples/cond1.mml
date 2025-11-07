@@ -1,12 +1,10 @@
+let a = 1;
+let b = 2;
+let c = 3;
 
-module Cond1 = 
-  let a = 1;
-  let b = 2;
-  let c = 3;
-
-  fn main() = 
-    if c < 1 then
-      a + b
-    else
-      a - b
-  ;
+fn main() =
+  if c < 1 then
+    a + b
+  else
+    a - b
+;

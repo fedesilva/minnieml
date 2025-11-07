@@ -398,10 +398,12 @@ Module(
   name: String,
   visibility: ModVisibility,  // Public, Lexical, Protected
   members: List[Member],
-  isImplicit: Boolean,
   docComment: Option[DocComment]
 )
 ```
+
+- **Top-level modules**: The CLI/test harness always provides a module name derived from the source path; there is no `module` keyword at file scope. The parser simply collects top-level members until EOF and wraps them in a `Module` with `ModVisibility.Public`.
+- **Doc comments**: File-level doc comments apply to the first member; the parser does not attach them to the synthetic top-level module node.
 
 ### Members
 

@@ -26,7 +26,7 @@ object CompilationPipeline:
           IO.pure(Left(s"Error reading file: ${error.getMessage}"))
         case Right(content) =>
           // Pass source code directly to error printer instead of setting current file
-          CompilerApi.compileString(content, Some(moduleName)).value.map {
+          CompilerApi.compileString(content, moduleName).value.map {
             case Left(compilerError) =>
               Left(ErrorPrinter.prettyPrint(compilerError, Some(content)))
             case Right(module) => Right(module)

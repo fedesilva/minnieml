@@ -5,7 +5,7 @@ import mml.mmlclib.api.CodeGenApi
 
 def codegen(input: String) =
   CodeGenApi
-    .generateFromString(input)
+    .generateFromString(input, "Anon")
     .value
     .unsafeRunSync() match
     case Right(code) => println(s"Generated code:\n$code")

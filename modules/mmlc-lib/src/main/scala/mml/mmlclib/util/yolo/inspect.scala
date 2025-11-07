@@ -7,7 +7,7 @@ import mml.mmlclib.ast.*
 import mml.mmlclib.semantic.*
 import mml.mmlclib.util.prettyprint.ast.prettyPrintAst
 
-def printModuleAst(source: String, name: Option[String] = "Anon".some): Unit =
+def printModuleAst(source: String, name: String = "Anon"): Unit =
   ParserApi
     .parseModuleString(source, name)
     .value
@@ -17,7 +17,7 @@ def printModuleAst(source: String, name: Option[String] = "Anon".some): Unit =
     }
     .unsafeRunSync()
 
-def printModuleAstSimple(source: String, name: Option[String] = "Anon".some): Unit =
+def printModuleAstSimple(source: String, name: String = "Anon"): Unit =
   ParserApi
     .parseModuleString(source, name)
     .value
@@ -27,7 +27,7 @@ def printModuleAstSimple(source: String, name: Option[String] = "Anon".some): Un
     }
     .unsafeRunSync()
 
-def parseModule(source: String, name: Option[String] = "Anon".some): Option[Module] =
+def parseModule(source: String, name: String = "Anon"): Option[Module] =
   ParserApi
     .parseModuleString(source, name)
     .value

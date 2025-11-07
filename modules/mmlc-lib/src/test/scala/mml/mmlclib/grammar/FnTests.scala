@@ -34,12 +34,10 @@ class FnTests extends BaseEffFunSuite:
   test("fn and let") {
     parseNotFailed(
       """
-       module A =
-         let a = 1;
-         let b = 2;
-         fn sum (a, b) = a + b;
-         let x = sum a b;
-       ;
+        let a = 1;
+        let b = 2;
+        fn sum (a, b) = a + b;
+        let x = sum a b;
        """
     )
   }

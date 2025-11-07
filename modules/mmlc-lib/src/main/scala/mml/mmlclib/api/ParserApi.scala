@@ -12,17 +12,17 @@ object ParserApi:
     * @param source
     *   the source string to parse
     * @param name
-    *   an optional name for the module
+    *   the module name to associate with the parsed members
     * @return
     *   a ParserEffect that, when run, yields either a ParserError or a Module
     */
   def parseModuleString(
     source: String,
-    name:   Option[String] = None
+    name:   String
   ): ParserEffect[Module] =
 
-    val n = name.map(sanitizeModuleName)
-    EitherT(IO.pure(Parser.parseModule(source, n)))
+    val sanitized = sanitizeModuleName(name)
+    EitherT(IO.pure(Parser.parseModule(source, sanitized)))
 
   def sanitizeModuleName(dirName: String): String =
     val words = dirName.split("[-_ ]+").filter(_.nonEmpty)

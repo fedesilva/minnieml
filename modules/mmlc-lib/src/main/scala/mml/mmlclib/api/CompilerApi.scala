@@ -21,13 +21,13 @@ object CompilerApi:
     * @param source
     *   the source code to compile
     * @param name
-    *   an optional name for the module
+    *   the module name to associate with the parsed members
     * @return
     *   a CompilerEffect that, when run, yields either a CompilerError or a Module
     */
   def compileString(
     source: String,
-    name:   Option[String] = None
+    name:   String
   ): CompilerEffect[Module] =
     for
       // Use leftMap to convert ParserError to CompilerError

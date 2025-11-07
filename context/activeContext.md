@@ -15,45 +15,15 @@
 
 ## Next Steps
 
- - #174 module parsing is fragile
+ - #174 revamp module parsing
 
-    This code fails:
+    see context/specs/174-revamp-module-parsing.md
 
-    ```
-        let a = 1;
-        rubbish-at-the-end
-    ```
-
-    and it should, but it fails with a parsing error, and that is unnacceptable.
-
-    ```
-        sbt:mml> console
-        [info] compiling 1 Scala source to /Users/f/Workshop/mine/mml/mml/modules/mmlc/target/scala-3.6.4/classes ...
-        Welcome to Scala 3.6.4 (21.0.6, Java Java HotSpot(TM) 64-Bit Server VM).
-        Type in expressions for evaluation. Or try :help.
-
-        scala> :load scripts/include.scala
-
-        scala> rewrite("""
-             | let a = 1;
-             | rubbish-at-the-end
-             | """)
-        Parse error:
-          Failure(Expected moduleP:1:1 / (namedModuleP | anonModuleP):2:1, found "let a = 1;")
-        Failed to parse module
-
-        scala>
-    ```
-
-    this one fails, too.
-
-    ```
-    let a = 1;;;
-    ```
-
-    So for some reason when we fail to parse the module itself, we can't recover.
-
-    We need to investigate, and fix this issue.
+    - [x] Parser entrypoint now uses `topLevelModuleP`, legacy named/anon paths and `Module.isImplicit` removed; spec updated with explicit-name rules.
+    - [x] ParserApi/CompilerApi/CodeGenApi/NativeEmitter/CLI/yolo helpers and all call sites now pass explicit module names (tests/tools/CLI).
+    - [x] BaseEffFunSuite helpers default to string names; grammar tests/docs updated and full suite rerun after scalafmt/scalafix.
+    - [x] Tests and `mml/samples` no longer wrap content in `module ... =`; top-level members stand alone.
+    - [x] Error recovery follow-up: broadened `failedMemberP`, kept module cleanup logic aligned, and re-enabled the “rubbish at the end” test once behavior is correct.
 
 ## Recent Changes
 
@@ -72,5 +42,7 @@
 ### Future work        
 
 * modules
+* TypeFn: infer correctly for functions
+* drop opdef and fn def in favor of bindings to lambdas with metadata (for assoc, etc) 
 * recursion 
 * protocols 

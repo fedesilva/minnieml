@@ -27,7 +27,7 @@ class NativeTypeEmissionTest extends BaseEffFunSuite:
       };
     """
 
-    CompilerApi.compileString(source, Some("Test")).value.flatMap {
+    CompilerApi.compileString(source, "Test").value.flatMap {
       case Right(module) =>
         // If compilation succeeded, let's try codegen to see if it fails there
         CodeGenApi.generateFromModule(module).value.map {

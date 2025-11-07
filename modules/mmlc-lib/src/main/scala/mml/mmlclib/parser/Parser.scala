@@ -13,8 +13,8 @@ type ParserResult = Either[ParserError, Module]
 
 object Parser:
 
-  def parseModule(source: String, name: Option[String] = "Anon".some): ParserResult =
-    parse(source, moduleP(name, source, _)) match
+  def parseModule(source: String, name: String): ParserResult =
+    parse(source, p => topLevelModuleP(name, source)(using p)) match
       case Parsed.Success(result, _) =>
         result.asRight
       case f: Parsed.Failure =>
