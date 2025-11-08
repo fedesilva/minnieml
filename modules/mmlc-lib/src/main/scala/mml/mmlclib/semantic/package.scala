@@ -408,9 +408,5 @@ object IsFnRef:
 
 object IsAtom:
   def unapply(term: Term): Option[Term] = term match
-    case v:   LiteralValue => v.some
-    case g:   TermGroup => g.some
-    case h:   Hole => h.some
-    case ref: Ref if ref.candidates.exists(c => c.isInstanceOf[Bnd] || c.isInstanceOf[FnParam]) =>
-      ref.some
-    case x => x.some
+    case _: Ref => None
+    case other => other.some

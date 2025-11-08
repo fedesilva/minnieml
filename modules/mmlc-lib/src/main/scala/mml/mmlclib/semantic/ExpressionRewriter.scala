@@ -120,7 +120,7 @@ object ExpressionRewriter:
       case (g: TermGroup) :: rest =>
         // Process a parenthesized group - treat as a bounded expression
         rewritePrecedenceExpr(g.inner.terms, MinPrecedence, g.span).map { case (innerExpr, _) =>
-          (Expr(g.span, List(innerExpr)), rest)
+          (innerExpr, rest)
         }
 
       case IsPrefixOpRef(ref, opDef, prec, assoc) :: rest =>
@@ -134,15 +134,14 @@ object ExpressionRewriter:
           (Expr(span, List(opApp)), remaining)
         }
 
-      case IsFnRef(ref, fnDef) :: rest =>
-        // Function reference - handle as potential function application
-        val resolvedRef = ref.copy(resolvedAs = fnDef.some)
-        // This is the entry point for an application chain.
-        // We recursively build the application chain from left to right.
-        buildAppChain(resolvedRef, rest, span)
+      case (ref: Ref) :: rest =>
+        // Any reference - handle as potential function application
+        // This includes FnDef refs, Bnd refs (partial applications), and FnParam refs
+        // The type checker will validate whether the application is valid
+        buildAppChain(ref, rest, span)
 
       case IsAtom(atom) :: rest =>
-        // Simple atom (literal, variable, etc.)
+        // Simple atom (literal, hole, etc.)
         (Expr(atom.span, List(atom)), rest).asRight
 
       case terms =>

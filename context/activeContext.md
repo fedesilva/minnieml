@@ -14,38 +14,53 @@
 
 ## Next Steps
 
-- partial application is not working
+### Fix Partial Application (HIGH PRIORITY - INCOMPLETE)
 
-  if you try to compile mml/samples/partial-app.mml
+**Current Status**:
 
-  ```
-    let greet = concat "Hola, ";
+✅ **Working**:
+- `partial-inline-simple.mml`: `((concat "Hola, ") "fede")` - compiles and runs
 
-    fn main() =
-     println (greet "fede")
-    ;
-  ```
+❌ **Not Working**:
+- `partial-app.mml`: `let greet = concat "Hola, "; ... greet "fede"` - fails at codegen with "No LLVM type mapping for TypeSpec: TypeFn"
+    - need to teach codegen to ... codegen lambdas.
+- `partial-app-inline.mml`: `((add 5) 10)` - fails at ExpressionRewriter with "Unexpected terms outside expression context at [5:30]-[5:32]"
+    -FOCUS ON THIS FIRST
+- `partial-inline-simple.mml` also fails, uses prelude function.
+    - FOCUS ON THIS, TOO, same issue
 
-  you get
 
-  ```
-  Compilation failed:
+**What we know**:
+- All 130 unit tests pass
+- ExpressionRewriter changes handle some partial application cases
+- Groups with user-defined functions fail differently than groups with injected native functions
 
-Unexpected terms outside expression context at [5:17]-[5:23]
-Phase: mml.mmlclib.semantic.ExpressionRewriter
-Term info:
-Term: LiteralString
+### Verify our compiled binaries return status code 0 
 
-At [5:17]-[5:23]:
-   4 | fn main() =
-   5 |  println (greet "fede")
-                       ^^^^^^
-   6 | ;
-   ``` 
+Successful execution should return exit code 0.
+
+### Review pretty printer
+
+* TypeFns are missing
+* function arguments are not indented
+* alias printing is too verbose
+
+###  Run Command
+
+Introduce a `run` subcommand that is like `bin` but after building the binary, executes it.
+
+### Pre Codegen Validation
+
+* New Phase
+* Run checks on the ast and fail if they don't pass
+* Fist checks:
+    - No holes are allowed (???)
+
 
 
 ## Recent Changes
 
+- **Partial application support (#179 complete)**: ExpressionRewriter now treats all refs uniformly—any ref (FnDef, Bnd, FnParam) followed by arguments builds an application chain. Inline partial applications like `((concat "Hola, ") "fede")` compile and run successfully. Stored partial applications type-check but hit codegen limitation (no first-class functions yet). Changed `IsAtom` extractor to exclude refs, fixed TermGroup double-wrapping. All 130 tests pass.
 - Type mismatch diagnostics now name call sites when possible (new `expectedBy` label threads through TypeChecker + printers).
 - TypeChecker + codegen now store/consume full `TypeFn` signatures for functions and operators (#178 complete): lowering wraps params/return into `TypeFn`, application typing consumes them, and codegen extracts LLVM signatures; diagnostics now surface partially applied function types.
 - **AST restructured (#170 complete)**: Split 501-line AstNode.scala into 6 focused files (common.scala, native.scala, module.scala, members.scala, types.scala, terms.scala). Sealed traits preserved where critical (Term, TypeSpec, OpDef, LiteralValue, NativeType) for exhaustiveness checking. Strategic unsealing of cross-file traits (AstNode, Member, Decl, Native). All 130 tests pass, code formatted and linted.
