@@ -14,7 +14,35 @@
 
 ## Next Steps
 
-- (none)
+- partial application is not working
+
+  if you try to compile mml/samples/partial-app.mml
+
+  ```
+    let greet = concat "Hola, ";
+
+    fn main() =
+     println (greet "fede")
+    ;
+  ```
+
+  you get
+
+  ```
+  Compilation failed:
+
+Unexpected terms outside expression context at [5:17]-[5:23]
+Phase: mml.mmlclib.semantic.ExpressionRewriter
+Term info:
+Term: LiteralString
+
+At [5:17]-[5:23]:
+   4 | fn main() =
+   5 |  println (greet "fede")
+                       ^^^^^^
+   6 | ;
+   ``` 
+
 
 ## Recent Changes
 
