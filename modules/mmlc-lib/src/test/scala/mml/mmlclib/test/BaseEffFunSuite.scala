@@ -4,12 +4,13 @@ import cats.effect.IO
 import mml.mmlclib.api.{CompilerApi, ParserApi}
 import mml.mmlclib.ast.{Error, Member, Module}
 import mml.mmlclib.semantic.*
-import mml.mmlclib.util.pipe.*
 import mml.mmlclib.util.prettyprint.ast.prettyPrintAst
 import munit.CatsEffectSuite
 
 /** Base trait for effectful tests; adds common MML specific assertions. */
 trait BaseEffFunSuite extends CatsEffectSuite:
+
+  final case class SemanticResult(module: Module, errors: List[SemanticError])
 
   private def containsErrorNode(module: Module): Boolean = {
     def checkMembers(members: List[Member]): Boolean =
@@ -121,22 +122,18 @@ trait BaseEffFunSuite extends CatsEffectSuite:
       // pass
     }
 
-    // We need to change the underlying api
-    // to pass the errors so we can use them in assertions
-    // def semFailedWithErrors(
-    //   source: String,
-    //       name:   Option[String] = "TestFail".some,
-    //       msg:    Option[String] = None
-    //     ): IO[Option[]] =
-    //       CompilerApi.compileString(source, name).value.map {
-    //         case Right(module) =>
-    //           assert(
-    //             containsErrorNode(module),
-    //             msg.getOrElse(s"Expected Error nodes but found none. ${prettyPrintAst(module)} ")
-    //           )
-    //         case Left(error) =>
-
-    //       }
+  def semState(
+    source: String,
+    name:   String         = "Test",
+    msg:    Option[String] = None
+  ): IO[SemanticResult] =
+    CompilerApi.compileState(source, name).value.map {
+      case Right(state) => SemanticResult(state.module, state.errors.toList)
+      case Left(error) =>
+        fail(
+          msg.getOrElse("Semantic pipeline failed before producing a state.") + s"\n$error"
+        )
+    }
 
   /** Parse source code without asserting on MemberErrors. Useful for testing phases that
     * specifically deal with MemberErrors
@@ -149,27 +146,6 @@ trait BaseEffFunSuite extends CatsEffectSuite:
     ParserApi.parseModuleString(source, name).value.map {
       case Right(module) => module
       case Left(error) => fail(msg.getOrElse("Parser Failed: ") + s"\n$error")
-    }
-
-  def semWithState(
-    source: String,
-    name:   String         = "Test",
-    msg:    Option[String] = None
-  ): IO[mml.mmlclib.semantic.SemanticPhaseState] =
-
-    justParse(source, name, msg).map { module =>
-      val moduleWithTypes = injectBasicTypes(module)
-      val moduleWithOps   = injectStandardOperators(moduleWithTypes)
-
-      val initialState = SemanticPhaseState(moduleWithOps, Vector.empty)
-
-      initialState
-        |> DuplicateNameChecker.rewriteModule
-        |> RefResolver.rewriteModule
-        |> TypeResolver.rewriteModule
-        |> ExpressionRewriter.rewriteModule
-        |> ParsingErrorChecker.checkModule
-        |> Simplifier.rewriteModule
     }
 
   protected def compileAndGenerate(

@@ -534,6 +534,8 @@ case class SemanticPhaseState(
 
 Each phase receives the current state, transforms the module, potentially adds errors, and returns the updated state.
 
+`SemanticApi.rewriteModule` returns this final `SemanticPhaseState` directly, ensuring callers always have access to the rewritten module plus every accumulated semantic error. Production code that only cares about successful compilations should call `CompilerApi.compileString`, which fails with `CompilerError.SemanticErrors` when `state.errors.nonEmpty`. Tests and tooling that need full diagnostics can call `CompilerApi.compileState` to obtain the state without discarding the partially rewritten module.
+
 **Phase order** (from `SemanticApi.scala`):
 1. ParsingErrorChecker
 2. DuplicateNameChecker
@@ -921,20 +923,6 @@ flowchart TD
 - `error/print/` - Error formatting and display
 - `pipe/` - Functional pipeline operator
 - `yolo/` - Quick debugging utilities
-
-### Test Structure
-
-**Grammar Tests** (`modules/mmlc-lib/src/test/scala/mml/mmlclib/grammar/`)
-- Parser-focused tests for each language construct
-- `BaseParserSuite` - Common test utilities
-
-**Semantic Tests** (`modules/mmlc-lib/src/test/scala/mml/mmlclib/semantic/`)
-- Tests for each semantic analysis phase
-- Integration tests for the full semantic pipeline
-
-**Test Helpers** (`modules/mmlc-lib/src/test/scala/mml/mmlclib/test/`)
-- `BaseEffFunSuite` - Base class for effect-based tests
-- Common test utilities and assertions
 
 ## Summary
 

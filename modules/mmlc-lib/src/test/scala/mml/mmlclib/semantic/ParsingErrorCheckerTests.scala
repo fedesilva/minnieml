@@ -41,7 +41,7 @@ class ParsingErrorCheckerTests extends BaseEffFunSuite:
   }
 
   test("MemberErrorChecker should catch member errors as shown in the example") {
-    semWithState(
+    semState(
       """
       fn valid(a: Int, b: Int): Int = a + b;
       let a  ; # Missing expression after =
@@ -53,6 +53,10 @@ class ParsingErrorCheckerTests extends BaseEffFunSuite:
       // if result.errors.nonEmpty then
       //   println(result.errors)
 
+      assert(
+        result.errors.nonEmpty,
+        s"Expected semantic errors but found none. ${result.module}"
+      )
       assert(clue(result.errors.size) == clue(1))
 
       result.errors.head match {
@@ -65,7 +69,7 @@ class ParsingErrorCheckerTests extends BaseEffFunSuite:
   }
 
   test("MemberErrorChecker should catch multiple member errors") {
-    semWithState(
+    semState(
       """
       fn valid(a: Int, b: Int): Int = a + b;
       let a  ; # Missing expression after =
@@ -76,6 +80,10 @@ class ParsingErrorCheckerTests extends BaseEffFunSuite:
       // import mml.mmlclib.util.prettyprint.ast.*
       // println(prettyPrintAst(result.module))
 
+      assert(
+        result.errors.nonEmpty,
+        s"Expected semantic errors but found none. ${result.module}"
+      )
       assert(clue(result.errors.size) == clue(2))
       assert(result.errors.forall {
         case SemanticError.MemberErrorFound(_, _) => true

@@ -38,6 +38,7 @@ The compiler is structured into multiple modules:
 ### Current Implementation Notes
 
 - **Error Handling:** The compiler accumulates errors through semantic phases using `SemanticPhaseState`, reporting multiple errors instead of failing on the first one
+- **Semantic API Access:** `SemanticApi.rewriteModule` returns the final `SemanticPhaseState`, while `CompilerApi.compileState` exposes it to callers; `compileString` preserves the fail-fast behavior by turning non-empty semantic errors into `CompilerError.SemanticErrors`
 - **Type Resolution:** TypeResolver follows RefResolver pattern, resolving type references throughout the AST
 - **Expression Rewriting:** Unified system treats operators and function application uniformly, rewriting operators as curried function applications
 - **Predefined Types:** The semantic package automatically injects common types (String, CharPtr, SizeT, Int64, Float64, Bool, etc.) into every module. When writing tests or examples, use unique names to avoid conflicts with these predefined types
@@ -84,6 +85,7 @@ flowchart TD
 4. **Error Handling**: See `SemanticPhaseState` in `semantic/package.scala`
 5. **Code Generation**: Start with `LlvmIrEmitter.scala`, then specialized emitters
 6. **Misc Debugging tools**: rewrrite in the yolo package. also the prettyprinter.
+7. **Testing**: Grammar suites live under `modules/mmlc-lib/src/test/scala/mml/mmlclib/grammar/`, semantic suites under `.../semantic/`, and shared helpers (e.g., `BaseEffFunSuite` with `semState`) under `.../test/`.
 
 
 ## How to compile and run samples

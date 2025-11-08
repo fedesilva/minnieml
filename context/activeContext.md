@@ -15,18 +15,21 @@
 
 ## Next Steps
 
- - #174 revamp module parsing
-
-    see context/specs/174-revamp-module-parsing.md
-
-    - [x] Parser entrypoint now uses `topLevelModuleP`, legacy named/anon paths and `Module.isImplicit` removed; spec updated with explicit-name rules.
-    - [x] ParserApi/CompilerApi/CodeGenApi/NativeEmitter/CLI/yolo helpers and all call sites now pass explicit module names (tests/tools/CLI).
-    - [x] BaseEffFunSuite helpers default to string names; grammar tests/docs updated and full suite rerun after scalafmt/scalafix.
-    - [x] Tests and `mml/samples` no longer wrap content in `module ... =`; top-level members stand alone.
-    - [x] Error recovery follow-up: broadened `failedMemberP`, kept module cleanup logic aligned, and re-enabled the “rubbish at the end” test once behavior is correct.
+# 177 Improve APIs to enable us to build better testing tools
+  see context/specs/improve-semantic-testing-tools.md
+  - [x] Refactor `SemanticApi.rewriteModule` to return the final `SemanticPhaseState` while preserving the existing phase threading/injection logic.
+  - [x] Add `compileState` in `CompilerApi`, update `compileString` to reuse it, and keep fatal-error behavior for production callers.
+  - [x] Replace `semWithState` in `BaseEffFunSuite` with compileState-backed helpers (e.g. `semState`) and update semantic tests to use them.
+  - [x] Document the new semantic-state API surface in `docs/design-and-semantics.md` and other relevant context files.
+  - [ ] Run `sbt test` (or faster Metals equivalents) and ensure the new helpers/tests pass before completion. (blocked: sbt needs explicit approval)
 
 ## Recent Changes
 
+- revamped module parsing
+    * the distinction between anon and named module is gone
+    * a file is a top level module, does not require or allow `module` or `;` as terminator
+    * this made it easier to improve the failedMemberP catch all parser.
+    * we now fail to parse trash constructs but do not abort the process
 - Docs: Source tree overview consolidated into `docs/design-and-semantics.md` Appendix A; `context/systemPatterns.md` now references updated compilation flow.
 - Unit type vs value
      * `Unit` is the type, `()` is the only inhabitant of that type.

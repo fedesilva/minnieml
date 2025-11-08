@@ -1,5 +1,6 @@
 package mml.mmlclib.api
 
+import cats.data.EitherT
 import cats.effect.IO
 import cats.syntax.all.*
 import mml.mmlclib.api.CompilerEffect
@@ -13,26 +14,30 @@ enum CompilerError:
   case Unknown(msg: String)
 
 object CompilerApi:
-  /** Compile a string source into a Module
-    *
-    * This function parses and semantically analyzes the source into a Module. All errors are
-    * captured in an EitherT.
-    *
-    * @param source
-    *   the source code to compile
-    * @param name
-    *   the module name to associate with the parsed members
-    * @return
-    *   a CompilerEffect that, when run, yields either a CompilerError or a Module
-    */
-  def compileString(
+  /** Run parsing + semantic pipeline and return the final state */
+  def compileState(
     source: String,
     name:   String
-  ): CompilerEffect[Module] =
+  ): CompilerEffect[SemanticPhaseState] =
     for
       // Use leftMap to convert ParserError to CompilerError
       parsedModule <- ParserApi
         .parseModuleString(source, name)
         .leftMap(error => CompilerError.ParserErrors(List(error)))
-      module <- SemanticApi.rewriteModule(parsedModule)
-    yield module
+      state <- SemanticApi.rewriteModule(parsedModule)
+    yield state
+
+  /** Compile a string source into a Module
+    *
+    * Runs `compileState` and only returns the rewritten Module when no semantic errors were
+    * accumulated. If semantic errors exist, they are surfaced as `CompilerError.SemanticErrors`.
+    */
+  def compileString(
+    source: String,
+    name:   String
+  ): CompilerEffect[Module] =
+    compileState(source, name).flatMap { state =>
+      if state.errors.isEmpty
+      then EitherT.rightT[IO, CompilerError](state.module)
+      else EitherT.leftT[IO, Module](CompilerError.SemanticErrors(state.errors.toList))
+    }
