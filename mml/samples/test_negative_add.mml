@@ -1,4 +1,1 @@
-fn println (a: String): Unit = @native;
-fn to_string (a: Int): String = @native;
-
 fn main() = println 5 + 3;
