@@ -43,7 +43,9 @@ object TypeChecker:
                 case Nil =>
                   // Lower param type ascriptions to specs
                   val updatedParams = fnDef.params.map(p => p.copy(typeSpec = p.typeAsc))
-                  val updatedFn     = fnDef.copy(typeSpec = fnDef.typeAsc, params = updatedParams)
+                  val loweredTypeSpec =
+                    fnDef.typeAsc.flatMap(buildFunctionTypeSpec(fnDef.span, updatedParams, _))
+                  val updatedFn = fnDef.copy(typeSpec = loweredTypeSpec, params = updatedParams)
                   (accErrors, accMembers :+ updatedFn)
                 case errs => (accErrors ++ errs, accMembers :+ fnDef)
 
@@ -56,10 +58,19 @@ object TypeChecker:
                     case b: BinOpDef =>
                       val updatedParam1 = b.param1.copy(typeSpec = b.param1.typeAsc)
                       val updatedParam2 = b.param2.copy(typeSpec = b.param2.typeAsc)
-                      b.copy(typeSpec = b.typeAsc, param1 = updatedParam1, param2 = updatedParam2)
+                      val loweredTypeSpec = b.typeAsc.flatMap(
+                        buildFunctionTypeSpec(b.span, List(updatedParam1, updatedParam2), _)
+                      )
+                      b.copy(
+                        typeSpec = loweredTypeSpec,
+                        param1   = updatedParam1,
+                        param2   = updatedParam2
+                      )
                     case u: UnaryOpDef =>
                       val updatedParam = u.param.copy(typeSpec = u.param.typeAsc)
-                      u.copy(typeSpec = u.typeAsc, param = updatedParam)
+                      val loweredTypeSpec =
+                        u.typeAsc.flatMap(buildFunctionTypeSpec(u.span, List(updatedParam), _))
+                      u.copy(typeSpec = loweredTypeSpec, param = updatedParam)
                   (accErrors, accMembers :+ newOp)
                 case errs => (accErrors ++ errs, accMembers :+ opDef)
 
@@ -85,20 +96,30 @@ object TypeChecker:
         // Pass the function's parameters as context for parameter lookups
         val paramContext = fnDef.params.map(p => p.name -> p).toMap
         for
-          checkedBody <- checkExprWithContext(fnDef.body, module, paramContext, fnDef.typeSpec)
-          finalTypeSpec <- fnDef.typeSpec match {
-            case Some(explicitType) =>
+          checkedBody <- checkExprWithContext(fnDef.body, module, paramContext, fnDef.typeAsc)
+          finalReturnType <- fnDef.typeAsc match {
+            case Some(explicitReturn) =>
               // Check if this is a native implementation - can't validate those
               if hasNativeImpl(fnDef.body) then
                 // For native implementations, trust the explicit type since we can't validate
-                Right(explicitType)
+                Right(explicitReturn)
               else
                 // For regular functions, validate explicit type matches body type
                 checkedBody.typeSpec match
-                  case Some(actualType) if areTypesCompatible(explicitType, actualType, module) =>
-                    Right(explicitType)
+                  case Some(actualType) if areTypesCompatible(explicitReturn, actualType, module) =>
+                    Right(explicitReturn)
                   case Some(actualType) =>
-                    Left(List(TypeError.TypeMismatch(fnDef, explicitType, actualType, phaseName)))
+                    Left(
+                      List(
+                        TypeError.TypeMismatch(
+                          fnDef,
+                          explicitReturn,
+                          actualType,
+                          phaseName,
+                          Some(fnDef.name)
+                        )
+                      )
+                    )
                   case None =>
                     Left(
                       List(
@@ -115,7 +136,10 @@ object TypeChecker:
                   )
               }
           }
-        yield fnDef.copy(body = checkedBody, typeSpec = Some(finalTypeSpec))
+        yield fnDef.copy(
+          body     = checkedBody,
+          typeSpec = buildFunctionTypeSpec(fnDef.span, fnDef.params, finalReturnType)
+        )
 
       case opDef: OpDef =>
         // Type spec already lowered in first pass, just check the body
@@ -125,20 +149,30 @@ object TypeChecker:
           case b: BinOpDef => Map(b.param1.name -> b.param1, b.param2.name -> b.param2)
           case u: UnaryOpDef => Map(u.param.name -> u.param)
         for
-          checkedBody <- checkExprWithContext(opDef.body, module, paramContext, opDef.typeSpec)
-          finalTypeSpec <- opDef.typeSpec match {
-            case Some(explicitType) =>
+          checkedBody <- checkExprWithContext(opDef.body, module, paramContext, opDef.typeAsc)
+          finalReturnType <- opDef.typeAsc match {
+            case Some(explicitReturn) =>
               // Check if this is a native implementation - can't validate those
               if hasNativeImpl(opDef.body) then
                 // For native implementations, trust the explicit type since we can't validate
-                Right(explicitType)
+                Right(explicitReturn)
               else
                 // For regular operators, validate explicit type matches body type
                 checkedBody.typeSpec match
-                  case Some(actualType) if areTypesCompatible(explicitType, actualType, module) =>
-                    Right(explicitType)
+                  case Some(actualType) if areTypesCompatible(explicitReturn, actualType, module) =>
+                    Right(explicitReturn)
                   case Some(actualType) =>
-                    Left(List(TypeError.TypeMismatch(opDef, explicitType, actualType, phaseName)))
+                    Left(
+                      List(
+                        TypeError.TypeMismatch(
+                          opDef,
+                          explicitReturn,
+                          actualType,
+                          phaseName,
+                          Some(opDef.name)
+                        )
+                      )
+                    )
                   case None =>
                     Left(
                       List(
@@ -156,8 +190,16 @@ object TypeChecker:
               }
           }
         yield opDef match
-          case b: BinOpDef => b.copy(body = checkedBody, typeSpec = Some(finalTypeSpec))
-          case u: UnaryOpDef => u.copy(body = checkedBody, typeSpec = Some(finalTypeSpec))
+          case b: BinOpDef =>
+            b.copy(
+              body     = checkedBody,
+              typeSpec = buildFunctionTypeSpec(b.span, List(b.param1, b.param2), finalReturnType)
+            )
+          case u: UnaryOpDef =>
+            u.copy(
+              body     = checkedBody,
+              typeSpec = buildFunctionTypeSpec(u.span, List(u.param), finalReturnType)
+            )
 
       case bnd: Bnd =>
         for {
@@ -408,157 +450,27 @@ object TypeChecker:
     module:    Module
   ): Either[List[TypeError], TypeSpec] =
     checkedFn match
-      case ref: Ref if ref.resolvedAs.isDefined =>
-        ref.resolvedAs.get match
-          case fnDef: FnDef =>
-            // Use updated function (with lowered type specs) if present
-            val updatedFn = module.members.collectFirst {
-              case fn: FnDef if fn.name == fnDef.name => fn
-            }
-            val params     = updatedFn.map(_.params).getOrElse(fnDef.params)
-            val returnType = updatedFn.flatMap(_.typeSpec).orElse(fnDef.typeSpec)
-
-            val remainingParams = params.drop(1)
-            (params.headOption, returnType, app.arg.typeSpec) match
-              case (Some(param), Some(ret), Some(argT)) =>
-                param.typeSpec match
-                  case Some(pT) =>
-                    if areTypesCompatible(pT, argT, module) then
-                      buildRemainingFunctionType(remainingParams, ret, app)
-                    else Left(List(TypeError.TypeMismatch(app.arg, pT, argT, phaseName)))
-                  case None =>
-                    Left(
-                      List(
-                        TypeError.UnresolvableType(TypeRef(param.span, param.name), app, phaseName)
-                      )
-                    )
-              case (None, Some(ret), Some(argT)) =>
-                // Allow calling zero-arity functions with an explicit unit argument: `fn f(): T = ...; f()`
-                argT match
-                  case TypeUnit(_) | TypeRef(_, "Unit", _) => Right(ret)
-                  case other =>
-                    Left(List(TypeError.InvalidApplication(app, ret, other, phaseName)))
-              case (None, Some(ret), None) =>
-                // Argument type unknown
-                Left(
-                  List(TypeError.UnresolvableType(TypeRef(app.arg.span, "arg"), app.arg, phaseName))
-                )
-              case (_, None, _) =>
-                Left(
-                  List(TypeError.UnresolvableType(TypeRef(app.span, fnDef.name), app, phaseName))
-                )
-              case (_, _, None) =>
-                Left(
-                  List(TypeError.UnresolvableType(TypeRef(app.arg.span, "arg"), app.arg, phaseName))
-                )
-
-          case binOp: BinOpDef =>
-            val updated = module.members.collectFirst {
-              case op: BinOpDef if op.name == binOp.name => op
-            }
-            val param1  = updated.map(_.param1).getOrElse(binOp.param1)
-            val param2  = updated.map(_.param2).getOrElse(binOp.param2)
-            val retType = updated.flatMap(_.typeSpec).orElse(binOp.typeSpec)
-
-            (Option(param1), retType, app.arg.typeSpec) match
-              case (Some(p), Some(r), Some(argT)) =>
-                p.typeSpec match
-                  case Some(pT) =>
-                    if areTypesCompatible(pT, argT, module) then
-                      buildRemainingFunctionType(List(param2), r, app)
-                    else Left(List(TypeError.TypeMismatch(app.arg, pT, argT, phaseName)))
-                  case None =>
-                    Left(List(TypeError.UnresolvableType(TypeRef(p.span, p.name), app, phaseName)))
-              case (None, Some(r), Some(argT)) =>
-                // No parameter available but being applied: invalid application
-                Left(List(TypeError.InvalidApplication(app, r, argT, phaseName)))
-              case (_, None, _) =>
-                Left(
-                  List(TypeError.UnresolvableType(TypeRef(app.span, binOp.name), app, phaseName))
-                )
-              case (_, _, None) =>
-                Left(
-                  List(TypeError.UnresolvableType(TypeRef(app.arg.span, "arg"), app.arg, phaseName))
-                )
-              case _ =>
-                Left(
-                  List(
-                    TypeError.InvalidApplication(
-                      app,
-                      TypeRef(app.span, binOp.name),
-                      app.arg.typeSpec.getOrElse(TypeRef(app.arg.span, "unknown")),
-                      phaseName
-                    )
-                  )
-                )
-
-          case unaryOp: UnaryOpDef =>
-            val updated = module.members.collectFirst {
-              case op: UnaryOpDef if op.name == unaryOp.name => op
-            }
-            val param   = updated.map(_.param).getOrElse(unaryOp.param)
-            val retType = updated.flatMap(_.typeSpec).orElse(unaryOp.typeSpec)
-
-            (Option(param), retType, app.arg.typeSpec) match
-              case (Some(p), Some(r), Some(argT)) =>
-                p.typeSpec match
-                  case Some(pT) =>
-                    if areTypesCompatible(pT, argT, module) then Right(r)
-                    else Left(List(TypeError.TypeMismatch(app.arg, pT, argT, phaseName)))
-                  case None =>
-                    Left(List(TypeError.UnresolvableType(TypeRef(p.span, p.name), app, phaseName)))
-              case (None, Some(r), Some(argT)) =>
-                // No parameter available but being applied: invalid application
-                Left(List(TypeError.InvalidApplication(app, r, argT, phaseName)))
-              case (_, None, _) =>
-                Left(
-                  List(TypeError.UnresolvableType(TypeRef(app.span, unaryOp.name), app, phaseName))
-                )
-              case (_, _, None) =>
-                Left(
-                  List(TypeError.UnresolvableType(TypeRef(app.arg.span, "arg"), app.arg, phaseName))
-                )
-              case _ =>
-                Left(
-                  List(
-                    TypeError.InvalidApplication(
-                      app,
-                      TypeRef(app.span, unaryOp.name),
-                      app.arg.typeSpec.getOrElse(TypeRef(app.arg.span, "unknown")),
-                      phaseName
-                    )
-                  )
-                )
-
-          case _ =>
-            Left(
-              List(
-                TypeError.InvalidApplication(
-                  app,
-                  TypeRef(app.span, "unknown"),
-                  TypeRef(app.span, "unknown"),
-                  phaseName
-                )
-              )
-            )
+      case ref: Ref =>
+        determineRefApplicationType(app, ref, module)
 
       case innerApp: App if innerApp.typeSpec.isDefined =>
-        val innerType = innerApp.typeSpec.get
-        app.arg.typeSpec match
-          case Some(argType) =>
-            innerType match
-              case TypeFn(_, headParam :: tailParams, returnType) =>
-                if areTypesCompatible(headParam, argType, module) then
-                  Right(buildRemainingFunctionTypeFromTypes(tailParams, returnType, app.span))
-                else Left(List(TypeError.TypeMismatch(app.arg, headParam, argType, phaseName)))
-              case TypeFn(_, Nil, _) =>
-                Left(List(TypeError.InvalidApplication(app, innerType, argType, phaseName)))
-              case other =>
+        innerApp.typeSpec match
+          case Some(fnType: TypeFn) =>
+            applyTypeFnToArgument(app, fnType, app.arg.typeSpec, module, None)
+          case Some(other) =>
+            app.arg.typeSpec match
+              case Some(argType) =>
                 Left(List(TypeError.InvalidApplication(app, other, argType, phaseName)))
+              case None =>
+                Left(
+                  List(
+                    TypeError.UnresolvableType(TypeRef(app.arg.span, "arg"), app.arg, phaseName)
+                  )
+                )
           case None =>
             Left(
               List(
-                TypeError.UnresolvableType(TypeRef(app.arg.span, "arg"), app.arg, phaseName)
+                TypeError.UnresolvableType(TypeRef(app.span, "fn"), app, phaseName)
               )
             )
 
@@ -574,29 +486,119 @@ object TypeChecker:
           )
         )
 
+  private def determineRefApplicationType(
+    app:    App,
+    ref:    Ref,
+    module: Module
+  ): Either[List[TypeError], TypeSpec] =
+    ref.resolvedAs match
+      case None =>
+        Left(List(TypeError.UnresolvableType(TypeRef(ref.span, ref.name), ref, phaseName)))
+      case Some(_) =>
+        extractTypeFnFromRef(ref, module) match
+          case Some(fnType) =>
+            applyTypeFnToArgument(app, fnType, app.arg.typeSpec, module, Some(ref.name))
+          case None =>
+            app.arg.typeSpec match
+              case Some(argType) =>
+                Left(
+                  List(
+                    TypeError.InvalidApplication(
+                      app,
+                      TypeRef(app.span, ref.name),
+                      argType,
+                      phaseName
+                    )
+                  )
+                )
+              case None =>
+                Left(
+                  List(
+                    TypeError.UnresolvableType(TypeRef(app.arg.span, "arg"), app.arg, phaseName)
+                  )
+                )
+
+  private def extractTypeFnFromRef(ref: Ref, module: Module): Option[TypeFn] =
+    val directType = ref.typeSpec.collect { case tf: TypeFn => tf }
+    directType.orElse {
+      ref.resolvedAs.flatMap {
+        case decl:  Decl => findTypeFnForDecl(decl, module)
+        case param: FnParam => param.typeSpec.collect { case tf: TypeFn => tf }
+        case _ => None
+      }
+    }
+
+  private def findTypeFnForDecl(decl: Decl, module: Module): Option[TypeFn] =
+    val updatedDecl = module.members.collectFirst {
+      case candidate: FnDef if decl.isInstanceOf[FnDef] && candidate.name == decl.name => candidate
+      case candidate: BinOpDef if decl.isInstanceOf[BinOpDef] && candidate.name == decl.name =>
+        candidate
+      case candidate: UnaryOpDef if decl.isInstanceOf[UnaryOpDef] && candidate.name == decl.name =>
+        candidate
+      case candidate: Bnd if decl.isInstanceOf[Bnd] && candidate.name == decl.name => candidate
+    }
+
+    updatedDecl
+      .collect { case d: Decl => d }
+      .orElse(Some(decl))
+      .flatMap(_.typeSpec.collect { case tf: TypeFn =>
+        tf
+      })
+
+  private def applyTypeFnToArgument(
+    app:     App,
+    fnType:  TypeFn,
+    argType: Option[TypeSpec],
+    module:  Module,
+    fnLabel: Option[String]
+  ): Either[List[TypeError], TypeSpec] =
+    argType match
+      case Some(actualArgType) =>
+        fnType.paramTypes match
+          case headParam :: tailParams =>
+            if areTypesCompatible(headParam, actualArgType, module) then
+              Right(buildRemainingFunctionTypeFromTypes(tailParams, fnType.returnType, app.span))
+            else
+              Left(
+                List(
+                  TypeError.TypeMismatch(
+                    app.arg,
+                    headParam,
+                    actualArgType,
+                    phaseName,
+                    fnLabel
+                  )
+                )
+              )
+          case Nil =>
+            actualArgType match
+              case TypeUnit(_) | TypeRef(_, "Unit", _) => Right(fnType.returnType)
+              case other =>
+                Left(
+                  List(
+                    TypeError.InvalidApplication(
+                      app,
+                      fnType.returnType,
+                      other,
+                      phaseName
+                    )
+                  )
+                )
+      case None =>
+        Left(List(TypeError.UnresolvableType(TypeRef(app.arg.span, "arg"), app.arg, phaseName)))
+
   /** Check function applications by collecting all arguments in a chain */
   private def checkApplication(app: App, module: Module): Either[List[TypeError], App] =
     checkApplicationWithContext(app, module, Map.empty)
 
-  private def buildRemainingFunctionType(
-    remainingParams: List[FnParam],
-    returnType:      TypeSpec,
-    app:             App
-  ): Either[List[TypeError], TypeSpec] =
-    if remainingParams.isEmpty then Right(returnType)
-    else
-      val missingParam = remainingParams.collectFirst {
-        case param if param.typeSpec.isEmpty => param
-      }
-      missingParam match
-        case Some(param) =>
-          Left(
-            List(
-              TypeError.UnresolvableType(TypeRef(param.span, param.name), app, phaseName)
-            )
-          )
-        case None =>
-          Right(TypeFn(app.span, remainingParams.map(_.typeSpec.get), returnType))
+  private def buildFunctionTypeSpec(
+    span:       SrcSpan,
+    params:     List[FnParam],
+    returnType: TypeSpec
+  ): Option[TypeSpec] =
+    params
+      .traverse(_.typeSpec)
+      .map(paramTypes => TypeFn(span, paramTypes, returnType))
 
   private def buildRemainingFunctionTypeFromTypes(
     remainingTypes: List[TypeSpec],
@@ -611,7 +613,7 @@ object TypeChecker:
     (node.typeAsc, node.typeSpec) match
       case (Some(ascribed), Some(computed)) =>
         if areTypesCompatible(ascribed, computed, module) then Nil
-        else List(TypeError.TypeMismatch(node, ascribed, computed, phaseName))
+        else List(TypeError.TypeMismatch(node, ascribed, computed, phaseName, None))
       case _ => Nil
 
   /** Check type compatibility (handles aliases, etc.) */
@@ -667,7 +669,15 @@ object TypeChecker:
         case Some(TypeRef(_, "Bool", _)) => Right(())
         case Some(other) =>
           Left(
-            List(TypeError.TypeMismatch(checkedCond, TypeRef(cond.span, "Bool"), other, phaseName))
+            List(
+              TypeError.TypeMismatch(
+                checkedCond,
+                TypeRef(cond.span, "Bool"),
+                other,
+                phaseName,
+                None
+              )
+            )
           )
         case None =>
           Left(List(TypeError.UnresolvableType(TypeRef(cond.span, "Bool"), checkedCond, phaseName)))

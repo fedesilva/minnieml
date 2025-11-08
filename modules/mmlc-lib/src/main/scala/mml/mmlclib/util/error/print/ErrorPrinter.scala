@@ -63,7 +63,7 @@ object ErrorPrinter:
           (param.span.start.line, param.span.start.col)
         case mml.mmlclib.semantic.TypeError.MissingOperatorReturnType(opDef, _) =>
           (opDef.span.start.line, opDef.span.start.col)
-        case mml.mmlclib.semantic.TypeError.TypeMismatch(node, _, _, _) =>
+        case mml.mmlclib.semantic.TypeError.TypeMismatch(node, _, _, _, _) =>
           val fs = node.asInstanceOf[FromSource]
           (fs.span.start.line, fs.span.start.col)
         case mml.mmlclib.semantic.TypeError.UndersaturatedApplication(app, _, _, _) =>

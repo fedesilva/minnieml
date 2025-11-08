@@ -117,7 +117,7 @@ object SourceCodeExtractor:
           .map(s => s"\n$s")
           .getOrElse("")
 
-      case TypeError.TypeMismatch(node, _, _, _) =>
+      case TypeError.TypeMismatch(node, _, _, _, _) =>
         node match
           case fs: FromSource =>
             extractSnippet(sourceCode, fs.span, highlightExpr = true)

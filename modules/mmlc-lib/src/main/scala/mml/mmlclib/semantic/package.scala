@@ -12,7 +12,13 @@ enum TypeError extends CompilationError:
   case MissingOperatorReturnType(opDef: OpDef, phase: String)
 
   // Expression and Application Errors
-  case TypeMismatch(node: Typeable, expected: TypeSpec, actual: TypeSpec, phase: String)
+  case TypeMismatch(
+    node:       Typeable,
+    expected:   TypeSpec,
+    actual:     TypeSpec,
+    phase:      String,
+    expectedBy: Option[String]
+  )
   case UndersaturatedApplication(app: App, expectedArgs: Int, actualArgs: Int, phase: String)
   case OversaturatedApplication(app: App, expectedArgs: Int, actualArgs: Int, phase: String)
   case InvalidApplication(app: App, fnType: TypeSpec, argType: TypeSpec, phase: String)

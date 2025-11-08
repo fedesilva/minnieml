@@ -167,11 +167,15 @@ object SemanticErrorPrinter:
         val location = LocationPrinter.printSpan(opDef.span)
         s"${Console.RED}Missing return type for operator '${opDef.name}' at $location${Console.RESET}\n${Console.YELLOW}Phase: $phase${Console.RESET}"
 
-      case TypeError.TypeMismatch(node, expected, actual, phase) =>
+      case TypeError.TypeMismatch(node, expected, actual, phase, expectedBy) =>
         val location    = LocationPrinter.printSpan(node.asInstanceOf[FromSource].span)
         val expectedStr = formatTypeSpec(expected)
         val actualStr   = formatTypeSpec(actual)
-        s"${Console.RED}Type mismatch at $location: expected '$expectedStr', got '$actualStr'${Console.RESET}\n${Console.YELLOW}Phase: $phase${Console.RESET}"
+        val expectation =
+          expectedBy match
+            case Some(name) => s"'$name' expected '$expectedStr'"
+            case None => s"expected '$expectedStr'"
+        s"${Console.RED}Type mismatch at $location: $expectation, got '$actualStr'${Console.RESET}\n${Console.YELLOW}Phase: $phase${Console.RESET}"
 
       case TypeError.UndersaturatedApplication(app, expectedArgs, actualArgs, phase) =>
         val location = LocationPrinter.printSpan(app.span)

@@ -1,19 +1,7 @@
 package mml.mmlclib.codegen.emitter
 
 import cats.syntax.all.*
-import mml.mmlclib.ast.{
-  Bnd,
-  FnDef,
-  LiteralBool,
-  LiteralInt,
-  LiteralString,
-  LiteralUnit,
-  Module,
-  NativeImpl,
-  NativeStruct,
-  NativeType,
-  TypeDef
-}
+import mml.mmlclib.ast.*
 
 /** Main entry point for LLVM IR emission.
   *
@@ -259,20 +247,17 @@ private def emitBinding(bnd: Bnd, state: CodeGenState): Either[CodeGenError, Cod
   *   Either a CodeGenError or the updated CodeGenState.
   */
 private def emitFnDef(fn: FnDef, state: CodeGenState): Either[CodeGenError, CodeGenState] = {
-  // Get the return type from the function's type annotation (required)
-  val returnTypeE = fn.typeSpec
-    .map(getLlvmType(_, state))
-    .getOrElse(Left(CodeGenError(s"Missing return type annotation for function '${fn.name}'")))
+  val fnTypeE = fn.typeSpec
+    .collect { case t: TypeFn => t }
+    .toRight(
+      CodeGenError(s"Missing function type specification for '${fn.name}'")
+    )
 
-  returnTypeE.flatMap { returnType =>
-    // Get parameter types
-    val paramTypesE = fn.params.traverse { param =>
-      param.typeSpec
-        .map(getLlvmType(_, state))
-        .getOrElse(Left(CodeGenError(s"Missing type for param '${param.name}' in fn '${fn.name}'")))
-    }
+  fnTypeE.flatMap { fnType =>
+    val returnTypeE = getLlvmType(fnType.returnType, state)
+    val paramTypesE = fnType.paramTypes.traverse(getLlvmType(_, state))
 
-    paramTypesE.flatMap { paramTypes =>
+    (returnTypeE, paramTypesE).tupled.flatMap { case (returnType, paramTypes) =>
       // Check if this is a native function implementation
       fn.body.terms match {
         case List(NativeImpl(_, _, _, _)) =>
