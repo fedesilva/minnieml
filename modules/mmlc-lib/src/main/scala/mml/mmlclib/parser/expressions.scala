@@ -52,7 +52,7 @@ private[parser] def tupleP(info: SourceInfo)(using P[Any]): P[Term] =
 
 private[parser] def ifExprP(info: SourceInfo)(using P[Any]): P[Term] =
   P(
-    spP(info) ~ ifKw ~/ exprP(info) ~ thenKw ~/ exprP(info) ~ elseKw ~/ exprP(info) ~ spP(
+    spP(info) ~ ifKw ~ exprP(info) ~ thenKw ~ exprP(info) ~ elseKw ~ exprP(info) ~ spP(
       info
     )
   )

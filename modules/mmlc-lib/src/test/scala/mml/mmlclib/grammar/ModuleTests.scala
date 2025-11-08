@@ -1,6 +1,7 @@
 package mml.mmlclib.grammar
 
 import mml.mmlclib.ast.*
+import mml.mmlclib.semantic.SemanticError
 import mml.mmlclib.test.BaseEffFunSuite
 import munit.*
 
@@ -89,5 +90,25 @@ class ModuleTests extends BaseEffFunSuite:
       """
     ).map { errors =>
       assert(!errors.isEmpty)
+    }
+  }
+
+  test("missing semicolon emits member error but continues parsing") {
+    val source =
+      """
+        let ooopsie = "missing semicolon"
+
+        let finally:String = "we are done";
+      """
+
+    semState(source, "MissingSemicolon").map { result =>
+      val parsingErrors = result.errors.collect {
+        case SemanticError.MemberErrorFound(member: ParsingMemberError, _) => member
+      }
+      assertEquals(parsingErrors.length, 1)
+      assertEquals(parsingErrors.head.failedCode, Some("let ooopsie = \"missing semicolon\""))
+
+      val bindingNames = result.module.members.collect { case b: Bnd => b.name }
+      assertEquals(bindingNames, List("finally"))
     }
   }

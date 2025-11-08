@@ -23,7 +23,7 @@ private[parser] def numericLitP(info: SourceInfo)(using P[Any]): P[LiteralValue]
 
 private[parser] def litStringP(info: SourceInfo)(using P[Any]): P[LiteralString] =
   import fastparse.NoWhitespace.*
-  P(spP(info) ~ "\"" ~/ CharsWhile(_ != '"', 0).! ~ "\"" ~ spP(info))
+  P(spP(info) ~ "\"" ~ CharsWhile(_ != '"', 0).! ~ "\"" ~ spP(info))
     .map { case (start, s, end) => LiteralString(span(start, end), s) }
 
 private[parser] def litBoolP(info: SourceInfo)(using P[Any]): P[LiteralBool] =

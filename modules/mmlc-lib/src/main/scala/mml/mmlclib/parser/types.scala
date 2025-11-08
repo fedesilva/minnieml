@@ -46,7 +46,7 @@ private[parser] def typeAliasP(info: SourceInfo)(using P[Any]): P[TypeAlias] =
   }
 
 private[parser] def nativeTypeP(info: SourceInfo)(using P[Any]): P[NativeType] =
-  P(spP(info) ~ nativeKw ~ ":" ~/ nativeTypeBodyP(info) ~ spP(info))
+  P(spP(info) ~ nativeKw ~ ":" ~ nativeTypeBodyP(info) ~ spP(info))
     .map { case (start, body, end) =>
       body match {
         case p: NativePrimitive => p.copy(span = span(start, end))
@@ -71,7 +71,7 @@ private[parser] def nativePointerP(info: SourceInfo)(using P[Any]): P[NativePoin
     }
 
 private[parser] def nativeStructP(info: SourceInfo)(using P[Any]): P[NativeStruct] =
-  P(spP(info) ~ "{" ~/ nativeFieldListP(info) ~ "}" ~ spP(info))
+  P(spP(info) ~ "{" ~ nativeFieldListP(info) ~ "}" ~ spP(info))
     .map { case (start, fields, end) =>
       NativeStruct(span(start, end), fields)
     }
@@ -85,7 +85,7 @@ private[parser] def nativeFieldListP(info: SourceInfo)(using P[Any]): P[Map[Stri
     }
 
 private[parser] def nativeFieldP(info: SourceInfo)(using P[Any]): P[(String, TypeSpec)] =
-  P(bindingIdP ~ ":" ~/ typeSpecP(info))
+  P(bindingIdP ~ ":" ~ typeSpecP(info))
 
 private[parser] def llvmPrimitiveTypeP(using P[Any]): P[String] =
   P(

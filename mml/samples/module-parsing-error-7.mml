@@ -3,3 +3,9 @@ let ooopsie = "missing semicolon"
 
 let finally:String = "we are done";
 
+let z;
+
+let y: Int = 1.2;
+
+let z = 1.2;
+
