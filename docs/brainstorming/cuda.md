@@ -14,25 +14,27 @@ This document summarizes the design considerations for MML around GPU/CPU/platfo
      .mml source
          |
        MMLC
-      /     \
-     /       \
-LLVM IR     PTX
-   |           |
-  CPU         GPU
-   |           |
-    \         /
-     \       /
+         |     
+         |       
+       LLVM IR
+      /       \
+     /         \
+    |           |
+   CPU         GPU
+    |           |
+     \         /
+      \       /
    Link together
 ```
 
-* One compilation process generates both CPU code (via LLVM IR) and GPU code (via PTX)
+* One compilation process generates both CPU code and GPU code LLVM IR
 * No runtime code generation - all compilation happens at build time
 * Clean toolchain integration:
 
-```bash
-mml → LLVM IR → llc → .o
-mml → PTX → ptxas → .o
-linker → final executable
+```
+mml -> LLVM IR -> x86|arm|etc -> llc -> .o
+mml -> LLVM IR nvptx -> .o
+linker -> final executable
 ```
 
 ### Platform Abstraction
@@ -65,11 +67,11 @@ To support device execution (e.g. CUDA), MML provides a `Run` effect:
 
 ```mml
 effect Run =
-  fn exec 'A 'B ( f: ('A -> 'B) ): 'B
+  fn exec 'R ( f: ( Unit -> 'R) ): 'R
 ;
 ```
 
-* The compiler follows the function passed to `exec`, typechecks it for the target backend, 
+* The compiler walks through the function passed to `exec`, typechecks it for the target backend, 
   and emits platform-specific code.
 * Handlers are responsible for launching on the chosen backend; on CUDA this lowers to:
 
@@ -79,7 +81,7 @@ call i32 @cudaLaunchKernel(i8* %kernel_func, ...)
 
 **Native annotation example**
 
-The `@native` annotation can be used to speficy a platform specific - potentially 
+The `@native` annotation can be used to declare platform specific - potentially 
 hardware implemented - operations like we allow right now for llvm based platforms.
 
 ```mml
@@ -87,13 +89,13 @@ fn exp <cuda> (f: Float): Float = @native(op="__expf")
 ```
 
 This functionality extends to platform specific effect handlers or protocol instances.
-One can imagine a cuda specific implementation of the `Num` protocol, where
+One can imagine a cuda specific implementation of the `Matrix` protocol. 
 
 **Platform-Specific Effect Handlers:**
 
 * Effect handlers can be specialized to a platform.
 * The same effects (Memory, Parallel) can have different implementations per platform.
-* Handlers may also be declared **without** `<>` for a host‑default implementation.
+* Handlers may also be declared **without** `<>` for a host‑agnostic implementation.
 
 **Memory Effect Example:**
 
@@ -118,8 +120,8 @@ handler Memory <cuda> =
 
 ### Code Generation Paths
 
-1. **CPU Path:** MML → LLVM IR → Object File
-2. **GPU Path:** MML → PTX Assembly → Object File (via ptxas)
+1. **CPU Path:** MML → LLVM IR → x86|amd64 -> Object File
+2. **GPU Path:** MML → LLVM IR -> nvptx -> Object File 
 3. **Linking:** Standard linker combines both object files with CUDA runtime
 
 ### Platform Polymorphism
@@ -137,7 +139,7 @@ let computation =
   let data = Memory.alloc 1000;
   let processed = Parallel.map (x => x * 2) data;
   let result = Parallel.reduce (+) processed;
-  let _ Memory.free data;
+  let _ = Memory.free data;
   result
 ```
 
@@ -151,13 +153,3 @@ Platform selection happens at the handler level, not in the computation itself.
 4. **Type Safety:** Platform constraints enforced by type system
 5. **Optimal Code:** Each platform gets native, optimized code generation
 
-## Architecture Summary
-
-This design achieves **portable parallelism** through:
-
-* Platform-parametric generics (like type generics but for execution targets)
-* Effect handlers as hardware abstraction layer
-* Dual backend compilation (LLVM IR + PTX)
-* Pure functional core with effectful platform-specific boundaries
-
-The result is a language where the same source code can be efficiently compiled to both sequential CPU execution and parallel GPU execution, with all platform-specific concerns handled through the effect system and resolved at compile time.
