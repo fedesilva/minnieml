@@ -118,9 +118,8 @@ object ExpressionRewriter:
           .asLeft
 
       case (g: TermGroup) :: rest =>
-        // Process a parenthesized group - treat as a bounded expression
-        rewritePrecedenceExpr(g.inner.terms, MinPrecedence, g.span).map { case (innerExpr, _) =>
-          (innerExpr, rest)
+        rewriteGroupAtom(g).flatMap { term =>
+          buildAppChain(term, rest, g.span)
         }
 
       case IsPrefixOpRef(ref, opDef, prec, assoc) :: rest =>
@@ -271,14 +270,45 @@ object ExpressionRewriter:
       case _ =>
         // The next terms are arguments. Parse one argument expression.
         // `rewriteAtom` will correctly parse a simple term, a group, or a nested application.
-        rewriteAtom(terms, span).flatMap { case (argExpr, remainingTerms) =>
-          // Build the application of the current function to the parsed argument.
-          buildSingleApp(fn, argExpr, span).flatMap { app =>
-            // Continue building the chain with the new application as the function.
-            // This creates the left-associative structure.
-            buildAppChain(app, remainingTerms, span)
-          }
-        }
+        terms match
+          case (g: TermGroup) :: restTerms =>
+            rewriteGroupAtom(g).flatMap { term =>
+              val argExpr = Expr(g.span, List(term))
+              buildSingleApp(fn, argExpr, span).flatMap { app =>
+                buildAppChain(app, restTerms, span)
+              }
+            }
+          case _ =>
+            rewriteAtom(terms, span).flatMap { case (argExpr, remainingTerms) =>
+              buildSingleApp(fn, argExpr, span).flatMap { app =>
+                buildAppChain(app, remainingTerms, span)
+              }
+            }
+
+  private def rewriteGroupAtom(
+    group: TermGroup
+  ): Either[NEL[SemanticError], Term] =
+    rewritePrecedenceExpr(group.inner.terms, MinPrecedence, group.span).flatMap {
+      case (innerExpr, remainingInGroup) if remainingInGroup.nonEmpty =>
+        NEL
+          .one(
+            SemanticError.DanglingTerms(
+              remainingInGroup,
+              "Unexpected terms inside group",
+              phaseName
+            )
+          )
+          .asLeft
+      case (innerExpr, _) if innerExpr.terms.length != 1 =>
+        NEL
+          .one(
+            SemanticError
+              .InvalidExpression(innerExpr, "Group must resolve to a single expression", phaseName)
+          )
+          .asLeft
+      case (innerExpr, _) =>
+        innerExpr.terms.head.asRight
+    }
 
   /** Build a single application node
     */

@@ -28,6 +28,21 @@ class TypeCheckerTests extends BaseEffFunSuite:
     semFailed(code)
   }
 
+  test("should type nested application with grouped arguments") {
+    val code =
+      """
+        fn double(a: Int): Int = a * 2;
+        fn sum(f: Int, x: Int): Int = f + x;
+        let a = sum (double 1) 2;
+      """
+    semNotFailed(code).map { module =>
+      val bnd = module.members.collectFirst { case b: Bnd if b.name == "a" => b }.get
+      bnd.typeSpec match
+        case Some(TypeRef(_, "Int", _)) => // pass
+        case other => fail(s"Expected Some(TypeRef(\"Int\")), got $other")
+    }
+  }
+
   test("should type partial application with the remaining function type") {
     val code =
       """

@@ -20,20 +20,13 @@
 
 ✅ **Working**:
 - `partial-inline-simple.mml`: `((concat "Hola, ") "fede")` - compiles and runs
+- `partial-app-inline.mml` also works
+- `double-and-sum.mml` / `apply.mml`: grouped applications now rewrite correctly
 
 ❌ **Not Working**:
 - `partial-app.mml`: `let greet = concat "Hola, "; ... greet "fede"` - fails at codegen with "No LLVM type mapping for TypeSpec: TypeFn"
-    - need to teach codegen to ... codegen lambdas.
-- `partial-app-inline.mml`: `((add 5) 10)` - fails at ExpressionRewriter with "Unexpected terms outside expression context at [5:30]-[5:32]"
-    -FOCUS ON THIS FIRST
-- `partial-inline-simple.mml` also fails, uses prelude function.
-    - FOCUS ON THIS, TOO, same issue
+    - need to teach codegen to ... codegen
 
-
-**What we know**:
-- All 130 unit tests pass
-- ExpressionRewriter changes handle some partial application cases
-- Groups with user-defined functions fail differently than groups with injected native functions
 
 ### Verify our compiled binaries return status code 0 
 
@@ -61,6 +54,7 @@ Introduce a `run` subcommand that is like `bin` but after building the binary, e
 ## Recent Changes
 
 - **Partial application support (#179 complete)**: ExpressionRewriter now treats all refs uniformly—any ref (FnDef, Bnd, FnParam) followed by arguments builds an application chain. Inline partial applications like `((concat "Hola, ") "fede")` compile and run successfully. Stored partial applications type-check but hit codegen limitation (no first-class functions yet). Changed `IsAtom` extractor to exclude refs, fixed TermGroup double-wrapping. All 130 tests pass.
+- **Grouped application fix**: Term groups are rewritten into atomic terms before application folding, so expressions like `sum (double 1) 2` now form the correct AST and pass both rewriting and type-checking tests.
 - Type mismatch diagnostics now name call sites when possible (new `expectedBy` label threads through TypeChecker + printers).
 - TypeChecker + codegen now store/consume full `TypeFn` signatures for functions and operators (#178 complete): lowering wraps params/return into `TypeFn`, application typing consumes them, and codegen extracts LLVM signatures; diagnostics now surface partially applied function types.
 - **AST restructured (#170 complete)**: Split 501-line AstNode.scala into 6 focused files (common.scala, native.scala, module.scala, members.scala, types.scala, terms.scala). Sealed traits preserved where critical (Term, TypeSpec, OpDef, LiteralValue, NativeType) for exhaustiveness checking. Strategic unsealing of cross-file traits (AstNode, Member, Decl, Native). All 130 tests pass, code formatted and linted.

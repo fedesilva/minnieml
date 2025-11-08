@@ -1,3 +1,0 @@
-fn func (a: Int): Int = ???;
-fn apply (f: Int, x: Int): Int = ???;
-let a = apply (func 1) 2;
