@@ -27,6 +27,12 @@
 - `partial-app.mml`: `let greet = concat "Hola, "; ... greet "fede"` - fails at codegen with "No LLVM type mapping for TypeSpec: TypeFn"
     - need to teach codegen to ... codegen
 
+* Spec
+    - we need to spec this work.
+        - the codegen needs to generate a closure.
+        - should the codegen walk the app chain to find arity etc?
+    - Imperative! discuss before proceeding.
+
 
 ### Verify our compiled binaries return status code 0 
 
