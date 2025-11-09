@@ -7,6 +7,8 @@ import mml.mmlclib.ast.*
 import mml.mmlclib.semantic.*
 import mml.mmlclib.util.prettyprint.ast.prettyPrintAst
 
+import java.nio.file.{Files, Paths}
+
 def printModuleAst(source: String, name: String = "Anon"): Unit =
   ParserApi
     .parseModuleString(source, name)
@@ -38,6 +40,11 @@ def parseModule(source: String, name: String = "Anon"): Option[Module] =
         none
     }
     .unsafeRunSync()
+
+def rewritePath(path: String, showTypes: Boolean = false, dumpRawState: Boolean = false): Unit =
+  import scala.jdk.CollectionConverters.*
+  val src = Files.readAllLines(Paths.get(path)).asScala.mkString("\n")
+  rewrite(src, showTypes, dumpRawState)
 
 def rewrite(src: String, showTypes: Boolean = false, dumpRawState: Boolean = false): Unit =
   parseModule(src) match
