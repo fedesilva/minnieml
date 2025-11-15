@@ -1,8 +1,11 @@
 # Codegen Strategy for Closures
 
-This document specifies the code generation strategy for implementing partially applied functions (closures) in the MinnieML compiler.
+This document specifies the code generation strategy for implementing partially applied functions (closures)
+in the MinnieML compiler.
 
-The core strategy is that a partial application creates a **closure**, which is a struct containing a function pointer and an environment. The function pointer always points to a specialized, executable **thunk**. The environment contains all arguments captured so far.
+The core strategy is that a partial application creates a **closure**, which is a struct containing a function
+pointer and an environment. The function pointer always points to a specialized, executable **thunk**. The
+environment contains all arguments captured so far.
 
 ---
 
@@ -56,7 +59,8 @@ Environments contain all free variables of the function, including:
 * arguments captured in previous partial applications
 * lexically captured variables from outer scopes
 
-The compiler uses **environment flattening**: every partial application allocates a new struct with all previous captures **plus** the new argument.
+The compiler uses **environment flattening**: every partial application allocates a new struct with all
+previous captures **plus** the new argument.
 
 ### 2.2 Memory Management
 

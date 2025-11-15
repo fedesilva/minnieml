@@ -22,19 +22,6 @@ The compiler is structured into multiple modules:
 - Error handling is done through `Either[CompilationError, T]` for functional error propagation
 - Cats and Cats Effect are used for functional programming patterns
 
-### Code Style and Comments
-
-- Comments should ONLY describe functionality, not implementation mechanics
-- Avoid comments like "start of block" or "end of block" markers
-- Keep code clean and avoid distracting structural comments that add no value
-- Comments that reference past changes are not useful; only document status quo.
-
-### Implementation Approach
-
-- Scala 3 with the new syntax style for implementation
-- FastParse for parser combinators
-- LLVM IR as the compilation target for portability and optimization
-
 ### Current Implementation Notes
 
 - **Error Handling:** The compiler accumulates errors through semantic phases using `SemanticPhaseState`, reporting multiple errors instead of failing on the first one
@@ -57,7 +44,6 @@ The compiler is structured into multiple modules:
 The compiler being written in Scala is a temporary situation.
 The goal is to reach self hosting, eventually.
 
-
 ## Compilation Flow
 
 ```mermaid
@@ -79,11 +65,11 @@ flowchart TD
 
 ### Entry Points for Understanding
 
-1. **Language Syntax**: Start with `Parser.scala` and example `.mml` files in `mml/samples/`
-2. **AST Structure**: Read `AstNode.scala` for all node types
-3. **Compilation Pipeline**: Follow `CompilationPipeline.scala` → `SemanticApi.scala`
+1. **Language Syntax**: Start with `mml.mmlclib.parser` package and see example `.mml` files in `mml/samples/`
+2. **AST Structure**: Read `mml.mmlclib.ast` package for all node types
+3. **Compilation Pipeline**: Follow `CompilationPipeline.scala` → `SemanticApi.scala` and read the `mml.mmlclib.semantic` package.
 4. **Error Handling**: See `SemanticPhaseState` in `semantic/package.scala`
-5. **Code Generation**: Start with `LlvmIrEmitter.scala`, then specialized emitters
+5. **Code Generation**: Start with `mml.mmlclib.codegen.LlvmIrEmitter.scala`, then specialized emitters
 6. **Misc Debugging tools**: rewrrite in the yolo package. also the prettyprinter.
 7. **Testing**: Grammar suites live under `modules/mmlc-lib/src/test/scala/mml/mmlclib/grammar/`, semantic suites under `.../semantic/`, and shared helpers (e.g., `BaseEffFunSuite` with `semState`) under `.../test/`.
 
@@ -97,6 +83,6 @@ flowchart TD
 * the compiler working directory (output) is `build/`
 * run the executable: `./build/target/ConcatPrintString-x86_64-apple-macosx`
 
-Remember that the bin command wants to compile an executable and will fail if there is no main.
+Remember that the `bin` command wants to compile an executable and will fail if there is no main.
 If there is no main, just replace `bin` in the examples above with `lib`, which will generate 
 a native library.
