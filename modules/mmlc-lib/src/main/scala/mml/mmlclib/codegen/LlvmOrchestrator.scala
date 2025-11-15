@@ -12,6 +12,8 @@ case class ToolInfo(versions: Map[String, String], missing: List[String])
 enum CompilationMode derives CanEqual:
   case Binary
   case Library
+  case Ast
+  case Ir
 
 enum LlvmCompilationError derives CanEqual:
   case TemporaryFileCreationError(message: String)
@@ -287,6 +289,9 @@ object LlvmOrchestrator:
       compileBinary(programName, targetTriple, workingDirectory, outputDir, targetDir, verbose)
     case CompilationMode.Library =>
       compileLibrary(programName, targetTriple, workingDirectory, outputDir, targetDir, verbose)
+    case CompilationMode.Ast | CompilationMode.Ir =>
+      // No compilation needed for these modes
+      IO.pure(0.asRight)
 
   /** Path to the MML runtime file in resources */
   private val mmlRuntimeResourcePath = "mml_runtime.c"

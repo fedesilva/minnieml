@@ -101,7 +101,7 @@ class ModuleTests extends BaseEffFunSuite:
         let finally:String = "we are done";
       """
 
-    semState(source, "MissingSemicolon").map { result =>
+    semState(source, name = "MissingSemicolon").map { result =>
       val parsingErrors = result.errors.collect {
         case SemanticError.MemberErrorFound(member: ParsingMemberError, _) => member
       }

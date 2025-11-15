@@ -51,6 +51,7 @@ object ErrorPrinter:
         .getOrElse((Int.MaxValue, Int.MaxValue))
     case SemanticError.InvalidExpressionFound(invalidExpr, _) =>
       (invalidExpr.span.start.line, invalidExpr.span.start.col)
+    case SemanticError.InvalidEntryPoint(_, span) => (span.start.line, span.start.col)
     case SemanticError.TypeCheckingError(error) =>
       // For type errors, we need to extract the position from the nested error
       // This is a bit hacky, but avoids code duplication
@@ -85,7 +86,7 @@ object ErrorPrinter:
           (bnd.span.start.line, bnd.span.start.col)
 
   /** Pretty print semantic errors */
-  private def prettyPrintSemanticErrors(
+  def prettyPrintSemanticErrors(
     errors:     List[SemanticError],
     sourceCode: Option[String]
   ): String =
@@ -168,6 +169,8 @@ object ErrorPrinter:
       case SemanticError.InvalidExpressionFound(invalidExpr, phase) =>
         s"${Console.RED}Invalid expression found at ${formatLocation(invalidExpr.span)}${Console.RESET}\n${Console.YELLOW}Phase: $phase${Console.RESET}"
 
+      case SemanticError.InvalidEntryPoint(message, span) =>
+        s"${Console.RED}$message at ${formatLocation(span)}${Console.RESET}"
       case SemanticError.TypeCheckingError(error) =>
         // Delegate to SemanticErrorPrinter to avoid duplication
         SemanticErrorPrinter.prettyPrintTypeError(error)

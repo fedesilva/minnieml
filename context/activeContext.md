@@ -36,16 +36,7 @@
 
 ### Verify our compiled binaries return status code 0
 
-Depends on: Pre Codegen Validation
-
-**Entry Point Requirement Relaxation:**
-- In `FunctionEmitter.scala`, convert `main(): Unit` to LLVM `define i32 @main()` with `ret i32 0`
-- Only applies to functions named `main` with `void` return type
-- Allows users to write idiomatic `fn main() = ...` while generating proper native entry point
-
-**Status:** In progress - codegen fix needed
-
-**Note:** Validation that `main` exists for binary mode is handled by "Pre Codegen Validation" task.
+- done: REQUIRED AUTHOR VALIDATION
 
 ### Review pretty printer
 
@@ -59,21 +50,7 @@ Introduce a `run` subcommand that is like `bin` but after building the binary, e
 
 ### Pre Codegen Validation (active)
 
-**New Phase (Phase 8, after TypeChecker):**
-- Run checks on the AST and fail before codegen if they don't pass
-
-**Checks:**
-- **Binary Entry Point Validation** (when compilation mode = Binary):
-  - Validate `main` function exists in the module
-  - Must have zero parameters (for now)
-  - Return type must be `Unit` or `i32`-compatible type (like `Int32`)
-  - Emit clear error: "Binary compilation requires valid entry point: fn main(): Unit"
-
-**Implementation Notes:**
-- Need to thread compilation mode through semantic pipeline or create mode-aware validator
-- Should run after TypeChecker so we have fully type-checked AST
-
-**Status:** TODO - new phase needed
+- done: required author validaton
 
 ### Pre Codegen Validation
 
@@ -91,31 +68,39 @@ Introduce a `run` subcommand that is like `bin` but after building the binary, e
 - Need to thread compilation mode through semantic pipeline or create mode-aware validator
 - Should run after TypeChecker so we have fully type-checked AST
 
-**Status:** TODO - new phase needed
+**Status:** In progress - new phase needed
 
-*Plan:*
-1.  **Create `PreCodegenValidator.scala`**:
-    *   A new file will be created at `modules/mmlc-lib/src/main/scala/mml/mmlclib/semantic/PreCodegenValidator.scala`.
-    *   This file will contain a `PreCodegenValidator` object with a `validate` method. This method will take the `CompilationMode` and the current `SemanticPhaseState` and return the updated state.
-    *   The `validate` method will iterate over a list of check functions, allowing for easy extension in the future.
+*Plan (Focused and Contained):*
+The core issue is that the `PreCodegenValidator` needs the `CompilationMode` to perform its checks, but threading this `CompilationMode` through the entire `CompilerApi` and `SemanticApi` creates unnecessary coupling and has led to numerous compilation errors.
 
-2.  **Implement Entry Point Check**:
-    *   The first check will be `validateEntryPoint`.
-    *   If the `CompilationMode` is `Binary`, this function will ensure that a `main` function is defined.
-    *   It will validate that `main` has zero parameters and a return type of `Unit` or a type compatible with `i32`.
-    *   If the validation fails, it will add a specific `SemanticError` to the state.
+The most focused approach is to:
 
-3.  **Update Compiler Pipeline**:
-    *   The `CompilationMode` will be passed through the compilation pipeline, starting from `CompilationPipeline.scala`, through `CompilerApi`, to `SemanticApi.rewriteModule`.
-    *   The new `PreCodegenValidator.validate` phase will be added to the end of the semantic analysis pipeline in `SemanticApi.scala`, right after the `TypeChecker`.
+1.  **Modify `CompilerApi.compileString` to return `CompilerEffect[SemanticPhaseState]` instead of `CompilerEffect[Module]`.** This allows the `CompilationPipeline` to access the `SemanticPhaseState` (which includes errors) directly after semantic analysis.
+2.  **In `CompilationPipeline.scala`, after `CompilerApi.compileString` returns the `CompilerEffect[SemanticPhaseState]`:**
+    *   Call `PreCodegenValidator.validate` with the appropriate `CompilationMode` (Binary, Library, Ast, Ir) and the `SemanticPhaseState`.
+    *   Handle any new errors added by the `PreCodegenValidator`.
+    *   Extract the `Module` from the (potentially updated) `SemanticPhaseState` for subsequent code generation steps.
+3.  **Revert `SemanticApi.scala` to its original state** (i.e., `rewriteModule` does not take `CompilationMode` and does not call `PreCodegenValidator`).
+4.  **Revert `CompilerApi.scala` to its original state** (i.e., `compileState` and `compileString` do not take `CompilationMode`).
+5.  **Revert `CodeGenApi.scala` to its original state** (i.e., `compileString` does not take `CompilationMode` and does not import `CompilationMode`).
 
-4.  **Add Tests**:
-    *   A new test suite, `PreCodegenValidatorSuite.scala`, will be created.
-    *   Tests will be added to verify that the `main` function check works correctly for both valid and invalid cases.
+This approach ensures that the `PreCodegenValidator` logic is isolated and only introduces the `CompilationMode` at the point where it's needed for validation within the `CompilationPipeline`.
 
-This approach will create a new, extensible validation phase and integrate it into the existing compiler architecture.
+**Current Progress:**
+- `PreCodegenValidator.scala` created and basic structure implemented.
+- `SemanticError.InvalidEntryPoint` definition updated to use `SrcSpan`.
+- `PreCodegenValidator.scala` imports and logic fixed.
+- `PreCodegenValidatorSuite.scala` created and tests added, `mml` code corrected.
+
+**Current Issues:**
+- The compiler pipeline (`CompilerApi`, `SemanticApi`, `CompilationPipeline`, `CodeGenApi`) is currently in an inconsistent state due to previous attempts to thread `CompilationMode`. These changes need to be reverted and the new focused plan applied.
 
 ### CodeGen Holes
+
+## Technical Debt
+
+- **`InvalidEntryPoint` Error Printing:** The `InvalidEntryPoint` semantic error is not fully handled in the error printers (`ErrorPrinter.scala`, `SemanticErrorPrinter.scala`, `SourceCodeExtractor.scala`). The pattern matches need to be updated to provide proper error messages for this case.
+
 
 **Goal:** Handle `???` (hole) expressions in code generation properly
 

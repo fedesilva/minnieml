@@ -43,9 +43,10 @@ class ParsingErrorCheckerTests extends BaseEffFunSuite:
   test("MemberErrorChecker should catch member errors as shown in the example") {
     semState(
       """
-      fn valid(a: Int, b: Int): Int = a + b;
-      let a  ; # Missing expression after =
-      """
+        fn valid(a: Int, b: Int): Int = a + b;
+        let a  ; # Missing expression after = 
+        """,
+      name = "Test"
     ).map { result =>
 
       // println(prettyPrintAst(result.module))
@@ -71,12 +72,12 @@ class ParsingErrorCheckerTests extends BaseEffFunSuite:
   test("MemberErrorChecker should catch multiple member errors") {
     semState(
       """
-      fn valid(a: Int, b: Int): Int = a + b;
-      let a  ; # Missing expression after =
-      bnd noLet = 5; # Invalid syntax - 'bnd' instead of 'let'
-      """
+        fn valid(a: Int, b: Int): Int = a + b;
+        let a  ; # Missing expression after = 
+        bnd noLet = 5; # Invalid syntax - 'bnd' instead of 'let'
+        """,
+      name = "Test"
     ).map { result =>
-
       // import mml.mmlclib.util.prettyprint.ast.*
       // println(prettyPrintAst(result.module))
 

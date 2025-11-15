@@ -28,9 +28,9 @@ class NativeTypeEmissionTest extends BaseEffFunSuite:
     """
 
     CompilerApi.compileString(source, "Test").value.flatMap {
-      case Right(module) =>
+      case Right(state) =>
         // If compilation succeeded, let's try codegen to see if it fails there
-        CodeGenApi.generateFromModule(module).value.map {
+        CodeGenApi.generateFromModule(state.module).value.map {
           case Right(_) =>
             fail("Expected codegen to fail with undefined type reference")
           case Left(error) =>

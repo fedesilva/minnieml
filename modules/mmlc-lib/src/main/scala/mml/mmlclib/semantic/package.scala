@@ -53,6 +53,7 @@ enum SemanticError extends CompilationError:
   case ParsingIdErrorFound(error: ParsingIdError, phase: String)
   case InvalidExpressionFound(invalidExpr: mml.mmlclib.ast.InvalidExpression, phase: String)
   case TypeCheckingError(error: TypeError)
+  case InvalidEntryPoint(message: String, span: SrcSpan)
 
 /** State that threads through semantic phases, accumulating errors while transforming the module */
 case class SemanticPhaseState(

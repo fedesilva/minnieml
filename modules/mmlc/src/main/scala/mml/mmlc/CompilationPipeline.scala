@@ -5,6 +5,7 @@ import mml.mmlc.CommandLineConfig.Command
 import mml.mmlclib.api.CompilerApi
 import mml.mmlclib.ast.Module
 import mml.mmlclib.codegen.CompilationMode
+import mml.mmlclib.semantic.{PreCodegenValidator, SemanticPhaseState}
 import mml.mmlclib.util.error.print.ErrorPrinter
 
 import java.nio.file.Path
@@ -18,7 +19,7 @@ object CompilationPipeline:
   private def compileModule(
     path:       Path,
     moduleName: String
-  ): IO[Either[String, Module]] =
+  ): IO[Either[String, SemanticPhaseState]] = // Changed return type to SemanticPhaseState
     for
       contentResult <- FileOperations.readFile(path)
       result <- contentResult match
@@ -26,21 +27,28 @@ object CompilationPipeline:
           IO.pure(Left(s"Error reading file: ${error.getMessage}"))
         case Right(content) =>
           // Pass source code directly to error printer instead of setting current file
-          CompilerApi.compileString(content, moduleName).value.map {
+          CompilerApi.compileString(content, moduleName).value.map { // Removed mode parameter
             case Left(compilerError) =>
               Left(ErrorPrinter.prettyPrint(compilerError, Some(content)))
-            case Right(module) => Right(module)
+            case Right(semanticState) => Right(semanticState) // Return SemanticPhaseState
           }
     yield result
 
   def processBinary(path: Path, moduleName: String, config: Command.Bin): IO[ExitCode] =
     for
-      moduleResult <- compileModule(path, moduleName)
-      exitCode <- moduleResult match
+      semanticStateResult <- compileModule(path, moduleName) // Removed mode parameter
+      exitCode <- semanticStateResult match
         case Left(error) =>
           IO.println(compilationFailed(error)).as(ExitCode.Error)
-        case Right(module) =>
-          processBinaryModule(module, config)
+        case Right(semanticState) =>
+          val validatedState = PreCodegenValidator.validate(CompilationMode.Binary)(semanticState)
+          if validatedState.errors.nonEmpty then
+            IO.println(
+              compilationFailed(
+                ErrorPrinter.prettyPrintSemanticErrors(validatedState.errors.toList, None)
+              )
+            ).as(ExitCode.Error)
+          else processBinaryModule(validatedState.module, config)
     yield exitCode
 
   private def processBinaryModule(module: Module, config: Command.Bin): IO[ExitCode] =
@@ -61,12 +69,19 @@ object CompilationPipeline:
 
   def processLibrary(path: Path, moduleName: String, config: Command.Lib): IO[ExitCode] =
     for
-      moduleResult <- compileModule(path, moduleName)
-      exitCode <- moduleResult match
+      semanticStateResult <- compileModule(path, moduleName) // Removed mode parameter
+      exitCode <- semanticStateResult match
         case Left(error) =>
           IO.println(compilationFailed(error)).as(ExitCode.Error)
-        case Right(module) =>
-          processLibraryModule(module, config)
+        case Right(semanticState) =>
+          val validatedState = PreCodegenValidator.validate(CompilationMode.Library)(semanticState)
+          if validatedState.errors.nonEmpty then
+            IO.println(
+              compilationFailed(
+                ErrorPrinter.prettyPrintSemanticErrors(validatedState.errors.toList, None)
+              )
+            ).as(ExitCode.Error)
+          else processLibraryModule(validatedState.module, config)
     yield exitCode
 
   private def processLibraryModule(module: Module, config: Command.Lib): IO[ExitCode] =
@@ -87,23 +102,40 @@ object CompilationPipeline:
 
   def processAstOnly(path: Path, moduleName: String, config: Command.Ast): IO[ExitCode] =
     for
-      moduleResult <- compileModule(path, moduleName)
-      exitCode <- moduleResult match
+      semanticStateResult <- compileModule(path, moduleName) // Removed mode parameter
+      exitCode <- semanticStateResult match
         case Left(error) =>
           IO.println(compilationFailed(error)).as(ExitCode.Error)
-        case Right(module) =>
-          // Write AST to file and exit
-          FileOperations.writeAstToFile(module, config.outputDir).as(ExitCode.Success)
+        case Right(semanticState) =>
+          val validatedState = PreCodegenValidator.validate(CompilationMode.Ast)(semanticState)
+          if validatedState.errors.nonEmpty then
+            IO.println(
+              compilationFailed(
+                ErrorPrinter.prettyPrintSemanticErrors(validatedState.errors.toList, None)
+              )
+            ).as(ExitCode.Error)
+          else
+            // Write AST to file and exit
+            FileOperations
+              .writeAstToFile(validatedState.module, config.outputDir)
+              .as(ExitCode.Success)
     yield exitCode
 
   def processIrOnly(path: Path, moduleName: String, config: Command.Ir): IO[ExitCode] =
     for
-      moduleResult <- compileModule(path, moduleName)
-      exitCode <- moduleResult match
+      semanticStateResult <- compileModule(path, moduleName) // Removed mode parameter
+      exitCode <- semanticStateResult match
         case Left(error) =>
           IO.println(compilationFailed(error)).as(ExitCode.Error)
-        case Right(module) =>
-          processIrModule(module, config)
+        case Right(semanticState) =>
+          val validatedState = PreCodegenValidator.validate(CompilationMode.Ir)(semanticState)
+          if validatedState.errors.nonEmpty then
+            IO.println(
+              compilationFailed(
+                ErrorPrinter.prettyPrintSemanticErrors(validatedState.errors.toList, None)
+              )
+            ).as(ExitCode.Error)
+          else processIrModule(validatedState.module, config)
     yield exitCode
 
   private def processIrModule(module: Module, config: Command.Ir): IO[ExitCode] =

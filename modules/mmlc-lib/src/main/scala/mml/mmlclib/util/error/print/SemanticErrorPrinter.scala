@@ -118,6 +118,9 @@ object SemanticErrorPrinter:
         val location = LocationPrinter.printSpan(invalidExpr.span)
         s"${Console.RED}Invalid expression found at $location [phase: $phase]${Console.RESET}"
 
+      case SemanticError.InvalidEntryPoint(message, span) =>
+        val location = LocationPrinter.printSpan(span)
+        s"${Console.RED}$message at $location${Console.RESET}"
       case SemanticError.TypeCheckingError(error) =>
         prettyPrintTypeError(error)
 
