@@ -30,47 +30,22 @@
 * Spec
     - The codegen strategy for closures is now specified in:
     - `context/specs/codegen-closure.md`
+
 * Plan (WIP)
-     - Baseline (TODO)
-      - Walk ExpressionCompiler.compileApp + FnDef emission to confirm how args + TypeFn metadata flow today.
-      - Identify exact failure point for stored partial apps (which node produces TypeFn at codegen, what IR we emit).
-      - Map where runtime declarations live so we know where to inject allocator/closure structs.
-  - Runtime Support (TODO)
-      - Add void *mml_alloc(uint64_t size) in modules/mmlc-lib/src/main/resources/mml_runtime.c, forwarding to malloc.
-      - Ensure headers/prototypes match (probably #include <stdint.h> already there).
-      - Update LLVM emitter to declare declare i8* @mml_alloc(i64) once (state.functionDeclarations).
-      - Verify build scripts copy the updated runtime into binaries.
-  - Closure Representation (TODO)
-      - Extend CodeGenState with slots to remember closure struct/env declarations (e.g., %Closure = { i8*, i8* }).
-      - When first needed, emit %Closure type def and store in nativeTypes.
-      - Decide on env naming scheme (e.g., %Env_fn_arityPrefix_hash), track layouts per unique capture set.
-      - Provide helper builders to emit loads/stores for closure struct fields.
-  - Partial Application Lowering (TODO)
-      - In compileApp, after collecting args, inspect the callee’s TypeFn signature to know total arity + param llvm types.
-      - If args < arity → build closure creation sequence:
-          - Emit env struct, allocate via @mml_alloc, store captured values.
-          - Emit closure allocation, store thunk pointer + env pointer.
-          - Return %Closure* typed value; add resulting TypeSpec mapping (TypeFn minus consumed params).
-      - If args == arity → existing direct call path, but ensure we bypass closure packaging.
-      - If args > arity (over-application) → repeatedly call closure apply path.
-      - Ensure type lowering returns %Closure* for TypeFn results so later consumers know how to call them.
-  - Thunk Generation & Reuse (TODO)
-      - Create data structure (maybe inside CodeGenState) to queue thunk definitions: key by function symbol + num captured args.
-      - For each partial application site, register needed thunk(s); include metadata: remaining param types, capture types, final callee.
-      - During module finalization (before output assembly), emit all queued thunks:
-          - Function signature define %Closure* @fn_thunk_k(i8* %env, <nextType> %arg).
-          - Inside: cast env to %Env_k, load captures, allocate %Env_{k+1}, store captures + new arg, allocate closure, store next thunk pointer.
-          - Final thunk (arity-1) instead returns raw result by calling base fn directly.
-      - Reuse identical thunks/env layouts across sites to reduce duplication.
-  - Validation (TODO)
-      - Update/expand tests: ensure mml/samples/partial-app.mml compiles/runs; add unit test covering stored partial application.
-      - Run sbt test (per instructions, full suite), capture status.
-      - Run scalafmt/scalafix if any Scala files touched; ensure runtime C compiled.
+    - see `context/tracking/codegen-closure.md`
 
+### Verify our compiled binaries return status code 0
 
-### Verify our compiled binaries return status code 0 
+Depends on: Pre Codegen Validation
 
-Successful execution should return exit code 0.
+**Entry Point Requirement Relaxation:**
+- In `FunctionEmitter.scala`, convert `main(): Unit` to LLVM `define i32 @main()` with `ret i32 0`
+- Only applies to functions named `main` with `void` return type
+- Allows users to write idiomatic `fn main() = ...` while generating proper native entry point
+
+**Status:** In progress - codegen fix needed
+
+**Note:** Validation that `main` exists for binary mode is handled by "Pre Codegen Validation" task.
 
 ### Review pretty printer
 
@@ -84,10 +59,37 @@ Introduce a `run` subcommand that is like `bin` but after building the binary, e
 
 ### Pre Codegen Validation
 
-* New Phase
-* Run checks on the ast and fail if they don't pass
-* Fist checks:
-    - No holes are allowed (???)
+**New Phase (Phase 8, after TypeChecker):**
+- Run checks on the AST and fail before codegen if they don't pass
+
+**Checks:**
+- **Binary Entry Point Validation** (when compilation mode = Binary):
+  - Validate `main` function exists in the module
+  - Must have zero parameters (for now)
+  - Return type must be `Unit` or `i32`-compatible type (like `Int32`)
+  - Emit clear error: "Binary compilation requires valid entry point: fn main(): Unit"
+
+**Implementation Notes:**
+- Need to thread compilation mode through semantic pipeline or create mode-aware validator
+- Should run after TypeChecker so we have fully type-checked AST
+
+**Status:** TODO - new phase needed
+
+### CodeGen Holes
+
+**Goal:** Handle `???` (hole) expressions in code generation properly
+
+**Current behavior:** Holes type-check but likely cause codegen to fail or produce invalid IR
+
+**Implementation:**
+- Detect `Hole` nodes during expression compilation in `ExpressionCompiler`
+- Emit LLVM IR that calls runtime function `mml_not_implemented()`
+- Add `void mml_not_implemented()` to `mml_runtime.c`:
+  - Print "(not_implemented)" to stderr
+  - Exit with code 2 (distinct from normal error exit code 1)
+- Update LLVM emitter to declare `declare void @mml_not_implemented()` in function declarations
+
+**Status:** TODO - codegen may currently fail on holes
 
 
 

@@ -11,6 +11,9 @@ If you are addressed with any of the following commands, follow instructions imm
     - follow `load context` instructions
     - even if you already did it, there might be updates.
 
+  - `cleanup context`
+    - follow instructions for this as described in `context-management.md`
+
   - `update context`
     - follow the instructions for this as described in `context-management.md`.
 
