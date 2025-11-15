@@ -36,14 +36,14 @@ type F64 = @native[t:double]
 ```
 # Generic numeric protocol
 protocol Num 'T =
-      op + (a: 'T, b: 'T): 'T;
-      op - (a: 'T, b: 'T): 'T;
-      op * (a: 'T, b: 'T): 'T;
-      op / (a: 'T, b: 'T): 'T;
-      op % (a: 'T, b: 'T): 'T;
-      # Comparison operators
-      op < (a: 'T, b: 'T): Bool;
-      op > (a: 'T, b: 'T): Bool;
+    op + (a: 'T, b: 'T): 'T;
+    op - (a: 'T, b: 'T): 'T;
+    op * (a: 'T, b: 'T): 'T;
+    op / (a: 'T, b: 'T): 'T;
+    op % (a: 'T, b: 'T): 'T;
+    # Comparison operators
+    op < (a: 'T, b: 'T): Bool;
+    op > (a: 'T, b: 'T): Bool;
 ;
 
 # Implementation for unsigned integers
@@ -95,7 +95,7 @@ This allows the compiler to use different memory layouts for different types; fo
 a region can be declared to use a structure of arrays (SoA) layout for a specific type.
 
 This also mitigates fragmentation since all the values in the same lane take
-the same space, so the compiler can reuse the space of freed values without
+the same space, so the compiler can reuse the space of free values without
 leaving holes.
 
 ### Lifetimes of regions and values associated with them

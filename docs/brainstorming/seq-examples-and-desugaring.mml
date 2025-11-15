@@ -1,6 +1,7 @@
 # The following examples show the use of sequence literals  also called seq notation
-# It allows us to define succintly  instances of Array (contiguous storage, fixed length)
+# It allows us to  succintly define instances of Array (pointers to contiguous storage, fixed length)
 # and manipulate them by using pattern matching
+
 # The mechanism also allows for user defined types to be selectable for desugaring
 #  as long as a canonical  instance of SequenceSugar is found for the type in question.
 # More details are provided below.
@@ -10,14 +11,15 @@
 # a1 :: Array Int
 let a1 = [ 1 ]
 
-# empty array is useless  if there is not type information
+# empty array is useless  if there is no type information
 # empty array literal (Nothing is the bottom type)
 # x0: [] Nothing
 # or equivalently
+
 # x0: Array Nothing
-# inferring Nothing is a warning
-# and nothing can be done with Nothing ( o_O )
-# so this line fails if warnings are configured as fatal
+# inferring Nothing causes a warning
+# as nothing can be done with Nothing ( o_O )
+# so this line fails if warnings escalation is configured (fatal error).
 #let x0 = []
 # you need to use type ascription
 # x0 : Array Int
@@ -26,13 +28,13 @@ let x0 : Array Int = []
 # if you only provide an element type
 # the container is Array
 # x1: Array Int
-let x1 = Int []
+let x1 = [] Int
+
+# Sequence notation for arbitrary types
 # here the container type is specified
 # and the element type is inferred by its element type - a literal Int.
 let x2 = List [ 1 ]
-
-# sequences desugar to array
-# but if an eligible type is inferred, it will be used.
+# here the ascription drives the container selection.
 let ns: List Int = [ 1 2 3 ]
 
 
@@ -48,7 +50,7 @@ let x = ["f" "e" "d" "e"]
 # the ??? thing lets compilation continue without a body if types check. the type of ??? is Nothing (the bottom type)
 let x : [] String = ???
 
-# the cons ([::]) pattern match, takes the first element of the list and the tail.
+# the cons ([::]) pattern takes the first element of the list and the tail.
 fn matchList l =
   l match
     | []                -> "empty"
