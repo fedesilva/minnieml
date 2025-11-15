@@ -12,5 +12,5 @@ If you are addressed with any of the following commands, follow instructions imm
     - even if you already did it, there might be updates.
 
   - `update context`
-    - follow the instructions for this as described in `context-management.md` .
+    - follow the instructions for this as described in `context-management.md`.
 

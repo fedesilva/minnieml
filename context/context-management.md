@@ -1,6 +1,16 @@
 
 ## Context Management 
 
+
+**Active Context**
+
+This is a critical piece that needs to be treated like a database.
+Do not create tasks yourself unless directed to.
+Do not remove tasks unless directed to, mark them as completed, 
+ update internal bullet lists, but always ask for confirmation.
+
+This file is a critical piece in the Agent/Author collaboration that lives across sessions and agents.
+
 **When a task is finished follow these rules**
 
 - update the active context adding a note on the task acomplished
