@@ -67,6 +67,38 @@ object CompilationPipeline:
       )
     yield exitCode
 
+  def processRun(path: Path, moduleName: String, config: Command.Run): IO[ExitCode] =
+    for
+      semanticStateResult <- compileModule(path, moduleName)
+      exitCode <- semanticStateResult match
+        case Left(error) =>
+          IO.println(compilationFailed(error)).as(ExitCode.Error)
+        case Right(semanticState) =>
+          val validatedState = PreCodegenValidator.validate(CompilationMode.Binary)(semanticState)
+          if validatedState.errors.nonEmpty then
+            IO.println(
+              compilationFailed(
+                ErrorPrinter.prettyPrintSemanticErrors(validatedState.errors.toList, None)
+              )
+            ).as(ExitCode.Error)
+          else processBinaryModuleAndRun(validatedState.module, config)
+    yield exitCode
+
+  private def processBinaryModuleAndRun(module: Module, config: Command.Run): IO[ExitCode] =
+    for
+      // Write AST to file if requested
+      _ <-
+        if config.outputAst then FileOperations.writeAstToFile(module, config.outputDir)
+        else IO.unit
+      // Generate native executable and run it
+      exitCode <- CodeGeneration.generateAndRunBinary(
+        module,
+        config.outputDir,
+        config.verbose,
+        config.targetTriple
+      )
+    yield exitCode
+
   def processLibrary(path: Path, moduleName: String, config: Command.Lib): IO[ExitCode] =
     for
       semanticStateResult <- compileModule(path, moduleName) // Removed mode parameter

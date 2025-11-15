@@ -14,6 +14,13 @@ object CommandLineConfig:
       verbose:      Boolean        = false,
       targetTriple: Option[String] = None
     )
+    case Run(
+      file:         Option[Path]   = None,
+      outputDir:    String         = "build",
+      outputAst:    Boolean        = false,
+      verbose:      Boolean        = false,
+      targetTriple: Option[String] = None
+    )
     case Lib(
       file:         Option[Path]   = None,
       outputDir:    String         = "build",
@@ -96,6 +103,44 @@ object CommandLineConfig:
           targetOpt.action((triple, config) =>
             config.copy(command = config.command match {
               case bin: Command.Bin => bin.copy(targetTriple = Some(triple))
+              case cmd => cmd
+            })
+          )
+        )
+
+    // Run command (compile and execute)
+    val runCommand =
+      cmd("run")
+        .action((_, config) => config.copy(command = Command.Run()))
+        .text("Compile source file to a binary executable and run it")
+        .children(
+          fileArg.action((file, config) =>
+            config.copy(command = config.command match {
+              case run: Command.Run => run.copy(file = Some(Paths.get(file)))
+              case cmd => cmd
+            })
+          ),
+          outputDirOpt.action((dir, config) =>
+            config.copy(command = config.command match {
+              case run: Command.Run => run.copy(outputDir = dir)
+              case cmd => cmd
+            })
+          ),
+          astOpt.action((_, config) =>
+            config.copy(command = config.command match {
+              case run: Command.Run => run.copy(outputAst = true)
+              case cmd => cmd
+            })
+          ),
+          verboseOpt.action((_, config) =>
+            config.copy(command = config.command match {
+              case run: Command.Run => run.copy(verbose = true)
+              case cmd => cmd
+            })
+          ),
+          targetOpt.action((triple, config) =>
+            config.copy(command = config.command match {
+              case run: Command.Run => run.copy(targetTriple = Some(triple))
               case cmd => cmd
             })
           )
@@ -244,6 +289,7 @@ object CommandLineConfig:
       ),
       infoCommand,
       binCommand,
+      runCommand,
       libCommand,
       astCommand,
       irCommand,

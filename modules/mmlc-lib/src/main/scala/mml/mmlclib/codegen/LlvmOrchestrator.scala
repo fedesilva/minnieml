@@ -106,6 +106,61 @@ object LlvmOrchestrator:
           yield result
     yield result
 
+  def compileAndRun(
+    llvmIr:           String,
+    moduleName:       String,
+    workingDirectory: String,
+    verbose:          Boolean        = false,
+    targetTriple:     Option[String] = None
+  ): IO[Either[LlvmCompilationError, Int]] =
+    for
+      // First compile the binary
+      compileResult <- compile(
+        llvmIr,
+        moduleName,
+        workingDirectory,
+        CompilationMode.Binary,
+        verbose,
+        targetTriple
+      )
+      result <- compileResult match
+        case Left(error) => IO.pure(error.asLeft)
+        case Right(_) =>
+          // Compilation succeeded, now run the executable
+          for
+            targetTripleResult <- detectOsTargetTriple(targetTriple)
+            runResult <- targetTripleResult match
+              case Left(error) => IO.pure(error.asLeft)
+              case Right(triple) =>
+                val executablePath = s"$workingDirectory/target/$moduleName-$triple"
+                logPhase(s"Running executable: $executablePath")
+                executeProgram(executablePath, verbose)
+          yield runResult
+    yield result
+
+  private def executeProgram(
+    executablePath: String,
+    verbose:        Boolean
+  ): IO[Either[LlvmCompilationError, Int]] =
+    IO {
+      try {
+        val processBuilder = new ProcessBuilder(executablePath)
+        processBuilder.inheritIO() // Inherit stdin/stdout/stderr from parent process
+
+        logDebug(s"Executing: $executablePath", verbose)
+        val process  = processBuilder.start()
+        val exitCode = process.waitFor()
+
+        logDebug(s"Program exited with code: $exitCode", verbose)
+        exitCode.asRight
+      } catch {
+        case e: Exception =>
+          val error = LlvmCompilationError.ExecutableRunError(executablePath, -1)
+          logError(s"Failed to execute program: ${e.getMessage}")
+          error.asLeft
+      }
+    }
+
   private def processLlvmFile(
     inputFile:        File,
     workingDirectory: String,
