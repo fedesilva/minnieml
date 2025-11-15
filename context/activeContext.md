@@ -48,59 +48,10 @@
 
 Introduce a `run` subcommand that is like `bin` but after building the binary, executes it.
 
-### Pre Codegen Validation (active)
-
-- done: required author validaton
-
-### Pre Codegen Validation
-
-**New Phase (Phase 8, after TypeChecker):**
-- Run checks on the AST and fail before codegen if they don't pass
-
-**Checks:**
-- **Binary Entry Point Validation** (when compilation mode = Binary):
-  - Validate `main` function exists in the module
-  - Must have zero parameters (for now)
-  - Return type must be `Unit` or `i32`-compatible type (like `Int32`)
-  - Emit clear error: "Binary compilation requires valid entry point: fn main(): Unit"
-
-**Implementation Notes:**
-- Need to thread compilation mode through semantic pipeline or create mode-aware validator
-- Should run after TypeChecker so we have fully type-checked AST
-
-**Status:** In progress - new phase needed
-
-*Plan (Focused and Contained):*
-The core issue is that the `PreCodegenValidator` needs the `CompilationMode` to perform its checks, but threading this `CompilationMode` through the entire `CompilerApi` and `SemanticApi` creates unnecessary coupling and has led to numerous compilation errors.
-
-The most focused approach is to:
-
-1.  **Modify `CompilerApi.compileString` to return `CompilerEffect[SemanticPhaseState]` instead of `CompilerEffect[Module]`.** This allows the `CompilationPipeline` to access the `SemanticPhaseState` (which includes errors) directly after semantic analysis.
-2.  **In `CompilationPipeline.scala`, after `CompilerApi.compileString` returns the `CompilerEffect[SemanticPhaseState]`:**
-    *   Call `PreCodegenValidator.validate` with the appropriate `CompilationMode` (Binary, Library, Ast, Ir) and the `SemanticPhaseState`.
-    *   Handle any new errors added by the `PreCodegenValidator`.
-    *   Extract the `Module` from the (potentially updated) `SemanticPhaseState` for subsequent code generation steps.
-3.  **Revert `SemanticApi.scala` to its original state** (i.e., `rewriteModule` does not take `CompilationMode` and does not call `PreCodegenValidator`).
-4.  **Revert `CompilerApi.scala` to its original state** (i.e., `compileState` and `compileString` do not take `CompilationMode`).
-5.  **Revert `CodeGenApi.scala` to its original state** (i.e., `compileString` does not take `CompilationMode` and does not import `CompilationMode`).
-
-This approach ensures that the `PreCodegenValidator` logic is isolated and only introduces the `CompilationMode` at the point where it's needed for validation within the `CompilationPipeline`.
-
-**Current Progress:**
-- `PreCodegenValidator.scala` created and basic structure implemented.
-- `SemanticError.InvalidEntryPoint` definition updated to use `SrcSpan`.
-- `PreCodegenValidator.scala` imports and logic fixed.
-- `PreCodegenValidatorSuite.scala` created and tests added, `mml` code corrected.
-
 **Current Issues:**
 - The compiler pipeline (`CompilerApi`, `SemanticApi`, `CompilationPipeline`, `CodeGenApi`) is currently in an inconsistent state due to previous attempts to thread `CompilationMode`. These changes need to be reverted and the new focused plan applied.
 
 ### CodeGen Holes
-
-## Technical Debt
-
-- **`InvalidEntryPoint` Error Printing:** The `InvalidEntryPoint` semantic error is not fully handled in the error printers (`ErrorPrinter.scala`, `SemanticErrorPrinter.scala`, `SourceCodeExtractor.scala`). The pattern matches need to be updated to provide proper error messages for this case.
-
 
 **Goal:** Handle `???` (hole) expressions in code generation properly
 
