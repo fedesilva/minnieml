@@ -14,7 +14,7 @@
 
 ## Next Steps
 
-### Fix Partial Application (HIGH PRIORITY - INCOMPLETE)
+### Fix Partial Application (INCOMPLETE)
 
 **Current Status**:
 
@@ -57,6 +57,24 @@ Depends on: Pre Codegen Validation
 
 Introduce a `run` subcommand that is like `bin` but after building the binary, executes it.
 
+### Pre Codegen Validation (active)
+
+**New Phase (Phase 8, after TypeChecker):**
+- Run checks on the AST and fail before codegen if they don't pass
+
+**Checks:**
+- **Binary Entry Point Validation** (when compilation mode = Binary):
+  - Validate `main` function exists in the module
+  - Must have zero parameters (for now)
+  - Return type must be `Unit` or `i32`-compatible type (like `Int32`)
+  - Emit clear error: "Binary compilation requires valid entry point: fn main(): Unit"
+
+**Implementation Notes:**
+- Need to thread compilation mode through semantic pipeline or create mode-aware validator
+- Should run after TypeChecker so we have fully type-checked AST
+
+**Status:** TODO - new phase needed
+
 ### Pre Codegen Validation
 
 **New Phase (Phase 8, after TypeChecker):**
@@ -74,6 +92,28 @@ Introduce a `run` subcommand that is like `bin` but after building the binary, e
 - Should run after TypeChecker so we have fully type-checked AST
 
 **Status:** TODO - new phase needed
+
+*Plan:*
+1.  **Create `PreCodegenValidator.scala`**:
+    *   A new file will be created at `modules/mmlc-lib/src/main/scala/mml/mmlclib/semantic/PreCodegenValidator.scala`.
+    *   This file will contain a `PreCodegenValidator` object with a `validate` method. This method will take the `CompilationMode` and the current `SemanticPhaseState` and return the updated state.
+    *   The `validate` method will iterate over a list of check functions, allowing for easy extension in the future.
+
+2.  **Implement Entry Point Check**:
+    *   The first check will be `validateEntryPoint`.
+    *   If the `CompilationMode` is `Binary`, this function will ensure that a `main` function is defined.
+    *   It will validate that `main` has zero parameters and a return type of `Unit` or a type compatible with `i32`.
+    *   If the validation fails, it will add a specific `SemanticError` to the state.
+
+3.  **Update Compiler Pipeline**:
+    *   The `CompilationMode` will be passed through the compilation pipeline, starting from `CompilationPipeline.scala`, through `CompilerApi`, to `SemanticApi.rewriteModule`.
+    *   The new `PreCodegenValidator.validate` phase will be added to the end of the semantic analysis pipeline in `SemanticApi.scala`, right after the `TypeChecker`.
+
+4.  **Add Tests**:
+    *   A new test suite, `PreCodegenValidatorSuite.scala`, will be created.
+    *   Tests will be added to verify that the `main` function check works correctly for both valid and invalid cases.
+
+This approach will create a new, extensible validation phase and integrate it into the existing compiler architecture.
 
 ### CodeGen Holes
 
