@@ -1,4 +1,4 @@
 
-fn main() = 
+fn main(): Unit =
   println (concat "Number: " (to_string 42))
 ;

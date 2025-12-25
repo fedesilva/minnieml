@@ -1,19 +1,7 @@
 package mml.mmlclib.codegen.emitter
 
 import cats.syntax.all.*
-import mml.mmlclib.ast.{
-  Bnd,
-  FnDef,
-  LiteralBool,
-  LiteralInt,
-  LiteralString,
-  LiteralUnit,
-  Module,
-  NativeImpl,
-  NativeStruct,
-  NativeType,
-  TypeDef
-}
+import mml.mmlclib.ast.*
 
 /** Main entry point for LLVM IR emission.
   *
@@ -55,7 +43,6 @@ def emitModule(module: Module): Either[CodeGenError, String] = {
         stateE.flatMap { state =>
           member match {
             case bnd: Bnd => emitBinding(bnd, state)
-            case fn:  FnDef => emitFnDef(fn, state)
             case _ => state.asRight
           }
         }
@@ -115,14 +102,11 @@ def emitModule(module: Module): Either[CodeGenError, String] = {
   }
 }
 
-/** Emits a binding (variable declaration).
+/** Emits a binding (variable declaration) or function/operator.
   *
-  * For literal initializations, emits a direct global assignment. For non-literal initializations,
-  * emits a global initializer function.
-  *
-  * IMPORTANT: To avoid duplicating computation at the top level, if the binding is non-literal, we
-  * discard the instructions produced by the first emit of the expression and reemit it within the
-  * initializer function.
+  * For Bnd with Lambda (functions/operators), delegates to function emission. For literal
+  * initializations, emits a direct global assignment. For non-literal initializations, emits a
+  * global initializer function.
   *
   * @param bnd
   *   the binding to emit
@@ -132,6 +116,71 @@ def emitModule(module: Module): Either[CodeGenError, String] = {
   *   Either a CodeGenError or the updated CodeGenState.
   */
 private def emitBinding(bnd: Bnd, state: CodeGenState): Either[CodeGenError, CodeGenState] = {
+  // Check if this is a function/operator (Bnd with Lambda)
+  bnd.value.terms match {
+    case List(lambda: Lambda) if bnd.meta.isDefined =>
+      // This is a function or operator with meta - emit as function
+      emitBndLambda(bnd, lambda, state)
+    case List(lambda: Lambda) =>
+      // Lambda without meta (e.g., from eta-expansion of partial application)
+      // Emit as a function using the Bnd's name
+      emitBndLambda(bnd, lambda, state)
+    case _ =>
+      // Regular value binding
+      emitValueBinding(bnd, state)
+  }
+}
+
+/** Emits a Bnd(Lambda) as a function definition.
+  */
+private def emitBndLambda(
+  bnd:    Bnd,
+  lambda: Lambda,
+  state:  CodeGenState
+): Either[CodeGenError, CodeGenState] = {
+  val fnName = bnd.name
+  val fnTypeE = bnd.typeSpec
+    .collect { case t: TypeFn => t }
+    .toRight(
+      CodeGenError(s"Missing function type specification for '${fnName}'", Some(bnd))
+    )
+
+  fnTypeE.flatMap { fnType =>
+    val returnTypeE = getLlvmType(fnType.returnType, state)
+    val paramTypesE = fnType.paramTypes.traverse(getLlvmType(_, state))
+
+    (returnTypeE, paramTypesE).tupled.flatMap { case (returnType, paramTypes) =>
+      // Filter out void/Unit params - they can't be passed in LLVM
+      val filteredParamTypes  = paramTypes.filter(_ != "void")
+      val isMainUnit          = fnName == "main" && returnType == "void"
+      val effectiveReturnType = if isMainUnit then "i64" else returnType
+      val overrideReturnLine  = if isMainUnit then Some("  ret i64 0") else None
+
+      // Check if this is a native function implementation
+      lambda.body.terms match {
+        case List(NativeImpl(_, _, _, _)) =>
+          // Add the function declaration to state
+          Right(state.withFunctionDeclaration(fnName, returnType, filteredParamTypes))
+
+        case _ =>
+          // For normal functions, compile the lambda body
+          compileBndLambda(
+            bnd,
+            lambda,
+            state,
+            effectiveReturnType,
+            filteredParamTypes,
+            overrideReturnType = Some(effectiveReturnType).filter(_ => isMainUnit),
+            overrideReturnLine = overrideReturnLine
+          )
+      }
+    }
+  }
+}
+
+/** Emits a regular value binding.
+  */
+private def emitValueBinding(bnd: Bnd, state: CodeGenState): Either[CodeGenError, CodeGenState] = {
   // Check if binding value is a direct literal at AST level
   bnd.value.terms match {
     case List(term) =>
@@ -144,7 +193,8 @@ private def emitBinding(bnd: Bnd, state: CodeGenState): Either[CodeGenError, Cod
             case None =>
               Left(
                 CodeGenError(
-                  s"Missing type specification for string literal in binding '${bnd.name}'"
+                  s"Missing type specification for string literal in binding '${bnd.name}'",
+                  Some(bnd)
                 )
               )
           }
@@ -159,7 +209,10 @@ private def emitBinding(bnd: Bnd, state: CodeGenState): Either[CodeGenError, Cod
             case Some(typeSpec) => getLlvmType(typeSpec, state)
             case None =>
               Left(
-                CodeGenError(s"Missing type specification for int literal in binding '${bnd.name}'")
+                CodeGenError(
+                  s"Missing type specification for int literal in binding '${bnd.name}'",
+                  Some(bnd)
+                )
               )
           }
           llvmTypeE.map { llvmType =>
@@ -173,7 +226,8 @@ private def emitBinding(bnd: Bnd, state: CodeGenState): Either[CodeGenError, Cod
             case None =>
               Left(
                 CodeGenError(
-                  s"Missing type specification for bool literal in binding '${bnd.name}'"
+                  s"Missing type specification for bool literal in binding '${bnd.name}'",
+                  Some(bnd)
                 )
               )
           }
@@ -196,7 +250,9 @@ private def emitBinding(bnd: Bnd, state: CodeGenState): Either[CodeGenError, Cod
             val llvmTypeE = bnd.typeSpec match {
               case Some(typeSpec) => getLlvmType(typeSpec, origState)
               case None =>
-                Left(CodeGenError(s"Missing type specification for binding '${bnd.name}'"))
+                Left(
+                  CodeGenError(s"Missing type specification for binding '${bnd.name}'", Some(bnd))
+                )
             }
 
             llvmTypeE.flatMap { llvmType =>
@@ -224,7 +280,8 @@ private def emitBinding(bnd: Bnd, state: CodeGenState): Either[CodeGenError, Cod
         val initFnName = s"_init_global_${bnd.name}"
         val llvmTypeE = bnd.typeSpec match {
           case Some(typeSpec) => getLlvmType(typeSpec, origState)
-          case None => Left(CodeGenError(s"Missing type specification for binding '${bnd.name}'"))
+          case None =>
+            Left(CodeGenError(s"Missing type specification for binding '${bnd.name}'", Some(bnd)))
         }
 
         llvmTypeE.flatMap { llvmType =>
@@ -243,47 +300,5 @@ private def emitBinding(bnd: Bnd, state: CodeGenState): Either[CodeGenError, Cod
           }
         }
       }
-  }
-}
-
-/** Emits a function definition into LLVM IR.
-  *
-  * Creates a proper function definition with parameters, emits the body, and adds a return
-  * instruction.
-  *
-  * @param fn
-  *   the function definition to emit
-  * @param state
-  *   the current code generation state
-  * @return
-  *   Either a CodeGenError or the updated CodeGenState.
-  */
-private def emitFnDef(fn: FnDef, state: CodeGenState): Either[CodeGenError, CodeGenState] = {
-  // Get the return type from the function's type annotation (required)
-  val returnTypeE = fn.typeSpec
-    .map(getLlvmType(_, state))
-    .getOrElse(Left(CodeGenError(s"Missing return type annotation for function '${fn.name}'")))
-
-  returnTypeE.flatMap { returnType =>
-    // Get parameter types
-    val paramTypesE = fn.params.traverse { param =>
-      param.typeSpec
-        .map(getLlvmType(_, state))
-        .getOrElse(Left(CodeGenError(s"Missing type for param '${param.name}' in fn '${fn.name}'")))
-    }
-
-    paramTypesE.flatMap { paramTypes =>
-      // Check if this is a native function implementation
-      fn.body.terms match {
-        case List(NativeImpl(_, _, _, _)) =>
-          // Add the function declaration to state rather than emitting it directly
-          // This ensures each declaration happens exactly once
-          Right(state.withFunctionDeclaration(fn.name, returnType, paramTypes))
-
-        case _ =>
-          // For normal functions, delegate to the FunctionEmitter
-          compileFnDef(fn, state, returnType, paramTypes)
-      }
-    }
   }
 }

@@ -31,7 +31,7 @@ case class Cond(
 
 case class App(
   span:     SrcSpan,
-  fn:       Ref | App,
+  fn:       Ref | App | Lambda,
   arg:      Expr,
   typeAsc:  Option[TypeSpec] = None,
   typeSpec: Option[TypeSpec] = None
@@ -41,6 +41,7 @@ case class Lambda(
   span:     SrcSpan,
   params:   List[FnParam],
   body:     Expr,
+  captures: List[Ref],
   typeSpec: Option[TypeSpec] = None,
   typeAsc:  Option[TypeSpec] = None
 ) extends Term
@@ -70,6 +71,7 @@ case class Ref(
 ) extends Term,
       FromSource
 
+/** The `_` symbol */
 case class Placeholder(
   span:     SrcSpan,
   typeSpec: Option[TypeSpec],

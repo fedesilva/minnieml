@@ -77,13 +77,65 @@ enum Associativity derives CanEqual:
   case Left
   case Right
 
+// --- Binding Metadata for unified callable representation ---
+
+enum CallableArity derives CanEqual:
+  case Nullary
+  case Unary
+  case Binary
+  case Nary(paramCount: Int)
+
+enum BindingOrigin derives CanEqual:
+  case Function
+  case Operator
+
+object Precedence:
+  val MaxUser:  Int = 100
+  val Function: Int = 101
+
+object OpMangling:
+  private val opCharNames: Map[Char, String] = Map(
+    '=' -> "eq",
+    '!' -> "bang",
+    '#' -> "hash",
+    '$' -> "dollar",
+    '%' -> "percent",
+    '^' -> "caret",
+    '&' -> "amp",
+    '*' -> "star",
+    '+' -> "plus",
+    '<' -> "lt",
+    '>' -> "gt",
+    '?' -> "quest",
+    '/' -> "slash",
+    '\\' -> "bslash",
+    '|' -> "pipe",
+    '~' -> "tilde",
+    '-' -> "minus"
+  )
+
+  def mangleOp(op: String, arity: Int): String =
+    val translated =
+      if op.forall(_.isLetterOrDigit) then op
+      else op.map(c => opCharNames.getOrElse(c, c.toString)).mkString("_")
+    s"op.$translated.$arity"
+
+final case class BindingMeta(
+  origin:        BindingOrigin,
+  arity:         CallableArity,
+  precedence:    Int,
+  associativity: Option[Associativity],
+  originalName:  String,
+  mangledName:   String
+)
+
 /** Marker trait for nodes that represent invalid/error constructs. These nodes allow the compiler
   * to continue processing even when errors are encountered, enabling better LSP support and partial
   * compilation.
   */
 trait InvalidNode extends AstNode
 
-trait Error extends AstNode, InvalidNode:
+trait Error extends InvalidNode:
   def span:       SrcSpan
   def message:    String
   def failedCode: Option[String]

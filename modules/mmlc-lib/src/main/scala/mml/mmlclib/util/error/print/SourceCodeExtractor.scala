@@ -91,33 +91,45 @@ object SourceCodeExtractor:
           .map(s => s"\n$s")
           .getOrElse("")
 
+      case SemanticError.InvalidEntryPoint(_, span) =>
+        extractSnippet(sourceCode, span, highlightExpr = true)
+          .map(s => s"\n$s")
+          .getOrElse("")
       case SemanticError.TypeCheckingError(error) =>
         extractTypeErrorSnippet(sourceCode, error)
 
   /** Extract source code snippet for a type checking error */
   private def extractTypeErrorSnippet(sourceCode: String, error: TypeError): String =
     error match
-      case TypeError.MissingParameterType(param, fnDef, _) =>
+      case TypeError.MissingParameterType(param, _, _) =>
         extractSnippet(sourceCode, param.span, highlightExpr = true)
           .map(s => s"\n$s")
           .getOrElse("")
 
-      case TypeError.MissingReturnType(fnDef, _) =>
-        extractSnippet(sourceCode, fnDef.span, highlightExpr = true)
+      case TypeError.MissingReturnType(decl, _) =>
+        val fs = decl.asInstanceOf[FromSource]
+        extractSnippet(sourceCode, fs.span, highlightExpr = true)
           .map(s => s"\n$s")
           .getOrElse("")
 
-      case TypeError.MissingOperatorParameterType(param, opDef, _) =>
+      case TypeError.RecursiveFunctionMissingReturnType(decl, _) =>
+        val fs = decl.asInstanceOf[FromSource]
+        extractSnippet(sourceCode, fs.span, highlightExpr = true)
+          .map(s => s"\n$s")
+          .getOrElse("")
+
+      case TypeError.MissingOperatorParameterType(param, _, _) =>
         extractSnippet(sourceCode, param.span, highlightExpr = true)
           .map(s => s"\n$s")
           .getOrElse("")
 
-      case TypeError.MissingOperatorReturnType(opDef, _) =>
-        extractSnippet(sourceCode, opDef.span, highlightExpr = true)
+      case TypeError.MissingOperatorReturnType(decl, _) =>
+        val fs = decl.asInstanceOf[FromSource]
+        extractSnippet(sourceCode, fs.span, highlightExpr = true)
           .map(s => s"\n$s")
           .getOrElse("")
 
-      case TypeError.TypeMismatch(node, _, _, _) =>
+      case TypeError.TypeMismatch(node, _, _, _, _) =>
         node match
           case fs: FromSource =>
             extractSnippet(sourceCode, fs.span, highlightExpr = true)
@@ -149,10 +161,13 @@ object SourceCodeExtractor:
           .map(s => s"\n$s")
           .getOrElse("")
 
-      case TypeError.UnresolvableType(typeRef, node, _) =>
-        extractSnippet(sourceCode, typeRef.span, highlightExpr = true)
-          .map(s => s"\n$s")
-          .getOrElse("")
+      case TypeError.UnresolvableType(node, _, _) =>
+        node match
+          case fs: FromSource =>
+            extractSnippet(sourceCode, fs.span, highlightExpr = true)
+              .map(s => s"\n$s")
+              .getOrElse("")
+          case _ => ""
 
       case TypeError.IncompatibleTypes(node, _, _, _, _) =>
         node match

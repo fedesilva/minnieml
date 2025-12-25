@@ -36,11 +36,11 @@ object CodeGenApi:
   ): CodeGenEffect[String] =
     for
       // Convert CompilerEffect to CodeGenEffect by mapping errors
-      parsedModule <- CompilerApi
+      semanticState <- CompilerApi
         .compileString(source, name)
         .leftMap(error => CodeGenApiError.CompilerErrors(List(error)))
       // Run LLVM IR printer and handle potential errors
-      result <- generateFromModule(parsedModule)
+      result <- generateFromModule(semanticState.module) // Extract module from semanticState
     yield result
 
   /** Generate LLVM IR from an existing module */

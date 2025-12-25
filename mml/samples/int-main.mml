@@ -1,0 +1,6 @@
+
+type AnInt = Int64;
+
+fn main(): Int =
+  0
+;

@@ -4,7 +4,6 @@ import cats.data.EitherT
 import cats.effect.IO
 import cats.syntax.all.*
 import mml.mmlclib.api.CompilerEffect
-import mml.mmlclib.ast.Module
 import mml.mmlclib.parser.ParserError
 import mml.mmlclib.semantic.*
 
@@ -35,9 +34,9 @@ object CompilerApi:
   def compileString(
     source: String,
     name:   String
-  ): CompilerEffect[Module] =
+  ): CompilerEffect[SemanticPhaseState] = // Changed return type to SemanticPhaseState
     compileState(source, name).flatMap { state =>
       if state.errors.isEmpty
-      then EitherT.rightT[IO, CompilerError](state.module)
-      else EitherT.leftT[IO, Module](CompilerError.SemanticErrors(state.errors.toList))
+      then EitherT.rightT[IO, CompilerError](state) // Return state instead of module
+      else EitherT.leftT[IO, SemanticPhaseState](CompilerError.SemanticErrors(state.errors.toList))
     }

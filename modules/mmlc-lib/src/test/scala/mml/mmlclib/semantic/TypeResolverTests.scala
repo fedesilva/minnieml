@@ -6,34 +6,44 @@ import mml.mmlclib.test.BaseEffFunSuite
 class TypeResolverTests extends BaseEffFunSuite:
 
   test("TypeResolver should resolve simple type references in bindings"):
-    val code = """      
+    val code = """
       let x: Int = 42;
     """
 
     semNotFailed(code).map { module =>
-      // Find the binding
-      val binding = module.members.collectFirst { case b: Bnd => b }.get
+      // Find the binding (skip stdlib injected bindings)
+      val binding = module.members.collectFirst {
+        case b: Bnd if b.name == "x" => b
+      }.get
 
       // Check that the type ascription has been resolved
-      binding.typeAsc match
+      clue(binding.typeAsc) match
         case Some(TypeRef(_, "Int", resolvedAs)) =>
-          assert(resolvedAs.isDefined, "Expected TypeRef to be resolved")
-          assertEquals(resolvedAs.get.asInstanceOf[TypeAlias].name, "Int")
-        case _ =>
-          fail("Expected TypeRef with resolved type")
+          assert(clue(resolvedAs).isDefined, "Expected TypeRef to be resolved")
+          assertEquals(clue(resolvedAs.get.asInstanceOf[TypeAlias].name), "Int")
+        case other =>
+          fail(s"Expected TypeRef with resolved type, got: ${clue(other)}")
     }
 
   test("TypeResolver should resolve type references in function parameters"):
-    val code = """      
+    val code = """
       fn greet(name: String): String = name;
     """
 
     semNotFailed(code).map { module =>
-      // Find the function
-      val fnDef = module.members.collectFirst { case f: FnDef if f.name == "greet" => f }.get
+      // Find the function (now Bnd with Lambda)
+      val bnd = module.members.collectFirst {
+        case b: Bnd
+            if b.meta.exists(_.origin == BindingOrigin.Function) &&
+              b.meta.exists(_.originalName == "greet") =>
+          b
+      }.get
+
+      // Extract lambda params
+      val lambda = bnd.value.terms.head.asInstanceOf[Lambda]
 
       // Check that the parameter type has been resolved
-      fnDef.params.head.typeAsc match
+      lambda.params.head.typeAsc match
         case Some(TypeRef(_, "String", resolvedAs)) =>
           assert(clue(resolvedAs.isDefined), "Expected TypeRef to be resolved")
           assertEquals(clue(resolvedAs.get.asInstanceOf[TypeDef].name), "String")
@@ -47,11 +57,20 @@ class TypeResolverTests extends BaseEffFunSuite:
     """
 
     semNotFailed(code).map { module =>
-      // Find the function
-      val fnDef = module.members.collectFirst { case f: FnDef if f.name == "isTrue" => f }.get
+      // Find the function (now Bnd with Lambda)
+      val bnd = module.members.collectFirst {
+        case b: Bnd
+            if b.meta.exists(_.origin == BindingOrigin.Function) &&
+              b.meta.exists(_.originalName == "isTrue") =>
+          b
+      }.get
 
-      // Check that the return type has been resolved
-      fnDef.typeAsc match
+      // Extract lambda and check return type
+      val lambda = bnd.value.terms.head.asInstanceOf[Lambda]
+
+      // Return type ascription is on lambda or bnd
+      val returnTypeAsc = lambda.typeAsc.orElse(bnd.typeAsc)
+      returnTypeAsc match
         case Some(TypeRef(_, "Bool", resolvedAs)) =>
           assert(resolvedAs.isDefined, "Expected TypeRef to be resolved")
           assertEquals(resolvedAs.get.asInstanceOf[TypeDef].name, "Bool")
@@ -79,16 +98,18 @@ class TypeResolverTests extends BaseEffFunSuite:
         case _ =>
           fail("Expected TypeRef with resolved type")
 
-      // Find the binding
-      val binding = module.members.collectFirst { case b: Bnd => b }.get
+      // Find the binding (skip stdlib injected bindings)
+      val binding = module.members.collectFirst {
+        case b: Bnd if b.name == "x" => b
+      }.get
 
       // Check that the binding's type has been resolved to the alias
-      binding.typeAsc match
+      clue(binding.typeAsc) match
         case Some(TypeRef(_, "TestNumber", resolvedAs)) =>
-          assert(resolvedAs.isDefined, "Expected TypeRef to be resolved")
-          assertEquals(resolvedAs.get.asInstanceOf[TypeAlias].name, "TestNumber")
-        case _ =>
-          fail("Expected TypeRef with resolved type")
+          assert(clue(resolvedAs).isDefined, "Expected TypeRef to be resolved")
+          assertEquals(clue(resolvedAs.get.asInstanceOf[TypeAlias].name), "TestNumber")
+        case other =>
+          fail(s"Expected TypeRef with resolved type, got: ${clue(other)}")
     }
 
   test("TypeResolver should report undefined type references"):

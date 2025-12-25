@@ -2,4 +2,6 @@
 let a = 1;
 let b = 2;
 
-fn main() = a + b ^ 2;
+fn main(): Int =
+  a + b ^ 2
+;

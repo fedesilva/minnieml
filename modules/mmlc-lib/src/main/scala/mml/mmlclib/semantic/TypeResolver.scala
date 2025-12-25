@@ -104,36 +104,27 @@ object TypeResolver:
   private def rewriteMemberWithInvalidTypes(member: Member, module: Module): Member =
     member match
       case bnd: Bnd =>
+        // Handle Bnd with Lambda - rewrite lambda params and body
+        val rewrittenValue = bnd.value.terms match
+          case (lambda: Lambda) :: rest =>
+            val rewrittenParams = lambda.params.map(p =>
+              p.copy(typeAsc = p.typeAsc.map(rewriteTypeSpecWithInvalidTypes(_, module)))
+            )
+            val rewrittenBody    = rewriteExprWithInvalidTypes(lambda.body, member, module)
+            val rewrittenTypeAsc = lambda.typeAsc.map(rewriteTypeSpecWithInvalidTypes(_, module))
+            val rewrittenLambda = lambda.copy(
+              params  = rewrittenParams,
+              body    = rewrittenBody,
+              typeAsc = rewrittenTypeAsc
+            )
+            val rewrittenRest = rest.map(rewriteTermWithInvalidTypes(_, member, module))
+            bnd.value.copy(terms = rewrittenLambda :: rewrittenRest)
+          case _ =>
+            rewriteExprWithInvalidTypes(bnd.value, member, module)
+
         bnd.copy(
-          value   = rewriteExprWithInvalidTypes(bnd.value, member, module),
+          value   = rewrittenValue,
           typeAsc = bnd.typeAsc.map(rewriteTypeSpecWithInvalidTypes(_, module))
-        )
-      case fnDef: FnDef =>
-        fnDef.copy(
-          params = fnDef.params.map(p =>
-            p.copy(typeAsc = p.typeAsc.map(rewriteTypeSpecWithInvalidTypes(_, module)))
-          ),
-          body    = rewriteExprWithInvalidTypes(fnDef.body, member, module),
-          typeAsc = fnDef.typeAsc.map(rewriteTypeSpecWithInvalidTypes(_, module))
-        )
-      case bin: BinOpDef =>
-        bin.copy(
-          param1 = bin.param1.copy(
-            typeAsc = bin.param1.typeAsc.map(rewriteTypeSpecWithInvalidTypes(_, module))
-          ),
-          param2 = bin.param2.copy(
-            typeAsc = bin.param2.typeAsc.map(rewriteTypeSpecWithInvalidTypes(_, module))
-          ),
-          body    = rewriteExprWithInvalidTypes(bin.body, member, module),
-          typeAsc = bin.typeAsc.map(rewriteTypeSpecWithInvalidTypes(_, module))
-        )
-      case unary: UnaryOpDef =>
-        unary.copy(
-          param = unary.param.copy(
-            typeAsc = unary.param.typeAsc.map(rewriteTypeSpecWithInvalidTypes(_, module))
-          ),
-          body    = rewriteExprWithInvalidTypes(unary.body, member, module),
-          typeAsc = unary.typeAsc.map(rewriteTypeSpecWithInvalidTypes(_, module))
         )
       case alias: TypeAlias =>
         val rewrittenTypeRef = rewriteTypeSpecWithInvalidTypes(alias.typeRef, module)
@@ -244,7 +235,19 @@ object TypeResolver:
           typeAsc = cond.typeAsc.map(rewriteTypeSpecWithInvalidTypes(_, module))
         )
       case app: App =>
-        app.copy(typeAsc = app.typeAsc.map(rewriteTypeSpecWithInvalidTypes(_, module)))
+        val newFn  = rewriteAppFnWithInvalidTypes(app.fn, member, module)
+        val newArg = rewriteExprWithInvalidTypes(app.arg, member, module)
+        app.copy(
+          fn      = newFn,
+          arg     = newArg,
+          typeAsc = app.typeAsc.map(rewriteTypeSpecWithInvalidTypes(_, module))
+        )
+      case lambda: Lambda =>
+        val newBody = rewriteExprWithInvalidTypes(lambda.body, member, module)
+        lambda.copy(
+          body    = newBody,
+          typeAsc = lambda.typeAsc.map(rewriteTypeSpecWithInvalidTypes(_, module))
+        )
       case placeholder: Placeholder =>
         placeholder.copy(typeAsc =
           placeholder.typeAsc.map(rewriteTypeSpecWithInvalidTypes(_, module))
@@ -265,6 +268,30 @@ object TypeResolver:
         }
       case _ => term
 
+  /** Rewrite App.fn to handle type ascriptions with invalid types */
+  private def rewriteAppFnWithInvalidTypes(
+    fn:     Ref | App | Lambda,
+    member: Member,
+    module: Module
+  ): Ref | App | Lambda =
+    fn match
+      case ref: Ref =>
+        ref.copy(typeAsc = ref.typeAsc.map(rewriteTypeSpecWithInvalidTypes(_, module)))
+      case app: App =>
+        val newFn  = rewriteAppFnWithInvalidTypes(app.fn, member, module)
+        val newArg = rewriteExprWithInvalidTypes(app.arg, member, module)
+        app.copy(
+          fn      = newFn,
+          arg     = newArg,
+          typeAsc = app.typeAsc.map(rewriteTypeSpecWithInvalidTypes(_, module))
+        )
+      case lambda: Lambda =>
+        val newBody = rewriteExprWithInvalidTypes(lambda.body, member, module)
+        lambda.copy(
+          body    = newBody,
+          typeAsc = lambda.typeAsc.map(rewriteTypeSpecWithInvalidTypes(_, module))
+        )
+
   /** Resolve type references in a module member using pre-built type map. */
   private def resolveMemberWithMap(
     member:  Member,
@@ -272,42 +299,29 @@ object TypeResolver:
   ): Either[List[SemanticError], Member] =
     member match
       case bnd: Bnd =>
+        // Handle Bnd with Lambda (functions/operators) - resolve lambda params and body
+        val resolvedValue = bnd.value.terms match
+          case (lambda: Lambda) :: rest =>
+            for
+              updatedParams <- lambda.params.traverse(resolveParamWithMap(_, member, typeMap))
+              updatedBody <- resolveExpr(lambda.body, member, typeMap)
+              updatedLambdaTypeAsc <- lambda.typeAsc.traverse(
+                resolveTypeSpecWithMap(_, member, typeMap)
+              )
+              updatedLambda = lambda.copy(
+                params  = updatedParams,
+                body    = updatedBody,
+                typeAsc = updatedLambdaTypeAsc
+              )
+              updatedRest <- rest.traverse(resolveTerm(_, member, typeMap))
+            yield bnd.value.copy(terms = updatedLambda :: updatedRest)
+          case _ =>
+            resolveExpr(bnd.value, member, typeMap)
+
         for
-          updatedValue <- resolveExpr(bnd.value, member, typeMap)
+          updatedValue <- resolvedValue
           updatedTypeAsc <- bnd.typeAsc.traverse(resolveTypeSpecWithMap(_, member, typeMap))
         yield bnd.copy(value = updatedValue, typeAsc = updatedTypeAsc)
-
-      case fnDef: FnDef =>
-        for
-          updatedParams <- fnDef.params.traverse(resolveParamWithMap(_, member, typeMap))
-          updatedBody <- resolveExpr(fnDef.body, member, typeMap)
-          updatedTypeAsc <- fnDef.typeAsc.traverse(resolveTypeSpecWithMap(_, member, typeMap))
-        yield fnDef.copy(params = updatedParams, body = updatedBody, typeAsc = updatedTypeAsc)
-
-      case opDef: OpDef =>
-        opDef match
-          case bin: BinOpDef =>
-            for
-              updatedParam1 <- resolveParamWithMap(bin.param1, member, typeMap)
-              updatedParam2 <- resolveParamWithMap(bin.param2, member, typeMap)
-              updatedBody <- resolveExpr(bin.body, member, typeMap)
-              updatedTypeAsc <- bin.typeAsc.traverse(resolveTypeSpecWithMap(_, member, typeMap))
-            yield bin.copy(
-              param1  = updatedParam1,
-              param2  = updatedParam2,
-              body    = updatedBody,
-              typeAsc = updatedTypeAsc
-            )
-          case unary: UnaryOpDef =>
-            for
-              updatedParam <- resolveParamWithMap(unary.param, member, typeMap)
-              updatedBody <- resolveExpr(unary.body, member, typeMap)
-              updatedTypeAsc <- unary.typeAsc.traverse(resolveTypeSpecWithMap(_, member, typeMap))
-            yield unary.copy(
-              param   = updatedParam,
-              body    = updatedBody,
-              typeAsc = updatedTypeAsc
-            )
 
       case alias: TypeAlias =>
         resolveTypeSpecWithMap(alias.typeRef, member, typeMap).map { updatedTypeRef =>
@@ -409,11 +423,6 @@ object TypeResolver:
           .traverse(resolveTypeSpecWithMap(_, member, typeMap))
           .map(resolvedTypes => tg.copy(types = resolvedTypes))
 
-      case ts: TypeSeq =>
-        // Resolve inner type
-        resolveTypeSpecWithMap(ts.inner, member, typeMap)
-          .map(resolvedInner => ts.copy(inner = resolvedInner))
-
       case scheme: TypeScheme =>
         // Resolve body type (type variables don't need resolution)
         resolveTypeSpecWithMap(scheme.bodyType, member, typeMap)
@@ -480,9 +489,17 @@ object TypeResolver:
         )
 
       case app: App =>
-        app.typeAsc
-          .traverse(resolveTypeSpecWithMap(_, member, typeMap))
-          .map(updatedTypeAsc => app.copy(typeAsc = updatedTypeAsc))
+        for
+          updatedFn <- resolveAppFn(app.fn, member, typeMap)
+          updatedArg <- resolveExpr(app.arg, member, typeMap)
+          updatedTypeAsc <- app.typeAsc.traverse(resolveTypeSpecWithMap(_, member, typeMap))
+        yield app.copy(fn = updatedFn, arg = updatedArg, typeAsc = updatedTypeAsc)
+
+      case lambda: Lambda =>
+        for
+          updatedBody <- resolveExpr(lambda.body, member, typeMap)
+          updatedTypeAsc <- lambda.typeAsc.traverse(resolveTypeSpecWithMap(_, member, typeMap))
+        yield lambda.copy(body = updatedBody, typeAsc = updatedTypeAsc)
 
       case placeholder: Placeholder =>
         placeholder.typeAsc
@@ -518,3 +535,26 @@ object TypeResolver:
       case _ =>
         // Other terms don't have type ascriptions that need resolution
         term.asRight[List[SemanticError]]
+
+  /** Resolve type references in App.fn (which can be Ref | App | Lambda) */
+  private def resolveAppFn(
+    fn:      Ref | App | Lambda,
+    member:  Member,
+    typeMap: Map[String, ResolvableType]
+  ): Either[List[SemanticError], Ref | App | Lambda] =
+    fn match
+      case ref: Ref =>
+        ref.typeAsc
+          .traverse(resolveTypeSpecWithMap(_, member, typeMap))
+          .map(updatedTypeAsc => ref.copy(typeAsc = updatedTypeAsc))
+      case app: App =>
+        for
+          updatedFn <- resolveAppFn(app.fn, member, typeMap)
+          updatedArg <- resolveExpr(app.arg, member, typeMap)
+          updatedTypeAsc <- app.typeAsc.traverse(resolveTypeSpecWithMap(_, member, typeMap))
+        yield app.copy(fn = updatedFn, arg = updatedArg, typeAsc = updatedTypeAsc)
+      case lambda: Lambda =>
+        for
+          updatedBody <- resolveExpr(lambda.body, member, typeMap)
+          updatedTypeAsc <- lambda.typeAsc.traverse(resolveTypeSpecWithMap(_, member, typeMap))
+        yield lambda.copy(body = updatedBody, typeAsc = updatedTypeAsc)

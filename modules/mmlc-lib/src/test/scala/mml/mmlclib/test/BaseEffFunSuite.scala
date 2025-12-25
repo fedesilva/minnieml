@@ -95,7 +95,8 @@ trait BaseEffFunSuite extends CatsEffectSuite:
     msg:    Option[String] = None
   ): IO[Module] =
     CompilerApi.compileString(source, name).value.map {
-      case Right(module) =>
+      case Right(state) =>
+        val module = state.module
         assert(
           !containsErrorNode(module),
           msg.getOrElse(
@@ -113,7 +114,8 @@ trait BaseEffFunSuite extends CatsEffectSuite:
     msg:    Option[String] = None
   ): IO[Unit] =
     CompilerApi.compileString(source, name).value.map {
-      case Right(module) =>
+      case Right(state) =>
+        val module = state.module
         assert(
           containsErrorNode(module),
           msg.getOrElse(s"Expected Error nodes but found none. ${prettyPrintAst(module)} ")
@@ -154,8 +156,8 @@ trait BaseEffFunSuite extends CatsEffectSuite:
   ): IO[String] =
     import mml.mmlclib.api.CodeGenApi
     CompilerApi.compileString(source, name).value.flatMap {
-      case Right(compiled) =>
-        CodeGenApi.generateFromModule(compiled).value.map {
+      case Right(state) =>
+        CodeGenApi.generateFromModule(state.module).value.map {
           case Right(llvmIr) => llvmIr
           case Left(error) => fail(s"CodeGen failed: $error")
         }

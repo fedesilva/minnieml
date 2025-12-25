@@ -1,6 +1,6 @@
 # The following types are a sample of the standard library plus some use examples
 # Maybe could be a type def like: `type Maybe 'T = 'T | ()`
-# But enums are more flexible - with an enum when you say One x, inference 
+# But enums are more flexible - with an enum when you say One x, inference
 # is as precise as can be for x.
 # You know it has type Maybe 'T for whatever 'T.
 # With a union type it will be frequently inferred as either unit or the concrete type
@@ -10,10 +10,10 @@ enum Maybe 'T =
   | One: 'T
   | None
 ;
-  
+
 # Puts Maybe members in the current scope to allow using them unqualified
 # (One instead of Maybe.One)
-use Maybe._;
+use Maybe.*;
 
 # empty :: Maybe 'T -> Boolean
 fn empty(x) =
@@ -21,17 +21,17 @@ fn empty(x) =
   | None -> true
   | _    -> false
 ;
-    
+
 # nonEmpty :: Maybe 'T -> Boolean
 fn nonEmpty(maybe) =
   ! empty maybe
 ;
-  
+
 enum Result 'T 'E =
   | Ok: 'T
   | Err: 'E
 ;
-  
+
 # Semigroup represents an associative binary operation.
 protocol Semigroup 'T =
   fn combine: 'T -> 'T -> 'T
@@ -63,7 +63,7 @@ protocol FlatMap 'F: Functor =
 ;
 
 # Monad is a functor that can flatten nested structures and create new ones.
-protocol Monad 'M: Functor & FlatMap & Applicative; 
+protocol Monad 'M: Functor & FlatMap & Applicative;
 
 protocol Foldable 'F =
   fn foldLeft 'A 'B : ('B -> 'A -> 'B) -> 'B -> 'F 'A -> 'B
@@ -82,7 +82,7 @@ instance Monoid Int =
 
 # Maybe implements the Functor protocol
 instance Functor Maybe =
-  fn map(f, maybe) = 
+  fn map(f, maybe) =
     maybe match
     | One x -> One(f x)
     | None  -> None
@@ -121,6 +121,6 @@ protocol Something 'T: Semigroup 'T =
   fn combine(x, y) = x + y
   # Example of operator definitions using protocols
   # the precedenc and associativity are fake
-  op + 20 right : ('T, 'T) -> 'T 
-  op >> 25 left :  ('T, 'T) -> 'T 
+  op + 20 right : ('T, 'T) -> 'T
+  op >> 25 left :  ('T, 'T) -> 'T
 ;

@@ -44,8 +44,7 @@ case class TypeStruct(span: SrcSpan, fields: List[(String, TypeSpec)]) extends T
 /** Refine types with a predicate `Int {i => i < 100 && i > 0 }` */
 case class TypeRefinement(span: SrcSpan, id: Option[String], expr: Expr) extends TypeSpec
 
-/** Union types  `Int | None` */
-// TODO: this is a Tuple2, not a list. remove 'types' and use tp1 and tp2
+/** Union types  `Int | None | Something | Other` */
 case class Union(span: SrcSpan, types: List[TypeSpec]) extends TypeSpec
 
 /** Intersection Types `Readable & Writable` */
@@ -53,9 +52,6 @@ case class Intersection(span: SrcSpan, types: List[TypeSpec]) extends TypeSpec
 
 /** The unit type `()` */
 case class TypeUnit(span: SrcSpan) extends TypeSpec
-
-/** Type Sequences `[Int], [String], [T]` */
-case class TypeSeq(span: SrcSpan, inner: TypeSpec) extends TypeSpec
 
 /** A grouping of types, mostly for disambiguation: `Map String (List Int)` */
 case class TypeGroup(span: SrcSpan, types: List[TypeSpec]) extends TypeSpec

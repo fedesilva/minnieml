@@ -45,37 +45,38 @@ def compileBinding(bnd: Bnd, state: CodeGenState): Either[CodeGenError, CodeGenS
           }
       }
     case Some(Left(err)) => Left(err)
-    case None => Left(CodeGenError(s"Type annotation missing for binding '${bnd.name}'"))
+    case None => Left(CodeGenError(s"Type annotation missing for binding '${bnd.name}'", Some(bnd)))
 
-/** Compiles a function definition into LLVM IR.
+/** Compiles a Bnd(Lambda) into LLVM IR function.
   *
-  * Creates a proper function definition with parameters, compiles the body, and adds a return
-  * instruction.
-  *
-  * @param fn
-  *   the function definition to compile
-  * @param state
-  *   the current code generation state
-  * @param returnType
-  *   the pre-calculated LLVM return type
-  * @param paramTypes
-  *   the pre-calculated LLVM parameter types
-  * @return
-  *   Either a CodeGenError or the updated CodeGenState.
+  * Handles functions and operators that are represented as Bnd(Lambda) with BindingMeta.
   */
-def compileFnDef(
-  fn:         FnDef,
-  state:      CodeGenState,
-  returnType: String,
-  paramTypes: List[String]
+def compileBndLambda(
+  bnd:                Bnd,
+  lambda:             Lambda,
+  state:              CodeGenState,
+  returnType:         String,
+  paramTypes:         List[String],
+  overrideReturnType: Option[String] = None,
+  overrideReturnLine: Option[String] = None
 ): Either[CodeGenError, CodeGenState] =
+  // Filter out Unit params (void) - they can't be passed in LLVM
+  // Keep params and types in sync by filtering together
+  val filteredParamsWithTypes = lambda.params
+    .zip(paramTypes)
+    .filter { case (_, typ) => typ != "void" }
+
+  val filteredParams     = filteredParamsWithTypes.map(_._1)
+  val filteredParamTypes = filteredParamsWithTypes.map(_._2)
+
   // Generate function declaration with parameters
-  val paramDecls = paramTypes.zipWithIndex
+  val paramDecls = filteredParamTypes.zipWithIndex
     .map { case (typ, idx) => s"$typ %$idx" }
     .mkString(", ")
 
-  val functionDecl = s"define $returnType @${fn.name}($paramDecls) {"
-  val entryLine    = "entry:"
+  val functionReturn = overrideReturnType.getOrElse(returnType)
+  val functionDecl   = s"define $functionReturn @${bnd.name}($paramDecls) {"
+  val entryLine      = "entry:"
 
   // Setup function body state with initial lines
   val bodyState = state
@@ -83,9 +84,9 @@ def compileFnDef(
     .emit(entryLine)
     .withRegister(0) // Reset register counter for local function scope
 
-  // Create a scope map for function parameters
-  val paramScope = fn.params
-    .zip(paramTypes)
+  // Create a scope map for lambda parameters
+  val paramScope = filteredParams
+    .zip(filteredParamTypes)
     .zipWithIndex
     .map { case ((param, typ), idx) =>
       val regNum    = idx
@@ -101,17 +102,19 @@ def compileFnDef(
     .toMap
 
   // Register count starts after parameter setup
-  val updatedState = bodyState.withRegister(fn.params.size)
+  val updatedState = bodyState.withRegister(filteredParams.size)
 
-  // Compile the function body with the parameter scope
-  compileExpr(fn.body, updatedState, paramScope).flatMap { bodyRes =>
-    // Add return instruction with the result of the function body
-    val returnLine =
-      if returnType == "void" then "  ret void"
+  // Compile the lambda body with the parameter scope
+  compileExpr(lambda.body, updatedState, paramScope).flatMap { bodyRes =>
+    val returnTypeLine = overrideReturnType.getOrElse(returnType)
+
+    val returnLine = overrideReturnLine.getOrElse {
+      if returnTypeLine == "void" then "  ret void"
       else
         val returnOp =
           if bodyRes.isLiteral then bodyRes.register.toString else s"%${bodyRes.register}"
-        s"  ret $returnType $returnOp"
+        s"  ret $returnTypeLine $returnOp"
+    }
 
     // Close function and add empty line
     Right(

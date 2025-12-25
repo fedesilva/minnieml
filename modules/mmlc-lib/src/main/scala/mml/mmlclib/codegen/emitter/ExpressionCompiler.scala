@@ -19,6 +19,13 @@ private def escapeString(str: String): String = {
   }
 }
 
+/** Gets the resolved name for a Ref - uses the Bnd's name (which is mangled for operators) */
+private def getResolvedName(ref: Ref): String =
+  ref.resolvedAs match {
+    case Some(bnd: Bnd) => bnd.name
+    case _ => ref.name
+  }
+
 /** Compiles a term (the smallest unit in an expression).
   *
   * Terms include literals, references, grouped expressions, or nested expressions.
@@ -40,6 +47,10 @@ def compileTerm(
   term match {
     case LiteralInt(_, value) =>
       CompileResult(value, state, true).asRight
+
+    case LiteralUnit(_) =>
+      // Unit is a zero-sized type, just return a dummy result
+      CompileResult(0, state, true).asRight
 
     // FIXME: Generalize, String is just a native record
     // FIXME: Uses so many hardcoded types!
@@ -124,7 +135,8 @@ def compileTerm(
             case None =>
               Left(
                 CodeGenError(
-                  s"Missing type information for global reference '${ref.name}' - TypeChecker should have provided this"
+                  s"Missing type information for global reference '${ref.name}' - TypeChecker should have provided this",
+                  Some(ref)
                 )
               )
           }
@@ -189,6 +201,8 @@ def compileTerm(
         thenRes <- compileExpr(ifTrue, thenState, functionScope)
         thenValue =
           if thenRes.isLiteral then thenRes.register.toString else s"%${thenRes.register}"
+        // Track the actual exit block (may differ from then$thenBB if nested conditional)
+        thenExitBlock        = thenRes.exitBlock.getOrElse(s"then$thenBB")
         stateAfterThenBranch = thenRes.state.emit(s"  br label %merge$mergeBB")
 
         // Else block
@@ -196,9 +210,11 @@ def compileTerm(
         elseRes <- compileExpr(ifFalse, elseState, functionScope)
         elseValue =
           if elseRes.isLiteral then elseRes.register.toString else s"%${elseRes.register}"
+        // Track the actual exit block (may differ from else$elseBB if nested conditional)
+        elseExitBlock        = elseRes.exitBlock.getOrElse(s"else$elseBB")
         stateAfterElseBranch = elseRes.state.emit(s"  br label %merge$mergeBB")
 
-        // Merge block with phi node
+        // Merge block with phi node (skip phi for void type)
         resultReg = stateAfterElseBranch.nextRegister
 
         // Get the type from the then branch result (both branches should have same type)
@@ -207,18 +223,32 @@ def compileTerm(
           case None =>
             Left(
               CodeGenError(
-                "Missing type information for conditional expression - TypeChecker should have provided this"
+                "Missing type information for conditional expression - TypeChecker should have provided this",
+                Some(cond)
               )
             )
         }
 
-        finalState = stateAfterElseBranch
-          .withRegister(resultReg + 1)
-          .emit(s"merge$mergeBB:")
-          .emit(
-            s"  %$resultReg = phi $phiType [ $thenValue, %then$thenBB ], [ $elseValue, %else$elseBB ]"
-          )
-      } yield CompileResult(resultReg, finalState, false)
+        finalState =
+          if phiType == "void" then
+            // Unit/void type - no phi node needed, just merge block
+            stateAfterElseBranch
+              .emit(s"merge$mergeBB:")
+          else
+            // Non-void type - emit phi to merge values from both branches
+            // Use actual exit blocks (important for nested conditionals)
+            stateAfterElseBranch
+              .withRegister(resultReg + 1)
+              .emit(s"merge$mergeBB:")
+              .emit(
+                s"  %$resultReg = phi $phiType [ $thenValue, %$thenExitBlock ], [ $elseValue, %$elseExitBlock ]"
+              )
+
+        // For void type, return 0 as dummy register
+        actualResultReg = if phiType == "void" then 0 else resultReg
+        // Set exitBlock so parent conditionals know where we exit from
+        mergeBlockLabel = s"merge$mergeBB"
+      } yield CompileResult(actualResultReg, finalState, false, "Int", Some(mergeBlockLabel))
     }
 
     case NativeImpl(_, _, _, _) => {
@@ -227,7 +257,7 @@ def compileTerm(
     }
 
     case other =>
-      CodeGenError(s"Unsupported term: $other").asLeft
+      CodeGenError(s"Unsupported term: ${other.getClass.getSimpleName}", Some(other)).asLeft
   }
 }
 
@@ -256,12 +286,18 @@ def compileExpr(
   expr.terms match {
     case List(term) =>
       compileTerm(term, state, functionScope)
-    case List(left, op: Ref, right) if op.resolvedAs.exists(_.isInstanceOf[BinOpDef]) =>
+    case List(left, op: Ref, right) if op.resolvedAs.exists {
+          case bnd: Bnd => bnd.meta.exists(_.arity == CallableArity.Binary)
+          case _ => false
+        } =>
       compileBinaryOp(op, left, right, state, functionScope)
-    case List(op: Ref, arg) if op.resolvedAs.exists(_.isInstanceOf[UnaryOpDef]) =>
+    case List(op: Ref, arg) if op.resolvedAs.exists {
+          case bnd: Bnd => bnd.meta.exists(_.arity == CallableArity.Unary)
+          case _ => false
+        } =>
       compileUnaryOp(op, arg, state, functionScope)
     case _ =>
-      CodeGenError(s"Invalid expression structure: ${expr.terms}").asLeft
+      CodeGenError(s"Invalid expression structure", Some(expr)).asLeft
   }
 }
 
@@ -376,7 +412,8 @@ private def applyBinaryOp(
             case None =>
               Left(
                 CodeGenError(
-                  s"Missing type information for binary operator operand - TypeChecker should have provided this"
+                  s"Missing type information for binary operator operand - TypeChecker should have provided this",
+                  Some(left)
                 )
               )
           }
@@ -386,7 +423,8 @@ private def applyBinaryOp(
     case None =>
       Left(
         CodeGenError(
-          s"No native operation found for binary operator '${opRef.name}' - operator definition should have @native annotation"
+          s"No native operation found for binary operator '${opRef.name}' - operator definition should have @native annotation",
+          Some(opRef)
         )
       )
   }
@@ -439,7 +477,8 @@ private def applyUnaryOp(
             case None =>
               Left(
                 CodeGenError(
-                  s"Missing type information for unary operator operand - TypeChecker should have provided this"
+                  s"Missing type information for unary operator operand - TypeChecker should have provided this",
+                  Some(arg)
                 )
               )
           }
@@ -449,7 +488,8 @@ private def applyUnaryOp(
     case None =>
       Left(
         CodeGenError(
-          s"No native operation found for unary operator '${opRef.name}' - operator definition should have @native annotation"
+          s"No native operation found for unary operator '${opRef.name}' - operator definition should have @native annotation",
+          Some(opRef)
         )
       )
   }
@@ -464,13 +504,14 @@ private def applyUnaryOp(
   */
 private def getNativeOperator(resolvedAs: Option[Resolvable]): Option[String] = {
   resolvedAs match {
-    case Some(binOp: BinOpDef) =>
-      binOp.body.terms.collectFirst { case NativeImpl(_, _, _, Some(nativeOp)) =>
-        nativeOp
-      }
-    case Some(unaryOp: UnaryOpDef) =>
-      unaryOp.body.terms.collectFirst { case NativeImpl(_, _, _, Some(nativeOp)) =>
-        nativeOp
+    case Some(bnd: Bnd)
+        if bnd.meta
+          .exists(m => m.arity == CallableArity.Binary || m.arity == CallableArity.Unary) =>
+      // Extract Lambda body from Bnd value and look for NativeImpl
+      bnd.value.terms.collectFirst { case lambda: Lambda => lambda.body }.flatMap { body =>
+        body.terms.collectFirst { case NativeImpl(_, _, _, Some(nativeOp)) =>
+          nativeOp
+        }
       }
     case _ => None
   }
@@ -500,16 +541,55 @@ def compileApp(
   def collectArgsAndFunction(
     app:  App,
     args: List[Expr] = List.empty
-  ): (Ref, List[Expr]) = {
+  ): (Ref | Lambda, List[Expr]) = {
     app.fn match {
       case ref:       Ref => (ref, app.arg :: args)
-      case nestedApp: App =>
-        collectArgsAndFunction(nestedApp, app.arg :: args)
+      case nestedApp: App => collectArgsAndFunction(nestedApp, app.arg :: args)
+      case lambda:    Lambda => (lambda, app.arg :: args)
     }
   }
 
   // Extract the function reference and all arguments
-  val (fnRef, allArgs) = collectArgsAndFunction(app)
+  val (fnOrLambda, allArgs) = collectArgsAndFunction(app)
+
+  // Handle immediate lambda application (from let-expression desugaring or grouped partial application)
+  fnOrLambda match {
+    case lambda: Lambda if lambda.params.size == 1 && allArgs.size == 1 =>
+      // Single-param immediately-applied lambda (from let-expression desugaring)
+      // `let x = E; body` desugars to `App(Lambda([x], body), E)`
+      // Compile as: evaluate arg, bind to param name, compile body
+      val param = lambda.params.head
+      val arg   = allArgs.head
+      return (for {
+        argRes <- compileExpr(arg, state, functionScope)
+        // If arg is a literal, materialize it into a register
+        // (functionScope lookups assume values are in registers)
+        (bindingReg, stateAfterBinding) =
+          if argRes.isLiteral then
+            val reg = argRes.state.nextRegister
+            val newState = argRes.state
+              .emit(s"  %$reg = add i64 0, ${argRes.register}")
+              .withRegister(reg + 1)
+            (reg, newState)
+          else (argRes.register, argRes.state)
+        // Extend function scope with the binding
+        extendedScope = functionScope + (param.name -> bindingReg)
+        // Compile lambda body with extended scope
+        bodyRes <- compileExpr(lambda.body, stateAfterBinding, extendedScope)
+      } yield bodyRes)
+
+    case lambda: Lambda =>
+      // Multi-param or multi-arg lambda application not yet supported
+      return Left(
+        CodeGenError(
+          "Immediate lambda application with multiple params/args not yet supported",
+          Some(app)
+        )
+      )
+    case _ => // continue with Ref handling below
+  }
+
+  val fnRef = fnOrLambda.asInstanceOf[Ref]
 
   // Check if this is a native operator first
   getNativeOperator(fnRef.resolvedAs) match {
@@ -525,7 +605,10 @@ def compileApp(
             // Look up the native operation descriptor
             descriptor <- NativeOpRegistry.getBinaryOp(nativeOp) match {
               case Some(desc) => Right(desc)
-              case None => Left(CodeGenError(s"Native operation '$nativeOp' not found in registry"))
+              case None =>
+                Left(
+                  CodeGenError(s"Native operation '$nativeOp' not found in registry", Some(fnRef))
+                )
             }
 
             resultReg = rightRes.state.nextRegister
@@ -541,7 +624,8 @@ def compileApp(
               case None =>
                 Left(
                   CodeGenError(
-                    s"Missing type information for binary operator operand - TypeChecker should have provided this"
+                    s"Missing type information for binary operator operand - TypeChecker should have provided this",
+                    Some(leftArg)
                   )
                 )
             }
@@ -570,7 +654,10 @@ def compileApp(
             // Look up the native operation descriptor
             descriptor <- NativeOpRegistry.getUnaryOp(nativeOp) match {
               case Some(desc) => Right(desc)
-              case None => Left(CodeGenError(s"Native operation '$nativeOp' not found in registry"))
+              case None =>
+                Left(
+                  CodeGenError(s"Native operation '$nativeOp' not found in registry", Some(fnRef))
+                )
             }
 
             resultReg = operandRes.state.nextRegister
@@ -585,7 +672,8 @@ def compileApp(
               case None =>
                 Left(
                   CodeGenError(
-                    s"Missing type information for unary operator operand - TypeChecker should have provided this"
+                    s"Missing type information for unary operator operand - TypeChecker should have provided this",
+                    Some(operandArg)
                   )
                 )
             }
@@ -608,22 +696,24 @@ def compileApp(
         case _ =>
           Left(
             CodeGenError(
-              s"Native operator '$nativeOp' called with wrong number of arguments: ${allArgs.length}"
+              s"Native operator '$nativeOp' called with wrong number of arguments: ${allArgs.length}",
+              Some(app)
             )
           )
       }
 
     case None =>
-      // Regular function call - check if this is a nullary function with unit args
+      // Regular function call - handle explicit unit arguments for nullary functions
+      def allArgsAreUnitLiterals: Boolean = allArgs.forall { arg =>
+        arg.terms match {
+          case List(_: LiteralUnit) => true
+          case _ => false
+        }
+      }
+
       val isNullaryWithUnitArgs = fnRef.resolvedAs match {
-        case Some(fnDef: FnDef) if fnDef.params.isEmpty =>
-          // Check if all arguments are unit literals (added by ExpressionRewriter)
-          allArgs.forall { arg =>
-            arg.terms match {
-              case List(_: LiteralUnit) => true
-              case _ => false
-            }
-          }
+        case Some(bnd: Bnd) if bnd.meta.exists(_.arity == CallableArity.Nullary) =>
+          allArgsAreUnitLiterals
         case _ => false
       }
 
@@ -638,15 +728,17 @@ def compileApp(
           case None =>
             Left(
               CodeGenError(
-                s"Missing return type information for function application '${fnRef.name}' - TypeChecker should have provided this"
+                s"Missing return type information for function application '${fnRef.name}' - TypeChecker should have provided this",
+                Some(app)
               )
             )
         }
 
         fnReturnTypeResult.flatMap { fnReturnType =>
+          val fnName = getResolvedName(fnRef)
           if fnReturnType == "void" then {
             // Unit functions - call without assigning to a register
-            val callLine = emitCall(None, None, fnRef.name, List.empty)
+            val callLine = emitCall(None, None, fnName, List.empty)
 
             Right(
               CompileResult(
@@ -658,7 +750,7 @@ def compileApp(
             )
           } else {
             // Non-Unit functions - assign result to register
-            val callLine = emitCall(Some(resultReg), Some(fnReturnType), fnRef.name, List.empty)
+            val callLine = emitCall(Some(resultReg), Some(fnReturnType), fnName, List.empty)
 
             Right(
               CompileResult(
@@ -684,14 +776,17 @@ def compileApp(
                   case Some(typeSpec) =>
                     getLlvmType(typeSpec, argRes.state) match {
                       case Right(llvmType) =>
-                        Right((compiledArgs :+ (argOp, llvmType), argRes.state))
+                        // Skip void/Unit args - they can't be passed in LLVM
+                        if llvmType == "void" then Right((compiledArgs, argRes.state))
+                        else Right((compiledArgs :+ (argOp, llvmType), argRes.state))
                       case Left(err) =>
                         Left(err)
                     }
                   case None =>
                     Left(
                       CodeGenError(
-                        s"Missing type information for function argument - TypeChecker should have provided this"
+                        s"Missing type information for function argument - TypeChecker should have provided this",
+                        Some(arg)
                       )
                     )
                 }
@@ -708,18 +803,20 @@ def compileApp(
               case None =>
                 Left(
                   CodeGenError(
-                    s"Missing return type information for function application '${fnRef.name}' - TypeChecker should have provided this"
+                    s"Missing return type information for function application '${fnRef.name}' - TypeChecker should have provided this",
+                    Some(app)
                   )
                 )
             }
 
             fnReturnTypeResult.flatMap { fnReturnType =>
               // Generate function call with proper types
-              val args = compiledArgs.map { case (value, typ) => (typ, value) }
+              val args   = compiledArgs.map { case (value, typ) => (typ, value) }
+              val fnName = getResolvedName(fnRef)
 
               if fnReturnType == "void" then {
                 // Unit functions - call without assigning to a register
-                val callLine = emitCall(None, None, fnRef.name, args)
+                val callLine = emitCall(None, None, fnName, args)
 
                 Right(
                   CompileResult(
@@ -731,7 +828,7 @@ def compileApp(
                 )
               } else {
                 // Non-Unit functions - assign result to register
-                val callLine = emitCall(Some(resultReg), Some(fnReturnType), fnRef.name, args)
+                val callLine = emitCall(Some(resultReg), Some(fnReturnType), fnName, args)
 
                 Right(
                   CompileResult(

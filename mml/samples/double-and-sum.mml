@@ -1,0 +1,8 @@
+
+fn double (a: Int): Int = a * 2;
+fn sum (f: Int, x: Int): Int = f + x;
+let a = sum (double 1) 2;
+
+fn main(): Unit =
+  println a
+;

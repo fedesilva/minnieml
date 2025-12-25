@@ -23,12 +23,8 @@ def prettyPrintTypeSpec(
         s"  base: ${prettyPrintTypeSpec(Some(base), showSourceSpans, showTypes, indent)}\n" +
         s"  args: ${args.map(arg => prettyPrintTypeSpec(Some(arg), showSourceSpans, showTypes, indent)).mkString(", ")}"
 
-    case Some(TypeFn(sp, paramTypes, returnType)) =>
-      val spanStr   = if showSourceSpans then s" ${printSourceSpan(sp)}" else ""
-      val indentStr = "  " * (indent + 1)
-      s"TypeFn$spanStr\n" +
-        s"${indentStr}params: ${paramTypes.map(p => prettyPrintTypeSpec(Some(p), showSourceSpans, showTypes, indent + 1)).mkString(", ")}\n" +
-        s"${indentStr}return: ${prettyPrintTypeSpec(Some(returnType), showSourceSpans, showTypes, indent + 1)}"
+    case Some(tf: TypeFn) =>
+      formatTypeSpecInline(tf, showSourceSpans, showTypes)
 
     case Some(TypeTuple(sp, elements)) =>
       val spanStr = if showSourceSpans then s" ${printSourceSpan(sp)}" else ""
@@ -66,11 +62,6 @@ def prettyPrintTypeSpec(
     case Some(TypeUnit(sp)) =>
       val spanStr = if showSourceSpans then s" ${printSourceSpan(sp)}" else ""
       s"TypeUnit$spanStr"
-
-    case Some(TypeSeq(sp, inner)) =>
-      val spanStr = if showSourceSpans then s" ${printSourceSpan(sp)}" else ""
-      s"TypeSeq$spanStr\n" +
-        s"  inner: ${prettyPrintTypeSpec(Some(inner), showSourceSpans, showTypes, indent)}"
 
     case Some(TypeGroup(sp, types)) =>
       val spanStr = if showSourceSpans then s" ${printSourceSpan(sp)}" else ""
@@ -116,3 +107,78 @@ def prettyPrintTypeSpec(
     case None =>
       "None"
   }
+
+private def formatTypeSpecInline(
+  typeSpec:        TypeSpec,
+  showSourceSpans: Boolean,
+  showTypes:       Boolean
+): String =
+  typeSpec match
+    case tf: TypeFn =>
+      val spanStr = if showSourceSpans then s" ${printSourceSpan(tf.span)}" else ""
+      s"${formatTypeFnInline(tf, showSourceSpans, showTypes)}$spanStr"
+    case TypeGroup(sp, types) =>
+      val spanStr = if showSourceSpans then s" ${printSourceSpan(sp)}" else ""
+      val inner   = types.map(formatTypeSpecInline(_, showSourceSpans, showTypes)).mkString(", ")
+      s"($inner)$spanStr"
+    case TypeScheme(sp, vars, bodyType) =>
+      val spanStr = if showSourceSpans then s" ${printSourceSpan(sp)}" else ""
+      val varsStr = if vars.nonEmpty then s"∀${vars.mkString(" ")}. " else ""
+      s"$varsStr${formatTypeSpecInline(bodyType, showSourceSpans, showTypes)}$spanStr"
+    case TypeRef(sp, name, resolvedAs) =>
+      val spanStr = if showSourceSpans then s" ${printSourceSpan(sp)}" else ""
+      val resolvedStr = resolvedAs match
+        case None => "(unresolved)"
+        case Some(td: TypeDef) => s" => TypeDef(${td.name})"
+        case Some(ta: TypeAlias) => s" => TypeAlias(${ta.name})"
+      s"TypeRef $name$spanStr$resolvedStr"
+    case TypeUnit(sp) =>
+      val spanStr = if showSourceSpans then s" ${printSourceSpan(sp)}" else ""
+      s"()$spanStr"
+    case TypeVariable(sp, name) =>
+      val spanStr = if showSourceSpans then s" ${printSourceSpan(sp)}" else ""
+      s"$name$spanStr"
+    case NativePrimitive(sp, llvmType) =>
+      val spanStr = if showSourceSpans then s" ${printSourceSpan(sp)}" else ""
+      s"@native:$llvmType$spanStr"
+    case NativePointer(sp, llvmType) =>
+      val spanStr = if showSourceSpans then s" ${printSourceSpan(sp)}" else ""
+      s"@native:*$llvmType$spanStr"
+    case other =>
+      prettyPrintTypeSpec(Some(other), showSourceSpans, showTypes)
+
+private def formatTypeFnInline(
+  typeFn:          TypeFn,
+  showSourceSpans: Boolean,
+  showTypes:       Boolean
+): String =
+  val paramsStr =
+    if typeFn.paramTypes.isEmpty then "()"
+    else
+      typeFn.paramTypes
+        .map(formatArrowParamType(_, showSourceSpans, showTypes))
+        .mkString(" -> ")
+  val returnStr = formatArrowReturnType(typeFn.returnType, showSourceSpans, showTypes)
+  s"$paramsStr -> $returnStr"
+
+private def formatArrowParamType(
+  typeSpec:        TypeSpec,
+  showSourceSpans: Boolean,
+  showTypes:       Boolean
+): String =
+  typeSpec match
+    case _: TypeFn | _: TypeScheme | _: Union | _: Intersection | _: TypeRefinement =>
+      s"(${formatTypeSpecInline(typeSpec, showSourceSpans, showTypes)})"
+    case _ =>
+      formatTypeSpecInline(typeSpec, showSourceSpans, showTypes)
+
+private def formatArrowReturnType(
+  typeSpec:        TypeSpec,
+  showSourceSpans: Boolean,
+  showTypes:       Boolean
+): String =
+  typeSpec match
+    case _: Union | _: Intersection | _: TypeRefinement | _: TypeScheme =>
+      s"(${formatTypeSpecInline(typeSpec, showSourceSpans, showTypes)})"
+    case _ =>
+      formatTypeSpecInline(typeSpec, showSourceSpans, showTypes)

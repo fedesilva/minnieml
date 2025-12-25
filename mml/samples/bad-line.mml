@@ -1,0 +1,5 @@
+
+fn main(): Unit =
+  println "Fede";
+  0
+;

@@ -21,3 +21,4 @@ project/project/metals.sbt
 
 project/project/project/metals.sbt
 .vscode
+benchmark/bin

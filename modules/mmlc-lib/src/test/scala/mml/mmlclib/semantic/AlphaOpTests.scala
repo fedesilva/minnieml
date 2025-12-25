@@ -157,15 +157,22 @@ class AlphaOpTests extends BaseEffFunSuite:
       bnd match
         case bnd: Bnd =>
           // Verify the operator definition was parsed correctly with default Left associativity
-          val opDef = m.members
+          val opBnd = m.members
             .collectFirst {
-              case op: BinOpDef if op.name == "implies" => op
+              case b: Bnd
+                  if b.meta.exists(m =>
+                    m.origin == BindingOrigin.Operator &&
+                      m.arity == CallableArity.Binary &&
+                      m.originalName == "implies"
+                  ) =>
+                b
             }
             .getOrElse(fail("Operator 'implies' not defined"))
 
-          assert(clue(opDef.precedence) == clue(45), "Precedence should be 45")
+          val meta = opBnd.meta.get
+          assert(clue(meta.precedence) == clue(45), "Precedence should be 45")
           assert(
-            clue(opDef.assoc) == clue(Associativity.Left),
+            clue(meta.associativity) == clue(Some(Associativity.Left)),
             "Default associativity should be Left"
           )
 
@@ -212,14 +219,24 @@ class AlphaOpTests extends BaseEffFunSuite:
       bnd match
         case bnd: Bnd =>
           // Verify the operator definition was parsed correctly with default precedence
-          val opDef = m.members
+          val opBnd = m.members
             .collectFirst {
-              case op: BinOpDef if op.name == "unless" => op
+              case b: Bnd
+                  if b.meta.exists(m =>
+                    m.origin == BindingOrigin.Operator &&
+                      m.arity == CallableArity.Binary &&
+                      m.originalName == "unless"
+                  ) =>
+                b
             }
             .getOrElse(fail("Operator 'unless' not defined"))
 
-          assert(clue(opDef.precedence) == clue(50), "Default precedence should be 50")
-          assert(clue(opDef.assoc) == clue(Associativity.Right), "Associativity should be Right")
+          val meta = opBnd.meta.get
+          assert(clue(meta.precedence) == clue(50), "Default precedence should be 50")
+          assert(
+            clue(meta.associativity) == clue(Some(Associativity.Right)),
+            "Associativity should be Right"
+          )
 
           // Verify expression structure
           bnd.value.terms match

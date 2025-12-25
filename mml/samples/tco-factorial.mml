@@ -1,0 +1,14 @@
+# Tail-recursive factorial with accumulator
+fn factorial_tco(n: Int, acc: Int): Int =
+  if n <= 1 then 
+    acc 
+  else 
+    factorial_tco (n - 1) (acc * n);
+
+# Wrapper with default accumulator
+fn factorial(n: Int): Int = factorial_tco n 1;
+
+# Postfix operator using the tail-recursive implementation
+op ! (n: Int): Int 95 left = factorial n;
+
+fn main() = println (to_string (20!));

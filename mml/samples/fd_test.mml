@@ -1,0 +1,5 @@
+
+fn main() = 
+  let fd open_file_write "test.txt";
+  println (to_string fd)
+;

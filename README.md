@@ -1,7 +1,7 @@
 # MinnieML
 
 A statically typed, functional language, with an ML inspired syntax, a rich type system,
-and strong machine empathy.
+and strong mechanical sympathy.
 
 ## Why
 
@@ -57,14 +57,14 @@ enum Maybe 'T =
 ;
 
 # empty :: Maybe 'T -> Boolean
-fn empty (x) =
+fn empty (maybe) =
   x match
     | None  -> true
     | _     -> false
 ;
 
 # nonEmpty :: Maybe 'T -> Boolean
-fn nonEmpty (maybe) =
+fn notEmpty (maybe) =
   not empty maybe
 ;
 

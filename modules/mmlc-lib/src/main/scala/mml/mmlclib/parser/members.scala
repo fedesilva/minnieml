@@ -26,7 +26,7 @@ private[parser] def letBindingP(info: SourceInfo)(using P[Any]): P[Member] =
       ~ bindingIdOrError
       ~ typeAscP(info)
       ~ defAsKw
-      ~ exprP(info)
+      ~ exprMemberP(info)
       ~ endKw
       ~ spP(info)
   )
@@ -95,15 +95,37 @@ private[parser] def fnDefP(info: SourceInfo)(using P[Any]): P[Member] =
           invalidId  = invalidId
         )
       case Right(fnName) =>
-        FnDef(
+        val fnSpan = span(startPoint, endPoint)
+        val arity = params.size match
+          case 0 => CallableArity.Nullary
+          case 1 => CallableArity.Unary
+          case 2 => CallableArity.Binary
+          case n => CallableArity.Nary(n)
+        val meta = BindingMeta(
+          origin        = BindingOrigin.Function,
+          arity         = arity,
+          precedence    = Precedence.Function,
+          associativity = None,
+          originalName  = fnName,
+          mangledName   = fnName
+        )
+        val lambda = Lambda(
+          span     = fnSpan,
+          params   = params,
+          body     = bodyExpr,
+          captures = Nil,
+          typeSpec = bodyExpr.typeSpec,
+          typeAsc  = typeAsc
+        )
+        Bnd(
           visibility = vis.getOrElse(MemberVisibility.Protected),
-          span       = span(startPoint, endPoint),
+          span       = fnSpan,
           name       = fnName,
-          params     = params,
-          body       = bodyExpr,
+          value      = Expr(fnSpan, List(lambda)),
           typeSpec   = bodyExpr.typeSpec,
           typeAsc    = typeAsc,
-          docComment = doc
+          docComment = doc,
+          meta       = Some(meta)
         )
   }
 
@@ -156,18 +178,35 @@ private[parser] def binOpDefP(info: SourceInfo)(using P[Any]): P[Member] =
             invalidId  = invalidId
           )
         case Right(opName) =>
-          BinOpDef(
+          val opSpan      = span(startPoint, endPoint)
+          val opPrec      = precedence.getOrElse(50)
+          val opAssoc     = assoc.getOrElse(Associativity.Left)
+          val mangledName = OpMangling.mangleOp(opName, 2)
+          val meta = BindingMeta(
+            origin        = BindingOrigin.Operator,
+            arity         = CallableArity.Binary,
+            precedence    = opPrec,
+            associativity = Some(opAssoc),
+            originalName  = opName,
+            mangledName   = mangledName
+          )
+          val lambda = Lambda(
+            span     = opSpan,
+            params   = List(param1, param2),
+            body     = bodyExpr,
+            captures = Nil,
+            typeSpec = bodyExpr.typeSpec,
+            typeAsc  = typeAsc
+          )
+          Bnd(
             visibility = vis.getOrElse(MemberVisibility.Protected),
-            span       = span(startPoint, endPoint),
-            name       = opName,
-            param1     = param1,
-            param2     = param2,
-            precedence = precedence.getOrElse(50),
-            assoc      = assoc.getOrElse(Associativity.Left),
-            body       = bodyExpr,
+            span       = opSpan,
+            name       = mangledName,
+            value      = Expr(opSpan, List(lambda)),
             typeSpec   = bodyExpr.typeSpec,
             typeAsc    = typeAsc,
-            docComment = doc
+            docComment = doc,
+            meta       = Some(meta)
           )
       }
   }
@@ -212,17 +251,35 @@ private[parser] def unaryOpP(info: SourceInfo)(using P[Any]): P[Member] =
             invalidId  = invalidId
           )
         case Right(opName) =>
-          UnaryOpDef(
+          val opSpan      = span(startPoint, endPoint)
+          val opPrec      = precedence.getOrElse(50)
+          val opAssoc     = assoc.getOrElse(Associativity.Right)
+          val mangledName = OpMangling.mangleOp(opName, 1)
+          val meta = BindingMeta(
+            origin        = BindingOrigin.Operator,
+            arity         = CallableArity.Unary,
+            precedence    = opPrec,
+            associativity = Some(opAssoc),
+            originalName  = opName,
+            mangledName   = mangledName
+          )
+          val lambda = Lambda(
+            span     = opSpan,
+            params   = List(param),
+            body     = bodyExpr,
+            captures = Nil,
+            typeSpec = bodyExpr.typeSpec,
+            typeAsc  = typeAsc
+          )
+          Bnd(
             visibility = vis.getOrElse(MemberVisibility.Protected),
-            span       = span(startPoint, endPoint),
-            name       = opName,
-            param      = param,
-            precedence = precedence.getOrElse(50),
-            assoc      = assoc.getOrElse(Associativity.Right),
-            body       = bodyExpr,
-            typeAsc    = typeAsc,
+            span       = opSpan,
+            name       = mangledName,
+            value      = Expr(opSpan, List(lambda)),
             typeSpec   = bodyExpr.typeSpec,
-            docComment = doc
+            typeAsc    = typeAsc,
+            docComment = doc,
+            meta       = Some(meta)
           )
       }
   }

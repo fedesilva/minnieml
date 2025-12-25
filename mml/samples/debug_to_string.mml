@@ -1,1 +1,3 @@
-fn main() = println (to_string 123);
+fn main(): Unit =
+  println (to_string 123)
+;

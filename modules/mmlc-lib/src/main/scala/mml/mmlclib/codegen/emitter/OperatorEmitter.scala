@@ -30,8 +30,8 @@ def emitBinaryOp(
         CompileResult(leftRes.register * rightRes.register, rightRes.state, true).asRight
       case "/" =>
         CompileResult(leftRes.register / rightRes.register, rightRes.state, true).asRight
-      case "^" => CodeGenError("Power operator not yet implemented").asLeft
-      case _ => CodeGenError(s"Unknown operator: $op").asLeft
+      case "^" => CodeGenError("Power operator not yet implemented", None).asLeft
+      case _ => CodeGenError(s"Unknown operator: $op", None).asLeft
   else
     op match
       case "+" =>
@@ -83,9 +83,9 @@ def emitBinaryOp(
           false
         ).asRight
       case "^" =>
-        CodeGenError("Power operator not yet implemented").asLeft
+        CodeGenError("Power operator not yet implemented", None).asLeft
       case _ =>
-        CodeGenError(s"Unknown operator: $op").asLeft
+        CodeGenError(s"Unknown operator: $op", None).asLeft
 
 /** Emits code for a unary operation using the compile result of the operand.
   *
@@ -106,7 +106,7 @@ def emitUnaryOp(
       case "+" => CompileResult(argRes.register, argRes.state, true).asRight
       case "!" =>
         CompileResult(if argRes.register == 0 then 1 else 0, argRes.state, true).asRight
-      case _ => CodeGenError(s"Unknown unary operator: $op").asLeft
+      case _ => CodeGenError(s"Unknown unary operator: $op", None).asLeft
   else
     op match
       case "-" =>
@@ -140,4 +140,4 @@ def emitUnaryOp(
           false
         ).asRight
       case _ =>
-        CodeGenError(s"Unknown unary operator: $op").asLeft
+        CodeGenError(s"Unknown unary operator: $op", None).asLeft

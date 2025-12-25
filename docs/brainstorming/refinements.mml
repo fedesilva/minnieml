@@ -1,0 +1,27 @@
+# refinement types
+# Chico means small in Spanish.
+type IntChico = Int { i | i <= 5 }
+
+# generic refinement for all types 'T that
+# conform to a Protocol defining the <= op with an Int on the rhs
+type TChico 'T = 'T  { i | i <= 5 }
+
+# Ascription with a literal. The compiler can statically
+# prove the predicate (3 <= 5).
+# NOTE: The relationship allowing an 'Int' literal to satisfy
+# an 'IntChico' type will be modeled via row polymorphism,
+# not traditional nominal subtyping.
+let a: IntChico = 3 # OK
+
+# Static check fails at compile-time (20 <= 5 is false)
+#let b: IntChico = 20
+
+# For non-literals (dynamic values), the type name 'IntChico'
+# acts as a validation function. This 'bifurcates' the computation,
+# returning a Result/Maybe type that must be 'folded'.
+let b = IntChico 5
+
+# Note: The signature reflects that validation returns a
+# type that must be 'folded'.
+# chico 'T : 'T -> Maybe TChico 'T
+fn chico (a) = IntChico a

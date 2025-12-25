@@ -1,0 +1,5 @@
+
+fn main() = 
+  let n = str_to_int "12";
+  println (to_string n)
+;

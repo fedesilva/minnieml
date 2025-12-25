@@ -41,20 +41,6 @@ def prettyPrintMember(
         s"""${indentStr}  "$message"""".stripMargin +
         failedCode.map(code => s"\n${indentStr}  $code").getOrElse("")
 
-    case fn: FnDef =>
-      val spanStr = if showSourceSpans then printSourceSpan(fn.span) else ""
-      val typeStr =
-        if showTypes then
-          s"\n${indentStr}  typeSpec: ${prettyPrintTypeSpec(fn.typeSpec, showSourceSpans, showTypes, indent + 1)}\n" +
-            s"${indentStr}  typeAsc: ${prettyPrintTypeSpec(fn.typeAsc, showSourceSpans, showTypes, indent + 1)}"
-        else ""
-      val visStr = memberVisibilityToString(fn.visibility)
-
-      s"${indentStr}FnDef $visStr ${fn.name}$spanStr$typeStr\n" +
-        // fn.docComment.map(doc => s"${prettyPrintDocComment(doc, indent + 1)}\n").getOrElse("") +
-        s"${indentStr}  params: ${prettyPrintParams(fn.params, indent + 1, showSourceSpans, showTypes)}\n" +
-        prettyPrintExpr(fn.body, indent + 1, showSourceSpans, showTypes)
-
     case bnd: Bnd =>
       val spanStr = if showSourceSpans then printSourceSpan(bnd.span) else ""
       val typeStr =
@@ -64,54 +50,31 @@ def prettyPrintMember(
         else ""
       val visStr = memberVisibilityToString(bnd.visibility)
 
-      s"${indentStr}Bnd $visStr ${bnd.name}$spanStr$typeStr\n" +
+      // For bindings with meta (functions/operators), show additional info
+      val metaStr = bnd.meta match
+        case Some(meta) =>
+          val originStr = meta.origin match
+            case BindingOrigin.Function => "fn"
+            case BindingOrigin.Operator => "op"
+          val nameStr =
+            if meta.originalName != bnd.name then s" (${meta.originalName})" else ""
+          val arityStr = meta.arity match
+            case CallableArity.Nullary => "nullary"
+            case CallableArity.Unary => "unary"
+            case CallableArity.Binary => "binary"
+            case CallableArity.Nary(nParams) => s"nary($nParams)"
+          val assocStr = meta.associativity
+            .map {
+              case Associativity.Left => "left"
+              case Associativity.Right => "right"
+            }
+            .getOrElse("none")
+          s" [$originStr $arityStr prec=${meta.precedence} assoc=$assocStr]$nameStr"
+        case None => ""
+
+      s"${indentStr}Bnd $visStr ${bnd.name}$metaStr$spanStr$typeStr\n" +
         // bnd.docComment.map(doc => s"${prettyPrintDocComment(doc, indent + 2)}\n").getOrElse("") +
         prettyPrintExpr(bnd.value, indent + 2, showSourceSpans, showTypes)
-
-    case BinOpDef(
-          visibility,
-          span,
-          name,
-          param1,
-          param2,
-          prec,
-          assoc,
-          body,
-          typeSpec,
-          typeAsc,
-          docComment
-        ) =>
-      val spanStr = if showSourceSpans then printSourceSpan(span) else ""
-      val typeStr =
-        if showTypes then
-          s"\n${indentStr}  typeSpec: ${prettyPrintTypeSpec(typeSpec, showSourceSpans, showTypes, indent + 1)}\n" +
-            s"${indentStr}  typeAsc: ${prettyPrintTypeSpec(typeAsc, showSourceSpans, showTypes, indent + 1)}"
-        else ""
-      val visStr = memberVisibilityToString(visibility)
-
-      s"${indentStr}BinOpDef $visStr $name $spanStr$typeStr\n" +
-        // docComment.map(doc => s"${prettyPrintDocComment(doc, indent + 2)}\n").getOrElse("") +
-        s"${indentStr}  param1: ${prettyPrintParams(Seq(param1), indent + 2, showSourceSpans, showTypes)}\n" +
-        s"${indentStr}  param2: ${prettyPrintParams(Seq(param2), indent + 2, showSourceSpans, showTypes)}\n" +
-        s"${indentStr}  precedence: $prec\n" +
-        s"${indentStr}  associativity: $assoc\n" +
-        prettyPrintExpr(body, indent + 2, showSourceSpans, showTypes)
-
-    case unop @ UnaryOpDef(_, _, _, _, _, _, _, _, _, _) =>
-      val spanStr = if showSourceSpans then printSourceSpan(unop.span) else ""
-      val typeStr =
-        if showTypes then
-          s"\n${indentStr}  typeSpec: ${prettyPrintTypeSpec(unop.typeSpec, showSourceSpans, showTypes, indent + 1)}\n" +
-            s"${indentStr}  typeAsc: ${prettyPrintTypeSpec(unop.typeAsc, showSourceSpans, showTypes, indent + 1)}"
-        else ""
-      val visStr = memberVisibilityToString(unop.visibility)
-
-      s"${indentStr}UnaryOpDef $visStr ${unop.name} $spanStr$typeStr\n" +
-        // unop.docComment.map(doc => s"${prettyPrintDocComment(doc, indent + 2)}\n").getOrElse("") +
-        s"${indentStr}  param: ${prettyPrintParams(Seq(unop.param), indent + 2, showSourceSpans, showTypes)}\n" +
-        s"${indentStr}  precedence: ${unop.precedence}\n" +
-        s"${indentStr}  associativity: ${unop.assoc}\n" +
-        prettyPrintExpr(unop.body, indent + 2, showSourceSpans, showTypes)
 
     case ta @ TypeAlias(_, _, _, _, _, _, _) =>
       val spanStr = if showSourceSpans then printSourceSpan(ta.span) else ""

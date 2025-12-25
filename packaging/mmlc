@@ -1,35 +1,12 @@
 #!/bin/bash
 
-# Get the directory where this script is located
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" &> /dev/null && pwd)"
+JAR_PATH="$SCRIPT_DIR/mmlc.jar"
 
-# Detect operating system and architecture
-OS=$(uname -s | tr '[:upper:]' '[:lower:]')
-# Normalize OS names
-case "$OS" in
-  linux*) OS="linux" ;;
-  darwin*) OS="darwin" ;;
-  *) OS="$OS" ;;
-esac
-
-# Normalize architecture
-case $(uname -m) in
-  x86_64|amd64) ARCH="x86_64" ;;
-  arm64|aarch64) ARCH="aarch64" ;;
-  *) ARCH=$(uname -m) ;;
-esac
-
-# The binary name with OS and architecture suffix
-BINARY_NAME="mmlc-${OS}-${ARCH}"
-
-# Check if the binary exists in the same directory as this script
-if [ -x "$SCRIPT_DIR/$BINARY_NAME" ]; then
-  # Execute the binary with all arguments passed to this script
-  exec "$SCRIPT_DIR/$BINARY_NAME" "$@"
+if [ -f "$JAR_PATH" ]; then
+  exec java -jar "$JAR_PATH" "$@"
   exit $?
 fi
 
-# If we reach here, the binary was not found
-echo "Error: Could not find $BINARY_NAME executable in $SCRIPT_DIR"
-echo "System information: $(uname -a)"
+echo "Error: Could not find mmlc.jar in $SCRIPT_DIR"
 exit 1

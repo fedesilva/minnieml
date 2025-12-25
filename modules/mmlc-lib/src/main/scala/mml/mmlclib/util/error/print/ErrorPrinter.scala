@@ -17,7 +17,7 @@ object ErrorPrinter:
     case CompilerError.SemanticErrors(errors) => prettyPrintSemanticErrors(errors, sourceCode)
     case CompilerError.ParserErrors(errors) => prettyPrintParserErrors(errors)
     case CompilerError.Unknown(msg) => s"Unknown error: $msg"
-    case CodeGenApiError.CodeGenErrors(errors) => prettyPrintCodeGenErrors(errors)
+    case CodeGenApiError.CodeGenErrors(errors) => prettyPrintCodeGenErrors(errors, sourceCode)
     case CodeGenApiError.CompilerErrors(errors) =>
       errors.map(err => prettyPrint(err, sourceCode)).mkString("\n")
     case CodeGenApiError.Unknown(msg) => s"Unknown code generation error: $msg"
@@ -51,19 +51,25 @@ object ErrorPrinter:
         .getOrElse((Int.MaxValue, Int.MaxValue))
     case SemanticError.InvalidExpressionFound(invalidExpr, _) =>
       (invalidExpr.span.start.line, invalidExpr.span.start.col)
+    case SemanticError.InvalidEntryPoint(_, span) => (span.start.line, span.start.col)
     case SemanticError.TypeCheckingError(error) =>
       // For type errors, we need to extract the position from the nested error
       // This is a bit hacky, but avoids code duplication
       error match
         case mml.mmlclib.semantic.TypeError.MissingParameterType(param, _, _) =>
           (param.span.start.line, param.span.start.col)
-        case mml.mmlclib.semantic.TypeError.MissingReturnType(fnDef, _) =>
-          (fnDef.span.start.line, fnDef.span.start.col)
+        case mml.mmlclib.semantic.TypeError.MissingReturnType(decl, _) =>
+          val fs = decl.asInstanceOf[FromSource]
+          (fs.span.start.line, fs.span.start.col)
+        case mml.mmlclib.semantic.TypeError.RecursiveFunctionMissingReturnType(decl, _) =>
+          val fs = decl.asInstanceOf[FromSource]
+          (fs.span.start.line, fs.span.start.col)
         case mml.mmlclib.semantic.TypeError.MissingOperatorParameterType(param, _, _) =>
           (param.span.start.line, param.span.start.col)
-        case mml.mmlclib.semantic.TypeError.MissingOperatorReturnType(opDef, _) =>
-          (opDef.span.start.line, opDef.span.start.col)
-        case mml.mmlclib.semantic.TypeError.TypeMismatch(node, _, _, _) =>
+        case mml.mmlclib.semantic.TypeError.MissingOperatorReturnType(decl, _) =>
+          val fs = decl.asInstanceOf[FromSource]
+          (fs.span.start.line, fs.span.start.col)
+        case mml.mmlclib.semantic.TypeError.TypeMismatch(node, _, _, _, _) =>
           val fs = node.asInstanceOf[FromSource]
           (fs.span.start.line, fs.span.start.col)
         case mml.mmlclib.semantic.TypeError.UndersaturatedApplication(app, _, _, _) =>
@@ -76,8 +82,10 @@ object ErrorPrinter:
           (cond.span.start.line, cond.span.start.col)
         case mml.mmlclib.semantic.TypeError.ConditionalBranchTypeUnknown(cond, _) =>
           (cond.span.start.line, cond.span.start.col)
-        case mml.mmlclib.semantic.TypeError.UnresolvableType(typeRef, _, _) =>
-          (typeRef.span.start.line, typeRef.span.start.col)
+        case mml.mmlclib.semantic.TypeError.UnresolvableType(node, _, _) =>
+          node match
+            case fs: FromSource => (fs.span.start.line, fs.span.start.col)
+            case _ => (Int.MaxValue, Int.MaxValue)
         case mml.mmlclib.semantic.TypeError.IncompatibleTypes(node, _, _, _, _) =>
           val fs = node.asInstanceOf[FromSource]
           (fs.span.start.line, fs.span.start.col)
@@ -85,7 +93,7 @@ object ErrorPrinter:
           (bnd.span.start.line, bnd.span.start.col)
 
   /** Pretty print semantic errors */
-  private def prettyPrintSemanticErrors(
+  def prettyPrintSemanticErrors(
     errors:     List[SemanticError],
     sourceCode: Option[String]
   ): String =
@@ -168,6 +176,8 @@ object ErrorPrinter:
       case SemanticError.InvalidExpressionFound(invalidExpr, phase) =>
         s"${Console.RED}Invalid expression found at ${formatLocation(invalidExpr.span)}${Console.RESET}\n${Console.YELLOW}Phase: $phase${Console.RESET}"
 
+      case SemanticError.InvalidEntryPoint(message, span) =>
+        s"${Console.RED}$message at ${formatLocation(span)}${Console.RESET}"
       case SemanticError.TypeCheckingError(error) =>
         // Delegate to SemanticErrorPrinter to avoid duplication
         SemanticErrorPrinter.prettyPrintTypeError(error)
@@ -194,10 +204,29 @@ object ErrorPrinter:
     case ParserError.Unknown(message) => s"Unknown parser error: $message"
 
   /** Pretty print code generation errors */
-  private def prettyPrintCodeGenErrors(
-    errors: List[mml.mmlclib.codegen.emitter.CodeGenError]
+  def prettyPrintCodeGenErrors(
+    errors:     List[mml.mmlclib.codegen.emitter.CodeGenError],
+    sourceCode: Option[String]
   ): String =
-    errors.map(e => s"Code generation error: ${e.message}").mkString("\n")
+    if errors.isEmpty then "No code generation errors"
+    else
+      val messages = errors.map { err =>
+        val baseMessage =
+          s"${Console.RED}Code generation error: ${err.message}${Console.RESET}\n${Console.YELLOW}Phase: Code Generation${Console.RESET}"
+
+        val snippetAndLocation = err.node.collect { case fs: FromSource => fs.span } match
+          case Some(span) if sourceCode.isDefined =>
+            SourceCodeExtractor
+              .extractSnippet(sourceCode.get, span, highlightExpr = true)
+              .map(snippet => s"${formatLocation(span)}\n$snippet")
+              .getOrElse(formatLocation(span)) // Fallback if snippet extraction fails
+          case Some(span) => formatLocation(span)
+          case None => ""
+
+        if snippetAndLocation.nonEmpty then s"$baseMessage\n$snippetAndLocation"
+        else baseMessage
+      }
+      messages.mkString("\n\n")
 
   /** Pretty print LLVM compilation errors */
   private def prettyPrintLlvmErrors(errors: List[LlvmCompilationError]): String =

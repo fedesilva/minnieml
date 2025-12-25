@@ -1,5 +1,5 @@
 let a = "fede";
 
-fn main() = 
+fn main(): Unit =
   println (concat "hola, " "fede")
 ;

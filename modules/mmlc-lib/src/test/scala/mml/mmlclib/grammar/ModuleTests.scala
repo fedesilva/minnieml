@@ -101,14 +101,17 @@ class ModuleTests extends BaseEffFunSuite:
         let finally:String = "we are done";
       """
 
-    semState(source, "MissingSemicolon").map { result =>
+    semState(source, name = "MissingSemicolon").map { result =>
       val parsingErrors = result.errors.collect {
         case SemanticError.MemberErrorFound(member: ParsingMemberError, _) => member
       }
       assertEquals(parsingErrors.length, 1)
       assertEquals(parsingErrors.head.failedCode, Some("let ooopsie = \"missing semicolon\""))
 
-      val bindingNames = result.module.members.collect { case b: Bnd => b.name }
-      assertEquals(bindingNames, List("finally"))
+      // Filter out stdlib injected bindings (functions/operators have meta)
+      val bindingNames = result.module.members.collect {
+        case b: Bnd if b.meta.isEmpty => b.name
+      }
+      assertEquals(clue(bindingNames), List("finally"))
     }
   }

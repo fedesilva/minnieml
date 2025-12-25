@@ -9,6 +9,6 @@ let c =
     "B"
 ;
 
-fn main() =
+fn main(): Unit =
   println (concat "Resultado: " c)
 ;

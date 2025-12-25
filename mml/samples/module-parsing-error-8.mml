@@ -1,0 +1,14 @@
+;
+;
+;
+let 1 = 3;
+let hola = "hola";
+
+;;
+\n
+
+\\\\
+
+fn main(): Unit =
+  println hola
+;

@@ -1,0 +1,8 @@
+fn main(): Unit =
+  let fd = open_file_write "test.txt";
+  let buf = mkBufferWithFd fd;
+  buf write "Hello, ";
+  buf writeln "World!";
+  flush buf;
+  close_file fd;
+

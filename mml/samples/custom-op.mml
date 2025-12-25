@@ -1,0 +1,8 @@
+
+# just an indirection operator for testing
+op ** (a: Int, b: Int) 80 left  = a * b;
+
+fn main() = 
+  println (to_string (2 ** 2))
+;
+

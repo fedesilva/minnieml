@@ -1,0 +1,8 @@
+fn add(a: Int, b: Int): Int = 
+  a + b
+;
+let f = add;
+
+fn main() = 
+  println (to_string (f 1 2))
+;

@@ -2,7 +2,7 @@ package mml.mmlclib.grammar
 
 import mml.mmlclib.ast.*
 import mml.mmlclib.test.BaseEffFunSuite
-import mml.mmlclib.util.prettyprint.ast.prettyPrintAst
+import mml.mmlclib.util.prettyprint.ast.{prettyPrintAst, prettyPrintTypeSpec}
 import munit.*
 
 class FnTests extends BaseEffFunSuite:
@@ -18,16 +18,19 @@ class FnTests extends BaseEffFunSuite:
         m.members.head
       }
     }.map {
-      case fn: FnDef =>
-        assert(
-          fn.params.size == 2,
-          s"Expected 2 params but got ${fn.params.size}: ${prettyPrintAst(fn)} "
-        )
-        assert(
-          fn.body.terms.size == 3,
-          s"Expected 3 terms but got ${fn.body.terms.size}: ${prettyPrintAst(fn)} "
-        )
-      case _ => fail("Expected a function")
+      case bnd: Bnd if bnd.meta.exists(_.origin == BindingOrigin.Function) =>
+        bnd.value.terms.head match
+          case lambda: Lambda =>
+            assert(
+              lambda.params.size == 2,
+              s"Expected 2 params but got ${lambda.params.size}: ${prettyPrintAst(bnd)} "
+            )
+            assert(
+              lambda.body.terms.size == 3,
+              s"Expected 3 terms but got ${lambda.body.terms.size}: ${prettyPrintAst(bnd)} "
+            )
+          case _ => fail("Expected a Lambda inside Bnd")
+      case _ => fail("Expected a function (Bnd with meta)")
     }
   }
 
@@ -67,12 +70,15 @@ class FnTests extends BaseEffFunSuite:
       assert(m.members.size == 1)
       m.members.last
     }.map {
-      case fn: FnDef =>
-        assert(
-          fn.body.terms.size == 1,
-          s"Expected 1 term but got ${fn.body.terms.size} : ${prettyPrintAst(fn)}"
-        )
-      case _ => fail("Expected a FnDef")
+      case bnd: Bnd if bnd.meta.exists(_.origin == BindingOrigin.Function) =>
+        bnd.value.terms.head match
+          case lambda: Lambda =>
+            assert(
+              lambda.body.terms.size == 1,
+              s"Expected 1 term but got ${lambda.body.terms.size} : ${prettyPrintAst(bnd)}"
+            )
+          case _ => fail("Expected a Lambda inside Bnd")
+      case _ => fail("Expected a function (Bnd with meta)")
     }
   }
 
@@ -85,22 +91,56 @@ class FnTests extends BaseEffFunSuite:
       assert(m.members.size == 1)
       m.members.head
     }.map {
-      case fn: FnDef =>
-        assert(
-          fn.params.size == 2,
-          s"Expected 2 params but got ${fn.params.size}: ${prettyPrintAst(fn)} "
-        )
-        assert(
-          fn.body.terms.size == 3,
-          s"Expected 3 terms but got ${fn.body.terms.size}: ${prettyPrintAst(fn)} "
-        )
-        fn.params
+      case bnd: Bnd if bnd.meta.exists(_.origin == BindingOrigin.Function) =>
+        bnd.value.terms.head match
+          case lambda: Lambda =>
+            assert(
+              lambda.params.size == 2,
+              s"Expected 2 params but got ${lambda.params.size}: ${prettyPrintAst(bnd)} "
+            )
+            assert(
+              lambda.body.terms.size == 3,
+              s"Expected 3 terms but got ${lambda.body.terms.size}: ${prettyPrintAst(bnd)} "
+            )
+            lambda.params
+          case _ => fail("Expected a Lambda inside Bnd")
       case _ => fail("Expected a function")
     }.map { params =>
       assert(
         params.forall(_.typeAsc.isDefined),
         s"Expected all params to have a type spec: ${params.map(p => prettyPrintAst(p))}"
       )
+    }
+  }
+
+  test("fn with function type return ascription") {
+    parseNotFailed(
+      """
+        fn wrap (f: String -> String): String -> String = f;
+      """
+    ).map { m =>
+      assert(m.members.size == 1)
+      m.members.head
+    }.map {
+      case bnd: Bnd if bnd.meta.exists(_.origin == BindingOrigin.Function) =>
+        // For Bnd(Lambda), the type ascription is on the lambda or the bnd
+        val typeAsc = bnd.value.terms.head match
+          case lambda: Lambda => lambda.typeAsc.orElse(bnd.typeAsc)
+          case _ => bnd.typeAsc
+        typeAsc match
+          case Some(TypeFn(_, params, returnType)) =>
+            assertEquals(params.size, 1)
+            params.head match
+              case TypeRef(_, "String", _) => // pass
+              case other =>
+                fail(s"Expected String param type, got ${prettyPrintAst(other)}")
+            returnType match
+              case TypeRef(_, "String", _) => // pass
+              case other =>
+                fail(s"Expected String return type, got ${prettyPrintAst(other)}")
+          case other =>
+            fail(s"Expected function return type, got ${prettyPrintTypeSpec(other)}")
+      case other => fail(s"Expected a function, got ${prettyPrintAst(other)}")
     }
   }
 
@@ -113,11 +153,14 @@ class FnTests extends BaseEffFunSuite:
       assert(m.members.size == 1)
       m.members.head
     }.map {
-      case bnd: FnDef =>
-        assert(
-          bnd.body.terms.size == 3,
-          s"Expected a body with 3 terms but got ${bnd.body.terms.size}: ${prettyPrintAst(bnd)}"
-        )
+      case bnd: Bnd if bnd.meta.exists(_.origin == BindingOrigin.Function) =>
+        bnd.value.terms.head match
+          case lambda: Lambda =>
+            assert(
+              lambda.body.terms.size == 3,
+              s"Expected a body with 3 terms but got ${lambda.body.terms.size}: ${prettyPrintAst(bnd)}"
+            )
+          case _ => fail("Expected a Lambda inside Bnd")
       case _ => fail("Expected a binding")
     }
   }

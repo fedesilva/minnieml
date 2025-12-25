@@ -459,8 +459,10 @@ class OpPrecedenceTests extends BaseEffFunSuite:
       // println(prettyPrintAst(memberBnd))
 
       memberBnd match
-        case fnDef: FnDef =>
-          fnDef.body.terms match
+        case bnd: Bnd if bnd.meta.exists(_.origin == BindingOrigin.Function) =>
+          // Extract lambda body
+          val lambda = bnd.value.terms.head.asInstanceOf[Lambda]
+          lambda.body.terms match
             case TXApp(minusRef, _, leftArg :: rightArg :: Nil) :: Nil =>
               // Check outer operator is -
               assertEquals(clue(minusRef.name), clue("-"), "Expected - operator")
@@ -518,7 +520,7 @@ class OpPrecedenceTests extends BaseEffFunSuite:
             case other =>
               fail(s"Expected TXApp pattern for subtraction, got: ${prettyPrintList(other)}")
         case x =>
-          fail(s"Expected a FnDef, got: ${prettyPrintAst(x)}")
+          fail(s"Expected a function Bnd, got: ${prettyPrintAst(x)}")
     }
   }
 

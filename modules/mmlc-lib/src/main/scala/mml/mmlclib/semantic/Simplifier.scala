@@ -12,12 +12,7 @@ object Simplifier:
 
   def simplifyMember(member: Member): Member =
     member match
-      case b:  Bnd => b.copy(value = simplifyExpr(b.value))
-      case fn: FnDef => fn.copy(body = simplifyExpr(fn.body))
-      case op: OpDef =>
-        op match
-          case bin: BinOpDef => bin.copy(body = simplifyExpr(bin.body))
-          case un:  UnaryOpDef => un.copy(body = simplifyExpr(un.body))
+      case b: Bnd => b.copy(value = simplifyExpr(b.value))
       case other => other
 
   // Helper to ensure a Term is an Expr, wrapping if necessary

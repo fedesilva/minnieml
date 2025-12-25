@@ -14,56 +14,135 @@ object ExpressionRewriter:
 
   private val MinPrecedence: Int = 1
 
-  /** Rewrite a module, handling all expression transformations in a single pass
+  // --- Eta-expansion helpers for partial application ---
+
+  /** Get the root Ref from an App chain */
+  private def getRootRef(term: Term): Option[Ref] =
+    term match
+      case ref: Ref => Some(ref)
+      case app: App => getRootRef(app.fn)
+      case _ => None
+
+  /** Get arity and params from a resolved callable (Bnd with Lambda).
+    *
+    * Uses transformedBindings to look up already-transformed Bnds (for chained partial
+    * application), falling back to resolvedAs for not-yet-transformed bindings.
     */
-  def rewriteModule(module: Module): Either[List[SemanticError], Module] =
-    val rewrittenMembers: List[Either[List[SemanticError], Member]] = module.members.map {
-      case bnd: Bnd =>
-        rewriteExpr(bnd.value).map(updatedExpr => bnd.copy(value = updatedExpr)).leftMap(_.toList)
-      case fn: FnDef =>
-        rewriteExpr(fn.body).map(updatedExpr => fn.copy(body = updatedExpr)).leftMap(_.toList)
-      case op: BinOpDef =>
-        rewriteExpr(op.body).map(updatedExpr => op.copy(body = updatedExpr)).leftMap(_.toList)
-      case op: UnaryOpDef =>
-        rewriteExpr(op.body).map(updatedExpr => op.copy(body = updatedExpr)).leftMap(_.toList)
-      case other =>
-        other.asRight
+  private def getArityAndParams(
+    fn:                  Term,
+    transformedBindings: Map[String, Bnd]
+  ): Option[(Int, List[FnParam])] =
+    getRootRef(fn).flatMap { ref =>
+      // First check transformed bindings (for chained partial application)
+      val bndOpt = transformedBindings
+        .get(ref.name)
+        .orElse(
+          ref.resolvedAs.collect { case bnd: Bnd => bnd }
+        )
+      bndOpt.flatMap { bnd =>
+        bnd.value.terms.headOption.collect { case lambda: Lambda =>
+          (lambda.params.length, lambda.params)
+        }
+      }
     }
 
-    val errors = rewrittenMembers.collect { case Left(errs) => errs }.flatten
-    if errors.nonEmpty then errors.asLeft
-    else module.copy(members = rewrittenMembers.collect { case Right(member) => member }).asRight
+  /** Count how many args have been applied in an App chain */
+  private def countAppliedArgs(fn: Term): Int =
+    fn match
+      case _:   Ref => 0
+      case app: App => 1 + countAppliedArgs(app.fn)
+      case _ => 0
+
+  /** Wrap undersaturated application in a Lambda (eta-expansion).
+    *
+    * If `fn` is an undersaturated application (fewer args than arity), or a bare function
+    * reference, wrap it in a Lambda with synthetic parameters for the remaining args.
+    */
+  private def wrapIfUndersaturated(
+    fn:                  Term,
+    span:                SrcSpan,
+    transformedBindings: Map[String, Bnd]
+  ): Expr =
+    // Only wrap if fn is Ref or App (the only valid function positions)
+    val fnAsCallable: Option[Ref | App] = fn match
+      case r: Ref => Some(r)
+      case a: App => Some(a)
+      case _ => None
+
+    fnAsCallable
+      .flatMap { callable =>
+        getArityAndParams(fn, transformedBindings).flatMap { case (arity, params) =>
+          val appliedCount = countAppliedArgs(fn)
+          if appliedCount < arity then
+            val remainingParams = params.drop(appliedCount)
+            val syntheticParams = remainingParams.zipWithIndex.map { (p, i) =>
+              FnParam(span, s"$$p$i", typeAsc = p.typeAsc, typeSpec = p.typeSpec)
+            }
+            // Pre-resolve synthetic Refs to their FnParams (RefResolver already ran)
+            val syntheticRefs = syntheticParams.map { param =>
+              Ref(span, param.name, resolvedAs = Some(param), candidates = List(param))
+            }
+            // Build App chain with synthetic args
+            val fullApp = syntheticRefs.foldLeft[Ref | App](callable) { (acc, ref) =>
+              App(span, acc, Expr(span, List(ref)))
+            }
+            val lambda = Lambda(span, syntheticParams, Expr(span, List(fullApp)), captures = Nil)
+            Some(Expr(span, List(lambda)))
+          else None
+        }
+      }
+      .getOrElse(Expr(fn.span, List(fn)))
+
+  /** Rewrite a module, handling all expression transformations.
+    *
+    * Processes bindings sequentially, accumulating transformed bindings so that chained partial
+    * applications can see the transformed arity.
+    */
+  def rewriteModule(module: Module): Either[List[SemanticError], Module] =
+    val (errors, members, _) = module.members.foldLeft(
+      (List.empty[List[SemanticError]], List.empty[Member], Map.empty[String, Bnd])
+    ) { case ((accErrors, accMembers, transformedBindings), member) =>
+      member match
+        case bnd: Bnd =>
+          rewriteExpr(bnd.value, transformedBindings) match
+            case Right(updatedExpr) =>
+              val updatedBnd = bnd.copy(value = updatedExpr)
+              (accErrors, accMembers :+ updatedBnd, transformedBindings + (bnd.name -> updatedBnd))
+            case Left(errs) =>
+              (accErrors :+ errs.toList, accMembers :+ bnd, transformedBindings)
+        case other =>
+          (accErrors, accMembers :+ other, transformedBindings)
+    }
+
+    val allErrors = errors.flatten
+    if allErrors.nonEmpty then allErrors.asLeft
+    else module.copy(members = members).asRight
 
   /** Rewrite a module, accumulating errors in the state. */
   def rewriteModule(state: SemanticPhaseState): SemanticPhaseState =
-    val (errors, members) =
-      state.module.members.foldLeft((List.empty[SemanticError], List.empty[Member])) {
-        case ((accErrors, accMembers), member) =>
-          val result = member match
-            case bnd: Bnd =>
-              rewriteExpr(bnd.value)
-                .map(updatedExpr => bnd.copy(value = updatedExpr))
-                .leftMap(_.toList)
-            case fn: FnDef =>
-              rewriteExpr(fn.body).map(updatedExpr => fn.copy(body = updatedExpr)).leftMap(_.toList)
-            case op: BinOpDef =>
-              rewriteExpr(op.body).map(updatedExpr => op.copy(body = updatedExpr)).leftMap(_.toList)
-            case op: UnaryOpDef =>
-              rewriteExpr(op.body).map(updatedExpr => op.copy(body = updatedExpr)).leftMap(_.toList)
-            case other =>
-              other.asRight
-
-          result match
+    val (errors, members, _) = state.module.members.foldLeft(
+      (List.empty[SemanticError], List.empty[Member], Map.empty[String, Bnd])
+    ) { case ((accErrors, accMembers, transformedBindings), member) =>
+      member match
+        case bnd: Bnd =>
+          rewriteExpr(bnd.value, transformedBindings) match
+            case Right(updatedExpr) =>
+              val updatedBnd = bnd.copy(value = updatedExpr)
+              (accErrors, accMembers :+ updatedBnd, transformedBindings + (bnd.name -> updatedBnd))
             case Left(errs) =>
-              (accErrors ++ errs, accMembers :+ member) // Keep original member on error
-            case Right(updated) => (accErrors, accMembers :+ updated)
-      }
+              (accErrors ++ errs.toList, accMembers :+ bnd, transformedBindings)
+        case other =>
+          (accErrors, accMembers :+ other, transformedBindings)
+    }
     state.addErrors(errors).withModule(state.module.copy(members = members))
 
   /** Rewrite an expression using precedence climbing for both operators and function application
     */
-  private def rewriteExpr(expr: Expr): Either[NEL[SemanticError], Expr] =
-    rewritePrecedenceExpr(expr.terms, MinPrecedence, expr.span).flatMap {
+  private def rewriteExpr(
+    expr:                Expr,
+    transformedBindings: Map[String, Bnd] = Map.empty
+  ): Either[NEL[SemanticError], Expr] =
+    rewritePrecedenceExpr(expr.terms, MinPrecedence, expr.span, transformedBindings).flatMap {
       case (result, remaining) =>
         if remaining.isEmpty then
           // All terms processed successfully
@@ -84,26 +163,28 @@ object ExpressionRewriter:
   /** Rewrite an expression using precedence climbing
     */
   private def rewritePrecedenceExpr(
-    terms:   List[Term],
-    minPrec: Int,
-    span:    SrcSpan
+    terms:               List[Term],
+    minPrec:             Int,
+    span:                SrcSpan,
+    transformedBindings: Map[String, Bnd]
   ): Either[NEL[SemanticError], (Expr, List[Term])] =
     for
       // First, rewrite any inner expressions in each term
-      rewrittenTerms <- terms.traverse(rewriteTerm)
+      rewrittenTerms <- terms.traverse(rewriteTerm(_, transformedBindings))
 
       // Rewrite the first atom in the expression
-      (lhs, restAfterAtom) <- rewriteAtom(rewrittenTerms, span)
+      (lhs, restAfterAtom) <- rewriteAtom(rewrittenTerms, span, transformedBindings)
 
       // Rewrite any operations with sufficient precedence
-      result <- rewriteOps(lhs, restAfterAtom, minPrec, span)
+      result <- rewriteOps(lhs, restAfterAtom, minPrec, span, transformedBindings)
     yield result
 
   /** Rewrite the first atom in a list of terms
     */
   private def rewriteAtom(
-    terms: List[Term],
-    span:  SrcSpan
+    terms:               List[Term],
+    span:                SrcSpan,
+    transformedBindings: Map[String, Bnd]
   ): Either[NEL[SemanticError], (Expr, List[Term])] =
     terms match
       case Nil =>
@@ -118,31 +199,30 @@ object ExpressionRewriter:
           .asLeft
 
       case (g: TermGroup) :: rest =>
-        // Process a parenthesized group - treat as a bounded expression
-        rewritePrecedenceExpr(g.inner.terms, MinPrecedence, g.span).map { case (innerExpr, _) =>
-          (Expr(g.span, List(innerExpr)), rest)
+        rewriteGroupAtom(g, transformedBindings).flatMap { term =>
+          buildAppChain(term, rest, g.span, transformedBindings)
         }
 
-      case IsPrefixOpRef(ref, opDef, prec, assoc) :: rest =>
+      case IsPrefixOpRef(ref, bnd, prec, assoc) :: rest =>
         // Prefix unary operator (like +, -, etc.)
-        val resolvedRef = ref.copy(resolvedAs = opDef.some)
+        val resolvedRef = ref.copy(resolvedAs = bnd.some)
         val nextMinPrec = if assoc == Associativity.Left then prec + 1 else prec
 
-        rewritePrecedenceExpr(rest, nextMinPrec, span).map { case (operand, remaining) =>
-          // Transform prefix operator to function application
-          val opApp = App(span, resolvedRef, operand)
-          (Expr(span, List(opApp)), remaining)
+        rewritePrecedenceExpr(rest, nextMinPrec, span, transformedBindings).map {
+          case (operand, remaining) =>
+            // Transform prefix operator to function application
+            val opApp = App(span, resolvedRef, operand)
+            (Expr(span, List(opApp)), remaining)
         }
 
-      case IsFnRef(ref, fnDef) :: rest =>
-        // Function reference - handle as potential function application
-        val resolvedRef = ref.copy(resolvedAs = fnDef.some)
-        // This is the entry point for an application chain.
-        // We recursively build the application chain from left to right.
-        buildAppChain(resolvedRef, rest, span)
+      case (ref: Ref) :: rest =>
+        // Any reference - handle as potential function application
+        // This includes Bnd refs (functions, operators, partial applications) and FnParam refs
+        // The type checker will validate whether the application is valid
+        buildAppChain(ref, rest, span, transformedBindings)
 
       case IsAtom(atom) :: rest =>
-        // Simple atom (literal, variable, etc.)
+        // Simple atom (literal, hole, etc.)
         (Expr(atom.span, List(atom)), rest).asRight
 
       case terms =>
@@ -157,35 +237,35 @@ object ExpressionRewriter:
   /** Process operations using precedence climbing
     */
   private def rewriteOps(
-    lhs:     Expr,
-    terms:   List[Term],
-    minPrec: Int,
-    span:    SrcSpan
+    lhs:                 Expr,
+    terms:               List[Term],
+    minPrec:             Int,
+    span:                SrcSpan,
+    transformedBindings: Map[String, Bnd]
   ): Either[NEL[SemanticError], (Expr, List[Term])] =
     terms match
-      case IsBinOpRef(ref, opDef, prec, assoc) :: rest if prec >= minPrec =>
+      case IsBinOpRef(ref, bnd, prec, assoc) :: rest if prec >= minPrec =>
         // Binary operator with sufficient precedence
-        val resolvedRef = ref.copy(resolvedAs = opDef.some)
+        val resolvedRef = ref.copy(resolvedAs = bnd.some)
         val nextMinPrec = if assoc == Associativity.Left then prec + 1 else prec
 
-        rewritePrecedenceExpr(rest, nextMinPrec, span).flatMap { case (rhs, remaining) =>
-          // Transform operator expression to function application
-          val opApp    = App(span, App(span, resolvedRef, lhs), rhs)
-          val combined = Expr(span, List(opApp))
-          rewriteOps(combined, remaining, minPrec, span)
+        rewritePrecedenceExpr(rest, nextMinPrec, span, transformedBindings).flatMap {
+          case (rhs, remaining) =>
+            // Transform operator expression to function application
+            val opApp    = App(span, App(span, resolvedRef, lhs), rhs)
+            val combined = Expr(span, List(opApp))
+            rewriteOps(combined, remaining, minPrec, span, transformedBindings)
         }
 
-      case IsPostfixOpRef(ref, opDef, prec, _) :: rest if prec >= minPrec =>
+      case IsPostfixOpRef(ref, bnd, prec, _) :: rest if prec >= minPrec =>
         // Postfix unary operator with sufficient precedence
-        val resolvedRef = ref.copy(resolvedAs = opDef.some)
+        val resolvedRef = ref.copy(resolvedAs = bnd.some)
         // Transform postfix operator to function application
         val opApp    = App(span, resolvedRef, lhs)
         val combined = Expr(span, List(opApp))
-        rewriteOps(combined, rest, minPrec, span)
+        rewriteOps(combined, rest, minPrec, span, transformedBindings)
 
       case (g: TermGroup) :: rest =>
-        // A group after a complete expression is invalid - expected operator
-        // For example: expr (term) is invalid without an operator between them
         NEL
           .one(
             SemanticError.DanglingTerms(
@@ -213,73 +293,84 @@ object ExpressionRewriter:
         // No more operations with sufficient precedence
         (lhs, terms).asRight
 
-  /** Check if a function reference is to a nullary (zero-parameter) function
-    */
-  private def isNullaryFunction(term: Term): Boolean =
-    term match
-      case ref: Ref =>
-        ref.resolvedAs match
-          case Some(fnDef: FnDef) => fnDef.params.isEmpty
-          case _ => false
-      case _ => false
-
   /** Build a chain of function applications recursively.
     *
-    * This function handles the left-associativity of application (`f x y` -> `((f x) y)`) and also
-    * the correct grouping for nested function calls (`f g x` -> `(f (g x))`).
+    * This function handles the left-associativity of application: `f x y` -> `((f x) y)`. Each term
+    * after the function becomes a single argument, applied left-to-right.
     *
-    * It works by parsing one argument, applying it to the current function (`fn`), and then
-    * recursively calling itself with the new application as the function.
-    *
-    * Special case: For nullary functions in value position (no arguments following), automatically
-    * wraps them in an App node with a unit argument to ensure proper code generation.
+    * Groups are processed as sub-expressions: `f (g x) y` -> `((f (g x)) y)`
     */
   private def buildAppChain(
-    fn:    Term,
-    terms: List[Term],
-    span:  SrcSpan
+    fn:                  Term,
+    terms:               List[Term],
+    span:                SrcSpan,
+    transformedBindings: Map[String, Bnd]
   ): Either[NEL[SemanticError], (Expr, List[Term])] =
     terms match
       case Nil =>
-        // No more arguments. Check if this is a nullary function in value position.
-        if isNullaryFunction(fn) then
-          // Auto-wrap nullary function with unit argument to ensure it's called
-          fn match
-            case ref: Ref =>
-              val unitLit  = LiteralUnit(fn.span)
-              val unitExpr = Expr(fn.span, List(unitLit))
-              val app      = App(fn.span, ref, unitExpr, typeAsc = None, typeSpec = None)
-              (Expr(fn.span, List(app)), terms).asRight
-            case _ =>
-              // This shouldn't happen since isNullaryFunction checks for Ref
-              (Expr(fn.span, List(fn)), terms).asRight
-        else
-          // Not a nullary function, just return the function reference
-          (Expr(fn.span, List(fn)), terms).asRight
+        // No more arguments; wrap if undersaturated (partial application).
+        (wrapIfUndersaturated(fn, span, transformedBindings), terms).asRight
       case t :: _ if isOperator(t) =>
-        // An operator ends the application chain.
-        // Check if this is a nullary function that should be auto-wrapped
-        if isNullaryFunction(fn) then
-          fn match
-            case ref: Ref =>
-              val unitLit  = LiteralUnit(fn.span)
-              val unitExpr = Expr(fn.span, List(unitLit))
-              val app      = App(fn.span, ref, unitExpr, typeAsc = None, typeSpec = None)
-              (Expr(fn.span, List(app)), terms).asRight
-            case _ =>
-              (Expr(fn.span, List(fn)), terms).asRight
-        else (Expr(fn.span, List(fn)), terms).asRight
-      case _ =>
-        // The next terms are arguments. Parse one argument expression.
-        // `rewriteAtom` will correctly parse a simple term, a group, or a nested application.
-        rewriteAtom(terms, span).flatMap { case (argExpr, remainingTerms) =>
-          // Build the application of the current function to the parsed argument.
+        // An operator ends the application chain; wrap if undersaturated.
+        (wrapIfUndersaturated(fn, span, transformedBindings), terms).asRight
+      case (g: TermGroup) :: restTerms =>
+        // Groups are processed as sub-expressions (may contain nested applications)
+        rewriteGroupAtom(g, transformedBindings).flatMap { term =>
+          val argExpr = Expr(g.span, List(term))
           buildSingleApp(fn, argExpr, span).flatMap { app =>
-            // Continue building the chain with the new application as the function.
-            // This creates the left-associative structure.
-            buildAppChain(app, remainingTerms, span)
+            buildAppChain(app, restTerms, span, transformedBindings)
           }
         }
+      case (ref: Ref) :: restTerms =>
+        // Plain Ref as argument - don't start a new app chain, just use as argument
+        val argExpr = Expr(ref.span, List(ref))
+        buildSingleApp(fn, argExpr, span).flatMap { app =>
+          buildAppChain(app, restTerms, span, transformedBindings)
+        }
+      case IsAtom(atom) :: restTerms =>
+        // Literal or other atom as argument
+        val argExpr = Expr(atom.span, List(atom))
+        buildSingleApp(fn, argExpr, span).flatMap { app =>
+          buildAppChain(app, restTerms, span, transformedBindings)
+        }
+      case other =>
+        // Unexpected term - let rewriteAtom handle/report error
+        rewriteAtom(other, span, transformedBindings).flatMap { case (argExpr, remainingTerms) =>
+          buildSingleApp(fn, argExpr, span).flatMap { app =>
+            buildAppChain(app, remainingTerms, span, transformedBindings)
+          }
+        }
+
+  private def rewriteGroupAtom(
+    group:               TermGroup,
+    transformedBindings: Map[String, Bnd]
+  ): Either[NEL[SemanticError], Term] =
+    rewritePrecedenceExpr(group.inner.terms, MinPrecedence, group.span, transformedBindings)
+      .flatMap {
+        case (innerExpr, remainingInGroup) if remainingInGroup.nonEmpty =>
+          NEL
+            .one(
+              SemanticError.DanglingTerms(
+                remainingInGroup,
+                "Unexpected terms inside group",
+                phaseName
+              )
+            )
+            .asLeft
+        case (innerExpr, _) if innerExpr.terms.length != 1 =>
+          NEL
+            .one(
+              SemanticError
+                .InvalidExpression(
+                  innerExpr,
+                  "Group must resolve to a single expression",
+                  phaseName
+                )
+            )
+            .asLeft
+        case (innerExpr, _) =>
+          innerExpr.terms.head.asRight
+      }
 
   /** Build a single application node
     */
@@ -289,8 +380,9 @@ object ExpressionRewriter:
     span: SrcSpan
   ): Either[NEL[SemanticError], Term] =
     fn match
-      case ref: Ref => App(span, ref, arg, typeAsc = None, typeSpec = None).asRight
-      case app: App => App(span, app, arg, typeAsc = None, typeSpec = None).asRight
+      case ref:    Ref => App(span, ref, arg, typeAsc = None, typeSpec = None).asRight
+      case app:    App => App(span, app, arg, typeAsc = None, typeSpec = None).asRight
+      case lambda: Lambda => App(span, lambda, arg, typeAsc = None, typeSpec = None).asRight
       case _ =>
         // Term that's not a function or application can't be applied to
         NEL
@@ -309,30 +401,53 @@ object ExpressionRewriter:
     expr.terms.lastOption.exists {
       case _: Ref => true
       case _: App => true
+      case _: Lambda => true
       case _ => false
     }
 
   /** Rewrite a term by recursively processing inner expressions
     */
-  private def rewriteTerm(term: Term): Either[NEL[SemanticError], Term] =
+  private def rewriteTerm(
+    term:                Term,
+    transformedBindings: Map[String, Bnd]
+  ): Either[NEL[SemanticError], Term] =
     term match
+      case app: App =>
+        for
+          newFn <- rewriteAppFn(app.fn, transformedBindings)
+          newArg <- rewriteExpr(app.arg, transformedBindings)
+        yield app.copy(fn = newFn, arg = newArg)
       case inv: InvalidExpression =>
         // Report that we found an invalid expression from an earlier phase
         NEL.one(SemanticError.InvalidExpressionFound(inv, phaseName)).asLeft
       case e: Expr =>
-        rewriteExpr(e)
+        rewriteExpr(e, transformedBindings)
+      case lambda: Lambda =>
+        // Process lambda body to rewrite operators and function applications
+        rewriteExpr(lambda.body, transformedBindings).map(newBody => lambda.copy(body = newBody))
       case c: Cond =>
         for
-          newCond <- rewriteExpr(c.cond)
-          newIfTrue <- rewriteExpr(c.ifTrue)
-          newIfFalse <- rewriteExpr(c.ifFalse)
+          newCond <- rewriteExpr(c.cond, transformedBindings)
+          newIfTrue <- rewriteExpr(c.ifTrue, transformedBindings)
+          newIfFalse <- rewriteExpr(c.ifFalse, transformedBindings)
         yield c.copy(cond = newCond, ifTrue = newIfTrue, ifFalse = newIfFalse)
       case t: Tuple =>
-        t.elements.traverse(rewriteExpr).map(newElems => t.copy(elements = newElems))
+        t.elements
+          .traverse(rewriteExpr(_, transformedBindings))
+          .map(newElems => t.copy(elements = newElems))
       case tg: TermGroup =>
-        rewriteExpr(tg.inner).map(newInner => tg.copy(inner = newInner))
+        rewriteExpr(tg.inner, transformedBindings).map(newInner => tg.copy(inner = newInner))
       case other =>
         other.asRight
+
+  private def rewriteAppFn(
+    fn:                  Ref | App | Lambda,
+    transformedBindings: Map[String, Bnd]
+  ): Either[NEL[SemanticError], Ref | App | Lambda] =
+    fn match
+      case ref:    Ref => rewriteTerm(ref, transformedBindings).map(_.asInstanceOf[Ref])
+      case app:    App => rewriteTerm(app, transformedBindings).map(_.asInstanceOf[App])
+      case lambda: Lambda => rewriteTerm(lambda, transformedBindings).map(_.asInstanceOf[Lambda])
 
   /** Check if a term is an operator
     */

@@ -1,0 +1,6 @@
+
+fn hola(a: String) = concat "Hola, " a;
+
+fn main() =
+  println (hola "fede")
+;

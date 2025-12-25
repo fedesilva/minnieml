@@ -1,0 +1,12 @@
+fn main() = 
+  println "Enter a number: ";
+  let input = str_to_int (readline());
+  let a = 1;
+  let b = 2 - input; 
+  let c = 3 * input;
+  let x = 3*3;
+  let y = 4*30 / input;
+  let z = b * y * x;
+  let result = a * b + c / y * x + input;
+  println (to_string result)
+;

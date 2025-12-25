@@ -1,4 +1,4 @@
 
-fn main() = 
-print (concat "Hello, " "world!")
+fn main(): Unit =
+  print (concat "Hello, " "world!")
 ;

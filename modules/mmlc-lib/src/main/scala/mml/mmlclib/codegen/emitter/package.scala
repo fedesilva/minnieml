@@ -75,7 +75,7 @@ def emitFunctionDeclaration(name: String, returnType: String, params: List[Strin
   s"declare $returnType @$name($paramString)"
 
 /** Represents an error that occurred during code generation. */
-case class CodeGenError(message: String)
+case class CodeGenError(message: String, node: Option[AstNode] = None)
 
 /** Represents the state during code generation.
   *
@@ -200,12 +200,15 @@ case class CodeGenState(
   *   indicates whether the result is a literal value
   * @param typeName
   *   the MML type name of the result
+  * @param exitBlock
+  *   the block label where control exits (for phi node predecessors in nested conditionals)
   */
 case class CompileResult(
   register:  Int,
   state:     CodeGenState,
-  isLiteral: Boolean = false,
-  typeName:  String  = "Int" // Default to Int for backward compatibility
+  isLiteral: Boolean        = false,
+  typeName:  String         = "Int", // Default to Int for backward compatibility
+  exitBlock: Option[String] = None
 )
 
 /** Convert a NativeType AST node to LLVM type definition string.
@@ -299,5 +302,8 @@ def getLlvmType(
     case other =>
       // No LLVM type mapping for this TypeSpec
       Left(
-        CodeGenError(s"No LLVM type mapping for TypeSpec: ${other.getClass.getSimpleName} - $other")
+        CodeGenError(
+          s"No LLVM type mapping for TypeSpec: ${other.getClass.getSimpleName}",
+          Some(other)
+        )
       )

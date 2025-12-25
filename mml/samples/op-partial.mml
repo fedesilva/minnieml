@@ -1,0 +1,9 @@
+
+op ++(a: Int, b: Int): Int = 
+  a + b
+;
+let f = 2 ++ _;
+
+fn main() = 
+  println (to_string (f 2))
+;

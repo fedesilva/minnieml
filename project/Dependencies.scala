@@ -16,8 +16,8 @@ object Dependencies {
 
   lazy val commonDependencies: Seq[ModuleID] =
     Seq(
-      "ch.qos.reload4j" % "reload4j"        % reload4jVersion,
-      "ch.qos.logback"  % "logback-classic" % logBackVersion,
+      "ch.qos.reload4j" % "reload4j" % reload4jVersion,
+//      "ch.qos.logback"  % "logback-classic" % logBackVersion,
       // "core" module - IO, IOApp, schedulers
       // This pulls in the kernel and std modules automatically.
       "org.typelevel" %% "cats-effect"    % catsEffectVersion,

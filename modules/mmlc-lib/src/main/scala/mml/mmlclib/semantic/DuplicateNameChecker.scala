@@ -55,50 +55,50 @@ object DuplicateNameChecker:
 
     // Then, check for duplicate parameters and convert to InvalidMember if needed
     val finalDecls = membersAfterDuplicates.map {
-      case fn: FnDef if hasDuplicateParams(fn.params) =>
-        val duplicateParamNames =
-          fn.params.groupBy(_.name).filter(_._2.size > 1).keys.mkString(", ")
-        errors += SemanticError.DuplicateName(
-          s"${fn.name} parameters: $duplicateParamNames",
-          fn.params.filter(p => fn.params.count(_.name == p.name) > 1),
-          phaseName
-        )
-        InvalidMember(
-          span           = fn.span,
-          originalMember = fn,
-          reason         = s"Duplicate parameter names: $duplicateParamNames"
-        )
-
-      case op: BinOpDef if op.param1.name == op.param2.name =>
-        errors += SemanticError.DuplicateName(
-          s"${op.name} parameters: ${op.param1.name}",
-          List(op.param1, op.param2),
-          phaseName
-        )
-        InvalidMember(
-          span           = op.span,
-          originalMember = op,
-          reason         = s"Duplicate parameter name: ${op.param1.name}"
-        )
-
-      case op: UnaryOpDef =>
-        // Unary ops have only one parameter, no duplicates possible
-        op
+      // Handle Bnd with Lambda (functions and operators)
+      case bnd: Bnd if bnd.meta.isDefined =>
+        extractLambdaParams(bnd) match
+          case Some(params) if hasDuplicateParams(params) =>
+            val displayName = bnd.meta.map(_.originalName).getOrElse(bnd.name)
+            val duplicateParamNames =
+              params.groupBy(_.name).filter(_._2.size > 1).keys.mkString(", ")
+            errors += SemanticError.DuplicateName(
+              s"$displayName parameters: $duplicateParamNames",
+              params.filter(p => params.count(_.name == p.name) > 1),
+              phaseName
+            )
+            InvalidMember(
+              span           = bnd.span,
+              originalMember = bnd,
+              reason         = s"Duplicate parameter names: $duplicateParamNames"
+            )
+          case _ => bnd
 
       case other => other
     }
 
-    // Also check for functions that conflict with operators
-    val operatorNames = decls.collect { case op: OpDef => op.name }.toSet
+    // Also check for functions that conflict with operators (by original name)
+    val operatorOriginalNames = decls.collect {
+      case bnd: Bnd if bnd.meta.exists(_.origin == BindingOrigin.Operator) =>
+        bnd.meta.get.originalName
+    }.toSet
+
     decls.collect {
-      case fn: FnDef if operatorNames.contains(fn.name) =>
+      case bnd: Bnd
+          if bnd.meta.exists(_.origin == BindingOrigin.Function) &&
+            operatorOriginalNames.contains(bnd.name) =>
         val allWithSameName = decls
           .filter {
-            case d: Decl => d.name == fn.name
+            case d: Decl =>
+              d.name == bnd.name ||
+              (d match {
+                case b: Bnd => b.meta.exists(_.originalName == bnd.name)
+                case _ => false
+              })
             case _ => false
           }
           .collect { case d: Decl => d }
-        errors += SemanticError.DuplicateName(fn.name, allWithSameName, phaseName)
+        errors += SemanticError.DuplicateName(bnd.name, allWithSameName, phaseName)
     }
 
     (finalDecls ++ otherMembers, errors.toList)
@@ -120,13 +120,25 @@ object DuplicateNameChecker:
       .toMap
 
   private def resolvableKey(r: Resolvable): (String, String) = r match
-    case _: BinOpDef => (r.name, "bin")
-    case _: UnaryOpDef => (r.name, "unary")
+    case bnd: Bnd =>
+      bnd.meta match
+        case Some(m) if m.origin == BindingOrigin.Operator && m.arity == CallableArity.Binary =>
+          (m.originalName, "bin")
+        case Some(m) if m.origin == BindingOrigin.Operator && m.arity == CallableArity.Unary =>
+          (m.originalName, "unary")
+        case Some(m) if m.origin == BindingOrigin.Function =>
+          (r.name, "fn")
+        case _ =>
+          (r.name, "bnd")
     case _: TypeDef => (r.name, "typedef")
     case _: TypeAlias => (r.name, "typealias")
-    case _: FnDef => (r.name, "fn")
-    case _: Bnd => (r.name, "bnd")
     case _ => (r.name, "other")
 
   private def hasDuplicateParams(params: List[FnParam]): Boolean =
     params.groupBy(_.name).exists(_._2.size > 1)
+
+  /** Extract lambda params from a Bnd with Lambda body */
+  private def extractLambdaParams(bnd: Bnd): Option[List[FnParam]] =
+    bnd.value.terms.headOption.collect { case lambda: Lambda =>
+      lambda.params
+    }

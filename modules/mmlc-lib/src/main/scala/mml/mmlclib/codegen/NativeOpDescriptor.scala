@@ -32,7 +32,10 @@ object NativeOpRegistry:
     "icmp_slt" -> NativeOpDescriptor("icmp_slt", "%result = icmp slt %type %left, %right"),
     "icmp_sle" -> NativeOpDescriptor("icmp_sle", "%result = icmp sle %type %left, %right"),
     "icmp_sgt" -> NativeOpDescriptor("icmp_sgt", "%result = icmp sgt %type %left, %right"),
-    "icmp_sge" -> NativeOpDescriptor("icmp_sge", "%result = icmp sge %type %left, %right")
+    "icmp_sge" -> NativeOpDescriptor("icmp_sge", "%result = icmp sge %type %left, %right"),
+    "shl" -> NativeOpDescriptor("shl", "%result = shl %type %left, %right"),
+    "lshr" -> NativeOpDescriptor("lshr", "%result = lshr %type %left, %right"),
+    "ashr" -> NativeOpDescriptor("ashr", "%result = ashr %type %left, %right")
   )
 
   /** Map from selector name to descriptor for unary operations. */

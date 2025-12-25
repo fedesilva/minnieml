@@ -1,0 +1,6 @@
+
+let greet = concat "Hola, ";
+
+fn main() =
+  println (greet "fede")
+;

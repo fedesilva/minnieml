@@ -8,6 +8,6 @@ fn join(a: String, b: String) =
   concat a b
 ;
 
-fn main() = 
+fn main(): Unit =
   println (join a b)
 ;

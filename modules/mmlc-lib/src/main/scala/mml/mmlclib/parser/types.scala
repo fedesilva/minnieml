@@ -10,12 +10,27 @@ private[parser] def typeAscP(info: SourceInfo)(using P[Any]): P[Option[TypeSpec]
   P(":" ~ typeSpecP(info)).?
 
 private[parser] def typeSpecP(info: SourceInfo)(using P[Any]): P[TypeSpec] =
-  P(
-    P(spP(info) ~ typeIdP ~ spP(info))
-      .map { case (start, id, end) =>
-        TypeRef(span(start, end), id)
-      }
-  )
+  P(spP(info) ~ typeAtomP(info) ~ ("->" ~ typeAtomP(info)).rep ~ spP(info))
+    .map { case (start, head, tail, end) =>
+      val types = head :: tail.toList
+      if types.size == 1 then head
+      else TypeFn(span(start, end), types.init, types.last)
+    }
+
+private[parser] def typeAtomP(info: SourceInfo)(using P[Any]): P[TypeSpec] =
+  P(typeGroupP(info) | typeRefP(info))
+
+private[parser] def typeGroupP(info: SourceInfo)(using P[Any]): P[TypeSpec] =
+  P(spP(info) ~ "(" ~ typeSpecP(info) ~ ")" ~ spP(info))
+    .map { case (start, innerType, end) =>
+      TypeGroup(span(start, end), List(innerType))
+    }
+
+private[parser] def typeRefP(info: SourceInfo)(using P[Any]): P[TypeSpec] =
+  P(spP(info) ~ typeIdP ~ spP(info))
+    .map { case (start, id, end) =>
+      TypeRef(span(start, end), id)
+    }
 
 private[parser] def nativeTypeDefP(info: SourceInfo)(using P[Any]): P[TypeDef] =
   P(

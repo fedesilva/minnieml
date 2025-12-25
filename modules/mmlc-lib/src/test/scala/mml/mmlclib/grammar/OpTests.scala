@@ -2,7 +2,7 @@ package mml.mmlclib.grammar
 
 import mml.mmlclib.ast.*
 import mml.mmlclib.test.BaseEffFunSuite
-import mml.mmlclib.util.prettyprint.ast.prettyPrintAst
+import mml.mmlclib.util.prettyprint.ast.{prettyPrintAst, prettyPrintTypeSpec}
 import munit.*
 
 class OpTests extends BaseEffFunSuite:
@@ -13,6 +13,43 @@ class OpTests extends BaseEffFunSuite:
         op + (a, b) = sum a b;
       """
     )
+  }
+
+  test("op with function type ascription") {
+    parseNotFailed(
+      """
+        op apply (f: Int -> Int, x: Int): Int = f x;
+      """
+    ).map { m =>
+      assert(
+        clue(m.members.size) == clue(1),
+        s"Expected 1 member, got: ${m.members.size}"
+      )
+      m.members.head
+    }.map {
+      case bnd: Bnd
+          if bnd.meta
+            .exists(m => m.origin == BindingOrigin.Operator && m.arity == CallableArity.Binary) =>
+        bnd.value.terms.head match
+          case lambda: Lambda =>
+            val param1 = lambda.params.head
+            param1.typeAsc match
+              case Some(TypeFn(_, params, returnType)) =>
+                assertEquals(params.size, 1)
+                params.head match
+                  case TypeRef(_, "Int", _) => // pass
+                  case other =>
+                    fail(s"Expected Int param type, got ${prettyPrintAst(other)}")
+                returnType match
+                  case TypeRef(_, "Int", _) => // pass
+                  case other =>
+                    fail(s"Expected Int return type, got ${prettyPrintAst(other)}")
+              case other =>
+                fail(s"Expected function type ascription, got ${prettyPrintTypeSpec(other)}")
+          case _ => fail("Expected Lambda inside Bnd")
+      case x =>
+        fail(s"Expected binary operator Bnd, got: ${prettyPrintAst(x)}")
+    }
   }
 
   test("let with left assoc unary op") {
@@ -26,17 +63,20 @@ class OpTests extends BaseEffFunSuite:
         s"Expected 1 member, got: ${m.members.size}"
       )
       m.members.head match
-        case op: UnaryOpDef =>
+        case bnd: Bnd
+            if bnd.meta
+              .exists(m => m.origin == BindingOrigin.Operator && m.arity == CallableArity.Unary) =>
+          val meta = bnd.meta.get
           assert(
-            clue(op.name) == clue("-"),
-            s"Expected op: -, got: ${op.name}"
+            clue(meta.originalName) == clue("-"),
+            s"Expected op: -, got: ${meta.originalName}"
           )
           assert(
-            clue(op.assoc) == clue(Associativity.Left),
-            s"Expected assoc: Left, got: ${op.assoc}"
+            clue(meta.associativity) == clue(Some(Associativity.Left)),
+            s"Expected assoc: Left, got: ${meta.associativity}"
           )
         case x =>
-          fail(s"Expected UnaryOpDef, got: $x")
+          fail(s"Expected unary operator Bnd, got: ${prettyPrintAst(x)}")
     }
   }
 
@@ -51,17 +91,20 @@ class OpTests extends BaseEffFunSuite:
         s"Expected 1 member, got: ${m.members.size}"
       )
       m.members.head match
-        case op: UnaryOpDef =>
+        case bnd: Bnd
+            if bnd.meta
+              .exists(m => m.origin == BindingOrigin.Operator && m.arity == CallableArity.Unary) =>
+          val meta = bnd.meta.get
           assert(
-            clue(op.name) == clue("-"),
-            s"Expected op: -, got: ${op.name}"
+            clue(meta.originalName) == clue("-"),
+            s"Expected op: -, got: ${meta.originalName}"
           )
           assert(
-            clue(op.assoc) == clue(Associativity.Right),
-            s"Expected assoc: Right, got: ${op.assoc}"
+            clue(meta.associativity) == clue(Some(Associativity.Right)),
+            s"Expected assoc: Right, got: ${meta.associativity}"
           )
         case x =>
-          fail(s"Expected UnaryOpDef, got: ${prettyPrintAst(x)}")
+          fail(s"Expected unary operator Bnd, got: ${prettyPrintAst(x)}")
     }
   }
 
@@ -114,21 +157,24 @@ class OpTests extends BaseEffFunSuite:
         s"Expected 1 member, got: ${m.members.size}"
       )
       m.members.head match
-        case op: UnaryOpDef =>
+        case bnd: Bnd
+            if bnd.meta
+              .exists(m => m.origin == BindingOrigin.Operator && m.arity == CallableArity.Unary) =>
+          val meta = bnd.meta.get
           assert(
-            clue(op.name) == clue("-"),
-            s"Failed test ${prettyPrintAst(op)}"
+            clue(meta.originalName) == clue("-"),
+            s"Failed test ${prettyPrintAst(bnd)}"
           )
           assert(
-            clue(op.assoc) == clue(Associativity.Right),
-            s"Failed test ${prettyPrintAst(op)}"
+            clue(meta.associativity) == clue(Some(Associativity.Right)),
+            s"Failed test ${prettyPrintAst(bnd)}"
           )
           assert(
-            clue(op.precedence) == clue(2),
-            s"Failed test ${prettyPrintAst(op)}"
+            clue(meta.precedence) == clue(2),
+            s"Failed test ${prettyPrintAst(bnd)}"
           )
         case x =>
-          fail(s"Expected UnaryOpDef, got: ${prettyPrintAst(x)}")
+          fail(s"Expected unary operator Bnd, got: ${prettyPrintAst(x)}")
     }
   }
 
@@ -143,20 +189,23 @@ class OpTests extends BaseEffFunSuite:
         s"Expected 1 member, got: ${m.members.size}"
       )
       m.members.head match
-        case op: UnaryOpDef =>
+        case bnd: Bnd
+            if bnd.meta
+              .exists(m => m.origin == BindingOrigin.Operator && m.arity == CallableArity.Unary) =>
+          val meta = bnd.meta.get
           assert(
-            clue(op.name) == clue("-"),
-            s"Failed test ${prettyPrintAst(op)}"
+            clue(meta.originalName) == clue("-"),
+            s"Failed test ${prettyPrintAst(bnd)}"
           )
           assert(
-            clue(op.assoc) == clue(Associativity.Left),
-            s"Failed test ${prettyPrintAst(op)}"
+            clue(meta.associativity) == clue(Some(Associativity.Left)),
+            s"Failed test ${prettyPrintAst(bnd)}"
           )
           assert(
-            clue(op.precedence) == clue(2),
-            s"Failed test ${prettyPrintAst(op)}"
+            clue(meta.precedence) == clue(2),
+            s"Failed test ${prettyPrintAst(bnd)}"
           )
         case x =>
-          fail(s"Expected UnaryOpDef, got: ${prettyPrintAst(x)}")
+          fail(s"Expected unary operator Bnd, got: ${prettyPrintAst(x)}")
     }
   }

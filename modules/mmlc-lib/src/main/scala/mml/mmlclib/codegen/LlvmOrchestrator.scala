@@ -12,6 +12,8 @@ case class ToolInfo(versions: Map[String, String], missing: List[String])
 enum CompilationMode derives CanEqual:
   case Binary
   case Library
+  case Ast
+  case Ir
 
 enum LlvmCompilationError derives CanEqual:
   case TemporaryFileCreationError(message: String)
@@ -103,6 +105,90 @@ object LlvmOrchestrator:
                 processLlvmFile(inputFile, workingDirectory, mode, verbose, targetTriple)
           yield result
     yield result
+
+  def compileAndRun(
+    llvmIr:           String,
+    moduleName:       String,
+    workingDirectory: String,
+    verbose:          Boolean        = false,
+    targetTriple:     Option[String] = None
+  ): IO[Either[LlvmCompilationError, Int]] =
+    for
+      // First compile the binary
+      compileResult <- compile(
+        llvmIr,
+        moduleName,
+        workingDirectory,
+        CompilationMode.Binary,
+        verbose,
+        targetTriple
+      )
+      result <- compileResult match
+        case Left(error) => IO.pure(error.asLeft)
+        case Right(_) =>
+          // Compilation succeeded, now run the executable
+          for
+            targetTripleResult <- detectOsTargetTriple(targetTriple)
+            runResult <- targetTripleResult match
+              case Left(error) => IO.pure(error.asLeft)
+              case Right(triple) =>
+                val executablePath = s"$workingDirectory/target/$moduleName-$triple"
+                logPhase(s"Running executable: $executablePath")
+                executeProgram(executablePath, verbose)
+          yield runResult
+    yield result
+
+  private def executeProgram(
+    executablePath: String,
+    verbose:        Boolean
+  ): IO[Either[LlvmCompilationError, Int]] =
+    IO {
+      try {
+        val processBuilder = new ProcessBuilder(executablePath)
+        processBuilder.inheritIO() // Inherit stdin/stdout/stderr from parent process
+
+        logDebug(s"Executing: $executablePath", verbose)
+        val process  = processBuilder.start()
+        val exitCode = process.waitFor()
+
+        if exitCode >= 128 then
+          val signalNum  = exitCode - 128
+          val signalName = signalNameFor(signalNum).getOrElse("UNKNOWN")
+          val reason     = signalReasonFor(signalNum).getOrElse("unknown reason")
+          logError(s"Process terminated by signal $signalName ($signalNum): $reason")
+        logDebug(s"Program exited with code: $exitCode", verbose)
+        exitCode.asRight
+      } catch {
+        case e: Exception =>
+          val error = LlvmCompilationError.ExecutableRunError(executablePath, -1)
+          logError(s"Failed to execute program: ${e.getMessage}")
+          error.asLeft
+      }
+    }
+
+  private def signalNameFor(signalNum: Int): Option[String] =
+    signalNum match
+      case 2 => Some("SIGINT")
+      case 4 => Some("SIGILL")
+      case 6 => Some("SIGABRT")
+      case 7 => Some("SIGBUS")
+      case 8 => Some("SIGFPE")
+      case 9 => Some("SIGKILL")
+      case 11 => Some("SIGSEGV")
+      case 15 => Some("SIGTERM")
+      case _ => None
+
+  private def signalReasonFor(signalNum: Int): Option[String] =
+    signalNum match
+      case 2 => Some("interrupt")
+      case 4 => Some("illegal instruction")
+      case 6 => Some("abort")
+      case 7 => Some("bus error")
+      case 8 => Some("floating point exception")
+      case 9 => Some("killed")
+      case 11 => Some("segmentation fault")
+      case 15 => Some("terminated")
+      case _ => None
 
   private def processLlvmFile(
     inputFile:        File,
@@ -287,6 +373,9 @@ object LlvmOrchestrator:
       compileBinary(programName, targetTriple, workingDirectory, outputDir, targetDir, verbose)
     case CompilationMode.Library =>
       compileLibrary(programName, targetTriple, workingDirectory, outputDir, targetDir, verbose)
+    case CompilationMode.Ast | CompilationMode.Ir =>
+      // No compilation needed for these modes
+      IO.pure(0.asRight)
 
   /** Path to the MML runtime file in resources */
   private val mmlRuntimeResourcePath = "mml_runtime.c"
@@ -410,7 +499,7 @@ object LlvmOrchestrator:
             logDebug(s"Output file: $objPath", verbose)
 
             val cmd =
-              s"clang -target $targetTriple -c -std=c17 -$optLevel -fPIC -o $objPath $sourcePath"
+              s"clang -target $targetTriple -c -std=c17 -$optLevel -flto -march=native -fPIC -o $objPath $sourcePath"
             executeCommand(
               cmd,
               "Failed to compile MML runtime",
@@ -451,7 +540,7 @@ object LlvmOrchestrator:
           logDebug(s"Output file: $finalExecutablePath", verbose)
 
           executeCommand(
-            s"clang -target $targetTriple -$optLevel  $inputFile $runtimePath -o $finalExecutablePath",
+            s"clang -target $targetTriple -$optLevel -flto -march=native $inputFile $runtimePath -o $finalExecutablePath",
             "Failed to compile and link",
             workingDirectory,
             verbose

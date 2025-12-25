@@ -13,3 +13,10 @@ op ! (n: Int): Int 95 left =
     1 
   else 
     n * (n - 1)!; # Recursive call to calculate factorial
+
+
+fn main() = 
+  let x = println "Give me a number";
+  let num = str_to_int (readline());
+  println (to_string( num! ) )
+;

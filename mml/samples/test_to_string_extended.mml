@@ -6,4 +6,6 @@ let concat_results =
       (concat "Large: " (to_string 1234567890))
     );
 
-fn main() = println concat_results;
+fn main(): Unit =
+  println concat_results
+;

@@ -2,7 +2,7 @@ package mml.mmlclib.grammar
 
 import mml.mmlclib.ast.*
 import mml.mmlclib.test.BaseEffFunSuite
-import mml.mmlclib.util.prettyprint.ast.prettyPrintAst
+import mml.mmlclib.util.prettyprint.ast.{prettyPrintAst, prettyPrintTypeSpec}
 import munit.*
 
 class LetBndTests extends BaseEffFunSuite:
@@ -225,6 +225,69 @@ class LetBndTests extends BaseEffFunSuite:
           case Some(ts: TypeRef) => assert(clue(ts.name) == clue("Int"))
           case _ => fail("Expected a type ascription but got ${prettyPrintAst(bnd.typeAsc)}")
 
+      case x => fail(s"Expected a binding but got: ${prettyPrintAst(x)}")
+    }
+  }
+
+  test("let with function type ascription") {
+    parseNotFailed(
+      """
+        let a: String -> String = ???;
+      """
+    ).map { m =>
+      assert(m.members.size == 1)
+      m.members.head
+    }.map {
+      case bnd: Bnd =>
+        bnd.typeAsc match
+          case Some(TypeFn(_, params, returnType)) =>
+            assertEquals(params.size, 1)
+            params.head match
+              case TypeRef(_, "String", _) => // pass
+              case other =>
+                fail(s"Expected String param type, got ${prettyPrintAst(other)}")
+            returnType match
+              case TypeRef(_, "String", _) => // pass
+              case other =>
+                fail(s"Expected String return type, got ${prettyPrintAst(other)}")
+          case other =>
+            fail(s"Expected function type ascription, got ${prettyPrintTypeSpec(other)}")
+      case x => fail(s"Expected a binding but got: ${prettyPrintAst(x)}")
+    }
+  }
+
+  test("let with grouped function type ascription") {
+    parseNotFailed(
+      """
+        let a: (String -> String) -> String = ???;
+      """
+    ).map { m =>
+      assert(m.members.size == 1)
+      m.members.head
+    }.map {
+      case bnd: Bnd =>
+        bnd.typeAsc match
+          case Some(TypeFn(_, params, returnType)) =>
+            assertEquals(params.size, 1)
+            params.head match
+              case TypeGroup(_, List(TypeFn(_, innerParams, innerReturn))) =>
+                assertEquals(innerParams.size, 1)
+                innerParams.head match
+                  case TypeRef(_, "String", _) => // pass
+                  case other =>
+                    fail(s"Expected String inner param, got ${prettyPrintAst(other)}")
+                innerReturn match
+                  case TypeRef(_, "String", _) => // pass
+                  case other =>
+                    fail(s"Expected String inner return, got ${prettyPrintAst(other)}")
+              case other =>
+                fail(s"Expected grouped function type, got ${prettyPrintAst(other)}")
+            returnType match
+              case TypeRef(_, "String", _) => // pass
+              case other =>
+                fail(s"Expected String return type, got ${prettyPrintAst(other)}")
+          case other =>
+            fail(s"Expected function type ascription, got ${prettyPrintTypeSpec(other)}")
       case x => fail(s"Expected a binding but got: ${prettyPrintAst(x)}")
     }
   }

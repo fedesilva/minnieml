@@ -1,7 +1,7 @@
 package mml.mmlclib.util.error.print
 
 import mml.mmlclib.ast.{Decl, FromSource}
-import mml.mmlclib.semantic.{SemanticError, TypeError}
+import mml.mmlclib.semantic.{SemanticError, TypeError, UnresolvableTypeContext}
 // Removed Ordering import
 
 /** Pretty printer for semantic errors */
@@ -118,6 +118,9 @@ object SemanticErrorPrinter:
         val location = LocationPrinter.printSpan(invalidExpr.span)
         s"${Console.RED}Invalid expression found at $location [phase: $phase]${Console.RESET}"
 
+      case SemanticError.InvalidEntryPoint(message, span) =>
+        val location = LocationPrinter.printSpan(span)
+        s"${Console.RED}$message at $location${Console.RESET}"
       case SemanticError.TypeCheckingError(error) =>
         prettyPrintTypeError(error)
 
@@ -151,27 +154,35 @@ object SemanticErrorPrinter:
       case other => other.getClass.getSimpleName
 
     error match
-      case TypeError.MissingParameterType(param, fnDef, phase) =>
+      case TypeError.MissingParameterType(param, decl, phase) =>
         val location = LocationPrinter.printSpan(param.span)
-        s"${Console.RED}Missing parameter type for '${param.name}' in function '${fnDef.name}' at $location${Console.RESET}\n${Console.YELLOW}Phase: $phase${Console.RESET}"
+        s"${Console.RED}Missing parameter type for '${param.name}' in function '${decl.name}' at $location${Console.RESET}\n${Console.YELLOW}Phase: $phase${Console.RESET}"
 
-      case TypeError.MissingReturnType(fnDef, phase) =>
-        val location = LocationPrinter.printSpan(fnDef.span)
-        s"${Console.RED}Missing return type for function '${fnDef.name}' at $location${Console.RESET}\n${Console.YELLOW}Phase: $phase${Console.RESET}"
+      case TypeError.MissingReturnType(decl, phase) =>
+        val location = LocationPrinter.printSpan(decl.asInstanceOf[FromSource].span)
+        s"${Console.RED}Missing return type for function '${decl.name}' at $location${Console.RESET}\n${Console.YELLOW}Phase: $phase${Console.RESET}"
 
-      case TypeError.MissingOperatorParameterType(param, opDef, phase) =>
+      case TypeError.RecursiveFunctionMissingReturnType(decl, phase) =>
+        val location = LocationPrinter.printSpan(decl.asInstanceOf[FromSource].span)
+        s"${Console.RED}Missing return type for self-recursive function '${decl.name}' at $location${Console.RESET}\n${Console.YELLOW}Phase: $phase${Console.RESET}"
+
+      case TypeError.MissingOperatorParameterType(param, decl, phase) =>
         val location = LocationPrinter.printSpan(param.span)
-        s"${Console.RED}Missing parameter type for '${param.name}' in operator '${opDef.name}' at $location${Console.RESET}\n${Console.YELLOW}Phase: $phase${Console.RESET}"
+        s"${Console.RED}Missing parameter type for '${param.name}' in operator '${decl.name}' at $location${Console.RESET}\n${Console.YELLOW}Phase: $phase${Console.RESET}"
 
-      case TypeError.MissingOperatorReturnType(opDef, phase) =>
-        val location = LocationPrinter.printSpan(opDef.span)
-        s"${Console.RED}Missing return type for operator '${opDef.name}' at $location${Console.RESET}\n${Console.YELLOW}Phase: $phase${Console.RESET}"
+      case TypeError.MissingOperatorReturnType(decl, phase) =>
+        val location = LocationPrinter.printSpan(decl.asInstanceOf[FromSource].span)
+        s"${Console.RED}Missing return type for operator '${decl.name}' at $location${Console.RESET}\n${Console.YELLOW}Phase: $phase${Console.RESET}"
 
-      case TypeError.TypeMismatch(node, expected, actual, phase) =>
+      case TypeError.TypeMismatch(node, expected, actual, phase, expectedBy) =>
         val location    = LocationPrinter.printSpan(node.asInstanceOf[FromSource].span)
         val expectedStr = formatTypeSpec(expected)
         val actualStr   = formatTypeSpec(actual)
-        s"${Console.RED}Type mismatch at $location: expected '$expectedStr', got '$actualStr'${Console.RESET}\n${Console.YELLOW}Phase: $phase${Console.RESET}"
+        val expectation =
+          expectedBy match
+            case Some(name) => s"'$name' expected '$expectedStr'"
+            case None => s"expected '$expectedStr'"
+        s"${Console.RED}Type mismatch at $location: $expectation, got '$actualStr'${Console.RESET}\n${Console.YELLOW}Phase: $phase${Console.RESET}"
 
       case TypeError.UndersaturatedApplication(app, expectedArgs, actualArgs, phase) =>
         val location = LocationPrinter.printSpan(app.span)
@@ -197,9 +208,14 @@ object SemanticErrorPrinter:
         val location = LocationPrinter.printSpan(cond.span)
         s"${Console.RED}Unable to determine conditional branch types at $location${Console.RESET}\n${Console.YELLOW}Phase: $phase${Console.RESET}"
 
-      case TypeError.UnresolvableType(typeRef, node, phase) =>
-        val location = LocationPrinter.printSpan(typeRef.span)
-        s"${Console.RED}Unresolvable type reference '${typeRef.name}' at $location${Console.RESET}\n${Console.YELLOW}Phase: $phase${Console.RESET}"
+      case TypeError.UnresolvableType(node, context, phase) =>
+        val location = node match
+          case fs: FromSource => LocationPrinter.printSpan(fs.span)
+          case _ => "<unknown>"
+        val nameSuffix = context match
+          case Some(UnresolvableTypeContext.NamedValue(name)) => s" for '$name'"
+          case _ => ""
+        s"${Console.RED}Unable to infer type$nameSuffix at $location${Console.RESET}\n${Console.YELLOW}Phase: $phase${Console.RESET}"
 
       case TypeError.IncompatibleTypes(node, type1, type2, context, phase) =>
         val location = LocationPrinter.printSpan(node.asInstanceOf[FromSource].span)

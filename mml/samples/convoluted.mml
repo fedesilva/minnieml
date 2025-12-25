@@ -1,7 +1,10 @@
-let a = 1;
-let b = 2; 
-let c = 3;
-let x = 3*3;
-let y = 4*30;
-let z = b * y * x;
-let result = a * b + c / y * x;
+fn main() = 
+  let a = 1;
+  let b = 2; 
+  let c = 3;
+  let x = 3*3;
+  let y = 4*30;
+  let z = b * y * x;
+  let result = a * b + c / y * x;
+  println (to_string result)
+;

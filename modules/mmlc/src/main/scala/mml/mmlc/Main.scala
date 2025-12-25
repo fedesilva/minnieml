@@ -44,6 +44,14 @@ object Main extends IOApp:
               CompilationPipeline.processBinary(path, moduleName, bin)
             )
 
+          case run: Command.Run =>
+            run.file.fold(
+              IO.println("Error: Source file is required for run command").as(ExitCode(1))
+            )(path =>
+              val moduleName = FileOperations.sanitizeFileName(path)
+              CompilationPipeline.processRun(path, moduleName, run)
+            )
+
           case lib: Command.Lib =>
             lib.file.fold(
               IO.println("Error: Source file is required for lib command").as(ExitCode(1))

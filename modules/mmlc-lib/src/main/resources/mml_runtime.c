@@ -4,6 +4,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/types.h>
+#include <sys/uio.h>
 #include <sys/wait.h>
 #include <unistd.h>
 
@@ -42,8 +43,12 @@ void println(String str)
 {
     if (str.data)
     {
-        write(STDOUT_FILENO, str.data, str.length);
-        write(STDOUT_FILENO, "\n", 1);
+        struct iovec iov[2];
+        iov[0].iov_base = str.data;
+        iov[0].iov_len = str.length;
+        iov[1].iov_base = "\n";
+        iov[1].iov_len = 1;
+        writev(STDOUT_FILENO, iov, 2);
     }
 }
 
@@ -110,6 +115,109 @@ String string_builder_finalize(StringBuilder *sb)
     free(sb->buffer);
     free(sb);
     return result;
+}
+
+// --- Output Buffer ---
+typedef struct
+{
+    size_t capacity;
+    size_t length;
+    char *data;
+    int fd;
+} BufferImpl;
+
+typedef BufferImpl *Buffer;
+
+Buffer mkBuffer()
+{
+    Buffer b = (Buffer)malloc(sizeof(BufferImpl));
+    if (!b)
+        return NULL;
+    b->capacity = 4096;
+    b->length = 0;
+    b->fd = STDOUT_FILENO;
+    b->data = (char *)malloc(b->capacity);
+    if (!b->data)
+    {
+        free(b);
+        return NULL;
+    }
+    return b;
+}
+
+Buffer mkBufferWithFd(int fd)
+{
+    Buffer b = (Buffer)malloc(sizeof(BufferImpl));
+    if (!b)
+        return NULL;
+    b->capacity = 4096;
+    b->length = 0;
+    b->fd = fd;
+    b->data = (char *)malloc(b->capacity);
+    if (!b->data)
+    {
+        free(b);
+        return NULL;
+    }
+    return b;
+}
+
+Buffer mkBufferWithSize(int64_t size)
+{
+    Buffer b = (Buffer)malloc(sizeof(BufferImpl));
+    if (!b)
+        return NULL;
+    b->capacity = size > 0 ? (size_t)size : 4096;
+    b->length = 0;
+    b->fd = STDOUT_FILENO;
+    b->data = (char *)malloc(b->capacity);
+    if (!b->data)
+    {
+        free(b);
+        return NULL;
+    }
+    return b;
+}
+
+void flush(Buffer b)
+{
+    if (b && b->data && b->length > 0)
+    {
+        write(b->fd, b->data, b->length);
+        b->length = 0;
+    }
+}
+
+void buffer_write(Buffer b, String s)
+{
+    if (!b || !s.data)
+        return;
+    while (b->length + s.length >= b->capacity)
+    {
+        b->capacity *= 2;
+        char *new_data = (char *)realloc(b->data, b->capacity);
+        if (!new_data)
+            return;
+        b->data = new_data;
+    }
+    memcpy(b->data + b->length, s.data, s.length);
+    b->length += s.length;
+}
+
+void buffer_writeln(Buffer b, String s)
+{
+    if (!b)
+        return;
+    buffer_write(b, s);
+    while (b->length + 1 >= b->capacity)
+    {
+        b->capacity *= 2;
+        char *new_data = (char *)realloc(b->data, b->capacity);
+        if (!new_data)
+            return;
+        b->data = new_data;
+    }
+    b->data[b->length++] = '\n';
 }
 
 // --- Substring ---
@@ -214,11 +322,82 @@ String to_string(int64_t value)
     return (String){total_length, data};
 }
 
+// --- String to Integer Conversion (strict) ---
+int64_t str_to_int(String s)
+{
+    if (!s.data || s.length == 0)
+        return 0;
+
+    size_t i = 0;
+    int sign = 1;
+    if (s.data[0] == '-' || s.data[0] == '+')
+    {
+        sign = (s.data[0] == '-') ? -1 : 1;
+        i = 1;
+    }
+
+    if (i >= s.length)
+        return 0;
+
+    int64_t value = 0;
+    for (; i < s.length; i++)
+    {
+        char c = s.data[i];
+        if (c < '0' || c > '9')
+            return 0;
+        value = (value * 10) + (c - '0');
+    }
+
+    return value * sign;
+}
+
 // --- File Handling ---
+
+// Helper: convert MML String to null-terminated C string
+static char *to_cstr(String s)
+{
+    char *cstr = (char *)malloc(s.length + 1);
+    if (!cstr)
+        return NULL;
+    memcpy(cstr, s.data, s.length);
+    cstr[s.length] = '\0';
+    return cstr;
+}
+
 int open_file(const char *path, const char *mode)
 {
     int flags = (!strcmp(mode, "r")) ? O_RDONLY : O_WRONLY | O_CREAT | O_TRUNC;
     return open(path, flags, 0644);
+}
+
+int open_file_read(String path)
+{
+    char *cpath = to_cstr(path);
+    if (!cpath)
+        return -1;
+    int fd = open(cpath, O_RDONLY, 0);
+    free(cpath);
+    return fd;
+}
+
+int open_file_write(String path)
+{
+    char *cpath = to_cstr(path);
+    if (!cpath)
+        return -1;
+    int fd = open(cpath, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+    free(cpath);
+    return fd;
+}
+
+int open_file_append(String path)
+{
+    char *cpath = to_cstr(path);
+    if (!cpath)
+        return -1;
+    int fd = open(cpath, O_WRONLY | O_CREAT | O_APPEND, 0644);
+    free(cpath);
+    return fd;
 }
 
 ssize_t read_file(int fd, char *buffer, size_t size)

@@ -1,4 +1,5 @@
 import mml.mmlclib.api.*
+import mml.mmlclib.ast.*
 import mml.mmlclib.util.yolo.*
 import mml.mmlclib.util.*
 import mml.mmlclib.util.prettyprint.*

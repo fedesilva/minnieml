@@ -1,0 +1,12 @@
+
+# for this to work we need:
+# * literal lamdas
+# * multi line (complex) functions (see LetIn)
+fn makeLambda() = 
+  let a = 1;
+  fn () -> to_string (2 * a)
+;
+
+fn main() = 
+  println (makeLambda ())
+;

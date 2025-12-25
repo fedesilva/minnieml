@@ -1,0 +1,25 @@
+
+fn mod(a: Int, b: Int): Int = a - (a / b) * b;
+
+fn fizzbuzz_line(n: Int): Unit =
+  if mod n 15 == 0 then
+    println_b "FizzBuzz"
+  else if mod n 3 == 0 then
+    println_b "Fizz"
+  else if mod n 5 == 0 then
+    println_b "Buzz"
+  else
+    println_b (to_string n)
+;
+
+fn fizzbuzz(n: Int, max: Int): Unit =
+  if n <= max then
+    fizzbuzz_line n;
+    fizzbuzz (n + 1) max
+  else
+    flush_buffer ()
+;
+
+fn main(): Unit =
+  fizzbuzz 1 1000000
+;
