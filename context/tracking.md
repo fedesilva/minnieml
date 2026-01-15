@@ -21,6 +21,25 @@
 
 ## Active Tasks
 
+### Simple Memory Management Prototype
+
+**Doc:** `docs/brainstorming/mem-man/1-simple-mem-prototype.md`
+
+Linear ownership with borrow-by-default. Enables safe automatic memory management
+and unlocks `noalias` parameter attributes for LLVM optimization.
+
+**Key points:**
+- Borrow by default, explicit move with `~` syntax
+- Extend `@native` with `[mem=alloc]` / `[mem=static]` attributes
+- New OwnershipAnalyzer phase inserts `__free_T` calls into AST
+- `cap` field in String/Buffer for runtime ownership check (conditional merges)
+- No codegen changes - just AST rewriting
+
+**Phases:**
+1. Hardcode native effects in compiler (no syntax changes)
+2. Add `@native[...]` parsing
+3. Implement OwnershipAnalyzer phase
+4. Write programs, find edge cases, iterate
 
 ### TARGET CPU
 
@@ -33,6 +52,8 @@ currently we have cpu and arch flags:
   - stop passing both flags to opt and clang.
 * change how emittig the target-cpu attribute  works
   - if present use that to generate the attribute
+* if a target triple is passed we should not use the llvm-check-ok data
+  since that most likely means we are cross compiling.
 
 ### Lsp command errors fail to propagate
 
