@@ -62,7 +62,14 @@ object CodegenStage:
           case None => state
           case Some(triple) =>
             val (targetAbi, abiState) = resolveTargetAbi(state.config, state.resolvedTriple, state)
-            LlvmIrEmitter.module(abiState.module, abiState.entryPoint, triple, targetAbi) match
+            val hostCpu               = LlvmToolchain.readHostCpu(state.config.outputDir.toString)
+            LlvmIrEmitter.module(
+              abiState.module,
+              abiState.entryPoint,
+              triple,
+              targetAbi,
+              hostCpu
+            ) match
               case Right(result) =>
                 // Lift codegen warnings to compiler state
                 val stateWithWarnings = result.warnings.foldLeft(abiState)(_.addWarning(_))

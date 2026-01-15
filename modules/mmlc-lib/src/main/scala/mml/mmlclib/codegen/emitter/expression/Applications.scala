@@ -267,14 +267,16 @@ def compileRegularCall(
       }
   }
 
+private case class CompiledArg(op: String, llvmType: String, typeSpec: Option[Type])
+
 /** Compiles all arguments to a function call. */
 private def compileArgs(
   allArgs:       List[Expr],
   state:         CodeGenState,
   functionScope: Map[String, (Int, String)],
   compileExpr:   ExprCompiler
-): Either[CodeGenError, (List[(String, String)], CodeGenState)] =
-  allArgs.foldLeft((List.empty[(String, String)], state).asRight[CodeGenError]) {
+): Either[CodeGenError, (List[CompiledArg], CodeGenState)] =
+  allArgs.foldLeft((List.empty[CompiledArg], state).asRight[CodeGenError]) {
     case (Right((compiledArgs, currentState)), arg) =>
       compileExpr(arg, currentState, functionScope).flatMap { argRes =>
         val argOp = if argRes.isLiteral then argRes.register.toString else s"%${argRes.register}"
@@ -285,7 +287,13 @@ private def compileArgs(
               case Right(llvmType) =>
                 // Skip void/Unit args - they can't be passed in LLVM
                 if llvmType == "void" then Right((compiledArgs, argRes.state))
-                else Right((compiledArgs :+ (argOp, llvmType), argRes.state))
+                else
+                  Right(
+                    (
+                      compiledArgs :+ CompiledArg(argOp, llvmType, arg.typeSpec),
+                      argRes.state
+                    )
+                  )
               case Left(err) => Left(err)
           case None =>
             Left(
@@ -302,22 +310,22 @@ private def compileArgs(
 private def compileFunctionWithTemplate(
   fnRef:        Ref,
   tpl:          String,
-  compiledArgs: List[(String, String)],
+  compiledArgs: List[CompiledArg],
   app:          App,
   state:        CodeGenState
 ): Either[CodeGenError, CompileResult] =
   val resultReg = state.nextRegister
   val instruction = compiledArgs match
-    case List((argOp, argType)) =>
+    case List(CompiledArg(argOp, argType, _)) =>
       // Single arg: use %operand (like unary operators)
       tpl.replace("%type", argType).replace("%operand", argOp)
     case args =>
       // Multiple args: use %operand1, %operand2, ... (like binary operators)
       args.zipWithIndex
-        .foldLeft(tpl) { case (t, ((argOp, argType), i)) =>
+        .foldLeft(tpl) { case (t, (CompiledArg(argOp, argType, _), i)) =>
           t.replace(s"%operand${i + 1}", argOp).replace(s"%type${i + 1}", argType)
         }
-        .replace("%type", args.headOption.map(_._2).getOrElse(""))
+        .replace("%type", args.headOption.map(_.llvmType).getOrElse(""))
 
   val line = s"  %$resultReg = $instruction"
   app.typeSpec.flatMap(getMmlTypeName) match
@@ -331,7 +339,7 @@ private def compileFunctionWithTemplate(
 /** Compiles a standard function call (non-template). */
 private def compileStandardCall(
   fnRef:        Ref,
-  compiledArgs: List[(String, String)],
+  compiledArgs: List[CompiledArg],
   fnReturnType: String,
   app:          App,
   state:        CodeGenState
@@ -340,18 +348,22 @@ private def compileStandardCall(
     case bnd: Bnd => isNativeBinding(bnd)
     case _ => false
   }
+  val rawArgs = compiledArgs.map(arg => (arg.op, arg.llvmType))
   val (finalArgs, stateAfterSplit) =
-    if isNative then lowerNativeArgs(compiledArgs, state)
-    else (compiledArgs, state)
-  val resultReg = stateAfterSplit.nextRegister
+    if isNative then lowerNativeArgs(rawArgs, state)
+    else (rawArgs, state)
+  val (stateWithAlias, aliasScopeTag, noaliasTag) =
+    buildCallAliasMetadata(getResolvedName(fnRef, stateAfterSplit), compiledArgs, stateAfterSplit)
+  val resultReg = stateWithAlias.nextRegister
   val args      = finalArgs.map { case (value, typ) => (typ, value) }
-  val fnName    = getResolvedName(fnRef, stateAfterSplit)
+  val fnName    = getResolvedName(fnRef, stateWithAlias)
 
   if fnReturnType == "void" then
-    val callLine = emitCall(None, None, fnName, args)
-    Right(CompileResult(0, stateAfterSplit.emit(callLine), false, "Unit"))
+    val callLine = emitCall(None, None, fnName, args, aliasScopeTag, noaliasTag)
+    Right(CompileResult(0, stateWithAlias.emit(callLine), false, "Unit"))
   else
-    val callLine = emitCall(Some(resultReg), Some(fnReturnType), fnName, args)
+    val callLine =
+      emitCall(Some(resultReg), Some(fnReturnType), fnName, args, aliasScopeTag, noaliasTag)
     app.typeSpec match
       case Some(ts) =>
         getMmlTypeName(ts) match
@@ -359,7 +371,7 @@ private def compileStandardCall(
             Right(
               CompileResult(
                 resultReg,
-                stateAfterSplit.withRegister(resultReg + 1).emit(callLine),
+                stateWithAlias.withRegister(resultReg + 1).emit(callLine),
                 false,
                 typeName
               )
@@ -368,3 +380,36 @@ private def compileStandardCall(
             Left(CodeGenError(s"Could not determine MML type name for result: $ts", Some(app)))
       case None =>
         Left(CodeGenError(s"Missing return type for function '${fnRef.name}'", Some(app)))
+
+private def sanitizeLabelPart(raw: String): String =
+  raw.replace("%", "reg").replaceAll("[^A-Za-z0-9_\\.]", "_")
+
+private def buildCallAliasMetadata(
+  fnName:       String,
+  compiledArgs: List[CompiledArg],
+  state:        CodeGenState
+): (CodeGenState, Option[String], Option[String]) =
+  val labels = compiledArgs.zipWithIndex.map { case (arg, idx) =>
+    val labelOp = sanitizeLabelPart(arg.op)
+    s"$fnName.arg$idx.$labelOp"
+  }
+  buildAliasTags(labels, state)
+
+private def buildAliasTags(
+  labels: List[String],
+  state:  CodeGenState
+): (CodeGenState, Option[String], Option[String]) =
+  if labels.isEmpty then (state, None, None)
+  else
+    val (stateWithScopes, scopeIds) = labels.foldLeft((state, List.empty[Int])) {
+      case ((s, acc), label) =>
+        val (s1, id) = s.ensureAliasScopeNode(label)
+        (s1, id :: acc)
+    }
+    val scopeIdList   = scopeIds.reverse
+    val aliasScopeTag = s"!{${scopeIdList.map(id => s"!$id").mkString(", ")}}"
+    val otherScopeIds = stateWithScopes.aliasScopeIds.values.filterNot(scopeIdList.toSet).toList
+    val sortedNoalias = otherScopeIds.sorted.map(id => s"!$id")
+    val noaliasTagOpt =
+      if sortedNoalias.isEmpty then None else Some(s"!{${sortedNoalias.mkString(", ")}}")
+    (stateWithScopes, Some(aliasScopeTag), noaliasTagOpt)
