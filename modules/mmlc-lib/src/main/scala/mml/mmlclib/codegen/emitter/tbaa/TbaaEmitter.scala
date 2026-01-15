@@ -1,7 +1,7 @@
 package mml.mmlclib.codegen.emitter.tbaa
 
 import mml.mmlclib.ast.*
-import mml.mmlclib.codegen.emitter.{CodeGenError, CodeGenState}
+import mml.mmlclib.codegen.emitter.{CodeGenError, CodeGenState, TypeNameResolver}
 
 object TbaaEmitter:
 
@@ -10,58 +10,20 @@ object TbaaEmitter:
     */
   def getTbaaTag(typeSpec: Type, state: CodeGenState): (CodeGenState, Option[String]) =
     typeSpec match
-      case TypeRef(_, name, resolvedId, _) =>
-        resolvedId.flatMap(state.resolvables.lookupType) match
-          case Some(td: TypeDef) =>
-            // Use the MML type name - preserves type distinctions
-            state.getTbaaAccessTag(td.name) match
+      case TypeRef(_, _, _, _) =>
+        TypeNameResolver.getMmlTypeName(typeSpec, state.resolvables) match
+          case Right(typeName) =>
+            state.getTbaaAccessTag(typeName) match
               case (s2, tag) => (s2, Some(tag))
-          case Some(ta: TypeAlias) =>
-            ta.typeSpec match
-              case Some(spec) => getTbaaTag(spec, state)
-              case None => getTbaaTag(ta.typeRef, state)
-          case Some(_: TypeStruct) =>
-            (state, None)
-          case None =>
-            (state, None)
-
+          case Left(_) => (state, None)
       case np: NativePrimitive =>
         state.getTbaaAccessTag(np.llvmType) match
           case (s2, tag) => (s2, Some(tag))
-
       case np: NativePointer =>
         state.getTbaaAccessTag(np.llvmType) match
           case (s2, tag) => (s2, Some(tag))
-
-      case _: TypeStruct =>
-        (state, None)
-
       case _ =>
         (state, None)
-
-  /** Extract MML type name from a TypeSpec. Returns the declared type name (Int64, CharPtr, String)
-    * to preserve MML's type distinctions in TBAA metadata.
-    */
-  private def getMmlTypeName(
-    typeSpec:    Type,
-    resolvables: ResolvablesIndex
-  ): Either[CodeGenError, String] =
-    typeSpec match
-      case TypeRef(_, name, resolvedId, _) =>
-        resolvedId.flatMap(resolvables.lookupType) match
-          case Some(_: TypeDef) => Right(name)
-          case Some(_: TypeStruct) => Right(name)
-          case Some(ta: TypeAlias) =>
-            ta.typeSpec match
-              case Some(spec) => getMmlTypeName(spec, resolvables)
-              case None => getMmlTypeName(ta.typeRef, resolvables)
-          case None =>
-            Left(CodeGenError(s"Unresolved type reference '$name'"))
-      case TypeStruct(_, _, _, name, _, _) => Right(name)
-      case np: NativePrimitive => Right(np.llvmType)
-      case np: NativePointer => Right(np.llvmType)
-      case other =>
-        Left(CodeGenError(s"Cannot extract type name from ${other.getClass.getSimpleName}"))
 
   /** Get TBAA access tag for a specific struct field.
     *
@@ -173,7 +135,9 @@ object TbaaEmitter:
       ) {
         case (Right((acc, currentOffset)), (fieldName, fieldTypeSpec)) =>
           for
-            typeName <- getMmlTypeName(fieldTypeSpec, resolvables).left
+            typeName <- TypeNameResolver
+              .getMmlTypeName(fieldTypeSpec, resolvables)
+              .left
               .map(e => CodeGenError(s"In struct '$structName', field '$fieldName': ${e.message}"))
             fieldAlignment <- StructLayout
               .alignOf(fieldTypeSpec, resolvables)

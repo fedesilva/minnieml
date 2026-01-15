@@ -29,6 +29,21 @@ Backend Optimization (TBAA): Your TBAA metadata (!0 = !{!"MML TBAA Root"}) disti
 
 Frontend/IR Optimization (Attribute): Since your IntArray is immutable (the struct container, not the data), you can mark the struct pointer argument as readonly or noalias if you pass by reference. But since you pass by value, you rely on LLVM's SROA (Scalar Replacement of Aggregates) to break the struct apart.
 
+### Lsp command errors fail to propagate
+
+In VScode console:
+
+```
+Compiling to binary... file:///Users/f/Workshop/mine/mml/mml/mml/samples/no-main.mml
+[Error] Header must provide a Content-Length property.
+{"\n\u001b[31mcompilation failed":"\u001b[0m\n\n\u001b[33mFile: mml/samples/no-main.mml\n\n\u001b[31mNo entry point 'main' found for binary compilation at [1:1]-[4:2]\u001b[0m\n\n\u001b[36m   1 |\u001b[0m \n\u001b[36m   2 |\u001b[0m \u001b[31m\u001b[1mfn this_is_not_main() =\u001b[0m\n       \u001b[32m\u001b[1m^^^^^^^^^^^^^^^^^^^^^^^\u001b[0m\n\u001b[36m   3 |\u001b[0m \u001b[31m\u001b[1m  println \"nopes\"\u001b[0m\n       \u001b[32m\u001b[1m^^^^^^^^^^^^^^^^^\u001b[0m\n\u001b[36m   4 |\u001b[0m \u001b[31m\u001b[1m;\u001b[0m\n       \u001b[32m\u001b[1m^\u001b[0m\u001b[0m\n\nContent-Length: 66"}
+[Error - 9:08:15 PM] Client MinnieML Language Server: connection to server is erroring.
+Header must provide a Content-Length property.
+{"\n\u001b[31mcompilation failed":"\u001b[0m\n\n\u001b[33mFile: mml/samples/no-main.mml\n\n\u001b[31mNo entry point 'main' found for binary compilation at [1:1]-[4:2]\u001b[0m\n\n\u001b[36m   1 |\u001b[0m \n\u001b[36m   2 |\u001b[0m \u001b[31m\u001b[1mfn this_is_not_main() =\u001b[0m\n       \u001b[32m\u001b[1m^^^^^^^^^^^^^^^^^^^^^^^\u001b[0m\n\u001b[36m   3 |\u001b[0m \u001b[31m\u001b[1m  println \"nopes\"\u001b[0m\n       \u001b[32m\u001b[1m^^^^^^^^^^^^^^^^^\u001b[0m\n\u001b[36m   4 |\u001b[0m \u001b[31m\u001b[1m;\u001b[0m\n       \u001b[32m\u001b[1m^\u001b[0m\u001b[0m\n\nContent-Length: 66"}
+```
+
+1. it should not use just the error printer.
+2. it should return useful information the editor can display
 
 ---
 
