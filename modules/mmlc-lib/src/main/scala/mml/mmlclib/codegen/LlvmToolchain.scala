@@ -206,10 +206,8 @@ object LlvmToolchain:
         Files
           .readAllLines(marker)
           .asScala
-          .collectFirst {
-            case line if line.startsWith(hostCpuPrefix) =>
-              line.stripPrefix(hostCpuPrefix).trim
-          }
+          .find(_.stripLeading().startsWith(hostCpuPrefix))
+          .map(_.stripLeading().stripPrefix(hostCpuPrefix).trim)
           .filter(_.nonEmpty)
       catch case _: Exception => None
     }
