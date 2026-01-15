@@ -12,6 +12,15 @@ enum CompilerError extends CompilationError:
   case ParserErrors(errors: List[ParserError])
   case Unknown(msg: String)
 
+  def message: String = this match
+    case SemanticErrors(errors) =>
+      if errors.size == 1 then errors.head.message
+      else s"${errors.size} errors: ${errors.map(_.message).mkString("; ")}"
+    case ParserErrors(errors) =>
+      if errors.size == 1 then errors.head.message
+      else s"${errors.size} parse errors: ${errors.map(_.message).mkString("; ")}"
+    case Unknown(msg) => msg
+
 object FrontEndApi:
   /** Run ingest + semantic pipeline and return the final state. */
   def compile(

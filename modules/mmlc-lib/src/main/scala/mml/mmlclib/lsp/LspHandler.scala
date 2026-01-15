@@ -1,9 +1,11 @@
 package mml.mmlclib.lsp
 
 import cats.effect.IO
-import mml.mmlclib.compiler.CompilerState
+import mml.mmlclib.api.CompilerApi
+import mml.mmlclib.compiler.{CompilerConfig, CompilerState}
 
 import java.io.{BufferedReader, PrintStream}
+import java.nio.file.Path
 import scala.concurrent.duration.*
 
 /** LSP handler that processes requests and manages state. */
@@ -311,19 +313,29 @@ class LspHandler(
           RpcError(RpcError.InvalidParams, "Missing file URI argument")
         )
       case Some(uri) =>
-        val path = uriToPath(uri)
-        val cmd  = if isLib then "lib" else "bin"
-        IO.blocking {
-          import scala.sys.process.*
-          val result = Process(List("mmlc", cmd, path)).!
-          result
-        }.flatMap { exitCode =>
-          val success = exitCode == 0
-          JsonRpc.writeResponse(
-            output,
-            id,
-            ujson.Obj("success" -> success, "exitCode" -> exitCode)
-          )
+        val filePath = Path.of(uriToPath(uri))
+        val outputDir = filePath.getParent match
+          case null => "out"
+          case dir => dir.resolve("out").toString
+        val config =
+          if isLib then CompilerConfig.library(outputDir)
+          else CompilerConfig.binary(outputDir)
+        val compile =
+          if isLib then CompilerApi.compileLibraryQuiet
+          else CompilerApi.compileBinaryQuiet
+        compile(filePath, config).flatMap {
+          case Left(errorMsg) =>
+            JsonRpc.writeResponse(
+              output,
+              id,
+              ujson.Obj("success" -> false, "message" -> errorMsg)
+            )
+          case Right(_) =>
+            JsonRpc.writeResponse(
+              output,
+              id,
+              ujson.Obj("success" -> true)
+            )
         }
 
   private def uriToPath(uri: String): String =
