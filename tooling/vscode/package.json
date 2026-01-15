@@ -59,6 +59,18 @@
             {
                 "command": "mml.compileLib",
                 "title": "MML: Compile as Library"
+            },
+            {
+                "command": "mml.clean",
+                "title": "MML: Clean Build Directory"
+            },
+            {
+                "command": "mml.ast",
+                "title": "MML: Generate AST"
+            },
+            {
+                "command": "mml.ir",
+                "title": "MML: Generate IR"
             }
         ]
     },
