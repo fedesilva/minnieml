@@ -43,7 +43,8 @@ and unlocks `noalias` parameter attributes for LLVM optimization.
 
 ### [COMPLETE] Lsp cats warnings
 
-* we need a blocking pool to run the compilation (after the above is fixed)
+* Added heartbeat fiber (50ms sleep + cede loop) - fixes idle warning during active use
+* Still occurs after laptop sleep/wake - possibly clock skew related, low priority
 
 2026-01-15T16:30:02.085Z [WARNING] Your app's responsiveness to a new asynchronous event (such as a new connection, an upstream response, or a timer) was in excess of 100 milliseconds. Your CPU is probably starving. Consider increasing the granularity of your delays or adding more cedes. This may also be a sign that you are unintentionally running blocking I/O operations (such as File or InetAddress) without the blocking combinator.
 
@@ -109,7 +110,8 @@ TBD
   VSCode extension updated with corresponding commands.
 - **LSP heartbeat**: Added background heartbeat fiber in `LspServer` that runs
   `IO.sleep(50ms) *> IO.cede` in a loop. Prevents cats-effect CPU starvation
-  warnings while idle without masking real issues.
+  warnings during active use. Warning still occurs after laptop sleep/wake
+  (possibly clock skew) - low priority, revisit later.
 
 ### 2026-01-14 (branch: 2026-01-14-dev)
 
