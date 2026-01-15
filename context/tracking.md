@@ -46,6 +46,9 @@ and unlocks `noalias` parameter attributes for LLVM optimization.
 * this is dumb: lsp is mmlc, yet it forks out a new instance.
 * extend the CompilerApi with a method that does not print errors, 
   returns them for lsp consumption (one for bin, one for lib) 
+* the CompilationError should probably mandate a message.
+* do not return diagnostics (for now) just a nice formatted message
+  with the reason ("An executable needs an entry point") or something like that.
 
 ### TARGET CPU
 
