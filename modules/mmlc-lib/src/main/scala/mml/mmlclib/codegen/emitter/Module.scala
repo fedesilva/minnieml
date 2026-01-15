@@ -4,6 +4,7 @@ import cats.syntax.all.*
 import mml.mmlclib.ast.*
 import mml.mmlclib.codegen.TargetAbi
 import mml.mmlclib.codegen.emitter.abis.lowerNativeParamTypes
+import mml.mmlclib.codegen.emitter.alias.AliasScopeEmitter
 import mml.mmlclib.codegen.emitter.expression.escapeString
 import mml.mmlclib.codegen.emitter.tbaa.TbaaEmitter
 import mml.mmlclib.errors.CompilerWarning
@@ -161,6 +162,11 @@ def emitModule(
       output.append("\n]\n")
 
     // 7. TBAA Metadata
+    if finalState.aliasScopeOutput.nonEmpty then
+      output.append("\n; Alias Scope Metadata\n")
+      output.append(finalState.aliasScopeOutput.reverse.mkString("\n"))
+      output.append('\n')
+
     if finalState.tbaaOutput.nonEmpty then
       output.append("\n; TBAA Metadata\n")
       output.append(finalState.tbaaOutput.reverse.mkString("\n"))
@@ -331,8 +337,19 @@ private def emitValueBinding(bnd: Bnd, state: CodeGenState): Either[CodeGenError
                 .emit(s"define internal void @$initFnName() {")
                 .emit(s"entry:")
               compileExpr(bnd.value, state2.withRegister(0)).map { compileRes2 =>
-                compileRes2.state
-                  .emit(emitStore(s"%${compileRes2.register}", llvmType, s"@$mangledName"))
+                val (stateWithAlias, aliasTag, noaliasTag) = bnd.typeSpec match
+                  case Some(spec) => AliasScopeEmitter.getAliasScopeTags(spec, compileRes2.state)
+                  case None => (compileRes2.state, None, None)
+                val storeLine =
+                  emitStore(
+                    s"%${compileRes2.register}",
+                    llvmType,
+                    s"@$mangledName",
+                    aliasScope = aliasTag,
+                    noalias    = noaliasTag
+                  )
+                stateWithAlias
+                  .emit(storeLine)
                   .emit("  ret void")
                   .emit("}")
                   .emit("")
@@ -360,8 +377,19 @@ private def emitValueBinding(bnd: Bnd, state: CodeGenState): Either[CodeGenError
             .emit(s"define internal void @$initFnName() {")
             .emit(s"entry:")
           compileExpr(bnd.value, state2.withRegister(0)).map { compileRes2 =>
-            compileRes2.state
-              .emit(emitStore(s"%${compileRes2.register}", llvmType, s"@$mangledName"))
+            val (stateWithAlias, aliasTag, noaliasTag) = bnd.typeSpec match
+              case Some(spec) => AliasScopeEmitter.getAliasScopeTags(spec, compileRes2.state)
+              case None => (compileRes2.state, None, None)
+            val storeLine =
+              emitStore(
+                s"%${compileRes2.register}",
+                llvmType,
+                s"@$mangledName",
+                aliasScope = aliasTag,
+                noalias    = noaliasTag
+              )
+            stateWithAlias
+              .emit(storeLine)
               .emit("  ret void")
               .emit("}")
               .emit("")

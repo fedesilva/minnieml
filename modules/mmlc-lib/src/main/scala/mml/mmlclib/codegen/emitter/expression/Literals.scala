@@ -2,6 +2,7 @@ package mml.mmlclib.codegen.emitter.expression
 
 import cats.syntax.all.*
 import mml.mmlclib.ast.*
+import mml.mmlclib.codegen.emitter.alias.AliasScopeEmitter
 import mml.mmlclib.codegen.emitter.tbaa.TbaaEmitter
 import mml.mmlclib.codegen.emitter.{
   CodeGenError,
@@ -50,9 +51,19 @@ def compileHole(hole: Hole, state: CodeGenState): Either[CodeGenError, CompileRe
             .withRegister(allocaReg + 1)
             .emit(s"  %$allocaReg = alloca $llvmType")
           val loadReg = stateWithAlloca.nextRegister
-          val stateWithLoad = stateWithAlloca
+          val (stateWithAlias, aliasTag, noaliasTag) =
+            AliasScopeEmitter.getAliasScopeTags(typeSpec, stateWithAlloca)
+          val loadLine =
+            emitLoad(
+              loadReg,
+              llvmType,
+              s"%$allocaReg",
+              aliasScope = aliasTag,
+              noalias    = noaliasTag
+            )
+          val stateWithLoad = stateWithAlias
             .withRegister(loadReg + 1)
-            .emit(emitLoad(loadReg, llvmType, s"%$allocaReg"))
+            .emit(loadLine)
 
           getMmlTypeName(typeSpec) match
             case Some(typeName) =>
@@ -127,9 +138,19 @@ def compileLiteralString(
         s"%$allocReg",
         List(("i32", "0"), ("i32", "0"))
       )
-      val stateWithLenPtr   = stateWithAlloc.withRegister(lenPtrReg + 1).emit(lenPtrLine)
-      val lenStoreLine      = emitStore(s"$strLen", "i64", s"%$lenPtrReg", Some(lenTag))
-      val stateWithLenStore = stateWithLenPtr.emit(lenStoreLine)
+      val stateWithLenPtr = stateWithAlloc.withRegister(lenPtrReg + 1).emit(lenPtrLine)
+      val (stateWithLenAlias, lenAliasTag, lenNoaliasTag) =
+        AliasScopeEmitter.getAliasScopeTagsByName("Int64", stateWithLenPtr)
+      val lenStoreLine =
+        emitStore(
+          s"$strLen",
+          "i64",
+          s"%$lenPtrReg",
+          Some(lenTag),
+          Some(lenAliasTag),
+          lenNoaliasTag
+        )
+      val stateWithLenStore = stateWithLenAlias.emit(lenStoreLine)
 
       // Store the data field (field 1, offset 8, type pointer)
       val dataPtrReg = stateWithLenStore.nextRegister
@@ -140,14 +161,33 @@ def compileLiteralString(
         s"%$allocReg",
         List(("i32", "0"), ("i32", "1"))
       )
-      val stateWithDataPtr   = stateWithLenStore.withRegister(dataPtrReg + 1).emit(dataPtrLine)
-      val dataStoreLine      = emitStore(s"%$ptrReg", "i8*", s"%$dataPtrReg", Some(dataTag))
-      val stateWithDataStore = stateWithDataPtr.emit(dataStoreLine)
+      val stateWithDataPtr = stateWithLenStore.withRegister(dataPtrReg + 1).emit(dataPtrLine)
+      val (stateWithDataAlias, dataAliasTag, dataNoaliasTag) =
+        AliasScopeEmitter.getAliasScopeTagsByName("CharPtr", stateWithDataPtr)
+      val dataStoreLine =
+        emitStore(
+          s"%$ptrReg",
+          "i8*",
+          s"%$dataPtrReg",
+          Some(dataTag),
+          Some(dataAliasTag),
+          dataNoaliasTag
+        )
+      val stateWithDataStore = stateWithDataAlias.emit(dataStoreLine)
 
       // Load the String struct (no TBAA tag for aggregate load)
-      val resultReg  = stateWithDataStore.nextRegister
-      val loadLine   = emitLoad(resultReg, "%struct.String", s"%$allocReg", None)
-      val finalState = stateWithDataStore.withRegister(resultReg + 1).emit(loadLine)
+      val (stateWithStructAlias, structAliasTag, structNoaliasTag) =
+        AliasScopeEmitter.getAliasScopeTags(ts, stateWithDataStore)
+      val resultReg = stateWithStructAlias.nextRegister
+      val loadLine =
+        emitLoad(
+          resultReg,
+          "%struct.String",
+          s"%$allocReg",
+          aliasScope = structAliasTag,
+          noalias    = structNoaliasTag
+        )
+      val finalState = stateWithStructAlias.withRegister(resultReg + 1).emit(loadLine)
 
       CompileResult(resultReg, finalState, false, "String")
   }

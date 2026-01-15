@@ -37,14 +37,38 @@ def emitXor(result: Int, typ: String, left: String, right: String): String =
   s"  %$result = xor $typ $left, $right"
 
 /** Helper for generating syntactically correct LLVM IR load instruction */
-def emitLoad(result: Int, typ: String, ptr: String, tbaaTag: Option[String] = None): String =
-  val tbaaPart = tbaaTag.map(tag => s", !tbaa $tag").getOrElse("")
-  s"  %$result = load $typ, $typ* $ptr$tbaaPart"
+def emitLoad(
+  result:     Int,
+  typ:        String,
+  ptr:        String,
+  tbaaTag:    Option[String] = None,
+  aliasScope: Option[String] = None,
+  noalias:    Option[String] = None
+): String =
+  val metadataParts = List(
+    tbaaTag.map(tag => s"!tbaa $tag"),
+    aliasScope.map(tag => s"!alias.scope $tag"),
+    noalias.map(tag => s"!noalias $tag")
+  ).flatten
+  val metadataSuffix = if metadataParts.isEmpty then "" else metadataParts.mkString(", ", ", ", "")
+  s"  %$result = load $typ, $typ* $ptr$metadataSuffix"
 
 /** Helper for generating syntactically correct LLVM IR store instruction */
-def emitStore(value: String, typ: String, ptr: String, tbaaTag: Option[String] = None): String =
-  val tbaaPart = tbaaTag.map(tag => s", !tbaa $tag").getOrElse("")
-  s"  store $typ $value, $typ* $ptr$tbaaPart"
+def emitStore(
+  value:      String,
+  typ:        String,
+  ptr:        String,
+  tbaaTag:    Option[String] = None,
+  aliasScope: Option[String] = None,
+  noalias:    Option[String] = None
+): String =
+  val metadataParts = List(
+    tbaaTag.map(tag => s"!tbaa $tag"),
+    aliasScope.map(tag => s"!alias.scope $tag"),
+    noalias.map(tag => s"!noalias $tag")
+  ).flatten
+  val metadataSuffix = if metadataParts.isEmpty then "" else metadataParts.mkString(", ", ", ", "")
+  s"  store $typ $value, $typ* $ptr$metadataSuffix"
 
 /** Helper for generating syntactically correct LLVM IR getelementptr instruction */
 def emitGetElementPtr(
@@ -238,6 +262,10 @@ case class CodeGenState(
   tbaaRootId:    Option[Int]        = None,
   tbaaScalarIds: Map[String, Int]   = Map.empty,
   tbaaStructIds: Map[String, Int]   = Map.empty,
+  // Alias scope metadata
+  aliasScopeOutput:   List[String]     = List.empty,
+  aliasScopeDomainId: Option[Int]      = None,
+  aliasScopeIds:      Map[String, Int] = Map.empty,
   // Resolvables index for soft reference lookups
   resolvables: ResolvablesIndex = ResolvablesIndex()
 ):
@@ -271,10 +299,14 @@ case class CodeGenState(
   /** Returns the complete LLVM IR as a single string. */
   def result: String =
     val mainOutput = output.reverse.mkString("\n")
+    val aliasSection =
+      if aliasScopeOutput.nonEmpty then
+        "\n\n; Alias Scope Metadata\n" + aliasScopeOutput.reverse.mkString("\n")
+      else ""
     val tbaaSection =
       if tbaaOutput.nonEmpty then "\n\n; TBAA Metadata\n" + tbaaOutput.reverse.mkString("\n")
       else ""
-    mainOutput + tbaaSection
+    mainOutput + aliasSection + tbaaSection
 
   /** Initialize TBAA Root if not present */
   def ensureTbaaRoot: CodeGenState =
@@ -412,6 +444,44 @@ case class CodeGenState(
           ),
           s"!$tagId"
         )
+
+  /** Ensure an alias scope domain metadata node exists. */
+  def ensureAliasScopeDomain: (CodeGenState, Int) =
+    aliasScopeDomainId match
+      case Some(id) => (this, id)
+      case None =>
+        val id       = nextTbaaId
+        val metadata = s"""!$id = distinct !{!$id, !"MML Alias Scope Domain"}"""
+        (
+          copy(
+            aliasScopeOutput   = metadata :: aliasScopeOutput,
+            nextTbaaId         = nextTbaaId + 1,
+            aliasScopeDomainId = Some(id)
+          ),
+          id
+        )
+
+  /** Ensure an alias scope metadata node exists for a given MML type name. */
+  def ensureAliasScopeNode(typeName: String): (CodeGenState, Int) =
+    aliasScopeIds.get(typeName) match
+      case Some(id) => (this, id)
+      case None =>
+        val (stateWithDomain, domainId) = ensureAliasScopeDomain
+        val id                          = stateWithDomain.nextTbaaId
+        val metadata = s"""!$id = distinct !{!$id, !$domainId, !"alias.scope:$typeName"}"""
+        (
+          stateWithDomain.copy(
+            aliasScopeOutput = metadata :: stateWithDomain.aliasScopeOutput,
+            nextTbaaId       = stateWithDomain.nextTbaaId + 1,
+            aliasScopeIds    = stateWithDomain.aliasScopeIds + (typeName -> id)
+          ),
+          id
+        )
+
+  /** Get the metadata reference string for an alias scope. */
+  def aliasScopeTag(typeName: String): (CodeGenState, String) =
+    val (stateWithScope, id) = ensureAliasScopeNode(typeName)
+    (stateWithScope, s"!{!$id}")
 
   /** Adds a string constant to the state and returns the name of the constant. */
   def addStringConstant(content: String): (CodeGenState, String) =

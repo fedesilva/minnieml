@@ -2,6 +2,7 @@ package mml.mmlclib.codegen.emitter
 
 import cats.syntax.all.*
 import mml.mmlclib.ast.*
+import mml.mmlclib.codegen.emitter.alias.AliasScopeEmitter
 import mml.mmlclib.codegen.emitter.compileExpr
 import mml.mmlclib.codegen.emitter.tbaa.TbaaEmitter
 import mml.mmlclib.errors.CompilerWarning
@@ -39,8 +40,19 @@ def compileBinding(bnd: Bnd, state: CodeGenState): Either[CodeGenError, CodeGenS
             .emit(s"define internal void @$initFnName() {")
             .emit(s"entry:")
           compileExpr(bnd.value, state2.withRegister(0)).map { compileRes2 =>
-            compileRes2.state
-              .emit(s"  store $llvmType %${compileRes2.register}, $llvmType* @${bnd.name}")
+            val (stateWithAlias, aliasTag, noaliasTag) = bnd.typeSpec match
+              case Some(spec) => AliasScopeEmitter.getAliasScopeTags(spec, compileRes2.state)
+              case None => (compileRes2.state, None, None)
+            val storeLine =
+              emitStore(
+                s"%${compileRes2.register}",
+                llvmType,
+                s"@${bnd.name}",
+                aliasScope = aliasTag,
+                noalias    = noaliasTag
+              )
+            stateWithAlias
+              .emit(storeLine)
               .emit("  ret void")
               .emit("}")
               .emit("")
@@ -222,20 +234,37 @@ private def compileStructConstructor(
                         TbaaEmitter
                           .getTbaaStructFieldTag(returnTypeSpec, fieldIndex, stateWithPtr)
                           .map { case (stateWithTag, tag) =>
+                            val (stateWithAlias, aliasTag, noaliasTag) =
+                              AliasScopeEmitter.getAliasScopeTags(field.typeSpec, stateWithTag)
                             val storeLine =
-                              emitStore(s"%$paramReg", fieldLlvmType, s"%$fieldPtrReg", Some(tag))
-                            stateWithTag.emit(storeLine)
+                              emitStore(
+                                s"%$paramReg",
+                                fieldLlvmType,
+                                s"%$fieldPtrReg",
+                                Some(tag),
+                                aliasTag,
+                                noaliasTag
+                              )
+                            stateWithAlias.emit(storeLine)
                           }
                       }
                 }
             }
 
             fieldsStateE.map { stateAfterStores =>
-              val resultReg = stateAfterStores.nextRegister
-              val loadLine  = emitLoad(resultReg, structLlvmType, s"%$allocReg", None)
+              val (stateWithAlias, aliasTag, noaliasTag) =
+                AliasScopeEmitter.getAliasScopeTags(returnTypeSpec, stateAfterStores)
+              val resultReg = stateWithAlias.nextRegister
+              val loadLine = emitLoad(
+                resultReg,
+                structLlvmType,
+                s"%$allocReg",
+                aliasScope = aliasTag,
+                noalias    = noaliasTag
+              )
               CompileResult(
                 resultReg,
-                stateAfterStores.withRegister(resultReg + 1).emit(loadLine),
+                stateWithAlias.withRegister(resultReg + 1).emit(loadLine),
                 false,
                 structDef.name
               )
