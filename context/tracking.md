@@ -21,24 +21,6 @@
 
 ## Active Tasks
 
-### Improvement to codegen now
-
-1. Add noalias to Array Parameters (10-15% improvement)
-scala// In your function parameter codegen
-val noaliasAttr = if (isArrayType(param.ty)) " noalias" else ""
-s"${param.llvmType}${noaliasAttr} %${param.name}"
-Generates:
-llvmdefine void @matmul_mat_mul_k(%struct.String noalias %0, %struct.String noalias %1, ...) {
-2. Simplify Alias Scope Hierarchy (5-10% improvement)
-Your current noalias sets have 100+ scopes. Flatten them:
-scala// Instead of propagating all parent scopes through call chain
-// Just mark direct parameter conflicts
-def generateAliasScope(fnName: String, params: List[Param]): String = {
-  params.zipWithIndex.map { case (p, i) => 
-    s"!${fnName}.arg${i}"
-  }.mkString(", ")
-}
-
 
 ### TARGET CPU
 
