@@ -18,11 +18,12 @@ endif
 all: $(BINDIR)/fizzbuzz-c $(BINDIR)/fizzbuzz2-c $(BINDIR)/fizzbuzz-go $(BINDIR)/fizzbuzz2-go \
      $(BINDIR)/ackermann-c $(BINDIR)/ackermann-go $(BINDIR)/ackermann-c-chacho $(BINDIR)/ackermann-unfair-c $(BINDIR)/ackermann-rs \
      $(BINDIR)/sieve-c $(BINDIR)/sieve-go $(BINDIR)/sieve-opt-go $(BINDIR)/sieve-rs \
-     $(BINDIR)/quicksort-c $(BINDIR)/matmul-c $(BINDIR)/matmul-restricted-c $(BINDIR)/matmul-go $(BINDIR)/matmul-hoisted-go \
+     $(BINDIR)/quicksort-c $(BINDIR)/matmul-c $(BINDIR)/matmul-opt-c $(BINDIR)/matmul-restricted-c $(BINDIR)/matmul-go $(BINDIR)/matmul-bce-go $(BINDIR)/matmul-opt-go \
      $(BINDIR)/nqueens-c $(BINDIR)/euclidean-ext-c
 
 mml: $(BINDIR)/sieve-mml $(BINDIR)/quicksort-mml $(BINDIR)/matmul-mml \
      $(BINDIR)/matmul-opt-mml $(BINDIR)/nqueens-mml $(BINDIR)/euclidean-ext-mml \
+     $(BINDIR)/ackermann-mml \
      $(SELF_SIEVE_BINARIES) $(SELF_MATMUL_BINARIES) $(SELF_MATMUL_OPT_BINARIES)
 
 $(BINDIR):
@@ -59,6 +60,9 @@ $(BINDIR)/ackermann-go: ackermann.go | $(BINDIR)
 
 $(BINDIR)/ackermann-rs: ackermann.rs | $(BINDIR)
 	rustc -O -o $@ $<
+
+$(BINDIR)/ackermann-mml: ackermann.mml | $(BINDIR)
+	mmlc bin -b $(BUILDDIR) -o $@ $<
 
 # Sieve
 $(BINDIR)/sieve-c: sieve.c | $(BINDIR)
@@ -142,13 +146,19 @@ $(BINDIR)/quicksort-mml: quicksort.mml | $(BINDIR)
 $(BINDIR)/matmul-c: matmul.c | $(BINDIR)
 	$(CC) $(CFLAGS) -o $@ $<
 
+$(BINDIR)/matmul-opt-c: matmul-opt.c | $(BINDIR)
+	$(CC) $(CFLAGS) -o $@ $<
+
 $(BINDIR)/matmul-restricted-c: matmul-restricted.c | $(BINDIR)
 	$(CC) $(CFLAGS) -o $@ $<
 
 $(BINDIR)/matmul-go: matmul.go | $(BINDIR)
 	go build -o $@ $<
 
-$(BINDIR)/matmul-hoisted-go: matmul-hoisted.go | $(BINDIR)
+$(BINDIR)/matmul-bce-go: matmul-bce.go | $(BINDIR)
+	go build -o $@ $<
+
+$(BINDIR)/matmul-opt-go: matmul-opt.go | $(BINDIR)
 	go build -o $@ $<
 
 $(BINDIR)/matmul-mml: mat-mul.mml | $(BINDIR)
@@ -311,24 +321,29 @@ bench-quicksort-time: $(BINDIR)/quicksort-c $(BINDIR)/quicksort-mml
 	/usr/bin/time -l $(BINDIR)/quicksort-mml
 
 bench-matmul: $(BINDIR)/matmul-c $(BINDIR)/matmul-restricted-c $(BINDIR)/matmul-go \
-	$(BINDIR)/matmul-hoisted-go $(BINDIR)/matmul-mml $(BINDIR)/matmul-opt-mml $(RESULTS_DEP)
+	$(BINDIR)/matmul-bce-go $(BINDIR)/matmul-opt-go $(BINDIR)/matmul-mml $(BINDIR)/matmul-opt-mml $(BINDIR)/matmul-opt-c $(RESULTS_DEP)
 	hyperfine -N --warmup 20 --runs 50 \
 		$(call EXPORT_FLAGS,matmul) \
 		'$(BINDIR)/matmul-c' \
+		'$(BINDIR)/matmul-opt-c' \
 		'$(BINDIR)/matmul-restricted-c' \
 		'$(BINDIR)/matmul-mml' \
 		'$(BINDIR)/matmul-opt-mml' \
 		'$(BINDIR)/matmul-go' \
-		'$(BINDIR)/matmul-hoisted-go'
+		'$(BINDIR)/matmul-bce-go' \
+		'$(BINDIR)/matmul-opt-go'
 
 bench-matmul-time: $(BINDIR)/matmul-c $(BINDIR)/matmul-restricted-c $(BINDIR)/matmul-go \
-	$(BINDIR)/matmul-hoisted-go $(BINDIR)/matmul-mml $(BINDIR)/matmul-opt-mml
+	$(BINDIR)/matmul-bce-go $(BINDIR)/matmul-opt-go $(BINDIR)/matmul-mml $(BINDIR)/matmul-opt-mml \
+	$(BINDIR)/matmul-opt-c
 	/usr/bin/time -l $(BINDIR)/matmul-c
+	/usr/bin/time -l $(BINDIR)/matmul-opt-c
 	/usr/bin/time -l $(BINDIR)/matmul-restricted-c
 	/usr/bin/time -l $(BINDIR)/matmul-mml
 	/usr/bin/time -l $(BINDIR)/matmul-opt-mml
 	/usr/bin/time -l $(BINDIR)/matmul-go
-	/usr/bin/time -l $(BINDIR)/matmul-hoisted-go
+	/usr/bin/time -l $(BINDIR)/matmul-bce-go
+	/usr/bin/time -l $(BINDIR)/matmul-opt-go
 
 bench-nqueens: $(BINDIR)/nqueens-c $(BINDIR)/nqueens-mml $(RESULTS_DEP)
 	hyperfine -N --warmup 5 --runs 20 \
@@ -350,11 +365,29 @@ bench-euclidean-time: $(BINDIR)/euclidean-ext-c $(BINDIR)/euclidean-ext-mml
 	/usr/bin/time -l $(BINDIR)/euclidean-ext-c
 	/usr/bin/time -l $(BINDIR)/euclidean-ext-mml
 
-bench: bench-sieve bench-quicksort bench-matmul bench-nqueens bench-euclidean \
+bench-ackermann: $(BINDIR)/ackermann-c $(BINDIR)/ackermann-c-chacho $(BINDIR)/ackermann-mml \
+                 $(BINDIR)/ackermann-rs $(BINDIR)/ackermann-go $(RESULTS_DEP)
+	hyperfine -N --warmup 5 --runs 20 \
+		$(call EXPORT_FLAGS,ackermann) \
+		'$(BINDIR)/ackermann-c' \
+		'$(BINDIR)/ackermann-c-chacho' \
+		'$(BINDIR)/ackermann-mml' \
+		'$(BINDIR)/ackermann-rs' \
+		'$(BINDIR)/ackermann-go'
+
+bench-ackermann-time: $(BINDIR)/ackermann-c $(BINDIR)/ackermann-c-chacho $(BINDIR)/ackermann-mml \
+                      $(BINDIR)/ackermann-rs $(BINDIR)/ackermann-go
+	/usr/bin/time -l $(BINDIR)/ackermann-c
+	/usr/bin/time -l $(BINDIR)/ackermann-c-chacho
+	/usr/bin/time -l $(BINDIR)/ackermann-mml
+	/usr/bin/time -l $(BINDIR)/ackermann-rs
+	/usr/bin/time -l $(BINDIR)/ackermann-go
+
+bench: bench-sieve bench-quicksort bench-matmul bench-nqueens bench-euclidean bench-ackermann \
        bench-self-sieve bench-self-matmul bench-self-matmul-opt
 
 bench-time: bench-sieve-time bench-quicksort-time bench-matmul-time bench-nqueens-time \
-            bench-euclidean-time bench-self-sieve-time bench-self-matmul-time \
+            bench-euclidean-time bench-ackermann-time bench-self-sieve-time bench-self-matmul-time \
             bench-self-matmul-opt-time
 
 clean:
