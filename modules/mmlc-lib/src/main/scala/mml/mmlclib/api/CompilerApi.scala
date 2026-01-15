@@ -95,6 +95,55 @@ object CompilerApi:
       case Right(state) => processNativeBinary(state)
     }
 
+  /** Compile to binary without printing errors. Returns Left(errorMessage) on failure. */
+  def compileBinaryQuiet(path: Path, config: CompilerConfig): IO[Either[String, CompilerState]] =
+    runPipelineQuiet(path, config).flatMap {
+      case Left(msg) => IO.pure(Left(msg))
+      case Right(state) => processNativeBinaryQuiet(state)
+    }
+
+  /** Compile to library without printing errors. Returns Left(errorMessage) on failure. */
+  def compileLibraryQuiet(path: Path, config: CompilerConfig): IO[Either[String, CompilerState]] =
+    runPipelineQuiet(path, config).flatMap {
+      case Left(msg) => IO.pure(Left(msg))
+      case Right(state) => processNativeBinaryQuiet(state)
+    }
+
+  /** Run frontend + codegen validation without printing. Returns error message on failure. */
+  private def runPipelineQuiet(
+    path:   Path,
+    config: CompilerConfig
+  ): IO[Either[String, CompilerState]] =
+    compilePath(path, config).flatMap {
+      case Left(error) =>
+        IO.pure(Left(error))
+      case Right(state) if state.hasErrors =>
+        IO.pure(Left(plainErrorMessage(state)))
+      case Right(state) =>
+        val validated = CodegenStage.process(state)
+        if validated.hasErrors then IO.pure(Left(plainErrorMessage(validated)))
+        else IO.pure(Right(validated))
+    }
+
+  /** Process native binary without printing. Returns error message on failure. */
+  private def processNativeBinaryQuiet(state: CompilerState): IO[Either[String, CompilerState]] =
+    for
+      _ <-
+        if state.config.outputAst then
+          FileOperations.writeAstToFile(state.module, state.config.outputDir.toString)
+        else IO.unit
+      finalState <- CodegenStage.processNative(state)
+    yield finalState.nativeResult match
+      case Some(_) => Right(finalState)
+      case None => Left(plainErrorMessage(finalState))
+
+  /** Generate plain text error message from state errors (no ANSI codes). */
+  private def plainErrorMessage(state: CompilerState): String =
+    val errors = state.errors.map(_.message)
+    if errors.isEmpty then "Unknown compilation error"
+    else if errors.size == 1 then errors.head
+    else errors.mkString("\n")
+
   def processAstOnly(path: Path, config: CompilerConfig): IO[ExitCode] =
     runFrontend(path, config).flatMap {
       case Left(exit) => IO.pure(exit)

@@ -174,12 +174,14 @@ async function executeCompileCommand(serverCommand: string, message: string): Pr
         const result = await client.sendRequest(ExecuteCommandRequest.type, {
             command: serverCommand,
             arguments: [uri]
-        }) as { success: boolean; exitCode: number };
+        }) as { success: boolean; message?: string };
 
         if (result.success) {
             vscode.window.showInformationMessage('MML: Compilation successful');
         } else {
-            vscode.window.showErrorMessage(`MML: Compilation failed (exit code ${result.exitCode})`);
+            const msg = result.message || 'Unknown error';
+            outputChannel.appendLine(`Compilation failed: ${msg}`);
+            vscode.window.showErrorMessage(`MML: ${msg}`);
         }
     } catch (error) {
         outputChannel.appendLine(`Compile error: ${error}`);
