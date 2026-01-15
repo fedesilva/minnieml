@@ -2,3 +2,7 @@
 fn this_is_not_main() =
   println "nopes"
 ;
+
+let a = 2;
+
+fn another_not_main() = a;
