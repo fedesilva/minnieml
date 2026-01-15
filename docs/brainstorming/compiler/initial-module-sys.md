@@ -114,7 +114,7 @@ The algorithm described above needs to be weaved into the current architecture; 
          - ExpressionRewriter 
            - purely local
          - TypeChecker
-           - SimpTyper
+           - SimpTyper (Current typer)
 
      
         

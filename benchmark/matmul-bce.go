@@ -12,29 +12,30 @@ func fillMatrix(arr []int64, n int64, seed int64) {
 }
 
 func matMul(A []int64, B []int64, C []int64, n int64) {
-	// Pre-calculate strict integer bounds to help BCE
 	N := int(n)
+	size := N * N
+
+	// BCE Hint: Prove to the compiler that all arrays are large enough.
+	// This single check allows the compiler to eliminate bounds checks 
+	// inside the loops because i, j, k are bounded by N.
+	_ = A[size-1]
+	_ = B[size-1]
+	_ = C[size-1]
 
 	for i := 0; i < N; i++ {
-		// Optimization: Slice the row out of A once.
-		// rowA becomes a simple slice. Accessing rowA[k] is
-		// much easier for the compiler to optimize than A[i*n+k]
-		rowStart := i * N
-		rowA := A[rowStart : rowStart+N]
-
+		rowOffset := i * N
 		for j := 0; j < N; j++ {
 			var acc int64 = 0
 			for k := 0; k < N; k++ {
-				// rowA[k] is now a direct access with fewer checks
-				valA := rowA[k]
-
-				// B is still hard because of the stride (k*n + j),
-				// but we stick to the algorithm.
+				// Naive i-j-k access pattern
+				// A[i*N + k]
+				valA := A[rowOffset+k]
+				// B[k*N + j]
 				valB := B[k*N+j]
 
 				acc += valA * valB
 			}
-			C[rowStart+j] = acc
+			C[rowOffset+j] = acc
 		}
 	}
 }
