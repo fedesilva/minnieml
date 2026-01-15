@@ -41,6 +41,12 @@ and unlocks `noalias` parameter attributes for LLVM optimization.
 3. Implement OwnershipAnalyzer phase
 4. Write programs, find edge cases, iterate
 
+### LSP forks for commands
+
+* this is dumb: lsp is mmlc, yet it forks out a new instance.
+* extend the CompilerApi with a method that does not print errors, 
+  returns them for lsp consumption (one for bin, one for lib) 
+
 ### TARGET CPU
 
 we are generating the target-cpu attribute and annotating with it all definitions.
