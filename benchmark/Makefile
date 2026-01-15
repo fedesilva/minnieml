@@ -231,7 +231,7 @@ $(BINDIR)/euclidean-ext-mml: euclidean-ext.mml | $(BINDIR)
 
 # Benchmarks
 bench-sieve: $(BINDIR)/sieve-c $(BINDIR)/sieve-go $(BINDIR)/sieve-rs $(BINDIR)/sieve-mml $(RESULTS_DEP)
-	hyperfine -N --warmup 20 --runs 500 \
+	hyperfine -N --warmup 20 --runs 50 \
 		$(call EXPORT_FLAGS,sieve) \
 		'$(BINDIR)/sieve-c' \
 		'$(BINDIR)/sieve-mml' \
@@ -245,7 +245,7 @@ bench-sieve-time: $(BINDIR)/sieve-c $(BINDIR)/sieve-go $(BINDIR)/sieve-rs $(BIND
 	/usr/bin/time -l $(BINDIR)/sieve-go
 
 bench-self-sieve: $(SELF_SIEVE_BINARIES) $(RESULTS_DEP)
-	hyperfine -N --warmup 20 --runs 500 \
+	hyperfine -N --warmup 20 --runs 50 \
 		$(call EXPORT_FLAGS,self) \
 		'$(BINDIR)/sieve-mml-O0-tco' \
 		'$(BINDIR)/sieve-mml-O0-no-tco' \
@@ -267,7 +267,7 @@ bench-self-sieve-time: $(SELF_SIEVE_BINARIES)
 	/usr/bin/time -l $(BINDIR)/sieve-mml-O3-no-tco
 
 bench-self-matmul: $(SELF_MATMUL_BINARIES) $(RESULTS_DEP)
-	hyperfine -N --warmup 20 --runs 500 \
+	hyperfine -N --warmup 20 --runs 50 \
 		$(call EXPORT_FLAGS,self-matmul) \
 		'$(BINDIR)/matmul-mml-O0-tco' \
 		'$(BINDIR)/matmul-mml-O0-no-tco' \
@@ -289,7 +289,7 @@ bench-self-matmul-time: $(SELF_MATMUL_BINARIES)
 	/usr/bin/time -l $(BINDIR)/matmul-mml-O3-no-tco
 
 bench-self-matmul-opt: $(SELF_MATMUL_OPT_BINARIES) $(RESULTS_DEP)
-	hyperfine -N --warmup 20 --runs 500 \
+	hyperfine -N --warmup 20 --runs 50 \
 		$(call EXPORT_FLAGS,self-matmul-opt) \
 		'$(BINDIR)/matmul-opt-mml-O0-tco' \
 		'$(BINDIR)/matmul-opt-mml-O0-no-tco' \
