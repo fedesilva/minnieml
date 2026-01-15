@@ -120,9 +120,10 @@ object CompilerApi:
       case Right(state) if state.hasErrors =>
         IO.pure(Left(plainErrorMessage(state)))
       case Right(state) =>
-        val validated = CodegenStage.process(state)
-        if validated.hasErrors then IO.pure(Left(plainErrorMessage(validated)))
-        else IO.pure(Right(validated))
+        IO.blocking(CodegenStage.process(state)).map { validated =>
+          if validated.hasErrors then Left(plainErrorMessage(validated))
+          else Right(validated)
+        }
     }
 
   /** Process native binary without printing. Returns error message on failure. */
