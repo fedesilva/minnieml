@@ -37,11 +37,11 @@ class OpTests extends BaseEffFunSuite:
               case Some(TypeFn(_, params, returnType)) =>
                 assertEquals(params.size, 1)
                 params.head match
-                  case TypeRef(_, "Int", _) => // pass
+                  case TypeRef(_, "Int", _, _) => // pass
                   case other =>
                     fail(s"Expected Int param type, got ${prettyPrintAst(other)}")
                 returnType match
-                  case TypeRef(_, "Int", _) => // pass
+                  case TypeRef(_, "Int", _, _) => // pass
                   case other =>
                     fail(s"Expected Int return type, got ${prettyPrintAst(other)}")
               case other =>

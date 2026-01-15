@@ -8,25 +8,252 @@
 #include <sys/wait.h>
 #include <unistd.h>
 
+#if defined(__clang__) || defined(__GNUC__)
+#define FORCE_INLINE __attribute__((always_inline))
+#else
+#define FORCE_INLINE
+#endif
+
 // --- String Struct ---
-typedef struct
+typedef struct String
 {
     size_t length;
     char *data;
 } String;
 
+// --- Array Structs ---
+typedef struct IntArray
+{
+    int64_t length;
+    int64_t *data;
+} IntArray;
+
+typedef struct StringArray
+{
+    int64_t length;
+    String *data;
+} StringArray;
+
+// --- Output Buffer ---
+typedef struct
+{
+    size_t capacity;
+    size_t length;
+    char *data;
+    int fd;
+} BufferImpl;
+
+typedef BufferImpl *Buffer;
+
+Buffer mkBuffer()
+{
+    Buffer b = (Buffer)malloc(sizeof(BufferImpl));
+    if (!b)
+        return NULL;
+    b->capacity = 1024*8;
+    b->length = 0;
+    b->fd = STDOUT_FILENO;
+    b->data = (char *)malloc(b->capacity);
+    if (!b->data)
+    {
+        free(b);
+        return NULL;
+    }
+    return b;
+}
+
+Buffer mkBufferWithFd(int fd)
+{
+    Buffer b = (Buffer)malloc(sizeof(BufferImpl));
+    if (!b)
+        return NULL;
+    b->capacity = 4096;
+    b->length = 0;
+    b->fd = fd;
+    b->data = (char *)malloc(b->capacity);
+    if (!b->data)
+    {
+        free(b);
+        return NULL;
+    }
+    return b;
+}
+
+Buffer mkBufferWithSize(int64_t size)
+{
+    Buffer b = (Buffer)malloc(sizeof(BufferImpl));
+    if (!b)
+        return NULL;
+    b->capacity = size > 0 ? (size_t)size : 4096;
+    b->length = 0;
+    b->fd = STDOUT_FILENO;
+    b->data = (char *)malloc(b->capacity);
+    if (!b->data)
+    {
+        free(b);
+        return NULL;
+    }
+    return b;
+}
+
+static Buffer stdout_buffer = NULL;
+
+static Buffer get_stdout_buffer(void)
+{
+    if (!stdout_buffer)
+        stdout_buffer = mkBuffer();
+    return stdout_buffer;
+}
+
+void flush(Buffer b)
+{
+    if (b && b->data && b->length > 0)
+    {
+        write(b->fd, b->data, b->length);
+        b->length = 0;
+    }
+}
+
+void mml_sys_flush()
+{
+    Buffer out = get_stdout_buffer();
+    if (out)
+        flush(out);
+}
+
+FORCE_INLINE void buffer_write(Buffer b, String s)
+{
+    if (!b || !s.data)
+        return;
+
+    // Auto-flush if this write would overflow
+    if (b->length + s.length >= b->capacity)
+        flush(b);
+
+    memcpy(b->data + b->length, s.data, s.length);
+    b->length += s.length;
+}
+
+FORCE_INLINE void buffer_writeln(Buffer b, String s)
+{
+    if (!b)
+        return;
+
+    // Auto-flush if this write would overflow (string + newline)
+    if (b->length + s.length + 1 >= b->capacity)
+        flush(b);
+
+    if (s.data)
+    {
+        memcpy(b->data + b->length, s.data, s.length);
+        b->length += s.length;
+    }
+    b->data[b->length++] = '\n';
+}
+
+FORCE_INLINE static size_t format_int64(char *buffer, size_t size, int64_t value)
+{
+    if (!buffer || size == 0)
+        return 0;
+
+    char digits[24];
+    size_t d = 0;
+    size_t pos = 0;
+    int64_t abs_value = value;
+
+    if (value < 0)
+    {
+        if (pos + 1 >= size)
+            return 0;
+        buffer[pos++] = '-';
+        abs_value = -value;
+    }
+
+    if (abs_value == 0)
+    {
+        if (pos + 1 >= size)
+            return 0;
+        buffer[pos++] = '0';
+        return pos;
+    }
+
+    while (abs_value > 0 && d < sizeof(digits))
+    {
+        int64_t q = abs_value / 10;
+        int64_t r = abs_value - q * 10;
+        digits[d++] = (char)('0' + r);
+        abs_value = q;
+    }
+
+    if (pos + d >= size)
+        return 0;
+
+    while (d > 0)
+    {
+        buffer[pos++] = digits[--d];
+    }
+
+    return pos;
+}
+
+FORCE_INLINE void buffer_write_int(Buffer b, int64_t value)
+{
+    if (!b)
+        return;
+
+    char buf[32];
+    size_t len = format_int64(buf, sizeof(buf), value);
+    if (len == 0)
+        return;
+
+    if (b->length + len >= b->capacity)
+        flush(b);
+
+    memcpy(b->data + b->length, buf, len);
+    b->length += len;
+}
+
+FORCE_INLINE void buffer_writeln_int(Buffer b, int64_t value)
+{
+    if (!b)
+        return;
+
+    char buf[32];
+    size_t len = format_int64(buf, sizeof(buf), value);
+    if (len == 0)
+        return;
+
+    if (b->length + len + 1 >= b->capacity)
+        flush(b);
+
+    memcpy(b->data + b->length, buf, len);
+    b->length += len;
+    b->data[b->length++] = '\n';
+}
+
 // --- Read a line from stdin ---
 String readline()
 {
+    mml_sys_flush();
     size_t size = 1024;
     char *buffer = (char *)malloc(size);
     if (!buffer)
         return (String){0, NULL};
+
     if (fgets(buffer, size, stdin))
     {
         buffer[strcspn(buffer, "\n")] = 0;
         return (String){strlen(buffer), buffer};
     }
+
+    // Check if we hit EOF
+    if (feof(stdin))
+    {
+        clearerr(stdin); // Clear the EOF flag
+        // Optionally print a message
+        // fprintf(stderr, "\n");  // New line after Ctrl+D
+    }
+
     free(buffer);
     return (String){0, NULL};
 }
@@ -36,20 +263,6 @@ void print(String str)
 {
     if (str.data)
         write(STDOUT_FILENO, str.data, str.length);
-}
-
-// --- Print a string with newline ---
-void println(String str)
-{
-    if (str.data)
-    {
-        struct iovec iov[2];
-        iov[0].iov_base = str.data;
-        iov[0].iov_len = str.length;
-        iov[1].iov_base = "\n";
-        iov[1].iov_len = 1;
-        writev(STDOUT_FILENO, iov, 2);
-    }
 }
 
 // --- StringBuilder ---
@@ -117,107 +330,26 @@ String string_builder_finalize(StringBuilder *sb)
     return result;
 }
 
-// --- Output Buffer ---
-typedef struct
+// --- Print a string with newline ---
+void println(String str)
 {
-    size_t capacity;
-    size_t length;
-    char *data;
-    int fd;
-} BufferImpl;
-
-typedef BufferImpl *Buffer;
-
-Buffer mkBuffer()
-{
-    Buffer b = (Buffer)malloc(sizeof(BufferImpl));
-    if (!b)
-        return NULL;
-    b->capacity = 4096;
-    b->length = 0;
-    b->fd = STDOUT_FILENO;
-    b->data = (char *)malloc(b->capacity);
-    if (!b->data)
-    {
-        free(b);
-        return NULL;
-    }
-    return b;
-}
-
-Buffer mkBufferWithFd(int fd)
-{
-    Buffer b = (Buffer)malloc(sizeof(BufferImpl));
-    if (!b)
-        return NULL;
-    b->capacity = 4096;
-    b->length = 0;
-    b->fd = fd;
-    b->data = (char *)malloc(b->capacity);
-    if (!b->data)
-    {
-        free(b);
-        return NULL;
-    }
-    return b;
-}
-
-Buffer mkBufferWithSize(int64_t size)
-{
-    Buffer b = (Buffer)malloc(sizeof(BufferImpl));
-    if (!b)
-        return NULL;
-    b->capacity = size > 0 ? (size_t)size : 4096;
-    b->length = 0;
-    b->fd = STDOUT_FILENO;
-    b->data = (char *)malloc(b->capacity);
-    if (!b->data)
-    {
-        free(b);
-        return NULL;
-    }
-    return b;
-}
-
-void flush(Buffer b)
-{
-    if (b && b->data && b->length > 0)
-    {
-        write(b->fd, b->data, b->length);
-        b->length = 0;
-    }
-}
-
-void buffer_write(Buffer b, String s)
-{
-    if (!b || !s.data)
+    if (!str.data)
         return;
-    while (b->length + s.length >= b->capacity)
-    {
-        b->capacity *= 2;
-        char *new_data = (char *)realloc(b->data, b->capacity);
-        if (!new_data)
-            return;
-        b->data = new_data;
-    }
-    memcpy(b->data + b->length, s.data, s.length);
-    b->length += s.length;
-}
 
-void buffer_writeln(Buffer b, String s)
-{
-    if (!b)
-        return;
-    buffer_write(b, s);
-    while (b->length + 1 >= b->capacity)
+    Buffer out = get_stdout_buffer();
+    if (out)
     {
-        b->capacity *= 2;
-        char *new_data = (char *)realloc(b->data, b->capacity);
-        if (!new_data)
-            return;
-        b->data = new_data;
+        buffer_writeln(out, str);
     }
-    b->data[b->length++] = '\n';
+    else
+    {
+        struct iovec iov[2];
+        iov[0].iov_base = str.data;
+        iov[0].iov_len = str.length;
+        iov[1].iov_base = "\n";
+        iov[1].iov_len = 1;
+        writev(STDOUT_FILENO, iov, 2);
+    }
 }
 
 // --- Substring ---
@@ -415,6 +547,36 @@ void close_file(int fd)
     close(fd);
 }
 
+String read_line_fd(int fd)
+{
+    if (fd == STDIN_FILENO)
+        mml_sys_flush();
+    size_t size = 1024;
+    size_t len = 0;
+    char *buffer = (char *)malloc(size);
+    if (!buffer)
+        return (String){0, NULL};
+
+    char c;
+    while (read(fd, &c, 1) == 1 && c != '\n')
+    {
+        if (len + 1 >= size)
+        {
+            size *= 2;
+            char *new_buf = (char *)realloc(buffer, size);
+            if (!new_buf)
+            {
+                free(buffer);
+                return (String){0, NULL};
+            }
+            buffer = new_buf;
+        }
+        buffer[len++] = c;
+    }
+    buffer[len] = '\0';
+    return (String){len, buffer};
+}
+
 // --- Process Execution ---
 int run_process(const char *cmd, char *const argv[])
 {
@@ -452,4 +614,116 @@ int run_process_with_output(const char *cmd, char *const argv[], char *output, s
     int status;
     waitpid(pid, &status, 0);
     return WEXITSTATUS(status);
+}
+
+// --- IntArray Functions ---
+FORCE_INLINE IntArray ar_int_new(int64_t size)
+{
+    if (size <= 0)
+        return (IntArray){0, NULL};
+
+    int64_t *storage = (int64_t *)malloc((size_t)size * sizeof(int64_t));
+    if (!storage)
+        return (IntArray){0, NULL};
+
+    return (IntArray){size, storage};
+}
+
+FORCE_INLINE void ar_int_set(IntArray arr, int64_t idx, int64_t value)
+{
+    if (!arr.data || idx < 0 || idx >= arr.length)
+    {
+        fprintf(stderr, "IntArray index out of bounds: %lld (length: %lld)\n",
+                (long long)idx, (long long)arr.length);
+        fflush(stderr);
+        exit(1);
+    }
+    arr.data[idx] = value;
+}
+
+FORCE_INLINE void unsafe_ar_int_set(IntArray arr, int64_t idx, int64_t value)
+{    
+    arr.data[idx] = value;
+}
+
+FORCE_INLINE int64_t ar_int_get(IntArray arr, int64_t idx)
+{
+    if (!arr.data || idx < 0 || idx >= arr.length)
+    {
+        
+        fprintf(stderr, "IntArray index out of bounds: %lld (length: %lld)\n",
+                (long long)idx, (long long)arr.length);
+        fflush(stderr);
+        exit(1);
+    }
+    return arr.data[idx];
+}
+
+FORCE_INLINE int64_t unsafe_ar_int_get(IntArray arr, int64_t idx)
+{    
+    return arr.data[idx];
+}
+
+FORCE_INLINE int64_t ar_int_len(IntArray arr)
+{
+    return arr.length;
+}
+
+// --- StringArray Functions ---
+FORCE_INLINE StringArray ar_str_new(int64_t size)
+{
+    if (size <= 0)
+        return (StringArray){0, NULL};
+
+    String *storage = (String *)malloc((size_t)size * sizeof(String));
+    if (!storage)
+        return (StringArray){0, NULL};
+
+    return (StringArray){size, storage};
+}
+
+FORCE_INLINE void ar_str_set(StringArray arr, int64_t idx, String value)
+{
+    if (!arr.data || idx < 0 || idx >= arr.length)
+    {
+        
+        fprintf(stderr, "StringArray index out of bounds: %lld (length: %lld)\n",
+                (long long)idx, (long long)arr.length);
+        fflush(stderr);
+        exit(1);
+    }
+    arr.data[idx] = value;
+}
+
+FORCE_INLINE String ar_str_get(StringArray arr, int64_t idx)
+{
+    if (!arr.data || idx < 0 || idx >= arr.length)
+    {
+        
+        fprintf(stderr, "StringArray index out of bounds: %lld (length: %lld)\n",
+                (long long)idx, (long long)arr.length);
+        fflush(stderr);
+        exit(1);
+    }
+    return arr.data[idx];
+}
+
+FORCE_INLINE int64_t ar_str_len(StringArray arr)
+{
+    return arr.length;
+}
+
+void __mml_sys_hole(int64_t start_line, int64_t start_col, int64_t end_line, int64_t end_col)
+{
+    mml_sys_flush();
+    fprintf(
+        stderr,
+        "not implemented at [%lld:%lld]-[%lld:%lld]\n",
+        (long long)start_line,
+        (long long)start_col,
+        (long long)end_line,
+        (long long)end_col
+    );
+    fflush(stderr);
+    exit(1);
 }

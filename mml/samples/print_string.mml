@@ -1,5 +1,5 @@
 
-fn main(): Unit =
-  println "Fede"
+fn main() =
+  println "Fede";
   0
 ;

@@ -1,6 +1,7 @@
 package mml.mmlclib.semantic
 
 import mml.mmlclib.ast.*
+import mml.mmlclib.compiler.CompilerState
 
 object DuplicateNameChecker:
 
@@ -9,7 +10,7 @@ object DuplicateNameChecker:
   /** Rewrite module to replace duplicate members with invalid nodes, accumulating errors in the
     * state.
     */
-  def rewriteModule(state: SemanticPhaseState): SemanticPhaseState =
+  def rewriteModule(state: CompilerState): CompilerState =
     val (rewrittenMembers, errors) = processMembers(state.module.members)
     state
       .withModule(state.module.copy(members = rewrittenMembers))
@@ -78,10 +79,13 @@ object DuplicateNameChecker:
     }
 
     // Also check for functions that conflict with operators (by original name)
-    val operatorOriginalNames = decls.collect {
-      case bnd: Bnd if bnd.meta.exists(_.origin == BindingOrigin.Operator) =>
-        bnd.meta.get.originalName
-    }.toSet
+    val operatorOriginalNames = decls
+      .collect {
+        case bnd: Bnd if bnd.meta.exists(_.origin == BindingOrigin.Operator) =>
+          bnd.meta.map(_.originalName)
+      }
+      .flatten
+      .toSet
 
     decls.collect {
       case bnd: Bnd

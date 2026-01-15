@@ -1,0 +1,61 @@
+# Extended Euclidean Algorithm (single return version)
+# Computes modular inverse using iterative EGCD
+
+fn egcd_loop(r0: Int, r1: Int, s0: Int, s1: Int): Int =
+  if r1 == 0 then
+    s0
+  else
+    # here is a line comment
+    let q = r0 / r1;
+    let r2 = r0 - (q * r1);
+    let s2 = s0 - (q * s1);
+    egcd_loop r1 r2 s1 s2
+  end
+;
+
+# Returns x such that (a * x) mod m = 1
+fn mod_inverse(a: Int, m: Int): Int =
+  # and here?
+  let x = egcd_loop a m 1 0;
+  if x < 0 then x + m else x end
+;
+
+# Check if number is odd (without bitwise AND)
+fn is_odd(n: Int): Bool =
+  (n % 2) == 1
+;
+
+# Fast modular exponentiation: computes (base^exp) mod m
+fn mod_exp_loop(base: Int, exp: Int, m: Int, result: Int): Int =
+  if exp == 0 then
+    result
+  else
+    let new_result = if is_odd exp then (result * base) % m else result end;
+    let new_base = (base * base) % m;
+    mod_exp_loop new_base (exp / 2) m new_result
+  end
+;
+
+fn mod_exp(base: Int, exp: Int, m: Int): Int =
+  mod_exp_loop base exp m 1
+;
+
+# Benchmark: RSA-style operations
+fn rsa_bench_loop(i: Int, n: Int, p: Int, sum: Int): Int =
+  if i >= n then
+    sum
+  else
+    # Compute i^65537 mod p, then take inverse
+    let encrypted = mod_exp i 65537 p;
+    let inv = mod_inverse encrypted p;
+    rsa_bench_loop (i + 1) n p (sum + inv)
+  end
+;
+
+fn main(): Unit =
+  let p = 1000000007;  # Large prime
+  let n = 10000;
+  
+  let result = rsa_bench_loop 2 n p 0;
+  println (concat "Checksum: " (to_string result))
+;

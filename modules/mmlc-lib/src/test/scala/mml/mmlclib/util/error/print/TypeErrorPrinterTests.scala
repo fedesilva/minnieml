@@ -1,6 +1,7 @@
 package mml.mmlclib.util.error.print
 
 import mml.mmlclib.ast.*
+import mml.mmlclib.parser.SourceInfo
 import mml.mmlclib.semantic.{SemanticError, TypeError}
 import mml.mmlclib.test.BaseEffFunSuite
 
@@ -22,7 +23,7 @@ class TypeErrorPrinterTests extends BaseEffFunSuite:
       TypeError.UnresolvableType(hole, None, "mml.mmlclib.semantic.TypeChecker")
     )
 
-    val output = ErrorPrinter.prettyPrintSemanticErrors(List(err), Some(code))
+    val output = ErrorPrinter.prettyPrintSemanticErrors(List(err), Some(SourceInfo(code)))
     assert(output.contains("Unable to infer type"))
     assert(output.contains("???"))
   }
@@ -36,7 +37,7 @@ class TypeErrorPrinterTests extends BaseEffFunSuite:
         ;
       """
     semState(code).map { result =>
-      val output = ErrorPrinter.prettyPrintSemanticErrors(result.errors, Some(code))
+      val output = ErrorPrinter.prettyPrintSemanticErrors(result.errors, Some(SourceInfo(code)))
       assert(output.contains("Invalid function application"))
       assert(!output.contains("function of type 'f'"))
     }

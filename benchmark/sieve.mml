@@ -1,0 +1,74 @@
+# Sieve of Eratosthenes - drag race style
+# Only stores odd numbers: index i represents number 2*i + 1
+# Clunky throwaway monomorphic IntArray (Int64 only)
+#
+
+fn init_sieve(arr: IntArray, i: Int, size: Int): Unit =
+  if i < size then
+    unsafe_ar_int_set arr i 1;
+    init_sieve arr (i + 1) size
+  end
+;
+
+fn clear_multiples(arr: IntArray, factor: Int, num: Int, size: Int): Unit =
+  if num < size then
+    unsafe_ar_int_set arr num 0;
+    clear_multiples arr factor (num + factor) size
+  end
+;
+
+fn find_next_prime(arr: IntArray, i: Int, limit: Int): Int =
+  if i > limit 
+  then 0
+  elif (unsafe_ar_int_get arr i) == 1 
+  then i
+  else find_next_prime arr (i + 1) limit
+  end
+;
+
+fn sieve_loop(arr: IntArray, factor: Int, q: Int, size: Int): Unit =
+  if factor <= q then
+    let next = find_next_prime arr (factor / 2) (q / 2);
+    if next != 0 then
+      let actual_factor = next * 2 + 1;
+      let start = actual_factor * actual_factor / 2;
+      let u = clear_multiples arr actual_factor start size;
+      sieve_loop arr (actual_factor + 2) q size
+    end
+  end
+;
+
+fn count_loop(arr: IntArray, i: Int, size: Int, acc: Int): Int =
+  if i < size then
+    let val = unsafe_ar_int_get arr i;
+    count_loop arr (i + 1) size (acc + val)
+  else acc
+  end
+;
+
+
+fn count_primes(arr: IntArray, size: Int): Int =
+  count_loop arr 0 size 1
+;
+
+fn isqrt(n: Int, guess: Int): Int =
+  let next = (guess + n / guess) / 2;
+  if next < guess then isqrt n next
+  else guess
+  end
+;
+
+fn run_sieve(limit: Int): Int =
+  let size = (limit + 1) / 2;
+  let arr = ar_int_new size;
+  let u1 = init_sieve arr 0 size;
+  let u2 = ar_int_set arr 0 0;
+  let q = isqrt limit (limit / 2);
+  let u3 = sieve_loop arr 3 q size;
+  count_primes arr size
+;
+
+fn main(): Unit =
+  let count = run_sieve 1000000;
+  println (concat "Primes found: " (to_string count))
+;

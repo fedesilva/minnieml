@@ -1,6 +1,8 @@
 package mml.mmlclib.util.error.print
 
-import mml.mmlclib.api.{CodeGenApiError, CompilerError, NativeEmitterError}
+import mml.mmlclib.api.CompilerError
+import mml.mmlclib.codegen.LlvmCompilationError
+import mml.mmlclib.codegen.emitter.CodeGenError
 
 /** Pretty printer for compiler errors */
 object CompilerErrorPrinter:
@@ -19,18 +21,8 @@ object CompilerErrorPrinter:
       ParserErrorPrinter.prettyPrint(errors)
     case CompilerError.Unknown(msg) =>
       s"Unknown compiler error: $msg"
-    case CodeGenApiError.CodeGenErrors(errors) =>
-      CodeGenErrorPrinter.prettyPrint(errors)
-    case CodeGenApiError.CompilerErrors(errors) =>
-      errors.map(prettyPrint).mkString("\n")
-    case CodeGenApiError.Unknown(msg) =>
-      s"Unknown code generation error: $msg"
-    case NativeEmitterError.CompilationErrors(errors) =>
-      errors.map(prettyPrint).mkString("\n")
-    case NativeEmitterError.CodeGenErrors(errors) =>
-      errors.map(prettyPrint).mkString("\n")
-    case NativeEmitterError.LlvmErrors(errors) =>
-      LlvmErrorPrinter.prettyPrint(errors)
-    case NativeEmitterError.Unknown(msg) =>
-      s"Unknown native emitter error: $msg"
+    case error: CodeGenError =>
+      CodeGenErrorPrinter.prettyPrint(List(error))
+    case error: LlvmCompilationError =>
+      LlvmErrorPrinter.prettyPrint(List(error))
     case other => other.toString

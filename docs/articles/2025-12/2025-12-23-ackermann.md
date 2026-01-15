@@ -132,12 +132,12 @@ Clever, but not exactly testing what we set out to test.
 MML didn't have bit shift operators yet. But here's the thing - adding them took exactly two lines of MML code:
 
 ```mml
-op << (a: Int, b: Int): Int 55 left = @native[op=shl];
-op >> (a: Int, b: Int): Int 55 left = @native[op=ashr];
+op << (a: Int, b: Int): Int 55 left = @native[tpl="shl %type %operand1, %operand2"];
+op >> (a: Int, b: Int): Int 55 left = @native[tpl="ashr %type %operand1, %operand2"];
 ```
 
-That's it. Not a compiler modification, not a language extension - just two operator declarations written in MML itself. 
-The operator system lets you define precedence (55) and associativity (left) right in the declaration, and `@native` bridges to LLVM's shift instructions.
+That's it. Not a compiler modification, not a language extension - just two operator declarations written in MML itself.
+The operator system lets you define precedence (55) and associativity (left) right in the declaration, and `@native[tpl="..."]` provides the LLVM IR template directly.
 
 With those operators, I could write the same optimization:
 

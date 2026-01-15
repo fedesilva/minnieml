@@ -1,6 +1,11 @@
 
 fn hola(a: String) = concat "Hola, " a;
 
-fn main() =
-  println (hola "fede")
+let name = "fede";
+
+fn main() =  
+  let pepe = "pepe";
+  println (hola name);
+  println name;
+  println pepe
 ;

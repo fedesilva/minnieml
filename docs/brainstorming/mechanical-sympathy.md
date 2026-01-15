@@ -3,9 +3,9 @@
 ### Native Operation Integration
 
 ```
-# Direct LLVM IR operation integration
+# Direct LLVM IR template integration
 # this will lower to llvm ir as `mul i64 %0, %1`
-fn mult(a: I64, b: I64): I64 = @native[op:mul]
+fn mult(a: I64, b: I64): I64 = @native[tpl="mul %type %operand1, %operand2"]
 
 # Forward declarations for external functions
 fn println(s: String) = @native;
@@ -46,23 +46,23 @@ protocol Num 'T =
   op > (a: 'T, b: 'T): Bool;
 ;
 
-# Implementation for unsigned integers
+# Implementation for unsigned integers (speculative - flags not yet implemented)
 instance Num U64 =
-  op + (a: U64, b: U64): U64 = @native[op:add, flags:nuw];
-  op * (a: U64, b: U64): U64 = @native[op:mul, flags:nuw];
-  op / (a: U64, b: U64): U64 = @native[op:udiv];
-  op % (a: U64, b: U64): U64 = @native[op:urem];
-  op < (a: U64, b: U64): Bool = @native[op:icmp, predicate:ult];
+  op + (a: U64, b: U64): U64 = @native[tpl="add nuw %type %operand1, %operand2"];
+  op * (a: U64, b: U64): U64 = @native[tpl="mul nuw %type %operand1, %operand2"];
+  op / (a: U64, b: U64): U64 = @native[tpl="udiv %type %operand1, %operand2"];
+  op % (a: U64, b: U64): U64 = @native[tpl="urem %type %operand1, %operand2"];
+  op < (a: U64, b: U64): Bool = @native[tpl="icmp ult %type %operand1, %operand2"];
   # Other operations...
 ;
 
-# Implementation for signed integers
+# Implementation for signed integers (speculative - flags not yet implemented)
 instance Num I64 =
-  op + (a: I64, b: I64): I64 = @native[op:add, flags:nsw];
-  op * (a: I64, b: I64): I64 = @native[op:mul, flags:nsw];
-  op / (a: I64, b: I64): I64 = @native[op:sdiv];
-  op % (a: I64, b: I64): I64 = @native[op:srem];
-  op < (a: I64, b: I64): Bool = @native[op:icmp, predicate:slt];
+  op + (a: I64, b: I64): I64 = @native[tpl="add nsw %type %operand1, %operand2"];
+  op * (a: I64, b: I64): I64 = @native[tpl="mul nsw %type %operand1, %operand2"];
+  op / (a: I64, b: I64): I64 = @native[tpl="sdiv %type %operand1, %operand2"];
+  op % (a: I64, b: I64): I64 = @native[tpl="srem %type %operand1, %operand2"];
+  op < (a: I64, b: I64): Bool = @native[tpl="icmp slt %type %operand1, %operand2"];
   # Other operations...
 ;
 ```

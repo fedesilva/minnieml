@@ -11,4 +11,4 @@ def fizzbuzz(n: int) -> None:
 
 
 if __name__ == "__main__":
-    fizzbuzz(1000000)
+    fizzbuzz(10000000)

@@ -1,22 +1,23 @@
 #-
   Factorial function implementation using a unary postfix operator.
-  
+
   This defines the factorial operation as a postfix '!' operator
   with precedence 95 and left associativity.
-  
+
   Usage examples:
     5!     => 120
     3 + 4! => 3 + 24 = 27
 -#
-op ! (n: Int): Int 95 left = 
-  if n <= 1 then 
-    1 
-  else 
-    n * (n - 1)!; # Recursive call to calculate factorial
+op ! (n: Int): Int 95 left =
+  if n <= 1 then
+    1
+  else
+    n * (n - 1)! # Recursive call to calculate factorial
+  end
+;
 
-
-fn main() = 
-  let x = println "Give me a number";
+fn main() =
+  println "Give me a number";
   let num = str_to_int (readline());
   println (to_string( num! ) )
 ;

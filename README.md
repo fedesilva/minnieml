@@ -1,7 +1,8 @@
 # MinnieML
 
-A statically typed, functional language, with an ML inspired syntax, a rich type system,
-and strong mechanical sympathy.
+A statically typed, functional language, with an ML inspired syntax, 
+a rich type system, great ergonomics, 
+modern tooling and strong mechanical sympathy.
 
 ## Why
 
@@ -42,10 +43,11 @@ A more complex example:
 
 - types start with an uppercase letter, mandatory (`Maybe`, `String`, `Int`)
 - type variables start with a ' and an uppercase letter (`'T`, `'R`, `'In`, `'Out`)
-- `#` is a line comment
+- `#` is a line comment (I've added // to make it look ok in github)
 - `()` reads as `unit`; it's like void ... (ish)
 - the `Maybe` type denotes we can have one value of type `'T` or None.
 - note the infered types in the comments
+- 
 
 This examples might not be possible to compile currently, depending on when you read this.
 See the STATUS entry below.
@@ -56,14 +58,14 @@ enum Maybe 'T =
   | None
 ;
 
-# empty :: Maybe 'T -> Boolean
+#// empty :: Maybe 'T -> Boolean
 fn empty (maybe) =
   x match
     | None  -> true
     | _     -> false
 ;
 
-# nonEmpty :: Maybe 'T -> Boolean
+#// nonEmpty :: Maybe 'T -> Boolean
 fn notEmpty (maybe) =
   not empty maybe
 ;
@@ -76,22 +78,22 @@ enum Species =
   | Reptile
 ;
 
-data Pet {
+struct Pet {
   name:     String
   species:  Species
 };
 
-data Person {
+struct Person {
   name: String
   pet:  Maybe Pet
 };
 
-# hasPet :: 'T: { pet: Maybe 'P } -> Boolean
+#// hasPet :: 'T: { pet: Maybe 'P } -> Boolean
 fn hasPet (p) =
   nonEmpty p.pet
 ;
 
-# nameOf :: 'T : { name: String } -> String
+#// nameOf :: 'T : { name: String } -> String
 fn nameOf (p): String =
   p.name
 ;
@@ -103,8 +105,8 @@ let victor  = Person  "Victor"  None;
 let pv = hasPet victor; # false
 let pf = hasPet fede;   # true
 
-# does not compile
-# let pz = hasPet zur
+#// does not compile
+#// let pz = hasPet zur
 ```
 
 

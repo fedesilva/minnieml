@@ -243,11 +243,11 @@ class LetBndTests extends BaseEffFunSuite:
           case Some(TypeFn(_, params, returnType)) =>
             assertEquals(params.size, 1)
             params.head match
-              case TypeRef(_, "String", _) => // pass
+              case TypeRef(_, "String", _, _) => // pass
               case other =>
                 fail(s"Expected String param type, got ${prettyPrintAst(other)}")
             returnType match
-              case TypeRef(_, "String", _) => // pass
+              case TypeRef(_, "String", _, _) => // pass
               case other =>
                 fail(s"Expected String return type, got ${prettyPrintAst(other)}")
           case other =>
@@ -273,17 +273,17 @@ class LetBndTests extends BaseEffFunSuite:
               case TypeGroup(_, List(TypeFn(_, innerParams, innerReturn))) =>
                 assertEquals(innerParams.size, 1)
                 innerParams.head match
-                  case TypeRef(_, "String", _) => // pass
+                  case TypeRef(_, "String", _, _) => // pass
                   case other =>
                     fail(s"Expected String inner param, got ${prettyPrintAst(other)}")
                 innerReturn match
-                  case TypeRef(_, "String", _) => // pass
+                  case TypeRef(_, "String", _, _) => // pass
                   case other =>
                     fail(s"Expected String inner return, got ${prettyPrintAst(other)}")
               case other =>
                 fail(s"Expected grouped function type, got ${prettyPrintAst(other)}")
             returnType match
-              case TypeRef(_, "String", _) => // pass
+              case TypeRef(_, "String", _, _) => // pass
               case other =>
                 fail(s"Expected String return type, got ${prettyPrintAst(other)}")
           case other =>

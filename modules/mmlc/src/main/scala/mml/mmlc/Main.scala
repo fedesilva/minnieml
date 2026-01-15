@@ -1,36 +1,17 @@
 package mml.mmlc
 
 import cats.effect.{ExitCode, IO, IOApp}
-import cats.syntax.all.*
 import mml.mmlc.CommandLineConfig.{Command, Config}
-import mml.mmlclib.codegen.LlvmOrchestrator
+import mml.mmlclib.api.CompilerApi
+import mml.mmlclib.compiler.CompilerConfig
+import mml.mmlclib.dev.DevLoop
+import mml.mmlclib.lsp.LspServer
 import scopt.OParser
 
 object Main extends IOApp:
 
-  // Centralized function to print version information
-  private def printVersionInfo: IO[Unit] =
-    IO.println(s"""
-                  |mmlc ${MmlcBuildInfo.version} 
-                  |(build: ${MmlcBuildInfo.build}-${MmlcBuildInfo.gitSha})
-                  |(${MmlcBuildInfo.os}-${MmlcBuildInfo.arch})
-      """.stripMargin.replaceAll("\n", " ").trim)
-
   def run(args: List[String]): IO[ExitCode] =
     parseAndProcessArgs(args)
-
-  def printSupportedTriples: IO[Unit] =
-    IO.println(s"\n${Console.CYAN}Example Target Triples:${Console.RESET}") *>
-      IO.println(s"  ${Console.RED}Cross compilation might not work${Console.RESET}") *>
-      IO.println(s"  ${Console.YELLOW}macOS:${Console.RESET}") *>
-      IO.println(s"    x86_64-apple-macosx     (Intel Mac)") *>
-      IO.println(s"    aarch64-apple-macosx    (Apple Silicon)") *>
-      IO.println(s"  ${Console.YELLOW}Linux:${Console.RESET}") *>
-      IO.println(s"    x86_64-pc-linux-gnu     (x86_64 Linux)") *>
-      IO.println(s"    aarch64-pc-linux-gnu    (ARM64 Linux)") *>
-      IO.println(s"  ${Console.YELLOW}WebAssembly:${Console.RESET}") *>
-      IO.println(s"    wasm32-unknown-unknown  (WebAssembly)") *>
-      IO.println(s"\n  Use with: mmlc bin --target <triple> <source-file>")
 
   private def parseAndProcessArgs(args: List[String]): IO[ExitCode] =
     OParser.parse(CommandLineConfig.createParser, args, Config()) match
@@ -39,79 +20,115 @@ object Main extends IOApp:
           case bin: Command.Bin =>
             bin.file.fold(
               IO.println("Error: Source file is required for bin command").as(ExitCode(1))
-            )(path =>
-              val moduleName = FileOperations.sanitizeFileName(path)
-              CompilationPipeline.processBinary(path, moduleName, bin)
-            )
+            ) { path =>
+              val cfg = CompilerConfig.binary(
+                bin.outputDir,
+                bin.verbose,
+                bin.targetTriple,
+                bin.targetArch,
+                bin.targetCpu,
+                bin.noStackCheck,
+                bin.emitOptIr,
+                bin.noTco,
+                bin.timings,
+                bin.outputAst,
+                bin.outputName,
+                bin.printPhases,
+                bin.optLevel
+              )
+              CompilerApi.processBinary(path, cfg)
+            }
 
           case run: Command.Run =>
             run.file.fold(
               IO.println("Error: Source file is required for run command").as(ExitCode(1))
-            )(path =>
-              val moduleName = FileOperations.sanitizeFileName(path)
-              CompilationPipeline.processRun(path, moduleName, run)
-            )
+            ) { path =>
+              val cfg = CompilerConfig.binary(
+                run.outputDir,
+                run.verbose,
+                run.targetTriple,
+                run.targetArch,
+                run.targetCpu,
+                run.noStackCheck,
+                run.emitOptIr,
+                run.noTco,
+                run.timings,
+                run.outputAst,
+                run.outputName,
+                run.printPhases,
+                run.optLevel
+              )
+              CompilerApi.processRun(path, cfg)
+            }
 
           case lib: Command.Lib =>
             lib.file.fold(
               IO.println("Error: Source file is required for lib command").as(ExitCode(1))
-            )(path =>
-              val moduleName = FileOperations.sanitizeFileName(path)
-              CompilationPipeline.processLibrary(path, moduleName, lib)
-            )
+            ) { path =>
+              val cfg = CompilerConfig.library(
+                lib.outputDir,
+                lib.verbose,
+                lib.targetTriple,
+                lib.targetArch,
+                lib.targetCpu,
+                lib.noStackCheck,
+                lib.emitOptIr,
+                lib.noTco,
+                lib.timings,
+                lib.outputAst,
+                lib.outputName,
+                lib.printPhases,
+                lib.optLevel
+              )
+              CompilerApi.processLibrary(path, cfg)
+            }
 
           case ast: Command.Ast =>
             ast.file.fold(
               IO.println("Error: Source file is required for ast command").as(ExitCode(1))
-            )(path =>
-              val moduleName = FileOperations.sanitizeFileName(path)
-              CompilationPipeline.processAstOnly(path, moduleName, ast)
-            )
+            ) { path =>
+              val cfg = CompilerConfig.ast(ast.outputDir, ast.verbose, ast.timings, ast.noTco)
+              CompilerApi.processAstOnly(path, cfg)
+            }
 
           case ir: Command.Ir =>
             ir.file.fold(
               IO.println("Error: Source file is required for ir command").as(ExitCode(1))
-            )(path =>
-              val moduleName = FileOperations.sanitizeFileName(path)
-              CompilationPipeline.processIrOnly(path, moduleName, ir)
-            )
+            ) { path =>
+              val cfg =
+                CompilerConfig.ir(ir.outputDir, ir.verbose, ir.timings, ir.outputAst, ir.noTco)
+              CompilerApi.processIrOnly(path, cfg)
+            }
 
           case clean: Command.Clean =>
-            FileOperations.cleanOutputDir(clean.outputDir)
+            CompilerApi.processClean(clean.outputDir)
 
           case i: Command.Info =>
-            printVersionInfo *>
-              printToolInfo(i.diagnostics) *>
-              (if i.showTriples then printSupportedTriples else IO.unit) *>
-              IO.println(
-                "Use `mmlc --help` or `mmlc -h` for more information on available commands."
-              ).as(ExitCode(0))
+            val cliInfo = CompilerApi.formatBuildInfo(
+              "mmlc-cli",
+              MmlcBuildInfo.version,
+              MmlcBuildInfo.build,
+              MmlcBuildInfo.gitSha,
+              MmlcBuildInfo.os,
+              MmlcBuildInfo.arch
+            )
+            IO.println(cliInfo).flatMap { _ =>
+              CompilerApi.processInfo(i.diagnostics, i.showTriples)
+            }
+
+          case dev: Command.Dev =>
+            dev.file.fold(
+              IO.println("Error: Source file is required for dev command").as(ExitCode(1))
+            ) { path =>
+              val cfg = CompilerConfig.dev(verbose = dev.verbose)
+              DevLoop.run(path, cfg)
+            }
+
+          case Command.Lsp() =>
+            val cfg = CompilerConfig.dev(verbose = false)
+            LspServer.run(cfg)
 
       case _ =>
         // Return success for help command
         if args.contains("--help") || args.contains("-h") then IO.pure(ExitCode.Success)
         else IO.pure(ExitCode(1))
-
-  def printToolInfo(printDiagnostics: Boolean): IO[Unit] =
-    if !printDiagnostics then IO.unit
-    else
-      LlvmOrchestrator.collectLlvmToolVersions.flatMap { info =>
-        val printVersions =
-          if info.versions.nonEmpty then
-            IO.println(s"${Console.CYAN}LLVM Tool Versions:${Console.RESET}") *>
-              info.versions.toList.traverse_ { case (tool, version) =>
-                IO.println(s"  ${Console.YELLOW}$tool:${Console.RESET} $version")
-              }
-          else IO.println(s"${Console.RED}No LLVM tools found.${Console.RESET}")
-
-        val printMissing =
-          if info.missing.nonEmpty then
-            IO.println(s"${Console.RED}Missing LLVM Tools:${Console.RESET}") *>
-              info.missing.toList.traverse_ { tool =>
-                IO.println(s"  ${Console.YELLOW}$tool${Console.RESET}")
-              } *> IO.println(LlvmOrchestrator.llvmInstallInstructions.stripMargin)
-          else IO.unit
-
-        // Sequence both operations
-        printVersions *> printMissing
-      }

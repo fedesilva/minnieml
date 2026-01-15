@@ -1,7 +1,7 @@
 
 
 let a = "Fede";
-let b = "Fede";
+let b = "Silva";
 let c = concat a b;
 
 fn join(a: String, b: String) =

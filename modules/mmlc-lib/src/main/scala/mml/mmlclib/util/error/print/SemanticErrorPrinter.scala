@@ -1,6 +1,7 @@
 package mml.mmlclib.util.error.print
 
 import mml.mmlclib.ast.{Decl, FromSource}
+import mml.mmlclib.parser.SourceInfo
 import mml.mmlclib.semantic.{SemanticError, TypeError, UnresolvableTypeContext}
 // Removed Ordering import
 
@@ -11,57 +12,48 @@ object SemanticErrorPrinter:
     *
     * @param errors
     *   List of semantic errors
-    * @param sourceCode
-    *   Optional source code string
+    * @param sourceInfo
+    *   Optional source info with the original source text
     * @return
     *   A human-readable error message
     */
-  def prettyPrint(errors: List[SemanticError], sourceCode: Option[String] = None): String =
+  def prettyPrint(errors: List[SemanticError], sourceInfo: Option[SourceInfo] = None): String =
     if errors.isEmpty then "No semantic errors"
     else
-      val errorMessages = errors.map(error => prettyPrintSingle(error, sourceCode))
+      val errorMessages = errors.map(error => prettyPrintSingle(error, sourceInfo))
       s"${Console.RED}Semantic errors:${Console.RESET}\n${errorMessages.mkString("\n\n")}"
 
   /** Pretty print a single semantic error
     *
     * @param error
     *   The semantic error to pretty print
-    * @param sourceCode
-    *   Optional source code string
+    * @param sourceInfo
+    *   Optional source info with the original source text
     * @return
     *   A human-readable error message
     */
-  private def prettyPrintSingle(error: SemanticError, sourceCode: Option[String]): String =
+  private def prettyPrintSingle(error: SemanticError, sourceInfo: Option[SourceInfo]): String =
     // Extract AST information when applicable
     val astInfo = error match
       case SemanticError.UndefinedRef(ref, _, _) =>
-        val resolved = ref.resolvedAs
-          .map(r => s"Resolved as: ${r.getClass.getSimpleName}(${r.name})")
+        val resolved = ref.resolvedId
+          .map(id => s"Resolved to: $id")
           .getOrElse("Not resolved")
         val candidates =
-          if ref.candidates.isEmpty then "No candidates found"
-          else {
-            val candidateList =
-              ref.candidates.map(c => s"${c.getClass.getSimpleName}(${c.name})").mkString(", ")
-            s"Candidates: [$candidateList]"
-          }
+          if ref.candidateIds.isEmpty then "No candidates found"
+          else s"Candidates: [${ref.candidateIds.mkString(", ")}]"
         s"Info: '$resolved', $candidates"
 
       case SemanticError.DanglingTerms(terms, _, _) =>
         val termInfos = terms
           .map {
             case ref: mml.mmlclib.ast.Ref =>
-              val resolved = ref.resolvedAs
-                .map(r => s"Resolved as: ${r.getClass.getSimpleName}(${r.name})")
+              val resolved = ref.resolvedId
+                .map(id => s"Resolved to: $id")
                 .getOrElse("Not resolved")
               val candidates =
-                if ref.candidates.isEmpty then "No candidates found"
-                else {
-                  val candidateList = ref.candidates
-                    .map(c => s"${c.getClass.getSimpleName}(${c.name})")
-                    .mkString(", ")
-                  s"Candidates: [$candidateList]"
-                }
+                if ref.candidateIds.isEmpty then "No candidates found"
+                else s"Candidates: [${ref.candidateIds.mkString(", ")}]"
               s"'${ref.name}': $resolved, $candidates"
             case term => s"Term: ${term.getClass.getSimpleName}"
           }
@@ -125,10 +117,10 @@ object SemanticErrorPrinter:
         prettyPrintTypeError(error)
 
     // Add AST info and source code snippets if source code is available
-    sourceCode match
-      case Some(src) =>
+    sourceInfo match
+      case Some(info) =>
         // Pass both the source code and the error to extractSnippetsFromError
-        val snippets = SourceCodeExtractor.extractSnippetsFromError(src, error)
+        val snippets = SourceCodeExtractor.extractSnippetsFromError(info, error)
         val fullMessage =
           if astInfo.nonEmpty then s"$baseMessage\n$astInfo\n$snippets"
           else s"$baseMessage\n$snippets"
@@ -145,8 +137,9 @@ object SemanticErrorPrinter:
     *   A human-readable error message
     */
   def prettyPrintTypeError(error: TypeError): String =
-    def formatTypeSpec(typeSpec: mml.mmlclib.ast.TypeSpec): String = typeSpec match
-      case mml.mmlclib.ast.TypeRef(_, name, _) => name
+    def formatTypeSpec(typeSpec: mml.mmlclib.ast.Type): String = typeSpec match
+      case mml.mmlclib.ast.TypeRef(_, name, _, _) => name
+      case mml.mmlclib.ast.TypeStruct(_, _, _, name, _, _) => name
       case mml.mmlclib.ast.TypeFn(_, params, returnType) =>
         val paramStr = params.map(formatTypeSpec).mkString(", ")
         s"($paramStr) -> ${formatTypeSpec(returnType)}"
@@ -198,6 +191,15 @@ object SemanticErrorPrinter:
         val argTypeStr = formatTypeSpec(argType)
         s"${Console.RED}Invalid function application at $location: cannot apply function of type '$fnTypeStr' to argument of type '$argTypeStr'${Console.RESET}\n${Console.YELLOW}Phase: $phase${Console.RESET}"
 
+      case TypeError.InvalidSelection(ref, baseType, phase) =>
+        val location    = LocationPrinter.printSpan(ref.span)
+        val baseTypeStr = formatTypeSpec(baseType)
+        s"${Console.RED}Invalid field selection at $location: '${ref.name}' is not available on type '$baseTypeStr'${Console.RESET}\n${Console.YELLOW}Phase: $phase${Console.RESET}"
+
+      case TypeError.UnknownField(ref, struct, phase) =>
+        val location = LocationPrinter.printSpan(ref.span)
+        s"${Console.RED}Unknown field at $location: '${struct.name}' has no field '${ref.name}'${Console.RESET}\n${Console.YELLOW}Phase: $phase${Console.RESET}"
+
       case TypeError.ConditionalBranchTypeMismatch(cond, trueType, falseType, phase) =>
         val location     = LocationPrinter.printSpan(cond.span)
         val trueTypeStr  = formatTypeSpec(trueType)
@@ -223,6 +225,7 @@ object SemanticErrorPrinter:
         val type2Str = formatTypeSpec(type2)
         s"${Console.RED}Incompatible types at $location in $context: '$type1Str' and '$type2Str'${Console.RESET}\n${Console.YELLOW}Phase: $phase${Console.RESET}"
 
-      case TypeError.UntypedHoleInBinding(bnd, phase) =>
-        val location = LocationPrinter.printSpan(bnd.span)
-        s"${Console.RED}Untyped hole '???' in binding '${bnd.name}' at $location - type cannot be inferred${Console.RESET}\n${Console.YELLOW}Phase: $phase${Console.RESET}"
+      case TypeError.UntypedHoleInBinding(bindingName, span, phase) =>
+        val location = LocationPrinter.printSpan(span)
+        s"${Console.RED}Untyped hole '???' in binding '${bindingName}' at $location - " +
+          s"type cannot be inferred${Console.RESET}\n${Console.YELLOW}Phase: $phase${Console.RESET}"

@@ -1,0 +1,23 @@
+
+fn test_iteration(): Unit =
+
+  let fd = open_file_read "mml/loren-ipsum.txt";
+  let line1 = read_line_fd fd;
+  let line2 = read_line_fd fd;
+
+  println line1;
+  println line2;
+
+  close_file fd
+;
+
+fn run(n: Int): Unit =
+  if n == 0 then ()
+  else
+    test_iteration ();
+    run (n - 1)
+  end;
+
+fn main(): Unit =
+  run 1000
+;

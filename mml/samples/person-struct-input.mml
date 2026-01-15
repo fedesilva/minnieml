@@ -1,0 +1,15 @@
+
+struct Person {
+  name: String,
+  age: Int
+};
+
+fn main() =
+  println "Enter name:";
+  let name = readline();
+  println "Enter age:";
+  let age = str_to_int (readline());
+  let p = Person name age;
+  println (concat "Name: " p.name);
+  println (concat "Age: " (to_string p.age))
+;

@@ -9,9 +9,9 @@ class TypeResolverNativeStructTests extends BaseEffFunSuite:
 
   test("TypeResolver should resolve type references in NativeStruct fields"):
     val code = """
-      type MySize = @native:i64;
-      type MyCharPtr = @native:*i8;
-      type MyString = @native:{
+      type MySize = @native[t=i64];
+      type MyCharPtr = @native[t=*i8];
+      type MyString = @native {
         length: MySize,
         data: MyCharPtr
       };
@@ -25,22 +25,25 @@ class TypeResolverNativeStructTests extends BaseEffFunSuite:
 
       // Check that it's a NativeStruct
       stringDef.typeSpec match
-        case Some(NativeStruct(_, fields)) =>
+        case Some(NativeStruct(_, fieldsList)) =>
+          val fields = fieldsList.toMap
           assertEquals(fields.size, 2)
 
           // Check length field
           fields("length") match
-            case TypeRef(_, "MySize", resolvedAs) =>
-              assert(resolvedAs.isDefined, "Expected MySize TypeRef to be resolved")
-              assertEquals(resolvedAs.get.asInstanceOf[TypeDef].name, "MySize")
+            case TypeRef(_, "MySize", resolvedId, _) =>
+              assert(resolvedId.isDefined, "Expected MySize TypeRef to be resolved")
+              val resolved = resolvedId.flatMap(module.resolvables.lookupType)
+              assertEquals(resolved.map(_.name), Some("MySize"))
             case other =>
               fail(s"Expected resolved TypeRef for length field, got: $other")
 
           // Check data field
           fields("data") match
-            case TypeRef(_, "MyCharPtr", resolvedAs) =>
-              assert(resolvedAs.isDefined, "Expected MyCharPtr TypeRef to be resolved")
-              assertEquals(resolvedAs.get.asInstanceOf[TypeDef].name, "MyCharPtr")
+            case TypeRef(_, "MyCharPtr", resolvedId, _) =>
+              assert(resolvedId.isDefined, "Expected MyCharPtr TypeRef to be resolved")
+              val resolved = resolvedId.flatMap(module.resolvables.lookupType)
+              assertEquals(resolved.map(_.name), Some("MyCharPtr"))
             case other =>
               fail(s"Expected resolved TypeRef for data field, got: $other")
 
@@ -50,11 +53,11 @@ class TypeResolverNativeStructTests extends BaseEffFunSuite:
 
   test("TypeResolver should handle nested type references in complex structs"):
     val code = """
-      type MyInt32 = @native:i32;
-      type MyInt64 = @native:i64;
-      type MyStrPtr = @native:*i8;
-      
-      type ComplexStruct = @native:{
+      type MyInt32 = @native[t=i32];
+      type MyInt64 = @native[t=i64];
+      type MyStrPtr = @native[t=*i8];
+
+      type ComplexStruct = @native {
         field1: MyInt32,
         field2: MyInt64,
         name: MyStrPtr
@@ -73,9 +76,9 @@ class TypeResolverNativeStructTests extends BaseEffFunSuite:
           // Verify all fields are resolved
           fields.foreach { case (fieldName, fieldType) =>
             fieldType match
-              case TypeRef(_, typeName, resolvedAs) =>
+              case TypeRef(_, typeName, resolvedId, _) =>
                 assert(
-                  resolvedAs.isDefined,
+                  resolvedId.isDefined,
                   s"Expected $typeName to be resolved for field $fieldName"
                 )
               case other =>
@@ -87,7 +90,7 @@ class TypeResolverNativeStructTests extends BaseEffFunSuite:
 
   test("TypeResolver should report errors for undefined types in NativeStruct fields"):
     val code = """
-      type MyStruct = @native:{
+      type MyStruct = @native {
         valid: Int64,
         invalid: UndefinedType
       };
@@ -99,10 +102,10 @@ class TypeResolverNativeStructTests extends BaseEffFunSuite:
 
   test("TypeResolver should handle type aliases in NativeStruct fields"):
     val code = """
-      type BaseInt = @native:i32;
+      type BaseInt = @native[t=i32];
       type MyInt = BaseInt;
-      
-      type MyStruct = @native:{
+
+      type MyStruct = @native {
         value: MyInt
       };
     """
@@ -113,11 +116,13 @@ class TypeResolverNativeStructTests extends BaseEffFunSuite:
       }.get
 
       myStruct.typeSpec match
-        case Some(NativeStruct(_, fields)) =>
+        case Some(NativeStruct(_, fieldsList)) =>
+          val fields = fieldsList.toMap
           fields("value") match
-            case TypeRef(_, "MyInt", resolvedAs) =>
-              assert(resolvedAs.isDefined, "Expected MyInt to be resolved")
-              assertEquals(resolvedAs.get.asInstanceOf[TypeAlias].name, "MyInt")
+            case TypeRef(_, "MyInt", resolvedId, _) =>
+              assert(resolvedId.isDefined, "Expected MyInt to be resolved")
+              val resolved = resolvedId.flatMap(module.resolvables.lookupType)
+              assertEquals(resolved.map(_.name), Some("MyInt"))
             case other =>
               fail(s"Expected resolved TypeRef for value field, got: $other")
         case other =>
@@ -126,7 +131,7 @@ class TypeResolverNativeStructTests extends BaseEffFunSuite:
 
   test("TypeResolver should handle empty NativeStruct"):
     val code = """
-      type EmptyStruct = @native:{};
+      type EmptyStruct = @native {};
     """
 
     semNotFailed(code).map { module =>

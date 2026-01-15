@@ -9,10 +9,11 @@ object Dependencies {
   val refinedVersion:       String = "0.11.3"
   val reload4jVersion:      String = "1.2.26"
   val lucumaRefinedVersion: String = "0.1.4"
-  val munitVersion:         String = "1.2.0"
+  val munitVersion:         String = "1.2.1"
   val munitCatsVersion:     String = "2.1.0"
   val fastparseVersion:     String = "3.1.1"
   val scoptVersion:         String = "4.1.0"
+  val upickleVersion:       String = "4.0.2"
 
   lazy val commonDependencies: Seq[ModuleID] =
     Seq(
@@ -35,7 +36,8 @@ object Dependencies {
 
   lazy val mmlclib: Seq[ModuleID] =
     Seq(
-      "com.lihaoyi" %% "fastparse" % fastparseVersion
+      "com.lihaoyi" %% "fastparse" % fastparseVersion,
+      "com.lihaoyi" %% "upickle"   % upickleVersion
     ) ++ commonDependencies ++ testDeps
 
   lazy val mmlc: Seq[ModuleID] =

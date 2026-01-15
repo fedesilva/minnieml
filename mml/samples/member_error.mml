@@ -3,3 +3,8 @@ let a  ;
 let b = 1;
 let c = ;
 let d = "ok";
+
+fn main() = 
+  println (to_string b);
+  println d;
+;

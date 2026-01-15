@@ -1,0 +1,13 @@
+
+struct Person {
+  name: String,
+  age: Int
+};
+ 
+let pf = Person "fede";
+
+fn main() =  
+  let p = pf 20;
+  println (concat "Name: " p.name);
+  println (concat "Age: " (to_string p.age))
+;

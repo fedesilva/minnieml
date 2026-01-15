@@ -1,9 +1,11 @@
+
 # Tail-recursive factorial with accumulator
 fn factorial_tco(n: Int, acc: Int): Int =
-  if n <= 1 then 
-    acc 
-  else 
-    factorial_tco (n - 1) (acc * n);
+  if n <= 1 then
+    acc
+  else
+    factorial_tco (n - 1) (acc * n)
+  end;
 
 # Wrapper with default accumulator
 fn factorial(n: Int): Int = factorial_tco n 1;

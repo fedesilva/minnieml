@@ -7,16 +7,17 @@
 #
 #
 
-fn letExpression (a) = 
-  let 
-     b = 1, 
-     c = 2, 
+fn letExpression (a) =
+  let
+     b = 1,
+     c = 2,
      d = a * b * c,
-     e = 
+     e =
        if d > 8 then
          3
        else
-         4 
+         4
+       end
    in
      a + b + c
 ;
@@ -25,41 +26,43 @@ fn exprAndDecl1  () =
 
   let a=1;
   let b=2;
-  
+
   a+b
 
 ;
 
-fn exprAndDecl2 () = 
+fn exprAndDecl2 () =
 
   let
-    flag1 = false, 
+    flag1 = false,
     flag2 = true
   ;
 
-  let 
+  let
     a = 1,
     b = 2,
     c = 3
   ;
 
-  let z = 
+  let z =
     if a > 1 then
       a + b
     else
       a - b
+    end
 
-  let y = 
+  let y =
     if not flag1 then
       a * b + c
     else
       a - b - c
+    end
   ;
 
   if flag2 then
     (a + b + c) / y
-  else   
+  else
     ( a * b + c ) / z
-    
+  end
+
 ;
-  

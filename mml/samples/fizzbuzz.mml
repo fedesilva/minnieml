@@ -1,26 +1,17 @@
-fn mod(a: Int, b: Int): Int = a - (a / b) * b;
 
-fn fizzbuzz_line(out: Buffer, n: Int): Unit =
-  if mod n 15 == 0 then
-    out writeln "FizzBuzz"
-  else if mod n 3 == 0 then
-    out writeln "Fizz"
-  else if mod n 5 == 0 then
-    out writeln "Buzz"
-  else
-    out writeln (to_string n)
+fn loop(n: Int, t: Int): Unit =
+  if n <= t then
+    if n % 15 == 0 then println "FizzBuzz"
+    elif n % 3 == 0 then println "Fizz"
+    elif n % 5 == 0 then println "Buzz"
+    else println (to_string n)
+    end;
+    loop (n+1) t
+  end
 ;
 
-fn fizzbuzz(out: Buffer, n: Int, max: Int): Unit =
-  if n <= max then
-    fizzbuzz_line out n;
-    fizzbuzz out (n + 1) max
-  else
-    flush out
+fn fizzbuzz(n: Int) = loop 1 n;
+
+fn main() =  
+  fizzbuzz 10000000
 ;
-
-fn main(): Unit =
-  let out = mkBufferWithSize 1024;
-  fizzbuzz out 1 1000000;
-  flush out;
-

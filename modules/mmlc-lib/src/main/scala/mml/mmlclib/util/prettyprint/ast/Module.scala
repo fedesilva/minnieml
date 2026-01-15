@@ -10,7 +10,8 @@ def prettyPrintModule(
 ): String =
   val indentStr = "  " * indent
   val spanStr   = if showSourceSpans then printSourceSpan(module.span) else ""
-  val header    = s"${indentStr}${module.visibility} Module$spanStr ${module.name}"
+  val visStr    = visibilityToString(module.visibility)
+  val header    = s"${indentStr}$visStr Module$spanStr ${module.name}"
   val docStr =
     module.docComment.map(doc => s"\n${prettyPrintDocComment(doc, indent + 1)}").getOrElse("")
   val membersStr =

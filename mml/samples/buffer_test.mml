@@ -1,7 +1,10 @@
+
+
 fn main(): Unit =
   let out = mkBuffer ();
   out write "Hello";
   out write " ";
   out writeln "World!";
   out writeln "This is buffered output.";
-  flush out;
+  flush out
+;

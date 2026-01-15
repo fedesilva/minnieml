@@ -1,7 +1,8 @@
-fn algo (n: Int) = 
-  if n <= 1 then 
-    1 
-  else 
+fn algo (n: Int) =
+  if n <= 1 then
+    1
+  else
     2
+  end
 ;
 

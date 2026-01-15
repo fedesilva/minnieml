@@ -3,18 +3,17 @@ package mml.mmlclib.util.prettyprint.ast
 import mml.mmlclib.ast.*
 
 def prettyPrintTypeSpec(
-  typeSpec:        Option[TypeSpec],
+  typeSpec:        Option[Type],
   showSourceSpans: Boolean = false,
   showTypes:       Boolean = false,
   indent:          Int     = 0
 ): String =
   typeSpec match {
-    case Some(TypeRef(sp, name, resolvedAs)) =>
+    case Some(TypeRef(sp, name, resolvedId, _)) =>
       val spanStr = if showSourceSpans then s" ${printSourceSpan(sp)}" else ""
-      val resolvedStr = resolvedAs match
+      val resolvedStr = resolvedId match
         case None => "(unresolved)"
-        case Some(td: TypeDef) => s" => TypeDef(${td.name})"
-        case Some(ta: TypeAlias) => s" => TypeAlias(${ta.name})"
+        case Some(id) => s" => $id"
       s"TypeRef $name$spanStr$resolvedStr"
 
     case Some(TypeApplication(sp, base, args)) =>
@@ -31,14 +30,30 @@ def prettyPrintTypeSpec(
       s"TypeTuple$spanStr\n" +
         s"  elements: ${elements.map(e => prettyPrintTypeSpec(Some(e), showSourceSpans, showTypes, indent)).mkString(", ")}"
 
-    case Some(TypeStruct(sp, fields)) =>
+    case Some(TypeOpenRecord(sp, fields)) =>
       val spanStr = if showSourceSpans then s" ${printSourceSpan(sp)}" else ""
-      s"TypeStruct$spanStr\n" +
+      s"TypeOpenRecord$spanStr\n" +
         fields
           .map { case (name, tp) =>
             s"  $name: ${prettyPrintTypeSpec(Some(tp), showSourceSpans, showTypes, indent)}"
           }
           .mkString("\n")
+
+    case Some(tr: TypeStruct) =>
+      val spanStr = if showSourceSpans then s" ${printSourceSpan(tr.span)}" else ""
+      val visStr  = visibilityToString(tr.visibility)
+      val fieldsStr =
+        if tr.fields.isEmpty then "{}"
+        else
+          val indentStr = "  " * (indent + 1)
+          val fieldLines = tr.fields
+            .map { field =>
+              s"$indentStr${field.name}: " +
+                s"${prettyPrintTypeSpec(Some(field.typeSpec), showSourceSpans, showTypes, indent + 1)}"
+            }
+            .mkString(",\n")
+          s"{\n$fieldLines\n${"  " * indent}}"
+      s"$visStr TypeRecord ${tr.name} $fieldsStr$spanStr"
 
     case Some(TypeRefinement(sp, id, expr)) =>
       val spanStr = if showSourceSpans then s" ${printSourceSpan(sp)}" else ""
@@ -77,15 +92,15 @@ def prettyPrintTypeSpec(
 
     case Some(NativePrimitive(sp, llvmType)) =>
       val spanStr = if showSourceSpans then s" ${printSourceSpan(sp)}" else ""
-      s"@native:$llvmType$spanStr"
+      s"@native[t=$llvmType]$spanStr"
 
     case Some(NativePointer(sp, llvmType)) =>
       val spanStr = if showSourceSpans then s" ${printSourceSpan(sp)}" else ""
-      s"@native:*$llvmType$spanStr"
+      s"@native[t=*$llvmType]$spanStr"
 
     case Some(NativeStruct(sp, fields)) =>
       val spanStr = if showSourceSpans then s" ${printSourceSpan(sp)}" else ""
-      if fields.isEmpty then s"@native:{}$spanStr"
+      if fields.isEmpty then s"@native {}$spanStr"
       else
         val indentStr = "  " * (indent + 1)
         val fieldStrs = fields
@@ -93,7 +108,7 @@ def prettyPrintTypeSpec(
             s"$indentStr$name: ${prettyPrintTypeSpec(Some(tp), showSourceSpans, showTypes, indent + 1)}"
           }
           .mkString(",\n")
-        s"@native:{\n$fieldStrs\n${"  " * indent}}$spanStr"
+        s"@native {\n$fieldStrs\n${"  " * indent}}$spanStr"
 
     case Some(TypeVariable(sp, name)) =>
       val spanStr = if showSourceSpans then s" ${printSourceSpan(sp)}" else ""
@@ -106,10 +121,13 @@ def prettyPrintTypeSpec(
 
     case None =>
       "None"
+
+    case _ => ???
+
   }
 
 private def formatTypeSpecInline(
-  typeSpec:        TypeSpec,
+  typeSpec:        Type,
   showSourceSpans: Boolean,
   showTypes:       Boolean
 ): String =
@@ -125,12 +143,11 @@ private def formatTypeSpecInline(
       val spanStr = if showSourceSpans then s" ${printSourceSpan(sp)}" else ""
       val varsStr = if vars.nonEmpty then s"∀${vars.mkString(" ")}. " else ""
       s"$varsStr${formatTypeSpecInline(bodyType, showSourceSpans, showTypes)}$spanStr"
-    case TypeRef(sp, name, resolvedAs) =>
+    case TypeRef(sp, name, resolvedId, _) =>
       val spanStr = if showSourceSpans then s" ${printSourceSpan(sp)}" else ""
-      val resolvedStr = resolvedAs match
+      val resolvedStr = resolvedId match
         case None => "(unresolved)"
-        case Some(td: TypeDef) => s" => TypeDef(${td.name})"
-        case Some(ta: TypeAlias) => s" => TypeAlias(${ta.name})"
+        case Some(id) => s" => $id"
       s"TypeRef $name$spanStr$resolvedStr"
     case TypeUnit(sp) =>
       val spanStr = if showSourceSpans then s" ${printSourceSpan(sp)}" else ""
@@ -140,10 +157,10 @@ private def formatTypeSpecInline(
       s"$name$spanStr"
     case NativePrimitive(sp, llvmType) =>
       val spanStr = if showSourceSpans then s" ${printSourceSpan(sp)}" else ""
-      s"@native:$llvmType$spanStr"
+      s"@native[t=$llvmType]$spanStr"
     case NativePointer(sp, llvmType) =>
       val spanStr = if showSourceSpans then s" ${printSourceSpan(sp)}" else ""
-      s"@native:*$llvmType$spanStr"
+      s"@native[t=*$llvmType]$spanStr"
     case other =>
       prettyPrintTypeSpec(Some(other), showSourceSpans, showTypes)
 
@@ -162,7 +179,7 @@ private def formatTypeFnInline(
   s"$paramsStr -> $returnStr"
 
 private def formatArrowParamType(
-  typeSpec:        TypeSpec,
+  typeSpec:        Type,
   showSourceSpans: Boolean,
   showTypes:       Boolean
 ): String =
@@ -173,7 +190,7 @@ private def formatArrowParamType(
       formatTypeSpecInline(typeSpec, showSourceSpans, showTypes)
 
 private def formatArrowReturnType(
-  typeSpec:        TypeSpec,
+  typeSpec:        Type,
   showSourceSpans: Boolean,
   showTypes:       Boolean
 ): String =

@@ -1,11 +1,11 @@
 
 fn ackermann(m: Int, n: Int): Int =
   if m == 0 then n + 1
-  else if m == 1 then n + 2
-  else if m == 2 then 2 * n + 3
-  else if m == 3 then (1 << (n + 3)) - 3
+  elif m == 1 then n + 2
+  elif m == 2 then 2 * n + 3
+  elif m == 3 then (1 << (n + 3)) - 3
   else ackermann (m - 1) (ackermann m (n - 1))
-;
+  end;
 
 fn main(): Unit =
   let result = ackermann 3 10;

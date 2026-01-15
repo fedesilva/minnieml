@@ -151,7 +151,7 @@ class CommentsTests extends BaseEffFunSuite:
     }
   }
 
-  test("doc comments with # margin - remove margin".ignore) {
+  test("doc comments with # margin - remove margin") {
     parseNotFailed(
       """
         #-

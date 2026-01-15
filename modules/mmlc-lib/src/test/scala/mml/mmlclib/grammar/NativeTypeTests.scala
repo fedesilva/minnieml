@@ -8,7 +8,7 @@ class NativeTypeTests extends BaseEffFunSuite:
 
   test("parse native primitive type - i32"):
     val code = """
-      type Int = @native:i32;
+      type Int = @native[t=i32];
     """
 
     Parser
@@ -28,7 +28,7 @@ class NativeTypeTests extends BaseEffFunSuite:
 
   test("parse native primitive type - float"):
     val code = """
-      type Float32 = @native:float;
+      type Float32 = @native[t=float];
     """
 
     Parser
@@ -48,7 +48,7 @@ class NativeTypeTests extends BaseEffFunSuite:
 
   test("parse native pointer type"):
     val code = """
-      type CharPtr = @native:*i8;
+      type CharPtr = @native[t=*i8];
     """
 
     Parser
@@ -68,7 +68,7 @@ class NativeTypeTests extends BaseEffFunSuite:
 
   test("parse native struct type"):
     val code = """
-      type MyStruct = @native:{
+      type MyStruct = @native {
         length: SomeType,
         data: AnotherType
       };
@@ -92,15 +92,16 @@ class NativeTypeTests extends BaseEffFunSuite:
             case Some(typeDef) =>
               assertEquals(typeDef.name, "MyStruct")
               typeDef.typeSpec match
-                case Some(NativeStruct(_, fields)) =>
+                case Some(NativeStruct(_, fieldsList)) =>
+                  val fields = fieldsList.toMap
                   assertEquals(fields.size, 2)
                   assert(fields.contains("length"), "Expected field 'length'")
                   assert(fields.contains("data"), "Expected field 'data'")
                   fields("length") match
-                    case TypeRef(_, "SomeType", _) => // good
+                    case TypeRef(_, "SomeType", _, _) => // good
                     case _ => fail(s"Expected TypeRef to SomeType, got: ${fields("length")}")
                   fields("data") match
-                    case TypeRef(_, "AnotherType", _) => // good
+                    case TypeRef(_, "AnotherType", _, _) => // good
                     case _ => fail(s"Expected TypeRef to AnotherType, got: ${fields("data")}")
                 case Some(other) =>
                   fail(s"Expected NativeStruct, got: $other")
@@ -115,7 +116,7 @@ class NativeTypeTests extends BaseEffFunSuite:
 
     floatTypes.foreach { floatType =>
       val code = s"""
-        type Test = @native:$floatType;
+        type Test = @native[t=$floatType];
       """
 
       Parser
@@ -138,7 +139,7 @@ class NativeTypeTests extends BaseEffFunSuite:
 
     intBits.foreach { bits =>
       val code = s"""
-        type Test = @native:i$bits;
+        type Test = @native[t=i$bits];
       """
 
       Parser
@@ -161,7 +162,7 @@ class NativeTypeTests extends BaseEffFunSuite:
 
     invalidBits.foreach { bits =>
       val code = s"""
-        type Test = @native:i$bits;
+        type Test = @native[t=i$bits];
       """
 
       Parser.parseModule(code, "Test") match
@@ -186,7 +187,7 @@ class NativeTypeTests extends BaseEffFunSuite:
 
   test("parse complex native struct"):
     val code = """
-      type ComplexStruct = @native:{
+      type ComplexStruct = @native {
         field1: TypeA,
         field2: TypeB,
         ptr: TypeC,
@@ -209,13 +210,14 @@ class NativeTypeTests extends BaseEffFunSuite:
               )
             case Some(typeDef) =>
               typeDef.typeSpec match
-                case Some(NativeStruct(_, fields)) =>
+                case Some(NativeStruct(_, fieldsList)) =>
+                  val fields = fieldsList.toMap
                   assertEquals(fields.size, 4)
                   assertEquals(fields.keySet, Set("field1", "field2", "ptr", "nested"))
                   // Verify the field types are parsed as TypeRefs
                   fields.foreach { case (name, typeSpec) =>
                     typeSpec match
-                      case TypeRef(_, _, _) => // good
+                      case TypeRef(_, _, _, _) => // good
                       case _ => fail(s"Field $name should have TypeRef, got: $typeSpec")
                   }
                 case Some(other) =>

@@ -2,8 +2,6 @@ package mml.mmlclib.parser
 
 import mml.mmlclib.ast.SrcPoint
 
-import scala.collection.mutable.ArrayBuffer
-
 final case class SourceInfo(text: String, lineStarts: Array[Int]):
 
   def pointAt(index: Int): SrcPoint =
@@ -23,8 +21,9 @@ final case class SourceInfo(text: String, lineStarts: Array[Int]):
 
 object SourceInfo:
   def apply(text: String): SourceInfo =
-    val starts = ArrayBuffer[Int](0)
-    text.zipWithIndex.foreach { case (ch, idx) =>
-      if ch == '\n' then starts += (idx + 1)
-    }
-    SourceInfo(text, starts.toArray)
+    val starts =
+      text.iterator.zipWithIndex
+        .foldLeft(List(0)) { case (acc, (ch, idx)) =>
+          if ch == '\n' then (idx + 1) :: acc else acc
+        }
+    SourceInfo(text, starts.reverse.toArray)

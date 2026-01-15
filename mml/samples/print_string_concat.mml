@@ -1,4 +1,9 @@
 
+let a = 2;
+let b = 40;
+let answer = a+b;
+
 fn main(): Unit =
-  print (concat "Hello, " "world!")
+  println (concat "Hello, " "world!");
+  println (concat "the answer is: " (to_string answer))
 ;

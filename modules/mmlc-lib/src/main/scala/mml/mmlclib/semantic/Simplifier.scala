@@ -2,13 +2,34 @@ package mml.mmlclib.semantic
 
 import cats.syntax.all.*
 import mml.mmlclib.ast.*
+import mml.mmlclib.compiler.CompilerState
 
 object Simplifier:
   def rewriteModule(module: Module): Either[List[SemanticError], Module] =
-    module.copy(members = module.members.map(simplifyMember)).asRight[List[SemanticError]]
+    val (updatedMembers, updatedResolvables) = module.members.foldLeft(
+      (List.empty[Member], module.resolvables)
+    ) { case ((accMembers, resolvables), member) =>
+      simplifyMember(member) match
+        case updatedBnd: Bnd =>
+          (accMembers :+ updatedBnd, resolvables.updated(updatedBnd))
+        case other =>
+          (accMembers :+ other, resolvables)
+    }
+    module
+      .copy(members = updatedMembers, resolvables = updatedResolvables)
+      .asRight[List[SemanticError]]
 
-  def rewriteModule(state: SemanticPhaseState): SemanticPhaseState =
-    state.withModule(state.module.copy(members = state.module.members.map(simplifyMember)))
+  def rewriteModule(state: CompilerState): CompilerState =
+    val (updatedMembers, updatedResolvables) = state.module.members.foldLeft(
+      (List.empty[Member], state.module.resolvables)
+    ) { case ((accMembers, resolvables), member) =>
+      simplifyMember(member) match
+        case updatedBnd: Bnd =>
+          (accMembers :+ updatedBnd, resolvables.updated(updatedBnd))
+        case other =>
+          (accMembers :+ other, resolvables)
+    }
+    state.withModule(state.module.copy(members = updatedMembers, resolvables = updatedResolvables))
 
   def simplifyMember(member: Member): Member =
     member match
@@ -73,6 +94,13 @@ object Simplifier:
         val simplifiedArg = simplifyExpr(app.arg) // Use simplifyExpr for args
         val simplifiedFn  = simplifyTerm(app.fn) // Use simplifyTerm for fn part
         app.copy(fn = simplifiedFn.asInstanceOf[Ref | App], arg = simplifiedArg)
+
+      case ref: Ref =>
+        ref.qualifier match
+          case Some(qualifier) =>
+            ref.copy(qualifier = Some(simplifyTerm(qualifier)))
+          case None =>
+            ref
 
       // --- Modify Cond Case ---
       case c: Cond =>

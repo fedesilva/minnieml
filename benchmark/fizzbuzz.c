@@ -15,6 +15,6 @@ void fizzbuzz(int n) {
 }
 
 int main() {
-    fizzbuzz(1000000);
+    fizzbuzz(10000000);
     return 0;
 }

@@ -55,7 +55,7 @@
             "patterns": [
                 {
                     "name": "keyword.control.mml",
-                    "match": "\\b(if|then|else)\\b"
+                    "match": "\\b(if|then|elif|else)\\b"
                 },
                 {
                     "name": "keyword.other.mml",

@@ -287,7 +287,7 @@ class AppRewritingTests extends BaseEffFunSuite:
                             "to_string should be applied"
                           )
                           nExpr.terms match
-                            case List(Ref(_, "n", _, _, _, _)) => ()
+                            case List(Ref(_, "n", _, _, _, _, _)) => ()
                             case _ =>
                               fail(
                                 s"Expected to_string argument to be Ref n, got:\n${prettyPrintAst(nExpr)}"
@@ -375,7 +375,7 @@ class AppRewritingTests extends BaseEffFunSuite:
       """
       fn func (a: Int): Int = ???;
       let cond = true;
-      let a = if cond then func 1 else func 2;
+      let a = if cond then func 1 else func 2 end;
       """
     ).map { m =>
       val memberBnd = lookupNames("a", m).headOption
@@ -388,7 +388,7 @@ class AppRewritingTests extends BaseEffFunSuite:
             case Some(Cond(_, condExpr, thenExpr, elseExpr, _, _)) =>
               // Verify condition is a reference to "cond"
               condExpr.terms.headOption match
-                case Some(Ref(_, condName, _, _, _, _)) =>
+                case Some(Ref(_, condName, _, _, _, _, _)) =>
                   assertEquals(clue(condName), "cond", "Condition name mismatch")
                 case Some(other) =>
                   fail(s"Expected Ref in condition expression, got: ${prettyPrintAst(other)}")

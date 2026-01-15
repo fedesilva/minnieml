@@ -30,20 +30,23 @@ def prettyPrintTerm(
         if showTypes then
           s"\n${indentStr}  typeSpec: ${prettyPrintTypeSpec(ref.typeSpec)}\n" +
             s"${indentStr}  typeAsc: ${prettyPrintTypeSpec(ref.typeAsc)}\n" +
-            s"${indentStr}  resolvedAs: ${ref.resolvedAs
-                .fold("None")(m => s"${m.getClass.getSimpleName} ${m.name}")}"
+            s"${indentStr}  resolvedId: ${ref.resolvedId.getOrElse("None")}"
         else ""
 
-      // Add resolvedAs display if not showing types and resolvedAs is present
+      val qualifierStr = ref.qualifier match
+        case Some(qualifier) =>
+          val qualifierTerm =
+            prettyPrintTerm(qualifier, indent + 2, showSourceSpans, showTypes)
+          s"\n${indentStr}  qualifier:\n$qualifierTerm"
+        case None => ""
+
+      // Add resolvedId display if not showing types and resolvedId is present
       val resolvedStr =
-        if !showTypes then
-          ref.resolvedAs.fold("")(r =>
-            s"\n${indentStr}  resolvedAs: ${r.getClass.getSimpleName} ${r.name}"
-          )
+        if !showTypes then ref.resolvedId.fold("")(id => s"\n${indentStr}  resolvedId: $id")
         else ""
 
-      s"${indentStr}Ref ${ref.name} $spanStr$typeStr$resolvedStr\n" +
-        s"${indentStr}  candidates: ${prettyPrintCandidates(ref.candidates)}"
+      s"${indentStr}Ref ${ref.name} $spanStr$typeStr$resolvedStr$qualifierStr\n" +
+        s"${indentStr}  candidateIds: ${ref.candidateIds.mkString(", ")}"
 
     case Hole(sp, typeSpec, typeAsc) =>
       val spanStr = if showSourceSpans then printSourceSpan(sp) else ""
@@ -129,13 +132,17 @@ def prettyPrintTerm(
         s"${indentStr}  fn:\n$fnStr\n" +
         s"${indentStr}  arg:\n$argStr"
 
-    case Lambda(sp, params, body, captures, typeSpec, typeAsc) =>
+    case Lambda(sp, params, body, captures, typeSpec, typeAsc, meta) =>
       val spanStr = if showSourceSpans then printSourceSpan(sp) else ""
       val typeStr =
         if showTypes then
           s"\n${indentStr}  typeSpec: ${prettyPrintTypeSpec(typeSpec)}\n" +
             s"${indentStr}  typeAsc: ${prettyPrintTypeSpec(typeAsc)}"
         else ""
+      val metaStr = meta match
+        case Some(info) =>
+          s"\n${indentStr}  meta: LambdaMeta(isTailRecursive=${info.isTailRecursive})"
+        case None => s"\n${indentStr} meta: None"
       val paramsStr =
         if params.isEmpty then s"${indentStr}  params: []"
         else
@@ -144,7 +151,7 @@ def prettyPrintTerm(
               .map(p => s"${indentStr}    ${p.name}: ${prettyPrintTypeSpec(p.typeSpec)}")
               .mkString("\n")
       val bodyStr = prettyPrintExpr(body, indent + 2, showSourceSpans, showTypes)
-      s"${indentStr}Lambda $spanStr$typeStr\n" +
+      s"${indentStr}Lambda $spanStr$typeStr$metaStr\n" +
         s"$paramsStr\n" +
         s"${indentStr}  body:\n$bodyStr"
 
@@ -168,6 +175,12 @@ def prettyPrintTerm(
     case lit: LiteralUnit =>
       val spanStr = if showSourceSpans then printSourceSpan(lit.span) else ""
       s"${indentStr}LiteralUnit $spanStr"
+
+    case DataConstructor(sp, typeSpec) =>
+      val spanStr = if showSourceSpans then printSourceSpan(sp) else ""
+      val typeStr =
+        if showTypes then s"\n${indentStr}  typeSpec: ${prettyPrintTypeSpec(typeSpec)}" else ""
+      s"${indentStr}DataConstructor $spanStr$typeStr"
 
     case NativeImpl(sp, typeSpec, typeAsc, _) =>
       val spanStr = if showSourceSpans then printSourceSpan(sp) else ""

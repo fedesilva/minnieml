@@ -13,10 +13,23 @@ type ParserResult = Either[ParserError, Module]
 
 object Parser:
 
-  def parseModule(source: String, name: String): ParserResult =
+  def parseModuleWithInfo(
+    source:     String,
+    name:       String,
+    sourcePath: Option[String] = None
+  ): (SourceInfo, ParserResult) =
     val info = SourceInfo(source)
-    parse(source, p => topLevelModuleP(name, info)(using p)) match
-      case Parsed.Success(result, _) =>
-        result.asRight
-      case f: Parsed.Failure =>
-        ParserError.Failure(f.trace().longMsg).asLeft
+    val result =
+      parse(source, p => topLevelModuleP(name, info, sourcePath)(using p)) match
+        case Parsed.Success(result, _) =>
+          result.asRight
+        case f: Parsed.Failure =>
+          ParserError.Failure(f.trace().longMsg).asLeft
+    (info, result)
+
+  def parseModule(
+    source:     String,
+    name:       String,
+    sourcePath: Option[String] = None
+  ): ParserResult =
+    parseModuleWithInfo(source, name, sourcePath)._2

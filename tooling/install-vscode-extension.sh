@@ -17,8 +17,15 @@ VSIX_FILE="${EXTENSION_NAME}-${EXTENSION_VERSION}.vsix"
 
 echo "--- Installing/Updating MinnieML VS Code Extension ($EXTENSION_NAME v$EXTENSION_VERSION) ---"
 
-# 1. Ensure vsce is installed
-echo "[1/5] Checking/Installing @vscode/vsce..."
+# 1. Install npm dependencies and bundle
+echo "[1/5] Installing dependencies and bundling..."
+cd "$EXTENSION_DIR"
+npm install
+npm run build
+cd "$SCRIPT_DIR"
+
+# 2. Ensure vsce is installed
+echo "[2/5] Checking/Installing @vscode/vsce..."
 if ! npm list -g --depth=0 | grep -q '@vscode/vsce'; then
     echo "   vsce not found globally, installing..."
     if ! npm install -g @vscode/vsce; then
@@ -30,8 +37,8 @@ else
     echo "   vsce is already installed globally."
 fi
 
-# 2. Find npm global prefix and vsce path
-echo "[2/5] Finding vsce path..."
+# 3. Find npm global prefix and vsce path
+echo "[3/5] Finding vsce path..."
 NPM_GLOBAL_PREFIX=$(npm prefix -g)
 if [ -z "$NPM_GLOBAL_PREFIX" ]; then
     echo "ERROR: Could not determine npm global prefix."
@@ -53,24 +60,23 @@ if [ ! -x "$VSCE_PATH" ]; then
 fi
 echo "   Found vsce at: $VSCE_PATH"
 
-# 3. Package the extension
-echo "[3/5] Packaging extension in $EXTENSION_DIR..."
+# 4. Package the extension
+echo "[4/5] Packaging extension in $EXTENSION_DIR..."
 cd "$EXTENSION_DIR"
 
 # Remove old package if it exists
 rm -f "$VSIX_FILE"
 
 # Package using full path and bypass prompts for repository/license
-# Use --no-dependencies if you don't have node_modules in the extension folder
-if ! "$VSCE_PATH" package --no-dependencies --allow-missing-repository -o "$VSIX_FILE"; then
+if ! "$VSCE_PATH" package --allow-missing-repository -o "$VSIX_FILE"; then
     echo "ERROR: Failed to package the extension using vsce."
     cd "$SCRIPT_DIR" # Go back to original script dir before exiting
     exit 1
 fi
 echo "   Successfully packaged: $VSIX_FILE"
 
-# 4. Check for 'code' command
-echo "[4/5] Checking for 'code' command..."
+# 5. Check for 'code' command
+echo "[5/5] Checking for 'code' command and installing..."
 if ! command -v code &> /dev/null; then
     echo "ERROR: 'code' command not found in PATH."
     echo "       Please install it from VS Code:"
@@ -83,8 +89,7 @@ if ! command -v code &> /dev/null; then
 fi
 echo "   'code' command found."
 
-# 5. Install the .vsix package
-echo "[5/5] Installing extension package: $VSIX_FILE..."
+# Install the .vsix package
 # Uninstall first to ensure a clean install, ignore errors if not installed
 code --uninstall-extension "$EXTENSION_NAME" > /dev/null 2>&1 || true
 if ! code --install-extension "$VSIX_FILE"; then

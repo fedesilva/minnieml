@@ -24,7 +24,7 @@ private[parser] def bindingIdOrError[$: P]: P[Either[String, String]] =
   }
 
 private[parser] def operatorIdOrError[$: P]: P[Either[String, String]] =
-  val opChars    = "=!#$%^&*+<>?/\\|~-"
+  val opChars    = "=!#$%^&*+<>?/\\|-"
   val symbolicOp = P(CharsWhile(c => opChars.indexOf(c) >= 0, min = 1).!)
 
   P(symbolicOp | CharsWhileIn("a-zA-Z0-9_", 1).!).map { captured =>

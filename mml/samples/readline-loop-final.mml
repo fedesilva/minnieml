@@ -1,5 +1,4 @@
 
-
 fn loop(): Unit =
   println "Type a number:";
   let s = readline();
@@ -7,8 +6,22 @@ fn loop(): Unit =
   println (concat "Number is: " (to_string n));
   loop()
 ;
-  
 
 fn main() = 
   loop()
 ;
+
+#
+# loop = 
+#   println |>
+#     () -> { 
+#       readline () |> 
+#         (s) -> {    
+#           str_to_int |>
+#             (n) -> {
+#               println... |> loop()
+#           }
+#         }
+#     }
+# 
+#

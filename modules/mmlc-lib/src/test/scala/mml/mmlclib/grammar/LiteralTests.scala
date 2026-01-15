@@ -19,7 +19,7 @@ class LiteralTests extends BaseEffFunSuite:
     }.map {
       case bnd: Bnd =>
         bnd.value.terms.head.typeSpec match
-          case Some(TypeRef(_, "String", _)) =>
+          case Some(TypeRef(_, "String", _, _)) =>
           // pass
           case other =>
             fail(s"Expected `Some(TypeRef(\"String\"))`, got $other")
@@ -38,7 +38,7 @@ class LiteralTests extends BaseEffFunSuite:
     }.map {
       case bnd: Bnd =>
         bnd.value.terms.head.typeSpec match
-          case Some(TypeRef(_, "Int", _)) =>
+          case Some(TypeRef(_, "Int", _, _)) =>
           // pass
           case other =>
             fail(s"Expected `Some(TypeRef(\"Int\"))`, got $other")
@@ -57,7 +57,7 @@ class LiteralTests extends BaseEffFunSuite:
     }.map {
       case bnd: Bnd =>
         bnd.value.terms.head.typeSpec match
-          case Some(TypeRef(_, "Float", _)) =>
+          case Some(TypeRef(_, "Float", _, _)) =>
           case other =>
             fail(s"Expected `Some(TypeRef(\"Float\"))`, got $other \n ${prettyPrintAst(bnd)} ")
       case _ => fail("Expected a let")
@@ -75,7 +75,7 @@ class LiteralTests extends BaseEffFunSuite:
     }.map {
       case bnd: Bnd =>
         bnd.value.terms.head.typeSpec match
-          case Some(TypeRef(_, "Bool", _)) =>
+          case Some(TypeRef(_, "Bool", _, _)) =>
           case other =>
             fail(s"Expected `Some(TypeRef(\"Bool\"))`, got $other")
       case _ => fail("Expected a let")
@@ -93,7 +93,7 @@ class LiteralTests extends BaseEffFunSuite:
     }.map {
       case bnd: Bnd =>
         bnd.value.terms.head.typeSpec match
-          case Some(TypeRef(_, "Unit", _)) =>
+          case Some(TypeRef(_, "Unit", _, _)) =>
           case other =>
             fail(s"Expected `Some(TypeRef(\"Unit\"))`, got $other")
       case _ => fail("Expected a let")

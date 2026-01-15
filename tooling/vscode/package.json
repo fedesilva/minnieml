@@ -1,15 +1,19 @@
 {
     "name": "mml-language",
     "displayName": "MinnieML Language",
-    "description": "Syntax highlighting for MinnieML language",
-    "version": "0.1.0",
+    "description": "Language support for MinnieML with syntax highlighting, diagnostics, and hover",
+    "version": "0.2.0",
     "engines": {
-        "vscode": "^1.60.0"
+        "vscode": "^1.75.0"
     },
     "publisher": "mml",
     "categories": [
         "Programming Languages"
     ],
+    "activationEvents": [
+        "onLanguage:mml"
+    ],
+    "main": "./out/extension.js",
     "contributes": {
         "languages": [
             {
@@ -31,6 +35,46 @@
                 "scopeName": "source.mml",
                 "path": "./syntaxes/mml.tmLanguage.json"
             }
+        ],
+        "configuration": {
+            "type": "object",
+            "title": "MinnieML",
+            "properties": {
+                "mml.mmlcPath": {
+                    "type": "string",
+                    "default": "mmlc",
+                    "description": "Path to the mmlc compiler executable"
+                }
+            }
+        },
+        "commands": [
+            {
+                "command": "mml.restart",
+                "title": "MML: Restart Language Server"
+            },
+            {
+                "command": "mml.compileBin",
+                "title": "MML: Compile to Binary"
+            },
+            {
+                "command": "mml.compileLib",
+                "title": "MML: Compile as Library"
+            }
         ]
+    },
+    "scripts": {
+        "vscode:prepublish": "npm run build",
+        "build": "esbuild src/extension.ts --bundle --outfile=out/extension.js --external:vscode --format=cjs --platform=node",
+        "compile": "tsc -p ./",
+        "watch": "tsc -watch -p ./"
+    },
+    "dependencies": {
+        "vscode-languageclient": "^9.0.1"
+    },
+    "devDependencies": {
+        "@types/node": "^20.10.0",
+        "@types/vscode": "^1.75.0",
+        "typescript": "^5.3.0",
+        "esbuild": "^0.20.0"
     }
 }

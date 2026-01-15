@@ -1,5 +1,17 @@
+#
+# Demonstrate partial application.
+# 
+
+# add takes two parameters
 fn add(a: Int, b: Int): Int = a + b;
+
+# we apply add to one parameter, leaving the second out.
+# this returns another function that takes 1 parameter
+# (the one that is missing)
 let inc = add 1;
+
+# When we call inc, it takes the missing parameter, 
+# calls add using both.
 fn main() = println (to_string (inc 41));
 
 

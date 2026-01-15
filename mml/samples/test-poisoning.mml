@@ -1,0 +1,14 @@
+
+
+let a = 1;
+# first error: primary
+let b: Int = "2";
+
+# second error: cause by b being bad
+let c = a + b;
+
+fn main() = 
+# third error: caused by c being bad
+
+  println (to_string c)
+;

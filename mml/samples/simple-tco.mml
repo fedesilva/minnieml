@@ -1,0 +1,16 @@
+
+
+
+fn loop(i:Int, to: Int): Unit =
+  println (concat "Iteration: " (to_string i));
+  if i <= to 
+  then loop ( i+1 ) to
+  else 
+    println "done";
+    ()
+  end
+;
+
+fn main() =
+  loop 1 100
+;

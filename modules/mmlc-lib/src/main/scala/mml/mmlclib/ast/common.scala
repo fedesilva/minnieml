@@ -20,28 +20,29 @@ trait AstNode derives CanEqual
 trait Typeable extends AstNode {
 
   /** This is the computed type */
-  def typeSpec: Option[TypeSpec]
+  def typeSpec: Option[Type]
 
   /** This is the type the user declares. */
-  def typeAsc: Option[TypeSpec]
+  def typeAsc: Option[Type]
 }
 
 trait FromSource extends AstNode {
   def span: SrcSpan
 }
 
-enum ModVisibility:
+/** Visibility control shared by modules and members.
+  *
+  *   - `pub`: Importable and referenceable from any module.
+  *   - `lex`: Visible only within the defining module and its descendants; never exported.
+  *   - `prot`: Visible to the current module, sibling modules, and nested modules; external access
+  *     requires import or fully qualified names.
+  *   - `priv`: Confined to the defining module (sibling modules can refer without import but it is
+  *     not exportable).
+  */
+enum Visibility derives CanEqual:
   // Everyone
   case Public
-  // Everyone in the same and below modules
-  case Lexical
-  // Only within the same module
-  case Protected
-
-enum MemberVisibility derives CanEqual:
-  // Everyone
-  case Public
-  // Only siblings of the conatianer
+  // Visible to the module, its siblings, and nested modules
   case Protected
   // Inside the module that contains the member
   case Private
@@ -51,6 +52,7 @@ trait Member extends AstNode
 
 trait Resolvable extends AstNode:
   def name: String
+  def id:   Option[String]
 
 case class DocComment(
   span: SrcSpan,
@@ -60,14 +62,15 @@ case class DocComment(
 
 trait Decl extends Member, Typeable, Resolvable:
   def docComment: Option[DocComment]
-  def visibility: MemberVisibility
+  def visibility: Visibility
 
 case class FnParam(
   span:       SrcSpan,
   name:       String,
-  typeSpec:   Option[TypeSpec]   = None,
-  typeAsc:    Option[TypeSpec]   = None,
-  docComment: Option[DocComment] = None
+  typeSpec:   Option[Type]       = None,
+  typeAsc:    Option[Type]       = None,
+  docComment: Option[DocComment] = None,
+  id:         Option[String]     = None
 ) extends AstNode,
       FromSource,
       Typeable,
@@ -110,13 +113,12 @@ object OpMangling:
     '/' -> "slash",
     '\\' -> "bslash",
     '|' -> "pipe",
-    '~' -> "tilde",
     '-' -> "minus"
   )
 
   def mangleOp(op: String, arity: Int): String =
     val translated =
-      if op.forall(_.isLetterOrDigit) then op
+      if op.forall(c => c.isLetterOrDigit || c == '_') then op
       else op.map(c => opCharNames.getOrElse(c, c.toString)).mkString("_")
     s"op.$translated.$arity"
 

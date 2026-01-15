@@ -1,6 +1,8 @@
 package mml.mmlclib.semantic
 
 import mml.mmlclib.ast.*
+import mml.mmlclib.compiler.{CompilerConfig, CompilerState, ParsingErrorChecker}
+import mml.mmlclib.parser.SourceInfo
 import mml.mmlclib.test.BaseEffFunSuite
 
 class ParsingErrorCheckerTests extends BaseEffFunSuite:
@@ -33,7 +35,7 @@ class ParsingErrorCheckerTests extends BaseEffFunSuite:
       let x = 42;
       """
     ).map { module =>
-      val state  = SemanticPhaseState(module, Vector.empty)
+      val state  = CompilerState.empty(module, SourceInfo(""), CompilerConfig.default)
       val result = ParsingErrorChecker.checkModule(state)
       assert(result.errors.isEmpty)
       assertNoDiff(result.module.toString, module.toString)

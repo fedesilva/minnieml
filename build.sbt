@@ -14,9 +14,12 @@ lazy val commonSettings =
     resolvers ++= Dependencies.resolvers,
     semanticdbEnabled := true,
     semanticdbVersion := scalafixSemanticdb.revision,
+    scalafixDependencies += "io.github.dedis" %% "scapegoat-scalafix" % "1.1.4",
     // Set fork to true as recommended by cats-effect for all projects
     Compile / run / fork := true
   )
+
+
 
 // Main project
 lazy val mml: Project =
@@ -27,9 +30,13 @@ lazy val mml: Project =
       Compile / mainClass := Some("mml.mmlc.Main"),
       Compile / gitSha    := readSha,
 
-      // Distribution tasks moved to root project
+      mmlc / assembly / test := (Test / test).value,
+
+      // Distribution tasks from root project
       mmlcPublishLocal := (mmlc / mmlcPublishLocal).value,
+      
       mmlcDistroAssembly := {
+        
         val jarPath = {
           val out = (mmlc / assembly / assemblyOutputPath).value
           (mmlc / assembly).value
@@ -109,7 +116,24 @@ lazy val mmlclib =
       name := "mmlc-lib",
       commonSettings,
       libraryDependencies ++= Dependencies.mmlclib,
-      buildInfoKeys    := Seq[BuildInfoKey](name, version, scalaVersion, sbtVersion),
+      buildInfoKeys := Seq[BuildInfoKey](
+        name,
+        version,
+        scalaVersion,
+        sbtVersion,
+        BuildInfoKey.action("build") {
+          java.time.Instant.now().toString
+        },
+        BuildInfoKey.action("gitSha") {
+          scala.sys.process.Process("git rev-parse --short HEAD").!!.trim
+        },
+        BuildInfoKey.action("os") {
+          System.getProperty("os.name")
+        },
+        BuildInfoKey.action("arch") {
+          System.getProperty("os.arch")
+        }
+      ),
       buildInfoObject  := "MmlLibBuildInfo",
       buildInfoPackage := "mml.mmlclib"
     )
@@ -128,6 +152,8 @@ lazy val mmlc =
       libraryDependencies ++= Dependencies.mmlc,
 
       assembly / assemblyJarName := s"mmlc.jar",
+
+      assembly / test := (Test / test).value,
 
       buildInfoKeys := Seq[BuildInfoKey](
         name,

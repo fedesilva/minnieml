@@ -1,18 +1,23 @@
 package mml.mmlclib.ast
 
 // **Type Specifications**
-sealed trait TypeSpec extends AstNode, FromSource
+sealed trait Type extends AstNode, FromSource
 
-type ResolvableType = TypeAlias | TypeDef
+sealed trait ResolvableType extends AstNode:
+  def name: String
+  def id:   Option[String]
+
+// type ResolvableType = TypeAlias | TypeDef
 
 /** References a type by name */
 case class TypeRef(
-  span:       SrcSpan,
-  name:       String,
-  resolvedAs: Option[ResolvableType] = None
-) extends TypeSpec
+  span:         SrcSpan,
+  name:         String,
+  resolvedId:   Option[String] = None,
+  candidateIds: List[String]   = Nil
+) extends Type
 
-sealed trait NativeType extends TypeSpec, Native
+sealed trait NativeType extends Type, Native
 
 case class NativePrimitive(
   span:     SrcSpan,
@@ -24,43 +29,69 @@ case class NativePointer(
   llvmType: String
 ) extends NativeType
 
+// TODO: make this use Field
 case class NativeStruct(
   span:   SrcSpan,
-  fields: Map[String, TypeSpec]
+  fields: List[(String, Type)]
 ) extends NativeType
 
 /** A type application, ie:  `List Int, Map String Int` */
-case class TypeApplication(span: SrcSpan, base: TypeSpec, args: List[TypeSpec]) extends TypeSpec
+case class TypeApplication(span: SrcSpan, base: Type, args: List[Type]) extends Type
 
 /** The type of a Fn `String -> Int` */
-case class TypeFn(span: SrcSpan, paramTypes: List[TypeSpec], returnType: TypeSpec) extends TypeSpec
+case class TypeFn(span: SrcSpan, paramTypes: List[Type], returnType: Type) extends Type
 
 /** A tuple type: `(1, "uno") : (Int, String)` */
-case class TypeTuple(span: SrcSpan, elements: List[TypeSpec]) extends TypeSpec
+case class TypeTuple(span: SrcSpan, elements: List[Type]) extends Type
 
-/** Structural type `{ name: String, age: Int }` */
-case class TypeStruct(span: SrcSpan, fields: List[(String, TypeSpec)]) extends TypeSpec
+/** Structural type `{ name: String, age: Int }` Can't be instanced. It's just an interface like.
+  * Open row, tbd row field
+  */
+case class TypeOpenRecord(span: SrcSpan, fields: List[(String, Type)]) extends Type
+
+// TODO: not all decls are typeable: a type is a type not a typeable
+/** Closed, nominal record */
+case class TypeStruct(
+  span:       SrcSpan,
+  docComment: Option[DocComment],
+  visibility: Visibility,
+  name:       String,
+  fields:     Vector[Field],
+  id:         Option[String] = None
+) extends Type,
+      ResolvableType,
+      Decl:
+  val typeSpec: Option[Type] = None
+  val typeAsc:  Option[Type] = None
+
+case class Field(
+  span:     SrcSpan,
+  name:     String,
+  typeSpec: Type,
+  id:       Option[String] = None
+) extends FromSource,
+      Resolvable
 
 /** Refine types with a predicate `Int {i => i < 100 && i > 0 }` */
-case class TypeRefinement(span: SrcSpan, id: Option[String], expr: Expr) extends TypeSpec
+case class TypeRefinement(span: SrcSpan, id: Option[String], expr: Expr) extends Type
 
 /** Union types  `Int | None | Something | Other` */
-case class Union(span: SrcSpan, types: List[TypeSpec]) extends TypeSpec
+case class Union(span: SrcSpan, types: List[Type]) extends Type
 
 /** Intersection Types `Readable & Writable` */
-case class Intersection(span: SrcSpan, types: List[TypeSpec]) extends TypeSpec
+case class Intersection(span: SrcSpan, types: List[Type]) extends Type
 
 /** The unit type `()` */
-case class TypeUnit(span: SrcSpan) extends TypeSpec
+case class TypeUnit(span: SrcSpan) extends Type
 
 /** A grouping of types, mostly for disambiguation: `Map String (List Int)` */
-case class TypeGroup(span: SrcSpan, types: List[TypeSpec]) extends TypeSpec
+case class TypeGroup(span: SrcSpan, types: List[Type]) extends Type
 
 /** A type variable (like 'T, 'R in the type system) */
 case class TypeVariable(
   span: SrcSpan,
   name: String // "'T", "'R", "'A", etc.
-) extends TypeSpec
+) extends Type
 
 /** A type scheme: ∀'T 'R 'A. Type
   *
@@ -74,30 +105,34 @@ case class TypeVariable(
 case class TypeScheme(
   span:     SrcSpan,
   vars:     List[String], // ["'T", "'R"] - the quantified variables
-  bodyType: TypeSpec // The actual type with variables
-) extends TypeSpec
+  bodyType: Type // The actual type with variables
+) extends Type
 
 /** A type definition, which is a new named type, as opposed to a type alias. */
 case class TypeDef(
-  visibility: MemberVisibility   = MemberVisibility.Protected,
+  visibility: Visibility         = Visibility.Protected,
   span:       SrcSpan,
   name:       String,
-  typeSpec:   Option[TypeSpec],
+  typeSpec:   Option[Type],
   docComment: Option[DocComment] = None,
-  typeAsc:    Option[TypeSpec]   = None
+  typeAsc:    Option[Type]       = None,
+  id:         Option[String]     = None
 ) extends Decl,
+      ResolvableType,
       FromSource
 
 /** A type alias, which is a new name for an existing type, NOT a new type */
 case class TypeAlias(
-  visibility: MemberVisibility   = MemberVisibility.Protected,
+  visibility: Visibility         = Visibility.Protected,
   span:       SrcSpan,
   name:       String,
-  typeRef:    TypeSpec,
-  typeSpec:   Option[TypeSpec]   = None,
-  typeAsc:    Option[TypeSpec]   = None,
-  docComment: Option[DocComment] = None
+  typeRef:    Type,
+  typeSpec:   Option[Type]       = None,
+  typeAsc:    Option[Type]       = None,
+  docComment: Option[DocComment] = None,
+  id:         Option[String]     = None
 ) extends Decl,
+      ResolvableType,
       FromSource
 
 /** Represents a type specification that could not be resolved. Preserves the original type for
@@ -105,7 +140,7 @@ case class TypeAlias(
   */
 case class InvalidType(
   span:         SrcSpan,
-  originalType: TypeSpec
-) extends TypeSpec,
+  originalType: Type
+) extends Type,
       InvalidNode,
       FromSource

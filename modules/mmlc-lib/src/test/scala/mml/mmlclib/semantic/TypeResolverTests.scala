@@ -18,9 +18,10 @@ class TypeResolverTests extends BaseEffFunSuite:
 
       // Check that the type ascription has been resolved
       clue(binding.typeAsc) match
-        case Some(TypeRef(_, "Int", resolvedAs)) =>
-          assert(clue(resolvedAs).isDefined, "Expected TypeRef to be resolved")
-          assertEquals(clue(resolvedAs.get.asInstanceOf[TypeAlias].name), "Int")
+        case Some(TypeRef(_, "Int", resolvedId, _)) =>
+          assert(clue(resolvedId).isDefined, "Expected TypeRef to be resolved")
+          val resolved = resolvedId.flatMap(module.resolvables.lookupType)
+          assertEquals(clue(resolved.map(_.name)), Some("Int"))
         case other =>
           fail(s"Expected TypeRef with resolved type, got: ${clue(other)}")
     }
@@ -44,9 +45,10 @@ class TypeResolverTests extends BaseEffFunSuite:
 
       // Check that the parameter type has been resolved
       lambda.params.head.typeAsc match
-        case Some(TypeRef(_, "String", resolvedAs)) =>
-          assert(clue(resolvedAs.isDefined), "Expected TypeRef to be resolved")
-          assertEquals(clue(resolvedAs.get.asInstanceOf[TypeDef].name), "String")
+        case Some(TypeRef(_, "String", resolvedId, _)) =>
+          assert(clue(resolvedId.isDefined), "Expected TypeRef to be resolved")
+          val resolved = resolvedId.flatMap(module.resolvables.lookupType)
+          assertEquals(clue(resolved.map(_.name)), Some("String"))
         case _ =>
           fail("Expected TypeRef with resolved type")
     }
@@ -71,9 +73,10 @@ class TypeResolverTests extends BaseEffFunSuite:
       // Return type ascription is on lambda or bnd
       val returnTypeAsc = lambda.typeAsc.orElse(bnd.typeAsc)
       returnTypeAsc match
-        case Some(TypeRef(_, "Bool", resolvedAs)) =>
-          assert(resolvedAs.isDefined, "Expected TypeRef to be resolved")
-          assertEquals(resolvedAs.get.asInstanceOf[TypeDef].name, "Bool")
+        case Some(TypeRef(_, "Bool", resolvedId, _)) =>
+          assert(resolvedId.isDefined, "Expected TypeRef to be resolved")
+          val resolved = resolvedId.flatMap(module.resolvables.lookupType)
+          assertEquals(resolved.map(_.name), Some("Bool"))
         case _ =>
           fail("Expected TypeRef with resolved type")
     }
@@ -92,9 +95,10 @@ class TypeResolverTests extends BaseEffFunSuite:
 
       // Check that the type reference in the alias has been resolved
       typeAlias.typeRef match
-        case TypeRef(_, "Int64", resolvedAs) =>
-          assert(resolvedAs.isDefined, "Expected Int64 to be resolved")
-          assertEquals(resolvedAs.get.asInstanceOf[TypeDef].name, "Int64")
+        case TypeRef(_, "Int64", resolvedId, _) =>
+          assert(resolvedId.isDefined, "Expected Int64 to be resolved")
+          val resolved = resolvedId.flatMap(module.resolvables.lookupType)
+          assertEquals(resolved.map(_.name), Some("Int64"))
         case _ =>
           fail("Expected TypeRef with resolved type")
 
@@ -105,9 +109,10 @@ class TypeResolverTests extends BaseEffFunSuite:
 
       // Check that the binding's type has been resolved to the alias
       clue(binding.typeAsc) match
-        case Some(TypeRef(_, "TestNumber", resolvedAs)) =>
-          assert(clue(resolvedAs).isDefined, "Expected TypeRef to be resolved")
-          assertEquals(clue(resolvedAs.get.asInstanceOf[TypeAlias].name), "TestNumber")
+        case Some(TypeRef(_, "TestNumber", resolvedId, _)) =>
+          assert(clue(resolvedId).isDefined, "Expected TypeRef to be resolved")
+          val resolved = resolvedId.flatMap(module.resolvables.lookupType)
+          assertEquals(clue(resolved.map(_.name)), Some("TestNumber"))
         case other =>
           fail(s"Expected TypeRef with resolved type, got: ${clue(other)}")
     }
@@ -132,15 +137,43 @@ class TypeResolverTests extends BaseEffFunSuite:
         case t: TypeAlias if t.name == "X" => t
       }.get
 
-      // Check that the typeSpec resolves to Int64 (the MML type), not @native:i64
+      // Check that the typeSpec resolves to Int64 (the MML type), not @native[t=i64]
       typeAlias.typeSpec match
-        case Some(TypeRef(_, "Int64", Some(td: TypeDef))) =>
-          assertEquals(td.name, "Int64")
+        case Some(TypeRef(_, "Int64", resolvedId, _)) =>
+          assert(resolvedId.isDefined, "Expected Int64 to be resolved")
+          val td =
+            resolvedId.flatMap(module.resolvables.lookupType).collect { case t: TypeDef => t }
+          assert(td.isDefined, "Expected to resolve to TypeDef")
+          assertEquals(td.get.name, "Int64")
           // Verify that Int64 itself has the native type, but that's not propagated to X
-          assert(td.typeSpec.isDefined, "Int64 should have a native typeSpec")
-          td.typeSpec match
+          assert(td.get.typeSpec.isDefined, "Int64 should have a native typeSpec")
+          td.get.typeSpec match
             case Some(NativePrimitive(_, "i64")) => // correct
-            case other => fail(s"Expected Int64 to have @native:i64, got $other")
+            case other => fail(s"Expected Int64 to have @native[t=i64], got $other")
         case other =>
           fail(s"Expected X to resolve to TypeRef(Int64), got $other")
+    }
+
+  test("TypeResolver should resolve type references to struct declarations"):
+    val code = """
+      struct Person {
+        name: String
+      };
+      let p: Person = ???;
+    """
+
+    semNotFailed(code).map { module =>
+      val binding = module.members.collectFirst {
+        case b: Bnd if b.name == "p" => b
+      }.get
+
+      clue(binding.typeAsc) match
+        case Some(TypeRef(_, "Person", resolvedId, _)) =>
+          val resolved = resolvedId.flatMap(module.resolvables.lookupType)
+          assert(
+            resolved.exists(_.isInstanceOf[TypeStruct]),
+            s"Expected TypeRef to resolve to TypeStruct, got: ${clue(resolved)}"
+          )
+        case other =>
+          fail(s"Expected TypeRef to resolve to TypeStruct, got: ${clue(other)}")
     }

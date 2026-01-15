@@ -1,8 +1,9 @@
 package mml.mmlclib.test
 
 import cats.effect.IO
-import mml.mmlclib.api.{CompilerApi, ParserApi}
+import mml.mmlclib.api.{FrontEndApi, ParserApi}
 import mml.mmlclib.ast.{Error, Member, Module}
+import mml.mmlclib.compiler.{CodegenStage, CompilerConfig}
 import mml.mmlclib.semantic.*
 import mml.mmlclib.util.prettyprint.ast.prettyPrintAst
 import munit.CatsEffectSuite
@@ -94,16 +95,19 @@ trait BaseEffFunSuite extends CatsEffectSuite:
     name:   String         = "Test",
     msg:    Option[String] = None
   ): IO[Module] =
-    CompilerApi.compileString(source, name).value.map {
+    FrontEndApi.compile(source, name).value.map {
       case Right(state) =>
-        val module = state.module
-        assert(
-          !containsErrorNode(module),
-          msg.getOrElse(
-            s"Failed: found Error nodes:\n ${prettyPrintAst(module)}"
+        if state.errors.nonEmpty then
+          fail(msg.getOrElse("Semantic Failed: .") + s"\n${state.errors}")
+        else
+          val module = state.module
+          assert(
+            !containsErrorNode(module),
+            msg.getOrElse(
+              s"Failed: found Error nodes:\n ${prettyPrintAst(module)}"
+            )
           )
-        )
-        module
+          module
       case Left(error) =>
         fail(msg.getOrElse("Semantic Failed: .") + s"\n${error}")
     }
@@ -113,12 +117,11 @@ trait BaseEffFunSuite extends CatsEffectSuite:
     name:   String         = "TestFail",
     msg:    Option[String] = None
   ): IO[Unit] =
-    CompilerApi.compileString(source, name).value.map {
+    FrontEndApi.compile(source, name).value.map {
       case Right(state) =>
-        val module = state.module
         assert(
-          containsErrorNode(module),
-          msg.getOrElse(s"Expected Error nodes but found none. ${prettyPrintAst(module)} ")
+          state.errors.nonEmpty || containsErrorNode(state.module),
+          msg.getOrElse(s"Expected errors but found none. ${prettyPrintAst(state.module)} ")
         )
       case Left(error) =>
       // pass
@@ -129,8 +132,8 @@ trait BaseEffFunSuite extends CatsEffectSuite:
     name:   String         = "Test",
     msg:    Option[String] = None
   ): IO[SemanticResult] =
-    CompilerApi.compileState(source, name).value.map {
-      case Right(state) => SemanticResult(state.module, state.errors.toList)
+    FrontEndApi.compile(source, name).value.map {
+      case Right(state) => SemanticResult(state.module, state.semanticErrors.toList)
       case Left(error) =>
         fail(
           msg.getOrElse("Semantic pipeline failed before producing a state.") + s"\n$error"
@@ -152,15 +155,21 @@ trait BaseEffFunSuite extends CatsEffectSuite:
 
   protected def compileAndGenerate(
     source: String,
-    name:   String = "Test"
+    name:   String         = "Test",
+    config: CompilerConfig = CompilerConfig.default
   ): IO[String] =
-    import mml.mmlclib.api.CodeGenApi
-    CompilerApi.compileString(source, name).value.flatMap {
+    FrontEndApi.compile(source, name, config).value.flatMap {
       case Right(state) =>
-        CodeGenApi.generateFromModule(state.module).value.map {
-          case Right(llvmIr) => llvmIr
-          case Left(error) => fail(s"CodeGen failed: $error")
-        }
+        if state.errors.nonEmpty then fail(s"Compilation failed: ${state.errors}")
+        else
+          val validated = CodegenStage.process(state)
+          if validated.hasErrors then fail(s"Validation failed: ${validated.errors}")
+          else
+            CodegenStage.processIrOnly(validated).flatMap { codegenState =>
+              codegenState.llvmIr match
+                case Some(ir) => IO.pure(ir)
+                case None => fail(s"CodeGen failed: ${codegenState.errors}")
+            }
       case Left(error) =>
         fail(s"Compilation failed: $error")
     }

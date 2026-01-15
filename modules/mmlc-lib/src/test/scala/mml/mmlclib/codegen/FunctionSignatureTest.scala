@@ -1,10 +1,11 @@
 package mml.mmlclib.codegen
 
+import mml.mmlclib.compiler.CompilerConfig
 import mml.mmlclib.test.BaseEffFunSuite
 
 class FunctionSignatureTest extends BaseEffFunSuite:
 
-  test("correctly generates signatures for native and regular functions") {
+  test("correctly generates signatures for native and regular functions on x86_64") {
     val source =
       """
         fn debug_print (a: String): Unit = @native;
@@ -13,15 +14,75 @@ class FunctionSignatureTest extends BaseEffFunSuite:
         fn main() = log_message "Fede";
       """
 
-    compileAndGenerate(source).map { llvmIr =>
-      assert(llvmIr.contains("declare void @debug_print(%String)"), "debug_print declaration")
-      assert(llvmIr.contains("declare void @log_message(%String)"), "log_message declaration")
+    // Use Binary mode to generate synthesized main entry point
+    val config =
+      CompilerConfig.binary("build", targetTriple = Some("x86_64-apple-macosx"))
+
+    compileAndGenerate(source, config = config).map { llvmIr =>
+
+      // Native functions keep original names (declarations)
+      assert(llvmIr.contains("declare void @debug_print(i64, i8*)"), "debug_print declaration")
+      assert(llvmIr.contains("declare void @log_message(i64, i8*)"), "log_message declaration")
       assert(
-        llvmIr.contains("declare %String @join_strings(%String, %String)"),
+        llvmIr.contains("declare %struct.String @join_strings(i64, i8*, i64, i8*)"),
         "join_strings declaration"
       )
-      assert(llvmIr.contains("define i64 @main()"), "main definition")
-      assert(llvmIr.contains("ret i64 0"), "main return")
+      // User main is mangled with module prefix
+      assert(llvmIr.contains("define void @test_main()"), "user main definition")
+      // Synthesized C main calls user's mangled main
+      assert(llvmIr.contains("define i32 @main("), "synthesized main definition")
+      assert(llvmIr.contains("call void @test_main()"), "synthesized main calls user main")
+      assert(llvmIr.contains("ret i32 0"), "synthesized main return")
+    }
+  }
+
+  test("correctly generates native signatures on aarch64") {
+    val source =
+      """
+        fn debug_print (a: String): Unit = @native;
+        fn log_message (a: String): Unit = @native;
+        fn join_strings(a: String, b: String): String = @native;
+        fn main() = log_message "Fede";
+      """
+
+    val config =
+      CompilerConfig.binary("build", targetTriple = Some("aarch64-apple-macosx"))
+
+    compileAndGenerate(source, config = config).map { llvmIr =>
+      assert(
+        llvmIr.contains("declare void @debug_print([2 x i64])"),
+        "debug_print declaration"
+      )
+      assert(
+        llvmIr.contains("declare void @log_message([2 x i64])"),
+        "log_message declaration"
+      )
+      assert(
+        llvmIr.contains("declare %struct.String @join_strings([2 x i64], [2 x i64])"),
+        "join_strings declaration"
+      )
+    }
+  }
+
+  test("aarch64 native calls pack 2x i64 struct args") {
+    val source =
+      """
+        fn debug_print (a: String): Unit = @native;
+        fn main(): Unit = debug_print "hi";
+      """
+
+    val config =
+      CompilerConfig.binary("build", targetTriple = Some("aarch64-apple-macosx"))
+
+    compileAndGenerate(source, config = config).map { llvmIr =>
+      assert(
+        llvmIr.contains("insertvalue [2 x i64]"),
+        s"expected packed insertvalue in:\n$llvmIr"
+      )
+      assert(
+        llvmIr.contains("call void @debug_print([2 x i64]"),
+        s"expected packed call site in:\n$llvmIr"
+      )
     }
   }
 
@@ -33,15 +94,15 @@ class FunctionSignatureTest extends BaseEffFunSuite:
       """
 
     compileAndGenerate(source).map { llvmIr =>
-      // Definition should use mangled name
+      // Definition should use module-prefixed mangled name
       assert(
-        llvmIr.contains("define i64 @op.star_star.2(i64 %0, i64 %1)"),
-        s"operator definition should use mangled name, got:\n$llvmIr"
+        llvmIr.contains("define i64 @test_op.star_star.2(i64 %0, i64 %1)"),
+        s"operator definition should use module-prefixed mangled name, got:\n$llvmIr"
       )
-      // Call should use mangled name (not @**)
+      // Call should use module-prefixed mangled name
       assert(
-        llvmIr.contains("call i64 @op.star_star.2("),
-        s"operator call should use mangled name, got:\n$llvmIr"
+        llvmIr.contains("call i64 @test_op.star_star.2("),
+        s"operator call should use module-prefixed mangled name, got:\n$llvmIr"
       )
       // Should NOT contain unmangled operator name
       assert(
@@ -59,15 +120,15 @@ class FunctionSignatureTest extends BaseEffFunSuite:
       """
 
     compileAndGenerate(source).map { llvmIr =>
-      // Definition should use mangled name
+      // Definition should use module-prefixed mangled name
       assert(
-        llvmIr.contains("define i64 @op.bang.1(i64 %0)"),
-        s"unary operator definition should use mangled name, got:\n$llvmIr"
+        llvmIr.contains("define i64 @test_op.bang.1(i64 %0)"),
+        s"unary operator definition should use module-prefixed mangled name, got:\n$llvmIr"
       )
-      // Call should use mangled name
+      // Call should use module-prefixed mangled name
       assert(
-        llvmIr.contains("call i64 @op.bang.1("),
-        s"unary operator call should use mangled name, got:\n$llvmIr"
+        llvmIr.contains("call i64 @test_op.bang.1("),
+        s"unary operator call should use module-prefixed mangled name, got:\n$llvmIr"
       )
     }
   }
@@ -80,15 +141,15 @@ class FunctionSignatureTest extends BaseEffFunSuite:
       """
 
     compileAndGenerate(source).map { llvmIr =>
-      // greet should be defined as a function taking one String arg
+      // greet should be defined as a function with module prefix
       assert(
-        llvmIr.contains("define %String @greet(%String"),
-        s"partial application should generate a function, got:\n$llvmIr"
+        llvmIr.contains("define %struct.String @test_greet(%struct.String"),
+        s"partial application should generate a module-prefixed function, got:\n$llvmIr"
       )
-      // main should call greet
+      // main should call greet with module prefix
       assert(
-        llvmIr.contains("call %String @greet("),
-        s"main should call the partial application function, got:\n$llvmIr"
+        llvmIr.contains("call %struct.String @test_greet("),
+        s"main should call the module-prefixed partial application function, got:\n$llvmIr"
       )
     }
   }
@@ -102,15 +163,15 @@ class FunctionSignatureTest extends BaseEffFunSuite:
       """
 
     compileAndGenerate(source).map { llvmIr =>
-      // add10 should be a function with 2 params (eta-expanded from add3 10)
+      // add10 should be a function with 2 params and module prefix
       assert(
-        llvmIr.contains("define i64 @add10(i64 %0, i64 %1)"),
-        s"partial should have 2 params, got:\n$llvmIr"
+        llvmIr.contains("define i64 @test_add10(i64 %0, i64 %1)"),
+        s"partial should have 2 params with module prefix, got:\n$llvmIr"
       )
-      // main should call add10 with two args
+      // main should call add10 with module prefix
       assert(
-        llvmIr.contains("call i64 @add10("),
-        s"main should call add10, got:\n$llvmIr"
+        llvmIr.contains("call i64 @test_add10("),
+        s"main should call test_add10, got:\n$llvmIr"
       )
     }
   }
@@ -124,14 +185,15 @@ class FunctionSignatureTest extends BaseEffFunSuite:
       """
 
     compileAndGenerate(source).map { llvmIr =>
-      // f should be a wrapper function calling add
+      // f should be a wrapper function with module prefix
       assert(
-        llvmIr.contains("define i64 @f(i64 %0, i64 %1)"),
-        s"alias should be eta-expanded to a function, got:\n$llvmIr"
+        llvmIr.contains("define i64 @test_f(i64 %0, i64 %1)"),
+        s"alias should be eta-expanded to a module-prefixed function, got:\n$llvmIr"
       )
+      // alias function should call original (also module-prefixed)
       assert(
-        llvmIr.contains("call i64 @add("),
-        s"alias function should call original, got:\n$llvmIr"
+        llvmIr.contains("call i64 @test_add("),
+        s"alias function should call module-prefixed original, got:\n$llvmIr"
       )
     }
   }
@@ -146,20 +208,20 @@ class FunctionSignatureTest extends BaseEffFunSuite:
       """
 
     compileAndGenerate(source).map { llvmIr =>
-      // add10 should be a function with 2 params
+      // add10 should be a function with 2 params and module prefix
       assert(
-        llvmIr.contains("define i64 @add10(i64 %0, i64 %1)"),
-        s"add10 should have 2 params, got:\n$llvmIr"
+        llvmIr.contains("define i64 @test_add10(i64 %0, i64 %1)"),
+        s"add10 should have 2 params with module prefix, got:\n$llvmIr"
       )
-      // add10and20 should be a function with 1 param (chained partial)
+      // add10and20 should be a function with 1 param and module prefix
       assert(
-        llvmIr.contains("define i64 @add10and20(i64 %0)"),
-        s"add10and20 should have 1 param (chained partial), got:\n$llvmIr"
+        llvmIr.contains("define i64 @test_add10and20(i64 %0)"),
+        s"add10and20 should have 1 param with module prefix, got:\n$llvmIr"
       )
-      // add10and20 should call add10
+      // add10and20 should call add10 with module prefix
       assert(
-        llvmIr.contains("call i64 @add10("),
-        s"add10and20 should call add10, got:\n$llvmIr"
+        llvmIr.contains("call i64 @test_add10("),
+        s"add10and20 should call test_add10, got:\n$llvmIr"
       )
     }
   }
@@ -172,10 +234,10 @@ class FunctionSignatureTest extends BaseEffFunSuite:
       """
 
     compileAndGenerate(source).map { llvmIr =>
-      // main should call add3 with 3 arguments
+      // main should call add3 with module prefix and 3 arguments
       assert(
-        llvmIr.contains("call i64 @add3(i64 1, i64 2, i64 3)"),
-        s"main should call add3 with all args, got:\n$llvmIr"
+        llvmIr.contains("call i64 @test_add3(i64 1, i64 2, i64 3)"),
+        s"main should call test_add3 with all args, got:\n$llvmIr"
       )
     }
   }
@@ -189,10 +251,48 @@ class FunctionSignatureTest extends BaseEffFunSuite:
       """
 
     compileAndGenerate(source).map { llvmIr =>
-      // wrapper should call helper with x and 10
+      // wrapper should call helper with module prefix, x and 10
       assert(
-        llvmIr.contains("call i64 @helper(i64 %0, i64 10)"),
-        s"wrapper should call helper with param and literal, got:\n$llvmIr"
+        llvmIr.contains("call i64 @test_helper(i64 %0, i64 10)"),
+        s"wrapper should call test_helper with param and literal, got:\n$llvmIr"
+      )
+    }
+  }
+
+  test("function with native template emits inline LLVM IR") {
+    val source =
+      """
+        fn ctpop(x: Int): Int = @native[tpl="call i64 @llvm.ctpop.i64(i64 %operand)"];
+        fn main(): Int = ctpop 255;
+      """
+
+    compileAndGenerate(source).map { llvmIr =>
+      // Should emit inline call to intrinsic, not a function call to ctpop
+      assert(
+        llvmIr.contains("call i64 @llvm.ctpop.i64(i64"),
+        s"should emit inline intrinsic call, got:\n$llvmIr"
+      )
+      // Should NOT generate a function definition for ctpop
+      assert(
+        !llvmIr.contains("define i64 @test_ctpop"),
+        s"should NOT define ctpop as a function, got:\n$llvmIr"
+      )
+    }
+  }
+
+  test("function with native template and multiple args uses operand1, operand2") {
+    val source =
+      """
+        fn mymax(a: Int, b: Int): Int = @native[tpl="call i64 @llvm.smax.i64(i64 %operand1, i64 %operand2)"];
+        fn main(): Int = mymax 10 20;
+      """
+
+    compileAndGenerate(source).map { llvmIr =>
+      // Should emit inline call with both operands substituted
+      assert(
+        llvmIr.contains("call i64 @llvm.smax.i64(i64") &&
+          llvmIr.contains("i64 10") && llvmIr.contains("i64 20"),
+        s"should emit inline intrinsic call with both args, got:\n$llvmIr"
       )
     }
   }

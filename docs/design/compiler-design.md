@@ -8,6 +8,7 @@ This document describes how the MML compiler processes programs: its internal da
 8. [Semantic Phase Pipeline](#8-semantic-phase-pipeline)
 9. [Standard Library Injection](#9-standard-library-injection)
 10. [Error Handling Strategy](#10-error-handling-strategy)
+11. [Code Generation: Native Templates](#11-code-generation-native-templates)
 Appendix A. [Source Tree Overview](#appendix-a-source-tree-overview)
 
 ---
@@ -30,7 +31,8 @@ Nodes that can have types, containing:
 - `typeAsc: Option[TypeSpec]` - **User-declared type** from source
 
 #### `Resolvable`
-Nodes that can be referenced by name (all `Decl` types, `FnParam`).
+Nodes that can be referenced by name (all `Decl` types, `FnParam`). Each `Resolvable` (and
+`ResolvableType`) carries a stable `id: Option[String]` used for soft references.
 
 ### Module Structure
 
@@ -38,14 +40,17 @@ Nodes that can be referenced by name (all `Decl` types, `FnParam`).
 Module(
   span: SrcSpan,
   name: String,
-  visibility: ModVisibility,  // Public, Lexical, Protected
+  visibility: Visibility,  // Public, Protected, Private
   members: List[Member],
-  docComment: Option[DocComment]
+  docComment: Option[DocComment],
+  sourcePath: Option[String],
+  resolvables: ResolvablesIndex
 )
 ```
 
-- **Top-level modules**: The CLI/test harness always provides a module name derived from the source path; there is no `module` keyword at file scope. The parser simply collects top-level members until EOF and wraps them in a `Module` with `ModVisibility.Public`.
+- **Top-level modules**: The CLI/test harness always provides a module name derived from the source path; there is no `module` keyword at file scope. The parser simply collects top-level members until EOF and wraps them in a `Module` with `Visibility.Public`.
 - **Doc comments**: File-level doc comments apply to the first member; the parser does not attach them to the synthetic top-level module node.
+- **Visibility**: Three levels (`Public`, `Protected`, `Private`) are carried in the AST for future access control; not enforced yet. See semantics doc for meaning.
 
 ### Members
 
@@ -62,7 +67,8 @@ All declarations extend `Decl` trait and include:
 Bnd(
   name: String,           // mangled name for operators (e.g., "op.plus.2")
   value: Expr,            // contains Lambda with params and body
-  meta: Option[BindingMeta]  // origin, arity, precedence, associativity, originalName
+  meta: Option[BindingMeta], // origin, arity, precedence, associativity, originalName
+  id: Option[String]         // stable soft-reference ID
 )
 ```
 
@@ -81,8 +87,8 @@ Expressions are built from terms:
 
 #### Values
 - **`Ref`**: Reference to a declaration or parameter
-  - Contains `resolvedAs: Option[Resolvable]` - what it resolves to
-  - Contains `candidates: List[Resolvable]` - potential resolutions during name resolution
+  - Contains `resolvedId: Option[String]` - ID of the resolved target (soft reference)
+  - Contains `candidateIds: List[String]` - potential resolution IDs during name resolution
 - **`LiteralInt`, `LiteralFloat`, `LiteralString`, `LiteralBool`, `LiteralUnit`**
 - **`Tuple`**: Tuple of expressions `(expr1, expr2, ...)`
 - **`Placeholder`**: Pattern matching placeholder `_`
@@ -92,7 +98,7 @@ Expressions are built from terms:
 
 ```scala
 // Type references
-TypeRef(name: String, resolvedAs: Option[ResolvableType])
+TypeRef(name: String, resolvedId: Option[String], candidateIds: List[String])
 
 // Native types (from C/LLVM)
 NativePrimitive(llvmType: String)        // e.g., "i64", "float"
@@ -114,6 +120,9 @@ TypeScheme(vars: List[String], bodyType: TypeSpec)  // ∀'T. 'T → 'T
 TypeVariable(name: String)                          // 'T, 'R, etc.
 ```
 
+- **Type definitions**: `TypeDef`, `TypeAlias`, and `TypeStruct` are `ResolvableType` nodes with
+  stable IDs; `Field` (struct fields) is also `Resolvable` and carries an ID.
+
 ### Error/Invalid Nodes
 
 For error recovery and LSP support:
@@ -124,6 +133,14 @@ For error recovery and LSP support:
 - **`InvalidMember`**: Members with structural errors
 - **`ParsingMemberError`**: Parse errors at member level
 - **`TermError`**: Expression-level parse errors
+
+### Soft References and ResolvablesIndex
+
+- All resolvable nodes (top-level declarations, struct fields, lambda parameters) carry stable IDs.
+- `Ref`/`TypeRef` store those IDs (`resolvedId`/`candidateIds`) instead of object references.
+- `Module.resolvables: ResolvablesIndex` maps IDs to the current AST nodes and is kept in sync as
+  phases rewrite members. Consumers (LSP, codegen, printers) always reify through this index to get
+  the latest node instance.
 
 ---
 
@@ -168,8 +185,9 @@ Top-level module members are parsed independently:
 
 ## 8. Semantic Phase Pipeline
 
-The semantic analysis happens in **seven sequential phases**. Each phase transforms the module AST
-and accumulates errors in a `SemanticPhaseState`.
+The semantic pipeline runs after stdlib injection and uses soft references throughout. Each phase
+transforms the module AST and keeps the `Module.resolvables` index in sync so references always
+resolve to the latest node copies.
 
 ### Phase State
 
@@ -182,16 +200,23 @@ case class SemanticPhaseState(
 
 Each phase receives the current state, transforms the module, potentially adds errors, and returns the updated state.
 
-`SemanticApi.rewriteModule` returns this final `SemanticPhaseState` directly, ensuring callers always have access to the rewritten module plus every accumulated semantic error. Production code that only cares about successful compilations should call `CompilerApi.compileString`, which fails with `CompilerError.SemanticErrors` when `state.errors.nonEmpty`. Tests and tooling that need full diagnostics can call `CompilerApi.compileState` to obtain the state without discarding the partially rewritten module.
-
-**Phase order** (from `SemanticApi.scala`):
-1. ParsingErrorChecker
-2. DuplicateNameChecker
-3. TypeResolver
-4. RefResolver
-5. ExpressionRewriter
-6. Simplifier
-7. TypeChecker
+`SemanticStage` wires the phases in this order:
+1. **Stdlib injection**: Adds prelude types, operators, and functions (with stable `stdlib::<name>` IDs).
+2. **DuplicateNameChecker**: Marks duplicates.
+3. **IdAssigner**: Assigns stable IDs to all user declarations and lambda parameters and seeds the
+   resolvables index.
+4. **TypeResolver**: Resolves `TypeRef` to type IDs, rewrites struct fields with resolved types, and
+   updates the type side of the index.
+5. **RefResolver**: Resolves `Ref` nodes to candidate/resolved IDs (parameters first, then members);
+   undefined refs become `InvalidExpression`.
+6. **ExpressionRewriter**: Builds application/operator trees; reifies `Ref` lookups through the
+   index and updates the index when copying/replacing nodes.
+7. **Simplifier**: Removes unnecessary `Expr`/`TermGroup` wrappers.
+8. **TypeChecker**: Validates types, propagates parameter/return type specs, and threads updated
+   resolvables (including params) forward.
+9. **ResolvablesIndexer**: Rebuilds the index after type checking to ensure all parameters and
+   rewritten members are indexed.
+10. **TailRecursionDetector**: Marks tail-recursive lambdas for loopification in codegen.
 
 ---
 
@@ -396,13 +421,20 @@ where possible.
 Functions and operators with `@native` bodies (containing `NativeImpl` nodes) serve to **lift native
 declarations and types into MML's type system**. These declarations expose native (C/LLVM)
 functionality to MML by declaring their signatures. The type checker skips body verification for
-native implementations since the body is external. During code generation, the compiler generates
-forward declarations for native functions and uses the structural type information to generate IR
-that correctly accesses those types.
+native implementations since the body is external.
+
+**Plain `@native`**: The compiler generates forward declarations for native functions; the linker
+resolves them against the runtime or external libraries.
+
+**`@native[tpl="..."]`**: For operators and functions with templates, codegen emits the template
+inline at call sites (no function definition generated). See "Native Templates" in the Code
+Generation section below.
 
 ---
 
 ## 9. Standard Library Injection
+
+NOTE: This is a stopgap solution until we get library support.
 
 The compiler **automatically injects** predefined types, operators, and functions into every module before semantic analysis. This injection is implemented in `semantic/package.scala`.
 
@@ -427,33 +459,34 @@ Word  → Int8
 
 ### Injected Operators
 
-All standard operators are injected as `@native` declarations:
+All standard operators are injected as `@native` declarations with LLVM IR templates:
 
 ```scala
 // Arithmetic (Int → Int → Int)
-op *(a: Int, b: Int): Int 80 left = @native;
-op /(a: Int, b: Int): Int 80 left = @native;
-op +(a: Int, b: Int): Int 60 left = @native;
-op -(a: Int, b: Int): Int 60 left = @native;
+op *(a: Int, b: Int): Int 80 left = @native[tpl="mul %type %operand1, %operand2"];
+op /(a: Int, b: Int): Int 80 left = @native[tpl="sdiv %type %operand1, %operand2"];
+op %(a: Int, b: Int): Int 80 left = @native[tpl="srem %type %operand1, %operand2"];
+op +(a: Int, b: Int): Int 60 left = @native[tpl="add %type %operand1, %operand2"];
+op -(a: Int, b: Int): Int 60 left = @native[tpl="sub %type %operand1, %operand2"];
 
 // Unary arithmetic (Int → Int)
-op +(a: Int): Int 95 right = @native;
-op -(a: Int): Int 95 right = @native;
+op +(a: Int): Int 95 right = @native[tpl="add %type 0, %operand"];
+op -(a: Int): Int 95 right = @native[tpl="sub %type 0, %operand"];
 
 // Comparison (Int → Int → Bool)
-op ==(a: Int, b: Int): Bool 50 left = @native;
-op !=(a: Int, b: Int): Bool 50 left = @native;
-op <(a: Int, b: Int): Bool 50 left = @native;
-op >(a: Int, b: Int): Bool 50 left = @native;
-op <=(a: Int, b: Int): Bool 50 left = @native;
-op >=(a: Int, b: Int): Bool 50 left = @native;
+op ==(a: Int, b: Int): Bool 50 left = @native[tpl="icmp eq %type %operand1, %operand2"];
+op !=(a: Int, b: Int): Bool 50 left = @native[tpl="icmp ne %type %operand1, %operand2"];
+op <(a: Int, b: Int): Bool 50 left = @native[tpl="icmp slt %type %operand1, %operand2"];
+op >(a: Int, b: Int): Bool 50 left = @native[tpl="icmp sgt %type %operand1, %operand2"];
+op <=(a: Int, b: Int): Bool 50 left = @native[tpl="icmp sle %type %operand1, %operand2"];
+op >=(a: Int, b: Int): Bool 50 left = @native[tpl="icmp sge %type %operand1, %operand2"];
 
 // Logical (Bool → Bool → Bool)
-op and(a: Bool, b: Bool): Bool 40 left = @native;
-op or(a: Bool, b: Bool): Bool 30 left = @native;
+op and(a: Bool, b: Bool): Bool 40 left = @native[tpl="and %type %operand1, %operand2"];
+op or(a: Bool, b: Bool): Bool 30 left = @native[tpl="or %type %operand1, %operand2"];
 
 // Unary logical (Bool → Bool)
-op not(a: Bool): Bool 95 right = @native;
+op not(a: Bool): Bool 95 right = @native[tpl="xor %type 1, %operand"];
 ```
 
 ### Injected Functions
@@ -461,6 +494,7 @@ op not(a: Bool): Bool 95 right = @native;
 ```scala
 fn print(s: String): Unit = @native;
 fn println(s: String): Unit = @native;
+fn mml_sys_flush(): Unit = @native;
 fn readline(): String = @native;
 fn concat(a: String, b: String): String = @native;
 fn to_string(n: Int): String = @native;
@@ -504,6 +538,49 @@ Type system errors (see semantics.md, Error Categories)
 
 All type errors are wrapped as `SemanticError.TypeCheckingError` for uniform handling in the phase pipeline.
 
+## 11. Code Generation: Native Templates
+
+When the compiler encounters a call to a function or operator with `@native[tpl="..."]`, it emits
+the template inline rather than generating a function call.
+
+### Template Extraction
+
+The codegen extracts templates from the AST:
+- **Operators**: `getNativeTemplate()` checks `BindingMeta.arity` (Binary/Unary) and extracts from `NativeImpl.nativeTpl`
+- **Functions**: `getFunctionTemplate()` extracts from functions (any arity except operators)
+
+### Template Substitution
+
+Templates use placeholders that are substituted at compile time:
+
+| Placeholder | Description | Example |
+|-------------|-------------|---------|
+| `%type` | LLVM type of first argument | `i64`, `float` |
+| `%operand` | Single argument value (unary ops/functions) | `%0` |
+| `%operand1`, `%operand2`, ... | Multiple arguments (1-indexed) | `%0`, `%1` |
+
+### Emission Process
+
+1. Compile arguments to get LLVM operand values
+2. Substitute placeholders in template with actual values
+3. Prepend `%result =` to the instruction
+4. Emit the instruction inline
+
+**Example**: For `fn ctpop(x: Int): Int = @native[tpl="call i64 @llvm.ctpop.i64(i64 %operand)"]`
+called as `ctpop 255`:
+
+```llvm
+%1 = call i64 @llvm.ctpop.i64(i64 255)
+```
+
+### Use Cases
+
+- **LLVM intrinsics**: `llvm.ctpop`, `llvm.sqrt`, `llvm.smax`, etc.
+- **Primitive operators**: `add`, `sub`, `mul`, `icmp`, etc.
+- **Bitwise operations**: Custom bit manipulation via LLVM instructions
+
+---
+
 ## Appendix A: Source Tree Overview
 
 ### Compilation Flow
@@ -521,7 +598,7 @@ flowchart TD
     ER --> S[Simplifier]
     S --> TC[TypeChecker]
     TC --> CG[LLVM IR Generation]
-    CG --> LO[LlvmOrchestrator]
+    CG --> LO[LlvmToolchain]
     LO --> Binary[Native Binary]
 ```
 
@@ -554,7 +631,7 @@ flowchart TD
 
 #### Code Generation (`codegen/`)
 - `LlvmIrEmitter.scala` - Main LLVM IR generation
-- `LlvmOrchestrator.scala` - Coordinates LLVM toolchain, runtime linking
+- `LlvmToolchain.scala` - Coordinates LLVM toolchain, runtime linking
 - `emitter/` - Specialized emitters:
   - `ExpressionCompiler.scala` - Expression to LLVM IR
   - `FunctionEmitter.scala` - Function definitions

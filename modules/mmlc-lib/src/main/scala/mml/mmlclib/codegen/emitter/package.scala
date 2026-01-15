@@ -2,6 +2,8 @@ package mml.mmlclib.codegen.emitter
 
 import cats.syntax.all.*
 import mml.mmlclib.ast.*
+import mml.mmlclib.codegen.TargetAbi
+import mml.mmlclib.errors.{CompilationError, CompilerWarning}
 
 /** Helper for generating syntactically correct LLVM IR type definitions */
 def emitTypeDefinition(typeName: String, fields: List[String]): String =
@@ -35,12 +37,14 @@ def emitXor(result: Int, typ: String, left: String, right: String): String =
   s"  %$result = xor $typ $left, $right"
 
 /** Helper for generating syntactically correct LLVM IR load instruction */
-def emitLoad(result: Int, typ: String, ptr: String): String =
-  s"  %$result = load $typ, $typ* $ptr"
+def emitLoad(result: Int, typ: String, ptr: String, tbaaTag: Option[String] = None): String =
+  val tbaaPart = tbaaTag.map(tag => s", !tbaa $tag").getOrElse("")
+  s"  %$result = load $typ, $typ* $ptr$tbaaPart"
 
 /** Helper for generating syntactically correct LLVM IR store instruction */
-def emitStore(value: String, typ: String, ptr: String): String =
-  s"  store $typ $value, $typ* $ptr"
+def emitStore(value: String, typ: String, ptr: String, tbaaTag: Option[String] = None): String =
+  val tbaaPart = tbaaTag.map(tag => s", !tbaa $tag").getOrElse("")
+  s"  store $typ $value, $typ* $ptr$tbaaPart"
 
 /** Helper for generating syntactically correct LLVM IR getelementptr instruction */
 def emitGetElementPtr(
@@ -65,6 +69,93 @@ def emitCall(
   val argString  = args.map { case (typ, value) => s"$typ $value" }.mkString(", ")
   s"  ${resultPart}call $returnPart@$fnName($argString)"
 
+/** Helper for generating LLVM IR extractvalue instruction */
+def emitExtractValue(result: Int, structType: String, value: String, index: Int): String =
+  s"  %$result = extractvalue $structType $value, $index"
+
+/** Helper for generating LLVM IR insertvalue instruction */
+def emitInsertValue(
+  result:        Int,
+  aggregateType: String,
+  aggregate:     String,
+  elementType:   String,
+  element:       String,
+  index:         Int
+): String =
+  s"  %$result = insertvalue $aggregateType $aggregate, $elementType $element, $index"
+
+/** Helper for generating LLVM IR ptrtoint instruction */
+def emitPtrToInt(result: Int, fromType: String, value: String, toType: String): String =
+  s"  %$result = ptrtoint $fromType $value to $toType"
+
+/** Get the field types of a struct from a TypeSpec if it's a NativeStruct. Returns None if not a
+  * native struct type.
+  */
+def getStructFieldTypesFromTypeSpec(
+  typeSpec: Type,
+  state:    CodeGenState
+): Option[List[String]] =
+  typeSpec match
+    case TypeRef(_, _, resolvedId, _) =>
+      resolvedId.flatMap(state.resolvables.lookupType) match
+        case Some(typeDef: TypeDef) =>
+          typeDef.typeSpec match
+            case Some(NativeStruct(_, fields)) =>
+              val fieldTypes = fields.map { case (_, fieldTypeSpec) =>
+                getLlvmType(fieldTypeSpec, state)
+              }
+              if fieldTypes.forall(_.isRight) then Some(fieldTypes.collect { case Right(t) => t })
+              else None
+            case _ => None
+        case Some(typeStruct: TypeStruct) =>
+          val fieldTypes = typeStruct.fields.toList.map { field =>
+            getLlvmType(field.typeSpec, state)
+          }
+          if fieldTypes.forall(_.isRight) then Some(fieldTypes.collect { case Right(t) => t })
+          else None
+        case Some(typeAlias: TypeAlias) =>
+          typeAlias.typeSpec
+            .flatMap(getStructFieldTypesFromTypeSpec(_, state))
+            .orElse(getStructFieldTypesFromTypeSpec(typeAlias.typeRef, state))
+        case _ => None
+    case typeStruct: TypeStruct =>
+      val fieldTypes = typeStruct.fields.toList.map { field =>
+        getLlvmType(field.typeSpec, state)
+      }
+      if fieldTypes.forall(_.isRight) then Some(fieldTypes.collect { case Right(t) => t })
+      else None
+    case _ => None
+
+/** Get the field types of a struct from its LLVM type name using state's nativeTypes. Parses the
+  * stored type definition to extract field types. Returns None if not a struct or parsing fails.
+  */
+def getStructFieldTypes(llvmType: String, state: CodeGenState): Option[List[String]] =
+  if !llvmType.startsWith("%") then None
+  else
+    val typeName = llvmType.drop(1)
+    state.nativeTypes.get(typeName).flatMap { typeDef =>
+      // Parse "%TypeName = type { field1, field2 }" to extract fields
+      val pattern = """type \{ (.+) \}""".r
+      pattern.findFirstMatchIn(typeDef).map { m =>
+        m.group(1).split(",").map(_.trim).toList
+      }
+    }
+
+def resolveTypeStruct(typeSpec: Type, resolvables: ResolvablesIndex): Option[TypeStruct] =
+  typeSpec match
+    case ts: TypeStruct => Some(ts)
+    case TypeGroup(_, types) if types.size == 1 =>
+      resolveTypeStruct(types.head, resolvables)
+    case TypeRef(_, _, resolvedId, _) =>
+      resolvedId.flatMap(resolvables.lookupType) match
+        case Some(ts: TypeStruct) => Some(ts)
+        case Some(ta: TypeAlias) =>
+          ta.typeSpec
+            .flatMap(resolveTypeStruct(_, resolvables))
+            .orElse(resolveTypeStruct(ta.typeRef, resolvables))
+        case _ => None
+    case _ => None
+
 /** Helper for generating syntactically correct LLVM IR global variable declaration */
 def emitGlobalVariable(name: String, typ: String, value: String): String =
   s"@$name = global $typ $value"
@@ -75,10 +166,40 @@ def emitFunctionDeclaration(name: String, returnType: String, params: List[Strin
   s"declare $returnType @$name($paramString)"
 
 /** Represents an error that occurred during code generation. */
-case class CodeGenError(message: String, node: Option[AstNode] = None)
+case class CodeGenError(message: String, node: Option[AstNode] = None) extends CompilationError
+
+/** Get size of LLVM type in bytes */
+def sizeOfLlvmType(llvmType: String): Int = llvmType match
+  case "i1" | "i8" => 1
+  case "i16" => 2
+  case "i32" | "float" => 4
+  case "i64" | "double" | "ptr" => 8
+  case t if t.endsWith("*") => 8
+  case _ => 8
+
+/** Get alignment of LLVM type in bytes (for struct field offset calculation) */
+def alignOfLlvmType(llvmType: String): Int = llvmType match
+  case "i1" | "i8" => 1
+  case "i16" => 2
+  case "i32" | "float" => 4
+  case "i64" | "double" | "ptr" => 8
+  case t if t.endsWith("*") => 8
+  case _ => 8
+
+/** Align offset to the given alignment boundary */
+def alignTo(offset: Int, alignment: Int): Int =
+  val mask = alignment - 1
+  (offset + mask) & ~mask
+
+enum TbaaNode derives CanEqual:
+  case Root(name: String)
+  case Scalar(name: String, parentId: Int)
+  case Struct(name: String, fields: List[(Int, Int)]) // (typeId, offset) pairs
 
 /** Represents the state during code generation.
   *
+  * @param targetAbi
+  *   the target ABI for native lowering
   * @param nextRegister
   *   the next available register number
   * @param output
@@ -97,6 +218,8 @@ case class CodeGenError(message: String, node: Option[AstNode] = None)
   *   map of function names to their declarations
   */
 case class CodeGenState(
+  moduleName:           String              = "",
+  targetAbi:            TargetAbi           = TargetAbi.Default,
   nextRegister:         Int                 = 0,
   output:               List[String]        = List.empty,
   initializers:         List[String]        = List.empty,
@@ -104,11 +227,27 @@ case class CodeGenState(
   nextStringId:         Int                 = 0,
   moduleHeader:         Option[String]      = None,
   nativeTypes:          Map[String, String] = Map.empty,
-  functionDeclarations: Map[String, String] = Map.empty
+  functionDeclarations: Map[String, String] = Map.empty,
+  emitLoopMetadata:     Boolean             = false,
+  // Warnings accumulated during codegen (lifted to CompilerState when done)
+  warnings: List[CompilerWarning] = List.empty,
+  // TBAA State
+  tbaaNodes:     Map[TbaaNode, Int] = Map.empty,
+  tbaaOutput:    List[String]       = List.empty,
+  nextTbaaId:    Int                = 0,
+  tbaaRootId:    Option[Int]        = None,
+  tbaaScalarIds: Map[String, Int]   = Map.empty,
+  tbaaStructIds: Map[String, Int]   = Map.empty,
+  // Resolvables index for soft reference lookups
+  resolvables: ResolvablesIndex = ResolvablesIndex()
 ):
   /** Returns a new state with an updated register counter. */
   def withRegister(reg: Int): CodeGenState =
     copy(nextRegister = reg)
+
+  /** Mangles a member name with the module prefix: modulename_membername */
+  def mangleName(name: String): String =
+    s"${moduleName.toLowerCase}_$name"
 
   /** Emits a single line of LLVM IR code, returning the updated state. */
   def emit(line: String): CodeGenState =
@@ -122,9 +261,157 @@ case class CodeGenState(
   def addInitializer(fnName: String): CodeGenState =
     copy(initializers = fnName :: initializers)
 
+  def withLoopMetadata: CodeGenState =
+    if emitLoopMetadata then this else copy(emitLoopMetadata = true)
+
+  /** Adds a warning to the codegen state (will be lifted to CompilerState when done). */
+  def addWarning(warning: CompilerWarning): CodeGenState =
+    copy(warnings = warning :: warnings)
+
   /** Returns the complete LLVM IR as a single string. */
   def result: String =
-    output.reverse.mkString("\n")
+    val mainOutput = output.reverse.mkString("\n")
+    val tbaaSection =
+      if tbaaOutput.nonEmpty then "\n\n; TBAA Metadata\n" + tbaaOutput.reverse.mkString("\n")
+      else ""
+    mainOutput + tbaaSection
+
+  /** Initialize TBAA Root if not present */
+  def ensureTbaaRoot: CodeGenState =
+    ensureTbaaRootWithId._1
+
+  /** Initialize TBAA Root if not present, returning state and root ID */
+  def ensureTbaaRootWithId: (CodeGenState, Int) =
+    tbaaRootId match
+      case Some(id) => (this, id)
+      case None =>
+        val rootNode = TbaaNode.Root("MML TBAA Root")
+        val rootId   = nextTbaaId
+        val metadata = s"""!$rootId = !{!"MML TBAA Root"}"""
+        val newState = copy(
+          tbaaNodes  = tbaaNodes + (rootNode -> rootId),
+          tbaaOutput = metadata :: tbaaOutput,
+          nextTbaaId = nextTbaaId + 1,
+          tbaaRootId = Some(rootId)
+        )
+        (newState, rootId)
+
+  /** Get or create a TBAA scalar type node */
+  def getTbaaScalar(name: String): (CodeGenState, Int) =
+    tbaaScalarIds.get(name) match
+      case Some(id) => (this, id)
+      case None =>
+        val (s1, rootId) = ensureTbaaRootWithId
+        val node         = TbaaNode.Scalar(name, rootId)
+        s1.tbaaNodes.get(node) match
+          case Some(id) => (s1.copy(tbaaScalarIds = s1.tbaaScalarIds + (name -> id)), id)
+          case None =>
+            val id = s1.nextTbaaId
+            // Scalar type metadata: !n = !{!"name", !root, i64 0}
+            val metadata = s"""!$id = !{!"$name", !$rootId, i64 0}"""
+            (
+              s1.copy(
+                tbaaNodes     = s1.tbaaNodes + (node -> id),
+                tbaaOutput    = metadata :: s1.tbaaOutput,
+                nextTbaaId    = s1.nextTbaaId + 1,
+                tbaaScalarIds = s1.tbaaScalarIds + (name -> id)
+              ),
+              id
+            )
+
+  /** Get or create a TBAA access tag for a scalar access */
+  def getTbaaAccessTag(typeName: String): (CodeGenState, String) =
+    val (s1, typeId) = getTbaaScalar(typeName)
+
+    // Check if we already have this tag generated? No, access tags are typically !{!type, !accessType, offset}
+    // For simple scalar access, it's !{!typeId, !typeId, i64 0}
+    // We can just generate a new ID for this tag or cache it.
+    // For now, let's treat the tag construction as a separate metadata node if needed,
+    // but typically !tbaa references a struct path.
+    // Standard scalar access: !tbaa !{!1, !1, i64 0} where !1 is the scalar type node.
+
+    // We need to emit the tag metadata node itself
+    val tagKey = s"tag_$typeName"
+    s1.tbaaScalarIds.get(tagKey) match
+      case Some(id) => (s1, s"!$id")
+      case None =>
+        val tagId    = s1.nextTbaaId
+        val metadata = s"!$tagId = !{!$typeId, !$typeId, i64 0}"
+        (
+          s1.copy(
+            tbaaOutput    = metadata :: s1.tbaaOutput,
+            nextTbaaId    = s1.nextTbaaId + 1,
+            tbaaScalarIds = s1.tbaaScalarIds + (tagKey -> tagId)
+          ),
+          s"!$tagId"
+        )
+
+  /** Get or create a TBAA struct type node with field layout.
+    * @param name
+    *   struct type name (e.g., "String")
+    * @param fields
+    *   list of (scalarTypeName, byteOffset) pairs
+    * @return
+    *   (updated state, struct node ID)
+    */
+  def getTbaaStruct(name: String, fields: List[(String, Int)]): (CodeGenState, Int) =
+    tbaaStructIds.get(name) match
+      case Some(id) => (this, id)
+      case None =>
+        // First ensure all scalar types exist
+        val (stateWithScalars, scalarIds) = fields.foldLeft((this, List.empty[(Int, Int)])) {
+          case ((s, acc), (scalarName, offset)) =>
+            val (s2, scalarId) = s.getTbaaScalar(scalarName)
+            (s2, acc :+ (scalarId, offset))
+        }
+        val structId = stateWithScalars.nextTbaaId
+        // Struct node: !{!"name", !scalar1, i64 offset1, !scalar2, i64 offset2, ...}
+        val fieldParts = scalarIds.map { case (sid, off) => s"!$sid, i64 $off" }.mkString(", ")
+        val metadata   = s"""!$structId = !{!"$name", $fieldParts}"""
+        (
+          stateWithScalars.copy(
+            tbaaOutput    = metadata :: stateWithScalars.tbaaOutput,
+            nextTbaaId    = stateWithScalars.nextTbaaId + 1,
+            tbaaStructIds = stateWithScalars.tbaaStructIds + (name -> structId)
+          ),
+          structId
+        )
+
+  /** Get or create a TBAA field access tag for a struct field.
+    * @param structName
+    *   the struct type name
+    * @param structFields
+    *   list of (scalarTypeName, byteOffset) for all fields
+    * @param fieldIndex
+    *   which field is being accessed
+    * @return
+    *   (updated state, tag string like "!5")
+    */
+  def getTbaaFieldAccessTag(
+    structName:   String,
+    structFields: List[(String, Int)],
+    fieldIndex:   Int
+  ): (CodeGenState, String) =
+    val (scalarName, offset) = structFields(fieldIndex)
+    val tagKey               = s"tag_${structName}_field_$fieldIndex"
+    tbaaScalarIds.get(tagKey) match
+      case Some(id) => (this, s"!$id")
+      case None =>
+        // Ensure struct node exists
+        val (s1, structId) = getTbaaStruct(structName, structFields)
+        // Get scalar type ID for this field
+        val (s2, scalarId) = s1.getTbaaScalar(scalarName)
+        val tagId          = s2.nextTbaaId
+        // Access tag: !{!structId, !scalarId, i64 offset}
+        val metadata = s"!$tagId = !{!$structId, !$scalarId, i64 $offset}"
+        (
+          s2.copy(
+            tbaaOutput    = metadata :: s2.tbaaOutput,
+            nextTbaaId    = s2.nextTbaaId + 1,
+            tbaaScalarIds = s2.tbaaScalarIds + (tagKey -> tagId)
+          ),
+          s"!$tagId"
+        )
 
   /** Adds a string constant to the state and returns the name of the constant. */
   def addStringConstant(content: String): (CodeGenState, String) =
@@ -146,14 +433,16 @@ case class CodeGenState(
     *
     * @param moduleName
     *   the name of the module
+    * @param targetTriple
+    *   the target triple for code generation
     * @return
     *   updated CodeGenState with the module header
     */
-  def withModuleHeader(moduleName: String): CodeGenState =
+  def withModuleHeader(moduleName: String, targetTriple: String): CodeGenState =
     moduleHeader match
       case Some(_) => this // Already has a header
       case None =>
-        val header = s"; ModuleID = '$moduleName'\ntarget triple = \"x86_64-unknown-unknown\"\n"
+        val header = s"; ModuleID = '$moduleName'\ntarget triple = \"$targetTriple\"\n"
         copy(moduleHeader = Some(header))
 
   /** Adds a native type definition if not already defined.
@@ -206,10 +495,24 @@ case class CodeGenState(
 case class CompileResult(
   register:  Int,
   state:     CodeGenState,
-  isLiteral: Boolean        = false,
-  typeName:  String         = "Int", // Default to Int for backward compatibility
+  isLiteral: Boolean,
+  typeName:  String,
   exitBlock: Option[String] = None
 )
+
+def getMmlTypeName(typeSpec: Type): Option[String] = typeSpec match {
+  case TypeRef(_, name, _, _) => Some(name)
+  case NativePrimitive(_, "i1") => Some("Bool")
+  case NativePrimitive(_, "i64") => Some("Int")
+  case NativePrimitive(_, "void") => Some("Unit")
+  case NativePointer(_, llvm) => Some(s"Pointer($llvm)")
+  case NativeStruct(_, _) => Some("NativeStruct")
+  case TypeUnit(_) => Some("Unit")
+  case TypeFn(_, _, _) => Some("Function")
+  case TypeTuple(_, _) => Some("Tuple")
+  case TypeStruct(_, _, _, name, _, _) => Some(name)
+  case _ => None
+}
 
 /** Convert a NativeType AST node to LLVM type definition string.
   *
@@ -234,7 +537,7 @@ def nativeTypeToLlvmDef(
       Right(emitPointerTypeDefinition(typeName, llvmType))
     case NativeStruct(_, fields) =>
       // Convert each field's TypeSpec to LLVM type
-      val fieldResults = fields.toList.map { case (fieldName, typeSpec) =>
+      val fieldResults = fields.map { case (fieldName, typeSpec) =>
         getLlvmType(typeSpec, state).map((fieldName, _))
       }
       // Check for errors
@@ -245,7 +548,7 @@ def nativeTypeToLlvmDef(
         )
       else
         val llvmFields = fieldResults.collect { case Right((_, t)) => t }
-        Right(emitTypeDefinition(typeName, llvmFields))
+        Right(emitTypeDefinition(s"struct.$typeName", llvmFields))
 
 /** Convert any TypeSpec to LLVM type string.
   *
@@ -260,35 +563,37 @@ def nativeTypeToLlvmDef(
   *   Either an error or the LLVM type string
   */
 def getLlvmType(
-  typeSpec: mml.mmlclib.ast.TypeSpec,
+  typeSpec: mml.mmlclib.ast.Type,
   state:    CodeGenState
 ): Either[CodeGenError, String] =
 
   typeSpec match
-    case typeRef @ TypeRef(_, name, resolvedOpt) =>
-      resolvedOpt match
-        case Some(resolved) =>
-          resolved match
-            case typeDef: TypeDef =>
-              typeDef.typeSpec match
-                case Some(nativeType: NativeType) =>
-                  // Follow through to get the actual LLVM type
-                  nativeType match
-                    case NativePrimitive(_, llvmType) => Right(llvmType)
-                    case NativePointer(_, llvmType) => Right(s"$llvmType*")
-                    case _: NativeStruct => Right(s"%$name") // Structs use % prefix
-                case _ =>
-                  // Non-native types cannot be translated to LLVM yet
-                  Left(CodeGenError(s"Cannot determine LLVM type for non-native type: $name"))
-            case typeAlias: TypeAlias =>
-              // Use the computed typeSpec if available, otherwise follow the typeRef
-              typeAlias.typeSpec match
-                case Some(spec) => getLlvmType(spec, state)
-                case None => getLlvmType(typeAlias.typeRef, state)
-        case None =>
-          // Unresolved type - this should have been caught by TypeResolver
-          // Add debug info to understand what's happening
-          Left(CodeGenError(s"Unresolved type reference: $name (TypeRef with no resolvedAs)"))
+    case TypeRef(_, name, resolvedId, _) =>
+      resolvedId.flatMap(state.resolvables.lookupType) match
+        case Some(typeDef: TypeDef) =>
+          typeDef.typeSpec match
+            case Some(nativeType: NativeType) =>
+              // Follow through to get the actual LLVM type
+              nativeType match
+                case NativePrimitive(_, llvmType) => Right(llvmType)
+                case NativePointer(_, llvmType) => Right(s"$llvmType*")
+                case _: NativeStruct => Right(s"%struct.$name") // Use %struct. prefix
+            case _ =>
+              // Non-native types cannot be translated to LLVM yet
+              Left(CodeGenError(s"Cannot determine LLVM type for non-native type: $name"))
+        case Some(typeAlias: TypeAlias) =>
+          // Use the computed typeSpec if available, otherwise follow the typeRef
+          typeAlias.typeSpec match
+            case Some(spec) => getLlvmType(spec, state)
+            case None => getLlvmType(typeAlias.typeRef, state)
+        case Some(_: TypeStruct) =>
+          Right(s"%struct.$name")
+        case _ =>
+          Left(
+            CodeGenError(
+              s"Unresolved type reference: $name (TypeRef with no resolvedId - probably typechecker bug)"
+            )
+          )
     case TypeUnit(_) =>
       Right("void")
     case np: NativePrimitive =>
@@ -299,6 +604,8 @@ def getLlvmType(
       Right(ptr.llvmType)
     case _: NativeStruct =>
       Left(CodeGenError("Unexpected inline native struct"))
+    case ts: TypeStruct =>
+      Right(s"%struct.${ts.name}")
     case other =>
       // No LLVM type mapping for this TypeSpec
       Left(

@@ -1,0 +1,88 @@
+# C = A * B
+# Matrices are N x N, flattened into 1D arrays of size N*N
+# Access: index = row * N + col
+
+fn fill_matrix_loop(arr: IntArray, i: Int, size: Int, current_seed: Int): Unit =
+  if i < size then
+    let next_seed = (current_seed * 1664525) + 1013904223;
+    # Keep numbers small to avoid immediate overflow during multiplication
+    unsafe_ar_int_set arr i (next_seed % 100);
+    fill_matrix_loop arr (i + 1) size next_seed
+  end
+;
+
+fn fill_matrix(arr: IntArray, n: Int, seed: Int): Unit =
+  let size = n * n;
+  fill_matrix_loop arr 0 size seed
+;
+
+# Inner loop: k from 0 to n
+# Calculates sum(A[i][k] * B[k][j])
+fn mat_mul_k(a: IntArray, b: IntArray, i: Int, j: Int, k: Int, n: Int, acc: Int): Int =
+  if k < n then
+    # A[i][k] -> A[i*n + k] (Sequential access)
+    let idx_a = (i * n) + k;
+    # B[k][j] -> B[k*n + j] (Strided access - jumps N elements)
+    let idx_b = (k * n) + j;
+    
+    let val_a = unsafe_ar_int_get a idx_a;
+    let val_b = unsafe_ar_int_get b idx_b;
+    
+    mat_mul_k a b i j (k + 1) n (acc + (val_a * val_b))
+  else
+    acc
+  end
+;
+
+# Middle loop: j from 0 to n
+fn mat_mul_j(a: IntArray, b: IntArray, c: IntArray, i: Int, j: Int, n: Int): Unit =
+  if j < n then
+    let val = mat_mul_k a b i j 0 n 0;
+    let idx_c = (i * n) + j;
+    unsafe_ar_int_set c idx_c val;
+    mat_mul_j a b c i (j + 1) n
+  end
+;
+
+# Outer loop: i from 0 to n
+fn mat_mul_i(a: IntArray, b: IntArray, c: IntArray, i: Int, n: Int): Unit =
+  if i < n then
+    mat_mul_j a b c i 0 n;
+    mat_mul_i a b c (i + 1) n
+  end
+;
+
+fn mat_mul(a: IntArray, b: IntArray, c: IntArray, n: Int): Unit =
+  mat_mul_i a b c 0 n
+;
+
+# Verify result (Trace)
+fn trace_loop(arr: IntArray, i: Int, n: Int, acc: Int): Int =
+  if i < n then
+    let idx = (i * n) + i;
+    let val = unsafe_ar_int_get arr idx;
+    trace_loop arr (i + 1) n (acc + val)
+  else
+    acc
+  end
+;
+
+fn trace(arr: IntArray, n: Int): Int =
+  trace_loop arr 0 n 0
+;
+
+fn main(): Unit =
+  # 500x500 matrix = 250,000 elements.
+  let n = 500; 
+  let a = ar_int_new (n * n);
+  let b = ar_int_new (n * n);
+  let c = ar_int_new (n * n);
+
+  fill_matrix a n 42;
+  fill_matrix b n 1337;
+
+  mat_mul a b c n;
+
+  let result = trace c n;
+  println (concat "Trace Checksum: " (to_string result))
+;

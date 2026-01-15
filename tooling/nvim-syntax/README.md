@@ -1,8 +1,15 @@
-# MinnieML Neovim Syntax Plugin
+# MinnieML Neovim Plugin
 
-Syntax highlighting support for MinnieML (`.mml`) files in Neovim.
+Syntax highlighting and LSP support for MinnieML (`.mml`) files in Neovim.
 
 ## Features
+
+- **LSP support** (requires [nvim-lspconfig](https://github.com/neovim/nvim-lspconfig)):
+  - Diagnostics (parse and semantic errors)
+  - Hover (type information)
+  - Go to definition
+  - Find references
+  - Semantic tokens (rich syntax highlighting)
 
 - **Syntax highlighting** for all MML language constructs:
   - Keywords: `fn`, `let`, `op`, `type`, `module`, `if`/`then`/`else`
@@ -192,13 +199,18 @@ colorscheme default  " or your preferred scheme
 - **Comment support**: Line comments (`#`) and nested doc comments (`#- ... -#`)
 - **Operator precedence**: Not implemented in syntax layer (handled by parser)
 
+## Prerequisites
+
+- **For LSP support**:
+  - [nvim-lspconfig](https://github.com/neovim/nvim-lspconfig) must be installed
+  - `mmlc` must be in your PATH (run `sbt mmlcPublishLocal` from the MML repo)
+
 ## Future Enhancements
 
 Potential improvements for the future:
 
 - **Tree-sitter grammar** for more advanced features (code folding, textobjects)
 - **Indentation rules** (`indent/mml.vim`)
-- **LSP integration** when MML language server is available
 - **Code folding** based on function/module boundaries
 
 ## License

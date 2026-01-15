@@ -9,12 +9,12 @@ class CondTests extends BaseEffFunSuite:
   test("simple cond") {
     parseNotFailed(
       """
-          let a = 
-            if true then 
-              1 
-            else 
+          let a =
+            if true then
+              1
+            else
               2
-            ;
+            end;
         """.stripMargin
     ).map { m =>
       assert(m.members.size == 1)

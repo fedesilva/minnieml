@@ -40,3 +40,5 @@ object LlvmErrorPrinter:
       s"LLVM tools not installed: ${missingTools.mkString(", ")}"
     case LlvmCompilationError.RuntimeResourceError(message) =>
       s"MML runtime resource error: $message"
+    case LlvmCompilationError.TripleResolutionError(message) =>
+      s"Target triple resolution failed: $message"

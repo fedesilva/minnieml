@@ -10,14 +10,14 @@ case class TermError(
   failedCode: Option[String]
 ) extends Term,
       Error:
-  final val typeSpec: Option[TypeSpec] = None
-  final val typeAsc:  Option[TypeSpec] = None
+  final val typeSpec: Option[Type] = None
+  final val typeAsc:  Option[Type] = None
 
 case class Expr(
   span:     SrcSpan,
   terms:    List[Term],
-  typeAsc:  Option[TypeSpec] = None,
-  typeSpec: Option[TypeSpec] = None
+  typeAsc:  Option[Type] = None,
+  typeSpec: Option[Type] = None
 ) extends Term
 
 case class Cond(
@@ -25,64 +25,70 @@ case class Cond(
   cond:     Expr,
   ifTrue:   Expr,
   ifFalse:  Expr,
-  typeSpec: Option[TypeSpec] = None,
-  typeAsc:  Option[TypeSpec] = None
+  typeSpec: Option[Type] = None,
+  typeAsc:  Option[Type] = None
 ) extends Term
 
 case class App(
   span:     SrcSpan,
   fn:       Ref | App | Lambda,
   arg:      Expr,
-  typeAsc:  Option[TypeSpec] = None,
-  typeSpec: Option[TypeSpec] = None
+  typeAsc:  Option[Type] = None,
+  typeSpec: Option[Type] = None
 ) extends Term
+
+case class LambdaMeta(
+  isTailRecursive: Boolean = false
+)
 
 case class Lambda(
   span:     SrcSpan,
   params:   List[FnParam],
   body:     Expr,
   captures: List[Ref],
-  typeSpec: Option[TypeSpec] = None,
-  typeAsc:  Option[TypeSpec] = None
+  typeSpec: Option[Type]       = None,
+  typeAsc:  Option[Type]       = None,
+  meta:     Option[LambdaMeta] = None
 ) extends Term
 
 case class TermGroup(
   span:    SrcSpan,
   inner:   Expr,
-  typeAsc: Option[TypeSpec] = None
+  typeAsc: Option[Type] = None
 ) extends Term:
-  def typeSpec: Option[TypeSpec] = inner.typeSpec
+  def typeSpec: Option[Type] = inner.typeSpec
 
 case class Tuple(
   span:     SrcSpan,
   elements: NonEmptyList[Expr],
-  typeAsc:  Option[TypeSpec] = None,
-  typeSpec: Option[TypeSpec] = None
+  typeAsc:  Option[Type] = None,
+  typeSpec: Option[Type] = None
 ) extends Term
 
 /** Points to something declared elsewhere */
 case class Ref(
-  span:       SrcSpan,
-  name:       String,
-  typeAsc:    Option[TypeSpec]   = None,
-  typeSpec:   Option[TypeSpec]   = None,
-  resolvedAs: Option[Resolvable] = None,
-  candidates: List[Resolvable]   = Nil
+  span:         SrcSpan,
+  name:         String,
+  typeAsc:      Option[Type]   = None,
+  typeSpec:     Option[Type]   = None,
+  resolvedId:   Option[String] = None,
+  candidateIds: List[String]   = Nil,
+  qualifier:    Option[Term]   = None
 ) extends Term,
       FromSource
 
 /** The `_` symbol */
 case class Placeholder(
   span:     SrcSpan,
-  typeSpec: Option[TypeSpec],
-  typeAsc:  Option[TypeSpec] = None
+  typeSpec: Option[Type],
+  typeAsc:  Option[Type] = None
 ) extends Term,
       FromSource
 
 case class Hole(
   span:     SrcSpan,
-  typeAsc:  Option[TypeSpec] = None,
-  typeSpec: Option[TypeSpec] = None
+  typeAsc:  Option[Type] = None,
+  typeSpec: Option[Type] = None
 ) extends Term,
       FromSource
 
@@ -93,8 +99,8 @@ sealed trait LiteralValue extends Term, FromSource
 case class LiteralInt(
   span:     SrcSpan,
   value:    Int,
-  typeSpec: Option[TypeSpec],
-  typeAsc:  Option[TypeSpec] = None
+  typeSpec: Option[Type],
+  typeAsc:  Option[Type] = None
 ) extends LiteralValue
 
 object LiteralInt {
@@ -108,8 +114,8 @@ object LiteralInt {
 case class LiteralString(
   span:     SrcSpan,
   value:    String,
-  typeSpec: Option[TypeSpec],
-  typeAsc:  Option[TypeSpec] = None
+  typeSpec: Option[Type],
+  typeAsc:  Option[Type] = None
 ) extends LiteralValue
 
 object LiteralString {
@@ -123,8 +129,8 @@ object LiteralString {
 case class LiteralBool(
   span:     SrcSpan,
   value:    Boolean,
-  typeSpec: Option[TypeSpec],
-  typeAsc:  Option[TypeSpec] = None
+  typeSpec: Option[Type],
+  typeAsc:  Option[Type] = None
 ) extends LiteralValue
 
 object LiteralBool {
@@ -137,8 +143,8 @@ object LiteralBool {
 
 case class LiteralUnit(
   span:     SrcSpan,
-  typeSpec: Option[TypeSpec],
-  typeAsc:  Option[TypeSpec] = None
+  typeSpec: Option[Type],
+  typeAsc:  Option[Type] = None
 ) extends LiteralValue
 
 object LiteralUnit {
@@ -152,23 +158,32 @@ object LiteralUnit {
 case class LiteralFloat(
   span:     SrcSpan,
   value:    Float,
-  typeSpec: Option[TypeSpec],
-  typeAsc:  Option[TypeSpec] = None
+  typeSpec: Option[Type],
+  typeAsc:  Option[Type] = None
 ) extends LiteralValue
 
-object LiteralFloat {
+object LiteralFloat:
   def apply(span: SrcSpan, value: Float): LiteralFloat =
     new LiteralFloat(span, value, Some(TypeRef(span, "Float")), None)
 
   def unapply(lit: LiteralFloat): Option[(SrcSpan, Float)] =
     Some((lit.span, lit.value))
-}
+
+/** Marks the body of a function as a data type constructor The codegen will use the return type to
+  * find the datatype fields. The typechecker will have to match the arguments types with the fields
+  * of the struct. The parser creates both the data type and the constructor.
+  */
+case class DataConstructor(
+  span:     SrcSpan,
+  typeSpec: Option[Type] = None
+) extends Term:
+  val typeAsc: Option[Type] = None
 
 case class NativeImpl(
-  span:     SrcSpan,
-  typeSpec: Option[TypeSpec] = None,
-  typeAsc:  Option[TypeSpec] = None,
-  nativeOp: Option[String]   = None
+  span:      SrcSpan,
+  typeSpec:  Option[Type]   = None,
+  typeAsc:   Option[Type]   = None,
+  nativeTpl: Option[String] = None
 ) extends Native,
       Term
 
@@ -178,8 +193,8 @@ case class NativeImpl(
 case class InvalidExpression(
   span:         SrcSpan,
   originalExpr: Expr,
-  typeSpec:     Option[TypeSpec] = None,
-  typeAsc:      Option[TypeSpec] = None
+  typeSpec:     Option[Type] = None,
+  typeAsc:      Option[Type] = None
 ) extends Term,
       InvalidNode,
       FromSource

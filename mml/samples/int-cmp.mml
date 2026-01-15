@@ -2,12 +2,12 @@
 let a = 1;
 let b = 2;
 
-let c = 
+let c =
   if a > b then
     "A"
   else
     "B"
-;
+  end;
 
 fn main(): Unit =
   println (concat "Resultado: " c)

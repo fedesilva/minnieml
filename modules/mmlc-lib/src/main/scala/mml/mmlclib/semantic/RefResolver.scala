@@ -2,13 +2,14 @@ package mml.mmlclib.semantic
 
 import cats.syntax.all.*
 import mml.mmlclib.ast.*
+import mml.mmlclib.compiler.CompilerState
 
 object RefResolver:
 
   private val phaseName = "mml.mmlclib.semantic.RefResolver"
 
   /** Resolve all references in a module, accumulating errors in the state. */
-  def rewriteModule(state: SemanticPhaseState): SemanticPhaseState =
+  def rewriteModule(state: CompilerState): CompilerState =
     val (errors, members) =
       state.module.members.foldLeft((List.empty[SemanticError], List.empty[Member])) {
         case ((accErrors, accMembers), member) =>
@@ -46,17 +47,25 @@ object RefResolver:
   ): Term =
     term match
       case ref: Ref =>
-        val candidates = lookupRefs(ref, member, module, extraParams)
-        if candidates.isEmpty then
-          InvalidExpression(
-            span         = ref.span,
-            originalExpr = Expr(ref.span, List(ref)),
-            typeSpec     = ref.typeSpec,
-            typeAsc      = ref.typeAsc
-          )
-        else if candidates.length == 1 then
-          ref.copy(candidates    = candidates, resolvedAs = Some(candidates.head))
-        else ref.copy(candidates = candidates)
+        ref.qualifier match
+          case Some(qualifier) =>
+            val updatedQualifier =
+              rewriteTermWithInvalidExpressions(qualifier, member, module, extraParams)
+            ref.copy(qualifier = Some(updatedQualifier))
+          case None =>
+            val candidates = lookupRefs(ref, member, module, extraParams)
+            if candidates.isEmpty then
+              InvalidExpression(
+                span         = ref.span,
+                originalExpr = Expr(ref.span, List(ref)),
+                typeSpec     = ref.typeSpec,
+                typeAsc      = ref.typeAsc
+              )
+            else
+              val ids = candidates.flatMap(_.id)
+              if candidates.length == 1 then
+                ref.copy(candidateIds    = ids, resolvedId = ids.headOption)
+              else ref.copy(candidateIds = ids)
       case e: Expr =>
         rewriteExprWithInvalidExpressions(e, member, module, extraParams)
       case other => other
@@ -70,18 +79,26 @@ object RefResolver:
   ): Expr =
     val rewrittenTerms = expr.terms.map {
       case ref: Ref =>
-        val candidates = lookupRefs(ref, member, module, extraParams)
-        if candidates.isEmpty then
-          // Create InvalidExpression wrapping the undefined ref
-          InvalidExpression(
-            span         = ref.span,
-            originalExpr = Expr(ref.span, List(ref)),
-            typeSpec     = ref.typeSpec,
-            typeAsc      = ref.typeAsc
-          )
-        else if candidates.length == 1 then
-          ref.copy(candidates    = candidates, resolvedAs = Some(candidates.head))
-        else ref.copy(candidates = candidates)
+        ref.qualifier match
+          case Some(qualifier) =>
+            val updatedQualifier =
+              rewriteTermWithInvalidExpressions(qualifier, member, module, extraParams)
+            ref.copy(qualifier = Some(updatedQualifier))
+          case None =>
+            val candidates = lookupRefs(ref, member, module, extraParams)
+            if candidates.isEmpty then
+              // Create InvalidExpression wrapping the undefined ref
+              InvalidExpression(
+                span         = ref.span,
+                originalExpr = Expr(ref.span, List(ref)),
+                typeSpec     = ref.typeSpec,
+                typeAsc      = ref.typeAsc
+              )
+            else
+              val ids = candidates.flatMap(_.id)
+              if candidates.length == 1 then
+                ref.copy(candidateIds    = ids, resolvedId = ids.headOption)
+              else ref.copy(candidateIds = ids)
 
       case group: TermGroup =>
         group.copy(inner =
@@ -126,10 +143,16 @@ object RefResolver:
   ): Ref | App | Lambda =
     fn match
       case ref: Ref =>
-        val candidates = lookupRefs(ref, member, module, extraParams)
-        if candidates.length == 1 then
-          ref.copy(candidates    = candidates, resolvedAs = Some(candidates.head))
-        else ref.copy(candidates = candidates)
+        ref.qualifier match
+          case Some(qualifier) =>
+            val updatedQualifier =
+              rewriteTermWithInvalidExpressions(qualifier, member, module, extraParams)
+            ref.copy(qualifier = Some(updatedQualifier))
+          case None =>
+            val candidates = lookupRefs(ref, member, module, extraParams)
+            val ids        = candidates.flatMap(_.id)
+            if candidates.length == 1 then ref.copy(candidateIds = ids, resolvedId = ids.headOption)
+            else ref.copy(candidateIds                           = ids)
       case app: App =>
         val newFn  = rewriteAppFnWithInvalidExpressions(app.fn, member, module, extraParams)
         val newArg = rewriteExprWithInvalidExpressions(app.arg, member, module, extraParams)
@@ -159,19 +182,28 @@ object RefResolver:
 
   /** Resolve references in a single term */
   private def resolveTerm(
-    term:   Term,
-    member: Member,
-    module: Module
+    term:        Term,
+    member:      Member,
+    module:      Module,
+    extraParams: List[FnParam] = Nil
   ): Either[List[SemanticError], Term] =
     term match
       case ref: Ref =>
-        val candidates = lookupRefs(ref, member, module)
-        if candidates.isEmpty then List(SemanticError.UndefinedRef(ref, member, phaseName)).asLeft
-        else if candidates.length == 1 then
-          ref.copy(candidates = candidates, resolvedAs = Some(candidates.head)).asRight
-        else ref.copy(candidates = candidates).asRight
+        ref.qualifier match
+          case Some(qualifier) =>
+            resolveTerm(qualifier, member, module, extraParams)
+              .map(updatedQualifier => ref.copy(qualifier = Some(updatedQualifier)))
+          case None =>
+            val candidates = lookupRefs(ref, member, module, extraParams)
+            if candidates.isEmpty then
+              List(SemanticError.UndefinedRef(ref, member, phaseName)).asLeft
+            else
+              val ids = candidates.flatMap(_.id)
+              if candidates.length == 1 then
+                ref.copy(candidateIds = ids, resolvedId = ids.headOption).asRight
+              else ref.copy(candidateIds = ids).asRight
       case e: Expr =>
-        resolveExpr(e, member, module)
+        resolveExpr(e, member, module, extraParams)
       case other =>
         other.asRight
 
@@ -183,6 +215,7 @@ object RefResolver:
     module:      Module,
     extraParams: List[FnParam] = Nil
   ): List[Resolvable] =
+    if ref.qualifier.isDefined then return Nil
 
     def collectMembers =
       module.members.collect {
@@ -221,11 +254,19 @@ object RefResolver:
     expr.terms.traverse {
 
       case ref: Ref =>
-        val candidates = lookupRefs(ref, member, module, extraParams)
-        if candidates.isEmpty then List(SemanticError.UndefinedRef(ref, member, phaseName)).asLeft
-        else if candidates.length == 1 then
-          ref.copy(candidates = candidates, resolvedAs = Some(candidates.head)).asRight
-        else ref.copy(candidates = candidates).asRight
+        ref.qualifier match
+          case Some(qualifier) =>
+            resolveTerm(qualifier, member, module, extraParams)
+              .map(updatedQualifier => ref.copy(qualifier = Some(updatedQualifier)))
+          case None =>
+            val candidates = lookupRefs(ref, member, module, extraParams)
+            if candidates.isEmpty then
+              List(SemanticError.UndefinedRef(ref, member, phaseName)).asLeft
+            else
+              val ids = candidates.flatMap(_.id)
+              if candidates.length == 1 then
+                ref.copy(candidateIds = ids, resolvedId = ids.headOption).asRight
+              else ref.copy(candidateIds = ids).asRight
 
       case group: TermGroup =>
         resolveExpr(group.inner, member, module, extraParams)
@@ -275,11 +316,19 @@ object RefResolver:
   ): Either[List[SemanticError], Ref | App | Lambda] =
     fn match
       case ref: Ref =>
-        val candidates = lookupRefs(ref, member, module, extraParams)
-        if candidates.isEmpty then List(SemanticError.UndefinedRef(ref, member, phaseName)).asLeft
-        else if candidates.length == 1 then
-          ref.copy(candidates = candidates, resolvedAs = Some(candidates.head)).asRight
-        else ref.copy(candidates = candidates).asRight
+        ref.qualifier match
+          case Some(qualifier) =>
+            resolveTerm(qualifier, member, module, extraParams)
+              .map(updatedQualifier => ref.copy(qualifier = Some(updatedQualifier)))
+          case None =>
+            val candidates = lookupRefs(ref, member, module, extraParams)
+            if candidates.isEmpty then
+              List(SemanticError.UndefinedRef(ref, member, phaseName)).asLeft
+            else
+              val ids = candidates.flatMap(_.id)
+              if candidates.length == 1 then
+                ref.copy(candidateIds = ids, resolvedId = ids.headOption).asRight
+              else ref.copy(candidateIds = ids).asRight
       case app: App =>
         for
           newFn <- resolveAppFn(app.fn, member, module, extraParams)

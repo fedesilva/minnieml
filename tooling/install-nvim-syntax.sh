@@ -37,11 +37,12 @@ else
 fi
 
 # 3. Copy plugin files
-echo "[3/4] Installing syntax plugin files..."
+echo "[3/4] Installing plugin files..."
 
 # Create target directories
 mkdir -p "$NVIM_CONFIG/ftdetect"
 mkdir -p "$NVIM_CONFIG/syntax"
+mkdir -p "$NVIM_CONFIG/after/plugin"
 
 # Copy ftdetect file
 echo "   Copying ftdetect/mml.vim..."
@@ -51,14 +52,21 @@ cp "$PLUGIN_DIR/ftdetect/mml.vim" "$NVIM_CONFIG/ftdetect/mml.vim"
 echo "   Copying syntax/mml.vim..."
 cp "$PLUGIN_DIR/syntax/mml.vim" "$NVIM_CONFIG/syntax/mml.vim"
 
+# Copy LSP config
+echo "   Copying after/plugin/mml_lsp.lua..."
+cp "$PLUGIN_DIR/after/plugin/mml_lsp.lua" "$NVIM_CONFIG/after/plugin/mml_lsp.lua"
+
 echo "   Files installed successfully."
 
 # 4. Verify installation
 echo "[4/4] Verifying installation..."
 
-if [ -f "$NVIM_CONFIG/ftdetect/mml.vim" ] && [ -f "$NVIM_CONFIG/syntax/mml.vim" ]; then
+if [ -f "$NVIM_CONFIG/ftdetect/mml.vim" ] && \
+   [ -f "$NVIM_CONFIG/syntax/mml.vim" ] && \
+   [ -f "$NVIM_CONFIG/after/plugin/mml_lsp.lua" ]; then
     echo "   ✓ ftdetect/mml.vim installed"
     echo "   ✓ syntax/mml.vim installed"
+    echo "   ✓ after/plugin/mml_lsp.lua installed"
 else
     echo "   ERROR: Installation verification failed."
     echo "   Some files may not have been copied correctly."
@@ -66,14 +74,18 @@ else
 fi
 
 echo ""
-echo "--- MinnieML Neovim Syntax Plugin installed successfully! ---"
+echo "--- MinnieML Neovim Plugin installed successfully! ---"
 echo ""
 echo "Installation location: $NVIM_CONFIG"
 echo ""
-echo "To use the plugin:"
+echo "Features:"
+echo "  - Syntax highlighting for .mml files"
+echo "  - LSP support (requires nvim-lspconfig and mmlc in PATH)"
+echo ""
+echo "To verify:"
 echo "  1. Open any .mml file in Neovim"
-echo "  2. Syntax highlighting should activate automatically"
-echo "  3. To verify, run: :set filetype? (should show 'filetype=mml')"
+echo "  2. Run :set filetype? (should show 'filetype=mml')"
+echo "  3. Run :LspInfo (should show 'mml' client attached)"
 echo ""
 echo "If you use a plugin manager (lazy.nvim, packer, etc.), you may want to"
 echo "add this as a local plugin instead. See README.md for details."

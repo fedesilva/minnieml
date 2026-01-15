@@ -1,0 +1,14 @@
+fn main(): Unit =
+  let arr = ar_str_new 3;
+  ar_str_set arr 0 "hello";
+  ar_str_set arr 1 "world";
+  ar_str_set arr 2 "!";
+  let len = ar_str_len arr;
+  let v0 = ar_str_get arr 0;
+  let v1 = ar_str_get arr 1;
+  let v2 = ar_str_get arr 2;
+  println (concat "Length: " (to_string len));
+  println (concat "arr[0] = " v0);
+  println (concat "arr[1] = " v1);
+  println (concat "arr[2] = " v2)
+;

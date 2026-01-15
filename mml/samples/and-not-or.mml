@@ -7,7 +7,7 @@ let result =
     "NADA"
   else
     "ALGO"
-;
+  end;
 
 fn main(): Unit =
   println result

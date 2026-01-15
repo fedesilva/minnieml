@@ -1,0 +1,53 @@
+struct Big {
+  a01: Int,
+  a02: Int,
+  a03: Int,
+  a04: Int,
+  a05: Int,
+  a06: Int,
+  a07: Int,
+  a08: Int,
+  a09: Int,
+  a10: Int,
+  a11: Int,
+  a12: Int,
+  a13: Int,
+  a14: Int,
+  a15: Int,
+  a16: Int,
+  a17: Int,
+  a18: Int,
+  a19: Int,
+  a20: Int
+};
+
+# LCG constants (glibc-ish)
+fn next(seed: Int): Int =
+  (seed * 1103515245 + 12345) % 2147483647
+;
+
+fn main(): Unit =
+  let s1  = next 42;
+  let s2  = next s1;
+  let s3  = next s2;
+  let s4  = next s3;
+  let s5  = next s4;
+  let s6  = next s5;
+  let s7  = next s6;
+  let s8  = next s7;
+  let s9  = next s8;
+  let s10 = next s9;
+  let s11 = next s10;
+  let s12 = next s11;
+  let s13 = next s12;
+  let s14 = next s13;
+  let s15 = next s14;
+  let s16 = next s15;
+  let s17 = next s16;
+  let s18 = next s17;
+  let s19 = next s18;
+  let s20 = next s19;
+  let b   = Big s1 s2 s3 s4 s5 s6 s7 s8 s9 s10 s11 s12 s13 s14 s15 s16 s17 s18 s19 s20;
+  println (concat "a01=" (to_string b.a01));
+  println (concat "a20=" (to_string b.a20))
+;

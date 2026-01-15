@@ -40,10 +40,8 @@ object TestExtractors:
           collect(app, Nil)
             .flatMap { // flatMap to handle potential None from collect (though unlikely with current @tailrec impl)
               case (ref: Ref, args) => // Check if the base term is a Ref
-                val bndOpt = ref.resolvedAs.collect { case bnd: Bnd =>
-                  bnd
-                } // Extract Bnd if resolvedAs is Some(Bnd)
-                Some((ref, bndOpt, args))
+                // Note: bndOpt is now always None - tests should resolve via module.resolvables if needed
+                Some((ref, None, args))
               case _ => None // Base term was not a Ref, pattern fails
             }
         case _ => None // Input term was not an App node

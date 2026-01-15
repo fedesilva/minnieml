@@ -1,9 +1,10 @@
 package mml.mmlclib.util.error.print
 
-import mml.mmlclib.api.{CodeGenApiError, CompilerError, NativeEmitterError}
+import mml.mmlclib.api.CompilerError
 import mml.mmlclib.ast.{FromSource, SrcSpan}
 import mml.mmlclib.codegen.LlvmCompilationError
-import mml.mmlclib.parser.ParserError
+import mml.mmlclib.codegen.emitter.CodeGenError
+import mml.mmlclib.parser.{ParserError, SourceInfo}
 import mml.mmlclib.semantic.SemanticError
 
 /** Simple error printer for compiler errors */
@@ -13,20 +14,14 @@ object ErrorPrinter:
     s"[${span.start.line}:${span.start.col}]-[${span.end.line}:${span.end.col}]"
 
   /** Pretty print any compiler error */
-  def prettyPrint(error: Any, sourceCode: Option[String] = None): String = error match
-    case CompilerError.SemanticErrors(errors) => prettyPrintSemanticErrors(errors, sourceCode)
+  def prettyPrint(error: Any, sourceInfo: Option[SourceInfo] = None): String = error match
+    case CompilerError.SemanticErrors(errors) => prettyPrintSemanticErrors(errors, sourceInfo)
     case CompilerError.ParserErrors(errors) => prettyPrintParserErrors(errors)
     case CompilerError.Unknown(msg) => s"Unknown error: $msg"
-    case CodeGenApiError.CodeGenErrors(errors) => prettyPrintCodeGenErrors(errors, sourceCode)
-    case CodeGenApiError.CompilerErrors(errors) =>
-      errors.map(err => prettyPrint(err, sourceCode)).mkString("\n")
-    case CodeGenApiError.Unknown(msg) => s"Unknown code generation error: $msg"
-    case NativeEmitterError.CompilationErrors(errors) =>
-      errors.map(err => prettyPrint(err, sourceCode)).mkString("\n")
-    case NativeEmitterError.CodeGenErrors(errors) =>
-      errors.map(err => prettyPrint(err, sourceCode)).mkString("\n")
-    case NativeEmitterError.LlvmErrors(errors) => prettyPrintLlvmErrors(errors)
-    case NativeEmitterError.Unknown(msg) => s"Unknown native emitter error: $msg"
+    case error: SemanticError => prettyPrintSemanticErrors(List(error), sourceInfo)
+    case error: ParserError => prettyPrintParserErrors(List(error))
+    case error: CodeGenError => prettyPrintCodeGenErrors(List(error), sourceInfo)
+    case error: LlvmCompilationError => prettyPrintLlvmErrors(List(error))
     case _ => error.toString
 
   /** Extract source position from error for sorting */
@@ -78,6 +73,10 @@ object ErrorPrinter:
           (app.span.start.line, app.span.start.col)
         case mml.mmlclib.semantic.TypeError.InvalidApplication(app, _, _, _) =>
           (app.span.start.line, app.span.start.col)
+        case mml.mmlclib.semantic.TypeError.InvalidSelection(ref, _, _) =>
+          (ref.span.start.line, ref.span.start.col)
+        case mml.mmlclib.semantic.TypeError.UnknownField(ref, _, _) =>
+          (ref.span.start.line, ref.span.start.col)
         case mml.mmlclib.semantic.TypeError.ConditionalBranchTypeMismatch(cond, _, _, _) =>
           (cond.span.start.line, cond.span.start.col)
         case mml.mmlclib.semantic.TypeError.ConditionalBranchTypeUnknown(cond, _) =>
@@ -89,53 +88,47 @@ object ErrorPrinter:
         case mml.mmlclib.semantic.TypeError.IncompatibleTypes(node, _, _, _, _) =>
           val fs = node.asInstanceOf[FromSource]
           (fs.span.start.line, fs.span.start.col)
-        case mml.mmlclib.semantic.TypeError.UntypedHoleInBinding(bnd, _) =>
-          (bnd.span.start.line, bnd.span.start.col)
+        case mml.mmlclib.semantic.TypeError.UntypedHoleInBinding(_, span, _) =>
+          (span.start.line, span.start.col)
 
   /** Pretty print semantic errors */
   def prettyPrintSemanticErrors(
     errors:     List[SemanticError],
-    sourceCode: Option[String]
+    sourceInfo: Option[SourceInfo]
   ): String =
     if errors.isEmpty then "No errors"
     else
       // Sort errors by source line and column position
       val sortedErrors = errors.sortBy(getErrorSourcePosition)
-      val messages     = sortedErrors.map(err => prettyPrintSemanticError(err, sourceCode))
+      val messages     = sortedErrors.map(err => prettyPrintSemanticError(err, sourceInfo))
       s"${messages.mkString("\n\n")}"
 
   /** Pretty print a single semantic error */
-  private def prettyPrintSemanticError(error: SemanticError, sourceCode: Option[String]): String =
+  private def prettyPrintSemanticError(
+    error:      SemanticError,
+    sourceInfo: Option[SourceInfo]
+  ): String =
     // Extract AST information when applicable
     val astInfo = error match
       case SemanticError.UndefinedRef(ref, _, _) =>
-        val resolved = ref.resolvedAs
-          .map(r => s"Resolved as: ${r.getClass.getSimpleName}(${r.name})")
+        val resolved = ref.resolvedId
+          .map(id => s"Resolved to: $id")
           .getOrElse("Not resolved")
         val candidates =
-          if ref.candidates.isEmpty then "No candidates found"
-          else {
-            val candidateList =
-              ref.candidates.map(c => s"${c.getClass.getSimpleName}(${c.name})").mkString(", ")
-            s"Candidates: [$candidateList]"
-          }
+          if ref.candidateIds.isEmpty then "No candidates found"
+          else s"Candidates: [${ref.candidateIds.mkString(", ")}]"
         s"Info: '$resolved', $candidates"
 
       case SemanticError.DanglingTerms(terms, _, _) =>
         val termInfos = terms
           .map {
             case ref: mml.mmlclib.ast.Ref =>
-              val resolved = ref.resolvedAs
-                .map(r => s"Resolved as: ${r.getClass.getSimpleName}(${r.name})")
+              val resolved = ref.resolvedId
+                .map(id => s"Resolved to: $id")
                 .getOrElse("Not resolved")
               val candidates =
-                if ref.candidates.isEmpty then "No candidates found"
-                else {
-                  val candidateList = ref.candidates
-                    .map(c => s"${c.getClass.getSimpleName}(${c.name})")
-                    .mkString(", ")
-                  s"Candidates: [$candidateList]"
-                }
+                if ref.candidateIds.isEmpty then "No candidates found"
+                else s"Candidates: [${ref.candidateIds.mkString(", ")}]"
               s"${Console.YELLOW}'${ref.name}': $resolved, $candidates${Console.RESET}"
             case term => s"Term: ${term.getClass.getSimpleName}"
           }
@@ -183,9 +176,9 @@ object ErrorPrinter:
         SemanticErrorPrinter.prettyPrintTypeError(error)
 
     // Add AST info and source code snippets if source code is available
-    sourceCode match
-      case Some(src) =>
-        val codeSnippet = SourceCodeExtractor.extractSnippetsFromError(src, error)
+    sourceInfo match
+      case Some(info) =>
+        val codeSnippet = SourceCodeExtractor.extractSnippetsFromError(info, error)
         val fullMessage =
           if astInfo.nonEmpty then s"$baseMessage\n$astInfo\n$codeSnippet"
           else s"$baseMessage\n$codeSnippet"
@@ -206,7 +199,7 @@ object ErrorPrinter:
   /** Pretty print code generation errors */
   def prettyPrintCodeGenErrors(
     errors:     List[mml.mmlclib.codegen.emitter.CodeGenError],
-    sourceCode: Option[String]
+    sourceInfo: Option[SourceInfo]
   ): String =
     if errors.isEmpty then "No code generation errors"
     else
@@ -214,14 +207,15 @@ object ErrorPrinter:
         val baseMessage =
           s"${Console.RED}Code generation error: ${err.message}${Console.RESET}\n${Console.YELLOW}Phase: Code Generation${Console.RESET}"
 
-        val snippetAndLocation = err.node.collect { case fs: FromSource => fs.span } match
-          case Some(span) if sourceCode.isDefined =>
-            SourceCodeExtractor
-              .extractSnippet(sourceCode.get, span, highlightExpr = true)
-              .map(snippet => s"${formatLocation(span)}\n$snippet")
-              .getOrElse(formatLocation(span)) // Fallback if snippet extraction fails
-          case Some(span) => formatLocation(span)
-          case None => ""
+        val snippetAndLocation =
+          (err.node.collect { case fs: FromSource => fs.span }, sourceInfo) match
+            case (Some(span), Some(info)) =>
+              SourceCodeExtractor
+                .extractSnippet(info, span, highlightExpr = true)
+                .map(snippet => s"${formatLocation(span)}\n$snippet")
+                .getOrElse(formatLocation(span)) // Fallback if snippet extraction fails
+            case (Some(span), None) => formatLocation(span)
+            case (None, _) => ""
 
         if snippetAndLocation.nonEmpty then s"$baseMessage\n$snippetAndLocation"
         else baseMessage
@@ -246,3 +240,5 @@ object ErrorPrinter:
       s"LLVM tools not installed: ${tools.mkString(", ")}"
     case LlvmCompilationError.RuntimeResourceError(msg) =>
       s"MML runtime resource error: $msg"
+    case LlvmCompilationError.TripleResolutionError(msg) =>
+      s"Target triple resolution failed: $msg"

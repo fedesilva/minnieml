@@ -1,0 +1,16 @@
+
+fn main() = 
+  let a = 1;
+  let b = 2;
+  println (to_string (a + b))
+;
+
+
+# let main =
+#   1 |> () ->
+#     2 |> () ->
+#       println ... 
+#     ; 
+#   ; 
+# ;
+

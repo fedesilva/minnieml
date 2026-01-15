@@ -21,8 +21,8 @@ private def mkStatementChain(head: Expr, tail: List[Expr]): Expr =
   }
 
 private def exprFromTermsP(info: SourceInfo, termParser: => P[Term])(using P[Any]): P[Expr] =
-  P(spP(info) ~ termParser.rep(1) ~ spP(info))
-    .map { case (start, ts, end) =>
+  P(spP(info) ~ termParser.rep(1) ~ spNoWsP(info) ~ spP(info))
+    .map { case (start, ts, end, _) =>
       val termsList = ts.toList
       val (typeSpec, typeAsc) =
         if termsList.size == 1 then (termsList.head.typeSpec, termsList.head.typeAsc)
@@ -31,7 +31,7 @@ private def exprFromTermsP(info: SourceInfo, termParser: => P[Term])(using P[Any
     }
 
 private[parser] def exprP(info: SourceInfo)(using P[Any]): P[Expr] =
-  P(exprNoSeqP(info) ~ (endKw ~ &(exprNoSeqP(info)) ~ exprNoSeqP(info)).rep)
+  P(exprNoSeqP(info) ~ (semiKw ~ &(exprNoSeqP(info)) ~ exprNoSeqP(info)).rep)
     .map { case (head, tail) =>
       if tail.isEmpty then head else mkStatementChain(head, tail.toList)
     }
@@ -51,13 +51,16 @@ private[parser] def termP(info: SourceInfo)(using P[Any]): P[Term] =
       litBoolP(info) |
       nativeImplP(info) |
       ifExprP(info) |
+      ifSingleBranchExprP(info) |
       litUnitP(info) |
       holeP(info) |
       litStringP(info) |
+      selectionTermP(info) |
       opRefP(info) |
       numericLitP(info) |
       groupTermP(info) |
       tupleP(info) |
+      typeRefTermP(info) |
       refP(info) |
       phP(info)
   )
@@ -68,20 +71,69 @@ private[parser] def termMemberP(info: SourceInfo)(using P[Any]): P[Term] =
       litBoolP(info) |
       nativeImplP(info) |
       ifExprMemberP(info) |
+      ifSingleBranchExprMemberP(info) |
       litUnitP(info) |
       holeP(info) |
       litStringP(info) |
+      selectionTermMemberP(info) |
       opRefP(info) |
       numericLitP(info) |
       groupTermMemberP(info) |
       tupleMemberP(info) |
+      typeRefTermP(info) |
       refP(info) |
       phP(info)
   )
 
+private[parser] def selectionTermP(info: SourceInfo)(using P[Any]): P[Term] =
+  selectionP(info, selectionBaseP(info))
+
+private[parser] def selectionTermMemberP(info: SourceInfo)(using P[Any]): P[Term] =
+  selectionP(info, selectionBaseMemberP(info))
+
+private def selectionBaseP(info: SourceInfo)(using P[Any]): P[Term] =
+  P(
+    groupTermP(info) |
+      tupleP(info) |
+      typeRefTermP(info) |
+      refP(info)
+  )
+
+private def selectionBaseMemberP(info: SourceInfo)(using P[Any]): P[Term] =
+  P(
+    groupTermMemberP(info) |
+      tupleMemberP(info) |
+      typeRefTermP(info) |
+      refP(info)
+  )
+
+private def selectionFieldP(info: SourceInfo)(using P[Any]): P[(String, SrcSpan)] =
+  import fastparse.NoWhitespace.*
+  P("." ~ spP(info) ~ bindingIdP ~ spNoWsP(info)).map { case (start, name, end) =>
+    name -> span(start, end)
+  }
+
+private def selectionP(info: SourceInfo, baseP: => P[Term])(using P[Any]): P[Term] =
+  P(
+    spP(info) ~ baseP ~ selectionFieldP(info).rep(1) ~ typeAscP(info) ~ spNoWsP(info) ~
+      spP(info)
+  ).map { case (_, base, fields, typeAsc, _, _) =>
+    val fieldList = fields.toList
+    val lastIndex = fieldList.size - 1
+    fieldList.zipWithIndex.foldLeft(base) { case (qualifier, ((fieldName, fieldSpan), idx)) =>
+      val selectionSpan = span(qualifier.span.start, fieldSpan.end)
+      Ref(
+        span      = selectionSpan,
+        name      = fieldName,
+        typeAsc   = if idx == lastIndex then typeAsc else None,
+        qualifier = Some(qualifier)
+      )
+    }
+  }
+
 private[parser] def tupleP(info: SourceInfo)(using P[Any]): P[Term] =
-  P(spP(info) ~ "(" ~ exprP(info).rep(sep = ",") ~ ")" ~ spP(info))
-    .map { case (start, exprs, end) =>
+  P(spP(info) ~ "(" ~ exprP(info).rep(sep = ",") ~ ")" ~ spNoWsP(info) ~ spP(info))
+    .map { case (start, exprs, end, _) =>
       NonEmptyList
         .fromList(exprs.toList)
         .fold(
@@ -97,8 +149,8 @@ private[parser] def tupleP(info: SourceInfo)(using P[Any]): P[Term] =
     }
 
 private[parser] def tupleMemberP(info: SourceInfo)(using P[Any]): P[Term] =
-  P(spP(info) ~ "(" ~ exprMemberP(info).rep(sep = ",") ~ ")" ~ spP(info))
-    .map { case (start, exprs, end) =>
+  P(spP(info) ~ "(" ~ exprMemberP(info).rep(sep = ",") ~ ")" ~ spNoWsP(info) ~ spP(info))
+    .map { case (start, exprs, end, _) =>
       NonEmptyList
         .fromList(exprs.toList)
         .fold(
@@ -115,19 +167,47 @@ private[parser] def tupleMemberP(info: SourceInfo)(using P[Any]): P[Term] =
 
 private[parser] def ifExprP(info: SourceInfo)(using P[Any]): P[Term] =
   P(
-    spP(info) ~ ifKw ~ exprP(info) ~ thenKw ~ exprP(info) ~ elseKw ~ exprP(info) ~ spP(
-      info
-    )
-  )
-    .map { case (start, cond, ifTrue, ifFalse, end) =>
-      Cond(span(start, end), cond, ifTrue, ifFalse)
+    spP(info) ~ ifKw ~ exprP(info) ~ thenKw ~ exprP(info) ~
+      (elifKw ~ exprP(info) ~ thenKw ~ exprP(info)).rep ~
+      elseKw ~ exprP(info) ~ endKw ~ spNoWsP(info) ~ spP(info)
+  ).map { case (start, cond, ifTrue, elsifs, ifFalse, end, _) =>
+    val finalSpan = span(start, end)
+    // Build nested Cond from elsif chain (fold right)
+    val elseExpr = elsifs.toList.foldRight(ifFalse) { case ((elsifCond, elsifBody), acc) =>
+      val condSpan = span(elsifCond.span.start, acc.span.end)
+      Expr(condSpan, List(Cond(condSpan, elsifCond, elsifBody, acc)))
     }
+    Cond(finalSpan, cond, ifTrue, elseExpr)
+  }
+
+private[parser] def ifSingleBranchExprP(info: SourceInfo)(using P[Any]): P[Term] =
+  P(
+    spP(info) ~ ifKw ~ exprP(info) ~ thenKw ~ exprP(info) ~
+      (elifKw ~ exprP(info) ~ thenKw ~ exprP(info)).rep ~
+      endKw ~ spNoWsP(info) ~ spP(info)
+  ).map { case (start, cond, ifTrue, elsifs, end, _) =>
+    val finalSpan = span(start, end)
+    val unitType  = TypeRef(finalSpan, "Unit")
+    val unitSpan  = span(end, end)
+    // Synthesize LiteralUnit for the missing else branch
+    val unitExpr = Expr(unitSpan, List(LiteralUnit(unitSpan)))
+    // Build nested Cond from elsif chain (fold right), ending with unit
+    val elseExpr = elsifs.toList.foldRight(unitExpr) { case ((elsifCond, elsifBody), acc) =>
+      val condSpan = span(elsifCond.span.start, acc.span.end)
+      Expr(
+        condSpan,
+        List(Cond(condSpan, elsifCond, elsifBody, acc, typeSpec = Some(unitType)))
+      )
+    }
+    Cond(finalSpan, cond, ifTrue, elseExpr, typeSpec = Some(unitType), typeAsc = Some(unitType))
+  }
 
 private[parser] def letExprP(info: SourceInfo)(using P[Any]): P[Term] =
   P(
-    spP(info) ~ letKw ~ bindingIdOrError ~ typeAscP(info)
-      ~ defAsKw ~ exprNoSeqP(info) ~ endKw ~ exprP(info) ~ spP(info)
-  ).map { case (start, idOrError, typeAsc, bindingExpr, restExpr, end) =>
+    spP(info) ~ letKw ~ spP(info) ~ bindingIdOrError ~ spNoWsP(info) ~ spP(info) ~
+      typeAscP(info) ~ defAsKw ~ exprNoSeqP(info) ~ semiKw ~ exprP(info) ~ spNoWsP(info) ~
+      spP(info)
+  ).map { case (start, idStart, idOrError, idEnd, _, typeAsc, bindingExpr, restExpr, end, _) =>
     idOrError match
       case Left(invalidId) =>
         TermError(
@@ -136,7 +216,7 @@ private[parser] def letExprP(info: SourceInfo)(using P[Any]): P[Term] =
           failedCode = Some(invalidId)
         )
       case Right(name) =>
-        val param = FnParam(span(start, end), name, typeAsc = typeAsc)
+        val param = FnParam(span(idStart, idEnd), name, typeAsc = typeAsc)
         val lambda = Lambda(
           span     = span(start, end),
           params   = List(param),
@@ -151,57 +231,90 @@ private[parser] def letExprP(info: SourceInfo)(using P[Any]): P[Term] =
   }
 
 private[parser] def groupTermP(info: SourceInfo)(using P[Any]): P[Term] =
-  P(spP(info) ~ "(" ~ exprP(info) ~ ")" ~ spP(info))
-    .map { case (start, expr, end) =>
+  P(spP(info) ~ "(" ~ exprP(info) ~ ")" ~ spNoWsP(info) ~ spP(info))
+    .map { case (start, expr, end, _) =>
       TermGroup(span(start, end), expr)
     }
 
 private[parser] def ifExprMemberP(info: SourceInfo)(using P[Any]): P[Term] =
   P(
-    spP(info) ~ ifKw ~ exprMemberP(info) ~ thenKw ~ exprMemberP(info) ~ elseKw ~ exprMemberP(
-      info
-    ) ~ spP(info)
-  )
-    .map { case (start, cond, ifTrue, ifFalse, end) =>
-      Cond(span(start, end), cond, ifTrue, ifFalse)
+    spP(info) ~ ifKw ~ exprMemberP(info) ~ thenKw ~ exprMemberP(info) ~
+      (elifKw ~ exprMemberP(info) ~ thenKw ~ exprMemberP(info)).rep ~
+      elseKw ~ exprMemberP(info) ~ endKw ~ spNoWsP(info) ~ spP(info)
+  ).map { case (start, cond, ifTrue, elsifs, ifFalse, end, _) =>
+    val finalSpan = span(start, end)
+    // Build nested Cond from elsif chain (fold right)
+    val elseExpr = elsifs.toList.foldRight(ifFalse) { case ((elsifCond, elsifBody), acc) =>
+      val condSpan = span(elsifCond.span.start, acc.span.end)
+      Expr(condSpan, List(Cond(condSpan, elsifCond, elsifBody, acc)))
     }
+    Cond(finalSpan, cond, ifTrue, elseExpr)
+  }
+
+private[parser] def ifSingleBranchExprMemberP(info: SourceInfo)(using P[Any]): P[Term] =
+  P(
+    spP(info) ~ ifKw ~ exprMemberP(info) ~ thenKw ~ exprMemberP(info) ~
+      (elifKw ~ exprMemberP(info) ~ thenKw ~ exprMemberP(info)).rep ~
+      endKw ~ spNoWsP(info) ~ spP(info)
+  ).map { case (start, cond, ifTrue, elsifs, end, _) =>
+    val finalSpan = span(start, end)
+    val unitType  = TypeRef(finalSpan, "Unit")
+    val unitSpan  = span(end, end)
+    // Synthesize LiteralUnit for the missing else branch
+    val unitExpr = Expr(unitSpan, List(LiteralUnit(unitSpan)))
+    // Build nested Cond from elsif chain (fold right), ending with unit
+    val elseExpr = elsifs.toList.foldRight(unitExpr) { case ((elsifCond, elsifBody), acc) =>
+      val condSpan = span(elsifCond.span.start, acc.span.end)
+      Expr(
+        condSpan,
+        List(Cond(condSpan, elsifCond, elsifBody, acc, typeSpec = Some(unitType)))
+      )
+    }
+    Cond(finalSpan, cond, ifTrue, elseExpr, typeSpec = Some(unitType), typeAsc = Some(unitType))
+  }
 
 private[parser] def groupTermMemberP(info: SourceInfo)(using P[Any]): P[Term] =
-  P(spP(info) ~ "(" ~ exprMemberP(info) ~ ")" ~ spP(info))
-    .map { case (start, expr, end) =>
+  P(spP(info) ~ "(" ~ exprMemberP(info) ~ ")" ~ spNoWsP(info) ~ spP(info))
+    .map { case (start, expr, end, _) =>
       TermGroup(span(start, end), expr)
     }
 
 private[parser] def refP(info: SourceInfo)(using P[Any]): P[Term] =
-  P(spP(info) ~ bindingIdP ~ typeAscP(info) ~ spP(info))
-    .map { case (start, id, typeAsc, end) =>
+  P(spP(info) ~ bindingIdP ~ typeAscP(info) ~ spNoWsP(info) ~ spP(info))
+    .map { case (start, id, typeAsc, end, _) =>
+      Ref(span(start, end), id, typeAsc = typeAsc)
+    }
+
+private[parser] def typeRefTermP(info: SourceInfo)(using P[Any]): P[Term] =
+  P(spP(info) ~ typeIdP ~ typeAscP(info) ~ spNoWsP(info) ~ spP(info))
+    .map { case (start, id, typeAsc, end, _) =>
       Ref(span(start, end), id, typeAsc = typeAsc)
     }
 
 private[parser] def opRefP(info: SourceInfo)(using P[Any]): P[Term] =
-  P(spP(info) ~ operatorIdP ~ spP(info))
-    .map { case (start, id, end) =>
+  P(spP(info) ~ operatorIdP ~ spNoWsP(info) ~ spP(info))
+    .map { case (start, id, end, _) =>
       Ref(span(start, end), id)
     }
 
 private[parser] def phP(info: SourceInfo)(using P[Any]): P[Term] =
-  P(spP(info) ~ placeholderKw ~ spP(info))
-    .map { case (start, end) =>
+  P(spP(info) ~ placeholderKw ~ spNoWsP(info) ~ spP(info))
+    .map { case (start, end, _) =>
       Placeholder(span(start, end), None)
     }
 
 private[parser] def holeP(info: SourceInfo)(using P[Any]): P[Term] =
-  P(spP(info) ~ holeKw ~ spP(info))
-    .map { case (start, end) =>
+  P(spP(info) ~ holeKw ~ spNoWsP(info) ~ spP(info))
+    .map { case (start, end, _) =>
       Hole(span(start, end))
     }
 
 private[parser] def nativeImplP(info: SourceInfo)(using P[Any]): P[NativeImpl] =
 
-  def nativeOpP: P[Option[String]] =
-    P("[" ~ "op" ~ "=" ~ CharsWhileIn("a-zA-Z0-9_", 1).! ~ "]").?
+  def nativeTplP: P[Option[String]] =
+    P("[" ~ "tpl" ~ "=" ~ "\"" ~ CharsWhile(_ != '"', 0).! ~ "\"" ~ "]").?
 
-  P(spP(info) ~ nativeKw ~ nativeOpP ~ spP(info))
-    .map { case (start, op, end) =>
-      NativeImpl(span(start, end), nativeOp = op)
+  P(spP(info) ~ nativeKw ~ nativeTplP ~ spNoWsP(info) ~ spP(info))
+    .map { case (start, tpl, end, _) =>
+      NativeImpl(span(start, end), nativeTpl = tpl)
     }

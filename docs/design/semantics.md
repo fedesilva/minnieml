@@ -112,23 +112,23 @@ MML allows declaring types that mirror native C/LLVM types. These declarations *
 
 ```rust
 # Primitive type with native representation
-type SizeT = @native:i64
+type SizeT = @native[t=i64];
 
 # Opaque pointer
-type CharPtr = @native:*i8
+type CharPtr = @native[t=*i8];
 
 # Struct mirror
 type String = @native {
   length: SizeT,
   data:   CharPtr
-}
+};
 ```
 
-**Primitive Types**: Each `@native:<repr>` declaration defines a **distinct fundamental type**. In other languages, primitives like `int` or `float` are hardcoded into the compiler. MML gives users the ability to define their own primitives via `@native`.
+**Primitive Types**: Each `@native[t=<repr>]` declaration defines a **distinct fundamental type**. In other languages, primitives like `int` or `float` are hardcoded into the compiler. MML gives users the ability to define their own primitives via `@native`.
 
 ```rust
-type Int64 = @native:i64
-type AnotherInt64 = @native:i64
+type Int64 = @native[t=i64];
+type AnotherInt64 = @native[t=i64];
 
 # These are DIFFERENT types - two distinct primitives
 # Even though both wrap i64, they are separate fundamental types
@@ -162,7 +162,7 @@ Two types are compatible if:
 2. One is a type alias that resolves to the other
 
 **Important for Native Types**: Each `@native` declaration creates a distinct fundamental type. The type checker treats these as opaque primitives and does not look at their underlying representation:
-- `Int64` and `AnotherInt64` (both `@native:i64`) are **incompatible** - they are different primitives
+- `Int64` and `AnotherInt64` (both `@native[t=i64]`) are **incompatible** - they are different primitives
 - The type checker cannot see that both wrap `i64`; it treats each `@native` declaration as a separate fundamental type
 
 ### Compound Types
@@ -191,8 +191,9 @@ The standard operators like `+`, `-`, `*`, `/`, `==`, `and`, etc. are **injected
 
 **Example operator definition**:
 ```mml
-op +(a: Int, b: Int): Int 60 left = @native;
-op *(a: Int, b: Int): Int 80 left = @native;
+op +(a: Int, b: Int): Int 60 left = @native[tpl="add %type %operand1, %operand2"];
+op *(a: Int, b: Int): Int 80 left = @native[tpl="mul %type %operand1, %operand2"];
+op %(a: Int, b: Int): Int 80 left = @native[tpl="srem %type %operand1, %operand2"];
 ```
 
 ### Operator Kinds
@@ -265,6 +266,16 @@ a * b + c  # Desugars to: + (* a b) c
 
 ## 4. Semantic Rules
 
+### Visibility (not enforced yet)
+
+Declarations carry a visibility flag for future access control, but the compiler does not enforce it
+yet.
+
+- **Public**: Importable and referenceable from any module.
+- **Protected**: Visible to the defining module and related modules (siblings/nested) when imported
+  or fully qualified.
+- **Private**: Confined to the defining module.
+
 ### Function Application
 
 **Currying**: Functions are curried, meaning multi-parameter functions desugar to nested single-parameter applications: `f a b` is really `((f a) b)`.
@@ -311,13 +322,30 @@ Functions and operators can have `@native` bodies, indicating external implement
 
 ```mml
 fn print(s: String): Unit = @native;
+fn mml_sys_flush(): Unit = @native;
 fn str_to_int(s: String): Int = @native;
-op +(a: Int, b: Int): Int 60 left = @native;
+op +(a: Int, b: Int): Int 60 left = @native[tpl="add %type %operand1, %operand2"];
 ```
 
 **Purpose**: Lift native (C/LLVM) functions into MML's type system by declaring their signatures. The type annotations define the interface contract.
-             The codegen will generate forward declarations in each module using these functions and the linker will resolve them
+             The codegen will generate forward declarations in each module using these functions and the linker will resolve them.
              If they are not found a linker error will occur.
+
+### Native Templates for Functions
+
+Functions can use `@native[tpl="..."]` to emit inline LLVM IR, useful for LLVM intrinsics:
+
+```mml
+fn ctpop(x: Int): Int = @native[tpl="call i64 @llvm.ctpop.i64(i64 %operand)"];
+fn pow(x: Float, y: Float): Float = @native[tpl="call float @llvm.pow.f32(float %operand1, float %operand2)"];
+```
+
+**Template placeholders**:
+- `%operand` - single argument (unary functions)
+- `%operand1`, `%operand2`, ... - multiple arguments (1-indexed)
+- `%type` - LLVM type of first argument
+
+The codegen prepends `%result =` to the template automatically.
 
 ---
 

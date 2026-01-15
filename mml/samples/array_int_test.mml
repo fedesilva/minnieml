@@ -1,0 +1,14 @@
+fn main(): Unit =
+  let arr = ar_int_new 3;
+  ar_int_set arr 0 10;
+  ar_int_set arr 1 20;
+  ar_int_set arr 2 30;
+  let len = ar_int_len arr;
+  let v0 = ar_int_get arr 0;
+  let v1 = ar_int_get arr 1;
+  let v2 = ar_int_get arr 2;
+  println (concat "Length: " (to_string len));
+  println (concat "arr[0] = " (to_string v0));
+  println (concat "arr[1] = " (to_string v1));
+  println (concat "arr[2] = " (to_string v2))
+;

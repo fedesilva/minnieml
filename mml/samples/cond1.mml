@@ -2,9 +2,12 @@ let a = 1;
 let b = 2;
 let c = 3;
 
+let d = -3 - -3;
+
 fn main(): Int =
   if c < 1 then
     a + b
   else
     a - b
+  end
 ;
