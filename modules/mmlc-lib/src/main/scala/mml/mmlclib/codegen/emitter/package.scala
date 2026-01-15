@@ -86,12 +86,19 @@ def emitCall(
   result:     Option[Int],
   returnType: Option[String],
   fnName:     String,
-  args:       List[(String, String)]
+  args:       List[(String, String)],
+  aliasScope: Option[String] = None,
+  noalias:    Option[String] = None
 ): String =
   val resultPart = result.map(r => s"%$r = ").getOrElse("")
   val returnPart = returnType.map(t => s"$t ").getOrElse("void ")
   val argString  = args.map { case (typ, value) => s"$typ $value" }.mkString(", ")
-  s"  ${resultPart}call $returnPart@$fnName($argString)"
+  val metadataParts = List(
+    aliasScope.map(tag => s"!alias.scope $tag"),
+    noalias.map(tag => s"!noalias $tag")
+  ).flatten
+  val metadataSuffix = if metadataParts.isEmpty then "" else metadataParts.mkString(", ", ", ", "")
+  s"  ${resultPart}call $returnPart@$fnName($argString)$metadataSuffix"
 
 /** Helper for generating LLVM IR extractvalue instruction */
 def emitExtractValue(result: Int, structType: String, value: String, index: Int): String =
@@ -187,7 +194,7 @@ def emitGlobalVariable(name: String, typ: String, value: String): String =
 /** Helper for generating syntactically correct LLVM IR function declaration */
 def emitFunctionDeclaration(name: String, returnType: String, params: List[String]): String =
   val paramString = params.mkString(", ")
-  s"declare $returnType @$name($paramString)"
+  s"declare $returnType @$name($paramString) #0"
 
 /** Represents an error that occurred during code generation. */
 case class CodeGenError(message: String, node: Option[AstNode] = None) extends CompilationError

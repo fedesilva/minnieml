@@ -29,7 +29,8 @@ def emitModule(
   module:       Module,
   entryPoint:   Option[String],
   targetTriple: String,
-  targetAbi:    TargetAbi
+  targetAbi:    TargetAbi,
+  targetCpu:    Option[String]
 ): Either[CodeGenError, EmitResult] = {
   // Setup the initial state with the module name, resolvables and header
   val initialState = CodeGenState(
@@ -115,6 +116,7 @@ def emitModule(
 
   // Construct the final output with all components in the proper order
   stateWithMain.map { finalState =>
+    val cpuAttrValue = targetCpu.filter(_.nonEmpty)
     // Assemble the full output in the correct order
     val output = new StringBuilder()
 
@@ -146,6 +148,11 @@ def emitModule(
 
     // 5. Function definitions and other code
     output.append(finalState.output.reverse.mkString("\n"))
+
+    // 5. Attributes
+    cpuAttrValue.foreach { cpu =>
+      output.append(s"""\nattributes #0 = { "target-cpu"="$cpu" }\n""")
+    }
 
     // 6. Global initializers
     if finalState.initializers.nonEmpty then
@@ -420,7 +427,7 @@ private def emitSynthesizedMain(
   if returnsInt then
     // Int-returning main: capture return value, flush, truncate i64 -> i32, return
     stateWithFlush
-      .emit("define i32 @main(i32 %0, ptr %1) {")
+      .emit("define i32 @main(i32 %0, ptr %1) #0 {")
       .emit("entry:")
       .emit(s"  %ret = call i64 @$entryPoint()")
       .emit("  call void @mml_sys_flush()")
@@ -431,7 +438,7 @@ private def emitSynthesizedMain(
   else
     // Unit-returning main: call entry point, flush, return 0
     stateWithFlush
-      .emit("define i32 @main(i32 %0, ptr %1) {")
+      .emit("define i32 @main(i32 %0, ptr %1) #0 {")
       .emit("entry:")
       .emit(s"  call void @$entryPoint()")
       .emit("  call void @mml_sys_flush()")

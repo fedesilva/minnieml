@@ -26,6 +26,7 @@ object LlvmIrEmitter:
     module:       Module,
     entryPoint:   Option[String],
     targetTriple: String,
-    targetAbi:    TargetAbi
+    targetAbi:    TargetAbi,
+    targetCpu:    Option[String]
   ): Either[CodeGenError, EmitResult] =
-    emitModule(module, entryPoint, targetTriple, targetAbi)
+    emitModule(module, entryPoint, targetTriple, targetAbi, targetCpu)

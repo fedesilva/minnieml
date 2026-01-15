@@ -6,6 +6,7 @@ import mml.mmlclib.errors.CompilationError
 
 import java.io.{File, InputStream}
 import java.nio.file.{Files, Path, Paths, StandardCopyOption}
+import scala.jdk.CollectionConverters.*
 import scala.sys.process.{Process, ProcessLogger}
 
 case class ToolInfo(versions: Map[String, String], missing: List[String])
@@ -75,6 +76,7 @@ object LlvmToolchain:
 
   /** File name to cache the local target triple */
   private val localTargetTripleFile = "local-target-triple"
+  private val hostCpuPrefix         = "Host CPU:"
 
   /** Installation instructions for different platforms */
   val llvmInstallInstructions: String =
@@ -189,6 +191,28 @@ object LlvmToolchain:
       if triple.nonEmpty then Some(triple) else None
     catch case _: Exception => None
   }
+
+  /** Parse Host CPU from the llvm-check-ok marker if available. */
+  def readHostCpu(buildDir: String): Option[String] =
+    def findMarker(path: Path): Option[Path] =
+      if path == null then None
+      else
+        val candidate = path.resolve(llvmCheckMarkerFile)
+        if Files.exists(candidate) then Some(candidate)
+        else findMarker(path.getParent)
+
+    findMarker(Paths.get(buildDir)).flatMap { marker =>
+      try
+        Files
+          .readAllLines(marker)
+          .asScala
+          .collectFirst {
+            case line if line.startsWith(hostCpuPrefix) =>
+              line.stripPrefix(hostCpuPrefix).trim
+          }
+          .filter(_.nonEmpty)
+      catch case _: Exception => None
+    }
 
   private def programNameFrom(path: Path): String =
     val fileName = path.getFileName.toString.stripSuffix(".ll")

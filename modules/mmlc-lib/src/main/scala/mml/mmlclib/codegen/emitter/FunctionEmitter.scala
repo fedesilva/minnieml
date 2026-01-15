@@ -115,7 +115,7 @@ private def compileRegularLambda(
     .map { case (typ, idx) => s"$typ %$idx" }
     .mkString(", ")
 
-  val functionDecl = s"define $returnType @$emittedName($paramDecls) {"
+  val functionDecl = s"define $returnType @$emittedName($paramDecls) #0 {"
   val entryLine    = "entry:"
 
   // Setup function body state with initial lines
