@@ -2,6 +2,7 @@ package mml.mmlclib.codegen.emitter
 
 import cats.syntax.all.*
 import mml.mmlclib.ast.*
+import mml.mmlclib.codegen.emitter.alias.AliasScopeEmitter
 import mml.mmlclib.codegen.emitter.expression.*
 import mml.mmlclib.codegen.emitter.tbaa.TbaaEmitter.getTbaaTag
 
@@ -61,13 +62,22 @@ def compileTerm(
                   val reg                      = state.nextRegister
                   val globalName               = getResolvedName(ref, state)
                   val (stateWithTbaa, tbaaTag) = getTbaaTag(typeSpec, state)
-                  val line                     = emitLoad(reg, llvmType, s"@$globalName", tbaaTag)
+                  val (stateWithAlias, aliasTag, noaliasTag) =
+                    AliasScopeEmitter.getAliasScopeTags(typeSpec, stateWithTbaa)
+                  val line = emitLoad(
+                    reg,
+                    llvmType,
+                    s"@$globalName",
+                    tbaaTag,
+                    aliasTag,
+                    noaliasTag
+                  )
 
                   getMmlTypeName(typeSpec) match {
                     case Some(typeName) =>
                       CompileResult(
                         reg,
-                        stateWithTbaa.withRegister(reg + 1).emit(line),
+                        stateWithAlias.withRegister(reg + 1).emit(line),
                         false,
                         typeName
                       ).asRight

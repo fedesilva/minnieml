@@ -4,7 +4,7 @@ import mml.mmlclib.ast.*
 
 def visibilityToString(visibility: Visibility): String =
   visibility match
-    case Visibility.Public => "pub"    
+    case Visibility.Public => "pub"
     case Visibility.Protected => "prot"
     case Visibility.Private => "priv"
 
