@@ -41,16 +41,6 @@ and unlocks `noalias` parameter attributes for LLVM optimization.
 3. Implement OwnershipAnalyzer phase
 4. Write programs, find edge cases, iterate
 
-### LSP forks for commands
-
-* this is dumb: lsp is mmlc, yet it forks out a new instance.
-* extend the CompilerApi with a method that does not print errors, 
-  returns them for lsp consumption (one for bin, one for lib) 
-* the CompilationError should probably mandate a message.
-* do not return diagnostics (for now) just a nice formatted message
-  with the reason ("An executable needs an entry point") or something like that.
-
-
 ### Lsp cats warnings
 
 * we need a blocking pool to run the compilation (after the above is fixed)
@@ -72,25 +62,30 @@ currently we have cpu and arch flags:
 * if a target triple is passed we should not use the llvm-check-ok data
   since that most likely means we are cross compiling.
 
-### Lsp command errors fail to propagate
-
-In VScode console:
-
-```
-Compiling to binary... file:///Users/f/Workshop/mine/mml/mml/mml/samples/no-main.mml
-[Error] Header must provide a Content-Length property.
-{"\n\u001b[31mcompilation failed":"\u001b[0m\n\n\u001b[33mFile: mml/samples/no-main.mml\n\n\u001b[31mNo entry point 'main' found for binary compilation at [1:1]-[4:2]\u001b[0m\n\n\u001b[36m   1 |\u001b[0m \n\u001b[36m   2 |\u001b[0m \u001b[31m\u001b[1mfn this_is_not_main() =\u001b[0m\n       \u001b[32m\u001b[1m^^^^^^^^^^^^^^^^^^^^^^^\u001b[0m\n\u001b[36m   3 |\u001b[0m \u001b[31m\u001b[1m  println \"nopes\"\u001b[0m\n       \u001b[32m\u001b[1m^^^^^^^^^^^^^^^^^\u001b[0m\n\u001b[36m   4 |\u001b[0m \u001b[31m\u001b[1m;\u001b[0m\n       \u001b[32m\u001b[1m^\u001b[0m\u001b[0m\n\nContent-Length: 66"}
-[Error - 9:08:15 PM] Client MinnieML Language Server: connection to server is erroring.
-Header must provide a Content-Length property.
-{"\n\u001b[31mcompilation failed":"\u001b[0m\n\n\u001b[33mFile: mml/samples/no-main.mml\n\n\u001b[31mNo entry point 'main' found for binary compilation at [1:1]-[4:2]\u001b[0m\n\n\u001b[36m   1 |\u001b[0m \n\u001b[36m   2 |\u001b[0m \u001b[31m\u001b[1mfn this_is_not_main() =\u001b[0m\n       \u001b[32m\u001b[1m^^^^^^^^^^^^^^^^^^^^^^^\u001b[0m\n\u001b[36m   3 |\u001b[0m \u001b[31m\u001b[1m  println \"nopes\"\u001b[0m\n       \u001b[32m\u001b[1m^^^^^^^^^^^^^^^^^\u001b[0m\n\u001b[36m   4 |\u001b[0m \u001b[31m\u001b[1m;\u001b[0m\n       \u001b[32m\u001b[1m^\u001b[0m\u001b[0m\n\nContent-Length: 66"}
-```
-
-1. it should not use just the error printer.
 2. it should return useful information the editor can display
+
+
+### Runtime: time functions
+
+TBD
+
 
 ---
 
 ## Recent Changes
+
+### 2026-01-15 (branch: 2026-01-14-dev)
+
+- **LSP in-process compilation**: LSP no longer forks mmlc process for compile
+  commands. Added `CompilerApi.compileBinaryQuiet` and `compileLibraryQuiet`
+  methods that return error messages instead of printing. `LspHandler` now calls
+  these directly.
+- **CompilationError.message**: Added `def message: String` to `CompilationError`
+  trait. Implemented for all error types: `ParserError`, `TypeError`,
+  `SemanticError`, `LlvmCompilationError`, `CodeGenError`, `CompilerError`.
+  Plain text messages without ANSI codes.
+- **VSCode extension**: Updated to display error messages from LSP and log them
+  to output channel.
 
 ### 2026-01-14 (branch: 2026-01-14-dev)
 

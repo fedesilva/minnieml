@@ -21,14 +21,26 @@ enum CompilationMode derives CanEqual:
   case Dev
 
 enum LlvmCompilationError extends CompilationError derives CanEqual:
-  case TemporaryFileCreationError(message: String)
+  case TemporaryFileCreationError(msg: String)
   case UnsupportedOperatingSystem(osName: String)
   case UnsupportedArchitecture(archName: String)
   case CommandExecutionError(command: String, errorMessage: String, exitCode: Int)
   case ExecutableRunError(path: String, exitCode: Int)
   case LlvmNotInstalled(missingTools: List[String])
-  case RuntimeResourceError(message: String)
-  case TripleResolutionError(message: String)
+  case RuntimeResourceError(msg: String)
+  case TripleResolutionError(msg: String)
+
+  def message: String = this match
+    case TemporaryFileCreationError(msg) => msg
+    case UnsupportedOperatingSystem(osName) => s"Unsupported operating system: $osName"
+    case UnsupportedArchitecture(archName) => s"Unsupported architecture: $archName"
+    case CommandExecutionError(command, errorMessage, exitCode) =>
+      s"Command '$command' failed (exit $exitCode): $errorMessage"
+    case ExecutableRunError(path, exitCode) => s"Executable '$path' failed with exit code $exitCode"
+    case LlvmNotInstalled(missingTools) =>
+      s"LLVM tools not installed: ${missingTools.mkString(", ")}"
+    case RuntimeResourceError(msg) => msg
+    case TripleResolutionError(msg) => msg
 
 object LlvmToolchain:
 

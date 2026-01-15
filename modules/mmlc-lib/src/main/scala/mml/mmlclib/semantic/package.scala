@@ -9,6 +9,17 @@ enum UnresolvableTypeContext derives CanEqual:
   case Argument
   case Function
 
+private def showType(t: Type): String = t match
+  case TypeRef(_, name, _, _) => name
+  case TypeStruct(_, _, _, name, _, _) => name
+  case TypeFn(_, params, ret) => s"(${params.map(showType).mkString(", ")}) -> ${showType(ret)}"
+  case TypeUnit(_) => "()"
+  case TypeTuple(_, elems) => s"(${elems.map(showType).mkString(", ")})"
+  case NativePrimitive(_, llvm) => llvm
+  case NativePointer(_, llvm) => s"*$llvm"
+  case TypeVariable(_, name) => name
+  case _ => t.getClass.getSimpleName
+
 enum TypeError extends CompilationError:
   // Function and Operator Definition Errors
   case MissingParameterType(param: FnParam, decl: Decl, phase: String)
@@ -51,17 +62,82 @@ enum TypeError extends CompilationError:
   )
   case UntypedHoleInBinding(bindingName: String, span: SrcSpan, phase: String)
 
+  def message: String = this match
+    case MissingParameterType(param, _, _) =>
+      s"Missing type annotation for parameter '${param.name}'"
+    case MissingReturnType(decl, _) =>
+      s"Missing return type for '${decl.name}'"
+    case RecursiveFunctionMissingReturnType(decl, _) =>
+      s"Recursive function '${decl.name}' requires explicit return type"
+    case MissingOperatorParameterType(param, _, _) =>
+      s"Missing type annotation for operator parameter '${param.name}'"
+    case MissingOperatorReturnType(decl, _) =>
+      s"Missing return type for operator '${decl.name}'"
+    case TypeMismatch(_, expected, actual, _, expectedBy) =>
+      val ctx = expectedBy.map(by => s" (expected by $by)").getOrElse("")
+      s"Type mismatch: expected ${showType(expected)}, got ${showType(actual)}$ctx"
+    case UndersaturatedApplication(_, expected, actual, _) =>
+      s"Too few arguments: expected $expected, got $actual"
+    case OversaturatedApplication(_, expected, actual, _) =>
+      s"Too many arguments: expected $expected, got $actual"
+    case InvalidApplication(_, fnType, argType, _) =>
+      s"Cannot apply ${showType(fnType)} to ${showType(argType)}"
+    case InvalidSelection(ref, baseType, _) =>
+      s"Cannot select '${ref.name}' from ${showType(baseType)}"
+    case UnknownField(ref, _, _) =>
+      s"Unknown field '${ref.name}' in struct"
+    case ConditionalBranchTypeMismatch(_, trueType, falseType, _) =>
+      s"Conditional branches have different types: ${showType(trueType)} vs ${showType(falseType)}"
+    case ConditionalBranchTypeUnknown(_, _) =>
+      "Cannot determine type of conditional branches"
+    case UnresolvableType(_, context, _) =>
+      context match
+        case Some(UnresolvableTypeContext.NamedValue(name)) =>
+          s"Cannot resolve type for '$name'"
+        case Some(UnresolvableTypeContext.Argument) =>
+          "Cannot resolve type for argument"
+        case Some(UnresolvableTypeContext.Function) =>
+          "Cannot resolve function type"
+        case None =>
+          "Cannot resolve type"
+    case IncompatibleTypes(_, type1, type2, ctx, _) =>
+      s"Incompatible types in $ctx: ${showType(type1)} and ${showType(type2)}"
+    case UntypedHoleInBinding(name, _, _) =>
+      s"Typed hole in '$name' requires type annotation"
+
 enum SemanticError extends CompilationError:
   case UndefinedRef(ref: Ref, member: Member, phase: String)
   case UndefinedTypeRef(typeRef: TypeRef, member: Member, phase: String)
   case DuplicateName(name: String, duplicates: List[Resolvable], phase: String)
-  case InvalidExpression(expr: Expr, message: String, phase: String)
-  case DanglingTerms(terms: List[Term], message: String, phase: String)
+  case InvalidExpression(expr: Expr, msg: String, phase: String)
+  case DanglingTerms(terms: List[Term], msg: String, phase: String)
   case MemberErrorFound(error: ParsingMemberError, phase: String)
   case ParsingIdErrorFound(error: ParsingIdError, phase: String)
   case InvalidExpressionFound(invalidExpr: mml.mmlclib.ast.InvalidExpression, phase: String)
   case TypeCheckingError(error: TypeError)
-  case InvalidEntryPoint(message: String, span: SrcSpan)
+  case InvalidEntryPoint(msg: String, span: SrcSpan)
+
+  def message: String = this match
+    case UndefinedRef(ref, _, _) =>
+      s"Undefined reference: '${ref.name}'"
+    case UndefinedTypeRef(typeRef, _, _) =>
+      s"Undefined type: '${typeRef.name}'"
+    case DuplicateName(name, _, _) =>
+      s"Duplicate definition: '$name'"
+    case InvalidExpression(_, msg, _) =>
+      msg
+    case DanglingTerms(_, msg, _) =>
+      msg
+    case MemberErrorFound(error, _) =>
+      s"Parse error in member: ${error.message}"
+    case ParsingIdErrorFound(error, _) =>
+      s"Parse error in identifier: ${error.message}"
+    case InvalidExpressionFound(_, _) =>
+      "Invalid expression"
+    case TypeCheckingError(error) =>
+      error.message
+    case InvalidEntryPoint(msg, _) =>
+      msg
 
 /** Generate a stable ID for stdlib members */
 private def stdlibId(name: String): Option[String] = Some(s"stdlib::$name")
