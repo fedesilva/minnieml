@@ -21,22 +21,36 @@
 
 ## Active Tasks
 
-### Codegen improvements
+### Improvement to codegen now
 
-Generate ir with this:
+1. Add noalias to Array Parameters (10-15% improvement)
+scala// In your function parameter codegen
+val noaliasAttr = if (isArrayType(param.ty)) " noalias" else ""
+s"${param.llvmType}${noaliasAttr} %${param.name}"
+Generates:
+llvmdefine void @matmul_mat_mul_k(%struct.String noalias %0, %struct.String noalias %1, ...) {
+2. Simplify Alias Scope Hierarchy (5-10% improvement)
+Your current noalias sets have 100+ scopes. Flatten them:
+scala// Instead of propagating all parent scopes through call chain
+// Just mark direct parameter conflicts
+def generateAliasScope(fnName: String, params: List[Param]): String = {
+  params.zipWithIndex.map { case (p, i) => 
+    s"!${fnName}.arg${i}"
+  }.mkString(", ")
+}
 
-attributes #0 = { "target-cpu"="skylake" }
-and attach the #0 to ALL function definitions, 
-including forward declarations (native impl)
 
-read the llvm-check-ok file and pull the 
-`  Host CPU: skylake`
+### TARGET CPU
 
-using the string on the right as target-cpu.
+we are generating the target-cpu attribute and annotating with it all definitions.
+BUT this will not work for cross compilation.
 
-if we can't find it, do not generate.
+currently we have cpu and arch flags:
 
-* there is code that attempts to do this but the previous agent failed miserably.
+* remove the arch flag
+  - stop passing both flags to opt and clang.
+* change how emittig the target-cpu attribute  works
+  - if present use that to generate the attribute
 
 ### Lsp command errors fail to propagate
 
@@ -58,4 +72,15 @@ Header must provide a Content-Length property.
 
 ## Recent Changes
 
+### 2026-01-14 (branch: 2026-01-14-dev)
+
+- **Benchmark infrastructure**: Added matmul and ackermann benchmarks,
+  Makefile improvements, benchmark results and reports
+- **Scoped TBAA**: Added scoped TBAA metadata for better alias analysis
+- **Alias scope emitter**: New `AliasScopeEmitter` for alias scope metadata
+  on function calls and memory operations
+- **Host CPU attribute fix**: Fixed bug in `LlvmToolchain.readHostCpu` where
+  `collectFirst { case line => ... }` matched all lines (total pattern),
+  stopping at first line instead of finding `Host CPU:`. Changed to
+  `.find(...).map(...)` pattern.
 
