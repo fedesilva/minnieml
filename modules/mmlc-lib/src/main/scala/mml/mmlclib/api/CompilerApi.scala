@@ -109,6 +109,93 @@ object CompilerApi:
       case Right(state) => processNativeBinaryQuiet(state)
     }
 
+  /** Clean output directory without printing. Returns Right with message on success. */
+  def cleanQuiet(outputDir: String): IO[Either[String, String]] =
+    IO.blocking {
+      val dir = new java.io.File(outputDir)
+      if dir.exists() then
+        def deleteRecursively(file: java.io.File): Boolean =
+          if file.isDirectory then file.listFiles().foreach(deleteRecursively)
+          file.delete()
+        deleteRecursively(dir)
+        Right(s"Cleaned directory: $outputDir")
+      else Right(s"Output directory does not exist: $outputDir")
+    }.handleErrorWith { e =>
+      IO.pure(Left(s"Failed to clean directory: ${e.getMessage}"))
+    }
+
+  /** Generate AST file without printing. Returns Right with AST file path on success. */
+  def processAstQuiet(path: Path, config: CompilerConfig): IO[Either[String, String]] =
+    compilePath(path, config).flatMap {
+      case Left(error) =>
+        IO.pure(Left(error))
+      case Right(state) if state.hasErrors =>
+        IO.pure(Left(plainErrorMessage(state)))
+      case Right(state) =>
+        writeAstQuiet(state.module, config.outputDir.toString)
+    }
+
+  /** Generate IR file without printing. Returns Right with IR file path on success. */
+  def processIrQuiet(path: Path, config: CompilerConfig): IO[Either[String, String]] =
+    compilePath(path, config).flatMap {
+      case Left(error) =>
+        IO.pure(Left(error))
+      case Right(state) if state.hasErrors =>
+        IO.pure(Left(plainErrorMessage(state)))
+      case Right(state) =>
+        IO.blocking(CodegenStage.process(state)).flatMap { validated =>
+          if validated.hasErrors then IO.pure(Left(plainErrorMessage(validated)))
+          else
+            CodegenStage.processIrOnly(validated).flatMap { finalState =>
+              finalState.llvmIr match
+                case Some(ir) =>
+                  writeIrQuiet(
+                    ir,
+                    finalState.module.name,
+                    config.outputDir.toString,
+                    finalState.resolvedTriple
+                  )
+                case None =>
+                  IO.pure(Left(plainErrorMessage(finalState)))
+            }
+        }
+    }
+
+  private def writeAstQuiet(
+    module:    mml.mmlclib.ast.Module,
+    outputDir: String
+  ): IO[Either[String, String]] =
+    IO.blocking {
+      val dir = new java.io.File(outputDir)
+      if !dir.exists() then dir.mkdirs()
+      val astFileName = s"$outputDir/${module.name}.ast"
+      val writer      = new java.io.PrintWriter(new java.io.File(astFileName))
+      try writer.write(mml.mmlclib.util.prettyprint.ast.prettyPrintAst(module, 2, false, true))
+      finally writer.close()
+      Right(astFileName)
+    }.handleErrorWith { e =>
+      IO.pure(Left(s"Failed to write AST: ${e.getMessage}"))
+    }
+
+  private def writeIrQuiet(
+    llvmIr:       String,
+    moduleName:   String,
+    outputDir:    String,
+    targetTriple: Option[String]
+  ): IO[Either[String, String]] =
+    IO.blocking {
+      val dir = new java.io.File(outputDir)
+      if !dir.exists() then dir.mkdirs()
+      val triple   = targetTriple.getOrElse("unknown")
+      val llvmFile = s"$outputDir/$moduleName-$triple.ll"
+      val writer   = new java.io.PrintWriter(llvmFile)
+      try writer.write(llvmIr)
+      finally writer.close()
+      Right(llvmFile)
+    }.handleErrorWith { e =>
+      IO.pure(Left(s"Failed to write IR: ${e.getMessage}"))
+    }
+
   /** Run frontend + codegen validation without printing. Returns error message on failure. */
   private def runPipelineQuiet(
     path:   Path,
