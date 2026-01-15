@@ -2,6 +2,7 @@ package mml.mmlclib.lsp
 
 import cats.effect.IO
 import mml.mmlclib.api.CompilerApi
+import mml.mmlclib.codegen.CompilationMode
 import mml.mmlclib.compiler.{CompilerConfig, CompilerState}
 
 import java.io.{BufferedReader, PrintStream}
@@ -292,6 +293,12 @@ class LspHandler(
         executeCompile(id, arguments, isLib = false)
       case LspCommands.CompileLib =>
         executeCompile(id, arguments, isLib = true)
+      case LspCommands.Clean =>
+        executeClean(id)
+      case LspCommands.Ast =>
+        executeAst(id, arguments)
+      case LspCommands.Ir =>
+        executeIr(id, arguments)
       case _ =>
         JsonRpc.writeError(
           output,
@@ -314,15 +321,10 @@ class LspHandler(
         )
       case Some(uri) =>
         val filePath = Path.of(uriToPath(uri))
-        val outputDir = filePath.getParent match
-          case null => "out"
-          case dir => dir.resolve("out").toString
-        val config =
-          if isLib then CompilerConfig.library(outputDir)
-          else CompilerConfig.binary(outputDir)
+        val mode     = if isLib then CompilationMode.Library else CompilationMode.Binary
+        val config   = CompilerConfig.default.copy(mode = mode)
         val compile =
-          if isLib then CompilerApi.compileLibraryQuiet
-          else CompilerApi.compileBinaryQuiet
+          if isLib then CompilerApi.compileLibraryQuiet else CompilerApi.compileBinaryQuiet
         compile(filePath, config).flatMap {
           case Left(errorMsg) =>
             JsonRpc.writeResponse(
@@ -338,6 +340,56 @@ class LspHandler(
             )
         }
 
+  private def executeClean(id: ujson.Value): IO[Unit] =
+    CompilerApi.cleanQuiet("build").flatMap {
+      case Left(errorMsg) =>
+        JsonRpc.writeResponse(output, id, ujson.Obj("success" -> false, "message" -> errorMsg))
+      case Right(msg) =>
+        JsonRpc.writeResponse(output, id, ujson.Obj("success" -> true, "message" -> msg))
+    }
+
+  private def executeAst(id: ujson.Value, arguments: List[ujson.Value]): IO[Unit] =
+    arguments.headOption.flatMap(_.strOpt) match
+      case None =>
+        JsonRpc.writeError(
+          output,
+          id,
+          RpcError(RpcError.InvalidParams, "Missing file URI argument")
+        )
+      case Some(uri) =>
+        val filePath = Path.of(uriToPath(uri))
+        CompilerApi.processAstQuiet(filePath, CompilerConfig.default).flatMap {
+          case Left(errorMsg) =>
+            JsonRpc.writeResponse(output, id, ujson.Obj("success" -> false, "message" -> errorMsg))
+          case Right(astPath) =>
+            JsonRpc.writeResponse(
+              output,
+              id,
+              ujson.Obj("success" -> true, "message" -> s"AST written to $astPath")
+            )
+        }
+
+  private def executeIr(id: ujson.Value, arguments: List[ujson.Value]): IO[Unit] =
+    arguments.headOption.flatMap(_.strOpt) match
+      case None =>
+        JsonRpc.writeError(
+          output,
+          id,
+          RpcError(RpcError.InvalidParams, "Missing file URI argument")
+        )
+      case Some(uri) =>
+        val filePath = Path.of(uriToPath(uri))
+        CompilerApi.processIrQuiet(filePath, CompilerConfig.default).flatMap {
+          case Left(errorMsg) =>
+            JsonRpc.writeResponse(output, id, ujson.Obj("success" -> false, "message" -> errorMsg))
+          case Right(irPath) =>
+            JsonRpc.writeResponse(
+              output,
+              id,
+              ujson.Obj("success" -> true, "message" -> s"IR written to $irPath")
+            )
+        }
+
   private def uriToPath(uri: String): String =
     if uri.startsWith("file://") then uri.stripPrefix("file://")
     else uri
@@ -347,7 +399,10 @@ object LspCommands:
   val Restart:    String       = "mml.server.restart"
   val CompileBin: String       = "mml.server.compileBin"
   val CompileLib: String       = "mml.server.compileLib"
-  val all:        List[String] = List(Restart, CompileBin, CompileLib)
+  val Clean:      String       = "mml.server.clean"
+  val Ast:        String       = "mml.server.ast"
+  val Ir:         String       = "mml.server.ir"
+  val all:        List[String] = List(Restart, CompileBin, CompileLib, Clean, Ast, Ir)
 
 object LspHandler:
 

@@ -129,6 +129,24 @@ export function activate(context: vscode.ExtensionContext) {
         })
     );
 
+    context.subscriptions.push(
+        vscode.commands.registerCommand('mml.clean', async () => {
+            await executeCompileCommand('mml.server.clean', 'Cleaning build directory...');
+        })
+    );
+
+    context.subscriptions.push(
+        vscode.commands.registerCommand('mml.ast', async () => {
+            await executeCompileCommand('mml.server.ast', 'Generating AST...');
+        })
+    );
+
+    context.subscriptions.push(
+        vscode.commands.registerCommand('mml.ir', async () => {
+            await executeCompileCommand('mml.server.ir', 'Generating IR...');
+        })
+    );
+
     // Check if there's already an active .mml file
     const activeEditor = vscode.window.activeTextEditor;
     if (activeEditor && activeEditor.document.languageId === 'mml') {
