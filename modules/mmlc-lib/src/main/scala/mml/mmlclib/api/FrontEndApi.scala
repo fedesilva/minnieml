@@ -30,7 +30,7 @@ object FrontEndApi:
     sourcePath: Option[String] = None
   ): CompilerEffect[CompilerState] =
     EitherT.liftF(
-      IO.delay {
+      IO.blocking {
         val ingestState = IngestStage.fromSource(source, name, config, sourcePath)
         SemanticStage.rewrite(ingestState)
       }

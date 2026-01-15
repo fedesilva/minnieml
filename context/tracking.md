@@ -41,7 +41,7 @@ and unlocks `noalias` parameter attributes for LLVM optimization.
 3. Implement OwnershipAnalyzer phase
 4. Write programs, find edge cases, iterate
 
-### Lsp cats warnings
+### [COMPLETE - pending validation] Lsp cats warnings
 
 * we need a blocking pool to run the compilation (after the above is fixed)
 
@@ -52,6 +52,9 @@ and unlocks `noalias` parameter attributes for LLVM optimization.
 * clean
 * ast
 * ir
+
+all should work like the ones we have now.
+in terms of messages, etc
 
 ### TARGET CPU
 
@@ -91,6 +94,12 @@ TBD
   Plain text messages without ANSI codes.
 - **VSCode extension**: Updated to display error messages from LSP and log them
   to output channel.
+- **IO.blocking for LSP**: Changed blocking operations to use `IO.blocking`:
+  - `FrontEndApi.compile` - parsing/semantic analysis
+  - `LlvmToolchain` - process execution, file I/O (collectLlvmToolVersions,
+    queryAndCacheTriple, queryLocalTriple, extractRuntimeResource, executeCommand,
+    checkLlvmTools, invalidateToolsMarker)
+  - `CompilerApi.runPipelineQuiet` - codegen validation
 
 ### 2026-01-14 (branch: 2026-01-14-dev)
 

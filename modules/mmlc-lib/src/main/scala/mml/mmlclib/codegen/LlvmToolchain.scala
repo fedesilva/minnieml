@@ -108,7 +108,7 @@ object LlvmToolchain:
     */
   def collectLlvmToolVersions(
     tools: List[String] = baseLlvmTools
-  ): IO[ToolInfo] = IO {
+  ): IO[ToolInfo] = IO.blocking {
     tools.foldLeft(ToolInfo(Map.empty[String, String], Nil)) {
       case (ToolInfo(versions, missing), tool) =>
         try
@@ -162,7 +162,7 @@ object LlvmToolchain:
 
   private def queryAndCacheTriple(
     cacheFile: java.nio.file.Path
-  ): IO[Either[LlvmCompilationError, String]] = IO {
+  ): IO[Either[LlvmCompilationError, String]] = IO.blocking {
     try
       val rawTriple = Process("clang -print-target-triple").!!.trim
       val triple    = normalizeTriple(rawTriple)
@@ -196,7 +196,7 @@ object LlvmToolchain:
       case _ => triple
 
   /** Query the local target triple without caching. For info/diagnostic commands. */
-  def queryLocalTriple: IO[Option[String]] = IO {
+  def queryLocalTriple: IO[Option[String]] = IO.blocking {
     try
       val rawTriple = Process("clang -print-target-triple").!!.trim
       val triple    = normalizeTriple(rawTriple)
@@ -718,7 +718,7 @@ object LlvmToolchain:
       logDebug(s"Runtime source already exists at $sourcePath", verbose)
       IO.pure(sourcePath.asRight)
     else
-      IO {
+      IO.blocking {
         try {
           logPhase("Extracting MML runtime source", printPhases)
           logDebug(s"Destination: $sourcePath", verbose)
@@ -1098,7 +1098,7 @@ object LlvmToolchain:
     verbose:          Boolean = false
   ): IO[Either[LlvmCompilationError, Int]] =
     IO.defer {
-      val setupDir = IO {
+      val setupDir = IO.blocking {
         val workingDirAbsolute = Paths.get(workingDirectory).toAbsolutePath.toString
         val workingDirFile     = new File(workingDirAbsolute)
         if !workingDirFile.exists() then {
@@ -1111,7 +1111,7 @@ object LlvmToolchain:
       }
 
       setupDir.flatMap { workingDirFile =>
-        IO {
+        IO.blocking {
           try {
             val exitCode = Process(cmd, workingDirFile).!
             if exitCode != 0 then {
@@ -1180,7 +1180,7 @@ object LlvmToolchain:
           .format(java.time.format.DateTimeFormatter.ISO_LOCAL_DATE_TIME)
         result <- collectLlvmToolVersions(tools).flatMap { case ToolInfo(versions, missingTools) =>
           if missingTools.isEmpty then
-            IO {
+            IO.blocking {
               try {
                 Files.createDirectories(markerFilePath.getParent)
                 val content = new StringBuilder()
@@ -1198,7 +1198,7 @@ object LlvmToolchain:
               }
             }
           else
-            IO {
+            IO.pure {
               val toolsMessage = missingTools.mkString(", ")
               logError(s"Required LLVM tools not found: $toolsMessage")
               logError(llvmInstallInstructions)
@@ -1232,7 +1232,7 @@ object LlvmToolchain:
   private def logDebug(message: String, verbose: Boolean): Unit =
     if verbose then println(s"  ${message}")
 
-  private def invalidateToolsMarker(workingDirectory: String): IO[Unit] = IO {
+  private def invalidateToolsMarker(workingDirectory: String): IO[Unit] = IO.blocking {
     val timestamp = java.time.LocalDateTime
       .now()
       .format(java.time.format.DateTimeFormatter.ISO_LOCAL_DATE_TIME)
