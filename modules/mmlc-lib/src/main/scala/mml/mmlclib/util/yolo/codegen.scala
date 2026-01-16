@@ -12,7 +12,7 @@ def codegen(input: String): Unit =
     case Right(state) =>
       if state.errors.nonEmpty then println(s"Compilation failed:\n${state.errors}")
       else
-        CodegenStage.processIrOnly(state).unsafeRunSync() match
+        CodegenStage.emitIrOnly(state).unsafeRunSync() match
           case finalState =>
             finalState.llvmIr match
               case Some(ir) => println(s"Generated code:\n$ir")

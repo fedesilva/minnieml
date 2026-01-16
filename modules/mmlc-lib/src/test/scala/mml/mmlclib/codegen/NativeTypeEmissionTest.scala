@@ -39,7 +39,7 @@ class NativeTypeEmissionTest extends BaseEffFunSuite:
           )
         else
           // If compilation succeeded, let's try codegen to see if it fails there
-          val validated = CodegenStage.process(state)
+          val validated = CodegenStage.validate(state)
           if validated.hasErrors then
             IO(
               assert(
@@ -48,7 +48,7 @@ class NativeTypeEmissionTest extends BaseEffFunSuite:
               )
             )
           else
-            CodegenStage.processIrOnly(validated).map { codegenState =>
+            CodegenStage.emitIrOnly(validated).map { codegenState =>
               codegenState.llvmIr match
                 case Some(_) =>
                   fail("Expected codegen to fail with undefined type reference")

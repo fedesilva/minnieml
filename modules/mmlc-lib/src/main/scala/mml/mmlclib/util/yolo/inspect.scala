@@ -126,12 +126,12 @@ def rewrite(
     s"Tail Recursion phase \n${prettyPrintAst(finalState.module, showTypes = showTypes, showSourceSpans = showSpans)}"
   )
 
-  val validated = CodegenStage.process(finalState)
+  val validated = CodegenStage.validate(finalState)
   if validated.errors.nonEmpty then
     println("-" * 80)
     println(s"Pre-codegen validation errors:\n${validated.errors.toList}")
   else if showIr then
-    CodegenStage.processIrOnly(validated).unsafeRunSync() match
+    CodegenStage.emitIrOnly(validated).unsafeRunSync() match
       case codegenState =>
         codegenState.llvmIr match
           case Some(ir) =>
