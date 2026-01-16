@@ -31,11 +31,12 @@ Ideally, independent tasks.
   - we need selection 
     - (Module.member or Module.Module.member)
       - ref resolver will have to work with this.
+      - we already have a form of selection for structs.
   - all the semantic phases need to be able to walk through selections
     - ref resolver
     - type resolver
     - typeChecker
-    * expression rewriter probably does not need it.
+    * expression rewriter?
       
  
 #### Introduce the concept of package.
@@ -54,7 +55,7 @@ A container for all the modules of the program and the build metadata.
 ## Compilation algorithm
 
 in parallel:
-* find a parse all files.
+* find and parse all files.
 * each folder inside the package is a module.
 * initial phase
    * resolve internal value references
