@@ -14,9 +14,6 @@ import java.nio.file.{Files, Path}
 
 object CodegenStage:
 
-  //
-  // LlvmToolchain.checkLlvmTools(workingDirectory, verbose, printPhases)
-
   /** Pure pipeline: validation only. */
   def validate(state: CompilerState): CompilerState =
     state |> CompilerState.timePhase("codegen", "pre-codegen-validation")(runValidation)
@@ -25,12 +22,14 @@ object CodegenStage:
   def emitIrOnly(state: CompilerState): IO[CompilerState] =
     IO.pure(state)
       |> CompilerState.timePhaseIO("codegen", "resolve-triple")(resolveTriple)
+      |> CompilerState.timePhaseIO("codegen", "llvm-info")(llvmInfo)
       |> CompilerState.timePhaseIO("codegen", "emit-llvm-ir")(emitIr)
 
   /** Effectful pipeline: resolve triple + emit IR + native compilation. */
   def processNative(state: CompilerState): IO[CompilerState] =
     IO.pure(state)
       |> CompilerState.timePhaseIO("codegen", "resolve-triple")(resolveTriple)
+      |> CompilerState.timePhaseIO("codegen", "llvm-info")(llvmInfo)
       |> CompilerState.timePhaseIO("codegen", "emit-llvm-ir")(emitIr)
       |> CompilerState.timePhaseIO("codegen", "write-llvm-ir")(writeIr)
       |> compileNative
@@ -52,6 +51,16 @@ object CodegenStage:
         .map {
           case Left(error) => state.addError(error).withCanEmitCode(false)
           case Right(triple) => state.withResolvedTriple(triple)
+        }
+
+  private def llvmInfo(state: CompilerState): IO[CompilerState] =
+    if !state.canEmitCode then IO.pure(state)
+    else
+      LlvmToolchain
+        .gatherLlvmInfo(state.config.outputDir, state.config.verbose, state.config.printPhases)
+        .map {
+          case Left(error) => state.addError(error).withCanEmitCode(false)
+          case Right(_) => state
         }
 
   private def emitIr(state: CompilerState): IO[CompilerState] =

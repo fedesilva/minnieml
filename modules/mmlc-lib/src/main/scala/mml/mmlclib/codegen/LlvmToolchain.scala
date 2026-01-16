@@ -68,8 +68,8 @@ object LlvmToolchain:
           )
         }
 
-  /** Marker file name to cache successful LLVM tool checks */
-  private val llvmCheckMarkerFile = "llvm-check-ok"
+  /** Marker file name to cache LLVM tool info */
+  private val llvmInfoFile = "llvm-info"
 
   /** File name to cache the local target triple */
   private val localTargetTripleFile = "local-target-triple"
@@ -187,12 +187,12 @@ object LlvmToolchain:
     catch case _: Exception => None
   }
 
-  /** Parse Host CPU from the llvm-check-ok marker if available. */
+  /** Parse Host CPU from the llvm-info marker if available. */
   def readHostCpu(buildDir: String): Option[String] =
     def findMarker(path: Path): Option[Path] =
       if path == null then None
       else
-        val candidate = path.resolve(llvmCheckMarkerFile)
+        val candidate = path.resolve(llvmInfoFile)
         if Files.exists(candidate) then Some(candidate)
         else findMarker(path.getParent)
 
@@ -265,15 +265,7 @@ object LlvmToolchain:
         _ <- IO(logInfo(s"Working directory: ${config.outputDir}", config.printPhases))
         _ <- IO(logInfo(s"Compilation mode: ${config.mode}", config.printPhases))
         _ <- createOutputDir(config.outputDir, config.printPhases)
-        toolsCheckResult <-
-          timedStep("llvm-check-tools", recordTiming)(
-            checkLlvmTools(config.outputDir, config.verbose, config.printPhases)
-          )
-        result <- toolsCheckResult match
-          case Left(error) =>
-            IO.pure(error.asLeft)
-          case Right(_) =>
-            processLlvmFile(inputFile, config, resolvedTriple, targetCpu, recordTiming)
+        result <- processLlvmFile(inputFile, config, resolvedTriple, targetCpu, recordTiming)
       yield result
 
   private def processLlvmFile(
@@ -364,7 +356,6 @@ object LlvmToolchain:
             config,
             outputDir,
             clangFlags,
-            targetCpu,
             recordTiming
           )
         else IO.pure(programBitcode.asRight)
@@ -626,8 +617,7 @@ object LlvmToolchain:
     outputDir:    Path,
     targetTriple: String,
     config:       CompilerConfig,
-    clangFlags:   List[String],
-    targetCpu:    Option[String]
+    clangFlags:   List[String]
   ): IO[Either[LlvmCompilationError, String]] = IO.defer {
     val runtimeFilename = mmlRuntimeBitcodeFilename(targetTriple)
     val bcPath          = outputDir.resolve(runtimeFilename).toAbsolutePath
@@ -646,7 +636,7 @@ object LlvmToolchain:
             logDebug(s"Input file: $sourcePath", config.verbose)
             logDebug(s"Output file: $bcPath", config.verbose)
 
-            val cpuFlags = targetCpu.map(cpu => List(s"-mcpu=$cpu")).getOrElse(Nil)
+            val cpuFlags = config.targetCpu.map(cpu => List(s"-mcpu=$cpu")).getOrElse(Nil)
             val cmd = (List(
               "clang",
               "-target",
@@ -675,7 +665,6 @@ object LlvmToolchain:
     config:       CompilerConfig,
     outputDir:    Path,
     clangFlags:   List[String],
-    targetCpu:    Option[String],
     recordTiming: Option[TimingRecorder]
   ): IO[Either[LlvmCompilationError, String]] =
     val programBitcode = outputDir.resolve(s"$programName.bc").toAbsolutePath.toString
@@ -683,7 +672,7 @@ object LlvmToolchain:
 
     for
       runtimeResult <- timedStep("llvm-runtime-bitcode", recordTiming)(
-        compileRuntimeBitcode(outputDir, targetTriple, config, clangFlags, targetCpu)
+        compileRuntimeBitcode(outputDir, targetTriple, config, clangFlags)
       )
       result <- runtimeResult match
         case Left(error) => IO.pure(error.asLeft)
@@ -908,12 +897,12 @@ object LlvmToolchain:
       }
     }
 
-  private def checkLlvmTools(
+  def gatherLlvmInfo(
     buildDir:    Path,
     verbose:     Boolean,
     printPhases: Boolean
   ): IO[Either[LlvmCompilationError, Unit]] = IO.defer {
-    val markerFilePath = buildDir.resolve(llvmCheckMarkerFile)
+    val markerFilePath = buildDir.resolve(llvmInfoFile)
     if Files.exists(markerFilePath) && markerHasTools(markerFilePath, llvmTools) then
       logDebug(s"LLVM tools already verified (marker file exists)", verbose)
       if verbose then {
@@ -996,8 +985,8 @@ object LlvmToolchain:
       .now()
       .format(java.time.format.DateTimeFormatter.ISO_LOCAL_DATE_TIME)
       .replace(":", "-")
-    val currentMarker  = buildDir.resolve(llvmCheckMarkerFile)
-    val archivedMarker = buildDir.resolve(s"$llvmCheckMarkerFile-$timestamp")
+    val currentMarker  = buildDir.resolve(llvmInfoFile)
+    val archivedMarker = buildDir.resolve(s"$llvmInfoFile-$timestamp")
     if Files.exists(currentMarker) then {
       try {
         Files.move(currentMarker, archivedMarker)
