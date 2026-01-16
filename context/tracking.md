@@ -21,13 +21,6 @@
 
 ## Active Tasks
 
-
-### [COMPLETE] bad ordering of steps
-
-resolveTargetCpu depends on the llvm-check-ok
-file but it is generated AFTER.
-
-
 ### Simple Memory Management Prototype
 
 **Doc:** `docs/brainstorming/mem-man/1-simple-mem-prototype.md`
