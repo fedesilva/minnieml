@@ -41,23 +41,8 @@ and unlocks `noalias` parameter attributes for LLVM optimization.
 3. Implement OwnershipAnalyzer phase
 4. Write programs, find edge cases, iterate
 
-### [COMPLETE] Lsp cats warnings
 
-* Added heartbeat fiber (50ms sleep + cede loop) - fixes idle warning during active use
-* Still occurs after laptop sleep/wake - possibly clock skew related, low priority
-
-2026-01-15T16:30:02.085Z [WARNING] Your app's responsiveness to a new asynchronous event (such as a new connection, an upstream response, or a timer) was in excess of 100 milliseconds. Your CPU is probably starving. Consider increasing the granularity of your delays or adding more cedes. This may also be a sign that you are unintentionally running blocking I/O operations (such as File or InetAddress) without the blocking combinator.
-
-### [COMPLETE] Lsp Commands
-
-* clean
-* ast
-* ir
-
-all should work like the ones we have now.
-in terms of messages, etc
-
-### TARGET CPU
+### TARGET CPU [COMPLETE]
 
 we are generating the target-cpu attribute and annotating with it all definitions.
 BUT this will not work for cross compilation.
@@ -85,6 +70,12 @@ TBD
 
 ### 2026-01-15 (branch: 2026-01-14-dev)
 
+- **TARGET CPU fix for cross-compilation**: Removed `--arch`/`-A` flag entirely.
+  Fixed `target-cpu` IR attribute logic: explicit `--cpu` uses that value,
+  `--target` without `--cpu` omits attribute (cross-compiling), neither uses
+  host CPU. Simplified clang flags: `-march=native` for local builds only,
+  no CPU flags for cross-compilation. Fixes "skylake is not a recognized
+  processor" warnings when cross-compiling to aarch64.
 - **LSP in-process compilation**: LSP no longer forks mmlc process for compile
   commands. Added `CompilerApi.compileBinaryQuiet` and `compileLibraryQuiet`
   methods that return error messages instead of printing. `LspHandler` now calls
