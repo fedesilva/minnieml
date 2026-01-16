@@ -10,15 +10,26 @@ object AliasScopeEmitter:
     typeSpec: Type,
     state:    CodeGenState
   ): (CodeGenState, Option[String], Option[String]) =
-    TypeNameResolver.getMmlTypeName(typeSpec, state.resolvables) match
-      case Right(typeName) =>
-        val (nextState, aliasTag, noaliasTag) = getAliasScopeTagsByName(typeName, state)
-        (nextState, Some(aliasTag), noaliasTag)
-      case Left(_) =>
-        (state, None, None)
+    if !state.emitAliasScopes then (state, None, None)
+    else
+      TypeNameResolver.getMmlTypeName(typeSpec, state.resolvables) match
+        case Right(typeName) =>
+          val (nextState, aliasTag, noaliasTag) = getAliasScopeTagsByNameImpl(typeName, state)
+          (nextState, Some(aliasTag), noaliasTag)
+        case Left(_) =>
+          (state, None, None)
 
   /** Returns alias scope/noalias tags for the provided type name. */
   def getAliasScopeTagsByName(
+    typeName: String,
+    state:    CodeGenState
+  ): (CodeGenState, Option[String], Option[String]) =
+    if !state.emitAliasScopes then (state, None, None)
+    else
+      val (nextState, aliasTag, noaliasTag) = getAliasScopeTagsByNameImpl(typeName, state)
+      (nextState, Some(aliasTag), noaliasTag)
+
+  private def getAliasScopeTagsByNameImpl(
     typeName: String,
     state:    CodeGenState
   ): (CodeGenState, String, Option[String]) =

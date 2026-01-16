@@ -399,7 +399,7 @@ private def buildAliasTags(
   labels: List[String],
   state:  CodeGenState
 ): (CodeGenState, Option[String], Option[String]) =
-  if labels.isEmpty then (state, None, None)
+  if labels.isEmpty || !state.emitAliasScopes then (state, None, None)
   else
     val (stateWithScopes, scopeIds) = labels.foldLeft((state, List.empty[Int])) {
       case ((s, acc), label) =>

@@ -147,7 +147,7 @@ def compileLiteralString(
           "i64",
           s"%$lenPtrReg",
           Some(lenTag),
-          Some(lenAliasTag),
+          lenAliasTag,
           lenNoaliasTag
         )
       val stateWithLenStore = stateWithLenAlias.emit(lenStoreLine)
@@ -170,7 +170,7 @@ def compileLiteralString(
           "i8*",
           s"%$dataPtrReg",
           Some(dataTag),
-          Some(dataAliasTag),
+          dataAliasTag,
           dataNoaliasTag
         )
       val stateWithDataStore = stateWithDataAlias.emit(dataStoreLine)
