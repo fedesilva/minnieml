@@ -15,12 +15,15 @@ import java.nio.file.{Files, Path}
 
 object CodegenStage:
 
+  // 
+  // LlvmToolchain.checkLlvmTools(workingDirectory, verbose, printPhases) 
+
   /** Pure pipeline: validation only. */
-  def process(state: CompilerState): CompilerState =
-    state |> CompilerState.timePhase("codegen", "pre-codegen-validation")(validate)
+  def validate(state: CompilerState): CompilerState =
+    state |> CompilerState.timePhase("codegen", "pre-codegen-validation")(runValidation)
 
   /** Effectful pipeline: resolve triple + emit IR only. */
-  def processIrOnly(state: CompilerState): IO[CompilerState] =
+  def emitIrOnly(state: CompilerState): IO[CompilerState] =
     IO.pure(state)
       |> CompilerState.timePhaseIO("codegen", "resolve-triple")(resolveTriple)
       |> CompilerState.timePhaseIO("codegen", "emit-llvm-ir")(emitIr)
@@ -35,12 +38,12 @@ object CodegenStage:
 
   // --- Private pipeline steps ---
 
-  private def validate(state: CompilerState): CompilerState =
+  private def runValidation(state: CompilerState): CompilerState =
     if state.hasErrors then state.withCanEmitCode(false)
     else
       val validated = PreCodegenValidator.validate(state.config.mode)(state)
-      if validated.hasErrors then validated.withCanEmitCode(false)
-      else validated
+      if validated.hasErrors then validated
+      else validated.withCanEmitCode(true)
 
   private def resolveTriple(state: CompilerState): IO[CompilerState] =
     if !state.canEmitCode then IO.pure(state)

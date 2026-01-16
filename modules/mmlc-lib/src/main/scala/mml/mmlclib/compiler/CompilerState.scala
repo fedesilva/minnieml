@@ -16,7 +16,7 @@ case class CompilerState(
   warnings:       Vector[CompilerWarning],
   timings:        Vector[Timing],
   entryPoint:     Option[String] = None,
-  canEmitCode:    Boolean        = true,
+  canEmitCode:    Boolean        = false,
   llvmIr:         Option[String] = None,
   nativeResult:   Option[Int]    = None,
   resolvedTriple: Option[String] = None

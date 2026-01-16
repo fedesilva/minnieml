@@ -45,11 +45,8 @@ enum LlvmCompilationError extends CompilationError derives CanEqual:
 object LlvmToolchain:
 
   /** List of required LLVM tools */
-  private val baseLlvmTools = List("llvm-as", "llvm-link", "opt", "llc", "clang")
-  private val optIrTools    = List("llvm-dis")
+  private val llvmTools = List("llvm-as", "llvm-link", "opt", "llc", "clang", "llvm-dis")
 
-  private def requiredLlvmTools(emitOptIr: Boolean): List[String] =
-    if emitOptIr then baseLlvmTools ++ optIrTools else baseLlvmTools
 
   private type TimingRecorder = PipelineTiming => Unit
 
@@ -94,10 +91,8 @@ object LlvmToolchain:
     * @return
     *   An IO effect with ToolInfo containing tool version info and missing tools.
     */
-  def collectLlvmToolVersions(
-    tools: List[String] = baseLlvmTools
-  ): IO[ToolInfo] = IO.blocking {
-    tools.foldLeft(ToolInfo(Map.empty[String, String], Nil)) {
+  def collectLlvmToolVersions(): IO[ToolInfo] = IO.blocking {
+    llvmTools.foldLeft(ToolInfo(Map.empty[String, String], Nil)) {
       case (ToolInfo(versions, missing), tool) =>
         try
           val output = new StringBuilder
@@ -312,7 +307,7 @@ object LlvmToolchain:
         _ <- createOutputDir(workingDirectory, printPhases)
         toolsCheckResult <-
           timedStep("llvm-check-tools", recordTiming)(
-            checkLlvmTools(workingDirectory, verbose, requiredLlvmTools(emitOptIr), printPhases)
+            checkLlvmTools(workingDirectory, verbose, printPhases)
           )
         result <- toolsCheckResult match
           case Left(error) =>
@@ -1141,12 +1136,12 @@ object LlvmToolchain:
 
   private def checkLlvmTools(
     buildDir:    String,
-    verbose:     Boolean,
-    tools:       List[String],
+    verbose:     Boolean,  
     printPhases: Boolean
   ): IO[Either[LlvmCompilationError, Unit]] = IO.defer {
+    //TODO: we should get the compiler config and use the path
     val markerFilePath = Paths.get(buildDir).resolve(llvmCheckMarkerFile)
-    if Files.exists(markerFilePath) && markerHasTools(markerFilePath, tools) then
+    if Files.exists(markerFilePath) && markerHasTools(markerFilePath, llvmTools) then
       logDebug(s"LLVM tools already verified (marker file exists)", verbose)
       if verbose then {
         try {
@@ -1163,11 +1158,11 @@ object LlvmToolchain:
         _ <-
           if Files.exists(markerFilePath) then invalidateToolsMarker(buildDir)
           else IO.unit
-        _ <- IO(logPhase(s"Checking for required LLVM tools: ${tools.mkString(", ")}", printPhases))
+        _ <- IO(logPhase(s"Checking for required LLVM tools: ${llvmTools.mkString(", ")}", printPhases))
         timestamp = java.time.LocalDateTime
           .now()
           .format(java.time.format.DateTimeFormatter.ISO_LOCAL_DATE_TIME)
-        result <- collectLlvmToolVersions(tools).flatMap { case ToolInfo(versions, missingTools) =>
+        result <- collectLlvmToolVersions().flatMap { case ToolInfo(versions, missingTools) =>
           if missingTools.isEmpty then
             IO.blocking {
               try {
