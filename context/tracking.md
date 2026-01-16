@@ -21,6 +21,24 @@
 
 ## Active Tasks
 
+
+### Native cpu
+
+if no -cpu is passed, we should be loading the information in
+`${build-dir}/llvm-check-ok` to extract the cpu
+
+There is (at least) one entry like this:
+`  Host CPU: skylake`
+
+This cpu string should is passed to ALL the llvm toolchain calls that accept it
+and a target-cpu attribute needs to be generated.
+
+However this is not working, at some point we broke the compiler and it's 
+not generating the target-cpu attribute.
+
+NEED TO FIX
+
+
 ### Simple Memory Management Prototype
 
 **Doc:** `docs/brainstorming/mem-man/1-simple-mem-prototype.md`
@@ -41,22 +59,6 @@ and unlocks `noalias` parameter attributes for LLVM optimization.
 3. Implement OwnershipAnalyzer phase
 4. Write programs, find edge cases, iterate
 
-
-### TARGET CPU [COMPLETE]
-
-we are generating the target-cpu attribute and annotating with it all definitions.
-BUT this will not work for cross compilation.
-
-currently we have cpu and arch flags:
-
-* remove the arch flag
-  - stop passing both flags to opt and clang.
-* change how emittig the target-cpu attribute  works
-  - if present use that to generate the attribute
-* if a target triple is passed we should not use the llvm-check-ok data
-  since that most likely means we are cross compiling.
-
-2. it should return useful information the editor can display
 
 
 ### Runtime: time functions
