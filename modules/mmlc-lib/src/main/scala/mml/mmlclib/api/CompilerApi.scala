@@ -70,7 +70,7 @@ object CompilerApi:
     runFrontend(path, config).flatMap {
       case Left(exit) => IO.pure(Left(exit))
       case Right(state) =>
-        val validated = CodegenStage.process(state)
+        val validated = CodegenStage.validate(state)
         if validated.hasErrors then
           IO.println(compilationFailed(prettyPrintStateErrors(validated)))
             *> maybePrintTimings(validated).as(Left(ExitCode.Error))
@@ -143,10 +143,10 @@ object CompilerApi:
       case Right(state) if state.hasErrors =>
         IO.pure(Left(plainErrorMessage(state)))
       case Right(state) =>
-        IO.blocking(CodegenStage.process(state)).flatMap { validated =>
+        IO.blocking(CodegenStage.validate(state)).flatMap { validated =>
           if validated.hasErrors then IO.pure(Left(plainErrorMessage(validated)))
           else
-            CodegenStage.processIrOnly(validated).flatMap { finalState =>
+            CodegenStage.emitIrOnly(validated).flatMap { finalState =>
               finalState.llvmIr match
                 case Some(ir) =>
                   writeIrQuiet(
@@ -207,7 +207,7 @@ object CompilerApi:
       case Right(state) if state.hasErrors =>
         IO.pure(Left(plainErrorMessage(state)))
       case Right(state) =>
-        IO.blocking(CodegenStage.process(state)).map { validated =>
+        IO.blocking(CodegenStage.validate(state)).map { validated =>
           if validated.hasErrors then Left(plainErrorMessage(validated))
           else Right(validated)
         }
@@ -246,7 +246,7 @@ object CompilerApi:
     runPipeline(path, config).flatMap {
       case Left(exit) => IO.pure(exit)
       case Right(state) =>
-        CodegenStage.processIrOnly(state).flatMap { finalState =>
+        CodegenStage.emitIrOnly(state).flatMap { finalState =>
           for
             _ <-
               if config.outputAst then FileOperations.writeAstToFile(finalState.module, outputDir)

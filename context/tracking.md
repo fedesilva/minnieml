@@ -22,21 +22,14 @@
 ## Active Tasks
 
 
-### Native cpu
+### Disastrous code
 
-if no -cpu is passed, we should be loading the information in
-`${build-dir}/llvm-check-ok` to extract the cpu
+see `context/specs/disastrous-code.md`
 
-There is (at least) one entry like this:
-`  Host CPU: skylake`
+### bad ordering of steps
 
-This cpu string should is passed to ALL the llvm toolchain calls that accept it
-and a target-cpu attribute needs to be generated.
-
-However this is not working, at some point we broke the compiler and it's 
-not generating the target-cpu attribute.
-
-NEED TO FIX
+resolveTargetCpu depends on the llvm-check-ok 
+file but it is generated AFTER.
 
 
 ### Simple Memory Management Prototype
