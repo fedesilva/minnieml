@@ -13,7 +13,6 @@ object CommandLineConfig:
       outputAst:    Boolean        = false,
       verbose:      Boolean        = false,
       targetTriple: Option[String] = None,
-      targetArch:   Option[String] = None,
       targetCpu:    Option[String] = None,
       noStackCheck: Boolean        = false,
       emitOptIr:    Boolean        = false,
@@ -29,7 +28,6 @@ object CommandLineConfig:
       outputAst:    Boolean        = false,
       verbose:      Boolean        = false,
       targetTriple: Option[String] = None,
-      targetArch:   Option[String] = None,
       targetCpu:    Option[String] = None,
       noStackCheck: Boolean        = false,
       emitOptIr:    Boolean        = false,
@@ -45,7 +43,6 @@ object CommandLineConfig:
       outputAst:    Boolean        = false,
       verbose:      Boolean        = false,
       targetTriple: Option[String] = None,
-      targetArch:   Option[String] = None,
       targetCpu:    Option[String] = None,
       noStackCheck: Boolean        = false,
       emitOptIr:    Boolean        = false,
@@ -109,11 +106,8 @@ object CommandLineConfig:
     val targetOpt = opt[String]('T', "target")
       .text("Target triple for cross-compilation (e.g., x86_64-pc-linux-gnu)")
 
-    val targetArchOpt = opt[String]('A', "arch")
-      .text("Target arch passed as -march when -T is provided")
-
     val targetCpuOpt = opt[String]('C', "cpu")
-      .text("Target CPU passed as -mcpu when -T is provided")
+      .text("Target CPU for cross-compilation (e.g., cortex-a53, apple-m1)")
 
     val noStackCheckOpt = opt[Unit]("no-stack-check")
       .text("Pass -fno-stack-check to clang")
@@ -182,12 +176,6 @@ object CommandLineConfig:
           targetOpt.action((triple, config) =>
             config.copy(command = config.command match {
               case bin: Command.Bin => bin.copy(targetTriple = Some(triple))
-              case cmd => cmd
-            })
-          ),
-          targetArchOpt.action((arch, config) =>
-            config.copy(command = config.command match {
-              case bin: Command.Bin => bin.copy(targetArch = Some(arch))
               case cmd => cmd
             })
           ),
@@ -277,12 +265,6 @@ object CommandLineConfig:
               case cmd => cmd
             })
           ),
-          targetArchOpt.action((arch, config) =>
-            config.copy(command = config.command match {
-              case run: Command.Run => run.copy(targetArch = Some(arch))
-              case cmd => cmd
-            })
-          ),
           targetCpuOpt.action((cpu, config) =>
             config.copy(command = config.command match {
               case run: Command.Run => run.copy(targetCpu = Some(cpu))
@@ -366,12 +348,6 @@ object CommandLineConfig:
           targetOpt.action((triple, config) =>
             config.copy(command = config.command match {
               case lib: Command.Lib => lib.copy(targetTriple = Some(triple))
-              case cmd => cmd
-            })
-          ),
-          targetArchOpt.action((arch, config) =>
-            config.copy(command = config.command match {
-              case lib: Command.Lib => lib.copy(targetArch = Some(arch))
               case cmd => cmd
             })
           ),

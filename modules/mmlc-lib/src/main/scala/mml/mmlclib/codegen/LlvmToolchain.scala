@@ -53,16 +53,8 @@ object LlvmToolchain:
 
   private type TimingRecorder = PipelineTiming => Unit
 
-  private def clangCpuFlags(
-    userProvidedTriple: Boolean,
-    targetArch:         Option[String],
-    targetCpu:          Option[String]
-  ): List[String] =
-    if userProvidedTriple then
-      List(
-        targetArch.map(arch => s"-march=$arch"),
-        targetCpu.map(cpu => s"-mcpu=$cpu")
-      ).flatten
+  private def clangCpuFlags(userProvidedTriple: Boolean): List[String] =
+    if userProvidedTriple then Nil
     else List("-march=native")
 
   private def clangStackProbeFlags(noStackCheck: Boolean): List[String] =
@@ -237,8 +229,6 @@ object LlvmToolchain:
     mode:             CompilationMode = CompilationMode.Binary,
     verbose:          Boolean         = false,
     targetTriple:     Option[String]  = None,
-    targetArch:       Option[String]  = None,
-    targetCpu:        Option[String]  = None,
     noStackCheck:     Boolean         = false,
     emitOptIr:        Boolean         = false,
     outputName:       Option[String]  = None,
@@ -252,8 +242,6 @@ object LlvmToolchain:
       mode,
       verbose,
       targetTriple,
-      targetArch,
-      targetCpu,
       noStackCheck,
       emitOptIr,
       outputName,
@@ -269,8 +257,6 @@ object LlvmToolchain:
     mode:             CompilationMode = CompilationMode.Binary,
     verbose:          Boolean         = false,
     targetTriple:     Option[String]  = None,
-    targetArch:       Option[String]  = None,
-    targetCpu:        Option[String]  = None,
     noStackCheck:     Boolean         = false,
     emitOptIr:        Boolean         = false,
     outputName:       Option[String]  = None,
@@ -286,8 +272,6 @@ object LlvmToolchain:
       mode,
       verbose,
       targetTriple,
-      targetArch,
-      targetCpu,
       noStackCheck,
       emitOptIr,
       outputName,
@@ -303,8 +287,6 @@ object LlvmToolchain:
     mode:             CompilationMode,
     verbose:          Boolean,
     targetTriple:     Option[String],
-    targetArch:       Option[String],
-    targetCpu:        Option[String],
     noStackCheck:     Boolean,
     emitOptIr:        Boolean,
     outputName:       Option[String],
@@ -341,8 +323,6 @@ object LlvmToolchain:
               mode,
               verbose,
               targetTriple,
-              targetArch,
-              targetCpu,
               noStackCheck,
               emitOptIr,
               outputName,
@@ -359,8 +339,6 @@ object LlvmToolchain:
     mode:             CompilationMode,
     verbose:          Boolean,
     targetTriple:     Option[String],
-    targetArch:       Option[String],
-    targetCpu:        Option[String],
     noStackCheck:     Boolean,
     emitOptIr:        Boolean,
     outputName:       Option[String],
@@ -395,8 +373,6 @@ object LlvmToolchain:
               mode,
               verbose,
               userProvidedTriple,
-              targetArch,
-              targetCpu,
               noStackCheck,
               emitOptIr,
               outputName,
@@ -418,8 +394,6 @@ object LlvmToolchain:
     mode:               CompilationMode,
     verbose:            Boolean,
     userProvidedTriple: Boolean,
-    targetArch:         Option[String],
-    targetCpu:          Option[String],
     noStackCheck:       Boolean,
     emitOptIr:          Boolean,
     outputName:         Option[String],
@@ -446,8 +420,6 @@ object LlvmToolchain:
           mode,
           verbose,
           userProvidedTriple,
-          targetArch,
-          targetCpu,
           noStackCheck,
           emitOptIr,
           outputName,
@@ -467,8 +439,6 @@ object LlvmToolchain:
     mode:               CompilationMode,
     verbose:            Boolean,
     userProvidedTriple: Boolean,
-    targetArch:         Option[String],
-    targetCpu:          Option[String],
     noStackCheck:       Boolean,
     emitOptIr:          Boolean,
     outputName:         Option[String],
@@ -480,7 +450,7 @@ object LlvmToolchain:
     import cats.data.EitherT
 
     val programBitcode = Paths.get(outputDir).resolve(s"$programName.bc").toAbsolutePath.toString
-    val clangFlags = clangCpuFlags(userProvidedTriple, targetArch, targetCpu) ++
+    val clangFlags = clangCpuFlags(userProvidedTriple) ++
       clangStackProbeFlags(noStackCheck)
 
     (for
