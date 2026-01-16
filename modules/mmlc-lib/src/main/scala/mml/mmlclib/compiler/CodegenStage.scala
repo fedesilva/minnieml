@@ -2,7 +2,6 @@ package mml.mmlclib.compiler
 
 import cats.effect.IO
 import mml.mmlclib.codegen.{
-  CompilationMode,
   LlvmCompilationError,
   LlvmIrEmitter,
   LlvmToolchain,
@@ -15,8 +14,8 @@ import java.nio.file.{Files, Path}
 
 object CodegenStage:
 
-  // 
-  // LlvmToolchain.checkLlvmTools(workingDirectory, verbose, printPhases) 
+  //
+  // LlvmToolchain.checkLlvmTools(workingDirectory, verbose, printPhases)
 
   /** Pure pipeline: validation only. */
   def validate(state: CompilerState): CompilerState =
@@ -48,9 +47,8 @@ object CodegenStage:
   private def resolveTriple(state: CompilerState): IO[CompilerState] =
     if !state.canEmitCode then IO.pure(state)
     else
-      val outputDir = state.config.outputDir.toString
       LlvmToolchain
-        .resolveTargetTriple(state.config.targetTriple, outputDir)
+        .resolveTargetTriple(state.config.targetTriple, state.config.outputDir.toString)
         .map {
           case Left(error) => state.addError(error).withCanEmitCode(false)
           case Right(triple) => state.withResolvedTriple(triple)
@@ -133,35 +131,16 @@ object CodegenStage:
   private def compileNative(state: CompilerState): IO[CompilerState] =
     if !state.canEmitCode || state.llvmIr.isEmpty then IO.pure(state)
     else
-      val irPath         = llvmIrPath(state)
-      val outputDir      = state.config.outputDir.toString
-      val verbose        = state.config.verbose
-      val triple         = state.resolvedTriple
-      val noStackCheck   = state.config.noStackCheck
-      val mode           = state.config.mode
-      val showTimings    = state.config.showTimings
-      val emitOptIr      = state.config.emitOptIr
-      val outputName     = state.config.outputName
-      val explicitTriple = state.config.targetTriple
-      val printPhases    = state.config.printPhases
-      val optLevel       = state.config.optLevel
-      val targetCpu      = resolveTargetCpu(state.config)
+      val irPath    = llvmIrPath(state)
+      val targetCpu = resolveTargetCpu(state.config)
 
-      val compileIo = selectCompileOperation(
-        irPath,
-        outputDir,
-        mode,
-        verbose,
-        triple,
-        noStackCheck,
-        emitOptIr,
-        showTimings,
-        outputName,
-        explicitTriple,
-        printPhases,
-        optLevel,
-        targetCpu
-      )
+      val compileIo =
+        if state.config.showTimings then
+          LlvmToolchain.compileWithTimings(irPath, state.config, state.resolvedTriple, targetCpu)
+        else
+          LlvmToolchain
+            .compile(irPath, state.config, state.resolvedTriple, targetCpu)
+            .map(_ -> Vector.empty[PipelineTiming])
 
       compileIo.map { case (result, stepTimings) =>
         val withSteps = stepTimings.foldLeft(state) { (s, t) =>
@@ -171,52 +150,3 @@ object CodegenStage:
           case Left(error) => withSteps.addError(error)
           case Right(code) => withSteps.withNativeResult(code)
       }
-
-  private def selectCompileOperation(
-    irPath:         Path,
-    outputDir:      String,
-    mode:           CompilationMode,
-    verbose:        Boolean,
-    triple:         Option[String],
-    noStackCheck:   Boolean,
-    emitOptIr:      Boolean,
-    showTimings:    Boolean,
-    outputName:     Option[String],
-    explicitTriple: Option[String],
-    printPhases:    Boolean,
-    optLevel:       Int,
-    targetCpu:      Option[String]
-  ): IO[(Either[LlvmCompilationError, Int], Vector[PipelineTiming])] =
-    val emptyTimings: Vector[PipelineTiming] = Vector.empty
-    if showTimings then
-      LlvmToolchain.compileWithTimings(
-        irPath,
-        outputDir,
-        mode,
-        verbose,
-        triple,
-        noStackCheck,
-        emitOptIr,
-        outputName,
-        explicitTriple,
-        printPhases,
-        optLevel,
-        targetCpu
-      )
-    else
-      LlvmToolchain
-        .compile(
-          irPath,
-          outputDir,
-          mode,
-          verbose,
-          triple,
-          noStackCheck,
-          emitOptIr,
-          outputName,
-          explicitTriple,
-          printPhases,
-          optLevel,
-          targetCpu
-        )
-        .map(_ -> emptyTimings)
