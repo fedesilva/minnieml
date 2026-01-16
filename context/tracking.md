@@ -22,10 +22,6 @@
 ## Active Tasks
 
 
-### Disastrous code
-
-see `context/specs/disastrous-code.md`
-
 ### bad ordering of steps
 
 resolveTargetCpu depends on the llvm-check-ok 
@@ -43,7 +39,7 @@ and unlocks `noalias` parameter attributes for LLVM optimization.
 - Borrow by default, explicit move with `~` syntax
 - Extend `@native` with `[mem=alloc]` / `[mem=static]` attributes
 - New OwnershipAnalyzer phase inserts `__free_T` calls into AST
-- `cap` field in String/Buffer for runtime ownership check (conditional merges)
+- `__cap` field in String/Buffer for runtime ownership check (conditional merges)
 - No codegen changes - just AST rewriting
 
 **Phases:**
@@ -65,6 +61,13 @@ TBD
 
 ### 2026-01-15 (branch: 2026-01-14-dev)
 
+- **Codegen config cleanup**: Refactored `LlvmToolchain` entry points from 12-13
+  individual parameters to 4 (`llvmIrPath`, `config`, `resolvedTriple`, `targetCpu`).
+  Pass `CompilerConfig` through internal chain instead of unpacking fields.
+  Changed `workingDirectory: String` to use `config.outputDir: Path` directly,
+  eliminating unnecessary Path→String→Path conversions. Simplified `CodegenStage.compileNative`,
+  removed redundant `selectCompileOperation` function. Emitter reviewed - uses
+  `CodeGenState` correctly, no changes needed.
 - **TARGET CPU fix for cross-compilation**: Removed `--arch`/`-A` flag entirely.
   Fixed `target-cpu` IR attribute logic: explicit `--cpu` uses that value,
   `--target` without `--cpu` omits attribute (cross-compiling), neither uses
