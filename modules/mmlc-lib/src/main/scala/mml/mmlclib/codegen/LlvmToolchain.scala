@@ -53,10 +53,6 @@ object LlvmToolchain:
 
   private type TimingRecorder = PipelineTiming => Unit
 
-  private def clangCpuFlags(userProvidedTriple: Boolean): List[String] =
-    if userProvidedTriple then Nil
-    else List("-march=native")
-
   private def clangStackProbeFlags(noStackCheck: Boolean): List[String] =
     if noStackCheck then List("-fno-stack-check") else Nil
 
@@ -234,7 +230,8 @@ object LlvmToolchain:
     outputName:       Option[String]  = None,
     explicitTriple:   Option[String]  = None,
     printPhases:      Boolean         = false,
-    optLevel:         Int             = 3
+    optLevel:         Int             = 3,
+    targetCpu:        Option[String]  = None
   ): IO[Either[LlvmCompilationError, Int]] =
     compileInternal(
       llvmIrPath,
@@ -248,7 +245,8 @@ object LlvmToolchain:
       explicitTriple,
       recordTiming = None,
       printPhases  = printPhases,
-      optLevel     = optLevel
+      optLevel     = optLevel,
+      targetCpu    = targetCpu
     )
 
   def compileWithTimings(
@@ -262,7 +260,8 @@ object LlvmToolchain:
     outputName:       Option[String]  = None,
     explicitTriple:   Option[String]  = None,
     printPhases:      Boolean         = false,
-    optLevel:         Int             = 3
+    optLevel:         Int             = 3,
+    targetCpu:        Option[String]  = None
   ): IO[(Either[LlvmCompilationError, Int], Vector[PipelineTiming])] =
     val timings = Vector.newBuilder[PipelineTiming]
     val record: TimingRecorder = timing => timings += timing
@@ -278,7 +277,8 @@ object LlvmToolchain:
       explicitTriple,
       recordTiming = Some(record),
       printPhases  = printPhases,
-      optLevel     = optLevel
+      optLevel     = optLevel,
+      targetCpu    = targetCpu
     ).map(result => result -> timings.result())
 
   private def compileInternal(
@@ -293,7 +293,8 @@ object LlvmToolchain:
     explicitTriple:   Option[String],
     recordTiming:     Option[TimingRecorder],
     printPhases:      Boolean,
-    optLevel:         Int
+    optLevel:         Int,
+    targetCpu:        Option[String]
   ): IO[Either[LlvmCompilationError, Int]] =
     val moduleName = programNameFrom(llvmIrPath)
     val inputFile  = llvmIrPath.toFile
@@ -329,7 +330,8 @@ object LlvmToolchain:
               explicitTriple,
               recordTiming,
               printPhases,
-              optLevel
+              optLevel,
+              targetCpu
             )
       yield result
 
@@ -345,7 +347,8 @@ object LlvmToolchain:
     explicitTriple:   Option[String],
     recordTiming:     Option[TimingRecorder],
     printPhases:      Boolean,
-    optLevel:         Int
+    optLevel:         Int,
+    targetCpu:        Option[String]
   ): IO[Either[LlvmCompilationError, Int]] =
     val programName   = programNameFrom(inputFile.toPath)
     val baseOutputDir = s"$workingDirectory/out"
@@ -358,8 +361,7 @@ object LlvmToolchain:
           IO(logError(s"Error detecting target triple: $error")) *>
             IO.pure(error.asLeft)
         case Right(triple) =>
-          val outputDir          = s"$baseOutputDir/$triple"
-          val userProvidedTriple = targetTriple.nonEmpty
+          val outputDir = s"$baseOutputDir/$triple"
           for
             _ <- createOutputDir(outputDir, printPhases)
             _ <- createOutputDir(targetDir, printPhases)
@@ -372,14 +374,14 @@ object LlvmToolchain:
               targetDir,
               mode,
               verbose,
-              userProvidedTriple,
               noStackCheck,
               emitOptIr,
               outputName,
               explicitTriple,
               recordTiming,
               printPhases,
-              optLevel
+              optLevel,
+              targetCpu
             )
           yield result
     yield result
@@ -393,14 +395,14 @@ object LlvmToolchain:
     targetDir:          String,
     mode:               CompilationMode,
     verbose:            Boolean,
-    userProvidedTriple: Boolean,
     noStackCheck:       Boolean,
     emitOptIr:          Boolean,
     outputName:         Option[String],
     explicitTriple:     Option[String],
     recordTiming:       Option[TimingRecorder],
     printPhases:        Boolean,
-    optLevel:           Int
+    optLevel:           Int,
+    targetCpu:          Option[String]
   ): IO[Either[LlvmCompilationError, Int]] =
     targetTripleResult match
       case Left(error) =>
@@ -419,39 +421,38 @@ object LlvmToolchain:
           targetDir,
           mode,
           verbose,
-          userProvidedTriple,
           noStackCheck,
           emitOptIr,
           outputName,
           explicitTriple,
           recordTiming,
           printPhases,
-          optLevel
+          optLevel,
+          targetCpu
         )
 
   private def runCompilationPipeline(
-    inputFile:          File,
-    programName:        String,
-    targetTriple:       String,
-    workingDirectory:   String,
-    outputDir:          String,
-    targetDir:          String,
-    mode:               CompilationMode,
-    verbose:            Boolean,
-    userProvidedTriple: Boolean,
-    noStackCheck:       Boolean,
-    emitOptIr:          Boolean,
-    outputName:         Option[String],
-    explicitTriple:     Option[String],
-    recordTiming:       Option[TimingRecorder],
-    printPhases:        Boolean,
-    optLevel:           Int
+    inputFile:        File,
+    programName:      String,
+    targetTriple:     String,
+    workingDirectory: String,
+    outputDir:        String,
+    targetDir:        String,
+    mode:             CompilationMode,
+    verbose:          Boolean,
+    noStackCheck:     Boolean,
+    emitOptIr:        Boolean,
+    outputName:       Option[String],
+    explicitTriple:   Option[String],
+    recordTiming:     Option[TimingRecorder],
+    printPhases:      Boolean,
+    optLevel:         Int,
+    targetCpu:        Option[String]
   ): IO[Either[LlvmCompilationError, Int]] =
     import cats.data.EitherT
 
     val programBitcode = Paths.get(outputDir).resolve(s"$programName.bc").toAbsolutePath.toString
-    val clangFlags = clangCpuFlags(userProvidedTriple) ++
-      clangStackProbeFlags(noStackCheck)
+    val clangFlags     = clangStackProbeFlags(noStackCheck)
 
     (for
       _ <- EitherT(
@@ -470,7 +471,8 @@ object LlvmToolchain:
             clangFlags,
             recordTiming,
             printPhases,
-            optLevel
+            optLevel,
+            targetCpu
           )
         else IO.pure(programBitcode.asRight)
       )
@@ -483,7 +485,8 @@ object LlvmToolchain:
             outputDir,
             verbose,
             printPhases,
-            optLevel
+            optLevel,
+            targetCpu
           )
         )
       )
@@ -502,7 +505,8 @@ object LlvmToolchain:
             workingDirectory,
             outputDir,
             verbose,
-            printPhases
+            printPhases,
+            targetCpu
           )
         )
       )
@@ -552,15 +556,17 @@ object LlvmToolchain:
     outputDir:        String,
     verbose:          Boolean,
     printPhases:      Boolean,
-    optLevel:         Int
+    optLevel:         Int,
+    targetCpu:        Option[String]
   ): IO[Either[LlvmCompilationError, Int]] =
     val outputFile =
       Paths.get(outputDir).resolve(s"${programName}_opt.bc").toAbsolutePath.toString
+    val cpuFlag = targetCpu.map(cpu => s" --mcpu=$cpu").getOrElse("")
     logPhase(s"Optimizing Bitcode", printPhases)
     logDebug(s"Input file: $inputFile", verbose)
     logDebug(s"Output file: $outputFile", verbose)
     executeCommand(
-      s"opt -O$optLevel $inputFile -o $outputFile",
+      s"opt -O$optLevel$cpuFlag $inputFile -o $outputFile",
       "Failed to optimize bitcode",
       workingDirectory,
       verbose
@@ -591,15 +597,17 @@ object LlvmToolchain:
     workingDirectory: String,
     outputDir:        String,
     verbose:          Boolean,
-    printPhases:      Boolean
+    printPhases:      Boolean,
+    targetCpu:        Option[String]
   ): IO[Either[LlvmCompilationError, Int]] =
     val inputFile  = Paths.get(outputDir).resolve(s"${programName}_opt.bc").toAbsolutePath.toString
     val outputFile = Paths.get(outputDir).resolve(s"$programName.s").toAbsolutePath.toString
+    val cpuFlag    = targetCpu.map(cpu => s" --mcpu=$cpu").getOrElse("")
     logPhase(s"Generating assembly", printPhases)
     logDebug(s"Input file: $inputFile", verbose)
     logDebug(s"Output file: $outputFile", verbose)
     executeCommand(
-      s"llc -mtriple=$targetTriple $inputFile -o $outputFile",
+      s"llc -mtriple=$targetTriple$cpuFlag $inputFile -o $outputFile",
       "Failed to convert Bitcode to Assembly",
       workingDirectory,
       verbose
@@ -810,7 +818,8 @@ object LlvmToolchain:
     targetTriple: String,
     clangFlags:   List[String],
     printPhases:  Boolean,
-    optLevel:     Int
+    optLevel:     Int,
+    targetCpu:    Option[String]
   ): IO[Either[LlvmCompilationError, String]] = IO.defer {
     val runtimeFilename = mmlRuntimeBitcodeFilename(targetTriple)
     val bcPath          = Paths.get(outputDir).resolve(runtimeFilename).toAbsolutePath.toString
@@ -829,6 +838,7 @@ object LlvmToolchain:
             logDebug(s"Input file: $sourcePath", verbose)
             logDebug(s"Output file: $bcPath", verbose)
 
+            val cpuFlags = targetCpu.map(cpu => List(s"-mcpu=$cpu")).getOrElse(Nil)
             val cmd = (List(
               "clang",
               "-target",
@@ -837,7 +847,7 @@ object LlvmToolchain:
               "-c",
               "-std=c17",
               s"-O$optLevel"
-            ) ++ clangFlags ++ List("-fPIC", "-o", bcPath, sourcePath)).mkString(" ")
+            ) ++ cpuFlags ++ clangFlags ++ List("-fPIC", "-o", bcPath, sourcePath)).mkString(" ")
             executeCommand(
               cmd,
               "Failed to compile MML runtime bitcode",
@@ -859,7 +869,8 @@ object LlvmToolchain:
     clangFlags:       List[String],
     recordTiming:     Option[TimingRecorder],
     printPhases:      Boolean,
-    optLevel:         Int
+    optLevel:         Int,
+    targetCpu:        Option[String]
   ): IO[Either[LlvmCompilationError, String]] =
     val programBitcode = Paths.get(outputDir).resolve(s"$programName.bc").toAbsolutePath.toString
     val linkedBitcode =
@@ -867,7 +878,15 @@ object LlvmToolchain:
 
     for
       runtimeResult <- timedStep("llvm-runtime-bitcode", recordTiming)(
-        compileRuntimeBitcode(outputDir, verbose, targetTriple, clangFlags, printPhases, optLevel)
+        compileRuntimeBitcode(
+          outputDir,
+          verbose,
+          targetTriple,
+          clangFlags,
+          printPhases,
+          optLevel,
+          targetCpu
+        )
       )
       result <- runtimeResult match
         case Left(error) => IO.pure(error.asLeft)

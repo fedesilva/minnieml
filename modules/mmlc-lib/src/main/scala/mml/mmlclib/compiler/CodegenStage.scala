@@ -67,7 +67,8 @@ object CodegenStage:
               abiState.entryPoint,
               triple,
               targetAbi,
-              targetCpu
+              targetCpu,
+              state.config.emitScopedAlias
             ) match
               case Right(result) =>
                 // Lift codegen warnings to compiler state
@@ -141,6 +142,7 @@ object CodegenStage:
       val explicitTriple = state.config.targetTriple
       val printPhases    = state.config.printPhases
       val optLevel       = state.config.optLevel
+      val targetCpu      = resolveTargetCpu(state.config)
 
       val compileIo = selectCompileOperation(
         irPath,
@@ -154,7 +156,8 @@ object CodegenStage:
         outputName,
         explicitTriple,
         printPhases,
-        optLevel
+        optLevel,
+        targetCpu
       )
 
       compileIo.map { case (result, stepTimings) =>
@@ -178,7 +181,8 @@ object CodegenStage:
     outputName:     Option[String],
     explicitTriple: Option[String],
     printPhases:    Boolean,
-    optLevel:       Int
+    optLevel:       Int,
+    targetCpu:      Option[String]
   ): IO[(Either[LlvmCompilationError, Int], Vector[PipelineTiming])] =
     val emptyTimings: Vector[PipelineTiming] = Vector.empty
     if showTimings then
@@ -193,7 +197,8 @@ object CodegenStage:
         outputName,
         explicitTriple,
         printPhases,
-        optLevel
+        optLevel,
+        targetCpu
       )
     else
       LlvmToolchain
@@ -208,6 +213,7 @@ object CodegenStage:
           outputName,
           explicitTriple,
           printPhases,
-          optLevel
+          optLevel,
+          targetCpu
         )
         .map(_ -> emptyTimings)

@@ -26,17 +26,19 @@ import mml.mmlclib.errors.CompilerWarning
 case class EmitResult(ir: String, warnings: List[CompilerWarning])
 
 def emitModule(
-  module:       Module,
-  entryPoint:   Option[String],
-  targetTriple: String,
-  targetAbi:    TargetAbi,
-  targetCpu:    Option[String]
+  module:          Module,
+  entryPoint:      Option[String],
+  targetTriple:    String,
+  targetAbi:       TargetAbi,
+  targetCpu:       Option[String],
+  emitAliasScopes: Boolean
 ): Either[CodeGenError, EmitResult] = {
   // Setup the initial state with the module name, resolvables and header
   val initialState = CodeGenState(
-    moduleName  = module.name,
-    targetAbi   = targetAbi,
-    resolvables = module.resolvables
+    moduleName      = module.name,
+    targetAbi       = targetAbi,
+    resolvables     = module.resolvables,
+    emitAliasScopes = emitAliasScopes
   ).withModuleHeader(module.name, targetTriple)
 
   // Collect all TypeDef members with native type specifications
