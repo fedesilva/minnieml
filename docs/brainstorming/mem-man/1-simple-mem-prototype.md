@@ -225,13 +225,13 @@ tail call void @loop()
 
 ## Runtime Capacity (The Safety Net)
 
-We add a `cap` field to the runtime struct layout for Resource Types (`String`, `Buffer`).
+We add a `__cap` field to the runtime struct layout for Resource Types (`String`, `Buffer`).
 Its role is strictly to handle **Control Flow Variance** (merging caller-owned and static paths) safely.
 
 
 ### The Logic: Conditional Merge Handling
 
-We use the `cap` field to safely handle merges, but we optimize based on what we know statically:
+We use the `__cap` field to safely handle merges, but we optimize based on what we know statically:
 
 1. **Both branches Static/Literal:**
    Treat as static. No free inserted.
@@ -240,9 +240,9 @@ We use the `cap` field to safely handle merges, but we optimize based on what we
    Treat as owned. Insert unconditional `free()`.
 
 3. **Mixed (One Alloc, One Static):**
-   Treat as owned, but insert a **conditional free**. The runtime checks `cap > 0`:
-   - If `cap > 0` (Alloc path taken): `free()` proceeds.
-   - If `cap = -1` (Static path taken): `free()` is skipped.
+   Treat as owned, but insert a **conditional free**. The runtime checks `__cap > 0`:
+   - If `__cap > 0` (Alloc path taken): `free()` proceeds.
+   - If `__cap = -1` (Static path taken): `free()` is skipped.
 
 This avoids unnecessary runtime checks in hot paths where ownership is statically known.
 
@@ -255,7 +255,7 @@ This avoids unnecessary runtime checks in hot paths where ownership is staticall
       println s;
       // Implicit free at end of scope
       // We don't know if `s` is static or heap allocated.
-      // this is where cap helps
+      // this is where __cap helps
 ```
 
 
@@ -279,9 +279,11 @@ type name (e.g., `__free_String`, `__free_Buffer`).
 
 ### Definition of the `__free_*` Functions
 
-Since the only Resource types defined today are String and Buffer and theyare defined in the c runtime, 
+Since the only Resource types defined today are String and Buffer and they are defined in the c runtime, 
 and any new one that we add in the short term will also be, we will provide deallocation
 functions for each in the same runtime alongside the types they free.
+
+Note: Since writing this we introduced specialized arrays, we need to think about them.
 
 ---
 
@@ -303,6 +305,10 @@ enum MemEffect:
 ### New Semantic Phase: OwnershipAnalyzer
 
 Runs after TypeChecker, before Codegen.
+
+Note: Since writing this we have introduces soft references and
+      the reindexing phase between typer and codegen.
+      We need to think about this.
 
 ```scala
 case class OwnershipInfo(
@@ -333,38 +339,36 @@ rewriting phase.
    ```mml
    let x = if cond then readline() else cached_value;
    ```
-   Both branches must have same ownership semantics.
+   A: Both branches must have same ownership semantics.
 
-
-   
 
 2. **Partial application with heap captures?** ✓ *Resolved by banning `~` in partial application*
    ```mml
    let greet = concat "Hello, "      -- captures a literal, ok (borrows static)
    let greet2 = concat (readline())  -- banned: cannot move owned value into closure
    ```
-   For prototype: `~` arguments must appear in saturating calls only.
+   A: For prototype: `~` arguments must appear in saturating calls only.
 
-3. **What frees a Buffer?** ✓ *Resolved by `cap` field*
-   Buffer is a Resource Type with a `cap` field like String. Therefore:
-   - `free(buf)` — universal, checks `cap`
+3. **What frees a Buffer?** ✓ *Resolved by `__cap` field*
+   A: Buffer is a Resource Type with a `__cap` field like String. Therefore:
+   - `free(buf)` — universal, checks `__cap`
    - `flush(buf)` — borrows, no ownership change
    - `close(~buf)` — consumes, frees after closing
 
 4. **Nested structs?**
-   If we add user structs containing Strings, ownership must be recursive.
+   A: If we add user structs containing Strings, ownership must be recursive.
 
 5. **Error messages?**
-   "Cannot use `s` after passing to `concat` - ownership was transferred"
+   A: "Cannot use `s` after passing to `concat` - ownership was transferred"
 
 6. **Linearity Ergonomics**
    Strict linearity might be rigid. How do we make "use-after-move" errors friendly?
-   Borrow-by-default helps — explicit `~` moves are the exception, not the rule.
+   A: Borrow-by-default helps — explicit `~` moves are the exception, not the rule.
 
-7. **Static vs Heap Safety** ✓ *Resolved by Runtime Capacity (`cap` field)*
+7. **Static vs Heap Safety** ✓ *Resolved by Runtime Capacity (`__cap` field)*
    Crucial to distinguish `LiteralString` (static) from allocated strings. Freeing a literal is fatal.
-   **Resolution:** The `cap` field in resource types allows runtime distinction: `cap > 0` for heap,
-   `cap = -1` for static. `free()` becomes a safe no-op for literals.
+   **Resolution:** The `__cap` field in resource types allows runtime distinction: `__cap > 0` for heap,
+   `__cap = -1` for static. `free()` becomes a safe no-op for literals.
 
 ---
 
