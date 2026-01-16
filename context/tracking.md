@@ -22,9 +22,9 @@
 ## Active Tasks
 
 
-### bad ordering of steps
+### [COMPLETE] bad ordering of steps
 
-resolveTargetCpu depends on the llvm-check-ok 
+resolveTargetCpu depends on the llvm-check-ok
 file but it is generated AFTER.
 
 
@@ -61,6 +61,14 @@ TBD
 
 ### 2026-01-15 (branch: 2026-01-14-dev)
 
+- **LLVM info step reordering**: Moved LLVM tools check earlier in the pipeline
+  to fix `resolveTargetCpu` dependency on marker file. Renamed `llvm-check-ok`
+  marker to `llvm-info`, renamed `checkLlvmTools` to `gatherLlvmInfo` (now public).
+  Added `llvmInfo` step in `CodegenStage` before `emitIr` in both `processNative`
+  and `emitIrOnly` pipelines. Removed redundant call from `LlvmToolchain.compileInternal`.
+  Fixed clang `-mcpu=` bug: `compileRuntimeBitcode` now uses `config.targetCpu`
+  (explicit `--cpu` CLI flag) instead of resolved `targetCpu` (which included
+  host CPU from marker). Clang only gets `-mcpu=` when `--cpu` is explicitly passed.
 - **Codegen config cleanup**: Refactored `LlvmToolchain` entry points from 12-13
   individual parameters to 4 (`llvmIrPath`, `config`, `resolvedTriple`, `targetCpu`).
   Pass `CompilerConfig` through internal chain instead of unpacking fields.
