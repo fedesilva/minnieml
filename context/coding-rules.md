@@ -48,6 +48,7 @@
 - **Prefer running via sbt while developing**
 - **Compile and run**: `sbt "run run <file>"` compiles AND runs the program in one step.
 - **Compile only**: `sbt "run bin <file>"` compiles to binary without running.
+- **Never deploy** the compiler (mmlcPublishLocal) without testing it works via sbt.
 
 ### Publishing the Compiler Artifact
 
@@ -56,7 +57,7 @@ The compiler needs to be installed before it's used if changes were made.
 - **Publish fat jar**: `sbt mmlcPublishLocal`
 - **After publishing**: `mmlc run <file>` or `mmlc bin <file>` from anywhere.
 
-### Before Task Finish
+### Before finish - Post Task Chores
 
 **Critical**: 
   - Go through all these steps
@@ -64,12 +65,7 @@ The compiler needs to be installed before it's used if changes were made.
 
 - **Scope**: These steps apply only when code changes were made (not for context-only updates).
 - **Validate**: Run the *full* test suite.
-- **Formatting**: Run `sbt scalafmtAll` before finishing.
-- **Linting**: Run `sbt scalafixAll` and fix any issues.
-- **Run scapegoat**: Check your work for quality by running: `sbt scapegoat`
-  - **address all the issues**
-- **Publish locally**: Run `sbt mmlcPublishLocal` to publish the compiler to its latest version.
-- **Tip**: Chain commands to avoid sbt startup overhead: `sbt "test; scapegoat; scalafmtAll; scalafixAll; mmlcPublishLocal"`
+- **IMPORTANT**: Chain commands to avoid sbt startup overhead: `sbt "test; scapegoat; scalafmtAll; scalafixAll; mmlcPublishLocal"`
 
 - **Run benchmarks**: 
   - after publishing the compiler:
