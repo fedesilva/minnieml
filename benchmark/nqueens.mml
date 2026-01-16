@@ -1,4 +1,4 @@
-# N-Queens solver using backtracking
+# N-Queens solver using backtracking (single recursive function like C)
 # Board represented as array where board[row] = column of queen in that row
 
 fn abs(x: Int): Int =
@@ -32,31 +32,23 @@ fn is_safe(board: IntArray, row: Int, col: Int): Bool =
   is_safe_loop board row col 0
 ;
 
-# Try to place queens starting from given row
-fn solve_loop(board: IntArray, row: Int, n: Int, col: Int, count: Int): Int =
+# Single recursive function - calls itself for both columns and rows
+fn solve_cols(board: IntArray, row: Int, n: Int, col: Int, acc: Int): Int =
   if col >= n then
-    count
+    acc
   else
-    let safe = is_safe board row col;
-    if safe then
+    let solutions_from_col = if is_safe board row col then
       unsafe_ar_int_set board row col;
-      let new_count = if row == (n - 1) then
-        count + 1
+      if row == (n - 1) then
+        1
       else
-        count + (solve board (row + 1) n 0)
-      end;
-      solve_loop board row n (col + 1) new_count
+        solve_cols board (row + 1) n 0 0  # Recursive call directly!
+      end
     else
-      solve_loop board row n (col + 1) count
-    end
-  end
-;
-
-fn solve(board: IntArray, row: Int, n: Int, count: Int): Int =
-  if row >= n then
-    count
-  else
-    solve_loop board row n 0 count
+      0
+    end;
+    let new_acc = acc + solutions_from_col;
+    solve_cols board row n (col + 1) new_acc
   end
 ;
 
@@ -64,6 +56,6 @@ fn main(): Unit =
   let n = 12;
   let board = ar_int_new n;
   
-  let solutions = solve board 0 n 0;
+  let solutions = solve_cols board 0 n 0 0;  # Start directly
   println (concat "Solutions for " (concat (to_string n) (concat "-queens: " (to_string solutions))))
 ;
