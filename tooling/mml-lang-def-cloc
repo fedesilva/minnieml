@@ -1,5 +1,5 @@
 MinnieML
-    filter remove_python_comments
+    filter remove_matches ^\s*#
     extension mml
     3rd_gen_scale 2.00
 

@@ -9,7 +9,6 @@ import mml.mmlclib.codegen.{
   PipelineTiming,
   TargetAbi
 }
-import mml.mmlclib.errors.*
 import mml.mmlclib.util.pipe.*
 
 import java.nio.file.{Files, Path}
@@ -62,13 +61,13 @@ object CodegenStage:
           case None => state
           case Some(triple) =>
             val (targetAbi, abiState) = resolveTargetAbi(state.config, state.resolvedTriple, state)
-            val hostCpu               = LlvmToolchain.readHostCpu(state.config.outputDir.toString)
+            val targetCpu             = resolveTargetCpu(state.config)
             LlvmIrEmitter.module(
               abiState.module,
               abiState.entryPoint,
               triple,
               targetAbi,
-              hostCpu
+              targetCpu
             ) match
               case Right(result) =>
                 // Lift codegen warnings to compiler state
@@ -77,28 +76,28 @@ object CodegenStage:
               case Left(error) => abiState.addError(error).withCanEmitCode(false)
     }
 
+  /** Determine the target CPU for IR emission.
+    *
+    * Logic:
+    *   - If --cpu is explicitly provided, use that
+    *   - If --target is provided but no --cpu, omit (cross-compiling, let LLVM decide)
+    *   - If neither, use host CPU from marker file (local build)
+    */
+  private def resolveTargetCpu(config: CompilerConfig): Option[String] =
+    config.targetCpu match
+      case Some(cpu) => Some(cpu) // Explicit --cpu flag
+      case None =>
+        if config.targetTriple.isDefined then None // Cross-compiling, omit
+        else LlvmToolchain.readHostCpu(config.outputDir.toString) // Local build
+
   private def resolveTargetAbi(
     config:         CompilerConfig,
     resolvedTriple: Option[String],
     state:          CompilerState
   ): (TargetAbi, CompilerState) =
-    val explicitTriple = config.targetTriple
-    val explicitArch   = config.targetArch
-    val explicitHint   = explicitTriple.orElse(explicitArch)
-    val hint           = explicitHint.orElse(resolvedTriple)
-    val targetAbi      = TargetAbi.fromHint(hint)
-    val archFromTriple = TargetAbi.archFromHint(explicitTriple)
-    val archFromArch   = TargetAbi.archFromHint(explicitArch)
-    val shouldWarn = archFromTriple.nonEmpty &&
-      archFromArch.nonEmpty &&
-      archFromTriple != archFromArch
-    val nextState =
-      (shouldWarn, explicitTriple, explicitArch) match
-        case (true, Some(triple), Some(arch)) =>
-          val message = s"Conflicting target hints: targetTriple=$triple targetArch=$arch"
-          state.addWarning(CompilerWarning.Generic(message))
-        case _ => state
-    (targetAbi, nextState)
+    val hint      = config.targetTriple.orElse(resolvedTriple)
+    val targetAbi = TargetAbi.fromHint(hint)
+    (targetAbi, state)
 
   private def llvmIrPath(state: CompilerState): Path =
     val triple = state.resolvedTriple.getOrElse("unknown")
@@ -134,8 +133,6 @@ object CodegenStage:
       val outputDir      = state.config.outputDir.toString
       val verbose        = state.config.verbose
       val triple         = state.resolvedTriple
-      val targetArch     = state.config.targetArch
-      val targetCpu      = state.config.targetCpu
       val noStackCheck   = state.config.noStackCheck
       val mode           = state.config.mode
       val showTimings    = state.config.showTimings
@@ -151,8 +148,6 @@ object CodegenStage:
         mode,
         verbose,
         triple,
-        targetArch,
-        targetCpu,
         noStackCheck,
         emitOptIr,
         showTimings,
@@ -177,8 +172,6 @@ object CodegenStage:
     mode:           CompilationMode,
     verbose:        Boolean,
     triple:         Option[String],
-    targetArch:     Option[String],
-    targetCpu:      Option[String],
     noStackCheck:   Boolean,
     emitOptIr:      Boolean,
     showTimings:    Boolean,
@@ -195,8 +188,6 @@ object CodegenStage:
         mode,
         verbose,
         triple,
-        targetArch,
-        targetCpu,
         noStackCheck,
         emitOptIr,
         outputName,
@@ -212,8 +203,6 @@ object CodegenStage:
           mode,
           verbose,
           triple,
-          targetArch,
-          targetCpu,
           noStackCheck,
           emitOptIr,
           outputName,
