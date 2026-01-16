@@ -33,7 +33,8 @@ object Main extends IOApp:
                 bin.outputAst,
                 bin.outputName,
                 bin.printPhases,
-                bin.optLevel
+                bin.optLevel,
+                bin.emitScopedAlias
               )
               CompilerApi.processBinary(path, cfg)
             }
@@ -54,7 +55,8 @@ object Main extends IOApp:
                 run.outputAst,
                 run.outputName,
                 run.printPhases,
-                run.optLevel
+                run.optLevel,
+                run.emitScopedAlias
               )
               CompilerApi.processRun(path, cfg)
             }
@@ -75,7 +77,8 @@ object Main extends IOApp:
                 lib.outputAst,
                 lib.outputName,
                 lib.printPhases,
-                lib.optLevel
+                lib.optLevel,
+                lib.emitScopedAlias
               )
               CompilerApi.processLibrary(path, cfg)
             }

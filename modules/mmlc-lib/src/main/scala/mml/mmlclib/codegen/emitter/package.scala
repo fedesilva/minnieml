@@ -273,6 +273,7 @@ case class CodeGenState(
   aliasScopeOutput:   List[String]     = List.empty,
   aliasScopeDomainId: Option[Int]      = None,
   aliasScopeIds:      Map[String, Int] = Map.empty,
+  emitAliasScopes:    Boolean          = false,
   // Resolvables index for soft reference lookups
   resolvables: ResolvablesIndex = ResolvablesIndex()
 ):

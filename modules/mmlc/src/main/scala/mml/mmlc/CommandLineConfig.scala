@@ -8,49 +8,52 @@ object CommandLineConfig:
 
   enum Command:
     case Bin(
-      file:         Option[Path]   = None,
-      outputDir:    String         = "build",
-      outputAst:    Boolean        = false,
-      verbose:      Boolean        = false,
-      targetTriple: Option[String] = None,
-      targetCpu:    Option[String] = None,
-      noStackCheck: Boolean        = false,
-      emitOptIr:    Boolean        = false,
-      noTco:        Boolean        = false,
-      timings:      Boolean        = false,
-      outputName:   Option[String] = None,
-      printPhases:  Boolean        = false,
-      optLevel:     Int            = 3
+      file:            Option[Path]   = None,
+      outputDir:       String         = "build",
+      outputAst:       Boolean        = false,
+      verbose:         Boolean        = false,
+      targetTriple:    Option[String] = None,
+      targetCpu:       Option[String] = None,
+      noStackCheck:    Boolean        = false,
+      emitOptIr:       Boolean        = false,
+      noTco:           Boolean        = false,
+      timings:         Boolean        = false,
+      outputName:      Option[String] = None,
+      printPhases:     Boolean        = false,
+      optLevel:        Int            = 3,
+      emitScopedAlias: Boolean        = false
     )
     case Run(
-      file:         Option[Path]   = None,
-      outputDir:    String         = "build",
-      outputAst:    Boolean        = false,
-      verbose:      Boolean        = false,
-      targetTriple: Option[String] = None,
-      targetCpu:    Option[String] = None,
-      noStackCheck: Boolean        = false,
-      emitOptIr:    Boolean        = false,
-      noTco:        Boolean        = false,
-      timings:      Boolean        = false,
-      outputName:   Option[String] = None,
-      printPhases:  Boolean        = false,
-      optLevel:     Int            = 3
+      file:            Option[Path]   = None,
+      outputDir:       String         = "build",
+      outputAst:       Boolean        = false,
+      verbose:         Boolean        = false,
+      targetTriple:    Option[String] = None,
+      targetCpu:       Option[String] = None,
+      noStackCheck:    Boolean        = false,
+      emitOptIr:       Boolean        = false,
+      noTco:           Boolean        = false,
+      timings:         Boolean        = false,
+      outputName:      Option[String] = None,
+      printPhases:     Boolean        = false,
+      optLevel:        Int            = 3,
+      emitScopedAlias: Boolean        = false
     )
     case Lib(
-      file:         Option[Path]   = None,
-      outputDir:    String         = "build",
-      outputAst:    Boolean        = false,
-      verbose:      Boolean        = false,
-      targetTriple: Option[String] = None,
-      targetCpu:    Option[String] = None,
-      noStackCheck: Boolean        = false,
-      emitOptIr:    Boolean        = false,
-      noTco:        Boolean        = false,
-      timings:      Boolean        = false,
-      outputName:   Option[String] = None,
-      printPhases:  Boolean        = false,
-      optLevel:     Int            = 3
+      file:            Option[Path]   = None,
+      outputDir:       String         = "build",
+      outputAst:       Boolean        = false,
+      verbose:         Boolean        = false,
+      targetTriple:    Option[String] = None,
+      targetCpu:       Option[String] = None,
+      noStackCheck:    Boolean        = false,
+      emitOptIr:       Boolean        = false,
+      noTco:           Boolean        = false,
+      timings:         Boolean        = false,
+      outputName:      Option[String] = None,
+      printPhases:     Boolean        = false,
+      optLevel:        Int            = 3,
+      emitScopedAlias: Boolean        = false
     )
     case Ast(
       file:      Option[Path] = None,
@@ -130,6 +133,9 @@ object CommandLineConfig:
         else failure("Optimization level must be between 0 and 3")
       )
       .text("Optimization level (0-3, default: 3)")
+
+    val emitScopedAliasOpt = opt[Unit]("emit-scoped-alias")
+      .text("Emit scoped alias metadata (disabled by default)")
 
     // Binary executable command
     val binCommand =
@@ -212,6 +218,12 @@ object CommandLineConfig:
           optLevelOpt.action((level, config) =>
             config.copy(command = config.command match {
               case bin: Command.Bin => bin.copy(optLevel = level)
+              case cmd => cmd
+            })
+          ),
+          emitScopedAliasOpt.action((_, config) =>
+            config.copy(command = config.command match {
+              case bin: Command.Bin => bin.copy(emitScopedAlias = true)
               case cmd => cmd
             })
           )
@@ -300,6 +312,12 @@ object CommandLineConfig:
               case run: Command.Run => run.copy(optLevel = level)
               case cmd => cmd
             })
+          ),
+          emitScopedAliasOpt.action((_, config) =>
+            config.copy(command = config.command match {
+              case run: Command.Run => run.copy(emitScopedAlias = true)
+              case cmd => cmd
+            })
           )
         )
 
@@ -384,6 +402,12 @@ object CommandLineConfig:
           optLevelOpt.action((level, config) =>
             config.copy(command = config.command match {
               case lib: Command.Lib => lib.copy(optLevel = level)
+              case cmd => cmd
+            })
+          ),
+          emitScopedAliasOpt.action((_, config) =>
+            config.copy(command = config.command match {
+              case lib: Command.Lib => lib.copy(emitScopedAlias = true)
               case cmd => cmd
             })
           )
