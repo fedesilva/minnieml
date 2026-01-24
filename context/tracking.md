@@ -21,6 +21,20 @@
 
 ## Active Tasks
 
+
+### Improved id generation scheme
+
+- Motivation: deterministic IDs keep naming stable and human-readable; struct fields are
+  already unique in a module so the structured path is enough, while nested params still need
+  owner-scoped UUIDs to avoid collisions without adding noise to top-level symbols.
+  - reading pretty printed ast will be easier, for example.
+
+
+- Top-level IDs should be deterministic: `module::<decl>::member` (no UUID).
+  - where `decl` is one of the Decls: Bnd, TypeDef, TypeStruct, TypeAlias  (verify this list is comprehensive)
+- Struct field IDs: `module::struct::structName::fieldName`.
+- Params and nested/lambda-local IDs: keep current owner-based scheme with UUID (`module::decl::owner::name::<uuid>`).
+
 ### Simple Memory Management Prototype
 
 **Doc:** `docs/brainstorming/mem-man/1-simple-mem-prototype.md`
@@ -114,4 +128,3 @@ TBD
   `collectFirst { case line => ... }` matched all lines (total pattern),
   stopping at first line instead of finding `Host CPU:`. Changed to
   `.find(...).map(...)` pattern.
-
