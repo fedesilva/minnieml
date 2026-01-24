@@ -25,6 +25,6 @@ object SemanticStage:
       |> CompilerState.timePhase("semantic", "resolvables-indexer")(
         ResolvablesIndexer.rewriteModule
       )
-      |> CompilerState.timePhase("semantic", "tail-recursion")(
+      |> CompilerState.timePhase("semantic", "tailrec-labeller")(
         TailRecursionDetector.rewriteModule
       )
