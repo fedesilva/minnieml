@@ -79,12 +79,12 @@ enum Species =
 ;
 
 struct Pet {
-  name:     String
+  name:     String,
   species:  Species
 };
 
 struct Person {
-  name: String
+  name: String,
   pet:  Maybe Pet
 };
 
