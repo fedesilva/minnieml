@@ -13,7 +13,7 @@ The current design is flexible and generic. Prototypes should leverage that, not
 
 ### Everything-is-Functions Makes Lifecycle Tracking Uniform
 
-The CPS-like representation of multi-line functions (chained lambdas) makes inserting `free`
+The CPS representation of multi-line functions (chained lambdas) makes inserting `free`
 calls trivial - we just graft new `App` nodes into the existing chain. No special AST nodes,
 no separate IR, just more function applications.
 
