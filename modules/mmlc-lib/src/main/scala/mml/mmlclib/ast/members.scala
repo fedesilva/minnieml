@@ -49,4 +49,3 @@ case class ParsingIdError(
   invalidId:  String
 ) extends Member,
       Error
-
