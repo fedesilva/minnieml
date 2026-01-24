@@ -140,7 +140,14 @@ enum SemanticError extends CompilationError:
       msg
 
 /** Generate a stable ID for stdlib members */
-private def stdlibId(name: String): Option[String] = Some(s"stdlib::$name")
+private def stdlibId(declSegment: String, name: String): Option[String] =
+  Some(s"stdlib::$declSegment::$name")
+
+private val stdlibAliasNames: Set[String] = Set("Int", "Byte", "Word")
+
+private def stdlibTypeId(name: String): Option[String] =
+  val segment = if stdlibAliasNames.contains(name) then "typealias" else "typedef"
+  stdlibId(segment, name)
 
 /** Inject basic types with native mappings into the module.
   */
@@ -149,7 +156,7 @@ def injectBasicTypes(module: Module): Module =
 
   // Helper to create a resolved TypeRef to a stdlib type
   def stdlibTypeRef(name: String): TypeRef =
-    TypeRef(dummySpan, name, stdlibId(name), Nil)
+    TypeRef(dummySpan, name, stdlibTypeId(name), Nil)
 
   val basicTypes: List[TypeDef | TypeAlias] = List(
     // Native type definitions with LLVM mappings
@@ -157,49 +164,49 @@ def injectBasicTypes(module: Module): Module =
       span     = dummySpan,
       name     = "Int64",
       typeSpec = Some(NativePrimitive(dummySpan, "i64")),
-      id       = stdlibId("Int64")
+      id       = stdlibId("typedef", "Int64")
     ),
     TypeDef(
       span     = dummySpan,
       name     = "Int32",
       typeSpec = Some(NativePrimitive(dummySpan, "i32")),
-      id       = stdlibId("Int32")
+      id       = stdlibId("typedef", "Int32")
     ),
     TypeDef(
       span     = dummySpan,
       name     = "Int16",
       typeSpec = Some(NativePrimitive(dummySpan, "i16")),
-      id       = stdlibId("Int16")
+      id       = stdlibId("typedef", "Int16")
     ),
     TypeDef(
       span     = dummySpan,
       name     = "Int8",
       typeSpec = Some(NativePrimitive(dummySpan, "i8")),
-      id       = stdlibId("Int8")
+      id       = stdlibId("typedef", "Int8")
     ),
     TypeDef(
       span     = dummySpan,
       name     = "Float",
       typeSpec = Some(NativePrimitive(dummySpan, "float")),
-      id       = stdlibId("Float")
+      id       = stdlibId("typedef", "Float")
     ),
     TypeDef(
       span     = dummySpan,
       name     = "Double",
       typeSpec = Some(NativePrimitive(dummySpan, "double")),
-      id       = stdlibId("Double")
+      id       = stdlibId("typedef", "Double")
     ),
     TypeDef(
       span     = dummySpan,
       name     = "Bool",
       typeSpec = Some(NativePrimitive(dummySpan, "i1")),
-      id       = stdlibId("Bool")
+      id       = stdlibId("typedef", "Bool")
     ),
     TypeDef(
       span     = dummySpan,
       name     = "CharPtr",
       typeSpec = Some(NativePointer(dummySpan, "i8")),
-      id       = stdlibId("CharPtr")
+      id       = stdlibId("typedef", "CharPtr")
     ),
     TypeDef(
       span = dummySpan,
@@ -210,27 +217,27 @@ def injectBasicTypes(module: Module): Module =
           List("length" -> stdlibTypeRef("Int64"), "data" -> stdlibTypeRef("CharPtr"))
         )
       ),
-      id = stdlibId("String")
+      id = stdlibId("typedef", "String")
     ),
     TypeDef(
       // This should be an alias to an MML type (which in turn will have it's own native repr)
       span     = dummySpan,
       name     = "SizeT",
       typeSpec = Some(NativePrimitive(dummySpan, "i64")),
-      id       = stdlibId("SizeT")
+      id       = stdlibId("typedef", "SizeT")
     ),
     // same as above, should this be it's own type or an alias?
     TypeDef(
       span     = dummySpan,
       name     = "Char",
       typeSpec = Some(NativePrimitive(dummySpan, "i8")),
-      id       = stdlibId("Char")
+      id       = stdlibId("typedef", "Char")
     ),
     TypeDef(
       span     = dummySpan,
       name     = "Unit",
       typeSpec = Some(NativePrimitive(dummySpan, "void")),
-      id       = stdlibId("Unit")
+      id       = stdlibId("typedef", "Unit")
     ),
 
     // Type aliases pointing to native types
@@ -238,26 +245,26 @@ def injectBasicTypes(module: Module): Module =
       span    = dummySpan,
       name    = "Int",
       typeRef = stdlibTypeRef("Int64"),
-      id      = stdlibId("Int")
+      id      = stdlibId("typealias", "Int")
     ),
     TypeAlias(
       span    = dummySpan,
       name    = "Byte",
       typeRef = stdlibTypeRef("Int8"),
-      id      = stdlibId("Byte")
+      id      = stdlibId("typealias", "Byte")
     ),
     TypeAlias(
       span    = dummySpan,
       name    = "Word",
       typeRef = stdlibTypeRef("Int8"),
-      id      = stdlibId("Word")
+      id      = stdlibId("typealias", "Word")
     ),
     // Output buffer - opaque pointer to heap-allocated struct
     TypeDef(
       span     = dummySpan,
       name     = "Buffer",
       typeSpec = Some(NativePointer(dummySpan, "i8")),
-      id       = stdlibId("Buffer")
+      id       = stdlibId("typedef", "Buffer")
     ),
 
     // Pointer types for arrays
@@ -265,13 +272,13 @@ def injectBasicTypes(module: Module): Module =
       span     = dummySpan,
       name     = "Int64Ptr",
       typeSpec = Some(NativePointer(dummySpan, "i64")),
-      id       = stdlibId("Int64Ptr")
+      id       = stdlibId("typedef", "Int64Ptr")
     ),
     TypeDef(
       span     = dummySpan,
       name     = "StringPtr",
       typeSpec = Some(NativePointer(dummySpan, "%struct.String")),
-      id       = stdlibId("StringPtr")
+      id       = stdlibId("typedef", "StringPtr")
     ),
 
     // Monomorphic array types
@@ -287,7 +294,7 @@ def injectBasicTypes(module: Module): Module =
           )
         )
       ),
-      id = stdlibId("IntArray")
+      id = stdlibId("typedef", "IntArray")
     ),
     TypeDef(
       span = dummySpan,
@@ -301,7 +308,7 @@ def injectBasicTypes(module: Module): Module =
           )
         )
       ),
-      id = stdlibId("StringArray")
+      id = stdlibId("typedef", "StringArray")
     )
   )
 
@@ -323,7 +330,7 @@ def injectStandardOperators(module: Module): Module =
 
   // Helper to create a resolved TypeRef to a stdlib type
   def stdlibTypeRef(name: String): TypeRef =
-    TypeRef(dummySpan, name, stdlibId(name), Nil)
+    TypeRef(dummySpan, name, stdlibTypeId(name), Nil)
 
   // Helper function to create TypeRef for basic types
   def intType  = stdlibTypeRef("Int")
@@ -366,7 +373,7 @@ def injectStandardOperators(module: Module): Module =
       typeAsc    = Some(returnType),
       docComment = None,
       meta       = Some(meta),
-      id         = stdlibId(mangledName)
+      id         = stdlibId("bnd", mangledName)
     )
 
   // Helper to create a unary operator as Bnd(Lambda)
@@ -405,7 +412,7 @@ def injectStandardOperators(module: Module): Module =
       typeAsc    = Some(returnType),
       docComment = None,
       meta       = Some(meta),
-      id         = stdlibId(mangledName)
+      id         = stdlibId("bnd", mangledName)
     )
 
   // Arithmetic operators: Int -> Int -> Int
@@ -474,7 +481,7 @@ def injectCommonFunctions(module: Module): Module =
 
   // Helper to create a resolved TypeRef to a stdlib type
   def stdlibTypeRef(name: String): TypeRef =
-    TypeRef(dummySpan, name, stdlibId(name), Nil)
+    TypeRef(dummySpan, name, stdlibTypeId(name), Nil)
 
   // Helper function to create TypeRef for basic types
   def stringType = stdlibTypeRef("String")
@@ -514,7 +521,7 @@ def injectCommonFunctions(module: Module): Module =
       typeAsc    = Some(returnType),
       docComment = None,
       meta       = Some(meta),
-      id         = stdlibId(name)
+      id         = stdlibId("bnd", name)
     )
 
   // Helper to create a binary operator that calls a function
@@ -531,7 +538,7 @@ def injectCommonFunctions(module: Module): Module =
     val param1 = FnParam(dummySpan, "a", typeAsc = Some(param1Type))
     val param2 = FnParam(dummySpan, "b", typeAsc = Some(param2Type))
     // Create refs with resolvedId pointing to the stdlib function
-    val fnRef = Ref(dummySpan, fnName, resolvedId = stdlibId(fnName))
+    val fnRef = Ref(dummySpan, fnName, resolvedId = stdlibId("bnd", fnName))
     val body =
       Expr(dummySpan, List(fnRef, Ref(dummySpan, "a"), Ref(dummySpan, "b")))
     val mangledName = OpMangling.mangleOp(name, 2)
@@ -559,7 +566,7 @@ def injectCommonFunctions(module: Module): Module =
       typeAsc    = Some(returnType),
       docComment = None,
       meta       = Some(meta),
-      id         = stdlibId(mangledName)
+      id         = stdlibId("bnd", mangledName)
     )
 
   val commonFunctions = List(

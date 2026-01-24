@@ -22,7 +22,7 @@
 ## Active Tasks
 
 
-### Improved id generation scheme
+### Improved id generation scheme [COMPLETE]
 
 - Motivation: deterministic IDs keep naming stable and human-readable; struct fields are
   already unique in a module so the structured path is enough, while nested params still need
@@ -124,7 +124,12 @@ TBD
 - **Scoped TBAA**: Added scoped TBAA metadata for better alias analysis
 - **Alias scope emitter**: New `AliasScopeEmitter` for alias scope metadata
   on function calls and memory operations
-- **Host CPU attribute fix**: Fixed bug in `LlvmToolchain.readHostCpu` where
-  `collectFirst { case line => ... }` matched all lines (total pattern),
-  stopping at first line instead of finding `Host CPU:`. Changed to
-  `.find(...).map(...)` pattern.
+  - **Host CPU attribute fix**: Fixed bug in `LlvmToolchain.readHostCpu` where
+    `collectFirst { case line => ... }` matched all lines (total pattern),
+    stopping at first line instead of finding `Host CPU:`. Changed to
+    `.find(...).map(...)` pattern.
+
+### 2026-01-24
+
+- **Deterministic IDs**: Top-level IDs now use `module::<decl-lc>::<name>` with decl class names lowercased; struct fields use `module::typestruct::<structName>::<fieldName>`; stdlib IDs aligned; nested params/lambdas keep owner+UUID.
+- **Tests**: `sbt "test; scapegoat; scalafmtAll; scalafixAll; mmlcPublishLocal"`
