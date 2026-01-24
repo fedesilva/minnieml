@@ -50,7 +50,7 @@ Enable writing more complex programs without manual memory management, while the
 teaches us about the actual memory model we need. This will evolve as we add real records
 (non-native) and an effects system.
 
-## The Problem]
+## The Problem
 
 Given an AST that's fundamentally functions and applications, we need to:
 1. Detect which values require heap allocation (String, Buffer, structs)
