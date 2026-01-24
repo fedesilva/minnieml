@@ -88,39 +88,51 @@ def rewrite(
     s"\n \n Duplicate Name phase: \n ${prettyPrintAst(state1.module, showSourceSpans = showSpans)}"
   )
 
-  val state2 = TypeResolver.rewriteModule(state1)
+  val state2 = IdAssigner.rewriteModule(state1)
   println("-" * 80)
   println(
-    s"\n \n Type Resolver phase:  \n ${prettyPrintAst(state2.module, showSourceSpans = showSpans)}"
+    s"\n \n Id Assigner phase:  \n ${prettyPrintAst(state2.module, showSourceSpans = showSpans)}"
   )
 
-  val state3 = RefResolver.rewriteModule(state2)
+  val state3 = TypeResolver.rewriteModule(state2)
   println("-" * 80)
   println(
-    s"\n \n Reference Resolver phase: \n ${prettyPrintAst(state3.module, showSourceSpans = showSpans)}"
+    s"\n \n Type Resolver phase:  \n ${prettyPrintAst(state3.module, showSourceSpans = showSpans)}"
   )
 
-  val state4 = ExpressionRewriter.rewriteModule(state3)
+  val state4 = RefResolver.rewriteModule(state3)
   println("-" * 80)
   println(
-    s"\n \n Expression Rewriting phase: \n ${prettyPrintAst(state4.module, showSourceSpans = showSpans)}"
+    s"\n \n Reference Resolver phase: \n ${prettyPrintAst(state4.module, showSourceSpans = showSpans)}"
   )
 
-  val state5 = Simplifier.rewriteModule(state4)
+  val state5 = ExpressionRewriter.rewriteModule(state4)
   println("-" * 80)
   println(
-    s"\n \n Simplifier phase: \n ${prettyPrintAst(state5.module, showSourceSpans = showSpans)}"
+    s"\n \n Expression Rewriting phase: \n ${prettyPrintAst(state5.module, showSourceSpans = showSpans)}"
   )
 
-  val state6 = TypeChecker.rewriteModule(state5)
+  val state6 = Simplifier.rewriteModule(state5)
+  println("-" * 80)
+  println(
+    s"\n \n Simplifier phase: \n ${prettyPrintAst(state6.module, showSourceSpans = showSpans)}"
+  )
+
+  val state7 = TypeChecker.rewriteModule(state6)
 
   // Always print the final module
   println("-" * 80)
   println(
-    s"Type Checker phase \n${prettyPrintAst(state6.module, showTypes = true, showSourceSpans = showSpans)}"
+    s"Type Checker phase \n${prettyPrintAst(state7.module, showTypes = true, showSourceSpans = showSpans)}"
   )
 
-  val finalState = TailRecursionDetector.rewriteModule(state6)
+  val state8 = ResolvablesIndexer.rewriteModule(state7)
+  println("-" * 80)
+  println(
+    s"Resolvables Indexer phase \n${prettyPrintAst(state8.module, showTypes = showTypes, showSourceSpans = showSpans)}"
+  )
+
+  val finalState = TailRecursionDetector.rewriteModule(state8)
   println("-" * 80)
   println(
     s"Tail Recursion phase \n${prettyPrintAst(finalState.module, showTypes = showTypes, showSourceSpans = showSpans)}"
