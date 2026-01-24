@@ -5,6 +5,10 @@ fn abs(x: Int): Int =
   if x < 0 then 0 - x else x end
 ;
 
+fn is_safe(board: IntArray, row: Int, col: Int): Bool =
+  is_safe_loop board row col 0
+;
+
 # Check if placing queen at (row, col) is safe
 fn is_safe_loop(board: IntArray, row: Int, col: Int, check_row: Int): Bool =
   if check_row >= row then
@@ -28,9 +32,7 @@ fn is_safe_loop(board: IntArray, row: Int, col: Int, check_row: Int): Bool =
   end
 ;
 
-fn is_safe(board: IntArray, row: Int, col: Int): Bool =
-  is_safe_loop board row col 0
-;
+
 
 # Single recursive function - calls itself for both columns and rows
 fn solve_cols(board: IntArray, row: Int, n: Int, col: Int, acc: Int): Int =
@@ -42,7 +44,7 @@ fn solve_cols(board: IntArray, row: Int, n: Int, col: Int, acc: Int): Int =
       if row == (n - 1) then
         1
       else
-        solve_cols board (row + 1) n 0 0  # Recursive call directly!
+        solve_cols board (row + 1) n 0 0 
       end
     else
       0
