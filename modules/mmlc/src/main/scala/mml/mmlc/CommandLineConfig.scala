@@ -121,8 +121,8 @@ object CommandLineConfig:
     val noTcoOpt = opt[Unit]("no-tco")
       .text("Disable tail-call optimization")
 
-    val timingOpt = opt[Unit]('t', "time")
-      .text("Print compilation timings at the end")
+    val timingOpt = opt[Unit]('m', "metrics")
+      .text("Print compilation metrics (timings, parser stats)")
 
     val printPhasesOpt = opt[Unit]('p', "print-phases")
       .text("Print detailed compilation phase information")

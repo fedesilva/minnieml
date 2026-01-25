@@ -4,7 +4,7 @@ import cats.effect.{ExitCode, IO}
 import cats.syntax.all.*
 import mml.mmlclib.MmlLibBuildInfo
 import mml.mmlclib.codegen.LlvmToolchain
-import mml.mmlclib.compiler.{CodegenStage, CompilerConfig, CompilerState, FileOperations}
+import mml.mmlclib.compiler.{CodegenStage, CompilerConfig, CompilerState, Counter, FileOperations}
 import mml.mmlclib.errors.CompilationError
 import mml.mmlclib.parser.{ParserError, SourceInfo}
 import mml.mmlclib.semantic.SemanticError
@@ -408,7 +408,21 @@ object CompilerApi:
         lines.traverse_(IO.println) *>
         IO.println(stageHeader) *>
         stageLines.traverse_(IO.println) *>
-        IO.println(totalLine)
+        IO.println(totalLine) *>
+        printCounters(state.counters)
+
+  private def printCounters(counters: Vector[Counter]): IO[Unit] =
+    if counters.isEmpty then IO.unit
+    else
+      val counterHeader = s"${Console.CYAN}Counters:${Console.RESET}"
+      val counterLines = counters.map { c =>
+        if c.name.startsWith("time:") then
+          val ms = c.value.toDouble / 1000000.0
+          f"  ${c.stage}%-10s ${c.name}%-24s $ms%.2f ms"
+        else f"  ${c.stage}%-10s ${c.name}%-24s ${c.value}%,d"
+      }
+      IO.println(counterHeader) *>
+        counterLines.traverse_(IO.println)
 
   def formatBuildInfo(
     label:   String,

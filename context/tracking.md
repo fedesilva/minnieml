@@ -21,6 +21,10 @@
 
 ## Active Tasks
 
+## Parser metrics
+
+read `docs/brainstorming/parser/instrument-parser.md`
+
 
 ### Simple Memory Management Prototype
 

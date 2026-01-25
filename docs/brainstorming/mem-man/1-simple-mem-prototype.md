@@ -50,6 +50,8 @@ Enable writing more complex programs without manual memory management, while the
 teaches us about the actual memory model we need. This will evolve as we add real records
 (non-native) and an effects system.
 
+[[note]]: we have already added records. edit.
+
 ## The Problem
 
 Given an AST that's fundamentally functions and applications, we need to:
@@ -176,10 +178,10 @@ Literal  → static memory, no owner, never free
 
 ```mml
 fn loop(): Unit =
-  println "Type a number:"
-  let s = readline()
-  let n = str_to_int s
-  println (concat "Number is: " (to_string n))
+  println "Type a number:";
+  let s = readline();
+  let n = str_to_int s;
+  println (concat "Number is: " (to_string n));
   loop ()
 ```
 
@@ -250,8 +252,8 @@ This avoids unnecessary runtime checks in hot paths where ownership is staticall
   fn main() =
     let s = 
       if strict_mode() 
-        then "static_default" 
-        else readline();  // heap alloc    
+      then "static_default" 
+      else readline();  # heap alloc    
       println s;
       // Implicit free at end of scope
       // We don't know if `s` is static or heap allocated.
@@ -283,11 +285,13 @@ Since the only Resource types defined today are String and Buffer and they are d
 and any new one that we add in the short term will also be, we will provide deallocation
 functions for each in the same runtime alongside the types they free.
 
-Note: Since writing this we introduced specialized arrays, we need to think about them.
+[[note]]: Since writing this we introduced specialized arrays, we need to think about them.
 
 ---
 
 ## Implementation Sketch
+
+[[note]]: we need to include Arrays (the temporary now)
 
 ### AST Changes
 
@@ -306,7 +310,7 @@ enum MemEffect:
 
 Runs after TypeChecker, before Codegen.
 
-Note: Since writing this we have introduces soft references and
+[[note]]: Since writing this we have introduced soft references and
       the reindexing phase between typer and codegen.
       We need to think about this.
 
