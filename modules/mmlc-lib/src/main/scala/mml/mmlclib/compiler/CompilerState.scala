@@ -8,6 +8,8 @@ import mml.mmlclib.semantic.SemanticError
 
 final case class Timing(stage: String, name: String, durationNanos: Long)
 
+final case class Counter(stage: String, name: String, value: Long)
+
 case class CompilerState(
   module:         Module,
   sourceInfo:     SourceInfo,
@@ -15,11 +17,12 @@ case class CompilerState(
   errors:         Vector[CompilationError],
   warnings:       Vector[CompilerWarning],
   timings:        Vector[Timing],
-  entryPoint:     Option[String] = None,
-  canEmitCode:    Boolean        = false,
-  llvmIr:         Option[String] = None,
-  nativeResult:   Option[Int]    = None,
-  resolvedTriple: Option[String] = None
+  counters:       Vector[Counter] = Vector.empty,
+  entryPoint:     Option[String]  = None,
+  canEmitCode:    Boolean         = false,
+  llvmIr:         Option[String]  = None,
+  nativeResult:   Option[Int]     = None,
+  resolvedTriple: Option[String]  = None
 ):
   def addErrors(newErrors: List[CompilationError]): CompilerState =
     copy(errors = errors ++ newErrors)
@@ -60,6 +63,12 @@ case class CompilerState(
   def addTiming(stage: String, name: String, durationNanos: Long): CompilerState =
     copy(timings = timings :+ Timing(stage, name, durationNanos))
 
+  def addCounter(stage: String, name: String, value: Long): CompilerState =
+    copy(counters = counters :+ Counter(stage, name, value))
+
+  def addCounters(newCounters: List[Counter]): CompilerState =
+    copy(counters = counters ++ newCounters)
+
   def semanticErrors: Vector[SemanticError] =
     errors.collect { case err: SemanticError => err }
 
@@ -77,7 +86,8 @@ object CompilerState:
       config     = config,
       errors     = Vector.empty,
       warnings   = Vector.empty,
-      timings    = Vector.empty
+      timings    = Vector.empty,
+      counters   = Vector.empty
     )
 
   def timed[A](

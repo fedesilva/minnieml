@@ -37,3 +37,21 @@ object Parser:
     sourcePath: Option[String] = None
   ): ParserResult =
     parseModuleWithInfo(source, name, sourcePath)._2
+
+  def parseModuleInstrumented(
+    source:     String,
+    name:       String,
+    sourcePath: Option[String] = None
+  ): (SourceInfo, ParserResult, ParserMetricsCollector) =
+    val info      = SourceInfo(source)
+    val collector = new ParserMetricsCollector(source.length)
+
+    val result = parse(
+      source,
+      p => topLevelModuleP(name, info, sourcePath)(using p),
+      instrument = collector
+    ) match
+      case Parsed.Success(result, _) => result.asRight
+      case f: Parsed.Failure => ParserError.Failure(f.trace().longMsg).asLeft
+
+    (info, result, collector)
