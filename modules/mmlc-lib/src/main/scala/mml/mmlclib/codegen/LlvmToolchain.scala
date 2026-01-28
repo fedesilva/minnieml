@@ -15,7 +15,7 @@ case class ToolInfo(versions: Map[String, String], missing: List[String])
 case class PipelineTiming(name: String, durationNanos: Long)
 
 enum CompilationMode derives CanEqual:
-  case Binary
+  case Exe
   case Library
   case Ast
   case Ir
@@ -349,7 +349,7 @@ object LlvmToolchain:
         )
       )
       optInputFile <- EitherT(
-        if config.mode == CompilationMode.Binary then
+        if config.mode == CompilationMode.Exe then
           linkRuntimeBitcode(
             programName,
             targetTriple,
@@ -473,7 +473,7 @@ object LlvmToolchain:
     clangFlags:   List[String],
     recordTiming: Option[TimingRecorder]
   ): IO[Either[LlvmCompilationError, Int]] = config.mode match
-    case CompilationMode.Binary =>
+    case CompilationMode.Exe =>
       compileBinary(
         programName,
         targetTriple,

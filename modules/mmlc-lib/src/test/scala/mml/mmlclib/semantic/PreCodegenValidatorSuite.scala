@@ -14,11 +14,11 @@ class PreCodegenValidatorSuite extends BaseEffFunSuite:
     """
     val expectedMessage = "No entry point 'main' found for binary compilation"
     FrontEndApi
-      .compile(source, "Test", CompilerConfig.default.copy(mode = CompilationMode.Binary))
+      .compile(source, "Test", CompilerConfig.default.copy(mode = CompilationMode.Exe))
       .value
       .map {
         case Right(state) =>
-          val validatedState = PreCodegenValidator.validate(CompilationMode.Binary)(state)
+          val validatedState = PreCodegenValidator.validate(CompilationMode.Exe)(state)
           val errorMessages = validatedState.errors.map {
             case InvalidEntryPoint(message, _) => message
             case _ => ""
@@ -34,11 +34,11 @@ class PreCodegenValidatorSuite extends BaseEffFunSuite:
     """
     val expectedMessage = "Entry point 'main' must have no parameters"
     FrontEndApi
-      .compile(source, "Test", CompilerConfig.default.copy(mode = CompilationMode.Binary))
+      .compile(source, "Test", CompilerConfig.default.copy(mode = CompilationMode.Exe))
       .value
       .map {
         case Right(state) =>
-          val validatedState = PreCodegenValidator.validate(CompilationMode.Binary)(state)
+          val validatedState = PreCodegenValidator.validate(CompilationMode.Exe)(state)
           val errorMessages = validatedState.errors.map {
             case InvalidEntryPoint(message, _) => message
             case _ => ""
@@ -54,11 +54,11 @@ class PreCodegenValidatorSuite extends BaseEffFunSuite:
     """
     val expectedMessage = "Entry point 'main' must have a return type of 'Unit' or 'Int64'"
     FrontEndApi
-      .compile(source, "Test", CompilerConfig.default.copy(mode = CompilationMode.Binary))
+      .compile(source, "Test", CompilerConfig.default.copy(mode = CompilationMode.Exe))
       .value
       .map {
         case Right(state) =>
-          val validatedState = PreCodegenValidator.validate(CompilationMode.Binary)(state)
+          val validatedState = PreCodegenValidator.validate(CompilationMode.Exe)(state)
           val errorMessages = validatedState.errors.map {
             case InvalidEntryPoint(message, _) => message
             case _ => ""
@@ -73,11 +73,11 @@ class PreCodegenValidatorSuite extends BaseEffFunSuite:
       fn main(): Unit = ();
     """
     FrontEndApi
-      .compile(source, "Test", CompilerConfig.default.copy(mode = CompilationMode.Binary))
+      .compile(source, "Test", CompilerConfig.default.copy(mode = CompilationMode.Exe))
       .value
       .map {
         case Right(state) =>
-          val validatedState = PreCodegenValidator.validate(CompilationMode.Binary)(state)
+          val validatedState = PreCodegenValidator.validate(CompilationMode.Exe)(state)
           assert(validatedState.errors.isEmpty)
         case Left(error) => fail(s"Compilation failed with error: $error")
       }
@@ -88,11 +88,11 @@ class PreCodegenValidatorSuite extends BaseEffFunSuite:
       fn main(): Int = 0;
     """
     FrontEndApi
-      .compile(source, "Test", CompilerConfig.default.copy(mode = CompilationMode.Binary))
+      .compile(source, "Test", CompilerConfig.default.copy(mode = CompilationMode.Exe))
       .value
       .map {
         case Right(state) =>
-          val validatedState = PreCodegenValidator.validate(CompilationMode.Binary)(state)
+          val validatedState = PreCodegenValidator.validate(CompilationMode.Exe)(state)
           assert(validatedState.errors.isEmpty)
         case Left(error) => fail(s"Compilation failed with error: $error")
       }

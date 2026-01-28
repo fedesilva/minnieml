@@ -23,7 +23,7 @@ object PreCodegenValidator:
     state: CompilerState
   ): CompilerState =
     mode match
-      case CompilationMode.Binary =>
+      case CompilationMode.Exe =>
         findMainFn(state.module) match
           case None =>
             state.addError(
