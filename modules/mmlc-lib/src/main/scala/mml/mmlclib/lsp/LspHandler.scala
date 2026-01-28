@@ -323,9 +323,7 @@ class LspHandler(
         val filePath = Path.of(uriToPath(uri))
         val mode     = if isLib then CompilationMode.Library else CompilationMode.Binary
         val config   = CompilerConfig.default.copy(mode = mode)
-        val compile =
-          if isLib then CompilerApi.compileLibraryQuiet else CompilerApi.compileBinaryQuiet
-        compile(filePath, config).flatMap {
+        CompilerApi.compileNativeQuiet(filePath, config).flatMap {
           case Left(errorMsg) =>
             JsonRpc.writeResponse(
               output,

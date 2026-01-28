@@ -36,7 +36,7 @@ object Main extends IOApp:
                 bin.optLevel,
                 bin.emitScopedAlias
               )
-              CompilerApi.processBinary(path, cfg)
+              CompilerApi.processNative(path, cfg)
             }
 
           case run: Command.Run =>
@@ -80,7 +80,7 @@ object Main extends IOApp:
                 lib.optLevel,
                 lib.emitScopedAlias
               )
-              CompilerApi.processLibrary(path, cfg)
+              CompilerApi.processNative(path, cfg)
             }
 
           case ast: Command.Ast =>
