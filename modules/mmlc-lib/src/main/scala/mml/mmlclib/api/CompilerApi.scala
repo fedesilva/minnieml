@@ -466,7 +466,7 @@ object CompilerApi:
         IO.println(s"\n${Console.CYAN}Target Triple:${Console.RESET}") *>
           IO.println(s"  ${Console.GREEN}Current: $triple${Console.RESET} (auto-detected)") *>
           printSampleTriples *>
-          IO.println(s"\n  Override with: mmlc bin --target <triple> <source-file>") *>
+          IO.println(s"\n  Override with: mmlc build --target <triple> <source-file>") *>
           IO.println(
             s"  ${Console.YELLOW}Cross-compilation requires appropriate toolchains.${Console.RESET}"
           )
@@ -476,7 +476,7 @@ object CompilerApi:
             s"  ${Console.RED}Could not detect local triple (is clang installed?)${Console.RESET}"
           ) *>
           printSampleTriples *>
-          IO.println(s"\n  Specify with: mmlc bin --target <triple> <source-file>")
+          IO.println(s"\n  Specify with: mmlc build --target <triple> <source-file>")
     }
 
   private def printSampleTriples: IO[Unit] =

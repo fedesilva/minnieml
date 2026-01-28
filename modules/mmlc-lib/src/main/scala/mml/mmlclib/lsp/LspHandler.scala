@@ -321,7 +321,7 @@ class LspHandler(
         )
       case Some(uri) =>
         val filePath = Path.of(uriToPath(uri))
-        val mode     = if isLib then CompilationMode.Library else CompilationMode.Binary
+        val mode     = if isLib then CompilationMode.Library else CompilationMode.Exe
         val config   = CompilerConfig.default.copy(mode = mode)
         CompilerApi.compileNativeQuiet(filePath, config).flatMap {
           case Left(errorMsg) =>

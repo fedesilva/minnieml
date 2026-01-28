@@ -41,7 +41,7 @@ object CompilerConfig:
       emitScopedAlias = false
     )
 
-  def binary(
+  def exe(
     outputDir:       String,
     verbose:         Boolean        = false,
     targetTriple:    Option[String] = None,
@@ -57,7 +57,7 @@ object CompilerConfig:
     emitScopedAlias: Boolean        = false
   ): CompilerConfig =
     CompilerConfig(
-      mode            = CompilationMode.Binary,
+      mode            = CompilationMode.Exe,
       outputDir       = Paths.get(outputDir),
       verbose         = verbose,
       targetTriple    = targetTriple,

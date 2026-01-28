@@ -55,7 +55,7 @@
 The compiler needs to be installed before it's used if changes were made.
 
 - **Publish fat jar**: `sbt mmlcPublishLocal`
-- **After publishing**: `mmlc run <file>` or `mmlc bin <file>` from anywhere.
+- **After publishing**: `mmlc run <file>` or `mmlc build <file>` from anywhere.
 
 ### Before finish - Post Task Chores
 

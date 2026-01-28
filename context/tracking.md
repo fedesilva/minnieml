@@ -57,6 +57,19 @@ TBD
 
 ## Recent Changes
 
+### 2026-01-27 (branch: 2026-01-14-dev)
+
+- **Unified build command**: Replaced separate `bin` and `lib` CLI commands with a single
+  `build` command. New `-x`/`--target-type` flag selects output type: `exe` (default) or `lib`.
+  - Renamed `CompilationMode.Binary` → `CompilationMode.Exe` throughout codebase
+  - Renamed `CompilerConfig.binary(...)` → `CompilerConfig.exe(...)`
+  - Removed `Command.Bin` and `Command.Lib`, added `Command.Build` with `targetType` field
+  - Updated `Main.scala` handler to dispatch based on `targetType`
+  - Updated `LspHandler.scala`, `PreCodegenValidator.scala`, `LlvmToolchain.scala`
+  - Updated test files: `PreCodegenValidatorSuite.scala`, `FunctionSignatureTest.scala`
+  - Updated `benchmark/Makefile`, `context/coding-rules.md`, `CompilerApi.scala` references
+  - CLI usage: `mmlc build file.mml` (exe), `mmlc build -x lib file.mml` (library)
+
 ### 2026-01-15 (branch: 2026-01-14-dev)
 
 - **LLVM info step reordering**: Moved LLVM tools check earlier in the pipeline

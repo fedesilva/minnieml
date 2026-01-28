@@ -16,7 +16,7 @@ class FunctionSignatureTest extends BaseEffFunSuite:
 
     // Use Binary mode to generate synthesized main entry point
     val config =
-      CompilerConfig.binary("build", targetTriple = Some("x86_64-apple-macosx"))
+      CompilerConfig.exe("build", targetTriple = Some("x86_64-apple-macosx"))
 
     compileAndGenerate(source, config = config).map { llvmIr =>
 
@@ -46,7 +46,7 @@ class FunctionSignatureTest extends BaseEffFunSuite:
       """
 
     val config =
-      CompilerConfig.binary("build", targetTriple = Some("aarch64-apple-macosx"))
+      CompilerConfig.exe("build", targetTriple = Some("aarch64-apple-macosx"))
 
     compileAndGenerate(source, config = config).map { llvmIr =>
       assert(
@@ -72,7 +72,7 @@ class FunctionSignatureTest extends BaseEffFunSuite:
       """
 
     val config =
-      CompilerConfig.binary("build", targetTriple = Some("aarch64-apple-macosx"))
+      CompilerConfig.exe("build", targetTriple = Some("aarch64-apple-macosx"))
 
     compileAndGenerate(source, config = config).map { llvmIr =>
       assert(
