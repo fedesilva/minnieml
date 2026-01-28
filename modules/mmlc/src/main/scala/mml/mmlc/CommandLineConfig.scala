@@ -69,7 +69,7 @@ object CommandLineConfig:
     case Lsp()
 
   case class Config(
-    command: Command = Command.Info()
+    command: Command = Command.Build()
   )
 
   def createParser: OParser[Unit, Config] =
@@ -129,103 +129,100 @@ object CommandLineConfig:
       )
       .text("Output type: exe (executable, default) or lib (library)")
 
-    // Build command (unified binary/library compilation)
-    val buildCommand =
-      cmd("build")
-        .action((_, config) => config.copy(command = Command.Build()))
-        .text("Compile source file (defaults to executable, use -y lib for library)")
-        .children(
-          fileArg.action((file, config) =>
-            config.copy(command = config.command match {
-              case build: Command.Build => build.copy(file = Some(Paths.get(file)))
-              case cmd => cmd
-            })
-          ),
-          targetTypeOpt.action((targetType, config) =>
-            config.copy(command = config.command match {
-              case build: Command.Build => build.copy(targetType = targetType)
-              case cmd => cmd
-            })
-          ),
-          buildDirOpt.action((dir, config) =>
-            config.copy(command = config.command match {
-              case build: Command.Build => build.copy(outputDir = dir)
-              case cmd => cmd
-            })
-          ),
-          outputNameOpt.action((name, config) =>
-            config.copy(command = config.command match {
-              case build: Command.Build => build.copy(outputName = Some(name))
-              case cmd => cmd
-            })
-          ),
-          astOpt.action((_, config) =>
-            config.copy(command = config.command match {
-              case build: Command.Build => build.copy(outputAst = true)
-              case cmd => cmd
-            })
-          ),
-          verboseOpt.action((_, config) =>
-            config.copy(command = config.command match {
-              case build: Command.Build => build.copy(verbose = true)
-              case cmd => cmd
-            })
-          ),
-          timingOpt.action((_, config) =>
-            config.copy(command = config.command match {
-              case build: Command.Build => build.copy(timings = true)
-              case cmd => cmd
-            })
-          ),
-          targetOpt.action((triple, config) =>
-            config.copy(command = config.command match {
-              case build: Command.Build => build.copy(targetTriple = Some(triple))
-              case cmd => cmd
-            })
-          ),
-          targetCpuOpt.action((cpu, config) =>
-            config.copy(command = config.command match {
-              case build: Command.Build => build.copy(targetCpu = Some(cpu))
-              case cmd => cmd
-            })
-          ),
-          noStackCheckOpt.action((_, config) =>
-            config.copy(command = config.command match {
-              case build: Command.Build => build.copy(noStackCheck = true)
-              case cmd => cmd
-            })
-          ),
-          emitOptIrOpt.action((_, config) =>
-            config.copy(command = config.command match {
-              case build: Command.Build => build.copy(emitOptIr = true)
-              case cmd => cmd
-            })
-          ),
-          noTcoOpt.action((_, config) =>
-            config.copy(command = config.command match {
-              case build: Command.Build => build.copy(noTco = true)
-              case cmd => cmd
-            })
-          ),
-          printPhasesOpt.action((_, config) =>
-            config.copy(command = config.command match {
-              case build: Command.Build => build.copy(printPhases = true)
-              case cmd => cmd
-            })
-          ),
-          optLevelOpt.action((level, config) =>
-            config.copy(command = config.command match {
-              case build: Command.Build => build.copy(optLevel = level)
-              case cmd => cmd
-            })
-          ),
-          emitScopedAliasOpt.action((_, config) =>
-            config.copy(command = config.command match {
-              case build: Command.Build => build.copy(emitScopedAlias = true)
-              case cmd => cmd
-            })
-          )
-        )
+    // Top-level build options (applied to default Build command)
+    def topLevelFileArg = arg[String]("<source-file>")
+      .optional()
+      .action((file, config) =>
+        config.command match
+          case build: Command.Build =>
+            config.copy(command = build.copy(file = Some(Paths.get(file))))
+          case _ => config
+      )
+      .text("Path to the source file")
+
+    def topLevelTargetTypeOpt = targetTypeOpt.action((t, c) =>
+      c.command match
+        case b: Command.Build => c.copy(command = b.copy(targetType = t))
+        case _ => c
+    )
+
+    def topLevelBuildDirOpt = buildDirOpt.action((d, c) =>
+      c.command match
+        case b: Command.Build => c.copy(command = b.copy(outputDir = d))
+        case _ => c
+    )
+
+    def topLevelOutputNameOpt = outputNameOpt.action((n, c) =>
+      c.command match
+        case b: Command.Build => c.copy(command = b.copy(outputName = Some(n)))
+        case _ => c
+    )
+
+    def topLevelAstOpt = astOpt.action((_, c) =>
+      c.command match
+        case b: Command.Build => c.copy(command = b.copy(outputAst = true))
+        case _ => c
+    )
+
+    def topLevelVerboseOpt = verboseOpt.action((_, c) =>
+      c.command match
+        case b: Command.Build => c.copy(command = b.copy(verbose = true))
+        case _ => c
+    )
+
+    def topLevelTimingOpt = timingOpt.action((_, c) =>
+      c.command match
+        case b: Command.Build => c.copy(command = b.copy(timings = true))
+        case _ => c
+    )
+
+    def topLevelTargetOpt = targetOpt.action((t, c) =>
+      c.command match
+        case b: Command.Build => c.copy(command = b.copy(targetTriple = Some(t)))
+        case _ => c
+    )
+
+    def topLevelTargetCpuOpt = targetCpuOpt.action((cpu, c) =>
+      c.command match
+        case b: Command.Build => c.copy(command = b.copy(targetCpu = Some(cpu)))
+        case _ => c
+    )
+
+    def topLevelNoStackCheckOpt = noStackCheckOpt.action((_, c) =>
+      c.command match
+        case b: Command.Build => c.copy(command = b.copy(noStackCheck = true))
+        case _ => c
+    )
+
+    def topLevelEmitOptIrOpt = emitOptIrOpt.action((_, c) =>
+      c.command match
+        case b: Command.Build => c.copy(command = b.copy(emitOptIr = true))
+        case _ => c
+    )
+
+    def topLevelNoTcoOpt = noTcoOpt.action((_, c) =>
+      c.command match
+        case b: Command.Build => c.copy(command = b.copy(noTco = true))
+        case _ => c
+    )
+
+    def topLevelPrintPhasesOpt = printPhasesOpt.action((_, c) =>
+      c.command match
+        case b: Command.Build => c.copy(command = b.copy(printPhases = true))
+        case _ => c
+    )
+
+    def topLevelOptLevelOpt = optLevelOpt.action((l, c) =>
+      c.command match
+        case b: Command.Build => c.copy(command = b.copy(optLevel = l))
+        case _ => c
+    )
+
+    def topLevelEmitScopedAliasOpt = emitScopedAliasOpt.action((_, c) =>
+      c.command match
+        case b: Command.Build => c.copy(command = b.copy(emitScopedAlias = true))
+        case _ => c
+    )
 
     // Run command (compile and execute)
     val runCommand =
@@ -472,13 +469,30 @@ object CommandLineConfig:
         "(" + MmlcBuildInfo.build + "-" + MmlcBuildInfo.gitSha + ")",
         "(" + MmlcBuildInfo.os + "-" + MmlcBuildInfo.arch + ")"
       ),
-      infoCommand,
-      buildCommand,
+      // Top-level build options (build is the default command)
+      topLevelTargetTypeOpt,
+      topLevelBuildDirOpt,
+      topLevelOutputNameOpt,
+      topLevelAstOpt,
+      topLevelVerboseOpt,
+      topLevelTimingOpt,
+      topLevelTargetOpt,
+      topLevelTargetCpuOpt,
+      topLevelNoStackCheckOpt,
+      topLevelEmitOptIrOpt,
+      topLevelNoTcoOpt,
+      topLevelPrintPhasesOpt,
+      topLevelOptLevelOpt,
+      topLevelEmitScopedAliasOpt,
+      // Subcommands (override the default Build when matched)
       runCommand,
       astCommand,
       irCommand,
       devCommand,
       lspCommand,
       cleanCommand,
-      help('h', "help").text("Display this help message")
+      infoCommand,
+      help('h', "help").text("Display this help message"),
+      // File argument last so subcommands take precedence
+      topLevelFileArg
     )

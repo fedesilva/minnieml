@@ -57,6 +57,20 @@ TBD
 
 ## Recent Changes
 
+### 2026-01-28 (branch: 2026-01-14-dev)
+
+- **Build as default CLI action**: Made `build` the default command so `mmlc file.mml` compiles
+  directly without needing `mmlc build file.mml`. Deleted the `build` subcommand.
+  - Changed `Config` default from `Command.Info()` to `Command.Build()`
+  - Added top-level build options in parser (`topLevelFileArg`, `topLevelTargetTypeOpt`, etc.)
+  - Removed `buildCommand` block; top-level options apply to default Build command
+  - Added early help handling in `Main.scala` (checks `-h`/`--help` before parsing)
+  - Updated no-file error to show `Usage: mmlc [options] <source-file>`
+  - Updated `benchmark/Makefile`: replaced all 31 `mmlc build` occurrences with `mmlc`
+  - Updated `context/coding-rules.md` documentation
+  - CLI usage: `mmlc file.mml`, `mmlc -v -O 2 file.mml`, `mmlc -x lib file.mml`
+  - Subcommands (`run`, `ast`, `ir`, `dev`, `lsp`, `clean`, `info`) still work
+
 ### 2026-01-27 (branch: 2026-01-14-dev)
 
 - **Unified build command**: Replaced separate `bin` and `lib` CLI commands with a single
