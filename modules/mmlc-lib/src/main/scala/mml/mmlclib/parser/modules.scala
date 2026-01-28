@@ -39,7 +39,7 @@ private def addStructConstructors(members: List[Member]): List[Member] =
   }
 
 private def mkStructConstructor(struct: TypeStruct): Bnd =
-  val constructorName = s"mk${struct.name}"
+  val constructorName = s"__mk_${struct.name}"
   val returnType      = TypeRef(struct.span, struct.name)
   val params = struct.fields.toList.map { field =>
     FnParam(field.span, field.name, typeAsc = Some(field.typeSpec))

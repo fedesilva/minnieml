@@ -363,13 +363,6 @@ case class CodeGenState(
   def getTbaaAccessTag(typeName: String): (CodeGenState, String) =
     val (s1, typeId) = getTbaaScalar(typeName)
 
-    // Check if we already have this tag generated? No, access tags are typically !{!type, !accessType, offset}
-    // For simple scalar access, it's !{!typeId, !typeId, i64 0}
-    // We can just generate a new ID for this tag or cache it.
-    // For now, let's treat the tag construction as a separate metadata node if needed,
-    // but typically !tbaa references a struct path.
-    // Standard scalar access: !tbaa !{!1, !1, i64 0} where !1 is the scalar type node.
-
     // We need to emit the tag metadata node itself
     val tagKey = s"tag_$typeName"
     s1.tbaaScalarIds.get(tagKey) match
@@ -629,9 +622,6 @@ def nativeTypeToLlvmDef(
         Right(emitTypeDefinition(s"struct.$typeName", llvmFields))
 
 /** Convert any TypeSpec to LLVM type string.
-  *
-  * This is a basic implementation for Block 3. It will be expanded in Block 4 to handle all type
-  * specifications properly.
   *
   * @param typeSpec
   *   the type specification to convert

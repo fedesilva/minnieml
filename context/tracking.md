@@ -122,6 +122,11 @@ TBD
 
 ### 2026-01-27
 
+- **Struct constructor rename**: Changed generated struct constructor names from `mk<Name>`
+  to `__mk_<Name>` to avoid collisions with user-defined functions. Resolution still works
+  via `meta.originalName` matching (same technique as operators). Updated `modules.scala:42`
+  and `DataConstructorTests.scala`.
+
 - **CompilerApi consolidation**: Removed redundant `processLibrary` and `compileLibraryQuiet`
   (identical to binary counterparts - both called `processNativeBinary`/`processNativeBinaryQuiet`).
   Renamed `processBinary` → `processNative`, `compileBinaryQuiet` → `compileNativeQuiet`.
