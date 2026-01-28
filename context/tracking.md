@@ -120,6 +120,14 @@ TBD
     stopping at first line instead of finding `Host CPU:`. Changed to
     `.find(...).map(...)` pattern.
 
+### 2026-01-27
+
+- **CompilerApi consolidation**: Removed redundant `processLibrary` and `compileLibraryQuiet`
+  (identical to binary counterparts - both called `processNativeBinary`/`processNativeBinaryQuiet`).
+  Renamed `processBinary` → `processNative`, `compileBinaryQuiet` → `compileNativeQuiet`.
+  Binary/library distinction carried by `config.mode`. Updated call sites in `Main.scala`
+  and `LspHandler.scala`.
+
 ### 2026-01-24
 
 - **Deterministic IDs**: Top-level IDs now use `module::<decl-lc>::<name>` with decl class names lowercased; struct fields use `module::typestruct::<structName>::<fieldName>`; stdlib IDs aligned; nested params/lambdas keep owner+UUID.

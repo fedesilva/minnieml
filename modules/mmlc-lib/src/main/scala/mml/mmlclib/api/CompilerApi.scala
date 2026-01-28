@@ -77,7 +77,7 @@ object CompilerApi:
         else IO.pure(Right(validated))
     }
 
-  def processBinary(path: Path, config: CompilerConfig): IO[ExitCode] =
+  def processNative(path: Path, config: CompilerConfig): IO[ExitCode] =
     runPipeline(path, config).flatMap {
       case Left(exit) => IO.pure(exit)
       case Right(state) => processNativeBinary(state)
@@ -89,21 +89,8 @@ object CompilerApi:
       case Right(state) => processNativeRun(state)
     }
 
-  def processLibrary(path: Path, config: CompilerConfig): IO[ExitCode] =
-    runPipeline(path, config).flatMap {
-      case Left(exit) => IO.pure(exit)
-      case Right(state) => processNativeBinary(state)
-    }
-
-  /** Compile to binary without printing errors. Returns Left(errorMessage) on failure. */
-  def compileBinaryQuiet(path: Path, config: CompilerConfig): IO[Either[String, CompilerState]] =
-    runPipelineQuiet(path, config).flatMap {
-      case Left(msg) => IO.pure(Left(msg))
-      case Right(state) => processNativeBinaryQuiet(state)
-    }
-
-  /** Compile to library without printing errors. Returns Left(errorMessage) on failure. */
-  def compileLibraryQuiet(path: Path, config: CompilerConfig): IO[Either[String, CompilerState]] =
+  /** Compile to native without printing errors. Returns Left(errorMessage) on failure. */
+  def compileNativeQuiet(path: Path, config: CompilerConfig): IO[Either[String, CompilerState]] =
     runPipelineQuiet(path, config).flatMap {
       case Left(msg) => IO.pure(Left(msg))
       case Right(state) => processNativeBinaryQuiet(state)
