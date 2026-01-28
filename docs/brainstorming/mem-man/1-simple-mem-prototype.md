@@ -47,10 +47,9 @@ in the same representation as everything else. What you see is what runs.
 ## Goal
 
 Enable writing more complex programs without manual memory management, while the compiler
-teaches us about the actual memory model we need. This will evolve as we add real records
-(non-native) and an effects system.
-
-[[note]]: we have already added records. edit.
+teaches us about the actual memory model we need. Records (user-defined structs) are now
+implemented; this prototype focuses on ownership tracking and automatic deallocation.
+The system will evolve as we add an effects system.
 
 ## The Problem
 
@@ -62,13 +61,45 @@ Given an AST that's fundamentally functions and applications, we need to:
 ## What Needs Tracking
 
 **Heap-allocated types:**
-- `String` - struct with length and data pointer
+- `String` - struct with length, capacity, and data pointer
 - `Buffer` - pointer type
+- `IntArray` - struct with length, capacity, and data pointer
+- `StringArray` - struct with length, capacity, and data pointer (elements are Strings)
 - Any `@native` struct
+- User-defined structs (`TypeStruct`) - may contain heap-allocated fields
 
 **No tracking needed:**
 - `Int`, `Bool`, `Unit` - register/stack values
 - String literals - static memory
+
+### Current Limitation: User Structs Are Value Types
+
+The current codegen emits user-defined structs as **value types**. The generated constructor
+(`__mk_<Name>`) uses `alloca` for temporary workspace, then loads and returns the struct by value:
+
+```llvm
+define %struct.Person @personstruct___mk_Person(%struct.String %0, i64 %1) {
+  %2 = alloca %struct.Person        ; temporary stack space
+  ; ... store fields ...
+  %5 = load %struct.Person, ...     ; load entire struct
+  ret %struct.Person %5             ; return by VALUE (copied)
+}
+```
+
+This means:
+- Local struct variables live on the stack
+- Global struct variables live in the data segment
+- Structs are passed and returned by copy, not by pointer
+
+**Implications for ownership tracking:**
+- The struct itself doesn't need `__cap` - its memory is managed by stack/data segment
+- Only heap-allocated *fields* within the struct need tracking (e.g., a `String` field
+  assigned from `readline()`)
+- `DataDestructor` would free heap-allocated fields recursively, not the struct itself
+
+**Open question:** Is this the intended semantics, or should structs be heap-allocated
+and passed by pointer? Fixing this is out of scope for the ownership prototype - we work
+with the current value-type semantics.
 
 ## The Core Insight: We Need Effect Information
 
@@ -281,17 +312,25 @@ type name (e.g., `__free_String`, `__free_Buffer`).
 
 ### Definition of the `__free_*` Functions
 
-Since the only Resource types defined today are String and Buffer and they are defined in the c runtime, 
-and any new one that we add in the short term will also be, we will provide deallocation
-functions for each in the same runtime alongside the types they free.
+**Runtime-provided (native types):**
 
-[[note]]: Since writing this we introduced specialized arrays, we need to think about them.
+The C runtime provides deallocation functions for native resource types:
+- `__free_String` - frees String data
+- `__free_Buffer` - frees Buffer
+- `__free_IntArray` - frees IntArray data
+- `__free_StringArray` - frees StringArray (must free contained Strings first)
+
+**Generated (user-defined structs):**
+
+For user-defined structs (`TypeStruct`), the parser generates `__free_<StructName>` alongside
+the constructor `__mk_<StructName>`. The destructor uses a `DataDestructor` marker node
+(mirroring `DataConstructor`), which codegen expands to:
+1. Recursively free any heap-allocated fields (Strings, arrays, nested structs)
+2. Free the struct itself (if heap-allocated, not stack)
 
 ---
 
 ## Implementation Sketch
-
-[[note]]: we need to include Arrays (the temporary now)
 
 ### AST Changes
 
@@ -302,17 +341,29 @@ case class NativeImpl(
 )
 
 enum MemEffect:
-  case Alloc
-  case Pure
+  case Alloc    // returns newly allocated memory, caller owns
+  case Static   // returns pointer to static/existing memory, caller doesn't own
+  case NoAlloc  // no memory effect, default for pure natives
+
+// Marker for generated struct destructors (mirrors DataConstructor)
+case class DataDestructor(
+  span:     SrcSpan,
+  typeSpec: Option[Type] = None
+) extends Term
 ```
 
 ### New Semantic Phase: OwnershipAnalyzer
 
-Runs after TypeChecker, before Codegen.
+Runs after `ResolvablesIndexer`, before codegen. The current semantic pipeline is:
 
-[[note]]: Since writing this we have introduced soft references and
-      the reindexing phase between typer and codegen.
-      We need to think about this.
+```
+inject-stdlib → duplicate-names → id-assigner → type-resolver →
+ref-resolver → expression-rewriter → simplifier → type-checker →
+resolvables-indexer → tailrec-detector → [OwnershipAnalyzer] → codegen
+```
+
+The phase needs complete resolution (soft references resolved, index built) to look up
+callee declarations and check `memEffect`.
 
 ```scala
 case class OwnershipInfo(
@@ -414,7 +465,7 @@ fn main(): Unit =
 echo -e "hello\nworld" > test.txt
 
 # Build
-sbt "run bin samples/leak_test.mml"
+sbt "run build samples/leak_test.mml"
 
 # Check for leaks
 leaks --atExit -- ./build/target/LeakTest-x86_64-apple-macosx
