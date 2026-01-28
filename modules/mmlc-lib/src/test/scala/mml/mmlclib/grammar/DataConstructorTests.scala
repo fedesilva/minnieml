@@ -21,8 +21,8 @@ class DataConstructorTests extends BaseEffFunSuite:
       .fold(
         err => fail(s"Parser failed: $err"),
         module => {
-          val ctor    = module.members.collectFirst { case b: Bnd if b.name == "mkPerson" => b }
-          val ctorBnd = ctor.getOrElse(fail("Expected mkPerson constructor"))
+          val ctor    = module.members.collectFirst { case b: Bnd if b.name == "__mk_Person" => b }
+          val ctorBnd = ctor.getOrElse(fail("Expected __mk_Person constructor"))
           val meta    = ctorBnd.meta.getOrElse(fail("Expected constructor meta"))
           assertEquals(meta.originalName, "Person")
 

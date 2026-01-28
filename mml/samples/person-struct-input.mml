@@ -4,6 +4,10 @@ struct Person {
   age: Int
 };
 
+fn mkPerson(): Unit =
+  ???
+;
+
 fn main() =
   println "Enter name:";
   let name = readline();
