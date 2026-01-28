@@ -11,7 +11,9 @@ import scopt.OParser
 object Main extends IOApp:
 
   def run(args: List[String]): IO[ExitCode] =
-    parseAndProcessArgs(args)
+    if args.contains("-h") || args.contains("--help") then
+      IO.println(OParser.usage(CommandLineConfig.createParser)).as(ExitCode.Success)
+    else parseAndProcessArgs(args)
 
   private def parseAndProcessArgs(args: List[String]): IO[ExitCode] =
     OParser.parse(CommandLineConfig.createParser, args, Config()) match
@@ -19,7 +21,8 @@ object Main extends IOApp:
         config.command match
           case build: Command.Build =>
             build.file.fold(
-              IO.println("Error: Source file is required for build command").as(ExitCode(1))
+              IO.println("Usage: mmlc [options] <source-file>\nRun 'mmlc -h' for help.")
+                .as(ExitCode(1))
             ) { path =>
               val cfg =
                 if build.targetType == "lib" then

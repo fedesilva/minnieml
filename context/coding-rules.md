@@ -47,7 +47,7 @@
 
 - **Prefer running via sbt while developing**
 - **Compile and run**: `sbt "run run <file>"` compiles AND runs the program in one step.
-- **Compile only**: `sbt "run bin <file>"` compiles to binary without running.
+- **Compile only**: `sbt "run <file>"` (or `mmlc <file>` after publishing).
 - **Never deploy** the compiler (mmlcPublishLocal) without testing it works via sbt.
 
 ### Publishing the Compiler Artifact
@@ -55,7 +55,7 @@
 The compiler needs to be installed before it's used if changes were made.
 
 - **Publish fat jar**: `sbt mmlcPublishLocal`
-- **After publishing**: `mmlc run <file>` or `mmlc build <file>` from anywhere.
+- **After publishing**: `mmlc run <file>` or `mmlc <file>` from anywhere.
 
 ### Before finish - Post Task Chores
 

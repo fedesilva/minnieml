@@ -62,7 +62,7 @@ $(BINDIR)/ackermann-rs: ackermann.rs | $(BINDIR)
 	rustc -O -o $@ $<
 
 $(BINDIR)/ackermann-mml: ackermann.mml | $(BINDIR)
-	mmlc build -I -b $(BUILDDIR) -o $@ $<
+	mmlc -I -b $(BUILDDIR) -o $@ $<
 
 # Sieve
 $(BINDIR)/sieve-c: sieve.c | $(BINDIR)
@@ -78,7 +78,7 @@ $(BINDIR)/sieve-rs: sieve.rs | $(BINDIR)
 	rustc -O -o $@ $<
 
 $(BINDIR)/sieve-mml: sieve.mml | $(BINDIR)
-	mmlc build -I -b $(BUILDDIR) -o $@ $<
+	mmlc -I -b $(BUILDDIR) -o $@ $<
 
 # Self benchmark binaries (MML with various opt/TCO knobs)
 SELF_SIEVE_BINARIES = \
@@ -112,35 +112,35 @@ SELF_MATMUL_OPT_BINARIES = \
 	$(BINDIR)/matmul-opt-mml-O3-no-tco
 
 $(BINDIR)/sieve-mml-O0-tco: sieve.mml | $(BINDIR)
-	mmlc build -I -b $(BUILDDIR) -O 0 -o $@ $<
+	mmlc -I -b $(BUILDDIR) -O 0 -o $@ $<
 
 $(BINDIR)/sieve-mml-O0-no-tco: sieve.mml | $(BINDIR)
-	mmlc build -I -b $(BUILDDIR) -O 0 --no-tco -o $@ $<
+	mmlc -I -b $(BUILDDIR) -O 0 --no-tco -o $@ $<
 
 $(BINDIR)/sieve-mml-O1-tco: sieve.mml | $(BINDIR)
-	mmlc build -I -b $(BUILDDIR) -O 1 -o $@ $<
+	mmlc -I -b $(BUILDDIR) -O 1 -o $@ $<
 
 $(BINDIR)/sieve-mml-O1-no-tco: sieve.mml | $(BINDIR)
-	mmlc build -I -b $(BUILDDIR) -O 1 --no-tco -o $@ $<
+	mmlc -I -b $(BUILDDIR) -O 1 --no-tco -o $@ $<
 
 $(BINDIR)/sieve-mml-O2-tco: sieve.mml | $(BINDIR)
-	mmlc build -I -b $(BUILDDIR) -O 2 -o $@ $<
+	mmlc -I -b $(BUILDDIR) -O 2 -o $@ $<
 
 $(BINDIR)/sieve-mml-O2-no-tco: sieve.mml | $(BINDIR)
-	mmlc build -I -b $(BUILDDIR) -O 2 --no-tco -o $@ $<
+	mmlc -I -b $(BUILDDIR) -O 2 --no-tco -o $@ $<
 
 $(BINDIR)/sieve-mml-O3-tco: sieve.mml | $(BINDIR)
-	mmlc build -I -b $(BUILDDIR) -O 3 -o $@ $<
+	mmlc -I -b $(BUILDDIR) -O 3 -o $@ $<
 
 $(BINDIR)/sieve-mml-O3-no-tco: sieve.mml | $(BINDIR)
-	mmlc build -I -b $(BUILDDIR) -O 3 --no-tco -o $@ $<
+	mmlc -I -b $(BUILDDIR) -O 3 --no-tco -o $@ $<
 
 # Quicksort
 $(BINDIR)/quicksort-c: quicksort.c | $(BINDIR)
 	$(CC) $(CFLAGS) -o $@ $<
 
 $(BINDIR)/quicksort-mml: quicksort.mml | $(BINDIR)
-	mmlc build -I -b $(BUILDDIR) -o $@ $<
+	mmlc -I -b $(BUILDDIR) -o $@ $<
 
 # Matrix Multiplication
 $(BINDIR)/matmul-c: matmul.c | $(BINDIR)
@@ -162,58 +162,58 @@ $(BINDIR)/matmul-opt-go: matmul-opt.go | $(BINDIR)
 	go build -o $@ $<
 
 $(BINDIR)/matmul-mml: mat-mul.mml | $(BINDIR)
-	mmlc build -I -b $(BUILDDIR) -o $@ $<
+	mmlc -I -b $(BUILDDIR) -o $@ $<
 
 $(BINDIR)/matmul-opt-mml: mat-mul-opt.mml | $(BINDIR)
-	mmlc build -I -b $(BUILDDIR) -o $@ $<
+	mmlc -I -b $(BUILDDIR) -o $@ $<
 
 $(BINDIR)/matmul-mml-O0-tco: mat-mul.mml | $(BINDIR)
-	mmlc build -I -b $(BUILDDIR) -O 0 -o $@ $<
+	mmlc -I -b $(BUILDDIR) -O 0 -o $@ $<
 
 $(BINDIR)/matmul-mml-O0-no-tco: mat-mul.mml | $(BINDIR)
-	mmlc build -I -b $(BUILDDIR) -O 0 --no-tco -o $@ $<
+	mmlc -I -b $(BUILDDIR) -O 0 --no-tco -o $@ $<
 
 $(BINDIR)/matmul-mml-O1-tco: mat-mul.mml | $(BINDIR)
-	mmlc build -I -b $(BUILDDIR) -O 1 -o $@ $<
+	mmlc -I -b $(BUILDDIR) -O 1 -o $@ $<
 
 $(BINDIR)/matmul-mml-O1-no-tco: mat-mul.mml | $(BINDIR)
-	mmlc build -I -b $(BUILDDIR) -O 1 --no-tco -o $@ $<
+	mmlc -I -b $(BUILDDIR) -O 1 --no-tco -o $@ $<
 
 $(BINDIR)/matmul-mml-O2-tco: mat-mul.mml | $(BINDIR)
-	mmlc build -I -b $(BUILDDIR) -O 2 -o $@ $<
+	mmlc -I -b $(BUILDDIR) -O 2 -o $@ $<
 
 $(BINDIR)/matmul-mml-O2-no-tco: mat-mul.mml | $(BINDIR)
-	mmlc build -I -b $(BUILDDIR) -O 2 --no-tco -o $@ $<
+	mmlc -I -b $(BUILDDIR) -O 2 --no-tco -o $@ $<
 
 $(BINDIR)/matmul-mml-O3-tco: mat-mul.mml | $(BINDIR)
-	mmlc build -I -b $(BUILDDIR) -O 3 -o $@ $<
+	mmlc -I -b $(BUILDDIR) -O 3 -o $@ $<
 
 $(BINDIR)/matmul-mml-O3-no-tco: mat-mul.mml | $(BINDIR)
-	mmlc build -I -b $(BUILDDIR) -O 3 --no-tco -o $@ $<
+	mmlc -I -b $(BUILDDIR) -O 3 --no-tco -o $@ $<
 
 $(BINDIR)/matmul-opt-mml-O0-tco: mat-mul-opt.mml | $(BINDIR)
-	mmlc build -I -b $(BUILDDIR) -O 0 -o $@ $<
+	mmlc -I -b $(BUILDDIR) -O 0 -o $@ $<
 
 $(BINDIR)/matmul-opt-mml-O0-no-tco: mat-mul-opt.mml | $(BINDIR)
-	mmlc build -I -b $(BUILDDIR) -O 0 --no-tco -o $@ $<
+	mmlc -I -b $(BUILDDIR) -O 0 --no-tco -o $@ $<
 
 $(BINDIR)/matmul-opt-mml-O1-tco: mat-mul-opt.mml | $(BINDIR)
-	mmlc build -I -b $(BUILDDIR) -O 1 -o $@ $<
+	mmlc -I -b $(BUILDDIR) -O 1 -o $@ $<
 
 $(BINDIR)/matmul-opt-mml-O1-no-tco: mat-mul-opt.mml | $(BINDIR)
-	mmlc build -I -b $(BUILDDIR) -O 1 --no-tco -o $@ $<
+	mmlc -I -b $(BUILDDIR) -O 1 --no-tco -o $@ $<
 
 $(BINDIR)/matmul-opt-mml-O2-tco: mat-mul-opt.mml | $(BINDIR)
-	mmlc build -I -b $(BUILDDIR) -O 2 -o $@ $<
+	mmlc -I -b $(BUILDDIR) -O 2 -o $@ $<
 
 $(BINDIR)/matmul-opt-mml-O2-no-tco: mat-mul-opt.mml | $(BINDIR)
-	mmlc build -I -b $(BUILDDIR) -O 2 --no-tco -o $@ $<
+	mmlc -I -b $(BUILDDIR) -O 2 --no-tco -o $@ $<
 
 $(BINDIR)/matmul-opt-mml-O3-tco: mat-mul-opt.mml | $(BINDIR)
-	mmlc build -I -b $(BUILDDIR) -O 3 -o $@ $<
+	mmlc -I -b $(BUILDDIR) -O 3 -o $@ $<
 
 $(BINDIR)/matmul-opt-mml-O3-no-tco: mat-mul-opt.mml | $(BINDIR)
-	mmlc build -I -b $(BUILDDIR) -O 3 --no-tco -o $@ $<
+	mmlc -I -b $(BUILDDIR) -O 3 --no-tco -o $@ $<
 
 # N-Queens
 $(BINDIR)/nqueens-c: nqueens.c | $(BINDIR)
@@ -223,14 +223,14 @@ $(BINDIR)/nqueens-go: nqueens.go | $(BINDIR)
 	go build -o $@ $<
 
 $(BINDIR)/nqueens-mml: nqueens.mml | $(BINDIR)
-	mmlc build -I -b $(BUILDDIR) -o $@ $<
+	mmlc -I -b $(BUILDDIR) -o $@ $<
 
 # Euclidean Extended GCD
 $(BINDIR)/euclidean-ext-c: euclidean-ext.c | $(BINDIR)
 	$(CC) $(CFLAGS) -o $@ $<
 
 $(BINDIR)/euclidean-ext-mml: euclidean-ext.mml | $(BINDIR)
-	mmlc build -I -b $(BUILDDIR) -o $@ $<
+	mmlc -I -b $(BUILDDIR) -o $@ $<
 
 # Benchmarks
 bench-sieve: $(BINDIR)/sieve-c $(BINDIR)/sieve-go $(BINDIR)/sieve-rs $(BINDIR)/sieve-mml $(RESULTS_DEP)
