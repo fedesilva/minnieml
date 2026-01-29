@@ -183,44 +183,51 @@ Top-level module members are parsed independently:
 
 ---
 
-## 8. Semantic Phase Pipeline
+## 8. Stages and Semantic Pipeline
 
-The semantic pipeline runs after stdlib injection and uses soft references throughout. Each phase
-transforms the module AST and keeps the `Module.resolvables` index in sync so references always
-resolve to the latest node copies.
+The compiler now runs as a series of **stages**, each composed of timed **phases** that transform a
+shared `CompilerState`. Stages today:
+- **IngestStage**: parse source, collect parser counters, and lift parse errors.
+- **SemanticStage**: rewrite the AST and resolvables index through semantic phases.
+- **CodegenStage**: validate, resolve target info, emit IR, and optionally build native artifacts.
 
-### Phase State
+`CompilerState` is the single threaded state that flows across all stages:
 
 ```scala
-case class SemanticPhaseState(
-  module: Module,
-  errors: Vector[SemanticError]
+case class CompilerState(
+  module:         Module,
+  sourceInfo:     SourceInfo,
+  config:         CompilerConfig,
+  errors:         Vector[CompilationError],
+  warnings:       Vector[CompilerWarning],
+  timings:        Vector[Timing],
+  counters:       Vector[Counter],
+  entryPoint:     Option[String] = None,
+  canEmitCode:    Boolean = false,
+  llvmIr:         Option[String] = None,
+  nativeResult:   Option[Int] = None,
+  resolvedTriple: Option[String] = None
 )
 ```
 
-Each phase receives the current state, transforms the module, potentially adds errors, and returns the updated state.
+Each phase receives a `CompilerState`, transforms it, and returns the updated state; timings are
+captured via `CompilerState.timePhase`/`timePhaseIO`.
 
-`SemanticStage` wires the phases in this order:
-1. **Stdlib injection**: Adds prelude types, operators, and functions (with stable `stdlib::<name>` IDs).
-2. **DuplicateNameChecker**: Marks duplicates.
-3. **IdAssigner**: Assigns stable IDs to all user declarations and lambda parameters and seeds the
-   resolvables index.
-4. **TypeResolver**: Resolves `TypeRef` to type IDs, rewrites struct fields with resolved types, and
-   updates the type side of the index.
-5. **RefResolver**: Resolves `Ref` nodes to candidate/resolved IDs (parameters first, then members);
-   undefined refs become `InvalidExpression`.
-6. **ExpressionRewriter**: Builds application/operator trees; reifies `Ref` lookups through the
-   index and updates the index when copying/replacing nodes.
-7. **Simplifier**: Removes unnecessary `Expr`/`TermGroup` wrappers.
-8. **TypeChecker**: Validates types, propagates parameter/return type specs, and threads updated
-   resolvables (including params) forward.
-9. **ResolvablesIndexer**: Rebuilds the index after type checking to ensure all parameters and
-   rewritten members are indexed.
-10. **TailRecursionDetector**: Marks tail-recursive lambdas for loopification in codegen.
+`SemanticStage.rewrite` runs after stdlib injection and wires phases in this order:
+0. **Stdlib injection**: Adds prelude types, operators, and functions (with stable `stdlib::<name>` IDs).
+1. **DuplicateNameChecker**
+2. **IdAssigner**
+3. **TypeResolver**
+4. **RefResolver**
+5. **ExpressionRewriter**
+6. **Simplifier**
+7. **TypeChecker**
+8. **ResolvablesIndexer**
+9. **TailRecursionDetector**
 
 ---
 
-### Phase 1: ParsingErrorChecker
+### IngestStage: ParsingErrorChecker
 
 **Purpose**: Report any parse errors that were recovered from during parsing.
 
@@ -237,7 +244,7 @@ Each phase receives the current state, transforms the module, potentially adds e
 
 ---
 
-### Phase 2: DuplicateNameChecker
+### Semantic Phase 1: DuplicateNameChecker
 
 **Purpose**: Detect and report duplicate declarations within a module.
 
@@ -260,7 +267,20 @@ Each phase receives the current state, transforms the module, potentially adds e
 
 ---
 
-### Phase 3: TypeResolver
+### Semantic Phase 2: IdAssigner
+
+Assigns stable IDs to all user declarations and lambda parameters and seeds the resolvables index
+before any resolving work happens.
+
+**Errors Reported**: None
+
+**AST Changes**:
+- Populates `id` fields for decls, params, and struct fields
+- Seeds `Module.resolvables` with the freshly assigned IDs
+
+---
+
+### Semantic Phase 3: TypeResolver
 
 **Purpose**: Resolve all `TypeRef` nodes to their type definitions.
 
@@ -290,7 +310,7 @@ Each phase receives the current state, transforms the module, potentially adds e
 
 ---
 
-### Phase 4: RefResolver
+### Semantic Phase 4: RefResolver
 
 **Purpose**: Resolve all `Ref` nodes to their declarations or parameters.
 
@@ -311,7 +331,7 @@ Each phase receives the current state, transforms the module, potentially adds e
 
 ---
 
-### Phase 5: ExpressionRewriter
+### Semantic Phase 5: ExpressionRewriter
 
 **Purpose**: Restructure expressions using **precedence climbing** to build proper AST structure for operators and function application.
 
@@ -351,7 +371,7 @@ let f = get_value;
 
 ---
 
-### Phase 6: Simplifier
+### Semantic Phase 6: Simplifier
 
 **Purpose**: Simplify AST structure by removing unnecessary nesting.
 
@@ -380,7 +400,7 @@ let f = get_value;
 
 ---
 
-### Phase 7: TypeChecker
+### Semantic Phase 7: TypeChecker
 
 **Purpose**: Validate member bodies, ensure parameter annotations are present, and infer return types
 where possible.
@@ -510,7 +530,7 @@ fn str_to_int(s: String): Int = @native;
 ### Error Accumulation Model
 
 The compiler uses an **error accumulation** model rather than fail-fast:
-- Errors are collected in `SemanticPhaseState.errors`
+- Errors are collected in `CompilerState.errors`
 - Compilation continues even after errors are found
 - This enables **better IDE support** and reporting **multiple errors** at once
 
@@ -587,91 +607,58 @@ called as `ctpop 255`:
 
 ```mermaid
 flowchart TD
-    Source[Source Code] --> Parser[Parser]
-    Parser --> AST[AST]
-    AST --> Inject[Stdlib Injection]
-    Inject --> PEC[ParsingErrorChecker]
-    PEC --> DNC[DuplicateNameChecker]
-    DNC --> TR[TypeResolver]
+    Source[Source Code] --> Parse[Parser]
+    Parse --> PEC[ParsingErrorChecker]
+    PEC --> Inject[Stdlib Injection]
+    Inject --> DNC[DuplicateNameChecker]
+    DNC --> IDA[IdAssigner]
+    IDA --> TR[TypeResolver]
     TR --> RR[RefResolver]
     RR --> ER[ExpressionRewriter]
     ER --> S[Simplifier]
     S --> TC[TypeChecker]
-    TC --> CG[LLVM IR Generation]
-    CG --> LO[LlvmToolchain]
-    LO --> Binary[Native Binary]
+    TC --> RI[ResolvablesIndexer]
+    RI --> TRD[TailRecursionDetector]
+    TRD --> VAL[Pre-Codegen Validation]
+    VAL --> RT[Resolve Triple]
+    RT --> LI[Llvm Info]
+    LI --> EM[Emit LLVM IR]
+    EM --> WI[Write LLVM IR]
+    WI --> TOOL[LlvmToolchain Compile]
+    TOOL --> Binary[Native Binary / Output]
 ```
 
 ### Module Organization
 
-**Compiler Frontend** (`modules/mmlc/`)
+**CLI** (`modules/mmlc/`)
 - `Main.scala` - Entry point, CLI handling
 - `CommandLineConfig.scala` - Command-line argument definitions
-- `CompilationPipeline.scala` - Orchestrates the full compilation process
-- `CodeGeneration.scala` - Native code generation coordination
-- `FileOperations.scala` - File I/O utilities
 
-**Core Compiler Library** (`modules/mmlc-lib/`)
+**Compiler Library** (`modules/mmlc-lib/`)
 
-#### AST (`ast/`)
-- `AstNode.scala` - All AST node definitions (Module, Member, Expr, Term, TypeSpec, etc.)
-
-#### Parser (`parser/`)
-- `Parser.scala` - FastParse-based parser implementation
-- `MmlWhitespace.scala` - Custom whitespace handling (consumes whitespace and line comments)
-
-#### Semantic Analysis (`semantic/`)
-- `package.scala` - `SemanticPhaseState` for error accumulation
-- `ParsingErrorChecker.scala` - Reports parser errors that made it through
-- `DuplicateNameChecker.scala` - First phase, checks for duplicate definitions
-- `TypeResolver.scala` - Resolves type references to type definitions
-- `RefResolver.scala` - Collects candidate definitions for each reference
-- `ExpressionRewriter.scala` - Unified precedence-based expression restructuring
-- `Simplifier.scala` - Final AST simplification before codegen
-
-#### Code Generation (`codegen/`)
-- `LlvmIrEmitter.scala` - Main LLVM IR generation
-- `LlvmToolchain.scala` - Coordinates LLVM toolchain, runtime linking
-- `emitter/` - Specialized emitters:
-  - `ExpressionCompiler.scala` - Expression to LLVM IR
-  - `FunctionEmitter.scala` - Function definitions
-  - `OperatorEmitter.scala` - Operator definitions
-  - `Module.scala` - Module-level emission
-
-#### APIs (`api/`)
-- `EffectTypes.scala` - `CompilerEffect[T]` type alias
-- `ParserApi.scala` - Parsing API
-- `SemanticApi.scala` - Semantic analysis pipeline
-- `CompilerApi.scala` - Combined parsing + semantic
-- `CodeGenApi.scala` - Code generation API
-- `NativeEmitterApi.scala` - Native binary emission
-
-#### Errors (`errors/`)
-- Error type definitions for each compilation phase
-
-#### Utilities (`util/`)
-- `prettyprint/ast/` - AST pretty printing for debugging
-- `error/print/` - Error formatting and display
-- `pipe/` - Functional pipeline operator
-- `yolo/` - Quick debugging utilities
+- **ast/**: `AstNode.scala` (AST definitions)
+- **parser/**: `Parser.scala`, `MmlWhitespace.scala`
+- **compiler/**: `IngestStage.scala`, `SemanticStage.scala`, `CodegenStage.scala`, `Compilation.scala`, `FileOperations.scala`
+- **semantic/**: Phase implementations (`ParsingErrorChecker`, `DuplicateNameChecker`, `IdAssigner`, `TypeResolver`, `RefResolver`, `ExpressionRewriter`, `Simplifier`, `TypeChecker`, `ResolvablesIndexer`, `TailRecursionDetector`) plus stdlib injection in `package.scala`
+- **codegen/**: `LlvmIrEmitter.scala`, `LlvmToolchain.scala`, `emitter/*`
+- **api/**: `ParserApi.scala`, `SemanticApi.scala`, `FrontEndApi.scala`, `CompilerApi.scala`, `CodeGenApi.scala`, `NativeEmitterApi.scala`
+- **lsp/**: LSP server, diagnostics, document manager
+- **dev/**: Dev loop utilities
+- **errors/**: Phase error types
+- **util/**: Pretty-printing, error formatting, pipeline helpers
 
 ## Summary
 
-The MML compiler follows a **multi-phase transformation pipeline**:
+The MML compiler flows through staged pipelines:
 
-1. **Parsing**: Source → AST (flat expression structures)
-2. **ParsingErrorChecker**: Report parse errors from recovery
-3. **DuplicateNameChecker**: Detect name collisions
-4. **TypeResolver**: Resolve type references
-5. **RefResolver**: Link references to declarations
-6. **ExpressionRewriter**: Build operator precedence and application structure
-7. **Simplifier**: Remove unnecessary nesting
-8. **TypeChecker**: Validate and infer types
+1. **IngestStage**: Parse source, collect parser counters, lift parse errors.
+2. **SemanticStage**: Stdlib injection → DuplicateNameChecker → IdAssigner → TypeResolver → RefResolver → ExpressionRewriter → Simplifier → TypeChecker → ResolvablesIndexer → TailRecursionDetector.
+3. **CodegenStage**: Pre-codegen validation → resolve target triple/CPU → gather LLVM tool info → emit LLVM IR → write IR → native compilation.
 
 Each phase:
-- Receives `SemanticPhaseState` with current module + accumulated errors
-- Transforms the AST
-- Returns updated state with new errors (if any)
+- Receives and returns a `CompilerState` (module, config, errors, warnings, timings, counters, artifacts).
+- Adds timings via `CompilerState.timePhase`/`timePhaseIO`.
+- Accumulates errors while keeping compilation progress for tooling.
 
 This design enables:
 - **Clear separation of concerns**: Each phase has one responsibility
