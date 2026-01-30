@@ -189,6 +189,7 @@ precedence 60 and left associativity, we can't rewrite `1 B.+ 2 B.* 3` properly.
 **SecondSemantic (parallel per module, with coordination):**
 - **Await** `Deferred` for each import dependency
 - Load external symbols into scope
+- type-resolver (now aware of imported symbols)
 - ref-resolver (now aware of imported symbols)
 - expression-rewriter (purely local)
 - simplifier
@@ -207,7 +208,9 @@ Using cats-effect `Deferred` for module synchronization:
 ```scala
 // IngestStage creates signals
 val signals: Map[ModuleId, Deferred[IO, ExportList]] =
-  moduleIds.traverse(id => Deferred[IO, ExportList].map(id -> _)).map(_.toMap)
+  moduleIds.traverse(
+    id => Deferred[IO, ExportList].map(id -> _)
+  ).map(_.toMap)
 
 // LocalSemantic completes its signal
 def localSemantic(moduleId: ModuleId, state: CompilerState): IO[CompilerState] =
