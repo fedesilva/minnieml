@@ -35,6 +35,16 @@ module B =
 - Imagine writing `2 ModuleA.ModuleB.+ 2` — not sure this will even parse
   - we would like to use `use ModuleA.ModuleB.+` instead
 - Imports will only be allowed at top level
+- Supported forms: qualified (`use Foo.Bar.baz`) and wildcard (`use Foo.Bar.*`)
+- Imports and local declarations share one namespace; any collision is an error
+- Imports only expose public exports from other modules
+- Add a top-level `Import` AST node (Resolvable + ResolvableType) so imports sit in the namespace,
+  carry ids, and participate in duplicate checks and error reporting
+- Imports work like type aliases: when we need details (operator metadata, arity, etc.),
+  we walk the chain to the actual definition
+- Parser work: add grammar for `use Foo.Bar.baz;` and `use Foo.Bar.*;` (no aliases)
+- Wildcard expansion: read target module's export list, create an `Import` node for each public
+  member; after expansion, everything works the same as explicit imports
 
 **Selection:**
 - `Module.member` or `Module.Module.member`
@@ -157,6 +167,9 @@ ref-resolution and type-resolution across module boundaries. This is *not* type 
 Crucially, **expression rewriting needs operator metadata** (precedence, associativity, arity)
 to rewrite expressions correctly. Without knowing that `B.+` is a binary operator with
 precedence 60 and left associativity, we can't rewrite `1 B.+ 2 B.* 3` properly.
+- Operators must remain unique by name and arity across imported modules; importing two
+  definitions of the same operator is a hard error during import resolution (no symbol wins);
+  enforcement happens in the duplicate-name pass over the merged namespace
 
 **What an export entry contains:**
 - Name (e.g., `"Address"`, `"+"`)
@@ -185,12 +198,20 @@ precedence 60 and left associativity, we can't rewrite `1 B.+ 2 B.* 3` properly.
 - type-resolver (local types only)
 - **Compute `ExportList`** from public members (fn, op, types)
 - **Complete** the module's `Deferred` signal
+- **Second duplicate-check pass** (after imports/wildcards expand) to catch collisions introduced
+  via wildcard imports
+
+**Import expansion / scope build (per module, after exports ready):**
+- Await needed exports, expand qualified and wildcard imports into concrete symbols
+- Run duplicate-name checker again over locals + imports (same rules as today: first occurrence
+  stays, rest become DuplicateMember + error)
+- Build merged scope (values/types/operators) from locals and imported exports; this scope feeds
+  the next resolver passes
 
 **SecondSemantic (parallel per module, with coordination):**
-- **Await** `Deferred` for each import dependency
-- Load external symbols into scope
-- type-resolver (now aware of imported symbols)
-- ref-resolver (now aware of imported symbols)
+- **Await** `Deferred` for each import dependency (already done in import expansion)
+- type-resolver (now aware of merged scope incl. imports)
+- ref-resolver (now aware of merged scope incl. imports)
 - expression-rewriter (purely local)
 - simplifier
 - type-checker (SimpTyper)
@@ -200,6 +221,12 @@ precedence 60 and left associativity, we can't rewrite `1 B.+ 2 B.* 3` properly.
 **FinalSemantic (sequential, entire package):**
 - Run second typechecker (bidi, generalizing)
 - Fails if types can't be resolved
+
+### Scope consumption
+
+- Build a merged scope from locals and imported exports (values, types, operators) keyed by
+  name + kind (+ operator arity). This scope feeds TypeResolver/RefResolver; unresolved names
+  still surface errors and produce Invalid* nodes as today.
 
 ### Coordination Pattern
 
