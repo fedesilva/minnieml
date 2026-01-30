@@ -11,7 +11,7 @@ MML will rely heavily on static monomorphization for both **Generics** (`List 'T
 While this will provide zero-cost abstractions, it will lead to code bloat:
 *   A utility function used with 10 different types will generate 10 copies.
 *   A function used with 5 different but behaviorally identical effect handlers will generate 5 copies.
-*   "Newtypes" (e.g., `type UserId = Int`) will often cause redundant specializations of the same logic.
+*   "Newtypes" (e.g., `type new UserId = Int`) will often cause redundant specializations of the same logic.
 
 ## 2. The Solution: Structural Deduplication
 
