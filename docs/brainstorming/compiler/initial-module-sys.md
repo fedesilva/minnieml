@@ -244,7 +244,8 @@ We achieve this by separating discovery from parsing:
 
 1. **Collect** — walk filesystem, gather paths (cheap, sequential)
 2. **Parse** — parse all files in parallel (expensive, parallel)
-3. **Assemble** — build tree from parsed modules (cheap, sequential)
+3. **Assemble** — build tree from parsed modules (cheap, sequential) and folders.
+  - remember, folders are modules, too.
 
 ### Phase 1: Collect Paths
 
