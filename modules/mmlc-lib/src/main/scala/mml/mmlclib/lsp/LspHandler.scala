@@ -17,10 +17,19 @@ class LspHandler(
 ):
 
   private var initialized = false
-  private var shutdown    = false
+  private var shutdown = false
 
   private def log(msg: String): IO[Unit] =
     IO.blocking(System.err.println(s"[LSP] $msg"))
+
+  private def requireInitialized[A](id: ujson.Value)(action: => IO[Unit]): IO[Unit] =
+    if initialized then action
+    else
+      JsonRpc.writeError(
+        output,
+        id,
+        RpcError(RpcError.ServerNotInitialized, "Server not initialized")
+      )
 
   /** Main loop - reads and handles messages until exit. */
   def run: IO[Unit] =
@@ -53,59 +62,71 @@ class LspHandler(
       case "shutdown" =>
         handleShutdown(req.id)
       case "textDocument/hover" =>
-        req.params match
-          case Some(params) => handleHover(req.id, params)
-          case None =>
-            JsonRpc.writeError(
-              output,
-              req.id,
-              RpcError(RpcError.InvalidParams, "Missing params")
-            )
+        requireInitialized(req.id) {
+          req.params match
+            case Some(params) => handleHover(req.id, params)
+            case None =>
+              JsonRpc.writeError(
+                output,
+                req.id,
+                RpcError(RpcError.InvalidParams, "Missing params")
+              )
+        }
       case "textDocument/definition" =>
-        req.params match
-          case Some(params) => handleDefinition(req.id, params)
-          case None =>
-            JsonRpc.writeError(
-              output,
-              req.id,
-              RpcError(RpcError.InvalidParams, "Missing params")
-            )
+        requireInitialized(req.id) {
+          req.params match
+            case Some(params) => handleDefinition(req.id, params)
+            case None =>
+              JsonRpc.writeError(
+                output,
+                req.id,
+                RpcError(RpcError.InvalidParams, "Missing params")
+              )
+        }
       case "textDocument/references" =>
-        req.params match
-          case Some(params) => handleReferences(req.id, params)
-          case None =>
-            JsonRpc.writeError(
-              output,
-              req.id,
-              RpcError(RpcError.InvalidParams, "Missing params")
-            )
+        requireInitialized(req.id) {
+          req.params match
+            case Some(params) => handleReferences(req.id, params)
+            case None =>
+              JsonRpc.writeError(
+                output,
+                req.id,
+                RpcError(RpcError.InvalidParams, "Missing params")
+              )
+        }
       case "textDocument/semanticTokens/full" =>
-        req.params match
-          case Some(params) => handleSemanticTokens(req.id, params)
-          case None =>
-            JsonRpc.writeError(
-              output,
-              req.id,
-              RpcError(RpcError.InvalidParams, "Missing params")
-            )
+        requireInitialized(req.id) {
+          req.params match
+            case Some(params) => handleSemanticTokens(req.id, params)
+            case None =>
+              JsonRpc.writeError(
+                output,
+                req.id,
+                RpcError(RpcError.InvalidParams, "Missing params")
+              )
+        }
       case "workspace/executeCommand" =>
-        req.params match
-          case Some(params) => handleExecuteCommand(req.id, params)
-          case None =>
-            JsonRpc.writeError(
-              output,
-              req.id,
-              RpcError(RpcError.InvalidParams, "Missing params")
-            )
+        requireInitialized(req.id) {
+          req.params match
+            case Some(params) => handleExecuteCommand(req.id, params)
+            case None =>
+              JsonRpc.writeError(
+                output,
+                req.id,
+                RpcError(RpcError.InvalidParams, "Missing params")
+              )
+        }
       case "workspace/symbol" =>
-        req.params match
-          case Some(params) => handleWorkspaceSymbol(req.id, params)
-          case None =>
-            JsonRpc.writeError(
-              output,
-              req.id,
-              RpcError(RpcError.InvalidParams, "Missing params")
-            )
+        requireInitialized(req.id) {
+          req.params match
+            case Some(params) => handleWorkspaceSymbol(req.id, params)
+            case None =>
+              JsonRpc.writeError(
+                output,
+                req.id,
+                RpcError(RpcError.InvalidParams, "Missing params")
+              )
+        }
       case method =>
         JsonRpc.writeError(
           output,

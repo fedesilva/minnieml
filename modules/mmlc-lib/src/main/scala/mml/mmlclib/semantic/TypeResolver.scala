@@ -180,7 +180,7 @@ object TypeResolver:
             InvalidType(typeRef.span, typeRef)
           case single :: Nil =>
             typeRef.copy(resolvedId = single.id)
-          case multiple =>
+          case _ =>
             // Also use InvalidType for ambiguous references
             InvalidType(typeRef.span, typeRef)
       case ns: NativeStruct =>

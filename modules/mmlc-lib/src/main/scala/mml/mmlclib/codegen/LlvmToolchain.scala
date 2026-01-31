@@ -827,7 +827,7 @@ object LlvmToolchain:
     }
 
   private def detectOsTargetTriple(
-    userProvidedTriple: Option[String] = None
+    userProvidedTriple: Option[String]
   ): IO[Either[LlvmCompilationError, String]] =
     IO {
       userProvidedTriple match
@@ -849,7 +849,7 @@ object LlvmToolchain:
     cmd:        String,
     errorMsg:   String,
     workingDir: Path,
-    verbose:    Boolean = false
+    verbose:    Boolean
   ): IO[Either[LlvmCompilationError, Int]] =
     IO.defer {
       val setupDir = IO.blocking {

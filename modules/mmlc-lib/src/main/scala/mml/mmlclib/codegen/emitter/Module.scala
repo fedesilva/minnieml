@@ -321,7 +321,7 @@ private def emitValueBinding(bnd: Bnd, state: CodeGenState): Either[CodeGenError
             state.emit(emitGlobalVariable(mangledName, llvmType, staticValue))
           }
 
-        case lit: LiteralUnit =>
+        case _: LiteralUnit =>
           // Unit literals don't generate globals, they're compile-time only
           Right(state)
 
@@ -329,7 +329,7 @@ private def emitValueBinding(bnd: Bnd, state: CodeGenState): Either[CodeGenError
           // Fall back to existing runtime initialization logic for complex expressions
           val origState  = state
           val initFnName = s"_init_global_$mangledName"
-          compileExpr(bnd.value, state).flatMap { compileRes =>
+          compileExpr(bnd.value, state).flatMap { _ =>
             // Get the binding's type specification for proper LLVM type
             val llvmTypeE = bnd.typeSpec match {
               case Some(typeSpec) => getLlvmType(typeSpec, origState)
@@ -372,7 +372,7 @@ private def emitValueBinding(bnd: Bnd, state: CodeGenState): Either[CodeGenError
       // Multiple terms - not a simple literal, use runtime initialization
       val origState  = state
       val initFnName = s"_init_global_$mangledName"
-      compileExpr(bnd.value, state).flatMap { compileRes =>
+      compileExpr(bnd.value, state).flatMap { _ =>
         val llvmTypeE = bnd.typeSpec match {
           case Some(typeSpec) => getLlvmType(typeSpec, origState)
           case None =>

@@ -1,6 +1,5 @@
 package mml.mmlclib.parser
 
-import cats.syntax.all.*
 import fastparse.*
 import mml.mmlclib.ast.*
 

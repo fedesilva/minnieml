@@ -1,8 +1,6 @@
 package mml.mmlclib.lsp
 
 import cats.effect.IO
-import upickle.default.*
-
 import java.io.{BufferedReader, PrintStream}
 import java.nio.charset.StandardCharsets
 
@@ -36,11 +34,12 @@ case class RpcError(
 )
 
 object RpcError:
-  val ParseError:     Int = -32700
-  val InvalidRequest: Int = -32600
-  val MethodNotFound: Int = -32601
-  val InvalidParams:  Int = -32602
-  val InternalError:  Int = -32603
+  val ParseError:           Int = -32700
+  val InvalidRequest:       Int = -32600
+  val MethodNotFound:       Int = -32601
+  val InvalidParams:        Int = -32602
+  val InternalError:        Int = -32603
+  val ServerNotInitialized: Int = -32002
 
 object JsonRpc:
 
