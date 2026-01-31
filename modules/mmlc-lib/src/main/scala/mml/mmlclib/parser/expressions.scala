@@ -31,10 +31,12 @@ private def exprFromTermsP(info: SourceInfo, termParser: => P[Term])(using P[Any
     }
 
 private[parser] def exprP(info: SourceInfo)(using P[Any]): P[Expr] =
-  P(exprNoSeqP(info) ~ (semiKw ~ &(exprNoSeqP(info)) ~ exprNoSeqP(info)).rep)
-    .map { case (head, tail) =>
-      if tail.isEmpty then head else mkStatementChain(head, tail.toList)
-    }
+  P(
+    exprNoSeqP(info) ~
+      (semiKw ~ &(!"/*" ~ exprNoSeqP(info)) ~ exprNoSeqP(info)).rep
+  ).map { case (head, tail) =>
+    if tail.isEmpty then head else mkStatementChain(head, tail.toList)
+  }
 
 private[parser] def exprNoSeqP(info: SourceInfo)(using P[Any]): P[Expr] =
   exprFromTermsP(info, termP(info))

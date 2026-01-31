@@ -5,8 +5,8 @@ import fastparse.{ParsingRun, Whitespace}
 
 import scala.annotation.tailrec
 
-/** Whitespace syntax that supports // line-comments— but leaves the `/*` and `*/` tokens
-  * untouched for the doc-comment parser.
+/** Whitespace syntax that supports // line-comments— but leaves the block comment tokens untouched
+  * for the doc-comment parser.
   */
 object MmlWhitespace {
   implicit object whitespace extends Whitespace {
@@ -40,14 +40,6 @@ object MmlWhitespace {
                     ctx.freshSuccessUnit(current)
                 else
                   // Single '/' at end of input - operator
-                  ctx.freshSuccessUnit(current)
-              else if currentChar == '*' then
-                // Check for "*/" (doc comment end)
-                if input.isReachable(current + 1) && input(current + 1) == '/' then
-                  // "*/" - doc comment end, preserve for docCommentP
-                  ctx.freshSuccessUnit(current)
-                else
-                  // Not a doc comment delimiter, don't consume
                   ctx.freshSuccessUnit(current)
               else
                 if ctx.verboseFailures then ctx.reportTerminalMsg(current, Msgs.empty)

@@ -125,6 +125,23 @@ class CommentsTests extends BaseEffFunSuite:
     }
   }
 
+  test("doc comment on later function does not break earlier function") {
+    val source =
+      """
+        fn fizzbuzz(n: Int) = 1;
+
+        /* entry point */
+        fn main() = fizzbuzz 10;
+      """
+
+    parseNotFailed(source).map { m =>
+      assertEquals(m.members.size, 2)
+      val docs = m.members.collect { case d: Decl => d.docComment }
+      assertEquals(docs.head, None)
+      assert(docs(1).isDefined)
+    }
+  }
+
   test("file-level doc comment attaches to first member") {
     parseNotFailed(
       """
