@@ -17,7 +17,7 @@ class LspHandler(
 ):
 
   private var initialized = false
-  private var shutdown = false
+  private var shutdown    = false
 
   private def log(msg: String): IO[Unit] =
     IO.blocking(System.err.println(s"[LSP] $msg"))

@@ -1,6 +1,7 @@
 package mml.mmlclib.lsp
 
 import cats.effect.IO
+
 import java.io.{BufferedReader, PrintStream}
 import java.nio.charset.StandardCharsets
 
