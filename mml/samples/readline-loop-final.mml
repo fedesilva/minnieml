@@ -11,17 +11,17 @@ fn main() =
   loop()
 ;
 
-#
-# loop = 
-#   println |>
-#     () -> { 
-#       readline () |> 
-#         (s) -> {    
-#           str_to_int |>
-#             (n) -> {
-#               println... |> loop()
-#           }
-#         }
-#     }
-# 
-#
+//
+// loop = 
+//   println |>
+//     () -> { 
+//       readline () |> 
+//         (s) -> {    
+//           str_to_int |>
+//             (n) -> {
+//               println... |> loop()
+//           }
+//         }
+//     }
+// 
+//

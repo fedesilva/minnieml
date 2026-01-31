@@ -1,7 +1,7 @@
-# Sieve of Eratosthenes - drag race style
-# Only stores odd numbers: index i represents number 2*i + 1
-# Clunky throwaway monomorphic IntArray (Int64 only)
-#
+// Sieve of Eratosthenes - drag race style
+// Only stores odd numbers: index i represents number 2*i + 1
+// Clunky throwaway monomorphic IntArray (Int64 only)
+//
 
 fn init_sieve(arr: IntArray, i: Int, size: Int): Unit =
   if i < size then

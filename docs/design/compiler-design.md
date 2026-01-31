@@ -153,8 +153,8 @@ The parser uses **FastParse** combinators and follows these principles:
 - **No significant indentation**: Whitespace is not syntactically meaningful
 - **Custom whitespace handler** (`MmlWhitespace`):
   - Consumes spaces, tabs, newlines, carriage returns
-  - Handles line comments starting with `#` (e.g., `# this is a comment`)
-  - Preserves `#-` and `-#` tokens for doc comment parser
+  - Handles line comments starting with `//` (e.g., `// this is a comment`)
+  - Preserves `/*` and `*/` tokens for doc comment parser
 
 **Implementation**: State machine with two states:
 - State 0: Normal whitespace consumption

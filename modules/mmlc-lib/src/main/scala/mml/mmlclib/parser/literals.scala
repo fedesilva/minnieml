@@ -42,13 +42,13 @@ private[parser] def litUnitP(info: SourceInfo)(using P[Any]): P[LiteralUnit] =
 private[parser] def docCommentP[$: P](info: SourceInfo): P[Option[DocComment]] =
   import fastparse.NoWhitespace.*
 
-  def comment: P[String] = P("#-" ~ commentBody ~ "-#")
+  def comment: P[String] = P("/*" ~ commentBody ~ "*/")
   def commentBody: P[String] =
-    P((comment | (!("-#") ~ AnyChar).!).rep).map(_.mkString.stripMargin('#'))
+    P((comment | (!("*/") ~ AnyChar).!).rep).map(_.mkString.stripMargin('*'))
 
   P(spP(info) ~ comment.! ~ spNoWsP(info) ~ spP(info)).?.map {
     case Some(start, s, end, _) =>
-      val clean = s.replaceAll("#-", "").replaceAll("-#", "").stripMargin('#').trim
+      val clean = s.replaceAll("/\\*", "").replaceAll("\\*/", "").stripMargin('*').trim
       DocComment(span(start, end), clean).some
     case None => none
   }

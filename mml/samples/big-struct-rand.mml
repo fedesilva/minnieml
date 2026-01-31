@@ -21,7 +21,7 @@ struct Big {
   a20: Int
 };
 
-# LCG constants (glibc-ish)
+// LCG constants (glibc-ish)
 fn next(seed: Int): Int =
   (seed * 1103515245 + 12345) % 2147483647
 ;

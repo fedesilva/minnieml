@@ -31,20 +31,20 @@
         "comments": {
             "patterns": [
                 {
-                    "name": "comment.line.number-sign.mml",
-                    "match": "#[^\\-].*$"
+                    "name": "comment.line.double-slash.mml",
+                    "match": "//.*$"
                 }
             ]
         },
         "docComments": {
             "name": "comment.block.documentation.mml",
-            "begin": "(#-)",
+            "begin": "(/\\*)",
             "beginCaptures": {
                 "1": {
                     "name": "punctuation.definition.comment.begin.mml"
                 }
             },
-            "end": "(-#)",
+            "end": "(\\*/)",
             "endCaptures": {
                 "1": {
                     "name": "punctuation.definition.comment.end.mml"

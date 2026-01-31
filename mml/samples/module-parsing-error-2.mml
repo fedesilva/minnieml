@@ -1,4 +1,4 @@
-# this error is cought.
+// this error is cought.
 let a = 1;
 
 rubbish-at-the-end;

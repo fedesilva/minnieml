@@ -13,7 +13,7 @@ Syntax highlighting and LSP support for MinnieML (`.mml`) files in Neovim.
 
 - **Syntax highlighting** for all MML language constructs:
   - Keywords: `fn`, `let`, `op`, `type`, `module`, `if`/`then`/`else`
-  - Comments: line comments (`#`) and documentation comments (`#- ... -#`)
+  - Comments: line comments (`//`) and documentation comments (`/* ... */`)
   - Operators: symbolic (`+`, `-`, `==`, etc.) and alphanumeric (`and`, `or`, `not`)
   - Literals: strings, integers, floats, booleans
   - Types: uppercase identifiers (`Int`, `String`, `Bool`, etc.)
@@ -196,7 +196,7 @@ colorscheme default  " or your preferred scheme
 
 - **Implementation**: Pure Vim regex-based syntax
 - **Syntax priority**: Keywords > Types > Identifiers > Operators
-- **Comment support**: Line comments (`#`) and nested doc comments (`#- ... -#`)
+- **Comment support**: Line comments (`//`) and nested doc comments (`/* ... */`)
 - **Operator precedence**: Not implemented in syntax layer (handled by parser)
 
 ## Prerequisites

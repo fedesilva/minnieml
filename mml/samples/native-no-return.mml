@@ -1,4 +1,4 @@
 
-# compile as lib, should fail because
-# native functions need a return type.
+// compile as lib, should fail because
+// native functions need a return type.
 fn is_bad_native(i: Int) = @native;

@@ -72,13 +72,14 @@ let, fn, op, type, module, if, then, else, @native, ??? (hole), _ (placeholder)
 ### Comments
 
 #### Line Comments
-- **Syntax**: `# comment text`
-- **Scope**: From `#` to end of line
+- **Syntax**: `// comment text`
+- **Scope**: From `//` to end of line
+- **Note**: `///` is also a comment (not an operator)
 
 #### Documentation Comments
-- **Syntax**: `#- ... -#`
+- **Syntax**: `/* ... */`
 - **Purpose**: Attached to members for documentation
-- **Can nest**: `#- outer #- inner -# -#`
+- **Can nest**: `/* outer /* inner */ */`
 
 ---
 
@@ -111,13 +112,13 @@ MML allows declaring types that mirror native C/LLVM types. These declarations *
 **Three forms of native types**:
 
 ```rust
-# Primitive type with native representation
+// Primitive type with native representation
 type SizeT = @native[t=i64];
 
-# Opaque pointer
+// Opaque pointer
 type CharPtr = @native[t=*i8];
 
-# Struct mirror
+// Struct mirror
 type String = @native {
   length: SizeT,
   data:   CharPtr
@@ -130,9 +131,9 @@ type String = @native {
 type Int64 = @native[t=i64];
 type AnotherInt64 = @native[t=i64];
 
-# These are DIFFERENT types - two distinct primitives
-# Even though both wrap i64, they are separate fundamental types
-# A function expecting Int64 won't accept AnotherInt64
+// These are DIFFERENT types - two distinct primitives
+// Even though both wrap i64, they are separate fundamental types
+// A function expecting Int64 won't accept AnotherInt64
 ```
 
 **Native Structs**: Native struct type declarations are **mirrors**, not definitions. The actual type definition exists in the linked C runtime (`mml_runtime.c`). MML uses these declarations to understand memory layout and generate correct IR.
@@ -149,10 +150,10 @@ Functions have types of the form `T1 → T2 → ... → Tn → R`, where:
 **Examples**:
 ```rust
 fn add(a: Int, b: Int): Int = a + b;
-# Type: Int → Int → Int
+// Type: Int → Int → Int
 
 fn print(s: String): Unit = @native;
-# Type: String → Unit
+// Type: String → Unit
 ```
 
 ### Type Compatibility
@@ -222,17 +223,17 @@ MML supports two kinds of operators:
 
 **Overloading rules**:
 ```rust
-# Valid: unary and binary - coexist
-op -(a: Int): Int 95 right = ???;        # Unary negation
-op -(a: Int, b: Int): Int 60 left = ???; # Binary subtraction
+// Valid: unary and binary - coexist
+op -(a: Int): Int 95 right = ???;        // Unary negation
+op -(a: Int, b: Int): Int 60 left = ???; // Binary subtraction
 
-# Invalid: duplicate binary operator
+// Invalid: duplicate binary operator
 op +(a: Int, b: Int): Int = ???;
-op +(x: Float, y: Float): Float = ???;  # ERROR: duplicate name
+op +(x: Float, y: Float): Float = ???;  // ERROR: duplicate name
 
-# Invalid: function and operator with same name
+// Invalid: function and operator with same name
 fn foo(x: Int): Int = x;
-op foo(a: Int, b: Int): Int = a + b;  # ERROR: name conflict
+op foo(a: Int, b: Int): Int = a + b;  // ERROR: name conflict
 ```
 
 ### Precedence and Associativity
@@ -257,9 +258,9 @@ These are **conventional values** used by the injected standard operators, not l
 
 Operators are syntactic sugar for function calls:
 ```mml
-1 + 2      # Desugars to: + 1 2
--5         # Desugars to: - 5
-a * b + c  # Desugars to: + (* a b) c
+1 + 2      // Desugars to: + 1 2
+-5         // Desugars to: - 5
+a * b + c  // Desugars to: + (* a b) c
 ```
 
 ---
@@ -283,8 +284,8 @@ yet.
 ```mml
 fn add(a: Int, b: Int): Int = a + b;
 
-let add5 = add 5;       # Partial application: Int → Int
-let result = add5 10;   # Full application: 15
+let add5 = add 5;       // Partial application: Int → Int
+let result = add5 10;   // Full application: 15
 ```
 
 **Juxtaposition**: Function application is written as juxtaposition: `f x` means "apply f to x".
@@ -296,12 +297,12 @@ Functions with zero parameters require special handling:
 **In call position**: Explicitly applied to unit
 ```mml
 fn get_value(): Int = 42;
-let x = get_value ();  # Explicit application to unit literal
+let x = get_value ();  // Explicit application to unit literal
 ```
 
 **In value position**: Function reference (no implicit call)
 ```mml
-let f = get_value;    # Reference to the nullary function
+let f = get_value;    // Reference to the nullary function
 ```
 To evaluate a nullary function, apply it explicitly with `()`.
 

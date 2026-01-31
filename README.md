@@ -29,12 +29,12 @@ This is not at all connected to my employer's IP, work, interests, opinions or a
 Here's a small syntax showcase
 
 ```rust
-    # Value Binding
+    // Value Binding
     let a = 1;
     let b = 2;
-    # Abstraction
+    // Abstraction
     fn times (a b) = a * b;
-    # Application
+    // Application
     let t1 = times 1 2;
     let t2 = times a b;
 ```
@@ -45,7 +45,7 @@ A more complex example:
 
 - types start with an uppercase letter, mandatory (`Maybe`, `String`, `Int`)
 - type variables start with a ' and an uppercase letter (`'T`, `'R`, `'In`, `'Out`)
-- `#` is a line comment (I've added // to make it look ok in github)
+- `//` is a line comment 
 - `()` reads as `unit`; it's like void ... (ish)
 - the `Maybe` type denotes we can have one value of type `'T` or None.
 - note the infered types in the comments

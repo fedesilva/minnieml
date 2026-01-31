@@ -1,11 +1,11 @@
-# C = A * B
-# Matrices are N x N, flattened into 1D arrays of size N*N
-# Access: index = row * N + col
+// C = A * B
+// Matrices are N x N, flattened into 1D arrays of size N*N
+// Access: index = row * N + col
 
 fn fill_matrix_loop(arr: IntArray, i: Int, size: Int, current_seed: Int): Unit =
   if i < size then
     let next_seed = (current_seed * 1664525) + 1013904223;
-    # Keep numbers small to avoid immediate overflow during multiplication
+    // Keep numbers small to avoid immediate overflow during multiplication
     unsafe_ar_int_set arr i (next_seed % 100);
     fill_matrix_loop arr (i + 1) size next_seed
   end
@@ -16,13 +16,13 @@ fn fill_matrix(arr: IntArray, n: Int, seed: Int): Unit =
   fill_matrix_loop arr 0 size seed
 ;
 
-# Inner loop: k from 0 to n
-# Calculates sum(A[i][k] * B[k][j])
+// Inner loop: k from 0 to n
+// Calculates sum(A[i][k] * B[k][j])
 fn mat_mul_k(a: IntArray, b: IntArray, i: Int, j: Int, k: Int, n: Int, acc: Int): Int =
   if k < n then
-    # A[i][k] -> A[i*n + k] (Sequential access)
+    // A[i][k] -> A[i*n + k] (Sequential access)
     let idx_a = (i * n) + k;
-    # B[k][j] -> B[k*n + j] (Strided access - jumps N elements)
+    // B[k][j] -> B[k*n + j] (Strided access - jumps N elements)
     let idx_b = (k * n) + j;
     
     let val_a = unsafe_ar_int_get a idx_a;
@@ -34,7 +34,7 @@ fn mat_mul_k(a: IntArray, b: IntArray, i: Int, j: Int, k: Int, n: Int, acc: Int)
   end
 ;
 
-# Middle loop: j from 0 to n
+// Middle loop: j from 0 to n
 fn mat_mul_j(a: IntArray, b: IntArray, c: IntArray, i: Int, j: Int, n: Int): Unit =
   if j < n then
     let val = mat_mul_k a b i j 0 n 0;
@@ -44,7 +44,7 @@ fn mat_mul_j(a: IntArray, b: IntArray, c: IntArray, i: Int, j: Int, n: Int): Uni
   end
 ;
 
-# Outer loop: i from 0 to n
+// Outer loop: i from 0 to n
 fn mat_mul_i(a: IntArray, b: IntArray, c: IntArray, i: Int, n: Int): Unit =
   if i < n then
     mat_mul_j a b c i 0 n;
@@ -56,7 +56,7 @@ fn mat_mul(a: IntArray, b: IntArray, c: IntArray, n: Int): Unit =
   mat_mul_i a b c 0 n
 ;
 
-# Verify result (Trace)
+// Verify result (Trace)
 fn trace_loop(arr: IntArray, i: Int, n: Int, acc: Int): Int =
   if i < n then
     let idx = (i * n) + i;
@@ -72,7 +72,7 @@ fn trace(arr: IntArray, n: Int): Int =
 ;
 
 fn main(): Unit =
-  # 500x500 matrix = 250,000 elements.
+  // 500x500 matrix = 250,000 elements.
   let n = 500; 
   let a = ar_int_new (n * n);
   let b = ar_int_new (n * n);

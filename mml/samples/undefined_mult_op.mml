@@ -1,11 +1,11 @@
-#- there is a function mult -#
+/* there is a function mult */
 fn mult (a: Int, b: Int): Int = ???;
 
-# this works because mult is in application
-# position
+// this works because mult is in application
+// position
 let a = mult 2 2;
 
-# this does not work because mult is expected to be
-# a binary operator, it would work with something like
-# `op mult (a b) = ???;`
+// this does not work because mult is expected to be
+// a binary operator, it would work with something like
+// `op mult (a b) = ???;`
 let b = 2 mult 2;
