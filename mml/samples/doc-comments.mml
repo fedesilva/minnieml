@@ -6,3 +6,5 @@ fn test() = "lalala";
   This is a doc comment for main
 */
 fn main() = println "something";
+
+
