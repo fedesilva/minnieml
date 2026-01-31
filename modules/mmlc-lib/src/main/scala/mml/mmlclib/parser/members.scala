@@ -55,13 +55,16 @@ private[parser] def letBindingP(info: SourceInfo)(using P[Any]): P[Member] =
 
 private[parser] def fnParamP(info: SourceInfo)(using P[Any]): P[FnParam] =
   P(
-    spP(info) ~ docCommentP(info) ~ bindingIdP ~ typeAscP(info) ~ spNoWsP(info) ~ spP(info)
-  ).map { case (start, doc, name, t, end, _) =>
+    spP(info) ~ docCommentP(info) ~ "~".!.? ~ bindingIdP ~ typeAscP(info) ~ spNoWsP(info) ~ spP(
+      info
+    )
+  ).map { case (start, doc, tilde, name, t, end, _) =>
     FnParam(
       span       = span(start, end),
       name       = name,
       typeAsc    = t,
-      docComment = doc
+      docComment = doc,
+      consuming  = tilde.isDefined
     )
   }
 

@@ -313,10 +313,22 @@ private[parser] def holeP(info: SourceInfo)(using P[Any]): P[Term] =
 
 private[parser] def nativeImplP(info: SourceInfo)(using P[Any]): P[NativeImpl] =
 
-  def nativeTplP: P[Option[String]] =
-    P("[" ~ "tpl" ~ "=" ~ "\"" ~ CharsWhile(_ != '"', 0).! ~ "\"" ~ "]").?
+  def memEffectP: P[MemEffect] =
+    P("alloc").map(_ => MemEffect.Alloc) | P("static").map(_ => MemEffect.Static)
 
-  P(spP(info) ~ nativeKw ~ nativeTplP ~ spNoWsP(info) ~ spP(info))
-    .map { case (start, tpl, end, _) =>
-      NativeImpl(span(start, end), nativeTpl = tpl)
+  def tplAttrP: P[String]    = P("tpl" ~ "=" ~ "\"" ~ CharsWhile(_ != '"', 0).! ~ "\"")
+  def memAttrP: P[MemEffect] = P("mem" ~ "=" ~ memEffectP)
+
+  // Parse [tpl="...", mem=alloc] or [mem=alloc, tpl="..."] or just one
+  def attrsP: P[(Option[String], Option[MemEffect])] =
+    P(
+      "[" ~ (
+        (tplAttrP ~ ("," ~ memAttrP).?).map { case (t, m) => (Some(t), m) } |
+          (memAttrP ~ ("," ~ tplAttrP).?).map { case (m, t) => (t, Some(m)) }
+      ) ~ "]"
+    ).?.map(_.getOrElse((None, None)))
+
+  P(spP(info) ~ nativeKw ~ attrsP ~ spNoWsP(info) ~ spP(info))
+    .map { case (start, (tpl, mem), end, _) =>
+      NativeImpl(span(start, end), nativeTpl = tpl, memEffect = mem)
     }

@@ -113,6 +113,24 @@ object SemanticErrorPrinter:
       case SemanticError.InvalidEntryPoint(message, span) =>
         val location = LocationPrinter.printSpan(span)
         s"${Console.RED}$message at $location${Console.RESET}"
+
+      case SemanticError.UseAfterMove(ref, movedAt, phase) =>
+        val location      = LocationPrinter.printSpan(ref.span)
+        val movedLocation = LocationPrinter.printSpan(movedAt)
+        s"${Console.RED}Use of '${ref.name}' after move at $location [phase: $phase]${Console.RESET}\nMoved at: $movedLocation"
+
+      case SemanticError.ConsumingParamNotLastUse(param, ref, phase) =>
+        val location = LocationPrinter.printSpan(ref.span)
+        s"${Console.RED}Consuming parameter '${param.name}' must be the last use of '${ref.name}' at $location [phase: $phase]${Console.RESET}"
+
+      case SemanticError.PartialApplicationWithConsuming(app, param, phase) =>
+        val location = LocationPrinter.printSpan(app.span)
+        s"${Console.RED}Cannot partially apply function with consuming parameter '${param.name}' at $location [phase: $phase]${Console.RESET}"
+
+      case SemanticError.ConditionalOwnershipMismatch(cond, phase) =>
+        val location = LocationPrinter.printSpan(cond.span)
+        s"${Console.RED}Conditional branches have different ownership states at $location [phase: $phase]${Console.RESET}"
+
       case SemanticError.TypeCheckingError(error) =>
         prettyPrintTypeError(error)
 

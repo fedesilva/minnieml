@@ -171,6 +171,9 @@ object AstLookup:
       case dc: DataConstructor =>
         Some(LookupResult(dc.typeSpec, None, dc.span))
 
+      case dd: DataDestructor =>
+        Some(LookupResult(dd.typeSpec, None, dd.span))
+
       case ni: NativeImpl =>
         Some(LookupResult(ni.typeSpec, Some("@native"), ni.span))
 

@@ -157,8 +157,8 @@ object SemanticTokens:
       case expr: Expr =>
         collectFromExpr(expr, resolvables)
 
-      case _: Placeholder | _: Hole | _: DataConstructor | _: NativeImpl | _: TermError |
-          _: InvalidExpression =>
+      case _: Placeholder | _: Hole | _: DataConstructor | _: DataDestructor | _: NativeImpl |
+          _: TermError | _: InvalidExpression =>
         Nil
 
   /** Collect tokens from a reference. */

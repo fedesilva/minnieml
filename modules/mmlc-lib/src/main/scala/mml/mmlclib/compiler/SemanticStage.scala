@@ -28,3 +28,6 @@ object SemanticStage:
       |> CompilerState.timePhase("semantic", "tailrec-detector")(
         TailRecursionDetector.rewriteModule
       )
+      |> CompilerState.timePhase("semantic", "ownership-analyzer")(
+        OwnershipAnalyzer.rewriteModule
+      )

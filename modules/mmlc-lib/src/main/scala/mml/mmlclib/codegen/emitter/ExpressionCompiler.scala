@@ -115,7 +115,7 @@ def compileTerm(
     case Cond(_, condExpr, ifTrue, ifFalse, _, _) =>
       compileCond(condExpr, ifTrue, ifFalse, state, functionScope, compileExpr)
 
-    case impl @ NativeImpl(_, _, _, _) => {
+    case impl @ NativeImpl(_, _, _, _, _) => {
       // Native implementation should be handled at function declaration level (compileBndLambda).
       // If reached here, it implies it's being used as an expression, which is invalid.
       Left(

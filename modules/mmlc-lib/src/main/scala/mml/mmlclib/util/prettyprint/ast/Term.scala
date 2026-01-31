@@ -182,15 +182,22 @@ def prettyPrintTerm(
         if showTypes then s"\n${indentStr}  typeSpec: ${prettyPrintTypeSpec(typeSpec)}" else ""
       s"${indentStr}DataConstructor $spanStr$typeStr"
 
-    case NativeImpl(sp, typeSpec, typeAsc, _) =>
+    case DataDestructor(sp, typeSpec) =>
+      val spanStr = if showSourceSpans then printSourceSpan(sp) else ""
+      val typeStr =
+        if showTypes then s"\n${indentStr}  typeSpec: ${prettyPrintTypeSpec(typeSpec)}" else ""
+      s"${indentStr}DataDestructor $spanStr$typeStr"
+
+    case NativeImpl(sp, typeSpec, typeAsc, _, memEffect) =>
       val spanStr = if showSourceSpans then printSourceSpan(sp) else ""
       val typeStr =
         if showTypes then
           s"\n${indentStr}  typeSpec: ${prettyPrintTypeSpec(typeSpec)}\n" +
             s"${indentStr}  typeAsc: ${prettyPrintTypeSpec(typeAsc)}"
         else ""
+      val memStr = memEffect.map(e => s" [mem=${e.toString.toLowerCase}]").getOrElse("")
 
-      s"${indentStr}NativeImpl $spanStr$typeStr"
+      s"${indentStr}NativeImpl$memStr $spanStr$typeStr"
 
     case TermError(sp, message, failedCode) =>
       val spanStr = if showSourceSpans then printSourceSpan(sp) else ""

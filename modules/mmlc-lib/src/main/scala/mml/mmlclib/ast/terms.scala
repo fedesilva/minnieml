@@ -2,6 +2,10 @@ package mml.mmlclib.ast
 
 import cats.data.NonEmptyList
 
+enum MemEffect derives CanEqual:
+  case Alloc // returns newly allocated memory, caller owns
+  case Static // returns pointer to static/existing memory
+
 sealed trait Term extends AstNode, Typeable, FromSource
 
 case class TermError(
@@ -179,11 +183,21 @@ case class DataConstructor(
 ) extends Term:
   val typeAsc: Option[Type] = None
 
+/** Marks the body of a destructor function for a data type. The codegen will use the type to
+  * determine how to free the memory. Generated alongside DataConstructor for structs.
+  */
+case class DataDestructor(
+  span:     SrcSpan,
+  typeSpec: Option[Type] = None
+) extends Term:
+  val typeAsc: Option[Type] = None
+
 case class NativeImpl(
   span:      SrcSpan,
-  typeSpec:  Option[Type]   = None,
-  typeAsc:   Option[Type]   = None,
-  nativeTpl: Option[String] = None
+  typeSpec:  Option[Type]      = None,
+  typeAsc:   Option[Type]      = None,
+  nativeTpl: Option[String]    = None,
+  memEffect: Option[MemEffect] = None
 ) extends Native,
       Term
 

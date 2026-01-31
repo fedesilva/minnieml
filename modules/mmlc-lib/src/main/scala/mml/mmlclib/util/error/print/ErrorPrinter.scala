@@ -47,6 +47,13 @@ object ErrorPrinter:
     case SemanticError.InvalidExpressionFound(invalidExpr, _) =>
       (invalidExpr.span.start.line, invalidExpr.span.start.col)
     case SemanticError.InvalidEntryPoint(_, span) => (span.start.line, span.start.col)
+    case SemanticError.UseAfterMove(ref, _, _) => (ref.span.start.line, ref.span.start.col)
+    case SemanticError.ConsumingParamNotLastUse(param, _, _) =>
+      (param.span.start.line, param.span.start.col)
+    case SemanticError.PartialApplicationWithConsuming(app, _, _) =>
+      (app.span.start.line, app.span.start.col)
+    case SemanticError.ConditionalOwnershipMismatch(cond, _) =>
+      (cond.span.start.line, cond.span.start.col)
     case SemanticError.TypeCheckingError(error) =>
       // For type errors, we need to extract the position from the nested error
       // This is a bit hacky, but avoids code duplication
@@ -171,6 +178,19 @@ object ErrorPrinter:
 
       case SemanticError.InvalidEntryPoint(message, span) =>
         s"${Console.RED}$message at ${formatLocation(span)}${Console.RESET}"
+
+      case SemanticError.UseAfterMove(ref, movedAt, phase) =>
+        s"${Console.RED}Use of '${ref.name}' after move at ${formatLocation(ref.span)}${Console.RESET}\n${Console.YELLOW}Moved at: ${formatLocation(movedAt)}, Phase: $phase${Console.RESET}"
+
+      case SemanticError.ConsumingParamNotLastUse(param, ref, phase) =>
+        s"${Console.RED}Consuming parameter '${param.name}' must be the last use of '${ref.name}' at ${formatLocation(ref.span)}${Console.RESET}\n${Console.YELLOW}Phase: $phase${Console.RESET}"
+
+      case SemanticError.PartialApplicationWithConsuming(app, param, phase) =>
+        s"${Console.RED}Cannot partially apply function with consuming parameter '${param.name}' at ${formatLocation(app.span)}${Console.RESET}\n${Console.YELLOW}Phase: $phase${Console.RESET}"
+
+      case SemanticError.ConditionalOwnershipMismatch(cond, phase) =>
+        s"${Console.RED}Conditional branches have different ownership states at ${formatLocation(cond.span)}${Console.RESET}\n${Console.YELLOW}Phase: $phase${Console.RESET}"
+
       case SemanticError.TypeCheckingError(error) =>
         // Delegate to SemanticErrorPrinter to avoid duplication
         SemanticErrorPrinter.prettyPrintTypeError(error)
