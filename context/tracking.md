@@ -21,16 +21,6 @@
 
 ## Active Tasks
 
-### Comments
-
-* change to // for line comments
-  - this will disallow the `//` operator (or anything using more two or more `//` and combinations)
-* change the doc comment to be `//* *//`
-
-
-###
-
-
 ### Simple Memory Management Prototype
 
 **Doc:** `docs/brainstorming/mem-man/1-simple-mem-prototype.md`
@@ -41,13 +31,14 @@ and unlocks `noalias` parameter attributes for LLVM optimization.
 **Key points:**
 - Borrow by default, explicit move with `~` syntax
 - Extend `@native` with `[mem=alloc]` / `[mem=static]` attributes
+  - `~` in arguments to signify move.
 - New OwnershipAnalyzer phase inserts `__free_T` calls into AST
 - `__cap` field in String/Buffer for runtime ownership check (conditional merges)
 - No codegen changes - just AST rewriting
 
 **Phases:**
 1. Hardcode native effects in compiler (no syntax changes)
-2. Add `@native[...]` parsing
+2. Add `@native[...]` and `~` parsing
 3. Implement OwnershipAnalyzer phase
 4. Write programs, find edge cases, iterate
 
@@ -61,6 +52,13 @@ TBD
 ---
 
 ## Recent Changes
+
+### 2026-01-31 (branch: 2026-01-14-dev)
+
+- **Doc comments parsing**: Fixed backtracking that broke preceding members when a later doc
+  comment followed a semicolon. `exprP` now guards statement sequencing against `/* ... */`
+  tokens; added regression test `doc comment on later function does not break earlier function`.
+  Ran `sbtn "test; scalafmtAll; scalafixAll; mmlcPublishLocal"`.
 
 ### 2026-01-28 (branch: 2026-01-14-dev)
 

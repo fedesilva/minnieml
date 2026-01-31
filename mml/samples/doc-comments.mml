@@ -1,12 +1,8 @@
 
-
-fn test() = 
- "lalala"
- ;
+/* this is a test function */
+fn test() = "lalala";
 
 /*
- lalala
+  This is a doc comment for main
 */
-fn main() = 
- println "something"
-;
+fn main() = println "something";
