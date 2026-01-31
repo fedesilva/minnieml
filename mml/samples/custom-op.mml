@@ -1,5 +1,5 @@
 
-# just an indirection operator for testing
+// just an indirection operator for testing
 op ** (a: Int, b: Int) 80 left  = a * b;
 
 fn main() = 

@@ -1,13 +1,13 @@
-# Test return type inference for functions and operators
+// Test return type inference for functions and operators
 
-# Function without explicit return type - should infer Int
+// Function without explicit return type - should infer Int
 fn add(a: Int, b: Int) = a + b;
 
-# Function without explicit return type - should infer Bool  
+// Function without explicit return type - should infer Bool  
 fn greater(x: Int, y: Int) = x > y;
 
-# Unary operator without explicit return type - should infer Int
+// Unary operator without explicit return type - should infer Int
 op ~(x: Int) = 0 - x;
 
-# Binary operator without explicit return type - should infer Int  
+// Binary operator without explicit return type - should infer Int  
 op **(a: Int, b: Int) = a * b;

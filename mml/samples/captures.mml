@@ -1,7 +1,7 @@
 
 
-# for this to work we need:
-# * literal lamdas
+// for this to work we need:
+// * literal lamdas
 fn makeLambda() = 
   let a = 1;
   () -> to_string (2 * a)

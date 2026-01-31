@@ -1,56 +1,56 @@
-# The following examples show the use of sequence literals  also called seq notation
-# It allows us to  succintly define instances of Array (pointers to contiguous storage, fixed length)
-# and manipulate them by using pattern matching
+// The following examples show the use of sequence literals  also called seq notation
+// It allows us to  succintly define instances of Array (pointers to contiguous storage, fixed length)
+// and manipulate them by using pattern matching
 
-# The mechanism also allows for user defined types to be selectable for desugaring
-#  as long as a canonical  instance of SequenceSugar is found for the type in question.
-# More details are provided below.
+// The mechanism also allows for user defined types to be selectable for desugaring
+//  as long as a canonical  instance of SequenceSugar is found for the type in question.
+// More details are provided below.
 
 
-# sequence literals are inferred and desugared to Array
-# a1 :: Array Int
+// sequence literals are inferred and desugared to Array
+// a1 :: Array Int
 let a1 = [ 1 ]
 
-# empty array is useless  if there is no type information
-# empty array literal (Nothing is the bottom type)
-# x0: [] Nothing
-# or equivalently
+// empty array is useless  if there is no type information
+// empty array literal (Nothing is the bottom type)
+// x0: [] Nothing
+// or equivalently
 
-# x0: Array Nothing
-# inferring Nothing causes a warning
-# as nothing can be done with Nothing ( o_O )
-# so this line fails if warnings escalation is configured (fatal error).
-#let x0 = []
-# you need to use type ascription
-# x0 : Array Int
+// x0: Array Nothing
+// inferring Nothing causes a warning
+// as nothing can be done with Nothing ( o_O )
+// so this line fails if warnings escalation is configured (fatal error).
+//let x0 = []
+// you need to use type ascription
+// x0 : Array Int
 let x0 : Array Int = []
-# or use type sequence notation which is idiomatic.
-# if you only provide an element type
-# the container is Array
-# x1: Array Int
+// or use type sequence notation which is idiomatic.
+// if you only provide an element type
+// the container is Array
+// x1: Array Int
 let x1 = [] Int
 
-# Sequence notation for arbitrary types
-# here the container type is specified
-# and the element type is inferred by its element type - a literal Int.
+// Sequence notation for arbitrary types
+// here the container type is specified
+// and the element type is inferred by its element type - a literal Int.
 let x2 = List [ 1 ]
-# here the ascription drives the container selection.
+// here the ascription drives the container selection.
 let ns: List Int = [ 1 2 3 ]
 
 
 
-#
-#desugars to ns: List Int
+//
+//desugars to ns: List Int
 let ns = List [ 1 2 3 ]
 
-# x : Array String
+// x : Array String
 let x = ["f" "e" "d" "e"]
 
-# also x : Array String
-# the ??? thing lets compilation continue without a body if types check. the type of ??? is Nothing (the bottom type)
+// also x : Array String
+// the ??? thing lets compilation continue without a body if types check. the type of ??? is Nothing (the bottom type)
 let x : [] String = ???
 
-# the cons ([::]) pattern takes the first element of the list and the tail.
+// the cons ([::]) pattern takes the first element of the list and the tail.
 fn matchList l =
   l match
     | []                -> "empty"
@@ -59,21 +59,21 @@ fn matchList l =
     | [ head :: tail ]  -> a
 
 
-#
-# Desugaring
-#
-# the compiler can desugar typed  sequence literals
-# of the form
-# LinkedList [1 2 3]
-# Vector [ "a" "b" "c" ]
-# which would result respectively in types
-# LinkedList Int
-# Vector String
-# since sequences always desugar to array
-# the desugaring process first desugars the seq to an array
-# then passes the array to the desugar function
-# of the appropriate instance for a types
-# the type 'T is the element type
+//
+// Desugaring
+//
+// the compiler can desugar typed  sequence literals
+// of the form
+// LinkedList [1 2 3]
+// Vector [ "a" "b" "c" ]
+// which would result respectively in types
+// LinkedList Int
+// Vector String
+// since sequences always desugar to array
+// the desugaring process first desugars the seq to an array
+// then passes the array to the desugar function
+// of the appropriate instance for a types
+// the type 'T is the element type
 protocol SeqDesugar 'F =
   desugar 'T: (Array 'T) -> ('F 'T)
 ;

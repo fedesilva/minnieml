@@ -1,28 +1,28 @@
-# The following types are a sample of the standard library plus some use examples
-# Maybe could be a type def like: `type Maybe 'T = 'T | ()`
-# But enums are more flexible - with an enum when you say One x, inference
-# is as precise as can be for x.
-# You know it has type Maybe 'T for whatever 'T.
-# With a union type it will be frequently inferred as either unit or the concrete type
-# See usage below
+// The following types are a sample of the standard library plus some use examples
+// Maybe could be a type def like: `type Maybe 'T = 'T | ()`
+// But enums are more flexible - with an enum when you say One x, inference
+// is as precise as can be for x.
+// You know it has type Maybe 'T for whatever 'T.
+// With a union type it will be frequently inferred as either unit or the concrete type
+// See usage below
 
 enum Maybe 'T =
   | One: 'T
   | None
 ;
 
-# Puts Maybe members in the current scope to allow using them unqualified
-# (One instead of Maybe.One)
+// Puts Maybe members in the current scope to allow using them unqualified
+// (One instead of Maybe.One)
 use Maybe.*;
 
-# empty :: Maybe 'T -> Boolean
+// empty :: Maybe 'T -> Boolean
 fn empty(x) =
   x match
   | None -> true
   | _    -> false
 ;
 
-# nonEmpty :: Maybe 'T -> Boolean
+// nonEmpty :: Maybe 'T -> Boolean
 fn nonEmpty(maybe) =
   ! empty maybe
 ;
@@ -32,37 +32,37 @@ enum Result 'T 'E =
   | Err: 'E
 ;
 
-# Semigroup represents an associative binary operation.
+// Semigroup represents an associative binary operation.
 protocol Semigroup 'T =
   fn combine: 'T -> 'T -> 'T
 ;
 
-# Monoid extends Semigroup with an identity (zero) element.
+// Monoid extends Semigroup with an identity (zero) element.
 protocol Monoid 'T: Semigroup =
   fn empty: 'T
 ;
 
-# Functor represents a structure that can be mapped over.
+// Functor represents a structure that can be mapped over.
 protocol Functor 'F =
   fn map 'A 'B : ('A -> 'B) -> ('F 'A) -> ('F 'B)
 ;
 
-# Apply extends Functor with the ability to apply a function wrapped in the structure
+// Apply extends Functor with the ability to apply a function wrapped in the structure
 protocol Apply 'F: Functor =
   fn ap 'A 'B : ('F ('A -> 'B)) -> ('F 'A) -> ('F 'B)
 ;
 
-# Applicative extends Apply with the ability to lift a value into the structure
+// Applicative extends Apply with the ability to lift a value into the structure
 protocol Applicative 'F: Apply =
   fn pure 'A : 'A -> 'F 'A
 ;
 
-# FlatMap extends Functor with the ability to flatten and map in one operation
+// FlatMap extends Functor with the ability to flatten and map in one operation
 protocol FlatMap 'F: Functor =
   fn flatMap 'A 'B : ('A -> 'F 'B) -> 'F 'A -> 'F 'B
 ;
 
-# Monad is a functor that can flatten nested structures and create new ones.
+// Monad is a functor that can flatten nested structures and create new ones.
 protocol Monad 'M: Functor & FlatMap & Applicative;
 
 protocol Foldable 'F =
@@ -70,17 +70,17 @@ protocol Foldable 'F =
   fn foldRight 'A 'B : ('A -> 'B -> 'B) -> 'B -> 'F 'A -> 'B
 ;
 
-# Int forms a semigroup under addition
+// Int forms a semigroup under addition
 instance Semigroup Int =
   fn combine(x, y) = x + y
 ;
 
-# Int forms a monoid under addition with 0 as identity
+// Int forms a monoid under addition with 0 as identity
 instance Monoid Int =
   fn empty() = 0
 ;
 
-# Maybe implements the Functor protocol
+// Maybe implements the Functor protocol
 instance Functor Maybe =
   fn map(f, maybe) =
     maybe match
@@ -88,7 +88,7 @@ instance Functor Maybe =
     | None  -> None
 ;
 
-# Maybe implements the Apply protocol
+// Maybe implements the Apply protocol
 instance Apply Maybe =
   fn ap(f, maybe) =
     f match
@@ -96,7 +96,7 @@ instance Apply Maybe =
     | None  -> None
 ;
 
-# Maybe implements the FlatMap protocol
+// Maybe implements the FlatMap protocol
 instance FlatMap Maybe =
   fn flatMap(f, maybe) =
     maybe match
@@ -104,12 +104,12 @@ instance FlatMap Maybe =
     | None  -> None
 ;
 
-# Maybe implements the Applicative protocol
+// Maybe implements the Applicative protocol
 instance Applicative Maybe =
   fn pure(x) = One x
 ;
 
-# Maybe implements the Monad protocol
+// Maybe implements the Monad protocol
 instance Monad Maybe =
   fn flatMap(f, maybe) = maybe match
     | One x -> f x
@@ -119,8 +119,8 @@ instance Monad Maybe =
 
 protocol Something 'T: Semigroup 'T =
   fn combine(x, y) = x + y
-  # Example of operator definitions using protocols
-  # the precedenc and associativity are fake
+  // Example of operator definitions using protocols
+  // the precedenc and associativity are fake
   op + 20 right : ('T, 'T) -> 'T
   op >> 25 left :  ('T, 'T) -> 'T
 ;

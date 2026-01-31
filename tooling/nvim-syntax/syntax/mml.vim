@@ -14,11 +14,11 @@ syn case match
 " Comments
 " ============================================================================
 
-" Line comments: # comment (but not #- which starts doc comments)
-syn match mmlComment "#\%(-\)\@!.*$" contains=mmlTodo
+" Line comments: // comment (but not /* which starts doc comments)
+syn match mmlComment "//.*$" contains=mmlTodo
 
-" Documentation comments: #- ... -# (can be nested)
-syn region mmlDocComment start="#-" end="-#" contains=mmlDocComment,mmlTodo
+" Documentation comments: /* ... */ (can be nested)
+syn region mmlDocComment start="/\*" end="\*/" contains=mmlDocComment,mmlTodo
 
 " TODO/FIXME/NOTE highlighting within comments
 syn keyword mmlTodo contained TODO FIXME NOTE XXX

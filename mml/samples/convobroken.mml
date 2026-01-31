@@ -2,9 +2,9 @@ fn main() =
   let a = 1;
   let b = 2; 
   let c = 3;
-  let x = 3*"3"; #doh
+  let x = 3*"3"; //doh
   let y = 4*30;
   let z = b * y * x;
   let result = a * b + c / y * x;
-  println (str_to_int result) #doh
+  println (str_to_int result) //doh
 ;

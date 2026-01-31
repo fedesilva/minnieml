@@ -1,4 +1,4 @@
-#-
+/*
   Factorial function implementation using a unary postfix operator.
 
   This defines the factorial operation as a postfix '!' operator
@@ -7,12 +7,12 @@
   Usage examples:
     5!     => 120
     3 + 4! => 3 + 24 = 27
--#
+*/
 op ! (n: Int): Int 95 left =
   if n <= 1 then
     1
   else
-    n * (n - 1)! # Recursive call to calculate factorial
+    n * (n - 1)! // Recursive call to calculate factorial
   end
 ;
 

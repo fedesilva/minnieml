@@ -1,13 +1,13 @@
-# C = A * B
-# Optimized Version: Loop Interchange (i-k-j) for Sequential Access
-# Matrices are N x N, flattened into 1D arrays of size N*N
+// C = A * B
+// Optimized Version: Loop Interchange (i-k-j) for Sequential Access
+// Matrices are N x N, flattened into 1D arrays of size N*N
 
-# --- Initialization ---
+// --- Initialization ---
 
 fn fill_matrix_loop(arr: IntArray, i: Int, size: Int, current_seed: Int): Unit =
   if i < size then
     let next_seed = (current_seed * 1664525) + 1013904223;
-    # Keep numbers small to avoid immediate overflow
+    // Keep numbers small to avoid immediate overflow
     unsafe_ar_int_set arr i (next_seed % 100);
     fill_matrix_loop arr (i + 1) size next_seed
   end
@@ -18,50 +18,50 @@ fn fill_matrix(arr: IntArray, n: Int, seed: Int): Unit =
   fill_matrix_loop arr 0 size seed
 ;
 
-# --- Matrix Multiplication (Interchanged) ---
+// --- Matrix Multiplication (Interchanged) ---
 
-# Inner loop: j from 0 to n
-# Logic: C[i][j] += val_a * B[k][j]
-# This iterates sequentially over B and C, which is cache-friendly and vectorizable.
+// Inner loop: j from 0 to n
+// Logic: C[i][j] += val_a * B[k][j]
+// This iterates sequentially over B and C, which is cache-friendly and vectorizable.
 fn mat_mul_j(c: IntArray, b: IntArray, val_a: Int, i: Int, k: Int, j: Int, n: Int): Unit =
   if j < n then
-    # Calculate indices
+    // Calculate indices
     let idx_c = (i * n) + j;
     let idx_b = (k * n) + j;
 
-    # Read values
+    // Read values
     let val_b = unsafe_ar_int_get b idx_b;
     let old_c = unsafe_ar_int_get c idx_c;
 
-    # Accumulate
+    // Accumulate
     let product = val_a * val_b;
     unsafe_ar_int_set c idx_c (old_c + product);
 
-    # Recurse
+    // Recurse
     mat_mul_j c b val_a i k (j + 1) n
   end
 ;
 
-# Middle loop: k from 0 to n
-# Logic: Load A[i][k] once, then apply to whole row j
+// Middle loop: k from 0 to n
+// Logic: Load A[i][k] once, then apply to whole row j
 fn mat_mul_k(a: IntArray, b: IntArray, c: IntArray, i: Int, k: Int, n: Int): Unit =
   if k < n then
-    # Load A value once for the inner loop (Hoisting)
+    // Load A value once for the inner loop (Hoisting)
     let idx_a = (i * n) + k;
     let val_a = unsafe_ar_int_get a idx_a;
 
-    # Run inner loop (j)
+    // Run inner loop (j)
     let u = mat_mul_j c b val_a i k 0 n;
 
-    # Recurse
+    // Recurse
     mat_mul_k a b c i (k + 1) n
   end
 ;
 
-# Outer loop: i from 0 to n
+// Outer loop: i from 0 to n
 fn mat_mul_i(a: IntArray, b: IntArray, c: IntArray, i: Int, n: Int): Unit =
   if i < n then
-    # Run middle loop (k)
+    // Run middle loop (k)
     let u = mat_mul_k a b c i 0 n;
     mat_mul_i a b c (i + 1) n
   end
@@ -71,7 +71,7 @@ fn mat_mul(a: IntArray, b: IntArray, c: IntArray, n: Int): Unit =
   mat_mul_i a b c 0 n
 ;
 
-# --- Verification ---
+// --- Verification ---
 
 fn trace_loop(arr: IntArray, i: Int, n: Int, acc: Int): Int =
   if i < n then
@@ -87,12 +87,12 @@ fn trace(arr: IntArray, n: Int): Int =
   trace_loop arr 0 n 0
 ;
 
-# --- Main ---
+// --- Main ---
 
 fn main(): Unit =
   let n = 500;
-  # Note: 'ar_int_new' is assumed to return zeroed memory. 
-  # If not, C must be manually zeroed before use in this algorithm.
+  // Note: 'ar_int_new' is assumed to return zeroed memory. 
+  // If not, C must be manually zeroed before use in this algorithm.
   let a = ar_int_new (n * n);
   let b = ar_int_new (n * n);
   let c = ar_int_new (n * n);

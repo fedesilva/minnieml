@@ -1,5 +1,5 @@
-# N-Queens solver using backtracking (single recursive function like C)
-# Board represented as array where board[row] = column of queen in that row
+// N-Queens solver using backtracking (single recursive function like C)
+// Board represented as array where board[row] = column of queen in that row
 
 fn abs(x: Int): Int =
   if x < 0 then 0 - x else x end
@@ -9,7 +9,7 @@ fn is_safe(board: IntArray, row: Int, col: Int): Bool =
   is_safe_loop board row col 0
 ;
 
-# Check if placing queen at (row, col) is safe
+// Check if placing queen at (row, col) is safe
 fn is_safe_loop(board: IntArray, row: Int, col: Int, check_row: Int): Bool =
   if check_row >= row then
     true
@@ -34,7 +34,7 @@ fn is_safe_loop(board: IntArray, row: Int, col: Int, check_row: Int): Bool =
 
 
 
-# Single recursive function - calls itself for both columns and rows
+// Single recursive function - calls itself for both columns and rows
 fn solve_cols(board: IntArray, row: Int, n: Int, col: Int, acc: Int): Int =
   if col >= n then
     acc
@@ -58,6 +58,6 @@ fn main(): Unit =
   let n = 12;
   let board = ar_int_new n;
   
-  let solutions = solve_cols board 0 n 0 0;  # Start directly
+  let solutions = solve_cols board 0 n 0 0;  // Start directly
   println (concat "Solutions for " (concat (to_string n) (concat "-queens: " (to_string solutions))))
 ;

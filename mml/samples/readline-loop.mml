@@ -1,5 +1,5 @@
-# REPL-style loop using readline
-# Sequencing via function chaining (no let...in yet)
+// REPL-style loop using readline
+// Sequencing via function chaining (no let...in yet)
 
 fn process(input: String): String = concat "You said: " input;
 fn loop(): Unit = loop_with (readline());
