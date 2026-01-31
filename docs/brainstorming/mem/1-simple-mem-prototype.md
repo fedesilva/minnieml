@@ -140,23 +140,30 @@ fn concat(a: String, b: String): String = @native[mem=alloc]
 ### Defaults (if no annotation)
 
 - Takes heap params → **Borrow** (default: caller retains ownership)
-- Moving ownership requires explicit syntax (`~` in signatures and `~expr` at call sites)
+- Consuming params are marked **only in the declaration** with `~param`. Call sites stay bare.
 - **Parameters taking ownership (`~`) must consume**: Any function parameter that takes a heap type
   by move (`~`) *must* consume it (either free it internally or transfer it elsewhere). This keeps
   the "who frees" question unambiguous.
 - `@native` functions that return heap types must declare `mem=alloc`; otherwise
   the return is treated as borrowed (no ownership, no frees inserted)
 
-### Explicit Move Syntax (`~`)
+### Native parameter consumption
+
+- Native functions use the same per-parameter `~` sigil to mean “callee consumes”.
+- Missing `~` means borrow-only (safe default that may leak but won’t double-free).
+- Call sites never use `~`; consumption is checked via last-use analysis on arguments.
+
+### Consuming Parameters (`~` in declarations only)
 
 To make the system simpler and clearer, we default to "Borrow" semantics.
-If you pass a value, you keep it. If you want to transfer ownership, you must move it (`~`).
-Critically, this must be explicit at **both** the call site and the declaration:
+If you pass a value, you keep it unless the callee declares it consumes (`~param`).
+Call sites never use `~`; the compiler checks that an argument passed to a consuming parameter
+is at its **last use**. If not, it emits a diagnostic (suggest `clone` or `leak/forget`).
 
 - `fn foo(x: String)` -> Borrows (caller retains ownership).
   - Call: `foo x` (borrows `x`, `x` remains valid)
 - `fn bar(~x: String)` -> Takes ownership.
-  - Call: `bar ~x` (moves `x`, `x` is now invalid)
+  - Call: `bar x` (call site unchanged). `x` must be last-use or cloned; afterwards `x` is invalid.
 
 This enforces synchronization: if the signature expects a move, the caller *must* provide one.
 
@@ -165,19 +172,19 @@ This enforces synchronization: if the signature expects a move, the caller *must
 ```mml
 let s = readline()
 println s        -- Default: Borrow. 's' remains valid.
-vector_push ~s   -- Explicit Move. 's' is now invalid.
+vector_push s    -- Param declared ~, so this consumes. 's' is now invalid.
 println s        -- Compile Error: Use after move.
 ```
 
 **Partial Application:** For this prototype, partial application with `~` arguments is **banned**.
-All `~` arguments must appear in a saturating call (one that fully applies the function).
+All consuming (`~`) arguments must appear in a saturating call (one that fully applies the function).
 
 ```mml
 -- ALLOWED: saturating call
-consume ~s 42
+consume s 42
 
 -- BANNED: partial application captures owned value
-let f = consume ~s   -- Compile Error: cannot move into partial application
+let f = consume s    -- Compile Error: cannot move into partial application
 f 42
 ```
 
@@ -193,7 +200,7 @@ owns a linear resource must be `FnOnce`. Banning this sidesteps linear closure t
 For the prototype, assume linear ownership with **Borrow by Default**:
 - Each heap value has exactly one owner
 - Function calls **borrow** by default (caller retains ownership)
-- Caller must explicitly move (`~`) to transfer ownership
+- Consuming parameters are marked with `~` in declarations; call sites stay bare
 - Values freed at scope end if still owned
 
 ### Ownership States
@@ -372,10 +379,12 @@ case class OwnershipInfo(
 )
 
 def analyzeOwnership(expr: Expr, owned: Set[String]): OwnershipInfo =
-  // Walk AST
-  // Track owned bindings
-  // At App nodes, check callee's mem effect
-  // Mark free points after last borrow or at scope end
+  // Walk AST with liveness to find last uses
+  // Track owned bindings and aliasing
+  // At App nodes, check callee memEffect and consuming params (~ in decls)
+  // If consuming param arg is not last-use -> emit diagnostic (clone or leak)
+  // Mark free points after last use (post-dominator) or at scope end
+  // Disallow consuming params in partial applications / multi-call closures
 ```
 
 
@@ -402,13 +411,13 @@ rewriting phase.
    let greet = concat "Hello, "      -- captures a literal, ok (borrows static)
    let greet2 = concat (readline())  -- banned: cannot move owned value into closure
    ```
-   A: For prototype: `~` arguments must appear in saturating calls only.
+   A: For prototype: consuming (`~`-declared) parameters must be supplied in saturating calls only.
 
 3. **What frees a Buffer?** ✓ *Resolved by `__cap` field*
    A: Buffer is a Resource Type with a `__cap` field like String. Therefore:
    - `free(buf)` — universal, checks `__cap`
    - `flush(buf)` — borrows, no ownership change
-   - `close(~buf)` — consumes, frees after closing
+   - `close(~buf)` — consumes (decl-level), frees after closing; call sites stay `close buf`
 
 4. **Nested structs?**
    A: If we add user structs containing Strings, ownership must be recursive.
@@ -418,7 +427,7 @@ rewriting phase.
 
 6. **Linearity Ergonomics**
    Strict linearity might be rigid. How do we make "use-after-move" errors friendly?
-   A: Borrow-by-default helps — explicit `~` moves are the exception, not the rule.
+   A: Borrow-by-default helps — consuming params are explicit in declarations, not at call sites.
 
 7. **Static vs Heap Safety** ✓ *Resolved by Runtime Capacity (`__cap` field)*
    Crucial to distinguish `LiteralString` (static) from allocated strings. Freeing a literal is fatal.
