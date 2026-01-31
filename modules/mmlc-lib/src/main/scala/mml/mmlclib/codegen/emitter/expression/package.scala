@@ -41,7 +41,7 @@ def extractFunctionTemplate(ref: Ref, resolvables: ResolvablesIndex): Option[(Bn
 /** Extracts NativeImpl template from a binding's lambda body. */
 private def extractTemplate(bnd: Bnd): Option[String] =
   bnd.value.terms.collectFirst { case lambda: Lambda => lambda.body }.flatMap { body =>
-    body.terms.collectFirst { case NativeImpl(_, _, _, Some(tpl)) => tpl }
+    body.terms.collectFirst { case NativeImpl(_, _, _, Some(tpl), _) => tpl }
   }
 
 /** Gets native operator template from a resolved binding (function-style API for compileApp). */

@@ -94,6 +94,27 @@ object SourceCodeExtractor:
         extractSnippet(sourceInfo, span)
           .map(s => s"\n$s")
           .getOrElse("")
+
+      case SemanticError.UseAfterMove(ref, _, _) =>
+        extractSnippet(sourceInfo, ref.span)
+          .map(s => s"\n$s")
+          .getOrElse("")
+
+      case SemanticError.ConsumingParamNotLastUse(_, ref, _) =>
+        extractSnippet(sourceInfo, ref.span)
+          .map(s => s"\n$s")
+          .getOrElse("")
+
+      case SemanticError.PartialApplicationWithConsuming(app, _, _) =>
+        extractSnippet(sourceInfo, app.span)
+          .map(s => s"\n$s")
+          .getOrElse("")
+
+      case SemanticError.ConditionalOwnershipMismatch(cond, _) =>
+        extractSnippet(sourceInfo, cond.span)
+          .map(s => s"\n$s")
+          .getOrElse("")
+
       case SemanticError.TypeCheckingError(error) =>
         extractTypeErrorSnippet(sourceInfo, error)
 

@@ -727,3 +727,39 @@ void __mml_sys_hole(int64_t start_line, int64_t start_col, int64_t end_line, int
     fflush(stderr);
     exit(1);
 }
+
+// --- Memory Management Free Functions ---
+
+void __free_String(String s)
+{
+    if (s.data)
+        free(s.data);
+}
+
+void __free_Buffer(Buffer b)
+{
+    if (b)
+    {
+        if (b->data)
+            free(b->data);
+        free(b);
+    }
+}
+
+void __free_IntArray(IntArray arr)
+{
+    if (arr.data)
+        free(arr.data);
+}
+
+void __free_StringArray(StringArray arr)
+{
+    if (arr.data)
+    {
+        for (int64_t i = 0; i < arr.length; i++)
+        {
+            __free_String(arr.data[i]);
+        }
+        free(arr.data);
+    }
+}

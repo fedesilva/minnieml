@@ -62,6 +62,7 @@ enum TypeError extends CompilationError:
   )
   case UntypedHoleInBinding(bindingName: String, span: SrcSpan, phase: String)
 
+  // TODO:   Why not define this within the members?
   def message: String = this match
     case MissingParameterType(param, _, _) =>
       s"Missing type annotation for parameter '${param.name}'"
@@ -116,6 +117,11 @@ enum SemanticError extends CompilationError:
   case InvalidExpressionFound(invalidExpr: mml.mmlclib.ast.InvalidExpression, phase: String)
   case TypeCheckingError(error: TypeError)
   case InvalidEntryPoint(msg: String, span: SrcSpan)
+  // Ownership errors
+  case UseAfterMove(ref: Ref, movedAt: SrcSpan, phase: String)
+  case ConsumingParamNotLastUse(param: FnParam, ref: Ref, phase: String)
+  case PartialApplicationWithConsuming(app: App, param: FnParam, phase: String)
+  case ConditionalOwnershipMismatch(cond: Cond, phase: String)
 
   def message: String = this match
     case UndefinedRef(ref, _, _) =>
@@ -138,6 +144,14 @@ enum SemanticError extends CompilationError:
       error.message
     case InvalidEntryPoint(msg, _) =>
       msg
+    case UseAfterMove(ref, movedAt, _) =>
+      s"Use of '${ref.name}' after move at ${movedAt.start.line}:${movedAt.start.col}"
+    case ConsumingParamNotLastUse(param, ref, _) =>
+      s"Consuming parameter '${param.name}' must be the last use of '${ref.name}'"
+    case PartialApplicationWithConsuming(_, param, _) =>
+      s"Cannot partially apply function with consuming parameter '${param.name}'"
+    case ConditionalOwnershipMismatch(_, _) =>
+      "Conditional branches have different ownership states"
 
 /** Generate a stable ID for stdlib members */
 private def stdlibId(declSegment: String, name: String): Option[String] =
@@ -490,7 +504,12 @@ def injectCommonFunctions(module: Module): Module =
   def bufferType = stdlibTypeRef("Buffer")
 
   // Helper to create a function as Bnd(Lambda)
-  def mkFn(name: String, params: List[FnParam], returnType: Type): Bnd =
+  def mkFn(
+    name:       String,
+    params:     List[FnParam],
+    returnType: Type,
+    memEffect:  Option[MemEffect] = None
+  ): Bnd =
     val arity = params.size match
       case 0 => CallableArity.Nullary
       case 1 => CallableArity.Unary
@@ -504,7 +523,7 @@ def injectCommonFunctions(module: Module): Module =
       originalName  = name,
       mangledName   = name
     )
-    val body = Expr(dummySpan, List(NativeImpl(dummySpan)))
+    val body = Expr(dummySpan, List(NativeImpl(dummySpan, memEffect = memEffect)))
     val lambda = Lambda(
       span     = dummySpan,
       params   = params,
@@ -573,21 +592,37 @@ def injectCommonFunctions(module: Module): Module =
     mkFn("print", List(FnParam(dummySpan, "a", typeAsc = Some(stringType))), unitType),
     mkFn("println", List(FnParam(dummySpan, "a", typeAsc = Some(stringType))), unitType),
     mkFn("mml_sys_flush", List(), unitType),
-    mkFn("readline", List(), stringType),
+    mkFn("readline", List(), stringType, Some(MemEffect.Alloc)),
     mkFn(
       "concat",
       List(
         FnParam(dummySpan, "a", typeAsc = Some(stringType)),
         FnParam(dummySpan, "b", typeAsc = Some(stringType))
       ),
-      stringType
+      stringType,
+      Some(MemEffect.Alloc)
     ),
-    mkFn("to_string", List(FnParam(dummySpan, "a", typeAsc = Some(intType))), stringType),
+    mkFn(
+      "to_string",
+      List(FnParam(dummySpan, "a", typeAsc = Some(intType))),
+      stringType,
+      Some(MemEffect.Alloc)
+    ),
     mkFn("str_to_int", List(FnParam(dummySpan, "a", typeAsc = Some(stringType))), intType),
     // Buffer functions
-    mkFn("mkBuffer", List(), bufferType),
-    mkFn("mkBufferWithFd", List(FnParam(dummySpan, "fd", typeAsc = Some(intType))), bufferType),
-    mkFn("mkBufferWithSize", List(FnParam(dummySpan, "size", typeAsc = Some(intType))), bufferType),
+    mkFn("mkBuffer", List(), bufferType, Some(MemEffect.Alloc)),
+    mkFn(
+      "mkBufferWithFd",
+      List(FnParam(dummySpan, "fd", typeAsc = Some(intType))),
+      bufferType,
+      Some(MemEffect.Alloc)
+    ),
+    mkFn(
+      "mkBufferWithSize",
+      List(FnParam(dummySpan, "size", typeAsc = Some(intType))),
+      bufferType,
+      Some(MemEffect.Alloc)
+    ),
     mkFn("flush", List(FnParam(dummySpan, "b", typeAsc = Some(bufferType))), unitType),
     mkFn(
       "buffer_write",
@@ -626,7 +661,23 @@ def injectCommonFunctions(module: Module): Module =
     mkFn("open_file_write", List(FnParam(dummySpan, "path", typeAsc = Some(stringType))), intType),
     mkFn("open_file_append", List(FnParam(dummySpan, "path", typeAsc = Some(stringType))), intType),
     mkFn("close_file", List(FnParam(dummySpan, "fd", typeAsc = Some(intType))), unitType),
-    mkFn("read_line_fd", List(FnParam(dummySpan, "fd", typeAsc = Some(intType))), stringType)
+    mkFn(
+      "read_line_fd",
+      List(FnParam(dummySpan, "fd", typeAsc = Some(intType))),
+      stringType,
+      Some(MemEffect.Alloc)
+    ),
+    // Memory management free functions
+    mkFn(
+      "__free_String",
+      List(FnParam(dummySpan, "s", typeAsc = Some(stringType))),
+      unitType
+    ),
+    mkFn(
+      "__free_Buffer",
+      List(FnParam(dummySpan, "b", typeAsc = Some(bufferType))),
+      unitType
+    )
   )
 
   // Array type refs
@@ -636,7 +687,12 @@ def injectCommonFunctions(module: Module): Module =
   // Array functions
   val arrayFunctions = List(
     // IntArray functions
-    mkFn("ar_int_new", List(FnParam(dummySpan, "size", typeAsc = Some(intType))), intArrayType),
+    mkFn(
+      "ar_int_new",
+      List(FnParam(dummySpan, "size", typeAsc = Some(intType))),
+      intArrayType,
+      Some(MemEffect.Alloc)
+    ),
     mkFn(
       "ar_int_set",
       List(
@@ -673,7 +729,12 @@ def injectCommonFunctions(module: Module): Module =
     ),
     mkFn("ar_int_len", List(FnParam(dummySpan, "arr", typeAsc = Some(intArrayType))), intType),
     // StringArray functions
-    mkFn("ar_str_new", List(FnParam(dummySpan, "size", typeAsc = Some(intType))), stringArrayType),
+    mkFn(
+      "ar_str_new",
+      List(FnParam(dummySpan, "size", typeAsc = Some(intType))),
+      stringArrayType,
+      Some(MemEffect.Alloc)
+    ),
     mkFn(
       "ar_str_set",
       List(
@@ -691,7 +752,18 @@ def injectCommonFunctions(module: Module): Module =
       ),
       stringType
     ),
-    mkFn("ar_str_len", List(FnParam(dummySpan, "arr", typeAsc = Some(stringArrayType))), intType)
+    mkFn("ar_str_len", List(FnParam(dummySpan, "arr", typeAsc = Some(stringArrayType))), intType),
+    // Memory management free functions for arrays
+    mkFn(
+      "__free_IntArray",
+      List(FnParam(dummySpan, "a", typeAsc = Some(intArrayType))),
+      unitType
+    ),
+    mkFn(
+      "__free_StringArray",
+      List(FnParam(dummySpan, "a", typeAsc = Some(stringArrayType))),
+      unitType
+    )
   )
 
   // Buffer operators that wrap native functions

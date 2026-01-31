@@ -239,7 +239,7 @@ private def emitBndLambda(
 
       // Check if this is a native function implementation
       lambda.body.terms match {
-        case List(NativeImpl(_, _, _, _)) =>
+        case List(NativeImpl(_, _, _, _, _)) =>
           // Native functions: emit as declaration with original name (external symbol)
           // Split struct params for x86_64 ABI compliance
           val abiParamTypes = lowerNativeParamTypes(filteredParamTypes, state)

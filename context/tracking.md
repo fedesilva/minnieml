@@ -24,6 +24,7 @@
 ### Simple Memory Management Prototype
 
 **Doc:** `docs/brainstorming/mem-man/1-simple-mem-prototype.md`
+**Plan:** `~/.claude/plans/nifty-coalescing-phoenix.md`
 
 Linear ownership with borrow-by-default. Enables safe automatic memory management
 and unlocks `noalias` parameter attributes for LLVM optimization.
@@ -31,16 +32,46 @@ and unlocks `noalias` parameter attributes for LLVM optimization.
 **Key points:**
 - Borrow by default, explicit move with `~` syntax
 - Extend `@native` with `[mem=alloc]` / `[mem=static]` attributes
-  - `~` in arguments to signify move.
 - New OwnershipAnalyzer phase inserts `__free_T` calls into AST
-- `__cap` field in String/Buffer for runtime ownership check (conditional merges)
 - No codegen changes - just AST rewriting
 
-**Phases:**
-1. Hardcode native effects in compiler (no syntax changes)
-2. Add `@native[...]` and `~` parsing
-3. Implement OwnershipAnalyzer phase
-4. Write programs, find edge cases, iterate
+**Progress:**
+
+- [x] **Phase 0: AST & Infrastructure**
+  - [x] Added `MemEffect` enum (Alloc, Static) to `ast/terms.scala`
+  - [x] Extended `NativeImpl` with `memEffect: Option[MemEffect]` field
+  - [x] Added `consuming: Boolean` flag to `FnParam` in `ast/common.scala`
+  - [x] Added `DataDestructor` term (for future struct destructor generation)
+  - [x] Modified `mkFn` helper in `semantic/package.scala` to accept `MemEffect`
+  - [x] Tagged allocating functions with `MemEffect.Alloc`: readline, concat, to_string, mkBuffer*, ar_*_new, read_line_fd
+  - [x] Added `__free_*` functions to stdlib: __free_String, __free_Buffer, __free_IntArray, __free_StringArray
+  - [x] Added runtime free functions to `mml_runtime.c`
+  - [x] Updated pretty printers for new AST nodes
+
+- [x] **Phase 1: Parser Support**
+  - [x] Extended `nativeImplP` for `[mem=alloc]` / `[mem=static]` syntax
+  - [x] Added `~` prefix parsing for consuming parameters in `fnParamP`
+
+- [ ] **Phase 2: OwnershipAnalyzer** (in progress)
+  - [x] Created `OwnershipAnalyzer.scala` with basic structure
+  - [x] Added `OwnershipState` enum (Owned, Moved, Borrowed, Literal)
+  - [x] Added `OwnershipScope` for tracking binding states
+  - [x] Added ownership errors to `SemanticError`: UseAfterMove, ConsumingParamNotLastUse, PartialApplicationWithConsuming, ConditionalOwnershipMismatch
+  - [x] Integrated into `SemanticStage.scala` pipeline
+  - [x] Basic use-after-move detection working
+  - [ ] **TODO:** Detect `App` calls with `MemEffect.Alloc` and mark bindings as Owned
+  - [ ] **TODO:** Insert `App(Ref("__free_T"), Ref(binding))` at scope end
+  - [ ] **TODO:** Track type information for bindings to select correct `__free_T`
+  - [ ] **TODO:** Implement move semantics for `~` consuming parameters
+
+- [ ] **Phase 3: Struct Destructors** 
+  - [ ] Generate `__free_StructName` for user structs alongside `__mk_StructName`
+  - [ ] Handle `DataDestructor` in codegen to free heap-allocated fields
+
+- [ ] **Phase 4: Testing**
+  - [ ] Write test programs with allocations
+  - [ ] Verify with `leaks --atExit` that leak count is 0
+  - [ ] Find edge cases, iterate
 
 
 
@@ -52,6 +83,19 @@ TBD
 ---
 
 ## Recent Changes
+
+### 2026-01-31 (branch: memory-prototype)
+
+- **Memory management prototype (partial)**: Implemented Phase 0-1 and started Phase 2.
+  - Added `MemEffect` enum and extended `NativeImpl` with `memEffect` field
+  - Added `consuming` flag to `FnParam` for `~` move syntax
+  - Added `DataDestructor` term for future struct destructor generation
+  - Tagged allocating stdlib functions with `MemEffect.Alloc`
+  - Added `__free_*` functions to stdlib and runtime
+  - Extended parser for `@native[mem=alloc]` and `~param` syntax
+  - Created `OwnershipAnalyzer.scala` phase with basic use-after-move detection
+  - Added ownership-related errors to `SemanticError`
+  - **Pending:** Insert `__free_T` calls, track allocations from App nodes
 
 ### 2026-01-31 (branch: 2026-01-14-dev)
 

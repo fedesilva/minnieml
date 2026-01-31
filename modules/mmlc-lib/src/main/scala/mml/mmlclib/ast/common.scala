@@ -70,7 +70,8 @@ case class FnParam(
   typeSpec:   Option[Type]       = None,
   typeAsc:    Option[Type]       = None,
   docComment: Option[DocComment] = None,
-  id:         Option[String]     = None
+  id:         Option[String]     = None,
+  consuming:  Boolean            = false // for ~param syntax: takes ownership
 ) extends AstNode,
       FromSource,
       Typeable,
