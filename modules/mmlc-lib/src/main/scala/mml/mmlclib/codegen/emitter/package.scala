@@ -1,6 +1,5 @@
 package mml.mmlclib.codegen.emitter
 
-import cats.syntax.all.*
 import mml.mmlclib.ast.*
 import mml.mmlclib.codegen.TargetAbi
 import mml.mmlclib.errors.{CompilationError, CompilerWarning}

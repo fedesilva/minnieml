@@ -211,7 +211,7 @@ object ErrorPrinter:
           (err.node.collect { case fs: FromSource => fs.span }, sourceInfo) match
             case (Some(span), Some(info)) =>
               SourceCodeExtractor
-                .extractSnippet(info, span, highlightExpr = true)
+                .extractSnippet(info, span)
                 .map(snippet => s"${formatLocation(span)}\n$snippet")
                 .getOrElse(formatLocation(span)) // Fallback if snippet extraction fails
             case (Some(span), None) => formatLocation(span)

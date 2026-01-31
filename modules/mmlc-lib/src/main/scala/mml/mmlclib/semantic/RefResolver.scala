@@ -213,7 +213,7 @@ object RefResolver:
     ref:         Ref,
     member:      Member,
     module:      Module,
-    extraParams: List[FnParam] = Nil
+    extraParams: List[FnParam]
   ): List[Resolvable] =
     if ref.qualifier.isDefined then return Nil
 

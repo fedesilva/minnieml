@@ -403,7 +403,7 @@ object ExpressionRewriter:
       resolvables
     )
       .flatMap {
-        case (innerExpr, remainingInGroup) if remainingInGroup.nonEmpty =>
+        case (_, remainingInGroup) if remainingInGroup.nonEmpty =>
           NEL
             .one(
               SemanticError.DanglingTerms(

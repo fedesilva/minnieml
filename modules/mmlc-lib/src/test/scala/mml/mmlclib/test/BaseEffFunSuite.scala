@@ -60,7 +60,7 @@ trait BaseEffFunSuite extends CatsEffectSuite:
           containsErrorNode(module),
           msg.getOrElse(s"Expected Error nodes but found none. ${prettyPrintAst(module)} ")
         )
-      case Left(error) =>
+      case Left(_) =>
       // pass
     }
   }
@@ -123,7 +123,7 @@ trait BaseEffFunSuite extends CatsEffectSuite:
           state.errors.nonEmpty || containsErrorNode(state.module),
           msg.getOrElse(s"Expected errors but found none. ${prettyPrintAst(state.module)} ")
         )
-      case Left(error) =>
+      case Left(_) =>
       // pass
     }
 
