@@ -474,7 +474,7 @@ fn main(): Unit =
 echo -e "hello\nworld" > test.txt
 
 # Build
-sbt "run build samples/leak_test.mml"
+sbtn "run build samples/leak_test.mml"
 
 # Check for leaks
 leaks --atExit -- ./build/target/LeakTest-x86_64-apple-macosx

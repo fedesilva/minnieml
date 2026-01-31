@@ -21,6 +21,18 @@
 
 ## Active Tasks
 
+### Comments
+
+* change to // for line comments
+  - this will disallow the `//` operator
+  - but any other operator using `/` should work (including `///`) so we need to
+    backtrack probably (like we do with kw and wordboundary)
+* change the doc comment to be `//* *//`
+  - Same as with the `//` other combinations of this chars are legal.
+
+
+###
+
 
 ### Simple Memory Management Prototype
 
