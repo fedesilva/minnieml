@@ -36,25 +36,23 @@
 - **Avoid**: Do not leave comments like "removed this, fixed that" 
 
 ### Code Quality
-- **Formatting**: Follow `.scalafmt.conf` settings; run `sbt scalafmtAll` before finishing
-- **Linting**: Run `sbt "scalafixAll"` and manually fix all issues that scalafix can't fix, see next.
+- **Formatting**: Follow `.scalafmt.conf` settings; run `sbtn scalafmtAll` before finishing
+- **Linting**: Run `sbtn "scalafixAll"` and manually fix all issues that scalafix can't fix, see next.
 - **Warnings**: Do not tolerate compiler warnings; fix them all.
 - **Exhaustivity**: Fix exhaustivity errors; the compiler knows better than you.
-- **Run scapegoat**: Check your work for quality by running: `sbt scapegoat`
-  - **address all the issues**
 
 ### Running the Compiler
 
-- **Prefer running via sbt while developing**
-- **Compile and run**: `sbt "run run <file>"` compiles AND runs the program in one step.
-- **Compile only**: `sbt "run <file>"` (or `mmlc <file>` after publishing).
-- **Never deploy** the compiler (mmlcPublishLocal) without testing it works via sbt.
+- **Prefer running via sbtn while developing**
+- **Compile and run**: `sbtn "run run <file>"` compiles AND runs the program in one step.
+- **Compile only**: `sbtn "run <file>"` (or `mmlc <file>` after publishing).
+- **Never deploy** the compiler (mmlcPublishLocal) without testing it works via sbtn.
 
 ### Publishing the Compiler Artifact
 
 The compiler needs to be installed before it's used if changes were made.
 
-- **Publish fat jar**: `sbt mmlcPublishLocal`
+- **Publish fat jar**: `sbtn mmlcPublishLocal`
 - **After publishing**: `mmlc run <file>` or `mmlc <file>` from anywhere.
 
 ### Before finish - Post Task Chores
@@ -65,7 +63,7 @@ The compiler needs to be installed before it's used if changes were made.
 
 - **Scope**: These steps apply only when code changes were made (not for context-only updates).
 - **Validate**: Run the *full* test suite.
-- **IMPORTANT**: Chain commands to avoid sbt startup overhead: `sbt "test; scapegoat; scalafmtAll; scalafixAll; mmlcPublishLocal"`
+- **IMPORTANT**: Chain commands to avoid sbtn startup overhead: `sbtn "test; scalafmtAll; scalafixAll; mmlcPublishLocal"`
 
 - **Run benchmarks**: 
   - after publishing the compiler:

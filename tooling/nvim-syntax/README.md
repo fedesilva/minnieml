@@ -203,7 +203,7 @@ colorscheme default  " or your preferred scheme
 
 - **For LSP support**:
   - [nvim-lspconfig](https://github.com/neovim/nvim-lspconfig) must be installed
-  - `mmlc` must be in your PATH (run `sbt mmlcPublishLocal` from the MML repo)
+  - `mmlc` must be in your PATH (run `sbtn mmlcPublishLocal` from the MML repo)
 
 ## Future Enhancements
 
