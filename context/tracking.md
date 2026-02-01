@@ -69,25 +69,14 @@ and unlocks `noalias` parameter attributes for LLVM optimization.
       either branch allocates.
     - Mixed inline conditional in `mixed_ownership_test.mml` no longer leaks; frees are
       inserted for heap branch while static branch remains safe via `__cap`.
-  - [ ] **TODO 2B: Function return ownership** (cross-scope allocation / escape analysis)
-    - **Problem:** `let s = get_string true n` leaks. `get_string` internally calls
-      `to_string` and returns that allocation, but the analyzer only sees
-      `App(Ref("get_string"), ...)` with no `MemEffect.Alloc` tag. User functions
-      that return allocations are not recognized.
-    - **Context:** Borrow-by-default applies to parameters. Return values that
-      originate from allocations inside the function must transfer ownership to
-      caller (the allocation "escapes"). Without this, either:
-      - Free inside function → caller gets dangling pointer
-      - Don't free anywhere → leak
-    - **Options:**
-      1. **Escape analysis:** Detect allocations that escape (are returned).
-         Don't free inside function; mark function as "returns ownership".
-         Complex: requires inter-procedural analysis.
-      2. **Explicit annotation:** Require `[mem=alloc]` on user functions that
-         return allocations. Clear but verbose.
-      3. **Type-based heuristic:** If function returns heap type (String, etc.),
-         assume ownership transfers. May over-free borrowed returns.
-    - **Decision needed:** Which approach to use
+  - [x] **TODO 2B: Function return ownership** (cross-scope allocation / escape analysis)
+    - Implemented intramodule fixed-point to mark functions whose return values originate from
+      heap allocations (direct native alloc or via other returning functions) and treat their
+      calls as allocating at call sites.
+    - Ownership frees exclude bindings that escape via return; prevents double-free in callees and
+      ensures caller frees returned heaps.
+    - Added regression test `OwnershipAnalyzerTests` to verify caller frees value returned from
+      allocating helper while callee does not free returned ownership.
 
 - [x] **Phase 2.5: Runtime `__cap` field**
   - **Problem:** `__free_*` functions don't check if memory is static vs heap.

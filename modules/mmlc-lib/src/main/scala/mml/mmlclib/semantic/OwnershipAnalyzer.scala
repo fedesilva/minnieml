@@ -19,9 +19,10 @@ case class BindingInfo(
 
 /** Tracks ownership for bindings within a scope */
 case class OwnershipScope(
-  bindings:    Map[String, BindingInfo] = Map.empty,
-  movedAt:     Map[String, SrcSpan]     = Map.empty,
-  resolvables: ResolvablesIndex
+  bindings:       Map[String, BindingInfo]  = Map.empty,
+  movedAt:        Map[String, SrcSpan]      = Map.empty,
+  resolvables:    ResolvablesIndex,
+  returningOwned: Map[String, Option[Type]] = Map.empty
 ):
   def withOwned(name: String, tpe: Option[Type], id: Option[String] = None): OwnershipScope =
     copy(bindings = bindings + (name -> BindingInfo(OwnershipState.Owned, tpe, id)))
@@ -79,6 +80,103 @@ case class TermResult(
 object OwnershipAnalyzer:
   private val PhaseName = "ownership-analyzer"
 
+  /** Infer which functions return owned heap values (even if not annotated with MemEffect.Alloc).
+    * Uses a fixed-point intramodule analysis so that functions returning the result of other
+    * returning functions are marked transitively.
+    */
+  private object ReturnOwnershipAnalysis:
+    private def merge(t1: Option[Type], t2: Option[Type]): Option[Type] = (t1, t2) match
+      case (Some(a), Some(b)) if a == b => Some(a)
+      case (Some(a), _) => Some(a)
+      case (_, Some(b)) => Some(b)
+      case _ => None
+
+    private def appReturnsOwned(
+      app:            App,
+      resolvables:    ResolvablesIndex,
+      returningOwned: Map[String, Option[Type]]
+    ): Option[Type] =
+      getBaseFn(app.fn).flatMap: ref =>
+        ref.resolvedId.flatMap: id =>
+          returningOwned
+            .get(id)
+            .flatten
+            .orElse:
+              resolvables
+                .lookup(id)
+                .collect { case bnd: Bnd => bnd }
+                .filter(bndAllocates)
+                .flatMap(b => b.typeAsc.orElse(b.typeSpec))
+
+    private def termReturnsOwned(
+      term:           Term,
+      env:            Map[String, Option[Type]],
+      resolvables:    ResolvablesIndex,
+      returningOwned: Map[String, Option[Type]]
+    ): Option[Type] =
+      term match
+        case ref: Ref => env.get(ref.name).flatten
+        case app: App =>
+          app.fn match
+            case lambda: Lambda =>
+              val argOwned  = argReturnsOwned(app.arg, env, resolvables, returningOwned)
+              val paramName = lambda.params.headOption.map(_.name)
+              val bodyEnv =
+                paramName.map(n => env + (n -> argOwned)).getOrElse(env)
+              argOwned.orElse(exprReturnsOwned(lambda.body, bodyEnv, resolvables, returningOwned))
+            case _ =>
+              appReturnsOwned(app, resolvables, returningOwned)
+        case cond: Cond =>
+          merge(
+            exprReturnsOwned(cond.ifTrue, env, resolvables, returningOwned),
+            exprReturnsOwned(cond.ifFalse, env, resolvables, returningOwned)
+          )
+        case TermGroup(_, inner, _) =>
+          exprReturnsOwned(inner, env, resolvables, returningOwned)
+        case _ => None
+
+    private def argReturnsOwned(
+      expr:           Expr,
+      env:            Map[String, Option[Type]],
+      resolvables:    ResolvablesIndex,
+      returningOwned: Map[String, Option[Type]]
+    ): Option[Type] =
+      exprReturnsOwned(expr, env, resolvables, returningOwned)
+
+    private def exprReturnsOwned(
+      expr:           Expr,
+      env:            Map[String, Option[Type]],
+      resolvables:    ResolvablesIndex,
+      returningOwned: Map[String, Option[Type]]
+    ): Option[Type] =
+      expr.terms.lastOption.flatMap(termReturnsOwned(_, env, resolvables, returningOwned))
+
+    def discover(module: Module): Map[String, Option[Type]] =
+      val resolvables = module.resolvables
+      val functions   = module.members.collect { case b: Bnd => b }.flatMap(b => b.id.map(_ -> b))
+      var returningOwned = Map.empty[String, Option[Type]]
+      var changed        = true
+      var iterations     = 0
+
+      while changed && iterations < 10 do
+        iterations += 1
+        changed = false
+        functions.foreach { case (id, bnd) =>
+          val lambdaOpt = bnd.value.terms.collectFirst { case l: Lambda => l }
+          lambdaOpt.foreach { lambda =>
+            val resultOwned =
+              exprReturnsOwned(lambda.body, Map.empty, resolvables, returningOwned)
+                .filter(t => getTypeName(t).exists(heapTypes.contains))
+
+            val current = returningOwned.get(id).flatten
+            if resultOwned.isDefined && current != resultOwned then
+              returningOwned = returningOwned.updated(id, resultOwned)
+              changed        = true
+          }
+        }
+
+      returningOwned
+
   /** Types that need to be freed - will be used when inserting free calls */
   val heapTypes: Set[String] = Set("String", "Buffer", "IntArray", "StringArray")
 
@@ -109,13 +207,27 @@ object OwnershipAnalyzer:
     case _: Lambda => None
 
   /** Check if an App calls an allocating function, returning the return type if so */
-  def appAllocates(app: App, resolvables: ResolvablesIndex): Option[Type] =
+  def appAllocates(
+    app:            App,
+    resolvables:    ResolvablesIndex,
+    returningOwned: Map[String, Option[Type]]
+  ): Option[Type] =
     getBaseFn(app.fn).flatMap: ref =>
-      ref.resolvedId
-        .flatMap(resolvables.lookup)
-        .collect { case bnd: Bnd => bnd }
-        .filter(bndAllocates)
-        .flatMap(_.typeAsc)
+      ref.resolvedId.flatMap { id =>
+        val returned =
+          returningOwned
+            .get(id)
+            .flatten
+            .filter(t => getTypeName(t).exists(heapTypes.contains))
+
+        returned.orElse:
+          resolvables
+            .lookup(id)
+            .collect { case bnd: Bnd => bnd }
+            .filter(bndAllocates)
+            .flatMap(_.typeAsc)
+            .filter(t => getTypeName(t).exists(heapTypes.contains))
+      }
 
   private def mergeAllocTypes(t1: Option[Type], t2: Option[Type]): Option[Type] = (t1, t2) match
     case (Some(a), Some(b)) if a == b => Some(a)
@@ -124,15 +236,15 @@ object OwnershipAnalyzer:
     case (None, Some(b)) => Some(b)
     case _ => None
 
-  private def exprAllocates(expr: Expr, resolvables: ResolvablesIndex): Option[Type] =
-    expr.terms.lastOption.flatMap(termAllocates(_, resolvables))
+  private def exprAllocates(expr: Expr, scope: OwnershipScope): Option[Type] =
+    expr.terms.lastOption.flatMap(termAllocates(_, scope))
 
   /** Check if a term is an allocating expression */
-  def termAllocates(term: Term, resolvables: ResolvablesIndex): Option[Type] = term match
-    case app: App => appAllocates(app, resolvables)
+  def termAllocates(term: Term, scope: OwnershipScope): Option[Type] = term match
+    case app: App => appAllocates(app, scope.resolvables, scope.returningOwned)
     case Cond(_, _, ifTrue, ifFalse, _, _) =>
-      val trueAlloc  = exprAllocates(ifTrue, resolvables)
-      val falseAlloc = exprAllocates(ifFalse, resolvables)
+      val trueAlloc  = exprAllocates(ifTrue, scope)
+      val falseAlloc = exprAllocates(ifFalse, scope)
       mergeAllocTypes(trueAlloc, falseAlloc)
     case _ => None
 
@@ -197,6 +309,18 @@ object OwnershipAnalyzer:
     // Wrap with: let __r = expr; <withFrees>
     val resultLam = Lambda(span, List(resultParam), withFrees, Nil, typeSpec = resultType)
     Expr(span, List(App(span, resultLam, expr, typeSpec = resultType)), typeSpec = resultType)
+
+  /** Names of owned bindings that flow out through the returned expression */
+  private def returnedOwnedNames(expr: Expr, scope: OwnershipScope): Set[String] =
+    def termReturned(term: Term): Set[String] =
+      term match
+        case ref: Ref if scope.getState(ref.name).contains(OwnershipState.Owned) => Set(ref.name)
+        case Cond(_, _, ifTrue, ifFalse, _, _) =>
+          returnedOwnedNames(ifTrue, scope) ++ returnedOwnedNames(ifFalse, scope)
+        case TermGroup(_, inner, _) => returnedOwnedNames(inner, scope)
+        case _ => Set.empty
+
+    expr.terms.lastOption.map(termReturned).getOrElse(Set.empty)
 
   /** Get the consuming parameter for a given argument position in an App chain. Returns the FnParam
     * if it's consuming, None otherwise.
@@ -288,12 +412,22 @@ object OwnershipAnalyzer:
             val argResult = analyzeExpr(arg, scope)
 
             // Check if arg is an allocating expression
-            val allocType = arg.terms.headOption.flatMap(termAllocates(_, scope.resolvables))
+            val allocType = arg.terms.headOption.flatMap(termAllocates(_, scope))
 
             // Set up scope for lambda body - first param gets ownership if allocating
             val bodyScope = params.headOption match
               case Some(param) if allocType.isDefined =>
-                argResult.scope.withOwned(param.name, allocType, param.id)
+                val paramTypeName =
+                  param.typeSpec
+                    .orElse(param.typeAsc)
+                    .flatMap(getTypeName)
+                val allocHeap =
+                  allocType.filter(t => getTypeName(t).exists(heapTypes.contains))
+                val owns =
+                  allocHeap.filter(t => paramTypeName.forall(_ == getTypeName(t).getOrElse("")))
+                owns
+                  .map(t => argResult.scope.withOwned(param.name, Some(t), param.id))
+                  .getOrElse(argResult.scope.withBorrowed(param.name))
               case Some(param) =>
                 // Non-allocating: check if it's a literal or borrowed
                 arg.terms.headOption match
@@ -313,10 +447,13 @@ object OwnershipAnalyzer:
               case App(_, _: Lambda, _, _, _) => true
               case _ => false
 
+            val escaping = returnedOwnedNames(bodyResult.expr, bodyResult.scope)
+
             val bindingsToFree =
               if isTerminalBody then
                 bodyResult.scope.ownedBindings.filter:
-                  case (_, Some(tpe), _) =>
+                  case (name, Some(tpe), _) =>
+                    !escaping.contains(name) &&
                     heapTypes.contains(getTypeName(tpe).getOrElse(""))
                   case _ => false
               else Nil
@@ -445,12 +582,13 @@ object OwnershipAnalyzer:
 
   /** Analyze a member and insert free calls */
   private def analyzeMember(
-    member:      Member,
-    resolvables: ResolvablesIndex
+    member:         Member,
+    resolvables:    ResolvablesIndex,
+    returningOwned: Map[String, Option[Type]]
   ): (Member, List[SemanticError]) =
     member match
       case bnd @ Bnd(visibility, span, name, value, typeSpec, typeAsc, docComment, meta, id) =>
-        val scope  = OwnershipScope(resolvables = resolvables)
+        val scope  = OwnershipScope(resolvables = resolvables, returningOwned = returningOwned)
         val result = analyzeExpr(value, scope)
         (bnd.copy(value = result.expr), result.errors)
 
@@ -459,11 +597,12 @@ object OwnershipAnalyzer:
 
   /** Main entry point - rewrite module with ownership tracking */
   def rewriteModule(state: CompilerState): CompilerState =
-    val module    = state.module
-    var allErrors = List.empty[SemanticError]
+    val module         = state.module
+    val returningOwned = ReturnOwnershipAnalysis.discover(module)
+    var allErrors      = List.empty[SemanticError]
 
     val newMembers = module.members.map: member =>
-      val (newMember, errors) = analyzeMember(member, module.resolvables)
+      val (newMember, errors) = analyzeMember(member, module.resolvables, returningOwned)
       allErrors = allErrors ++ errors
       newMember
 

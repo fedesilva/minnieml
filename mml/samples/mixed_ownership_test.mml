@@ -6,6 +6,7 @@
 // a heap-allocated string (__cap > 0). The __free_String function
 // must check __cap before freeing to avoid crashing on static strings.
 
+// Returns either a heap string (to_string) or static literal
 fn get_string(use_heap: Bool, n: Int): String =
   if use_heap then
     to_string n
@@ -14,21 +15,25 @@ fn get_string(use_heap: Bool, n: Int): String =
   end
 ;
 
+// Reads static path to println to ensure static strings are safe
 fn test_static(n: Int): Unit =
   let s = get_string false n;
   println s
 ;
 
+// Reads heap path to println to ensure frees are inserted
 fn test_heap(n: Int): Unit =
   let s = get_string true n;
   println s
 ;
 
+// Inline conditional branch mixing static vs heap allocations
 fn test_inline_conditional(use_heap: Bool, n: Int): Unit =
   let s = if use_heap then to_string n else "inline static" end;
   println s
 ;
 
+// Tail recursion over static-only path
 fn run_static(n: Int): Unit =
   if n != 0 then
     test_static n;
@@ -36,6 +41,7 @@ fn run_static(n: Int): Unit =
   end
 ;
 
+// Tail recursion over heap-only path
 fn run_heap(n: Int): Unit =
   if n != 0 then
     test_heap n;
@@ -43,6 +49,7 @@ fn run_heap(n: Int): Unit =
   end
 ;
 
+// Tail recursion alternating static/heap branches
 fn run_mixed(n: Int, use_heap: Bool): Unit =
   if n != 0 then
     test_inline_conditional use_heap n;
@@ -50,6 +57,7 @@ fn run_mixed(n: Int, use_heap: Bool): Unit =
   end
 ;
 
+// Entry point running each scenario
 fn main(): Unit =
   println "Testing static strings (should not crash on free)...";
   run_static 100;
