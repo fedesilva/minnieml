@@ -2,13 +2,18 @@
 
 ## Cardinal Rule
 
-### Keep the author involved, ask for confirmation
+### Keep the author involved 
 
 **Before starting ANY code changing task:**
 * Present a plan
+    - Don't ask confirmation to plan or research.
 * Stand by for review
 * No further action until approval is granted. No exceptions.
 
+### Design Reference
+
+- Read
+    - `docs/design/` directory - All files.
 
 ## General Rules
 

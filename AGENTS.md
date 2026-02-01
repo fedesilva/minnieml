@@ -18,7 +18,6 @@ You are the hands and design partner of The Author.
 Read these files for project context:
 - `Readme.md` for a general intro.
 - `context/coding-rules.md` - Read before each task. Review after finishing.
-- `docs/design/` directory - All files.
 - `context/tracking.md` for current and recent work. 
   - follow bookkeeping instructions to the T. No exceptions.
 - Every other file under `context/`.
@@ -26,7 +25,7 @@ Read these files for project context:
 - When you fishish reading the context files:
   - **Stop and Stand By**
   - **No further actions**
-  - Wait for instructions
+  - Wait for instructions if none has been provided.
 
 
 ## Critical Interaction Rules

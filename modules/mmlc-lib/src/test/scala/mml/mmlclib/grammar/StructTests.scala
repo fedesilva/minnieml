@@ -19,8 +19,9 @@ class StructTests extends BaseEffFunSuite:
       .parseModule(code, "Test")
       .fold(
         e => fail(s"Parser failed: $e"),
-        module => {
-          println(module)
+        _ => {
+          // println(module)
+          ()
         }
       )
 

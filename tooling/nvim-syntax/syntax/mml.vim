@@ -66,8 +66,8 @@ syn match mmlOperator ";"
 syn match mmlOperator ","
 
 " Symbolic operators (but not single = or : which are handled above)
-" This matches sequences like +, -, *, ==, !=, <=, >=, |>, etc.
-syn match mmlOperator "[!$%^&*+<>?/\\|~-]\+"
+" Avoid matching // and /* so comments stay in comment groups.
+syn match mmlOperator "\%(//\|/\*\)\@![!$%^&*+<>?/\\|~-]\+"
 
 " Parentheses and brackets
 syn match mmlDelimiter "[(){}\[\]]"

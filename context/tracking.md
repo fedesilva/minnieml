@@ -21,6 +21,12 @@
 
 ## Active Tasks
 
+### Neovim MML comment highlighting [COMPLETE]
+
+**Goal:** Restore correct comment coloring in Neovim for `.mml` files.
+
+**Outcome:** Fixed. Updated `tooling/nvim-syntax/syntax/mml.vim` to exclude `//` and `/*` from operator matches so they stay in `mmlComment`/`mmlDocComment`. Verified headless (`synIDattr`) on `mml/samples/nqueens.mml` and dummy buffers; division `/` still highlights as operator. Ran `sbtn "test; scalafmtAll; scalafixAll; mmlcPublishLocal"` successfully.
+
 ### Simple Memory Management Prototype
 
 **Doc:** `docs/brainstorming/mem-man/1-simple-mem-prototype.md`
@@ -161,6 +167,13 @@ TBD
 ---
 
 ## Recent Changes
+
+### 2026-02-01 (branch: memory-prototype)
+
+- **Neovim syntax: comment highlighting fix**: Updated `tooling/nvim-syntax/syntax/mml.vim`
+  operator regex to ignore `//` and `/*` sequences so they remain in comment groups.
+  Verified headless with `synIDattr`; division `/` still highlights as operator.
+  Ran `sbtn "test; scalafmtAll; scalafixAll; mmlcPublishLocal"` after the change.
 
 ### 2026-01-31 (branch: memory-prototype)
 

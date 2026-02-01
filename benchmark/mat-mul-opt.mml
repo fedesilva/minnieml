@@ -94,7 +94,7 @@ fn main(): Unit =
   // Note: 'ar_int_new' is assumed to return zeroed memory. 
   // If not, C must be manually zeroed before use in this algorithm.
   let a = ar_int_new (n * n);
-  let b = ar_int_new (n * n);
+  let b = ar_int_new (n * n);ar_int_newar_int_new
   let c = ar_int_new (n * n);
 
   fill_matrix a n 42;
