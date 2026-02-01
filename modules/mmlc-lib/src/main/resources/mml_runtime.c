@@ -15,32 +15,39 @@
 #endif
 
 // --- String Struct ---
+// __cap: >0 = heap allocated (freeable), -1 = static (don't free)
 typedef struct String
 {
     size_t length;
     char *data;
+    int64_t __cap;
 } String;
 
 // --- Array Structs ---
+// __cap: >0 = heap allocated (freeable), -1 = static (don't free)
 typedef struct IntArray
 {
     int64_t length;
     int64_t *data;
+    int64_t __cap;
 } IntArray;
 
 typedef struct StringArray
 {
     int64_t length;
     String *data;
+    int64_t __cap;
 } StringArray;
 
 // --- Output Buffer ---
+// __cap: >0 = heap allocated (freeable), -1 = static (don't free)
 typedef struct
 {
     size_t capacity;
     size_t length;
     char *data;
     int fd;
+    int64_t __cap;
 } BufferImpl;
 
 typedef BufferImpl *Buffer;
@@ -53,6 +60,7 @@ Buffer mkBuffer()
     b->capacity = 1024*8;
     b->length = 0;
     b->fd = STDOUT_FILENO;
+    b->__cap = (int64_t)b->capacity;
     b->data = (char *)malloc(b->capacity);
     if (!b->data)
     {
@@ -70,6 +78,7 @@ Buffer mkBufferWithFd(int fd)
     b->capacity = 4096;
     b->length = 0;
     b->fd = fd;
+    b->__cap = (int64_t)b->capacity;
     b->data = (char *)malloc(b->capacity);
     if (!b->data)
     {
@@ -87,6 +96,7 @@ Buffer mkBufferWithSize(int64_t size)
     b->capacity = size > 0 ? (size_t)size : 4096;
     b->length = 0;
     b->fd = STDOUT_FILENO;
+    b->__cap = (int64_t)b->capacity;
     b->data = (char *)malloc(b->capacity);
     if (!b->data)
     {
@@ -238,24 +248,22 @@ String readline()
     size_t size = 1024;
     char *buffer = (char *)malloc(size);
     if (!buffer)
-        return (String){0, NULL};
+        return (String){0, NULL, -1};
 
     if (fgets(buffer, size, stdin))
     {
         buffer[strcspn(buffer, "\n")] = 0;
-        return (String){strlen(buffer), buffer};
+        return (String){strlen(buffer), buffer, (int64_t)size};
     }
 
     // Check if we hit EOF
     if (feof(stdin))
     {
         clearerr(stdin); // Clear the EOF flag
-        // Optionally print a message
-        // fprintf(stderr, "\n");  // New line after Ctrl+D
     }
 
     free(buffer);
-    return (String){0, NULL};
+    return (String){0, NULL, -1};
 }
 
 // --- Print a string (no newline) ---
@@ -312,17 +320,17 @@ void string_builder_append(StringBuilder *sb, String str)
 String string_builder_finalize(StringBuilder *sb)
 {
     if (!sb)
-        return (String){0, NULL};
+        return (String){0, NULL, -1};
 
     char *data = (char *)malloc(sb->length + 1);
     if (!data)
     {
         free(sb->buffer);
         free(sb);
-        return (String){0, NULL};
+        return (String){0, NULL, -1};
     }
 
-    String result = {sb->length, data};
+    String result = {sb->length, data, (int64_t)(sb->length + 1)};
     memcpy(result.data, sb->buffer, sb->length);
     result.data[result.length] = '\0';
     free(sb->buffer);
@@ -356,17 +364,17 @@ void println(String str)
 String substring(String s, size_t start, size_t len)
 {
     if (start >= s.length || !s.data)
-        return (String){0, NULL};
+        return (String){0, NULL, -1};
     if (start + len > s.length)
         len = s.length - start;
 
     char *new_data = (char *)malloc(len + 1);
     if (!new_data)
-        return (String){0, NULL};
+        return (String){0, NULL, -1};
 
     memcpy(new_data, s.data + start, len);
     new_data[len] = '\0';
-    return (String){len, new_data};
+    return (String){len, new_data, (int64_t)(len + 1)};
 }
 
 // --- Free String Memory ---
@@ -383,7 +391,7 @@ String concat(String a, String b)
 {
     // Return empty string if either input is invalid
     if (!a.data && !b.data)
-        return (String){0, NULL};
+        return (String){0, NULL, -1};
 
     // If one string is empty, return a copy of the other
     if (!a.data)
@@ -395,14 +403,14 @@ String concat(String a, String b)
     size_t total_length = a.length + b.length;
     char *new_data = (char *)malloc(total_length + 1);
     if (!new_data)
-        return (String){0, NULL};
+        return (String){0, NULL, -1};
 
     // Copy both strings
     memcpy(new_data, a.data, a.length);
     memcpy(new_data + a.length, b.data, b.length);
     new_data[total_length] = '\0';
 
-    return (String){total_length, new_data};
+    return (String){total_length, new_data, (int64_t)(total_length + 1)};
 }
 
 // --- Integer to String Conversion ---
@@ -413,10 +421,10 @@ String to_string(int64_t value)
     {
         char *data = (char *)malloc(2);
         if (!data)
-            return (String){0, NULL};
+            return (String){0, NULL, -1};
         data[0] = '0';
         data[1] = '\0';
-        return (String){1, data};
+        return (String){1, data, 2};
     }
 
     // Determine sign and make value positive for processing
@@ -436,7 +444,7 @@ String to_string(int64_t value)
     size_t total_length = digit_count + (is_negative ? 1 : 0);
     char *data = (char *)malloc(total_length + 1);
     if (!data)
-        return (String){0, NULL};
+        return (String){0, NULL, -1};
 
     // Fill in digits from right to left
     data[total_length] = '\0';
@@ -451,7 +459,7 @@ String to_string(int64_t value)
     if (is_negative)
         data[0] = '-';
 
-    return (String){total_length, data};
+    return (String){total_length, data, (int64_t)(total_length + 1)};
 }
 
 // --- String to Integer Conversion (strict) ---
@@ -555,7 +563,7 @@ String read_line_fd(int fd)
     size_t len = 0;
     char *buffer = (char *)malloc(size);
     if (!buffer)
-        return (String){0, NULL};
+        return (String){0, NULL, -1};
 
     char c;
     while (read(fd, &c, 1) == 1 && c != '\n')
@@ -567,14 +575,14 @@ String read_line_fd(int fd)
             if (!new_buf)
             {
                 free(buffer);
-                return (String){0, NULL};
+                return (String){0, NULL, -1};
             }
             buffer = new_buf;
         }
         buffer[len++] = c;
     }
     buffer[len] = '\0';
-    return (String){len, buffer};
+    return (String){len, buffer, (int64_t)size};
 }
 
 // --- Process Execution ---
@@ -620,13 +628,13 @@ int run_process_with_output(const char *cmd, char *const argv[], char *output, s
 FORCE_INLINE IntArray ar_int_new(int64_t size)
 {
     if (size <= 0)
-        return (IntArray){0, NULL};
+        return (IntArray){0, NULL, -1};
 
     int64_t *storage = (int64_t *)malloc((size_t)size * sizeof(int64_t));
     if (!storage)
-        return (IntArray){0, NULL};
+        return (IntArray){0, NULL, -1};
 
-    return (IntArray){size, storage};
+    return (IntArray){size, storage, size};
 }
 
 FORCE_INLINE void ar_int_set(IntArray arr, int64_t idx, int64_t value)
@@ -673,13 +681,13 @@ FORCE_INLINE int64_t ar_int_len(IntArray arr)
 FORCE_INLINE StringArray ar_str_new(int64_t size)
 {
     if (size <= 0)
-        return (StringArray){0, NULL};
+        return (StringArray){0, NULL, -1};
 
     String *storage = (String *)malloc((size_t)size * sizeof(String));
     if (!storage)
-        return (StringArray){0, NULL};
+        return (StringArray){0, NULL, -1};
 
-    return (StringArray){size, storage};
+    return (StringArray){size, storage, size};
 }
 
 FORCE_INLINE void ar_str_set(StringArray arr, int64_t idx, String value)
@@ -732,13 +740,13 @@ void __mml_sys_hole(int64_t start_line, int64_t start_col, int64_t end_line, int
 
 void __free_String(String s)
 {
-    if (s.data)
+    if (s.__cap > 0 && s.data)
         free(s.data);
 }
 
 void __free_Buffer(Buffer b)
 {
-    if (b)
+    if (b && b->__cap > 0)
     {
         if (b->data)
             free(b->data);
@@ -748,17 +756,17 @@ void __free_Buffer(Buffer b)
 
 void __free_IntArray(IntArray arr)
 {
-    if (arr.data)
+    if (arr.__cap > 0 && arr.data)
         free(arr.data);
 }
 
 void __free_StringArray(StringArray arr)
 {
-    if (arr.data)
+    if (arr.__cap > 0 && arr.data)
     {
         for (int64_t i = 0; i < arr.length; i++)
         {
-            __free_String(arr.data[i]);
+            __free_String(arr.data[i]);  // Each element checks its own __cap
         }
         free(arr.data);
     }

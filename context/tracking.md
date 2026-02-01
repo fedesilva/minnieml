@@ -55,22 +55,68 @@ and unlocks `noalias` parameter attributes for LLVM optimization.
 - [ ] **Phase 2: OwnershipAnalyzer** (in progress)
   - [x] Created `OwnershipAnalyzer.scala` with basic structure
   - [x] Added `OwnershipState` enum (Owned, Moved, Borrowed, Literal)
-  - [x] Added `OwnershipScope` for tracking binding states
+  - [x] Added `OwnershipScope` with `BindingInfo` tracking state, type, and ID
   - [x] Added ownership errors to `SemanticError`: UseAfterMove, ConsumingParamNotLastUse, PartialApplicationWithConsuming, ConditionalOwnershipMismatch
   - [x] Integrated into `SemanticStage.scala` pipeline
   - [x] Basic use-after-move detection working
-  - [ ] **TODO:** Detect `App` calls with `MemEffect.Alloc` and mark bindings as Owned
-  - [ ] **TODO:** Insert `App(Ref("__free_T"), Ref(binding))` at scope end
-  - [ ] **TODO:** Track type information for bindings to select correct `__free_T`
-  - [ ] **TODO:** Implement move semantics for `~` consuming parameters
+  - [x] Detect `App` calls with `MemEffect.Alloc` and mark bindings as Owned
+  - [x] Insert `App(Ref("__free_T"), Ref(binding))` at scope end (CPS-style wrapping)
+  - [x] Track type information for bindings to select correct `__free_T`
+  - [x] Leak test passes: `mml/samples/leak_test.mml` shows 0 leaks with `leaks --atExit`
+  - [ ] **TODO:** Implement move semantics for `~` consuming parameters (partial)
+  - [ ] **TODO:** Handle conditional branches with mixed ownership (static vs heap)
 
-- [ ] **Phase 3: Struct Destructors** 
+- [ ] **Phase 2.5: Runtime `__cap` field** (IN PROGRESS - ABI ISSUE)
+  - **Problem:** `__free_*` functions don't check if memory is static vs heap.
+    Freeing a static string literal would crash. Currently "works" because
+    literals get `Literal` state and are never freed, but mixed conditionals
+    like `if cond then "static" else readline()` would fail.
+  - **Solution:** Add `__cap` field to all heap types:
+    - `__cap > 0` = heap allocated, safe to free
+    - `__cap == -1` = static memory, don't free
+  - [x] **Phase A: C Runtime Updates** (`mml_runtime.c`)
+    - [x] A1: Update `__free_*` functions to check `__cap > 0` before freeing
+    - [x] A2: Update allocation functions to set `__cap`:
+      - [x] `ar_int_new()` - add `__cap = size`
+      - [x] `ar_str_new()` - add `__cap = size`
+      - [x] `to_string()` - add `__cap = buffer_size`
+      - [x] `substring()` - add `__cap = new_length + 1`
+      - [x] `read_line_fd()` - add `__cap = allocated_size`
+      - [x] `mkBuffer()` - add `__cap = 8192`
+      - [x] `mkBufferWithFd()` - add `__cap = 4096`
+      - [x] `mkBufferWithSize()` - add `__cap = actual_size`
+  - [x] **Phase B: MML Type Definitions** (`semantic/package.scala`)
+    - [x] B1: Add `__cap` field to String type
+    - [x] B2: Add `__cap` field to IntArray type
+    - [x] B3: Add `__cap` field to StringArray type
+  - [x] **Phase C: Codegen Updates for String Literals**
+    - [x] C1: Update local string literal emission (`Literals.scala`) - store `__cap = -1`
+    - [x] C2: Update global string literal emission (`Module.scala`) - add `__cap = -1` to struct
+  - [x] **Phase C2: x86_64 ABI Fix** (UNEXPECTED)
+    - **Cause:** Adding `__cap` changed String from 16 bytes to 24 bytes
+    - **Effect:** x86_64 ABI threshold crossed - structs >16 bytes need `byval` (stack pointer)
+      instead of register passing. MML was passing in registers, C expected stack pointer → segfault
+    - [x] Added `LargeStructByval` rule in `abis/x86_64/LargeStructByval.scala`
+    - [x] Emits `ptr byval(%struct.T) align 8` for structs >16 bytes
+    - [x] Allocates struct on stack at call sites, passes pointer
+    - [x] Unit tests pass (208/208)
+  - [ ] **Phase D: Testing** (BLOCKED)
+    - [x] D1: `hello.mml` works
+    - [ ] D2: `leak_test.mml` crashes (SEGV 139) - needs investigation
+    - [ ] D3: Run benchmarks
+  - **Current crash:** `leak_test.mml` segfaults (exit 139) despite `hello.mml` working.
+    The byval fix handles simple String passing but something else is broken.
+    `leak_test.mml` uses `read_line_fd` which returns String - likely same ABI issue
+    but in a different code path (return values vs parameters?). Needs lldb to identify.
+
+- [ ] **Phase 3: Struct Destructors**
   - [ ] Generate `__free_StructName` for user structs alongside `__mk_StructName`
   - [ ] Handle `DataDestructor` in codegen to free heap-allocated fields
 
 - [ ] **Phase 4: Testing**
-  - [ ] Write test programs with allocations
-  - [ ] Verify with `leaks --atExit` that leak count is 0
+  - [x] Write test programs with allocations (`mml/samples/leak_test.mml`)
+  - [x] Verify with `leaks --atExit` that leak count is 0 (passes for simple case)
+  - [ ] Write test for mixed conditional ownership (static vs heap)
   - [ ] Find edge cases, iterate
 
 
@@ -86,16 +132,23 @@ TBD
 
 ### 2026-01-31 (branch: memory-prototype)
 
-- **Memory management prototype (partial)**: Implemented Phase 0-1 and started Phase 2.
+- **Memory management prototype**: Implemented Phase 0-2 core functionality.
   - Added `MemEffect` enum and extended `NativeImpl` with `memEffect` field
   - Added `consuming` flag to `FnParam` for `~` move syntax
   - Added `DataDestructor` term for future struct destructor generation
   - Tagged allocating stdlib functions with `MemEffect.Alloc`
   - Added `__free_*` functions to stdlib and runtime
   - Extended parser for `@native[mem=alloc]` and `~param` syntax
-  - Created `OwnershipAnalyzer.scala` phase with basic use-after-move detection
-  - Added ownership-related errors to `SemanticError`
-  - **Pending:** Insert `__free_T` calls, track allocations from App nodes
+  - Created `OwnershipAnalyzer.scala` phase:
+    - Detects allocating calls via `MemEffect.Alloc`
+    - Tracks ownership state (Owned, Moved, Borrowed, Literal) with type info
+    - Inserts `__free_T` calls at scope end using CPS-style wrapping
+    - Use-after-move detection working
+  - Added `mml/samples/leak_test.mml` - passes with 0 leaks
+  - **Problem found:** `__cap` field not implemented in runtime structs.
+    Current code works only because literals never reach `__free_*`.
+    Mixed conditionals (static vs heap) would crash or leak.
+  - **Pending:** Add `__cap` to all heap types (String, IntArray, StringArray, Buffer)
 
 ### 2026-01-31 (branch: 2026-01-14-dev)
 

@@ -2,7 +2,7 @@ package mml.mmlclib.codegen.emitter.abis
 
 import mml.mmlclib.codegen.TargetAbi
 import mml.mmlclib.codegen.emitter.abis.aarch64.PackTwoI64Structs
-import mml.mmlclib.codegen.emitter.abis.x86_64.SplitSmallStructs
+import mml.mmlclib.codegen.emitter.abis.x86_64.{LargeStructByval, SplitSmallStructs}
 import mml.mmlclib.codegen.emitter.{CodeGenState, getStructFieldTypes}
 
 trait StructLoweringRule:
@@ -21,7 +21,7 @@ trait StructLoweringRule:
   ): Option[(List[(String, String)], CodeGenState)]
 
 private val rules: List[StructLoweringRule] =
-  List(SplitSmallStructs, PackTwoI64Structs)
+  List(SplitSmallStructs, LargeStructByval, PackTwoI64Structs)
 
 private def rulesFor(state: CodeGenState): List[StructLoweringRule] =
   rules.filter(_.targetAbi == state.targetAbi)
@@ -90,3 +90,52 @@ def lowerNativeArgs(
         case None =>
           (accArgs :+ (value, typ), currentState)
   }
+
+/** Checks if a return type needs sret lowering (large struct return on x86_64).
+  *
+  * On x86_64, structs >16 bytes must be returned via a hidden first pointer parameter (sret).
+  */
+def needsSretReturn(returnType: String, state: CodeGenState): Boolean =
+  if state.targetAbi != TargetAbi.X86_64 then false
+  else
+    getStructFieldTypes(returnType, state) match
+      case Some(fieldTypes) => !shouldSplitX86_64(fieldTypes)
+      case None => false
+
+/** Lowers return type for sret convention if needed.
+  *
+  * @return
+  *   (newReturnType, Option[sretParamType]) - if sret is needed, returns ("void", Some(sretParam))
+  */
+def lowerNativeReturnType(
+  returnType: String,
+  state:      CodeGenState
+): (String, Option[String]) =
+  if needsSretReturn(returnType, state) then ("void", Some(s"ptr sret($returnType) align 8"))
+  else (returnType, None)
+
+/** Emits sret call site code: allocates space, calls with sret, loads result.
+  *
+  * @return
+  *   (resultReg, updatedState) where resultReg holds the loaded struct value
+  */
+def emitSretCall(
+  fnName:     String,
+  returnType: String,
+  args:       List[(String, String)],
+  state:      CodeGenState,
+  emitCallFn: (Option[Int], Option[String], String, List[(String, String)]) => String
+): (Int, CodeGenState) =
+  val allocReg     = state.nextRegister
+  val allocLine    = s"  %$allocReg = alloca $returnType, align 8"
+  val sretArg      = (s"%$allocReg", s"ptr sret($returnType) align 8")
+  val argsWithSret = sretArg :: args
+  val callLine     = emitCallFn(None, Some("void"), fnName, argsWithSret)
+  val loadReg      = allocReg + 1
+  val loadLine     = s"  %$loadReg = load $returnType, ptr %$allocReg, align 8"
+  val finalState = state
+    .withRegister(loadReg + 1)
+    .emit(allocLine)
+    .emit(callLine)
+    .emit(loadLine)
+  (loadReg, finalState)

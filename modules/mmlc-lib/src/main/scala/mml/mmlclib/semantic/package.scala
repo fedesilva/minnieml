@@ -228,7 +228,11 @@ def injectBasicTypes(module: Module): Module =
       typeSpec = Some(
         NativeStruct(
           dummySpan,
-          List("length" -> stdlibTypeRef("Int64"), "data" -> stdlibTypeRef("CharPtr"))
+          List(
+            "length" -> stdlibTypeRef("Int64"),
+            "data" -> stdlibTypeRef("CharPtr"),
+            "__cap" -> stdlibTypeRef("Int64")
+          )
         )
       ),
       id = stdlibId("typedef", "String")
@@ -304,7 +308,8 @@ def injectBasicTypes(module: Module): Module =
           dummySpan,
           List(
             "length" -> stdlibTypeRef("Int64"),
-            "data" -> stdlibTypeRef("Int64Ptr")
+            "data" -> stdlibTypeRef("Int64Ptr"),
+            "__cap" -> stdlibTypeRef("Int64")
           )
         )
       ),
@@ -318,7 +323,8 @@ def injectBasicTypes(module: Module): Module =
           dummySpan,
           List(
             "length" -> stdlibTypeRef("Int64"),
-            "data" -> stdlibTypeRef("StringPtr")
+            "data" -> stdlibTypeRef("StringPtr"),
+            "__cap" -> stdlibTypeRef("Int64")
           )
         )
       ),

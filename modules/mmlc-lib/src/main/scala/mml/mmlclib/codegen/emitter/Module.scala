@@ -3,7 +3,7 @@ package mml.mmlclib.codegen.emitter
 import cats.syntax.all.*
 import mml.mmlclib.ast.*
 import mml.mmlclib.codegen.TargetAbi
-import mml.mmlclib.codegen.emitter.abis.lowerNativeParamTypes
+import mml.mmlclib.codegen.emitter.abis.{lowerNativeParamTypes, lowerNativeReturnType}
 import mml.mmlclib.codegen.emitter.alias.AliasScopeEmitter
 import mml.mmlclib.codegen.emitter.expression.escapeString
 import mml.mmlclib.codegen.emitter.tbaa.TbaaEmitter
@@ -241,9 +241,12 @@ private def emitBndLambda(
       lambda.body.terms match {
         case List(NativeImpl(_, _, _, _, _)) =>
           // Native functions: emit as declaration with original name (external symbol)
-          // Split struct params for x86_64 ABI compliance
+          // Lower params for ABI (byval for large structs on x86_64)
           val abiParamTypes = lowerNativeParamTypes(filteredParamTypes, state)
-          Right(state.withFunctionDeclaration(fnName, returnType, abiParamTypes))
+          // Lower return type for ABI (sret for large struct returns on x86_64)
+          val (abiReturnType, sretParam) = lowerNativeReturnType(returnType, state)
+          val finalParamTypes            = sretParam.toList ++ abiParamTypes
+          Right(state.withFunctionDeclaration(fnName, abiReturnType, finalParamTypes))
 
         case _ =>
           // User-defined functions: emit with mangled name (modulename_functionname)
@@ -271,7 +274,8 @@ private def emitValueBinding(bnd: Bnd, state: CodeGenState): Either[CodeGenError
     case List(term) =>
       term match {
         case lit: LiteralString =>
-          // Generate static String global: @a = global %String { i64 4, ptr @str.0 }
+          // Generate static String global: @a = global %String { i64 4, ptr @str.0, i64 -1 }
+          // __cap = -1 indicates static memory (don't free)
           val (newState, constName) = state.addStringConstant(lit.value)
           val llvmTypeE = bnd.typeSpec match {
             case Some(typeSpec) => getLlvmType(typeSpec, newState)
@@ -284,7 +288,7 @@ private def emitValueBinding(bnd: Bnd, state: CodeGenState): Either[CodeGenError
               )
           }
           llvmTypeE.map { llvmType =>
-            val staticValue = s"{ i64 ${lit.value.length}, ptr @$constName }"
+            val staticValue = s"{ i64 ${lit.value.length}, ptr @$constName, i64 -1 }"
             newState.emit(emitGlobalVariable(mangledName, llvmType, staticValue))
           }
 
