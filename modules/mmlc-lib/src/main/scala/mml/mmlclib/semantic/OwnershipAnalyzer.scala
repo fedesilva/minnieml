@@ -117,9 +117,23 @@ object OwnershipAnalyzer:
         .filter(bndAllocates)
         .flatMap(_.typeAsc)
 
+  private def mergeAllocTypes(t1: Option[Type], t2: Option[Type]): Option[Type] = (t1, t2) match
+    case (Some(a), Some(b)) if a == b => Some(a)
+    case (Some(a), Some(_)) => Some(a)
+    case (Some(a), None) => Some(a)
+    case (None, Some(b)) => Some(b)
+    case _ => None
+
+  private def exprAllocates(expr: Expr, resolvables: ResolvablesIndex): Option[Type] =
+    expr.terms.lastOption.flatMap(termAllocates(_, resolvables))
+
   /** Check if a term is an allocating expression */
   def termAllocates(term: Term, resolvables: ResolvablesIndex): Option[Type] = term match
     case app: App => appAllocates(app, resolvables)
+    case Cond(_, _, ifTrue, ifFalse, _, _) =>
+      val trueAlloc  = exprAllocates(ifTrue, resolvables)
+      val falseAlloc = exprAllocates(ifFalse, resolvables)
+      mergeAllocTypes(trueAlloc, falseAlloc)
     case _ => None
 
   /** Create a free call: App(Ref("__free_T"), Ref(binding)) */
