@@ -66,7 +66,7 @@ and unlocks `noalias` parameter attributes for LLVM optimization.
   - [ ] **TODO:** Implement move semantics for `~` consuming parameters (partial)
   - [ ] **TODO:** Handle conditional branches with mixed ownership (static vs heap)
 
-- [ ] **Phase 2.5: Runtime `__cap` field** (IN PROGRESS - ABI ISSUE)
+- [x] **Phase 2.5: Runtime `__cap` field**
   - **Problem:** `__free_*` functions don't check if memory is static vs heap.
     Freeing a static string literal would crash. Currently "works" because
     literals get `Literal` state and are never freed, but mixed conditionals
@@ -92,22 +92,25 @@ and unlocks `noalias` parameter attributes for LLVM optimization.
   - [x] **Phase C: Codegen Updates for String Literals**
     - [x] C1: Update local string literal emission (`Literals.scala`) - store `__cap = -1`
     - [x] C2: Update global string literal emission (`Module.scala`) - add `__cap = -1` to struct
-  - [x] **Phase C2: x86_64 ABI Fix** (UNEXPECTED)
+  - [x] **Phase C2: x86_64 ABI Fix for Parameters**
     - **Cause:** Adding `__cap` changed String from 16 bytes to 24 bytes
     - **Effect:** x86_64 ABI threshold crossed - structs >16 bytes need `byval` (stack pointer)
       instead of register passing. MML was passing in registers, C expected stack pointer → segfault
     - [x] Added `LargeStructByval` rule in `abis/x86_64/LargeStructByval.scala`
     - [x] Emits `ptr byval(%struct.T) align 8` for structs >16 bytes
     - [x] Allocates struct on stack at call sites, passes pointer
-    - [x] Unit tests pass (208/208)
-  - [ ] **Phase D: Testing** (BLOCKED)
+  - [x] **Phase C3: x86_64 ABI Fix for Return Values (sret)**
+    - **Cause:** Functions returning large structs (>16 bytes) need `sret` calling convention.
+      C expects caller to pass hidden first pointer where return value is written.
+      MML was trying to receive return value in registers → segfault on `read_line_fd`, etc.
+    - [x] Added `needsSretReturn()` and `lowerNativeReturnType()` in `AbiLowering.scala`
+    - [x] Updated `Module.scala` to emit `void` return + `sret` param in declarations
+    - [x] Updated `Applications.scala` to allocate space, call with sret, load result
+    - [x] Updated `FunctionSignatureTest.scala` for new expected signatures
+  - [x] **Phase D: Testing**
     - [x] D1: `hello.mml` works
-    - [ ] D2: `leak_test.mml` crashes (SEGV 139) - needs investigation
-    - [ ] D3: Run benchmarks
-  - **Current crash:** `leak_test.mml` segfaults (exit 139) despite `hello.mml` working.
-    The byval fix handles simple String passing but something else is broken.
-    `leak_test.mml` uses `read_line_fd` which returns String - likely same ABI issue
-    but in a different code path (return values vs parameters?). Needs lldb to identify.
+    - [x] D2: `leak_test.mml` works - 0 leaks with `leaks --atExit`
+    - [x] D3: All benchmarks compile and run
 
 - [ ] **Phase 3: Struct Destructors**
   - [ ] Generate `__free_StructName` for user structs alongside `__mk_StructName`
@@ -131,6 +134,16 @@ TBD
 ## Recent Changes
 
 ### 2026-01-31 (branch: memory-prototype)
+
+- **x86_64 sret ABI fix**: Fixed crash in `leak_test.mml` caused by ABI mismatch for large
+  struct return values. On x86_64, structs >16 bytes must use `sret` (structure return)
+  convention where caller passes hidden first pointer for return value.
+  - Added `needsSretReturn()` and `lowerNativeReturnType()` to `AbiLowering.scala`
+  - Updated `Module.scala`: native declarations with large struct returns now emit
+    `declare void @fn(ptr sret(%struct.T) align 8, ...)` instead of `declare %struct.T @fn(...)`
+  - Updated `Applications.scala`: call sites allocate space, pass sret pointer, load result
+  - Updated `FunctionSignatureTest.scala` to expect sret signature for `join_strings`
+  - All 208 tests pass, all benchmarks compile, `leak_test.mml` runs with 0 leaks
 
 - **Memory management prototype**: Implemented Phase 0-2 core functionality.
   - Added `MemEffect` enum and extended `NativeImpl` with `memEffect` field
