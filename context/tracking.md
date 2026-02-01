@@ -64,14 +64,11 @@ and unlocks `noalias` parameter attributes for LLVM optimization.
   - [x] Track type information for bindings to select correct `__free_T`
   - [x] Leak test passes: `mml/samples/leak_test.mml` shows 0 leaks with `leaks --atExit`
   - [ ] **TODO:** Implement move semantics for `~` consuming parameters (partial)
-  - [ ] **TODO 2A: Inline conditional ownership** (same-scope allocation)
-    - **Problem:** `let s = if cond then to_string n else "literal" end` leaks.
-      The `Cond` contains an allocation in one branch, but `termAllocates` only
-      checks `App`, not `Cond`. Binding `s` is not marked Owned, no free inserted.
-    - **Solution:** Extend `termAllocates` to recursively check `Cond` branches.
-      If either branch allocates, the conditional allocates. Runtime `__cap` check
-      handles static vs heap safely.
-    - **Test:** `mml/samples/mixed_ownership_test.mml` - currently shows 200 leaks
+  - [x] **TODO 2A: Inline conditional ownership**
+    - `termAllocates` now recurses into `Cond` branches and propagates Owned state when
+      either branch allocates.
+    - Mixed inline conditional in `mixed_ownership_test.mml` no longer leaks; frees are
+      inserted for heap branch while static branch remains safe via `__cap`.
   - [ ] **TODO 2B: Function return ownership** (cross-scope allocation / escape analysis)
     - **Problem:** `let s = get_string true n` leaks. `get_string` internally calls
       `to_string` and returns that allocation, but the analyzer only sees
@@ -146,9 +143,8 @@ and unlocks `noalias` parameter attributes for LLVM optimization.
   - [x] Write test programs with allocations (`mml/samples/leak_test.mml`)
   - [x] Verify with `leaks --atExit` that leak count is 0 (passes for simple case)
   - [x] Write test for mixed conditional ownership (`mml/samples/mixed_ownership_test.mml`)
-    - Currently shows 200 leaks: 100 from `test_heap` (TODO 2B), 100 from
-      `test_inline_conditional` (TODO 2A)
-    - Static strings don't crash (proves `__cap` check works)
+    - Currently shows ~100 leaks from `test_heap` (TODO 2B). Inline conditional branch is
+      clean after TODO 2A fix. Static strings don't crash (proves `__cap` check works).
   - [ ] Find edge cases, iterate
 
 
@@ -164,6 +160,10 @@ TBD
 
 ### 2026-02-01 (branch: memory-prototype)
 
+- **Ownership analyzer: conditional allocations**: `termAllocates` now detects allocations in
+  conditional branches, propagating ownership so frees are inserted for inline conditionals
+  (fixes leak in `mixed_ownership_test.mml`). Ran `sbtn "test; scalafmtAll; scalafixAll; mmlcPublishLocal"`.
+  Benchmarks reported passing after author fixed `mat-mul-opt.mml` typo.
 - **Neovim syntax: comment highlighting fix**: Updated `tooling/nvim-syntax/syntax/mml.vim`
   operator regex to ignore `//` and `/*` sequences so they remain in comment groups.
   Verified headless with `synIDattr`; division `/` still highlights as operator.
