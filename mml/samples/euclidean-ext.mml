@@ -59,3 +59,4 @@ fn main(): Unit =
   let result = rsa_bench_loop 2 n p 0;
   println (concat "Checksum: " (to_string result))
 ;
+

@@ -1,6 +1,6 @@
 // Mixed conditional ownership test
 // Tests that __free_* correctly handles both static and heap strings
-// Run with: leaks --atExit -- ./build/target/mixed_ownership_test
+// Run with: leaks --atExit -- ./build/target/mixedownershiptest
 //
 // The conditional returns either a static string (__cap == -1) or
 // a heap-allocated string (__cap > 0). The __free_String function
