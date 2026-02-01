@@ -2,7 +2,7 @@ package mml.mmlclib.codegen.emitter.expression
 
 import cats.syntax.all.*
 import mml.mmlclib.ast.*
-import mml.mmlclib.codegen.emitter.abis.lowerNativeArgs
+import mml.mmlclib.codegen.emitter.abis.{lowerNativeArgs, needsSretReturn}
 import mml.mmlclib.codegen.emitter.{
   CodeGenError,
   CodeGenState,
@@ -187,8 +187,6 @@ def compileNullaryCall(
   app:   App,
   state: CodeGenState
 ): Either[CodeGenError, CompileResult] =
-  val resultReg = state.nextRegister
-
   val fnReturnTypeResult = app.typeSpec match
     case Some(typeSpec) => getLlvmType(typeSpec, state)
     case None =>
@@ -201,11 +199,50 @@ def compileNullaryCall(
 
   fnReturnTypeResult.flatMap { fnReturnType =>
     val fnName = getResolvedName(fnRef, state)
+    val isNative = fnRef.resolvedId.flatMap(state.resolvables.lookup).exists {
+      case bnd: Bnd => isNativeBinding(bnd)
+      case _ => false
+    }
+    val useSret = isNative && needsSretReturn(fnReturnType, state)
+
     if fnReturnType == "void" then
       val callLine = emitCall(None, None, fnName, List.empty)
       Right(CompileResult(0, state.emit(callLine), false, "Unit"))
+    else if useSret then
+      // Sret call for nullary function returning large struct
+      val allocReg  = state.nextRegister
+      val allocLine = s"  %$allocReg = alloca $fnReturnType, align 8"
+      val sretArg   = (s"ptr sret($fnReturnType) align 8", s"%$allocReg")
+      val callLine  = emitCall(None, Some("void"), fnName, List(sretArg))
+      val loadReg   = allocReg + 1
+      val loadLine  = s"  %$loadReg = load $fnReturnType, ptr %$allocReg, align 8"
+      val finalState = state
+        .withRegister(loadReg + 1)
+        .emit(allocLine)
+        .emit(callLine)
+        .emit(loadLine)
+      app.typeSpec match
+        case Some(ts) =>
+          getMmlTypeName(ts) match
+            case Some(typeName) =>
+              Right(CompileResult(loadReg, finalState, false, typeName))
+            case None =>
+              Left(
+                CodeGenError(
+                  s"Could not determine MML type name for function application result from spec: $ts",
+                  Some(app)
+                )
+              )
+        case None =>
+          Left(
+            CodeGenError(
+              s"Missing return type information for function application '${fnRef.name}'",
+              Some(app)
+            )
+          )
     else
-      val callLine = emitCall(Some(resultReg), Some(fnReturnType), fnName, List.empty)
+      val resultReg = state.nextRegister
+      val callLine  = emitCall(Some(resultReg), Some(fnReturnType), fnName, List.empty)
       app.typeSpec match
         case Some(ts) =>
           getMmlTypeName(ts) match
@@ -354,14 +391,39 @@ private def compileStandardCall(
     else (rawArgs, state)
   val (stateWithAlias, aliasScopeTag, noaliasTag) =
     buildCallAliasMetadata(getResolvedName(fnRef, stateAfterSplit), compiledArgs, stateAfterSplit)
-  val resultReg = stateWithAlias.nextRegister
-  val args      = finalArgs.map { case (value, typ) => (typ, value) }
-  val fnName    = getResolvedName(fnRef, stateWithAlias)
+  val fnName = getResolvedName(fnRef, stateWithAlias)
+  val args   = finalArgs.map { case (value, typ) => (typ, value) }
+
+  // Check if this native function needs sret (large struct return on x86_64)
+  val useSret = isNative && needsSretReturn(fnReturnType, stateWithAlias)
 
   if fnReturnType == "void" then
     val callLine = emitCall(None, None, fnName, args, aliasScopeTag, noaliasTag)
     Right(CompileResult(0, stateWithAlias.emit(callLine), false, "Unit"))
+  else if useSret then
+    // Sret call: allocate space, pass as first arg, load result after call
+    val allocReg  = stateWithAlias.nextRegister
+    val allocLine = s"  %$allocReg = alloca $fnReturnType, align 8"
+    val sretArg   = (s"ptr sret($fnReturnType) align 8", s"%$allocReg")
+    val callLine  = emitCall(None, Some("void"), fnName, sretArg :: args, aliasScopeTag, noaliasTag)
+    val loadReg   = allocReg + 1
+    val loadLine  = s"  %$loadReg = load $fnReturnType, ptr %$allocReg, align 8"
+    val finalState = stateWithAlias
+      .withRegister(loadReg + 1)
+      .emit(allocLine)
+      .emit(callLine)
+      .emit(loadLine)
+    app.typeSpec match
+      case Some(ts) =>
+        getMmlTypeName(ts) match
+          case Some(typeName) =>
+            Right(CompileResult(loadReg, finalState, false, typeName))
+          case None =>
+            Left(CodeGenError(s"Could not determine MML type name for result: $ts", Some(app)))
+      case None =>
+        Left(CodeGenError(s"Missing return type for function '${fnRef.name}'", Some(app)))
   else
+    val resultReg = stateWithAlias.nextRegister
     val callLine =
       emitCall(Some(resultReg), Some(fnReturnType), fnName, args, aliasScopeTag, noaliasTag)
     app.typeSpec match

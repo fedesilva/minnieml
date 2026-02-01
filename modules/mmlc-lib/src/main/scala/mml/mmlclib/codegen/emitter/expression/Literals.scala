@@ -175,9 +175,36 @@ def compileLiteralString(
         )
       val stateWithDataStore = stateWithDataAlias.emit(dataStoreLine)
 
+      // Store the __cap field (field 2) with -1 for static string literal
+      val (stateWithCapTag, capTag) =
+        TbaaEmitter.getTbaaStructFieldTag(ts, 2, stateWithDataStore) match
+          case Right((st, tag)) => (st, Some(tag))
+          case Left(_) => (stateWithDataStore, None)
+      val capPtrReg = stateWithCapTag.nextRegister
+      val capPtrLine = emitGetElementPtr(
+        capPtrReg,
+        "%struct.String",
+        "%struct.String*",
+        s"%$allocReg",
+        List(("i32", "0"), ("i32", "2"))
+      )
+      val stateWithCapPtr = stateWithCapTag.withRegister(capPtrReg + 1).emit(capPtrLine)
+      val (stateWithCapAlias, capAliasTag, capNoaliasTag) =
+        AliasScopeEmitter.getAliasScopeTagsByName("Int64", stateWithCapPtr)
+      val capStoreLine =
+        emitStore(
+          "-1",
+          "i64",
+          s"%$capPtrReg",
+          capTag,
+          capAliasTag,
+          capNoaliasTag
+        )
+      val stateWithCapStore = stateWithCapAlias.emit(capStoreLine)
+
       // Load the String struct (no TBAA tag for aggregate load)
       val (stateWithStructAlias, structAliasTag, structNoaliasTag) =
-        AliasScopeEmitter.getAliasScopeTags(ts, stateWithDataStore)
+        AliasScopeEmitter.getAliasScopeTags(ts, stateWithCapStore)
       val resultReg = stateWithStructAlias.nextRegister
       val loadLine =
         emitLoad(

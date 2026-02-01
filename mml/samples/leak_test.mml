@@ -2,7 +2,7 @@
 // Run with: leaks --atExit -- ./build/target/leaktest
 
 fn test_iteration(): Unit =
-  let fd = open_file_read "test.txt";
+  let fd = open_file_read "mml/samples/test.txt";
   let line1 = read_line_fd fd;
   let line2 = read_line_fd fd;
   println line1;
@@ -11,13 +11,12 @@ fn test_iteration(): Unit =
 ;
 
 fn run(n: Int): Unit =
-  if n == 0 then ()
-  else
+  if n != 0 then   
     test_iteration ();
     run (n - 1)
   end
 ;
 
 fn main(): Unit =
-  run 1000
+  run 10000
 ;

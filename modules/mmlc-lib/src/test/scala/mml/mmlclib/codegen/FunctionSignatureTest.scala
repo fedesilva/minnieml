@@ -21,11 +21,21 @@ class FunctionSignatureTest extends BaseEffFunSuite:
     compileAndGenerate(source, config = config).map { llvmIr =>
 
       // Native functions keep original names (declarations)
-      assert(llvmIr.contains("declare void @debug_print(i64, i8*)"), "debug_print declaration")
-      assert(llvmIr.contains("declare void @log_message(i64, i8*)"), "log_message declaration")
+      // String is now 24 bytes (3 fields: length, data, __cap), passed via byval pointer on x86_64
       assert(
-        llvmIr.contains("declare %struct.String @join_strings(i64, i8*, i64, i8*)"),
-        "join_strings declaration"
+        llvmIr.contains("declare void @debug_print(ptr byval(%struct.String) align 8)"),
+        "debug_print declaration"
+      )
+      assert(
+        llvmIr.contains("declare void @log_message(ptr byval(%struct.String) align 8)"),
+        "log_message declaration"
+      )
+      // join_strings returns String (>16 bytes) so uses sret on x86_64
+      assert(
+        llvmIr.contains(
+          "declare void @join_strings(ptr sret(%struct.String) align 8, ptr byval(%struct.String) align 8, ptr byval(%struct.String) align 8)"
+        ),
+        "join_strings declaration with sret"
       )
       // User main is mangled with module prefix
       assert(llvmIr.contains("define void @test_main()"), "user main definition")
@@ -49,22 +59,24 @@ class FunctionSignatureTest extends BaseEffFunSuite:
       CompilerConfig.exe("build", targetTriple = Some("aarch64-apple-macosx"))
 
     compileAndGenerate(source, config = config).map { llvmIr =>
+      // String is now 24 bytes (3 fields: length, data, __cap), so passed as struct directly
+      // (aarch64 packing only applies to 2-field i64/ptr structs)
       assert(
-        llvmIr.contains("declare void @debug_print([2 x i64])"),
+        llvmIr.contains("declare void @debug_print(%struct.String)"),
         "debug_print declaration"
       )
       assert(
-        llvmIr.contains("declare void @log_message([2 x i64])"),
+        llvmIr.contains("declare void @log_message(%struct.String)"),
         "log_message declaration"
       )
       assert(
-        llvmIr.contains("declare %struct.String @join_strings([2 x i64], [2 x i64])"),
+        llvmIr.contains("declare %struct.String @join_strings(%struct.String, %struct.String)"),
         "join_strings declaration"
       )
     }
   }
 
-  test("aarch64 native calls pack 2x i64 struct args") {
+  test("aarch64 native calls with String struct args") {
     val source =
       """
         fn debug_print (a: String): Unit = @native;
@@ -75,13 +87,11 @@ class FunctionSignatureTest extends BaseEffFunSuite:
       CompilerConfig.exe("build", targetTriple = Some("aarch64-apple-macosx"))
 
     compileAndGenerate(source, config = config).map { llvmIr =>
+      // String is now 24 bytes (3 fields), so it's passed as %struct.String directly
+      // (no packing into [2 x i64] since it has 3 fields now)
       assert(
-        llvmIr.contains("insertvalue [2 x i64]"),
-        s"expected packed insertvalue in:\n$llvmIr"
-      )
-      assert(
-        llvmIr.contains("call void @debug_print([2 x i64]"),
-        s"expected packed call site in:\n$llvmIr"
+        llvmIr.contains("call void @debug_print(%struct.String"),
+        s"expected struct call site in:\n$llvmIr"
       )
     }
   }
