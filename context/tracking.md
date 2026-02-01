@@ -64,7 +64,33 @@ and unlocks `noalias` parameter attributes for LLVM optimization.
   - [x] Track type information for bindings to select correct `__free_T`
   - [x] Leak test passes: `mml/samples/leak_test.mml` shows 0 leaks with `leaks --atExit`
   - [ ] **TODO:** Implement move semantics for `~` consuming parameters (partial)
-  - [ ] **TODO:** Handle conditional branches with mixed ownership (static vs heap)
+  - [ ] **TODO 2A: Inline conditional ownership** (same-scope allocation)
+    - **Problem:** `let s = if cond then to_string n else "literal" end` leaks.
+      The `Cond` contains an allocation in one branch, but `termAllocates` only
+      checks `App`, not `Cond`. Binding `s` is not marked Owned, no free inserted.
+    - **Solution:** Extend `termAllocates` to recursively check `Cond` branches.
+      If either branch allocates, the conditional allocates. Runtime `__cap` check
+      handles static vs heap safely.
+    - **Test:** `mml/samples/mixed_ownership_test.mml` - currently shows 200 leaks
+  - [ ] **TODO 2B: Function return ownership** (cross-scope allocation / escape analysis)
+    - **Problem:** `let s = get_string true n` leaks. `get_string` internally calls
+      `to_string` and returns that allocation, but the analyzer only sees
+      `App(Ref("get_string"), ...)` with no `MemEffect.Alloc` tag. User functions
+      that return allocations are not recognized.
+    - **Context:** Borrow-by-default applies to parameters. Return values that
+      originate from allocations inside the function must transfer ownership to
+      caller (the allocation "escapes"). Without this, either:
+      - Free inside function → caller gets dangling pointer
+      - Don't free anywhere → leak
+    - **Options:**
+      1. **Escape analysis:** Detect allocations that escape (are returned).
+         Don't free inside function; mark function as "returns ownership".
+         Complex: requires inter-procedural analysis.
+      2. **Explicit annotation:** Require `[mem=alloc]` on user functions that
+         return allocations. Clear but verbose.
+      3. **Type-based heuristic:** If function returns heap type (String, etc.),
+         assume ownership transfers. May over-free borrowed returns.
+    - **Decision needed:** Which approach to use
 
 - [x] **Phase 2.5: Runtime `__cap` field**
   - **Problem:** `__free_*` functions don't check if memory is static vs heap.
@@ -119,7 +145,10 @@ and unlocks `noalias` parameter attributes for LLVM optimization.
 - [ ] **Phase 4: Testing**
   - [x] Write test programs with allocations (`mml/samples/leak_test.mml`)
   - [x] Verify with `leaks --atExit` that leak count is 0 (passes for simple case)
-  - [ ] Write test for mixed conditional ownership (static vs heap)
+  - [x] Write test for mixed conditional ownership (`mml/samples/mixed_ownership_test.mml`)
+    - Currently shows 200 leaks: 100 from `test_heap` (TODO 2B), 100 from
+      `test_inline_conditional` (TODO 2A)
+    - Static strings don't crash (proves `__cap` check works)
   - [ ] Find edge cases, iterate
 
 
