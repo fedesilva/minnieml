@@ -21,29 +21,6 @@
 
 ## Active Tasks
 
-### AArch is broken [COMPLETE]
-
-**Fixed 2026-02-02:** ABI mismatch for large structs (>16 bytes) on AArch64. MML was emitting
-`ptr byval(%struct)` for both architectures, but AAPCS64 represents indirect struct passing
-as plain `ptr` (no `byval`). This caused segfaults (matmul) and malloc errors (sieve) when
-cross-compiled aarch64 binaries ran against clang-compiled runtime.
-
-**Fix:** `LargeStructIndirect.scala` now emits plain `ptr` instead of `ptr byval(...)` for
-aarch64 large struct parameters. Updated tests in `FunctionSignatureTest.scala`. Verified
-cross-compiled binaries run correctly on aarch64 hardware.
-
-~~Original issue: latest changes to aarch have introduced errors in aarch:~~
-I cross compiled and found that matmul segfaults and sieve has issues with malloc (probably a bug in the aarch side only since I tested it on x86_64 and it works - the sieve program I mean)
-
-  ❯ ./matmul-aarch64-apple-macosx
-  [1]    19221 segmentation fault  ./matmul-aarch64-apple-macosx
-  ❯ ./sieve-aarch64-apple-macosx
-  sieve-aarch64-apple-macosx(19276,0x1f0f6e240) malloc: *** error for object 0x1: pointer being freed was not allocated
-  sieve-aarch64-apple-macosx(19276,0x1f0f6e240) malloc: *** set a breakpoint in malloc_error_break to debug
-  [1]    19276 abort      ./sieve-aarch64-apple-macosx
-    ~/Dropbox/exchange/mml ············································································································ ✘ ABRT
-  ❯
-
 
 ### Simple Memory Management Prototype
 
@@ -171,13 +148,6 @@ and unlocks `noalias` parameter attributes for LLVM optimization.
       clean after TODO 2A fix. Static strings don't crash (proves `__cap` check works).
   - [ ] Find edge cases, iterate
 
-
-
-### Refactor codegen [COMPLETE]
-
-see `context/specs/refactor-codegen.md`
-
-**Status (2026-02-02):** Complete. ABI lowering refactored into per-target strategies threaded through `CodeGenState`; added AArch64 HFA regression (Vec3d/Vec4f) keeping ≤4 float/double structs in registers (no byval/sret). Fixed aarch64 large-struct ABI mismatch (see "AArch is broken" task above). All tests pass, benchmarks compile, cross-compiled aarch64 binaries verified on hardware.
 
 
 ### Runtime: time functions
