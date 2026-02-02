@@ -4,7 +4,8 @@ struct Person {
   age: Int
 };
  
-let p = Person "fede" 20;
+let pp = Person "fede";
+let p = pp 25;
 
 fn main() =  
   println (concat "Name: " p.name);

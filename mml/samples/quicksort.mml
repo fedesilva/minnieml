@@ -61,6 +61,9 @@ fn run_sort(size: Int): Int =
   unsafe_ar_int_get arr (size / 2)
 ;
 
+/*
+the entry point
+*/
 fn main(): Unit =
   // Sort 1 million integers
   let result = run_sort 1000000;
