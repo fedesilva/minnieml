@@ -20,7 +20,8 @@ Read these files for project context:
 - `context/coding-rules.md` - Read before each task. Review after finishing.
 - `context/tracking.md` for current and recent work. 
   - follow bookkeeping instructions to the T. No exceptions.
-- Every other file under `context/`.
+
+- Other files under context are *ONLY* to be read on a as-needed basis.
 
 - When you fishish reading the context files:
   - Wait for instructions if none has been provided.
