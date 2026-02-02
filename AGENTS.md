@@ -23,9 +23,8 @@ Read these files for project context:
 - Every other file under `context/`.
 
 - When you fishish reading the context files:
-  - **Stop and Stand By**
-  - **No further actions**
   - Wait for instructions if none has been provided.
+  - If instructions have been provided, summarize your understanding.
 
 
 ## Critical Interaction Rules
@@ -36,8 +35,9 @@ Read these files for project context:
   - Failure to follow these steps wastes time and money. 
 
 - **Keep the author involved** 
+  - **Ask for confirmation BEFORE** starting to edit code.
   - Ask confirmation frequently, while working.
   - Split your work into small chunks, stop on completion and ask for review and signoff.
-  - Don't ask confirmation to investigate
+  - **Don't ask confirmation** to investigate
   - use common sense.
 

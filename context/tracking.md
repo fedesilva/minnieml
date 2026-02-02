@@ -119,6 +119,20 @@ and unlocks `noalias` parameter attributes for LLVM optimization.
     - [x] Updated `Module.scala` to emit `void` return + `sret` param in declarations
     - [x] Updated `Applications.scala` to allocate space, call with sret, load result
     - [x] Updated `FunctionSignatureTest.scala` for new expected signatures
+  - [ ] **TODO: AArch64 large-struct ABI parity (post b07afb2 review)**
+    - Detect AArch64 HFA (≤4 floats/doubles) structs and skip indirect lowering so they stay in SIMD
+      registers per AAPCS64; avoid regressing interop with C/Swift HFAs.
+    - Add regression tests under `FunctionSignatureTest` for HFA params/returns (e.g., 3x double, 4x
+      float) comparing emitted IR against clang.
+    - Audit `needsSretReturn` and `LargeStructIndirect` usage to ensure HFAs never take the indirect
+      path.
+  - [ ] **TODO: AArch64 large-struct param attributes**
+    - Update `LargeStructIndirect` to emit `ptr byval(%struct.T) align 8` (not bare `ptr`) to match
+      clang AAPCS64 copy semantics and alignment.
+    - Adjust call-site lowering to pass the `byval` pointer and ensure signatures/calls in
+      `FunctionSignatureTest` assert the attribute.
+    - Re-run aarch64 IR tests and targeted native interop (e.g., `unsafe_ar_int_set`) to confirm no
+      ABI mismatches.
   - [x] **Phase D: Testing**
     - [x] D1: `hello.mml` works
     - [x] D2: `leak_test.mml` works - 0 leaks with `leaks --atExit`
