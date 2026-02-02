@@ -1,7 +1,7 @@
 package mml.mmlclib.codegen.emitter.abis
 
 import mml.mmlclib.codegen.TargetAbi
-import mml.mmlclib.codegen.emitter.abis.aarch64.PackTwoI64Structs
+import mml.mmlclib.codegen.emitter.abis.aarch64.{LargeStructIndirect, PackTwoI64Structs}
 import mml.mmlclib.codegen.emitter.abis.x86_64.{LargeStructByval, SplitSmallStructs}
 import mml.mmlclib.codegen.emitter.{CodeGenState, getStructFieldTypes}
 
@@ -21,7 +21,7 @@ trait StructLoweringRule:
   ): Option[(List[(String, String)], CodeGenState)]
 
 private val rules: List[StructLoweringRule] =
-  List(SplitSmallStructs, LargeStructByval, PackTwoI64Structs)
+  List(SplitSmallStructs, LargeStructByval, LargeStructIndirect, PackTwoI64Structs)
 
 private def rulesFor(state: CodeGenState): List[StructLoweringRule] =
   rules.filter(_.targetAbi == state.targetAbi)
@@ -60,6 +60,9 @@ def isPointerType(llvmType: String): Boolean =
 def isPackableAarch64(fieldTypes: List[String]): Boolean =
   fieldTypes.size == 2 && fieldTypes.forall(t => t == "i64" || isPointerType(t))
 
+def isLargeStructAarch64(fieldTypes: List[String]): Boolean =
+  fieldTypes.map(sizeOfLlvmType).sum > 16 && !isPackableAarch64(fieldTypes)
+
 def shouldSplitX86_64(fieldTypes: List[String]): Boolean =
   shouldSplitStruct(fieldTypes)
 
@@ -91,16 +94,19 @@ def lowerNativeArgs(
           (accArgs :+ (value, typ), currentState)
   }
 
-/** Checks if a return type needs sret lowering (large struct return on x86_64).
+/** Checks if a return type needs sret lowering (large struct return).
   *
-  * On x86_64, structs >16 bytes must be returned via a hidden first pointer parameter (sret).
+  * On both x86_64 and AArch64, structs >16 bytes must be returned via a hidden first pointer
+  * parameter (sret).
   */
 def needsSretReturn(returnType: String, state: CodeGenState): Boolean =
-  if state.targetAbi != TargetAbi.X86_64 then false
-  else
-    getStructFieldTypes(returnType, state) match
-      case Some(fieldTypes) => !shouldSplitX86_64(fieldTypes)
-      case None => false
+  getStructFieldTypes(returnType, state) match
+    case Some(fieldTypes) =>
+      state.targetAbi match
+        case TargetAbi.X86_64 => !shouldSplitX86_64(fieldTypes)
+        case TargetAbi.AArch64 => isLargeStructAarch64(fieldTypes)
+        case _ => false
+    case None => false
 
 /** Lowers return type for sret convention if needed.
   *

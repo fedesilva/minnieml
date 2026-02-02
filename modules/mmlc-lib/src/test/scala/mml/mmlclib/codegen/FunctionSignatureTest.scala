@@ -59,24 +59,27 @@ class FunctionSignatureTest extends BaseEffFunSuite:
       CompilerConfig.exe("build", targetTriple = Some("aarch64-apple-macosx"))
 
     compileAndGenerate(source, config = config).map { llvmIr =>
-      // String is now 24 bytes (3 fields: length, data, __cap), so passed as struct directly
-      // (aarch64 packing only applies to 2-field i64/ptr structs)
+      // String is 24 bytes (3 fields: length, data, __cap), >16 bytes so passed
+      // indirectly via pointer on aarch64 (AAPCS64: composites >16 bytes)
       assert(
-        llvmIr.contains("declare void @debug_print(%struct.String)"),
-        "debug_print declaration"
+        llvmIr.contains("declare void @debug_print(ptr)"),
+        s"debug_print should use indirect ptr param, got:\n$llvmIr"
       )
       assert(
-        llvmIr.contains("declare void @log_message(%struct.String)"),
-        "log_message declaration"
+        llvmIr.contains("declare void @log_message(ptr)"),
+        s"log_message should use indirect ptr param, got:\n$llvmIr"
       )
+      // join_strings returns String (>16 bytes) so uses sret on aarch64
       assert(
-        llvmIr.contains("declare %struct.String @join_strings(%struct.String, %struct.String)"),
-        "join_strings declaration"
+        llvmIr.contains(
+          "declare void @join_strings(ptr sret(%struct.String) align 8, ptr, ptr)"
+        ),
+        s"join_strings should use sret + indirect ptr params, got:\n$llvmIr"
       )
     }
   }
 
-  test("aarch64 native calls with String struct args") {
+  test("aarch64 native calls with String struct args use indirect pointer") {
     val source =
       """
         fn debug_print (a: String): Unit = @native;
@@ -87,11 +90,10 @@ class FunctionSignatureTest extends BaseEffFunSuite:
       CompilerConfig.exe("build", targetTriple = Some("aarch64-apple-macosx"))
 
     compileAndGenerate(source, config = config).map { llvmIr =>
-      // String is now 24 bytes (3 fields), so it's passed as %struct.String directly
-      // (no packing into [2 x i64] since it has 3 fields now)
+      // 24-byte struct should be passed via alloca + store + ptr on aarch64
       assert(
-        llvmIr.contains("call void @debug_print(%struct.String"),
-        s"expected struct call site in:\n$llvmIr"
+        llvmIr.contains("call void @debug_print(ptr %"),
+        s"expected indirect ptr call site in:\n$llvmIr"
       )
     }
   }
