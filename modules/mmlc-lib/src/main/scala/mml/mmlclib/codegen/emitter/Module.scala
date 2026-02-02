@@ -3,7 +3,7 @@ package mml.mmlclib.codegen.emitter
 import cats.syntax.all.*
 import mml.mmlclib.ast.*
 import mml.mmlclib.codegen.TargetAbi
-import mml.mmlclib.codegen.emitter.abis.{lowerNativeParamTypes, lowerNativeReturnType}
+import mml.mmlclib.codegen.emitter.abis.AbiStrategy
 import mml.mmlclib.codegen.emitter.alias.AliasScopeEmitter
 import mml.mmlclib.codegen.emitter.expression.escapeString
 import mml.mmlclib.codegen.emitter.tbaa.TbaaEmitter
@@ -37,6 +37,7 @@ def emitModule(
   val initialState = CodeGenState(
     moduleName      = module.name,
     targetAbi       = targetAbi,
+    abi             = AbiStrategy.forTarget(targetAbi),
     resolvables     = module.resolvables,
     emitAliasScopes = emitAliasScopes
   ).withModuleHeader(module.name, targetTriple)
@@ -242,9 +243,9 @@ private def emitBndLambda(
         case List(NativeImpl(_, _, _, _, _)) =>
           // Native functions: emit as declaration with original name (external symbol)
           // Lower params for ABI (byval for large structs on x86_64)
-          val abiParamTypes = lowerNativeParamTypes(filteredParamTypes, state)
+          val abiParamTypes = state.abi.lowerParamTypes(filteredParamTypes, state)
           // Lower return type for ABI (sret for large struct returns on x86_64)
-          val (abiReturnType, sretParam) = lowerNativeReturnType(returnType, state)
+          val (abiReturnType, sretParam) = state.abi.lowerReturnType(returnType, state)
           val finalParamTypes            = sretParam.toList ++ abiParamTypes
           Right(state.withFunctionDeclaration(fnName, abiReturnType, finalParamTypes))
 

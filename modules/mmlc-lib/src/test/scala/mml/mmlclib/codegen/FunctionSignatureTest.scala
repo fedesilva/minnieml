@@ -60,21 +60,21 @@ class FunctionSignatureTest extends BaseEffFunSuite:
 
     compileAndGenerate(source, config = config).map { llvmIr =>
       // String is 24 bytes (3 fields: length, data, __cap), >16 bytes so passed
-      // indirectly via pointer on aarch64 (AAPCS64: composites >16 bytes)
+      // indirectly via byval pointer on aarch64 (AAPCS64: composites >16 bytes)
       assert(
-        llvmIr.contains("declare void @debug_print(ptr)"),
-        s"debug_print should use indirect ptr param, got:\n$llvmIr"
+        llvmIr.contains("declare void @debug_print(ptr byval(%struct.String) align 8)"),
+        s"debug_print should use byval ptr param, got:\n$llvmIr"
       )
       assert(
-        llvmIr.contains("declare void @log_message(ptr)"),
-        s"log_message should use indirect ptr param, got:\n$llvmIr"
+        llvmIr.contains("declare void @log_message(ptr byval(%struct.String) align 8)"),
+        s"log_message should use byval ptr param, got:\n$llvmIr"
       )
       // join_strings returns String (>16 bytes) so uses sret on aarch64
       assert(
         llvmIr.contains(
-          "declare void @join_strings(ptr sret(%struct.String) align 8, ptr, ptr)"
+          "declare void @join_strings(ptr sret(%struct.String) align 8, ptr byval(%struct.String) align 8, ptr byval(%struct.String) align 8)"
         ),
-        s"join_strings should use sret + indirect ptr params, got:\n$llvmIr"
+        s"join_strings should use sret + byval ptr params, got:\n$llvmIr"
       )
     }
   }
@@ -90,10 +90,58 @@ class FunctionSignatureTest extends BaseEffFunSuite:
       CompilerConfig.exe("build", targetTriple = Some("aarch64-apple-macosx"))
 
     compileAndGenerate(source, config = config).map { llvmIr =>
-      // 24-byte struct should be passed via alloca + store + ptr on aarch64
+      // 24-byte struct should be passed via alloca + store + byval ptr on aarch64
       assert(
-        llvmIr.contains("call void @debug_print(ptr %"),
-        s"expected indirect ptr call site in:\n$llvmIr"
+        llvmIr.contains("call void @debug_print(ptr byval(%struct.String) align 8 %"),
+        s"expected byval ptr call site in:\n$llvmIr"
+      )
+    }
+  }
+
+  test("aarch64 HFAs stay in registers (no byval/sret) for float/double aggregates") {
+    val source =
+      """
+        type F32 = @native[t=float];
+        type F64 = @native[t=double];
+
+        type Vec3d = @native { x: F64, y: F64, z: F64 };
+        type Vec4f = @native { x: F32, y: F32, z: F32, w: F32 };
+
+        fn hfa_arg_d (v: Vec3d): Int = @native;
+        fn hfa_ret_d (): Vec3d = @native;
+        fn hfa_arg_f (v: Vec4f): Int = @native;
+        fn hfa_ret_f (): Vec4f = @native;
+
+        fn main(): Unit = ();
+      """
+
+    val config =
+      CompilerConfig.exe("build", targetTriple = Some("aarch64-apple-macosx"))
+
+    compileAndGenerate(source, config = config).map { llvmIr =>
+      assert(
+        llvmIr.contains("declare i64 @hfa_arg_d(%struct.Vec3d)"),
+        s"HFA double arg should not be byval/split:\n$llvmIr"
+      )
+      assert(
+        llvmIr.contains("declare %struct.Vec3d @hfa_ret_d()"),
+        s"HFA double return should not use sret:\n$llvmIr"
+      )
+      assert(
+        llvmIr.contains("declare i64 @hfa_arg_f(%struct.Vec4f)"),
+        s"HFA float arg should not be byval/split:\n$llvmIr"
+      )
+      assert(
+        llvmIr.contains("declare %struct.Vec4f @hfa_ret_f()"),
+        s"HFA float return should not use sret:\n$llvmIr"
+      )
+      assert(
+        !llvmIr.contains("byval(%struct.Vec3d)") && !llvmIr.contains("byval(%struct.Vec4f)"),
+        s"HFA params must not be lowered to byval pointers:\n$llvmIr"
+      )
+      assert(
+        !llvmIr.contains("sret(%struct.Vec3d)") && !llvmIr.contains("sret(%struct.Vec4f)"),
+        s"HFA returns must not use sret:\n$llvmIr"
       )
     }
   }

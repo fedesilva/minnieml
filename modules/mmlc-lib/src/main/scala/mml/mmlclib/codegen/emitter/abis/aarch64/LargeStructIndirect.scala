@@ -1,18 +1,17 @@
 package mml.mmlclib.codegen.emitter.abis.aarch64
 
-import mml.mmlclib.codegen.TargetAbi
 import mml.mmlclib.codegen.emitter.CodeGenState
-import mml.mmlclib.codegen.emitter.abis.{StructLoweringRule, isLargeStructAarch64}
+import mml.mmlclib.codegen.emitter.abis.StructLoweringRule
+import mml.mmlclib.codegen.emitter.abis.StructLoweringUtils.isLargeStructAarch64
 
 /** On AArch64, structs >16 bytes are passed indirectly via pointer (AAPCS64). */
 object LargeStructIndirect extends StructLoweringRule:
-  val targetAbi: TargetAbi = TargetAbi.AArch64
 
   def lowerParamTypes(
     structType: String,
     fieldTypes: List[String]
   ): Option[List[String]] =
-    if isLargeStructAarch64(fieldTypes) then Some(List("ptr"))
+    if isLargeStructAarch64(fieldTypes) then Some(List(s"ptr byval($structType) align 8"))
     else None
 
   def lowerArgs(
@@ -30,5 +29,5 @@ object LargeStructIndirect extends StructLoweringRule:
         .withRegister(storeReg)
         .emit(allocLine)
         .emit(storeLine)
-      Some((List((s"%$allocReg", "ptr")), finalState))
+      Some((List((s"%$allocReg", s"ptr byval($structType) align 8")), finalState))
     else None

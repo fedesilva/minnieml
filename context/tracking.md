@@ -152,6 +152,13 @@ and unlocks `noalias` parameter attributes for LLVM optimization.
 
 
 
+### Refactor codegen
+
+see `context/specs/refactor-codegen.md`
+
+**Status (2026-02-02):** Pending review. ABI lowering refactored into per-target strategies threaded through `CodeGenState`; added AArch64 HFA regression (Vec3d/Vec4f) keeping ≤4 float/double structs in registers (no byval/sret). Ran `sbtn "test; scalafmtAll; scalafixAll; mmlcPublishLocal"` and `make -C benchmark clean`, `make -C benchmark mml`.
+
+
 ### Runtime: time functions
 
 TBD
@@ -160,6 +167,10 @@ TBD
 ---
 
 ## Recent Changes
+
+### 2026-02-02
+
+- **Refactor codegen ABI strategies**: Introduced per-target `AbiStrategy` objects threaded via `CodeGenState`; replaced TargetAbi branching. Added AArch64 HFA regression test (Vec3d/Vec4f) to ensure ≤4 float/double structs stay in registers (no byval/sret). Ran `sbtn "test; scalafmtAll; scalafixAll; mmlcPublishLocal"` and `make -C benchmark clean`, `make -C benchmark mml`.
 
 ### 2026-02-01 (branch: memory-prototype)
 

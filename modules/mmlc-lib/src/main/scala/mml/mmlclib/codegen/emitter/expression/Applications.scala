@@ -2,7 +2,6 @@ package mml.mmlclib.codegen.emitter.expression
 
 import cats.syntax.all.*
 import mml.mmlclib.ast.*
-import mml.mmlclib.codegen.emitter.abis.{lowerNativeArgs, needsSretReturn}
 import mml.mmlclib.codegen.emitter.{
   CodeGenError,
   CodeGenState,
@@ -203,24 +202,23 @@ def compileNullaryCall(
       case bnd: Bnd => isNativeBinding(bnd)
       case _ => false
     }
-    val useSret = isNative && needsSretReturn(fnReturnType, state)
+    val useSret = isNative && state.abi.needsSret(fnReturnType, state)
 
     if fnReturnType == "void" then
       val callLine = emitCall(None, None, fnName, List.empty)
       Right(CompileResult(0, state.emit(callLine), false, "Unit"))
     else if useSret then
       // Sret call for nullary function returning large struct
-      val allocReg  = state.nextRegister
-      val allocLine = s"  %$allocReg = alloca $fnReturnType, align 8"
-      val sretArg   = (s"ptr sret($fnReturnType) align 8", s"%$allocReg")
-      val callLine  = emitCall(None, Some("void"), fnName, List(sretArg))
-      val loadReg   = allocReg + 1
-      val loadLine  = s"  %$loadReg = load $fnReturnType, ptr %$allocReg, align 8"
-      val finalState = state
-        .withRegister(loadReg + 1)
-        .emit(allocLine)
-        .emit(callLine)
-        .emit(loadLine)
+      val (loadReg, finalState) =
+        state.abi.emitSretCall(
+          fnName,
+          fnReturnType,
+          List.empty,
+          state,
+          emitCall,
+          None,
+          None
+        )
       app.typeSpec match
         case Some(ts) =>
           getMmlTypeName(ts) match
@@ -387,7 +385,7 @@ private def compileStandardCall(
   }
   val rawArgs = compiledArgs.map(arg => (arg.op, arg.llvmType))
   val (finalArgs, stateAfterSplit) =
-    if isNative then lowerNativeArgs(rawArgs, state)
+    if isNative then state.abi.lowerArgs(rawArgs, state)
     else (rawArgs, state)
   val (stateWithAlias, aliasScopeTag, noaliasTag) =
     buildCallAliasMetadata(getResolvedName(fnRef, stateAfterSplit), compiledArgs, stateAfterSplit)
@@ -395,24 +393,22 @@ private def compileStandardCall(
   val args   = finalArgs.map { case (value, typ) => (typ, value) }
 
   // Check if this native function needs sret (large struct return on x86_64)
-  val useSret = isNative && needsSretReturn(fnReturnType, stateWithAlias)
+  val useSret = isNative && stateWithAlias.abi.needsSret(fnReturnType, stateWithAlias)
 
   if fnReturnType == "void" then
     val callLine = emitCall(None, None, fnName, args, aliasScopeTag, noaliasTag)
     Right(CompileResult(0, stateWithAlias.emit(callLine), false, "Unit"))
   else if useSret then
-    // Sret call: allocate space, pass as first arg, load result after call
-    val allocReg  = stateWithAlias.nextRegister
-    val allocLine = s"  %$allocReg = alloca $fnReturnType, align 8"
-    val sretArg   = (s"ptr sret($fnReturnType) align 8", s"%$allocReg")
-    val callLine  = emitCall(None, Some("void"), fnName, sretArg :: args, aliasScopeTag, noaliasTag)
-    val loadReg   = allocReg + 1
-    val loadLine  = s"  %$loadReg = load $fnReturnType, ptr %$allocReg, align 8"
-    val finalState = stateWithAlias
-      .withRegister(loadReg + 1)
-      .emit(allocLine)
-      .emit(callLine)
-      .emit(loadLine)
+    val (loadReg, finalState) =
+      stateWithAlias.abi.emitSretCall(
+        fnName,
+        fnReturnType,
+        args,
+        stateWithAlias,
+        emitCall,
+        aliasScopeTag,
+        noaliasTag
+      )
     app.typeSpec match
       case Some(ts) =>
         getMmlTypeName(ts) match

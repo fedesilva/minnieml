@@ -1,11 +1,10 @@
 package mml.mmlclib.codegen.emitter.abis.aarch64
 
-import mml.mmlclib.codegen.TargetAbi
-import mml.mmlclib.codegen.emitter.abis.{StructLoweringRule, isPackableAarch64, isPointerType}
+import mml.mmlclib.codegen.emitter.abis.StructLoweringRule
+import mml.mmlclib.codegen.emitter.abis.StructLoweringUtils.{isPackableAarch64, isPointerType}
 import mml.mmlclib.codegen.emitter.{CodeGenState, emitExtractValue, emitInsertValue, emitPtrToInt}
 
 object PackTwoI64Structs extends StructLoweringRule:
-  val targetAbi: TargetAbi = TargetAbi.AArch64
 
   def lowerParamTypes(
     structType: String,

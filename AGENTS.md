@@ -36,8 +36,8 @@ Read these files for project context:
 
 - **Keep the author involved** 
   - **Ask for confirmation BEFORE** starting to edit code.
-  - Ask confirmation frequently, while working.
+  - **Don't ask confirmation** to investigate or make a plan.
+      - use common sense.
   - Split your work into small chunks, stop on completion and ask for review and signoff.
-  - **Don't ask confirmation** to investigate
-  - use common sense.
+  - Ask confirmation frequently, while working.
 

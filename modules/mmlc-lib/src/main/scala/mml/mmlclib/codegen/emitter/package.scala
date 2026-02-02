@@ -2,6 +2,7 @@ package mml.mmlclib.codegen.emitter
 
 import mml.mmlclib.ast.*
 import mml.mmlclib.codegen.TargetAbi
+import mml.mmlclib.codegen.emitter.abis.AbiStrategy
 import mml.mmlclib.errors.{CompilationError, CompilerWarning}
 
 /** Helper for generating syntactically correct LLVM IR type definitions */
@@ -250,6 +251,7 @@ enum TbaaNode derives CanEqual:
 case class CodeGenState(
   moduleName:           String              = "",
   targetAbi:            TargetAbi           = TargetAbi.Default,
+  abi:                  AbiStrategy         = AbiStrategy.forTarget(TargetAbi.Default),
   nextRegister:         Int                 = 0,
   output:               List[String]        = List.empty,
   initializers:         List[String]        = List.empty,
