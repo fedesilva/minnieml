@@ -60,21 +60,23 @@ class FunctionSignatureTest extends BaseEffFunSuite:
 
     compileAndGenerate(source, config = config).map { llvmIr =>
       // String is 24 bytes (3 fields: length, data, __cap), >16 bytes so passed
-      // indirectly via byval pointer on aarch64 (AAPCS64: composites >16 bytes)
+      // indirectly via plain pointer on aarch64 (AAPCS64: composites >16 bytes).
+      // Note: Unlike x86_64, AAPCS64 does NOT use byval - the pointer is passed
+      // directly and the callee reads from it (caller-allocated copy).
       assert(
-        llvmIr.contains("declare void @debug_print(ptr byval(%struct.String) align 8)"),
-        s"debug_print should use byval ptr param, got:\n$llvmIr"
+        llvmIr.contains("declare void @debug_print(ptr)"),
+        s"debug_print should use plain ptr param on aarch64, got:\n$llvmIr"
       )
       assert(
-        llvmIr.contains("declare void @log_message(ptr byval(%struct.String) align 8)"),
-        s"log_message should use byval ptr param, got:\n$llvmIr"
+        llvmIr.contains("declare void @log_message(ptr)"),
+        s"log_message should use plain ptr param on aarch64, got:\n$llvmIr"
       )
       // join_strings returns String (>16 bytes) so uses sret on aarch64
       assert(
         llvmIr.contains(
-          "declare void @join_strings(ptr sret(%struct.String) align 8, ptr byval(%struct.String) align 8, ptr byval(%struct.String) align 8)"
+          "declare void @join_strings(ptr sret(%struct.String) align 8, ptr, ptr)"
         ),
-        s"join_strings should use sret + byval ptr params, got:\n$llvmIr"
+        s"join_strings should use sret + plain ptr params on aarch64, got:\n$llvmIr"
       )
     }
   }
@@ -90,10 +92,11 @@ class FunctionSignatureTest extends BaseEffFunSuite:
       CompilerConfig.exe("build", targetTriple = Some("aarch64-apple-macosx"))
 
     compileAndGenerate(source, config = config).map { llvmIr =>
-      // 24-byte struct should be passed via alloca + store + byval ptr on aarch64
+      // 24-byte struct should be passed via alloca + store + plain ptr on aarch64
+      // (no byval - AAPCS64 passes indirect structs as plain pointers)
       assert(
-        llvmIr.contains("call void @debug_print(ptr byval(%struct.String) align 8 %"),
-        s"expected byval ptr call site in:\n$llvmIr"
+        llvmIr.contains("call void @debug_print(ptr %"),
+        s"expected plain ptr call site on aarch64 in:\n$llvmIr"
       )
     }
   }

@@ -11,7 +11,7 @@ object LargeStructIndirect extends StructLoweringRule:
     structType: String,
     fieldTypes: List[String]
   ): Option[List[String]] =
-    if isLargeStructAarch64(fieldTypes) then Some(List(s"ptr byval($structType) align 8"))
+    if isLargeStructAarch64(fieldTypes) then Some(List("ptr"))
     else None
 
   def lowerArgs(
@@ -29,5 +29,5 @@ object LargeStructIndirect extends StructLoweringRule:
         .withRegister(storeReg)
         .emit(allocLine)
         .emit(storeLine)
-      Some((List((s"%$allocReg", s"ptr byval($structType) align 8")), finalState))
+      Some((List((s"%$allocReg", "ptr")), finalState))
     else None

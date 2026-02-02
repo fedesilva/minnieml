@@ -21,6 +21,30 @@
 
 ## Active Tasks
 
+### AArch is broken [COMPLETE]
+
+**Fixed 2026-02-02:** ABI mismatch for large structs (>16 bytes) on AArch64. MML was emitting
+`ptr byval(%struct)` for both architectures, but AAPCS64 represents indirect struct passing
+as plain `ptr` (no `byval`). This caused segfaults (matmul) and malloc errors (sieve) when
+cross-compiled aarch64 binaries ran against clang-compiled runtime.
+
+**Fix:** `LargeStructIndirect.scala` now emits plain `ptr` instead of `ptr byval(...)` for
+aarch64 large struct parameters. Updated tests in `FunctionSignatureTest.scala`. Verified
+cross-compiled binaries run correctly on aarch64 hardware.
+
+~~Original issue: latest changes to aarch have introduced errors in aarch:~~
+I cross compiled and found that matmul segfaults and sieve has issues with malloc (probably a bug in the aarch side only since I tested it on x86_64 and it works - the sieve program I mean)
+
+  ❯ ./matmul-aarch64-apple-macosx
+  [1]    19221 segmentation fault  ./matmul-aarch64-apple-macosx
+  ❯ ./sieve-aarch64-apple-macosx
+  sieve-aarch64-apple-macosx(19276,0x1f0f6e240) malloc: *** error for object 0x1: pointer being freed was not allocated
+  sieve-aarch64-apple-macosx(19276,0x1f0f6e240) malloc: *** set a breakpoint in malloc_error_break to debug
+  [1]    19276 abort      ./sieve-aarch64-apple-macosx
+    ~/Dropbox/exchange/mml ············································································································ ✘ ABRT
+  ❯
+
+
 ### Simple Memory Management Prototype
 
 **Doc:** `docs/brainstorming/mem-man/1-simple-mem-prototype.md`
@@ -126,13 +150,10 @@ and unlocks `noalias` parameter attributes for LLVM optimization.
       float) comparing emitted IR against clang.
     - Audit `needsSretReturn` and `LargeStructIndirect` usage to ensure HFAs never take the indirect
       path.
-  - [ ] **TODO: AArch64 large-struct param attributes**
-    - Update `LargeStructIndirect` to emit `ptr byval(%struct.T) align 8` (not bare `ptr`) to match
-      clang AAPCS64 copy semantics and alignment.
-    - Adjust call-site lowering to pass the `byval` pointer and ensure signatures/calls in
-      `FunctionSignatureTest` assert the attribute.
-    - Re-run aarch64 IR tests and targeted native interop (e.g., `unsafe_ar_int_set`) to confirm no
-      ABI mismatches.
+  - [x] **TODO: AArch64 large-struct param attributes** [COMPLETE 2026-02-02]
+    - Fixed: `LargeStructIndirect` now emits plain `ptr` (not `byval`) to match clang AAPCS64.
+    - Updated `FunctionSignatureTest` to assert plain `ptr` for aarch64 large struct params.
+    - Verified cross-compiled binaries run correctly on aarch64 hardware.
   - [x] **Phase D: Testing**
     - [x] D1: `hello.mml` works
     - [x] D2: `leak_test.mml` works - 0 leaks with `leaks --atExit`
@@ -152,11 +173,11 @@ and unlocks `noalias` parameter attributes for LLVM optimization.
 
 
 
-### Refactor codegen
+### Refactor codegen [COMPLETE]
 
 see `context/specs/refactor-codegen.md`
 
-**Status (2026-02-02):** Pending review. ABI lowering refactored into per-target strategies threaded through `CodeGenState`; added AArch64 HFA regression (Vec3d/Vec4f) keeping ≤4 float/double structs in registers (no byval/sret). Ran `sbtn "test; scalafmtAll; scalafixAll; mmlcPublishLocal"` and `make -C benchmark clean`, `make -C benchmark mml`.
+**Status (2026-02-02):** Complete. ABI lowering refactored into per-target strategies threaded through `CodeGenState`; added AArch64 HFA regression (Vec3d/Vec4f) keeping ≤4 float/double structs in registers (no byval/sret). Fixed aarch64 large-struct ABI mismatch (see "AArch is broken" task above). All tests pass, benchmarks compile, cross-compiled aarch64 binaries verified on hardware.
 
 
 ### Runtime: time functions
@@ -169,6 +190,16 @@ TBD
 ## Recent Changes
 
 ### 2026-02-02
+
+- **AArch64 large-struct ABI fix**: Fixed ABI mismatch causing segfaults and malloc errors in
+  cross-compiled aarch64 binaries. Root cause: MML emitted `ptr byval(%struct)` for large struct
+  parameters on both x86_64 and aarch64, but AAPCS64 represents indirect struct passing as plain
+  `ptr` (no `byval` attribute). Clang-compiled runtime expected plain pointer, MML passed byval.
+  - Updated `LargeStructIndirect.scala`: `lowerParamTypes` and `lowerArgs` now emit `ptr` instead
+    of `ptr byval(%struct.T) align 8` for aarch64
+  - Updated `FunctionSignatureTest.scala`: aarch64 tests now expect plain `ptr` for large structs
+  - Verified: cross-compiled sieve/matmul run correctly on aarch64 hardware
+  - Ran `sbtn "test; scalafmtAll; scalafixAll; mmlcPublishLocal"` (210/210 tests pass)
 
 - **Refactor codegen ABI strategies**: Introduced per-target `AbiStrategy` objects threaded via `CodeGenState`; replaced TargetAbi branching. Added AArch64 HFA regression test (Vec3d/Vec4f) to ensure ≤4 float/double structs stay in registers (no byval/sret). Ran `sbtn "test; scalafmtAll; scalafixAll; mmlcPublishLocal"` and `make -C benchmark clean`, `make -C benchmark mml`.
 
