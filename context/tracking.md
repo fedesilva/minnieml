@@ -64,6 +64,22 @@ and unlocks `noalias` parameter attributes for LLVM optimization.
   - [x] Insert `App(Ref("__free_T"), Ref(binding))` at scope end (CPS-style wrapping)
   - [x] Track type information for bindings to select correct `__free_T`
   - [x] Leak test passes: `mml/samples/leak_test.mml` shows 0 leaks with `leaks --atExit`
+  - [ ] **TODO: Expression temporary cleanup** (orphaned expressions) - PENDING REVIEW
+    - **Spec:** `context/specs/orphaned-expressions.md`
+    - **Done:**
+      - Added `tempCounter` to `OwnershipScope` for generating fresh `__tmp_N` names
+      - Added `syntheticSpan` for generated AST nodes (avoids semantic token conflicts)
+      - Modified regular App case to handle entire curried application chains at once
+      - Collects all args, identifies allocating ones, wraps with let-bindings
+      - Fixed double-free by only freeing bindings created in current scope (not inherited)
+      - Simple temps work: `consume (to_string 42)` - 0 leaks
+      - Curried temps work: `concat (to_string a) (to_string b)` - 0 leaks
+      - Updated `AppRewritingTests` to handle new AST structure with ownership wrappers
+    - **Remaining (300 leaks in test_temporaries.mml):**
+      - Nested allocating calls: `concat (concat p1 p2) p1` - inner concat result leaks
+      - Issue: when the result of an allocating call is used as an arg to another call,
+        the intermediate result isn't being wrapped (fn is App, not Ref)
+      - Need to detect when `fn` in App chain is itself an allocating call
   - [ ] **TODO:** Implement move semantics for `~` consuming parameters (partial)
   - [x] **TODO 2A: Inline conditional ownership**
     - `termAllocates` now recurses into `Cond` branches and propagates Owned state when
@@ -160,6 +176,14 @@ TBD
 ## Recent Changes
 
 ### 2026-02-02
+
+- **Expression temporary cleanup**: Fixed memory leaks for orphaned expression temporaries.
+  Nested allocating calls like `concat (concat p1 p2) p1` now properly free intermediate results.
+  - Insert explicit `__free_*` calls inside temp wrapper structure (not relying on scope-end)
+  - Mark `__free_*` params as `consuming=true` so freed bindings become Moved
+  - Mark inherited owned bindings as Borrowed inside temp wrappers (prevents double-free)
+  - Remove `preExistingOwned` filter; all owned bindings freed at terminal body
+  - `test_temporaries.mml`: 0 leaks (was 300+), all memory tests pass
 
 - **Memory prototype current state**: Linear ownership with borrow-by-default functional for
   String, Buffer, IntArray, StringArray. `OwnershipAnalyzer` tracks ownership states, detects

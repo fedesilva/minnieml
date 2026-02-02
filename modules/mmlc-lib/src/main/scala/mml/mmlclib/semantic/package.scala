@@ -673,15 +673,15 @@ def injectCommonFunctions(module: Module): Module =
       stringType,
       Some(MemEffect.Alloc)
     ),
-    // Memory management free functions
+    // Memory management free functions - params are consuming (take ownership)
     mkFn(
       "__free_String",
-      List(FnParam(dummySpan, "s", typeAsc = Some(stringType))),
+      List(FnParam(dummySpan, "s", typeAsc = Some(stringType), consuming = true)),
       unitType
     ),
     mkFn(
       "__free_Buffer",
-      List(FnParam(dummySpan, "b", typeAsc = Some(bufferType))),
+      List(FnParam(dummySpan, "b", typeAsc = Some(bufferType), consuming = true)),
       unitType
     )
   )
@@ -759,15 +759,15 @@ def injectCommonFunctions(module: Module): Module =
       stringType
     ),
     mkFn("ar_str_len", List(FnParam(dummySpan, "arr", typeAsc = Some(stringArrayType))), intType),
-    // Memory management free functions for arrays
+    // Memory management free functions for arrays - params are consuming
     mkFn(
       "__free_IntArray",
-      List(FnParam(dummySpan, "a", typeAsc = Some(intArrayType))),
+      List(FnParam(dummySpan, "a", typeAsc = Some(intArrayType), consuming = true)),
       unitType
     ),
     mkFn(
       "__free_StringArray",
-      List(FnParam(dummySpan, "a", typeAsc = Some(stringArrayType))),
+      List(FnParam(dummySpan, "a", typeAsc = Some(stringArrayType), consuming = true)),
       unitType
     )
   )

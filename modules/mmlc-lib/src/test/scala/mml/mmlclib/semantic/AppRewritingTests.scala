@@ -263,6 +263,29 @@ class AppRewritingTests extends BaseEffFunSuite:
             fail(s"Member `main` not found in module: ${prettyPrintAst(m)}")
           )
 
+      // Helper to find App(Ref(name), _) recursively through ownership wrappers
+      def findAppByName(term: Term, name: String): Option[App] =
+        term match
+          case app @ App(_, Ref(_, n, _, _, _, _, _), _, _, _) if n == name => Some(app)
+          case App(_, fn, arg, _, _) =>
+            findAppByName(fn, name).orElse(arg.terms.flatMap(findAppByName(_, name)).headOption)
+          case Lambda(_, _, body, _, _, _, _) =>
+            body.terms.flatMap(findAppByName(_, name)).headOption
+          case Expr(_, terms, _, _) =>
+            terms.flatMap(findAppByName(_, name)).headOption
+          case _ => None
+
+      // Helper to find to_string app in ownership wrapper arg
+      def findToStringInWrapperArg(term: Term): Option[App] =
+        term match
+          case App(_, Lambda(_, params, _, _, _, _, _), arg, _, _)
+              if params.headOption.exists(_.name.startsWith("__tmp_")) =>
+            arg.terms.flatMap(t => findAppByName(t, "to_string")).headOption
+          case App(_, fn, _, _, _) => findToStringInWrapperArg(fn)
+          case Lambda(_, _, body, _, _, _, _) =>
+            body.terms.flatMap(findToStringInWrapperArg).headOption
+          case _ => None
+
       memberBnd match
         case bnd: Bnd =>
           bnd.value.terms match
@@ -276,29 +299,27 @@ class AppRewritingTests extends BaseEffFunSuite:
                         s"Expected let binding argument to be LiteralInt(1), got:\n${prettyPrintAst(argExpr)}"
                       )
 
-                  innerLambda.body.terms match
-                    case List(TXApp(printlnRef, _, List(toStringExpr))) =>
-                      assertEquals(clue(printlnRef.name), "println", "println should be applied")
-                      toStringExpr.terms match
-                        case List(TXApp(toStringRef, _, List(nExpr))) =>
-                          assertEquals(
-                            clue(toStringRef.name),
-                            "to_string",
-                            "to_string should be applied"
-                          )
-                          nExpr.terms match
-                            case List(Ref(_, "n", _, _, _, _, _)) => ()
-                            case _ =>
-                              fail(
-                                s"Expected to_string argument to be Ref n, got:\n${prettyPrintAst(nExpr)}"
-                              )
-                        case _ =>
-                          fail(
-                            s"Expected to_string application, got:\n${prettyPrintAst(toStringExpr)}"
-                          )
+                  // After ownership analysis, to_string wraps its result in a synthetic let.
+                  // Find println in the body (may be nested in ownership wrappers).
+                  val printlnApp = findAppByName(innerLambda, "println")
+                  assert(
+                    printlnApp.isDefined,
+                    s"Expected println application in let body, got:\n${prettyPrintAst(innerLambda)}"
+                  )
+
+                  // Find to_string in the ownership wrapper's argument
+                  val toStringApp = findToStringInWrapperArg(innerLambda)
+                  assert(
+                    toStringApp.isDefined,
+                    s"Expected to_string in ownership wrapper arg:\n${prettyPrintAst(innerLambda)}"
+                  )
+
+                  // Verify to_string's argument is Ref(n)
+                  toStringApp.get.arg.terms match
+                    case List(Ref(_, "n", _, _, _, _, _)) => ()
                     case other =>
                       fail(
-                        s"Expected println application in let body, got:\n${other
+                        s"Expected to_string argument to be Ref n, got:\n${other
                             .map(t => prettyPrintAst(t, 0, false, false))
                             .mkString("\n")}"
                       )

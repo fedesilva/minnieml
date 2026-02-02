@@ -1,0 +1,28 @@
+// Simple temporary test
+fn consume(s: String): Unit = println s;
+
+fn test1(): Unit =
+  consume (to_string 42)
+;
+
+fn test2(): Unit =
+  let s = concat (to_string 1) (to_string 2);
+  println s
+;
+
+fn test3(): Unit =
+  let part1 = to_string 1;
+  let part2 = to_string 2;
+  let s = concat (concat part1 part2) part1;
+  println s
+;
+
+fn main(): Unit =
+  println "Test 1: simple temp";
+  test1();
+  println "Test 2: concat temps";
+  test2();
+  println "Test 3: nested concat";
+  test3();
+  println "Done"
+;
