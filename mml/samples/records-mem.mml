@@ -1,0 +1,63 @@
+// Struct and Deep-Free Test
+// Run with: leaks --atExit -- ./build/target/structtest
+
+struct User { 
+  name: String, 
+  role: String 
+};
+
+// Helper to prevent optimizer from removing the struct usage
+fn consume_user(u: User): Unit =
+  // Access fields to ensure they are valid pointers
+  println (concat (concat u.name " is a ") u.role)
+;
+
+// 1. SCOPE CLEANUP TEST
+// We create a User struct with two heap strings.
+// When 'u' goes out of scope, the compiler must:
+// 1. Detect 'u' is a struct.
+// 2. Generate free(u.name).
+// 3. Generate free(u.role).
+fn test_struct_scope(n: Int): Unit =
+  let name_str = concat "User" (to_string n);
+  let role_str = concat "Admin" (to_string n);
+  
+  // Positional instantiation
+  let u = User name_str role_str;
+  
+  consume_user u
+  // <-- 'u' dies here. Implicitly must free its fields.
+;
+
+// 2. ANONYMOUS STRUCT TEST
+// We pass a struct directly to a function.
+// It is a temporary value.
+// It must be destroyed (and its fields freed) after the call returns.
+fn test_anon_struct(n: Int): Unit =
+  // Positional instantiation in expression
+  consume_user (User (to_string n) "Guest")
+;
+
+fn run_scope(n: Int): Unit =
+  if n != 0 then
+    test_struct_scope n;
+    run_scope (n - 1)
+  end
+;
+
+fn run_anon(n: Int): Unit =
+  if n != 0 then
+    test_anon_struct n;
+    run_anon (n - 1)
+  end
+;
+
+fn main(): Unit =
+  println "Testing Struct Field Cleanup...";
+  run_scope 100;
+
+  println "Testing Anonymous Struct Temporaries...";
+  run_anon 100;
+
+  println "Struct tests passed!"
+;
