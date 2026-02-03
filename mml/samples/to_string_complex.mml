@@ -6,6 +6,14 @@ fn make_test_results(): String =
       (concat "Large: " (to_string 1234567890))
     );
 
+fn loop(i: Int, to: Int): Unit = 
+  if i <= to then
+    println (make_test_results ());
+    loop (i+1) to
+  end
+;
+  
+
 fn main(): Unit =
-  println (make_test_results ())
+  loop 1 1000
 ;
