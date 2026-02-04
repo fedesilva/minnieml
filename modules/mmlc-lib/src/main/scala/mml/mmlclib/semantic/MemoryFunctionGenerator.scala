@@ -149,13 +149,14 @@ object MemoryFunctionGenerator:
 
   /** Build a `__clone_StructName` function for a user struct.
     *
-    * Generated pattern: {{{ fn __clone_User(u: User): User = __mk_User (__clone_String u.name)
-    * (__clone_String u.role) }}}
+    * Generated pattern: {{{fn __clone_User(s: User): User = __mk_User s.name s.role}}}
+    *
+    * Note: We just extract fields and pass to constructor. Constructor codegen handles cloning heap
+    * fields, so we avoid double-cloning.
     */
   private def mkCloneFunction(
-    struct:      TypeStruct,
-    moduleName:  String,
-    resolvables: ResolvablesIndex
+    struct:     TypeStruct,
+    moduleName: String
   ): Bnd =
     val structName = struct.name
     val fnName     = s"__clone_$structName"
@@ -188,32 +189,12 @@ object MemoryFunctionGenerator:
       typeSpec   = Some(constructorType)
     )
 
-    // Build arguments: for each field, either clone (if heap) or just access (if not)
+    // Build arguments: extract each field and pass to constructor
+    // Constructor codegen handles cloning heap fields, so we just pass field accesses
     val argExprs: List[Expr] = struct.fields.toList.map { field =>
-      val paramRef  = Ref(syntheticSpan, paramName, typeSpec = Some(structTypeRef))
-      val fieldRef  = Ref(syntheticSpan, field.name, qualifier = Some(paramRef))
-      val fieldExpr = Expr(syntheticSpan, List(fieldRef), typeSpec = Some(field.typeSpec))
-
-      TypeUtils.getTypeName(field.typeSpec) match
-        case Some(typeName) if TypeUtils.isHeapType(typeName, resolvables) =>
-          // Heap field - wrap with clone
-          TypeUtils.cloneFnFor(typeName, resolvables) match
-            case Some(cloneFnName) =>
-              val cloneFnRef = Ref(
-                syntheticSpan,
-                cloneFnName,
-                resolvedId = Some(s"stdlib::bnd::$cloneFnName"),
-                typeSpec   = Some(TypeFn(syntheticSpan, List(field.typeSpec), field.typeSpec))
-              )
-              val cloneApp =
-                App(syntheticSpan, cloneFnRef, fieldExpr, typeSpec = Some(field.typeSpec))
-              Expr(syntheticSpan, List(cloneApp), typeSpec = Some(field.typeSpec))
-            case None =>
-              // No clone function - just use field directly (shouldn't happen)
-              fieldExpr
-        case _ =>
-          // Non-heap field - use directly
-          fieldExpr
+      val paramRef = Ref(syntheticSpan, paramName, typeSpec = Some(structTypeRef))
+      val fieldRef = Ref(syntheticSpan, field.name, qualifier = Some(paramRef))
+      Expr(syntheticSpan, List(fieldRef), typeSpec = Some(field.typeSpec))
     }
 
     // Build constructor call: __mk_StructName arg1 arg2 ...
@@ -281,7 +262,7 @@ object MemoryFunctionGenerator:
       val generatedFns = structsNeedingMemFns.flatMap { struct =>
         List(
           mkFreeFunction(struct, moduleName, module.resolvables),
-          mkCloneFunction(struct, moduleName, module.resolvables)
+          mkCloneFunction(struct, moduleName)
         )
       }
 

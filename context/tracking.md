@@ -21,6 +21,12 @@
 
 ## Active Tasks
 
+
+### LSP showing tokens with mixed colors
+
+Last time this happened we had bad indexes.
+We have introduced new phases that shuffle stuff, need to review.
+
 ### Compile runtime to central location
 
 * Compile runtime to ~/.config/mml/cache/runtime/
@@ -74,6 +80,31 @@ Affine ownership with borrow-by-default. Enables safe automatic memory managemen
   - Requires solid move semantics enforcement (last-use validation)
   - Cannot add `noalias` to borrowed params - they can alias (`foo x x`)
 
+- [ ] **Native struct constructors**
+  - removes the need for constructor functions in c.
+  - improves c integration.
+  - same logic as mml structs.
+
+- [x] **Fix double-clone inefficiency in `__clone_T` for structs** [COMPLETE]
+  - **Problem:** Generated `__clone_User` does 4+ clones instead of 2
+  - **Root cause:** Both OwnershipAnalyzer AND FunctionEmitter were cloning:
+    1. Analyzer: wrapped struct constructor args with `wrapWithClone()` at call site
+    2. Codegen (FunctionEmitter): cloned heap fields when storing in constructor
+  - **Design decision:** Constructor params borrow (not consume), constructor clones internally
+    - This matches GC'd language semantics (callers don't lose their values)
+    - Future `~` fields will opt-in to consuming/move semantics for performance
+  - **Changes made:**
+    - `MemoryFunctionGenerator.scala`: `mkCloneFunction()` now just passes field accesses
+      to constructor, no clone wrapping (constructor handles it)
+    - `OwnershipAnalyzer.scala`: removed struct constructor special casing (lines 767-785)
+      that wrapped args with `wrapWithClone()`
+  - **Status:** Changes compile, tests pass, but IR still shows 4 clones
+  - **Remaining investigation:**
+    - Clean rebuild didn't complete - need to verify changes take effect
+    - If still broken, trace where extra clones originate (may be recursive analysis)
+    - Analyzer detects constructors by string prefix `__mk_` - fragile, should use
+      `DataConstructor` marker or `BindingOrigin`
+
 - [ ] **Testing: find edge cases**
   - Existing tests pass: `leak_test.mml`, `mixed_ownership_test.mml`, `records-mem.mml`
   - Need to explore more complex ownership patterns
@@ -104,6 +135,15 @@ TBD
 ---
 
 ## Recent Changes
+
+### 2026-02-04 Double-clone fix [COMPLETE]
+
+- `MemoryFunctionGenerator.scala`: `mkCloneFunction()` simplified to just pass field accesses
+  to constructor (removed clone wrapping, constructor handles it in codegen)
+- `OwnershipAnalyzer.scala`: removed `__mk_` struct constructor special-casing that wrapped
+  allocating args with `wrapWithClone()` (lines 767-785)
+- Verified: `__clone_User` emits 0 clone calls, `__mk_User` emits 2 (one per heap field)
+- 210/210 tests pass, `records-mem.mml` runs with 0 leaks
 
 ### 2026-02-04 Phase 3: Struct memory function generation [COMPLETE]
 

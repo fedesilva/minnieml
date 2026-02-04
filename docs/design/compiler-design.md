@@ -94,6 +94,14 @@ Expressions are built from terms:
 - **`Placeholder`**: Pattern matching placeholder `_`
 - **`Hole`**: Typed hole `???` (for incomplete code)
 
+#### Marker Nodes
+- **`DataConstructor`**: Marker node for struct constructor bodies. This is NOT a callable
+  function—it signals to codegen that the enclosing function should emit struct assembly
+  (alloca, store fields, load, return). The constructor's parameters become the field values.
+  Only appears as the sole term in a generated `__mk_StructName` function body.
+- **`DataDestructor`**: Vestigial marker, currently unused. Was planned for struct destructors
+  but the approach changed to generating `__free_T` as regular AST with `App` nodes.
+
 ### Type Specifications (`TypeSpec`)
 
 ```scala

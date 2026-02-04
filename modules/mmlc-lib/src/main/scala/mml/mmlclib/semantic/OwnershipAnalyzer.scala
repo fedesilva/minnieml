@@ -764,27 +764,10 @@ object OwnershipAnalyzer:
               // Collect allocating bindings (reverse order for proper nesting of let-bindings)
               val allocBindings = tempsAndArgs.flatMap(_._5).reverse
 
-              // Check if this is a struct constructor - if so, clone heap args (struct owns copies)
-              val isStructConstructor = baseFn match
-                case ref: Ref => ref.name.startsWith("__mk_")
-                case _ => false
+              // Note: struct constructors handle cloning internally (in FunctionEmitter),
+              // so we don't need to clone args at call site here.
 
-              // For struct constructors, wrap heap args with clone calls
-              val finalInnerApp =
-                if isStructConstructor then
-                  // Rebuild the App chain with cloned args for heap types
-                  tempsAndArgs.foldLeft(baseFn: Ref | App | Lambda) {
-                    case (accFn, (argExpr, s, tAsc, tSpec, Some((_, _, allocType)))) =>
-                      // This arg allocated - wrap with clone
-                      val clonedArg = wrapWithClone(argExpr, allocType)
-                      App(s, accFn, clonedArg, tAsc, tSpec)
-                    case (accFn, (argExpr, s, tAsc, tSpec, None)) =>
-                      // Non-allocating arg - use as-is
-                      App(s, accFn, argExpr, tAsc, tSpec)
-                  }
-                else innerApp
-
-              val finalInnerBody = Expr(syntheticSpan, List(finalInnerApp), typeSpec = typeSpec)
+              val finalInnerBody = Expr(syntheticSpan, List(innerApp), typeSpec = typeSpec)
 
               // Build structure with explicit free calls:
               // let tmp0 = arg0; let tmp1 = arg1; let result = inner; free tmp1; free tmp0; result
