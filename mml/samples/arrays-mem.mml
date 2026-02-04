@@ -1,0 +1,56 @@
+// Array Memory Test
+// Tests "Looping Destruction" logic in __free_StringArray
+// Run with: leaks --atExit -- ./build/target/arraysmem
+
+// 1. FILL
+// Fill the array with heap-allocated strings.
+// Note: We use temporaries (concat ...) passed directly to set.
+// This relies on the array taking ownership of the string buffer.
+fn fill_array(arr: StringArray, i: Int, n: Int): Unit =
+  if i < n then
+    // Allocates "Item <N>" on the heap
+    ar_str_set arr i (concat "Item " (to_string i));
+    fill_array arr (i + 1) n
+  end
+;
+
+// 2. SCOPE TEST
+// 'arr' is a local variable.
+// When it goes out of scope, the compiler must:
+// 1. Generate a loop from 0 to arr.length.
+// 2. Call __free_String(arr[i]) for each item.
+// 3. Call free(arr.data).
+fn test_array_scope(size: Int): Unit =
+  let arr = ar_str_new size;
+  
+  fill_array arr 0 size;
+  
+  // Optional: Print one to ensure data is valid before death
+  if size > 0 then
+    let first = ar_str_get arr 0;
+    // We don't print 'first' to avoid complicating the ownership trace 
+    // (copy vs move of 'first') for this specific test.
+    ()
+  end
+  
+  // <-- 'arr' dies here. Massive heap cleanup should trigger.
+;
+
+// 3. LOAD RUNNER
+// Run enough iterations to make leaks obvious in the memory report.
+fn run_test(n: Int): Unit =
+  if n > 0 then
+    // 500 strings * 24 bytes (struct) + heap buffers per iteration
+    test_array_scope 500;
+    run_test (n - 1)
+  end
+;
+
+fn main(): Unit =
+  println "Testing StringArray Looping Destructors...";
+  
+  // 1000 iterations * 500 items = 500,000 strings allocated and freed.
+  run_test 1000;
+  
+  println "Array tests passed!"
+;

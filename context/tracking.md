@@ -21,6 +21,9 @@
 
 ## Active Tasks
 
+### Compile runtime to central location
+
+* Compile runtime to ~/.config/mml/cache/runtime/
 
 ### Simple Memory Management Prototype
 
@@ -35,6 +38,11 @@ and unlocks `noalias` parameter attributes for LLVM optimization.
 - Extend `@native` with `[mem=alloc]` / `[mem=static]` attributes
 - New OwnershipAnalyzer phase inserts `__free_T` calls into AST
 - No codegen changes - just AST rewriting
+
+**check**
+
+array-mem.mml and why it fails for next steps
+
 
 **Progress:**
 
@@ -174,6 +182,16 @@ TBD
 ---
 
 ## Recent Changes
+
+### 2026-02-03
+
+- **Require LLD linker**: Added `ld.lld` to required LLVM tools and configured clang to use it.
+  - Added `ld.lld` to `llvmTools` list in `LlvmToolchain.scala`
+  - Added `-fuse-ld=lld` flag to `compileBinary` clang invocation
+  - Updated install instructions: `brew install llvm lld` (macOS), `apt-get install llvm clang lld` (Linux)
+  - LLD is a separate package on both platforms, not bundled with llvm
+  - Ran `sbtn "test; scalafmtAll; scalafixAll; mmlcPublishLocal"` (210/210 tests pass)
+  - Ran `mmlc clean && make -C benchmark clean && make -C benchmark mml` (all 7 benchmarks compile)
 
 ### 2026-02-02
 

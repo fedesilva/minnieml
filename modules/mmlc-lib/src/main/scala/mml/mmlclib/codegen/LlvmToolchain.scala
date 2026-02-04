@@ -46,7 +46,7 @@ enum LlvmCompilationError extends CompilationError derives CanEqual:
 object LlvmToolchain:
 
   /** List of required LLVM tools */
-  private val llvmTools = List("llvm-as", "llvm-link", "opt", "llc", "clang", "llvm-dis")
+  private val llvmTools = List("llvm-as", "llvm-link", "opt", "llc", "clang", "llvm-dis", "ld.lld")
 
   private type TimingRecorder = PipelineTiming => Unit
 
@@ -80,8 +80,8 @@ object LlvmToolchain:
     """
       |Installation instructions:
       |
-      |- macOS: brew install llvm
-      |- Ubuntu/Debian: apt-get install llvm clang
+      |- macOS: brew install llvm lld
+      |- Ubuntu/Debian: apt-get install llvm clang lld
       |
       |Make sure the tools are in your PATH.
     """.stripMargin
@@ -728,7 +728,7 @@ object LlvmToolchain:
 
     timedStep("llvm-compile-binary", recordTiming)(
       executeCommand(
-        (List("clang", "-target", targetTriple, s"-O${config.optLevel}") ++
+        (List("clang", "-target", targetTriple, "-fuse-ld=lld", s"-O${config.optLevel}") ++
           clangFlags ++ List(inputFile, "-o", finalExecutablePath)).mkString(" "),
         "Failed to compile and link",
         config.outputDir,

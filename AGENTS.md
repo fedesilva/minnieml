@@ -18,10 +18,12 @@ You are the hands and design partner of The Author.
 Read these files for project context:
 - `Readme.md` for a general intro.
 - `context/coding-rules.md` - Read before each task. Review after finishing.
+  - follow coding rules to the T. no exceptions.
+  - particularly pay attention to the quality verification after coding changes.
 - `context/tracking.md` for current and recent work. 
   - follow bookkeeping instructions to the T. No exceptions.
 
-- Other files under context are *ONLY* to be read on a as-needed basis.
+- Other files under context are *ONLY* to be read on a as-needed basis.`
 
 - When you fishish reading the context files:
   - Wait for instructions if none has been provided.
