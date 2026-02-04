@@ -18,7 +18,8 @@ case class CompilerConfig(
   outputName:      Option[String],
   printPhases:     Boolean,
   optLevel:        Int,
-  emitScopedAlias: Boolean
+  emitScopedAlias: Boolean,
+  asan:            Boolean
 )
 
 object CompilerConfig:
@@ -38,7 +39,8 @@ object CompilerConfig:
       outputName      = None,
       printPhases     = false,
       optLevel        = 3,
-      emitScopedAlias = false
+      emitScopedAlias = false,
+      asan            = false
     )
 
   def exe(
@@ -54,7 +56,8 @@ object CompilerConfig:
     outputName:      Option[String] = None,
     printPhases:     Boolean        = false,
     optLevel:        Int            = 3,
-    emitScopedAlias: Boolean        = false
+    emitScopedAlias: Boolean        = false,
+    asan:            Boolean        = false
   ): CompilerConfig =
     CompilerConfig(
       mode            = CompilationMode.Exe,
@@ -70,7 +73,8 @@ object CompilerConfig:
       outputName      = outputName,
       printPhases     = printPhases,
       optLevel        = optLevel,
-      emitScopedAlias = emitScopedAlias
+      emitScopedAlias = emitScopedAlias,
+      asan            = asan
     )
 
   def library(
@@ -86,7 +90,8 @@ object CompilerConfig:
     outputName:      Option[String] = None,
     printPhases:     Boolean        = false,
     optLevel:        Int            = 3,
-    emitScopedAlias: Boolean        = false
+    emitScopedAlias: Boolean        = false,
+    asan:            Boolean        = false
   ): CompilerConfig =
     CompilerConfig(
       mode            = CompilationMode.Library,
@@ -102,7 +107,8 @@ object CompilerConfig:
       outputName      = outputName,
       printPhases     = printPhases,
       optLevel        = optLevel,
-      emitScopedAlias = emitScopedAlias
+      emitScopedAlias = emitScopedAlias,
+      asan            = asan
     )
 
   def ast(
@@ -125,7 +131,8 @@ object CompilerConfig:
       outputName      = None,
       printPhases     = false,
       optLevel        = 0,
-      emitScopedAlias = false
+      emitScopedAlias = false,
+      asan            = false
     )
 
   def ir(
@@ -149,7 +156,8 @@ object CompilerConfig:
       outputName      = None,
       printPhases     = false,
       optLevel        = 0,
-      emitScopedAlias = false
+      emitScopedAlias = false,
+      asan            = false
     )
 
   def dev(
@@ -170,5 +178,6 @@ object CompilerConfig:
       outputName      = None,
       printPhases     = false,
       optLevel        = 0,
-      emitScopedAlias = false
+      emitScopedAlias = false,
+      asan            = false
     )

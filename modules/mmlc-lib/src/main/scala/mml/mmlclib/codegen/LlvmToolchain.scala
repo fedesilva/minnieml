@@ -53,6 +53,9 @@ object LlvmToolchain:
   private def clangStackProbeFlags(noStackCheck: Boolean): List[String] =
     if noStackCheck then List("-fno-stack-check") else Nil
 
+  private def clangAsanFlags(asan: Boolean): List[String] =
+    if asan then List("-fsanitize=address", "-fno-omit-frame-pointer") else Nil
+
   private def timedStep[A](
     name:         String,
     recordTiming: Option[TimingRecorder]
@@ -340,7 +343,7 @@ object LlvmToolchain:
     import cats.data.EitherT
 
     val programBitcode = outputDir.resolve(s"$programName.bc").toAbsolutePath.toString
-    val clangFlags     = clangStackProbeFlags(config.noStackCheck)
+    val clangFlags     = clangStackProbeFlags(config.noStackCheck) ++ clangAsanFlags(config.asan)
 
     (for
       _ <- EitherT(

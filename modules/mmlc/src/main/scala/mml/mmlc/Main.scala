@@ -39,7 +39,8 @@ object Main extends IOApp:
                     build.outputName,
                     build.printPhases,
                     build.optLevel,
-                    build.emitScopedAlias
+                    build.emitScopedAlias,
+                    build.asan
                   )
                 else
                   CompilerConfig.exe(
@@ -55,7 +56,8 @@ object Main extends IOApp:
                     build.outputName,
                     build.printPhases,
                     build.optLevel,
-                    build.emitScopedAlias
+                    build.emitScopedAlias,
+                    build.asan
                   )
               CompilerApi.processNative(path, cfg)
             }
@@ -77,7 +79,8 @@ object Main extends IOApp:
                 run.outputName,
                 run.printPhases,
                 run.optLevel,
-                run.emitScopedAlias
+                run.emitScopedAlias,
+                run.asan
               )
               CompilerApi.processRun(path, cfg)
             }

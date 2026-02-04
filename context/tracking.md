@@ -41,13 +41,10 @@ and unlocks `noalias` parameter attributes for LLVM optimization.
 - New OwnershipAnalyzer phase inserts `__free_T` calls into AST
 - No codegen changes - just AST rewriting
 
-**PRIORITY BUG: Use-after-free in temp wrapper**
+**PRIORITY BUG: Use-after-free in temp wrapper** [FIXED 2026-02-04]
 
-`records-mem.mml` crashes with use-after-free. Freeing args BEFORE they're used by the outer call.
-Example: `concat "User" (to_string n)` - frees `to_string n` result before `concat` reads it.
-
-Previous attempt to fix this caused stack overflow (infinite recursion in analyzeTerm).
-Stack overflow fixed with `skipTempWrapping` flag, but underlying use-after-free remains.
+Fixed by struct constructor ownership tracking. `bndAllocates` now recognizes `DataConstructor`
+terms returning heap types. `records-mem.mml` runs with 0 leaks.
 
 **check**
 
@@ -82,22 +79,14 @@ array-mem.mml and why it fails for next steps
   - [x] Insert `App(Ref("__free_T"), Ref(binding))` at scope end (CPS-style wrapping)
   - [x] Track type information for bindings to select correct `__free_T`
   - [x] Leak test passes: `mml/samples/leak_test.mml` shows 0 leaks with `leaks --atExit`
-  - [ ] **TODO: Expression temporary cleanup** (orphaned expressions) - PENDING REVIEW
+  - [x] **TODO: Expression temporary cleanup** (orphaned expressions) [COMPLETE 2026-02-04]
     - **Spec:** `context/specs/orphaned-expressions.md`
-    - **Done:**
-      - Added `tempCounter` to `OwnershipScope` for generating fresh `__tmp_N` names
-      - Added `syntheticSpan` for generated AST nodes (avoids semantic token conflicts)
-      - Modified regular App case to handle entire curried application chains at once
-      - Collects all args, identifies allocating ones, wraps with let-bindings
-      - Fixed double-free by only freeing bindings created in current scope (not inherited)
-      - Simple temps work: `consume (to_string 42)` - 0 leaks
-      - Curried temps work: `concat (to_string a) (to_string b)` - 0 leaks
-      - Updated `AppRewritingTests` to handle new AST structure with ownership wrappers
-    - **Remaining (300 leaks in test_temporaries.mml):**
-      - Nested allocating calls: `concat (concat p1 p2) p1` - inner concat result leaks
-      - Issue: when the result of an allocating call is used as an arg to another call,
-        the intermediate result isn't being wrapped (fn is App, not Ref)
-      - Need to detect when `fn` in App chain is itself an allocating call
+    - Added `tempCounter` to `OwnershipScope` for generating fresh `__tmp_N` names
+    - Added `syntheticSpan` for generated AST nodes (avoids semantic token conflicts)
+    - Modified regular App case to handle entire curried application chains at once
+    - Collects all args, identifies allocating ones, wraps with let-bindings
+    - Fixed double-free by only freeing bindings created in current scope (not inherited)
+    - `test_temporaries.mml` now passes with **0 leaks**
   - [ ] **TODO:** Implement move semantics for `~` consuming parameters (partial)
   - [x] **TODO 2A: Inline conditional ownership**
     - `termAllocates` now recurses into `Cond` branches and propagates Owned state when
@@ -223,9 +212,25 @@ Result: `let u = User name_str role_str` marked `u` as `Borrowed` instead of `Ow
 - `leaks --atExit` shows **0 leaks** (was 600)
 - All 7 benchmarks compile
 
-**Remaining TODO:**
-- Add ASAN flag to CompilerConfig
-- Re-enable ASAN with flag control
+### 2026-02-04 ASAN flag [COMPLETE]
+
+Added `--asan`/`-s` CLI flag to enable AddressSanitizer for memory error detection.
+
+**Changes:**
+- Added `asan: Boolean` field to `CompilerConfig` (default: false)
+- Added `asan: Boolean` to `Command.Build` and `Command.Run` in `CommandLineConfig`
+- Added `-s`/`--asan` CLI option
+- Added `clangAsanFlags()` helper in `LlvmToolchain` - emits `-fsanitize=address -fno-omit-frame-pointer`
+- Updated `clangFlags` construction to include ASAN flags when enabled
+
+**Verification:**
+- All 210 tests pass
+- `records-mem.mml` runs clean with ASAN (no memory errors)
+- Memory leak tests all pass (0 leaks):
+  - `to_string_complex.mml`
+  - `test_temporaries.mml`
+  - `test_unused_locals.mml`
+
 ### 2026-02-03
 
 - **Phase F: Remove `__cap` infrastructure**: Final cleanup eliminating runtime `__cap` discriminator.

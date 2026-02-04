@@ -22,7 +22,8 @@ object CommandLineConfig:
       printPhases:     Boolean        = false,
       optLevel:        Int            = 3,
       emitScopedAlias: Boolean        = false,
-      targetType:      String         = "exe"
+      targetType:      String         = "exe",
+      asan:            Boolean        = false
     )
     case Run(
       file:            Option[Path]   = None,
@@ -38,7 +39,8 @@ object CommandLineConfig:
       outputName:      Option[String] = None,
       printPhases:     Boolean        = false,
       optLevel:        Int            = 3,
-      emitScopedAlias: Boolean        = false
+      emitScopedAlias: Boolean        = false,
+      asan:            Boolean        = false
     )
     case Ast(
       file:      Option[Path] = None,
@@ -121,6 +123,9 @@ object CommandLineConfig:
 
     val emitScopedAliasOpt = opt[Unit]("emit-scoped-alias")
       .text("Emit scoped alias metadata (disabled by default)")
+
+    val asanOpt = opt[Unit]('s', "asan")
+      .text("Enable AddressSanitizer for memory error detection")
 
     val targetTypeOpt = opt[String]('x', "target-type")
       .validate(t =>
@@ -224,6 +229,12 @@ object CommandLineConfig:
         case _ => c
     )
 
+    def topLevelAsanOpt = asanOpt.action((_, c) =>
+      c.command match
+        case b: Command.Build => c.copy(command = b.copy(asan = true))
+        case _ => c
+    )
+
     // Run command (compile and execute)
     val runCommand =
       cmd("run")
@@ -311,6 +322,12 @@ object CommandLineConfig:
           emitScopedAliasOpt.action((_, config) =>
             config.copy(command = config.command match {
               case run: Command.Run => run.copy(emitScopedAlias = true)
+              case cmd => cmd
+            })
+          ),
+          asanOpt.action((_, config) =>
+            config.copy(command = config.command match {
+              case run: Command.Run => run.copy(asan = true)
               case cmd => cmd
             })
           )
@@ -484,6 +501,7 @@ object CommandLineConfig:
       topLevelPrintPhasesOpt,
       topLevelOptLevelOpt,
       topLevelEmitScopedAliasOpt,
+      topLevelAsanOpt,
       // Subcommands (override the default Build when matched)
       runCommand,
       astCommand,
