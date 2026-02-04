@@ -20,11 +20,12 @@ case class BindingInfo(
 
 /** Tracks ownership for bindings within a scope */
 case class OwnershipScope(
-  bindings:       Map[String, BindingInfo]  = Map.empty,
-  movedAt:        Map[String, SrcSpan]      = Map.empty,
-  resolvables:    ResolvablesIndex,
-  returningOwned: Map[String, Option[Type]] = Map.empty,
-  tempCounter:    Int                       = 0
+  bindings:        Map[String, BindingInfo]  = Map.empty,
+  movedAt:         Map[String, SrcSpan]      = Map.empty,
+  resolvables:     ResolvablesIndex,
+  returningOwned:  Map[String, Option[Type]] = Map.empty,
+  tempCounter:     Int                       = 0,
+  skipTempWrapping: Boolean                  = false
 ):
   def nextTemp: (String, OwnershipScope) =
     (s"__tmp_$tempCounter", copy(tempCounter = tempCounter + 1))
@@ -740,7 +741,7 @@ object OwnershipAnalyzer:
 
             val allocatingArgs = argsWithAlloc.filter(_._5.isDefined)
 
-            if allocatingArgs.isEmpty then
+            if allocatingArgs.isEmpty || scope.skipTempWrapping then
               // No allocating args - proceed with normal analysis
               val argResult                 = analyzeExpr(arg, scope)
               val (scopeAfterArg, fnErrors) = handleConsumingParam(fn, arg, argResult.scope)
@@ -758,15 +759,22 @@ object OwnershipAnalyzer:
               )
             else
               // Create temps for allocating args, build clean App chain, wrap with let-bindings
+              // IMPORTANT: Analyze allocating args BEFORE wrapping to prevent infinite recursion.
+              // If we put unanalyzed args in wrappers, analyzeTerm on the wrapper re-analyzes
+              // them, triggering temp-wrapping again (stack overflow).
               var currentScope = scope
+              var argErrors    = List.empty[SemanticError]
               val tempsAndArgs = argsWithAlloc.map { case (argExpr, s, tAsc, tSpec, allocOpt) =>
                 allocOpt match
                   case Some(allocType) =>
+                    // Analyze this arg NOW so it won't be re-wrapped later
+                    val argResult = analyzeExpr(argExpr, currentScope)
+                    argErrors = argErrors ++ argResult.errors
                     val (tmpName, newScope) = currentScope.nextTemp
                     currentScope = newScope
                     val tmpRef     = Ref(syntheticSpan, tmpName, typeSpec = Some(allocType))
                     val tmpRefExpr = Expr(syntheticSpan, List(tmpRef), typeSpec = Some(allocType))
-                    (tmpRefExpr, s, tAsc, tSpec, Some((tmpName, argExpr, allocType)))
+                    (tmpRefExpr, s, tAsc, tSpec, Some((tmpName, argResult.expr, allocType)))
                   case None =>
                     (argExpr, s, tAsc, tSpec, None)
               }
@@ -856,20 +864,21 @@ object OwnershipAnalyzer:
               // For analyzing the temp wrapper, mark inherited owned bindings as Borrowed.
               // This prevents them from being freed inside the wrapper - they'll be freed
               // by their owning scope. Temps have explicit frees so they're handled.
-              val borrowedScope = scope.ownedBindings.foldLeft(currentScope) {
-                case (s, (name, _, _, _)) => s.withBorrowed(name)
-              }
+              // Also set skipTempWrapping to prevent infinite recursion on analyzed args.
+              val borrowedScope = scope.ownedBindings
+                .foldLeft(currentScope) { case (s, (name, _, _, _)) => s.withBorrowed(name) }
+                .copy(skipTempWrapping = true)
 
               // The wrapped result is an Expr with a single App term
               wrappedExpr.terms match
                 case List(wrappedApp: App) =>
                   val result = analyzeTerm(wrappedApp, borrowedScope)
                   // Restore original scope's ownership state for outer context
-                  TermResult(scope, result.term, result.errors)
+                  TermResult(scope, result.term, argErrors ++ result.errors)
                 case _ =>
                   // Fallback - shouldn't happen
                   val result = analyzeExpr(wrappedExpr, borrowedScope)
-                  TermResult(scope, wrappedExpr.terms.head, result.errors)
+                  TermResult(scope, wrappedExpr.terms.head, argErrors ++ result.errors)
 
       case Cond(span, condExpr, ifTrue, ifFalse, typeSpec, typeAsc) =>
         // Analyze condition

@@ -39,6 +39,14 @@ and unlocks `noalias` parameter attributes for LLVM optimization.
 - New OwnershipAnalyzer phase inserts `__free_T` calls into AST
 - No codegen changes - just AST rewriting
 
+**PRIORITY BUG: Use-after-free in temp wrapper**
+
+`records-mem.mml` crashes with use-after-free. Freeing args BEFORE they're used by the outer call.
+Example: `concat "User" (to_string n)` - frees `to_string n` result before `concat` reads it.
+
+Previous attempt to fix this caused stack overflow (infinite recursion in analyzeTerm).
+Stack overflow fixed with `skipTempWrapping` flag, but underlying use-after-free remains.
+
 **check**
 
 array-mem.mml and why it fails for next steps
