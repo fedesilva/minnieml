@@ -275,8 +275,7 @@ private def emitValueBinding(bnd: Bnd, state: CodeGenState): Either[CodeGenError
     case List(term) =>
       term match {
         case lit: LiteralString =>
-          // Generate static String global: @a = global %String { i64 4, ptr @str.0, i64 -1 }
-          // __cap = -1 indicates static memory (don't free)
+          // Generate static String global: @a = global %String { i64 4, ptr @str.0 }
           val (newState, constName) = state.addStringConstant(lit.value)
           val llvmTypeE = bnd.typeSpec match {
             case Some(typeSpec) => getLlvmType(typeSpec, newState)
@@ -289,7 +288,7 @@ private def emitValueBinding(bnd: Bnd, state: CodeGenState): Either[CodeGenError
               )
           }
           llvmTypeE.map { llvmType =>
-            val staticValue = s"{ i64 ${lit.value.length}, ptr @$constName, i64 -1 }"
+            val staticValue = s"{ i64 ${lit.value.length}, ptr @$constName }"
             newState.emit(emitGlobalVariable(mangledName, llvmType, staticValue))
           }
 

@@ -160,12 +160,13 @@ array-mem.mml and why it fails for next steps
     - [x] D2: `leak_test.mml` works - 0 leaks with `leaks --atExit`
     - [x] D3: All benchmarks compile and run
 
-- [ ] **Phase 2.6: Eliminate `__cap` - Type-Level Memory Attributes**
+- [x] **Phase 2.6: Eliminate `__cap` - Type-Level Memory Attributes** [COMPLETE]
   - **Spec:** `context/specs/mem-no-cap.md`
-  - Replace hardcoded `heapTypes` set with `@native[mem=heap]` attribute
-  - Heap promotion for returns (clone static to heap, caller always owns)
-  - Sidecar booleans for local mixed ownership tracking
-  - Memory function generation phase (`__free_T` and `__clone_T`)
+  - [x] Replace hardcoded `heapTypes` set with `@native[mem=heap]` attribute
+  - [x] Memory function generation phase (`__free_T` and `__clone_T`)
+  - [x] Clone insertion for returns (static to heap promotion, caller always owns)
+  - [x] Sidecar booleans for local mixed ownership tracking
+  - [x] Remove `__cap` infrastructure (final cleanup)
 
 - [ ] **Phase 3: Struct Destructors**
   - [ ] Generate `__free_StructName` for user structs alongside `__mk_StructName`
@@ -175,8 +176,7 @@ array-mem.mml and why it fails for next steps
   - [x] Write test programs with allocations (`mml/samples/leak_test.mml`)
   - [x] Verify with `leaks --atExit` that leak count is 0 (passes for simple case)
   - [x] Write test for mixed conditional ownership (`mml/samples/mixed_ownership_test.mml`)
-    - Currently shows ~100 leaks from `test_heap` (TODO 2B). Inline conditional branch is
-      clean after TODO 2A fix. Static strings don't crash (proves `__cap` check works).
+    - 0 leaks after Phase 2.6 completion (clone promotion + sidecar booleans)
   - [ ] Find edge cases, iterate
 
 
@@ -191,6 +191,28 @@ TBD
 ## Recent Changes
 
 ### 2026-02-03
+
+- **Phase F: Remove `__cap` infrastructure**: Final cleanup eliminating runtime `__cap` discriminator.
+  - Removed `__cap` field from String, IntArray, StringArray structs in `semantic/package.scala`
+  - Removed `__cap` field from C runtime structs (String, IntArray, StringArray, BufferImpl)
+  - Removed `__cap > 0` checks from `__free_*` functions - now unconditionally free if data non-null
+  - Removed `__cap = -1` from string literal codegen (`Literals.scala`, `Module.scala`)
+  - String struct now 16 bytes (was 24): fits in registers, passed as `(i64, i8*)` on x86_64
+  - Updated `TbaaEmissionTest` and `FunctionSignatureTest` for new struct layout/ABI
+  - All 210 tests pass, 7 benchmarks compile, 0 memory leaks in mixed_ownership_test
+
+- **Phase E: Sidecar booleans for local mixed ownership**: Replaced runtime `__cap` checks with
+  compile-time ownership tracking for local variables with mixed allocation origins.
+  - Extended `BindingInfo` with `sidecar: Option[String]` field
+  - Extended `OwnershipScope` with `withMixedOwnership()` and `getSidecar()` helpers
+  - Added `detectMixedConditional()` - detects XOR allocation (one branch allocates, other doesn't)
+  - Added `mkSidecarConditional()` - generates `if cond then true else false` tracking bool
+  - Added `mkConditionalFree()` - generates `if __owns_x then __free_T x else ()`
+  - Modified `wrapWithFrees()` to emit conditional free for bindings with sidecars
+  - LLVM IR: sidecar compiles to `phi i1` at merge, conditional free to predicted branch
+  - Verified: `mixed_ownership_test.mml` runs with 0 leaks
+  - Ran `sbtn "test; scalafmtAll; scalafixAll; mmlcPublishLocal"` (210/210 tests pass)
+  - Ran `make -C benchmark clean && make -C benchmark mml` (all 7 benchmarks compile)
 
 - **Require LLD linker**: Added `ld.lld` to required LLVM tools and configured clang to use it.
   - Added `ld.lld` to `llvmTools` list in `LlvmToolchain.scala`

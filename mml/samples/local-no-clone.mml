@@ -1,0 +1,10 @@
+
+ fn cond(heap: Bool, n: Int): Unit =
+    let a = if heap then to_string n else "static" end;
+    println (concat "result: " a)
+  ;
+
+  fn main() =
+    cond true 42;
+    cond false 0
+  ;

@@ -280,17 +280,23 @@ fn __clone_Company(c: Company): Company =
 - Verified: All 210 tests pass, all 7 benchmarks compile, 0 memory leaks in mixed_ownership_test
 - LLVM IR shows `__clone_String` being called in static branches of mixed-allocation returns
 
-### Remaining
+**Phase E: Sidecar Booleans for Local Mixed Ownership (COMPLETED 2026-02-03)**
+- Extended `BindingInfo` with `sidecar: Option[String]` field
+- Extended `OwnershipScope` with `withMixedOwnership()` and `getSidecar()` helpers
+- Added `detectMixedConditional()` - detects XOR allocation in Cond branches
+- Added `mkSidecarConditional()` - generates `if cond then true else false` based on which branch allocates
+- Added `mkConditionalFree()` - generates `if __owns_x then __free_T x else ()`
+- Modified `wrapWithFrees()` to emit conditional free for bindings with sidecars
+- Modified App(Lambda) case to detect mixed conditionals and generate sidecar let-bindings
+- Verified: `mixed_ownership_test.mml` runs with 0 leaks, LLVM IR shows phi i1 for sidecar and conditional branch for free
 
-**Phase E: Sidecar Booleans for Local Mixed Ownership**
-- Track ownership at compile time for local conditionals
-- Generate `__owns_<varname>` sidecar booleans
-- Conditional free at scope end based on sidecar
-
-**Phase F: Remove `__cap` Infrastructure** (final cleanup after D+E proven)
-- Remove `__cap` field from struct definitions in `semantic/package.scala`
-- Update C runtime to remove `__cap` checks in free functions
-- Remove `__cap = -1` from string literals in `codegen/emitter/Literals.scala` and `Module.scala`
+**Phase F: Remove `__cap` Infrastructure (COMPLETED 2026-02-03)**
+- Removed `__cap` field from String, IntArray, StringArray struct definitions in `semantic/package.scala`
+- Updated C runtime: removed `__cap` field from structs, removed `__cap` checks in free functions
+- Removed `__cap = -1` from string literal codegen in `Literals.scala` and `Module.scala`
+- Updated tests in `TbaaEmissionTest.scala` and `FunctionSignatureTest.scala` for new 16-byte String layout
+- String ABI changed: 16 bytes now fits in registers (decomposed to `i64, i8*` on x86_64, `[2 x i64]` on aarch64)
+- Verified: All 210 tests pass, 7 benchmarks compile, 0 memory leaks
 
 ### Key Files Modified
 
@@ -303,3 +309,25 @@ fn __clone_Company(c: Company): Company =
 | `semantic/MemoryFunctionGenerator.scala` | NEW: generates `__free_T`/`__clone_T` for user structs |
 | `compiler/SemanticStage.scala` | Added MemoryFunctionGenerator to pipeline |
 | `mml_runtime.c` | Added `__clone_*` C implementations |
+
+---
+
+## Future Work
+
+### Custom Free Function Names for External Libraries
+
+Native types currently derive free function names by convention: `__free_<TypeName>`. This doesn't work for external C libraries that have their own destroy/drop/release functions.
+
+**Proposed:** Add optional `free_fn` attribute to `@native[mem=heap]`:
+
+```mml
+// Current: derives __free_Texture
+type Texture = @native[mem=heap] { id: Int, width: Int, height: Int };
+
+// Proposed: explicit free function
+type Texture = @native[mem=heap, free_fn="UnloadTexture"] { ... };
+type Font = @native[mem=heap, free_fn="UnloadFont"] { ... };
+type Sound = @native[mem=heap, free_fn="UnloadSound"] { ... };
+```
+
+This allows integrating with libraries like raylib, SDL, etc. that have their own resource management functions.

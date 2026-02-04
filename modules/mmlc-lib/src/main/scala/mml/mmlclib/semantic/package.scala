@@ -230,8 +230,7 @@ def injectBasicTypes(module: Module): Module =
           dummySpan,
           List(
             "length" -> stdlibTypeRef("Int64"),
-            "data" -> stdlibTypeRef("CharPtr"),
-            "__cap" -> stdlibTypeRef("Int64")
+            "data" -> stdlibTypeRef("CharPtr")
           ),
           memEffect = Some(MemEffect.Alloc)
         )
@@ -309,8 +308,7 @@ def injectBasicTypes(module: Module): Module =
           dummySpan,
           List(
             "length" -> stdlibTypeRef("Int64"),
-            "data" -> stdlibTypeRef("Int64Ptr"),
-            "__cap" -> stdlibTypeRef("Int64")
+            "data" -> stdlibTypeRef("Int64Ptr")
           ),
           memEffect = Some(MemEffect.Alloc)
         )
@@ -325,8 +323,7 @@ def injectBasicTypes(module: Module): Module =
           dummySpan,
           List(
             "length" -> stdlibTypeRef("Int64"),
-            "data" -> stdlibTypeRef("StringPtr"),
-            "__cap" -> stdlibTypeRef("Int64")
+            "data" -> stdlibTypeRef("StringPtr")
           ),
           memEffect = Some(MemEffect.Alloc)
         )

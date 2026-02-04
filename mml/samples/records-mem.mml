@@ -38,6 +38,29 @@ fn test_anon_struct(n: Int): Unit =
   consume_user (User (to_string n) "Guest")
 ;
 
+// 3. CONTROL FLOW STRUCT TEST
+// 'u' is initialized on two different paths.
+// Path A: 'name' is Heap, 'role' is Heap
+// Path B: 'name' is Static, 'role' is Static
+// The compiler must merge the ownership state of the fields at the end.
+fn test_mixed_struct(n: Int): Unit =
+  let u = if n > 50 then
+    User (to_string n) "DynamicRole" // Mixed or fully dynamic
+  else
+    User "StaticName" "StaticRole"   // Fully static
+  end;
+
+  consume_user u
+  // <-- Does the compiler track that 'u.name' might be static or dynamic here?
+;
+
+fn run_mixed(n:Int): Unit = 
+  if n != 0 then 
+    test_mixed_struct n;
+    run_mixed (n - 1)
+  end
+;
+
 fn run_scope(n: Int): Unit =
   if n != 0 then
     test_struct_scope n;
@@ -58,6 +81,9 @@ fn main(): Unit =
 
   println "Testing Anonymous Struct Temporaries...";
   run_anon 100;
+
+  println "Testing mixed struct ownership ...";
+  run_mixed 100;
 
   println "Struct tests passed!"
 ;

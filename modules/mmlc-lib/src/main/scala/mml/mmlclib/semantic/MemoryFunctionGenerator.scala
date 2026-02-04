@@ -38,11 +38,8 @@ object MemoryFunctionGenerator:
 
   /** Build a `__free_StructName` function for a user struct.
     *
-    * Generated pattern: {{{
-    * fn __free_User(~u: User): Unit =
-    *   let _ = __free_String u.name;
-    *   __free_String u.role
-    * }}}
+    * Generated pattern: {{{ fn __free_User(~u: User): Unit = let _ = __free_String u.name;
+    * __free_String u.role }}}
     */
   private def mkFreeFunction(
     struct:      TypeStruct,
@@ -99,7 +96,7 @@ object MemoryFunctionGenerator:
       if freeCalls.isEmpty then Expr(syntheticSpan, List(LiteralUnit(syntheticSpan)))
       else
         // Chain free calls with let _ = ...; pattern
-        val lastCall = freeCalls.last
+        val lastCall  = freeCalls.last
         val initCalls = freeCalls.init
 
         val innerBody = Expr(syntheticSpan, List(lastCall), typeSpec = Some(unitTypeRef))
@@ -152,10 +149,8 @@ object MemoryFunctionGenerator:
 
   /** Build a `__clone_StructName` function for a user struct.
     *
-    * Generated pattern: {{{
-    * fn __clone_User(u: User): User =
-    *   __mk_User (__clone_String u.name) (__clone_String u.role)
-    * }}}
+    * Generated pattern: {{{ fn __clone_User(u: User): User = __mk_User (__clone_String u.name)
+    * (__clone_String u.role) }}}
     */
   private def mkCloneFunction(
     struct:      TypeStruct,
@@ -224,12 +219,13 @@ object MemoryFunctionGenerator:
     // Build constructor call: __mk_StructName arg1 arg2 ...
     // Track the result type through each curried application
     val (constructorCall, _) =
-      argExprs.foldLeft((constructorRef: Ref | App | Lambda, constructorType)) { case ((fn, currType), arg) =>
-        val resultType = currType match
-          case TypeFn(_, _, ret) => ret
-          case other             => other
-        val app = App(syntheticSpan, fn, arg, typeSpec = Some(resultType))
-        (app, resultType)
+      argExprs.foldLeft((constructorRef: Ref | App | Lambda, constructorType)) {
+        case ((fn, currType), arg) =>
+          val resultType = currType match
+            case TypeFn(_, _, ret) => ret
+            case other => other
+          val app = App(syntheticSpan, fn, arg, typeSpec = Some(resultType))
+          (app, resultType)
       }
 
     val body = Expr(syntheticSpan, List(constructorCall), typeSpec = Some(structTypeRef))

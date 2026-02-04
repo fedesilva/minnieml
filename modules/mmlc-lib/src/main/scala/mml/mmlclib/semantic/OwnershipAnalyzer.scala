@@ -10,11 +10,12 @@ enum OwnershipState derives CanEqual:
   case Borrowed // Borrowed reference, caller does not own
   case Literal // Literal value, no ownership tracking needed
 
-/** Binding info: ownership state, type, and ID for selecting __free_T */
+/** Binding info: ownership state, type, ID for selecting __free_T, and optional sidecar boolean */
 case class BindingInfo(
   state:      OwnershipState,
   bindingTpe: Option[Type]   = None,
-  bindingId:  Option[String] = None
+  bindingId:  Option[String] = None,
+  sidecar:    Option[String] = None // Name of __owns_<binding> if mixed ownership
 )
 
 /** Tracks ownership for bindings within a scope */
@@ -29,6 +30,19 @@ case class OwnershipScope(
     (s"__tmp_$tempCounter", copy(tempCounter = tempCounter + 1))
   def withOwned(name: String, tpe: Option[Type], id: Option[String] = None): OwnershipScope =
     copy(bindings = bindings + (name -> BindingInfo(OwnershipState.Owned, tpe, id)))
+
+  def withMixedOwnership(
+    name:        String,
+    tpe:         Option[Type],
+    sidecarName: String,
+    id:          Option[String] = None
+  ): OwnershipScope =
+    copy(bindings =
+      bindings + (name -> BindingInfo(OwnershipState.Owned, tpe, id, Some(sidecarName)))
+    )
+
+  def getSidecar(name: String): Option[String] =
+    bindings.get(name).flatMap(_.sidecar)
 
   def withMoved(name: String, span: SrcSpan): OwnershipScope =
     val existing = bindings.get(name)
@@ -50,11 +64,12 @@ case class OwnershipScope(
 
   def getMovedAt(name: String): Option[SrcSpan] = movedAt.get(name)
 
-  /** Get all owned bindings that need to be freed, with their types and IDs */
-  def ownedBindings: List[(String, Option[Type], Option[String])] =
+  /** Get all owned bindings that need to be freed, with their types, IDs, and sidecars */
+  def ownedBindings: List[(String, Option[Type], Option[String], Option[String])] =
     bindings
       .collect:
-        case (name, BindingInfo(OwnershipState.Owned, tpe, id)) => (name, tpe, id)
+        case (name, BindingInfo(OwnershipState.Owned, tpe, id, sidecar)) =>
+          (name, tpe, id, sidecar)
       .toList
 
 /** Result of analyzing an expression */
@@ -312,12 +327,80 @@ object OwnershipAnalyzer:
     val argExpr = Expr(span, List(argRef), typeSpec = Some(tpe))
     App(span, fnRef, argExpr, typeSpec = unitType)
 
+  /** Check if an expression is a conditional with mixed allocation (one branch allocates, other
+    * doesn't). Returns Some((trueAllocates, allocType)) if mixed, None otherwise.
+    */
+  private def detectMixedConditional(expr: Expr, scope: OwnershipScope): Option[(Boolean, Type)] =
+    expr.terms.headOption.flatMap:
+      case Cond(_, _, ifTrue, ifFalse, _, _) =>
+        val trueAlloc  = exprAllocates(ifTrue, scope)
+        val falseAlloc = exprAllocates(ifFalse, scope)
+        // XOR: exactly one branch allocates
+        (trueAlloc, falseAlloc) match
+          case (Some(tpe), None) => Some((true, tpe))
+          case (None, Some(tpe)) => Some((false, tpe))
+          case _ => None
+      case _ => None
+
+  /** Create a sidecar conditional: `if cond then true else false` or `if cond then false else true`
+    * depending on which branch allocates.
+    */
+  private def mkSidecarConditional(
+    originalCond:  Cond,
+    trueAllocates: Boolean
+  ): Cond =
+    val boolType = Some(TypeRef(syntheticSpan, "Bool", Some("stdlib::typedef::Bool"), Nil))
+    val trueLit  = LiteralBool(syntheticSpan, true)
+    val falseLit = LiteralBool(syntheticSpan, false)
+
+    val (ifTrueExpr, ifFalseExpr) =
+      if trueAllocates then
+        (
+          Expr(syntheticSpan, List(trueLit), typeSpec  = boolType),
+          Expr(syntheticSpan, List(falseLit), typeSpec = boolType)
+        )
+      else
+        (
+          Expr(syntheticSpan, List(falseLit), typeSpec = boolType),
+          Expr(syntheticSpan, List(trueLit), typeSpec  = boolType)
+        )
+
+    Cond(syntheticSpan, originalCond.cond, ifTrueExpr, ifFalseExpr, boolType, boolType)
+
+  /** Create a conditional free: if __owns_x then __free_T x else () */
+  private def mkConditionalFree(
+    bindingName: String,
+    tpe:         Type,
+    sidecarName: String,
+    span:        SrcSpan,
+    bindingId:   Option[String],
+    resolvables: ResolvablesIndex
+  ): Cond =
+    val boolType = Some(TypeRef(span, "Bool", Some("stdlib::typedef::Bool"), Nil))
+    val unitType = Some(TypeRef(span, "Unit", Some("stdlib::typedef::Unit"), Nil))
+
+    // Condition: reference to the sidecar boolean
+    val sidecarRef  = Ref(span, sidecarName, typeSpec = boolType)
+    val sidecarExpr = Expr(span, List(sidecarRef), typeSpec = boolType)
+
+    // Then branch: __free_T x
+    val freeCall     = mkFreeCall(bindingName, tpe, span, bindingId, resolvables)
+    val freeCallExpr = Expr(span, List(freeCall), typeSpec = unitType)
+
+    // Else branch: ()
+    val unitLit     = LiteralUnit(span)
+    val unitLitExpr = Expr(span, List(unitLit), typeSpec = unitType)
+
+    Cond(span, sidecarExpr, freeCallExpr, unitLitExpr, unitType, unitType)
+
   /** Wrap an expression with CPS-style free calls. Transforms: `expr` into
     * `let __r = expr; let _ = free1; let _ = free2; __r`
+    *
+    * For bindings with sidecars, generates conditional free: `if __owns_x then __free_T x else ()`
     */
   private def wrapWithFrees(
     expr:        Expr,
-    toFree:      List[(String, Option[Type], Option[String])],
+    toFree:      List[(String, Option[Type], Option[String], Option[String])],
     span:        SrcSpan,
     resolvables: ResolvablesIndex
   ): Expr =
@@ -339,16 +422,24 @@ object OwnershipAnalyzer:
 
     // Fold free calls from right to left, building:
     // let _ = freeN; ... let _ = free1; __r
+    // For bindings with sidecars, generate conditional free instead
     val withFrees = toFree.foldRight(innermost): (binding, acc) =>
-      val (name, tpeOpt, id) = binding
+      val (name, tpeOpt, id, sidecarOpt) = binding
       tpeOpt match
         case Some(tpe) =>
-          val freeCall = mkFreeCall(name, tpe, span, id, resolvables)
+          val freeOrCondFree: Term = sidecarOpt match
+            case Some(sidecarName) =>
+              // Conditional free: if __owns_x then __free_T x else ()
+              mkConditionalFree(name, tpe, sidecarName, span, id, resolvables)
+            case None =>
+              // Unconditional free
+              mkFreeCall(name, tpe, span, id, resolvables)
+
           val discardParam =
             FnParam(span, "_", typeSpec = unitType, typeAsc = unitType)
           val discardLam =
             Lambda(span, List(discardParam), acc, Nil, typeSpec = resultType)
-          val freeAppExpr = Expr(span, List(freeCall), typeSpec = unitType)
+          val freeAppExpr = Expr(span, List(freeOrCondFree), typeSpec = unitType)
           Expr(span, List(App(span, discardLam, freeAppExpr, typeSpec = resultType)))
         case None => acc
 
@@ -365,20 +456,20 @@ object OwnershipAnalyzer:
     val cloneFnName = s"__clone_$typeName"
     val cloneFnId   = Some(s"stdlib::bnd::$cloneFnName")
     val cloneFnType = Some(TypeFn(syntheticSpan, List(tpe), tpe))
-    val cloneFnRef  = Ref(syntheticSpan, cloneFnName, resolvedId = cloneFnId, typeSpec = cloneFnType)
-    val cloneApp    = App(syntheticSpan, cloneFnRef, expr, typeSpec = Some(tpe))
+    val cloneFnRef = Ref(syntheticSpan, cloneFnName, resolvedId = cloneFnId, typeSpec = cloneFnType)
+    val cloneApp   = App(syntheticSpan, cloneFnRef, expr, typeSpec = Some(tpe))
     Expr(syntheticSpan, List(cloneApp), typeSpec = Some(tpe))
 
   /** Promote static branches to heap when function returns heap type.
     *
-    * When a function returns a heap type and its body is a conditional where one branch allocates and
-    * the other doesn't, wrap the non-allocating branch with __clone_T. This ensures the caller always
-    * owns the returned value and can unconditionally free it.
+    * When a function returns a heap type and its body is a conditional where one branch allocates
+    * and the other doesn't, wrap the non-allocating branch with __clone_T. This ensures the caller
+    * always owns the returned value and can unconditionally free it.
     */
   private def promoteStaticBranchesInReturn(
-    expr:        Expr,
-    returnType:  Option[Type],
-    scope:       OwnershipScope
+    expr:       Expr,
+    returnType: Option[Type],
+    scope:      OwnershipScope
   ): Expr =
     // Only apply to heap return types
     val typeName = returnType.flatMap(getTypeName)
@@ -392,7 +483,7 @@ object OwnershipAnalyzer:
         (trueAlloc, falseAlloc) match
           case (Some(_), None) =>
             // True allocates, false is static - clone false branch
-            val cloned = wrapWithClone(ifFalse, returnType.getOrElse(ifFalse.typeSpec.get))
+            val cloned  = wrapWithClone(ifFalse, returnType.getOrElse(ifFalse.typeSpec.get))
             val newCond = Cond(span, condExpr, ifTrue, cloned, typeSpec, typeAsc)
             expr.copy(terms = expr.terms.init :+ newCond)
           case (None, Some(_)) =>
@@ -509,8 +600,24 @@ object OwnershipAnalyzer:
             // Check if arg is an allocating expression
             val allocType = arg.terms.headOption.flatMap(termAllocates(_, scope))
 
-            // Set up scope for lambda body - first param gets ownership if allocating
-            val bodyScope = params.headOption match
+            // Check if arg is a MIXED conditional (one branch allocates, other doesn't)
+            val mixedCond = detectMixedConditional(arg, scope)
+
+            // Set up scope for lambda body - handle mixed conditionals specially
+            val (bodyScope, sidecarOpt) = params.headOption match
+              case Some(param) if mixedCond.isDefined =>
+                // Mixed conditional: generate sidecar boolean for compile-time tracking
+                val (trueAllocates, allocTpe) = mixedCond.get
+                val sidecarName               = s"__owns_${param.name}"
+                val originalCond              = arg.terms.head.asInstanceOf[Cond]
+                val sidecarCond               = mkSidecarConditional(originalCond, trueAllocates)
+                val boolType =
+                  Some(TypeRef(syntheticSpan, "Bool", Some("stdlib::typedef::Bool"), Nil))
+                val sidecarExpr = Expr(syntheticSpan, List(sidecarCond), typeSpec = boolType)
+                val scopeWithSidecar = argResult.scope
+                  .withMixedOwnership(param.name, Some(allocTpe), sidecarName, param.id)
+                  .withLiteral(sidecarName) // sidecar is bool, no cleanup needed
+                (scopeWithSidecar, Some((sidecarName, sidecarExpr, boolType)))
               case Some(param) if allocType.isDefined =>
                 val paramTypeName =
                   param.typeSpec
@@ -520,18 +627,20 @@ object OwnershipAnalyzer:
                   allocType.filter(t => getTypeName(t).exists(isHeapType(_, scope.resolvables)))
                 val owns =
                   allocHeap.filter(t => paramTypeName.forall(_ == getTypeName(t).getOrElse("")))
-                owns
+                val newScope = owns
                   .map(t => argResult.scope.withOwned(param.name, Some(t), param.id))
                   .getOrElse(argResult.scope.withBorrowed(param.name))
+                (newScope, None)
               case Some(param) =>
                 // Non-allocating: check if it's a literal or borrowed
-                arg.terms.headOption match
+                val newScope = arg.terms.headOption match
                   case Some(_: LiteralString) =>
                     argResult.scope.withLiteral(param.name)
                   case _ =>
                     argResult.scope.withBorrowed(param.name)
+                (newScope, None)
               case None =>
-                argResult.scope
+                (argResult.scope, None)
 
             // Analyze the lambda body with the updated scope
             val bodyResult = analyzeExpr(body, bodyScope)
@@ -547,26 +656,63 @@ object OwnershipAnalyzer:
             // Free all owned bindings at terminal body. Double-free is prevented by:
             // 1. Explicit __free_* calls mark their args as Moved (via consuming param)
             // 2. Temp wrappers mark inherited bindings as Borrowed (see borrowedScope below)
+            // 3. Bindings with sidecars are excluded here - handled separately below
+            // For bindings with sidecars, generates conditional free at this point
+            val sidecarBinding = sidecarOpt.flatMap(_ => params.headOption.map(_.name))
             val bindingsToFree =
               if isTerminalBody then
                 bodyResult.scope.ownedBindings.filter:
-                  case (name, Some(tpe), _) =>
+                  case (name, Some(tpe), _, _) =>
                     !escaping.contains(name) &&
+                    !sidecarBinding.contains(name) && // Exclude sidecar binding - handled below
                     getTypeName(tpe).exists(isHeapType(_, scope.resolvables))
                   case _ => false
               else Nil
 
             // Wrap body in CPS-style free sequence:
             // let result = <body>; let _ = free x; result
-            val newBody =
+            // For bindings with sidecars: if __owns_x then __free_T x else ()
+            val bodyWithTerminalFrees =
               if bindingsToFree.isEmpty then bodyResult.expr
               else wrapWithFrees(bodyResult.expr, bindingsToFree, body.span, scope.resolvables)
 
+            // If we have a sidecar, wrap the body (inside the let) with conditional free
+            // Structure: let __owns_x = <cond>; let x = <val>; <body>; if __owns_x then free x; result
+            val newBody = sidecarOpt match
+              case Some((sidecarName, _, _)) =>
+                // Get the binding's type from the param
+                val bindingName = params.headOption.map(_.name).getOrElse("")
+                val bindingType = params.headOption.flatMap(p => p.typeSpec.orElse(p.typeAsc))
+                val bindingId   = params.headOption.flatMap(_.id)
+
+                bindingType match
+                  case Some(tpe) if getTypeName(tpe).exists(isHeapType(_, scope.resolvables)) =>
+                    // Generate: let __r = <body>; if __owns_x then free x else (); __r
+                    val toFree = List((bindingName, Some(tpe), bindingId, Some(sidecarName)))
+                    wrapWithFrees(bodyWithTerminalFrees, toFree, body.span, scope.resolvables)
+                  case _ =>
+                    bodyWithTerminalFrees
+              case None =>
+                bodyWithTerminalFrees
+
             val newLambda = Lambda(lSpan, params, newBody, captures, lTypeSpec, lTypeAsc, meta)
+            val innerApp  = App(span, newLambda, argResult.expr, typeAsc, typeSpec)
+
+            // If we have a sidecar, wrap with: let __owns_x = <sidecar_cond>; <innerApp>
+            val finalTerm = sidecarOpt match
+              case Some((sidecarName, sidecarExpr, boolType)) =>
+                val sidecarParam =
+                  FnParam(syntheticSpan, sidecarName, typeSpec = boolType, typeAsc = boolType)
+                val innerAppExpr = Expr(syntheticSpan, List(innerApp), typeSpec = typeSpec)
+                val sidecarLambda =
+                  Lambda(syntheticSpan, List(sidecarParam), innerAppExpr, Nil, typeSpec = typeSpec)
+                App(syntheticSpan, sidecarLambda, sidecarExpr, typeSpec = typeSpec)
+              case None =>
+                innerApp
 
             TermResult(
               scope, // Lambda application doesn't change outer scope
-              App(span, newLambda, argResult.expr, typeAsc, typeSpec),
+              finalTerm,
               errors = argResult.errors ++ bodyResult.errors
             )
 
@@ -630,10 +776,31 @@ object OwnershipAnalyzer:
                 case (accFn, (argExpr, s, tAsc, tSpec, _)) =>
                   App(s, accFn, argExpr, tAsc, tSpec)
               }
-              val innerBody = Expr(syntheticSpan, List(innerApp), typeSpec = typeSpec)
 
               // Collect allocating bindings (reverse order for proper nesting of let-bindings)
               val allocBindings = tempsAndArgs.flatMap(_._5).reverse
+
+              // Check if this is a struct constructor - if so, clone heap args (struct owns copies)
+              val isStructConstructor = baseFn match
+                case ref: Ref => ref.name.startsWith("__mk_")
+                case _        => false
+
+              // For struct constructors, wrap heap args with clone calls
+              val finalInnerApp =
+                if isStructConstructor then
+                  // Rebuild the App chain with cloned args for heap types
+                  tempsAndArgs.foldLeft(baseFn: Ref | App | Lambda) {
+                    case (accFn, (argExpr, s, tAsc, tSpec, Some((_, _, allocType)))) =>
+                      // This arg allocated - wrap with clone
+                      val clonedArg = wrapWithClone(argExpr, allocType)
+                      App(s, accFn, clonedArg, tAsc, tSpec)
+                    case (accFn, (argExpr, s, tAsc, tSpec, None)) =>
+                      // Non-allocating arg - use as-is
+                      App(s, accFn, argExpr, tAsc, tSpec)
+                  }
+                else innerApp
+
+              val finalInnerBody = Expr(syntheticSpan, List(finalInnerApp), typeSpec = typeSpec)
 
               // Build structure with explicit free calls:
               // let tmp0 = arg0; let tmp1 = arg1; let result = inner; free tmp1; free tmp0; result
@@ -670,7 +837,7 @@ object OwnershipAnalyzer:
                 Lambda(syntheticSpan, List(resultParam), withFrees, Nil, typeSpec = resultType)
               val withResult = Expr(
                 syntheticSpan,
-                List(App(syntheticSpan, resultLam, innerBody, typeSpec = resultType)),
+                List(App(syntheticSpan, resultLam, finalInnerBody, typeSpec = resultType)),
                 typeSpec = resultType
               )
 
@@ -690,7 +857,7 @@ object OwnershipAnalyzer:
               // This prevents them from being freed inside the wrapper - they'll be freed
               // by their owning scope. Temps have explicit frees so they're handled.
               val borrowedScope = scope.ownedBindings.foldLeft(currentScope) {
-                case (s, (name, _, _)) => s.withBorrowed(name)
+                case (s, (name, _, _, _)) => s.withBorrowed(name)
               }
 
               // The wrapped result is an Expr with a single App term

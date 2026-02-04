@@ -21,21 +21,21 @@ class FunctionSignatureTest extends BaseEffFunSuite:
     compileAndGenerate(source, config = config).map { llvmIr =>
 
       // Native functions keep original names (declarations)
-      // String is now 24 bytes (3 fields: length, data, __cap), passed via byval pointer on x86_64
+      // String is now 16 bytes (2 fields: length, data), decomposed to (i64, i8*) on x86_64 SysV ABI
       assert(
-        llvmIr.contains("declare void @debug_print(ptr byval(%struct.String) align 8)"),
-        "debug_print declaration"
+        llvmIr.contains("declare void @debug_print(i64, i8*)"),
+        s"debug_print declaration, got:\n$llvmIr"
       )
       assert(
-        llvmIr.contains("declare void @log_message(ptr byval(%struct.String) align 8)"),
-        "log_message declaration"
+        llvmIr.contains("declare void @log_message(i64, i8*)"),
+        s"log_message declaration, got:\n$llvmIr"
       )
-      // join_strings returns String (>16 bytes) so uses sret on x86_64
+      // join_strings: two String params (each decomposed) + struct return
       assert(
         llvmIr.contains(
-          "declare void @join_strings(ptr sret(%struct.String) align 8, ptr byval(%struct.String) align 8, ptr byval(%struct.String) align 8)"
+          "declare %struct.String @join_strings(i64, i8*, i64, i8*)"
         ),
-        "join_strings declaration with sret"
+        s"join_strings declaration, got:\n$llvmIr"
       )
       // User main is mangled with module prefix
       assert(llvmIr.contains("define void @test_main()"), "user main definition")
@@ -59,29 +59,27 @@ class FunctionSignatureTest extends BaseEffFunSuite:
       CompilerConfig.exe("build", targetTriple = Some("aarch64-apple-macosx"))
 
     compileAndGenerate(source, config = config).map { llvmIr =>
-      // String is 24 bytes (3 fields: length, data, __cap), >16 bytes so passed
-      // indirectly via plain pointer on aarch64 (AAPCS64: composites >16 bytes).
-      // Note: Unlike x86_64, AAPCS64 does NOT use byval - the pointer is passed
-      // directly and the callee reads from it (caller-allocated copy).
+      // String is 16 bytes (2 fields: length, data), lowered to [2 x i64] for register passing
+      // (AAPCS64: composites <=16 bytes can be passed in registers)
       assert(
-        llvmIr.contains("declare void @debug_print(ptr)"),
-        s"debug_print should use plain ptr param on aarch64, got:\n$llvmIr"
+        llvmIr.contains("declare void @debug_print([2 x i64])"),
+        s"debug_print should use [2 x i64] param on aarch64, got:\n$llvmIr"
       )
       assert(
-        llvmIr.contains("declare void @log_message(ptr)"),
-        s"log_message should use plain ptr param on aarch64, got:\n$llvmIr"
+        llvmIr.contains("declare void @log_message([2 x i64])"),
+        s"log_message should use [2 x i64] param on aarch64, got:\n$llvmIr"
       )
-      // join_strings returns String (>16 bytes) so uses sret on aarch64
+      // join_strings returns String (16 bytes) - returned as struct, params as [2 x i64]
       assert(
         llvmIr.contains(
-          "declare void @join_strings(ptr sret(%struct.String) align 8, ptr, ptr)"
+          "declare %struct.String @join_strings([2 x i64], [2 x i64])"
         ),
-        s"join_strings should use sret + plain ptr params on aarch64, got:\n$llvmIr"
+        s"join_strings should return struct directly on aarch64, got:\n$llvmIr"
       )
     }
   }
 
-  test("aarch64 native calls with String struct args use indirect pointer") {
+  test("aarch64 native calls with String struct args use flattened array") {
     val source =
       """
         fn debug_print (a: String): Unit = @native;
@@ -92,11 +90,10 @@ class FunctionSignatureTest extends BaseEffFunSuite:
       CompilerConfig.exe("build", targetTriple = Some("aarch64-apple-macosx"))
 
     compileAndGenerate(source, config = config).map { llvmIr =>
-      // 24-byte struct should be passed via alloca + store + plain ptr on aarch64
-      // (no byval - AAPCS64 passes indirect structs as plain pointers)
+      // 16-byte struct is lowered to [2 x i64] for register passing on aarch64
       assert(
-        llvmIr.contains("call void @debug_print(ptr %"),
-        s"expected plain ptr call site on aarch64 in:\n$llvmIr"
+        llvmIr.contains("call void @debug_print([2 x i64] %"),
+        s"expected [2 x i64] call site on aarch64 in:\n$llvmIr"
       )
     }
   }

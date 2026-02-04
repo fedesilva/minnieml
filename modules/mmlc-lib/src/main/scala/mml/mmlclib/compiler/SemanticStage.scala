@@ -22,7 +22,7 @@ object SemanticStage:
         .timePhase("semantic", "expression-rewriter")(ExpressionRewriter.rewriteModule)
       |> CompilerState.timePhase("semantic", "simplifier")(Simplifier.rewriteModule)
       |> CompilerState.timePhase("semantic", "type-checker")(TypeChecker.rewriteModule)
-      |> CompilerState.timePhase("semantic", "memory-function-generator")(
+      |> CompilerState.timePhase("semantic", "mem-fn-gen")(
         MemoryFunctionGenerator.rewriteModule
       )
       |> CompilerState.timePhase("semantic", "resolvables-indexer")(

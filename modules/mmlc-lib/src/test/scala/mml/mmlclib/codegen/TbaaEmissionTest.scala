@@ -44,8 +44,8 @@ class TbaaEmissionTest extends BaseEffFunSuite:
       assert(llvmIr.contains("!{!\"CharPtr\""), "Missing CharPtr TBAA node")
 
       // Verify struct node references MML types with correct offsets
-      // String has 3 fields: length (Int64 @ 0), data (CharPtr @ 8), __cap (Int64 @ 16)
-      val stringMatch = """!\{!"String", !(\d+), i64 0, !(\d+), i64 8, !(\d+), i64 16\}""".r
+      // String has 2 fields: length (Int64 @ 0), data (CharPtr @ 8)
+      val stringMatch = """!\{!"String", !(\d+), i64 0, !(\d+), i64 8\}""".r
       assert(
         stringMatch.findFirstIn(llvmIr).isDefined,
         s"String TBAA should reference MML types with offsets. TBAA:\n${llvmIr.split("\n").filter(_.startsWith("!")).mkString("\n")}"
