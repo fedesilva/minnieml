@@ -27,12 +27,16 @@
 * add an `init` subcommand to clean and recompile the runtime.
 * update tooling to find the runtime where it's compiled.
 
+### Mem Management Harness
+
+tbd
+
 ### Simple Memory Management Prototype
 
 **Doc:** `docs/brainstorming/mem/1-simple-mem-prototype.md`
 **Plan:** `context/specs/mem-plan.md`
 
-Linear ownership with borrow-by-default. Enables safe automatic memory management
+Affine ownership with borrow-by-default. Enables safe automatic memory management
 and unlocks `noalias` parameter attributes for LLVM optimization.
 
 **Key points:**
@@ -273,7 +277,7 @@ Added `--asan`/`-s` CLI flag to enable AddressSanitizer for memory error detecti
   - Remove `preExistingOwned` filter; all owned bindings freed at terminal body
   - `test_temporaries.mml`: 0 leaks (was 300+), all memory tests pass
 
-- **Memory prototype current state**: Linear ownership with borrow-by-default functional for
+- **Memory prototype current state**: Affine ownership with borrow-by-default functional for
   String, Buffer, IntArray, StringArray. `OwnershipAnalyzer` tracks ownership states, detects
   allocating calls (native `MemEffect.Alloc` + intramodule fixed-point for user functions),
   inserts `__free_T` via CPS rewriting. Runtime `__cap` field discriminates static vs heap.

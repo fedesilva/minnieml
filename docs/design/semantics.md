@@ -7,7 +7,8 @@ This document describes the semantics of the MinnieML language: its syntax, type
 2. [Type System](#2-type-system)
 3. [Operator System](#3-operator-system)
 4. [Semantic Rules](#4-semantic-rules)
-5. [Error Categories](#5-error-categories)
+5. [Memory Management](#5-memory-management)
+6. [Error Categories](#6-error-categories)
 
 ---
 
@@ -348,9 +349,103 @@ fn pow(x: Float, y: Float): Float = @native[tpl="call float @llvm.pow.f32(float 
 
 The codegen prepends `%result =` to the template automatically.
 
+### Memory Effects on Native Functions
+
+Native functions that allocate memory can be annotated with `[mem=alloc]`:
+
+```mml
+fn readline(): String = @native[mem=alloc];
+fn concat(a: String, b: String): String = @native[mem=alloc];
+fn to_string(n: Int): String = @native[mem=alloc];
+```
+
+**Memory effect attributes**:
+- `[mem=alloc]` — Function allocates new memory. Caller owns the return value.
+- `[mem=static]` — Function returns a pointer to static/existing memory. Caller does not own it.
+- *None* — Default. No memory effect, caller does not own the return.
+
+These attributes can be combined with templates: `@native[mem=alloc, tpl="..."]`
+
+### Consuming Parameters
+
+Parameters can be marked as *consuming* with the `~` prefix in declarations:
+
+```mml
+fn take_ownership(~s: String): Unit = ...;
+```
+
+**Rules**:
+- `~` appears only in the declaration, not at call sites
+- A consuming parameter transfers ownership from caller to callee
+- The caller must not use the value after passing it to a consuming parameter
+- Consuming parameters in partial applications are not allowed
+
 ---
 
-## 5. Error Categories
+## 5. Memory Management
+
+MML uses affine ownership with borrow-by-default semantics for automatic memory management.
+
+### Ownership Model
+
+Each heap-allocated value has exactly one owner. By default, function calls borrow values
+(caller retains ownership). Ownership can be transferred using consuming parameters.
+
+**Ownership rules**:
+- Values returned by allocating functions (`[mem=alloc]`) are owned by the caller
+- Passing a value to a regular parameter borrows it; the caller retains ownership
+- Passing a value to a consuming parameter (`~`) transfers ownership to the callee
+- Using a value after its ownership was transferred is an error
+- Owned values are automatically freed when they go out of scope
+
+### Heap Types
+
+A type is heap-allocated if declared with `[mem=heap]`:
+
+```mml
+type String = @native[mem=heap] { length: Int64, data: CharPtr };
+type Buffer = @native[mem=heap, t=*i8];
+```
+
+User-defined structs are heap types if they contain any heap-typed fields:
+
+```mml
+struct User { name: String, age: Int };  // Heap type (contains String)
+struct Point { x: Int, y: Int };         // Not a heap type
+```
+
+### Ownership Examples
+
+```mml
+fn example(): Unit =
+  let s = readline();    // s is owned (readline allocates)
+  println s;             // println borrows s
+  println s;             // s can be used again (still owned)
+  // s is automatically freed at scope end
+
+fn transfer_example(): Unit =
+  let s = readline();
+  consume_string s;      // If consume_string takes ~s, ownership transfers
+  // println s;          // ERROR: use after move
+```
+
+### Return Value Ownership
+
+Functions returning heap types transfer ownership to the caller:
+
+```mml
+fn make_greeting(name: String): String =
+  concat "Hello, " name   // Caller owns the returned string
+
+fn main(): Unit =
+  let greeting = make_greeting "World";
+  println greeting;
+  // greeting is freed here
+```
+
+---
+
+## 6. Error Categories
 
 ### Semantic Errors
 
@@ -378,3 +473,11 @@ Application errors:
 Conditional errors:
 - **`ConditionalBranchTypeMismatch`**: `if` branches have different types
 - **`ConditionalGuardTypeMismatch`**: Condition is not `Bool`
+
+### Ownership Errors
+
+Errors related to memory ownership:
+- **`UseAfterMove`**: Using a binding after its ownership was transferred
+- **`ConsumingParamNotLastUse`**: Consuming parameter requires the argument to be its last use
+- **`PartialApplicationWithConsuming`**: Cannot partially apply a function with consuming parameters
+- **`ConditionalOwnershipMismatch`**: Conditional branches have incompatible ownership states

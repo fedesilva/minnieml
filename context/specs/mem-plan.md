@@ -1,6 +1,6 @@
 # Memory Management Prototype Implementation Plan
 
-Linear ownership with borrow-by-default. Insert `__free_T` calls as standard `App` nodes.
+Affine ownership with borrow-by-default. Insert `__free_T` calls as standard `App` nodes.
 No codegen changes needed.
 
 ## Implementation Phases

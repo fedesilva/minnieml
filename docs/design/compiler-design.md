@@ -222,8 +222,10 @@ captured via `CompilerState.timePhase`/`timePhaseIO`.
 5. **ExpressionRewriter**
 6. **Simplifier**
 7. **TypeChecker**
-8. **ResolvablesIndexer**
-9. **TailRecursionDetector**
+8. **MemoryFunctionGenerator**
+9. **ResolvablesIndexer**
+10. **TailRecursionDetector**
+11. **OwnershipAnalyzer**
 
 ---
 
@@ -452,6 +454,69 @@ Generation section below.
 
 ---
 
+### Semantic Phase 8: MemoryFunctionGenerator
+
+**Purpose**: Generate `__free_T` and `__clone_T` functions for user-defined structs with heap fields.
+
+**Behavior**:
+- Scans module for `TypeStruct` declarations
+- For each struct with heap fields, generates:
+  - `__free_StructName(~s: StructName): Unit` — calls `__free_*` on each heap field
+  - `__clone_StructName(s: StructName): StructName` — calls `__clone_*` on heap fields,
+    passes non-heap fields directly to constructor
+- Native heap types (String, Buffer, IntArray, StringArray) have memory functions in the C runtime
+
+**AST Changes**:
+- Adds generated `Bnd` members to the module
+- Updates `resolvables` index with new function IDs
+
+---
+
+### Semantic Phase 11: OwnershipAnalyzer
+
+**Purpose**: Track ownership of heap-allocated values and insert `__free_*` calls.
+
+**Ownership States**:
+- `Owned` — Caller owns the value, must free at scope end
+- `Moved` — Ownership transferred, caller must not use
+- `Borrowed` — Lent to callee, caller retains ownership
+- `Literal` — Static memory, never freed
+
+**Key Behaviors**:
+
+1. **Allocation Detection**: Identifies allocating calls via:
+   - `NativeImpl.memEffect = Alloc`
+   - Intramodule fixed-point analysis for user functions returning heap values
+   - Struct constructors (`__mk_*`) for structs with heap fields
+
+2. **Free Insertion**: Uses CPS-style AST rewriting at scope end:
+   ```
+   let x = alloc(); body  →  let x = alloc(); let __r = body; __free_T x; __r
+   ```
+
+3. **Expression Temporaries**: Allocating args not bound to variables get synthetic bindings:
+   ```
+   f (alloc())  →  let __tmp = alloc(); let __r = f __tmp; __free_T __tmp; __r
+   ```
+
+4. **Mixed Ownership Conditionals**: When branches differ in allocation, generates sidecar boolean:
+   ```
+   let s = if c then alloc() else "lit"
+   →
+   let __owns_s = if c then true else false;
+   let s = if c then alloc() else "lit";
+   // at scope end: if __owns_s then __free_T s else ()
+   ```
+
+5. **Return Escape**: Bindings escaping via return are not freed; ownership transfers to caller.
+   Static branches in mixed returns are wrapped with `__clone_T`.
+
+**Errors Reported**:
+- `UseAfterMove`, `ConsumingParamNotLastUse`, `PartialApplicationWithConsuming`,
+  `ConditionalOwnershipMismatch`
+
+---
+
 ## 9. Standard Library Injection
 
 NOTE: This is a stopgap solution until we get library support.
@@ -617,9 +682,11 @@ flowchart TD
     RR --> ER[ExpressionRewriter]
     ER --> S[Simplifier]
     S --> TC[TypeChecker]
-    TC --> RI[ResolvablesIndexer]
+    TC --> MFG[MemoryFunctionGenerator]
+    MFG --> RI[ResolvablesIndexer]
     RI --> TRD[TailRecursionDetector]
-    TRD --> VAL[Pre-Codegen Validation]
+    TRD --> OA[OwnershipAnalyzer]
+    OA --> VAL[Pre-Codegen Validation]
     VAL --> RT[Resolve Triple]
     RT --> LI[Llvm Info]
     LI --> EM[Emit LLVM IR]
@@ -639,7 +706,7 @@ flowchart TD
 - **ast/**: `AstNode.scala` (AST definitions)
 - **parser/**: `Parser.scala`, `MmlWhitespace.scala`
 - **compiler/**: `IngestStage.scala`, `SemanticStage.scala`, `CodegenStage.scala`, `Compilation.scala`, `FileOperations.scala`
-- **semantic/**: Phase implementations (`ParsingErrorChecker`, `DuplicateNameChecker`, `IdAssigner`, `TypeResolver`, `RefResolver`, `ExpressionRewriter`, `Simplifier`, `TypeChecker`, `ResolvablesIndexer`, `TailRecursionDetector`) plus stdlib injection in `package.scala`
+- **semantic/**: Phase implementations (`ParsingErrorChecker`, `DuplicateNameChecker`, `IdAssigner`, `TypeResolver`, `RefResolver`, `ExpressionRewriter`, `Simplifier`, `TypeChecker`, `MemoryFunctionGenerator`, `ResolvablesIndexer`, `TailRecursionDetector`, `OwnershipAnalyzer`) plus stdlib injection in `package.scala`
 - **codegen/**: `LlvmIrEmitter.scala`, `LlvmToolchain.scala`, `emitter/*`
 - **api/**: `ParserApi.scala`, `SemanticApi.scala`, `FrontEndApi.scala`, `CompilerApi.scala`, `CodeGenApi.scala`, `NativeEmitterApi.scala`
 - **lsp/**: LSP server, diagnostics, document manager
@@ -652,7 +719,7 @@ flowchart TD
 The MML compiler flows through staged pipelines:
 
 1. **IngestStage**: Parse source, collect parser counters, lift parse errors.
-2. **SemanticStage**: Stdlib injection → DuplicateNameChecker → IdAssigner → TypeResolver → RefResolver → ExpressionRewriter → Simplifier → TypeChecker → ResolvablesIndexer → TailRecursionDetector.
+2. **SemanticStage**: Stdlib injection → DuplicateNameChecker → IdAssigner → TypeResolver → RefResolver → ExpressionRewriter → Simplifier → TypeChecker → MemoryFunctionGenerator → ResolvablesIndexer → TailRecursionDetector → OwnershipAnalyzer.
 3. **CodegenStage**: Pre-codegen validation → resolve target triple/CPU → gather LLVM tool info → emit LLVM IR → write IR → native compilation.
 
 Each phase:

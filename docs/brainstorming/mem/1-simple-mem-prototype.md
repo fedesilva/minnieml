@@ -189,15 +189,15 @@ f 42
 ```
 
 *Rationale:* Closures are typically callable multiple times (`FnMany`), but a closure that
-owns a linear resource must be `FnOnce`. Banning this sidesteps linear closure types for now.
+owns an affine resource must be `FnOnce`. Banning this sidesteps affine closure types for now.
 
 ---
 
 ## Ownership Model
 
-### Linear Types Lite
+### Affine Types Lite
 
-For the prototype, assume linear ownership with **Borrow by Default**:
+For the prototype, assume affine ownership with **Borrow by Default**:
 - Each heap value has exactly one owner
 - Function calls **borrow** by default (caller retains ownership)
 - Consuming parameters are marked with `~` in declarations; call sites stay bare
@@ -425,8 +425,8 @@ rewriting phase.
 5. **Error messages?**
    A: "Cannot use `s` after passing to `concat` - ownership was transferred"
 
-6. **Linearity Ergonomics**
-   Strict linearity might be rigid. How do we make "use-after-move" errors friendly?
+6. **Affine Ergonomics**
+   Strict affine typing might be rigid. How do we make "use-after-move" errors friendly?
    A: Borrow-by-default helps — consuming params are explicit in declarations, not at call sites.
 
 7. **Static vs Heap Safety** ✓ *Resolved by Runtime Capacity (`__cap` field)*
