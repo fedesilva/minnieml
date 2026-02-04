@@ -48,9 +48,10 @@ fn run_test(n: Int): Unit =
 
 fn main(): Unit =
   println "Testing StringArray Looping Destructors...";
-  
   // 1000 iterations * 500 items = 500,000 strings allocated and freed.
   run_test 1000;
   
   println "Array tests passed!"
 ;
+
+

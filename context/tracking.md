@@ -25,19 +25,15 @@
 
 * Compile runtime to ~/.config/mml/cache/runtime/
 * add an `init` subcommand to clean and recompile the runtime.
+    - or run the init code if it's not been ran when we first compile something 
 * update tooling to find the runtime where it's compiled.
-
-### Mem Management Harness
-
-tbd
 
 ### Simple Memory Management Prototype
 
 **Doc:** `docs/brainstorming/mem/1-simple-mem-prototype.md`
-**Plan:** `context/specs/mem-plan.md`
+**QA:** `context/specs/qa-mem.md`
 
-Affine ownership with borrow-by-default. Enables safe automatic memory management
-and unlocks `noalias` parameter attributes for LLVM optimization.
+Affine ownership with borrow-by-default. Enables safe automatic memory management.
 
 **Key points:**
 - Borrow by default, explicit move with `~` syntax
@@ -45,143 +41,59 @@ and unlocks `noalias` parameter attributes for LLVM optimization.
 - New OwnershipAnalyzer phase inserts `__free_T` calls into AST
 - No codegen changes - just AST rewriting
 
-**PRIORITY BUG: Use-after-free in temp wrapper** [FIXED 2026-02-04]
 
-Fixed by struct constructor ownership tracking. `bndAllocates` now recognizes `DataConstructor`
-terms returning heap types. `records-mem.mml` runs with 0 leaks.
+**Remaining:**
 
-**check**
+- [ ] **Fix `arrays-mem.mml` double-free** — missing `consuming` on `ar_str_set`
+  - **Root cause:** `ar_str_set` stores the String in the array (takes ownership) but
+    the `value` param lacks `consuming = true`, so ownership analyzer inserts a free
+    after the call. Later `__free_StringArray` frees the same strings → double-free.
+  - **Fix:** Add `consuming = true` to `value` param in `ar_str_set` (package.scala:749)
 
-array-mem.mml and why it fails for next steps
+- [ ] **@native type annotations: explicit deallocation function**
+  - Currently assumes `__free_<TypeName>` by naming convention
+  - Make explicit: `@native[mem=heap, free=__free_String]`
+  - Only for @native types; MML structs generate free functions automatically
 
+- [ ] **`noalias` on allocating function returns** — can do now
+  - Return values from `[mem=alloc]` functions are fresh allocations
+  - Safe to mark with `noalias` - can't alias anything pre-existing
 
-**Progress:**
+- [ ] **Move semantics for `~` consuming parameters** (partial)
+  - **Done:**
+    - `~param` syntax parsing
+    - `consuming` flag on `FnParam`
+    - Use-after-move detection and error reporting
+    - `__free_*` params marked consuming (freed bindings become Moved)
+  - **Missing:**
+    - Partial application ban (consuming params must be in saturating calls)
+    - Last-use validation (arg to `~` param must be final use of that binding)
 
-- [x] **Phase 0: AST & Infrastructure**
-  - [x] Added `MemEffect` enum (Alloc, Static) to `ast/terms.scala`
-  - [x] Extended `NativeImpl` with `memEffect: Option[MemEffect]` field
-  - [x] Added `consuming: Boolean` flag to `FnParam` in `ast/common.scala`
-  - [x] Added `DataDestructor` term (for future struct destructor generation)
-  - [x] Modified `mkFn` helper in `semantic/package.scala` to accept `MemEffect`
-  - [x] Tagged allocating functions with `MemEffect.Alloc`: readline, concat, to_string, mkBuffer*, ar_*_new, read_line_fd
-  - [x] Added `__free_*` functions to stdlib: __free_String, __free_Buffer, __free_IntArray, __free_StringArray
-  - [x] Added runtime free functions to `mml_runtime.c`
-  - [x] Updated pretty printers for new AST nodes
+- [ ] **`noalias` on consuming parameters** — needs move semantics first
+  - `~` params can be `noalias` because caller can't use the value afterward
+  - Requires solid move semantics enforcement (last-use validation)
+  - Cannot add `noalias` to borrowed params - they can alias (`foo x x`)
 
-- [x] **Phase 1: Parser Support**
-  - [x] Extended `nativeImplP` for `[mem=alloc]` / `[mem=static]` syntax
-  - [x] Added `~` prefix parsing for consuming parameters in `fnParamP`
+- [ ] **Testing: find edge cases**
+  - Existing tests pass: `leak_test.mml`, `mixed_ownership_test.mml`, `records-mem.mml`
+  - Need to explore more complex ownership patterns
 
-- [ ] **Phase 2: OwnershipAnalyzer** (in progress)
-  - [x] Created `OwnershipAnalyzer.scala` with basic structure
-  - [x] Added `OwnershipState` enum (Owned, Moved, Borrowed, Literal)
-  - [x] Added `OwnershipScope` with `BindingInfo` tracking state, type, and ID
-  - [x] Added ownership errors to `SemanticError`: UseAfterMove, ConsumingParamNotLastUse, PartialApplicationWithConsuming, ConditionalOwnershipMismatch
-  - [x] Integrated into `SemanticStage.scala` pipeline
-  - [x] Basic use-after-move detection working
-  - [x] Detect `App` calls with `MemEffect.Alloc` and mark bindings as Owned
-  - [x] Insert `App(Ref("__free_T"), Ref(binding))` at scope end (CPS-style wrapping)
-  - [x] Track type information for bindings to select correct `__free_T`
-  - [x] Leak test passes: `mml/samples/leak_test.mml` shows 0 leaks with `leaks --atExit`
-  - [x] **TODO: Expression temporary cleanup** (orphaned expressions) [COMPLETE 2026-02-04]
-    - **Spec:** `context/specs/orphaned-expressions.md`
-    - Added `tempCounter` to `OwnershipScope` for generating fresh `__tmp_N` names
-    - Added `syntheticSpan` for generated AST nodes (avoids semantic token conflicts)
-    - Modified regular App case to handle entire curried application chains at once
-    - Collects all args, identifies allocating ones, wraps with let-bindings
-    - Fixed double-free by only freeing bindings created in current scope (not inherited)
-    - `test_temporaries.mml` now passes with **0 leaks**
-  - [ ] **TODO:** Implement move semantics for `~` consuming parameters (partial)
-  - [x] **TODO 2A: Inline conditional ownership**
-    - `termAllocates` now recurses into `Cond` branches and propagates Owned state when
-      either branch allocates.
-    - Mixed inline conditional in `mixed_ownership_test.mml` no longer leaks; frees are
-      inserted for heap branch while static branch remains safe via `__cap`.
-  - [x] **TODO 2B: Function return ownership** (cross-scope allocation / escape analysis)
-    - Implemented intramodule fixed-point to mark functions whose return values originate from
-      heap allocations (direct native alloc or via other returning functions) and treat their
-      calls as allocating at call sites.
-    - Ownership frees exclude bindings that escape via return; prevents double-free in callees and
-      ensures caller frees returned heaps.
-    - Added regression test `OwnershipAnalyzerTests` to verify caller frees value returned from
-      allocating helper while callee does not free returned ownership.
-
-- [x] **Phase 2.5: Runtime `__cap` field**
-  - **Problem:** `__free_*` functions don't check if memory is static vs heap.
-    Freeing a static string literal would crash. Currently "works" because
-    literals get `Literal` state and are never freed, but mixed conditionals
-    like `if cond then "static" else readline()` would fail.
-  - **Solution:** Add `__cap` field to all heap types:
-    - `__cap > 0` = heap allocated, safe to free
-    - `__cap == -1` = static memory, don't free
-  - [x] **Phase A: C Runtime Updates** (`mml_runtime.c`)
-    - [x] A1: Update `__free_*` functions to check `__cap > 0` before freeing
-    - [x] A2: Update allocation functions to set `__cap`:
-      - [x] `ar_int_new()` - add `__cap = size`
-      - [x] `ar_str_new()` - add `__cap = size`
-      - [x] `to_string()` - add `__cap = buffer_size`
-      - [x] `substring()` - add `__cap = new_length + 1`
-      - [x] `read_line_fd()` - add `__cap = allocated_size`
-      - [x] `mkBuffer()` - add `__cap = 8192`
-      - [x] `mkBufferWithFd()` - add `__cap = 4096`
-      - [x] `mkBufferWithSize()` - add `__cap = actual_size`
-  - [x] **Phase B: MML Type Definitions** (`semantic/package.scala`)
-    - [x] B1: Add `__cap` field to String type
-    - [x] B2: Add `__cap` field to IntArray type
-    - [x] B3: Add `__cap` field to StringArray type
-  - [x] **Phase C: Codegen Updates for String Literals**
-    - [x] C1: Update local string literal emission (`Literals.scala`) - store `__cap = -1`
-    - [x] C2: Update global string literal emission (`Module.scala`) - add `__cap = -1` to struct
-  - [x] **Phase C2: x86_64 ABI Fix for Parameters**
-    - **Cause:** Adding `__cap` changed String from 16 bytes to 24 bytes
-    - **Effect:** x86_64 ABI threshold crossed - structs >16 bytes need `byval` (stack pointer)
-      instead of register passing. MML was passing in registers, C expected stack pointer → segfault
-    - [x] Added `LargeStructByval` rule in `abis/x86_64/LargeStructByval.scala`
-    - [x] Emits `ptr byval(%struct.T) align 8` for structs >16 bytes
-    - [x] Allocates struct on stack at call sites, passes pointer
-  - [x] **Phase C3: x86_64 ABI Fix for Return Values (sret)**
-    - **Cause:** Functions returning large structs (>16 bytes) need `sret` calling convention.
-      C expects caller to pass hidden first pointer where return value is written.
-      MML was trying to receive return value in registers → segfault on `read_line_fd`, etc.
-    - [x] Added `needsSretReturn()` and `lowerNativeReturnType()` in `AbiLowering.scala`
-    - [x] Updated `Module.scala` to emit `void` return + `sret` param in declarations
-    - [x] Updated `Applications.scala` to allocate space, call with sret, load result
-    - [x] Updated `FunctionSignatureTest.scala` for new expected signatures
-  - [ ] **TODO: AArch64 large-struct ABI parity (post b07afb2 review)**
-    - Detect AArch64 HFA (≤4 floats/doubles) structs and skip indirect lowering so they stay in SIMD
-      registers per AAPCS64; avoid regressing interop with C/Swift HFAs.
-    - Add regression tests under `FunctionSignatureTest` for HFA params/returns (e.g., 3x double, 4x
-      float) comparing emitted IR against clang.
-    - Audit `needsSretReturn` and `LargeStructIndirect` usage to ensure HFAs never take the indirect
-      path.
-  - [x] **TODO: AArch64 large-struct param attributes** [COMPLETE 2026-02-02]
-    - Fixed: `LargeStructIndirect` now emits plain `ptr` (not `byval`) to match clang AAPCS64.
-    - Updated `FunctionSignatureTest` to assert plain `ptr` for aarch64 large struct params.
-    - Verified cross-compiled binaries run correctly on aarch64 hardware.
-  - [x] **Phase D: Testing**
-    - [x] D1: `hello.mml` works
-    - [x] D2: `leak_test.mml` works - 0 leaks with `leaks --atExit`
-    - [x] D3: All benchmarks compile and run
-
-- [x] **Phase 2.6: Eliminate `__cap` - Type-Level Memory Attributes** [COMPLETE]
-  - **Spec:** `context/specs/mem-no-cap.md`
-  - [x] Replace hardcoded `heapTypes` set with `@native[mem=heap]` attribute
-  - [x] Memory function generation phase (`__free_T` and `__clone_T`)
-  - [x] Clone insertion for returns (static to heap promotion, caller always owns)
-  - [x] Sidecar booleans for local mixed ownership tracking
-  - [x] Remove `__cap` infrastructure (final cleanup)
-
-- [ ] **Phase 3: Struct Destructors**
-  - [ ] Generate `__free_StructName` for user structs alongside `__mk_StructName`
-  - [ ] Handle `DataDestructor` in codegen to free heap-allocated fields
-
-- [ ] **Phase 4: Testing**
-  - [x] Write test programs with allocations (`mml/samples/leak_test.mml`)
-  - [x] Verify with `leaks --atExit` that leak count is 0 (passes for simple case)
-  - [x] Write test for mixed conditional ownership (`mml/samples/mixed_ownership_test.mml`)
-    - 0 leaks after Phase 2.6 completion (clone promotion + sidecar booleans)
-  - [ ] Find edge cases, iterate
-
+- [ ] **Memory test harness** — similar to benchmark infrastructure
+  - **Approach:**
+    1. Compile and run each sample with `--asan` (AddressSanitizer)
+       - Detects: double-free, use-after-free, buffer overflows
+    2. Compile and run without ASAN, check with `leaks --atExit --`
+       - Detects: memory leaks
+  - **Samples:** `mml/samples/mem/`
+    - `test_unused_locals.mml`
+    - `test_temporaries.mml`
+    - `test_leaks.mml`
+    - `records-mem.mml`
+    - `to_string_complex.mml`
+  - **Infrastructure:**
+    - Makefile or script to run both ASAN and leaks passes
+    - Fail on any ASAN error or non-zero leak count
+    - Report summary of results
 
 
 ### Runtime: time functions
@@ -192,6 +104,25 @@ TBD
 ---
 
 ## Recent Changes
+
+### 2026-02-04 Phase 3: Struct memory function generation [COMPLETE]
+
+**Summary:** `MemoryFunctionGenerator` phase generates `__free_T` and `__clone_T` functions for
+user-defined structs that contain heap-allocated fields.
+
+**Implementation:**
+- New file `semantic/MemoryFunctionGenerator.scala`
+- `mkFreeFunction()` - generates `__free_StructName` that calls `__free_T` on each heap field
+- `mkCloneFunction()` - generates `__clone_StructName` that deep-copies heap fields via `__clone_T`
+- Integrated into `SemanticStage.scala` pipeline (runs after TypeChecker, before ResolvablesIndexer)
+- Free function params marked `consuming = true` for move semantics
+
+**Note:** Original plan called for `DataDestructor` term in codegen. Approach changed to generate
+free functions as regular AST (App nodes). No codegen changes needed; `DataDestructor` is vestigial.
+
+**Verification:**
+- `records-mem.mml` runs with 0 leaks (structs with String fields properly freed)
+- All tests pass
 
 ### 2026-02-04 Struct constructor ownership tracking [COMPLETE]
 

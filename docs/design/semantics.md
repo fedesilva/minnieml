@@ -414,6 +414,22 @@ struct User { name: String, age: Int };  // Heap type (contains String)
 struct Point { x: Int, y: Int };         // Not a heap type
 ```
 
+### Struct Construction
+
+Struct constructors **clone** their arguments. For heap-typed fields, the constructor
+calls `__clone_T` to deep-copy the value. The caller retains ownership of the original.
+
+```mml
+fn example(): Unit =
+  let name = readline();       // name is owned
+  let user = User name 25;     // Constructor clones name
+  println name;                // OK: caller still owns name
+  println user.name;           // OK: user owns its own copy
+  // Both name and user.name freed at scope end
+```
+
+This means struct construction always allocates fresh copies of heap-typed fields.
+
 ### Ownership Examples
 
 ```mml
