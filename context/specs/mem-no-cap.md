@@ -251,3 +251,55 @@ fn __clone_Company(c: Company): Company =
 - `docs/brainstorming/mem/1-simple-mem-prototype.md` - Original design
 - `context/specs/mem-plan.md` - Implementation plan
 - `context/tracking.md` - Phase 2.5 `__cap` implementation details
+
+---
+
+## Implementation Progress (2026-02-03)
+
+### Completed
+
+**Phase A+B: Type-Level Memory Attributes + Replace hardcoded heapTypes**
+- Added `memEffect: Option[MemEffect]` field to `NativePrimitive`, `NativePointer`, `NativeStruct` in `ast/types.scala`
+- Extended parser in `parser/types.scala` to handle `@native[mem=heap]` syntax
+- Updated stdlib type definitions in `semantic/package.scala` with `memEffect = Some(MemEffect.Alloc)` for String, Buffer, IntArray, StringArray
+- Replaced hardcoded `heapTypes` set with `isHeapType()` in `OwnershipAnalyzer.scala` that queries type attributes dynamically
+- Added `findTypeByName()` helper to resolve types by name across different ID formats
+- All 210 tests pass
+
+**Phase C: Memory Function Generation**
+- Added `__clone_String`, `__clone_Buffer`, `__clone_IntArray`, `__clone_StringArray` to C runtime (`mml_runtime.c`)
+- Added clone function declarations to stdlib (`semantic/package.scala`)
+- Created `MemoryFunctionGenerator.scala` - generates `__free_T` and `__clone_T` for user structs with heap fields
+- Added `MemoryFunctionGenerator` to `SemanticStage.scala` pipeline (after TypeChecker, before resolvables-indexer)
+- All 210 tests pass, all 7 benchmarks compile, 0 memory leaks
+
+**Phase D: Clone Insertion for Returns (COMPLETED 2026-02-03)**
+- Added `wrapWithClone()` helper function in `OwnershipAnalyzer.scala`
+- Added `promoteStaticBranchesInReturn()` - detects mixed allocation in conditionals and wraps static branches with `__clone_T`
+- Updated Lambda case in `analyzeTerm` to call clone insertion on function bodies
+- Verified: All 210 tests pass, all 7 benchmarks compile, 0 memory leaks in mixed_ownership_test
+- LLVM IR shows `__clone_String` being called in static branches of mixed-allocation returns
+
+### Remaining
+
+**Phase E: Sidecar Booleans for Local Mixed Ownership**
+- Track ownership at compile time for local conditionals
+- Generate `__owns_<varname>` sidecar booleans
+- Conditional free at scope end based on sidecar
+
+**Phase F: Remove `__cap` Infrastructure** (final cleanup after D+E proven)
+- Remove `__cap` field from struct definitions in `semantic/package.scala`
+- Update C runtime to remove `__cap` checks in free functions
+- Remove `__cap = -1` from string literals in `codegen/emitter/Literals.scala` and `Module.scala`
+
+### Key Files Modified
+
+| File | Changes |
+|------|---------|
+| `ast/types.scala` | Added `memEffect` to NativeType case classes |
+| `parser/types.scala` | Parse `[mem=heap]` in native type syntax |
+| `semantic/package.scala` | Added `memEffect` to stdlib types, added clone function declarations |
+| `semantic/OwnershipAnalyzer.scala` | Replaced `heapTypes` with `isHeapType()`, added clone insertion for returns |
+| `semantic/MemoryFunctionGenerator.scala` | NEW: generates `__free_T`/`__clone_T` for user structs |
+| `compiler/SemanticStage.scala` | Added MemoryFunctionGenerator to pipeline |
+| `mml_runtime.c` | Added `__clone_*` C implementations |

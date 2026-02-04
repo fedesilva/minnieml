@@ -771,3 +771,71 @@ void __free_StringArray(StringArray arr)
         free(arr.data);
     }
 }
+
+// --- Memory Management Clone Functions ---
+
+String __clone_String(String s)
+{
+    if (!s.data || s.length == 0)
+        return (String){0, NULL, -1};
+
+    char *new_data = (char *)malloc(s.length + 1);
+    if (!new_data)
+        return (String){0, NULL, -1};
+
+    memcpy(new_data, s.data, s.length);
+    new_data[s.length] = '\0';
+    return (String){s.length, new_data, (int64_t)(s.length + 1)};
+}
+
+Buffer __clone_Buffer(Buffer b)
+{
+    if (!b)
+        return NULL;
+
+    Buffer new_b = (Buffer)malloc(sizeof(BufferImpl));
+    if (!new_b)
+        return NULL;
+
+    new_b->capacity = b->capacity;
+    new_b->length = b->length;
+    new_b->fd = b->fd;
+    new_b->__cap = b->__cap;
+    new_b->data = (char *)malloc(b->capacity);
+    if (!new_b->data)
+    {
+        free(new_b);
+        return NULL;
+    }
+    memcpy(new_b->data, b->data, b->length);
+    return new_b;
+}
+
+IntArray __clone_IntArray(IntArray arr)
+{
+    if (!arr.data || arr.length <= 0)
+        return (IntArray){0, NULL, -1};
+
+    int64_t *new_data = (int64_t *)malloc((size_t)arr.length * sizeof(int64_t));
+    if (!new_data)
+        return (IntArray){0, NULL, -1};
+
+    memcpy(new_data, arr.data, (size_t)arr.length * sizeof(int64_t));
+    return (IntArray){arr.length, new_data, arr.length};
+}
+
+StringArray __clone_StringArray(StringArray arr)
+{
+    if (!arr.data || arr.length <= 0)
+        return (StringArray){0, NULL, -1};
+
+    String *new_data = (String *)malloc((size_t)arr.length * sizeof(String));
+    if (!new_data)
+        return (StringArray){0, NULL, -1};
+
+    for (int64_t i = 0; i < arr.length; i++)
+    {
+        new_data[i] = __clone_String(arr.data[i]);
+    }
+    return (StringArray){arr.length, new_data, arr.length};
+}

@@ -131,7 +131,7 @@ def getStructFieldTypesFromTypeSpec(
       resolvedId.flatMap(state.resolvables.lookupType) match
         case Some(typeDef: TypeDef) =>
           typeDef.typeSpec match
-            case Some(NativeStruct(_, fields)) =>
+            case Some(NativeStruct(_, fields, _)) =>
               val fieldTypes = fields.map { case (_, fieldTypeSpec) =>
                 getLlvmType(fieldTypeSpec, state)
               }
@@ -574,11 +574,11 @@ case class CompileResult(
 
 def getMmlTypeName(typeSpec: Type): Option[String] = typeSpec match {
   case TypeRef(_, name, _, _) => Some(name)
-  case NativePrimitive(_, "i1") => Some("Bool")
-  case NativePrimitive(_, "i64") => Some("Int")
-  case NativePrimitive(_, "void") => Some("Unit")
-  case NativePointer(_, llvm) => Some(s"Pointer($llvm)")
-  case NativeStruct(_, _) => Some("NativeStruct")
+  case NativePrimitive(_, "i1", _) => Some("Bool")
+  case NativePrimitive(_, "i64", _) => Some("Int")
+  case NativePrimitive(_, "void", _) => Some("Unit")
+  case NativePointer(_, llvm, _) => Some(s"Pointer($llvm)")
+  case NativeStruct(_, _, _) => Some("NativeStruct")
   case TypeUnit(_) => Some("Unit")
   case TypeFn(_, _, _) => Some("Function")
   case TypeTuple(_, _) => Some("Tuple")
@@ -603,11 +603,11 @@ def nativeTypeToLlvmDef(
   state:      CodeGenState
 ): Either[CodeGenError, String] =
   nativeType match
-    case NativePrimitive(_, llvmType) =>
+    case NativePrimitive(_, llvmType, _) =>
       Right(s"%$typeName = type $llvmType")
-    case NativePointer(_, llvmType) =>
+    case NativePointer(_, llvmType, _) =>
       Right(emitPointerTypeDefinition(typeName, llvmType))
-    case NativeStruct(_, fields) =>
+    case NativeStruct(_, fields, _) =>
       // Convert each field's TypeSpec to LLVM type
       val fieldResults = fields.map { case (fieldName, typeSpec) =>
         getLlvmType(typeSpec, state).map((fieldName, _))
@@ -644,8 +644,8 @@ def getLlvmType(
             case Some(nativeType: NativeType) =>
               // Follow through to get the actual LLVM type
               nativeType match
-                case NativePrimitive(_, llvmType) => Right(llvmType)
-                case NativePointer(_, llvmType) => Right(s"$llvmType*")
+                case NativePrimitive(_, llvmType, _) => Right(llvmType)
+                case NativePointer(_, llvmType, _) => Right(s"$llvmType*")
                 case _: NativeStruct => Right(s"%struct.$name") // Use %struct. prefix
             case _ =>
               // Non-native types cannot be translated to LLVM yet

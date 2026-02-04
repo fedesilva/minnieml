@@ -110,8 +110,28 @@ private[parser] def nativeTypeP(info: SourceInfo)(using P[Any]): P[NativeType] =
   }
 
 private[parser] def nativeBracketTypeP(info: SourceInfo)(using P[Any]): P[NativeType] =
-  P("[" ~ "t=" ~ (nativePointerTypeP(info) | nativePrimitiveTypeP(info)) ~ "]")
-    .map { case nativeType => nativeType }
+  def memEffectP: P[MemEffect]  = P("heap").map(_ => MemEffect.Alloc)
+  def tAttrP:     P[NativeType] = P("t=" ~ (nativePointerTypeP(info) | nativePrimitiveTypeP(info)))
+  def memAttrP:   P[MemEffect]  = P("mem=" ~ memEffectP)
+
+  P(
+    "[" ~ (
+      (tAttrP ~ ("," ~ memAttrP).?).map { case (t, m) =>
+        m.fold(t) { case eff =>
+          t match
+            case p: NativePrimitive => p.copy(memEffect = Some(eff))
+            case p: NativePointer => p.copy(memEffect = Some(eff))
+            case s: NativeStruct => s.copy(memEffect = Some(eff))
+        }
+      } |
+        (memAttrP ~ "," ~ tAttrP).map { case (m, t) =>
+          t match
+            case p: NativePrimitive => p.copy(memEffect = Some(m))
+            case p: NativePointer => p.copy(memEffect = Some(m))
+            case s: NativeStruct => s.copy(memEffect = Some(m))
+        }
+    ) ~ "]"
+  )
 
 private[parser] def nativePrimitiveTypeP(info: SourceInfo)(using P[Any]): P[NativePrimitive] =
   P(spP(info) ~ llvmPrimitiveTypeP ~ spNoWsP(info) ~ spP(info))
@@ -126,9 +146,11 @@ private[parser] def nativePointerTypeP(info: SourceInfo)(using P[Any]): P[Native
     }
 
 private[parser] def nativeStructP(info: SourceInfo)(using P[Any]): P[NativeStruct] =
-  P(spP(info) ~ "{" ~ nativeFieldListP(info) ~ "}" ~ spNoWsP(info) ~ spP(info))
-    .map { case (start, fields, end, _) =>
-      NativeStruct(span(start, end), fields)
+  def memAttrP: P[MemEffect] = P("[" ~ "mem=" ~ "heap".! ~ "]").map(_ => MemEffect.Alloc)
+
+  P(spP(info) ~ memAttrP.? ~ "{" ~ nativeFieldListP(info) ~ "}" ~ spNoWsP(info) ~ spP(info))
+    .map { case (start, memOpt, fields, end, _) =>
+      NativeStruct(span(start, end), fields, memOpt)
     }
 
 private[parser] def nativeFieldListP(info: SourceInfo)(using P[Any]): P[List[(String, Type)]] =

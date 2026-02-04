@@ -19,7 +19,7 @@ class NativeTypeTests extends BaseEffFunSuite:
           val typeDef = module.members.collectFirst { case t: TypeDef => t }.get
           assertEquals(typeDef.name, "Int")
           typeDef.typeSpec match
-            case Some(NativePrimitive(_, llvmType)) =>
+            case Some(NativePrimitive(_, llvmType, _)) =>
               assertEquals(llvmType, "i32")
             case _ =>
               fail("Expected NativePrimitive")
@@ -39,7 +39,7 @@ class NativeTypeTests extends BaseEffFunSuite:
           val typeDef = module.members.collectFirst { case t: TypeDef => t }.get
           assertEquals(typeDef.name, "Float32")
           typeDef.typeSpec match
-            case Some(NativePrimitive(_, llvmType)) =>
+            case Some(NativePrimitive(_, llvmType, _)) =>
               assertEquals(llvmType, "float")
             case _ =>
               fail("Expected NativePrimitive")
@@ -59,7 +59,7 @@ class NativeTypeTests extends BaseEffFunSuite:
           val typeDef = module.members.collectFirst { case t: TypeDef => t }.get
           assertEquals(typeDef.name, "CharPtr")
           typeDef.typeSpec match
-            case Some(NativePointer(_, llvmType)) =>
+            case Some(NativePointer(_, llvmType, _)) =>
               assertEquals(llvmType, "i8")
             case _ =>
               fail("Expected NativePointer")
@@ -92,7 +92,7 @@ class NativeTypeTests extends BaseEffFunSuite:
             case Some(typeDef) =>
               assertEquals(typeDef.name, "MyStruct")
               typeDef.typeSpec match
-                case Some(NativeStruct(_, fieldsList)) =>
+                case Some(NativeStruct(_, fieldsList, _)) =>
                   val fields = fieldsList.toMap
                   assertEquals(fields.size, 2)
                   assert(fields.contains("length"), "Expected field 'length'")
@@ -126,7 +126,7 @@ class NativeTypeTests extends BaseEffFunSuite:
           module => {
             val typeDef = module.members.collectFirst { case t: TypeDef => t }.get
             typeDef.typeSpec match
-              case Some(NativePrimitive(_, llvmType)) =>
+              case Some(NativePrimitive(_, llvmType, _)) =>
                 assertEquals(llvmType, floatType)
               case _ =>
                 fail(s"Expected NativePrimitive for $floatType")
@@ -149,7 +149,7 @@ class NativeTypeTests extends BaseEffFunSuite:
           module => {
             val typeDef = module.members.collectFirst { case t: TypeDef => t }.get
             typeDef.typeSpec match
-              case Some(NativePrimitive(_, llvmType)) =>
+              case Some(NativePrimitive(_, llvmType, _)) =>
                 assertEquals(llvmType, s"i$bits")
               case _ =>
                 fail(s"Expected NativePrimitive for i$bits")
@@ -210,7 +210,7 @@ class NativeTypeTests extends BaseEffFunSuite:
               )
             case Some(typeDef) =>
               typeDef.typeSpec match
-                case Some(NativeStruct(_, fieldsList)) =>
+                case Some(NativeStruct(_, fieldsList, _)) =>
                   val fields = fieldsList.toMap
                   assertEquals(fields.size, 4)
                   assertEquals(fields.keySet, Set("field1", "field2", "ptr", "nested"))

@@ -148,7 +148,7 @@ class TypeResolverTests extends BaseEffFunSuite:
           // Verify that Int64 itself has the native type, but that's not propagated to X
           assert(td.get.typeSpec.isDefined, "Int64 should have a native typeSpec")
           td.get.typeSpec match
-            case Some(NativePrimitive(_, "i64")) => // correct
+            case Some(NativePrimitive(_, "i64", _)) => // correct
             case other => fail(s"Expected Int64 to have @native[t=i64], got $other")
         case other =>
           fail(s"Expected X to resolve to TypeRef(Int64), got $other")

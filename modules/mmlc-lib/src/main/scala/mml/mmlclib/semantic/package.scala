@@ -15,8 +15,8 @@ private def showType(t: Type): String = t match
   case TypeFn(_, params, ret) => s"(${params.map(showType).mkString(", ")}) -> ${showType(ret)}"
   case TypeUnit(_) => "()"
   case TypeTuple(_, elems) => s"(${elems.map(showType).mkString(", ")})"
-  case NativePrimitive(_, llvm) => llvm
-  case NativePointer(_, llvm) => s"*$llvm"
+  case NativePrimitive(_, llvm, _) => llvm
+  case NativePointer(_, llvm, _) => s"*$llvm"
   case TypeVariable(_, name) => name
   case _ => t.getClass.getSimpleName
 
@@ -232,7 +232,8 @@ def injectBasicTypes(module: Module): Module =
             "length" -> stdlibTypeRef("Int64"),
             "data" -> stdlibTypeRef("CharPtr"),
             "__cap" -> stdlibTypeRef("Int64")
-          )
+          ),
+          memEffect = Some(MemEffect.Alloc)
         )
       ),
       id = stdlibId("typedef", "String")
@@ -281,7 +282,7 @@ def injectBasicTypes(module: Module): Module =
     TypeDef(
       span     = dummySpan,
       name     = "Buffer",
-      typeSpec = Some(NativePointer(dummySpan, "i8")),
+      typeSpec = Some(NativePointer(dummySpan, "i8", memEffect = Some(MemEffect.Alloc))),
       id       = stdlibId("typedef", "Buffer")
     ),
 
@@ -310,7 +311,8 @@ def injectBasicTypes(module: Module): Module =
             "length" -> stdlibTypeRef("Int64"),
             "data" -> stdlibTypeRef("Int64Ptr"),
             "__cap" -> stdlibTypeRef("Int64")
-          )
+          ),
+          memEffect = Some(MemEffect.Alloc)
         )
       ),
       id = stdlibId("typedef", "IntArray")
@@ -325,7 +327,8 @@ def injectBasicTypes(module: Module): Module =
             "length" -> stdlibTypeRef("Int64"),
             "data" -> stdlibTypeRef("StringPtr"),
             "__cap" -> stdlibTypeRef("Int64")
-          )
+          ),
+          memEffect = Some(MemEffect.Alloc)
         )
       ),
       id = stdlibId("typedef", "StringArray")
@@ -769,6 +772,31 @@ def injectCommonFunctions(module: Module): Module =
       "__free_StringArray",
       List(FnParam(dummySpan, "a", typeAsc = Some(stringArrayType), consuming = true)),
       unitType
+    ),
+    // Memory management clone functions - return heap copies
+    mkFn(
+      "__clone_String",
+      List(FnParam(dummySpan, "s", typeAsc = Some(stringType))),
+      stringType,
+      Some(MemEffect.Alloc)
+    ),
+    mkFn(
+      "__clone_Buffer",
+      List(FnParam(dummySpan, "b", typeAsc = Some(bufferType))),
+      bufferType,
+      Some(MemEffect.Alloc)
+    ),
+    mkFn(
+      "__clone_IntArray",
+      List(FnParam(dummySpan, "a", typeAsc = Some(intArrayType))),
+      intArrayType,
+      Some(MemEffect.Alloc)
+    ),
+    mkFn(
+      "__clone_StringArray",
+      List(FnParam(dummySpan, "a", typeAsc = Some(stringArrayType))),
+      stringArrayType,
+      Some(MemEffect.Alloc)
     )
   )
 

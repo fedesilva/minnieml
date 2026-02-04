@@ -29,9 +29,9 @@ object TypeNameResolver:
             Left(CodeGenError(s"Unresolved type reference '$name'"))
       case TypeStruct(_, _, _, name, _, _) =>
         Right(name)
-      case NativePrimitive(_, llvmType) =>
+      case NativePrimitive(_, llvmType, _) =>
         Right(llvmType)
-      case NativePointer(_, llvmType) =>
+      case NativePointer(_, llvmType, _) =>
         Right(llvmType)
       case other =>
         Left(CodeGenError(s"Cannot extract type name from ${other.getClass.getSimpleName}"))

@@ -172,7 +172,7 @@ object OwnershipAnalyzer:
           lambdaOpt.foreach { lambda =>
             val resultOwned =
               exprReturnsOwned(lambda.body, Map.empty, resolvables, returningOwned)
-                .filter(t => getTypeName(t).exists(heapTypes.contains))
+                .filter(t => getTypeName(t).exists(isHeapType(_, resolvables)))
 
             val current = returningOwned.get(id).flatten
             if resultOwned.isDefined && current != resultOwned then
@@ -183,18 +183,56 @@ object OwnershipAnalyzer:
 
       returningOwned
 
-  /** Types that need to be freed - will be used when inserting free calls */
-  val heapTypes: Set[String] = Set("String", "Buffer", "IntArray", "StringArray")
-
-  /** Get the free function name for a type - will be used when inserting free calls */
-  def freeFnFor(tName: String): Option[String] =
-    if heapTypes.contains(tName) then Some(s"__free_$tName")
-    else None
-
-  /** Get the type name from a Type - will be used when inserting free calls */
+  /** Get the type name from a Type */
   def getTypeName(t: Type): Option[String] = t match
     case TypeRef(_, name, _, _) => Some(name)
+    case TypeStruct(_, _, _, name, _, _) => Some(name)
     case _ => None
+
+  /** Find a type definition by name, trying common ID patterns */
+  private def findTypeByName(
+    typeName:    String,
+    resolvables: ResolvablesIndex
+  ): Option[ResolvableType] =
+    // Try stdlib ID format first
+    resolvables
+      .lookupType(s"stdlib::typedef::$typeName")
+      .orElse(resolvables.lookupType(s"stdlib::typealias::$typeName"))
+      .orElse:
+        // Search through all types by name as fallback (for user-defined types)
+        resolvables.resolvableTypes.values.find:
+          case td: TypeDef => td.name == typeName
+          case ta: TypeAlias => ta.name == typeName
+          case ts: TypeStruct => ts.name == typeName
+
+  /** Check if a type is heap-allocated by looking at its NativeType.memEffect */
+  def isHeapType(typeName: String, resolvables: ResolvablesIndex): Boolean =
+    findTypeByName(typeName, resolvables) match
+      case Some(TypeDef(_, _, _, Some(ns: NativeStruct), _, _, _)) =>
+        ns.memEffect.contains(MemEffect.Alloc)
+      case Some(TypeDef(_, _, _, Some(np: NativePointer), _, _, _)) =>
+        np.memEffect.contains(MemEffect.Alloc)
+      case Some(TypeDef(_, _, _, Some(prim: NativePrimitive), _, _, _)) =>
+        prim.memEffect.contains(MemEffect.Alloc)
+      case Some(s: TypeStruct) =>
+        hasHeapFields(s, resolvables)
+      case _ => false
+
+  /** Check if a user struct has any heap-typed fields */
+  def hasHeapFields(struct: TypeStruct, resolvables: ResolvablesIndex): Boolean =
+    struct.fields.exists { field =>
+      getTypeName(field.typeSpec).exists(isHeapType(_, resolvables))
+    }
+
+  /** Get free function name for a type, or None if not heap type */
+  def freeFnFor(typeName: String, resolvables: ResolvablesIndex): Option[String] =
+    if isHeapType(typeName, resolvables) then Some(s"__free_$typeName")
+    else None
+
+  /** Get clone function name for a type, or None if not heap type */
+  def cloneFnFor(typeName: String, resolvables: ResolvablesIndex): Option[String] =
+    if isHeapType(typeName, resolvables) then Some(s"__clone_$typeName")
+    else None
 
   /** Check if a Bnd has memory effect Alloc */
   def bndAllocates(bnd: Bnd): Boolean =
@@ -224,7 +262,7 @@ object OwnershipAnalyzer:
           returningOwned
             .get(id)
             .flatten
-            .filter(t => getTypeName(t).exists(heapTypes.contains))
+            .filter(t => getTypeName(t).exists(isHeapType(_, resolvables)))
 
         returned.orElse:
           resolvables
@@ -232,7 +270,7 @@ object OwnershipAnalyzer:
             .collect { case bnd: Bnd => bnd }
             .filter(bndAllocates)
             .flatMap(_.typeAsc)
-            .filter(t => getTypeName(t).exists(heapTypes.contains))
+            .filter(t => getTypeName(t).exists(isHeapType(_, resolvables)))
       }
 
   private def mergeAllocTypes(t1: Option[Type], t2: Option[Type]): Option[Type] = (t1, t2) match
@@ -259,10 +297,11 @@ object OwnershipAnalyzer:
     bindingName: String,
     tpe:         Type,
     span:        SrcSpan,
-    bindingId:   Option[String]
+    bindingId:   Option[String],
+    resolvables: ResolvablesIndex
   ): App =
     val typeName = getTypeName(tpe)
-    val freeFn   = typeName.flatMap(freeFnFor).getOrElse("__free_String")
+    val freeFn   = typeName.flatMap(freeFnFor(_, resolvables)).getOrElse("__free_String")
     // Use stdlib ID format for the free function
     val freeFnId = Some(s"stdlib::bnd::$freeFn")
     val unitType: Option[Type] = Some(TypeRef(span, "Unit", Some("stdlib::typedef::Unit"), Nil))
@@ -277,9 +316,10 @@ object OwnershipAnalyzer:
     * `let __r = expr; let _ = free1; let _ = free2; __r`
     */
   private def wrapWithFrees(
-    expr:   Expr,
-    toFree: List[(String, Option[Type], Option[String])],
-    span:   SrcSpan
+    expr:        Expr,
+    toFree:      List[(String, Option[Type], Option[String])],
+    span:        SrcSpan,
+    resolvables: ResolvablesIndex
   ): Expr =
     if toFree.isEmpty then return expr
 
@@ -303,7 +343,7 @@ object OwnershipAnalyzer:
       val (name, tpeOpt, id) = binding
       tpeOpt match
         case Some(tpe) =>
-          val freeCall = mkFreeCall(name, tpe, span, id)
+          val freeCall = mkFreeCall(name, tpe, span, id, resolvables)
           val discardParam =
             FnParam(span, "_", typeSpec = unitType, typeAsc = unitType)
           val discardLam =
@@ -315,6 +355,55 @@ object OwnershipAnalyzer:
     // Wrap with: let __r = expr; <withFrees>
     val resultLam = Lambda(span, List(resultParam), withFrees, Nil, typeSpec = resultType)
     Expr(span, List(App(span, resultLam, expr, typeSpec = resultType)), typeSpec = resultType)
+
+  /** Wrap an expression with __clone_T call */
+  private def wrapWithClone(
+    expr: Expr,
+    tpe:  Type
+  ): Expr =
+    val typeName    = getTypeName(tpe).getOrElse("String")
+    val cloneFnName = s"__clone_$typeName"
+    val cloneFnId   = Some(s"stdlib::bnd::$cloneFnName")
+    val cloneFnType = Some(TypeFn(syntheticSpan, List(tpe), tpe))
+    val cloneFnRef  = Ref(syntheticSpan, cloneFnName, resolvedId = cloneFnId, typeSpec = cloneFnType)
+    val cloneApp    = App(syntheticSpan, cloneFnRef, expr, typeSpec = Some(tpe))
+    Expr(syntheticSpan, List(cloneApp), typeSpec = Some(tpe))
+
+  /** Promote static branches to heap when function returns heap type.
+    *
+    * When a function returns a heap type and its body is a conditional where one branch allocates and
+    * the other doesn't, wrap the non-allocating branch with __clone_T. This ensures the caller always
+    * owns the returned value and can unconditionally free it.
+    */
+  private def promoteStaticBranchesInReturn(
+    expr:        Expr,
+    returnType:  Option[Type],
+    scope:       OwnershipScope
+  ): Expr =
+    // Only apply to heap return types
+    val typeName = returnType.flatMap(getTypeName)
+    if !typeName.exists(isHeapType(_, scope.resolvables)) then return expr
+
+    expr.terms.lastOption match
+      case Some(Cond(span, condExpr, ifTrue, ifFalse, typeSpec, typeAsc)) =>
+        val trueAlloc  = exprAllocates(ifTrue, scope)
+        val falseAlloc = exprAllocates(ifFalse, scope)
+
+        (trueAlloc, falseAlloc) match
+          case (Some(_), None) =>
+            // True allocates, false is static - clone false branch
+            val cloned = wrapWithClone(ifFalse, returnType.getOrElse(ifFalse.typeSpec.get))
+            val newCond = Cond(span, condExpr, ifTrue, cloned, typeSpec, typeAsc)
+            expr.copy(terms = expr.terms.init :+ newCond)
+          case (None, Some(_)) =>
+            // False allocates, true is static - clone true branch
+            val cloned  = wrapWithClone(ifTrue, returnType.getOrElse(ifTrue.typeSpec.get))
+            val newCond = Cond(span, condExpr, cloned, ifFalse, typeSpec, typeAsc)
+            expr.copy(terms = expr.terms.init :+ newCond)
+          case _ =>
+            // Both allocate or neither - no change needed
+            expr
+      case _ => expr
 
   /** Names of owned bindings that flow out through the returned expression */
   private def returnedOwnedNames(expr: Expr, scope: OwnershipScope): Set[String] =
@@ -428,7 +517,7 @@ object OwnershipAnalyzer:
                     .orElse(param.typeAsc)
                     .flatMap(getTypeName)
                 val allocHeap =
-                  allocType.filter(t => getTypeName(t).exists(heapTypes.contains))
+                  allocType.filter(t => getTypeName(t).exists(isHeapType(_, scope.resolvables)))
                 val owns =
                   allocHeap.filter(t => paramTypeName.forall(_ == getTypeName(t).getOrElse("")))
                 owns
@@ -463,7 +552,7 @@ object OwnershipAnalyzer:
                 bodyResult.scope.ownedBindings.filter:
                   case (name, Some(tpe), _) =>
                     !escaping.contains(name) &&
-                    heapTypes.contains(getTypeName(tpe).getOrElse(""))
+                    getTypeName(tpe).exists(isHeapType(_, scope.resolvables))
                   case _ => false
               else Nil
 
@@ -471,7 +560,7 @@ object OwnershipAnalyzer:
             // let result = <body>; let _ = free x; result
             val newBody =
               if bindingsToFree.isEmpty then bodyResult.expr
-              else wrapWithFrees(bodyResult.expr, bindingsToFree, body.span)
+              else wrapWithFrees(bodyResult.expr, bindingsToFree, body.span, scope.resolvables)
 
             val newLambda = Lambda(lSpan, params, newBody, captures, lTypeSpec, lTypeAsc, meta)
 
@@ -554,7 +643,7 @@ object OwnershipAnalyzer:
 
               // Free calls for all temps (in same order as allocBindings, which frees inner first)
               val freeCalls = allocBindings.map { case (tmpName, _, allocType) =>
-                mkFreeCall(tmpName, allocType, syntheticSpan, None)
+                mkFreeCall(tmpName, allocType, syntheticSpan, None, scope.resolvables)
               }
 
               // Build innermost: result reference
@@ -639,9 +728,13 @@ object OwnershipAnalyzer:
 
         val bodyResult = analyzeExpr(body, paramScope)
 
+        // Apply clone insertion for mixed-allocation returns
+        val returnType   = typeAsc.orElse(typeSpec)
+        val promotedBody = promoteStaticBranchesInReturn(bodyResult.expr, returnType, paramScope)
+
         TermResult(
           scope, // Lambda doesn't change outer scope
-          Lambda(span, params, bodyResult.expr, captures, typeSpec, typeAsc, meta),
+          Lambda(span, params, promotedBody, captures, typeSpec, typeAsc, meta),
           errors = bodyResult.errors
         )
 

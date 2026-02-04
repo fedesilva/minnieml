@@ -90,15 +90,15 @@ def prettyPrintTypeSpec(
       s"InvalidType$spanStr\n" +
         s"  original: ${prettyPrintTypeSpec(Some(inv.originalType), showSourceSpans, showTypes, indent)}"
 
-    case Some(NativePrimitive(sp, llvmType)) =>
+    case Some(NativePrimitive(sp, llvmType, _)) =>
       val spanStr = if showSourceSpans then s" ${printSourceSpan(sp)}" else ""
       s"@native[t=$llvmType]$spanStr"
 
-    case Some(NativePointer(sp, llvmType)) =>
+    case Some(NativePointer(sp, llvmType, _)) =>
       val spanStr = if showSourceSpans then s" ${printSourceSpan(sp)}" else ""
       s"@native[t=*$llvmType]$spanStr"
 
-    case Some(NativeStruct(sp, fields)) =>
+    case Some(NativeStruct(sp, fields, _)) =>
       val spanStr = if showSourceSpans then s" ${printSourceSpan(sp)}" else ""
       if fields.isEmpty then s"@native {}$spanStr"
       else
@@ -155,10 +155,10 @@ private def formatTypeSpecInline(
     case TypeVariable(sp, name) =>
       val spanStr = if showSourceSpans then s" ${printSourceSpan(sp)}" else ""
       s"$name$spanStr"
-    case NativePrimitive(sp, llvmType) =>
+    case NativePrimitive(sp, llvmType, _) =>
       val spanStr = if showSourceSpans then s" ${printSourceSpan(sp)}" else ""
       s"@native[t=$llvmType]$spanStr"
-    case NativePointer(sp, llvmType) =>
+    case NativePointer(sp, llvmType, _) =>
       val spanStr = if showSourceSpans then s" ${printSourceSpan(sp)}" else ""
       s"@native[t=*$llvmType]$spanStr"
     case other =>

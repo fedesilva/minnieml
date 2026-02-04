@@ -20,19 +20,22 @@ case class TypeRef(
 sealed trait NativeType extends Type, Native
 
 case class NativePrimitive(
-  span:     SrcSpan,
-  llvmType: String
+  span:      SrcSpan,
+  llvmType:  String,
+  memEffect: Option[MemEffect] = None
 ) extends NativeType
 
 case class NativePointer(
-  span:     SrcSpan,
-  llvmType: String
+  span:      SrcSpan,
+  llvmType:  String,
+  memEffect: Option[MemEffect] = None
 ) extends NativeType
 
 // TODO: make this use Field
 case class NativeStruct(
-  span:   SrcSpan,
-  fields: List[(String, Type)]
+  span:      SrcSpan,
+  fields:    List[(String, Type)],
+  memEffect: Option[MemEffect] = None
 ) extends NativeType
 
 /** A type application, ie:  `List Int, Map String Int` */
