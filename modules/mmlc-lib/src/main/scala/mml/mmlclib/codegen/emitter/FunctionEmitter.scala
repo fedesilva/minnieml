@@ -231,14 +231,33 @@ private def compileStructConstructor(
                         )
                         val stateWithPtr =
                           currentState.withRegister(fieldPtrReg + 1).emit(ptrLine)
+
+                        // For heap fields, clone the param before storing
+                        val cloneFnOpt = TypeUtils
+                          .getTypeName(field.typeSpec)
+                          .flatMap(TypeUtils.cloneFnFor(_, stateWithPtr.resolvables))
+
+                        val (valueToStore, stateAfterClone) = cloneFnOpt match
+                          case Some(cloneFnName) =>
+                            val cloneReg = stateWithPtr.nextRegister
+                            val cloneLine = emitCall(
+                              Some(cloneReg),
+                              Some(fieldLlvmType),
+                              cloneFnName,
+                              List((fieldLlvmType, s"%$paramReg"))
+                            )
+                            (s"%$cloneReg", stateWithPtr.withRegister(cloneReg + 1).emit(cloneLine))
+                          case None =>
+                            (s"%$paramReg", stateWithPtr)
+
                         TbaaEmitter
-                          .getTbaaStructFieldTag(returnTypeSpec, fieldIndex, stateWithPtr)
+                          .getTbaaStructFieldTag(returnTypeSpec, fieldIndex, stateAfterClone)
                           .map { case (stateWithTag, tag) =>
                             val (stateWithAlias, aliasTag, noaliasTag) =
                               AliasScopeEmitter.getAliasScopeTags(field.typeSpec, stateWithTag)
                             val storeLine =
                               emitStore(
-                                s"%$paramReg",
+                                valueToStore,
                                 fieldLlvmType,
                                 s"%$fieldPtrReg",
                                 Some(tag),

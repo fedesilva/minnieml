@@ -24,6 +24,8 @@
 ### Compile runtime to central location
 
 * Compile runtime to ~/.config/mml/cache/runtime/
+* add an `init` subcommand to clean and recompile the runtime.
+* update tooling to find the runtime where it's compiled.
 
 ### Simple Memory Management Prototype
 
@@ -198,6 +200,32 @@ TBD
 
 ## Recent Changes
 
+### 2026-02-04 Struct constructor ownership tracking [COMPLETE]
+
+**Original problem:** `records-mem.mml` had 600 memory leaks because struct constructor calls like
+`User name_str role_str` were not recognized as allocating operations.
+
+**Root cause:** `bndAllocates()` only checked for `NativeImpl` with `MemEffect.Alloc`. Struct
+constructors have `DataConstructor` in their body, so they were never detected as allocating.
+Result: `let u = User name_str role_str` marked `u` as `Borrowed` instead of `Owned`.
+
+**Fix in `OwnershipAnalyzer.scala`:**
+1. Modified `bndAllocates(bnd, resolvables)` to also recognize `DataConstructor` terms that return
+   heap types (structs with heap fields)
+2. Updated two call sites to pass `resolvables` parameter
+3. Added `lookupFreeFnId` helper to find the actual free function ID - looks in stdlib first,
+   then searches user module resolvables (fixes `__free_User` → `recordsmem___free_User` resolution)
+4. Updated `mkFreeCall` to use the helper instead of assuming all free functions are in stdlib
+
+**Verification:**
+- All 210 tests pass
+- `records-mem.mml` runs without crash
+- `leaks --atExit` shows **0 leaks** (was 600)
+- All 7 benchmarks compile
+
+**Remaining TODO:**
+- Add ASAN flag to CompilerConfig
+- Re-enable ASAN with flag control
 ### 2026-02-03
 
 - **Phase F: Remove `__cap` infrastructure**: Final cleanup eliminating runtime `__cap` discriminator.

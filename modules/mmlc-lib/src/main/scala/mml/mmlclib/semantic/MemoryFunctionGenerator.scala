@@ -23,16 +23,16 @@ object MemoryFunctionGenerator:
   /** Check if a struct has any fields that are heap types */
   private def structHasHeapFields(struct: TypeStruct, resolvables: ResolvablesIndex): Boolean =
     struct.fields.exists { field =>
-      OwnershipAnalyzer.getTypeName(field.typeSpec).exists { typeName =>
-        OwnershipAnalyzer.isHeapType(typeName, resolvables)
+      TypeUtils.getTypeName(field.typeSpec).exists { typeName =>
+        TypeUtils.isHeapType(typeName, resolvables)
       }
     }
 
   /** Get heap fields from a struct */
   private def heapFieldsOf(struct: TypeStruct, resolvables: ResolvablesIndex): Vector[Field] =
     struct.fields.filter { field =>
-      OwnershipAnalyzer.getTypeName(field.typeSpec).exists { typeName =>
-        OwnershipAnalyzer.isHeapType(typeName, resolvables)
+      TypeUtils.getTypeName(field.typeSpec).exists { typeName =>
+        TypeUtils.isHeapType(typeName, resolvables)
       }
     }
 
@@ -69,8 +69,8 @@ object MemoryFunctionGenerator:
 
     // Build free calls for each heap field
     val freeCalls: List[Term] = heapFields.toList.flatMap { field =>
-      OwnershipAnalyzer.getTypeName(field.typeSpec).flatMap { typeName =>
-        OwnershipAnalyzer.freeFnFor(typeName, resolvables).map { freeFnName =>
+      TypeUtils.getTypeName(field.typeSpec).flatMap { typeName =>
+        TypeUtils.freeFnFor(typeName, resolvables).map { freeFnName =>
           // Build: __free_T s.fieldName
           val freeFnRef = Ref(
             syntheticSpan,
@@ -194,10 +194,10 @@ object MemoryFunctionGenerator:
       val fieldRef  = Ref(syntheticSpan, field.name, qualifier = Some(paramRef))
       val fieldExpr = Expr(syntheticSpan, List(fieldRef), typeSpec = Some(field.typeSpec))
 
-      OwnershipAnalyzer.getTypeName(field.typeSpec) match
-        case Some(typeName) if OwnershipAnalyzer.isHeapType(typeName, resolvables) =>
+      TypeUtils.getTypeName(field.typeSpec) match
+        case Some(typeName) if TypeUtils.isHeapType(typeName, resolvables) =>
           // Heap field - wrap with clone
-          OwnershipAnalyzer.cloneFnFor(typeName, resolvables) match
+          TypeUtils.cloneFnFor(typeName, resolvables) match
             case Some(cloneFnName) =>
               val cloneFnRef = Ref(
                 syntheticSpan,
@@ -285,12 +285,9 @@ object MemoryFunctionGenerator:
         )
       }
 
-      // Add generated functions to module members
-      val newMembers = module.members ++ generatedFns
-
-      // Update resolvables index with new functions
-      val newResolvables = generatedFns.foldLeft(module.resolvables) { (idx, fn) =>
+      val finalMembers = module.members ++ generatedFns
+      val finalResolvables = generatedFns.foldLeft(module.resolvables) { (idx, fn) =>
         idx.updated(fn)
       }
 
-      state.withModule(module.copy(members = newMembers, resolvables = newResolvables))
+      state.withModule(module.copy(members = finalMembers, resolvables = finalResolvables))

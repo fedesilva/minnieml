@@ -20,12 +20,12 @@ case class BindingInfo(
 
 /** Tracks ownership for bindings within a scope */
 case class OwnershipScope(
-  bindings:        Map[String, BindingInfo]  = Map.empty,
-  movedAt:         Map[String, SrcSpan]      = Map.empty,
-  resolvables:     ResolvablesIndex,
-  returningOwned:  Map[String, Option[Type]] = Map.empty,
-  tempCounter:     Int                       = 0,
-  skipTempWrapping: Boolean                  = false
+  bindings:         Map[String, BindingInfo]  = Map.empty,
+  movedAt:          Map[String, SrcSpan]      = Map.empty,
+  resolvables:      ResolvablesIndex,
+  returningOwned:   Map[String, Option[Type]] = Map.empty,
+  tempCounter:      Int                       = 0,
+  skipTempWrapping: Boolean                   = false
 ):
   def nextTemp: (String, OwnershipScope) =
     (s"__tmp_$tempCounter", copy(tempCounter = tempCounter + 1))
@@ -127,7 +127,7 @@ object OwnershipAnalyzer:
               resolvables
                 .lookup(id)
                 .collect { case bnd: Bnd => bnd }
-                .filter(bndAllocates)
+                .filter(bndAllocates(_, resolvables))
                 .flatMap(b => b.typeAsc.orElse(b.typeSpec))
 
     private def termReturnsOwned(
@@ -199,64 +199,30 @@ object OwnershipAnalyzer:
 
       returningOwned
 
-  /** Get the type name from a Type */
-  def getTypeName(t: Type): Option[String] = t match
-    case TypeRef(_, name, _, _) => Some(name)
-    case TypeStruct(_, _, _, name, _, _) => Some(name)
-    case _ => None
-
-  /** Find a type definition by name, trying common ID patterns */
-  private def findTypeByName(
-    typeName:    String,
-    resolvables: ResolvablesIndex
-  ): Option[ResolvableType] =
-    // Try stdlib ID format first
-    resolvables
-      .lookupType(s"stdlib::typedef::$typeName")
-      .orElse(resolvables.lookupType(s"stdlib::typealias::$typeName"))
-      .orElse:
-        // Search through all types by name as fallback (for user-defined types)
-        resolvables.resolvableTypes.values.find:
-          case td: TypeDef => td.name == typeName
-          case ta: TypeAlias => ta.name == typeName
-          case ts: TypeStruct => ts.name == typeName
-
-  /** Check if a type is heap-allocated by looking at its NativeType.memEffect */
+  // Delegate to TypeUtils for type queries
+  def getTypeName(t: Type): Option[String] = TypeUtils.getTypeName(t)
   def isHeapType(typeName: String, resolvables: ResolvablesIndex): Boolean =
-    findTypeByName(typeName, resolvables) match
-      case Some(TypeDef(_, _, _, Some(ns: NativeStruct), _, _, _)) =>
-        ns.memEffect.contains(MemEffect.Alloc)
-      case Some(TypeDef(_, _, _, Some(np: NativePointer), _, _, _)) =>
-        np.memEffect.contains(MemEffect.Alloc)
-      case Some(TypeDef(_, _, _, Some(prim: NativePrimitive), _, _, _)) =>
-        prim.memEffect.contains(MemEffect.Alloc)
-      case Some(s: TypeStruct) =>
-        hasHeapFields(s, resolvables)
-      case _ => false
-
-  /** Check if a user struct has any heap-typed fields */
+    TypeUtils.isHeapType(typeName, resolvables)
   def hasHeapFields(struct: TypeStruct, resolvables: ResolvablesIndex): Boolean =
-    struct.fields.exists { field =>
-      getTypeName(field.typeSpec).exists(isHeapType(_, resolvables))
-    }
-
-  /** Get free function name for a type, or None if not heap type */
+    TypeUtils.hasHeapFields(struct, resolvables)
   def freeFnFor(typeName: String, resolvables: ResolvablesIndex): Option[String] =
-    if isHeapType(typeName, resolvables) then Some(s"__free_$typeName")
-    else None
-
-  /** Get clone function name for a type, or None if not heap type */
+    TypeUtils.freeFnFor(typeName, resolvables)
   def cloneFnFor(typeName: String, resolvables: ResolvablesIndex): Option[String] =
-    if isHeapType(typeName, resolvables) then Some(s"__clone_$typeName")
-    else None
+    TypeUtils.cloneFnFor(typeName, resolvables)
 
-  /** Check if a Bnd has memory effect Alloc */
-  def bndAllocates(bnd: Bnd): Boolean =
+  /** Check if a Bnd has memory effect Alloc (native allocator or struct constructor with heap
+    * fields)
+    */
+  def bndAllocates(bnd: Bnd, resolvables: ResolvablesIndex): Boolean =
     bnd.value.terms
       .collectFirst:
         case lambda: Lambda =>
           lambda.body.terms.exists:
             case NativeImpl(_, _, _, _, Some(MemEffect.Alloc)) => true
+            case DataConstructor(_, Some(returnType)) =>
+              // Struct with heap fields needs cleanup
+              // isHeapType for TypeStruct delegates to hasHeapFields
+              getTypeName(returnType).exists(isHeapType(_, resolvables))
             case _ => false
       .getOrElse(false)
 
@@ -284,7 +250,7 @@ object OwnershipAnalyzer:
           resolvables
             .lookup(id)
             .collect { case bnd: Bnd => bnd }
-            .filter(bndAllocates)
+            .filter(bndAllocates(_, resolvables))
             .flatMap(_.typeAsc)
             .filter(t => getTypeName(t).exists(isHeapType(_, resolvables)))
       }
@@ -308,6 +274,16 @@ object OwnershipAnalyzer:
       mergeAllocTypes(trueAlloc, falseAlloc)
     case _ => None
 
+  /** Look up the resolved ID for a free function by name */
+  private def lookupFreeFnId(freeFn: String, resolvables: ResolvablesIndex): Option[String] =
+    // Try stdlib first, then search resolvables for user-defined free functions
+    val stdlibId = s"stdlib::bnd::$freeFn"
+    if resolvables.lookup(stdlibId).isDefined then Some(stdlibId)
+    else
+      // Search for a binding with this name in resolvables
+      resolvables.resolvables.collectFirst:
+        case (id, bnd: Bnd) if bnd.name == freeFn => id
+
   /** Create a free call: App(Ref("__free_T"), Ref(binding)) */
   private def mkFreeCall(
     bindingName: String,
@@ -318,8 +294,8 @@ object OwnershipAnalyzer:
   ): App =
     val typeName = getTypeName(tpe)
     val freeFn   = typeName.flatMap(freeFnFor(_, resolvables)).getOrElse("__free_String")
-    // Use stdlib ID format for the free function
-    val freeFnId = Some(s"stdlib::bnd::$freeFn")
+    // Look up the actual ID for the free function (could be stdlib or user module)
+    val freeFnId = lookupFreeFnId(freeFn, resolvables)
     val unitType: Option[Type] = Some(TypeRef(span, "Unit", Some("stdlib::typedef::Unit"), Nil))
     // Free function type: T -> Unit
     val fnType  = Some(TypeFn(span, List(tpe), unitType.get))
@@ -791,7 +767,7 @@ object OwnershipAnalyzer:
               // Check if this is a struct constructor - if so, clone heap args (struct owns copies)
               val isStructConstructor = baseFn match
                 case ref: Ref => ref.name.startsWith("__mk_")
-                case _        => false
+                case _ => false
 
               // For struct constructors, wrap heap args with clone calls
               val finalInnerApp =

@@ -675,6 +675,10 @@ def getLlvmType(
       Left(CodeGenError("Unexpected inline native struct"))
     case ts: TypeStruct =>
       Right(s"%struct.${ts.name}")
+    case TypeFn(_, _, ret) =>
+      // When a function type leaks into places expecting a concrete type (e.g., constructor
+      // return type lookup), fall back to the return type's LLVM mapping.
+      getLlvmType(ret, state)
     case other =>
       // No LLVM type mapping for this TypeSpec
       Left(

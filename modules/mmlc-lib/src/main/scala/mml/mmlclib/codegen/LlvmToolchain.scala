@@ -603,8 +603,7 @@ object LlvmToolchain:
               "-c",
               "-std=c17",
               s"-O${config.optLevel}",
-              "-flto",
-              "-fsanitize=address"
+              "-flto"
             ) ++ clangFlags ++ List("-fPIC", "-o", objPath.toString, sourcePath)).mkString(" ")
             executeCommand(cmd, "Failed to compile MML runtime", config.outputDir, config.verbose)
               .map {
@@ -645,8 +644,7 @@ object LlvmToolchain:
               "-emit-llvm",
               "-c",
               "-std=c17",
-              s"-O${config.optLevel}",
-              "-fsanitize=address"
+              s"-O${config.optLevel}"
             ) ++ cpuFlags ++ clangFlags ++ List("-fPIC", "-o", bcPath.toString, sourcePath))
               .mkString(" ")
             executeCommand(
@@ -730,7 +728,13 @@ object LlvmToolchain:
 
     timedStep("llvm-compile-binary", recordTiming)(
       executeCommand(
-        (List("clang", "-target", targetTriple, "-fuse-ld=lld", "-fsanitize=address", s"-O${config.optLevel}") ++
+        (List(
+          "clang",
+          "-target",
+          targetTriple,
+          "-fuse-ld=lld",
+          s"-O${config.optLevel}"
+        ) ++
           clangFlags ++ List(inputFile, "-o", finalExecutablePath)).mkString(" "),
         "Failed to compile and link",
         config.outputDir,
