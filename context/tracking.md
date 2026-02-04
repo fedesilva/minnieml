@@ -160,6 +160,13 @@ array-mem.mml and why it fails for next steps
     - [x] D2: `leak_test.mml` works - 0 leaks with `leaks --atExit`
     - [x] D3: All benchmarks compile and run
 
+- [ ] **Phase 2.6: Eliminate `__cap` - Type-Level Memory Attributes**
+  - **Spec:** `context/specs/mem-no-cap.md`
+  - Replace hardcoded `heapTypes` set with `@native[mem=heap]` attribute
+  - Heap promotion for returns (clone static to heap, caller always owns)
+  - Sidecar booleans for local mixed ownership tracking
+  - Memory function generation phase (`__free_T` and `__clone_T`)
+
 - [ ] **Phase 3: Struct Destructors**
   - [ ] Generate `__free_StructName` for user structs alongside `__mk_StructName`
   - [ ] Handle `DataDestructor` in codegen to free heap-allocated fields
