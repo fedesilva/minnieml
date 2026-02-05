@@ -28,7 +28,7 @@ Multiple locations construct stdlib IDs as string literals rather than deriving 
 
 **Note on Unit/Bool:** These are fundamental types that the ownership analyzer legitimately needs:
 - `Unit` - return type of `__free_*` functions, type of `let _ = ...` discard bindings
-- `Bool` - type of sidecar booleans for mixed ownership tracking (`__owns_x`)
+- `Bool` - type of witness booleans for mixed ownership tracking (`__owns_x`)
 
 The dependency is unavoidable; the issue is only the repeated string literals.
 
@@ -168,18 +168,18 @@ This 90-line fixed-point analysis is conceptually independent. It discovers whic
 1. Extract to separate file `semantic/ReturnOwnershipAnalysis.scala`
 2. Or add clear documentation header explaining the algorithm
 
-### 3.4 Deep Nesting in Sidecar Logic
+### 3.4 Deep Nesting in Witness Logic
 
 ```scala
 // Lines 658-674 - 4 levels of nesting
-val newBody = sidecarOpt match
-  case Some((sidecarName, _, _)) =>
+val newBody = witnessOpt match
+  case Some((witnessName, _, _)) =>
     val bindingName = params.headOption.map(_.name).getOrElse("")
     val bindingType = params.headOption.flatMap(p => p.typeSpec.orElse(p.typeAsc))
     val bindingId   = params.headOption.flatMap(_.id)
     bindingType match
       case Some(tpe) if getTypeName(tpe).exists(isHeapType(_, scope.resolvables)) =>
-        val toFree = List((bindingName, Some(tpe), bindingId, Some(sidecarName)))
+        val toFree = List((bindingName, Some(tpe), bindingId, Some(witnessName)))
         wrapWithFrees(bodyWithTerminalFrees, toFree, body.span, scope.resolvables)
       case _ =>
         bodyWithTerminalFrees
@@ -190,9 +190,9 @@ val newBody = sidecarOpt match
 **Recommendation:** Extract to helper:
 
 ```scala
-private def wrapWithSidecarFreeIfNeeded(
+private def wrapWithWitnessFreeIfNeeded(
   body: Expr,
-  sidecarOpt: Option[(String, Expr, Option[Type])],
+  witnessOpt: Option[(String, Expr, Option[Type])],
   params: List[FnParam],
   scope: OwnershipScope
 ): Expr = ...
@@ -219,4 +219,4 @@ private def wrapWithSidecarFreeIfNeeded(
 - `TypeUtils` correctly centralizes type queries - both phases use it
 - Phase isolation is clean - no imports between semantic phases
 - CPS-style free insertion is elegant and doesn't require codegen changes
-- Sidecar boolean approach for mixed ownership is a clever compile-time solution
+- Witness boolean approach for mixed ownership is a clever compile-time solution

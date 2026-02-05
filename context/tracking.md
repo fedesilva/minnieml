@@ -30,8 +30,9 @@ We have introduced new phases that shuffle stuff, need to review.
 ### Compile runtime to central location
 
 * Compile runtime to ~/.config/mml/cache/runtime/
-* add an `init` subcommand to clean and recompile the runtime.
+* add an `setup` subcommand to clean and recompile the runtime.
     - or run the init code if it's not been ran when we first compile something 
+    - and check for installed tools.
 * update tooling to find the runtime where it's compiled.
 
 ### Simple Memory Management Prototype
@@ -48,7 +49,12 @@ Affine ownership with borrow-by-default. Enables safe automatic memory managemen
 - No codegen changes - just AST rewriting
 
 
+
 **Remaining:**
+
+- [x] *terminology*: rename sidecar to witness. [COMPLETE]
+    
+
 
 - [ ] **Fix `arrays-mem.mml` double-free** — missing `consuming` on `ar_str_set`
   - **Root cause:** `ar_str_set` stores the String in the array (takes ownership) but
@@ -217,15 +223,15 @@ Added `--asan`/`-s` CLI flag to enable AddressSanitizer for memory error detecti
   - Updated `TbaaEmissionTest` and `FunctionSignatureTest` for new struct layout/ABI
   - All 210 tests pass, 7 benchmarks compile, 0 memory leaks in mixed_ownership_test
 
-- **Phase E: Sidecar booleans for local mixed ownership**: Replaced runtime `__cap` checks with
+- **Phase E: Witness booleans for local mixed ownership**: Replaced runtime `__cap` checks with
   compile-time ownership tracking for local variables with mixed allocation origins.
-  - Extended `BindingInfo` with `sidecar: Option[String]` field
-  - Extended `OwnershipScope` with `withMixedOwnership()` and `getSidecar()` helpers
+  - Extended `BindingInfo` with `witness: Option[String]` field
+  - Extended `OwnershipScope` with `withMixedOwnership()` and `getWitness()` helpers
   - Added `detectMixedConditional()` - detects XOR allocation (one branch allocates, other doesn't)
-  - Added `mkSidecarConditional()` - generates `if cond then true else false` tracking bool
+  - Added `mkWitnessConditional()` - generates `if cond then true else false` tracking bool
   - Added `mkConditionalFree()` - generates `if __owns_x then __free_T x else ()`
-  - Modified `wrapWithFrees()` to emit conditional free for bindings with sidecars
-  - LLVM IR: sidecar compiles to `phi i1` at merge, conditional free to predicted branch
+  - Modified `wrapWithFrees()` to emit conditional free for bindings with witnesses
+  - LLVM IR: witness compiles to `phi i1` at merge, conditional free to predicted branch
   - Verified: `mixed_ownership_test.mml` runs with 0 leaks
   - Ran `sbtn "test; scalafmtAll; scalafixAll; mmlcPublishLocal"` (210/210 tests pass)
   - Ran `make -C benchmark clean && make -C benchmark mml` (all 7 benchmarks compile)

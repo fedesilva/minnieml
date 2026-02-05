@@ -10,12 +10,12 @@ enum OwnershipState derives CanEqual:
   case Borrowed // Borrowed reference, caller does not own
   case Literal // Literal value, no ownership tracking needed
 
-/** Binding info: ownership state, type, ID for selecting __free_T, and optional sidecar boolean */
+/** Binding info: ownership state, type, ID for selecting __free_T, and optional witness boolean */
 case class BindingInfo(
   state:      OwnershipState,
   bindingTpe: Option[Type]   = None,
   bindingId:  Option[String] = None,
-  sidecar:    Option[String] = None // Name of __owns_<binding> if mixed ownership
+  witness:    Option[String] = None // Name of __owns_<binding> if mixed ownership
 )
 
 /** Tracks ownership for bindings within a scope */
@@ -35,15 +35,15 @@ case class OwnershipScope(
   def withMixedOwnership(
     name:        String,
     tpe:         Option[Type],
-    sidecarName: String,
+    witnessName: String,
     id:          Option[String] = None
   ): OwnershipScope =
     copy(bindings =
-      bindings + (name -> BindingInfo(OwnershipState.Owned, tpe, id, Some(sidecarName)))
+      bindings + (name -> BindingInfo(OwnershipState.Owned, tpe, id, Some(witnessName)))
     )
 
-  def getSidecar(name: String): Option[String] =
-    bindings.get(name).flatMap(_.sidecar)
+  def getWitness(name: String): Option[String] =
+    bindings.get(name).flatMap(_.witness)
 
   def withMoved(name: String, span: SrcSpan): OwnershipScope =
     val existing = bindings.get(name)
@@ -65,12 +65,12 @@ case class OwnershipScope(
 
   def getMovedAt(name: String): Option[SrcSpan] = movedAt.get(name)
 
-  /** Get all owned bindings that need to be freed, with their types, IDs, and sidecars */
+  /** Get all owned bindings that need to be freed, with their types, IDs, and witnesses */
   def ownedBindings: List[(String, Option[Type], Option[String], Option[String])] =
     bindings
       .collect:
-        case (name, BindingInfo(OwnershipState.Owned, tpe, id, sidecar)) =>
-          (name, tpe, id, sidecar)
+        case (name, BindingInfo(OwnershipState.Owned, tpe, id, witness)) =>
+          (name, tpe, id, witness)
       .toList
 
 /** Result of analyzing an expression */
@@ -319,10 +319,10 @@ object OwnershipAnalyzer:
           case _ => None
       case _ => None
 
-  /** Create a sidecar conditional: `if cond then true else false` or `if cond then false else true`
+  /** Create a witness conditional: `if cond then true else false` or `if cond then false else true`
     * depending on which branch allocates.
     */
-  private def mkSidecarConditional(
+  private def mkWitnessConditional(
     originalCond:  Cond,
     trueAllocates: Boolean
   ): Cond =
@@ -348,7 +348,7 @@ object OwnershipAnalyzer:
   private def mkConditionalFree(
     bindingName: String,
     tpe:         Type,
-    sidecarName: String,
+    witnessName: String,
     span:        SrcSpan,
     bindingId:   Option[String],
     resolvables: ResolvablesIndex
@@ -356,9 +356,9 @@ object OwnershipAnalyzer:
     val boolType = Some(TypeRef(span, "Bool", Some("stdlib::typedef::Bool"), Nil))
     val unitType = Some(TypeRef(span, "Unit", Some("stdlib::typedef::Unit"), Nil))
 
-    // Condition: reference to the sidecar boolean
-    val sidecarRef  = Ref(span, sidecarName, typeSpec = boolType)
-    val sidecarExpr = Expr(span, List(sidecarRef), typeSpec = boolType)
+    // Condition: reference to the witness boolean
+    val witnessRef  = Ref(span, witnessName, typeSpec = boolType)
+    val witnessExpr = Expr(span, List(witnessRef), typeSpec = boolType)
 
     // Then branch: __free_T x
     val freeCall     = mkFreeCall(bindingName, tpe, span, bindingId, resolvables)
@@ -368,12 +368,12 @@ object OwnershipAnalyzer:
     val unitLit     = LiteralUnit(span)
     val unitLitExpr = Expr(span, List(unitLit), typeSpec = unitType)
 
-    Cond(span, sidecarExpr, freeCallExpr, unitLitExpr, unitType, unitType)
+    Cond(span, witnessExpr, freeCallExpr, unitLitExpr, unitType, unitType)
 
   /** Wrap an expression with CPS-style free calls. Transforms: `expr` into
     * `let __r = expr; let _ = free1; let _ = free2; __r`
     *
-    * For bindings with sidecars, generates conditional free: `if __owns_x then __free_T x else ()`
+    * For bindings with witnesses, generates conditional free: `if __owns_x then __free_T x else ()`
     */
   private def wrapWithFrees(
     expr:        Expr,
@@ -399,15 +399,15 @@ object OwnershipAnalyzer:
 
     // Fold free calls from right to left, building:
     // let _ = freeN; ... let _ = free1; __r
-    // For bindings with sidecars, generate conditional free instead
+    // For bindings with witnesses, generate conditional free instead
     val withFrees = toFree.foldRight(innermost): (binding, acc) =>
-      val (name, tpeOpt, id, sidecarOpt) = binding
+      val (name, tpeOpt, id, witnessOpt) = binding
       tpeOpt match
         case Some(tpe) =>
-          val freeOrCondFree: Term = sidecarOpt match
-            case Some(sidecarName) =>
+          val freeOrCondFree: Term = witnessOpt match
+            case Some(witnessName) =>
               // Conditional free: if __owns_x then __free_T x else ()
-              mkConditionalFree(name, tpe, sidecarName, span, id, resolvables)
+              mkConditionalFree(name, tpe, witnessName, span, id, resolvables)
             case None =>
               // Unconditional free
               mkFreeCall(name, tpe, span, id, resolvables)
@@ -581,20 +581,20 @@ object OwnershipAnalyzer:
             val mixedCond = detectMixedConditional(arg, scope)
 
             // Set up scope for lambda body - handle mixed conditionals specially
-            val (bodyScope, sidecarOpt) = params.headOption match
+            val (bodyScope, witnessOpt) = params.headOption match
               case Some(param) if mixedCond.isDefined =>
-                // Mixed conditional: generate sidecar boolean for compile-time tracking
+                // Mixed conditional: generate witness boolean for compile-time tracking
                 val (trueAllocates, allocTpe) = mixedCond.get
-                val sidecarName               = s"__owns_${param.name}"
+                val witnessName               = s"__owns_${param.name}"
                 val originalCond              = arg.terms.head.asInstanceOf[Cond]
-                val sidecarCond               = mkSidecarConditional(originalCond, trueAllocates)
+                val witnessCond               = mkWitnessConditional(originalCond, trueAllocates)
                 val boolType =
                   Some(TypeRef(syntheticSpan, "Bool", Some("stdlib::typedef::Bool"), Nil))
-                val sidecarExpr = Expr(syntheticSpan, List(sidecarCond), typeSpec = boolType)
-                val scopeWithSidecar = argResult.scope
-                  .withMixedOwnership(param.name, Some(allocTpe), sidecarName, param.id)
-                  .withLiteral(sidecarName) // sidecar is bool, no cleanup needed
-                (scopeWithSidecar, Some((sidecarName, sidecarExpr, boolType)))
+                val witnessExpr = Expr(syntheticSpan, List(witnessCond), typeSpec = boolType)
+                val scopeWithWitness = argResult.scope
+                  .withMixedOwnership(param.name, Some(allocTpe), witnessName, param.id)
+                  .withLiteral(witnessName) // witness is bool, no cleanup needed
+                (scopeWithWitness, Some((witnessName, witnessExpr, boolType)))
               case Some(param) if allocType.isDefined =>
                 val paramTypeName =
                   param.typeSpec
@@ -633,30 +633,30 @@ object OwnershipAnalyzer:
             // Free all owned bindings at terminal body. Double-free is prevented by:
             // 1. Explicit __free_* calls mark their args as Moved (via consuming param)
             // 2. Temp wrappers mark inherited bindings as Borrowed (see borrowedScope below)
-            // 3. Bindings with sidecars are excluded here - handled separately below
-            // For bindings with sidecars, generates conditional free at this point
-            val sidecarBinding = sidecarOpt.flatMap(_ => params.headOption.map(_.name))
+            // 3. Bindings with witnesses are excluded here - handled separately below
+            // For bindings with witnesses, generates conditional free at this point
+            val witnessBinding = witnessOpt.flatMap(_ => params.headOption.map(_.name))
             val bindingsToFree =
               if isTerminalBody then
                 bodyResult.scope.ownedBindings.filter:
                   case (name, Some(tpe), _, _) =>
                     !escaping.contains(name) &&
-                    !sidecarBinding.contains(name) && // Exclude sidecar binding - handled below
+                    !witnessBinding.contains(name) && // Exclude witness binding - handled below
                     getTypeName(tpe).exists(isHeapType(_, scope.resolvables))
                   case _ => false
               else Nil
 
             // Wrap body in CPS-style free sequence:
             // let result = <body>; let _ = free x; result
-            // For bindings with sidecars: if __owns_x then __free_T x else ()
+            // For bindings with witnesses: if __owns_x then __free_T x else ()
             val bodyWithTerminalFrees =
               if bindingsToFree.isEmpty then bodyResult.expr
               else wrapWithFrees(bodyResult.expr, bindingsToFree, body.span, scope.resolvables)
 
-            // If we have a sidecar, wrap the body (inside the let) with conditional free
+            // If we have a witness, wrap the body (inside the let) with conditional free
             // Structure: let __owns_x = <cond>; let x = <val>; <body>; if __owns_x then free x; result
-            val newBody = sidecarOpt match
-              case Some((sidecarName, _, _)) =>
+            val newBody = witnessOpt match
+              case Some((witnessName, _, _)) =>
                 // Get the binding's type from the param
                 val bindingName = params.headOption.map(_.name).getOrElse("")
                 val bindingType = params.headOption.flatMap(p => p.typeSpec.orElse(p.typeAsc))
@@ -665,7 +665,7 @@ object OwnershipAnalyzer:
                 bindingType match
                   case Some(tpe) if getTypeName(tpe).exists(isHeapType(_, scope.resolvables)) =>
                     // Generate: let __r = <body>; if __owns_x then free x else (); __r
-                    val toFree = List((bindingName, Some(tpe), bindingId, Some(sidecarName)))
+                    val toFree = List((bindingName, Some(tpe), bindingId, Some(witnessName)))
                     wrapWithFrees(bodyWithTerminalFrees, toFree, body.span, scope.resolvables)
                   case _ =>
                     bodyWithTerminalFrees
@@ -675,15 +675,15 @@ object OwnershipAnalyzer:
             val newLambda = Lambda(lSpan, params, newBody, captures, lTypeSpec, lTypeAsc, meta)
             val innerApp  = App(span, newLambda, argResult.expr, typeAsc, typeSpec)
 
-            // If we have a sidecar, wrap with: let __owns_x = <sidecar_cond>; <innerApp>
-            val finalTerm = sidecarOpt match
-              case Some((sidecarName, sidecarExpr, boolType)) =>
-                val sidecarParam =
-                  FnParam(syntheticSpan, sidecarName, typeSpec = boolType, typeAsc = boolType)
+            // If we have a witness, wrap with: let __owns_x = <witness_cond>; <innerApp>
+            val finalTerm = witnessOpt match
+              case Some((witnessName, witnessExpr, boolType)) =>
+                val witnessParam =
+                  FnParam(syntheticSpan, witnessName, typeSpec = boolType, typeAsc = boolType)
                 val innerAppExpr = Expr(syntheticSpan, List(innerApp), typeSpec = typeSpec)
-                val sidecarLambda =
-                  Lambda(syntheticSpan, List(sidecarParam), innerAppExpr, Nil, typeSpec = typeSpec)
-                App(syntheticSpan, sidecarLambda, sidecarExpr, typeSpec = typeSpec)
+                val witnessLambda =
+                  Lambda(syntheticSpan, List(witnessParam), innerAppExpr, Nil, typeSpec = typeSpec)
+                App(syntheticSpan, witnessLambda, witnessExpr, typeSpec = typeSpec)
               case None =>
                 innerApp
 

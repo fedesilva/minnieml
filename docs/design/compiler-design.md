@@ -507,7 +507,7 @@ Generation section below.
    f (alloc())  →  let __tmp = alloc(); let __r = f __tmp; __free_T __tmp; __r
    ```
 
-4. **Mixed Ownership Conditionals**: When branches differ in allocation, generates sidecar boolean:
+4. **Mixed Ownership Conditionals**: When branches differ in allocation, generates witness boolean:
    ```
    let s = if c then alloc() else "lit"
    →

@@ -727,7 +727,7 @@ void __mml_sys_hole(int64_t start_line, int64_t start_col, int64_t end_line, int
 }
 
 // --- Memory Management Free Functions ---
-// Note: With compile-time ownership tracking (sidecar booleans), these functions
+// Note: With compile-time ownership tracking (witness booleans), these functions
 // are only called when the value is actually owned. No runtime __cap check needed.
 
 void __free_String(String s)
