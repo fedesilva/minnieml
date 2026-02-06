@@ -22,6 +22,10 @@
 ## Active Tasks
 
 
+### LSP crashes
+
+both on nvim and vscode
+
 ### LSP showing tokens with mixed colors
 
 Last time this happened we had bad indexes.
