@@ -35,7 +35,7 @@ The dependency is unavoidable; the issue is only the repeated string literals.
 **Recommendation:** Extract to a shared constants object (location TBD):
 
 ```scala
-object StdlibIds:
+object fundamentalTypesIds:
   def typedef(name: String): String = s"stdlib::typedef::$name"
   val UnitType: String = typedef("Unit")
   val BoolType: String = typedef("Bool")
@@ -50,7 +50,7 @@ val freeFn = typeName.flatMap(freeFnFor(_, resolvables)).getOrElse("__free_Strin
 
 If type lookup fails, it silently falls back to `__free_String`. This could mask bugs.
 
-**Recommendation:** Return an error or log a warning instead of silent fallback.
+**Recommendation:** Return an error instead of silent fallback.
 
 ### 1.3 Hardcoded Naming Convention
 

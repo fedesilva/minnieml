@@ -1,0 +1,18 @@
+
+fn join(a: String, b: String): String = concat a b;
+
+fn make_test_results(): String =
+  join (join (join (join (join (join "Zero: " (to_string 0)) ", ") "Positive: ") (to_string 123)) ", ") (join "Large: " (to_string 1234567890))
+;
+
+fn loop(i: Int, to: Int): Unit =
+  if i <= to then
+    println (make_test_results ());
+    loop (i+1) to
+  end
+;
+
+
+fn main(): Unit =
+  loop 1 1000
+;
