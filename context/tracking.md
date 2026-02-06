@@ -22,46 +22,46 @@
 ## Active Tasks
 
 
-### LSP crashes [COMPLETE]
 
-both on nvim and vscode
-- if you open nqueens.mml or mat-mul.mml (just to mention two) no problem.
-- if you open astar.mml CRASH
-- **Root cause:** `JsonRpc.readContent` used `BufferedReader.read(N)` which reads N
-  *characters*, but `Content-Length` is in *bytes*. Files with multi-byte UTF-8 chars
-  (astar.mml has 2 em dashes — U+2014, 3 bytes each) caused the reader to overshoot
-  by 4 bytes, consuming the next message's headers as content body → JSON parse error.
-- **Fix:** Rewrote `JsonRpc` to use raw `InputStream` byte reading for message bodies.
-  Headers parsed byte-by-byte, content read as exact byte count then decoded as UTF-8.
-- **Additional fix:** `IO.println` in error handler wrote to stdout (LSP protocol channel),
-  corrupting the stream. Replaced with logger calls.
-- **Logging:** Added file-based logging via log4cats `Logger[IO]` (custom implementation
-  backed by `PrintWriter`, no SLF4J backend needed). Logs to `$buildDir/lsp/server.log`.
-  Every request, response, notification, error, and compilation logged.
-- **Deps:** Removed unused `reload4j` and `log4cats-slf4j`. Kept `log4cats-core` only.
+### LSP: find references does not work for struct constructors
 
-### LSP over HTTP
+Navigating to reference (go-to-definition) on a struct constructor call does not jump
+to the struct definition. The constructor is synthetic (`__mk_<Name>`), so the LSP
+should resolve through it to the `TypeStruct` declaration.
 
-Provide a websocket interface for the LSP server.
+Example — asking for "go to definition" on `MinHeap` in the constructor call within
+`heap_new` should navigate to the `struct MinHeap` definition:
 
-* Add http4s dependencies
-* Implement websocket wrapper for JSON-RPC
-* Add CLI flag --http
-* add https://typelevel.org/log4cats/ and log to $buildDir/lsp/server.log
+```
+struct MinHeap {
+  indices: IntArray,
+  scores:  IntArray,
+  capacity: Int
+};
 
-
-### LSP showing tokens with mixed colors
+fn heap_new (cap: Int): MinHeap =
+  MinHeap          // <-- go-to-def here should jump to struct MinHeap
+    (ar_int_new cap)
+    (ar_int_new cap)
+    cap
+;
+```
 
 ### LSP showing tokens with mixed colors
 
 Last time this happened we had bad indexes.
 We have introduced new phases that shuffle stuff, need to review.
 We need to ignore anything that is not in the source (synthetic)
+There is image evidence in context/images
+
+
+### Refactor SourceSpan
 
 * refactor SourceSpan (and from source?) to be an enum
     - Synth | SourceSpan (one has real info, the other is just a placeholder, 
         also informs something is synth and should not even visible.
 * things like constructors need to use the span of the type definition.
+
 
 
 ### Simple Memory Management Prototype
