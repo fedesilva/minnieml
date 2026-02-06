@@ -1,0 +1,15 @@
+
+
+fn good(i:Int) = if i > 20 then true else false end;
+
+fn bad() = 
+  if good 2 then
+    println "good"
+  else
+    println "nopes"
+;
+
+fn main() = 
+  println (good 21);
+  bad()
+;

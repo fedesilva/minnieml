@@ -26,14 +26,13 @@
 
 Last time this happened we had bad indexes.
 We have introduced new phases that shuffle stuff, need to review.
+We need to ignore anything that is not in the source (synthetic)
 
-### Compile runtime to central location
+* refactor SourceSpan (and from source?) to be an enum
+    - Synth | SourceSpan (one has real info, the other is just a placeholder, 
+        also informs something is synth and should not even visible.
+* things like constructors need to use the span of the type definition.
 
-* Compile runtime to ~/.config/mml/cache/runtime/
-* add an `setup` subcommand to clean and recompile the runtime.
-    - or run the init code if it's not been ran when we first compile something 
-    - and check for installed tools.
-* update tooling to find the runtime where it's compiled.
 
 ### Simple Memory Management Prototype
 
@@ -143,6 +142,15 @@ Affine ownership with borrow-by-default. Enables safe automatic memory managemen
     - Report summary of results
 
 
+
+### Compile runtime to central location
+
+* Compile runtime to ~/.config/mml/cache/runtime/
+* add an `setup` subcommand to clean and recompile the runtime.
+    - or run the init code if it's not been ran when we first compile something 
+    - and check for installed tools.
+* update tooling to find the runtime where it's compiled.
+
 ### Runtime: time functions
 
 TBD
@@ -151,6 +159,16 @@ TBD
 ---
 
 ## Recent Changes
+
+### 2026-02-06 Lift inner functions in astar.mml
+
+- `astar.mml`: Uncommented A* implementation, lifting 4 inner functions to top-level
+  with captured variables passed as explicit parameters (MML doesn't support closures).
+  - `init_g(g_score, inf, total, i)` — was inner to `astar`, captured `g_score`, `size`, `inf`
+  - `visit_neighbors(open_set, g_score, walls, goal_idx, width, height, current, cx, cy, dir, heap_sz)` — was inner to `solve`, captured solve's locals + astar's state
+  - `solve(open_set, g_score, walls, goal_idx, width, height, h_size)` — was inner to `astar`, mutually recursive with `visit_neighbors`
+  - `build_wall(walls, w, i)` — was inner to `main`, captured `walls` and `w`
+- Verified: compiles and outputs 198 (correct shortest path cost)
 
 ### 2026-02-06 Right-assoc operator use-after-free fix [COMPLETE]
 

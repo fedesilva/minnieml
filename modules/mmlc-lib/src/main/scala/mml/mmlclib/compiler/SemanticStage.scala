@@ -6,6 +6,7 @@ import mml.mmlclib.util.pipe.*
 object SemanticStage:
 
   def rewrite(state: CompilerState): CompilerState =
+
     val withStdlib = CompilerState.timePhase("semantic", "inject-stdlib") { current =>
       val moduleWithTypes = injectBasicTypes(current.module)
       val moduleWithOps   = injectStandardOperators(moduleWithTypes)
