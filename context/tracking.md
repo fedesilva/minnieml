@@ -61,11 +61,11 @@ need to add those to nvim plugin.
 
 ### Add Name node to AST
 
-Introduce a `Name` AST node with its own `SrcSpan`. Use it as a field on all
-named declarations (`TypeDef`, `TypeAlias`, `TypeStruct`, `FnDef`, `LetBnd`,
-`OpDef`, etc.). This eliminates keyword-length guessing in semantic tokens —
-`declarationToken` and `keywordLengthFor` can be replaced by reading
-`decl.name.span` directly.
+**Spec:** `context/specs/ast-name-node.md`
+
+Introduce a `Name` AST node with its own `SrcSpan`. Use `nameNode: Name` as
+a field on all named declarations, with `def name: String = nameNode.value`
+for backward compatibility. Eliminates keyword-length guessing in semantic tokens.
 
 ### Refactor SourceSpan
 
