@@ -109,8 +109,14 @@ object SemanticTokens:
   /** Collect tokens from a struct type. */
   private def collectFromTypeStruct(ts: TypeStruct): List[RawToken] =
     val keyword = keywordAt(ts.span.start, 6) // "struct"
-    val name    = declarationToken(ts.span, ts.name, TokenType.Type)
-    val fields  = ts.fields.toList.flatMap(f => collectFromType(f.typeSpec))
+    val name = tokenAtPos(
+      line      = ts.span.start.line,
+      col       = ts.span.start.col + 7, // 6 ("struct") + 1 (space)
+      length    = ts.name.length,
+      tokenType = TokenType.Type,
+      modifiers = Set(TokenModifier.Declaration, TokenModifier.Readonly)
+    )
+    val fields = ts.fields.toList.flatMap(f => collectFromType(f.typeSpec))
     keyword.toList ++ name.toList ++ fields
 
   /** Collect tokens from an expression. */

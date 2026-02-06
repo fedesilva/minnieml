@@ -47,13 +47,25 @@ fn heap_new (cap: Int): MinHeap =
 ;
 ```
 
-### LSP showing tokens with mixed colors
+### LSP showing tokens with mixed colors [COMPLETE]
 
 Last time this happened we had bad indexes.
 We have introduced new phases that shuffle stuff, need to review.
 We need to ignore anything that is not in the source (synthetic)
 There is image evidence in context/images
 
+### Neovim improvements
+
+vscode plugin has commands like restart lsp and compile.
+need to add those to nvim plugin.
+
+### Add Name node to AST
+
+Introduce a `Name` AST node with its own `SrcSpan`. Use it as a field on all
+named declarations (`TypeDef`, `TypeAlias`, `TypeStruct`, `FnDef`, `LetBnd`,
+`OpDef`, etc.). This eliminates keyword-length guessing in semantic tokens —
+`declarationToken` and `keywordLengthFor` can be replaced by reading
+`decl.name.span` directly.
 
 ### Refactor SourceSpan
 
@@ -189,6 +201,16 @@ TBD
 ---
 
 ## Recent Changes
+
+### 2026-02-06 Fix struct semantic token miscoloring [COMPLETE]
+
+- **Root cause:** `collectFromTypeStruct` used `declarationToken` which calls
+  `keywordLengthFor(TokenType.Type)` = 4 ("type"). But the keyword is "struct" (length 6).
+  The name token started 2 chars too early, causing `stru` to show as keyword and `ct MinHeap`
+  as type name.
+- **Fix:** Replaced `declarationToken` call with direct `tokenAtPos` using correct offset 7
+  (6 for "struct" + 1 for space) in `SemanticTokens.scala:collectFromTypeStruct`.
+- Verified: 211 tests pass, all 7 benchmarks compile.
 
 ### 2026-02-06 LSP crash fix + logging [COMPLETE]
 
