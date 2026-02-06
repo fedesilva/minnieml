@@ -574,6 +574,11 @@ object OwnershipAnalyzer:
             // Analyze the argument first
             val argResult = analyzeExpr(arg, scope)
 
+            // Track bindings that already belonged to the outer scope so we don't free them
+            // inside this CPS wrapper. Only bindings created in this let should be freed here.
+            val inheritedOwned: Set[String] =
+              scope.ownedBindings.map(_._1).toSet
+
             // Check if arg is an allocating expression
             val allocType = arg.terms.headOption.flatMap(termAllocates(_, scope))
 
@@ -622,12 +627,6 @@ object OwnershipAnalyzer:
             // Analyze the lambda body with the updated scope
             val bodyResult = analyzeExpr(body, bodyScope)
 
-            // Only insert free calls if body doesn't chain to another let-binding.
-            // In CPS style, App(Lambda, ...) is a continuation - ownership propagates through.
-            val isTerminalBody = !bodyResult.expr.terms.lastOption.exists:
-              case App(_, _: Lambda, _, _, _) => true
-              case _ => false
-
             val escaping = returnedOwnedNames(bodyResult.expr, bodyResult.scope)
 
             // Free all owned bindings at terminal body. Double-free is prevented by:
@@ -637,14 +636,14 @@ object OwnershipAnalyzer:
             // For bindings with witnesses, generates conditional free at this point
             val witnessBinding = witnessOpt.flatMap(_ => params.headOption.map(_.name))
             val bindingsToFree =
-              if isTerminalBody then
-                bodyResult.scope.ownedBindings.filter:
-                  case (name, Some(tpe), _, _) =>
-                    !escaping.contains(name) &&
-                    !witnessBinding.contains(name) && // Exclude witness binding - handled below
-                    getTypeName(tpe).exists(isHeapType(_, scope.resolvables))
-                  case _ => false
-              else Nil
+              bodyResult.scope.ownedBindings.filter:
+                case (name, Some(tpe), _, _) =>
+                  !inheritedOwned.contains(name) &&
+                  !(scope.skipTempWrapping && name.startsWith("__tmp_")) &&
+                  !escaping.contains(name) &&
+                  !witnessBinding.contains(name) && // Exclude witness binding - handled below
+                  getTypeName(tpe).exists(isHeapType(_, scope.resolvables))
+                case _ => false
 
             // Wrap body in CPS-style free sequence:
             // let result = <body>; let _ = free x; result
@@ -937,7 +936,22 @@ object OwnershipAnalyzer:
       case bnd @ Bnd(visibility, span, name, value, typeSpec, typeAsc, docComment, meta, id) =>
         val scope  = OwnershipScope(resolvables = resolvables, returningOwned = returningOwned)
         val result = analyzeExpr(value, scope)
-        (bnd.copy(value = result.expr), result.errors)
+
+        // Final cleanup: free any owned bindings that remain in scope and do not escape.
+        // This covers cases where nested CPS wrappers skipped frees for inherited bindings.
+        val escapingFinal = returnedOwnedNames(result.expr, result.scope)
+        val finalToFree = result.scope.ownedBindings.collect {
+          case (name, Some(tpe), id, witness)
+              if !escapingFinal.contains(name) &&
+                getTypeName(tpe).exists(isHeapType(_, resolvables)) =>
+            (name, Some(tpe), id, witness)
+        }
+
+        val cleanedValue =
+          if finalToFree.isEmpty then result.expr
+          else wrapWithFrees(result.expr, finalToFree, value.span, resolvables)
+
+        (bnd.copy(value = cleanedValue), result.errors)
 
       case other =>
         (other, Nil)

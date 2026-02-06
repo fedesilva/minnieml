@@ -60,6 +60,11 @@ Affine ownership with borrow-by-default. Enables safe automatic memory managemen
     with left-nesting (works clean)
   - **Symptom:** ASAN heap-use-after-free in `concat` (memcpy reads freed memory).
     `leaks --atExit` shows "pointer being freed was not allocated".
+  - **Current workaround:** skip frees for `__tmp_*` bindings using string matching.
+    It's a workaround because it is **fragile**: it depends on a naming scheme that
+    could change, it doesn't express the real ownership rule (it's a heuristic), and
+    it could miss other temporaries or skip frees it shouldn't. **Must be replaced**
+    with a semantic check before marking this task complete.
   - **Key fact:** `++` is a plain `Bnd(Lambda)` — identical to `fn` definitions. The
     function/operator definition ASTs are byte-identical in structure (`concat a b`).
     The difference is purely at call sites.
@@ -168,6 +173,12 @@ TBD
 ---
 
 ## Recent Changes
+
+### 2026-02-06 OwnershipAnalyzer temp wrapper workaround
+
+- `OwnershipAnalyzer.scala`: skip frees for `__tmp_*` bindings via string match as a
+  stopgap for the right-assoc `++` use-after-free (must be replaced before completion)
+- Tests: added `OwnershipAnalyzerTests` coverage for right-assoc `++` ownership wrapping
 
 ### 2026-02-04 Double-clone fix [COMPLETE]
 

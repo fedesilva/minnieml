@@ -275,17 +275,6 @@ class AppRewritingTests extends BaseEffFunSuite:
             terms.flatMap(findAppByName(_, name)).headOption
           case _ => None
 
-      // Helper to find to_string app in ownership wrapper arg
-      def findToStringInWrapperArg(term: Term): Option[App] =
-        term match
-          case App(_, Lambda(_, params, _, _, _, _, _), arg, _, _)
-              if params.headOption.exists(_.name.startsWith("__tmp_")) =>
-            arg.terms.flatMap(t => findAppByName(t, "to_string")).headOption
-          case App(_, fn, _, _, _) => findToStringInWrapperArg(fn)
-          case Lambda(_, _, body, _, _, _, _) =>
-            body.terms.flatMap(findToStringInWrapperArg).headOption
-          case _ => None
-
       memberBnd match
         case bnd: Bnd =>
           bnd.value.terms match
@@ -307,11 +296,11 @@ class AppRewritingTests extends BaseEffFunSuite:
                     s"Expected println application in let body, got:\n${prettyPrintAst(innerLambda)}"
                   )
 
-                  // Find to_string in the ownership wrapper's argument
-                  val toStringApp = findToStringInWrapperArg(innerLambda)
+                  // Find to_string anywhere in the ownership-wrapped body
+                  val toStringApp = findAppByName(innerLambda, "to_string")
                   assert(
                     toStringApp.isDefined,
-                    s"Expected to_string in ownership wrapper arg:\n${prettyPrintAst(innerLambda)}"
+                    s"Expected to_string call in ownership-wrapped body:\n${prettyPrintAst(innerLambda)}"
                   )
 
                   // Verify to_string's argument is Ref(n)

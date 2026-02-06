@@ -17,6 +17,20 @@ class OwnershipAnalyzerTests extends BaseEffFunSuite:
       case Tuple(_, elements, _, _) => elements.exists(containsFreeString)
       case _ => false
 
+  private def countFreesOf(name: String, term: Term): Int =
+    term match
+      case App(_, fn: Ref, Expr(_, List(Ref(_, argName, _, _, _, _, _)), _, _), _, _)
+          if fn.name == "__free_String" && argName == name =>
+        1
+      case App(_, fn, arg, _, _) => countFreesOf(name, fn) + countFreesOf(name, arg)
+      case Expr(_, terms, _, _) => terms.map(countFreesOf(name, _)).sum
+      case Lambda(_, _, body, _, _, _, _) => countFreesOf(name, body)
+      case TermGroup(_, inner, _) => countFreesOf(name, inner)
+      case Cond(_, cond, ifTrue, ifFalse, _, _) =>
+        countFreesOf(name, cond) + countFreesOf(name, ifTrue) + countFreesOf(name, ifFalse)
+      case Tuple(_, elements, _, _) => elements.toList.map(countFreesOf(name, _)).sum
+      case _ => 0
+
   test("caller frees value returned by user function that allocates internally") {
     val code =
       """
@@ -47,5 +61,28 @@ class OwnershipAnalyzerTests extends BaseEffFunSuite:
         !containsFreeString(getBody),
         "callee should not free the returned String"
       )
+    }
+  }
+
+  test("right-assoc ++ chain frees each binding exactly once") {
+    val code =
+      """
+        op ++(a: String, b: String): String 61 right = concat a b;
+
+        fn main(): Unit =
+          let s0 = to_string 0;
+          let s  = "Zero: " ++ s0 ++ ", " ++ (to_string 1);
+          println s
+        ;
+      """
+
+    semNotFailed(code).map { module =>
+      val mainBody = module.members.collectFirst {
+        case b: Bnd if b.name == "main" =>
+          b.value.terms.collectFirst { case l: Lambda => l.body }.get
+      }.get
+
+      val freesS0 = countFreesOf("s0", mainBody)
+      assertEquals(freesS0, 1, "s0 should be freed exactly once, at scope end")
     }
   }
