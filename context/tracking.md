@@ -185,6 +185,14 @@ Affine ownership with borrow-by-default. Enables safe automatic memory managemen
 
 
 
+### LSP log rotation
+
+**Spec:** `context/specs/lsp-log-rotation.md`
+
+Size-based log rotation on LSP startup. Before opening the writer, check if
+`server.log` exceeds 5 MB and rotate (`server.log.1`, `.2`, `.3`). Keeps logs
+bounded without per-write overhead.
+
 ### Compile runtime to central location
 
 * Compile runtime to ~/.config/mml/cache/runtime/
