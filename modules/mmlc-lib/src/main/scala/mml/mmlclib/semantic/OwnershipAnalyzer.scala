@@ -20,12 +20,12 @@ case class BindingInfo(
 
 /** Tracks ownership for bindings within a scope */
 case class OwnershipScope(
-  bindings:         Map[String, BindingInfo]  = Map.empty,
-  movedAt:          Map[String, SrcSpan]      = Map.empty,
-  resolvables:      ResolvablesIndex,
-  returningOwned:   Map[String, Option[Type]] = Map.empty,
-  tempCounter:      Int                       = 0,
-  skipTempWrapping: Boolean                   = false
+  bindings:          Map[String, BindingInfo]  = Map.empty,
+  movedAt:           Map[String, SrcSpan]      = Map.empty,
+  resolvables:       ResolvablesIndex,
+  returningOwned:    Map[String, Option[Type]] = Map.empty,
+  tempCounter:       Int                       = 0,
+  insideTempWrapper: Boolean                   = false
 ):
   def nextTemp: (String, OwnershipScope) =
     (s"__tmp_$tempCounter", copy(tempCounter = tempCounter + 1))
@@ -639,7 +639,7 @@ object OwnershipAnalyzer:
               bodyResult.scope.ownedBindings.filter:
                 case (name, Some(tpe), _, _) =>
                   !inheritedOwned.contains(name) &&
-                  !(scope.skipTempWrapping && name.startsWith("__tmp_")) &&
+                  !scope.insideTempWrapper &&
                   !escaping.contains(name) &&
                   !witnessBinding.contains(name) && // Exclude witness binding - handled below
                   getTypeName(tpe).exists(isHeapType(_, scope.resolvables))
@@ -716,7 +716,7 @@ object OwnershipAnalyzer:
 
             val allocatingArgs = argsWithAlloc.filter(_._5.isDefined)
 
-            if allocatingArgs.isEmpty || scope.skipTempWrapping then
+            if allocatingArgs.isEmpty || scope.insideTempWrapper then
               // No allocating args - proceed with normal analysis
               val argResult                 = analyzeExpr(arg, scope)
               val (scopeAfterArg, fnErrors) = handleConsumingParam(fn, arg, argResult.scope)
@@ -822,10 +822,10 @@ object OwnershipAnalyzer:
               // For analyzing the temp wrapper, mark inherited owned bindings as Borrowed.
               // This prevents them from being freed inside the wrapper - they'll be freed
               // by their owning scope. Temps have explicit frees so they're handled.
-              // Also set skipTempWrapping to prevent infinite recursion on analyzed args.
+              // Mark as inside temp wrapper to prevent infinite recursion and scope-level frees.
               val borrowedScope = scope.ownedBindings
                 .foldLeft(currentScope) { case (s, (name, _, _, _)) => s.withBorrowed(name) }
-                .copy(skipTempWrapping = true)
+                .copy(insideTempWrapper = true)
 
               // The wrapped result is an Expr with a single App term
               wrappedExpr.terms match
