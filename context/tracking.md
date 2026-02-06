@@ -22,9 +22,35 @@
 ## Active Tasks
 
 
-### LSP crashes
+### LSP crashes [COMPLETE]
 
 both on nvim and vscode
+- if you open nqueens.mml or mat-mul.mml (just to mention two) no problem.
+- if you open astar.mml CRASH
+- **Root cause:** `JsonRpc.readContent` used `BufferedReader.read(N)` which reads N
+  *characters*, but `Content-Length` is in *bytes*. Files with multi-byte UTF-8 chars
+  (astar.mml has 2 em dashes — U+2014, 3 bytes each) caused the reader to overshoot
+  by 4 bytes, consuming the next message's headers as content body → JSON parse error.
+- **Fix:** Rewrote `JsonRpc` to use raw `InputStream` byte reading for message bodies.
+  Headers parsed byte-by-byte, content read as exact byte count then decoded as UTF-8.
+- **Additional fix:** `IO.println` in error handler wrote to stdout (LSP protocol channel),
+  corrupting the stream. Replaced with logger calls.
+- **Logging:** Added file-based logging via log4cats `Logger[IO]` (custom implementation
+  backed by `PrintWriter`, no SLF4J backend needed). Logs to `$buildDir/lsp/server.log`.
+  Every request, response, notification, error, and compilation logged.
+- **Deps:** Removed unused `reload4j` and `log4cats-slf4j`. Kept `log4cats-core` only.
+
+### LSP over HTTP
+
+Provide a websocket interface for the LSP server.
+
+* Add http4s dependencies
+* Implement websocket wrapper for JSON-RPC
+* Add CLI flag --http
+* add https://typelevel.org/log4cats/ and log to $buildDir/lsp/server.log
+
+
+### LSP showing tokens with mixed colors
 
 ### LSP showing tokens with mixed colors
 
@@ -164,6 +190,25 @@ TBD
 
 ## Recent Changes
 
+### 2026-02-06 LSP crash fix + logging [COMPLETE]
+
+- **Root cause:** `JsonRpc.readContent` used `BufferedReader.read(N)` (characters) but
+  `Content-Length` is bytes. astar.mml's 2 em dashes (U+2014, 3 bytes/1 char each)
+  caused 4-byte overshoot → next message's headers consumed as JSON body → parse error → exit.
+- **JsonRpc.scala:** Rewrote to use raw `InputStream`. Headers parsed byte-by-byte,
+  content read as exact byte count then decoded UTF-8. Added diagnostic info to parse errors.
+- **LspHandler.scala:** Replaced `IO.println` (stdout corruption) with logger. Added logging
+  on every request, response, notification, error, compilation. Threaded `Logger[IO]` as
+  explicit parameter.
+- **LspServer.scala:** Creates logger via `LspLogging.create`, passes to handler and
+  document manager.
+- **DocumentManager.scala:** Added compilation logging with error counts.
+- **New: LspLogging.scala:** `Logger[IO]` implementation backed by `PrintWriter` to
+  `$outputDir/lsp/server.log`. No SLF4J backend needed.
+- **Dependencies.scala:** Removed `reload4j` (unused), removed `log4cats-slf4j`
+  (SLF4J classpath issues in fat jar). Kept `log4cats-core` only.
+- Verified: 211 tests pass, all 7 benchmarks compile, astar.mml opens in VSCode without crash.
+
 ### 2026-02-06 Lift inner functions in astar.mml
 
 - `astar.mml`: Uncommented A* implementation, lifting 4 inner functions to top-level
@@ -173,6 +218,20 @@ TBD
   - `solve(open_set, g_score, walls, goal_idx, width, height, h_size)` — was inner to `astar`, mutually recursive with `visit_neighbors`
   - `build_wall(walls, w, i)` — was inner to `main`, captured `walls` and `w`
 - Verified: compiles and outputs 198 (correct shortest path cost)
+
+### 2026-02-06 JsonRpc Header Parsing Fix [COMPLETE]
+
+- `JsonRpc.scala`: Modified `readContentLength` to robustly skip headers until an empty line,
+  extracting `Content-Length` regardless of order.
+- Fixed "exit code 0" crash when clients (VSCode/Neovim) sent `Content-Type` or other headers.
+- Verified with updated `repro_lsp.py` injecting `Content-Type`.
+
+### 2026-02-06 LSP Crash Fix [COMPLETE]
+
+- `LspHandler.scala`: Added error recovery to `handleNextMessage`. Unhandled exceptions during
+  message processing (e.g., compiler bugs) now log to stderr and keep the server alive
+  instead of terminating the process.
+- Verified with `repro_lsp.py`.
 
 ### 2026-02-06 Right-assoc operator use-after-free fix [COMPLETE]
 

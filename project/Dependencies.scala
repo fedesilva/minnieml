@@ -2,23 +2,21 @@ import sbt.*
 
 object Dependencies {
 
-  val logBackVersion:       String = "1.5.19"
   val monocleVersion:       String = "3.3.0"
   val catsVersion:          String = "2.12.0"
   val catsEffectVersion:    String = "3.6.3"
   val refinedVersion:       String = "0.11.3"
-  val reload4jVersion:      String = "1.2.26"
-  val lucumaRefinedVersion: String = "0.1.4"  
+  val lucumaRefinedVersion: String = "0.1.4"
   val fastparseVersion:     String = "3.1.1"
   val scoptVersion:         String = "4.1.0"
   val upickleVersion:       String = "4.4.2"
+  val log4catsVersion:      String = "2.7.1"
 
-  val munitVersion:         String = "1.2.2"
-  val munitCatsVersion:     String = "2.1.0"
+  val munitVersion:     String = "1.2.2"
+  val munitCatsVersion: String = "2.1.0"
 
   lazy val commonDependencies: Seq[ModuleID] =
     Seq(
-      "ch.qos.reload4j" % "reload4j" % reload4jVersion,
       // "core" module - IO, IOApp, schedulers
       // This pulls in the kernel and std modules automatically.
       "org.typelevel" %% "cats-effect"    % catsEffectVersion,
@@ -26,7 +24,8 @@ object Dependencies {
       "eu.timepit"    %% "refined-cats"   % refinedVersion,
       "edu.gemini"    %% "lucuma-refined" % lucumaRefinedVersion,
       "dev.optics"    %% "monocle-core"   % monocleVersion,
-      "dev.optics"    %% "monocle-macro"  % monocleVersion
+      "dev.optics"    %% "monocle-macro"  % monocleVersion,
+      "org.typelevel" %% "log4cats-core" % log4catsVersion
     )
 
   lazy val testDeps: Seq[ModuleID] = Seq(

@@ -1,5 +1,4 @@
 // astar.mml
-
 // This benchmark simulates routing a path across a 100x100 discrete 2D grid,
 // navigating from the top-left corner to the bottom-right destination while avoiding a vertical wall obstruction.
 // It models a standard grid-based navigation environment—similar to a video game map or a simplified circuit

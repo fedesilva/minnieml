@@ -2,7 +2,7 @@ package mml.mmlclib.lsp
 
 import cats.effect.IO
 
-import java.io.{BufferedReader, PrintStream}
+import java.io.{InputStream, PrintStream}
 import java.nio.charset.StandardCharsets
 
 /** JSON-RPC message types for LSP communication. */
@@ -44,39 +44,60 @@ object RpcError:
 
 object JsonRpc:
 
-  private val ContentLengthHeader = "Content-Length: "
-
-  /** Reads a single LSP message from the input stream. Blocks until a complete message is
-    * available.
+  /** Reads a single LSP message from the input stream. Content-Length is in bytes, so we read raw
+    * bytes for the body to avoid byte/char mismatch with multi-byte UTF-8.
     */
-  def readMessage(reader: BufferedReader): IO[Either[String, RpcMessage]] =
+  def readMessage(input: InputStream): IO[Either[String, RpcMessage]] =
     IO.blocking {
-      readContentLength(reader).flatMap { length =>
-        skipHeaders(reader)
-        readContent(reader, length)
+      readHeaders(input).flatMap { headers =>
+        headers
+          .find(_.toLowerCase.startsWith("content-length:"))
+          .map(h => h.substring(h.indexOf(':') + 1).trim)
+          .toRight(s"Missing Content-Length (headers: ${headers.mkString(", ")})") match
+          case Left(err) => Left(err)
+          case Right(lenStr) =>
+            try
+              val length = lenStr.toInt
+              readContentBytes(input, length)
+            catch case _: NumberFormatException => Left(s"Invalid Content-Length: $lenStr")
       }
-    }.map(_.flatMap(parseMessage))
+    }.map(_.flatMap { content =>
+      parseMessage(content).left.map { err =>
+        val preview = if content.length > 200 then content.take(200) + "..." else content
+        s"$err (body=${preview})"
+      }
+    })
 
-  private def readContentLength(reader: BufferedReader): Either[String, Int] =
-    val line = reader.readLine()
-    if line == null then Left("Connection closed")
-    else if line.startsWith(ContentLengthHeader) then
-      try Right(line.substring(ContentLengthHeader.length).trim.toInt)
-      catch case _: NumberFormatException => Left(s"Invalid Content-Length: $line")
-    else Left(s"Expected Content-Length header, got: $line")
+  /** Read header lines until empty line (\\r\\n\\r\\n). Returns list of header strings. */
+  private def readHeaders(input: InputStream): Either[String, List[String]] =
+    val headers = List.newBuilder[String]
+    val line    = new StringBuilder
+    var prev    = 0
+    var done    = false
 
-  private def skipHeaders(reader: BufferedReader): Unit =
-    var line = reader.readLine()
-    while line != null && line.nonEmpty do line = reader.readLine()
+    while !done do
+      val b = input.read()
+      if b == -1 then return Left("Connection closed while reading headers")
+      else if b == '\n' && prev == '\r' then
+        val headerLine = line.toString.stripSuffix("\r")
+        if headerLine.isEmpty then done = true
+        else
+          headers += headerLine
+          line.clear()
+      else line.append(b.toChar)
+      prev = b
 
-  private def readContent(reader: BufferedReader, length: Int): Either[String, String] =
-    val buffer = new Array[Char](length)
+    Right(headers.result())
+
+  /** Read exactly `length` bytes and decode as UTF-8. */
+  private def readContentBytes(input: InputStream, length: Int): Either[String, String] =
+    val buffer = new Array[Byte](length)
     var read   = 0
     while read < length do
-      val n = reader.read(buffer, read, length - read)
-      if n == -1 then return Left("Unexpected end of stream")
+      val n = input.read(buffer, read, length - read)
+      if n == -1 then return Left(s"Unexpected end of stream (read $read of $length bytes)")
       read += n
-    Right(new String(buffer))
+    Right(new String(buffer, StandardCharsets.UTF_8))
 
   private def parseMessage(content: String): Either[String, RpcMessage] =
     try
