@@ -1,5 +1,7 @@
 # MML Parser Optimization: The "Commit & Recover" Strategy
 
+## And an upgrade of the error system
+
 **Problem:**
 The parser currently exhibits high backtrack counts (~66%) because it uses
 "Ordered Choice" (`|`) without "Cuts" (`~/`). For every simple identifier,
