@@ -50,6 +50,10 @@ fn heap_new (cap: Int): MinHeap =
 vscode plugin has commands like restart lsp and compile.
 need to add those to nvim plugin.
 
+#### Neovim restart command does not work
+
+The neovim restart LSP command is not functioning correctly. Needs investigation and fix.
+
 ### Add Name node to AST
 
 **Spec:** `context/specs/ast-name-node.md`

@@ -59,7 +59,7 @@
                 },
                 {
                     "name": "keyword.other.mml",
-                    "match": "\\b(module|fn|let|op|end|pub|protected|lexical|type)\\b"
+                    "match": "\\b(module|fn|let|op|end|pub|protected|lexical|type|inline)\\b"
                 },
                 {
                     "name": "keyword.operator.mml",

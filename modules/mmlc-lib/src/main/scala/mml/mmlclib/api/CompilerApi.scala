@@ -401,7 +401,7 @@ object CompilerApi:
   private def printCounters(counters: Vector[Counter]): IO[Unit] =
     if counters.isEmpty then IO.unit
     else
-      val counterHeader = s"${Console.CYAN}Counters:${Console.RESET}"
+      val counterHeader = s"${Console.CYAN}Parser metrics:${Console.RESET}"
       val counterLines = counters.map { c =>
         if c.name.startsWith("time:") then
           val ms = c.value.toDouble / 1000000.0
