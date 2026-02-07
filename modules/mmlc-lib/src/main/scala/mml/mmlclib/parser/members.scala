@@ -75,6 +75,7 @@ private[parser] def fnDefP(info: SourceInfo)(using P[Any]): P[Member] =
   P(
     docCommentP(info)
       ~ visibilityP.?
+      ~ inlineKw.!.?
       ~ fnKw
       ~ spP(info)
       ~ bindingIdOrError
@@ -93,6 +94,7 @@ private[parser] def fnDefP(info: SourceInfo)(using P[Any]): P[Member] =
     case (
           doc,
           vis,
+          inl,
           nameStart,
           idOrError,
           nameEnd,
@@ -126,7 +128,8 @@ private[parser] def fnDefP(info: SourceInfo)(using P[Any]): P[Member] =
             precedence    = Precedence.Function,
             associativity = None,
             originalName  = fnName,
-            mangledName   = fnName
+            mangledName   = fnName,
+            inlineHint    = inl.isDefined
           )
           val lambda = Lambda(
             span     = lambdaSpan,
@@ -158,6 +161,7 @@ private[parser] def binOpDefP(info: SourceInfo)(using P[Any]): P[Member] =
   P(
     docCommentP(info)
       ~ visibilityP.?
+      ~ inlineKw.!.?
       ~ opKw
       ~ spP(info)
       ~ operatorIdOrError
@@ -181,6 +185,7 @@ private[parser] def binOpDefP(info: SourceInfo)(using P[Any]): P[Member] =
     case (
           doc,
           vis,
+          inl,
           nameStart,
           idOrError,
           nameEnd,
@@ -216,7 +221,8 @@ private[parser] def binOpDefP(info: SourceInfo)(using P[Any]): P[Member] =
             precedence    = opPrec,
             associativity = Some(opAssoc),
             originalName  = opName,
-            mangledName   = mangledName
+            mangledName   = mangledName,
+            inlineHint    = inl.isDefined
           )
           val lambda = Lambda(
             span     = lambdaSpan,
@@ -243,6 +249,7 @@ private[parser] def unaryOpP(info: SourceInfo)(using P[Any]): P[Member] =
   P(
     docCommentP(info)
       ~ visibilityP.?
+      ~ inlineKw.!.?
       ~ opKw
       ~ spP(info)
       ~ operatorIdOrError
@@ -263,6 +270,7 @@ private[parser] def unaryOpP(info: SourceInfo)(using P[Any]): P[Member] =
     case (
           doc,
           vis,
+          inl,
           nameStart,
           idOrError,
           nameEnd,
@@ -297,7 +305,8 @@ private[parser] def unaryOpP(info: SourceInfo)(using P[Any]): P[Member] =
             precedence    = opPrec,
             associativity = Some(opAssoc),
             originalName  = opName,
-            mangledName   = mangledName
+            mangledName   = mangledName,
+            inlineHint    = inl.isDefined
           )
           val lambda = Lambda(
             span     = lambdaSpan,

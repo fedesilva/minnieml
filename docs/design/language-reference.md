@@ -52,7 +52,7 @@ Reserved words that cannot be used as identifiers:
 
 ```
 let, fn, op, type, struct, module,
-if, then, elif, else, end,
+if, then, elif, else, end, inline,
 @native, ??? (hole), _ (placeholder), ~ (move)
 ```
 
@@ -136,6 +136,16 @@ be explicitly applied to `()` at call sites:
 ```mml
 fn get_value(): Int = 42;
 let x = get_value ();
+```
+
+**Inline hint:** Prefixing a function or operator declaration with `inline` requests that
+the compiler inline it at call sites. This emits the LLVM `inlinehint` attribute; the
+optimizer may still choose not to inline if the cost model disagrees.
+
+```mml
+inline fn dot(u: Vec3, v: Vec3): Float =
+  (u.x *. v.x) +. (u.y *. v.y) +. (u.z *. v.z)
+;
 ```
 
 ### Operator declarations

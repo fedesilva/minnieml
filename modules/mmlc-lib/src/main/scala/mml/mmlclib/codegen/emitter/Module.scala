@@ -153,8 +153,13 @@ def emitModule(
     output.append(finalState.output.reverse.mkString("\n"))
 
     // 5. Attributes
-    cpuAttrValue.foreach { cpu =>
-      output.append(s"""\nattributes #0 = { "target-cpu"="$cpu" }\n""")
+    cpuAttrValue match {
+      case Some(cpu) =>
+        output.append(s"""\nattributes #0 = { "target-cpu"="$cpu" }""")
+        output.append(s"""\nattributes #1 = { inlinehint "target-cpu"="$cpu" }\n""")
+      case None =>
+        output.append("\nattributes #0 = {}")
+        output.append("\nattributes #1 = { inlinehint }\n")
     }
 
     // 6. Global initializers

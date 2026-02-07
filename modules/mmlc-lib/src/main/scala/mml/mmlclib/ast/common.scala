@@ -131,7 +131,8 @@ final case class BindingMeta(
   precedence:    Int,
   associativity: Option[Associativity],
   originalName:  String,
-  mangledName:   String
+  mangledName:   String,
+  inlineHint:    Boolean = false
 )
 
 /** Marker trait for nodes that represent invalid/error constructs. These nodes allow the compiler

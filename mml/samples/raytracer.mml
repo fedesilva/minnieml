@@ -7,29 +7,29 @@
 
 struct Vec3 { x: Float, y: Float, z: Float };
 
-fn vec_add(u: Vec3, v: Vec3): Vec3 =
+inline fn vec_add(u: Vec3, v: Vec3): Vec3 =
   Vec3 (u.x +. v.x) (u.y +. v.y) (u.z +. v.z)
 ;
 
-fn vec_sub(u: Vec3, v: Vec3): Vec3 =
+inline fn vec_sub(u: Vec3, v: Vec3): Vec3 =
   Vec3 (u.x -. v.x) (u.y -. v.y) (u.z -. v.z)
 ;
 
 // Scalar multiplication: v * t
-fn vec_scale(v: Vec3, t: Float): Vec3 =
+inline fn vec_scale(v: Vec3, t: Float): Vec3 =
   Vec3 (v.x *. t) (v.y *. t) (v.z *. t)
 ;
 
 // Dot product
-fn dot(u: Vec3, v: Vec3): Float =
+inline fn dot(u: Vec3, v: Vec3): Float =
   (u.x *. v.x) +. (u.y *. v.y) +. (u.z *. v.z)
 ;
 
-fn length_squared(v: Vec3): Float = dot v v;
+inline fn length_squared(v: Vec3): Float = dot v v;
 
-fn length(v: Vec3): Float = sqrt (length_squared v);
+inline fn length(v: Vec3): Float = sqrt (length_squared v);
 
-fn unit_vector(v: Vec3): Vec3 =
+inline fn unit_vector(v: Vec3): Vec3 =
   vec_scale v (1.0 /. (length v))
 ;
 
@@ -37,7 +37,7 @@ fn unit_vector(v: Vec3): Vec3 =
 
 struct Ray { origin: Vec3, dir: Vec3 };
 
-fn ray_at(r: Ray, t: Float): Vec3 =
+inline fn ray_at(r: Ray, t: Float): Vec3 =
   vec_add r.origin (vec_scale r.dir t)
 ;
 
@@ -46,12 +46,12 @@ struct Sphere { center: Vec3, radius: Float };
 // Hit record (simplified: only t and normal needed for this demo)
 struct Hit { t: Float, p: Vec3, normal: Vec3, did_hit: Bool };
 
-fn no_hit(): Hit =
+inline fn no_hit(): Hit =
   let zero = Vec3 0.0 0.0 0.0;
   Hit 0.0 zero zero false
 ;
 
-fn hit_sphere(s: Sphere, r: Ray, t_min: Float, t_max: Float): Hit =
+inline fn hit_sphere(s: Sphere, r: Ray, t_min: Float, t_max: Float): Hit =
   let oc = vec_sub r.origin s.center;
   let a = length_squared r.dir;
   let half_b = dot oc r.dir;
@@ -129,66 +129,66 @@ fn ray_color(r: Ray): Vec3 =
   end
 ;
 
-// --- Output Utilities ---
+// --- Batch Rendering ---
+// Separate computation from I/O for SIMD vectorization opportunity.
+// Each row is computed into FloatArrays, then written to the buffer.
 
-fn write_color(b: Buffer, pixel_color: Vec3): Unit =
-  // Convert [0,1] to [0,255]
-  let ir = 255.999 *. pixel_color.x;
-  let ig = 255.999 *. pixel_color.y;
-  let ib = 255.999 *. pixel_color.z;
-  
-  buffer_write_int b (float_to_int ir);
-  buffer_write b " ";
-  buffer_write_int b (float_to_int ig);
-  buffer_write b " ";
-  buffer_writeln_int b (float_to_int ib)
-;
-
-// --- Main Loop ---
-
-fn render_col(b: Buffer, i: Int, j: Int, width: Int, height: Int): Unit =
+fn compute_row(
+  r_arr: FloatArray, g_arr: FloatArray, b_arr: FloatArray,
+  i: Int, j: Int, width: Int, height: Int,
+  origin: Vec3, ll_corner: Vec3, horizontal: Vec3, vertical: Vec3
+): Unit =
   if i < width then
-    // u = i / (width - 1)
     let u = (int_to_float i) /. (int_to_float (width - 1));
-    // v = j / (height - 1)
     let v = (int_to_float ((height - 1) - j)) /. (int_to_float (height - 1));
-    
-    // Camera defaults
-    let origin = Vec3 0.0 0.0 0.0;
-    let focal_length = 1.0;
-    let viewport_height = 2.0;
-    // Aspect ratio 16.0 / 9.0
-    let aspect_ratio = 16.0 /. 9.0; 
-    let viewport_width = viewport_height *. aspect_ratio;
-    
-    let horizontal = Vec3 viewport_width 0.0 0.0;
-    let vertical = Vec3 0.0 viewport_height 0.0;
-    
-    // lower_left_corner = origin - horizontal/2 - vertical/2 - vec3(0, 0, focal_length)
-    let ll_corner = Vec3 
-      (0.0 -. (viewport_width /. 2.0))
-      (0.0 -. (viewport_height /. 2.0))
-      (0.0 -. focal_length);
 
-    // direction = lower_left + u*hor + v*vert - origin
     let hor_u = vec_scale horizontal u;
     let ver_v = vec_scale vertical v;
     let target = vec_add ll_corner (vec_add hor_u ver_v);
     let direction = vec_sub target origin;
-    
+
     let r = Ray origin direction;
-    let pixel_color = ray_color r;
-    
-    write_color b pixel_color;
-    
-    render_col b (i + 1) j width height
+    let color = ray_color r;
+
+    unsafe_ar_float_set r_arr i color.x;
+    unsafe_ar_float_set g_arr i color.y;
+    unsafe_ar_float_set b_arr i color.z;
+
+    compute_row r_arr g_arr b_arr (i + 1) j width height
+      origin ll_corner horizontal vertical
   end
 ;
 
-fn render_row(b: Buffer, j: Int, width: Int, height: Int): Unit =
-  if j >= 0 then // Render from top to bottom
-    render_col b 0 j width height;
-    render_row b (j - 1) width height
+fn write_row(
+  buf: Buffer, r_arr: FloatArray, g_arr: FloatArray, b_arr: FloatArray,
+  i: Int, width: Int
+): Unit =
+  if i < width then
+    let ir = 255.999 *. (unsafe_ar_float_get r_arr i);
+    let ig = 255.999 *. (unsafe_ar_float_get g_arr i);
+    let ib = 255.999 *. (unsafe_ar_float_get b_arr i);
+
+    buffer_write_int buf (float_to_int ir);
+    buffer_write buf " ";
+    buffer_write_int buf (float_to_int ig);
+    buffer_write buf " ";
+    buffer_writeln_int buf (float_to_int ib);
+
+    write_row buf r_arr g_arr b_arr (i + 1) width
+  end
+;
+
+fn render_rows(
+  buf: Buffer, r_arr: FloatArray, g_arr: FloatArray, b_arr: FloatArray,
+  j: Int, width: Int, height: Int,
+  origin: Vec3, ll_corner: Vec3, horizontal: Vec3, vertical: Vec3
+): Unit =
+  if j >= 0 then
+    compute_row r_arr g_arr b_arr 0 j width height
+      origin ll_corner horizontal vertical;
+    write_row buf r_arr g_arr b_arr 0 width;
+    render_rows buf r_arr g_arr b_arr (j - 1) width height
+      origin ll_corner horizontal vertical
   end
 ;
 
@@ -198,18 +198,36 @@ fn main(): Unit =
   let image_width = 400;
   let image_height = float_to_int ((int_to_float image_width) /. aspect_ratio);
 
+  // Camera setup (computed once)
+  let origin = Vec3 0.0 0.0 0.0;
+  let viewport_height = 2.0;
+  let viewport_width = viewport_height *. aspect_ratio;
+  let focal_length = 1.0;
+  let horizontal = Vec3 viewport_width 0.0 0.0;
+  let vertical = Vec3 0.0 viewport_height 0.0;
+  let ll_corner = Vec3
+    (0.0 -. (viewport_width /. 2.0))
+    (0.0 -. (viewport_height /. 2.0))
+    (0.0 -. focal_length);
+
+  // Per-row float buffers (allocated once, reused across rows)
+  let r_arr = ar_float_new image_width;
+  let g_arr = ar_float_new image_width;
+  let b_arr = ar_float_new image_width;
+
   // Stdout buffer
-  let b = mkBufferWithFd 1;
+  let buf = mkBufferWithFd 1;
 
   // PPM Header
-  buffer_writeln b "P3";
-  buffer_write_int b image_width;
-  buffer_write b " ";
-  buffer_writeln_int b image_height;
-  buffer_writeln b "255";
+  buffer_writeln buf "P3";
+  buffer_write_int buf image_width;
+  buffer_write buf " ";
+  buffer_writeln_int buf image_height;
+  buffer_writeln buf "255";
 
   // Render
-  render_row b (image_height - 1) image_width image_height;
-  
-  flush b
+  render_rows buf r_arr g_arr b_arr (image_height - 1) image_width image_height
+    origin ll_corner horizontal vertical;
+
+  flush buf
 ;

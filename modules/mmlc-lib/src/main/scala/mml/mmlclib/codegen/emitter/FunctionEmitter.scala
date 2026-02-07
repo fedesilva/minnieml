@@ -115,7 +115,8 @@ private def compileRegularLambda(
     .map { case (typ, idx) => s"$typ %$idx" }
     .mkString(", ")
 
-  val functionDecl = s"define $returnType @$emittedName($paramDecls) #0 {"
+  val attrGroup    = if bnd.meta.exists(_.inlineHint) then "#1" else "#0"
+  val functionDecl = s"define $returnType @$emittedName($paramDecls) $attrGroup {"
   val entryLine    = "entry:"
 
   // Setup function body state with initial lines
@@ -370,7 +371,8 @@ private def compileTailRecursiveLambda(
           .map { case (typ, idx) => s"$typ %$idx" }
           .mkString(", ")
 
-        val functionDecl = s"define $returnType @$emittedName($paramDecls) {"
+        val attrGroup    = if bnd.meta.exists(_.inlineHint) then "#1" else "#0"
+        val functionDecl = s"define $returnType @$emittedName($paramDecls) $attrGroup {"
         val loopHeader   = "loop.header"
         val loopLatch    = "loop.latch"
 

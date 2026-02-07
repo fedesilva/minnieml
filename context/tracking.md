@@ -45,13 +45,6 @@ fn heap_new (cap: Int): MinHeap =
 ;
 ```
 
-### LSP showing tokens with mixed colors [COMPLETE]
-
-Last time this happened we had bad indexes.
-We have introduced new phases that shuffle stuff, need to review.
-We need to ignore anything that is not in the source (synthetic)
-There is image evidence in context/images
-
 ### Neovim improvements
 
 vscode plugin has commands like restart lsp and compile.
@@ -183,66 +176,6 @@ Affine ownership with borrow-by-default. Enables safe automatic memory managemen
 
 
 
-### Implement floats, float arrays and raytracer for testing
-
-**Branch:** `floats-and-raytracer`
-**Sample:** `mml/samples/raytracer.mml`
-
-Add float type support to MML including literals, operators, and codegen. Use a raytracer
-as a real-world test case.
-
-**Done so far:**
-
-- [x] `LiteralFloat` AST node (`ast/terms.scala`)
-- [x] Float literal parsing (`parser/literals.scala`) — `.` included in `opChars` for
-  float-suffixed operators like `+.`, `-.`, `*.`, `/.`
-- [x] Float type in stdlib (`semantic/package.scala`) — `Float` type alias for native `float`
-- [x] Float operators defined in raytracer source as `@native[tpl=...]`
-- [x] Semantic analysis: type resolver, type checker handle `LiteralFloat`
-- [x] Codegen: `LiteralFloat` emits hex double-precision format (`0x%016X` of
-  `Double.doubleToRawLongBits`) because LLVM rejects decimal float literals that aren't
-  exactly representable in IEEE 754 single precision
-- [x] `CompileResult.operandStr` method centralizes operand-to-string logic — checks
-  `literalValue` first, falls back to `isLiteral`/register. Replaced 12+ raw
-  `if res.isLiteral then res.register.toString else s"%${res.register}"` patterns
-- [x] Removed debug `println` statements from `ExpressionCompiler.scala` and
-  `expression/package.scala`
-- [x] Added `.` → `"dot"` and `~` → `"tilde"` to `opCharNames` in `ast/common.scala`
-  (were missing, causing mangled names like `op.plus_..2` instead of `op.plus_dot.2`)
-- [x] 211 tests pass, formatting clean
-
-**Remaining bugs — codegen literal materialization:**
-
-Two places hardcode `add` to materialize a literal value into a register (needed because
-`functionScope` maps names to register numbers, can't hold literal values directly):
-
-1. **`expression/Applications.scala:49`** — `compileLambdaApp` (desugared `let` bindings):
-   `s"  %$reg = add i64 0, ${argRes.register}"` — hardcodes `i64` and `add`, uses
-   `argRes.register` (which is `0` dummy for floats) instead of `argRes.operandStr`
-
-2. **`FunctionEmitter.scala:641`** — `compilePreStatements` (tail-rec loop body let bindings):
-   `s"  %$r = add $llvmType 0, ${res.register}"` — uses dynamic `$llvmType` (so emits
-   `add float`) but still uses `res.register` instead of `res.operandStr`, and `add` is
-   wrong for floats
-
-**Design note:** The materialization hack (`add i64 0, <value>`) exists because
-`functionScope: Map[String, (Int, String)]` only stores `(register, typeName)` — it can't
-represent literals. The fix: expand `functionScope` entries to also carry `isLiteral` and
-`literalValue` (same info `CompileResult` already has). Then `let a = 1.0` stores the
-literal info in scope, and when `a` is referenced later it uses `operandStr` directly.
-No materialization instruction emitted at all — no `add`, no `fadd`, nothing.
-
-**Remaining work:**
-
-- [x] Fix literal materialization: expand `functionScope` to carry literal info instead of
-  emitting `add` instructions. Affects `Applications.scala:49` (`compileLambdaApp`) and
-  `FunctionEmitter.scala:641` (`compilePreStatements`)
-- [ ] Float arrays (similar to `IntArray`/`StringArray`)
-- [x] Raytracer compiles and runs (`mmlc run mml/samples/raytracer.mml`)
-- [x] Verify with ASan (`mmlc run -s mml/samples/raytracer.mml`)
-- [ ] `int_to_float` / `float_to_int` conversion functions in stdlib or raytracer
-- [ ] Runtime support: `mml_runtime.c` changes for float (if any)
-
 ### LSP log rotation
 
 **Spec:** `context/specs/lsp-log-rotation.md`
@@ -267,6 +200,32 @@ TBD
 ---
 
 ## Recent Changes
+
+### 2026-02-06 Add `inline` keyword
+
+Added `inline fn` / `inline op` syntax that emits LLVM `inlinehint` attribute on functions.
+Motivated by LLVM's cost model not inlining `hit_sphere` in the raytracer.
+
+**Changes:**
+- `ast/common.scala`: Added `inlineHint: Boolean = false` to `BindingMeta`
+- `parser/keywords.scala`: Added `inlineKw` definition, included in `keywords` list
+- `parser/members.scala`: `fnDefP`, `binOpDefP`, `unaryOpP` parse optional `inline` before
+  `fn`/`op`, set `inlineHint` in `BindingMeta`
+- `codegen/emitter/FunctionEmitter.scala`: Both `compileRegularLambda` and
+  `compileTailRecursiveLambda` emit `#1` (inlinehint) or `#0` based on `bnd.meta.inlineHint`.
+  Note: `compileTailRecursiveLambda` was previously missing any attribute group.
+- `codegen/emitter/Module.scala`: Emits two attribute groups — `#0` (base) and `#1`
+  (base + `inlinehint`). Both include `target-cpu` when set, or empty/`inlinehint` when not.
+- `mml/samples/raytracer.mml`: Marked `vec_add`, `vec_sub`, `vec_scale`, `dot`,
+  `length_squared`, `length`, `unit_vector`, `ray_at`, `no_hit`, `hit_sphere` as `inline`
+- `docs/design/language-reference.md`: Documented `inline` modifier, added to keywords list
+
+**Results:**
+- `inlinehint` successfully caused LLVM to inline `hit_sphere` into `world_hit`/`compute_row`
+  (confirmed in optimized IR at `build/out/<triple>/Raytracer_opt.ll`)
+- Float SIMD (`<N x float>`) did NOT happen — branchy intersection code prevents
+  auto-vectorization. Only `<8 x i8>` byte shuffles (from string/buffer helpers) present.
+- 211 tests pass, ASan clean, all benchmarks compile
 
 ### 2026-02-06 Fix float literal materialization, raytracer working
 
