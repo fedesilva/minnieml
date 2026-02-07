@@ -1,11 +1,10 @@
-# LLVM IR Generation and Optimization in MinnieML
+# LLVM IR generation and optimization in MinnieML
 
-MinnieML (MML) leverages LLVM as its backend compiler. 
+MinnieML (MML) uses LLVM as its backend compiler.
 
-This article demonstrates how MML generates LLVM IR from source code and 
-how LLVM's optimization pipeline transforms this code into efficient executable instructions.
+This article shows how MML generates LLVM IR from source code and how LLVM's optimization pipeline transforms it into efficient executables.
 
-## The Code Generation Pipeline
+## The code generation pipeline
 
 The MML compiler processes source code through several stages:
 
@@ -17,7 +16,7 @@ The MML compiler processes source code through several stages:
 6. LLVM optimization passes
 7. Final code generation (machine code)
 
-## Example: Expression Evaluation and Global Initialization
+## Example: expression evaluation and global initialization
 
 Consider this MML program with variable declarations and arithmetic operations:
 
@@ -30,7 +29,7 @@ let a = 1 * 2 + 3 / y * x;
 
 This program defines four variables with increasingly complex initialization expressions.
 
-## Generated LLVM IR
+## Generated LLVM IR at this stage
 
 After parsing and semantic analysis, MML generates the following LLVM IR:
 
@@ -69,9 +68,9 @@ entry:
 
 **Note**: At this development stage, the IR must be manually fed into the LLVM toolchain for further processing.
 
-### Breaking Down the Generated IR
+### Breaking down the generated IR
 
-#### LLVM IR Primer
+#### LLVM IR primer
 
 LLVR IR is a low-level, typed assembly language that LLVM uses as an intermediate representation.
 It is designed to be easy to analyze and transform, making it suitable for optimization.
@@ -91,7 +90,7 @@ In this example, the IR includes:
 
 Let's analyze how each part of the MML code translates to LLVM IR:
 
-1. **Simple Constant Expressions**
+1. **Simple constant expressions**
    ```mml
    let x = 3*3;
    let y = 4*30;
@@ -110,7 +109,7 @@ Let's analyze how each part of the MML code translates to LLVM IR:
    For now, the code generator is simple and straightforward, and we can focus on continuously 
    building the language.
 
-2. **Complex Expression for `z`**
+2. **Complex expression for `z`**
    ```mml
    # (2 * y) * x
    let z = 2 * y * x; 
@@ -133,7 +132,7 @@ Let's analyze how each part of the MML code translates to LLVM IR:
    the expression is evaluated as `(2 * y) * x` since `*` is left-associative, 
    which directly maps to the sequence of operations in the IR.
 
-3. **Complex Expression for `a`**
+3. **Complex expression for `a`**
    ```mml
    # (1 * 2) + ((3 / y) * x)
    let a = 1 * 2 + 3 / y * x;
@@ -160,7 +159,7 @@ Let's analyze how each part of the MML code translates to LLVM IR:
    - `1 * 2` is constant-folded to `2`
    - The remaining computation happens at runtime in the order: `3/y`, then `(3/y)*x`, then `2 + ((3/y)*x)`
 
-4. **Global Constructor Array**
+4. **Global constructor array**
    ```llvm
    @llvm.global_ctors = appending global [2 x { i32, void ()*, i8* }] [
      { i32, void ()*, i8* } { i32 65535, void ()* @_init_global_z, i8* null },
@@ -179,7 +178,7 @@ The IR follows a pattern that reflects how MML's compiler works:
 3. For each non-constant binding, it creates an initialization function
 4. All initialization functions are collected in the global constructor array
 
-## LLVM Optimization Magic
+## After LLVM optimization
 
 When this IR passes through LLVM's optimizer, the result is substantially more efficient:
 
@@ -197,30 +196,18 @@ target triple = "x86_64-unknown-unknown"
 
 The optimizer performs several transformations:
 
-1. **Constant Propagation**: LLVM calculates the values of `z` and `a` at compile time:
+1. **Constant propagation**: LLVM calculates the values of `z` and `a` at compile time:
    - `z = 2 * 120 * 9 = 2160`
    - `a = 2 + (3 / 120) * 9 = 2` (the division `3/120` evaluates to 0 due to integer division)
 
-2. **Dead Code Elimination**: The initializer functions are completely removed.
+2. **Dead code elimination**: The initializer functions are completely removed.
 
-3. **Global Constructor Elimination**: The `@llvm.global_ctors` array is now empty.
+3. **Global constructor elimination**: The `@llvm.global_ctors` array is now empty.
 
-4. **Address Space Optimization**: Added `local_unnamed_addr` to the globals for more efficient memory layout.
+4. **Address space optimization**: Added `local_unnamed_addr` to the globals for more efficient memory layout.
 
-## Why This Matters
+## Why this matters
 
-This example highlights several benefits of using LLVM:
+The compiler generates straightforward, readable IR and lets LLVM handle the heavy optimization. Expressions are reduced to constants where possible, dead code is eliminated, and we get all of this without writing any optimization logic ourselves.
 
-1. **Simple Code Generation**: The compiler focuses on generating straightforward, readable IR without complex optimization logic.
-
-2. **Powerful Optimizations**: LLVM provides industrial-strength optimizations that would be impractical to implement independently.
-
-3. **Compile-Time Evaluation**: Complex expressions are reduced to constants where possible, eliminating runtime computation.
-
-4. **Progressive Enhancement**: The compiler leverages LLVM's mature optimization pipeline from day one.
-
-## Conclusion
-
-MinnieML demonstrates how a language can benefit from LLVM's optimization capabilities. By generating clean IR and leveraging LLVM's optimization passes, language designers can focus on language features and semantics while getting high-performance code generation "for free."
-
-This separation of concerns makes it easier to add new features without constantly revisiting the code generation strategy.
+This separation lets us focus on language features and semantics without constantly revisiting code generation.

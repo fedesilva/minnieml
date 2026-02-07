@@ -2,35 +2,35 @@
 
 This document describes the semantics of the MinnieML language: its syntax, type system, and behavioral rules.
 
-## Table of Contents
-1. [Lexical Rules](#1-lexical-rules)
-2. [Type System](#2-type-system)
-3. [Operator System](#3-operator-system)
-4. [Semantic Rules](#4-semantic-rules)
-5. [Memory Management](#5-memory-management)
-6. [Error Categories](#6-error-categories)
+## Table of contents
+1. [Lexical rules](#1-lexical-rules)
+2. [Type system](#2-type-system)
+3. [Operator system](#3-operator-system)
+4. [Semantic rules](#4-semantic-rules)
+5. [Memory management](#5-memory-management)
+6. [Error categories](#6-error-categories)
 
 ---
 
-## 1. Lexical Rules
+## 1. Lexical rules
 
 ### Identifiers
 
 MML has distinct lexical rules for different kinds of identifiers:
 
-#### Binding Identifiers (Variables, Functions)
+#### Binding identifiers (variables, functions)
 - **Pattern**: `[a-z][a-zA-Z0-9_]*`
 - **Must start with**: Lowercase letter `a-z`
 - **Can contain**: Letters, digits, underscores
 - **Examples**: `x`, `myValue`, `calculate_sum`
 
-#### Type Identifiers
+#### Type identifiers
 - **Pattern**: `[A-Z][a-zA-Z0-9]*`
 - **Must start with**: Uppercase letter `A-Z`
 - **Can contain**: Letters and digits (no underscores)
 - **Examples**: `Int`, `String`, `MyType`
 
-#### Operator Identifiers
+#### Operator identifiers
 Operators can be **either symbolic OR alphanumeric**:
 
 **Symbolic operators**:
@@ -51,42 +51,42 @@ let, fn, op, type, module, if, then, else, @native, ??? (hole), _ (placeholder)
 
 ### Literals
 
-#### Numeric Literals
+#### Numeric literals
 - **Integers**: `[0-9]+` → `LiteralInt`
   - Examples: `42`, `0`, `1234`
 - **Floats**: `[0-9]+\.[0-9]+` or `\.[0-9]+` → `LiteralFloat`
   - Examples: `3.14`, `.5`, `0.001`
 
-#### String Literals
+#### String literals
 - **Pattern**: `"[^"]*"` (raw content, no escape processing during parsing)
 - **Multiline support**: Yes, newlines and special characters are preserved
 - **Escape handling**: Performed at code generation time using LLVM hex escapes
 - **Examples**: `"hello"`, `"world"`, `"line 1\nline 2"` (literal newline in source)
 
-#### Boolean Literals
+#### Boolean literals
 - **Values**: `true`, `false`
 
-#### Unit Literal
+#### Unit literal
 - **Syntax**: `()`
 - **Type**: `Unit` (the only inhabitant of the Unit type)
 
 ### Comments
 
-#### Line Comments
+#### Line comments
 - **Syntax**: `// comment text`
 - **Scope**: From `//` to end of line
 - **Note**: `///` is also a comment (not an operator)
 
-#### Documentation Comments
+#### Documentation comments
 - **Syntax**: `/* ... */`
 - **Purpose**: Attached to members for documentation
 - **Can nest**: `/* outer /* inner */ */`
 
 ---
 
-## 2. Type System
+## 2. Type system
 
-### Basic Types
+### Basic types
 
 MML provides a set of basic types that map directly to LLVM types:
 
@@ -99,18 +99,18 @@ Unit                           // Unit type (void)
 String                         // Struct with length and data pointer
 ```
 
-**Type Aliases**:
+**Type aliases**:
 ```mml
 Int   → Int64   // Default integer type
 Byte  → Int8
 Word  → Int8
 ```
 
-### Native Type Declarations
+### Native type declarations
 
-MML allows declaring types that mirror native C/LLVM types. These declarations **lift native types into MML's type system** without defining the types themselves.
+MML allows declaring types that mirror native C/LLVM types. These declarations lift native types into MML's type system without defining the types themselves.
 
-**Three forms of native types**:
+**Three forms**:
 
 ```rust
 // Primitive type with native representation
@@ -126,7 +126,7 @@ type String = @native {
 };
 ```
 
-**Primitive Types**: Each `@native[t=<repr>]` declaration defines a **distinct fundamental type**. In other languages, primitives like `int` or `float` are hardcoded into the compiler. MML gives users the ability to define their own primitives via `@native`.
+**Primitive types**: Each `@native[t=<repr>]` declaration defines a distinct fundamental type. In other languages, primitives like `int` or `float` are hardcoded into the compiler. In MML, users define their own primitives via `@native`.
 
 ```rust
 type Int64 = @native[t=i64];
@@ -137,11 +137,11 @@ type AnotherInt64 = @native[t=i64];
 // A function expecting Int64 won't accept AnotherInt64
 ```
 
-**Native Structs**: Native struct type declarations are **mirrors**, not definitions. The actual type definition exists in the linked C runtime (`mml_runtime.c`). MML uses these declarations to understand memory layout and generate correct IR.
+**Native structs**: Native struct type declarations are mirrors, not definitions. The actual type definition exists in the linked C runtime (`mml_runtime.c`). MML uses these declarations to understand memory layout and generate correct IR.
 
 
 
-### Function Types
+### Function types
 
 Functions have types of the form `T1 → T2 → ... → Tn → R`, where:
 - `T1, T2, ..., Tn` are parameter types
@@ -157,17 +157,17 @@ fn print(s: String): Unit = @native;
 // Type: String → Unit
 ```
 
-### Type Compatibility
+### Type compatibility
 
 Two types are compatible if:
 1. They are the same type (same name)
 2. One is a type alias that resolves to the other
 
-**Important for Native Types**: Each `@native` declaration creates a distinct fundamental type. The type checker treats these as opaque primitives and does not look at their underlying representation:
+**Important for native types**: Each `@native` declaration creates a distinct fundamental type. The type checker treats these as opaque primitives and does not look at their underlying representation:
 - `Int64` and `AnotherInt64` (both `@native[t=i64]`) are **incompatible** - they are different primitives
 - The type checker cannot see that both wrap `i64`; it treats each `@native` declaration as a separate fundamental type
 
-### Compound Types
+### Compound types
 
 **Tuples**: `(T1, T2, ..., Tn)`
 ```mml
@@ -183,9 +183,9 @@ let f: Int → Int → Int = add;
 
 ---
 
-## 3. Operator System
+## 3. Operator system
 
-### User-Defined Operators
+### User-defined operators
 
 **All operators in MML are user-defined**, including fundamental arithmetic and logical operators. There are no built-in operators in the language itself.
 
@@ -198,7 +198,7 @@ op *(a: Int, b: Int): Int 80 left = @native[tpl="mul %type %operand1, %operand2"
 op %(a: Int, b: Int): Int 80 left = @native[tpl="srem %type %operand1, %operand2"];
 ```
 
-### Operator Kinds
+### Operator kinds
 
 MML supports two kinds of operators:
 
@@ -212,7 +212,7 @@ MML supports two kinds of operators:
    - Example: `op -(a: Int): Int 95 right = ...;`
    - Represented as `Bnd` with `BindingMeta(arity=Unary)`
 
-### Operator Overloading
+### Operator overloading
 
 **Operators can be overloaded by arity**:
 - A binary operator and a unary operator **can share the same name**
@@ -237,7 +237,7 @@ fn foo(x: Int): Int = x;
 op foo(a: Int, b: Int): Int = a + b;  // ERROR: name conflict
 ```
 
-### Precedence and Associativity
+### Precedence and associativity
 
 Every operator has:
 - **Precedence**: Integer value (higher binds tighter)
@@ -255,7 +255,7 @@ Every operator has:
 
 These are **conventional values** used by the injected standard operators, not language-enforced rules. User-defined operators can use any precedence value.
 
-### Operators as Functions
+### Operators as functions
 
 Operators are syntactic sugar for function calls:
 ```mml
@@ -266,7 +266,7 @@ a * b + c  // Desugars to: + (* a b) c
 
 ---
 
-## 4. Semantic Rules
+## 4. Semantic rules
 
 ### Visibility (not enforced yet)
 
@@ -278,7 +278,7 @@ yet.
   or fully qualified.
 - **Private**: Confined to the defining module.
 
-### Function Application
+### Function application
 
 **Currying**: Functions are curried, meaning multi-parameter functions desugar to nested single-parameter applications: `f a b` is really `((f a) b)`.
 
@@ -291,7 +291,7 @@ let result = add5 10;   // Full application: 15
 
 **Juxtaposition**: Function application is written as juxtaposition: `f x` means "apply f to x".
 
-### Nullary Functions
+### Nullary functions
 
 Functions with zero parameters require special handling:
 
@@ -307,7 +307,7 @@ let f = get_value;    // Reference to the nullary function
 ```
 To evaluate a nullary function, apply it explicitly with `()`.
 
-### Conditional Expressions
+### Conditional expressions
 
 ```mml
 if condition then expr1 else expr2;
@@ -318,7 +318,7 @@ if condition then expr1 else expr2;
 - `expr1` and `expr2` must have the same type
 - The entire expression has the type of the branches
 
-### Native Declarations
+### Native declarations
 
 Functions and operators can have `@native` bodies, indicating external implementation:
 
@@ -333,7 +333,7 @@ op +(a: Int, b: Int): Int 60 left = @native[tpl="add %type %operand1, %operand2"
              The codegen will generate forward declarations in each module using these functions and the linker will resolve them.
              If they are not found a linker error will occur.
 
-### Native Templates for Functions
+### Native templates for functions
 
 Functions can use `@native[tpl="..."]` to emit inline LLVM IR, useful for LLVM intrinsics:
 
@@ -349,7 +349,7 @@ fn pow(x: Float, y: Float): Float = @native[tpl="call float @llvm.pow.f32(float 
 
 The codegen prepends `%result =` to the template automatically.
 
-### Memory Effects on Native Functions
+### Memory effects on native functions
 
 Native functions that allocate memory can be annotated with `[mem=alloc]`:
 
@@ -366,7 +366,7 @@ fn to_string(n: Int): String = @native[mem=alloc];
 
 These attributes can be combined with templates: `@native[mem=alloc, tpl="..."]`
 
-### Consuming Parameters
+### Consuming parameters
 
 Parameters can be marked as *consuming* with the `~` prefix in declarations:
 
@@ -382,11 +382,11 @@ fn take_ownership(~s: String): Unit = ...;
 
 ---
 
-## 5. Memory Management
+## 5. Memory management
 
 MML uses affine ownership with borrow-by-default semantics for automatic memory management.
 
-### Ownership Model
+### Ownership model
 
 Each heap-allocated value has exactly one owner. By default, function calls borrow values
 (caller retains ownership). Ownership can be transferred using consuming parameters.
@@ -398,7 +398,7 @@ Each heap-allocated value has exactly one owner. By default, function calls borr
 - Using a value after its ownership was transferred is an error
 - Owned values are automatically freed when they go out of scope
 
-### Heap Types
+### Heap types
 
 A type is heap-allocated if declared with `[mem=heap]`:
 
@@ -414,7 +414,7 @@ struct User { name: String, age: Int };  // Heap type (contains String)
 struct Point { x: Int, y: Int };         // Not a heap type
 ```
 
-### Struct Construction
+### Struct construction
 
 Struct constructors **clone** their arguments. For heap-typed fields, the constructor
 calls `__clone_T` to deep-copy the value. The caller retains ownership of the original.
@@ -430,7 +430,7 @@ fn example(): Unit =
 
 This means struct construction always allocates fresh copies of heap-typed fields.
 
-### Ownership Examples
+### Ownership examples
 
 ```mml
 fn example(): Unit =
@@ -445,7 +445,7 @@ fn transfer_example(): Unit =
   // println s;          // ERROR: use after move
 ```
 
-### Return Value Ownership
+### Return value ownership
 
 Functions returning heap types transfer ownership to the caller:
 
@@ -461,9 +461,9 @@ fn main(): Unit =
 
 ---
 
-## 6. Error Categories
+## 6. Error categories
 
-### Semantic Errors
+### Semantic errors
 
 Errors related to names and references:
 - **`UndefinedRef`**: Reference to undefined variable, function, or parameter
@@ -474,7 +474,7 @@ Expression structure errors:
 - **`InvalidExpression`**: Malformed expression that cannot be processed
 - **`DanglingTerms`**: Terms that appear in invalid positions
 
-### Type Errors
+### Type errors
 
 Parameter and return type errors:
 - **`MissingParameterType`**: Function parameter lacks required type annotation
@@ -490,7 +490,7 @@ Conditional errors:
 - **`ConditionalBranchTypeMismatch`**: `if` branches have different types
 - **`ConditionalGuardTypeMismatch`**: Condition is not `Bool`
 
-### Ownership Errors
+### Ownership errors
 
 Errors related to memory ownership:
 - **`UseAfterMove`**: Using a binding after its ownership was transferred

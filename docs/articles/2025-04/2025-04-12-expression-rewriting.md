@@ -1,17 +1,17 @@
-# MinnieML Expression Rewriting
+# MinnieML expression rewriting
 
 This is an overview of the current implementation of expression rewriting in MinnieML, focusing on the unified handling of operators and function applications.
 
-## Architecture Overview
+## Architecture overview
 
 The expression rewriting pipeline consists of two main phases:
 
-1. **Reference Resolution**: Collects all possible interpretations for each reference
-2. **Expression Rewriting**: Applies precedence climbing to structure expressions
+1. **Reference resolution**: collects all possible interpretations for each reference
+2. **Expression rewriting**: applies precedence climbing to structure expressions
 
-This is a significant evolution from the approach described in the [custom operators article](2025-02-24-custom-operators.md), which had components with overlapping responsibilities.
+This is an evolution from the approach described in the [custom operators article](2025-02-24-custom-operators.md), which had components with overlapping responsibilities.
 
-## Reference Resolution
+## Reference resolution
 
 The `RefResolver` now focuses solely on collecting candidate definitions for each reference. It:
 
@@ -22,7 +22,7 @@ The `RefResolver` now focuses solely on collecting candidate definitions for eac
 This is simpler than the previous approach where `RefResolver` performed context-aware resolution directly.
 This module is now free of complexity that belongs and was duplicated from the next phase.
 
-## Unified Expression Rewriting
+## Unified expression rewriting
 
 The `ExpressionRewriter` now handles all expression structuring in a single pass, treating both operators and function applications with the same mechanism:
 
@@ -31,11 +31,11 @@ The `ExpressionRewriter` now handles all expression structuring in a single pass
 - Sets function application precedence to 100 (highest in the system)
 - Handles mixed expressions with both operators and function calls
 
-## Contextual Disambiguation: The Heart of the Semantic Phase
+## Contextual disambiguation
 
-A key feature of the expression rewriting system is its contextual disambiguation capability. This critical phase of the compiler occurs before type checking.
+The expression rewriting system disambiguates references based on position and context, before type checking runs.
 
-The `ExpressionRewriter` intelligently determines the correct interpretation of each reference based on its position and context within an expression. For example:
+The `ExpressionRewriter` determines the correct interpretation of each reference based on where it appears in an expression. For example:
 
 - The same symbol like `+` can be resolved as either a unary prefix operator or a binary operator
 - In `+4`, the `+` is resolved as a unary prefix operator
@@ -48,9 +48,9 @@ Without this contextual analysis, expressions like `+4! - 2!` would be ambiguous
 - In operator position: Try to resolve to binary operators first, falling back to postfix operators
 - Apply precedence rules to structure the expression correctly
 
-This position-sensitive resolution is essential for handling custom operators and enables the language's flexible yet predictable syntax.
+This position-sensitive resolution is what makes custom operators work.
 
-## Pipeline Example 1: Mixed Operators
+## Pipeline example 1: mixed operators
 
 Consider this expression with mixed unary and binary operators:
 
@@ -58,7 +58,7 @@ Consider this expression with mixed unary and binary operators:
 let a = +4! - 2!;
 ```
 
-### Original Flat AST
+### Original flat AST
 
 ```
 Bnd a
@@ -75,7 +75,7 @@ Bnd a
         candidates: []
 ```
 
-### After Reference Resolution
+### After reference resolution
 
 At this point he have collected candidates for each reference.
 The expression remains flat.
@@ -95,7 +95,7 @@ Bnd a
         candidates: [UnaryOpDef !]
 ```
 
-### After Expression Rewriting
+### After expression rewriting
 
 The expression rewriting algorithm, using the information collected
 during locals resolution, resolves references and uses that information
@@ -132,14 +132,14 @@ This AST represents the following:
 let a = ((+4)!) - (2!);
 ```
 
-## Pipeline Example 2: Function Application with Operators
+## Pipeline example 2: function application with operators
 
 ```mml
 fn mult (a b) = ???;
 let a = 2 * 4! - mult 2 2;
 ```
 
-### After Expression Rewriting (Final Simplified AST)
+### After expression rewriting (final simplified AST)
 
 ```
 Bnd a
@@ -181,10 +181,9 @@ let a = ((2 * (4!)) - ((mult 2) 2));
 Note how function application is structured as nested `App` nodes with the highest precedence,
 while still respecting operator precedence rules. The function application `mult 2 2` is interpreted as `(mult 2) 2`, illustrating the left-associative nature of function application.
 
-## Pipeline Example 3: Boolean Operators
+## Pipeline example 3: boolean operators
 
-Boolean operations are a perfect example of how the unified expression rewriting system elegantly
-handles complex expressions without special parsing cases.
+Boolean operations show how the unified expression rewriting system handles complex expressions without special parsing cases.
 
 The system uses the specified operator precedence (see later for definitions) to create the expected
 behavior of boolean logic.
@@ -201,7 +200,7 @@ let result =
 ;
 ```
 
-### Original Flat AST
+### Original flat AST
 
 ```
 Bnd result
@@ -237,7 +236,7 @@ Bnd result
             LiteralString "ALGO"
 ```
 
-### After Reference Resolution
+### After reference resolution
 
 ```
 Bnd result
@@ -273,7 +272,7 @@ Bnd result
             LiteralString "ALGO"
 ```
 
-### After Expression Rewriting (Final Simplified AST)
+### After expression rewriting (final simplified AST)
 
 ```
 Bnd result
@@ -341,15 +340,15 @@ This hierarchy ensures that:
 - `and` operations are evaluated before `or` operations
 - The entire expression follows standard boolean logic evaluation order
 
-The beauty of this approach is that we don't need parentheses or special syntax rules to represent boolean logic - the same unified expression rewriting mechanism handles boolean operations just like any other operators in the system. Alphabetic operators like `and`, `or`, and `not` are treated identically to symbolic operators, with their behavior defined by their precedence and associativity values.
+We don't need parentheses or special syntax rules to represent boolean logic - the same expression rewriting mechanism handles boolean operations like any other operator. Alphabetic operators like `and`, `or`, and `not` are treated the same as symbolic operators, with their behavior defined by their precedence and associativity values.
 
 Because the language will provide a well defined set of operators with standard definitions,
 and because the compiler will reject overrides ( no duplicates allowed ), the user will have - unless they mess
 with the prelude - a sane operator set, working as they expect.
 
-## Implementation Details
+## Implementation details
 
-1. **Precedence Levels**:
+1. **Precedence levels**:
 
    - Function application: 100 (highest)
    - Unary operators: 95
@@ -359,16 +358,16 @@ with the prelude - a sane operator set, working as they expect.
    - Comparisons: 50
    - Logical operators: 30-40
 
-2. **Application Chains**:
+2. **Application chains**:
    - Function applications are built as left-associative chains
    - Multiple arguments are interpreted as nested applications
    - For example, `f a b c` becomes `((f a) b) c` in the AST
 
-## Standard Operators
+## Standard operators
 
 The compiler automatically injects a set of standard operators into every module via the `injectStandardOperators` function. These include:
 
-### Binary Operators
+### Binary operators
 
 ```mml
 op ^ (a b) 90 right = ???;  # Exponentiation
@@ -386,7 +385,7 @@ op and (a b) 40 left = ???; # Logical AND
 op or (a b) 30 left  = ???; # Logical OR
 ```
 
-### Unary Operators
+### Unary operators
 
 ```mml
 op - (a) 95 right = ???;  # Unary minus
@@ -397,13 +396,10 @@ op not (a) 95 right = ???; # Logical NOT (prefix)
 
 Note that MinnieML supports alphabetic operators like `and`, `or`, and `not` alongside symbolic operators. The system treats all operators uniformly regardless of their naming style.
 
-## Key Differences from Previous Implementation
+## Differences from previous implementation
 
-1. **Decoupled Resolution**: Reference resolution and expression rewriting are more cleanly separated
-2. **Implemented Application**: Function application is fully implemented (was marked as TODO)
-3. **Unified Approach**: Both operators and function application use the same precedence climbing mechanism
-4. **Component Renaming**: `PrecedenceClimbing` functionality is now in `ExpressionRewriter`
-5. **Alphabetic Operators**: Full support for alphabetic operators like `and`, `or`, and `not`
-
-This approach provides a consistent, extensible foundation for the compiler pipeline as we move toward the
-Typed Lambda Intermediate Representation (TLIR).
+- Reference resolution and expression rewriting are more cleanly separated
+- Function application is fully implemented (was a TODO)
+- Both operators and function application use the same precedence climbing mechanism
+- `PrecedenceClimbing` functionality is now in `ExpressionRewriter`
+- Alphabetic operators like `and`, `or`, and `not` are supported

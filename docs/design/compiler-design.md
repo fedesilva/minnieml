@@ -2,22 +2,22 @@
 
 This document describes how the MML compiler processes programs: its internal data structures, algorithms, and transformation phases.
 
-## Table of Contents
-6. [AST Structure](#6-ast-structure)
-7. [Parser Architecture](#7-parser-architecture)
-8. [Semantic Phase Pipeline](#8-semantic-phase-pipeline)
-9. [Standard Library Injection](#9-standard-library-injection)
-10. [Error Handling Strategy](#10-error-handling-strategy)
-11. [Code Generation: Native Templates](#11-code-generation-native-templates)
-Appendix A. [Source Tree Overview](#appendix-a-source-tree-overview)
+## Table of contents
+6. [AST structure](#6-ast-structure)
+7. [Parser architecture](#7-parser-architecture)
+8. [Semantic phase pipeline](#8-semantic-phase-pipeline)
+9. [Standard library injection](#9-standard-library-injection)
+10. [Error handling strategy](#10-error-handling-strategy)
+11. [Code generation: native templates](#11-code-generation-native-templates)
+Appendix A. [Source tree overview](#appendix-a-source-tree-overview)
 
 ---
 
-## 6. AST Structure
+## 6. AST structure
 
-The Abstract Syntax Tree is organized into several key node categories.
+The Abstract Syntax Tree is organized into several node categories.
 
-### Core Traits
+### Core traits
 
 #### `AstNode`
 Base trait for all AST nodes.
@@ -34,7 +34,7 @@ Nodes that can have types, containing:
 Nodes that can be referenced by name (all `Decl` types, `FnParam`). Each `Resolvable` (and
 `ResolvableType`) carries a stable `id: Option[String]` used for soft references.
 
-### Module Structure
+### Module structure
 
 ```scala
 Module(
@@ -77,7 +77,7 @@ Bnd(
 
 Expressions are built from terms:
 
-#### Expression Structures
+#### Expression structures
 - **`Expr`**: Sequence of terms that form an expression
 - **`TermGroup`**: Parenthesized expression `(expr)`
 - **`Cond`**: Conditional expression `if cond then expr1 else expr2`
@@ -94,7 +94,7 @@ Expressions are built from terms:
 - **`Placeholder`**: Pattern matching placeholder `_`
 - **`Hole`**: Typed hole `???` (for incomplete code)
 
-#### Marker Nodes
+#### Marker nodes
 - **`DataConstructor`**: Marker node for struct constructor bodies. This is NOT a callable
   function—it signals to codegen that the enclosing function should emit struct assembly
   (alloca, store fields, load, return). The constructor's parameters become the field values.
@@ -131,7 +131,7 @@ TypeVariable(name: String)                          // 'T, 'R, etc.
 - **Type definitions**: `TypeDef`, `TypeAlias`, and `TypeStruct` are `ResolvableType` nodes with
   stable IDs; `Field` (struct fields) is also `Resolvable` and carries an ID.
 
-### Error/Invalid Nodes
+### Error/invalid nodes
 
 For error recovery and LSP support:
 
@@ -142,7 +142,7 @@ For error recovery and LSP support:
 - **`ParsingMemberError`**: Parse errors at member level
 - **`TermError`**: Expression-level parse errors
 
-### Soft References and ResolvablesIndex
+### Soft references and ResolvablesIndex
 
 - All resolvable nodes (top-level declarations, struct fields, lambda parameters) carry stable IDs.
 - `Ref`/`TypeRef` store those IDs (`resolvedId`/`candidateIds`) instead of object references.
@@ -152,11 +152,11 @@ For error recovery and LSP support:
 
 ---
 
-## 7. Parser Architecture
+## 7. Parser architecture
 
 The parser uses **FastParse** combinators and follows these principles:
 
-### Whitespace Handling
+### Whitespace handling
 
 - **No significant indentation**: Whitespace is not syntactically meaningful
 - **Custom whitespace handler** (`MmlWhitespace`):
@@ -168,7 +168,7 @@ The parser uses **FastParse** combinators and follows these principles:
 - State 0: Normal whitespace consumption
 - State 1: Inside line comment (consume until newline)
 
-### Expression Parsing Strategy
+### Expression parsing strategy
 
 Expressions are parsed as **sequences of terms** that are later restructured by the `ExpressionRewriter` phase using precedence climbing.
 
@@ -181,7 +181,7 @@ let result = 1 + 2 * 3;
 
 **Rationale**: This approach simplifies parsing and defers precedence handling to semantic analysis, enabling better error recovery and making operator precedence extensible.
 
-### Member Parsing
+### Member parsing
 
 Top-level module members are parsed independently:
 - `fnKw` → `Bnd` with `Lambda` body and `BindingMeta(origin=Function)`
@@ -191,7 +191,7 @@ Top-level module members are parsed independently:
 
 ---
 
-## 8. Stages and Semantic Pipeline
+## 8. Stages and semantic pipeline
 
 The compiler now runs as a series of **stages**, each composed of timed **phases** that transform a
 shared `CompilerState`. Stages today:
@@ -246,11 +246,11 @@ captured via `CompilerState.timePhase`/`timePhaseIO`.
 - Converts them to semantic errors for uniform error reporting
 - **Runs FIRST** to surface syntax errors immediately
 
-**Errors Reported**:
+**Errors reported**:
 - `SemanticError.MemberErrorFound`
 - `SemanticError.ParsingIdErrorFound`
 
-**AST Changes**: None, only reports errors
+**AST changes**: None, only reports errors
 
 ---
 
@@ -268,10 +268,10 @@ captured via `CompilerState.timePhase`/`timePhaseIO`.
 - First occurrence is kept valid, duplicates are wrapped in `DuplicateMember` nodes
 - Also checks for **duplicate parameter names** within functions/operators (via Lambda params)
 
-**Errors Reported**:
+**Errors reported**:
 - `SemanticError.DuplicateName`
 
-**AST Changes**:
+**AST changes**:
 - Wraps duplicate members in `DuplicateMember` nodes
 - Wraps members with duplicate parameters in `InvalidMember` nodes
 
@@ -282,9 +282,9 @@ captured via `CompilerState.timePhase`/`timePhaseIO`.
 Assigns stable IDs to all user declarations and lambda parameters and seeds the resolvables index
 before any resolving work happens.
 
-**Errors Reported**: None
+**Errors reported**: None
 
-**AST Changes**:
+**AST changes**:
 - Populates `id` fields for decls, params, and struct fields
 - Seeds `Module.resolvables` with the freshly assigned IDs
 
@@ -294,11 +294,11 @@ before any resolving work happens.
 
 **Purpose**: Resolve all `TypeRef` nodes to their type definitions.
 
-**Three-Phase Resolution**:
+**Three-phase resolution**:
 
-1. **Build Type Map**: Collect all `TypeDef` and `TypeAlias` into a map
-2. **Resolve Type Map**: Resolve `TypeRef` nodes within the definitions themselves (handles nested types like `NativeStruct` fields)
-3. **Resolve Members**: Resolve all `TypeRef` nodes in member declarations and expressions
+1. **Build type map**: Collect all `TypeDef` and `TypeAlias` into a map
+2. **Resolve type map**: Resolve `TypeRef` nodes within the definitions themselves (handles nested types like `NativeStruct` fields)
+3. **Resolve members**: Resolve all `TypeRef` nodes in member declarations and expressions
 
 **Behavior**:
 - Resolves `TypeRef` nodes in:
@@ -310,10 +310,10 @@ before any resolving work happens.
 - Computes `typeSpec` for `TypeAlias` by following the chain
 - Handles recursive type resolution in compound types (`TypeFn`, `TypeStruct`, etc.)
 
-**Errors Reported**:
+**Errors reported**:
 - `SemanticError.UndefinedTypeRef`
 
-**AST Changes**:
+**AST changes**:
 - Updates `TypeRef.resolvedAs` to point to `TypeDef` or `TypeAlias`
 - Computes `TypeAlias.typeSpec` by following resolution chain
 - Wraps unresolvable type refs in `InvalidType` nodes
@@ -332,10 +332,10 @@ before any resolving work happens.
 - If exactly one match: sets `Ref.resolvedAs = Some(match)`
 - If no matches: wraps expression in `InvalidExpression` node
 
-**Errors Reported**:
+**Errors reported**:
 - `SemanticError.UndefinedRef`
 
-**AST Changes**:
+**AST changes**:
 - Updates `Ref.candidates` and `Ref.resolvedAs` fields
 - Wraps unresolvable references in `InvalidExpression` nodes
 
@@ -351,12 +351,12 @@ before any resolving work happens.
 3. Binary operators (with user-defined precedence)
 4. Postfix operators (unary with left associativity)
 
-**Function Application as Juxtaposition**:
+**Function application as juxtaposition**:
 Function application is treated as a **high-precedence operation** through juxtaposition.
 
 **Example**: `f x y` is parsed as terms `[Ref("f"), Ref("x"), Ref("y")]` and rewritten to `App(App(Ref("f"), x), y)`.
 
-**Nullary Function Handling**:
+**Nullary function handling**:
 Nullary functions are called explicitly with `()`; value position keeps a reference:
 ```mml
 fn get_value(): Int = 42;
@@ -369,12 +369,12 @@ let f = get_value;
 - `f x y` → `App(App(Ref("f"), x), y)`
 - `-5` → `App(Ref("-"), 5)`
 
-**Errors Reported**:
+**Errors reported**:
 - `SemanticError.InvalidExpression`
 - `SemanticError.DanglingTerms`
 - `SemanticError.InvalidExpressionFound`
 
-**AST Changes**:
+**AST changes**:
 - Transforms flat `Expr(terms)` into nested `App` structures
 - Resolves operator references to their definitions
 - Leaves nullary references untouched; explicit `()` remains an application
@@ -404,7 +404,7 @@ let f = get_value;
 - Preserves `Expr` wrapper for member bodies and conditional branches
 - Transfers type ascriptions when unwrapping
 
-**AST Changes**:
+**AST changes**:
 - Removes unnecessary `Expr` and `TermGroup` nesting
 - Flattens AST for easier processing in later phases
 
@@ -415,7 +415,7 @@ let f = get_value;
 **Purpose**: Validate member bodies, ensure parameter annotations are present, and infer return types
 where possible.
 
-**Two-Phase Flow**
+**Two-phase flow**
 
 1. **Lower mandatory ascriptions**
    - For `Bnd` with `BindingMeta` (functions/operators), copy each Lambda parameter's `typeAsc` into
@@ -431,13 +431,13 @@ where possible.
    - `Bnd` bindings without meta run through the same expression checker; their `typeSpec` mirrors
      the computed expression type. Explicit `typeAsc` entries are validated against the inferred result.
 
-**Application Checking**:
+**Application checking**:
 - Works over nested `App` chains produced by the rewriter, validating one argument at a time.
 - Ensures zero-argument functions in call position accept `Unit`.
 - Emits `TypeError.TypeMismatch`, `InvalidApplication`, `UndersaturatedApplication`, or
   `OversaturatedApplication` depending on the shape of the call.
 
-**Additional Rules**:
+**Additional rules**:
 - After checking, a function or operator's `typeSpec` stores its return type; parameter
   `typeSpec` entries hold the concrete argument types.
 - Conditional guards must be `Bool`; both branches must agree on type or trigger
@@ -446,10 +446,10 @@ where possible.
 - All detected issues are wrapped as `SemanticError.TypeCheckingError` and accumulated in the phase
   state.
 
-**Note on Native Implementations**:
+**Note on native implementations**:
 
-Functions and operators with `@native` bodies (containing `NativeImpl` nodes) serve to **lift native
-declarations and types into MML's type system**. These declarations expose native (C/LLVM)
+Functions and operators with `@native` bodies (containing `NativeImpl` nodes) lift native
+declarations and types into MML's type system. These declarations expose native (C/LLVM)
 functionality to MML by declaring their signatures. The type checker skips body verification for
 native implementations since the body is external.
 
@@ -474,7 +474,7 @@ Generation section below.
     passes non-heap fields directly to constructor
 - Native heap types (String, Buffer, IntArray, StringArray) have memory functions in the C runtime
 
-**AST Changes**:
+**AST changes**:
 - Adds generated `Bnd` members to the module
 - Updates `resolvables` index with new function IDs
 
@@ -484,30 +484,30 @@ Generation section below.
 
 **Purpose**: Track ownership of heap-allocated values and insert `__free_*` calls.
 
-**Ownership States**:
+**Ownership states**:
 - `Owned` — Caller owns the value, must free at scope end
 - `Moved` — Ownership transferred, caller must not use
 - `Borrowed` — Lent to callee, caller retains ownership
 - `Literal` — Static memory, never freed
 
-**Key Behaviors**:
+**Key behaviors**:
 
-1. **Allocation Detection**: Identifies allocating calls via:
+1. **Allocation detection**: Identifies allocating calls via:
    - `NativeImpl.memEffect = Alloc`
    - Intramodule fixed-point analysis for user functions returning heap values
    - Struct constructors (`__mk_*`) for structs with heap fields
 
-2. **Free Insertion**: Uses CPS-style AST rewriting at scope end:
+2. **Free insertion**: Uses CPS-style AST rewriting at scope end:
    ```
    let x = alloc(); body  →  let x = alloc(); let __r = body; __free_T x; __r
    ```
 
-3. **Expression Temporaries**: Allocating args not bound to variables get synthetic bindings:
+3. **Expression temporaries**: Allocating args not bound to variables get synthetic bindings:
    ```
    f (alloc())  →  let __tmp = alloc(); let __r = f __tmp; __free_T __tmp; __r
    ```
 
-4. **Mixed Ownership Conditionals**: When branches differ in allocation, generates witness boolean:
+4. **Mixed ownership conditionals**: When branches differ in allocation, generates witness boolean:
    ```
    let s = if c then alloc() else "lit"
    →
@@ -516,22 +516,22 @@ Generation section below.
    // at scope end: if __owns_s then __free_T s else ()
    ```
 
-5. **Return Escape**: Bindings escaping via return are not freed; ownership transfers to caller.
+5. **Return escape**: Bindings escaping via return are not freed; ownership transfers to caller.
    Static branches in mixed returns are wrapped with `__clone_T`.
 
-**Errors Reported**:
+**Errors reported**:
 - `UseAfterMove`, `ConsumingParamNotLastUse`, `PartialApplicationWithConsuming`,
   `ConditionalOwnershipMismatch`
 
 ---
 
-## 9. Standard Library Injection
+## 9. Standard library injection
 
 NOTE: This is a stopgap solution until we get library support.
 
-The compiler **automatically injects** predefined types, operators, and functions into every module before semantic analysis. This injection is implemented in `semantic/package.scala`.
+The compiler automatically injects predefined types, operators, and functions into every module before semantic analysis. This injection is implemented in `semantic/package.scala`.
 
-### Injected Types
+### Injected types
 
 ```scala
 // Native type definitions with LLVM mappings
@@ -550,7 +550,7 @@ Byte  → Int8
 Word  → Int8
 ```
 
-### Injected Operators
+### Injected operators
 
 All standard operators are injected as `@native` declarations with LLVM IR templates:
 
@@ -582,7 +582,7 @@ op or(a: Bool, b: Bool): Bool 30 left = @native[tpl="or %type %operand1, %operan
 op not(a: Bool): Bool 95 right = @native[tpl="xor %type 1, %operand"];
 ```
 
-### Injected Functions
+### Injected functions
 
 ```scala
 fn print(s: String): Unit = @native;
@@ -598,16 +598,16 @@ fn str_to_int(s: String): Int = @native;
 
 ---
 
-## 10. Error Handling Strategy
+## 10. Error handling strategy
 
-### Error Accumulation Model
+### Error accumulation model
 
 The compiler uses an **error accumulation** model rather than fail-fast:
 - Errors are collected in `CompilerState.errors`
 - Compilation continues even after errors are found
-- This enables **better IDE support** and reporting **multiple errors** at once
+- This enables better IDE support and reporting multiple errors at once
 
-### Invalid Nodes
+### Invalid nodes
 
 The compiler wraps invalid constructs in special nodes to continue analysis:
 
@@ -616,12 +616,9 @@ The compiler wraps invalid constructs in special nodes to continue analysis:
 - **`DuplicateMember`**: Duplicate declarations (first stays valid)
 - **`InvalidMember`**: Members with errors (e.g., duplicate parameters)
 
-**Benefits**:
-- **Partial compilation**: Generate code for valid parts
-- **LSP support**: Continue providing IDE features despite errors
-- **Better error messages**: More context available
+This allows partial compilation, continued LSP features despite errors, and richer error messages.
 
-### Error Types
+### Error types
 
 #### `SemanticError`
 General semantic analysis errors (see semantics.md, Error Categories)
@@ -631,18 +628,18 @@ Type system errors (see semantics.md, Error Categories)
 
 All type errors are wrapped as `SemanticError.TypeCheckingError` for uniform handling in the phase pipeline.
 
-## 11. Code Generation: Native Templates
+## 11. Code generation: native templates
 
 When the compiler encounters a call to a function or operator with `@native[tpl="..."]`, it emits
 the template inline rather than generating a function call.
 
-### Template Extraction
+### Template extraction
 
 The codegen extracts templates from the AST:
 - **Operators**: `getNativeTemplate()` checks `BindingMeta.arity` (Binary/Unary) and extracts from `NativeImpl.nativeTpl`
 - **Functions**: `getFunctionTemplate()` extracts from functions (any arity except operators)
 
-### Template Substitution
+### Template substitution
 
 Templates use placeholders that are substituted at compile time:
 
@@ -652,7 +649,7 @@ Templates use placeholders that are substituted at compile time:
 | `%operand` | Single argument value (unary ops/functions) | `%0` |
 | `%operand1`, `%operand2`, ... | Multiple arguments (1-indexed) | `%0`, `%1` |
 
-### Emission Process
+### Emission process
 
 1. Compile arguments to get LLVM operand values
 2. Substitute placeholders in template with actual values
@@ -666,7 +663,7 @@ called as `ctpop 255`:
 %1 = call i64 @llvm.ctpop.i64(i64 255)
 ```
 
-### Use Cases
+### Use cases
 
 - **LLVM intrinsics**: `llvm.ctpop`, `llvm.sqrt`, `llvm.smax`, etc.
 - **Primitive operators**: `add`, `sub`, `mul`, `icmp`, etc.
@@ -674,9 +671,9 @@ called as `ctpop 255`:
 
 ---
 
-## Appendix A: Source Tree Overview
+## Appendix A: source tree overview
 
-### Compilation Flow
+### Compilation flow
 
 ```mermaid
 flowchart TD
@@ -703,7 +700,7 @@ flowchart TD
     TOOL --> Binary[Native Binary / Output]
 ```
 
-### Module Organization
+### Module organization
 
 **CLI** (`modules/mmlc/`)
 - `Main.scala` - Entry point, CLI handling
@@ -735,11 +732,7 @@ Each phase:
 - Adds timings via `CompilerState.timePhase`/`timePhaseIO`.
 - Accumulates errors while keeping compilation progress for tooling.
 
-This design enables:
-- **Clear separation of concerns**: Each phase has one responsibility
-- **Error recovery**: Continue analysis after errors
-- **Incremental development**: Easy to add new phases
-- **Better tooling**: Partial results enable IDE features
+Each phase has one responsibility, errors accumulate without halting compilation, and partial results feed the LSP.
 
 ---
 

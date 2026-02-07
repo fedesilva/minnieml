@@ -1,9 +1,9 @@
-# When Your Functional Language Beats C 
+# When your functional language beats C
 
 I recently got recursion and functions with complex expressions working so I implemented 
 the Ackermann function to stress-test recursion and function call performance.
 
-## The Test
+## The test
 
 The Ackermann function is perfect for testing recursive performance - it's simple to implement but creates deep call stacks:
 
@@ -68,7 +68,7 @@ int main(void) {
 }
 ```
 
-## The Surprise
+## The surprise
 
 MML's performance caught me off guard. Benchmarks on an Intel Core i9-9880H (macOS Sequoia),
 measuring wall-clock time:
@@ -85,7 +85,7 @@ pipeline as the C version.
 
 To be clear: C can match or beat this with enough manual restructuring — the point is that MML didn’t require it.
 
-## The Plot Twist
+## The plot twist
 
 My friend Chacho sent me a C version that runs in ~0.006s. Looking at the code revealed the trick:
 
@@ -127,7 +127,7 @@ return ((int64_t)1 << (n + 3)) - 3;
 
 Clever, but not exactly testing what we set out to test.
 
-## The Response
+## The response
 
 MML didn't have bit shift operators yet. But here's the thing - adding them took exactly two lines of MML code:
 
@@ -153,7 +153,7 @@ fn ackermann(m: Int, n: Int): Int =
 
 Result: ~0.006s, matching the optimized C version.
 
-## The Real Victory
+## What actually matters
 
 While it's satisfying that MML can match C's tricks when needed, the real win is that the clean, recursive version - the one 
 that actually tests function call performance - beats C's recursive implementation. 
@@ -164,8 +164,4 @@ that aren’t as easily visible in the imperative version.
 The ability to extend the language with two lines of code when you need low-level operations? 
 That's the kind of flexibility that makes a language practical for real work. 
 The operators aren't built into the compiler - they're just part of the standard library, written in MML itself.
-
-
-
-
 
