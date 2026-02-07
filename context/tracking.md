@@ -21,7 +21,14 @@
 
 ## Active Tasks
 
+### Update language reference [COMPLETE]
 
+**Spec:** `context/specs/lang-ref-updated.md`
+
+Rename `docs/design/semantics.md` → `docs/design/language-reference.md` and fill gaps:
+missing declaration syntax (`let`, `fn`, `op`, `struct`, `type`), program structure
+(semicolons, expression sequencing, top-level module), struct as a first-class type system
+concept, scoping rules, and cleaning up error categories that leak compiler internals.
 
 ### LSP: find references does not work for struct constructors
 
@@ -209,6 +216,21 @@ TBD
 ---
 
 ## Recent Changes
+
+### 2026-02-06 Update language reference [COMPLETE]
+
+- Renamed `docs/design/semantics.md` to `docs/design/language-reference.md`
+- Updated references in `docs/design/compiler-design.md`
+- Added **Declarations** section: `let`, `fn`, `op`, `struct`, `type` with syntax and examples
+- Added **Program structure** section: modules, semicolons as terminators, expression sequencing
+- Added **Control flow** section: conditionals (`if`/`elif`/`else`/`end`), recursion and tail
+  calls, limitations (no loops, no nested functions — temporary, pending memory model)
+- Added **Structs** as standalone type system section with heap classification
+- Added **Scoping rules** to semantic rules
+- Updated keywords list (added `struct`, `elif`, `end`, `~`)
+- Rewrote error categories in language terms (removed compiler internal type names)
+- Changed all code fences from `scala`/`rust` to `mml`
+- Clarified juxtaposition as uniform application mechanism (functions, operators, constructors)
 
 ### 2026-02-06 Fix struct semantic token miscoloring [COMPLETE]
 

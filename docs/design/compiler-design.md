@@ -621,10 +621,10 @@ This allows partial compilation, continued LSP features despite errors, and rich
 ### Error types
 
 #### `SemanticError`
-General semantic analysis errors (see semantics.md, Error Categories)
+General semantic analysis errors (see language-reference.md, Errors)
 
 #### `TypeError`
-Type system errors (see semantics.md, Error Categories)
+Type system errors (see language-reference.md, Errors)
 
 All type errors are wrapped as `SemanticError.TypeCheckingError` for uniform handling in the phase pipeline.
 
