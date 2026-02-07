@@ -51,8 +51,8 @@ fn sift_up (h: MinHeap, idx: Int): Unit =
     if c_score < p_score then
       heap_swap h idx parent;
       sift_up h parent
-    else () end
-  else () end
+    end
+  end
 ;
 
 fn sift_down (h: MinHeap, size: Int, idx: Int): Unit =
@@ -77,7 +77,7 @@ fn sift_down (h: MinHeap, size: Int, idx: Int): Unit =
   if smallest != idx then
     heap_swap h idx smallest;
     sift_down h size smallest
-  else () end
+  end
 ;
 
 fn heap_push (h: MinHeap, size: Int, grid_idx: Int, f_score: Int): Int =
@@ -126,10 +126,17 @@ fn init_g (g_score: IntArray, inf: Int, total: Int, i: Int): Unit =
 ;
 
 fn visit_neighbors (
-  open_set: MinHeap, g_score: IntArray, walls: IntArray,
-  goal_idx: Int, width: Int, height: Int,
-  current: Int, cx: Int, cy: Int,
-  dir: Int, heap_sz: Int
+  open_set: MinHeap,
+  g_score: IntArray,
+  walls: IntArray,
+  goal_idx: Int,
+  width: Int,
+  height: Int,
+  current: Int,
+  cx: Int,
+  cy: Int,
+  dir: Int,
+  heap_sz: Int
 ): Int =
   if dir == 4 then
     solve open_set g_score walls goal_idx width height heap_sz
@@ -172,8 +179,12 @@ fn visit_neighbors (
 ;
 
 fn solve (
-  open_set: MinHeap, g_score: IntArray, walls: IntArray,
-  goal_idx: Int, width: Int, height: Int,
+  open_set: MinHeap, 
+  g_score: IntArray, 
+  walls: IntArray,
+  goal_idx: Int, 
+  width: Int, 
+  height: Int,
   h_size: Int
 ): Int =
   if h_size == 0 then (0 - 1)
