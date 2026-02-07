@@ -21,53 +21,9 @@
 
 ## Active Tasks
 
-### LSP: find references does not work for struct constructors
 
-Navigating to reference (go-to-definition) on a struct constructor call does not jump
-to the struct definition. The constructor is synthetic (`__mk_<Name>`), so the LSP
-should resolve through it to the `TypeStruct` declaration.
 
-Example — asking for "go to definition" on `MinHeap` in the constructor call within
-`heap_new` should navigate to the `struct MinHeap` definition:
 
-```
-struct MinHeap {
-  indices: IntArray,
-  scores:  IntArray,
-  capacity: Int
-};
-
-fn heap_new (cap: Int): MinHeap =
-  MinHeap          // <-- go-to-def here should jump to struct MinHeap
-    (ar_int_new cap)
-    (ar_int_new cap)
-    cap
-;
-```
-
-### Neovim improvements
-
-vscode plugin has commands like restart lsp and compile.
-need to add those to nvim plugin.
-
-#### Neovim restart command does not work
-
-The neovim restart LSP command is not functioning correctly. Needs investigation and fix.
-
-### Add Name node to AST
-
-**Spec:** `context/specs/ast-name-node.md`
-
-Introduce a `Name` AST node with its own `SrcSpan`. Use `nameNode: Name` as
-a field on all named declarations, with `def name: String = nameNode.value`
-for backward compatibility. Eliminates keyword-length guessing in semantic tokens.
-
-### Refactor SourceSpan
-
-* refactor SourceSpan (and from source?) to be an enum
-    - Synth | SourceSpan (one has real info, the other is just a placeholder, 
-        also informs something is synth and should not even visible.
-* things like constructors need to use the span of the type definition.
 
 
 
@@ -177,29 +133,6 @@ Affine ownership with borrow-by-default. Enables safe automatic memory managemen
     - Makefile or script to run both ASAN and leaks passes
     - Fail on any ASAN error or non-zero leak count
     - Report summary of results
-
-
-
-### LSP log rotation
-
-**Spec:** `context/specs/lsp-log-rotation.md`
-
-Size-based log rotation on LSP startup. Before opening the writer, check if
-`server.log` exceeds 5 MB and rotate (`server.log.1`, `.2`, `.3`). Keeps logs
-bounded without per-write overhead.
-
-### Compile runtime to central location
-
-* Compile runtime to ~/.config/mml/cache/runtime/
-* add an `setup` subcommand to clean and recompile the runtime.
-    - or run the init code if it's not been ran when we first compile something 
-    - and check for installed tools.
-* update tooling to find the runtime where it's compiled.
-
-### Runtime: time functions
-
-TBD
-
 
 ---
 
