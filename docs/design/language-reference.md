@@ -152,6 +152,8 @@ op ++(a: String, b: String): String 61 right = concat a b;
 op -(a: Int): Int 95 right = @native[tpl="sub %type 0, %operand"];
 ```
 
+Fixity is a function of associativity and arity.
+
 See [Operator system](#6-operator-system) for details on precedence, overloading,
 and desugaring.
 
