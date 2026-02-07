@@ -8,5 +8,5 @@ fn main() =
   let y = 4*30 / input;
   let z = b * y * x;
   let result = a * b + c / y * x + input;
-  println (to_string result)
+  println (int_to_str result)
 ;

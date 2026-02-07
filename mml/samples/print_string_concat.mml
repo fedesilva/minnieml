@@ -4,6 +4,6 @@ let b = 40;
 let answer = a+b;
 
 fn main(): Unit =
-  println (concat "Hello, " "world!");
-  println (concat "the answer is: " (to_string answer))
+  println ("Hello, " ++ "world!");
+  println ("the answer is: " ++ (int_to_str answer))
 ;

@@ -4,7 +4,7 @@
 // * literal lamdas
 fn makeLambda() = 
   let a = 1;
-  () -> to_string (2 * a)
+  () -> int_to_str (2 * a)
 ;
 
 fn main() = 

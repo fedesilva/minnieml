@@ -15,8 +15,11 @@ class FindDefinitionTests extends BaseEffFunSuite:
       """
 
     semNotFailed(code).map { m =>
-      val params = collectParams(m.members)
-      val refs   = collectRefs(m.members)
+      val mainBnd = m.members
+        .collectFirst { case b: Bnd if b.name == "main" => b }
+        .getOrElse(fail("Could not find 'main'"))
+      val params = collectParamsFromMember(mainBnd)
+      val refs   = collectRefsFromMember(mainBnd)
 
       val xParamOpt = params.find(_.name == "x")
       assert(xParamOpt.isDefined, "Could not find param 'x'")
@@ -39,9 +42,6 @@ class FindDefinitionTests extends BaseEffFunSuite:
       assert(yDefs.contains(yParam.span), s"Missing param span for 'y': $yDefs")
     }
   }
-
-  private def collectParams(members: List[Member]): List[FnParam] =
-    members.flatMap(collectParamsFromMember)
 
   private def collectParamsFromMember(member: Member): List[FnParam] =
     member match
@@ -86,9 +86,6 @@ class FindDefinitionTests extends BaseEffFunSuite:
         collectParamsFromAppFn(app.fn) ++ collectParamsFromExpr(app.arg)
       case ref: Ref =>
         ref.qualifier.toList.flatMap(collectParamsFromTerm)
-
-  private def collectRefs(members: List[Member]): List[Ref] =
-    members.flatMap(collectRefsFromMember)
 
   private def collectRefsFromMember(member: Member): List[Ref] =
     member match

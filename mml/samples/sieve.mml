@@ -70,5 +70,5 @@ fn run_sieve(limit: Int): Int =
 
 fn main(): Unit =
   let count = run_sieve 1000000;
-  println (concat "Primes found: " (to_string count))
+  println ("Primes found: " ++ (int_to_str count))
 ;

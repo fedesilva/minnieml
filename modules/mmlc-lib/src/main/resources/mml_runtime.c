@@ -237,6 +237,35 @@ FORCE_INLINE void buffer_writeln_int(Buffer b, int64_t value)
     b->data[b->length++] = '\n';
 }
 
+FORCE_INLINE void buffer_write_float(Buffer b, float value)
+{
+    if (!b)
+        return;
+    char buf[32];
+    int len = snprintf(buf, sizeof(buf), "%g", (double)value);
+    if (len <= 0)
+        return;
+    if (b->length + len >= b->capacity)
+        flush(b);
+    memcpy(b->data + b->length, buf, len);
+    b->length += len;
+}
+
+FORCE_INLINE void buffer_writeln_float(Buffer b, float value)
+{
+    if (!b)
+        return;
+    char buf[32];
+    int len = snprintf(buf, sizeof(buf), "%g", (double)value);
+    if (len <= 0)
+        return;
+    if (b->length + len + 1 >= b->capacity)
+        flush(b);
+    memcpy(b->data + b->length, buf, len);
+    b->length += len;
+    b->data[b->length++] = '\n';
+}
+
 // --- Read a line from stdin ---
 String readline()
 {
@@ -410,7 +439,7 @@ String concat(String a, String b)
 }
 
 // --- Integer to String Conversion ---
-String to_string(int64_t value)
+String int_to_str(int64_t value)
 {
     // Handle special case of 0
     if (value == 0)
@@ -456,6 +485,27 @@ String to_string(int64_t value)
         data[0] = '-';
 
     return (String){total_length, data};
+}
+
+// --- Float to String Conversion ---
+String float_to_str(float value)
+{
+    char buf[32];
+    int len = snprintf(buf, sizeof(buf), "%g", (double)value);
+    if (len <= 0)
+    {
+        char *data = (char *)malloc(2);
+        if (!data)
+            return (String){0, NULL};
+        data[0] = '0';
+        data[1] = '\0';
+        return (String){1, data};
+    }
+    char *data = (char *)malloc(len + 1);
+    if (!data)
+        return (String){0, NULL};
+    memcpy(data, buf, len + 1);
+    return (String){(size_t)len, data};
 }
 
 // --- String to Integer Conversion (strict) ---

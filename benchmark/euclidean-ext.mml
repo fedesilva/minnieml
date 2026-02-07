@@ -55,5 +55,5 @@ fn main(): Unit =
   let n = 10000;
   
   let result = rsa_bench_loop 2 n p 0;
-  println (concat "Checksum: " (to_string result))
+  println ("Checksum: " ++ (int_to_str result))
 ;

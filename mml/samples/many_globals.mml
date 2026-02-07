@@ -2,10 +2,10 @@
 
 let a = "Fede";
 let b = "Silva";
-let c = concat a b;
+let c = a ++ b;
 
 fn join(a: String, b: String) =
-  concat a b
+  a ++ b
 ;
 
 fn main(): Unit =

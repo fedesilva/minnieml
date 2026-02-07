@@ -4,5 +4,5 @@ fn sum (f: Int, x: Int): Int = f + x;
 let a = sum (double 1) 2;
 
 fn main(): Unit =
-  println (to_string a)
+  println (int_to_str a)
 ;

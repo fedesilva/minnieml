@@ -10,5 +10,5 @@ let c =
   end;
 
 fn main(): Unit =
-  println (concat "Resultado: " c)
+  println ("Resultado: " ++ c)
 ;

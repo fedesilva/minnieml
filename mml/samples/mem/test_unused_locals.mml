@@ -7,8 +7,8 @@
 // This function allocates two strings but only uses one.
 // The runtime must free 'unused' when the function returns/ends.
 fn test_unused_locals(n: Int): Unit =
-  let unused = to_string (n + 9999); // Heap alloc, never used
-  let used = to_string n;            // Heap alloc, used
+  let unused = int_to_str (n + 9999); // Heap alloc, never used
+  let used = int_to_str n;            // Heap alloc, used
   println used
   // 'unused' should be freed here automatically
 ;
@@ -30,7 +30,7 @@ fn wrapper_layer(s: String): String =
 
 // generate a string, pass it through layers, and print it.
 fn test_deep_stack(n: Int): Unit =
-  let s = to_string n;
+  let s = int_to_str n;
   let res = wrapper_layer s;
   println res
 ;

@@ -1,26 +1,9 @@
 // Mini Ray Tracer in MML
 // Renders a simple scene with spheres to a PPM image via stdout.
+// Float operators (+. -. *. /. <. >.) and math functions (sqrt, fabs,
+// int_to_float, float_to_int) are provided by the stdlib.
 
-// --- 1. Float Infrastructure ---
-
-// Floating-point arithmetic using OCaml-style operators
-op +.(a: Float, b: Float): Float 60 left = @native[tpl="fadd float %operand1, %operand2"];
-op -.(a: Float, b: Float): Float 60 left = @native[tpl="fsub float %operand1, %operand2"];
-op *.(a: Float, b: Float): Float 80 left = @native[tpl="fmul float %operand1, %operand2"];
-op /.(a: Float, b: Float): Float 80 left = @native[tpl="fdiv float %operand1, %operand2"];
-
-// Unary negation for float (using `-.` as prefix)
-op -.(a: Float): Float 95 right = @native[tpl="fsub float 0.0, %operand"];
-
-// Comparisons
-op <.(a: Float, b: Float): Bool 50 left = @native[tpl="fcmp olt float %operand1, %operand2"];
-op >.(a: Float, b: Float): Bool 50 left = @native[tpl="fcmp ogt float %operand1, %operand2"];
-
-// Math functions
-fn sqrt(x: Float): Float = @native[tpl="call float @llvm.sqrt.f32(float %operand)"];
-fn fabs(x: Float): Float = @native[tpl="call float @llvm.fabs.f32(float %operand)"];
-
-// --- 2. Linear Algebra ---
+// --- Linear Algebra ---
 
 struct Vec3 { x: Float, y: Float, z: Float };
 
@@ -50,7 +33,7 @@ fn unit_vector(v: Vec3): Vec3 =
   vec_scale v (1.0 /. (length v))
 ;
 
-// --- 3. Scene Geometry ---
+// --- Scene Geometry ---
 
 struct Ray { origin: Vec3, dir: Vec3 };
 
@@ -100,7 +83,7 @@ fn hit_sphere(s: Sphere, r: Ray, t_min: Float, t_max: Float): Hit =
   end
 ;
 
-// --- 4. World & Rendering ---
+// --- World & Rendering ---
 
 // Hardcoded world hit function (simulates a list of objects)
 fn world_hit(r: Ray, t_min: Float, t_max: Float): Hit =
@@ -146,7 +129,7 @@ fn ray_color(r: Ray): Vec3 =
   end
 ;
 
-// --- 5. Output Utilities ---
+// --- Output Utilities ---
 
 fn write_color(b: Buffer, pixel_color: Vec3): Unit =
   // Convert [0,1] to [0,255]
@@ -161,9 +144,7 @@ fn write_color(b: Buffer, pixel_color: Vec3): Unit =
   buffer_writeln_int b (float_to_int ib)
 ;
 
-fn float_to_int(f: Float): Int = @native[tpl="fptosi float %operand to i64"];
-
-// --- 6. Main Loop ---
+// --- Main Loop ---
 
 fn render_col(b: Buffer, i: Int, j: Int, width: Int, height: Int): Unit =
   if i < width then
@@ -210,8 +191,6 @@ fn render_row(b: Buffer, j: Int, width: Int, height: Int): Unit =
     render_row b (j - 1) width height
   end
 ;
-
-fn int_to_float(i: Int): Float = @native[tpl="sitofp i64 %operand to float"];
 
 fn main(): Unit =
   // Image settings

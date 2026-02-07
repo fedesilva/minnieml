@@ -7,8 +7,8 @@ fn main(): Unit =
   let v0 = ar_str_get arr 0;
   let v1 = ar_str_get arr 1;
   let v2 = ar_str_get arr 2;
-  println (concat "Length: " (to_string len));
-  println (concat "arr[0] = " v0);
-  println (concat "arr[1] = " v1);
-  println (concat "arr[2] = " v2)
+  println ("Length: " ++ (int_to_str len));
+  println ("arr[0] = " ++ v0);
+  println ("arr[1] = " ++ v1);
+  println ("arr[2] = " ++ v2)
 ;

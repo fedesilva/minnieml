@@ -9,7 +9,7 @@
 fn fill_array(arr: StringArray, i: Int, n: Int): Unit =
   if i < n then
     // Allocates "Item <N>" on the heap
-    ar_str_set arr i (concat "Item " (to_string i));
+    ar_str_set arr i ("Item " ++ (int_to_str i));
     fill_array arr (i + 1) n
   end
 ;

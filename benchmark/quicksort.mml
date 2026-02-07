@@ -64,5 +64,5 @@ fn run_sort(size: Int): Int =
 fn main(): Unit =
   // Sort 1 million integers
   let result = run_sort 1000000;
-  println (concat "Median checksum: " (to_string result))
+  println ("Median checksum: " ++ (int_to_str result))
 ;

@@ -65,5 +65,5 @@ fn main(): Unit =
   let board = ar_int_new n;
   
   let solutions = solve board 0 n 0;
-  println (concat "Solutions for " (concat (to_string n) (concat "-queens: " (to_string solutions))))
+  println ("Solutions for " ++ (int_to_str n) ++ "-queens: " ++ (int_to_str solutions))
 ;

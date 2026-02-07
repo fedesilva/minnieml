@@ -4,6 +4,6 @@ fn add(a: Int, b: Int): Int = a + b;
 fn main() =
   let mk = fn x -> add x;      // returns a function
   let inc = mk 1;
-  println (to_string (inc 41))
+  println (int_to_str (inc 41))
 ;
 

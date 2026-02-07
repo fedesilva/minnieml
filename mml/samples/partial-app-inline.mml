@@ -2,5 +2,5 @@
 fn add(a: Int, b: Int): Int = a + b;
 
 fn main(): Unit =
-  println (to_string ((add 5) 10))
+  println (int_to_str ((add 5) 10))
 ;

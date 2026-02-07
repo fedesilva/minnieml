@@ -229,5 +229,5 @@ fn main (): Unit =
 
   let cost = astar w h start goal walls;
 
-  println (to_string cost)
+  println (int_to_str cost)
 ;

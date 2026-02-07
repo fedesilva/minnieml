@@ -29,7 +29,7 @@ class TailRecursionLoopificationTest extends BaseEffFunSuite:
     val source =
       """
       fn loop(i: Int, to: Int): Unit =
-        println (to_string i);
+        println (int_to_str i);
         if i <= to then
           loop (i + 1) to
         else

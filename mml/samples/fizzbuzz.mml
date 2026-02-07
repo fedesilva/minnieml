@@ -4,7 +4,7 @@ fn loop(n: Int, t: Int): Unit =
     if n % 15 == 0 then println "FizzBuzz"
     elif n % 3 == 0 then println "Fizz"
     elif n % 5 == 0 then println "Buzz"
-    else println (to_string n)
+    else println (int_to_str n)
     end;
     loop (n+1) t
   end

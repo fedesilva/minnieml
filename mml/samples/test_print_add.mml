@@ -1,4 +1,4 @@
 
 fn main(): Unit =
-  println (to_string(5 + 3))
+  println (int_to_str(5 + 3))
 ;

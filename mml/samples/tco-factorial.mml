@@ -13,4 +13,4 @@ fn factorial(n: Int): Int = factorial_tco n 1;
 // Postfix operator using the tail-recursive implementation
 op ! (n: Int): Int 95 left = factorial n;
 
-fn main() = println (to_string (20!));
+fn main() = println (int_to_str (20!));

@@ -2,7 +2,7 @@
 fn main() = 
   let a = 1;
   let b = 2;
-  println (to_string (a + b))
+  println (int_to_str (a + b))
 ;
 
 

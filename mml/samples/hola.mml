@@ -1,5 +1,5 @@
 
-fn hola(a: String) = concat "Hola, " a;
+fn hola(a: String) = "Hola, " ++ a;
 
 let name = "fede";
 

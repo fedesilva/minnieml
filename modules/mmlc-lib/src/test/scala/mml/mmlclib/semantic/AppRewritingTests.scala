@@ -253,7 +253,7 @@ class AppRewritingTests extends BaseEffFunSuite:
       """
       fn main(): Unit =
         let n = 1;
-        println (to_string n)
+        println (int_to_str n)
       ;
       """
     ).map { m =>
@@ -288,7 +288,7 @@ class AppRewritingTests extends BaseEffFunSuite:
                         s"Expected let binding argument to be LiteralInt(1), got:\n${prettyPrintAst(argExpr)}"
                       )
 
-                  // After ownership analysis, to_string wraps its result in a synthetic let.
+                  // After ownership analysis, int_to_str wraps its result in a synthetic let.
                   // Find println in the body (may be nested in ownership wrappers).
                   val printlnApp = findAppByName(innerLambda, "println")
                   assert(
@@ -296,19 +296,19 @@ class AppRewritingTests extends BaseEffFunSuite:
                     s"Expected println application in let body, got:\n${prettyPrintAst(innerLambda)}"
                   )
 
-                  // Find to_string anywhere in the ownership-wrapped body
-                  val toStringApp = findAppByName(innerLambda, "to_string")
+                  // Find int_to_str anywhere in the ownership-wrapped body
+                  val toStringApp = findAppByName(innerLambda, "int_to_str")
                   assert(
                     toStringApp.isDefined,
-                    s"Expected to_string call in ownership-wrapped body:\n${prettyPrintAst(innerLambda)}"
+                    s"Expected int_to_str call in ownership-wrapped body:\n${prettyPrintAst(innerLambda)}"
                   )
 
-                  // Verify to_string's argument is Ref(n)
+                  // Verify int_to_str's argument is Ref(n)
                   toStringApp.get.arg.terms match
                     case List(Ref(_, "n", _, _, _, _, _)) => ()
                     case other =>
                       fail(
-                        s"Expected to_string argument to be Ref n, got:\n${other
+                        s"Expected int_to_str argument to be Ref n, got:\n${other
                             .map(t => prettyPrintAst(t, 0, false, false))
                             .mkString("\n")}"
                       )

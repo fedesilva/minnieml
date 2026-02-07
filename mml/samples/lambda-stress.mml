@@ -12,6 +12,6 @@ let inc = add 1;
 
 // When we call inc, it takes the missing parameter, 
 // calls add using both.
-fn main() = println (to_string (inc 41));
+fn main() = println (int_to_str (inc 41));
 
 

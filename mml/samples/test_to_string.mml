@@ -1,4 +1,4 @@
 
 fn main(): Unit =
-  println (concat "Number: " (to_string 42))
+  println ("Number: " ++ (int_to_str 42))
 ;

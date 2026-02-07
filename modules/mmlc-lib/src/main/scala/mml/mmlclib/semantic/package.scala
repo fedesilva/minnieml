@@ -374,8 +374,9 @@ def injectStandardOperators(module: Module): Module =
     TypeRef(dummySpan, name, stdlibTypeId(name), Nil)
 
   // Helper function to create TypeRef for basic types
-  def intType  = stdlibTypeRef("Int")
-  def boolType = stdlibTypeRef("Bool")
+  def intType   = stdlibTypeRef("Int")
+  def boolType  = stdlibTypeRef("Bool")
+  def floatType = stdlibTypeRef("Float")
 
   // Helper to create a binary operator as Bnd(Lambda)
   def mkBinOp(
@@ -504,8 +505,38 @@ def injectStandardOperators(module: Module): Module =
     mkUnaryOp(name, prec, assoc, tpl, boolType, boolType)
   }
 
+  // Float arithmetic: Float -> Float -> Float
+  val floatArithmeticOps = List(
+    ("+.", 60, Associativity.Left, "fadd %type %operand1, %operand2"),
+    ("-.", 60, Associativity.Left, "fsub %type %operand1, %operand2"),
+    ("*.", 80, Associativity.Left, "fmul %type %operand1, %operand2"),
+    ("/.", 80, Associativity.Left, "fdiv %type %operand1, %operand2")
+  ).map { case (name, prec, assoc, tpl) =>
+    mkBinOp(name, prec, assoc, tpl, floatType, floatType)
+  }
+
+  // Float comparison: Float -> Float -> Bool
+  val floatComparisonOps = List(
+    ("<.", 50, Associativity.Left, "fcmp olt %type %operand1, %operand2"),
+    (">.", 50, Associativity.Left, "fcmp ogt %type %operand1, %operand2"),
+    ("<=.", 50, Associativity.Left, "fcmp ole %type %operand1, %operand2"),
+    (">=.", 50, Associativity.Left, "fcmp oge %type %operand1, %operand2"),
+    ("==.", 50, Associativity.Left, "fcmp oeq %type %operand1, %operand2"),
+    ("!=.", 50, Associativity.Left, "fcmp une %type %operand1, %operand2")
+  ).map { case (name, prec, assoc, tpl) =>
+    mkBinOp(name, prec, assoc, tpl, floatType, boolType)
+  }
+
+  // Unary float: Float -> Float
+  val unaryFloatOps = List(
+    ("-.", 95, Associativity.Right, "fsub %type 0.0, %operand")
+  ).map { case (name, prec, assoc, tpl) =>
+    mkUnaryOp(name, prec, assoc, tpl, floatType, floatType)
+  }
+
   val standardOps =
-    arithmeticOps ++ comparisonOps ++ logicalOps ++ unaryArithmeticOps ++ unaryLogicalOps
+    arithmeticOps ++ comparisonOps ++ logicalOps ++ unaryArithmeticOps ++ unaryLogicalOps ++
+      floatArithmeticOps ++ floatComparisonOps ++ unaryFloatOps
 
   // Build resolvables index from stdlib operators
   val opIndex = standardOps.foldLeft(module.resolvables) { (idx, bnd) =>
@@ -527,6 +558,7 @@ def injectCommonFunctions(module: Module): Module =
   // Helper function to create TypeRef for basic types
   def stringType = stdlibTypeRef("String")
   def intType    = stdlibTypeRef("Int")
+  def floatType  = stdlibTypeRef("Float")
   def unitType   = stdlibTypeRef("Unit")
   def bufferType = stdlibTypeRef("Buffer")
 
@@ -615,6 +647,46 @@ def injectCommonFunctions(module: Module): Module =
       id         = stdlibId("bnd", mangledName)
     )
 
+  // Helper to create a function with a native template (like mkFn but with nativeTpl)
+  def mkFnWithTpl(
+    name:       String,
+    params:     List[FnParam],
+    returnType: Type,
+    tpl:        String
+  ): Bnd =
+    val arity = params.size match
+      case 0 => CallableArity.Nullary
+      case 1 => CallableArity.Unary
+      case 2 => CallableArity.Binary
+      case n => CallableArity.Nary(n)
+    val meta = BindingMeta(
+      origin        = BindingOrigin.Function,
+      arity         = arity,
+      precedence    = Precedence.Function,
+      associativity = None,
+      originalName  = name,
+      mangledName   = name
+    )
+    val body = Expr(dummySpan, List(NativeImpl(dummySpan, nativeTpl = Some(tpl))))
+    val lambda = Lambda(
+      span     = dummySpan,
+      params   = params,
+      body     = body,
+      captures = Nil,
+      typeSpec = None,
+      typeAsc  = Some(returnType)
+    )
+    Bnd(
+      span       = dummySpan,
+      name       = name,
+      value      = Expr(dummySpan, List(lambda)),
+      typeSpec   = None,
+      typeAsc    = Some(returnType),
+      docComment = None,
+      meta       = Some(meta),
+      id         = stdlibId("bnd", name)
+    )
+
   val commonFunctions = List(
     mkFn("print", List(FnParam(dummySpan, "a", typeAsc = Some(stringType))), unitType),
     mkFn("println", List(FnParam(dummySpan, "a", typeAsc = Some(stringType))), unitType),
@@ -630,8 +702,14 @@ def injectCommonFunctions(module: Module): Module =
       Some(MemEffect.Alloc)
     ),
     mkFn(
-      "to_string",
+      "int_to_str",
       List(FnParam(dummySpan, "a", typeAsc = Some(intType))),
+      stringType,
+      Some(MemEffect.Alloc)
+    ),
+    mkFn(
+      "float_to_str",
+      List(FnParam(dummySpan, "a", typeAsc = Some(floatType))),
       stringType,
       Some(MemEffect.Alloc)
     ),
@@ -683,6 +761,47 @@ def injectCommonFunctions(module: Module): Module =
       ),
       unitType
     ),
+    mkFn(
+      "buffer_write_float",
+      List(
+        FnParam(dummySpan, "b", typeAsc = Some(bufferType)),
+        FnParam(dummySpan, "n", typeAsc = Some(floatType))
+      ),
+      unitType
+    ),
+    mkFn(
+      "buffer_writeln_float",
+      List(
+        FnParam(dummySpan, "b", typeAsc = Some(bufferType)),
+        FnParam(dummySpan, "n", typeAsc = Some(floatType))
+      ),
+      unitType
+    ),
+    // Conversion functions (template-based)
+    mkFnWithTpl(
+      "int_to_float",
+      List(FnParam(dummySpan, "i", typeAsc = Some(intType))),
+      floatType,
+      "sitofp i64 %operand to float"
+    ),
+    mkFnWithTpl(
+      "float_to_int",
+      List(FnParam(dummySpan, "f", typeAsc = Some(floatType))),
+      intType,
+      "fptosi float %operand to i64"
+    ),
+    mkFnWithTpl(
+      "sqrt",
+      List(FnParam(dummySpan, "x", typeAsc = Some(floatType))),
+      floatType,
+      "call float @llvm.sqrt.f32(float %operand)"
+    ),
+    mkFnWithTpl(
+      "fabs",
+      List(FnParam(dummySpan, "x", typeAsc = Some(floatType))),
+      floatType,
+      "call float @llvm.fabs.f32(float %operand)"
+    ),
     // File operations
     mkFn("open_file_read", List(FnParam(dummySpan, "path", typeAsc = Some(stringType))), intType),
     mkFn("open_file_write", List(FnParam(dummySpan, "path", typeAsc = Some(stringType))), intType),
@@ -711,7 +830,6 @@ def injectCommonFunctions(module: Module): Module =
   def intArrayType    = stdlibTypeRef("IntArray")
   def stringArrayType = stdlibTypeRef("StringArray")
   def floatArrayType  = stdlibTypeRef("FloatArray")
-  def floatType       = stdlibTypeRef("Float")
 
   // Array functions
   val arrayFunctions = List(
@@ -902,10 +1020,33 @@ def injectCommonFunctions(module: Module): Module =
       bufferType,
       intType,
       unitType
+    ),
+    mkBinOpExpr(
+      "write_float",
+      20,
+      Associativity.Left,
+      "buffer_write_float",
+      bufferType,
+      floatType,
+      unitType
+    ),
+    mkBinOpExpr(
+      "writeln_float",
+      20,
+      Associativity.Left,
+      "buffer_writeln_float",
+      bufferType,
+      floatType,
+      unitType
     )
   )
 
-  val allFunctions = commonFunctions ++ arrayFunctions ++ bufferOps
+  // String operators
+  val stringOps = List(
+    mkBinOpExpr("++", 61, Associativity.Right, "concat", stringType, stringType, stringType)
+  )
+
+  val allFunctions = commonFunctions ++ arrayFunctions ++ bufferOps ++ stringOps
 
   // Build resolvables index from stdlib functions
   val fnIndex = allFunctions.foldLeft(module.resolvables) { (idx, bnd) =>

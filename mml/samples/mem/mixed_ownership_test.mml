@@ -6,10 +6,10 @@
 // a heap-allocated string (__cap > 0). The __free_String function
 // must check __cap before freeing to avoid crashing on static strings.
 
-// Returns either a heap string (to_string) or static literal
+// Returns either a heap string (int_to_str) or static literal
 fn get_string(use_heap: Bool, n: Int): String =
   if use_heap then
-    to_string n
+    int_to_str n
   else
     "static string"
   end
@@ -29,7 +29,7 @@ fn test_heap(n: Int): Unit =
 
 // Inline conditional branch mixing static vs heap allocations
 fn test_inline_conditional(use_heap: Bool, n: Int): Unit =
-  let s = if use_heap then to_string n else "inline static" end;
+  let s = if use_heap then int_to_str n else "inline static" end;
   println s
 ;
 

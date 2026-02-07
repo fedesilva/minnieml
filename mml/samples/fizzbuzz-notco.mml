@@ -7,7 +7,7 @@ fn fizzbuzz(n: Int): Unit =
     if mod n 15 == 0 then println "FizzBuzz"
     elif mod n 3 == 0 then println "Fizz"
     elif mod n 5 == 0 then println "Buzz"
-    else println (to_string n)
+    else println (int_to_str n)
     end
   end
 ;

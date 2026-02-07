@@ -35,7 +35,7 @@ class OwnershipAnalyzerTests extends BaseEffFunSuite:
     val code =
       """
         fn get_string(n: Int): String =
-          to_string n
+          int_to_str n
         ;
 
         fn main(): Unit =
@@ -67,11 +67,9 @@ class OwnershipAnalyzerTests extends BaseEffFunSuite:
   test("right-assoc ++ chain frees each binding exactly once") {
     val code =
       """
-        op ++(a: String, b: String): String 61 right = concat a b;
-
         fn main(): Unit =
-          let s0 = to_string 0;
-          let s  = "Zero: " ++ s0 ++ ", " ++ (to_string 1);
+          let s0 = int_to_str 0;
+          let s  = "Zero: " ++ s0 ++ ", " ++ (int_to_str 1);
           println s
         ;
       """

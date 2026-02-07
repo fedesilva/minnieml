@@ -8,6 +8,6 @@ let pf = Person "fede";
 
 fn main() =  
   let p = pf 20;
-  println (concat "Name: " p.name);
-  println (concat "Age: " (to_string p.age))
+  println ("Name: " ++ p.name);
+  println ("Age: " ++ (int_to_str p.age))
 ;

@@ -2,7 +2,7 @@
 
 
 fn loop(i:Int, to: Int): Unit =
-  println (concat "Iteration: " (to_string i));
+  println ("Iteration: " ++ (int_to_str i));
   if i <= to 
   then loop ( i+1 ) to
   else 

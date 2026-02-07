@@ -1,7 +1,7 @@
 
  fn cond(heap: Bool, n: Int): Unit =
-    let a = if heap then to_string n else "static" end;
-    println (concat "result: " a)
+    let a = if heap then int_to_str n else "static" end;
+    println ("result: " ++ a)
   ;
 
   fn main() =

@@ -7,25 +7,25 @@ fn consume(s: String): Unit =
 ;
 
 // 1. ANONYMOUS ARGUMENT TEST
-// We pass the result of 'to_string' directly to 'consume'.
+// We pass the result of 'int_to_str' directly to 'consume'.
 // It isn't stored in a variable, so the compiler must handle the lifetime.
 fn test_anonymous_arg(n: Int): Unit =
-  consume (to_string n)
+  consume (int_to_str n)
 ;
 
 // 2. CONCAT TEMPORARIES TEST
 // This is the hardest test.
-// We call: concat (to_string n) (to_string n)
+// We call: concat (int_to_str n) (int_to_str n)
 //
 // Execution flow:
-// 1. to_string n  -> creates Heap String A
-// 2. to_string n  -> creates Heap String B
+// 1. int_to_str n  -> creates Heap String A
+// 2. int_to_str n  -> creates Heap String B
 // 3. concat A B   -> creates Heap String C
 //
 // Crucial Step: The compiler must auto-free A and B here!
 // If it doesn't, you leak 2 strings per iteration.
 fn test_concat_temps(n: Int): Unit =
-  let s = concat (to_string n) (to_string n);
+  let s = (int_to_str n) ++ (int_to_str n);
   println s
 ;
 
@@ -34,10 +34,10 @@ fn test_concat_temps(n: Int): Unit =
 // The result of the inner concat is a temporary heap string.
 // It must be freed after the outer concat finishes.
 fn test_nested_concat(n: Int): Unit =
-  // We explicitly use to_string to force heap allocation
-  let part1 = to_string n;
-  let part2 = to_string n;
-  let s = concat (concat part1 part2) part1;
+  // We explicitly use int_to_str to force heap allocation
+  let part1 = int_to_str n;
+  let part2 = int_to_str n;
+  let s = (part1 ++ part2) ++ part1;
   println s
 ;
 

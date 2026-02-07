@@ -19,5 +19,5 @@ op ! (n: Int): Int 95 left =
 fn main() =
   println "Give me a number";
   let num = str_to_int (readline());
-  println (to_string( num! ) )
+  println (int_to_str( num! ) )
 ;

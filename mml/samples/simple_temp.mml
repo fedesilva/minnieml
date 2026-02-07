@@ -2,18 +2,18 @@
 fn consume(s: String): Unit = println s;
 
 fn test1(): Unit =
-  consume (to_string 42)
+  consume (int_to_str 42)
 ;
 
 fn test2(): Unit =
-  let s = concat (to_string 1) (to_string 2);
+  let s = (int_to_str 1) ++ (int_to_str 2);
   println s
 ;
 
 fn test3(): Unit =
-  let part1 = to_string 1;
-  let part2 = to_string 2;
-  let s = concat (concat part1 part2) part1;
+  let part1 = int_to_str 1;
+  let part2 = int_to_str 2;
+  let s = (part1 ++ part2) ++ part1;
   println s
 ;
 

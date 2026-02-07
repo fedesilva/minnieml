@@ -6,5 +6,5 @@ fn main() =
   let y = 4*30;
   let z = b * y * x;
   let result = a * b + c / y * x;
-  println (to_string result)
+  println (int_to_str result)
 ;

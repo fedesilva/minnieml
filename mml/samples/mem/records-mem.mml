@@ -9,7 +9,7 @@ struct User {
 // Helper to prevent optimizer from removing the struct usage
 fn consume_user(u: User): Unit =
   // Access fields to ensure they are valid pointers
-  println (concat (concat u.name " is a ") u.role)
+  println ((u.name ++ " is a ") ++ u.role)
 ;
 
 // 1. SCOPE CLEANUP TEST
@@ -19,8 +19,8 @@ fn consume_user(u: User): Unit =
 // 2. Generate free(u.name).
 // 3. Generate free(u.role).
 fn test_struct_scope(n: Int): Unit =
-  let name_str = concat "User" (to_string n);
-  let role_str = concat "Admin" (to_string n);
+  let name_str = "User" ++ (int_to_str n);
+  let role_str = "Admin" ++ (int_to_str n);
   
   // Positional instantiation
   let u = User name_str role_str;
@@ -35,7 +35,7 @@ fn test_struct_scope(n: Int): Unit =
 // It must be destroyed (and its fields freed) after the call returns.
 fn test_anon_struct(n: Int): Unit =
   // Positional instantiation in expression
-  consume_user (User (to_string n) "Guest")
+  consume_user (User (int_to_str n) "Guest")
 ;
 
 // 3. CONTROL FLOW STRUCT TEST
@@ -45,7 +45,7 @@ fn test_anon_struct(n: Int): Unit =
 // The compiler must merge the ownership state of the fields at the end.
 fn test_mixed_struct(n: Int): Unit =
   let u = if n > 50 then
-    User (to_string n) "DynamicRole" // Mixed or fully dynamic
+    User (int_to_str n) "DynamicRole" // Mixed or fully dynamic
   else
     User "StaticName" "StaticRole"   // Fully static
   end;

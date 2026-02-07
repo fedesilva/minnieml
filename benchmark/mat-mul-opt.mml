@@ -103,5 +103,5 @@ fn main(): Unit =
   mat_mul a b c n;
 
   let result = trace c n;
-  println (concat "Trace Checksum: " (to_string result))
+  println ("Trace Checksum: " ++ (int_to_str result))
 ;
