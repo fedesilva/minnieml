@@ -1,21 +1,21 @@
-# Row Polymorphism Extensions: Unions and Intersections
+# Row polymorphism extensions: unions and intersections
 
-## Relation to Core Design
+## Relation to core design
 
 This document extends the two-phase type inference design described in the main document. It shows how unions and intersections emerge naturally from the row polymorphism machinery already designed for records.
 
 **Key insight**: Records and unions are dual. The same row variable mechanism that handles "at least these fields" for records handles "at most these variants" for unions. Intersections are just record field merging—no additional mechanism needed.
 
-## The Duality
+## The duality
 
 Records (Product):   { x: Int, y: String | ρ }  "at least these fields"
 Unions (Sum):        < `A(Int) | `B(String) | ρ >  "at most these variants"
 
 Both use row variables (`ρ`) to capture "the rest." The constraint system treats them symmetrically.
 
-## Type Representations
+## Type representations
 
-### TypeRecord (Already Designed)
+### TypeRecord (already designed)
 
     case class TypeRecord(
       span: SrcSpan,
@@ -26,7 +26,7 @@ Both use row variables (`ρ`) to capture "the rest." The constraint system treat
 **Closed record** (nominal): `rowVarId = EmptyRow` (sentinel value, e.g., -1)
 **Open record** (structural): `rowVarId = ?ρ` (fresh unification var)
 
-### TypeUnion (New, Mirrors TypeRecord)
+### TypeUnion (new, mirrors TypeRecord)
 
     case class TypeUnion(
       span: SrcSpan,
@@ -50,9 +50,9 @@ Examples:
     let handle = fn x: Int | String => match x { ... }
     // Int | String = TypeUnion([("Int", Int), ("String", String)], ?ρ)
 
-## Constraint Extensions
+## Constraint extensions
 
-### HasField (Already Designed)
+### HasField (already designed)
 
     case HasField(
       recordId: Int,       // the record type
@@ -62,7 +62,7 @@ Examples:
       span: SrcSpan
     )
 
-### HasVariant (New, Mirrors HasField)
+### HasVariant (new, mirrors HasField)
 
     case HasVariant(
       unionId: Int,        // the union type
@@ -72,9 +72,9 @@ Examples:
       span: SrcSpan
     )
 
-## When Constraints Are Emitted
+## When constraints are emitted
 
-### Records (Field Access)
+### Records (field access)
 
     let f = fn x => x.name
 
@@ -84,7 +84,7 @@ SimpTyper:
 3. Emit: `HasField(?0, "name", ?1, ?ρ₁, span)`
 4. Result type: `?1`
 
-### Unions (Pattern Match)
+### Unions (pattern match)
 
     let g = fn x => match x {
       `Int(n) => n
@@ -99,7 +99,7 @@ SimpTyper:
 5. Emit: `HasVariant(?0, "`String", ?2, ?ρ₂, span2)`
 6. SeqTyper unifies `?ρ₁` and `?ρ₂` (both point to same `?0`)
 
-### Multiple Accesses (Same Record)
+### Multiple accesses (same record)
 
     let h = fn x => (x.name, x.age)
 
@@ -109,9 +109,9 @@ SimpTyper:
 3. Emit: `HasField(?0, "age", ?2, ?ρ₂, span2)`
 4. SeqTyper sees both constraints on `?0`, unifies `?ρ₁` and `?ρ₂`
 
-## Row Unification Algorithms
+## Row unification algorithms
 
-### Record Unification (Already Designed)
+### Record unification (already designed)
 
     unifyRecords(r1: TypeRecord, r2: TypeRecord):
       commonFields = r1.fields ∩ r2.fields (by name)
@@ -137,7 +137,7 @@ Example:
     { x: Int | ?ρ₁ } ~ { x: Int, y: String | ?ρ₂ }
     → unify(?ρ₁, { y: String | ?ρ₂ })
 
-### Union Unification (New, Mirrors Record)
+### Union unification (new, mirrors record)
 
     unifyUnions(u1: TypeUnion, u2: TypeUnion):
       commonVariants = u1.variants ∩ u2.variants (by name)
@@ -165,7 +165,7 @@ Example:
 
 **Key observation**: The algorithm is **identical**, just swap "fields" for "variants". The unification engine can be parameterized.
 
-## Intersection Types (No Extension Needed!)
+## Intersection types (no extension needed!)
 
 Intersections are just multiple record fields merged:
 
@@ -182,7 +182,7 @@ Desugars to:
 
 **No new types or constraints needed.** Intersections are record type merging, which row polymorphism already supports.
 
-### Intersection Syntax Desugaring
+### Intersection syntax desugaring
 
     // User writes:
     fn x: A & B => ...
@@ -192,7 +192,7 @@ Desugars to:
 
 If `A` and `B` have conflicting fields, that's a type error (fields with same name must have same type).
 
-## Syntax Examples
+## Syntax examples
 
 ### Records
 
@@ -238,7 +238,7 @@ Desugars to:
 
     let widget = fn x: { draw: () -> (), onClick: () -> () | ?ρ } => ...
 
-## Implementation Timeline Addition
+## Implementation timeline addition
 
 After the core constraint system is working (main document, steps 1-7):
 
@@ -257,7 +257,7 @@ After the core constraint system is working (main document, steps 1-7):
    - Verify field name conflicts produce errors
    - Test with trait-like usage
 
-## Why No Subtyping Is Still True
+## Why no subtyping is still true
 
 Even with unions and intersections, **no subtype relations exist**. Everything is unification + row polymorphism:
 
@@ -275,7 +275,7 @@ There's no "`Person <: { x: Int }`" relation. Instead:
 
 Same mechanism for unions—no "`` `Int <: Int | String``", just row unification.
 
-## Error Messages
+## Error messages
 
 With unions and intersections, error messages follow the same three-part pattern:
 
@@ -289,7 +289,7 @@ With unions and intersections, error messages follow the same three-part pattern
        9 | let y = x as `Bool(true)
                  ^^^^^
 
-## Generalization With Rows
+## Generalization with rows
 
 Level-based generalization works identically for record rows and union rows:
 

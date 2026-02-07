@@ -1,12 +1,12 @@
-# Platform-Specific Language Design for CUDA (or others) Integration in MML
+# Platform-specific language design for CUDA (or others) integration in MML
 
 ## Overview
 
 This document summarizes the design considerations for MML around GPU/CPU/platform specialization.
 
-## Key Design Decisions
+## Key design decisions
 
-### Compilation Strategy
+### Compilation strategy
 
 **Single Binary, Dual Backends:**
 
@@ -37,7 +37,7 @@ mml -> LLVM IR nvptx -> .o
 linker -> final executable
 ```
 
-### Platform Abstraction
+### Platform abstraction
 
 **Platform as a specialization parameter**
 
@@ -49,7 +49,7 @@ linker -> final executable
 Within any function, handler, or protocol instance that selects a platform, that choice applies to the entire body and 
 its transitive callees. Every effect, function, and protocol used must be platform‑agnostic or have an instance for that platform; otherwise compilation fails.
 
-**Example:**
+Example:
 
 ```mml
 fn process_array <cuda> (data: Array Float, size: Int) =
@@ -59,9 +59,9 @@ fn process_array <cuda> (data: Array Float, size: Int) =
 ;
 ```
 
-### Effect System Integration
+### Effect system integration
 
-### Run Effect and Platform-Aware Execution
+### Run effect and platform-aware execution
 
 To support device execution (e.g. CUDA), MML provides a `Run` effect:
 
@@ -97,7 +97,7 @@ One can imagine a cuda specific implementation of the `Matrix` protocol.
 * The same effects (Memory, Parallel) can have different implementations per platform.
 * Handlers may also be declared **without** `<>` for a host‑agnostic implementation.
 
-**Memory Effect Example:**
+Memory Effect Example:
 
 ```mml
 effect Memory =
@@ -116,21 +116,21 @@ handler Memory <cuda> =
 ;
 ```
 
-## Technical Implementation
+## Technical implementation
 
-### Code Generation Paths
+### Code generation paths
 
-1. **CPU Path:** MML → LLVM IR → x86|amd64 -> Object File
-2. **GPU Path:** MML → LLVM IR -> nvptx -> Object File 
-3. **Linking:** Standard linker combines both object files with CUDA runtime
+1. CPU Path: MML → LLVM IR → x86|amd64 -> Object File
+2. GPU Path: MML → LLVM IR -> nvptx -> Object File 
+3. Linking: Standard linker combines both object files with CUDA runtime
 
-### Platform Polymorphism
+### Platform polymorphism
 
-* **Monomorphization:** The compiler creates concrete instances for each platform.
-* **Effect Resolution:** Platform-specific handlers selected at compile time.
-* **Memory Models:** Different memory semantics abstracted through platform traits.
+* Monomorphization: The compiler creates concrete instances for each platform.
+* Effect Resolution: Platform-specific handlers selected at compile time.
+* Memory Models: Different memory semantics abstracted through platform traits.
 
-### Pure Functional Core
+### Pure functional core
 
 The computation logic remains platform-agnostic:
 
@@ -147,9 +147,9 @@ Platform selection happens at the handler level, not in the computation itself.
 
 ## Benefits
 
-1. **Write Once, Run Anywhere:** Same algorithm works on CPU and GPU
-2. **No Runtime Overhead:** All platform decisions made at compile time
-3. **Clean Separation:** Pure computation separate from platform concerns
-4. **Type Safety:** Platform constraints enforced by type system
-5. **Optimal Code:** Each platform gets native, optimized code generation
+1. Write Once, Run Anywhere: Same algorithm works on CPU and GPU
+2. No Runtime Overhead: All platform decisions made at compile time
+3. Clean Separation: Pure computation separate from platform concerns
+4. Type Safety: Platform constraints enforced by type system
+5. Optimal Code: Each platform gets native, optimized code generation
 

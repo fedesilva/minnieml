@@ -1,29 +1,29 @@
-# MML Parser Optimization: The "Commit & Recover" Strategy
+# MML parser optimization: the "commit & recover" strategy
 
 ## And an upgrade of the error system
 
-**Problem:**
+Problem:
 The parser currently exhibits high backtrack counts (~66%) because it uses
 "Ordered Choice" (`|`) without "Cuts" (`~/`). For every simple identifier,
 the parser tentatively checks—and fails—against every keyword rule
 (`let`, `if`, `native`, etc.) before falling back to `refP`.
 
-**Constraint:**
+Constraint:
 We cannot simply add Cuts (`~/`) because standard Fastparse cuts cause
 immediate termination on failure. The compiler must remain resilient,
 generating error nodes for analysis in later phases rather than aborting
 the compilation.
 
-**Solution: Irrefutable Rules**
-To fix performance without sacrificing resilience, we use **Local Cuts**
-combined with **In-Rule Recovery**. Once a specific keyword matches
+Solution: Irrefutable Rules
+To fix performance without sacrificing resilience, we use local cuts
+combined with in-rule recovery. Once a specific keyword matches
 (e.g., `let`), we cut to prevent backtracking to other rules, but we
 make the subsequent parsing *irrefutable* by capturing local failures
 as `TermError` nodes.
 
 ---
 
-## 1. Synchronization Sets
+## 1. synchronization sets
 
 Instead of scanning for a single delimiter character (which risks
 consuming the rest of the file if that character is missing), recovery
@@ -31,9 +31,9 @@ uses a **Synchronization Set** — tokens that unambiguously signal
 "we are in a new context."
 
 For MML, the sync set includes:
-- **Statement terminators:** `;`
-- **Block closers:** `end`, `)`
-- **Top-level keywords:** `fn`, `struct`, `type`, `op`
+- Statement terminators: `;`
+- Block closers: `end`, `)`
+- Top-level keywords: `fn`, `struct`, `type`, `op`
 
 ```scala
 def syncSet(using P[Any]) =
@@ -45,7 +45,7 @@ def recover(using P[Any]) = (!syncSet ~ AnyChar).rep(1)
 
 ---
 
-## 2. Implementation Pattern
+## 2. implementation pattern
 
 We introduce a `resilient` helper that attempts a parser, and on
 failure, consumes input until the sync set and emits an error node.
@@ -84,7 +84,7 @@ def letExprP(info: SourceInfo)(using P[Any]): P[Term] =
 
 ---
 
-## 3. Context-Specific Anchors (Block Structures)
+## 3. context-specific anchors (block structures)
 
 The generic `resilient` helper works for linear forms like `let`. For
 multi-keyword block structures (`if`/`elif`/`else`/`end`), recovery
@@ -108,20 +108,20 @@ the rest of the block without aborting.
 
 ---
 
-## 4. Downstream Impact: Error-Aware Phases
+## 4. downstream impact: error-aware phases
 
 With this change, `TermError` nodes will appear **inside** valid AST
 nodes (e.g., `Let(TermError(...), ...)`). Previously, errors only
 appeared at the member level.
 
-### Error Classification
+### Error classification
 
 To prevent unhelpful cascades, semantic phases must distinguish
 between the **root cause** and **consequences**.
 
-1. **Primary Error:** The original parse error. (`cause = None`).
+1. Primary Error: The original parse error. (`cause = None`).
    Always reported.
-2. **Secondary Error:** A downstream consequence (e.g., type checking
+2. Secondary Error: A downstream consequence (e.g., type checking
    failing on a `TermError`). (`cause = Some(primary)`). Suppressed
    by default unless verbose logging is on.
 
@@ -130,7 +130,7 @@ trait Error extends InvalidNode:
   def cause: Option[Error] = None // None → primary, Some → secondary
 ```
 
-### Phase Handling Table
+### Phase handling table
 
 | Phase                  | Action on `case _: TermError`                      |
 | :--------------------- | :------------------------------------------------- |
@@ -151,14 +151,14 @@ trait Error extends InvalidNode:
 
 ---
 
-## 5. Review Notes & Decisions
+## 5. review notes & decisions
 
-* **Scope:** We will apply this optimization to the recursive
+* Scope: We will apply this optimization to the recursive
   "Big 3": `let`, `if`, and `fn`. Leaf nodes (`refP`, `litP`) do
   not require optimization as they fail fast naturally.
-* **Node Types:** We will reuse the existing `TermError`,
+* Node Types: We will reuse the existing `TermError`,
   `ParsingMemberError`, and `ParsingIdError` types. No new
   `PoisonNode` class is required.
-* **Ordering:** The ordered choice in `termP` remains unchanged.
+* Ordering: The ordered choice in `termP` remains unchanged.
   The performance gain comes from eliminating backtracking *after*
   a keyword match, not from reordering the initial checks.

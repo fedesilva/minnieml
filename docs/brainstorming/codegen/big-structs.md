@@ -1,6 +1,6 @@
-# Large Struct Return Semantics
+# Large struct return semantics
 
-## Current Behavior
+## Current behavior
 
 Struct constructors return by value, regardless of size:
 
@@ -24,16 +24,16 @@ copying involved at the language level.
 
 ## Implications
 
-- **Stack pressure**: Large allocations per call
-- **Memory bandwidth**: Copying N bytes on return
-- **Recursion/nesting**: Costs multiply with call depth
+- Stack pressure: Large allocations per call
+- Memory bandwidth: Copying N bytes on return
+- Recursion/nesting: Costs multiply with call depth
 
 For small-to-medium structs (≤64 bytes), this is fine. For larger structs, it may
 become a performance concern.
 
 ## Alternatives
 
-### 1. Heap Allocation (Box semantics)
+### 1. heap allocation (box semantics)
 
 ```llvm
 define %struct.Big* @__mk_Big(...) {
@@ -43,16 +43,16 @@ define %struct.Big* @__mk_Big(...) {
 }
 ```
 
-**Pros:**
+Pros:
 - Only 8 bytes returned
 - No stack pressure for large structs
 
-**Cons:**
+Cons:
 - Heap allocation cost (malloc/free)
 - Requires ownership tracking for the struct itself
 - Indirection on every field access
 
-### 2. Caller-Provided Buffer (out-parameter)
+### 2. caller-provided buffer (out-parameter)
 
 ```llvm
 define void @__mk_Big(%struct.Big* sret %out, ...) {
@@ -61,16 +61,16 @@ define void @__mk_Big(%struct.Big* sret %out, ...) {
 }
 ```
 
-**Pros:**
+Pros:
 - No copy on return
 - Caller controls memory placement (stack or heap)
 - Matches what ABI already does under the hood
 
-**Cons:**
+Cons:
 - Changes calling convention at MML level
 - Complicates the "constructor is a function" model
 
-### 3. Threshold-Based Hybrid
+### 3. threshold-based hybrid
 
 Use value semantics for small structs, switch to heap/sret for large ones:
 - ≤16 bytes: return in registers (current, optimal)

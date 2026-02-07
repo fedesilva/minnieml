@@ -1,4 +1,4 @@
-# Initial Module System
+# Initial module system
 
 An abridged implementation of the north star architecture described in
 `docs/brainstorming/compiler/reactive-data-oriented-compiler/`.
@@ -8,15 +8,15 @@ for introducing multi-module compilation to MML.
 
 ---
 
-## Preliminary Work
+## Preliminary work
 
 Ideally independent tasks that can be tackled in separately.
 
-### Nested Modules
+### Nested modules
 
 We want nested modules working before proceeding with multi-file compilation.
 
-**Syntax:** Using `module` keyword inside a file (which is itself a module):
+Syntax: Using `module` keyword inside a file (which is itself a module):
 
 ```mml
 module A =
@@ -30,7 +30,7 @@ module B =
 ;
 ```
 
-**Imports:**
+Imports:
 - Could get away without them using fully-qualified names, but we want to reference operators
 - Imagine writing `2 ModuleA.ModuleB.+ 2` — not sure this will even parse
   - we would like to use `use ModuleA.ModuleB.+` instead
@@ -46,22 +46,22 @@ module B =
 - Wildcard expansion: read target module's export list, create an `Import` node for each public
   member; after expansion, everything works the same as explicit imports
 
-**Selection:**
+Selection:
 - `Module.member` or `Module.Module.member`
 - Ref resolver will have to work with this
 - We already have a form of selection for structs
 
-**Semantic phase updates:**
+Semantic phase updates:
 - Ref resolver — walk through selections
 - Type resolver — walk through selections
 - TypeChecker — walk through selections
 - Expression rewriter — possibly affected
 
-### Package Concept
+### Package concept
 
 A Package is the top-level container: all modules of the program plus build metadata.
 
-**Compiler input:**
+Compiler input:
 - If file: package is implicit, use defaults or CLI flags (lib or exe for example)
 - If folder: package is implicit unless there is a config file
   - No config file → use defaults or CLI flags
@@ -69,9 +69,9 @@ A Package is the top-level container: all modules of the program plus build meta
 
 ---
 
-## Compilation Algorithm
+## Compilation algorithm
 
-### Parallel Initial Phase
+### Parallel initial phase
 
 - Find and parse all files
   - Each folder inside the package is a module, subfoders and files are submodules.
@@ -85,7 +85,7 @@ A Package is the top-level container: all modules of the program plus build meta
 - Create dependency list from import declarations
 - Put dependencies in a shared system list
 
-### Parallel Middle Phase
+### Parallel middle phase
 
 - When modules you depend on save their exports, compiler wakes waiting modules
 - Load external symbols (types and values)
@@ -93,7 +93,7 @@ A Package is the top-level container: all modules of the program plus build meta
 - Local type checking with current simple typechecker
   - Instead of failing on unknown types, create type variables (constrained if info is enough)
 
-### Sequential Final Phase
+### Sequential final phase
 
 Once all files are processed and all modules are compiled and rewritten:
 
@@ -102,12 +102,12 @@ Once all files are processed and all modules are compiled and rewritten:
 
 ---
 
-## Migration Strategy
+## Migration strategy
 
 The algorithm above needs to be woven into the current architecture using the same
 stage-with-phases approach.
 
-### Current Architecture
+### Current architecture
 
 **`CompilerState`** (per-module):
 - `module: Module` — the AST
@@ -115,15 +115,15 @@ stage-with-phases approach.
 - `config: CompilerConfig` — build configuration
 - `errors`, `warnings`, `timings`, `counters`
 
-**Stages:**
+Stages:
 - `IngestStage.fromSource` → parse source into `CompilerState`
 - `SemanticStage.rewrite` → phases run sequentially via `|>` pipe
 
-### New Architecture
+### New architecture
 
-**Two levels of state:**
+Two levels of state:
 
-1. **`PackageState`** (package-level, new):
+1. `PackageState` (package-level, new):
    ```scala
    case class PackageState(
      moduleTree: ModuleTree,
@@ -133,23 +133,23 @@ stage-with-phases approach.
    )
    ```
 
-2. **`CompilerState`** (per-module, extended):
+2. `CompilerState` (per-module, extended):
    - Add `imports: List[Import]` — parsed import declarations
    - Add `exports: Option[ExportList]` — computed during LocalSemantic
 
-**Export table:**
+Export table:
 - Each module computes its `ExportList` locally during LocalSemantic
 - Then publishes to `PackageState.exportTable` (shared)
 - Other modules await via `Deferred` signals
 
-### What Exports Are (and Are Not)
+### What exports are (and are not)
 
 **Exports are symbols, not semantic types.**
 
 An `ExportList` contains just enough information to complete *name resolution* — not type checking.
 Type checking happens later and validates semantic correctness.
 
-**Example:** If module `A` has:
+Example: If module `A` has:
 ```mml
 struct Person { name: String, address: Address };
 ```
@@ -159,29 +159,29 @@ And `Address` is defined in module `B`, then:
 - `A` can now resolve the name `Address` to `B.Address`
 - Later, the type checker validates that usage is semantically correct
 
-**Why this matters:**
+Why this matters:
 
 The export list exists to allow a second resolution pass (SecondSemantic) that finishes
 ref-resolution and type-resolution across module boundaries. This is *not* type checking.
 
-Crucially, **expression rewriting needs operator metadata** (precedence, associativity, arity)
+Importantly, **expression rewriting needs operator metadata** (precedence, associativity, arity)
 to rewrite expressions correctly. Without knowing that `B.+` is a binary operator with
 precedence 60 and left associativity, we can't rewrite `1 B.+ 2 B.* 3` properly.
 - Operators must remain unique by name and arity across imported modules; importing two
   definitions of the same operator is a hard error during import resolution (no symbol wins);
   enforcement happens in the duplicate-name pass over the merged namespace
 
-**What an export entry contains:**
+What an export entry contains:
 - Name (e.g., `"Address"`, `"+"`)
 - Kind (type, function, operator)
 - For operators: precedence, associativity, arity
 
-**What it does NOT contain:**
+What it does NOT contain:
 - Semantic type information
 - Type compatibility rules
 - Anything the type checker needs to validate correctness
 
-### Stages Draft
+### Stages draft
 
 **IngestStage (package-aware):**
 - Walk folder tree, collect all file paths (cheap, just strings)
@@ -196,9 +196,9 @@ precedence 60 and left associativity, we can't rewrite `1 B.+ 2 B.* 3` properly.
 - duplicate-names
 - id-assigner
 - type-resolver (local types only)
-- **Compute `ExportList`** from public members (fn, op, types)
-- **Complete** the module's `Deferred` signal
-- **Second duplicate-check pass** (after imports/wildcards expand) to catch collisions introduced
+- Compute `ExportList` from public members (fn, op, types)
+- Complete the module's `Deferred` signal
+- Second duplicate-check pass (after imports/wildcards expand) to catch collisions introduced
   via wildcard imports
 
 **Import expansion / scope build (per module, after exports ready):**
@@ -209,7 +209,7 @@ precedence 60 and left associativity, we can't rewrite `1 B.+ 2 B.* 3` properly.
   the next resolver passes
 
 **SecondSemantic (parallel per module, with coordination):**
-- **Await** `Deferred` for each import dependency (already done in import expansion)
+- Await `Deferred` for each import dependency (already done in import expansion)
 - type-resolver (now aware of merged scope incl. imports)
 - ref-resolver (now aware of merged scope incl. imports)
 - expression-rewriter (purely local)
@@ -228,7 +228,7 @@ precedence 60 and left associativity, we can't rewrite `1 B.+ 2 B.* 3` properly.
   name + kind (+ operator arity). This scope feeds TypeResolver/RefResolver; unresolved names
   still surface errors and produce Invalid* nodes as today.
 
-### Coordination Pattern
+### Coordination pattern
 
 Using cats-effect `Deferred` for module synchronization:
 
@@ -260,7 +260,7 @@ def secondSemantic(moduleId: ModuleId, state: CompilerState): IO[CompilerState] 
 
 ---
 
-## Appendix A: IngestStage Algorithm
+## Appendix a: IngestStage algorithm
 
 Detailed description of the maximum-parallelism ingestion strategy.
 
@@ -269,12 +269,12 @@ Detailed description of the maximum-parallelism ingestion strategy.
 The goal is to saturate all cores during parsing while building an immutable `ModuleTree`.
 We achieve this by separating discovery from parsing:
 
-1. **Collect** — walk filesystem, gather paths (cheap, sequential)
-2. **Parse** — parse all files in parallel (expensive, parallel)
-3. **Assemble** — build tree from parsed modules (cheap, sequential) and folders.
+1. Collect — walk filesystem, gather paths (cheap, sequential)
+2. Parse — parse all files in parallel (expensive, parallel)
+3. Assemble — build tree from parsed modules (cheap, sequential) and folders.
   - remember, folders are modules, too.
 
-### Phase 1: Collect Paths
+### Phase 1: collect paths
 
 Walk the package folder recursively, collecting `.mml` file paths.
 Each path gets a `ModuleId` based on its location in the hierarchy.
@@ -292,12 +292,12 @@ def collectPaths(root: Path): List[ModuleEntry] =
   // parentId links file to its containing folder module
 ```
 
-**ModuleId derivation:**
+ModuleId derivation:
 - `src/Foo.mml` → `ModuleId("src::Foo")`
 - `src/Bar/Baz.mml` → `ModuleId("src::Bar::Baz")`
 - Folder `src/Bar/` → `ModuleId("src::Bar")` (implicit module)
 
-### Phase 2: Parse in Parallel
+### Phase 2: parse in parallel
 
 Parse all collected files concurrently. Each worker loads one file on demand.
 
@@ -312,7 +312,7 @@ def parseAll(entries: List[ModuleEntry]): IO[Map[ModuleId, CompilerState]] =
 
 Memory is bounded by worker count, not file count — each worker holds one source at a time.
 
-### Phase 3: Assemble Tree
+### Phase 3: assemble tree
 
 Build `ModuleTree` from parsed modules using `parentId` relationships.
 
@@ -333,9 +333,9 @@ def buildTree(
 
 The tree is constructed once, immutably. No updates needed after initial build.
 
-### Why This Works
+### Why this works
 
-- **No memory spike**: files loaded on-demand by workers, not all at once
-- **Full parallelism**: all cores busy during parse phase
-- **Clean data flow**: three distinct phases, easy to reason about
-- **Immutable-friendly**: tree built in one shot from complete data
+- No memory spike: files loaded on-demand by workers, not all at once
+- Full parallelism: all cores busy during parse phase
+- Clean data flow: three distinct phases, easy to reason about
+- Immutable-friendly: tree built in one shot from complete data

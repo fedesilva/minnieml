@@ -1,6 +1,6 @@
-# Unique Resource Types
+# Unique resource types
 
-## Status: Early Discussion
+## Status: early discussion
 
 ## Problem
 
@@ -63,22 +63,22 @@ parameter is consuming (`~`). If not, emit an error.
 - No call-site `~` for non-unique types (caller doesn't choose clone vs move).
 - `~` on declarations remains the mechanism for consuming parameters.
 
-## Open Questions
+## Open questions
 
-1. **Struct fields with unique types.** Should `struct Session { sock: Socket }` be
+1. Struct fields with unique types. Should `struct Session { sock: Socket }` be
    allowed? If so, `Session` itself becomes non-clonable (unique by propagation).
    The constructor would need `~` on the socket field. This has implications for
    `MemoryFunctionGenerator` -- it would skip `__clone_T` for such structs.
 
-2. **Returning unique values.** A function returning a unique type transfers ownership
+2. Returning unique values. A function returning a unique type transfers ownership
    to the caller, same as `[mem=alloc]` today. No special handling needed, but worth
    confirming the analyzer handles it.
 
-3. **Unique in conditionals.** `let x = if cond then open_socket 80 else open_socket 90`
+3. Unique in conditionals. `let x = if cond then open_socket 80 else open_socket 90`
    -- both branches produce owned unique values. The witness boolean mechanism already
    handles mixed ownership; unique types should work the same way.
 
-4. **Borrowing with guarantees.** Sometimes you want to *use* a socket without consuming
+4. Borrowing with guarantees. Sometimes you want to *use* a socket without consuming
    it (e.g., `send socket data`). A future refinement could allow borrowing unique types
    in limited contexts (single use, no aliasing). For now, the simplest model is: unique
    values can only be moved or used in-place by the owner.

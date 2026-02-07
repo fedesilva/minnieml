@@ -1,4 +1,4 @@
-# Plan: Add Name node to AST
+# Plan: add name node to AST
 
 ## Context
 
@@ -15,22 +15,22 @@ use it on all named declarations so `decl.nameNode.span` gives the precise name 
 To avoid a massive blast radius (~305 usages across ~37 files), use Scala's uniform access
 principle:
 
-- **`nameNode: Name`** — the actual stored field on case classes
-- **`def name: String = nameNode.value`** — derived accessor on the traits, fully
+- `nameNode: Name` — the actual stored field on case classes
+- `def name: String = nameNode.value` — derived accessor on the traits, fully
   backward-compatible
 
 Existing code that does `.name` keeps returning `String` with zero changes. Only code that
 needs the span accesses `.nameNode.span`.
 
-**Blast radius is limited to:**
+Blast radius is limited to:
 - AST construction sites (parser + synthetic code) — change `name = "foo"` → `nameNode = Name(...)`
 - Semantic tokens — simplified to use `.nameNode.span`
 
 ## Plan
 
-### Step 1: Define `Name` and a synthetic helper
+### Step 1: define `name` and a synthetic helper
 
-**File:** `ast/common.scala`
+File: `ast/common.scala`
 
 ```scala
 case class Name(span: SrcSpan, value: String) extends AstNode, FromSource
@@ -40,9 +40,9 @@ object Name:
   def synth(value: String): Name = Name(emptySpan, value)
 ```
 
-### Step 2: Update traits
+### Step 2: update traits
 
-**File:** `ast/common.scala`
+File: `ast/common.scala`
 
 ```scala
 trait Resolvable extends AstNode:
@@ -51,7 +51,7 @@ trait Resolvable extends AstNode:
   def id:   Option[String]
 ```
 
-**File:** `ast/types.scala`
+File: `ast/types.scala`
 
 ```scala
 sealed trait ResolvableType extends AstNode:
@@ -60,7 +60,7 @@ sealed trait ResolvableType extends AstNode:
   def id:   Option[String]
 ```
 
-### Step 3: Update AST case classes
+### Step 3: update AST case classes
 
 Replace `name: String` with `nameNode: Name` on:
 
@@ -75,37 +75,37 @@ Replace `name: String` with `nameNode: Name` on:
 
 Each case class inherits `def name: String = nameNode.value` from the trait.
 
-### Step 4: Update parser to capture name spans
+### Step 4: update parser to capture name spans
 
-**File:** `parser/members.scala`
+File: `parser/members.scala`
 
-- **`letBindingP`**: Add `spNoWsP(info)` after `bindingIdOrError` to capture name end point.
+- `letBindingP`: Add `spNoWsP(info)` after `bindingIdOrError` to capture name end point.
   Create `Name(span(startPoint, nameEnd), name)`.
 
-- **`fnDefP`**: Already captures `nameStart`/`nameEnd`. Create
+- `fnDefP`: Already captures `nameStart`/`nameEnd`. Create
   `Name(span(nameStart, nameEnd), fnName)`. Pass to `Bnd(..., nameNode = ...)`.
 
-- **`binOpDefP`**: Same as fnDefP — already captures `nameStart`/`nameEnd`.
+- `binOpDefP`: Same as fnDefP — already captures `nameStart`/`nameEnd`.
   Create `Name(span(nameStart, nameEnd), mangledName)`.
 
-- **`unaryOpP`**: Same pattern.
+- `unaryOpP`: Same pattern.
 
-- **`fnParamP`**: Add `spP(info)` before `bindingIdP` and `spNoWsP(info)` after to capture
+- `fnParamP`: Add `spP(info)` before `bindingIdP` and `spNoWsP(info)` after to capture
   name span. Create `Name(nameSpan, paramName)`.
 
-**File:** `parser/types.scala`
+File: `parser/types.scala`
 
-- **`nativeTypeDefP`**: Add `spP(info)` before `typeIdP` and `spNoWsP(info)` after.
+- `nativeTypeDefP`: Add `spP(info)` before `typeIdP` and `spNoWsP(info)` after.
   Create `Name(nameSpan, id)`.
 
-- **`typeAliasP`**: Same pattern.
+- `typeAliasP`: Same pattern.
 
-- **`structDefP`**: Same pattern.
+- `structDefP`: Same pattern.
 
-- **`fieldP`**: Add `spNoWsP(info)` after `bindingIdP`.
+- `fieldP`: Add `spNoWsP(info)` after `bindingIdP`.
   Create `Name(nameSpan, id)`.
 
-### Step 5: Update AST construction sites
+### Step 5: update AST construction sites
 
 Only sites that **construct** these AST nodes need changes — switching from
 `name = "foo"` to `nameNode = Name.synth("foo")` (or `Name(span, value)` when a
@@ -119,25 +119,25 @@ Key files:
 - `codegen/` — any node construction
 - Test files that construct AST nodes
 
-### Step 6: Simplify SemanticTokens
+### Step 6: simplify semantictokens
 
-**File:** `lsp/SemanticTokens.scala`
+File: `lsp/SemanticTokens.scala`
 
-- **Delete** `declarationToken()` and `keywordLengthFor()` functions.
-- **`collectFromTypeDef`**: Use `td.nameNode.span` directly for the name token position.
-- **`collectFromTypeAlias`**: Use `ta.nameNode.span` directly.
-- **`collectFromTypeStruct`**: Use `ts.nameNode.span` directly (replaces hardcoded offset 7).
-- **`collectFromBnd`**: Use `bnd.nameNode.span` for name token (replaces backward guessing).
-- **`collectFromLambda`**: Use `param.nameNode.span` for parameter tokens.
+- Delete `declarationToken()` and `keywordLengthFor()` functions.
+- `collectFromTypeDef`: Use `td.nameNode.span` directly for the name token position.
+- `collectFromTypeAlias`: Use `ta.nameNode.span` directly.
+- `collectFromTypeStruct`: Use `ts.nameNode.span` directly (replaces hardcoded offset 7).
+- `collectFromBnd`: Use `bnd.nameNode.span` for name token (replaces backward guessing).
+- `collectFromLambda`: Use `param.nameNode.span` for parameter tokens.
 
 ## Files modified (summary)
 
-- **AST**: `ast/common.scala`, `ast/types.scala`, `ast/members.scala`
-- **Parser**: `parser/members.scala`, `parser/types.scala`
-- **LSP**: `lsp/SemanticTokens.scala`
-- **Synthetic construction**: `MemoryFunctionGenerator.scala`, `OwnershipAnalyzer.scala`,
+- AST: `ast/common.scala`, `ast/types.scala`, `ast/members.scala`
+- Parser: `parser/members.scala`, `parser/types.scala`
+- LSP: `lsp/SemanticTokens.scala`
+- Synthetic construction: `MemoryFunctionGenerator.scala`, `OwnershipAnalyzer.scala`,
   `ExpressionRewriter.scala`, `package.scala`, codegen files that construct AST nodes
-- **Tests**: any test that constructs `Bnd`, `FnParam`, `Field`, `TypeDef`, `TypeAlias`,
+- Tests: any test that constructs `Bnd`, `FnParam`, `Field`, `TypeDef`, `TypeAlias`,
   `TypeStruct` directly
 
 ## Verification

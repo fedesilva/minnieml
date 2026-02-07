@@ -1,4 +1,4 @@
-# LSP Log Rotation
+# LSP log rotation
 
 ## Context
 

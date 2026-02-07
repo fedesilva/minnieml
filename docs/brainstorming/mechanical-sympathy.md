@@ -1,10 +1,10 @@
-# Mechanical Sympathy
+# Mechanical sympathy
 
-### Native Operation Integration
+### Native operation integration
 
 ```
 # Direct LLVM IR template integration
-# this will lower to llvm ir as `mul i64 %0, %1`
+# This will lower to llvm ir as `mul i64 %0, %1`
 fn mult(a: I64, b: I64): I64 = @native[tpl="mul %type %operand1, %operand2"]
 
 # Forward declarations for external functions
@@ -31,7 +31,7 @@ type F32 = @native[t:float]
 type F64 = @native[t:double]
 ```
 
-### Protocol-Based Operations
+### Protocol-based operations
 
 ```
 // Generic numeric protocol
@@ -75,7 +75,7 @@ instance Num F32 =
 ;
 ```
 
-## Region-Based Memory Management
+## Region-based memory management
 
 While the compiler will aggresively use stack allocation or static allocations when possible,
 for heap allocation, the language uses a region-based memory management system.
@@ -202,7 +202,7 @@ fn with_lane_layout ( data ): Array User =
 
 ```
 
-## Practical Region Usage Patterns
+## Practical region usage patterns
 
 While region inference is the end goal, explicit region control remains valuable for expressing architectural intent. Consider this example of a web server's memory organization:
 
@@ -222,22 +222,22 @@ This hierarchical structure maps naturally to different concerns and lifetimes i
 
 1. The **NetworkIO region** might need specific memory layouts for efficient buffering and connection management
 2. The **RequestHandler region** spawns and discards per-request regions, creating a perfect isolation boundary for request processing
-3. **Metrics and Observability regions** likely have different access patterns and lifetimes than the request-handling code
+3. Metrics and Observability regions likely have different access patterns and lifetimes than the request-handling code
 
 Even with sophisticated region inference, these architectural decisions would be difficult for a compiler to make automatically since they're based on domain knowledge about the application's behavior patterns. The manual region boundaries express intent about the server's memory architecture in a way that's both functional and machine-aware.
 
 Region inference would focus on optimizing lower-level allocations while preserving these higher-level architectural boundaries that the developer has explicitly defined.
 
-## Type-Based Alias Analysis (TBAA)
+## Type-based alias analysis (TBAA)
 
 Type-Based Alias Analysis (TBAA) is a powerful optimization technique that allows the compiler to understand how different types interact with each other in memory. By annotating types with metadata about their aliasing behavior, the compiler can make more informed decisions about optimizations like reordering loads and stores, which can lead to significant performance improvements.
 
 For each module we compile, we will generate a TBAA hierarchy that describes the relationships between types. This hierarchy will be used to annotate loads and stores in the generated LLVM IR, allowing the compiler to apply optimizations based on the aliasing behavior of different types.
 
-## Summary of Design Principles
+## Summary of design principles
 
-1. **High-level functional abstractions** with protocols, immutable data, and pure functions
-2. **Direct LLVM IR integration** through the `@native` annotation system
-3. **Type-safe memory management** through lexically-scoped regions
-4. **Machine-level control** through explicit type representations and operation flags
-5. **Performance optimizations** through specialized memory layouts and TBAA metadata
+1. High-level functional abstractions with protocols, immutable data, and pure functions
+2. Direct LLVM IR integration through the `@native` annotation system
+3. Type-safe memory management through lexically-scoped regions
+4. Machine-level control through explicit type representations and operation flags
+5. Performance optimizations through specialized memory layouts and TBAA metadata
