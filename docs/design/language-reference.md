@@ -14,6 +14,7 @@ rules.
 7. [Semantic rules](#7-semantic-rules)
 8. [Memory management](#8-memory-management)
 9. [Errors](#9-errors)
+10. [Standard library](#10-standard-library)
 
 ---
 
@@ -158,7 +159,7 @@ Operators require a precedence (integer, higher binds tighter) and associativity
 (`left` or `right`). They can be unary (one parameter) or binary (two parameters).
 
 ```mml
-op ++(a: String, b: String): String 61 right = concat a b;
+op ++(a: String, b: String): String 61 right = concat a b;  // string concatenation (injected)
 op -(a: Int): Int 95 right = @native[tpl="sub %type 0, %operand"];
 ```
 
@@ -379,10 +380,10 @@ Word  → Int8
 ### Arrays
 
 MML does not have polymorphic types yet, so arrays are provided as monomorphic
-native types: `IntArray` and `StringArray`. These are backed by C runtime
-implementations with dedicated accessor functions (`ar_int_get`, `ar_int_set`,
-`ar_str_get`, `ar_str_set`, etc.). Once the type checker supports generics, these
-will be replaced by a single polymorphic array type.
+native types: `IntArray`, `StringArray`, and `FloatArray`. These are backed by C
+runtime implementations with dedicated accessor functions (`ar_int_get`,
+`ar_int_set`, `ar_float_get`, `ar_float_set`, etc.). Once the type checker
+supports generics, these will be replaced by a single polymorphic array type.
 
 ### Native type declarations
 
@@ -569,7 +570,8 @@ a * b + c  // desugars to: + (* a b) c
 - Function parameters are visible within the function body.
 - Module-level declarations are visible to all members in the module, regardless of
   declaration order (no forward-declaration needed).
-- There are no nested functions or closures.
+- For now, there are no nested functions or closures.
+    - this is a temporary limitation.
 
 ### Visibility (not enforced yet)
 
@@ -776,3 +778,191 @@ fn main(): Unit =
 - A consuming parameter requires the argument to be its last use.
 - Partially applying a function with consuming parameters is not allowed.
 - Conditional branches must produce compatible ownership states.
+
+---
+
+## 10. Standard library
+
+MML does not yet support multi-file modules or imports. As a stopgap, the compiler
+injects a set of types, operators, and functions into every module before semantic
+analysis. These are available without any declaration.
+
+### Types
+
+#### Primitive types
+
+| Type     | LLVM     | Description           |
+|----------|----------|-----------------------|
+| `Int64`  | `i64`    | 64-bit signed integer |
+| `Int32`  | `i32`    | 32-bit signed integer |
+| `Int16`  | `i16`    | 16-bit signed integer |
+| `Int8`   | `i8`     | 8-bit signed integer  |
+| `Float`  | `float`  | 32-bit IEEE 754       |
+| `Double` | `double` | 64-bit IEEE 754       |
+| `Bool`   | `i1`     | Boolean               |
+| `Char`   | `i8`     | Character (same as Int8)  |
+| `SizeT`  | `i64`    | Size type (same as Int64) |
+| `Unit`   | `void`   | Unit type             |
+
+#### Type aliases
+
+| Alias  | Target |
+|--------|--------|
+| `Int`  | `Int64` |
+| `Byte` | `Int8`  |
+| `Word` | `Int8`  |
+
+#### Composite types
+
+| Type          | Description                                                  |
+|---------------|--------------------------------------------------------------|
+| `String`      | Struct: `{ length: Int64, data: CharPtr }`. Heap-allocated.  |
+| `Buffer`      | Opaque pointer to a buffered I/O writer. Heap-allocated.     |
+| `IntArray`    | Struct: `{ length: Int64, data: Int64Ptr }`. Heap-allocated. |
+| `StringArray` | Struct: `{ length: Int64, data: StringPtr }`. Heap-allocated.|
+| `FloatArray`  | Struct: `{ length: Int64, data: FloatPtr }`. Heap-allocated. |
+
+### Operators
+
+#### Integer arithmetic
+
+| Operator  | Type                | Prec | Assoc | Description             |
+|-----------|---------------------|------|-------|-------------------------|
+| `a + b`   | `Int -> Int -> Int` | 60   | left  | Addition                |
+| `a - b`   | `Int -> Int -> Int` | 60   | left  | Subtraction             |
+| `a * b`   | `Int -> Int -> Int` | 80   | left  | Multiplication          |
+| `a / b`   | `Int -> Int -> Int` | 80   | left  | Integer division        |
+| `a % b`   | `Int -> Int -> Int` | 80   | left  | Remainder               |
+| `a << b`  | `Int -> Int -> Int` | 55   | left  | Left shift              |
+| `a >> b`  | `Int -> Int -> Int` | 55   | left  | Arithmetic right shift  |
+| `+a`      | `Int -> Int`        | 95   | right | Unary plus              |
+| `-a`      | `Int -> Int`        | 95   | right | Unary negation          |
+
+#### Integer comparison
+
+| Operator  | Type                 | Prec | Assoc |
+|-----------|----------------------|------|-------|
+| `a == b`  | `Int -> Int -> Bool` | 50   | left  |
+| `a != b`  | `Int -> Int -> Bool` | 50   | left  |
+| `a < b`   | `Int -> Int -> Bool` | 50   | left  |
+| `a > b`   | `Int -> Int -> Bool` | 50   | left  |
+| `a <= b`  | `Int -> Int -> Bool` | 50   | left  |
+| `a >= b`  | `Int -> Int -> Bool` | 50   | left  |
+
+#### Logical
+
+| Operator   | Type                   | Prec | Assoc |
+|------------|------------------------|------|-------|
+| `a and b`  | `Bool -> Bool -> Bool` | 40   | left  |
+| `a or b`   | `Bool -> Bool -> Bool` | 30   | left  |
+| `not a`    | `Bool -> Bool`         | 95   | right |
+
+#### Float arithmetic
+
+Float operators use a `.` suffix to distinguish them from integer operators.
+
+| Operator  | Type                        | Prec | Assoc |
+|-----------|-----------------------------|------|-------|
+| `a +. b`  | `Float -> Float -> Float`   | 60   | left  |
+| `a -. b`  | `Float -> Float -> Float`   | 60   | left  |
+| `a *. b`  | `Float -> Float -> Float`   | 80   | left  |
+| `a /. b`  | `Float -> Float -> Float`   | 80   | left  |
+| `-.a`     | `Float -> Float`            | 95   | right |
+
+#### Float comparison
+
+| Operator   | Type                      | Prec | Assoc |
+|------------|---------------------------|------|-------|
+| `a <. b`   | `Float -> Float -> Bool`  | 50   | left  |
+| `a >. b`   | `Float -> Float -> Bool`  | 50   | left  |
+| `a <=. b`  | `Float -> Float -> Bool`  | 50   | left  |
+| `a >=. b`  | `Float -> Float -> Bool`  | 50   | left  |
+| `a ==. b`  | `Float -> Float -> Bool`  | 50   | left  |
+| `a !=. b`  | `Float -> Float -> Bool`  | 50   | left  |
+
+#### String
+
+| Operator  | Type                         | Prec | Assoc | Description                    |
+|-----------|------------------------------|------|-------|--------------------------------|
+| `a ++ b`  | `String -> String -> String` | 61   | right | Concatenation (calls `concat`) |
+
+### Functions
+
+#### I/O
+
+| Function         | Type              | Description                        |
+|------------------|-------------------|------------------------------------|
+| `print(s)`       | `String -> Unit`  | Print string to stdout             |
+| `println(s)`     | `String -> Unit`  | Print string with newline          |
+| `readline()`     | `() -> String`    | Read line from stdin. Allocates.   |
+| `mml_sys_flush()`| `() -> Unit`      | Flush stdout                       |
+
+#### String operations
+
+| Function         | Type                         | Description                          |
+|------------------|------------------------------|--------------------------------------|
+| `concat(a, b)`   | `String -> String -> String` | Concatenate two strings. Allocates.  |
+| `int_to_str(n)`  | `Int -> String`              | Integer to string. Allocates.        |
+| `float_to_str(f)`| `Float -> String`            | Float to string. Allocates.          |
+| `str_to_int(s)`  | `String -> Int`              | Parse integer from string            |
+
+#### Type conversion
+
+| Function          | Type             | Description                |
+|-------------------|------------------|----------------------------|
+| `int_to_float(n)` | `Int -> Float`  | Convert integer to float   |
+| `float_to_int(f)` | `Float -> Int`  | Truncate float to integer  |
+
+#### Float math
+
+| Function  | Type             | Description                     |
+|-----------|------------------|---------------------------------|
+| `sqrt(x)` | `Float -> Float` | Square root (LLVM intrinsic)   |
+| `fabs(x)` | `Float -> Float` | Absolute value (LLVM intrinsic)|
+
+#### Buffered I/O
+
+Buffers provide efficient batched output. Write operations accumulate in memory and
+are flushed explicitly or when the buffer is freed.
+
+| Function                   | Type                        | Description                                  |
+|----------------------------|-----------------------------|----------------------------------------------|
+| `mkBuffer()`               | `() -> Buffer`              | Create buffer writing to stdout. Allocates.  |
+| `mkBufferWithFd(fd)`       | `Int -> Buffer`             | Create buffer for file descriptor. Allocates.|
+| `mkBufferWithSize(size)`   | `Int -> Buffer`             | Create buffer with custom capacity. Allocates.|
+| `flush(b)`                 | `Buffer -> Unit`            | Flush buffer contents                        |
+| `buffer_write(b, s)`       | `Buffer -> String -> Unit`  | Write string                                 |
+| `buffer_writeln(b, s)`     | `Buffer -> String -> Unit`  | Write string with newline                    |
+| `buffer_write_int(b, n)`   | `Buffer -> Int -> Unit`     | Write integer                                |
+| `buffer_writeln_int(b, n)` | `Buffer -> Int -> Unit`     | Write integer with newline                   |
+| `buffer_write_float(b, f)` | `Buffer -> Float -> Unit`   | Write float                                  |
+| `buffer_writeln_float(b, f)`| `Buffer -> Float -> Unit`  | Write float with newline                     |
+
+#### File I/O
+
+| Function              | Type             | Description                        |
+|-----------------------|------------------|------------------------------------|
+| `open_file_read(path)` | `String -> Int` | Open file for reading, returns fd  |
+| `open_file_write(path)`| `String -> Int` | Open file for writing, returns fd  |
+| `open_file_append(path)`| `String -> Int`| Open file for appending, returns fd|
+| `close_file(fd)`       | `Int -> Unit`   | Close file descriptor              |
+| `read_line_fd(fd)`     | `Int -> String` | Read line from fd. Allocates.      |
+
+#### Array operations
+
+Each array type (`IntArray`, `StringArray`, `FloatArray`) has the same set of
+operations. The table below uses `IntArray` / `Int` as the example; substitute
+the appropriate types for the other families.
+
+| Function                    | Type                            | Description        |
+|-----------------------------|---------------------------------|--------------------|
+| `ar_int_new(size)`          | `Int -> IntArray`               | Create. Allocates. |
+| `ar_int_set(arr, i, v)`    | `IntArray -> Int -> Int -> Unit` | Bounds-checked set |
+| `ar_int_get(arr, i)`       | `IntArray -> Int -> Int`        | Bounds-checked get |
+| `unsafe_ar_int_set(arr, i, v)` | `IntArray -> Int -> Int -> Unit` | Unchecked set  |
+| `unsafe_ar_int_get(arr, i)` | `IntArray -> Int -> Int`       | Unchecked get      |
+| `ar_int_len(arr)`           | `IntArray -> Int`              | Array length       |
+
+The `StringArray` family uses `ar_str_*` and the `FloatArray` family uses
+`ar_float_*`. The `StringArray` family does not have `unsafe_ar_str_set` or
+`unsafe_ar_str_get` variants.

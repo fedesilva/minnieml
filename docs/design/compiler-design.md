@@ -67,7 +67,7 @@ All declarations extend `Decl` trait and include:
 Bnd(
   name: String,           // mangled name for operators (e.g., "op.plus.2")
   value: Expr,            // contains Lambda with params and body
-  meta: Option[BindingMeta], // origin, arity, precedence, associativity, originalName
+  meta: Option[BindingMeta], // origin, arity, precedence, associativity, originalName, inlineHint
   id: Option[String]         // stable soft-reference ID
 )
 ```
@@ -188,6 +188,9 @@ Top-level module members are parsed independently:
 - `opKw` → `Bnd` with `Lambda` body and `BindingMeta(origin=Operator)`
 - `letKw` → `Bnd` (no meta for simple value bindings)
 - `typeKw` → `TypeDef` or `TypeAlias`
+
+An optional `inline` keyword before `fn` or `op` sets `BindingMeta.inlineHint = true`.
+Codegen emits the LLVM `inlinehint` function attribute for these declarations.
 
 ---
 
@@ -542,7 +545,12 @@ Char                           // i8
 SizeT                          // i64
 Unit                           // void
 CharPtr                        // i8*
+FloatPtr                       // float*
 String                         // Struct: { length: Int64, data: CharPtr }
+IntArray                       // Struct: { length: Int64, data: CharPtr }
+StringArray                    // Struct: { length: Int64, data: CharPtr }
+FloatArray                     // Struct: { length: Int64, data: FloatPtr }
+Buffer                         // Opaque pointer (i8*)
 
 // Type aliases
 Int   → Int64
@@ -580,18 +588,61 @@ op or(a: Bool, b: Bool): Bool 30 left = @native[tpl="or %type %operand1, %operan
 
 // Unary logical (Bool → Bool)
 op not(a: Bool): Bool 95 right = @native[tpl="xor %type 1, %operand"];
+
+// String concatenation (String → String → String)
+op ++(a: String, b: String): String 61 right = concat a b;
+
+// Float arithmetic (Float → Float → Float)
+op +.(a: Float, b: Float): Float 60 left = @native[tpl="fadd %type %operand1, %operand2"];
+op -.(a: Float, b: Float): Float 60 left = @native[tpl="fsub %type %operand1, %operand2"];
+op *.(a: Float, b: Float): Float 80 left = @native[tpl="fmul %type %operand1, %operand2"];
+op /.(a: Float, b: Float): Float 80 left = @native[tpl="fdiv %type %operand1, %operand2"];
+
+// Float comparison (Float → Float → Bool)
+op <.(a: Float, b: Float): Bool 50 left = @native[tpl="fcmp olt %type %operand1, %operand2"];
+op >.(a: Float, b: Float): Bool 50 left = @native[tpl="fcmp ogt %type %operand1, %operand2"];
+
+// Unary float (Float → Float)
+op +.(a: Float): Float 95 right = @native[tpl="fadd %type 0.0, %operand"];
+op -.(a: Float): Float 95 right = @native[tpl="fneg %type %operand"];
 ```
 
 ### Injected functions
 
 ```scala
+// I/O
 fn print(s: String): Unit = @native;
 fn println(s: String): Unit = @native;
 fn mml_sys_flush(): Unit = @native;
 fn readline(): String = @native;
-fn concat(a: String, b: String): String = @native;
-fn to_string(n: Int): String = @native;
+
+// String operations
+fn concat(a: String, b: String): String = @native[mem=alloc];
+fn to_string(n: Int): String = @native[mem=alloc];
+fn float_to_str(a: Float): String = @native[mem=alloc];
 fn str_to_int(s: String): Int = @native;
+
+// Float math
+fn int_to_float(n: Int): Float = @native[tpl="sitofp i64 %operand to float"];
+fn float_to_int(f: Float): Int = @native[tpl="fptosi float %operand to i64"];
+fn sqrt(x: Float): Float = @native[tpl="call float @llvm.sqrt.f32(float %operand)"];
+fn fabs(x: Float): Float = @native[tpl="call float @llvm.fabs.f32(float %operand)"];
+
+// Buffer I/O
+fn mkBufferWithFd(fd: Int): Buffer = @native[mem=alloc];
+fn flush(b: Buffer): Unit = @native;
+fn buffer_write(b: Buffer, s: String): Unit = @native;
+fn buffer_writeln(b: Buffer, s: String): Unit = @native;
+fn buffer_write_int(b: Buffer, n: Int): Unit = @native;
+fn buffer_writeln_int(b: Buffer, n: Int): Unit = @native;
+fn buffer_write_float(b: Buffer, n: Float): Unit = @native;
+fn buffer_writeln_float(b: Buffer, n: Float): Unit = @native;
+
+// IntArray, StringArray, FloatArray
+fn ar_int_new(size: Int): IntArray = @native[mem=alloc];
+fn ar_int_set(arr: IntArray, i: Int, value: Int): Unit = @native;
+fn ar_int_get(arr: IntArray, i: Int): Int = @native;
+// ... unsafe variants, ar_int_len, plus analogous ar_str_* and ar_float_* families
 ```
 
 **Implementation**: See `injectBasicTypes`, `injectStandardOperators`, and `injectCommonFunctions` in `semantic/package.scala`.
