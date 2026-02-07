@@ -34,7 +34,7 @@ type F64 = @native[t:double]
 ### Protocol-Based Operations
 
 ```
-# Generic numeric protocol
+// Generic numeric protocol
 protocol Num 'T =
   op + (a: 'T, b: 'T): 'T;
   op - (a: 'T, b: 'T): 'T;
@@ -46,7 +46,7 @@ protocol Num 'T =
   op > (a: 'T, b: 'T): Bool;
 ;
 
-# Implementation for unsigned integers (speculative - flags not yet implemented)
+// Implementation for unsigned integers (speculative - flags not yet implemented)
 instance Num U64 =
   op + (a: U64, b: U64): U64 = @native[tpl="add nuw %type %operand1, %operand2"];
   op * (a: U64, b: U64): U64 = @native[tpl="mul nuw %type %operand1, %operand2"];
@@ -56,7 +56,7 @@ instance Num U64 =
   # Other operations...
 ;
 
-# Implementation for signed integers (speculative - flags not yet implemented)
+// Implementation for signed integers (speculative - flags not yet implemented)
 instance Num I64 =
   op + (a: I64, b: I64): I64 = @native[tpl="add nsw %type %operand1, %operand2"];
   op * (a: I64, b: I64): I64 = @native[tpl="mul nsw %type %operand1, %operand2"];
@@ -64,6 +64,14 @@ instance Num I64 =
   op % (a: I64, b: I64): I64 = @native[tpl="srem %type %operand1, %operand2"];
   op < (a: I64, b: I64): Bool = @native[tpl="icmp slt %type %operand1, %operand2"];
   # Other operations...
+;
+
+// Implementation for floats
+instance Num F32 =
+  op + (a: F32, b: F32): F32 = @native[tpl="fadd %type %operand1, %operand2"];
+  op * (a: F32, b: F32): F32 = @native[tpl="fmul %type %operand1, %operand2"];
+  # Note: fcmp instead of icmp for floats
+  op < (a: F32, b: F32): Bool = @native[tpl="fcmp olt %type %operand1, %operand2"];
 ;
 ```
 

@@ -154,7 +154,7 @@ For error recovery and LSP support:
 
 ## 7. Parser architecture
 
-The parser uses **FastParse** combinators and follows these principles:
+The parser uses **FastParse** combinators.
 
 ### Whitespace handling
 
@@ -667,7 +667,7 @@ The compiler wraps invalid constructs in special nodes to continue analysis:
 - **`DuplicateMember`**: Duplicate declarations (first stays valid)
 - **`InvalidMember`**: Members with errors (e.g., duplicate parameters)
 
-This allows partial compilation, continued LSP features despite errors, and richer error messages.
+Partial compilation continues, LSP features work despite errors, and error messages include more context.
 
 ### Error types
 
@@ -778,12 +778,7 @@ The MML compiler flows through staged pipelines:
 2. **SemanticStage**: Stdlib injection → DuplicateNameChecker → IdAssigner → TypeResolver → RefResolver → ExpressionRewriter → Simplifier → TypeChecker → MemoryFunctionGenerator → ResolvablesIndexer → TailRecursionDetector → OwnershipAnalyzer.
 3. **CodegenStage**: Pre-codegen validation → resolve target triple/CPU → gather LLVM tool info → emit LLVM IR → write IR → native compilation.
 
-Each phase:
-- Receives and returns a `CompilerState` (module, config, errors, warnings, timings, counters, artifacts).
-- Adds timings via `CompilerState.timePhase`/`timePhaseIO`.
-- Accumulates errors while keeping compilation progress for tooling.
-
-Each phase has one responsibility, errors accumulate without halting compilation, and partial results feed the LSP.
+Each phase takes a `CompilerState` and returns an updated one. Timings are recorded via `CompilerState.timePhase`/`timePhaseIO`. Errors accumulate without halting compilation, so partial results remain available for the LSP.
 
 ---
 

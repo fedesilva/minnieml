@@ -37,7 +37,8 @@ MML has distinct lexical rules for different kinds of identifiers:
 - **Examples**: `Int`, `String`, `MyType`
 
 #### Operator identifiers
-Operators can be **either symbolic OR alphanumeric**:
+MML supports user-defined operators (see [Operator system](#6-operator-system)).
+Operator names can be symbolic or alphanumeric:
 
 **Symbolic operators**:
 - **Allowed characters**: `=!#$%^&*+<>?/\|~-`
@@ -75,8 +76,8 @@ if, then, elif, else, end, inline,
 - **Values**: `true`, `false`
 
 #### Unit literal
-- **Syntax**: `()`
-- **Type**: `Unit` (the only inhabitant of the Unit type)
+- **Syntax**: `()` (the only value of type `Unit`)
+- **Type**: `Unit`
 
 ### Comments
 
@@ -329,7 +330,7 @@ fn sum_loop(i: Int, limit: Int, acc: Int): Int =
 ;
 ```
 
-The accumulator pattern is the standard way to express loops with state:
+Loops with state use the accumulator pattern:
 
 ```mml
 fn count(arr: IntArray, i: Int, size: Int, acc: Int): Int =
@@ -341,17 +342,23 @@ fn count(arr: IntArray, i: Int, size: Int, acc: Int): Int =
 ;
 ```
 
-### Limitations
+### No loops
 
-**No loops**: MML has no `while`, `for`, or any loop construct. All iteration is done
-via recursion.
+MML has no `while`, `for`, or any loop construct. All iteration is expressed via
+recursion. See [Recursion and tail calls](#recursion-and-tail-calls).
 
-**No nested functions** (temporary): Functions cannot be defined inside other
-functions. MML does not support closures yet. If a function needs access to values
-from an outer scope, those values must be passed as explicit parameters and the
-function must be lifted to the top level. This restriction exists because the memory
-model must be finalized first — ownership tracking rules will affect how captures
-work.
+### Current limitations
+
+**No nested functions**: Functions cannot be defined inside other functions. MML does
+not support closures yet. To access values from an outer scope, pass them as explicit
+parameters and lift the function to the top level.
+
+**No generics**: The type checker does not support parametric polymorphism yet.
+Monomorphic workarounds (e.g., `IntArray`, `StringArray`, `FloatArray`) are used
+in the meantime.
+
+**No ad-hoc polymorphism**: No typeclasses, traits, or overloading by type signature.
+Operators can only be overloaded by arity (unary vs binary).
 
 ---
 
@@ -570,8 +577,7 @@ a * b + c  // desugars to: + (* a b) c
 - Function parameters are visible within the function body.
 - Module-level declarations are visible to all members in the module, regardless of
   declaration order (no forward-declaration needed).
-- For now, there are no nested functions or closures.
-    - this is a temporary limitation.
+- Nested functions and closures are not yet supported.
 
 ### Visibility (not enforced yet)
 
@@ -714,8 +720,6 @@ fn example(): Unit =
   println user.name            // OK: user owns its own copy
 ;
 ```
-
-Struct construction always allocates fresh copies of heap-typed fields.
 
 ### Ownership examples
 
