@@ -24,7 +24,7 @@ import mml.mmlclib.codegen.emitter.tbaa.TbaaEmitter.getTbaaTag
 def compileTerm(
   term:          Term,
   state:         CodeGenState,
-  functionScope: Map[String, (Int, String)] = Map.empty
+  functionScope: Map[String, ScopeEntry] = Map.empty
 ): Either[CodeGenError, CompileResult] = {
   term match {
     case LiteralInt(_, value) =>
@@ -56,9 +56,15 @@ def compileTerm(
     case ref: Ref => {
       // Check if reference exists in the function's local scope
       functionScope.get(ref.name) match {
-        case Some((paramReg, typeName)) =>
-          // Reference to a function parameter
-          CompileResult(paramReg, state, false, typeName).asRight
+        case Some(entry) =>
+          // Reference to a function parameter or local binding
+          CompileResult(
+            entry.register,
+            state,
+            entry.isLiteral,
+            entry.typeName,
+            literalValue = entry.literalValue
+          ).asRight
         case None =>
           // Global reference - get actual type from typeSpec
           ref.typeSpec match {
@@ -140,7 +146,7 @@ def compileTerm(
 private def compileSelectionRef(
   ref:           Ref,
   state:         CodeGenState,
-  functionScope: Map[String, (Int, String)]
+  functionScope: Map[String, ScopeEntry]
 ): Either[CodeGenError, CompileResult] =
   ref.qualifier match
     case None =>
@@ -223,7 +229,7 @@ private def compileSelectionRef(
 def compileExpr(
   expr:          Expr,
   state:         CodeGenState,
-  functionScope: Map[String, (Int, String)] = Map.empty
+  functionScope: Map[String, ScopeEntry] = Map.empty
 ): Either[CodeGenError, CompileResult] = {
   expr.terms match {
     case List(term) =>
@@ -263,7 +269,7 @@ def compileBinaryOp(
   left:          Term,
   right:         Term,
   state:         CodeGenState,
-  functionScope: Map[String, (Int, String)] = Map.empty
+  functionScope: Map[String, ScopeEntry] = Map.empty
 ): Either[CodeGenError, CompileResult] =
   for
     leftCompileResult <- compileTerm(left, state, functionScope)
@@ -288,7 +294,7 @@ def compileUnaryOp(
   opRef:         Ref,
   arg:           Term,
   state:         CodeGenState,
-  functionScope: Map[String, (Int, String)] = Map.empty
+  functionScope: Map[String, ScopeEntry] = Map.empty
 ): Either[CodeGenError, CompileResult] =
   for
     argCompileResult <- compileTerm(arg, state, functionScope)
@@ -312,7 +318,7 @@ def compileUnaryOp(
 def compileApp(
   app:           App,
   state:         CodeGenState,
-  functionScope: Map[String, (Int, String)] = Map.empty
+  functionScope: Map[String, ScopeEntry] = Map.empty
 ): Either[CodeGenError, CompileResult] =
   val (fnOrLambda, allArgs) = collectArgsAndFunction(app)
 

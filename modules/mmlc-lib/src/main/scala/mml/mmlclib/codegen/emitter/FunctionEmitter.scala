@@ -138,7 +138,7 @@ private def compileRegularLambda(
       bodyState.emit(allocLine).emit(storeLine).emit(loadLine)
 
       val mmlType = param.typeAsc.flatMap(getMmlTypeName).getOrElse("Unknown")
-      (param.name, (regNum, mmlType))
+      (param.name, ScopeEntry(regNum, mmlType))
     }
     .toMap
 
@@ -173,7 +173,7 @@ private def compileStructConstructor(
   bnd:           Bnd,
   lambda:        Lambda,
   state:         CodeGenState,
-  functionScope: Map[String, (Int, String)]
+  functionScope: Map[String, ScopeEntry]
 ): Either[CodeGenError, CompileResult] =
   val returnTypeE = bnd.typeSpec match
     case Some(fnType: TypeFn) => Right(fnType.returnType)
@@ -218,7 +218,7 @@ private def compileStructConstructor(
                           Some(param)
                         )
                       )
-                    case Some((paramReg, _)) =>
+                    case Some(entry) =>
                       getLlvmType(field.typeSpec, currentState).flatMap { fieldLlvmType =>
                         val fieldPtrReg = currentState.nextRegister
                         val ptrLine = emitGetElementPtr(
@@ -236,6 +236,7 @@ private def compileStructConstructor(
                           .getTypeName(field.typeSpec)
                           .flatMap(TypeUtils.cloneFnFor(_, stateWithPtr.resolvables))
 
+                        val paramOp = entry.operandStr
                         val (valueToStore, stateAfterClone) = cloneFnOpt match
                           case Some(cloneFnName) =>
                             val cloneReg = stateWithPtr.nextRegister
@@ -243,11 +244,11 @@ private def compileStructConstructor(
                               Some(cloneReg),
                               Some(fieldLlvmType),
                               cloneFnName,
-                              List((fieldLlvmType, s"%$paramReg"))
+                              List((fieldLlvmType, paramOp))
                             )
                             (s"%$cloneReg", stateWithPtr.withRegister(cloneReg + 1).emit(cloneLine))
                           case None =>
-                            (s"%$paramReg", stateWithPtr)
+                            (paramOp, stateWithPtr)
 
                         TbaaEmitter
                           .getTbaaStructFieldTag(returnTypeSpec, fieldIndex, stateAfterClone)
@@ -395,7 +396,7 @@ private def compileTailRecursiveLambda(
           .zip(phiRegs)
           .map { case (param, reg) =>
             val mmlType = param.typeAsc.flatMap(getMmlTypeName).getOrElse("Unknown")
-            param.name -> (reg, mmlType)
+            param.name -> ScopeEntry(reg, mmlType)
           }
           .toMap
 
@@ -463,9 +464,9 @@ private def compileTailRecursiveLambda(
 private def compileExitBranchChecks(
   exitBranches: List[ExitBranch],
   state:        CodeGenState,
-  paramScope:   Map[String, (Int, String)],
+  paramScope:   Map[String, ScopeEntry],
   latchLabel:   String
-): Either[CodeGenError, (CodeGenState, Map[String, (Int, String)])] =
+): Either[CodeGenError, (CodeGenState, Map[String, ScopeEntry])] =
   val numBranches = exitBranches.size
   exitBranches.zipWithIndex.foldLeft((state, paramScope).asRight[CodeGenError]) {
     case (Right((currentState, currentScope)), (branch, exitIdx)) =>
@@ -508,7 +509,7 @@ private def compileExitBranchChecks(
 private def compileCompoundConditions(
   conditions:  List[(Expr, Boolean)],
   state:       CodeGenState,
-  paramScope:  Map[String, (Int, String)],
+  paramScope:  Map[String, ScopeEntry],
   exitIdx:     Int,
   condIdx:     Int,
   exitLabel:   String,
@@ -558,7 +559,7 @@ private def compileCompoundConditions(
 private def compileExitBlocks(
   exitBranches: List[ExitBranch],
   state:        CodeGenState,
-  paramScope:   Map[String, (Int, String)],
+  paramScope:   Map[String, ScopeEntry],
   returnType:   String
 ): Either[CodeGenError, CodeGenState] =
   exitBranches.zipWithIndex.foldLeft(state.asRight[CodeGenError]) {
@@ -602,7 +603,7 @@ private def compileBranchCondition(
 private def compileTailRecArgs(
   args:             List[Expr],
   state:            CodeGenState,
-  functionScope:    Map[String, (Int, String)],
+  functionScope:    Map[String, ScopeEntry],
   initialExitBlock: Option[String]
 ): Either[CodeGenError, (List[String], CodeGenState, Option[String])] =
   args.foldLeft((List.empty[String], state, initialExitBlock).asRight[CodeGenError]) {
@@ -623,8 +624,8 @@ private def compileTailRecArgs(
 private def compileBoundStatements(
   statements:    List[BoundStatement],
   state:         CodeGenState,
-  functionScope: Map[String, (Int, String)]
-): Either[CodeGenError, (CodeGenState, Map[String, (Int, String)], Option[String])] =
+  functionScope: Map[String, ScopeEntry]
+): Either[CodeGenError, (CodeGenState, Map[String, ScopeEntry], Option[String])] =
   statements.foldLeft((state, functionScope, Option.empty[String]).asRight[CodeGenError]) {
     case (Right((currentState, currentScope, prevExitBlock)), BoundStatement(bindingName, expr)) =>
       compileExpr(expr, currentState, currentScope).flatMap { res =>
@@ -632,20 +633,8 @@ private def compileBoundStatements(
         val newExitBlock = res.exitBlock.orElse(prevExitBlock)
         bindingName match
           case Some(name) =>
-            // Let binding: add the result to scope
-            // If result is a literal, materialize it into a register
-            if res.isLiteral then
-              val r = res.state.nextRegister
-              mmlTypeNameToLlvm(res.typeName).map { llvmType =>
-                val s = res.state
-                  .emit(s"  %$r = add $llvmType 0, ${res.register}")
-                  .withRegister(r + 1)
-                (s, currentScope + (name -> (r, res.typeName)), newExitBlock)
-              }
-            else
-              Right(
-                (res.state, currentScope + (name -> (res.register, res.typeName)), newExitBlock)
-              )
+            val entry = ScopeEntry(res.register, res.typeName, res.isLiteral, res.literalValue)
+            Right((res.state, currentScope + (name -> entry), newExitBlock))
           case None =>
             // Side-effect only: discard result
             Right((res.state, currentScope, newExitBlock))

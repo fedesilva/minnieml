@@ -1,11 +1,17 @@
 package mml.mmlclib.codegen.emitter.expression
 
 import mml.mmlclib.ast.*
-import mml.mmlclib.codegen.emitter.{CodeGenError, CodeGenState, CompileResult, getLlvmType}
+import mml.mmlclib.codegen.emitter.{
+  CodeGenError,
+  CodeGenState,
+  CompileResult,
+  ScopeEntry,
+  getLlvmType
+}
 
 /** Type alias for the expression compiler function passed to avoid circular dependency. */
 type ExprCompiler =
-  (Expr, CodeGenState, Map[String, (Int, String)]) => Either[CodeGenError, CompileResult]
+  (Expr, CodeGenState, Map[String, ScopeEntry]) => Either[CodeGenError, CompileResult]
 
 /** Compiles a conditional expression (if-then-else) to LLVM IR.
   *
@@ -29,7 +35,7 @@ def compileCond(
   ifTrue:        Expr,
   ifFalse:       Expr,
   state:         CodeGenState,
-  functionScope: Map[String, (Int, String)],
+  functionScope: Map[String, ScopeEntry],
   compileExpr:   ExprCompiler
 ): Either[CodeGenError, CompileResult] =
   for

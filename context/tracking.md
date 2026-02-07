@@ -21,15 +21,6 @@
 
 ## Active Tasks
 
-### Update language reference [COMPLETE]
-
-**Spec:** `context/specs/lang-ref-updated.md`
-
-Rename `docs/design/semantics.md` → `docs/design/language-reference.md` and fill gaps:
-missing declaration syntax (`let`, `fn`, `op`, `struct`, `type`), program structure
-(semicolons, expression sequencing, top-level module), struct as a first-class type system
-concept, scoping rules, and cleaning up error categories that leak compiler internals.
-
 ### LSP: find references does not work for struct constructors
 
 Navigating to reference (go-to-definition) on a struct constructor call does not jump
@@ -243,12 +234,12 @@ No materialization instruction emitted at all — no `add`, no `fadd`, nothing.
 
 **Remaining work:**
 
-- [ ] Fix literal materialization: expand `functionScope` to carry literal info instead of
+- [x] Fix literal materialization: expand `functionScope` to carry literal info instead of
   emitting `add` instructions. Affects `Applications.scala:49` (`compileLambdaApp`) and
   `FunctionEmitter.scala:641` (`compilePreStatements`)
 - [ ] Float arrays (similar to `IntArray`/`StringArray`)
-- [ ] Raytracer compiles and runs (`mmlc run mml/samples/raytracer.mml`)
-- [ ] Verify with ASan (`mmlc run -s mml/samples/raytracer.mml`)
+- [x] Raytracer compiles and runs (`mmlc run mml/samples/raytracer.mml`)
+- [x] Verify with ASan (`mmlc run -s mml/samples/raytracer.mml`)
 - [ ] `int_to_float` / `float_to_int` conversion functions in stdlib or raytracer
 - [ ] Runtime support: `mml_runtime.c` changes for float (if any)
 
@@ -276,6 +267,25 @@ TBD
 ---
 
 ## Recent Changes
+
+### 2026-02-06 Fix float literal materialization, raytracer working
+
+- **Root cause:** Two codegen sites materialized literals into registers using hardcoded
+  `add i64 0, <value>`, which broke for `Float` (wrong type, wrong instruction, wrong operand).
+  The deeper issue: `functionScope: Map[String, (Int, String)]` only stored register+type,
+  so literal info was lost on scope entry and had to be "materialized" immediately.
+- **Fix:** Introduced `ScopeEntry` case class carrying `register`, `typeName`, `isLiteral`,
+  and `literalValue`. Replaced all `(Int, String)` scope entries across 5 files. Scope lookup
+  now preserves literal info through references — no materialization instructions emitted at all.
+- **Files changed:**
+  - `emitter/package.scala` — added `ScopeEntry` case class
+  - `emitter/expression/Conditionals.scala` — updated `ExprCompiler` type alias
+  - `emitter/ExpressionCompiler.scala` — scope lookup preserves literal info
+  - `emitter/expression/Applications.scala` — removed `add i64` materialization in `compileLambdaApp`
+  - `emitter/FunctionEmitter.scala` — removed `add <type>` materialization in `compileBoundStatements`,
+    updated param scope construction
+- **Verification:** 211 tests pass, raytracer produces valid 400x225 PPM (~1MB), ASan clean
+  on raytracer and all memory samples, all 7 benchmarks compile, `scalafmtAll`/`scalafixAll` clean.
 
 ### 2026-02-06 Update language reference [COMPLETE]
 

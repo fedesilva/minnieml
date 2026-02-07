@@ -551,6 +551,22 @@ case class CodeGenState(
       val declaration = emitFunctionDeclaration(name, returnType, paramTypes)
       copy(functionDeclarations = functionDeclarations + (name -> declaration))
 
+/** An entry in the function scope, tracking a binding's register and type info.
+  *
+  * When `isLiteral` is true, the value has not been materialized into a register — it will be
+  * emitted inline by consumers (e.g. as an immediate operand).
+  */
+case class ScopeEntry(
+  register:     Int,
+  typeName:     String,
+  isLiteral:    Boolean        = false,
+  literalValue: Option[String] = None
+):
+  def operandStr: String =
+    literalValue.getOrElse(
+      if isLiteral then register.toString else s"%$register"
+    )
+
 /** Represents the result of compiling a term or expression.
   *
   * @param register

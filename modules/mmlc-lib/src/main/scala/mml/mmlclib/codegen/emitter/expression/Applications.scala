@@ -6,6 +6,7 @@ import mml.mmlclib.codegen.emitter.{
   CodeGenError,
   CodeGenState,
   CompileResult,
+  ScopeEntry,
   emitCall,
   getLlvmType,
   getMmlTypeName
@@ -32,7 +33,7 @@ def compileLambdaApp(
   lambda:        Lambda,
   allArgs:       List[Expr],
   state:         CodeGenState,
-  functionScope: Map[String, (Int, String)],
+  functionScope: Map[String, ScopeEntry],
   compileExpr:   ExprCompiler
 ): Either[CodeGenError, CompileResult] =
   if lambda.params.size == 1 && allArgs.size == 1 then
@@ -40,20 +41,10 @@ def compileLambdaApp(
     val arg   = allArgs.head
     for
       argRes <- compileExpr(arg, state, functionScope)
-      // If arg is a literal, materialize it into a register
-      // (functionScope lookups assume values are in registers)
-      (bindingReg, stateAfterBinding) =
-        if argRes.isLiteral then
-          val reg = argRes.state.nextRegister
-          val newState = argRes.state
-            .emit(s"  %$reg = add i64 0, ${argRes.register}")
-            .withRegister(reg + 1)
-          (reg, newState)
-        else (argRes.register, argRes.state)
-      // Extend function scope with the binding (register, typeName)
-      extendedScope = functionScope + (param.name -> (bindingReg, argRes.typeName))
-      // Compile lambda body with extended scope
-      bodyRes <- compileExpr(lambda.body, stateAfterBinding, extendedScope)
+      // Store literal info in the scope entry — no materialization needed
+      entry = ScopeEntry(argRes.register, argRes.typeName, argRes.isLiteral, argRes.literalValue)
+      extendedScope = functionScope + (param.name -> entry)
+      bodyRes <- compileExpr(lambda.body, argRes.state, extendedScope)
     // Preserve exit block from argument if body doesn't have one
     // (needed when arg contains a conditional like `let x = if cond then a else b end`)
     yield bodyRes.copy(exitBlock = bodyRes.exitBlock.orElse(argRes.exitBlock))
@@ -75,7 +66,7 @@ def compileNativeOp(
   allArgs:       List[Expr],
   app:           App,
   state:         CodeGenState,
-  functionScope: Map[String, (Int, String)],
+  functionScope: Map[String, ScopeEntry],
   compileExpr:   ExprCompiler
 ): Either[CodeGenError, CompileResult] =
   allArgs match
@@ -97,7 +88,7 @@ private def compileBinaryNativeOp(
   leftArg:       Expr,
   rightArg:      Expr,
   state:         CodeGenState,
-  functionScope: Map[String, (Int, String)],
+  functionScope: Map[String, ScopeEntry],
   compileExpr:   ExprCompiler
 ): Either[CodeGenError, CompileResult] =
   for
@@ -133,7 +124,7 @@ private def compileUnaryNativeOp(
   tpl:           String,
   operandArg:    Expr,
   state:         CodeGenState,
-  functionScope: Map[String, (Int, String)],
+  functionScope: Map[String, ScopeEntry],
   compileExpr:   ExprCompiler
 ): Either[CodeGenError, CompileResult] =
   for
@@ -274,7 +265,7 @@ def compileRegularCall(
   allArgs:       List[Expr],
   app:           App,
   state:         CodeGenState,
-  functionScope: Map[String, (Int, String)],
+  functionScope: Map[String, ScopeEntry],
   compileExpr:   ExprCompiler
 ): Either[CodeGenError, CompileResult] =
   // Compile all arguments
@@ -307,7 +298,7 @@ private case class CompiledArg(op: String, llvmType: String, typeSpec: Option[Ty
 private def compileArgs(
   allArgs:       List[Expr],
   state:         CodeGenState,
-  functionScope: Map[String, (Int, String)],
+  functionScope: Map[String, ScopeEntry],
   compileExpr:   ExprCompiler
 ): Either[CodeGenError, (List[CompiledArg], CodeGenState)] =
   allArgs.foldLeft((List.empty[CompiledArg], state).asRight[CodeGenError]) {
