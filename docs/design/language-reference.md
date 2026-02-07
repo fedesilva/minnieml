@@ -5,96 +5,28 @@ rules.
 
 ## Table of contents
 
-1. [Lexical rules](#1-lexical-rules)
-2. [Declarations](#2-declarations)
-3. [Program structure](#3-program-structure)
-4. [Control flow](#4-control-flow)
-5. [Type system](#5-type-system)
-6. [Operator system](#6-operator-system)
-7. [Semantic rules](#7-semantic-rules)
-8. [Memory management](#8-memory-management)
-9. [Errors](#9-errors)
-10. [Standard library](#10-standard-library)
+1. [Declarations](#1-declarations)
+2. [Program structure](#2-program-structure)
+3. [Control flow](#3-control-flow)
+4. [Type system](#4-type-system)
+5. [Operator system](#5-operator-system)
+6. [Semantic rules](#6-semantic-rules)
+7. [Memory management](#7-memory-management)
+8. [Errors](#8-errors)
+9. [Standard library](#9-standard-library)
+10. [Current limitations](#10-current-limitations)
+- [Appendix: Reserved words](#appendix-reserved-words)
 
 ---
 
-## 1. Lexical rules
-
-### Identifiers
-
-MML has distinct lexical rules for different kinds of identifiers:
-
-#### Binding identifiers (variables, functions)
-- **Pattern**: `[a-z][a-zA-Z0-9_]*`
-- **Must start with**: Lowercase letter `a-z`
-- **Can contain**: Letters, digits, underscores
-- **Examples**: `x`, `myValue`, `calculate_sum`
-
-#### Type identifiers
-- **Pattern**: `[A-Z][a-zA-Z0-9]*`
-- **Must start with**: Uppercase letter `A-Z`
-- **Can contain**: Letters and digits (no underscores)
-- **Examples**: `Int`, `String`, `MyType`
-
-#### Operator identifiers
-MML supports user-defined operators (see [Operator system](#6-operator-system)).
-Operator names can be symbolic or alphanumeric:
-
-**Symbolic operators**:
-- **Allowed characters**: `=!#$%^&*+<>?/\|~-`
-- **Examples**: `+`, `-`, `==`, `|>`, `>>`
-
-**Alphanumeric operators**:
-- **Pattern**: Same as binding identifiers: `[a-z][a-zA-Z0-9_]*`
-- **Examples**: `and`, `or`, `mod`, `div`
-
-### Keywords
-
-Reserved words that cannot be used as identifiers:
-
-```
-let, fn, op, type, struct, module,
-if, then, elif, else, end, inline,
-@native, ??? (hole), _ (placeholder), ~ (move)
-```
-
-### Literals
-
-#### Numeric literals
-- **Integers**: `[0-9]+`
-  - Examples: `42`, `0`, `1234`
-- **Floats**: `[0-9]+\.[0-9]+` or `\.[0-9]+`
-  - Examples: `3.14`, `.5`, `0.001`
-
-#### String literals
-- **Pattern**: `"[^"]*"` (raw content, no escape processing during parsing)
-- **Multiline support**: Yes, newlines and special characters are preserved
-- **Escape handling**: Performed at code generation time using LLVM hex escapes
-- **Examples**: `"hello"`, `"world"`, `"line 1\nline 2"` (literal newline in source)
-
-#### Boolean literals
-- **Values**: `true`, `false`
-
-#### Unit literal
-- **Syntax**: `()` (the only value of type `Unit`)
-- **Type**: `Unit`
-
-### Comments
-
-#### Line comments
-- **Syntax**: `// comment text`
-- **Scope**: From `//` to end of line
-
-#### Documentation comments
-- **Syntax**: `/* ... */`
-- **Purpose**: Attached to members for documentation
-- **Can nest**: `/* outer /* inner */ */`
-
----
-
-## 2. Declarations
+## 1. Declarations
 
 Every declaration in MML is terminated by a semicolon (`;`).
+
+Binding names (variables, functions) start with a lowercase letter and may contain
+letters, digits, and underscores: `[a-z][a-zA-Z0-9_]*`.
+
+Identifiers cannot be [reserved words](#appendix-reserved-words).
 
 ### Let bindings
 
@@ -123,7 +55,7 @@ is a single expression, possibly containing `let` bindings and sequenced express
 separated by `;` (see [Expression sequencing](#expression-sequencing)).
 
 ```mml
-fn greet(name: String): String = concat "Hello, " name;
+fn greet(name: String): String = "Hello, " ++ name;
 
 fn factorial(n: Int): Int =
   if n == 0 then 1
@@ -152,6 +84,9 @@ inline fn dot(u: Vec3, v: Vec3): Float =
 
 ### Operator declarations
 
+Operator names can be symbolic (from `=!#$%^&*+<>?/\|~-`, e.g. `+`, `==`, `|>`)
+or alphanumeric (same rules as binding names, e.g. `and`, `or`, `mod`).
+
 ```mml
 op name(params): ReturnType precedence associativity = body;
 ```
@@ -160,16 +95,18 @@ Operators require a precedence (integer, higher binds tighter) and associativity
 (`left` or `right`). They can be unary (one parameter) or binary (two parameters).
 
 ```mml
-op ++(a: String, b: String): String 61 right = concat a b;  // string concatenation (injected)
+op ++(a: String, b: String): String 61 right = concat a b;  // string concatenation (standard library)
 op -(a: Int): Int 95 right = @native[tpl="sub %type 0, %operand"];
 ```
 
-Fixity is a function of associativity and arity.
-
-See [Operator system](#6-operator-system) for details on precedence, overloading,
-and desugaring.
+See [Operator system](#5-operator-system) for details on precedence, fixity,
+overloading, and desugaring.
 
 ### Struct declarations
+
+Type names start with an uppercase letter and may contain letters and digits:
+`[A-Z][a-zA-Z0-9]*`. This applies to structs, type aliases, and native type
+declarations.
 
 ```mml
 struct Name { field1: Type1, field2: Type2 };
@@ -201,7 +138,7 @@ See [Native type declarations](#native-type-declarations) for the full syntax.
 
 ---
 
-## 3. Program structure
+## 2. Program structure
 
 ### Modules
 
@@ -237,7 +174,7 @@ expression. The value of the body is the value of its last expression.
 
 ```mml
 fn process(name: String): Unit =
-  let greeting = concat "Hello, " name;
+  let greeting = "Hello, " ++ name;
   println greeting;
   println "done"
 ;
@@ -253,9 +190,40 @@ fn side_effects(): Unit =
 ;
 ```
 
+### Literals
+
+- **Integers**: `[0-9]+` (e.g. `42`, `0`, `1234`)
+- **Floats**: `[0-9]+\.[0-9]+` or `\.[0-9]+` (e.g. `3.14`, `.5`, `0.001`)
+- **Strings**: `"[^"]*"` — raw content, no escape processing during parsing. Multiline.
+  Escape handling is performed at code generation time using LLVM hex escapes.
+- **Booleans**: `true`, `false`
+- **Unit**: `()`, the only value of type `Unit`
+
+### Typed holes
+
+`???` is a placeholder expression that marks unfinished code. It allows a program
+to compile and type-check even when parts of the implementation are missing. At
+runtime, reaching a hole prints the source location to stderr and terminates the
+program with exit code 1.
+
+A hole adopts the type expected by its context (return type, let binding type
+annotation, etc.). If the compiler cannot determine the type, it reports an error
+requesting a type annotation.
+
+```mml
+fn todo(x: Int): Int = ???;         // compiles, crashes at runtime if called
+let y: String = ???;                // type inferred from annotation
+let z = ???;                        // error: can't infer type
+```
+
+### Comments
+
+- **Line comments**: `// comment text` — from `//` to end of line
+- **Documentation comments**: `/* ... */` — attached to members, can nest
+
 ---
 
-## 4. Control flow
+## 3. Control flow
 
 ### Conditionals
 
@@ -347,22 +315,9 @@ fn count(arr: IntArray, i: Int, size: Int, acc: Int): Int =
 MML has no `while`, `for`, or any loop construct. All iteration is expressed via
 recursion. See [Recursion and tail calls](#recursion-and-tail-calls).
 
-### Current limitations
-
-**No nested functions**: Functions cannot be defined inside other functions. MML does
-not support closures yet. To access values from an outer scope, pass them as explicit
-parameters and lift the function to the top level.
-
-**No generics**: The type checker does not support parametric polymorphism yet.
-Monomorphic workarounds (e.g., `IntArray`, `StringArray`, `FloatArray`) are used
-in the meantime.
-
-**No ad-hoc polymorphism**: No typeclasses, traits, or overloading by type signature.
-Operators can only be overloaded by arity (unary vs binary).
-
 ---
 
-## 5. Type system
+## 4. Type system
 
 ### Basic types
 
@@ -461,7 +416,7 @@ struct Point { x: Int, y: Int };         // Not a heap type
 ```
 
 The compiler generates `__free_T` and `__clone_T` functions for heap structs
-automatically. See [Memory management](#8-memory-management) for ownership details.
+automatically. See [Memory management](#7-memory-management) for ownership details.
 
 ### Function types
 
@@ -500,13 +455,13 @@ let f: Int → Int → Int = add;
 
 ---
 
-## 6. Operator system
+## 5. Operator system
 
 ### User-defined operators
 
 All operators in MML are user-defined, including arithmetic and logical operators.
 There are no built-in operators. The standard operators (`+`, `-`, `*`, `/`, `==`,
-`and`, etc.) are injected by the compiler into every module as ordinary operator
+`and`, etc.) are provided by the standard library as ordinary operator
 declarations.
 
 ```mml
@@ -523,12 +478,26 @@ op %(a: Int, b: Int): Int 80 left = @native[tpl="srem %type %operand1, %operand2
 2. **Unary operators**: One operand.
    `op name(a: T): R prec assoc = body;`
 
+### Operators are functions
+
+An operator is just a function with metadata (precedence, associativity, arity)
+that tells the expression rewriter how to desugar it. After rewriting, operator
+calls become ordinary function applications. There is no separate calling
+convention or special treatment at runtime.
+
+Because operator names can be alphabetic (e.g., `not`, `and`, `mod`), they share
+the same namespace as functions. A function and an operator with the same name
+conflict — the compiler rejects the duplicate.
+
 ### Operator overloading
 
-Operators can be overloaded **by arity only**: a binary and a unary operator can share
-the same name (e.g., binary `-` for subtraction and unary `-` for negation).
+Currently, the only form of overloading in MML is by arity: a unary and a binary operator
+can share the same name (e.g., unary `-` for negation and binary `-` for
+subtraction). The compiler distinguishes them during expression rewriting based
+on position and argument count.
 
-Functions cannot be overloaded. A function and an operator with the same name conflict.
+See [Current limitations](#10-current-limitations) for the current scope of
+overloading.
 
 ```mml
 // Valid: unary and binary - coexist
@@ -545,7 +514,7 @@ op +(x: Float, y: Float): Float 60 left = ...;  // error: duplicate name
 Every operator has a precedence (integer, higher binds tighter) and associativity
 (`left` or `right`).
 
-**Standard precedence levels** (used by the injected operators):
+**Standard precedence levels** (used by the standard library operators):
 ```
 95: Unary operators (prefix: +, -, not)
 80: Multiplicative (*, /)
@@ -558,6 +527,14 @@ Every operator has a precedence (integer, higher binds tighter) and associativit
 These are conventional values, not language-enforced. User-defined operators can use
 any precedence value.
 
+### Fixity
+
+Fixity (prefix, infix, or postfix) is determined by the combination of arity and
+associativity: binary operators are always infix, unary operators with `right`
+associativity are prefix (e.g., `-x`), and unary operators with `left`
+associativity are postfix (e.g., `x!`). There is no separate fixity annotation —
+arity and associativity are sufficient to determine operator position.
+
 ### Operators as functions
 
 Operators desugar to function calls:
@@ -569,7 +546,7 @@ a * b + c  // desugars to: + (* a b) c
 
 ---
 
-## 7. Semantic rules
+## 6. Semantic rules
 
 ### Scoping
 
@@ -673,7 +650,7 @@ fn take_ownership(~s: String): Unit = ...;
 
 ---
 
-## 8. Memory management
+## 7. Memory management
 
 MML uses affine ownership with borrow-by-default semantics for automatic memory
 management.
@@ -743,7 +720,7 @@ Functions returning heap types transfer ownership to the caller:
 
 ```mml
 fn make_greeting(name: String): String =
-  concat "Hello, " name
+  "Hello, " ++ name
 ;
 
 fn main(): Unit =
@@ -754,7 +731,7 @@ fn main(): Unit =
 
 ---
 
-## 9. Errors
+## 8. Errors
 
 ### Name and reference errors
 
@@ -785,11 +762,12 @@ fn main(): Unit =
 
 ---
 
-## 10. Standard library
+## 9. Standard library
 
-MML does not yet support multi-file modules or imports. As a stopgap, the compiler
-injects a set of types, operators, and functions into every module before semantic
-analysis. These are available without any declaration.
+The standard library provides a set of types, operators, and functions available
+in every module without explicit imports. For implementation details, see
+[Standard library injection](compiler-design.md#9-standard-library-injection) in
+the compiler design document.
 
 ### Types
 
@@ -970,3 +948,43 @@ the appropriate types for the other families.
 The `StringArray` family uses `ar_str_*` and the `FloatArray` family uses
 `ar_float_*`. The `StringArray` family does not have `unsafe_ar_str_set` or
 `unsafe_ar_str_get` variants.
+
+---
+
+## 10. Current limitations
+
+**No nested functions**: Functions cannot be defined inside other functions. MML does
+not support closures yet. To access values from an outer scope, pass them as explicit
+parameters and lift the function to the top level.
+
+**No generics**: The type checker does not support parametric polymorphism yet.
+Monomorphic workarounds (e.g., `IntArray`, `StringArray`, `FloatArray`) are used
+in the meantime.
+
+**Overloading**: Operators can be overloaded by arity — a unary and a binary
+operator can share a name — but two binary operators with the same name are
+rejected even if their parameter types differ. Functions cannot be overloaded.
+Type-based dispatch requires protocols (ad-hoc polymorphism) which are not yet
+implemented. These restrictions follow from the current state of the type system
+rather than from a language design decision.
+
+---
+
+## Appendix: Reserved words
+
+- `let`
+- `fn`
+- `op`
+- `type`
+- `struct`
+- `module`
+- `if`
+- `then`
+- `elif`
+- `else`
+- `end`
+- `inline`
+- `@native`
+- `???`
+- `_`
+- `~`
