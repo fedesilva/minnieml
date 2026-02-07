@@ -157,8 +157,7 @@ private def compileRegularLambda(
     val returnLine =
       if returnType == "void" then "  ret void"
       else
-        val returnOp =
-          if bodyRes.isLiteral then bodyRes.register.toString else s"%${bodyRes.register}"
+        val returnOp = bodyRes.operandStr
         s"  ret $returnType $returnOp"
 
     // Close function and add empty line
@@ -569,8 +568,7 @@ private def compileExitBlocks(
         val returnLine =
           if returnType == "void" then "  ret void"
           else
-            val returnOp =
-              if exitRes.isLiteral then exitRes.register.toString else s"%${exitRes.register}"
+            val returnOp = exitRes.operandStr
             s"  ret $returnType $returnOp"
         exitRes.state.emit(returnLine)
       }
@@ -581,7 +579,7 @@ private def compileBranchCondition(
   cond:    Expr,
   condRes: CompileResult
 ): Either[CodeGenError, (CodeGenState, String)] =
-  val condOp = if condRes.isLiteral then condRes.register.toString else s"%${condRes.register}"
+  val condOp = condRes.operandStr
   cond.typeSpec match
     case Some(typeSpec) =>
       getLlvmType(typeSpec, condRes.state).map { llvmType =>
@@ -610,8 +608,7 @@ private def compileTailRecArgs(
   args.foldLeft((List.empty[String], state, initialExitBlock).asRight[CodeGenError]) {
     case (Right((values, currentState, currentExitBlock)), arg) =>
       compileExpr(arg, currentState, functionScope).map { res =>
-        val value =
-          if res.isLiteral then res.register.toString else s"%${res.register}"
+        val value         = res.operandStr
         val nextExitBlock = res.exitBlock.orElse(currentExitBlock)
         (values :+ value, res.state, nextExitBlock)
       }

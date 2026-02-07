@@ -9,11 +9,11 @@ import MmlWhitespace.*
 private[parser] def numericLitP(info: SourceInfo)(using P[Any]): P[LiteralValue] =
   import fastparse.NoWhitespace.*
   P(
-    (spP(info) ~ CharIn("0-9").rep(1) ~ "." ~ CharIn("0-9").rep(1).! ~ spNoWsP(info) ~ spP(info))
+    (spP(info) ~ (CharIn("0-9").rep(1) ~ "." ~ CharIn("0-9").rep(1)).! ~ spNoWsP(info) ~ spP(info))
       .map { case (start, s, end, _) =>
         LiteralFloat(span(start, end), s.toFloat)
       } |
-      (spP(info) ~ "." ~ CharIn("0-9").rep(1).! ~ spNoWsP(info) ~ spP(info)).map {
+      (spP(info) ~ ("." ~ CharIn("0-9").rep(1)).! ~ spNoWsP(info) ~ spP(info)).map {
         case (start, s, end, _) =>
           LiteralFloat(span(start, end), s.toFloat)
       } |

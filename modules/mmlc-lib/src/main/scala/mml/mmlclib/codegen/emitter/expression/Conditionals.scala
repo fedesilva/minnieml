@@ -41,7 +41,7 @@ def compileCond(
     mergeBB = elseBB + 1
 
     // Handle condition based on its type
-    condOp = if condRes.isLiteral then condRes.register.toString else s"%${condRes.register}"
+    condOp = condRes.operandStr
 
     // Reserve block label slots by advancing register counter past mergeBB
     stateWithReservedLabels = condRes.state.withRegister(mergeBB + 1)
@@ -63,7 +63,7 @@ def compileCond(
     // Then block
     thenState = stateAfterBranch.emit(s"then$thenBB:")
     thenRes <- compileExpr(ifTrue, thenState, functionScope)
-    thenValue = if thenRes.isLiteral then thenRes.register.toString else s"%${thenRes.register}"
+    thenValue = thenRes.operandStr
     // Track the actual exit block (may differ from then$thenBB if nested conditional)
     thenExitBlock        = thenRes.exitBlock.getOrElse(s"then$thenBB")
     stateAfterThenBranch = thenRes.state.emit(s"  br label %merge$mergeBB")
@@ -71,7 +71,7 @@ def compileCond(
     // Else block
     elseState = stateAfterThenBranch.emit(s"else$elseBB:")
     elseRes <- compileExpr(ifFalse, elseState, functionScope)
-    elseValue = if elseRes.isLiteral then elseRes.register.toString else s"%${elseRes.register}"
+    elseValue = elseRes.operandStr
     // Track the actual exit block (may differ from else$elseBB if nested conditional)
     elseExitBlock        = elseRes.exitBlock.getOrElse(s"else$elseBB")
     stateAfterElseBranch = elseRes.state.emit(s"  br label %merge$mergeBB")

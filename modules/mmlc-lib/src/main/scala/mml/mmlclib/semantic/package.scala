@@ -298,6 +298,12 @@ def injectBasicTypes(module: Module): Module =
       typeSpec = Some(NativePointer(dummySpan, "%struct.String")),
       id       = stdlibId("typedef", "StringPtr")
     ),
+    TypeDef(
+      span     = dummySpan,
+      name     = "FloatPtr",
+      typeSpec = Some(NativePointer(dummySpan, "float")),
+      id       = stdlibId("typedef", "FloatPtr")
+    ),
 
     // Monomorphic array types
     TypeDef(
@@ -329,6 +335,21 @@ def injectBasicTypes(module: Module): Module =
         )
       ),
       id = stdlibId("typedef", "StringArray")
+    ),
+    TypeDef(
+      span = dummySpan,
+      name = "FloatArray",
+      typeSpec = Some(
+        NativeStruct(
+          dummySpan,
+          List(
+            "length" -> stdlibTypeRef("Int64"),
+            "data" -> stdlibTypeRef("FloatPtr")
+          ),
+          memEffect = Some(MemEffect.Alloc)
+        )
+      ),
+      id = stdlibId("typedef", "FloatArray")
     )
   )
 
@@ -689,6 +710,8 @@ def injectCommonFunctions(module: Module): Module =
   // Array type refs
   def intArrayType    = stdlibTypeRef("IntArray")
   def stringArrayType = stdlibTypeRef("StringArray")
+  def floatArrayType  = stdlibTypeRef("FloatArray")
+  def floatType       = stdlibTypeRef("Float")
 
   // Array functions
   val arrayFunctions = List(
@@ -759,6 +782,48 @@ def injectCommonFunctions(module: Module): Module =
       stringType
     ),
     mkFn("ar_str_len", List(FnParam(dummySpan, "arr", typeAsc = Some(stringArrayType))), intType),
+    // FloatArray functions
+    mkFn(
+      "ar_float_new",
+      List(FnParam(dummySpan, "size", typeAsc = Some(intType))),
+      floatArrayType,
+      Some(MemEffect.Alloc)
+    ),
+    mkFn(
+      "ar_float_set",
+      List(
+        FnParam(dummySpan, "arr", typeAsc   = Some(floatArrayType)),
+        FnParam(dummySpan, "idx", typeAsc   = Some(intType)),
+        FnParam(dummySpan, "value", typeAsc = Some(floatType))
+      ),
+      unitType
+    ),
+    mkFn(
+      "ar_float_get",
+      List(
+        FnParam(dummySpan, "arr", typeAsc = Some(floatArrayType)),
+        FnParam(dummySpan, "idx", typeAsc = Some(intType))
+      ),
+      floatType
+    ),
+    mkFn(
+      "unsafe_ar_float_set",
+      List(
+        FnParam(dummySpan, "arr", typeAsc   = Some(floatArrayType)),
+        FnParam(dummySpan, "idx", typeAsc   = Some(intType)),
+        FnParam(dummySpan, "value", typeAsc = Some(floatType))
+      ),
+      unitType
+    ),
+    mkFn(
+      "unsafe_ar_float_get",
+      List(
+        FnParam(dummySpan, "arr", typeAsc = Some(floatArrayType)),
+        FnParam(dummySpan, "idx", typeAsc = Some(intType))
+      ),
+      floatType
+    ),
+    mkFn("ar_float_len", List(FnParam(dummySpan, "arr", typeAsc = Some(floatArrayType))), intType),
     // Memory management free functions for arrays - params are consuming
     mkFn(
       "__free_IntArray",
@@ -768,6 +833,11 @@ def injectCommonFunctions(module: Module): Module =
     mkFn(
       "__free_StringArray",
       List(FnParam(dummySpan, "a", typeAsc = Some(stringArrayType), consuming = true)),
+      unitType
+    ),
+    mkFn(
+      "__free_FloatArray",
+      List(FnParam(dummySpan, "a", typeAsc = Some(floatArrayType), consuming = true)),
       unitType
     ),
     // Memory management clone functions - return heap copies
@@ -793,6 +863,12 @@ def injectCommonFunctions(module: Module): Module =
       "__clone_StringArray",
       List(FnParam(dummySpan, "a", typeAsc = Some(stringArrayType))),
       stringArrayType,
+      Some(MemEffect.Alloc)
+    ),
+    mkFn(
+      "__clone_FloatArray",
+      List(FnParam(dummySpan, "a", typeAsc = Some(floatArrayType))),
+      floatArrayType,
       Some(MemEffect.Alloc)
     )
   )

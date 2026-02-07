@@ -117,9 +117,9 @@ def applyBinaryOp(
   extractNativeOpTemplate(opRef, rightRes.state.resolvables) match
     case Some((_, tpl, _)) =>
       val resultReg = rightRes.state.nextRegister
-      val leftOp = if leftRes.isLiteral then leftRes.register.toString else s"%${leftRes.register}"
-      val rightOp =
-        if rightRes.isLiteral then rightRes.register.toString else s"%${rightRes.register}"
+
+      val leftOp  = leftRes.operandStr
+      val rightOp = rightRes.operandStr
 
       left.typeSpec match
         case Some(typeSpec) =>
@@ -159,7 +159,7 @@ def applyUnaryOp(
   extractNativeOpTemplate(opRef, argRes.state.resolvables) match
     case Some((_, tpl, _)) =>
       val resultReg = argRes.state.nextRegister
-      val argOp     = if argRes.isLiteral then argRes.register.toString else s"%${argRes.register}"
+      val argOp     = argRes.operandStr
 
       arg.typeSpec match
         case Some(typeSpec) =>

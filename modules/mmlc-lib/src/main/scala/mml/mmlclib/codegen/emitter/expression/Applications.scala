@@ -105,8 +105,8 @@ private def compileBinaryNativeOp(
     rightRes <- compileExpr(rightArg, leftRes.state, functionScope)
 
     resultReg = rightRes.state.nextRegister
-    leftOp    = if leftRes.isLiteral then leftRes.register.toString else s"%${leftRes.register}"
-    rightOp   = if rightRes.isLiteral then rightRes.register.toString else s"%${rightRes.register}"
+    leftOp    = leftRes.operandStr
+    rightOp   = rightRes.operandStr
 
     llvmType <- leftArg.typeSpec match
       case Some(typeSpec) => getLlvmType(typeSpec, rightRes.state)
@@ -140,8 +140,7 @@ private def compileUnaryNativeOp(
     operandRes <- compileExpr(operandArg, state, functionScope)
 
     resultReg = operandRes.state.nextRegister
-    operandOp =
-      if operandRes.isLiteral then operandRes.register.toString else s"%${operandRes.register}"
+    operandOp = operandRes.operandStr
 
     llvmType <- operandArg.typeSpec match
       case Some(typeSpec) => getLlvmType(typeSpec, operandRes.state)
@@ -314,7 +313,7 @@ private def compileArgs(
   allArgs.foldLeft((List.empty[CompiledArg], state).asRight[CodeGenError]) {
     case (Right((compiledArgs, currentState)), arg) =>
       compileExpr(arg, currentState, functionScope).flatMap { argRes =>
-        val argOp = if argRes.isLiteral then argRes.register.toString else s"%${argRes.register}"
+        val argOp = argRes.operandStr
 
         arg.typeSpec match
           case Some(typeSpec) =>

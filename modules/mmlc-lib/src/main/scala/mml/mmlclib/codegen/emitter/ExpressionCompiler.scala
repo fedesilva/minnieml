@@ -30,6 +30,12 @@ def compileTerm(
     case LiteralInt(_, value) =>
       CompileResult(value, state, true, "Int").asRight
 
+    case LiteralFloat(_, value) =>
+      // LLVM rejects decimal float literals that aren't exactly representable in IEEE 754.
+      // Emit as double-precision hex (LLVM truncates to float).
+      val hexStr = f"0x${java.lang.Double.doubleToRawLongBits(value.toDouble)}%016X"
+      CompileResult(0, state, true, "Float", literalValue = Some(hexStr)).asRight
+
     case LiteralUnit(_) =>
       // Unit is a zero-sized type, just return a dummy result
       CompileResult(0, state, true, "Unit").asRight
@@ -158,10 +164,8 @@ private def compileSelectionRef(
                   val structTypeE = getLlvmType(baseType, qualifierRes.state)
                   val fieldType   = structDef.fields(fieldIndex).typeSpec
                   structTypeE.flatMap { structLlvmType =>
-                    val baseValue =
-                      if qualifierRes.isLiteral then qualifierRes.register.toString
-                      else s"%${qualifierRes.register}"
-                    val fieldReg = qualifierRes.state.nextRegister
+                    val baseValue = qualifierRes.operandStr
+                    val fieldReg  = qualifierRes.state.nextRegister
                     val line =
                       emitExtractValue(fieldReg, structLlvmType, baseValue, fieldIndex)
                     getMmlTypeName(fieldType) match

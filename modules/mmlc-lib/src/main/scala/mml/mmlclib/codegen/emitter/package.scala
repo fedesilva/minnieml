@@ -565,12 +565,18 @@ case class CodeGenState(
   *   the block label where control exits (for phi node predecessors in nested conditionals)
   */
 case class CompileResult(
-  register:  Int,
-  state:     CodeGenState,
-  isLiteral: Boolean,
-  typeName:  String,
-  exitBlock: Option[String] = None
-)
+  register:     Int,
+  state:        CodeGenState,
+  isLiteral:    Boolean,
+  typeName:     String,
+  exitBlock:    Option[String] = None,
+  literalValue: Option[String] = None
+) {
+  def operandStr: String =
+    literalValue.getOrElse(
+      if isLiteral then register.toString else s"%$register"
+    )
+}
 
 def getMmlTypeName(typeSpec: Type): Option[String] = typeSpec match {
   case TypeRef(_, name, _, _) => Some(name)

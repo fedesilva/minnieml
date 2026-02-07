@@ -114,7 +114,9 @@ object OpMangling:
     '/' -> "slash",
     '\\' -> "bslash",
     '|' -> "pipe",
-    '-' -> "minus"
+    '-' -> "minus",
+    '.' -> "dot",
+    '~' -> "tilde"
   )
 
   def mangleOp(op: String, arity: Int): String =

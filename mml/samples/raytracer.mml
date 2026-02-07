@@ -1,0 +1,236 @@
+// Mini Ray Tracer in MML
+// Renders a simple scene with spheres to a PPM image via stdout.
+
+// --- 1. Float Infrastructure ---
+
+// Floating-point arithmetic using OCaml-style operators
+op +.(a: Float, b: Float): Float 60 left = @native[tpl="fadd float %operand1, %operand2"];
+op -.(a: Float, b: Float): Float 60 left = @native[tpl="fsub float %operand1, %operand2"];
+op *.(a: Float, b: Float): Float 80 left = @native[tpl="fmul float %operand1, %operand2"];
+op /.(a: Float, b: Float): Float 80 left = @native[tpl="fdiv float %operand1, %operand2"];
+
+// Unary negation for float (using `-.` as prefix)
+op -.(a: Float): Float 95 right = @native[tpl="fsub float 0.0, %operand"];
+
+// Comparisons
+op <.(a: Float, b: Float): Bool 50 left = @native[tpl="fcmp olt float %operand1, %operand2"];
+op >.(a: Float, b: Float): Bool 50 left = @native[tpl="fcmp ogt float %operand1, %operand2"];
+
+// Math functions
+fn sqrt(x: Float): Float = @native[tpl="call float @llvm.sqrt.f32(float %operand)"];
+fn fabs(x: Float): Float = @native[tpl="call float @llvm.fabs.f32(float %operand)"];
+
+// --- 2. Linear Algebra ---
+
+struct Vec3 { x: Float, y: Float, z: Float };
+
+fn vec_add(u: Vec3, v: Vec3): Vec3 =
+  Vec3 (u.x +. v.x) (u.y +. v.y) (u.z +. v.z)
+;
+
+fn vec_sub(u: Vec3, v: Vec3): Vec3 =
+  Vec3 (u.x -. v.x) (u.y -. v.y) (u.z -. v.z)
+;
+
+// Scalar multiplication: v * t
+fn vec_scale(v: Vec3, t: Float): Vec3 =
+  Vec3 (v.x *. t) (v.y *. t) (v.z *. t)
+;
+
+// Dot product
+fn dot(u: Vec3, v: Vec3): Float =
+  (u.x *. v.x) +. (u.y *. v.y) +. (u.z *. v.z)
+;
+
+fn length_squared(v: Vec3): Float = dot v v;
+
+fn length(v: Vec3): Float = sqrt (length_squared v);
+
+fn unit_vector(v: Vec3): Vec3 =
+  vec_scale v (1.0 /. (length v))
+;
+
+// --- 3. Scene Geometry ---
+
+struct Ray { origin: Vec3, dir: Vec3 };
+
+fn ray_at(r: Ray, t: Float): Vec3 =
+  vec_add r.origin (vec_scale r.dir t)
+;
+
+struct Sphere { center: Vec3, radius: Float };
+
+// Hit record (simplified: only t and normal needed for this demo)
+struct Hit { t: Float, p: Vec3, normal: Vec3, did_hit: Bool };
+
+fn no_hit(): Hit =
+  let zero = Vec3 0.0 0.0 0.0;
+  Hit 0.0 zero zero false
+;
+
+fn hit_sphere(s: Sphere, r: Ray, t_min: Float, t_max: Float): Hit =
+  let oc = vec_sub r.origin s.center;
+  let a = length_squared r.dir;
+  let half_b = dot oc r.dir;
+  let c = (length_squared oc) -. (s.radius *. s.radius);
+  let discriminant = (half_b *. half_b) -. (a *. c);
+
+  if discriminant <. 0.0 then
+    no_hit ()
+  else
+    let sqrtd = sqrt discriminant;
+    let root1 = ((0.0 -. half_b) -. sqrtd) /. a;
+    
+    // Check first root
+    if (root1 <. t_max) and (root1 >. t_min) then
+      let p = ray_at r root1;
+      let normal = vec_scale (vec_sub p s.center) (1.0 /. s.radius);
+      Hit root1 p normal true
+    else
+      // Check second root
+      let root2 = ((0.0 -. half_b) +. sqrtd) /. a;
+      if (root2 <. t_max) and (root2 >. t_min) then
+        let p = ray_at r root2;
+        let normal = vec_scale (vec_sub p s.center) (1.0 /. s.radius);
+        Hit root2 p normal true
+      else
+        no_hit ()
+      end
+    end
+  end
+;
+
+// --- 4. World & Rendering ---
+
+// Hardcoded world hit function (simulates a list of objects)
+fn world_hit(r: Ray, t_min: Float, t_max: Float): Hit =
+  let closest_so_far = t_max;
+  let final_hit = no_hit ();
+
+  // Sphere 1: Center (Small sphere)
+  let s1 = Sphere (Vec3 0.0 0.0 (0.0 -. 1.0)) 0.5;
+  let h1 = hit_sphere s1 r t_min closest_so_far;
+  
+  // Update closest hit if h1 hit
+  let result1 = if h1.did_hit then
+    h1 // New closest
+  else
+    final_hit // Keep previous (no hit)
+  end;
+  
+  let t1 = if h1.did_hit then h1.t else closest_so_far end;
+
+  // Sphere 2: Ground (Giant sphere)
+  let s2 = Sphere (Vec3 0.0 (0.0 -. 100.5) (0.0 -. 1.0)) 100.0;
+  let h2 = hit_sphere s2 r t_min t1;
+
+  if h2.did_hit then h2 else result1 end
+;
+
+fn ray_color(r: Ray): Vec3 =
+  let hit = world_hit r 0.001 1000000.0;
+  
+  if hit.did_hit then
+    // Simple diffuse-like shading based on normal: 0.5 * (normal + 1)
+    let n = hit.normal;
+    let color_vec = Vec3 (n.x +. 1.0) (n.y +. 1.0) (n.z +. 1.0);
+    vec_scale color_vec 0.5
+  else
+    // Background (Sky gradient)
+    let unit_dir = unit_vector r.dir;
+    let t = 0.5 *. (unit_dir.y +. 1.0);
+    let white = Vec3 1.0 1.0 1.0;
+    let blue = Vec3 0.5 0.7 1.0;
+    // lerp: (1-t)*white + t*blue
+    vec_add (vec_scale white (1.0 -. t)) (vec_scale blue t)
+  end
+;
+
+// --- 5. Output Utilities ---
+
+fn write_color(b: Buffer, pixel_color: Vec3): Unit =
+  // Convert [0,1] to [0,255]
+  let ir = 255.999 *. pixel_color.x;
+  let ig = 255.999 *. pixel_color.y;
+  let ib = 255.999 *. pixel_color.z;
+  
+  buffer_write_int b (float_to_int ir);
+  buffer_write b " ";
+  buffer_write_int b (float_to_int ig);
+  buffer_write b " ";
+  buffer_writeln_int b (float_to_int ib)
+;
+
+fn float_to_int(f: Float): Int = @native[tpl="fptosi float %operand to i64"];
+
+// --- 6. Main Loop ---
+
+fn render_col(b: Buffer, i: Int, j: Int, width: Int, height: Int): Unit =
+  if i < width then
+    // u = i / (width - 1)
+    let u = (int_to_float i) /. (int_to_float (width - 1));
+    // v = j / (height - 1)
+    let v = (int_to_float ((height - 1) - j)) /. (int_to_float (height - 1));
+    
+    // Camera defaults
+    let origin = Vec3 0.0 0.0 0.0;
+    let focal_length = 1.0;
+    let viewport_height = 2.0;
+    // Aspect ratio 16.0 / 9.0
+    let aspect_ratio = 16.0 /. 9.0; 
+    let viewport_width = viewport_height *. aspect_ratio;
+    
+    let horizontal = Vec3 viewport_width 0.0 0.0;
+    let vertical = Vec3 0.0 viewport_height 0.0;
+    
+    // lower_left_corner = origin - horizontal/2 - vertical/2 - vec3(0, 0, focal_length)
+    let ll_corner = Vec3 
+      (0.0 -. (viewport_width /. 2.0))
+      (0.0 -. (viewport_height /. 2.0))
+      (0.0 -. focal_length);
+
+    // direction = lower_left + u*hor + v*vert - origin
+    let hor_u = vec_scale horizontal u;
+    let ver_v = vec_scale vertical v;
+    let target = vec_add ll_corner (vec_add hor_u ver_v);
+    let direction = vec_sub target origin;
+    
+    let r = Ray origin direction;
+    let pixel_color = ray_color r;
+    
+    write_color b pixel_color;
+    
+    render_col b (i + 1) j width height
+  end
+;
+
+fn render_row(b: Buffer, j: Int, width: Int, height: Int): Unit =
+  if j >= 0 then // Render from top to bottom
+    render_col b 0 j width height;
+    render_row b (j - 1) width height
+  end
+;
+
+fn int_to_float(i: Int): Float = @native[tpl="sitofp i64 %operand to float"];
+
+fn main(): Unit =
+  // Image settings
+  let aspect_ratio = 16.0 /. 9.0;
+  let image_width = 400;
+  let image_height = float_to_int ((int_to_float image_width) /. aspect_ratio);
+
+  // Stdout buffer
+  let b = mkBufferWithFd 1;
+
+  // PPM Header
+  buffer_writeln b "P3";
+  buffer_write_int b image_width;
+  buffer_write b " ";
+  buffer_writeln_int b image_height;
+  buffer_writeln b "255";
+
+  // Render
+  render_row b (image_height - 1) image_width image_height;
+  
+  flush b
+;

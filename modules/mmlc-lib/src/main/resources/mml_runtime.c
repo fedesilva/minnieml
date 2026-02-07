@@ -34,6 +34,12 @@ typedef struct StringArray
     String *data;
 } StringArray;
 
+typedef struct FloatArray
+{
+    int64_t length;
+    float *data;
+} FloatArray;
+
 // --- Output Buffer ---
 typedef struct
 {
@@ -711,6 +717,58 @@ FORCE_INLINE int64_t ar_str_len(StringArray arr)
     return arr.length;
 }
 
+// --- FloatArray Functions ---
+FORCE_INLINE FloatArray ar_float_new(int64_t size)
+{
+    if (size <= 0)
+        return (FloatArray){0, NULL};
+
+    float *storage = (float *)malloc((size_t)size * sizeof(float));
+    if (!storage)
+        return (FloatArray){0, NULL};
+
+    return (FloatArray){size, storage};
+}
+
+FORCE_INLINE void ar_float_set(FloatArray arr, int64_t idx, float value)
+{
+    if (!arr.data || idx < 0 || idx >= arr.length)
+    {
+        fprintf(stderr, "FloatArray index out of bounds: %lld (length: %lld)\n",
+                (long long)idx, (long long)arr.length);
+        fflush(stderr);
+        exit(1);
+    }
+    arr.data[idx] = value;
+}
+
+FORCE_INLINE void unsafe_ar_float_set(FloatArray arr, int64_t idx, float value)
+{    
+    arr.data[idx] = value;
+}
+
+FORCE_INLINE float ar_float_get(FloatArray arr, int64_t idx)
+{
+    if (!arr.data || idx < 0 || idx >= arr.length)
+    {
+        fprintf(stderr, "FloatArray index out of bounds: %lld (length: %lld)\n",
+                (long long)idx, (long long)arr.length);
+        fflush(stderr);
+        exit(1);
+    }
+    return arr.data[idx];
+}
+
+FORCE_INLINE float unsafe_ar_float_get(FloatArray arr, int64_t idx)
+{    
+    return arr.data[idx];
+}
+
+FORCE_INLINE int64_t ar_float_len(FloatArray arr)
+{
+    return arr.length;
+}
+
 void __mml_sys_hole(int64_t start_line, int64_t start_col, int64_t end_line, int64_t end_col)
 {
     mml_sys_flush();
@@ -762,6 +820,12 @@ void __free_StringArray(StringArray arr)
         }
         free(arr.data);
     }
+}
+
+void __free_FloatArray(FloatArray arr)
+{
+    if (arr.data)
+        free(arr.data);
 }
 
 // --- Memory Management Clone Functions ---
@@ -829,4 +893,17 @@ StringArray __clone_StringArray(StringArray arr)
         new_data[i] = __clone_String(arr.data[i]);
     }
     return (StringArray){arr.length, new_data};
+}
+
+FloatArray __clone_FloatArray(FloatArray arr)
+{
+    if (!arr.data || arr.length <= 0)
+        return (FloatArray){0, NULL};
+
+    float *new_data = (float *)malloc((size_t)arr.length * sizeof(float));
+    if (!new_data)
+        return (FloatArray){0, NULL};
+
+    memcpy(new_data, arr.data, (size_t)arr.length * sizeof(float));
+    return (FloatArray){arr.length, new_data};
 }
