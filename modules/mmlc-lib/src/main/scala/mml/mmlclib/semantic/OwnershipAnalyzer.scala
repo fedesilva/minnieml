@@ -29,8 +29,10 @@ case class OwnershipScope(
   consumedVia:            Map[String, (Ref, FnParam)] = Map.empty,
   skipConsumingOwnership: Boolean                     = false
 ):
+
   def nextTemp: (String, OwnershipScope) =
     (s"__tmp_$tempCounter", copy(tempCounter = tempCounter + 1))
+
   def withOwned(name: String, tpe: Option[Type], id: Option[String] = None): OwnershipScope =
     copy(bindings = bindings + (name -> BindingInfo(OwnershipState.Owned, tpe, id)))
 
@@ -587,6 +589,16 @@ object OwnershipAnalyzer:
       case None =>
         (scope, Nil)
 
+  /** Check if rebinding a name should be a move (not a borrow). True when the source binding is
+    * Owned, has a resolved type, no witness (skip mixed-ownership), and the type is a user-defined
+    * struct with heap fields.
+    */
+  private def isMoveOnRebind(name: String, scope: OwnershipScope): Boolean =
+    scope.getInfo(name) match
+      case Some(BindingInfo(OwnershipState.Owned, Some(tpe), _, None)) =>
+        TypeUtils.getTypeName(tpe).exists(TypeUtils.isStructWithHeapFields(_, scope.resolvables))
+      case _ => false
+
   /** Check if a function call resolves to a struct constructor */
   private def isConstructorCall(
     fn:          Ref | App | Lambda,
@@ -625,10 +637,13 @@ object OwnershipAnalyzer:
   ): TermResult =
     term match
       case ref: Ref =>
-        // Check if this is a use of a moved binding
-        scope.getState(ref.name) match
+        // Check if this is a use of a moved binding (direct or via qualifier)
+        val nameToCheck = ref.qualifier match
+          case Some(q: Ref) => q.name
+          case _ => ref.name
+        scope.getState(nameToCheck) match
           case Some(OwnershipState.Moved) =>
-            scope.getMovedAt(ref.name) match
+            scope.getMovedAt(nameToCheck) match
               case Some(movedAt) =>
                 TermResult(
                   scope,
@@ -697,10 +712,15 @@ object OwnershipAnalyzer:
                   .getOrElse(argResult.scope.withBorrowed(param.name))
                 (newScope, None)
               case Some(param) =>
-                // Non-allocating: check if it's a literal or borrowed
+                // Non-allocating: check if it's a literal, move-on-rebind, or borrowed
                 val newScope = arg.terms.headOption match
                   case Some(_: LiteralString) =>
                     argResult.scope.withLiteral(param.name)
+                  case Some(ref: Ref) if isMoveOnRebind(ref.name, argResult.scope) =>
+                    val srcInfo = argResult.scope.getInfo(ref.name).get
+                    argResult.scope
+                      .withMoved(ref.name, ref.span)
+                      .withOwned(param.name, srcInfo.bindingTpe, param.id)
                   case _ =>
                     argResult.scope.withBorrowed(param.name)
                 (newScope, None)

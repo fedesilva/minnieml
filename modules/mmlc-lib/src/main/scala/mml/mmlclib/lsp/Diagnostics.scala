@@ -39,6 +39,11 @@ object Diagnostics:
       case SemanticError.InvalidExpressionFound(inv, _) => Some(inv.span)
       case SemanticError.TypeCheckingError(typeErr) => extractTypeErrorSpan(typeErr)
       case SemanticError.InvalidEntryPoint(_, span) => Some(span)
+      case SemanticError.UseAfterMove(ref, _, _) => Some(ref.span)
+      case SemanticError.ConsumingParamNotLastUse(_, ref, _) => Some(ref.span)
+      case SemanticError.PartialApplicationWithConsuming(fn, _, _) => Some(fn.span)
+      case SemanticError.ConditionalOwnershipMismatch(cond, _) => Some(cond.span)
+      case SemanticError.BorrowEscapeViaReturn(ref, _) => Some(ref.span)
 
       case te: TypeError => extractTypeErrorSpan(te)
 
@@ -105,6 +110,11 @@ object Diagnostics:
         formatTypeError(typeErr)
       case SemanticError.InvalidEntryPoint(msg, _) =>
         s"Invalid entry point: $msg"
+      case e: SemanticError.UseAfterMove => e.message
+      case e: SemanticError.ConsumingParamNotLastUse => e.message
+      case e: SemanticError.PartialApplicationWithConsuming => e.message
+      case e: SemanticError.ConditionalOwnershipMismatch => e.message
+      case e: SemanticError.BorrowEscapeViaReturn => e.message
 
       case te: TypeError => formatTypeError(te)
 

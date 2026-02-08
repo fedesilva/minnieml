@@ -1,0 +1,30 @@
+// Move-only struct test: rebinding a struct with heap fields is a move.
+// Run with: leaks --atExit -- ./build/target/movestruct
+
+struct User { name: String, role: String };
+
+fn print_user(u: User): Unit =
+  println ((u.name ++ " is a ") ++ u.role)
+;
+
+fn test_move(n: Int): Unit =
+  let name_str = "User" ++ (int_to_str n);
+  let role_str = "Admin" ++ (int_to_str n);
+  let a = User name_str role_str;
+  let b = a;
+  // print_user a;
+  print_user b 
+;
+
+fn run(n: Int): Unit =
+  if n != 0 then
+    test_move n;
+    run (n - 1)
+  end
+;
+
+fn main(): Unit =
+  println "Testing move-only structs...";
+  run 100;
+  println "Move-struct tests passed!"
+;

@@ -75,7 +75,7 @@ Affine ownership with borrow-by-default. Enables safe automatic memory managemen
   - Non-owned args (literals, borrowed refs) auto-cloned at call site.
   - Changes: `MemoryFunctionGenerator` (consuming params + explicit clone in `__clone_T`),
     `OwnershipAnalyzer` (auto-clone pre-processing), `FunctionEmitter` (removed clone-on-store).
-- [ ] **Move-only structs** — assigning a struct with owned fields is a move
+- [x] **Move-only structs** — assigning a struct with owned fields is a move [COMPLETE]
   - `let a = mkFoo x; let b = a` moves `a` into `b`, `a` is invalid after.
   - Use-after-move detection already exists for leaf values; extend to structs.
   - Explicit `clone` required to duplicate a struct with owned fields.
@@ -143,6 +143,31 @@ Affine ownership with borrow-by-default. Enables safe automatic memory managemen
 ---
 
 ## Recent Changes
+
+### 2026-02-08 Move-only structs + LSP ownership diagnostics [COMPLETE]
+
+- **Problem:** Rebinding a struct with heap fields (`let b = a`) was a silent borrow (shallow
+  copy), risking unclear ownership. Also, ownership errors (UseAfterMove, BorrowEscapeViaReturn,
+  etc.) were not reported in the LSP — `Diagnostics.extractSpan` had `case _ => None` catching
+  all ownership error variants, producing 0 diagnostics even when the compiler detected errors.
+- **Fix:**
+  - Rebinding an Owned user-defined `TypeStruct` with heap fields is now an implicit move. The
+    source becomes Moved (invalid), the target becomes Owned. Native types (String, IntArray, etc.)
+    keep borrow-by-default. Structs without heap fields also keep borrow behavior.
+  - Use-after-move detection extended to qualified refs (field access like `a.name` after move).
+  - LSP `Diagnostics.scala`: added span extraction and message formatting for all 5 ownership
+    error variants (UseAfterMove, ConsumingParamNotLastUse, PartialApplicationWithConsuming,
+    ConditionalOwnershipMismatch, BorrowEscapeViaReturn).
+- **Changes:**
+  - `ast/TypeUtils.scala`: added `isStructWithHeapFields` — matches only `TypeStruct`, not native
+  - `semantic/OwnershipAnalyzer.scala`: added `isMoveOnRebind` helper, move branch in let-binding
+    case, qualified ref check in use-after-move detection
+  - `lsp/Diagnostics.scala`: 5 new cases in `extractSpan` and `formatErrorMessage`
+  - `OwnershipAnalyzerTests.scala`: 6 new tests (struct move, use-after-move, field access after
+    move, non-heap struct borrows, string borrows, borrowed struct stays borrowed)
+  - `mml/samples/mem/move-struct.mml`: new sample (100 iterations, 0 leaks)
+- **Verification:** 243 tests pass, `scalafmtAll`/`scalafixAll` clean, `mmlcPublishLocal` OK,
+  all 7 benchmarks compile, all 10 memory samples 0 leaks.
 
 ### 2026-02-08 Fix consuming param memory leaks + BindingOrigin metadata [COMPLETE]
 

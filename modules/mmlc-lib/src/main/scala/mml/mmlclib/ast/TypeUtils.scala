@@ -42,6 +42,14 @@ object TypeUtils:
       getTypeName(field.typeSpec).exists(isHeapType(_, resolvables))
     }
 
+  /** Check if a type resolves to a user-defined TypeStruct with heap fields. Unlike isHeapType,
+    * this excludes native TypeDef types (String, IntArray, etc.).
+    */
+  def isStructWithHeapFields(typeName: String, resolvables: ResolvablesIndex): Boolean =
+    findTypeByName(typeName, resolvables) match
+      case Some(s: TypeStruct) => hasHeapFields(s, resolvables)
+      case _ => false
+
   /** Get free function name for a type, or None if not heap type */
   def freeFnFor(typeName: String, resolvables: ResolvablesIndex): Option[String] =
     if isHeapType(typeName, resolvables) then Some(s"__free_$typeName")

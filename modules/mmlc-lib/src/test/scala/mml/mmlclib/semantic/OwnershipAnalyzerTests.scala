@@ -5,17 +5,21 @@ import mml.mmlclib.test.BaseEffFunSuite
 
 class OwnershipAnalyzerTests extends BaseEffFunSuite:
 
-  private def containsFreeString(term: Term): Boolean =
+  private def containsFreeOf(freeName: String)(term: Term): Boolean =
     term match
-      case Ref(_, "__free_String", _, _, _, _, _) => true
-      case App(_, fn, arg, _, _) => containsFreeString(fn) || containsFreeString(arg)
-      case Expr(_, terms, _, _) => terms.exists(containsFreeString)
-      case Lambda(_, _, body, _, _, _, _) => containsFreeString(body)
-      case TermGroup(_, inner, _) => containsFreeString(inner)
+      case Ref(_, name, _, _, _, _, _) => name == freeName
+      case App(_, fn, arg, _, _) =>
+        containsFreeOf(freeName)(fn) || containsFreeOf(freeName)(arg)
+      case Expr(_, terms, _, _) => terms.exists(containsFreeOf(freeName))
+      case Lambda(_, _, body, _, _, _, _) => containsFreeOf(freeName)(body)
+      case TermGroup(_, inner, _) => containsFreeOf(freeName)(inner)
       case Cond(_, cond, ifTrue, ifFalse, _, _) =>
-        containsFreeString(cond) || containsFreeString(ifTrue) || containsFreeString(ifFalse)
-      case Tuple(_, elements, _, _) => elements.exists(containsFreeString)
+        containsFreeOf(freeName)(cond) || containsFreeOf(freeName)(ifTrue) ||
+        containsFreeOf(freeName)(ifFalse)
+      case Tuple(_, elements, _, _) => elements.exists(containsFreeOf(freeName))
       case _ => false
+
+  private def containsFreeString(term: Term): Boolean = containsFreeOf("__free_String")(term)
 
   private def countFreesOf(name: String, term: Term): Int =
     term match
@@ -453,5 +457,131 @@ class OwnershipAnalyzerTests extends BaseEffFunSuite:
         !containsFreeString(mkPointBody),
         "non-heap fields should not trigger freeing"
       )
+    }
+  }
+
+  test("struct rebinding moves ownership") {
+    val code =
+      """
+        struct User { name: String, role: String };
+
+        fn main(): Unit =
+          let n = "Alice" ++ " Smith";
+          let r = "Admin" ++ " Role";
+          let a = User n r;
+          let b = a;
+          println b.name
+        ;
+      """
+
+    semNotFailed(code).map { module =>
+      val mainBody = module.members.collectFirst {
+        case b: Bnd if b.name == "main" =>
+          b.value.terms.collectFirst { case l: Lambda => l.body }.get
+      }.get
+
+      assert(
+        containsFreeOf("__free_User")(mainBody),
+        "moved struct target should be freed"
+      )
+    }
+  }
+
+  test("use after struct move detected") {
+    val code =
+      """
+        struct User { name: String, role: String };
+
+        fn print_user(u: User): Unit =
+          println u.name
+        ;
+
+        fn main(): Unit =
+          let n = "Alice" ++ " Smith";
+          let r = "Admin" ++ " Role";
+          let a = User n r;
+          let b = a;
+          print_user a
+        ;
+      """
+
+    semState(code).map { result =>
+      val moveErrors = result.errors.collect { case e: SemanticError.UseAfterMove => e }
+      assert(moveErrors.nonEmpty, "Expected UseAfterMove error for struct use after move")
+    }
+  }
+
+  test("struct move field access after rejected") {
+    val code =
+      """
+        struct User { name: String, role: String };
+
+        fn main(): Unit =
+          let n = "Alice" ++ " Smith";
+          let r = "Admin" ++ " Role";
+          let a = User n r;
+          let b = a;
+          println a.name
+        ;
+      """
+
+    semState(code).map { result =>
+      val moveErrors = result.errors.collect { case e: SemanticError.UseAfterMove => e }
+      assert(moveErrors.nonEmpty, "Expected UseAfterMove error for field access after move")
+    }
+  }
+
+  test("non-heap struct rebinding borrows") {
+    val code =
+      """
+        struct Point { x: Int, y: Int };
+
+        fn main(): Unit =
+          let a = Point 1 2;
+          let b = a;
+          println (int_to_str a.x);
+          println (int_to_str b.x)
+        ;
+      """
+
+    semState(code).map { result =>
+      val moveErrors = result.errors.collect { case e: SemanticError.UseAfterMove => e }
+      assert(moveErrors.isEmpty, s"Non-heap struct should not move: $moveErrors")
+    }
+  }
+
+  test("string rebinding still borrows") {
+    val code =
+      """
+        fn main(): Unit =
+          let a = "hello" ++ " world";
+          let b = a;
+          println a;
+          println b
+        ;
+      """
+
+    semState(code).map { result =>
+      val moveErrors = result.errors.collect { case e: SemanticError.UseAfterMove => e }
+      assert(moveErrors.isEmpty, s"String rebinding should borrow, not move: $moveErrors")
+    }
+  }
+
+  test("borrowed struct rebinding stays borrowed") {
+    val code =
+      """
+        struct User { name: String, role: String };
+
+        fn use_user(u: User): Unit =
+          let b = u;
+          println b.name
+        ;
+
+        fn main(): Unit = println "ok";
+      """
+
+    semState(code).map { result =>
+      val moveErrors = result.errors.collect { case e: SemanticError.UseAfterMove => e }
+      assert(moveErrors.isEmpty, s"Borrowed param rebinding should stay borrowed: $moveErrors")
     }
   }
