@@ -70,10 +70,16 @@ The compiler needs to be installed before it's used if changes were made.
 - **Validate**: Run the *full* test suite.
 - **IMPORTANT**: Chain commands to avoid sbtn startup overhead: `sbtn "test; scalafmtAll; scalafixAll; mmlcPublishLocal"`
 
-- **Run benchmarks**: 
+- **Run benchmarks**:
   - after publishing the compiler:
   - run `make -C benchmark clean`
   - run `make -C benchmark mml`
+
+- **Run leaks check** (when changes touch memory management / ownership):
+  - `sbtn "run clean"` first if you previously compiled with ASan (`-s`)
+  - compile via sbt without `-s`: `sbtn "run mml/samples/mem/<file>.mml"`
+  - then `leaks --atExit -- build/target/<name>` on each compiled binary
+  - all samples must show 0 leaks
 
 ## Git usage
 

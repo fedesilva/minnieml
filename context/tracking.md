@@ -33,6 +33,11 @@ Affine ownership with borrow-by-default. Enables safe automatic memory managemen
 
 #### Bug Fixes
 
+- [ ] **Fix memory leak regressions in `test_unused_locals.mml` and `move-valid.mml`** — URGENT
+  - `test_unused_locals.mml`: 100 leaks (1600 bytes) under `leaks --atExit`
+  - `move-valid.mml`: 2 leaks (64 bytes) under `leaks --atExit`
+  - Regressions from earlier changes on the `memory-prototype` branch.
+  - Both are ASan-clean (no double-free/use-after-free), only leaks.
 - [x] **Fix `arrays-mem.mml` double-free** — missing `consuming` on `ar_str_set` [COMPLETE]
   - **Root cause:** `ar_str_set` stores the String in the array (takes ownership) but
     the `value` param lacks `consuming = true`, so ownership analyzer inserts a free
@@ -62,14 +67,14 @@ Affine ownership with borrow-by-default. Enables safe automatic memory managemen
 
 #### Struct Ownership
 
-- [ ] **Struct constructors as sinks (move-in)**
-  - Currently constructors clone their args (borrow + internal copy).
-  - Change to: constructors consume all heap-typed fields (move semantics).
+- [x] **Struct constructors as sinks (move-in)** [COMPLETE]
+  - Constructors consume all heap-typed fields (move semantics).
   - No `~` annotation needed on struct fields — consuming is the default for
     constructors. This is not opt-out.
   - Callers who want to retain a value must explicitly `clone` before passing.
-  - Impacts: `MemoryFunctionGenerator`, `OwnershipAnalyzer` constructor handling,
-    `FunctionEmitter` (remove clone-on-store for constructor params).
+  - Non-owned args (literals, borrowed refs) auto-cloned at call site.
+  - Changes: `MemoryFunctionGenerator` (consuming params + explicit clone in `__clone_T`),
+    `OwnershipAnalyzer` (auto-clone pre-processing), `FunctionEmitter` (removed clone-on-store).
 - [ ] **Move-only structs** — assigning a struct with owned fields is a move
   - `let a = mkFoo x; let b = a` moves `a` into `b`, `a` is invalid after.
   - Use-after-move detection already exists for leaf values; extend to structs.
@@ -138,6 +143,32 @@ Affine ownership with borrow-by-default. Enables safe automatic memory managemen
 ---
 
 ## Recent Changes
+
+### 2026-02-08 Struct constructors as sinks (move-in semantics) [COMPLETE — pending review]
+
+- **Problem:** Constructors borrowed all args and cloned heap-typed fields internally at codegen
+  level. Every construction with heap fields involved redundant allocations: caller keeps original,
+  constructor clones into struct, caller frees original.
+- **Fix:** Constructors now consume (move-in) heap-typed fields. Owned values move directly into
+  the struct. Non-owned values (literals, borrowed refs) are auto-cloned at the call site.
+- **Changes:**
+  - `semantic/MemoryFunctionGenerator.scala`: `rewriteConstructor` marks heap params as consuming.
+    `mkCloneFunction` wraps heap field accesses with explicit `__clone_T` calls (constructor no
+    longer clones internally). Added `wrapFieldWithClone` helper.
+  - `codegen/emitter/FunctionEmitter.scala`: Removed clone-on-store in `compileStructConstructor`.
+    Constructor now trusts its params are already owned.
+  - `semantic/OwnershipAnalyzer.scala`: Added `isConstructorCall`, `argNeedsClone`, `argAllocates`
+    helpers. Auto-clone pre-processing between `baseFnParams` and `argsWithAlloc` wraps non-owned
+    args to consuming constructor params with `wrapWithClone`. Critical fix: move propagation in
+    let-binding case — consuming params inside let-binding bodies now propagate Moved state to
+    enclosing scopes (was causing double-free).
+- **Tests:** 4 new in `OwnershipAnalyzerTests.scala` (owned consumed without clone, literal auto-
+  clone, borrowed auto-clone, non-heap fields not consumed). 1 new in `StructCodegenTest.scala`
+  (constructor IR has no clone calls).
+- **Verification:** 237 tests pass, `scalafmtAll`/`scalafixAll` clean, `mmlcPublishLocal` OK,
+  ASan clean on all memory samples, all 7 benchmarks compile. Leaks: 0 on 7/9 samples.
+  Known regressions: `test_unused_locals.mml` (100 leaks), `move-valid.mml` (2 leaks) — from
+  earlier changes on this branch, tracked as urgent bug fix.
 
 ### 2026-02-07 Borrow escape enforcement — Rule 1: return [COMPLETE]
 

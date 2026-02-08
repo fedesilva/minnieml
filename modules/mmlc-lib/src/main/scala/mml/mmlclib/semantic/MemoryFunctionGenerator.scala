@@ -147,16 +147,56 @@ object MemoryFunctionGenerator:
       id         = genId(moduleName, fnName)
     )
 
+  /** Wrap a field access expression with a __clone_T call */
+  private def wrapFieldWithClone(
+    fieldExpr:   Expr,
+    fieldType:   Type,
+    resolvables: ResolvablesIndex
+  ): Expr =
+    val typeName    = TypeUtils.getTypeName(fieldType).getOrElse("String")
+    val cloneFnName = TypeUtils.cloneFnFor(typeName, resolvables).getOrElse(s"__clone_$typeName")
+    val cloneFnId   = Some(s"stdlib::bnd::$cloneFnName")
+    val cloneFnType = Some(TypeFn(syntheticSpan, List(fieldType), fieldType))
+    val cloneFnRef =
+      Ref(syntheticSpan, cloneFnName, resolvedId = cloneFnId, typeSpec = cloneFnType)
+    val cloneApp = App(syntheticSpan, cloneFnRef, fieldExpr, typeSpec = Some(fieldType))
+    Expr(syntheticSpan, List(cloneApp), typeSpec = Some(fieldType))
+
+  /** Rewrite a __mk_StructName constructor to mark heap-typed params as consuming */
+  private def rewriteConstructor(
+    struct:      TypeStruct,
+    resolvables: ResolvablesIndex,
+    members:     List[Member]
+  ): List[Member] =
+    val constructorName = s"__mk_${struct.name}"
+    members.map:
+      case bnd: Bnd if bnd.name == constructorName =>
+        val lambdaOpt = bnd.value.terms.collectFirst { case l: Lambda => l }
+        lambdaOpt match
+          case Some(lambda) =>
+            val newParams = lambda.params.zip(struct.fields.toList).map { (param, field) =>
+              val isHeap = TypeUtils
+                .getTypeName(field.typeSpec)
+                .exists(TypeUtils.isHeapType(_, resolvables))
+              if isHeap then param.copy(consuming = true)
+              else param
+            }
+            val newLambda = lambda.copy(params = newParams)
+            bnd.copy(value = Expr(bnd.value.span, List(newLambda)))
+          case None => bnd
+      case other => other
+
   /** Build a `__clone_StructName` function for a user struct.
     *
-    * Generated pattern: {{{fn __clone_User(s: User): User = __mk_User s.name s.role}}}
+    * Generated pattern:
+    * {{{fn __clone_User(s: User): User = __mk_User (__clone_String s.name) (__clone_String s.role)}}}
     *
-    * Note: We just extract fields and pass to constructor. Constructor codegen handles cloning heap
-    * fields, so we avoid double-cloning.
+    * Heap fields are explicitly cloned before passing to the constructor, which consumes its args.
     */
   private def mkCloneFunction(
-    struct:     TypeStruct,
-    moduleName: String
+    struct:      TypeStruct,
+    moduleName:  String,
+    resolvables: ResolvablesIndex
   ): Bnd =
     val structName = struct.name
     val fnName     = s"__clone_$structName"
@@ -189,12 +229,18 @@ object MemoryFunctionGenerator:
       typeSpec   = Some(constructorType)
     )
 
-    // Build arguments: extract each field and pass to constructor
-    // Constructor codegen handles cloning heap fields, so we just pass field accesses
+    // Build arguments: extract each field, wrapping heap fields with __clone_T
     val argExprs: List[Expr] = struct.fields.toList.map { field =>
-      val paramRef = Ref(syntheticSpan, paramName, typeSpec = Some(structTypeRef))
-      val fieldRef = Ref(syntheticSpan, field.name, qualifier = Some(paramRef))
-      Expr(syntheticSpan, List(fieldRef), typeSpec = Some(field.typeSpec))
+      val paramRef    = Ref(syntheticSpan, paramName, typeSpec = Some(structTypeRef))
+      val fieldRef    = Ref(syntheticSpan, field.name, qualifier = Some(paramRef))
+      val fieldAccess = Expr(syntheticSpan, List(fieldRef), typeSpec = Some(field.typeSpec))
+
+      val isHeap = TypeUtils
+        .getTypeName(field.typeSpec)
+        .exists(TypeUtils.isHeapType(_, resolvables))
+
+      if isHeap then wrapFieldWithClone(fieldAccess, field.typeSpec, resolvables)
+      else fieldAccess
     }
 
     // Build constructor call: __mk_StructName arg1 arg2 ...
@@ -258,16 +304,31 @@ object MemoryFunctionGenerator:
 
     if structsNeedingMemFns.isEmpty then state
     else
+      // Rewrite constructor params: mark heap-typed params as consuming
+      val membersWithRewrittenCtors = structsNeedingMemFns.foldLeft(module.members) {
+        (members, struct) =>
+          rewriteConstructor(struct, module.resolvables, members)
+      }
+
+      // Update resolvables with rewritten constructor Bnds
+      val rewrittenCtors = structsNeedingMemFns.flatMap { struct =>
+        val ctorName = s"__mk_${struct.name}"
+        membersWithRewrittenCtors.collectFirst { case b: Bnd if b.name == ctorName => b }
+      }
+      val resolvablesWithCtors = rewrittenCtors.foldLeft(module.resolvables) { (idx, bnd) =>
+        idx.updated(bnd)
+      }
+
       // Generate __free_T and __clone_T for each struct
       val generatedFns = structsNeedingMemFns.flatMap { struct =>
         List(
-          mkFreeFunction(struct, moduleName, module.resolvables),
-          mkCloneFunction(struct, moduleName)
+          mkFreeFunction(struct, moduleName, resolvablesWithCtors),
+          mkCloneFunction(struct, moduleName, resolvablesWithCtors)
         )
       }
 
-      val finalMembers = module.members ++ generatedFns
-      val finalResolvables = generatedFns.foldLeft(module.resolvables) { (idx, fn) =>
+      val finalMembers = membersWithRewrittenCtors ++ generatedFns
+      val finalResolvables = generatedFns.foldLeft(resolvablesWithCtors) { (idx, fn) =>
         idx.updated(fn)
       }
 

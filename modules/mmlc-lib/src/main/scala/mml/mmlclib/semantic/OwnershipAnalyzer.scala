@@ -582,6 +582,37 @@ object OwnershipAnalyzer:
       case None =>
         (scope, Nil)
 
+  /** Check if a function call resolves to a struct constructor */
+  private def isConstructorCall(
+    fn:          Ref | App | Lambda,
+    resolvables: ResolvablesIndex
+  ): Boolean =
+    getBaseFn(fn)
+      .flatMap(_.resolvedId)
+      .flatMap(resolvables.lookup)
+      .collect { case bnd: Bnd => bnd }
+      .flatMap(_.value.terms.collectFirst { case l: Lambda => l })
+      .exists(_.body.terms.exists(_.isInstanceOf[DataConstructor]))
+
+  /** Check if an argument expression needs auto-cloning for a consuming constructor param. Returns
+    * true for non-owned values: literals, borrowed refs, field accesses.
+    */
+  private def argNeedsClone(argExpr: Expr, scope: OwnershipScope): Boolean =
+    argExpr.terms.headOption match
+      case Some(_: LiteralString) => true
+      case Some(ref: Ref) =>
+        if ref.qualifier.isDefined then true // field access
+        else
+          scope.getState(ref.name) match
+            case Some(OwnershipState.Owned) => false // will be moved
+            case Some(OwnershipState.Borrowed) | Some(OwnershipState.Literal) => true
+            case _ => false
+      case _ => false
+
+  /** Check if an argument is a freshly allocating expression */
+  private def argAllocates(argExpr: Expr, scope: OwnershipScope): Boolean =
+    argExpr.terms.lastOption.flatMap(termAllocates(_, scope)).isDefined
+
   /** Analyze a term and track ownership changes */
   private def analyzeTerm(
     term:  Term,
@@ -733,8 +764,23 @@ object OwnershipAnalyzer:
               case None =>
                 innerApp
 
+            // Propagate moves of inherited bindings back to the outer scope.
+            // When a consuming call inside the body moves an inherited owned binding,
+            // the outer scope must know so it doesn't free the binding again.
+            val returnScope = inheritedOwned.foldLeft(scope) { (s, name) =>
+              val movedInArg  = argResult.scope.getState(name).contains(OwnershipState.Moved)
+              val movedInBody = bodyResult.scope.getState(name).contains(OwnershipState.Moved)
+              if movedInArg || movedInBody then
+                val span = argResult.scope
+                  .getMovedAt(name)
+                  .orElse(bodyResult.scope.getMovedAt(name))
+                  .getOrElse(syntheticSpan)
+                s.withMoved(name, span)
+              else s
+            }
+
             TermResult(
-              scope, // Lambda application doesn't change outer scope
+              returnScope,
               finalTerm,
               errors = argResult.errors ++ bodyResult.errors ++ lastUseErrors
             )
@@ -764,8 +810,24 @@ object OwnershipAnalyzer:
               .map(_.params)
               .getOrElse(Nil)
 
+            // Auto-clone non-owned args passed to consuming constructor params
+            val processedArgs =
+              if isConstructorCall(baseFn, scope.resolvables) then
+                allArgsWithMeta.zipWithIndex.map { case ((argExpr, s, tAsc, tSpec), idx) =>
+                  val param = baseFnParams.lift(idx)
+                  val needsClone = param.exists(_.consuming) &&
+                    !argAllocates(argExpr, scope) &&
+                    argNeedsClone(argExpr, scope)
+                  if needsClone then
+                    val paramType =
+                      param.flatMap(_.typeAsc).getOrElse(argExpr.typeSpec.get)
+                    (wrapWithClone(argExpr, paramType), s, tAsc, tSpec)
+                  else (argExpr, s, tAsc, tSpec)
+                }
+              else allArgsWithMeta
+
             // Check which args allocate (in order from first to last)
-            val argsWithAlloc = allArgsWithMeta.zipWithIndex.map {
+            val argsWithAlloc = processedArgs.zipWithIndex.map {
               case ((argExpr, s, tAsc, tSpec), idx) =>
                 val allocType  = argExpr.terms.lastOption.flatMap(termAllocates(_, scope))
                 val isConsumed = baseFnParams.lift(idx).exists(_.consuming)
@@ -829,9 +891,6 @@ object OwnershipAnalyzer:
               // Collect allocating bindings (reverse order for proper nesting of let-bindings)
               val allBindings   = tempsAndArgs.flatMap(_._5).reverse
               val allocBindings = allBindings.map(b => (b._1, b._2, b._3))
-
-              // Note: struct constructors handle cloning internally (in FunctionEmitter),
-              // so we don't need to clone args at call site here.
 
               val finalInnerBody = Expr(syntheticSpan, List(innerApp), typeSpec = typeSpec)
 

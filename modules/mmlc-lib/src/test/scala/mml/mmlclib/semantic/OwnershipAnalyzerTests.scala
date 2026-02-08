@@ -31,6 +31,18 @@ class OwnershipAnalyzerTests extends BaseEffFunSuite:
       case Tuple(_, elements, _, _) => elements.toList.map(countFreesOf(name, _)).sum
       case _ => 0
 
+  private def containsCloneString(term: Term): Boolean =
+    term match
+      case Ref(_, name, _, _, _, _, _) => name == "__clone_String"
+      case App(_, fn, arg, _, _) => containsCloneString(fn) || containsCloneString(arg)
+      case Expr(_, terms, _, _) => terms.exists(containsCloneString)
+      case Lambda(_, _, body, _, _, _, _) => containsCloneString(body)
+      case TermGroup(_, inner, _) => containsCloneString(inner)
+      case Cond(_, cond, ifTrue, ifFalse, _, _) =>
+        containsCloneString(cond) || containsCloneString(ifTrue) || containsCloneString(ifFalse)
+      case Tuple(_, elements, _, _) => elements.exists(containsCloneString)
+      case _ => false
+
   test("caller frees value returned by user function that allocates internally") {
     val code =
       """
@@ -335,5 +347,111 @@ class OwnershipAnalyzerTests extends BaseEffFunSuite:
     semState(code).map { result =>
       val errors = result.errors.collect { case e: SemanticError.BorrowEscapeViaReturn => e }
       assert(errors.isEmpty, s"Expected no BorrowEscapeViaReturn errors but got: $errors")
+    }
+  }
+
+  test("constructor consumes owned args without cloning") {
+    val code =
+      """
+        struct User { name: String, role: String };
+
+        fn main(): Unit =
+          let n = "Alice" ++ " Smith";
+          let r = "Admin" ++ " Role";
+          let u = User n r;
+          println u.name
+        ;
+      """
+
+    semNotFailed(code).map { module =>
+      val mainBody = module.members.collectFirst {
+        case b: Bnd if b.name == "main" =>
+          b.value.terms.collectFirst { case l: Lambda => l.body }.get
+      }.get
+
+      assert(
+        !containsCloneString(mainBody),
+        "owned args to constructor should be moved, not cloned"
+      )
+    }
+  }
+
+  test("constructor auto-clones literal string args") {
+    val code =
+      """
+        struct User { name: String, role: String };
+
+        fn main(): Unit =
+          let u = User "Alice" "Admin";
+          println u.name
+        ;
+      """
+
+    semNotFailed(code).map { module =>
+      val mainBody = module.members.collectFirst {
+        case b: Bnd if b.name == "main" =>
+          b.value.terms.collectFirst { case l: Lambda => l.body }.get
+      }.get
+
+      assert(
+        containsCloneString(mainBody),
+        "literal args to constructor should be auto-cloned"
+      )
+    }
+  }
+
+  test("constructor auto-clones borrowed args") {
+    val code =
+      """
+        struct User { name: String, role: String };
+
+        fn make_user(n: String, r: String): User =
+          User n r
+        ;
+
+        fn main(): Unit = println "ok";
+      """
+
+    semNotFailed(code).map { module =>
+      val mkUserBody = module.members.collectFirst {
+        case b: Bnd if b.name == "make_user" =>
+          b.value.terms.collectFirst { case l: Lambda => l.body }.get
+      }.get
+
+      assert(
+        containsCloneString(mkUserBody),
+        "borrowed args to constructor should be auto-cloned"
+      )
+    }
+  }
+
+  test("constructor with non-heap fields not consumed") {
+    val code =
+      """
+        struct Point { x: Int, y: Int };
+
+        fn make_point(a: Int, b: Int): Point =
+          Point a b
+        ;
+
+        fn main(): Unit = println "ok";
+      """
+
+    semNotFailed(code).map { module =>
+      // Point has no heap fields, so no consuming params, no clones
+      val mkPointBody = module.members.collectFirst {
+        case b: Bnd if b.name == "make_point" =>
+          b.value.terms.collectFirst { case l: Lambda => l.body }.get
+      }.get
+
+      assert(
+        !containsCloneString(mkPointBody),
+        "non-heap fields should not trigger cloning"
+      )
+
+      assert(
+        !containsFreeString(mkPointBody),
+        "non-heap fields should not trigger freeing"
+      )
     }
   }
