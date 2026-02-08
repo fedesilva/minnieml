@@ -14,7 +14,9 @@ It's all about exploring ideas and having fun while learning.
 
       -- Spanish for "Forewarned is forearmed"
 
+
     Or literally "He who warns you, does not betray you".
+    
 
 This is not something you want to use, I'm making this public to share with friends, so if you continue, hello friend!
 
@@ -47,10 +49,8 @@ A more complex example:
 - `()` reads as `unit`; it's like void ... (ish)
 - the `Maybe` type denotes we can have one value of type `'T` or None.
 - note the infered types in the comments
-- 
 
 This examples might not be possible to compile currently, depending on when you read this.
-See the STATUS entry below.
 
 ```rust
 enum Maybe 'T =
@@ -58,14 +58,14 @@ enum Maybe 'T =
   | None
 ;
 
-#// empty :: Maybe 'T -> Boolean
+// empty :: Maybe 'T -> Boolean
 fn empty (maybe) =
   x match
     | None  -> true
     | _     -> false
 ;
 
-#// nonEmpty :: Maybe 'T -> Boolean
+// nonEmpty :: Maybe 'T -> Boolean
 fn notEmpty (maybe) =
   not empty maybe
 ;
@@ -88,12 +88,12 @@ struct Person {
   pet:  Maybe Pet
 };
 
-#// hasPet :: 'T: { pet: Maybe 'P } -> Boolean
+// hasPet :: 'T: { pet: Maybe 'P } -> Boolean
 fn hasPet (p) =
   nonEmpty p.pet
 ;
 
-#// nameOf :: 'T : { name: String } -> String
+// nameOf :: 'T : { name: String } -> String
 fn nameOf (p): String =
   p.name
 ;
@@ -102,11 +102,11 @@ let zur     = Pet     "Zur"     Species.Cat;
 let fede    = Person  "Fede"    One zur;
 let victor  = Person  "Victor"  None;
 
-let pv = hasPet victor; # false
-let pf = hasPet fede;   # true
+let pv = hasPet victor; // false
+let pf = hasPet fede;   // true
 
-#// does not compile
-#// let pz = hasPet zur
+// does not compile
+// let pz = hasPet zur
 ```
 
 
