@@ -51,3 +51,9 @@ object TypeUtils:
   def cloneFnFor(typeName: String, resolvables: ResolvablesIndex): Option[String] =
     if isHeapType(typeName, resolvables) then Some(s"__clone_$typeName")
     else None
+
+  /** Check if a type resolves to a NativePointer (actual LLVM pointer, not a struct). */
+  def isPointerType(typeName: String, resolvables: ResolvablesIndex): Boolean =
+    findTypeByName(typeName, resolvables) match
+      case Some(TypeDef(_, _, _, Some(_: NativePointer), _, _, _)) => true
+      case _ => false

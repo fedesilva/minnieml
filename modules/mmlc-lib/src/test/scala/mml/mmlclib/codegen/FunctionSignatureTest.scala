@@ -356,3 +356,110 @@ class FunctionSignatureTest extends BaseEffFunSuite:
       )
     }
   }
+
+  test("noalias on native function returning allocating NativePointer") {
+    val source =
+      """
+        type MyPtr = @native[t=*i8, mem=heap];
+        fn alloc_ptr(): MyPtr = @native;
+        fn main(): Unit = ();
+      """
+
+    compileAndGenerate(source).map { llvmIr =>
+      assert(
+        llvmIr.contains("declare noalias i8* @alloc_ptr()"),
+        s"allocating pointer return should have noalias, got:\n$llvmIr"
+      )
+    }
+  }
+
+  test("no noalias on native function returning non-allocating NativePointer") {
+    val source =
+      """
+        type MyPtr = @native[t=*i8];
+        fn get_ptr(): MyPtr = @native;
+        fn main(): Unit = ();
+      """
+
+    compileAndGenerate(source).map { llvmIr =>
+      // get_ptr returns a pointer but has no mem=heap, so no noalias
+      assert(
+        llvmIr.contains("declare i8* @get_ptr()"),
+        s"non-allocating pointer return should NOT have noalias, got:\n$llvmIr"
+      )
+    }
+  }
+
+  test("no noalias on native function returning NativeStruct with Alloc") {
+    val source =
+      """
+        fn join_strings(a: String, b: String): String = @native;
+        fn main(): Unit = ();
+      """
+
+    compileAndGenerate(source).map { llvmIr =>
+      // String is NativeStruct (passed as {i64, i8*}), not a pointer — no noalias on return
+      assert(
+        !llvmIr.contains("noalias %struct.String @join_strings"),
+        s"String return should NOT have noalias, got:\n$llvmIr"
+      )
+    }
+  }
+
+  test("noalias on consuming NativePointer parameter in user function") {
+    val source =
+      """
+        type MyPtr = @native[t=*i8, mem=heap];
+        fn alloc_ptr(): MyPtr = @native;
+        fn free_ptr(~p: MyPtr): Unit = @native;
+        fn take_ptr(~p: MyPtr): Unit = free_ptr p;
+        fn main(): Unit = take_ptr (alloc_ptr ());
+      """
+
+    compileAndGenerate(source).map { llvmIr =>
+      assert(
+        llvmIr.contains("define void @test_take_ptr(i8* noalias %0)"),
+        s"consuming pointer param should have noalias, got:\n$llvmIr"
+      )
+    }
+  }
+
+  test("no noalias on consuming NativeStruct parameter") {
+    val source =
+      """
+        fn consume_str(~s: String): Unit = println s;
+        fn main(): Unit = consume_str "hello";
+      """
+
+    compileAndGenerate(source).map { llvmIr =>
+      // String is a NativeStruct ({i64, ptr}), not a pointer type
+      // The user function definition should NOT have noalias on the struct param
+      assert(
+        llvmIr.contains("define void @test_consume_str(%struct.String %0)"),
+        s"consuming String param should NOT have noalias, got:\n$llvmIr"
+      )
+    }
+  }
+
+  test("no noalias on non-consuming NativePointer parameter") {
+    val source =
+      """
+        type MyPtr = @native[t=*i8, mem=heap];
+        fn alloc_ptr(): MyPtr = @native;
+        fn read_ptr(p: MyPtr): Unit = @native;
+        fn main(): Unit = read_ptr (alloc_ptr ());
+      """
+
+    compileAndGenerate(source).map { llvmIr =>
+      // Only alloc_ptr gets noalias (on return), read_ptr should not
+      assert(
+        llvmIr.contains("declare noalias i8* @alloc_ptr()"),
+        s"alloc_ptr should have noalias return, got:\n$llvmIr"
+      )
+      // read_ptr declaration should NOT have noalias on param
+      assert(
+        llvmIr.contains("declare void @read_ptr(i8*)"),
+        s"non-consuming pointer param should NOT have noalias, got:\n$llvmIr"
+      )
+    }
+  }

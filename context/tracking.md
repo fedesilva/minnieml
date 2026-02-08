@@ -94,10 +94,10 @@ Affine ownership with borrow-by-default. Enables safe automatic memory managemen
 
 #### Optimization
 
-- [ ] **`noalias` on allocating function returns**
+- [x] **`noalias` on allocating function returns** [COMPLETE]
   - Return values from `[mem=alloc]` functions are fresh allocations.
   - Safe to mark with `noalias` — can't alias anything pre-existing.
-- [ ] **`noalias` on consuming parameters** — needs move semantics first
+- [x] **`noalias` on consuming parameters** [COMPLETE]
   - `~` params can be `noalias` because caller can't use the value afterward.
   - Requires solid move semantics enforcement (last-use validation).
 
@@ -140,6 +140,27 @@ Affine ownership with borrow-by-default. Enables safe automatic memory managemen
 ---
 
 ## Recent Changes
+
+### 2026-02-07 Add `noalias` attributes to LLVM IR emission [COMPLETE]
+
+- **Two cases:** (1) Native functions with `MemEffect.Alloc` returning `NativePointer` types get
+  `noalias` on return. (2) Consuming (`~`) parameters of `NativePointer` type get `noalias` in
+  user function definitions.
+- **Key distinction:** Only `NativePointer` types (Buffer, CharPtr, etc.) are actual LLVM pointers.
+  `NativeStruct` types (String, arrays) are value types at LLVM level — `noalias` doesn't apply.
+- **Changes:**
+  - `ast/TypeUtils.scala`: Added `isPointerType` — checks if type resolves to `NativePointer`
+  - `codegen/emitter/FunctionEmitter.scala`: Added `isPointerParam` helper. Both
+    `compileRegularLambda` and `compileTailRecursiveLambda` emit `noalias` on consuming pointer params
+  - `codegen/emitter/Module.scala`: Native function declarations check both `NativeImpl.memEffect`
+    (stdlib) and the return type's own `memEffect` (user-defined `@native[t=*i8, mem=heap]`)
+- **Tests:** 6 new tests in `FunctionSignatureTest.scala` covering all combinations
+- **Benchmark impact (matmul):**
+  - `matmul-opt-mml`: 70.2 ms -> 48.6 ms (31% faster, now matches `matmul-opt-c` at 47.0 ms)
+  - `noalias` on `ar_int_new` return lets LLVM prove array pointers don't alias, enabling
+    vectorization in the inner loop
+- **Verification:** 226 tests pass, `scalafmtAll`/`scalafixAll` clean, ASan clean on
+  `move-valid.mml`, all 7 benchmarks compile
 
 ### 2026-02-07 Last-use validation for consuming parameters [COMPLETE]
 

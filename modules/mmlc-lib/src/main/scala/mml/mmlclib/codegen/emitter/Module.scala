@@ -245,14 +245,34 @@ private def emitBndLambda(
 
       // Check if this is a native function implementation
       lambda.body.terms match {
-        case List(NativeImpl(_, _, _, _, _)) =>
+        case List(NativeImpl(_, _, _, _, memEffect)) =>
           // Native functions: emit as declaration with original name (external symbol)
           // Lower params for ABI (byval for large structs on x86_64)
           val abiParamTypes = state.abi.lowerParamTypes(filteredParamTypes, state)
           // Lower return type for ABI (sret for large struct returns on x86_64)
           val (abiReturnType, sretParam) = state.abi.lowerReturnType(returnType, state)
           val finalParamTypes            = sretParam.toList ++ abiParamTypes
-          Right(state.withFunctionDeclaration(fnName, abiReturnType, finalParamTypes))
+
+          // Add noalias for functions that allocate and return a pointer type
+          // Check both the NativeImpl memEffect (stdlib) and the return type's own
+          // memEffect (user-defined types like @native[t=*i8, mem=heap])
+          val returnTypeInfo = fnType.returnType match
+            case tr: TypeRef =>
+              tr.resolvedId
+                .flatMap(state.resolvables.lookupType)
+                .collect:
+                  case TypeDef(_, _, _, Some(np: NativePointer), _, _, _) => np
+            case _ => None
+
+          val isAllocatingPointerReturn = returnTypeInfo.exists { np =>
+            memEffect.contains(MemEffect.Alloc) || np.memEffect.contains(MemEffect.Alloc)
+          }
+
+          val finalReturnType =
+            if isAllocatingPointerReturn then s"noalias $abiReturnType"
+            else abiReturnType
+
+          Right(state.withFunctionDeclaration(fnName, finalReturnType, finalParamTypes))
 
         case _ =>
           // User-defined functions: emit with mangled name (modulename_functionname)

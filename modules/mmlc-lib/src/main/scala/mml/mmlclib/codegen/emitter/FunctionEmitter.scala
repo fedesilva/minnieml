@@ -92,6 +92,13 @@ def compileBndLambda(
         compileRegularLambda(bnd, lambda, stateWithWarning, returnType, paramTypes, emittedName)
   else compileRegularLambda(bnd, lambda, state, returnType, paramTypes, emittedName)
 
+/** Check if a parameter is a NativePointer type at LLVM level. */
+private def isPointerParam(param: FnParam, resolvables: ResolvablesIndex): Boolean =
+  param.typeSpec
+    .orElse(param.typeAsc)
+    .flatMap(TypeUtils.getTypeName)
+    .exists(TypeUtils.isPointerType(_, resolvables))
+
 /** Compiles a regular (non-tail-recursive) lambda to LLVM IR. */
 private def compileRegularLambda(
   bnd:         Bnd,
@@ -111,8 +118,14 @@ private def compileRegularLambda(
   val filteredParamTypes = filteredParamsWithTypes.map(_._2)
 
   // Generate function declaration with parameters
-  val paramDecls = filteredParamTypes.zipWithIndex
-    .map { case (typ, idx) => s"$typ %$idx" }
+  val paramDecls = filteredParams
+    .zip(filteredParamTypes)
+    .zipWithIndex
+    .map { case ((param, typ), idx) =>
+      if param.consuming && isPointerParam(param, state.resolvables)
+      then s"$typ noalias %$idx"
+      else s"$typ %$idx"
+    }
     .mkString(", ")
 
   val attrGroup    = if bnd.meta.exists(_.inlineHint) then "#1" else "#0"
@@ -367,8 +380,14 @@ private def compileTailRecursiveLambda(
           )
         )
       else
-        val paramDecls = filteredParamTypes.zipWithIndex
-          .map { case (typ, idx) => s"$typ %$idx" }
+        val paramDecls = filteredParams
+          .zip(filteredParamTypes)
+          .zipWithIndex
+          .map { case ((param, typ), idx) =>
+            if param.consuming && isPointerParam(param, state.resolvables)
+            then s"$typ noalias %$idx"
+            else s"$typ %$idx"
+          }
           .mkString(", ")
 
         val attrGroup    = if bnd.meta.exists(_.inlineHint) then "#1" else "#0"
