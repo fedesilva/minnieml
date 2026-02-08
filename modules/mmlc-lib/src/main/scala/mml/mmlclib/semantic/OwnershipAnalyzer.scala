@@ -20,13 +20,14 @@ case class BindingInfo(
 
 /** Tracks ownership for bindings within a scope */
 case class OwnershipScope(
-  bindings:          Map[String, BindingInfo]    = Map.empty,
-  movedAt:           Map[String, SrcSpan]        = Map.empty,
-  resolvables:       ResolvablesIndex,
-  returningOwned:    Map[String, Option[Type]]   = Map.empty,
-  tempCounter:       Int                         = 0,
-  insideTempWrapper: Boolean                     = false,
-  consumedVia:       Map[String, (Ref, FnParam)] = Map.empty
+  bindings:               Map[String, BindingInfo]    = Map.empty,
+  movedAt:                Map[String, SrcSpan]        = Map.empty,
+  resolvables:            ResolvablesIndex,
+  returningOwned:         Map[String, Option[Type]]   = Map.empty,
+  tempCounter:            Int                         = 0,
+  insideTempWrapper:      Boolean                     = false,
+  consumedVia:            Map[String, (Ref, FnParam)] = Map.empty,
+  skipConsumingOwnership: Boolean                     = false
 ):
   def nextTemp: (String, OwnershipScope) =
     (s"__tmp_$tempCounter", copy(tempCounter = tempCounter + 1))
@@ -187,8 +188,12 @@ object OwnershipAnalyzer:
         functions.foreach { case (id, bnd) =>
           val lambdaOpt = bnd.value.terms.collectFirst { case l: Lambda => l }
           lambdaOpt.foreach { lambda =>
+            val consumingEnv: Map[String, Option[Type]] = lambda.params
+              .filter(_.consuming)
+              .flatMap(p => p.typeSpec.orElse(p.typeAsc).map(p.name -> Some(_)))
+              .toMap
             val resultOwned =
-              exprReturnsOwned(lambda.body, Map.empty, resolvables, returningOwned)
+              exprReturnsOwned(lambda.body, consumingEnv, resolvables, returningOwned)
                 .filter(t => getTypeName(t).exists(isHeapType(_, resolvables)))
 
             val current = returningOwned.get(id).flatten
@@ -983,8 +988,12 @@ object OwnershipAnalyzer:
 
       case Lambda(span, params, body, captures, typeSpec, typeAsc, meta) =>
         // Create new scope for lambda body with params as borrowed (by default)
+        // Consuming params are added as Owned so they get freed at body end,
+        // unless skipConsumingOwnership is set (for __free_* and __mk_* functions)
         val paramScope = params.foldLeft(scope): (s, p) =>
-          if p.consuming then s // Consuming params are handled at call site
+          if p.consuming && !scope.skipConsumingOwnership then
+            s.withOwned(p.name, p.typeSpec.orElse(p.typeAsc), p.id)
+          else if p.consuming then s
           else s.withBorrowed(p.name)
 
         val bodyResult = analyzeExpr(body, paramScope)
@@ -993,17 +1002,32 @@ object OwnershipAnalyzer:
         val returnType   = typeAsc.orElse(typeSpec)
         val promotedBody = promoteStaticBranchesInReturn(bodyResult.expr, returnType, paramScope)
 
+        // Insert frees for consuming params that are still Owned (not returned, not moved)
+        val escaping = returnedOwnedNames(promotedBody, bodyResult.scope)
+        val consumingToFree = params.filter(_.consuming).flatMap { p =>
+          val pType = p.typeSpec.orElse(p.typeAsc)
+          if !scope.skipConsumingOwnership &&
+            pType.flatMap(getTypeName).exists(isHeapType(_, scope.resolvables)) &&
+            !escaping.contains(p.name) &&
+            !bodyResult.scope.getState(p.name).contains(OwnershipState.Moved)
+          then Some((p.name, pType, p.id, None: Option[String]))
+          else None
+        }
+        val finalBody =
+          if consumingToFree.isEmpty then promotedBody
+          else wrapWithFrees(promotedBody, consumingToFree, body.span, scope.resolvables)
+
         // Check for borrowed values escaping via return
         val borrowEscapeErrors = returnType
           .flatMap(getTypeName)
           .filter(isHeapType(_, scope.resolvables))
-          .map(_ => returnedBorrowedRefs(promotedBody, bodyResult.scope))
+          .map(_ => returnedBorrowedRefs(finalBody, bodyResult.scope))
           .getOrElse(Nil)
           .map(ref => SemanticError.BorrowEscapeViaReturn(ref, PhaseName))
 
         TermResult(
           scope, // Lambda doesn't change outer scope
-          Lambda(span, params, promotedBody, captures, typeSpec, typeAsc, meta),
+          Lambda(span, params, finalBody, captures, typeSpec, typeAsc, meta),
           errors = bodyResult.errors ++ borrowEscapeErrors
         )
 
@@ -1069,7 +1093,18 @@ object OwnershipAnalyzer:
   ): (Member, List[SemanticError]) =
     member match
       case bnd @ Bnd(visibility, span, name, value, typeSpec, typeAsc, docComment, meta, id) =>
-        val scope  = OwnershipScope(resolvables = resolvables, returningOwned = returningOwned)
+        val hasNativeBody = value.terms.exists:
+          case l: Lambda => l.body.terms.exists(_.isInstanceOf[NativeImpl])
+          case _ => false
+        val origin        = meta.map(_.origin)
+        val isDestructor  = origin.contains(BindingOrigin.Destructor)
+        val isConstructor = origin.contains(BindingOrigin.Constructor)
+        val skipConsuming = isDestructor || isConstructor || hasNativeBody
+        val scope = OwnershipScope(
+          resolvables            = resolvables,
+          returningOwned         = returningOwned,
+          skipConsumingOwnership = skipConsuming
+        )
         val result = analyzeExpr(value, scope)
 
         // Final cleanup: free any owned bindings that remain in scope and do not escape.

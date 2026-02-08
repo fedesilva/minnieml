@@ -33,7 +33,7 @@ Affine ownership with borrow-by-default. Enables safe automatic memory managemen
 
 #### Bug Fixes
 
-- [ ] **Fix memory leak regressions in `test_unused_locals.mml` and `move-valid.mml`** — URGENT
+- [x] **Fix memory leak regressions in `test_unused_locals.mml` and `move-valid.mml`** [COMPLETE]
   - `test_unused_locals.mml`: 100 leaks (1600 bytes) under `leaks --atExit`
   - `move-valid.mml`: 2 leaks (64 bytes) under `leaks --atExit`
   - Regressions from earlier changes on the `memory-prototype` branch.
@@ -143,6 +143,34 @@ Affine ownership with borrow-by-default. Enables safe automatic memory managemen
 ---
 
 ## Recent Changes
+
+### 2026-02-08 Fix consuming param memory leaks + BindingOrigin metadata [COMPLETE]
+
+- **Problem:** Two leak regressions — `test_unused_locals.mml` (100 leaks), `move-valid.mml`
+  (2 leaks). Consuming (`~`) params were invisible to ownership tracking inside function bodies:
+  skipped entirely in Lambda param scope, never freed. Additionally, `ReturnOwnershipAnalysis`
+  used `Map.empty` as initial env, so pass-through functions like `identity(~s) = s` were not
+  recognized as returning owned values.
+- **Fix:**
+  - Lambda case: consuming params added as Owned in body scope, frees inserted at body end for
+    those not returned or moved.
+  - `ReturnOwnershipAnalysis.discover`: consuming params seeded into env so the fixed-point
+    correctly propagates through pass-through functions.
+  - `skipConsumingOwnership` flag on `OwnershipScope` prevents freeing in destructors,
+    constructors, and native bodies.
+  - Added `BindingOrigin.Destructor` and `BindingOrigin.Constructor` variants to replace
+    string prefix matching (`__free_*`/`__mk_*`). Tagged in `MemoryFunctionGenerator` and
+    `parser/modules.scala`. Exhaustivity updates in `TypeChecker`, `SemanticTokens`, `Member`.
+- **Changes:**
+  - `ast/common.scala`: `BindingOrigin.Destructor`, `BindingOrigin.Constructor`
+  - `parser/modules.scala`: constructor uses `BindingOrigin.Constructor`
+  - `semantic/MemoryFunctionGenerator.scala`: destructor uses `BindingOrigin.Destructor`
+  - `semantic/OwnershipAnalyzer.scala`: core fix (consuming param scope, ReturnOwnershipAnalysis
+    env, skipConsumingOwnership via metadata)
+  - `semantic/TypeChecker.scala`, `lsp/SemanticTokens.scala`, `util/prettyprint/ast/Member.scala`:
+    exhaustivity for new BindingOrigin variants
+- **Verification:** 237 tests pass, `scalafmtAll`/`scalafixAll` clean, `mmlcPublishLocal` OK,
+  ASan clean on both samples, all 9 memory samples 0 leaks, all 7 benchmarks compile.
 
 ### 2026-02-08 Struct constructors as sinks (move-in semantics) [COMPLETE — pending review]
 

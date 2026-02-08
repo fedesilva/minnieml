@@ -56,6 +56,8 @@ def prettyPrintMember(
           val originStr = meta.origin match
             case BindingOrigin.Function => "fn"
             case BindingOrigin.Operator => "op"
+            case BindingOrigin.Constructor => "constructor"
+            case BindingOrigin.Destructor => "destructor"
           val nameStr =
             if meta.originalName != bnd.name then s" (${meta.originalName})" else ""
           val arityStr = meta.arity match

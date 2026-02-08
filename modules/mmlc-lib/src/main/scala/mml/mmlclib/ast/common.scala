@@ -92,6 +92,8 @@ enum CallableArity derives CanEqual:
 enum BindingOrigin derives CanEqual:
   case Function
   case Operator
+  case Destructor
+  case Constructor
 
 object Precedence:
   val MaxUser:  Int = 100

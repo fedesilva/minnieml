@@ -66,7 +66,8 @@ object SemanticTokens:
     val (keywordLen, nameTokenType) = bnd.meta match
       case Some(meta) =>
         meta.origin match
-          case BindingOrigin.Function => (2, TokenType.Function) // "fn"
+          case BindingOrigin.Function | BindingOrigin.Constructor | BindingOrigin.Destructor =>
+            (2, TokenType.Function) // "fn"
           case BindingOrigin.Operator => (2, TokenType.Operator) // "op"
       case None =>
         (3, TokenType.Variable) // "let"
@@ -185,7 +186,9 @@ object SemanticTokens:
             bnd.meta match
               case Some(meta) =>
                 meta.origin match
-                  case BindingOrigin.Function => TokenType.Function
+                  case BindingOrigin.Function | BindingOrigin.Constructor |
+                      BindingOrigin.Destructor =>
+                    TokenType.Function
                   case BindingOrigin.Operator => TokenType.Operator
               case None => TokenType.Variable
           case _: TypeDef | _: TypeAlias | _: TypeStruct => TokenType.Type

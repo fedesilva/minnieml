@@ -128,7 +128,7 @@ object MemoryFunctionGenerator:
 
     // Build the binding
     val meta = BindingMeta(
-      origin        = BindingOrigin.Function,
+      origin        = BindingOrigin.Destructor,
       arity         = CallableArity.Unary,
       precedence    = Precedence.Function,
       associativity = None,

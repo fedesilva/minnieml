@@ -216,7 +216,7 @@ object TypeChecker:
           val isNative      = hasNativeImpl(lambda.body)
 
           meta.origin match
-            case BindingOrigin.Function =>
+            case BindingOrigin.Function | BindingOrigin.Constructor | BindingOrigin.Destructor =>
               val paramErrors = lambda.params.collect {
                 case param if param.typeAsc.isEmpty =>
                   TypeError.MissingParameterType(param, bnd, phaseName)
