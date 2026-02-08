@@ -160,6 +160,78 @@ class OwnershipAnalyzerTests extends BaseEffFunSuite:
     }
   }
 
+  test("consuming param not last use detected") {
+    val code =
+      """
+        fn consume(~s: String): Unit = println s;
+
+        fn main(): Unit =
+          let s = "hello" ++ " world";
+          consume s;
+          println s
+        ;
+      """
+
+    semState(code).map { result =>
+      val errors = result.errors.collect { case e: SemanticError.ConsumingParamNotLastUse => e }
+      assert(errors.nonEmpty, "Expected ConsumingParamNotLastUse error")
+    }
+  }
+
+  test("consuming param as last use accepted") {
+    val code =
+      """
+        fn consume(~s: String): Unit = println s;
+
+        fn main(): Unit =
+          let s = "hello" ++ " world";
+          println s;
+          consume s
+        ;
+      """
+
+    semState(code).map { result =>
+      val errors = result.errors.collect { case e: SemanticError.ConsumingParamNotLastUse => e }
+      assert(errors.isEmpty, s"Expected no ConsumingParamNotLastUse errors but got: $errors")
+    }
+  }
+
+  test("consuming param only use accepted") {
+    val code =
+      """
+        fn consume(~s: String): Unit = println s;
+
+        fn main(): Unit =
+          let s = "hello" ++ " world";
+          consume s
+        ;
+      """
+
+    semState(code).map { result =>
+      val errors = result.errors.collect { case e: SemanticError.ConsumingParamNotLastUse => e }
+      assert(errors.isEmpty, s"Expected no ConsumingParamNotLastUse errors but got: $errors")
+    }
+  }
+
+  test("independent bindings each consumed once no error") {
+    val code =
+      """
+        fn consume(~s: String): Unit = println s;
+
+        fn main(): Unit =
+          let s1 = "hello" ++ " world";
+          let s2 = "goodbye" ++ " world";
+          consume s1;
+          consume s2
+        ;
+      """
+
+    semState(code).map { result =>
+      val errors = result.errors.collect { case e: SemanticError.ConsumingParamNotLastUse => e }
+      assert(errors.isEmpty, s"Expected no ConsumingParamNotLastUse errors but got: $errors")
+    }
+  }
+
   test("saturated call to function with consuming param is accepted") {
     val code =
       """

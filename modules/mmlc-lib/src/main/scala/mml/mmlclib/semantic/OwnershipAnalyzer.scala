@@ -20,12 +20,13 @@ case class BindingInfo(
 
 /** Tracks ownership for bindings within a scope */
 case class OwnershipScope(
-  bindings:          Map[String, BindingInfo]  = Map.empty,
-  movedAt:           Map[String, SrcSpan]      = Map.empty,
+  bindings:          Map[String, BindingInfo]    = Map.empty,
+  movedAt:           Map[String, SrcSpan]        = Map.empty,
   resolvables:       ResolvablesIndex,
-  returningOwned:    Map[String, Option[Type]] = Map.empty,
-  tempCounter:       Int                       = 0,
-  insideTempWrapper: Boolean                   = false
+  returningOwned:    Map[String, Option[Type]]   = Map.empty,
+  tempCounter:       Int                         = 0,
+  insideTempWrapper: Boolean                     = false,
+  consumedVia:       Map[String, (Ref, FnParam)] = Map.empty
 ):
   def nextTemp: (String, OwnershipScope) =
     (s"__tmp_$tempCounter", copy(tempCounter = tempCounter + 1))
@@ -485,6 +486,27 @@ object OwnershipAnalyzer:
 
     expr.terms.lastOption.map(termReturned).getOrElse(Set.empty)
 
+  /** Check if a binding name is referenced anywhere in an expression */
+  private def containsRefInExpr(name: String, expr: Expr): Boolean =
+    expr.terms.exists(containsRef(name, _))
+
+  /** Check if a binding name is referenced anywhere in a term */
+  private def containsRef(name: String, term: Term): Boolean =
+    term match
+      case ref: Ref => ref.name == name
+      case App(_, fn, arg, _, _) => containsRef(name, fn) || containsRefInExpr(name, arg)
+      case Cond(_, cond, ifTrue, ifFalse, _, _) =>
+        containsRefInExpr(name, cond) || containsRefInExpr(name, ifTrue) ||
+        containsRefInExpr(name, ifFalse)
+      case TermGroup(_, inner, _) => containsRefInExpr(name, inner)
+      case Tuple(_, elements, _, _) => elements.exists(containsRefInExpr(name, _))
+      case Lambda(_, params, body, _, _, _, _) =>
+        // Skip if a param shadows the name
+        if params.exists(_.name == name) then false
+        else containsRefInExpr(name, body)
+      case expr: Expr => containsRefInExpr(name, expr)
+      case _ => false
+
   /** Get the consuming parameter for a given argument position in an App chain. Returns the FnParam
     * if it's consuming, None otherwise.
     */
@@ -520,15 +542,18 @@ object OwnershipAnalyzer:
     scope: OwnershipScope
   ): (OwnershipScope, List[SemanticError]) =
     getConsumingParam(fn, scope.resolvables) match
-      case Some(_) =>
+      case Some(consumingParam) =>
         // Get the ref being passed (if it's a simple ref)
         arg.terms.headOption match
           case Some(ref: Ref) =>
             // Check if it's owned - can only move owned values
             scope.getState(ref.name) match
               case Some(OwnershipState.Owned) =>
-                // Valid move - mark as moved
-                (scope.withMoved(ref.name, ref.span), Nil)
+                // Valid move - mark as moved and record consuming info
+                val newScope = scope
+                  .withMoved(ref.name, ref.span)
+                  .copy(consumedVia = scope.consumedVia + (ref.name -> (ref, consumingParam)))
+                (newScope, Nil)
               case Some(OwnershipState.Moved) =>
                 // Already moved - use after move error
                 val errors = scope.getMovedAt(ref.name) match
@@ -573,6 +598,16 @@ object OwnershipAnalyzer:
           case Lambda(lSpan, params, body, captures, lTypeSpec, lTypeAsc, meta) =>
             // Analyze the argument first
             val argResult = analyzeExpr(arg, scope)
+
+            // Forward-scan: check if any newly-moved bindings are still used in the body
+            val newlyMoved = argResult.scope.movedAt.keySet -- scope.movedAt.keySet
+            val lastUseErrors = newlyMoved.toList.flatMap: name =>
+              if containsRefInExpr(name, body) then
+                argResult.scope.consumedVia
+                  .get(name)
+                  .map: (ref, param) =>
+                    SemanticError.ConsumingParamNotLastUse(param, ref, PhaseName)
+              else Nil
 
             // Track bindings that already belonged to the outer scope so we don't free them
             // inside this CPS wrapper. Only bindings created in this let should be freed here.
@@ -689,7 +724,7 @@ object OwnershipAnalyzer:
             TermResult(
               scope, // Lambda application doesn't change outer scope
               finalTerm,
-              errors = argResult.errors ++ bodyResult.errors
+              errors = argResult.errors ++ bodyResult.errors ++ lastUseErrors
             )
 
           // Regular function application - handle entire curried chain at once

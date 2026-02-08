@@ -48,7 +48,7 @@ Affine ownership with borrow-by-default. Enables safe automatic memory managemen
 - [x] **Partial application ban** — consuming params must be in saturating calls [COMPLETE]
   - A closure capturing an owned value via `~` would need `FnOnce` semantics.
     Ban this for now: consuming args only in fully-applied calls.
-- [ ] **Last-use validation** — arg to `~` param must be final use of that binding
+- [x] **Last-use validation** — arg to `~` param must be final use of that binding [COMPLETE]
   - If not last use, emit diagnostic suggesting `clone` or restructuring.
 
 #### Borrow Safety
@@ -140,6 +140,30 @@ Affine ownership with borrow-by-default. Enables safe automatic memory managemen
 ---
 
 ## Recent Changes
+
+### 2026-02-07 Last-use validation for consuming parameters [COMPLETE]
+
+- **Problem:** No proactive error at the consuming call site when a binding is still used later.
+  `UseAfterMove` only fires reactively at the later use. Added `ConsumingParamNotLastUse` which
+  fires at the consuming call site, complementing the existing error.
+- **Approach:** Forward-scan in the let-binding case (`App(Lambda, arg)`). After analyzing `arg`,
+  diff `movedAt` keys to find newly-moved bindings, then check if the lambda `body` references them
+  via `containsRef`/`containsRefInExpr` tree walkers (skip lambdas that shadow the name).
+- **Changes:**
+  - `semantic/OwnershipAnalyzer.scala`: Added `consumedVia: Map[String, (Ref, FnParam)]` to
+    `OwnershipScope`, recorded in `handleConsumingParam` on valid move. Added `containsRef`/
+    `containsRefInExpr` helpers. Forward-scan after `analyzeExpr(arg, scope)` emits
+    `ConsumingParamNotLastUse` when moved binding appears in body.
+  - `util/error/print/ErrorPrinter.scala`: Fixed `getErrorSourcePosition` to use `ref.span`
+    (call site) instead of `param.span` (function definition).
+  - `mml/samples/mem/consume-not-last.mml`: negative example
+- **Tests:** 4 new tests in `OwnershipAnalyzerTests.scala`:
+  - "consuming param not last use detected"
+  - "consuming param as last use accepted"
+  - "consuming param only use accepted"
+  - "independent bindings each consumed once no error"
+- **Verification:** 220 tests pass, `scalafmtAll`/`scalafixAll` clean, `mmlcPublishLocal` OK,
+  existing memory samples compile without false positives, `move-valid.mml` ASan clean
 
 ### 2026-02-07 Partial application ban for consuming parameters [COMPLETE]
 

@@ -48,8 +48,8 @@ object ErrorPrinter:
       (invalidExpr.span.start.line, invalidExpr.span.start.col)
     case SemanticError.InvalidEntryPoint(_, span) => (span.start.line, span.start.col)
     case SemanticError.UseAfterMove(ref, _, _) => (ref.span.start.line, ref.span.start.col)
-    case SemanticError.ConsumingParamNotLastUse(param, _, _) =>
-      (param.span.start.line, param.span.start.col)
+    case SemanticError.ConsumingParamNotLastUse(_, ref, _) =>
+      (ref.span.start.line, ref.span.start.col)
     case SemanticError.PartialApplicationWithConsuming(fn, _, _) =>
       (fn.span.start.line, fn.span.start.col)
     case SemanticError.ConditionalOwnershipMismatch(cond, _) =>
