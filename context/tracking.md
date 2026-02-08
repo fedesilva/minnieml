@@ -21,118 +21,121 @@
 
 ## Active Tasks
 
-
-
-
-
-
-
-### Simple Memory Management Prototype
-
-**Doc:** `docs/brainstorming/mem/1-simple-mem-prototype.md`
-**QA:** `context/specs/qa-mem.md`
+### Memory Management 
 
 Affine ownership with borrow-by-default. Enables safe automatic memory management.
 
-**Key points:**
 - Borrow by default, explicit move with `~` syntax
-- Extend `@native` with `[mem=alloc]` / `[mem=static]` attributes
-- New OwnershipAnalyzer phase inserts `__free_T` calls into AST
+- OwnershipAnalyzer phase inserts `__free_T` calls into AST
 - No codegen changes - just AST rewriting
-
-
 
 **Remaining:**
 
-- [x] **Use-after-free in chained user-function calls that wrap allocating natives** [COMPLETE]
-  - **Repro:** `mml/samples/concat-op.mml` — `op ++(a,b) = concat a b` chained as
-    `"Zero: " ++ (to_string 0) ++ ", " ++ ...`
-  - **Root cause:** Right-associative operator chaining creates nested temp wrappers.
-    During re-analysis, the CPS handler sees owned bindings from outer scopes and
-    adds `wrapWithFrees` calls for them.
-  - **Fix:** Replaced `skipTempWrapping: Boolean` + `name.startsWith("__tmp_")` string
-    matching with `insideTempWrapper: Boolean` flag on `OwnershipScope`. When inside a
-    temp wrapper, ALL scope-level frees are skipped — the wrapper's explicit free chain
-    handles everything. This is correct because wrapper bodies only contain temp
-    let-bindings and explicit frees (no user bindings needing scope-level cleanup).
-  - **Verified:** 211 tests pass, identical IR output, all mem samples clean under ASan,
-    benchmarks compile.
+#### Bug Fixes
 
 - [ ] **Fix `arrays-mem.mml` double-free** — missing `consuming` on `ar_str_set`
   - **Root cause:** `ar_str_set` stores the String in the array (takes ownership) but
     the `value` param lacks `consuming = true`, so ownership analyzer inserts a free
-    after the call. Later `__free_StringArray` frees the same strings → double-free.
+    after the call. Later `__free_StringArray` frees the same strings -> double-free.
   - **Fix:** Add `consuming = true` to `value` param in `ar_str_set` (package.scala:749)
 
-- [ ] **@native type annotations: explicit deallocation function**
-  - Currently assumes `__free_<TypeName>` by naming convention
+#### Move Semantics (`~` consuming parameters)
+
+- [x] `~param` syntax parsing [COMPLETE]
+- [x] `consuming` flag on `FnParam` [COMPLETE]
+- [x] Use-after-move detection and error reporting [COMPLETE]
+- [x] `__free_*` params marked consuming [COMPLETE]
+- [ ] **Partial application ban** — consuming params must be in saturating calls
+  - A closure capturing an owned value via `~` would need `FnOnce` semantics.
+    Ban this for now: consuming args only in fully-applied calls.
+- [ ] **Last-use validation** — arg to `~` param must be final use of that binding
+  - If not last use, emit diagnostic suggesting `clone` or restructuring.
+
+#### Borrow Safety
+
+- [ ] **Borrow escape enforcement** — borrows cannot escape a function
+  - A borrowed value must not be: returned, stored into a container, or captured
+    by an escaping closure.
+  - Enforcement rules:
+    1. Return type owned -> returned value must be owned (not borrowed)
+    2. Struct constructor args consume (see below) -> can't pass a borrow to a sink
+    3. Closures: deferred until closures exist, but design must account for it
+  - This is the critical invariant that prevents use-after-free from borrow misuse.
+
+#### Struct Ownership
+
+- [ ] **Struct constructors as sinks (move-in)**
+  - Currently constructors clone their args (borrow + internal copy).
+  - Change to: constructors consume all heap-typed fields (move semantics).
+  - No `~` annotation needed on struct fields — consuming is the default for
+    constructors. This is not opt-out.
+  - Callers who want to retain a value must explicitly `clone` before passing.
+  - Impacts: `MemoryFunctionGenerator`, `OwnershipAnalyzer` constructor handling,
+    `FunctionEmitter` (remove clone-on-store for constructor params).
+- [ ] **Move-only structs** — assigning a struct with owned fields is a move
+  - `let a = mkFoo x; let b = a` moves `a` into `b`, `a` is invalid after.
+  - Use-after-move detection already exists for leaf values; extend to structs.
+  - Explicit `clone` required to duplicate a struct with owned fields.
+  - Must enforce: no implicit shallow copy of aggregates with owned fields (invariant I3/A2).
+- [ ] **Recursive/nested struct destructors** — consider later
+  - A struct containing another struct with owned fields needs recursive free.
+  - `__free_Outer` must call `__free_Inner` on nested owned struct fields.
+  - `MemoryFunctionGenerator` may already handle this; needs verification and testing.
+
+#### Native Type Improvements
+
+- [ ] **`@native` type annotations: explicit deallocation function**
+  - Currently assumes `__free_<TypeName>` by naming convention.
   - Make explicit: `@native[mem=heap, free=__free_String]`
-  - Only for @native types; MML structs generate free functions automatically
-
-- [ ] **`noalias` on allocating function returns** — can do now
-  - Return values from `[mem=alloc]` functions are fresh allocations
-  - Safe to mark with `noalias` - can't alias anything pre-existing
-
-- [ ] **Move semantics for `~` consuming parameters** (partial)
-  - **Done:**
-    - `~param` syntax parsing
-    - `consuming` flag on `FnParam`
-    - Use-after-move detection and error reporting
-    - `__free_*` params marked consuming (freed bindings become Moved)
-  - **Missing:**
-    - Partial application ban (consuming params must be in saturating calls)
-    - Last-use validation (arg to `~` param must be final use of that binding)
-
-- [ ] **`noalias` on consuming parameters** — needs move semantics first
-  - `~` params can be `noalias` because caller can't use the value afterward
-  - Requires solid move semantics enforcement (last-use validation)
-  - Cannot add `noalias` to borrowed params - they can alias (`foo x x`)
-
+  - Only for `@native` types; MML structs generate free functions automatically.
 - [ ] **Native struct constructors**
-  - removes the need for constructor functions in c.
-  - improves c integration.
-  - same logic as mml structs.
+  - Removes the need for constructor functions in C.
+  - Same logic as MML struct constructors.
 
-- [x] **Fix double-clone inefficiency in `__clone_T` for structs** [COMPLETE]
-  - **Problem:** Generated `__clone_User` does 4+ clones instead of 2
-  - **Root cause:** Both OwnershipAnalyzer AND FunctionEmitter were cloning:
-    1. Analyzer: wrapped struct constructor args with `wrapWithClone()` at call site
-    2. Codegen (FunctionEmitter): cloned heap fields when storing in constructor
-  - **Design decision:** Constructor params borrow (not consume), constructor clones internally
-    - This matches GC'd language semantics (callers don't lose their values)
-    - Future `~` fields will opt-in to consuming/move semantics for performance
-  - **Changes made:**
-    - `MemoryFunctionGenerator.scala`: `mkCloneFunction()` now just passes field accesses
-      to constructor, no clone wrapping (constructor handles it)
-    - `OwnershipAnalyzer.scala`: removed struct constructor special casing (lines 767-785)
-      that wrapped args with `wrapWithClone()`
-  - **Status:** Changes compile, tests pass, but IR still shows 4 clones
-  - **Remaining investigation:**
-    - Clean rebuild didn't complete - need to verify changes take effect
-    - If still broken, trace where extra clones originate (may be recursive analysis)
-    - Analyzer detects constructors by string prefix `__mk_` - fragile, should use
-      `DataConstructor` marker or `BindingOrigin`
+#### Optimization
 
-- [ ] **Testing: find edge cases**
-  - Existing tests pass: `leak_test.mml`, `mixed_ownership_test.mml`, `records-mem.mml`
-  - Need to explore more complex ownership patterns
+- [ ] **`noalias` on allocating function returns**
+  - Return values from `[mem=alloc]` functions are fresh allocations.
+  - Safe to mark with `noalias` — can't alias anything pre-existing.
+- [ ] **`noalias` on consuming parameters** — needs move semantics first
+  - `~` params can be `noalias` because caller can't use the value afterward.
+  - Requires solid move semantics enforcement (last-use validation).
 
-- [ ] **Memory test harness** — similar to benchmark infrastructure
-  - **Approach:**
-    1. Compile and run each sample with `--asan` (AddressSanitizer)
-       - Detects: double-free, use-after-free, buffer overflows
-    2. Compile and run without ASAN, check with `leaks --atExit --`
-       - Detects: memory leaks
-  - **Samples:** `mml/samples/mem/`
-    - `test_unused_locals.mml`
-    - `test_temporaries.mml`
-    - `test_leaks.mml`
-    - `records-mem.mml`
-    - `to_string_complex.mml`
-  - **Infrastructure:**
-    - Makefile or script to run both ASAN and leaks passes
-    - Fail on any ASAN error or non-zero leak count
-    - Report summary of results
+#### OOM Policy
+
+- [ ] **Decide OOM invariant** — Policy A (null => empty) vs Policy B (trap on OOM)
+  - Policy A: if `ptr == null` then `len == 0`, consumers handle gracefully.
+  - Policy B: allocation failure traps/aborts before returning.
+  - Decision needed. Once chosen, enforce globally across all producers/consumers.
+  - See `qa-mem.md` I0 for full invariant descriptions.
+
+#### Testing & Infrastructure
+
+- [ ] **Edge case testing** — see `mem-next.md` for test matrix
+  - Aliasing / copy hazards (T1, T2)
+  - Move invalidation across rebinding (T3, T4)
+  - Aggregate ownership (T5-T8) — addressed by move-only structs + clone
+  - Nested conditional cleanup (T9-T11)
+  - OOM invariant verification (T12) — after OOM policy decision
+- [ ] **Memory test harness** — automated ASan + leaks pass
+  - Compile and run each sample with `--asan` (double-free, use-after-free, overflows)
+  - Compile and run without ASan, check with `leaks --atExit --` (leaks)
+  - Samples: `mml/samples/mem/`
+  - Fail on any ASan error or non-zero leak count
+
+#### Code Quality (from `qa-mem.md`)
+
+- [ ] **Split `analyzeTerm`** (~380 lines) into helpers — High priority
+  - Extract: `analyzeLetBinding`, `analyzeRegularApp`, `collectCurriedArgs`,
+    `wrapAllocatingArgs`
+- [ ] **Extract hardcoded stdlib IDs** to shared constants object — Medium
+  - `"stdlib::typedef::Unit"` repeated 6+ places, `"stdlib::typedef::Bool"` 3+ places
+- [ ] **Refactor mutable state in `.map()`** to `foldLeft` — Medium
+  - Lines 741-756: `var currentScope` + `var argErrors` mutated inside `.map()`
+- [ ] **Remove `__free_String` silent fallback** — Low
+  - Line 296: `getOrElse("__free_String")` masks bugs; should error instead.
+- [ ] **Use binding metadata for constructor detection** — Low
+  - Replace `name.startsWith("__mk_")` with `BindingOrigin.DataConstructor` lookup.
 
 ---
 
