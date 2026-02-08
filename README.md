@@ -104,10 +104,6 @@ let victor  = Person  "Victor"  None;
 
 let pv = hasPet victor; // false
 let pf = hasPet fede;   // true
-<<<<<<< HEAD
-=======
-
->>>>>>> 3fb3d01 (Fix comment syntax in README.md)
 
 // does not compile
 // let pz = hasPet zur
