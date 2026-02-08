@@ -145,7 +145,8 @@ fn visit_neighbors (
       if dir == 0 then current + 1
       elif dir == 1 then current - 1
       elif dir == 2 then current + width
-      else current - width end;
+      else current - width 
+      end;
 
     let valid =
       if dir == 0 then cx < (width - 1)
@@ -198,7 +199,10 @@ fn solve (
     else
       let cx = current % width;
       let cy = current / width;
-      visit_neighbors open_set g_score walls goal_idx width height
+     
+    
+   
+   visit_neighbors open_set g_score walls goal_idx width height
         current cx cy 0 current_h_size
     end
   end
