@@ -13,22 +13,19 @@ fn test_unused_locals(n: Int): Unit =
   // 'unused' should be freed here automatically
 ;
 
-// 2. TRANSFER TEST
-// A simple pass-through function.
-// Tests that we don't accidentally free 's' while returning it,
-// nor do we lose the pointer (leak) during the return.
-fn identity(s: String): String =
-  s
-;
+// 2. MOVE TEST
+// Takes ownership via ~ and returns it. The caller must move in,
+// and the returned value is owned by the next caller up the stack.
+fn identity(~s: String): String = s;
 
-// 3. NESTED TRANSFER TEST
-// Passes ownership through multiple layers.
-fn wrapper_layer(s: String): String =
+// 3. NESTED MOVE TEST
+// Moves ownership through multiple layers via ~ parameters.
+fn wrapper_layer(~s: String): String =
   let result = identity s;
   result
 ;
 
-// generate a string, pass it through layers, and print it.
+// Allocate a string, move it through layers, and print it.
 fn test_deep_stack(n: Int): Unit =
   let s = int_to_str n;
   let res = wrapper_layer s;

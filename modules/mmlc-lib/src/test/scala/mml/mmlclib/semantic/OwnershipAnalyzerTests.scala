@@ -251,3 +251,89 @@ class OwnershipAnalyzerTests extends BaseEffFunSuite:
       assert(errors.isEmpty, s"Expected no PartialApplicationWithConsuming errors but got: $errors")
     }
   }
+
+  test("borrowed param returned from heap-returning function is rejected") {
+    val code =
+      """
+        fn identity(s: String): String = s;
+        fn main(): Unit = println "ok";
+      """
+
+    semState(code).map { result =>
+      val errors = result.errors.collect { case e: SemanticError.BorrowEscapeViaReturn => e }
+      assert(errors.nonEmpty, "Expected BorrowEscapeViaReturn error")
+      assertEquals(errors.head.ref.name, "s")
+    }
+  }
+
+  test("allocating call returned from heap-returning function is accepted") {
+    val code =
+      """
+        fn make_str(n: Int): String = int_to_str n;
+        fn main(): Unit = println "ok";
+      """
+
+    semState(code).map { result =>
+      val errors = result.errors.collect { case e: SemanticError.BorrowEscapeViaReturn => e }
+      assert(errors.isEmpty, s"Expected no BorrowEscapeViaReturn errors but got: $errors")
+    }
+  }
+
+  test("string literal returned from heap-returning function is accepted") {
+    val code =
+      """
+        fn greeting(): String = "hello";
+        fn main(): Unit = println "ok";
+      """
+
+    semState(code).map { result =>
+      val errors = result.errors.collect { case e: SemanticError.BorrowEscapeViaReturn => e }
+      assert(errors.isEmpty, s"Expected no BorrowEscapeViaReturn errors but got: $errors")
+    }
+  }
+
+  test("mixed conditional with clone promotion is accepted") {
+    val code =
+      """
+        fn maybe_str(n: Int): String =
+          if n > 0 then int_to_str n else "none" end
+        ;
+        fn main(): Unit = println "ok";
+      """
+
+    semState(code).map { result =>
+      val errors = result.errors.collect { case e: SemanticError.BorrowEscapeViaReturn => e }
+      assert(errors.isEmpty, s"Expected no BorrowEscapeViaReturn errors but got: $errors")
+    }
+  }
+
+  test("conditional with both branches borrowed in heap-returning function is rejected") {
+    val code =
+      """
+        fn pick(flag: Bool, a: String, b: String): String =
+          if flag then a else b end
+        ;
+        fn main(): Unit = println "ok";
+      """
+
+    semState(code).map { result =>
+      val errors = result.errors.collect { case e: SemanticError.BorrowEscapeViaReturn => e }
+      assert(errors.nonEmpty, "Expected BorrowEscapeViaReturn error for borrowed branches")
+      val names = errors.map(_.ref.name).toSet
+      assert(names.contains("a"), "Expected error for borrowed 'a'")
+      assert(names.contains("b"), "Expected error for borrowed 'b'")
+    }
+  }
+
+  test("non-heap return type with borrowed param is accepted") {
+    val code =
+      """
+        fn id(n: Int): Int = n;
+        fn main(): Unit = println "ok";
+      """
+
+    semState(code).map { result =>
+      val errors = result.errors.collect { case e: SemanticError.BorrowEscapeViaReturn => e }
+      assert(errors.isEmpty, s"Expected no BorrowEscapeViaReturn errors but got: $errors")
+    }
+  }

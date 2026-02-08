@@ -1,0 +1,9 @@
+// Borrow escape demonstration (expected: compile error)
+// Returning a borrowed parameter from a function that returns a heap type
+// would cause use-after-free: the caller would free a value it doesn't own.
+fn identity(s: String): String = s;
+
+fn main(): Unit =
+  let s = identity "hello";
+  println s
+;

@@ -486,6 +486,18 @@ object OwnershipAnalyzer:
 
     expr.terms.lastOption.map(termReturned).getOrElse(Set.empty)
 
+  /** Refs of borrowed bindings that flow out through the returned expression */
+  private def returnedBorrowedRefs(expr: Expr, scope: OwnershipScope): List[Ref] =
+    def termReturned(term: Term): List[Ref] =
+      term match
+        case ref: Ref if scope.getState(ref.name).contains(OwnershipState.Borrowed) =>
+          List(ref)
+        case Cond(_, _, ifTrue, ifFalse, _, _) =>
+          returnedBorrowedRefs(ifTrue, scope) ++ returnedBorrowedRefs(ifFalse, scope)
+        case TermGroup(_, inner, _) => returnedBorrowedRefs(inner, scope)
+        case _ => List.empty
+    expr.terms.lastOption.map(termReturned).getOrElse(List.empty)
+
   /** Check if a binding name is referenced anywhere in an expression */
   private def containsRefInExpr(name: String, expr: Expr): Boolean =
     expr.terms.exists(containsRef(name, _))
@@ -922,10 +934,18 @@ object OwnershipAnalyzer:
         val returnType   = typeAsc.orElse(typeSpec)
         val promotedBody = promoteStaticBranchesInReturn(bodyResult.expr, returnType, paramScope)
 
+        // Check for borrowed values escaping via return
+        val borrowEscapeErrors = returnType
+          .flatMap(getTypeName)
+          .filter(isHeapType(_, scope.resolvables))
+          .map(_ => returnedBorrowedRefs(promotedBody, bodyResult.scope))
+          .getOrElse(Nil)
+          .map(ref => SemanticError.BorrowEscapeViaReturn(ref, PhaseName))
+
         TermResult(
           scope, // Lambda doesn't change outer scope
           Lambda(span, params, promotedBody, captures, typeSpec, typeAsc, meta),
-          errors = bodyResult.errors
+          errors = bodyResult.errors ++ borrowEscapeErrors
         )
 
       case expr: Expr =>

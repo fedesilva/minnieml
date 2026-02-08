@@ -54,6 +54,8 @@ object ErrorPrinter:
       (fn.span.start.line, fn.span.start.col)
     case SemanticError.ConditionalOwnershipMismatch(cond, _) =>
       (cond.span.start.line, cond.span.start.col)
+    case SemanticError.BorrowEscapeViaReturn(ref, _) =>
+      (ref.span.start.line, ref.span.start.col)
     case SemanticError.TypeCheckingError(error) =>
       // For type errors, we need to extract the position from the nested error
       // This is a bit hacky, but avoids code duplication
@@ -190,6 +192,9 @@ object ErrorPrinter:
 
       case SemanticError.ConditionalOwnershipMismatch(cond, phase) =>
         s"${Console.RED}Conditional branches have different ownership states at ${formatLocation(cond.span)}${Console.RESET}\n${Console.YELLOW}Phase: $phase${Console.RESET}"
+
+      case SemanticError.BorrowEscapeViaReturn(ref, phase) =>
+        s"${Console.RED}Cannot return borrowed value '${ref.name}' at ${formatLocation(ref.span)}${Console.RESET}\n${Console.YELLOW}Phase: $phase${Console.RESET}"
 
       case SemanticError.TypeCheckingError(error) =>
         // Delegate to SemanticErrorPrinter to avoid duplication

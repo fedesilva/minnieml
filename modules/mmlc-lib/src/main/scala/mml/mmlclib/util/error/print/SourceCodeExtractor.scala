@@ -115,6 +115,11 @@ object SourceCodeExtractor:
           .map(s => s"\n$s")
           .getOrElse("")
 
+      case SemanticError.BorrowEscapeViaReturn(ref, _) =>
+        extractSnippet(sourceInfo, ref.span)
+          .map(s => s"\n$s")
+          .getOrElse("")
+
       case SemanticError.TypeCheckingError(error) =>
         extractTypeErrorSnippet(sourceInfo, error)
 

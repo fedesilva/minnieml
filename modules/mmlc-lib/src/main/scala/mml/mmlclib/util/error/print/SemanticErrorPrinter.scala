@@ -131,6 +131,10 @@ object SemanticErrorPrinter:
         val location = LocationPrinter.printSpan(cond.span)
         s"${Console.RED}Conditional branches have different ownership states at $location [phase: $phase]${Console.RESET}"
 
+      case SemanticError.BorrowEscapeViaReturn(ref, phase) =>
+        val location = LocationPrinter.printSpan(ref.span)
+        s"${Console.RED}Cannot return borrowed value '${ref.name}' at $location [phase: $phase]${Console.RESET}"
+
       case SemanticError.TypeCheckingError(error) =>
         prettyPrintTypeError(error)
 

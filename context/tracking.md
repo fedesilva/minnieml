@@ -53,11 +53,9 @@ Affine ownership with borrow-by-default. Enables safe automatic memory managemen
 
 #### Borrow Safety
 
-- [ ] **Borrow escape enforcement** — borrows cannot escape a function
-  - A borrowed value must not be: returned, stored into a container, or captured
-    by an escaping closure.
-  - Enforcement rules:
-    1. Return type owned -> returned value must be owned (not borrowed)
+- [x] **Borrow escape via return** — Rule 1: returned value must be owned [COMPLETE]
+  - Functions returning heap types cannot return borrowed parameters.
+  - Enforcement rules (remaining):
     2. Struct constructor args consume (see below) -> can't pass a borrow to a sink
     3. Closures: deferred until closures exist, but design must account for it
   - This is the critical invariant that prevents use-after-free from borrow misuse.
@@ -140,6 +138,26 @@ Affine ownership with borrow-by-default. Enables safe automatic memory managemen
 ---
 
 ## Recent Changes
+
+### 2026-02-07 Borrow escape enforcement — Rule 1: return [COMPLETE]
+
+- **Problem:** Nothing prevented a function from returning a borrowed parameter as if owned,
+  causing use-after-free: caller would free a value it doesn't own.
+- **Fix:** After `promoteStaticBranchesInReturn` in the Lambda case of `analyzeTerm`, inspect the
+  terminal expression for any `Borrowed` refs. If the return type is a heap type, emit
+  `BorrowEscapeViaReturn` errors. Runs on the promoted body to avoid false positives on mixed
+  conditionals (where clone insertion already handles the static branch).
+- **Changes:**
+  - `semantic/package.scala`: Added `BorrowEscapeViaReturn(ref, phase)` error variant
+  - `semantic/OwnershipAnalyzer.scala`: Added `returnedBorrowedRefs` helper (walks through
+    `Cond`/`TermGroup`). Lambda case checks after promotion, emits per-ref errors.
+  - 3 error printer files: `SemanticErrorPrinter`, `ErrorPrinter`, `SourceCodeExtractor`
+  - `mml/samples/mem/test_unused_locals.mml`: `identity`/`wrapper_layer` now use `~` move
+    semantics instead of returning borrowed params
+  - `mml/samples/mem/borrow-escape.mml`: negative example (rejected)
+- **Tests:** 6 new in `OwnershipAnalyzerTests.scala`, 1 existing test fixed in `TypeResolverTests`
+- **Verification:** 232 tests pass, `scalafmtAll`/`scalafixAll` clean, all 7 benchmarks compile,
+  all memory samples run, ASan clean on `test_unused_locals.mml`
 
 ### 2026-02-07 Add `noalias` attributes to LLVM IR emission [COMPLETE]
 
