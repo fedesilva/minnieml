@@ -1,0 +1,9 @@
+// Use-after-move demonstration (expected: compile error)
+// Moving a value via ~ and then using it again is rejected.
+fn consume(~s: String): Unit = println s;
+
+fn main(): Unit =
+  let s = "hello" ++ " world";
+  consume s;
+  println s
+;

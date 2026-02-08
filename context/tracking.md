@@ -33,7 +33,7 @@ Affine ownership with borrow-by-default. Enables safe automatic memory managemen
 
 #### Bug Fixes
 
-- [ ] **Fix `arrays-mem.mml` double-free** — missing `consuming` on `ar_str_set`
+- [x] **Fix `arrays-mem.mml` double-free** — missing `consuming` on `ar_str_set` [COMPLETE]
   - **Root cause:** `ar_str_set` stores the String in the array (takes ownership) but
     the `value` param lacks `consuming = true`, so ownership analyzer inserts a free
     after the call. Later `__free_StringArray` frees the same strings -> double-free.
@@ -140,6 +140,33 @@ Affine ownership with borrow-by-default. Enables safe automatic memory managemen
 ---
 
 ## Recent Changes
+
+### 2026-02-07 Add use-after-move regression tests and samples
+
+- **Tests added** to `OwnershipAnalyzerTests.scala`:
+  - "use after move to consuming param" — double move of same binding to `~` param detected
+  - "use after move in expression" — read of binding after move detected
+  - "no error when each binding moved once" — valid single-move usage produces no `UseAfterMove`
+- **Samples added:**
+  - `mml/samples/mem/use-after-move.mml` — negative example, rejected with `UseAfterMove` error
+  - `mml/samples/mem/move-valid.mml` — positive example, compiles and runs ASan clean
+- **Verification:** 214 tests pass, `scalafmtAll`/`scalafixAll` clean, samples verified with
+  `mmlc` and `mmlc run -s`
+
+### 2026-02-07 Fix `arrays-mem.mml` double-free [COMPLETE]
+
+- **Root cause:** Two issues. (1) `ar_str_set`'s `value` param lacked `consuming = true`,
+  so the ownership analyzer inserted a free after the call even though the callee takes
+  ownership of the string. (2) The temp wrapper in `OwnershipAnalyzer` generated explicit
+  free calls for ALL allocating temps, including those passed to consuming parameters —
+  causing a double-free when the callee already owned the value.
+- **Fix:**
+  - `semantic/package.scala`: Added `consuming = true` to `ar_str_set`'s `value` param
+  - `semantic/OwnershipAnalyzer.scala`: Resolve the base function's param list when building
+    temp wrappers, track `isConsumed` per arg position, filter consumed temps out of the
+    explicit free calls list
+- **Verification:** 211 tests pass, ASan clean on `arrays-mem.mml` and all memory samples,
+  all 7 benchmarks compile, scalafmt/scalafix clean
 
 ### 2026-02-06 Add `inline` keyword
 

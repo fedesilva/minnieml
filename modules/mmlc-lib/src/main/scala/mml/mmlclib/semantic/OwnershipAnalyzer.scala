@@ -708,10 +708,21 @@ object OwnershipAnalyzer:
             val (baseFn, allArgsWithMeta) =
               collectArgsAndBase(fn, List((arg, span, typeAsc, typeSpec)))
 
+            // Resolve base function's param list to detect consuming params
+            val baseFnParams: List[FnParam] = getBaseFn(baseFn)
+              .flatMap(_.resolvedId)
+              .flatMap(scope.resolvables.lookup)
+              .collect { case bnd: Bnd => bnd }
+              .flatMap(_.value.terms.collectFirst { case l: Lambda => l })
+              .map(_.params)
+              .getOrElse(Nil)
+
             // Check which args allocate (in order from first to last)
-            val argsWithAlloc = allArgsWithMeta.map { case (argExpr, s, tAsc, tSpec) =>
-              val allocType = argExpr.terms.lastOption.flatMap(termAllocates(_, scope))
-              (argExpr, s, tAsc, tSpec, allocType)
+            val argsWithAlloc = allArgsWithMeta.zipWithIndex.map {
+              case ((argExpr, s, tAsc, tSpec), idx) =>
+                val allocType  = argExpr.terms.lastOption.flatMap(termAllocates(_, scope))
+                val isConsumed = baseFnParams.lift(idx).exists(_.consuming)
+                (argExpr, s, tAsc, tSpec, allocType, isConsumed)
             }
 
             val allocatingArgs = argsWithAlloc.filter(_._5.isDefined)
@@ -739,19 +750,27 @@ object OwnershipAnalyzer:
               // them, triggering temp-wrapping again (stack overflow).
               var currentScope = scope
               var argErrors    = List.empty[SemanticError]
-              val tempsAndArgs = argsWithAlloc.map { case (argExpr, s, tAsc, tSpec, allocOpt) =>
-                allocOpt match
-                  case Some(allocType) =>
-                    // Analyze this arg NOW so it won't be re-wrapped later
-                    val argResult = analyzeExpr(argExpr, currentScope)
-                    argErrors = argErrors ++ argResult.errors
-                    val (tmpName, newScope) = currentScope.nextTemp
-                    currentScope = newScope
-                    val tmpRef     = Ref(syntheticSpan, tmpName, typeSpec = Some(allocType))
-                    val tmpRefExpr = Expr(syntheticSpan, List(tmpRef), typeSpec = Some(allocType))
-                    (tmpRefExpr, s, tAsc, tSpec, Some((tmpName, argResult.expr, allocType)))
-                  case None =>
-                    (argExpr, s, tAsc, tSpec, None)
+              val tempsAndArgs = argsWithAlloc.map {
+                case (argExpr, s, tAsc, tSpec, allocOpt, consumed) =>
+                  allocOpt match
+                    case Some(allocType) =>
+                      // Analyze this arg NOW so it won't be re-wrapped later
+                      val argResult = analyzeExpr(argExpr, currentScope)
+                      argErrors = argErrors ++ argResult.errors
+                      val (tmpName, newScope) = currentScope.nextTemp
+                      currentScope = newScope
+                      val tmpRef = Ref(syntheticSpan, tmpName, typeSpec = Some(allocType))
+                      val tmpRefExpr =
+                        Expr(syntheticSpan, List(tmpRef), typeSpec = Some(allocType))
+                      (
+                        tmpRefExpr,
+                        s,
+                        tAsc,
+                        tSpec,
+                        Some((tmpName, argResult.expr, allocType, consumed))
+                      )
+                    case None =>
+                      (argExpr, s, tAsc, tSpec, None)
               }
 
               // Build the clean App chain using temps where needed
@@ -761,7 +780,8 @@ object OwnershipAnalyzer:
               }
 
               // Collect allocating bindings (reverse order for proper nesting of let-bindings)
-              val allocBindings = tempsAndArgs.flatMap(_._5).reverse
+              val allBindings   = tempsAndArgs.flatMap(_._5).reverse
+              val allocBindings = allBindings.map(b => (b._1, b._2, b._3))
 
               // Note: struct constructors handle cloning internally (in FunctionEmitter),
               // so we don't need to clone args at call site here.
@@ -774,8 +794,9 @@ object OwnershipAnalyzer:
               val resultName = "__tmp_result"
               val resultRef  = Ref(syntheticSpan, resultName, typeSpec = resultType)
 
-              // Free calls for all temps (in same order as allocBindings, which frees inner first)
-              val freeCalls = allocBindings.map { case (tmpName, _, allocType) =>
+              // Free calls for temps not consumed by the callee
+              val nonConsumedBindings = allBindings.filterNot(_._4)
+              val freeCalls = nonConsumedBindings.map { case (tmpName, _, allocType, _) =>
                 mkFreeCall(tmpName, allocType, syntheticSpan, None, scope.resolvables)
               }
 

@@ -887,7 +887,7 @@ def injectCommonFunctions(module: Module): Module =
       List(
         FnParam(dummySpan, "arr", typeAsc   = Some(stringArrayType)),
         FnParam(dummySpan, "idx", typeAsc   = Some(intType)),
-        FnParam(dummySpan, "value", typeAsc = Some(stringType))
+        FnParam(dummySpan, "value", typeAsc = Some(stringType), consuming = true)
       ),
       unitType
     ),

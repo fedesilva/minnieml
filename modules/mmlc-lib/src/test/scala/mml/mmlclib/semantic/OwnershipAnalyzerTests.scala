@@ -64,6 +64,62 @@ class OwnershipAnalyzerTests extends BaseEffFunSuite:
     }
   }
 
+  test("use after move to consuming param") {
+    val code =
+      """
+        fn consume(~s: String): Unit = println s;
+
+        fn main(): Unit =
+          let s = "hello" ++ " world";
+          consume s;
+          consume s
+        ;
+      """
+
+    semState(code).map { result =>
+      val moveErrors = result.errors.collect { case e: SemanticError.UseAfterMove => e }
+      assert(moveErrors.nonEmpty, "Expected UseAfterMove error for double move")
+    }
+  }
+
+  test("use after move in expression") {
+    val code =
+      """
+        fn consume(~s: String): Unit = println s;
+
+        fn main(): Unit =
+          let s = "hello" ++ " world";
+          consume s;
+          println s
+        ;
+      """
+
+    semState(code).map { result =>
+      val moveErrors = result.errors.collect { case e: SemanticError.UseAfterMove => e }
+      assert(moveErrors.nonEmpty, "Expected UseAfterMove error when reading moved binding")
+    }
+  }
+
+  test("no error when each binding moved once") {
+    val code =
+      """
+        fn consume(~s: String): Unit = println s;
+
+        fn main(): Unit =
+          let s1 = "hello" ++ " world";
+          consume s1;
+          let s2 = "goodbye" ++ " world";
+          consume s2;
+          println "done"
+        ;
+      """
+
+    semState(code).map { result =>
+      val moveErrors = result.errors.collect { case e: SemanticError.UseAfterMove => e }
+      assert(moveErrors.isEmpty, s"Expected no UseAfterMove errors but got: $moveErrors")
+    }
+  }
+
   test("right-assoc ++ chain frees each binding exactly once") {
     val code =
       """
