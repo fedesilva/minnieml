@@ -65,7 +65,7 @@ object ExpressionRewriter:
     span:                SrcSpan,
     transformedBindings: Map[String, Bnd],
     resolvables:         ResolvablesIndex
-  ): Expr =
+  ): Either[NEL[SemanticError], Expr] =
     // Only wrap if fn is Ref or App (the only valid function positions)
     val fnAsCallable: Option[Ref | App] = fn match
       case r: Ref => Some(r)
@@ -78,23 +78,36 @@ object ExpressionRewriter:
           val appliedCount = countAppliedArgs(fn)
           if appliedCount < arity then
             val remainingParams = params.drop(appliedCount)
-            val syntheticParams = remainingParams.zipWithIndex.map { (p, i) =>
-              FnParam(span, s"$$p$i", typeAsc = p.typeAsc, typeSpec = p.typeSpec)
-            }
-            // Pre-resolve synthetic Refs to their FnParams (RefResolver already ran)
-            val syntheticRefs = syntheticParams.map { param =>
-              Ref(span, param.name, resolvedId = param.id, candidateIds = param.id.toList)
-            }
-            // Build App chain with synthetic args
-            val fullApp = syntheticRefs.foldLeft[Ref | App](callable) { (acc, ref) =>
-              App(span, acc, Expr(span, List(ref)))
-            }
-            val lambda = Lambda(span, syntheticParams, Expr(span, List(fullApp)), captures = Nil)
-            Some(Expr(span, List(lambda)))
+            // Ban partial application when any remaining param is consuming
+            remainingParams.find(_.consuming) match
+              case Some(consumingParam) =>
+                Some(
+                  NEL
+                    .one(
+                      SemanticError
+                        .PartialApplicationWithConsuming(fn, consumingParam, phaseName)
+                    )
+                    .asLeft
+                )
+              case None =>
+                val syntheticParams = remainingParams.zipWithIndex.map { (p, i) =>
+                  FnParam(span, s"$$p$i", typeAsc = p.typeAsc, typeSpec = p.typeSpec)
+                }
+                // Pre-resolve synthetic Refs to their FnParams (RefResolver already ran)
+                val syntheticRefs = syntheticParams.map { param =>
+                  Ref(span, param.name, resolvedId = param.id, candidateIds = param.id.toList)
+                }
+                // Build App chain with synthetic args
+                val fullApp = syntheticRefs.foldLeft[Ref | App](callable) { (acc, ref) =>
+                  App(span, acc, Expr(span, List(ref)))
+                }
+                val lambda =
+                  Lambda(span, syntheticParams, Expr(span, List(fullApp)), captures = Nil)
+                Some(Expr(span, List(lambda)).asRight)
           else None
         }
       }
-      .getOrElse(Expr(fn.span, List(fn)))
+      .getOrElse(Expr(fn.span, List(fn)).asRight)
 
   /** Rewrite a module, handling all expression transformations.
     *
@@ -357,10 +370,10 @@ object ExpressionRewriter:
     terms match
       case Nil =>
         // No more arguments; wrap if undersaturated (partial application).
-        (wrapIfUndersaturated(fn, span, transformedBindings, resolvables), terms).asRight
+        wrapIfUndersaturated(fn, span, transformedBindings, resolvables).map((_, terms))
       case t :: _ if isOperator(t, resolvables) =>
         // An operator ends the application chain; wrap if undersaturated.
-        (wrapIfUndersaturated(fn, span, transformedBindings, resolvables), terms).asRight
+        wrapIfUndersaturated(fn, span, transformedBindings, resolvables).map((_, terms))
       case (g: TermGroup) :: restTerms =>
         // Groups are processed as sub-expressions (may contain nested applications)
         rewriteGroupAtom(g, transformedBindings, resolvables).flatMap { term =>

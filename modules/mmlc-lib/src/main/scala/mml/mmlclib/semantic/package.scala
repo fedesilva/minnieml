@@ -120,7 +120,7 @@ enum SemanticError extends CompilationError:
   // Ownership errors
   case UseAfterMove(ref: Ref, movedAt: SrcSpan, phase: String)
   case ConsumingParamNotLastUse(param: FnParam, ref: Ref, phase: String)
-  case PartialApplicationWithConsuming(app: App, param: FnParam, phase: String)
+  case PartialApplicationWithConsuming(fn: Term, param: FnParam, phase: String)
   case ConditionalOwnershipMismatch(cond: Cond, phase: String)
 
   def message: String = this match

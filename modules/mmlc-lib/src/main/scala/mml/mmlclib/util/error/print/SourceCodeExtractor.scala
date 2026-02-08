@@ -105,8 +105,8 @@ object SourceCodeExtractor:
           .map(s => s"\n$s")
           .getOrElse("")
 
-      case SemanticError.PartialApplicationWithConsuming(app, _, _) =>
-        extractSnippet(sourceInfo, app.span)
+      case SemanticError.PartialApplicationWithConsuming(fn, _, _) =>
+        extractSnippet(sourceInfo, fn.span)
           .map(s => s"\n$s")
           .getOrElse("")
 

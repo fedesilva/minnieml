@@ -1,0 +1,6 @@
+fn consume(a: Int, ~s: String): Unit = println s;
+
+fn main(): Unit =
+  let f = consume 42;
+  println "done"
+;

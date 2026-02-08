@@ -140,3 +140,42 @@ class OwnershipAnalyzerTests extends BaseEffFunSuite:
       assertEquals(freesS0, 1, "s0 should be freed exactly once, at scope end")
     }
   }
+
+  test("partial application of function with consuming param is rejected") {
+    val code =
+      """
+        fn consume(a: Int, ~s: String): Unit = println s;
+
+        fn main(): Unit =
+          let f = consume 42;
+          println "done"
+        ;
+      """
+
+    semState(code).map { result =>
+      val errors = result.errors.collect { case e: SemanticError.PartialApplicationWithConsuming =>
+        e
+      }
+      assert(errors.nonEmpty, "Expected PartialApplicationWithConsuming error")
+    }
+  }
+
+  test("saturated call to function with consuming param is accepted") {
+    val code =
+      """
+        fn consume(a: Int, ~s: String): Unit = println s;
+
+        fn main(): Unit =
+          let s = "hello" ++ " world";
+          consume 42 s;
+          println "done"
+        ;
+      """
+
+    semState(code).map { result =>
+      val errors = result.errors.collect { case e: SemanticError.PartialApplicationWithConsuming =>
+        e
+      }
+      assert(errors.isEmpty, s"Expected no PartialApplicationWithConsuming errors but got: $errors")
+    }
+  }

@@ -45,7 +45,7 @@ Affine ownership with borrow-by-default. Enables safe automatic memory managemen
 - [x] `consuming` flag on `FnParam` [COMPLETE]
 - [x] Use-after-move detection and error reporting [COMPLETE]
 - [x] `__free_*` params marked consuming [COMPLETE]
-- [ ] **Partial application ban** — consuming params must be in saturating calls
+- [x] **Partial application ban** — consuming params must be in saturating calls [COMPLETE]
   - A closure capturing an owned value via `~` would need `FnOnce` semantics.
     Ban this for now: consuming args only in fully-applied calls.
 - [ ] **Last-use validation** — arg to `~` param must be final use of that binding
@@ -140,6 +140,26 @@ Affine ownership with borrow-by-default. Enables safe automatic memory managemen
 ---
 
 ## Recent Changes
+
+### 2026-02-07 Partial application ban for consuming parameters [COMPLETE]
+
+- **Problem:** Partial application of functions with `~` (consuming) params silently drops move
+  semantics — ExpressionRewriter eta-expands into a Lambda with synthetic params that lack the
+  `consuming` flag, leading to potential double-frees.
+- **Fix:** `wrapIfUndersaturated` in `ExpressionRewriter.scala` now checks remaining (unapplied)
+  params for `consuming = true`. If found, emits `PartialApplicationWithConsuming` error instead
+  of eta-expanding. Borrowing params still allow partial application.
+- **Changes:**
+  - `semantic/package.scala`: Changed error field from `app: App` to `fn: Term` (bare refs aren't `App`)
+  - `semantic/ExpressionRewriter.scala`: `wrapIfUndersaturated` returns `Either[NEL[SemanticError], Expr]`,
+    checks remaining params for consuming flag; updated two callers in `buildAppChain`
+  - 4 error printer files: renamed `app` to `fn` in pattern matches
+  - `mml/samples/mem/partial-consume.mml`: negative example
+- **Tests:** 2 new tests in `OwnershipAnalyzerTests.scala`:
+  - "partial application of function with consuming param is rejected"
+  - "saturated call to function with consuming param is accepted"
+- **Verification:** 216 tests pass, `scalafmtAll`/`scalafixAll` clean, all 7 benchmarks compile,
+  existing memory samples compile without false positives
 
 ### 2026-02-07 Add use-after-move regression tests and samples
 

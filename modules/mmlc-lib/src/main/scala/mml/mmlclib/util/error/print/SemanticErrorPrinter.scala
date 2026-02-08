@@ -123,8 +123,8 @@ object SemanticErrorPrinter:
         val location = LocationPrinter.printSpan(ref.span)
         s"${Console.RED}Consuming parameter '${param.name}' must be the last use of '${ref.name}' at $location [phase: $phase]${Console.RESET}"
 
-      case SemanticError.PartialApplicationWithConsuming(app, param, phase) =>
-        val location = LocationPrinter.printSpan(app.span)
+      case SemanticError.PartialApplicationWithConsuming(fn, param, phase) =>
+        val location = LocationPrinter.printSpan(fn.span)
         s"${Console.RED}Cannot partially apply function with consuming parameter '${param.name}' at $location [phase: $phase]${Console.RESET}"
 
       case SemanticError.ConditionalOwnershipMismatch(cond, phase) =>
