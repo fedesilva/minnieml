@@ -99,6 +99,26 @@ private def isPointerParam(param: FnParam, resolvables: ResolvablesIndex): Boole
     .flatMap(TypeUtils.getTypeName)
     .exists(TypeUtils.isPointerType(_, resolvables))
 
+/** Filter out Unit params (void) — they can't be passed in LLVM. */
+private def filterVoidParams(
+  params:     List[FnParam],
+  paramTypes: List[String]
+): List[(FnParam, String)] =
+  params.zip(paramTypes).filter((_, t) => t != "void")
+
+/** Format LLVM parameter declarations, adding `noalias` for consuming pointer params. */
+private def formatParamDecls(
+  params:      List[(FnParam, String)],
+  resolvables: ResolvablesIndex
+): String =
+  params.zipWithIndex
+    .map { case ((param, typ), idx) =>
+      if param.consuming && isPointerParam(param, resolvables)
+      then s"$typ noalias %$idx"
+      else s"$typ %$idx"
+    }
+    .mkString(", ")
+
 /** Compiles a regular (non-tail-recursive) lambda to LLVM IR. */
 private def compileRegularLambda(
   bnd:         Bnd,
@@ -108,25 +128,10 @@ private def compileRegularLambda(
   paramTypes:  List[String],
   emittedName: String
 ): Either[CodeGenError, CodeGenState] =
-  // Filter out Unit params (void) - they can't be passed in LLVM
-  // Keep params and types in sync by filtering together
-  val filteredParamsWithTypes = lambda.params
-    .zip(paramTypes)
-    .filter { case (_, typ) => typ != "void" }
-
-  val filteredParams     = filteredParamsWithTypes.map(_._1)
-  val filteredParamTypes = filteredParamsWithTypes.map(_._2)
-
-  // Generate function declaration with parameters
-  val paramDecls = filteredParams
-    .zip(filteredParamTypes)
-    .zipWithIndex
-    .map { case ((param, typ), idx) =>
-      if param.consuming && isPointerParam(param, state.resolvables)
-      then s"$typ noalias %$idx"
-      else s"$typ %$idx"
-    }
-    .mkString(", ")
+  val filteredParamsWithTypes = filterVoidParams(lambda.params, paramTypes)
+  val filteredParams          = filteredParamsWithTypes.map(_._1)
+  val filteredParamTypes      = filteredParamsWithTypes.map(_._2)
+  val paramDecls              = formatParamDecls(filteredParamsWithTypes, state.resolvables)
 
   val attrGroup    = if bnd.meta.exists(_.inlineHint) then "#1" else "#0"
   val functionDecl = s"define $returnType @$emittedName($paramDecls) $attrGroup {"
@@ -346,15 +351,15 @@ private def compileTailRecursiveLambda(
   findTailRecPattern(lambda, bnd)
     .toRight(CodeGenError(s"Tail recursion shape not supported for '${bnd.name}'", Some(bnd)))
     .flatMap { pattern =>
-      // Filter out Unit params (void) - they can't be passed in LLVM
       val paramsWithTypesAndArgs = lambda.params
         .zip(paramTypes)
         .zip(pattern.recursiveArgs)
         .filter { case ((_, typ), _) => typ != "void" }
 
-      val filteredParams        = paramsWithTypesAndArgs.map { case ((p, _), _) => p }
-      val filteredParamTypes    = paramsWithTypesAndArgs.map { case ((_, t), _) => t }
-      val filteredRecursiveArgs = paramsWithTypesAndArgs.map { case (_, arg) => arg }
+      val filteredParamsWithTypes = paramsWithTypesAndArgs.map { case ((p, t), _) => (p, t) }
+      val filteredParams          = filteredParamsWithTypes.map(_._1)
+      val filteredParamTypes      = filteredParamsWithTypes.map(_._2)
+      val filteredRecursiveArgs   = paramsWithTypesAndArgs.map { case (_, arg) => arg }
 
       if pattern.recursiveArgs.size != lambda.params.size then
         Left(
@@ -364,15 +369,7 @@ private def compileTailRecursiveLambda(
           )
         )
       else
-        val paramDecls = filteredParams
-          .zip(filteredParamTypes)
-          .zipWithIndex
-          .map { case ((param, typ), idx) =>
-            if param.consuming && isPointerParam(param, state.resolvables)
-            then s"$typ noalias %$idx"
-            else s"$typ %$idx"
-          }
-          .mkString(", ")
+        val paramDecls = formatParamDecls(filteredParamsWithTypes, state.resolvables)
 
         val attrGroup    = if bnd.meta.exists(_.inlineHint) then "#1" else "#0"
         val functionDecl = s"define $returnType @$emittedName($paramDecls) $attrGroup {"

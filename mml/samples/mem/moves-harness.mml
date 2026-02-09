@@ -1,0 +1,20 @@
+// Valid move semantics — each owned value moved exactly once.
+fn consume(~s: String): Unit = println s;
+
+fn run(n: Int): Unit = 
+  if n >= 0 then
+    let s1 = "hello" ++ " world";
+    consume s1;
+    let s2 = "goodbye" ++ " world";
+    consume s2;
+    // this fails
+    // println s2
+    run (n-1)
+  end
+;
+
+
+fn main(): Unit =
+  run 100;
+  println "done"  
+;

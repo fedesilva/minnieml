@@ -16,25 +16,21 @@ import mml.mmlclib.compiler.CompilerState
 object MemoryFunctionGenerator:
   private val syntheticSpan = SrcSpan(SrcPoint(0, 0, -1), SrcPoint(0, 0, -1))
 
+  private def unitTypeRef(span: SrcSpan): TypeRef =
+    TypeRef(span, "Unit", Some("stdlib::typedef::Unit"), Nil)
+
   /** Generate a stable ID for generated memory functions */
   private def genId(moduleName: String, fnName: String): Option[String] =
     Some(s"$moduleName::bnd::$fnName")
 
-  /** Check if a struct has any fields that are heap types */
-  private def structHasHeapFields(struct: TypeStruct, resolvables: ResolvablesIndex): Boolean =
-    struct.fields.exists { field =>
-      TypeUtils.getTypeName(field.typeSpec).exists { typeName =>
-        TypeUtils.isHeapType(typeName, resolvables)
-      }
-    }
+  private def isHeapField(field: Field, resolvables: ResolvablesIndex): Boolean =
+    TypeUtils.getTypeName(field.typeSpec).exists(TypeUtils.isHeapType(_, resolvables))
 
-  /** Get heap fields from a struct */
+  private def structHasHeapFields(struct: TypeStruct, resolvables: ResolvablesIndex): Boolean =
+    struct.fields.exists(isHeapField(_, resolvables))
+
   private def heapFieldsOf(struct: TypeStruct, resolvables: ResolvablesIndex): Vector[Field] =
-    struct.fields.filter { field =>
-      TypeUtils.getTypeName(field.typeSpec).exists { typeName =>
-        TypeUtils.isHeapType(typeName, resolvables)
-      }
-    }
+    struct.fields.filter(isHeapField(_, resolvables))
 
   /** Build a `__free_StructName` function for a user struct.
     *
@@ -53,8 +49,7 @@ object MemoryFunctionGenerator:
     // Type refs
     val structTypeRef =
       TypeRef(syntheticSpan, structName, struct.id, Nil)
-    val unitTypeRef =
-      TypeRef(syntheticSpan, "Unit", Some("stdlib::typedef::Unit"), Nil)
+    val unitTR = unitTypeRef(syntheticSpan)
 
     // Parameter - consuming since it takes ownership
     val param = FnParam(
@@ -76,7 +71,7 @@ object MemoryFunctionGenerator:
             syntheticSpan,
             freeFnName,
             resolvedId = Some(s"stdlib::bnd::$freeFnName"),
-            typeSpec   = Some(TypeFn(syntheticSpan, List(field.typeSpec), unitTypeRef))
+            typeSpec   = Some(TypeFn(syntheticSpan, List(field.typeSpec), unitTR))
           )
           val paramRef = Ref(syntheticSpan, paramName, typeSpec = Some(structTypeRef))
           val fieldRef = Ref(
@@ -86,7 +81,7 @@ object MemoryFunctionGenerator:
             typeSpec  = Some(field.typeSpec)
           )
           val argExpr = Expr(syntheticSpan, List(fieldRef), typeSpec = Some(field.typeSpec))
-          App(syntheticSpan, freeFnRef, argExpr, typeSpec = Some(unitTypeRef))
+          App(syntheticSpan, freeFnRef, argExpr, typeSpec = Some(unitTR))
         }
       }
     }
@@ -99,22 +94,22 @@ object MemoryFunctionGenerator:
         val lastCall  = freeCalls.last
         val initCalls = freeCalls.init
 
-        val innerBody = Expr(syntheticSpan, List(lastCall), typeSpec = Some(unitTypeRef))
+        val innerBody = Expr(syntheticSpan, List(lastCall), typeSpec = Some(unitTR))
         initCalls.foldRight(innerBody) { (call, acc) =>
           val discardParam =
-            FnParam(syntheticSpan, "_", typeSpec = Some(unitTypeRef), typeAsc = Some(unitTypeRef))
+            FnParam(syntheticSpan, "_", typeSpec = Some(unitTR), typeAsc = Some(unitTR))
           val wrapper =
-            Lambda(syntheticSpan, List(discardParam), acc, Nil, typeSpec = Some(unitTypeRef))
-          val callExpr = Expr(syntheticSpan, List(call), typeSpec = Some(unitTypeRef))
+            Lambda(syntheticSpan, List(discardParam), acc, Nil, typeSpec = Some(unitTR))
+          val callExpr = Expr(syntheticSpan, List(call), typeSpec = Some(unitTR))
           Expr(
             syntheticSpan,
-            List(App(syntheticSpan, wrapper, callExpr, typeSpec = Some(unitTypeRef))),
-            typeSpec = Some(unitTypeRef)
+            List(App(syntheticSpan, wrapper, callExpr, typeSpec = Some(unitTR))),
+            typeSpec = Some(unitTR)
           )
         }
 
     // Build the function type: StructName -> Unit
-    val fnType = TypeFn(syntheticSpan, List(structTypeRef), unitTypeRef)
+    val fnType = TypeFn(syntheticSpan, List(structTypeRef), unitTR)
 
     // Build the lambda
     val lambda = Lambda(
@@ -123,7 +118,7 @@ object MemoryFunctionGenerator:
       body,
       Nil,
       typeSpec = Some(fnType),
-      typeAsc  = Some(unitTypeRef)
+      typeAsc  = Some(unitTR)
     )
 
     // Build the binding
@@ -141,7 +136,7 @@ object MemoryFunctionGenerator:
       name       = fnName,
       value      = Expr(syntheticSpan, List(lambda)),
       typeSpec   = Some(fnType),
-      typeAsc    = Some(unitTypeRef),
+      typeAsc    = Some(unitTR),
       docComment = None,
       meta       = Some(meta),
       id         = genId(moduleName, fnName)
@@ -175,10 +170,7 @@ object MemoryFunctionGenerator:
         lambdaOpt match
           case Some(lambda) =>
             val newParams = lambda.params.zip(struct.fields.toList).map { (param, field) =>
-              val isHeap = TypeUtils
-                .getTypeName(field.typeSpec)
-                .exists(TypeUtils.isHeapType(_, resolvables))
-              if isHeap then param.copy(consuming = true)
+              if isHeapField(field, resolvables) then param.copy(consuming = true)
               else param
             }
             val newLambda = lambda.copy(params = newParams)
@@ -235,11 +227,8 @@ object MemoryFunctionGenerator:
       val fieldRef    = Ref(syntheticSpan, field.name, qualifier = Some(paramRef))
       val fieldAccess = Expr(syntheticSpan, List(fieldRef), typeSpec = Some(field.typeSpec))
 
-      val isHeap = TypeUtils
-        .getTypeName(field.typeSpec)
-        .exists(TypeUtils.isHeapType(_, resolvables))
-
-      if isHeap then wrapFieldWithClone(fieldAccess, field.typeSpec, resolvables)
+      if isHeapField(field, resolvables) then
+        wrapFieldWithClone(fieldAccess, field.typeSpec, resolvables)
       else fieldAccess
     }
 

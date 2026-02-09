@@ -106,6 +106,15 @@ object OwnershipAnalyzer:
   /** Synthetic span for generated AST nodes - won't conflict with semantic tokens */
   private val syntheticSpan = SrcSpan(SrcPoint(0, 0, -1), SrcPoint(0, 0, -1))
 
+  private val UnitTypeId = "stdlib::typedef::Unit"
+  private val BoolTypeId = "stdlib::typedef::Bool"
+
+  private def unitTypeRef(span: SrcSpan): TypeRef =
+    TypeRef(span, "Unit", Some(UnitTypeId), Nil)
+
+  private def boolTypeRef(span: SrcSpan): TypeRef =
+    TypeRef(span, "Bool", Some(BoolTypeId), Nil)
+
   /** Infer which functions return owned heap values (even if not annotated with MemEffect.Alloc).
     * Uses a fixed-point intramodule analysis so that functions returning the result of other
     * returning functions are marked transitively.
@@ -292,25 +301,26 @@ object OwnershipAnalyzer:
       resolvables.resolvables.collectFirst:
         case (id, bnd: Bnd) if bnd.name == freeFn => id
 
-  /** Create a free call: App(Ref("__free_T"), Ref(binding)) */
+  /** Create a free call: App(Ref("__free_T"), Ref(binding)). Returns None when no free function
+    * exists for the type.
+    */
   private def mkFreeCall(
     bindingName: String,
     tpe:         Type,
     span:        SrcSpan,
     bindingId:   Option[String],
     resolvables: ResolvablesIndex
-  ): App =
+  ): Option[App] =
     val typeName = getTypeName(tpe)
-    val freeFn   = typeName.flatMap(freeFnFor(_, resolvables)).getOrElse("__free_String")
-    // Look up the actual ID for the free function (could be stdlib or user module)
-    val freeFnId = lookupFreeFnId(freeFn, resolvables)
-    val unitType: Option[Type] = Some(TypeRef(span, "Unit", Some("stdlib::typedef::Unit"), Nil))
-    // Free function type: T -> Unit
-    val fnType  = Some(TypeFn(span, List(tpe), unitType.get))
-    val fnRef   = Ref(span, freeFn, resolvedId = freeFnId, typeSpec = fnType)
-    val argRef  = Ref(span, bindingName, resolvedId = bindingId, typeSpec = Some(tpe))
-    val argExpr = Expr(span, List(argRef), typeSpec = Some(tpe))
-    App(span, fnRef, argExpr, typeSpec = unitType)
+    typeName.flatMap(freeFnFor(_, resolvables)).map { freeFn =>
+      val freeFnId = lookupFreeFnId(freeFn, resolvables)
+      val unitType: Option[Type] = Some(unitTypeRef(span))
+      val fnType  = Some(TypeFn(span, List(tpe), unitType.get))
+      val fnRef   = Ref(span, freeFn, resolvedId = freeFnId, typeSpec = fnType)
+      val argRef  = Ref(span, bindingName, resolvedId = bindingId, typeSpec = Some(tpe))
+      val argExpr = Expr(span, List(argRef), typeSpec = Some(tpe))
+      App(span, fnRef, argExpr, typeSpec = unitType)
+    }
 
   /** Check if an expression is a conditional with mixed allocation (one branch allocates, other
     * doesn't). Returns Some((trueAllocates, allocType)) if mixed, None otherwise.
@@ -334,7 +344,7 @@ object OwnershipAnalyzer:
     originalCond:  Cond,
     trueAllocates: Boolean
   ): Cond =
-    val boolType = Some(TypeRef(syntheticSpan, "Bool", Some("stdlib::typedef::Bool"), Nil))
+    val boolType = Some(boolTypeRef(syntheticSpan))
     val trueLit  = LiteralBool(syntheticSpan, true)
     val falseLit = LiteralBool(syntheticSpan, false)
 
@@ -360,23 +370,21 @@ object OwnershipAnalyzer:
     span:        SrcSpan,
     bindingId:   Option[String],
     resolvables: ResolvablesIndex
-  ): Cond =
-    val boolType = Some(TypeRef(span, "Bool", Some("stdlib::typedef::Bool"), Nil))
-    val unitType = Some(TypeRef(span, "Unit", Some("stdlib::typedef::Unit"), Nil))
+  ): Option[Cond] =
+    mkFreeCall(bindingName, tpe, span, bindingId, resolvables).map { freeCall =>
+      val boolType = Some(boolTypeRef(span))
+      val unitType = Some(unitTypeRef(span))
 
-    // Condition: reference to the witness boolean
-    val witnessRef  = Ref(span, witnessName, typeSpec = boolType)
-    val witnessExpr = Expr(span, List(witnessRef), typeSpec = boolType)
+      val witnessRef  = Ref(span, witnessName, typeSpec = boolType)
+      val witnessExpr = Expr(span, List(witnessRef), typeSpec = boolType)
 
-    // Then branch: __free_T x
-    val freeCall     = mkFreeCall(bindingName, tpe, span, bindingId, resolvables)
-    val freeCallExpr = Expr(span, List(freeCall), typeSpec = unitType)
+      val freeCallExpr = Expr(span, List(freeCall), typeSpec = unitType)
 
-    // Else branch: ()
-    val unitLit     = LiteralUnit(span)
-    val unitLitExpr = Expr(span, List(unitLit), typeSpec = unitType)
+      val unitLit     = LiteralUnit(span)
+      val unitLitExpr = Expr(span, List(unitLit), typeSpec = unitType)
 
-    Cond(span, witnessExpr, freeCallExpr, unitLitExpr, unitType, unitType)
+      Cond(span, witnessExpr, freeCallExpr, unitLitExpr, unitType, unitType)
+    }
 
   /** Wrap an expression with CPS-style free calls. Transforms: `expr` into
     * `let __r = expr; let _ = free1; let _ = free2; __r`
@@ -400,7 +408,7 @@ object OwnershipAnalyzer:
     val resultRef   = Ref(span, resultName, typeSpec = resultType)
 
     // Unit type for free call results
-    val unitType = Some(TypeRef(span, "Unit", Some("stdlib::typedef::Unit"), Nil))
+    val unitType = Some(unitTypeRef(span))
 
     // Build the innermost expression: just the result reference
     val innermost = Expr(span, List(resultRef), typeSpec = resultType)
@@ -410,21 +418,20 @@ object OwnershipAnalyzer:
     // For bindings with witnesses, generate conditional free instead
     val withFrees = toFree.foldRight(innermost): (binding, acc) =>
       val (name, tpeOpt, id, witnessOpt) = binding
-      tpeOpt match
-        case Some(tpe) =>
-          val freeOrCondFree: Term = witnessOpt match
-            case Some(witnessName) =>
-              // Conditional free: if __owns_x then __free_T x else ()
-              mkConditionalFree(name, tpe, witnessName, span, id, resolvables)
-            case None =>
-              // Unconditional free
-              mkFreeCall(name, tpe, span, id, resolvables)
-
+      val freeTermOpt: Option[Term] = tpeOpt.flatMap { tpe =>
+        witnessOpt match
+          case Some(witnessName) =>
+            mkConditionalFree(name, tpe, witnessName, span, id, resolvables)
+          case None =>
+            mkFreeCall(name, tpe, span, id, resolvables)
+      }
+      freeTermOpt match
+        case Some(freeTerm) =>
           val discardParam =
             FnParam(span, "_", typeSpec = unitType, typeAsc = unitType)
           val discardLam =
             Lambda(span, List(discardParam), acc, Nil, typeSpec = resultType)
-          val freeAppExpr = Expr(span, List(freeOrCondFree), typeSpec = unitType)
+          val freeAppExpr = Expr(span, List(freeTerm), typeSpec = unitType)
           Expr(span, List(App(span, discardLam, freeAppExpr, typeSpec = resultType)))
         case None => acc
 
@@ -630,6 +637,438 @@ object OwnershipAnalyzer:
   private def argAllocates(argExpr: Expr, scope: OwnershipScope): Boolean =
     argExpr.terms.lastOption.flatMap(termAllocates(_, scope)).isDefined
 
+  /** Check for use-after-move on a Ref */
+  private def analyzeRef(ref: Ref, scope: OwnershipScope): TermResult =
+    val nameToCheck = ref.qualifier match
+      case Some(q: Ref) => q.name
+      case _ => ref.name
+    scope.getState(nameToCheck) match
+      case Some(OwnershipState.Moved) =>
+        scope.getMovedAt(nameToCheck) match
+          case Some(movedAt) =>
+            TermResult(
+              scope,
+              ref,
+              errors = List(SemanticError.UseAfterMove(ref, movedAt, PhaseName))
+            )
+          case None =>
+            TermResult(scope, ref)
+      case _ =>
+        TermResult(scope, ref)
+
+  /** Analyze a let-binding: App(Lambda(params, body), arg) */
+  private def analyzeLetBinding(
+    span:      SrcSpan,
+    lSpan:     SrcSpan,
+    params:    List[FnParam],
+    body:      Expr,
+    captures:  List[Ref],
+    lTypeSpec: Option[Type],
+    lTypeAsc:  Option[Type],
+    meta:      Option[LambdaMeta],
+    arg:       Expr,
+    typeAsc:   Option[Type],
+    typeSpec:  Option[Type],
+    scope:     OwnershipScope
+  ): TermResult =
+    val argResult = analyzeExpr(arg, scope)
+
+    // Forward-scan: check if any newly-moved bindings are still used in the body
+    val newlyMoved = argResult.scope.movedAt.keySet -- scope.movedAt.keySet
+    val lastUseErrors = newlyMoved.toList.flatMap: name =>
+      if containsRefInExpr(name, body) then
+        argResult.scope.consumedVia
+          .get(name)
+          .map: (ref, param) =>
+            SemanticError.ConsumingParamNotLastUse(param, ref, PhaseName)
+      else Nil
+
+    // Track bindings that already belonged to the outer scope so we don't free them
+    // inside this CPS wrapper. Only bindings created in this let should be freed here.
+    val inheritedOwned: Set[String] =
+      scope.ownedBindings.map(_._1).toSet
+
+    val allocType = arg.terms.headOption.flatMap(termAllocates(_, scope))
+    val mixedCond = detectMixedConditional(arg, scope)
+
+    // Set up scope for lambda body - handle mixed conditionals specially
+    val (bodyScope, witnessOpt) = params.headOption match
+      case Some(param) if mixedCond.isDefined =>
+        val (trueAllocates, allocTpe) = mixedCond.get
+        val witnessName               = s"__owns_${param.name}"
+        val originalCond              = arg.terms.head.asInstanceOf[Cond]
+        val witnessCond               = mkWitnessConditional(originalCond, trueAllocates)
+        val boolType                  = Some(boolTypeRef(syntheticSpan))
+        val witnessExpr               = Expr(syntheticSpan, List(witnessCond), typeSpec = boolType)
+        val scopeWithWitness = argResult.scope
+          .withMixedOwnership(param.name, Some(allocTpe), witnessName, param.id)
+          .withLiteral(witnessName)
+        (scopeWithWitness, Some((witnessName, witnessExpr, boolType)))
+      case Some(param) if allocType.isDefined =>
+        val paramTypeName =
+          param.typeSpec.orElse(param.typeAsc).flatMap(getTypeName)
+        val allocHeap =
+          allocType.filter(t => getTypeName(t).exists(isHeapType(_, scope.resolvables)))
+        val owns =
+          allocHeap.filter(t => paramTypeName.forall(_ == getTypeName(t).getOrElse("")))
+        val newScope = owns
+          .map(t => argResult.scope.withOwned(param.name, Some(t), param.id))
+          .getOrElse(argResult.scope.withBorrowed(param.name))
+        (newScope, None)
+      case Some(param) =>
+        val newScope = arg.terms.headOption match
+          case Some(_: LiteralString) =>
+            argResult.scope.withLiteral(param.name)
+          case Some(ref: Ref) if isMoveOnRebind(ref.name, argResult.scope) =>
+            val srcInfo = argResult.scope.getInfo(ref.name).get
+            argResult.scope
+              .withMoved(ref.name, ref.span)
+              .withOwned(param.name, srcInfo.bindingTpe, param.id)
+          case _ =>
+            argResult.scope.withBorrowed(param.name)
+        (newScope, None)
+      case None =>
+        (argResult.scope, None)
+
+    val bodyResult = analyzeExpr(body, bodyScope)
+    val escaping   = returnedOwnedNames(bodyResult.expr, bodyResult.scope)
+
+    // Free all owned bindings at terminal body
+    val witnessBinding = witnessOpt.flatMap(_ => params.headOption.map(_.name))
+    val bindingsToFree =
+      bodyResult.scope.ownedBindings.filter:
+        case (name, Some(tpe), _, _) =>
+          !inheritedOwned.contains(name) &&
+          !scope.insideTempWrapper &&
+          !escaping.contains(name) &&
+          !witnessBinding.contains(name) &&
+          getTypeName(tpe).exists(isHeapType(_, scope.resolvables))
+        case _ => false
+
+    val bodyWithTerminalFrees =
+      if bindingsToFree.isEmpty then bodyResult.expr
+      else wrapWithFrees(bodyResult.expr, bindingsToFree, body.span, scope.resolvables)
+
+    // If we have a witness, wrap the body with conditional free
+    val newBody = witnessOpt match
+      case Some((witnessName, _, _)) =>
+        val bindingName = params.headOption.map(_.name).getOrElse("")
+        val bindingType = params.headOption.flatMap(p => p.typeSpec.orElse(p.typeAsc))
+        val bindingId   = params.headOption.flatMap(_.id)
+        bindingType match
+          case Some(tpe) if getTypeName(tpe).exists(isHeapType(_, scope.resolvables)) =>
+            val toFree = List((bindingName, Some(tpe), bindingId, Some(witnessName)))
+            wrapWithFrees(bodyWithTerminalFrees, toFree, body.span, scope.resolvables)
+          case _ =>
+            bodyWithTerminalFrees
+      case None =>
+        bodyWithTerminalFrees
+
+    val newLambda = Lambda(lSpan, params, newBody, captures, lTypeSpec, lTypeAsc, meta)
+    val innerApp  = App(span, newLambda, argResult.expr, typeAsc, typeSpec)
+
+    val finalTerm = witnessOpt match
+      case Some((witnessName, witnessExpr, boolType)) =>
+        val witnessParam =
+          FnParam(syntheticSpan, witnessName, typeSpec = boolType, typeAsc = boolType)
+        val innerAppExpr = Expr(syntheticSpan, List(innerApp), typeSpec = typeSpec)
+        val witnessLambda =
+          Lambda(syntheticSpan, List(witnessParam), innerAppExpr, Nil, typeSpec = typeSpec)
+        App(syntheticSpan, witnessLambda, witnessExpr, typeSpec = typeSpec)
+      case None =>
+        innerApp
+
+    // Propagate moves of inherited bindings back to the outer scope
+    val returnScope = inheritedOwned.foldLeft(scope) { (s, name) =>
+      val movedInArg  = argResult.scope.getState(name).contains(OwnershipState.Moved)
+      val movedInBody = bodyResult.scope.getState(name).contains(OwnershipState.Moved)
+      if movedInArg || movedInBody then
+        val span = argResult.scope
+          .getMovedAt(name)
+          .orElse(bodyResult.scope.getMovedAt(name))
+          .getOrElse(syntheticSpan)
+        s.withMoved(name, span)
+      else s
+    }
+
+    TermResult(
+      returnScope,
+      finalTerm,
+      errors = argResult.errors ++ bodyResult.errors ++ lastUseErrors
+    )
+
+  /** Collect all args and base function from a curried App chain */
+  private def collectArgsAndBase(
+    t:    Ref | App | Lambda,
+    args: List[(Expr, SrcSpan, Option[Type], Option[Type])]
+  ): (Ref | Lambda, List[(Expr, SrcSpan, Option[Type], Option[Type])]) =
+    t match
+      case ref:    Ref => (ref, args)
+      case lambda: Lambda => (lambda, args)
+      case App(s, inner, a, tAsc, tSpec) =>
+        collectArgsAndBase(inner, (a, s, tAsc, tSpec) :: args)
+
+  /** Analyze a regular function application (not a let-binding) */
+  private def analyzeRegularApp(
+    span:     SrcSpan,
+    fn:       Ref | App | Lambda,
+    arg:      Expr,
+    typeAsc:  Option[Type],
+    typeSpec: Option[Type],
+    scope:    OwnershipScope
+  ): TermResult =
+    val (baseFn, allArgsWithMeta) =
+      collectArgsAndBase(fn, List((arg, span, typeAsc, typeSpec)))
+
+    // Resolve base function's param list to detect consuming params
+    val baseFnParams: List[FnParam] = getBaseFn(baseFn)
+      .flatMap(_.resolvedId)
+      .flatMap(scope.resolvables.lookup)
+      .collect { case bnd: Bnd => bnd }
+      .flatMap(_.value.terms.collectFirst { case l: Lambda => l })
+      .map(_.params)
+      .getOrElse(Nil)
+
+    // Auto-clone non-owned args passed to consuming constructor params
+    val processedArgs =
+      if isConstructorCall(baseFn, scope.resolvables) then
+        allArgsWithMeta.zipWithIndex.map { case ((argExpr, s, tAsc, tSpec), idx) =>
+          val param = baseFnParams.lift(idx)
+          val needsClone = param.exists(_.consuming) &&
+            !argAllocates(argExpr, scope) &&
+            argNeedsClone(argExpr, scope)
+          if needsClone then
+            val paramType =
+              param.flatMap(_.typeAsc).getOrElse(argExpr.typeSpec.get)
+            (wrapWithClone(argExpr, paramType), s, tAsc, tSpec)
+          else (argExpr, s, tAsc, tSpec)
+        }
+      else allArgsWithMeta
+
+    // Check which args allocate (in order from first to last)
+    val argsWithAlloc = processedArgs.zipWithIndex.map { case ((argExpr, s, tAsc, tSpec), idx) =>
+      val allocType  = argExpr.terms.lastOption.flatMap(termAllocates(_, scope))
+      val isConsumed = baseFnParams.lift(idx).exists(_.consuming)
+      (argExpr, s, tAsc, tSpec, allocType, isConsumed)
+    }
+
+    val allocatingArgs = argsWithAlloc.filter(_._5.isDefined)
+
+    if allocatingArgs.isEmpty || scope.insideTempWrapper then
+      // No allocating args - proceed with normal analysis
+      val argResult                 = analyzeExpr(arg, scope)
+      val (scopeAfterArg, fnErrors) = handleConsumingParam(fn, arg, argResult.scope)
+      val fnResult                  = analyzeTerm(fn, scopeAfterArg)
+      TermResult(
+        fnResult.scope,
+        App(
+          span,
+          fnResult.term.asInstanceOf[Ref | App | Lambda],
+          argResult.expr,
+          typeAsc,
+          typeSpec
+        ),
+        errors = argResult.errors ++ fnResult.errors ++ fnErrors
+      )
+    else analyzeAllocatingApp(baseFn, argsWithAlloc, typeSpec, scope)
+
+  /** Handle App with allocating args: create temp bindings and explicit free calls */
+  private def analyzeAllocatingApp(
+    baseFn:        Ref | Lambda,
+    argsWithAlloc: List[(Expr, SrcSpan, Option[Type], Option[Type], Option[Type], Boolean)],
+    typeSpec:      Option[Type],
+    scope:         OwnershipScope
+  ): TermResult =
+    // Analyze allocating args BEFORE wrapping to prevent infinite recursion
+    type TempInfo = (String, Expr, Type, Boolean)
+    type ArgEntry =
+      (Expr, SrcSpan, Option[Type], Option[Type], Option[TempInfo])
+
+    val (finalScope, argErrors, tempsAndArgs) =
+      argsWithAlloc.foldLeft(
+        (scope, List.empty[SemanticError], Vector.empty[ArgEntry])
+      ) { case ((curScope, errs, acc), (argExpr, s, tAsc, tSpec, allocOpt, consumed)) =>
+        allocOpt match
+          case Some(allocType) =>
+            val argResult           = analyzeExpr(argExpr, curScope)
+            val (tmpName, newScope) = curScope.nextTemp
+            val tmpRef              = Ref(syntheticSpan, tmpName, typeSpec = Some(allocType))
+            val tmpRefExpr =
+              Expr(syntheticSpan, List(tmpRef), typeSpec = Some(allocType))
+            (
+              newScope,
+              errs ++ argResult.errors,
+              acc :+ (
+                tmpRefExpr,
+                s,
+                tAsc,
+                tSpec,
+                Some((tmpName, argResult.expr, allocType, consumed))
+              )
+            )
+          case None =>
+            (curScope, errs, acc :+ (argExpr, s, tAsc, tSpec, None))
+      }
+
+    // Build the clean App chain using temps where needed
+    val innerApp = tempsAndArgs.foldLeft(baseFn: Ref | App | Lambda) {
+      case (accFn, (argExpr, s, tAsc, tSpec, _)) =>
+        App(s, accFn, argExpr, tAsc, tSpec)
+    }
+
+    // Collect allocating bindings (reverse order for proper nesting of let-bindings)
+    val allBindings   = tempsAndArgs.flatMap(_._5).reverse
+    val allocBindings = allBindings.map(b => (b._1, b._2, b._3))
+
+    val finalInnerBody = Expr(syntheticSpan, List(innerApp), typeSpec = typeSpec)
+
+    // Build structure with explicit free calls:
+    // let tmp0 = arg0; let tmp1 = arg1; let result = inner; free tmp1; free tmp0; result
+    val resultType = typeSpec
+    val resultName = "__tmp_result"
+    val resultRef  = Ref(syntheticSpan, resultName, typeSpec = resultType)
+
+    // Free calls for temps not consumed by the callee
+    val nonConsumedBindings = allBindings.filterNot(_._4)
+    val freeCalls = nonConsumedBindings.flatMap { case (tmpName, _, allocType, _) =>
+      mkFreeCall(tmpName, allocType, syntheticSpan, None, scope.resolvables)
+    }
+
+    val innermost = Expr(syntheticSpan, List(resultRef), typeSpec = resultType)
+
+    val unitType = Some(unitTypeRef(syntheticSpan))
+    val withFrees = freeCalls.foldRight(innermost) { (freeCall, acc) =>
+      val discardParam = FnParam(syntheticSpan, "_", typeSpec = unitType)
+      val discardLam =
+        Lambda(syntheticSpan, List(discardParam), acc, Nil, typeSpec = resultType)
+      val freeExpr = Expr(syntheticSpan, List(freeCall), typeSpec = unitType)
+      Expr(
+        syntheticSpan,
+        List(App(syntheticSpan, discardLam, freeExpr, typeSpec = resultType))
+      )
+    }
+
+    val resultParam = FnParam(syntheticSpan, resultName, typeSpec = resultType)
+    val resultLam =
+      Lambda(syntheticSpan, List(resultParam), withFrees, Nil, typeSpec = resultType)
+    val withResult = Expr(
+      syntheticSpan,
+      List(App(syntheticSpan, resultLam, finalInnerBody, typeSpec = resultType)),
+      typeSpec = resultType
+    )
+
+    val wrappedExpr = allocBindings.foldLeft(withResult) {
+      case (body, (tmpName, argExpr, allocType)) =>
+        val tmpParam = FnParam(syntheticSpan, tmpName, typeSpec = Some(allocType))
+        val wrapperLambda =
+          Lambda(syntheticSpan, List(tmpParam), body, Nil, typeSpec = body.typeSpec)
+        Expr(
+          syntheticSpan,
+          List(App(syntheticSpan, wrapperLambda, argExpr, typeSpec = body.typeSpec))
+        )
+    }
+
+    // Mark inherited owned bindings as Borrowed inside the temp wrapper
+    val borrowedScope = scope.ownedBindings
+      .foldLeft(finalScope) { case (s, (name, _, _, _)) => s.withBorrowed(name) }
+      .copy(insideTempWrapper = true)
+
+    wrappedExpr.terms match
+      case List(wrappedApp: App) =>
+        val result = analyzeTerm(wrappedApp, borrowedScope)
+        TermResult(scope, result.term, argErrors ++ result.errors)
+      case _ =>
+        val result = analyzeExpr(wrappedExpr, borrowedScope)
+        TermResult(scope, wrappedExpr.terms.head, argErrors ++ result.errors)
+
+  /** Analyze a conditional expression */
+  private def analyzeCond(
+    span:     SrcSpan,
+    condExpr: Expr,
+    ifTrue:   Expr,
+    ifFalse:  Expr,
+    typeSpec: Option[Type],
+    typeAsc:  Option[Type],
+    scope:    OwnershipScope
+  ): TermResult =
+    val condResult  = analyzeExpr(condExpr, scope)
+    val trueResult  = analyzeExpr(ifTrue, condResult.scope)
+    val falseResult = analyzeExpr(ifFalse, condResult.scope)
+    TermResult(
+      trueResult.scope,
+      Cond(span, condResult.expr, trueResult.expr, falseResult.expr, typeSpec, typeAsc),
+      errors = condResult.errors ++ trueResult.errors ++ falseResult.errors
+    )
+
+  /** Analyze a standalone lambda definition */
+  private def analyzeLambda(
+    span:     SrcSpan,
+    params:   List[FnParam],
+    body:     Expr,
+    captures: List[Ref],
+    typeSpec: Option[Type],
+    typeAsc:  Option[Type],
+    meta:     Option[LambdaMeta],
+    scope:    OwnershipScope
+  ): TermResult =
+    // Consuming params are Owned so they get freed at body end,
+    // unless skipConsumingOwnership is set (for destructor/constructor functions)
+    val paramScope = params.foldLeft(scope): (s, p) =>
+      if p.consuming && !scope.skipConsumingOwnership then
+        s.withOwned(p.name, p.typeSpec.orElse(p.typeAsc), p.id)
+      else if p.consuming then s
+      else s.withBorrowed(p.name)
+
+    val bodyResult = analyzeExpr(body, paramScope)
+
+    val returnType   = typeAsc.orElse(typeSpec)
+    val promotedBody = promoteStaticBranchesInReturn(bodyResult.expr, returnType, paramScope)
+
+    // Insert frees for consuming params that are still Owned (not returned, not moved)
+    val escaping = returnedOwnedNames(promotedBody, bodyResult.scope)
+    val consumingToFree = params.filter(_.consuming).flatMap { p =>
+      val pType = p.typeSpec.orElse(p.typeAsc)
+      if !scope.skipConsumingOwnership &&
+        pType.flatMap(getTypeName).exists(isHeapType(_, scope.resolvables)) &&
+        !escaping.contains(p.name) &&
+        !bodyResult.scope.getState(p.name).contains(OwnershipState.Moved)
+      then Some((p.name, pType, p.id, None: Option[String]))
+      else None
+    }
+    val finalBody =
+      if consumingToFree.isEmpty then promotedBody
+      else wrapWithFrees(promotedBody, consumingToFree, body.span, scope.resolvables)
+
+    val borrowEscapeErrors = returnType
+      .flatMap(getTypeName)
+      .filter(isHeapType(_, scope.resolvables))
+      .map(_ => returnedBorrowedRefs(finalBody, bodyResult.scope))
+      .getOrElse(Nil)
+      .map(ref => SemanticError.BorrowEscapeViaReturn(ref, PhaseName))
+
+    TermResult(
+      scope,
+      Lambda(span, params, finalBody, captures, typeSpec, typeAsc, meta),
+      errors = bodyResult.errors ++ borrowEscapeErrors
+    )
+
+  /** Analyze a tuple expression */
+  private def analyzeTuple(
+    span:     SrcSpan,
+    elements: cats.data.NonEmptyList[Expr],
+    typeAsc:  Option[Type],
+    typeSpec: Option[Type],
+    scope:    OwnershipScope
+  ): TermResult =
+    val (finalScope, errors, newElements) =
+      elements.toList.foldLeft((scope, List.empty[SemanticError], Vector.empty[Expr])) {
+        case ((curScope, errs, acc), elem) =>
+          val result = analyzeExpr(elem, curScope)
+          (result.scope, errs ++ result.errors, acc :+ result.expr)
+      }
+    val nel = cats.data.NonEmptyList.fromListUnsafe(newElements.toList)
+    TermResult(finalScope, Tuple(span, nel, typeAsc, typeSpec), errors = errors)
+
   /** Analyze a term and track ownership changes */
   private def analyzeTerm(
     term:  Term,
@@ -637,419 +1076,32 @@ object OwnershipAnalyzer:
   ): TermResult =
     term match
       case ref: Ref =>
-        // Check if this is a use of a moved binding (direct or via qualifier)
-        val nameToCheck = ref.qualifier match
-          case Some(q: Ref) => q.name
-          case _ => ref.name
-        scope.getState(nameToCheck) match
-          case Some(OwnershipState.Moved) =>
-            scope.getMovedAt(nameToCheck) match
-              case Some(movedAt) =>
-                TermResult(
-                  scope,
-                  ref,
-                  errors = List(SemanticError.UseAfterMove(ref, movedAt, PhaseName))
-                )
-              case None =>
-                TermResult(scope, ref)
-          case _ =>
-            TermResult(scope, ref)
+        analyzeRef(ref, scope)
+
+      case App(span, fn: Lambda, arg, typeAsc, typeSpec) =>
+        analyzeLetBinding(
+          span,
+          fn.span,
+          fn.params,
+          fn.body,
+          fn.captures,
+          fn.typeSpec,
+          fn.typeAsc,
+          fn.meta,
+          arg,
+          typeAsc,
+          typeSpec,
+          scope
+        )
 
       case App(span, fn, arg, typeAsc, typeSpec) =>
-        fn match
-          // Pattern: App(Lambda(...), arg) - this is a let binding
-          case Lambda(lSpan, params, body, captures, lTypeSpec, lTypeAsc, meta) =>
-            // Analyze the argument first
-            val argResult = analyzeExpr(arg, scope)
-
-            // Forward-scan: check if any newly-moved bindings are still used in the body
-            val newlyMoved = argResult.scope.movedAt.keySet -- scope.movedAt.keySet
-            val lastUseErrors = newlyMoved.toList.flatMap: name =>
-              if containsRefInExpr(name, body) then
-                argResult.scope.consumedVia
-                  .get(name)
-                  .map: (ref, param) =>
-                    SemanticError.ConsumingParamNotLastUse(param, ref, PhaseName)
-              else Nil
-
-            // Track bindings that already belonged to the outer scope so we don't free them
-            // inside this CPS wrapper. Only bindings created in this let should be freed here.
-            val inheritedOwned: Set[String] =
-              scope.ownedBindings.map(_._1).toSet
-
-            // Check if arg is an allocating expression
-            val allocType = arg.terms.headOption.flatMap(termAllocates(_, scope))
-
-            // Check if arg is a MIXED conditional (one branch allocates, other doesn't)
-            val mixedCond = detectMixedConditional(arg, scope)
-
-            // Set up scope for lambda body - handle mixed conditionals specially
-            val (bodyScope, witnessOpt) = params.headOption match
-              case Some(param) if mixedCond.isDefined =>
-                // Mixed conditional: generate witness boolean for compile-time tracking
-                val (trueAllocates, allocTpe) = mixedCond.get
-                val witnessName               = s"__owns_${param.name}"
-                val originalCond              = arg.terms.head.asInstanceOf[Cond]
-                val witnessCond               = mkWitnessConditional(originalCond, trueAllocates)
-                val boolType =
-                  Some(TypeRef(syntheticSpan, "Bool", Some("stdlib::typedef::Bool"), Nil))
-                val witnessExpr = Expr(syntheticSpan, List(witnessCond), typeSpec = boolType)
-                val scopeWithWitness = argResult.scope
-                  .withMixedOwnership(param.name, Some(allocTpe), witnessName, param.id)
-                  .withLiteral(witnessName) // witness is bool, no cleanup needed
-                (scopeWithWitness, Some((witnessName, witnessExpr, boolType)))
-              case Some(param) if allocType.isDefined =>
-                val paramTypeName =
-                  param.typeSpec
-                    .orElse(param.typeAsc)
-                    .flatMap(getTypeName)
-                val allocHeap =
-                  allocType.filter(t => getTypeName(t).exists(isHeapType(_, scope.resolvables)))
-                val owns =
-                  allocHeap.filter(t => paramTypeName.forall(_ == getTypeName(t).getOrElse("")))
-                val newScope = owns
-                  .map(t => argResult.scope.withOwned(param.name, Some(t), param.id))
-                  .getOrElse(argResult.scope.withBorrowed(param.name))
-                (newScope, None)
-              case Some(param) =>
-                // Non-allocating: check if it's a literal, move-on-rebind, or borrowed
-                val newScope = arg.terms.headOption match
-                  case Some(_: LiteralString) =>
-                    argResult.scope.withLiteral(param.name)
-                  case Some(ref: Ref) if isMoveOnRebind(ref.name, argResult.scope) =>
-                    val srcInfo = argResult.scope.getInfo(ref.name).get
-                    argResult.scope
-                      .withMoved(ref.name, ref.span)
-                      .withOwned(param.name, srcInfo.bindingTpe, param.id)
-                  case _ =>
-                    argResult.scope.withBorrowed(param.name)
-                (newScope, None)
-              case None =>
-                (argResult.scope, None)
-
-            // Analyze the lambda body with the updated scope
-            val bodyResult = analyzeExpr(body, bodyScope)
-
-            val escaping = returnedOwnedNames(bodyResult.expr, bodyResult.scope)
-
-            // Free all owned bindings at terminal body. Double-free is prevented by:
-            // 1. Explicit __free_* calls mark their args as Moved (via consuming param)
-            // 2. Temp wrappers mark inherited bindings as Borrowed (see borrowedScope below)
-            // 3. Bindings with witnesses are excluded here - handled separately below
-            // For bindings with witnesses, generates conditional free at this point
-            val witnessBinding = witnessOpt.flatMap(_ => params.headOption.map(_.name))
-            val bindingsToFree =
-              bodyResult.scope.ownedBindings.filter:
-                case (name, Some(tpe), _, _) =>
-                  !inheritedOwned.contains(name) &&
-                  !scope.insideTempWrapper &&
-                  !escaping.contains(name) &&
-                  !witnessBinding.contains(name) && // Exclude witness binding - handled below
-                  getTypeName(tpe).exists(isHeapType(_, scope.resolvables))
-                case _ => false
-
-            // Wrap body in CPS-style free sequence:
-            // let result = <body>; let _ = free x; result
-            // For bindings with witnesses: if __owns_x then __free_T x else ()
-            val bodyWithTerminalFrees =
-              if bindingsToFree.isEmpty then bodyResult.expr
-              else wrapWithFrees(bodyResult.expr, bindingsToFree, body.span, scope.resolvables)
-
-            // If we have a witness, wrap the body (inside the let) with conditional free
-            // Structure: let __owns_x = <cond>; let x = <val>; <body>; if __owns_x then free x; result
-            val newBody = witnessOpt match
-              case Some((witnessName, _, _)) =>
-                // Get the binding's type from the param
-                val bindingName = params.headOption.map(_.name).getOrElse("")
-                val bindingType = params.headOption.flatMap(p => p.typeSpec.orElse(p.typeAsc))
-                val bindingId   = params.headOption.flatMap(_.id)
-
-                bindingType match
-                  case Some(tpe) if getTypeName(tpe).exists(isHeapType(_, scope.resolvables)) =>
-                    // Generate: let __r = <body>; if __owns_x then free x else (); __r
-                    val toFree = List((bindingName, Some(tpe), bindingId, Some(witnessName)))
-                    wrapWithFrees(bodyWithTerminalFrees, toFree, body.span, scope.resolvables)
-                  case _ =>
-                    bodyWithTerminalFrees
-              case None =>
-                bodyWithTerminalFrees
-
-            val newLambda = Lambda(lSpan, params, newBody, captures, lTypeSpec, lTypeAsc, meta)
-            val innerApp  = App(span, newLambda, argResult.expr, typeAsc, typeSpec)
-
-            // If we have a witness, wrap with: let __owns_x = <witness_cond>; <innerApp>
-            val finalTerm = witnessOpt match
-              case Some((witnessName, witnessExpr, boolType)) =>
-                val witnessParam =
-                  FnParam(syntheticSpan, witnessName, typeSpec = boolType, typeAsc = boolType)
-                val innerAppExpr = Expr(syntheticSpan, List(innerApp), typeSpec = typeSpec)
-                val witnessLambda =
-                  Lambda(syntheticSpan, List(witnessParam), innerAppExpr, Nil, typeSpec = typeSpec)
-                App(syntheticSpan, witnessLambda, witnessExpr, typeSpec = typeSpec)
-              case None =>
-                innerApp
-
-            // Propagate moves of inherited bindings back to the outer scope.
-            // When a consuming call inside the body moves an inherited owned binding,
-            // the outer scope must know so it doesn't free the binding again.
-            val returnScope = inheritedOwned.foldLeft(scope) { (s, name) =>
-              val movedInArg  = argResult.scope.getState(name).contains(OwnershipState.Moved)
-              val movedInBody = bodyResult.scope.getState(name).contains(OwnershipState.Moved)
-              if movedInArg || movedInBody then
-                val span = argResult.scope
-                  .getMovedAt(name)
-                  .orElse(bodyResult.scope.getMovedAt(name))
-                  .getOrElse(syntheticSpan)
-                s.withMoved(name, span)
-              else s
-            }
-
-            TermResult(
-              returnScope,
-              finalTerm,
-              errors = argResult.errors ++ bodyResult.errors ++ lastUseErrors
-            )
-
-          // Regular function application - handle entire curried chain at once
-          case _ =>
-            // Collect all args and base function from curried application chain
-            def collectArgsAndBase(
-              t:    Ref | App | Lambda,
-              args: List[(Expr, SrcSpan, Option[Type], Option[Type])]
-            ): (Ref | Lambda, List[(Expr, SrcSpan, Option[Type], Option[Type])]) =
-              t match
-                case ref:    Ref => (ref, args)
-                case lambda: Lambda => (lambda, args)
-                case App(s, inner, a, tAsc, tSpec) =>
-                  collectArgsAndBase(inner, (a, s, tAsc, tSpec) :: args)
-
-            val (baseFn, allArgsWithMeta) =
-              collectArgsAndBase(fn, List((arg, span, typeAsc, typeSpec)))
-
-            // Resolve base function's param list to detect consuming params
-            val baseFnParams: List[FnParam] = getBaseFn(baseFn)
-              .flatMap(_.resolvedId)
-              .flatMap(scope.resolvables.lookup)
-              .collect { case bnd: Bnd => bnd }
-              .flatMap(_.value.terms.collectFirst { case l: Lambda => l })
-              .map(_.params)
-              .getOrElse(Nil)
-
-            // Auto-clone non-owned args passed to consuming constructor params
-            val processedArgs =
-              if isConstructorCall(baseFn, scope.resolvables) then
-                allArgsWithMeta.zipWithIndex.map { case ((argExpr, s, tAsc, tSpec), idx) =>
-                  val param = baseFnParams.lift(idx)
-                  val needsClone = param.exists(_.consuming) &&
-                    !argAllocates(argExpr, scope) &&
-                    argNeedsClone(argExpr, scope)
-                  if needsClone then
-                    val paramType =
-                      param.flatMap(_.typeAsc).getOrElse(argExpr.typeSpec.get)
-                    (wrapWithClone(argExpr, paramType), s, tAsc, tSpec)
-                  else (argExpr, s, tAsc, tSpec)
-                }
-              else allArgsWithMeta
-
-            // Check which args allocate (in order from first to last)
-            val argsWithAlloc = processedArgs.zipWithIndex.map {
-              case ((argExpr, s, tAsc, tSpec), idx) =>
-                val allocType  = argExpr.terms.lastOption.flatMap(termAllocates(_, scope))
-                val isConsumed = baseFnParams.lift(idx).exists(_.consuming)
-                (argExpr, s, tAsc, tSpec, allocType, isConsumed)
-            }
-
-            val allocatingArgs = argsWithAlloc.filter(_._5.isDefined)
-
-            if allocatingArgs.isEmpty || scope.insideTempWrapper then
-              // No allocating args - proceed with normal analysis
-              val argResult                 = analyzeExpr(arg, scope)
-              val (scopeAfterArg, fnErrors) = handleConsumingParam(fn, arg, argResult.scope)
-              val fnResult                  = analyzeTerm(fn, scopeAfterArg)
-              TermResult(
-                fnResult.scope,
-                App(
-                  span,
-                  fnResult.term.asInstanceOf[Ref | App | Lambda],
-                  argResult.expr,
-                  typeAsc,
-                  typeSpec
-                ),
-                errors = argResult.errors ++ fnResult.errors ++ fnErrors
-              )
-            else
-              // Create temps for allocating args, build clean App chain, wrap with let-bindings
-              // IMPORTANT: Analyze allocating args BEFORE wrapping to prevent infinite recursion.
-              // If we put unanalyzed args in wrappers, analyzeTerm on the wrapper re-analyzes
-              // them, triggering temp-wrapping again (stack overflow).
-              var currentScope = scope
-              var argErrors    = List.empty[SemanticError]
-              val tempsAndArgs = argsWithAlloc.map {
-                case (argExpr, s, tAsc, tSpec, allocOpt, consumed) =>
-                  allocOpt match
-                    case Some(allocType) =>
-                      // Analyze this arg NOW so it won't be re-wrapped later
-                      val argResult = analyzeExpr(argExpr, currentScope)
-                      argErrors = argErrors ++ argResult.errors
-                      val (tmpName, newScope) = currentScope.nextTemp
-                      currentScope = newScope
-                      val tmpRef = Ref(syntheticSpan, tmpName, typeSpec = Some(allocType))
-                      val tmpRefExpr =
-                        Expr(syntheticSpan, List(tmpRef), typeSpec = Some(allocType))
-                      (
-                        tmpRefExpr,
-                        s,
-                        tAsc,
-                        tSpec,
-                        Some((tmpName, argResult.expr, allocType, consumed))
-                      )
-                    case None =>
-                      (argExpr, s, tAsc, tSpec, None)
-              }
-
-              // Build the clean App chain using temps where needed
-              val innerApp = tempsAndArgs.foldLeft(baseFn: Ref | App | Lambda) {
-                case (accFn, (argExpr, s, tAsc, tSpec, _)) =>
-                  App(s, accFn, argExpr, tAsc, tSpec)
-              }
-
-              // Collect allocating bindings (reverse order for proper nesting of let-bindings)
-              val allBindings   = tempsAndArgs.flatMap(_._5).reverse
-              val allocBindings = allBindings.map(b => (b._1, b._2, b._3))
-
-              val finalInnerBody = Expr(syntheticSpan, List(innerApp), typeSpec = typeSpec)
-
-              // Build structure with explicit free calls:
-              // let tmp0 = arg0; let tmp1 = arg1; let result = inner; free tmp1; free tmp0; result
-              val resultType = typeSpec
-              val resultName = "__tmp_result"
-              val resultRef  = Ref(syntheticSpan, resultName, typeSpec = resultType)
-
-              // Free calls for temps not consumed by the callee
-              val nonConsumedBindings = allBindings.filterNot(_._4)
-              val freeCalls = nonConsumedBindings.map { case (tmpName, _, allocType, _) =>
-                mkFreeCall(tmpName, allocType, syntheticSpan, None, scope.resolvables)
-              }
-
-              // Build innermost: result reference
-              val innermost = Expr(syntheticSpan, List(resultRef), typeSpec = resultType)
-
-              // Wrap with free calls: let _ = free tmpN; ... let _ = free tmp0; result
-              val unitType = Some(
-                TypeRef(syntheticSpan, "Unit", Some("stdlib::typedef::Unit"), Nil)
-              )
-              val withFrees = freeCalls.foldRight(innermost) { (freeCall, acc) =>
-                val discardParam = FnParam(syntheticSpan, "_", typeSpec = unitType)
-                val discardLam =
-                  Lambda(syntheticSpan, List(discardParam), acc, Nil, typeSpec = resultType)
-                val freeExpr = Expr(syntheticSpan, List(freeCall), typeSpec = unitType)
-                Expr(
-                  syntheticSpan,
-                  List(App(syntheticSpan, discardLam, freeExpr, typeSpec = resultType))
-                )
-              }
-
-              // Wrap with result binding: let result = innerBody; <withFrees>
-              val resultParam = FnParam(syntheticSpan, resultName, typeSpec = resultType)
-              val resultLam =
-                Lambda(syntheticSpan, List(resultParam), withFrees, Nil, typeSpec = resultType)
-              val withResult = Expr(
-                syntheticSpan,
-                List(App(syntheticSpan, resultLam, finalInnerBody, typeSpec = resultType)),
-                typeSpec = resultType
-              )
-
-              // Wrap with temp bindings (cleanup is already in withResult, not scope-end)
-              val wrappedExpr = allocBindings.foldLeft(withResult) {
-                case (body, (tmpName, argExpr, allocType)) =>
-                  val tmpParam = FnParam(syntheticSpan, tmpName, typeSpec = Some(allocType))
-                  val wrapperLambda =
-                    Lambda(syntheticSpan, List(tmpParam), body, Nil, typeSpec = body.typeSpec)
-                  Expr(
-                    syntheticSpan,
-                    List(App(syntheticSpan, wrapperLambda, argExpr, typeSpec = body.typeSpec))
-                  )
-              }
-
-              // For analyzing the temp wrapper, mark inherited owned bindings as Borrowed.
-              // This prevents them from being freed inside the wrapper - they'll be freed
-              // by their owning scope. Temps have explicit frees so they're handled.
-              // Mark as inside temp wrapper to prevent infinite recursion and scope-level frees.
-              val borrowedScope = scope.ownedBindings
-                .foldLeft(currentScope) { case (s, (name, _, _, _)) => s.withBorrowed(name) }
-                .copy(insideTempWrapper = true)
-
-              // The wrapped result is an Expr with a single App term
-              wrappedExpr.terms match
-                case List(wrappedApp: App) =>
-                  val result = analyzeTerm(wrappedApp, borrowedScope)
-                  // Restore original scope's ownership state for outer context
-                  TermResult(scope, result.term, argErrors ++ result.errors)
-                case _ =>
-                  // Fallback - shouldn't happen
-                  val result = analyzeExpr(wrappedExpr, borrowedScope)
-                  TermResult(scope, wrappedExpr.terms.head, argErrors ++ result.errors)
+        analyzeRegularApp(span, fn, arg, typeAsc, typeSpec, scope)
 
       case Cond(span, condExpr, ifTrue, ifFalse, typeSpec, typeAsc) =>
-        // Analyze condition
-        val condResult = analyzeExpr(condExpr, scope)
-
-        // Analyze both branches starting from the same scope
-        val trueResult  = analyzeExpr(ifTrue, condResult.scope)
-        val falseResult = analyzeExpr(ifFalse, condResult.scope)
-
-        // Branches should have compatible ownership states
-        // For now, just use the true branch's scope
-        TermResult(
-          trueResult.scope,
-          Cond(span, condResult.expr, trueResult.expr, falseResult.expr, typeSpec, typeAsc),
-          errors = condResult.errors ++ trueResult.errors ++ falseResult.errors
-        )
+        analyzeCond(span, condExpr, ifTrue, ifFalse, typeSpec, typeAsc, scope)
 
       case Lambda(span, params, body, captures, typeSpec, typeAsc, meta) =>
-        // Create new scope for lambda body with params as borrowed (by default)
-        // Consuming params are added as Owned so they get freed at body end,
-        // unless skipConsumingOwnership is set (for __free_* and __mk_* functions)
-        val paramScope = params.foldLeft(scope): (s, p) =>
-          if p.consuming && !scope.skipConsumingOwnership then
-            s.withOwned(p.name, p.typeSpec.orElse(p.typeAsc), p.id)
-          else if p.consuming then s
-          else s.withBorrowed(p.name)
-
-        val bodyResult = analyzeExpr(body, paramScope)
-
-        // Apply clone insertion for mixed-allocation returns
-        val returnType   = typeAsc.orElse(typeSpec)
-        val promotedBody = promoteStaticBranchesInReturn(bodyResult.expr, returnType, paramScope)
-
-        // Insert frees for consuming params that are still Owned (not returned, not moved)
-        val escaping = returnedOwnedNames(promotedBody, bodyResult.scope)
-        val consumingToFree = params.filter(_.consuming).flatMap { p =>
-          val pType = p.typeSpec.orElse(p.typeAsc)
-          if !scope.skipConsumingOwnership &&
-            pType.flatMap(getTypeName).exists(isHeapType(_, scope.resolvables)) &&
-            !escaping.contains(p.name) &&
-            !bodyResult.scope.getState(p.name).contains(OwnershipState.Moved)
-          then Some((p.name, pType, p.id, None: Option[String]))
-          else None
-        }
-        val finalBody =
-          if consumingToFree.isEmpty then promotedBody
-          else wrapWithFrees(promotedBody, consumingToFree, body.span, scope.resolvables)
-
-        // Check for borrowed values escaping via return
-        val borrowEscapeErrors = returnType
-          .flatMap(getTypeName)
-          .filter(isHeapType(_, scope.resolvables))
-          .map(_ => returnedBorrowedRefs(finalBody, bodyResult.scope))
-          .getOrElse(Nil)
-          .map(ref => SemanticError.BorrowEscapeViaReturn(ref, PhaseName))
-
-        TermResult(
-          scope, // Lambda doesn't change outer scope
-          Lambda(span, params, finalBody, captures, typeSpec, typeAsc, meta),
-          errors = bodyResult.errors ++ borrowEscapeErrors
-        )
+        analyzeLambda(span, params, body, captures, typeSpec, typeAsc, meta, scope)
 
       case expr: Expr =>
         val result = analyzeExpr(expr, scope)
@@ -1057,32 +1109,14 @@ object OwnershipAnalyzer:
 
       case TermGroup(span, inner, typeAsc) =>
         val result = analyzeExpr(inner, scope)
-        TermResult(
-          result.scope,
-          TermGroup(span, result.expr, typeAsc),
-          errors = result.errors
-        )
+        TermResult(result.scope, TermGroup(span, result.expr, typeAsc), errors = result.errors)
 
       case Tuple(span, elements, typeAsc, typeSpec) =>
-        var currentScope = scope
-        var errors       = List.empty[SemanticError]
-        val newElements = elements.map: elem =>
-          val result = analyzeExpr(elem, currentScope)
-          currentScope = result.scope
-          errors       = errors ++ result.errors
-          result.expr
+        analyzeTuple(span, elements, typeAsc, typeSpec, scope)
 
-        TermResult(
-          currentScope,
-          Tuple(span, newElements, typeAsc, typeSpec),
-          errors = errors
-        )
-
-      // Literals don't affect ownership
       case lit: LiteralValue =>
         TermResult(scope, lit)
 
-      // Other terms pass through unchanged
       case other =>
         TermResult(scope, other)
 

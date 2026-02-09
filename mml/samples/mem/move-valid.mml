@@ -7,4 +7,6 @@ fn main(): Unit =
   let s2 = "goodbye" ++ " world";
   consume s2;
   println "done"
+  // this fails
+  // println s2
 ;
