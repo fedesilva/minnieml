@@ -1,13 +1,10 @@
 
-
-
 fn loop(i:Int, to: Int): Unit =
   println ("Iteration: " ++ (int_to_str i));
   if i <= to 
   then loop ( i+1 ) to
   else 
-    println "done";
-    ()
+    println "done"
   end
 ;
 
