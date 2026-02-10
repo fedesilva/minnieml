@@ -612,6 +612,30 @@ class OwnershipAnalyzerTests extends BaseEffFunSuite:
     }
   }
 
+  test("same string in two array slots rejected") {
+    val code =
+      """
+        fn main(): Unit =
+          let arr = ar_str_new 2;
+          let s = "hello" ++ " world";
+          ar_str_set arr 0 s;
+          ar_str_set arr 1 s;
+          println (ar_str_get arr 0)
+        ;
+      """
+
+    semState(code).map { result =>
+      val consumeErrors = result.errors.collect { case e: SemanticError.ConsumingParamNotLastUse =>
+        e
+      }
+      val moveErrors = result.errors.collect { case e: SemanticError.UseAfterMove => e }
+      assert(
+        consumeErrors.nonEmpty || moveErrors.nonEmpty,
+        s"Expected ownership error for double use of moved string, got: ${result.errors}"
+      )
+    }
+  }
+
   test("native struct constructor heap params marked consuming") {
     val code =
       """

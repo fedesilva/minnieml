@@ -33,16 +33,30 @@ Affine ownership with borrow-by-default. Enables safe automatic memory managemen
 
 #### Testing & Infrastructure
 
-- [ ] **Edge case testing** — see `mem-next.md` for test matrix
-  - Aliasing / copy hazards (T1, T2)
-  - Move invalidation across rebinding (T3, T4)
-  - Aggregate ownership (T5-T8) — addressed by move-only structs + clone
-  - Nested conditional cleanup (T9-T11)
+- [ ] **Edge case testing** — see `mem-next.md` for test matrix.
+  All cases done except T10 mixed variant (blocked by bug below).
+- [ ] **BUG: nested mixed-ownership conditionals** — witness booleans don't propagate
+  through nested `if/else` where inner branches mix heap/literal. Blocks T10 mixed variant.
 
 
 ---
 
 ## Recent Changes
+
+### 2026-02-10 Negative test harness complete [COMPLETE]
+
+- **Problem:** Negative tests (expected compile errors) were confirmed manually but lacked
+  unit tests asserting the correct error types.
+- **Fix:** Added T8 test ("same string in two array slots rejected") to
+  `OwnershipAnalyzerTests.scala`. Passes same owned string to `ar_str_set` twice; asserts
+  `ConsumingParamNotLastUse` or `UseAfterMove` is emitted.
+- **All 5 negative cases now have unit tests:**
+  - T8 (array alias): "same string in two array slots rejected"
+  - use-after-move: "use after move to consuming param", "use after move in expression"
+  - borrow-escape: "borrowed param returned from heap-returning function is rejected"
+  - consume-not-last: "consuming param not last use detected"
+  - partial-consume: "partial application of function with consuming param is rejected"
+- **Verification:** 257 tests pass, `scalafmtAll`/`scalafixAll` clean.
 
 ### 2026-02-09 Move constructor generation from parser to semantic phase [COMPLETE]
 
