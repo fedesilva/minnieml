@@ -128,7 +128,7 @@ Affine ownership with borrow-by-default. Enables safe automatic memory managemen
 
 #### Code Quality (from `qa-mem.md`)
 
-- [ ] **Split `analyzeTerm`** (~380 lines) into helpers — High priority
+- [x] **Split `analyzeTerm`** (~380 lines) into helpers — High priority [COMPLETE]
   - Extract: `analyzeLetBinding`, `analyzeRegularApp`, `collectCurriedArgs`,
     `wrapAllocatingArgs`
 - [ ] **Extract hardcoded stdlib IDs** to shared constants object — Medium
