@@ -51,20 +51,23 @@ typedef struct
 
 typedef BufferImpl *Buffer;
 
+static void mml_sys_oom_abort(void)
+{
+    write(STDERR_FILENO, "out of memory\n", 14);
+    abort();
+}
+
 Buffer mkBuffer()
 {
     Buffer b = (Buffer)malloc(sizeof(BufferImpl));
     if (!b)
-        return NULL;
+        mml_sys_oom_abort();
     b->capacity = 1024*8;
     b->length = 0;
     b->fd = STDOUT_FILENO;
     b->data = (char *)malloc(b->capacity);
     if (!b->data)
-    {
-        free(b);
-        return NULL;
-    }
+        mml_sys_oom_abort();
     return b;
 }
 
@@ -72,16 +75,13 @@ Buffer mkBufferWithFd(int fd)
 {
     Buffer b = (Buffer)malloc(sizeof(BufferImpl));
     if (!b)
-        return NULL;
+        mml_sys_oom_abort();
     b->capacity = 4096;
     b->length = 0;
     b->fd = fd;
     b->data = (char *)malloc(b->capacity);
     if (!b->data)
-    {
-        free(b);
-        return NULL;
-    }
+        mml_sys_oom_abort();
     return b;
 }
 
@@ -89,16 +89,13 @@ Buffer mkBufferWithSize(int64_t size)
 {
     Buffer b = (Buffer)malloc(sizeof(BufferImpl));
     if (!b)
-        return NULL;
+        mml_sys_oom_abort();
     b->capacity = size > 0 ? (size_t)size : 4096;
     b->length = 0;
     b->fd = STDOUT_FILENO;
     b->data = (char *)malloc(b->capacity);
     if (!b->data)
-    {
-        free(b);
-        return NULL;
-    }
+        mml_sys_oom_abort();
     return b;
 }
 
@@ -273,7 +270,7 @@ String readline()
     size_t size = 1024;
     char *buffer = (char *)malloc(size);
     if (!buffer)
-        return (String){0, NULL};
+        mml_sys_oom_abort();
 
     if (fgets(buffer, size, stdin))
     {
@@ -310,14 +307,11 @@ StringBuilder *string_builder_new(size_t initial_capacity)
 {
     StringBuilder *sb = (StringBuilder *)malloc(sizeof(StringBuilder));
     if (!sb)
-        return NULL;
+        mml_sys_oom_abort();
 
     sb->buffer = (char *)malloc(initial_capacity);
     if (!sb->buffer)
-    {
-        free(sb);
-        return NULL;
-    }
+        mml_sys_oom_abort();
 
     sb->capacity = initial_capacity;
     sb->length = 0;
@@ -334,7 +328,7 @@ void string_builder_append(StringBuilder *sb, String str)
         sb->capacity *= 2;
         char *new_buffer = (char *)realloc(sb->buffer, sb->capacity);
         if (!new_buffer)
-            return;
+            mml_sys_oom_abort();
         sb->buffer = new_buffer;
     }
     memcpy(sb->buffer + sb->length, str.data, str.length);
@@ -349,11 +343,7 @@ String string_builder_finalize(StringBuilder *sb)
 
     char *data = (char *)malloc(sb->length + 1);
     if (!data)
-    {
-        free(sb->buffer);
-        free(sb);
-        return (String){0, NULL};
-    }
+        mml_sys_oom_abort();
 
     String result = {sb->length, data};
     memcpy(result.data, sb->buffer, sb->length);
@@ -395,7 +385,7 @@ String substring(String s, size_t start, size_t len)
 
     char *new_data = (char *)malloc(len + 1);
     if (!new_data)
-        return (String){0, NULL};
+        mml_sys_oom_abort();
 
     memcpy(new_data, s.data + start, len);
     new_data[len] = '\0';
@@ -428,7 +418,7 @@ String concat(String a, String b)
     size_t total_length = a.length + b.length;
     char *new_data = (char *)malloc(total_length + 1);
     if (!new_data)
-        return (String){0, NULL};
+        mml_sys_oom_abort();
 
     // Copy both strings
     memcpy(new_data, a.data, a.length);
@@ -446,7 +436,7 @@ String int_to_str(int64_t value)
     {
         char *data = (char *)malloc(2);
         if (!data)
-            return (String){0, NULL};
+            mml_sys_oom_abort();
         data[0] = '0';
         data[1] = '\0';
         return (String){1, data};
@@ -469,7 +459,7 @@ String int_to_str(int64_t value)
     size_t total_length = digit_count + (is_negative ? 1 : 0);
     char *data = (char *)malloc(total_length + 1);
     if (!data)
-        return (String){0, NULL};
+        mml_sys_oom_abort();
 
     // Fill in digits from right to left
     data[total_length] = '\0';
@@ -496,14 +486,14 @@ String float_to_str(float value)
     {
         char *data = (char *)malloc(2);
         if (!data)
-            return (String){0, NULL};
+            mml_sys_oom_abort();
         data[0] = '0';
         data[1] = '\0';
         return (String){1, data};
     }
     char *data = (char *)malloc(len + 1);
     if (!data)
-        return (String){0, NULL};
+        mml_sys_oom_abort();
     memcpy(data, buf, len + 1);
     return (String){(size_t)len, data};
 }
@@ -544,7 +534,7 @@ static char *to_cstr(String s)
 {
     char *cstr = (char *)malloc(s.length + 1);
     if (!cstr)
-        return NULL;
+        mml_sys_oom_abort();
     memcpy(cstr, s.data, s.length);
     cstr[s.length] = '\0';
     return cstr;
@@ -609,7 +599,7 @@ String read_line_fd(int fd)
     size_t len = 0;
     char *buffer = (char *)malloc(size);
     if (!buffer)
-        return (String){0, NULL};
+        mml_sys_oom_abort();
 
     char c;
     while (read(fd, &c, 1) == 1 && c != '\n')
@@ -619,10 +609,7 @@ String read_line_fd(int fd)
             size *= 2;
             char *new_buf = (char *)realloc(buffer, size);
             if (!new_buf)
-            {
-                free(buffer);
-                return (String){0, NULL};
-            }
+                mml_sys_oom_abort();
             buffer = new_buf;
         }
         buffer[len++] = c;
@@ -678,7 +665,7 @@ FORCE_INLINE IntArray ar_int_new(int64_t size)
 
     int64_t *storage = (int64_t *)malloc((size_t)size * sizeof(int64_t));
     if (!storage)
-        return (IntArray){0, NULL};
+        mml_sys_oom_abort();
 
     return (IntArray){size, storage};
 }
@@ -731,7 +718,7 @@ FORCE_INLINE StringArray ar_str_new(int64_t size)
 
     String *storage = (String *)malloc((size_t)size * sizeof(String));
     if (!storage)
-        return (StringArray){0, NULL};
+        mml_sys_oom_abort();
 
     return (StringArray){size, storage};
 }
@@ -775,7 +762,7 @@ FORCE_INLINE FloatArray ar_float_new(int64_t size)
 
     float *storage = (float *)malloc((size_t)size * sizeof(float));
     if (!storage)
-        return (FloatArray){0, NULL};
+        mml_sys_oom_abort();
 
     return (FloatArray){size, storage};
 }
@@ -887,7 +874,7 @@ String __clone_String(String s)
 
     char *new_data = (char *)malloc(s.length + 1);
     if (!new_data)
-        return (String){0, NULL};
+        mml_sys_oom_abort();
 
     memcpy(new_data, s.data, s.length);
     new_data[s.length] = '\0';
@@ -901,17 +888,14 @@ Buffer __clone_Buffer(Buffer b)
 
     Buffer new_b = (Buffer)malloc(sizeof(BufferImpl));
     if (!new_b)
-        return NULL;
+        mml_sys_oom_abort();
 
     new_b->capacity = b->capacity;
     new_b->length = b->length;
     new_b->fd = b->fd;
     new_b->data = (char *)malloc(b->capacity);
     if (!new_b->data)
-    {
-        free(new_b);
-        return NULL;
-    }
+        mml_sys_oom_abort();
     memcpy(new_b->data, b->data, b->length);
     return new_b;
 }
@@ -923,7 +907,7 @@ IntArray __clone_IntArray(IntArray arr)
 
     int64_t *new_data = (int64_t *)malloc((size_t)arr.length * sizeof(int64_t));
     if (!new_data)
-        return (IntArray){0, NULL};
+        mml_sys_oom_abort();
 
     memcpy(new_data, arr.data, (size_t)arr.length * sizeof(int64_t));
     return (IntArray){arr.length, new_data};
@@ -936,7 +920,7 @@ StringArray __clone_StringArray(StringArray arr)
 
     String *new_data = (String *)malloc((size_t)arr.length * sizeof(String));
     if (!new_data)
-        return (StringArray){0, NULL};
+        mml_sys_oom_abort();
 
     for (int64_t i = 0; i < arr.length; i++)
     {
@@ -952,7 +936,7 @@ FloatArray __clone_FloatArray(FloatArray arr)
 
     float *new_data = (float *)malloc((size_t)arr.length * sizeof(float));
     if (!new_data)
-        return (FloatArray){0, NULL};
+        mml_sys_oom_abort();
 
     memcpy(new_data, arr.data, (size_t)arr.length * sizeof(float));
     return (FloatArray){arr.length, new_data};

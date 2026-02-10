@@ -106,11 +106,13 @@ Affine ownership with borrow-by-default. Enables safe automatic memory managemen
 
 #### OOM Policy
 
-- [ ] **Decide OOM invariant** — Policy A (null => empty) vs Policy B (trap on OOM)
-  - Policy A: if `ptr == null` then `len == 0`, consumers handle gracefully.
-  - Policy B: allocation failure traps/aborts before returning.
-  - Decision needed. Once chosen, enforce globally across all producers/consumers.
-  - See `qa-mem.md` I0 for full invariant descriptions.
+- [x] **OOM invariant: Policy B (trap on OOM)** [COMPLETE]
+  - All allocation failures in `mml_runtime.c` call `mml_sys_oom_abort()` (writes
+    "out of memory\n" to stderr, calls `abort()`).
+  - Legitimate empty-value returns preserved: empty arrays (`size <= 0`), EOF,
+    out-of-bounds substring, clone of empty input.
+  - MML struct constructors use `alloca` (stack), not `malloc` — no OOM path.
+  - `__free_*` null guards kept (protect against freeing legitimately empty values).
 
 #### Testing & Infrastructure
 
@@ -143,6 +145,21 @@ Affine ownership with borrow-by-default. Enables safe automatic memory managemen
 ---
 
 ## Recent Changes
+
+### 2026-02-09 OOM Policy B: trap on allocation failure [COMPLETE]
+
+- **Decision:** Policy B — all allocation failures abort immediately.
+- **Changes:** `mml_runtime.c` only.
+  - Added `mml_sys_oom_abort()` helper: writes "out of memory\n" to stderr, calls `abort()`.
+  - Replaced all `return {0, NULL}` / `return NULL` on malloc/realloc failure paths with
+    `mml_sys_oom_abort()` across all producers and clone functions.
+  - Preserved legitimate empty-value returns: empty arrays (`size <= 0`), `readline` EOF,
+    out-of-bounds `substring`, `concat` of two null strings, clone of empty input,
+    `string_builder_finalize(NULL)`.
+  - `__free_*` null guards kept — protect against freeing legitimately empty values.
+- **Verified:** MML struct constructors use `alloca` (stack), not `malloc` — no OOM path.
+- **Verification:** 243 tests pass, `scalafmtAll`/`scalafixAll` clean, `mmlcPublishLocal` OK,
+  all 7 benchmarks compile, all 11 memory samples 0 leaks.
 
 ### 2026-02-09 OwnershipAnalyzer code quality cleanup [COMPLETE]
 
