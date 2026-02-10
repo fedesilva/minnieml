@@ -123,10 +123,11 @@ Affine ownership with borrow-by-default. Enables safe automatic memory managemen
   - Aggregate ownership (T5-T8) — addressed by move-only structs + clone
   - Nested conditional cleanup (T9-T11)
   - OOM invariant verification (T12) — after OOM policy decision
-- [ ] **Memory test harness** — automated ASan + leaks pass
+- [x] **Memory test harness** — automated ASan + leaks pass [COMPLETE]
   - Compile and run each sample with `--asan` (double-free, use-after-free, overflows)
   - Compile and run without ASan, check with `leaks --atExit --` (leaks)
-  - Samples: `mml/samples/mem/`
+  - Tests: `tests/mem/` (13 positive `.mml` files + `run.sh` harness)
+  - Usage: `./tests/mem/run.sh asan`, `./tests/mem/run.sh leaks`, `./tests/mem/run.sh all`
   - Fail on any ASan error or non-zero leak count
 
 #### Code Quality (from `qa-mem.md`)
@@ -155,6 +156,17 @@ runs before the ref resolver, so references to generated code are present.
 ---
 
 ## Recent Changes
+
+### 2026-02-09 Memory test harness [COMPLETE]
+
+- **Problem:** Memory management validation (ASan + leaks) was manual per POST-CHORE instructions.
+- **Fix:** Shell script harness at `tests/mem/run.sh` automating both checks across 13 positive
+  test files copied to `tests/mem/`.
+- **Modes:** `asan` (compile+run with `-s`), `leaks` (compile, check with `leaks --atExit`),
+  `all` (both in sequence). `mmlc clean` between modes prevents cross-contamination.
+- **Build isolation:** `-b build/test-mem` with `-o build/test-mem/<name>` keeps test builds
+  inside `build/` (gitignored). Cleaned up on exit.
+- **Verification:** 13/13 ASan pass, 13/13 leaks pass, nonzero exit on failure (CI-ready).
 
 ### 2026-02-09 Native struct constructor generation and field access [COMPLETE]
 

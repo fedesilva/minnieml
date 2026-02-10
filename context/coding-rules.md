@@ -75,11 +75,10 @@ The compiler needs to be installed before it's used if changes were made.
   - run `make -C benchmark clean`
   - run `make -C benchmark mml`
 
-- **Run leaks check** (when changes touch memory management / ownership):
-  - `sbtn "run clean"` first if you previously compiled with ASan (`-s`)
-  - compile via sbt without `-s`: `sbtn "run mml/samples/mem/<file>.mml"`
-  - then `leaks --atExit -- build/target/<name>` on each compiled binary
-  - all samples must show 0 leaks
+- **Run memory tests** (when changes touch memory management / ownership):
+  - `./tests/mem/run.sh all`
+  - All 13 tests must pass both ASan and leaks checks
+  - The script handles `mmlc clean` between modes automatically
 
 ## Git usage
 

@@ -1,0 +1,61 @@
+// Scope and Ownership Transfer Test
+// Tests that local variables are freed when scope ends and
+// that ownership is correctly passed through call stacks.
+// Run with: leaks --atExit -- ./build/target/scopetest
+
+// 1. DISCARD TEST
+// This function allocates two strings but only uses one.
+// The runtime must free 'unused' when the function returns/ends.
+fn test_unused_locals(n: Int): Unit =
+  let unused = int_to_str (n + 9999); // Heap alloc, never used
+  let used = int_to_str n;            // Heap alloc, used
+  println used
+  // 'unused' should be freed here automatically
+;
+
+// 2. MOVE TEST
+// Takes ownership via ~ and returns it. The caller must move in,
+// and the returned value is owned by the next caller up the stack.
+fn identity(~s: String): String = s;
+
+// 3. NESTED MOVE TEST
+// Moves ownership through multiple layers via ~ parameters.
+fn wrapper_layer(~s: String): String =
+  let result = identity s;
+  result
+;
+
+// Allocate a string, move it through layers, and print it.
+fn test_deep_stack(n: Int): Unit =
+  let s = int_to_str n;
+  let res = wrapper_layer s;
+  println res
+;
+
+// Runner for unused locals (Variable cleanup)
+fn run_discard_loop(n: Int): Unit =
+  if n != 0 then
+    test_unused_locals n;
+    run_discard_loop (n - 1)
+  end
+;
+
+// Runner for deep stack (Ownership transfer)
+fn run_transfer_loop(n: Int): Unit =
+  if n != 0 then
+    test_deep_stack n;
+    run_transfer_loop (n - 1)
+  end
+;
+
+fn main(): Unit =
+  println "Testing Unused Local Variable cleanup (The 'unused' let)...";
+  run_discard_loop 100;
+
+  println "------------------------------------------------";
+
+  println "Testing Deep Stack Ownership Transfer...";
+  run_transfer_loop 100;
+
+  println "Scope tests passed!"
+;

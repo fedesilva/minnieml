@@ -1,0 +1,76 @@
+// Temporaries and Concat Test
+// Run with: leaks --atExit -- ./build/target/temptest
+
+// Helper to consume a string so the optimizer doesn't delete it
+fn consume(s: String): Unit =
+  println s
+;
+
+// 1. ANONYMOUS ARGUMENT TEST
+// We pass the result of 'int_to_str' directly to 'consume'.
+// It isn't stored in a variable, so the compiler must handle the lifetime.
+fn test_anonymous_arg(n: Int): Unit =
+  consume (int_to_str n)
+;
+
+// 2. CONCAT TEMPORARIES TEST
+// This is the hardest test.
+// We call: concat (int_to_str n) (int_to_str n)
+//
+// Execution flow:
+// 1. int_to_str n  -> creates Heap String A
+// 2. int_to_str n  -> creates Heap String B
+// 3. concat A B   -> creates Heap String C
+//
+// Crucial Step: The compiler must auto-free A and B here!
+// If it doesn't, you leak 2 strings per iteration.
+fn test_concat_temps(n: Int): Unit =
+  let s = (int_to_str n) ++ (int_to_str n);
+  println s
+;
+
+// 3. NESTED CONCAT TEST
+// concat (concat "a" "b") "c"
+// The result of the inner concat is a temporary heap string.
+// It must be freed after the outer concat finishes.
+fn test_nested_concat(n: Int): Unit =
+  // We explicitly use int_to_str to force heap allocation
+  let part1 = int_to_str n;
+  let part2 = int_to_str n;
+  let s = (part1 ++ part2) ++ part1;
+  println s
+;
+
+fn run_anon(n: Int): Unit =
+  if n != 0 then
+    test_anonymous_arg n;
+    run_anon (n - 1)
+  end
+;
+
+fn run_concat(n: Int): Unit =
+  if n != 0 then
+    test_concat_temps n;
+    run_concat (n - 1)
+  end
+;
+
+fn run_nested(n: Int): Unit =
+  if n != 0 then
+    test_nested_concat n;
+    run_nested (n - 1)
+  end
+;
+
+fn main(): Unit =
+  println "Testing Anonymous Arguments...";
+  run_anon 100;
+
+  println "Testing Concat Temporaries (Left/Right operands)...";
+  run_concat 100;
+
+  println "Testing Nested Concat (Intermediate results)...";
+  run_nested 100;
+
+  println "All temporary tests passed!"
+;

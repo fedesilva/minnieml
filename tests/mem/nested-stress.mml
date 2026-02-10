@@ -1,0 +1,21 @@
+// Stress test: allocate many nested structs in a loop
+struct Inner { name: String };
+struct Outer { inner: Inner, tag: String };
+
+fn make_outer(n: Int): Outer =
+  let i = Inner ("name" ++ (int_to_str n));
+  Outer i ("tag" ++ (int_to_str n))
+;
+
+fn stress(n: Int): Unit =
+  if n != 0 then
+    let o = make_outer n;
+    println ((o.inner.name ++ " / ") ++ o.tag);
+    stress (n - 1)
+  end
+;
+
+fn main(): Unit =
+  stress 1000;
+  println "done"
+;

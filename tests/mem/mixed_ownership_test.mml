@@ -1,0 +1,69 @@
+// Mixed conditional ownership test
+// Tests that __free_* correctly handles both static and heap strings
+// Run with: leaks --atExit -- ./build/target/mixedownershiptest
+//
+// The conditional returns either a static string (__cap == -1) or
+// a heap-allocated string (__cap > 0). The __free_String function
+// must check __cap before freeing to avoid crashing on static strings.
+
+// Returns either a heap string (int_to_str) or static literal
+fn get_string(use_heap: Bool, n: Int): String =
+  if use_heap then
+    int_to_str n
+  else
+    "static string"
+  end
+;
+
+// Reads static path to println to ensure static strings are safe
+fn test_static(n: Int): Unit =
+  let s = get_string false n;
+  println s
+;
+
+// Reads heap path to println to ensure frees are inserted
+fn test_heap(n: Int): Unit =
+  let s = get_string true n;
+  println s
+;
+
+// Inline conditional branch mixing static vs heap allocations
+fn test_inline_conditional(use_heap: Bool, n: Int): Unit =
+  let s = if use_heap then int_to_str n else "inline static" end;
+  println s
+;
+
+// Tail recursion over static-only path
+fn run_static(n: Int): Unit =
+  if n != 0 then
+    test_static n;
+    run_static (n - 1)
+  end
+;
+
+// Tail recursion over heap-only path
+fn run_heap(n: Int): Unit =
+  if n != 0 then
+    test_heap n;
+    run_heap (n - 1)
+  end
+;
+
+// Tail recursion alternating static/heap branches
+fn run_mixed(n: Int, use_heap: Bool): Unit =
+  if n != 0 then
+    test_inline_conditional use_heap n;
+    run_mixed (n - 1) (not use_heap)
+  end
+;
+
+// Entry point running each scenario
+fn main(): Unit =
+  println "Testing static strings (should not crash on free)...";
+  run_static 100;
+  println "Testing heap strings (should not leak)...";
+  run_heap 100;
+  println "Testing alternating static/heap...";
+  run_mixed 200 true;
+  println "All tests passed!"
+;

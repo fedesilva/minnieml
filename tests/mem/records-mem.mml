@@ -1,0 +1,89 @@
+// Struct and Deep-Free Test
+// Run with: leaks --atExit -- ./build/target/structtest
+
+struct User { 
+  name: String, 
+  role: String 
+};
+
+// Helper to prevent optimizer from removing the struct usage
+fn consume_user(u: User): Unit =
+  // Access fields to ensure they are valid pointers
+  println ((u.name ++ " is a ") ++ u.role)
+;
+
+// 1. SCOPE CLEANUP TEST
+// We create a User struct with two heap strings.
+// When 'u' goes out of scope, the compiler must:
+// 1. Detect 'u' is a struct.
+// 2. Generate free(u.name).
+// 3. Generate free(u.role).
+fn test_struct_scope(n: Int): Unit =
+  let name_str = "User" ++ (int_to_str n);
+  let role_str = "Admin" ++ (int_to_str n);
+  
+  // Positional instantiation
+  let u = User name_str role_str;
+  
+  consume_user u
+  // <-- 'u' dies here. Implicitly must free its fields.
+;
+
+// 2. ANONYMOUS STRUCT TEST
+// We pass a struct directly to a function.
+// It is a temporary value.
+// It must be destroyed (and its fields freed) after the call returns.
+fn test_anon_struct(n: Int): Unit =
+  // Positional instantiation in expression
+  consume_user (User (int_to_str n) "Guest")
+;
+
+// 3. CONTROL FLOW STRUCT TEST
+// 'u' is initialized on two different paths.
+// Path A: 'name' is Heap, 'role' is Heap
+// Path B: 'name' is Static, 'role' is Static
+// The compiler must merge the ownership state of the fields at the end.
+fn test_mixed_struct(n: Int): Unit =
+  let u = if n > 50 then
+    User (int_to_str n) "DynamicRole" // Mixed or fully dynamic
+  else
+    User "StaticName" "StaticRole"   // Fully static
+  end;
+
+  consume_user u
+  // <-- Does the compiler track that 'u.name' might be static or dynamic here?
+;
+
+fn run_mixed(n:Int): Unit = 
+  if n != 0 then 
+    test_mixed_struct n;
+    run_mixed (n - 1)
+  end
+;
+
+fn run_scope(n: Int): Unit =
+  if n != 0 then
+    test_struct_scope n;
+    run_scope (n - 1)
+  end
+;
+
+fn run_anon(n: Int): Unit =
+  if n != 0 then
+    test_anon_struct n;
+    run_anon (n - 1)
+  end
+;
+
+fn main(): Unit =
+  println "Testing Struct Field Cleanup...";
+  run_scope 100;
+
+  println "Testing Anonymous Struct Temporaries...";
+  run_anon 100;
+
+  println "Testing mixed struct ownership ...";
+  run_mixed 100;
+
+  println "Struct tests passed!"
+;

@@ -1,0 +1,28 @@
+// ++ is concat (concatenates two strings)
+// concat allocates memory for the joined strings.
+// int_to_str also allocates memory to hold the resulting string.
+//
+// this program does not leak memory despite the fact that the 
+// language does not use a garbage collector.
+//
+// the compiler tracks ownership and lifetyime and introduces 
+// calls to free memory where appropriate.
+//
+fn make_test_results(): String =
+  "Zero: "      ++ (int_to_str 0)   ++ ", " ++
+  "Positive: "  ++ (int_to_str 123) ++ ", " ++
+  "Large: "     ++ (int_to_str 1234567890)
+;
+
+fn loop(i: Int, to: Int): Unit = 
+  if i <= to then
+    println (make_test_results ());
+    loop (i+1) to
+  end
+;
+  
+
+fn main(): Unit =
+  loop 1 1000
+;
+
