@@ -158,7 +158,7 @@ object OwnershipAnalyzer:
               val paramName = lambda.params.headOption.map(_.name)
               val bodyEnv =
                 paramName.map(n => env + (n -> argOwned)).getOrElse(env)
-              argOwned.orElse(exprReturnsOwned(lambda.body, bodyEnv, resolvables, returningOwned))
+              exprReturnsOwned(lambda.body, bodyEnv, resolvables, returningOwned).orElse(argOwned)
             case _ =>
               appReturnsOwned(app, resolvables, returningOwned)
         case cond: Cond =>
@@ -973,13 +973,28 @@ object OwnershipAnalyzer:
       .foldLeft(finalScope) { case (s, (name, _, _, _)) => s.withBorrowed(name) }
       .copy(insideTempWrapper = true)
 
+    // Non-allocating args consumed by constructor params must be marked as Moved
+    // in the outer scope. The temp wrapper marks them Borrowed internally, so
+    // handleConsumingParam won't see them as owned during re-analysis.
+    val consumedMoves: List[(String, SrcSpan)] = argsWithAlloc
+      .collect:
+        case (argExpr, _, _, _, None, true) =>
+          argExpr.terms.headOption.collect:
+            case ref: Ref if scope.getState(ref.name).contains(OwnershipState.Owned) =>
+              (ref.name, ref.span)
+      .flatten
+
+    val returnScope = consumedMoves.foldLeft(scope) { case (s, (name, span)) =>
+      s.withMoved(name, span)
+    }
+
     wrappedExpr.terms match
       case List(wrappedApp: App) =>
         val result = analyzeTerm(wrappedApp, borrowedScope)
-        TermResult(scope, result.term, argErrors ++ result.errors)
+        TermResult(returnScope, result.term, argErrors ++ result.errors)
       case _ =>
         val result = analyzeExpr(wrappedExpr, borrowedScope)
-        TermResult(scope, wrappedExpr.terms.head, argErrors ++ result.errors)
+        TermResult(returnScope, wrappedExpr.terms.head, argErrors ++ result.errors)
 
   /** Analyze a conditional expression */
   private def analyzeCond(

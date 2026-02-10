@@ -80,10 +80,11 @@ Affine ownership with borrow-by-default. Enables safe automatic memory managemen
   - Use-after-move detection already exists for leaf values; extend to structs.
   - Explicit `clone` required to duplicate a struct with owned fields.
   - Must enforce: no implicit shallow copy of aggregates with owned fields (invariant I3/A2).
-- [ ] **Recursive/nested struct destructors** — consider later
+- [x] **Recursive/nested struct destructors** [COMPLETE]
   - A struct containing another struct with owned fields needs recursive free.
   - `__free_Outer` must call `__free_Inner` on nested owned struct fields.
-  - `MemoryFunctionGenerator` may already handle this; needs verification and testing.
+  - `MemoryFunctionGenerator` already handled type detection; ID resolution and ownership
+    tracking were broken. Fixed in three places (see recent changes 2026-02-09).
 
 #### Native Type Improvements
 
@@ -152,6 +153,35 @@ cleans up the parser. clear separation of concerns.
 ---
 
 ## Recent Changes
+
+### 2026-02-09 Nested struct destructor resolution and ownership tracking [COMPLETE]
+
+- **Problem:** Three bugs prevented nested structs (e.g., `Outer { inner: Inner, data: String }`)
+  from compiling correctly when `Inner` itself has heap fields.
+- **Bug 1 — ID resolution:** `MemoryFunctionGenerator` hardcoded `stdlib::bnd::__free_T` for all
+  free/clone references. User-defined struct destructors live at `moduleName::bnd::__free_T`, not
+  stdlib. Added `resolveMemFnId` helper: checks user struct first, stdlib second, user-declared
+  `free=` functions third. Fixed both `mkFreeFunction` and `wrapFieldWithClone`.
+- **Bug 2 — Consuming move inside temp wrappers:** `analyzeAllocatingApp` marks inherited owned
+  bindings as Borrowed inside temp wrappers (to prevent double-free). But non-allocating args
+  passed to consuming constructor params (e.g., `i` in `Outer i ("data" ++ ...)`) were never
+  marked Moved because `handleConsumingParam` saw them as Borrowed. Fix: collect non-allocating
+  consumed args after building the wrapper and propagate Moved state to the outer scope.
+- **Bug 3 — ReturnOwnershipAnalysis type priority:** `termReturnsOwned` for let-bindings returned
+  `argOwned.orElse(bodyReturns)`, preferring the arg's alloc type. For `let i = Inner(...);
+  Outer i (...)`, this returned `InnerType` instead of `OuterType`, causing type mismatch with
+  the let-binding param and marking the result as Borrowed. Fix: swapped to
+  `bodyReturns.orElse(argOwned)`.
+- **Changes:**
+  - `semantic/MemoryFunctionGenerator.scala`: `resolveMemFnId` helper, fixed `mkFreeFunction`
+    and `wrapFieldWithClone`
+  - `semantic/OwnershipAnalyzer.scala`: `consumedMoves` propagation in `analyzeAllocatingApp`,
+    `bodyReturns.orElse(argOwned)` in `ReturnOwnershipAnalysis.termReturnsOwned`
+  - `OwnershipAnalyzerTests.scala`: 1 new test (nested struct with heap fields has correct free calls)
+  - `mml/samples/mem/nested-struct.mml`: new sample (100 iterations, inline allocation)
+  - `mml/samples/mem/nested-stress.mml`: stress sample (1000 iterations via helper function)
+- **Verification:** 252 tests pass, `scalafmtAll`/`scalafixAll` clean, `mmlcPublishLocal` OK,
+  all 7 benchmarks compile, both nested struct samples ASan clean, all 13 memory samples 0 leaks.
 
 ### 2026-02-09 OOM Policy B: trap on allocation failure [COMPLETE]
 

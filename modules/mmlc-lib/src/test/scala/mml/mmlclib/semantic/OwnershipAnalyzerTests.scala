@@ -585,3 +585,29 @@ class OwnershipAnalyzerTests extends BaseEffFunSuite:
       assert(moveErrors.isEmpty, s"Borrowed param rebinding should stay borrowed: $moveErrors")
     }
   }
+
+  test("nested struct with heap fields has correct free calls") {
+    val code =
+      """
+        struct Inner { name: String };
+        struct Outer { inner: Inner, data: String };
+
+        fn main(): Unit =
+          let i = Inner ("hello" ++ " world");
+          let o = Outer i ("foo" ++ " bar");
+          println o.data
+        ;
+      """
+
+    semNotFailed(code).map { module =>
+      val mainBody = module.members.collectFirst {
+        case b: Bnd if b.name == "main" =>
+          b.value.terms.collectFirst { case l: Lambda => l.body }.get
+      }.get
+
+      assert(
+        containsFreeOf("__free_Outer")(mainBody),
+        "Outer struct should be freed via __free_Outer"
+      )
+    }
+  }
