@@ -131,18 +131,32 @@ Affine ownership with borrow-by-default. Enables safe automatic memory managemen
 - [x] **Split `analyzeTerm`** (~380 lines) into helpers — High priority [COMPLETE]
   - Extract: `analyzeLetBinding`, `analyzeRegularApp`, `collectCurriedArgs`,
     `wrapAllocatingArgs`
-- [ ] **Extract hardcoded stdlib IDs** to shared constants object — Medium
+- [x] **Extract hardcoded stdlib IDs** to shared constants object — Medium [COMPLETE]
   - `"stdlib::typedef::Unit"` repeated 6+ places, `"stdlib::typedef::Bool"` 3+ places
-- [ ] **Refactor mutable state in `.map()`** to `foldLeft` — Medium
+- [x] **Refactor mutable state in `.map()`** to `foldLeft` — Medium [COMPLETE]
   - Lines 741-756: `var currentScope` + `var argErrors` mutated inside `.map()`
-- [ ] **Remove `__free_String` silent fallback** — Low
+- [x] **Remove `__free_String` silent fallback** — Low [COMPLETE]
   - Line 296: `getOrElse("__free_String")` masks bugs; should error instead.
-- [ ] **Use binding metadata for constructor detection** — Low
+- [x] **Use binding metadata for constructor detection** — Low [COMPLETE]
   - Replace `name.startsWith("__mk_")` with `BindingOrigin.DataConstructor` lookup.
 
 ---
 
 ## Recent Changes
+
+### 2026-02-09 OwnershipAnalyzer code quality cleanup [COMPLETE]
+
+- **All 5 code quality tasks from `qa-mem.md` now complete:**
+  - `analyzeTerm` split from ~380 lines to 50, with helpers: `analyzeLetBinding`, `analyzeRegularApp`,
+    `collectArgsAndBase`, `argNeedsClone`/`argAllocates`/`wrapWithClone`
+  - Hardcoded stdlib IDs extracted to `UnitTypeId`/`BoolTypeId` constants (line 109-110)
+  - Mutable state in `analyzeExpr` refactored from `var` + `.map()` to `foldLeft`
+  - `__free_String` silent fallback (`getOrElse`) removed (no longer present)
+  - Constructor detection uses `DataConstructor` term lookup via `isConstructorCall`, not
+    `startsWith("__mk_")`
+- **Today's change:** `analyzeExpr` `foldLeft` refactor (the rest were completed in prior sessions)
+- **Verification:** 243 tests pass, `scalafmtAll`/`scalafixAll` clean, `mmlcPublishLocal` OK,
+  all 7 benchmarks compile.
 
 ### 2026-02-08 Move-only structs + LSP ownership diagnostics [COMPLETE]
 
