@@ -1125,17 +1125,15 @@ object OwnershipAnalyzer:
     expr:  Expr,
     scope: OwnershipScope
   ): ExprResult =
-    var currentScope = scope
-    var errors       = List.empty[SemanticError]
-    val newTerms = expr.terms.map: term =>
-      val result = analyzeTerm(term, currentScope)
-      currentScope = result.scope
-      errors       = errors ++ result.errors
-      result.term
+    val (finalScope, revTerms, errors) =
+      expr.terms.foldLeft((scope, List.empty[Term], List.empty[SemanticError])):
+        case ((s, ts, errs), term) =>
+          val result = analyzeTerm(term, s)
+          (result.scope, result.term :: ts, errs ++ result.errors)
 
     ExprResult(
-      currentScope,
-      expr.copy(terms = newTerms),
+      finalScope,
+      expr.copy(terms = revTerms.reverse),
       errors = errors
     )
 
