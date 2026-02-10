@@ -88,11 +88,11 @@ Affine ownership with borrow-by-default. Enables safe automatic memory managemen
 
 #### Native Type Improvements
 
-- [ ] **`@native` type annotations: explicit deallocation function**
+- [x] **`@native` type annotations: explicit deallocation function** [COMPLETE]
   - Currently assumes `__free_<TypeName>` by naming convention.
   - Make explicit: `@native[mem=heap, free=__free_String]`
   - Only for `@native` types; MML structs generate free functions automatically.
-- [ ] **Native struct constructors**
+- [x] **Native struct constructors** [COMPLETE]
   - Removes the need for constructor functions in C.
   - Same logic as MML struct constructors.
 
@@ -145,14 +145,38 @@ Affine ownership with borrow-by-default. Enables safe automatic memory managemen
 
 ### Move constructor generation to a phase in sema stage
 
-* after resolvers
-* before rewriter
+* after type resolver
+* before ref resolver
 
 cleans up the parser. clear separation of concerns.
+runs before the ref resolver, so references to generated code are present.
+
 
 ---
 
 ## Recent Changes
+
+### 2026-02-09 Native struct constructor generation and field access [COMPLETE]
+
+- **Problem:** User-defined `@native` struct types (e.g., `type Vec2 = @native { x: Float, y: Float }`)
+  required hand-written C constructors and getter functions. MML user-defined structs already had
+  auto-generated constructors; native structs did not.
+- **Fix:** Extended constructor generation to `@native` struct types, and enabled dot-notation field
+  access on them.
+- **Changes:**
+  - `parser/modules.scala`: `addStructConstructors` matches `TypeDef` with `NativeStruct`, new
+    `mkNativeStructConstructor` generates constructor `Bnd` from `NativeStruct.fields`
+  - `codegen/emitter/package.scala`: `resolveTypeStruct` handles `TypeDef`/`NativeStruct` by
+    synthesizing a `TypeStruct` from native fields (enables `compileStructConstructor` and field access)
+  - `semantic/TypeChecker.scala`: `resolveStructType` extended with same `TypeDef`/`NativeStruct`
+    handling (enables field access type checking)
+  - `semantic/MemoryFunctionGenerator.scala`: `rewriteModule` also finds native structs with heap
+    fields and rewrites their constructor params as `consuming = true`. No `__free_T`/`__clone_T`
+    generated for native structs (user-provided via `free=` or C code).
+- **Tests:** 4 new (parser: native struct ctor synthesized, codegen: alloca/store + extractvalue,
+  semantic: heap params marked consuming)
+- **Verification:** 256 tests pass, `scalafmtAll`/`scalafixAll` clean, `mmlcPublishLocal` OK,
+  all 7 benchmarks compile.
 
 ### 2026-02-09 Nested struct destructor resolution and ownership tracking [COMPLETE]
 

@@ -55,6 +55,38 @@ class StructCodegenTest extends BaseEffFunSuite:
     }
   }
 
+  test("native struct constructor allocates and stores fields") {
+    val source =
+      """
+      type Vec2 = @native { x: Float, y: Float };
+
+      fn makeVec(a: Float, b: Float): Vec2 =
+        Vec2 a b
+      ;
+      """
+
+    compileAndGenerate(source).map { llvmIr =>
+      assert(llvmIr.contains("%struct.Vec2 = type { float, float }"))
+      assert(llvmIr.contains("alloca %struct.Vec2"))
+      assert(llvmIr.contains("getelementptr %struct.Vec2"))
+    }
+  }
+
+  test("native struct field access emits extractvalue") {
+    val source =
+      """
+      type Vec2 = @native { x: Float, y: Float };
+
+      fn getX(v: Vec2): Float =
+        v.x
+      ;
+      """
+
+    compileAndGenerate(source).map { llvmIr =>
+      assert(llvmIr.contains("extractvalue %struct.Vec2"))
+    }
+  }
+
   test("constructor does not emit clone calls for heap fields") {
     val source =
       """

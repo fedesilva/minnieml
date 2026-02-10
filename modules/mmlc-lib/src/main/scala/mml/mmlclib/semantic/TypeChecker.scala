@@ -946,11 +946,19 @@ object TypeChecker:
     unwrapTypeGroup(resolveAliasChain(typeSpec, module)) match
       case ts: TypeStruct => Some(ts)
       case tr: TypeRef =>
-        // Look up by ID or name to find the struct
-        tr.resolvedId
+        val resolved = tr.resolvedId
           .flatMap(module.resolvables.lookupType)
           .orElse(module.members.collectFirst { case ts: TypeStruct if ts.name == tr.name => ts })
-          .collect { case ts: TypeStruct => ts }
+        resolved match
+          case Some(ts: TypeStruct) => Some(ts)
+          case Some(td: TypeDef) =>
+            td.typeSpec.collect { case ns: NativeStruct =>
+              val fields = ns.fields.map { case (name, t) =>
+                Field(td.span, name, t)
+              }.toVector
+              TypeStruct(td.span, None, td.visibility, td.name, fields, td.id)
+            }
+          case _ => None
       case _ => None
 
   private def unwrapTypeGroup(typeSpec: Type): Type =

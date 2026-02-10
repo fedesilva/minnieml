@@ -611,3 +611,31 @@ class OwnershipAnalyzerTests extends BaseEffFunSuite:
       )
     }
   }
+
+  test("native struct constructor heap params marked consuming") {
+    val code =
+      """
+        type NamedValue = @native[mem=heap, free=freeNamedValue] {
+          name: String,
+          value: Int
+        };
+
+        fn freeNamedValue(~n: NamedValue): Unit = ();
+
+        fn main(): Unit =
+          let nv = NamedValue "hello" 42;
+          ()
+        ;
+      """
+
+    semNotFailed(code).map { module =>
+      val ctor = module.members.collectFirst {
+        case b: Bnd if b.name == "__mk_NamedValue" => b
+      }.get
+      val lambda     = ctor.value.terms.collectFirst { case l: Lambda => l }.get
+      val nameParam  = lambda.params.find(_.name == "name").get
+      val valueParam = lambda.params.find(_.name == "value").get
+      assert(nameParam.consuming, "heap-typed 'name' param should be consuming")
+      assert(!valueParam.consuming, "non-heap 'value' param should not be consuming")
+    }
+  }

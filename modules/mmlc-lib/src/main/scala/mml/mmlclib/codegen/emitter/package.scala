@@ -180,6 +180,14 @@ def resolveTypeStruct(typeSpec: Type, resolvables: ResolvablesIndex): Option[Typ
     case TypeRef(_, _, resolvedId, _) =>
       resolvedId.flatMap(resolvables.lookupType) match
         case Some(ts: TypeStruct) => Some(ts)
+        case Some(td: TypeDef) =>
+          td.typeSpec match
+            case Some(ns: NativeStruct) =>
+              val fields = ns.fields.map { case (name, t) =>
+                Field(td.span, name, t)
+              }.toVector
+              Some(TypeStruct(td.span, None, td.visibility, td.name, fields, td.id))
+            case _ => None
         case Some(ta: TypeAlias) =>
           ta.typeSpec
             .flatMap(resolveTypeStruct(_, resolvables))

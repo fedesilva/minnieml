@@ -47,6 +47,34 @@ class DataConstructorTests extends BaseEffFunSuite:
       )
   }
 
+  test("native struct constructor is synthesized") {
+    val code =
+      """
+        type Vec2 = @native { x: Float, y: Float };
+      """
+
+    Parser
+      .parseModule(code, "Test")
+      .fold(
+        err => fail(s"Parser failed: $err"),
+        module => {
+          val ctor    = module.members.collectFirst { case b: Bnd if b.name == "__mk_Vec2" => b }
+          val ctorBnd = ctor.getOrElse(fail("Expected __mk_Vec2 constructor"))
+          val meta    = ctorBnd.meta.getOrElse(fail("Expected constructor meta"))
+          assertEquals(meta.originalName, "Vec2")
+          assertEquals(meta.origin, BindingOrigin.Constructor)
+
+          val lambda     = ctorBnd.value.terms.collectFirst { case l: Lambda => l }
+          val lambdaNode = lambda.getOrElse(fail("Expected constructor lambda"))
+          assertEquals(lambdaNode.params.map(_.name), List("x", "y"))
+
+          lambdaNode.body.terms.headOption match
+            case Some(DataConstructor(_, Some(TypeRef(_, "Vec2", _, _)))) => ()
+            case other => fail(s"Expected DataConstructor for Vec2, got $other")
+        }
+      )
+  }
+
   private def typeSpecToName(typeSpec: Type): String =
     typeSpec match
       case TypeRef(_, name, _, _) => name

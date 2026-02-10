@@ -43,7 +43,10 @@ object MemoryFunctionGenerator:
           case (id, bnd: Bnd) if bnd.name == fnName => id
 
   private def isHeapField(field: Field, resolvables: ResolvablesIndex): Boolean =
-    TypeUtils.getTypeName(field.typeSpec).exists(TypeUtils.isHeapType(_, resolvables))
+    isNativeHeapField(field.typeSpec, resolvables)
+
+  private def isNativeHeapField(fieldType: Type, resolvables: ResolvablesIndex): Boolean =
+    TypeUtils.getTypeName(fieldType).exists(TypeUtils.isHeapType(_, resolvables))
 
   private def structHasHeapFields(struct: TypeStruct, resolvables: ResolvablesIndex): Boolean =
     struct.fields.exists(isHeapField(_, resolvables))
@@ -198,6 +201,28 @@ object MemoryFunctionGenerator:
           case None => bnd
       case other => other
 
+  /** Rewrite a native struct constructor to mark heap-typed params as consuming */
+  private def rewriteNativeConstructor(
+    td:          TypeDef,
+    ns:          NativeStruct,
+    resolvables: ResolvablesIndex,
+    members:     List[Member]
+  ): List[Member] =
+    val constructorName = s"__mk_${td.name}"
+    members.map:
+      case bnd: Bnd if bnd.name == constructorName =>
+        val lambdaOpt = bnd.value.terms.collectFirst { case l: Lambda => l }
+        lambdaOpt match
+          case Some(lambda) =>
+            val newParams = lambda.params.zip(ns.fields).map { (param, field) =>
+              if isNativeHeapField(field._2, resolvables) then param.copy(consuming = true)
+              else param
+            }
+            val newLambda = lambda.copy(params = newParams)
+            bnd.copy(value = Expr(bnd.value.span, List(newLambda)))
+          case None => bnd
+      case other => other
+
   /** Build a `__clone_StructName` function for a user struct.
     *
     * Generated pattern:
@@ -311,7 +336,16 @@ object MemoryFunctionGenerator:
     // Find structs that have heap fields
     val structsNeedingMemFns = structs.filter(structHasHeapFields(_, module.resolvables))
 
-    if structsNeedingMemFns.isEmpty then state
+    // Find native structs with heap fields (constructor rewrite only, no free/clone generation)
+    val nativeStructsWithHeapFields = module.members.collect { case td: TypeDef =>
+      td.typeSpec.collect {
+        case ns: NativeStruct
+            if ns.fields.exists(f => isNativeHeapField(f._2, module.resolvables)) =>
+          (td, ns)
+      }
+    }.flatten
+
+    if structsNeedingMemFns.isEmpty && nativeStructsWithHeapFields.isEmpty then state
     else
       // Rewrite constructor params: mark heap-typed params as consuming
       val membersWithRewrittenCtors = structsNeedingMemFns.foldLeft(module.members) {
@@ -319,16 +353,24 @@ object MemoryFunctionGenerator:
           rewriteConstructor(struct, module.resolvables, members)
       }
 
+      // Also rewrite native struct constructor params
+      val membersWithAllCtors = nativeStructsWithHeapFields.foldLeft(membersWithRewrittenCtors) {
+        case (members, (td, ns)) =>
+          rewriteNativeConstructor(td, ns, module.resolvables, members)
+      }
+
       // Update resolvables with rewritten constructor Bnds
-      val rewrittenCtors = structsNeedingMemFns.flatMap { struct =>
-        val ctorName = s"__mk_${struct.name}"
-        membersWithRewrittenCtors.collectFirst { case b: Bnd if b.name == ctorName => b }
+      val allCtorNames =
+        structsNeedingMemFns.map(s => s"__mk_${s.name}") ++
+          nativeStructsWithHeapFields.map { case (td, _) => s"__mk_${td.name}" }
+      val rewrittenCtors = allCtorNames.flatMap { ctorName =>
+        membersWithAllCtors.collectFirst { case b: Bnd if b.name == ctorName => b }
       }
       val resolvablesWithCtors = rewrittenCtors.foldLeft(module.resolvables) { (idx, bnd) =>
         idx.updated(bnd)
       }
 
-      // Generate __free_T and __clone_T for each struct
+      // Generate __free_T and __clone_T for user structs only (not native structs)
       val generatedFns = structsNeedingMemFns.flatMap { struct =>
         List(
           mkFreeFunction(struct, moduleName, resolvablesWithCtors),
@@ -336,7 +378,7 @@ object MemoryFunctionGenerator:
         )
       }
 
-      val finalMembers = membersWithRewrittenCtors ++ generatedFns
+      val finalMembers = membersWithAllCtors ++ generatedFns
       val finalResolvables = generatedFns.foldLeft(resolvablesWithCtors) { (idx, fn) =>
         idx.updated(fn)
       }
