@@ -142,6 +142,13 @@ Affine ownership with borrow-by-default. Enables safe automatic memory managemen
 - [x] **Use binding metadata for constructor detection** — Low [COMPLETE]
   - Replace `name.startsWith("__mk_")` with `BindingOrigin.DataConstructor` lookup.
 
+### Move constructor generation to a phase in sema stage
+
+* after resolvers
+* before rewriter
+
+cleans up the parser. clear separation of concerns.
+
 ---
 
 ## Recent Changes
