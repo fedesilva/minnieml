@@ -922,7 +922,7 @@ object TypeChecker:
     val resolved1 = unwrapTypeGroup(resolveAliasChain(t1, module))
     val resolved2 = unwrapTypeGroup(resolveAliasChain(t2, module))
     (resolved1, resolved2) match
-      case (NativePrimitive(_, n1, _), NativePrimitive(_, n2, _)) => n1 == n2
+      case (NativePrimitive(_, n1, _, _), NativePrimitive(_, n2, _, _)) => n1 == n2
       case (TypeRef(_, name1, _, _), TypeRef(_, name2, _, _)) => name1 == name2
       case (TypeStruct(_, _, _, expectedName, _, _), TypeStruct(_, _, _, actualName, _, _)) =>
         expectedName == actualName

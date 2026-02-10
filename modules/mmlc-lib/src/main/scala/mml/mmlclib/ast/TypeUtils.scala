@@ -26,12 +26,8 @@ object TypeUtils:
   /** Check if a type is heap-allocated by looking at its NativeType.memEffect */
   def isHeapType(typeName: String, resolvables: ResolvablesIndex): Boolean =
     findTypeByName(typeName, resolvables) match
-      case Some(TypeDef(_, _, _, Some(ns: NativeStruct), _, _, _)) =>
-        ns.memEffect.contains(MemEffect.Alloc)
-      case Some(TypeDef(_, _, _, Some(np: NativePointer), _, _, _)) =>
-        np.memEffect.contains(MemEffect.Alloc)
-      case Some(TypeDef(_, _, _, Some(prim: NativePrimitive), _, _, _)) =>
-        prim.memEffect.contains(MemEffect.Alloc)
+      case Some(TypeDef(_, _, _, Some(nt: NativeType), _, _, _)) =>
+        nt.memEffect.contains(MemEffect.Alloc)
       case Some(s: TypeStruct) =>
         hasHeapFields(s, resolvables)
       case _ => false
@@ -52,8 +48,13 @@ object TypeUtils:
 
   /** Get free function name for a type, or None if not heap type */
   def freeFnFor(typeName: String, resolvables: ResolvablesIndex): Option[String] =
-    if isHeapType(typeName, resolvables) then Some(s"__free_$typeName")
-    else None
+    findTypeByName(typeName, resolvables) match
+      case Some(TypeDef(_, _, _, Some(nt: NativeType), _, _, _))
+          if nt.memEffect.contains(MemEffect.Alloc) =>
+        Some(nt.freeFn.getOrElse(s"__free_$typeName"))
+      case Some(s: TypeStruct) if hasHeapFields(s, resolvables) =>
+        Some(s"__free_$typeName")
+      case _ => None
 
   /** Get clone function name for a type, or None if not heap type */
   def cloneFnFor(typeName: String, resolvables: ResolvablesIndex): Option[String] =

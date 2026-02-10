@@ -17,25 +17,30 @@ case class TypeRef(
   candidateIds: List[String]   = Nil
 ) extends Type
 
-sealed trait NativeType extends Type, Native
+sealed trait NativeType extends Type, Native:
+  def memEffect: Option[MemEffect]
+  def freeFn:    Option[String]
 
 case class NativePrimitive(
   span:      SrcSpan,
   llvmType:  String,
-  memEffect: Option[MemEffect] = None
+  memEffect: Option[MemEffect] = None,
+  freeFn:    Option[String]    = None
 ) extends NativeType
 
 case class NativePointer(
   span:      SrcSpan,
   llvmType:  String,
-  memEffect: Option[MemEffect] = None
+  memEffect: Option[MemEffect] = None,
+  freeFn:    Option[String]    = None
 ) extends NativeType
 
 // TODO: make this use Field
 case class NativeStruct(
   span:      SrcSpan,
   fields:    List[(String, Type)],
-  memEffect: Option[MemEffect] = None
+  memEffect: Option[MemEffect] = None,
+  freeFn:    Option[String]    = None
 ) extends NativeType
 
 /** A type application, ie:  `List Int, Map String Int` */

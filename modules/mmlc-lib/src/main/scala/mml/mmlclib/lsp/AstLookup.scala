@@ -436,7 +436,7 @@ object AstLookup:
         case ts: TypeStruct =>
           findDefinitionInFields(ts.fields.toList, line, col, module)
 
-        case NativeStruct(_, fields, _) =>
+        case NativeStruct(_, fields, _, _) =>
           fields
             .collectFirst {
               case (_, t) if containsPosition(t.span, line, col) =>
@@ -756,7 +756,7 @@ object AstLookup:
         case ts: TypeStruct =>
           findReferenceTargetInFields(ts.fields.toList, line, col, module, ts.name)
 
-        case NativeStruct(_, fields, _) =>
+        case NativeStruct(_, fields, _, _) =>
           fields.collectFirst {
             case (_, t) if containsPosition(t.span, line, col) =>
               findReferenceTargetInType(t, line, col, module)
@@ -981,7 +981,7 @@ object AstLookup:
       case ts: TypeStruct =>
         ts.fields.toList.flatMap(field => collectReferencesInType(field.typeSpec, target, module))
 
-      case NativeStruct(_, fields, _) =>
+      case NativeStruct(_, fields, _, _) =>
         fields.flatMap { case (_, t) => collectReferencesInType(t, target, module) }
 
       case TypeApplication(_, base, args) =>
@@ -1139,11 +1139,11 @@ object AstLookup:
       case TypeGroup(_, types) =>
         types.map(formatTypeInner).mkString("(", " ", ")")
 
-      case NativePrimitive(_, llvm, _) => s"@native[t=$llvm]"
+      case NativePrimitive(_, llvm, _, _) => s"@native[t=$llvm]"
 
-      case NativePointer(_, llvm, _) => s"@native[t=*$llvm]"
+      case NativePointer(_, llvm, _, _) => s"@native[t=*$llvm]"
 
-      case NativeStruct(_, fields, _) =>
+      case NativeStruct(_, fields, _, _) =>
         val fieldStr = fields.map { case (n, t) => s"$n: ${formatTypeInner(t)}" }.mkString(", ")
         s"@native { $fieldStr }"
 

@@ -12,9 +12,9 @@ def visibilityToString(visibility: Visibility): String =
 def typeSpecToSimpleName(typeSpec: Type): String =
   typeSpec match
     case TypeRef(_, name, _, _) => name
-    case NativePrimitive(_, llvmType, _) => s"@native[t=$llvmType]"
-    case NativePointer(_, llvmType, _) => s"@native[t=*$llvmType]"
-    case NativeStruct(_, fields, _) => s"@native {${fields.size} fields}"
+    case NativePrimitive(_, llvmType, _, _) => s"@native[t=$llvmType]"
+    case NativePointer(_, llvmType, _, _) => s"@native[t=*$llvmType]"
+    case NativeStruct(_, fields, _, _) => s"@native {${fields.size} fields}"
     case TypeUnit(_) => "()"
     case TypeFn(_, params, ret) =>
       s"(${params.map(typeSpecToSimpleName).mkString(" -> ")}) -> ${typeSpecToSimpleName(ret)}"

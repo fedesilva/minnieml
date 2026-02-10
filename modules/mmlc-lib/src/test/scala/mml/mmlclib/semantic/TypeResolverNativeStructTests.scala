@@ -25,7 +25,7 @@ class TypeResolverNativeStructTests extends BaseEffFunSuite:
 
       // Check that it's a NativeStruct
       stringDef.typeSpec match
-        case Some(NativeStruct(_, fieldsList, _)) =>
+        case Some(NativeStruct(_, fieldsList, _, _)) =>
           val fields = fieldsList.toMap
           assertEquals(fields.size, 2)
 
@@ -70,7 +70,7 @@ class TypeResolverNativeStructTests extends BaseEffFunSuite:
       }.get
 
       complexStruct.typeSpec match
-        case Some(NativeStruct(_, fields, _)) =>
+        case Some(NativeStruct(_, fields, _, _)) =>
           assertEquals(fields.size, 3)
 
           // Verify all fields are resolved
@@ -116,7 +116,7 @@ class TypeResolverNativeStructTests extends BaseEffFunSuite:
       }.get
 
       myStruct.typeSpec match
-        case Some(NativeStruct(_, fieldsList, _)) =>
+        case Some(NativeStruct(_, fieldsList, _, _)) =>
           val fields = fieldsList.toMap
           fields("value") match
             case TypeRef(_, "MyInt", resolvedId, _) =>
@@ -140,7 +140,7 @@ class TypeResolverNativeStructTests extends BaseEffFunSuite:
       }.get
 
       emptyStruct.typeSpec match
-        case Some(NativeStruct(_, fields, _)) =>
+        case Some(NativeStruct(_, fields, _, _)) =>
           assertEquals(fields.size, 0)
         case other =>
           fail(s"Expected NativeStruct, got: $other")

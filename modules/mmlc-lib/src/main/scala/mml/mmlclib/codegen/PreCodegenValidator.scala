@@ -78,7 +78,7 @@ object PreCodegenValidator:
     val canonical = resolveAliasChain(typeSpec, module)
     canonical match
       case TypeUnit(_) => true
-      case NativePrimitive(_, llvmType, _) => allowedNativeReturnLlvmT.contains(llvmType)
+      case NativePrimitive(_, llvmType, _, _) => allowedNativeReturnLlvmT.contains(llvmType)
       case TypeRef(_, name, _, _) => allowedReturnNames.contains(name)
       case _ => false
 

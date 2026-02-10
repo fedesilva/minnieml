@@ -684,6 +684,22 @@ struct User { name: String, age: Int };  // Heap type (contains String)
 struct Point { x: Int, y: Int };         // Not a heap type
 ```
 
+### Custom deallocation functions
+
+By default, heap-typed `@native` types use a `__free_<TypeName>` naming convention for
+their deallocation function. The `free=<name>` attribute overrides this:
+
+```mml
+type Handle = @native[t=*i8, mem=heap, free=close_handle];
+type MyStr = @native[mem=heap, free=destroy_str] { length: Int64, data: CharPtr };
+```
+
+When `free=` is provided, the ownership system calls the specified function instead of
+`__free_Handle` or `__free_MyStr`. When omitted, the convention applies.
+
+This only affects `@native` types. User-defined `struct` types always use automatically
+generated `__free_<Name>` functions.
+
 ### Struct construction and cloning
 
 Struct constructors clone their arguments. For heap-typed fields, the constructor

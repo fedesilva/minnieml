@@ -110,28 +110,31 @@ private[parser] def nativeTypeP(info: SourceInfo)(using P[Any]): P[NativeType] =
   }
 
 private[parser] def nativeBracketTypeP(info: SourceInfo)(using P[Any]): P[NativeType] =
-  def memEffectP: P[MemEffect]  = P("heap").map(_ => MemEffect.Alloc)
-  def tAttrP:     P[NativeType] = P("t=" ~ (nativePointerTypeP(info) | nativePrimitiveTypeP(info)))
-  def memAttrP:   P[MemEffect]  = P("mem=" ~ memEffectP)
+  enum Attr:
+    case TAttr(t: NativeType)
+    case MemAttr(eff: MemEffect)
+    case FreeAttr(name: String)
 
-  P(
-    "[" ~ (
-      (tAttrP ~ ("," ~ memAttrP).?).map { case (t, m) =>
-        m.fold(t) { case eff =>
-          t match
-            case p: NativePrimitive => p.copy(memEffect = Some(eff))
-            case p: NativePointer => p.copy(memEffect = Some(eff))
-            case s: NativeStruct => s.copy(memEffect = Some(eff))
-        }
-      } |
-        (memAttrP ~ "," ~ tAttrP).map { case (m, t) =>
-          t match
-            case p: NativePrimitive => p.copy(memEffect = Some(m))
-            case p: NativePointer => p.copy(memEffect = Some(m))
-            case s: NativeStruct => s.copy(memEffect = Some(m))
-        }
-    ) ~ "]"
-  )
+  def tAttrP: P[Attr] =
+    P("t=" ~ (nativePointerTypeP(info) | nativePrimitiveTypeP(info))).map(Attr.TAttr(_))
+  def memAttrP: P[Attr] =
+    P("mem=" ~ "heap").map(_ => Attr.MemAttr(MemEffect.Alloc))
+  def freeAttrP: P[Attr] =
+    P("free=" ~ nativeIdentP).map(Attr.FreeAttr(_))
+
+  P("[" ~ (tAttrP | memAttrP | freeAttrP).rep(sep = ",", min = 1) ~ "]")
+    .flatMap { attrs =>
+      attrs.collectFirst { case Attr.TAttr(t) => t } match
+        case None => Fail
+        case Some(base) =>
+          val memOpt  = attrs.collectFirst { case Attr.MemAttr(eff) => eff }
+          val freeOpt = attrs.collectFirst { case Attr.FreeAttr(n) => n }
+          val result = base match
+            case p: NativePrimitive => p.copy(memEffect = memOpt, freeFn = freeOpt)
+            case p: NativePointer => p.copy(memEffect = memOpt, freeFn = freeOpt)
+            case s: NativeStruct => s.copy(memEffect = memOpt, freeFn = freeOpt)
+          Pass(result)
+    }
 
 private[parser] def nativePrimitiveTypeP(info: SourceInfo)(using P[Any]): P[NativePrimitive] =
   P(spP(info) ~ llvmPrimitiveTypeP ~ spNoWsP(info) ~ spP(info))
@@ -146,11 +149,23 @@ private[parser] def nativePointerTypeP(info: SourceInfo)(using P[Any]): P[Native
     }
 
 private[parser] def nativeStructP(info: SourceInfo)(using P[Any]): P[NativeStruct] =
-  def memAttrP: P[MemEffect] = P("[" ~ "mem=" ~ "heap".! ~ "]").map(_ => MemEffect.Alloc)
+  enum StructAttr:
+    case MemAttr(eff: MemEffect)
+    case FreeAttr(name: String)
 
-  P(spP(info) ~ memAttrP.? ~ "{" ~ nativeFieldListP(info) ~ "}" ~ spNoWsP(info) ~ spP(info))
-    .map { case (start, memOpt, fields, end, _) =>
-      NativeStruct(span(start, end), fields, memOpt)
+  def memAttrP: P[StructAttr] =
+    P("mem=" ~ "heap").map(_ => StructAttr.MemAttr(MemEffect.Alloc))
+  def freeAttrP: P[StructAttr] =
+    P("free=" ~ nativeIdentP).map(StructAttr.FreeAttr(_))
+  def attrsP: P[Seq[StructAttr]] =
+    P("[" ~ (memAttrP | freeAttrP).rep(sep = ",", min = 1) ~ "]")
+
+  P(spP(info) ~ attrsP.? ~ "{" ~ nativeFieldListP(info) ~ "}" ~ spNoWsP(info) ~ spP(info))
+    .map { case (start, attrsOpt, fields, end, _) =>
+      val attrs   = attrsOpt.getOrElse(Seq.empty)
+      val memOpt  = attrs.collectFirst { case StructAttr.MemAttr(eff) => eff }
+      val freeOpt = attrs.collectFirst { case StructAttr.FreeAttr(n) => n }
+      NativeStruct(span(start, end), fields, memOpt, freeOpt)
     }
 
 private[parser] def nativeFieldListP(info: SourceInfo)(using P[Any]): P[List[(String, Type)]] =
@@ -159,6 +174,9 @@ private[parser] def nativeFieldListP(info: SourceInfo)(using P[Any]): P[List[(St
 
 private[parser] def nativeFieldP(info: SourceInfo)(using P[Any]): P[(String, Type)] =
   P(bindingIdP ~ ":" ~ typeSpecP(info))
+
+private[parser] def nativeIdentP(using P[Any]): P[String] =
+  P(CharsWhileIn("a-zA-Z_", 1) ~ CharsWhileIn("a-zA-Z0-9_", 0)).!
 
 private[parser] def llvmPrimitiveTypeP(using P[Any]): P[String] =
   P(

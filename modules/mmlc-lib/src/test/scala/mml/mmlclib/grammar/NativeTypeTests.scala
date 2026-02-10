@@ -19,7 +19,7 @@ class NativeTypeTests extends BaseEffFunSuite:
           val typeDef = module.members.collectFirst { case t: TypeDef => t }.get
           assertEquals(typeDef.name, "Int")
           typeDef.typeSpec match
-            case Some(NativePrimitive(_, llvmType, _)) =>
+            case Some(NativePrimitive(_, llvmType, _, _)) =>
               assertEquals(llvmType, "i32")
             case _ =>
               fail("Expected NativePrimitive")
@@ -39,7 +39,7 @@ class NativeTypeTests extends BaseEffFunSuite:
           val typeDef = module.members.collectFirst { case t: TypeDef => t }.get
           assertEquals(typeDef.name, "Float32")
           typeDef.typeSpec match
-            case Some(NativePrimitive(_, llvmType, _)) =>
+            case Some(NativePrimitive(_, llvmType, _, _)) =>
               assertEquals(llvmType, "float")
             case _ =>
               fail("Expected NativePrimitive")
@@ -59,7 +59,7 @@ class NativeTypeTests extends BaseEffFunSuite:
           val typeDef = module.members.collectFirst { case t: TypeDef => t }.get
           assertEquals(typeDef.name, "CharPtr")
           typeDef.typeSpec match
-            case Some(NativePointer(_, llvmType, _)) =>
+            case Some(NativePointer(_, llvmType, _, _)) =>
               assertEquals(llvmType, "i8")
             case _ =>
               fail("Expected NativePointer")
@@ -92,7 +92,7 @@ class NativeTypeTests extends BaseEffFunSuite:
             case Some(typeDef) =>
               assertEquals(typeDef.name, "MyStruct")
               typeDef.typeSpec match
-                case Some(NativeStruct(_, fieldsList, _)) =>
+                case Some(NativeStruct(_, fieldsList, _, _)) =>
                   val fields = fieldsList.toMap
                   assertEquals(fields.size, 2)
                   assert(fields.contains("length"), "Expected field 'length'")
@@ -126,7 +126,7 @@ class NativeTypeTests extends BaseEffFunSuite:
           module => {
             val typeDef = module.members.collectFirst { case t: TypeDef => t }.get
             typeDef.typeSpec match
-              case Some(NativePrimitive(_, llvmType, _)) =>
+              case Some(NativePrimitive(_, llvmType, _, _)) =>
                 assertEquals(llvmType, floatType)
               case _ =>
                 fail(s"Expected NativePrimitive for $floatType")
@@ -149,7 +149,7 @@ class NativeTypeTests extends BaseEffFunSuite:
           module => {
             val typeDef = module.members.collectFirst { case t: TypeDef => t }.get
             typeDef.typeSpec match
-              case Some(NativePrimitive(_, llvmType, _)) =>
+              case Some(NativePrimitive(_, llvmType, _, _)) =>
                 assertEquals(llvmType, s"i$bits")
               case _ =>
                 fail(s"Expected NativePrimitive for i$bits")
@@ -210,7 +210,7 @@ class NativeTypeTests extends BaseEffFunSuite:
               )
             case Some(typeDef) =>
               typeDef.typeSpec match
-                case Some(NativeStruct(_, fieldsList, _)) =>
+                case Some(NativeStruct(_, fieldsList, _, _)) =>
                   val fields = fieldsList.toMap
                   assertEquals(fields.size, 4)
                   assertEquals(fields.keySet, Set("field1", "field2", "ptr", "nested"))
@@ -225,5 +225,93 @@ class NativeTypeTests extends BaseEffFunSuite:
                 case None =>
                   fail("Expected typeSpec to be defined")
           }
+        }
+      )
+
+  test("parse native pointer with free attribute"):
+    val code = """
+      type Handle = @native[t=*i8, mem=heap, free=close_handle];
+    """
+
+    Parser
+      .parseModule(code, "Test")
+      .fold(
+        e => fail(s"Parser failed: $e"),
+        module => {
+          val typeDef = module.members.collectFirst { case t: TypeDef => t }.get
+          assertEquals(typeDef.name, "Handle")
+          typeDef.typeSpec match
+            case Some(NativePointer(_, llvmType, memEffect, freeFn)) =>
+              assertEquals(llvmType, "i8")
+              assertEquals(memEffect, Some(MemEffect.Alloc))
+              assertEquals(freeFn, Some("close_handle"))
+            case _ =>
+              fail("Expected NativePointer with free attribute")
+        }
+      )
+
+  test("parse native pointer without free attribute has None"):
+    val code = """
+      type Buffer = @native[t=*i8, mem=heap];
+    """
+
+    Parser
+      .parseModule(code, "Test")
+      .fold(
+        e => fail(s"Parser failed: $e"),
+        module => {
+          val typeDef = module.members.collectFirst { case t: TypeDef => t }.get
+          typeDef.typeSpec match
+            case Some(NativePointer(_, _, memEffect, freeFn)) =>
+              assertEquals(memEffect, Some(MemEffect.Alloc))
+              assertEquals(freeFn, None)
+            case _ =>
+              fail("Expected NativePointer")
+        }
+      )
+
+  test("parse native struct with free attribute"):
+    val code = """
+      type MyStr = @native[mem=heap, free=my_free] {
+        length: SomeType,
+        data: AnotherType
+      };
+    """
+
+    Parser
+      .parseModule(code, "Test")
+      .fold(
+        e => fail(s"Parser failed: $e"),
+        module => {
+          val typeDef = module.members.collectFirst { case t: TypeDef => t }.get
+          assertEquals(typeDef.name, "MyStr")
+          typeDef.typeSpec match
+            case Some(NativeStruct(_, fields, memEffect, freeFn)) =>
+              assertEquals(fields.size, 2)
+              assertEquals(memEffect, Some(MemEffect.Alloc))
+              assertEquals(freeFn, Some("my_free"))
+            case _ =>
+              fail("Expected NativeStruct with free attribute")
+        }
+      )
+
+  test("parse native bracket attrs in any order"):
+    val code = """
+      type H = @native[free=close_it, mem=heap, t=*i8];
+    """
+
+    Parser
+      .parseModule(code, "Test")
+      .fold(
+        e => fail(s"Parser failed: $e"),
+        module => {
+          val typeDef = module.members.collectFirst { case t: TypeDef => t }.get
+          typeDef.typeSpec match
+            case Some(NativePointer(_, llvmType, memEffect, freeFn)) =>
+              assertEquals(llvmType, "i8")
+              assertEquals(memEffect, Some(MemEffect.Alloc))
+              assertEquals(freeFn, Some("close_it"))
+            case _ =>
+              fail("Expected NativePointer")
         }
       )
