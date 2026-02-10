@@ -18,14 +18,15 @@ object SemanticStage:
       |> CompilerState.timePhase("semantic", "duplicate-names")(DuplicateNameChecker.rewriteModule)
       |> CompilerState.timePhase("semantic", "id-assigner")(IdAssigner.rewriteModule)
       |> CompilerState.timePhase("semantic", "type-resolver")(TypeResolver.rewriteModule)
+      |> CompilerState.timePhase("semantic", "ctor-gen")(ConstructorGenerator.rewriteModule)
+      |> CompilerState.timePhase("semantic", "mem-fn-gen")(
+        MemoryFunctionGenerator.rewriteModule
+      )
       |> CompilerState.timePhase("semantic", "ref-resolver")(RefResolver.rewriteModule)
       |> CompilerState
         .timePhase("semantic", "expression-rewriter")(ExpressionRewriter.rewriteModule)
       |> CompilerState.timePhase("semantic", "simplifier")(Simplifier.rewriteModule)
       |> CompilerState.timePhase("semantic", "type-checker")(TypeChecker.rewriteModule)
-      |> CompilerState.timePhase("semantic", "mem-fn-gen")(
-        MemoryFunctionGenerator.rewriteModule
-      )
       |> CompilerState.timePhase("semantic", "resolvables-indexer")(
         ResolvablesIndexer.rewriteModule
       )

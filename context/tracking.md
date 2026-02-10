@@ -144,7 +144,7 @@ Affine ownership with borrow-by-default. Enables safe automatic memory managemen
 - [x] **Use binding metadata for constructor detection** — Low [COMPLETE]
   - Replace `name.startsWith("__mk_")` with `BindingOrigin.DataConstructor` lookup.
 
-### Move constructor generation to a phase in sema stage
+### Move constructor generation to a phase in sema stage [COMPLETE]
 
 * after type resolver
 * before ref resolver
@@ -156,6 +156,28 @@ runs before the ref resolver, so references to generated code are present.
 ---
 
 ## Recent Changes
+
+### 2026-02-09 Move constructor generation from parser to semantic phase [COMPLETE]
+
+- **Problem:** Constructor synthesis (`addStructConstructors`, `mkStructConstructor`,
+  `mkNativeStructConstructor`) lived in the parser (`modules.scala`), mixing parsing with
+  code generation. `MemoryFunctionGenerator` ran after `TypeChecker` despite only needing
+  resolved types and constructor nodes.
+- **Fix:** New `ConstructorGenerator` semantic phase generates constructor `Bnd` nodes for
+  both MML and native structs. Runs after `TypeResolver`. `MemoryFunctionGenerator` moved
+  from after `TypeChecker` to after `ConstructorGenerator`, grouping code-generation phases
+  before analysis phases.
+- **Changes:**
+  - New `semantic/ConstructorGenerator.scala`: moved constructor logic from parser
+  - `parser/modules.scala`: removed `addStructConstructors`, `mkStructConstructor`,
+    `mkNativeStructConstructor` and related helpers
+  - `compiler/SemanticStage.scala`: pipeline reorder (ctor-gen → mem-fn-gen → ref-resolver →
+    ... → type-checker)
+  - `semantic/MemoryFunctionGenerator.scala`: doc comment updated
+  - `docs/design/compiler-design.md`: phase numbering, Mermaid diagram, summary updated
+  - Test moved from `grammar/DataConstructorTests` to `semantic/DataConstructorTests`
+- **Verification:** 256 tests pass, `scalafmtAll`/`scalafixAll` clean, `mmlcPublishLocal` OK,
+  all 7 benchmarks compile, 13/13 memory tests pass (ASan + leaks).
 
 ### 2026-02-09 Memory test harness [COMPLETE]
 

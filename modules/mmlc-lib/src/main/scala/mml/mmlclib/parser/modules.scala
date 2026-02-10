@@ -21,112 +21,12 @@ private[parser] def topLevelModuleP(
     val filteredMembers = membersList.lastOption match
       case Some(ParsingMemberError(_, _, None)) => membersList.dropRight(1)
       case _ => membersList
-    val expandedMembers = addStructConstructors(filteredMembers)
     Module(
       span       = span(start, end),
       name       = name,
       visibility = Visibility.Protected,
-      members    = expandedMembers,
+      members    = filteredMembers,
       docComment = None,
       sourcePath = sourcePath
     )
   }
-
-private def addStructConstructors(members: List[Member]): List[Member] =
-  members.flatMap {
-    case struct: TypeStruct => List(struct, mkStructConstructor(struct))
-    case td:     TypeDef =>
-      td.typeSpec match
-        case Some(ns: NativeStruct) if ns.fields.nonEmpty =>
-          List(td, mkNativeStructConstructor(td, ns))
-        case _ => List(td)
-    case other => List(other)
-  }
-
-private def mkStructConstructor(struct: TypeStruct): Bnd =
-  val constructorName = s"__mk_${struct.name}"
-  val returnType      = TypeRef(struct.span, struct.name)
-  val params = struct.fields.toList.map { field =>
-    FnParam(field.span, field.name, typeAsc = Some(field.typeSpec))
-  }
-  val arity = params.size match
-    case 0 => CallableArity.Nullary
-    case 1 => CallableArity.Unary
-    case 2 => CallableArity.Binary
-    case n => CallableArity.Nary(n)
-  val meta = BindingMeta(
-    origin        = BindingOrigin.Constructor,
-    arity         = arity,
-    precedence    = Precedence.Function,
-    associativity = None,
-    originalName  = struct.name,
-    mangledName   = constructorName
-  )
-  val bodyExpr = Expr(
-    struct.span,
-    List(DataConstructor(struct.span, typeSpec = Some(returnType))),
-    typeAsc  = None,
-    typeSpec = Some(returnType)
-  )
-  val lambda = Lambda(
-    span     = struct.span,
-    params   = params,
-    body     = bodyExpr,
-    captures = Nil,
-    typeSpec = bodyExpr.typeSpec,
-    typeAsc  = Some(returnType)
-  )
-  Bnd(
-    visibility = struct.visibility,
-    span       = struct.span,
-    name       = constructorName,
-    value      = Expr(struct.span, List(lambda)),
-    typeSpec   = bodyExpr.typeSpec,
-    typeAsc    = Some(returnType),
-    docComment = None,
-    meta       = Some(meta)
-  )
-
-private def mkNativeStructConstructor(td: TypeDef, ns: NativeStruct): Bnd =
-  val constructorName = s"__mk_${td.name}"
-  val returnType      = TypeRef(td.span, td.name)
-  val params = ns.fields.map { case (fieldName, fieldType) =>
-    FnParam(td.span, fieldName, typeAsc = Some(fieldType))
-  }
-  val arity = params.size match
-    case 0 => CallableArity.Nullary
-    case 1 => CallableArity.Unary
-    case 2 => CallableArity.Binary
-    case n => CallableArity.Nary(n)
-  val meta = BindingMeta(
-    origin        = BindingOrigin.Constructor,
-    arity         = arity,
-    precedence    = Precedence.Function,
-    associativity = None,
-    originalName  = td.name,
-    mangledName   = constructorName
-  )
-  val bodyExpr = Expr(
-    td.span,
-    List(DataConstructor(td.span, typeSpec = Some(returnType))),
-    typeAsc  = None,
-    typeSpec = Some(returnType)
-  )
-  val lambda = Lambda(
-    span     = td.span,
-    params   = params,
-    body     = bodyExpr,
-    captures = Nil,
-    typeSpec = bodyExpr.typeSpec,
-    typeAsc  = Some(returnType)
-  )
-  Bnd(
-    visibility = td.visibility,
-    span       = td.span,
-    name       = constructorName,
-    value      = Expr(td.span, List(lambda)),
-    typeSpec   = bodyExpr.typeSpec,
-    typeAsc    = Some(returnType),
-    docComment = None,
-    meta       = Some(meta)
-  )

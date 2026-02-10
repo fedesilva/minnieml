@@ -6,8 +6,8 @@ import mml.mmlclib.compiler.CompilerState
 /** Generates memory management functions (`__free_T` and `__clone_T`) for user-defined structs that
   * contain heap-allocated fields.
   *
-  * This phase runs after TypeChecker and before ResolvablesIndexer. For each user struct with heap
-  * fields, it generates:
+  * This phase runs after ConstructorGenerator and before RefResolver. For each user struct with
+  * heap fields, it generates:
   *   - `__free_StructName(s: StructName): Unit` - frees all heap fields
   *   - `__clone_StructName(s: StructName): StructName` - deep copies all heap fields
   *
