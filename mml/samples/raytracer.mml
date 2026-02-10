@@ -134,9 +134,17 @@ fn ray_color(r: Ray): Vec3 =
 // Each row is computed into FloatArrays, then written to the buffer.
 
 fn compute_row(
-  r_arr: FloatArray, g_arr: FloatArray, b_arr: FloatArray,
-  i: Int, j: Int, width: Int, height: Int,
-  origin: Vec3, ll_corner: Vec3, horizontal: Vec3, vertical: Vec3
+  r_arr: FloatArray, 
+  g_arr: FloatArray, 
+  b_arr: FloatArray,
+  i: Int, 
+  j: Int, 
+  width: Int, 
+  height: Int,
+  origin: Vec3, 
+  ll_corner: Vec3, 
+  horizontal: Vec3, 
+  vertical: Vec3
 ): Unit =
   if i < width then
     let u = (int_to_float i) /. (int_to_float (width - 1));
@@ -160,8 +168,12 @@ fn compute_row(
 ;
 
 fn write_row(
-  buf: Buffer, r_arr: FloatArray, g_arr: FloatArray, b_arr: FloatArray,
-  i: Int, width: Int
+  buf: Buffer, 
+  r_arr: FloatArray, 
+  g_arr: FloatArray, 
+  b_arr: FloatArray,
+  i: Int, 
+  width: Int
 ): Unit =
   if i < width then
     let ir = 255.999 *. (unsafe_ar_float_get r_arr i);
@@ -179,9 +191,17 @@ fn write_row(
 ;
 
 fn render_rows(
-  buf: Buffer, r_arr: FloatArray, g_arr: FloatArray, b_arr: FloatArray,
-  j: Int, width: Int, height: Int,
-  origin: Vec3, ll_corner: Vec3, horizontal: Vec3, vertical: Vec3
+  buf: Buffer, 
+  r_arr: FloatArray, 
+  g_arr: FloatArray, 
+  b_arr: FloatArray,
+  j: Int, 
+  width: Int, 
+  height: Int,
+  origin: Vec3, 
+  ll_corner: Vec3, 
+  horizontal: Vec3, 
+  vertical: Vec3
 ): Unit =
   if j >= 0 then
     compute_row r_arr g_arr b_arr 0 j width height
