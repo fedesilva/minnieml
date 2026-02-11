@@ -35,7 +35,6 @@ Read these files for project context:
 
 ## Critical Interaction Rules
 
-- After loading context: summarize understanding, stand by for instructions.
 - When interrupted with a question: stop work, answer, stand by.
   - NO EXCEPTIONS.
   - Failure to follow these steps wastes time and money. 
@@ -45,5 +44,4 @@ Read these files for project context:
   - **Don't ask confirmation** to investigate or make a plan.
       - use common sense.
   - Split your work into small chunks, stop on completion and ask for review and signoff.
-  - Ask confirmation frequently, while working.
 
