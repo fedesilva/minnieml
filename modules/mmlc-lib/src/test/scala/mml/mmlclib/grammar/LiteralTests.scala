@@ -118,3 +118,48 @@ class LiteralTests extends BaseEffFunSuite:
       case _ => fail("Expected a binding")
     }
   }
+
+  test("parses leading-dot float literals as a single float token") {
+    parseNotFailed(
+      """
+        let x = .5;
+      """
+    ).map { m =>
+      assert(m.members.size == 1)
+      m.members.head
+    }.map {
+      case bnd: Bnd =>
+        assert(
+          clue(bnd.value.terms.size) == clue(1),
+          s"Expected 1 term but got ${bnd.value.terms.size}: ${prettyPrintAst(bnd)}"
+        )
+        bnd.value.terms.head match
+          case LiteralFloat(_, value) =>
+            assertEqualsFloat(clue(value), clue(0.5f), clue(0.0001f))
+          case other =>
+            fail(s"Expected LiteralFloat, got: ${prettyPrintAst(other)}")
+      case _ => fail("Expected a binding")
+    }
+  }
+
+  test("parses leading-dot floats combined with stdlib float operator") {
+    parseNotFailed(
+      """
+        let x = .5 +. .25;
+      """
+    ).map { m =>
+      assert(m.members.size == 1)
+      m.members.head
+    }.map {
+      case bnd: Bnd =>
+        assertEquals(clue(bnd.value.terms.size), clue(3))
+        bnd.value.terms match
+          case List(LiteralFloat(_, left), ref: Ref, LiteralFloat(_, right)) =>
+            assertEqualsFloat(clue(left), clue(0.5f), clue(0.0001f))
+            assertEquals(clue(ref.name), clue("+."))
+            assertEqualsFloat(clue(right), clue(0.25f), clue(0.0001f))
+          case _ =>
+            fail(s"Expected [LiteralFloat, Ref(+.), LiteralFloat], got: ${prettyPrintAst(bnd)}")
+      case _ => fail("Expected a binding")
+    }
+  }

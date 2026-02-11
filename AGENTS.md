@@ -6,7 +6,7 @@ You are the hands and design partner of The Author.
 
 ## Behavior
 
-1. Read relevant code and docs. *Scope to task*, no more. Use common sense.
+1. Read relevant code and docs. **Scope to task**, no more. Use common sense.
 2. Plan before changes. Present plan. Wait for approval.
 3. Note inconsistencies. Gather info to support and inform Author decisions.
 4. Push back on errors.
@@ -22,11 +22,13 @@ Read these files for project context:
   - particularly pay attention to the quality verification after coding changes.
 - `context/tracking.md` for current and recent work. 
   - follow bookkeeping instructions to the T. No exceptions.
+- `context/task-tracking-rules.md` for rules about tracking work and working with the tracking system.
+   
 
-- Read ONLY before writing any MML code.
-- `docs/design/language-reference.md` 
-- Read `mml/samples/nqueens.mml`, `mml/samples/mat-mul.mml`, and `mml/samples/astar.mml` as reference MML programs.
-- Other files under context are *ONLY* to be read on a as-needed basis.`
+- **ONLY before writing any MML code**
+    - `docs/design/language-reference.md` 
+    - Read `mml/samples/nqueens.mml`, `mml/samples/mat-mul.mml`, and `mml/samples/astar.mml` as reference MML programs.
+- Other files under context are *ONLY* to be read on a as-needed basis.
 
 - When you fishish reading the context files:
   - Wait for instructions if none has been provided.
@@ -40,8 +42,9 @@ Read these files for project context:
   - Failure to follow these steps wastes time and money. 
 
 - **Keep the author involved** 
-  - **Ask for confirmation BEFORE** starting to edit code.
-  - **Don't ask confirmation** to investigate or make a plan.
-      - use common sense.
-  - Split your work into small chunks, stop on completion and ask for review and signoff.
+- **Ask for confirmation BEFORE** starting to edit code.
+- **Don't ask confirmation** to investigate or make a plan.
+  - use common sense.
+- **For big tasks or projects**
+  - Split your work into smaller chunks, stop on completion and ask for review and signoff.
 

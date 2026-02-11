@@ -58,8 +58,8 @@ private[parser] def termP(info: SourceInfo)(using P[Any]): P[Term] =
       holeP(info) |
       litStringP(info) |
       selectionTermP(info) |
-      opRefP(info) |
       numericLitP(info) |
+      opRefP(info) |
       groupTermP(info) |
       tupleP(info) |
       typeRefTermP(info) |
@@ -78,8 +78,8 @@ private[parser] def termMemberP(info: SourceInfo)(using P[Any]): P[Term] =
       holeP(info) |
       litStringP(info) |
       selectionTermMemberP(info) |
-      opRefP(info) |
       numericLitP(info) |
+      opRefP(info) |
       groupTermMemberP(info) |
       tupleMemberP(info) |
       typeRefTermP(info) |

@@ -43,6 +43,11 @@ Affine ownership with borrow-by-default. Enables safe automatic memory managemen
 - [ ] **BUG: user-struct `__clone_*` resolution** — `wrapWithClone` resolves to
   `stdlib::bnd::__clone_<T>` even when `__clone_<T>` is generated in the current module,
   causing unresolved symbols for auto-cloned user-defined heap structs.
+- [ ] **BUG: constructor auto-clones borrowed args** — `analyzeRegularApp` wraps
+  non-owned (borrowed) args to consuming constructor params with `wrapWithClone`. This is
+  wrong: constructors take ownership, so passing a borrowed value should be an error, not
+  a silent clone. Literals (e.g. `"hello"`) still need heap allocation but that's a
+  separate concern from cloning borrowed refs.
 
 ### Parser
 
@@ -52,13 +57,29 @@ Parser regressions affecting valid syntax and tokenization.
 
 - [x] **Permit `=` and `;` without trailing whitespace** [COMPLETE] — `wordBoundary` on `defAsKw`
   and `semiKw` rejects `let x=1;` or `fn f(x:Int)=x+1;` unless a space is inserted.
-- [ ] **Preserve `.5` float literals when `.` is an operator** — `opRefP` captures `.`
+- [x] **Preserve `.5` float literals when `.` is an operator** [COMPLETE] — `opRefP` captures `.`
   before `numericLitP`, splitting `.5` into `.` and `5` instead of a float literal.
 
 
 ---
 
 ## Recent Changes
+
+### 2026-02-10 Preserve `.5` float literals with `.` operator [COMPLETE]
+
+- **Problem:** `termP`/`termMemberP` parsed `opRefP` before `numericLitP`, so leading-dot
+  float literals were split into operator + int (`.5` -> `Ref(".")`, `LiteralInt(5)`).
+- **Fix:** Reordered term parsing so `numericLitP` runs before `opRefP`, allowing `.5` and
+  similar leading-dot floats to parse as `LiteralFloat` while preserving operator parsing.
+- **Changes:**
+  - `modules/mmlc-lib/src/main/scala/mml/mmlclib/parser/expressions.scala`:
+    `termP` and `termMemberP` now try `numericLitP` before `opRefP`
+  - `modules/mmlc-lib/src/test/scala/mml/mmlclib/grammar/LiteralTests.scala`:
+    added regression test for `let x = .5;`
+  - `modules/mmlc-lib/src/test/scala/mml/mmlclib/grammar/LiteralTests.scala`:
+    added combined regression test for `let x = .5 +. .25;`
+- **Verification:** `sbtn "test; scalafmtAll; scalafixAll; mmlcPublishLocal"` passed
+  (260 tests); `make -C benchmark clean` and `make -C benchmark mml` passed (all 7 benchmarks).
 
 ### 2026-02-10 Parser whitespace regression for `=` and `;` [COMPLETE]
 
