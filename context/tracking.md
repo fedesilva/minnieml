@@ -38,10 +38,40 @@ Affine ownership with borrow-by-default. Enables safe automatic memory managemen
 - [ ] **BUG: nested mixed-ownership conditionals** — witness booleans don't propagate
   through nested `if/else` where inner branches mix heap/literal. Blocks T10 mixed variant.
 
+#### Bugs
+
+- [ ] **BUG: user-struct `__clone_*` resolution** — `wrapWithClone` resolves to
+  `stdlib::bnd::__clone_<T>` even when `__clone_<T>` is generated in the current module,
+  causing unresolved symbols for auto-cloned user-defined heap structs.
+
+### Parser
+
+Parser regressions affecting valid syntax and tokenization.
+
+**Remaining:**
+
+- [x] **Permit `=` and `;` without trailing whitespace** [COMPLETE] — `wordBoundary` on `defAsKw`
+  and `semiKw` rejects `let x=1;` or `fn f(x:Int)=x+1;` unless a space is inserted.
+- [ ] **Preserve `.5` float literals when `.` is an operator** — `opRefP` captures `.`
+  before `numericLitP`, splitting `.5` into `.` and `5` instead of a float literal.
+
 
 ---
 
 ## Recent Changes
+
+### 2026-02-10 Parser whitespace regression for `=` and `;` [COMPLETE]
+
+- **Problem:** Parser required a non-word boundary after `=` and `;`, rejecting valid compact
+  syntax like `let x=1;let y=2;` and function definitions without inserted spaces.
+- **Fix:** Removed `wordBoundary` from `defAsKw` and `semiKw` in parser keywords so these
+  punctuation tokens parse independently of trailing whitespace.
+- **Changes:**
+  - `modules/mmlc-lib/src/main/scala/mml/mmlclib/parser/keywords.scala`: `defAsKw` changed
+    from `P("=" ~ wordBoundary)` to `P("=")`, `semiKw` from `P(";" ~ wordBoundary)` to `P(";")`
+  - `modules/mmlc-lib/src/test/scala/mml/mmlclib/grammar/LetBndTests.scala`: added
+    "let bindings allow no spaces around = and ;" regression test
+- **Verification:** New parser regression test added and committed with the fix (`afb168c`).
 
 ### 2026-02-10 Negative test harness complete [COMPLETE]
 

@@ -23,7 +23,8 @@ Read these files for project context:
 - `context/tracking.md` for current and recent work. 
   - follow bookkeeping instructions to the T. No exceptions.
 
-- `docs/design/language-reference.md` - Read before writing any MML code.
+- Read ONLY before writing any MML code.
+- `docs/design/language-reference.md` 
 - Read `mml/samples/nqueens.mml`, `mml/samples/mat-mul.mml`, and `mml/samples/astar.mml` as reference MML programs.
 - Other files under context are *ONLY* to be read on a as-needed basis.`
 
