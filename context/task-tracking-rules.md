@@ -30,4 +30,4 @@ This are NO EXCEPTION rules for working with the `context/tracking.md` file.
 * When the user requests, or confirms a task is done, log changes in recent changes.
 
 
-----------------------------------------------------------------------------------------------------------------
+--------------------------------------------------------------------------------------------------------
