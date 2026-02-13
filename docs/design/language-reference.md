@@ -269,7 +269,7 @@ fn fizzbuzz(n: Int): Unit =
   if n % 15 == 0 then println "FizzBuzz"
   elif n % 3 == 0 then println "Fizz"
   elif n % 5 == 0 then println "Buzz"
-  else println (to_string n)
+  else println (int_to_str n)
   end
 ;
 ```
@@ -310,10 +310,6 @@ fn count(arr: IntArray, i: Int, size: Int, acc: Int): Int =
 ;
 ```
 
-### No loops
-
-MML has no `while`, `for`, or any loop construct. All iteration is expressed via
-recursion. See [Recursion and tail calls](#recursion-and-tail-calls).
 
 ---
 

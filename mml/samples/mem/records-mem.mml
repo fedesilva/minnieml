@@ -52,6 +52,7 @@ fn test_mixed_struct(n: Int): Unit =
 
   consume_user u
   // <-- Does the compiler track that 'u.name' might be static or dynamic here?
+  // yes!
 ;
 
 fn run_mixed(n:Int): Unit = 
