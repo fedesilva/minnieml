@@ -5,7 +5,9 @@
 Before reading the IR, here's what the main instructions do:
 
 ### `alloca <type>`
-Allocates space **on the stack** (not the heap). Returns a pointer to that space. It's like a local variable declaration in C. The memory is automatically freed when the function returns.
+Allocates space **on the stack** (not the heap). Returns a pointer to that space.
+It's like a local variable declaration in C. The memory is automatically freed
+when the function returns.
 
 ```llvm
 %4 = alloca %struct.String    ; allocate sizeof(String) bytes on the stack
@@ -38,7 +40,10 @@ getelementptr <base_type>, <ptr_type> <ptr>, <index0>, <index1>, ...
 ; This is equivalent to C's: char* p = &str_1[0];
 ```
 
-Why two indices? Because `@str.1` has type `[2 x i8]*` (pointer to an array). The first `0` dereferences the pointer to get the array, the second `0` indexes into the array to get the first element. This is a common LLVM idiom for getting an `i8*` from a global string constant.
+Why two indices? Because `@str.1` has type `[2 x i8]*` (pointer to an array).
+The first `0` dereferences the pointer to get the array, the second `0` indexes
+into the array to get the first element. This is a common LLVM idiom for
+getting an `i8*` from a global string constant.
 
 **Example 2 — accessing a struct field:**
 ```llvm
@@ -111,7 +116,10 @@ Pulls a field out of a struct that's already in **registers** (not memory). No m
 ```
 
 ### `phi`
-A phi node selects a value based on which basic block we came from. It exists because LLVM IR is in SSA (Static Single Assignment) form, where each variable is assigned exactly once. At a merge point (like a loop header), you need phi to reconcile different values from different paths.
+A phi node selects a value based on which basic block we came from. It exists
+because LLVM IR is in SSA (Static Single Assignment) form, where each variable
+is assigned exactly once. At a merge point (like a loop header), you need phi
+to reconcile different values from different paths.
 
 ```llvm
 %2 = phi i64 [ %0, %entry ], [ %10, %loop.latch ]
