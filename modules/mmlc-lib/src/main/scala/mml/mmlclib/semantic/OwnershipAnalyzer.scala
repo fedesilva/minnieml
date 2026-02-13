@@ -322,45 +322,97 @@ object OwnershipAnalyzer:
       App(span, fnRef, argExpr, typeSpec = unitType)
     }
 
-  /** Check if an expression is a conditional with mixed allocation (one branch allocates, other
-    * doesn't). Returns Some((trueAllocates, allocType)) if mixed, None otherwise.
-    */
-  private def detectMixedConditional(expr: Expr, scope: OwnershipScope): Option[(Boolean, Type)] =
-    expr.terms.headOption.flatMap:
-      case Cond(_, _, ifTrue, ifFalse, _, _) =>
-        val trueAlloc  = exprAllocates(ifTrue, scope)
-        val falseAlloc = exprAllocates(ifFalse, scope)
-        // XOR: exactly one branch allocates
-        (trueAlloc, falseAlloc) match
-          case (Some(tpe), None) => Some((true, tpe))
-          case (None, Some(tpe)) => Some((false, tpe))
-          case _ => None
-      case _ => None
+  private enum ConditionalOwnership derives CanEqual:
+    case AlwaysOwned(tpe: Type)
+    case NeverOwned
+    case MixedOwned(tpe: Type, witnessExpr: Expr)
 
-  /** Create a witness conditional: `if cond then true else false` or `if cond then false else true`
-    * depending on which branch allocates.
-    */
-  private def mkWitnessConditional(
-    originalCond:  Cond,
-    trueAllocates: Boolean
-  ): Cond =
+  private def boolLiteralExpr(value: Boolean): Expr =
     val boolType = Some(boolTypeRef(syntheticSpan))
-    val trueLit  = LiteralBool(syntheticSpan, true)
-    val falseLit = LiteralBool(syntheticSpan, false)
+    Expr(syntheticSpan, List(LiteralBool(syntheticSpan, value)), typeSpec = boolType)
 
-    val (ifTrueExpr, ifFalseExpr) =
-      if trueAllocates then
-        (
-          Expr(syntheticSpan, List(trueLit), typeSpec  = boolType),
-          Expr(syntheticSpan, List(falseLit), typeSpec = boolType)
-        )
-      else
-        (
-          Expr(syntheticSpan, List(falseLit), typeSpec = boolType),
-          Expr(syntheticSpan, List(trueLit), typeSpec  = boolType)
-        )
+  private def mkBoolConditionalExpr(
+    condExpr:    Expr,
+    ifTrueExpr:  Expr,
+    ifFalseExpr: Expr
+  ): Expr =
+    val boolType = Some(boolTypeRef(syntheticSpan))
+    val condTerm = Cond(syntheticSpan, condExpr, ifTrueExpr, ifFalseExpr, boolType, boolType)
+    Expr(syntheticSpan, List(condTerm), typeSpec = boolType)
 
-    Cond(syntheticSpan, originalCond.cond, ifTrueExpr, ifFalseExpr, boolType, boolType)
+  private def classifyConditionalOwnership(
+    expr:  Expr,
+    scope: OwnershipScope
+  ): ConditionalOwnership =
+    def classifyExpr(e: Expr): ConditionalOwnership =
+      e.terms.lastOption match
+        case Some(cond: Cond) =>
+          classifyCond(cond)
+        case _ =>
+          exprAllocates(e, scope) match
+            case Some(tpe) => ConditionalOwnership.AlwaysOwned(tpe)
+            case None => ConditionalOwnership.NeverOwned
+
+    def classifyCond(cond: Cond): ConditionalOwnership =
+      val trueOwnership  = classifyExpr(cond.ifTrue)
+      val falseOwnership = classifyExpr(cond.ifFalse)
+      val boolTrue       = boolLiteralExpr(true)
+      val boolFalse      = boolLiteralExpr(false)
+
+      (trueOwnership, falseOwnership) match
+        case (ConditionalOwnership.AlwaysOwned(t1), ConditionalOwnership.AlwaysOwned(t2)) =>
+          ConditionalOwnership.AlwaysOwned(mergeAllocTypes(Some(t1), Some(t2)).getOrElse(t1))
+        case (ConditionalOwnership.NeverOwned, ConditionalOwnership.NeverOwned) =>
+          ConditionalOwnership.NeverOwned
+        case (ConditionalOwnership.AlwaysOwned(tpe), ConditionalOwnership.NeverOwned) =>
+          ConditionalOwnership.MixedOwned(
+            tpe,
+            mkBoolConditionalExpr(cond.cond, boolTrue, boolFalse)
+          )
+        case (ConditionalOwnership.NeverOwned, ConditionalOwnership.AlwaysOwned(tpe)) =>
+          ConditionalOwnership.MixedOwned(
+            tpe,
+            mkBoolConditionalExpr(cond.cond, boolFalse, boolTrue)
+          )
+        case (ConditionalOwnership.MixedOwned(tpe, witness), ConditionalOwnership.NeverOwned) =>
+          ConditionalOwnership.MixedOwned(
+            tpe,
+            mkBoolConditionalExpr(cond.cond, witness, boolFalse)
+          )
+        case (ConditionalOwnership.NeverOwned, ConditionalOwnership.MixedOwned(tpe, witness)) =>
+          ConditionalOwnership.MixedOwned(
+            tpe,
+            mkBoolConditionalExpr(cond.cond, boolFalse, witness)
+          )
+        case (ConditionalOwnership.AlwaysOwned(t1), ConditionalOwnership.MixedOwned(t2, witness)) =>
+          ConditionalOwnership.MixedOwned(
+            mergeAllocTypes(Some(t1), Some(t2)).getOrElse(t1),
+            mkBoolConditionalExpr(cond.cond, boolTrue, witness)
+          )
+        case (ConditionalOwnership.MixedOwned(t1, witness), ConditionalOwnership.AlwaysOwned(t2)) =>
+          ConditionalOwnership.MixedOwned(
+            mergeAllocTypes(Some(t1), Some(t2)).getOrElse(t1),
+            mkBoolConditionalExpr(cond.cond, witness, boolTrue)
+          )
+        case (
+              ConditionalOwnership.MixedOwned(t1, witnessTrue),
+              ConditionalOwnership.MixedOwned(t2, witnessFalse)
+            ) =>
+          ConditionalOwnership.MixedOwned(
+            mergeAllocTypes(Some(t1), Some(t2)).getOrElse(t1),
+            mkBoolConditionalExpr(cond.cond, witnessTrue, witnessFalse)
+          )
+
+    classifyExpr(expr)
+
+  /** Check if an expression has mixed ownership and return allocation type + witness expression. */
+  private def detectMixedConditional(
+    expr:  Expr,
+    scope: OwnershipScope
+  ): Option[(Type, Expr)] =
+    classifyConditionalOwnership(expr, scope) match
+      case ConditionalOwnership.MixedOwned(tpe, witnessExpr) => Some((tpe, witnessExpr))
+      case _ => None
 
   /** Create a conditional free: if __owns_x then __free_T x else () */
   private def mkConditionalFree(
@@ -694,12 +746,9 @@ object OwnershipAnalyzer:
     // Set up scope for lambda body - handle mixed conditionals specially
     val (bodyScope, witnessOpt) = params.headOption match
       case Some(param) if mixedCond.isDefined =>
-        val (trueAllocates, allocTpe) = mixedCond.get
-        val witnessName               = s"__owns_${param.name}"
-        val originalCond              = arg.terms.head.asInstanceOf[Cond]
-        val witnessCond               = mkWitnessConditional(originalCond, trueAllocates)
-        val boolType                  = Some(boolTypeRef(syntheticSpan))
-        val witnessExpr               = Expr(syntheticSpan, List(witnessCond), typeSpec = boolType)
+        val (allocTpe, witnessExpr) = mixedCond.get
+        val witnessName             = s"__owns_${param.name}"
+        val boolType                = Some(boolTypeRef(syntheticSpan))
         val scopeWithWitness = argResult.scope
           .withMixedOwnership(param.name, Some(allocTpe), witnessName, param.id)
           .withLiteral(witnessName)
@@ -1009,9 +1058,69 @@ object OwnershipAnalyzer:
     val condResult  = analyzeExpr(condExpr, scope)
     val trueResult  = analyzeExpr(ifTrue, condResult.scope)
     val falseResult = analyzeExpr(ifFalse, condResult.scope)
+
+    val outerOwnedBindings = condResult.scope.bindings.collect {
+      case (name, info @ BindingInfo(OwnershipState.Owned, _, _, _)) => (name, info)
+    }
+
+    val freesInTrueBranch = outerOwnedBindings.toList.flatMap { case (name, info) =>
+      val trueState  = trueResult.scope.getState(name).getOrElse(info.state)
+      val falseState = falseResult.scope.getState(name).getOrElse(info.state)
+      val isHeap = info.bindingTpe
+        .flatMap(getTypeName)
+        .exists(isHeapType(_, scope.resolvables))
+      (trueState, falseState) match
+        case (OwnershipState.Owned, OwnershipState.Moved) if isHeap =>
+          Some((name, info.bindingTpe, info.bindingId, None: Option[String]))
+        case _ =>
+          None
+    }
+
+    val freesInFalseBranch = outerOwnedBindings.toList.flatMap { case (name, info) =>
+      val trueState  = trueResult.scope.getState(name).getOrElse(info.state)
+      val falseState = falseResult.scope.getState(name).getOrElse(info.state)
+      val isHeap = info.bindingTpe
+        .flatMap(getTypeName)
+        .exists(isHeapType(_, scope.resolvables))
+      (trueState, falseState) match
+        case (OwnershipState.Moved, OwnershipState.Owned) if isHeap =>
+          Some((name, info.bindingTpe, info.bindingId, None: Option[String]))
+        case _ =>
+          None
+    }
+
+    val mergedScope = outerOwnedBindings.toList.foldLeft(condResult.scope) {
+      case (acc, (name, info)) =>
+        val trueState  = trueResult.scope.getState(name).getOrElse(info.state)
+        val falseState = falseResult.scope.getState(name).getOrElse(info.state)
+        (trueState, falseState) match
+          case (OwnershipState.Moved, OwnershipState.Moved) =>
+            val movedAt = trueResult.scope
+              .getMovedAt(name)
+              .orElse(falseResult.scope.getMovedAt(name))
+              .getOrElse(syntheticSpan)
+            acc.withMoved(name, movedAt)
+          case (OwnershipState.Moved, OwnershipState.Owned) =>
+            val movedAt = trueResult.scope.getMovedAt(name).getOrElse(syntheticSpan)
+            acc.withMoved(name, movedAt)
+          case (OwnershipState.Owned, OwnershipState.Moved) =>
+            val movedAt = falseResult.scope.getMovedAt(name).getOrElse(syntheticSpan)
+            acc.withMoved(name, movedAt)
+          case _ =>
+            acc
+    }
+
+    val mergedTrueExpr =
+      if freesInTrueBranch.isEmpty then trueResult.expr
+      else wrapWithFrees(trueResult.expr, freesInTrueBranch, ifTrue.span, scope.resolvables)
+
+    val mergedFalseExpr =
+      if freesInFalseBranch.isEmpty then falseResult.expr
+      else wrapWithFrees(falseResult.expr, freesInFalseBranch, ifFalse.span, scope.resolvables)
+
     TermResult(
-      trueResult.scope,
-      Cond(span, condResult.expr, trueResult.expr, falseResult.expr, typeSpec, typeAsc),
+      mergedScope,
+      Cond(span, condResult.expr, mergedTrueExpr, mergedFalseExpr, typeSpec, typeAsc),
       errors = condResult.errors ++ trueResult.errors ++ falseResult.errors
     )
 

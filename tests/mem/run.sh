@@ -19,6 +19,7 @@ fi
 
 pass() { printf "${GREEN}PASS${RESET} %s\n" "$1"; }
 fail() { printf "${RED}FAIL${RESET} %s\n" "$1"; }
+progress() { printf "%s\n" "$1"; }
 
 usage() {
   echo "Usage: $0 {asan|leaks|all}"
@@ -46,73 +47,115 @@ clean_build() {
 run_asan() {
   printf "\n${BOLD}=== ASan mode ===${RESET}\n\n"
   clean_build
+  local start_ts
+  start_ts=$(date +%s)
 
   local passed=0 failed=0 total=0 failures=""
+  local tests
+  tests="$(collect_tests)"
+  total=$(printf "%s\n" "$tests" | wc -l | tr -d ' ')
+  local current=0
 
-  for src in $(collect_tests); do
+  for src in $tests; do
     name=$(basename "$src" .mml)
     binary="$BUILD_DIR/${name}-asan"
-    total=$((total + 1))
+    current=$((current + 1))
+    compile_start=$(date +%s)
+    progress "[asan] ($current/$total) compiling $name ..."
 
     # Compile with ASan, then run the binary directly
-    if mmlc -s -b "$BUILD_DIR" -o "$binary" "$src" > /dev/null 2>&1 \
-       && "$binary" > /dev/null 2>&1; then
+    if mmlc -s -b "$BUILD_DIR" -o "$binary" "$src" > /dev/null 2>&1; then
+      compile_end=$(date +%s)
+      compile_elapsed=$((compile_end - compile_start))
+      progress "[asan] ($current/$total) compiled $name (${compile_elapsed}s)"
+      run_start=$(date +%s)
+      progress "[asan] ($current/$total) running $name ..."
+    else
+      compile_end=$(date +%s)
+      compile_elapsed=$((compile_end - compile_start))
+      fail "$name (compile)"
+      progress "[asan] ($current/$total) compile failed $name (${compile_elapsed}s)"
+      failed=$((failed + 1))
+      failures="$failures $name"
+      continue
+    fi
+
+    if "$binary" > /dev/null 2>&1; then
+      run_end=$(date +%s)
+      run_elapsed=$((run_end - run_start))
+      progress "[asan] ($current/$total) ran $name (${run_elapsed}s)"
       pass "$name"
       passed=$((passed + 1))
     else
+      run_end=$(date +%s)
+      run_elapsed=$((run_end - run_start))
+      progress "[asan] ($current/$total) run failed $name (${run_elapsed}s)"
       fail "$name"
       failed=$((failed + 1))
       failures="$failures $name"
     fi
   done
 
+  local end_ts elapsed
+  end_ts=$(date +%s)
+  elapsed=$((end_ts - start_ts))
+
   printf "\n${BOLD}ASan: %d/%d passed${RESET}" "$passed" "$total"
   if [ "$failed" -gt 0 ]; then
     printf " (${RED}%d failed:${RESET}%s)" "$failed" "$failures"
   fi
-  printf "\n"
+  printf " (${elapsed}s)\n"
   return "$failed"
 }
 
 run_leaks() {
   printf "\n${BOLD}=== Leaks mode ===${RESET}\n\n"
   clean_build
+  local start_ts
+  start_ts=$(date +%s)
+  local tests
+  tests="$(collect_tests)"
+  local total
+  total=$(printf "%s\n" "$tests" | wc -l | tr -d ' ')
 
-  # Compile all first
-  local compile_failures=""
-  for src in $(collect_tests); do
-    name=$(basename "$src" .mml)
-    if ! mmlc -b "$BUILD_DIR" -o "$BUILD_DIR/$name" "$src" > /dev/null 2>&1; then
-      compile_failures="$compile_failures $name"
-    fi
-  done
+  local passed=0 failed=0 failures=""
+  local current=0
 
-  if [ -n "$compile_failures" ]; then
-    printf "${RED}Compile failures:${RESET}%s\n" "$compile_failures"
-  fi
-
-  # Check leaks on compiled binaries
-  local passed=0 failed=0 total=0 failures=""
-
-  for src in $(collect_tests); do
+  for src in $tests; do
     name=$(basename "$src" .mml)
     binary="$BUILD_DIR/$name"
+    current=$((current + 1))
 
-    if [ ! -x "$binary" ]; then
-      fail "$name (not compiled)"
+    compile_start=$(date +%s)
+    progress "[leaks] ($current/$total) compiling $name ..."
+    if ! mmlc -b "$BUILD_DIR" -o "$binary" "$src" > /dev/null 2>&1; then
+      compile_end=$(date +%s)
+      compile_elapsed=$((compile_end - compile_start))
+      progress "[leaks] ($current/$total) compile failed $name (${compile_elapsed}s)"
+      fail "$name (compile)"
       failed=$((failed + 1))
-      total=$((total + 1))
       failures="$failures $name"
       continue
+    else
+      compile_end=$(date +%s)
+      compile_elapsed=$((compile_end - compile_start))
+      progress "[leaks] ($current/$total) compiled $name (${compile_elapsed}s)"
     fi
 
-    total=$((total + 1))
+    check_start=$(date +%s)
+    progress "[leaks] ($current/$total) checking leaks $name ..."
     leaks_output=$(leaks --atExit -- "$binary" 2>&1) || true
 
     if echo "$leaks_output" | grep -q "0 leaks for 0 total leaked bytes"; then
+      check_end=$(date +%s)
+      check_elapsed=$((check_end - check_start))
+      progress "[leaks] ($current/$total) checked $name (${check_elapsed}s)"
       pass "$name"
       passed=$((passed + 1))
     else
+      check_end=$(date +%s)
+      check_elapsed=$((check_end - check_start))
+      progress "[leaks] ($current/$total) leak check failed $name (${check_elapsed}s)"
       fail "$name"
       failed=$((failed + 1))
       failures="$failures $name"
@@ -121,11 +164,15 @@ run_leaks() {
     fi
   done
 
+  local end_ts elapsed
+  end_ts=$(date +%s)
+  elapsed=$((end_ts - start_ts))
+
   printf "\n${BOLD}Leaks: %d/%d passed${RESET}" "$passed" "$total"
   if [ "$failed" -gt 0 ]; then
     printf " (${RED}%d failed:${RESET}%s)" "$failed" "$failures"
   fi
-  printf "\n"
+  printf " (${elapsed}s)\n"
   return "$failed"
 }
 

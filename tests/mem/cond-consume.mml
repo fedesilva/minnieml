@@ -1,0 +1,27 @@
+// Conditional consumption of an owned binding.
+// One branch consumes, the other only borrows.
+
+fn consume(~s: String): Unit = println s;
+
+fn test_cond_consume(flag: Bool): Unit =
+  let s = int_to_str 1;
+  if flag then
+    consume s
+  else
+    println s
+  end
+;
+
+fn run_cond_consume(i: Int): Unit =
+  if i > 0 then
+    test_cond_consume true;
+    test_cond_consume false;
+    run_cond_consume (i - 1)
+  end
+;
+
+fn main(): Unit =
+  println "conditional consume...";
+  run_cond_consume 100;
+  println "conditional consume passed!"
+;

@@ -47,6 +47,21 @@ class OwnershipAnalyzerTests extends BaseEffFunSuite:
       case Tuple(_, elements, _, _) => elements.exists(containsCloneString)
       case _ => false
 
+  private def containsRefName(name: String)(term: Term): Boolean =
+    term match
+      case Ref(_, n, _, _, _, _, _) => n == name
+      case App(_, fn, arg, _, _) =>
+        containsRefName(name)(fn) || containsRefName(name)(arg)
+      case Expr(_, terms, _, _) => terms.exists(containsRefName(name))
+      case Lambda(_, _, body, _, _, _, _) => containsRefName(name)(body)
+      case TermGroup(_, inner, _) => containsRefName(name)(inner)
+      case Cond(_, cond, ifTrue, ifFalse, _, _) =>
+        containsRefName(name)(cond) ||
+        containsRefName(name)(ifTrue) ||
+        containsRefName(name)(ifFalse)
+      case Tuple(_, elements, _, _) => elements.exists(containsRefName(name))
+      case _ => false
+
   test("caller frees value returned by user function that allocates internally") {
     val code =
       """
@@ -229,6 +244,35 @@ class OwnershipAnalyzerTests extends BaseEffFunSuite:
     }
   }
 
+  test("conditional consume in one branch frees in the other branch") {
+    val code =
+      """
+        fn consume(~s: String): Unit = println s;
+
+        fn test_cond_consume(flag: Bool): Unit =
+          let s = int_to_str 1;
+          if flag then
+            consume s
+          else
+            println s
+          end
+        ;
+      """
+
+    semNotFailed(code).map { module =>
+      val testBody = module.members.collectFirst {
+        case b: Bnd if b.name == "test_cond_consume" =>
+          b.value.terms.collectFirst { case l: Lambda => l.body }.get
+      }.get
+
+      assertEquals(
+        countFreesOf("s", testBody),
+        1,
+        "expected one branch-local free of s when only one branch consumes it"
+      )
+    }
+  }
+
   test("independent bindings each consumed once no error") {
     val code =
       """
@@ -320,6 +364,51 @@ class OwnershipAnalyzerTests extends BaseEffFunSuite:
     semState(code).map { result =>
       val errors = result.errors.collect { case e: SemanticError.BorrowEscapeViaReturn => e }
       assert(errors.isEmpty, s"Expected no BorrowEscapeViaReturn errors but got: $errors")
+    }
+  }
+
+  test("nested mixed conditional in heap-returning function is accepted") {
+    val code =
+      """
+        fn nested_maybe(flag1: Bool, flag2: Bool, n: Int): String =
+          if flag1 then
+            if flag2 then int_to_str n else "none" end
+          else
+            int_to_str (n + 1)
+          end
+        ;
+        fn main(): Unit = println "ok";
+      """
+
+    semState(code).map { result =>
+      val errors = result.errors.collect { case e: SemanticError.BorrowEscapeViaReturn => e }
+      assert(errors.isEmpty, s"Expected no BorrowEscapeViaReturn errors but got: $errors")
+    }
+  }
+
+  test("nested mixed conditional let-binding creates ownership witness") {
+    val code =
+      """
+        fn main(): Unit =
+          let s = if true then
+            if false then int_to_str 1 else "none" end
+          else
+            int_to_str 2
+          end;
+          println s
+        ;
+      """
+
+    semNotFailed(code).map { module =>
+      val mainBody = module.members.collectFirst {
+        case b: Bnd if b.name == "main" =>
+          b.value.terms.collectFirst { case l: Lambda => l.body }.get
+      }.get
+
+      assert(
+        containsRefName("__owns_s")(mainBody),
+        "expected mixed nested conditional let-binding to generate __owns_s witness"
+      )
     }
   }
 

@@ -35,8 +35,39 @@ Affine ownership with borrow-by-default. Enables safe automatic memory managemen
 
 - [ ] **Edge case testing** — see `mem-next.md` for test matrix.
   All cases done except T10 mixed variant (blocked by bug below).
-- [ ] **BUG: nested mixed-ownership conditionals** — witness booleans don't propagate
+- [x] **BUG: nested mixed-ownership conditionals** [COMPLETE] — witness booleans don't propagate
   through nested `if/else` where inner branches mix heap/literal. Blocks T10 mixed variant.
+  - **Plan:**
+    - Implement recursive mixed-ownership classification in `OwnershipAnalyzer` so nested
+      `Cond` trees produce a composed witness boolean expression.
+    - Replace shallow top-level mixed detection (`detectMixedConditional`) with recursive
+      witness extraction used by `analyzeLetBinding`.
+    - Keep existing semantics for non-mixed branches and all-heap branches.
+    - Add regression tests in `OwnershipAnalyzerTests` for nested mixed conditionals.
+    - Extend/adjust memory sample coverage for T10 mixed variant.
+    - Run full post-task verification (`sbtn` chain, benchmarks, mem tests).
+  - **Progress subtasks:**
+    - [x] Implement recursive witness propagation for nested mixed conditionals.
+    - [x] Wire new witness detection into `analyzeLetBinding`.
+    - [x] Add unit regression test(s) for nested mixed conditionals.
+    - [x] Update memory sample coverage for T10 mixed variant.
+    - [x] Run full verification and record results.
+  - **Current status (2026-02-13):**
+    - Recursive witness propagation for nested mixed conditionals is implemented.
+    - `OwnershipAnalyzer` fixed conditional branch ownership reconciliation for mixed
+      consume/borrow flows by merging branch states and inserting branch-local frees.
+    - New regression tests in `OwnershipAnalyzerTests` pass, including:
+      - `nested mixed conditional in heap-returning function is accepted`
+      - `nested mixed conditional let-binding creates ownership witness`
+      - `conditional consume in one branch frees in the other branch`
+    - Memory samples split for clarity:
+      - `tests/mem/nested-cond.mml`
+      - `tests/mem/cond-consume.mml`
+    - Full verification passed:
+      - `sbtn "test; scalafmtAll; scalafixAll; mmlcPublishLocal"`
+      - `make -C benchmark clean`
+      - `make -C benchmark mml`
+      - `./tests/mem/run.sh all`: ASan 15/15, Leaks 15/15
 
 #### Bugs
 
@@ -64,6 +95,27 @@ Parser regressions affecting valid syntax and tokenization.
 ---
 
 ## Recent Changes
+
+### 2026-02-13 Conditional ownership merge + memory harness progress output [COMPLETE]
+
+- **Problem:** Leak failure was reported under nested mixed conditionals, but isolation showed
+  `nested-cond` clean and leaks coming from branch-divergent conditional consumption
+  (`consume` on one branch, borrow on the other).
+- **Fix:** Updated `OwnershipAnalyzer.analyzeCond` to reconcile ownership across both branches and
+  emit branch-local frees when ownership diverges across branches.
+- **Changes:**
+  - `modules/mmlc-lib/src/main/scala/mml/mmlclib/semantic/OwnershipAnalyzer.scala`:
+    conditional branch state merge + branch-local free insertion
+  - `modules/mmlc-lib/src/test/scala/mml/mmlclib/semantic/OwnershipAnalyzerTests.scala`:
+    added regression test
+    `conditional consume in one branch frees in the other branch`
+  - Replaced `tests/mem/t10-nested-cond.mml` with:
+    - `tests/mem/nested-cond.mml`
+    - `tests/mem/cond-consume.mml`
+  - `tests/mem/run.sh`: added streamed per-test progress and per-step timings for
+    compile/run/check phases in ASan and leaks modes
+- **Verification:** `sbtn "test; scalafmtAll; scalafixAll; mmlcPublishLocal"` passed; benchmarks
+  passed; `./tests/mem/run.sh all` passed (ASan 15/15, Leaks 15/15).
 
 ### 2026-02-10 Preserve `.5` float literals with `.` operator [COMPLETE]
 

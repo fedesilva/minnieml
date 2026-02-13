@@ -1,0 +1,52 @@
+// Nested conditional ownership (all-heap and mixed variants)
+// Verifies ownership tracking and conditional cleanup for nested if/else.
+
+fn all_heap(a: Int, b: Int): Unit =
+  let s = if a > 0 then
+    if b > 0 then
+      int_to_str a
+    else
+      int_to_str b
+    end
+  else
+    int_to_str (a + b)
+  end;
+  println s
+;
+
+// Mixed variant: one nested path returns a literal, others allocate.
+// Ownership should be tracked with a witness and freed only on owning paths.
+fn mixed_nested(a: Int, b: Int): Unit =
+  let s = if a > 0 then
+    if b > 0 then
+      int_to_str a
+    else
+      "none"
+    end
+  else
+    int_to_str (a + b)
+  end;
+  println s
+;
+
+fn run_all_heap(i: Int): Unit =
+  if i > 0 then
+    all_heap i (i - 50);
+    run_all_heap (i - 1)
+  end
+;
+
+fn run_mixed_nested(i: Int): Unit =
+  if i > 0 then
+    mixed_nested i (i - 50);
+    run_mixed_nested (i - 1)
+  end
+;
+
+fn main(): Unit =
+  println "nested conditionals (all-heap)...";
+  run_all_heap 100;
+  println "nested conditionals (mixed heap+literal)...";
+  run_mixed_nested 100;
+  println "nested conditionals passed!"
+;
