@@ -71,6 +71,12 @@ private[parser] def fnParamP(info: SourceInfo)(using P[Any]): P[FnParam] =
 private[parser] def fnParamListP(info: SourceInfo)(using P[Any]): P[List[FnParam]] =
   P(fnParamP(info).rep(sep = ",")).map(_.toList)
 
+/**
+  * Parses a function definition into a Bnd(id, lambda(expr))
+  * 
+  * @param info
+  * @return
+  */
 private[parser] def fnDefP(info: SourceInfo)(using P[Any]): P[Member] =
   P(
     docCommentP(info)

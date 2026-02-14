@@ -109,41 +109,6 @@ object ExpressionRewriter:
       }
       .getOrElse(Expr(fn.span, List(fn)).asRight)
 
-  /** Rewrite a module, handling all expression transformations.
-    *
-    * Processes bindings sequentially, accumulating transformed bindings so that chained partial
-    * applications can see the transformed arity.
-    */
-  def rewriteModule(module: Module): Either[List[SemanticError], Module] =
-    val (errors, members, _, updatedResolvables) = module.members.foldLeft(
-      (
-        List.empty[List[SemanticError]],
-        List.empty[Member],
-        Map.empty[String, Bnd],
-        module.resolvables
-      )
-    ) { case ((accErrors, accMembers, transformedBindings, resolvables), member) =>
-      member match
-        case bnd: Bnd =>
-          rewriteExpr(bnd.value, transformedBindings, resolvables) match
-            case Right(updatedExpr) =>
-              val updatedBnd = bnd.copy(value = updatedExpr)
-              (
-                accErrors,
-                accMembers :+ updatedBnd,
-                transformedBindings + (bnd.name -> updatedBnd),
-                resolvables.updated(updatedBnd)
-              )
-            case Left(errs) =>
-              (accErrors :+ errs.toList, accMembers :+ bnd, transformedBindings, resolvables)
-        case other =>
-          (accErrors, accMembers :+ other, transformedBindings, resolvables)
-    }
-
-    val allErrors = errors.flatten
-    if allErrors.nonEmpty then allErrors.asLeft
-    else module.copy(members = members, resolvables = updatedResolvables).asRight
-
   /** Rewrite a module, accumulating errors in the state. */
   def rewriteModule(state: CompilerState): CompilerState =
     val (errors, members, _, updatedResolvables) = state.module.members.foldLeft(
