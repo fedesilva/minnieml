@@ -33,9 +33,9 @@ Affine ownership with borrow-by-default. Enables safe automatic memory managemen
 
 #### Testing & Infrastructure
 
-- [ ] **Edge case testing** — see `mem-next.md` for test matrix.
+- [ ] **Edge case testing**: see `mem-next.md` for test matrix.
   All cases done except T10 mixed variant (blocked by bug below).
-- [x] **BUG: nested mixed-ownership conditionals** [COMPLETE] — witness booleans don't propagate
+- [x] **BUG: nested mixed-ownership conditionals** [COMPLETE]: witness booleans don't propagate
   through nested `if/else` where inner branches mix heap/literal. Blocks T10 mixed variant.
   - **Plan:**
     - Implement recursive mixed-ownership classification in `OwnershipAnalyzer` so nested
@@ -71,10 +71,10 @@ Affine ownership with borrow-by-default. Enables safe automatic memory managemen
 
 #### Bugs
 
-- [ ] **BUG: user-struct `__clone_*` resolution** — `wrapWithClone` resolves to
+- [ ] **BUG: user-struct `__clone_*` resolution**: `wrapWithClone` resolves to
   `stdlib::bnd::__clone_<T>` even when `__clone_<T>` is generated in the current module,
   causing unresolved symbols for auto-cloned user-defined heap structs.
-- [ ] **BUG: constructor auto-clones borrowed args** — `analyzeRegularApp` wraps
+- [ ] **BUG: constructor auto-clones borrowed args**: `analyzeRegularApp` wraps
   non-owned (borrowed) args to consuming constructor params with `wrapWithClone`. This is
   wrong: constructors take ownership, so passing a borrowed value should be an error, not
   a silent clone. Literals (e.g. `"hello"`) still need heap allocation but that's a
@@ -86,9 +86,9 @@ Parser regressions affecting valid syntax and tokenization.
 
 **Remaining:**
 
-- [x] **Permit `=` and `;` without trailing whitespace** [COMPLETE] — `wordBoundary` on `defAsKw`
+- [x] **Permit `=` and `;` without trailing whitespace** [COMPLETE]: `wordBoundary` on `defAsKw`
   and `semiKw` rejects `let x=1;` or `fn f(x:Int)=x+1;` unless a space is inserted.
-- [x] **Preserve `.5` float literals when `.` is an operator** [COMPLETE] — `opRefP` captures `.`
+- [x] **Preserve `.5` float literals when `.` is an operator** [COMPLETE]: `opRefP` captures `.`
   before `numericLitP`, splitting `.5` into `.` and `5` instead of a float literal.
 
 
@@ -220,16 +220,16 @@ Parser regressions affecting valid syntax and tokenization.
 
 - **Problem:** Three bugs prevented nested structs (e.g., `Outer { inner: Inner, data: String }`)
   from compiling correctly when `Inner` itself has heap fields.
-- **Bug 1 — ID resolution:** `MemoryFunctionGenerator` hardcoded `stdlib::bnd::__free_T` for all
+- **Bug 1: ID resolution:** `MemoryFunctionGenerator` hardcoded `stdlib::bnd::__free_T` for all
   free/clone references. User-defined struct destructors live at `moduleName::bnd::__free_T`, not
   stdlib. Added `resolveMemFnId` helper: checks user struct first, stdlib second, user-declared
   `free=` functions third. Fixed both `mkFreeFunction` and `wrapFieldWithClone`.
-- **Bug 2 — Consuming move inside temp wrappers:** `analyzeAllocatingApp` marks inherited owned
+- **Bug 2: Consuming move inside temp wrappers:** `analyzeAllocatingApp` marks inherited owned
   bindings as Borrowed inside temp wrappers (to prevent double-free). But non-allocating args
   passed to consuming constructor params (e.g., `i` in `Outer i ("data" ++ ...)`) were never
   marked Moved because `handleConsumingParam` saw them as Borrowed. Fix: collect non-allocating
   consumed args after building the wrapper and propagate Moved state to the outer scope.
-- **Bug 3 — ReturnOwnershipAnalysis type priority:** `termReturnsOwned` for let-bindings returned
+- **Bug 3: ReturnOwnershipAnalysis type priority:** `termReturnsOwned` for let-bindings returned
   `argOwned.orElse(bodyReturns)`, preferring the arg's alloc type. For `let i = Inner(...);
   Outer i (...)`, this returned `InnerType` instead of `OuterType`, causing type mismatch with
   the let-binding param and marking the result as Borrowed. Fix: swapped to
@@ -247,7 +247,7 @@ Parser regressions affecting valid syntax and tokenization.
 
 ### 2026-02-09 OOM Policy B: trap on allocation failure [COMPLETE]
 
-- **Decision:** Policy B — all allocation failures abort immediately.
+- **Decision:** Policy B: all allocation failures abort immediately.
 - **Changes:** `mml_runtime.c` only.
   - Added `mml_sys_oom_abort()` helper: writes "out of memory\n" to stderr, calls `abort()`.
   - Replaced all `return {0, NULL}` / `return NULL` on malloc/realloc failure paths with
@@ -255,8 +255,8 @@ Parser regressions affecting valid syntax and tokenization.
   - Preserved legitimate empty-value returns: empty arrays (`size <= 0`), `readline` EOF,
     out-of-bounds `substring`, `concat` of two null strings, clone of empty input,
     `string_builder_finalize(NULL)`.
-  - `__free_*` null guards kept — protect against freeing legitimately empty values.
-- **Verified:** MML struct constructors use `alloca` (stack), not `malloc` — no OOM path.
+  - `__free_*` null guards kept: protect against freeing legitimately empty values.
+- **Verified:** MML struct constructors use `alloca` (stack), not `malloc`: no OOM path.
 - **Verification:** 243 tests pass, `scalafmtAll`/`scalafixAll` clean, `mmlcPublishLocal` OK,
   all 7 benchmarks compile, all 11 memory samples 0 leaks.
 
@@ -278,7 +278,7 @@ Parser regressions affecting valid syntax and tokenization.
 
 - **Problem:** Rebinding a struct with heap fields (`let b = a`) was a silent borrow (shallow
   copy), risking unclear ownership. Also, ownership errors (UseAfterMove, BorrowEscapeViaReturn,
-  etc.) were not reported in the LSP — `Diagnostics.extractSpan` had `case _ => None` catching
+  etc.) were not reported in the LSP: `Diagnostics.extractSpan` had `case _ => None` catching
   all ownership error variants, producing 0 diagnostics even when the compiler detected errors.
 - **Fix:**
   - Rebinding an Owned user-defined `TypeStruct` with heap fields is now an implicit move. The
@@ -289,7 +289,7 @@ Parser regressions affecting valid syntax and tokenization.
     error variants (UseAfterMove, ConsumingParamNotLastUse, PartialApplicationWithConsuming,
     ConditionalOwnershipMismatch, BorrowEscapeViaReturn).
 - **Changes:**
-  - `ast/TypeUtils.scala`: added `isStructWithHeapFields` — matches only `TypeStruct`, not native
+  - `ast/TypeUtils.scala`: added `isStructWithHeapFields`: matches only `TypeStruct`, not native
   - `semantic/OwnershipAnalyzer.scala`: added `isMoveOnRebind` helper, move branch in let-binding
     case, qualified ref check in use-after-move detection
   - `lsp/Diagnostics.scala`: 5 new cases in `extractSpan` and `formatErrorMessage`
@@ -301,7 +301,7 @@ Parser regressions affecting valid syntax and tokenization.
 
 ### 2026-02-08 Fix consuming param memory leaks + BindingOrigin metadata [COMPLETE]
 
-- **Problem:** Two leak regressions — `test_unused_locals.mml` (100 leaks), `move-valid.mml`
+- **Problem:** Two leak regressions: `test_unused_locals.mml` (100 leaks), `move-valid.mml`
   (2 leaks). Consuming (`~`) params were invisible to ownership tracking inside function bodies:
   skipped entirely in Lambda param scope, never freed. Additionally, `ReturnOwnershipAnalysis`
   used `Map.empty` as initial env, so pass-through functions like `identity(~s) = s` were not
@@ -327,7 +327,7 @@ Parser regressions affecting valid syntax and tokenization.
 - **Verification:** 237 tests pass, `scalafmtAll`/`scalafixAll` clean, `mmlcPublishLocal` OK,
   ASan clean on both samples, all 9 memory samples 0 leaks, all 7 benchmarks compile.
 
-### 2026-02-08 Struct constructors as sinks (move-in semantics) [COMPLETE — pending review]
+### 2026-02-08 Struct constructors as sinks (move-in semantics) [COMPLETE, pending review]
 
 - **Problem:** Constructors borrowed all args and cloned heap-typed fields internally at codegen
   level. Every construction with heap fields involved redundant allocations: caller keeps original,
@@ -343,17 +343,17 @@ Parser regressions affecting valid syntax and tokenization.
   - `semantic/OwnershipAnalyzer.scala`: Added `isConstructorCall`, `argNeedsClone`, `argAllocates`
     helpers. Auto-clone pre-processing between `baseFnParams` and `argsWithAlloc` wraps non-owned
     args to consuming constructor params with `wrapWithClone`. Critical fix: move propagation in
-    let-binding case — consuming params inside let-binding bodies now propagate Moved state to
+    let-binding case: consuming params inside let-binding bodies now propagate Moved state to
     enclosing scopes (was causing double-free).
 - **Tests:** 4 new in `OwnershipAnalyzerTests.scala` (owned consumed without clone, literal auto-
   clone, borrowed auto-clone, non-heap fields not consumed). 1 new in `StructCodegenTest.scala`
   (constructor IR has no clone calls).
 - **Verification:** 237 tests pass, `scalafmtAll`/`scalafixAll` clean, `mmlcPublishLocal` OK,
   ASan clean on all memory samples, all 7 benchmarks compile. Leaks: 0 on 7/9 samples.
-  Known regressions: `test_unused_locals.mml` (100 leaks), `move-valid.mml` (2 leaks) — from
+  Known regressions: `test_unused_locals.mml` (100 leaks), `move-valid.mml` (2 leaks): from
   earlier changes on this branch, tracked as urgent bug fix.
 
-### 2026-02-07 Borrow escape enforcement — Rule 1: return [COMPLETE]
+### 2026-02-07 Borrow escape enforcement (Rule 1: return) [COMPLETE]
 
 - **Problem:** Nothing prevented a function from returning a borrowed parameter as if owned,
   causing use-after-free: caller would free a value it doesn't own.
@@ -379,9 +379,9 @@ Parser regressions affecting valid syntax and tokenization.
   `noalias` on return. (2) Consuming (`~`) parameters of `NativePointer` type get `noalias` in
   user function definitions.
 - **Key distinction:** Only `NativePointer` types (Buffer, CharPtr, etc.) are actual LLVM pointers.
-  `NativeStruct` types (String, arrays) are value types at LLVM level — `noalias` doesn't apply.
+  `NativeStruct` types (String, arrays) are value types at LLVM level: `noalias` doesn't apply.
 - **Changes:**
-  - `ast/TypeUtils.scala`: Added `isPointerType` — checks if type resolves to `NativePointer`
+  - `ast/TypeUtils.scala`: Added `isPointerType`: checks if type resolves to `NativePointer`
   - `codegen/emitter/FunctionEmitter.scala`: Added `isPointerParam` helper. Both
     `compileRegularLambda` and `compileTailRecursiveLambda` emit `noalias` on consuming pointer params
   - `codegen/emitter/Module.scala`: Native function declarations check both `NativeImpl.memEffect`
@@ -421,7 +421,7 @@ Parser regressions affecting valid syntax and tokenization.
 ### 2026-02-07 Partial application ban for consuming parameters [COMPLETE]
 
 - **Problem:** Partial application of functions with `~` (consuming) params silently drops move
-  semantics — ExpressionRewriter eta-expands into a Lambda with synthetic params that lack the
+  semantics: ExpressionRewriter eta-expands into a Lambda with synthetic params that lack the
   `consuming` flag, leading to potential double-frees.
 - **Fix:** `wrapIfUndersaturated` in `ExpressionRewriter.scala` now checks remaining (unapplied)
   params for `consuming = true`. If found, emits `PartialApplicationWithConsuming` error instead
@@ -441,12 +441,12 @@ Parser regressions affecting valid syntax and tokenization.
 ### 2026-02-07 Add use-after-move regression tests and samples
 
 - **Tests added** to `OwnershipAnalyzerTests.scala`:
-  - "use after move to consuming param" — double move of same binding to `~` param detected
-  - "use after move in expression" — read of binding after move detected
-  - "no error when each binding moved once" — valid single-move usage produces no `UseAfterMove`
+  - "use after move to consuming param": double move of same binding to `~` param detected
+  - "use after move in expression": read of binding after move detected
+  - "no error when each binding moved once": valid single-move usage produces no `UseAfterMove`
 - **Samples added:**
-  - `mml/samples/mem/use-after-move.mml` — negative example, rejected with `UseAfterMove` error
-  - `mml/samples/mem/move-valid.mml` — positive example, compiles and runs ASan clean
+  - `mml/samples/mem/use-after-move.mml`: negative example, rejected with `UseAfterMove` error
+  - `mml/samples/mem/move-valid.mml`: positive example, compiles and runs ASan clean
 - **Verification:** 214 tests pass, `scalafmtAll`/`scalafixAll` clean, samples verified with
   `mmlc` and `mmlc run -s`
 
@@ -455,7 +455,7 @@ Parser regressions affecting valid syntax and tokenization.
 - **Root cause:** Two issues. (1) `ar_str_set`'s `value` param lacked `consuming = true`,
   so the ownership analyzer inserted a free after the call even though the callee takes
   ownership of the string. (2) The temp wrapper in `OwnershipAnalyzer` generated explicit
-  free calls for ALL allocating temps, including those passed to consuming parameters —
+  free calls for ALL allocating temps, including those passed to consuming parameters:
   causing a double-free when the callee already owned the value.
 - **Fix:**
   - `semantic/package.scala`: Added `consuming = true` to `ar_str_set`'s `value` param
@@ -478,7 +478,7 @@ Motivated by LLVM's cost model not inlining `hit_sphere` in the raytracer.
 - `codegen/emitter/FunctionEmitter.scala`: Both `compileRegularLambda` and
   `compileTailRecursiveLambda` emit `#1` (inlinehint) or `#0` based on `bnd.meta.inlineHint`.
   Note: `compileTailRecursiveLambda` was previously missing any attribute group.
-- `codegen/emitter/Module.scala`: Emits two attribute groups — `#0` (base) and `#1`
+- `codegen/emitter/Module.scala`: Emits two attribute groups: `#0` (base) and `#1`
   (base + `inlinehint`). Both include `target-cpu` when set, or empty/`inlinehint` when not.
 - `mml/samples/raytracer.mml`: Marked `vec_add`, `vec_sub`, `vec_scale`, `dot`,
   `length_squared`, `length`, `unit_vector`, `ray_at`, `no_hit`, `hit_sphere` as `inline`
@@ -487,7 +487,7 @@ Motivated by LLVM's cost model not inlining `hit_sphere` in the raytracer.
 **Results:**
 - `inlinehint` successfully caused LLVM to inline `hit_sphere` into `world_hit`/`compute_row`
   (confirmed in optimized IR at `build/out/<triple>/Raytracer_opt.ll`)
-- Float SIMD (`<N x float>`) did NOT happen — branchy intersection code prevents
+- Float SIMD (`<N x float>`) did NOT happen: branchy intersection code prevents
   auto-vectorization. Only `<8 x i8>` byte shuffles (from string/buffer helpers) present.
 - 211 tests pass, ASan clean, all benchmarks compile
 
@@ -499,13 +499,13 @@ Motivated by LLVM's cost model not inlining `hit_sphere` in the raytracer.
   so literal info was lost on scope entry and had to be "materialized" immediately.
 - **Fix:** Introduced `ScopeEntry` case class carrying `register`, `typeName`, `isLiteral`,
   and `literalValue`. Replaced all `(Int, String)` scope entries across 5 files. Scope lookup
-  now preserves literal info through references — no materialization instructions emitted at all.
+  now preserves literal info through references: no materialization instructions emitted at all.
 - **Files changed:**
-  - `emitter/package.scala` — added `ScopeEntry` case class
-  - `emitter/expression/Conditionals.scala` — updated `ExprCompiler` type alias
-  - `emitter/ExpressionCompiler.scala` — scope lookup preserves literal info
-  - `emitter/expression/Applications.scala` — removed `add i64` materialization in `compileLambdaApp`
-  - `emitter/FunctionEmitter.scala` — removed `add <type>` materialization in `compileBoundStatements`,
+  - `emitter/package.scala`: added `ScopeEntry` case class
+  - `emitter/expression/Conditionals.scala`: updated `ExprCompiler` type alias
+  - `emitter/ExpressionCompiler.scala`: scope lookup preserves literal info
+  - `emitter/expression/Applications.scala`: removed `add i64` materialization in `compileLambdaApp`
+  - `emitter/FunctionEmitter.scala`: removed `add <type>` materialization in `compileBoundStatements`,
     updated param scope construction
 - **Verification:** 211 tests pass, raytracer produces valid 400x225 PPM (~1MB), ASan clean
   on raytracer and all memory samples, all 7 benchmarks compile, `scalafmtAll`/`scalafixAll` clean.
@@ -517,7 +517,7 @@ Motivated by LLVM's cost model not inlining `hit_sphere` in the raytracer.
 - Added **Declarations** section: `let`, `fn`, `op`, `struct`, `type` with syntax and examples
 - Added **Program structure** section: modules, semicolons as terminators, expression sequencing
 - Added **Control flow** section: conditionals (`if`/`elif`/`else`/`end`), recursion and tail
-  calls, limitations (no loops, no nested functions — temporary, pending memory model)
+  calls, limitations (no loops, no nested functions: temporary, pending memory model)
 - Added **Structs** as standalone type system section with heap classification
 - Added **Scoping rules** to semantic rules
 - Updated keywords list (added `struct`, `elif`, `end`, `~`)
@@ -558,10 +558,10 @@ Motivated by LLVM's cost model not inlining `hit_sphere` in the raytracer.
 
 - `astar.mml`: Uncommented A* implementation, lifting 4 inner functions to top-level
   with captured variables passed as explicit parameters (MML doesn't support closures).
-  - `init_g(g_score, inf, total, i)` — was inner to `astar`, captured `g_score`, `size`, `inf`
-  - `visit_neighbors(open_set, g_score, walls, goal_idx, width, height, current, cx, cy, dir, heap_sz)` — was inner to `solve`, captured solve's locals + astar's state
-  - `solve(open_set, g_score, walls, goal_idx, width, height, h_size)` — was inner to `astar`, mutually recursive with `visit_neighbors`
-  - `build_wall(walls, w, i)` — was inner to `main`, captured `walls` and `w`
+  - `init_g(g_score, inf, total, i)`: was inner to `astar`, captured `g_score`, `size`, `inf`
+  - `visit_neighbors(open_set, g_score, walls, goal_idx, width, height, current, cx, cy, dir, heap_sz)`: was inner to `solve`, captured solve's locals + astar's state
+  - `solve(open_set, g_score, walls, goal_idx, width, height, h_size)`: was inner to `astar`, mutually recursive with `visit_neighbors`
+  - `build_wall(walls, w, i)`: was inner to `main`, captured `walls` and `w`
 - Verified: compiles and outputs 198 (correct shortest path cost)
 
 ### 2026-02-06 JsonRpc Header Parsing Fix [COMPLETE]
