@@ -29,9 +29,6 @@ Affine ownership with borrow-by-default. Enables safe automatic memory managemen
 - OwnershipAnalyzer phase inserts `__free_T` calls into AST
 - No codegen changes - just AST rewriting
 
-**Remaining:**
-
-#### Testing & Infrastructure
 
 - [ ] **Edge case testing**: see `mem-next.md` for test matrix.
   All cases done except T10 mixed variant (blocked by bug below).
@@ -87,12 +84,21 @@ Affine ownership with borrow-by-default. Enables safe automatic memory managemen
 
 Parser regressions affecting valid syntax and tokenization.
 
-**Remaining:**
-
 - [x] **Permit `=` and `;` without trailing whitespace** [COMPLETE]: `wordBoundary` on `defAsKw`
   and `semiKw` rejects `let x=1;` or `fn f(x:Int)=x+1;` unless a space is inserted.
 - [x] **Preserve `.5` float literals when `.` is an operator** [COMPLETE]: `opRefP` captures `.`
   before `numericLitP`, splitting `.5` into `.` and `5` instead of a float literal.
+
+### QA Debt
+
+Quality debt tasks tracked from QA misses.
+
+- [ ] **Ownership test matcher debt from QA misses**: follow `context/qa-misses.md` entries
+  (2026-02-15) to:
+  - discuss and define semantic detection for `__free_*` / `__clone_*` assertions (resolved-id /
+    type-aware checks over raw name string matching),
+  - introduce extractor-first handling for repeated noisy wildcard AST match patterns in tests,
+    or perform a focused review with documented rationale where extractors are not appropriate.
 
 
 ---
