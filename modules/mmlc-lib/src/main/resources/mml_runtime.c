@@ -14,6 +14,12 @@
 #define FORCE_INLINE
 #endif
 
+static void mml_sys_oom_abort(void)
+{
+    write(STDERR_FILENO, "out of memory\n", 14);
+    abort();
+}
+
 // --- String Struct ---
 typedef struct String
 {
@@ -51,11 +57,7 @@ typedef struct
 
 typedef BufferImpl *Buffer;
 
-static void mml_sys_oom_abort(void)
-{
-    write(STDERR_FILENO, "out of memory\n", 14);
-    abort();
-}
+
 
 Buffer mkBuffer()
 {
