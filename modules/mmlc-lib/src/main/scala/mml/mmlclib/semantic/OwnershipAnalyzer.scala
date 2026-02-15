@@ -301,6 +301,26 @@ object OwnershipAnalyzer:
       resolvables.resolvables.collectFirst:
         case (id, bnd: Bnd) if bnd.name == freeFn => id
 
+  /** Look up the resolved ID for a clone function by name.
+    *
+    * For user-defined structs, prefer the generated module-local clone function. For native/stdlib
+    * types, keep preferring stdlib clone symbols.
+    */
+  private def lookupCloneFnId(
+    cloneFn:     String,
+    typeName:    String,
+    resolvables: ResolvablesIndex
+  ): Option[String] =
+    val stdlibId = s"stdlib::bnd::$cloneFn"
+    val userCloneId = resolvables.resolvables.collectFirst:
+      case (id, bnd: Bnd) if bnd.name == cloneFn && !id.startsWith("stdlib::") => id
+
+    if TypeUtils.isStructWithHeapFields(typeName, resolvables) then
+      userCloneId.orElse:
+        if resolvables.lookup(stdlibId).isDefined then Some(stdlibId) else None
+    else if resolvables.lookup(stdlibId).isDefined then Some(stdlibId)
+    else userCloneId
+
   /** Create a free call: App(Ref("__free_T"), Ref(binding)). Returns None when no free function
     * exists for the type.
     */
@@ -493,12 +513,13 @@ object OwnershipAnalyzer:
 
   /** Wrap an expression with __clone_T call */
   private def wrapWithClone(
-    expr: Expr,
-    tpe:  Type
+    expr:        Expr,
+    tpe:         Type,
+    resolvables: ResolvablesIndex
   ): Expr =
     val typeName    = getTypeName(tpe).getOrElse("String")
-    val cloneFnName = s"__clone_$typeName"
-    val cloneFnId   = Some(s"stdlib::bnd::$cloneFnName")
+    val cloneFnName = cloneFnFor(typeName, resolvables).getOrElse(s"__clone_$typeName")
+    val cloneFnId   = lookupCloneFnId(cloneFnName, typeName, resolvables)
     val cloneFnType = Some(TypeFn(syntheticSpan, List(tpe), tpe))
     val cloneFnRef = Ref(syntheticSpan, cloneFnName, resolvedId = cloneFnId, typeSpec = cloneFnType)
     val cloneApp   = App(syntheticSpan, cloneFnRef, expr, typeSpec = Some(tpe))
@@ -527,12 +548,14 @@ object OwnershipAnalyzer:
         (trueAlloc, falseAlloc) match
           case (Some(_), None) =>
             // True allocates, false is static - clone false branch
-            val cloned  = wrapWithClone(ifFalse, returnType.getOrElse(ifFalse.typeSpec.get))
+            val cloned =
+              wrapWithClone(ifFalse, returnType.getOrElse(ifFalse.typeSpec.get), scope.resolvables)
             val newCond = Cond(span, condExpr, ifTrue, cloned, typeSpec, typeAsc)
             expr.copy(terms = expr.terms.init :+ newCond)
           case (None, Some(_)) =>
             // False allocates, true is static - clone true branch
-            val cloned  = wrapWithClone(ifTrue, returnType.getOrElse(ifTrue.typeSpec.get))
+            val cloned =
+              wrapWithClone(ifTrue, returnType.getOrElse(ifTrue.typeSpec.get), scope.resolvables)
             val newCond = Cond(span, condExpr, cloned, ifFalse, typeSpec, typeAsc)
             expr.copy(terms = expr.terms.init :+ newCond)
           case _ =>
@@ -889,7 +912,7 @@ object OwnershipAnalyzer:
           if needsClone then
             val paramType =
               param.flatMap(_.typeAsc).getOrElse(argExpr.typeSpec.get)
-            (wrapWithClone(argExpr, paramType), s, tAsc, tSpec)
+            (wrapWithClone(argExpr, paramType, scope.resolvables), s, tAsc, tSpec)
           else (argExpr, s, tAsc, tSpec)
         }
       else allArgsWithMeta

@@ -23,7 +23,14 @@ class OwnershipAnalyzerTests extends BaseEffFunSuite:
 
   private def countFreesOf(name: String, term: Term): Int =
     term match
+      //FIXME:QA: General, matching with so many _,_ is an antipattern.
+      //       -- stable references are best: ref: Ref, then ref.argname)
+      //          not sure if this is possible.
+      //       -- another posibility, since it seems we have a patten (no pun intended)
+      //          in the pattern matches below, we can use custom extractors like expression rewriter uses, 
+      //          but defined for this module
       case App(_, fn: Ref, Expr(_, List(Ref(_, argName, _, _, _, _, _)), _, _), _, _)
+          // FIXME:QA: brittle string match.
           if fn.name == "__free_String" && argName == name =>
         1
       case App(_, fn, arg, _, _) => countFreesOf(name, fn) + countFreesOf(name, arg)
@@ -37,6 +44,7 @@ class OwnershipAnalyzerTests extends BaseEffFunSuite:
 
   private def containsCloneString(term: Term): Boolean =
     term match
+      // FIXME:QA: brittle string match.
       case Ref(_, name, _, _, _, _, _) => name == "__clone_String"
       case App(_, fn, arg, _, _) => containsCloneString(fn) || containsCloneString(arg)
       case Expr(_, terms, _, _) => terms.exists(containsCloneString)
@@ -46,6 +54,23 @@ class OwnershipAnalyzerTests extends BaseEffFunSuite:
         containsCloneString(cond) || containsCloneString(ifTrue) || containsCloneString(ifFalse)
       case Tuple(_, elements, _, _) => elements.exists(containsCloneString)
       case _ => false
+
+  private def cloneResolvedIdsOf(cloneName: String, term: Term): List[String] =
+    term match
+      case Ref(_, name, _, _, resolvedId, _, _) if name == cloneName =>
+        resolvedId.toList
+      case App(_, fn, arg, _, _) =>
+        cloneResolvedIdsOf(cloneName, fn) ++ cloneResolvedIdsOf(cloneName, arg)
+      case Expr(_, terms, _, _) => terms.flatMap(cloneResolvedIdsOf(cloneName, _))
+      case Lambda(_, _, body, _, _, _, _) => cloneResolvedIdsOf(cloneName, body)
+      case TermGroup(_, inner, _) => cloneResolvedIdsOf(cloneName, inner)
+      case Cond(_, cond, ifTrue, ifFalse, _, _) =>
+        cloneResolvedIdsOf(cloneName, cond) ++
+          cloneResolvedIdsOf(cloneName, ifTrue) ++
+          cloneResolvedIdsOf(cloneName, ifFalse)
+      case Tuple(_, elements, _, _) =>
+        elements.toList.flatMap(cloneResolvedIdsOf(cloneName, _))
+      case _ => Nil
 
   private def containsRefName(name: String)(term: Term): Boolean =
     term match
@@ -518,6 +543,34 @@ class OwnershipAnalyzerTests extends BaseEffFunSuite:
     }
   }
 
+  test("constructor clone of user struct resolves to module-local clone fn") {
+    val code =
+      """
+        struct User { name: String, role: String };
+        struct Wrapper { user: User };
+
+        fn wrap(u: User): Wrapper =
+          Wrapper u
+        ;
+
+        fn main(): Unit = println "ok";
+      """
+
+    semNotFailed(code).map { module =>
+      val wrapBody = module.members.collectFirst {
+        case b: Bnd if b.name == "wrap" =>
+          b.value.terms.collectFirst { case l: Lambda => l.body }.get
+      }.get
+
+      val ids = cloneResolvedIdsOf("__clone_User", wrapBody)
+      assert(ids.nonEmpty, "expected __clone_User call for borrowed constructor arg")
+      assert(
+        ids.exists(!_.startsWith("stdlib::")),
+        s"expected module-local __clone_User id, got: $ids"
+      )
+    }
+  }
+
   test("constructor with non-heap fields not consumed") {
     val code =
       """
@@ -578,7 +631,7 @@ class OwnershipAnalyzerTests extends BaseEffFunSuite:
 
   test("use after struct move detected") {
     val code =
-      """
+      """      
         struct User { name: String, role: String };
 
         fn print_user(u: User): Unit =
@@ -590,6 +643,7 @@ class OwnershipAnalyzerTests extends BaseEffFunSuite:
           let r = "Admin" ++ " Role";
           let a = User n r;
           let b = a;
+          // Quack! not possible, mem is not owned anymore by a.
           print_user a
         ;
       """
@@ -600,7 +654,7 @@ class OwnershipAnalyzerTests extends BaseEffFunSuite:
     }
   }
 
-  test("struct move field access after rejected") {
+  test("struct use field access after rejected") {
     val code =
       """
         struct User { name: String, role: String };
