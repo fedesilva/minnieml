@@ -370,7 +370,6 @@ The compiler automatically injects a set of standard operators into every module
 ### Binary operators
 
 ```mml
-op ^ (a b) 90 right = ???;  # Exponentiation
 op * (a b) 80 left  = ???;  # Multiplication
 op / (a b) 80 left  = ???;  # Division
 op + (a b) 60 left  = ???;  # Addition

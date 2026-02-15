@@ -15,13 +15,13 @@ fn make_test_results(): String =
 ;
 
 fn loop(i: Int, to: Int): Unit = 
-  if i <= to then
+  if i <= to then    
     println (make_test_results ());
     loop (i+1) to
   end
 ;
-  
 
+  
 fn main(): Unit =
   loop 1 1000
 ;

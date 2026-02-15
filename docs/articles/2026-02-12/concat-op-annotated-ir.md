@@ -264,9 +264,9 @@ declare i64 @op.lt_lt.2(i64, i64) #0    ; <<
 declare i64 @op.gt_gt.2(i64, i64) #0    ; >>
 
 ; --- Boolean ---
-declare i1 @op.not.1(i1) #0             ; !
-declare i1 @op.and.2(i1, i1) #0         ; &&
-declare i1 @op.or.2(i1, i1) #0          ; ||
+declare i1 @op.not.1(i1) #0             ; not
+declare i1 @op.and.2(i1, i1) #0         ; and
+declare i1 @op.or.2(i1, i1) #0          ; or
 
 ; --- Math builtins ---
 declare float @fabs(float) #0

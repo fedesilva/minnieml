@@ -3,5 +3,11 @@ let a = 1;
 let b = 2;
 
 fn main(): Int =
-  a + b ^ 2
+  let x = 
+    if a > 1 then
+      a + b 
+    else
+      "aa"
+    end;
+  x
 ;
