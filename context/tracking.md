@@ -25,13 +25,15 @@
 
 Affine ownership with borrow-by-default. Enables safe automatic memory management.
 
+GitHub: `https://github.com/fedesilva/minnieml/issues/134`
+
 - Borrow by default, explicit move with `~` syntax
 - OwnershipAnalyzer phase inserts `__free_T` calls into AST
 - No codegen changes - just AST rewriting
 
 
-- [ ] **Edge case testing**: see `mem-next.md` for test matrix.
-  All cases done except T10 mixed variant (blocked by bug below).
+- [x] **Edge case testing** [COMPLETE]: see `mem-next.md` for test matrix.
+  All listed cases are covered (Author confirmation on 2026-02-15).
 - [ ] **Define and enforce global borrow-only ownership semantics**: document and implement
   no-move behavior for top-level bindings passed to consuming params.
   See `context/spaces/mem-globals-no-move.md`.
@@ -80,30 +82,31 @@ Affine ownership with borrow-by-default. Enables safe automatic memory managemen
   a silent clone. Literals (e.g. `"hello"`) still need heap allocation but that's a
   separate concern from cloning borrowed refs.
 
-### Parser
-
-Parser regressions affecting valid syntax and tokenization.
-
-- [x] **Permit `=` and `;` without trailing whitespace** [COMPLETE]: `wordBoundary` on `defAsKw`
-  and `semiKw` rejects `let x=1;` or `fn f(x:Int)=x+1;` unless a space is inserted.
-- [x] **Preserve `.5` float literals when `.` is an operator** [COMPLETE]: `opRefP` captures `.`
-  before `numericLitP`, splitting `.5` into `.` and `5` instead of a float literal.
-
 ### QA Debt
 
 Quality debt tasks tracked from QA misses.
 
-- [ ] **Ownership test matcher debt from QA misses**: follow `context/qa-misses.md` entries
-  (2026-02-15) to:
-  - discuss and define semantic detection for `__free_*` / `__clone_*` assertions (resolved-id /
-    type-aware checks over raw name string matching),
-  - introduce extractor-first handling for repeated noisy wildcard AST match patterns in tests,
-    or perform a focused review with documented rationale where extractors are not appropriate.
+GitHub: `https://github.com/fedesilva/minnieml/issues/235`
+
+- [ ] **Define semantic detection for ownership free/clone assertions**: follow
+  `context/qa-misses.md` section `2026-02-15 - Top-priority brittle string-name assertions in OwnershipAnalyzerTests`
+  and decide resolved-id/type-aware checks for `__free_*` / `__clone_*` assertions instead of
+  raw name string matching.
+
+- [ ] **Refactor noisy wildcard AST matcher patterns with extractors**: follow
+  `context/qa-misses.md` section `2026-02-15 - Brittle deep wildcard pattern matching in OwnershipAnalyzerTests helpers`
+  and introduce extractor-first handling for repeated noisy match patterns in tests, or perform a
+  focused review with documented rationale where extractors are not appropriate.
 
 
 ---
 
 ## Recent Changes
+
+### 2026-02-15 Memory edge-case testing marked complete [COMPLETE]
+
+- **Status update:** Author confirmed all cases listed in `mem-next.md` are covered.
+- **Tracking update:** Marked `Edge case testing` complete under `## Active Tasks -> ### Memory Management`.
 
 ### 2026-02-14 User-struct clone resolution in ownership analyzer [COMPLETE]
 
