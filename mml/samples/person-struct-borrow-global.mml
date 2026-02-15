@@ -1,0 +1,18 @@
+
+struct Person {
+  name: String,
+  age: Int
+};
+
+let name = "fede"; 
+let p = Person name 25;
+
+fn main() =  
+  // 
+  // this should FAIL but it does not, why?
+  // because globals are cloned implicitely.
+  //
+  println name;
+  println ("Name: " ++ p.name);
+  println ("Age: " ++ (int_to_str p.age))
+;

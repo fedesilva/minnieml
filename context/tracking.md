@@ -35,6 +35,9 @@ Affine ownership with borrow-by-default. Enables safe automatic memory managemen
 
 - [ ] **Edge case testing**: see `mem-next.md` for test matrix.
   All cases done except T10 mixed variant (blocked by bug below).
+- [ ] **Define and enforce global borrow-only ownership semantics**: document and implement
+  no-move behavior for top-level bindings passed to consuming params.
+  See `context/spaces/mem-globals-no-move.md`.
 - [x] **BUG: nested mixed-ownership conditionals** [COMPLETE]: witness booleans don't propagate
   through nested `if/else` where inner branches mix heap/literal. Blocks T10 mixed variant.
   - **Plan:**
@@ -71,7 +74,7 @@ Affine ownership with borrow-by-default. Enables safe automatic memory managemen
 
 #### Bugs
 
-- [ ] **BUG: user-struct `__clone_*` resolution**: `wrapWithClone` resolves to
+- [x] **BUG: user-struct `__clone_*` resolution** [COMPLETE]: `wrapWithClone` resolves to
   `stdlib::bnd::__clone_<T>` even when `__clone_<T>` is generated in the current module,
   causing unresolved symbols for auto-cloned user-defined heap structs.
 - [ ] **BUG: constructor auto-clones borrowed args**: `analyzeRegularApp` wraps
@@ -95,6 +98,25 @@ Parser regressions affecting valid syntax and tokenization.
 ---
 
 ## Recent Changes
+
+### 2026-02-14 User-struct clone resolution in ownership analyzer [COMPLETE]
+
+- **Problem:** `OwnershipAnalyzer.wrapWithClone` hardcoded clone refs to
+  `stdlib::bnd::__clone_<T>`, which breaks user-defined struct cloning when
+  `__clone_<T>` is generated in the current module namespace.
+- **Fix:** Added clone-ID resolution that prefers module-local `__clone_<T>` for
+  user-defined structs with heap fields, while preserving stdlib preference for
+  native/stdlib heap types.
+- **Changes:**
+  - `modules/mmlc-lib/src/main/scala/mml/mmlclib/semantic/OwnershipAnalyzer.scala`:
+    added `lookupCloneFnId`, threaded `resolvables` into `wrapWithClone`,
+    and updated clone-wrapping call sites.
+  - `modules/mmlc-lib/src/test/scala/mml/mmlclib/semantic/OwnershipAnalyzerTests.scala`:
+    added regression test
+    `constructor clone of user struct resolves to module-local clone fn`.
+- **Verification:** `sbt "test; scalafmtAll; scalafixAll; mmlcPublishLocal"` passed;
+  `make -C benchmark clean` and `make -C benchmark mml` passed. Memory harness
+  handoff: `./tests/mem/run.sh all` run delegated to Author.
 
 ### 2026-02-13 Conditional ownership merge + memory harness progress output [COMPLETE]
 
