@@ -5,6 +5,9 @@
 
 // --- Linear Algebra ---
 
+
+
+
 struct Vec3 { x: Float, y: Float, z: Float };
 
 inline fn vec_add(u: Vec3, v: Vec3): Vec3 =

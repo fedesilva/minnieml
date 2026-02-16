@@ -79,6 +79,30 @@ GitHub: `https://github.com/fedesilva/minnieml/issues/134`
   a silent clone. Literals (e.g. `"hello"`) still need heap allocation but that's a
   separate concern from cloning borrowed refs.
 
+### LSP QA and Bug Fixing
+
+Quality assurance and bug fixes for the LSP server.
+
+GitHub: `https://github.com/fedesilva/minnieml/issues/220`
+
+- [ ] **PRECONDITION: Evolve `FromSource` to distinguish real source spans vs synthesized origins**:
+  Hard dependency for reliable go-to-definition and semantic token behavior around
+  generated symbols (constructors, destructors, clones). See `context/specs/qa-lsp.md`
+  intro note 2.
+
+- [ ] **PRECONDITION (related): Implement names as explicit AST nodes**:
+  Architectural follow-up covered in a separate design document. Out of scope for this
+  QA pass but needed for full LSP precision. See `context/specs/qa-lsp.md` intro note 3.
+
+- [ ] **BUG: Go-to-definition on struct constructor resolves to function, not struct**:
+  Constructor is synthetic (`__mk_<Name>`), LSP should resolve through it to the
+  `TypeStruct` declaration. Blocked by `FromSource` precondition.
+  See `context/specs/qa-lsp.md` repro case D.
+
+- [ ] **Investigate semantic token bugs**: Declaration positions are guessed (not
+  span-derived), conditional keyword tokenization is brittle on multiline, unresolved
+  refs get no token. See `context/specs/qa-lsp.md` findings 1–3.
+
 ### QA Debt
 
 Quality debt tasks tracked from QA misses.

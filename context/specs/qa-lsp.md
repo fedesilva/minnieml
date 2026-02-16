@@ -3,6 +3,8 @@
 **Date:** 2026-02-13  
 **Scope:** `modules/mmlc-lib/src/main/scala/mml/mmlclib/lsp/*` + LSP tests
 
+Ticket: https://github.com/fedesilva/minnieml/issues/220
+
 ## Intro Notes
 
 1. **Definition targets must be source-backed.**  
@@ -147,19 +149,27 @@ Likely current behavior: first ref drops semantic token entirely.
 
 ### D. Go-to-definition on struct constructor usage resolves to function, not struct
 
+The constructor is synthetic (`__mk_<Name>`), so the LSP should resolve through it
+to the `TypeStruct` declaration.
+
 ```mml
-struct User {
-  name: String
+struct MinHeap {
+  indices: IntArray,
+  scores:  IntArray,
+  capacity: Int
 };
 
-fn main(): Unit =
-  let u = User "alice";
-  println u.name
+fn heap_new (cap: Int): MinHeap =
+  MinHeap          // <-- go-to-def here should jump to struct MinHeap
+    (ar_int_new cap)
+    (ar_int_new cap)
+    cap
 ;
 ```
 
-Action: place cursor on `User` in `let u = User "alice";` and run go-to-definition.  
-Expected: jump to `struct User { ... }` declaration.  
+Action: place cursor on `MinHeap` in the constructor call within `heap_new` and run
+go-to-definition.
+Expected: jump to `struct MinHeap { ... }` declaration.
 Actual: jumps to the enclosing function definition (current `fn`), not the struct
 declaration.
 

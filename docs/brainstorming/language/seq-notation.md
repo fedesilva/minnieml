@@ -24,12 +24,12 @@ MinnieML offers two solutions:
    let x0 : Array Int = [];
    ```
 
-2. Type notation (idiomatic):
+2. Type notation (idiomatic): 
    ```
-   let x1 = Int [];
+   let x1 = [] Int; // FIXME needs review.
    ```
 
-You read this as `Int Array`, compiles to `Array Int`
+You read this as `Array Int`, compiles to `Array Int`
 
 
 ## Alternative container types
