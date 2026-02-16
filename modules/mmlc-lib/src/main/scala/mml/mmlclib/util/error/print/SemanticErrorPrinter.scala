@@ -161,7 +161,7 @@ object SemanticErrorPrinter:
   def prettyPrintTypeError(error: TypeError): String =
     def formatTypeSpec(typeSpec: mml.mmlclib.ast.Type): String = typeSpec match
       case mml.mmlclib.ast.TypeRef(_, name, _, _) => name
-      case mml.mmlclib.ast.TypeStruct(_, _, _, name, _, _) => name
+      case ts: mml.mmlclib.ast.TypeStruct => ts.name
       case mml.mmlclib.ast.TypeFn(_, params, returnType) =>
         val paramStr = params.map(formatTypeSpec).mkString(", ")
         s"($paramStr) -> ${formatTypeSpec(returnType)}"

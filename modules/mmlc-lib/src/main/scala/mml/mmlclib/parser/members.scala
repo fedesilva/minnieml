@@ -24,6 +24,7 @@ private[parser] def letBindingP(info: SourceInfo)(using P[Any]): P[Member] =
       ~ letKw
       ~ spP(info)
       ~ bindingIdOrError
+      ~ spNoWsP(info)
       ~ typeAscP(info)
       ~ defAsKw
       ~ exprMemberP(info)
@@ -31,21 +32,21 @@ private[parser] def letBindingP(info: SourceInfo)(using P[Any]): P[Member] =
       ~ spNoWsP(info)
       ~ spP(info)
   )
-    .map { case (doc, vis, startPoint, idOrError, typeAsc, expr, endPoint, _) =>
+    .map { case (doc, vis, nameStart, idOrError, nameEnd, typeAsc, expr, endPoint, _) =>
       idOrError match
         case Left(invalidId) =>
           ParsingIdError(
-            span = span(startPoint, endPoint),
+            span = span(nameStart, endPoint),
             message =
               s"Invalid identifier '$invalidId'. Identifiers must start with a lowercase letter (a-z) followed by letters, digits, or underscores",
             failedCode = Some(invalidId),
             invalidId  = invalidId
           )
-        case Right(name) =>
+        case Right(nameStr) =>
           Bnd(
             visibility = vis.getOrElse(Visibility.Protected),
-            SourceOrigin.Loc(span(startPoint, endPoint)),
-            name,
+            SourceOrigin.Loc(span(nameStart, endPoint)),
+            Name(span(nameStart, nameEnd), nameStr),
             expr,
             expr.typeSpec,
             typeAsc,
@@ -55,13 +56,12 @@ private[parser] def letBindingP(info: SourceInfo)(using P[Any]): P[Member] =
 
 private[parser] def fnParamP(info: SourceInfo)(using P[Any]): P[FnParam] =
   P(
-    spP(info) ~ docCommentP(info) ~ "~".!.? ~ bindingIdP ~ typeAscP(info) ~ spNoWsP(info) ~ spP(
-      info
-    )
-  ).map { case (start, doc, tilde, name, t, end, _) =>
+    spP(info) ~ docCommentP(info) ~ "~".!.? ~ spP(info) ~ bindingIdP ~ spNoWsP(info) ~
+      typeAscP(info) ~ spNoWsP(info) ~ spP(info)
+  ).map { case (start, doc, tilde, nameStart, nameStr, nameEnd, t, end, _) =>
     FnParam(
       source     = SourceOrigin.Loc(span(start, end)),
-      name       = name,
+      nameNode   = Name(span(nameStart, nameEnd), nameStr),
       typeAsc    = t,
       docComment = doc,
       consuming  = tilde.isDefined
@@ -121,6 +121,7 @@ private[parser] def fnDefP(info: SourceInfo)(using P[Any]): P[Member] =
           )
         case Right(fnName) =>
           val bndSpan    = span(nameStart, nameEnd)
+          val nameN      = Name(span(nameStart, nameEnd), fnName)
           val lambdaSpan = span(lambdaStart, endPoint)
           val arity = params.size match
             case 0 => CallableArity.Nullary
@@ -147,7 +148,7 @@ private[parser] def fnDefP(info: SourceInfo)(using P[Any]): P[Member] =
           Bnd(
             visibility = vis.getOrElse(Visibility.Protected),
             source     = SourceOrigin.Loc(bndSpan),
-            name       = fnName,
+            nameNode   = nameN,
             value      = Expr(lambdaSpan, List(lambda)),
             typeSpec   = bodyExpr.typeSpec,
             typeAsc    = typeAsc,
@@ -220,6 +221,7 @@ private[parser] def binOpDefP(info: SourceInfo)(using P[Any]): P[Member] =
           val opPrec      = precedence.getOrElse(50)
           val opAssoc     = assoc.getOrElse(Associativity.Left)
           val mangledName = OpMangling.mangleOp(opName, 2)
+          val nameN       = Name(span(nameStart, nameEnd), mangledName)
           val meta = BindingMeta(
             origin        = BindingOrigin.Operator,
             arity         = CallableArity.Binary,
@@ -240,7 +242,7 @@ private[parser] def binOpDefP(info: SourceInfo)(using P[Any]): P[Member] =
           Bnd(
             visibility = vis.getOrElse(Visibility.Protected),
             source     = SourceOrigin.Loc(bndSpan),
-            name       = mangledName,
+            nameNode   = nameN,
             value      = Expr(lambdaSpan, List(lambda)),
             typeSpec   = bodyExpr.typeSpec,
             typeAsc    = typeAsc,
@@ -304,6 +306,7 @@ private[parser] def unaryOpP(info: SourceInfo)(using P[Any]): P[Member] =
           val opPrec      = precedence.getOrElse(50)
           val opAssoc     = assoc.getOrElse(Associativity.Right)
           val mangledName = OpMangling.mangleOp(opName, 1)
+          val nameN       = Name(span(nameStart, nameEnd), mangledName)
           val meta = BindingMeta(
             origin        = BindingOrigin.Operator,
             arity         = CallableArity.Unary,
@@ -324,7 +327,7 @@ private[parser] def unaryOpP(info: SourceInfo)(using P[Any]): P[Member] =
           Bnd(
             visibility = vis.getOrElse(Visibility.Protected),
             source     = SourceOrigin.Loc(bndSpan),
-            name       = mangledName,
+            nameNode   = nameN,
             value      = Expr(lambdaSpan, List(lambda)),
             typeSpec   = bodyExpr.typeSpec,
             typeAsc    = typeAsc,

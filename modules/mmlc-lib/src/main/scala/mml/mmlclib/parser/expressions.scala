@@ -15,8 +15,9 @@ private def mkStatementChain(head: Expr, tail: List[Expr]): Expr =
     val stmtSpan  = span(stmt.span.start, rest.span.end)
     val paramSpan = stmt.span
     val unitType  = TypeRef(paramSpan, "Unit")
-    val param     = FnParam(SourceOrigin.Synth, statementParamName, typeAsc = Some(unitType))
-    val lambda    = Lambda(stmtSpan, List(param), rest, captures = Nil)
+    val param =
+      FnParam(SourceOrigin.Synth, Name.synth(statementParamName), typeAsc = Some(unitType))
+    val lambda = Lambda(stmtSpan, List(param), rest, captures = Nil)
     Expr(stmtSpan, List(App(stmtSpan, lambda, stmt)))
   }
 
@@ -218,7 +219,11 @@ private[parser] def letExprP(info: SourceInfo)(using P[Any]): P[Term] =
           failedCode = Some(invalidId)
         )
       case Right(name) =>
-        val param = FnParam(SourceOrigin.Loc(span(idStart, idEnd)), name, typeAsc = typeAsc)
+        val param = FnParam(
+          SourceOrigin.Loc(span(idStart, idEnd)),
+          Name(span(idStart, idEnd), name),
+          typeAsc = typeAsc
+        )
         val lambda = Lambda(
           span     = span(start, end),
           params   = List(param),

@@ -59,10 +59,10 @@ object SemanticTokens:
       case _: DuplicateMember | _: InvalidMember | _: ParsingMemberError | _: ParsingIdError =>
         Nil
 
-  /** Collect tokens from a binding (let, fn, op). Note: bnd.span.start points to the NAME, not the
-    * keyword.
-    */
+  /** Collect tokens from a binding (let, fn, op). */
   private def collectFromBnd(bnd: Bnd, resolvables: ResolvablesIndex): List[RawToken] =
+    if !bnd.source.isFromSource then return Nil
+
     val (keywordLen, nameTokenType) = bnd.meta match
       case Some(meta) =>
         meta.origin match
@@ -72,24 +72,16 @@ object SemanticTokens:
       case None =>
         (3, TokenType.Variable) // "let"
 
-    // Keyword is BEFORE the name: col = name_col - 1 (space) - keyword_len
-    val keywordCol = bnd.span.start.col - 1 - keywordLen
+    val nameSpan   = bnd.nameNode.span
+    val keywordCol = nameSpan.start.col - 1 - keywordLen
     val keywordToken =
-      tokenAtPos(bnd.span.start.line, keywordCol, keywordLen, TokenType.Keyword)
+      tokenAtPos(nameSpan.start.line, keywordCol, keywordLen, TokenType.Keyword)
 
-    // Name token: span.start is already at the name position
-    val nameLen = bnd.meta match
-      case Some(meta) if meta.origin == BindingOrigin.Operator => meta.originalName.length
-      case _ => bnd.name.length
-
-    val nameToken =
-      tokenAtPos(
-        line      = bnd.span.start.line,
-        col       = bnd.span.start.col,
-        length    = nameLen,
-        tokenType = nameTokenType,
-        modifiers = Set(TokenModifier.Declaration, TokenModifier.Readonly)
-      )
+    val nameToken = tokenAt(
+      nameSpan,
+      nameTokenType,
+      modifiers = Set(TokenModifier.Declaration, TokenModifier.Readonly)
+    )
 
     val bodyTokens = collectFromExpr(bnd.value, resolvables)
 
@@ -98,23 +90,29 @@ object SemanticTokens:
   /** Collect tokens from a type definition. */
   private def collectFromTypeDef(td: TypeDef): List[RawToken] =
     val keyword = keywordAt(td.span.start, 4) // "type"
-    val name    = declarationToken(td.span, td.name, TokenType.Type)
+    val name = tokenAt(
+      td.nameNode.span,
+      TokenType.Type,
+      modifiers = Set(TokenModifier.Declaration, TokenModifier.Readonly)
+    )
     keyword.toList ++ name.toList ++ td.typeSpec.toList.flatMap(collectFromType)
 
   /** Collect tokens from a type alias. */
   private def collectFromTypeAlias(ta: TypeAlias): List[RawToken] =
     val keyword = keywordAt(ta.span.start, 4) // "type"
-    val name    = declarationToken(ta.span, ta.name, TokenType.Type)
+    val name = tokenAt(
+      ta.nameNode.span,
+      TokenType.Type,
+      modifiers = Set(TokenModifier.Declaration, TokenModifier.Readonly)
+    )
     keyword.toList ++ name.toList ++ collectFromType(ta.typeRef)
 
   /** Collect tokens from a struct type. */
   private def collectFromTypeStruct(ts: TypeStruct): List[RawToken] =
     val keyword = keywordAt(ts.span.start, 6) // "struct"
-    val name = tokenAtPos(
-      line      = ts.span.start.line,
-      col       = ts.span.start.col + 7, // 6 ("struct") + 1 (space)
-      length    = ts.name.length,
-      tokenType = TokenType.Type,
+    val name = tokenAt(
+      ts.nameNode.span,
+      TokenType.Type,
       modifiers = Set(TokenModifier.Declaration, TokenModifier.Readonly)
     )
     val fields = ts.fields.toList.flatMap(f => collectFromType(f.typeSpec))
@@ -207,17 +205,14 @@ object SemanticTokens:
   /** Collect tokens from a lambda. */
   private def collectFromLambda(lambda: Lambda, resolvables: ResolvablesIndex): List[RawToken] =
     val paramTokens = lambda.params.flatMap { param =>
-      // Skip params with invalid/empty spans or synthetic names (e.g., statement chain params)
-      if param.span.start.line > 0 && param.span.start.col > 0 && param.source.isFromSource then
-        val nameToken = RawToken(
-          line      = param.span.start.line,
-          col       = param.span.start.col,
-          length    = param.name.length,
-          tokenType = TokenType.Parameter,
+      if param.source.isFromSource then
+        val nameToken = tokenAt(
+          param.nameNode.span,
+          TokenType.Parameter,
           modifiers = Set(TokenModifier.Declaration, TokenModifier.Readonly)
         )
         val typeTokens = param.typeAsc.toList.flatMap(collectFromType)
-        nameToken :: typeTokens
+        nameToken.toList ++ typeTokens
       else Nil
     }
     paramTokens ++ collectFromExpr(lambda.body, resolvables)
@@ -337,31 +332,6 @@ object SemanticTokens:
   ): Option[RawToken] =
     if line <= 0 || col <= 0 || length <= 0 then None
     else Some(RawToken(line, col, length, tokenType, modifiers))
-
-  /** Create a declaration token, trying to find the name after the keyword. */
-  private def declarationToken(
-    span:      SrcSpan,
-    name:      String,
-    tokenType: TokenType
-  ): Option[RawToken] =
-    // Assume name follows keyword + whitespace
-    // For "type Foo", "let x", "fn bar", etc.
-    // This is an approximation - real implementation would need source text
-    tokenAtPos(
-      line      = span.start.line,
-      col       = span.start.col + keywordLengthFor(tokenType) + 1,
-      length    = name.length,
-      tokenType = tokenType,
-      modifiers = Set(TokenModifier.Declaration, TokenModifier.Readonly)
-    )
-
-  private def keywordLengthFor(tokenType: TokenType): Int =
-    tokenType match
-      case TokenType.Type => 4 // "type"
-      case TokenType.Function => 2 // "fn"
-      case TokenType.Operator => 2 // "op"
-      case TokenType.Variable => 3 // "let"
-      case _ => 0
 
   /** Delta encode tokens for LSP protocol. Each token is: [deltaLine, deltaCol, length, tokenType,
     * tokenModifiers]

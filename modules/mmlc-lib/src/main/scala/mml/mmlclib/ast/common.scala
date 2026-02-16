@@ -17,6 +17,15 @@ final case class SrcSpan(
 
 trait AstNode derives CanEqual
 
+/** A name with its source position. Used on named declarations so the LSP can get the precise
+  * position of the identifier without guessing from keyword offsets.
+  */
+case class Name(span: SrcSpan, value: String) extends AstNode, FromSource
+
+object Name:
+  private val emptySpan:    SrcSpan = SrcSpan(SrcPoint(0, 0, 0), SrcPoint(0, 0, 0))
+  def synth(value: String): Name    = Name(emptySpan, value)
+
 trait Typeable extends AstNode {
 
   /** This is the computed type */
@@ -64,8 +73,9 @@ enum Visibility derives CanEqual:
 trait Member extends AstNode
 
 trait Resolvable extends AstNode:
-  def name: String
-  def id:   Option[String]
+  def nameNode: Name
+  def name:     String = nameNode.value
+  def id:       Option[String]
 
 case class DocComment(
   span: SrcSpan,
@@ -79,7 +89,7 @@ trait Decl extends Member, Typeable, Resolvable:
 
 case class FnParam(
   source:     SourceOrigin,
-  name:       String,
+  nameNode:   Name,
   typeSpec:   Option[Type]       = None,
   typeAsc:    Option[Type]       = None,
   docComment: Option[DocComment] = None,

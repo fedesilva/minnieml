@@ -114,8 +114,21 @@ GitHub: `https://github.com/fedesilva/minnieml/issues/220`
     - [x] Add/update LSP tests for synthesized symbol filtering.
 
 - [ ] **PRECONDITION (related): Implement names as explicit AST nodes**:
-  Architectural follow-up covered in a separate design document. Out of scope for this
-  QA pass but needed for full LSP precision. See `context/specs/qa-lsp.md` intro note 3.
+  Add `Name(span, value)` case class to AST. Replace `name: String` with `nameNode: Name`
+  on `Bnd`, `FnParam`, `TypeDef`, `TypeAlias`, `TypeStruct`, `Field`. Backward-compatible
+  via `def name = nameNode.value` on traits. Eliminates position-guessing in `SemanticTokens`.
+  Design: `docs/brainstorming/compiler/ast-name-node.md`.
+  - **Subtasks:**
+    - [ ] Define `Name` case class and `Name.synth` factory in `ast/common.scala`.
+    - [ ] Update `Resolvable` and `ResolvableType` traits with `nameNode`/`name` accessors.
+    - [ ] Replace `name: String` field on 6 case classes (`Bnd`, `FnParam`, `TypeDef`,
+      `TypeAlias`, `TypeStruct`, `Field`).
+    - [ ] Update parser to capture name spans (members.scala + types.scala).
+    - [ ] Update synthetic construction sites (~120: package.scala, ConstructorGenerator,
+      MemoryFunctionGenerator, OwnershipAnalyzer, ExpressionRewriter, tests).
+    - [ ] Simplify `SemanticTokens.scala`: delete `declarationToken`/`keywordLengthFor`,
+      use `nameNode.span` directly.
+    - [ ] Run full verification.
 
 - [ ] **BUG: Go-to-definition on struct constructor resolves to function, not struct**:
   Constructor is synthetic (`__mk_<Name>`), LSP should resolve through it to the
@@ -123,12 +136,17 @@ GitHub: `https://github.com/fedesilva/minnieml/issues/220`
   See `context/specs/qa-lsp.md` repro case D.
 
 - [ ] **BUG: Synthesized constructor body leaks overlapping tokens onto user code**:
-  `collectFromBnd` traverses the body of synthesized Bnds (constructors, destructors)
-  even though the Bnd itself is filtered. The body Lambda/Expr/DataConstructor reuse
-  `struct.span` from the source struct, producing stray function/parameter tokens that
-  overlap with user code on the same line. Observed: `println ("Name: " ++ p.name)` gets
-  a length-11 function token at the `println` position (from the constructor body traversal),
-  covering the string literal. See `context/specs/qa-lsp.md` finding 6.
+  `collectFromBnd` traversed the body of synthesized Bnds (constructors, destructors).
+  The body Lambda/Expr/DataConstructor reuse `struct.span` from the source struct,
+  producing stray function/parameter tokens that overlap with user code on the same line.
+  See `context/specs/qa-lsp.md` finding 6.
+  - [x] Fix: `collectFromBnd` now returns `Nil` for synthesized Bnds instead of
+    traversing their body expressions.
+  - [ ] **Remaining**: strings inside parenthesized operator expressions (e.g.
+    `println ("Name: " ++ p.name)`) still show wrong color despite string token being
+    emitted. Existing test confirms string token IS present on the line. Likely another
+    source of overlapping tokens or a token length/position issue causing the editor to
+    override the string token. Needs further investigation with full token dump.
 
 - [ ] **Investigate semantic token bugs**: Declaration positions are guessed (not
   span-derived), conditional keyword tokenization is brittle on multiline, unresolved

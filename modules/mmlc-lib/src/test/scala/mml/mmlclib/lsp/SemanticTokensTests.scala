@@ -103,7 +103,7 @@ class SemanticTokensTests extends BaseEffFunSuite:
         decodedTokens.find(t => t.tokenType == TokenType.Function && t.length == 7)
       printlnLine match
         case Some(pl) =>
-          val lineTokens = decodedTokens.filter(_.line == pl.line)
+          val lineTokens      = decodedTokens.filter(_.line == pl.line)
           val hasStringOnLine = lineTokens.exists(_.tokenType == TokenType.String)
           assert(
             hasStringOnLine,

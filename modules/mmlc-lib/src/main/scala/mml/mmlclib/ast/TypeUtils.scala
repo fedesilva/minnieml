@@ -6,7 +6,7 @@ object TypeUtils:
   /** Get the type name from a Type */
   def getTypeName(t: Type): Option[String] = t match
     case TypeRef(_, name, _, _) => Some(name)
-    case TypeStruct(_, _, _, name, _, _) => Some(name)
+    case ts: TypeStruct => Some(ts.name)
     case _ => None
 
   /** Find a type definition by name */

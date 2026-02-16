@@ -151,7 +151,12 @@ class TbaaEmissionTest extends BaseEffFunSuite:
       )
     )
     val innerTypeDef =
-      TypeDef(span = span, name = "Inner", typeSpec = Some(innerStruct), id = Some("inner-id"))
+      TypeDef(
+        span     = span,
+        nameNode = Name.synth("Inner"),
+        typeSpec = Some(innerStruct),
+        id       = Some("inner-id")
+      )
     val innerTypeRef = TypeRef(span, "Inner", Some("inner-id"), Nil)
 
     // Create resolvables index for the lookup
@@ -190,7 +195,12 @@ class TbaaEmissionTest extends BaseEffFunSuite:
       )
     )
     val innerTypeDef =
-      TypeDef(span = span, name = "Inner", typeSpec = Some(innerStruct), id = Some("inner-id"))
+      TypeDef(
+        span     = span,
+        nameNode = Name.synth("Inner"),
+        typeSpec = Some(innerStruct),
+        id       = Some("inner-id")
+      )
     val innerTypeRef = TypeRef(span, "Inner", Some("inner-id"), Nil)
 
     // Create resolvables index for the lookup

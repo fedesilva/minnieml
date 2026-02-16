@@ -147,7 +147,7 @@ def prettyPrintParams(
 ): String =
   val indentStr = "  " * indent
   params
-    .map { case p @ FnParam(_, name, typeSpec, typeAsc, _, _, consuming) =>
+    .map { case p @ FnParam(_, _, typeSpec, typeAsc, _, _, consuming) =>
       val spanStr = if showSourceSpans then printSourceSpan(p.span) else ""
       val typeStr =
         if showTypes then
@@ -155,6 +155,6 @@ def prettyPrintParams(
             s"${indentStr}  typeAsc: ${prettyPrintTypeSpec(typeAsc)}"
         else ""
       val consumingPrefix = if consuming then "~" else ""
-      s"$consumingPrefix${name}$spanStr$typeStr"
+      s"$consumingPrefix${p.name}$spanStr$typeStr"
     }
     .mkString(", ")

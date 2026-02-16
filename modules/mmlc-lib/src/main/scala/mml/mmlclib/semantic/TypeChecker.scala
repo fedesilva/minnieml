@@ -924,12 +924,12 @@ object TypeChecker:
     (resolved1, resolved2) match
       case (NativePrimitive(_, n1, _, _), NativePrimitive(_, n2, _, _)) => n1 == n2
       case (TypeRef(_, name1, _, _), TypeRef(_, name2, _, _)) => name1 == name2
-      case (TypeStruct(_, _, _, expectedName, _, _), TypeStruct(_, _, _, actualName, _, _)) =>
-        expectedName == actualName
-      case (TypeStruct(_, _, _, expectedName, _, _), TypeRef(_, actualName, _, _)) =>
-        expectedName == actualName
-      case (TypeRef(_, expectedName, _, _), TypeStruct(_, _, _, actualName, _, _)) =>
-        expectedName == actualName
+      case (ts1: TypeStruct, ts2: TypeStruct) =>
+        ts1.name == ts2.name
+      case (ts: TypeStruct, TypeRef(_, actualName, _, _)) =>
+        ts.name == actualName
+      case (TypeRef(_, expectedName, _, _), ts: TypeStruct) =>
+        expectedName == ts.name
       case (TypeFn(_, p1, r1), TypeFn(_, p2, r2)) =>
         p1.length == p2.length &&
         p1.zip(p2).forall { case (pt1, pt2) => areTypesCompatible(pt1, pt2, module) } &&
@@ -954,9 +954,9 @@ object TypeChecker:
           case Some(td: TypeDef) =>
             td.typeSpec.collect { case ns: NativeStruct =>
               val fields = ns.fields.map { case (name, t) =>
-                Field(td.span, name, t)
+                Field(td.span, Name.synth(name), t)
               }.toVector
-              TypeStruct(td.span, None, td.visibility, td.name, fields, td.id)
+              TypeStruct(td.span, None, td.visibility, td.nameNode, fields, td.id)
             }
           case _ => None
       case _ => None

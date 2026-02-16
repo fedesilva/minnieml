@@ -76,7 +76,7 @@ object MemoryFunctionGenerator:
     // Parameter - consuming since it takes ownership
     val param = FnParam(
       SourceOrigin.Synth,
-      paramName,
+      Name.synth(paramName),
       typeAsc   = Some(structTypeRef),
       consuming = true
     )
@@ -119,7 +119,12 @@ object MemoryFunctionGenerator:
         val innerBody = Expr(syntheticSpan, List(lastCall), typeSpec = Some(unitTR))
         initCalls.foldRight(innerBody) { (call, acc) =>
           val discardParam =
-            FnParam(SourceOrigin.Synth, "_", typeSpec = Some(unitTR), typeAsc = Some(unitTR))
+            FnParam(
+              SourceOrigin.Synth,
+              Name.synth("_"),
+              typeSpec = Some(unitTR),
+              typeAsc  = Some(unitTR)
+            )
           val wrapper =
             Lambda(syntheticSpan, List(discardParam), acc, Nil, typeSpec = Some(unitTR))
           val callExpr = Expr(syntheticSpan, List(call), typeSpec = Some(unitTR))
@@ -155,7 +160,7 @@ object MemoryFunctionGenerator:
 
     Bnd(
       source     = SourceOrigin.Synth,
-      name       = fnName,
+      nameNode   = Name.synth(fnName),
       value      = Expr(syntheticSpan, List(lambda)),
       typeSpec   = Some(fnType),
       typeAsc    = Some(unitTR),
@@ -246,7 +251,7 @@ object MemoryFunctionGenerator:
     // Parameter - not consuming since we're cloning (borrowing)
     val param = FnParam(
       SourceOrigin.Synth,
-      paramName,
+      Name.synth(paramName),
       typeAsc   = Some(structTypeRef),
       consuming = false
     )
@@ -316,7 +321,7 @@ object MemoryFunctionGenerator:
 
     Bnd(
       source     = SourceOrigin.Synth,
-      name       = fnName,
+      nameNode   = Name.synth(fnName),
       value      = Expr(syntheticSpan, List(lambda)),
       typeSpec   = Some(fnType),
       typeAsc    = Some(structTypeRef),

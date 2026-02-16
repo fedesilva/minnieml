@@ -35,13 +35,14 @@ private[parser] def typeRefP(info: SourceInfo)(using P[Any]): P[Type] =
 private[parser] def nativeTypeDefP(info: SourceInfo)(using P[Any]): P[TypeDef] =
   P(
     spP(info)
-      ~ visibilityP.? ~ typeKw ~ typeIdP ~ defAsKw ~ nativeTypeP(info) ~ semiKw
+      ~ visibilityP.? ~ typeKw ~ spP(info) ~ typeIdP ~ spNoWsP(info) ~ defAsKw ~
+      nativeTypeP(info) ~ semiKw
       ~ spNoWsP(info) ~ spP(info)
-  ).map { case (start, vis, id, typeSpec, end, _) =>
+  ).map { case (start, vis, nameStart, id, nameEnd, typeSpec, end, _) =>
     TypeDef(
       visibility = vis.getOrElse(Visibility.Protected),
       span(start, end),
-      id,
+      Name(span(nameStart, nameEnd), id),
       typeSpec.some
     )
   }
@@ -50,9 +51,10 @@ private[parser] def structDefP(info: SourceInfo)(using P[Any]): P[Member] =
   P(
     spP(info)
       ~ docCommentP(info)
-      ~ visibilityP.? ~ structKw ~ typeIdP ~ "{" ~ recordFieldsP(info) ~ "}" ~ semiKw
+      ~ visibilityP.? ~ structKw ~ spP(info) ~ typeIdP ~ spNoWsP(info) ~
+      "{" ~ recordFieldsP(info) ~ "}" ~ semiKw
       ~ spNoWsP(info) ~ spP(info)
-  ).map { case (start, doc, viz, id, fields, end, _) =>
+  ).map { case (start, doc, viz, nameStart, id, nameEnd, fields, end, _) =>
     val structSpan = span(start, end)
     if fields.isEmpty then
       val snippet = info.slice(start.index, end.index).trim
@@ -66,7 +68,7 @@ private[parser] def structDefP(info: SourceInfo)(using P[Any]): P[Member] =
         structSpan,
         doc,
         viz.getOrElse(Visibility.Protected),
-        id,
+        Name(span(nameStart, nameEnd), id),
         fields
       )
   }
@@ -78,22 +80,24 @@ private[parser] def recordFieldsP(info: SourceInfo)(using P[Any]): P[Vector[Fiel
 private[parser] def fieldP(info: SourceInfo)(using P[Any]): P[Field] =
   P(
     spP(info) ~
-      bindingIdP ~ ":" ~ typeSpecP(info) ~
+      bindingIdP ~ spNoWsP(info) ~ ":" ~ typeSpecP(info) ~
       spNoWsP(info) ~ spP(info)
-  ).map { case (start, id, tpe, end, _) =>
-    Field(span(start, end), id, tpe)
+  ).map { case (start, id, nameEnd, tpe, end, _) =>
+    Field(span(start, end), Name(span(start, nameEnd), id), tpe)
   }
 
 private[parser] def typeAliasP(info: SourceInfo)(using P[Any]): P[TypeAlias] =
   P(
     spP(info)
-      ~ visibilityP.? ~ typeKw ~ typeIdP ~ defAsKw ~ typeSpecP(info) ~ semiKw
+      ~ visibilityP.? ~ typeKw ~ spP(info) ~ typeIdP ~ spNoWsP(info) ~ defAsKw ~ typeSpecP(
+        info
+      ) ~ semiKw
       ~ spNoWsP(info) ~ spP(info)
-  ).map { case (start, vis, id, typeSpec, end, _) =>
+  ).map { case (start, vis, nameStart, id, nameEnd, typeSpec, end, _) =>
     TypeAlias(
       visibility = vis.getOrElse(Visibility.Protected),
       span(start, end),
-      id,
+      Name(span(nameStart, nameEnd), id),
       typeSpec
     )
   }

@@ -3,7 +3,7 @@ package mml.mmlclib.ast
 case class Bnd(
   visibility: Visibility          = Visibility.Protected,
   source:     SourceOrigin,
-  name:       String,
+  nameNode:   Name,
   value:      Expr,
   typeSpec:   Option[Type]        = None,
   typeAsc:    Option[Type]        = None,

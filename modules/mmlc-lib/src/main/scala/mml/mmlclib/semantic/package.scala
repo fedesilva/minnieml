@@ -11,7 +11,7 @@ enum UnresolvableTypeContext derives CanEqual:
 
 private def showType(t: Type): String = t match
   case TypeRef(_, name, _, _) => name
-  case TypeStruct(_, _, _, name, _, _) => name
+  case ts: TypeStruct => ts.name
   case TypeFn(_, params, ret) => s"(${params.map(showType).mkString(", ")}) -> ${showType(ret)}"
   case TypeUnit(_) => "()"
   case TypeTuple(_, elems) => s"(${elems.map(showType).mkString(", ")})"
@@ -179,55 +179,55 @@ def injectBasicTypes(module: Module): Module =
     // Native type definitions with LLVM mappings
     TypeDef(
       span     = dummySpan,
-      name     = "Int64",
+      nameNode = Name.synth("Int64"),
       typeSpec = Some(NativePrimitive(dummySpan, "i64")),
       id       = stdlibId("typedef", "Int64")
     ),
     TypeDef(
       span     = dummySpan,
-      name     = "Int32",
+      nameNode = Name.synth("Int32"),
       typeSpec = Some(NativePrimitive(dummySpan, "i32")),
       id       = stdlibId("typedef", "Int32")
     ),
     TypeDef(
       span     = dummySpan,
-      name     = "Int16",
+      nameNode = Name.synth("Int16"),
       typeSpec = Some(NativePrimitive(dummySpan, "i16")),
       id       = stdlibId("typedef", "Int16")
     ),
     TypeDef(
       span     = dummySpan,
-      name     = "Int8",
+      nameNode = Name.synth("Int8"),
       typeSpec = Some(NativePrimitive(dummySpan, "i8")),
       id       = stdlibId("typedef", "Int8")
     ),
     TypeDef(
       span     = dummySpan,
-      name     = "Float",
+      nameNode = Name.synth("Float"),
       typeSpec = Some(NativePrimitive(dummySpan, "float")),
       id       = stdlibId("typedef", "Float")
     ),
     TypeDef(
       span     = dummySpan,
-      name     = "Double",
+      nameNode = Name.synth("Double"),
       typeSpec = Some(NativePrimitive(dummySpan, "double")),
       id       = stdlibId("typedef", "Double")
     ),
     TypeDef(
       span     = dummySpan,
-      name     = "Bool",
+      nameNode = Name.synth("Bool"),
       typeSpec = Some(NativePrimitive(dummySpan, "i1")),
       id       = stdlibId("typedef", "Bool")
     ),
     TypeDef(
       span     = dummySpan,
-      name     = "CharPtr",
+      nameNode = Name.synth("CharPtr"),
       typeSpec = Some(NativePointer(dummySpan, "i8")),
       id       = stdlibId("typedef", "CharPtr")
     ),
     TypeDef(
-      span = dummySpan,
-      name = "String",
+      span     = dummySpan,
+      nameNode = Name.synth("String"),
       typeSpec = Some(
         NativeStruct(
           dummySpan,
@@ -243,47 +243,47 @@ def injectBasicTypes(module: Module): Module =
     TypeDef(
       // This should be an alias to an MML type (which in turn will have it's own native repr)
       span     = dummySpan,
-      name     = "SizeT",
+      nameNode = Name.synth("SizeT"),
       typeSpec = Some(NativePrimitive(dummySpan, "i64")),
       id       = stdlibId("typedef", "SizeT")
     ),
     // same as above, should this be it's own type or an alias?
     TypeDef(
       span     = dummySpan,
-      name     = "Char",
+      nameNode = Name.synth("Char"),
       typeSpec = Some(NativePrimitive(dummySpan, "i8")),
       id       = stdlibId("typedef", "Char")
     ),
     TypeDef(
       span     = dummySpan,
-      name     = "Unit",
+      nameNode = Name.synth("Unit"),
       typeSpec = Some(NativePrimitive(dummySpan, "void")),
       id       = stdlibId("typedef", "Unit")
     ),
 
     // Type aliases pointing to native types
     TypeAlias(
-      span    = dummySpan,
-      name    = "Int",
-      typeRef = stdlibTypeRef("Int64"),
-      id      = stdlibId("typealias", "Int")
+      span     = dummySpan,
+      nameNode = Name.synth("Int"),
+      typeRef  = stdlibTypeRef("Int64"),
+      id       = stdlibId("typealias", "Int")
     ),
     TypeAlias(
-      span    = dummySpan,
-      name    = "Byte",
-      typeRef = stdlibTypeRef("Int8"),
-      id      = stdlibId("typealias", "Byte")
+      span     = dummySpan,
+      nameNode = Name.synth("Byte"),
+      typeRef  = stdlibTypeRef("Int8"),
+      id       = stdlibId("typealias", "Byte")
     ),
     TypeAlias(
-      span    = dummySpan,
-      name    = "Word",
-      typeRef = stdlibTypeRef("Int8"),
-      id      = stdlibId("typealias", "Word")
+      span     = dummySpan,
+      nameNode = Name.synth("Word"),
+      typeRef  = stdlibTypeRef("Int8"),
+      id       = stdlibId("typealias", "Word")
     ),
     // Output buffer - opaque pointer to heap-allocated struct
     TypeDef(
       span     = dummySpan,
-      name     = "Buffer",
+      nameNode = Name.synth("Buffer"),
       typeSpec = Some(NativePointer(dummySpan, "i8", memEffect = Some(MemEffect.Alloc))),
       id       = stdlibId("typedef", "Buffer")
     ),
@@ -291,27 +291,27 @@ def injectBasicTypes(module: Module): Module =
     // Pointer types for arrays
     TypeDef(
       span     = dummySpan,
-      name     = "Int64Ptr",
+      nameNode = Name.synth("Int64Ptr"),
       typeSpec = Some(NativePointer(dummySpan, "i64")),
       id       = stdlibId("typedef", "Int64Ptr")
     ),
     TypeDef(
       span     = dummySpan,
-      name     = "StringPtr",
+      nameNode = Name.synth("StringPtr"),
       typeSpec = Some(NativePointer(dummySpan, "%struct.String")),
       id       = stdlibId("typedef", "StringPtr")
     ),
     TypeDef(
       span     = dummySpan,
-      name     = "FloatPtr",
+      nameNode = Name.synth("FloatPtr"),
       typeSpec = Some(NativePointer(dummySpan, "float")),
       id       = stdlibId("typedef", "FloatPtr")
     ),
 
     // Monomorphic array types
     TypeDef(
-      span = dummySpan,
-      name = "IntArray",
+      span     = dummySpan,
+      nameNode = Name.synth("IntArray"),
       typeSpec = Some(
         NativeStruct(
           dummySpan,
@@ -325,8 +325,8 @@ def injectBasicTypes(module: Module): Module =
       id = stdlibId("typedef", "IntArray")
     ),
     TypeDef(
-      span = dummySpan,
-      name = "StringArray",
+      span     = dummySpan,
+      nameNode = Name.synth("StringArray"),
       typeSpec = Some(
         NativeStruct(
           dummySpan,
@@ -340,8 +340,8 @@ def injectBasicTypes(module: Module): Module =
       id = stdlibId("typedef", "StringArray")
     ),
     TypeDef(
-      span = dummySpan,
-      name = "FloatArray",
+      span     = dummySpan,
+      nameNode = Name.synth("FloatArray"),
       typeSpec = Some(
         NativeStruct(
           dummySpan,
@@ -390,8 +390,8 @@ def injectStandardOperators(module: Module): Module =
     paramType:  Type,
     returnType: Type
   ): Bnd =
-    val param1      = FnParam(SourceOrigin.Synth, "a", typeAsc = Some(paramType))
-    val param2      = FnParam(SourceOrigin.Synth, "b", typeAsc = Some(paramType))
+    val param1      = FnParam(SourceOrigin.Synth, Name.synth("a"), typeAsc = Some(paramType))
+    val param2      = FnParam(SourceOrigin.Synth, Name.synth("b"), typeAsc = Some(paramType))
     val body        = Expr(dummySpan, List(NativeImpl(dummySpan, nativeTpl = Some(tpl))))
     val mangledName = OpMangling.mangleOp(name, 2)
     val meta = BindingMeta(
@@ -412,7 +412,7 @@ def injectStandardOperators(module: Module): Module =
     )
     Bnd(
       source     = SourceOrigin.Synth,
-      name       = mangledName,
+      nameNode   = Name.synth(mangledName),
       value      = Expr(dummySpan, List(lambda)),
       typeSpec   = None,
       typeAsc    = Some(returnType),
@@ -430,7 +430,7 @@ def injectStandardOperators(module: Module): Module =
     paramType:  Type,
     returnType: Type
   ): Bnd =
-    val param       = FnParam(SourceOrigin.Synth, "a", typeAsc = Some(paramType))
+    val param       = FnParam(SourceOrigin.Synth, Name.synth("a"), typeAsc = Some(paramType))
     val body        = Expr(dummySpan, List(NativeImpl(dummySpan, nativeTpl = Some(tpl))))
     val mangledName = OpMangling.mangleOp(name, 1)
     val meta = BindingMeta(
@@ -451,7 +451,7 @@ def injectStandardOperators(module: Module): Module =
     )
     Bnd(
       source     = SourceOrigin.Synth,
-      name       = mangledName,
+      nameNode   = Name.synth(mangledName),
       value      = Expr(dummySpan, List(lambda)),
       typeSpec   = None,
       typeAsc    = Some(returnType),
@@ -596,7 +596,7 @@ def injectCommonFunctions(module: Module): Module =
     )
     Bnd(
       source     = SourceOrigin.Synth,
-      name       = name,
+      nameNode   = Name.synth(name),
       value      = Expr(dummySpan, List(lambda)),
       typeSpec   = None,
       typeAsc    = Some(returnType),
@@ -616,8 +616,8 @@ def injectCommonFunctions(module: Module): Module =
     param2Type: Type,
     returnType: Type
   ): Bnd =
-    val param1 = FnParam(SourceOrigin.Synth, "a", typeAsc = Some(param1Type))
-    val param2 = FnParam(SourceOrigin.Synth, "b", typeAsc = Some(param2Type))
+    val param1 = FnParam(SourceOrigin.Synth, Name.synth("a"), typeAsc = Some(param1Type))
+    val param2 = FnParam(SourceOrigin.Synth, Name.synth("b"), typeAsc = Some(param2Type))
     // Create refs with resolvedId pointing to the stdlib function
     val fnRef = Ref(dummySpan, fnName, resolvedId = stdlibId("bnd", fnName))
     val body =
@@ -641,7 +641,7 @@ def injectCommonFunctions(module: Module): Module =
     )
     Bnd(
       source     = SourceOrigin.Synth,
-      name       = mangledName,
+      nameNode   = Name.synth(mangledName),
       value      = Expr(dummySpan, List(lambda)),
       typeSpec   = None,
       typeAsc    = Some(returnType),
@@ -681,7 +681,7 @@ def injectCommonFunctions(module: Module): Module =
     )
     Bnd(
       source     = SourceOrigin.Synth,
-      name       = name,
+      nameNode   = Name.synth(name),
       value      = Expr(dummySpan, List(lambda)),
       typeSpec   = None,
       typeAsc    = Some(returnType),
@@ -691,152 +691,176 @@ def injectCommonFunctions(module: Module): Module =
     )
 
   val commonFunctions = List(
-    mkFn("print", List(FnParam(SourceOrigin.Synth, "a", typeAsc = Some(stringType))), unitType),
-    mkFn("println", List(FnParam(SourceOrigin.Synth, "a", typeAsc = Some(stringType))), unitType),
+    mkFn(
+      "print",
+      List(FnParam(SourceOrigin.Synth, Name.synth("a"), typeAsc = Some(stringType))),
+      unitType
+    ),
+    mkFn(
+      "println",
+      List(FnParam(SourceOrigin.Synth, Name.synth("a"), typeAsc = Some(stringType))),
+      unitType
+    ),
     mkFn("mml_sys_flush", List(), unitType),
     mkFn("readline", List(), stringType, Some(MemEffect.Alloc)),
     mkFn(
       "concat",
       List(
-        FnParam(SourceOrigin.Synth, "a", typeAsc = Some(stringType)),
-        FnParam(SourceOrigin.Synth, "b", typeAsc = Some(stringType))
+        FnParam(SourceOrigin.Synth, Name.synth("a"), typeAsc = Some(stringType)),
+        FnParam(SourceOrigin.Synth, Name.synth("b"), typeAsc = Some(stringType))
       ),
       stringType,
       Some(MemEffect.Alloc)
     ),
     mkFn(
       "int_to_str",
-      List(FnParam(SourceOrigin.Synth, "a", typeAsc = Some(intType))),
+      List(FnParam(SourceOrigin.Synth, Name.synth("a"), typeAsc = Some(intType))),
       stringType,
       Some(MemEffect.Alloc)
     ),
     mkFn(
       "float_to_str",
-      List(FnParam(SourceOrigin.Synth, "a", typeAsc = Some(floatType))),
+      List(FnParam(SourceOrigin.Synth, Name.synth("a"), typeAsc = Some(floatType))),
       stringType,
       Some(MemEffect.Alloc)
     ),
-    mkFn("str_to_int", List(FnParam(SourceOrigin.Synth, "a", typeAsc = Some(stringType))), intType),
+    mkFn(
+      "str_to_int",
+      List(FnParam(SourceOrigin.Synth, Name.synth("a"), typeAsc = Some(stringType))),
+      intType
+    ),
     // Buffer functions
     mkFn("mkBuffer", List(), bufferType, Some(MemEffect.Alloc)),
     mkFn(
       "mkBufferWithFd",
-      List(FnParam(SourceOrigin.Synth, "fd", typeAsc = Some(intType))),
+      List(FnParam(SourceOrigin.Synth, Name.synth("fd"), typeAsc = Some(intType))),
       bufferType,
       Some(MemEffect.Alloc)
     ),
     mkFn(
       "mkBufferWithSize",
-      List(FnParam(SourceOrigin.Synth, "size", typeAsc = Some(intType))),
+      List(FnParam(SourceOrigin.Synth, Name.synth("size"), typeAsc = Some(intType))),
       bufferType,
       Some(MemEffect.Alloc)
     ),
-    mkFn("flush", List(FnParam(SourceOrigin.Synth, "b", typeAsc = Some(bufferType))), unitType),
+    mkFn(
+      "flush",
+      List(FnParam(SourceOrigin.Synth, Name.synth("b"), typeAsc = Some(bufferType))),
+      unitType
+    ),
     mkFn(
       "buffer_write",
       List(
-        FnParam(SourceOrigin.Synth, "b", typeAsc = Some(bufferType)),
-        FnParam(SourceOrigin.Synth, "s", typeAsc = Some(stringType))
+        FnParam(SourceOrigin.Synth, Name.synth("b"), typeAsc = Some(bufferType)),
+        FnParam(SourceOrigin.Synth, Name.synth("s"), typeAsc = Some(stringType))
       ),
       unitType
     ),
     mkFn(
       "buffer_writeln",
       List(
-        FnParam(SourceOrigin.Synth, "b", typeAsc = Some(bufferType)),
-        FnParam(SourceOrigin.Synth, "s", typeAsc = Some(stringType))
+        FnParam(SourceOrigin.Synth, Name.synth("b"), typeAsc = Some(bufferType)),
+        FnParam(SourceOrigin.Synth, Name.synth("s"), typeAsc = Some(stringType))
       ),
       unitType
     ),
     mkFn(
       "buffer_write_int",
       List(
-        FnParam(SourceOrigin.Synth, "b", typeAsc = Some(bufferType)),
-        FnParam(SourceOrigin.Synth, "n", typeAsc = Some(intType))
+        FnParam(SourceOrigin.Synth, Name.synth("b"), typeAsc = Some(bufferType)),
+        FnParam(SourceOrigin.Synth, Name.synth("n"), typeAsc = Some(intType))
       ),
       unitType
     ),
     mkFn(
       "buffer_writeln_int",
       List(
-        FnParam(SourceOrigin.Synth, "b", typeAsc = Some(bufferType)),
-        FnParam(SourceOrigin.Synth, "n", typeAsc = Some(intType))
+        FnParam(SourceOrigin.Synth, Name.synth("b"), typeAsc = Some(bufferType)),
+        FnParam(SourceOrigin.Synth, Name.synth("n"), typeAsc = Some(intType))
       ),
       unitType
     ),
     mkFn(
       "buffer_write_float",
       List(
-        FnParam(SourceOrigin.Synth, "b", typeAsc = Some(bufferType)),
-        FnParam(SourceOrigin.Synth, "n", typeAsc = Some(floatType))
+        FnParam(SourceOrigin.Synth, Name.synth("b"), typeAsc = Some(bufferType)),
+        FnParam(SourceOrigin.Synth, Name.synth("n"), typeAsc = Some(floatType))
       ),
       unitType
     ),
     mkFn(
       "buffer_writeln_float",
       List(
-        FnParam(SourceOrigin.Synth, "b", typeAsc = Some(bufferType)),
-        FnParam(SourceOrigin.Synth, "n", typeAsc = Some(floatType))
+        FnParam(SourceOrigin.Synth, Name.synth("b"), typeAsc = Some(bufferType)),
+        FnParam(SourceOrigin.Synth, Name.synth("n"), typeAsc = Some(floatType))
       ),
       unitType
     ),
     // Conversion functions (template-based)
     mkFnWithTpl(
       "int_to_float",
-      List(FnParam(SourceOrigin.Synth, "i", typeAsc = Some(intType))),
+      List(FnParam(SourceOrigin.Synth, Name.synth("i"), typeAsc = Some(intType))),
       floatType,
       "sitofp i64 %operand to float"
     ),
     mkFnWithTpl(
       "float_to_int",
-      List(FnParam(SourceOrigin.Synth, "f", typeAsc = Some(floatType))),
+      List(FnParam(SourceOrigin.Synth, Name.synth("f"), typeAsc = Some(floatType))),
       intType,
       "fptosi float %operand to i64"
     ),
     mkFnWithTpl(
       "sqrt",
-      List(FnParam(SourceOrigin.Synth, "x", typeAsc = Some(floatType))),
+      List(FnParam(SourceOrigin.Synth, Name.synth("x"), typeAsc = Some(floatType))),
       floatType,
       "call float @llvm.sqrt.f32(float %operand)"
     ),
     mkFnWithTpl(
       "fabs",
-      List(FnParam(SourceOrigin.Synth, "x", typeAsc = Some(floatType))),
+      List(FnParam(SourceOrigin.Synth, Name.synth("x"), typeAsc = Some(floatType))),
       floatType,
       "call float @llvm.fabs.f32(float %operand)"
     ),
     // File operations
     mkFn(
       "open_file_read",
-      List(FnParam(SourceOrigin.Synth, "path", typeAsc = Some(stringType))),
+      List(FnParam(SourceOrigin.Synth, Name.synth("path"), typeAsc = Some(stringType))),
       intType
     ),
     mkFn(
       "open_file_write",
-      List(FnParam(SourceOrigin.Synth, "path", typeAsc = Some(stringType))),
+      List(FnParam(SourceOrigin.Synth, Name.synth("path"), typeAsc = Some(stringType))),
       intType
     ),
     mkFn(
       "open_file_append",
-      List(FnParam(SourceOrigin.Synth, "path", typeAsc = Some(stringType))),
+      List(FnParam(SourceOrigin.Synth, Name.synth("path"), typeAsc = Some(stringType))),
       intType
     ),
-    mkFn("close_file", List(FnParam(SourceOrigin.Synth, "fd", typeAsc = Some(intType))), unitType),
+    mkFn(
+      "close_file",
+      List(FnParam(SourceOrigin.Synth, Name.synth("fd"), typeAsc = Some(intType))),
+      unitType
+    ),
     mkFn(
       "read_line_fd",
-      List(FnParam(SourceOrigin.Synth, "fd", typeAsc = Some(intType))),
+      List(FnParam(SourceOrigin.Synth, Name.synth("fd"), typeAsc = Some(intType))),
       stringType,
       Some(MemEffect.Alloc)
     ),
     // Memory management free functions - params are consuming (take ownership)
     mkFn(
       "__free_String",
-      List(FnParam(SourceOrigin.Synth, "s", typeAsc = Some(stringType), consuming = true)),
+      List(
+        FnParam(SourceOrigin.Synth, Name.synth("s"), typeAsc = Some(stringType), consuming = true)
+      ),
       unitType
     ),
     mkFn(
       "__free_Buffer",
-      List(FnParam(SourceOrigin.Synth, "b", typeAsc = Some(bufferType), consuming = true)),
+      List(
+        FnParam(SourceOrigin.Synth, Name.synth("b"), typeAsc = Some(bufferType), consuming = true)
+      ),
       unitType
     )
   )
@@ -851,168 +875,189 @@ def injectCommonFunctions(module: Module): Module =
     // IntArray functions
     mkFn(
       "ar_int_new",
-      List(FnParam(SourceOrigin.Synth, "size", typeAsc = Some(intType))),
+      List(FnParam(SourceOrigin.Synth, Name.synth("size"), typeAsc = Some(intType))),
       intArrayType,
       Some(MemEffect.Alloc)
     ),
     mkFn(
       "ar_int_set",
       List(
-        FnParam(SourceOrigin.Synth, "arr", typeAsc   = Some(intArrayType)),
-        FnParam(SourceOrigin.Synth, "idx", typeAsc   = Some(intType)),
-        FnParam(SourceOrigin.Synth, "value", typeAsc = Some(intType))
+        FnParam(SourceOrigin.Synth, Name.synth("arr"), typeAsc   = Some(intArrayType)),
+        FnParam(SourceOrigin.Synth, Name.synth("idx"), typeAsc   = Some(intType)),
+        FnParam(SourceOrigin.Synth, Name.synth("value"), typeAsc = Some(intType))
       ),
       unitType
     ),
     mkFn(
       "ar_int_get",
       List(
-        FnParam(SourceOrigin.Synth, "arr", typeAsc = Some(intArrayType)),
-        FnParam(SourceOrigin.Synth, "idx", typeAsc = Some(intType))
+        FnParam(SourceOrigin.Synth, Name.synth("arr"), typeAsc = Some(intArrayType)),
+        FnParam(SourceOrigin.Synth, Name.synth("idx"), typeAsc = Some(intType))
       ),
       intType
     ),
     mkFn(
       "unsafe_ar_int_set",
       List(
-        FnParam(SourceOrigin.Synth, "arr", typeAsc   = Some(intArrayType)),
-        FnParam(SourceOrigin.Synth, "idx", typeAsc   = Some(intType)),
-        FnParam(SourceOrigin.Synth, "value", typeAsc = Some(intType))
+        FnParam(SourceOrigin.Synth, Name.synth("arr"), typeAsc   = Some(intArrayType)),
+        FnParam(SourceOrigin.Synth, Name.synth("idx"), typeAsc   = Some(intType)),
+        FnParam(SourceOrigin.Synth, Name.synth("value"), typeAsc = Some(intType))
       ),
       unitType
     ),
     mkFn(
       "unsafe_ar_int_get",
       List(
-        FnParam(SourceOrigin.Synth, "arr", typeAsc = Some(intArrayType)),
-        FnParam(SourceOrigin.Synth, "idx", typeAsc = Some(intType))
+        FnParam(SourceOrigin.Synth, Name.synth("arr"), typeAsc = Some(intArrayType)),
+        FnParam(SourceOrigin.Synth, Name.synth("idx"), typeAsc = Some(intType))
       ),
       intType
     ),
     mkFn(
       "ar_int_len",
-      List(FnParam(SourceOrigin.Synth, "arr", typeAsc = Some(intArrayType))),
+      List(FnParam(SourceOrigin.Synth, Name.synth("arr"), typeAsc = Some(intArrayType))),
       intType
     ),
     // StringArray functions
     mkFn(
       "ar_str_new",
-      List(FnParam(SourceOrigin.Synth, "size", typeAsc = Some(intType))),
+      List(FnParam(SourceOrigin.Synth, Name.synth("size"), typeAsc = Some(intType))),
       stringArrayType,
       Some(MemEffect.Alloc)
     ),
     mkFn(
       "ar_str_set",
       List(
-        FnParam(SourceOrigin.Synth, "arr", typeAsc   = Some(stringArrayType)),
-        FnParam(SourceOrigin.Synth, "idx", typeAsc   = Some(intType)),
-        FnParam(SourceOrigin.Synth, "value", typeAsc = Some(stringType), consuming = true)
+        FnParam(SourceOrigin.Synth, Name.synth("arr"), typeAsc = Some(stringArrayType)),
+        FnParam(SourceOrigin.Synth, Name.synth("idx"), typeAsc = Some(intType)),
+        FnParam(
+          SourceOrigin.Synth,
+          Name.synth("value"),
+          typeAsc   = Some(stringType),
+          consuming = true
+        )
       ),
       unitType
     ),
     mkFn(
       "ar_str_get",
       List(
-        FnParam(SourceOrigin.Synth, "arr", typeAsc = Some(stringArrayType)),
-        FnParam(SourceOrigin.Synth, "idx", typeAsc = Some(intType))
+        FnParam(SourceOrigin.Synth, Name.synth("arr"), typeAsc = Some(stringArrayType)),
+        FnParam(SourceOrigin.Synth, Name.synth("idx"), typeAsc = Some(intType))
       ),
       stringType
     ),
     mkFn(
       "ar_str_len",
-      List(FnParam(SourceOrigin.Synth, "arr", typeAsc = Some(stringArrayType))),
+      List(FnParam(SourceOrigin.Synth, Name.synth("arr"), typeAsc = Some(stringArrayType))),
       intType
     ),
     // FloatArray functions
     mkFn(
       "ar_float_new",
-      List(FnParam(SourceOrigin.Synth, "size", typeAsc = Some(intType))),
+      List(FnParam(SourceOrigin.Synth, Name.synth("size"), typeAsc = Some(intType))),
       floatArrayType,
       Some(MemEffect.Alloc)
     ),
     mkFn(
       "ar_float_set",
       List(
-        FnParam(SourceOrigin.Synth, "arr", typeAsc   = Some(floatArrayType)),
-        FnParam(SourceOrigin.Synth, "idx", typeAsc   = Some(intType)),
-        FnParam(SourceOrigin.Synth, "value", typeAsc = Some(floatType))
+        FnParam(SourceOrigin.Synth, Name.synth("arr"), typeAsc   = Some(floatArrayType)),
+        FnParam(SourceOrigin.Synth, Name.synth("idx"), typeAsc   = Some(intType)),
+        FnParam(SourceOrigin.Synth, Name.synth("value"), typeAsc = Some(floatType))
       ),
       unitType
     ),
     mkFn(
       "ar_float_get",
       List(
-        FnParam(SourceOrigin.Synth, "arr", typeAsc = Some(floatArrayType)),
-        FnParam(SourceOrigin.Synth, "idx", typeAsc = Some(intType))
+        FnParam(SourceOrigin.Synth, Name.synth("arr"), typeAsc = Some(floatArrayType)),
+        FnParam(SourceOrigin.Synth, Name.synth("idx"), typeAsc = Some(intType))
       ),
       floatType
     ),
     mkFn(
       "unsafe_ar_float_set",
       List(
-        FnParam(SourceOrigin.Synth, "arr", typeAsc   = Some(floatArrayType)),
-        FnParam(SourceOrigin.Synth, "idx", typeAsc   = Some(intType)),
-        FnParam(SourceOrigin.Synth, "value", typeAsc = Some(floatType))
+        FnParam(SourceOrigin.Synth, Name.synth("arr"), typeAsc   = Some(floatArrayType)),
+        FnParam(SourceOrigin.Synth, Name.synth("idx"), typeAsc   = Some(intType)),
+        FnParam(SourceOrigin.Synth, Name.synth("value"), typeAsc = Some(floatType))
       ),
       unitType
     ),
     mkFn(
       "unsafe_ar_float_get",
       List(
-        FnParam(SourceOrigin.Synth, "arr", typeAsc = Some(floatArrayType)),
-        FnParam(SourceOrigin.Synth, "idx", typeAsc = Some(intType))
+        FnParam(SourceOrigin.Synth, Name.synth("arr"), typeAsc = Some(floatArrayType)),
+        FnParam(SourceOrigin.Synth, Name.synth("idx"), typeAsc = Some(intType))
       ),
       floatType
     ),
     mkFn(
       "ar_float_len",
-      List(FnParam(SourceOrigin.Synth, "arr", typeAsc = Some(floatArrayType))),
+      List(FnParam(SourceOrigin.Synth, Name.synth("arr"), typeAsc = Some(floatArrayType))),
       intType
     ),
     // Memory management free functions for arrays - params are consuming
     mkFn(
       "__free_IntArray",
-      List(FnParam(SourceOrigin.Synth, "a", typeAsc = Some(intArrayType), consuming = true)),
+      List(
+        FnParam(SourceOrigin.Synth, Name.synth("a"), typeAsc = Some(intArrayType), consuming = true)
+      ),
       unitType
     ),
     mkFn(
       "__free_StringArray",
-      List(FnParam(SourceOrigin.Synth, "a", typeAsc = Some(stringArrayType), consuming = true)),
+      List(
+        FnParam(
+          SourceOrigin.Synth,
+          Name.synth("a"),
+          typeAsc   = Some(stringArrayType),
+          consuming = true
+        )
+      ),
       unitType
     ),
     mkFn(
       "__free_FloatArray",
-      List(FnParam(SourceOrigin.Synth, "a", typeAsc = Some(floatArrayType), consuming = true)),
+      List(
+        FnParam(
+          SourceOrigin.Synth,
+          Name.synth("a"),
+          typeAsc   = Some(floatArrayType),
+          consuming = true
+        )
+      ),
       unitType
     ),
     // Memory management clone functions - return heap copies
     mkFn(
       "__clone_String",
-      List(FnParam(SourceOrigin.Synth, "s", typeAsc = Some(stringType))),
+      List(FnParam(SourceOrigin.Synth, Name.synth("s"), typeAsc = Some(stringType))),
       stringType,
       Some(MemEffect.Alloc)
     ),
     mkFn(
       "__clone_Buffer",
-      List(FnParam(SourceOrigin.Synth, "b", typeAsc = Some(bufferType))),
+      List(FnParam(SourceOrigin.Synth, Name.synth("b"), typeAsc = Some(bufferType))),
       bufferType,
       Some(MemEffect.Alloc)
     ),
     mkFn(
       "__clone_IntArray",
-      List(FnParam(SourceOrigin.Synth, "a", typeAsc = Some(intArrayType))),
+      List(FnParam(SourceOrigin.Synth, Name.synth("a"), typeAsc = Some(intArrayType))),
       intArrayType,
       Some(MemEffect.Alloc)
     ),
     mkFn(
       "__clone_StringArray",
-      List(FnParam(SourceOrigin.Synth, "a", typeAsc = Some(stringArrayType))),
+      List(FnParam(SourceOrigin.Synth, Name.synth("a"), typeAsc = Some(stringArrayType))),
       stringArrayType,
       Some(MemEffect.Alloc)
     ),
     mkFn(
       "__clone_FloatArray",
-      List(FnParam(SourceOrigin.Synth, "a", typeAsc = Some(floatArrayType))),
+      List(FnParam(SourceOrigin.Synth, Name.synth("a"), typeAsc = Some(floatArrayType))),
       floatArrayType,
       Some(MemEffect.Alloc)
     )

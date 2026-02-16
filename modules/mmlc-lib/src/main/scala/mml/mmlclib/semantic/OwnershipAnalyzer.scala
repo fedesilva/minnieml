@@ -477,7 +477,12 @@ object OwnershipAnalyzer:
     // Create a unique result binding name with proper type
     val resultName = "__ownership_result"
     val resultParam =
-      FnParam(SourceOrigin.Synth, resultName, typeSpec = resultType, typeAsc = resultType)
+      FnParam(
+        SourceOrigin.Synth,
+        Name.synth(resultName),
+        typeSpec = resultType,
+        typeAsc  = resultType
+      )
     val resultRef = Ref(span, resultName, typeSpec = resultType)
 
     // Unit type for free call results
@@ -501,7 +506,7 @@ object OwnershipAnalyzer:
       freeTermOpt match
         case Some(freeTerm) =>
           val discardParam =
-            FnParam(SourceOrigin.Synth, "_", typeSpec = unitType, typeAsc = unitType)
+            FnParam(SourceOrigin.Synth, Name.synth("_"), typeSpec = unitType, typeAsc = unitType)
           val discardLam =
             Lambda(span, List(discardParam), acc, Nil, typeSpec = resultType)
           val freeAppExpr = Expr(span, List(freeTerm), typeSpec = unitType)
@@ -851,7 +856,12 @@ object OwnershipAnalyzer:
     val finalTerm = witnessOpt match
       case Some((witnessName, witnessExpr, boolType)) =>
         val witnessParam =
-          FnParam(SourceOrigin.Synth, witnessName, typeSpec = boolType, typeAsc = boolType)
+          FnParam(
+            SourceOrigin.Synth,
+            Name.synth(witnessName),
+            typeSpec = boolType,
+            typeAsc  = boolType
+          )
         val innerAppExpr = Expr(syntheticSpan, List(innerApp), typeSpec = typeSpec)
         val witnessLambda =
           Lambda(syntheticSpan, List(witnessParam), innerAppExpr, Nil, typeSpec = typeSpec)
@@ -1019,7 +1029,7 @@ object OwnershipAnalyzer:
 
     val unitType = Some(unitTypeRef(syntheticSpan))
     val withFrees = freeCalls.foldRight(innermost) { (freeCall, acc) =>
-      val discardParam = FnParam(SourceOrigin.Synth, "_", typeSpec = unitType)
+      val discardParam = FnParam(SourceOrigin.Synth, Name.synth("_"), typeSpec = unitType)
       val discardLam =
         Lambda(syntheticSpan, List(discardParam), acc, Nil, typeSpec = resultType)
       val freeExpr = Expr(syntheticSpan, List(freeCall), typeSpec = unitType)
@@ -1029,7 +1039,7 @@ object OwnershipAnalyzer:
       )
     }
 
-    val resultParam = FnParam(SourceOrigin.Synth, resultName, typeSpec = resultType)
+    val resultParam = FnParam(SourceOrigin.Synth, Name.synth(resultName), typeSpec = resultType)
     val resultLam =
       Lambda(syntheticSpan, List(resultParam), withFrees, Nil, typeSpec = resultType)
     val withResult = Expr(
@@ -1040,7 +1050,7 @@ object OwnershipAnalyzer:
 
     val wrappedExpr = allocBindings.foldLeft(withResult) {
       case (body, (tmpName, argExpr, allocType)) =>
-        val tmpParam = FnParam(SourceOrigin.Synth, tmpName, typeSpec = Some(allocType))
+        val tmpParam = FnParam(SourceOrigin.Synth, Name.synth(tmpName), typeSpec = Some(allocType))
         val wrapperLambda =
           Lambda(syntheticSpan, List(tmpParam), body, Nil, typeSpec = body.typeSpec)
         Expr(
@@ -1300,7 +1310,7 @@ object OwnershipAnalyzer:
     returningOwned: Map[String, Option[Type]]
   ): (Member, List[SemanticError]) =
     member match
-      case bnd @ Bnd(visibility, source, name, value, typeSpec, typeAsc, docComment, meta, id) =>
+      case bnd @ Bnd(_, _, _, value, _, _, _, meta, _) =>
         val hasNativeBody = value.terms.exists:
           case l: Lambda => l.body.terms.exists(_.isInstanceOf[NativeImpl])
           case _ => false

@@ -3,9 +3,7 @@ package mml.mmlclib.ast
 // **Type Specifications**
 sealed trait Type extends AstNode, FromSource
 
-sealed trait ResolvableType extends AstNode:
-  def name: String
-  def id:   Option[String]
+sealed trait ResolvableType extends Resolvable
 
 // type ResolvableType = TypeAlias | TypeDef
 
@@ -63,7 +61,7 @@ case class TypeStruct(
   span:       SrcSpan,
   docComment: Option[DocComment],
   visibility: Visibility,
-  name:       String,
+  nameNode:   Name,
   fields:     Vector[Field],
   id:         Option[String] = None
 ) extends Type,
@@ -74,7 +72,7 @@ case class TypeStruct(
 
 case class Field(
   span:     SrcSpan,
-  name:     String,
+  nameNode: Name,
   typeSpec: Type,
   id:       Option[String] = None
 ) extends FromSource,
@@ -120,7 +118,7 @@ case class TypeScheme(
 case class TypeDef(
   visibility: Visibility         = Visibility.Protected,
   span:       SrcSpan,
-  name:       String,
+  nameNode:   Name,
   typeSpec:   Option[Type],
   docComment: Option[DocComment] = None,
   typeAsc:    Option[Type]       = None,
@@ -133,7 +131,7 @@ case class TypeDef(
 case class TypeAlias(
   visibility: Visibility         = Visibility.Protected,
   span:       SrcSpan,
-  name:       String,
+  nameNode:   Name,
   typeRef:    Type,
   typeSpec:   Option[Type]       = None,
   typeAsc:    Option[Type]       = None,

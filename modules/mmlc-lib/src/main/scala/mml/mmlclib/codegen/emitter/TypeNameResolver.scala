@@ -27,8 +27,8 @@ object TypeNameResolver:
               case None => getMmlTypeName(alias.typeRef, resolvables)
           case None =>
             Left(CodeGenError(s"Unresolved type reference '$name'"))
-      case TypeStruct(_, _, _, name, _, _) =>
-        Right(name)
+      case ts: TypeStruct =>
+        Right(ts.name)
       case NativePrimitive(_, llvmType, _, _) =>
         Right(llvmType)
       case NativePointer(_, llvmType, _, _) =>
