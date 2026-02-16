@@ -71,15 +71,19 @@ case class Tuple(
 
 /** Points to something declared elsewhere */
 case class Ref(
-  span:         SrcSpan,
-  name:         String,
-  typeAsc:      Option[Type]   = None,
-  typeSpec:     Option[Type]   = None,
-  resolvedId:   Option[String] = None,
-  candidateIds: List[String]   = Nil,
-  qualifier:    Option[Term]   = None
+  override val source: SourceOrigin,
+  name:                String,
+  typeAsc:             Option[Type]   = None,
+  typeSpec:            Option[Type]   = None,
+  resolvedId:          Option[String] = None,
+  candidateIds:        List[String]   = Nil,
+  qualifier:           Option[Term]   = None
 ) extends Term,
-      FromSource
+      FromSource:
+  private val syntheticSpan = SrcSpan(SrcPoint(0, 0, -1), SrcPoint(0, 0, -1))
+  def span: SrcSpan = source match
+    case SourceOrigin.Loc(s) => s
+    case SourceOrigin.Synth => syntheticSpan
 
 /** The `_` symbol */
 case class Placeholder(

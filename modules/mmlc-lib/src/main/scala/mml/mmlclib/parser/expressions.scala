@@ -126,7 +126,7 @@ private def selectionP(info: SourceInfo, baseP: => P[Term])(using P[Any]): P[Ter
     fieldList.zipWithIndex.foldLeft(base) { case (qualifier, ((fieldName, fieldSpan), idx)) =>
       val selectionSpan = span(qualifier.span.start, fieldSpan.end)
       Ref(
-        span      = selectionSpan,
+        source    = SourceOrigin.Loc(selectionSpan),
         name      = fieldName,
         typeAsc   = if idx == lastIndex then typeAsc else None,
         qualifier = Some(qualifier)
@@ -289,19 +289,19 @@ private[parser] def groupTermMemberP(info: SourceInfo)(using P[Any]): P[Term] =
 private[parser] def refP(info: SourceInfo)(using P[Any]): P[Term] =
   P(spP(info) ~ bindingIdP ~ typeAscP(info) ~ spNoWsP(info) ~ spP(info))
     .map { case (start, id, typeAsc, end, _) =>
-      Ref(span(start, end), id, typeAsc = typeAsc)
+      Ref(SourceOrigin.Loc(span(start, end)), id, typeAsc = typeAsc)
     }
 
 private[parser] def typeRefTermP(info: SourceInfo)(using P[Any]): P[Term] =
   P(spP(info) ~ typeIdP ~ typeAscP(info) ~ spNoWsP(info) ~ spP(info))
     .map { case (start, id, typeAsc, end, _) =>
-      Ref(span(start, end), id, typeAsc = typeAsc)
+      Ref(SourceOrigin.Loc(span(start, end)), id, typeAsc = typeAsc)
     }
 
 private[parser] def opRefP(info: SourceInfo)(using P[Any]): P[Term] =
   P(spP(info) ~ operatorIdP ~ spNoWsP(info) ~ spP(info))
     .map { case (start, id, end, _) =>
-      Ref(span(start, end), id)
+      Ref(SourceOrigin.Loc(span(start, end)), id)
     }
 
 private[parser] def phP(info: SourceInfo)(using P[Any]): P[Term] =

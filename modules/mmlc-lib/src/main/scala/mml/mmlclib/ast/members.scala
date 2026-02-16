@@ -1,15 +1,15 @@
 package mml.mmlclib.ast
 
 case class Bnd(
-  visibility: Visibility          = Visibility.Protected,
-  source:     SourceOrigin,
-  nameNode:   Name,
-  value:      Expr,
-  typeSpec:   Option[Type]        = None,
-  typeAsc:    Option[Type]        = None,
-  docComment: Option[DocComment]  = None,
-  meta:       Option[BindingMeta] = None,
-  id:         Option[String]      = None
+  visibility:          Visibility          = Visibility.Protected,
+  override val source: SourceOrigin,
+  nameNode:            Name,
+  value:               Expr,
+  typeSpec:            Option[Type]        = None,
+  typeAsc:             Option[Type]        = None,
+  docComment:          Option[DocComment]  = None,
+  meta:                Option[BindingMeta] = None,
+  id:                  Option[String]      = None
 ) extends Decl,
       FromSource:
   private val syntheticSpan = SrcSpan(SrcPoint(0, 0, -1), SrcPoint(0, 0, -1))

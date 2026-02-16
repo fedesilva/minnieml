@@ -100,7 +100,12 @@ object ExpressionRewriter:
                 }
                 // Pre-resolve synthetic Refs to their FnParams (RefResolver already ran)
                 val syntheticRefs = syntheticParams.map { param =>
-                  Ref(span, param.name, resolvedId = param.id, candidateIds = param.id.toList)
+                  Ref(
+                    SourceOrigin.Synth,
+                    param.name,
+                    resolvedId   = param.id,
+                    candidateIds = param.id.toList
+                  )
                 }
                 // Build App chain with synthetic args
                 val fullApp = syntheticRefs.foldLeft[Ref | App](callable) { (acc, ref) =>

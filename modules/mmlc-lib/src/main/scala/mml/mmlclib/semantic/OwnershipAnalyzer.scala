@@ -335,9 +335,10 @@ object OwnershipAnalyzer:
     typeName.flatMap(freeFnFor(_, resolvables)).map { freeFn =>
       val freeFnId = lookupFreeFnId(freeFn, resolvables)
       val unitType: Option[Type] = Some(unitTypeRef(span))
-      val fnType  = Some(TypeFn(span, List(tpe), unitType.get))
-      val fnRef   = Ref(span, freeFn, resolvedId = freeFnId, typeSpec = fnType)
-      val argRef  = Ref(span, bindingName, resolvedId = bindingId, typeSpec = Some(tpe))
+      val fnType = Some(TypeFn(span, List(tpe), unitType.get))
+      val fnRef  = Ref(SourceOrigin.Synth, freeFn, resolvedId = freeFnId, typeSpec = fnType)
+      val argRef =
+        Ref(SourceOrigin.Synth, bindingName, resolvedId = bindingId, typeSpec = Some(tpe))
       val argExpr = Expr(span, List(argRef), typeSpec = Some(tpe))
       App(span, fnRef, argExpr, typeSpec = unitType)
     }
@@ -447,7 +448,7 @@ object OwnershipAnalyzer:
       val boolType = Some(boolTypeRef(span))
       val unitType = Some(unitTypeRef(span))
 
-      val witnessRef  = Ref(span, witnessName, typeSpec = boolType)
+      val witnessRef  = Ref(SourceOrigin.Synth, witnessName, typeSpec = boolType)
       val witnessExpr = Expr(span, List(witnessRef), typeSpec = boolType)
 
       val freeCallExpr = Expr(span, List(freeCall), typeSpec = unitType)
@@ -483,7 +484,7 @@ object OwnershipAnalyzer:
         typeSpec = resultType,
         typeAsc  = resultType
       )
-    val resultRef = Ref(span, resultName, typeSpec = resultType)
+    val resultRef = Ref(SourceOrigin.Synth, resultName, typeSpec = resultType)
 
     // Unit type for free call results
     val unitType = Some(unitTypeRef(span))
@@ -527,8 +528,9 @@ object OwnershipAnalyzer:
     val cloneFnName = cloneFnFor(typeName, resolvables).getOrElse(s"__clone_$typeName")
     val cloneFnId   = lookupCloneFnId(cloneFnName, typeName, resolvables)
     val cloneFnType = Some(TypeFn(syntheticSpan, List(tpe), tpe))
-    val cloneFnRef = Ref(syntheticSpan, cloneFnName, resolvedId = cloneFnId, typeSpec = cloneFnType)
-    val cloneApp   = App(syntheticSpan, cloneFnRef, expr, typeSpec = Some(tpe))
+    val cloneFnRef =
+      Ref(SourceOrigin.Synth, cloneFnName, resolvedId = cloneFnId, typeSpec = cloneFnType)
+    val cloneApp = App(syntheticSpan, cloneFnRef, expr, typeSpec = Some(tpe))
     Expr(syntheticSpan, List(cloneApp), typeSpec = Some(tpe))
 
   /** Promote static branches to heap when function returns heap type.
@@ -983,7 +985,7 @@ object OwnershipAnalyzer:
           case Some(allocType) =>
             val argResult           = analyzeExpr(argExpr, curScope)
             val (tmpName, newScope) = curScope.nextTemp
-            val tmpRef              = Ref(syntheticSpan, tmpName, typeSpec = Some(allocType))
+            val tmpRef              = Ref(SourceOrigin.Synth, tmpName, typeSpec = Some(allocType))
             val tmpRefExpr =
               Expr(syntheticSpan, List(tmpRef), typeSpec = Some(allocType))
             (
@@ -1017,7 +1019,7 @@ object OwnershipAnalyzer:
     // let tmp0 = arg0; let tmp1 = arg1; let result = inner; free tmp1; free tmp0; result
     val resultType = typeSpec
     val resultName = "__tmp_result"
-    val resultRef  = Ref(syntheticSpan, resultName, typeSpec = resultType)
+    val resultRef  = Ref(SourceOrigin.Synth, resultName, typeSpec = resultType)
 
     // Free calls for temps not consumed by the callee
     val nonConsumedBindings = allBindings.filterNot(_._4)

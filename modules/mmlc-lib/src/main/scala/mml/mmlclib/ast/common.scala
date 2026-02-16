@@ -36,7 +36,8 @@ trait Typeable extends AstNode {
 }
 
 trait FromSource extends AstNode {
-  def span: SrcSpan
+  def span:   SrcSpan
+  def source: SourceOrigin = SourceOrigin.Loc(span)
 }
 
 /** Distinguishes AST nodes parsed from source vs synthesized by the compiler. */
@@ -88,13 +89,13 @@ trait Decl extends Member, Typeable, Resolvable:
   def visibility: Visibility
 
 case class FnParam(
-  source:     SourceOrigin,
-  nameNode:   Name,
-  typeSpec:   Option[Type]       = None,
-  typeAsc:    Option[Type]       = None,
-  docComment: Option[DocComment] = None,
-  id:         Option[String]     = None,
-  consuming:  Boolean            = false // for ~param syntax: takes ownership
+  override val source: SourceOrigin,
+  nameNode:            Name,
+  typeSpec:            Option[Type]       = None,
+  typeAsc:             Option[Type]       = None,
+  docComment:          Option[DocComment] = None,
+  id:                  Option[String]     = None,
+  consuming:           Boolean            = false // for ~param syntax: takes ownership
 ) extends AstNode,
       FromSource,
       Typeable,

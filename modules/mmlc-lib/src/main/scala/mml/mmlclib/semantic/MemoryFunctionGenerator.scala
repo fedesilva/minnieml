@@ -90,14 +90,14 @@ object MemoryFunctionGenerator:
         TypeUtils.freeFnFor(typeName, resolvables).map { freeFnName =>
           // Build: __free_T s.fieldName
           val freeFnRef = Ref(
-            syntheticSpan,
+            SourceOrigin.Synth,
             freeFnName,
             resolvedId = resolveMemFnId(typeName, freeFnName, moduleName, resolvables),
             typeSpec   = Some(TypeFn(syntheticSpan, List(field.typeSpec), unitTR))
           )
-          val paramRef = Ref(syntheticSpan, paramName, typeSpec = Some(structTypeRef))
+          val paramRef = Ref(SourceOrigin.Synth, paramName, typeSpec = Some(structTypeRef))
           val fieldRef = Ref(
-            syntheticSpan,
+            SourceOrigin.Synth,
             field.name,
             qualifier = Some(paramRef),
             typeSpec  = Some(field.typeSpec)
@@ -181,7 +181,7 @@ object MemoryFunctionGenerator:
     val cloneFnId   = resolveMemFnId(typeName, cloneFnName, moduleName, resolvables)
     val cloneFnType = Some(TypeFn(syntheticSpan, List(fieldType), fieldType))
     val cloneFnRef =
-      Ref(syntheticSpan, cloneFnName, resolvedId = cloneFnId, typeSpec = cloneFnType)
+      Ref(SourceOrigin.Synth, cloneFnName, resolvedId = cloneFnId, typeSpec = cloneFnType)
     val cloneApp = App(syntheticSpan, cloneFnRef, fieldExpr, typeSpec = Some(fieldType))
     Expr(syntheticSpan, List(cloneApp), typeSpec = Some(fieldType))
 
@@ -265,7 +265,7 @@ object MemoryFunctionGenerator:
     // Constructor reference: __mk_StructName
     val constructorName = s"__mk_$structName"
     val constructorRef = Ref(
-      syntheticSpan,
+      SourceOrigin.Synth,
       constructorName,
       resolvedId = Some(s"$moduleName::bnd::$constructorName"),
       typeSpec   = Some(constructorType)
@@ -273,8 +273,8 @@ object MemoryFunctionGenerator:
 
     // Build arguments: extract each field, wrapping heap fields with __clone_T
     val argExprs: List[Expr] = struct.fields.toList.map { field =>
-      val paramRef    = Ref(syntheticSpan, paramName, typeSpec = Some(structTypeRef))
-      val fieldRef    = Ref(syntheticSpan, field.name, qualifier = Some(paramRef))
+      val paramRef    = Ref(SourceOrigin.Synth, paramName, typeSpec = Some(structTypeRef))
+      val fieldRef    = Ref(SourceOrigin.Synth, field.name, qualifier = Some(paramRef))
       val fieldAccess = Expr(syntheticSpan, List(fieldRef), typeSpec = Some(field.typeSpec))
 
       if isHeapField(field, resolvables) then

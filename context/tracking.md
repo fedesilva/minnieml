@@ -113,22 +113,22 @@ GitHub: `https://github.com/fedesilva/minnieml/issues/220`
     - [x] Run full test suite (`sbtn "test; scalafmtAll; scalafixAll"`): 266/266 pass.
     - [x] Add/update LSP tests for synthesized symbol filtering.
 
-- [ ] **PRECONDITION (related): Implement names as explicit AST nodes**:
+- [x] **PRECONDITION (related): Implement names as explicit AST nodes** [COMPLETE]:
   Add `Name(span, value)` case class to AST. Replace `name: String` with `nameNode: Name`
   on `Bnd`, `FnParam`, `TypeDef`, `TypeAlias`, `TypeStruct`, `Field`. Backward-compatible
   via `def name = nameNode.value` on traits. Eliminates position-guessing in `SemanticTokens`.
   Design: `docs/brainstorming/compiler/ast-name-node.md`.
   - **Subtasks:**
-    - [ ] Define `Name` case class and `Name.synth` factory in `ast/common.scala`.
-    - [ ] Update `Resolvable` and `ResolvableType` traits with `nameNode`/`name` accessors.
-    - [ ] Replace `name: String` field on 6 case classes (`Bnd`, `FnParam`, `TypeDef`,
+    - [x] Define `Name` case class and `Name.synth` factory in `ast/common.scala`.
+    - [x] Update `Resolvable` and `ResolvableType` traits with `nameNode`/`name` accessors.
+    - [x] Replace `name: String` field on 6 case classes (`Bnd`, `FnParam`, `TypeDef`,
       `TypeAlias`, `TypeStruct`, `Field`).
-    - [ ] Update parser to capture name spans (members.scala + types.scala).
-    - [ ] Update synthetic construction sites (~120: package.scala, ConstructorGenerator,
+    - [x] Update parser to capture name spans (members.scala + types.scala).
+    - [x] Update synthetic construction sites (~120: package.scala, ConstructorGenerator,
       MemoryFunctionGenerator, OwnershipAnalyzer, ExpressionRewriter, tests).
-    - [ ] Simplify `SemanticTokens.scala`: delete `declarationToken`/`keywordLengthFor`,
+    - [x] Simplify `SemanticTokens.scala`: delete `declarationToken`/`keywordLengthFor`,
       use `nameNode.span` directly.
-    - [ ] Run full verification.
+    - [x] Run full verification.
 
 - [ ] **BUG: Go-to-definition on struct constructor resolves to function, not struct**:
   Constructor is synthetic (`__mk_<Name>`), LSP should resolve through it to the
@@ -142,15 +142,13 @@ GitHub: `https://github.com/fedesilva/minnieml/issues/220`
   See `context/specs/qa-lsp.md` finding 6.
   - [x] Fix: `collectFromBnd` now returns `Nil` for synthesized Bnds instead of
     traversing their body expressions.
-  - [ ] **Remaining**: strings inside parenthesized operator expressions (e.g.
-    `println ("Name: " ++ p.name)`) still show wrong color despite string token being
-    emitted. Existing test confirms string token IS present on the line. Likely another
-    source of overlapping tokens or a token length/position issue causing the editor to
-    override the string token. Needs further investigation with full token dump.
+  - [x] **Remaining**: strings inside parenthesized operator expressions show wrong
+    color (red/pink instead of string green). Fixed by extending `Ref` with `SourceOrigin`
+    and filtering synthetic Refs in `collectFromRef`. See Recent Changes entry below.
 
-- [ ] **Investigate semantic token bugs**: Declaration positions are guessed (not
-  span-derived), conditional keyword tokenization is brittle on multiline, unresolved
-  refs get no token. See `context/specs/qa-lsp.md` findings 1–3.
+- [ ] **Investigate semantic token bugs**: ~~Declaration positions are guessed~~ (fixed
+  by Name AST node, `4649872`). Remaining: conditional keyword tokenization is brittle
+  on multiline, unresolved refs get no token. See `context/specs/qa-lsp.md` findings 2–3.
 
 ### QA Debt
 
@@ -172,6 +170,47 @@ GitHub: `https://github.com/fedesilva/minnieml/issues/235`
 ---
 
 ## Recent Changes
+
+### 2026-02-16 Fix phantom semantic tokens from ownership free/clone wrappers [COMPLETE]
+
+- **Problem:** Ownership analyzer's `mkFreeCall`, `mkConditionalFree`, and `wrapWithFrees`
+  created `Ref` AST nodes with real source spans and `resolvedId` set. `collectFromRef`
+  resolved these Refs and emitted Function/Parameter tokens at source span positions,
+  producing phantom tokens that overlapped with actual user-code tokens (strings showed
+  wrong color in `person-struct.mml` lines 22-25).
+- **Fix:** Extended `Ref` case class to take `source: SourceOrigin` as first parameter
+  (replacing `span: SrcSpan`), following the same pattern already used by `Bnd` and
+  `FnParam`. Updated `FromSource` trait with a default `source` method. Added early return
+  in `collectFromRef` for non-source Refs. Updated all 28 `Ref` construction sites across
+  parser (4, `SourceOrigin.Loc`), semantic phases (10, `SourceOrigin.Synth`), and codegen
+  helpers (7, `SourceOrigin.Synth`).
+- **Changes:**
+  - `ast/common.scala`: `FromSource.source` default method, `FnParam` gets `override val`
+  - `ast/terms.scala`: `Ref` first param → `override val source: SourceOrigin`, derived `def span`
+  - `ast/members.scala`: `Bnd` gets `override val` on `source`
+  - `lsp/SemanticTokens.scala`: `collectFromRef` returns `Nil` for `!ref.source.isFromSource`
+  - `semantic/OwnershipAnalyzer.scala`: 6 Ref sites → `SourceOrigin.Synth`
+  - `semantic/MemoryFunctionGenerator.scala`: 7 Ref sites → `SourceOrigin.Synth`
+  - `semantic/package.scala`: 3 Ref sites → `SourceOrigin.Synth`
+  - `semantic/ExpressionRewriter.scala`: 1 Ref site → `SourceOrigin.Synth`
+  - `parser/expressions.scala`: 4 Ref sites → `SourceOrigin.Loc(span(...))`
+- **Tests:** Added "no phantom tokens from ownership free wrappers" in `SemanticTokensTests`
+- **Verification:** 268 tests pass, `scalafmtAll`/`scalafixAll` clean, `mmlcPublishLocal` OK.
+
+### 2026-02-16 Implement names as explicit AST nodes [COMPLETE]
+
+- **Problem:** Declaration positions in `SemanticTokens` were guessed via `declarationToken`/
+  `keywordLengthFor` offset arithmetic. No span-accurate name positions on AST nodes.
+- **Fix:** Added `Name(span, value)` case class. Replaced `name: String` with `nameNode: Name`
+  on `Bnd`, `FnParam`, `TypeDef`, `TypeAlias`, `TypeStruct`, `Field`. Backward-compatible via
+  `def name = nameNode.value` on `Resolvable` trait. Parser captures real name spans; synthetic
+  sites use `Name.synth(...)`. `SemanticTokens` uses `nameNode.span` directly, deleting
+  `declarationToken`/`keywordLengthFor`. Also fixed synthesized Bnd body traversal leaking
+  overlapping tokens: `collectFromBnd` returns `Nil` for non-source Bnds.
+- **Changes:** 21 files, 345 insertions, 262 deletions (see commit `4649872`).
+- **Known remaining:** String coloring inside parenthesized operator expressions (e.g.
+  `println ("Name: " ++ p.name)`) still wrong. Witness: `mml/samples/person-struct.mml`,
+  screenshots in `context/images/`.
 
 ### 2026-02-16 Evolve `FromSource` to distinguish real vs synthesized origins [COMPLETE]
 

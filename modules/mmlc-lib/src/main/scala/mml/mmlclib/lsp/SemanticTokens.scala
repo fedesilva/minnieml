@@ -168,6 +168,7 @@ object SemanticTokens:
 
   /** Collect tokens from a reference. */
   private def collectFromRef(ref: Ref, resolvables: ResolvablesIndex): List[RawToken] =
+    if !ref.source.isFromSource then return Nil
     val resolvedOpt =
       ref.resolvedId
         .flatMap(resolvables.lookup)

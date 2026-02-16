@@ -619,9 +619,9 @@ def injectCommonFunctions(module: Module): Module =
     val param1 = FnParam(SourceOrigin.Synth, Name.synth("a"), typeAsc = Some(param1Type))
     val param2 = FnParam(SourceOrigin.Synth, Name.synth("b"), typeAsc = Some(param2Type))
     // Create refs with resolvedId pointing to the stdlib function
-    val fnRef = Ref(dummySpan, fnName, resolvedId = stdlibId("bnd", fnName))
+    val fnRef = Ref(SourceOrigin.Synth, fnName, resolvedId = stdlibId("bnd", fnName))
     val body =
-      Expr(dummySpan, List(fnRef, Ref(dummySpan, "a"), Ref(dummySpan, "b")))
+      Expr(dummySpan, List(fnRef, Ref(SourceOrigin.Synth, "a"), Ref(SourceOrigin.Synth, "b")))
     val mangledName = OpMangling.mangleOp(name, 2)
     val meta = BindingMeta(
       origin        = BindingOrigin.Operator,

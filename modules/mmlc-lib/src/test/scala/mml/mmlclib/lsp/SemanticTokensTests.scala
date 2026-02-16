@@ -116,6 +116,49 @@ class SemanticTokensTests extends BaseEffFunSuite:
     }
   }
 
+  test("no phantom tokens from ownership free wrappers") {
+    val code =
+      """
+      struct Person { name: String, age: Int };
+
+      fn main() =
+        let p = Person "fede" 25;
+        println ("Name: " ++ p.name);
+        println "---"
+      ;
+      """
+
+    semNotFailed(code).map { module =>
+      val decodedTokens = decodeTokens(SemanticTokens.compute(module))
+
+      // No two tokens on the same line should have overlapping ranges
+      val byLine = decodedTokens.groupBy(_.line)
+      byLine.foreach { (line, tokens) =>
+        val sorted = tokens.sortBy(_.col)
+        sorted.sliding(2).foreach {
+          case List(a, b) =>
+            assert(
+              a.col + a.length <= b.col,
+              s"Overlapping tokens on line $line: " +
+                s"${a.col}:${a.length}:${a.tokenType.name} overlaps ${b.col}:${b.length}:${b.tokenType.name}"
+            )
+          case _ => ()
+        }
+      }
+
+      // String literal "Name: " should have TokenType.String, not Function/Parameter
+      val nameStringTokens =
+        decodedTokens.filter(t => t.tokenType == TokenType.String && t.length == 8)
+      assert(
+        nameStringTokens.nonEmpty,
+        s"Expected string token for \"Name: \".\nAll tokens:\n" +
+          decodedTokens
+            .map(t => s"${t.line}:${t.col}:${t.length}:${t.tokenType.name}")
+            .mkString("\n")
+      )
+    }
+  }
+
   test("synthesized constructor and destructor bindings excluded from workspace symbols") {
     val code =
       """
