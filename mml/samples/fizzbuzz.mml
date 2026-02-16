@@ -10,6 +10,7 @@ fn loop(n: Int, t: Int): Unit =
   end
 ;
 
+
 fn fizzbuzz(n: Int) = loop 1 n;
 
 /* entry point */

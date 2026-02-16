@@ -6,8 +6,8 @@ fn main(): Int =
   let x = 
     if a > 1 then
       a + b 
-    else
-      "aa"
+    else  
+      2
     end;
-  x
+  x  
 ;

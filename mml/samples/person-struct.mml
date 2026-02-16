@@ -1,12 +1,19 @@
 
 struct Person {
   name: String,
-  age: Int
+  age: Int,
+  address: Address
+};
+
+struct Address {
+  city: String, 
+  street: String
 };
  
-let p = Person "fede" 25;
+let addr =  Address "San Francisco" "101 28th Street";
+let p =     Person "fede" 25 addr;
 
 fn main() =  
   println ("Name: " ++ p.name);
-  println ("Age: " ++ (int_to_str p.age))
+  println ("Age: " ++ int_to_str p.age)
 ;
