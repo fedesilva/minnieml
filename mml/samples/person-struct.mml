@@ -18,8 +18,10 @@ fn main() =
   // Cannae use after move
   // println addr.city;
 
+  // /println "--------------------------------";
   println ("Name: "   ++ p.name);
   println ("Age: "    ++ int_to_str p.age);
   println ("City: "   ++ p.address.city);
-  println ("Street: " ++ p.address.street)
+  println ("Street: " ++ p.address.street);
+  println "--------------------------------"
 ;
