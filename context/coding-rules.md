@@ -4,7 +4,7 @@
 
 ### Keep the author involved 
 
-**Before starting ANY code changing task:**
+**Before starting a CODE changing task:**
 * Present a plan
     - Don't ask confirmation to plan or research.
 * Stand by for review
@@ -12,7 +12,7 @@
 
 ### Design Reference
 
-- Read
+- Read before designing 
     - `docs/design/` directory - All files.
 
 ## General Rules
@@ -79,6 +79,12 @@ The compiler needs to be installed before it's used if changes were made.
   - `./tests/mem/run.sh all`
   - All 13 tests must pass both ASan and leaks checks
   - The script handles `mmlc clean` between modes automatically
+
+- **If a command session stalls during post-task verification**:
+  - Kill the stalled session/process and rerun the same verification command once.
+  - If the retry also fails or stalls, explicitly report it as a verification failure and ask the Author
+    to run it locally.
+  - Prefer killing and retrying over waiting indefinitely on a stuck shell interaction.
 
 ## Git usage
 
