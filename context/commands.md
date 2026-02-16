@@ -3,6 +3,7 @@
 If you are addressed with any of the following commands, follow instructions immediately.
 You will be addressed *literaly*. If the Author does not utter this commands literaly, 
 do not execute. IF in doubt ask, and again, response should be literal, DO NOT ASSUME.
+Questions are not commands.
 
   - `load context`:
     - read all the context files and

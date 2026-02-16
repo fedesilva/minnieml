@@ -16,8 +16,8 @@
   before working with this file - even if you read it before, 
   it might have changed in the meantime.
 
-* Follow the rules in those documents faithfully.
-* No exceptions
+* Follow the rules in those documents.
+* These rules are mandatory unless the Author explicitly overrides them.
 
 ## Active Tasks
 

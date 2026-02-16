@@ -4,16 +4,16 @@
 
 ### Keep the author involved 
 
-**Before starting a CODE changing task:**
-* Present a plan
-    - Don't ask confirmation to plan or research.
-* Stand by for review
-* No further action until approval is granted. No exceptions.
-
-### Design Reference
-
-- Read before designing 
-    - `docs/design/` directory - All files.
+**Execution guardrails:**
+* Questions are not commands.
+  - Do not start code or documentation changes because the Author asked a question.
+* Research needs no approval.
+  - Read code/docs, investigate, and analyze without asking permission.
+* Before code or documentation changes:
+  - Present a plan and ask for confirmation.
+  - No further editing action until approval is granted.
+* These rules are mandatory unless the Author explicitly overrides them.
+* If a rule is unclear or conflicts with the current task, raise the conflict and wait for direction.
 
 ## General Rules
 
@@ -26,7 +26,7 @@
 
 ### Reading code
 
-* No approval needed to make plans and read code.
+* No approval needed to read code/docs, research, or prepare a plan.
 
 ### Testing
 - **Framework**: Use `munit.CatsEffectSuite` with `BaseEffFunSuite` helpers
@@ -67,6 +67,10 @@ The compiler needs to be installed before it's used if changes were made.
   - Do not wait for confirmation, or ask to run this, do it or the task is not done.
 
 - **Scope**: These steps apply only when code changes were made (not for context-only updates).
+- **Fast sanity check first (mandatory)**:
+  - Before publishing the compiler or running expensive verification (benchmarks, full memory harness),
+    run the in-development compiler with `sbtn` on a relevant sample for the current change.
+  - Example: `sbtn "run run <relevant-file>"`
 - **Validate**: Run the *full* test suite.
 - **IMPORTANT**: Chain commands to avoid sbtn startup overhead: `sbtn "test; scalafmtAll; scalafixAll; mmlcPublishLocal"`
 
