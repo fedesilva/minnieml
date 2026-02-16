@@ -85,5 +85,5 @@ fn main(): Unit =
   println "Testing mixed struct ownership ...";
   run_mixed 100;
 
-  println "Struct tests passed!"
+  println "Struct tests end!"
 ;

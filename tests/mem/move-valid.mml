@@ -1,3 +1,4 @@
+
 // Valid move semantics — each owned value moved exactly once.
 fn consume(~s: String): Unit = println s;
 

@@ -26,5 +26,5 @@ fn run(n: Int): Unit =
 fn main(): Unit =
   println "Testing nested struct cleanup...";
   run 100;
-  println "Nested struct tests passed!"
+  println "Nested struct tests end!"
 ;

@@ -48,5 +48,5 @@ fn main(): Unit =
   run_all_heap 100;
   println "nested conditionals (mixed heap+literal)...";
   run_mixed_nested 100;
-  println "nested conditionals passed!"
+  println "nested conditionals end!"
 ;

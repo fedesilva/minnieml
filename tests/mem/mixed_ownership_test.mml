@@ -65,5 +65,5 @@ fn main(): Unit =
   run_heap 100;
   println "Testing alternating static/heap...";
   run_mixed 200 true;
-  println "All tests passed!"
+  println "All tests end!"
 ;
