@@ -89,6 +89,23 @@ GitHub: `https://github.com/fedesilva/minnieml/issues/220`
   Hard dependency for reliable go-to-definition and semantic token behavior around
   generated symbols (constructors, destructors, clones). See `context/specs/qa-lsp.md`
   intro note 2.
+  - **Approach:** Make `FromSource` a sum type: `Loc(span: SrcSpan)` | `Synth` (no payload).
+    AST nodes that currently extend the `FromSource` trait get a `source: FromSource` field
+    instead. Add convenience `def span: Option[SrcSpan]` for extraction. Replace all 9
+    `startsWith("__")` checks in LSP code with `Loc`/`Synth` pattern matching. Orthogonal
+    to `BindingOrigin` — provenance and binding category are separate concerns.
+  - **Subtasks:**
+    - [ ] Replace `FromSource` trait with enum: `Loc(span: SrcSpan)` | `Synth`.
+      Add `def span: Option[SrcSpan]` convenience method.
+    - [ ] Update AST nodes (`Bnd`, `FnParam`, `Field`, `TypeStruct`, `TypeDef`,
+      `TypeAlias`, `DocComment`, `DuplicateMember`, `InvalidMember`) to carry
+      `source: FromSource` field instead of extending the trait.
+    - [ ] Update all parser-produced nodes to emit `FromSource.Loc(span)`.
+    - [ ] Update `ConstructorGenerator` and `MemoryFunctionGenerator` to emit
+      `FromSource.Synth` on generated bindings and params.
+    - [ ] Replace all 9 `startsWith("__")` in `AstLookup` (8) and `SemanticTokens` (1)
+      with `FromSource.Loc`/`Synth` pattern matching.
+    - [ ] Add/update LSP tests for synthesized symbol filtering.
 
 - [ ] **PRECONDITION (related): Implement names as explicit AST nodes**:
   Architectural follow-up covered in a separate design document. Out of scope for this
