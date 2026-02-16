@@ -147,8 +147,8 @@ def prettyPrintParams(
 ): String =
   val indentStr = "  " * indent
   params
-    .map { case FnParam(span, name, typeSpec, typeAsc, _, _, consuming) =>
-      val spanStr = if showSourceSpans then printSourceSpan(span) else ""
+    .map { case p @ FnParam(_, name, typeSpec, typeAsc, _, _, consuming) =>
+      val spanStr = if showSourceSpans then printSourceSpan(p.span) else ""
       val typeStr =
         if showTypes then
           s"\n${indentStr}  typeSpec: ${prettyPrintTypeSpec(typeSpec)}\n" +

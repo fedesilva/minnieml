@@ -37,7 +37,7 @@ object ConstructorGenerator:
       TypeRef(struct.span, struct.name, resolvedId = struct.id)
     val params = struct.fields.toList.map { field =>
       FnParam(
-        field.span,
+        SourceOrigin.Synth,
         field.name,
         typeAsc = Some(field.typeSpec),
         id      = paramId(moduleName, constructorName, field.name)
@@ -67,7 +67,7 @@ object ConstructorGenerator:
     )
     Bnd(
       visibility = struct.visibility,
-      span       = struct.span,
+      source     = SourceOrigin.Synth,
       name       = constructorName,
       value      = Expr(struct.span, List(lambda)),
       typeSpec   = bodyExpr.typeSpec,
@@ -83,7 +83,7 @@ object ConstructorGenerator:
       TypeRef(td.span, td.name, resolvedId = td.id)
     val params = ns.fields.map { case (fieldName, fieldType) =>
       FnParam(
-        td.span,
+        SourceOrigin.Synth,
         fieldName,
         typeAsc = Some(fieldType),
         id      = paramId(moduleName, constructorName, fieldName)
@@ -113,7 +113,7 @@ object ConstructorGenerator:
     )
     Bnd(
       visibility = td.visibility,
-      span       = td.span,
+      source     = SourceOrigin.Synth,
       name       = constructorName,
       value      = Expr(td.span, List(lambda)),
       typeSpec   = bodyExpr.typeSpec,

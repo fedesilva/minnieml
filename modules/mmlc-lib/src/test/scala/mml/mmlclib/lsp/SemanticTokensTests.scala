@@ -52,6 +52,98 @@ class SemanticTokensTests extends BaseEffFunSuite:
     }
   }
 
+  test("statement chain params do not produce semantic tokens") {
+    val code =
+      """
+      fn main() =
+        println "a";
+        println "b";
+        println "c"
+      ;
+      """
+
+    semNotFailed(code).map { module =>
+      val decodedTokens = decodeTokens(SemanticTokens.compute(module))
+      val paramTokens   = decodedTokens.filter(_.tokenType == TokenType.Parameter)
+      assert(
+        paramTokens.isEmpty,
+        s"Synthesized __stmt params should not produce tokens, got: " +
+          paramTokens.map(t => s"${t.line}:${t.col}:${t.length}").mkString(", ")
+      )
+    }
+  }
+
+  test("string literal in function argument gets string token") {
+    val code =
+      """
+      struct Pair { name: String, value: String };
+
+      fn show(p: Pair): String = "Name: " ++ p.name;
+
+      fn main() =
+        let p = Pair "x" "y";
+        println ("Name: " ++ p.name);
+        println (show p)
+      ;
+      """
+
+    semNotFailed(code).map { module =>
+      val decodedTokens = decodeTokens(SemanticTokens.compute(module))
+      val allTokens = decodedTokens
+        .map(t => s"${t.line}:${t.col}:${t.length}:${t.tokenType.name}")
+        .mkString("\n")
+      // Find all string tokens
+      val stringTokens = decodedTokens.filter(_.tokenType == TokenType.String)
+      assert(
+        stringTokens.nonEmpty,
+        s"Expected at least one string token.\nAll tokens:\n$allTokens"
+      )
+      // Line with println ("Name: " ++ p.name) should have a string token for "Name: "
+      val printlnLine =
+        decodedTokens.find(t => t.tokenType == TokenType.Function && t.length == 7)
+      printlnLine match
+        case Some(pl) =>
+          val lineTokens = decodedTokens.filter(_.line == pl.line)
+          val hasStringOnLine = lineTokens.exists(_.tokenType == TokenType.String)
+          assert(
+            hasStringOnLine,
+            s"Line ${pl.line} should have a string token.\nLine tokens: " +
+              lineTokens.map(t => s"${t.col}:${t.length}:${t.tokenType.name}").mkString(", ") +
+              s"\nAll tokens:\n$allTokens"
+          )
+        case None =>
+          fail(s"Could not find println function token.\nAll tokens:\n$allTokens")
+    }
+  }
+
+  test("synthesized constructor and destructor bindings excluded from workspace symbols") {
+    val code =
+      """
+      struct User { name: String };
+
+      fn main(): Int = 0;
+      """
+
+    semNotFailed(code).map { module =>
+      val symbols = AstLookup.collectSymbols(module, "file:///test.mml")
+      val names   = symbols.map(_.name)
+      assert(names.contains("main"), s"Expected 'main' in symbols: $names")
+      assert(names.contains("User"), s"Expected 'User' in symbols: $names")
+      assert(
+        !names.exists(_.startsWith("__mk_")),
+        s"Synthesized constructors should be excluded: $names"
+      )
+      assert(
+        !names.exists(_.startsWith("__free_")),
+        s"Synthesized destructors should be excluded: $names"
+      )
+      assert(
+        !names.exists(_.startsWith("__clone_")),
+        s"Synthesized clone fns should be excluded: $names"
+      )
+    }
+  }
+
   private case class DecodedToken(
     line:      Int,
     col:       Int,

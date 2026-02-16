@@ -30,6 +30,19 @@ trait FromSource extends AstNode {
   def span: SrcSpan
 }
 
+/** Distinguishes AST nodes parsed from source vs synthesized by the compiler. */
+enum SourceOrigin derives CanEqual:
+  case Loc(span: SrcSpan)
+  case Synth
+
+  def spanOpt: Option[SrcSpan] = this match
+    case Loc(s) => Some(s)
+    case Synth => None
+
+  def isFromSource: Boolean = this match
+    case Loc(_) => true
+    case Synth => false
+
 /** Visibility control shared by modules and members.
   *
   *   - `pub`: Importable and referenceable from any module.
@@ -65,7 +78,7 @@ trait Decl extends Member, Typeable, Resolvable:
   def visibility: Visibility
 
 case class FnParam(
-  span:       SrcSpan,
+  source:     SourceOrigin,
   name:       String,
   typeSpec:   Option[Type]       = None,
   typeAsc:    Option[Type]       = None,
@@ -75,7 +88,11 @@ case class FnParam(
 ) extends AstNode,
       FromSource,
       Typeable,
-      Resolvable
+      Resolvable:
+  private val syntheticSpan = SrcSpan(SrcPoint(0, 0, -1), SrcPoint(0, 0, -1))
+  def span: SrcSpan = source match
+    case SourceOrigin.Loc(s) => s
+    case SourceOrigin.Synth => syntheticSpan
 
 enum Associativity derives CanEqual:
   case Left

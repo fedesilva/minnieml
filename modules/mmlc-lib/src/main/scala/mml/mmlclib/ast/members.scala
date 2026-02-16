@@ -2,7 +2,7 @@ package mml.mmlclib.ast
 
 case class Bnd(
   visibility: Visibility          = Visibility.Protected,
-  span:       SrcSpan,
+  source:     SourceOrigin,
   name:       String,
   value:      Expr,
   typeSpec:   Option[Type]        = None,
@@ -11,7 +11,11 @@ case class Bnd(
   meta:       Option[BindingMeta] = None,
   id:         Option[String]      = None
 ) extends Decl,
-      FromSource
+      FromSource:
+  private val syntheticSpan = SrcSpan(SrcPoint(0, 0, -1), SrcPoint(0, 0, -1))
+  def span: SrcSpan = source match
+    case SourceOrigin.Loc(s) => s
+    case SourceOrigin.Synth => syntheticSpan
 
 /** Represents a duplicate member declaration. The first occurrence remains valid and referenceable,
   * subsequent duplicates are wrapped in this node.

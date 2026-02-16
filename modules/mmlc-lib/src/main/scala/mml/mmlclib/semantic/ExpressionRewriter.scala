@@ -91,7 +91,7 @@ object ExpressionRewriter:
                 )
               case None =>
                 val syntheticParams = remainingParams.zipWithIndex.map { (p, i) =>
-                  FnParam(span, s"$$p$i", typeAsc = p.typeAsc, typeSpec = p.typeSpec)
+                  FnParam(SourceOrigin.Synth, s"$$p$i", typeAsc = p.typeAsc, typeSpec = p.typeSpec)
                 }
                 // Pre-resolve synthetic Refs to their FnParams (RefResolver already ran)
                 val syntheticRefs = syntheticParams.map { param =>

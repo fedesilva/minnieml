@@ -85,27 +85,33 @@ Quality assurance and bug fixes for the LSP server.
 
 GitHub: `https://github.com/fedesilva/minnieml/issues/220`
 
-- [ ] **PRECONDITION: Evolve `FromSource` to distinguish real source spans vs synthesized origins**:
+- [x] **PRECONDITION: Evolve `FromSource` to distinguish real source spans vs synthesized origins** [COMPLETE]:
   Hard dependency for reliable go-to-definition and semantic token behavior around
   generated symbols (constructors, destructors, clones). See `context/specs/qa-lsp.md`
   intro note 2.
-  - **Approach:** Make `FromSource` a sum type: `Loc(span: SrcSpan)` | `Synth` (no payload).
-    AST nodes that currently extend the `FromSource` trait get a `source: FromSource` field
-    instead. Add convenience `def span: Option[SrcSpan]` for extraction. Replace all 9
-    `startsWith("__")` checks in LSP code with `Loc`/`Synth` pattern matching. Orthogonal
-    to `BindingOrigin` — provenance and binding category are separate concerns.
+  - **Approach (revised):** Keep `FromSource` trait intact (used in 26+ pattern matches
+    across error printers, diagnostics, etc.). Add new `enum SourceOrigin` with
+    `Loc(span: SrcSpan)` | `Synth`. Only `Bnd` and `FnParam` get `source: SourceOrigin`
+    field (replacing their `span: SrcSpan` field); they still extend `FromSource` via
+    computed `def span`. Replace all 9 `startsWith("__")` checks in LSP code with
+    `source`-based checks. Orthogonal to `BindingOrigin`.
   - **Subtasks:**
-    - [ ] Replace `FromSource` trait with enum: `Loc(span: SrcSpan)` | `Synth`.
-      Add `def span: Option[SrcSpan]` convenience method.
-    - [ ] Update AST nodes (`Bnd`, `FnParam`, `Field`, `TypeStruct`, `TypeDef`,
-      `TypeAlias`, `DocComment`, `DuplicateMember`, `InvalidMember`) to carry
-      `source: FromSource` field instead of extending the trait.
-    - [ ] Update all parser-produced nodes to emit `FromSource.Loc(span)`.
-    - [ ] Update `ConstructorGenerator` and `MemoryFunctionGenerator` to emit
-      `FromSource.Synth` on generated bindings and params.
-    - [ ] Replace all 9 `startsWith("__")` in `AstLookup` (8) and `SemanticTokens` (1)
-      with `FromSource.Loc`/`Synth` pattern matching.
-    - [ ] Add/update LSP tests for synthesized symbol filtering.
+    - [x] Create `enum SourceOrigin` in `ast/common.scala` with `Loc`/`Synth` cases.
+    - [x] Update `FnParam`: `span: SrcSpan` → `source: SourceOrigin`, computed `def span`.
+    - [x] Update `Bnd`: `span: SrcSpan` → `source: SourceOrigin`, computed `def span`.
+    - [x] Update parser construction sites (4 Bnd + 3 FnParam) → `SourceOrigin.Loc(...)`.
+    - [x] Update `ConstructorGenerator` (2 Bnd + 2 FnParam) → `SourceOrigin.Synth`.
+    - [x] Update `MemoryFunctionGenerator` (2 Bnd + 3 FnParam) → `SourceOrigin.Synth`.
+    - [x] Update `OwnershipAnalyzer` (5 FnParam + 1 Bnd pattern match) → `SourceOrigin.Synth`.
+    - [x] Update `ExpressionRewriter` (1 FnParam) → `SourceOrigin.Synth`.
+    - [x] Update stdlib in `semantic/package.scala` (~60 FnParam + 5 Bnd) → `SourceOrigin.Synth`.
+    - [x] Replace 8 `startsWith("__")` in `AstLookup.scala` with `source`-based checks.
+    - [x] Replace 1 `startsWith("__")` in `SemanticTokens.scala` with `source`-based check.
+    - [x] Update `Member.scala` prettyprint FnParam pattern match.
+    - [x] Compile and fix remaining construction sites: statement chain param (`expressions.scala`)
+      and eta-expansion params (`ExpressionRewriter.scala`) changed from `Loc` to `Synth`.
+    - [x] Run full test suite (`sbtn "test; scalafmtAll; scalafixAll"`): 266/266 pass.
+    - [x] Add/update LSP tests for synthesized symbol filtering.
 
 - [ ] **PRECONDITION (related): Implement names as explicit AST nodes**:
   Architectural follow-up covered in a separate design document. Out of scope for this
@@ -115,6 +121,14 @@ GitHub: `https://github.com/fedesilva/minnieml/issues/220`
   Constructor is synthetic (`__mk_<Name>`), LSP should resolve through it to the
   `TypeStruct` declaration. Blocked by `FromSource` precondition.
   See `context/specs/qa-lsp.md` repro case D.
+
+- [ ] **BUG: Synthesized constructor body leaks overlapping tokens onto user code**:
+  `collectFromBnd` traverses the body of synthesized Bnds (constructors, destructors)
+  even though the Bnd itself is filtered. The body Lambda/Expr/DataConstructor reuse
+  `struct.span` from the source struct, producing stray function/parameter tokens that
+  overlap with user code on the same line. Observed: `println ("Name: " ++ p.name)` gets
+  a length-11 function token at the `println` position (from the constructor body traversal),
+  covering the string literal. See `context/specs/qa-lsp.md` finding 6.
 
 - [ ] **Investigate semantic token bugs**: Declaration positions are guessed (not
   span-derived), conditional keyword tokenization is brittle on multiline, unresolved
@@ -140,6 +154,37 @@ GitHub: `https://github.com/fedesilva/minnieml/issues/235`
 ---
 
 ## Recent Changes
+
+### 2026-02-16 Evolve `FromSource` to distinguish real vs synthesized origins [COMPLETE]
+
+- **Problem:** LSP code used 9 brittle `startsWith("__")` checks to filter synthesized symbols
+  (constructors, destructors, clones, statement chain params). No AST-level distinction between
+  source-backed and compiler-generated `Bnd`/`FnParam` nodes.
+- **Fix:** Added `enum SourceOrigin` (`Loc(span)` | `Synth`) to `ast/common.scala`. Replaced
+  `span: SrcSpan` field in `Bnd` and `FnParam` with `source: SourceOrigin`, keeping `FromSource`
+  trait via computed `def span`. All construction sites updated across parser, semantic phases,
+  and stdlib. All `startsWith("__")` LSP checks replaced with `source`-based checks.
+- **Changes:**
+  - `ast/common.scala`: added `enum SourceOrigin` with `Loc`/`Synth` cases, `spanOpt`, `isFromSource`
+  - `ast/members.scala`: `Bnd` field `span` → `source: SourceOrigin`, computed `def span`
+  - `ast/common.scala`: `FnParam` field `span` → `source: SourceOrigin`, computed `def span`
+  - `parser/expressions.scala`: statement chain param → `Synth` (was `Loc`, caused stray tokens)
+  - `parser/members.scala`: 4 Bnd + 3 FnParam → `SourceOrigin.Loc(...)`
+  - `semantic/ConstructorGenerator.scala`: 2 Bnd + 2 FnParam → `Synth`
+  - `semantic/MemoryFunctionGenerator.scala`: 2 Bnd + 3 FnParam → `Synth`
+  - `semantic/OwnershipAnalyzer.scala`: 5 FnParam + 1 Bnd → `Synth`
+  - `semantic/ExpressionRewriter.scala`: eta-expansion FnParam → `Synth`
+  - `semantic/package.scala`: ~60 FnParam + 5 Bnd (stdlib) → `Synth`
+  - `lsp/AstLookup.scala`: 8 `startsWith("__")` → `source`-based checks
+  - `lsp/SemanticTokens.scala`: 1 `startsWith("__")` → `source.isFromSource` check
+  - `util/prettyprint/ast/Member.scala`: FnParam pattern match updated
+  - `mml_runtime.c`: moved `flush` before `mml_sys_flush` (forward-reference error from earlier reorder)
+- **Tests added:**
+  - `SemanticTokensTests`: "statement chain params do not produce semantic tokens"
+  - `SemanticTokensTests`: "synthesized constructor and destructor bindings excluded from workspace symbols"
+- **Verification:**
+  - `sbtn "test; scalafmtAll; scalafixAll; mmlcPublishLocal"` passed (266/266)
+  - `make -C benchmark clean && make -C benchmark mml` passed (7/7)
 
 ### 2026-02-16 Constructor borrowed-arg consumption semantics [COMPLETE]
 

@@ -44,7 +44,7 @@ private[parser] def letBindingP(info: SourceInfo)(using P[Any]): P[Member] =
         case Right(name) =>
           Bnd(
             visibility = vis.getOrElse(Visibility.Protected),
-            span(startPoint, endPoint),
+            SourceOrigin.Loc(span(startPoint, endPoint)),
             name,
             expr,
             expr.typeSpec,
@@ -60,7 +60,7 @@ private[parser] def fnParamP(info: SourceInfo)(using P[Any]): P[FnParam] =
     )
   ).map { case (start, doc, tilde, name, t, end, _) =>
     FnParam(
-      span       = span(start, end),
+      source     = SourceOrigin.Loc(span(start, end)),
       name       = name,
       typeAsc    = t,
       docComment = doc,
@@ -146,7 +146,7 @@ private[parser] def fnDefP(info: SourceInfo)(using P[Any]): P[Member] =
           )
           Bnd(
             visibility = vis.getOrElse(Visibility.Protected),
-            span       = bndSpan,
+            source     = SourceOrigin.Loc(bndSpan),
             name       = fnName,
             value      = Expr(lambdaSpan, List(lambda)),
             typeSpec   = bodyExpr.typeSpec,
@@ -239,7 +239,7 @@ private[parser] def binOpDefP(info: SourceInfo)(using P[Any]): P[Member] =
           )
           Bnd(
             visibility = vis.getOrElse(Visibility.Protected),
-            span       = bndSpan,
+            source     = SourceOrigin.Loc(bndSpan),
             name       = mangledName,
             value      = Expr(lambdaSpan, List(lambda)),
             typeSpec   = bodyExpr.typeSpec,
@@ -323,7 +323,7 @@ private[parser] def unaryOpP(info: SourceInfo)(using P[Any]): P[Member] =
           )
           Bnd(
             visibility = vis.getOrElse(Visibility.Protected),
-            span       = bndSpan,
+            source     = SourceOrigin.Loc(bndSpan),
             name       = mangledName,
             value      = Expr(lambdaSpan, List(lambda)),
             typeSpec   = bodyExpr.typeSpec,

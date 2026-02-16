@@ -72,7 +72,7 @@ object AstLookup:
         // (i.e., on the binding name itself). If inside value span, return what findInExpr returns
         // (None for comments/whitespace).
         if containsPosition(bnd.value.span, line, col) then findInExpr(bnd.value, line, col)
-        else if bnd.name.startsWith("__") then None
+        else if bnd.source == SourceOrigin.Synth then None
         else Some(LookupResult(bnd.typeSpec, Some(bnd.name), bnd.span))
 
       case td: TypeDef =>
@@ -203,7 +203,7 @@ object AstLookup:
 
   private def findInParams(params: List[FnParam], line: Int, col: Int): Option[LookupResult] =
     params.collectFirst {
-      case p if containsPosition(p.span, line, col) && !p.name.startsWith("__") =>
+      case p if containsPosition(p.span, line, col) && p.source.isFromSource =>
         LookupResult(p.typeSpec, Some(p.name), p.span)
     }
 
@@ -391,7 +391,7 @@ object AstLookup:
   ): List[SrcSpan] =
     params
       .collectFirst {
-        case p if containsPosition(p.span, line, col) && !p.name.startsWith("__") =>
+        case p if containsPosition(p.span, line, col) && p.source.isFromSource =>
           val typeDefs = p.typeAsc.toList.flatMap(findDefinitionInType(_, line, col, module))
           if typeDefs.nonEmpty then typeDefs else spanForResolvable(p).toList
       }
@@ -502,8 +502,8 @@ object AstLookup:
 
   private def spanForResolvable(resolvable: Resolvable): Option[SrcSpan] =
     resolvable match
-      case bnd:   Bnd if bnd.name.startsWith("__") => None
-      case param: FnParam if param.name.startsWith("__") => None
+      case bnd:   Bnd if bnd.source == SourceOrigin.Synth => None
+      case param: FnParam if param.source == SourceOrigin.Synth => None
       case fs:    FromSource => Some(fs.span)
       case _ => None
 
@@ -1042,8 +1042,8 @@ object AstLookup:
 
   private def valueTargetFromResolvable(resolvable: Resolvable): Option[ValueTarget] =
     resolvable match
-      case bnd:   Bnd if bnd.name.startsWith("__") => None
-      case param: FnParam if param.name.startsWith("__") => None
+      case bnd:   Bnd if bnd.source == SourceOrigin.Synth => None
+      case param: FnParam if param.source == SourceOrigin.Synth => None
       case _ => resolvable.id.map(ValueTarget(_))
 
   private def typeTargetFromRef(ref: TypeRef, module: Module): Option[ReferenceTarget] =
@@ -1061,7 +1061,7 @@ object AstLookup:
   /** Collect all symbols in a module for workspace/symbol. Uses indexes, skips stdlib. */
   def collectSymbols(module: Module, uri: String): List[SymbolInformation] =
     val valueSymbols = module.resolvables.resolvables.values.toList.collect {
-      case bnd: Bnd if !isStdlib(bnd.id) && !bnd.name.startsWith("__") =>
+      case bnd: Bnd if !isStdlib(bnd.id) && bnd.source.isFromSource =>
         val isFunction = bnd.value.terms.headOption.exists(_.isInstanceOf[Lambda])
         val isOperator = bnd.name.exists(c => !c.isLetterOrDigit && c != '_')
         val kind =

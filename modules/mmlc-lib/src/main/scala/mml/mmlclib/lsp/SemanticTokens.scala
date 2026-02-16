@@ -208,7 +208,7 @@ object SemanticTokens:
   private def collectFromLambda(lambda: Lambda, resolvables: ResolvablesIndex): List[RawToken] =
     val paramTokens = lambda.params.flatMap { param =>
       // Skip params with invalid/empty spans or synthetic names (e.g., statement chain params)
-      if param.span.start.line > 0 && param.span.start.col > 0 && !param.name.startsWith("__") then
+      if param.span.start.line > 0 && param.span.start.col > 0 && param.source.isFromSource then
         val nameToken = RawToken(
           line      = param.span.start.line,
           col       = param.span.start.col,

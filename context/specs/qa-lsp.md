@@ -194,6 +194,24 @@ declaration.
    - remove `var`/`while` in `LspHandler`, `JsonRpc`, and token delta encoding
    - use tail-recursive/state-threaded helpers and expression-oriented flow only
 
+### 6. High: Synthesized constructor/destructor body traversal leaks overlapping tokens
+
+- `modules/mmlc-lib/src/main/scala/mml/mmlclib/lsp/SemanticTokens.scala:65`
+
+`collectFromBnd` filters the keyword and name tokens for synthesized Bnds (span is synthetic,
+`tokenAtPos` returns `None`). But it unconditionally calls `collectFromExpr(bnd.value, ...)`,
+which traverses the constructor's body Lambda, DataConstructor, and type ascription. These
+inner nodes reuse `struct.span` from the source struct declaration, producing stray tokens
+at the struct's source position.
+
+When the struct declaration happens to share a line position with user code (e.g., same column
+offset), these stray tokens overlap with real tokens. Observed: `println ("Name: " ++ p.name)`
+gets three tokens at col 9 — a length-11 function token (from the constructor body), a
+length-1 parameter token, and the correct length-7 function token for `println`. The length-11
+token extends over the `"Name: "` string literal, causing the editor to color it as a function.
+
+**Fix:** `collectFromBnd` should skip body traversal when `bnd.source == SourceOrigin.Synth`.
+
 ## Functional Programming Ethos Review Summary
 
 - **Good:** `DocumentManager` uses `Ref[IO, Map[...]]` and pure state updates

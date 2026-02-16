@@ -110,13 +110,6 @@ static Buffer get_stdout_buffer(void)
     return stdout_buffer;
 }
 
-void mml_sys_flush()
-{
-    Buffer out = get_stdout_buffer();
-    if (out)
-        flush(out);
-}
-
 void flush(Buffer b)
 {
     if (b && b->data && b->length > 0)
@@ -124,6 +117,13 @@ void flush(Buffer b)
         write(b->fd, b->data, b->length);
         b->length = 0;
     }
+}
+
+void mml_sys_flush()
+{
+    Buffer out = get_stdout_buffer();
+    if (out)
+        flush(out);
 }
 
 
