@@ -110,6 +110,13 @@ static Buffer get_stdout_buffer(void)
     return stdout_buffer;
 }
 
+void mml_sys_flush()
+{
+    Buffer out = get_stdout_buffer();
+    if (out)
+        flush(out);
+}
+
 void flush(Buffer b)
 {
     if (b && b->data && b->length > 0)
@@ -119,12 +126,7 @@ void flush(Buffer b)
     }
 }
 
-void mml_sys_flush()
-{
-    Buffer out = get_stdout_buffer();
-    if (out)
-        flush(out);
-}
+
 
 FORCE_INLINE void buffer_write(Buffer b, String s)
 {
