@@ -662,8 +662,16 @@ object OwnershipAnalyzer:
                     List(SemanticError.UseAfterMove(ref, movedAt, PhaseName))
                   case None => Nil
                 (scope, errors)
+              case Some(OwnershipState.Borrowed) =>
+                // Borrowed refs cannot satisfy consuming params.
+                if scope.insideTempWrapper then (scope, Nil)
+                else
+                  (
+                    scope,
+                    List(SemanticError.ConsumingParamNotLastUse(consumingParam, ref, PhaseName))
+                  )
               case _ =>
-                // Passing a borrowed or literal to consuming param - allowed
+                // Passing a literal or untracked expression to consuming param - allowed
                 (scope, Nil)
           case _ =>
             // Complex expression - can't track ownership
@@ -694,17 +702,17 @@ object OwnershipAnalyzer:
       .exists(_.body.terms.exists(_.isInstanceOf[DataConstructor]))
 
   /** Check if an argument expression needs auto-cloning for a consuming constructor param. Returns
-    * true for non-owned values: literals, borrowed refs, field accesses.
+    * true for literal string values.
     */
   private def argNeedsClone(argExpr: Expr, scope: OwnershipScope): Boolean =
     argExpr.terms.headOption match
       case Some(_: LiteralString) => true
       case Some(ref: Ref) =>
-        if ref.qualifier.isDefined then true // field access
+        if ref.qualifier.isDefined then false
         else
           scope.getState(ref.name) match
             case Some(OwnershipState.Owned) => false // will be moved
-            case Some(OwnershipState.Borrowed) | Some(OwnershipState.Literal) => true
+            case Some(OwnershipState.Borrowed) | Some(OwnershipState.Literal) => false
             case _ => false
       case _ => false
 

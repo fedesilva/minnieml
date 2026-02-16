@@ -10,10 +10,16 @@ struct Address {
   street: String
 };
  
-let addr =  Address "San Francisco" "101 28th Street";
-let p =     Person "fede" 25 addr;
-
 fn main() =  
-  println ("Name: " ++ p.name);
-  println ("Age: " ++ int_to_str p.age)
+
+  let addr =  Address "San Francisco" "101 28th Street";
+  let p =     Person "fede" 25 addr;
+
+  // Cannae use after move
+  // println addr.city;
+
+  println ("Name: "   ++ p.name);
+  println ("Age: "    ++ int_to_str p.age);
+  println ("City: "   ++ p.address.city);
+  println ("Street: " ++ p.address.street)
 ;

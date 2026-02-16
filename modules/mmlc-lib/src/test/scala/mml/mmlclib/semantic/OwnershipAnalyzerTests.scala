@@ -23,11 +23,11 @@ class OwnershipAnalyzerTests extends BaseEffFunSuite:
 
   private def countFreesOf(name: String, term: Term): Int =
     term match
-      //FIXME:QA: General, matching with so many _,_ is an antipattern.
+      // FIXME:QA: General, matching with so many _,_ is an antipattern.
       //       -- stable references are best: ref: Ref, then ref.argname)
       //          not sure if this is possible.
       //       -- another posibility, since it seems we have a patten (no pun intended)
-      //          in the pattern matches below, we can use custom extractors like expression rewriter uses, 
+      //          in the pattern matches below, we can use custom extractors like expression rewriter uses,
       //          but defined for this module
       case App(_, fn: Ref, Expr(_, List(Ref(_, argName, _, _, _, _, _)), _, _), _, _)
           // FIXME:QA: brittle string match.
@@ -54,23 +54,6 @@ class OwnershipAnalyzerTests extends BaseEffFunSuite:
         containsCloneString(cond) || containsCloneString(ifTrue) || containsCloneString(ifFalse)
       case Tuple(_, elements, _, _) => elements.exists(containsCloneString)
       case _ => false
-
-  private def cloneResolvedIdsOf(cloneName: String, term: Term): List[String] =
-    term match
-      case Ref(_, name, _, _, resolvedId, _, _) if name == cloneName =>
-        resolvedId.toList
-      case App(_, fn, arg, _, _) =>
-        cloneResolvedIdsOf(cloneName, fn) ++ cloneResolvedIdsOf(cloneName, arg)
-      case Expr(_, terms, _, _) => terms.flatMap(cloneResolvedIdsOf(cloneName, _))
-      case Lambda(_, _, body, _, _, _, _) => cloneResolvedIdsOf(cloneName, body)
-      case TermGroup(_, inner, _) => cloneResolvedIdsOf(cloneName, inner)
-      case Cond(_, cond, ifTrue, ifFalse, _, _) =>
-        cloneResolvedIdsOf(cloneName, cond) ++
-          cloneResolvedIdsOf(cloneName, ifTrue) ++
-          cloneResolvedIdsOf(cloneName, ifFalse)
-      case Tuple(_, elements, _, _) =>
-        elements.toList.flatMap(cloneResolvedIdsOf(cloneName, _))
-      case _ => Nil
 
   private def containsRefName(name: String)(term: Term): Boolean =
     term match
@@ -518,7 +501,7 @@ class OwnershipAnalyzerTests extends BaseEffFunSuite:
     }
   }
 
-  test("constructor auto-clones borrowed args") {
+  test("constructor rejects borrowed args for consuming params") {
     val code =
       """
         struct User { name: String, role: String };
@@ -530,20 +513,21 @@ class OwnershipAnalyzerTests extends BaseEffFunSuite:
         fn main(): Unit = println "ok";
       """
 
-    semNotFailed(code).map { module =>
-      val mkUserBody = module.members.collectFirst {
-        case b: Bnd if b.name == "make_user" =>
-          b.value.terms.collectFirst { case l: Lambda => l.body }.get
-      }.get
-
+    semState(code).map { result =>
+      val consumeErrors = result.errors.collect { case e: SemanticError.ConsumingParamNotLastUse =>
+        e
+      }
       assert(
-        containsCloneString(mkUserBody),
-        "borrowed args to constructor should be auto-cloned"
+        consumeErrors.nonEmpty,
+        s"Expected consuming-param ownership error for borrowed constructor args, got: ${result.errors}"
       )
+      val names = consumeErrors.map(_.ref.name).toSet
+      assert(names.contains("n"), s"Expected borrowed arg 'n' to be rejected, got: $names")
+      assert(names.contains("r"), s"Expected borrowed arg 'r' to be rejected, got: $names")
     }
   }
 
-  test("constructor clone of user struct resolves to module-local clone fn") {
+  test("constructor rejects borrowed user-struct args") {
     val code =
       """
         struct User { name: String, role: String };
@@ -556,17 +540,13 @@ class OwnershipAnalyzerTests extends BaseEffFunSuite:
         fn main(): Unit = println "ok";
       """
 
-    semNotFailed(code).map { module =>
-      val wrapBody = module.members.collectFirst {
-        case b: Bnd if b.name == "wrap" =>
-          b.value.terms.collectFirst { case l: Lambda => l.body }.get
-      }.get
-
-      val ids = cloneResolvedIdsOf("__clone_User", wrapBody)
-      assert(ids.nonEmpty, "expected __clone_User call for borrowed constructor arg")
+    semState(code).map { result =>
+      val consumeErrors = result.errors.collect { case e: SemanticError.ConsumingParamNotLastUse =>
+        e
+      }
       assert(
-        ids.exists(!_.startsWith("stdlib::")),
-        s"expected module-local __clone_User id, got: $ids"
+        consumeErrors.exists(_.ref.name == "u"),
+        s"Expected borrowed user-struct arg 'u' to be rejected, got: ${result.errors}"
       )
     }
   }

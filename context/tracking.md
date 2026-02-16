@@ -30,10 +30,7 @@ GitHub: `https://github.com/fedesilva/minnieml/issues/134`
 - Borrow by default, explicit move with `~` syntax
 - OwnershipAnalyzer phase inserts `__free_T` calls into AST
 - No codegen changes - just AST rewriting
-
-
-- [x] **Edge case testing** [COMPLETE]: see `mem-next.md` for test matrix.
-  All listed cases are covered (Author confirmation on 2026-02-15).
+  
 - [ ] **Define and enforce global borrow-only ownership semantics**: document and implement
   no-move behavior for top-level bindings passed to consuming params.
   See `context/spaces/mem-globals-no-move.md`.
@@ -76,7 +73,7 @@ GitHub: `https://github.com/fedesilva/minnieml/issues/134`
 - [x] **BUG: user-struct `__clone_*` resolution** [COMPLETE]: `wrapWithClone` resolves to
   `stdlib::bnd::__clone_<T>` even when `__clone_<T>` is generated in the current module,
   causing unresolved symbols for auto-cloned user-defined heap structs.
-- [ ] **BUG: constructor auto-clones borrowed args**: `analyzeRegularApp` wraps
+- [x] **BUG: constructor auto-clones borrowed args** [COMPLETE]: `analyzeRegularApp` wraps
   non-owned (borrowed) args to consuming constructor params with `wrapWithClone`. This is
   wrong: constructors take ownership, so passing a borrowed value should be an error, not
   a silent clone. Literals (e.g. `"hello"`) still need heap allocation but that's a
@@ -102,6 +99,32 @@ GitHub: `https://github.com/fedesilva/minnieml/issues/235`
 ---
 
 ## Recent Changes
+
+### 2026-02-16 Constructor borrowed-arg consumption semantics [COMPLETE]
+
+- **Problem:** Constructors were auto-cloning borrowed arguments passed to consuming params,
+  masking ownership errors and allowing invalid borrowed consumption.
+- **Fix:** Updated ownership analysis so borrowed refs passed to consuming constructor params are
+  rejected via existing consuming-ownership diagnostics, while retaining literal string
+  auto-clone behavior and preserving temp-wrapper internals.
+- **Changes:**
+  - `modules/mmlc-lib/src/main/scala/mml/mmlclib/semantic/OwnershipAnalyzer.scala`:
+    reject borrowed refs in `handleConsumingParam`; narrow constructor clone trigger to literal
+    strings only.
+  - `modules/mmlc-lib/src/test/scala/mml/mmlclib/semantic/OwnershipAnalyzerTests.scala`:
+    replaced borrowed constructor auto-clone assertions with rejection tests for borrowed args
+    (`n`, `r`, and user-struct `u`).
+  - `modules/mmlc-lib/src/test/scala/mml/mmlclib/codegen/StructCodegenTest.scala`:
+    updated constructor fixture to pass owned input (`int_to_str`) to satisfy consuming semantics.
+  - `context/coding-rules.md`:
+    added post-task rule for stalled verification sessions (kill and retry once; report clearly
+    if still blocked).
+- **Verification:**
+  - `sbtn "testOnly mml.mmlclib.semantic.OwnershipAnalyzerTests"` passed (34/34).
+  - `sbtn "test; scalafmtAll; scalafixAll; mmlcPublishLocal"` passed (264/264).
+  - `make -C benchmark clean` passed.
+  - `make -C benchmark mml` passed.
+  - `./tests/mem/run.sh all` passed (ASan 15/15, Leaks 15/15).
 
 ### 2026-02-15 Memory edge-case testing marked complete [COMPLETE]
 

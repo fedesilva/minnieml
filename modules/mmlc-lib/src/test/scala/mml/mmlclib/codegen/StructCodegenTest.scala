@@ -26,8 +26,8 @@ class StructCodegenTest extends BaseEffFunSuite:
         age: Int
       };
 
-      fn makePerson(name: String, age: Int): Person =
-        Person name age
+      fn makePerson(age: Int): Person =
+        Person (int_to_str age) age
       ;
       """
 
