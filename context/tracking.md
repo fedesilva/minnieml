@@ -60,6 +60,11 @@ GitHub: `https://github.com/fedesilva/minnieml/issues/220`
   When the extension detects the MML language server crashed or is no longer running,
   automatically restart it (and keep current manual restart command as fallback).
 
+- [ ] **VS Code: add verbose LSP client console logging (cpptools-style)**:
+  Log request/notification flow in the VS Code extension output channel with entries like
+  `(received)`, `(invoked)`, and `Sending response` including method names and request IDs,
+  aligned with current server-side LSP logging verbosity.
+
 - [ ] **Investigate semantic token bugs**: ~~Declaration positions are guessed~~ (fixed
   by Name AST node, `4649872`), ~~LSP mutable-state/imperative flow~~ (fixed in current
   pass). Remaining: conditional keyword tokenization is brittle on multiline, unresolved refs
