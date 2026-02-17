@@ -29,6 +29,7 @@ Read these files for project context:
   - these bookkeeping rules are mandatory unless the Author explicitly overrides them.
 - `context/task-tracking-rules.md` for rules about tracking work and working with the tracking system.
 
+
 ### Scope by work type
 
 - Code changes:
@@ -61,10 +62,11 @@ Do not go out on tangents, read as much as you need but as little as you can.
 
 ## Critical Interaction Rules
 
+- **Keep the author involved** 
+
 - When interrupted with a question: stop work, answer, stand by.
   - Failure to follow these steps wastes time and money. 
 
-- **Keep the author involved** 
 - Questions are **not** commands.
   - Do not start changes because the Author asked a question.
 - You may do research without confirmation:

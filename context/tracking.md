@@ -41,7 +41,7 @@ Quality assurance and bug fixes for the LSP server.
 
 GitHub: `https://github.com/fedesilva/minnieml/issues/220`
 
-- [ ] **BUG: Synthesized constructor body leaks overlapping tokens onto user code**:
+- [x] **BUG: Synthesized constructor body leaks overlapping tokens onto user code** [COMPLETE]:
   `collectFromBnd` traversed the body of synthesized Bnds (constructors, destructors).
   The body Lambda/Expr/DataConstructor reuse `struct.span` from the source struct,
   producing stray function/parameter tokens that overlap with user code on the same line.
