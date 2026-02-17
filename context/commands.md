@@ -10,9 +10,6 @@ Questions are not commands.
         pay particular attention to current work specified in the tracking document.
     - read code related to the current task to be informed and ready, and wait for instructions.
 
-  - `reload context` 
-    - follow `load context` instructions
-    - even if you already did it, there might be updates.
 
   - `update tracking`
     - log any missing already complete and validated task.
