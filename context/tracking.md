@@ -35,41 +35,6 @@ GitHub: `https://github.com/fedesilva/minnieml/issues/134`
   no-move behavior for top-level bindings passed to consuming params.
   See `context/spaces/mem-globals-no-move.md`.
 
-### LSP QA and Bug Fixing
-
-Quality assurance and bug fixes for the LSP server.
-
-GitHub: `https://github.com/fedesilva/minnieml/issues/220`
-
-- [x] **BUG: Synthesized constructor body leaks overlapping tokens onto user code** [COMPLETE]:
-  `collectFromBnd` traversed the body of synthesized Bnds (constructors, destructors).
-  The body Lambda/Expr/DataConstructor reuse `struct.span` from the source struct,
-  producing stray function/parameter tokens that overlap with user code on the same line.
-  See `context/specs/qa-lsp.md` finding 6.
-
-- [x] **BUG: Go-to-definition on non-source symbols navigates to next term** [COMPLETE]:
-  Repro was `mml/samples/person-struct.mml`, line 23, click `int_to_str`; backend used to
-  jump to next term (`p`) instead of returning no definition. Backend now returns no definition
-  for non-source-backed targets (`AstLookup` + regression test).
-
-- [x] **VS Code: show popup when go-to-definition has no target** [COMPLETE]:
-  In `tooling/vscode`, when `textDocument/definition` resolves to no location for the
-  symbol under cursor, show `definition not found for: <<symbol>>` instead of silent no-op.
-
-- [x] **VS Code: restart language server automatically after crash/detect-stop** [COMPLETE]:
-  When the extension detects the MML language server crashed or is no longer running,
-  automatically restart it (and keep current manual restart command as fallback).
-
-- [x] **VS Code: add verbose LSP client console logging (cpptools-style)** [COMPLETE]:
-  Log request/notification flow in the VS Code extension output channel with entries like
-  `(received)`, `(invoked)`, and `Sending response` including method names and request IDs,
-  aligned with current server-side LSP logging verbosity.
-
-- [ ] **Investigate semantic token bugs**: ~~Declaration positions are guessed~~ (fixed
-  by Name AST node, `4649872`), ~~LSP mutable-state/imperative flow~~ (fixed in current
-  pass). Remaining: conditional keyword tokenization is brittle on multiline, unresolved refs
-  get no token. See `context/specs/qa-lsp.md` findings 2–3, 5.
-
 ### QA Debt
 
 Quality debt tasks tracked from QA misses.
