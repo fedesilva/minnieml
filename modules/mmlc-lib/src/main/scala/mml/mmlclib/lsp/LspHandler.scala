@@ -18,32 +18,41 @@ class LspHandler(
   logger:          Logger[IO]
 ):
 
-  private var initialized = false
-  private var shutdown    = false
+  private case class HandlerState(
+    initialized: Boolean,
+    shutdown:    Boolean
+  )
 
-  private def requireInitialized[A](id: ujson.Value)(action: => IO[Unit]): IO[Unit] =
-    if initialized then action
+  private def requireInitialized(
+    id:    ujson.Value,
+    state: HandlerState
+  )(action: => IO[HandlerState]): IO[HandlerState] =
+    if state.initialized then action
     else
       logger.warn(s"Request rejected: server not initialized (id=$id)") *>
-        JsonRpc.writeError(
-          output,
-          id,
-          RpcError(RpcError.ServerNotInitialized, "Server not initialized")
-        )
+        JsonRpc
+          .writeError(
+            output,
+            id,
+            RpcError(RpcError.ServerNotInitialized, "Server not initialized")
+          )
+          .as(state)
 
   /** Main loop - reads and handles messages until exit. */
   def run: IO[Unit] =
-    handleNextMessage.flatMap { continue =>
-      if continue then run else logger.info("Message loop ending")
-    }
+    loop(HandlerState(initialized = false, shutdown = false))
 
-  /** Handle a single message. Returns false if we should exit. */
-  def handleNextMessage: IO[Boolean] =
+  private def loop(state: HandlerState): IO[Unit] =
+    if state.shutdown then logger.info("Message loop ending")
+    else handleNextMessage(state).flatMap(loop)
+
+  /** Handle a single message and return the next handler state. */
+  private def handleNextMessage(state: HandlerState): IO[HandlerState] =
     JsonRpc.readMessage(input).flatMap {
       case Left(error) =>
-        logger.error(s"Read error: $error") *> IO.pure(false)
+        logger.error(s"Read error: $error") *> IO.pure(state.copy(shutdown = true))
       case Right(msg) =>
-        handleMessage(msg).handleErrorWith { e =>
+        handleMessage(msg, state).handleErrorWith { e =>
           logger.error(e)(s"Error handling message: ${msgSummary(msg)}") *>
             (msg match
               case req: RpcRequest =>
@@ -52,8 +61,8 @@ class LspHandler(
                   req.id,
                   RpcError(RpcError.InternalError, s"Internal error: ${e.toString}")
                 )
-              case _ => IO.unit) *>
-            IO.pure(true)
+              case _ => IO.unit
+            ).as(state)
         }
     }
 
@@ -63,118 +72,138 @@ class LspHandler(
       case notif: RpcNotification => s"notification ${notif.method}"
       case resp:  RpcResponse => s"response id=${resp.id}"
 
-  private def handleMessage(msg: RpcMessage): IO[Boolean] =
+  private def handleMessage(msg: RpcMessage, state: HandlerState): IO[HandlerState] =
     msg match
       case req: RpcRequest =>
         logger.info(s"<-- request: ${req.method} id=${req.id}") *>
-          handleRequest(req) *> IO.delay(!shutdown)
+          handleRequest(req, state)
       case notif: RpcNotification =>
         logger.info(s"<-- notification: ${notif.method}") *>
-          handleNotification(notif) *> IO.delay(!shutdown)
+          handleNotification(notif, state)
       case resp: RpcResponse =>
         logger.info(s"<-- response: id=${resp.id}") *>
-          IO.delay(!shutdown)
+          IO.pure(state)
 
-  private def handleRequest(req: RpcRequest): IO[Unit] =
+  private def handleRequest(req: RpcRequest, state: HandlerState): IO[HandlerState] =
     req.method match
       case "initialize" =>
-        handleInitialize(req.id)
+        handleInitialize(req.id).as(state)
       case "shutdown" =>
-        handleShutdown(req.id)
+        handleShutdown(req.id).as(state.copy(shutdown = true))
       case "textDocument/hover" =>
-        requireInitialized(req.id) {
+        requireInitialized(req.id, state) {
           req.params match
-            case Some(params) => handleHover(req.id, params)
+            case Some(params) => handleHover(req.id, params).as(state)
             case None =>
-              JsonRpc.writeError(
-                output,
-                req.id,
-                RpcError(RpcError.InvalidParams, "Missing params")
-              )
+              JsonRpc
+                .writeError(
+                  output,
+                  req.id,
+                  RpcError(RpcError.InvalidParams, "Missing params")
+                )
+                .as(state)
         }
       case "textDocument/definition" =>
-        requireInitialized(req.id) {
+        requireInitialized(req.id, state) {
           req.params match
-            case Some(params) => handleDefinition(req.id, params)
+            case Some(params) => handleDefinition(req.id, params).as(state)
             case None =>
-              JsonRpc.writeError(
-                output,
-                req.id,
-                RpcError(RpcError.InvalidParams, "Missing params")
-              )
+              JsonRpc
+                .writeError(
+                  output,
+                  req.id,
+                  RpcError(RpcError.InvalidParams, "Missing params")
+                )
+                .as(state)
         }
       case "textDocument/references" =>
-        requireInitialized(req.id) {
+        requireInitialized(req.id, state) {
           req.params match
-            case Some(params) => handleReferences(req.id, params)
+            case Some(params) => handleReferences(req.id, params).as(state)
             case None =>
-              JsonRpc.writeError(
-                output,
-                req.id,
-                RpcError(RpcError.InvalidParams, "Missing params")
-              )
+              JsonRpc
+                .writeError(
+                  output,
+                  req.id,
+                  RpcError(RpcError.InvalidParams, "Missing params")
+                )
+                .as(state)
         }
       case "textDocument/semanticTokens/full" =>
-        requireInitialized(req.id) {
+        requireInitialized(req.id, state) {
           req.params match
-            case Some(params) => handleSemanticTokens(req.id, params)
+            case Some(params) => handleSemanticTokens(req.id, params).as(state)
             case None =>
-              JsonRpc.writeError(
-                output,
-                req.id,
-                RpcError(RpcError.InvalidParams, "Missing params")
-              )
+              JsonRpc
+                .writeError(
+                  output,
+                  req.id,
+                  RpcError(RpcError.InvalidParams, "Missing params")
+                )
+                .as(state)
         }
       case "workspace/executeCommand" =>
-        requireInitialized(req.id) {
+        requireInitialized(req.id, state) {
           req.params match
-            case Some(params) => handleExecuteCommand(req.id, params)
+            case Some(params) =>
+              handleExecuteCommand(req.id, params).map { shouldShutdown =>
+                if shouldShutdown then state.copy(shutdown = true) else state
+              }
             case None =>
-              JsonRpc.writeError(
-                output,
-                req.id,
-                RpcError(RpcError.InvalidParams, "Missing params")
-              )
+              JsonRpc
+                .writeError(
+                  output,
+                  req.id,
+                  RpcError(RpcError.InvalidParams, "Missing params")
+                )
+                .as(state)
         }
       case "workspace/symbol" =>
-        requireInitialized(req.id) {
+        requireInitialized(req.id, state) {
           req.params match
-            case Some(params) => handleWorkspaceSymbol(req.id, params)
+            case Some(params) => handleWorkspaceSymbol(req.id, params).as(state)
             case None =>
-              JsonRpc.writeError(
-                output,
-                req.id,
-                RpcError(RpcError.InvalidParams, "Missing params")
-              )
+              JsonRpc
+                .writeError(
+                  output,
+                  req.id,
+                  RpcError(RpcError.InvalidParams, "Missing params")
+                )
+                .as(state)
         }
       case method =>
         logger.warn(s"Method not found: $method") *>
-          JsonRpc.writeError(
-            output,
-            req.id,
-            RpcError(RpcError.MethodNotFound, s"Method not found: $method")
-          )
+          JsonRpc
+            .writeError(
+              output,
+              req.id,
+              RpcError(RpcError.MethodNotFound, s"Method not found: $method")
+            )
+            .as(state)
 
-  private def handleNotification(notif: RpcNotification): IO[Unit] =
+  private def handleNotification(
+    notif: RpcNotification,
+    state: HandlerState
+  ): IO[HandlerState] =
     notif.method match
       case "initialized" =>
-        logger.info("Client initialized") *> IO { initialized = true }
+        logger.info("Client initialized") *> IO.pure(state.copy(initialized = true))
       case "exit" =>
-        logger.info("Exit notification received") *> IO { shutdown = true }
+        logger.info("Exit notification received") *> IO.pure(state.copy(shutdown = true))
       case "textDocument/didOpen" =>
         notif.params match
-          case Some(params) => handleDidOpen(params)
-          case None => IO.unit
+          case Some(params) => handleDidOpen(params).as(state)
+          case None => IO.pure(state)
       case "textDocument/didChange" =>
         notif.params match
-          case Some(params) => handleDidChange(params)
-          case None => IO.unit
+          case Some(params) => handleDidChange(params).as(state)
+          case None => IO.pure(state)
       case "textDocument/didClose" =>
         notif.params match
-          case Some(params) => handleDidClose(params)
-          case None => IO.unit
+          case Some(params) => handleDidClose(params).as(state)
+          case None => IO.pure(state)
       case other =>
-        logger.debug(s"Ignoring notification: $other")
+        logger.debug(s"Ignoring notification: $other").as(state)
 
   private def handleInitialize(id: ujson.Value): IO[Unit] =
     logger.info("Handling initialize") *> {
@@ -193,7 +222,6 @@ class LspHandler(
 
   private def handleShutdown(id: ujson.Value): IO[Unit] =
     logger.info("Shutdown request received") *>
-      IO { shutdown = true } *>
       sendResponse(id, ujson.Null)
 
   private def handleDidOpen(params: ujson.Value): IO[Unit] =
@@ -348,32 +376,35 @@ class LspHandler(
       PublishDiagnosticsParams.toJson(params)
     )
 
-  private def handleExecuteCommand(id: ujson.Value, params: ujson.Value): IO[Unit] =
+  private def handleExecuteCommand(id: ujson.Value, params: ujson.Value): IO[Boolean] =
     val command   = params("command").str
     val arguments = params.obj.get("arguments").map(_.arr.toList).getOrElse(Nil)
     logger.info(s"executeCommand: $command") *> {
       command match
         case LspCommands.Restart =>
           logger.info("Restart command received") *>
-            JsonRpc.writeResponse(output, id, ujson.Obj("success" -> true)).flatMap { _ =>
-              IO.blocking(output.flush()) *> IO.sleep(100.millis) *> IO { shutdown = true }
-            }
+            JsonRpc.writeResponse(output, id, ujson.Obj("success" -> true)) *>
+            IO.blocking(output.flush()) *>
+            IO.sleep(100.millis) *>
+            IO.pure(true)
         case LspCommands.CompileBin =>
-          executeCompile(id, arguments, isLib = false)
+          executeCompile(id, arguments, isLib = false).as(false)
         case LspCommands.CompileLib =>
-          executeCompile(id, arguments, isLib = true)
+          executeCompile(id, arguments, isLib = true).as(false)
         case LspCommands.Clean =>
-          executeClean(id)
+          executeClean(id).as(false)
         case LspCommands.Ast =>
-          executeAst(id, arguments)
+          executeAst(id, arguments).as(false)
         case LspCommands.Ir =>
-          executeIr(id, arguments)
+          executeIr(id, arguments).as(false)
         case _ =>
-          JsonRpc.writeError(
-            output,
-            id,
-            RpcError(RpcError.InvalidParams, s"Unknown command: $command")
-          )
+          JsonRpc
+            .writeError(
+              output,
+              id,
+              RpcError(RpcError.InvalidParams, s"Unknown command: $command")
+            )
+            .as(false)
     }
 
   private def executeCompile(

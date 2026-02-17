@@ -48,8 +48,9 @@ GitHub: `https://github.com/fedesilva/minnieml/issues/220`
   See `context/specs/qa-lsp.md` finding 6.
 
 - [ ] **Investigate semantic token bugs**: ~~Declaration positions are guessed~~ (fixed
-  by Name AST node, `4649872`). Remaining: conditional keyword tokenization is brittle
-  on multiline, unresolved refs get no token. See `context/specs/qa-lsp.md` findings 2–3.
+  by Name AST node, `4649872`), ~~LSP mutable-state/imperative flow~~ (fixed in current
+  pass). Remaining: conditional keyword tokenization is brittle on multiline, unresolved refs
+  get no token. See `context/specs/qa-lsp.md` findings 2–3, 5.
 
 ### QA Debt
 

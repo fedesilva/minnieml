@@ -340,28 +340,23 @@ object SemanticTokens:
     * LSP uses 0-based line/column. Our RawToken uses 1-based (from source spans).
     */
   private def deltaEncode(tokens: List[RawToken]): Array[Int] =
-    val result   = Array.newBuilder[Int]
-    var prevLine = 1 // 1-based
-    var prevCol  = 1 // 1-based
+    val (_, _, builder) =
+      tokens.foldLeft((1, 1, Array.newBuilder[Int])) { case ((prevLine, prevCol, result), token) =>
+        val deltaLine = token.line - prevLine
+        val deltaCol =
+          if deltaLine == 0 then token.col - prevCol
+          else token.col - 1
+        val modifierBits = token.modifiers.foldLeft(0) { (acc, mod) =>
+          acc | (1 << mod.ordinal)
+        }
 
-    for token <- tokens do
-      // Convert to deltas (result is 0-based)
-      val deltaLine = token.line - prevLine
-      val deltaCol =
-        if deltaLine == 0 then token.col - prevCol
-        else token.col - 1 // Absolute position for new lines (0-based)
+        result += deltaLine
+        result += deltaCol
+        result += token.length
+        result += token.tokenType.ordinal
+        result += modifierBits
 
-      val modifierBits = token.modifiers.foldLeft(0) { (acc, mod) =>
-        acc | (1 << mod.ordinal)
+        (token.line, token.col, result)
       }
 
-      result += deltaLine
-      result += deltaCol
-      result += token.length
-      result += token.tokenType.ordinal
-      result += modifierBits
-
-      prevLine = token.line
-      prevCol  = token.col
-
-    result.result()
+    builder.result()
