@@ -132,8 +132,25 @@ GitHub: `https://github.com/fedesilva/minnieml/issues/220`
 
 - [ ] **BUG: Go-to-definition on struct constructor resolves to function, not struct**:
   Constructor is synthetic (`__mk_<Name>`), LSP should resolve through it to the
-  `TypeStruct` declaration. Blocked by `FromSource` precondition.
-  See `context/specs/qa-lsp.md` repro case D.
+  `TypeStruct` declaration. See `context/specs/qa-lsp.md` repro case D.
+  - [x] `spanForResolvable` resolves `BindingOrigin.Constructor` synth Bnds through
+    `meta.originalName` to the source `TypeStruct.nameNode.span`. Works for simple cases
+    (non-heap struct in return position). Test: "go-to-definition on struct constructor
+    resolves to struct declaration" in `FindDefinitionTests`.
+  - [ ] **BLOCKED: Ownership analyzer synthetic spans break AST traversal.** When the
+    constructor arg is a heap-allocating call, `OwnershipAnalyzer.analyzeAllocatingApp`
+    wraps it in temp-binding nodes using `syntheticSpan = (0,0,-1)`. The let-binding
+    `App(Lambda(param, body), arg)` keeps its real span, but `arg` is replaced by the
+    wrapped `Expr(syntheticSpan, ...)`. `findDefinitionInApp` checks
+    `containsPosition(app.arg.span, ...)` which returns false for synthetic spans,
+    so the arg subtree (containing the source `Ref("Address")`) is never traversed.
+    Same issue in `findDefinitionInExpr` line 277: gates on `containsPosition(expr.span)`.
+    - **Fix needed in `AstLookup.scala`**: traversal must not skip expressions with
+      invalid/synthetic spans — they may contain source-backed nodes inside. Either
+      always traverse when span is invalid, or propagate source spans through ownership
+      wrappers.
+    - Ignored test: "go-to-definition on constructor inside let binding resolves to struct"
+    - Repro: `mml/samples/person-struct.mml`, click `Address` or `Person` in `main` body.
 
 - [ ] **BUG: Synthesized constructor body leaks overlapping tokens onto user code**:
   `collectFromBnd` traversed the body of synthesized Bnds (constructors, destructors).

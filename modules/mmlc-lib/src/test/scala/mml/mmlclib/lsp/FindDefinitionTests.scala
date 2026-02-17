@@ -122,6 +122,72 @@ class FindDefinitionTests extends BaseEffFunSuite:
         collectRefsFromExpr(inv.originalExpr)
       case _ => Nil
 
+  test("go-to-definition on struct constructor resolves to struct declaration") {
+    val code =
+      """
+      struct Pair { fst: Int, snd: Int };
+      fn make(a: Int, b: Int): Pair = Pair a b;
+      """
+
+    semNotFailed(code).map { m =>
+      val structOpt = m.members.collectFirst { case ts: TypeStruct => ts }
+      assert(structOpt.isDefined, "Could not find struct 'Pair'")
+      val struct = structOpt.get
+
+      val makeBnd = m.members
+        .collectFirst { case b: Bnd if b.meta.exists(_.originalName == "make") => b }
+        .getOrElse(fail("Could not find 'make'"))
+      val refs = collectRefsFromMember(makeBnd)
+
+      val ctorRef = refs.find(_.name == "Pair")
+      assert(ctorRef.isDefined, "Could not find ref 'Pair' in make body")
+
+      val ref  = ctorRef.get
+      val defs = AstLookup.findDefinitionAt(m, ref.span.start.line, ref.span.start.col)
+      assert(
+        defs.contains(struct.nameNode.span),
+        s"Expected struct nameNode span ${struct.nameNode.span}, got: $defs"
+      )
+    }
+  }
+
+  // TODO: fix-ctor-gotodef: this test documents the real bug — see tracking.md
+  // The simple case (Pair test above) passes because non-heap struct constructors
+  // don't get ownership temp wrappers. Heap-struct constructors inside let bindings
+  // fail because OwnershipAnalyzer wraps the arg with syntheticSpan nodes,
+  // causing findDefinitionInApp to skip the arg entirely.
+  test("go-to-definition on constructor inside let binding resolves to struct".ignore) {
+    val code =
+      """
+      struct Address { city: String, street: String };
+      fn main() =
+        let addr = Address "SF" "Main St";
+        println addr.city
+      ;
+      """
+
+    semNotFailed(code).map { m =>
+      val structOpt = m.members.collectFirst { case ts: TypeStruct if ts.name == "Address" => ts }
+      assert(structOpt.isDefined, "Could not find struct 'Address'")
+      val struct = structOpt.get
+
+      val mainBnd = m.members
+        .collectFirst { case b: Bnd if b.meta.exists(_.originalName == "main") => b }
+        .getOrElse(fail("Could not find 'main'"))
+
+      val refs    = collectRefsFromMember(mainBnd)
+      val ctorRef = refs.find(r => r.name == "Address" && r.source.isFromSource)
+      assert(ctorRef.isDefined, "Could not find source ref 'Address'")
+
+      val ref  = ctorRef.get
+      val defs = AstLookup.findDefinitionAt(m, ref.span.start.line, ref.span.start.col)
+      assert(
+        defs.contains(struct.nameNode.span),
+        s"Expected struct nameNode span ${struct.nameNode.span}, got: $defs"
+      )
+    }
+  }
+
   private def collectRefsFromAppFn(fn: Ref | App | Lambda): List[Ref] =
     fn match
       case ref: Ref =>

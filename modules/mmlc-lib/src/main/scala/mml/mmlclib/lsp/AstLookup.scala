@@ -231,20 +231,20 @@ object AstLookup:
         if typeDefs.nonEmpty then typeDefs
         else if containsPosition(bnd.value.span, line, col) then
           val exprDefs = findDefinitionInExpr(bnd.value, line, col, module)
-          if exprDefs.nonEmpty then exprDefs else spanForResolvable(bnd).toList
-        else spanForResolvable(bnd).toList
+          if exprDefs.nonEmpty then exprDefs else spanForResolvable(bnd, module).toList
+        else spanForResolvable(bnd, module).toList
 
       case td: TypeDef =>
         val typeDefs = td.typeSpec.toList.flatMap(findDefinitionInType(_, line, col, module))
-        if typeDefs.nonEmpty then typeDefs else spanForResolvable(td).toList
+        if typeDefs.nonEmpty then typeDefs else spanForResolvable(td, module).toList
 
       case ta: TypeAlias =>
         val typeDefs = findDefinitionInType(ta.typeRef, line, col, module)
-        if typeDefs.nonEmpty then typeDefs else spanForResolvable(ta).toList
+        if typeDefs.nonEmpty then typeDefs else spanForResolvable(ta, module).toList
 
       case ts: TypeStruct =>
         val fieldDefs = findDefinitionInFields(ts.fields.toList, line, col, module)
-        if fieldDefs.nonEmpty then fieldDefs else spanForResolvable(ts).toList
+        if fieldDefs.nonEmpty then fieldDefs else spanForResolvable(ts, module).toList
 
       case dm: DuplicateMember =>
         findDefinitionInMember(dm.originalMember, line, col, module)
@@ -352,9 +352,13 @@ object AstLookup:
             Nil
       case None =>
         val resolved =
-          ref.resolvedId.flatMap(module.resolvables.lookup).toList.flatMap(spanForResolvable)
+          ref.resolvedId
+            .flatMap(module.resolvables.lookup)
+            .toList
+            .flatMap(spanForResolvable(_, module))
         if resolved.nonEmpty then resolved
-        else ref.candidateIds.flatMap(module.resolvables.lookup).flatMap(spanForResolvable)
+        else
+          ref.candidateIds.flatMap(module.resolvables.lookup).flatMap(spanForResolvable(_, module))
 
   private def findDefinitionInApp(
     app:    App,
@@ -393,7 +397,7 @@ object AstLookup:
       .collectFirst {
         case p if containsPosition(p.span, line, col) && p.source.isFromSource =>
           val typeDefs = p.typeAsc.toList.flatMap(findDefinitionInType(_, line, col, module))
-          if typeDefs.nonEmpty then typeDefs else spanForResolvable(p).toList
+          if typeDefs.nonEmpty then typeDefs else spanForResolvable(p, module).toList
       }
       .getOrElse(Nil)
 
@@ -500,9 +504,15 @@ object AstLookup:
           case ts: TypeStruct if ts.name == ref.name => ts.span
         }
 
-  private def spanForResolvable(resolvable: Resolvable): Option[SrcSpan] =
+  private def spanForResolvable(resolvable: Resolvable, module: Module): Option[SrcSpan] =
     resolvable match
-      case bnd:   Bnd if bnd.source == SourceOrigin.Synth => None
+      case bnd: Bnd if bnd.source == SourceOrigin.Synth =>
+        bnd.meta match
+          case Some(m) if m.origin == BindingOrigin.Constructor =>
+            module.members.collectFirst {
+              case ts: TypeStruct if ts.name == m.originalName => ts.nameNode.span
+            }
+          case _ => None
       case param: FnParam if param.source == SourceOrigin.Synth => None
       case fs:    FromSource => Some(fs.span)
       case _ => None
@@ -816,7 +826,7 @@ object AstLookup:
           if includeDeclaration then
             target match
               case ValueTarget(targetId) if bnd.id.contains(targetId) =>
-                spanForResolvable(bnd).toList
+                spanForResolvable(bnd, module).toList
               case _ => Nil
           else Nil
         val typeRefs  = bnd.typeAsc.toList.flatMap(collectReferencesInType(_, target, module))
@@ -828,7 +838,7 @@ object AstLookup:
           if includeDeclaration then
             target match
               case TypeTarget(targetId) if td.id.contains(targetId) =>
-                spanForResolvable(td).toList
+                spanForResolvable(td, module).toList
               case _ => Nil
           else Nil
         val typeRefs = td.typeSpec.toList.flatMap(collectReferencesInType(_, target, module))
@@ -839,7 +849,7 @@ object AstLookup:
           if includeDeclaration then
             target match
               case TypeTarget(targetId) if ta.id.contains(targetId) =>
-                spanForResolvable(ta).toList
+                spanForResolvable(ta, module).toList
               case _ => Nil
           else Nil
         val typeRefs = collectReferencesInType(ta.typeRef, target, module)
@@ -850,7 +860,7 @@ object AstLookup:
           if includeDeclaration then
             target match
               case TypeTarget(targetId) if ts.id.contains(targetId) =>
-                spanForResolvable(ts).toList
+                spanForResolvable(ts, module).toList
               case _ => Nil
           else Nil
         val fieldDecls =
@@ -952,7 +962,7 @@ object AstLookup:
         if includeDeclaration then
           target match
             case ValueTarget(targetId) if param.id.contains(targetId) =>
-              spanForResolvable(param).toList
+              spanForResolvable(param, module).toList
             case _ => Nil
         else Nil
       val typeRefs = param.typeAsc.toList.flatMap(collectReferencesInType(_, target, module))
