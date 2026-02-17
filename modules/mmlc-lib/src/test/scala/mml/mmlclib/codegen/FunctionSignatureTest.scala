@@ -5,6 +5,40 @@ import mml.mmlclib.test.BaseEffFunSuite
 
 class FunctionSignatureTest extends BaseEffFunSuite:
 
+  test("synthesized main passes argv as StringArray for unit-returning main(args)") {
+    val source =
+      """
+        fn main(args: StringArray): Unit = println (int_to_str (ar_str_len args));
+      """
+    val config =
+      CompilerConfig.exe("build", targetTriple = Some("x86_64-apple-macosx"))
+
+    compileAndGenerate(source, config = config).map { llvmIr =>
+      assert(llvmIr.contains("define i32 @main(i32 %0, ptr %1) #0"))
+      assert(llvmIr.contains("%args = call %struct.StringArray @mml_args_to_array(i32 %0, ptr %1)"))
+      assert(llvmIr.contains("call void @test_main(%struct.StringArray %args)"))
+      assert(llvmIr.contains("call void @__free_StringArray(%struct.StringArray %args)"))
+      assert(llvmIr.contains("call void @mml_sys_flush()"))
+    }
+  }
+
+  test("synthesized main passes argv as StringArray for int-returning main(args)") {
+    val source =
+      """
+        fn main(args: StringArray): Int = ar_str_len args;
+      """
+    val config =
+      CompilerConfig.exe("build", targetTriple = Some("x86_64-apple-macosx"))
+
+    compileAndGenerate(source, config = config).map { llvmIr =>
+      assert(llvmIr.contains("define i32 @main(i32 %0, ptr %1) #0"))
+      assert(llvmIr.contains("%args = call %struct.StringArray @mml_args_to_array(i32 %0, ptr %1)"))
+      assert(llvmIr.contains("%ret = call i64 @test_main(%struct.StringArray %args)"))
+      assert(llvmIr.contains("call void @__free_StringArray(%struct.StringArray %args)"))
+      assert(llvmIr.contains("%exitcode = trunc i64 %ret to i32"))
+    }
+  }
+
   test("correctly generates signatures for native and regular functions on x86_64") {
     val source =
       """

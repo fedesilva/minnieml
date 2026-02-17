@@ -1,0 +1,10 @@
+fn print_args_loop(args: StringArray, i: Int, n: Int): Unit =
+  if i < n then
+    println (ar_str_get args i);
+    print_args_loop args (i + 1) n  
+  end
+;
+
+fn main(args: StringArray): Unit =
+  print_args_loop args 0 (ar_str_len args)
+;

@@ -62,11 +62,18 @@ Spec: `context/specs/lsp-log-rotation.md`
 - [ ] **Implement size-based LSP log rotation at startup**: before opening `server.log`,
   rotate when file size exceeds 5 MB using `server.log.1`, `.2`, `.3` up to 10 items, then delete.
 
-### Entry Point Parameters
+### Entry Point Parameters [COMPLETE]
 
 Pass parameters at the entry point when the internal function signature requires them,
 using a monomorphic array.
 
 GitHub: `https://github.com/fedesilva/minnieml/issues/200`
 
-- [ ] **Pass parameters if internal entry point takes them (use monomorphic array)**.
+- [x] **Pass parameters if internal entry point takes them (use monomorphic array)**.
+
+## Recent Changes
+
+- 2026-02-17: Completed issue #200. Implemented `main(args: StringArray)` entry-point support
+  in pre-codegen validation and synthesized wrapper flow, added runtime helper
+  `mml_args_to_array(argc, argv)` (dropping `argv[0]`), added tests, and added sample
+  `mml/samples/print-args.mml`.

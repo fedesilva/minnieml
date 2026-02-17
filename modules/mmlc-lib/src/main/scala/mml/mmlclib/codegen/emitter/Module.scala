@@ -450,20 +450,48 @@ private def emitSynthesizedMain(
   module:     Module,
   state:      CodeGenState
 ): CodeGenState =
-  val returnsInt = mainReturnsInt(module, state)
+  val returnsInt     = mainReturnsInt(module, state)
+  val takesArgsArray = mainTakesStringArrayArg(module)
 
   // Ensure mml_sys_flush is declared
-  val stateWithFlush = state.withFunctionDeclaration("mml_sys_flush", "void", List.empty)
+  val stateWithFlush = state
+    .withFunctionDeclaration("mml_sys_flush", "void", List.empty)
+    .withFunctionDeclaration("mml_args_to_array", "%struct.StringArray", List("i32", "ptr"))
+    .withFunctionDeclaration("__free_StringArray", "void", List("%struct.StringArray"))
 
   if returnsInt then
-    // Int-returning main: capture return value, flush, truncate i64 -> i32, return
+    if takesArgsArray then
+      stateWithFlush
+        .emit("define i32 @main(i32 %0, ptr %1) #0 {")
+        .emit("entry:")
+        .emit("  %args = call %struct.StringArray @mml_args_to_array(i32 %0, ptr %1)")
+        .emit(s"  %ret = call i64 @$entryPoint(%struct.StringArray %args)")
+        .emit("  call void @mml_sys_flush()")
+        .emit("  call void @__free_StringArray(%struct.StringArray %args)")
+        .emit("  %exitcode = trunc i64 %ret to i32")
+        .emit("  ret i32 %exitcode")
+        .emit("}")
+        .emit("")
+    else
+      // Int-returning main: capture return value, flush, truncate i64 -> i32, return
+      stateWithFlush
+        .emit("define i32 @main(i32 %0, ptr %1) #0 {")
+        .emit("entry:")
+        .emit(s"  %ret = call i64 @$entryPoint()")
+        .emit("  call void @mml_sys_flush()")
+        .emit("  %exitcode = trunc i64 %ret to i32")
+        .emit("  ret i32 %exitcode")
+        .emit("}")
+        .emit("")
+  else if takesArgsArray then
     stateWithFlush
       .emit("define i32 @main(i32 %0, ptr %1) #0 {")
       .emit("entry:")
-      .emit(s"  %ret = call i64 @$entryPoint()")
+      .emit("  %args = call %struct.StringArray @mml_args_to_array(i32 %0, ptr %1)")
+      .emit(s"  call void @$entryPoint(%struct.StringArray %args)")
       .emit("  call void @mml_sys_flush()")
-      .emit("  %exitcode = trunc i64 %ret to i32")
-      .emit("  ret i32 %exitcode")
+      .emit("  call void @__free_StringArray(%struct.StringArray %args)")
+      .emit("  ret i32 0")
       .emit("}")
       .emit("")
   else
@@ -492,6 +520,20 @@ private def mainReturnsInt(module: Module, state: CodeGenState): Boolean =
             case _ => false
         case _ => false
     case None => false
+
+private def mainTakesStringArrayArg(module: Module): Boolean =
+  findMainFn(module) match
+    case Some((_, lambda)) =>
+      lambda.params match
+        case param :: Nil =>
+          !param.consuming && paramTypeIsStringArray(param)
+        case _ => false
+    case None => false
+
+private def paramTypeIsStringArray(param: FnParam): Boolean =
+  param.typeSpec.orElse(param.typeAsc) match
+    case Some(TypeRef(_, name, _, _)) => name == "StringArray"
+    case _ => false
 
 /** Finds the main function binding and its lambda in the module. */
 private def findMainFn(module: Module): Option[(Bnd, Lambda)] =

@@ -885,6 +885,21 @@ String __clone_String(String s)
     return (String){s.length, new_data};
 }
 
+StringArray mml_args_to_array(int argc, char **argv)
+{
+    int64_t user_argc = (argc > 1) ? (int64_t)(argc - 1) : 0;
+    StringArray arr = ar_str_new(user_argc);
+
+    for (int64_t i = 0; i < user_argc; i++)
+    {
+        char *raw = argv[i + 1];
+        String borrowed = (String){strlen(raw), raw};
+        ar_str_set(arr, i, __clone_String(borrowed));
+    }
+
+    return arr;
+}
+
 Buffer __clone_Buffer(Buffer b)
 {
     if (!b)

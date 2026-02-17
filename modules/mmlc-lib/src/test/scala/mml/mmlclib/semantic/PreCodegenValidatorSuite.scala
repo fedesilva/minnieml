@@ -28,11 +28,46 @@ class PreCodegenValidatorSuite extends BaseEffFunSuite:
       }
   }
 
-  test("binary mode main function must have no parameters") {
+  test("binary mode main function with non-StringArray parameter is not a valid entry point") {
     val source          = """
       fn main(a: Int32) = 1;
     """
-    val expectedMessage = "Entry point 'main' must have no parameters"
+    val expectedMessage = "No entry point 'main' found for binary compilation"
+    FrontEndApi
+      .compile(source, "Test", CompilerConfig.default.copy(mode = CompilationMode.Exe))
+      .value
+      .map {
+        case Right(state) =>
+          val validatedState = PreCodegenValidator.validate(CompilationMode.Exe)(state)
+          val errorMessages = validatedState.errors.map {
+            case InvalidEntryPoint(message, _) => message
+            case _ => ""
+          }
+          assert(errorMessages.contains(expectedMessage))
+        case Left(error) => fail(s"Compilation failed with error: $error")
+      }
+  }
+
+  test("binary mode main function with StringArray parameter is valid") {
+    val source = """
+      fn main(args: StringArray): Unit = ();
+    """
+    FrontEndApi
+      .compile(source, "Test", CompilerConfig.default.copy(mode = CompilationMode.Exe))
+      .value
+      .map {
+        case Right(state) =>
+          val validatedState = PreCodegenValidator.validate(CompilationMode.Exe)(state)
+          assert(validatedState.errors.isEmpty)
+        case Left(error) => fail(s"Compilation failed with error: $error")
+      }
+  }
+
+  test("binary mode consuming StringArray main parameter is not a valid entry point") {
+    val source          = """
+      fn main(~args: StringArray): Unit = ();
+    """
+    val expectedMessage = "No entry point 'main' found for binary compilation"
     FrontEndApi
       .compile(source, "Test", CompilerConfig.default.copy(mode = CompilationMode.Exe))
       .value

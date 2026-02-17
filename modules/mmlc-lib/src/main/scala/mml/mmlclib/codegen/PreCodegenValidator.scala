@@ -32,41 +32,52 @@ object PreCodegenValidator:
                 state.module.span
               )
             )
-          case Some((bnd, lambda)) =>
-            if lambda.params.nonEmpty then
-              state.addError(
-                SemanticError
-                  .InvalidEntryPoint("Entry point 'main' must have no parameters", bnd.span)
-              )
-            else
-              bnd.typeSpec match
-                case Some(fnType) =>
-                  extractReturnType(fnType, state.module) match
-                    case Some(retType) if isValidReturnType(retType, state.module) =>
-                      val mangledMain = s"${state.module.name.toLowerCase}_main"
-                      state.withEntryPoint(mangledMain)
-                    case _ =>
-                      state.addError(
-                        SemanticError.InvalidEntryPoint(
-                          "Entry point 'main' must have a return type of 'Unit' or 'Int64'",
-                          bnd.span
-                        )
+          case Some((bnd, _)) =>
+            bnd.typeSpec match
+              case Some(fnType) =>
+                extractReturnType(fnType, state.module) match
+                  case Some(retType) if isValidReturnType(retType, state.module) =>
+                    val mangledMain = s"${state.module.name.toLowerCase}_main"
+                    state.withEntryPoint(mangledMain)
+                  case _ =>
+                    state.addError(
+                      SemanticError.InvalidEntryPoint(
+                        "Entry point 'main' must have a return type of 'Unit' or 'Int64'",
+                        bnd.span
                       )
-                case None =>
-                  state.addError(
-                    SemanticError.InvalidEntryPoint(
-                      "Entry point 'main' must have a return type of 'Unit' or 'Int64'",
-                      bnd.span
                     )
+              case None =>
+                state.addError(
+                  SemanticError.InvalidEntryPoint(
+                    "Entry point 'main' must have a return type of 'Unit' or 'Int64'",
+                    bnd.span
                   )
+                )
       case _ => state
 
   private def findMainFn(module: Module): Option[(Bnd, Lambda)] =
     module.members.collectFirst {
       case bnd: Bnd
           if bnd.meta.exists(m => m.origin == BindingOrigin.Function && m.originalName == "main") =>
-        bnd.value.terms.headOption.collect { case lambda: Lambda => (bnd, lambda) }
+        bnd.value.terms.headOption.collect {
+          case lambda: Lambda if isValidMainParams(lambda, module) => (bnd, lambda)
+        }
     }.flatten
+
+  private def isValidMainParams(lambda: Lambda, module: Module): Boolean =
+    lambda.params match
+      case Nil => true
+      case param :: Nil =>
+        !param.consuming && paramType(param).exists(isStringArrayType(_, module))
+      case _ => false
+
+  private def paramType(param: FnParam): Option[Type] =
+    param.typeSpec.orElse(param.typeAsc)
+
+  private def isStringArrayType(typeSpec: Type, module: Module): Boolean =
+    resolveAliasChain(typeSpec, module) match
+      case TypeRef(_, name, _, _) => name == "StringArray"
+      case _ => false
 
   private def extractReturnType(typeSpec: Type, module: Module): Option[Type] =
     resolveAliasChain(typeSpec, module) match
