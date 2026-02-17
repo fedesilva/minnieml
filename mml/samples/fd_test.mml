@@ -1,5 +1,5 @@
 
 fn main() = 
-  let fd open_file_write "test.txt";
+  let fd = open_file_write "test.txt";
   println (int_to_str fd)
 ;

@@ -12,4 +12,7 @@ fn fizzbuzz(n: Int): Unit =
   end
 ;
 
-fn main(): Unit = fizzbuzz 1000000;
+fn main(args: StringArray): Unit = 
+  let loops = str_to_int (ar_str_get args 0);
+  fizzbuzz loops
+;

@@ -16,8 +16,10 @@ op ! (n: Int): Int 95 left =
   end
 ;
 
-fn main() =
-  println "Give me a number";
-  let num = str_to_int (readline());
-  println (int_to_str( num! ) )
+fn main(args: StringArray) =  
+  let num = str_to_int (ar_str_get args 0);
+  if num > 20 then
+    println "Bigger than 20 overflows"
+  end;
+  println (int_to_str(num!))
 ;

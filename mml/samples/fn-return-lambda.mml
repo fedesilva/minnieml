@@ -1,9 +1,5 @@
-
-fn add(a: Int, b: Int): Int = a + b;
-
-fn main() =
-  let mk = fn x -> add x;      // returns a function
-  let inc = mk 1;
-  println (int_to_str (inc 41))
+// We have not yet implemented lambda literals
+fn main(): Unit =
+  // let mk = { a -> a * 3 };      // returns a function
+  ???  
 ;
-
