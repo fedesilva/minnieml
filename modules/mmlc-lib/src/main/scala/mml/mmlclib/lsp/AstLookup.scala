@@ -19,10 +19,70 @@ object AstLookup:
 
   /** Find the definition span for the symbol or type at the given position. */
   def findDefinitionAt(module: Module, line: Int, col: Int): List[SrcSpan] =
-    val spans = findDefinitionInMembers(module.members, line, col, module)
-    spans.filter(isValidSpan).distinct
+    if isNonSourceRefAt(module, line, col) then Nil
+    else
+      val spans = findDefinitionInMembers(module.members, line, col, module)
+      spans.filter(isValidSpan).distinct
+
+  private def isNonSourceRefAt(module: Module, line: Int, col: Int): Boolean =
+    findInnermostRefAt(module, line, col).exists { ref =>
+      ref.qualifier.isEmpty && ref.resolvedId
+        .flatMap(module.resolvables.lookup)
+        .exists(resolvable => spanForResolvable(resolvable, module).isEmpty)
+    }
+
+  private def findInnermostRefAt(module: Module, line: Int, col: Int): Option[Ref] =
+    val refs = module.members.flatMap(findRefsInMemberAt(_, line, col))
+    refs.sortBy(ref => ref.span.end.index - ref.span.start.index).headOption
+
+  private def findRefsInMemberAt(member: Member, line: Int, col: Int): List[Ref] =
+    member match
+      case bnd: Bnd =>
+        findRefsInExprAt(bnd.value, line, col)
+      case dm: DuplicateMember =>
+        findRefsInMemberAt(dm.originalMember, line, col)
+      case im: InvalidMember =>
+        findRefsInMemberAt(im.originalMember, line, col)
+      case _ => Nil
+
+  private def findRefsInExprAt(expr: Expr, line: Int, col: Int): List[Ref] =
+    expr.terms.flatMap(findRefsInTermAt(_, line, col))
+
+  private def findRefsInTermAt(term: Term, line: Int, col: Int): List[Ref] =
+    term match
+      case ref: Ref =>
+        val current =
+          if isValidSpan(ref.span) && containsPosition(ref.span, line, col) then List(ref) else Nil
+        current ++ ref.qualifier.toList.flatMap(findRefsInTermAt(_, line, col))
+      case app: App =>
+        findRefsInAppFnAt(app.fn, line, col) ++ findRefsInExprAt(app.arg, line, col)
+      case lambda: Lambda =>
+        findRefsInExprAt(lambda.body, line, col)
+      case cond: Cond =>
+        findRefsInExprAt(cond.cond, line, col) ++
+          findRefsInExprAt(cond.ifTrue, line, col) ++
+          findRefsInExprAt(cond.ifFalse, line, col)
+      case group: TermGroup =>
+        findRefsInExprAt(group.inner, line, col)
+      case tuple: Tuple =>
+        tuple.elements.toList.flatMap(findRefsInExprAt(_, line, col))
+      case expr: Expr =>
+        findRefsInExprAt(expr, line, col)
+      case inv: InvalidExpression =>
+        findRefsInExprAt(inv.originalExpr, line, col)
+      case _ => Nil
+
+  private def findRefsInAppFnAt(fn: Ref | App | Lambda, line: Int, col: Int): List[Ref] =
+    fn match
+      case ref: Ref =>
+        findRefsInTermAt(ref, line, col)
+      case app: App =>
+        findRefsInAppFnAt(app.fn, line, col) ++ findRefsInExprAt(app.arg, line, col)
+      case lambda: Lambda =>
+        findRefsInExprAt(lambda.body, line, col)
 
   /** Find all references to the symbol or type at the given position. */
+
   def findReferencesAt(
     module:             Module,
     line:               Int,
@@ -279,11 +339,19 @@ object AstLookup:
   ): List[SrcSpan] =
     if isValidSpan(expr.span) && !containsPosition(expr.span, line, col) then Nil
     else
-      expr.terms
-        .collectFirst {
-          case t if termContains(t, line, col) => findDefinitionInTerm(t, line, col, module)
-        }
-        .getOrElse(Nil)
+      val fromValidSpan = expr.terms.collectFirst {
+        case t if isValidSpan(t.span) && containsPosition(t.span, line, col) =>
+          findDefinitionInTerm(t, line, col, module)
+      }
+
+      fromValidSpan.getOrElse {
+        expr.terms
+          .collectFirst {
+            case t if !isValidSpan(t.span) && termContains(t, line, col) =>
+              findDefinitionInTerm(t, line, col, module)
+          }
+          .getOrElse(Nil)
+      }
 
   private def findDefinitionInTerm(
     term:   Term,
@@ -369,26 +437,37 @@ object AstLookup:
     col:    Int,
     module: Module
   ): List[SrcSpan] =
-    val argResult =
-      if containsOrInvalid(app.arg.span, line, col) then
-        findDefinitionInExpr(app.arg, line, col, module)
-      else Nil
+    def findFnRefAtCursor(fn: Ref | App | Lambda): Option[Ref] =
+      fn match
+        case ref: Ref if isValidSpan(ref.span) && containsPosition(ref.span, line, col) => Some(ref)
+        case innerApp: App => findFnRefAtCursor(innerApp.fn)
+        case _ => None
 
-    if argResult.nonEmpty then argResult
-    else
-      app.fn match
-        case ref: Ref if containsOrInvalid(ref.span, line, col) =>
-          findDefinitionInRef(ref, line, col, module)
-        case innerApp: App if containsOrInvalid(innerApp.span, line, col) =>
-          findDefinitionInApp(innerApp, line, col, module)
-        case lambda: Lambda if containsOrInvalid(lambda.span, line, col) =>
-          val typeDefs = lambda.typeAsc.toList.flatMap(findDefinitionInType(_, line, col, module))
-          if typeDefs.nonEmpty then typeDefs
-          else
-            val bodyDefs = findDefinitionInExpr(lambda.body, line, col, module)
-            if bodyDefs.nonEmpty then bodyDefs
-            else findDefinitionInParams(lambda.params, line, col, module)
-        case _ => Nil
+    findFnRefAtCursor(app.fn) match
+      case Some(ref) =>
+        findDefinitionInRef(ref, line, col, module)
+      case None =>
+        val argResult =
+          if containsOrInvalid(app.arg.span, line, col) then
+            findDefinitionInExpr(app.arg, line, col, module)
+          else Nil
+
+        if argResult.nonEmpty then argResult
+        else
+          app.fn match
+            case ref: Ref if containsOrInvalid(ref.span, line, col) =>
+              findDefinitionInRef(ref, line, col, module)
+            case innerApp: App if containsOrInvalid(innerApp.span, line, col) =>
+              findDefinitionInApp(innerApp, line, col, module)
+            case lambda: Lambda if containsOrInvalid(lambda.span, line, col) =>
+              val typeDefs =
+                lambda.typeAsc.toList.flatMap(findDefinitionInType(_, line, col, module))
+              if typeDefs.nonEmpty then typeDefs
+              else
+                val bodyDefs = findDefinitionInExpr(lambda.body, line, col, module)
+                if bodyDefs.nonEmpty then bodyDefs
+                else findDefinitionInParams(lambda.params, line, col, module)
+            case _ => Nil
 
   private def findDefinitionInParams(
     params: List[FnParam],

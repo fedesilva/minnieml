@@ -188,6 +188,40 @@ class FindDefinitionTests extends BaseEffFunSuite:
     }
   }
 
+  test("go-to-definition on non-source symbol returns no definition") {
+    val code =
+      """
+      struct Person {
+        name: String,
+        age: Int
+      };
+
+      fn main() =
+        let p = Person "fede" 25;
+        println ("Age: " ++ int_to_str p.age)
+      ;
+      """
+
+    semNotFailed(code).map { m =>
+      val mainBnd = m.members
+        .collectFirst { case b: Bnd if b.meta.exists(_.originalName == "main") => b }
+        .getOrElse(fail("Could not find 'main'"))
+
+      val refs = collectRefsFromMember(mainBnd)
+      val stdlibRef =
+        refs.find(r => r.name == "int_to_str" && r.source.isFromSource && r.qualifier.isEmpty)
+      assert(stdlibRef.isDefined, "Could not find source ref 'int_to_str'")
+
+      val ref  = stdlibRef.get
+      val defs = AstLookup.findDefinitionAt(m, ref.span.start.line, ref.span.start.col)
+      assertEquals(
+        defs,
+        Nil,
+        s"Expected no definition for non-source symbol at ${ref.span}, got: $defs"
+      )
+    }
+  }
+
   private def collectRefsFromAppFn(fn: Ref | App | Lambda): List[Ref] =
     fn match
       case ref: Ref =>

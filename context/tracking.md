@@ -47,6 +47,19 @@ GitHub: `https://github.com/fedesilva/minnieml/issues/220`
   producing stray function/parameter tokens that overlap with user code on the same line.
   See `context/specs/qa-lsp.md` finding 6.
 
+- [x] **BUG: Go-to-definition on non-source symbols navigates to next term** [COMPLETE]:
+  Repro was `mml/samples/person-struct.mml`, line 23, click `int_to_str`; backend used to
+  jump to next term (`p`) instead of returning no definition. Backend now returns no definition
+  for non-source-backed targets (`AstLookup` + regression test).
+
+- [ ] **VS Code: show popup when go-to-definition has no target**:
+  In `tooling/vscode`, when `textDocument/definition` resolves to no location for the
+  symbol under cursor, show `definition not found for: <<symbol>>` instead of silent no-op.
+
+- [ ] **VS Code: restart language server automatically after crash/detect-stop**:
+  When the extension detects the MML language server crashed or is no longer running,
+  automatically restart it (and keep current manual restart command as fallback).
+
 - [ ] **Investigate semantic token bugs**: ~~Declaration positions are guessed~~ (fixed
   by Name AST node, `4649872`), ~~LSP mutable-state/imperative flow~~ (fixed in current
   pass). Remaining: conditional keyword tokenization is brittle on multiline, unresolved refs
