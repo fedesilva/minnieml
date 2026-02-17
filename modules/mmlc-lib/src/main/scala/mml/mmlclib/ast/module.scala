@@ -10,7 +10,8 @@ case class Module(
   resolvables: ResolvablesIndex   = ResolvablesIndex()
 ) extends AstNode,
       FromSource,
-      Member
+      Member:
+  override val source: SourceOrigin = SourceOrigin.Loc(span)
 
 /** Index for soft reference lookups. Stores resolvables and resolvable types by their stable IDs.
   * Updated alongside AST rewrites to always point to the current version of each node.

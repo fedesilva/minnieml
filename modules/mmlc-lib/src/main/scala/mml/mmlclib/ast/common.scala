@@ -20,7 +20,8 @@ trait AstNode derives CanEqual
 /** A name with its source position. Used on named declarations so the LSP can get the precise
   * position of the identifier without guessing from keyword offsets.
   */
-case class Name(span: SrcSpan, value: String) extends AstNode, FromSource
+case class Name(span: SrcSpan, value: String) extends AstNode, FromSource:
+  override val source: SourceOrigin = SourceOrigin.Loc(span)
 
 object Name:
   private val emptySpan:    SrcSpan = SrcSpan(SrcPoint(0, 0, 0), SrcPoint(0, 0, 0))
@@ -36,8 +37,7 @@ trait Typeable extends AstNode {
 }
 
 trait FromSource extends AstNode {
-  def span:   SrcSpan
-  def source: SourceOrigin = SourceOrigin.Loc(span)
+  def source: SourceOrigin
 }
 
 /** Distinguishes AST nodes parsed from source vs synthesized by the compiler. */
@@ -81,7 +81,8 @@ case class DocComment(
   span: SrcSpan,
   text: String
 ) extends AstNode,
-      FromSource
+      FromSource:
+  override val source: SourceOrigin = SourceOrigin.Loc(span)
 
 trait Decl extends Member, Typeable, Resolvable:
   def docComment: Option[DocComment]

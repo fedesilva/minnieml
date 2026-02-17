@@ -47,6 +47,9 @@ object AstLookup:
   private def isValidSpan(span: SrcSpan): Boolean =
     span.start.line > 0 && span.start.col > 0 && span.end.line > 0 && span.end.col > 0
 
+  private def containsOrInvalid(span: SrcSpan, line: Int, col: Int): Boolean =
+    !isValidSpan(span) || containsPosition(span, line, col)
+
   private sealed trait ReferenceTarget
   private case class ValueTarget(id: String)                            extends ReferenceTarget
   private case class TypeTarget(id: String)                             extends ReferenceTarget
@@ -62,7 +65,7 @@ object AstLookup:
       case bnd: Bnd =>
         // Bnd span is just the name, but we also need to check value span for params/body
         containsPosition(bnd.span, line, col) || containsPosition(bnd.value.span, line, col)
-      case fs: FromSource => containsPosition(fs.span, line, col)
+      case fs: FromSource => fs.source.spanOpt.exists(containsPosition(_, line, col))
       case _ => false
 
   private def findInMember(member: Member, line: Int, col: Int): Option[LookupResult] =
@@ -106,7 +109,7 @@ object AstLookup:
     }
 
   private def findInExpr(expr: Expr, line: Int, col: Int): Option[LookupResult] =
-    if !containsPosition(expr.span, line, col) then None
+    if isValidSpan(expr.span) && !containsPosition(expr.span, line, col) then None
     else
       // Only return results for actual terms, not for whitespace/comments within the expr span
       expr.terms.collectFirst {
@@ -114,7 +117,7 @@ object AstLookup:
       }.flatten
 
   private def termContains(t: Term, line: Int, col: Int): Boolean =
-    containsPosition(t.span, line, col)
+    containsOrInvalid(t.span, line, col)
 
   private def findInTerm(term: Term, line: Int, col: Int): Option[LookupResult] =
     term match
@@ -186,16 +189,16 @@ object AstLookup:
   private def findInApp(app: App, line: Int, col: Int): Option[LookupResult] =
     // Check arg first - fn may have overly broad span (e.g., lambda from let binding)
     val argResult =
-      if containsPosition(app.arg.span, line, col) then findInExpr(app.arg, line, col)
+      if containsOrInvalid(app.arg.span, line, col) then findInExpr(app.arg, line, col)
       else None
 
     argResult.orElse {
       app.fn match
-        case ref: Ref if containsPosition(ref.span, line, col) =>
+        case ref: Ref if containsOrInvalid(ref.span, line, col) =>
           Some(LookupResult(ref.typeSpec, Some(ref.name), ref.span))
-        case innerApp: App if containsPosition(innerApp.span, line, col) =>
+        case innerApp: App if containsOrInvalid(innerApp.span, line, col) =>
           findInApp(innerApp, line, col)
-        case lambda: Lambda if containsPosition(lambda.span, line, col) =>
+        case lambda: Lambda if containsOrInvalid(lambda.span, line, col) =>
           findInExpr(lambda.body, line, col)
             .orElse(findInParams(lambda.params, line, col))
         case _ => None
@@ -274,7 +277,7 @@ object AstLookup:
     col:    Int,
     module: Module
   ): List[SrcSpan] =
-    if !containsPosition(expr.span, line, col) then Nil
+    if isValidSpan(expr.span) && !containsPosition(expr.span, line, col) then Nil
     else
       expr.terms
         .collectFirst {
@@ -367,18 +370,18 @@ object AstLookup:
     module: Module
   ): List[SrcSpan] =
     val argResult =
-      if containsPosition(app.arg.span, line, col) then
+      if containsOrInvalid(app.arg.span, line, col) then
         findDefinitionInExpr(app.arg, line, col, module)
       else Nil
 
     if argResult.nonEmpty then argResult
     else
       app.fn match
-        case ref: Ref if containsPosition(ref.span, line, col) =>
+        case ref: Ref if containsOrInvalid(ref.span, line, col) =>
           findDefinitionInRef(ref, line, col, module)
-        case innerApp: App if containsPosition(innerApp.span, line, col) =>
+        case innerApp: App if containsOrInvalid(innerApp.span, line, col) =>
           findDefinitionInApp(innerApp, line, col, module)
-        case lambda: Lambda if containsPosition(lambda.span, line, col) =>
+        case lambda: Lambda if containsOrInvalid(lambda.span, line, col) =>
           val typeDefs = lambda.typeAsc.toList.flatMap(findDefinitionInType(_, line, col, module))
           if typeDefs.nonEmpty then typeDefs
           else
@@ -496,7 +499,7 @@ object AstLookup:
 
   private def definitionForTypeRef(ref: TypeRef, module: Module): Option[SrcSpan] =
     ref.resolvedId.flatMap(module.resolvables.lookupType) match
-      case Some(resolvable: FromSource) => Some(resolvable.span)
+      case Some(resolvable: FromSource) => resolvable.source.spanOpt
       case _ =>
         module.members.collectFirst {
           case ta: TypeAlias if ta.name == ref.name => ta.span
@@ -514,7 +517,7 @@ object AstLookup:
             }
           case _ => None
       case param: FnParam if param.source == SourceOrigin.Synth => None
-      case fs:    FromSource => Some(fs.span)
+      case fs:    FromSource => fs.source.spanOpt
       case _ => None
 
   private def resolveStructType(typeSpec: Type, module: Module): Option[TypeStruct] =
@@ -622,7 +625,7 @@ object AstLookup:
     col:    Int,
     module: Module
   ): Option[ReferenceTarget] =
-    if !containsPosition(expr.span, line, col) then None
+    if isValidSpan(expr.span) && !containsPosition(expr.span, line, col) then None
     else
       expr.terms.collectFirst {
         case t if termContains(t, line, col) => findReferenceTargetInTerm(t, line, col, module)
@@ -704,15 +707,15 @@ object AstLookup:
     col:    Int,
     module: Module
   ): Option[ReferenceTarget] =
-    if containsPosition(app.arg.span, line, col) then
+    if containsOrInvalid(app.arg.span, line, col) then
       findReferenceTargetInExpr(app.arg, line, col, module)
     else
       app.fn match
-        case ref: Ref if containsPosition(ref.span, line, col) =>
+        case ref: Ref if containsOrInvalid(ref.span, line, col) =>
           findReferenceTargetInTerm(ref, line, col, module)
-        case innerApp: App if containsPosition(innerApp.span, line, col) =>
+        case innerApp: App if containsOrInvalid(innerApp.span, line, col) =>
           findReferenceTargetInApp(innerApp, line, col, module)
-        case lambda: Lambda if containsPosition(lambda.span, line, col) =>
+        case lambda: Lambda if containsOrInvalid(lambda.span, line, col) =>
           findReferenceTargetInTerm(lambda, line, col, module)
         case _ => None
 

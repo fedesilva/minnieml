@@ -44,7 +44,8 @@ object DuplicateNameChecker:
             else
               DuplicateMember(
                 span = member match {
-                  case m: FromSource => m.span
+                  case m: FromSource =>
+                    m.source.spanOpt.getOrElse(SrcSpan(SrcPoint(0, 0, 0), SrcPoint(0, 0, 0)))
                   case _ => SrcSpan(SrcPoint(0, 0, 0), SrcPoint(0, 0, 0))
                 },
                 originalMember  = member,

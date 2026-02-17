@@ -130,14 +130,14 @@ GitHub: `https://github.com/fedesilva/minnieml/issues/220`
       use `nameNode.span` directly.
     - [x] Run full verification.
 
-- [ ] **BUG: Go-to-definition on struct constructor resolves to function, not struct**:
+- [x] **BUG: Go-to-definition on struct constructor resolves to function, not struct** [COMPLETE]:
   Constructor is synthetic (`__mk_<Name>`), LSP should resolve through it to the
   `TypeStruct` declaration. See `context/specs/qa-lsp.md` repro case D.
   - [x] `spanForResolvable` resolves `BindingOrigin.Constructor` synth Bnds through
     `meta.originalName` to the source `TypeStruct.nameNode.span`. Works for simple cases
     (non-heap struct in return position). Test: "go-to-definition on struct constructor
     resolves to struct declaration" in `FindDefinitionTests`.
-  - [ ] **BLOCKED: Ownership analyzer synthetic spans break AST traversal.** When the
+  - [x] **Ownership analyzer synthetic spans break AST traversal** [COMPLETE]. When the
     constructor arg is a heap-allocating call, `OwnershipAnalyzer.analyzeAllocatingApp`
     wraps it in temp-binding nodes using `syntheticSpan = (0,0,-1)`. The let-binding
     `App(Lambda(param, body), arg)` keeps its real span, but `arg` is replaced by the
@@ -149,7 +149,11 @@ GitHub: `https://github.com/fedesilva/minnieml/issues/220`
       invalid/synthetic spans — they may contain source-backed nodes inside. Either
       always traverse when span is invalid, or propagate source spans through ownership
       wrappers.
-    - Ignored test: "go-to-definition on constructor inside let binding resolves to struct"
+    - Fix implemented: `AstLookup` now traverses through invalid/synthetic wrapper spans
+      (`containsOrInvalid` guard), and `FromSource` callsites now use `source.spanOpt`
+      instead of trait-level fake span assumptions.
+    - Regression test enabled and passing:
+      "go-to-definition on constructor inside let binding resolves to struct"
     - Repro: `mml/samples/person-struct.mml`, click `Address` or `Person` in `main` body.
 
 - [ ] **BUG: Synthesized constructor body leaks overlapping tokens onto user code**:
@@ -187,6 +191,27 @@ GitHub: `https://github.com/fedesilva/minnieml/issues/235`
 ---
 
 ## Recent Changes
+
+### 2026-02-16 Complete constructor go-to-definition through synthetic ownership wrappers [COMPLETE]
+
+- **Problem:** Constructor go-to-definition still failed inside let bindings when
+  `OwnershipAnalyzer` wrapped constructor args with synthetic `(0,0,-1)` spans.
+  `AstLookup` gated traversal on `containsPosition`, skipping those subtrees and
+  missing source refs (e.g. `Address` in `person-struct.mml`).
+- **Fix:**
+  - `FromSource` now exposes only `source: SourceOrigin` (no `.span` on trait).
+  - Added explicit `source` wiring for span-backed AST nodes (`Name`, `DocComment`,
+    `Module`, `DuplicateMember`, `InvalidMember`, `Field`, `TypeDef`, `TypeAlias`,
+    `InvalidType`) and default source derivation for `Type`/`Term`.
+  - Updated LSP/diagnostic/error-printer callsites to use `source.spanOpt`.
+  - Updated `AstLookup` traversal gates to continue traversal when spans are invalid/synthetic.
+- **Tests and verification:**
+  - Enabled and passed `FindDefinitionTests` case:
+    `go-to-definition on constructor inside let binding resolves to struct`.
+  - `sbt compile` passed.
+  - `sbtn "test"` passed (270/270).
+  - `sbtn "scalafmtAll; scalafixAll; mmlcPublishLocal"` passed.
+  - `make -C benchmark clean && make -C benchmark mml` passed.
 
 ### 2026-02-16 Fix phantom semantic tokens from ownership free/clone wrappers [COMPLETE]
 

@@ -31,7 +31,7 @@ object Diagnostics:
       case SemanticError.UndefinedRef(ref, _, _) => Some(ref.span)
       case SemanticError.UndefinedTypeRef(typeRef, _, _) => Some(typeRef.span)
       case SemanticError.DuplicateName(_, dups, _) =>
-        dups.collectFirst { case fs: FromSource => fs.span }
+        dups.collectFirst { case fs: FromSource => fs.source.spanOpt }.flatten
       case SemanticError.InvalidExpression(expr, _, _) => Some(expr.span)
       case SemanticError.DanglingTerms(terms, _, _) => terms.headOption.map(_.span)
       case SemanticError.MemberErrorFound(err, _) => Some(err.span)
@@ -77,12 +77,12 @@ object Diagnostics:
 
   private def nodeSpan(node: Typeable): Option[SrcSpan] =
     node match
-      case fs: FromSource => Some(fs.span)
+      case fs: FromSource => fs.source.spanOpt
       case _ => None
 
   private def astNodeSpan(node: AstNode): Option[SrcSpan] =
     node match
-      case fs: FromSource => Some(fs.span)
+      case fs: FromSource => fs.source.spanOpt
       case _ => None
 
   private def formatErrorMessage(error: CompilationError): String =

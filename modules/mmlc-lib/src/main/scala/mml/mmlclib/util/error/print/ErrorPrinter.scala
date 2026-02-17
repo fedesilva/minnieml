@@ -13,6 +13,14 @@ object ErrorPrinter:
   def formatLocation(span: SrcSpan): String =
     s"[${span.start.line}:${span.start.col}]-[${span.end.line}:${span.end.col}]"
 
+  private def spanOf(node: FromSource): Option[SrcSpan] =
+    node.source.spanOpt
+
+  private def startPosOf(node: FromSource): (Int, Int) =
+    spanOf(node)
+      .map(s => (s.start.line, s.start.col))
+      .getOrElse((Int.MaxValue, Int.MaxValue))
+
   /** Pretty print any compiler error */
   def prettyPrint(error: Any, sourceInfo: Option[SourceInfo] = None): String = error match
     case CompilerError.SemanticErrors(errors) => prettyPrintSemanticErrors(errors, sourceInfo)
@@ -32,8 +40,9 @@ object ErrorPrinter:
     case SemanticError.DuplicateName(_, duplicates, _) =>
       duplicates
         .collect { case d: FromSource => d }
-        .minByOption(_.span.start.index)
-        .map(d => (d.span.start.line, d.span.start.col))
+        .flatMap(spanOf)
+        .minByOption(_.start.index)
+        .map(s => (s.start.line, s.start.col))
         .getOrElse((Int.MaxValue, Int.MaxValue))
     case SemanticError.InvalidExpression(expr, _, _) => (expr.span.start.line, expr.span.start.col)
     case SemanticError.MemberErrorFound(error, _) => (error.span.start.line, error.span.start.col)
@@ -63,19 +72,15 @@ object ErrorPrinter:
         case mml.mmlclib.semantic.TypeError.MissingParameterType(param, _, _) =>
           (param.span.start.line, param.span.start.col)
         case mml.mmlclib.semantic.TypeError.MissingReturnType(decl, _) =>
-          val fs = decl.asInstanceOf[FromSource]
-          (fs.span.start.line, fs.span.start.col)
+          startPosOf(decl.asInstanceOf[FromSource])
         case mml.mmlclib.semantic.TypeError.RecursiveFunctionMissingReturnType(decl, _) =>
-          val fs = decl.asInstanceOf[FromSource]
-          (fs.span.start.line, fs.span.start.col)
+          startPosOf(decl.asInstanceOf[FromSource])
         case mml.mmlclib.semantic.TypeError.MissingOperatorParameterType(param, _, _) =>
           (param.span.start.line, param.span.start.col)
         case mml.mmlclib.semantic.TypeError.MissingOperatorReturnType(decl, _) =>
-          val fs = decl.asInstanceOf[FromSource]
-          (fs.span.start.line, fs.span.start.col)
+          startPosOf(decl.asInstanceOf[FromSource])
         case mml.mmlclib.semantic.TypeError.TypeMismatch(node, _, _, _, _) =>
-          val fs = node.asInstanceOf[FromSource]
-          (fs.span.start.line, fs.span.start.col)
+          startPosOf(node.asInstanceOf[FromSource])
         case mml.mmlclib.semantic.TypeError.UndersaturatedApplication(app, _, _, _) =>
           (app.span.start.line, app.span.start.col)
         case mml.mmlclib.semantic.TypeError.OversaturatedApplication(app, _, _, _) =>
@@ -92,11 +97,10 @@ object ErrorPrinter:
           (cond.span.start.line, cond.span.start.col)
         case mml.mmlclib.semantic.TypeError.UnresolvableType(node, _, _) =>
           node match
-            case fs: FromSource => (fs.span.start.line, fs.span.start.col)
+            case fs: FromSource => startPosOf(fs)
             case _ => (Int.MaxValue, Int.MaxValue)
         case mml.mmlclib.semantic.TypeError.IncompatibleTypes(node, _, _, _, _) =>
-          val fs = node.asInstanceOf[FromSource]
-          (fs.span.start.line, fs.span.start.col)
+          startPosOf(node.asInstanceOf[FromSource])
         case mml.mmlclib.semantic.TypeError.UntypedHoleInBinding(_, span, _) =>
           (span.start.line, span.start.col)
 
@@ -149,7 +153,9 @@ object ErrorPrinter:
     val baseMessage = error match
       case SemanticError.DuplicateName(name, duplicates, phase) =>
         val locations = duplicates
-          .collect { case d: FromSource => formatLocation(d.span) }
+          .collect { case d: FromSource => d }
+          .flatMap(spanOf)
+          .map(formatLocation)
           .mkString(", ")
 
         s"${Console.RED}Duplicate name '$name' defined at: $locations${Console.RESET}\n${Console.YELLOW}Phase: $phase${Console.RESET}"
@@ -233,7 +239,7 @@ object ErrorPrinter:
           s"${Console.RED}Code generation error: ${err.message}${Console.RESET}\n${Console.YELLOW}Phase: Code Generation${Console.RESET}"
 
         val snippetAndLocation =
-          (err.node.collect { case fs: FromSource => fs.span }, sourceInfo) match
+          (err.node.collect { case fs: FromSource => fs }.flatMap(spanOf), sourceInfo) match
             case (Some(span), Some(info)) =>
               SourceCodeExtractor
                 .extractSnippet(info, span)

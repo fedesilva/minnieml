@@ -156,7 +156,7 @@ class FindDefinitionTests extends BaseEffFunSuite:
   // don't get ownership temp wrappers. Heap-struct constructors inside let bindings
   // fail because OwnershipAnalyzer wraps the arg with syntheticSpan nodes,
   // causing findDefinitionInApp to skip the arg entirely.
-  test("go-to-definition on constructor inside let binding resolves to struct".ignore) {
+  test("go-to-definition on constructor inside let binding resolves to struct") {
     val code =
       """
       struct Address { city: String, street: String };

@@ -26,7 +26,8 @@ case class DuplicateMember(
   firstOccurrence: Member
 ) extends Member,
       InvalidNode,
-      FromSource
+      FromSource:
+  override val source: SourceOrigin = SourceOrigin.Loc(span)
 
 /** Represents a member that is invalid for reasons other than being a duplicate. For example,
   * functions with duplicate parameter names.
@@ -37,7 +38,8 @@ case class InvalidMember(
   reason:         String
 ) extends Member,
       InvalidNode,
-      FromSource
+      FromSource:
+  override val source: SourceOrigin = SourceOrigin.Loc(span)
 
 case class ParsingMemberError(
   span:       SrcSpan,

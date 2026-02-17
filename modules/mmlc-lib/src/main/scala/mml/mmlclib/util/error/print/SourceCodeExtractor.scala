@@ -8,6 +8,8 @@ import scala.math.Ordering // Added Ordering import
 
 /** Utility for extracting source code snippets for error reporting */
 object SourceCodeExtractor:
+  private def spanOf(node: FromSource): Option[SrcSpan] =
+    node.source.spanOpt
 
   /** Extract source code snippets for a semantic error
     *
@@ -25,14 +27,17 @@ object SourceCodeExtractor:
       case SemanticError.DuplicateName(name, duplicates, _) =>
         // Sort duplicates by their starting index
         val sortedDuplicates =
-          duplicates.collect { case d: FromSource => d }.sortBy(_.span.start.index) // Sort by index
+          duplicates
+            .collect { case d: FromSource => d }
+            .flatMap(d => spanOf(d).map(s => (d, s)))
+            .sortBy(_._2.start.index)
 
         // Iterate over sorted duplicates
-        val snippets = sortedDuplicates.map { d => // Use sorted list
-          val location = LocationPrinter.printSpan(d.span)
+        val snippets = sortedDuplicates.map { case (_, span) =>
+          val location = LocationPrinter.printSpan(span)
 
           val snippet =
-            extractSnippet(sourceInfo, d.span)
+            extractSnippet(sourceInfo, span)
               .getOrElse("Source line not available")
 
           s"\nAt ${Console.YELLOW}$location${Console.RESET}:\n$snippet"
@@ -69,20 +74,22 @@ object SourceCodeExtractor:
       case SemanticError.DanglingTerms(terms, _, _) =>
         // Extract snippets for each dangling term
         val snippets = terms.collect { case term: FromSource =>
-          val location = LocationPrinter.printSpan(term.span)
+          spanOf(term).map { span =>
+            val location = LocationPrinter.printSpan(span)
 
-          // Find the line where this term is defined (1-based)
-          val lineNumber = term.span.start.line
+            // Find the line where this term is defined (1-based)
+            val lineNumber = span.start.line
 
-          // Generate a snippet with the term highlighted
-          val snippet =
-            if lineNumber > 0 && lineNumber <= sourceLines.length then
-              extractSnippet(sourceInfo, term.span)
-                .getOrElse("Source line not available")
-            else "Source line not available"
+            // Generate a snippet with the term highlighted
+            val snippet =
+              if lineNumber > 0 && lineNumber <= sourceLines.length then
+                extractSnippet(sourceInfo, span)
+                  .getOrElse("Source line not available")
+              else "Source line not available"
 
-          s"\nAt ${Console.YELLOW}$location${Console.RESET}:\n$snippet"
-        }
+            s"\nAt ${Console.YELLOW}$location${Console.RESET}:\n$snippet"
+          }
+        }.flatten
         snippets.mkString("\n")
 
       case SemanticError.InvalidExpressionFound(invalidExpr, _) =>
@@ -133,13 +140,15 @@ object SourceCodeExtractor:
 
       case TypeError.MissingReturnType(decl, _) =>
         val fs = decl.asInstanceOf[FromSource]
-        extractSnippet(sourceInfo, fs.span)
+        spanOf(fs)
+          .flatMap(extractSnippet(sourceInfo, _))
           .map(s => s"\n$s")
           .getOrElse("")
 
       case TypeError.RecursiveFunctionMissingReturnType(decl, _) =>
         val fs = decl.asInstanceOf[FromSource]
-        extractSnippet(sourceInfo, fs.span)
+        spanOf(fs)
+          .flatMap(extractSnippet(sourceInfo, _))
           .map(s => s"\n$s")
           .getOrElse("")
 
@@ -150,16 +159,19 @@ object SourceCodeExtractor:
 
       case TypeError.MissingOperatorReturnType(decl, _) =>
         val fs = decl.asInstanceOf[FromSource]
-        extractSnippet(sourceInfo, fs.span)
+        spanOf(fs)
+          .flatMap(extractSnippet(sourceInfo, _))
           .map(s => s"\n$s")
           .getOrElse("")
 
       case TypeError.TypeMismatch(node, _, _, _, _) =>
         node match
           case fs: FromSource =>
-            extractSnippet(sourceInfo, fs.span)
+            spanOf(fs)
+              .flatMap(extractSnippet(sourceInfo, _))
               .map(s => s"\n$s")
               .getOrElse("")
+          case _ => ""
 
       case TypeError.UndersaturatedApplication(app, _, _, _) =>
         extractSnippet(sourceInfo, app.span)
@@ -199,7 +211,8 @@ object SourceCodeExtractor:
       case TypeError.UnresolvableType(node, _, _) =>
         node match
           case fs: FromSource =>
-            extractSnippet(sourceInfo, fs.span)
+            spanOf(fs)
+              .flatMap(extractSnippet(sourceInfo, _))
               .map(s => s"\n$s")
               .getOrElse("")
           case _ => ""
@@ -207,7 +220,8 @@ object SourceCodeExtractor:
       case TypeError.IncompatibleTypes(node, _, _, _, _) =>
         node match
           case fs: FromSource =>
-            extractSnippet(sourceInfo, fs.span)
+            spanOf(fs)
+              .flatMap(extractSnippet(sourceInfo, _))
               .map(s => s"\n$s")
               .getOrElse("")
           case _ => ""

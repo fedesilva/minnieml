@@ -6,7 +6,9 @@ enum MemEffect derives CanEqual:
   case Alloc // returns newly allocated memory, caller owns
   case Static // returns pointer to static/existing memory
 
-sealed trait Term extends AstNode, Typeable, FromSource
+sealed trait Term extends AstNode, Typeable, FromSource:
+  def span:            SrcSpan
+  override def source: SourceOrigin = SourceOrigin.Loc(span)
 
 case class TermError(
   span:       SrcSpan,

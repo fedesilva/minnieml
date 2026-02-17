@@ -1,7 +1,9 @@
 package mml.mmlclib.ast
 
 // **Type Specifications**
-sealed trait Type extends AstNode, FromSource
+sealed trait Type extends AstNode, FromSource:
+  def span:            SrcSpan
+  override def source: SourceOrigin = SourceOrigin.Loc(span)
 
 sealed trait ResolvableType extends Resolvable
 
@@ -76,7 +78,8 @@ case class Field(
   typeSpec: Type,
   id:       Option[String] = None
 ) extends FromSource,
-      Resolvable
+      Resolvable:
+  override val source: SourceOrigin = SourceOrigin.Loc(span)
 
 /** Refine types with a predicate `Int {i => i < 100 && i > 0 }` */
 case class TypeRefinement(span: SrcSpan, id: Option[String], expr: Expr) extends Type
@@ -125,7 +128,8 @@ case class TypeDef(
   id:         Option[String]     = None
 ) extends Decl,
       ResolvableType,
-      FromSource
+      FromSource:
+  override val source: SourceOrigin = SourceOrigin.Loc(span)
 
 /** A type alias, which is a new name for an existing type, NOT a new type */
 case class TypeAlias(
@@ -139,7 +143,8 @@ case class TypeAlias(
   id:         Option[String]     = None
 ) extends Decl,
       ResolvableType,
-      FromSource
+      FromSource:
+  override val source: SourceOrigin = SourceOrigin.Loc(span)
 
 /** Represents a type specification that could not be resolved. Preserves the original type for
   * debugging and error reporting.
@@ -149,4 +154,5 @@ case class InvalidType(
   originalType: Type
 ) extends Type,
       InvalidNode,
-      FromSource
+      FromSource:
+  override val source: SourceOrigin = SourceOrigin.Loc(span)

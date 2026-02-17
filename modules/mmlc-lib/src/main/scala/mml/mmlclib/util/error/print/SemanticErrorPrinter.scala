@@ -7,6 +7,11 @@ import mml.mmlclib.semantic.{SemanticError, TypeError, UnresolvableTypeContext}
 
 /** Pretty printer for semantic errors */
 object SemanticErrorPrinter:
+  private def spanOf(node: FromSource): Option[mml.mmlclib.ast.SrcSpan] =
+    node.source.spanOpt
+
+  private def locationOf(node: FromSource): String =
+    spanOf(node).map(LocationPrinter.printSpan).getOrElse("<unknown>")
 
   /** Pretty print a list of semantic errors
     *
@@ -82,9 +87,10 @@ object SemanticErrorPrinter:
         // Sort duplicates by their starting index using sortBy
         val sortedDuplicates = duplicates
           .collect { case d: FromSource => d }
-          .sortBy(_.span.start.index) // Use sortBy
+          .flatMap(d => spanOf(d).map(s => (d, s)))
+          .sortBy(_._2.start.index)
         val locations = sortedDuplicates // Use sorted list
-          .map(d => LocationPrinter.printSpan(d.span))
+          .map { case (_, s) => LocationPrinter.printSpan(s) }
           .mkString(" ") // Use space separator
         s"${Console.RED}Duplicate name '$name' defined at: $locations [phase: $phase]${Console.RESET}"
 
@@ -174,11 +180,11 @@ object SemanticErrorPrinter:
         s"${Console.RED}Missing parameter type for '${param.name}' in function '${decl.name}' at $location${Console.RESET}\n${Console.YELLOW}Phase: $phase${Console.RESET}"
 
       case TypeError.MissingReturnType(decl, phase) =>
-        val location = LocationPrinter.printSpan(decl.asInstanceOf[FromSource].span)
+        val location = locationOf(decl.asInstanceOf[FromSource])
         s"${Console.RED}Missing return type for function '${decl.name}' at $location${Console.RESET}\n${Console.YELLOW}Phase: $phase${Console.RESET}"
 
       case TypeError.RecursiveFunctionMissingReturnType(decl, phase) =>
-        val location = LocationPrinter.printSpan(decl.asInstanceOf[FromSource].span)
+        val location = locationOf(decl.asInstanceOf[FromSource])
         s"${Console.RED}Missing return type for self-recursive function '${decl.name}' at $location${Console.RESET}\n${Console.YELLOW}Phase: $phase${Console.RESET}"
 
       case TypeError.MissingOperatorParameterType(param, decl, phase) =>
@@ -186,11 +192,11 @@ object SemanticErrorPrinter:
         s"${Console.RED}Missing parameter type for '${param.name}' in operator '${decl.name}' at $location${Console.RESET}\n${Console.YELLOW}Phase: $phase${Console.RESET}"
 
       case TypeError.MissingOperatorReturnType(decl, phase) =>
-        val location = LocationPrinter.printSpan(decl.asInstanceOf[FromSource].span)
+        val location = locationOf(decl.asInstanceOf[FromSource])
         s"${Console.RED}Missing return type for operator '${decl.name}' at $location${Console.RESET}\n${Console.YELLOW}Phase: $phase${Console.RESET}"
 
       case TypeError.TypeMismatch(node, expected, actual, phase, expectedBy) =>
-        val location    = LocationPrinter.printSpan(node.asInstanceOf[FromSource].span)
+        val location    = locationOf(node.asInstanceOf[FromSource])
         val expectedStr = formatTypeSpec(expected)
         val actualStr   = formatTypeSpec(actual)
         val expectation =
@@ -234,7 +240,7 @@ object SemanticErrorPrinter:
 
       case TypeError.UnresolvableType(node, context, phase) =>
         val location = node match
-          case fs: FromSource => LocationPrinter.printSpan(fs.span)
+          case fs: FromSource => locationOf(fs)
           case _ => "<unknown>"
         val nameSuffix = context match
           case Some(UnresolvableTypeContext.NamedValue(name)) => s" for '$name'"
@@ -242,7 +248,7 @@ object SemanticErrorPrinter:
         s"${Console.RED}Unable to infer type$nameSuffix at $location${Console.RESET}\n${Console.YELLOW}Phase: $phase${Console.RESET}"
 
       case TypeError.IncompatibleTypes(node, type1, type2, context, phase) =>
-        val location = LocationPrinter.printSpan(node.asInstanceOf[FromSource].span)
+        val location = locationOf(node.asInstanceOf[FromSource])
         val type1Str = formatTypeSpec(type1)
         val type2Str = formatTypeSpec(type2)
         s"${Console.RED}Incompatible types at $location in $context: '$type1Str' and '$type2Str'${Console.RESET}\n${Console.YELLOW}Phase: $phase${Console.RESET}"
