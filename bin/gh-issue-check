@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+if [[ $# -lt 2 || $# -gt 3 ]]; then
+  echo "Usage: $(basename "$0") <issue-number> <item-text> [repo]" >&2
+  echo "Example: $(basename "$0") 220 \"VS Code: show popup when go-to-definition has no target\" fedesilva/minnieml" >&2
+  exit 1
+fi
+
+issue="$1"
+item_text="$2"
+repo="${3:-fedesilva/minnieml}"
+
+tmp="$(mktemp)"
+trap 'rm -f "$tmp"' EXIT
+
+gh issue view "$issue" --repo "$repo" --json body --jq .body > "$tmp"
+export ITEM_TEXT="$item_text"
+perl -0pi -e '
+  my $text = $ENV{ITEM_TEXT};
+  s/^([ \t]*)- \[ \]([ \t]*\*\*\Q$text\E\*\*[^\n]*)$/$1- [x]$2/gm;
+' "$tmp"
+
+gh issue edit "$issue" --repo "$repo" --body-file "$tmp" >/dev/null
+echo "Checked item in issue #$issue: $item_text"

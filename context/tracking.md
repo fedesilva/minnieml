@@ -52,15 +52,15 @@ GitHub: `https://github.com/fedesilva/minnieml/issues/220`
   jump to next term (`p`) instead of returning no definition. Backend now returns no definition
   for non-source-backed targets (`AstLookup` + regression test).
 
-- [ ] **VS Code: show popup when go-to-definition has no target**:
+- [x] **VS Code: show popup when go-to-definition has no target** [COMPLETE]:
   In `tooling/vscode`, when `textDocument/definition` resolves to no location for the
   symbol under cursor, show `definition not found for: <<symbol>>` instead of silent no-op.
 
-- [ ] **VS Code: restart language server automatically after crash/detect-stop**:
+- [x] **VS Code: restart language server automatically after crash/detect-stop** [COMPLETE]:
   When the extension detects the MML language server crashed or is no longer running,
   automatically restart it (and keep current manual restart command as fallback).
 
-- [ ] **VS Code: add verbose LSP client console logging (cpptools-style)**:
+- [x] **VS Code: add verbose LSP client console logging (cpptools-style)** [COMPLETE]:
   Log request/notification flow in the VS Code extension output channel with entries like
   `(received)`, `(invoked)`, and `Sending response` including method names and request IDs,
   aligned with current server-side LSP logging verbosity.

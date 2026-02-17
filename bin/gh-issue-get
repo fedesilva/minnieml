@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+if [[ $# -lt 1 || $# -gt 3 ]]; then
+  echo "Usage: $(basename "$0") <issue-number> [repo] [fields]" >&2
+  echo "Example: $(basename "$0") 220 fedesilva/minnieml number,title,state,url,body" >&2
+  exit 1
+fi
+
+issue="$1"
+repo="${2:-fedesilva/minnieml}"
+fields="${3:-number,title,state,url,labels,assignees,body}"
+
+gh issue view "$issue" --repo "$repo" --json "$fields"

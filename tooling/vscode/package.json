@@ -44,6 +44,11 @@
                     "type": "string",
                     "default": "mmlc",
                     "description": "Path to the mmlc compiler executable"
+                },
+                "mml.verboseLspClientLogging": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "Log LSP client request/response flow in MinnieML output"
                 }
             }
         },

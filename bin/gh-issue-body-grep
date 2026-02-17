@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+if [[ $# -lt 2 || $# -gt 3 ]]; then
+  echo "Usage: $(basename "$0") <issue-number> <pattern> [repo]" >&2
+  echo "Example: $(basename "$0") 220 \"VS Code:\" fedesilva/minnieml" >&2
+  exit 1
+fi
+
+issue="$1"
+pattern="$2"
+repo="${3:-fedesilva/minnieml}"
+
+gh issue view "$issue" --repo "$repo" --json body --jq .body | nl -ba | rg -n "$pattern"

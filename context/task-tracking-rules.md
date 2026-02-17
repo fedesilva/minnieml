@@ -40,6 +40,12 @@ If a rule is unclear or conflicts with the current task, raise the conflict and 
   - GitHub repo: `https://github.com/fedesilva/minnieml`
   - GitHub project: `https://github.com/users/fedesilva/projects/3`
 - Use `gh` to keep Active Tracked Items aligned with GitHub tickets.
+- Prefer local helper scripts under `bin/` for issue body sync operations so escalation prompts
+  stay short and reviewable.
+  - `bin/gh-issue-body-get <issue> [repo]`: fetch current issue body
+  - `bin/gh-issue-body-set <issue> <body-file> [repo]`: replace issue body from file
+  - `bin/gh-issue-body-replace <issue> <perl-expression> [repo]`: apply in-place text updates
+  - Default repo for these scripts is `fedesilva/minnieml`.
 - Synchronize with GitHub at these points:
   - when creating a top-level Active Tracked Item
   - when creating a subtask representation (checklist item or sub-issue)
