@@ -401,7 +401,7 @@ entry:
 ; ============================================================================
 ; THE ++ OPERATOR (String Concatenation)
 ; ============================================================================
-; In MML, this is a built-in binary operator:
+; In MML, this is a binary operator that wraps the concat function.
 ;
 ;   "hello" ++ " world"
 ;

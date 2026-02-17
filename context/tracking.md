@@ -50,3 +50,23 @@ GitHub: `https://github.com/fedesilva/minnieml/issues/235`
   `context/qa-misses.md` section `2026-02-15 - Brittle deep wildcard pattern matching in OwnershipAnalyzerTests helpers`
   and introduce extractor-first handling for repeated noisy match patterns in tests, or perform a
   focused review with documented rationale where extractors are not appropriate.
+
+### LSP Logging
+
+Bound LSP server log growth using startup-time rotation and prepare runtime cache setup flow.
+
+GitHub: `https://github.com/fedesilva/minnieml/issues/223`
+
+Spec: `context/specs/lsp-log-rotation.md`
+
+- [ ] **Implement size-based LSP log rotation at startup**: before opening `server.log`,
+  rotate when file size exceeds 5 MB using `server.log.1`, `.2`, `.3` up to 10 items, then delete.
+
+### Entry Point Parameters
+
+Pass parameters at the entry point when the internal function signature requires them,
+using a monomorphic array.
+
+GitHub: `https://github.com/fedesilva/minnieml/issues/200`
+
+- [ ] **Pass parameters if internal entry point takes them (use monomorphic array)**.
