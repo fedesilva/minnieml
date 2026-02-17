@@ -56,7 +56,6 @@ enum SourceOrigin derives CanEqual:
 /** Visibility control shared by modules and members.
   *
   *   - `pub`: Importable and referenceable from any module.
-  *   - `lex`: Visible only within the defining module and its descendants; never exported.
   *   - `prot`: Visible to the current module, sibling modules, and nested modules; external access
   *     requires import or fully qualified names.
   *   - `priv`: Confined to the defining module (sibling modules can refer without import but it is
