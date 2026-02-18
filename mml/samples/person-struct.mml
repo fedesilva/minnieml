@@ -12,13 +12,13 @@ struct Address {
  
 fn main() =  
 
-  let addr =  Address "San Francisco" "101 28th Street";
-  let p =     Person "fede" 25 addr;
+  let addr  = Address "San Francisco" "101 28th Street";
+  let p     = Person "fede" 25 addr;
 
   // Cannae use after move
   // println addr.city;
 
-  // /println "--------------------------------";
+  println "--------------------------------";
   println ("Name: "   ++ p.name);
   println ("Age: "    ++ int_to_str p.age);
   println ("City: "   ++ p.address.city);
