@@ -62,6 +62,20 @@ Spec: `context/specs/lsp-log-rotation.md`
 - [ ] **Implement size-based LSP log rotation at startup**: before opening `server.log`,
   rotate when file size exceeds 5 MB using `server.log.1`, `.2`, `.3` up to 10 items, then delete.
 
+### SourceOrigin Migration
+
+Finish `SourceOrigin` migration so synthetic nodes stop leaking fake source coordinates.
+
+GitHub: `https://github.com/fedesilva/minnieml/issues/237`
+
+Spec: `context/specs/source-origin-migration.md`
+
+- [ ] **Phase A: fix `Name.synth` origin contract**.
+- [ ] **Phase B: remove fake location fallback in `DuplicateNameChecker`**.
+- [ ] **Phase C: clean bootstrap dummy spans in ingest/fallback paths**.
+- [ ] **Phase D: remove remaining `0,0,0` anti-patterns in stdlib injection paths**.
+- [ ] **Phase E: add guardrail against `SrcPoint(0,0,0)` reintroduction**.
+
 ### Entry Point Parameters [COMPLETE]
 
 Pass parameters at the entry point when the internal function signature requires them,
@@ -81,6 +95,10 @@ Report:
 
 
 ## Recent Changes
+
+- 2026-02-20: Created issue #237 (`Finish SourceOrigin migration`) from
+  `context/specs/source-origin-migration.md`, added it to GitHub project #3, and set project
+  status to `In progress`.
 
 - 2026-02-17: Completed issue #200. Implemented `main(args: StringArray)` entry-point support
   in pre-codegen validation and synthesized wrapper flow, added runtime helper

@@ -23,6 +23,8 @@ trait AstNode derives CanEqual
 case class Name(span: SrcSpan, value: String) extends AstNode, FromSource:
   override val source: SourceOrigin = SourceOrigin.Loc(span)
 
+// FIXME:QA: spans with 0 coords should have been removed already.
+// it's the whole point of SourceOrigin.
 object Name:
   private val emptySpan:    SrcSpan = SrcSpan(SrcPoint(0, 0, 0), SrcPoint(0, 0, 0))
   def synth(value: String): Name    = Name(emptySpan, value)

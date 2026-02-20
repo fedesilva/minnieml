@@ -23,7 +23,9 @@ If a rule is unclear or conflicts with the current task, raise the conflict and 
 - Before requesting top-level signoff, run required post-task rules from `context/coding-rules.md` when applicable.
 - After signoff, ask whether to mark the top-level Tracked Item `[COMPLETE]`, then stand by for instruction.
 - When instructed, update Tracked Item status and log the change under `Recent Changes`.
+  - log codebase or documentation changes **only**.
 - Never delete Tracked Items. Mark status only.
+  - if explicitely told to delete, ask for confirmation.
 
 ## Recent Changes
 
@@ -59,5 +61,6 @@ If a rule is unclear or conflicts with the current task, raise the conflict and 
   - In `tracking.md`, use checkbox lists (`[ ]`) for subtasks.
   - For larger subtasks, create `context/specs/<task-name-short>.md`.
 - For long tickets that need deeper planning, discuss creating a separate local spec file.
+- DO NOT LOG ticket creation/modifications to RECENT CHANGES.
 
 --------------------------------------------------------------------------------------------------------
