@@ -10,7 +10,7 @@ let p = Person name 25;
 fn main() =  
   // 
   // this should FAIL but it does not, why?
-  // because globals are cloned implicitely.
+  // because we don't track globals.
   //
   println name;
   println ("Name: " ++ p.name);
