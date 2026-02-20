@@ -1,0 +1,151 @@
+type Int64 = @native[t=i64];
+type Int32 = @native[t=i32];
+type Int16 = @native[t=i16];
+type Int8 = @native[t=i8];
+type Float = @native[t=float];
+type Double = @native[t=double];
+type Bool = @native[t=i1];
+type CharPtr = @native[t=*i8];
+
+type String = @native[mem=heap, free=free_string] {
+  length: Int64,
+  data: CharPtr
+};
+
+type SizeT = @native[t=i64];
+type Char = @native[t=i8];
+type Unit = @native[t=void];
+
+type Int = Int64;
+type Byte = Int8;
+type Word = Int8;
+
+type Buffer = @native[t=*i8, mem=heap, free=free_buffer];
+
+type Int64Ptr = @native[t=*i64];
+type StringPtr = @native[t=*%struct.String];
+type FloatPtr = @native[t=*float];
+
+type IntArray = @native[mem=heap, free=free_int_array] {
+  length: Int64,
+  data: Int64Ptr
+};
+type StringArray = @native[mem=heap, free=free_string_array] {
+  length: Int64,
+  data: StringPtr
+};
+type FloatArray = @native[mem=heap, free=free_float_array] {
+  length: Int64,
+  data: FloatPtr
+};
+
+op *(a: Int, b: Int): Int 80 left = @native[tpl="mul %type %operand1, %operand2"];
+op /(a: Int, b: Int): Int 80 left = @native[tpl="sdiv %type %operand1, %operand2"];
+op %(a: Int, b: Int): Int 80 left = @native[tpl="srem %type %operand1, %operand2"];
+op +(a: Int, b: Int): Int 60 left = @native[tpl="add %type %operand1, %operand2"];
+op -(a: Int, b: Int): Int 60 left = @native[tpl="sub %type %operand1, %operand2"];
+op <<(a: Int, b: Int): Int 55 left = @native[tpl="shl %type %operand1, %operand2"];
+op >>(a: Int, b: Int): Int 55 left = @native[tpl="ashr %type %operand1, %operand2"];
+
+op ==(a: Int, b: Int): Bool 50 left = @native[tpl="icmp eq %type %operand1, %operand2"];
+op !=(a: Int, b: Int): Bool 50 left = @native[tpl="icmp ne %type %operand1, %operand2"];
+op <(a: Int, b: Int): Bool 50 left = @native[tpl="icmp slt %type %operand1, %operand2"];
+op >(a: Int, b: Int): Bool 50 left = @native[tpl="icmp sgt %type %operand1, %operand2"];
+op <=(a: Int, b: Int): Bool 50 left = @native[tpl="icmp sle %type %operand1, %operand2"];
+op >=(a: Int, b: Int): Bool 50 left = @native[tpl="icmp sge %type %operand1, %operand2"];
+
+op and(a: Bool, b: Bool): Bool 40 left = @native[tpl="and %type %operand1, %operand2"];
+op or(a: Bool, b: Bool): Bool 30 left = @native[tpl="or %type %operand1, %operand2"];
+
+op -(a: Int): Int 95 right = @native[tpl="sub %type 0, %operand"];
+op +(a: Int): Int 95 right = @native[tpl="add %type 0, %operand"];
+op not(a: Bool): Bool 95 right = @native[tpl="xor %type 1, %operand"];
+
+op +.(a: Float, b: Float): Float 60 left = @native[tpl="fadd %type %operand1, %operand2"];
+op -.(a: Float, b: Float): Float 60 left = @native[tpl="fsub %type %operand1, %operand2"];
+op *.(a: Float, b: Float): Float 80 left = @native[tpl="fmul %type %operand1, %operand2"];
+op /.(a: Float, b: Float): Float 80 left = @native[tpl="fdiv %type %operand1, %operand2"];
+
+op <.(a: Float, b: Float): Bool 50 left = @native[tpl="fcmp olt %type %operand1, %operand2"];
+op >.(a: Float, b: Float): Bool 50 left = @native[tpl="fcmp ogt %type %operand1, %operand2"];
+op <=.(a: Float, b: Float): Bool 50 left = @native[tpl="fcmp ole %type %operand1, %operand2"];
+op >=.(a: Float, b: Float): Bool 50 left = @native[tpl="fcmp oge %type %operand1, %operand2"];
+op ==.(a: Float, b: Float): Bool 50 left = @native[tpl="fcmp oeq %type %operand1, %operand2"];
+op !=.(a: Float, b: Float): Bool 50 left = @native[tpl="fcmp une %type %operand1, %operand2"];
+
+op -.(a: Float): Float 95 right = @native[tpl="fsub %type 0.0, %operand"];
+
+fn mml_sys_flush(): Unit = @native;
+
+fn readline(): String = @native[mem=alloc];
+
+fn print(a: String): Unit = @native;
+fn println(a: String): Unit = @native;
+
+fn concat(a: String, b: String): String = @native[mem=alloc];
+fn int_to_str(a: Int): String = @native[mem=alloc];
+fn float_to_str(a: Float): String = @native[mem=alloc];
+fn str_to_int(a: String): Int = @native;
+
+fn mkBuffer(): Buffer = @native[mem=alloc];
+fn mkBufferWithFd(fd: Int): Buffer = @native[mem=alloc];
+fn mkBufferWithSize(size: Int): Buffer = @native[mem=alloc];
+fn flush(b: Buffer): Unit = @native;
+fn buffer_write(b: Buffer, s: String): Unit = @native;
+fn buffer_writeln(b: Buffer, s: String): Unit = @native;
+fn buffer_write_int(b: Buffer, n: Int): Unit = @native;
+fn buffer_writeln_int(b: Buffer, n: Int): Unit = @native;
+fn buffer_write_float(b: Buffer, n: Float): Unit = @native;
+fn buffer_writeln_float(b: Buffer, n: Float): Unit = @native;
+
+fn int_to_float(i: Int): Float = @native[tpl="sitofp i64 %operand to float"];
+fn float_to_int(f: Float): Int = @native[tpl="fptosi float %operand to i64"];
+fn sqrt(x: Float): Float = @native[tpl="call float @llvm.sqrt.f32(float %operand)"];
+fn fabs(x: Float): Float = @native[tpl="call float @llvm.fabs.f32(float %operand)"];
+
+fn open_file_read(path: String): Int = @native;
+fn open_file_write(path: String): Int = @native;
+fn open_file_append(path: String): Int = @native;
+fn close_file(fd: Int): Unit = @native;
+fn read_line_fd(fd: Int): String = @native[mem=alloc];
+
+fn free_string(~s: String): Unit = @native;
+fn free_buffer(~b: Buffer): Unit = @native;
+
+fn ar_int_new(size: Int): IntArray = @native[mem=alloc];
+fn ar_int_set(arr: IntArray, idx: Int, value: Int): Unit = @native;
+fn ar_int_get(arr: IntArray, idx: Int): Int = @native;
+fn unsafe_ar_int_set(arr: IntArray, idx: Int, value: Int): Unit = @native;
+fn unsafe_ar_int_get(arr: IntArray, idx: Int): Int = @native;
+fn ar_int_len(arr: IntArray): Int = @native;
+
+fn ar_str_new(size: Int): StringArray = @native[mem=alloc];
+fn ar_str_set(arr: StringArray, idx: Int, ~value: String): Unit = @native;
+fn ar_str_get(arr: StringArray, idx: Int): String = @native;
+fn ar_str_len(arr: StringArray): Int = @native;
+
+fn ar_float_new(size: Int): FloatArray = @native[mem=alloc];
+fn ar_float_set(arr: FloatArray, idx: Int, value: Float): Unit = @native;
+fn ar_float_get(arr: FloatArray, idx: Int): Float = @native;
+fn unsafe_ar_float_set(arr: FloatArray, idx: Int, value: Float): Unit = @native;
+fn unsafe_ar_float_get(arr: FloatArray, idx: Int): Float = @native;
+fn ar_float_len(arr: FloatArray): Int = @native;
+
+fn free_int_array(~a: IntArray): Unit = @native;
+fn free_string_array(~a: StringArray): Unit = @native;
+fn free_float_array(~a: FloatArray): Unit = @native;
+
+fn __clone_String(s: String): String = @native[mem=alloc];
+fn __clone_Buffer(b: Buffer): Buffer = @native[mem=alloc];
+fn __clone_IntArray(a: IntArray): IntArray = @native[mem=alloc];
+fn __clone_StringArray(a: StringArray): StringArray = @native[mem=alloc];
+fn __clone_FloatArray(a: FloatArray): FloatArray = @native[mem=alloc];
+
+op write(a: Buffer, b: String): Unit 20 left = buffer_write a b;
+op writeln(a: Buffer, b: String): Unit 20 left = buffer_writeln a b;
+op write_int(a: Buffer, b: Int): Unit 20 left = buffer_write_int a b;
+op writeln_int(a: Buffer, b: Int): Unit 20 left = buffer_writeln_int a b;
+op write_float(a: Buffer, b: Float): Unit 20 left = buffer_write_float a b;
+op writeln_float(a: Buffer, b: Float): Unit 20 left = buffer_writeln_float a b;
+
+op ++(a: String, b: String): String 61 right = concat a b;
