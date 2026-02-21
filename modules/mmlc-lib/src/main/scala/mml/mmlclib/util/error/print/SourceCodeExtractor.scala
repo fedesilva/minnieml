@@ -97,8 +97,9 @@ object SourceCodeExtractor:
           .map(s => s"\n$s")
           .getOrElse("")
 
-      case SemanticError.InvalidEntryPoint(_, span) =>
-        extractSnippet(sourceInfo, span)
+      case SemanticError.InvalidEntryPoint(_, source) =>
+        source.spanOpt
+          .flatMap(extractSnippet(sourceInfo, _))
           .map(s => s"\n$s")
           .getOrElse("")
 

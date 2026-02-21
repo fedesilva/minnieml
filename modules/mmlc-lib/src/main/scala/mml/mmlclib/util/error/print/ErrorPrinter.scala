@@ -55,7 +55,10 @@ object ErrorPrinter:
         .getOrElse((Int.MaxValue, Int.MaxValue))
     case SemanticError.InvalidExpressionFound(invalidExpr, _) =>
       (invalidExpr.span.start.line, invalidExpr.span.start.col)
-    case SemanticError.InvalidEntryPoint(_, span) => (span.start.line, span.start.col)
+    case SemanticError.InvalidEntryPoint(_, source) =>
+      source.spanOpt
+        .map(span => (span.start.line, span.start.col))
+        .getOrElse((Int.MaxValue, Int.MaxValue))
     case SemanticError.UseAfterMove(ref, _, _) => (ref.span.start.line, ref.span.start.col)
     case SemanticError.ConsumingParamNotLastUse(_, ref, _) =>
       (ref.span.start.line, ref.span.start.col)
@@ -184,8 +187,9 @@ object ErrorPrinter:
       case SemanticError.InvalidExpressionFound(invalidExpr, phase) =>
         s"${Console.RED}Invalid expression found at ${formatLocation(invalidExpr.span)}${Console.RESET}\n${Console.YELLOW}Phase: $phase${Console.RESET}"
 
-      case SemanticError.InvalidEntryPoint(message, span) =>
-        s"${Console.RED}$message at ${formatLocation(span)}${Console.RESET}"
+      case SemanticError.InvalidEntryPoint(message, source) =>
+        val location = source.spanOpt.map(formatLocation).getOrElse("[synthetic]")
+        s"${Console.RED}$message at $location${Console.RESET}"
 
       case SemanticError.UseAfterMove(ref, movedAt, phase) =>
         s"${Console.RED}Use of '${ref.name}' after move at ${formatLocation(ref.span)}${Console.RESET}\n${Console.YELLOW}Moved at: ${formatLocation(movedAt)}, Phase: $phase${Console.RESET}"

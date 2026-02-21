@@ -22,7 +22,7 @@ private[parser] def topLevelModuleP(
       case Some(ParsingMemberError(_, _, None)) => membersList.dropRight(1)
       case _ => membersList
     Module(
-      span       = span(start, end),
+      source     = SourceOrigin.Loc(span(start, end)),
       name       = name,
       visibility = Visibility.Protected,
       members    = filteredMembers,

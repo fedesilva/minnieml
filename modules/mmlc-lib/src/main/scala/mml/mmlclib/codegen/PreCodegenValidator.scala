@@ -29,7 +29,7 @@ object PreCodegenValidator:
             state.addError(
               SemanticError.InvalidEntryPoint(
                 "No entry point 'main' found for binary compilation",
-                state.module.span
+                state.module.source
               )
             )
           case Some((bnd, _)) =>
@@ -43,14 +43,14 @@ object PreCodegenValidator:
                     state.addError(
                       SemanticError.InvalidEntryPoint(
                         "Entry point 'main' must have a return type of 'Unit' or 'Int64'",
-                        bnd.span
+                        bnd.source
                       )
                     )
               case None =>
                 state.addError(
                   SemanticError.InvalidEntryPoint(
                     "Entry point 'main' must have a return type of 'Unit' or 'Int64'",
-                    bnd.span
+                    bnd.source
                   )
                 )
       case _ => state

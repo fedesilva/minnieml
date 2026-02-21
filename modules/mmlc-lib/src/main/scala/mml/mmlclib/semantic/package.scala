@@ -116,7 +116,7 @@ enum SemanticError extends CompilationError:
   case ParsingIdErrorFound(error: ParsingIdError, phase: String)
   case InvalidExpressionFound(invalidExpr: mml.mmlclib.ast.InvalidExpression, phase: String)
   case TypeCheckingError(error: TypeError)
-  case InvalidEntryPoint(msg: String, span: SrcSpan)
+  case InvalidEntryPoint(msg: String, source: SourceOrigin)
   // Ownership errors
   case UseAfterMove(ref: Ref, movedAt: SrcSpan, phase: String)
   case ConsumingParamNotLastUse(param: FnParam, ref: Ref, phase: String)

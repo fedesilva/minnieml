@@ -116,8 +116,8 @@ object SemanticErrorPrinter:
         val location = LocationPrinter.printSpan(invalidExpr.span)
         s"${Console.RED}Invalid expression found at $location [phase: $phase]${Console.RESET}"
 
-      case SemanticError.InvalidEntryPoint(message, span) =>
-        val location = LocationPrinter.printSpan(span)
+      case SemanticError.InvalidEntryPoint(message, source) =>
+        val location = source.spanOpt.map(LocationPrinter.printSpan).getOrElse("[synthetic]")
         s"${Console.RED}$message at $location${Console.RESET}"
 
       case SemanticError.UseAfterMove(ref, movedAt, phase) =>

@@ -84,7 +84,7 @@ Spec: `context/specs/source-origin-migration.md`
     - A bad intermediate change reintroduced synthetic fallback coordinates through an adapter-like
       `DuplicateMember.span` implementation. This violates SourceOrigin migration rules and must be
       removed completely before Phase B can be marked complete.
-- [ ] **Phase C: clean bootstrap dummy spans in ingest/fallback paths**.
+- [x] **Phase C: clean bootstrap dummy spans in ingest/fallback paths**.
 - [ ] **Phase D: remove remaining `0,0,0` anti-patterns in stdlib injection paths**.
 - [ ] **Phase E: add guardrail against `SrcPoint(0,0,0)` reintroduction**.
 
@@ -99,6 +99,21 @@ Report:
 
 
 ## Recent Changes
+
+- 2026-02-21: Completed SourceOrigin Migration Phase C (ingest/fallback source-origin cleanup).
+  - `Module` now carries `source: SourceOrigin` directly (removed raw module span field).
+  - Parser top-level module creation now uses explicit `SourceOrigin.Loc(...)`.
+  - Ingest/bootstrap and compilation fallback paths now construct modules with
+    `SourceOrigin.Synth` instead of fake `SrcPoint(0,0,0)` spans.
+  - `SemanticError.InvalidEntryPoint` now carries `SourceOrigin` and all related
+    diagnostics/error printers now read location via `source.spanOpt`.
+  - Updated module pretty-printer to render `[synthetic]` for synthetic module origin.
+  - Updated synthetic-duplicate test fixture module construction to explicit synthetic origin.
+  - Verification passed:
+    `sbtn "run run mml/samples/hello.mml"`,
+    `sbtn "test; scalafmtAll; scalafixAll; mmlcPublishLocal"`,
+    `make -C benchmark clean`,
+    `make -C benchmark mml`.
 
 - 2026-02-21: Completed SourceOrigin Migration Phase B (`DuplicateNameChecker` source-origin cleanup).
   - Replaced duplicate fallback span fabrication with `SourceOrigin` propagation in

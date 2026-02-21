@@ -33,7 +33,7 @@ class DuplicateNameCheckerTests extends BaseEffFunSuite:
 
   test("synthetic duplicates stay synthetic and never fabricate source spans"):
     val module = Module(
-      span       = SrcSpan(SrcPoint(1, 1, 0), SrcPoint(1, 1, 0)),
+      source     = SourceOrigin.Synth,
       name       = "SyntheticDuplicateModule",
       visibility = Visibility.Public,
       members    = List(mkSyntheticBinding("x", 1), mkSyntheticBinding("x", 2))

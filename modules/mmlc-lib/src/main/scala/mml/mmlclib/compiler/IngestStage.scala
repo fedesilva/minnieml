@@ -1,13 +1,11 @@
 package mml.mmlclib.compiler
 
 import mml.mmlclib.api.ParserApi
-import mml.mmlclib.ast.{Module, SrcPoint, SrcSpan, Visibility}
+import mml.mmlclib.ast.{Module, SourceOrigin, Visibility}
 import mml.mmlclib.parser.{Parser, SourceInfo}
 import mml.mmlclib.util.pipe.*
 
 object IngestStage:
-
-  private val dummySpan = SrcSpan(SrcPoint(0, 0, 0), SrcPoint(0, 0, 0))
 
   def fromSource(
     source:     String,
@@ -17,7 +15,7 @@ object IngestStage:
   ): CompilerState =
     val sanitizedName = ParserApi.sanitizeModuleName(name)
     val emptyModule = Module(
-      span       = dummySpan,
+      source     = SourceOrigin.Synth,
       name       = sanitizedName,
       visibility = Visibility.Public,
       members    = List.empty,

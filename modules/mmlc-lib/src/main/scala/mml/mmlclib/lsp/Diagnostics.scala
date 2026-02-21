@@ -48,7 +48,7 @@ object Diagnostics:
       case SemanticError.ParsingIdErrorFound(err, _) => List(err.span)
       case SemanticError.InvalidExpressionFound(inv, _) => List(inv.span)
       case SemanticError.TypeCheckingError(typeErr) => extractTypeErrorSpans(typeErr)
-      case SemanticError.InvalidEntryPoint(_, span) => List(span)
+      case SemanticError.InvalidEntryPoint(_, source) => source.spanOpt.toList
       case SemanticError.UseAfterMove(ref, _, _) => List(ref.span)
       case SemanticError.ConsumingParamNotLastUse(_, ref, _) => List(ref.span)
       case SemanticError.PartialApplicationWithConsuming(fn, _, _) => List(fn.span)
