@@ -41,13 +41,23 @@ If a rule is unclear or conflicts with the current task, raise the conflict and 
   - Repo: MinnieML
   - GitHub repo: `https://github.com/fedesilva/minnieml`
   - GitHub project: `https://github.com/users/fedesilva/projects/3`
-- Use `gh` to keep Active Tracked Items aligned with GitHub tickets.
-- Prefer local helper scripts under `bin/` for issue body sync operations so escalation prompts
-  stay short and reviewable.
-  - `bin/gh-issue-body-get <issue> [repo]`: fetch current issue body
-  - `bin/gh-issue-body-set <issue> <body-file> [repo]`: replace issue body from file
-  - `bin/gh-issue-body-replace <issue> <perl-expression> [repo]`: apply in-place text updates
-  - Default repo for these scripts is `fedesilva/minnieml`.
+- Use local helper scripts under `bin/` first for GitHub sync operations; use raw `gh` only when
+  no helper script covers the operation.
+  - Rationale: helper-script commands keep escalation prompts shorter and easier for the Author to
+    review and approve safely.
+  - For issue body updates/checklist toggles, do not use raw `gh issue edit --body*`; use
+    `bin/gh-issue-body-*` / `bin/gh-issue-check` / `bin/gh-issue-uncheck`.
+  - `bin/gh-issue-get <issue> [repo] [fields]`: fetch issue metadata/body.
+  - `bin/gh-issue-list [--repo ...] [--state ...] [--label ...] [--limit ...]`:
+    list/filter issues.
+  - `bin/gh-issue-body-get <issue> [repo]`: fetch issue body.
+  - `bin/gh-issue-body-grep <issue> <pattern> [repo]`: grep issue body with line numbers.
+  - `bin/gh-issue-body-set <issue> <body-file> [repo]`: replace issue body from file.
+  - `bin/gh-issue-body-replace <issue> <perl-expression> [repo]`: apply in-place issue body edit.
+  - `bin/gh-issue-check <issue> <item-text> [repo]`: mark checklist item checked.
+  - `bin/gh-issue-uncheck <issue> <item-text> [repo]`: mark checklist item unchecked.
+  - `bin/gh-project-items [--owner ...] [--project ...] [--limit ...]`: inspect project items.
+  - Default repo for issue helpers is `fedesilva/minnieml`.
 - Synchronize with GitHub at these points:
   - when creating a top-level Active Tracked Item
   - when creating a subtask representation (checklist item or sub-issue)
