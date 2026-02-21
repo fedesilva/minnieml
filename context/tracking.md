@@ -51,18 +51,6 @@ GitHub: `https://github.com/fedesilva/minnieml/issues/235`
   and introduce extractor-first handling for repeated noisy match patterns in tests, or perform a
   focused review with documented rationale where extractors are not appropriate.
 
-### LSP Logging
-
-Bound LSP server log growth using startup-time rotation and prepare runtime cache setup flow.
-
-GitHub: `https://github.com/fedesilva/minnieml/issues/223`
-
-Spec: `context/specs/lsp-log-rotation.md`
-
-- [x] **Implement size-based LSP log rotation at startup** [COMPLETE]: before opening `server.log`,
-  rotate when file size exceeds 5 MB using `server.log.1`, `.2`, `.3` up to 10 items, then delete.
-
-
 ### Bug: resolution and indexes for partial application
 
 Report: 
