@@ -15,6 +15,19 @@ data paths that should use `SourceOrigin.Synth`.
   It must never infer "real source" from sentinel coordinates.
 - `SrcPoint(0,0,0)` is forbidden as a source-origin fallback.
 
+## CRITICAL Scope Lock (Prominent, Non-Optional)
+
+- This migration is **NOT** complete until **ALL** remaining AST nodes are migrated from raw
+  `SrcSpan` fields to explicit `SourceOrigin`.
+- Partial fixes are invalid for this workstream. Cleaning one area (e.g. stdlib injection) while
+  leaving `terms.scala` / `types.scala` span-based is still an incomplete migration.
+- Required end-state:
+  - `common.scala`: source-bearing nodes use `SourceOrigin`.
+  - `members.scala`: source-bearing nodes use `SourceOrigin`.
+  - `terms.scala`: source-bearing nodes use `SourceOrigin`.
+  - `types.scala`: source-bearing nodes use `SourceOrigin`.
+  - No production fallback may fabricate coordinates for synthetic nodes.
+
 ## Audit Findings
 
 1. `Name.synth` violates the `SourceOrigin` model contract.
@@ -108,22 +121,46 @@ Tasks:
 Checkpoint:
 - Ingest and fallback compile paths carry synthetic origin explicitly and do not create fake spans.
 
-### Phase D - Remove naked span dependencies from stdlib injection and builders
+### Phase D - Migrate ALL remaining AST nodes away from naked spans
 
-Goal: keep stdlib injection synthetic without relying on fake source spans.
+Goal: complete the half-migrated model by removing raw `SrcSpan` fields from all remaining
+source-bearing AST nodes.
+
+Target files:
+- `modules/mmlc-lib/src/main/scala/mml/mmlclib/ast/types.scala`
+- `modules/mmlc-lib/src/main/scala/mml/mmlclib/ast/terms.scala`
+- `modules/mmlc-lib/src/main/scala/mml/mmlclib/ast/members.scala`
+- `modules/mmlc-lib/src/main/scala/mml/mmlclib/ast/common.scala`
+- all direct call sites that construct or consume those nodes
+
+Tasks:
+- Refactor remaining span-based AST node definitions to carry `source: SourceOrigin`.
+- Keep parser-origin nodes explicit with `SourceOrigin.Loc(realSpan)`.
+- Keep compiler-synthesized nodes explicit with `SourceOrigin.Synth`.
+- Update all constructors/call sites accordingly (parser, semantic phases, codegen, lsp, tests).
+- Remove synthetic-span adapter patterns and sentinel-coordinate fallbacks.
+
+Checkpoint:
+- No remaining source-bearing AST node stores naked `SrcSpan`.
+- Any concrete-span consumer reads from `source.spanOpt` / explicit `Loc` match only.
+
+### Phase E - Remove naked span dependencies from stdlib injection and builders
+
+Goal: keep stdlib injection synthetic without relying on fake source spans, after Phase D unblocks
+the AST model.
 
 Target files:
 - `modules/mmlc-lib/src/main/scala/mml/mmlclib/semantic/package.scala`
 
 Tasks:
-- Remove all naked span requirements in stdlib builder paths.
+- Remove span-sentinel usage from stdlib builders.
 - Ensure injected nodes are created with explicit `SourceOrigin.Synth`.
-- Eliminate sentinel-coordinate based source semantics.
+- Preserve real locations only where parser-origin values are genuinely present.
 
 Checkpoint:
 - Stdlib-injected nodes are synthetic by explicit origin and do not depend on span sentinels.
 
-### Phase E - Add guardrail
+### Phase F - Add guardrail
 
 Goal: make recurrence hard.
 
@@ -137,6 +174,6 @@ Checkpoint:
 
 ## Order and Signoff Rhythm
 
-- Execute in order: A -> B -> C -> D -> E.
+- Execute in order: A -> B -> C -> D -> E -> F.
 - Stop after each phase for review/signoff before proceeding.
 - Keep each phase small and verifiable to avoid hidden migration drift.

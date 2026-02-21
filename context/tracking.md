@@ -66,6 +66,13 @@ Spec: `context/specs/lsp-log-rotation.md`
 
 Finish `SourceOrigin` migration so synthetic nodes stop leaking fake source coordinates.
 
+**CRITICAL SCOPE LOCK (NON-OPTIONAL):**
+- This tracked item is not complete until **ALL** remaining AST nodes are migrated off naked
+  `SrcSpan` fields (not only `Name`/duplicates/ingest/stdlib).
+- Required AST files in scope: `ast/common.scala`, `ast/members.scala`, `ast/terms.scala`,
+  `ast/types.scala`.
+- Partial/local fixes do not count as completion.
+
 GitHub: `https://github.com/fedesilva/minnieml/issues/237`
 
 Spec: `context/specs/source-origin-migration.md`
@@ -85,8 +92,14 @@ Spec: `context/specs/source-origin-migration.md`
       `DuplicateMember.span` implementation. This violates SourceOrigin migration rules and must be
       removed completely before Phase B can be marked complete.
 - [x] **Phase C: clean bootstrap dummy spans in ingest/fallback paths**.
-- [ ] **Phase D: remove remaining `0,0,0` anti-patterns in stdlib injection paths**.
-- [ ] **Phase E: add guardrail against `SrcPoint(0,0,0)` reintroduction**.
+- [ ] **Phase D: migrate ALL remaining source-bearing AST nodes off naked `SrcSpan` fields**.
+  - [ ] `ast/types.scala`: source-bearing nodes use `SourceOrigin` (no raw source fields).
+  - [ ] `ast/terms.scala`: source-bearing nodes use `SourceOrigin` (no raw source fields).
+  - [ ] `ast/members.scala`: remove any remaining raw-source adapter patterns.
+  - [ ] `ast/common.scala`: remove any remaining raw-source adapter patterns.
+  - [ ] Update all constructors/call sites in parser/semantic/codegen/lsp/tests to the new model.
+- [ ] **Phase E: remove remaining `0,0,0` anti-patterns in stdlib injection paths**.
+- [ ] **Phase F: add guardrail against `SrcPoint(0,0,0)` and naked `SrcSpan` reintroduction**.
 
 
 ### Bug: resolution and indexes for partial application
