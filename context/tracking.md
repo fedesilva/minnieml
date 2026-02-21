@@ -71,19 +71,23 @@ GitHub: `https://github.com/fedesilva/minnieml/issues/237`
 Spec: `context/specs/source-origin-migration.md`
 
 - [x] **Phase A: fix `Name.synth` origin contract**.
-- [ ] **Phase B: remove fake location fallback in `DuplicateNameChecker`**.
+- [x] **Phase B: remove fake location fallback in `DuplicateNameChecker`**.
+  - **Sub-item plan (restart checkpoint, correctness-first)**:
+    - [x] `DuplicateNameChecker` no longer fabricates `SrcPoint(0,0,0)` fallback for duplicates.
+    - [x] Duplicate diagnostics now select the first real source span in duplicate groups.
+    - [x] `DuplicateMember` now stores `source: SourceOrigin` directly.
+    - [x] Remove any remaining adapter/fallback behavior for duplicate synthetic locations.
+    - [x] Finish/verify regression tests for synthetic duplicate handling and diagnostics behavior.
+    - [x] Run full post-task verification (`sbtn "test; scalafmtAll; scalafixAll; mmlcPublishLocal"`,
+      `make -C benchmark clean`, `make -C benchmark mml`).
+  - **Failure note (must correct):**
+    - A bad intermediate change reintroduced synthetic fallback coordinates through an adapter-like
+      `DuplicateMember.span` implementation. This violates SourceOrigin migration rules and must be
+      removed completely before Phase B can be marked complete.
 - [ ] **Phase C: clean bootstrap dummy spans in ingest/fallback paths**.
 - [ ] **Phase D: remove remaining `0,0,0` anti-patterns in stdlib injection paths**.
 - [ ] **Phase E: add guardrail against `SrcPoint(0,0,0)` reintroduction**.
 
-### Entry Point Parameters [COMPLETE]
-
-Pass parameters at the entry point when the internal function signature requires them,
-using a monomorphic array.
-
-GitHub: `https://github.com/fedesilva/minnieml/issues/200`
-
-- [x] **Pass parameters if internal entry point takes them (use monomorphic array)**.
 
 ### Bug: resolution and indexes for partial application
 
@@ -95,6 +99,32 @@ Report:
 
 
 ## Recent Changes
+
+- 2026-02-21: Completed SourceOrigin Migration Phase B (`DuplicateNameChecker` source-origin cleanup).
+  - Replaced duplicate fallback span fabrication with `SourceOrigin` propagation in
+    `DuplicateNameChecker`; synthetic duplicates remain `SourceOrigin.Synth`.
+  - Updated `DuplicateMember` to store `source: SourceOrigin` directly; removed synthetic span
+    adapter behavior.
+  - Updated LSP duplicate diagnostics to emit one diagnostic per real duplicate span (instead of
+    collapsing to a single item), while omitting diagnostics when all duplicates are synthetic.
+  - Updated AST pretty-printer duplicate span rendering to use `source.spanOpt` and show
+    `[synthetic]` for synthetic entries.
+  - Added regression tests:
+    `modules/mmlc-lib/src/test/scala/mml/mmlclib/semantic/DuplicateNameCheckerTests.scala`,
+    `modules/mmlc-lib/src/test/scala/mml/mmlclib/lsp/DiagnosticsTests.scala`.
+  - Verification passed:
+    `sbtn "testOnly mml.mmlclib.semantic.DuplicateNameCheckerTests mml.mmlclib.lsp.DiagnosticsTests"`,
+    `sbtn "run run mml/samples/hello.mml"`,
+    `sbtn "test; scalafmtAll; scalafixAll; mmlcPublishLocal"`,
+    `make -C benchmark clean`,
+    `make -C benchmark mml`.
+
+- 2026-02-21: SourceOrigin Phase B workstream interrupted after invariant violation (NOT COMPLETE).
+  - **Failure:** An intermediate patch reintroduced synthetic span fallback behavior via
+    `DuplicateMember` adapter-like span mapping.
+  - **Why this is wrong:** Phase B explicitly forbids fake/sentinel coordinate fallback behavior.
+  - **Corrective path for restart:** keep `SourceOrigin` explicit end-to-end for duplicate handling,
+    remove adapter/fallback behavior, complete regression tests, then run full required verification.
 
 - 2026-02-21: Completed SourceOrigin Migration Phase A (`Name` root source-model checkpoint).
   - Removed naked span from `Name`; `Name` now carries only `value` + `source: SourceOrigin`.

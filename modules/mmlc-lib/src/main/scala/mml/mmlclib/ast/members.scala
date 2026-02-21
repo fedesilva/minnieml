@@ -21,13 +21,12 @@ case class Bnd(
   * subsequent duplicates are wrapped in this node.
   */
 case class DuplicateMember(
-  span:            SrcSpan,
+  source:          SourceOrigin,
   originalMember:  Member,
   firstOccurrence: Member
 ) extends Member,
       InvalidNode,
-      FromSource:
-  override val source: SourceOrigin = SourceOrigin.Loc(span)
+      FromSource
 
 /** Represents a member that is invalid for reasons other than being a duplicate. For example,
   * functions with duplicate parameter names.

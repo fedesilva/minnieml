@@ -122,7 +122,9 @@ def prettyPrintMember(
       s"${indentStr}$visStr TypeRecord ${tr.name} $fieldsStr$spanStr"
 
     case dup: DuplicateMember =>
-      val spanStr = if showSourceSpans then printSourceSpan(dup.span) else ""
+      val spanStr =
+        if showSourceSpans then dup.source.spanOpt.map(printSourceSpan).getOrElse("[synthetic]")
+        else ""
       s"${indentStr}DuplicateMember $spanStr\n" +
         s"${indentStr}  firstOccurrence: ${dup.firstOccurrence.getClass.getSimpleName} ${dup.firstOccurrence match {
             case d: Decl => d.name

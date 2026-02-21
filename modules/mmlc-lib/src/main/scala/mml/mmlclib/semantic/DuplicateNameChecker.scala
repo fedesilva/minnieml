@@ -43,11 +43,9 @@ object DuplicateNameChecker:
             if itemsWithSameKey.head == member then member // First occurrence stays as-is
             else
               DuplicateMember(
-                span = member match {
-                  case m: FromSource =>
-                    m.source.spanOpt.getOrElse(SrcSpan(SrcPoint(0, 0, 0), SrcPoint(0, 0, 0)))
-                  case _ => SrcSpan(SrcPoint(0, 0, 0), SrcPoint(0, 0, 0))
-                },
+                source = member match
+                  case m: FromSource => m.source
+                  case _ => SourceOrigin.Synth,
                 originalMember  = member,
                 firstOccurrence = itemsWithSameKey.head
               )
