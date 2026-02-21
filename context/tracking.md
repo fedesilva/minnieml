@@ -62,45 +62,6 @@ Spec: `context/specs/lsp-log-rotation.md`
 - [ ] **Implement size-based LSP log rotation at startup**: before opening `server.log`,
   rotate when file size exceeds 5 MB using `server.log.1`, `.2`, `.3` up to 10 items, then delete.
 
-### SourceOrigin Migration
-
-Finish `SourceOrigin` migration so synthetic nodes stop leaking fake source coordinates.
-
-**CRITICAL SCOPE LOCK (NON-OPTIONAL):**
-- This tracked item is not complete until **ALL** remaining AST nodes are migrated off naked
-  `SrcSpan` fields (not only `Name`/duplicates/ingest/stdlib).
-- Required AST files in scope: `ast/common.scala`, `ast/members.scala`, `ast/terms.scala`,
-  `ast/types.scala`.
-- Partial/local fixes do not count as completion.
-
-GitHub: `https://github.com/fedesilva/minnieml/issues/237`
-
-Spec: `context/specs/source-origin-migration.md`
-
-- [x] **Phase A: fix `Name.synth` origin contract**.
-- [x] **Phase B: remove fake location fallback in `DuplicateNameChecker`**.
-  - **Sub-item plan (restart checkpoint, correctness-first)**:
-    - [x] `DuplicateNameChecker` no longer fabricates `SrcPoint(0,0,0)` fallback for duplicates.
-    - [x] Duplicate diagnostics now select the first real source span in duplicate groups.
-    - [x] `DuplicateMember` now stores `source: SourceOrigin` directly.
-    - [x] Remove any remaining adapter/fallback behavior for duplicate synthetic locations.
-    - [x] Finish/verify regression tests for synthetic duplicate handling and diagnostics behavior.
-    - [x] Run full post-task verification (`sbtn "test; scalafmtAll; scalafixAll; mmlcPublishLocal"`,
-      `make -C benchmark clean`, `make -C benchmark mml`).
-  - **Failure note (must correct):**
-    - A bad intermediate change reintroduced synthetic fallback coordinates through an adapter-like
-      `DuplicateMember.span` implementation. This violates SourceOrigin migration rules and must be
-      removed completely before Phase B can be marked complete.
-- [x] **Phase C: clean bootstrap dummy spans in ingest/fallback paths**.
-- [x] **Phase D: migrate ALL remaining source-bearing AST nodes off naked `SrcSpan` fields**.
-  - [x] `ast/types.scala`: source-bearing nodes use `SourceOrigin` (no raw source fields).
-  - [x] `ast/terms.scala`: source-bearing nodes use `SourceOrigin` (no raw source fields).
-  - [x] `ast/members.scala`: remove any remaining raw-source adapter patterns.
-  - [x] `ast/common.scala`: remove any remaining raw-source adapter patterns.
-  - [x] Update all constructors/call sites in parser/semantic/codegen/lsp/tests to the new model.
-- [x] **Phase E: remove remaining `0,0,0` anti-patterns in stdlib injection paths**.
-
-
 
 ### Bug: resolution and indexes for partial application
 
