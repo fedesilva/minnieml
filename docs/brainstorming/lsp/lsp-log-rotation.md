@@ -4,6 +4,10 @@
 
 The LSP server logs to `build/lsp/server.log` via a custom `Logger[IO]` in `LspLogging.scala`. The file is opened in append mode with no size limit, rotation, or cleanup. Over time it grows unbounded.
 
+### First change the log dir
+
+* Use `~/.cache/mml/lsp/log/`
+
 ## Design: size-based rotation on startup
 
 On `LspLogging.create()`, before opening the writer:
