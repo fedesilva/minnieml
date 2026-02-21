@@ -2,9 +2,10 @@
 
 // for this to work we need:
 // * literal lamdas
+// * captures
 fn makeLambda() = 
   let a = 1;
-  () -> int_to_str (2 * a)
+  { -> int_to_str (2 * a) }
 ;
 
 fn main() = 
