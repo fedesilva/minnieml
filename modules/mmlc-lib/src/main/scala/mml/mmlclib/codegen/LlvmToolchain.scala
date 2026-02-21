@@ -554,6 +554,7 @@ object LlvmToolchain:
                 logDebug(s"Found file at: $localPath", verbose)
                 Files.newInputStream(localPath)
               else
+                // FIXME:QA: Exceptions are not allowed in this codebase.
                 throw new Exception(
                   s"Could not find resource: $mmlRuntimeResourcePath (tried multiple paths)"
                 )

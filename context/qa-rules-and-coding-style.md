@@ -83,3 +83,9 @@ Before considering a change ready, verify:
 - Cats syntax style is used consistently (`.asRight`, `.some`, etc.).
 - Deep wildcard patterns were replaced with extractors/helpers when repeated or brittle.
 - Tests assert semantics (resolved/type-aware) rather than brittle naming where possible.
+
+## 8) No Exceptions, without exceptions.
+
+  - This codebase does not use exceptions. 
+  - The compiler should accumulate errors.
+  

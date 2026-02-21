@@ -140,9 +140,11 @@ private def compileBranchCondition(
             (stateAfterCompare, s"%$compareReg")
           case Left(err) =>
             // Type resolution failed - this is a compiler bug
+            // FIXME:QA: Exceptions are not acceptable
             throw new RuntimeException(s"Codegen error: ${err.message}")
       case None =>
         // Missing type is a compiler bug - TypeChecker should have provided this
+        // FIXME:QA: Exceptions are not acceptable
         throw new RuntimeException(
           "Codegen error: Missing type information for conditional guard - TypeChecker bug"
         )
