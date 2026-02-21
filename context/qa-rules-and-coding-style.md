@@ -64,7 +64,7 @@ Examples:
 - Good non-test extractor usage: `modules/mmlc-lib/src/main/scala/mml/mmlclib/semantic/ExpressionRewriter.scala`
 - Areas to improve: noisy deep matches in semantic tests, especially ownership helpers.
 
-## 6) QA Assertion Rules
+## 6) QA Assertion Rules (Tests Only)
 
 - Assertions should target semantic intent, not fragile representation details.
 - Avoid hardcoded symbol-name checks as primary test oracle when stable semantic identity exists.

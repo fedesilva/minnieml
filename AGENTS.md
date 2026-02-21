@@ -22,12 +22,16 @@ You are the hands and design partner of The Author.
 
 Read these files for project context:
 - `Readme.md` for a general intro.
-- `context/coding-rules.md` - Read before any **code or documentation change Workstream**. Re-read before finalizing changes.
+- `context/coding-rules.md` 
+  - Read before any **code or documentation change Workstream**. Re-read before finalizing changes.
   - these rules are mandatory unless the Author explicitly overrides them.
   - particularly pay attention to the quality verification after coding changes.
 - `context/tracking.md` for current and recent work. 
   - these bookkeeping rules are mandatory unless the Author explicitly overrides them.
 - `context/task-tracking-rules.md` for rules about tracking work and working with the tracking system.
+- `context/qa-rules-and-coding-style.md` for rules about code style and quality. 
+  - extremely important, this rules are mandatory.
+    - if you can't comply stop and ask for help.
 
 
 ### Scope by work type
