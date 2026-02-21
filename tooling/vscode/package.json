@@ -49,6 +49,12 @@
                     "type": "boolean",
                     "default": false,
                     "description": "Log LSP client request/response flow in MinnieML output"
+                },
+                "mml.didChangeDebounceMs": {
+                    "type": "number",
+                    "default": 250,
+                    "minimum": 0,
+                    "description": "Debounce window in milliseconds before sending textDocument/didChange notifications (0 disables debounce)"
                 }
             }
         },

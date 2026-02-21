@@ -20,6 +20,18 @@ let autoRestartAttempts = 0;
 let verboseLspClientLogging = false;
 let requestSequence = 0;
 let startLspFn: (() => void) | undefined;
+const DEFAULT_DID_CHANGE_DEBOUNCE_MS = 250;
+let didChangeDebounceMs = DEFAULT_DID_CHANGE_DEBOUNCE_MS;
+
+type DidChangeNext = (event: vscode.TextDocumentChangeEvent) => Promise<void>;
+
+type PendingDidChange = {
+    event: vscode.TextDocumentChangeEvent;
+    next: DidChangeNext;
+    timer: NodeJS.Timeout;
+};
+
+const pendingDidChanges = new Map<string, PendingDidChange>();
 
 export function activate(context: vscode.ExtensionContext) {
     outputChannel = vscode.window.createOutputChannel('MinnieML');
@@ -37,6 +49,9 @@ export function activate(context: vscode.ExtensionContext) {
         const config = vscode.workspace.getConfiguration('mml');
         const mmlcPath = config.get<string>('mmlcPath', 'mmlc');
         verboseLspClientLogging = config.get<boolean>('verboseLspClientLogging', false);
+        didChangeDebounceMs = normalizeDidChangeDebounce(
+            config.get<number>('didChangeDebounceMs', DEFAULT_DID_CHANGE_DEBOUNCE_MS)
+        );
 
         const serverOptions: ServerOptions = {
             command: mmlcPath,
@@ -71,6 +86,15 @@ export function activate(context: vscode.ExtensionContext) {
             },
             errorHandler: errorHandler,
             middleware: {
+                didChange: (event, next) => queueDidChange(event, next),
+                didSave: async (document, next) => {
+                    await flushPendingDidChange(document.uri.toString());
+                    return next(document);
+                },
+                didClose: async (document, next) => {
+                    await flushPendingDidChange(document.uri.toString());
+                    return next(document);
+                },
                 provideDefinition: async (document, position, token, next) => {
                     const reqId = nextRequestId();
                     const symbol = symbolAt(document, position);
@@ -129,6 +153,7 @@ export function activate(context: vscode.ExtensionContext) {
             }
             outputChannel.appendLine('Restarting language server...');
             isRestarting = true;
+            clearPendingDidChanges();
             try {
                 // Server will ack, then quit
                 outputChannel.appendLine('Sending restart request...');
@@ -202,6 +227,20 @@ export function activate(context: vscode.ExtensionContext) {
             }
         })
     );
+    context.subscriptions.push(
+        vscode.workspace.onDidChangeConfiguration((event) => {
+            if (!event.affectsConfiguration('mml.didChangeDebounceMs')) {
+                return;
+            }
+            const config = vscode.workspace.getConfiguration('mml');
+            didChangeDebounceMs = normalizeDidChangeDebounce(
+                config.get<number>('didChangeDebounceMs', DEFAULT_DID_CHANGE_DEBOUNCE_MS)
+            );
+            outputChannel.appendLine(
+                `[Info] didChange debounce updated: ${didChangeDebounceMs}ms`
+            );
+        })
+    );
 
     outputChannel.appendLine('MinnieML extension activated');
 }
@@ -243,6 +282,7 @@ async function executeCompileCommand(serverCommand: string, message: string): Pr
 
 export function deactivate(): Thenable<void> | undefined {
     isDeactivating = true;
+    clearPendingDidChanges();
     if (autoRestartTimer) {
         clearTimeout(autoRestartTimer);
         autoRestartTimer = undefined;
@@ -322,4 +362,54 @@ function logLsp(message: string): void {
     if (verboseLspClientLogging) {
         outputChannel.appendLine(`[LSP] ${message}`);
     }
+}
+
+function normalizeDidChangeDebounce(value: number): number {
+    if (!Number.isFinite(value)) {
+        return DEFAULT_DID_CHANGE_DEBOUNCE_MS;
+    }
+    return Math.max(0, Math.floor(value));
+}
+
+function queueDidChange(event: vscode.TextDocumentChangeEvent, next: DidChangeNext): Promise<void> {
+    if (didChangeDebounceMs <= 0) {
+        return next(event);
+    }
+
+    const uri = event.document.uri.toString();
+    const existing = pendingDidChanges.get(uri);
+    if (existing) {
+        clearTimeout(existing.timer);
+    }
+
+    const timer = setTimeout(() => {
+        const pending = pendingDidChanges.get(uri);
+        if (!pending) {
+            return;
+        }
+        pendingDidChanges.delete(uri);
+        pending.next(pending.event).catch((error) => {
+            outputChannel.appendLine(`[Warn] didChange send failed for ${uri}: ${String(error)}`);
+        });
+    }, didChangeDebounceMs);
+
+    pendingDidChanges.set(uri, { event, next, timer });
+    return Promise.resolve();
+}
+
+async function flushPendingDidChange(uri: string): Promise<void> {
+    const pending = pendingDidChanges.get(uri);
+    if (!pending) {
+        return;
+    }
+    clearTimeout(pending.timer);
+    pendingDidChanges.delete(uri);
+    await pending.next(pending.event);
+}
+
+function clearPendingDidChanges(): void {
+    for (const pending of pendingDidChanges.values()) {
+        clearTimeout(pending.timer);
+    }
+    pendingDidChanges.clear();
 }

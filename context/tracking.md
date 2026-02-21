@@ -62,6 +62,20 @@ Report:
 
 ## Recent Changes
 
+- 2026-02-21: VS Code LSP client `didChange` debounce control added [COMPLETE].
+  - Added client-side debounce for outbound `textDocument/didChange` notifications in
+    `tooling/vscode/src/extension.ts` using `middleware.didChange`.
+  - Added pending-change flush behavior on save/close and pending-change cleanup on
+    restart/deactivate to avoid stale notifications.
+  - Added configurable setting `mml.didChangeDebounceMs` (default `250`, `0` disables
+    debounce) in `tooling/vscode/package.json`.
+  - Verification passed:
+    `npm run build` (in `tooling/vscode`),
+    `sbtn "run run mml/samples/hello.mml"`,
+    `sbtn "test; scalafmtAll; scalafixAll; mmlcPublishLocal"`,
+    `make -C benchmark clean`,
+    `make -C benchmark mml`.
+
 - 2026-02-21: LSP startup log rotation implemented [COMPLETE].
   - Kept LSP logs under `outputDir/lsp/server.log` (no migration to user cache path).
   - Added startup rotation in `LspLogging.create` with threshold `5 MB` and retention
