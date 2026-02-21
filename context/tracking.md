@@ -70,7 +70,7 @@ GitHub: `https://github.com/fedesilva/minnieml/issues/237`
 
 Spec: `context/specs/source-origin-migration.md`
 
-- [ ] **Phase A: fix `Name.synth` origin contract**.
+- [x] **Phase A: fix `Name.synth` origin contract**.
 - [ ] **Phase B: remove fake location fallback in `DuplicateNameChecker`**.
 - [ ] **Phase C: clean bootstrap dummy spans in ingest/fallback paths**.
 - [ ] **Phase D: remove remaining `0,0,0` anti-patterns in stdlib injection paths**.
@@ -95,6 +95,20 @@ Report:
 
 
 ## Recent Changes
+
+- 2026-02-21: Completed SourceOrigin Migration Phase A (`Name` root source-model checkpoint).
+  - Removed naked span from `Name`; `Name` now carries only `value` + `source: SourceOrigin`.
+  - Kept parser behavior via `Name(span, value)` constructor mapping to `SourceOrigin.Loc(span)`.
+  - Updated LSP/token/definition call sites to read name location from `nameNode.source.spanOpt`
+    instead of `nameNode.span`.
+  - Added regression tests in
+    `modules/mmlc-lib/src/test/scala/mml/mmlclib/semantic/NameSourceOriginTests.scala`.
+  - Verification passed:
+    `sbtn "testOnly mml.mmlclib.semantic.NameSourceOriginTests mml.mmlclib.lsp.FindDefinitionTests mml.mmlclib.lsp.SemanticTokensTests"`,
+    `sbtn "run run mml/samples/hello.mml"`,
+    `sbtn "test; scalafmtAll; scalafixAll; mmlcPublishLocal"`,
+    `make -C benchmark clean`,
+    `make -C benchmark mml`.
 
 - 2026-02-20: Created issue #237 (`Finish SourceOrigin migration`) from
   `context/specs/source-origin-migration.md`, added it to GitHub project #3, and set project

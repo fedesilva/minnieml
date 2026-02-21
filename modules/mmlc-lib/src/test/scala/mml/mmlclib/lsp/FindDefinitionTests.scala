@@ -142,11 +142,12 @@ class FindDefinitionTests extends BaseEffFunSuite:
       val ctorRef = refs.find(_.name == "Pair")
       assert(ctorRef.isDefined, "Could not find ref 'Pair' in make body")
 
-      val ref  = ctorRef.get
-      val defs = AstLookup.findDefinitionAt(m, ref.span.start.line, ref.span.start.col)
+      val ref            = ctorRef.get
+      val defs           = AstLookup.findDefinitionAt(m, ref.span.start.line, ref.span.start.col)
+      val structNameSpan = struct.nameNode.source.spanOpt.getOrElse(struct.span)
       assert(
-        defs.contains(struct.nameNode.span),
-        s"Expected struct nameNode span ${struct.nameNode.span}, got: $defs"
+        defs.contains(structNameSpan),
+        s"Expected struct name span $structNameSpan, got: $defs"
       )
     }
   }
@@ -179,11 +180,12 @@ class FindDefinitionTests extends BaseEffFunSuite:
       val ctorRef = refs.find(r => r.name == "Address" && r.source.isFromSource)
       assert(ctorRef.isDefined, "Could not find source ref 'Address'")
 
-      val ref  = ctorRef.get
-      val defs = AstLookup.findDefinitionAt(m, ref.span.start.line, ref.span.start.col)
+      val ref            = ctorRef.get
+      val defs           = AstLookup.findDefinitionAt(m, ref.span.start.line, ref.span.start.col)
+      val structNameSpan = struct.nameNode.source.spanOpt.getOrElse(struct.span)
       assert(
-        defs.contains(struct.nameNode.span),
-        s"Expected struct nameNode span ${struct.nameNode.span}, got: $defs"
+        defs.contains(structNameSpan),
+        s"Expected struct name span $structNameSpan, got: $defs"
       )
     }
   }

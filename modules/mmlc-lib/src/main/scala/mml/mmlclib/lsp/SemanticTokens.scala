@@ -72,16 +72,19 @@ object SemanticTokens:
       case None =>
         (3, TokenType.Variable) // "let"
 
-    val nameSpan   = bnd.nameNode.span
-    val keywordCol = nameSpan.start.col - 1 - keywordLen
-    val keywordToken =
+    val nameSpanOpt = bnd.nameNode.source.spanOpt
+    val keywordToken = nameSpanOpt.flatMap { nameSpan =>
+      val keywordCol = nameSpan.start.col - 1 - keywordLen
       tokenAtPos(nameSpan.start.line, keywordCol, keywordLen, TokenType.Keyword)
+    }
 
-    val nameToken = tokenAt(
-      nameSpan,
-      nameTokenType,
-      modifiers = Set(TokenModifier.Declaration, TokenModifier.Readonly)
-    )
+    val nameToken = nameSpanOpt.flatMap { nameSpan =>
+      tokenAt(
+        nameSpan,
+        nameTokenType,
+        modifiers = Set(TokenModifier.Declaration, TokenModifier.Readonly)
+      )
+    }
 
     val bodyTokens = collectFromExpr(bnd.value, resolvables)
 
@@ -90,31 +93,37 @@ object SemanticTokens:
   /** Collect tokens from a type definition. */
   private def collectFromTypeDef(td: TypeDef): List[RawToken] =
     val keyword = keywordAt(td.span.start, 4) // "type"
-    val name = tokenAt(
-      td.nameNode.span,
-      TokenType.Type,
-      modifiers = Set(TokenModifier.Declaration, TokenModifier.Readonly)
-    )
+    val name = td.nameNode.source.spanOpt.flatMap { span =>
+      tokenAt(
+        span,
+        TokenType.Type,
+        modifiers = Set(TokenModifier.Declaration, TokenModifier.Readonly)
+      )
+    }
     keyword.toList ++ name.toList ++ td.typeSpec.toList.flatMap(collectFromType)
 
   /** Collect tokens from a type alias. */
   private def collectFromTypeAlias(ta: TypeAlias): List[RawToken] =
     val keyword = keywordAt(ta.span.start, 4) // "type"
-    val name = tokenAt(
-      ta.nameNode.span,
-      TokenType.Type,
-      modifiers = Set(TokenModifier.Declaration, TokenModifier.Readonly)
-    )
+    val name = ta.nameNode.source.spanOpt.flatMap { span =>
+      tokenAt(
+        span,
+        TokenType.Type,
+        modifiers = Set(TokenModifier.Declaration, TokenModifier.Readonly)
+      )
+    }
     keyword.toList ++ name.toList ++ collectFromType(ta.typeRef)
 
   /** Collect tokens from a struct type. */
   private def collectFromTypeStruct(ts: TypeStruct): List[RawToken] =
     val keyword = keywordAt(ts.span.start, 6) // "struct"
-    val name = tokenAt(
-      ts.nameNode.span,
-      TokenType.Type,
-      modifiers = Set(TokenModifier.Declaration, TokenModifier.Readonly)
-    )
+    val name = ts.nameNode.source.spanOpt.flatMap { span =>
+      tokenAt(
+        span,
+        TokenType.Type,
+        modifiers = Set(TokenModifier.Declaration, TokenModifier.Readonly)
+      )
+    }
     val fields = ts.fields.toList.flatMap(f => collectFromType(f.typeSpec))
     keyword.toList ++ name.toList ++ fields
 
@@ -207,11 +216,13 @@ object SemanticTokens:
   private def collectFromLambda(lambda: Lambda, resolvables: ResolvablesIndex): List[RawToken] =
     val paramTokens = lambda.params.flatMap { param =>
       if param.source.isFromSource then
-        val nameToken = tokenAt(
-          param.nameNode.span,
-          TokenType.Parameter,
-          modifiers = Set(TokenModifier.Declaration, TokenModifier.Readonly)
-        )
+        val nameToken = param.nameNode.source.spanOpt.flatMap { span =>
+          tokenAt(
+            span,
+            TokenType.Parameter,
+            modifiers = Set(TokenModifier.Declaration, TokenModifier.Readonly)
+          )
+        }
         val typeTokens = param.typeAsc.toList.flatMap(collectFromType)
         nameToken.toList ++ typeTokens
       else Nil

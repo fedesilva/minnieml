@@ -5,14 +5,24 @@ This is a high-priority consistency task.
 Leaving this migration unfinished hurts compiler quality and keeps leaking fake source locations into
 data paths that should use `SourceOrigin.Synth`.
 
+## Non-Negotiable Invariant
+
+- No AST node may carry a naked `SrcSpan` field.
+- Source location is represented only by `SourceOrigin`:
+  - `SourceOrigin.Loc(span)` when the node is from real source.
+  - `SourceOrigin.Synth` when the node is compiler-synthesized.
+- Any API that still requires a concrete span must explicitly pattern-match on `SourceOrigin`.
+  It must never infer "real source" from sentinel coordinates.
+- `SrcPoint(0,0,0)` is forbidden as a source-origin fallback.
+
 ## Audit Findings
 
 1. `Name.synth` violates the `SourceOrigin` model contract.
 - `modules/mmlc-lib/src/main/scala/mml/mmlclib/ast/common.scala:23`
 - `modules/mmlc-lib/src/main/scala/mml/mmlclib/ast/common.scala:29`
-- `Name` always reports `SourceOrigin.Loc(span)`, but `Name.synth` fabricates `0,0,0`.
-- Synthetic names become indistinguishable from real source-located names unless callers know the
-  sentinel convention.
+- `Name` currently carries a naked span field, which bypasses the model.
+- `Name.synth` was implemented via fabricated coordinates, creating an implicit sentinel contract.
+- This is exactly the anti-pattern we are removing globally.
 
 2. `DuplicateNameChecker` still manufactures fake `Loc(0,0,0)` when source is missing.
 - `modules/mmlc-lib/src/main/scala/mml/mmlclib/semantic/DuplicateNameChecker.scala:48`
@@ -39,11 +49,10 @@ data paths that should use `SourceOrigin.Synth`.
 
 ## Why This Keeps Happening
 
-- The model is only half-migrated: some nodes use `SourceOrigin`, others still require raw
-  `SrcSpan`.
+- The model is only half-migrated: some nodes use `SourceOrigin`, while others still carry raw
+  `SrcSpan` fields.
 - There is no guardrail enforcing “no fake `Loc` spans in production code”.
-- `Name` is structurally source-located, so synthetic names are currently forced through fake
-  coordinates.
+- There is no explicit hard invariant banning naked spans in AST nodes.
 - AI agents failed the basic job here: they did not report that the migration was incomplete.
 - The human also failed by trusting the handoff and not doing an immediate verification pass.
 - Both sides missed a preventable quality gate, and the bug survived longer than it should have.
@@ -52,20 +61,22 @@ data paths that should use `SourceOrigin.Synth`.
 
 ## Execution Plan
 
-### Phase A - Fix `Name.synth` contract first
+### Phase A - Establish and enforce the AST source model at the root
 
-Goal: make synthetic names truly synthetic by origin, not fake source-located.
+Goal: remove naked span semantics at the root (`Name`) and lock the invariant with tests.
 
 Target files:
 - `modules/mmlc-lib/src/main/scala/mml/mmlclib/ast/common.scala`
 
 Tasks:
-- Refactor `Name` so parser-created names preserve real `SourceOrigin.Loc(span)`.
-- Update `Name.synth` so it produces `SourceOrigin.Synth` instead of a fabricated `Loc(0,0,0)`.
-- Add tests that pin this behavior and protect against regressions.
+- Refactor `Name` to carry source via `SourceOrigin` only (no standalone `span` field).
+- Ensure parser-created names use `SourceOrigin.Loc(realSpan)`.
+- Ensure synthesized names use `SourceOrigin.Synth` (no fake source coordinates).
+- Add tests that enforce this contract and fail on regressions.
 
 Checkpoint:
-- Verify no synthetic name reports a real `Loc` span.
+- `Name` has no naked span field.
+- `Name` source is always explicit (`Loc` or `Synth`), never inferred from coordinates.
 
 ### Phase B - Remove fake duplicate-location fallback
 
@@ -76,13 +87,13 @@ Target files:
 
 Tasks:
 - Replace `getOrElse(SrcSpan(SrcPoint(0, 0, 0), ...))` fallback logic.
-- Preserve real spans when available; keep synthetic origin when not.
+- Preserve real spans only when available via `SourceOrigin.Loc`; otherwise keep synthetic origin.
 - Add regression tests for duplicate declarations involving synthetic nodes.
 
 Checkpoint:
 - Diagnostics must not include fake `0,0,0` locations for synthetic duplicates.
 
-### Phase C - Pipeline bootstrap cleanup
+### Phase C - Remove naked spans from bootstrap/module ingest paths
 
 Goal: remove fake module bootstrap spans from ingest/fallback paths.
 
@@ -91,13 +102,13 @@ Target files:
 - `modules/mmlc-lib/src/main/scala/mml/mmlclib/compiler/Compilation.scala`
 
 Tasks:
-- Replace dummy `SrcSpan(SrcPoint(0, 0, 0), ...)` bootstrap values.
-- If required, refactor `Module` source/origin representation to allow synthetic module origin.
+- Replace dummy bootstrap spans with explicit synthetic origins.
+- Refactor module/source-bearing nodes that still require naked spans to use `SourceOrigin`.
 
 Checkpoint:
-- Ingest and fallback compile paths no longer create fake source `Loc` values.
+- Ingest and fallback compile paths carry synthetic origin explicitly and do not create fake spans.
 
-### Phase D - Standard-library injection hygiene
+### Phase D - Remove naked span dependencies from stdlib injection and builders
 
 Goal: keep stdlib injection synthetic without relying on fake source spans.
 
@@ -105,23 +116,24 @@ Target files:
 - `modules/mmlc-lib/src/main/scala/mml/mmlclib/semantic/package.scala`
 
 Tasks:
-- Remove `0,0,0` sentinel spans from stdlib injection paths where feasible.
-- Where a raw `SrcSpan` remains structurally required, use a dedicated synthetic sentinel
-  convention (`-1`-based), never `Loc(0,0,0)`.
+- Remove all naked span requirements in stdlib builder paths.
+- Ensure injected nodes are created with explicit `SourceOrigin.Synth`.
+- Eliminate sentinel-coordinate based source semantics.
 
 Checkpoint:
-- Stdlib-injected nodes are consistently synthetic by origin and no longer leak fake source coords.
+- Stdlib-injected nodes are synthetic by explicit origin and do not depend on span sentinels.
 
 ### Phase E - Add guardrail
 
 Goal: make recurrence hard.
 
 Tasks:
-- Add a guard test/check that fails on newly introduced `SrcPoint(0, 0, 0)` in production code
-  paths relevant to AST/source-origin.
+- Add guard checks that fail when:
+  - new naked `SrcSpan` fields are introduced in AST/source-bearing nodes
+  - `SrcPoint(0,0,0)` is introduced as a source-origin fallback in production paths
 
 Checkpoint:
-- CI/local verification catches reintroduction of fake source-located sentinels.
+- CI/local verification catches both naked-span reintroduction and fake-span fallback patterns.
 
 ## Order and Signoff Rhythm
 

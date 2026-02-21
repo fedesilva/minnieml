@@ -20,14 +20,18 @@ trait AstNode derives CanEqual
 /** A name with its source position. Used on named declarations so the LSP can get the precise
   * position of the identifier without guessing from keyword offsets.
   */
-case class Name(span: SrcSpan, value: String) extends AstNode, FromSource:
-  override val source: SourceOrigin = SourceOrigin.Loc(span)
+case class Name(
+  value:               String,
+  override val source: SourceOrigin
+) extends AstNode,
+      FromSource
 
-// FIXME:QA: spans with 0 coords should have been removed already.
-// it's the whole point of SourceOrigin.
 object Name:
-  private val emptySpan:    SrcSpan = SrcSpan(SrcPoint(0, 0, 0), SrcPoint(0, 0, 0))
-  def synth(value: String): Name    = Name(emptySpan, value)
+  def apply(span: SrcSpan, value: String): Name =
+    new Name(value, SourceOrigin.Loc(span))
+
+  def synth(value: String): Name =
+    Name(value, SourceOrigin.Synth)
 
 trait Typeable extends AstNode {
 

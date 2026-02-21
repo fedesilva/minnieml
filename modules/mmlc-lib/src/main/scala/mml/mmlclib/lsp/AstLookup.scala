@@ -592,7 +592,8 @@ object AstLookup:
         bnd.meta match
           case Some(m) if m.origin == BindingOrigin.Constructor =>
             module.members.collectFirst {
-              case ts: TypeStruct if ts.name == m.originalName => ts.nameNode.span
+              case ts: TypeStruct if ts.name == m.originalName =>
+                ts.nameNode.source.spanOpt.getOrElse(ts.span)
             }
           case _ => None
       case param: FnParam if param.source == SourceOrigin.Synth => None
