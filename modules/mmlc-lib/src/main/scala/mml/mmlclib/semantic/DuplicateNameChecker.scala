@@ -68,7 +68,7 @@ object DuplicateNameChecker:
               phaseName
             )
             InvalidMember(
-              span           = bnd.span,
+              source         = bnd.source,
               originalMember = bnd,
               reason         = s"Duplicate parameter names: $duplicateParamNames"
             )

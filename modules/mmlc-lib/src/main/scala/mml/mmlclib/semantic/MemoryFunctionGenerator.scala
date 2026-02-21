@@ -14,10 +14,10 @@ import mml.mmlclib.compiler.CompilerState
   * Native types (String, Buffer, etc.) have their memory functions defined in the C runtime.
   */
 object MemoryFunctionGenerator:
-  private val syntheticSpan = SrcSpan(SrcPoint(0, 0, -1), SrcPoint(0, 0, -1))
+  private val syntheticSource = SourceOrigin.Synth
 
-  private def unitTypeRef(span: SrcSpan): TypeRef =
-    TypeRef(span, "Unit", Some("stdlib::typedef::Unit"), Nil)
+  private def unitTypeRef(source: SourceOrigin): TypeRef =
+    TypeRef(source, "Unit", Some("stdlib::typedef::Unit"), Nil)
 
   /** Generate a stable ID for generated memory functions */
   private def genId(moduleName: String, fnName: String): Option[String] =
@@ -70,8 +70,8 @@ object MemoryFunctionGenerator:
 
     // Type refs
     val structTypeRef =
-      TypeRef(syntheticSpan, structName, struct.id, Nil)
-    val unitTR = unitTypeRef(syntheticSpan)
+      TypeRef(syntheticSource, structName, struct.id, Nil)
+    val unitTR = unitTypeRef(syntheticSource)
 
     // Parameter - consuming since it takes ownership
     val param = FnParam(
@@ -93,7 +93,7 @@ object MemoryFunctionGenerator:
             SourceOrigin.Synth,
             freeFnName,
             resolvedId = resolveMemFnId(typeName, freeFnName, moduleName, resolvables),
-            typeSpec   = Some(TypeFn(syntheticSpan, List(field.typeSpec), unitTR))
+            typeSpec   = Some(TypeFn(syntheticSource, List(field.typeSpec), unitTR))
           )
           val paramRef = Ref(SourceOrigin.Synth, paramName, typeSpec = Some(structTypeRef))
           val fieldRef = Ref(
@@ -102,21 +102,25 @@ object MemoryFunctionGenerator:
             qualifier = Some(paramRef),
             typeSpec  = Some(field.typeSpec)
           )
-          val argExpr = Expr(syntheticSpan, List(fieldRef), typeSpec = Some(field.typeSpec))
-          App(syntheticSpan, freeFnRef, argExpr, typeSpec = Some(unitTR))
+          val argExpr = Expr(syntheticSource, List(fieldRef), typeSpec = Some(field.typeSpec))
+          App(syntheticSource, freeFnRef, argExpr, typeSpec = Some(unitTR))
         }
       }
     }
 
     // Build the body - sequence of let _ = free; statements ending with unit
     val body =
-      if freeCalls.isEmpty then Expr(syntheticSpan, List(LiteralUnit(syntheticSpan)))
+      if freeCalls.isEmpty then
+        Expr(
+          syntheticSource,
+          List(LiteralUnit(syntheticSource, typeSpec = Some(unitTR), typeAsc = None))
+        )
       else
         // Chain free calls with let _ = ...; pattern
         val lastCall  = freeCalls.last
         val initCalls = freeCalls.init
 
-        val innerBody = Expr(syntheticSpan, List(lastCall), typeSpec = Some(unitTR))
+        val innerBody = Expr(syntheticSource, List(lastCall), typeSpec = Some(unitTR))
         initCalls.foldRight(innerBody) { (call, acc) =>
           val discardParam =
             FnParam(
@@ -126,21 +130,21 @@ object MemoryFunctionGenerator:
               typeAsc  = Some(unitTR)
             )
           val wrapper =
-            Lambda(syntheticSpan, List(discardParam), acc, Nil, typeSpec = Some(unitTR))
-          val callExpr = Expr(syntheticSpan, List(call), typeSpec = Some(unitTR))
+            Lambda(syntheticSource, List(discardParam), acc, Nil, typeSpec = Some(unitTR))
+          val callExpr = Expr(syntheticSource, List(call), typeSpec = Some(unitTR))
           Expr(
-            syntheticSpan,
-            List(App(syntheticSpan, wrapper, callExpr, typeSpec = Some(unitTR))),
+            syntheticSource,
+            List(App(syntheticSource, wrapper, callExpr, typeSpec = Some(unitTR))),
             typeSpec = Some(unitTR)
           )
         }
 
     // Build the function type: StructName -> Unit
-    val fnType = TypeFn(syntheticSpan, List(structTypeRef), unitTR)
+    val fnType = TypeFn(syntheticSource, List(structTypeRef), unitTR)
 
     // Build the lambda
     val lambda = Lambda(
-      syntheticSpan,
+      syntheticSource,
       List(param),
       body,
       Nil,
@@ -161,7 +165,7 @@ object MemoryFunctionGenerator:
     Bnd(
       source     = SourceOrigin.Synth,
       nameNode   = Name.synth(fnName),
-      value      = Expr(syntheticSpan, List(lambda)),
+      value      = Expr(syntheticSource, List(lambda)),
       typeSpec   = Some(fnType),
       typeAsc    = Some(unitTR),
       docComment = None,
@@ -179,11 +183,11 @@ object MemoryFunctionGenerator:
     val typeName    = TypeUtils.getTypeName(fieldType).getOrElse("String")
     val cloneFnName = TypeUtils.cloneFnFor(typeName, resolvables).getOrElse(s"__clone_$typeName")
     val cloneFnId   = resolveMemFnId(typeName, cloneFnName, moduleName, resolvables)
-    val cloneFnType = Some(TypeFn(syntheticSpan, List(fieldType), fieldType))
+    val cloneFnType = Some(TypeFn(syntheticSource, List(fieldType), fieldType))
     val cloneFnRef =
       Ref(SourceOrigin.Synth, cloneFnName, resolvedId = cloneFnId, typeSpec = cloneFnType)
-    val cloneApp = App(syntheticSpan, cloneFnRef, fieldExpr, typeSpec = Some(fieldType))
-    Expr(syntheticSpan, List(cloneApp), typeSpec = Some(fieldType))
+    val cloneApp = App(syntheticSource, cloneFnRef, fieldExpr, typeSpec = Some(fieldType))
+    Expr(syntheticSource, List(cloneApp), typeSpec = Some(fieldType))
 
   /** Rewrite a __mk_StructName constructor to mark heap-typed params as consuming */
   private def rewriteConstructor(
@@ -202,7 +206,7 @@ object MemoryFunctionGenerator:
               else param
             }
             val newLambda = lambda.copy(params = newParams)
-            bnd.copy(value = Expr(bnd.value.span, List(newLambda)))
+            bnd.copy(value = Expr(bnd.value.source, List(newLambda)))
           case None => bnd
       case other => other
 
@@ -224,7 +228,7 @@ object MemoryFunctionGenerator:
               else param
             }
             val newLambda = lambda.copy(params = newParams)
-            bnd.copy(value = Expr(bnd.value.span, List(newLambda)))
+            bnd.copy(value = Expr(bnd.value.source, List(newLambda)))
           case None => bnd
       case other => other
 
@@ -246,7 +250,7 @@ object MemoryFunctionGenerator:
 
     // Type refs
     val structTypeRef =
-      TypeRef(syntheticSpan, structName, struct.id, Nil)
+      TypeRef(syntheticSource, structName, struct.id, Nil)
 
     // Parameter - not consuming since we're cloning (borrowing)
     val param = FnParam(
@@ -259,7 +263,7 @@ object MemoryFunctionGenerator:
     // Build the constructor type as a curried function: T1 -> T2 -> ... -> StructType
     val fieldTypes = struct.fields.map(_.typeSpec).toList
     val constructorType = fieldTypes.foldRight(structTypeRef: Type) { (fieldType, accType) =>
-      TypeFn(syntheticSpan, List(fieldType), accType)
+      TypeFn(syntheticSource, List(fieldType), accType)
     }
 
     // Constructor reference: __mk_StructName
@@ -275,7 +279,7 @@ object MemoryFunctionGenerator:
     val argExprs: List[Expr] = struct.fields.toList.map { field =>
       val paramRef    = Ref(SourceOrigin.Synth, paramName, typeSpec = Some(structTypeRef))
       val fieldRef    = Ref(SourceOrigin.Synth, field.name, qualifier = Some(paramRef))
-      val fieldAccess = Expr(syntheticSpan, List(fieldRef), typeSpec = Some(field.typeSpec))
+      val fieldAccess = Expr(syntheticSource, List(fieldRef), typeSpec = Some(field.typeSpec))
 
       if isHeapField(field, resolvables) then
         wrapFieldWithClone(fieldAccess, field.typeSpec, moduleName, resolvables)
@@ -290,18 +294,18 @@ object MemoryFunctionGenerator:
           val resultType = currType match
             case TypeFn(_, _, ret) => ret
             case other => other
-          val app = App(syntheticSpan, fn, arg, typeSpec = Some(resultType))
+          val app = App(syntheticSource, fn, arg, typeSpec = Some(resultType))
           (app, resultType)
       }
 
-    val body = Expr(syntheticSpan, List(constructorCall), typeSpec = Some(structTypeRef))
+    val body = Expr(syntheticSource, List(constructorCall), typeSpec = Some(structTypeRef))
 
     // Build the function type: StructName -> StructName
-    val fnType = TypeFn(syntheticSpan, List(structTypeRef), structTypeRef)
+    val fnType = TypeFn(syntheticSource, List(structTypeRef), structTypeRef)
 
     // Build the lambda
     val lambda = Lambda(
-      syntheticSpan,
+      syntheticSource,
       List(param),
       body,
       Nil,
@@ -322,7 +326,7 @@ object MemoryFunctionGenerator:
     Bnd(
       source     = SourceOrigin.Synth,
       nameNode   = Name.synth(fnName),
-      value      = Expr(syntheticSpan, List(lambda)),
+      value      = Expr(syntheticSource, List(lambda)),
       typeSpec   = Some(fnType),
       typeAsc    = Some(structTypeRef),
       docComment = None,

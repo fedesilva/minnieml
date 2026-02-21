@@ -6,12 +6,10 @@ enum MemEffect derives CanEqual:
   case Alloc // returns newly allocated memory, caller owns
   case Static // returns pointer to static/existing memory
 
-sealed trait Term extends AstNode, Typeable, FromSource:
-  def span:            SrcSpan
-  override def source: SourceOrigin = SourceOrigin.Loc(span)
+sealed trait Term extends AstNode, Typeable, FromSource
 
 case class TermError(
-  span:       SrcSpan,
+  source:     SourceOrigin,
   message:    String,
   failedCode: Option[String]
 ) extends Term,
@@ -19,15 +17,19 @@ case class TermError(
   final val typeSpec: Option[Type] = None
   final val typeAsc:  Option[Type] = None
 
+object TermError:
+  def apply(span: SrcSpan, message: String, failedCode: Option[String]): TermError =
+    new TermError(SourceOrigin.Loc(span), message, failedCode)
+
 case class Expr(
-  span:     SrcSpan,
+  source:   SourceOrigin,
   terms:    List[Term],
   typeAsc:  Option[Type] = None,
   typeSpec: Option[Type] = None
 ) extends Term
 
 case class Cond(
-  span:     SrcSpan,
+  source:   SourceOrigin,
   cond:     Expr,
   ifTrue:   Expr,
   ifFalse:  Expr,
@@ -36,19 +38,36 @@ case class Cond(
 ) extends Term
 
 case class App(
-  span:     SrcSpan,
+  source:   SourceOrigin,
   fn:       Ref | App | Lambda,
   arg:      Expr,
   typeAsc:  Option[Type] = None,
   typeSpec: Option[Type] = None
 ) extends Term
 
+object App:
+  def apply(
+    span:     SrcSpan,
+    fn:       Ref | App | Lambda,
+    arg:      Expr,
+    typeAsc:  Option[Type],
+    typeSpec: Option[Type]
+  ): App =
+    new App(SourceOrigin.Loc(span), fn, arg, typeAsc, typeSpec)
+
+  def apply(
+    span: SrcSpan,
+    fn:   Ref | App | Lambda,
+    arg:  Expr
+  ): App =
+    new App(SourceOrigin.Loc(span), fn, arg, None, None)
+
 case class LambdaMeta(
   isTailRecursive: Boolean = false
 )
 
 case class Lambda(
-  span:     SrcSpan,
+  source:   SourceOrigin,
   params:   List[FnParam],
   body:     Expr,
   captures: List[Ref],
@@ -57,15 +76,45 @@ case class Lambda(
   meta:     Option[LambdaMeta] = None
 ) extends Term
 
+object Lambda:
+  def apply(
+    span:     SrcSpan,
+    params:   List[FnParam],
+    body:     Expr,
+    captures: List[Ref],
+    typeSpec: Option[Type],
+    typeAsc:  Option[Type],
+    meta:     Option[LambdaMeta]
+  ): Lambda =
+    new Lambda(SourceOrigin.Loc(span), params, body, captures, typeSpec, typeAsc, meta)
+
+  def apply(
+    span:     SrcSpan,
+    params:   List[FnParam],
+    body:     Expr,
+    captures: List[Ref],
+    typeSpec: Option[Type],
+    typeAsc:  Option[Type]
+  ): Lambda =
+    new Lambda(SourceOrigin.Loc(span), params, body, captures, typeSpec, typeAsc, None)
+
+  def apply(
+    span:     SrcSpan,
+    params:   List[FnParam],
+    body:     Expr,
+    captures: List[Ref]
+  ): Lambda =
+    new Lambda(SourceOrigin.Loc(span), params, body, captures, None, None, None)
+
 case class TermGroup(
-  span:    SrcSpan,
+  source:  SourceOrigin,
   inner:   Expr,
   typeAsc: Option[Type] = None
 ) extends Term:
   def typeSpec: Option[Type] = inner.typeSpec
 
 case class Tuple(
-  span:     SrcSpan,
+  source:   SourceOrigin,
   elements: NonEmptyList[Expr],
   typeAsc:  Option[Type] = None,
   typeSpec: Option[Type] = None
@@ -73,30 +122,26 @@ case class Tuple(
 
 /** Points to something declared elsewhere */
 case class Ref(
-  override val source: SourceOrigin,
-  name:                String,
-  typeAsc:             Option[Type]   = None,
-  typeSpec:            Option[Type]   = None,
-  resolvedId:          Option[String] = None,
-  candidateIds:        List[String]   = Nil,
-  qualifier:           Option[Term]   = None
+  source:       SourceOrigin,
+  name:         String,
+  typeAsc:      Option[Type]   = None,
+  typeSpec:     Option[Type]   = None,
+  resolvedId:   Option[String] = None,
+  candidateIds: List[String]   = Nil,
+  qualifier:    Option[Term]   = None
 ) extends Term,
-      FromSource:
-  private val syntheticSpan = SrcSpan(SrcPoint(0, 0, -1), SrcPoint(0, 0, -1))
-  def span: SrcSpan = source match
-    case SourceOrigin.Loc(s) => s
-    case SourceOrigin.Synth => syntheticSpan
+      FromSource
 
 /** The `_` symbol */
 case class Placeholder(
-  span:     SrcSpan,
+  source:   SourceOrigin,
   typeSpec: Option[Type],
   typeAsc:  Option[Type] = None
 ) extends Term,
       FromSource
 
 case class Hole(
-  span:     SrcSpan,
+  source:   SourceOrigin,
   typeAsc:  Option[Type] = None,
   typeSpec: Option[Type] = None
 ) extends Term,
@@ -107,66 +152,77 @@ case class Hole(
 sealed trait LiteralValue extends Term, FromSource
 
 case class LiteralInt(
-  span:     SrcSpan,
+  source:   SourceOrigin,
   value:    Int,
   typeSpec: Option[Type],
   typeAsc:  Option[Type] = None
 ) extends LiteralValue
 
-object LiteralInt {
+object LiteralInt:
   def apply(span: SrcSpan, value: Int): LiteralInt =
-    new LiteralInt(span, value, Some(TypeRef(span, "Int")), None)
+    new LiteralInt(
+      SourceOrigin.Loc(span),
+      value,
+      Some(TypeRef(SourceOrigin.Loc(span), "Int")),
+      None
+    )
 
-  def unapply(lit: LiteralInt): Option[(SrcSpan, Int)] =
-    Some((lit.span, lit.value))
-}
+  def unapply(lit: LiteralInt): Option[(SourceOrigin, Int)] =
+    Some((lit.source, lit.value))
 
 case class LiteralString(
-  span:     SrcSpan,
+  source:   SourceOrigin,
   value:    String,
   typeSpec: Option[Type],
   typeAsc:  Option[Type] = None
 ) extends LiteralValue
 
-object LiteralString {
+object LiteralString:
   def apply(span: SrcSpan, value: String): LiteralString =
-    new LiteralString(span, value, Some(TypeRef(span, "String")), None)
+    new LiteralString(
+      SourceOrigin.Loc(span),
+      value,
+      Some(TypeRef(SourceOrigin.Loc(span), "String")),
+      None
+    )
 
-  def unapply(lit: LiteralString): Option[(SrcSpan, String)] =
-    Some((lit.span, lit.value))
-}
+  def unapply(lit: LiteralString): Option[(SourceOrigin, String)] =
+    Some((lit.source, lit.value))
 
 case class LiteralBool(
-  span:     SrcSpan,
+  source:   SourceOrigin,
   value:    Boolean,
   typeSpec: Option[Type],
   typeAsc:  Option[Type] = None
 ) extends LiteralValue
 
-object LiteralBool {
+object LiteralBool:
   def apply(span: SrcSpan, value: Boolean): LiteralBool =
-    new LiteralBool(span, value, Some(TypeRef(span, "Bool")), None)
+    new LiteralBool(
+      SourceOrigin.Loc(span),
+      value,
+      Some(TypeRef(SourceOrigin.Loc(span), "Bool")),
+      None
+    )
 
-  def unapply(lit: LiteralBool): Option[(SrcSpan, Boolean)] =
-    Some((lit.span, lit.value))
-}
+  def unapply(lit: LiteralBool): Option[(SourceOrigin, Boolean)] =
+    Some((lit.source, lit.value))
 
 case class LiteralUnit(
-  span:     SrcSpan,
+  source:   SourceOrigin,
   typeSpec: Option[Type],
   typeAsc:  Option[Type] = None
 ) extends LiteralValue
 
-object LiteralUnit {
+object LiteralUnit:
   def apply(span: SrcSpan): LiteralUnit =
-    new LiteralUnit(span, Some(TypeRef(span, "Unit")), None)
+    new LiteralUnit(SourceOrigin.Loc(span), Some(TypeRef(SourceOrigin.Loc(span), "Unit")), None)
 
-  def unapply(lit: LiteralUnit): Option[SrcSpan] =
-    Some(lit.span)
-}
+  def unapply(lit: LiteralUnit): Option[SourceOrigin] =
+    Some(lit.source)
 
 case class LiteralFloat(
-  span:     SrcSpan,
+  source:   SourceOrigin,
   value:    Float,
   typeSpec: Option[Type],
   typeAsc:  Option[Type] = None
@@ -174,17 +230,22 @@ case class LiteralFloat(
 
 object LiteralFloat:
   def apply(span: SrcSpan, value: Float): LiteralFloat =
-    new LiteralFloat(span, value, Some(TypeRef(span, "Float")), None)
+    new LiteralFloat(
+      SourceOrigin.Loc(span),
+      value,
+      Some(TypeRef(SourceOrigin.Loc(span), "Float")),
+      None
+    )
 
-  def unapply(lit: LiteralFloat): Option[(SrcSpan, Float)] =
-    Some((lit.span, lit.value))
+  def unapply(lit: LiteralFloat): Option[(SourceOrigin, Float)] =
+    Some((lit.source, lit.value))
 
 /** Marks the body of a function as a data type constructor The codegen will use the return type to
   * find the datatype fields. The typechecker will have to match the arguments types with the fields
   * of the struct. The parser creates both the data type and the constructor.
   */
 case class DataConstructor(
-  span:     SrcSpan,
+  source:   SourceOrigin,
   typeSpec: Option[Type] = None
 ) extends Term:
   val typeAsc: Option[Type] = None
@@ -193,13 +254,13 @@ case class DataConstructor(
   * determine how to free the memory. Generated alongside DataConstructor for structs.
   */
 case class DataDestructor(
-  span:     SrcSpan,
+  source:   SourceOrigin,
   typeSpec: Option[Type] = None
 ) extends Term:
   val typeAsc: Option[Type] = None
 
 case class NativeImpl(
-  span:      SrcSpan,
+  source:    SourceOrigin,
   typeSpec:  Option[Type]      = None,
   typeAsc:   Option[Type]      = None,
   nativeTpl: Option[String]    = None,
@@ -211,7 +272,7 @@ case class NativeImpl(
   * original expression for debugging and error reporting.
   */
 case class InvalidExpression(
-  span:         SrcSpan,
+  source:       SourceOrigin,
   originalExpr: Expr,
   typeSpec:     Option[Type] = None,
   typeAsc:      Option[Type] = None

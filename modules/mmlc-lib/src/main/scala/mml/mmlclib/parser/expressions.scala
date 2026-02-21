@@ -9,11 +9,19 @@ import MmlWhitespace.*
 
 private val statementParamName = "__stmt"
 
+private def locSpan(node: FromSource): SrcSpan =
+  node.source match
+    case SourceOrigin.Loc(s) => s
+    case SourceOrigin.Synth =>
+      throw IllegalStateException("Parser expected source-located node")
+
 private def mkStatementChain(head: Expr, tail: List[Expr]): Expr =
   val statements = head :: tail
   statements.reduceRight { (stmt, rest) =>
-    val stmtSpan  = span(stmt.span.start, rest.span.end)
-    val paramSpan = stmt.span
+    val stmtLoc   = locSpan(stmt)
+    val restLoc   = locSpan(rest)
+    val stmtSpan  = span(stmtLoc.start, restLoc.end)
+    val paramSpan = stmtLoc
     val unitType  = TypeRef(paramSpan, "Unit")
     val param =
       FnParam(SourceOrigin.Synth, Name.synth(statementParamName), typeAsc = Some(unitType))
@@ -124,7 +132,8 @@ private def selectionP(info: SourceInfo, baseP: => P[Term])(using P[Any]): P[Ter
     val fieldList = fields.toList
     val lastIndex = fieldList.size - 1
     fieldList.zipWithIndex.foldLeft(base) { case (qualifier, ((fieldName, fieldSpan), idx)) =>
-      val selectionSpan = span(qualifier.span.start, fieldSpan.end)
+      val qualifierLoc  = locSpan(qualifier)
+      val selectionSpan = span(qualifierLoc.start, fieldSpan.end)
       Ref(
         source    = SourceOrigin.Loc(selectionSpan),
         name      = fieldName,
@@ -177,7 +186,9 @@ private[parser] def ifExprP(info: SourceInfo)(using P[Any]): P[Term] =
     val finalSpan = span(start, end)
     // Build nested Cond from elsif chain (fold right)
     val elseExpr = elsifs.toList.foldRight(ifFalse) { case ((elsifCond, elsifBody), acc) =>
-      val condSpan = span(elsifCond.span.start, acc.span.end)
+      val elsifCondLoc = locSpan(elsifCond)
+      val accLoc       = locSpan(acc)
+      val condSpan     = span(elsifCondLoc.start, accLoc.end)
       Expr(condSpan, List(Cond(condSpan, elsifCond, elsifBody, acc)))
     }
     Cond(finalSpan, cond, ifTrue, elseExpr)
@@ -196,7 +207,9 @@ private[parser] def ifSingleBranchExprP(info: SourceInfo)(using P[Any]): P[Term]
     val unitExpr = Expr(unitSpan, List(LiteralUnit(unitSpan)))
     // Build nested Cond from elsif chain (fold right), ending with unit
     val elseExpr = elsifs.toList.foldRight(unitExpr) { case ((elsifCond, elsifBody), acc) =>
-      val condSpan = span(elsifCond.span.start, acc.span.end)
+      val elsifCondLoc = locSpan(elsifCond)
+      val accLoc       = locSpan(acc)
+      val condSpan     = span(elsifCondLoc.start, accLoc.end)
       Expr(
         condSpan,
         List(Cond(condSpan, elsifCond, elsifBody, acc, typeSpec = Some(unitType)))
@@ -252,7 +265,9 @@ private[parser] def ifExprMemberP(info: SourceInfo)(using P[Any]): P[Term] =
     val finalSpan = span(start, end)
     // Build nested Cond from elsif chain (fold right)
     val elseExpr = elsifs.toList.foldRight(ifFalse) { case ((elsifCond, elsifBody), acc) =>
-      val condSpan = span(elsifCond.span.start, acc.span.end)
+      val elsifCondLoc = locSpan(elsifCond)
+      val accLoc       = locSpan(acc)
+      val condSpan     = span(elsifCondLoc.start, accLoc.end)
       Expr(condSpan, List(Cond(condSpan, elsifCond, elsifBody, acc)))
     }
     Cond(finalSpan, cond, ifTrue, elseExpr)
@@ -271,7 +286,9 @@ private[parser] def ifSingleBranchExprMemberP(info: SourceInfo)(using P[Any]): P
     val unitExpr = Expr(unitSpan, List(LiteralUnit(unitSpan)))
     // Build nested Cond from elsif chain (fold right), ending with unit
     val elseExpr = elsifs.toList.foldRight(unitExpr) { case ((elsifCond, elsifBody), acc) =>
-      val condSpan = span(elsifCond.span.start, acc.span.end)
+      val elsifCondLoc = locSpan(elsifCond)
+      val accLoc       = locSpan(acc)
+      val condSpan     = span(elsifCondLoc.start, accLoc.end)
       Expr(
         condSpan,
         List(Cond(condSpan, elsifCond, elsifBody, acc, typeSpec = Some(unitType)))

@@ -29,60 +29,63 @@ private val holeFunctionParamTypes = List("i64", "i64", "i64", "i64")
   * expected type.
   */
 def compileHole(hole: Hole, state: CodeGenState): Either[CodeGenError, CompileResult] =
-  val span = hole.span
-  val stateWithDecl =
-    state.withFunctionDeclaration(holeFunctionName, "void", holeFunctionParamTypes)
-  val args = List(
-    ("i64", span.start.line.toString),
-    ("i64", span.start.col.toString),
-    ("i64", span.end.line.toString),
-    ("i64", span.end.col.toString)
-  )
-  val stateAfterCall = stateWithDecl.emit(emitCall(None, None, holeFunctionName, args))
-
-  hole.typeSpec match
-    case Some(typeSpec) =>
-      getLlvmType(typeSpec, stateAfterCall) match
-        case Right("void") =>
-          CompileResult(0, stateAfterCall, false, "Unit").asRight
-        case Right(llvmType) =>
-          val allocaReg = stateAfterCall.nextRegister
-          val stateWithAlloca = stateAfterCall
-            .withRegister(allocaReg + 1)
-            .emit(s"  %$allocaReg = alloca $llvmType")
-          val loadReg = stateWithAlloca.nextRegister
-          val (stateWithAlias, aliasTag, noaliasTag) =
-            AliasScopeEmitter.getAliasScopeTags(typeSpec, stateWithAlloca)
-          val loadLine =
-            emitLoad(
-              loadReg,
-              llvmType,
-              s"%$allocaReg",
-              aliasScope = aliasTag,
-              noalias    = noaliasTag
-            )
-          val stateWithLoad = stateWithAlias
-            .withRegister(loadReg + 1)
-            .emit(loadLine)
-
-          getMmlTypeName(typeSpec) match
-            case Some(typeName) =>
-              CompileResult(loadReg, stateWithLoad, false, typeName).asRight
-            case None =>
-              Left(
-                CodeGenError(
-                  s"Could not determine MML type name for hole from spec: $typeSpec",
-                  Some(hole)
-                )
-              )
-        case Left(err) => Left(err)
+  hole.spanOpt match
     case None =>
-      Left(
-        CodeGenError(
-          "Missing type information for hole - TypeChecker should have provided this",
-          Some(hole)
-        )
+      Left(CodeGenError("Hole expression is missing source span", Some(hole)))
+    case Some(span) =>
+      val stateWithDecl =
+        state.withFunctionDeclaration(holeFunctionName, "void", holeFunctionParamTypes)
+      val args = List(
+        ("i64", span.start.line.toString),
+        ("i64", span.start.col.toString),
+        ("i64", span.end.line.toString),
+        ("i64", span.end.col.toString)
       )
+      val stateAfterCall = stateWithDecl.emit(emitCall(None, None, holeFunctionName, args))
+
+      hole.typeSpec match
+        case Some(typeSpec) =>
+          getLlvmType(typeSpec, stateAfterCall) match
+            case Right("void") =>
+              CompileResult(0, stateAfterCall, false, "Unit").asRight
+            case Right(llvmType) =>
+              val allocaReg = stateAfterCall.nextRegister
+              val stateWithAlloca = stateAfterCall
+                .withRegister(allocaReg + 1)
+                .emit(s"  %$allocaReg = alloca $llvmType")
+              val loadReg = stateWithAlloca.nextRegister
+              val (stateWithAlias, aliasTag, noaliasTag) =
+                AliasScopeEmitter.getAliasScopeTags(typeSpec, stateWithAlloca)
+              val loadLine =
+                emitLoad(
+                  loadReg,
+                  llvmType,
+                  s"%$allocaReg",
+                  aliasScope = aliasTag,
+                  noalias    = noaliasTag
+                )
+              val stateWithLoad = stateWithAlias
+                .withRegister(loadReg + 1)
+                .emit(loadLine)
+
+              getMmlTypeName(typeSpec) match
+                case Some(typeName) =>
+                  CompileResult(loadReg, stateWithLoad, false, typeName).asRight
+                case None =>
+                  Left(
+                    CodeGenError(
+                      s"Could not determine MML type name for hole from spec: $typeSpec",
+                      Some(hole)
+                    )
+                  )
+            case Left(err) => Left(err)
+        case None =>
+          Left(
+            CodeGenError(
+              "Missing type information for hole - TypeChecker should have provided this",
+              Some(hole)
+            )
+          )
 
 // ============================================================================
 // String Literal Compilation

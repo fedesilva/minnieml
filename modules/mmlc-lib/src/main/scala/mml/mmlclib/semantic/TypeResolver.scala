@@ -90,7 +90,7 @@ object TypeResolver:
           case Some(td: TypeDef) =>
             // Return TypeRef to the TypeDef, not its native typeSpec
             // This ensures type aliases resolve to MML types rather than native representations
-            Some(TypeRef(tr.span, td.name, td.id))
+            Some(TypeRef(tr.source, td.name, td.id))
           case Some(ta: TypeAlias) =>
             ta.typeSpec match
               case Some(spec) => Some(spec)
@@ -100,7 +100,7 @@ object TypeResolver:
                   case innerRef: TypeRef => computeTypeSpecForAlias(innerRef, module)
                   case _ => None
           case Some(ts: TypeStruct) =>
-            Some(TypeRef(tr.span, ts.name, ts.id))
+            Some(TypeRef(tr.source, ts.name, ts.id))
           case _ => None
       case _ => None
 
@@ -116,7 +116,7 @@ object TypeResolver:
           case Some(td: TypeDef) =>
             // Return TypeRef to the TypeDef, not its native typeSpec
             // This ensures type aliases resolve to MML types rather than native representations
-            Some(TypeRef(tr.span, td.name, td.id))
+            Some(TypeRef(tr.source, td.name, td.id))
           case Some(ta: TypeAlias) =>
             ta.typeSpec match
               case Some(spec) => Some(spec)
@@ -126,7 +126,7 @@ object TypeResolver:
                   case innerRef: TypeRef => computeTypeSpecForAliasWithMap(innerRef, typeMap)
                   case _ => None
           case Some(ts: TypeStruct) =>
-            Some(TypeRef(tr.span, ts.name, ts.id))
+            Some(TypeRef(tr.source, ts.name, ts.id))
           case _ => None
       case _ => None
 
@@ -177,12 +177,12 @@ object TypeResolver:
         candidates match
           case Nil =>
             // Return InvalidType instead of failing
-            InvalidType(typeRef.span, typeRef)
+            InvalidType(typeRef.source, typeRef)
           case single :: Nil =>
             typeRef.copy(resolvedId = single.id)
           case _ =>
             // Also use InvalidType for ambiguous references
-            InvalidType(typeRef.span, typeRef)
+            InvalidType(typeRef.source, typeRef)
       case ns: NativeStruct =>
         // Recursively handle struct fields
         val rewrittenFields = ns.fields.map { case (fieldName, fieldType) =>

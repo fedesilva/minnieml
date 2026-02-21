@@ -36,14 +36,14 @@ class SemanticTokensTests extends BaseEffFunSuite:
 
       val decodedTokens = decodeTokens(SemanticTokens.compute(module))
 
-      val missingTokens = refs.filter(ref => tokenAt(decodedTokens, ref.span).isEmpty)
+      val missingTokens = refs.filter(ref => tokenAt(decodedTokens, ref).isEmpty)
       assert(
         missingTokens.isEmpty,
         s"Missing semantic tokens for println refs.\n${debugForRefs(refs, decodedTokens, module)}"
       )
 
       val wrongTokens = refs.filter { ref =>
-        tokenAt(decodedTokens, ref.span).exists(_.tokenType != TokenType.Function)
+        tokenAt(decodedTokens, ref).exists(_.tokenType != TokenType.Function)
       }
       assert(
         wrongTokens.isEmpty,
@@ -194,6 +194,9 @@ class SemanticTokensTests extends BaseEffFunSuite:
     tokenType: TokenType
   )
 
+  private def spanOrFail(node: FromSource, label: String): SrcSpan =
+    node.source.spanOpt.getOrElse(fail(s"Missing source span for $label"))
+
   private def decodeTokens(result: SemanticTokensResult): List[DecodedToken] =
     val tokens   = ListBuffer.empty[DecodedToken]
     val data     = result.data
@@ -216,6 +219,9 @@ class SemanticTokensTests extends BaseEffFunSuite:
   private def tokenAt(tokens: List[DecodedToken], span: SrcSpan): Option[DecodedToken] =
     tokens.find(token => token.line == span.start.line && token.col == span.start.col)
 
+  private def tokenAt(tokens: List[DecodedToken], node: FromSource): Option[DecodedToken] =
+    node.spanOpt.flatMap(span => tokenAt(tokens, span))
+
   private def debugForRefs(
     refs:   List[Ref],
     tokens: List[DecodedToken],
@@ -223,13 +229,14 @@ class SemanticTokensTests extends BaseEffFunSuite:
   ): String =
     refs
       .map { ref =>
-        val tokenOpt = tokenAt(tokens, ref.span)
+        val tokenOpt = tokenAt(tokens, ref)
+        val refSpan  = spanOrFail(ref, s"ref '${ref.name}'")
         val tokenDesc = tokenOpt match
-          case Some(token) => s"${token.tokenType.name}@${token.line}:${token.col}"
+          case Some(tok) => s"${tok.tokenType.name}@${tok.line}:${tok.col}"
           case None => "none"
         val lineTokens =
           tokens
-            .filter(_.line == ref.span.start.line)
+            .filter(_.line == refSpan.start.line)
             .map(t => s"${t.col}:${t.length}:${t.tokenType.name}")
             .mkString(", ")
         val resolved =
@@ -237,7 +244,7 @@ class SemanticTokensTests extends BaseEffFunSuite:
             .flatMap(module.resolvables.lookup)
             .map(_.getClass.getSimpleName)
             .getOrElse("none")
-        s"${ref.name}@${ref.span.start.line}:${ref.span.start.col} " +
+        s"${ref.name}@${refSpan.start.line}:${refSpan.start.col} " +
           s"token=$tokenDesc resolvedId=${ref.resolvedId} resolved=$resolved " +
           s"candidates=${ref.candidateIds} lineTokens=[$lineTokens]"
       }

@@ -184,9 +184,9 @@ def resolveTypeStruct(typeSpec: Type, resolvables: ResolvablesIndex): Option[Typ
           td.typeSpec match
             case Some(ns: NativeStruct) =>
               val fields = ns.fields.map { case (name, t) =>
-                Field(td.span, Name.synth(name), t)
+                Field(td.source, Name.synth(name), t)
               }.toVector
-              Some(TypeStruct(td.span, None, td.visibility, td.nameNode, fields, td.id))
+              Some(TypeStruct(td.source, None, td.visibility, td.nameNode, fields, td.id))
             case _ => None
         case Some(ta: TypeAlias) =>
           ta.typeSpec

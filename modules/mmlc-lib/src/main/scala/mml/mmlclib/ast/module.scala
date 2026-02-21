@@ -1,13 +1,13 @@
 package mml.mmlclib.ast
 
 case class Module(
-  source:              SourceOrigin,
-  name:                String,
-  visibility:          Visibility,
-  members:             List[Member],
-  docComment:          Option[DocComment] = None,
-  sourcePath:          Option[String]     = None,
-  resolvables:         ResolvablesIndex   = ResolvablesIndex()
+  source:      SourceOrigin,
+  name:        String,
+  visibility:  Visibility,
+  members:     List[Member],
+  docComment:  Option[DocComment] = None,
+  sourcePath:  Option[String]     = None,
+  resolvables: ResolvablesIndex   = ResolvablesIndex()
 ) extends AstNode,
       FromSource,
       Member

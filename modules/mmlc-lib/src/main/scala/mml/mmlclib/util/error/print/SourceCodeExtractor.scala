@@ -45,29 +45,34 @@ object SourceCodeExtractor:
         snippets.mkString("\n")
 
       case SemanticError.UndefinedRef(ref, _, _) =>
-        extractSnippet(sourceInfo, ref.span, nameHighlightSpan = Some(ref.span))
+        spanOf(ref)
+          .flatMap(span => extractSnippet(sourceInfo, span, nameHighlightSpan = Some(span)))
           .map(s => s"\n$s")
           .getOrElse("")
 
       case SemanticError.UndefinedTypeRef(typeRef, _, _) =>
-        extractSnippet(sourceInfo, typeRef.span, nameHighlightSpan = Some(typeRef.span))
+        spanOf(typeRef)
+          .flatMap(span => extractSnippet(sourceInfo, span, nameHighlightSpan = Some(span)))
           .map(s => s"\n$s")
           .getOrElse("")
 
       case SemanticError.InvalidExpression(expr, _, _) =>
-        extractSnippet(sourceInfo, expr.span)
+        spanOf(expr)
+          .flatMap(extractSnippet(sourceInfo, _))
           .map(s => s"\n$s")
           .getOrElse("")
 
       case SemanticError.MemberErrorFound(error, _) =>
         // For member errors, extract snippet with the error span highlighted
-        extractSnippet(sourceInfo, error.span)
+        spanOf(error)
+          .flatMap(extractSnippet(sourceInfo, _))
           .map(s => s"\n$s")
           .getOrElse("")
 
       case SemanticError.ParsingIdErrorFound(error, _) =>
         // For identifier errors, extract snippet with the invalid identifier highlighted
-        extractSnippet(sourceInfo, error.span)
+        spanOf(error)
+          .flatMap(extractSnippet(sourceInfo, _))
           .map(s => s"\n$s")
           .getOrElse("")
 
@@ -93,7 +98,8 @@ object SourceCodeExtractor:
         snippets.mkString("\n")
 
       case SemanticError.InvalidExpressionFound(invalidExpr, _) =>
-        extractSnippet(sourceInfo, invalidExpr.span)
+        spanOf(invalidExpr)
+          .flatMap(extractSnippet(sourceInfo, _))
           .map(s => s"\n$s")
           .getOrElse("")
 
@@ -104,27 +110,32 @@ object SourceCodeExtractor:
           .getOrElse("")
 
       case SemanticError.UseAfterMove(ref, _, _) =>
-        extractSnippet(sourceInfo, ref.span)
+        spanOf(ref)
+          .flatMap(extractSnippet(sourceInfo, _))
           .map(s => s"\n$s")
           .getOrElse("")
 
       case SemanticError.ConsumingParamNotLastUse(_, ref, _) =>
-        extractSnippet(sourceInfo, ref.span)
+        spanOf(ref)
+          .flatMap(extractSnippet(sourceInfo, _))
           .map(s => s"\n$s")
           .getOrElse("")
 
       case SemanticError.PartialApplicationWithConsuming(fn, _, _) =>
-        extractSnippet(sourceInfo, fn.span)
+        spanOf(fn)
+          .flatMap(extractSnippet(sourceInfo, _))
           .map(s => s"\n$s")
           .getOrElse("")
 
       case SemanticError.ConditionalOwnershipMismatch(cond, _) =>
-        extractSnippet(sourceInfo, cond.span)
+        spanOf(cond)
+          .flatMap(extractSnippet(sourceInfo, _))
           .map(s => s"\n$s")
           .getOrElse("")
 
       case SemanticError.BorrowEscapeViaReturn(ref, _) =>
-        extractSnippet(sourceInfo, ref.span)
+        spanOf(ref)
+          .flatMap(extractSnippet(sourceInfo, _))
           .map(s => s"\n$s")
           .getOrElse("")
 
@@ -135,7 +146,8 @@ object SourceCodeExtractor:
   private def extractTypeErrorSnippet(sourceInfo: SourceInfo, error: TypeError): String =
     error match
       case TypeError.MissingParameterType(param, _, _) =>
-        extractSnippet(sourceInfo, param.span)
+        spanOf(param)
+          .flatMap(extractSnippet(sourceInfo, _))
           .map(s => s"\n$s")
           .getOrElse("")
 
@@ -154,7 +166,8 @@ object SourceCodeExtractor:
           .getOrElse("")
 
       case TypeError.MissingOperatorParameterType(param, _, _) =>
-        extractSnippet(sourceInfo, param.span)
+        spanOf(param)
+          .flatMap(extractSnippet(sourceInfo, _))
           .map(s => s"\n$s")
           .getOrElse("")
 
@@ -175,37 +188,44 @@ object SourceCodeExtractor:
           case _ => ""
 
       case TypeError.UndersaturatedApplication(app, _, _, _) =>
-        extractSnippet(sourceInfo, app.span)
+        spanOf(app)
+          .flatMap(extractSnippet(sourceInfo, _))
           .map(s => s"\n$s")
           .getOrElse("")
 
       case TypeError.OversaturatedApplication(app, _, _, _) =>
-        extractSnippet(sourceInfo, app.span)
+        spanOf(app)
+          .flatMap(extractSnippet(sourceInfo, _))
           .map(s => s"\n$s")
           .getOrElse("")
 
       case TypeError.InvalidApplication(app, _, _, _) =>
-        extractSnippet(sourceInfo, app.span)
+        spanOf(app)
+          .flatMap(extractSnippet(sourceInfo, _))
           .map(s => s"\n$s")
           .getOrElse("")
 
       case TypeError.InvalidSelection(ref, _, _) =>
-        extractSnippet(sourceInfo, ref.span)
+        spanOf(ref)
+          .flatMap(extractSnippet(sourceInfo, _))
           .map(s => s"\n$s")
           .getOrElse("")
 
       case TypeError.UnknownField(ref, _, _) =>
-        extractSnippet(sourceInfo, ref.span)
+        spanOf(ref)
+          .flatMap(extractSnippet(sourceInfo, _))
           .map(s => s"\n$s")
           .getOrElse("")
 
       case TypeError.ConditionalBranchTypeMismatch(cond, _, _, _) =>
-        extractSnippet(sourceInfo, cond.span)
+        spanOf(cond)
+          .flatMap(extractSnippet(sourceInfo, _))
           .map(s => s"\n$s")
           .getOrElse("")
 
       case TypeError.ConditionalBranchTypeUnknown(cond, _) =>
-        extractSnippet(sourceInfo, cond.span)
+        spanOf(cond)
+          .flatMap(extractSnippet(sourceInfo, _))
           .map(s => s"\n$s")
           .getOrElse("")
 
@@ -227,8 +247,9 @@ object SourceCodeExtractor:
               .getOrElse("")
           case _ => ""
 
-      case TypeError.UntypedHoleInBinding(_, span, _) =>
-        extractSnippet(sourceInfo, span)
+      case TypeError.UntypedHoleInBinding(_, source, _) =>
+        source.spanOpt
+          .flatMap(extractSnippet(sourceInfo, _))
           .map(s => s"\n$s")
           .getOrElse("")
 

@@ -15,7 +15,7 @@ def prettyPrintTerm(
   val indentStr = "  " * indent
   term match {
     case Placeholder(sp, typeSpec, typeAsc) =>
-      val spanStr = if showSourceSpans then printSourceSpan(sp) else ""
+      val spanStr = if showSourceSpans then printSourceOrigin(sp) else ""
       val typeStr =
         if showTypes then
           s"\n${indentStr}  typeSpec: ${prettyPrintTypeSpec(typeSpec)}\n" +
@@ -25,7 +25,7 @@ def prettyPrintTerm(
       s"${indentStr}Placeholder $spanStr$typeStr"
 
     case ref: Ref =>
-      val spanStr = if showSourceSpans then printSourceSpan(ref.span) else ""
+      val spanStr = if showSourceSpans then printSourceOrigin(ref.source) else ""
       val typeStr =
         if showTypes then
           s"\n${indentStr}  typeSpec: ${prettyPrintTypeSpec(ref.typeSpec)}\n" +
@@ -49,7 +49,7 @@ def prettyPrintTerm(
         s"${indentStr}  candidateIds: ${ref.candidateIds.mkString(", ")}"
 
     case Hole(sp, typeSpec, typeAsc) =>
-      val spanStr = if showSourceSpans then printSourceSpan(sp) else ""
+      val spanStr = if showSourceSpans then printSourceOrigin(sp) else ""
       val typeStr =
         if showTypes then
           s"\n${indentStr}  typeSpec: ${prettyPrintTypeSpec(typeSpec)}\n" +
@@ -61,7 +61,7 @@ def prettyPrintTerm(
     case e: Expr => prettyPrintExpr(e, indent, showSourceSpans, showTypes)
 
     case TermGroup(sp, inner, typeAsc) =>
-      val spanStr = if showSourceSpans then printSourceSpan(sp) else ""
+      val spanStr = if showSourceSpans then printSourceOrigin(sp) else ""
       val typeStr =
         if showTypes then s"\n${indentStr}  typeAsc: ${prettyPrintTypeSpec(typeAsc)}" else ""
 
@@ -69,7 +69,7 @@ def prettyPrintTerm(
         prettyPrintExpr(inner, indent + 1, showSourceSpans, showTypes)
 
     case Cond(sp, cond, ifTrue, ifFalse, typeSpec, typeAsc) =>
-      val spanStr = if showSourceSpans then printSourceSpan(sp) else ""
+      val spanStr = if showSourceSpans then printSourceOrigin(sp) else ""
       val typeStr =
         if showTypes then
           s"\n${indentStr}  typeSpec: ${prettyPrintTypeSpec(typeSpec)}\n" +
@@ -82,7 +82,7 @@ def prettyPrintTerm(
         s"${indentStr}  ifFalse:\n${prettyPrintExpr(ifFalse, indent + 2, showSourceSpans, showTypes)}"
 
     case Tuple(sp, elements, typeSpec, typeAsc) =>
-      val spanStr = if showSourceSpans then printSourceSpan(sp) else ""
+      val spanStr = if showSourceSpans then printSourceOrigin(sp) else ""
       val typeStr =
         if showTypes then
           s"\n${indentStr}  typeSpec: ${prettyPrintTypeSpec(typeSpec)}\n" +
@@ -119,7 +119,7 @@ def prettyPrintTerm(
           .mkString("\n")
 
     case App(sp, fn, arg, typeAsc, typeSpec) =>
-      val spanStr = if showSourceSpans then printSourceSpan(sp) else ""
+      val spanStr = if showSourceSpans then printSourceOrigin(sp) else ""
       val typeStr =
         if showTypes then
           s"\n${indentStr}  typeSpec: ${prettyPrintTypeSpec(typeSpec)}\n" +
@@ -133,7 +133,7 @@ def prettyPrintTerm(
         s"${indentStr}  arg:\n$argStr"
 
     case Lambda(sp, params, body, captures, typeSpec, typeAsc, meta) =>
-      val spanStr = if showSourceSpans then printSourceSpan(sp) else ""
+      val spanStr = if showSourceSpans then printSourceOrigin(sp) else ""
       val typeStr =
         if showTypes then
           s"\n${indentStr}  typeSpec: ${prettyPrintTypeSpec(typeSpec)}\n" +
@@ -157,39 +157,39 @@ def prettyPrintTerm(
 
     // Literal values
     case lit: LiteralInt =>
-      val spanStr = if showSourceSpans then printSourceSpan(lit.span) else ""
+      val spanStr = if showSourceSpans then printSourceOrigin(lit.source) else ""
       s"${indentStr}LiteralInt ${lit.value} $spanStr"
 
     case lit: LiteralString =>
-      val spanStr = if showSourceSpans then printSourceSpan(lit.span) else ""
+      val spanStr = if showSourceSpans then printSourceOrigin(lit.source) else ""
       s"""${indentStr}LiteralString "${lit.value}" $spanStr"""
 
     case lit: LiteralBool =>
-      val spanStr = if showSourceSpans then printSourceSpan(lit.span) else ""
+      val spanStr = if showSourceSpans then printSourceOrigin(lit.source) else ""
       s"${indentStr}LiteralBool ${lit.value} $spanStr"
 
     case lit: LiteralFloat =>
-      val spanStr = if showSourceSpans then printSourceSpan(lit.span) else ""
+      val spanStr = if showSourceSpans then printSourceOrigin(lit.source) else ""
       s"${indentStr}LiteralFloat ${lit.value} $spanStr"
 
     case lit: LiteralUnit =>
-      val spanStr = if showSourceSpans then printSourceSpan(lit.span) else ""
+      val spanStr = if showSourceSpans then printSourceOrigin(lit.source) else ""
       s"${indentStr}LiteralUnit $spanStr"
 
     case DataConstructor(sp, typeSpec) =>
-      val spanStr = if showSourceSpans then printSourceSpan(sp) else ""
+      val spanStr = if showSourceSpans then printSourceOrigin(sp) else ""
       val typeStr =
         if showTypes then s"\n${indentStr}  typeSpec: ${prettyPrintTypeSpec(typeSpec)}" else ""
       s"${indentStr}DataConstructor $spanStr$typeStr"
 
     case DataDestructor(sp, typeSpec) =>
-      val spanStr = if showSourceSpans then printSourceSpan(sp) else ""
+      val spanStr = if showSourceSpans then printSourceOrigin(sp) else ""
       val typeStr =
         if showTypes then s"\n${indentStr}  typeSpec: ${prettyPrintTypeSpec(typeSpec)}" else ""
       s"${indentStr}DataDestructor $spanStr$typeStr"
 
     case NativeImpl(sp, typeSpec, typeAsc, _, memEffect) =>
-      val spanStr = if showSourceSpans then printSourceSpan(sp) else ""
+      val spanStr = if showSourceSpans then printSourceOrigin(sp) else ""
       val typeStr =
         if showTypes then
           s"\n${indentStr}  typeSpec: ${prettyPrintTypeSpec(typeSpec)}\n" +
@@ -200,13 +200,13 @@ def prettyPrintTerm(
       s"${indentStr}NativeImpl$memStr $spanStr$typeStr"
 
     case TermError(sp, message, failedCode) =>
-      val spanStr = if showSourceSpans then printSourceSpan(sp) else ""
+      val spanStr = if showSourceSpans then printSourceOrigin(sp) else ""
       s"${indentStr}TermError $spanStr\n" +
         s"""${indentStr}  "$message"""" +
         failedCode.map(code => s"\n${indentStr}  $code").getOrElse("")
 
     case inv: InvalidExpression =>
-      val spanStr = if showSourceSpans then printSourceSpan(inv.span) else ""
+      val spanStr = if showSourceSpans then printSourceOrigin(inv.source) else ""
       val typeStr =
         if showTypes then
           s"\n${indentStr}  typeSpec: ${prettyPrintTypeSpec(inv.typeSpec)}\n" +

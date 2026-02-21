@@ -10,14 +10,14 @@ def prettyPrintTypeSpec(
 ): String =
   typeSpec match {
     case Some(TypeRef(sp, name, resolvedId, _)) =>
-      val spanStr = if showSourceSpans then s" ${printSourceSpan(sp)}" else ""
+      val spanStr = if showSourceSpans then s" ${printSourceOrigin(sp)}" else ""
       val resolvedStr = resolvedId match
         case None => "(unresolved)"
         case Some(id) => s" => $id"
       s"TypeRef $name$spanStr$resolvedStr"
 
     case Some(TypeApplication(sp, base, args)) =>
-      val spanStr = if showSourceSpans then s" ${printSourceSpan(sp)}" else ""
+      val spanStr = if showSourceSpans then s" ${printSourceOrigin(sp)}" else ""
       s"TypeApplication$spanStr\n" +
         s"  base: ${prettyPrintTypeSpec(Some(base), showSourceSpans, showTypes, indent)}\n" +
         s"  args: ${args.map(arg => prettyPrintTypeSpec(Some(arg), showSourceSpans, showTypes, indent)).mkString(", ")}"
@@ -26,12 +26,12 @@ def prettyPrintTypeSpec(
       formatTypeSpecInline(tf, showSourceSpans, showTypes)
 
     case Some(TypeTuple(sp, elements)) =>
-      val spanStr = if showSourceSpans then s" ${printSourceSpan(sp)}" else ""
+      val spanStr = if showSourceSpans then s" ${printSourceOrigin(sp)}" else ""
       s"TypeTuple$spanStr\n" +
         s"  elements: ${elements.map(e => prettyPrintTypeSpec(Some(e), showSourceSpans, showTypes, indent)).mkString(", ")}"
 
     case Some(TypeOpenRecord(sp, fields)) =>
-      val spanStr = if showSourceSpans then s" ${printSourceSpan(sp)}" else ""
+      val spanStr = if showSourceSpans then s" ${printSourceOrigin(sp)}" else ""
       s"TypeOpenRecord$spanStr\n" +
         fields
           .map { case (name, tp) =>
@@ -40,7 +40,7 @@ def prettyPrintTypeSpec(
           .mkString("\n")
 
     case Some(tr: TypeStruct) =>
-      val spanStr = if showSourceSpans then s" ${printSourceSpan(tr.span)}" else ""
+      val spanStr = if showSourceSpans then s" ${printSourceOrigin(tr.source)}" else ""
       val visStr  = visibilityToString(tr.visibility)
       val fieldsStr =
         if tr.fields.isEmpty then "{}"
@@ -56,50 +56,50 @@ def prettyPrintTypeSpec(
       s"$visStr TypeRecord ${tr.name} $fieldsStr$spanStr"
 
     case Some(TypeRefinement(sp, id, expr)) =>
-      val spanStr = if showSourceSpans then s" ${printSourceSpan(sp)}" else ""
+      val spanStr = if showSourceSpans then s" ${printSourceOrigin(sp)}" else ""
       s"TypeRefinement$spanStr${id.map(i => s" ($i)").getOrElse("")}\n" +
         prettyPrintExpr(expr, 1, showSourceSpans, showTypes)
 
     case Some(Union(sp, types)) =>
-      val spanStr = if showSourceSpans then s" ${printSourceSpan(sp)}" else ""
+      val spanStr = if showSourceSpans then s" ${printSourceOrigin(sp)}" else ""
       s"Union$spanStr\n" +
         types
           .map(t => prettyPrintTypeSpec(Some(t), showSourceSpans, showTypes, indent))
           .mkString(" | ")
 
     case Some(Intersection(sp, types)) =>
-      val spanStr = if showSourceSpans then s" ${printSourceSpan(sp)}" else ""
+      val spanStr = if showSourceSpans then s" ${printSourceOrigin(sp)}" else ""
       s"Intersection$spanStr\n" +
         types
           .map(t => prettyPrintTypeSpec(Some(t), showSourceSpans, showTypes, indent))
           .mkString(" & ")
 
     case Some(TypeUnit(sp)) =>
-      val spanStr = if showSourceSpans then s" ${printSourceSpan(sp)}" else ""
+      val spanStr = if showSourceSpans then s" ${printSourceOrigin(sp)}" else ""
       s"TypeUnit$spanStr"
 
     case Some(TypeGroup(sp, types)) =>
-      val spanStr = if showSourceSpans then s" ${printSourceSpan(sp)}" else ""
+      val spanStr = if showSourceSpans then s" ${printSourceOrigin(sp)}" else ""
       s"TypeGroup$spanStr\n" +
         types
           .map(t => prettyPrintTypeSpec(Some(t), showSourceSpans, showTypes, indent))
           .mkString(", ")
 
     case Some(inv: InvalidType) =>
-      val spanStr = if showSourceSpans then s" ${printSourceSpan(inv.span)}" else ""
+      val spanStr = if showSourceSpans then s" ${printSourceOrigin(inv.source)}" else ""
       s"InvalidType$spanStr\n" +
         s"  original: ${prettyPrintTypeSpec(Some(inv.originalType), showSourceSpans, showTypes, indent)}"
 
     case Some(NativePrimitive(sp, llvmType, _, _)) =>
-      val spanStr = if showSourceSpans then s" ${printSourceSpan(sp)}" else ""
+      val spanStr = if showSourceSpans then s" ${printSourceOrigin(sp)}" else ""
       s"@native[t=$llvmType]$spanStr"
 
     case Some(NativePointer(sp, llvmType, _, _)) =>
-      val spanStr = if showSourceSpans then s" ${printSourceSpan(sp)}" else ""
+      val spanStr = if showSourceSpans then s" ${printSourceOrigin(sp)}" else ""
       s"@native[t=*$llvmType]$spanStr"
 
     case Some(NativeStruct(sp, fields, _, _)) =>
-      val spanStr = if showSourceSpans then s" ${printSourceSpan(sp)}" else ""
+      val spanStr = if showSourceSpans then s" ${printSourceOrigin(sp)}" else ""
       if fields.isEmpty then s"@native {}$spanStr"
       else
         val indentStr = "  " * (indent + 1)
@@ -111,11 +111,11 @@ def prettyPrintTypeSpec(
         s"@native {\n$fieldStrs\n${"  " * indent}}$spanStr"
 
     case Some(TypeVariable(sp, name)) =>
-      val spanStr = if showSourceSpans then s" ${printSourceSpan(sp)}" else ""
+      val spanStr = if showSourceSpans then s" ${printSourceOrigin(sp)}" else ""
       s"$name$spanStr"
 
     case Some(TypeScheme(sp, vars, bodyType)) =>
-      val spanStr = if showSourceSpans then s" ${printSourceSpan(sp)}" else ""
+      val spanStr = if showSourceSpans then s" ${printSourceOrigin(sp)}" else ""
       val varsStr = if vars.nonEmpty then s"∀${vars.mkString(" ")}. " else ""
       s"$varsStr${prettyPrintTypeSpec(Some(bodyType), showSourceSpans, showTypes, indent)}$spanStr"
 
@@ -133,33 +133,33 @@ private def formatTypeSpecInline(
 ): String =
   typeSpec match
     case tf: TypeFn =>
-      val spanStr = if showSourceSpans then s" ${printSourceSpan(tf.span)}" else ""
+      val spanStr = if showSourceSpans then s" ${printSourceOrigin(tf.source)}" else ""
       s"${formatTypeFnInline(tf, showSourceSpans, showTypes)}$spanStr"
     case TypeGroup(sp, types) =>
-      val spanStr = if showSourceSpans then s" ${printSourceSpan(sp)}" else ""
+      val spanStr = if showSourceSpans then s" ${printSourceOrigin(sp)}" else ""
       val inner   = types.map(formatTypeSpecInline(_, showSourceSpans, showTypes)).mkString(", ")
       s"($inner)$spanStr"
     case TypeScheme(sp, vars, bodyType) =>
-      val spanStr = if showSourceSpans then s" ${printSourceSpan(sp)}" else ""
+      val spanStr = if showSourceSpans then s" ${printSourceOrigin(sp)}" else ""
       val varsStr = if vars.nonEmpty then s"∀${vars.mkString(" ")}. " else ""
       s"$varsStr${formatTypeSpecInline(bodyType, showSourceSpans, showTypes)}$spanStr"
     case TypeRef(sp, name, resolvedId, _) =>
-      val spanStr = if showSourceSpans then s" ${printSourceSpan(sp)}" else ""
+      val spanStr = if showSourceSpans then s" ${printSourceOrigin(sp)}" else ""
       val resolvedStr = resolvedId match
         case None => "(unresolved)"
         case Some(id) => s" => $id"
       s"TypeRef $name$spanStr$resolvedStr"
     case TypeUnit(sp) =>
-      val spanStr = if showSourceSpans then s" ${printSourceSpan(sp)}" else ""
+      val spanStr = if showSourceSpans then s" ${printSourceOrigin(sp)}" else ""
       s"()$spanStr"
     case TypeVariable(sp, name) =>
-      val spanStr = if showSourceSpans then s" ${printSourceSpan(sp)}" else ""
+      val spanStr = if showSourceSpans then s" ${printSourceOrigin(sp)}" else ""
       s"$name$spanStr"
     case NativePrimitive(sp, llvmType, _, _) =>
-      val spanStr = if showSourceSpans then s" ${printSourceSpan(sp)}" else ""
+      val spanStr = if showSourceSpans then s" ${printSourceOrigin(sp)}" else ""
       s"@native[t=$llvmType]$spanStr"
     case NativePointer(sp, llvmType, _, _) =>
-      val spanStr = if showSourceSpans then s" ${printSourceSpan(sp)}" else ""
+      val spanStr = if showSourceSpans then s" ${printSourceOrigin(sp)}" else ""
       s"@native[t=*$llvmType]$spanStr"
     case other =>
       prettyPrintTypeSpec(Some(other), showSourceSpans, showTypes)

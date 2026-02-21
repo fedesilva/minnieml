@@ -30,19 +30,19 @@ def prettyPrintMember(
   val indentStr = "  " * indent
   member match {
     case ParsingMemberError(span, message, failedCode) =>
-      val spanStr = if showSourceSpans then printSourceSpan(span) else ""
+      val spanStr = if showSourceSpans then printSourceOrigin(span) else ""
       s"${indentStr}MemberError $spanStr\n" +
         s"""${indentStr}  "$message"""".stripMargin +
         failedCode.map(code => s"\n${indentStr}  $code").getOrElse("")
 
     case ParsingIdError(span, message, failedCode, invalidId) =>
-      val spanStr = if showSourceSpans then printSourceSpan(span) else ""
+      val spanStr = if showSourceSpans then printSourceOrigin(span) else ""
       s"${indentStr}IdError $spanStr\n" +
         s"""${indentStr}  "$message"""".stripMargin +
         failedCode.map(code => s"\n${indentStr}  $code").getOrElse("")
 
     case bnd: Bnd =>
-      val spanStr = if showSourceSpans then printSourceSpan(bnd.span) else ""
+      val spanStr = if showSourceSpans then printSourceOrigin(bnd.source) else ""
       val typeStr =
         if showTypes then
           s"\n${indentStr}  typeSpec: ${prettyPrintTypeSpec(bnd.typeSpec, showSourceSpans, showTypes, indent + 1)}\n" +
@@ -79,7 +79,7 @@ def prettyPrintMember(
         prettyPrintExpr(bnd.value, indent + 2, showSourceSpans, showTypes)
 
     case ta @ TypeAlias(_, _, _, _, _, _, _, _) =>
-      val spanStr = if showSourceSpans then printSourceSpan(ta.span) else ""
+      val spanStr = if showSourceSpans then printSourceOrigin(ta.source) else ""
       val typeStr =
         if showTypes then
           s"\n${indentStr}  typeSpec: ${prettyPrintTypeSpec(ta.typeSpec)}\n" +
@@ -92,7 +92,7 @@ def prettyPrintMember(
       s"${indentStr}$visStr TypeAlias ${ta.name} -> $targetName$spanStr$typeStr"
 
     case td @ TypeDef(_, _, _, _, _, _, _) =>
-      val spanStr = if showSourceSpans then printSourceSpan(td.span) else ""
+      val spanStr = if showSourceSpans then printSourceOrigin(td.source) else ""
       val typeStr =
         if showTypes then
           s"\n${indentStr}  typeSpec: ${prettyPrintTypeSpec(td.typeSpec, showSourceSpans, showTypes, indent + 1)}\n" +
@@ -107,7 +107,7 @@ def prettyPrintMember(
     // td.docComment.map(doc => s"\n${prettyPrintDocComment(doc, indent + 2)}").getOrElse("")
 
     case tr @ TypeStruct(_, _, _, _, _, _) =>
-      val spanStr = if showSourceSpans then printSourceSpan(tr.span) else ""
+      val spanStr = if showSourceSpans then printSourceOrigin(tr.source) else ""
       val visStr  = visibilityToString(tr.visibility)
       val fieldsStr =
         if tr.fields.isEmpty then "{}"
@@ -123,7 +123,7 @@ def prettyPrintMember(
 
     case dup: DuplicateMember =>
       val spanStr =
-        if showSourceSpans then dup.source.spanOpt.map(printSourceSpan).getOrElse("[synthetic]")
+        if showSourceSpans then printSourceOrigin(dup.source)
         else ""
       s"${indentStr}DuplicateMember $spanStr\n" +
         s"${indentStr}  firstOccurrence: ${dup.firstOccurrence.getClass.getSimpleName} ${dup.firstOccurrence match {
@@ -134,7 +134,7 @@ def prettyPrintMember(
         prettyPrintMember(dup.originalMember, indent + 2, showSourceSpans, showTypes)
 
     case inv: InvalidMember =>
-      val spanStr = if showSourceSpans then printSourceSpan(inv.span) else ""
+      val spanStr = if showSourceSpans then printSourceOrigin(inv.source) else ""
       s"${indentStr}InvalidMember $spanStr\n" +
         s"""${indentStr}  reason: "${inv.reason}"\n""" +
         s"${indentStr}  original:\n" +
@@ -150,7 +150,7 @@ def prettyPrintParams(
   val indentStr = "  " * indent
   params
     .map { case p @ FnParam(_, _, typeSpec, typeAsc, _, _, consuming) =>
-      val spanStr = if showSourceSpans then printSourceSpan(p.span) else ""
+      val spanStr = if showSourceSpans then printSourceOrigin(p.source) else ""
       val typeStr =
         if showTypes then
           s"\n${indentStr}  typeSpec: ${prettyPrintTypeSpec(typeSpec)}\n" +

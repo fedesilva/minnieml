@@ -107,10 +107,11 @@ private[parser] def nativeTypeP(info: SourceInfo)(using P[Any]): P[NativeType] =
     spP(info) ~ nativeKw ~ (nativeBracketTypeP(info) | nativeStructP(info)) ~ spNoWsP(info) ~
       spP(info)
   ).map { case (start, body, end, _) =>
+    val source = SourceOrigin.Loc(span(start, end))
     body match
-      case p: NativePrimitive => p.copy(span = span(start, end))
-      case p: NativePointer => p.copy(span = span(start, end))
-      case s: NativeStruct => s.copy(span = span(start, end))
+      case p: NativePrimitive => p.copy(source = source)
+      case p: NativePointer => p.copy(source = source)
+      case s: NativeStruct => s.copy(source = source)
   }
 
 private[parser] def nativeBracketTypeP(info: SourceInfo)(using P[Any]): P[NativeType] =

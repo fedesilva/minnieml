@@ -111,6 +111,6 @@ object PreCodegenValidator:
             case None => resolveAliasChain(ta.typeRef, module)
         case Some(td: TypeDef) =>
           // Return TypeRef to the TypeDef, not its native typeSpec
-          TypeRef(tr.span, td.name, td.id)
+          TypeRef(tr.source, td.name, td.id)
         case _ => tr
     case other => other

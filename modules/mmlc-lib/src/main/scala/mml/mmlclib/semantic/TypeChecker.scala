@@ -84,7 +84,7 @@ object TypeChecker:
                     val updatedParams = lambda.params.map(p => p.copy(typeSpec = p.typeAsc))
                     val returnType    = lambda.typeAsc.orElse(bnd.typeAsc)
                     val loweredTypeSpec =
-                      returnType.flatMap(buildFunctionTypeSpec(bnd.span, updatedParams, _))
+                      returnType.flatMap(buildFunctionTypeSpec(bnd.source, updatedParams, _))
                     val updatedLambda = lambda.copy(params = updatedParams)
                     val updatedValue  = bnd.value.copy(terms = updatedLambda :: rest)
                     val updatedBnd    = bnd.copy(value = updatedValue, typeSpec = loweredTypeSpec)
@@ -177,7 +177,7 @@ object TypeChecker:
             val updatedBnd = bnd.copy(
               value = updatedValue,
               typeSpec = finalReturnType.flatMap(
-                buildFunctionTypeSpec(bnd.span, lambda.params, _)
+                buildFunctionTypeSpec(bnd.source, lambda.params, _)
               )
             )
             CheckResult(updatedBnd, transformedErrors ++ returnErrors)
@@ -374,10 +374,12 @@ object TypeChecker:
           case Some(t) => CheckResult.ok(hole.copy(typeSpec = Some(t)))
           case None =>
             val displayBindingName = normalizeBindingName(bindingName)
-            CheckResult(
-              hole,
-              Vector(TypeError.UntypedHoleInBinding(displayBindingName, hole.span, phaseName))
-            )
+            val errors = hole.spanOpt match
+              case Some(span) =>
+                Vector(TypeError.UntypedHoleInBinding(displayBindingName, span, phaseName))
+              case None =>
+                Vector(TypeError.UnresolvableType(hole, None, phaseName))
+            CheckResult(hole, errors)
 
       case other =>
         // Other term types do not require type checking at this stage
@@ -541,7 +543,7 @@ object TypeChecker:
     val lambdaTypeSpec = for
       paramType <- typedParam.typeSpec
       returnType <- bodyType
-    yield TypeFn(lambda.span, List(paramType), returnType)
+    yield TypeFn(lambda.source, List(paramType), returnType)
 
     val checkedLambda = lambda.copy(
       params   = List(typedParam),
@@ -597,8 +599,8 @@ object TypeChecker:
           Vector(
             TypeError.InvalidApplication(
               app,
-              TypeRef(app.span, "invalid-fn"),
-              TypeRef(app.span, "unknown-arg"),
+              TypeRef(app.source, "invalid-fn"),
+              TypeRef(app.source, "unknown-arg"),
               phaseName
             )
           )
@@ -840,7 +842,7 @@ object TypeChecker:
         fnType.paramTypes match
           case headParam :: tailParams =>
             val returnType =
-              buildRemainingFunctionTypeFromTypes(tailParams, fnType.returnType, app.span)
+              buildRemainingFunctionTypeFromTypes(tailParams, fnType.returnType, app.source)
             if areTypesCompatible(headParam, actualArgType, module) then
               CheckResult.ok(Some(returnType))
             else
@@ -893,21 +895,21 @@ object TypeChecker:
     checkApplicationWithContext(app, module, Map.empty, bindingName)
 
   private def buildFunctionTypeSpec(
-    span:       SrcSpan,
+    source:     SourceOrigin,
     params:     List[FnParam],
     returnType: Type
   ): Option[Type] =
     params
       .traverse(_.typeSpec)
-      .map(paramTypes => TypeFn(span, paramTypes, returnType))
+      .map(paramTypes => TypeFn(source, paramTypes, returnType))
 
   private def buildRemainingFunctionTypeFromTypes(
     remainingTypes: List[Type],
     returnType:     Type,
-    span:           SrcSpan
+    source:         SourceOrigin
   ): Type =
     if remainingTypes.isEmpty then returnType
-    else TypeFn(span, remainingTypes, returnType)
+    else TypeFn(source, remainingTypes, returnType)
 
   /** Validate type ascription against computed type */
   private def validateTypeAscription(node: Typeable, module: Module): List[TypeError] =
@@ -954,9 +956,9 @@ object TypeChecker:
           case Some(td: TypeDef) =>
             td.typeSpec.collect { case ns: NativeStruct =>
               val fields = ns.fields.map { case (name, t) =>
-                Field(td.span, Name.synth(name), t)
+                Field(td.source, Name.synth(name), t)
               }.toVector
-              TypeStruct(td.span, None, td.visibility, td.nameNode, fields, td.id)
+              TypeStruct(td.source, None, td.visibility, td.nameNode, fields, td.id)
             }
           case _ => None
       case _ => None
@@ -984,9 +986,9 @@ object TypeChecker:
             case None => resolveAliasChain(ta.typeRef, module)
         case Some(td: TypeDef) =>
           // Return TypeRef to the TypeDef, not its native typeSpec
-          TypeRef(tr.span, td.name, td.id)
+          TypeRef(tr.source, td.name, td.id)
         case Some(ts: TypeStruct) =>
-          TypeRef(tr.span, ts.name, ts.id)
+          TypeRef(tr.source, ts.name, ts.id)
         case _ => tr
     case other => other
 
@@ -1011,7 +1013,7 @@ object TypeChecker:
       if bodyType.isEmpty && checkedBody.errors.isEmpty then
         Vector(TypeError.UnresolvableType(lambda, None, phaseName))
       else Vector.empty
-    val lambdaTypeSpec = bodyType.flatMap(buildFunctionTypeSpec(lambda.span, paramsWithSpecs, _))
+    val lambdaTypeSpec = bodyType.flatMap(buildFunctionTypeSpec(lambda.source, paramsWithSpecs, _))
     CheckResult(
       lambda.copy(
         params   = paramsWithSpecs,
@@ -1057,7 +1059,7 @@ object TypeChecker:
           Vector(
             TypeError.TypeMismatch(
               checkedCond.value,
-              TypeRef(cond.span, "Bool"),
+              TypeRef(cond.source, "Bool"),
               other,
               phaseName,
               None

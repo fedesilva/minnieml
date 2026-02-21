@@ -279,7 +279,7 @@ class LspHandler(
                 case None => typeStr
               val hover = Hover(
                 contents = MarkupContent(MarkupContent.Markdown, content),
-                range    = Some(Range.fromSrcSpan(result.span))
+                range    = result.span.map(Range.fromSrcSpan)
               )
               sendResponse(id, Hover.toJson(hover))
       }

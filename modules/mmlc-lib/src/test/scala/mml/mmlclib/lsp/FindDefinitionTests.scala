@@ -5,6 +5,9 @@ import mml.mmlclib.test.BaseEffFunSuite
 
 class FindDefinitionTests extends BaseEffFunSuite:
 
+  private def spanOrFail(node: FromSource, label: String): SrcSpan =
+    node.source.spanOpt.getOrElse(fail(s"Missing source span for $label"))
+
   test("find definition for local param and let binding") {
     val code =
       """
@@ -31,15 +34,19 @@ class FindDefinitionTests extends BaseEffFunSuite:
       val yRefOpt = refs.find(ref => ref.name == "y" && ref.qualifier.isEmpty)
       assert(yRefOpt.isDefined, "Could not find ref 'y'")
 
-      val xRef   = xRefOpt.get
-      val xDefs  = AstLookup.findDefinitionAt(m, xRef.span.start.line, xRef.span.start.col)
-      val xParam = xParamOpt.get
-      assert(xDefs.contains(xParam.span), s"Missing param span for 'x': $xDefs")
+      val xRef       = xRefOpt.get
+      val xRefSpan   = spanOrFail(xRef, "ref 'x'")
+      val xDefs      = AstLookup.findDefinitionAt(m, xRefSpan.start.line, xRefSpan.start.col)
+      val xParam     = xParamOpt.get
+      val xParamSpan = spanOrFail(xParam, "param 'x'")
+      assert(xDefs.contains(xParamSpan), s"Missing param span for 'x': $xDefs")
 
-      val yRef   = yRefOpt.get
-      val yDefs  = AstLookup.findDefinitionAt(m, yRef.span.start.line, yRef.span.start.col)
-      val yParam = yParamOpt.get
-      assert(yDefs.contains(yParam.span), s"Missing param span for 'y': $yDefs")
+      val yRef       = yRefOpt.get
+      val yRefSpan   = spanOrFail(yRef, "ref 'y'")
+      val yDefs      = AstLookup.findDefinitionAt(m, yRefSpan.start.line, yRefSpan.start.col)
+      val yParam     = yParamOpt.get
+      val yParamSpan = spanOrFail(yParam, "param 'y'")
+      assert(yDefs.contains(yParamSpan), s"Missing param span for 'y': $yDefs")
     }
   }
 
@@ -143,8 +150,9 @@ class FindDefinitionTests extends BaseEffFunSuite:
       assert(ctorRef.isDefined, "Could not find ref 'Pair' in make body")
 
       val ref            = ctorRef.get
-      val defs           = AstLookup.findDefinitionAt(m, ref.span.start.line, ref.span.start.col)
-      val structNameSpan = struct.nameNode.source.spanOpt.getOrElse(struct.span)
+      val refSpan        = spanOrFail(ref, "constructor ref 'Pair'")
+      val defs           = AstLookup.findDefinitionAt(m, refSpan.start.line, refSpan.start.col)
+      val structNameSpan = spanOrFail(struct.nameNode, "struct 'Pair' name")
       assert(
         defs.contains(structNameSpan),
         s"Expected struct name span $structNameSpan, got: $defs"
@@ -181,8 +189,9 @@ class FindDefinitionTests extends BaseEffFunSuite:
       assert(ctorRef.isDefined, "Could not find source ref 'Address'")
 
       val ref            = ctorRef.get
-      val defs           = AstLookup.findDefinitionAt(m, ref.span.start.line, ref.span.start.col)
-      val structNameSpan = struct.nameNode.source.spanOpt.getOrElse(struct.span)
+      val refSpan        = spanOrFail(ref, "constructor ref 'Address'")
+      val defs           = AstLookup.findDefinitionAt(m, refSpan.start.line, refSpan.start.col)
+      val structNameSpan = spanOrFail(struct.nameNode, "struct 'Address' name")
       assert(
         defs.contains(structNameSpan),
         s"Expected struct name span $structNameSpan, got: $defs"
@@ -214,12 +223,13 @@ class FindDefinitionTests extends BaseEffFunSuite:
         refs.find(r => r.name == "int_to_str" && r.source.isFromSource && r.qualifier.isEmpty)
       assert(stdlibRef.isDefined, "Could not find source ref 'int_to_str'")
 
-      val ref  = stdlibRef.get
-      val defs = AstLookup.findDefinitionAt(m, ref.span.start.line, ref.span.start.col)
+      val ref     = stdlibRef.get
+      val refSpan = spanOrFail(ref, "ref 'int_to_str'")
+      val defs    = AstLookup.findDefinitionAt(m, refSpan.start.line, refSpan.start.col)
       assertEquals(
         defs,
         Nil,
-        s"Expected no definition for non-source symbol at ${ref.span}, got: $defs"
+        s"Expected no definition for non-source symbol at $refSpan, got: $defs"
       )
     }
   }

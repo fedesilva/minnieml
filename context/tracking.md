@@ -92,14 +92,14 @@ Spec: `context/specs/source-origin-migration.md`
       `DuplicateMember.span` implementation. This violates SourceOrigin migration rules and must be
       removed completely before Phase B can be marked complete.
 - [x] **Phase C: clean bootstrap dummy spans in ingest/fallback paths**.
-- [ ] **Phase D: migrate ALL remaining source-bearing AST nodes off naked `SrcSpan` fields**.
-  - [ ] `ast/types.scala`: source-bearing nodes use `SourceOrigin` (no raw source fields).
-  - [ ] `ast/terms.scala`: source-bearing nodes use `SourceOrigin` (no raw source fields).
-  - [ ] `ast/members.scala`: remove any remaining raw-source adapter patterns.
-  - [ ] `ast/common.scala`: remove any remaining raw-source adapter patterns.
-  - [ ] Update all constructors/call sites in parser/semantic/codegen/lsp/tests to the new model.
-- [ ] **Phase E: remove remaining `0,0,0` anti-patterns in stdlib injection paths**.
-- [ ] **Phase F: add guardrail against `SrcPoint(0,0,0)` and naked `SrcSpan` reintroduction**.
+- [x] **Phase D: migrate ALL remaining source-bearing AST nodes off naked `SrcSpan` fields**.
+  - [x] `ast/types.scala`: source-bearing nodes use `SourceOrigin` (no raw source fields).
+  - [x] `ast/terms.scala`: source-bearing nodes use `SourceOrigin` (no raw source fields).
+  - [x] `ast/members.scala`: remove any remaining raw-source adapter patterns.
+  - [x] `ast/common.scala`: remove any remaining raw-source adapter patterns.
+  - [x] Update all constructors/call sites in parser/semantic/codegen/lsp/tests to the new model.
+- [x] **Phase E: remove remaining `0,0,0` anti-patterns in stdlib injection paths**.
+
 
 
 ### Bug: resolution and indexes for partial application
@@ -112,6 +112,27 @@ Report:
 
 
 ## Recent Changes
+
+- 2026-02-21: Completed SourceOrigin Migration Phases D and E [COMPLETE].
+  - Migrated remaining source-bearing nodes in `ast/common.scala`, `ast/members.scala`,
+    `ast/terms.scala`, and `ast/types.scala` to explicit `SourceOrigin`.
+  - Updated parser/semantic/codegen/lsp/error-printing/pretty-printing call sites to the new
+    source model and removed raw-span adapter dependencies.
+  - Stdlib injection now uses explicit synthetic origin (`SourceOrigin.Synth`) without
+    `SrcPoint(0,0,0)` fallback patterns.
+  - Follow-up regression fix: literal extractor matching is now source-origin agnostic and
+    codegen literal handling no longer depends on source-span-backed extractors.
+  - Added regression tests:
+    `modules/mmlc-lib/src/test/scala/mml/mmlclib/semantic/LiteralSourceOriginTests.scala`,
+    `modules/mmlc-lib/src/test/scala/mml/mmlclib/codegen/LiteralTermCodegenTest.scala`.
+  - Verification passed:
+    `sbtn "run mml/samples/mem/mixed_ownership_test.mml; run tests/mem/nested-cond.mml"`,
+    `sbtn "testOnly mml.mmlclib.codegen.LiteralTermCodegenTest mml.mmlclib.semantic.LiteralSourceOriginTests"`,
+    `sbtn "test; scalafmtAll; scalafixAll; mmlcPublishLocal"`,
+    `make -C benchmark clean`,
+    `make -C benchmark mml`,
+    `mmlc -aI mml/samples/mem/mixed_ownership_test.mml`,
+    `mmlc -aI tests/mem/nested-cond.mml`.
 
 - 2026-02-21: Completed SourceOrigin Migration Phase C (ingest/fallback source-origin cleanup).
   - `Module` now carries `source: SourceOrigin` directly (removed raw module span field).

@@ -1,5 +1,7 @@
 package mml.mmlclib.ast
 
+import scala.Conversion
+
 /* Represents a point in the source code, with a line, column number and the char index.
  */
 final case class SrcPoint(
@@ -21,8 +23,8 @@ trait AstNode derives CanEqual
   * position of the identifier without guessing from keyword offsets.
   */
 case class Name(
-  value:               String,
-  override val source: SourceOrigin
+  value:  String,
+  source: SourceOrigin
 ) extends AstNode,
       FromSource
 
@@ -44,6 +46,8 @@ trait Typeable extends AstNode {
 
 trait FromSource extends AstNode {
   def source: SourceOrigin
+
+  final def spanOpt: Option[SrcSpan] = source.spanOpt
 }
 
 /** Distinguishes AST nodes parsed from source vs synthesized by the compiler. */
@@ -58,6 +62,10 @@ enum SourceOrigin derives CanEqual:
   def isFromSource: Boolean = this match
     case Loc(_) => true
     case Synth => false
+
+object SourceOrigin:
+  given Conversion[SrcSpan, SourceOrigin] with
+    def apply(span: SrcSpan): SourceOrigin = Loc(span)
 
 /** Visibility control shared by modules and members.
   *
@@ -84,32 +92,31 @@ trait Resolvable extends AstNode:
   def id:       Option[String]
 
 case class DocComment(
-  span: SrcSpan,
-  text: String
+  source: SourceOrigin,
+  text:   String
 ) extends AstNode,
-      FromSource:
-  override val source: SourceOrigin = SourceOrigin.Loc(span)
+      FromSource
+
+object DocComment:
+  def apply(span: SrcSpan, text: String): DocComment =
+    new DocComment(SourceOrigin.Loc(span), text)
 
 trait Decl extends Member, Typeable, Resolvable:
   def docComment: Option[DocComment]
   def visibility: Visibility
 
 case class FnParam(
-  override val source: SourceOrigin,
-  nameNode:            Name,
-  typeSpec:            Option[Type]       = None,
-  typeAsc:             Option[Type]       = None,
-  docComment:          Option[DocComment] = None,
-  id:                  Option[String]     = None,
-  consuming:           Boolean            = false // for ~param syntax: takes ownership
+  source:     SourceOrigin,
+  nameNode:   Name,
+  typeSpec:   Option[Type]       = None,
+  typeAsc:    Option[Type]       = None,
+  docComment: Option[DocComment] = None,
+  id:         Option[String]     = None,
+  consuming:  Boolean            = false // for ~param syntax: takes ownership
 ) extends AstNode,
       FromSource,
       Typeable,
-      Resolvable:
-  private val syntheticSpan = SrcSpan(SrcPoint(0, 0, -1), SrcPoint(0, 0, -1))
-  def span: SrcSpan = source match
-    case SourceOrigin.Loc(s) => s
-    case SourceOrigin.Synth => syntheticSpan
+      Resolvable
 
 enum Associativity derives CanEqual:
   case Left
@@ -177,7 +184,6 @@ final case class BindingMeta(
   */
 trait InvalidNode extends AstNode
 
-trait Error extends InvalidNode:
-  def span:       SrcSpan
+trait Error extends InvalidNode, FromSource:
   def message:    String
   def failedCode: Option[String]

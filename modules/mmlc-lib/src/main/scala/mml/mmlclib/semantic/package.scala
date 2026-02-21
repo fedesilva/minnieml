@@ -60,7 +60,7 @@ enum TypeError extends CompilationError:
     context: String,
     phase:   String
   )
-  case UntypedHoleInBinding(bindingName: String, span: SrcSpan, phase: String)
+  case UntypedHoleInBinding(bindingName: String, source: SourceOrigin, phase: String)
 
   // TODO:   Why not define this within the members?
   def message: String = this match
@@ -118,7 +118,7 @@ enum SemanticError extends CompilationError:
   case TypeCheckingError(error: TypeError)
   case InvalidEntryPoint(msg: String, source: SourceOrigin)
   // Ownership errors
-  case UseAfterMove(ref: Ref, movedAt: SrcSpan, phase: String)
+  case UseAfterMove(ref: Ref, movedAt: SourceOrigin, phase: String)
   case ConsumingParamNotLastUse(param: FnParam, ref: Ref, phase: String)
   case PartialApplicationWithConsuming(fn: Term, param: FnParam, phase: String)
   case ConditionalOwnershipMismatch(cond: Cond, phase: String)
@@ -146,7 +146,11 @@ enum SemanticError extends CompilationError:
     case InvalidEntryPoint(msg, _) =>
       msg
     case UseAfterMove(ref, movedAt, _) =>
-      s"Use of '${ref.name}' after move at ${movedAt.start.line}:${movedAt.start.col}"
+      movedAt.spanOpt match
+        case Some(span) =>
+          s"Use of '${ref.name}' after move at ${span.start.line}:${span.start.col}"
+        case None =>
+          s"Use of '${ref.name}' after move"
     case ConsumingParamNotLastUse(param, ref, _) =>
       s"Consuming parameter '${param.name}' must be the last use of '${ref.name}'"
     case PartialApplicationWithConsuming(_, param, _) =>
@@ -169,68 +173,68 @@ private def stdlibTypeId(name: String): Option[String] =
 /** Inject basic types with native mappings into the module.
   */
 def injectBasicTypes(module: Module): Module =
-  val dummySpan = SrcSpan(SrcPoint(0, 0, 0), SrcPoint(0, 0, 0))
+  val syntheticSource = SourceOrigin.Synth
 
   // Helper to create a resolved TypeRef to a stdlib type
   def stdlibTypeRef(name: String): TypeRef =
-    TypeRef(dummySpan, name, stdlibTypeId(name), Nil)
+    TypeRef(syntheticSource, name, stdlibTypeId(name), Nil)
 
   val basicTypes: List[TypeDef | TypeAlias] = List(
     // Native type definitions with LLVM mappings
     TypeDef(
-      span     = dummySpan,
+      source   = SourceOrigin.Synth,
       nameNode = Name.synth("Int64"),
-      typeSpec = Some(NativePrimitive(dummySpan, "i64")),
+      typeSpec = Some(NativePrimitive(syntheticSource, "i64")),
       id       = stdlibId("typedef", "Int64")
     ),
     TypeDef(
-      span     = dummySpan,
+      source   = SourceOrigin.Synth,
       nameNode = Name.synth("Int32"),
-      typeSpec = Some(NativePrimitive(dummySpan, "i32")),
+      typeSpec = Some(NativePrimitive(syntheticSource, "i32")),
       id       = stdlibId("typedef", "Int32")
     ),
     TypeDef(
-      span     = dummySpan,
+      source   = SourceOrigin.Synth,
       nameNode = Name.synth("Int16"),
-      typeSpec = Some(NativePrimitive(dummySpan, "i16")),
+      typeSpec = Some(NativePrimitive(syntheticSource, "i16")),
       id       = stdlibId("typedef", "Int16")
     ),
     TypeDef(
-      span     = dummySpan,
+      source   = SourceOrigin.Synth,
       nameNode = Name.synth("Int8"),
-      typeSpec = Some(NativePrimitive(dummySpan, "i8")),
+      typeSpec = Some(NativePrimitive(syntheticSource, "i8")),
       id       = stdlibId("typedef", "Int8")
     ),
     TypeDef(
-      span     = dummySpan,
+      source   = SourceOrigin.Synth,
       nameNode = Name.synth("Float"),
-      typeSpec = Some(NativePrimitive(dummySpan, "float")),
+      typeSpec = Some(NativePrimitive(syntheticSource, "float")),
       id       = stdlibId("typedef", "Float")
     ),
     TypeDef(
-      span     = dummySpan,
+      source   = SourceOrigin.Synth,
       nameNode = Name.synth("Double"),
-      typeSpec = Some(NativePrimitive(dummySpan, "double")),
+      typeSpec = Some(NativePrimitive(syntheticSource, "double")),
       id       = stdlibId("typedef", "Double")
     ),
     TypeDef(
-      span     = dummySpan,
+      source   = SourceOrigin.Synth,
       nameNode = Name.synth("Bool"),
-      typeSpec = Some(NativePrimitive(dummySpan, "i1")),
+      typeSpec = Some(NativePrimitive(syntheticSource, "i1")),
       id       = stdlibId("typedef", "Bool")
     ),
     TypeDef(
-      span     = dummySpan,
+      source   = SourceOrigin.Synth,
       nameNode = Name.synth("CharPtr"),
-      typeSpec = Some(NativePointer(dummySpan, "i8")),
+      typeSpec = Some(NativePointer(syntheticSource, "i8")),
       id       = stdlibId("typedef", "CharPtr")
     ),
     TypeDef(
-      span     = dummySpan,
+      source   = SourceOrigin.Synth,
       nameNode = Name.synth("String"),
       typeSpec = Some(
         NativeStruct(
-          dummySpan,
+          syntheticSource,
           List(
             "length" -> stdlibTypeRef("Int64"),
             "data" -> stdlibTypeRef("CharPtr")
@@ -242,79 +246,79 @@ def injectBasicTypes(module: Module): Module =
     ),
     TypeDef(
       // This should be an alias to an MML type (which in turn will have it's own native repr)
-      span     = dummySpan,
+      source   = SourceOrigin.Synth,
       nameNode = Name.synth("SizeT"),
-      typeSpec = Some(NativePrimitive(dummySpan, "i64")),
+      typeSpec = Some(NativePrimitive(syntheticSource, "i64")),
       id       = stdlibId("typedef", "SizeT")
     ),
     // same as above, should this be it's own type or an alias?
     TypeDef(
-      span     = dummySpan,
+      source   = SourceOrigin.Synth,
       nameNode = Name.synth("Char"),
-      typeSpec = Some(NativePrimitive(dummySpan, "i8")),
+      typeSpec = Some(NativePrimitive(syntheticSource, "i8")),
       id       = stdlibId("typedef", "Char")
     ),
     TypeDef(
-      span     = dummySpan,
+      source   = SourceOrigin.Synth,
       nameNode = Name.synth("Unit"),
-      typeSpec = Some(NativePrimitive(dummySpan, "void")),
+      typeSpec = Some(NativePrimitive(syntheticSource, "void")),
       id       = stdlibId("typedef", "Unit")
     ),
 
     // Type aliases pointing to native types
     TypeAlias(
-      span     = dummySpan,
+      source   = SourceOrigin.Synth,
       nameNode = Name.synth("Int"),
       typeRef  = stdlibTypeRef("Int64"),
       id       = stdlibId("typealias", "Int")
     ),
     TypeAlias(
-      span     = dummySpan,
+      source   = SourceOrigin.Synth,
       nameNode = Name.synth("Byte"),
       typeRef  = stdlibTypeRef("Int8"),
       id       = stdlibId("typealias", "Byte")
     ),
     TypeAlias(
-      span     = dummySpan,
+      source   = SourceOrigin.Synth,
       nameNode = Name.synth("Word"),
       typeRef  = stdlibTypeRef("Int8"),
       id       = stdlibId("typealias", "Word")
     ),
     // Output buffer - opaque pointer to heap-allocated struct
     TypeDef(
-      span     = dummySpan,
+      source   = SourceOrigin.Synth,
       nameNode = Name.synth("Buffer"),
-      typeSpec = Some(NativePointer(dummySpan, "i8", memEffect = Some(MemEffect.Alloc))),
+      typeSpec = Some(NativePointer(syntheticSource, "i8", memEffect = Some(MemEffect.Alloc))),
       id       = stdlibId("typedef", "Buffer")
     ),
 
     // Pointer types for arrays
     TypeDef(
-      span     = dummySpan,
+      source   = SourceOrigin.Synth,
       nameNode = Name.synth("Int64Ptr"),
-      typeSpec = Some(NativePointer(dummySpan, "i64")),
+      typeSpec = Some(NativePointer(syntheticSource, "i64")),
       id       = stdlibId("typedef", "Int64Ptr")
     ),
     TypeDef(
-      span     = dummySpan,
+      source   = SourceOrigin.Synth,
       nameNode = Name.synth("StringPtr"),
-      typeSpec = Some(NativePointer(dummySpan, "%struct.String")),
+      typeSpec = Some(NativePointer(syntheticSource, "%struct.String")),
       id       = stdlibId("typedef", "StringPtr")
     ),
     TypeDef(
-      span     = dummySpan,
+      source   = SourceOrigin.Synth,
       nameNode = Name.synth("FloatPtr"),
-      typeSpec = Some(NativePointer(dummySpan, "float")),
+      typeSpec = Some(NativePointer(syntheticSource, "float")),
       id       = stdlibId("typedef", "FloatPtr")
     ),
 
     // Monomorphic array types
     TypeDef(
-      span     = dummySpan,
+      source   = SourceOrigin.Synth,
       nameNode = Name.synth("IntArray"),
       typeSpec = Some(
         NativeStruct(
-          dummySpan,
+          syntheticSource,
           List(
             "length" -> stdlibTypeRef("Int64"),
             "data" -> stdlibTypeRef("Int64Ptr")
@@ -325,11 +329,11 @@ def injectBasicTypes(module: Module): Module =
       id = stdlibId("typedef", "IntArray")
     ),
     TypeDef(
-      span     = dummySpan,
+      source   = SourceOrigin.Synth,
       nameNode = Name.synth("StringArray"),
       typeSpec = Some(
         NativeStruct(
-          dummySpan,
+          syntheticSource,
           List(
             "length" -> stdlibTypeRef("Int64"),
             "data" -> stdlibTypeRef("StringPtr")
@@ -340,11 +344,11 @@ def injectBasicTypes(module: Module): Module =
       id = stdlibId("typedef", "StringArray")
     ),
     TypeDef(
-      span     = dummySpan,
+      source   = SourceOrigin.Synth,
       nameNode = Name.synth("FloatArray"),
       typeSpec = Some(
         NativeStruct(
-          dummySpan,
+          syntheticSource,
           List(
             "length" -> stdlibTypeRef("Int64"),
             "data" -> stdlibTypeRef("FloatPtr")
@@ -370,11 +374,11 @@ def injectBasicTypes(module: Module): Module =
   */
 def injectStandardOperators(module: Module): Module =
 
-  val dummySpan = SrcSpan(SrcPoint(0, 0, 0), SrcPoint(0, 0, 0))
+  val syntheticSource = SourceOrigin.Synth
 
   // Helper to create a resolved TypeRef to a stdlib type
   def stdlibTypeRef(name: String): TypeRef =
-    TypeRef(dummySpan, name, stdlibTypeId(name), Nil)
+    TypeRef(syntheticSource, name, stdlibTypeId(name), Nil)
 
   // Helper function to create TypeRef for basic types
   def intType   = stdlibTypeRef("Int")
@@ -390,9 +394,9 @@ def injectStandardOperators(module: Module): Module =
     paramType:  Type,
     returnType: Type
   ): Bnd =
-    val param1      = FnParam(SourceOrigin.Synth, Name.synth("a"), typeAsc = Some(paramType))
-    val param2      = FnParam(SourceOrigin.Synth, Name.synth("b"), typeAsc = Some(paramType))
-    val body        = Expr(dummySpan, List(NativeImpl(dummySpan, nativeTpl = Some(tpl))))
+    val param1 = FnParam(SourceOrigin.Synth, Name.synth("a"), typeAsc = Some(paramType))
+    val param2 = FnParam(SourceOrigin.Synth, Name.synth("b"), typeAsc = Some(paramType))
+    val body   = Expr(syntheticSource, List(NativeImpl(syntheticSource, nativeTpl = Some(tpl))))
     val mangledName = OpMangling.mangleOp(name, 2)
     val meta = BindingMeta(
       origin        = BindingOrigin.Operator,
@@ -403,7 +407,7 @@ def injectStandardOperators(module: Module): Module =
       mangledName   = mangledName
     )
     val lambda = Lambda(
-      span     = dummySpan,
+      source   = SourceOrigin.Synth,
       params   = List(param1, param2),
       body     = body,
       captures = Nil,
@@ -413,7 +417,7 @@ def injectStandardOperators(module: Module): Module =
     Bnd(
       source     = SourceOrigin.Synth,
       nameNode   = Name.synth(mangledName),
-      value      = Expr(dummySpan, List(lambda)),
+      value      = Expr(syntheticSource, List(lambda)),
       typeSpec   = None,
       typeAsc    = Some(returnType),
       docComment = None,
@@ -430,8 +434,8 @@ def injectStandardOperators(module: Module): Module =
     paramType:  Type,
     returnType: Type
   ): Bnd =
-    val param       = FnParam(SourceOrigin.Synth, Name.synth("a"), typeAsc = Some(paramType))
-    val body        = Expr(dummySpan, List(NativeImpl(dummySpan, nativeTpl = Some(tpl))))
+    val param = FnParam(SourceOrigin.Synth, Name.synth("a"), typeAsc = Some(paramType))
+    val body  = Expr(syntheticSource, List(NativeImpl(syntheticSource, nativeTpl = Some(tpl))))
     val mangledName = OpMangling.mangleOp(name, 1)
     val meta = BindingMeta(
       origin        = BindingOrigin.Operator,
@@ -442,7 +446,7 @@ def injectStandardOperators(module: Module): Module =
       mangledName   = mangledName
     )
     val lambda = Lambda(
-      span     = dummySpan,
+      source   = SourceOrigin.Synth,
       params   = List(param),
       body     = body,
       captures = Nil,
@@ -452,7 +456,7 @@ def injectStandardOperators(module: Module): Module =
     Bnd(
       source     = SourceOrigin.Synth,
       nameNode   = Name.synth(mangledName),
-      value      = Expr(dummySpan, List(lambda)),
+      value      = Expr(syntheticSource, List(lambda)),
       typeSpec   = None,
       typeAsc    = Some(returnType),
       docComment = None,
@@ -552,11 +556,11 @@ def injectStandardOperators(module: Module): Module =
   * println, readline, concat, to_string, and str_to_int functions.
   */
 def injectCommonFunctions(module: Module): Module =
-  val dummySpan = SrcSpan(SrcPoint(0, 0, 0), SrcPoint(0, 0, 0))
+  val syntheticSource = SourceOrigin.Synth
 
   // Helper to create a resolved TypeRef to a stdlib type
   def stdlibTypeRef(name: String): TypeRef =
-    TypeRef(dummySpan, name, stdlibTypeId(name), Nil)
+    TypeRef(syntheticSource, name, stdlibTypeId(name), Nil)
 
   // Helper function to create TypeRef for basic types
   def stringType = stdlibTypeRef("String")
@@ -585,9 +589,9 @@ def injectCommonFunctions(module: Module): Module =
       originalName  = name,
       mangledName   = name
     )
-    val body = Expr(dummySpan, List(NativeImpl(dummySpan, memEffect = memEffect)))
+    val body = Expr(syntheticSource, List(NativeImpl(syntheticSource, memEffect = memEffect)))
     val lambda = Lambda(
-      span     = dummySpan,
+      source   = SourceOrigin.Synth,
       params   = params,
       body     = body,
       captures = Nil,
@@ -597,7 +601,7 @@ def injectCommonFunctions(module: Module): Module =
     Bnd(
       source     = SourceOrigin.Synth,
       nameNode   = Name.synth(name),
-      value      = Expr(dummySpan, List(lambda)),
+      value      = Expr(syntheticSource, List(lambda)),
       typeSpec   = None,
       typeAsc    = Some(returnType),
       docComment = None,
@@ -621,7 +625,7 @@ def injectCommonFunctions(module: Module): Module =
     // Create refs with resolvedId pointing to the stdlib function
     val fnRef = Ref(SourceOrigin.Synth, fnName, resolvedId = stdlibId("bnd", fnName))
     val body =
-      Expr(dummySpan, List(fnRef, Ref(SourceOrigin.Synth, "a"), Ref(SourceOrigin.Synth, "b")))
+      Expr(syntheticSource, List(fnRef, Ref(SourceOrigin.Synth, "a"), Ref(SourceOrigin.Synth, "b")))
     val mangledName = OpMangling.mangleOp(name, 2)
     val meta = BindingMeta(
       origin        = BindingOrigin.Operator,
@@ -632,7 +636,7 @@ def injectCommonFunctions(module: Module): Module =
       mangledName   = mangledName
     )
     val lambda = Lambda(
-      span     = dummySpan,
+      source   = SourceOrigin.Synth,
       params   = List(param1, param2),
       body     = body,
       captures = Nil,
@@ -642,7 +646,7 @@ def injectCommonFunctions(module: Module): Module =
     Bnd(
       source     = SourceOrigin.Synth,
       nameNode   = Name.synth(mangledName),
-      value      = Expr(dummySpan, List(lambda)),
+      value      = Expr(syntheticSource, List(lambda)),
       typeSpec   = None,
       typeAsc    = Some(returnType),
       docComment = None,
@@ -670,9 +674,9 @@ def injectCommonFunctions(module: Module): Module =
       originalName  = name,
       mangledName   = name
     )
-    val body = Expr(dummySpan, List(NativeImpl(dummySpan, nativeTpl = Some(tpl))))
+    val body = Expr(syntheticSource, List(NativeImpl(syntheticSource, nativeTpl = Some(tpl))))
     val lambda = Lambda(
-      span     = dummySpan,
+      source   = SourceOrigin.Synth,
       params   = params,
       body     = body,
       captures = Nil,
@@ -682,7 +686,7 @@ def injectCommonFunctions(module: Module): Module =
     Bnd(
       source     = SourceOrigin.Synth,
       nameNode   = Name.synth(name),
-      value      = Expr(dummySpan, List(lambda)),
+      value      = Expr(syntheticSource, List(lambda)),
       typeSpec   = None,
       typeAsc    = Some(returnType),
       docComment = None,
@@ -1132,7 +1136,7 @@ def collectBadRefs(expr: Expr, module: Module): List[Ref] =
     case (acc, ref: Ref) =>
       ref.qualifier match
         case Some(qualifier) =>
-          val qualifierExpr = Expr(qualifier.span, List(qualifier))
+          val qualifierExpr = Expr(qualifier.source, List(qualifier))
           acc ++ collectBadRefs(qualifierExpr, module)
         case None =>
           if lookupRef(ref, module).isDefined then acc

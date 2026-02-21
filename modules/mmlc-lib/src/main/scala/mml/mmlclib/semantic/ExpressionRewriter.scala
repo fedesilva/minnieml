@@ -62,7 +62,7 @@ object ExpressionRewriter:
     */
   private def wrapIfUndersaturated(
     fn:                  Term,
-    span:                SrcSpan,
+    source:              SourceOrigin,
     transformedBindings: Map[String, Bnd],
     resolvables:         ResolvablesIndex
   ): Either[NEL[SemanticError], Expr] =
@@ -109,15 +109,15 @@ object ExpressionRewriter:
                 }
                 // Build App chain with synthetic args
                 val fullApp = syntheticRefs.foldLeft[Ref | App](callable) { (acc, ref) =>
-                  App(span, acc, Expr(span, List(ref)))
+                  App(source, acc, Expr(source, List(ref)))
                 }
                 val lambda =
-                  Lambda(span, syntheticParams, Expr(span, List(fullApp)), captures = Nil)
-                Some(Expr(span, List(lambda)).asRight)
+                  Lambda(source, syntheticParams, Expr(source, List(fullApp)), captures = Nil)
+                Some(Expr(source, List(lambda)).asRight)
           else None
         }
       }
-      .getOrElse(Expr(fn.span, List(fn)).asRight)
+      .getOrElse(Expr(fn.source, List(fn)).asRight)
 
   /** Rewrite a module, accumulating errors in the state. */
   def rewriteModule(state: CompilerState): CompilerState =
@@ -156,7 +156,7 @@ object ExpressionRewriter:
     transformedBindings: Map[String, Bnd],
     resolvables:         ResolvablesIndex
   ): Either[NEL[SemanticError], Expr] =
-    rewritePrecedenceExpr(expr.terms, MinPrecedence, expr.span, transformedBindings, resolvables)
+    rewritePrecedenceExpr(expr.terms, MinPrecedence, expr.source, transformedBindings, resolvables)
       .flatMap { case (result, remaining) =>
         if remaining.isEmpty then
           // All terms processed successfully
@@ -179,7 +179,7 @@ object ExpressionRewriter:
   private def rewritePrecedenceExpr(
     terms:               List[Term],
     minPrec:             Int,
-    span:                SrcSpan,
+    source:              SourceOrigin,
     transformedBindings: Map[String, Bnd],
     resolvables:         ResolvablesIndex
   ): Either[NEL[SemanticError], (Expr, List[Term])] =
@@ -188,17 +188,17 @@ object ExpressionRewriter:
       rewrittenTerms <- terms.traverse(rewriteTerm(_, transformedBindings, resolvables))
 
       // Rewrite the first atom in the expression
-      (lhs, restAfterAtom) <- rewriteAtom(rewrittenTerms, span, transformedBindings, resolvables)
+      (lhs, restAfterAtom) <- rewriteAtom(rewrittenTerms, source, transformedBindings, resolvables)
 
       // Rewrite any operations with sufficient precedence
-      result <- rewriteOps(lhs, restAfterAtom, minPrec, span, transformedBindings, resolvables)
+      result <- rewriteOps(lhs, restAfterAtom, minPrec, source, transformedBindings, resolvables)
     yield result
 
   /** Rewrite the first atom in a list of terms
     */
   private def rewriteAtom(
     terms:               List[Term],
-    span:                SrcSpan,
+    source:              SourceOrigin,
     transformedBindings: Map[String, Bnd],
     resolvables:         ResolvablesIndex
   ): Either[NEL[SemanticError], (Expr, List[Term])] =
@@ -207,7 +207,7 @@ object ExpressionRewriter:
         NEL
           .one(
             SemanticError.InvalidExpression(
-              Expr(span, Nil),
+              Expr(source, Nil),
               "Expected an expression, got empty terms",
               phaseName
             )
@@ -216,7 +216,7 @@ object ExpressionRewriter:
 
       case (g: TermGroup) :: rest =>
         rewriteGroupAtom(g, transformedBindings, resolvables).flatMap { term =>
-          buildAppChain(term, rest, g.span, transformedBindings, resolvables)
+          buildAppChain(term, rest, g.source, transformedBindings, resolvables)
         }
 
       case (head :: rest) =>
@@ -226,27 +226,27 @@ object ExpressionRewriter:
             val resolvedRef = ref.copy(resolvedId = bnd.id)
             val nextMinPrec = if assoc == Associativity.Left then prec + 1 else prec
 
-            rewritePrecedenceExpr(rest, nextMinPrec, span, transformedBindings, resolvables).map {
+            rewritePrecedenceExpr(rest, nextMinPrec, source, transformedBindings, resolvables).map {
               case (operand, remaining) =>
                 // Transform prefix operator to function application
-                val opApp = App(span, resolvedRef, operand)
-                (Expr(span, List(opApp)), remaining)
+                val opApp = App(source, resolvedRef, operand)
+                (Expr(source, List(opApp)), remaining)
             }
           case None =>
             // Not a prefix operator - check for ref, atom, or error
             head match
               case ref: Ref =>
                 // Any reference - handle as potential function application
-                buildAppChain(ref, rest, span, transformedBindings, resolvables)
+                buildAppChain(ref, rest, source, transformedBindings, resolvables)
               case IsAtom(atom) =>
                 // Simple atom (literal, hole, etc.)
-                (Expr(atom.span, List(atom)), rest).asRight
+                (Expr(atom.source, List(atom)), rest).asRight
               case _ =>
                 // Invalid expression structure
                 NEL
                   .one(
                     SemanticError.InvalidExpression(
-                      Expr(span, head :: rest),
+                      Expr(source, head :: rest),
                       "Invalid expression structure",
                       phaseName
                     )
@@ -259,7 +259,7 @@ object ExpressionRewriter:
     lhs:                 Expr,
     terms:               List[Term],
     minPrec:             Int,
-    span:                SrcSpan,
+    source:              SourceOrigin,
     transformedBindings: Map[String, Bnd],
     resolvables:         ResolvablesIndex
   ): Either[NEL[SemanticError], (Expr, List[Term])] =
@@ -271,12 +271,12 @@ object ExpressionRewriter:
             val resolvedRef = ref.copy(resolvedId = bnd.id)
             val nextMinPrec = if assoc == Associativity.Left then prec + 1 else prec
 
-            rewritePrecedenceExpr(rest, nextMinPrec, span, transformedBindings, resolvables)
+            rewritePrecedenceExpr(rest, nextMinPrec, source, transformedBindings, resolvables)
               .flatMap { case (rhs, remaining) =>
                 // Transform operator expression to function application
-                val opApp    = App(span, App(span, resolvedRef, lhs), rhs)
-                val combined = Expr(span, List(opApp))
-                rewriteOps(combined, remaining, minPrec, span, transformedBindings, resolvables)
+                val opApp    = App(source, App(source, resolvedRef, lhs), rhs)
+                val combined = Expr(source, List(opApp))
+                rewriteOps(combined, remaining, minPrec, source, transformedBindings, resolvables)
               }
           case None =>
             // Check for postfix operator with sufficient precedence
@@ -285,9 +285,9 @@ object ExpressionRewriter:
               case Some((ref, bnd, _, _)) =>
                 val resolvedRef = ref.copy(resolvedId = bnd.id)
                 // Transform postfix operator to function application
-                val opApp    = App(span, resolvedRef, lhs)
-                val combined = Expr(span, List(opApp))
-                rewriteOps(combined, rest, minPrec, span, transformedBindings, resolvables)
+                val opApp    = App(source, resolvedRef, lhs)
+                val combined = Expr(source, List(opApp))
+                rewriteOps(combined, rest, minPrec, source, transformedBindings, resolvables)
               case None =>
                 // Neither binary nor postfix op with sufficient precedence
                 rewriteOpsRemainder(head, lhs, terms, resolvables)
@@ -338,43 +338,43 @@ object ExpressionRewriter:
   private def buildAppChain(
     fn:                  Term,
     terms:               List[Term],
-    span:                SrcSpan,
+    source:              SourceOrigin,
     transformedBindings: Map[String, Bnd],
     resolvables:         ResolvablesIndex
   ): Either[NEL[SemanticError], (Expr, List[Term])] =
     terms match
       case Nil =>
         // No more arguments; wrap if undersaturated (partial application).
-        wrapIfUndersaturated(fn, span, transformedBindings, resolvables).map((_, terms))
+        wrapIfUndersaturated(fn, source, transformedBindings, resolvables).map((_, terms))
       case t :: _ if isOperator(t, resolvables) =>
         // An operator ends the application chain; wrap if undersaturated.
-        wrapIfUndersaturated(fn, span, transformedBindings, resolvables).map((_, terms))
+        wrapIfUndersaturated(fn, source, transformedBindings, resolvables).map((_, terms))
       case (g: TermGroup) :: restTerms =>
         // Groups are processed as sub-expressions (may contain nested applications)
         rewriteGroupAtom(g, transformedBindings, resolvables).flatMap { term =>
-          val argExpr = Expr(g.span, List(term))
-          buildSingleApp(fn, argExpr, span).flatMap { app =>
-            buildAppChain(app, restTerms, span, transformedBindings, resolvables)
+          val argExpr = Expr(g.source, List(term))
+          buildSingleApp(fn, argExpr, source).flatMap { app =>
+            buildAppChain(app, restTerms, source, transformedBindings, resolvables)
           }
         }
       case (ref: Ref) :: restTerms =>
         // Plain Ref as argument - don't start a new app chain, just use as argument
-        val argExpr = Expr(ref.span, List(ref))
-        buildSingleApp(fn, argExpr, span).flatMap { app =>
-          buildAppChain(app, restTerms, span, transformedBindings, resolvables)
+        val argExpr = Expr(ref.source, List(ref))
+        buildSingleApp(fn, argExpr, source).flatMap { app =>
+          buildAppChain(app, restTerms, source, transformedBindings, resolvables)
         }
       case IsAtom(atom) :: restTerms =>
         // Literal or other atom as argument
-        val argExpr = Expr(atom.span, List(atom))
-        buildSingleApp(fn, argExpr, span).flatMap { app =>
-          buildAppChain(app, restTerms, span, transformedBindings, resolvables)
+        val argExpr = Expr(atom.source, List(atom))
+        buildSingleApp(fn, argExpr, source).flatMap { app =>
+          buildAppChain(app, restTerms, source, transformedBindings, resolvables)
         }
       case other =>
         // Unexpected term - let rewriteAtom handle/report error
-        rewriteAtom(other, span, transformedBindings, resolvables).flatMap {
+        rewriteAtom(other, source, transformedBindings, resolvables).flatMap {
           case (argExpr, remainingTerms) =>
-            buildSingleApp(fn, argExpr, span).flatMap { app =>
-              buildAppChain(app, remainingTerms, span, transformedBindings, resolvables)
+            buildSingleApp(fn, argExpr, source).flatMap { app =>
+              buildAppChain(app, remainingTerms, source, transformedBindings, resolvables)
             }
         }
 
@@ -386,7 +386,7 @@ object ExpressionRewriter:
     rewritePrecedenceExpr(
       group.inner.terms,
       MinPrecedence,
-      group.span,
+      group.source,
       transformedBindings,
       resolvables
     )
@@ -419,14 +419,14 @@ object ExpressionRewriter:
   /** Build a single application node
     */
   private def buildSingleApp(
-    fn:   Term,
-    arg:  Expr,
-    span: SrcSpan
+    fn:     Term,
+    arg:    Expr,
+    source: SourceOrigin
   ): Either[NEL[SemanticError], Term] =
     fn match
-      case ref:    Ref => App(span, ref, arg, typeAsc = None, typeSpec = None).asRight
-      case app:    App => App(span, app, arg, typeAsc = None, typeSpec = None).asRight
-      case lambda: Lambda => App(span, lambda, arg, typeAsc = None, typeSpec = None).asRight
+      case ref:    Ref => App(source, ref, arg, typeAsc = None, typeSpec = None).asRight
+      case app:    App => App(source, app, arg, typeAsc = None, typeSpec = None).asRight
+      case lambda: Lambda => App(source, lambda, arg, typeAsc = None, typeSpec = None).asRight
       case _ =>
         // Term that's not a function or application can't be applied to
         NEL

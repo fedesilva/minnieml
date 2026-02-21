@@ -92,7 +92,7 @@ object SemanticTokens:
 
   /** Collect tokens from a type definition. */
   private def collectFromTypeDef(td: TypeDef): List[RawToken] =
-    val keyword = keywordAt(td.span.start, 4) // "type"
+    val keyword = td.spanOpt.flatMap(span => keywordAt(span.start, 4)) // "type"
     val name = td.nameNode.source.spanOpt.flatMap { span =>
       tokenAt(
         span,
@@ -104,7 +104,7 @@ object SemanticTokens:
 
   /** Collect tokens from a type alias. */
   private def collectFromTypeAlias(ta: TypeAlias): List[RawToken] =
-    val keyword = keywordAt(ta.span.start, 4) // "type"
+    val keyword = ta.spanOpt.flatMap(span => keywordAt(span.start, 4)) // "type"
     val name = ta.nameNode.source.spanOpt.flatMap { span =>
       tokenAt(
         span,
@@ -116,7 +116,7 @@ object SemanticTokens:
 
   /** Collect tokens from a struct type. */
   private def collectFromTypeStruct(ts: TypeStruct): List[RawToken] =
-    val keyword = keywordAt(ts.span.start, 6) // "struct"
+    val keyword = ts.spanOpt.flatMap(span => keywordAt(span.start, 6)) // "struct"
     val name = ts.nameNode.source.spanOpt.flatMap { span =>
       tokenAt(
         span,
@@ -147,17 +147,17 @@ object SemanticTokens:
         collectFromCond(cond, resolvables)
 
       case lit: LiteralInt =>
-        tokenAt(lit.span, TokenType.Number).toList
+        lit.spanOpt.flatMap(tokenAt(_, TokenType.Number)).toList
 
       case lit: LiteralFloat =>
-        tokenAt(lit.span, TokenType.Number).toList
+        lit.spanOpt.flatMap(tokenAt(_, TokenType.Number)).toList
 
       case lit: LiteralString =>
-        tokenAt(lit.span, TokenType.String).toList
+        lit.spanOpt.flatMap(tokenAt(_, TokenType.String)).toList
 
       case lit: LiteralBool =>
         // true/false are keywords
-        tokenAt(lit.span, TokenType.Keyword).toList
+        lit.spanOpt.flatMap(tokenAt(_, TokenType.Keyword)).toList
 
       case _: LiteralUnit =>
         Nil // () is just punctuation
@@ -232,16 +232,28 @@ object SemanticTokens:
   /** Collect tokens from a conditional. */
   private def collectFromCond(cond: Cond, resolvables: ResolvablesIndex): List[RawToken] =
     // "if" at start of cond span
-    val ifKeyword = keywordAt(cond.span.start, 2)
+    val ifKeyword = cond.spanOpt.flatMap(span => keywordAt(span.start, 2))
 
     // "then" is between cond.cond.end and cond.ifTrue.start
-    val thenKeyword = keywordBetween(cond.cond.span.end, cond.ifTrue.span.start, 4)
+    val thenKeyword = for
+      condSpan <- cond.cond.spanOpt
+      ifTrueSpan <- cond.ifTrue.spanOpt
+      kw <- keywordBetween(condSpan.end, ifTrueSpan.start, 4)
+    yield kw
 
     // "else" or "elif" is between cond.ifTrue.end and cond.ifFalse.start
-    val elseKeyword = keywordBetween(cond.ifTrue.span.end, cond.ifFalse.span.start, 4)
+    val elseKeyword = for
+      ifTrueSpan <- cond.ifTrue.spanOpt
+      ifFalseSpan <- cond.ifFalse.spanOpt
+      kw <- keywordBetween(ifTrueSpan.end, ifFalseSpan.start, 4)
+    yield kw
 
     // "end" is at the end of the cond span (if present)
-    val endKeyword = keywordAtEnd(cond.span, cond.ifFalse.span, 3)
+    val endKeyword = for
+      condSpan <- cond.spanOpt
+      lastExprSpan <- cond.ifFalse.spanOpt
+      kw <- keywordAtEnd(condSpan, lastExprSpan, 3)
+    yield kw
 
     val condTokens    = collectFromExpr(cond.cond, resolvables)
     val ifTrueTokens  = collectFromExpr(cond.ifTrue, resolvables)
@@ -259,7 +271,9 @@ object SemanticTokens:
   private def collectFromType(typ: Type): List[RawToken] =
     typ match
       case tr: TypeRef =>
-        tokenAt(tr.span, TokenType.Type, lengthOverride = Some(tr.name.length)).toList
+        tr.spanOpt
+          .flatMap(tokenAt(_, TokenType.Type, lengthOverride = Some(tr.name.length)))
+          .toList
       case tf: TypeFn =>
         tf.paramTypes.flatMap(collectFromType) ++ collectFromType(tf.returnType)
       case tt: TypeTuple =>
@@ -267,7 +281,9 @@ object SemanticTokens:
       case ta: TypeApplication =>
         collectFromType(ta.base) ++ ta.args.flatMap(collectFromType)
       case tv: TypeVariable =>
-        tokenAt(tv.span, TokenType.Type, lengthOverride = Some(tv.name.length)).toList
+        tv.spanOpt
+          .flatMap(tokenAt(_, TokenType.Type, lengthOverride = Some(tv.name.length)))
+          .toList
       case ts: TypeScheme =>
         collectFromType(ts.bodyType)
       case tor: TypeOpenRecord =>
@@ -327,13 +343,15 @@ object SemanticTokens:
     val length = ref.name.length
     if length <= 0 then None
     else
-      ref.qualifier match
-        case Some(_) =>
-          val end      = ref.span.end
-          val startCol = end.col - length
-          tokenAtPos(end.line, startCol, length, tokenType)
-        case None =>
-          tokenAtPos(ref.span.start.line, ref.span.start.col, length, tokenType)
+      ref.spanOpt.flatMap { span =>
+        ref.qualifier match
+          case Some(_) =>
+            val end      = span.end
+            val startCol = end.col - length
+            tokenAtPos(end.line, startCol, length, tokenType)
+          case None =>
+            tokenAtPos(span.start.line, span.start.col, length, tokenType)
+      }
 
   private def tokenAtPos(
     line:      Int,

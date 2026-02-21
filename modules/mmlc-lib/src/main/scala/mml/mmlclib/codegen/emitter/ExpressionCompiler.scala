@@ -27,21 +27,21 @@ def compileTerm(
   functionScope: Map[String, ScopeEntry] = Map.empty
 ): Either[CodeGenError, CompileResult] = {
   term match {
-    case LiteralInt(_, value) =>
-      CompileResult(value, state, true, "Int").asRight
+    case lit: LiteralInt =>
+      CompileResult(lit.value, state, true, "Int").asRight
 
-    case LiteralFloat(_, value) =>
+    case lit: LiteralFloat =>
       // LLVM rejects decimal float literals that aren't exactly representable in IEEE 754.
       // Emit as double-precision hex (LLVM truncates to float).
-      val hexStr = f"0x${java.lang.Double.doubleToRawLongBits(value.toDouble)}%016X"
+      val hexStr = f"0x${java.lang.Double.doubleToRawLongBits(lit.value.toDouble)}%016X"
       CompileResult(0, state, true, "Float", literalValue = Some(hexStr)).asRight
 
-    case LiteralUnit(_) =>
+    case _: LiteralUnit =>
       // Unit is a zero-sized type, just return a dummy result
       CompileResult(0, state, true, "Unit").asRight
 
-    case LiteralBool(_, value) =>
-      val literalValue = if value then 1 else 0
+    case lit: LiteralBool =>
+      val literalValue = if lit.value then 1 else 0
       CompileResult(literalValue, state, true, "Bool").asRight
 
     case hole: Hole =>

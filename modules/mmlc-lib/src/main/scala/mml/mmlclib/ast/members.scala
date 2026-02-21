@@ -1,21 +1,17 @@
 package mml.mmlclib.ast
 
 case class Bnd(
-  visibility:          Visibility          = Visibility.Protected,
-  override val source: SourceOrigin,
-  nameNode:            Name,
-  value:               Expr,
-  typeSpec:            Option[Type]        = None,
-  typeAsc:             Option[Type]        = None,
-  docComment:          Option[DocComment]  = None,
-  meta:                Option[BindingMeta] = None,
-  id:                  Option[String]      = None
+  visibility: Visibility          = Visibility.Protected,
+  source:     SourceOrigin,
+  nameNode:   Name,
+  value:      Expr,
+  typeSpec:   Option[Type]        = None,
+  typeAsc:    Option[Type]        = None,
+  docComment: Option[DocComment]  = None,
+  meta:       Option[BindingMeta] = None,
+  id:         Option[String]      = None
 ) extends Decl,
-      FromSource:
-  private val syntheticSpan = SrcSpan(SrcPoint(0, 0, -1), SrcPoint(0, 0, -1))
-  def span: SrcSpan = source match
-    case SourceOrigin.Loc(s) => s
-    case SourceOrigin.Synth => syntheticSpan
+      FromSource
 
 /** Represents a duplicate member declaration. The first occurrence remains valid and referenceable,
   * subsequent duplicates are wrapped in this node.
@@ -32,25 +28,41 @@ case class DuplicateMember(
   * functions with duplicate parameter names.
   */
 case class InvalidMember(
-  span:           SrcSpan,
+  source:         SourceOrigin,
   originalMember: Member,
   reason:         String
 ) extends Member,
       InvalidNode,
-      FromSource:
-  override val source: SourceOrigin = SourceOrigin.Loc(span)
+      FromSource
+
+object InvalidMember:
+  def apply(span: SrcSpan, originalMember: Member, reason: String): InvalidMember =
+    new InvalidMember(SourceOrigin.Loc(span), originalMember, reason)
 
 case class ParsingMemberError(
-  span:       SrcSpan,
+  source:     SourceOrigin,
   message:    String,
   failedCode: Option[String]
 ) extends Member,
       Error
 
+object ParsingMemberError:
+  def apply(span: SrcSpan, message: String, failedCode: Option[String]): ParsingMemberError =
+    new ParsingMemberError(SourceOrigin.Loc(span), message, failedCode)
+
 case class ParsingIdError(
-  span:       SrcSpan,
+  source:     SourceOrigin,
   message:    String,
   failedCode: Option[String],
   invalidId:  String
 ) extends Member,
       Error
+
+object ParsingIdError:
+  def apply(
+    span:       SrcSpan,
+    message:    String,
+    failedCode: Option[String],
+    invalidId:  String
+  ): ParsingIdError =
+    new ParsingIdError(SourceOrigin.Loc(span), message, failedCode, invalidId)

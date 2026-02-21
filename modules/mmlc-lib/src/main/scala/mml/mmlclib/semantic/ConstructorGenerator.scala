@@ -34,7 +34,7 @@ object ConstructorGenerator:
   private def mkStructConstructor(struct: TypeStruct, moduleName: String): Bnd =
     val constructorName = s"__mk_${struct.name}"
     val returnType =
-      TypeRef(struct.span, struct.name, resolvedId = struct.id)
+      TypeRef(struct.source, struct.name, resolvedId = struct.id)
     val params = struct.fields.toList.map { field =>
       FnParam(
         SourceOrigin.Synth,
@@ -52,13 +52,13 @@ object ConstructorGenerator:
       mangledName   = constructorName
     )
     val bodyExpr = Expr(
-      struct.span,
-      List(DataConstructor(struct.span, typeSpec = Some(returnType))),
+      struct.source,
+      List(DataConstructor(struct.source, typeSpec = Some(returnType))),
       typeAsc  = None,
       typeSpec = Some(returnType)
     )
     val lambda = Lambda(
-      span     = struct.span,
+      source   = struct.source,
       params   = params,
       body     = bodyExpr,
       captures = Nil,
@@ -69,7 +69,7 @@ object ConstructorGenerator:
       visibility = struct.visibility,
       source     = SourceOrigin.Synth,
       nameNode   = Name.synth(constructorName),
-      value      = Expr(struct.span, List(lambda)),
+      value      = Expr(struct.source, List(lambda)),
       typeSpec   = bodyExpr.typeSpec,
       typeAsc    = Some(returnType),
       docComment = None,
@@ -80,7 +80,7 @@ object ConstructorGenerator:
   private def mkNativeStructConstructor(td: TypeDef, ns: NativeStruct, moduleName: String): Bnd =
     val constructorName = s"__mk_${td.name}"
     val returnType =
-      TypeRef(td.span, td.name, resolvedId = td.id)
+      TypeRef(td.source, td.name, resolvedId = td.id)
     val params = ns.fields.map { case (fieldName, fieldType) =>
       FnParam(
         SourceOrigin.Synth,
@@ -98,13 +98,13 @@ object ConstructorGenerator:
       mangledName   = constructorName
     )
     val bodyExpr = Expr(
-      td.span,
-      List(DataConstructor(td.span, typeSpec = Some(returnType))),
+      td.source,
+      List(DataConstructor(td.source, typeSpec = Some(returnType))),
       typeAsc  = None,
       typeSpec = Some(returnType)
     )
     val lambda = Lambda(
-      span     = td.span,
+      source   = td.source,
       params   = params,
       body     = bodyExpr,
       captures = Nil,
@@ -115,7 +115,7 @@ object ConstructorGenerator:
       visibility = td.visibility,
       source     = SourceOrigin.Synth,
       nameNode   = Name.synth(constructorName),
-      value      = Expr(td.span, List(lambda)),
+      value      = Expr(td.source, List(lambda)),
       typeSpec   = bodyExpr.typeSpec,
       typeAsc    = Some(returnType),
       docComment = None,

@@ -152,7 +152,7 @@ class TbaaEmissionTest extends BaseEffFunSuite:
     )
     val innerTypeDef =
       TypeDef(
-        span     = span,
+        source   = SourceOrigin.Loc(span),
         nameNode = Name.synth("Inner"),
         typeSpec = Some(innerStruct),
         id       = Some("inner-id")
@@ -196,7 +196,7 @@ class TbaaEmissionTest extends BaseEffFunSuite:
     )
     val innerTypeDef =
       TypeDef(
-        span     = span,
+        source   = SourceOrigin.Loc(span),
         nameNode = Name.synth("Inner"),
         typeSpec = Some(innerStruct),
         id       = Some("inner-id")
