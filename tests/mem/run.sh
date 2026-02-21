@@ -21,11 +21,11 @@ pass() { printf "${GREEN}PASS${RESET} %s\n" "$1"; }
 fail() { printf "${RED}FAIL${RESET} %s\n" "$1"; }
 progress() { printf "%s\n" "$1"; }
 
+ASAN_OPTS="detect_leaks=1:halt_on_error=1:abort_on_error=1"
+
 usage() {
-  echo "Usage: $0 {asan|leaks|all}"
-  echo "  asan   Compile+run each test with AddressSanitizer"
-  echo "  leaks  Compile each test, check with leaks --atExit"
-  echo "  all    Run both asan and leaks"
+  echo "Usage: $0 [all]"
+  echo "  Runs memory tests in one ASan+LSan pass (single compile + single run per test)."
   exit 1
 }
 
@@ -44,8 +44,8 @@ clean_build() {
   rm -rf "$BUILD_DIR"
 }
 
-run_asan() {
-  printf "\n${BOLD}=== ASan mode ===${RESET}\n\n"
+run_mem() {
+  printf "\n${BOLD}=== ASan+LSan mode ===${RESET}\n\n"
   clean_build
   local start_ts
   start_ts=$(date +%s)
@@ -58,38 +58,38 @@ run_asan() {
 
   for src in $tests; do
     name=$(basename "$src" .mml)
-    binary="$BUILD_DIR/${name}-asan"
+    binary="$BUILD_DIR/$name"
     current=$((current + 1))
     compile_start=$(date +%s)
-    progress "[asan] ($current/$total) compiling $name ..."
+    progress "[mem] ($current/$total) compiling $name ..."
 
-    # Compile with ASan, then run the binary directly
+    # Compile once with ASan instrumentation; leak detection runs via ASAN_OPTIONS.
     if mmlc -s -b "$BUILD_DIR" -o "$binary" "$src" > /dev/null 2>&1; then
       compile_end=$(date +%s)
       compile_elapsed=$((compile_end - compile_start))
-      progress "[asan] ($current/$total) compiled $name (${compile_elapsed}s)"
+      progress "[mem] ($current/$total) compiled $name (${compile_elapsed}s)"
       run_start=$(date +%s)
-      progress "[asan] ($current/$total) running $name ..."
+      progress "[mem] ($current/$total) running $name ..."
     else
       compile_end=$(date +%s)
       compile_elapsed=$((compile_end - compile_start))
       fail "$name (compile)"
-      progress "[asan] ($current/$total) compile failed $name (${compile_elapsed}s)"
+      progress "[mem] ($current/$total) compile failed $name (${compile_elapsed}s)"
       failed=$((failed + 1))
       failures="$failures $name"
       continue
     fi
 
-    if "$binary" > /dev/null 2>&1; then
+    if ASAN_OPTIONS="$ASAN_OPTS" "$binary" > /dev/null 2>&1; then
       run_end=$(date +%s)
       run_elapsed=$((run_end - run_start))
-      progress "[asan] ($current/$total) ran $name (${run_elapsed}s)"
+      progress "[mem] ($current/$total) ran $name (${run_elapsed}s)"
       pass "$name"
       passed=$((passed + 1))
     else
       run_end=$(date +%s)
       run_elapsed=$((run_end - run_start))
-      progress "[asan] ($current/$total) run failed $name (${run_elapsed}s)"
+      progress "[mem] ($current/$total) run failed $name (${run_elapsed}s)"
       fail "$name"
       failed=$((failed + 1))
       failures="$failures $name"
@@ -100,75 +100,7 @@ run_asan() {
   end_ts=$(date +%s)
   elapsed=$((end_ts - start_ts))
 
-  printf "\n${BOLD}ASan: %d/%d passed${RESET}" "$passed" "$total"
-  if [ "$failed" -gt 0 ]; then
-    printf " (${RED}%d failed:${RESET}%s)" "$failed" "$failures"
-  fi
-  printf " (${elapsed}s)\n"
-  return "$failed"
-}
-
-run_leaks() {
-  printf "\n${BOLD}=== Leaks mode ===${RESET}\n\n"
-  clean_build
-  local start_ts
-  start_ts=$(date +%s)
-  local tests
-  tests="$(collect_tests)"
-  local total
-  total=$(printf "%s\n" "$tests" | wc -l | tr -d ' ')
-
-  local passed=0 failed=0 failures=""
-  local current=0
-
-  for src in $tests; do
-    name=$(basename "$src" .mml)
-    binary="$BUILD_DIR/$name"
-    current=$((current + 1))
-
-    compile_start=$(date +%s)
-    progress "[leaks] ($current/$total) compiling $name ..."
-    if ! mmlc -b "$BUILD_DIR" -o "$binary" "$src" > /dev/null 2>&1; then
-      compile_end=$(date +%s)
-      compile_elapsed=$((compile_end - compile_start))
-      progress "[leaks] ($current/$total) compile failed $name (${compile_elapsed}s)"
-      fail "$name (compile)"
-      failed=$((failed + 1))
-      failures="$failures $name"
-      continue
-    else
-      compile_end=$(date +%s)
-      compile_elapsed=$((compile_end - compile_start))
-      progress "[leaks] ($current/$total) compiled $name (${compile_elapsed}s)"
-    fi
-
-    check_start=$(date +%s)
-    progress "[leaks] ($current/$total) checking leaks $name ..."
-    leaks_output=$(leaks --atExit -- "$binary" 2>&1) || true
-
-    if echo "$leaks_output" | grep -q "0 leaks for 0 total leaked bytes"; then
-      check_end=$(date +%s)
-      check_elapsed=$((check_end - check_start))
-      progress "[leaks] ($current/$total) checked $name (${check_elapsed}s)"
-      pass "$name"
-      passed=$((passed + 1))
-    else
-      check_end=$(date +%s)
-      check_elapsed=$((check_end - check_start))
-      progress "[leaks] ($current/$total) leak check failed $name (${check_elapsed}s)"
-      fail "$name"
-      failed=$((failed + 1))
-      failures="$failures $name"
-      # Show the leak summary line
-      echo "$leaks_output" | grep -E "leaks for .* total leaked bytes" || true
-    fi
-  done
-
-  local end_ts elapsed
-  end_ts=$(date +%s)
-  elapsed=$((end_ts - start_ts))
-
-  printf "\n${BOLD}Leaks: %d/%d passed${RESET}" "$passed" "$total"
+  printf "\n${BOLD}ASan+LSan: %d/%d passed${RESET}" "$passed" "$total"
   if [ "$failed" -gt 0 ]; then
     printf " (${RED}%d failed:${RESET}%s)" "$failed" "$failures"
   fi
@@ -177,26 +109,12 @@ run_leaks() {
 }
 
 # Main
-[ $# -lt 1 ] && usage
+[ $# -gt 1 ] && usage
+[ $# -eq 1 ] && [ "$1" != "all" ] && usage
 
-mode="$1"
 exit_code=0
 
-case "$mode" in
-  asan)
-    run_asan || exit_code=1
-    ;;
-  leaks)
-    run_leaks || exit_code=1
-    ;;
-  all)
-    run_asan || exit_code=1
-    run_leaks || exit_code=1
-    ;;
-  *)
-    usage
-    ;;
-esac
+run_mem || exit_code=1
 
 clean_build
 exit "$exit_code"

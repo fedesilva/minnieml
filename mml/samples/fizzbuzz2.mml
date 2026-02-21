@@ -1,14 +1,14 @@
 
 let out = mkBufferWithSize (1024 * 4 * 10);
 
-fn loop(n: Int, t: Int): Unit =
-  if n <= t then
-    if n % 15 == 0 then out writeln "FizzBuzz"
-    elif n % 3 == 0 then out writeln "Fizz"
-    elif n % 5 == 0 then out writeln "Buzz"
-    else out writeln_int n
+fn loop(i: Int, t: Int): Unit =
+  if i <= t then
+    if i % 15 == 0 then out writeln "FizzBuzz"
+    elif i % 3 == 0 then out writeln "Fizz"
+    elif i % 5 == 0 then out writeln "Buzz"
+    else out writeln_int i
     end; 
-    loop (n+1) t
+    loop (i+1) t
   end
 ;
 

@@ -4,21 +4,51 @@ import cats.effect.IO
 import org.typelevel.log4cats.Logger
 
 import java.io.{FileWriter, PrintWriter}
-import java.nio.file.{Files, Path}
+import java.nio.file.{Files, Path, StandardCopyOption}
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
 
 object LspLogging:
+
+  private[lsp] val MaxLogSizeBytes: Long = 5L * 1024 * 1024
+  private[lsp] val MaxRotatedFiles: Int  = 10
+  private val LogFileName = "server.log"
 
   /** Create a Logger[IO] that writes to $outputDir/lsp/server.log. */
   def create(outputDir: Path): IO[Logger[IO]] =
     IO.blocking {
       val logDir = outputDir.resolve("lsp")
       Files.createDirectories(logDir)
-      val logFile = logDir.resolve("server.log")
+      rotateIfNeededBlocking(logDir, MaxLogSizeBytes, MaxRotatedFiles)
+      val logFile = logDir.resolve(LogFileName)
       val writer  = new PrintWriter(new FileWriter(logFile.toFile, true), true)
       fileLogger(writer)
     }
+
+  private[lsp] def rotateIfNeeded(
+    logDir:       Path,
+    maxSizeBytes: Long = MaxLogSizeBytes,
+    maxFiles:     Int  = MaxRotatedFiles
+  ): IO[Unit] =
+    IO.blocking(rotateIfNeededBlocking(logDir, maxSizeBytes, maxFiles))
+
+  private def rotateIfNeededBlocking(logDir: Path, maxSizeBytes: Long, maxFiles: Int): Unit =
+    if maxFiles > 0 then
+      val logFile = logDir.resolve(LogFileName)
+      if Files.exists(logFile) && Files.size(logFile) > maxSizeBytes then
+        Files.deleteIfExists(rotatedFile(logDir, maxFiles))
+
+        (1 until maxFiles).reverse.foreach { index =>
+          val from = rotatedFile(logDir, index)
+          if Files.exists(from) then
+            val to = rotatedFile(logDir, index + 1)
+            Files.move(from, to, StandardCopyOption.REPLACE_EXISTING)
+        }
+
+        Files.move(logFile, rotatedFile(logDir, 1), StandardCopyOption.REPLACE_EXISTING)
+
+  private def rotatedFile(logDir: Path, index: Int): Path =
+    logDir.resolve(s"$LogFileName.$index")
 
   private def fileLogger(writer: PrintWriter): Logger[IO] =
     val fmt = DateTimeFormatter.ofPattern("HH:mm:ss.SSS")

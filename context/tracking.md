@@ -59,7 +59,7 @@ GitHub: `https://github.com/fedesilva/minnieml/issues/223`
 
 Spec: `context/specs/lsp-log-rotation.md`
 
-- [ ] **Implement size-based LSP log rotation at startup**: before opening `server.log`,
+- [x] **Implement size-based LSP log rotation at startup** [COMPLETE]: before opening `server.log`,
   rotate when file size exceeds 5 MB using `server.log.1`, `.2`, `.3` up to 10 items, then delete.
 
 
@@ -73,6 +73,31 @@ Report:
 
 
 ## Recent Changes
+
+- 2026-02-21: LSP startup log rotation implemented [COMPLETE].
+  - Kept LSP logs under `outputDir/lsp/server.log` (no migration to user cache path).
+  - Added startup rotation in `LspLogging.create` with threshold `5 MB` and retention
+    `server.log.1` through `server.log.10` (oldest deleted on rotate).
+  - Added regression tests:
+    `modules/mmlc-lib/src/test/scala/mml/mmlclib/lsp/LspLoggingTests.scala`.
+  - Verification passed:
+    `sbtn "run run mml/samples/hello.mml"`,
+    `sbtn "testOnly mml.mmlclib.lsp.LspLoggingTests"`,
+    `sbtn "test; scalafmtAll; scalafixAll; mmlcPublishLocal"`,
+    `make -C benchmark clean`,
+    `make -C benchmark mml`.
+
+- 2026-02-21: Memory harness switched to single-pass ASan+LSan execution [COMPLETE].
+  - Reworked `tests/mem/run.sh` to remove dual `asan`/`leaks` passes and run one pass with
+    ASan instrumentation plus leak detection via
+    `ASAN_OPTIONS=detect_leaks=1:halt_on_error=1:abort_on_error=1`.
+  - `./tests/mem/run.sh all` now compiles each test once and executes once.
+  - Verification passed:
+    `./tests/mem/run.sh all` (15/15),
+    `sbtn "run run mml/samples/hello.mml"`,
+    `sbtn "test; scalafmtAll; scalafixAll; mmlcPublishLocal"`,
+    `make -C benchmark clean`,
+    `make -C benchmark mml`.
 
 - 2026-02-21: Completed SourceOrigin Migration Phases D and E [COMPLETE].
   - Migrated remaining source-bearing nodes in `ast/common.scala`, `ast/members.scala`,
