@@ -56,6 +56,8 @@ If a rule is unclear or conflicts with the current task, raise the conflict and 
   - `bin/gh-issue-body-replace <issue> <perl-expression> [repo]`: apply in-place issue body edit.
   - `bin/gh-issue-check <issue> <item-text> [repo]`: mark checklist item checked.
   - `bin/gh-issue-uncheck <issue> <item-text> [repo]`: mark checklist item unchecked.
+  - `bin/gh-project-item-add <issue-number-or-url> [--repo ...] [--owner ...] [--project ...]`:
+    add an issue to a GitHub project item list.
   - `bin/gh-project-items [--owner ...] [--project ...] [--limit ...]`: inspect project items.
   - Default repo for issue helpers is `fedesilva/minnieml`.
 - Synchronize with GitHub at these points:
@@ -64,6 +66,18 @@ If a rule is unclear or conflicts with the current task, raise the conflict and 
   - when marking a subtask or top-level Tracked Item complete
   - for other updates only when not in the middle of active Workstream execution, unless the Author asks otherwise
 - Every top-level Active Tracked Item must have a corresponding GitHub ticket.
+- Creating a GitHub ticket for a top-level Active Tracked Item is not complete until that issue is
+  added to GitHub project `fedesilva/projects/3`.
+  - This is mandatory for every new top-level Tracked Item.
+  - Use `bin/gh-project-item-add <issue-number-or-url>` for this step.
+  - Only if this helper script is unavailable, use raw `gh` (for example:
+    `gh project item-add 3 --owner fedesilva --url <issue-url>`).
+- Creation protocol for top-level Tracked Items (mandatory, in order):
+  1. Create the GitHub issue.
+  2. Add the issue to project `fedesilva/projects/3`.
+  3. Only then report ticket creation as done.
+- When the Author asks to "create a GH ticket" for a top-level Tracked Item, treat project-add as
+  included by default unless explicitly told to create an issue only.
 - Ticket and Tracked Item must reference each other.
 - Subtask tracking rules:
   - In GitHub, use checklist items for small steps.

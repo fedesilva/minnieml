@@ -82,5 +82,9 @@ Do not go out on tangents, read as much as you need but as little as you can.
 - **For tracking updates**, treat Workstream signoff and Tracked Item status updates as separate steps:
   - get signoff on the Workstream first
   - then ask before updating the Tracked Item
+- **For top-level tracked-item ticket creation**:
+  - "create GH ticket" means create the issue and add it to project `fedesilva/projects/3`
+    before reporting completion, unless the Author explicitly asks for issue-only creation.
+  - Use `bin/gh-project-item-add <issue-number-or-url>` for the project-add step.
 - **For big tasks or projects**
   - Split your work into smaller chunks, stop on completion and ask for review and signoff.
