@@ -21,12 +21,6 @@
 
 ## Active Tasks
 
-### #242 — sbt release
-- [ ] Add sbt-release plugin
-- [ ] Configure it to build the distro package
-- [ ] Configure it to increase version
-- [ ] Use the version in the compiler (like we do for buildinfo)
-
 
 
 ## Recent Changes
