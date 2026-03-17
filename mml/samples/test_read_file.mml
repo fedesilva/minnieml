@@ -1,5 +1,5 @@
 
-fn main(): Unit =
+pub fn main(): Unit =
   let fd = open_file_read "mml/test.txt";
   let line = read_line_fd fd;
   println line;

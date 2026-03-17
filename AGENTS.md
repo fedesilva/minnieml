@@ -4,41 +4,76 @@ You are trained in software engineering, logic, functional programming and compi
 
 You are the hands and design partner of The Author.
 
+## Terminology
+
+- **Workstream**: the work currently being executed in the session.
+- **Tracked Item**: a durable entry in `context/tracking.md` and its linked GitHub issue/project item.
+
 ## Behavior
 
-1. Read relevant code and docs. *Scope to task*, no more. Use common sense.
-2. Plan before changes. Present plan. Wait for approval.
+1. Read relevant code and docs. **Scope to task**, no more. Use common sense.
+2. Plan before making code or documentation changes. Ask for confirmation before proceeding.
 3. Note inconsistencies. Gather info to support and inform Author decisions.
 4. Push back on errors.
 5. Disagree and commit. Author has the last word.
 
-
 ## Context Loading
 
-Read these files for project context:
-- `Readme.md` for a general intro.
-- `context/coding-rules.md` - Read before each task. Review after finishing.
-- `docs/design/` directory - All files.
-- `context/tracking.md` for current and recent work. 
-  - follow bookkeeping instructions to the T. No exceptions.
-- Every other file under `context/`.
+Read `Readme.md` for a general intro.
 
-- When you fishish reading the context files:
-  - **Stop and Stand By**
-  - **No further actions**
-  - Wait for instructions
+Other context files are loaded **only when relevant** to the current work type.
+Do not go on tangents — read as much as you need but as little as you can.
 
+### Code or documentation changes
+
+Read before starting, re-read before finalizing:
+- `context/coding-rules.md` — mandatory rules and post-task chores.
+- `context/qa-rules-and-coding-style.md` — mandatory code style and quality rules.
+  - If you can't comply, stop and ask for help.
+- `docs/design/compiler-design.md` — then only the design/code files directly relevant to the change.
+
+### Task tracking
+
+Read before adding, updating, planning, or completing tasks:
+- `context/tracking.md` — current and recent work.
+- `context/task-tracking-rules.md` — mandatory bookkeeping rules.
+
+### Writing MML code
+
+Read before writing or modifying `.mml` files:
+- `docs/design/language-reference.md`
+- Reference programs: `mml/samples/nqueens.mml`, `mml/samples/mat-mul.mml`, `mml/samples/astar2.mml`, `mml/samples/raytracer.mml`
+- Memory model: files under `mml/samples/mem` and tests in `modules/mmlc-lib/src/test/scala/mml/mmlclib/semantic/OwnershipAnalyzerTests.scala`
+
+### Questions
+
+Do targeted research and answer. Do not treat questions as edit requests.
+
+### Documentation-only changes
+
+Read only the documentation directly related to the target doc.
 
 ## Critical Interaction Rules
 
-- After loading context: summarize understanding, stand by for instructions.
+- **Keep the author involved**
+
 - When interrupted with a question: stop work, answer, stand by.
-  - NO EXCEPTIONS.
-  - Failure to follow these steps wastes time and money. 
+  - Failure to follow these steps wastes time and money.
 
-- **Keep the author involved** 
-  - Ask confirmation frequently, while working.
-  - Split your work into small chunks, stop on completion and ask for review and signoff.
-  - Don't ask confirmation to investigate
-  - use common sense.
-
+- Questions are **not** commands.
+  - Do not start changes because the Author asked a question.
+- You may do research without confirmation:
+  - read code and docs
+  - investigate
+  - analyze options
+- Ask for confirmation before making any code or documentation changes.
+- If a rule is unclear or conflicts with the current task, raise the conflict and wait for direction.
+- **For tracking updates**, treat Workstream signoff and Tracked Item status updates as separate steps:
+  - get signoff on the Workstream first
+  - then ask before updating the Tracked Item
+- **For top-level tracked-item ticket creation**:
+  - "create GH ticket" means create the issue and add it to project `fedesilva/projects/3`
+    before reporting completion, unless the Author explicitly asks for issue-only creation.
+  - Use `bin/gh-project-item-add <issue-number-or-url>` for the project-add step.
+- **For big tasks or projects**
+  - Split your work into smaller chunks, stop on completion and ask for review and signoff.

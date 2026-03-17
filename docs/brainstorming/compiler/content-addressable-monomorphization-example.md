@@ -1,10 +1,10 @@
 Content-Addressable Monomorphization: A Worked End-to-End Collapse
 
-Here’s a concrete end-to-end collapse where **(1) generic**, **(2) effect handler**, and **(3) newtype/alias** all disappear into **one** emitted symbol.
+Here's a concrete end-to-end collapse where **(1) generic**, **(2) effect handler**, and **(3) newtype/alias** all disappear into **one** emitted symbol.
 
 ## Source
 
-### Types (aliases / “zero-cost newtypes”)
+### Types (aliases / "zero-cost newtypes")
 ```mml
 type UserId  = Int
 type OrderId = Int
@@ -34,7 +34,7 @@ module StdoutLog {
 }
 ```
 
-### A generic function that uses the effect + a “newtype”
+### A generic function that uses the effect + a "newtype"
 ```mml
 fn audit_inc<'Id>(x: 'Id): 'Id =
   Log.info(concat("inc: ", to_string(x)))
@@ -67,21 +67,21 @@ Your specializer is effectively:
 
 Two contexts:
 
-- **Ctx A**: `{ 'Id -> Int, Log -> SystemLog }`
-- **Ctx B**: `{ 'Id -> Int, Log -> StdoutLog }`
+- Ctx A: `{ 'Id -> Int, Log -> SystemLog }`
+- Ctx B: `{ 'Id -> Int, Log -> StdoutLog }`
 
 Why `'Id -> Int` in both?
 - because `UserId = Int` and `OrderId = Int` erase (or normalize) to the same rep type for codegen.
 
 ---
 
-## Step 1 — Substitution
+## Step 1 — substitution
 
 ### After substituting **type**
 `audit_inc<'Id>` becomes `audit_inc<Int>` in both cases.
 
 ### After substituting **effect**
-The `Log.info(...)` call is rewritten to the chosen handler’s `info`.
+The `Log.info(...)` call is rewritten to the chosen handler's `info`.
 
 So you *appear* to get two different concrete ASTs:
 
@@ -93,7 +93,7 @@ fn audit_inc_Int_SystemLog(x: Int): Int =
 ;
 ```
 
-**Concrete B:**
+Concrete B:
 ```mml
 fn audit_inc_Int_StdoutLog(x: Int): Int =
   StdoutLog.info(concat("inc: ", to_string(x)))
@@ -103,11 +103,11 @@ fn audit_inc_Int_StdoutLog(x: Int): Int =
 
 ---
 
-## Step 2 — Normalization that makes them equal
+## Step 2 — normalization that makes them equal
 
 There are two key normalizations that matter for *this* collapse:
 
-### 2.1 Alpha-normalization (boring but necessary)
+### 2.1 alpha-normalization (boring but necessary)
 Rename locals/params to canonical names.
 
 Both become (shape-wise):
@@ -118,13 +118,13 @@ fn (v0: Int): Int =
 ;
 ```
 
-### 2.2 **Handler inlining / resolution normalization** (the important one)
+### 2.2 **handler inlining / resolution normalization** (the important one)
 Both `SystemLog.info` and `StdoutLog.info` are tiny wrappers that compile to the same call:
 
 - `SystemLog.info(msg)` → `System.writeLine(msg)`
 - `StdoutLog.info(msg)` → `System.writeLine(msg)`
 
-If your normalization pass canonicalizes trivial wrappers (or you normalize based on *callee body hash*, see Merkle section), then both concrete ASTs reduce to the same “post-normalized” structure:
+If your normalization pass canonicalizes trivial wrappers (or you normalize based on *callee body hash*, see Merkle section), then both concrete ASTs reduce to the same "post-normalized" structure:
 
 ```mml
 fn (v0: Int): Int =
@@ -137,7 +137,7 @@ At this point **the handler identity is gone**; only the *behavior* remains.
 
 ---
 
-## Step 3 — Content hash
+## Step 3 — content hash
 
 Now you hash the normalized AST (plus the hashes of callees, Merkle-style).
 
@@ -163,7 +163,7 @@ Because the normalized AST is identical, you get:
 
 ---
 
-## Step 4 — Cache + single emitted symbol
+## Step 4 — cache + single emitted symbol
 
 First time (from `a()`):
 - cache miss → emit LLVM for that function
@@ -182,9 +182,9 @@ So both `a()` and `b()` end up calling:
 ## What actually collapsed (three-for-one)
 
 1) **Generic**: `'Id` collapsed because `UserId` and `OrderId` erase to the same rep (`Int`).
-2) **Newtype/alias**: `UserId` vs `OrderId` didn’t create new code because they’re representationally identical.
+2) **Newtype/alias**: `UserId` vs `OrderId` didn't create new code because they're representationally identical.
 3) **Effect**: two distinct handlers collapsed because after normalization they both reduce to the same underlying call graph.
 
-That’s the exact kind of “content-addressable monomorphization” win you want: **semantic identity → single symbol → less bloat + better I-cache locality**.
+That's the exact kind of "content-addressable monomorphization" win you want: **semantic identity → single symbol → less bloat + better I-cache locality**.
 
-If you want this to work *without* doing “inline wrapper bodies” as a normalization, the Merkle call-graph approach is the clean way: the call edge is keyed by the callee’s own content hash, not by its human name. That makes “two different wrappers with identical bodies” collapse automatically.
+If you want this to work *without* doing "inline wrapper bodies" as a normalization, the Merkle call-graph approach is the clean way: the call edge is keyed by the callee's own content hash, not by its human name. That makes "two different wrappers with identical bodies" collapse automatically.

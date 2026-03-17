@@ -1,6 +1,6 @@
 
 
-fn main(): Unit =
+pub fn main(): Unit =
   let out = mkBuffer ();
   out write "Hello";
   out write " ";

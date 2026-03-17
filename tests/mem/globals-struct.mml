@@ -1,0 +1,26 @@
+// Global strings auto-cloned into struct constructors.
+// Verifies globals remain usable after clone and structs are freed correctly.
+
+struct Wrapper { value: String };
+struct Container { outer: Wrapper, tag: String };
+
+let g_name = "fede";
+
+fn test_global_clone() =
+  let c = Container (Wrapper g_name) g_name;
+  println c.tag;
+  println c.outer.value;
+  println g_name
+;
+
+fn loop(n: Int): Unit =
+  if n > 0 then
+    test_global_clone();
+    loop (n - 1)
+  end
+;
+
+pub fn main() =
+  loop 100;
+  println "done"
+;

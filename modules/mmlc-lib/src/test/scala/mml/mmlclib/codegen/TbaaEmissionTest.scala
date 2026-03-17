@@ -44,6 +44,7 @@ class TbaaEmissionTest extends BaseEffFunSuite:
       assert(llvmIr.contains("!{!\"CharPtr\""), "Missing CharPtr TBAA node")
 
       // Verify struct node references MML types with correct offsets
+      // String has 2 fields: length (Int64 @ 0), data (CharPtr @ 8)
       val stringMatch = """!\{!"String", !(\d+), i64 0, !(\d+), i64 8\}""".r
       assert(
         stringMatch.findFirstIn(llvmIr).isDefined,
@@ -105,6 +106,37 @@ class TbaaEmissionTest extends BaseEffFunSuite:
         s"String TBAA should have fields at offsets 0 and 8, found: $offsets in: ${stringNode.get}"
       )
     }
+
+    test("loads and stores include alias scope metadata") {
+      val source = """
+      fn main(): Unit =
+        println "alias"
+      ;
+    """
+
+      compileAndGenerate(source).map { llvmIr =>
+        assert(llvmIr.contains("!alias.scope"), "Alias scope metadata missing")
+        assert(llvmIr.contains("!noalias"), "Noalias metadata missing")
+        assert(
+          llvmIr.contains("alias.scope:Int64") || llvmIr.contains("alias.scope:String"),
+          s"Alias scope metadata should mention a known MML type. IR snippet:\n${llvmIr.split("\n").filter(_.contains("alias.scope")).mkString("\n")}"
+        )
+
+        val storeLines =
+          llvmIr.split("\n").filter(line => line.contains("store") && line.contains("!alias.scope"))
+        assert(
+          storeLines.nonEmpty,
+          s"Expected at least one store with alias.scope metadata, found: ${storeLines.mkString("\n")}"
+        )
+
+        val loadLines =
+          llvmIr.split("\n").filter(line => line.contains("load") && line.contains("!alias.scope"))
+        assert(
+          loadLines.nonEmpty,
+          s"Expected at least one load with alias.scope metadata, found: ${loadLines.mkString("\n")}"
+        )
+      }
+    }
   }
 
   private val span = SrcSpan(SrcPoint(0, 0, 0), SrcPoint(0, 0, 0))
@@ -119,7 +151,12 @@ class TbaaEmissionTest extends BaseEffFunSuite:
       )
     )
     val innerTypeDef =
-      TypeDef(span = span, name = "Inner", typeSpec = Some(innerStruct), id = Some("inner-id"))
+      TypeDef(
+        source   = SourceOrigin.Loc(span),
+        nameNode = Name.synth("Inner"),
+        typeSpec = Some(innerStruct),
+        id       = Some("inner-id")
+      )
     val innerTypeRef = TypeRef(span, "Inner", Some("inner-id"), Nil)
 
     // Create resolvables index for the lookup
@@ -158,7 +195,12 @@ class TbaaEmissionTest extends BaseEffFunSuite:
       )
     )
     val innerTypeDef =
-      TypeDef(span = span, name = "Inner", typeSpec = Some(innerStruct), id = Some("inner-id"))
+      TypeDef(
+        source   = SourceOrigin.Loc(span),
+        nameNode = Name.synth("Inner"),
+        typeSpec = Some(innerStruct),
+        id       = Some("inner-id")
+      )
     val innerTypeRef = TypeRef(span, "Inner", Some("inner-id"), Nil)
 
     // Create resolvables index for the lookup

@@ -2,6 +2,6 @@ let a = 1;
 let b = 2;
 let c = a + b * 2;
 
-fn main(): Int =
+pub fn main(): Int =
   a + 1
 ;

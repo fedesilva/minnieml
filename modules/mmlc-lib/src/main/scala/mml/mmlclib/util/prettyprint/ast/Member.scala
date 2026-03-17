@@ -4,7 +4,7 @@ import mml.mmlclib.ast.*
 
 def visibilityToString(visibility: Visibility): String =
   visibility match
-    case Visibility.Public => "pub"    
+    case Visibility.Public => "pub"
     case Visibility.Protected => "prot"
     case Visibility.Private => "priv"
 
@@ -12,9 +12,9 @@ def visibilityToString(visibility: Visibility): String =
 def typeSpecToSimpleName(typeSpec: Type): String =
   typeSpec match
     case TypeRef(_, name, _, _) => name
-    case NativePrimitive(_, llvmType) => s"@native[t=$llvmType]"
-    case NativePointer(_, llvmType) => s"@native[t=*$llvmType]"
-    case NativeStruct(_, fields) => s"@native {${fields.size} fields}"
+    case NativePrimitive(_, llvmType, _, _) => s"@native[t=$llvmType]"
+    case NativePointer(_, llvmType, _, _) => s"@native[t=*$llvmType]"
+    case NativeStruct(_, fields, _, _) => s"@native {${fields.size} fields}"
     case TypeUnit(_) => "()"
     case TypeFn(_, params, ret) =>
       s"(${params.map(typeSpecToSimpleName).mkString(" -> ")}) -> ${typeSpecToSimpleName(ret)}"
@@ -30,19 +30,19 @@ def prettyPrintMember(
   val indentStr = "  " * indent
   member match {
     case ParsingMemberError(span, message, failedCode) =>
-      val spanStr = if showSourceSpans then printSourceSpan(span) else ""
+      val spanStr = if showSourceSpans then printSourceOrigin(span) else ""
       s"${indentStr}MemberError $spanStr\n" +
         s"""${indentStr}  "$message"""".stripMargin +
         failedCode.map(code => s"\n${indentStr}  $code").getOrElse("")
 
     case ParsingIdError(span, message, failedCode, invalidId) =>
-      val spanStr = if showSourceSpans then printSourceSpan(span) else ""
+      val spanStr = if showSourceSpans then printSourceOrigin(span) else ""
       s"${indentStr}IdError $spanStr\n" +
         s"""${indentStr}  "$message"""".stripMargin +
         failedCode.map(code => s"\n${indentStr}  $code").getOrElse("")
 
     case bnd: Bnd =>
-      val spanStr = if showSourceSpans then printSourceSpan(bnd.span) else ""
+      val spanStr = if showSourceSpans then printSourceOrigin(bnd.source) else ""
       val typeStr =
         if showTypes then
           s"\n${indentStr}  typeSpec: ${prettyPrintTypeSpec(bnd.typeSpec, showSourceSpans, showTypes, indent + 1)}\n" +
@@ -56,6 +56,8 @@ def prettyPrintMember(
           val originStr = meta.origin match
             case BindingOrigin.Function => "fn"
             case BindingOrigin.Operator => "op"
+            case BindingOrigin.Constructor => "constructor"
+            case BindingOrigin.Destructor => "destructor"
           val nameStr =
             if meta.originalName != bnd.name then s" (${meta.originalName})" else ""
           val arityStr = meta.arity match
@@ -77,7 +79,7 @@ def prettyPrintMember(
         prettyPrintExpr(bnd.value, indent + 2, showSourceSpans, showTypes)
 
     case ta @ TypeAlias(_, _, _, _, _, _, _, _) =>
-      val spanStr = if showSourceSpans then printSourceSpan(ta.span) else ""
+      val spanStr = if showSourceSpans then printSourceOrigin(ta.source) else ""
       val typeStr =
         if showTypes then
           s"\n${indentStr}  typeSpec: ${prettyPrintTypeSpec(ta.typeSpec)}\n" +
@@ -90,7 +92,7 @@ def prettyPrintMember(
       s"${indentStr}$visStr TypeAlias ${ta.name} -> $targetName$spanStr$typeStr"
 
     case td @ TypeDef(_, _, _, _, _, _, _) =>
-      val spanStr = if showSourceSpans then printSourceSpan(td.span) else ""
+      val spanStr = if showSourceSpans then printSourceOrigin(td.source) else ""
       val typeStr =
         if showTypes then
           s"\n${indentStr}  typeSpec: ${prettyPrintTypeSpec(td.typeSpec, showSourceSpans, showTypes, indent + 1)}\n" +
@@ -105,7 +107,7 @@ def prettyPrintMember(
     // td.docComment.map(doc => s"\n${prettyPrintDocComment(doc, indent + 2)}").getOrElse("")
 
     case tr @ TypeStruct(_, _, _, _, _, _) =>
-      val spanStr = if showSourceSpans then printSourceSpan(tr.span) else ""
+      val spanStr = if showSourceSpans then printSourceOrigin(tr.source) else ""
       val visStr  = visibilityToString(tr.visibility)
       val fieldsStr =
         if tr.fields.isEmpty then "{}"
@@ -120,7 +122,9 @@ def prettyPrintMember(
       s"${indentStr}$visStr TypeRecord ${tr.name} $fieldsStr$spanStr"
 
     case dup: DuplicateMember =>
-      val spanStr = if showSourceSpans then printSourceSpan(dup.span) else ""
+      val spanStr =
+        if showSourceSpans then printSourceOrigin(dup.source)
+        else ""
       s"${indentStr}DuplicateMember $spanStr\n" +
         s"${indentStr}  firstOccurrence: ${dup.firstOccurrence.getClass.getSimpleName} ${dup.firstOccurrence match {
             case d: Decl => d.name
@@ -130,7 +134,7 @@ def prettyPrintMember(
         prettyPrintMember(dup.originalMember, indent + 2, showSourceSpans, showTypes)
 
     case inv: InvalidMember =>
-      val spanStr = if showSourceSpans then printSourceSpan(inv.span) else ""
+      val spanStr = if showSourceSpans then printSourceOrigin(inv.source) else ""
       s"${indentStr}InvalidMember $spanStr\n" +
         s"""${indentStr}  reason: "${inv.reason}"\n""" +
         s"${indentStr}  original:\n" +
@@ -145,16 +149,14 @@ def prettyPrintParams(
 ): String =
   val indentStr = "  " * indent
   params
-    .map { case FnParam(span, name, typeSpec, typeAsc, doc, _) =>
-      val spanStr = if showSourceSpans then printSourceSpan(span) else ""
+    .map { case p @ FnParam(_, _, typeSpec, typeAsc, _, _, consuming) =>
+      val spanStr = if showSourceSpans then printSourceOrigin(p.source) else ""
       val typeStr =
         if showTypes then
           s"\n${indentStr}  typeSpec: ${prettyPrintTypeSpec(typeSpec)}\n" +
             s"${indentStr}  typeAsc: ${prettyPrintTypeSpec(typeAsc)}"
         else ""
-
-      // val docStr = doc.map(d => s"\n${prettyPrintDocComment(d, indent + 2)}").getOrElse("")
-      // s"${name}$spanStr$docStr$typeStr"
-      s"${name}$spanStr$typeStr"
+      val consumingPrefix = if consuming then "~" else ""
+      s"$consumingPrefix${p.name}$spanStr$typeStr"
     }
     .mkString(", ")

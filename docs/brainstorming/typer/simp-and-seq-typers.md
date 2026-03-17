@@ -1,17 +1,17 @@
-# Two-Phase Type Inference: SimpTyper and SeqTyper
+# Two-phase type inference: SimpTyper and SeqTyper
 
 ## Motivation
 
 The current type checker is monomorphic and bidirectional. We want to:
 
-1. **Keep monomorphic inference for parallelism**: Each module can be typed independently
-2. **Support polymorphism globally**: Let-generalization, instantiation at call sites
-3. **Improve error messages**: Simpler local errors from SimpTyper,
+1. Keep monomorphic inference for parallelism: Each module can be typed independently
+2. Support polymorphism globally: Let-generalization, instantiation at call sites
+3. Improve error messages: Simpler local errors from SimpTyper,
    complex cross-module errors from SeqTyper
-4. **Scale to large programs**: Parallel first pass means most "anchor" types
+4. Scale to large programs: Parallel first pass means most "anchor" types
    are solved before the sequential global pass
 
-## Architecture Overview
+## Architecture overview
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
@@ -40,7 +40,7 @@ The current type checker is monomorphic and bidirectional. We want to:
 └─────────────────────────────────────────────────────────────┘
 ```
 
-### Data Flow (Refined)
+### Data flow (refined)
 
 ```
 [Source A] ──► SimpTyper ──► [AST_A + Constraints_A] ──┐
@@ -60,7 +60,7 @@ AST has concrete types (UnificationVars replaced by Solution Map).
 
 ## Decisions
 
-### 1. New AST Types
+### 1. new AST types
 
 #### UnificationVar
 
@@ -87,7 +87,7 @@ AST structure in SeqTyper.
 **Global ID encoding**: During merge, `GlobalID = (ModuleID << 32) | LocalID`
 avoids hash lookups for variable remapping.
 
-#### Constrained (Required, for provenance)
+#### Constrained (required, for provenance)
 
 After SeqTyper solves, preserve where the type came from:
 
@@ -104,7 +104,7 @@ excellent error messages are a goal.
 
 `Constrained` wrapper is useful for "this type was inferred from X, Y, Z" messages.
 
-### 2. Constraint Representation
+### 2. constraint representation
 
 ```scala
 enum Constraint:
@@ -148,7 +148,7 @@ emitted. This enables three-part error messages:
 and `funcId` turned out to be `Int`, the unifier would say "Type Mismatch". With `Call`,
 the solver can produce a specific error: "Type Int is not callable".
 
-### 3. Where Constraints Live
+### 3. where constraints live
 
 | Phase | Location |
 |-------|----------|
@@ -157,33 +157,33 @@ the solver can produce a specific error: "Type Int is not callable".
 
 The `Module` AST node gets a new optional field to carry constraints from SimpTyper.
 
-### 4. Rigid vs Unification Variables
+### 4. rigid vs unification variables
 
 Two distinct concepts:
 
-- **TypeVariable** (`'T`, `'R`): Rigid, bound by a `∀`, cannot unify with concrete types
-- **UnificationVar** (`?0`, `?1`): Flexible, placeholder to be solved
+- TypeVariable (`'T`, `'R`): Rigid, bound by a `∀`, cannot unify with concrete types
+- UnificationVar (`?0`, `?1`): Flexible, placeholder to be solved
 
 They are separate types in the AST. TypeVariable already exists; UnificationVar is new.
 
-### 5. Cross-Module References
+### 5. cross-module references
 
 During SimpTyper on module A, when encountering `B.foo`:
 
-- **If `B.foo` has type annotation**: Use the annotation (bidi works)
-- **If no annotation**: Create `UnificationVar`, defer to SeqTyper
+- If `B.foo` has type annotation: Use the annotation (bidi works)
+- If no annotation: Create `UnificationVar`, defer to SeqTyper
 
 SeqTyper later unifies A's `?X` (representing B.foo) with B's actual type for `foo`.
 
-### 6. Polymorphism Target
+### 6. polymorphism target
 
-- **Let-generalization**: Functions get type schemes (∀ at binding site)
-- **Instantiation at call sites**: Fresh unification vars replace quantified vars
-- **Target**: Rank-2 (polymorphic types in function arguments)
-- **Not prenex-only**: Eventually support higher-rank via bidirectional approach
+- Let-generalization: Functions get type schemes (∀ at binding site)
+- Instantiation at call sites: Fresh unification vars replace quantified vars
+- Target: Rank-2 (polymorphic types in function arguments)
+- Not prenex-only: Eventually support higher-rank via bidirectional approach
   (Peyton Jones et al.), but out of scope for initial implementation
 
-## Phase Behaviors
+## Phase behaviors
 
 ### SimpTyper (per-module, parallel)
 
@@ -351,9 +351,9 @@ solve(ctx):
 
 **Unification algorithm**: Union-find based for efficiency. Level promotion on union.
 
-## Open Questions
+## Open questions
 
-### Q1: Constraint Kinds [RESOLVED]
+### Q1: constraint kinds [RESOLVED]
 
 Current set: `Equals`, `Unify`, `HasField`, `Call`, `Import`, `Instantiate`.
 
@@ -397,10 +397,10 @@ through substitution handles this.
 
 ```mml
 data Person { name: String, profession: String }
-# Person = TypeRecord([name, profession], EmptyRow)
+# Person = typerecord([name, profession], emptyrow)
 
 let f = fn x: { name: String } => x.name
-# { name: String } = TypeRecord([name], ?ρ)
+# { name: string } = typerecord([name], ?ρ)
 ```
 
 When unifying Person with `{ name: String | ?ρ }`:
@@ -412,8 +412,8 @@ separate row vars. SeqTyper unifies them when it discovers they're the same reco
 ```mml
 let g = fn x => (x.name, x.age)
 # Emits:
-#   HasField(?0, "name", ?1, ?row1, span1)
-#   HasField(?0, "age", ?2, ?row2, span2)
+# Hasfield(?0, "name", ?1, ?row1, span1)
+# Hasfield(?0, "age", ?2, ?row2, span2)
 # SeqTyper unifies ?row1 and ?row2
 ```
 
@@ -421,7 +421,7 @@ Future:
 - `Instance(uvar, typeClass, ...)` - for type classes (if added)
 - `HasEffect(uvar, effectRow)` - same pattern for effects
 
-### Q2: Error Attribution [RESOLVED]
+### Q2: error attribution [RESOLVED]
 
 Three-part errors:
 1. UnificationVar.span → "Type variable introduced here"
@@ -430,7 +430,7 @@ Three-part errors:
 
 Both vars and constraints carry spans.
 
-### Q3: Module.constraints Field [RESOLVED]
+### Q3: Module.constraints field [RESOLVED]
 
 **`Option[ConstraintSet]`** is correct.
 
@@ -439,7 +439,7 @@ Both vars and constraints carry spans.
 - Allows nullifying/GC after SeqTyper runs, freeing memory for backend
 - Lightweight AST preserved, heavy constraints discarded
 
-### Q4: Interaction with Existing Phases [RESOLVED]
+### Q4: interaction with existing phases [RESOLVED]
 
 **SimpTyper replaces TypeChecker.**
 
@@ -456,7 +456,7 @@ No value in a "pre-check" TypeChecker. SimpTyper *is* the checker. If it encount
 a definite error (e.g., `1 + "foo"` where `+` is monomorphic on Int), it can error
 immediately or emit a failing constraint.
 
-### Q5: Incremental Compilation
+### Q5: incremental compilation
 
 **Reality**: Global type inference is inherently at odds with incremental compilation.
 If you change a type in Module A, and Module B infers types from A, Module B must be
@@ -467,7 +467,7 @@ re-checked.
 **Future mitigation**: "Interface Hashing" - after SimpTyper on A, if the exported
 type signatures/constraints haven't changed, skip re-running SeqTyper on dependents.
 
-### Q6: Global State for SeqTyper [PARTIALLY RESOLVED]
+### Q6: global state for SeqTyper [PARTIALLY RESOLVED]
 
 Create a **transient** `SolverContext` that lives only during Phase 2:
 
@@ -484,7 +484,7 @@ They are transient solution artifacts.
 
 Full design depends on multi-module compilation (in progress).
 
-### Q7: Polymorphism Scope [RESOLVED]
+### Q7: polymorphism scope [RESOLVED]
 
 Solved by **level-based generalization** (see UnificationVar.level above).
 
@@ -493,7 +493,7 @@ Solved by **level-based generalization** (see UnificationVar.level above).
 - After solving let-binding at level L, vars with level > L can generalize
 - No AST structure needed in SeqTyper
 
-### Q8: Native Functions and Polymorphism [RESOLVED]
+### Q8: native functions and polymorphism [RESOLVED]
 
 `@native` functions are **anchors**:
 
@@ -505,26 +505,26 @@ Solved by **level-based generalization** (see UnificationVar.level above).
 
 ## Dependencies
 
-1. **Multi-module compilation** - needed for SeqTyper global state design
-2. **SeqTyper global state design** - after multi-module support
-3. **SeqTyper implementation** - after global state design
+1. Multi-module compilation - needed for SeqTyper global state design
+2. SeqTyper global state design - after multi-module support
+3. SeqTyper implementation - after global state design
 
-## Polymorphism Rank
+## Polymorphism rank
 
 **Rank-1 for MVP**. The constraint system as designed supports Rank-1 (prenex) well.
 
 **Rank-N is future work**. Arbitrary-rank types (Peyton Jones et al.) require:
 - Bidirectional type checking (we have this)
 - Instantiation constraints (we have this)
-- **Subsumption checking** (not in current constraints)
-- **Skolemization** for checking quantified types
+- Subsumption checking (not in current constraints)
+- Skolemization for checking quantified types
 
 When checking `e : ∀α. τ` against expected type `σ`, you need to skolemize `α`
 (make it rigid during the check). This isn't just unification anymore.
 
 Do not attempt Rank-N until Rank-1 is solid and tested.
 
-## Row Unification Algorithm
+## Row unification algorithm
 
 Row unification is more complex than regular unification. Example:
 ```
@@ -563,7 +563,7 @@ unifyRows(r1: TypeRecord, r2: TypeRecord):
 **EmptyRow**: Sentinel value (e.g., `rowVarId = -1` or dedicated type). When a row
 var unifies with EmptyRow, the record is closed - no more fields can be added.
 
-## Module Exports
+## Module exports
 
 SimpTyper needs to know which bindings are exported. SeqTyper uses this to resolve
 `Import` constraints.
@@ -583,18 +583,18 @@ containing the (possibly unsolved) types of all public members.
 - Union-find for efficient unification
 - Row polymorphism literature (Rémy, Wand)
 
-## Implementation Pitfalls
+## Implementation pitfalls
 
-### Pitfall 1: Recursive Let Timing (SimpTyper)
+### Pitfall 1: recursive let timing (SimpTyper)
 
 When inferring `let f = ...`:
 
 ```
-# WRONG order:
+# Wrong order:
 state = state.enterLevel()
 rhsType = inferExpr(rhs, ...)    # ← if rhs references f, it's not in scope yet!
 
-# CORRECT order:
+# Correct order:
 state = state.enterLevel()
 (fVar, state) = freshVar(state, binding.span)
 env = env + (f -> fVar)          # ← add f to environment FIRST
@@ -605,19 +605,19 @@ emit Unify(fVar.id, rhsType)
 This matters for recursive functions and recursive data. If MML distinguishes
 `let` from `let rec`, this only applies to `let rec`.
 
-### Pitfall 2: Remapping Two-Pass (SeqTyper)
+### Pitfall 2: remapping two-pass (SeqTyper)
 
 Step 1 (merge constraints) must be **two passes**:
 
 ```
-# Pass 1: Build complete lookup table
+# Pass 1: build complete lookup table
 globalIdTable = Map.empty
 for (moduleId, module) in modules.zipWithIndex:
   for localId in 0 until module.constraints.nextVarId:
     globalId = (moduleId << 32) | localId
     globalIdTable += (moduleId, localId) -> globalId
 
-# Pass 2: Merge and remap constraints
+# Pass 2: merge and remap constraints
 for (moduleId, module) in modules.zipWithIndex:
   for constraint in module.constraints.constraints:
     ctx = ctx.addConstraint(remapIds(globalIdTable, moduleId, constraint))
@@ -626,7 +626,7 @@ for (moduleId, module) in modules.zipWithIndex:
 If done in one pass, Module A referencing Module Z might fail because Z's
 variables haven't been assigned Global IDs yet.
 
-### Pitfall 3: Let-Lambda Correspondence and Generalization
+### Pitfall 3: let-lambda correspondence and generalization
 
 MML parses `let` as immediately-applied lambda:
 ```mml
@@ -653,7 +653,7 @@ treats `x` as monomorphic (runtime function call).
 to flag lambdas as "synthetic" (from let-desugaring) so the type checker knows
 aggressive generalization is safe. For now, level-based approach should suffice.
 
-### Pitfall 4: Mutual Recursion Across Modules
+### Pitfall 4: mutual recursion across modules
 
 If Module A defines `f` calling `B.g`, and Module B defines `g` calling `A.f`:
 
@@ -668,17 +668,17 @@ or unification might fail to terminate without careful handling.
 - Mutual recursion across modules: disallowed for MVP
 - Future: detect cycles, handle with special unification pass
 
-## Draft Timeline
+## Draft timeline
 
 1. Add `UnificationVar` to AST
 2. Add `Constraint`, `ConstraintSet` types
 3. Add `constraints` field to `Module`
-4. **Implement and unit test UnionFind with level logic in isolation**
+4. Implement and unit test UnionFind with level logic in isolation
    - Test: "unify level 5 and level 3 → result is level 3"
    - Test: "unify level 3 with concrete → level preserved"
    - Test: basic occurs check, path compression
    - Do not hook up to AST yet
-5. **Implement minimal SeqTyper solver core** (`Equals`, `Unify`, `HasField`)
+5. Implement minimal SeqTyper solver core (`Equals`, `Unify`, `HasField`)
    - Include `HasField` early to test row unification before SimpTyper exists
    - Defer `Call`, `Import`, `Instantiate` for later
    - Test end-to-end with hand-written constraints:

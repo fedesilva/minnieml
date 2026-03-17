@@ -1,11 +1,11 @@
-# Loooking at function (and op) design
-# a) a single complex expression
-#   This aligns with ocaml and the old mml vision
-#
-# b) multiple expressions and declarations
-#    this aligns with rust and fsharp
-#
-#
+// Loooking at function (and op) design
+// a) a single complex expression
+//   This aligns with ocaml and the old mml vision
+//
+// b) multiple expressions and declarations
+//    this aligns with rust and fsharp
+//
+//
 
 fn letExpression (a) =
   let

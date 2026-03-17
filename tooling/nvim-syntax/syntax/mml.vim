@@ -14,11 +14,11 @@ syn case match
 " Comments
 " ============================================================================
 
-" Line comments: # comment (but not #- which starts doc comments)
-syn match mmlComment "#\%(-\)\@!.*$" contains=mmlTodo
+" Line comments: // comment (but not /* which starts doc comments)
+syn match mmlComment "//.*$" contains=mmlTodo
 
-" Documentation comments: #- ... -# (can be nested)
-syn region mmlDocComment start="#-" end="-#" contains=mmlDocComment,mmlTodo
+" Documentation comments: /* ... */ (can be nested)
+syn region mmlDocComment start="/\*" end="\*/" contains=mmlDocComment,mmlTodo
 
 " TODO/FIXME/NOTE highlighting within comments
 syn keyword mmlTodo contained TODO FIXME NOTE XXX
@@ -31,7 +31,7 @@ syn keyword mmlTodo contained TODO FIXME NOTE XXX
 syn keyword mmlConditional if then elif else
 
 " Declaration keywords
-syn keyword mmlKeyword module fn let op type end
+syn keyword mmlKeyword module fn let op type end inline
 
 " Visibility keywords
 syn keyword mmlKeyword pub protected lexical
@@ -66,8 +66,8 @@ syn match mmlOperator ";"
 syn match mmlOperator ","
 
 " Symbolic operators (but not single = or : which are handled above)
-" This matches sequences like +, -, *, ==, !=, <=, >=, |>, etc.
-syn match mmlOperator "[!$%^&*+<>?/\\|~-]\+"
+" Avoid matching // and /* so comments stay in comment groups.
+syn match mmlOperator "\%(//\|/\*\)\@![!$%^&*+<>?/\\|~-]\+"
 
 " Parentheses and brackets
 syn match mmlDelimiter "[(){}\[\]]"

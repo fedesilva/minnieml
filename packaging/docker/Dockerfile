@@ -1,4 +1,4 @@
-FROM ubuntu:22.04
+FROM ubuntu:25.10
 
 # Avoid interaction
 ARG DEBIAN_FRONTEND=noninteractive
@@ -13,8 +13,11 @@ RUN apt-get update && apt-get install -y \
     build-essential \
     libz-dev \
     llvm \
+    lld \
     clang \
     tree \
+    hyperfine \
+    golang-any \    
     && rm -rf /var/lib/apt/lists/*
 
 # Install SDKMAN for managing SBT and GraalVM

@@ -1,5 +1,7 @@
 package mml.mmlclib.ast
 
+import scala.Conversion
+
 /* Represents a point in the source code, with a line, column number and the char index.
  */
 final case class SrcPoint(
@@ -17,6 +19,22 @@ final case class SrcSpan(
 
 trait AstNode derives CanEqual
 
+/** A name with its source position. Used on named declarations so the LSP can get the precise
+  * position of the identifier without guessing from keyword offsets.
+  */
+case class Name(
+  value:  String,
+  source: SourceOrigin
+) extends AstNode,
+      FromSource
+
+object Name:
+  def apply(span: SrcSpan, value: String): Name =
+    new Name(value, SourceOrigin.Loc(span))
+
+  def synth(value: String): Name =
+    Name(value, SourceOrigin.Synth)
+
 trait Typeable extends AstNode {
 
   /** This is the computed type */
@@ -27,13 +45,31 @@ trait Typeable extends AstNode {
 }
 
 trait FromSource extends AstNode {
-  def span: SrcSpan
+  def source: SourceOrigin
+
+  final def spanOpt: Option[SrcSpan] = source.spanOpt
 }
+
+/** Distinguishes AST nodes parsed from source vs synthesized by the compiler. */
+enum SourceOrigin derives CanEqual:
+  case Loc(span: SrcSpan)
+  case Synth
+
+  def spanOpt: Option[SrcSpan] = this match
+    case Loc(s) => Some(s)
+    case Synth => None
+
+  def isFromSource: Boolean = this match
+    case Loc(_) => true
+    case Synth => false
+
+object SourceOrigin:
+  given Conversion[SrcSpan, SourceOrigin] with
+    def apply(span: SrcSpan): SourceOrigin = Loc(span)
 
 /** Visibility control shared by modules and members.
   *
   *   - `pub`: Importable and referenceable from any module.
-  *   - `lex`: Visible only within the defining module and its descendants; never exported.
   *   - `prot`: Visible to the current module, sibling modules, and nested modules; external access
   *     requires import or fully qualified names.
   *   - `priv`: Confined to the defining module (sibling modules can refer without import but it is
@@ -51,26 +87,32 @@ enum Visibility derives CanEqual:
 trait Member extends AstNode
 
 trait Resolvable extends AstNode:
-  def name: String
-  def id:   Option[String]
+  def nameNode: Name
+  def name:     String = nameNode.value
+  def id:       Option[String]
 
 case class DocComment(
-  span: SrcSpan,
-  text: String
+  source: SourceOrigin,
+  text:   String
 ) extends AstNode,
       FromSource
+
+object DocComment:
+  def apply(span: SrcSpan, text: String): DocComment =
+    new DocComment(SourceOrigin.Loc(span), text)
 
 trait Decl extends Member, Typeable, Resolvable:
   def docComment: Option[DocComment]
   def visibility: Visibility
 
 case class FnParam(
-  span:       SrcSpan,
-  name:       String,
+  source:     SourceOrigin,
+  nameNode:   Name,
   typeSpec:   Option[Type]       = None,
   typeAsc:    Option[Type]       = None,
   docComment: Option[DocComment] = None,
-  id:         Option[String]     = None
+  id:         Option[String]     = None,
+  consuming:  Boolean            = false // for ~param syntax: takes ownership
 ) extends AstNode,
       FromSource,
       Typeable,
@@ -91,6 +133,8 @@ enum CallableArity derives CanEqual:
 enum BindingOrigin derives CanEqual:
   case Function
   case Operator
+  case Destructor
+  case Constructor
 
 object Precedence:
   val MaxUser:  Int = 100
@@ -113,7 +157,9 @@ object OpMangling:
     '/' -> "slash",
     '\\' -> "bslash",
     '|' -> "pipe",
-    '-' -> "minus"
+    '-' -> "minus",
+    '.' -> "dot",
+    '~' -> "tilde"
   )
 
   def mangleOp(op: String, arity: Int): String =
@@ -128,7 +174,8 @@ final case class BindingMeta(
   precedence:    Int,
   associativity: Option[Associativity],
   originalName:  String,
-  mangledName:   String
+  mangledName:   String,
+  inlineHint:    Boolean = false
 )
 
 /** Marker trait for nodes that represent invalid/error constructs. These nodes allow the compiler
@@ -137,7 +184,6 @@ final case class BindingMeta(
   */
 trait InvalidNode extends AstNode
 
-trait Error extends InvalidNode:
-  def span:       SrcSpan
+trait Error extends InvalidNode, FromSource:
   def message:    String
   def failedCode: Option[String]

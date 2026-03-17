@@ -9,6 +9,6 @@ let c =
     "B"
   end;
 
-fn main(): Unit =
-  println (concat "Resultado: " c)
+pub fn main(): Unit =
+  println ("Resultado: " ++ c)
 ;

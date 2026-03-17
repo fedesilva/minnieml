@@ -9,14 +9,23 @@ import MmlWhitespace.*
 
 private val statementParamName = "__stmt"
 
+private def locSpan(node: FromSource): SrcSpan =
+  node.source match
+    case SourceOrigin.Loc(s) => s
+    case SourceOrigin.Synth =>
+      throw IllegalStateException("Parser expected source-located node")
+
 private def mkStatementChain(head: Expr, tail: List[Expr]): Expr =
   val statements = head :: tail
   statements.reduceRight { (stmt, rest) =>
-    val stmtSpan  = span(stmt.span.start, rest.span.end)
-    val paramSpan = stmt.span
+    val stmtLoc   = locSpan(stmt)
+    val restLoc   = locSpan(rest)
+    val stmtSpan  = span(stmtLoc.start, restLoc.end)
+    val paramSpan = stmtLoc
     val unitType  = TypeRef(paramSpan, "Unit")
-    val param     = FnParam(paramSpan, statementParamName, typeAsc = Some(unitType))
-    val lambda    = Lambda(stmtSpan, List(param), rest, captures = Nil)
+    val param =
+      FnParam(SourceOrigin.Synth, Name.synth(statementParamName), typeAsc = Some(unitType))
+    val lambda = Lambda(stmtSpan, List(param), rest, captures = Nil)
     Expr(stmtSpan, List(App(stmtSpan, lambda, stmt)))
   }
 
@@ -31,10 +40,12 @@ private def exprFromTermsP(info: SourceInfo, termParser: => P[Term])(using P[Any
     }
 
 private[parser] def exprP(info: SourceInfo)(using P[Any]): P[Expr] =
-  P(exprNoSeqP(info) ~ (semiKw ~ &(exprNoSeqP(info)) ~ exprNoSeqP(info)).rep)
-    .map { case (head, tail) =>
-      if tail.isEmpty then head else mkStatementChain(head, tail.toList)
-    }
+  P(
+    exprNoSeqP(info) ~
+      (semiKw ~ &(!"/*" ~ exprNoSeqP(info)) ~ exprNoSeqP(info)).rep
+  ).map { case (head, tail) =>
+    if tail.isEmpty then head else mkStatementChain(head, tail.toList)
+  }
 
 private[parser] def exprNoSeqP(info: SourceInfo)(using P[Any]): P[Expr] =
   exprFromTermsP(info, termP(info))
@@ -56,8 +67,8 @@ private[parser] def termP(info: SourceInfo)(using P[Any]): P[Term] =
       holeP(info) |
       litStringP(info) |
       selectionTermP(info) |
-      opRefP(info) |
       numericLitP(info) |
+      opRefP(info) |
       groupTermP(info) |
       tupleP(info) |
       typeRefTermP(info) |
@@ -76,8 +87,8 @@ private[parser] def termMemberP(info: SourceInfo)(using P[Any]): P[Term] =
       holeP(info) |
       litStringP(info) |
       selectionTermMemberP(info) |
-      opRefP(info) |
       numericLitP(info) |
+      opRefP(info) |
       groupTermMemberP(info) |
       tupleMemberP(info) |
       typeRefTermP(info) |
@@ -121,9 +132,10 @@ private def selectionP(info: SourceInfo, baseP: => P[Term])(using P[Any]): P[Ter
     val fieldList = fields.toList
     val lastIndex = fieldList.size - 1
     fieldList.zipWithIndex.foldLeft(base) { case (qualifier, ((fieldName, fieldSpan), idx)) =>
-      val selectionSpan = span(qualifier.span.start, fieldSpan.end)
+      val qualifierLoc  = locSpan(qualifier)
+      val selectionSpan = span(qualifierLoc.start, fieldSpan.end)
       Ref(
-        span      = selectionSpan,
+        source    = SourceOrigin.Loc(selectionSpan),
         name      = fieldName,
         typeAsc   = if idx == lastIndex then typeAsc else None,
         qualifier = Some(qualifier)
@@ -174,7 +186,9 @@ private[parser] def ifExprP(info: SourceInfo)(using P[Any]): P[Term] =
     val finalSpan = span(start, end)
     // Build nested Cond from elsif chain (fold right)
     val elseExpr = elsifs.toList.foldRight(ifFalse) { case ((elsifCond, elsifBody), acc) =>
-      val condSpan = span(elsifCond.span.start, acc.span.end)
+      val elsifCondLoc = locSpan(elsifCond)
+      val accLoc       = locSpan(acc)
+      val condSpan     = span(elsifCondLoc.start, accLoc.end)
       Expr(condSpan, List(Cond(condSpan, elsifCond, elsifBody, acc)))
     }
     Cond(finalSpan, cond, ifTrue, elseExpr)
@@ -193,7 +207,9 @@ private[parser] def ifSingleBranchExprP(info: SourceInfo)(using P[Any]): P[Term]
     val unitExpr = Expr(unitSpan, List(LiteralUnit(unitSpan)))
     // Build nested Cond from elsif chain (fold right), ending with unit
     val elseExpr = elsifs.toList.foldRight(unitExpr) { case ((elsifCond, elsifBody), acc) =>
-      val condSpan = span(elsifCond.span.start, acc.span.end)
+      val elsifCondLoc = locSpan(elsifCond)
+      val accLoc       = locSpan(acc)
+      val condSpan     = span(elsifCondLoc.start, accLoc.end)
       Expr(
         condSpan,
         List(Cond(condSpan, elsifCond, elsifBody, acc, typeSpec = Some(unitType)))
@@ -216,7 +232,11 @@ private[parser] def letExprP(info: SourceInfo)(using P[Any]): P[Term] =
           failedCode = Some(invalidId)
         )
       case Right(name) =>
-        val param = FnParam(span(idStart, idEnd), name, typeAsc = typeAsc)
+        val param = FnParam(
+          SourceOrigin.Loc(span(idStart, idEnd)),
+          Name(span(idStart, idEnd), name),
+          typeAsc = typeAsc
+        )
         val lambda = Lambda(
           span     = span(start, end),
           params   = List(param),
@@ -245,7 +265,9 @@ private[parser] def ifExprMemberP(info: SourceInfo)(using P[Any]): P[Term] =
     val finalSpan = span(start, end)
     // Build nested Cond from elsif chain (fold right)
     val elseExpr = elsifs.toList.foldRight(ifFalse) { case ((elsifCond, elsifBody), acc) =>
-      val condSpan = span(elsifCond.span.start, acc.span.end)
+      val elsifCondLoc = locSpan(elsifCond)
+      val accLoc       = locSpan(acc)
+      val condSpan     = span(elsifCondLoc.start, accLoc.end)
       Expr(condSpan, List(Cond(condSpan, elsifCond, elsifBody, acc)))
     }
     Cond(finalSpan, cond, ifTrue, elseExpr)
@@ -264,7 +286,9 @@ private[parser] def ifSingleBranchExprMemberP(info: SourceInfo)(using P[Any]): P
     val unitExpr = Expr(unitSpan, List(LiteralUnit(unitSpan)))
     // Build nested Cond from elsif chain (fold right), ending with unit
     val elseExpr = elsifs.toList.foldRight(unitExpr) { case ((elsifCond, elsifBody), acc) =>
-      val condSpan = span(elsifCond.span.start, acc.span.end)
+      val elsifCondLoc = locSpan(elsifCond)
+      val accLoc       = locSpan(acc)
+      val condSpan     = span(elsifCondLoc.start, accLoc.end)
       Expr(
         condSpan,
         List(Cond(condSpan, elsifCond, elsifBody, acc, typeSpec = Some(unitType)))
@@ -282,19 +306,19 @@ private[parser] def groupTermMemberP(info: SourceInfo)(using P[Any]): P[Term] =
 private[parser] def refP(info: SourceInfo)(using P[Any]): P[Term] =
   P(spP(info) ~ bindingIdP ~ typeAscP(info) ~ spNoWsP(info) ~ spP(info))
     .map { case (start, id, typeAsc, end, _) =>
-      Ref(span(start, end), id, typeAsc = typeAsc)
+      Ref(SourceOrigin.Loc(span(start, end)), id, typeAsc = typeAsc)
     }
 
 private[parser] def typeRefTermP(info: SourceInfo)(using P[Any]): P[Term] =
   P(spP(info) ~ typeIdP ~ typeAscP(info) ~ spNoWsP(info) ~ spP(info))
     .map { case (start, id, typeAsc, end, _) =>
-      Ref(span(start, end), id, typeAsc = typeAsc)
+      Ref(SourceOrigin.Loc(span(start, end)), id, typeAsc = typeAsc)
     }
 
 private[parser] def opRefP(info: SourceInfo)(using P[Any]): P[Term] =
   P(spP(info) ~ operatorIdP ~ spNoWsP(info) ~ spP(info))
     .map { case (start, id, end, _) =>
-      Ref(span(start, end), id)
+      Ref(SourceOrigin.Loc(span(start, end)), id)
     }
 
 private[parser] def phP(info: SourceInfo)(using P[Any]): P[Term] =
@@ -311,10 +335,30 @@ private[parser] def holeP(info: SourceInfo)(using P[Any]): P[Term] =
 
 private[parser] def nativeImplP(info: SourceInfo)(using P[Any]): P[NativeImpl] =
 
-  def nativeTplP: P[Option[String]] =
-    P("[" ~ "tpl" ~ "=" ~ "\"" ~ CharsWhile(_ != '"', 0).! ~ "\"" ~ "]").?
+  enum Attr:
+    case TplAttr(tpl: String)
+    case MemAttr(eff: MemEffect)
+    case NameAttr(name: String)
 
-  P(spP(info) ~ nativeKw ~ nativeTplP ~ spNoWsP(info) ~ spP(info))
-    .map { case (start, tpl, end, _) =>
-      NativeImpl(span(start, end), nativeTpl = tpl)
+  def memEffectP: P[MemEffect] =
+    P("alloc").map(_ => MemEffect.Alloc) | P("static").map(_ => MemEffect.Static)
+
+  def quotedStringP: P[String] = P("\"" ~ CharsWhile(_ != '"', 0).! ~ "\"")
+  def tplAttrP:      P[Attr]   = P("tpl" ~ "=" ~ quotedStringP).map(Attr.TplAttr(_))
+  def memAttrP:      P[Attr]   = P("mem" ~ "=" ~ memEffectP).map(Attr.MemAttr(_))
+  def nameAttrP:     P[Attr]   = P("name" ~ "=" ~ quotedStringP).map(Attr.NameAttr(_))
+
+  def attrsP: P[(Option[String], Option[MemEffect], Option[String])] =
+    P("[" ~ (tplAttrP | memAttrP | nameAttrP).rep(sep = ",", min = 1) ~ "]").?.map {
+      case None => (None, None, None)
+      case Some(attrs) =>
+        val tpl  = attrs.collectFirst { case Attr.TplAttr(t) => t }
+        val mem  = attrs.collectFirst { case Attr.MemAttr(e) => e }
+        val name = attrs.collectFirst { case Attr.NameAttr(n) => n }
+        (tpl, mem, name)
+    }
+
+  P(spP(info) ~ nativeKw ~ attrsP ~ spNoWsP(info) ~ spP(info))
+    .map { case (start, (tpl, mem, name), end, _) =>
+      NativeImpl(span(start, end), nativeTpl = tpl, memEffect = mem, nativeSymbol = name)
     }

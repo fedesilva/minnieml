@@ -25,9 +25,14 @@ private[parser] def thenKw[$: P]: P[Unit] = P("then" ~ wordBoundary)
 
 private[parser] def moduleKw[$: P]: P[Unit] = P("module" ~ wordBoundary)
 
+private[parser] def inlineKw[$: P]: P[Unit] = P("inline" ~ wordBoundary)
 private[parser] def nativeKw[$: P]: P[Unit] = P("@native" ~ wordBoundary)
 
 /** All the keywords in a list, so we can check against it to prevent usage in say ids. */
+private[parser] def pubKw[$: P]:  P[Unit] = P("pub" ~ wordBoundary)
+private[parser] def protKw[$: P]: P[Unit] = P("prot" ~ wordBoundary)
+private[parser] def privKw[$: P]: P[Unit] = P("priv" ~ wordBoundary)
+
 private[parser] def keywords[$: P]: P[Unit] =
   P(
     moduleKw |
@@ -43,6 +48,11 @@ private[parser] def keywords[$: P]: P[Unit] =
       elseKw |
       thenKw |
       typeKw |
+      inlineKw |
       nativeKw |
-      fnKw
+      fnKw |
+      structKw |
+      pubKw |
+      protKw |
+      privKw
   )

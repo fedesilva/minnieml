@@ -2,8 +2,8 @@ package mml.mmlclib.ast
 
 case class Bnd(
   visibility: Visibility          = Visibility.Protected,
-  span:       SrcSpan,
-  name:       String,
+  source:     SourceOrigin,
+  nameNode:   Name,
   value:      Expr,
   typeSpec:   Option[Type]        = None,
   typeAsc:    Option[Type]        = None,
@@ -17,7 +17,7 @@ case class Bnd(
   * subsequent duplicates are wrapped in this node.
   */
 case class DuplicateMember(
-  span:            SrcSpan,
+  source:          SourceOrigin,
   originalMember:  Member,
   firstOccurrence: Member
 ) extends Member,
@@ -28,46 +28,41 @@ case class DuplicateMember(
   * functions with duplicate parameter names.
   */
 case class InvalidMember(
-  span:           SrcSpan,
+  source:         SourceOrigin,
   originalMember: Member,
   reason:         String
 ) extends Member,
       InvalidNode,
       FromSource
 
+object InvalidMember:
+  def apply(span: SrcSpan, originalMember: Member, reason: String): InvalidMember =
+    new InvalidMember(SourceOrigin.Loc(span), originalMember, reason)
+
 case class ParsingMemberError(
-  span:       SrcSpan,
+  source:     SourceOrigin,
   message:    String,
   failedCode: Option[String]
 ) extends Member,
       Error
 
+object ParsingMemberError:
+  def apply(span: SrcSpan, message: String, failedCode: Option[String]): ParsingMemberError =
+    new ParsingMemberError(SourceOrigin.Loc(span), message, failedCode)
+
 case class ParsingIdError(
-  span:       SrcSpan,
+  source:     SourceOrigin,
   message:    String,
   failedCode: Option[String],
   invalidId:  String
 ) extends Member,
       Error
 
-/** Index for soft reference lookups. Stores resolvables and resolvable types by their stable IDs.
-  * Updated alongside AST rewrites to always point to the current version of each node.
-  */
-case class ResolvablesIndex(
-  resolvables:     Map[String, Resolvable]     = Map.empty,
-  resolvableTypes: Map[String, ResolvableType] = Map.empty
-):
-  def lookup(id:     String): Option[Resolvable]     = resolvables.get(id)
-  def lookupType(id: String): Option[ResolvableType] = resolvableTypes.get(id)
-
-  def updated(r: Resolvable): ResolvablesIndex =
-    r.id.fold(this)(id => copy(resolvables = resolvables.updated(id, r)))
-
-  def updatedType(t: ResolvableType): ResolvablesIndex =
-    t.id.fold(this)(id => copy(resolvableTypes = resolvableTypes.updated(id, t)))
-
-  def updatedAll(rs: Iterable[Resolvable]): ResolvablesIndex =
-    rs.foldLeft(this)((idx, r) => idx.updated(r))
-
-  def updatedAllTypes(ts: Iterable[ResolvableType]): ResolvablesIndex =
-    ts.foldLeft(this)((idx, t) => idx.updatedType(t))
+object ParsingIdError:
+  def apply(
+    span:       SrcSpan,
+    message:    String,
+    failedCode: Option[String],
+    invalidId:  String
+  ): ParsingIdError =
+    new ParsingIdError(SourceOrigin.Loc(span), message, failedCode, invalidId)

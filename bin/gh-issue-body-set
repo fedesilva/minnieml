@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+if [[ $# -lt 2 || $# -gt 3 ]]; then
+  echo "Usage: $(basename "$0") <issue-number> <body-file> [repo]" >&2
+  echo "Example: $(basename "$0") 220 /tmp/body.md fedesilva/minnieml" >&2
+  exit 1
+fi
+
+issue="$1"
+body_file="$2"
+repo="${3:-fedesilva/minnieml}"
+
+if [[ ! -f "$body_file" ]]; then
+  echo "Body file not found: $body_file" >&2
+  exit 1
+fi
+
+gh issue edit "$issue" --repo "$repo" --body-file "$body_file" >/dev/null
+echo "Updated issue #$issue in $repo"

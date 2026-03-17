@@ -1,6 +1,5 @@
 package mml.mmlclib.semantic
 
-import mml.mmlclib.ast.*
 import mml.mmlclib.compiler.{CompilerConfig, CompilerState, ParsingErrorChecker}
 import mml.mmlclib.parser.SourceInfo
 import mml.mmlclib.test.BaseEffFunSuite

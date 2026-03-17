@@ -17,6 +17,17 @@ class LetBndTests extends BaseEffFunSuite:
 
   }
 
+  test("let bindings allow no spaces around = and ;") {
+    parseNotFailed(
+      """
+        let x=1;let y=2;
+      """
+    ).map { m =>
+      assertEquals(m.members.size, 2)
+      assert(m.members.forall(_.isInstanceOf[Bnd]))
+    }
+  }
+
   test("let with app") {
 
     parseNotFailed(

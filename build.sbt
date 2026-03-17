@@ -1,11 +1,12 @@
 import sbt.`*`
 import sbt.io.IO
+import sbtrelease.ReleasePlugin.autoImport._
+import sbtrelease.ReleaseStateTransformations._
 
 lazy val commonSettings =
   Seq(
     organization := "minnie-ml",
-    version      := "0.0.1-SNAPSHOT",
-    scalaVersion := "3.6.4",
+    scalaVersion := "3.8.2",
     scalacOptions ++= ScalacConfig.opts,
     // because for tests, yolo.
     Test / scalacOptions --= Seq("-Ywarn-unused:imports", "-Xfatal-warnings"),
@@ -14,7 +15,7 @@ lazy val commonSettings =
     resolvers ++= Dependencies.resolvers,
     semanticdbEnabled := true,
     semanticdbVersion := scalafixSemanticdb.revision,
-    scalafixDependencies += "io.github.dedis" %% "scapegoat-scalafix" % "1.1.4",
+    // scalafixDependencies += "io.github.dedis" %% "scapegoat-scalafix" % "1.1.4", // disabled: no Scala 3.8.1 support
     // Set fork to true as recommended by cats-effect for all projects
     Compile / run / fork := true
   )
@@ -86,6 +87,18 @@ lazy val mml: Project =
         println(s"Distribution package created at ${packageDir.getAbsolutePath}")
         packageDir
       },
+      releaseProcess := Seq[ReleaseStep](
+        checkSnapshotDependencies,
+        inquireVersions,
+        runClean,
+        runTest,
+        setReleaseVersion,
+        commitReleaseVersion,
+        tagRelease,
+        releaseStepTask(mmlcDistro),
+        setNextVersion,
+        commitNextVersion
+      ),
       mmlcDistro := {
         val packageDir = mmlcDistroAssembly.value
         val date       = java.time.LocalDate.now().toString

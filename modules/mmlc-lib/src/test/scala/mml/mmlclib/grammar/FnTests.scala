@@ -187,3 +187,61 @@ class FnTests extends BaseEffFunSuite:
       }
     }
   }
+
+  test("native fn with name attribute") {
+    parseNotFailed(
+      """
+        fn clone_string(s: String): String = @native[name="__clone_String"];
+      """
+    ).map { m =>
+      val bnd    = m.members.head.asInstanceOf[Bnd]
+      val lambda = bnd.value.terms.head.asInstanceOf[Lambda]
+      val native = lambda.body.terms.head.asInstanceOf[NativeImpl]
+      assertEquals(native.nativeSymbol, Some("__clone_String"))
+      assertEquals(native.memEffect, None)
+      assertEquals(native.nativeTpl, None)
+    }
+  }
+
+  test("native fn with name and mem attributes") {
+    parseNotFailed(
+      """
+        fn alloc_thing(): String = @native[name="__alloc_Thing", mem=alloc];
+      """
+    ).map { m =>
+      val bnd    = m.members.head.asInstanceOf[Bnd]
+      val lambda = bnd.value.terms.head.asInstanceOf[Lambda]
+      val native = lambda.body.terms.head.asInstanceOf[NativeImpl]
+      assertEquals(native.nativeSymbol, Some("__alloc_Thing"))
+      assertEquals(native.memEffect, Some(MemEffect.Alloc))
+    }
+  }
+
+  test("native fn with mem and name attributes (reversed order)") {
+    parseNotFailed(
+      """
+        fn alloc_thing(): String = @native[mem=alloc, name="__alloc_Thing"];
+      """
+    ).map { m =>
+      val bnd    = m.members.head.asInstanceOf[Bnd]
+      val lambda = bnd.value.terms.head.asInstanceOf[Lambda]
+      val native = lambda.body.terms.head.asInstanceOf[NativeImpl]
+      assertEquals(native.nativeSymbol, Some("__alloc_Thing"))
+      assertEquals(native.memEffect, Some(MemEffect.Alloc))
+    }
+  }
+
+  test("native fn with all three attributes") {
+    parseNotFailed(
+      """
+        fn intrinsic(x: Int): Int = @native[tpl="call i64 @foo(i64 %operand)", mem=alloc, name="__foo"];
+      """
+    ).map { m =>
+      val bnd    = m.members.head.asInstanceOf[Bnd]
+      val lambda = bnd.value.terms.head.asInstanceOf[Lambda]
+      val native = lambda.body.terms.head.asInstanceOf[NativeImpl]
+      assertEquals(native.nativeTpl, Some("call i64 @foo(i64 %operand)"))
+      assertEquals(native.memEffect, Some(MemEffect.Alloc))
+      assertEquals(native.nativeSymbol, Some("__foo"))
+    }
+  }

@@ -2,7 +2,7 @@ fn make_test_results(): String =
   "Test Results: Fail"
 ;
 
-# Must fail, no ()
-fn main(): Unit =
+// Must fail, no ()
+pub fn main(): Unit =
   println (make_test_results)
 ;

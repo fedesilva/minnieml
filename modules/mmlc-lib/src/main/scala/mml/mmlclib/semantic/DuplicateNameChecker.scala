@@ -43,10 +43,9 @@ object DuplicateNameChecker:
             if itemsWithSameKey.head == member then member // First occurrence stays as-is
             else
               DuplicateMember(
-                span = member match {
-                  case m: FromSource => m.span
-                  case _ => SrcSpan(SrcPoint(0, 0, 0), SrcPoint(0, 0, 0))
-                },
+                source = member match
+                  case m: FromSource => m.source
+                  case _ => SourceOrigin.Synth,
                 originalMember  = member,
                 firstOccurrence = itemsWithSameKey.head
               )
@@ -69,7 +68,7 @@ object DuplicateNameChecker:
               phaseName
             )
             InvalidMember(
-              span           = bnd.span,
+              source         = bnd.source,
               originalMember = bnd,
               reason         = s"Duplicate parameter names: $duplicateParamNames"
             )

@@ -1,0 +1,63 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+usage() {
+  cat >&2 <<'EOF'
+Usage: gh-project-item-add <issue-number-or-url> [--repo <repo>] [--owner <owner>] [--project <number>]
+Examples:
+  gh-project-item-add 239
+  gh-project-item-add 239 --repo fedesilva/minnieml --owner fedesilva --project 3
+  gh-project-item-add https://github.com/fedesilva/minnieml/issues/239
+EOF
+}
+
+if [[ $# -eq 1 && ( "$1" == "-h" || "$1" == "--help" ) ]]; then
+  usage
+  exit 0
+fi
+
+if [[ $# -lt 1 ]]; then
+  usage
+  exit 1
+fi
+
+target="$1"
+shift
+
+repo="fedesilva/minnieml"
+owner="fedesilva"
+project="3"
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --repo)
+      repo="${2:-}"
+      shift 2
+      ;;
+    --owner)
+      owner="${2:-}"
+      shift 2
+      ;;
+    --project)
+      project="${2:-}"
+      shift 2
+      ;;
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    *)
+      echo "Unknown option: $1" >&2
+      usage
+      exit 1
+      ;;
+  esac
+done
+
+if [[ "$target" =~ ^https?:// ]]; then
+  issue_url="$target"
+else
+  issue_url="$(gh issue view "$target" --repo "$repo" --json url --jq .url)"
+fi
+
+gh project item-add "$project" --owner "$owner" --url "$issue_url"

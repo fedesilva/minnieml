@@ -1,27 +1,27 @@
-# Design: Path-Dependent Types for Zero-Cost Array Safety
+# Design: path-dependent types for zero-cost array safety
 
-## 1. The Core Problem
+## 1. the core problem
 In high-performance computing (e.g., sieves, matrix multiplication, FFT), array bounds checks are a significant bottleneck.
-* **Standard Approach (Java/Go/Rust):** Check bounds at *every* access site.
+* Standard Approach (Java/Go/Rust): Check bounds at *every* access site.
     * *Pros:* Safe.
     * *Cons:* Performance overhead; reliance on complex optimizer passes (LICM) to remove redundant checks.
-* **Unsafe Approach (C/C++):** Trust the programmer.
+* Unsafe Approach (C/C++): Trust the programmer.
     * *Pros:* Maximum performance.
     * *Cons:* Memory corruption, segmentation faults, security vulnerabilities.
 
-**Goal:** Achieve C-level performance with Type-Level safety guarantees, without requiring a heavy theorem prover.
+Goal: Achieve C-level performance with Type-Level safety guarantees, without requiring a heavy theorem prover.
 
-## 2. The Solution: Provenance over Arithmetic
+## 2. the solution: provenance over arithmetic
 Instead of proving that an integer `i` satisfies the arithmetic condition `0 <= i < size` at every use site (which is hard/undecidable for complex calculations), we use **Path-Dependent Types** to prove **Provenance**.
 
 We treat an array index not as a generic `Int`, but as a "Token" issued by a specific array instance.
 
-### The Mechanism
-1.  **The Instance (Path):** Every array `arr` defines a unique type `arr.Index`.
-2.  **The Validator (Smart Constructor):** The *only* way to obtain an `arr.Index` is to pass a runtime bounds check against `arr`.
-3.  **The Accessor (Trusted Core):** The array provides an `unchecked_get` method that *requires* an `arr.Index`.
+### The mechanism
+1.  The Instance (Path): Every array `arr` defines a unique type `arr.Index`.
+2.  The Validator (Smart Constructor): The *only* way to obtain an `arr.Index` is to pass a runtime bounds check against `arr`.
+3.  The Accessor (Trusted Core): The array provides an `unchecked_get` method that *requires* an `arr.Index`.
 
-### Conceptual Code (Scala/MML)
+### Conceptual code (scala/mml)
 
 ```scala
 // Abstract definition (Concept)
@@ -53,14 +53,14 @@ arr2.get(safeIdx) // Error: Expected arr2.Index, got arr1.Index
 
 
 
-## 3. Benefits & Architecture
+## 3. benefits & architecture
 
-### A. Separation of Concerns (Validator vs. Worker)
+### A. separation of concerns (validator vs. worker)
 This pattern naturally separates code into two zones:
-* **The Safe Shell (Validator):** Handles I/O, user input, and setup. Checks constraints. High safety, low frequency.
-* **The Fast Core (Worker):** Receives validated `Index` tokens. Executes hot loops. Zero overhead, high frequency.
+* The Safe Shell (Validator): Handles I/O, user input, and setup. Checks constraints. High safety, low frequency.
+* The Fast Core (Worker): Receives validated `Index` tokens. Executes hot loops. Zero overhead, high frequency.
 
-### B. "Chain of Trust"
+### B. "chain of trust"
 Once a token `idx` is created for `arr1`, it remains valid indefinitely (assuming immutable size).
 * You can pass `idx` to other functions.
 * You can compose functions (map/filter) that preserve the index validity.
@@ -74,31 +74,31 @@ arr1.get(idx1) // OK
 arr1.get(idx2) // Compile Error: Expected arr1.Index, got arr2.Index
 ```
 
-### C. Decidability vs. Fully Dependent Types
-* **Full Dependent Types:** Require the compiler to solve `i < N`. If `i` is the result of a complex function, the compiler may time out or fail.
-* **Path-Dependent Types:** Require the compiler to check nominal equality (`arr1` == `arr1`). This is $O(1)$ and always decidable.
+### C. decidability vs. fully dependent types
+* Full Dependent Types: Require the compiler to solve `i < N`. If `i` is the result of a complex function, the compiler may time out or fail.
+* Path-Dependent Types: Require the compiler to check nominal equality (`arr1` == `arr1`). This is $O(1)$ and always decidable.
 
-## 4. Compilation & LLVM Lowering
+## 4. compilation & LLVM lowering
 
-### Type Erasure
+### Type erasure
 This abstraction is strictly a **compile-time** construct.
-* **Frontend:** Tracks `arr1.Index` vs `arr2.Index`.
-* **Backend (Codegen):** Erases both types to the native integer width (e.g., `i64`).
+* Frontend: Tracks `arr1.Index` vs `arr2.Index`.
+* Backend (Codegen): Erases both types to the native integer width (e.g., `i64`).
 
-**Result:** The generated LLVM IR contains raw integer arithmetic and direct memory pointers. There are no structs, no wrappers, and no runtime overhead.
+Result: The generated LLVM IR contains raw integer arithmetic and direct memory pointers. There are no structs, no wrappers, and no runtime overhead.
 
-### Aliasing & Optimization
+### Aliasing & optimization
 While path-dependent types prove *safety*, they do not automatically prove *non-aliasing* to LLVM (since `arr1` and `arr2` could point to the same memory).
 
 To maximize vectorization:
-1.  **Safety:** Handled by Path-Dependent Types (removes branching/checks).
-2.  **Performance:** Handled by **Metadata Injection** (`!noalias`, `!alias.scope`) in the backend, allowing LLVM to reorder and vectorize loads/stores aggressively.
+1.  Safety: Handled by Path-Dependent Types (removes branching/checks).
+2.  Performance: Handled by **Metadata Injection** (`!noalias`, `!alias.scope`) in the backend, allowing LLVM to reorder and vectorize loads/stores aggressively.
 
-## 5. Summary
+## 5. summary
 Using Path-Dependent types allows MML to implement **Loop Invariant Code Motion (LICM)** manually at the type level.
 
-* **Standard Compiler:** *Hopes* it can prove the check is inside the loop and redundant.
-* **MML + Path Types:** *Forces* the check outside the loop via the type signature, guaranteeing the inner loop is essentially raw C code.
+* Standard Compiler: *Hopes* it can prove the check is inside the loop and redundant.
+* MML + Path Types: *Forces* the check outside the loop via the type signature, guaranteeing the inner loop is essentially raw C code.
 
 
 ## Appendixes
@@ -110,10 +110,10 @@ Using Path-Dependent types allows MML to implement **Loop Invariant Code Motion 
 ```mml
 # Drafting syntax
 
-## 1. Opaque Structure
+## 1. opaque structure
 # 'opaque' visibility means:
-#   * Creation restricted to the companion module.
-#   * Field access restricted to the companion module.
+# * creation restricted to the companion module.
+# * field access restricted to the companion module.
 data opaque Array 'T {
   data: *'T,
   
@@ -122,7 +122,7 @@ data opaque Array 'T {
   length: Array::Index 
 }
 
-## 2. Companion Module
+## 2. companion module
 module Array =
 
   # 1. The Opaque Token
@@ -163,25 +163,25 @@ module Array =
 
 ;
 
-## 3. Usage & Safety Proof
+## 3. usage & safety proof
 
 let arr1 = mkArray 100;
 let arr2 = mkArray 100;
 
-# 1. Validation
-# 'check' binds Self -> arr1. 
-# Returns: Maybe arr1::Index
+# 1. validation
+# 'check' binds self -> arr1.
+# Returns: maybe arr1::index
 val safe_idx = check arr1 10; 
 
-# 2. Valid Access
-# 'get' binds Self -> arr1. Expects arr1::Index.
+# 2. valid access
+# 'get' binds self -> arr1. expects arr1::index.
 # Matches 'safe_idx'. OK.
-# Warning, pseudo code ignores Maybe 
+# Warning, pseudo code ignores maybe
 get arr1 safe_idx;
 
-# 3. Invalid Access (The Trap)
-# 'get' binds Self -> arr2. Expects arr2::Index.
-# You passed 'safe_idx' (arr1::Index).
-# COMPILE ERROR: Type Mismatch (arr2::Index != arr1::Index).
+# 3. invalid access (the trap)
+# 'get' binds self -> arr2. expects arr2::index.
+# You passed 'safe_idx' (arr1::index).
+# Compile ERROR: type mismatch (arr2::index != arr1::index).
 get arr2 safe_idx;
 ```

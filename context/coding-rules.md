@@ -1,15 +1,5 @@
 # MML Tech Context
 
-## Cardinal Rule
-
-### Keep the author involved, ask for confirmation
-
-**Before starting ANY code changing task:**
-* Present a plan
-* Stand by for review
-* No further action until approval is granted. No exceptions.
-
-
 ## General Rules
 
 ### Scala Language
@@ -21,7 +11,7 @@
 
 ### Reading code
 
-* No approval needed to make plans and read code.
+* No approval needed to read code/docs, research, or prepare a plan.
 
 ### Testing
 - **Framework**: Use `munit.CatsEffectSuite` with `BaseEffFunSuite` helpers
@@ -36,45 +26,57 @@
 - **Avoid**: Do not leave comments like "removed this, fixed that" 
 
 ### Code Quality
-- **Formatting**: Follow `.scalafmt.conf` settings; run `sbt scalafmtAll` before finishing
-- **Linting**: Run `sbt "scalafixAll"` and manually fix all issues that scalafix can't fix, see next.
+- **Formatting**: Follow `.scalafmt.conf` settings; run `sbtn scalafmtAll` before finishing
+- **Linting**: Run `sbtn "scalafixAll"` and manually fix all issues that scalafix can't fix, see next.
 - **Warnings**: Do not tolerate compiler warnings; fix them all.
 - **Exhaustivity**: Fix exhaustivity errors; the compiler knows better than you.
-- **Run scapegoat**: Check your work for quality by running: `sbt scapegoat`
-  - **address all the issues**
 
 ### Running the Compiler
 
-- **Prefer running via sbt while developing**
-- **Compile and run**: `sbt "run run <file>"` compiles AND runs the program in one step.
-- **Compile only**: `sbt "run bin <file>"` compiles to binary without running.
+- **Prefer running via sbtn while developing**
+- **Compile and run**: `sbtn "run run <file>"` compiles AND runs the program in one step.
+- **Compile only**: `sbtn "run <file>"` (or `mmlc <file>` after publishing).
+- **Never deploy** the compiler (mmlcPublishLocal) without testing it works via sbtn.
 
 ### Publishing the Compiler Artifact
 
 The compiler needs to be installed before it's used if changes were made.
 
-- **Publish fat jar**: `sbt mmlcPublishLocal`
-- **After publishing**: `mmlc run <file>` or `mmlc bin <file>` from anywhere.
+- **Publish fat jar**: `sbtn mmlcPublishLocal`
+- **After publishing**: `mmlc run <file>` or `mmlc <file>` from anywhere.
 
-### Before Task Finish
+### Before finish - Post Task Chores
 
 **Critical**: 
   - Go through all these steps
   - Do not wait for confirmation, or ask to run this, do it or the task is not done.
+    - **don't ask to do your job, just do your job**
 
-- **Scope**: These steps apply only when code changes were made (not for context-only updates).
-- **Validate**: Run the *full* test suite.
-- **Formatting**: Run `sbt scalafmtAll` before finishing.
-- **Linting**: Run `sbt scalafixAll` and fix any issues.
-- **Run scapegoat**: Check your work for quality by running: `sbt scapegoat`
-  - **address all the issues**
-- **Publish locally**: Run `sbt mmlcPublishLocal` to publish the compiler to its latest version.
-- **Tip**: Chain commands to avoid sbt startup overhead: `sbt "test; scapegoat; scalafmtAll; scalafixAll; mmlcPublishLocal"`
+- **Scope**: These steps apply only when code changes were made *to the compiler*.
+  - not for context changes
+  - not for documentation changes
+  - not for mml samples.
+- **Fast sanity check first (mandatory)**:
+  - Before publishing the compiler or running expensive verification (benchmarks, full memory harness),
+    run the in-development compiler with `sbtn` on a relevant sample for the current change.
+  - Example: `sbtn "run run <relevant-file>"`
+- **Validate**: Run the *full* test suite
 
-- **Run benchmarks**: 
+- **Run benchmarks**:
   - after publishing the compiler:
   - run `make -C benchmark clean`
   - run `make -C benchmark mml`
+
+- **Run memory tests** (when changes touch memory management / ownership):
+  - `./tests/mem/run.sh all`
+  - All 13 tests must pass both ASan and leaks checks
+  - The script handles `mmlc clean` between modes automatically
+
+- **If a command session stalls during post-task verification**:
+  - Kill the stalled session/process and rerun the same verification command once.
+  - If the retry also fails or stalls, explicitly report it as a verification failure and ask the Author
+    to run it locally.
+  - Prefer killing and retrying over waiting indefinitely on a stuck shell interaction.
 
 ## Git usage
 

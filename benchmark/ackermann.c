@@ -12,7 +12,6 @@ static int64_t ackermann(int64_t m, int64_t n) {
 
 int main(void) {
   const int64_t result = ackermann(3, 10);
-  // Fast enough; printf dominates basically nothing here, but keep it simple.
   printf("ackermann(3, 10) = %lld\n", (long long)result);
   return 0;
 }

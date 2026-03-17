@@ -5,27 +5,71 @@ import mml.mmlclib.test.BaseEffFunSuite
 
 class FunctionSignatureTest extends BaseEffFunSuite:
 
+  test("synthesized main passes argv as StringArray for unit-returning main(args)") {
+    val source =
+      """
+        pub fn main(args: StringArray): Unit = println (int_to_str (ar_str_len args));
+      """
+    val config =
+      CompilerConfig.exe("build", targetTriple = Some("x86_64-apple-macosx"))
+
+    compileAndGenerate(source, config = config).map { llvmIr =>
+      assert(llvmIr.contains("define i32 @main(i32 %0, ptr %1) #0"))
+      assert(llvmIr.contains("%args = call %struct.StringArray @mml_args_to_array(i32 %0, ptr %1)"))
+      assert(llvmIr.contains("call void @test_main(%struct.StringArray %args)"))
+      assert(llvmIr.contains("call void @__free_StringArray(%struct.StringArray %args)"))
+      assert(llvmIr.contains("call void @mml_sys_flush()"))
+    }
+  }
+
+  test("synthesized main passes argv as StringArray for int-returning main(args)") {
+    val source =
+      """
+        pub fn main(args: StringArray): Int = ar_str_len args;
+      """
+    val config =
+      CompilerConfig.exe("build", targetTriple = Some("x86_64-apple-macosx"))
+
+    compileAndGenerate(source, config = config).map { llvmIr =>
+      assert(llvmIr.contains("define i32 @main(i32 %0, ptr %1) #0"))
+      assert(llvmIr.contains("%args = call %struct.StringArray @mml_args_to_array(i32 %0, ptr %1)"))
+      assert(llvmIr.contains("%ret = call i64 @test_main(%struct.StringArray %args)"))
+      assert(llvmIr.contains("call void @__free_StringArray(%struct.StringArray %args)"))
+      assert(llvmIr.contains("%exitcode = trunc i64 %ret to i32"))
+    }
+  }
+
   test("correctly generates signatures for native and regular functions on x86_64") {
     val source =
       """
         fn debug_print (a: String): Unit = @native;
         fn log_message (a: String): Unit = @native;
         fn join_strings(a: String, b: String): String = @native;
-        fn main() = log_message "Fede";
+        pub fn main() = log_message "Fede";
       """
 
     // Use Binary mode to generate synthesized main entry point
     val config =
-      CompilerConfig.binary("build", targetTriple = Some("x86_64-apple-macosx"))
+      CompilerConfig.exe("build", targetTriple = Some("x86_64-apple-macosx"))
 
     compileAndGenerate(source, config = config).map { llvmIr =>
 
       // Native functions keep original names (declarations)
-      assert(llvmIr.contains("declare void @debug_print(i64, i8*)"), "debug_print declaration")
-      assert(llvmIr.contains("declare void @log_message(i64, i8*)"), "log_message declaration")
+      // String is now 16 bytes (2 fields: length, data), decomposed to (i64, i8*) on x86_64 SysV ABI
       assert(
-        llvmIr.contains("declare %struct.String @join_strings(i64, i8*, i64, i8*)"),
-        "join_strings declaration"
+        llvmIr.contains("declare void @debug_print(i64, i8*)"),
+        s"debug_print declaration, got:\n$llvmIr"
+      )
+      assert(
+        llvmIr.contains("declare void @log_message(i64, i8*)"),
+        s"log_message declaration, got:\n$llvmIr"
+      )
+      // join_strings: two String params (each decomposed) + struct return
+      assert(
+        llvmIr.contains(
+          "declare %struct.String @join_strings(i64, i8*, i64, i8*)"
+        ),
+        s"join_strings declaration, got:\n$llvmIr"
       )
       // User main is mangled with module prefix
       assert(llvmIr.contains("define void @test_main()"), "user main definition")
@@ -42,46 +86,96 @@ class FunctionSignatureTest extends BaseEffFunSuite:
         fn debug_print (a: String): Unit = @native;
         fn log_message (a: String): Unit = @native;
         fn join_strings(a: String, b: String): String = @native;
-        fn main() = log_message "Fede";
+        pub fn main() = log_message "Fede";
       """
 
     val config =
-      CompilerConfig.binary("build", targetTriple = Some("aarch64-apple-macosx"))
+      CompilerConfig.exe("build", targetTriple = Some("aarch64-apple-macosx"))
 
     compileAndGenerate(source, config = config).map { llvmIr =>
+      // String is 16 bytes (2 fields: length, data), lowered to [2 x i64] for register passing
+      // (AAPCS64: composites <=16 bytes can be passed in registers)
       assert(
         llvmIr.contains("declare void @debug_print([2 x i64])"),
-        "debug_print declaration"
+        s"debug_print should use [2 x i64] param on aarch64, got:\n$llvmIr"
       )
       assert(
         llvmIr.contains("declare void @log_message([2 x i64])"),
-        "log_message declaration"
+        s"log_message should use [2 x i64] param on aarch64, got:\n$llvmIr"
       )
+      // join_strings returns String (16 bytes) - returned as struct, params as [2 x i64]
       assert(
-        llvmIr.contains("declare %struct.String @join_strings([2 x i64], [2 x i64])"),
-        "join_strings declaration"
+        llvmIr.contains(
+          "declare %struct.String @join_strings([2 x i64], [2 x i64])"
+        ),
+        s"join_strings should return struct directly on aarch64, got:\n$llvmIr"
       )
     }
   }
 
-  test("aarch64 native calls pack 2x i64 struct args") {
+  test("aarch64 native calls with String struct args use flattened array") {
     val source =
       """
         fn debug_print (a: String): Unit = @native;
-        fn main(): Unit = debug_print "hi";
+        pub fn main(): Unit = debug_print "hi";
       """
 
     val config =
-      CompilerConfig.binary("build", targetTriple = Some("aarch64-apple-macosx"))
+      CompilerConfig.exe("build", targetTriple = Some("aarch64-apple-macosx"))
+
+    compileAndGenerate(source, config = config).map { llvmIr =>
+      // 16-byte struct is lowered to [2 x i64] for register passing on aarch64
+      assert(
+        llvmIr.contains("call void @debug_print([2 x i64] %"),
+        s"expected [2 x i64] call site on aarch64 in:\n$llvmIr"
+      )
+    }
+  }
+
+  test("aarch64 HFAs stay in registers (no byval/sret) for float/double aggregates") {
+    val source =
+      """
+        type F32 = @native[t=float];
+        type F64 = @native[t=double];
+
+        type Vec3d = @native { x: F64, y: F64, z: F64 };
+        type Vec4f = @native { x: F32, y: F32, z: F32, w: F32 };
+
+        fn hfa_arg_d (v: Vec3d): Int = @native;
+        fn hfa_ret_d (): Vec3d = @native;
+        fn hfa_arg_f (v: Vec4f): Int = @native;
+        fn hfa_ret_f (): Vec4f = @native;
+
+        pub fn main(): Unit = ();
+      """
+
+    val config =
+      CompilerConfig.exe("build", targetTriple = Some("aarch64-apple-macosx"))
 
     compileAndGenerate(source, config = config).map { llvmIr =>
       assert(
-        llvmIr.contains("insertvalue [2 x i64]"),
-        s"expected packed insertvalue in:\n$llvmIr"
+        llvmIr.contains("declare i64 @hfa_arg_d(%struct.Vec3d)"),
+        s"HFA double arg should not be byval/split:\n$llvmIr"
       )
       assert(
-        llvmIr.contains("call void @debug_print([2 x i64]"),
-        s"expected packed call site in:\n$llvmIr"
+        llvmIr.contains("declare %struct.Vec3d @hfa_ret_d()"),
+        s"HFA double return should not use sret:\n$llvmIr"
+      )
+      assert(
+        llvmIr.contains("declare i64 @hfa_arg_f(%struct.Vec4f)"),
+        s"HFA float arg should not be byval/split:\n$llvmIr"
+      )
+      assert(
+        llvmIr.contains("declare %struct.Vec4f @hfa_ret_f()"),
+        s"HFA float return should not use sret:\n$llvmIr"
+      )
+      assert(
+        !llvmIr.contains("byval(%struct.Vec3d)") && !llvmIr.contains("byval(%struct.Vec4f)"),
+        s"HFA params must not be lowered to byval pointers:\n$llvmIr"
+      )
+      assert(
+        !llvmIr.contains("sret(%struct.Vec3d)") && !llvmIr.contains("sret(%struct.Vec4f)"),
+        s"HFA returns must not use sret:\n$llvmIr"
       )
     }
   }
@@ -96,7 +190,7 @@ class FunctionSignatureTest extends BaseEffFunSuite:
     compileAndGenerate(source).map { llvmIr =>
       // Definition should use module-prefixed mangled name
       assert(
-        llvmIr.contains("define i64 @test_op.star_star.2(i64 %0, i64 %1)"),
+        llvmIr.contains("define internal i64 @test_op.star_star.2(i64 %0, i64 %1)"),
         s"operator definition should use module-prefixed mangled name, got:\n$llvmIr"
       )
       // Call should use module-prefixed mangled name
@@ -122,7 +216,7 @@ class FunctionSignatureTest extends BaseEffFunSuite:
     compileAndGenerate(source).map { llvmIr =>
       // Definition should use module-prefixed mangled name
       assert(
-        llvmIr.contains("define i64 @test_op.bang.1(i64 %0)"),
+        llvmIr.contains("define internal i64 @test_op.bang.1(i64 %0)"),
         s"unary operator definition should use module-prefixed mangled name, got:\n$llvmIr"
       )
       // Call should use module-prefixed mangled name
@@ -143,7 +237,7 @@ class FunctionSignatureTest extends BaseEffFunSuite:
     compileAndGenerate(source).map { llvmIr =>
       // greet should be defined as a function with module prefix
       assert(
-        llvmIr.contains("define %struct.String @test_greet(%struct.String"),
+        llvmIr.contains("define internal %struct.String @test_greet(%struct.String"),
         s"partial application should generate a module-prefixed function, got:\n$llvmIr"
       )
       // main should call greet with module prefix
@@ -165,7 +259,7 @@ class FunctionSignatureTest extends BaseEffFunSuite:
     compileAndGenerate(source).map { llvmIr =>
       // add10 should be a function with 2 params and module prefix
       assert(
-        llvmIr.contains("define i64 @test_add10(i64 %0, i64 %1)"),
+        llvmIr.contains("define internal i64 @test_add10(i64 %0, i64 %1)"),
         s"partial should have 2 params with module prefix, got:\n$llvmIr"
       )
       // main should call add10 with module prefix
@@ -187,7 +281,7 @@ class FunctionSignatureTest extends BaseEffFunSuite:
     compileAndGenerate(source).map { llvmIr =>
       // f should be a wrapper function with module prefix
       assert(
-        llvmIr.contains("define i64 @test_f(i64 %0, i64 %1)"),
+        llvmIr.contains("define internal i64 @test_f(i64 %0, i64 %1)"),
         s"alias should be eta-expanded to a module-prefixed function, got:\n$llvmIr"
       )
       // alias function should call original (also module-prefixed)
@@ -210,12 +304,12 @@ class FunctionSignatureTest extends BaseEffFunSuite:
     compileAndGenerate(source).map { llvmIr =>
       // add10 should be a function with 2 params and module prefix
       assert(
-        llvmIr.contains("define i64 @test_add10(i64 %0, i64 %1)"),
+        llvmIr.contains("define internal i64 @test_add10(i64 %0, i64 %1)"),
         s"add10 should have 2 params with module prefix, got:\n$llvmIr"
       )
       // add10and20 should be a function with 1 param and module prefix
       assert(
-        llvmIr.contains("define i64 @test_add10and20(i64 %0)"),
+        llvmIr.contains("define internal i64 @test_add10and20(i64 %0)"),
         s"add10and20 should have 1 param with module prefix, got:\n$llvmIr"
       )
       // add10and20 should call add10 with module prefix
@@ -293,6 +387,207 @@ class FunctionSignatureTest extends BaseEffFunSuite:
         llvmIr.contains("call i64 @llvm.smax.i64(i64") &&
           llvmIr.contains("i64 10") && llvmIr.contains("i64 20"),
         s"should emit inline intrinsic call with both args, got:\n$llvmIr"
+      )
+    }
+  }
+
+  test("noalias on native function returning allocating NativePointer") {
+    val source =
+      """
+        type MyPtr = @native[t=*i8, mem=heap];
+        fn alloc_ptr(): MyPtr = @native;
+        fn main(): Unit = ();
+      """
+
+    compileAndGenerate(source).map { llvmIr =>
+      assert(
+        llvmIr.contains("declare noalias i8* @alloc_ptr()"),
+        s"allocating pointer return should have noalias, got:\n$llvmIr"
+      )
+    }
+  }
+
+  test("no noalias on native function returning non-allocating NativePointer") {
+    val source =
+      """
+        type MyPtr = @native[t=*i8];
+        fn get_ptr(): MyPtr = @native;
+        fn main(): Unit = ();
+      """
+
+    compileAndGenerate(source).map { llvmIr =>
+      // get_ptr returns a pointer but has no mem=heap, so no noalias
+      assert(
+        llvmIr.contains("declare i8* @get_ptr()"),
+        s"non-allocating pointer return should NOT have noalias, got:\n$llvmIr"
+      )
+    }
+  }
+
+  test("no noalias on native function returning NativeStruct with Alloc") {
+    val source =
+      """
+        fn join_strings(a: String, b: String): String = @native;
+        fn main(): Unit = ();
+      """
+
+    compileAndGenerate(source).map { llvmIr =>
+      // String is NativeStruct (passed as {i64, i8*}), not a pointer — no noalias on return
+      assert(
+        !llvmIr.contains("noalias %struct.String @join_strings"),
+        s"String return should NOT have noalias, got:\n$llvmIr"
+      )
+    }
+  }
+
+  test("noalias on consuming NativePointer parameter in user function") {
+    val source =
+      """
+        type MyPtr = @native[t=*i8, mem=heap];
+        fn alloc_ptr(): MyPtr = @native;
+        fn free_ptr(~p: MyPtr): Unit = @native;
+        fn take_ptr(~p: MyPtr): Unit = free_ptr p;
+        fn main(): Unit = take_ptr (alloc_ptr ());
+      """
+
+    compileAndGenerate(source).map { llvmIr =>
+      assert(
+        llvmIr.contains("define internal void @test_take_ptr(i8* noalias %0)"),
+        s"consuming pointer param should have noalias, got:\n$llvmIr"
+      )
+    }
+  }
+
+  test("no noalias on consuming NativeStruct parameter") {
+    val source =
+      """
+        fn consume_str(~s: String): Unit = println s;
+        fn main(): Unit = consume_str "hello";
+      """
+
+    compileAndGenerate(source).map { llvmIr =>
+      // String is a NativeStruct ({i64, ptr}), not a pointer type
+      // The user function definition should NOT have noalias on the struct param
+      assert(
+        llvmIr.contains("define internal void @test_consume_str(%struct.String %0)"),
+        s"consuming String param should NOT have noalias, got:\n$llvmIr"
+      )
+    }
+  }
+
+  test("no noalias on non-consuming NativePointer parameter") {
+    val source =
+      """
+        type MyPtr = @native[t=*i8, mem=heap];
+        fn alloc_ptr(): MyPtr = @native;
+        fn read_ptr(p: MyPtr): Unit = @native;
+        fn main(): Unit = read_ptr (alloc_ptr ());
+      """
+
+    compileAndGenerate(source).map { llvmIr =>
+      // Only alloc_ptr gets noalias (on return), read_ptr should not
+      assert(
+        llvmIr.contains("declare noalias i8* @alloc_ptr()"),
+        s"alloc_ptr should have noalias return, got:\n$llvmIr"
+      )
+      // read_ptr declaration should NOT have noalias on param
+      assert(
+        llvmIr.contains("declare void @read_ptr(i8*)"),
+        s"non-consuming pointer param should NOT have noalias, got:\n$llvmIr"
+      )
+    }
+  }
+
+  test("native fn with name attribute declares and calls the native symbol") {
+    val source =
+      """
+        fn clone_string(s: String): String = @native[name="__clone_String", mem=alloc];
+        fn main(): String = clone_string "hello";
+      """
+
+    compileAndGenerate(source).map { llvmIr =>
+      assert(
+        llvmIr.contains("declare") && llvmIr.contains("@__clone_String("),
+        s"declaration should use native symbol __clone_String, got:\n$llvmIr"
+      )
+      assert(
+        llvmIr.contains("call") && llvmIr.contains("@__clone_String("),
+        s"call should use native symbol __clone_String, got:\n$llvmIr"
+      )
+      assert(
+        !llvmIr.contains("@clone_string("),
+        s"should NOT contain MML name clone_string as LLVM symbol, got:\n$llvmIr"
+      )
+    }
+  }
+
+  test("native fn without name attribute still uses binding name") {
+    val source =
+      """
+        fn debug_print(a: String): Unit = @native;
+        fn main(): Unit = debug_print "hi";
+      """
+
+    compileAndGenerate(source).map { llvmIr =>
+      assert(
+        llvmIr.contains("declare void @debug_print("),
+        s"declaration should use binding name debug_print, got:\n$llvmIr"
+      )
+      assert(
+        llvmIr.contains("call void @debug_print("),
+        s"call should use binding name debug_print, got:\n$llvmIr"
+      )
+    }
+  }
+
+  test("stdlib str_eq is declared and called with the expected native symbol") {
+    val source =
+      """
+        fn main(): Bool = str_eq "a" "b";
+      """
+
+    compileAndGenerate(source).map { llvmIr =>
+      assert(
+        llvmIr.contains("declare i1 @str_eq("),
+        s"declaration should use stdlib symbol str_eq, got:\n$llvmIr"
+      )
+      assert(
+        llvmIr.contains("call i1 @str_eq("),
+        s"call should use stdlib symbol str_eq, got:\n$llvmIr"
+      )
+    }
+  }
+
+  test("non-pub function emits internal linkage in IR") {
+    val source =
+      """
+        fn helper(): Int = 42;
+        fn main(): Int = helper ();
+      """
+
+    compileAndGenerate(source).map { llvmIr =>
+      assert(
+        llvmIr.contains("define internal i64 @test_helper()"),
+        s"non-pub function should have internal linkage, got:\n$llvmIr"
+      )
+    }
+  }
+
+  test("pub function emits no linkage qualifier in IR") {
+    val source =
+      """
+        pub fn exported(): Int = 42;
+        fn main(): Int = exported ();
+      """
+
+    compileAndGenerate(source).map { llvmIr =>
+      assert(
+        llvmIr.contains("define i64 @test_exported()"),
+        s"pub function should have no internal linkage, got:\n$llvmIr"
+      )
+      assert(
+        !llvmIr.contains("define internal i64 @test_exported()"),
+        s"pub function must not have internal linkage, got:\n$llvmIr"
       )
     }
   }

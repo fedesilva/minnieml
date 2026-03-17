@@ -1,4 +1,4 @@
 
-fn main(): Unit =
+pub fn main(): Unit =
   println (5 + 3)
 ;

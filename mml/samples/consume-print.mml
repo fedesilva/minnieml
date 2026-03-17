@@ -1,0 +1,22 @@
+fn consume(~s: String) = println s;
+
+fn test(flag: Bool) =
+  let s = int_to_str 1;
+  if flag then
+    consume s
+  else
+    println s
+  end
+;
+
+fn loop(n: Int): Unit =
+  if n > 0 then
+    test (n % 2 == 0);
+    loop (n - 1)
+  end
+;
+
+pub fn main() =
+  loop 100;
+  println "done"
+;

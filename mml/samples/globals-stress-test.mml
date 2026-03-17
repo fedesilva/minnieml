@@ -1,0 +1,23 @@
+struct Wrapper { value: String };
+struct Container { outer: Wrapper, tag: String };
+
+// Corrected to lowercase start
+let g_name = "fede"; 
+
+// Deeply nested consumption with intentional grouping
+let c = Container (Wrapper (((g_name)))) ((((g_name))));
+
+fn borrow_string(s: String): Unit =
+  println s
+;
+
+pub fn main(): Unit =
+  // 1. Can we still borrow the global?
+  borrow_string g_name;
+  
+  // 2. Can we borrow the fields of the global-seeded container?
+  println c.tag;
+  
+  // 3. Final verification of the global itself
+  println g_name
+;

@@ -9,11 +9,11 @@ import MmlWhitespace.*
 private[parser] def numericLitP(info: SourceInfo)(using P[Any]): P[LiteralValue] =
   import fastparse.NoWhitespace.*
   P(
-    (spP(info) ~ CharIn("0-9").rep(1) ~ "." ~ CharIn("0-9").rep(1).! ~ spNoWsP(info) ~ spP(info))
+    (spP(info) ~ (CharIn("0-9").rep(1) ~ "." ~ CharIn("0-9").rep(1)).! ~ spNoWsP(info) ~ spP(info))
       .map { case (start, s, end, _) =>
         LiteralFloat(span(start, end), s.toFloat)
       } |
-      (spP(info) ~ "." ~ CharIn("0-9").rep(1).! ~ spNoWsP(info) ~ spP(info)).map {
+      (spP(info) ~ ("." ~ CharIn("0-9").rep(1)).! ~ spNoWsP(info) ~ spP(info)).map {
         case (start, s, end, _) =>
           LiteralFloat(span(start, end), s.toFloat)
       } |
@@ -42,13 +42,13 @@ private[parser] def litUnitP(info: SourceInfo)(using P[Any]): P[LiteralUnit] =
 private[parser] def docCommentP[$: P](info: SourceInfo): P[Option[DocComment]] =
   import fastparse.NoWhitespace.*
 
-  def comment: P[String] = P("#-" ~ commentBody ~ "-#")
+  def comment: P[String] = P("/*" ~ commentBody ~ "*/")
   def commentBody: P[String] =
-    P((comment | (!("-#") ~ AnyChar).!).rep).map(_.mkString.stripMargin('#'))
+    P((comment | (!("*/") ~ AnyChar).!).rep).map(_.mkString.stripMargin('*'))
 
   P(spP(info) ~ comment.! ~ spNoWsP(info) ~ spP(info)).?.map {
     case Some(start, s, end, _) =>
-      val clean = s.replaceAll("#-", "").replaceAll("-#", "").stripMargin('#').trim
+      val clean = s.replaceAll("/\\*", "").replaceAll("\\*/", "").stripMargin('*').trim
       DocComment(span(start, end), clean).some
     case None => none
   }

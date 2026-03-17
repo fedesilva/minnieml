@@ -1,4 +1,7 @@
 
-fn main(): Unit =
+
+
+/* main entry point */
+pub fn main(): Unit =
   println "Hello, Friend"
 ;

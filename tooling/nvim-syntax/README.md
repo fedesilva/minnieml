@@ -12,13 +12,15 @@ Syntax highlighting and LSP support for MinnieML (`.mml`) files in Neovim.
   - Semantic tokens (rich syntax highlighting)
 
 - **Syntax highlighting** for all MML language constructs:
-  - Keywords: `fn`, `let`, `op`, `type`, `module`, `if`/`then`/`else`
-  - Comments: line comments (`#`) and documentation comments (`#- ... -#`)
+  - Keywords: `fn`, `let`, `op`, `type`, `module`, `inline`, `if`/`then`/`else`
+  - Comments: line comments (`//`) and documentation comments (`/* ... */`)
   - Operators: symbolic (`+`, `-`, `==`, etc.) and alphanumeric (`and`, `or`, `not`)
   - Literals: strings, integers, floats, booleans
   - Types: uppercase identifiers (`Int`, `String`, `Bool`, etc.)
   - Native annotations: `@native`
   - Special constants: `()`, `???`, `_`
+
+- **LSP commands** for compiling, cleaning, AST/IR generation, and server restart
 
 - **File type detection** for `.mml` files
 - **No dependencies** - pure Vim script implementation
@@ -87,6 +89,32 @@ use {
 ```vim
 Plug '~/Workshop/mine/mml/mml/tooling/nvim-syntax'
 ```
+
+## Commands
+
+The following user commands are available when the MML LSP server is running:
+
+| Command | Description |
+|---|---|
+| `:MmlRestart` | Restart the MML LSP server |
+| `:MmlCompile` | Compile the current file to a binary |
+| `:MmlCompileLib` | Compile the current file as a library |
+| `:MmlClean` | Clean the build directory |
+| `:MmlAst` | Generate and display the AST |
+| `:MmlIr` | Generate and display LLVM IR |
+
+## Keybindings
+
+Default keybindings are set buffer-locally when the MML LSP server attaches:
+
+| Keybinding | Command | Description |
+|---|---|---|
+| `<leader>mr` | `:MmlRestart` | Restart LSP server |
+| `<leader>mce` | `:MmlCompile` | Compile to binary |
+| `<leader>mcl` | `:MmlCompileLib` | Compile as library |
+| `<leader>mK` | `:MmlClean` | Clean build directory |
+| `<leader>ma` | `:MmlAst` | Show AST |
+| `<leader>mi` | `:MmlIr` | Show IR |
 
 ## Usage
 
@@ -196,14 +224,14 @@ colorscheme default  " or your preferred scheme
 
 - **Implementation**: Pure Vim regex-based syntax
 - **Syntax priority**: Keywords > Types > Identifiers > Operators
-- **Comment support**: Line comments (`#`) and nested doc comments (`#- ... -#`)
+- **Comment support**: Line comments (`//`) and nested doc comments (`/* ... */`)
 - **Operator precedence**: Not implemented in syntax layer (handled by parser)
 
 ## Prerequisites
 
 - **For LSP support**:
   - [nvim-lspconfig](https://github.com/neovim/nvim-lspconfig) must be installed
-  - `mmlc` must be in your PATH (run `sbt mmlcPublishLocal` from the MML repo)
+  - `mmlc` must be in your PATH (run `sbtn mmlcPublishLocal` from the MML repo)
 
 ## Future Enhancements
 

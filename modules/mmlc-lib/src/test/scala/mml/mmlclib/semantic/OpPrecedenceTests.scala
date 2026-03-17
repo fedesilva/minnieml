@@ -1294,19 +1294,19 @@ class OpPrecedenceTests extends BaseEffFunSuite:
   }
 
 // Test operators with the same symbol but different arity
-// op ++ (a) = a + 1;
-// op ++ (a b) = a + b;
-// let a = 1 ++ 2;  // Binary usage
-// let b = ++1;     // Unary prefix usage
+// op <> (a) = a + 1;
+// op <> (a b) = a + b;
+// let a = 1 <> 2;  // Binary usage
+// let b = <>1;     // Unary prefix usage
 // Verifies disambiguation between unary and binary variants of the same operator
 
   test("Test operators with the same symbol but different arity") {
     semNotFailed(
       """
-       op ++ (a: Int, b: Int): Int = a + b;
-       op ++ (a: Int): Int = a + 1;
-       let a = 1 ++ 2;
-       let b = ++1;
+       op <> (a: Int, b: Int): Int = a + b;
+       op <> (a: Int): Int = a + 1;
+       let a = 1 <> 2;
+       let b = <>1;
       """
     ).map { m =>
 
@@ -1323,9 +1323,9 @@ class OpPrecedenceTests extends BaseEffFunSuite:
       memberBndA match
         case bnd: Bnd =>
           bnd.value.terms match
-            case TXApp(binaryPlusPlusRef, _, firstArg :: secondArg :: Nil) :: Nil =>
-              // Check operator is ++
-              assertEquals(clue(binaryPlusPlusRef.name), clue("++"), "Expected ++ operator")
+            case TXApp(binaryRef, _, firstArg :: secondArg :: Nil) :: Nil =>
+              // Check operator is <>
+              assertEquals(clue(binaryRef.name), clue("<>"), "Expected <> operator")
 
               // First argument should be literal 1
               firstArg match
@@ -1343,16 +1343,16 @@ class OpPrecedenceTests extends BaseEffFunSuite:
                     s"Expected second argument to be literal 2, got: ${prettyPrintAst(secondArg)}"
                   )
             case other =>
-              fail(s"Expected TXApp pattern for binary ++, got: ${prettyPrintList(other)}")
+              fail(s"Expected TXApp pattern for binary <>, got: ${prettyPrintList(other)}")
         case x =>
           fail(s"Expected a Bnd, got: ${prettyPrintAst(x)}")
 
       memberBndB match
         case bnd: Bnd =>
           bnd.value.terms match
-            case TXApp(unaryPlusPlusRef, _, args) :: Nil =>
-              // Check operator is ++
-              assertEquals(clue(unaryPlusPlusRef.name), clue("++"), "Expected ++ operator")
+            case TXApp(unaryRef, _, args) :: Nil =>
+              // Check operator is <>
+              assertEquals(clue(unaryRef.name), clue("<>"), "Expected <> operator")
 
               // Check we have one argument
               assertEquals(clue(args.size), clue(1), "Expected one argument")
@@ -1364,7 +1364,7 @@ class OpPrecedenceTests extends BaseEffFunSuite:
                 case _ =>
                   fail(s"Expected argument to be literal 1, got: ${prettyPrintAst(args.head)}")
             case other =>
-              fail(s"Expected TXApp pattern for unary ++, got: ${prettyPrintList(other)}")
+              fail(s"Expected TXApp pattern for unary <>, got: ${prettyPrintList(other)}")
         case x =>
           fail(s"Expected a Bnd, got: ${prettyPrintAst(x)}")
     }

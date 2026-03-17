@@ -39,7 +39,7 @@ object Simplifier:
   // Helper to ensure a Term is an Expr, wrapping if necessary
   private def ensureExpr(term: Term): Expr = term match {
     case e: Expr => e // Already an Expr
-    case other => Expr(other.span, List(other)) // Wrap non-Expr in Expr
+    case other => Expr(other.source, List(other)) // Wrap non-Expr in Expr
   }
 
   /** Simplifies an expression that must remain an Expr (e.g., member body, cond branch). */
@@ -53,7 +53,7 @@ object Simplifier:
     // Simplify all subterms recursively using simplifyTerm
     val simplifiedTerms = expr.terms.map(simplifyTerm)
     // Always rebuild the Expr with the simplified terms
-    Expr(expr.span, simplifiedTerms, expr.typeSpec, expr.typeAsc)
+    Expr(expr.source, simplifiedTerms, expr.typeSpec, expr.typeAsc)
 
   /** Recursively simplify a term.
     *   - For an Expr: simplify its contents, then unwrap if only one term remains.

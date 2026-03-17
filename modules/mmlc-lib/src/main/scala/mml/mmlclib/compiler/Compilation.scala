@@ -63,6 +63,5 @@ object Compilation:
     config:     CompilerConfig
   ): CompilerState =
     import mml.mmlclib.ast.*
-    val dummySpan = SrcSpan(SrcPoint(0, 0, 0), SrcPoint(0, 0, 0))
-    val module    = Module(dummySpan, moduleName, Visibility.Public, Nil)
+    val module = Module(SourceOrigin.Synth, moduleName, Visibility.Public, Nil)
     CompilerState.empty(module, SourceInfo(content), config)

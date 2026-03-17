@@ -60,7 +60,7 @@ trait BaseEffFunSuite extends CatsEffectSuite:
           containsErrorNode(module),
           msg.getOrElse(s"Expected Error nodes but found none. ${prettyPrintAst(module)} ")
         )
-      case Left(error) =>
+      case Left(_) =>
       // pass
     }
   }
@@ -123,7 +123,7 @@ trait BaseEffFunSuite extends CatsEffectSuite:
           state.errors.nonEmpty || containsErrorNode(state.module),
           msg.getOrElse(s"Expected errors but found none. ${prettyPrintAst(state.module)} ")
         )
-      case Left(error) =>
+      case Left(_) =>
       // pass
     }
 
@@ -162,10 +162,10 @@ trait BaseEffFunSuite extends CatsEffectSuite:
       case Right(state) =>
         if state.errors.nonEmpty then fail(s"Compilation failed: ${state.errors}")
         else
-          val validated = CodegenStage.process(state)
+          val validated = CodegenStage.validate(state)
           if validated.hasErrors then fail(s"Validation failed: ${validated.errors}")
           else
-            CodegenStage.processIrOnly(validated).flatMap { codegenState =>
+            CodegenStage.emitIrOnly(validated).flatMap { codegenState =>
               codegenState.llvmIr match
                 case Some(ir) => IO.pure(ir)
                 case None => fail(s"CodeGen failed: ${codegenState.errors}")

@@ -59,36 +59,32 @@ object SemanticTokens:
       case _: DuplicateMember | _: InvalidMember | _: ParsingMemberError | _: ParsingIdError =>
         Nil
 
-  /** Collect tokens from a binding (let, fn, op). Note: bnd.span.start points to the NAME, not the
-    * keyword.
-    */
+  /** Collect tokens from a binding (let, fn, op). */
   private def collectFromBnd(bnd: Bnd, resolvables: ResolvablesIndex): List[RawToken] =
+    if !bnd.source.isFromSource then return Nil
+
     val (keywordLen, nameTokenType) = bnd.meta match
       case Some(meta) =>
         meta.origin match
-          case BindingOrigin.Function => (2, TokenType.Function) // "fn"
+          case BindingOrigin.Function | BindingOrigin.Constructor | BindingOrigin.Destructor =>
+            (2, TokenType.Function) // "fn"
           case BindingOrigin.Operator => (2, TokenType.Operator) // "op"
       case None =>
         (3, TokenType.Variable) // "let"
 
-    // Keyword is BEFORE the name: col = name_col - 1 (space) - keyword_len
-    val keywordCol = bnd.span.start.col - 1 - keywordLen
-    val keywordToken =
-      tokenAtPos(bnd.span.start.line, keywordCol, keywordLen, TokenType.Keyword)
+    val nameSpanOpt = bnd.nameNode.source.spanOpt
+    val keywordToken = nameSpanOpt.flatMap { nameSpan =>
+      val keywordCol = nameSpan.start.col - 1 - keywordLen
+      tokenAtPos(nameSpan.start.line, keywordCol, keywordLen, TokenType.Keyword)
+    }
 
-    // Name token: span.start is already at the name position
-    val nameLen = bnd.meta match
-      case Some(meta) if meta.origin == BindingOrigin.Operator => meta.originalName.length
-      case _ => bnd.name.length
-
-    val nameToken =
-      tokenAtPos(
-        line      = bnd.span.start.line,
-        col       = bnd.span.start.col,
-        length    = nameLen,
-        tokenType = nameTokenType,
+    val nameToken = nameSpanOpt.flatMap { nameSpan =>
+      tokenAt(
+        nameSpan,
+        nameTokenType,
         modifiers = Set(TokenModifier.Declaration, TokenModifier.Readonly)
       )
+    }
 
     val bodyTokens = collectFromExpr(bnd.value, resolvables)
 
@@ -96,21 +92,39 @@ object SemanticTokens:
 
   /** Collect tokens from a type definition. */
   private def collectFromTypeDef(td: TypeDef): List[RawToken] =
-    val keyword = keywordAt(td.span.start, 4) // "type"
-    val name    = declarationToken(td.span, td.name, TokenType.Type)
+    val keyword = td.spanOpt.flatMap(span => keywordAt(span.start, 4)) // "type"
+    val name = td.nameNode.source.spanOpt.flatMap { span =>
+      tokenAt(
+        span,
+        TokenType.Type,
+        modifiers = Set(TokenModifier.Declaration, TokenModifier.Readonly)
+      )
+    }
     keyword.toList ++ name.toList ++ td.typeSpec.toList.flatMap(collectFromType)
 
   /** Collect tokens from a type alias. */
   private def collectFromTypeAlias(ta: TypeAlias): List[RawToken] =
-    val keyword = keywordAt(ta.span.start, 4) // "type"
-    val name    = declarationToken(ta.span, ta.name, TokenType.Type)
+    val keyword = ta.spanOpt.flatMap(span => keywordAt(span.start, 4)) // "type"
+    val name = ta.nameNode.source.spanOpt.flatMap { span =>
+      tokenAt(
+        span,
+        TokenType.Type,
+        modifiers = Set(TokenModifier.Declaration, TokenModifier.Readonly)
+      )
+    }
     keyword.toList ++ name.toList ++ collectFromType(ta.typeRef)
 
   /** Collect tokens from a struct type. */
   private def collectFromTypeStruct(ts: TypeStruct): List[RawToken] =
-    val keyword = keywordAt(ts.span.start, 6) // "struct"
-    val name    = declarationToken(ts.span, ts.name, TokenType.Type)
-    val fields  = ts.fields.toList.flatMap(f => collectFromType(f.typeSpec))
+    val keyword = ts.spanOpt.flatMap(span => keywordAt(span.start, 6)) // "struct"
+    val name = ts.nameNode.source.spanOpt.flatMap { span =>
+      tokenAt(
+        span,
+        TokenType.Type,
+        modifiers = Set(TokenModifier.Declaration, TokenModifier.Readonly)
+      )
+    }
+    val fields = ts.fields.toList.flatMap(f => collectFromType(f.typeSpec))
     keyword.toList ++ name.toList ++ fields
 
   /** Collect tokens from an expression. */
@@ -133,17 +147,17 @@ object SemanticTokens:
         collectFromCond(cond, resolvables)
 
       case lit: LiteralInt =>
-        tokenAt(lit.span, TokenType.Number).toList
+        lit.spanOpt.flatMap(tokenAt(_, TokenType.Number)).toList
 
       case lit: LiteralFloat =>
-        tokenAt(lit.span, TokenType.Number).toList
+        lit.spanOpt.flatMap(tokenAt(_, TokenType.Number)).toList
 
       case lit: LiteralString =>
-        tokenAt(lit.span, TokenType.String).toList
+        lit.spanOpt.flatMap(tokenAt(_, TokenType.String)).toList
 
       case lit: LiteralBool =>
         // true/false are keywords
-        tokenAt(lit.span, TokenType.Keyword).toList
+        lit.spanOpt.flatMap(tokenAt(_, TokenType.Keyword)).toList
 
       case _: LiteralUnit =>
         Nil // () is just punctuation
@@ -157,12 +171,13 @@ object SemanticTokens:
       case expr: Expr =>
         collectFromExpr(expr, resolvables)
 
-      case _: Placeholder | _: Hole | _: DataConstructor | _: NativeImpl | _: TermError |
-          _: InvalidExpression =>
+      case _: Placeholder | _: Hole | _: DataConstructor | _: DataDestructor | _: NativeImpl |
+          _: TermError | _: InvalidExpression =>
         Nil
 
   /** Collect tokens from a reference. */
   private def collectFromRef(ref: Ref, resolvables: ResolvablesIndex): List[RawToken] =
+    if !ref.source.isFromSource then return Nil
     val resolvedOpt =
       ref.resolvedId
         .flatMap(resolvables.lookup)
@@ -179,7 +194,9 @@ object SemanticTokens:
             bnd.meta match
               case Some(meta) =>
                 meta.origin match
-                  case BindingOrigin.Function => TokenType.Function
+                  case BindingOrigin.Function | BindingOrigin.Constructor |
+                      BindingOrigin.Destructor =>
+                    TokenType.Function
                   case BindingOrigin.Operator => TokenType.Operator
               case None => TokenType.Variable
           case _: TypeDef | _: TypeAlias | _: TypeStruct => TokenType.Type
@@ -198,17 +215,16 @@ object SemanticTokens:
   /** Collect tokens from a lambda. */
   private def collectFromLambda(lambda: Lambda, resolvables: ResolvablesIndex): List[RawToken] =
     val paramTokens = lambda.params.flatMap { param =>
-      // Skip params with invalid/empty spans or synthetic names (e.g., statement chain params)
-      if param.span.start.line > 0 && param.span.start.col > 0 && !param.name.startsWith("__") then
-        val nameToken = RawToken(
-          line      = param.span.start.line,
-          col       = param.span.start.col,
-          length    = param.name.length,
-          tokenType = TokenType.Parameter,
-          modifiers = Set(TokenModifier.Declaration, TokenModifier.Readonly)
-        )
+      if param.source.isFromSource then
+        val nameToken = param.nameNode.source.spanOpt.flatMap { span =>
+          tokenAt(
+            span,
+            TokenType.Parameter,
+            modifiers = Set(TokenModifier.Declaration, TokenModifier.Readonly)
+          )
+        }
         val typeTokens = param.typeAsc.toList.flatMap(collectFromType)
-        nameToken :: typeTokens
+        nameToken.toList ++ typeTokens
       else Nil
     }
     paramTokens ++ collectFromExpr(lambda.body, resolvables)
@@ -216,16 +232,28 @@ object SemanticTokens:
   /** Collect tokens from a conditional. */
   private def collectFromCond(cond: Cond, resolvables: ResolvablesIndex): List[RawToken] =
     // "if" at start of cond span
-    val ifKeyword = keywordAt(cond.span.start, 2)
+    val ifKeyword = cond.spanOpt.flatMap(span => keywordAt(span.start, 2))
 
     // "then" is between cond.cond.end and cond.ifTrue.start
-    val thenKeyword = keywordBetween(cond.cond.span.end, cond.ifTrue.span.start, 4)
+    val thenKeyword = for
+      condSpan <- cond.cond.spanOpt
+      ifTrueSpan <- cond.ifTrue.spanOpt
+      kw <- keywordBetween(condSpan.end, ifTrueSpan.start, 4)
+    yield kw
 
     // "else" or "elif" is between cond.ifTrue.end and cond.ifFalse.start
-    val elseKeyword = keywordBetween(cond.ifTrue.span.end, cond.ifFalse.span.start, 4)
+    val elseKeyword = for
+      ifTrueSpan <- cond.ifTrue.spanOpt
+      ifFalseSpan <- cond.ifFalse.spanOpt
+      kw <- keywordBetween(ifTrueSpan.end, ifFalseSpan.start, 4)
+    yield kw
 
     // "end" is at the end of the cond span (if present)
-    val endKeyword = keywordAtEnd(cond.span, cond.ifFalse.span, 3)
+    val endKeyword = for
+      condSpan <- cond.spanOpt
+      lastExprSpan <- cond.ifFalse.spanOpt
+      kw <- keywordAtEnd(condSpan, lastExprSpan, 3)
+    yield kw
 
     val condTokens    = collectFromExpr(cond.cond, resolvables)
     val ifTrueTokens  = collectFromExpr(cond.ifTrue, resolvables)
@@ -243,7 +271,9 @@ object SemanticTokens:
   private def collectFromType(typ: Type): List[RawToken] =
     typ match
       case tr: TypeRef =>
-        tokenAt(tr.span, TokenType.Type, lengthOverride = Some(tr.name.length)).toList
+        tr.spanOpt
+          .flatMap(tokenAt(_, TokenType.Type, lengthOverride = Some(tr.name.length)))
+          .toList
       case tf: TypeFn =>
         tf.paramTypes.flatMap(collectFromType) ++ collectFromType(tf.returnType)
       case tt: TypeTuple =>
@@ -251,7 +281,9 @@ object SemanticTokens:
       case ta: TypeApplication =>
         collectFromType(ta.base) ++ ta.args.flatMap(collectFromType)
       case tv: TypeVariable =>
-        tokenAt(tv.span, TokenType.Type, lengthOverride = Some(tv.name.length)).toList
+        tv.spanOpt
+          .flatMap(tokenAt(_, TokenType.Type, lengthOverride = Some(tv.name.length)))
+          .toList
       case ts: TypeScheme =>
         collectFromType(ts.bodyType)
       case tor: TypeOpenRecord =>
@@ -311,13 +343,15 @@ object SemanticTokens:
     val length = ref.name.length
     if length <= 0 then None
     else
-      ref.qualifier match
-        case Some(_) =>
-          val end      = ref.span.end
-          val startCol = end.col - length
-          tokenAtPos(end.line, startCol, length, tokenType)
-        case None =>
-          tokenAtPos(ref.span.start.line, ref.span.start.col, length, tokenType)
+      ref.spanOpt.flatMap { span =>
+        ref.qualifier match
+          case Some(_) =>
+            val end      = span.end
+            val startCol = end.col - length
+            tokenAtPos(end.line, startCol, length, tokenType)
+          case None =>
+            tokenAtPos(span.start.line, span.start.col, length, tokenType)
+      }
 
   private def tokenAtPos(
     line:      Int,
@@ -329,59 +363,29 @@ object SemanticTokens:
     if line <= 0 || col <= 0 || length <= 0 then None
     else Some(RawToken(line, col, length, tokenType, modifiers))
 
-  /** Create a declaration token, trying to find the name after the keyword. */
-  private def declarationToken(
-    span:      SrcSpan,
-    name:      String,
-    tokenType: TokenType
-  ): Option[RawToken] =
-    // Assume name follows keyword + whitespace
-    // For "type Foo", "let x", "fn bar", etc.
-    // This is an approximation - real implementation would need source text
-    tokenAtPos(
-      line      = span.start.line,
-      col       = span.start.col + keywordLengthFor(tokenType) + 1,
-      length    = name.length,
-      tokenType = tokenType,
-      modifiers = Set(TokenModifier.Declaration, TokenModifier.Readonly)
-    )
-
-  private def keywordLengthFor(tokenType: TokenType): Int =
-    tokenType match
-      case TokenType.Type => 4 // "type"
-      case TokenType.Function => 2 // "fn"
-      case TokenType.Operator => 2 // "op"
-      case TokenType.Variable => 3 // "let"
-      case _ => 0
-
   /** Delta encode tokens for LSP protocol. Each token is: [deltaLine, deltaCol, length, tokenType,
     * tokenModifiers]
     *
     * LSP uses 0-based line/column. Our RawToken uses 1-based (from source spans).
     */
   private def deltaEncode(tokens: List[RawToken]): Array[Int] =
-    val result   = Array.newBuilder[Int]
-    var prevLine = 1 // 1-based
-    var prevCol  = 1 // 1-based
+    val (_, _, builder) =
+      tokens.foldLeft((1, 1, Array.newBuilder[Int])) { case ((prevLine, prevCol, result), token) =>
+        val deltaLine = token.line - prevLine
+        val deltaCol =
+          if deltaLine == 0 then token.col - prevCol
+          else token.col - 1
+        val modifierBits = token.modifiers.foldLeft(0) { (acc, mod) =>
+          acc | (1 << mod.ordinal)
+        }
 
-    for token <- tokens do
-      // Convert to deltas (result is 0-based)
-      val deltaLine = token.line - prevLine
-      val deltaCol =
-        if deltaLine == 0 then token.col - prevCol
-        else token.col - 1 // Absolute position for new lines (0-based)
+        result += deltaLine
+        result += deltaCol
+        result += token.length
+        result += token.tokenType.ordinal
+        result += modifierBits
 
-      val modifierBits = token.modifiers.foldLeft(0) { (acc, mod) =>
-        acc | (1 << mod.ordinal)
+        (token.line, token.col, result)
       }
 
-      result += deltaLine
-      result += deltaCol
-      result += token.length
-      result += token.tokenType.ordinal
-      result += modifierBits
-
-      prevLine = token.line
-      prevCol  = token.col
-
-    result.result()
+    builder.result()

@@ -23,20 +23,22 @@ object PreCodegenValidator:
     state: CompilerState
   ): CompilerState =
     mode match
-      case CompilationMode.Binary =>
+      case CompilationMode.Exe =>
         findMainFn(state.module) match
           case None =>
             state.addError(
               SemanticError.InvalidEntryPoint(
                 "No entry point 'main' found for binary compilation",
-                state.module.span
+                state.module.source
               )
             )
-          case Some((bnd, lambda)) =>
-            if lambda.params.nonEmpty then
+          case Some((bnd, _)) =>
+            if bnd.visibility != Visibility.Public then
               state.addError(
-                SemanticError
-                  .InvalidEntryPoint("Entry point 'main' must have no parameters", bnd.span)
+                SemanticError.InvalidEntryPoint(
+                  "Entry point 'main' must be declared 'pub'",
+                  bnd.source
+                )
               )
             else
               bnd.typeSpec match
@@ -49,14 +51,14 @@ object PreCodegenValidator:
                       state.addError(
                         SemanticError.InvalidEntryPoint(
                           "Entry point 'main' must have a return type of 'Unit' or 'Int64'",
-                          bnd.span
+                          bnd.source
                         )
                       )
                 case None =>
                   state.addError(
                     SemanticError.InvalidEntryPoint(
                       "Entry point 'main' must have a return type of 'Unit' or 'Int64'",
-                      bnd.span
+                      bnd.source
                     )
                   )
       case _ => state
@@ -65,8 +67,25 @@ object PreCodegenValidator:
     module.members.collectFirst {
       case bnd: Bnd
           if bnd.meta.exists(m => m.origin == BindingOrigin.Function && m.originalName == "main") =>
-        bnd.value.terms.headOption.collect { case lambda: Lambda => (bnd, lambda) }
+        bnd.value.terms.headOption.collect {
+          case lambda: Lambda if isValidMainParams(lambda, module) => (bnd, lambda)
+        }
     }.flatten
+
+  private def isValidMainParams(lambda: Lambda, module: Module): Boolean =
+    lambda.params match
+      case Nil => true
+      case param :: Nil =>
+        !param.consuming && paramType(param).exists(isStringArrayType(_, module))
+      case _ => false
+
+  private def paramType(param: FnParam): Option[Type] =
+    param.typeSpec.orElse(param.typeAsc)
+
+  private def isStringArrayType(typeSpec: Type, module: Module): Boolean =
+    resolveAliasChain(typeSpec, module) match
+      case TypeRef(_, name, _, _) => name == "StringArray"
+      case _ => false
 
   private def extractReturnType(typeSpec: Type, module: Module): Option[Type] =
     resolveAliasChain(typeSpec, module) match
@@ -78,7 +97,7 @@ object PreCodegenValidator:
     val canonical = resolveAliasChain(typeSpec, module)
     canonical match
       case TypeUnit(_) => true
-      case NativePrimitive(_, llvmType) => allowedNativeReturnLlvmT.contains(llvmType)
+      case NativePrimitive(_, llvmType, _, _) => allowedNativeReturnLlvmT.contains(llvmType)
       case TypeRef(_, name, _, _) => allowedReturnNames.contains(name)
       case _ => false
 
@@ -100,6 +119,6 @@ object PreCodegenValidator:
             case None => resolveAliasChain(ta.typeRef, module)
         case Some(td: TypeDef) =>
           // Return TypeRef to the TypeDef, not its native typeSpec
-          TypeRef(tr.span, td.name, td.id)
+          TypeRef(tr.source, td.name, td.id)
         case _ => tr
     case other => other

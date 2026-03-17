@@ -3,7 +3,8 @@ package mml.mmlclib.codegen.emitter
 import cats.syntax.all.*
 import mml.mmlclib.ast.*
 import mml.mmlclib.codegen.TargetAbi
-import mml.mmlclib.codegen.emitter.abis.lowerNativeParamTypes
+import mml.mmlclib.codegen.emitter.abis.AbiStrategy
+import mml.mmlclib.codegen.emitter.alias.AliasScopeEmitter
 import mml.mmlclib.codegen.emitter.expression.escapeString
 import mml.mmlclib.codegen.emitter.tbaa.TbaaEmitter
 import mml.mmlclib.errors.CompilerWarning
@@ -25,16 +26,20 @@ import mml.mmlclib.errors.CompilerWarning
 case class EmitResult(ir: String, warnings: List[CompilerWarning])
 
 def emitModule(
-  module:       Module,
-  entryPoint:   Option[String],
-  targetTriple: String,
-  targetAbi:    TargetAbi
+  module:          Module,
+  entryPoint:      Option[String],
+  targetTriple:    String,
+  targetAbi:       TargetAbi,
+  targetCpu:       Option[String],
+  emitAliasScopes: Boolean
 ): Either[CodeGenError, EmitResult] = {
   // Setup the initial state with the module name, resolvables and header
   val initialState = CodeGenState(
-    moduleName  = module.name,
-    targetAbi   = targetAbi,
-    resolvables = module.resolvables
+    moduleName      = module.name,
+    targetAbi       = targetAbi,
+    abi             = AbiStrategy.forTarget(targetAbi),
+    resolvables     = module.resolvables,
+    emitAliasScopes = emitAliasScopes
   ).withModuleHeader(module.name, targetTriple)
 
   // Collect all TypeDef members with native type specifications
@@ -114,6 +119,7 @@ def emitModule(
 
   // Construct the final output with all components in the proper order
   stateWithMain.map { finalState =>
+    val cpuAttrValue = targetCpu.filter(_.nonEmpty)
     // Assemble the full output in the correct order
     val output = new StringBuilder()
 
@@ -146,6 +152,16 @@ def emitModule(
     // 5. Function definitions and other code
     output.append(finalState.output.reverse.mkString("\n"))
 
+    // 5. Attributes
+    cpuAttrValue match {
+      case Some(cpu) =>
+        output.append(s"""\nattributes #0 = { "target-cpu"="$cpu" }""")
+        output.append(s"""\nattributes #1 = { inlinehint "target-cpu"="$cpu" }\n""")
+      case None =>
+        output.append("\nattributes #0 = {}")
+        output.append("\nattributes #1 = { inlinehint }\n")
+    }
+
     // 6. Global initializers
     if finalState.initializers.nonEmpty then
       val initSize = finalState.initializers.size
@@ -161,6 +177,11 @@ def emitModule(
       output.append("\n]\n")
 
     // 7. TBAA Metadata
+    if finalState.aliasScopeOutput.nonEmpty then
+      output.append("\n; Alias Scope Metadata\n")
+      output.append(finalState.aliasScopeOutput.reverse.mkString("\n"))
+      output.append('\n')
+
     if finalState.tbaaOutput.nonEmpty then
       output.append("\n; TBAA Metadata\n")
       output.append(finalState.tbaaOutput.reverse.mkString("\n"))
@@ -224,22 +245,48 @@ private def emitBndLambda(
 
       // Check if this is a native function implementation
       lambda.body.terms match {
-        case List(NativeImpl(_, _, _, _)) =>
+        case List(NativeImpl(_, _, _, _, memEffect, nativeSymbol)) =>
           // Native functions: emit as declaration with original name (external symbol)
-          // Split struct params for x86_64 ABI compliance
-          val abiParamTypes = lowerNativeParamTypes(filteredParamTypes, state)
-          Right(state.withFunctionDeclaration(fnName, returnType, abiParamTypes))
+          // Lower params for ABI (byval for large structs on x86_64)
+          val abiParamTypes = state.abi.lowerParamTypes(filteredParamTypes, state)
+          // Lower return type for ABI (sret for large struct returns on x86_64)
+          val (abiReturnType, sretParam) = state.abi.lowerReturnType(returnType, state)
+          val finalParamTypes            = sretParam.toList ++ abiParamTypes
+
+          // Add noalias for functions that allocate and return a pointer type
+          // Check both the NativeImpl memEffect (stdlib) and the return type's own
+          // memEffect (user-defined types like @native[t=*i8, mem=heap])
+          val returnTypeInfo = fnType.returnType match
+            case tr: TypeRef =>
+              tr.resolvedId
+                .flatMap(state.resolvables.lookupType)
+                .collect:
+                  case TypeDef(_, _, _, Some(np: NativePointer), _, _, _) => np
+            case _ => None
+
+          val isAllocatingPointerReturn = returnTypeInfo.exists { np =>
+            memEffect.contains(MemEffect.Alloc) || np.memEffect.contains(MemEffect.Alloc)
+          }
+
+          val finalReturnType =
+            if isAllocatingPointerReturn then s"noalias $abiReturnType"
+            else abiReturnType
+
+          val declaredName = nativeSymbol.getOrElse(fnName)
+          Right(state.withFunctionDeclaration(declaredName, finalReturnType, finalParamTypes))
 
         case _ =>
           // User-defined functions: emit with mangled name (modulename_functionname)
           val emittedName = state.mangleName(fnName)
+          val linkage     = if bnd.visibility == Visibility.Public then "" else "internal "
           compileBndLambda(
             bnd,
             lambda,
             state,
             returnType,
             filteredParamTypes,
-            emittedName
+            emittedName,
+            linkage
           )
       }
     }
@@ -306,7 +353,7 @@ private def emitValueBinding(bnd: Bnd, state: CodeGenState): Either[CodeGenError
             state.emit(emitGlobalVariable(mangledName, llvmType, staticValue))
           }
 
-        case lit: LiteralUnit =>
+        case _: LiteralUnit =>
           // Unit literals don't generate globals, they're compile-time only
           Right(state)
 
@@ -314,7 +361,7 @@ private def emitValueBinding(bnd: Bnd, state: CodeGenState): Either[CodeGenError
           // Fall back to existing runtime initialization logic for complex expressions
           val origState  = state
           val initFnName = s"_init_global_$mangledName"
-          compileExpr(bnd.value, state).flatMap { compileRes =>
+          compileExpr(bnd.value, state).flatMap { _ =>
             // Get the binding's type specification for proper LLVM type
             val llvmTypeE = bnd.typeSpec match {
               case Some(typeSpec) => getLlvmType(typeSpec, origState)
@@ -331,8 +378,19 @@ private def emitValueBinding(bnd: Bnd, state: CodeGenState): Either[CodeGenError
                 .emit(s"define internal void @$initFnName() {")
                 .emit(s"entry:")
               compileExpr(bnd.value, state2.withRegister(0)).map { compileRes2 =>
-                compileRes2.state
-                  .emit(emitStore(s"%${compileRes2.register}", llvmType, s"@$mangledName"))
+                val (stateWithAlias, aliasTag, noaliasTag) = bnd.typeSpec match
+                  case Some(spec) => AliasScopeEmitter.getAliasScopeTags(spec, compileRes2.state)
+                  case None => (compileRes2.state, None, None)
+                val storeLine =
+                  emitStore(
+                    s"%${compileRes2.register}",
+                    llvmType,
+                    s"@$mangledName",
+                    aliasScope = aliasTag,
+                    noalias    = noaliasTag
+                  )
+                stateWithAlias
+                  .emit(storeLine)
                   .emit("  ret void")
                   .emit("}")
                   .emit("")
@@ -346,7 +404,7 @@ private def emitValueBinding(bnd: Bnd, state: CodeGenState): Either[CodeGenError
       // Multiple terms - not a simple literal, use runtime initialization
       val origState  = state
       val initFnName = s"_init_global_$mangledName"
-      compileExpr(bnd.value, state).flatMap { compileRes =>
+      compileExpr(bnd.value, state).flatMap { _ =>
         val llvmTypeE = bnd.typeSpec match {
           case Some(typeSpec) => getLlvmType(typeSpec, origState)
           case None =>
@@ -360,8 +418,19 @@ private def emitValueBinding(bnd: Bnd, state: CodeGenState): Either[CodeGenError
             .emit(s"define internal void @$initFnName() {")
             .emit(s"entry:")
           compileExpr(bnd.value, state2.withRegister(0)).map { compileRes2 =>
-            compileRes2.state
-              .emit(emitStore(s"%${compileRes2.register}", llvmType, s"@$mangledName"))
+            val (stateWithAlias, aliasTag, noaliasTag) = bnd.typeSpec match
+              case Some(spec) => AliasScopeEmitter.getAliasScopeTags(spec, compileRes2.state)
+              case None => (compileRes2.state, None, None)
+            val storeLine =
+              emitStore(
+                s"%${compileRes2.register}",
+                llvmType,
+                s"@$mangledName",
+                aliasScope = aliasTag,
+                noalias    = noaliasTag
+              )
+            stateWithAlias
+              .emit(storeLine)
               .emit("  ret void")
               .emit("}")
               .emit("")
@@ -384,26 +453,54 @@ private def emitSynthesizedMain(
   module:     Module,
   state:      CodeGenState
 ): CodeGenState =
-  val returnsInt = mainReturnsInt(module, state)
+  val returnsInt     = mainReturnsInt(module, state)
+  val takesArgsArray = mainTakesStringArrayArg(module)
 
   // Ensure mml_sys_flush is declared
-  val stateWithFlush = state.withFunctionDeclaration("mml_sys_flush", "void", List.empty)
+  val stateWithFlush = state
+    .withFunctionDeclaration("mml_sys_flush", "void", List.empty)
+    .withFunctionDeclaration("mml_args_to_array", "%struct.StringArray", List("i32", "ptr"))
+    .withFunctionDeclaration("__free_StringArray", "void", List("%struct.StringArray"))
 
   if returnsInt then
-    // Int-returning main: capture return value, flush, truncate i64 -> i32, return
+    if takesArgsArray then
+      stateWithFlush
+        .emit("define i32 @main(i32 %0, ptr %1) #0 {")
+        .emit("entry:")
+        .emit("  %args = call %struct.StringArray @mml_args_to_array(i32 %0, ptr %1)")
+        .emit(s"  %ret = call i64 @$entryPoint(%struct.StringArray %args)")
+        .emit("  call void @mml_sys_flush()")
+        .emit("  call void @__free_StringArray(%struct.StringArray %args)")
+        .emit("  %exitcode = trunc i64 %ret to i32")
+        .emit("  ret i32 %exitcode")
+        .emit("}")
+        .emit("")
+    else
+      // Int-returning main: capture return value, flush, truncate i64 -> i32, return
+      stateWithFlush
+        .emit("define i32 @main(i32 %0, ptr %1) #0 {")
+        .emit("entry:")
+        .emit(s"  %ret = call i64 @$entryPoint()")
+        .emit("  call void @mml_sys_flush()")
+        .emit("  %exitcode = trunc i64 %ret to i32")
+        .emit("  ret i32 %exitcode")
+        .emit("}")
+        .emit("")
+  else if takesArgsArray then
     stateWithFlush
-      .emit("define i32 @main(i32 %0, ptr %1) {")
+      .emit("define i32 @main(i32 %0, ptr %1) #0 {")
       .emit("entry:")
-      .emit(s"  %ret = call i64 @$entryPoint()")
+      .emit("  %args = call %struct.StringArray @mml_args_to_array(i32 %0, ptr %1)")
+      .emit(s"  call void @$entryPoint(%struct.StringArray %args)")
       .emit("  call void @mml_sys_flush()")
-      .emit("  %exitcode = trunc i64 %ret to i32")
-      .emit("  ret i32 %exitcode")
+      .emit("  call void @__free_StringArray(%struct.StringArray %args)")
+      .emit("  ret i32 0")
       .emit("}")
       .emit("")
   else
     // Unit-returning main: call entry point, flush, return 0
     stateWithFlush
-      .emit("define i32 @main(i32 %0, ptr %1) {")
+      .emit("define i32 @main(i32 %0, ptr %1) #0 {")
       .emit("entry:")
       .emit(s"  call void @$entryPoint()")
       .emit("  call void @mml_sys_flush()")
@@ -426,6 +523,20 @@ private def mainReturnsInt(module: Module, state: CodeGenState): Boolean =
             case _ => false
         case _ => false
     case None => false
+
+private def mainTakesStringArrayArg(module: Module): Boolean =
+  findMainFn(module) match
+    case Some((_, lambda)) =>
+      lambda.params match
+        case param :: Nil =>
+          !param.consuming && paramTypeIsStringArray(param)
+        case _ => false
+    case None => false
+
+private def paramTypeIsStringArray(param: FnParam): Boolean =
+  param.typeSpec.orElse(param.typeAsc) match
+    case Some(TypeRef(_, name, _, _)) => name == "StringArray"
+    case _ => false
 
 /** Finds the main function binding and its lambda in the module. */
 private def findMainFn(module: Module): Option[(Bnd, Lambda)] =

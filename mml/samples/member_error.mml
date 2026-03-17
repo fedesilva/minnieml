@@ -4,7 +4,7 @@ let b = 1;
 let c = ;
 let d = "ok";
 
-fn main() = 
-  println (to_string b);
+pub fn main() = 
+  println (int_to_str b);
   println d;
 ;

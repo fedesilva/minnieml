@@ -9,7 +9,7 @@ def prettyPrintExpr(
   showTypes:       Boolean = false
 ): String =
   val indentStr = "  " * indent
-  val spanStr   = if showSourceSpans then printSourceSpan(expr.span) else ""
+  val spanStr   = if showSourceSpans then printSourceOrigin(expr.source) else ""
   val typeStr =
     if showTypes then
       s"${indentStr}  typeSpec: ${prettyPrintTypeSpec(expr.typeSpec)}\n" +

@@ -7,6 +7,11 @@ import mml.mmlclib.semantic.{SemanticError, TypeError, UnresolvableTypeContext}
 
 /** Pretty printer for semantic errors */
 object SemanticErrorPrinter:
+  private def spanOf(node: FromSource): Option[mml.mmlclib.ast.SrcSpan] =
+    node.source.spanOpt
+
+  private def locationOf(node: FromSource): String =
+    spanOf(node).map(LocationPrinter.printSpan).getOrElse("<unknown>")
 
   /** Pretty print a list of semantic errors
     *
@@ -65,14 +70,14 @@ object SemanticErrorPrinter:
     // Generate the base error message without source code snippets
     val baseMessage = error match
       case SemanticError.UndefinedRef(ref, member, phase) =>
-        val location = LocationPrinter.printSpan(ref.span)
+        val location = locationOf(ref)
         val memberName = member match
           case d: Decl => d.name
           case _ => "unknown"
         s"${Console.RED}Undefined reference '${ref.name}' at $location in $memberName [phase: $phase]${Console.RESET}"
 
       case SemanticError.UndefinedTypeRef(typeRef, member, phase) =>
-        val location = LocationPrinter.printSpan(typeRef.span)
+        val location = locationOf(typeRef)
         val memberName = member match
           case d: Decl => d.name
           case _ => "unknown"
@@ -82,37 +87,64 @@ object SemanticErrorPrinter:
         // Sort duplicates by their starting index using sortBy
         val sortedDuplicates = duplicates
           .collect { case d: FromSource => d }
-          .sortBy(_.span.start.index) // Use sortBy
+          .flatMap(d => spanOf(d).map(s => (d, s)))
+          .sortBy(_._2.start.index)
         val locations = sortedDuplicates // Use sorted list
-          .map(d => LocationPrinter.printSpan(d.span))
+          .map { case (_, s) => LocationPrinter.printSpan(s) }
           .mkString(" ") // Use space separator
         s"${Console.RED}Duplicate name '$name' defined at: $locations [phase: $phase]${Console.RESET}"
 
       case SemanticError.InvalidExpression(expr, message, phase) =>
-        val location = LocationPrinter.printSpan(expr.span)
+        val location = locationOf(expr)
         s"${Console.RED}Invalid expression at $location: $message [phase: $phase]${Console.RESET}"
 
       case SemanticError.MemberErrorFound(error, phase) =>
-        val location = LocationPrinter.printSpan(error.span)
+        val location = locationOf(error)
         val snippet  = error.failedCode.getOrElse("<no code available>")
         s"${Console.RED}Parser error at $location: ${error.message} [phase: $phase]\n$snippet${Console.RESET}"
 
       case SemanticError.ParsingIdErrorFound(error, phase) =>
-        val location = LocationPrinter.printSpan(error.span)
+        val location = locationOf(error)
         val snippet  = error.failedCode.getOrElse("<no code available>")
         s"${Console.RED}Invalid identifier at $location: ${error.message} [phase: $phase]\n$snippet${Console.RESET}"
 
       case SemanticError.DanglingTerms(terms, message, phase) =>
-        val locations = terms.map(t => LocationPrinter.printSpan(t.span)).mkString(", ")
+        val locations = terms.map(t => locationOf(t)).mkString(", ")
         s"${Console.RED}$message at $locations [phase: $phase]${Console.RESET}"
 
       case SemanticError.InvalidExpressionFound(invalidExpr, phase) =>
-        val location = LocationPrinter.printSpan(invalidExpr.span)
+        val location = locationOf(invalidExpr)
         s"${Console.RED}Invalid expression found at $location [phase: $phase]${Console.RESET}"
 
-      case SemanticError.InvalidEntryPoint(message, span) =>
-        val location = LocationPrinter.printSpan(span)
+      case SemanticError.InvalidEntryPoint(message, source) =>
+        val location = source.spanOpt.map(LocationPrinter.printSpan).getOrElse("[synthetic]")
         s"${Console.RED}$message at $location${Console.RESET}"
+
+      case SemanticError.VisibilityViolation(ref, decl, phase) =>
+        val location = locationOf(ref)
+        s"${Console.RED}'${ref.name}' is not visible at $location (declared in '${decl.name}') [phase: $phase]${Console.RESET}"
+
+      case SemanticError.UseAfterMove(ref, movedAt, phase) =>
+        val location      = locationOf(ref)
+        val movedLocation = movedAt.spanOpt.map(LocationPrinter.printSpan).getOrElse("[synthetic]")
+        s"${Console.RED}Use of '${ref.name}' after move at $location [phase: $phase]${Console.RESET}\nMoved at: $movedLocation"
+
+      case SemanticError.ConsumingParamNotLastUse(param, ref, phase) =>
+        val location = locationOf(ref)
+        s"${Console.RED}Consuming parameter '${param.name}' must be the last use of '${ref.name}' at $location [phase: $phase]${Console.RESET}"
+
+      case SemanticError.PartialApplicationWithConsuming(fn, param, phase) =>
+        val location = locationOf(fn)
+        s"${Console.RED}Cannot partially apply function with consuming parameter '${param.name}' at $location [phase: $phase]${Console.RESET}"
+
+      case SemanticError.ConditionalOwnershipMismatch(cond, phase) =>
+        val location = locationOf(cond)
+        s"${Console.RED}Conditional branches have different ownership states at $location [phase: $phase]${Console.RESET}"
+
+      case SemanticError.BorrowEscapeViaReturn(ref, phase) =>
+        val location = locationOf(ref)
+        s"${Console.RED}Cannot return borrowed value '${ref.name}' at $location [phase: $phase]${Console.RESET}"
+
       case SemanticError.TypeCheckingError(error) =>
         prettyPrintTypeError(error)
 
@@ -139,7 +171,7 @@ object SemanticErrorPrinter:
   def prettyPrintTypeError(error: TypeError): String =
     def formatTypeSpec(typeSpec: mml.mmlclib.ast.Type): String = typeSpec match
       case mml.mmlclib.ast.TypeRef(_, name, _, _) => name
-      case mml.mmlclib.ast.TypeStruct(_, _, _, name, _, _) => name
+      case ts: mml.mmlclib.ast.TypeStruct => ts.name
       case mml.mmlclib.ast.TypeFn(_, params, returnType) =>
         val paramStr = params.map(formatTypeSpec).mkString(", ")
         s"($paramStr) -> ${formatTypeSpec(returnType)}"
@@ -148,27 +180,27 @@ object SemanticErrorPrinter:
 
     error match
       case TypeError.MissingParameterType(param, decl, phase) =>
-        val location = LocationPrinter.printSpan(param.span)
+        val location = locationOf(param)
         s"${Console.RED}Missing parameter type for '${param.name}' in function '${decl.name}' at $location${Console.RESET}\n${Console.YELLOW}Phase: $phase${Console.RESET}"
 
       case TypeError.MissingReturnType(decl, phase) =>
-        val location = LocationPrinter.printSpan(decl.asInstanceOf[FromSource].span)
+        val location = locationOf(decl.asInstanceOf[FromSource])
         s"${Console.RED}Missing return type for function '${decl.name}' at $location${Console.RESET}\n${Console.YELLOW}Phase: $phase${Console.RESET}"
 
       case TypeError.RecursiveFunctionMissingReturnType(decl, phase) =>
-        val location = LocationPrinter.printSpan(decl.asInstanceOf[FromSource].span)
+        val location = locationOf(decl.asInstanceOf[FromSource])
         s"${Console.RED}Missing return type for self-recursive function '${decl.name}' at $location${Console.RESET}\n${Console.YELLOW}Phase: $phase${Console.RESET}"
 
       case TypeError.MissingOperatorParameterType(param, decl, phase) =>
-        val location = LocationPrinter.printSpan(param.span)
+        val location = locationOf(param)
         s"${Console.RED}Missing parameter type for '${param.name}' in operator '${decl.name}' at $location${Console.RESET}\n${Console.YELLOW}Phase: $phase${Console.RESET}"
 
       case TypeError.MissingOperatorReturnType(decl, phase) =>
-        val location = LocationPrinter.printSpan(decl.asInstanceOf[FromSource].span)
+        val location = locationOf(decl.asInstanceOf[FromSource])
         s"${Console.RED}Missing return type for operator '${decl.name}' at $location${Console.RESET}\n${Console.YELLOW}Phase: $phase${Console.RESET}"
 
       case TypeError.TypeMismatch(node, expected, actual, phase, expectedBy) =>
-        val location    = LocationPrinter.printSpan(node.asInstanceOf[FromSource].span)
+        val location    = locationOf(node.asInstanceOf[FromSource])
         val expectedStr = formatTypeSpec(expected)
         val actualStr   = formatTypeSpec(actual)
         val expectation =
@@ -178,41 +210,41 @@ object SemanticErrorPrinter:
         s"${Console.RED}Type mismatch at $location: $expectation, got '$actualStr'${Console.RESET}\n${Console.YELLOW}Phase: $phase${Console.RESET}"
 
       case TypeError.UndersaturatedApplication(app, expectedArgs, actualArgs, phase) =>
-        val location = LocationPrinter.printSpan(app.span)
+        val location = locationOf(app)
         s"${Console.RED}Under-saturated function application at $location: expected $expectedArgs arguments, got $actualArgs${Console.RESET}\n${Console.YELLOW}Phase: $phase${Console.RESET}"
 
       case TypeError.OversaturatedApplication(app, expectedArgs, actualArgs, phase) =>
-        val location = LocationPrinter.printSpan(app.span)
+        val location = locationOf(app)
         s"${Console.RED}Over-saturated function application at $location: expected $expectedArgs arguments, got $actualArgs${Console.RESET}\n${Console.YELLOW}Phase: $phase${Console.RESET}"
 
       case TypeError.InvalidApplication(app, fnType, argType, phase) =>
-        val location   = LocationPrinter.printSpan(app.span)
+        val location   = locationOf(app)
         val fnTypeStr  = formatTypeSpec(fnType)
         val argTypeStr = formatTypeSpec(argType)
         s"${Console.RED}Invalid function application at $location: cannot apply function of type '$fnTypeStr' to argument of type '$argTypeStr'${Console.RESET}\n${Console.YELLOW}Phase: $phase${Console.RESET}"
 
       case TypeError.InvalidSelection(ref, baseType, phase) =>
-        val location    = LocationPrinter.printSpan(ref.span)
+        val location    = locationOf(ref)
         val baseTypeStr = formatTypeSpec(baseType)
         s"${Console.RED}Invalid field selection at $location: '${ref.name}' is not available on type '$baseTypeStr'${Console.RESET}\n${Console.YELLOW}Phase: $phase${Console.RESET}"
 
       case TypeError.UnknownField(ref, struct, phase) =>
-        val location = LocationPrinter.printSpan(ref.span)
+        val location = locationOf(ref)
         s"${Console.RED}Unknown field at $location: '${struct.name}' has no field '${ref.name}'${Console.RESET}\n${Console.YELLOW}Phase: $phase${Console.RESET}"
 
       case TypeError.ConditionalBranchTypeMismatch(cond, trueType, falseType, phase) =>
-        val location     = LocationPrinter.printSpan(cond.span)
+        val location     = locationOf(cond)
         val trueTypeStr  = formatTypeSpec(trueType)
         val falseTypeStr = formatTypeSpec(falseType)
         s"${Console.RED}Conditional branch type mismatch at $location: 'then' branch has type '$trueTypeStr', 'else' branch has type '$falseTypeStr'${Console.RESET}\n${Console.YELLOW}Phase: $phase${Console.RESET}"
 
       case TypeError.ConditionalBranchTypeUnknown(cond, phase) =>
-        val location = LocationPrinter.printSpan(cond.span)
+        val location = locationOf(cond)
         s"${Console.RED}Unable to determine conditional branch types at $location${Console.RESET}\n${Console.YELLOW}Phase: $phase${Console.RESET}"
 
       case TypeError.UnresolvableType(node, context, phase) =>
         val location = node match
-          case fs: FromSource => LocationPrinter.printSpan(fs.span)
+          case fs: FromSource => locationOf(fs)
           case _ => "<unknown>"
         val nameSuffix = context match
           case Some(UnresolvableTypeContext.NamedValue(name)) => s" for '$name'"
@@ -220,12 +252,12 @@ object SemanticErrorPrinter:
         s"${Console.RED}Unable to infer type$nameSuffix at $location${Console.RESET}\n${Console.YELLOW}Phase: $phase${Console.RESET}"
 
       case TypeError.IncompatibleTypes(node, type1, type2, context, phase) =>
-        val location = LocationPrinter.printSpan(node.asInstanceOf[FromSource].span)
+        val location = locationOf(node.asInstanceOf[FromSource])
         val type1Str = formatTypeSpec(type1)
         val type2Str = formatTypeSpec(type2)
         s"${Console.RED}Incompatible types at $location in $context: '$type1Str' and '$type2Str'${Console.RESET}\n${Console.YELLOW}Phase: $phase${Console.RESET}"
 
-      case TypeError.UntypedHoleInBinding(bindingName, span, phase) =>
-        val location = LocationPrinter.printSpan(span)
+      case TypeError.UntypedHoleInBinding(bindingName, source, phase) =>
+        val location = source.spanOpt.map(LocationPrinter.printSpan).getOrElse("[synthetic]")
         s"${Console.RED}Untyped hole '???' in binding '${bindingName}' at $location - " +
           s"type cannot be inferred${Console.RESET}\n${Console.YELLOW}Phase: $phase${Console.RESET}"

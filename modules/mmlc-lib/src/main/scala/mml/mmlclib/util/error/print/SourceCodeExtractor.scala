@@ -8,6 +8,8 @@ import scala.math.Ordering // Added Ordering import
 
 /** Utility for extracting source code snippets for error reporting */
 object SourceCodeExtractor:
+  private def spanOf(node: FromSource): Option[SrcSpan] =
+    node.source.spanOpt
 
   /** Extract source code snippets for a semantic error
     *
@@ -25,16 +27,17 @@ object SourceCodeExtractor:
       case SemanticError.DuplicateName(name, duplicates, _) =>
         // Sort duplicates by their starting index
         val sortedDuplicates =
-          duplicates.collect { case d: FromSource => d }.sortBy(_.span.start.index) // Sort by index
+          duplicates
+            .collect { case d: FromSource => d }
+            .flatMap(d => spanOf(d).map(s => (d, s)))
+            .sortBy(_._2.start.index)
 
         // Iterate over sorted duplicates
-        val snippets = sortedDuplicates.map { d => // Use sorted list
-          val location = LocationPrinter.printSpan(d.span)
+        val snippets = sortedDuplicates.map { case (_, span) =>
+          val location = LocationPrinter.printSpan(span)
 
-          // Use extractSnippet with the specific span of the duplicate name
-          // Use default contextLines=1, highlightExpr=false to highlight just the name span
           val snippet =
-            extractSnippet(sourceInfo, d.span, highlightExpr = false) // Use extractSnippet
+            extractSnippet(sourceInfo, span)
               .getOrElse("Source line not available")
 
           s"\nAt ${Console.YELLOW}$location${Console.RESET}:\n$snippet"
@@ -42,60 +45,106 @@ object SourceCodeExtractor:
         snippets.mkString("\n")
 
       case SemanticError.UndefinedRef(ref, _, _) =>
-        extractSnippet(sourceInfo, ref.span, nameHighlightSpan = Some(ref.span))
+        spanOf(ref)
+          .flatMap(span => extractSnippet(sourceInfo, span, nameHighlightSpan = Some(span)))
           .map(s => s"\n$s")
           .getOrElse("")
 
       case SemanticError.UndefinedTypeRef(typeRef, _, _) =>
-        extractSnippet(sourceInfo, typeRef.span, nameHighlightSpan = Some(typeRef.span))
+        spanOf(typeRef)
+          .flatMap(span => extractSnippet(sourceInfo, span, nameHighlightSpan = Some(span)))
           .map(s => s"\n$s")
           .getOrElse("")
 
       case SemanticError.InvalidExpression(expr, _, _) =>
-        extractSnippet(sourceInfo, expr.span, highlightExpr = true)
+        spanOf(expr)
+          .flatMap(extractSnippet(sourceInfo, _))
           .map(s => s"\n$s")
           .getOrElse("")
 
       case SemanticError.MemberErrorFound(error, _) =>
         // For member errors, extract snippet with the error span highlighted
-        extractSnippet(sourceInfo, error.span, highlightExpr = true)
+        spanOf(error)
+          .flatMap(extractSnippet(sourceInfo, _))
           .map(s => s"\n$s")
           .getOrElse("")
 
       case SemanticError.ParsingIdErrorFound(error, _) =>
         // For identifier errors, extract snippet with the invalid identifier highlighted
-        extractSnippet(sourceInfo, error.span, highlightExpr = true)
+        spanOf(error)
+          .flatMap(extractSnippet(sourceInfo, _))
           .map(s => s"\n$s")
           .getOrElse("")
 
       case SemanticError.DanglingTerms(terms, _, _) =>
         // Extract snippets for each dangling term
         val snippets = terms.collect { case term: FromSource =>
-          val location = LocationPrinter.printSpan(term.span)
+          spanOf(term).map { span =>
+            val location = LocationPrinter.printSpan(span)
 
-          // Find the line where this term is defined (1-based)
-          val lineNumber = term.span.start.line
+            // Find the line where this term is defined (1-based)
+            val lineNumber = span.start.line
 
-          // Generate a snippet with the term highlighted
-          val snippet =
-            if lineNumber > 0 && lineNumber <= sourceLines.length then
-              extractSnippet(sourceInfo, term.span, highlightExpr = true)
-                .getOrElse("Source line not available")
-            else "Source line not available"
+            // Generate a snippet with the term highlighted
+            val snippet =
+              if lineNumber > 0 && lineNumber <= sourceLines.length then
+                extractSnippet(sourceInfo, span)
+                  .getOrElse("Source line not available")
+              else "Source line not available"
 
-          s"\nAt ${Console.YELLOW}$location${Console.RESET}:\n$snippet"
-        }
+            s"\nAt ${Console.YELLOW}$location${Console.RESET}:\n$snippet"
+          }
+        }.flatten
         snippets.mkString("\n")
 
       case SemanticError.InvalidExpressionFound(invalidExpr, _) =>
-        extractSnippet(sourceInfo, invalidExpr.span, highlightExpr = true)
+        spanOf(invalidExpr)
+          .flatMap(extractSnippet(sourceInfo, _))
           .map(s => s"\n$s")
           .getOrElse("")
 
-      case SemanticError.InvalidEntryPoint(_, span) =>
-        extractSnippet(sourceInfo, span, highlightExpr = true)
+      case SemanticError.InvalidEntryPoint(_, source) =>
+        source.spanOpt
+          .flatMap(extractSnippet(sourceInfo, _))
           .map(s => s"\n$s")
           .getOrElse("")
+
+      case SemanticError.UseAfterMove(ref, _, _) =>
+        spanOf(ref)
+          .flatMap(extractSnippet(sourceInfo, _))
+          .map(s => s"\n$s")
+          .getOrElse("")
+
+      case SemanticError.ConsumingParamNotLastUse(_, ref, _) =>
+        spanOf(ref)
+          .flatMap(extractSnippet(sourceInfo, _))
+          .map(s => s"\n$s")
+          .getOrElse("")
+
+      case SemanticError.PartialApplicationWithConsuming(fn, _, _) =>
+        spanOf(fn)
+          .flatMap(extractSnippet(sourceInfo, _))
+          .map(s => s"\n$s")
+          .getOrElse("")
+
+      case SemanticError.ConditionalOwnershipMismatch(cond, _) =>
+        spanOf(cond)
+          .flatMap(extractSnippet(sourceInfo, _))
+          .map(s => s"\n$s")
+          .getOrElse("")
+
+      case SemanticError.BorrowEscapeViaReturn(ref, _) =>
+        spanOf(ref)
+          .flatMap(extractSnippet(sourceInfo, _))
+          .map(s => s"\n$s")
+          .getOrElse("")
+
+      case SemanticError.VisibilityViolation(ref, _, _) =>
+        spanOf(ref)
+          .flatMap(extractSnippet(sourceInfo, _))
+          .map(s => s"\n$s")
+          .getOrElse("")
+
       case SemanticError.TypeCheckingError(error) =>
         extractTypeErrorSnippet(sourceInfo, error)
 
@@ -103,79 +152,94 @@ object SourceCodeExtractor:
   private def extractTypeErrorSnippet(sourceInfo: SourceInfo, error: TypeError): String =
     error match
       case TypeError.MissingParameterType(param, _, _) =>
-        extractSnippet(sourceInfo, param.span, highlightExpr = true)
+        spanOf(param)
+          .flatMap(extractSnippet(sourceInfo, _))
           .map(s => s"\n$s")
           .getOrElse("")
 
       case TypeError.MissingReturnType(decl, _) =>
         val fs = decl.asInstanceOf[FromSource]
-        extractSnippet(sourceInfo, fs.span, highlightExpr = true)
+        spanOf(fs)
+          .flatMap(extractSnippet(sourceInfo, _))
           .map(s => s"\n$s")
           .getOrElse("")
 
       case TypeError.RecursiveFunctionMissingReturnType(decl, _) =>
         val fs = decl.asInstanceOf[FromSource]
-        extractSnippet(sourceInfo, fs.span, highlightExpr = true)
+        spanOf(fs)
+          .flatMap(extractSnippet(sourceInfo, _))
           .map(s => s"\n$s")
           .getOrElse("")
 
       case TypeError.MissingOperatorParameterType(param, _, _) =>
-        extractSnippet(sourceInfo, param.span, highlightExpr = true)
+        spanOf(param)
+          .flatMap(extractSnippet(sourceInfo, _))
           .map(s => s"\n$s")
           .getOrElse("")
 
       case TypeError.MissingOperatorReturnType(decl, _) =>
         val fs = decl.asInstanceOf[FromSource]
-        extractSnippet(sourceInfo, fs.span, highlightExpr = true)
+        spanOf(fs)
+          .flatMap(extractSnippet(sourceInfo, _))
           .map(s => s"\n$s")
           .getOrElse("")
 
       case TypeError.TypeMismatch(node, _, _, _, _) =>
         node match
           case fs: FromSource =>
-            extractSnippet(sourceInfo, fs.span, highlightExpr = true)
+            spanOf(fs)
+              .flatMap(extractSnippet(sourceInfo, _))
               .map(s => s"\n$s")
               .getOrElse("")
+          case _ => ""
 
       case TypeError.UndersaturatedApplication(app, _, _, _) =>
-        extractSnippet(sourceInfo, app.span, highlightExpr = true)
+        spanOf(app)
+          .flatMap(extractSnippet(sourceInfo, _))
           .map(s => s"\n$s")
           .getOrElse("")
 
       case TypeError.OversaturatedApplication(app, _, _, _) =>
-        extractSnippet(sourceInfo, app.span, highlightExpr = true)
+        spanOf(app)
+          .flatMap(extractSnippet(sourceInfo, _))
           .map(s => s"\n$s")
           .getOrElse("")
 
       case TypeError.InvalidApplication(app, _, _, _) =>
-        extractSnippet(sourceInfo, app.span, highlightExpr = true)
+        spanOf(app)
+          .flatMap(extractSnippet(sourceInfo, _))
           .map(s => s"\n$s")
           .getOrElse("")
 
       case TypeError.InvalidSelection(ref, _, _) =>
-        extractSnippet(sourceInfo, ref.span, highlightExpr = true)
+        spanOf(ref)
+          .flatMap(extractSnippet(sourceInfo, _))
           .map(s => s"\n$s")
           .getOrElse("")
 
       case TypeError.UnknownField(ref, _, _) =>
-        extractSnippet(sourceInfo, ref.span, highlightExpr = true)
+        spanOf(ref)
+          .flatMap(extractSnippet(sourceInfo, _))
           .map(s => s"\n$s")
           .getOrElse("")
 
       case TypeError.ConditionalBranchTypeMismatch(cond, _, _, _) =>
-        extractSnippet(sourceInfo, cond.span, highlightExpr = true)
+        spanOf(cond)
+          .flatMap(extractSnippet(sourceInfo, _))
           .map(s => s"\n$s")
           .getOrElse("")
 
       case TypeError.ConditionalBranchTypeUnknown(cond, _) =>
-        extractSnippet(sourceInfo, cond.span, highlightExpr = true)
+        spanOf(cond)
+          .flatMap(extractSnippet(sourceInfo, _))
           .map(s => s"\n$s")
           .getOrElse("")
 
       case TypeError.UnresolvableType(node, _, _) =>
         node match
           case fs: FromSource =>
-            extractSnippet(sourceInfo, fs.span, highlightExpr = true)
+            spanOf(fs)
+              .flatMap(extractSnippet(sourceInfo, _))
               .map(s => s"\n$s")
               .getOrElse("")
           case _ => ""
@@ -183,13 +247,15 @@ object SourceCodeExtractor:
       case TypeError.IncompatibleTypes(node, _, _, _, _) =>
         node match
           case fs: FromSource =>
-            extractSnippet(sourceInfo, fs.span, highlightExpr = true)
+            spanOf(fs)
+              .flatMap(extractSnippet(sourceInfo, _))
               .map(s => s"\n$s")
               .getOrElse("")
           case _ => ""
 
-      case TypeError.UntypedHoleInBinding(_, span, _) =>
-        extractSnippet(sourceInfo, span, highlightExpr = true)
+      case TypeError.UntypedHoleInBinding(_, source, _) =>
+        source.spanOpt
+          .flatMap(extractSnippet(sourceInfo, _))
           .map(s => s"\n$s")
           .getOrElse("")
 
@@ -203,8 +269,6 @@ object SourceCodeExtractor:
     *   Number of lines of context to include before and after
     * @param nameHighlightSpan
     *   Optional specific span to highlight (for identifiers)
-    * @param highlightExpr
-    *   Whether to highlight the entire expression
     * @return
     *   Option containing the formatted code snippet
     */
@@ -212,8 +276,7 @@ object SourceCodeExtractor:
     sourceInfo:        SourceInfo,
     span:              SrcSpan,
     contextLines:      Int             = 1,
-    nameHighlightSpan: Option[SrcSpan] = None,
-    highlightExpr:     Boolean         = false
+    nameHighlightSpan: Option[SrcSpan] = None
   ): Option[String] =
     // Split the source code into lines
     val lines = sourceInfo.text.split("\n")
@@ -241,8 +304,7 @@ object SourceCodeExtractor:
         codeLines,
         lineNumbers,
         startLine,
-        nameHighlightSpan.getOrElse(span),
-        highlightExpr
+        nameHighlightSpan.getOrElse(span)
       )
 
       Some(processedLines.mkString("\n"))
@@ -257,8 +319,6 @@ object SourceCodeExtractor:
     *   The starting line index (0-based)
     * @param highlightSpan
     *   The source span to highlight
-    * @param highlightExpr
-    *   Whether to highlight the entire expression
     * @return
     *   Formatted lines with highlighting
     */
@@ -266,8 +326,7 @@ object SourceCodeExtractor:
     codeLines:     Array[String],
     lineNumbers:   Array[String],
     startLine:     Int,
-    highlightSpan: SrcSpan,
-    highlightExpr: Boolean
+    highlightSpan: SrcSpan
   ): List[String] =
     val result = List.newBuilder[String]
 
@@ -298,9 +357,6 @@ object SourceCodeExtractor:
           val targetText = line.substring(startIdx, endIdx)
           val afterText  = line.substring(endIdx)
 
-          // Apply highlighting (RED for the text)
-          // Use highlightExpr flag - if true, highlight whole span, else just the specific part (though for duplicates, the span IS the specific part)
-          // For simplicity now, let's always highlight the calculated targetText red.
           val highlightedText = s"${Console.RED}${Console.BOLD}$targetText${Console.RESET}"
           val formattedLine   = s"$num $beforeText$highlightedText$afterText"
           result += formattedLine

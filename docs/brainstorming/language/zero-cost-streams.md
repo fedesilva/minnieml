@@ -164,14 +164,14 @@
 
   ### 5.1 Monomorphization (Specialization)
   MinnieML is strictly typed. The compiler must perform full monomorphization on Stream chains.
-  * **Input:** `arr.map(f).filter(p)`
-  * **Type:** `FilterStream (MapStream (ArrayStream Int) typeof(f)) typeof(p)`
-  * **Action:** The compiler generates a specialized version of the `step` function for *this exact type signature*.
+  * Input: `arr.map(f).filter(p)`
+  * Type: `FilterStream (MapStream (ArrayStream Int) typeof(f)) typeof(p)`
+  * Action: The compiler generates a specialized version of the `step` function for *this exact type signature*.
 
   ### 5.2 State Flattening (Scalar Replacement)
   The State tuple for complex chains must be flattened into registers.
-  * **Logical State:** `(OuterInt, Maybe (InnerInt))`
-  * **Physical Storage:**
+  * Logical State: `(OuterInt, Maybe (InnerInt))`
+  * Physical Storage:
       * `Register A`: Outer Index (`Int`)
       * `Register B`: Inner Active Flag (`Bool`)
       * `Register C`: Inner Index (`Int`)
@@ -182,7 +182,7 @@
   ### 5.3 Control Flow Synthesis (Unstaging)
   When a terminal operation (e.g., `fold`, `reduce`, `collect`) is called, the compiler emits the loop.
 
-  **Algorithm:**
+  Algorithm:
   1.  Emit **Init Code**: Call `Stream.init` to set up initial registers.
   2.  Emit **Label**: `LOOP_START:`
   3.  Emit **Body**: Inline the specialized `Stream.step` logic.
@@ -192,7 +192,7 @@
 
   ## 6. Example Trace
 
-  **Source Code:**
+  Source Code:
   let result = arr       # [1, 2, 3]
     .map(x -> x + 1)
     .flatMap(y -> range(0, y))
@@ -242,6 +242,6 @@
     return r_acc;
 
   ## 7. Limitations & Constraints
-  1.  **Finite Types:** The compiler must be able to deduce the size of the state tuple at compile time.
-  2.  **Side Effects:** The `step` function assumes strictly sequential execution.
-  3.  **Recursion:** Recursive `flatMap` requires explicit stack management if not tail-recursive.
+  1.  Finite Types: The compiler must be able to deduce the size of the state tuple at compile time.
+  2.  Side Effects: The `step` function assumes strictly sequential execution.
+  3.  Recursion: Recursive `flatMap` requires explicit stack management if not tail-recursive.

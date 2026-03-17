@@ -11,43 +11,65 @@ import scopt.OParser
 object Main extends IOApp:
 
   def run(args: List[String]): IO[ExitCode] =
-    parseAndProcessArgs(args)
+    if args.contains("-h") || args.contains("--help") then
+      IO.println(OParser.usage(CommandLineConfig.createParser)).as(ExitCode.Success)
+    else parseAndProcessArgs(args)
 
   private def parseAndProcessArgs(args: List[String]): IO[ExitCode] =
     OParser.parse(CommandLineConfig.createParser, args, Config()) match
       case Some(config) =>
         config.command match
-          case bin: Command.Bin =>
-            bin.file.fold(
-              IO.println("Error: Source file is required for bin command").as(ExitCode(1))
+          case build: Command.Build =>
+            build.file.fold(
+              IO.println("Usage: mmlc [options] <source-file>\nRun 'mmlc -h' for help.")
+                .as(ExitCode(1))
             ) { path =>
-              val cfg = CompilerConfig.binary(
-                bin.outputDir,
-                bin.verbose,
-                bin.targetTriple,
-                bin.targetArch,
-                bin.targetCpu,
-                bin.noStackCheck,
-                bin.emitOptIr,
-                bin.noTco,
-                bin.timings,
-                bin.outputAst,
-                bin.outputName,
-                bin.printPhases,
-                bin.optLevel
-              )
-              CompilerApi.processBinary(path, cfg)
+              val cfg =
+                if build.targetType == "lib" then
+                  CompilerConfig.library(
+                    build.outputDir,
+                    build.verbose,
+                    build.targetTriple,
+                    build.targetCpu,
+                    build.noStackCheck,
+                    build.emitOptIr,
+                    build.noTco,
+                    build.timings,
+                    build.outputAst,
+                    build.outputName,
+                    build.printPhases,
+                    build.optLevel,
+                    build.emitScopedAlias,
+                    build.asan
+                  )
+                else
+                  CompilerConfig.exe(
+                    build.outputDir,
+                    build.verbose,
+                    build.targetTriple,
+                    build.targetCpu,
+                    build.noStackCheck,
+                    build.emitOptIr,
+                    build.noTco,
+                    build.timings,
+                    build.outputAst,
+                    build.outputName,
+                    build.printPhases,
+                    build.optLevel,
+                    build.emitScopedAlias,
+                    build.asan
+                  )
+              CompilerApi.processNative(path, cfg)
             }
 
           case run: Command.Run =>
             run.file.fold(
               IO.println("Error: Source file is required for run command").as(ExitCode(1))
             ) { path =>
-              val cfg = CompilerConfig.binary(
+              val cfg = CompilerConfig.exe(
                 run.outputDir,
                 run.verbose,
                 run.targetTriple,
-                run.targetArch,
                 run.targetCpu,
                 run.noStackCheck,
                 run.emitOptIr,
@@ -56,31 +78,11 @@ object Main extends IOApp:
                 run.outputAst,
                 run.outputName,
                 run.printPhases,
-                run.optLevel
+                run.optLevel,
+                run.emitScopedAlias,
+                run.asan
               )
               CompilerApi.processRun(path, cfg)
-            }
-
-          case lib: Command.Lib =>
-            lib.file.fold(
-              IO.println("Error: Source file is required for lib command").as(ExitCode(1))
-            ) { path =>
-              val cfg = CompilerConfig.library(
-                lib.outputDir,
-                lib.verbose,
-                lib.targetTriple,
-                lib.targetArch,
-                lib.targetCpu,
-                lib.noStackCheck,
-                lib.emitOptIr,
-                lib.noTco,
-                lib.timings,
-                lib.outputAst,
-                lib.outputName,
-                lib.printPhases,
-                lib.optLevel
-              )
-              CompilerApi.processLibrary(path, cfg)
             }
 
           case ast: Command.Ast =>

@@ -1,2 +1,2 @@
 
-fn main(): Int = 32;
+pub fn main(): Int = 32;

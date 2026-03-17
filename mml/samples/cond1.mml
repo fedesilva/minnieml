@@ -4,7 +4,7 @@ let c = 3;
 
 let d = -3 - -3;
 
-fn main(): Int =
+pub fn main(): Int =
   if c < 1 then
     a + b
   else

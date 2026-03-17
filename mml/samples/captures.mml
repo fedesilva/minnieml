@@ -1,12 +1,13 @@
 
 
-# for this to work we need:
-# * literal lamdas
+// for this to work we need:
+// * literal lamdas
+// * captures
 fn makeLambda() = 
   let a = 1;
-  () -> to_string (2 * a)
+  { -> int_to_str (2 * a) }
 ;
 
-fn main() = 
+pub fn main() = 
   println (makeLambda ())
 ;

@@ -41,7 +41,13 @@ def extractFunctionTemplate(ref: Ref, resolvables: ResolvablesIndex): Option[(Bn
 /** Extracts NativeImpl template from a binding's lambda body. */
 private def extractTemplate(bnd: Bnd): Option[String] =
   bnd.value.terms.collectFirst { case lambda: Lambda => lambda.body }.flatMap { body =>
-    body.terms.collectFirst { case NativeImpl(_, _, _, Some(tpl)) => tpl }
+    body.terms.collectFirst { case NativeImpl(_, _, _, Some(tpl), _, _) => tpl }
+  }
+
+/** Extracts NativeImpl nativeSymbol from a binding's lambda body. */
+private def getNativeSymbol(bnd: Bnd): Option[String] =
+  bnd.value.terms.collectFirst { case lambda: Lambda => lambda.body }.flatMap { body =>
+    body.terms.collectFirst { case NativeImpl(_, _, _, _, _, Some(sym)) => sym }
   }
 
 /** Gets native operator template from a resolved binding (function-style API for compileApp). */
@@ -83,7 +89,7 @@ def substituteTemplate(tpl: String, llvmType: String, operands: List[String]): S
 def getResolvedName(ref: Ref, state: CodeGenState): String =
   ref.resolvedId.flatMap(state.resolvables.lookup) match
     case Some(bnd: Bnd) =>
-      if isNativeBinding(bnd) then bnd.name
+      if isNativeBinding(bnd) then getNativeSymbol(bnd).getOrElse(bnd.name)
       else state.mangleName(bnd.name)
     case _ => ref.name
 
@@ -117,9 +123,9 @@ def applyBinaryOp(
   extractNativeOpTemplate(opRef, rightRes.state.resolvables) match
     case Some((_, tpl, _)) =>
       val resultReg = rightRes.state.nextRegister
-      val leftOp = if leftRes.isLiteral then leftRes.register.toString else s"%${leftRes.register}"
-      val rightOp =
-        if rightRes.isLiteral then rightRes.register.toString else s"%${rightRes.register}"
+
+      val leftOp  = leftRes.operandStr
+      val rightOp = rightRes.operandStr
 
       left.typeSpec match
         case Some(typeSpec) =>
@@ -159,7 +165,7 @@ def applyUnaryOp(
   extractNativeOpTemplate(opRef, argRes.state.resolvables) match
     case Some((_, tpl, _)) =>
       val resultReg = argRes.state.nextRegister
-      val argOp     = if argRes.isLiteral then argRes.register.toString else s"%${argRes.register}"
+      val argOp     = argRes.operandStr
 
       arg.typeSpec match
         case Some(typeSpec) =>

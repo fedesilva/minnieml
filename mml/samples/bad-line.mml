@@ -1,5 +1,5 @@
 
-fn main(): Unit =
+pub fn main(): Unit =
   println "Fede";
   0
 ;

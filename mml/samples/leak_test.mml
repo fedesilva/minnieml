@@ -1,0 +1,22 @@
+// Leak test for ownership analyzer
+// Run with: leaks --atExit -- ./build/target/leaktest
+
+fn test_iteration(): Unit =
+  let fd = open_file_read "mml/samples/test.txt";
+  let line1 = read_line_fd fd;
+  let line2 = read_line_fd fd;
+  println line1;
+  println line2;
+  close_file fd
+;
+
+fn run(n: Int): Unit =
+  if n != 0 then   
+    test_iteration ();
+    run (n - 1)
+  end
+;
+
+pub fn main(): Unit =
+  run 10000
+;

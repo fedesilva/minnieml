@@ -44,6 +44,17 @@
                     "type": "string",
                     "default": "mmlc",
                     "description": "Path to the mmlc compiler executable"
+                },
+                "mml.verboseLspClientLogging": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "Log LSP client request/response flow in MinnieML output"
+                },
+                "mml.didChangeDebounceMs": {
+                    "type": "number",
+                    "default": 250,
+                    "minimum": 0,
+                    "description": "Debounce window in milliseconds before sending textDocument/didChange notifications (0 disables debounce)"
                 }
             }
         },
@@ -59,6 +70,18 @@
             {
                 "command": "mml.compileLib",
                 "title": "MML: Compile as Library"
+            },
+            {
+                "command": "mml.clean",
+                "title": "MML: Clean Build Directory"
+            },
+            {
+                "command": "mml.ast",
+                "title": "MML: Generate AST"
+            },
+            {
+                "command": "mml.ir",
+                "title": "MML: Generate IR"
             }
         ]
     },

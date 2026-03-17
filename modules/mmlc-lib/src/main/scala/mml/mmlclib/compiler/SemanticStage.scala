@@ -6,6 +6,7 @@ import mml.mmlclib.util.pipe.*
 object SemanticStage:
 
   def rewrite(state: CompilerState): CompilerState =
+
     val withStdlib = CompilerState.timePhase("semantic", "inject-stdlib") { current =>
       val moduleWithTypes = injectBasicTypes(current.module)
       val moduleWithOps   = injectStandardOperators(moduleWithTypes)
@@ -17,6 +18,10 @@ object SemanticStage:
       |> CompilerState.timePhase("semantic", "duplicate-names")(DuplicateNameChecker.rewriteModule)
       |> CompilerState.timePhase("semantic", "id-assigner")(IdAssigner.rewriteModule)
       |> CompilerState.timePhase("semantic", "type-resolver")(TypeResolver.rewriteModule)
+      |> CompilerState.timePhase("semantic", "ctor-gen")(ConstructorGenerator.rewriteModule)
+      |> CompilerState.timePhase("semantic", "mem-fn-gen")(
+        MemoryFunctionGenerator.rewriteModule
+      )
       |> CompilerState.timePhase("semantic", "ref-resolver")(RefResolver.rewriteModule)
       |> CompilerState
         .timePhase("semantic", "expression-rewriter")(ExpressionRewriter.rewriteModule)
@@ -25,6 +30,12 @@ object SemanticStage:
       |> CompilerState.timePhase("semantic", "resolvables-indexer")(
         ResolvablesIndexer.rewriteModule
       )
-      |> CompilerState.timePhase("semantic", "tail-recursion")(
+      |> CompilerState.timePhase("semantic", "tailrec-detector")(
         TailRecursionDetector.rewriteModule
+      )
+      |> CompilerState.timePhase("semantic", "ownership-analyzer")(
+        OwnershipAnalyzer.rewriteModule
+      )
+      |> CompilerState.timePhase("semantic", "resolvables-indexer-final")(
+        ResolvablesIndexer.rewriteModule
       )

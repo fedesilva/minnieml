@@ -253,7 +253,7 @@ class AppRewritingTests extends BaseEffFunSuite:
       """
       fn main(): Unit =
         let n = 1;
-        println (to_string n)
+        println (int_to_str n)
       ;
       """
     ).map { m =>
@@ -262,6 +262,18 @@ class AppRewritingTests extends BaseEffFunSuite:
           .getOrElse(
             fail(s"Member `main` not found in module: ${prettyPrintAst(m)}")
           )
+
+      // Helper to find App(Ref(name), _) recursively through ownership wrappers
+      def findAppByName(term: Term, name: String): Option[App] =
+        term match
+          case app @ App(_, Ref(_, n, _, _, _, _, _), _, _, _) if n == name => Some(app)
+          case App(_, fn, arg, _, _) =>
+            findAppByName(fn, name).orElse(arg.terms.flatMap(findAppByName(_, name)).headOption)
+          case Lambda(_, _, body, _, _, _, _) =>
+            body.terms.flatMap(findAppByName(_, name)).headOption
+          case Expr(_, terms, _, _) =>
+            terms.flatMap(findAppByName(_, name)).headOption
+          case _ => None
 
       memberBnd match
         case bnd: Bnd =>
@@ -276,29 +288,27 @@ class AppRewritingTests extends BaseEffFunSuite:
                         s"Expected let binding argument to be LiteralInt(1), got:\n${prettyPrintAst(argExpr)}"
                       )
 
-                  innerLambda.body.terms match
-                    case List(TXApp(printlnRef, _, List(toStringExpr))) =>
-                      assertEquals(clue(printlnRef.name), "println", "println should be applied")
-                      toStringExpr.terms match
-                        case List(TXApp(toStringRef, _, List(nExpr))) =>
-                          assertEquals(
-                            clue(toStringRef.name),
-                            "to_string",
-                            "to_string should be applied"
-                          )
-                          nExpr.terms match
-                            case List(Ref(_, "n", _, _, _, _, _)) => ()
-                            case _ =>
-                              fail(
-                                s"Expected to_string argument to be Ref n, got:\n${prettyPrintAst(nExpr)}"
-                              )
-                        case _ =>
-                          fail(
-                            s"Expected to_string application, got:\n${prettyPrintAst(toStringExpr)}"
-                          )
+                  // After ownership analysis, int_to_str wraps its result in a synthetic let.
+                  // Find println in the body (may be nested in ownership wrappers).
+                  val printlnApp = findAppByName(innerLambda, "println")
+                  assert(
+                    printlnApp.isDefined,
+                    s"Expected println application in let body, got:\n${prettyPrintAst(innerLambda)}"
+                  )
+
+                  // Find int_to_str anywhere in the ownership-wrapped body
+                  val toStringApp = findAppByName(innerLambda, "int_to_str")
+                  assert(
+                    toStringApp.isDefined,
+                    s"Expected int_to_str call in ownership-wrapped body:\n${prettyPrintAst(innerLambda)}"
+                  )
+
+                  // Verify int_to_str's argument is Ref(n)
+                  toStringApp.get.arg.terms match
+                    case List(Ref(_, "n", _, _, _, _, _)) => ()
                     case other =>
                       fail(
-                        s"Expected println application in let body, got:\n${other
+                        s"Expected int_to_str argument to be Ref n, got:\n${other
                             .map(t => prettyPrintAst(t, 0, false, false))
                             .mkString("\n")}"
                       )

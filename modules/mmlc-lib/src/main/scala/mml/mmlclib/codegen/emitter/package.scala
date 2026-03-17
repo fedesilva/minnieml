@@ -1,8 +1,8 @@
 package mml.mmlclib.codegen.emitter
 
-import cats.syntax.all.*
 import mml.mmlclib.ast.*
 import mml.mmlclib.codegen.TargetAbi
+import mml.mmlclib.codegen.emitter.abis.AbiStrategy
 import mml.mmlclib.errors.{CompilationError, CompilerWarning}
 
 /** Helper for generating syntactically correct LLVM IR type definitions */
@@ -37,14 +37,38 @@ def emitXor(result: Int, typ: String, left: String, right: String): String =
   s"  %$result = xor $typ $left, $right"
 
 /** Helper for generating syntactically correct LLVM IR load instruction */
-def emitLoad(result: Int, typ: String, ptr: String, tbaaTag: Option[String] = None): String =
-  val tbaaPart = tbaaTag.map(tag => s", !tbaa $tag").getOrElse("")
-  s"  %$result = load $typ, $typ* $ptr$tbaaPart"
+def emitLoad(
+  result:     Int,
+  typ:        String,
+  ptr:        String,
+  tbaaTag:    Option[String] = None,
+  aliasScope: Option[String] = None,
+  noalias:    Option[String] = None
+): String =
+  val metadataParts = List(
+    tbaaTag.map(tag => s"!tbaa $tag"),
+    aliasScope.map(tag => s"!alias.scope $tag"),
+    noalias.map(tag => s"!noalias $tag")
+  ).flatten
+  val metadataSuffix = if metadataParts.isEmpty then "" else metadataParts.mkString(", ", ", ", "")
+  s"  %$result = load $typ, $typ* $ptr$metadataSuffix"
 
 /** Helper for generating syntactically correct LLVM IR store instruction */
-def emitStore(value: String, typ: String, ptr: String, tbaaTag: Option[String] = None): String =
-  val tbaaPart = tbaaTag.map(tag => s", !tbaa $tag").getOrElse("")
-  s"  store $typ $value, $typ* $ptr$tbaaPart"
+def emitStore(
+  value:      String,
+  typ:        String,
+  ptr:        String,
+  tbaaTag:    Option[String] = None,
+  aliasScope: Option[String] = None,
+  noalias:    Option[String] = None
+): String =
+  val metadataParts = List(
+    tbaaTag.map(tag => s"!tbaa $tag"),
+    aliasScope.map(tag => s"!alias.scope $tag"),
+    noalias.map(tag => s"!noalias $tag")
+  ).flatten
+  val metadataSuffix = if metadataParts.isEmpty then "" else metadataParts.mkString(", ", ", ", "")
+  s"  store $typ $value, $typ* $ptr$metadataSuffix"
 
 /** Helper for generating syntactically correct LLVM IR getelementptr instruction */
 def emitGetElementPtr(
@@ -62,12 +86,19 @@ def emitCall(
   result:     Option[Int],
   returnType: Option[String],
   fnName:     String,
-  args:       List[(String, String)]
+  args:       List[(String, String)],
+  aliasScope: Option[String] = None,
+  noalias:    Option[String] = None
 ): String =
   val resultPart = result.map(r => s"%$r = ").getOrElse("")
   val returnPart = returnType.map(t => s"$t ").getOrElse("void ")
   val argString  = args.map { case (typ, value) => s"$typ $value" }.mkString(", ")
-  s"  ${resultPart}call $returnPart@$fnName($argString)"
+  val metadataParts = List(
+    aliasScope.map(tag => s"!alias.scope $tag"),
+    noalias.map(tag => s"!noalias $tag")
+  ).flatten
+  val metadataSuffix = if metadataParts.isEmpty then "" else metadataParts.mkString(", ", ", ", "")
+  s"  ${resultPart}call $returnPart@$fnName($argString)$metadataSuffix"
 
 /** Helper for generating LLVM IR extractvalue instruction */
 def emitExtractValue(result: Int, structType: String, value: String, index: Int): String =
@@ -100,7 +131,7 @@ def getStructFieldTypesFromTypeSpec(
       resolvedId.flatMap(state.resolvables.lookupType) match
         case Some(typeDef: TypeDef) =>
           typeDef.typeSpec match
-            case Some(NativeStruct(_, fields)) =>
+            case Some(NativeStruct(_, fields, _, _)) =>
               val fieldTypes = fields.map { case (_, fieldTypeSpec) =>
                 getLlvmType(fieldTypeSpec, state)
               }
@@ -149,6 +180,14 @@ def resolveTypeStruct(typeSpec: Type, resolvables: ResolvablesIndex): Option[Typ
     case TypeRef(_, _, resolvedId, _) =>
       resolvedId.flatMap(resolvables.lookupType) match
         case Some(ts: TypeStruct) => Some(ts)
+        case Some(td: TypeDef) =>
+          td.typeSpec match
+            case Some(ns: NativeStruct) =>
+              val fields = ns.fields.map { case (name, t) =>
+                Field(td.source, Name.synth(name), t)
+              }.toVector
+              Some(TypeStruct(td.source, None, td.visibility, td.nameNode, fields, td.id))
+            case _ => None
         case Some(ta: TypeAlias) =>
           ta.typeSpec
             .flatMap(resolveTypeStruct(_, resolvables))
@@ -163,7 +202,7 @@ def emitGlobalVariable(name: String, typ: String, value: String): String =
 /** Helper for generating syntactically correct LLVM IR function declaration */
 def emitFunctionDeclaration(name: String, returnType: String, params: List[String]): String =
   val paramString = params.mkString(", ")
-  s"declare $returnType @$name($paramString)"
+  s"declare $returnType @$name($paramString) #0"
 
 /** Represents an error that occurred during code generation. */
 case class CodeGenError(message: String, node: Option[AstNode] = None) extends CompilationError
@@ -220,6 +259,7 @@ enum TbaaNode derives CanEqual:
 case class CodeGenState(
   moduleName:           String              = "",
   targetAbi:            TargetAbi           = TargetAbi.Default,
+  abi:                  AbiStrategy         = AbiStrategy.forTarget(TargetAbi.Default),
   nextRegister:         Int                 = 0,
   output:               List[String]        = List.empty,
   initializers:         List[String]        = List.empty,
@@ -238,6 +278,11 @@ case class CodeGenState(
   tbaaRootId:    Option[Int]        = None,
   tbaaScalarIds: Map[String, Int]   = Map.empty,
   tbaaStructIds: Map[String, Int]   = Map.empty,
+  // Alias scope metadata
+  aliasScopeOutput:   List[String]     = List.empty,
+  aliasScopeDomainId: Option[Int]      = None,
+  aliasScopeIds:      Map[String, Int] = Map.empty,
+  emitAliasScopes:    Boolean          = false,
   // Resolvables index for soft reference lookups
   resolvables: ResolvablesIndex = ResolvablesIndex()
 ):
@@ -271,10 +316,14 @@ case class CodeGenState(
   /** Returns the complete LLVM IR as a single string. */
   def result: String =
     val mainOutput = output.reverse.mkString("\n")
+    val aliasSection =
+      if aliasScopeOutput.nonEmpty then
+        "\n\n; Alias Scope Metadata\n" + aliasScopeOutput.reverse.mkString("\n")
+      else ""
     val tbaaSection =
       if tbaaOutput.nonEmpty then "\n\n; TBAA Metadata\n" + tbaaOutput.reverse.mkString("\n")
       else ""
-    mainOutput + tbaaSection
+    mainOutput + aliasSection + tbaaSection
 
   /** Initialize TBAA Root if not present */
   def ensureTbaaRoot: CodeGenState =
@@ -322,13 +371,6 @@ case class CodeGenState(
   /** Get or create a TBAA access tag for a scalar access */
   def getTbaaAccessTag(typeName: String): (CodeGenState, String) =
     val (s1, typeId) = getTbaaScalar(typeName)
-
-    // Check if we already have this tag generated? No, access tags are typically !{!type, !accessType, offset}
-    // For simple scalar access, it's !{!typeId, !typeId, i64 0}
-    // We can just generate a new ID for this tag or cache it.
-    // For now, let's treat the tag construction as a separate metadata node if needed,
-    // but typically !tbaa references a struct path.
-    // Standard scalar access: !tbaa !{!1, !1, i64 0} where !1 is the scalar type node.
 
     // We need to emit the tag metadata node itself
     val tagKey = s"tag_$typeName"
@@ -413,6 +455,44 @@ case class CodeGenState(
           s"!$tagId"
         )
 
+  /** Ensure an alias scope domain metadata node exists. */
+  def ensureAliasScopeDomain: (CodeGenState, Int) =
+    aliasScopeDomainId match
+      case Some(id) => (this, id)
+      case None =>
+        val id       = nextTbaaId
+        val metadata = s"""!$id = distinct !{!$id, !"MML Alias Scope Domain"}"""
+        (
+          copy(
+            aliasScopeOutput   = metadata :: aliasScopeOutput,
+            nextTbaaId         = nextTbaaId + 1,
+            aliasScopeDomainId = Some(id)
+          ),
+          id
+        )
+
+  /** Ensure an alias scope metadata node exists for a given MML type name. */
+  def ensureAliasScopeNode(typeName: String): (CodeGenState, Int) =
+    aliasScopeIds.get(typeName) match
+      case Some(id) => (this, id)
+      case None =>
+        val (stateWithDomain, domainId) = ensureAliasScopeDomain
+        val id                          = stateWithDomain.nextTbaaId
+        val metadata = s"""!$id = distinct !{!$id, !$domainId, !"alias.scope:$typeName"}"""
+        (
+          stateWithDomain.copy(
+            aliasScopeOutput = metadata :: stateWithDomain.aliasScopeOutput,
+            nextTbaaId       = stateWithDomain.nextTbaaId + 1,
+            aliasScopeIds    = stateWithDomain.aliasScopeIds + (typeName -> id)
+          ),
+          id
+        )
+
+  /** Get the metadata reference string for an alias scope. */
+  def aliasScopeTag(typeName: String): (CodeGenState, String) =
+    val (stateWithScope, id) = ensureAliasScopeNode(typeName)
+    (stateWithScope, s"!{!$id}")
+
   /** Adds a string constant to the state and returns the name of the constant. */
   def addStringConstant(content: String): (CodeGenState, String) =
     // Check if this content already exists
@@ -479,6 +559,22 @@ case class CodeGenState(
       val declaration = emitFunctionDeclaration(name, returnType, paramTypes)
       copy(functionDeclarations = functionDeclarations + (name -> declaration))
 
+/** An entry in the function scope, tracking a binding's register and type info.
+  *
+  * When `isLiteral` is true, the value has not been materialized into a register — it will be
+  * emitted inline by consumers (e.g. as an immediate operand).
+  */
+case class ScopeEntry(
+  register:     Int,
+  typeName:     String,
+  isLiteral:    Boolean        = false,
+  literalValue: Option[String] = None
+):
+  def operandStr: String =
+    literalValue.getOrElse(
+      if isLiteral then register.toString else s"%$register"
+    )
+
 /** Represents the result of compiling a term or expression.
   *
   * @param register
@@ -493,24 +589,30 @@ case class CodeGenState(
   *   the block label where control exits (for phi node predecessors in nested conditionals)
   */
 case class CompileResult(
-  register:  Int,
-  state:     CodeGenState,
-  isLiteral: Boolean,
-  typeName:  String,
-  exitBlock: Option[String] = None
-)
+  register:     Int,
+  state:        CodeGenState,
+  isLiteral:    Boolean,
+  typeName:     String,
+  exitBlock:    Option[String] = None,
+  literalValue: Option[String] = None
+) {
+  def operandStr: String =
+    literalValue.getOrElse(
+      if isLiteral then register.toString else s"%$register"
+    )
+}
 
 def getMmlTypeName(typeSpec: Type): Option[String] = typeSpec match {
   case TypeRef(_, name, _, _) => Some(name)
-  case NativePrimitive(_, "i1") => Some("Bool")
-  case NativePrimitive(_, "i64") => Some("Int")
-  case NativePrimitive(_, "void") => Some("Unit")
-  case NativePointer(_, llvm) => Some(s"Pointer($llvm)")
-  case NativeStruct(_, _) => Some("NativeStruct")
+  case NativePrimitive(_, "i1", _, _) => Some("Bool")
+  case NativePrimitive(_, "i64", _, _) => Some("Int")
+  case NativePrimitive(_, "void", _, _) => Some("Unit")
+  case NativePointer(_, llvm, _, _) => Some(s"Pointer($llvm)")
+  case NativeStruct(_, _, _, _) => Some("NativeStruct")
   case TypeUnit(_) => Some("Unit")
   case TypeFn(_, _, _) => Some("Function")
   case TypeTuple(_, _) => Some("Tuple")
-  case TypeStruct(_, _, _, name, _, _) => Some(name)
+  case ts: TypeStruct => Some(ts.name)
   case _ => None
 }
 
@@ -531,11 +633,11 @@ def nativeTypeToLlvmDef(
   state:      CodeGenState
 ): Either[CodeGenError, String] =
   nativeType match
-    case NativePrimitive(_, llvmType) =>
+    case NativePrimitive(_, llvmType, _, _) =>
       Right(s"%$typeName = type $llvmType")
-    case NativePointer(_, llvmType) =>
+    case NativePointer(_, llvmType, _, _) =>
       Right(emitPointerTypeDefinition(typeName, llvmType))
-    case NativeStruct(_, fields) =>
+    case NativeStruct(_, fields, _, _) =>
       // Convert each field's TypeSpec to LLVM type
       val fieldResults = fields.map { case (fieldName, typeSpec) =>
         getLlvmType(typeSpec, state).map((fieldName, _))
@@ -551,9 +653,6 @@ def nativeTypeToLlvmDef(
         Right(emitTypeDefinition(s"struct.$typeName", llvmFields))
 
 /** Convert any TypeSpec to LLVM type string.
-  *
-  * This is a basic implementation for Block 3. It will be expanded in Block 4 to handle all type
-  * specifications properly.
   *
   * @param typeSpec
   *   the type specification to convert
@@ -575,8 +674,8 @@ def getLlvmType(
             case Some(nativeType: NativeType) =>
               // Follow through to get the actual LLVM type
               nativeType match
-                case NativePrimitive(_, llvmType) => Right(llvmType)
-                case NativePointer(_, llvmType) => Right(s"$llvmType*")
+                case NativePrimitive(_, llvmType, _, _) => Right(llvmType)
+                case NativePointer(_, llvmType, _, _) => Right(s"$llvmType*")
                 case _: NativeStruct => Right(s"%struct.$name") // Use %struct. prefix
             case _ =>
               // Non-native types cannot be translated to LLVM yet
@@ -606,6 +705,10 @@ def getLlvmType(
       Left(CodeGenError("Unexpected inline native struct"))
     case ts: TypeStruct =>
       Right(s"%struct.${ts.name}")
+    case TypeFn(_, _, ret) =>
+      // When a function type leaks into places expecting a concrete type (e.g., constructor
+      // return type lookup), fall back to the return type's LLVM mapping.
+      getLlvmType(ret, state)
     case other =>
       // No LLVM type mapping for this TypeSpec
       Left(

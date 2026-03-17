@@ -2,6 +2,7 @@ package mml.mmlclib.codegen.emitter
 
 import cats.syntax.all.*
 import mml.mmlclib.ast.*
+import mml.mmlclib.codegen.emitter.alias.AliasScopeEmitter
 import mml.mmlclib.codegen.emitter.expression.*
 import mml.mmlclib.codegen.emitter.tbaa.TbaaEmitter.getTbaaTag
 
@@ -23,18 +24,24 @@ import mml.mmlclib.codegen.emitter.tbaa.TbaaEmitter.getTbaaTag
 def compileTerm(
   term:          Term,
   state:         CodeGenState,
-  functionScope: Map[String, (Int, String)] = Map.empty
+  functionScope: Map[String, ScopeEntry] = Map.empty
 ): Either[CodeGenError, CompileResult] = {
   term match {
-    case LiteralInt(_, value) =>
-      CompileResult(value, state, true, "Int").asRight
+    case lit: LiteralInt =>
+      CompileResult(lit.value, state, true, "Int").asRight
 
-    case LiteralUnit(_) =>
+    case lit: LiteralFloat =>
+      // LLVM rejects decimal float literals that aren't exactly representable in IEEE 754.
+      // Emit as double-precision hex (LLVM truncates to float).
+      val hexStr = f"0x${java.lang.Double.doubleToRawLongBits(lit.value.toDouble)}%016X"
+      CompileResult(0, state, true, "Float", literalValue = Some(hexStr)).asRight
+
+    case _: LiteralUnit =>
       // Unit is a zero-sized type, just return a dummy result
       CompileResult(0, state, true, "Unit").asRight
 
-    case LiteralBool(_, value) =>
-      val literalValue = if value then 1 else 0
+    case lit: LiteralBool =>
+      val literalValue = if lit.value then 1 else 0
       CompileResult(literalValue, state, true, "Bool").asRight
 
     case hole: Hole =>
@@ -49,9 +56,15 @@ def compileTerm(
     case ref: Ref => {
       // Check if reference exists in the function's local scope
       functionScope.get(ref.name) match {
-        case Some((paramReg, typeName)) =>
-          // Reference to a function parameter
-          CompileResult(paramReg, state, false, typeName).asRight
+        case Some(entry) =>
+          // Reference to a function parameter or local binding
+          CompileResult(
+            entry.register,
+            state,
+            entry.isLiteral,
+            entry.typeName,
+            literalValue = entry.literalValue
+          ).asRight
         case None =>
           // Global reference - get actual type from typeSpec
           ref.typeSpec match {
@@ -61,13 +74,22 @@ def compileTerm(
                   val reg                      = state.nextRegister
                   val globalName               = getResolvedName(ref, state)
                   val (stateWithTbaa, tbaaTag) = getTbaaTag(typeSpec, state)
-                  val line                     = emitLoad(reg, llvmType, s"@$globalName", tbaaTag)
+                  val (stateWithAlias, aliasTag, noaliasTag) =
+                    AliasScopeEmitter.getAliasScopeTags(typeSpec, stateWithTbaa)
+                  val line = emitLoad(
+                    reg,
+                    llvmType,
+                    s"@$globalName",
+                    tbaaTag,
+                    aliasTag,
+                    noaliasTag
+                  )
 
                   getMmlTypeName(typeSpec) match {
                     case Some(typeName) =>
                       CompileResult(
                         reg,
-                        stateWithTbaa.withRegister(reg + 1).emit(line),
+                        stateWithAlias.withRegister(reg + 1).emit(line),
                         false,
                         typeName
                       ).asRight
@@ -105,7 +127,7 @@ def compileTerm(
     case Cond(_, condExpr, ifTrue, ifFalse, _, _) =>
       compileCond(condExpr, ifTrue, ifFalse, state, functionScope, compileExpr)
 
-    case impl @ NativeImpl(_, _, _, _) => {
+    case impl @ NativeImpl(_, _, _, _, _, _) => {
       // Native implementation should be handled at function declaration level (compileBndLambda).
       // If reached here, it implies it's being used as an expression, which is invalid.
       Left(
@@ -124,7 +146,7 @@ def compileTerm(
 private def compileSelectionRef(
   ref:           Ref,
   state:         CodeGenState,
-  functionScope: Map[String, (Int, String)]
+  functionScope: Map[String, ScopeEntry]
 ): Either[CodeGenError, CompileResult] =
   ref.qualifier match
     case None =>
@@ -148,10 +170,8 @@ private def compileSelectionRef(
                   val structTypeE = getLlvmType(baseType, qualifierRes.state)
                   val fieldType   = structDef.fields(fieldIndex).typeSpec
                   structTypeE.flatMap { structLlvmType =>
-                    val baseValue =
-                      if qualifierRes.isLiteral then qualifierRes.register.toString
-                      else s"%${qualifierRes.register}"
-                    val fieldReg = qualifierRes.state.nextRegister
+                    val baseValue = qualifierRes.operandStr
+                    val fieldReg  = qualifierRes.state.nextRegister
                     val line =
                       emitExtractValue(fieldReg, structLlvmType, baseValue, fieldIndex)
                     getMmlTypeName(fieldType) match
@@ -209,7 +229,7 @@ private def compileSelectionRef(
 def compileExpr(
   expr:          Expr,
   state:         CodeGenState,
-  functionScope: Map[String, (Int, String)] = Map.empty
+  functionScope: Map[String, ScopeEntry] = Map.empty
 ): Either[CodeGenError, CompileResult] = {
   expr.terms match {
     case List(term) =>
@@ -249,7 +269,7 @@ def compileBinaryOp(
   left:          Term,
   right:         Term,
   state:         CodeGenState,
-  functionScope: Map[String, (Int, String)] = Map.empty
+  functionScope: Map[String, ScopeEntry] = Map.empty
 ): Either[CodeGenError, CompileResult] =
   for
     leftCompileResult <- compileTerm(left, state, functionScope)
@@ -274,7 +294,7 @@ def compileUnaryOp(
   opRef:         Ref,
   arg:           Term,
   state:         CodeGenState,
-  functionScope: Map[String, (Int, String)] = Map.empty
+  functionScope: Map[String, ScopeEntry] = Map.empty
 ): Either[CodeGenError, CompileResult] =
   for
     argCompileResult <- compileTerm(arg, state, functionScope)
@@ -298,7 +318,7 @@ def compileUnaryOp(
 def compileApp(
   app:           App,
   state:         CodeGenState,
-  functionScope: Map[String, (Int, String)] = Map.empty
+  functionScope: Map[String, ScopeEntry] = Map.empty
 ): Either[CodeGenError, CompileResult] =
   val (fnOrLambda, allArgs) = collectArgsAndFunction(app)
 

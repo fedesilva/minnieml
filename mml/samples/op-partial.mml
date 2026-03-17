@@ -4,6 +4,6 @@ op ++(a: Int, b: Int): Int =
 ;
 let f = 2 ++ _;
 
-fn main() = 
-  println (to_string (f 2))
+pub fn main() = 
+  println (int_to_str (f 2))
 ;

@@ -18,8 +18,6 @@ class TailRecursionLoopificationTest extends BaseEffFunSuite:
 
     compileAndGenerate(source, config = CompilerConfig.default.copy(noTco = false)).map { llvmIr =>
       assert(llvmIr.contains("loop.header:"))
-      assert(llvmIr.contains("loop.latch:"))
-      assert(llvmIr.contains("loop.exit.0:"))
       assert(llvmIr.contains("phi i64"))
       assert(llvmIr.contains("br label %loop.header"))
     }
@@ -29,7 +27,7 @@ class TailRecursionLoopificationTest extends BaseEffFunSuite:
     val source =
       """
       fn loop(i: Int, to: Int): Unit =
-        println (to_string i);
+        println (int_to_str i);
         if i <= to then
           loop (i + 1) to
         else
@@ -39,9 +37,8 @@ class TailRecursionLoopificationTest extends BaseEffFunSuite:
 
     compileAndGenerate(source, config = CompilerConfig.default.copy(noTco = false)).map { llvmIr =>
       assert(llvmIr.contains("loop.header:"))
-      assert(llvmIr.contains("loop.latch:"))
-      assert(llvmIr.contains("loop.exit.0:"))
       assert(llvmIr.contains("phi i64"))
+      assert(llvmIr.contains("br label %loop.header"))
       assert(llvmIr.contains("call void @println"))
     }
   }
@@ -58,10 +55,8 @@ class TailRecursionLoopificationTest extends BaseEffFunSuite:
 
     compileAndGenerate(source, config = CompilerConfig.default.copy(noTco = false)).map { llvmIr =>
       assert(llvmIr.contains("loop.header:"))
-      assert(llvmIr.contains("loop.latch:"))
-      assert(llvmIr.contains("loop.exit.0:"))
-      assert(llvmIr.contains("loop.exit.1:"))
       assert(llvmIr.contains("phi i64"))
+      assert(llvmIr.contains("br label %loop.header"))
     }
   }
 
@@ -78,8 +73,74 @@ class TailRecursionLoopificationTest extends BaseEffFunSuite:
 
     compileAndGenerate(source, config = CompilerConfig.default.copy(noTco = false)).map { llvmIr =>
       assert(llvmIr.contains("loop.header:"))
-      assert(llvmIr.contains("loop.latch:"))
-      assert(llvmIr.contains("loop.exit.0:"))
       assert(llvmIr.contains("phi i64"))
+      assert(llvmIr.contains("br label %loop.header"))
+    }
+  }
+
+  test("emits both-branches-recursive tail recursion as a loop") {
+    val source =
+      """
+      fn walk(i: Int, n: Int): Int =
+        if i >= n then 0
+        elif i == 42 then walk (i + 2) n
+        else walk (i + 1) n
+        end;
+      """
+
+    compileAndGenerate(source, config = CompilerConfig.default.copy(noTco = false)).map { llvmIr =>
+      assert(llvmIr.contains("loop.header:"))
+      assert(llvmIr.contains("phi i64"))
+      assert(
+        llvmIr.split("br label %loop.header").length >= 3,
+        "expected at least 2 back edges"
+      )
+      assert(!llvmIr.contains("call i64 @walk"))
+    }
+  }
+
+  test("emits nested both-branches-recursive with different args") {
+    val source =
+      """
+      fn search(i: Int, step: Int, limit: Int): Int =
+        if i >= limit then i
+        else
+          if step > 5 then search (i + step) 1 limit
+          else search (i + 1) (step + 1) limit
+          end
+        end;
+      """
+
+    compileAndGenerate(source, config = CompilerConfig.default.copy(noTco = false)).map { llvmIr =>
+      assert(llvmIr.contains("loop.header:"))
+      assert(llvmIr.contains("phi i64"))
+      assert(
+        llvmIr.split("br label %loop.header").length >= 3,
+        "expected at least 2 back edges"
+      )
+      assert(!llvmIr.contains("call i64 @search"))
+    }
+  }
+
+  test("emits deep nested conditionals mixing exits and calls") {
+    val source =
+      """
+      fn deep(x: Int, y: Int): Int =
+        if x <= 0 then y
+        else
+          if y > 10 then
+            if x > 5 then deep (x - 2) y
+            else 999
+            end
+          else deep (x - 1) (y + 1)
+          end
+        end;
+      """
+
+    compileAndGenerate(source, config = CompilerConfig.default.copy(noTco = false)).map { llvmIr =>
+      assert(llvmIr.contains("loop.header:"))
+      assert(llvmIr.contains("phi i64"))
+      assert(llvmIr.contains("br label %loop.header"))
+      assert(!llvmIr.contains("call i64 @deep"))
     }
   }

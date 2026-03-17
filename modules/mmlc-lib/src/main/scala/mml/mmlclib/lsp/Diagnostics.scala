@@ -11,11 +11,18 @@ object Diagnostics:
 
   /** Extract diagnostics from compiler state. */
   def fromCompilerState(state: CompilerState): List[Diagnostic] =
-    state.errors.toList.flatMap(fromError)
+    state.errors.toList.flatMap(fromErrorDiagnostics)
 
   /** Convert a single compilation error to a diagnostic. */
   def fromError(error: CompilationError): Option[Diagnostic] =
-    extractSpan(error).map { span =>
+    fromErrorDiagnostics(error).headOption
+
+  /** Convert a single compilation error to all related diagnostics. */
+  def fromErrorAll(error: CompilationError): List[Diagnostic] =
+    fromErrorDiagnostics(error)
+
+  private def fromErrorDiagnostics(error: CompilationError): List[Diagnostic] =
+    extractSpans(error).map { span =>
       Diagnostic(
         range    = Range.fromSrcSpan(span),
         severity = DiagnosticSeverity.Error,
@@ -23,61 +30,69 @@ object Diagnostics:
       )
     }
 
-  private def extractSpan(error: CompilationError): Option[SrcSpan] =
+  private def extractSpans(error: CompilationError): List[SrcSpan] =
     error match
-      case ParserError.Failure(_) => None
-      case ParserError.Unknown(_) => None
+      case ParserError.Failure(_) => Nil
+      case ParserError.Unknown(_) => Nil
 
-      case SemanticError.UndefinedRef(ref, _, _) => Some(ref.span)
-      case SemanticError.UndefinedTypeRef(typeRef, _, _) => Some(typeRef.span)
+      case SemanticError.UndefinedRef(ref, _, _) => ref.spanOpt.toList
+      case SemanticError.UndefinedTypeRef(typeRef, _, _) => typeRef.spanOpt.toList
       case SemanticError.DuplicateName(_, dups, _) =>
-        dups.collectFirst { case fs: FromSource => fs.span }
-      case SemanticError.InvalidExpression(expr, _, _) => Some(expr.span)
-      case SemanticError.DanglingTerms(terms, _, _) => terms.headOption.map(_.span)
-      case SemanticError.MemberErrorFound(err, _) => Some(err.span)
-      case SemanticError.ParsingIdErrorFound(err, _) => Some(err.span)
-      case SemanticError.InvalidExpressionFound(inv, _) => Some(inv.span)
-      case SemanticError.TypeCheckingError(typeErr) => extractTypeErrorSpan(typeErr)
-      case SemanticError.InvalidEntryPoint(_, span) => Some(span)
+        dups.iterator
+          .collect { case fs: FromSource => fs.source.spanOpt }
+          .collect { case Some(span) => span }
+          .toList
+      case SemanticError.InvalidExpression(expr, _, _) => expr.spanOpt.toList
+      case SemanticError.DanglingTerms(terms, _, _) => terms.headOption.toList.flatMap(_.spanOpt)
+      case SemanticError.MemberErrorFound(err, _) => err.spanOpt.toList
+      case SemanticError.ParsingIdErrorFound(err, _) => err.spanOpt.toList
+      case SemanticError.InvalidExpressionFound(inv, _) => inv.spanOpt.toList
+      case SemanticError.TypeCheckingError(typeErr) => extractTypeErrorSpans(typeErr)
+      case SemanticError.InvalidEntryPoint(_, source) => source.spanOpt.toList
+      case SemanticError.UseAfterMove(ref, _, _) => ref.spanOpt.toList
+      case SemanticError.ConsumingParamNotLastUse(_, ref, _) => ref.spanOpt.toList
+      case SemanticError.PartialApplicationWithConsuming(fn, _, _) => fn.spanOpt.toList
+      case SemanticError.ConditionalOwnershipMismatch(cond, _) => cond.spanOpt.toList
+      case SemanticError.BorrowEscapeViaReturn(ref, _) => ref.spanOpt.toList
 
-      case te: TypeError => extractTypeErrorSpan(te)
+      case te: TypeError => extractTypeErrorSpans(te)
 
-      case _ => None
+      case _ => Nil
 
-  private def extractTypeErrorSpan(error: TypeError): Option[SrcSpan] =
+  private def extractTypeErrorSpans(error: TypeError): List[SrcSpan] =
     error match
-      case TypeError.MissingParameterType(param, _, _) => Some(param.span)
-      case TypeError.MissingReturnType(decl, _) => declSpan(decl)
-      case TypeError.RecursiveFunctionMissingReturnType(d, _) => declSpan(d)
-      case TypeError.MissingOperatorParameterType(param, _, _) => Some(param.span)
-      case TypeError.MissingOperatorReturnType(decl, _) => declSpan(decl)
-      case TypeError.TypeMismatch(node, _, _, _, _) => nodeSpan(node)
-      case TypeError.UndersaturatedApplication(app, _, _, _) => Some(app.span)
-      case TypeError.OversaturatedApplication(app, _, _, _) => Some(app.span)
-      case TypeError.InvalidApplication(app, _, _, _) => Some(app.span)
-      case TypeError.InvalidSelection(ref, _, _) => Some(ref.span)
-      case TypeError.UnknownField(ref, _, _) => Some(ref.span)
-      case TypeError.ConditionalBranchTypeMismatch(c, _, _, _) => Some(c.span)
-      case TypeError.ConditionalBranchTypeUnknown(cond, _) => Some(cond.span)
-      case TypeError.UnresolvableType(node, _, _) => nodeSpan(node)
-      case TypeError.IncompatibleTypes(node, _, _, _, _) => astNodeSpan(node)
-      case TypeError.UntypedHoleInBinding(_, span, _) => Some(span)
+      case TypeError.MissingParameterType(param, _, _) => param.spanOpt.toList
+      case TypeError.MissingReturnType(decl, _) => declSpan(decl).toList
+      case TypeError.RecursiveFunctionMissingReturnType(d, _) => declSpan(d).toList
+      case TypeError.MissingOperatorParameterType(param, _, _) => param.spanOpt.toList
+      case TypeError.MissingOperatorReturnType(decl, _) => declSpan(decl).toList
+      case TypeError.TypeMismatch(node, _, _, _, _) => nodeSpan(node).toList
+      case TypeError.UndersaturatedApplication(app, _, _, _) => app.spanOpt.toList
+      case TypeError.OversaturatedApplication(app, _, _, _) => app.spanOpt.toList
+      case TypeError.InvalidApplication(app, _, _, _) => app.spanOpt.toList
+      case TypeError.InvalidSelection(ref, _, _) => ref.spanOpt.toList
+      case TypeError.UnknownField(ref, _, _) => ref.spanOpt.toList
+      case TypeError.ConditionalBranchTypeMismatch(c, _, _, _) => c.spanOpt.toList
+      case TypeError.ConditionalBranchTypeUnknown(cond, _) => cond.spanOpt.toList
+      case TypeError.UnresolvableType(node, _, _) => nodeSpan(node).toList
+      case TypeError.IncompatibleTypes(node, _, _, _, _) => astNodeSpan(node).toList
+      case TypeError.UntypedHoleInBinding(_, source, _) => source.spanOpt.toList
 
   private def declSpan(decl: Decl): Option[SrcSpan] =
     decl match
-      case bnd: Bnd => Some(bnd.span)
-      case td:  TypeDef => Some(td.span)
-      case ta:  TypeAlias => Some(ta.span)
-      case ts:  TypeStruct => Some(ts.span)
+      case bnd: Bnd => bnd.spanOpt
+      case td:  TypeDef => td.spanOpt
+      case ta:  TypeAlias => ta.spanOpt
+      case ts:  TypeStruct => ts.spanOpt
 
   private def nodeSpan(node: Typeable): Option[SrcSpan] =
     node match
-      case fs: FromSource => Some(fs.span)
+      case fs: FromSource => fs.source.spanOpt
       case _ => None
 
   private def astNodeSpan(node: AstNode): Option[SrcSpan] =
     node match
-      case fs: FromSource => Some(fs.span)
+      case fs: FromSource => fs.source.spanOpt
       case _ => None
 
   private def formatErrorMessage(error: CompilationError): String =
@@ -105,6 +120,11 @@ object Diagnostics:
         formatTypeError(typeErr)
       case SemanticError.InvalidEntryPoint(msg, _) =>
         s"Invalid entry point: $msg"
+      case e: SemanticError.UseAfterMove => e.message
+      case e: SemanticError.ConsumingParamNotLastUse => e.message
+      case e: SemanticError.PartialApplicationWithConsuming => e.message
+      case e: SemanticError.ConditionalOwnershipMismatch => e.message
+      case e: SemanticError.BorrowEscapeViaReturn => e.message
 
       case te: TypeError => formatTypeError(te)
 

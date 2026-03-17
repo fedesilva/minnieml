@@ -56,8 +56,8 @@ object RefResolver:
             val candidates = lookupRefs(ref, member, module, extraParams)
             if candidates.isEmpty then
               InvalidExpression(
-                span         = ref.span,
-                originalExpr = Expr(ref.span, List(ref)),
+                source       = ref.source,
+                originalExpr = Expr(ref.source, List(ref)),
                 typeSpec     = ref.typeSpec,
                 typeAsc      = ref.typeAsc
               )
@@ -89,8 +89,8 @@ object RefResolver:
             if candidates.isEmpty then
               // Create InvalidExpression wrapping the undefined ref
               InvalidExpression(
-                span         = ref.span,
-                originalExpr = Expr(ref.span, List(ref)),
+                source       = ref.source,
+                originalExpr = Expr(ref.source, List(ref)),
                 typeSpec     = ref.typeSpec,
                 typeAsc      = ref.typeAsc
               )
@@ -213,7 +213,7 @@ object RefResolver:
     ref:         Ref,
     member:      Member,
     module:      Module,
-    extraParams: List[FnParam] = Nil
+    extraParams: List[FnParam]
   ): List[Resolvable] =
     if ref.qualifier.isDefined then return Nil
 

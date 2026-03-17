@@ -2,6 +2,7 @@ package mml.mmlclib.codegen.emitter
 
 import cats.syntax.all.*
 import mml.mmlclib.ast.*
+import mml.mmlclib.codegen.emitter.alias.AliasScopeEmitter
 import mml.mmlclib.codegen.emitter.compileExpr
 import mml.mmlclib.codegen.emitter.tbaa.TbaaEmitter
 import mml.mmlclib.errors.CompilerWarning
@@ -39,8 +40,19 @@ def compileBinding(bnd: Bnd, state: CodeGenState): Either[CodeGenError, CodeGenS
             .emit(s"define internal void @$initFnName() {")
             .emit(s"entry:")
           compileExpr(bnd.value, state2.withRegister(0)).map { compileRes2 =>
-            compileRes2.state
-              .emit(s"  store $llvmType %${compileRes2.register}, $llvmType* @${bnd.name}")
+            val (stateWithAlias, aliasTag, noaliasTag) = bnd.typeSpec match
+              case Some(spec) => AliasScopeEmitter.getAliasScopeTags(spec, compileRes2.state)
+              case None => (compileRes2.state, None, None)
+            val storeLine =
+              emitStore(
+                s"%${compileRes2.register}",
+                llvmType,
+                s"@${bnd.name}",
+                aliasScope = aliasTag,
+                noalias    = noaliasTag
+              )
+            stateWithAlias
+              .emit(storeLine)
               .emit("  ret void")
               .emit("}")
               .emit("")
@@ -63,13 +75,23 @@ def compileBndLambda(
   state:       CodeGenState,
   returnType:  String,
   paramTypes:  List[String],
-  emittedName: String
+  emittedName: String,
+  linkage:     String = ""
 ): Either[CodeGenError, CodeGenState] =
   // Try loopification for tail-recursive functions, fall back to regular codegen if pattern unsupported
   if lambda.meta.exists(_.isTailRecursive) then
-    findTailRecPattern(lambda, bnd) match
-      case Some(_) =>
-        compileTailRecursiveLambda(bnd, lambda, state, returnType, paramTypes, emittedName)
+    findTailRecBody(lambda, bnd) match
+      case Some(body) =>
+        compileTailRecursiveLambda(
+          bnd,
+          lambda,
+          state,
+          returnType,
+          paramTypes,
+          emittedName,
+          body,
+          linkage
+        )
       case None =>
         // Pattern not recognized - emit warning and fall back to regular codegen
         val warning = CompilerWarning.TailRecPatternUnsupported(
@@ -77,8 +99,43 @@ def compileBndLambda(
           "tail recursion pattern not recognized, falling back to standard recursion"
         )
         val stateWithWarning = state.addWarning(warning)
-        compileRegularLambda(bnd, lambda, stateWithWarning, returnType, paramTypes, emittedName)
-  else compileRegularLambda(bnd, lambda, state, returnType, paramTypes, emittedName)
+        compileRegularLambda(
+          bnd,
+          lambda,
+          stateWithWarning,
+          returnType,
+          paramTypes,
+          emittedName,
+          linkage
+        )
+  else compileRegularLambda(bnd, lambda, state, returnType, paramTypes, emittedName, linkage)
+
+/** Check if a parameter is a NativePointer type at LLVM level. */
+private def isPointerParam(param: FnParam, resolvables: ResolvablesIndex): Boolean =
+  param.typeSpec
+    .orElse(param.typeAsc)
+    .flatMap(TypeUtils.getTypeName)
+    .exists(TypeUtils.isPointerType(_, resolvables))
+
+/** Filter out Unit params (void) — they can't be passed in LLVM. */
+private def filterVoidParams(
+  params:     List[FnParam],
+  paramTypes: List[String]
+): List[(FnParam, String)] =
+  params.zip(paramTypes).filter((_, t) => t != "void")
+
+/** Format LLVM parameter declarations, adding `noalias` for consuming pointer params. */
+private def formatParamDecls(
+  params:      List[(FnParam, String)],
+  resolvables: ResolvablesIndex
+): String =
+  params.zipWithIndex
+    .map { case ((param, typ), idx) =>
+      if param.consuming && isPointerParam(param, resolvables)
+      then s"$typ noalias %$idx"
+      else s"$typ %$idx"
+    }
+    .mkString(", ")
 
 /** Compiles a regular (non-tail-recursive) lambda to LLVM IR. */
 private def compileRegularLambda(
@@ -87,23 +144,16 @@ private def compileRegularLambda(
   state:       CodeGenState,
   returnType:  String,
   paramTypes:  List[String],
-  emittedName: String
+  emittedName: String,
+  linkage:     String = ""
 ): Either[CodeGenError, CodeGenState] =
-  // Filter out Unit params (void) - they can't be passed in LLVM
-  // Keep params and types in sync by filtering together
-  val filteredParamsWithTypes = lambda.params
-    .zip(paramTypes)
-    .filter { case (_, typ) => typ != "void" }
+  val filteredParamsWithTypes = filterVoidParams(lambda.params, paramTypes)
+  val filteredParams          = filteredParamsWithTypes.map(_._1)
+  val filteredParamTypes      = filteredParamsWithTypes.map(_._2)
+  val paramDecls              = formatParamDecls(filteredParamsWithTypes, state.resolvables)
 
-  val filteredParams     = filteredParamsWithTypes.map(_._1)
-  val filteredParamTypes = filteredParamsWithTypes.map(_._2)
-
-  // Generate function declaration with parameters
-  val paramDecls = filteredParamTypes.zipWithIndex
-    .map { case (typ, idx) => s"$typ %$idx" }
-    .mkString(", ")
-
-  val functionDecl = s"define $returnType @$emittedName($paramDecls) {"
+  val attrGroup    = if bnd.meta.exists(_.inlineHint) then "#1" else "#0"
+  val functionDecl = s"define $linkage$returnType @$emittedName($paramDecls) $attrGroup {"
   val entryLine    = "entry:"
 
   // Setup function body state with initial lines
@@ -126,7 +176,7 @@ private def compileRegularLambda(
       bodyState.emit(allocLine).emit(storeLine).emit(loadLine)
 
       val mmlType = param.typeAsc.flatMap(getMmlTypeName).getOrElse("Unknown")
-      (param.name, (regNum, mmlType))
+      (param.name, ScopeEntry(regNum, mmlType))
     }
     .toMap
 
@@ -145,8 +195,7 @@ private def compileRegularLambda(
     val returnLine =
       if returnType == "void" then "  ret void"
       else
-        val returnOp =
-          if bodyRes.isLiteral then bodyRes.register.toString else s"%${bodyRes.register}"
+        val returnOp = bodyRes.operandStr
         s"  ret $returnType $returnOp"
 
     // Close function and add empty line
@@ -162,7 +211,7 @@ private def compileStructConstructor(
   bnd:           Bnd,
   lambda:        Lambda,
   state:         CodeGenState,
-  functionScope: Map[String, (Int, String)]
+  functionScope: Map[String, ScopeEntry]
 ): Either[CodeGenError, CompileResult] =
   val returnTypeE = bnd.typeSpec match
     case Some(fnType: TypeFn) => Right(fnType.returnType)
@@ -207,7 +256,7 @@ private def compileStructConstructor(
                           Some(param)
                         )
                       )
-                    case Some((paramReg, _)) =>
+                    case Some(entry) =>
                       getLlvmType(field.typeSpec, currentState).flatMap { fieldLlvmType =>
                         val fieldPtrReg = currentState.nextRegister
                         val ptrLine = emitGetElementPtr(
@@ -219,23 +268,44 @@ private def compileStructConstructor(
                         )
                         val stateWithPtr =
                           currentState.withRegister(fieldPtrReg + 1).emit(ptrLine)
+
+                        val valueToStore    = entry.operandStr
+                        val stateAfterClone = stateWithPtr
+
                         TbaaEmitter
-                          .getTbaaStructFieldTag(returnTypeSpec, fieldIndex, stateWithPtr)
+                          .getTbaaStructFieldTag(returnTypeSpec, fieldIndex, stateAfterClone)
                           .map { case (stateWithTag, tag) =>
+                            val (stateWithAlias, aliasTag, noaliasTag) =
+                              AliasScopeEmitter.getAliasScopeTags(field.typeSpec, stateWithTag)
                             val storeLine =
-                              emitStore(s"%$paramReg", fieldLlvmType, s"%$fieldPtrReg", Some(tag))
-                            stateWithTag.emit(storeLine)
+                              emitStore(
+                                valueToStore,
+                                fieldLlvmType,
+                                s"%$fieldPtrReg",
+                                Some(tag),
+                                aliasTag,
+                                noaliasTag
+                              )
+                            stateWithAlias.emit(storeLine)
                           }
                       }
                 }
             }
 
             fieldsStateE.map { stateAfterStores =>
-              val resultReg = stateAfterStores.nextRegister
-              val loadLine  = emitLoad(resultReg, structLlvmType, s"%$allocReg", None)
+              val (stateWithAlias, aliasTag, noaliasTag) =
+                AliasScopeEmitter.getAliasScopeTags(returnTypeSpec, stateAfterStores)
+              val resultReg = stateWithAlias.nextRegister
+              val loadLine = emitLoad(
+                resultReg,
+                structLlvmType,
+                s"%$allocReg",
+                aliasScope = aliasTag,
+                noalias    = noaliasTag
+              )
               CompileResult(
                 resultReg,
-                stateAfterStores.withRegister(resultReg + 1).emit(loadLine),
+                stateWithAlias.withRegister(resultReg + 1).emit(loadLine),
                 false,
                 structDef.name
               )
@@ -243,51 +313,39 @@ private def compileStructConstructor(
           }
   }
 
-/** Exit branch with compound conditions (conjunction).
-  *
-  * Each condition is a (expr, exitWhenTrue) pair. The exit is taken when ALL conditions match their
-  * expected truth value. For simple cases, this is a single-element list. For nested conditionals,
-  * this accumulates outer conditions.
-  *
-  * @param conditions
-  *   conjunction of (condition, exitWhenTrue) pairs
-  * @param exitExpr
-  *   expression to return when exit is taken
-  * @param latchPrefix
-  *   statements that must be executed before this exit can be checked (for nested cond exits)
-  *
-  * Example: `List((outer, false), (inner, true))` means exit when outer=false AND inner=true.
-  */
-private case class ExitBranch(
-  conditions:  List[(Expr, Boolean)],
-  exitExpr:    Expr,
-  latchPrefix: List[BoundStatement] = Nil
-)
-
-/** A statement in a tail-recursive pattern, optionally binding a name.
+/** A statement in a tail-recursive body, optionally binding a name.
   *
   * For sequence lambdas (__stmt), bindingName is None (side-effect only). For let-bindings,
   * bindingName is Some(name) and the result is bound to that name for use in subsequent code.
   */
 private case class BoundStatement(bindingName: Option[String], expr: Expr)
 
-/** Pattern for tail-recursive function loopification.
+/** Recursive tree representing the body of a tail-recursive function for loopification.
   *
-  * @param preStatements
-  *   statements before the condition check (start of each iteration)
-  * @param exitBranches
-  *   exit conditions with their return expressions
-  * @param latchStatements
-  *   statements in the recursive branch before the recursive call
-  * @param recursiveArgs
-  *   arguments to the recursive call
+  * Each leaf either exits the loop (ret) or loops back (br to loop header). Branch nodes split on a
+  * condition — both branches may contain recursive calls, enabling patterns like astar2's
+  * visit_neighbors where different paths recurse with different arguments.
   */
-private case class TailRecPattern(
-  preStatements:   List[BoundStatement],
-  exitBranches:    List[ExitBranch],
-  latchStatements: List[BoundStatement],
-  recursiveArgs:   List[Expr]
-)
+sealed private trait TailRecBody
+
+/** A leaf that exits the loop: compiles preStatements then returns exitExpr. */
+private case class TailRecExit(preStatements: List[BoundStatement], exitExpr: Expr)
+    extends TailRecBody
+
+/** A leaf that loops back: compiles preStatements then jumps to loop header with new args. */
+private case class TailRecCall(preStatements: List[BoundStatement], args: List[Expr])
+    extends TailRecBody
+
+/** A branch: compiles preStatements, evaluates condition, recurses into both subtrees. */
+private case class TailRecBranch(
+  preStatements: List[BoundStatement],
+  condition:     Expr,
+  ifTrue:        TailRecBody,
+  ifFalse:       TailRecBody
+) extends TailRecBody
+
+/** A back edge from a recursive call site to the loop header. */
+private case class BackEdge(blockLabel: String, argValues: List[String])
 
 private def compileTailRecursiveLambda(
   bnd:         Bnd,
@@ -295,245 +353,149 @@ private def compileTailRecursiveLambda(
   state:       CodeGenState,
   returnType:  String,
   paramTypes:  List[String],
-  emittedName: String
+  emittedName: String,
+  body:        TailRecBody,
+  linkage:     String = ""
 ): Either[CodeGenError, CodeGenState] =
-  findTailRecPattern(lambda, bnd)
-    .toRight(CodeGenError(s"Tail recursion shape not supported for '${bnd.name}'", Some(bnd)))
-    .flatMap { pattern =>
-      // Filter out Unit params (void) - they can't be passed in LLVM
-      val paramsWithTypesAndArgs = lambda.params
-        .zip(paramTypes)
-        .zip(pattern.recursiveArgs)
-        .filter { case ((_, typ), _) => typ != "void" }
+  val nonVoidIndices          = paramTypes.indices.filter(i => paramTypes(i) != "void").toList
+  val filteredParamsWithTypes = nonVoidIndices.map(i => (lambda.params(i), paramTypes(i)))
+  val filteredParams          = filteredParamsWithTypes.map(_._1)
+  val filteredParamTypes      = filteredParamsWithTypes.map(_._2)
+  val paramDecls              = formatParamDecls(filteredParamsWithTypes, state.resolvables)
 
-      val filteredParams        = paramsWithTypesAndArgs.map { case ((p, _), _) => p }
-      val filteredParamTypes    = paramsWithTypesAndArgs.map { case ((_, t), _) => t }
-      val filteredRecursiveArgs = paramsWithTypesAndArgs.map { case (_, arg) => arg }
+  val attrGroup    = if bnd.meta.exists(_.inlineHint) then "#1" else "#0"
+  val functionDecl = s"define $linkage$returnType @$emittedName($paramDecls) $attrGroup {"
+  val loopHeader   = "loop.header"
 
-      if pattern.recursiveArgs.size != lambda.params.size then
-        Left(
-          CodeGenError(
-            s"Tail recursion argument count mismatch for '${bnd.name}'",
-            Some(bnd)
-          )
-        )
-      else
-        val paramDecls = filteredParamTypes.zipWithIndex
-          .map { case (typ, idx) => s"$typ %$idx" }
-          .mkString(", ")
+  val baseState       = state.emit(functionDecl).emit("entry:")
+  val stateAfterEntry = baseState.emit(s"  br label %$loopHeader")
+  val headerState     = stateAfterEntry.emit(s"$loopHeader:")
 
-        val functionDecl = s"define $returnType @$emittedName($paramDecls) {"
-        val loopHeader   = "loop.header"
-        val loopLatch    = "loop.latch"
+  val paramCount = filteredParams.size
+  val phiStart   = paramCount
+  val phiRegs    = filteredParams.indices.map(i => phiStart + i).toList
 
-        val baseState       = state.emit(functionDecl).emit("entry:")
-        val stateAfterEntry = baseState.emit(s"  br label %$loopHeader")
-        val headerState     = stateAfterEntry.emit(s"$loopHeader:")
+  // Emit placeholder phi lines — replaced after collecting all back edges
+  val phiPlaceholders = phiRegs.zip(filteredParamTypes).map { case (phiReg, llvmType) =>
+    s"  %$phiReg = phi $llvmType __PHI_PLACEHOLDER_$phiReg"
+  }
 
-        val paramCount            = filteredParams.size
-        val phiStart              = paramCount
-        val phiRegs               = filteredParams.indices.map(i => phiStart + i).toList
-        val backBlockPlaceholder  = "__mml_tailrec_back_block"
-        val backValuePlaceholders = filteredParams.indices.map(i => s"__mml_tailrec_back_$i")
-
-        val phiLines =
-          phiRegs.zip(filteredParamTypes).zipWithIndex.map { case ((phiReg, llvmType), idx) =>
-            val entryValue = s"%$idx"
-            val backValue  = backValuePlaceholders(idx)
-            s"  %$phiReg = phi $llvmType [ $entryValue, %entry ], " +
-              s"[ $backValue, %$backBlockPlaceholder ]"
-          }
-
-        val paramScope = filteredParams
-          .zip(phiRegs)
-          .map { case (param, reg) =>
-            val mmlType = param.typeAsc.flatMap(getMmlTypeName).getOrElse("Unknown")
-            param.name -> (reg, mmlType)
-          }
-          .toMap
-
-        val stateAfterPhi = headerState.emitAll(phiLines).withRegister(phiStart + paramCount)
-
-        for
-          // Compile pre-statements with let-bindings added to scope
-          preResult <- compileBoundStatements(pattern.preStatements, stateAfterPhi, paramScope)
-          (stateAfterPreStatements, scopeAfterPre, _) = preResult
-          // Compile exit branch conditions (may include latchPrefix for nested cond exits)
-          checksResult <- compileExitBranchChecks(
-            pattern.exitBranches,
-            stateAfterPreStatements,
-            scopeAfterPre,
-            loopLatch
-          )
-          (stateAfterChecks, scopeAfterExitPrefixes) = checksResult
-          // Emit latch block with remaining latch statements
-          // Use scopeAfterExitPrefixes which includes bindings from exit latchPrefix
-          latchState = stateAfterChecks.emit(s"$loopLatch:")
-          latchResult <- compileBoundStatements(
-            pattern.latchStatements,
-            latchState,
-            scopeAfterExitPrefixes
-          )
-          (stateAfterLatchStmts, scopeAfterLatch, latchExitBlock) = latchResult
-          // Compile recursive args using full scope
-          // Pass latchExitBlock so we track if latch statements ended in a different block
-          argsResult <- compileTailRecArgs(
-            filteredRecursiveArgs,
-            stateAfterLatchStmts,
-            scopeAfterLatch,
-            latchExitBlock
-          )
-          (argValues, stateAfterArgs, lastExitBlock) = argsResult
-          backEdgeBlock                              = lastExitBlock.getOrElse(loopLatch)
-          stateAfterBack = stateAfterArgs.emit(s"  br label %$loopHeader")
-          // Emit exit blocks (use scopeAfterExitPrefixes for exit expressions)
-          stateAfterExits <- compileExitBlocks(
-            pattern.exitBranches,
-            stateAfterBack,
-            scopeAfterExitPrefixes,
-            returnType
-          )
-          finalState = stateAfterExits.emit("}").emit("")
-        yield
-          val replacements = backValuePlaceholders
-            .zip(argValues)
-            .toMap
-            .updated(backBlockPlaceholder, backEdgeBlock)
-          replacePlaceholders(finalState, replacements)
+  val paramScope = filteredParams
+    .zip(phiRegs)
+    .map { case (param, reg) =>
+      val mmlType = param.typeAsc.flatMap(getMmlTypeName).getOrElse("Unknown")
+      param.name -> ScopeEntry(reg, mmlType)
     }
+    .toMap
 
-/** Compile condition checks for exit branches with compound conditions.
+  val stateAfterPhi = headerState.emitAll(phiPlaceholders).withRegister(phiStart + paramCount)
+
+  compileTailRecBody(
+    body,
+    stateAfterPhi,
+    paramScope,
+    returnType,
+    loopHeader,
+    loopHeader,
+    nonVoidIndices
+  ).map { case (stateAfterBody, backEdges) =>
+    val finalState = stateAfterBody.emit("}").emit("")
+    // Build phi replacements from collected back edges
+    val replacements = phiRegs.zipWithIndex.map { case (phiReg, paramIdx) =>
+      val entryValue  = s"%$paramIdx"
+      val backEntries = backEdges.map(e => s"[ ${e.argValues(paramIdx)}, %${e.blockLabel} ]")
+      val allEntries  = s"[ $entryValue, %entry ]" :: backEntries
+      s"__PHI_PLACEHOLDER_$phiReg" -> allEntries.mkString(", ")
+    }.toMap
+    replacePlaceholders(finalState, replacements)
+  }
+
+/** Compile a tail-recursive body tree into LLVM IR.
   *
-  * For compound conditions, generates chained checks: exit.check.{exitIdx}.{condIdx} Each condition
-  * in the chain must match for the exit to be taken.
-  *
-  * Exits with non-empty latchPrefix have their prefix compiled before checking their conditions.
-  * This ensures nested conditional exits have the required scope.
+  * Each leaf either returns (TailRecExit) or jumps back to the loop header (TailRecCall). Branch
+  * nodes split into conditional blocks. No merge blocks needed — every path terminates.
   *
   * @return
-  *   (updated state, scope after all latch prefixes)
+  *   updated state and list of back edges for phi node construction
   */
-private def compileExitBranchChecks(
-  exitBranches: List[ExitBranch],
-  state:        CodeGenState,
-  paramScope:   Map[String, (Int, String)],
-  latchLabel:   String
-): Either[CodeGenError, (CodeGenState, Map[String, (Int, String)])] =
-  val numBranches = exitBranches.size
-  exitBranches.zipWithIndex.foldLeft((state, paramScope).asRight[CodeGenError]) {
-    case (Right((currentState, currentScope)), (branch, exitIdx)) =>
-      val exitLabel = s"loop.exit.$exitIdx"
-      val nextExitOrLatch =
-        if exitIdx == numBranches - 1 then latchLabel else s"loop.check.${exitIdx + 1}"
-
-      // If this exit has a latchPrefix, compile it first to get required scope
-      val prefixResult =
-        if branch.latchPrefix.isEmpty then Right((currentState, currentScope, Option.empty[String]))
-        else compileBoundStatements(branch.latchPrefix, currentState, currentScope)
-
-      prefixResult.flatMap { case (stateAfterPrefix, scopeAfterPrefix, _) =>
-        compileCompoundConditions(
-          branch.conditions,
-          stateAfterPrefix,
-          scopeAfterPrefix,
-          exitIdx,
-          condIdx     = 0,
-          exitLabel   = exitLabel,
-          fallthrough = nextExitOrLatch
-        ).map { stateAfterConds =>
-          // Emit the next check label if not the last exit
-          val finalState =
-            if exitIdx < numBranches - 1 then stateAfterConds.emit(s"loop.check.${exitIdx + 1}:")
-            else stateAfterConds
-          // Pass forward the extended scope (includes latchPrefix bindings)
-          (finalState, scopeAfterPrefix)
-        }
-      }
-
-    case (Left(err), _) => Left(err)
-  }
-
-/** Compile a chain of conditions for a single exit branch.
-  *
-  * Each condition must match its expected truth value for the exit to be taken. If any condition
-  * doesn't match, we fall through to the next exit check or latch.
-  */
-private def compileCompoundConditions(
-  conditions:  List[(Expr, Boolean)],
-  state:       CodeGenState,
-  paramScope:  Map[String, (Int, String)],
-  exitIdx:     Int,
-  condIdx:     Int,
-  exitLabel:   String,
-  fallthrough: String
-): Either[CodeGenError, CodeGenState] =
-  conditions match
-    case Nil =>
-      // No conditions left - shouldn't happen, but if it does, just branch to exit
-      Right(state.emit(s"  br label %$exitLabel"))
-
-    case (cond, exitWhenTrue) :: Nil =>
-      // Last condition - branch to exit or fallthrough
+private def compileTailRecBody(
+  body:           TailRecBody,
+  state:          CodeGenState,
+  scope:          Map[String, ScopeEntry],
+  returnType:     String,
+  loopHeader:     String,
+  currentBlock:   String,
+  nonVoidIndices: List[Int]
+): Either[CodeGenError, (CodeGenState, List[BackEdge])] =
+  body match
+    case TailRecExit(preStmts, exitExpr) =>
       for
-        condRes <- compileExpr(cond, state, paramScope)
-        result <- compileBranchCondition(cond, condRes)
-        (stateAfterCond, branchCond) = result
-        (trueLabel, falseLabel) =
-          if exitWhenTrue then (exitLabel, fallthrough) else (fallthrough, exitLabel)
-      yield stateAfterCond.emit(s"  br i1 $branchCond, label %$trueLabel, label %$falseLabel")
+        preResult <- compileBoundStatements(preStmts, state, scope)
+        (stateAfterPre, scopeAfterPre, _) = preResult
+        exitRes <- compileExpr(exitExpr, stateAfterPre, scopeAfterPre)
+        returnLine =
+          if returnType == "void" then "  ret void"
+          else s"  ret $returnType ${exitRes.operandStr}"
+      yield (exitRes.state.emit(returnLine), Nil)
 
-    case (cond, exitWhenTrue) :: rest =>
-      // More conditions follow - branch to next check or fallthrough
-      val nextCheckLabel = s"exit.check.$exitIdx.${condIdx + 1}"
+    case TailRecCall(preStmts, args) =>
       for
-        condRes <- compileExpr(cond, state, paramScope)
-        result <- compileBranchCondition(cond, condRes)
-        (stateAfterCond, branchCond) = result
-        // If condition matches expected, continue to next check; otherwise fallthrough
-        (trueLabel, falseLabel) =
-          if exitWhenTrue then (nextCheckLabel, fallthrough) else (fallthrough, nextCheckLabel)
-        stateWithBranch = stateAfterCond.emit(
+        preResult <- compileBoundStatements(preStmts, state, scope)
+        (stateAfterPre, scopeAfterPre, preExitBlock) = preResult
+        filteredArgs                                 = nonVoidIndices.map(args(_))
+        argsResult <- compileTailRecArgs(
+          filteredArgs,
+          stateAfterPre,
+          scopeAfterPre,
+          preExitBlock
+        )
+        (argValues, stateAfterArgs, lastExitBlock) = argsResult
+      yield
+        val backBlock   = lastExitBlock.orElse(preExitBlock).getOrElse(currentBlock)
+        val stateWithBr = stateAfterArgs.emit(s"  br label %$loopHeader")
+        (stateWithBr, List(BackEdge(backBlock, argValues)))
+
+    case TailRecBranch(preStmts, condition, ifTrue, ifFalse) =>
+      for
+        preResult <- compileBoundStatements(preStmts, state, scope)
+        (stateAfterPre, scopeAfterPre, _) = preResult
+        condRes <- compileExpr(condition, stateAfterPre, scopeAfterPre)
+        branchResult <- compileBranchCondition(condition, condRes)
+        (stateAfterCond, branchCond) = branchResult
+        uid                          = stateAfterCond.nextRegister
+        stateWithUid                 = stateAfterCond.withRegister(uid + 1)
+        trueLabel                    = s"tailrec.then.$uid"
+        falseLabel                   = s"tailrec.else.$uid"
+        stateWithBr = stateWithUid.emit(
           s"  br i1 $branchCond, label %$trueLabel, label %$falseLabel"
         )
-        stateWithLabel = stateWithBranch.emit(s"$nextCheckLabel:")
-        finalState <- compileCompoundConditions(
-          rest,
-          stateWithLabel,
-          paramScope,
-          exitIdx,
-          condIdx + 1,
-          exitLabel,
-          fallthrough
+        trueResult <- compileTailRecBody(
+          ifTrue,
+          stateWithBr.emit(s"$trueLabel:"),
+          scopeAfterPre,
+          returnType,
+          loopHeader,
+          trueLabel,
+          nonVoidIndices
         )
-      yield finalState
-
-/** Compile exit blocks - each evaluates its exit expression and returns. */
-private def compileExitBlocks(
-  exitBranches: List[ExitBranch],
-  state:        CodeGenState,
-  paramScope:   Map[String, (Int, String)],
-  returnType:   String
-): Either[CodeGenError, CodeGenState] =
-  exitBranches.zipWithIndex.foldLeft(state.asRight[CodeGenError]) {
-    case (Right(currentState), (branch, idx)) =>
-      val blockState = currentState.emit(s"loop.exit.$idx:")
-      compileExpr(branch.exitExpr, blockState, paramScope).map { exitRes =>
-        val returnLine =
-          if returnType == "void" then "  ret void"
-          else
-            val returnOp =
-              if exitRes.isLiteral then exitRes.register.toString else s"%${exitRes.register}"
-            s"  ret $returnType $returnOp"
-        exitRes.state.emit(returnLine)
-      }
-    case (Left(err), _) => Left(err)
-  }
+        (stateAfterTrue, trueEdges) = trueResult
+        falseResult <- compileTailRecBody(
+          ifFalse,
+          stateAfterTrue.emit(s"$falseLabel:"),
+          scopeAfterPre,
+          returnType,
+          loopHeader,
+          falseLabel,
+          nonVoidIndices
+        )
+        (stateAfterFalse, falseEdges) = falseResult
+      yield (stateAfterFalse, trueEdges ++ falseEdges)
 
 private def compileBranchCondition(
   cond:    Expr,
   condRes: CompileResult
 ): Either[CodeGenError, (CodeGenState, String)] =
-  val condOp = if condRes.isLiteral then condRes.register.toString else s"%${condRes.register}"
+  val condOp = condRes.operandStr
   cond.typeSpec match
     case Some(typeSpec) =>
       getLlvmType(typeSpec, condRes.state).map { llvmType =>
@@ -556,14 +518,13 @@ private def compileBranchCondition(
 private def compileTailRecArgs(
   args:             List[Expr],
   state:            CodeGenState,
-  functionScope:    Map[String, (Int, String)],
+  functionScope:    Map[String, ScopeEntry],
   initialExitBlock: Option[String]
 ): Either[CodeGenError, (List[String], CodeGenState, Option[String])] =
   args.foldLeft((List.empty[String], state, initialExitBlock).asRight[CodeGenError]) {
     case (Right((values, currentState, currentExitBlock)), arg) =>
       compileExpr(arg, currentState, functionScope).map { res =>
-        val value =
-          if res.isLiteral then res.register.toString else s"%${res.register}"
+        val value         = res.operandStr
         val nextExitBlock = res.exitBlock.orElse(currentExitBlock)
         (values :+ value, res.state, nextExitBlock)
       }
@@ -578,8 +539,8 @@ private def compileTailRecArgs(
 private def compileBoundStatements(
   statements:    List[BoundStatement],
   state:         CodeGenState,
-  functionScope: Map[String, (Int, String)]
-): Either[CodeGenError, (CodeGenState, Map[String, (Int, String)], Option[String])] =
+  functionScope: Map[String, ScopeEntry]
+): Either[CodeGenError, (CodeGenState, Map[String, ScopeEntry], Option[String])] =
   statements.foldLeft((state, functionScope, Option.empty[String]).asRight[CodeGenError]) {
     case (Right((currentState, currentScope, prevExitBlock)), BoundStatement(bindingName, expr)) =>
       compileExpr(expr, currentState, currentScope).flatMap { res =>
@@ -587,20 +548,8 @@ private def compileBoundStatements(
         val newExitBlock = res.exitBlock.orElse(prevExitBlock)
         bindingName match
           case Some(name) =>
-            // Let binding: add the result to scope
-            // If result is a literal, materialize it into a register
-            if res.isLiteral then
-              val r = res.state.nextRegister
-              mmlTypeNameToLlvm(res.typeName).map { llvmType =>
-                val s = res.state
-                  .emit(s"  %$r = add $llvmType 0, ${res.register}")
-                  .withRegister(r + 1)
-                (s, currentScope + (name -> (r, res.typeName)), newExitBlock)
-              }
-            else
-              Right(
-                (res.state, currentScope + (name -> (res.register, res.typeName)), newExitBlock)
-              )
+            val entry = ScopeEntry(res.register, res.typeName, res.isLiteral, res.literalValue)
+            Right((res.state, currentScope + (name -> entry), newExitBlock))
           case None =>
             // Side-effect only: discard result
             Right((res.state, currentScope, newExitBlock))
@@ -631,189 +580,59 @@ private def replacePlaceholders(
   }
   state.copy(output = updatedOutput)
 
-private def findTailRecPattern(lambda: Lambda, bnd: Bnd): Option[TailRecPattern] =
-  findTerminalCondWithPreStatements(lambda.body, Nil).flatMap { case (preStatements, cond) =>
-    extractCondChainPattern(cond, lambda, bnd, Nil).map { case (exits, latchStmts, args) =>
-      TailRecPattern(preStatements, exits, latchStmts, args)
-    }
-  }
+/** Extract a tail-recursive body tree from a lambda. */
+private def findTailRecBody(lambda: Lambda, bnd: Bnd): Option[TailRecBody] =
+  extractBody(lambda.body, lambda, bnd, Nil)
 
-/** Extract exit branches, latch statements, and recursive args from a Cond chain.
+/** Walk through let-binding/sequence chains, building TailRecBody tree.
   *
-  * @param outerConditions
-  *   conditions from enclosing conditionals (for nested latch conditionals)
+  * At a Cond, recurse into both branches. Both-recursive is valid — the key improvement over the
+  * old flat model. At a self-call App, produce TailRecCall. Branches without recursive calls are
+  * wrapped as TailRecExit by the caller.
   */
-private def extractCondChainPattern(
-  cond:            Cond,
-  lambda:          Lambda,
-  bnd:             Bnd,
-  accExits:        List[ExitBranch],
-  outerConditions: List[(Expr, Boolean)] = Nil
-): Option[(List[ExitBranch], List[BoundStatement], List[Expr])] =
-  val trueResult =
-    extractRecursiveBranch(cond.ifTrue, lambda, bnd, outerConditions :+ (cond.cond, true))
-  val falseResult =
-    extractRecursiveBranch(cond.ifFalse, lambda, bnd, outerConditions :+ (cond.cond, false))
-
-  (trueResult, falseResult) match
-    // "if cond then (stmts; recurse) else base" - exit when cond is FALSE
-    case (Some((nestedExits, latchStmts, args)), None) =>
-      val exitConds = outerConditions :+ (cond.cond, false)
-      val exit      = ExitBranch(exitConds, cond.ifFalse)
-      Some((accExits ++ nestedExits :+ exit, latchStmts, args))
-
-    // "if cond then base else (stmts; recurse)" - exit when cond is TRUE
-    case (None, Some((nestedExits, latchStmts, args))) =>
-      val exitConds = outerConditions :+ (cond.cond, true)
-      val exit      = ExitBranch(exitConds, cond.ifTrue)
-      Some((accExits ++ nestedExits :+ exit, latchStmts, args))
-
-    // Neither branch recursive - check for elif (nested Cond in ifFalse)
-    case (None, None) =>
-      cond.ifFalse.terms match
-        case List(nestedCond: Cond) =>
-          val exitConds = outerConditions :+ (cond.cond, true)
-          val exit      = ExitBranch(exitConds, cond.ifTrue)
-          extractCondChainPattern(nestedCond, lambda, bnd, accExits :+ exit, outerConditions)
-        case _ => None
-
-    // Both branches recursive - invalid
-    case (Some(_), Some(_)) => None
-
-/** Extract latch statements and recursive args from a branch that contains a recursive call.
-  *
-  * Returns (nestedExits, latchStatements, recursiveArgs) where nestedExits are any additional exit
-  * branches from nested conditionals within the latch.
-  */
-private def extractRecursiveBranch(
-  expr:            Expr,
-  lambda:          Lambda,
-  bnd:             Bnd,
-  outerConditions: List[(Expr, Boolean)]
-): Option[(List[ExitBranch], List[BoundStatement], List[Expr])] =
-  extractSelfCallWithPreStatements(expr, lambda, bnd, Nil, outerConditions)
-
-/** Traverse through lambdas to find self-call, collecting pre-statements with bindings.
-  *
-  * Also handles nested conditionals in the latch - these produce additional exit branches.
-  *
-  * @return
-  *   (nestedExits, latchStatements, recursiveArgs)
-  */
-private def extractSelfCallWithPreStatements(
-  expr:            Expr,
-  lambda:          Lambda,
-  bnd:             Bnd,
-  accStatements:   List[BoundStatement],
-  outerConditions: List[(Expr, Boolean)]
-): Option[(List[ExitBranch], List[BoundStatement], List[Expr])] =
+private def extractBody(
+  expr:          Expr,
+  lambda:        Lambda,
+  bnd:           Bnd,
+  accStatements: List[BoundStatement]
+): Option[TailRecBody] =
   expr.terms match
     case List(app: App) =>
       app.fn match
         case innerLambda: Lambda =>
-          // Sequence lambda: no binding. Let-binding lambda: bind the parameter name.
           val binding =
             if isSequenceLambda(innerLambda) then None
             else innerLambda.params.headOption.map(_.name)
           val stmt = BoundStatement(binding, app.arg)
-          extractSelfCallWithPreStatements(
-            innerLambda.body,
-            lambda,
-            bnd,
-            accStatements :+ stmt,
-            outerConditions
-          )
+          extractBody(innerLambda.body, lambda, bnd, accStatements :+ stmt)
         case _ =>
           collectAppArgs(app).flatMap { case (ref, args) =>
             if isSelfRef(ref, bnd) && args.size == lambda.params.size then
-              Some((Nil, accStatements, args)) // No nested exits, direct self-call
+              TailRecCall(accStatements, args).some
             else None
           }
 
-    // Handle nested conditional in latch: recurse into it for nested pattern extraction
-    case List(nestedCond: Cond) =>
-      extractNestedLatchCond(nestedCond, lambda, bnd, accStatements, outerConditions)
-
-    case _ => None
-
-/** Extract pattern from a nested conditional within the latch.
-  *
-  * This handles cases like: `if inner_cond then early_exit else (more_stmts; recurse)` where the
-  * nested conditional creates an additional exit branch.
-  *
-  * The key insight is that exits from nested conditionals need the latch statements that precede
-  * the nested conditional to be in scope. So we populate `latchPrefix` with `accStatements`.
-  */
-private def extractNestedLatchCond(
-  cond:            Cond,
-  lambda:          Lambda,
-  bnd:             Bnd,
-  accStatements:   List[BoundStatement],
-  outerConditions: List[(Expr, Boolean)]
-): Option[(List[ExitBranch], List[BoundStatement], List[Expr])] =
-  // Check which branch has the recursive call
-  // Pass accStatements through so innermost exits get the full prefix
-  val trueResult =
-    extractSelfCallWithPreStatements(
-      cond.ifTrue,
-      lambda,
-      bnd,
-      accStatements,
-      outerConditions :+ (cond.cond, true)
-    )
-  val falseResult =
-    extractSelfCallWithPreStatements(
-      cond.ifFalse,
-      lambda,
-      bnd,
-      accStatements,
-      outerConditions :+ (cond.cond, false)
-    )
-
-  (trueResult, falseResult) match
-    // Recursive in true branch, exit in false branch
-    case (Some((nestedExits, innerLatchStmts, args)), None) =>
-      val exitConds = outerConditions :+ (cond.cond, false)
-      // Only add latchPrefix if no nested exits (innermost exit gets the prefix)
-      // Nested exits already have accStatements from the recursive call
-      val latchPrefix = if nestedExits.isEmpty then accStatements else Nil
-      val exit        = ExitBranch(exitConds, cond.ifFalse, latchPrefix = latchPrefix)
-      Some((nestedExits :+ exit, innerLatchStmts, args))
-
-    // Recursive in false branch, exit in true branch
-    case (None, Some((nestedExits, innerLatchStmts, args))) =>
-      val exitConds = outerConditions :+ (cond.cond, true)
-      // Only add latchPrefix if no nested exits (innermost exit gets the prefix)
-      // Nested exits already have accStatements from the recursive call
-      val latchPrefix = if nestedExits.isEmpty then accStatements else Nil
-      val exit        = ExitBranch(exitConds, cond.ifTrue, latchPrefix = latchPrefix)
-      Some((nestedExits :+ exit, innerLatchStmts, args))
-
-    // Both branches recursive - invalid
-    case (Some(_), Some(_)) => None
-
-    // Neither branch recursive - can't extract pattern
-    case (None, None) => None
-
-/** Traverse through lambdas to find terminal Cond, collecting pre-statements with bindings. */
-private def findTerminalCondWithPreStatements(
-  expr:          Expr,
-  accStatements: List[BoundStatement]
-): Option[(List[BoundStatement], Cond)] =
-  expr.terms match
     case List(cond: Cond) =>
-      Some((accStatements.reverse, cond))
-
-    case List(app: App) =>
-      app.fn match
-        case innerLambda: Lambda =>
-          // Sequence lambda: no binding. Let-binding lambda: bind the parameter name.
-          val binding =
-            if isSequenceLambda(innerLambda) then None
-            else innerLambda.params.headOption.map(_.name)
-          val stmt = BoundStatement(binding, app.arg)
-          findTerminalCondWithPreStatements(innerLambda.body, stmt :: accStatements)
-        case _ => None
+      val trueBody  = extractBody(cond.ifTrue, lambda, bnd, Nil)
+      val falseBody = extractBody(cond.ifFalse, lambda, bnd, Nil)
+      (trueBody, falseBody) match
+        case (Some(tb), Some(fb)) =>
+          TailRecBranch(accStatements, cond.cond, tb, fb).some
+        case (Some(tb), None) =>
+          TailRecBranch(
+            accStatements,
+            cond.cond,
+            tb,
+            TailRecExit(Nil, cond.ifFalse)
+          ).some
+        case (None, Some(fb)) =>
+          TailRecBranch(
+            accStatements,
+            cond.cond,
+            TailRecExit(Nil, cond.ifTrue),
+            fb
+          ).some
+        case (None, None) => None
 
     case _ => None
 

@@ -5,6 +5,9 @@ import mml.mmlclib.test.BaseEffFunSuite
 
 class FindDefinitionTests extends BaseEffFunSuite:
 
+  private def spanOrFail(node: FromSource, label: String): SrcSpan =
+    node.source.spanOpt.getOrElse(fail(s"Missing source span for $label"))
+
   test("find definition for local param and let binding") {
     val code =
       """
@@ -15,8 +18,11 @@ class FindDefinitionTests extends BaseEffFunSuite:
       """
 
     semNotFailed(code).map { m =>
-      val params = collectParams(m.members)
-      val refs   = collectRefs(m.members)
+      val mainBnd = m.members
+        .collectFirst { case b: Bnd if b.name == "main" => b }
+        .getOrElse(fail("Could not find 'main'"))
+      val params = collectParamsFromMember(mainBnd)
+      val refs   = collectRefsFromMember(mainBnd)
 
       val xParamOpt = params.find(_.name == "x")
       assert(xParamOpt.isDefined, "Could not find param 'x'")
@@ -28,20 +34,21 @@ class FindDefinitionTests extends BaseEffFunSuite:
       val yRefOpt = refs.find(ref => ref.name == "y" && ref.qualifier.isEmpty)
       assert(yRefOpt.isDefined, "Could not find ref 'y'")
 
-      val xRef   = xRefOpt.get
-      val xDefs  = AstLookup.findDefinitionAt(m, xRef.span.start.line, xRef.span.start.col)
-      val xParam = xParamOpt.get
-      assert(xDefs.contains(xParam.span), s"Missing param span for 'x': $xDefs")
+      val xRef       = xRefOpt.get
+      val xRefSpan   = spanOrFail(xRef, "ref 'x'")
+      val xDefs      = AstLookup.findDefinitionAt(m, xRefSpan.start.line, xRefSpan.start.col)
+      val xParam     = xParamOpt.get
+      val xParamSpan = spanOrFail(xParam, "param 'x'")
+      assert(xDefs.contains(xParamSpan), s"Missing param span for 'x': $xDefs")
 
-      val yRef   = yRefOpt.get
-      val yDefs  = AstLookup.findDefinitionAt(m, yRef.span.start.line, yRef.span.start.col)
-      val yParam = yParamOpt.get
-      assert(yDefs.contains(yParam.span), s"Missing param span for 'y': $yDefs")
+      val yRef       = yRefOpt.get
+      val yRefSpan   = spanOrFail(yRef, "ref 'y'")
+      val yDefs      = AstLookup.findDefinitionAt(m, yRefSpan.start.line, yRefSpan.start.col)
+      val yParam     = yParamOpt.get
+      val yParamSpan = spanOrFail(yParam, "param 'y'")
+      assert(yDefs.contains(yParamSpan), s"Missing param span for 'y': $yDefs")
     }
   }
-
-  private def collectParams(members: List[Member]): List[FnParam] =
-    members.flatMap(collectParamsFromMember)
 
   private def collectParamsFromMember(member: Member): List[FnParam] =
     member match
@@ -87,9 +94,6 @@ class FindDefinitionTests extends BaseEffFunSuite:
       case ref: Ref =>
         ref.qualifier.toList.flatMap(collectParamsFromTerm)
 
-  private def collectRefs(members: List[Member]): List[Ref] =
-    members.flatMap(collectRefsFromMember)
-
   private def collectRefsFromMember(member: Member): List[Ref] =
     member match
       case bnd: Bnd =>
@@ -124,6 +128,111 @@ class FindDefinitionTests extends BaseEffFunSuite:
       case inv: InvalidExpression =>
         collectRefsFromExpr(inv.originalExpr)
       case _ => Nil
+
+  test("go-to-definition on struct constructor resolves to struct declaration") {
+    val code =
+      """
+      struct Pair { fst: Int, snd: Int };
+      fn make(a: Int, b: Int): Pair = Pair a b;
+      """
+
+    semNotFailed(code).map { m =>
+      val structOpt = m.members.collectFirst { case ts: TypeStruct => ts }
+      assert(structOpt.isDefined, "Could not find struct 'Pair'")
+      val struct = structOpt.get
+
+      val makeBnd = m.members
+        .collectFirst { case b: Bnd if b.meta.exists(_.originalName == "make") => b }
+        .getOrElse(fail("Could not find 'make'"))
+      val refs = collectRefsFromMember(makeBnd)
+
+      val ctorRef = refs.find(_.name == "Pair")
+      assert(ctorRef.isDefined, "Could not find ref 'Pair' in make body")
+
+      val ref            = ctorRef.get
+      val refSpan        = spanOrFail(ref, "constructor ref 'Pair'")
+      val defs           = AstLookup.findDefinitionAt(m, refSpan.start.line, refSpan.start.col)
+      val structNameSpan = spanOrFail(struct.nameNode, "struct 'Pair' name")
+      assert(
+        defs.contains(structNameSpan),
+        s"Expected struct name span $structNameSpan, got: $defs"
+      )
+    }
+  }
+
+  // TODO: fix-ctor-gotodef: this test documents the real bug — see tracking.md
+  // The simple case (Pair test above) passes because non-heap struct constructors
+  // don't get ownership temp wrappers. Heap-struct constructors inside let bindings
+  // fail because OwnershipAnalyzer wraps the arg with syntheticSpan nodes,
+  // causing findDefinitionInApp to skip the arg entirely.
+  test("go-to-definition on constructor inside let binding resolves to struct") {
+    val code =
+      """
+      struct Address { city: String, street: String };
+      fn main() =
+        let addr = Address "SF" "Main St";
+        println addr.city
+      ;
+      """
+
+    semNotFailed(code).map { m =>
+      val structOpt = m.members.collectFirst { case ts: TypeStruct if ts.name == "Address" => ts }
+      assert(structOpt.isDefined, "Could not find struct 'Address'")
+      val struct = structOpt.get
+
+      val mainBnd = m.members
+        .collectFirst { case b: Bnd if b.meta.exists(_.originalName == "main") => b }
+        .getOrElse(fail("Could not find 'main'"))
+
+      val refs    = collectRefsFromMember(mainBnd)
+      val ctorRef = refs.find(r => r.name == "Address" && r.source.isFromSource)
+      assert(ctorRef.isDefined, "Could not find source ref 'Address'")
+
+      val ref            = ctorRef.get
+      val refSpan        = spanOrFail(ref, "constructor ref 'Address'")
+      val defs           = AstLookup.findDefinitionAt(m, refSpan.start.line, refSpan.start.col)
+      val structNameSpan = spanOrFail(struct.nameNode, "struct 'Address' name")
+      assert(
+        defs.contains(structNameSpan),
+        s"Expected struct name span $structNameSpan, got: $defs"
+      )
+    }
+  }
+
+  test("go-to-definition on non-source symbol returns no definition") {
+    val code =
+      """
+      struct Person {
+        name: String,
+        age: Int
+      };
+
+      fn main() =
+        let p = Person "fede" 25;
+        println ("Age: " ++ int_to_str p.age)
+      ;
+      """
+
+    semNotFailed(code).map { m =>
+      val mainBnd = m.members
+        .collectFirst { case b: Bnd if b.meta.exists(_.originalName == "main") => b }
+        .getOrElse(fail("Could not find 'main'"))
+
+      val refs = collectRefsFromMember(mainBnd)
+      val stdlibRef =
+        refs.find(r => r.name == "int_to_str" && r.source.isFromSource && r.qualifier.isEmpty)
+      assert(stdlibRef.isDefined, "Could not find source ref 'int_to_str'")
+
+      val ref     = stdlibRef.get
+      val refSpan = spanOrFail(ref, "ref 'int_to_str'")
+      val defs    = AstLookup.findDefinitionAt(m, refSpan.start.line, refSpan.start.col)
+      assertEquals(
+        defs,
+        Nil,
+        s"Expected no definition for non-source symbol at $refSpan, got: $defs"
+      )
+    }
+  }
 
   private def collectRefsFromAppFn(fn: Ref | App | Lambda): List[Ref] =
     fn match

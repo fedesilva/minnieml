@@ -9,6 +9,6 @@ let hola = "hola";
 
 \\\\
 
-fn main(): Unit =
+pub fn main(): Unit =
   println hola
 ;

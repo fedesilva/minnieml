@@ -34,7 +34,7 @@ class AlphaOpTests extends BaseEffFunSuite:
               dExpr.terms match
                 case List(dRef: Ref) if dRef.name == "d" =>
                 // Verified d reference
-                case other =>
+                case _ =>
                   fail(s"Expected d reference, got: ${prettyPrintAst(dExpr)}")
 
               // Check xor expression
@@ -45,7 +45,7 @@ class AlphaOpTests extends BaseEffFunSuite:
                   cExpr.terms match
                     case List(cRef: Ref) if cRef.name == "c" =>
                     // Verified c reference
-                    case other =>
+                    case _ =>
                       fail(s"Expected c reference, got: ${prettyPrintAst(cExpr)}")
 
                   // Check and expression
@@ -56,20 +56,20 @@ class AlphaOpTests extends BaseEffFunSuite:
                       aExpr.terms match
                         case List(aRef: Ref) if aRef.name == "a" =>
                         // Verified a reference
-                        case other =>
+                        case _ =>
                           fail(s"Expected a reference, got: ${prettyPrintAst(aExpr)}")
 
                       // Check b reference
                       bExpr.terms match
                         case List(bRef: Ref) if bRef.name == "b" =>
                         // Verified b reference
-                        case other =>
+                        case _ =>
                           fail(s"Expected b reference, got: ${prettyPrintAst(bExpr)}")
 
-                    case other =>
+                    case _ =>
                       fail(s"Expected (a and b) expression, got: ${prettyPrintAst(andExpr)}")
 
-                case other =>
+                case _ =>
                   fail(s"Expected ((a and b) xor c) expression, got: ${prettyPrintAst(xorExpr)}")
 
             case other =>
@@ -111,10 +111,10 @@ class AlphaOpTests extends BaseEffFunSuite:
                   aExpr.terms match
                     case List(aRef: Ref) if aRef.name == "a" =>
                     // Verified a reference
-                    case other =>
+                    case _ =>
                       fail(s"Expected a reference, got: ${prettyPrintAst(aExpr)}")
 
-                case other =>
+                case _ =>
                   fail(s"Expected 'negate a' structure, got: ${prettyPrintAst(negateExpr)}")
 
               // Check right: not b
@@ -125,10 +125,10 @@ class AlphaOpTests extends BaseEffFunSuite:
                   bExpr.terms match
                     case List(bRef: Ref) if bRef.name == "b" =>
                     // Verified b reference
-                    case other =>
+                    case _ =>
                       fail(s"Expected b reference, got: ${prettyPrintAst(bExpr)}")
 
-                case other =>
+                case _ =>
                   fail(s"Expected 'not b' structure, got: ${prettyPrintAst(notExpr)}")
 
             case other =>
@@ -184,14 +184,14 @@ class AlphaOpTests extends BaseEffFunSuite:
               aExpr.terms match
                 case List(aRef: Ref) if aRef.name == "a" =>
                 // Verified a reference
-                case other =>
+                case _ =>
                   fail(s"Expected a reference, got: ${prettyPrintAst(aExpr)}")
 
               // Check b reference
               bExpr.terms match
                 case List(bRef: Ref) if bRef.name == "b" =>
                 // Verified b reference
-                case other =>
+                case _ =>
                   fail(s"Expected b reference, got: ${prettyPrintAst(bExpr)}")
 
             case x =>
@@ -246,14 +246,14 @@ class AlphaOpTests extends BaseEffFunSuite:
               aExpr.terms match
                 case List(aRef: Ref) if aRef.name == "a" =>
                 // Verified a reference
-                case other =>
+                case _ =>
                   fail(s"Expected a reference, got: ${prettyPrintAst(aExpr)}")
 
               // Check b reference
               bExpr.terms match
                 case List(bRef: Ref) if bRef.name == "b" =>
                 // Verified b reference
-                case other =>
+                case _ =>
                   fail(s"Expected b reference, got: ${prettyPrintAst(bExpr)}")
 
             case x =>
@@ -296,10 +296,10 @@ class AlphaOpTests extends BaseEffFunSuite:
                   aExpr.terms match
                     case List(aRef: Ref) if aRef.name == "a" =>
                     // Verified a reference
-                    case other =>
+                    case _ =>
                       fail(s"Expected a reference, got: ${prettyPrintAst(aExpr)}")
 
-                case other =>
+                case _ =>
                   fail(s"Expected 'not a' structure, got: ${prettyPrintAst(notExpr)}")
 
               // Check right: (negate b) and c
@@ -314,20 +314,20 @@ class AlphaOpTests extends BaseEffFunSuite:
                       bExpr.terms match
                         case List(bRef: Ref) if bRef.name == "b" =>
                         // Verified b reference
-                        case other =>
+                        case _ =>
                           fail(s"Expected b reference, got: ${prettyPrintAst(bExpr)}")
 
-                    case other =>
+                    case _ =>
                       fail(s"Expected 'negate b' structure, got: ${prettyPrintAst(negateExpr)}")
 
                   // Check c reference
                   cExpr.terms match
                     case List(cRef: Ref) if cRef.name == "c" =>
                     // Verified c reference
-                    case other =>
+                    case _ =>
                       fail(s"Expected c reference, got: ${prettyPrintAst(cExpr)}")
 
-                case other =>
+                case _ =>
                   fail(s"Expected '(negate b) and c' structure, got: ${prettyPrintAst(andExpr)}")
 
             case other =>
@@ -366,7 +366,7 @@ class AlphaOpTests extends BaseEffFunSuite:
               cExpr.terms match
                 case List(cRef: Ref) if cRef.name == "c" =>
                 // Verified c reference
-                case other =>
+                case _ =>
                   fail(s"Expected rightmost term to be 'c', got: ${prettyPrintAst(cExpr)}")
 
               // Check left part ((not a) or ((not b) and (not a)))
@@ -382,10 +382,10 @@ class AlphaOpTests extends BaseEffFunSuite:
                       aExpr1.terms match
                         case List(aRef1: Ref) if aRef1.name == "a" =>
                         // Verified a reference
-                        case other =>
+                        case _ =>
                           fail(s"Expected a reference, got: ${prettyPrintAst(aExpr1)}")
 
-                    case other =>
+                    case _ =>
                       fail(s"Expected 'not a' for leftmost part, got: ${prettyPrintAst(notAExpr1)}")
 
                   // Check (not b) and (not a)
@@ -401,10 +401,10 @@ class AlphaOpTests extends BaseEffFunSuite:
                           bExpr.terms match
                             case List(bRef: Ref) if bRef.name == "b" =>
                             // Verified b reference
-                            case other =>
+                            case _ =>
                               fail(s"Expected b reference, got: ${prettyPrintAst(bExpr)}")
 
-                        case other =>
+                        case _ =>
                           fail(
                             s"Expected 'not b' in the and expression, got: ${prettyPrintAst(notBExpr)}"
                           )
@@ -417,20 +417,20 @@ class AlphaOpTests extends BaseEffFunSuite:
                           aExpr2.terms match
                             case List(aRef2: Ref) if aRef2.name == "a" =>
                             // Verified a reference
-                            case other =>
+                            case _ =>
                               fail(s"Expected a reference, got: ${prettyPrintAst(aExpr2)}")
 
-                        case other =>
+                        case _ =>
                           fail(
                             s"Expected 'not a' in the and expression, got: ${prettyPrintAst(notAExpr2)}"
                           )
 
-                    case other =>
+                    case _ =>
                       fail(
                         s"Expected 'not b and not a' expression, got: ${prettyPrintAst(andExpr)}"
                       )
 
-                case other =>
+                case _ =>
                   fail(s"Expected inner or expression, got: ${prettyPrintAst(innerOrExpr)}")
 
             case other =>

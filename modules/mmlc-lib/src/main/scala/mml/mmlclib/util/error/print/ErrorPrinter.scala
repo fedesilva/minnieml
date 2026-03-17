@@ -1,7 +1,7 @@
 package mml.mmlclib.util.error.print
 
 import mml.mmlclib.api.CompilerError
-import mml.mmlclib.ast.{FromSource, SrcSpan}
+import mml.mmlclib.ast.{FromSource, SourceOrigin, SrcSpan}
 import mml.mmlclib.codegen.LlvmCompilationError
 import mml.mmlclib.codegen.emitter.CodeGenError
 import mml.mmlclib.parser.{ParserError, SourceInfo}
@@ -12,6 +12,25 @@ object ErrorPrinter:
   /** Format a location as line:col-line:col */
   def formatLocation(span: SrcSpan): String =
     s"[${span.start.line}:${span.start.col}]-[${span.end.line}:${span.end.col}]"
+
+  private def spanOf(node: FromSource): Option[SrcSpan] =
+    node.source.spanOpt
+
+  private def startPosOf(node: FromSource): (Int, Int) =
+    spanOf(node)
+      .map(s => (s.start.line, s.start.col))
+      .getOrElse((Int.MaxValue, Int.MaxValue))
+
+  private def startPosOf(source: SourceOrigin): (Int, Int) =
+    source.spanOpt
+      .map(s => (s.start.line, s.start.col))
+      .getOrElse((Int.MaxValue, Int.MaxValue))
+
+  private def locationOf(node: FromSource): String =
+    spanOf(node).map(formatLocation).getOrElse("[synthetic]")
+
+  private def locationOf(source: SourceOrigin): String =
+    source.spanOpt.map(formatLocation).getOrElse("[synthetic]")
 
   /** Pretty print any compiler error */
   def prettyPrint(error: Any, sourceInfo: Option[SourceInfo] = None): String = error match
@@ -26,70 +45,69 @@ object ErrorPrinter:
 
   /** Extract source position from error for sorting */
   private def getErrorSourcePosition(error: SemanticError): (Int, Int) = error match
-    case SemanticError.UndefinedRef(ref, _, _) => (ref.span.start.line, ref.span.start.col)
-    case SemanticError.UndefinedTypeRef(typeRef, _, _) =>
-      (typeRef.span.start.line, typeRef.span.start.col)
+    case SemanticError.UndefinedRef(ref, _, _) => startPosOf(ref)
+    case SemanticError.UndefinedTypeRef(typeRef, _, _) => startPosOf(typeRef)
     case SemanticError.DuplicateName(_, duplicates, _) =>
       duplicates
         .collect { case d: FromSource => d }
-        .minByOption(_.span.start.index)
-        .map(d => (d.span.start.line, d.span.start.col))
+        .flatMap(spanOf)
+        .minByOption(_.start.index)
+        .map(s => (s.start.line, s.start.col))
         .getOrElse((Int.MaxValue, Int.MaxValue))
-    case SemanticError.InvalidExpression(expr, _, _) => (expr.span.start.line, expr.span.start.col)
-    case SemanticError.MemberErrorFound(error, _) => (error.span.start.line, error.span.start.col)
-    case SemanticError.ParsingIdErrorFound(error, _) =>
-      (error.span.start.line, error.span.start.col)
+    case SemanticError.InvalidExpression(expr, _, _) => startPosOf(expr)
+    case SemanticError.MemberErrorFound(error, _) => startPosOf(error)
+    case SemanticError.ParsingIdErrorFound(error, _) => startPosOf(error)
     case SemanticError.DanglingTerms(terms, _, _) =>
       terms
-        .minByOption(_.span.start.index)
-        .map(t => (t.span.start.line, t.span.start.col))
+        .collect { case fs: FromSource => startPosOf(fs) }
+        .minOption
         .getOrElse((Int.MaxValue, Int.MaxValue))
-    case SemanticError.InvalidExpressionFound(invalidExpr, _) =>
-      (invalidExpr.span.start.line, invalidExpr.span.start.col)
-    case SemanticError.InvalidEntryPoint(_, span) => (span.start.line, span.start.col)
+    case SemanticError.InvalidExpressionFound(invalidExpr, _) => startPosOf(invalidExpr)
+    case SemanticError.InvalidEntryPoint(_, source) => startPosOf(source)
+    case SemanticError.UseAfterMove(ref, _, _) => startPosOf(ref)
+    case SemanticError.ConsumingParamNotLastUse(_, ref, _) => startPosOf(ref)
+    case SemanticError.PartialApplicationWithConsuming(fn, _, _) => startPosOf(fn)
+    case SemanticError.ConditionalOwnershipMismatch(cond, _) => startPosOf(cond)
+    case SemanticError.BorrowEscapeViaReturn(ref, _) => startPosOf(ref)
+    case SemanticError.VisibilityViolation(ref, _, _) => startPosOf(ref)
     case SemanticError.TypeCheckingError(error) =>
       // For type errors, we need to extract the position from the nested error
       // This is a bit hacky, but avoids code duplication
       error match
         case mml.mmlclib.semantic.TypeError.MissingParameterType(param, _, _) =>
-          (param.span.start.line, param.span.start.col)
+          startPosOf(param)
         case mml.mmlclib.semantic.TypeError.MissingReturnType(decl, _) =>
-          val fs = decl.asInstanceOf[FromSource]
-          (fs.span.start.line, fs.span.start.col)
+          startPosOf(decl.asInstanceOf[FromSource])
         case mml.mmlclib.semantic.TypeError.RecursiveFunctionMissingReturnType(decl, _) =>
-          val fs = decl.asInstanceOf[FromSource]
-          (fs.span.start.line, fs.span.start.col)
+          startPosOf(decl.asInstanceOf[FromSource])
         case mml.mmlclib.semantic.TypeError.MissingOperatorParameterType(param, _, _) =>
-          (param.span.start.line, param.span.start.col)
+          startPosOf(param)
         case mml.mmlclib.semantic.TypeError.MissingOperatorReturnType(decl, _) =>
-          val fs = decl.asInstanceOf[FromSource]
-          (fs.span.start.line, fs.span.start.col)
+          startPosOf(decl.asInstanceOf[FromSource])
         case mml.mmlclib.semantic.TypeError.TypeMismatch(node, _, _, _, _) =>
-          val fs = node.asInstanceOf[FromSource]
-          (fs.span.start.line, fs.span.start.col)
+          startPosOf(node.asInstanceOf[FromSource])
         case mml.mmlclib.semantic.TypeError.UndersaturatedApplication(app, _, _, _) =>
-          (app.span.start.line, app.span.start.col)
+          startPosOf(app)
         case mml.mmlclib.semantic.TypeError.OversaturatedApplication(app, _, _, _) =>
-          (app.span.start.line, app.span.start.col)
+          startPosOf(app)
         case mml.mmlclib.semantic.TypeError.InvalidApplication(app, _, _, _) =>
-          (app.span.start.line, app.span.start.col)
+          startPosOf(app)
         case mml.mmlclib.semantic.TypeError.InvalidSelection(ref, _, _) =>
-          (ref.span.start.line, ref.span.start.col)
+          startPosOf(ref)
         case mml.mmlclib.semantic.TypeError.UnknownField(ref, _, _) =>
-          (ref.span.start.line, ref.span.start.col)
+          startPosOf(ref)
         case mml.mmlclib.semantic.TypeError.ConditionalBranchTypeMismatch(cond, _, _, _) =>
-          (cond.span.start.line, cond.span.start.col)
+          startPosOf(cond)
         case mml.mmlclib.semantic.TypeError.ConditionalBranchTypeUnknown(cond, _) =>
-          (cond.span.start.line, cond.span.start.col)
+          startPosOf(cond)
         case mml.mmlclib.semantic.TypeError.UnresolvableType(node, _, _) =>
           node match
-            case fs: FromSource => (fs.span.start.line, fs.span.start.col)
+            case fs: FromSource => startPosOf(fs)
             case _ => (Int.MaxValue, Int.MaxValue)
         case mml.mmlclib.semantic.TypeError.IncompatibleTypes(node, _, _, _, _) =>
-          val fs = node.asInstanceOf[FromSource]
-          (fs.span.start.line, fs.span.start.col)
-        case mml.mmlclib.semantic.TypeError.UntypedHoleInBinding(_, span, _) =>
-          (span.start.line, span.start.col)
+          startPosOf(node.asInstanceOf[FromSource])
+        case mml.mmlclib.semantic.TypeError.UntypedHoleInBinding(_, source, _) =>
+          startPosOf(source)
 
   /** Pretty print semantic errors */
   def prettyPrintSemanticErrors(
@@ -140,37 +158,60 @@ object ErrorPrinter:
     val baseMessage = error match
       case SemanticError.DuplicateName(name, duplicates, phase) =>
         val locations = duplicates
-          .collect { case d: FromSource => formatLocation(d.span) }
+          .collect { case d: FromSource => d }
+          .flatMap(spanOf)
+          .map(formatLocation)
           .mkString(", ")
 
         s"${Console.RED}Duplicate name '$name' defined at: $locations${Console.RESET}\n${Console.YELLOW}Phase: $phase${Console.RESET}"
 
       case SemanticError.UndefinedRef(ref, member, phase) =>
-        s"${Console.RED}Undefined reference '${ref.name}' at ${formatLocation(ref.span)}${Console.RESET}\n${Console.YELLOW}Phase: $phase${Console.RESET}"
+        s"${Console.RED}Undefined reference '${ref.name}' at ${locationOf(ref)}${Console.RESET}\n${Console.YELLOW}Phase: $phase${Console.RESET}"
 
       case SemanticError.UndefinedTypeRef(typeRef, member, phase) =>
-        s"${Console.RED}Undefined type reference '${typeRef.name}' at ${formatLocation(typeRef.span)}${Console.RESET}\n${Console.YELLOW}Phase: $phase${Console.RESET}"
+        s"${Console.RED}Undefined type reference '${typeRef.name}' at ${locationOf(typeRef)}${Console.RESET}\n${Console.YELLOW}Phase: $phase${Console.RESET}"
 
       case SemanticError.InvalidExpression(expr, message, phase) =>
-        s"${Console.RED}Invalid expression at ${formatLocation(expr.span)}: $message${Console.RESET}\n${Console.YELLOW}Phase: $phase${Console.RESET}"
+        s"${Console.RED}Invalid expression at ${locationOf(expr)}: $message${Console.RESET}\n${Console.YELLOW}Phase: $phase${Console.RESET}"
 
       case SemanticError.MemberErrorFound(error, phase) =>
-        val location = formatLocation(error.span)
+        val location = locationOf(error)
         s"${Console.RED}Parser error at $location: ${error.message}${Console.RESET}\n${Console.YELLOW}Phase: $phase${Console.RESET}"
 
       case SemanticError.ParsingIdErrorFound(error, phase) =>
-        val location = formatLocation(error.span)
+        val location = locationOf(error)
         s"${Console.RED}Invalid identifier at $location: ${error.message}${Console.RESET}\n${Console.YELLOW}Phase: $phase${Console.RESET}"
 
       case SemanticError.DanglingTerms(terms, message, phase) =>
-        val locations = terms.map(t => formatLocation(t.span)).mkString(", ")
+        val locations = terms.collect { case fs: FromSource => locationOf(fs) }.mkString(", ")
         s"${Console.RED}$message at $locations${Console.RESET}\n${Console.YELLOW}Phase: $phase${Console.RESET}"
 
       case SemanticError.InvalidExpressionFound(invalidExpr, phase) =>
-        s"${Console.RED}Invalid expression found at ${formatLocation(invalidExpr.span)}${Console.RESET}\n${Console.YELLOW}Phase: $phase${Console.RESET}"
+        s"${Console.RED}Invalid expression found at ${locationOf(invalidExpr)}${Console.RESET}\n${Console.YELLOW}Phase: $phase${Console.RESET}"
 
-      case SemanticError.InvalidEntryPoint(message, span) =>
-        s"${Console.RED}$message at ${formatLocation(span)}${Console.RESET}"
+      case SemanticError.InvalidEntryPoint(message, source) =>
+        val location = locationOf(source)
+        s"${Console.RED}$message at $location${Console.RESET}"
+
+      case SemanticError.VisibilityViolation(ref, decl, phase) =>
+        s"${Console.RED}'${ref.name}' is not visible (declared in '${decl.name}')${Console.RESET}\n${Console.YELLOW}Phase: $phase${Console.RESET}"
+
+      case SemanticError.UseAfterMove(ref, movedAt, phase) =>
+        s"${Console.RED}Use of '${ref.name}' after move at ${locationOf(ref)}${Console.RESET}\n${Console.YELLOW}Moved at: ${locationOf(movedAt)}, Phase: $phase${Console.RESET}"
+
+      case SemanticError.ConsumingParamNotLastUse(param, ref, phase) =>
+        s"${Console.RED}Consuming parameter '${param.name}' must be the last use of '${ref.name}' at ${locationOf(ref)}${Console.RESET}\n${Console.YELLOW}Phase: $phase${Console.RESET}"
+
+      case SemanticError.PartialApplicationWithConsuming(fn, param, phase) =>
+        val location = locationOf(fn)
+        s"${Console.RED}Cannot partially apply function with consuming parameter '${param.name}' at $location${Console.RESET}\n${Console.YELLOW}Phase: $phase${Console.RESET}"
+
+      case SemanticError.ConditionalOwnershipMismatch(cond, phase) =>
+        s"${Console.RED}Conditional branches have different ownership states at ${locationOf(cond)}${Console.RESET}\n${Console.YELLOW}Phase: $phase${Console.RESET}"
+
+      case SemanticError.BorrowEscapeViaReturn(ref, phase) =>
+        s"${Console.RED}Cannot return borrowed value '${ref.name}' at ${locationOf(ref)}${Console.RESET}\n${Console.YELLOW}Phase: $phase${Console.RESET}"
+
       case SemanticError.TypeCheckingError(error) =>
         // Delegate to SemanticErrorPrinter to avoid duplication
         SemanticErrorPrinter.prettyPrintTypeError(error)
@@ -208,10 +249,10 @@ object ErrorPrinter:
           s"${Console.RED}Code generation error: ${err.message}${Console.RESET}\n${Console.YELLOW}Phase: Code Generation${Console.RESET}"
 
         val snippetAndLocation =
-          (err.node.collect { case fs: FromSource => fs.span }, sourceInfo) match
+          (err.node.collect { case fs: FromSource => fs }.flatMap(spanOf), sourceInfo) match
             case (Some(span), Some(info)) =>
               SourceCodeExtractor
-                .extractSnippet(info, span, highlightExpr = true)
+                .extractSnippet(info, span)
                 .map(snippet => s"${formatLocation(span)}\n$snippet")
                 .getOrElse(formatLocation(span)) // Fallback if snippet extraction fails
             case (Some(span), None) => formatLocation(span)

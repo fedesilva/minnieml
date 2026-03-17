@@ -1,11 +1,11 @@
-# Brainstorming: Templated Arrays
+# Brainstorming: templated arrays
 
-**Status:** Draft
-**Goal:** Implement a templating mechanism for arrays while we don't have a polymorphic typechecker.
+Status: Draft
+Goal: Implement a templating mechanism for arrays while we don't have a polymorphic typechecker.
 
 ---
 
-## 1. Motivation
+## 1. motivation
 
 Right now MML uses two predefined monomorphic arrays (`IntArray`, `StringArray`).
 
@@ -17,7 +17,7 @@ Problems:
 
 ---
 
-## 2. Proposed Syntax
+## 2. proposed syntax
 
 Use higher-kinded syntax via juxtaposition (like function application):
 
@@ -29,9 +29,9 @@ let zs: Array MyRecord = [...];
 
 ---
 
-## 3. Implementation Strategy
+## 3. implementation strategy
 
-### 3.1 Uniform Runtime Representation
+### 3.1 uniform runtime representation
 
 Single native `Array` type at runtime:
 
@@ -41,7 +41,7 @@ type Array = @native { length: Int, data: Ptr };
 
 The `Array T` syntax exists only so codegen knows element type.
 
-### 3.2 Generic Runtime Functions
+### 3.2 generic runtime functions
 
 ```c
 mkArray(len: Int, elemSize: Int, elemAlign: Int) -> Array
@@ -49,7 +49,7 @@ array_data(a: Array) -> Ptr
 array_len(a: Array) -> Int
 ```
 
-### 3.3 Codegen-Driven Element Access
+### 3.3 codegen-driven element access
 
 When codegen sees `Array T`:
 1. Compute `elemSize` and `elemAlign` from `T`
@@ -59,7 +59,7 @@ When codegen sees `Array T`:
 
 This eliminates the current `unsafe_ar_int_get` / `ar_str_get` zoo.
 
-### 3.4 Monomorphization Cache
+### 3.4 monomorphization cache
 
 When codegen encounters `Array T`:
 - Check if we've already synthesized accessors for `T`
@@ -70,7 +70,7 @@ Cache stores layout info per `T`: size, align, trivial-copy flag.
 
 ---
 
-## 4. Literal Optimization
+## 4. literal optimization
 
 For `[1, 2, 3] : Array Int`:
 1. Emit constant blob `[3 x i64]`
@@ -82,16 +82,16 @@ For records: same if trivially copyable, otherwise fall back to per-element stor
 
 ---
 
-## 5. Benefits
+## 5. benefits
 
-1. **Single implementation** - no more per-type array boilerplate
-2. **Optimal codegen** - since we know structure and sizes, can use intrinsics
-3. **Literal syntax** - can render directly to LLVM array syntax
-4. **Future-proof** - easy migration path when polymorphic typer arrives
+1. Single implementation - no more per-type array boilerplate
+2. Optimal codegen - since we know structure and sizes, can use intrinsics
+3. Literal syntax - can render directly to LLVM array syntax
+4. Future-proof - easy migration path when polymorphic typer arrives
 
 ---
 
-## 6. Open Questions
+## 6. open questions
 
 - Syntax for array literals: `[1, 2, 3]` vs `Array [1, 2, 3]`?
 - Bounds checking strategy?

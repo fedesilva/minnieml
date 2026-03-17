@@ -1,10 +1,11 @@
 package mml.mmlclib.lsp
 
 import cats.effect.IO
-import upickle.default.*
+import cats.syntax.either.*
 
-import java.io.{BufferedReader, PrintStream}
+import java.io.{InputStream, PrintStream}
 import java.nio.charset.StandardCharsets
+import scala.annotation.tailrec
 
 /** JSON-RPC message types for LSP communication. */
 sealed trait RpcMessage
@@ -36,47 +37,69 @@ case class RpcError(
 )
 
 object RpcError:
-  val ParseError:     Int = -32700
-  val InvalidRequest: Int = -32600
-  val MethodNotFound: Int = -32601
-  val InvalidParams:  Int = -32602
-  val InternalError:  Int = -32603
+  val ParseError:           Int = -32700
+  val InvalidRequest:       Int = -32600
+  val MethodNotFound:       Int = -32601
+  val InvalidParams:        Int = -32602
+  val InternalError:        Int = -32603
+  val ServerNotInitialized: Int = -32002
 
 object JsonRpc:
 
-  private val ContentLengthHeader = "Content-Length: "
-
-  /** Reads a single LSP message from the input stream. Blocks until a complete message is
-    * available.
+  /** Reads a single LSP message from the input stream. Content-Length is in bytes, so we read raw
+    * bytes for the body to avoid byte/char mismatch with multi-byte UTF-8.
     */
-  def readMessage(reader: BufferedReader): IO[Either[String, RpcMessage]] =
+  def readMessage(input: InputStream): IO[Either[String, RpcMessage]] =
     IO.blocking {
-      readContentLength(reader).flatMap { length =>
-        skipHeaders(reader)
-        readContent(reader, length)
+      readHeaders(input).flatMap { headers =>
+        headers
+          .find(_.toLowerCase.startsWith("content-length:"))
+          .map(h => h.substring(h.indexOf(':') + 1).trim)
+          .toRight(s"Missing Content-Length (headers: ${headers.mkString(", ")})") match
+          case Left(err) => Left(err)
+          case Right(lenStr) =>
+            try
+              val length = lenStr.toInt
+              readContentBytes(input, length)
+            catch case _: NumberFormatException => Left(s"Invalid Content-Length: $lenStr")
       }
-    }.map(_.flatMap(parseMessage))
+    }.map(_.flatMap { content =>
+      parseMessage(content).left.map { err =>
+        val preview = if content.length > 200 then content.take(200) + "..." else content
+        s"$err (body=${preview})"
+      }
+    })
 
-  private def readContentLength(reader: BufferedReader): Either[String, Int] =
-    val line = reader.readLine()
-    if line == null then Left("Connection closed")
-    else if line.startsWith(ContentLengthHeader) then
-      try Right(line.substring(ContentLengthHeader.length).trim.toInt)
-      catch case _: NumberFormatException => Left(s"Invalid Content-Length: $line")
-    else Left(s"Expected Content-Length header, got: $line")
+  /** Read header lines until empty line (\\r\\n\\r\\n). Returns list of header strings. */
+  private def readHeaders(input: InputStream): Either[String, List[String]] =
+    @tailrec
+    def loop(
+      prev:    Int,
+      line:    List[Char],
+      headers: List[String]
+    ): Either[String, List[String]] =
+      val b = input.read()
+      if b == -1 then "Connection closed while reading headers".asLeft
+      else if b == '\n' && prev == '\r' then
+        val headerLine = line.reverse.mkString.stripSuffix("\r")
+        if headerLine.isEmpty then headers.reverse.asRight
+        else loop(b, Nil, headerLine :: headers)
+      else loop(b, b.toChar :: line, headers)
 
-  private def skipHeaders(reader: BufferedReader): Unit =
-    var line = reader.readLine()
-    while line != null && line.nonEmpty do line = reader.readLine()
+    loop(prev = 0, line = Nil, headers = Nil)
 
-  private def readContent(reader: BufferedReader, length: Int): Either[String, String] =
-    val buffer = new Array[Char](length)
-    var read   = 0
-    while read < length do
-      val n = reader.read(buffer, read, length - read)
-      if n == -1 then return Left("Unexpected end of stream")
-      read += n
-    Right(new String(buffer))
+  /** Read exactly `length` bytes and decode as UTF-8. */
+  private def readContentBytes(input: InputStream, length: Int): Either[String, String] =
+    val buffer = new Array[Byte](length)
+    @tailrec
+    def fill(offset: Int): Either[String, Unit] =
+      if offset >= length then ().asRight
+      else
+        val n = input.read(buffer, offset, length - offset)
+        if n == -1 then s"Unexpected end of stream (read $offset of $length bytes)".asLeft
+        else fill(offset + n)
+
+    fill(0).map(_ => new String(buffer, StandardCharsets.UTF_8))
 
   private def parseMessage(content: String): Either[String, RpcMessage] =
     try

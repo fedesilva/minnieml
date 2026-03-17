@@ -1,6 +1,6 @@
 
 
-fn main() = 
+pub fn main() = 
   println "Type a number: ";
   let a = str_to_int (readline());
   if a % 2 == 0 then

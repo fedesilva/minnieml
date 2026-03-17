@@ -1,4 +1,5 @@
 package mml.mmlclib.errors
 
 /** Marker trait for all compilation errors */
-trait CompilationError
+trait CompilationError:
+  def message: String

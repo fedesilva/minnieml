@@ -1,20 +1,20 @@
-# **MMLVM - Reference Guide**
+# MMLVM - reference guide
 
-## **1. Execution Model**
+## 1. execution model
 
-- **SSA-based (Single Static Assignment)**
-- **Infinite Virtual Registers** (`%N` notation: `%0`, `%1`, `%2`, ...)
-- **Stack-based function calls** (`call`, `ret`)
-- **Heap for dynamic memory** (`alloc`, `free`, `load`, `store`)
-- **Global Symbols** (`@name` for global variables and functions)
-- **Labels** (`:label` for branching and control flow)
-- **Textual Representation** for debuggability and analysis
+- SSA-based (Single Static Assignment)
+- Infinite Virtual Registers (`%N` notation: `%0`, `%1`, `%2`, ...)
+- Stack-based function calls (`call`, `ret`)
+- Heap for dynamic memory (`alloc`, `free`, `load`, `store`)
+- Global Symbols (`@name` for global variables and functions)
+- Labels (`:label` for branching and control flow)
+- Textual Representation for debuggability and analysis
 
 ---
 
-## **2. Global Variables & Static Initialization**
+## 2. global variables & static initialization
 
-### **Simple Globals**
+### Simple globals
 
 MinnieML:
 
@@ -38,7 +38,7 @@ fn @main(): Int
 end
 ```
 
-### **Globals Requiring Initialization**
+### Globals requiring initialization
 
 MinnieML:
 
@@ -75,9 +75,9 @@ end
 
 ---
 
-## **3. Function Calls & External Functions**
+## 3. function calls & external functions
 
-### **Arithmetic with Precedence**
+### Arithmetic with precedence
 
 MinnieML:
 
@@ -106,7 +106,7 @@ fn @main(): Int
 end
 ```
 
-### **Calling an External Function**
+### Calling an external function
 
 MinnieML:
 
@@ -132,14 +132,14 @@ fn @main(): Unit
 end
 ```
 
-- **`extern @print(String): Unit`** declares a function **not in this module**.
+- `extern @print(String): Unit` declares a function **not in this module**.
 - `call @print, %0` calls the external function with argument `%0`.
 
 ---
 
-## **4. Opcode Reference**
+## 4. opcode reference
 
-### **Arithmetic Operations**
+### Arithmetic operations
 
 ```
 add %rd, %ra, %rb   # rd = ra + rb
@@ -150,7 +150,7 @@ rem %rd, %ra, %rb   # rd = ra % rb
 neg %rd, %ra        # rd = -ra
 ```
 
-### **Bitwise Operations**
+### Bitwise operations
 
 ```
 and %rd, %ra, %rb   # rd = ra & rb
@@ -160,7 +160,7 @@ shl %rd, %ra, %rb   # rd = ra << rb
 shr %rd, %ra, %rb   # rd = ra >> rb
 ```
 
-### **Comparison & Branching**
+### Comparison & branching
 
 ```
 eq   %rd, %ra, %rb   # rd = (ra == rb)
@@ -174,14 +174,14 @@ br   %cond, :true_label, :false_label
 jmp  :label
 ```
 
-### **Stack Operations**
+### Stack operations
 
 ```
 push %ra
 pop  %rd
 ```
 
-### **Memory Operations**
+### Memory operations
 
 ```
 alloc  %rd, size

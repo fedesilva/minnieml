@@ -2,6 +2,7 @@ package mml.mmlclib.codegen.emitter.expression
 
 import cats.syntax.all.*
 import mml.mmlclib.ast.*
+import mml.mmlclib.codegen.emitter.alias.AliasScopeEmitter
 import mml.mmlclib.codegen.emitter.tbaa.TbaaEmitter
 import mml.mmlclib.codegen.emitter.{
   CodeGenError,
@@ -28,50 +29,63 @@ private val holeFunctionParamTypes = List("i64", "i64", "i64", "i64")
   * expected type.
   */
 def compileHole(hole: Hole, state: CodeGenState): Either[CodeGenError, CompileResult] =
-  val span = hole.span
-  val stateWithDecl =
-    state.withFunctionDeclaration(holeFunctionName, "void", holeFunctionParamTypes)
-  val args = List(
-    ("i64", span.start.line.toString),
-    ("i64", span.start.col.toString),
-    ("i64", span.end.line.toString),
-    ("i64", span.end.col.toString)
-  )
-  val stateAfterCall = stateWithDecl.emit(emitCall(None, None, holeFunctionName, args))
-
-  hole.typeSpec match
-    case Some(typeSpec) =>
-      getLlvmType(typeSpec, stateAfterCall) match
-        case Right("void") =>
-          CompileResult(0, stateAfterCall, false, "Unit").asRight
-        case Right(llvmType) =>
-          val allocaReg = stateAfterCall.nextRegister
-          val stateWithAlloca = stateAfterCall
-            .withRegister(allocaReg + 1)
-            .emit(s"  %$allocaReg = alloca $llvmType")
-          val loadReg = stateWithAlloca.nextRegister
-          val stateWithLoad = stateWithAlloca
-            .withRegister(loadReg + 1)
-            .emit(emitLoad(loadReg, llvmType, s"%$allocaReg"))
-
-          getMmlTypeName(typeSpec) match
-            case Some(typeName) =>
-              CompileResult(loadReg, stateWithLoad, false, typeName).asRight
-            case None =>
-              Left(
-                CodeGenError(
-                  s"Could not determine MML type name for hole from spec: $typeSpec",
-                  Some(hole)
-                )
-              )
-        case Left(err) => Left(err)
+  hole.spanOpt match
     case None =>
-      Left(
-        CodeGenError(
-          "Missing type information for hole - TypeChecker should have provided this",
-          Some(hole)
-        )
+      Left(CodeGenError("Hole expression is missing source span", Some(hole)))
+    case Some(span) =>
+      val stateWithDecl =
+        state.withFunctionDeclaration(holeFunctionName, "void", holeFunctionParamTypes)
+      val args = List(
+        ("i64", span.start.line.toString),
+        ("i64", span.start.col.toString),
+        ("i64", span.end.line.toString),
+        ("i64", span.end.col.toString)
       )
+      val stateAfterCall = stateWithDecl.emit(emitCall(None, None, holeFunctionName, args))
+
+      hole.typeSpec match
+        case Some(typeSpec) =>
+          getLlvmType(typeSpec, stateAfterCall) match
+            case Right("void") =>
+              CompileResult(0, stateAfterCall, false, "Unit").asRight
+            case Right(llvmType) =>
+              val allocaReg = stateAfterCall.nextRegister
+              val stateWithAlloca = stateAfterCall
+                .withRegister(allocaReg + 1)
+                .emit(s"  %$allocaReg = alloca $llvmType")
+              val loadReg = stateWithAlloca.nextRegister
+              val (stateWithAlias, aliasTag, noaliasTag) =
+                AliasScopeEmitter.getAliasScopeTags(typeSpec, stateWithAlloca)
+              val loadLine =
+                emitLoad(
+                  loadReg,
+                  llvmType,
+                  s"%$allocaReg",
+                  aliasScope = aliasTag,
+                  noalias    = noaliasTag
+                )
+              val stateWithLoad = stateWithAlias
+                .withRegister(loadReg + 1)
+                .emit(loadLine)
+
+              getMmlTypeName(typeSpec) match
+                case Some(typeName) =>
+                  CompileResult(loadReg, stateWithLoad, false, typeName).asRight
+                case None =>
+                  Left(
+                    CodeGenError(
+                      s"Could not determine MML type name for hole from spec: $typeSpec",
+                      Some(hole)
+                    )
+                  )
+            case Left(err) => Left(err)
+        case None =>
+          Left(
+            CodeGenError(
+              "Missing type information for hole - TypeChecker should have provided this",
+              Some(hole)
+            )
+          )
 
 // ============================================================================
 // String Literal Compilation
@@ -127,9 +141,19 @@ def compileLiteralString(
         s"%$allocReg",
         List(("i32", "0"), ("i32", "0"))
       )
-      val stateWithLenPtr   = stateWithAlloc.withRegister(lenPtrReg + 1).emit(lenPtrLine)
-      val lenStoreLine      = emitStore(s"$strLen", "i64", s"%$lenPtrReg", Some(lenTag))
-      val stateWithLenStore = stateWithLenPtr.emit(lenStoreLine)
+      val stateWithLenPtr = stateWithAlloc.withRegister(lenPtrReg + 1).emit(lenPtrLine)
+      val (stateWithLenAlias, lenAliasTag, lenNoaliasTag) =
+        AliasScopeEmitter.getAliasScopeTagsByName("Int64", stateWithLenPtr)
+      val lenStoreLine =
+        emitStore(
+          s"$strLen",
+          "i64",
+          s"%$lenPtrReg",
+          Some(lenTag),
+          lenAliasTag,
+          lenNoaliasTag
+        )
+      val stateWithLenStore = stateWithLenAlias.emit(lenStoreLine)
 
       // Store the data field (field 1, offset 8, type pointer)
       val dataPtrReg = stateWithLenStore.nextRegister
@@ -140,14 +164,33 @@ def compileLiteralString(
         s"%$allocReg",
         List(("i32", "0"), ("i32", "1"))
       )
-      val stateWithDataPtr   = stateWithLenStore.withRegister(dataPtrReg + 1).emit(dataPtrLine)
-      val dataStoreLine      = emitStore(s"%$ptrReg", "i8*", s"%$dataPtrReg", Some(dataTag))
-      val stateWithDataStore = stateWithDataPtr.emit(dataStoreLine)
+      val stateWithDataPtr = stateWithLenStore.withRegister(dataPtrReg + 1).emit(dataPtrLine)
+      val (stateWithDataAlias, dataAliasTag, dataNoaliasTag) =
+        AliasScopeEmitter.getAliasScopeTagsByName("CharPtr", stateWithDataPtr)
+      val dataStoreLine =
+        emitStore(
+          s"%$ptrReg",
+          "i8*",
+          s"%$dataPtrReg",
+          Some(dataTag),
+          dataAliasTag,
+          dataNoaliasTag
+        )
+      val stateWithDataStore = stateWithDataAlias.emit(dataStoreLine)
 
       // Load the String struct (no TBAA tag for aggregate load)
-      val resultReg  = stateWithDataStore.nextRegister
-      val loadLine   = emitLoad(resultReg, "%struct.String", s"%$allocReg", None)
-      val finalState = stateWithDataStore.withRegister(resultReg + 1).emit(loadLine)
+      val (stateWithStructAlias, structAliasTag, structNoaliasTag) =
+        AliasScopeEmitter.getAliasScopeTags(ts, stateWithDataStore)
+      val resultReg = stateWithStructAlias.nextRegister
+      val loadLine =
+        emitLoad(
+          resultReg,
+          "%struct.String",
+          s"%$allocReg",
+          aliasScope = structAliasTag,
+          noalias    = structNoaliasTag
+        )
+      val finalState = stateWithStructAlias.withRegister(resultReg + 1).emit(loadLine)
 
       CompileResult(resultReg, finalState, false, "String")
   }

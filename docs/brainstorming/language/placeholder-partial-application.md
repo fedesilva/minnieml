@@ -1,4 +1,4 @@
-# Placeholder Partial Application
+# Placeholder partial application
 
 ## Problem
 
@@ -11,7 +11,7 @@ let f = ???;  # how to get a function that adds 2 to something?
 
 Eta-expansion handles undersaturated function calls (`concat "hello"`), but operators require infix syntax and have no prefix reference form like Haskell's `(+)`.
 
-## Solution: Placeholder Syntax
+## Solution: placeholder syntax
 
 Use `_` as a placeholder to create partial applications:
 
@@ -29,13 +29,13 @@ let greet = concat "Hello, " _;  # \(x) -> concat "Hello, " x
 let greetFede = concat _ "Fede"; # \(x) -> concat x "Fede"
 ```
 
-## Transformation Rules
+## Transformation rules
 
 At parse time (or early rewriting), transform expressions containing `_`:
 
-1. **Single placeholder**: `expr with _` → `\($p0) -> expr with $p0`
-2. **Multiple placeholders**: `_ op _` → `\($p0, $p1) -> $p0 op $p1`
-3. **Nested**: Each `_` at the same expression level becomes a param, left-to-right
+1. Single placeholder: `expr with _` → `\($p0) -> expr with $p0`
+2. Multiple placeholders: `_ op _` → `\($p0, $p1) -> $p0 op $p1`
+3. Nested: Each `_` at the same expression level becomes a param, left-to-right
 
 ### Examples
 
@@ -47,9 +47,9 @@ concat "Hi" _   →  \($p0) -> concat "Hi" $p0
 _ * _ + _       →  \($p0, $p1, $p2) -> $p0 * $p1 + $p2
 ```
 
-## Implementation Options
+## Implementation options
 
-### Option A: Parser-level transformation
+### Option a: parser-level transformation
 
 Transform during parsing when `_` is encountered. The parser would:
 1. Detect `_` tokens in expression position
@@ -59,7 +59,7 @@ Transform during parsing when `_` is encountered. The parser would:
 **Pros**: Clean separation, early transformation
 **Cons**: Parser gets more complex, context needed
 
-### Option B: AST placeholder node + rewriter **PREFERRED**
+### Option b: AST placeholder node + rewriter **PREFERRED**
 
 1. Parser emits `Placeholder` nodes for `_`
 2. New rewriter pass collects placeholders and wraps in Lambda
@@ -70,7 +70,7 @@ Transform during parsing when `_` is encountered. The parser would:
 
 **fede note** 2025-12-24: as of today I prefer this. 
 
-### Option C: ExpressionRewriter extension
+### Option c: ExpressionRewriter extension
 
 Extend existing ExpressionRewriter to detect and transform placeholder patterns.
 
@@ -78,9 +78,9 @@ Extend existing ExpressionRewriter to detect and transform placeholder patterns.
 **Cons**: ExpressionRewriter already complex
           *fede note* yes. let's not.
 
-## Open Questions
+## Open questions
 
-1. **Scope of placeholder**: Does `_` only work at expression level, or inside groups too?
+1. Scope of placeholder: Does `_` only work at expression level, or inside groups too?
    - `(2 + _) * 3` → `\(x) -> (2 + x) * 3`?
    - Or error because `_` is inside a group?
 
@@ -97,15 +97,15 @@ Extend existing ExpressionRewriter to detect and transform placeholder patterns.
         ```
             let a = 2 +;
 
-2. **Interaction with existing partial application**: 
+2. Interaction with existing partial application: 
    - `concat _ "x"` vs `concat "x"` (eta-expanded)
    - Should be orthogonal - placeholder is explicit, eta is automatic
 
-3. **Type inference**: Placeholder params need types from context
+3. Type inference: Placeholder params need types from context
    - `2 + _` → param must be Int (from `+` signature)
    - May need type propagation from operator/function
 
-4. **Precedence**: How does `_ + _ * _` parse?
+4. Precedence: How does `_ + _ * _` parse?
    - Should follow normal operator precedence
    - `_ + (_ * _)` → `\(a, b, c) -> a + (b * c)`
 

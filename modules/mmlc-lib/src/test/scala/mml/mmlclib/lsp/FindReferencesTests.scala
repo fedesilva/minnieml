@@ -5,6 +5,9 @@ import mml.mmlclib.test.BaseEffFunSuite
 
 class FindReferencesTests extends BaseEffFunSuite:
 
+  private def spanOrFail(node: FromSource, label: String): SrcSpan =
+    node.source.spanOpt.getOrElse(fail(s"Missing source span for $label"))
+
   test("find references to function") {
     val code =
       """
@@ -17,9 +20,10 @@ class FindReferencesTests extends BaseEffFunSuite:
       // Find the add function Bnd and use its span
       val addBnd = m.members.collectFirst { case bnd: Bnd if bnd.name == "add" => bnd }
       assert(addBnd.isDefined, "Could not find 'add' binding")
-      val bnd    = addBnd.get
-      val fnLine = bnd.span.start.line
-      val fnCol  = bnd.span.start.col
+      val bnd     = addBnd.get
+      val bndSpan = spanOrFail(bnd, "binding 'add'")
+      val fnLine  = bndSpan.start.line
+      val fnCol   = bndSpan.start.col
 
       val refs = AstLookup.findReferencesAt(m, fnLine, fnCol, includeDeclaration = true)
 
@@ -41,10 +45,11 @@ class FindReferencesTests extends BaseEffFunSuite:
       // Find the double function and get the first param
       val doubleBnd = m.members.collectFirst { case bnd: Bnd if bnd.name == "double" => bnd }
       assert(doubleBnd.isDefined, "Could not find 'double' binding")
-      val lambda = doubleBnd.get.value.terms.head.asInstanceOf[Lambda]
-      val param  = lambda.params.head
-      val line   = param.span.start.line
-      val col    = param.span.start.col
+      val lambda    = doubleBnd.get.value.terms.head.asInstanceOf[Lambda]
+      val param     = lambda.params.head
+      val paramSpan = spanOrFail(param, "param 'x'")
+      val line      = paramSpan.start.line
+      val col       = paramSpan.start.col
 
       val refs = AstLookup.findReferencesAt(m, line, col, includeDeclaration = true)
 

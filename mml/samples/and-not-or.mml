@@ -9,6 +9,6 @@ let result =
     "ALGO"
   end;
 
-fn main(): Unit =
+pub fn main(): Unit =
   println result
 ;

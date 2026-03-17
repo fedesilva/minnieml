@@ -1,12 +1,27 @@
 
 struct Person {
   name: String,
-  age: Int
+  age: Int,
+  address: Address
+};
+
+struct Address {
+  city: String, 
+  street: String
 };
  
-let p = Person "fede" 20;
+pub fn main() =  
 
-fn main() =  
-  println (concat "Name: " p.name);
-  println (concat "Age: " (to_string p.age))
+  let addr  = Address "San Francisco" "101 28th Street";
+  let p     = Person "fede" 25 addr;
+
+  // Cannae use after move
+  // println addr.city;
+
+  println "--------------------------------";
+  println ("Name: "   ++ p.name);
+  println ("Age: "    ++ int_to_str p.age);
+  println ("City: "   ++ p.address.city);
+  println ("Street: " ++ p.address.street);
+  println "--------------------------------"
 ;

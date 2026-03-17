@@ -2,6 +2,12 @@
 let a = 1;
 let b = 2;
 
-fn main(): Int =
-  a + b ^ 2
+pub fn main(): Int =
+  let x = 
+    if a > 1 then
+      a + b 
+    else  
+      2
+    end;
+  x  
 ;

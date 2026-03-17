@@ -1,9 +1,9 @@
 
-fn hola(a: String) = concat "Hola, " a;
+fn hola(a: String) = "Hola, " ++ a;
 
 let name = "fede";
 
-fn main() =  
+pub fn main() =  
   let pepe = "pepe";
   println (hola name);
   println name;

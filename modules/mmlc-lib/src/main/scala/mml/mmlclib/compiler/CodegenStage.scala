@@ -2,14 +2,12 @@ package mml.mmlclib.compiler
 
 import cats.effect.IO
 import mml.mmlclib.codegen.{
-  CompilationMode,
   LlvmCompilationError,
   LlvmIrEmitter,
   LlvmToolchain,
   PipelineTiming,
   TargetAbi
 }
-import mml.mmlclib.errors.*
 import mml.mmlclib.util.pipe.*
 
 import java.nio.file.{Files, Path}
@@ -17,41 +15,52 @@ import java.nio.file.{Files, Path}
 object CodegenStage:
 
   /** Pure pipeline: validation only. */
-  def process(state: CompilerState): CompilerState =
-    state |> CompilerState.timePhase("codegen", "pre-codegen-validation")(validate)
+  def validate(state: CompilerState): CompilerState =
+    state |> CompilerState.timePhase("codegen", "pre-codegen-validation")(runValidation)
 
   /** Effectful pipeline: resolve triple + emit IR only. */
-  def processIrOnly(state: CompilerState): IO[CompilerState] =
+  def emitIrOnly(state: CompilerState): IO[CompilerState] =
     IO.pure(state)
       |> CompilerState.timePhaseIO("codegen", "resolve-triple")(resolveTriple)
+      |> CompilerState.timePhaseIO("codegen", "llvm-info")(llvmInfo)
       |> CompilerState.timePhaseIO("codegen", "emit-llvm-ir")(emitIr)
 
   /** Effectful pipeline: resolve triple + emit IR + native compilation. */
   def processNative(state: CompilerState): IO[CompilerState] =
     IO.pure(state)
       |> CompilerState.timePhaseIO("codegen", "resolve-triple")(resolveTriple)
+      |> CompilerState.timePhaseIO("codegen", "llvm-info")(llvmInfo)
       |> CompilerState.timePhaseIO("codegen", "emit-llvm-ir")(emitIr)
       |> CompilerState.timePhaseIO("codegen", "write-llvm-ir")(writeIr)
       |> compileNative
 
   // --- Private pipeline steps ---
 
-  private def validate(state: CompilerState): CompilerState =
+  private def runValidation(state: CompilerState): CompilerState =
     if state.hasErrors then state.withCanEmitCode(false)
     else
       val validated = PreCodegenValidator.validate(state.config.mode)(state)
-      if validated.hasErrors then validated.withCanEmitCode(false)
-      else validated
+      if validated.hasErrors then validated
+      else validated.withCanEmitCode(true)
 
   private def resolveTriple(state: CompilerState): IO[CompilerState] =
     if !state.canEmitCode then IO.pure(state)
     else
-      val outputDir = state.config.outputDir.toString
       LlvmToolchain
-        .resolveTargetTriple(state.config.targetTriple, outputDir)
+        .resolveTargetTriple(state.config.targetTriple, state.config.outputDir.toString)
         .map {
           case Left(error) => state.addError(error).withCanEmitCode(false)
           case Right(triple) => state.withResolvedTriple(triple)
+        }
+
+  private def llvmInfo(state: CompilerState): IO[CompilerState] =
+    if !state.canEmitCode then IO.pure(state)
+    else
+      LlvmToolchain
+        .gatherLlvmInfo(state.config.outputDir, state.config.verbose, state.config.printPhases)
+        .map {
+          case Left(error) => state.addError(error).withCanEmitCode(false)
+          case Right(_) => state
         }
 
   private def emitIr(state: CompilerState): IO[CompilerState] =
@@ -62,7 +71,15 @@ object CodegenStage:
           case None => state
           case Some(triple) =>
             val (targetAbi, abiState) = resolveTargetAbi(state.config, state.resolvedTriple, state)
-            LlvmIrEmitter.module(abiState.module, abiState.entryPoint, triple, targetAbi) match
+            val targetCpu             = resolveTargetCpu(state.config)
+            LlvmIrEmitter.module(
+              abiState.module,
+              abiState.entryPoint,
+              triple,
+              targetAbi,
+              targetCpu,
+              state.config.emitScopedAlias
+            ) match
               case Right(result) =>
                 // Lift codegen warnings to compiler state
                 val stateWithWarnings = result.warnings.foldLeft(abiState)(_.addWarning(_))
@@ -70,28 +87,28 @@ object CodegenStage:
               case Left(error) => abiState.addError(error).withCanEmitCode(false)
     }
 
+  /** Determine the target CPU for IR emission.
+    *
+    * Logic:
+    *   - If --cpu is explicitly provided, use that
+    *   - If --target is provided but no --cpu, omit (cross-compiling, let LLVM decide)
+    *   - If neither, use host CPU from marker file (local build)
+    */
+  private def resolveTargetCpu(config: CompilerConfig): Option[String] =
+    config.targetCpu match
+      case Some(cpu) => Some(cpu) // Explicit --cpu flag
+      case None =>
+        if config.targetTriple.isDefined then None // Cross-compiling, omit
+        else LlvmToolchain.readHostCpu(config.outputDir.toString) // Local build
+
   private def resolveTargetAbi(
     config:         CompilerConfig,
     resolvedTriple: Option[String],
     state:          CompilerState
   ): (TargetAbi, CompilerState) =
-    val explicitTriple = config.targetTriple
-    val explicitArch   = config.targetArch
-    val explicitHint   = explicitTriple.orElse(explicitArch)
-    val hint           = explicitHint.orElse(resolvedTriple)
-    val targetAbi      = TargetAbi.fromHint(hint)
-    val archFromTriple = TargetAbi.archFromHint(explicitTriple)
-    val archFromArch   = TargetAbi.archFromHint(explicitArch)
-    val shouldWarn = archFromTriple.nonEmpty &&
-      archFromArch.nonEmpty &&
-      archFromTriple != archFromArch
-    val nextState =
-      (shouldWarn, explicitTriple, explicitArch) match
-        case (true, Some(triple), Some(arch)) =>
-          val message = s"Conflicting target hints: targetTriple=$triple targetArch=$arch"
-          state.addWarning(CompilerWarning.Generic(message))
-        case _ => state
-    (targetAbi, nextState)
+    val hint      = config.targetTriple.orElse(resolvedTriple)
+    val targetAbi = TargetAbi.fromHint(hint)
+    (targetAbi, state)
 
   private def llvmIrPath(state: CompilerState): Path =
     val triple = state.resolvedTriple.getOrElse("unknown")
@@ -123,37 +140,16 @@ object CodegenStage:
   private def compileNative(state: CompilerState): IO[CompilerState] =
     if !state.canEmitCode || state.llvmIr.isEmpty then IO.pure(state)
     else
-      val irPath         = llvmIrPath(state)
-      val outputDir      = state.config.outputDir.toString
-      val verbose        = state.config.verbose
-      val triple         = state.resolvedTriple
-      val targetArch     = state.config.targetArch
-      val targetCpu      = state.config.targetCpu
-      val noStackCheck   = state.config.noStackCheck
-      val mode           = state.config.mode
-      val showTimings    = state.config.showTimings
-      val emitOptIr      = state.config.emitOptIr
-      val outputName     = state.config.outputName
-      val explicitTriple = state.config.targetTriple
-      val printPhases    = state.config.printPhases
-      val optLevel       = state.config.optLevel
+      val irPath    = llvmIrPath(state)
+      val targetCpu = resolveTargetCpu(state.config)
 
-      val compileIo = selectCompileOperation(
-        irPath,
-        outputDir,
-        mode,
-        verbose,
-        triple,
-        targetArch,
-        targetCpu,
-        noStackCheck,
-        emitOptIr,
-        showTimings,
-        outputName,
-        explicitTriple,
-        printPhases,
-        optLevel
-      )
+      val compileIo =
+        if state.config.showTimings then
+          LlvmToolchain.compileWithTimings(irPath, state.config, state.resolvedTriple, targetCpu)
+        else
+          LlvmToolchain
+            .compile(irPath, state.config, state.resolvedTriple, targetCpu)
+            .map(_ -> Vector.empty[PipelineTiming])
 
       compileIo.map { case (result, stepTimings) =>
         val withSteps = stepTimings.foldLeft(state) { (s, t) =>
@@ -163,55 +159,3 @@ object CodegenStage:
           case Left(error) => withSteps.addError(error)
           case Right(code) => withSteps.withNativeResult(code)
       }
-
-  private def selectCompileOperation(
-    irPath:         Path,
-    outputDir:      String,
-    mode:           CompilationMode,
-    verbose:        Boolean,
-    triple:         Option[String],
-    targetArch:     Option[String],
-    targetCpu:      Option[String],
-    noStackCheck:   Boolean,
-    emitOptIr:      Boolean,
-    showTimings:    Boolean,
-    outputName:     Option[String],
-    explicitTriple: Option[String],
-    printPhases:    Boolean,
-    optLevel:       Int
-  ): IO[(Either[LlvmCompilationError, Int], Vector[PipelineTiming])] =
-    val emptyTimings: Vector[PipelineTiming] = Vector.empty
-    if showTimings then
-      LlvmToolchain.compileWithTimings(
-        irPath,
-        outputDir,
-        mode,
-        verbose,
-        triple,
-        targetArch,
-        targetCpu,
-        noStackCheck,
-        emitOptIr,
-        outputName,
-        explicitTriple,
-        printPhases,
-        optLevel
-      )
-    else
-      LlvmToolchain
-        .compile(
-          irPath,
-          outputDir,
-          mode,
-          verbose,
-          triple,
-          targetArch,
-          targetCpu,
-          noStackCheck,
-          emitOptIr,
-          outputName,
-          explicitTriple,
-          printPhases,
-          optLevel
-        )
-        .map(_ -> emptyTimings)

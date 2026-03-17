@@ -1,7 +1,7 @@
-# Sieve of Eratosthenes - drag race style
-# Only stores odd numbers: index i represents number 2*i + 1
-# Clunky throwaway monomorphic IntArray (Int64 only)
-#
+// Sieve of Eratosthenes - drag race style
+// Only stores odd numbers: index i represents number 2*i + 1
+// Clunky throwaway monomorphic IntArray (Int64 only)
+//
 
 fn init_sieve(arr: IntArray, i: Int, size: Int): Unit =
   if i < size then
@@ -68,7 +68,7 @@ fn run_sieve(limit: Int): Int =
   count_primes arr size
 ;
 
-fn main(): Unit =
+pub fn main(): Unit =
   let count = run_sieve 1000000;
-  println (concat "Primes found: " (to_string count))
+  println ("Primes found: " ++ (int_to_str count))
 ;
