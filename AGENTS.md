@@ -41,9 +41,11 @@ Read before adding, updating, planning, or completing tasks:
 ### Writing MML code
 
 Read before writing or modifying `.mml` files:
-- `docs/design/language-reference.md`
+- `docs/language-reference.md`
 - Reference programs: `mml/samples/nqueens.mml`, `mml/samples/mat-mul.mml`, `mml/samples/astar2.mml`, `mml/samples/raytracer.mml`
-- Memory model: files under `mml/samples/mem` and tests in `modules/mmlc-lib/src/test/scala/mml/mmlclib/semantic/OwnershipAnalyzerTests.scala`
+- Memory model: 
+  - `design/memory-model.md` for a high level, technical overview.
+  - files under `mml/samples/mem` and tests in `modules/mmlc-lib/src/test/scala/mml/mmlclib/semantic/OwnershipAnalyzerTests.scala`
 
 ### Questions
 
@@ -51,7 +53,7 @@ Do targeted research and answer. Do not treat questions as edit requests.
 
 ### Documentation-only changes
 
-Read only the documentation directly related to the target doc.
+Read only the documentation and code directly related to the target doc.
 
 ## Critical Interaction Rules
 
