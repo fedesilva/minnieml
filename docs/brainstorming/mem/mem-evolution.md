@@ -37,13 +37,10 @@ conditional branches agree on ownership, witnesses would be unnecessary. The
 living outside the type — but ownership is a property of the value, not the function
 that produced it.
 
-A comparison with Neut (a language with linearity built into the type system from
-day one) makes the gap visible. Neut's type system prevents misuse by construction.
-MML's analyzer detects misuse after the fact. The right fix is to move the
-load-bearing invariants into the type system where the compiler can enforce them
-structurally.
+The right fix is to move the load-bearing invariants into the type system
+where the compiler can enforce them structurally.
 
-This document outlines a layered evolution plan: each layer adds a capability,
+This document describes a layered evolution plan. Each layer adds a capability,
 each is independently useful, and the later layers simplify what came before.
 
 ---
@@ -309,8 +306,8 @@ end
 fn load_texture(path: String): Texture = @native;
 ```
 
-Same mechanism, same place. The binding author declares the type, implements the
-protocols, and the compiler enforces the rest.
+Same mechanism, same place. The binding author declares the type and implements
+the protocols. The compiler enforces the rest.
 
 ---
 
@@ -363,8 +360,9 @@ For the common case (struct with heap fields), the compiler derives `Drop` and
 `Clone` automatically. The user only writes explicit implementations when they
 need custom logic (flush before close, reference counting, arena deallocation).
 
-This means the default experience doesn't change: define a struct, the compiler
-handles cleanup. But the mechanism is uniform rather than hard-coded to heap-type detection.
+The default experience doesn't change: define a struct, the compiler handles
+cleanup. But the mechanism is uniform rather than hard-coded to heap-type
+detection.
 
 ### The uniqueness tradeoff
 
@@ -390,17 +388,43 @@ capabilities attached to the type. The `unique` keyword on a declaration adds
 Propagation infers row members (a struct with a `Unique` field is itself
 `Unique`).
 
-This means uniqueness is not a separate mechanism from protocols -- it lives in
-the same row. This also opens the door for other properties later (`Send`, `Sync`,
-etc.) without new keywords each time.
+Uniqueness is not a separate mechanism from protocols -- it lives in the same
+row. Other properties (`Send`, `Sync`, etc.) can be added later without new
+keywords each time.
 
 Exact syntax for type-level row constraints is TBD.
 
 
-### What this doesn't answer yet
+### Fundamental protocols
 
-- Whether `Clone` should be auto-derived or always explicit.
-- How this interacts with the protocol dispatch mechanism (still in design).
-- Whether `Drop` should be a "special" protocol with compiler support or just a
-  regular protocol that the compiler happens to call at scope end.
-- How type rows interact with type inference and generic constraints.
+`Drop` and `Clone` are **fundamental protocols**. They are defined in MML
+(not special syntax), but the compiler knows about them and emits code based
+on their presence. Future additions (`Send`, `Sync`, effects) would work the
+same way.
+
+What makes a protocol fundamental:
+- The compiler auto-derives instances (`Drop` for structs with `Drop` fields).
+- The compiler inserts calls implicitly (`drop` at scope end).
+- The protocol participates in type-level rules (`Drop` implies `Unique`).
+
+User-defined protocols are just dispatch mechanisms. The compiler doesn't
+care about their semantics, it only monomorphises the calls.
+
+### Resolved questions
+
+- **Clone auto-derivation:** Clone is not auto-derived. Literals and globals
+  are auto-cloned (they have no owner to transfer). Everything else requires an
+  explicit clone or produces a compiler error. This keeps duplication costs
+  visible.
+
+- **Protocol dispatch interaction:** None. `Drop` and `Clone` are monomorphised
+  at compile time. No vtable, no dynamic dispatch. The protocol is a structured
+  way to name the functions the compiler already generates.
+
+### Open questions
+
+- How type rows interact with type inference and generic constraints. When
+  writing `fn foo[T](x: T)`, what operations are available on `x`? If `T` is
+  unconstrained, you can only borrow or move — no clone, no drop. Constraints
+  like `T: Clone` would unlock specific operations. Exact syntax and semantics
+  TBD.
