@@ -101,11 +101,11 @@ fn heap_pop (h: MinHeap, size: Int): PopResult =
 // 2. A* Pathfinding Logic
 // ---------------------------------------------------------
 
-fn abs (x: Int): Int = if x < 0 then 0 - x else x end;
-fn min (a: Int, b: Int): Int = if a < b then a else b end;
-fn max (a: Int, b: Int): Int = if a > b then a else b end;
+inline fn abs (x: Int): Int = if x < 0 then 0 - x else x end;
+inline fn min (a: Int, b: Int): Int = if a < b then a else b end;
+inline fn max (a: Int, b: Int): Int = if a > b then a else b end;
 
-fn dir_dx (dir: Int): Int =
+inline fn dir_dx (dir: Int): Int =
   if dir == 0 then 1
   elif dir == 1 then (0 - 1)
   elif dir == 2 then 0
@@ -117,7 +117,7 @@ fn dir_dx (dir: Int): Int =
   end
 ;
 
-fn dir_dy (dir: Int): Int =
+inline fn dir_dy (dir: Int): Int =
   if dir == 0 then 0
   elif dir == 1 then 0
   elif dir == 2 then 1
