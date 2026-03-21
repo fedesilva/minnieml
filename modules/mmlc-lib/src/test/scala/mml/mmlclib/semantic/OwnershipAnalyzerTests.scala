@@ -7,7 +7,7 @@ import scala.annotation.tailrec
 
 class OwnershipAnalyzerTests extends BaseEffFunSuite:
 
-  //TODO:QA: move this extractors to a common module, they might be useful elsewhere.
+  // TODO:QA: move this extractors to a common module, they might be useful elsewhere.
   private object Unwrapped:
     @tailrec
     def unapply(term: Term): Option[Term] =
@@ -704,7 +704,7 @@ class OwnershipAnalyzerTests extends BaseEffFunSuite:
         fn main(): Unit =
           let a = "hello" ++ " world";
           let b = a;
-          println a; // Error, a was moved.
+          println a; // Error, `a`` was moved.
           println b  
         ;
       """
