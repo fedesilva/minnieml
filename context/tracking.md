@@ -12,15 +12,17 @@
   *before* working with this file - even if you read it before, 
   it might have changed in the meantime.
 
-* *Always read* `context/coding-rules.md` 
-  before working with this file - even if you read it before, 
-  it might have changed in the meantime.
-
-* Follow the rules in those documents.
+* Follow the rules stated above.
 * These rules are mandatory unless the Author explicitly overrides them.
 
 ## Active Tasks
 
+### #188 Literal lambdas and captures
+
+- GitHub: https://github.com/fedesilva/minnieml/issues/188
+- [ ] Implement parsing support for literal lambdas
+- Reference: `docs/brainstorming/language/lambda-syntax-design.md`
+- [ ] integrate captures into the memory system
 
 
 ## Recent Changes
