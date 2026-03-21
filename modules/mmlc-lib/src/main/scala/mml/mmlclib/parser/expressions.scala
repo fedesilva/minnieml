@@ -71,6 +71,7 @@ private[parser] def termP(info: SourceInfo)(using P[Any]): P[Term] =
       opRefP(info) |
       groupTermP(info) |
       tupleP(info) |
+      lambdaLitP(info) |
       typeRefTermP(info) |
       refP(info) |
       phP(info)
@@ -91,6 +92,7 @@ private[parser] def termMemberP(info: SourceInfo)(using P[Any]): P[Term] =
       opRefP(info) |
       groupTermMemberP(info) |
       tupleMemberP(info) |
+      lambdaLitP(info) |
       typeRefTermP(info) |
       refP(info) |
       phP(info)
@@ -248,6 +250,21 @@ private[parser] def letExprP(info: SourceInfo)(using P[Any]): P[Term] =
           fn   = lambda,
           arg  = bindingExpr
         )
+  }
+
+private def lambdaWithParamsP(info: SourceInfo)(using P[Any]): P[(List[FnParam], Expr)] =
+  P(fnParamListP(info).filter(_.nonEmpty) ~ arrowKw ~/ exprP(info))
+
+private def lambdaNoParamsP(info: SourceInfo)(using P[Any]): P[(List[FnParam], Expr)] =
+  P(exprP(info)).map(Nil -> _)
+
+private[parser] def lambdaLitP(info: SourceInfo)(using P[Any]): P[Term] =
+  P(
+    spP(info) ~ "{" ~
+      (lambdaWithParamsP(info) | lambdaNoParamsP(info)) ~
+      "}" ~ spNoWsP(info) ~ spP(info)
+  ).map { case (start, (params, body), end, _) =>
+    Lambda(span(start, end), params, body, captures = Nil)
   }
 
 private[parser] def groupTermP(info: SourceInfo)(using P[Any]): P[Term] =
