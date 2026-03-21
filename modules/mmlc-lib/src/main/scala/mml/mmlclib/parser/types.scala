@@ -10,7 +10,7 @@ private[parser] def typeAscP(info: SourceInfo)(using P[Any]): P[Option[Type]] =
   P(":" ~ typeSpecP(info)).?
 
 private[parser] def typeSpecP(info: SourceInfo)(using P[Any]): P[Type] =
-  P(spP(info) ~ typeAtomP(info) ~ ("->" ~ typeAtomP(info)).rep ~ spNoWsP(info) ~ spP(info))
+  P(spP(info) ~ typeAtomP(info) ~ (arrowKw ~ typeAtomP(info)).rep ~ spNoWsP(info) ~ spP(info))
     .map { case (start, head, tail, end, _) =>
       val types = head :: tail.toList
       if types.size == 1 then head
