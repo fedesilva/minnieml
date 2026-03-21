@@ -32,13 +32,27 @@
   - [x] Add `arrowKw`, `lambdaLitP` parser combinator
   - [x] Wire into `termP`/`termMemberP`
   - [x] Tests in `LambdaLitTests.scala`
-- Phase 2 — Codegen: semantic analysis + code generation for lambda values (closures, function pointers)
-  - [ ] Name resolution and type checking for lambdas in expression position
-  - [ ] Closure representation and codegen
-- Phase 3 — Ownership: capture semantics and memory management (rules TBD/confirm)
+- Phase 2 — Codegen (non-capturing): lambda values as function pointers, indirect calls
+  - Spec: `context/specs/lambda-step2.md`
+  - [ ] TypeChecker: infer lambda param types from call-site context
+  - [ ] `getLlvmType(TypeFn)` → `"ptr"`, deferred definitions in CodeGenState
+  - [ ] Compile lambda literals as internal functions returning function pointers
+  - [ ] Indirect call codegen for function-pointer variables
+  - [ ] Test with sample program + full test suite
+- Phase 3 — Closures: capturing lambdas + ownership
   - [ ] Capture analysis (populate `captures` list in semantic phase)
+  - [ ] Closure representation and codegen
   - [ ] Ownership rules for captured bindings (borrow vs move — needs design confirmation)
 
+
+### #244 Bidirectional type inference for lambda parameters
+
+- GitHub: https://github.com/fedesilva/minnieml/issues/244
+- Infer lambda param types from body usage (e.g. `{ x -> x + 1 }` infers `x: Int` from `+`)
+- Requires constraint-based or unification-based inference — design TBD
+- [ ] Design inference approach (type variables + unification vs local constraint propagation)
+- [ ] Implementation
+- [ ] Tests
 
 ## Recent Changes
 
