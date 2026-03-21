@@ -16,6 +16,7 @@ private[parser] def placeholderKw[$: P]: P[Unit] = P("_" ~ wordBoundary)
 private[parser] def holeKw[$: P]:        P[Unit] = P("???" ~ wordBoundary)
 private[parser] def typeKw[$: P]:        P[Unit] = P("type" ~ wordBoundary)
 private[parser] def moveKw[$: P]:        P[Unit] = P("~" ~ wordBoundary)
+private[parser] def arrowKw[$: P]:       P[Unit] = P("->")
 private[parser] def structKw[$: P]:      P[Unit] = P("struct" ~ wordBoundary)
 
 private[parser] def ifKw[$: P]:   P[Unit] = P("if" ~ wordBoundary)
@@ -51,6 +52,7 @@ private[parser] def keywords[$: P]: P[Unit] =
       inlineKw |
       nativeKw |
       fnKw |
+      arrowKw |
       structKw |
       pubKw |
       protKw |
