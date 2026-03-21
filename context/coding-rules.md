@@ -58,8 +58,10 @@ The compiler needs to be installed before it's used if changes were made.
   - not for mml samples.
 - **Fast sanity check first (mandatory)**:
   - Before publishing the compiler or running expensive verification (benchmarks, full memory harness),
-    run the in-development compiler with `sbtn` on a relevant sample for the current change.
-  - Example: `sbtn "run run <relevant-file>"`
+    compile and run the following programs with `sbtn`:
+    - `sbtn "run run mml/samples/hello.mml"`
+    - `sbtn "run run mml/samples/quicksort.mml"`
+    - `sbtn "run run mml/samples/astar2.mml"`
 - **Validate**: Run the *full* test suite
 
 - **Run benchmarks**:

@@ -27,13 +27,26 @@
 ### #188 Literal lambdas and captures
 
 - GitHub: https://github.com/fedesilva/minnieml/issues/188
-- [ ] Implement parsing support for literal lambdas
 - Reference: `docs/brainstorming/language/lambda-syntax-design.md`
-- [ ] integrate captures into the memory system
+- Phase 1 — Parser: parse `{ params -> body }` syntax into Lambda AST nodes (no runnable programs yet) [COMPLETE]
+  - [x] Add `arrowKw`, `lambdaLitP` parser combinator
+  - [x] Wire into `termP`/`termMemberP`
+  - [x] Tests in `LambdaLitTests.scala`
+- Phase 2 — Codegen: semantic analysis + code generation for lambda values (closures, function pointers)
+  - [ ] Name resolution and type checking for lambdas in expression position
+  - [ ] Closure representation and codegen
+- Phase 3 — Ownership: capture semantics and memory management (rules TBD/confirm)
+  - [ ] Capture analysis (populate `captures` list in semantic phase)
+  - [ ] Ownership rules for captured bindings (borrow vs move — needs design confirmation)
 
 
 ## Recent Changes
 
+- 2026-03-21: #188 Phase 1 complete — parser support for literal lambdas.
+  - Added `arrowKw` keyword, `lambdaLitP` parser combinator in `expressions.scala`.
+  - Wired into `termP`/`termMemberP`. Updated `types.scala` to use `arrowKw`.
+  - Guarded `->` from being parsed as operator in `identifiers.scala`.
+  - 11 new tests in `LambdaLitTests.scala`. All 318 tests pass, benchmarks compile.
 - 2026-03-21: Fix #243: `isMoveOnRebind` now moves native heap types [COMPLETE].
   - Changed `isMoveOnRebind` to use `TypeUtils.isHeapType` instead of `isStructWithHeapFields`,
     so rebinding native heap types (String, Buffer, arrays) transfers ownership.
