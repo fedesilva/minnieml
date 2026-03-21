@@ -7,42 +7,42 @@ import scala.annotation.tailrec
 
 class OwnershipAnalyzerTests extends BaseEffFunSuite:
 
+  //TODO:QA: move this extractors to a common module, they might be useful elsewhere.
   private object Unwrapped:
     @tailrec
     def unapply(term: Term): Option[Term] =
       term match
         case TermGroup(_, Expr(_, List(inner), _, _), _) => unapply(inner)
-        case _                                           => Some(term)
+        case _ => Some(term)
 
   private object Call1:
     def unapply(term: Term): Option[(Term, Term)] =
       term match
         case Unwrapped(App(_, fn, Expr(_, List(arg), _, _), _, _)) => Some((fn, arg))
-        case _                                                     => None
+        case _ => None
 
   private object RefNamed:
     def unapply(term: Term): Option[String] =
       term match
         case Unwrapped(ref: Ref) => Some(ref.name)
-        case _                   => None
+        case _ => None
 
   private object RefResolved:
     def unapply(term: Term): Option[String] =
       term match
         case Unwrapped(ref: Ref) => ref.resolvedId
-        case _                   => None
+        case _ => None
 
   private def existsTerm(term: Term)(p: PartialFunction[Term, Boolean]): Boolean =
     p.applyOrElse(term, (_: Term) => false) || (term match
-      case App(_, fn, arg, _, _)          => existsTerm(fn)(p) || existsExpr(arg)(p)
-      case Expr(_, terms, _, _)           => terms.exists(existsTerm(_)(p))
+      case App(_, fn, arg, _, _) => existsTerm(fn)(p) || existsExpr(arg)(p)
+      case Expr(_, terms, _, _) => terms.exists(existsTerm(_)(p))
       case Lambda(_, _, body, _, _, _, _) => existsExpr(body)(p)
-      case TermGroup(_, inner, _)         => existsExpr(inner)(p)
+      case TermGroup(_, inner, _) => existsExpr(inner)(p)
       case Cond(_, cond, ifTrue, ifFalse, _, _) =>
         existsExpr(cond)(p) || existsExpr(ifTrue)(p) || existsExpr(ifFalse)(p)
       case Tuple(_, elements, _, _) => elements.exists(existsExpr(_)(p))
-      case _                        => false
-    )
+      case _ => false)
 
   private def existsExpr(expr: Expr)(p: PartialFunction[Term, Boolean]): Boolean =
     expr.terms.exists(existsTerm(_)(p))
@@ -50,14 +50,14 @@ class OwnershipAnalyzerTests extends BaseEffFunSuite:
   private def countTerm(term: Term)(p: PartialFunction[Term, Int]): Int =
     val matched = p.applyOrElse(term, (_: Term) => 0)
     val childCount = term match
-      case App(_, fn, arg, _, _)          => countTerm(fn)(p) + countExpr(arg)(p)
-      case Expr(_, terms, _, _)           => terms.map(countTerm(_)(p)).sum
+      case App(_, fn, arg, _, _) => countTerm(fn)(p) + countExpr(arg)(p)
+      case Expr(_, terms, _, _) => terms.map(countTerm(_)(p)).sum
       case Lambda(_, _, body, _, _, _, _) => countExpr(body)(p)
-      case TermGroup(_, inner, _)         => countExpr(inner)(p)
+      case TermGroup(_, inner, _) => countExpr(inner)(p)
       case Cond(_, cond, ifTrue, ifFalse, _, _) =>
         countExpr(cond)(p) + countExpr(ifTrue)(p) + countExpr(ifFalse)(p)
       case Tuple(_, elements, _, _) => elements.toList.map(countTerm(_)(p)).sum
-      case _                        => 0
+      case _ => 0
     matched + childCount
 
   private def countExpr(expr: Expr)(p: PartialFunction[Term, Int]): Int =
@@ -66,13 +66,13 @@ class OwnershipAnalyzerTests extends BaseEffFunSuite:
   private def containsFreeOf(freeName: String)(term: Term): Boolean =
     existsTerm(term) {
       case Call1(RefResolved(id), _) if id.endsWith("::" + freeName) => true
-      case Call1(RefNamed(name), _) if name == freeName              => true
+      case Call1(RefNamed(name), _) if name == freeName => true
     }
 
   private def containsFreeString(term: Term): Boolean =
     existsTerm(term) {
       case Call1(RefResolved(id), _) if id.endsWith("::__free_String") => true
-      case Call1(RefNamed(name), _) if name == "__free_String"         => true
+      case Call1(RefNamed(name), _) if name == "__free_String" => true
     }
 
   private def countFreesOf(name: String, term: Term): Int =
@@ -80,8 +80,8 @@ class OwnershipAnalyzerTests extends BaseEffFunSuite:
       case Call1(fn, RefNamed(argName)) if argName == name =>
         fn match
           case RefResolved(id) if id.endsWith("::__free_String") => 1
-          case RefNamed(n) if n == "__free_String"               => 1
-          case _                                                 => 0
+          case RefNamed(n) if n == "__free_String" => 1
+          case _ => 0
     }
 
   private def containsCloneString(term: Term): Boolean =
@@ -698,20 +698,59 @@ class OwnershipAnalyzerTests extends BaseEffFunSuite:
     }
   }
 
-  test("string rebinding still borrows") {
+  test("string rebinding moves ownership") {
     val code =
       """
         fn main(): Unit =
           let a = "hello" ++ " world";
           let b = a;
-          println a;
+          println a; // Error, a was moved.
+          println b  
+        ;
+      """
+
+    semState(code).map { result =>
+      val moveErrors = result.errors.collect { case e: SemanticError.UseAfterMove => e }
+      assert(moveErrors.nonEmpty, "String rebinding should move — use after move expected")
+    }
+  }
+
+  test("string rebinding without use-after-move is valid") {
+    val code =
+      """
+        fn main(): Unit =
+          let a = "hello" ++ " world";
+          let b = a;
           println b
         ;
       """
 
     semState(code).map { result =>
       val moveErrors = result.errors.collect { case e: SemanticError.UseAfterMove => e }
-      assert(moveErrors.isEmpty, s"String rebinding should borrow, not move: $moveErrors")
+      assert(moveErrors.isEmpty, s"No use-after-move when original is not used: $moveErrors")
+    }
+  }
+
+  test("string rebinding target gets freed") {
+    val code =
+      """
+        fn main(): Unit =
+          let a = "hello" ++ " world";
+          let b = a;
+          println b
+        ;
+      """
+
+    semNotFailed(code).map { module =>
+      val mainBody = module.members.collectFirst {
+        case b: Bnd if b.name == "main" =>
+          b.value.terms.collectFirst { case l: Lambda => l.body }.get
+      }.get
+
+      assert(
+        containsFreeString(mainBody.terms.last),
+        "moved string target should be freed"
+      )
     }
   }
 
