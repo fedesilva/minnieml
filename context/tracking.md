@@ -17,12 +17,12 @@
 
 ## Active Tasks
 
-### #243 Bug: isMoveOnRebind does not move native heap types
+### #243 Bug: isMoveOnRebind does not move native heap types [COMPLETE]
 
 - GitHub: https://github.com/fedesilva/minnieml/issues/243
-- [ ] Fix `isMoveOnRebind` to handle native heap types (String, Buffer, arrays)
-- [ ] Add tests for String/Buffer/array move-on-rebind
-- [ ] Verify samples still pass
+- [x] Fix `isMoveOnRebind` to handle native heap types (String, Buffer, arrays)
+- [x] Add tests for String/Buffer/array move-on-rebind
+- [x] Verify samples still pass
 
 ### #188 Literal lambdas and captures
 
@@ -33,4 +33,13 @@
 
 
 ## Recent Changes
+
+- 2026-03-21: Fix #243: `isMoveOnRebind` now moves native heap types [COMPLETE].
+  - Changed `isMoveOnRebind` to use `TypeUtils.isHeapType` instead of `isStructWithHeapFields`,
+    so rebinding native heap types (String, Buffer, arrays) transfers ownership.
+  - Updated `"string rebinding still borrows"` test to `"string rebinding moves ownership"` —
+    now asserts `UseAfterMove` when original is used after rebind.
+  - Added `"string rebinding without use-after-move is valid"` and
+    `"string rebinding target gets freed"` tests.
+  - All 307 tests pass, 17/17 memory tests pass (ASan+LSan), benchmarks compile.
 
