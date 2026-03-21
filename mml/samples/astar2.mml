@@ -1,13 +1,55 @@
 // ---------------------------------------------------------
+// A* Pathfinding Demo
+// ---------------------------------------------------------
+// This file demonstrates A* on a rectangular grid.
+//
+// The grid is stored as one flat IntArray instead of a 2D array:
+// - index = y * width + x
+// - x moves left/right
+// - y moves up/down
+//
+// Cell meanings in the walls array:
+// - 0 = open cell
+// - 1 = wall
+// - 2 = final path, used only after the search succeeds
+//
+// A* keeps track of:
+// - where we can go next
+// - the cheapest known cost to reach each cell
+// - which previous cell leads into each best-known route
+// - which cells are already fully processed
+
+// ---------------------------------------------------------
 // 1. Min-Heap Implementation
 // ---------------------------------------------------------
+// A* repeatedly asks:
+// "Among all cells we may explore next, which one looks best right now?"
+//
+// This sample answers that question with a min-heap.
+// A min-heap is a priority queue where:
+// - every entry has a score
+// - the smallest score is kept at the top
+// - removing that smallest entry is fast
+//
+// Here, each entry stores:
+// - a grid cell index
+// - that cell's A* priority score
 
 struct MinHeap {
+  // Flattened grid index for each queued entry.
   indices:  IntArray,
+  // Priority score for the entry at the same position in indices.
   scores:   IntArray,
+  // Maximum number of entries this heap can store.
   capacity: Int
 };
 
+// Create the priority queue used for cells that may be explored next.
+// Parameter:
+// - cap: maximum number of queued entries
+//
+// The sample allocates enough space for every grid cell, because in the worst
+// case many or all cells may be inserted into the queue.
 fn heap_new (cap: Int): MinHeap =
   MinHeap
     (ar_int_new cap)
@@ -15,84 +57,167 @@ fn heap_new (cap: Int): MinHeap =
     cap
 ;
 
+// heap_pop needs to return two values at once:
+// - idx: which grid cell was removed from the top of the queue
+// - size: the new logical queue size after that removal
+//
+// PopResult is the small record used to return both pieces together.
 struct PopResult {
+  // Number of valid entries left in the heap after the pop.
   size: Int,
+  // Grid cell removed from the top of the heap.
   idx: Int
 };
 
+// Swap two positions inside the heap.
+// Parameters:
+// - h: the priority queue
+// - i: first heap position
+// - j: second heap position
+//
+// Each heap position stores two related values:
+// - h.indices[position] = which grid cell this entry represents
+// - h.scores[position]  = that cell's priority
+//
+// Those two values must move together, otherwise a cell would become paired
+// with the wrong score.
 fn heap_swap (h: MinHeap, i: Int, j: Int): Unit =
+  // Read the entry currently stored at position i.
   let idx_i = unsafe_ar_int_get (h.indices) i;
   let scr_i = unsafe_ar_int_get (h.scores) i;
+
+  // Read the entry currently stored at position j.
   let idx_j = unsafe_ar_int_get (h.indices) j;
   let scr_j = unsafe_ar_int_get (h.scores) j;
 
+  // Write j's entry into position i.
   unsafe_ar_int_set (h.indices) i idx_j;
   unsafe_ar_int_set (h.scores) i scr_j;
+
+  // Write i's old entry into position j.
   unsafe_ar_int_set (h.indices) j idx_i;
   unsafe_ar_int_set (h.scores) j scr_i
 ;
 
+// Move a newly inserted heap entry upward until heap order is restored.
+// Parameters:
+// - h: the priority queue
+// - idx: the heap position currently being fixed
+//
+// In a min-heap, smaller scores belong closer to the top.
+// So if this entry's score is smaller than its parent's score, they swap.
 fn sift_up (h: MinHeap, idx: Int): Unit =
   if idx > 0 then
+    // In an array-based binary heap, the parent of idx is at (idx - 1) / 2.
     let parent = (idx - 1) / 2;
+
+    // Compare the score at the parent with the score at idx.
     let p_score = unsafe_ar_int_get (h.scores) parent;
     let c_score = unsafe_ar_int_get (h.scores) idx;
 
     if c_score < p_score then
+      // Smaller score means "should be explored sooner".
       heap_swap h idx parent;
+
+      // After the swap, continue checking from the parent's old position.
       sift_up h parent
     end
   end
 ;
 
+// Move a heap entry downward until heap order is restored.
+// Parameters:
+// - h: the priority queue
+// - size: number of valid entries currently in the heap
+// - idx: heap position currently being fixed
+//
+// This is mainly used after removing the top entry, because the last entry is
+// moved into the root and may now be too large to stay there.
 fn sift_down (h: MinHeap, size: Int, idx: Int): Unit =
+  // In an array-based binary heap, left and right children are computed from idx.
   let left = 2 * idx + 1;
   let right = 2 * idx + 2;
+
+  // Start by assuming the current position is already the smallest.
   let smallest = idx;
 
   let smallest =
     if left < size then
+      // If the left child exists and is smaller, it becomes the best candidate.
       if (unsafe_ar_int_get (h.scores) left) < (unsafe_ar_int_get (h.scores) smallest)
-      then left 
-      else smallest 
+      then left
+      else smallest
       end
-    else smallest 
+    else smallest
     end;
 
   let smallest =
     if right < size then
+      // Compare the right child against the best candidate so far.
       if (unsafe_ar_int_get (h.scores) right) < (unsafe_ar_int_get (h.scores) smallest)
-      then right 
-      else smallest 
+      then right
+      else smallest
       end
-    else smallest 
+    else smallest
     end;
 
   if smallest != idx then
+    // One child should come before the current entry, so swap and keep sinking.
     heap_swap h idx smallest;
     sift_down h size smallest
   end
 ;
 
+// Insert one grid cell into the priority queue.
+// Parameters:
+// - h: the priority queue
+// - size: current number of valid entries
+// - grid_idx: flattened grid index of the cell being inserted
+// - f_score: A* priority for that cell
+//
+// Returns:
+// - new heap size after insertion
 fn heap_push (h: MinHeap, size: Int, grid_idx: Int, f_score: Int): Int =
+  // Put the new entry into the first unused slot at the end.
   unsafe_ar_int_set (h.indices) size grid_idx;
   unsafe_ar_int_set (h.scores) size f_score;
+
+  // Move it upward if its score is smaller than its parent's score.
   sift_up h size;
+
+  // One more entry is now active.
   size + 1
 ;
 
+// Remove the best cell from the priority queue.
+// Parameters:
+// - h: the priority queue
+// - size: current number of valid entries
+//
+// Returns:
+// - PopResult.size: new heap size after removal
+// - PopResult.idx: grid cell that had the smallest score
+//
+// If the heap is empty, idx is set to -1.
 fn heap_pop (h: MinHeap, size: Int): PopResult =
   if size == 0 then PopResult 0 (0 - 1)
   else
+    // Position 0 always holds the smallest score in a min-heap.
     let root = unsafe_ar_int_get (h.indices) 0;
+
+    // The last live entry will be moved into the root to fill the gap.
     let last = size - 1;
     let last_idx = unsafe_ar_int_get (h.indices) last;
     let last_scr = unsafe_ar_int_get (h.scores) last;
 
+    // Move the last entry to the root.
     unsafe_ar_int_set (h.indices) 0 last_idx;
     unsafe_ar_int_set (h.scores) 0 last_scr;
 
+    // Restore heap order over the remaining entries.
     sift_down h last 0;
+
+    // Return both the chosen grid cell and the new logical size.
     PopResult last root
   end
 ;
@@ -100,11 +225,37 @@ fn heap_pop (h: MinHeap, size: Int): PopResult =
 // ---------------------------------------------------------
 // 2. A* Pathfinding Logic
 // ---------------------------------------------------------
+// A* tries to find a path from start to goal by balancing two ideas:
+//
+// 1. g-score:
+//    "How much has it really cost to get here from the start?"
+//
+// 2. heuristic:
+//    "How far does this cell still look from the goal?"
+//
+// 3. f-score:
+//    f = g + heuristic
+//    This is the priority used in the queue.
+//
+// Cells with smaller f-scores are explored first.
 
+// Return the absolute value of x.
+// This is useful when turning coordinate differences into distances.
 inline fn abs (x: Int): Int = if x < 0 then 0 - x else x end;
+
+// Return the smaller of a and b.
 inline fn min (a: Int, b: Int): Int = if a < b then a else b end;
+
+// Return the larger of a and b.
 inline fn max (a: Int, b: Int): Int = if a > b then a else b end;
 
+// Convert a direction number into its x movement.
+// Direction mapping:
+// - 0: right
+// - 1: left
+// - 2: down
+// - 3: up
+// - 4..7: diagonals
 inline fn dir_dx (dir: Int): Int =
   if dir == 0 then 1
   elif dir == 1 then (0 - 1)
@@ -117,6 +268,8 @@ inline fn dir_dx (dir: Int): Int =
   end
 ;
 
+// Convert a direction number into its y movement.
+// Combined with dir_dx, this gives one of the eight neighboring cells.
 inline fn dir_dy (dir: Int): Int =
   if dir == 0 then 0
   elif dir == 1 then 0
@@ -129,18 +282,41 @@ inline fn dir_dy (dir: Int): Int =
   end
 ;
 
+// Return true when a direction number represents a diagonal move.
 inline fn is_diagonal (dir: Int): Bool =
   dir >= 4
 ;
 
+// Return the movement cost for one step in the given direction.
+// This sample uses:
+// - 10 for straight moves
+// - 14 for diagonal moves
+//
+// Using 10 and 14 is a common grid approximation for:
+// - straight cost = 1.0
+// - diagonal cost = 1.414...
 inline fn move_cost (dir: Int): Int =
   if is_diagonal dir then 14 else 10 end
 ;
 
+// Return true when a cell is not a wall.
+// Parameters:
+// - walls: grid storage
+// - idx: flattened grid index to inspect
 inline fn is_open (walls: IntArray, idx: Int): Bool =
   (unsafe_ar_int_get walls idx) != 1
 ;
 
+// Decide whether a diagonal move is allowed.
+// Parameters:
+// - walls: grid storage
+// - width: grid width, needed for index math
+// - cx, cy: current cell coordinates
+// - dx, dy: one-step movement being tested
+//
+// If we move diagonally, we also require the horizontal side cell and the
+// vertical side cell to be open. This prevents the path from cutting through
+// the corner of a wall.
 fn diagonal_clear (
   walls: IntArray,
   width: Int,
@@ -149,28 +325,60 @@ fn diagonal_clear (
   dx: Int,
   dy: Int
 ): Bool =
+  // Cell reached by only the horizontal part of the move.
   let horizontal_idx = cy * width + (cx + dx);
+
+  // Cell reached by only the vertical part of the move.
   let vertical_idx = (cy + dy) * width + cx;
+
   is_open walls horizontal_idx and is_open walls vertical_idx
 ;
 
-// Octile distance for 8-way movement with 10/14 step costs
+// Estimate the remaining distance from idx_a to idx_b.
+// Parameters:
+// - idx_a: current cell
+// - idx_b: goal cell
+// - width: grid width, needed to recover x/y coordinates
+//
+// This uses octile distance, which matches 8-direction movement:
+// - take as many diagonal steps as possible
+// - then finish with straight steps
 fn heuristic (idx_a: Int, idx_b: Int, width: Int): Int =
+  // Recover horizontal and vertical distance between the two cells.
   let dx = abs ((idx_a % width) - (idx_b % width));
   let dy = abs ((idx_a / width) - (idx_b / width));
+
+  // The smaller difference can be paid with diagonals.
   let diagonal_steps = min dx dy;
+
+  // The remaining difference must be paid with straight moves.
   let straight_steps = (max dx dy) - diagonal_steps;
+
   diagonal_steps * 14 + straight_steps * 10
 ;
 
+// Fill arr with the same value in every position from i up to total - 1.
+// Parameters:
+// - arr: array to initialize
+// - val: value to write
+// - total: array length to initialize
+// - i: current write position used by the recursive loop
 fn init_array (arr: IntArray, val: Int, total: Int, i: Int): Unit =
   if i < total then
+    // Write the default value at this position.
     unsafe_ar_int_set arr i val;
+
+    // Continue with the next position.
     init_array arr val total (i + 1)
   end
 ;
 
-// Reconstruct path by following the came_from pointers
+// Walk backward from the goal to the start and mark the final path.
+// Parameters:
+// - walls: grid storage, reused for visualization
+// - came_from: parent link for each cell on the best known route
+// - current: cell currently being marked
+// - start: original start cell, where we stop
 fn mark_path (
   walls: IntArray,
   came_from: IntArray,
@@ -179,12 +387,31 @@ fn mark_path (
 ): Unit =
   if current != start then
     if current != (0 - 1) then
-      unsafe_ar_int_set walls current 2; // 2 represents path
+      // Store 2 only for printing later. It means:
+      // "this cell belongs to the final route".
+      unsafe_ar_int_set walls current 2;
+
+      // Move to this cell's parent and continue walking backward.
       mark_path walls came_from (unsafe_ar_int_get came_from current) start
     end
   end
 ;
 
+// Examine all 8 neighbors of the current cell.
+// Parameters:
+// - open_set: priority queue of cells that may be explored next
+// - g_score: best known cost from start to each cell
+// - came_from: parent link for reconstructing the final path
+// - closed: whether a cell has already been fully processed
+// - walls: grid data
+// - goal_idx: target cell
+// - width, height: grid dimensions
+// - current: cell whose neighbors are being inspected
+// - dir: which of the 8 directions we are currently testing
+// - heap_sz: current logical queue size
+//
+// Returns:
+// - the final result of continuing the search from this point
 fn visit_neighbors (
   open_set: MinHeap,
   g_score: IntArray,
@@ -199,19 +426,32 @@ fn visit_neighbors (
   heap_sz: Int
 ): Int =
   if dir == 8 then
+    // All eight directions have been considered.
+    // Resume the main A* loop with the updated queue.
     solve open_set g_score came_from closed walls goal_idx width height heap_sz
   else
+    // Convert the flattened current index into x/y coordinates.
     let cx = current % width;
     let cy = current / width;
+
+    // Turn this direction number into an x/y step.
     let dx = dir_dx dir;
     let dy = dir_dy dir;
+
+    // Compute the neighbor coordinates reached by that step.
     let nx = cx + dx;
     let ny = cy + dy;
 
     if nx >= 0 and nx < width and ny >= 0 and ny < height then
+      // Convert the neighbor coordinates back into a flattened array index.
       let neighbor_idx = ny * width + nx;
+
+      // Inspect whether the neighbor is blocked or already finished.
       let neighbor_open = is_open walls neighbor_idx;
       let neighbor_closed = (unsafe_ar_int_get closed neighbor_idx) == 1;
+
+      // Straight moves are always allowed.
+      // Diagonal moves must also pass the corner-cutting check.
       let diagonal_ok =
         if is_diagonal dir then
           diagonal_clear walls width cx cy dx dy
@@ -221,12 +461,25 @@ fn visit_neighbors (
       ;
 
       if neighbor_open and diagonal_ok and not neighbor_closed then
+        // Cost of a route that reaches the neighbor through the current cell.
         let tentative_g = (unsafe_ar_int_get g_score current) + (move_cost dir);
+
+        // Only update the neighbor if this route is better than the best one
+        // we had found for it earlier.
         if tentative_g < (unsafe_ar_int_get g_score neighbor_idx) then
+          // Record the better real cost from the start to this neighbor.
           unsafe_ar_int_set g_score neighbor_idx tentative_g;
+
+          // Record that the best route into this neighbor comes from current.
           unsafe_ar_int_set came_from neighbor_idx current;
+
+          // f = real cost so far + estimated cost still remaining.
           let f = tentative_g + (heuristic neighbor_idx goal_idx width);
+
+          // Insert the neighbor into the queue so it can be explored later.
           let new_sz = heap_push open_set heap_sz neighbor_idx f;
+
+          // Continue with the next direction, carrying the updated queue size.
           visit_neighbors
             open_set
             g_score
@@ -240,6 +493,7 @@ fn visit_neighbors (
             (dir + 1)
             new_sz
         else
+          // This route was not better, so ignore it and move on.
           visit_neighbors
             open_set
             g_score
@@ -254,6 +508,7 @@ fn visit_neighbors (
             heap_sz
         end
       else
+        // Skip blocked, illegal, or already-closed neighbors.
         visit_neighbors
           open_set
           g_score
@@ -268,6 +523,7 @@ fn visit_neighbors (
           heap_sz
       end
     else
+      // Skip neighbors that fall outside the grid.
       visit_neighbors
         open_set
         g_score
@@ -284,6 +540,25 @@ fn visit_neighbors (
   end
 ;
 
+// Main A* loop.
+// Parameters:
+// - open_set: priority queue of cells waiting to be explored
+// - g_score: best known real cost from start to each cell
+// - came_from: parent link for each cell
+// - closed: whether a cell has been fully processed
+// - walls: grid data
+// - goal_idx: target cell
+// - width, height: grid dimensions
+// - h_size: current logical size of the priority queue
+//
+// Returns:
+// - goal cell index if a path was found
+// - -1 if no path exists
+//
+// This function repeatedly:
+// 1. removes the best-looking cell from the queue
+// 2. checks whether it is the goal
+// 3. if not, explores its neighbors
 fn solve (
   open_set: MinHeap,
   g_score: IntArray,
@@ -295,15 +570,31 @@ fn solve (
   height: Int,
   h_size: Int
 ): Int =
-  if h_size == 0 then (0 - 1)
+  if h_size == 0 then
+    // Nothing is left to explore, so the goal cannot be reached.
+    (0 - 1)
   else
+    // Take the currently best-looking cell from the queue.
     let pop_res = heap_pop open_set h_size;
+
+    // This is the cell A* will process now.
     let current = pop_res.idx;
-    if current == goal_idx then current
+
+    if current == goal_idx then
+      // Reaching the goal ends the search immediately.
+      current
     elif (unsafe_ar_int_get closed current) == 1 then
+      // The same cell may appear in the queue more than once.
+      // That happens when a later insertion gave it a better score.
+      // If this cell is already closed, then this popped copy is stale and
+      // should be ignored.
       solve open_set g_score came_from closed walls goal_idx width height (pop_res.size)
     else
+      // Mark current as closed before exploring outward from it.
+      // "Closed" means we are done looking for better routes into this cell.
       unsafe_ar_int_set closed current 1;
+
+      // Start checking current's 8 neighbors, beginning with direction 0.
       visit_neighbors
         open_set
         g_score
@@ -320,6 +611,17 @@ fn solve (
   end
 ;
 
+// Set up all data structures needed by A* and run the search.
+// Parameters:
+// - width, height: grid dimensions
+// - start_idx: starting cell
+// - goal_idx: target cell
+// - came_from: array provided by the caller; filled with parent links
+// - walls: grid data, where 1 means blocked
+//
+// Returns:
+// - goal index if a path was found
+// - -1 if no path exists
 fn astar (
   width: Int,
   height: Int,
@@ -328,18 +630,39 @@ fn astar (
   came_from: IntArray,
   walls: IntArray
 ): Int =
+  // Total number of cells in the grid.
   let size = width * height;
+
+  // Very large stand-in for "infinity".
+  // It means: "we do not yet know any route to this cell".
   let inf = 999999999;
+
+  // g_score[cell] = best known real cost from start to cell.
   let g_score = ar_int_new size;
+
+  // closed[cell] = 1 after the cell has been fully processed.
   let closed = ar_int_new size;
+
+  // Queue of cells that may be explored next.
   let open_set = heap_new size;
 
+  // Initialize all cells as:
+  // - infinitely far away
+  // - having no parent
+  // - not closed yet
   init_array g_score inf size 0;
   init_array came_from (0 - 1) size 0;
   init_array closed 0 size 0;
+
+  // The start cell costs 0 to reach from itself.
   unsafe_ar_int_set g_score start_idx 0;
 
+  // Seed the queue with the start cell.
+  // Its f-score is:
+  // - g = 0 because we are already there
+  // - h = estimated distance from start to goal
   let h_size = heap_push open_set 0 start_idx (heuristic start_idx goal_idx width);
+
   solve open_set g_score came_from closed walls goal_idx width height h_size
 ;
 
@@ -347,6 +670,16 @@ fn astar (
 // 3. Visualization and Main
 // ---------------------------------------------------------
 
+// Print the grid row by row.
+// Parameters:
+// - walls: grid data, reused here for display
+// - w, h: grid dimensions
+// - i: current flattened position being printed
+//
+// Display mapping:
+// - # means wall
+// - * means final path
+// - . means open space
 fn print_grid (
   walls: IntArray,
   w: Int,
@@ -354,18 +687,35 @@ fn print_grid (
   i: Int
 ): Unit =
   if i < (w * h) then
+    // Read the stored cell value.
     let cell = unsafe_ar_int_get walls i;
+
+    // Convert the stored integer into a printable character.
     let char = if cell == 1 then "#" elif cell == 2 then "*" else "." end;
 
     print char;
+
+    // The grid lives in one flat array, so emit a newline after every row.
     if (i + 1) % w == 0 then
-      println ""    
+      println ""
     end
     ;
+
+    // Continue printing the next cell.
     print_grid walls w h (i + 1)
   end
 ;
 
+// Draw one vertical wall into the grid.
+// Parameters:
+// - walls: grid storage to modify
+// - width, height: grid dimensions
+// - x, y: starting coordinate of the wall
+// - length: how many cells downward to mark
+// - i: current offset used by the recursive loop
+//
+// This function clips naturally:
+// out-of-bounds cells are ignored instead of causing an error.
 fn build_vertical_wall (
   walls: IntArray,
   width: Int,
@@ -376,24 +726,45 @@ fn build_vertical_wall (
   i: Int
 ): Unit =
   if i < length then
+    // Current wall cell being considered.
     let wx = x;
     let wy = y + i;
 
     if wx >= 0 and wx < width and wy >= 0 and wy < height then
+      // Convert (wx, wy) into a flat index and store 1 for "wall".
       unsafe_ar_int_set walls (wy * width + wx) 1
     end;
 
+    // Continue with the next cell farther down the wall.
     build_vertical_wall walls width height x y length (i + 1)
   end
 ;
 
+// Program entry point.
+// It:
+// 1. builds a small demo grid
+// 2. optionally places one vertical wall from command-line input
+// 3. runs A*
+// 4. marks the resulting route
+// 5. prints the final grid
 pub fn main(args: StringArray): Unit =
+  // Demo grid dimensions.
   let w = 30;
   let h = 10;
+
+  // Total number of cells.
   let size = w * h;
+
+  // Start at the top-left corner.
   let start = 0;
+
+  // Goal at the bottom-right corner.
   let goal = size - 1;
+
+  // Number of command-line arguments.
   let argc = ar_str_len args;
+
+  // Special help mode if the first argument is "help".
   let show_help =
     if argc > 0 then
       str_eq (ar_str_get args 0) "help"
@@ -403,7 +774,7 @@ pub fn main(args: StringArray): Unit =
   ;
 
   if show_help then
-    println 
+    println
 
 "- x is horizontal, valid grid range 0..29
 - y is vertical from the top, valid range 0..9
@@ -416,22 +787,33 @@ Current behavior is clipped, not rejected:
 - if l <= 0, no wall is built"
 
   else
+    // Read wall parameters from the command line, falling back to defaults.
     let wall_x = if argc > 0 then str_to_int (ar_str_get args 0) else 25 end;
     let wall_y = if argc > 1 then str_to_int (ar_str_get args 1) else 3 end;
     let wall_length = if argc > 2 then str_to_int (ar_str_get args 2) else 4 end;
+
+    // Grid and parent-link storage.
     let walls = ar_int_new size;
     let came_from = ar_int_new size;
 
+    // Place one obstacle before running the search.
     build_vertical_wall walls w h wall_x wall_y wall_length 0;
 
+    // Run A* from start to goal.
     let result = astar w h start goal came_from walls;
 
     if result != (0 - 1) then
+      // Turn the parent links discovered by A* into visible path markers.
       mark_path walls came_from goal start;
-      unsafe_ar_int_set walls start 0; // Mark start as empty for clarity
+
+      // Keep the start cell visually open so the printed grid stays simple.
+      unsafe_ar_int_set walls start 0;
+
+      // Show the final map.
       print_grid walls w h 0;
       println "Path found! '*' is path, '#' is wall."
     else
+      // No route from start to goal exists.
       println "No path found."
     end
   end
