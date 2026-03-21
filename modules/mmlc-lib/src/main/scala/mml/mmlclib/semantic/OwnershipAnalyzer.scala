@@ -733,7 +733,7 @@ object OwnershipAnalyzer:
   private def isMoveOnRebind(name: String, scope: OwnershipScope): Boolean =
     scope.getInfo(name) match
       case Some(BindingInfo(OwnershipState.Owned, Some(tpe), _, None)) =>
-        TypeUtils.getTypeName(tpe).exists(TypeUtils.isStructWithHeapFields(_, scope.resolvables))
+        TypeUtils.getTypeName(tpe).exists(TypeUtils.isHeapType(_, scope.resolvables))
       case _ => false
 
   /** Check if an argument expression needs auto-cloning for a consuming constructor param. Returns
