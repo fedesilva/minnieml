@@ -1,8 +1,7 @@
 pub fn main() =
   // we should be able to infer a without a type annotation
   // or generalization or expensive unification
-  // this is simple propagation
-  // let mk = { a -> a * 3 };      // returns a function
-  let mk = { a: Int -> a * 3 };      // returns a function
-  mk
+  // this is simple bidirection propagation and signature lookup.
+  let mk = { a  -> a * 3 };      // returns a function
+  println (int_to_str (mk 14))
 ;

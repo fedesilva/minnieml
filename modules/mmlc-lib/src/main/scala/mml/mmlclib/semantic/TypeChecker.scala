@@ -4,6 +4,8 @@ import cats.implicits.*
 import mml.mmlclib.ast.*
 import mml.mmlclib.compiler.CompilerState
 
+import scala.annotation.tailrec
+
 object TypeChecker:
   private val phaseName          = "mml.mmlclib.semantic.TypeChecker"
   private val statementParamName = "__stmt"
@@ -22,11 +24,184 @@ object TypeChecker:
   private object CheckResult:
     def ok[A](value: A): CheckResult[A] = CheckResult(value, Vector.empty)
 
+  private case class LambdaInferenceState(
+    inferred:   Map[String, Type],
+    aliases:    Map[String, String],
+    conflicted: Set[String],
+    errors:     Vector[TypeError]
+  )
+
+  private case class LambdaInferenceResult(
+    inferred:     Map[String, Type],
+    failedParams: Set[String],
+    errors:       Vector[TypeError]
+  )
+
   private def bindingDisplayName(bnd: Bnd): String =
     bnd.meta.map(_.originalName).getOrElse(bnd.name)
 
   private def normalizeBindingName(name: String): String =
     if name == statementParamName then "statement" else name
+
+  @tailrec
+  private def resolveAlias(name: String, aliases: Map[String, String]): String =
+    aliases.get(name) match
+      case Some(next) if next != name => resolveAlias(next, aliases)
+      case _ => name
+
+  private def collectAppChain(app: App): (Ref | Lambda, List[Expr]) =
+    @tailrec
+    def loop(current: App, args: List[Expr]): (Ref | Lambda, List[Expr]) =
+      current.fn match
+        case inner:  App => loop(inner, current.arg :: args)
+        case ref:    Ref => (ref, current.arg :: args)
+        case lambda: Lambda => (lambda, current.arg :: args)
+
+    loop(app, Nil)
+
+  private def bareRef(expr: Expr): Option[Ref] =
+    expr.terms match
+      case List(ref: Ref) => Some(ref)
+      case List(group: TermGroup) => bareRef(group.inner)
+      case List(inner: Expr) => bareRef(inner)
+      case _ => None
+
+  private def trackedParamName(
+    ref:          Ref,
+    aliases:      Map[String, String],
+    trackedNames: Set[String]
+  ): Option[String] =
+    val resolved = resolveAlias(ref.name, aliases)
+    Option.when(trackedNames.contains(resolved))(resolved)
+
+  private def recordLambdaParamInference(
+    paramName:    String,
+    inferredType: Type,
+    state:        LambdaInferenceState,
+    tracked:      Map[String, FnParam],
+    module:       Module
+  ): LambdaInferenceState =
+    if state.conflicted.contains(paramName) then state
+    else
+      state.inferred.get(paramName) match
+        case None =>
+          state.copy(inferred = state.inferred + (paramName -> inferredType))
+        case Some(existingType) if areTypesCompatible(existingType, inferredType, module) =>
+          state
+        case Some(existingType) =>
+          val error =
+            TypeError.ConflictingLambdaParamInference(
+              tracked(paramName),
+              existingType,
+              inferredType,
+              phaseName
+            )
+          state.copy(
+            conflicted = state.conflicted + paramName,
+            errors     = state.errors :+ error
+          )
+
+  private def recordInferenceFromExpr(
+    expr:    Expr,
+    argType: Type,
+    state:   LambdaInferenceState,
+    tracked: Map[String, FnParam],
+    module:  Module
+  ): LambdaInferenceState =
+    bareRef(expr)
+      .flatMap(trackedParamName(_, state.aliases, tracked.keySet))
+      .map(recordLambdaParamInference(_, argType, state, tracked, module))
+      .getOrElse(state)
+
+  private def isSimpleLetBinding(lambda: Lambda, app: App): Boolean =
+    lambda.source == app.source &&
+      (lambda.params match
+        case List(param) =>
+          param.name != statementParamName &&
+          param.typeAsc.isEmpty &&
+          param.typeSpec.isEmpty
+        case _ => false)
+
+  private def inferParamTypesFromBody(
+    params: List[FnParam],
+    body:   Expr,
+    module: Module
+  ): LambdaInferenceResult =
+    val tracked = params.map(param => param.name -> param).toMap
+
+    def walkAppFn(
+      fn:    Ref | App | Lambda,
+      state: LambdaInferenceState
+    ): LambdaInferenceState =
+      fn match
+        case _:   Ref => state
+        case app: App => walkApp(app, state)
+        case _:   Lambda => state
+
+    def walkExpr(expr: Expr, state: LambdaInferenceState): LambdaInferenceState =
+      expr.terms.foldLeft(state)(walkTerm)
+
+    def walkTerm(state: LambdaInferenceState, term: Term): LambdaInferenceState =
+      term match
+        case app:  App => walkApp(app, state)
+        case cond: Cond =>
+          walkExpr(cond.ifFalse, walkExpr(cond.ifTrue, walkExpr(cond.cond, state)))
+        case group: TermGroup =>
+          walkExpr(group.inner, state)
+        case tuple: Tuple =>
+          tuple.elements.toList.foldLeft(state) { (acc, elem) =>
+            walkExpr(elem, acc)
+          }
+        case ref: Ref =>
+          ref.qualifier match
+            case Some(qualifier) => walkTerm(state, qualifier)
+            case None => state
+        case _: Lambda =>
+          state
+        case nested: Expr =>
+          walkExpr(nested, state)
+        case _ =>
+          state
+
+    def walkApp(app: App, state: LambdaInferenceState): LambdaInferenceState =
+      val inferredFromCall =
+        collectAppChain(app) match
+          case (ref: Ref, args) =>
+            extractTypeFnFromRef(ref, module) match
+              case Some(fnType) =>
+                args
+                  .zip(fnType.paramTypes)
+                  .foldLeft(state) { case (acc, (argExpr, argType)) =>
+                    recordInferenceFromExpr(argExpr, argType, acc, tracked, module)
+                  }
+              case None =>
+                state
+          case _ =>
+            state
+
+      app.fn match
+        case lambda: Lambda if isSimpleLetBinding(lambda, app) =>
+          val afterArg = walkExpr(app.arg, inferredFromCall)
+          val aliasesWithBinding =
+            bareRef(app.arg)
+              .flatMap(trackedParamName(_, afterArg.aliases, tracked.keySet))
+              .map(target => afterArg.aliases + (lambda.params.head.name -> target))
+              .getOrElse(afterArg.aliases)
+          walkExpr(lambda.body, afterArg.copy(aliases = aliasesWithBinding))
+        case _ =>
+          walkExpr(app.arg, walkAppFn(app.fn, inferredFromCall))
+
+    val initialState = LambdaInferenceState(Map.empty, Map.empty, Set.empty, Vector.empty)
+    val finalState   = walkExpr(body, initialState)
+    val uninferred   = tracked.keySet -- finalState.inferred.keySet -- finalState.conflicted
+    val missingErrors =
+      uninferred.toVector.map(name => TypeError.UninferrableLambdaParam(tracked(name), phaseName))
+
+    LambdaInferenceResult(
+      finalState.inferred,
+      finalState.conflicted ++ uninferred,
+      finalState.errors ++ missingErrors
+    )
 
   /** Main entry point - process module and accumulate errors */
   def rewriteModule(state: CompilerState): CompilerState =
@@ -1036,19 +1211,36 @@ object TypeChecker:
   ): CheckResult[Lambda] =
     // Infer param types from expected function type when not annotated
     val expectedFn = expectedType.flatMap(extractTypeFn(_, module))
-    val paramsWithSpecs = lambda.params.zipWithIndex.map { (p, i) =>
+    val topDownParams = lambda.params.zipWithIndex.map { (p, i) =>
       if p.typeSpec.isDefined then p
       else if p.typeAsc.isDefined then p.copy(typeSpec = p.typeAsc)
       else p.copy(typeSpec                             = expectedFn.flatMap(_.paramTypes.lift(i)))
     }
+    val stillUntyped = topDownParams.filter(_.typeSpec.isEmpty)
+    val inferenceResult =
+      if stillUntyped.isEmpty then LambdaInferenceResult(Map.empty, Set.empty, Vector.empty)
+      else inferParamTypesFromBody(stillUntyped, lambda.body, module)
+    val paramsWithSpecs = topDownParams.map { param =>
+      param.typeSpec match
+        case Some(_) => param
+        case None => param.copy(typeSpec = inferenceResult.inferred.get(param.name))
+    }
     // Build param context from lambda params (merged with outer context)
     val lambdaParamContext = paramContext ++ paramsWithSpecs.map(p => p.name -> p).toMap
     // Use lambda's return type ascription (}: Type) as expected type for body
-    val checkedBody =
+    val checkedBodyRaw =
       checkExprWithContext(lambda.body, module, lambdaParamContext, lambda.typeAsc, bindingName)
+    val checkedBody =
+      checkedBodyRaw.copy(
+        errors = checkedBodyRaw.errors.filterNot {
+          case TypeError.UnresolvableType(_, Some(UnresolvableTypeContext.NamedValue(name)), _) =>
+            inferenceResult.failedParams.contains(name)
+          case _ => false
+        }
+      )
     val bodyType = checkedBody.value.typeSpec
     val bodyErrors =
-      if bodyType.isEmpty && checkedBody.errors.isEmpty then
+      if bodyType.isEmpty && checkedBody.errors.isEmpty && inferenceResult.errors.isEmpty then
         Vector(TypeError.UnresolvableType(lambda, None, phaseName))
       else Vector.empty
     val lambdaTypeSpec = bodyType.flatMap(buildFunctionTypeSpec(lambda.source, paramsWithSpecs, _))
@@ -1058,7 +1250,7 @@ object TypeChecker:
         body     = checkedBody.value,
         typeSpec = lambdaTypeSpec
       ),
-      checkedBody.errors ++ bodyErrors
+      inferenceResult.errors ++ checkedBody.errors ++ bodyErrors
     )
 
   /** Check conditional with parameter context */

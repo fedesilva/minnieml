@@ -34,20 +34,26 @@
   - [ ] 3.5 — Heap-type captures (String, structs) + clone/free — spec: `context/specs/lambda-step3-ownership.md`
 
 
-### #244 Bottom-up type inference for lambda parameters
+### #244 Bottom-up type inference for lambda parameters [COMPLETE]
 
 - GitHub: https://github.com/fedesilva/minnieml/issues/244
 - Spec: `context/specs/244-lambda-param-inference.md`
 - Infer lambda param types from body usage (e.g. `{ x -> x + 1 }` infers `x: Int` from `+`)
 - Monomorphic signature lookup — no unification, no generalization
-- [ ] 1 — Implement `inferParamTypesFromBody` AST walk in TypeChecker
-- [ ] 2 — Wire into `checkLambdaWithContext` after existing expectedType inference
-- [ ] 3 — Error messages for conflicts and unresolvable params
-- [ ] 4 — Tests: direct op usage, captures, let-aliases, conflict/no-anchor errors
-- [ ] 5 — Verify existing top-down inference still takes priority (no regression)
+- [x] 1 — Implement `inferParamTypesFromBody` AST walk in TypeChecker
+- [x] 2 — Wire into `checkLambdaWithContext` after existing expectedType inference
+- [x] 3 — Error messages for conflicts and unresolvable params
+- [x] 4 — Tests: direct op usage, captures, let-aliases, conflict/no-anchor errors
+- [x] 5 — Verify existing top-down inference still takes priority (no regression)
 
 ## Recent Changes
 
+- 2026-03-22: #244 bottom-up lambda param inference [COMPLETE].
+  - TypeChecker: infer still-untyped lambda params from monomorphic body usage sites.
+  - Supports simple let-alias propagation and capture-assisted anchors.
+  - Adds dedicated conflict / no-anchor lambda inference errors and LSP/error-printer plumbing.
+  - Tests cover operator/function anchors, alias chains, captures, conflicts, and top-down priority.
+  - Sample: `mml/samples/lambda-infer-args.mml` now demonstrates unannotated lambda param inference.
 - 2026-03-21: runtime — add FORCE_INLINE to string/IO functions.
   - `readline`, `print`, `println`, `concat`, `substring`, `free_string`,
     `string_builder_append`, `string_builder_finalize`, `to_cstr`.
@@ -75,4 +81,3 @@
   - Guard `->` from operator parsing in `identifiers.scala`.
 - 2026-03-21: Fix #243: `isMoveOnRebind` now moves native heap types [COMPLETE].
   - `isMoveOnRebind` uses `TypeUtils.isHeapType` instead of `isStructWithHeapFields`.
-

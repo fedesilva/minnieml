@@ -106,6 +106,10 @@ object ErrorPrinter:
             case _ => (Int.MaxValue, Int.MaxValue)
         case mml.mmlclib.semantic.TypeError.IncompatibleTypes(node, _, _, _, _) =>
           startPosOf(node.asInstanceOf[FromSource])
+        case mml.mmlclib.semantic.TypeError.ConflictingLambdaParamInference(param, _, _, _) =>
+          startPosOf(param)
+        case mml.mmlclib.semantic.TypeError.UninferrableLambdaParam(param, _) =>
+          startPosOf(param)
         case mml.mmlclib.semantic.TypeError.UntypedHoleInBinding(_, source, _) =>
           startPosOf(source)
 
