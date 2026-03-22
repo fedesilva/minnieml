@@ -267,7 +267,9 @@ private def compileRegularLambdaLiteral(
     literalValue = Some(s"@$fnName")
   )
 
-/** Merge metadata from a sub-state back into the parent state. */
+/** Merge metadata from a sub-state back into the parent state. NOTE: must be updated when new
+  * metadata fields are added to CodeGenState.
+  */
 private def mergeSubState(parent: CodeGenState, sub: CodeGenState): CodeGenState =
   parent.copy(
     stringConstants     = sub.stringConstants,
