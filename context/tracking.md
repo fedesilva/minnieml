@@ -17,9 +17,6 @@
 
 ## Active Tasks
 
-### #243 Bug: isMoveOnRebind does not move native heap types [COMPLETE]
-
-- GitHub: https://github.com/fedesilva/minnieml/issues/243
 
 ### #188 Literal lambdas and captures
 
@@ -28,9 +25,13 @@
 - Phase 1 — Parser [COMPLETE]
 - Phase 2 — Codegen (non-capturing) [COMPLETE]
 - Phase 3 — Closures: capturing lambdas + ownership
-  - [ ] Capture analysis (populate `captures` list in semantic phase)
-  - [ ] Closure representation and codegen
-  - [ ] Ownership rules for captured bindings (borrow vs move — needs design confirmation)
+  - Spec: `context/specs/lambda-step3-closures.md`
+  - [x] 3.0 — Update tracking with Phase 3 subtasks
+  - [ ] 3.1 — CaptureAnalyzer semantic phase
+  - [ ] 3.2 — Fat pointer calling convention (`{ ptr fn, ptr env }`)
+  - [ ] 3.3 — Env struct codegen (value-type captures)
+  - [ ] 3.4 — Ownership integration (env as owned value)
+  - [ ] 3.5 — Heap-type captures (String, structs) + clone/free
 
 
 ### #244 Bidirectional type inference for lambda parameters

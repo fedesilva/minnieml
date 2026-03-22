@@ -1,5 +1,5 @@
-// We have not yet implemented lambda literals
-pub fn main(): Unit =
-  // let mk = { a -> a * 3 };      // returns a function
-  ???  
+
+pub fn main() =  
+  let mk = { a: Int -> a * 3 };      // returns a function
+  println (int_to_str (mk 14))
 ;
