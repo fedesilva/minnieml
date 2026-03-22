@@ -429,10 +429,11 @@ object TypeChecker:
       case List(singleTerm) =>
         val checkedTerm =
           checkTermWithContext(singleTerm, module, paramContext, expectedType, bindingName)
-        val finalTerm = normalizeCheckedTerm(checkedTerm.value)
+        val finalTerm     = normalizeCheckedTerm(checkedTerm.value)
+        val termAscErrors = validateTypeAscription(finalTerm, module).toVector
         CheckResult(
           expr.copy(terms = List(finalTerm), typeSpec = finalTerm.typeSpec),
-          checkedTerm.errors
+          checkedTerm.errors ++ termAscErrors
         )
       case terms =>
         // Check all terms in the expression
@@ -448,8 +449,9 @@ object TypeChecker:
                   checkExprWithContext(e, module, paramContext, termExpectedType, bindingName)
                 case t =>
                   checkTermWithContext(t, module, paramContext, termExpectedType, bindingName)
-              val finalTerm = normalizeCheckedTerm(checkedTerm.value)
-              (accErrors ++ checkedTerm.errors, accTerms :+ finalTerm)
+              val finalTerm     = normalizeCheckedTerm(checkedTerm.value)
+              val termAscErrors = validateTypeAscription(finalTerm, module).toVector
+              (accErrors ++ checkedTerm.errors ++ termAscErrors, accTerms :+ finalTerm)
           }
         // The type of the expression is the type of the last term
         val exprType = checkedTerms.lastOption.flatMap { case t: Typeable =>

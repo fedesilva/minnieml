@@ -606,3 +606,31 @@ class TypeCheckerTests extends BaseEffFunSuite:
       )
     }
   }
+
+  test("term-level type ascription mismatch is rejected") {
+    val code =
+      """
+        let c = 1: String;
+      """
+    semState(code).map { result =>
+      val typeErrors = result.errors.collect { case SemanticError.TypeCheckingError(err) => err }
+      assert(
+        typeErrors.exists {
+          case TypeError
+                .TypeMismatch(_, TypeRef(_, "String", _, _), TypeRef(_, "Int", _, _), _, _) =>
+            true
+          case _ => false
+        },
+        s"Expected TypeMismatch (String vs Int), got: $typeErrors"
+      )
+    }
+  }
+
+  test("term-level type ascription matching type is accepted") {
+    val code =
+      """
+        let a = 1: Int;
+        let b = "hello": String;
+      """
+    semNotFailed(code).map { _ => () }
+  }
