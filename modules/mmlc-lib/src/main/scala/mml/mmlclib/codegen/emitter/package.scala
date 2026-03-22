@@ -240,6 +240,7 @@ def sizeOfLlvmType(llvmType: String): Int = llvmType match
   case "i16" => 2
   case "i32" | "float" => 4
   case "i64" | "double" | "ptr" => 8
+  case "{ ptr, ptr }" => 16
   case t if t.endsWith("*") => 8
   case _ => 8
 
@@ -249,6 +250,7 @@ def alignOfLlvmType(llvmType: String): Int = llvmType match
   case "i16" => 2
   case "i32" | "float" => 4
   case "i64" | "double" | "ptr" => 8
+  case "{ ptr, ptr }" => 8
   case t if t.endsWith("*") => 8
   case _ => 8
 
@@ -745,8 +747,8 @@ def getLlvmType(
     case ts: TypeStruct =>
       Right(s"%struct.${ts.name}")
     case _: TypeFn =>
-      // Function values are opaque pointers in LLVM (used for indirect calls)
-      Right("ptr")
+      // Function values are fat pointers: { fn_ptr, env_ptr }
+      Right("{ ptr, ptr }")
     case other =>
       // No LLVM type mapping for this TypeSpec
       Left(
