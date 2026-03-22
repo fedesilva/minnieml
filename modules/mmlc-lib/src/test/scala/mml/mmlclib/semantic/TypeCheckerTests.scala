@@ -634,3 +634,11 @@ class TypeCheckerTests extends BaseEffFunSuite:
       """
     semNotFailed(code).map { _ => () }
   }
+
+  test("lambda return type ascription does not false-positive") {
+    val code =
+      """
+        let f = { x: Int -> x }: Int;
+      """
+    semNotFailed(code).map { _ => () }
+  }

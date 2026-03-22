@@ -1122,10 +1122,14 @@ object TypeChecker:
 
   /** Validate type ascription against computed type */
   private def validateTypeAscription(node: Typeable, module: Module): List[TypeError] =
-    (node.typeAsc, node.typeSpec) match
-      case (Some(ascribed), Some(computed)) =>
-        if areTypesCompatible(ascribed, computed, module) then Nil
-        else List(TypeError.TypeMismatch(node, ascribed, computed, phaseName, None))
+    // Lambda typeAsc is the return type, not the full function type
+    val (ascribed, computed) = (node, node.typeAsc, node.typeSpec) match
+      case (_: Lambda, Some(asc), Some(TypeFn(_, _, ret))) => (Some(asc), Some(ret))
+      case (_, asc, comp) => (asc, comp)
+    (ascribed, computed) match
+      case (Some(asc), Some(comp)) =>
+        if areTypesCompatible(asc, comp, module) then Nil
+        else List(TypeError.TypeMismatch(node, asc, comp, phaseName, None))
       case _ => Nil
 
   /** Check type compatibility (handles aliases, etc.) */
