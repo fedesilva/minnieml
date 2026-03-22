@@ -246,6 +246,12 @@ def injectBasicTypes(module: Module): Module =
     ),
     TypeDef(
       source   = SourceOrigin.Synth,
+      nameNode = Name.synth("RawPtr"),
+      typeSpec = Some(NativePointer(syntheticSource, "i8")),
+      id       = stdlibId("typedef", "RawPtr")
+    ),
+    TypeDef(
+      source   = SourceOrigin.Synth,
       nameNode = Name.synth("String"),
       typeSpec = Some(
         NativeStruct(
@@ -888,6 +894,13 @@ def injectCommonFunctions(module: Module): Module =
       "__free_Buffer",
       List(
         FnParam(SourceOrigin.Synth, Name.synth("b"), typeAsc = Some(bufferType), consuming = true)
+      ),
+      unitType
+    ),
+    mkFn(
+      "mml_free_raw",
+      List(
+        FnParam(SourceOrigin.Synth, Name.synth("p"), typeAsc = Some(stdlibTypeRef("RawPtr")))
       ),
       unitType
     )

@@ -596,6 +596,14 @@ object TypeChecker:
           checkedQualifier.errors ++ baseErrors ++ selectionErrors
         )
 
+  /** Resolve a Ref's type from module resolvables (best-effort, no errors). */
+  private def resolveRefType(ref: Ref, module: Module): Option[Type] =
+    ref.resolvedId.flatMap(module.resolvables.lookup).flatMap {
+      case param: FnParam => param.typeSpec.orElse(param.typeAsc)
+      case decl:  Decl => decl.typeSpec
+      case _ => None
+    }
+
   /** Check ref using module lookups */
   private def checkRef(ref: Ref, module: Module): CheckResult[Ref] =
     // Look up the declaration in the current module to get the computed typeSpec
@@ -1244,10 +1252,21 @@ object TypeChecker:
         Vector(TypeError.UnresolvableType(lambda, None, phaseName))
       else Vector.empty
     val lambdaTypeSpec = bodyType.flatMap(buildFunctionTypeSpec(lambda.source, paramsWithSpecs, _))
+    // Update capture Refs with types resolved from param context or module
+    val typedCaptures = lambda.captures.map { ref =>
+      if ref.typeSpec.isDefined then ref
+      else
+        val captureType = lambdaParamContext
+          .get(ref.name)
+          .flatMap(p => p.typeSpec.orElse(p.typeAsc))
+          .orElse(resolveRefType(ref, module))
+        captureType.map(t => ref.copy(typeSpec = Some(t))).getOrElse(ref)
+    }
     CheckResult(
       lambda.copy(
         params   = paramsWithSpecs,
         body     = checkedBody.value,
+        captures = typedCaptures,
         typeSpec = lambdaTypeSpec
       ),
       inferenceResult.errors ++ checkedBody.errors ++ bodyErrors

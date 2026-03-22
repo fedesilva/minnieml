@@ -895,6 +895,12 @@ void __free_FloatArray(FloatArray arr)
         free(arr.data);
 }
 
+void mml_free_raw(void *p)
+{
+    if (p)
+        free(p);
+}
+
 // --- Memory Management Clone Functions ---
 
 String __clone_String(String s)

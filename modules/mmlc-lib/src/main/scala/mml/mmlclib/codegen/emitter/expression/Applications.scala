@@ -308,16 +308,75 @@ def compileRegularCall(
           )
 
       fnReturnTypeResult.flatMap { fnReturnType =>
-        // Check for function template (for LLVM intrinsics like llvm.sqrt)
-        getFunctionTemplate(fnRef.resolvedId.flatMap(finalState.resolvables.lookup)) match
-          case Some(tpl) =>
-            compileFunctionWithTemplate(fnRef, tpl, compiledArgs, app, finalState)
-          case None =>
-            compileStandardCall(fnRef, compiledArgs, fnReturnType, app, finalState)
+        // __free_closure: emit inline dtor dispatch (extract env, load dtor, call it)
+        if fnRef.name == "__free_closure" then
+          emitClosureFreeViaEnvDtor(compiledArgs, app, finalState)
+        else
+          // For per-env free functions, extract env ptr from fat pointer arg
+          val isClosureEnvFree = fnRef.name.startsWith("__free___closure_env_")
+          val (adjustedArgs, stateAfterExtract) =
+            if isClosureEnvFree then extractEnvPtrFromArgs(compiledArgs, finalState)
+            else (compiledArgs, finalState)
+
+          // Check for function template (for LLVM intrinsics like llvm.sqrt)
+          getFunctionTemplate(
+            fnRef.resolvedId.flatMap(stateAfterExtract.resolvables.lookup)
+          ) match
+            case Some(tpl) =>
+              compileFunctionWithTemplate(fnRef, tpl, adjustedArgs, app, stateAfterExtract)
+            case None =>
+              compileStandardCall(fnRef, adjustedArgs, fnReturnType, app, stateAfterExtract)
       }
   }
 
 private case class CompiledArg(op: String, llvmType: String, typeSpec: Option[Type])
+
+/** Emit inline code to free a closure via its embedded destructor pointer.
+  *
+  * The closure arg is a fat pointer { ptr fn, ptr env }. The env struct's first field (index 0) is
+  * a pointer to the destructor function. We extract the env ptr, null-check it, load the dtor, and
+  * call it with the env ptr.
+  */
+private def emitClosureFreeViaEnvDtor(
+  compiledArgs: List[CompiledArg],
+  app:          App,
+  state:        CodeGenState
+): Either[CodeGenError, CompileResult] =
+  compiledArgs match
+    case List(arg) if arg.llvmType == "{ ptr, ptr }" =>
+      // Extract env ptr, load dtor from field 0, call it.
+      // No null check needed: only capturing closures (env != null) become Owned,
+      // and the dtor itself (mml_free_raw) null-checks internally.
+      val envReg  = state.nextRegister
+      val dtorReg = envReg + 1
+
+      val extractEnv = emitExtractValue(envReg, "{ ptr, ptr }", arg.op, 1)
+      val loadDtor   = s"  %$dtorReg = load ptr, ptr %$envReg"
+      val callDtor   = s"  call void %$dtorReg(ptr %$envReg)"
+
+      val finalState = state
+        .withRegister(dtorReg + 1)
+        .emit(extractEnv)
+        .emit(loadDtor)
+        .emit(callDtor)
+
+      Right(CompileResult(0, finalState, false, "Unit"))
+    case _ =>
+      Left(CodeGenError("__free_closure expects a single { ptr, ptr } argument", Some(app)))
+
+/** For closure env free functions, extract the env pointer (index 1) from the fat pointer arg. */
+private def extractEnvPtrFromArgs(
+  compiledArgs: List[CompiledArg],
+  state:        CodeGenState
+): (List[CompiledArg], CodeGenState) =
+  compiledArgs match
+    case List(arg) if arg.llvmType == "{ ptr, ptr }" =>
+      val envReg      = state.nextRegister
+      val extractLine = emitExtractValue(envReg, "{ ptr, ptr }", arg.op, 1)
+      val newArg      = CompiledArg(s"%$envReg", "ptr", None)
+      (List(newArg), state.withRegister(envReg + 1).emit(extractLine))
+    case other =>
+      (other, state)
 
 /** Compiles all arguments to a function call. */
 private def compileArgs(
