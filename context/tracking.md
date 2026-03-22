@@ -19,6 +19,9 @@
 
 ### #188 Literal lambdas and captures
 
+* there are issues to address:
+  `context/specs/lambdas-work-review.md`
+
 - GitHub: https://github.com/fedesilva/minnieml/issues/188
 - Reference: `docs/brainstorming/language/lambda-syntax-design.md`
 - Phase 1 — Parser [COMPLETE]
@@ -39,6 +42,13 @@
     - [x] 3.4.6 — Fix: split lambdaAllocates from termAllocates (only let-bound, not arg-position)
     - [x] 3.4.7 — Universal __free_closure with embedded dtor pointer in env struct field 0
     - [x] 3.4.8 — All tests pass: 333 unit, 18/18 mem (including closure-capture 0 leaks)
+  - [ ] 3.4-QA — Codegen & ownership review fixes (spec: `context/specs/lambdas-work-review.md`)
+    - [ ] 3.4-QA.1 [P1] Keep emitted env setup for let-bound capturing lambdas (`Applications.scala`)
+    - [ ] 3.4-QA.2 [P1] Allocate unique symbols for let-bound lambda definitions (`Applications.scala`)
+    - [ ] 3.4-QA.3 [P1] Size closure env allocations using LLVM struct layout (`ExpressionCompiler.scala`)
+    - [ ] 3.4-QA.4 [P2] Pass real closure env on recursive capturing lambdas (`Applications.scala`)
+    - [ ] 3.4-QA.5 [P2] Keep capture support in tail-recursive lambda path (`ExpressionCompiler.scala`)
+    - [ ] 3.4-QA.6 [P2] Stop freeing non-capturing function values as closures (`OwnershipAnalyzer.scala`)
   - [ ] 3.5 — Heap-type captures (String, structs) + clone/free — spec: `context/specs/lambda-step3-ownership.md`
 
 ### Update language ref and memory model docs.
