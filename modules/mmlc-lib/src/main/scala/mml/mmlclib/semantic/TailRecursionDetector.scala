@@ -25,20 +25,16 @@ object TailRecursionDetector:
     member match
       case bnd: Bnd =>
         bnd.value.terms match
-          case (lambda: Lambda) :: rest if hasTailRecursiveCall(lambda.body, bnd) =>
-            val meta = lambda.meta.getOrElse(LambdaMeta())
-            val updated = lambda.copy(
-              meta = Some(meta.copy(isTailRecursive = true)),
-              body = rewriteLetBoundLambdas(lambda.body)
-            )
-            val updatedBnd = bnd.copy(value = bnd.value.copy(terms = updated :: rest))
-            updatedBnd
           case (lambda: Lambda) :: rest =>
+            val isTailRec     = hasTailRecursiveCallById(lambda.body, bnd.name, bnd.id)
             val rewrittenBody = rewriteLetBoundLambdas(lambda.body)
-            if rewrittenBody ne lambda.body then
-              val updated    = lambda.copy(body = rewrittenBody)
-              val updatedBnd = bnd.copy(value = bnd.value.copy(terms = updated :: rest))
-              updatedBnd
+            val updatedMeta =
+              if isTailRec then
+                Some(lambda.meta.getOrElse(LambdaMeta()).copy(isTailRecursive = true))
+              else lambda.meta
+            if isTailRec || (rewrittenBody ne lambda.body) then
+              val updated = lambda.copy(meta = updatedMeta, body = rewrittenBody)
+              bnd.copy(value = bnd.value.copy(terms = updated :: rest))
             else bnd
           case _ => bnd
       case other => other
@@ -62,19 +58,12 @@ object TailRecursionDetector:
   /** Check if the arg of a let-binding is a lambda that self-recurses via the param. */
   private def rewriteLetBoundArg(arg: Expr, param: FnParam): Expr =
     arg.terms match
-      case List(innerLambda: Lambda) if hasTailRecursiveCallByParam(innerLambda.body, param) =>
+      case List(innerLambda: Lambda)
+          if hasTailRecursiveCallById(innerLambda.body, param.name, param.id) =>
         val meta    = innerLambda.meta.getOrElse(LambdaMeta())
         val updated = innerLambda.copy(meta = Some(meta.copy(isTailRecursive = true)))
         Expr(arg.source, List(updated), arg.typeSpec)
       case _ => arg
-
-  /** Check if expr contains a tail-recursive call to bnd in terminal position. */
-  private def hasTailRecursiveCall(expr: Expr, bnd: Bnd): Boolean =
-    hasTailRecursiveCallById(expr, bnd.name, bnd.id)
-
-  /** Check if expr contains a tail-recursive call to a let-bound param. */
-  private def hasTailRecursiveCallByParam(expr: Expr, param: FnParam): Boolean =
-    hasTailRecursiveCallById(expr, param.name, param.id)
 
   private def hasTailRecursiveCallById(
     expr:     Expr,
