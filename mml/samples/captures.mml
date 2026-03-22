@@ -1,13 +1,11 @@
-
-
 // for this to work we need:
-// * literal lamdas
+// * literal lambdas
 // * captures
-fn makeLambda() = 
+fn makeLambda(): String =
   let a = 1;
-  { -> int_to_str (2 * a) }
+  { int_to_str (2 * a) }
 ;
 
-pub fn main() = 
+pub fn main() =
   println (makeLambda ())
 ;
