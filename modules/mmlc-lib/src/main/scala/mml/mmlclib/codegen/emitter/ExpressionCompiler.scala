@@ -138,10 +138,88 @@ def compileTerm(
       )
     }
 
+    case lambda: Lambda =>
+      compileLambdaLiteral(lambda, state, functionScope)
+
     case other =>
       CodeGenError(s"Unsupported term: ${other.getClass.getSimpleName}", Some(other)).asLeft
   }
 }
+
+/** Compiles an expression-position lambda literal to a deferred LLVM function, returning its
+  * address as a function pointer.
+  */
+private def compileLambdaLiteral(
+  lambda:        Lambda,
+  state:         CodeGenState,
+  functionScope: Map[String, ScopeEntry]
+): Either[CodeGenError, CompileResult] =
+  val typeFn = lambda.typeSpec match
+    case Some(tf: TypeFn) => Right(tf)
+    case other =>
+      Left(CodeGenError(s"Lambda missing TypeFn typeSpec, got: $other", Some(lambda)))
+
+  typeFn.flatMap { tf =>
+    val (stateWithId, fnName) = state.allocAnonFnName
+    for
+      returnType <- getLlvmType(tf.returnType, stateWithId)
+      paramTypes <- tf.paramTypes.traverse(getLlvmType(_, stateWithId))
+
+      filteredParamsWithTypes = filterVoidParams(lambda.params, paramTypes)
+      paramDecls              = formatParamDecls(filteredParamsWithTypes, stateWithId.resolvables)
+
+      // Compile body in a sub-state (fresh output and registers)
+      subState = stateWithId.copy(
+        output       = List.empty,
+        nextRegister = 0
+      )
+
+      // Map params directly to LLVM argument registers (same as compileRegularLambda)
+      paramScope = filteredParamsWithTypes.zipWithIndex.map { case ((param, _), idx) =>
+        val mmlType = param.typeAsc.flatMap(getMmlTypeName).getOrElse("Unknown")
+        (param.name, ScopeEntry(idx, mmlType))
+      }.toMap
+      bodyState = subState.withRegister(filteredParamsWithTypes.size)
+
+      bodyRes <- compileExpr(lambda.body, bodyState, functionScope ++ paramScope)
+
+      retLine =
+        if returnType == "void" then "  ret void"
+        else s"  ret $returnType ${bodyRes.operandStr}"
+
+      finalSubState = bodyRes.state.emit(retLine).emit("}")
+
+      // Build the complete function definition
+      header = s"define internal $returnType @$fnName($paramDecls) #0 {"
+      fnBody = (header :: "entry:" :: finalSubState.output.reverse).mkString("\n")
+
+      // Merge sub-state metadata back to caller state, append deferred definition
+      mergedState = stateWithId
+        .copy(
+          stringConstants     = finalSubState.stringConstants,
+          nextStringId        = finalSubState.nextStringId,
+          tbaaNodes           = finalSubState.tbaaNodes,
+          tbaaOutput          = finalSubState.tbaaOutput,
+          nextTbaaId          = finalSubState.nextTbaaId,
+          tbaaRootId          = finalSubState.tbaaRootId,
+          tbaaScalarIds       = finalSubState.tbaaScalarIds,
+          tbaaStructIds       = finalSubState.tbaaStructIds,
+          aliasScopeOutput    = finalSubState.aliasScopeOutput,
+          aliasScopeDomainId  = finalSubState.aliasScopeDomainId,
+          aliasScopeIds       = finalSubState.aliasScopeIds,
+          warnings            = finalSubState.warnings,
+          deferredDefinitions = finalSubState.deferredDefinitions,
+          nextAnonFnId        = finalSubState.nextAnonFnId
+        )
+        .addDeferredDefinition(fnBody)
+    yield CompileResult(
+      register     = 0,
+      state        = mergedState,
+      isLiteral    = true,
+      typeName     = "Function",
+      literalValue = Some(s"@$fnName")
+    )
+  }
 
 private def compileSelectionRef(
   ref:           Ref,
@@ -327,10 +405,15 @@ def compileApp(
       compileLambdaApp(lambda, allArgs, state, functionScope, compileExpr)
 
     case ref: Ref =>
-      getNativeOpTemplate(ref.resolvedId.flatMap(state.resolvables.lookup)) match
-        case Some(tpl) =>
-          compileNativeOp(ref, tpl, allArgs, app, state, functionScope, compileExpr)
-        case None if isNullaryWithUnitArgs(ref, allArgs, state.resolvables) =>
-          compileNullaryCall(ref, app, state)
-        case None =>
-          compileRegularCall(ref, allArgs, app, state, functionScope, compileExpr)
+      // Indirect call: local binding with TypeFn typeSpec (function pointer)
+      val isIndirect = functionScope.contains(ref.name) &&
+        ref.typeSpec.exists(_.isInstanceOf[TypeFn])
+      if isIndirect then compileIndirectCall(ref, allArgs, app, state, functionScope, compileExpr)
+      else
+        getNativeOpTemplate(ref.resolvedId.flatMap(state.resolvables.lookup)) match
+          case Some(tpl) =>
+            compileNativeOp(ref, tpl, allArgs, app, state, functionScope, compileExpr)
+          case None if isNullaryWithUnitArgs(ref, allArgs, state.resolvables) =>
+            compileNullaryCall(ref, app, state)
+          case None =>
+            compileRegularCall(ref, allArgs, app, state, functionScope, compileExpr)

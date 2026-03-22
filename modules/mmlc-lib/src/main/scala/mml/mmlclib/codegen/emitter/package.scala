@@ -100,6 +100,18 @@ def emitCall(
   val metadataSuffix = if metadataParts.isEmpty then "" else metadataParts.mkString(", ", ", ", "")
   s"  ${resultPart}call $returnPart@$fnName($argString)$metadataSuffix"
 
+/** Helper for generating LLVM IR indirect call (function pointer). */
+def emitIndirectCall(
+  result:     Option[Int],
+  returnType: Option[String],
+  fnPtr:      String,
+  args:       List[(String, String)]
+): String =
+  val resultPart = result.map(r => s"%$r = ").getOrElse("")
+  val returnPart = returnType.map(t => s"$t ").getOrElse("void ")
+  val argString  = args.map { case (typ, value) => s"$typ $value" }.mkString(", ")
+  s"  ${resultPart}call $returnPart$fnPtr($argString)"
+
 /** Helper for generating LLVM IR extractvalue instruction */
 def emitExtractValue(result: Int, structType: String, value: String, index: Int): String =
   s"  %$result = extractvalue $structType $value, $index"
@@ -284,7 +296,10 @@ case class CodeGenState(
   aliasScopeIds:      Map[String, Int] = Map.empty,
   emitAliasScopes:    Boolean          = false,
   // Resolvables index for soft reference lookups
-  resolvables: ResolvablesIndex = ResolvablesIndex()
+  resolvables: ResolvablesIndex = ResolvablesIndex(),
+  // Deferred function definitions (expression-position lambdas compiled as separate functions)
+  deferredDefinitions: List[String] = List.empty,
+  nextAnonFnId:        Int          = 0
 ):
   /** Returns a new state with an updated register counter. */
   def withRegister(reg: Int): CodeGenState =
@@ -293,6 +308,15 @@ case class CodeGenState(
   /** Mangles a member name with the module prefix: modulename_membername */
   def mangleName(name: String): String =
     s"${moduleName.toLowerCase}_$name"
+
+  /** Allocates a unique anonymous function name and returns (updatedState, mangledName). */
+  def allocAnonFnName: (CodeGenState, String) =
+    val name = s"_anon_$nextAnonFnId"
+    (copy(nextAnonFnId = nextAnonFnId + 1), mangleName(name))
+
+  /** Appends a deferred function definition (emitted after main output). */
+  def addDeferredDefinition(defn: String): CodeGenState =
+    copy(deferredDefinitions = defn :: deferredDefinitions)
 
   /** Emits a single line of LLVM IR code, returning the updated state. */
   def emit(line: String): CodeGenState =
@@ -705,10 +729,9 @@ def getLlvmType(
       Left(CodeGenError("Unexpected inline native struct"))
     case ts: TypeStruct =>
       Right(s"%struct.${ts.name}")
-    case TypeFn(_, _, ret) =>
-      // When a function type leaks into places expecting a concrete type (e.g., constructor
-      // return type lookup), fall back to the return type's LLVM mapping.
-      getLlvmType(ret, state)
+    case _: TypeFn =>
+      // Function values are opaque pointers in LLVM (used for indirect calls)
+      Right("ptr")
     case other =>
       // No LLVM type mapping for this TypeSpec
       Left(

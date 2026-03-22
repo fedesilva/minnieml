@@ -152,7 +152,12 @@ def emitModule(
     // 5. Function definitions and other code
     output.append(finalState.output.reverse.mkString("\n"))
 
-    // 5. Attributes
+    // 5b. Deferred definitions (expression-position lambdas)
+    if finalState.deferredDefinitions.nonEmpty then
+      output.append("\n")
+      finalState.deferredDefinitions.reverse.foreach(d => output.append(d).append("\n"))
+
+    // 6. Attributes
     cpuAttrValue match {
       case Some(cpu) =>
         output.append(s"""\nattributes #0 = { "target-cpu"="$cpu" }""")
