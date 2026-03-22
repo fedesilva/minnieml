@@ -40,6 +40,11 @@
 * lang ref needs a link to the memory model doc.
 
 
+### Update the design doc
+
+* there are new phases in the semantic stage
+
+
 ### QA Test infra
 
 * add comments to each test, describing in plain english what they do, what they expect, etc
