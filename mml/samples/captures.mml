@@ -1,11 +1,12 @@
-// for this to work we need:
-// * literal lambdas
-// * captures
-fn makeLambda(): String =
-  let a = 1;
-  { int_to_str (2 * a) }
+// Closure test: lambda captures a local binding
+fn apply(f: Int -> Int, x: Int): Int = f x;
+
+fn makeAdder(a: Int): Int -> Int =
+  { x: Int -> x + a }
 ;
 
 pub fn main() =
-  println (makeLambda ())
+  let add5 = makeAdder 5;
+  let result = apply add5 37;
+  println (int_to_str result)
 ;

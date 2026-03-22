@@ -237,34 +237,61 @@ private def compileRegularLambdaLiteral(
 ): Either[CodeGenError, CompileResult] =
   val filteredParamsWithTypes = filterVoidParams(lambda.params, paramTypes)
   val userParamDecls          = formatParamDecls(filteredParamsWithTypes, state.resolvables)
-  // All lambda functions get a trailing ptr %env parameter (closure env)
-  val envParamIdx = filteredParamsWithTypes.size
+  val envParamIdx             = filteredParamsWithTypes.size
   val allParamDecls =
     if userParamDecls.isEmpty then s"ptr %$envParamIdx"
     else s"$userParamDecls, ptr %$envParamIdx"
 
-  val subState = state.copy(output = List.empty, nextRegister = 0)
+  if lambda.captures.isEmpty then
+    compileNonCapturingLambda(
+      lambda,
+      state,
+      fnName,
+      returnType,
+      filteredParamsWithTypes,
+      allParamDecls,
+      envParamIdx,
+      functionScope
+    )
+  else
+    compileCapturingLambda(
+      lambda,
+      state,
+      fnName,
+      returnType,
+      filteredParamsWithTypes,
+      allParamDecls,
+      envParamIdx,
+      functionScope
+    )
 
+/** Non-capturing lambda: deferred function ignores env, returns { ptr @fn, ptr null }. */
+private def compileNonCapturingLambda(
+  lambda:                  Lambda,
+  state:                   CodeGenState,
+  fnName:                  String,
+  returnType:              String,
+  filteredParamsWithTypes: List[(FnParam, String)],
+  allParamDecls:           String,
+  envParamIdx:             Int,
+  functionScope:           Map[String, ScopeEntry]
+): Either[CodeGenError, CompileResult] =
+  val subState = state.copy(output = List.empty, nextRegister = 0)
   val paramScope = filteredParamsWithTypes.zipWithIndex.map { case ((param, _), idx) =>
     val mmlType = param.typeAsc.flatMap(getMmlTypeName).getOrElse("Unknown")
     (param.name, ScopeEntry(idx, mmlType))
   }.toMap
-  // +1 for the env param at the end
   val bodyState = subState.withRegister(envParamIdx + 1)
 
   for
     bodyRes <- compileExpr(lambda.body, bodyState, functionScope ++ paramScope)
-
     retLine =
       if returnType == "void" then "  ret void"
       else s"  ret $returnType ${bodyRes.operandStr}"
-
     finalSubState = bodyRes.state.emit(retLine).emit("}")
-
-    header = s"define internal $returnType @$fnName($allParamDecls) #0 {"
-    fnBody = (header :: "entry:" :: finalSubState.output.reverse).mkString("\n")
-
-    mergedState = mergeSubState(state, finalSubState).addDeferredDefinition(fnBody)
+    header        = s"define internal $returnType @$fnName($allParamDecls) #0 {"
+    fnBody        = (header :: "entry:" :: finalSubState.output.reverse).mkString("\n")
+    mergedState   = mergeSubState(state, finalSubState).addDeferredDefinition(fnBody)
   yield CompileResult(
     register     = 0,
     state        = mergedState,
@@ -273,25 +300,127 @@ private def compileRegularLambdaLiteral(
     literalValue = Some(s"{ ptr @$fnName, ptr null }")
   )
 
+/** Capturing lambda: allocate env struct, store captures, build fat pointer. Inside the deferred
+  * function, load captures from env into scope.
+  */
+private def compileCapturingLambda(
+  lambda:                  Lambda,
+  state:                   CodeGenState,
+  fnName:                  String,
+  returnType:              String,
+  filteredParamsWithTypes: List[(FnParam, String)],
+  allParamDecls:           String,
+  envParamIdx:             Int,
+  functionScope:           Map[String, ScopeEntry]
+): Either[CodeGenError, CompileResult] =
+  // Resolve LLVM types for each capture
+  val captureTypesResult = lambda.captures.traverse { ref =>
+    ref.typeSpec match
+      case Some(ts) => getLlvmType(ts, state).map(t => (ref, t))
+      case None =>
+        Left(CodeGenError(s"Capture '${ref.name}' has no type", Some(ref)))
+  }
+
+  captureTypesResult.flatMap { captureTypes =>
+    val capLlvmTypes = captureTypes.map(_._2)
+    val envTypeName  = s"closure_env_$fnName"
+    val envTypeDef   = emitTypeDefinition(envTypeName, capLlvmTypes)
+    val envTypeRef   = s"%$envTypeName"
+
+    // Register env type and malloc/free declarations
+    val stateWithEnv = state
+      .withNativeType(envTypeName, envTypeDef)
+      .withFunctionDeclaration("malloc", "ptr", List("i64"))
+      .withFunctionDeclaration("free", "void", List("ptr"))
+
+    // --- Call site: allocate env, store captures, build fat pointer ---
+    val envSize   = capLlvmTypes.map(sizeOfLlvmType).sum
+    val mallocReg = stateWithEnv.nextRegister
+    val mallocLine =
+      emitCall(Some(mallocReg), Some("ptr"), "malloc", List(("i64", envSize.toString)))
+    var siteState = stateWithEnv.withRegister(mallocReg + 1).emit(mallocLine)
+
+    // Store each capture into the env struct
+    captureTypes.zipWithIndex.foreach { case ((ref, llvmType), idx) =>
+      val capOp = functionScope.get(ref.name) match
+        case Some(entry) => entry.operandStr
+        case None => s"@${ref.name}" // global fallback
+      val gepReg = siteState.nextRegister
+      val gepLine =
+        s"  %$gepReg = getelementptr $envTypeRef, ptr %$mallocReg, i32 0, i32 $idx"
+      val storeLine = s"  store $llvmType $capOp, ptr %$gepReg"
+      siteState = siteState.withRegister(gepReg + 1).emit(gepLine).emit(storeLine)
+    }
+
+    // Build the fat pointer { ptr @fn, ptr %env }
+    val fp0Reg = siteState.nextRegister
+    val fp1Reg = fp0Reg + 1
+    val insertFn =
+      emitInsertValue(fp0Reg, "{ ptr, ptr }", "undef", "ptr", s"@$fnName", 0)
+    val insertEnv =
+      emitInsertValue(fp1Reg, "{ ptr, ptr }", s"%$fp0Reg", "ptr", s"%$mallocReg", 1)
+    siteState = siteState.withRegister(fp1Reg + 1).emit(insertFn).emit(insertEnv)
+
+    // --- Deferred function: load captures from env into scope ---
+    val subState = siteState.copy(output = List.empty, nextRegister = 0)
+    val paramScope = filteredParamsWithTypes.zipWithIndex.map { case ((param, _), idx) =>
+      val mmlType = param.typeAsc.flatMap(getMmlTypeName).getOrElse("Unknown")
+      (param.name, ScopeEntry(idx, mmlType))
+    }.toMap
+    var bodyState = subState.withRegister(envParamIdx + 1)
+
+    // Load each capture from the env struct
+    val captureScope = captureTypes.zipWithIndex.map { case ((ref, llvmType), idx) =>
+      val gepReg  = bodyState.nextRegister
+      val loadReg = gepReg + 1
+      val gepLine =
+        s"  %$gepReg = getelementptr $envTypeRef, ptr %$envParamIdx, i32 0, i32 $idx"
+      val loadLine = s"  %$loadReg = load $llvmType, ptr %$gepReg"
+      bodyState = bodyState.withRegister(loadReg + 1).emit(gepLine).emit(loadLine)
+      val mmlType = ref.typeSpec.flatMap(getMmlTypeName).getOrElse("Unknown")
+      (ref.name, ScopeEntry(loadReg, mmlType))
+    }.toMap
+
+    val allScope = functionScope ++ paramScope ++ captureScope
+
+    for
+      bodyRes <- compileExpr(lambda.body, bodyState, allScope)
+      retLine =
+        if returnType == "void" then "  ret void"
+        else s"  ret $returnType ${bodyRes.operandStr}"
+      finalSubState = bodyRes.state.emit(retLine).emit("}")
+      header        = s"define internal $returnType @$fnName($allParamDecls) #0 {"
+      fnBody        = (header :: "entry:" :: finalSubState.output.reverse).mkString("\n")
+      mergedState   = mergeSubState(siteState, finalSubState).addDeferredDefinition(fnBody)
+    yield CompileResult(
+      register = fp1Reg,
+      state    = mergedState,
+      false,
+      "Function"
+    )
+  }
+
 /** Merge metadata from a sub-state back into the parent state. NOTE: must be updated when new
   * metadata fields are added to CodeGenState.
   */
 private def mergeSubState(parent: CodeGenState, sub: CodeGenState): CodeGenState =
   parent.copy(
-    stringConstants     = sub.stringConstants,
-    nextStringId        = sub.nextStringId,
-    tbaaNodes           = sub.tbaaNodes,
-    tbaaOutput          = sub.tbaaOutput,
-    nextTbaaId          = sub.nextTbaaId,
-    tbaaRootId          = sub.tbaaRootId,
-    tbaaScalarIds       = sub.tbaaScalarIds,
-    tbaaStructIds       = sub.tbaaStructIds,
-    aliasScopeOutput    = sub.aliasScopeOutput,
-    aliasScopeDomainId  = sub.aliasScopeDomainId,
-    aliasScopeIds       = sub.aliasScopeIds,
-    warnings            = sub.warnings,
-    deferredDefinitions = sub.deferredDefinitions,
-    nextAnonFnId        = sub.nextAnonFnId
+    stringConstants      = sub.stringConstants,
+    nextStringId         = sub.nextStringId,
+    tbaaNodes            = sub.tbaaNodes,
+    tbaaOutput           = sub.tbaaOutput,
+    nextTbaaId           = sub.nextTbaaId,
+    tbaaRootId           = sub.tbaaRootId,
+    tbaaScalarIds        = sub.tbaaScalarIds,
+    tbaaStructIds        = sub.tbaaStructIds,
+    aliasScopeOutput     = sub.aliasScopeOutput,
+    aliasScopeDomainId   = sub.aliasScopeDomainId,
+    aliasScopeIds        = sub.aliasScopeIds,
+    warnings             = sub.warnings,
+    deferredDefinitions  = sub.deferredDefinitions,
+    nextAnonFnId         = sub.nextAnonFnId,
+    nativeTypes          = sub.nativeTypes,
+    functionDeclarations = sub.functionDeclarations
   )
 
 private def compileSelectionRef(
