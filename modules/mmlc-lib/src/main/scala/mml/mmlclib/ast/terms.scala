@@ -81,7 +81,8 @@ object App:
     new App(SourceOrigin.Loc(span), fn, arg, None, None)
 
 case class LambdaMeta(
-  isTailRecursive: Boolean = false
+  isTailRecursive: Boolean        = false,
+  envStructName:   Option[String] = None
 )
 
 case class Lambda(
