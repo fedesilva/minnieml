@@ -1,5 +1,3 @@
-// Recursive let-bound lambda with `: Type` return ascription.
-
 type ForeverFn = Unit -> Unit;
 
 pub fn main() =
