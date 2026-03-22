@@ -45,21 +45,17 @@
   - [x] RefResolver: let-binding name in scope during arg resolution (recursive lets)
   - [x] TypeChecker: pre-seed binding type from lambda typeAsc (recursive lets)
   - [x] Codegen: pre-allocate anon fn name for recursive let-bound lambdas
-  - [ ] QA in progress
+  - [x] QA complete
     - [x] TypeChecker: pre-seed recursive let type from param typeAsc (not just lambda typeAsc)
     - [x] TypeChecker: `extractTypeFn` resolves type aliases via `resolveAliasChain`
     - [x] TypeChecker: `areTypesCompatible` treats `TypeFn(Nil, R)` ≡ `TypeFn([Unit], R)` (nullary ≡ thunk)
     - [x] Codegen: `resolveToTypeFn` helper in emitter package (resolves aliases for fn type detection)
     - [x] Codegen: `isIndirect` check uses `resolveToTypeFn` instead of `isInstanceOf[TypeFn]`
-    - [ ] **BLOCKED**: codegen emits `call void @loop()` instead of using the pre-allocated anon fn name
-      - Sample: `mml/samples/let-lambda-type-ascription.mml` (recursive let-bound lambda with type alias ascription)
-      - Root cause: `compileApp` → `isIndirect` check may still fail because the `TypeRef("ForeverFn")` on the
-        ref's `typeSpec` might lack a `resolvedId` (the typeSpec was set by TypeChecker pre-seeding from
-        `param.typeAsc`, which should have been resolved by TypeResolver — needs verification)
-      - The lambda IS emitted as `@letlambdatypeascription__anon_0` but both call sites (line 195, 243 in IR)
-        emit `call void @loop()` — meaning `isIndirect` is false, falling through to `compileRegularCall`
-      - Approach discussed: use stable names derived from binding ID (e.g. `main_loop`) instead of `allocAnonFnName`,
-        since `FnParam.id` already encodes `module::bnd::owner::name::uuid`
+    - [x] Let-bound lambdas: stable names, TCO, direct self-calls
+      - TypeResolver: resolve param typeAsc in expression-level lambdas (4 cases)
+      - Stable names: `mangleName(param.name)` instead of `allocAnonFnName`
+      - TailRecursionDetector: detect let-bound lambda self-recursion via binding param
+      - Codegen: TCO path for let-bound lambdas (deferred emission via `compileTailRecursiveLambda`)
 - Phase 3 — Closures: capturing lambdas + ownership
   - [ ] Capture analysis (populate `captures` list in semantic phase)
   - [ ] Closure representation and codegen
@@ -77,6 +73,13 @@
 
 ## Recent Changes
 
+- 2026-03-21: #188 Phase 2 QA — let-bound lambdas: stable names, TCO, direct self-calls.
+  - TypeResolver: resolve param typeAsc in expression-level lambdas (4 cases missed params).
+  - Stable names: `mangleName(param.name)` replaces `allocAnonFnName` for let-bound lambdas.
+  - TailRecursionDetector: traverse let-binding chains, detect self-recursion via binding param.
+  - Codegen: TCO deferred emission for let-bound lambdas, generalized `isSelfRef`/`findTailRecBody`.
+  - `let-lambda-type-ascription.mml` compiles with `@module_loop`, TCO loop, direct calls.
+  - All 318 tests pass, 17/17 memory tests pass, benchmarks compile.
 - 2026-03-21: #188 Phase 2 QA fixes — type ascription, recursive lets, codegen.
   - General term-level type ascription in parser (`Term.withTypeAsc` on AST).
   - Lambda `}: Type` return ascription flows as expected type for body.
