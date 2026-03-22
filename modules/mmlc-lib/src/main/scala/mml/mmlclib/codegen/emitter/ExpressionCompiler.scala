@@ -340,40 +340,43 @@ private def compileCapturingLambda(
     val mallocReg = stateWithEnv.nextRegister
     val mallocLine =
       emitCall(Some(mallocReg), Some("ptr"), "malloc", List(("i64", envSize.toString)))
-    var siteState = stateWithEnv.withRegister(mallocReg + 1).emit(mallocLine)
+    val siteStateAfterMalloc = stateWithEnv.withRegister(mallocReg + 1).emit(mallocLine)
 
     // Store destructor pointer at field 0
     val dtorName = lambda.meta
       .flatMap(_.envStructName)
       .map(n => s"__free_$n")
       .getOrElse("__free_closure")
-    val dtorGepReg = siteState.nextRegister
+    val dtorGepReg = siteStateAfterMalloc.nextRegister
     val dtorGepLine =
       s"  %$dtorGepReg = getelementptr $envTypeRef, ptr %$mallocReg, i32 0, i32 0"
     val dtorStoreLine =
       s"  store ptr @${state.mangleName(dtorName)}, ptr %$dtorGepReg"
-    siteState = siteState.withRegister(dtorGepReg + 1).emit(dtorGepLine).emit(dtorStoreLine)
+    val siteStateAfterDtor =
+      siteStateAfterMalloc.withRegister(dtorGepReg + 1).emit(dtorGepLine).emit(dtorStoreLine)
 
     // Store each capture into the env struct (field indices shifted by 1 for __dtor)
-    captureTypes.zipWithIndex.foreach { case ((ref, llvmType), idx) =>
-      val capOp = functionScope.get(ref.name) match
-        case Some(entry) => entry.operandStr
-        case None => s"@${ref.name}" // global fallback
-      val gepReg = siteState.nextRegister
-      val gepLine =
-        s"  %$gepReg = getelementptr $envTypeRef, ptr %$mallocReg, i32 0, i32 ${idx + 1}"
-      val storeLine = s"  store $llvmType $capOp, ptr %$gepReg"
-      siteState = siteState.withRegister(gepReg + 1).emit(gepLine).emit(storeLine)
-    }
+    val siteStateAfterCaptures =
+      captureTypes.zipWithIndex.foldLeft(siteStateAfterDtor) { case (st, ((ref, llvmType), idx)) =>
+        val capOp = functionScope.get(ref.name) match
+          case Some(entry) => entry.operandStr
+          case None => s"@${ref.name}" // global fallback
+        val gepReg = st.nextRegister
+        val gepLine =
+          s"  %$gepReg = getelementptr $envTypeRef, ptr %$mallocReg, i32 0, i32 ${idx + 1}"
+        val storeLine = s"  store $llvmType $capOp, ptr %$gepReg"
+        st.withRegister(gepReg + 1).emit(gepLine).emit(storeLine)
+      }
 
     // Build the fat pointer { ptr @fn, ptr %env }
-    val fp0Reg = siteState.nextRegister
+    val fp0Reg = siteStateAfterCaptures.nextRegister
     val fp1Reg = fp0Reg + 1
     val insertFn =
       emitInsertValue(fp0Reg, "{ ptr, ptr }", "undef", "ptr", s"@$fnName", 0)
     val insertEnv =
       emitInsertValue(fp1Reg, "{ ptr, ptr }", s"%$fp0Reg", "ptr", s"%$mallocReg", 1)
-    siteState = siteState.withRegister(fp1Reg + 1).emit(insertFn).emit(insertEnv)
+    val siteState =
+      siteStateAfterCaptures.withRegister(fp1Reg + 1).emit(insertFn).emit(insertEnv)
 
     // --- Deferred function: load captures from env into scope ---
     val subState = siteState.copy(output = List.empty, nextRegister = 0)
@@ -381,19 +384,21 @@ private def compileCapturingLambda(
       val mmlType = param.typeAsc.flatMap(getMmlTypeName).getOrElse("Unknown")
       (param.name, ScopeEntry(idx, mmlType))
     }.toMap
-    var bodyState = subState.withRegister(envParamIdx + 1)
+    val initialBodyState = subState.withRegister(envParamIdx + 1)
 
     // Load each capture from the env struct (field indices shifted by 1 for __dtor at field 0)
-    val captureScope = captureTypes.zipWithIndex.map { case ((ref, llvmType), idx) =>
-      val gepReg  = bodyState.nextRegister
-      val loadReg = gepReg + 1
-      val gepLine =
-        s"  %$gepReg = getelementptr $envTypeRef, ptr %$envParamIdx, i32 0, i32 ${idx + 1}"
-      val loadLine = s"  %$loadReg = load $llvmType, ptr %$gepReg"
-      bodyState = bodyState.withRegister(loadReg + 1).emit(gepLine).emit(loadLine)
-      val mmlType = ref.typeSpec.flatMap(getMmlTypeName).getOrElse("Unknown")
-      (ref.name, ScopeEntry(loadReg, mmlType))
-    }.toMap
+    val (bodyState, captureScope) =
+      captureTypes.zipWithIndex.foldLeft((initialBodyState, Map.empty[String, ScopeEntry])) {
+        case ((st, scope), ((ref, llvmType), idx)) =>
+          val gepReg  = st.nextRegister
+          val loadReg = gepReg + 1
+          val gepLine =
+            s"  %$gepReg = getelementptr $envTypeRef, ptr %$envParamIdx, i32 0, i32 ${idx + 1}"
+          val loadLine = s"  %$loadReg = load $llvmType, ptr %$gepReg"
+          val newState = st.withRegister(loadReg + 1).emit(gepLine).emit(loadLine)
+          val mmlType  = ref.typeSpec.flatMap(getMmlTypeName).getOrElse("Unknown")
+          (newState, scope + (ref.name -> ScopeEntry(loadReg, mmlType)))
+      }
 
     val allScope = functionScope ++ paramScope ++ captureScope
 
