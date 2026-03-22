@@ -73,31 +73,31 @@
 
 ## Recent Changes
 
+- 2026-03-21: runtime — add FORCE_INLINE to string/IO functions.
+  - `readline`, `print`, `println`, `concat`, `substring`, `free_string`,
+    `string_builder_append`, `string_builder_finalize`, `to_cstr`.
 - 2026-03-21: #188 Phase 2 QA — let-bound lambdas: stable names, TCO, direct self-calls.
   - TypeResolver: resolve param typeAsc in expression-level lambdas (4 cases missed params).
-  - Stable names: `mangleName(param.name)` replaces `allocAnonFnName` for let-bound lambdas.
+  - Stable names: `mangleName(param.name)` replaces `allocAnonFnName`.
   - TailRecursionDetector: traverse let-binding chains, detect self-recursion via binding param.
-  - Codegen: TCO deferred emission for let-bound lambdas, generalized `isSelfRef`/`findTailRecBody`.
-  - `let-lambda-type-ascription.mml` compiles with `@module_loop`, TCO loop, direct calls.
-  - All 318 tests pass, 17/17 memory tests pass, benchmarks compile.
-- 2026-03-21: #188 Phase 2 QA fixes — type ascription, recursive lets, codegen.
-  - General term-level type ascription in parser (`Term.withTypeAsc` on AST).
+  - Codegen: TCO deferred emission, generalized `isSelfRef`/`findTailRecBody`.
+- 2026-03-21: #188 Phase 2 QA — type ascription, recursive lets, codegen fixes.
+  - General term-level type ascription in parser (`Term.withTypeAsc`).
   - Lambda `}: Type` return ascription flows as expected type for body.
-  - RefResolver puts let-binding name in scope during arg resolution.
-  - TypeChecker pre-seeds binding type from lambda typeAsc for recursive lets.
-  - Codegen pre-allocates anon fn name so recursive let-bound lambdas self-call.
-  - `readline-loop-lambda.mml` compiles and runs. All 318 tests pass, benchmarks compile.
-- 2026-03-21: #188 Phase 1 complete — parser support for literal lambdas.
-  - Added `arrowKw` keyword, `lambdaLitP` parser combinator in `expressions.scala`.
-  - Wired into `termP`/`termMemberP`. Updated `types.scala` to use `arrowKw`.
-  - Guarded `->` from being parsed as operator in `identifiers.scala`.
-  - 11 new tests in `LambdaLitTests.scala`. All 318 tests pass, benchmarks compile.
+  - RefResolver: let-binding name in scope during arg resolution.
+  - TypeChecker: pre-seed binding type from lambda typeAsc for recursive lets.
+  - Codegen: pre-allocate anon fn name for recursive let-bound lambda self-calls.
+- 2026-03-21: #188 Phase 2 — lambda codegen for non-capturing lambdas.
+  - TypeChecker: infer lambda param types from call-site expectedType.
+  - `getLlvmType(TypeFn)` → `"ptr"` (opaque function pointer).
+  - `compileLambdaLiteral`: expression-position lambdas to internal LLVM functions.
+  - `compileIndirectCall`: call through function pointers (TypeFn in scope).
+  - `CodeGenState`: `deferredDefinitions` + `nextAnonFnId`.
+  - Runtime: `str_to_int` panics on invalid input, `mml_panic` helper.
+- 2026-03-21: #188 Phase 1 — parser support for literal lambdas.
+  - `arrowKw` keyword, `lambdaLitP` parser combinator in `expressions.scala`.
+  - Wired into `termP`/`termMemberP`. Reuse `arrowKw` in type arrow parsing.
+  - Guard `->` from operator parsing in `identifiers.scala`.
 - 2026-03-21: Fix #243: `isMoveOnRebind` now moves native heap types [COMPLETE].
-  - Changed `isMoveOnRebind` to use `TypeUtils.isHeapType` instead of `isStructWithHeapFields`,
-    so rebinding native heap types (String, Buffer, arrays) transfers ownership.
-  - Updated `"string rebinding still borrows"` test to `"string rebinding moves ownership"` —
-    now asserts `UseAfterMove` when original is used after rebind.
-  - Added `"string rebinding without use-after-move is valid"` and
-    `"string rebinding target gets freed"` tests.
-  - All 307 tests pass, 17/17 memory tests pass (ASan+LSan), benchmarks compile.
+  - `isMoveOnRebind` uses `TypeUtils.isHeapType` instead of `isStructWithHeapFields`.
 
