@@ -510,8 +510,24 @@ object TypeChecker:
     // Step 1: Check arg first to get its type
     val param          = lambda.params.head
     val argBindingName = normalizeBindingName(param.name)
+    // For recursive let bindings: if the arg is a lambda with a return type
+    // ascription, pre-seed the binding's type so the lambda body can
+    // reference the binding (same as fn return type annotations).
+    val argContextWithSelf = app.arg.terms match
+      case List(argLambda: Lambda) if argLambda.typeAsc.isDefined =>
+        val preType = buildFunctionTypeSpec(
+          argLambda.source,
+          argLambda.params,
+          argLambda.typeAsc.get
+        )
+        preType match
+          case Some(fnType) =>
+            val preParam = param.copy(typeSpec = Some(fnType))
+            paramContext + (param.name -> preParam)
+          case None => paramContext
+      case _ => paramContext
     val checkedArg =
-      checkExprWithContext(app.arg, module, paramContext, param.typeAsc, argBindingName)
+      checkExprWithContext(app.arg, module, argContextWithSelf, param.typeAsc, argBindingName)
     val argType = checkedArg.value.typeSpec
 
     // Step 2: Assign inferred type to param (use typeAsc if present, else inferred)
@@ -1009,8 +1025,9 @@ object TypeChecker:
     }
     // Build param context from lambda params (merged with outer context)
     val lambdaParamContext = paramContext ++ paramsWithSpecs.map(p => p.name -> p).toMap
+    // Use lambda's return type ascription (}: Type) as expected type for body
     val checkedBody =
-      checkExprWithContext(lambda.body, module, lambdaParamContext, None, bindingName)
+      checkExprWithContext(lambda.body, module, lambdaParamContext, lambda.typeAsc, bindingName)
     val bodyType = checkedBody.value.typeSpec
     val bodyErrors =
       if bodyType.isEmpty && checkedBody.errors.isEmpty then
