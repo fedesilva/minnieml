@@ -1,0 +1,23 @@
+// Closure capture memory test — env struct must be freed on scope exit.
+// Each call to makeAdder allocates a closure env via malloc.
+// Without proper free, this leaks 8 bytes per call.
+fn apply(f: Int -> Int, x: Int): Int = f x;
+
+fn makeAdder(a: Int): Int -> Int =
+  { x: Int -> x + a }
+;
+
+fn loop(n: Int, acc: Int): Int =
+  if n > 0 then
+    let adder = makeAdder n;
+    let r = apply adder acc;
+    loop (n - 1) r
+  else
+    acc
+  end
+;
+
+pub fn main(): Unit =
+  let result = loop 100000 0;
+  println (int_to_str result)
+;
