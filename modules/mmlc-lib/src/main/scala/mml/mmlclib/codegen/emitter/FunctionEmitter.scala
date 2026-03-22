@@ -361,19 +361,26 @@ private[emitter] def compileTailRecursiveLambda(
   val filteredParamsWithTypes = nonVoidIndices.map(i => (lambda.params(i), paramTypes(i)))
   val filteredParams          = filteredParamsWithTypes.map(_._1)
   val filteredParamTypes      = filteredParamsWithTypes.map(_._2)
-  val paramDecls              = formatParamDecls(filteredParamsWithTypes, state.resolvables)
+  val userParamDecls          = formatParamDecls(filteredParamsWithTypes, state.resolvables)
+  // All lambda functions get a trailing ptr %env parameter (closure env)
+  val envParamIdx = filteredParamsWithTypes.size
+  val allParamDecls =
+    if userParamDecls.isEmpty then s"ptr %$envParamIdx"
+    else s"$userParamDecls, ptr %$envParamIdx"
 
-  val attrGroup    = if inlineHint then "#1" else "#0"
-  val functionDecl = s"define $linkage$returnType @$emittedName($paramDecls) $attrGroup {"
-  val loopHeader   = "loop.header"
+  val attrGroup = if inlineHint then "#1" else "#0"
+  val functionDecl =
+    s"define $linkage$returnType @$emittedName($allParamDecls) $attrGroup {"
+  val loopHeader = "loop.header"
 
   val baseState       = state.emit(functionDecl).emit("entry:")
   val stateAfterEntry = baseState.emit(s"  br label %$loopHeader")
   val headerState     = stateAfterEntry.emit(s"$loopHeader:")
 
   val paramCount = filteredParams.size
-  val phiStart   = paramCount
-  val phiRegs    = filteredParams.indices.map(i => phiStart + i).toList
+  // +1 to skip the env param register at the end
+  val phiStart = paramCount + 1
+  val phiRegs  = filteredParams.indices.map(i => phiStart + i).toList
 
   // Emit placeholder phi lines — replaced after collecting all back edges
   val phiPlaceholders = phiRegs.zip(filteredParamTypes).map { case (phiReg, llvmType) =>
