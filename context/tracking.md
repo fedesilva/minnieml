@@ -30,8 +30,8 @@
   - [x] 3.1 — CaptureAnalyzer semantic phase
   - [x] 3.2 — Fat pointer calling convention (`{ ptr fn, ptr env }`)
   - [x] 3.3 — Env struct codegen (value-type captures)
-  - [ ] 3.4 — Ownership integration (env as owned value)
-  - [ ] 3.5 — Heap-type captures (String, structs) + clone/free
+  - [ ] 3.4 — Ownership integration (env as owned value) — spec: `context/specs/lambda-step3-ownership.md`
+  - [ ] 3.5 — Heap-type captures (String, structs) + clone/free — spec: `context/specs/lambda-step3-ownership.md`
 
 
 ### #244 Bidirectional type inference for lambda parameters

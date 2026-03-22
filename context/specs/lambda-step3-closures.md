@@ -111,43 +111,9 @@ tracks anonymous function IDs).
 ```
 These are added to `functionScope` so the lambda body can reference them.
 
-### Step 3.4: Ownership for closures — env as owned value
+### Steps 3.4–3.5: Ownership and heap captures
 
-**Goal**: OwnershipAnalyzer recognizes closure-creating lambdas as allocating expressions.
-The binding that receives a closure owns the env. When the closure goes out of scope, free the env.
-
-**For value-type-only captures**: env struct has no heap fields, so `free(env_ptr)` suffices.
-
-**Changes to `OwnershipAnalyzer.scala`**:
-- `analyzeLambda`: when captures are non-empty, the lambda expression is "allocating"
-- The let-binding receiving the closure should be `Owned`
-- `wrapWithFrees`: free the env pointer when closure goes out of scope
-- Need a way to associate a closure binding with its env free mechanism — simplest: mark
-  `TypeFn` values with captures as heap types so existing `isHeapType` logic triggers frees
-
-**Key design point**: `isHeapType` should return `true` for the env and for the lambda itself
-if it captures heap values. This means:
-- A closure that captures anything is a heap value (it owns a malloc'd env)
-- A non-capturing lambda is NOT a heap value (no allocation)
-
-### Step 3.5: Heap-type captures (String, structs)
-
-**Goal**: Extend capture codegen to handle heap-typed captured values.
-
-**At closure creation** (codegen):
-- Clone each heap-typed capture before storing into env
-- Emit `call %struct.String @__clone_String(%struct.String %val)` etc.
-
-**At env deallocation**:
-- Generate `__free_closure_env_N` function that frees each heap capture, then frees the env
-- Or: inline the free sequence at the point where the closure goes out of scope
-
-**OwnershipAnalyzer changes**:
-- When a lambda captures a heap binding, clone it (outer scope retains its copy)
-- `isHeapType` returns true for closure with heap captures
-- The generated free for the env must chain field-level frees (like `__free_StructName`)
-
-**Tests**: Sample program capturing `String`, verify with ASan and leaks.
+Detailed spec: `context/specs/lambda-step3-ownership.md`
 
 ## Critical Files
 
