@@ -8,6 +8,7 @@ import mml.mmlclib.codegen.emitter.{
   CompileResult,
   ScopeEntry,
   emitCall,
+  emitIndirectCall,
   getLlvmType,
   getMmlTypeName
 }
@@ -461,3 +462,66 @@ private def buildAliasTags(
     val noaliasTagOpt =
       if sortedNoalias.isEmpty then None else Some(s"!{${sortedNoalias.mkString(", ")}}")
     (stateWithScopes, Some(aliasScopeTag), noaliasTagOpt)
+
+/** Compiles an indirect call through a function pointer (e.g. calling a lambda parameter). */
+def compileIndirectCall(
+  fnRef:         Ref,
+  allArgs:       List[Expr],
+  app:           App,
+  state:         CodeGenState,
+  functionScope: Map[String, ScopeEntry],
+  compileExpr:   ExprCompiler
+): Either[CodeGenError, CompileResult] =
+  compileArgs(allArgs, state, functionScope, compileExpr).flatMap { case (compiledArgs, argState) =>
+    val fnReturnTypeResult = app.typeSpec match
+      case Some(typeSpec) => getLlvmType(typeSpec, argState)
+      case None =>
+        Left(
+          CodeGenError(
+            s"Missing return type for indirect call '${fnRef.name}'",
+            Some(app)
+          )
+        )
+
+    fnReturnTypeResult.flatMap { fnReturnType =>
+      // Look up the function pointer from scope
+      val fnPtrOp = functionScope.get(fnRef.name) match
+        case Some(entry) => Right(entry.operandStr)
+        case None =>
+          Left(
+            CodeGenError(
+              s"Function pointer '${fnRef.name}' not found in scope",
+              Some(fnRef)
+            )
+          )
+
+      fnPtrOp.flatMap { ptr =>
+        val args = compiledArgs.map(arg => (arg.llvmType, arg.op))
+
+        if fnReturnType == "void" then
+          val callLine = emitIndirectCall(None, None, ptr, args)
+          Right(CompileResult(0, argState.emit(callLine), false, "Unit"))
+        else
+          val resultReg = argState.nextRegister
+          val callLine =
+            emitIndirectCall(Some(resultReg), Some(fnReturnType), ptr, args)
+          app.typeSpec.flatMap(getMmlTypeName) match
+            case Some(typeName) =>
+              Right(
+                CompileResult(
+                  resultReg,
+                  argState.withRegister(resultReg + 1).emit(callLine),
+                  false,
+                  typeName
+                )
+              )
+            case None =>
+              Left(
+                CodeGenError(
+                  s"Could not determine MML type for indirect call result",
+                  Some(app)
+                )
+              )
+      }
+    }
+  }

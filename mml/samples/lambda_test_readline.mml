@@ -1,0 +1,10 @@
+fn apply(f: Int -> Int, x: Int): Int = f x;
+
+pub fn main() =
+  // Get dynamic input to stop the compiler from knowing the answer at compile-time
+  let s = readline(); 
+  let input_val = str_to_int s;
+  
+  let result = apply { x -> x + 1 } input_val;
+  println (int_to_str result)
+;
