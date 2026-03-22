@@ -51,7 +51,7 @@
     - [ ] 3.4-QA.6 [P1] Pass real closure env on recursive capturing lambdas (`Applications.scala`)
     - [ ] 3.4-QA.7 [P1] Keep capture support in tail-recursive lambda path (`ExpressionCompiler.scala`)
     - [ ] 3.4-QA.8 [P1] Stop freeing non-capturing function values as closures (`OwnershipAnalyzer.scala`)
-    - [ ] 3.4-QA.9 [P2] Mutable var in compileCapturingLambda — replace with foldLeft (`ExpressionCompiler.scala`)
+    - [x] 3.4-QA.9 [P2] Mutable var in compileCapturingLambda — replace with foldLeft (`ExpressionCompiler.scala`)
     - [ ] 3.4-QA.10 [P2] mergeSubState fragile manual field sync (`ExpressionCompiler.scala`)
     - [ ] 3.4-QA.11 [P2] Two codepaths for closure free could diverge (`Applications.scala`)
     - [ ] 3.4-QA.12 [P2] No guard against capturing heap types before phase 3.5 (`ClosureMemoryFnGenerator.scala`)
@@ -95,6 +95,7 @@
 
 ## Recent Changes
 
+- 2026-03-22: #188 3.4-QA.9 — Replace mutable vars in compileCapturingLambda with foldLeft.
 - 2026-03-22: Update language reference and memory model docs for lambdas/closures.
 - 2026-03-22: #188 Phase 3.4 — closure ownership integration
   - ClosureMemoryFnGenerator: synthesizes env TypeStruct (with embedded dtor ptr at field 0) + per-env free functions + universal `__free_closure`.
