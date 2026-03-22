@@ -121,8 +121,11 @@ object RefResolver:
         )
 
       case app: App =>
+        val argParams = app.fn match
+          case lambda: Lambda => lambda.params ++ extraParams
+          case _ => extraParams
         val newFn  = rewriteAppFnWithInvalidExpressions(app.fn, member, module, extraParams)
-        val newArg = rewriteExprWithInvalidExpressions(app.arg, member, module, extraParams)
+        val newArg = rewriteExprWithInvalidExpressions(app.arg, member, module, argParams)
         app.copy(fn = newFn, arg = newArg)
 
       case lambda: Lambda =>
@@ -154,8 +157,11 @@ object RefResolver:
             if candidates.length == 1 then ref.copy(candidateIds = ids, resolvedId = ids.headOption)
             else ref.copy(candidateIds                           = ids)
       case app: App =>
+        val argParams = app.fn match
+          case lambda: Lambda => lambda.params ++ extraParams
+          case _ => extraParams
         val newFn  = rewriteAppFnWithInvalidExpressions(app.fn, member, module, extraParams)
-        val newArg = rewriteExprWithInvalidExpressions(app.arg, member, module, extraParams)
+        val newArg = rewriteExprWithInvalidExpressions(app.arg, member, module, argParams)
         app.copy(fn = newFn, arg = newArg)
       case lambda: Lambda =>
         val newParams = lambda.params ++ extraParams
@@ -289,9 +295,15 @@ object RefResolver:
         yield cond.copy(cond = newCond, ifTrue = newIfTrue, ifFalse = newIfFalse)
 
       case app: App =>
+        // When fn is a Lambda (let-desugaring), the binding name is in scope
+        // for the arg — enables recursive let bindings like
+        // `let loop = { ... loop () ... };`
+        val argParams = app.fn match
+          case lambda: Lambda => lambda.params ++ extraParams
+          case _ => extraParams
         for
           newFn <- resolveAppFn(app.fn, member, module, extraParams)
-          newArg <- resolveExpr(app.arg, member, module, extraParams)
+          newArg <- resolveExpr(app.arg, member, module, argParams)
         yield app.copy(fn = newFn, arg = newArg)
 
       case lambda: Lambda =>
