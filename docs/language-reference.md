@@ -82,6 +82,98 @@ inline fn dot(u: Vec3, v: Vec3): Float =
 ;
 ```
 
+### Lambda expressions
+
+Lambda expressions create anonymous function values. The basic form is
+`{ params -> body }`:
+
+```mml
+{ x: Int -> x + 1 }
+```
+
+**Parameter types** can be annotated or inferred from context:
+
+```mml
+fn apply(f: Int -> Int, x: Int): Int = f x;
+
+let result = apply { x -> x + 1 } 41;   // x: Int inferred from f's type
+```
+
+**Multiple parameters** are separated by commas:
+
+```mml
+{ a: Int, b: Int -> a + b }
+```
+
+**Nullary lambdas** (thunks) omit the arrow:
+
+```mml
+{ println "hello" }
+```
+
+A nullary lambda has type `Unit -> R` and is called by applying it to `()`.
+
+**Body expressions** follow the same rules as function bodies — `let` bindings
+followed by a final expression:
+
+```mml
+let f = { x: Int ->
+  let y = x + 1;
+  y * 2
+};
+```
+
+**Return type ascription** can be written after the closing brace:
+
+```mml
+let loop = {
+  println "tick";
+  loop()
+}: Unit;
+```
+
+**Let-bound lambdas** can be recursive. The binding name is in scope inside
+the lambda body:
+
+```mml
+type ForeverFn = Unit -> Unit;
+
+let loop: ForeverFn = {
+  println "Type a number:";
+  let n = str_to_int (readline());
+  println ("Number is: " ++ (int_to_str n));
+  loop()
+};
+
+loop()
+```
+
+The `inline` hint can be applied to let-bound lambdas the same way as to
+named functions.
+
+**Closures**: Lambdas can reference bindings from enclosing scopes. The
+referenced values are captured at the point the lambda is created:
+
+```mml
+fn makeAdder(a: Int): Int -> Int =
+  { x: Int -> x + a }
+;
+```
+
+Here `a` is captured from the enclosing function's parameter. See
+[Memory management](#7-memory-management) for how captures interact with
+ownership.
+
+**Nested lambdas**: Inner lambdas can capture bindings from any enclosing
+scope:
+
+```mml
+let outer = { x: Int ->
+  let y = x + 1;
+  apply { z: Int -> x + y + z } 100
+};
+```
+
 ### Operator declarations
 
 Operator names can be symbolic (from `=!#$%^&*+<>?/\|~-`, e.g. `+`, `==`, `|>`)
@@ -428,6 +520,22 @@ fn print(s: String): Unit = @native;
 
 Functions are curried — each arrow represents a function taking one argument.
 
+Lambda expressions produce values with function types. A lambda can be used
+anywhere a function type is expected:
+
+```mml
+fn apply(f: Int -> Int, x: Int): Int = f x;
+
+let inc = { x: Int -> x + 1 };     // inc: Int -> Int
+let r = apply inc 10;              // r = 11
+let r2 = apply { x -> x * 2 } 5;  // r2 = 10
+```
+
+When a lambda appears in a context where the expected type is known (function
+parameter, let binding with type annotation, return position), the compiler
+infers parameter types from that context. Explicit annotations are needed
+only when the context is insufficient.
+
 ### Type compatibility
 
 Two types are compatible if:
@@ -550,7 +658,9 @@ a * b + c  // desugars to: + (* a b) c
 - Function parameters are visible within the function body.
 - Module-level declarations are visible to all members in the module, regardless of
   declaration order (no forward-declaration needed).
-- Nested functions and closures are not yet supported.
+- Lambda bodies can reference bindings from enclosing scopes (closures). Captured
+  bindings are resolved at the point the lambda is created, not when it is called.
+- Let-bound lambdas can reference their own binding name for recursion.
 
 ### Visibility (not enforced yet)
 
@@ -725,6 +835,27 @@ fn transfer_example(): Unit =
   // println s;          // error: use after move
 ;
 ```
+
+### Closure ownership
+
+A **non-capturing lambda** (no references to enclosing bindings) is a plain
+function pointer — a value type with no allocation and no ownership cost.
+
+A **capturing lambda** (closure) allocates an environment struct on the heap
+to hold the captured values. The closure is a heap type: it is freed when it
+goes out of scope, and it can be moved or returned like any other owned value.
+
+Captured value-type bindings (integers, floats, booleans) are copied into the
+environment. The original binding remains usable.
+
+```mml
+fn makeAdder(a: Int): Int -> Int =
+  { x: Int -> x + a }    // a (Int) is copied into the closure env
+;
+```
+
+See the [memory model](memory-model.md) for full details on ownership states
+and destruction rules.
 
 ### Return value ownership
 
@@ -965,9 +1096,10 @@ The `StringArray` family uses `ar_str_*` and the `FloatArray` family uses
 
 ## 10. Current limitations
 
-**No nested functions**: Functions cannot be defined inside other functions. MML does
-not support closures yet. To access values from an outer scope, pass them as explicit
-parameters and lift the function to the top level.
+**No heap-type captures**: Closures can capture value types (integers, floats,
+booleans) but not heap types (String, structs with heap fields) yet. To work
+around this, pass heap values as explicit function parameters instead of
+capturing them.
 
 **No generics**: The type checker does not support parametric polymorphism yet.
 Monomorphic workarounds (e.g., `IntArray`, `StringArray`, `FloatArray`) are used
@@ -996,6 +1128,7 @@ rather than from a language design decision.
 - `else`
 - `end`
 - `inline`
+- `->`
 - `@native`
 - `???`
 - `_`
