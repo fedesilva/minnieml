@@ -30,6 +30,15 @@
   - [x] 3.2 — Fat pointer calling convention (`{ ptr fn, ptr env }`)
   - [x] 3.3 — Env struct codegen (value-type captures)
   - [ ] 3.4 — Ownership integration (env as owned value) — spec: `context/specs/lambda-step3-ownership.md`
+    - [x] 3.4.0 — Stdlib: RawPtr type + mml_free_raw C function
+    - [x] 3.4.1 — ClosureMemoryGenerator phase (env TypeStruct + free fn)
+    - [x] 3.4.2 — OwnershipAnalyzer: termAllocates, isOwnedType, mkFreeCall for TypeFn
+    - [x] 3.4.3 — Codegen: extractEnvPtr from fat pointer for free calls
+    - [x] 3.4.4 — TypeChecker: propagate typeSpec to Lambda.captures (pre-existing bug fix)
+    - [x] 3.4.5 — captures.mml: compiles, runs, 0 leaks
+    - [x] 3.4.6 — Fix: split lambdaAllocates from termAllocates (only let-bound, not arg-position)
+    - [x] 3.4.7 — Universal __free_closure with embedded dtor pointer in env struct field 0
+    - [x] 3.4.8 — All tests pass: 333 unit, 18/18 mem (including closure-capture 0 leaks)
   - [ ] 3.5 — Heap-type captures (String, structs) + clone/free — spec: `context/specs/lambda-step3-ownership.md`
 
 ### Update language ref and memory model docs.
@@ -58,6 +67,13 @@
 
 ## Recent Changes
 
+- 2026-03-22: #188 Phase 3.4 — closure ownership integration
+  - ClosureMemoryFnGenerator: synthesizes env TypeStruct (with embedded dtor ptr at field 0) + per-env free functions + universal `__free_closure`.
+  - OwnershipAnalyzer: capturing lambdas tracked as owned values, free calls inserted at scope exit.
+  - Codegen: env struct includes dtor pointer; universal free dispatches via dtor; env ptr extracted from fat pointer at call site.
+  - Stdlib: `RawPtr` type, `mml_free_raw` function. C runtime: `mml_free_raw`.
+  - TypeChecker fix: propagate typeSpec to Lambda.captures (pre-existing bug).
+  - All mem tests pass, including closure-capture (0 leaks).
 - 2026-03-22: #244 bottom-up lambda param inference
   - TypeChecker: infer still-untyped lambda params from monomorphic body usage sites.
   - Supports simple let-alias propagation and capture-assisted anchors.
