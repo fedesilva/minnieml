@@ -76,6 +76,8 @@ object Diagnostics:
       case TypeError.ConditionalBranchTypeUnknown(cond, _) => cond.spanOpt.toList
       case TypeError.UnresolvableType(node, _, _) => nodeSpan(node).toList
       case TypeError.IncompatibleTypes(node, _, _, _, _) => astNodeSpan(node).toList
+      case TypeError.ConflictingLambdaParamInference(param, _, _, _) => param.spanOpt.toList
+      case TypeError.UninferrableLambdaParam(param, _) => param.spanOpt.toList
       case TypeError.UntypedHoleInBinding(_, source, _) => source.spanOpt.toList
 
   private def declSpan(decl: Decl): Option[SrcSpan] =
@@ -168,5 +170,11 @@ object Diagnostics:
       case TypeError.IncompatibleTypes(_, t1, t2, ctx, _) =>
         s"Incompatible types in $ctx: ${AstLookup.formatType(Some(t1))} " +
           s"vs ${AstLookup.formatType(Some(t2))}"
+      case TypeError.ConflictingLambdaParamInference(param, firstType, nextType, _) =>
+        s"Conflicting types inferred for lambda parameter '${param.name}': " +
+          s"${AstLookup.formatType(Some(firstType))} vs " +
+          s"${AstLookup.formatType(Some(nextType))}"
+      case TypeError.UninferrableLambdaParam(param, _) =>
+        s"Cannot infer type for lambda parameter '${param.name}'"
       case TypeError.UntypedHoleInBinding(name, _, _) =>
         s"Typed hole in binding '$name' requires type annotation"

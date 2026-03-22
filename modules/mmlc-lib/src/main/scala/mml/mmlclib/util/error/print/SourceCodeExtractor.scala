@@ -253,6 +253,18 @@ object SourceCodeExtractor:
               .getOrElse("")
           case _ => ""
 
+      case TypeError.ConflictingLambdaParamInference(param, _, _, _) =>
+        spanOf(param)
+          .flatMap(extractSnippet(sourceInfo, _))
+          .map(s => s"\n$s")
+          .getOrElse("")
+
+      case TypeError.UninferrableLambdaParam(param, _) =>
+        spanOf(param)
+          .flatMap(extractSnippet(sourceInfo, _))
+          .map(s => s"\n$s")
+          .getOrElse("")
+
       case TypeError.UntypedHoleInBinding(_, source, _) =>
         source.spanOpt
           .flatMap(extractSnippet(sourceInfo, _))
