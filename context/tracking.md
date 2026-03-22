@@ -27,9 +27,9 @@
 - Phase 3 — Closures: capturing lambdas + ownership
   - Spec: `context/specs/lambda-step3-closures.md`
   - [x] 3.0 — Update tracking with Phase 3 subtasks
-  - [ ] 3.1 — CaptureAnalyzer semantic phase
-  - [ ] 3.2 — Fat pointer calling convention (`{ ptr fn, ptr env }`)
-  - [ ] 3.3 — Env struct codegen (value-type captures)
+  - [x] 3.1 — CaptureAnalyzer semantic phase
+  - [x] 3.2 — Fat pointer calling convention (`{ ptr fn, ptr env }`)
+  - [x] 3.3 — Env struct codegen (value-type captures)
   - [ ] 3.4 — Ownership integration (env as owned value)
   - [ ] 3.5 — Heap-type captures (String, structs) + clone/free
 
