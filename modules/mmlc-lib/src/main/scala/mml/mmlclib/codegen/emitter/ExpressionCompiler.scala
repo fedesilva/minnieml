@@ -222,7 +222,7 @@ private def compileTailRecLambdaLiteral(
       state        = mergedState,
       isLiteral    = true,
       typeName     = "Function",
-      literalValue = Some(s"@$fnName")
+      literalValue = Some(s"{ ptr @$fnName, ptr null }")
     )
   }
 
@@ -236,7 +236,12 @@ private def compileRegularLambdaLiteral(
   functionScope: Map[String, ScopeEntry]
 ): Either[CodeGenError, CompileResult] =
   val filteredParamsWithTypes = filterVoidParams(lambda.params, paramTypes)
-  val paramDecls              = formatParamDecls(filteredParamsWithTypes, state.resolvables)
+  val userParamDecls          = formatParamDecls(filteredParamsWithTypes, state.resolvables)
+  // All lambda functions get a trailing ptr %env parameter (closure env)
+  val envParamIdx = filteredParamsWithTypes.size
+  val allParamDecls =
+    if userParamDecls.isEmpty then s"ptr %$envParamIdx"
+    else s"$userParamDecls, ptr %$envParamIdx"
 
   val subState = state.copy(output = List.empty, nextRegister = 0)
 
@@ -244,7 +249,8 @@ private def compileRegularLambdaLiteral(
     val mmlType = param.typeAsc.flatMap(getMmlTypeName).getOrElse("Unknown")
     (param.name, ScopeEntry(idx, mmlType))
   }.toMap
-  val bodyState = subState.withRegister(filteredParamsWithTypes.size)
+  // +1 for the env param at the end
+  val bodyState = subState.withRegister(envParamIdx + 1)
 
   for
     bodyRes <- compileExpr(lambda.body, bodyState, functionScope ++ paramScope)
@@ -255,7 +261,7 @@ private def compileRegularLambdaLiteral(
 
     finalSubState = bodyRes.state.emit(retLine).emit("}")
 
-    header = s"define internal $returnType @$fnName($paramDecls) #0 {"
+    header = s"define internal $returnType @$fnName($allParamDecls) #0 {"
     fnBody = (header :: "entry:" :: finalSubState.output.reverse).mkString("\n")
 
     mergedState = mergeSubState(state, finalSubState).addDeferredDefinition(fnBody)
@@ -264,7 +270,7 @@ private def compileRegularLambdaLiteral(
     state        = mergedState,
     isLiteral    = true,
     typeName     = "Function",
-    literalValue = Some(s"@$fnName")
+    literalValue = Some(s"{ ptr @$fnName, ptr null }")
   )
 
 /** Merge metadata from a sub-state back into the parent state. NOTE: must be updated when new
