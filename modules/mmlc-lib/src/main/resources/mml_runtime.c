@@ -14,10 +14,17 @@
 #define FORCE_INLINE
 #endif
 
+static void mml_panic(const char *msg)
+{
+    write(STDERR_FILENO, "panic: ", 7);
+    write(STDERR_FILENO, msg, strlen(msg));
+    write(STDERR_FILENO, "\n", 1);
+    abort();
+}
+
 static void mml_sys_oom_abort(void)
 {
-    write(STDERR_FILENO, "out of memory\n", 14);
-    abort();
+    mml_panic("out of memory");
 }
 
 // --- String Struct ---
@@ -525,7 +532,7 @@ String float_to_str(float value)
 int64_t str_to_int(String s)
 {
     if (!s.data || s.length == 0)
-        return 0;
+        mml_panic("str_to_int: empty string");
 
     size_t i = 0;
     int sign = 1;
@@ -536,14 +543,14 @@ int64_t str_to_int(String s)
     }
 
     if (i >= s.length)
-        return 0;
+        mml_panic("str_to_int: no digits after sign");
 
     int64_t value = 0;
     for (; i < s.length; i++)
     {
         char c = s.data[i];
         if (c < '0' || c > '9')
-            return 0;
+            mml_panic("str_to_int: non-digit character");
         value = (value * 10) + (c - '0');
     }
 

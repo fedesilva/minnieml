@@ -1,0 +1,6 @@
+fn apply(f: Int -> Int, x: Int): Int = f x;
+
+pub fn main(): Int =
+  let result = apply { x -> x + 1 } 41;
+  result
+;
