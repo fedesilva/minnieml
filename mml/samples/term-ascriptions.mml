@@ -1,0 +1,7 @@
+
+
+let a = "String" :String;
+let b = 1: Int;
+
+// This should fail!
+let c = 1: String;
