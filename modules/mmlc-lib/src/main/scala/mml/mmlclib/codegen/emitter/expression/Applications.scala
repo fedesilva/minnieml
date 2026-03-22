@@ -9,6 +9,7 @@ import mml.mmlclib.codegen.emitter.{
   ScopeEntry,
   compileLambdaLiteral,
   emitCall,
+  emitExtractValue,
   emitIndirectCall,
   getLlvmType,
   getMmlTypeName
@@ -47,7 +48,12 @@ def compileLambdaApp(
     val (preAlloc, argScope) = arg.terms match
       case List(_: Lambda) =>
         val fnName = state.mangleName(param.name)
-        val entry  = ScopeEntry(0, "Function", isLiteral = true, literalValue = Some(s"@$fnName"))
+        val entry = ScopeEntry(
+          0,
+          "Function",
+          isLiteral    = true,
+          literalValue = Some(s"{ ptr @$fnName, ptr null }")
+        )
         (Some((state, fnName)), functionScope + (param.name -> entry))
       case _ =>
         (None, functionScope)
@@ -502,8 +508,8 @@ def compileIndirectCall(
         )
 
     fnReturnTypeResult.flatMap { fnReturnType =>
-      // Look up the function pointer from scope
-      val fnPtrOp = functionScope.get(fnRef.name) match
+      // Look up the fat pointer { fn_ptr, env_ptr } from scope
+      val closureOp = functionScope.get(fnRef.name) match
         case Some(entry) => Right(entry.operandStr)
         case None =>
           Left(
@@ -513,22 +519,45 @@ def compileIndirectCall(
             )
           )
 
-      fnPtrOp.flatMap { ptr =>
-        val args = compiledArgs.map(arg => (arg.llvmType, arg.op))
+      closureOp.flatMap { closure =>
+        // Extract fn pointer and env from the fat pointer
+        val fnReg  = argState.nextRegister
+        val envReg = fnReg + 1
+        val extractFn =
+          emitExtractValue(fnReg, "{ ptr, ptr }", closure, 0)
+        val extractEnv =
+          emitExtractValue(envReg, "{ ptr, ptr }", closure, 1)
+        val stateAfterExtract = argState
+          .withRegister(envReg + 1)
+          .emit(extractFn)
+          .emit(extractEnv)
+
+        // Build args with env as the last parameter
+        val userArgs = compiledArgs.map(arg => (arg.llvmType, arg.op))
+        val allArgs  = userArgs :+ ("ptr", s"%$envReg")
+        val fnPtr    = s"%$fnReg"
 
         if fnReturnType == "void" then
-          val callLine = emitIndirectCall(None, None, ptr, args)
-          Right(CompileResult(0, argState.emit(callLine), false, "Unit"))
+          val callLine = emitIndirectCall(None, None, fnPtr, allArgs)
+          Right(
+            CompileResult(0, stateAfterExtract.emit(callLine), false, "Unit")
+          )
         else
-          val resultReg = argState.nextRegister
-          val callLine =
-            emitIndirectCall(Some(resultReg), Some(fnReturnType), ptr, args)
+          val resultReg = stateAfterExtract.nextRegister
+          val callLine = emitIndirectCall(
+            Some(resultReg),
+            Some(fnReturnType),
+            fnPtr,
+            allArgs
+          )
           app.typeSpec.flatMap(getMmlTypeName) match
             case Some(typeName) =>
               Right(
                 CompileResult(
                   resultReg,
-                  argState.withRegister(resultReg + 1).emit(callLine),
+                  stateAfterExtract
+                    .withRegister(resultReg + 1)
+                    .emit(callLine),
                   false,
                   typeName
                 )
