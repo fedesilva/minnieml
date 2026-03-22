@@ -69,7 +69,7 @@
     - [ ] 3.4-QA.24 [P3] Inconsistent Cats syntax in new codegen code — use .asRight/.asLeft/.some/.none (`ExpressionCompiler.scala`, `Applications.scala`)
   - [ ] 3.5 — Heap-type captures (String, structs) + clone/free — spec: `context/specs/lambda-step3-ownership.md`
 
-### Update language ref and memory model docs.
+### Update language ref and memory model docs. [COMPLETE]
 
 * lambdas are in, need to update.
 * updates to the type checker (type annotations are not mandatory for lambdas but they might still be needed)
@@ -95,6 +95,7 @@
 
 ## Recent Changes
 
+- 2026-03-22: Update language reference and memory model docs for lambdas/closures.
 - 2026-03-22: #188 Phase 3.4 — closure ownership integration
   - ClosureMemoryFnGenerator: synthesizes env TypeStruct (with embedded dtor ptr at field 0) + per-env free functions + universal `__free_closure`.
   - OwnershipAnalyzer: capturing lambdas tracked as owned values, free calls inserted at scope exit.

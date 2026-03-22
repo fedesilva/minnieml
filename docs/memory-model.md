@@ -250,6 +250,55 @@ Native types implement their own free/clone in the runtime.
 
 ---
 
+## Closures
+
+A **non-capturing lambda** is a plain function pointer. It is a value type and requires
+no ownership tracking or deallocation.
+
+A **capturing lambda** (closure) allocates an environment struct on the heap to store
+captured values. The closure value itself — a fat pointer containing the function pointer
+and a pointer to the environment — is a heap type.
+
+### Capture semantics
+
+Captured bindings are copied into the environment struct at the point the lambda is
+created. For value types (Int, Float, Bool, etc.) this is a plain copy; the original
+binding remains usable.
+
+```mml
+fn makeAdder(a: Int): Int -> Int =
+  { x: Int -> x + a }   // a is copied into the closure env
+;
+```
+
+### Closure ownership
+
+A capturing lambda is `Owned` by the binding it is assigned to. Like any owned heap
+value, it is freed when it goes out of scope, can be passed to consuming parameters,
+and can be returned to transfer ownership to the caller.
+
+```mml
+fn main() =
+  let add5 = makeAdder 5;    // add5 owns the closure
+  let r = apply add5 37;     // add5 is borrowed by apply
+  println (int_to_str r)
+;                             // add5 is freed here
+```
+
+### Environment destruction
+
+Each closure environment has a destructor embedded in the environment struct itself.
+When the closure is freed, the runtime dispatches to the correct destructor
+automatically. For closures that capture only value types, the destructor simply
+releases the environment allocation.
+
+### Current limitation
+
+Closures cannot yet capture heap-typed values (String, structs with heap fields). Pass
+heap values as explicit function parameters instead of capturing them.
+
+---
+
 ## Compile-time errors
 
 | Error | Cause |
