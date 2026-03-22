@@ -1,0 +1,6 @@
+
+
+let lambda: Unit -> Unit = ???;
+
+
+

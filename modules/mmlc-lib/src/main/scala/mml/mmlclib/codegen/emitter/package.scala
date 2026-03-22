@@ -207,6 +207,21 @@ def resolveTypeStruct(typeSpec: Type, resolvables: ResolvablesIndex): Option[Typ
         case _ => None
     case _ => None
 
+/** Resolve a type to TypeFn, following type aliases */
+def resolveToTypeFn(typeSpec: Type, resolvables: ResolvablesIndex): Option[TypeFn] =
+  typeSpec match
+    case tf: TypeFn => Some(tf)
+    case TypeGroup(_, types) if types.size == 1 =>
+      resolveToTypeFn(types.head, resolvables)
+    case TypeRef(_, _, resolvedId, _) =>
+      resolvedId.flatMap(resolvables.lookupType) match
+        case Some(ta: TypeAlias) =>
+          ta.typeSpec
+            .flatMap(resolveToTypeFn(_, resolvables))
+            .orElse(resolveToTypeFn(ta.typeRef, resolvables))
+        case _ => None
+    case _ => None
+
 /** Helper for generating syntactically correct LLVM IR global variable declaration */
 def emitGlobalVariable(name: String, typ: String, value: String): String =
   s"@$name = global $typ $value"
