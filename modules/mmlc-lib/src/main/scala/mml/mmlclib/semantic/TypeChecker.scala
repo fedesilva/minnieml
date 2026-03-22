@@ -513,6 +513,8 @@ object TypeChecker:
     // For recursive let bindings: if the arg is a lambda with a return type
     // ascription, pre-seed the binding's type so the lambda body can
     // reference the binding (same as fn return type annotations).
+    // Also handle when the let binding itself has a type ascription
+    // (e.g., `let loop: ForeverFn = { ... loop() ... }`).
     val argContextWithSelf = app.arg.terms match
       case List(argLambda: Lambda) if argLambda.typeAsc.isDefined =>
         val preType = buildFunctionTypeSpec(
@@ -525,6 +527,9 @@ object TypeChecker:
             val preParam = param.copy(typeSpec = Some(fnType))
             paramContext + (param.name -> preParam)
           case None => paramContext
+      case List(_: Lambda) if param.typeAsc.isDefined =>
+        val preParam = param.copy(typeSpec = param.typeAsc)
+        paramContext + (param.name -> preParam)
       case _ => paramContext
     val checkedArg =
       checkExprWithContext(app.arg, module, argContextWithSelf, param.typeAsc, argBindingName)
@@ -810,11 +815,11 @@ object TypeChecker:
                   )
 
   private def extractTypeFnFromRef(ref: Ref, module: Module): Option[TypeFn] =
-    val directType = ref.typeSpec.flatMap(extractTypeFn)
+    val directType = ref.typeSpec.flatMap(extractTypeFn(_, module))
     directType.orElse {
       ref.resolvedId.flatMap(module.resolvables.lookup).flatMap {
         case decl:  Decl => findTypeFnForDecl(decl, module)
-        case param: FnParam => param.typeSpec.flatMap(extractTypeFn)
+        case param: FnParam => param.typeSpec.flatMap(extractTypeFn(_, module))
         case _ => None
       }
     }
@@ -824,16 +829,19 @@ object TypeChecker:
       case ref: Ref =>
         extractTypeFnFromRef(ref, module).flatMap(_.paramTypes.headOption)
       case app: App =>
-        app.typeSpec.flatMap(extractTypeFn).flatMap(_.paramTypes.headOption)
+        app.typeSpec.flatMap(extractTypeFn(_, module)).flatMap(_.paramTypes.headOption)
       case lambda: Lambda =>
-        lambda.typeSpec.flatMap(extractTypeFn).flatMap(_.paramTypes.headOption)
+        lambda.typeSpec.flatMap(extractTypeFn(_, module)).flatMap(_.paramTypes.headOption)
       case _ =>
         None
 
-  private def extractTypeFn(typeSpec: Type): Option[TypeFn] =
+  private def extractTypeFn(typeSpec: Type, module: Module): Option[TypeFn] =
     unwrapTypeGroup(typeSpec) match
       case tf: TypeFn => Some(tf)
-      case TypeScheme(_, _, bodyType) => extractTypeFn(bodyType)
+      case TypeScheme(_, _, bodyType) => extractTypeFn(bodyType, module)
+      case tr: TypeRef =>
+        val resolved = resolveAliasChain(tr, module)
+        if resolved == tr then None else extractTypeFn(resolved, module)
       case _ => None
 
   private def findTypeFnForDecl(decl: Decl, module: Module): Option[TypeFn] =
@@ -844,7 +852,7 @@ object TypeChecker:
     updatedDecl
       .collect { case d: Decl => d }
       .orElse(Some(decl))
-      .flatMap(_.typeSpec.flatMap(extractTypeFn))
+      .flatMap(_.typeSpec.flatMap(extractTypeFn(_, module)))
 
   private def applyTypeFnToArgument(
     app:     App,
@@ -949,8 +957,13 @@ object TypeChecker:
       case (TypeRef(_, expectedName, _, _), ts: TypeStruct) =>
         expectedName == ts.name
       case (TypeFn(_, p1, r1), TypeFn(_, p2, r2)) =>
-        p1.length == p2.length &&
-        p1.zip(p2).forall { case (pt1, pt2) => areTypesCompatible(pt1, pt2, module) } &&
+        // Nullary functions (no params) are compatible with Unit -> R thunks
+        val (np1, np2) = (p1, p2) match
+          case (Nil, List(u)) if isUnitType(u) => (Nil, Nil)
+          case (List(u), Nil) if isUnitType(u) => (Nil, Nil)
+          case other => other
+        np1.length == np2.length &&
+        np1.zip(np2).forall { case (pt1, pt2) => areTypesCompatible(pt1, pt2, module) } &&
         areTypesCompatible(r1, r2, module)
       case (TypeTuple(_, e1), TypeTuple(_, e2)) =>
         e1.length == e2.length &&
@@ -978,6 +991,11 @@ object TypeChecker:
             }
           case _ => None
       case _ => None
+
+  private def isUnitType(t: Type): Boolean = t match
+    case TypeRef(_, "Unit", _, _) => true
+    case TypeUnit(_) => true
+    case _ => false
 
   private def unwrapTypeGroup(typeSpec: Type): Type =
     typeSpec match
@@ -1017,7 +1035,7 @@ object TypeChecker:
     expectedType: Option[Type]
   ): CheckResult[Lambda] =
     // Infer param types from expected function type when not annotated
-    val expectedFn = expectedType.flatMap(extractTypeFn)
+    val expectedFn = expectedType.flatMap(extractTypeFn(_, module))
     val paramsWithSpecs = lambda.params.zipWithIndex.map { (p, i) =>
       if p.typeSpec.isDefined then p
       else if p.typeAsc.isDefined then p.copy(typeSpec = p.typeAsc)

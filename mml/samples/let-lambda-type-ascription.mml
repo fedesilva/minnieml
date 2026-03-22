@@ -1,15 +1,15 @@
-// Recursive let-bound lambda with }: Type return ascription.
+// Recursive let-bound lambda with `: Type` return ascription.
+
+type ForeverFn = Unit -> Unit;
 
 pub fn main() =
 
-  let loop = {
+  let loop: ForeverFn = {
     println "Type a number:";
     let n = str_to_int (readline());
     println ("Number is: " ++ (int_to_str n));
     loop()
-  }: Unit;
+  };
 
   loop()
-
 ;
-

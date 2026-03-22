@@ -408,7 +408,7 @@ def compileApp(
     case ref: Ref =>
       // Indirect call: local binding with TypeFn typeSpec (function pointer)
       val isIndirect = functionScope.contains(ref.name) &&
-        ref.typeSpec.exists(_.isInstanceOf[TypeFn])
+        ref.typeSpec.exists(t => resolveToTypeFn(t, state.resolvables).isDefined)
       if isIndirect then compileIndirectCall(ref, allArgs, app, state, functionScope, compileExpr)
       else
         getNativeOpTemplate(ref.resolvedId.flatMap(state.resolvables.lookup)) match
