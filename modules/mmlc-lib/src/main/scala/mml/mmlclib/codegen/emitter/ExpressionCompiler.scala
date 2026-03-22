@@ -153,7 +153,8 @@ private[emitter] def compileLambdaLiteral(
   lambda:           Lambda,
   state:            CodeGenState,
   functionScope:    Map[String, ScopeEntry],
-  preAllocatedName: Option[(CodeGenState, String)] = None
+  preAllocatedName: Option[(CodeGenState, String)] = None,
+  bindingParam:     Option[FnParam]                = None
 ): Either[CodeGenError, CompileResult] =
   val typeFn = lambda.typeSpec match
     case Some(tf: TypeFn) => Right(tf)
@@ -166,54 +167,57 @@ private[emitter] def compileLambdaLiteral(
       returnType <- getLlvmType(tf.returnType, stateWithId)
       paramTypes <- tf.paramTypes.traverse(getLlvmType(_, stateWithId))
 
-      filteredParamsWithTypes = filterVoidParams(lambda.params, paramTypes)
-      paramDecls              = formatParamDecls(filteredParamsWithTypes, stateWithId.resolvables)
+      // Check for tail recursion in let-bound lambdas
+      tailRecBody = for
+        param <- bindingParam
+        if lambda.meta.exists(_.isTailRecursive)
+        body <- findTailRecBody(lambda, param.name, param.id)
+      yield body
 
-      // Compile body in a sub-state (fresh output and registers)
-      subState = stateWithId.copy(
-        output       = List.empty,
-        nextRegister = 0
-      )
+      result <- tailRecBody match
+        case Some(body) =>
+          compileTailRecLambdaLiteral(
+            lambda,
+            stateWithId,
+            fnName,
+            returnType,
+            paramTypes,
+            body
+          )
+        case None =>
+          compileRegularLambdaLiteral(
+            lambda,
+            stateWithId,
+            fnName,
+            returnType,
+            paramTypes,
+            functionScope
+          )
+    yield result
+  }
 
-      // Map params directly to LLVM argument registers (same as compileRegularLambda)
-      paramScope = filteredParamsWithTypes.zipWithIndex.map { case ((param, _), idx) =>
-        val mmlType = param.typeAsc.flatMap(getMmlTypeName).getOrElse("Unknown")
-        (param.name, ScopeEntry(idx, mmlType))
-      }.toMap
-      bodyState = subState.withRegister(filteredParamsWithTypes.size)
-
-      bodyRes <- compileExpr(lambda.body, bodyState, functionScope ++ paramScope)
-
-      retLine =
-        if returnType == "void" then "  ret void"
-        else s"  ret $returnType ${bodyRes.operandStr}"
-
-      finalSubState = bodyRes.state.emit(retLine).emit("}")
-
-      // Build the complete function definition
-      header = s"define internal $returnType @$fnName($paramDecls) #0 {"
-      fnBody = (header :: "entry:" :: finalSubState.output.reverse).mkString("\n")
-
-      // Merge sub-state metadata back to caller state, append deferred definition
-      mergedState = stateWithId
-        .copy(
-          stringConstants     = finalSubState.stringConstants,
-          nextStringId        = finalSubState.nextStringId,
-          tbaaNodes           = finalSubState.tbaaNodes,
-          tbaaOutput          = finalSubState.tbaaOutput,
-          nextTbaaId          = finalSubState.nextTbaaId,
-          tbaaRootId          = finalSubState.tbaaRootId,
-          tbaaScalarIds       = finalSubState.tbaaScalarIds,
-          tbaaStructIds       = finalSubState.tbaaStructIds,
-          aliasScopeOutput    = finalSubState.aliasScopeOutput,
-          aliasScopeDomainId  = finalSubState.aliasScopeDomainId,
-          aliasScopeIds       = finalSubState.aliasScopeIds,
-          warnings            = finalSubState.warnings,
-          deferredDefinitions = finalSubState.deferredDefinitions,
-          nextAnonFnId        = finalSubState.nextAnonFnId
-        )
-        .addDeferredDefinition(fnBody)
-    yield CompileResult(
+/** Compiles a tail-recursive let-bound lambda as a deferred LLVM function. */
+private def compileTailRecLambdaLiteral(
+  lambda:     Lambda,
+  state:      CodeGenState,
+  fnName:     String,
+  returnType: String,
+  paramTypes: List[String],
+  body:       TailRecBody
+): Either[CodeGenError, CompileResult] =
+  val subState = state.copy(output = List.empty)
+  compileTailRecursiveLambda(
+    lambda,
+    subState,
+    returnType,
+    paramTypes,
+    fnName,
+    body,
+    linkage = "internal "
+  ).map { finalSubState =>
+    val fnBody      = finalSubState.output.reverse.mkString("\n")
+    val mergedState = mergeSubState(state, finalSubState).addDeferredDefinition(fnBody)
+    CompileResult(
       register     = 0,
       state        = mergedState,
       isLiteral    = true,
@@ -221,6 +225,66 @@ private[emitter] def compileLambdaLiteral(
       literalValue = Some(s"@$fnName")
     )
   }
+
+/** Compiles a regular (non-tail-recursive) lambda literal as a deferred LLVM function. */
+private def compileRegularLambdaLiteral(
+  lambda:        Lambda,
+  state:         CodeGenState,
+  fnName:        String,
+  returnType:    String,
+  paramTypes:    List[String],
+  functionScope: Map[String, ScopeEntry]
+): Either[CodeGenError, CompileResult] =
+  val filteredParamsWithTypes = filterVoidParams(lambda.params, paramTypes)
+  val paramDecls              = formatParamDecls(filteredParamsWithTypes, state.resolvables)
+
+  val subState = state.copy(output = List.empty, nextRegister = 0)
+
+  val paramScope = filteredParamsWithTypes.zipWithIndex.map { case ((param, _), idx) =>
+    val mmlType = param.typeAsc.flatMap(getMmlTypeName).getOrElse("Unknown")
+    (param.name, ScopeEntry(idx, mmlType))
+  }.toMap
+  val bodyState = subState.withRegister(filteredParamsWithTypes.size)
+
+  for
+    bodyRes <- compileExpr(lambda.body, bodyState, functionScope ++ paramScope)
+
+    retLine =
+      if returnType == "void" then "  ret void"
+      else s"  ret $returnType ${bodyRes.operandStr}"
+
+    finalSubState = bodyRes.state.emit(retLine).emit("}")
+
+    header = s"define internal $returnType @$fnName($paramDecls) #0 {"
+    fnBody = (header :: "entry:" :: finalSubState.output.reverse).mkString("\n")
+
+    mergedState = mergeSubState(state, finalSubState).addDeferredDefinition(fnBody)
+  yield CompileResult(
+    register     = 0,
+    state        = mergedState,
+    isLiteral    = true,
+    typeName     = "Function",
+    literalValue = Some(s"@$fnName")
+  )
+
+/** Merge metadata from a sub-state back into the parent state. */
+private def mergeSubState(parent: CodeGenState, sub: CodeGenState): CodeGenState =
+  parent.copy(
+    stringConstants     = sub.stringConstants,
+    nextStringId        = sub.nextStringId,
+    tbaaNodes           = sub.tbaaNodes,
+    tbaaOutput          = sub.tbaaOutput,
+    nextTbaaId          = sub.nextTbaaId,
+    tbaaRootId          = sub.tbaaRootId,
+    tbaaScalarIds       = sub.tbaaScalarIds,
+    tbaaStructIds       = sub.tbaaStructIds,
+    aliasScopeOutput    = sub.aliasScopeOutput,
+    aliasScopeDomainId  = sub.aliasScopeDomainId,
+    aliasScopeIds       = sub.aliasScopeIds,
+    warnings            = sub.warnings,
+    deferredDefinitions = sub.deferredDefinitions,
+    nextAnonFnId        = sub.nextAnonFnId
+  )
 
 private def compileSelectionRef(
   ref:           Ref,
