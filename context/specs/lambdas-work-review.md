@@ -176,6 +176,55 @@ The default `case _ => this` means any new `Term` subclass added in the future s
 
 ---
 
+## [P2] ClosureMemoryFnGenerator mutable traversals and non-idiomatic control flow
+
+**File:** `ClosureMemoryFnGenerator.scala`
+
+`collectCapturingLambdas` (line 41) uses `var counter` + `List.newBuilder` + `Unit`-returning recursive walk.
+`buildIdTypeMap` (line 74) uses `Map.newBuilder` + `Unit`-returning recursive walk.
+Both `tagLambdas` (line 292) and `rewriteModule` (line 340) use early `return` statements.
+
+These violate QA Rules 1 (functional default), 2 (mutation boundaries), and 3 (prefer folds/recursion).
+Replace with `foldLeft` or recursive functions returning accumulated results, and convert `return` to `if-then-else` expressions.
+
+---
+
+## [P2] asInstanceOf cast in ClosureMemoryFnGenerator.tagLambdas
+
+**File:** `ClosureMemoryFnGenerator.scala:312`
+
+```scala
+val newFn = rewriteTerm(fn).asInstanceOf[Ref | App | Lambda]
+```
+
+This bypasses the type system and can throw `ClassCastException`, violating QA Rule 8 (no exceptions).
+Either add a specific overload for `Ref | App | Lambda`, or pattern-match the result.
+
+---
+
+## [P3] Hardcoded string name matching for closure free dispatch
+
+**File:** `Applications.scala:312,316`
+
+```scala
+if fnRef.name == "__free_closure" then ...
+val isClosureEnvFree = fnRef.name.startsWith("__free___closure_env_")
+```
+
+Closure free dispatch is keyed on raw string prefixes, coupling codegen to the naming convention chosen by
+ClosureMemoryFnGenerator. If the naming changes, this code silently falls through to the wrong codepath.
+Consider a flag on the AST node or a shared constant.
+
+---
+
+## [P3] Inconsistent Cats syntax in new codegen code
+
+**Files:** `ExpressionCompiler.scala`, `Applications.scala`
+
+New code uses bare `Right(...)`, `Left(...)`, `Some(...)`, `None` instead of Cats syntax extensions (`.asRight`, `.asLeft`, `.some`, `.none`). This is inconsistent with the rest of the codebase and violates QA Rule 4.
+
+---
+
 ## [P3] sizeOfLlvmType ignores struct alignment/padding
 
 **File:** `ExpressionCompiler.scala:207` / `codegen/emitter/package.scala:sizeOfLlvmType`
