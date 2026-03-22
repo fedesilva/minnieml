@@ -334,7 +334,7 @@ object TypeChecker:
 
       case lambda: Lambda =>
         // Handle Lambda terms (e.g., from eta-expansion of partial applications)
-        checkLambdaWithContext(lambda, module, paramContext, bindingName)
+        checkLambdaWithContext(lambda, module, paramContext, bindingName, expectedType)
 
       case other =>
         // For other terms, use the regular checkTerm
@@ -997,12 +997,15 @@ object TypeChecker:
     lambda:       Lambda,
     module:       Module,
     paramContext: Map[String, FnParam],
-    bindingName:  String
+    bindingName:  String,
+    expectedType: Option[Type]
   ): CheckResult[Lambda] =
-    // Lower param type ascriptions to specs if not already done
-    val paramsWithSpecs = lambda.params.map { p =>
+    // Infer param types from expected function type when not annotated
+    val expectedFn = expectedType.flatMap(extractTypeFn)
+    val paramsWithSpecs = lambda.params.zipWithIndex.map { (p, i) =>
       if p.typeSpec.isDefined then p
-      else p.copy(typeSpec = p.typeAsc)
+      else if p.typeAsc.isDefined then p.copy(typeSpec = p.typeAsc)
+      else p.copy(typeSpec                             = expectedFn.flatMap(_.paramTypes.lift(i)))
     }
     // Build param context from lambda params (merged with outer context)
     val lambdaParamContext = paramContext ++ paramsWithSpecs.map(p => p.name -> p).toMap
