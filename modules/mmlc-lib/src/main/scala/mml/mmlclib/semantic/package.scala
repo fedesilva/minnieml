@@ -60,6 +60,13 @@ enum TypeError extends CompilationError:
     context: String,
     phase:   String
   )
+  case ConflictingLambdaParamInference(
+    param:     FnParam,
+    firstType: Type,
+    nextType:  Type,
+    phase:     String
+  )
+  case UninferrableLambdaParam(param: FnParam, phase: String)
   case UntypedHoleInBinding(bindingName: String, source: SourceOrigin, phase: String)
 
   // TODO:   Why not define this within the members?
@@ -103,6 +110,11 @@ enum TypeError extends CompilationError:
           "Cannot resolve type"
     case IncompatibleTypes(_, type1, type2, ctx, _) =>
       s"Incompatible types in $ctx: ${showType(type1)} and ${showType(type2)}"
+    case ConflictingLambdaParamInference(param, firstType, nextType, _) =>
+      s"Conflicting types inferred for lambda parameter '${param.name}': " +
+        s"${showType(firstType)} vs ${showType(nextType)}. Add a type annotation."
+    case UninferrableLambdaParam(param, _) =>
+      s"Cannot infer type for lambda parameter '${param.name}'. Add a type annotation."
     case UntypedHoleInBinding(name, _, _) =>
       s"Typed hole in '$name' requires type annotation"
 

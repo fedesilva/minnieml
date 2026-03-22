@@ -257,6 +257,19 @@ object SemanticErrorPrinter:
         val type2Str = formatTypeSpec(type2)
         s"${Console.RED}Incompatible types at $location in $context: '$type1Str' and '$type2Str'${Console.RESET}\n${Console.YELLOW}Phase: $phase${Console.RESET}"
 
+      case TypeError.ConflictingLambdaParamInference(param, firstType, nextType, phase) =>
+        val location     = locationOf(param)
+        val firstTypeStr = formatTypeSpec(firstType)
+        val nextTypeStr  = formatTypeSpec(nextType)
+        s"${Console.RED}Conflicting types inferred for lambda parameter '${param.name}' " +
+          s"at $location: '$firstTypeStr' vs '$nextTypeStr'${Console.RESET}\n" +
+          s"${Console.YELLOW}Phase: $phase${Console.RESET}"
+
+      case TypeError.UninferrableLambdaParam(param, phase) =>
+        val location = locationOf(param)
+        s"${Console.RED}Cannot infer type for lambda parameter '${param.name}' " +
+          s"at $location${Console.RESET}\n${Console.YELLOW}Phase: $phase${Console.RESET}"
+
       case TypeError.UntypedHoleInBinding(bindingName, source, phase) =>
         val location = source.spanOpt.map(LocationPrinter.printSpan).getOrElse("[synthetic]")
         s"${Console.RED}Untyped hole '???' in binding '${bindingName}' at $location - " +
