@@ -46,18 +46,19 @@ def compileLambdaApp(
     // knowing their own name).
     val (preAlloc, argScope) = arg.terms match
       case List(_: Lambda) =>
-        val allocated @ (_, fnName) = state.allocAnonFnName
-        val entry = ScopeEntry(0, "Function", isLiteral = true, literalValue = Some(s"@$fnName"))
-        (Some(allocated), functionScope + (param.name -> entry))
+        val fnName = state.mangleName(param.name)
+        val entry  = ScopeEntry(0, "Function", isLiteral = true, literalValue = Some(s"@$fnName"))
+        (Some((state, fnName)), functionScope + (param.name -> entry))
       case _ =>
         (None, functionScope)
     val compileState = preAlloc.map(_._1).getOrElse(state)
     for
       argRes <- arg.terms match
         case List(lambdaLit: Lambda) =>
-          compileLambdaLiteral(lambdaLit, compileState, argScope, preAlloc).map { res =>
-            res.copy(state = res.state.copy(output = state.output))
-          }
+          compileLambdaLiteral(lambdaLit, compileState, argScope, preAlloc, Some(param))
+            .map { res =>
+              res.copy(state = res.state.copy(output = state.output))
+            }
         case _ => compileExpr(arg, compileState, argScope)
       // Store literal info in the scope entry — no materialization needed
       entry = ScopeEntry(argRes.register, argRes.typeName, argRes.isLiteral, argRes.literalValue)
