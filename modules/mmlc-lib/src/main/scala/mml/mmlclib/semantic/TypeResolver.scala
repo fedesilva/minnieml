@@ -278,8 +278,12 @@ object TypeResolver:
           typeAsc = app.typeAsc.map(rewriteTypeSpecWithInvalidTypes(_, module))
         )
       case lambda: Lambda =>
+        val newParams = lambda.params.map(p =>
+          p.copy(typeAsc = p.typeAsc.map(rewriteTypeSpecWithInvalidTypes(_, module)))
+        )
         val newBody = rewriteExprWithInvalidTypes(lambda.body, member, module)
         lambda.copy(
+          params  = newParams,
           body    = newBody,
           typeAsc = lambda.typeAsc.map(rewriteTypeSpecWithInvalidTypes(_, module))
         )
@@ -326,8 +330,12 @@ object TypeResolver:
           typeAsc = app.typeAsc.map(rewriteTypeSpecWithInvalidTypes(_, module))
         )
       case lambda: Lambda =>
+        val newParams = lambda.params.map(p =>
+          p.copy(typeAsc = p.typeAsc.map(rewriteTypeSpecWithInvalidTypes(_, module)))
+        )
         val newBody = rewriteExprWithInvalidTypes(lambda.body, member, module)
         lambda.copy(
+          params  = newParams,
           body    = newBody,
           typeAsc = lambda.typeAsc.map(rewriteTypeSpecWithInvalidTypes(_, module))
         )
@@ -548,9 +556,10 @@ object TypeResolver:
 
       case lambda: Lambda =>
         for
+          updatedParams <- lambda.params.traverse(resolveParamWithMap(_, member, typeMap))
           updatedBody <- resolveExpr(lambda.body, member, typeMap)
           updatedTypeAsc <- lambda.typeAsc.traverse(resolveTypeSpecWithMap(_, member, typeMap))
-        yield lambda.copy(body = updatedBody, typeAsc = updatedTypeAsc)
+        yield lambda.copy(params = updatedParams, body = updatedBody, typeAsc = updatedTypeAsc)
 
       case placeholder: Placeholder =>
         placeholder.typeAsc
@@ -606,6 +615,7 @@ object TypeResolver:
         yield app.copy(fn = updatedFn, arg = updatedArg, typeAsc = updatedTypeAsc)
       case lambda: Lambda =>
         for
+          updatedParams <- lambda.params.traverse(resolveParamWithMap(_, member, typeMap))
           updatedBody <- resolveExpr(lambda.body, member, typeMap)
           updatedTypeAsc <- lambda.typeAsc.traverse(resolveTypeSpecWithMap(_, member, typeMap))
-        yield lambda.copy(body = updatedBody, typeAsc = updatedTypeAsc)
+        yield lambda.copy(params = updatedParams, body = updatedBody, typeAsc = updatedTypeAsc)
