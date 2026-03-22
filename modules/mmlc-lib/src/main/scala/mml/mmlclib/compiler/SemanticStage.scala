@@ -23,6 +23,9 @@ object SemanticStage:
         MemoryFunctionGenerator.rewriteModule
       )
       |> CompilerState.timePhase("semantic", "ref-resolver")(RefResolver.rewriteModule)
+      |> CompilerState.timePhase("semantic", "capture-analyzer")(
+        CaptureAnalyzer.rewriteModule
+      )
       |> CompilerState
         .timePhase("semantic", "expression-rewriter")(ExpressionRewriter.rewriteModule)
       |> CompilerState.timePhase("semantic", "simplifier")(Simplifier.rewriteModule)
