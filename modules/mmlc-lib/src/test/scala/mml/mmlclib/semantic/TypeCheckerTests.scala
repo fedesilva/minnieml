@@ -5,6 +5,64 @@ import mml.mmlclib.test.BaseEffFunSuite
 
 class TypeCheckerTests extends BaseEffFunSuite:
 
+  private def collectLambdaLiterals(module: Module): List[Lambda] =
+    module.members.flatMap {
+      case bnd: Bnd if bnd.meta.isDefined =>
+        bnd.value.terms match
+          case (lambda: Lambda) :: _ =>
+            collectLambdaLiteralsInExpr(lambda.body)
+          case _ => Nil
+      case bnd: Bnd =>
+        collectLambdaLiteralsInExpr(bnd.value)
+      case _ => Nil
+    }
+
+  private def collectLambdaLiteralsInExpr(expr: Expr): List[Lambda] =
+    expr.terms.flatMap {
+      case lambda: Lambda =>
+        lambda :: collectLambdaLiteralsInExpr(lambda.body)
+      case app: App =>
+        app.fn match
+          case fnLambda: Lambda if fnLambda.source != app.source =>
+            fnLambda :: collectLambdaLiteralsInExpr(fnLambda.body) ++
+              collectLambdaLiteralsInExpr(app.arg)
+          case fnLambda: Lambda =>
+            collectLambdaLiteralsInExpr(fnLambda.body) ++
+              collectLambdaLiteralsInExpr(app.arg)
+          case _ =>
+            collectLambdaLiteralsInAppFn(app.fn) ++
+              collectLambdaLiteralsInExpr(app.arg)
+      case cond: Cond =>
+        collectLambdaLiteralsInExpr(cond.cond) ++
+          collectLambdaLiteralsInExpr(cond.ifTrue) ++
+          collectLambdaLiteralsInExpr(cond.ifFalse)
+      case nested: Expr =>
+        collectLambdaLiteralsInExpr(nested)
+      case group: TermGroup =>
+        collectLambdaLiteralsInExpr(group.inner)
+      case tuple: Tuple =>
+        tuple.elements.toList.flatMap(collectLambdaLiteralsInExpr)
+      case _ =>
+        Nil
+    }
+
+  private def collectLambdaLiteralsInAppFn(fn: Ref | App | Lambda): List[Lambda] =
+    fn match
+      case _:   Ref => Nil
+      case app: App =>
+        collectLambdaLiteralsInAppFn(app.fn) ++
+          collectLambdaLiteralsInExpr(app.arg)
+      case lambda: Lambda =>
+        lambda :: collectLambdaLiteralsInExpr(lambda.body)
+
+  private def findLambdaLiteral(
+    module:     Module,
+    paramNames: List[String]
+  ): Lambda =
+    collectLambdaLiterals(module)
+      .find(_.params.map(_.name) == paramNames)
+      .getOrElse(fail(s"Expected lambda literal with params ${paramNames.mkString(", ")}"))
+
   test("should correctly type a multi-argument function application") {
     val code =
       """
@@ -177,6 +235,106 @@ class TypeCheckerTests extends BaseEffFunSuite:
         },
         "Expected UntypedHoleInBinding to reference binding name 'x'"
       )
+    }
+  }
+
+  test("lambda literal infers param type from operator usage") {
+    val code = "let f = { x -> x + 1 };"
+    semNotFailed(code).map { module =>
+      val lambda = findLambdaLiteral(module, List("x"))
+      lambda.params.head.typeSpec match
+        case Some(TypeRef(_, "Int", _, _)) => ()
+        case other => fail(s"Expected x: Int, got $other")
+    }
+  }
+
+  test("lambda literal infers param type from named function usage") {
+    val code =
+      """
+        fn inc(x: Int): Int = x + 1;
+        let f = { y -> inc y };
+      """
+    semNotFailed(code).map { module =>
+      val lambda = findLambdaLiteral(module, List("y"))
+      lambda.params.head.typeSpec match
+        case Some(TypeRef(_, "Int", _, _)) => ()
+        case other => fail(s"Expected y: Int, got $other")
+    }
+  }
+
+  test("lambda literal infers param type through let alias") {
+    val code = "let f = { x -> let y = x; y + 1 };"
+    semNotFailed(code).map { module =>
+      val lambda = findLambdaLiteral(module, List("x"))
+      lambda.params.head.typeSpec match
+        case Some(TypeRef(_, "Int", _, _)) => ()
+        case other => fail(s"Expected x: Int, got $other")
+    }
+  }
+
+  test("lambda literal infers param type from capture-assisted operator usage") {
+    val code =
+      """
+        fn foo(a: Int): Int =
+          let f = { x -> x + a };
+          f 1
+        ;
+      """
+    semNotFailed(code).map { module =>
+      val lambda = findLambdaLiteral(module, List("x"))
+      lambda.params.head.typeSpec match
+        case Some(TypeRef(_, "Int", _, _)) => ()
+        case other => fail(s"Expected x: Int, got $other")
+    }
+  }
+
+  test("lambda literal reports uninferrable param when no anchor exists") {
+    val code = "let f = { x -> x };"
+    semState(code).map { result =>
+      val typeErrors = result.errors.collect { case SemanticError.TypeCheckingError(err) => err }
+      assert(
+        typeErrors.exists {
+          case TypeError.UninferrableLambdaParam(param, _) => param.name == "x"
+          case _ => false
+        },
+        s"Expected UninferrableLambdaParam for x, got: $typeErrors"
+      )
+    }
+  }
+
+  test("lambda literal reports conflicting inferred param types") {
+    val code =
+      """
+        fn inc(x: Int): Int = x + 1;
+        fn echoFloat(x: Float): Float = x;
+        let f = { x ->
+          let y = inc x;
+          echoFloat x
+        };
+      """
+    semState(code).map { result =>
+      val typeErrors = result.errors.collect { case SemanticError.TypeCheckingError(err) => err }
+      assert(
+        typeErrors.exists {
+          case TypeError.ConflictingLambdaParamInference(param, _, _, _) => param.name == "x"
+          case _ => false
+        },
+        s"Expected ConflictingLambdaParamInference for x, got: $typeErrors"
+      )
+    }
+  }
+
+  test("lambda literal keeps top-down expected type over bottom-up anchors") {
+    val code =
+      """
+        fn applyFloat(f: Float -> Float, x: Float): Float = f x;
+        let r = applyFloat { x -> x + 1 } 1.0;
+      """
+    semState(code).map { result =>
+      val lambda = findLambdaLiteral(result.module, List("x"))
+      lambda.params.head.typeSpec match
+        case Some(TypeRef(_, "Float", _, _)) => ()
+        case other => fail(s"Expected x: Float from call-site context, got $other")
     }
   }
 
