@@ -1,0 +1,14 @@
+// Nested closures: inner lambda captures outer lambda's param and
+// enclosing let-binding.
+fn apply(f: Int -> Int, x: Int): Int = f x;
+
+pub fn main() =
+  // Outer lambda captures nothing, inner captures x and y from outer
+  let outer = { x: Int ->
+    let y = x + 1;
+    apply { z: Int -> x + y + z } 100
+  };
+  let r1 = apply outer 3;
+  // x=3, y=4, z=100 => 3 + 4 + 100 = 107
+  println (int_to_str r1)
+;
