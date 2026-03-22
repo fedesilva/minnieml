@@ -80,16 +80,16 @@ def compileBndLambda(
 ): Either[CodeGenError, CodeGenState] =
   // Try loopification for tail-recursive functions, fall back to regular codegen if pattern unsupported
   if lambda.meta.exists(_.isTailRecursive) then
-    findTailRecBody(lambda, bnd) match
+    findTailRecBody(lambda, bnd.name, bnd.id) match
       case Some(body) =>
         compileTailRecursiveLambda(
-          bnd,
           lambda,
           state,
           returnType,
           paramTypes,
           emittedName,
           body,
+          bnd.meta.exists(_.inlineHint),
           linkage
         )
       case None =>
@@ -347,15 +347,15 @@ private case class TailRecBranch(
 /** A back edge from a recursive call site to the loop header. */
 private case class BackEdge(blockLabel: String, argValues: List[String])
 
-private def compileTailRecursiveLambda(
-  bnd:         Bnd,
+private[emitter] def compileTailRecursiveLambda(
   lambda:      Lambda,
   state:       CodeGenState,
   returnType:  String,
   paramTypes:  List[String],
   emittedName: String,
   body:        TailRecBody,
-  linkage:     String = ""
+  inlineHint:  Boolean = false,
+  linkage:     String  = ""
 ): Either[CodeGenError, CodeGenState] =
   val nonVoidIndices          = paramTypes.indices.filter(i => paramTypes(i) != "void").toList
   val filteredParamsWithTypes = nonVoidIndices.map(i => (lambda.params(i), paramTypes(i)))
@@ -363,7 +363,7 @@ private def compileTailRecursiveLambda(
   val filteredParamTypes      = filteredParamsWithTypes.map(_._2)
   val paramDecls              = formatParamDecls(filteredParamsWithTypes, state.resolvables)
 
-  val attrGroup    = if bnd.meta.exists(_.inlineHint) then "#1" else "#0"
+  val attrGroup    = if inlineHint then "#1" else "#0"
   val functionDecl = s"define $linkage$returnType @$emittedName($paramDecls) $attrGroup {"
   val loopHeader   = "loop.header"
 
@@ -581,8 +581,12 @@ private def replacePlaceholders(
   state.copy(output = updatedOutput)
 
 /** Extract a tail-recursive body tree from a lambda. */
-private def findTailRecBody(lambda: Lambda, bnd: Bnd): Option[TailRecBody] =
-  extractBody(lambda.body, lambda, bnd, Nil)
+private[emitter] def findTailRecBody(
+  lambda:   Lambda,
+  selfName: String,
+  selfId:   Option[String]
+): Option[TailRecBody] =
+  extractBody(lambda.body, lambda, selfName, selfId, Nil)
 
 /** Walk through let-binding/sequence chains, building TailRecBody tree.
   *
@@ -593,7 +597,8 @@ private def findTailRecBody(lambda: Lambda, bnd: Bnd): Option[TailRecBody] =
 private def extractBody(
   expr:          Expr,
   lambda:        Lambda,
-  bnd:           Bnd,
+  selfName:      String,
+  selfId:        Option[String],
   accStatements: List[BoundStatement]
 ): Option[TailRecBody] =
   expr.terms match
@@ -604,17 +609,17 @@ private def extractBody(
             if isSequenceLambda(innerLambda) then None
             else innerLambda.params.headOption.map(_.name)
           val stmt = BoundStatement(binding, app.arg)
-          extractBody(innerLambda.body, lambda, bnd, accStatements :+ stmt)
+          extractBody(innerLambda.body, lambda, selfName, selfId, accStatements :+ stmt)
         case _ =>
           collectAppArgs(app).flatMap { case (ref, args) =>
-            if isSelfRef(ref, bnd) && args.size == lambda.params.size then
+            if isSelfRef(ref, selfName, selfId) && arityMatches(args, lambda) then
               TailRecCall(accStatements, args).some
             else None
           }
 
     case List(cond: Cond) =>
-      val trueBody  = extractBody(cond.ifTrue, lambda, bnd, Nil)
-      val falseBody = extractBody(cond.ifFalse, lambda, bnd, Nil)
+      val trueBody  = extractBody(cond.ifTrue, lambda, selfName, selfId, Nil)
+      val falseBody = extractBody(cond.ifFalse, lambda, selfName, selfId, Nil)
       (trueBody, falseBody) match
         case (Some(tb), Some(fb)) =>
           TailRecBranch(accStatements, cond.cond, tb, fb).some
@@ -650,9 +655,21 @@ private def collectAppArgs(app: App): Option[(Ref, List[Expr])] =
       case _ => None
   loop(app, Nil)
 
-private def isSelfRef(ref: Ref, bnd: Bnd): Boolean =
-  if ref.qualifier.isDefined then return false
-  // Compare by ID if available, otherwise fall back to name
-  ref.resolvedId match
-    case Some(id) => bnd.id.contains(id)
-    case None => ref.name == bnd.name
+/** Check arg count matches params, accounting for nullary functions where the lambda has 0 AST
+  * params but the call passes 1 Unit arg.
+  */
+private def arityMatches(args: List[Expr], lambda: Lambda): Boolean =
+  args.size == lambda.params.size ||
+    (lambda.params.isEmpty && args.forall(isUnitExpr))
+
+private def isUnitExpr(expr: Expr): Boolean =
+  expr.terms match
+    case List(_: LiteralUnit) => true
+    case _ => false
+
+private def isSelfRef(ref: Ref, selfName: String, selfId: Option[String]): Boolean =
+  if ref.qualifier.isDefined then false
+  else
+    ref.resolvedId match
+      case Some(id) => selfId.contains(id)
+      case None => ref.name == selfName
