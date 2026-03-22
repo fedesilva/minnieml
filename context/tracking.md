@@ -69,6 +69,50 @@
     - [ ] 3.4-QA.24 [P3] Inconsistent Cats syntax in new codegen code — use .asRight/.asLeft/.some/.none (`ExpressionCompiler.scala`, `Applications.scala`)
   - [ ] 3.5 — Heap-type captures (String, structs) + clone/free — spec: `context/specs/lambda-step3-ownership.md`
 
+
+- BUG: fails to compile nested lambda.
+
+    ❯ mmlc run -aI mml/samples/readline-loop-lambda.mml
+    AST written to build/ReadlineLoopLambda.ast
+    llvm-as: /Users/f/Workshop/mine/mml/mml/build/ReadlineLoopLambda-x86_64-apple-macosx.ll:268:35: error: use of undefined value '%18'
+      %19 = extractvalue { ptr, ptr } %18, 0
+                                      ^
+
+- Generated IR feedback and smells
+    - source: `mml/samples/captures.mml`
+
+   
+      1. The closure type naming is inconsistent
+
+      You have both:
+
+      %closure_env_captures__anon_0 = type { ptr, i64 }
+      %struct.__closure_env_0 = type { i8*, i64 }
+
+      and TBAA refers to __closure_env_0. That smells like duplicated type naming machinery rather than a semantic problem. The generated code uses %closure_env_captures__anon_0 for GEPs.
+
+      Not broken, but I would clean that up before it spreads.
+
+      2. The destructor slot is untyped/raw
+
+      Environment layout is:
+
+      { free_fn_ptr, captured_0, captured_1, ... }
+
+      That works, but it is basically manual runtime object layout. Fine for now, but eventually you may want a compiler-level closure env descriptor rather than “slot 0 is destructor by convention”.
+
+      Right now it is okay because the convention is simple and visible.
+
+      3. Function pointer typing is very loose
+
+      apply does:
+
+      call i64 %2(i64 %1, ptr %3)
+
+      So %2 is just a raw ptr being called as a function. LLVM tolerates this style, but if you later start doing more aggressive optimization or cross-module work, you may want a more explicit closure function signature discipline in the IR layer.
+
+
+
 ### Update language ref and memory model docs. [COMPLETE]
 
 * lambdas are in, need to update.
