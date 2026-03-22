@@ -34,11 +34,18 @@
   - [x] Tests in `LambdaLitTests.scala`
 - Phase 2 — Codegen (non-capturing): lambda values as function pointers, indirect calls
   - Spec: `context/specs/lambda-step2.md`
-  - [ ] TypeChecker: infer lambda param types from call-site context
-  - [ ] `getLlvmType(TypeFn)` → `"ptr"`, deferred definitions in CodeGenState
-  - [ ] Compile lambda literals as internal functions returning function pointers
-  - [ ] Indirect call codegen for function-pointer variables
-  - [ ] Test with sample program + full test suite
+  - [x] TypeChecker: infer lambda param types from call-site context
+  - [x] `getLlvmType(TypeFn)` → `"ptr"`, deferred definitions in CodeGenState
+  - [x] Compile lambda literals as internal functions returning function pointers
+  - [x] Indirect call codegen for function-pointer variables
+  - [x] Test with sample program + full test suite (318 pass, benchmarks compile)
+  - [x] Runtime: `str_to_int` panics on invalid input, `mml_panic` helper
+  - [x] General term-level type ascription (`expr: Type`) in parser + `Term.withTypeAsc`
+  - [x] Lambda return type ascription (`}: Type`) used as expected type for body
+  - [x] RefResolver: let-binding name in scope during arg resolution (recursive lets)
+  - [x] TypeChecker: pre-seed binding type from lambda typeAsc (recursive lets)
+  - [x] Codegen: pre-allocate anon fn name for recursive let-bound lambdas
+  - [ ] QA in progress
 - Phase 3 — Closures: capturing lambdas + ownership
   - [ ] Capture analysis (populate `captures` list in semantic phase)
   - [ ] Closure representation and codegen
@@ -56,6 +63,13 @@
 
 ## Recent Changes
 
+- 2026-03-21: #188 Phase 2 QA fixes — type ascription, recursive lets, codegen.
+  - General term-level type ascription in parser (`Term.withTypeAsc` on AST).
+  - Lambda `}: Type` return ascription flows as expected type for body.
+  - RefResolver puts let-binding name in scope during arg resolution.
+  - TypeChecker pre-seeds binding type from lambda typeAsc for recursive lets.
+  - Codegen pre-allocates anon fn name so recursive let-bound lambdas self-call.
+  - `readline-loop-lambda.mml` compiles and runs. All 318 tests pass, benchmarks compile.
 - 2026-03-21: #188 Phase 1 complete — parser support for literal lambdas.
   - Added `arrowKw` keyword, `lambdaLitP` parser combinator in `expressions.scala`.
   - Wired into `termP`/`termMemberP`. Updated `types.scala` to use `arrowKw`.

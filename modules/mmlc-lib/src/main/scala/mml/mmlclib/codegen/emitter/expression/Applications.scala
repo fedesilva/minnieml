@@ -7,6 +7,7 @@ import mml.mmlclib.codegen.emitter.{
   CodeGenState,
   CompileResult,
   ScopeEntry,
+  compileLambdaLiteral,
   emitCall,
   emitIndirectCall,
   getLlvmType,
@@ -40,8 +41,24 @@ def compileLambdaApp(
   if lambda.params.size == 1 && allArgs.size == 1 then
     val param = lambda.params.head
     val arg   = allArgs.head
+    // Pre-allocate name for lambda args so the binding is in scope during
+    // compilation — enables recursive let bindings (same as top-level fns
+    // knowing their own name).
+    val (preAlloc, argScope) = arg.terms match
+      case List(_: Lambda) =>
+        val allocated @ (_, fnName) = state.allocAnonFnName
+        val entry = ScopeEntry(0, "Function", isLiteral = true, literalValue = Some(s"@$fnName"))
+        (Some(allocated), functionScope + (param.name -> entry))
+      case _ =>
+        (None, functionScope)
+    val compileState = preAlloc.map(_._1).getOrElse(state)
     for
-      argRes <- compileExpr(arg, state, functionScope)
+      argRes <- arg.terms match
+        case List(lambdaLit: Lambda) =>
+          compileLambdaLiteral(lambdaLit, compileState, argScope, preAlloc).map { res =>
+            res.copy(state = res.state.copy(output = state.output))
+          }
+        case _ => compileExpr(arg, compileState, argScope)
       // Store literal info in the scope entry — no materialization needed
       entry = ScopeEntry(argRes.register, argRes.typeName, argRes.isLiteral, argRes.literalValue)
       extendedScope = functionScope + (param.name -> entry)
