@@ -34,22 +34,17 @@
   - [ ] 3.5 — Heap-type captures (String, structs) + clone/free — spec: `context/specs/lambda-step3-ownership.md`
 
 
-### #244 Bidirectional type inference for lambda parameters
-
-this might be bullshite. I just want a simple bidirectional
-walk, find anchors or fail.
-
-no generalization, no unification.
-but in simple programs, because `fn`s have mandatory type ascriptions
-high chance if we make the effort, everything can be inferred, and
-IF NOT JUST ERROR.
+### #244 Bottom-up type inference for lambda parameters
 
 - GitHub: https://github.com/fedesilva/minnieml/issues/244
+- Spec: `context/specs/244-lambda-param-inference.md`
 - Infer lambda param types from body usage (e.g. `{ x -> x + 1 }` infers `x: Int` from `+`)
-- Requires constraint-based or unification-based inference — design TBD
-- [ ] Design inference approach (type variables + unification vs local constraint propagation)
-- [ ] Implementation
-- [ ] Tests
+- Monomorphic signature lookup — no unification, no generalization
+- [ ] 1 — Implement `inferParamTypesFromBody` AST walk in TypeChecker
+- [ ] 2 — Wire into `checkLambdaWithContext` after existing expectedType inference
+- [ ] 3 — Error messages for conflicts and unresolvable params
+- [ ] 4 — Tests: direct op usage, captures, let-aliases, conflict/no-anchor errors
+- [ ] 5 — Verify existing top-down inference still takes priority (no regression)
 
 ## Recent Changes
 
