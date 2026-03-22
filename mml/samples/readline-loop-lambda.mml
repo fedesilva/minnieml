@@ -5,10 +5,8 @@ pub fn main() =
   let loop = {
     println "Type a number:";
     let n = str_to_int (readline());
-    let printer = {
-      println ("Number is: " ++ (int_to_str n))
-    };
-    printer ();
+    let printer =
+    println ("Number is: " ++ (int_to_str n));
     loop()
   }: Unit;
 
