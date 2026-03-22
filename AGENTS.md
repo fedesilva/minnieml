@@ -79,3 +79,4 @@ Read only the documentation and code directly related to the target doc.
   - Use `bin/gh-project-item-add <issue-number-or-url>` for the project-add step.
 - **For big tasks or projects**
   - Split your work into smaller chunks, stop on completion and ask for review and signoff.
+- **After completing work** for coding tasks, enforce the qa rules. Use relevant skills.
