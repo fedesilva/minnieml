@@ -20,7 +20,7 @@ LLVM will reject the duplicate definition or later calls will bind to the wrong 
 
 ---
 
-## [P2] Pass the real closure env on recursive capturing lambdas
+## [P1] Pass the real closure env on recursive capturing lambdas
 
 **File:** `Applications.scala:49-55`
 
@@ -40,7 +40,7 @@ In those cases the subsequent `store`s write past the malloc'd buffer, so captur
 
 ---
 
-## [P2] Keep capture support in the tail-recursive lambda path
+## [P1] Keep capture support in the tail-recursive lambda path
 
 **File:** `ExpressionCompiler.scala:199-225`
 
@@ -50,7 +50,7 @@ The tail-recursive codegen path needs the same env setup/load logic as regular c
 
 ---
 
-## [P2] Stop freeing non-capturing function values as closures
+## [P1] Stop freeing non-capturing function values as closures
 
 **File:** `OwnershipAnalyzer.scala:256-259`
 
