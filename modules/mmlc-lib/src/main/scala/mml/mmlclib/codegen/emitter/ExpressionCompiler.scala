@@ -149,10 +149,11 @@ def compileTerm(
 /** Compiles an expression-position lambda literal to a deferred LLVM function, returning its
   * address as a function pointer.
   */
-private def compileLambdaLiteral(
-  lambda:        Lambda,
-  state:         CodeGenState,
-  functionScope: Map[String, ScopeEntry]
+private[emitter] def compileLambdaLiteral(
+  lambda:           Lambda,
+  state:            CodeGenState,
+  functionScope:    Map[String, ScopeEntry],
+  preAllocatedName: Option[(CodeGenState, String)] = None
 ): Either[CodeGenError, CompileResult] =
   val typeFn = lambda.typeSpec match
     case Some(tf: TypeFn) => Right(tf)
@@ -160,7 +161,7 @@ private def compileLambdaLiteral(
       Left(CodeGenError(s"Lambda missing TypeFn typeSpec, got: $other", Some(lambda)))
 
   typeFn.flatMap { tf =>
-    val (stateWithId, fnName) = state.allocAnonFnName
+    val (stateWithId, fnName) = preAllocatedName.getOrElse(state.allocAnonFnName)
     for
       returnType <- getLlvmType(tf.returnType, stateWithId)
       paramTypes <- tf.paramTypes.traverse(getLlvmType(_, stateWithId))

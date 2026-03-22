@@ -1,0 +1,7 @@
+pub fn main(): Int =
+  let f = { x: Int ->
+    let y = x + 1;
+    y
+  };
+  f
+;

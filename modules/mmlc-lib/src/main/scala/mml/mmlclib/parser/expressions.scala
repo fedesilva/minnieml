@@ -56,8 +56,15 @@ private[parser] def exprMemberP(info: SourceInfo)(using P[Any]): P[Expr] =
 private[parser] def exprNoSeqMemberP(info: SourceInfo)(using P[Any]): P[Expr] =
   exprFromTermsP(info, termMemberP(info))
 
+private def withTypeAsc(info: SourceInfo, termParser: => P[Term])(using P[Any]): P[Term] =
+  P(termParser ~ typeAscP(info)).map {
+    case (term, Some(asc)) => term.withTypeAsc(asc)
+    case (term, None) => term
+  }
+
 private[parser] def termP(info: SourceInfo)(using P[Any]): P[Term] =
-  P(
+  withTypeAsc(
+    info,
     letExprP(info) |
       litBoolP(info) |
       nativeImplP(info) |
@@ -78,7 +85,8 @@ private[parser] def termP(info: SourceInfo)(using P[Any]): P[Term] =
   )
 
 private[parser] def termMemberP(info: SourceInfo)(using P[Any]): P[Term] =
-  P(
+  withTypeAsc(
+    info,
     letExprP(info) |
       litBoolP(info) |
       nativeImplP(info) |

@@ -6,7 +6,25 @@ enum MemEffect derives CanEqual:
   case Alloc // returns newly allocated memory, caller owns
   case Static // returns pointer to static/existing memory
 
-sealed trait Term extends AstNode, Typeable, FromSource
+sealed trait Term extends AstNode, Typeable, FromSource:
+  def withTypeAsc(t: Type): Term = this match
+    case x: Expr => x.copy(typeAsc = Some(t))
+    case x: Cond => x.copy(typeAsc = Some(t))
+    case x: App => x.copy(typeAsc = Some(t))
+    case x: Lambda => x.copy(typeAsc = Some(t))
+    case x: TermGroup => x.copy(typeAsc = Some(t))
+    case x: Tuple => x.copy(typeAsc = Some(t))
+    case x: Ref => x.copy(typeAsc = Some(t))
+    case x: Placeholder => x.copy(typeAsc = Some(t))
+    case x: Hole => x.copy(typeAsc = Some(t))
+    case x: LiteralInt => x.copy(typeAsc = Some(t))
+    case x: LiteralString => x.copy(typeAsc = Some(t))
+    case x: LiteralBool => x.copy(typeAsc = Some(t))
+    case x: LiteralUnit => x.copy(typeAsc = Some(t))
+    case x: LiteralFloat => x.copy(typeAsc = Some(t))
+    case x: NativeImpl => x.copy(typeAsc = Some(t))
+    case x: InvalidExpression => x.copy(typeAsc = Some(t))
+    case _: TermError | _: DataConstructor | _: DataDestructor => this
 
 case class TermError(
   source:     SourceOrigin,
