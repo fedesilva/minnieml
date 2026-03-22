@@ -17,7 +17,6 @@
 
 ## Active Tasks
 
-
 ### #188 Literal lambdas and captures
 
 - GitHub: https://github.com/fedesilva/minnieml/issues/188
@@ -33,22 +32,16 @@
   - [ ] 3.4 — Ownership integration (env as owned value) — spec: `context/specs/lambda-step3-ownership.md`
   - [ ] 3.5 — Heap-type captures (String, structs) + clone/free — spec: `context/specs/lambda-step3-ownership.md`
 
+### Update language ref and memory model docs.
 
-### #244 Bottom-up type inference for lambda parameters [COMPLETE]
-
-- GitHub: https://github.com/fedesilva/minnieml/issues/244
-- Spec: `context/specs/244-lambda-param-inference.md`
-- Infer lambda param types from body usage (e.g. `{ x -> x + 1 }` infers `x: Int` from `+`)
-- Monomorphic signature lookup — no unification, no generalization
-- [x] 1 — Implement `inferParamTypesFromBody` AST walk in TypeChecker
-- [x] 2 — Wire into `checkLambdaWithContext` after existing expectedType inference
-- [x] 3 — Error messages for conflicts and unresolvable params
-- [x] 4 — Tests: direct op usage, captures, let-aliases, conflict/no-anchor errors
-- [x] 5 — Verify existing top-down inference still takes priority (no regression)
+* lambdas
+* updates to the type checker (type annotations are not mandatory for lambdas but might still be needed)
+* see the changelog below and the git history.
+* lang ref needs a link to the memory model doc.
 
 ## Recent Changes
 
-- 2026-03-22: #244 bottom-up lambda param inference [COMPLETE].
+- 2026-03-22: #244 bottom-up lambda param inference
   - TypeChecker: infer still-untyped lambda params from monomorphic body usage sites.
   - Supports simple let-alias propagation and capture-assisted anchors.
   - Adds dedicated conflict / no-anchor lambda inference errors and LSP/error-printer plumbing.
@@ -79,5 +72,5 @@
   - `arrowKw` keyword, `lambdaLitP` parser combinator in `expressions.scala`.
   - Wired into `termP`/`termMemberP`. Reuse `arrowKw` in type arrow parsing.
   - Guard `->` from operator parsing in `identifiers.scala`.
-- 2026-03-21: Fix #243: `isMoveOnRebind` now moves native heap types [COMPLETE].
+- 2026-03-21: Fix #243: `isMoveOnRebind` now moves native heap types
   - `isMoveOnRebind` uses `TypeUtils.isHeapType` instead of `isStructWithHeapFields`.
