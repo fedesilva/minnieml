@@ -34,10 +34,22 @@
 
 ### Update language ref and memory model docs.
 
-* lambdas
-* updates to the type checker (type annotations are not mandatory for lambdas but might still be needed)
+* lambdas are in, need to update.
+* updates to the type checker (type annotations are not mandatory for lambdas but they might still be needed)
 * see the changelog below and the git history.
 * lang ref needs a link to the memory model doc.
+
+
+### QA Test infra
+
+* add comments to each test, describing in plain english what they do, what they expect, etc
+* move all the newer extractors to the test extractors module (or new subppackage)
+  - prefix them with TX
+  - are we still using TXApp and where not why? and if we can use them.
+
+### QA Parser
+
+* Add commentary with examples to the parsers
 
 ## Recent Changes
 
