@@ -47,14 +47,16 @@ def compileLambdaApp(
     // knowing their own name).
     val (preAlloc, argScope) = arg.terms match
       case List(_: Lambda) =>
-        val fnName = state.mangleName(param.name)
+        val uniqueName  = s"${param.name}_${state.nextAnonFnId}"
+        val stateWithId = state.copy(nextAnonFnId = state.nextAnonFnId + 1)
+        val fnName      = stateWithId.mangleName(uniqueName)
         val entry = ScopeEntry(
           0,
           "Function",
           isLiteral    = true,
           literalValue = Some(s"{ ptr @$fnName, ptr null }")
         )
-        (Some((state, fnName)), functionScope + (param.name -> entry))
+        (Some((stateWithId, fnName)), functionScope + (param.name -> entry))
       case _ =>
         (None, functionScope)
     val compileState = preAlloc.map(_._1).getOrElse(state)
@@ -63,7 +65,11 @@ def compileLambdaApp(
         case List(lambdaLit: Lambda) =>
           compileLambdaLiteral(lambdaLit, compileState, argScope, preAlloc, Some(param))
             .map { res =>
-              res.copy(state = res.state.copy(output = state.output))
+              // Non-capturing: value is a constant literal, safe to discard sub-output.
+              // Capturing: call-site IR (malloc/store/insertvalue) defines the fat pointer
+              // register and must be preserved.
+              if res.isLiteral then res.copy(state = res.state.copy(output = state.output))
+              else res
             }
         case _ => compileExpr(arg, compileState, argScope)
       // Store literal info in the scope entry — no materialization needed

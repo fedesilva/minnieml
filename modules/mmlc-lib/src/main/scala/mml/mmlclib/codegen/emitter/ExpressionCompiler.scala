@@ -182,7 +182,8 @@ private[emitter] def compileLambdaLiteral(
             fnName,
             returnType,
             paramTypes,
-            body
+            body,
+            functionScope
           )
         case None =>
           compileRegularLambdaLiteral(
@@ -198,6 +199,22 @@ private[emitter] def compileLambdaLiteral(
 
 /** Compiles a tail-recursive let-bound lambda as a deferred LLVM function. */
 private def compileTailRecLambdaLiteral(
+  lambda:        Lambda,
+  state:         CodeGenState,
+  fnName:        String,
+  returnType:    String,
+  paramTypes:    List[String],
+  body:          TailRecBody,
+  functionScope: Map[String, ScopeEntry]
+): Either[CodeGenError, CompileResult] =
+  if lambda.captures.nonEmpty then
+    compileTailRecCapturingLambda(
+      lambda, state, fnName, returnType, paramTypes, body, functionScope
+    )
+  else
+    compileTailRecNonCapturing(lambda, state, fnName, returnType, paramTypes, body)
+
+private def compileTailRecNonCapturing(
   lambda:     Lambda,
   state:      CodeGenState,
   fnName:     String,
@@ -224,6 +241,41 @@ private def compileTailRecLambdaLiteral(
       typeName     = "Function",
       literalValue = Some(s"{ ptr @$fnName, ptr null }")
     )
+  }
+
+private def compileTailRecCapturingLambda(
+  lambda:        Lambda,
+  state:         CodeGenState,
+  fnName:        String,
+  returnType:    String,
+  paramTypes:    List[String],
+  body:          TailRecBody,
+  functionScope: Map[String, ScopeEntry]
+): Either[CodeGenError, CompileResult] =
+  emitCallSiteEnv(lambda, state, fnName, functionScope).flatMap { envResult =>
+    val siteState = envResult.siteState
+    val subState  = siteState.copy(output = List.empty)
+    val capInfo   = (envResult.envTypeRef, envResult.captureTypes)
+    compileTailRecursiveLambda(
+      lambda,
+      subState,
+      returnType,
+      paramTypes,
+      fnName,
+      body,
+      linkage     = "internal ",
+      captureInfo = Some(capInfo)
+    ).map { finalSubState =>
+      val fnBody      = finalSubState.output.reverse.mkString("\n")
+      val mergedState =
+        mergeSubState(siteState, finalSubState).addDeferredDefinition(fnBody)
+      CompileResult(
+        register = envResult.fpRegister,
+        state    = mergedState,
+        false,
+        "Function"
+      )
+    }
   }
 
 /** Compiles a regular (non-tail-recursive) lambda literal as a deferred LLVM function. */
@@ -300,20 +352,23 @@ private def compileNonCapturingLambda(
     literalValue = Some(s"{ ptr @$fnName, ptr null }")
   )
 
-/** Capturing lambda: allocate env struct, store captures, build fat pointer. Inside the deferred
-  * function, load captures from env into scope.
+/** Result of call-site env setup for a capturing lambda. */
+private case class EnvSetupResult(
+  siteState:    CodeGenState,
+  fpRegister:   Int,
+  envTypeRef:   String,
+  captureTypes: List[(Ref, String)]
+)
+
+/** Resolve capture types, create env struct, emit call-site IR (malloc, store dtor + captures,
+  * build fat pointer). Shared between regular capturing lambdas and tail-recursive ones.
   */
-private def compileCapturingLambda(
-  lambda:                  Lambda,
-  state:                   CodeGenState,
-  fnName:                  String,
-  returnType:              String,
-  filteredParamsWithTypes: List[(FnParam, String)],
-  allParamDecls:           String,
-  envParamIdx:             Int,
-  functionScope:           Map[String, ScopeEntry]
-): Either[CodeGenError, CompileResult] =
-  // Resolve LLVM types for each capture
+private def emitCallSiteEnv(
+  lambda:        Lambda,
+  state:         CodeGenState,
+  fnName:        String,
+  functionScope: Map[String, ScopeEntry]
+): Either[CodeGenError, EnvSetupResult] =
   val captureTypesResult = lambda.captures.traverse { ref =>
     ref.typeSpec match
       case Some(ts) => getLlvmType(ts, state).map(t => (ref, t))
@@ -321,28 +376,23 @@ private def compileCapturingLambda(
         Left(CodeGenError(s"Capture '${ref.name}' has no type", Some(ref)))
   }
 
-  captureTypesResult.flatMap { captureTypes =>
+  captureTypesResult.map { captureTypes =>
     val capLlvmTypes = captureTypes.map(_._2)
     val envTypeName  = s"closure_env_$fnName"
-    // Field 0 is __dtor (ptr), followed by capture fields
-    val envTypeDef = emitTypeDefinition(envTypeName, "ptr" :: capLlvmTypes)
-    val envTypeRef = s"%$envTypeName"
+    val envTypeDef   = emitTypeDefinition(envTypeName, "ptr" :: capLlvmTypes)
+    val envTypeRef   = s"%$envTypeName"
 
-    // Register env type and malloc/free declarations
     val stateWithEnv = state
       .withNativeType(envTypeName, envTypeDef)
       .withFunctionDeclaration("malloc", "ptr", List("i64"))
       .withFunctionDeclaration("free", "void", List("ptr"))
 
-    // --- Call site: allocate env, store dtor + captures, build fat pointer ---
-    // Field 0 is __dtor (ptr), captures start at field 1
     val envSize   = sizeOfLlvmType("ptr") + capLlvmTypes.map(sizeOfLlvmType).sum
     val mallocReg = stateWithEnv.nextRegister
     val mallocLine =
       emitCall(Some(mallocReg), Some("ptr"), "malloc", List(("i64", envSize.toString)))
     val siteStateAfterMalloc = stateWithEnv.withRegister(mallocReg + 1).emit(mallocLine)
 
-    // Store destructor pointer at field 0
     val dtorName = lambda.meta
       .flatMap(_.envStructName)
       .map(n => s"__free_$n")
@@ -355,20 +405,19 @@ private def compileCapturingLambda(
     val siteStateAfterDtor =
       siteStateAfterMalloc.withRegister(dtorGepReg + 1).emit(dtorGepLine).emit(dtorStoreLine)
 
-    // Store each capture into the env struct (field indices shifted by 1 for __dtor)
     val siteStateAfterCaptures =
-      captureTypes.zipWithIndex.foldLeft(siteStateAfterDtor) { case (st, ((ref, llvmType), idx)) =>
-        val capOp = functionScope.get(ref.name) match
-          case Some(entry) => entry.operandStr
-          case None => s"@${ref.name}" // global fallback
-        val gepReg = st.nextRegister
-        val gepLine =
-          s"  %$gepReg = getelementptr $envTypeRef, ptr %$mallocReg, i32 0, i32 ${idx + 1}"
-        val storeLine = s"  store $llvmType $capOp, ptr %$gepReg"
-        st.withRegister(gepReg + 1).emit(gepLine).emit(storeLine)
+      captureTypes.zipWithIndex.foldLeft(siteStateAfterDtor) {
+        case (st, ((ref, llvmType), idx)) =>
+          val capOp = functionScope.get(ref.name) match
+            case Some(entry) => entry.operandStr
+            case None        => s"@${ref.name}"
+          val gepReg = st.nextRegister
+          val gepLine =
+            s"  %$gepReg = getelementptr $envTypeRef, ptr %$mallocReg, i32 0, i32 ${idx + 1}"
+          val storeLine = s"  store $llvmType $capOp, ptr %$gepReg"
+          st.withRegister(gepReg + 1).emit(gepLine).emit(storeLine)
       }
 
-    // Build the fat pointer { ptr @fn, ptr %env }
     val fp0Reg = siteStateAfterCaptures.nextRegister
     val fp1Reg = fp0Reg + 1
     val insertFn =
@@ -378,7 +427,24 @@ private def compileCapturingLambda(
     val siteState =
       siteStateAfterCaptures.withRegister(fp1Reg + 1).emit(insertFn).emit(insertEnv)
 
-    // --- Deferred function: load captures from env into scope ---
+    EnvSetupResult(siteState, fp1Reg, envTypeRef, captureTypes)
+  }
+
+/** Capturing lambda: allocate env at call site, load captures in deferred function body. */
+private def compileCapturingLambda(
+  lambda:                  Lambda,
+  state:                   CodeGenState,
+  fnName:                  String,
+  returnType:              String,
+  filteredParamsWithTypes: List[(FnParam, String)],
+  allParamDecls:           String,
+  envParamIdx:             Int,
+  functionScope:           Map[String, ScopeEntry]
+): Either[CodeGenError, CompileResult] =
+  emitCallSiteEnv(lambda, state, fnName, functionScope).flatMap { envResult =>
+    val siteState  = envResult.siteState
+    val envTypeRef = envResult.envTypeRef
+
     val subState = siteState.copy(output = List.empty, nextRegister = 0)
     val paramScope = filteredParamsWithTypes.zipWithIndex.map { case ((param, _), idx) =>
       val mmlType = param.typeAsc.flatMap(getMmlTypeName).getOrElse("Unknown")
@@ -386,19 +452,8 @@ private def compileCapturingLambda(
     }.toMap
     val initialBodyState = subState.withRegister(envParamIdx + 1)
 
-    // Load each capture from the env struct (field indices shifted by 1 for __dtor at field 0)
     val (bodyState, captureScope) =
-      captureTypes.zipWithIndex.foldLeft((initialBodyState, Map.empty[String, ScopeEntry])) {
-        case ((st, scope), ((ref, llvmType), idx)) =>
-          val gepReg  = st.nextRegister
-          val loadReg = gepReg + 1
-          val gepLine =
-            s"  %$gepReg = getelementptr $envTypeRef, ptr %$envParamIdx, i32 0, i32 ${idx + 1}"
-          val loadLine = s"  %$loadReg = load $llvmType, ptr %$gepReg"
-          val newState = st.withRegister(loadReg + 1).emit(gepLine).emit(loadLine)
-          val mmlType  = ref.typeSpec.flatMap(getMmlTypeName).getOrElse("Unknown")
-          (newState, scope + (ref.name -> ScopeEntry(loadReg, mmlType)))
-      }
+      emitCaptureLoads(envTypeRef, envParamIdx, envResult.captureTypes, initialBodyState)
 
     val allScope = functionScope ++ paramScope ++ captureScope
 
@@ -412,7 +467,7 @@ private def compileCapturingLambda(
       fnBody        = (header :: "entry:" :: finalSubState.output.reverse).mkString("\n")
       mergedState   = mergeSubState(siteState, finalSubState).addDeferredDefinition(fnBody)
     yield CompileResult(
-      register = fp1Reg,
+      register = envResult.fpRegister,
       state    = mergedState,
       false,
       "Function"
