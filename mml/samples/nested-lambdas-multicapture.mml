@@ -1,5 +1,7 @@
 // Self recursive lambda, with inner lambda, several captures.
 // Onwership rules will probably prevent this from working!
+// - one would have to clone the captured values.
+//   this is escape hatch right now. 
 
 pub fn main() =
 

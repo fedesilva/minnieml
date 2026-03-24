@@ -137,6 +137,27 @@ def formatParamDecls(
     }
     .mkString(", ")
 
+/** Load captures from env struct in a deferred function's entry block. Each capture gets a GEP
+  * (field index shifted by 1 for __dtor at field 0) and a load.
+  */
+def emitCaptureLoads(
+  envTypeRef:   String,
+  envParamIdx:  Int,
+  captureTypes: List[(Ref, String)],
+  bodyState:    CodeGenState
+): (CodeGenState, Map[String, ScopeEntry]) =
+  captureTypes.zipWithIndex.foldLeft((bodyState, Map.empty[String, ScopeEntry])) {
+    case ((st, scope), ((ref, llvmType), idx)) =>
+      val gepReg  = st.nextRegister
+      val loadReg = gepReg + 1
+      val gepLine =
+        s"  %$gepReg = getelementptr $envTypeRef, ptr %$envParamIdx, i32 0, i32 ${idx + 1}"
+      val loadLine = s"  %$loadReg = load $llvmType, ptr %$gepReg"
+      val newState = st.withRegister(loadReg + 1).emit(gepLine).emit(loadLine)
+      val mmlType  = ref.typeSpec.flatMap(getMmlTypeName).getOrElse("Unknown")
+      (newState, scope + (ref.name -> ScopeEntry(loadReg, mmlType)))
+  }
+
 /** Compiles a regular (non-tail-recursive) lambda to LLVM IR. */
 private def compileRegularLambda(
   bnd:         Bnd,
@@ -354,8 +375,9 @@ private[emitter] def compileTailRecursiveLambda(
   paramTypes:  List[String],
   emittedName: String,
   body:        TailRecBody,
-  inlineHint:  Boolean = false,
-  linkage:     String  = ""
+  inlineHint:  Boolean                        = false,
+  linkage:     String                         = "",
+  captureInfo: Option[(String, List[(Ref, String)])] = None
 ): Either[CodeGenError, CodeGenState] =
   val nonVoidIndices          = paramTypes.indices.filter(i => paramTypes(i) != "void").toList
   val filteredParamsWithTypes = nonVoidIndices.map(i => (lambda.params(i), paramTypes(i)))
@@ -373,13 +395,23 @@ private[emitter] def compileTailRecursiveLambda(
     s"define $linkage$returnType @$emittedName($allParamDecls) $attrGroup {"
   val loopHeader = "loop.header"
 
-  val baseState       = state.emit(functionDecl).emit("entry:")
-  val stateAfterEntry = baseState.emit(s"  br label %$loopHeader")
+  val baseState = state.emit(functionDecl).emit("entry:")
+
+  // Load captures from env in entry block (before loop header branch)
+  val captureCount = captureInfo.fold(0)(_._2.size)
+  val (stateAfterCaptures, captureScope) = captureInfo match
+    case Some((envTypeRef, captureTypes)) =>
+      val captureStartState = baseState.withRegister(envParamIdx + 1)
+      emitCaptureLoads(envTypeRef, envParamIdx, captureTypes, captureStartState)
+    case None =>
+      (baseState, Map.empty[String, ScopeEntry])
+
+  val stateAfterEntry = stateAfterCaptures.emit(s"  br label %$loopHeader")
   val headerState     = stateAfterEntry.emit(s"$loopHeader:")
 
   val paramCount = filteredParams.size
-  // +1 to skip the env param register at the end
-  val phiStart = paramCount + 1
+  // +1 to skip the env param register; +2 per capture for GEP+load in entry
+  val phiStart = paramCount + 1 + 2 * captureCount
   val phiRegs  = filteredParams.indices.map(i => phiStart + i).toList
 
   // Emit placeholder phi lines — replaced after collecting all back edges
@@ -396,11 +428,12 @@ private[emitter] def compileTailRecursiveLambda(
     .toMap
 
   val stateAfterPhi = headerState.emitAll(phiPlaceholders).withRegister(phiStart + paramCount)
+  val bodyScope     = paramScope ++ captureScope
 
   compileTailRecBody(
     body,
     stateAfterPhi,
-    paramScope,
+    bodyScope,
     returnType,
     loopHeader,
     loopHeader,
@@ -646,7 +679,43 @@ private def extractBody(
           ).some
         case (None, None) => None
 
+    // Ownership wrapper: the OwnershipAnalyzer may rewrite a tail call into
+    //   let __ownership_result = self_call(args); free_calls...; __ownership_result
+    // Detect when a Ref in tail position refers to a binding whose value is a self-call.
+    // Reorder: run cleanup statements before the back-edge jump.
+    case List(ref: Ref) =>
+      extractSelfCallFromAccumulated(ref.name, accStatements, lambda, selfName, selfId)
+
     case _ => None
+
+/** When the tail position is a Ref, check if it refers to a binding in the accumulated
+  * statements whose value is a self-call. This handles the OwnershipAnalyzer's pattern:
+  *   let __ownership_result = self_call(args); cleanup; __ownership_result
+  * Returns a TailRecCall with cleanup statements moved before the back-edge.
+  */
+private def extractSelfCallFromAccumulated(
+  refName:       String,
+  accStatements: List[BoundStatement],
+  lambda:        Lambda,
+  selfName:      String,
+  selfId:        Option[String]
+): Option[TailRecBody] =
+  val idx = accStatements.indexWhere {
+    case BoundStatement(Some(n), _) => n == refName
+    case _                          => false
+  }
+  if idx < 0 then None
+  else
+    val BoundStatement(_, callExpr) = accStatements(idx): @unchecked
+    // The self-call may be wrapped in additional lambda chains (ownership frees).
+    // Recursively extract through the callExpr to find the self-call.
+    extractBody(callExpr, lambda, selfName, selfId, Nil).flatMap {
+      case TailRecCall(innerStmts, args) =>
+        val stmtsBefore = accStatements.take(idx)
+        val stmtsAfter  = accStatements.drop(idx + 1)
+        TailRecCall(stmtsBefore ++ innerStmts ++ stmtsAfter, args).some
+      case _ => None
+    }
 
 /** Detect sequence lambda: single param named __stmt */
 private def isSequenceLambda(lambda: Lambda): Boolean =

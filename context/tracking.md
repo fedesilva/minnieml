@@ -68,48 +68,74 @@
     - [ ] 3.4-QA.23 [P3] Hardcoded string name matching for closure free dispatch (`Applications.scala:312,316`)
     - [ ] 3.4-QA.24 [P3] Inconsistent Cats syntax in new codegen code — use .asRight/.asLeft/.some/.none (`ExpressionCompiler.scala`, `Applications.scala`)
   - [ ] 3.5 — Heap-type captures (String, structs) + clone/free — spec: `context/specs/lambda-step3-ownership.md`
+    - **URGENT**: all capturing lambdas with heap-type captures produce invalid IR — struct is copied
+      into env but heap pointer is shared without clone/ownership transfer. Original owner frees the
+      buffer, leaving closure with dangling pointer. TCO case works by accident (lifetime coincidence).
+      Phase C should be revisited after 3.5 is fixed. See `context/specs/bad-id-nested-llambdas-multicapture.md`.
 
 
-- BUG: fails to compile nested lambda.
+#### Nested lambda / N-level nesting workstream — IN PROGRESS
 
-    ❯ mmlc run -aI mml/samples/readline-loop-lambda.mml
-    AST written to build/ReadlineLoopLambda.ast
-    llvm-as: /Users/f/Workshop/mine/mml/mml/build/ReadlineLoopLambda-x86_64-apple-macosx.ll:268:35: error: use of undefined value '%18'
-      %19 = extractvalue { ptr, ptr } %18, 0
-                                      ^
+Addresses nested capturing lambdas producing malformed IR (undefined register for fat pointer).
+Plan: `.claude/plans/piped-scribbling-parnas.md`
 
-- Generated IR feedback and smells
-    - source: `mml/samples/captures.mml`
+**Workstream A+B+C** (core codegen fixes):
+  - [x] Phase A — QA.1: Keep call-site IR for capturing lambdas (`Applications.scala:63-67`)
+    - Condition output reset on `res.isLiteral` — capturing lambdas preserve their malloc/GEP/store/insertvalue IR
+    - Code change is in place (uncommitted)
+  - [x] Phase B — QA.2: Unique symbols for let-bound lambda definitions (`Applications.scala:48-57`)
+    - Counter-suffixed naming: `mangleName(name + “_” + nextAnonFnId)` → `@module_loop_0`
+    - Code change is in place (uncommitted)
+  - [ ] Phase C — QA.7: TCO + captures (full fix, NOT disable-TCO) — CODE IN PLACE, HAS BUGS
+    - Recursion is the only looping construct — TCO is mandatory
+    - **Done (uncommitted):**
+      - Extracted `emitCallSiteEnv` helper from `compileCapturingLambda` (ExpressionCompiler.scala)
+        - Resolves capture types, creates env type, emits malloc/store dtor/store captures/insertvalue fat pointer
+        - Returns `EnvSetupResult(siteState, fpRegister, envTypeRef, captureTypes)`
+      - Extracted `emitCaptureLoads` as shared package-level function (FunctionEmitter.scala)
+        - GEP+load for each capture from env struct, returns `(CodeGenState, Map[String, ScopeEntry])`
+      - Refactored `compileCapturingLambda` to use both helpers (behavior unchanged)
+      - Updated `compileTailRecLambdaLiteral` to accept `functionScope` and dispatch:
+        - `lambda.captures.nonEmpty` → `compileTailRecCapturingLambda` (calls `emitCallSiteEnv` + passes captureInfo)
+        - else → `compileTailRecNonCapturing` (original behavior)
+      - Updated `compileTailRecursiveLambda` (FunctionEmitter.scala):
+        - New param `captureInfo: Option[(String, List[(Ref, String)])]`
+        - Entry block: emits capture loads before `br label %loop.header`
+        - `phiStart` adjusted: `paramCount + 1 + 2 * captureCount`
+        - Capture scope merged into body scope
+      - Fixed `extractBody` (FunctionEmitter.scala): OwnershipAnalyzer wraps tail calls as
+        `let __ownership_result = self_call(); frees; __ownership_result`. Added `extractSelfCallFromAccumulated`
+        to recognize this pattern — recursively extracts through the callExpr, reorders frees before back-edge.
+    - **Verified:**
+      - 336/336 unit tests pass
+      - 18/18 ASan memory tests pass
+      - Sanity samples (hello, quicksort, astar2) pass
+      - `captures.mml` (non-TCO capturing lambda) passes
+      - Benchmarks compile
+      - `mmlc run -aI mml/samples/nested-lambdas-multicapture.mml` runs correctly with TCO
+        (loops without stack overflow, captures work across iterations)
+    - **Remaining before marking complete:**
+      - Leaks-mode memory tests not yet run
+      - Heap-type capture ownership is shared, not cloned — known limitation, tracked as Phase 3.5
+        (see `context/specs/bad-id-nested-llambdas-multicapture.md`)
+    - **Files changed:**
+      - `ExpressionCompiler.scala`: `EnvSetupResult`, `emitCallSiteEnv`, `compileTailRecCapturingLambda`, `compileTailRecNonCapturing`, refactored `compileCapturingLambda`
+      - `FunctionEmitter.scala`: `emitCaptureLoads`, `captureInfo` param on `compileTailRecursiveLambda`, `extractSelfCallFromAccumulated`, Ref case in `extractBody`
+      - `Applications.scala`: pre-existing Phase A+B changes (unchanged this session)
+    - BUGS also in: `context/specs/bad-id-nested-llambdas-multicapture.md`
+      - IR GENERATED IS INVALID AND THE CLOSURES ARE NOT WORKING WELL WITH OWNERSHIP
 
-   
-      1. The closure type naming is inconsistent
+**Deferred workstream D+E** (follow-up):
+  - [ ] Phase D — QA.8: Null-guard in `__free_closure` for non-capturing function values
+    - Emit `icmp eq ptr %env, null` + branch around dtor call in `emitClosureFreeViaEnvDtor`
+  - [ ] Phase E — QA.6: Self-reference in env for recursive capturing lambdas
+    - Backpatch pattern: add `{ ptr, ptr }` field at end of env struct for closure's own fat pointer
+    - Thread `bindingParam` to `compileCapturingLambda` to detect self-referencing lambdas
 
-      You have both:
-
-      %closure_env_captures__anon_0 = type { ptr, i64 }
-      %struct.__closure_env_0 = type { i8*, i64 }
-
-      and TBAA refers to __closure_env_0. That smells like duplicated type naming machinery rather than a semantic problem. The generated code uses %closure_env_captures__anon_0 for GEPs.
-
-      Not broken, but I would clean that up before it spreads.
-
-      2. The destructor slot is untyped/raw
-
-      Environment layout is:
-
-      { free_fn_ptr, captured_0, captured_1, ... }
-
-      That works, but it is basically manual runtime object layout. Fine for now, but eventually you may want a compiler-level closure env descriptor rather than “slot 0 is destructor by convention”.
-
-      Right now it is okay because the convention is simple and visible.
-
-      3. Function pointer typing is very loose
-
-      apply does:
-
-      call i64 %2(i64 %1, ptr %3)
-
-      So %2 is just a raw ptr being called as a function. LLVM tolerates this style, but if you later start doing more aggressive optimization or cross-module work, you may want a more explicit closure function signature discipline in the IR layer.
+**IR feedback notes** (not blocking, cleanup later):
+  - Closure type naming inconsistent (`%closure_env_*` vs `%struct.__closure_env_*` + TBAA mismatch)
+  - Destructor slot is untyped/raw (convention-based, fine for now)
+  - Function pointer typing very loose (raw ptr called as function)
 
 
 
@@ -139,6 +165,16 @@
 
 ## Recent Changes
 
+- 2026-03-24: #188 Nested lambda workstream A+B+C — capturing lambdas + TCO
+  - QA.1 (Phase A): Capturing lambdas preserve call-site IR; output reset conditioned on `isLiteral`.
+  - QA.2 (Phase B): Counter-suffixed unique symbols for let-bound lambda definitions.
+  - QA.7 (Phase C): TCO for capturing lambdas.
+    - Extracted `emitCallSiteEnv` + `EnvSetupResult` (shared env setup for regular and tail-rec paths).
+    - Extracted `emitCaptureLoads` as package-level function in FunctionEmitter.
+    - `compileTailRecursiveLambda`: loads captures in entry block, adjusted phi start, merges capture scope.
+    - `extractSelfCallFromAccumulated`: handles OwnershipAnalyzer `__ownership_result` wrapper in tail position.
+  - 336/336 unit tests, 18/18 ASan mem tests pass. Leaks-mode pending.
+  - Known limitation: heap-type captures share buffer pointer (Phase 3.5).
 - 2026-03-22: #188 3.4-QA.9 — Replace mutable vars in compileCapturingLambda with foldLeft.
 - 2026-03-22: Update language reference and memory model docs for lambdas/closures.
 - 2026-03-22: #188 Phase 3.4 — closure ownership integration
