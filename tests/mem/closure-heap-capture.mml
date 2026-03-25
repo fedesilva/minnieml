@@ -1,3 +1,4 @@
+
 fn makeGreeter(~name: String): Unit -> Unit =
   { println ("Hello, " ++ name) }
 ;
