@@ -76,6 +76,18 @@
     - Codegen: `sizeOfLlvmStructResolved` — state-aware struct size for env malloc
     - New error wired into error printer, LSP diagnostics, source code extractor
     - 336/336 tests, 19/19 mem tests (new `closure-heap-capture`), benchmarks compile
+  - [ ] 3.5.1 — Literal heap captures: design decision
+    - Literal String bindings (`let s = "hello"`) have `Literal` ownership state — data pointer
+      is static `.rodata`, not heap-allocated. If captured into env and the env destructor calls
+      `__free_String`, it frees static memory → crash.
+    - Struct constructors already auto-clone literals for consuming params (`argNeedsClone`).
+    - Options: (a) auto-clone literals at capture site (same as struct ctor precedent),
+      (b) error on literal heap captures (restrictive — no user-facing clone syntax yet),
+      (c) track "is heap-allocated" flag and skip free for static captures.
+    - Also surfaces the broader question: MML has no user-facing clone syntax (`__clone_*` uses
+      `__` prefix which is not valid in user code). Needed for any pattern where the user must
+      explicitly clone before capturing a borrowed binding.
+    - Related: `let-shadow-in-lambda.mml` sample reproduces the issue.
 
 
 #### Nested lambda / N-level nesting workstream — IN PROGRESS
@@ -142,15 +154,25 @@ Plan: `.claude/plans/piped-scribbling-parnas.md`
   - Function pointer typing very loose (raw ptr called as function)
 
 
-### Clone as keyword
+### ~~Clone as keyword~~ — SUPERSEDED by Protocols
 
-* `clone` is a keyword
-* treat it as application
-* ref resolver runs after the memory function generator, so it's ok
-  - ref resolver *needs to know* and resolve to the clone function
-* everything else should fall into place
-* we get away with a generic `clone` without generics
- - in the future we will use a protocol, but that's what's up right now.
+Decided against `clone` keyword (2026-03-24): pollutes parser, ref resolver, expression
+rewriter, type checker for a single-use feature that protocols will supersede. Not worth it.
+
+### Protocols (ad-hoc polymorphism)
+
+**Next major feature.** Gives us Clone, Drop, and a foundation for everything else.
+
+* Implement protocols (type classes / ad-hoc polymorphism)
+* Drop protocol → free functions (`__free_T`)
+* Clone protocol → clone functions (`__clone_T`)
+* Native types: user provides protocol instances
+* Structs: auto-derive both Drop and Clone
+* Reuse and extend existing MemoryFunctionGenerator machinery to generate protocol instances
+* Operators in protocols deferred for later (complex)
+* Touches: parser, ref resolver, type checker (NOT expression rewriter)
+* Start simple: single-type instances, nothing fancy
+* Unblocks 3.5.1 once Clone protocol exists (user writes `clone x` via protocol dispatch)
 
 ### Update language ref and memory model docs. 
 
