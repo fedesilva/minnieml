@@ -3,7 +3,7 @@ package mml.mmlclib.semantic
 import mml.mmlclib.ast.*
 import mml.mmlclib.compiler.CompilerState
 
-import java.util.UUID
+import java.util.IdentityHashMap
 
 /** Generates closure environment types and memory functions for capturing lambdas.
   *
@@ -30,45 +30,57 @@ object ClosureMemoryFnGenerator:
   private def typeId(moduleName: String, name: String): Option[String] =
     Some(s"$moduleName::typedef::$name")
 
-  private def paramId(moduleName: String, fnName: String, paramName: String): Option[String] =
-    Some(s"$moduleName::bnd::$fnName::$paramName::${UUID.randomUUID().toString.take(8)}")
+  private def paramId(
+    moduleName: String,
+    fnName:     String,
+    paramName:  String
+  ): Option[String] =
+    Some(s"$moduleName::bnd::$fnName::$paramName")
 
   /** Collect all capturing lambdas from a module, paired with a stable name for each.
     *
     * The name is derived from the enclosing binding name + a counter for disambiguation.
     */
-  private def collectCapturingLambdas(module: Module): List[(Lambda, String)] =
-    var counter = 0
-    val result  = List.newBuilder[(Lambda, String)]
+  private type Collected = (List[(Lambda, String)], Int)
 
-    def walkExpr(expr: Expr, bindingName: String): Unit =
-      expr.terms.foreach(walkTerm(_, bindingName))
+  private def collectCapturingLambdas(
+    module: Module
+  ): List[(Lambda, String)] =
 
-    def walkTerm(term: Term, bindingName: String): Unit = term match
-      case lambda: Lambda if lambda.captures.nonEmpty =>
-        val name = s"__closure_env_${counter}"
-        counter += 1
-        result += ((lambda, name))
-        walkExpr(lambda.body, bindingName)
-      case lambda: Lambda =>
-        walkExpr(lambda.body, bindingName)
-      case App(_, fn, arg, _, _) =>
-        walkTerm(fn, bindingName)
-        walkExpr(arg, bindingName)
-      case Cond(_, cond, ifTrue, ifFalse, _, _) =>
-        walkExpr(cond, bindingName)
-        walkExpr(ifTrue, bindingName)
-        walkExpr(ifFalse, bindingName)
-      case TermGroup(_, inner, _) =>
-        walkExpr(inner, bindingName)
-      case _ => ()
+    def walkExpr(expr: Expr, counter: Int): Collected =
+      expr.terms.foldLeft((List.empty[(Lambda, String)], counter)):
+        case ((acc, cnt), term) =>
+          val (found, next) = walkTerm(term, cnt)
+          (acc ::: found, next)
 
-    module.members.foreach:
-      case bnd: Bnd =>
-        walkExpr(bnd.value, bnd.name)
-      case _ => ()
+    def walkTerm(term: Term, counter: Int): Collected =
+      term match
+        case lambda: Lambda if lambda.captures.nonEmpty =>
+          val name          = s"__closure_env_$counter"
+          val (inner, next) = walkExpr(lambda.body, counter + 1)
+          ((lambda, name) :: inner, next)
+        case lambda: Lambda =>
+          walkExpr(lambda.body, counter)
+        case App(_, fn, arg, _, _) =>
+          val (fnFound, cnt1)  = walkTerm(fn, counter)
+          val (argFound, cnt2) = walkExpr(arg, cnt1)
+          (fnFound ::: argFound, cnt2)
+        case Cond(_, cond, ifTrue, ifFalse, _, _) =>
+          val (c, cnt1) = walkExpr(cond, counter)
+          val (t, cnt2) = walkExpr(ifTrue, cnt1)
+          val (f, cnt3) = walkExpr(ifFalse, cnt2)
+          (c ::: t ::: f, cnt3)
+        case TermGroup(_, inner, _) =>
+          walkExpr(inner, counter)
+        case _ => (Nil, counter)
 
-    result.result()
+    module.members
+      .foldLeft((List.empty[(Lambda, String)], 0)):
+        case ((acc, cnt), bnd: Bnd) =>
+          val (found, next) = walkExpr(bnd.value, cnt)
+          (acc ::: found, next)
+        case (state, _) => state
+      ._1
 
   /** Build a map from param/binding IDs to their types by walking the module AST. */
   private def buildIdTypeMap(module: Module): Map[String, Type] =
@@ -287,7 +299,7 @@ object ClosureMemoryFnGenerator:
   /** Rewrite lambdas in the AST to tag them with envStructName. */
   private def tagLambdas(
     members:   List[Member],
-    lambdaMap: Map[Lambda, String]
+    lambdaMap: IdentityHashMap[Lambda, String]
   ): List[Member] =
     if lambdaMap.isEmpty then return members
 
@@ -299,7 +311,7 @@ object ClosureMemoryFnGenerator:
     def rewriteTerm(term: Term): Term = term match
       case lambda: Lambda =>
         val newBody = rewriteExpr(lambda.body)
-        lambdaMap.get(lambda) match
+        Option(lambdaMap.get(lambda)) match
           case Some(envName) =>
             val newMeta = lambda.meta
               .getOrElse(LambdaMeta())
@@ -339,8 +351,9 @@ object ClosureMemoryFnGenerator:
     val capturingLambdas = collectCapturingLambdas(module)
     if capturingLambdas.isEmpty then return state
 
-    // Build a map from Lambda identity to env struct name
-    val lambdaMap: Map[Lambda, String] = capturingLambdas.toMap
+    // Build a map from Lambda identity (reference equality) to env struct name
+    val lambdaMap = new IdentityHashMap[Lambda, String]()
+    capturingLambdas.foreach((l, n) => lambdaMap.put(l, n))
 
     // Build ID → type map for resolving capture types
     val idTypeMap = buildIdTypeMap(module)
