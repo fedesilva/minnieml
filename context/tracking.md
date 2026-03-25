@@ -17,19 +17,15 @@
 
 ## Active Tasks
 
-### #246 VS Code extension for LLVM IR navigation and hover [COMPLETE]
+### #245 Inner function syntax
 
-- GitHub: https://github.com/fedesilva/minnieml/issues/246
-- Reference: `tooling/vscode/`, `tooling/install-vscode-extension.sh`
-- Reason: generated LLVM IR is hard to inspect when symbols like `%str.0` are declared near the
-  top of the file and then referenced much later inside a sequence of stack/string-building
-  instructions.
-- [x] Create a separate VS Code extension for LLVM IR files.
-- [x] Keep it purely editor-side; no backend or language server.
-- [x] Index LLVM IR symbols and provide navigation / go-to-definition.
-- [x] Provide hover information for symbol references from indexed declarations.
-- [x] Add a separate installation script mirroring the current MinnieML VS Code extension install
-  flow.
+- GitHub: https://github.com/fedesilva/minnieml/issues/245
+- Add inner function syntax as a nicer alternative to inner let-bound lambdas.
+- Main use case: recursive inner helpers with clearer syntax and cleaner return type annotations.
+- Current shape:
+  `let loop = { ... }: Unit;`
+- Desired shape:
+  `fn loop(): Unit = ... ;`
 
 ### #188 Literal lambdas and captures
 
@@ -168,10 +164,12 @@ Plan: `.claude/plans/piped-scribbling-parnas.md`
   - Function pointer typing very loose (raw ptr called as function)
 
 
-### ~~Clone as keyword~~ — SUPERSEDED by Protocols
+### Update language ref and memory model docs. 
 
-Decided against `clone` keyword (2026-03-24): pollutes parser, ref resolver, expression
-rewriter, type checker for a single-use feature that protocols will supersede. Not worth it.
+* lambdas are in, need to update.
+* updates to the type checker (type annotations are not mandatory for lambdas but they might still be needed)
+* see the changelog below and the git history.
+* lang ref needs a link to the memory model doc.
 
 ### Protocols (ad-hoc polymorphism)
 
@@ -188,12 +186,6 @@ rewriter, type checker for a single-use feature that protocols will supersede. N
 * Start simple: single-type instances, nothing fancy
 * Unblocks 3.5.1 once Clone protocol exists (user writes `clone x` via protocol dispatch)
 
-### Update language ref and memory model docs. 
-
-* lambdas are in, need to update.
-* updates to the type checker (type annotations are not mandatory for lambdas but they might still be needed)
-* see the changelog below and the git history.
-* lang ref needs a link to the memory model doc.
 
 
 ### Update the design doc
