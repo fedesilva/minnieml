@@ -69,6 +69,7 @@ object ErrorPrinter:
     case SemanticError.PartialApplicationWithConsuming(fn, _, _) => startPosOf(fn)
     case SemanticError.ConditionalOwnershipMismatch(cond, _) => startPosOf(cond)
     case SemanticError.BorrowEscapeViaReturn(ref, _) => startPosOf(ref)
+    case SemanticError.CapturedBorrowedHeapBinding(ref, _) => startPosOf(ref)
     case SemanticError.VisibilityViolation(ref, _, _) => startPosOf(ref)
     case SemanticError.TypeCheckingError(error) =>
       // For type errors, we need to extract the position from the nested error
@@ -215,6 +216,9 @@ object ErrorPrinter:
 
       case SemanticError.BorrowEscapeViaReturn(ref, phase) =>
         s"${Console.RED}Cannot return borrowed value '${ref.name}' at ${locationOf(ref)}${Console.RESET}\n${Console.YELLOW}Phase: $phase${Console.RESET}"
+
+      case SemanticError.CapturedBorrowedHeapBinding(ref, phase) =>
+        s"${Console.RED}Cannot capture borrowed heap binding '${ref.name}' at ${locationOf(ref)}${Console.RESET}\n${Console.YELLOW}Phase: $phase${Console.RESET}"
 
       case SemanticError.TypeCheckingError(error) =>
         // Delegate to SemanticErrorPrinter to avoid duplication

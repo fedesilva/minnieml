@@ -392,7 +392,7 @@ private def emitCallSiteEnv(
       .withFunctionDeclaration("malloc", "ptr", List("i64"))
       .withFunctionDeclaration("free", "void", List("ptr"))
 
-    val envSize   = sizeOfLlvmStruct("ptr" :: capLlvmTypes)
+    val envSize   = sizeOfLlvmStructResolved("ptr" :: capLlvmTypes, stateWithEnv)
     val mallocReg = stateWithEnv.nextRegister
     val mallocLine =
       emitCall(Some(mallocReg), Some("ptr"), "malloc", List(("i64", envSize.toString)))

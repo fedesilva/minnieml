@@ -67,24 +67,15 @@
     - [ ] 3.4-QA.22 [P2] asInstanceOf cast in ClosureMemoryFnGenerator.tagLambdas breaks no-exceptions rule (`ClosureMemoryFnGenerator.scala:312`)
     - [ ] 3.4-QA.23 [P3] Hardcoded string name matching for closure free dispatch (`Applications.scala:312,316`)
     - [ ] 3.4-QA.24 [P3] Inconsistent Cats syntax in new codegen code — use .asRight/.asLeft/.some/.none (`ExpressionCompiler.scala`, `Applications.scala`)
-  - [ ] 3.5 — Heap-type captures (String, structs) + clone/free — spec: `context/specs/lambda-step3-ownership.md`
-    - **URGENT**: all capturing lambdas with heap-type captures produce invalid IR — struct is copied
-      into env but heap pointer is shared without clone/ownership transfer. Original owner frees the
-      buffer, leaving closure with dangling pointer. TCO case works by accident (lifetime coincidence).
-      Phase C should be revisited after 3.5 is fixed. See `context/specs/bad-id-nested-llambdas-multicapture.md`.
-    - **Findings (2026-03-24, QA P1 analysis):**
-      - OwnershipAnalyzer does NOT treat captures as moves. Captures are metadata-only (set by
-        CaptureAnalyzer); the ownership pass inherits captured bindings as Owned but never marks
-        them Moved in the outer scope.
-      - Per-env free functions (`__free___closure_env_N`) only call `mml_free_raw` — they do not
-        free heap fields inside the env struct. So heap buffers captured by value are never freed
-        via the closure path; only the outer scope's `__free_String` frees them at exit.
-      - Currently "works by accident": no double-free because env free doesn't touch heap fields,
-        and the outer scope outlives all closures. But the shared `i8*` buffer is unsound if the
-        outer binding were moved before the closure finishes.
-      - Fix requires either: (a) treat heap-type captures as moves in the analyzer and error on
-        re-capture without clone, or (b) auto-insert clones at capture sites and extend env free
-        functions to free heap fields.
+  - [x] 3.5 — Heap-type captures (String, structs) + move/free [PENDING REVIEW]
+    - OwnershipAnalyzer: heap-type captures use move semantics (same as struct constructors)
+      - Owned capture → Moved in outer scope; Borrowed inside lambda body (env owns it)
+      - Borrowed capture of heap type → `CapturedBorrowedHeapBinding` error
+    - Codegen: env destructor (`__free___closure_env_N`) frees heap fields via GEP+load+free
+      before calling `mml_free_raw`, with ABI-lowered args
+    - Codegen: `sizeOfLlvmStructResolved` — state-aware struct size for env malloc
+    - New error wired into error printer, LSP diagnostics, source code extractor
+    - 336/336 tests, 19/19 mem tests (new `closure-heap-capture`), benchmarks compile
 
 
 #### Nested lambda / N-level nesting workstream — IN PROGRESS
@@ -151,8 +142,17 @@ Plan: `.claude/plans/piped-scribbling-parnas.md`
   - Function pointer typing very loose (raw ptr called as function)
 
 
+### Clone as keyword
 
-### Update language ref and memory model docs. [COMPLETE]
+* `clone` is a keyword
+* treat it as application
+* ref resolver runs after the memory function generator, so it's ok
+  - ref resolver *needs to know* and resolve to the clone function
+* everything else should fall into place
+* we get away with a generic `clone` without generics
+ - in the future we will use a protocol, but that's what's up right now.
+
+### Update language ref and memory model docs. 
 
 * lambdas are in, need to update.
 * updates to the type checker (type annotations are not mandatory for lambdas but they might still be needed)
@@ -178,6 +178,13 @@ Plan: `.claude/plans/piped-scribbling-parnas.md`
 
 ## Recent Changes
 
+- 2026-03-24: #188 Phase 3.5 — heap-type capture ownership (move semantics + env field free)
+  - OwnershipAnalyzer: heap-type captures move into env; borrowed captures → error.
+  - Captured heap bindings set to Borrowed inside lambda body (env owns them).
+  - Codegen: env destructor emits GEP+load+free for each heap field, ABI-lowered args.
+  - `sizeOfLlvmStructResolved`: state-aware struct sizing resolves named types for env malloc.
+  - New `CapturedBorrowedHeapBinding` error + printer/LSP/extractor wiring.
+  - New mem test: `tests/mem/closure-heap-capture.mml` (19/19 ASan+LSan pass).
 - 2026-03-24: #188 3.4-QA P1 batch — QA.3, QA.4, QA.5, QA.8
   - QA.3: `sizeOfLlvmStruct` replaces naive sum with alignment-padded struct sizing for env malloc.
   - QA.4: `IdentityHashMap` for lambda→envStructName (reference equality, not structural).
