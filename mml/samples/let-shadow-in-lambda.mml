@@ -1,0 +1,13 @@
+// Test: shadowing a captured binding inside a capturing thunk.
+// Matches the failing pattern from nested-lambdas-multicapture.mml:
+//   outer `name` is captured, then `let n = name` rebinds, then `let n = 1` shadows.
+
+pub fn main() =
+  let name = "world";
+  let f = {
+    let n = name;
+    let n = 1;
+    println (int_to_str n)
+  };
+  f ()
+;
