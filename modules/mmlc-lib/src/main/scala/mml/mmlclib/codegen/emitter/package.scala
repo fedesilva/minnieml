@@ -269,6 +269,34 @@ def sizeOfLlvmStruct(fields: List[String]): Int =
     else fields.map(alignOfLlvmType).max
   alignTo(endOffset, maxAlign)
 
+/** State-aware size of LLVM type — resolves named struct types via nativeTypes. */
+def sizeOfLlvmTypeResolved(llvmType: String, state: CodeGenState): Int =
+  if llvmType.startsWith("%") then
+    getStructFieldTypes(llvmType, state) match
+      case Some(fields) => sizeOfLlvmStructResolved(fields, state)
+      case None => sizeOfLlvmType(llvmType)
+  else sizeOfLlvmType(llvmType)
+
+/** State-aware alignment of LLVM type — resolves named struct types via nativeTypes. */
+def alignOfLlvmTypeResolved(llvmType: String, state: CodeGenState): Int =
+  if llvmType.startsWith("%") then
+    getStructFieldTypes(llvmType, state) match
+      case Some(fields) if fields.nonEmpty => fields.map(alignOfLlvmTypeResolved(_, state)).max
+      case _ => alignOfLlvmType(llvmType)
+  else alignOfLlvmType(llvmType)
+
+/** State-aware struct size with proper alignment padding for named field types. */
+def sizeOfLlvmStructResolved(fields: List[String], state: CodeGenState): Int =
+  val endOffset = fields.foldLeft(0) { (offset, field) =>
+    alignTo(offset, alignOfLlvmTypeResolved(field, state)) +
+      sizeOfLlvmTypeResolved(field, state)
+  }
+  val maxAlign =
+    if fields.isEmpty then 1
+    else fields.map(alignOfLlvmTypeResolved(_, state)).max
+  alignTo(endOffset, maxAlign)
+  alignTo(endOffset, maxAlign)
+
 enum TbaaNode derives CanEqual:
   case Root(name: String)
   case Scalar(name: String, parentId: Int)

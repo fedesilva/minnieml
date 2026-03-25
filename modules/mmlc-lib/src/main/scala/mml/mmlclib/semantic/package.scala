@@ -136,6 +136,7 @@ enum SemanticError extends CompilationError:
   case PartialApplicationWithConsuming(fn: Term, param: FnParam, phase: String)
   case ConditionalOwnershipMismatch(cond: Cond, phase: String)
   case BorrowEscapeViaReturn(ref: Ref, phase: String)
+  case CapturedBorrowedHeapBinding(ref: Ref, phase: String)
 
   def message: String = this match
     case UndefinedRef(ref, _, _) =>
@@ -174,6 +175,8 @@ enum SemanticError extends CompilationError:
       "Conditional branches have different ownership states"
     case BorrowEscapeViaReturn(ref, _) =>
       s"Cannot return borrowed value '${ref.name}' from a function that returns a heap type"
+    case CapturedBorrowedHeapBinding(ref, _) =>
+      s"Cannot capture borrowed heap binding '${ref.name}' in a closure"
 
 /** Generate a stable ID for stdlib members */
 private def stdlibId(declSegment: String, name: String): Option[String] =
