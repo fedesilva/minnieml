@@ -4,7 +4,7 @@
 fn apply(f: Int -> Int, x: Int): Int = f x;
 
 fn makeAdder(a: Int): Int -> Int =
-  { x: Int -> x + a }
+  { x -> x + a }
 ;
 
 fn loop(n: Int, acc: Int): Int =
