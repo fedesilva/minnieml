@@ -158,6 +158,69 @@ def emitCaptureLoads(
       (newState, scope + (ref.name -> ScopeEntry(loadReg, mmlType)))
   }
 
+/** Resolve the LLVM-level name for a memory function (__free_T, __clone_T). Native/stdlib functions
+  * use their raw name; user-generated functions use mangled name.
+  */
+private def resolveMemFnLlvmName(
+  fnName: String,
+  state:  CodeGenState
+): String =
+  val isNative = state.resolvables.resolvables.values.exists:
+    case bnd: Bnd if bnd.name == fnName =>
+      bnd.value.terms match
+        case List(l: Lambda) =>
+          l.body.terms match
+            case List(_: NativeImpl) => true
+            case _ => false
+        case _ => false
+    case _ => false
+  if isNative then fnName else state.mangleName(fnName)
+
+/** Emit GEP+load+free for each heap-typed field in an env struct. Called when compiling
+  * `__free___closure_env_N` functions.
+  */
+private def emitEnvHeapFieldFrees(
+  envStructName: String,
+  state:         CodeGenState
+): Either[CodeGenError, CodeGenState] =
+  val resolvables = state.resolvables
+  val envStruct = resolvables.resolvableTypes.values.collectFirst:
+    case ts: TypeStruct if ts.name == envStructName => ts
+
+  envStruct match
+    case None => Right(state)
+    case Some(ts) =>
+      val envLlvmType = s"%struct.$envStructName"
+      ts.fields.toList.zipWithIndex.tail.foldLeft(state.asRight[CodeGenError]):
+        case (stE, (field, fieldIdx)) =>
+          stE.flatMap: st =>
+            val typeName = TypeUtils.getTypeName(field.typeSpec)
+            val isHeap   = typeName.exists(TypeUtils.isHeapType(_, resolvables))
+            if !isHeap then Right(st)
+            else
+              getLlvmType(field.typeSpec, st).map: fieldLlvmType =>
+                val freeFnName =
+                  typeName.flatMap(TypeUtils.freeFnFor(_, resolvables)).getOrElse("")
+                val llvmFreeName = resolveMemFnLlvmName(freeFnName, st)
+                val gepReg       = st.nextRegister
+                val loadReg      = gepReg + 1
+                val gepLine =
+                  s"  %$gepReg = getelementptr $envLlvmType, ptr %0, i32 0, i32 $fieldIdx"
+                val loadLine =
+                  s"  %$loadReg = load $fieldLlvmType, ptr %$gepReg"
+                val stAfterLoad = st.withRegister(loadReg + 1).emit(gepLine).emit(loadLine)
+                // ABI-lower the argument (struct types split into fields on x86_64)
+                val rawArgs              = List((s"%$loadReg", fieldLlvmType))
+                val (lowered, stLowered) = stAfterLoad.abi.lowerArgs(rawArgs, stAfterLoad)
+                val callArgs             = lowered.map((op, typ) => (typ, op))
+                // Ensure function declared with ABI-lowered param types
+                val declParamTypes = lowered.map(_._2)
+                val stWithDecl =
+                  stLowered.withFunctionDeclaration(llvmFreeName, "void", declParamTypes)
+                val callLine =
+                  emitCall(None, None, llvmFreeName, callArgs)
+                stWithDecl.emit(callLine)
+
 /** Compiles a regular (non-tail-recursive) lambda to LLVM IR. */
 private def compileRegularLambda(
   bnd:         Bnd,
@@ -202,30 +265,37 @@ private def compileRegularLambda(
     .toMap
 
   // Register count starts after parameter setup
-  val updatedState = bodyState.withRegister(filteredParams.size)
+  val baseState = bodyState.withRegister(filteredParams.size)
 
-  val bodyResult =
-    lambda.body.terms match
-      case List(_: DataConstructor) =>
-        compileStructConstructor(bnd, lambda, updatedState, paramScope)
-      case _ =>
-        compileExpr(lambda.body, updatedState, paramScope)
+  // For env free functions, emit heap field frees before the body (mml_free_raw)
+  val updatedStateE =
+    if bnd.name.startsWith("__free___closure_env_") then
+      val envStructName = bnd.name.stripPrefix("__free_")
+      emitEnvHeapFieldFrees(envStructName, baseState)
+    else Right(baseState)
 
-  // Compile the lambda body with the parameter scope
-  bodyResult.flatMap { bodyRes =>
-    val returnLine =
-      if returnType == "void" then "  ret void"
-      else
-        val returnOp = bodyRes.operandStr
-        s"  ret $returnType $returnOp"
+  updatedStateE.flatMap { updatedState =>
+    val bodyResult =
+      lambda.body.terms match
+        case List(_: DataConstructor) =>
+          compileStructConstructor(bnd, lambda, updatedState, paramScope)
+        case _ =>
+          compileExpr(lambda.body, updatedState, paramScope)
 
-    // Close function and add empty line
-    Right(
-      bodyRes.state
-        .emit(returnLine)
-        .emit("}")
-        .emit("")
-    )
+    bodyResult.flatMap { bodyRes =>
+      val returnLine =
+        if returnType == "void" then "  ret void"
+        else
+          val returnOp = bodyRes.operandStr
+          s"  ret $returnType $returnOp"
+
+      Right(
+        bodyRes.state
+          .emit(returnLine)
+          .emit("}")
+          .emit("")
+      )
+    }
   }
 
 private def compileStructConstructor(

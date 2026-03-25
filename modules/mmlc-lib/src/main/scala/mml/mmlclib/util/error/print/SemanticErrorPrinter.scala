@@ -145,6 +145,10 @@ object SemanticErrorPrinter:
         val location = locationOf(ref)
         s"${Console.RED}Cannot return borrowed value '${ref.name}' at $location [phase: $phase]${Console.RESET}"
 
+      case SemanticError.CapturedBorrowedHeapBinding(ref, phase) =>
+        val location = locationOf(ref)
+        s"${Console.RED}Cannot capture borrowed heap binding '${ref.name}' at $location [phase: $phase]${Console.RESET}"
+
       case SemanticError.TypeCheckingError(error) =>
         prettyPrintTypeError(error)
 

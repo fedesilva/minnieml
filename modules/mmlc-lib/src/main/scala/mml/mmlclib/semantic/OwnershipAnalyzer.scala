@@ -1297,10 +1297,18 @@ object OwnershipAnalyzer:
       else if p.consuming then s
       else s.withBorrowed(p.name)
 
-    val bodyResult = analyzeExpr(body, paramScope)
+    // Heap-type captures are owned by the env — body borrows them
+    val captureScope = captures.foldLeft(paramScope): (s, ref) =>
+      val isHeapCapture = ref.typeSpec
+        .flatMap(getTypeName)
+        .exists(isHeapType(_, s.resolvables))
+      if isHeapCapture then s.withBorrowed(ref.name)
+      else s
+
+    val bodyResult = analyzeExpr(body, captureScope)
 
     val returnType   = typeAsc.orElse(typeSpec)
-    val promotedBody = promoteStaticBranchesInReturn(bodyResult.expr, returnType, paramScope)
+    val promotedBody = promoteStaticBranchesInReturn(bodyResult.expr, returnType, captureScope)
 
     // Insert frees for consuming params that are still Owned (not returned, not moved)
     val escaping = returnedOwnedNames(promotedBody, bodyResult.scope)
@@ -1331,10 +1339,26 @@ object OwnershipAnalyzer:
       .getOrElse(Nil)
       .map(ref => SemanticError.BorrowEscapeViaReturn(ref, PhaseName))
 
+    // Move heap-type captures in the outer scope; error if capturing borrowed heap binding
+    val (returnScope, captureErrors) =
+      captures.foldLeft((scope, List.empty[SemanticError])): (acc, ref) =>
+        val (s, errs) = acc
+        val isHeapCapture = ref.typeSpec
+          .flatMap(getTypeName)
+          .exists(isHeapType(_, s.resolvables))
+        if !isHeapCapture then acc
+        else
+          s.getState(ref.name) match
+            case Some(OwnershipState.Owned) =>
+              (s.withMoved(ref.name, span), errs)
+            case Some(OwnershipState.Borrowed) | Some(OwnershipState.Literal) =>
+              (s, errs :+ SemanticError.CapturedBorrowedHeapBinding(ref, PhaseName))
+            case _ => acc
+
     TermResult(
-      scope,
+      returnScope,
       Lambda(span, params, finalBody, captures, typeSpec, typeAsc, meta),
-      errors = bodyResult.errors ++ borrowEscapeErrors
+      errors = bodyResult.errors ++ borrowEscapeErrors ++ captureErrors
     )
 
   /** Analyze a tuple expression */

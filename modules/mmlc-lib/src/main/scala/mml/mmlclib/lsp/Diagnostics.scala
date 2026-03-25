@@ -54,6 +54,7 @@ object Diagnostics:
       case SemanticError.PartialApplicationWithConsuming(fn, _, _) => fn.spanOpt.toList
       case SemanticError.ConditionalOwnershipMismatch(cond, _) => cond.spanOpt.toList
       case SemanticError.BorrowEscapeViaReturn(ref, _) => ref.spanOpt.toList
+      case SemanticError.CapturedBorrowedHeapBinding(ref, _) => ref.spanOpt.toList
 
       case te: TypeError => extractTypeErrorSpans(te)
 
@@ -127,6 +128,7 @@ object Diagnostics:
       case e: SemanticError.PartialApplicationWithConsuming => e.message
       case e: SemanticError.ConditionalOwnershipMismatch => e.message
       case e: SemanticError.BorrowEscapeViaReturn => e.message
+      case e: SemanticError.CapturedBorrowedHeapBinding => e.message
 
       case te: TypeError => formatTypeError(te)
 
