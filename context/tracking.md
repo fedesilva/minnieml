@@ -17,6 +17,20 @@
 
 ## Active Tasks
 
+### #246 VS Code extension for LLVM IR navigation and hover [COMPLETE]
+
+- GitHub: https://github.com/fedesilva/minnieml/issues/246
+- Reference: `tooling/vscode/`, `tooling/install-vscode-extension.sh`
+- Reason: generated LLVM IR is hard to inspect when symbols like `%str.0` are declared near the
+  top of the file and then referenced much later inside a sequence of stack/string-building
+  instructions.
+- [x] Create a separate VS Code extension for LLVM IR files.
+- [x] Keep it purely editor-side; no backend or language server.
+- [x] Index LLVM IR symbols and provide navigation / go-to-definition.
+- [x] Provide hover information for symbol references from indexed declarations.
+- [x] Add a separate installation script mirroring the current MinnieML VS Code extension install
+  flow.
+
 ### #188 Literal lambdas and captures
 
 * there are issues to address:
@@ -200,6 +214,12 @@ rewriter, type checker for a single-use feature that protocols will supersede. N
 
 ## Recent Changes
 
+- 2026-03-25: #246 LLVM IR VS Code extension
+  - Added a standalone VS Code extension under `tooling/vscode-llvm-ir` for `.ll` files.
+  - Implemented editor-side symbol indexing, hover, go-to-definition, find-references, and
+    document outline support for LLVM IR symbols.
+  - Added explicit LLVM IR output/context-menu commands and a separate installer script
+    `tooling/install-vscode-llvm-ir-extension.sh`.
 - 2026-03-24: #188 Phase 3.5 — heap-type capture ownership (move semantics + env field free)
   - OwnershipAnalyzer: heap-type captures move into env; borrowed captures → error.
   - Captured heap bindings set to Borrowed inside lambda body (env owns them).
