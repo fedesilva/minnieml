@@ -1,0 +1,81 @@
+{
+    "name": "mml-llvm-ir-language",
+    "displayName": "LLVM IR Navigation",
+    "description": "Editor-side navigation and hover support for LLVM IR",
+    "version": "0.1.0",
+    "engines": {
+        "vscode": "^1.75.0"
+    },
+    "publisher": "mml",
+    "categories": [
+        "Programming Languages"
+    ],
+    "activationEvents": [
+        "onLanguage:llvm-ir",
+        "onStartupFinished",
+        "onCommand:llvmIr.showOutput",
+        "onCommand:llvmIr.goToDeclaration",
+        "onCommand:llvmIr.findReferences"
+    ],
+    "main": "./out/extension.js",
+    "contributes": {
+        "languages": [
+            {
+                "id": "llvm-ir",
+                "aliases": [
+                    "LLVM IR",
+                    "llvm-ir"
+                ],
+                "extensions": [
+                    ".ll"
+                ],
+                "configuration": "./language-configuration.json"
+            }
+        ],
+        "commands": [
+            {
+                "command": "llvmIr.showOutput",
+                "title": "LLVM IR: Show Output"
+            },
+            {
+                "command": "llvmIr.goToDeclaration",
+                "title": "LLVM IR: Go To Symbol Declaration"
+            },
+            {
+                "command": "llvmIr.findReferences",
+                "title": "LLVM IR: Find Symbol References"
+            }
+        ],
+        "menus": {
+            "editor/context": [
+                {
+                    "command": "llvmIr.goToDeclaration",
+                    "group": "navigation",
+                    "when": "resourceExtname == .ll"
+                },
+                {
+                    "command": "llvmIr.findReferences",
+                    "group": "navigation",
+                    "when": "resourceExtname == .ll"
+                },
+                {
+                    "command": "llvmIr.showOutput",
+                    "group": "navigation",
+                    "when": "resourceExtname == .ll"
+                }
+            ]
+        }
+    },
+    "scripts": {
+        "vscode:prepublish": "npm run build",
+        "build": "esbuild src/extension.ts --bundle --outfile=out/extension.js --external:vscode --format=cjs --platform=node",
+        "compile": "tsc -p ./",
+        "watch": "tsc -watch -p ./"
+    },
+    "devDependencies": {
+        "@types/node": "^20.10.0",
+        "@types/vscode": "^1.75.0",
+        "esbuild": "^0.25.0",
+        "typescript": "^5.3.0"
+    }
+}
