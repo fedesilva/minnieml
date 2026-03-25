@@ -45,12 +45,12 @@
   - [ ] 3.4-QA — Codegen & ownership review fixes (spec: `context/specs/lambdas-work-review.md`)
     - [ ] 3.4-QA.1 [P1] Keep emitted env setup for let-bound capturing lambdas (`Applications.scala`)
     - [ ] 3.4-QA.2 [P1] Allocate unique symbols for let-bound lambda definitions (`Applications.scala`)
-    - [ ] 3.4-QA.3 [P1] Size closure env allocations using LLVM struct layout (`ExpressionCompiler.scala`)
-    - [ ] 3.4-QA.4 [P1] ClosureMemoryFnGenerator uses Lambda structural equality as map key (`ClosureMemoryFnGenerator.scala`)
-    - [ ] 3.4-QA.5 [P1] Non-deterministic UUIDs in ClosureMemoryFnGenerator (`ClosureMemoryFnGenerator.scala`)
+    - [x] 3.4-QA.3 [P1] Size closure env allocations using LLVM struct layout (`ExpressionCompiler.scala`)
+    - [x] 3.4-QA.4 [P1] ClosureMemoryFnGenerator uses Lambda structural equality as map key (`ClosureMemoryFnGenerator.scala`)
+    - [x] 3.4-QA.5 [P1] Non-deterministic UUIDs in ClosureMemoryFnGenerator (`ClosureMemoryFnGenerator.scala`)
     - [ ] 3.4-QA.6 [P1] Pass real closure env on recursive capturing lambdas (`Applications.scala`)
     - [ ] 3.4-QA.7 [P1] Keep capture support in tail-recursive lambda path (`ExpressionCompiler.scala`)
-    - [ ] 3.4-QA.8 [P1] Stop freeing non-capturing function values as closures (`OwnershipAnalyzer.scala`)
+    - [x] 3.4-QA.8 [P1] Stop freeing non-capturing function values as closures (`OwnershipAnalyzer.scala`)
     - [x] 3.4-QA.9 [P2] Mutable var in compileCapturingLambda — replace with foldLeft (`ExpressionCompiler.scala`)
     - [ ] 3.4-QA.10 [P2] mergeSubState fragile manual field sync (`ExpressionCompiler.scala`)
     - [ ] 3.4-QA.11 [P2] Two codepaths for closure free could diverge (`Applications.scala`)
@@ -60,7 +60,7 @@
     - [ ] 3.4-QA.15 [P3] OwnershipAnalyzer 5-tuples should be a case class (`OwnershipAnalyzer.scala`)
     - [ ] 3.4-QA.16 [P3] Term.withTypeAsc silently ignores unknown term types (`ast/terms.scala`)
     - [ ] 3.4-QA.17 [P3] FORCE_INLINE on non-hot-path runtime functions (`mml_runtime.c`)
-    - [ ] 3.4-QA.18 [P3] sizeOfLlvmType ignores struct alignment/padding (`codegen/emitter/package.scala`)
+    - [x] 3.4-QA.18 [P3] sizeOfLlvmType ignores struct alignment/padding (`codegen/emitter/package.scala`)
     - [ ] 3.4-QA.19 [P2] Replace shape-coupled/name-coupled lambda semantic tests with semantic extractors (`CaptureAnalyzerTests.scala`, `TypeCheckerTests.scala`, `LambdaLitTests.scala`)
     - [ ] 3.4-QA.20 [P3] Remove new `TODO:QA` by extracting ownership test helpers or tracking them properly (`OwnershipAnalyzerTests.scala`)
     - [ ] 3.4-QA.21 [P2] Mutable traversals + early returns in ClosureMemoryFnGenerator — replace var/builder/return with folds and if-else (`ClosureMemoryFnGenerator.scala`)
@@ -72,6 +72,19 @@
       into env but heap pointer is shared without clone/ownership transfer. Original owner frees the
       buffer, leaving closure with dangling pointer. TCO case works by accident (lifetime coincidence).
       Phase C should be revisited after 3.5 is fixed. See `context/specs/bad-id-nested-llambdas-multicapture.md`.
+    - **Findings (2026-03-24, QA P1 analysis):**
+      - OwnershipAnalyzer does NOT treat captures as moves. Captures are metadata-only (set by
+        CaptureAnalyzer); the ownership pass inherits captured bindings as Owned but never marks
+        them Moved in the outer scope.
+      - Per-env free functions (`__free___closure_env_N`) only call `mml_free_raw` — they do not
+        free heap fields inside the env struct. So heap buffers captured by value are never freed
+        via the closure path; only the outer scope's `__free_String` frees them at exit.
+      - Currently "works by accident": no double-free because env free doesn't touch heap fields,
+        and the outer scope outlives all closures. But the shared `i8*` buffer is unsound if the
+        outer binding were moved before the closure finishes.
+      - Fix requires either: (a) treat heap-type captures as moves in the analyzer and error on
+        re-capture without clone, or (b) auto-insert clones at capture sites and extend env free
+        functions to free heap fields.
 
 
 #### Nested lambda / N-level nesting workstream — IN PROGRESS
@@ -165,6 +178,15 @@ Plan: `.claude/plans/piped-scribbling-parnas.md`
 
 ## Recent Changes
 
+- 2026-03-24: #188 3.4-QA P1 batch — QA.3, QA.4, QA.5, QA.8
+  - QA.3: `sizeOfLlvmStruct` replaces naive sum with alignment-padded struct sizing for env malloc.
+  - QA.4: `IdentityHashMap` for lambda→envStructName (reference equality, not structural).
+  - QA.4: Refactored `collectCapturingLambdas` from mutable vars to pure fold.
+  - QA.5: Removed UUID from `paramId`; counter-based env names already ensure uniqueness.
+  - QA.8: Null guard in `emitClosureFreeViaEnvDtor` — non-capturing fns (null env) skip dtor.
+  - QA.8: `exitBlock` on `CompileResult` so tail-rec PHI tracks through null-guard blocks.
+  - Also closes QA.18 (same root cause as QA.3).
+  - 336/336 tests, 18/18 mem tests, benchmarks compile.
 - 2026-03-24: #188 Nested lambda workstream A+B+C — capturing lambdas + TCO
   - QA.1 (Phase A): Capturing lambdas preserve call-site IR; output reset conditioned on `isLiteral`.
   - QA.2 (Phase B): Counter-suffixed unique symbols for let-bound lambda definitions.
