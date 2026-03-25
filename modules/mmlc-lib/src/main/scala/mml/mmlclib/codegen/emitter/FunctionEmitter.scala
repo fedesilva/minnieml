@@ -375,8 +375,8 @@ private[emitter] def compileTailRecursiveLambda(
   paramTypes:  List[String],
   emittedName: String,
   body:        TailRecBody,
-  inlineHint:  Boolean                        = false,
-  linkage:     String                         = "",
+  inlineHint:  Boolean                               = false,
+  linkage:     String                                = "",
   captureInfo: Option[(String, List[(Ref, String)])] = None
 ): Either[CodeGenError, CodeGenState] =
   val nonVoidIndices          = paramTypes.indices.filter(i => paramTypes(i) != "void").toList
@@ -688,10 +688,10 @@ private def extractBody(
 
     case _ => None
 
-/** When the tail position is a Ref, check if it refers to a binding in the accumulated
-  * statements whose value is a self-call. This handles the OwnershipAnalyzer's pattern:
-  *   let __ownership_result = self_call(args); cleanup; __ownership_result
-  * Returns a TailRecCall with cleanup statements moved before the back-edge.
+/** When the tail position is a Ref, check if it refers to a binding in the accumulated statements
+  * whose value is a self-call. This handles the OwnershipAnalyzer's pattern: let __ownership_result =
+  * self_call(args); cleanup; __ownership_result Returns a TailRecCall with cleanup statements moved
+  * before the back-edge.
   */
 private def extractSelfCallFromAccumulated(
   refName:       String,
@@ -702,7 +702,7 @@ private def extractSelfCallFromAccumulated(
 ): Option[TailRecBody] =
   val idx = accStatements.indexWhere {
     case BoundStatement(Some(n), _) => n == refName
-    case _                          => false
+    case _ => false
   }
   if idx < 0 then None
   else

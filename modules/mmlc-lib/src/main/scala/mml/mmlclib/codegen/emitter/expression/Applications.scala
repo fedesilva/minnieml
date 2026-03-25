@@ -337,11 +337,11 @@ def compileRegularCall(
 
 private case class CompiledArg(op: String, llvmType: String, typeSpec: Option[Type])
 
-/** Emit inline code to free a closure via its embedded destructor pointer.
+/** Free a closure via the destructor pointer embedded in its env struct.
   *
-  * The closure arg is a fat pointer { ptr fn, ptr env }. The env struct's first field (index 0) is
-  * a pointer to the destructor function. We extract the env ptr, null-check it, load the dtor, and
-  * call it with the env ptr.
+  * The arg is a fat pointer `{ ptr fn, ptr env }`. The env struct's field 0 holds a pointer to the
+  * destructor function. We extract the env ptr, null-check it (non-capturing functions have null
+  * env), and if non-null load the dtor from field 0 and call it with the env ptr.
   */
 private def emitClosureFreeViaEnvDtor(
   compiledArgs: List[CompiledArg],
@@ -350,25 +350,46 @@ private def emitClosureFreeViaEnvDtor(
 ): Either[CodeGenError, CompileResult] =
   compiledArgs match
     case List(arg) if arg.llvmType == "{ ptr, ptr }" =>
-      // Extract env ptr, load dtor from field 0, call it.
-      // No null check needed: only capturing closures (env != null) become Owned,
-      // and the dtor itself (mml_free_raw) null-checks internally.
       val envReg  = state.nextRegister
-      val dtorReg = envReg + 1
+      val cmpReg  = envReg + 1
+      val dtorReg = cmpReg + 1
 
-      val extractEnv = emitExtractValue(envReg, "{ ptr, ptr }", arg.op, 1)
-      val loadDtor   = s"  %$dtorReg = load ptr, ptr %$envReg"
-      val callDtor   = s"  call void %$dtorReg(ptr %$envReg)"
+      val freeLabel = s"closure_free_${envReg}_dtor"
+      val endLabel  = s"closure_free_${envReg}_end"
+
+      val extractEnv =
+        emitExtractValue(envReg, "{ ptr, ptr }", arg.op, 1)
+      val nullCheck =
+        s"  %$cmpReg = icmp eq ptr %$envReg, null"
+      val branch =
+        s"  br i1 %$cmpReg, label %$endLabel, label %$freeLabel"
+      val freeLbl  = s"$freeLabel:"
+      val loadDtor = s"  %$dtorReg = load ptr, ptr %$envReg"
+      val callDtor = s"  call void %$dtorReg(ptr %$envReg)"
+      val brEnd    = s"  br label %$endLabel"
+      val endLbl   = s"$endLabel:"
 
       val finalState = state
         .withRegister(dtorReg + 1)
         .emit(extractEnv)
+        .emit(nullCheck)
+        .emit(branch)
+        .emit(freeLbl)
         .emit(loadDtor)
         .emit(callDtor)
+        .emit(brEnd)
+        .emit(endLbl)
 
-      Right(CompileResult(0, finalState, false, "Unit"))
+      Right(
+        CompileResult(0, finalState, false, "Unit", exitBlock = Some(endLabel))
+      )
     case _ =>
-      Left(CodeGenError("__free_closure expects a single { ptr, ptr } argument", Some(app)))
+      Left(
+        CodeGenError(
+          "__free_closure expects a single { ptr, ptr } argument",
+          Some(app)
+        )
+      )
 
 /** For closure env free functions, extract the env pointer (index 1) from the fat pointer arg. */
 private def extractEnvPtrFromArgs(

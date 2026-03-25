@@ -259,6 +259,16 @@ def alignTo(offset: Int, alignment: Int): Int =
   val mask = alignment - 1
   (offset + mask) & ~mask
 
+/** Compute size of an LLVM struct with proper alignment padding. */
+def sizeOfLlvmStruct(fields: List[String]): Int =
+  val endOffset = fields.foldLeft(0) { (offset, field) =>
+    alignTo(offset, alignOfLlvmType(field)) + sizeOfLlvmType(field)
+  }
+  val maxAlign =
+    if fields.isEmpty then 1
+    else fields.map(alignOfLlvmType).max
+  alignTo(endOffset, maxAlign)
+
 enum TbaaNode derives CanEqual:
   case Root(name: String)
   case Scalar(name: String, parentId: Int)

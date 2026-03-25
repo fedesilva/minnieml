@@ -209,10 +209,15 @@ private def compileTailRecLambdaLiteral(
 ): Either[CodeGenError, CompileResult] =
   if lambda.captures.nonEmpty then
     compileTailRecCapturingLambda(
-      lambda, state, fnName, returnType, paramTypes, body, functionScope
+      lambda,
+      state,
+      fnName,
+      returnType,
+      paramTypes,
+      body,
+      functionScope
     )
-  else
-    compileTailRecNonCapturing(lambda, state, fnName, returnType, paramTypes, body)
+  else compileTailRecNonCapturing(lambda, state, fnName, returnType, paramTypes, body)
 
 private def compileTailRecNonCapturing(
   lambda:     Lambda,
@@ -266,7 +271,7 @@ private def compileTailRecCapturingLambda(
       linkage     = "internal ",
       captureInfo = Some(capInfo)
     ).map { finalSubState =>
-      val fnBody      = finalSubState.output.reverse.mkString("\n")
+      val fnBody = finalSubState.output.reverse.mkString("\n")
       val mergedState =
         mergeSubState(siteState, finalSubState).addDeferredDefinition(fnBody)
       CompileResult(
@@ -387,7 +392,7 @@ private def emitCallSiteEnv(
       .withFunctionDeclaration("malloc", "ptr", List("i64"))
       .withFunctionDeclaration("free", "void", List("ptr"))
 
-    val envSize   = sizeOfLlvmType("ptr") + capLlvmTypes.map(sizeOfLlvmType).sum
+    val envSize   = sizeOfLlvmStruct("ptr" :: capLlvmTypes)
     val mallocReg = stateWithEnv.nextRegister
     val mallocLine =
       emitCall(Some(mallocReg), Some("ptr"), "malloc", List(("i64", envSize.toString)))
@@ -406,16 +411,15 @@ private def emitCallSiteEnv(
       siteStateAfterMalloc.withRegister(dtorGepReg + 1).emit(dtorGepLine).emit(dtorStoreLine)
 
     val siteStateAfterCaptures =
-      captureTypes.zipWithIndex.foldLeft(siteStateAfterDtor) {
-        case (st, ((ref, llvmType), idx)) =>
-          val capOp = functionScope.get(ref.name) match
-            case Some(entry) => entry.operandStr
-            case None        => s"@${ref.name}"
-          val gepReg = st.nextRegister
-          val gepLine =
-            s"  %$gepReg = getelementptr $envTypeRef, ptr %$mallocReg, i32 0, i32 ${idx + 1}"
-          val storeLine = s"  store $llvmType $capOp, ptr %$gepReg"
-          st.withRegister(gepReg + 1).emit(gepLine).emit(storeLine)
+      captureTypes.zipWithIndex.foldLeft(siteStateAfterDtor) { case (st, ((ref, llvmType), idx)) =>
+        val capOp = functionScope.get(ref.name) match
+          case Some(entry) => entry.operandStr
+          case None => s"@${ref.name}"
+        val gepReg = st.nextRegister
+        val gepLine =
+          s"  %$gepReg = getelementptr $envTypeRef, ptr %$mallocReg, i32 0, i32 ${idx + 1}"
+        val storeLine = s"  store $llvmType $capOp, ptr %$gepReg"
+        st.withRegister(gepReg + 1).emit(gepLine).emit(storeLine)
       }
 
     val fp0Reg = siteStateAfterCaptures.nextRegister
