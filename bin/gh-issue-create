@@ -1,0 +1,52 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+usage() {
+  cat >&2 <<'EOF'
+Usage: gh-issue-create <title> <body-file> [--repo <repo>]
+Examples:
+  gh-issue-create "No-end syntax" /tmp/no-end-issue.md
+  gh-issue-create "No-end syntax" /tmp/no-end-issue.md --repo fedesilva/minnieml
+EOF
+}
+
+if [[ $# -eq 1 && ( "$1" == "-h" || "$1" == "--help" ) ]]; then
+  usage
+  exit 0
+fi
+
+if [[ $# -lt 2 ]]; then
+  usage
+  exit 1
+fi
+
+title="$1"
+body_file="$2"
+shift 2
+
+repo="fedesilva/minnieml"
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --repo)
+      repo="${2:-}"
+      shift 2
+      ;;
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    *)
+      echo "Unknown option: $1" >&2
+      usage
+      exit 1
+      ;;
+  esac
+done
+
+if [[ ! -f "$body_file" ]]; then
+  echo "Body file not found: $body_file" >&2
+  exit 1
+fi
+
+gh issue create --repo "$repo" --title "$title" --body-file "$body_file"
