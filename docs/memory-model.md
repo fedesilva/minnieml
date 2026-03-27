@@ -271,13 +271,30 @@ and a pointer to the environment — is a heap type.
 
 ### Capture semantics
 
-Captured bindings are copied into the environment struct at the point the lambda is
-created. For value types (Int, Float, Bool, etc.) this is a plain copy; the original
+Captured bindings are stored in the environment struct when the lambda is created.
+
+For value types (`Int`, `Float`, `Bool`, etc.), this is a plain copy. The original
 binding remains usable.
 
 ```mml
 fn makeAdder(a: Int): Int -> Int =
   { x: Int -> x + a }   // a is copied into the closure env
+;
+```
+
+Heap-typed captures follow ownership rules instead:
+
+- If the captured binding is **Owned**, ownership moves into the closure environment.
+- The original outer binding becomes `Moved`.
+- Inside the lambda body, the captured field is treated as **Borrowed** from the
+  environment.
+- If the captured binding is already **Borrowed** or a **Literal**, capture is rejected.
+
+```mml
+fn makeGreeter(name: String): Unit -> Unit =
+  {
+    println ("Hello, " ++ name);
+  }: Unit;
 ;
 ```
 
@@ -297,15 +314,23 @@ fn main() =
 
 ### Environment destruction
 
-Each closure environment has a destructor embedded in the environment struct itself.
-When the closure is freed, the runtime dispatches to the correct destructor
-automatically. For closures that capture only value types, the destructor simply
-releases the environment allocation.
+When a capturing closure goes out of scope, its environment is destroyed automatically.
+
+For closures that capture only value types, this just releases the environment
+allocation. For closures with heap captures, the captured heap values are destroyed
+before the environment itself is released.
 
 ### Current limitation
 
-Closures cannot yet capture heap-typed values (String, structs with heap fields). Pass
-heap values as explicit function parameters instead of capturing them.
+Closures do not yet expose explicit capture modes in the surface language. Capture policy
+is implicit:
+
+- value captures are copied
+- owned heap captures are moved into the environment
+- borrowed heap bindings cannot be captured
+
+There is no syntax yet for explicit capture lists or for choosing borrow-vs-move
+capture behavior directly.
 
 ---
 
