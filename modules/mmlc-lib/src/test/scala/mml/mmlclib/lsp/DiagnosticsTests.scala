@@ -9,7 +9,7 @@ class DiagnosticsTests extends BaseEffFunSuite:
   test("duplicate diagnostic prefers the first real source span when synthetic entries exist"):
     val code =
       """
-      fn print(a: String): Unit = ();
+      fn print(a: String): Unit = ();;
       """
 
     semState(code).map { result =>

@@ -11,7 +11,7 @@ class FindReferencesTests extends BaseEffFunSuite:
   test("find references to function") {
     val code =
       """
-      fn add(x: Int, y: Int): Int = x + y;
+      fn add(x: Int, y: Int): Int = x + y;;
       let result = add 1 2;
       let result2 = add 3 4;
       """
@@ -38,7 +38,7 @@ class FindReferencesTests extends BaseEffFunSuite:
   test("find references to parameter") {
     val code =
       """
-      fn double(x: Int): Int = x + x;
+      fn double(x: Int): Int = x + x;;
       """
 
     semNotFailed(code).map { m =>

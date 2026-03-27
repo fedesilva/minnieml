@@ -7,5 +7,5 @@ pub fn main() =
   let y = 4*30;
   let z = b * y * x;
   let result = a * b + c / y * x;
-  println (str_to_int result) //doh
+  println (str_to_int result); //doh
 ;

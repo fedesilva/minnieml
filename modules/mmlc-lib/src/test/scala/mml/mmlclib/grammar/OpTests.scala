@@ -10,7 +10,7 @@ class OpTests extends BaseEffFunSuite:
   test("let with simple binop") {
     parseNotFailed(
       """
-        op + (a, b) = sum a b;
+        op + (a, b) = sum a b;;
       """
     )
   }
@@ -18,7 +18,7 @@ class OpTests extends BaseEffFunSuite:
   test("op with function type ascription") {
     parseNotFailed(
       """
-        op apply (f: Int -> Int, x: Int): Int = f x;
+        op apply (f: Int -> Int, x: Int): Int = f x;;
       """
     ).map { m =>
       assert(
@@ -55,7 +55,7 @@ class OpTests extends BaseEffFunSuite:
   test("let with left assoc unary op") {
     parseNotFailed(
       """
-        op - (a) left = neg a;
+        op - (a) left = neg a;;
       """
     ).map { m =>
       assert(
@@ -83,7 +83,7 @@ class OpTests extends BaseEffFunSuite:
   test("let with right assoc unary op") {
     parseNotFailed(
       """
-        op - (a) right = neg a right;
+        op - (a) right = neg a right;;
       """
     ).map { m =>
       assert(
@@ -111,7 +111,7 @@ class OpTests extends BaseEffFunSuite:
   test("unary op with invalid name") {
     parseFailedWithErrors(
       """
-        op 123invalid (a) = a;
+        op 123invalid (a) = a;;
       """
     ).map { errors =>
       assert(errors.size == 1, s"Expected 1 error but got ${errors.size}")
@@ -126,7 +126,7 @@ class OpTests extends BaseEffFunSuite:
   test("binop with invalid name") {
     parseFailedWithErrors(
       """
-        op 123invalid (a, b) = a;
+        op 123invalid (a, b) = a;;
       """
     ).map { errors =>
       assert(errors.size == 1, s"Expected 1 error but got ${errors.size}")
@@ -149,7 +149,7 @@ class OpTests extends BaseEffFunSuite:
   test("unary right assoc with precedence") {
     parseNotFailed(
       """
-        op - (a) 2 right = neg a;
+        op - (a) 2 right = neg a;;
       """
     ).map { m =>
       assert(
@@ -181,7 +181,7 @@ class OpTests extends BaseEffFunSuite:
   test("unary left assoc with precedence") {
     parseNotFailed(
       """
-          op - (a) 2 left  = neg a;
+          op - (a) 2 left  = neg a;;
         """
     ).map { m =>
       assert(

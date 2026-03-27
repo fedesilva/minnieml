@@ -7,24 +7,24 @@ struct Inner { name: String };
 struct Outer { inner: Inner, data: String };
 
 fn consume_outer(o: Outer): Unit =
-  println ((o.inner.name ++ " / ") ++ o.data)
+  println ((o.inner.name ++ " / ") ++ o.data);
 ;
 
 fn test_nested(n: Int): Unit =
   let i = Inner ("inner" ++ (int_to_str n));
   let o = Outer i ("data" ++ (int_to_str n));
-  consume_outer o
+  consume_outer o;
 ;
 
 fn run(n: Int): Unit =
   if n != 0 then
     test_nested n;
-    run (n - 1)
-  end
+    run (n - 1);
+  ;
 ;
 
 pub fn main(): Unit =
   println "Testing nested struct cleanup...";
   run 100;
-  println "Nested struct tests end!"
+  println "Nested struct tests end!";
 ;

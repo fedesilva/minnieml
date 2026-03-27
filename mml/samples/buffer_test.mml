@@ -7,4 +7,4 @@ pub fn main(): Unit =
   out writeln "World!";
   out writeln "This is buffered output.";
   flush out
-;
+;;

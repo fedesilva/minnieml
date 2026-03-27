@@ -4,11 +4,10 @@ let b = 2;
 
 let c =
   if a > b then
-    "A"
+    "A";
   else
-    "B"
-  end;
-
+    "B";
+  ;
 pub fn main(): Unit =
-  println ("Resultado: " ++ c)
+  println ("Resultado: " ++ c);
 ;

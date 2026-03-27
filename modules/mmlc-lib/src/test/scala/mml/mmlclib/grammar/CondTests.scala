@@ -11,10 +11,10 @@ class CondTests extends BaseEffFunSuite:
       """
           let a =
             if true then
-              1
+              1;
             else
-              2
-            end;
+              2;
+            ;
         """.stripMargin
     ).map { m =>
       assert(m.members.size == 1)

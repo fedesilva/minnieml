@@ -1,6 +1,6 @@
-fn apply(f: Int -> Int, x: Int): Int = f x;
+fn apply(f: Int -> Int, x: Int): Int = f x;;
 
 pub fn main() =
   let result = apply { x -> x + 1 } 41;
-  println (int_to_str result)
+  println (int_to_str result);
 ;

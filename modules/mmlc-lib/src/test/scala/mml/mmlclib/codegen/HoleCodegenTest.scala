@@ -8,7 +8,7 @@ class HoleCodegenTest extends BaseEffFunSuite:
     val source =
       """
         fn main(): Int =
-          ???
+          ???;
         ;
       """
 

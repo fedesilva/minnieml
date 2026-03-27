@@ -99,12 +99,12 @@ class OwnershipAnalyzerTests extends BaseEffFunSuite:
     val code =
       """
         fn get_string(n: Int): String =
-          int_to_str n
+          int_to_str n;
         ;
 
         fn main(): Unit =
           let s = get_string 5;
-          println s
+          println s;
         ;
       """
 
@@ -131,12 +131,12 @@ class OwnershipAnalyzerTests extends BaseEffFunSuite:
   test("use after move to consuming param") {
     val code =
       """
-        fn consume(~s: String): Unit = println s;
+        fn consume(~s: String): Unit = println s;;
 
         fn main(): Unit =
           let s = "hello" ++ " world";
           consume s;
-          consume s
+          consume s;
         ;
       """
 
@@ -149,12 +149,12 @@ class OwnershipAnalyzerTests extends BaseEffFunSuite:
   test("use after move in expression") {
     val code =
       """
-        fn consume(~s: String): Unit = println s;
+        fn consume(~s: String): Unit = println s;;
 
         fn main(): Unit =
           let s = "hello" ++ " world";
           consume s;
-          println s
+          println s;
         ;
       """
 
@@ -167,14 +167,14 @@ class OwnershipAnalyzerTests extends BaseEffFunSuite:
   test("no error when each binding moved once") {
     val code =
       """
-        fn consume(~s: String): Unit = println s;
+        fn consume(~s: String): Unit = println s;;
 
         fn main(): Unit =
           let s1 = "hello" ++ " world";
           consume s1;
           let s2 = "goodbye" ++ " world";
           consume s2;
-          println "done"
+          println "done";
         ;
       """
 
@@ -190,7 +190,7 @@ class OwnershipAnalyzerTests extends BaseEffFunSuite:
         fn main(): Unit =
           let s0 = int_to_str 0;
           let s  = "Zero: " ++ s0 ++ ", " ++ (int_to_str 1);
-          println s
+          println s;
         ;
       """
 
@@ -208,11 +208,11 @@ class OwnershipAnalyzerTests extends BaseEffFunSuite:
   test("partial application of function with consuming param is rejected") {
     val code =
       """
-        fn consume(a: Int, ~s: String): Unit = println s;
+        fn consume(a: Int, ~s: String): Unit = println s;;
 
         fn main(): Unit =
           let f = consume 42;
-          println "done"
+          println "done";
         ;
       """
 
@@ -227,12 +227,12 @@ class OwnershipAnalyzerTests extends BaseEffFunSuite:
   test("consuming param not last use detected") {
     val code =
       """
-        fn consume(~s: String): Unit = println s;
+        fn consume(~s: String): Unit = println s;;
 
         fn main(): Unit =
           let s = "hello" ++ " world";
           consume s;
-          println s
+          println s;
         ;
       """
 
@@ -245,12 +245,12 @@ class OwnershipAnalyzerTests extends BaseEffFunSuite:
   test("consuming param as last use accepted") {
     val code =
       """
-        fn consume(~s: String): Unit = println s;
+        fn consume(~s: String): Unit = println s;;
 
         fn main(): Unit =
           let s = "hello" ++ " world";
           println s;
-          consume s
+          consume s;
         ;
       """
 
@@ -263,11 +263,11 @@ class OwnershipAnalyzerTests extends BaseEffFunSuite:
   test("consuming param only use accepted") {
     val code =
       """
-        fn consume(~s: String): Unit = println s;
+        fn consume(~s: String): Unit = println s;;
 
         fn main(): Unit =
           let s = "hello" ++ " world";
-          consume s
+          consume s;
         ;
       """
 
@@ -280,15 +280,15 @@ class OwnershipAnalyzerTests extends BaseEffFunSuite:
   test("conditional consume in one branch frees in the other branch") {
     val code =
       """
-        fn consume(~s: String): Unit = println s;
+        fn consume(~s: String): Unit = println s;;
 
         fn test_cond_consume(flag: Bool): Unit =
           let s = int_to_str 1;
           if flag then
-            consume s
+            consume s;
           else
-            println s
-          end
+            println s;
+          ;
         ;
       """
 
@@ -309,13 +309,13 @@ class OwnershipAnalyzerTests extends BaseEffFunSuite:
   test("independent bindings each consumed once no error") {
     val code =
       """
-        fn consume(~s: String): Unit = println s;
+        fn consume(~s: String): Unit = println s;;
 
         fn main(): Unit =
           let s1 = "hello" ++ " world";
           let s2 = "goodbye" ++ " world";
           consume s1;
-          consume s2
+          consume s2;
         ;
       """
 
@@ -328,12 +328,12 @@ class OwnershipAnalyzerTests extends BaseEffFunSuite:
   test("saturated call to function with consuming param is accepted") {
     val code =
       """
-        fn consume(a: Int, ~s: String): Unit = println s;
+        fn consume(a: Int, ~s: String): Unit = println s;;
 
         fn main(): Unit =
           let s = "hello" ++ " world";
           consume 42 s;
-          println "done"
+          println "done";
         ;
       """
 
@@ -348,8 +348,8 @@ class OwnershipAnalyzerTests extends BaseEffFunSuite:
   test("borrowed param returned from heap-returning function is rejected") {
     val code =
       """
-        fn identity(s: String): String = s;
-        fn main(): Unit = println "ok";
+        fn identity(s: String): String = s;;
+        fn main(): Unit = println "ok";;
       """
 
     semState(code).map { result =>
@@ -362,8 +362,8 @@ class OwnershipAnalyzerTests extends BaseEffFunSuite:
   test("allocating call returned from heap-returning function is accepted") {
     val code =
       """
-        fn make_str(n: Int): String = int_to_str n;
-        fn main(): Unit = println "ok";
+        fn make_str(n: Int): String = int_to_str n;;
+        fn main(): Unit = println "ok";;
       """
 
     semState(code).map { result =>
@@ -375,8 +375,8 @@ class OwnershipAnalyzerTests extends BaseEffFunSuite:
   test("string literal returned from heap-returning function is accepted") {
     val code =
       """
-        fn greeting(): String = "hello";
-        fn main(): Unit = println "ok";
+        fn greeting(): String = "hello";;
+        fn main(): Unit = println "ok";;
       """
 
     semState(code).map { result =>
@@ -389,9 +389,13 @@ class OwnershipAnalyzerTests extends BaseEffFunSuite:
     val code =
       """
         fn maybe_str(n: Int): String =
-          if n > 0 then int_to_str n else "none" end
+          if n > 0 then
+            int_to_str n;
+          else
+            "none";
+          ;
         ;
-        fn main(): Unit = println "ok";
+        fn main(): Unit = println "ok";;
       """
 
     semState(code).map { result =>
@@ -405,12 +409,16 @@ class OwnershipAnalyzerTests extends BaseEffFunSuite:
       """
         fn nested_maybe(flag1: Bool, flag2: Bool, n: Int): String =
           if flag1 then
-            if flag2 then int_to_str n else "none" end
+            if flag2 then
+              int_to_str n;
+            else
+              "none";
+            ;
           else
-            int_to_str (n + 1)
-          end
+            int_to_str (n + 1);
+          ;
         ;
-        fn main(): Unit = println "ok";
+        fn main(): Unit = println "ok";;
       """
 
     semState(code).map { result =>
@@ -424,11 +432,15 @@ class OwnershipAnalyzerTests extends BaseEffFunSuite:
       """
         fn main(): Unit =
           let s = if true then
-            if false then int_to_str 1 else "none" end
+            if false then
+              int_to_str 1;
+            else
+              "none";
+            ;
           else
-            int_to_str 2
-          end;
-          println s
+            int_to_str 2;
+          ;
+          println s;
         ;
       """
 
@@ -449,9 +461,13 @@ class OwnershipAnalyzerTests extends BaseEffFunSuite:
     val code =
       """
         fn pick(flag: Bool, a: String, b: String): String =
-          if flag then a else b end
+          if flag then
+            a;
+          else
+            b;
+          ;
         ;
-        fn main(): Unit = println "ok";
+        fn main(): Unit = println "ok";;
       """
 
     semState(code).map { result =>
@@ -466,8 +482,8 @@ class OwnershipAnalyzerTests extends BaseEffFunSuite:
   test("non-heap return type with borrowed param is accepted") {
     val code =
       """
-        fn id(n: Int): Int = n;
-        fn main(): Unit = println "ok";
+        fn id(n: Int): Int = n;;
+        fn main(): Unit = println "ok";;
       """
 
     semState(code).map { result =>
@@ -485,7 +501,7 @@ class OwnershipAnalyzerTests extends BaseEffFunSuite:
           let n = "Alice" ++ " Smith";
           let r = "Admin" ++ " Role";
           let u = User n r;
-          println u.name
+          println u.name;
         ;
       """
 
@@ -509,7 +525,7 @@ class OwnershipAnalyzerTests extends BaseEffFunSuite:
 
         fn main(): Unit =
           let u = User "Alice" "Admin";
-          println u.name
+          println u.name;
         ;
       """
 
@@ -532,10 +548,10 @@ class OwnershipAnalyzerTests extends BaseEffFunSuite:
         struct User { name: String, role: String };
 
         fn make_user(n: String, r: String): User =
-          User n r
+          User n r;
         ;
 
-        fn main(): Unit = println "ok";
+        fn main(): Unit = println "ok";;
       """
 
     semState(code).map { result =>
@@ -559,10 +575,10 @@ class OwnershipAnalyzerTests extends BaseEffFunSuite:
         struct Wrapper { user: User };
 
         fn wrap(u: User): Wrapper =
-          Wrapper u
+          Wrapper u;
         ;
 
-        fn main(): Unit = println "ok";
+        fn main(): Unit = println "ok";;
       """
 
     semState(code).map { result =>
@@ -582,10 +598,10 @@ class OwnershipAnalyzerTests extends BaseEffFunSuite:
         struct Point { x: Int, y: Int };
 
         fn make_point(a: Int, b: Int): Point =
-          Point a b
+          Point a b;
         ;
 
-        fn main(): Unit = println "ok";
+        fn main(): Unit = println "ok";;
       """
 
     semNotFailed(code).map { module =>
@@ -617,7 +633,7 @@ class OwnershipAnalyzerTests extends BaseEffFunSuite:
           let r = "Admin" ++ " Role";
           let a = User n r;
           let b = a;
-          println b.name
+          println b.name;
         ;
       """
 
@@ -640,7 +656,7 @@ class OwnershipAnalyzerTests extends BaseEffFunSuite:
         struct User { name: String, role: String };
 
         fn print_user(u: User): Unit =
-          println u.name
+          println u.name;
         ;
 
         fn main(): Unit =
@@ -649,7 +665,7 @@ class OwnershipAnalyzerTests extends BaseEffFunSuite:
           let a = User n r;
           let b = a;
           // Quack! not possible, mem is not owned anymore by a.
-          print_user a
+          print_user a;
         ;
       """
 
@@ -669,7 +685,7 @@ class OwnershipAnalyzerTests extends BaseEffFunSuite:
           let r = "Admin" ++ " Role";
           let a = User n r;
           let b = a;
-          println a.name
+          println a.name;
         ;
       """
 
@@ -688,7 +704,7 @@ class OwnershipAnalyzerTests extends BaseEffFunSuite:
           let a = Point 1 2;
           let b = a;
           println (int_to_str a.x);
-          println (int_to_str b.x)
+          println (int_to_str b.x);
         ;
       """
 
@@ -705,7 +721,7 @@ class OwnershipAnalyzerTests extends BaseEffFunSuite:
           let a = "hello" ++ " world";
           let b = a;
           println a; // Error, `a`` was moved.
-          println b  
+          println b;
         ;
       """
 
@@ -721,7 +737,7 @@ class OwnershipAnalyzerTests extends BaseEffFunSuite:
         fn main(): Unit =
           let a = "hello" ++ " world";
           let b = a;
-          println b
+          println b;
         ;
       """
 
@@ -737,7 +753,7 @@ class OwnershipAnalyzerTests extends BaseEffFunSuite:
         fn main(): Unit =
           let a = "hello" ++ " world";
           let b = a;
-          println b
+          println b;
         ;
       """
 
@@ -761,10 +777,10 @@ class OwnershipAnalyzerTests extends BaseEffFunSuite:
 
         fn use_user(u: User): Unit =
           let b = u;
-          println b.name
+          println b.name;
         ;
 
-        fn main(): Unit = println "ok";
+        fn main(): Unit = println "ok";;
       """
 
     semState(code).map { result =>
@@ -782,7 +798,7 @@ class OwnershipAnalyzerTests extends BaseEffFunSuite:
         fn main(): Unit =
           let i = Inner ("hello" ++ " world");
           let o = Outer i ("foo" ++ " bar");
-          println o.data
+          println o.data;
         ;
       """
 
@@ -807,7 +823,7 @@ class OwnershipAnalyzerTests extends BaseEffFunSuite:
           let s = "hello" ++ " world";
           ar_str_set arr 0 s;
           ar_str_set arr 1 s;
-          println (ar_str_get arr 0)
+          println (ar_str_get arr 0);
         ;
       """
 
@@ -831,11 +847,11 @@ class OwnershipAnalyzerTests extends BaseEffFunSuite:
           value: Int
         };
 
-        fn freeNamedValue(~n: NamedValue): Unit = ();
+        fn freeNamedValue(~n: NamedValue): Unit = ();;
 
         fn main(): Unit =
           let nv = NamedValue "hello" 42;
-          ()
+          ();
         ;
       """
 
@@ -860,7 +876,7 @@ class OwnershipAnalyzerTests extends BaseEffFunSuite:
         let p2 = Person (name) 25;
 
         fn main() =
-          println name
+          println name;
         ;
       """
 

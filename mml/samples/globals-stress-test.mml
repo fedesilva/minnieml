@@ -8,9 +8,8 @@ let g_name = "fede";
 let c = Container (Wrapper (((g_name)))) ((((g_name))));
 
 fn borrow_string(s: String): Unit =
-  println s
+  println s;
 ;
-
 pub fn main(): Unit =
   // 1. Can we still borrow the global?
   borrow_string g_name;
@@ -19,5 +18,5 @@ pub fn main(): Unit =
   println c.tag;
   
   // 3. Final verification of the global itself
-  println g_name
+  println g_name;
 ;

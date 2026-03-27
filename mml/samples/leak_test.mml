@@ -7,16 +7,14 @@ fn test_iteration(): Unit =
   let line2 = read_line_fd fd;
   println line1;
   println line2;
-  close_file fd
+  close_file fd;
 ;
-
 fn run(n: Int): Unit =
-  if n != 0 then   
+  if n != 0 then
     test_iteration ();
-    run (n - 1)
-  end
+    run (n - 1);
+  ;
 ;
-
 pub fn main(): Unit =
-  run 10000
+  run 10000;
 ;

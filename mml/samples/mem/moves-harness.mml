@@ -1,5 +1,5 @@
 // Valid move semantics — each owned value moved exactly once.
-fn consume(~s: String): Unit = println s;
+fn consume(~s: String): Unit = println s;;
 
 fn run(n: Int): Unit = 
   if n >= 0 then
@@ -9,12 +9,10 @@ fn run(n: Int): Unit =
     consume s2;
     // this fails
     // println s2
-    run (n-1)
-  end
+    run (n-1);
+  ;
 ;
-
-
 pub fn main(): Unit =
   run 100;
-  println "done"  
+  println "done";
 ;

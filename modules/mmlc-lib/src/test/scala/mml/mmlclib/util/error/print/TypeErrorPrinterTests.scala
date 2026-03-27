@@ -11,7 +11,7 @@ class TypeErrorPrinterTests extends BaseEffFunSuite:
     val code =
       """
         fn main() =
-          ???
+          ???;
         ;
       """
     val holeSpan = SrcSpan(
@@ -33,7 +33,7 @@ class TypeErrorPrinterTests extends BaseEffFunSuite:
       """
         fn main() =
           let f = 1;
-          f 2
+          f 2;
         ;
       """
     semState(code).map { result =>

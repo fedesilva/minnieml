@@ -24,4 +24,4 @@ pub fn main() =
   println ("City: "   ++ p.address.city);
   println ("Street: " ++ p.address.street);
   println "--------------------------------"
-;
+;;

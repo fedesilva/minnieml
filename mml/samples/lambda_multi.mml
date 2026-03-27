@@ -4,5 +4,5 @@ pub fn main(): Int =
     let y = x + 1;
     y
   };
-  f 1
+  f 1;
 ;

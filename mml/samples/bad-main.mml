@@ -1,2 +1,2 @@
 
-pub fn main(): String = "fede";
+pub fn main(): String = "fede";;

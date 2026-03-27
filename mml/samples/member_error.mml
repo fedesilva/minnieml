@@ -1,10 +1,10 @@
-fn mult (a: Int, b: Int): Int = a * b;
+fn mult (a: Int, b: Int): Int = a * b;;
 let a  ;
 let b = 1;
 let c = ;
 let d = "ok";
 
-pub fn main() = 
+pub fn main() =
   println (int_to_str b);
   println d;
 ;

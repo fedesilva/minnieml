@@ -1,2 +1,2 @@
 
-pub fn main():Int = 120;
+pub fn main():Int = 120;;

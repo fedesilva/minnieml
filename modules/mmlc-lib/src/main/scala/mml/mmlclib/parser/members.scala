@@ -91,7 +91,7 @@ private[parser] def fnDefP(info: SourceInfo)(using P[Any]): P[Member] =
       ~ ")"
       ~ typeAscP(info)
       ~ defAsKw
-      ~ exprP(info)
+      ~ terminatedExprP(info)
       ~ semiKw
       ~ spNoWsP(info)
       ~ spP(info)
@@ -106,7 +106,7 @@ private[parser] def fnDefP(info: SourceInfo)(using P[Any]): P[Member] =
           lambdaStart,
           params,
           typeAsc,
-          bodyExpr,
+          (bodyExpr, bodyEnd),
           endPoint,
           _
         ) =>
@@ -122,7 +122,7 @@ private[parser] def fnDefP(info: SourceInfo)(using P[Any]): P[Member] =
         case Right(fnName) =>
           val bndSpan    = span(nameStart, nameEnd)
           val nameN      = Name(span(nameStart, nameEnd), fnName)
-          val lambdaSpan = span(lambdaStart, endPoint)
+          val lambdaSpan = span(lambdaStart, bodyEnd)
           val arity = params.size match
             case 0 => CallableArity.Nullary
             case 1 => CallableArity.Unary
@@ -182,7 +182,7 @@ private[parser] def binOpDefP(info: SourceInfo)(using P[Any]): P[Member] =
       ~ precedenceP.?
       ~ assocP.?
       ~ defAsKw
-      ~ exprP(info)
+      ~ terminatedExprP(info)
       ~ spP(info)
       ~ semiKw
       ~ spNoWsP(info)
@@ -201,7 +201,7 @@ private[parser] def binOpDefP(info: SourceInfo)(using P[Any]): P[Member] =
           typeAsc,
           precedence,
           assoc,
-          bodyExpr,
+          (bodyExpr, bodyEnd),
           _,
           endPoint,
           _
@@ -217,7 +217,7 @@ private[parser] def binOpDefP(info: SourceInfo)(using P[Any]): P[Member] =
           )
         case Right(opName) =>
           val bndSpan     = span(nameStart, nameEnd)
-          val lambdaSpan  = span(lambdaStart, endPoint)
+          val lambdaSpan  = span(lambdaStart, bodyEnd)
           val opPrec      = precedence.getOrElse(50)
           val opAssoc     = assoc.getOrElse(Associativity.Left)
           val mangledName = OpMangling.mangleOp(opName, 2)
@@ -269,7 +269,7 @@ private[parser] def unaryOpP(info: SourceInfo)(using P[Any]): P[Member] =
       ~ precedenceP.?
       ~ assocP.?
       ~ defAsKw
-      ~ exprP(info)
+      ~ terminatedExprP(info)
       ~ semiKw
       ~ spNoWsP(info)
       ~ spP(info)
@@ -286,7 +286,7 @@ private[parser] def unaryOpP(info: SourceInfo)(using P[Any]): P[Member] =
           typeAsc,
           precedence,
           assoc,
-          bodyExpr,
+          (bodyExpr, bodyEnd),
           endPoint,
           _
         ) =>
@@ -302,7 +302,7 @@ private[parser] def unaryOpP(info: SourceInfo)(using P[Any]): P[Member] =
 
         case Right(opName) =>
           val bndSpan     = span(nameStart, nameEnd)
-          val lambdaSpan  = span(lambdaStart, endPoint)
+          val lambdaSpan  = span(lambdaStart, bodyEnd)
           val opPrec      = precedence.getOrElse(50)
           val opAssoc     = assoc.getOrElse(Associativity.Right)
           val mangledName = OpMangling.mangleOp(opName, 1)

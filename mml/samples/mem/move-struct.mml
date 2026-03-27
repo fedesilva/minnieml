@@ -4,9 +4,8 @@
 struct User { name: String, role: String };
 
 fn print_user(~u: User): Unit =
-  println ( u.name ++ " is a " ++ u.role)
+  println ( u.name ++ " is a " ++ u.role);
 ;
-
 fn test_move(n: Int): Unit =
   let name_str = "User" ++ int_to_str n;
   let role_str = "Admin" ++ int_to_str n;
@@ -15,21 +14,19 @@ fn test_move(n: Int): Unit =
   // this does not compile:
   // a's value ownership has been moved to b.
   // print_user a;
-  print_user b
+  print_user b;
   // this does not compile:
   // print_user takes ownership of b
   // print_user b 
 ;
-
 fn run(n: Int): Unit =
   if n != 0 then
     test_move n;
-    run (n - 1)
-  end
+    run (n - 1);
+  ;
 ;
-
 pub fn main(): Unit =
   println "Testing move-only structs...";
   run 10000;
-  println "Move-struct tests finished!"
+  println "Move-struct tests finished!";
 ;

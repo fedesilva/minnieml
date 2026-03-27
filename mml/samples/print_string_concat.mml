@@ -1,10 +1,9 @@
-
-let answer = a+b;
 let a = 2;
 let b = 40;
+let answer = a + b;
 
 
 pub fn main(): Unit =
   println ("Hello, " ++ "world!");
-  println ("the answer is: " ++ (int_to_str answer))
+  println ("the answer is: " ++ (int_to_str answer));
 ;

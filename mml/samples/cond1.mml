@@ -6,8 +6,8 @@ let d = -3 - -3;
 
 pub fn main(): Int =
   if c < 1 then
-    a + b
+    a + b;
   else
-    a - b
-  end
+    a - b;
+  ;
 ;

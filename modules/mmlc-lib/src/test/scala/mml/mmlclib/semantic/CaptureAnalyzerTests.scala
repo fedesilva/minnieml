@@ -55,8 +55,8 @@ class CaptureAnalyzerTests extends BaseEffFunSuite:
       """
         fn foo(dummy: Int): Int =
           let a = 1;
-          let l = { x: Int -> x + a };
-          l dummy
+          let l = { x: Int -> x + a; };
+          l dummy;
         ;
       """
     semNotFailed(code).map { module =>
@@ -77,8 +77,8 @@ class CaptureAnalyzerTests extends BaseEffFunSuite:
       """
         let g = 42;
         fn foo(dummy: Int): Int =
-          let l = { x: Int -> x + g };
-          l dummy
+          let l = { x: Int -> x + g; };
+          l dummy;
         ;
       """
     semNotFailed(code).map { module =>
@@ -98,8 +98,8 @@ class CaptureAnalyzerTests extends BaseEffFunSuite:
     val code =
       """
         fn foo(dummy: Int): Int =
-          let l = { x: Int -> x + 1 };
-          l dummy
+          let l = { x: Int -> x + 1; };
+          l dummy;
         ;
       """
     semNotFailed(code).map { module =>
@@ -120,8 +120,8 @@ class CaptureAnalyzerTests extends BaseEffFunSuite:
         fn foo(dummy: Int): Int =
           let a = 1;
           let b = 2;
-          let l = { x: Int -> x + a + b };
-          l dummy
+          let l = { x: Int -> x + a + b; };
+          l dummy;
         ;
       """
     semNotFailed(code).map { module =>
@@ -141,8 +141,8 @@ class CaptureAnalyzerTests extends BaseEffFunSuite:
     val code =
       """
         fn foo(a: Int, dummy: Int): Int =
-          let l = { x: Int -> x + a };
-          l dummy
+          let l = { x: Int -> x + a; };
+          l dummy;
         ;
       """
     semNotFailed(code).map { module =>
@@ -163,8 +163,8 @@ class CaptureAnalyzerTests extends BaseEffFunSuite:
       """
         fn foo(dummy: Int): Int =
           let a = 1;
-          let l = { x: Int -> x + a };
-          l dummy
+          let l = { x: Int -> x + a; };
+          l dummy;
         ;
       """
     semNotFailed(code).map { module =>
@@ -184,7 +184,7 @@ class CaptureAnalyzerTests extends BaseEffFunSuite:
     val code =
       """
         fn foo(a: Int): Int -> Int =
-          { x: Int -> x + a }
+          { x: Int -> x + a; };
         ;
       """
     semNotFailed(code).map { module =>
@@ -203,10 +203,10 @@ class CaptureAnalyzerTests extends BaseEffFunSuite:
   test("non-capturing lambda has empty captures") {
     val code =
       """
-        fn apply(f: Int -> Int, x: Int): Int = f x;
+        fn apply(f: Int -> Int, x: Int): Int = f x;;
         pub fn main(): Unit =
-          let result = apply { x: Int -> x + 1 } 41;
-          println (int_to_str result)
+          let result = apply { x: Int -> x + 1; } 41;
+          println (int_to_str result);
         ;
       """
     semNotFailed(code).map { module =>

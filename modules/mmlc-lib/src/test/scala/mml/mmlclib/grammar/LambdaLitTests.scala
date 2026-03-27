@@ -9,7 +9,7 @@ class LambdaLitTests extends BaseEffFunSuite:
   test("single param lambda") {
     parseNotFailed(
       """
-        let f = { x -> x };
+        let f = { x -> x; };
       """
     ).map { m =>
       val bnd = m.members.head.asInstanceOf[Bnd]
@@ -24,7 +24,7 @@ class LambdaLitTests extends BaseEffFunSuite:
   test("multi param lambda") {
     parseNotFailed(
       """
-        let f = { a, b -> a };
+        let f = { a, b -> a; };
       """
     ).map { m =>
       val bnd = m.members.head.asInstanceOf[Bnd]
@@ -38,7 +38,7 @@ class LambdaLitTests extends BaseEffFunSuite:
   test("typed param") {
     parseNotFailed(
       """
-        let f = { x: Int -> x };
+        let f = { x: Int -> x; };
       """
     ).map { m =>
       val bnd = m.members.head.asInstanceOf[Bnd]
@@ -53,7 +53,7 @@ class LambdaLitTests extends BaseEffFunSuite:
   test("zero param lambda") {
     parseNotFailed(
       """
-        let f = { 42 };
+        let f = { 42; };
       """
     ).map { m =>
       val bnd = m.members.head.asInstanceOf[Bnd]
@@ -67,7 +67,7 @@ class LambdaLitTests extends BaseEffFunSuite:
   test("multiline body") {
     parseNotFailed(
       """
-        let f = { x -> let y = x; y };
+        let f = { x -> let y = x; y; };
       """
     ).map { m =>
       val bnd = m.members.head.asInstanceOf[Bnd]
@@ -85,7 +85,7 @@ class LambdaLitTests extends BaseEffFunSuite:
   test("nested lambdas") {
     parseNotFailed(
       """
-        let f = { a -> { b -> a } };
+        let f = { a -> { b -> a; }; };
       """
     ).map { m =>
       val bnd = m.members.head.asInstanceOf[Bnd]
@@ -105,8 +105,8 @@ class LambdaLitTests extends BaseEffFunSuite:
   test("lambda in application") {
     parseNotFailed(
       """
-        fn apply(f, x) = f x;
-        let r = apply { x -> x } 1;
+        fn apply(f, x) = f x;;
+        let r = apply { x -> x; } 1;
       """
     ).map { m =>
       assert(m.members.size == 2, s"Expected 2 members: ${prettyPrintAst(m)}")
@@ -116,7 +116,7 @@ class LambdaLitTests extends BaseEffFunSuite:
   test("consuming param") {
     parseNotFailed(
       """
-        let f = { ~s -> s };
+        let f = { ~s -> s; };
       """
     ).map { m =>
       val bnd = m.members.head.asInstanceOf[Bnd]
@@ -131,7 +131,7 @@ class LambdaLitTests extends BaseEffFunSuite:
   test("lambda with operator body") {
     parseNotFailed(
       """
-        let f = { a, b -> a + b };
+        let f = { a, b -> a + b; };
       """
     ).map { m =>
       val bnd = m.members.head.asInstanceOf[Bnd]
@@ -150,6 +150,14 @@ class LambdaLitTests extends BaseEffFunSuite:
     parseFailed(
       """
         let f = { x -> };
+      """
+    )
+  }
+
+  test("reject missing lambda body terminator") {
+    parseFailed(
+      """
+        let f = { x -> x };
       """
     )
   }
