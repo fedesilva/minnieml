@@ -17,42 +17,6 @@
 
 ## Active Tasks
 
-### No-`end` syntax [COMPLETE]
-
-- Reference: `docs/brainstorming/language/no-end.md`
-- Implement semicolon-only expression parsing for nested parser frames.
-- Remove `end` from expression syntax per proposal.
-- Make function/operator bodies and `if` branches consume their own terminating `;`.
-- Parser prerequisite for `#245 Inner function syntax`.
-- [x] 1. Parser frame ownership
-  - Introduce a terminated expression parser for nested block-like frames.
-  - Use it for function bodies, operator bodies, and conditional branches.
-  - Keep non-block expression contexts on the existing unterminated expression parser
-    where needed (for example lambda literals and simple inline expressions).
-- [x] 2. Conditional grammar migration
-  - Remove `end` from `if` / `elif` / `else` parsing.
-  - Make each branch consume exactly one terminating `;` as its parser frame closes.
-  - Preserve single-branch `if` behavior by synthesizing `else ()` as today.
-- [x] 3. Member/declaration boundary audit
-  - Rewire `fn` / `op` parsing so the body parser consumes its own trailing `;`.
-  - Keep top-level declaration termination correct and reject extra `;` where required.
-  - Re-check expression-level `let` sequencing against the new frame ownership rules.
-- [x] 4. Syntax-bearing Scala tests and tooling
-  - Update parser / semantic / codegen tests whose source snippets still use `end`.
-  - Update parser-adjacent comments and diagnostics that describe the old syntax.
-  - Audit LSP / semantic-token logic for assumptions about `end` at conditional tails.
-- [x] 5. Repo-wide `.mml` migration
-  - Rewrite every checked-in `.mml` file across samples, tests, benchmarks, docs,
-    and resources to semicolon-only conditional syntax.
-  - Preserve intentionally failing fixtures where the failure mode depends on malformed syntax,
-    but update them to fail in the new grammar shape.
-- [x] 6. Documentation migration
-  - Update `docs/language-reference.md` after the implementation lands.
-  - Refresh other syntax examples that still demonstrate `end`-terminated conditionals.
-- [x] 7. Verification
-  - Run targeted parser / semantic / codegen tests for conditional parsing and sequencing.
-  - Run the mandatory compiler post-task verification flow once the compiler changes are stable.
-
 ### #245 Inner function syntax
 
 - GitHub: https://github.com/fedesilva/minnieml/issues/245
@@ -242,7 +206,7 @@ Plan: `.claude/plans/piped-scribbling-parnas.md`
 
 ## Recent Changes
 
-- 2026-03-26: No-`end` syntax [COMPLETE]
+- 2026-03-26: No-`end` syntax
   - Parser: removed `end` from conditional syntax; nested parser frames now close with semicolons only.
   - Parser: function, operator, conditional, and lambda bodies now require their own final expression `;`.
   - Tests/tooling: migrated Scala parser/semantic/codegen/LSP fixtures to the new semicolon ownership rules.
