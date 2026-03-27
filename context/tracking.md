@@ -27,6 +27,12 @@
 - Desired shape:
   `fn loop(): Unit = ... ;`
 
+# `check` compiler command and api
+
+* only runs up to the end of sema stage.
+* cli entry point
+* lsp uses it
+
 ### #188 Literal lambdas and captures
 
 * there are issues to address:
