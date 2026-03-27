@@ -1,8 +1,8 @@
 
 // just an indirection operator for testing
-op ** (a: Int, b: Int) 80 left  = a * b;
+op ** (a: Int, b: Int) 80 left  = a * b;;
 
 pub fn main() = 
   println (int_to_str (2 ** 2))
-;
+;;
 

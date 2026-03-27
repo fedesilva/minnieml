@@ -3,18 +3,21 @@ let out = mkBufferWithSize (1024 * 4 * 10);
 
 fn loop(i: Int, t: Int): Unit =
   if i <= t then
-    if i % 15 == 0 then out writeln "FizzBuzz"
-    elif i % 3 == 0 then out writeln "Fizz"
-    elif i % 5 == 0 then out writeln "Buzz"
-    else out writeln_int i
-    end; 
-    loop (i+1) t
-  end
+    if i % 15 == 0 then
+      out writeln "FizzBuzz";
+    elif i % 3 == 0 then
+      out writeln "Fizz";
+    elif i % 5 == 0 then
+      out writeln "Buzz";
+    else
+      out writeln_int i;
+    ;
+    loop (i + 1) t;
+  ;
 ;
+fn fizzbuzz(n: Int) = loop 1 n;;
 
-fn fizzbuzz(n: Int) = loop 1 n;
-
-pub fn main() =  
+pub fn main() =
   fizzbuzz 10000000;
-  flush out
+  flush out;
 ;

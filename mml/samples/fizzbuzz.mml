@@ -1,19 +1,21 @@
 
 fn loop(n: Int, t: Int): Unit =
   if n <= t then
-    if n % 15 == 0 then println "FizzBuzz"
-    elif n % 3 == 0 then println "Fizz"
-    elif n % 5 == 0 then println "Buzz"
-    else println (int_to_str n)
-    end;
-    loop (n+1) t
-  end
+    if n % 15 == 0 then
+      println "FizzBuzz";
+    elif n % 3 == 0 then
+      println "Fizz";
+    elif n % 5 == 0 then
+      println "Buzz";
+    else
+      println (int_to_str n);
+    ;
+    loop (n + 1) t;
+  ;
 ;
+fn fizzbuzz(n: Int) = loop 1 n;;
 
-
-fn fizzbuzz(n: Int) = loop 1 n;
-
-/* entry point */
-pub fn main() =  
-  fizzbuzz 10000000
+// entry point
+pub fn main() =
+  fizzbuzz 10000000;
 ;

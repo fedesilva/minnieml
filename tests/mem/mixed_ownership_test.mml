@@ -9,52 +9,57 @@
 // Returns either a heap string (int_to_str) or static literal
 fn get_string(use_heap: Bool, n: Int): String =
   if use_heap then
-    int_to_str n
+    int_to_str n;
   else
-    "static string"
-  end
+    "static string";
+  ;
 ;
 
 // Reads static path to println to ensure static strings are safe
 fn test_static(n: Int): Unit =
   let s = get_string false n;
-  println s
+  println s;
 ;
 
 // Reads heap path to println to ensure frees are inserted
 fn test_heap(n: Int): Unit =
   let s = get_string true n;
-  println s
+  println s;
 ;
 
 // Inline conditional branch mixing static vs heap allocations
 fn test_inline_conditional(use_heap: Bool, n: Int): Unit =
-  let s = if use_heap then int_to_str n else "inline static" end;
-  println s
+  let s =
+    if use_heap then
+      int_to_str n;
+    else
+      "inline static";
+    ;
+  println s;
 ;
 
 // Tail recursion over static-only path
 fn run_static(n: Int): Unit =
   if n != 0 then
     test_static n;
-    run_static (n - 1)
-  end
+    run_static (n - 1);
+  ;
 ;
 
 // Tail recursion over heap-only path
 fn run_heap(n: Int): Unit =
   if n != 0 then
     test_heap n;
-    run_heap (n - 1)
-  end
+    run_heap (n - 1);
+  ;
 ;
 
 // Tail recursion alternating static/heap branches
 fn run_mixed(n: Int, use_heap: Bool): Unit =
   if n != 0 then
     test_inline_conditional use_heap n;
-    run_mixed (n - 1) (not use_heap)
-  end
+    run_mixed (n - 1) (not use_heap);
+  ;
 ;
 
 // Entry point running each scenario
@@ -65,5 +70,5 @@ pub fn main(): Unit =
   run_heap 100;
   println "Testing alternating static/heap...";
   run_mixed 200 true;
-  println "All tests end!"
+  println "All tests end!";
 ;

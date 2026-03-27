@@ -6,24 +6,24 @@
 fn init_sieve(arr: IntArray, i: Int, size: Int): Unit =
   if i < size then
     unsafe_ar_int_set arr i 1;
-    init_sieve arr (i + 1) size
-  end
+    init_sieve arr (i + 1) size;
+  ;
 ;
 
 fn clear_multiples(arr: IntArray, factor: Int, num: Int, size: Int): Unit =
   if num < size then
     unsafe_ar_int_set arr num 0;
-    clear_multiples arr factor (num + factor) size
-  end
+    clear_multiples arr factor (num + factor) size;
+  ;
 ;
 
 fn find_next_prime(arr: IntArray, i: Int, limit: Int): Int =
   if i > limit 
-  then 0
+  then 0;
   elif (unsafe_ar_int_get arr i) == 1 
-  then i
-  else find_next_prime arr (i + 1) limit
-  end
+  then i;
+  else find_next_prime arr (i + 1) limit;
+  ;
 ;
 
 fn sieve_loop(arr: IntArray, factor: Int, q: Int, size: Int): Unit =
@@ -33,29 +33,31 @@ fn sieve_loop(arr: IntArray, factor: Int, q: Int, size: Int): Unit =
       let actual_factor = next * 2 + 1;
       let start = actual_factor * actual_factor / 2;
       let u = clear_multiples arr actual_factor start size;
-      sieve_loop arr (actual_factor + 2) q size
-    end
-  end
+      sieve_loop arr (actual_factor + 2) q size;
+    ;
+  ;
 ;
 
 fn count_loop(arr: IntArray, i: Int, size: Int, acc: Int): Int =
   if i < size then
     let val = unsafe_ar_int_get arr i;
-    count_loop arr (i + 1) size (acc + val)
-  else acc
-  end
+    count_loop arr (i + 1) size (acc + val);
+  else
+    acc;
+  ;
 ;
 
-
 fn count_primes(arr: IntArray, size: Int): Int =
-  count_loop arr 0 size 1
+  count_loop arr 0 size 1;
 ;
 
 fn isqrt(n: Int, guess: Int): Int =
   let next = (guess + n / guess) / 2;
-  if next < guess then isqrt n next
-  else guess
-  end
+  if next < guess then
+    isqrt n next;
+  else
+    guess;
+  ;
 ;
 
 fn run_sieve(limit: Int): Int =
@@ -65,10 +67,10 @@ fn run_sieve(limit: Int): Int =
   let u2 = ar_int_set arr 0 0;
   let q = isqrt limit (limit / 2);
   let u3 = sieve_loop arr 3 q size;
-  count_primes arr size
+  count_primes arr size;
 ;
 
 pub fn main(): Unit =
   let count = run_sieve 1000000;
-  println ("Primes found: " ++ (int_to_str count))
+  println ("Primes found: " ++ (int_to_str count));
 ;

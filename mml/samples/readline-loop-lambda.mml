@@ -10,7 +10,7 @@ pub fn main() =
     loop()
   }: Unit;
 
-  loop()
+  loop();
 
 ;
 

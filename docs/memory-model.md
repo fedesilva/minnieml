@@ -190,7 +190,12 @@ exactly once.
 ### Both branches allocate
 
 ```mml
-let s = if flag then int_to_str a else int_to_str b end;
+let s =
+  if flag then
+    int_to_str a;
+  else
+    int_to_str b;
+  ;;
 ```
 
 `s` is always `Owned`.
@@ -198,7 +203,12 @@ let s = if flag then int_to_str a else int_to_str b end;
 ### Mixed ownership
 
 ```mml
-let s = if flag then int_to_str a else "none" end;
+let s =
+  if flag then
+    int_to_str a;
+  else
+    "none";
+  ;;
 ```
 
 `s` may or may not own a value. The compiler tracks that and frees it only when needed.
@@ -209,10 +219,10 @@ let s = if flag then int_to_str a else "none" end;
 let s = int_to_str 1;
 
 if flag then
-  consume s
+  consume s;
 else
-  println s
-end
+  println s;
+;
 ```
 
 In the non-consuming branch, the compiler inserts a `free` so the value is always

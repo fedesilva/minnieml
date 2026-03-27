@@ -4,14 +4,14 @@
 fn all_heap(a: Int, b: Int): Unit =
   let s = if a > 0 then
     if b > 0 then
-      int_to_str a
+      int_to_str a;
     else
-      int_to_str b
-    end
+      int_to_str b;
+    ;
   else
-    int_to_str (a + b)
-  end;
-  println s
+    int_to_str (a + b);
+  ;
+  println s;
 ;
 
 // Mixed variant: one nested path returns a literal, others allocate.
@@ -19,28 +19,28 @@ fn all_heap(a: Int, b: Int): Unit =
 fn mixed_nested(a: Int, b: Int): Unit =
   let s = if a > 0 then
     if b > 0 then
-      int_to_str a
+      int_to_str a;
     else
-      "none"
-    end
+      "none";
+    ;
   else
-    int_to_str (a + b)
-  end;
-  println s
+    int_to_str (a + b);
+  ;
+  println s;
 ;
 
 fn run_all_heap(i: Int): Unit =
   if i > 0 then
     all_heap i (i - 50);
-    run_all_heap (i - 1)
-  end
+    run_all_heap (i - 1);
+  ;
 ;
 
 fn run_mixed_nested(i: Int): Unit =
   if i > 0 then
     mixed_nested i (i - 50);
-    run_mixed_nested (i - 1)
-  end
+    run_mixed_nested (i - 1);
+  ;
 ;
 
 pub fn main(): Unit =
@@ -48,5 +48,5 @@ pub fn main(): Unit =
   run_all_heap 100;
   println "nested conditionals (mixed heap+literal)...";
   run_mixed_nested 100;
-  println "nested conditionals end!"
+  println "nested conditionals end!";
 ;

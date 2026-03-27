@@ -1,10 +1,8 @@
 
 pub fn main() = 
   if true then
-    println "true"
+    println "true";
   else
-    println "derp"
-  end
+    println "derp";
+  ;
 ;
-
-

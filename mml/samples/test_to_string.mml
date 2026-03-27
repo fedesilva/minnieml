@@ -1,4 +1,4 @@
 
 pub fn main(): Unit =
   println ("Number: " ++ (int_to_str 42))
-;
+;;

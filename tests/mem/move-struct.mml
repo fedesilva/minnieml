@@ -4,7 +4,7 @@
 struct User { name: String, role: String };
 
 fn print_user(u: User): Unit =
-  println (u.name ++ " is a " ++ u.role)
+  println (u.name ++ " is a " ++ u.role);
 ;
 
 fn test_move(n: Int): Unit =
@@ -13,18 +13,18 @@ fn test_move(n: Int): Unit =
   let a = User name_str role_str;
   let b = a;
   // print_user a;
-  print_user b 
+  print_user b;
 ;
 
 fn run(n: Int): Unit =
   if n != 0 then
     test_move n;
-    run (n - 1)
-  end
+    run (n - 1);
+  ;
 ;
 
 pub fn main(): Unit =
   println "Testing move-only structs...";
   run 100;
-  println "Move-struct test end!"
+  println "Move-struct test end!";
 ;

@@ -3,5 +3,5 @@ pub fn main() =
   // or generalization or expensive unification
   // this is simple bidirection propagation and signature lookup.
   let mk = { a  -> a * 3 };      // returns a function
-  println (int_to_str (mk 14))
+  println (int_to_str (mk 14));
 ;

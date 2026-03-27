@@ -5,4 +5,4 @@ let concat_results =
 
 pub fn main(): Unit =
   println concat_results
-;
+;;

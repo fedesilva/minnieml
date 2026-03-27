@@ -10,7 +10,7 @@ class FnTests extends BaseEffFunSuite:
   test("simple fn") {
     parseNotFailed(
       """
-          fn sum (a, b) = a sum b;
+          fn sum (a, b) = a sum b;;
       """
     ).map { m =>
       {
@@ -39,7 +39,7 @@ class FnTests extends BaseEffFunSuite:
       """
         let a = 1;
         let b = 2;
-        fn sum (a, b) = a + b;
+        fn sum (a, b) = a + b;;
         let x = sum a b;
        """
     )
@@ -48,7 +48,7 @@ class FnTests extends BaseEffFunSuite:
   test("app with id and lit") {
     parseNotFailed(
       """        
-        fn sum (a, b) = b + 3;
+        fn sum (a, b) = b + 3;;
       """
     )
   }
@@ -56,7 +56,7 @@ class FnTests extends BaseEffFunSuite:
   test("Placeholder is accepted as a term") {
     parseNotFailed(
       """        
-          fn plusA (a) = sum a _;
+          fn plusA (a) = sum a _;;
         """
     )
   }
@@ -64,7 +64,7 @@ class FnTests extends BaseEffFunSuite:
   test("fn with hole for body") {
     parseNotFailed(
       """
-        fn hole (h) = ???;
+        fn hole (h) = ???;;
       """
     ).map { m =>
       assert(m.members.size == 1)
@@ -85,7 +85,7 @@ class FnTests extends BaseEffFunSuite:
   test("fn with type spec") {
     parseNotFailed(
       """
-        fn sum (a: Int, b: Int) = a + b;
+        fn sum (a: Int, b: Int) = a + b;;
       """
     ).map { m =>
       assert(m.members.size == 1)
@@ -116,7 +116,7 @@ class FnTests extends BaseEffFunSuite:
   test("fn with function type return ascription") {
     parseNotFailed(
       """
-        fn wrap (f: String -> String): String -> String = f;
+        fn wrap (f: String -> String): String -> String = f;;
       """
     ).map { m =>
       assert(m.members.size == 1)
@@ -147,7 +147,7 @@ class FnTests extends BaseEffFunSuite:
   test("grouped expression") {
     parseNotFailed(
       """
-        fn compute (a, b) = 1 + (2 * 3);
+        fn compute (a, b) = 1 + (2 * 3);;
       """
     ).map { m =>
       assert(m.members.size == 1)
@@ -168,7 +168,7 @@ class FnTests extends BaseEffFunSuite:
   test("cant use a keyword as a name") {
     parseFailed(
       """
-        fn let (a) = 1;
+        fn let (a) = 1;;
       """
     )
   }
@@ -176,7 +176,7 @@ class FnTests extends BaseEffFunSuite:
   test("fn with invalid name") {
     parseFailedWithErrors(
       """
-        fn 123invalid (a) = a;
+        fn 123invalid (a) = a;;
       """
     ).map { errors =>
       assert(errors.size == 1, s"Expected 1 error but got ${errors.size}")
@@ -191,7 +191,7 @@ class FnTests extends BaseEffFunSuite:
   test("native fn with name attribute") {
     parseNotFailed(
       """
-        fn clone_string(s: String): String = @native[name="__clone_String"];
+        fn clone_string(s: String): String = @native[name="__clone_String"];;
       """
     ).map { m =>
       val bnd    = m.members.head.asInstanceOf[Bnd]
@@ -206,7 +206,7 @@ class FnTests extends BaseEffFunSuite:
   test("native fn with name and mem attributes") {
     parseNotFailed(
       """
-        fn alloc_thing(): String = @native[name="__alloc_Thing", mem=alloc];
+        fn alloc_thing(): String = @native[name="__alloc_Thing", mem=alloc];;
       """
     ).map { m =>
       val bnd    = m.members.head.asInstanceOf[Bnd]
@@ -220,7 +220,7 @@ class FnTests extends BaseEffFunSuite:
   test("native fn with mem and name attributes (reversed order)") {
     parseNotFailed(
       """
-        fn alloc_thing(): String = @native[mem=alloc, name="__alloc_Thing"];
+        fn alloc_thing(): String = @native[mem=alloc, name="__alloc_Thing"];;
       """
     ).map { m =>
       val bnd    = m.members.head.asInstanceOf[Bnd]
@@ -234,7 +234,7 @@ class FnTests extends BaseEffFunSuite:
   test("native fn with all three attributes") {
     parseNotFailed(
       """
-        fn intrinsic(x: Int): Int = @native[tpl="call i64 @foo(i64 %operand)", mem=alloc, name="__foo"];
+        fn intrinsic(x: Int): Int = @native[tpl="call i64 @foo(i64 %operand)", mem=alloc, name="__foo"];;
       """
     ).map { m =>
       val bnd    = m.members.head.asInstanceOf[Bnd]

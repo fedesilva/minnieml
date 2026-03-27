@@ -9,7 +9,7 @@ class ParsingErrorCheckerTests extends BaseEffFunSuite:
   test("Full semantic pipeline passes correct modules") {
     semNotFailed(
       """
-      fn valid(a: Int, b: Int): Int = a + b;
+      fn valid(a: Int, b: Int): Int = a + b;;
       let x = 42;
       """
     ).map { module =>
@@ -21,7 +21,7 @@ class ParsingErrorCheckerTests extends BaseEffFunSuite:
   test("Full semantic pipeline integration with MemberErrorChecker") {
     semFailed(
       """
-      fn valid(a: Int, b: Int): Int = a + b;
+      fn valid(a: Int, b: Int): Int = a + b;;
       let x  ; // Missing expression after =
       """
     )
@@ -30,7 +30,7 @@ class ParsingErrorCheckerTests extends BaseEffFunSuite:
   test("MemberErrorChecker should pass a module with no errors") {
     justParse(
       """
-      fn valid(a: Int, b: Int): Int = a + b;
+      fn valid(a: Int, b: Int): Int = a + b;;
       let x = 42;
       """
     ).map { module =>
@@ -44,7 +44,7 @@ class ParsingErrorCheckerTests extends BaseEffFunSuite:
   test("MemberErrorChecker should catch member errors as shown in the example") {
     semState(
       """
-        fn valid(a: Int, b: Int): Int = a + b;
+        fn valid(a: Int, b: Int): Int = a + b;;
         let a  ; # Missing expression after = 
         """,
       name = "Test"
@@ -73,7 +73,7 @@ class ParsingErrorCheckerTests extends BaseEffFunSuite:
   test("MemberErrorChecker should catch multiple member errors") {
     semState(
       """
-        fn valid(a: Int, b: Int): Int = a + b;
+        fn valid(a: Int, b: Int): Int = a + b;;
         let a  ; # Missing expression after = 
         bnd noLet = 5; # Invalid syntax - 'bnd' instead of 'let'
         """,

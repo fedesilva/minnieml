@@ -1,15 +1,14 @@
 
 fn ackermann(m: Int, n: Int): Int =
   if m == 0 then
-    n + 1
+    n + 1;
   elif n == 0 then
-    ackermann (m - 1) 1
+    ackermann (m - 1) 1;
   else
-    ackermann (m - 1) (ackermann m (n - 1))
-  end
+    ackermann (m - 1) (ackermann m (n - 1));
+  ;
 ;
-
 pub fn main() =
   let result = ackermann 3 10;
-  println ("ackermann(3, 10) = " ++ (int_to_str result))
+  println ("ackermann(3, 10) = " ++ (int_to_str result));
 ;

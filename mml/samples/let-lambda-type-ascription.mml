@@ -1,13 +1,13 @@
+// Let-bound lambda with return-type ascription.
+
 type ForeverFn = Unit -> Unit;
 
+let loop: ForeverFn = {
+  println "Type a number:";
+  let n = str_to_int (readline());
+  println ("Number is: " ++ (int_to_str n))
+}: Unit;
+
 pub fn main() =
-
-  let loop: ForeverFn = {
-    println "Type a number:";
-    let n = str_to_int (readline());
-    println ("Number is: " ++ (int_to_str n));
-    loop()
-  };
-
-  loop()
+  loop ();
 ;

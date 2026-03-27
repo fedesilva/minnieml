@@ -2,4 +2,4 @@
 pub fn main() =
   println "Fede";
   0
-;
+;;

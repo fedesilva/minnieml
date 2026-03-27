@@ -28,7 +28,7 @@ class TypeResolverTests extends BaseEffFunSuite:
 
   test("TypeResolver should resolve type references in function parameters"):
     val code = """
-      fn greet(name: String): String = name ++ "!";
+      fn greet(name: String): String = name ++ "!";;
     """
 
     semNotFailed(code).map { module =>
@@ -55,7 +55,7 @@ class TypeResolverTests extends BaseEffFunSuite:
 
   test("TypeResolver should resolve type references in function return types"):
     val code = """
-      fn isTrue(): Bool = true;
+      fn isTrue(): Bool = true;;
     """
 
     semNotFailed(code).map { module =>
