@@ -17,7 +17,7 @@
 
 ## Active Tasks
 
-### #245 Inner function syntax
+### #245 Inner function syntax [COMPLETE]
 
 - GitHub: https://github.com/fedesilva/minnieml/issues/245
 - Add inner function syntax as a nicer alternative to inner let-bound lambdas.
@@ -26,6 +26,41 @@
   `let loop = { ... }: Unit;`
 - Desired shape:
   `fn loop(): Unit = ... ;`
+- Final implementation state:
+  - Parser prototype is in place in `modules/mmlc-lib/src/main/scala/mml/mmlclib/parser/expressions.scala`.
+  - Tests added/updated in:
+    - `modules/mmlc-lib/src/test/scala/mml/mmlclib/grammar/LambdaLitTests.scala`
+    - `modules/mmlc-lib/src/test/scala/mml/mmlclib/semantic/CaptureAnalyzerTests.scala`
+    - `modules/mmlc-lib/src/test/scala/mml/mmlclib/semantic/TypeCheckerTests.scala`
+  - Docs updated in `docs/language-reference.md`.
+  - Samples:
+    - `mml/samples/readline-loop-inner-fn.mml` demonstrates the simple recursive local-helper case.
+    - `mml/samples/raytrace2.mml` is the sample-level compromise that keeps the fully-local-helper
+      closure bug out of the shipped example.
+- Important current lowering rule:
+  - typed inner `fn` is currently lowered to the equivalent of
+    `let loop: Int -> Unit = { i: Int -> ... };`
+    not
+    `let loop = { i: Int -> ... }: Unit;`
+  - This matches the current working typed-local-recursion path in the existing compiler.
+- Verified in this session:
+  - targeted grammar / capture / typechecker tests pass
+  - fast sample runs pass (`hello`, `quicksort`, `astar2`)
+  - full suite passes (`341/341`)
+  - `mmlcPublishLocal` passes
+  - `make -C benchmark clean && make -C benchmark mml` passes
+  - installed `mmlc` compiles a recursive typed inner-function example
+- Defer / ignore for `#245` pickup:
+  - `docs/brainstorming/compiler/lambda-unification.md` is separate design work, not part of this tracked item
+  - `mml/samples/raytrace2.mml` is part of this task as the intended showcase sample.
+    Current status: partial inner-`fn` variant works and the built sample runs, but the fully-local
+    helper version is still blocked by a callable/closure gap.
+    Minimal repro shape: a recursive local helper capturing a sibling local function value.
+    Current failure: codegen closure env field of `TypeFn` (for example `helper: TypeFn`) trips
+    struct/TBAA type-name resolution with
+    `In struct '__closure_env_0', field 'helper': Cannot extract type name from TypeFn`.
+    Revisit tonight / next session if we want the all-inner-helper `raytrace2` end state.
+  - `mml/samples/readline-loop-lambda.mml` was manually repaired during investigation and is not part of the inner-`fn` implementation itself
 
 # `check` compiler command and api
 
@@ -83,6 +118,8 @@
     - [ ] 3.4-QA.22 [P2] asInstanceOf cast in ClosureMemoryFnGenerator.tagLambdas breaks no-exceptions rule (`ClosureMemoryFnGenerator.scala:312`)
     - [ ] 3.4-QA.23 [P3] Hardcoded string name matching for closure free dispatch (`Applications.scala:312,316`)
     - [ ] 3.4-QA.24 [P3] Inconsistent Cats syntax in new codegen code — use .asRight/.asLeft/.some/.none (`ExpressionCompiler.scala`, `Applications.scala`)
+    - [ ] 3.4-QA.25 [P2] Closure env fields of `TypeFn` fail struct/TBAA type-name lowering
+      (`TypeNameResolver.scala`, `TbaaEmitter.scala`, `raytrace2` fully-local helper case)
   - [x] 3.5 — Heap-type captures (String, structs) + move/free [PENDING REVIEW]
     - OwnershipAnalyzer: heap-type captures use move semantics (same as struct constructors)
       - Owned capture → Moved in outer scope; Borrowed inside lambda body (env owns it)
@@ -211,6 +248,16 @@ Plan: `.claude/plans/piped-scribbling-parnas.md`
 * Add commentary with examples to the parsers
 
 ## Recent Changes
+
+- 2026-03-27: #245 Inner function syntax [COMPLETE]
+  - Parser: added local `fn name(...): Ret = ... ; expr` surface syntax in `expressions.scala`.
+  - Tests: grammar, capture analysis, and typechecker coverage added for typed and recursive inner functions.
+  - Docs: language reference now documents inner functions as sugar for local let-bound lambdas.
+  - Samples: added `mml/samples/readline-loop-inner-fn.mml`; `mml/samples/raytrace2.mml` now documents
+    the shipped sample compromise and the deferred fully-local-helper `TypeFn` closure bug.
+  - Verification already completed in-session: targeted tests, fast samples, full suite, publish,
+    benchmarks, installed `mmlc` recursive inner-function check, and direct runs of the new
+    readline sample / built `raytrace2`.
 
 - 2026-03-26: No-`end` syntax
   - Parser: removed `end` from conditional syntax; nested parser frames now close with semicolons only.

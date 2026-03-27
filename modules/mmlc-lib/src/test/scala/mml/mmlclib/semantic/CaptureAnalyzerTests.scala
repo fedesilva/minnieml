@@ -180,6 +180,28 @@ class CaptureAnalyzerTests extends BaseEffFunSuite:
     }
   }
 
+  test("inner fn captures from enclosing let through the same lambda path") {
+    val code =
+      """
+        fn foo(dummy: Int): Int =
+          let a = 1;
+          fn addA(x: Int): Int = x + a;;
+          addA dummy;
+        ;
+      """
+    semNotFailed(code).map { module =>
+      val lambdas = collectAllLambdas(module)
+      val userLambda =
+        lambdas.find(_.params.exists(_.name == "x"))
+      assert(userLambda.isDefined, "Expected an inner-fn lambda")
+      val capNames = userLambda.get.captures.map(_.name)
+      assert(
+        capNames.contains("a"),
+        s"Expected capture of 'a', got $capNames"
+      )
+    }
+  }
+
   test("nested lambda propagates captures outward") {
     val code =
       """
