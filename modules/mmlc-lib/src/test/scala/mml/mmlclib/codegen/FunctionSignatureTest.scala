@@ -8,7 +8,7 @@ class FunctionSignatureTest extends BaseEffFunSuite:
   test("synthesized main passes argv as StringArray for unit-returning main(args)") {
     val source =
       """
-        pub fn main(args: StringArray): Unit = println (int_to_str (ar_str_len args));
+        pub fn main(args: StringArray): Unit = println (int_to_str (ar_str_len args));;
       """
     val config =
       CompilerConfig.exe("build", targetTriple = Some("x86_64-apple-macosx"))
@@ -25,7 +25,7 @@ class FunctionSignatureTest extends BaseEffFunSuite:
   test("synthesized main passes argv as StringArray for int-returning main(args)") {
     val source =
       """
-        pub fn main(args: StringArray): Int = ar_str_len args;
+        pub fn main(args: StringArray): Int = ar_str_len args;;
       """
     val config =
       CompilerConfig.exe("build", targetTriple = Some("x86_64-apple-macosx"))
@@ -42,10 +42,10 @@ class FunctionSignatureTest extends BaseEffFunSuite:
   test("correctly generates signatures for native and regular functions on x86_64") {
     val source =
       """
-        fn debug_print (a: String): Unit = @native;
-        fn log_message (a: String): Unit = @native;
-        fn join_strings(a: String, b: String): String = @native;
-        pub fn main() = log_message "Fede";
+        fn debug_print (a: String): Unit = @native;;
+        fn log_message (a: String): Unit = @native;;
+        fn join_strings(a: String, b: String): String = @native;;
+        pub fn main() = log_message "Fede";;
       """
 
     // Use Binary mode to generate synthesized main entry point
@@ -83,10 +83,10 @@ class FunctionSignatureTest extends BaseEffFunSuite:
   test("correctly generates native signatures on aarch64") {
     val source =
       """
-        fn debug_print (a: String): Unit = @native;
-        fn log_message (a: String): Unit = @native;
-        fn join_strings(a: String, b: String): String = @native;
-        pub fn main() = log_message "Fede";
+        fn debug_print (a: String): Unit = @native;;
+        fn log_message (a: String): Unit = @native;;
+        fn join_strings(a: String, b: String): String = @native;;
+        pub fn main() = log_message "Fede";;
       """
 
     val config =
@@ -116,8 +116,8 @@ class FunctionSignatureTest extends BaseEffFunSuite:
   test("aarch64 native calls with String struct args use flattened array") {
     val source =
       """
-        fn debug_print (a: String): Unit = @native;
-        pub fn main(): Unit = debug_print "hi";
+        fn debug_print (a: String): Unit = @native;;
+        pub fn main(): Unit = debug_print "hi";;
       """
 
     val config =
@@ -141,12 +141,12 @@ class FunctionSignatureTest extends BaseEffFunSuite:
         type Vec3d = @native { x: F64, y: F64, z: F64 };
         type Vec4f = @native { x: F32, y: F32, z: F32, w: F32 };
 
-        fn hfa_arg_d (v: Vec3d): Int = @native;
-        fn hfa_ret_d (): Vec3d = @native;
-        fn hfa_arg_f (v: Vec4f): Int = @native;
-        fn hfa_ret_f (): Vec4f = @native;
+        fn hfa_arg_d (v: Vec3d): Int = @native;;
+        fn hfa_ret_d (): Vec3d = @native;;
+        fn hfa_arg_f (v: Vec4f): Int = @native;;
+        fn hfa_ret_f (): Vec4f = @native;;
 
-        pub fn main(): Unit = ();
+        pub fn main(): Unit = ();;
       """
 
     val config =
@@ -183,8 +183,8 @@ class FunctionSignatureTest extends BaseEffFunSuite:
   test("custom binary operator uses mangled name in definition and call") {
     val source =
       """
-        op ** (a: Int, b: Int) 80 left = a * b;
-        fn main(): Int = 2 ** 3;
+        op ** (a: Int, b: Int) 80 left = a * b;;
+        fn main(): Int = 2 ** 3;;
       """
 
     compileAndGenerate(source).map { llvmIr =>
@@ -209,8 +209,8 @@ class FunctionSignatureTest extends BaseEffFunSuite:
   test("custom unary operator uses mangled name in definition and call") {
     val source =
       """
-        op ! (a: Int) 90 left = a * a;
-        fn main(): Int = !5;
+        op ! (a: Int) 90 left = a * a;;
+        fn main(): Int = !5;;
       """
 
     compileAndGenerate(source).map { llvmIr =>
@@ -231,7 +231,7 @@ class FunctionSignatureTest extends BaseEffFunSuite:
     val source =
       """
         let greet = concat "Hello, ";
-        fn main(): Unit = println (greet "world");
+        fn main(): Unit = println (greet "world");;
       """
 
     compileAndGenerate(source).map { llvmIr =>
@@ -251,9 +251,9 @@ class FunctionSignatureTest extends BaseEffFunSuite:
   test("partial application of multi-param function") {
     val source =
       """
-        fn add3(a: Int, b: Int, c: Int): Int = a + b + c;
+        fn add3(a: Int, b: Int, c: Int): Int = a + b + c;;
         let add10 = add3 10;
-        fn main(): Int = add10 20 5;
+        fn main(): Int = add10 20 5;;
       """
 
     compileAndGenerate(source).map { llvmIr =>
@@ -273,9 +273,9 @@ class FunctionSignatureTest extends BaseEffFunSuite:
   test("function aliasing via eta-expansion") {
     val source =
       """
-        fn add(a: Int, b: Int): Int = a + b;
+        fn add(a: Int, b: Int): Int = a + b;;
         let f = add;
-        fn main(): Int = f 1 2;
+        fn main(): Int = f 1 2;;
       """
 
     compileAndGenerate(source).map { llvmIr =>
@@ -295,10 +295,10 @@ class FunctionSignatureTest extends BaseEffFunSuite:
   test("chained partial application") {
     val source =
       """
-        fn add3(a: Int, b: Int, c: Int): Int = a + b + c;
+        fn add3(a: Int, b: Int, c: Int): Int = a + b + c;;
         let add10 = add3 10;
         let add10and20 = add10 20;
-        fn main(): Int = add10and20 5;
+        fn main(): Int = add10and20 5;;
       """
 
     compileAndGenerate(source).map { llvmIr =>
@@ -323,8 +323,8 @@ class FunctionSignatureTest extends BaseEffFunSuite:
   test("curried application - multi-param function called with all args") {
     val source =
       """
-        fn add3(a: Int, b: Int, c: Int): Int = a + b + c;
-        fn main(): Int = add3 1 2 3;
+        fn add3(a: Int, b: Int, c: Int): Int = a + b + c;;
+        fn main(): Int = add3 1 2 3;;
       """
 
     compileAndGenerate(source).map { llvmIr =>
@@ -339,9 +339,9 @@ class FunctionSignatureTest extends BaseEffFunSuite:
   test("curried application - function calling another with params") {
     val source =
       """
-        fn helper(a: Int, b: Int): Int = a + b;
-        fn wrapper(x: Int): Int = helper x 10;
-        fn main(): Int = wrapper 5;
+        fn helper(a: Int, b: Int): Int = a + b;;
+        fn wrapper(x: Int): Int = helper x 10;;
+        fn main(): Int = wrapper 5;;
       """
 
     compileAndGenerate(source).map { llvmIr =>
@@ -356,8 +356,8 @@ class FunctionSignatureTest extends BaseEffFunSuite:
   test("function with native template emits inline LLVM IR") {
     val source =
       """
-        fn ctpop(x: Int): Int = @native[tpl="call i64 @llvm.ctpop.i64(i64 %operand)"];
-        fn main(): Int = ctpop 255;
+        fn ctpop(x: Int): Int = @native[tpl="call i64 @llvm.ctpop.i64(i64 %operand)"];;
+        fn main(): Int = ctpop 255;;
       """
 
     compileAndGenerate(source).map { llvmIr =>
@@ -377,8 +377,8 @@ class FunctionSignatureTest extends BaseEffFunSuite:
   test("function with native template and multiple args uses operand1, operand2") {
     val source =
       """
-        fn mymax(a: Int, b: Int): Int = @native[tpl="call i64 @llvm.smax.i64(i64 %operand1, i64 %operand2)"];
-        fn main(): Int = mymax 10 20;
+        fn mymax(a: Int, b: Int): Int = @native[tpl="call i64 @llvm.smax.i64(i64 %operand1, i64 %operand2)"];;
+        fn main(): Int = mymax 10 20;;
       """
 
     compileAndGenerate(source).map { llvmIr =>
@@ -395,8 +395,8 @@ class FunctionSignatureTest extends BaseEffFunSuite:
     val source =
       """
         type MyPtr = @native[t=*i8, mem=heap];
-        fn alloc_ptr(): MyPtr = @native;
-        fn main(): Unit = ();
+        fn alloc_ptr(): MyPtr = @native;;
+        fn main(): Unit = ();;
       """
 
     compileAndGenerate(source).map { llvmIr =>
@@ -411,8 +411,8 @@ class FunctionSignatureTest extends BaseEffFunSuite:
     val source =
       """
         type MyPtr = @native[t=*i8];
-        fn get_ptr(): MyPtr = @native;
-        fn main(): Unit = ();
+        fn get_ptr(): MyPtr = @native;;
+        fn main(): Unit = ();;
       """
 
     compileAndGenerate(source).map { llvmIr =>
@@ -427,8 +427,8 @@ class FunctionSignatureTest extends BaseEffFunSuite:
   test("no noalias on native function returning NativeStruct with Alloc") {
     val source =
       """
-        fn join_strings(a: String, b: String): String = @native;
-        fn main(): Unit = ();
+        fn join_strings(a: String, b: String): String = @native;;
+        fn main(): Unit = ();;
       """
 
     compileAndGenerate(source).map { llvmIr =>
@@ -444,10 +444,10 @@ class FunctionSignatureTest extends BaseEffFunSuite:
     val source =
       """
         type MyPtr = @native[t=*i8, mem=heap];
-        fn alloc_ptr(): MyPtr = @native;
-        fn free_ptr(~p: MyPtr): Unit = @native;
-        fn take_ptr(~p: MyPtr): Unit = free_ptr p;
-        fn main(): Unit = take_ptr (alloc_ptr ());
+        fn alloc_ptr(): MyPtr = @native;;
+        fn free_ptr(~p: MyPtr): Unit = @native;;
+        fn take_ptr(~p: MyPtr): Unit = free_ptr p;;
+        fn main(): Unit = take_ptr (alloc_ptr ());;
       """
 
     compileAndGenerate(source).map { llvmIr =>
@@ -461,8 +461,8 @@ class FunctionSignatureTest extends BaseEffFunSuite:
   test("no noalias on consuming NativeStruct parameter") {
     val source =
       """
-        fn consume_str(~s: String): Unit = println s;
-        fn main(): Unit = consume_str "hello";
+        fn consume_str(~s: String): Unit = println s;;
+        fn main(): Unit = consume_str "hello";;
       """
 
     compileAndGenerate(source).map { llvmIr =>
@@ -479,9 +479,9 @@ class FunctionSignatureTest extends BaseEffFunSuite:
     val source =
       """
         type MyPtr = @native[t=*i8, mem=heap];
-        fn alloc_ptr(): MyPtr = @native;
-        fn read_ptr(p: MyPtr): Unit = @native;
-        fn main(): Unit = read_ptr (alloc_ptr ());
+        fn alloc_ptr(): MyPtr = @native;;
+        fn read_ptr(p: MyPtr): Unit = @native;;
+        fn main(): Unit = read_ptr (alloc_ptr ());;
       """
 
     compileAndGenerate(source).map { llvmIr =>
@@ -501,8 +501,8 @@ class FunctionSignatureTest extends BaseEffFunSuite:
   test("native fn with name attribute declares and calls the native symbol") {
     val source =
       """
-        fn clone_string(s: String): String = @native[name="__clone_String", mem=alloc];
-        fn main(): String = clone_string "hello";
+        fn clone_string(s: String): String = @native[name="__clone_String", mem=alloc];;
+        fn main(): String = clone_string "hello";;
       """
 
     compileAndGenerate(source).map { llvmIr =>
@@ -524,8 +524,8 @@ class FunctionSignatureTest extends BaseEffFunSuite:
   test("native fn without name attribute still uses binding name") {
     val source =
       """
-        fn debug_print(a: String): Unit = @native;
-        fn main(): Unit = debug_print "hi";
+        fn debug_print(a: String): Unit = @native;;
+        fn main(): Unit = debug_print "hi";;
       """
 
     compileAndGenerate(source).map { llvmIr =>
@@ -543,7 +543,7 @@ class FunctionSignatureTest extends BaseEffFunSuite:
   test("stdlib str_eq is declared and called with the expected native symbol") {
     val source =
       """
-        fn main(): Bool = str_eq "a" "b";
+        fn main(): Bool = str_eq "a" "b";;
       """
 
     compileAndGenerate(source).map { llvmIr =>
@@ -561,8 +561,8 @@ class FunctionSignatureTest extends BaseEffFunSuite:
   test("non-pub function emits internal linkage in IR") {
     val source =
       """
-        fn helper(): Int = 42;
-        fn main(): Int = helper ();
+        fn helper(): Int = 42;;
+        fn main(): Int = helper ();;
       """
 
     compileAndGenerate(source).map { llvmIr =>
@@ -576,8 +576,8 @@ class FunctionSignatureTest extends BaseEffFunSuite:
   test("pub function emits no linkage qualifier in IR") {
     val source =
       """
-        pub fn exported(): Int = 42;
-        fn main(): Int = exported ();
+        pub fn exported(): Int = 42;;
+        fn main(): Int = exported ();;
       """
 
     compileAndGenerate(source).map { llvmIr =>

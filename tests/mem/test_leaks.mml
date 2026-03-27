@@ -8,16 +8,18 @@ fn test_iteration(): Unit =
   println line1;
   println line2;
 
-  close_file fd
+  close_file fd;
 ;
 
 fn run(n: Int): Unit =
-  if n == 0 then ()
+  if n == 0 then
+    ();
   else
     test_iteration ();
-    run (n - 1)
-  end;
+    run (n - 1);
+  ;
+;
 
 pub fn main(): Unit =
-  run 1000
+  run 1000;
 ;

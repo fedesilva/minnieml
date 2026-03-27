@@ -11,7 +11,6 @@ private[parser] def fnKw[$: P]:          P[Unit] = P("fn" ~ wordBoundary)
 private[parser] def opKw[$: P]:          P[Unit] = P("op" ~ wordBoundary)
 private[parser] def defAsKw[$: P]:       P[Unit] = P("=")
 private[parser] def semiKw[$: P]:        P[Unit] = P(";")
-private[parser] def endKw[$: P]:         P[Unit] = P("end" ~ wordBoundary)
 private[parser] def placeholderKw[$: P]: P[Unit] = P("_" ~ wordBoundary)
 private[parser] def holeKw[$: P]:        P[Unit] = P("???" ~ wordBoundary)
 private[parser] def typeKw[$: P]:        P[Unit] = P("type" ~ wordBoundary)
@@ -38,7 +37,6 @@ private[parser] def keywords[$: P]: P[Unit] =
   P(
     moduleKw |
       semiKw |
-      endKw |
       defAsKw |
       placeholderKw |
       letKw |

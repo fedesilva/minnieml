@@ -2,68 +2,69 @@
 // Board represented as array where board[row] = column of queen in that row
 
 fn abs(x: Int): Int =
-  if x < 0 then 0 - x else x end
+  if x < 0 then
+    0 - x;
+  else
+    x;
+  ;
 ;
-
 // Check if placing queen at (row, col) is safe
 fn is_safe_loop(board: IntArray, row: Int, col: Int, check_row: Int): Bool =
   if check_row >= row then
-    true
+    true;
   else
     let queen_col = unsafe_ar_int_get board check_row;
     let same_col = queen_col == col;
     let row_diff = abs (row - check_row);
     let col_diff = abs (col - queen_col);
     let same_diag = row_diff == col_diff;
-    
+
     if same_col then
-      false
+      false;
     else
       if same_diag then
-        false
+        false;
       else
-        is_safe_loop board row col (check_row + 1)
-      end
-    end
-  end
+        is_safe_loop board row col (check_row + 1);
+      ;
+    ;
+  ;
 ;
-
 fn is_safe(board: IntArray, row: Int, col: Int): Bool =
-  is_safe_loop board row col 0
+  is_safe_loop board row col 0;
 ;
 
 // Try to place queens starting from given row
 fn solve_loop(board: IntArray, row: Int, n: Int, col: Int, count: Int): Int =
   if col >= n then
-    count
+    count;
   else
     let safe = is_safe board row col;
     if safe then
       unsafe_ar_int_set board row col;
-      let new_count = if row == (n - 1) then
-        count + 1
-      else
-        count + (solve board (row + 1) n 0)
-      end;
-      solve_loop board row n (col + 1) new_count
+      let new_count =
+        if row == (n - 1) then
+          count + 1;
+        else
+          count + (solve board (row + 1) n 0);
+        ;
+      solve_loop board row n (col + 1) new_count;
     else
-      solve_loop board row n (col + 1) count
-    end
-  end
+      solve_loop board row n (col + 1) count;
+    ;
+  ;
 ;
-
 fn solve(board: IntArray, row: Int, n: Int, count: Int): Int =
   if row >= n then
-    count
+    count;
   else
-    solve_loop board row n 0 count
-  end
+    solve_loop board row n 0 count;
+  ;
 ;
-
 pub fn main(): Unit =
   let n = 12;
   let board = ar_int_new n;
-  
+
   let solutions = solve board 0 n 0;
-  println ("Solutions for " ++ (int_to_str n) ++ "-queens: " ++ (int_to_str solutions))
+  println ("Solutions for " ++ (int_to_str n) ++ "-queens: " ++ (int_to_str solutions));
 ;

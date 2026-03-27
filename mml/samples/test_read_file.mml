@@ -4,5 +4,5 @@ pub fn main(): Unit =
   let line = read_line_fd fd;
   println line;
   close_file fd
-;
+;;
 

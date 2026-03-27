@@ -55,13 +55,15 @@ is a single expression, possibly containing `let` bindings and sequenced express
 separated by `;` (see [Expression sequencing](#expression-sequencing)).
 
 ```mml
-fn greet(name: String): String = "Hello, " ++ name;
+fn greet(name: String): String = "Hello, " ++ name;;
 
 fn factorial(n: Int): Int =
-  if n == 0 then 1
-  else n * factorial (n - 1)
-  end
-;
+  if n == 0 then
+    1;
+  else
+    n * factorial (n - 1);
+  ;
+;;
 ```
 
 **Nullary functions** (zero parameters) are declared with empty parentheses and must
@@ -243,21 +245,21 @@ declaration order.
 
 ### Semicolons
 
-Semicolons are **terminators**, not separators. Every top-level declaration and every
-`let` binding within a function body ends with `;`. The final expression in a function
-body is not terminated by `;` — the `;` that follows belongs to the enclosing
-declaration.
+Semicolons are **terminators**, not separators. Every expression parser frame ends with
+`;`, and top-level declarations still end with their own `;`. In practice that means a
+multiline `fn` or `op` body usually finishes with `;;`: one `;` closes the body
+expression, the next closes the declaration.
 
 ```mml
 fn example(): Int =
   let x = 1;
   let y = 2;
-  x + y
-;
+  x + y;
+;;
 ```
 
-The two `let` bindings end with `;`. The final expression `x + y` is the return
-value. The trailing `;` terminates the `fn` declaration.
+The two `let` bindings end with `;`. The final expression `x + y;` closes the function
+body, and the trailing `;` closes the `fn` declaration.
 
 ### Expression sequencing
 
@@ -268,8 +270,8 @@ expression. The value of the body is the value of its last expression.
 fn process(name: String): Unit =
   let greeting = "Hello, " ++ name;
   println greeting;
-  println "done"
-;
+  println "done";
+;;
 ```
 
 Expressions can be sequenced directly with `;` for side effects:
@@ -278,8 +280,8 @@ Expressions can be sequenced directly with `;` for side effects:
 fn side_effects(): Unit =
   println "first";
   println "second";
-  println "third"
-;
+  println "third";
+;;
 ```
 
 ### Literals
@@ -319,32 +321,33 @@ let z = ???;                        // error: can't infer type
 
 ### Conditionals
 
-Conditionals are expressions. Every `if` block is terminated by `end`.
+Conditionals are expressions. `if` has no `end`; each branch body ends with `;`, and the
+enclosing expression frame then ends with its own `;`.
 
 **If/else** (returns a value):
 
 ```mml
-if condition then expr1 else expr2 end
+if condition then expr1; else expr2; ;
 ```
 
 **If/elif/else** (multiple branches):
 
 ```mml
 if cond1 then
-  expr1
+  expr1;
 elif cond2 then
-  expr2
+  expr2;
 else
-  expr3
-end
+  expr3;
+;
 ```
 
 **Single-branch if** (returns `Unit`):
 
 ```mml
 if condition then
-  expr
-end
+  expr;
+;
 ```
 
 The compiler inserts an implicit `else ()` for single-branch conditionals, so both
@@ -354,16 +357,20 @@ branches return `Unit`. Only use `else` when the `if` needs to return a value.
 - The condition must have type `Bool`
 - When `else` is present, both branches must have the same type
 - The entire `if` expression has the type of its branches
-- `end` is always required
+- Every branch body must end with `;`
 
 ```mml
 fn fizzbuzz(n: Int): Unit =
-  if n % 15 == 0 then println "FizzBuzz"
-  elif n % 3 == 0 then println "Fizz"
-  elif n % 5 == 0 then println "Buzz"
-  else println (int_to_str n)
-  end
-;
+  if n % 15 == 0 then
+    println "FizzBuzz";
+  elif n % 3 == 0 then
+    println "Fizz";
+  elif n % 5 == 0 then
+    println "Buzz";
+  else
+    println (int_to_str n);
+  ;
+;;
 ```
 
 ### Recursion and tail calls
@@ -379,15 +386,17 @@ returns:
 fn count_down(n: Int): Unit =
   if n > 0 then
     println (to_string n);
-    count_down (n - 1)
-  end
-;
+    count_down (n - 1);
+  ;
+;;
 
 fn sum_loop(i: Int, limit: Int, acc: Int): Int =
-  if i == limit then acc
-  else sum_loop (i + 1) limit (acc + i)
-  end
-;
+  if i == limit then
+    acc;
+  else
+    sum_loop (i + 1) limit (acc + i);
+  ;
+;;
 ```
 
 Loops with state use the accumulator pattern:
@@ -396,10 +405,11 @@ Loops with state use the accumulator pattern:
 fn count(arr: IntArray, i: Int, size: Int, acc: Int): Int =
   if i < size then
     let v = unsafe_ar_int_get arr i;
-    count arr (i + 1) size (acc + v)
-  else acc
-  end
-;
+    count arr (i + 1) size (acc + v);
+  else
+    acc;
+  ;
+;;
 ```
 
 
@@ -1126,7 +1136,6 @@ rather than from a language design decision.
 - `then`
 - `elif`
 - `else`
-- `end`
 - `inline`
 - `->`
 - `@native`

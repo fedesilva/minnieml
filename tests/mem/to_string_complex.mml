@@ -5,15 +5,16 @@ fn make_test_results(): String =
       (concat "Positive: " (concat (int_to_str 123) ", "))
       (concat "Large: " (int_to_str 1234567890))
     );
+;
 
 fn loop(i: Int, to: Int): Unit = 
   if i <= to then
     println (make_test_results ());
-    loop (i+1) to
-  end
+    loop (i+1) to;
+  ;
 ;
   
 
 pub fn main(): Unit =
-  loop 1 1000
+  loop 1 1000;
 ;

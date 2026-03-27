@@ -14,7 +14,7 @@ class AppRewritingTests extends BaseEffFunSuite:
 
     val code =
       """
-      fn mult (a: Int, b: Int): Int = ???;
+      fn mult (a: Int, b: Int): Int = ???;;
       let a = mult 2 2;
     """
 
@@ -63,8 +63,8 @@ class AppRewritingTests extends BaseEffFunSuite:
   test("grouped function applications should work correctly") {
     semNotFailed(
       """
-        fn double (a: Int): Int = a * 2;
-        fn sum (f: Int, x: Int): Int = f + x;
+        fn double (a: Int): Int = a * 2;;
+        fn sum (f: Int, x: Int): Int = f + x;;
         let a = sum (double 1) 2;
       """
     ).map { m =>
@@ -111,7 +111,7 @@ class AppRewritingTests extends BaseEffFunSuite:
   test("curried function application should work without boundaries") {
     semNotFailed(
       """
-      fn func (a: Int, b: Int, c: Int, d: Int): Int = ???;
+      fn func (a: Int, b: Int, c: Int, d: Int): Int = ???;;
       let a = func 1 2 3 4;
       """
     ).map { m =>
@@ -154,7 +154,7 @@ class AppRewritingTests extends BaseEffFunSuite:
   test("function application with operators should work") {
     semNotFailed(
       """
-      fn func (a: Int, b: Int): Int = ???;
+      fn func (a: Int, b: Int): Int = ???;;
       let a = (func 1 1) + 3 - func 1 2;
       """
     ).map { m =>
@@ -253,7 +253,7 @@ class AppRewritingTests extends BaseEffFunSuite:
       """
       fn main(): Unit =
         let n = 1;
-        println (int_to_str n)
+        println (int_to_str n);
       ;
       """
     ).map { m =>
@@ -332,7 +332,7 @@ class AppRewritingTests extends BaseEffFunSuite:
   test("zero-arity function") {
     semNotFailed(
       """
-      fn func (): Int = ???;
+      fn func (): Int = ???;;
       let a = func ();
       """
     ).map { m =>
@@ -358,7 +358,7 @@ class AppRewritingTests extends BaseEffFunSuite:
   test("nullary function reference is not auto-applied") {
     semNotFailed(
       """
-      fn func (): Int = ???;
+      fn func (): Int = ???;;
       let a = func;
       """
     ).map { m =>
@@ -383,9 +383,9 @@ class AppRewritingTests extends BaseEffFunSuite:
   test("function application within if/else") {
     semNotFailed(
       """
-      fn func (a: Int): Int = ???;
+      fn func (a: Int): Int = ???;;
       let cond = true;
-      let a = if cond then func 1 else func 2 end;
+      let a = if cond then func 1; else func 2; ;
       """
     ).map { m =>
       val memberBnd = lookupNames("a", m).headOption
@@ -448,8 +448,8 @@ class AppRewritingTests extends BaseEffFunSuite:
   test("nested function applications with operators") {
     semNotFailed(
       """
-      fn func1 (a: Int): Int = ???;
-      fn func2 (b: Int): Int = ???;
+      fn func1 (a: Int): Int = ???;;
+      fn func2 (b: Int): Int = ???;;
       let a = func1 (func2 1) + 2;
       """
     ).map { m =>
@@ -513,7 +513,7 @@ class AppRewritingTests extends BaseEffFunSuite:
   test("single-argument function") {
     semNotFailed(
       """
-      fn func (a: Int): Int = ???;
+      fn func (a: Int): Int = ???;;
       let a = func 1;
       """
     ).map { m =>

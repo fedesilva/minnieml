@@ -10,7 +10,7 @@ class SemanticTokensTests extends BaseEffFunSuite:
   test("semantic tokens color println calls consistently") {
     val code =
       """
-      fn hola(a: String) = concat "Hola, " a;
+      fn hola(a: String) = concat "Hola, " a;;
 
       let name = "fede";
 
@@ -18,7 +18,7 @@ class SemanticTokensTests extends BaseEffFunSuite:
         let pepe = "pepe";
         println (hola name);
         println name;
-        println pepe
+        println pepe;
       ;
       """
 
@@ -58,7 +58,7 @@ class SemanticTokensTests extends BaseEffFunSuite:
       fn main() =
         println "a";
         println "b";
-        println "c"
+        println "c";
       ;
       """
 
@@ -78,12 +78,12 @@ class SemanticTokensTests extends BaseEffFunSuite:
       """
       struct Pair { name: String, value: String };
 
-      fn show(p: Pair): String = "Name: " ++ p.name;
+      fn show(p: Pair): String = "Name: " ++ p.name;;
 
       fn main() =
         let p = Pair "x" "y";
         println ("Name: " ++ p.name);
-        println (show p)
+        println (show p);
       ;
       """
 
@@ -124,7 +124,7 @@ class SemanticTokensTests extends BaseEffFunSuite:
       fn main() =
         let p = Person "fede" 25;
         println ("Name: " ++ p.name);
-        println "---"
+        println "---";
       ;
       """
 
@@ -164,7 +164,7 @@ class SemanticTokensTests extends BaseEffFunSuite:
       """
       struct User { name: String };
 
-      fn main(): Int = 0;
+      fn main(): Int = 0;;
       """
 
     semNotFailed(code).map { module =>

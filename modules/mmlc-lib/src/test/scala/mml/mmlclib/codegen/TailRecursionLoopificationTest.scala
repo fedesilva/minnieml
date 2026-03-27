@@ -10,10 +10,11 @@ class TailRecursionLoopificationTest extends BaseEffFunSuite:
       """
       fn sum(i: Int, acc: Int): Int =
         if i < 10 then
-          sum (i + 1) (acc + i)
+          sum (i + 1) (acc + i);
         else
-          acc
-        end;
+          acc;
+        ;
+      ;
       """
 
     compileAndGenerate(source, config = CompilerConfig.default.copy(noTco = false)).map { llvmIr =>
@@ -29,10 +30,11 @@ class TailRecursionLoopificationTest extends BaseEffFunSuite:
       fn loop(i: Int, to: Int): Unit =
         println (int_to_str i);
         if i <= to then
-          loop (i + 1) to
+          loop (i + 1) to;
         else
-          ()
-        end;
+          ();
+        ;
+      ;
       """
 
     compileAndGenerate(source, config = CompilerConfig.default.copy(noTco = false)).map { llvmIr =>
@@ -47,10 +49,11 @@ class TailRecursionLoopificationTest extends BaseEffFunSuite:
     val source =
       """
       fn find(i: Int, limit: Int): Int =
-        if i > limit then 0
-        elif i == 42 then i
-        else find (i + 1) limit
-        end;
+        if i > limit then 0;
+        elif i == 42 then i;
+        else find (i + 1) limit;
+        ;
+      ;
       """
 
     compileAndGenerate(source, config = CompilerConfig.default.copy(noTco = false)).map { llvmIr =>
@@ -66,9 +69,11 @@ class TailRecursionLoopificationTest extends BaseEffFunSuite:
       fn count(i: Int, acc: Int): Int =
         if i < 10 then
           let next = i + 1;
-          count next (acc + i)
-        else acc
-        end;
+          count next (acc + i);
+        else
+          acc;
+        ;
+      ;
       """
 
     compileAndGenerate(source, config = CompilerConfig.default.copy(noTco = false)).map { llvmIr =>
@@ -82,10 +87,11 @@ class TailRecursionLoopificationTest extends BaseEffFunSuite:
     val source =
       """
       fn walk(i: Int, n: Int): Int =
-        if i >= n then 0
-        elif i == 42 then walk (i + 2) n
-        else walk (i + 1) n
-        end;
+        if i >= n then 0;
+        elif i == 42 then walk (i + 2) n;
+        else walk (i + 1) n;
+        ;
+      ;
       """
 
     compileAndGenerate(source, config = CompilerConfig.default.copy(noTco = false)).map { llvmIr =>
@@ -103,12 +109,16 @@ class TailRecursionLoopificationTest extends BaseEffFunSuite:
     val source =
       """
       fn search(i: Int, step: Int, limit: Int): Int =
-        if i >= limit then i
+        if i >= limit then
+          i;
         else
-          if step > 5 then search (i + step) 1 limit
-          else search (i + 1) (step + 1) limit
-          end
-        end;
+          if step > 5 then
+            search (i + step) 1 limit;
+          else
+            search (i + 1) (step + 1) limit;
+          ;
+        ;
+      ;
       """
 
     compileAndGenerate(source, config = CompilerConfig.default.copy(noTco = false)).map { llvmIr =>
@@ -126,15 +136,20 @@ class TailRecursionLoopificationTest extends BaseEffFunSuite:
     val source =
       """
       fn deep(x: Int, y: Int): Int =
-        if x <= 0 then y
+        if x <= 0 then
+          y;
         else
           if y > 10 then
-            if x > 5 then deep (x - 2) y
-            else 999
-            end
-          else deep (x - 1) (y + 1)
-          end
-        end;
+            if x > 5 then
+              deep (x - 2) y;
+            else
+              999;
+            ;
+          else
+            deep (x - 1) (y + 1);
+          ;
+        ;
+      ;
       """
 
     compileAndGenerate(source, config = CompilerConfig.default.copy(noTco = false)).map { llvmIr =>

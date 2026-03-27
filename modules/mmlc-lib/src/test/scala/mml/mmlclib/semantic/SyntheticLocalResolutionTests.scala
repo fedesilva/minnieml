@@ -72,7 +72,7 @@ class SyntheticLocalResolutionTests extends BaseEffFunSuite:
   test("partial application synthetic params are resolved and indexed") {
     val code =
       """
-        fn mult(a: Int, b: Int): Int = a * b;
+        fn mult(a: Int, b: Int): Int = a * b;;
         let partial = mult 1;
       """
 
@@ -90,10 +90,10 @@ class SyntheticLocalResolutionTests extends BaseEffFunSuite:
   test("ownership temp wrappers resolve synthetic locals and index discard params") {
     val code =
       """
-        fn print_it(s: String): Unit = println s;
+        fn print_it(s: String): Unit = println s;;
 
         fn main(): Unit =
-          print_it (int_to_str 1)
+          print_it (int_to_str 1);
         ;
       """
 
@@ -115,7 +115,7 @@ class SyntheticLocalResolutionTests extends BaseEffFunSuite:
       """
         fn main(): Unit =
           let s = int_to_str 1;
-          println "done"
+          println "done";
         ;
       """
 

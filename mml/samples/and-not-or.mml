@@ -4,11 +4,11 @@ let flag2 = true;
 
 let result =
   if not flag1 or not flag1 and not flag2 then
-    "NADA"
+    "NADA";
   else
     "ALGO"
-  end;
+  ;;
 
 pub fn main(): Unit =
   println result
-;
+;;

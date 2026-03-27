@@ -4,4 +4,4 @@ let c = a + b * 2;
 
 pub fn main(): Int =
   a + 1
-;
+;;

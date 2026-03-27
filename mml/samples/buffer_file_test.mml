@@ -5,4 +5,4 @@ pub fn main(): Unit =
   buf writeln "World!";
   flush buf;
   close_file fd;
-
+;

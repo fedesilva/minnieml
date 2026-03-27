@@ -3,7 +3,7 @@ fn swap(arr: IntArray, a: Int, b: Int): Unit =
   let tmp = unsafe_ar_int_get arr a; 
   unsafe_ar_int_set arr a (unsafe_ar_int_get arr b);
   unsafe_ar_int_set arr b tmp
-;
+;;
 
 // The inner loop of partition: for (j = low; j < high; j++)
 // Returns the final value of 'i' (the pivot index)
@@ -13,15 +13,14 @@ fn partition_loop(arr: IntArray, j: Int, high: Int, pivot: Int, i: Int): Int =
     if val < pivot then
       let new_i = i + 1;
       swap arr new_i j;
-      partition_loop arr (j + 1) high pivot new_i
+      partition_loop arr (j + 1) high pivot new_i;
     else
-      partition_loop arr (j + 1) high pivot i
-    end
+      partition_loop arr (j + 1) high pivot i;
+    ;
   else
-    i
-  end
+    i;
+  ;
 ;
-
 fn partition(arr: IntArray, low: Int, high: Int): Int =
   let pivot = unsafe_ar_int_get arr high;
   let i_start = low - 1;
@@ -30,17 +29,16 @@ fn partition(arr: IntArray, low: Int, high: Int): Int =
   // Place pivot in the correct spot
   swap arr (final_i + 1) high;
   final_i + 1
-;
+;;
 
 fn quicksort(arr: IntArray, low: Int, high: Int): Unit =
   if low < high then
     // a comment in a function with let
     let p = partition arr low high;
     quicksort arr low (p - 1);
-    quicksort arr (p + 1) high
-  end
+    quicksort arr (p + 1) high;
+  ;
 ;
-
 // Standard Linear Congruential Generator for deterministic random numbers
 fn fill_random(arr: IntArray, seed: Int, i: Int, size: Int): Unit =
   if i < size then
@@ -50,16 +48,15 @@ fn fill_random(arr: IntArray, seed: Int, i: Int, size: Int): Unit =
     // Keep it positive and manageable for sort checking
     let val = next % 100000;
     unsafe_ar_int_set arr i val;
-    fill_random arr next (i + 1) size
-  end
+    fill_random arr next (i + 1) size;
+  ;
 ;
-
 fn run_sort(size: Int): Int =
   let arr = ar_int_new size;
   fill_random arr 42 0 size;
   quicksort arr 0 (size - 1);
   unsafe_ar_int_get arr (size / 2)
-;
+;;
 
 /*
 the entry point
@@ -68,4 +65,4 @@ pub fn main(): Unit =
   // Sort 1 million integers
   let result = run_sort 1000000;
   println ("Median checksum: " ++ (int_to_str result))
-;
+;;

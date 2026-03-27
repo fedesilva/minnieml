@@ -13,7 +13,7 @@ class FindDefinitionTests extends BaseEffFunSuite:
       """
       fn main(x: Int): Int =
         let y = x + 1;
-        y
+        y;
       ;
       """
 
@@ -133,7 +133,7 @@ class FindDefinitionTests extends BaseEffFunSuite:
     val code =
       """
       struct Pair { fst: Int, snd: Int };
-      fn make(a: Int, b: Int): Pair = Pair a b;
+      fn make(a: Int, b: Int): Pair = Pair a b;;
       """
 
     semNotFailed(code).map { m =>
@@ -171,7 +171,7 @@ class FindDefinitionTests extends BaseEffFunSuite:
       struct Address { city: String, street: String };
       fn main() =
         let addr = Address "SF" "Main St";
-        println addr.city
+        println addr.city;
       ;
       """
 
@@ -209,7 +209,7 @@ class FindDefinitionTests extends BaseEffFunSuite:
 
       fn main() =
         let p = Person "fede" 25;
-        println ("Age: " ++ int_to_str p.age)
+        println ("Age: " ++ int_to_str p.age);
       ;
       """
 

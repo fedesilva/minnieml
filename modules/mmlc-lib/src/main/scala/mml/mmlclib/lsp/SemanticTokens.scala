@@ -248,13 +248,6 @@ object SemanticTokens:
       kw <- keywordBetween(ifTrueSpan.end, ifFalseSpan.start, 4)
     yield kw
 
-    // "end" is at the end of the cond span (if present)
-    val endKeyword = for
-      condSpan <- cond.spanOpt
-      lastExprSpan <- cond.ifFalse.spanOpt
-      kw <- keywordAtEnd(condSpan, lastExprSpan, 3)
-    yield kw
-
     val condTokens    = collectFromExpr(cond.cond, resolvables)
     val ifTrueTokens  = collectFromExpr(cond.ifTrue, resolvables)
     val ifFalseTokens = collectFromExpr(cond.ifFalse, resolvables)
@@ -262,7 +255,6 @@ object SemanticTokens:
     ifKeyword.toList ++
       thenKeyword.toList ++
       elseKeyword.toList ++
-      endKeyword.toList ++
       condTokens ++
       ifTrueTokens ++
       ifFalseTokens
@@ -310,20 +302,6 @@ object SemanticTokens:
       if before.col >= col + length && col > 0 then
         tokenAtPos(after.line, col, length, TokenType.Keyword)
       else None
-
-  /** Find "end" keyword at the end of a cond span. */
-  private def keywordAtEnd(
-    condSpan:     SrcSpan,
-    lastExprSpan: SrcSpan,
-    length:       Int
-  ): Option[RawToken] =
-    // "end" should be at the very end of condSpan
-    val endLine = condSpan.end.line
-    val endCol  = condSpan.end.col - length + 1
-    if endCol > 0 && (endLine > lastExprSpan.end.line ||
-        (endLine == lastExprSpan.end.line && endCol > lastExprSpan.end.col))
-    then tokenAtPos(endLine, endCol, length, TokenType.Keyword)
-    else None
 
   /** Create a token at a span. */
   private def tokenAt(

@@ -9,7 +9,7 @@ class TbaaEmissionTest extends BaseEffFunSuite:
   test("generates distinct TBAA field tags for struct fields") {
     val source = """
       fn main(): Unit =
-        println "hello"
+        println "hello";
       ;
     """
 
@@ -34,7 +34,7 @@ class TbaaEmissionTest extends BaseEffFunSuite:
   test("TBAA has proper hierarchy: root, MML types, struct, access tags") {
     val source = """
       fn main(): Unit =
-        println "test"
+        println "test";
       ;
     """
 
@@ -56,7 +56,7 @@ class TbaaEmissionTest extends BaseEffFunSuite:
   test("stores to different struct fields use different TBAA tags") {
     val source = """
       fn main(): Unit =
-        println "hello"
+        println "hello";
       ;
     """
 
@@ -86,7 +86,7 @@ class TbaaEmissionTest extends BaseEffFunSuite:
   test("TBAA field offsets honor alignment (String has ptr at offset 8, not 4)") {
     val source = """
       fn main(): Unit =
-        println "test"
+        println "test";
       ;
     """
 
@@ -110,7 +110,7 @@ class TbaaEmissionTest extends BaseEffFunSuite:
     test("loads and stores include alias scope metadata") {
       val source = """
       fn main(): Unit =
-        println "alias"
+        println "alias";
       ;
     """
 

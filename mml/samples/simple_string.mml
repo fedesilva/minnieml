@@ -2,4 +2,4 @@ let a = "fede";
 
 pub fn main(): Unit =
   println ("hola, " ++ "fede")
-;
+;;
