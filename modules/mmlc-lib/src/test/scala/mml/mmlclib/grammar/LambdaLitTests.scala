@@ -128,6 +128,92 @@ class LambdaLitTests extends BaseEffFunSuite:
     }
   }
 
+  test("inner fn desugars to the same scoped binding shape as let-bound lambda") {
+    parseNotFailed(
+      """
+        fn main(): Int =
+          fn inc(a: Int): Int = a + 1;;
+          inc 41;
+        ;
+      """
+    ).map { m =>
+      val mainBnd = m.members.head.asInstanceOf[Bnd]
+      mainBnd.value.terms.head match
+        case mainLambda: Lambda =>
+          mainLambda.body.terms match
+            case List(App(_, bindingLambda: Lambda, argExpr, _, _)) =>
+              assertEquals(bindingLambda.params.size, 1)
+              assertEquals(bindingLambda.params.head.name, "inc")
+              assert(
+                bindingLambda.params.head.typeAsc.isDefined,
+                "Expected synthesized binding type"
+              )
+
+              argExpr.terms match
+                case List(innerLambda: Lambda) =>
+                  assertEquals(innerLambda.params.size, 1)
+                  assertEquals(innerLambda.params.head.name, "a")
+                  assert(innerLambda.params.head.typeAsc.isDefined, "Expected typed param")
+                  assert(innerLambda.typeAsc.isEmpty, "Expected return type on binding, not lambda")
+                case other =>
+                  fail(
+                    s"Expected scoped binding value to be a Lambda, got ${other
+                        .map(prettyPrintAst(_))
+                        .mkString(", ")}"
+                  )
+            case other =>
+              fail(
+                s"Expected main body to be App(Lambda(binding), Lambda(value)), got ${other
+                    .map(prettyPrintAst(_))
+                    .mkString(", ")}"
+              )
+        case other =>
+          fail(s"Expected main binding Lambda, got ${prettyPrintAst(other)}")
+    }
+  }
+
+  test("recursive nullary inner fn parses as scoped lambda binding") {
+    parseNotFailed(
+      """
+        fn main(): Unit =
+          fn loop(): Unit = loop();;
+          loop();
+        ;
+      """
+    ).map { m =>
+      val mainBnd = m.members.head.asInstanceOf[Bnd]
+      mainBnd.value.terms.head match
+        case mainLambda: Lambda =>
+          mainLambda.body.terms match
+            case List(App(_, bindingLambda: Lambda, argExpr, _, _)) =>
+              assertEquals(bindingLambda.params.size, 1)
+              assertEquals(bindingLambda.params.head.name, "loop")
+              assert(
+                bindingLambda.params.head.typeAsc.isDefined,
+                "Expected synthesized binding type"
+              )
+
+              argExpr.terms match
+                case List(innerLambda: Lambda) =>
+                  assert(innerLambda.params.isEmpty, "Expected nullary inner function")
+                  assert(innerLambda.typeAsc.isEmpty, "Expected return type on binding, not lambda")
+                case other =>
+                  fail(
+                    s"Expected recursive binding value to be a Lambda, got ${other
+                        .map(prettyPrintAst(_))
+                        .mkString(", ")}"
+                  )
+            case other =>
+              fail(
+                s"Expected main body to be App(Lambda(binding), Lambda(value)), got ${other
+                    .map(prettyPrintAst(_))
+                    .mkString(", ")}"
+              )
+        case other =>
+          fail(s"Expected main binding Lambda, got ${prettyPrintAst(other)}")
+    }
+  }
+
   test("lambda with operator body") {
     parseNotFailed(
       """
