@@ -433,6 +433,26 @@ class TypeCheckerTests extends BaseEffFunSuite:
     }
   }
 
+  test("inner fn with typed params and return type supports recursive self-call") {
+    val code =
+      """
+        fn main(): Unit =
+          fn loop(i: Int): Unit =
+            if i < 3 then
+              loop (i + 1);
+            ;
+          ;
+          loop 0;
+        ;
+      """
+    semNotFailed(code).map { module =>
+      val fn = module.members.collectFirst { case b: Bnd if b.name == "main" => b }.get
+      fn.typeSpec match
+        case Some(TypeFn(_, Nil, TypeRef(_, "Unit", _, _))) => ()
+        case other => fail(s"Expected main to typecheck as Unit, got $other")
+    }
+  }
+
   test("nested let in member binding") {
     val code =
       """
