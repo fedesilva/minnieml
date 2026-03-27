@@ -28,6 +28,27 @@ letters, digits, and underscores: `[a-z][a-zA-Z0-9_]*`.
 
 Identifiers cannot be [reserved words](#appendix-reserved-words).
 
+### Visibility modifiers
+
+Top-level declarations can be prefixed with a visibility modifier:
+
+```mml
+pub fn main(): Unit = ();;
+prot let cache_size = 1024;
+priv fn helper(x: Int): Int = x;;
+```
+
+Available modifiers:
+
+- `pub` — public
+- `prot` — protected
+- `priv` — private
+
+If omitted, visibility defaults to `prot`.
+
+Most visibility rules are not enforced yet. One exception: when building an
+executable, `main` must be declared `pub`.
+
 ### Let bindings
 
 ```mml
@@ -93,13 +114,24 @@ Lambda expressions create anonymous function values. The basic form is
 { x: Int -> x + 1 }
 ```
 
-**Parameter types** can be annotated or inferred from context:
+**Parameter syntax** matches function parameters. Parameters can be annotated,
+inferred, or marked as consuming with `~`:
 
 ```mml
 fn apply(f: Int -> Int, x: Int): Int = f x;
 
 let result = apply { x -> x + 1 } 41;   // x: Int inferred from f's type
+let consume = { ~s: String -> print s };
 ```
+
+Type inference draws on two sources:
+
+- top-down expected types from the surrounding context
+- bottom-up anchors from the lambda body, such as operator use or calls to
+  named functions
+
+When both are available, the surrounding expected type wins. If the available
+evidence does not point to one type, the compiler reports an inference error.
 
 **Multiple parameters** are separated by commas:
 
@@ -114,6 +146,13 @@ let result = apply { x -> x + 1 } 41;   // x: Int inferred from f's type
 ```
 
 A nullary lambda has type `Unit -> R` and is called by applying it to `()`.
+Here `()` is the value of type `Unit`, not a special empty-argument call form.
+See [Literals](#literals).
+
+```mml
+let greet = { println "hello" };
+greet ();
+```
 
 **Body expressions** follow the same rules as function bodies — `let` bindings
 followed by a final expression:
@@ -166,6 +205,9 @@ Here `a` is captured from the enclosing function's parameter. See
 [Memory management](#7-memory-management) for how captures interact with
 ownership.
 
+Module-level bindings are not captures; they are referenced directly like other
+global declarations.
+
 **Nested lambdas**: Inner lambdas can capture bindings from any enclosing
 scope:
 
@@ -175,6 +217,10 @@ let outer = { x: Int ->
   apply { z: Int -> x + y + z } 100
 };
 ```
+
+If an inner lambda captures a binding from outside the enclosing lambda, the
+capture propagates outward. The enclosing lambda must also carry it in its
+environment.
 
 ### Operator declarations
 
@@ -190,7 +236,7 @@ Operators require a precedence (integer, higher binds tighter) and associativity
 
 ```mml
 op ++(a: String, b: String): String 61 right = concat a b;  // string concatenation (standard library)
-op -(a: Int): Int 95 right = @native[tpl="sub %type 0, %operand"];
+op -(a: Int): Int 95 right = ???;
 ```
 
 See [Operator system](#5-operator-system) for details on precedence, fixity,
@@ -239,9 +285,10 @@ See [Native type declarations](#native-type-declarations) for the full syntax.
 A source file is a module. The compiler derives the module name from the file path.
 There is no `module` keyword at file scope.
 
-Top-level members can be: `let`, `fn`, `op`, `struct`, `type`. Module-level
-declarations are visible to all other declarations in the same module regardless of
-declaration order.
+Top-level members can be: `let`, `fn`, `op`, `struct`, `type`. Each can be
+prefixed by an optional visibility modifier (`pub`, `prot`, `priv`).
+Module-level declarations are visible to all other declarations in the same
+module regardless of declaration order.
 
 ### Semicolons
 
@@ -292,6 +339,28 @@ fn side_effects(): Unit =
   Escape handling is performed at code generation time using LLVM hex escapes.
 - **Booleans**: `true`, `false`
 - **Unit**: `()`, the only value of type `Unit`
+
+### Term-level type ascriptions
+
+Any term can be ascribed with `: Type`:
+
+```mml
+let answer = 42: Int;
+let label = "ok": String;
+let pair = (1, "x"): (Int, String);
+```
+
+The ascribed type must be compatible with the term's computed type.
+
+For lambda literals, a post-brace ascription constrains the lambda's **return
+type**, not the full function value:
+
+```mml
+let loop = {
+  println "tick";
+  loop()
+}: Unit;
+```
 
 ### Typed holes
 
@@ -543,8 +612,14 @@ let r2 = apply { x -> x * 2 } 5;  // r2 = 10
 
 When a lambda appears in a context where the expected type is known (function
 parameter, let binding with type annotation, return position), the compiler
-infers parameter types from that context. Explicit annotations are needed
-only when the context is insufficient.
+uses that context to infer parameter types. It can also infer parameter types
+from the lambda body itself, for example from operator usage or calls to named
+functions.
+
+If body-derived evidence conflicts, inference fails. If both top-down context
+and bottom-up evidence are present, the top-down expected type takes
+precedence. Explicit annotations are needed only when the available evidence is
+insufficient or ambiguous.
 
 ### Type compatibility
 
@@ -671,15 +746,21 @@ a * b + c  // desugars to: + (* a b) c
 - Lambda bodies can reference bindings from enclosing scopes (closures). Captured
   bindings are resolved at the point the lambda is created, not when it is called.
 - Let-bound lambdas can reference their own binding name for recursion.
+- Inner binders shadow outer names, including names that would otherwise be
+  captured.
 
-### Visibility (not enforced yet)
+### Visibility
 
-Declarations carry a visibility flag for future access control, but the compiler does
-not enforce it yet.
+Declarations carry a visibility flag written as `pub`, `prot`, or `priv`.
+Most visibility rules are not enforced yet.
 
 - **Public**: Importable and referenceable from any module.
 - **Protected**: Visible to the defining module and related modules.
 - **Private**: Confined to the defining module.
+
+One rule is enforced today:
+
+- In executable mode, the entry point `main` must be declared `pub`.
 
 ### Function application
 
@@ -861,6 +942,22 @@ environment. The original binding remains usable.
 ```mml
 fn makeAdder(a: Int): Int -> Int =
   { x: Int -> x + a }    // a (Int) is copied into the closure env
+;
+```
+
+Heap captures do not behave like value captures:
+
+- Capturing an **owned** heap binding moves ownership into the closure
+  environment.
+- The original outer binding is then considered moved.
+- The lambda body borrows the captured field from the environment.
+- Capturing a **borrowed** heap binding is rejected.
+
+```mml
+fn makeGreeter(name: String): Unit -> Unit =
+  {
+    println ("Hello, " ++ name);
+  }: Unit;
 ;
 ```
 
@@ -1106,10 +1203,11 @@ The `StringArray` family uses `ar_str_*` and the `FloatArray` family uses
 
 ## 10. Current limitations
 
-**No heap-type captures**: Closures can capture value types (integers, floats,
-booleans) but not heap types (String, structs with heap fields) yet. To work
-around this, pass heap values as explicit function parameters instead of
-capturing them.
+**No explicit capture modes**: Closure capture policy is currently implicit.
+Value-type captures are copied, owned heap captures are moved into the closure
+environment, and borrowed heap bindings cannot be captured. There is not yet a
+surface syntax for explicit capture lists or for choosing borrow-vs-move
+capture behavior.
 
 **No generics**: The type checker does not support parametric polymorphism yet.
 Monomorphic workarounds (e.g., `IntArray`, `StringArray`, `FloatArray`) are used
@@ -1142,3 +1240,6 @@ rather than from a language design decision.
 - `???`
 - `_`
 - `~`
+- `pub`
+- `prot`
+- `priv`
