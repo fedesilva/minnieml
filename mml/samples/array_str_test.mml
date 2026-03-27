@@ -11,4 +11,4 @@ pub fn main(): Unit =
   println ("arr[0] = " ++ v0);
   println ("arr[1] = " ++ v1);
   println ("arr[2] = " ++ v2)
-;
+;;

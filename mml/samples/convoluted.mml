@@ -7,4 +7,4 @@ pub fn main() =
   let z = b * y * x;
   let result = a * b + c / y * x;
   println (int_to_str result)
-;
+;;

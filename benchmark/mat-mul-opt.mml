@@ -9,13 +9,13 @@ fn fill_matrix_loop(arr: IntArray, i: Int, size: Int, current_seed: Int): Unit =
     let next_seed = (current_seed * 1664525) + 1013904223;
     // Keep numbers small to avoid immediate overflow
     unsafe_ar_int_set arr i (next_seed % 100);
-    fill_matrix_loop arr (i + 1) size next_seed
-  end
+    fill_matrix_loop arr (i + 1) size next_seed;
+  ;
 ;
 
 fn fill_matrix(arr: IntArray, n: Int, seed: Int): Unit =
   let size = n * n;
-  fill_matrix_loop arr 0 size seed
+  fill_matrix_loop arr 0 size seed;
 ;
 
 // --- Matrix Multiplication (Interchanged) ---
@@ -38,8 +38,8 @@ fn mat_mul_j(c: IntArray, b: IntArray, val_a: Int, i: Int, k: Int, j: Int, n: In
     unsafe_ar_int_set c idx_c (old_c + product);
 
     // Recurse
-    mat_mul_j c b val_a i k (j + 1) n
-  end
+    mat_mul_j c b val_a i k (j + 1) n;
+  ;
 ;
 
 // Middle loop: k from 0 to n
@@ -54,8 +54,8 @@ fn mat_mul_k(a: IntArray, b: IntArray, c: IntArray, i: Int, k: Int, n: Int): Uni
     let u = mat_mul_j c b val_a i k 0 n;
 
     // Recurse
-    mat_mul_k a b c i (k + 1) n
-  end
+    mat_mul_k a b c i (k + 1) n;
+  ;
 ;
 
 // Outer loop: i from 0 to n
@@ -63,12 +63,12 @@ fn mat_mul_i(a: IntArray, b: IntArray, c: IntArray, i: Int, n: Int): Unit =
   if i < n then
     // Run middle loop (k)
     let u = mat_mul_k a b c i 0 n;
-    mat_mul_i a b c (i + 1) n
-  end
+    mat_mul_i a b c (i + 1) n;
+  ;
 ;
 
 fn mat_mul(a: IntArray, b: IntArray, c: IntArray, n: Int): Unit =
-  mat_mul_i a b c 0 n
+  mat_mul_i a b c 0 n;
 ;
 
 // --- Verification ---
@@ -77,14 +77,14 @@ fn trace_loop(arr: IntArray, i: Int, n: Int, acc: Int): Int =
   if i < n then
     let idx = (i * n) + i;
     let val = unsafe_ar_int_get arr idx;
-    trace_loop arr (i + 1) n (acc + val)
+    trace_loop arr (i + 1) n (acc + val);
   else
-    acc
-  end
+    acc;
+  ;
 ;
 
 fn trace(arr: IntArray, n: Int): Int =
-  trace_loop arr 0 n 0
+  trace_loop arr 0 n 0;
 ;
 
 // --- Main ---
@@ -103,5 +103,5 @@ pub fn main(): Unit =
   mat_mul a b c n;
 
   let result = trace c n;
-  println ("Trace Checksum: " ++ (int_to_str result))
+  println ("Trace Checksum: " ++ (int_to_str result));
 ;

@@ -5,9 +5,8 @@ let b = "Silva";
 let c = a ++ b;
 
 fn join(a: String, b: String) =
-  a ++ b
+  a ++ b;
 ;
-
 pub fn main(): Unit =
-  println (join a b)
+  println (join a b);
 ;

@@ -1,16 +1,16 @@
 
 fn makeGreeter(~name: String): Unit -> Unit =
-  { println ("Hello, " ++ name) }
+  { println ("Hello, " ++ name); };
 ;
 
 fn loop(n: Int): Unit =
   if n > 0 then
     let greet = makeGreeter ("User" ++ (int_to_str n));
     greet ();
-    loop (n - 1)
-  end
+    loop (n - 1);
+  ;
 ;
 
 pub fn main(): Unit =
-  loop 100000
+  loop 100000;
 ;

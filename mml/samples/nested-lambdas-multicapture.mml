@@ -1,27 +1,18 @@
-// Self recursive lambda, with inner lambda, several captures.
-// Onwership rules will probably prevent this from working!
-// - one would have to clone the captured values.
-//   this is escape hatch right now. 
+// Nested lambdas with captures.
 
 pub fn main() =
-
   println ("What's your name?");
-  let name = readline();
+  let name = 1;
 
-  let loop = {
-    println ("Type a number, " ++ name);
+  let f = {
+    println ("Type a number, " ++ (int_to_str name));
     let n = str_to_int (readline());
 
-    let printit = {
-      println ("Number is: " ++ (int_to_str n) ++ ", " ++ name)
-    };
+    let g = {
+      println ("Number is: " ++ (int_to_str n) ++ ", " ++ (int_to_str name));
+    }: Unit;
 
-    printit ();
-    loop()
-
-  }: Unit;
-
-  loop()
-
+    g();
+  };
+  f();
 ;
-

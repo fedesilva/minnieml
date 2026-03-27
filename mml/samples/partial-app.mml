@@ -3,4 +3,4 @@ let greet = concat "Hola, ";
 
 pub fn main() =
   println (greet "fede")
-;
+;;

@@ -11,4 +11,4 @@ pub fn main() =
 // third error: caused by c being bad
 
   println (int_to_str c)
-;
+;;

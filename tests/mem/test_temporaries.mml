@@ -3,14 +3,14 @@
 
 // Helper to consume a string so the optimizer doesn't delete it
 fn consume(s: String): Unit =
-  println s
+  println s;
 ;
 
 // 1. ANONYMOUS ARGUMENT TEST
 // We pass the result of 'int_to_str' directly to 'consume'.
 // It isn't stored in a variable, so the compiler must handle the lifetime.
 fn test_anonymous_arg(n: Int): Unit =
-  consume (int_to_str n)
+  consume (int_to_str n);
 ;
 
 // 2. CONCAT TEMPORARIES TEST
@@ -26,7 +26,7 @@ fn test_anonymous_arg(n: Int): Unit =
 // If it doesn't, you leak 2 strings per iteration.
 fn test_concat_temps(n: Int): Unit =
   let s = (int_to_str n) ++ (int_to_str n);
-  println s
+  println s;
 ;
 
 // 3. NESTED CONCAT TEST
@@ -38,28 +38,28 @@ fn test_nested_concat(n: Int): Unit =
   let part1 = int_to_str n;
   let part2 = int_to_str n;
   let s = (part1 ++ part2) ++ part1;
-  println s
+  println s;
 ;
 
 fn run_anon(n: Int): Unit =
   if n != 0 then
     test_anonymous_arg n;
-    run_anon (n - 1)
-  end
+    run_anon (n - 1);
+  ;
 ;
 
 fn run_concat(n: Int): Unit =
   if n != 0 then
     test_concat_temps n;
-    run_concat (n - 1)
-  end
+    run_concat (n - 1);
+  ;
 ;
 
 fn run_nested(n: Int): Unit =
   if n != 0 then
     test_nested_concat n;
-    run_nested (n - 1)
-  end
+    run_nested (n - 1);
+  ;
 ;
 
 pub fn main(): Unit =
@@ -72,5 +72,5 @@ pub fn main(): Unit =
   println "Testing Nested Concat (Intermediate results)...";
   run_nested 100;
 
-  println "All temporary tests passed!"
+  println "All temporary tests passed!";
 ;

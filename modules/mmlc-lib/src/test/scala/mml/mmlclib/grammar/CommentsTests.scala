@@ -118,7 +118,7 @@ class CommentsTests extends BaseEffFunSuite:
     parseNotFailed(
       """
          /* This is a doc comment */
-         fn func (x) = 42;
+         fn func (x) = 42;;
        """
     ).map { m =>
       assertEquals(m.members.size, 1)
@@ -128,10 +128,10 @@ class CommentsTests extends BaseEffFunSuite:
   test("doc comment on later function does not break earlier function") {
     val source =
       """
-        fn fizzbuzz(n: Int) = 1;
+        fn fizzbuzz(n: Int) = 1;;
 
         /* entry point */
-        fn main() = fizzbuzz 10;
+        fn main() = fizzbuzz 10;;
       """
 
     parseNotFailed(source).map { m =>

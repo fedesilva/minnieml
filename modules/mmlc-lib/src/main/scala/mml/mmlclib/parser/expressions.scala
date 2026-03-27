@@ -56,6 +56,14 @@ private[parser] def exprMemberP(info: SourceInfo)(using P[Any]): P[Expr] =
 private[parser] def exprNoSeqMemberP(info: SourceInfo)(using P[Any]): P[Expr] =
   exprFromTermsP(info, termMemberP(info))
 
+private[parser] def terminatedExprP(info: SourceInfo)(using P[Any]): P[(Expr, SrcPoint)] =
+  P(exprP(info) ~ semiKw ~ spNoWsP(info))
+
+private[parser] def terminatedNestedMemberExprP(info: SourceInfo)(using
+  P[Any]
+): P[(Expr, SrcPoint)] =
+  P(exprP(info) ~ semiKw ~ spNoWsP(info))
+
 private def withTypeAsc(info: SourceInfo, termParser: => P[Term])(using P[Any]): P[Term] =
   P(termParser ~ typeAscP(info)).map {
     case (term, Some(asc)) => term.withTypeAsc(asc)
@@ -189,13 +197,13 @@ private[parser] def tupleMemberP(info: SourceInfo)(using P[Any]): P[Term] =
 
 private[parser] def ifExprP(info: SourceInfo)(using P[Any]): P[Term] =
   P(
-    spP(info) ~ ifKw ~ exprP(info) ~ thenKw ~ exprP(info) ~
-      (elifKw ~ exprP(info) ~ thenKw ~ exprP(info)).rep ~
-      elseKw ~ exprP(info) ~ endKw ~ spNoWsP(info) ~ spP(info)
-  ).map { case (start, cond, ifTrue, elsifs, ifFalse, end, _) =>
+    spP(info) ~ ifKw ~ exprP(info) ~ thenKw ~ terminatedExprP(info) ~
+      (elifKw ~ exprP(info) ~ thenKw ~ terminatedExprP(info)).rep ~
+      elseKw ~ terminatedExprP(info) ~ spNoWsP(info)
+  ).map { case (start, cond, (ifTrue, _), elsifs, (ifFalse, _), end) =>
     val finalSpan = span(start, end)
     // Build nested Cond from elsif chain (fold right)
-    val elseExpr = elsifs.toList.foldRight(ifFalse) { case ((elsifCond, elsifBody), acc) =>
+    val elseExpr = elsifs.toList.foldRight(ifFalse) { case ((elsifCond, (elsifBody, _)), acc) =>
       val elsifCondLoc = locSpan(elsifCond)
       val accLoc       = locSpan(acc)
       val condSpan     = span(elsifCondLoc.start, accLoc.end)
@@ -206,17 +214,17 @@ private[parser] def ifExprP(info: SourceInfo)(using P[Any]): P[Term] =
 
 private[parser] def ifSingleBranchExprP(info: SourceInfo)(using P[Any]): P[Term] =
   P(
-    spP(info) ~ ifKw ~ exprP(info) ~ thenKw ~ exprP(info) ~
-      (elifKw ~ exprP(info) ~ thenKw ~ exprP(info)).rep ~
-      endKw ~ spNoWsP(info) ~ spP(info)
-  ).map { case (start, cond, ifTrue, elsifs, end, _) =>
+    spP(info) ~ ifKw ~ exprP(info) ~ thenKw ~ terminatedExprP(info) ~
+      (elifKw ~ exprP(info) ~ thenKw ~ terminatedExprP(info)).rep ~
+      spNoWsP(info)
+  ).map { case (start, cond, (ifTrue, _), elsifs, end) =>
     val finalSpan = span(start, end)
     val unitType  = TypeRef(finalSpan, "Unit")
     val unitSpan  = span(end, end)
     // Synthesize LiteralUnit for the missing else branch
     val unitExpr = Expr(unitSpan, List(LiteralUnit(unitSpan)))
     // Build nested Cond from elsif chain (fold right), ending with unit
-    val elseExpr = elsifs.toList.foldRight(unitExpr) { case ((elsifCond, elsifBody), acc) =>
+    val elseExpr = elsifs.toList.foldRight(unitExpr) { case ((elsifCond, (elsifBody, _)), acc) =>
       val elsifCondLoc = locSpan(elsifCond)
       val accLoc       = locSpan(acc)
       val condSpan     = span(elsifCondLoc.start, accLoc.end)
@@ -261,10 +269,11 @@ private[parser] def letExprP(info: SourceInfo)(using P[Any]): P[Term] =
   }
 
 private def lambdaWithParamsP(info: SourceInfo)(using P[Any]): P[(List[FnParam], Expr)] =
-  P(fnParamListP(info).filter(_.nonEmpty) ~ arrowKw ~/ exprP(info))
+  P(fnParamListP(info).filter(_.nonEmpty) ~ arrowKw ~/ terminatedExprP(info))
+    .map { case (params, (body, _)) => params -> body }
 
 private def lambdaNoParamsP(info: SourceInfo)(using P[Any]): P[(List[FnParam], Expr)] =
-  P(exprP(info)).map(Nil -> _)
+  P(terminatedExprP(info)).map { case (body, _) => Nil -> body }
 
 private[parser] def lambdaLitP(info: SourceInfo)(using P[Any]): P[Term] =
   P(
@@ -283,13 +292,13 @@ private[parser] def groupTermP(info: SourceInfo)(using P[Any]): P[Term] =
 
 private[parser] def ifExprMemberP(info: SourceInfo)(using P[Any]): P[Term] =
   P(
-    spP(info) ~ ifKw ~ exprMemberP(info) ~ thenKw ~ exprMemberP(info) ~
-      (elifKw ~ exprMemberP(info) ~ thenKw ~ exprMemberP(info)).rep ~
-      elseKw ~ exprMemberP(info) ~ endKw ~ spNoWsP(info) ~ spP(info)
-  ).map { case (start, cond, ifTrue, elsifs, ifFalse, end, _) =>
+    spP(info) ~ ifKw ~ exprMemberP(info) ~ thenKw ~ terminatedNestedMemberExprP(info) ~
+      (elifKw ~ exprMemberP(info) ~ thenKw ~ terminatedNestedMemberExprP(info)).rep ~
+      elseKw ~ terminatedNestedMemberExprP(info) ~ spNoWsP(info)
+  ).map { case (start, cond, (ifTrue, _), elsifs, (ifFalse, _), end) =>
     val finalSpan = span(start, end)
     // Build nested Cond from elsif chain (fold right)
-    val elseExpr = elsifs.toList.foldRight(ifFalse) { case ((elsifCond, elsifBody), acc) =>
+    val elseExpr = elsifs.toList.foldRight(ifFalse) { case ((elsifCond, (elsifBody, _)), acc) =>
       val elsifCondLoc = locSpan(elsifCond)
       val accLoc       = locSpan(acc)
       val condSpan     = span(elsifCondLoc.start, accLoc.end)
@@ -300,17 +309,17 @@ private[parser] def ifExprMemberP(info: SourceInfo)(using P[Any]): P[Term] =
 
 private[parser] def ifSingleBranchExprMemberP(info: SourceInfo)(using P[Any]): P[Term] =
   P(
-    spP(info) ~ ifKw ~ exprMemberP(info) ~ thenKw ~ exprMemberP(info) ~
-      (elifKw ~ exprMemberP(info) ~ thenKw ~ exprMemberP(info)).rep ~
-      endKw ~ spNoWsP(info) ~ spP(info)
-  ).map { case (start, cond, ifTrue, elsifs, end, _) =>
+    spP(info) ~ ifKw ~ exprMemberP(info) ~ thenKw ~ terminatedNestedMemberExprP(info) ~
+      (elifKw ~ exprMemberP(info) ~ thenKw ~ terminatedNestedMemberExprP(info)).rep ~
+      spNoWsP(info)
+  ).map { case (start, cond, (ifTrue, _), elsifs, end) =>
     val finalSpan = span(start, end)
     val unitType  = TypeRef(finalSpan, "Unit")
     val unitSpan  = span(end, end)
     // Synthesize LiteralUnit for the missing else branch
     val unitExpr = Expr(unitSpan, List(LiteralUnit(unitSpan)))
     // Build nested Cond from elsif chain (fold right), ending with unit
-    val elseExpr = elsifs.toList.foldRight(unitExpr) { case ((elsifCond, elsifBody), acc) =>
+    val elseExpr = elsifs.toList.foldRight(unitExpr) { case ((elsifCond, (elsifBody, _)), acc) =>
       val elsifCondLoc = locSpan(elsifCond)
       val accLoc       = locSpan(acc)
       val condSpan     = span(elsifCondLoc.start, accLoc.end)

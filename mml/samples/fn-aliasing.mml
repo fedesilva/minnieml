@@ -1,8 +1,8 @@
 fn add(a: Int, b: Int): Int = 
   a + b
-;
+;;
 let f = add;
 
 pub fn main() = 
   println (int_to_str (f 1 2))
-;
+;;

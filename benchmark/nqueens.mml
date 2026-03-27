@@ -2,18 +2,22 @@
 // Board represented as array where board[row] = column of queen in that row
 
 fn abs(x: Int): Int =
-  if x < 0 then 0 - x else x end
+  if x < 0 then
+    0 - x;
+  else
+    x;
+  ;
 ;
 
 /* Entry point for is_safe, calls recursive is_safe_loop */
 fn is_safe(board: IntArray, row: Int, col: Int): Bool =
-  is_safe_loop board row col 0
+  is_safe_loop board row col 0;
 ;
 
 // Check if placing queen at (row, col) is safe
 fn is_safe_loop(board: IntArray, row: Int, col: Int, check_row: Int): Bool =
   if check_row >= row then
-    true
+    true;
   else
     let queen_col = unsafe_ar_int_get board check_row;
     let same_col = queen_col == col;
@@ -22,37 +26,36 @@ fn is_safe_loop(board: IntArray, row: Int, col: Int, check_row: Int): Bool =
     let same_diag = row_diff == col_diff;
     
     if same_col then
-      false
+      false;
     else
       if same_diag then
-        false
+        false;
       else
-        is_safe_loop board row col (check_row + 1)
-      end
-    end
-  end
+        is_safe_loop board row col (check_row + 1);
+      ;
+    ;
+  ;
 ;
-
-
 
 // Single recursive function - calls itself for both columns and rows
 fn solve_cols(board: IntArray, row: Int, n: Int, col: Int, acc: Int): Int =
   if col >= n then
-    acc
+    acc;
   else
-    let solutions_from_col = if is_safe board row col then
-      unsafe_ar_int_set board row col;
-      if row == (n - 1) then
-        1
+    let solutions_from_col =
+      if is_safe board row col then
+        unsafe_ar_int_set board row col;
+        if row == (n - 1) then
+          1;
+        else
+          solve_cols board (row + 1) n 0 0;
+        ;
       else
-        solve_cols board (row + 1) n 0 0 
-      end
-    else
-      0
-    end;
+        0;
+    ;
     let new_acc = acc + solutions_from_col;
-    solve_cols board row n (col + 1) new_acc
-  end
+    solve_cols board row n (col + 1) new_acc;
+  ;
 ;
 
 pub fn main(): Unit =
@@ -60,5 +63,5 @@ pub fn main(): Unit =
   let board = ar_int_new n;
   
   let solutions = solve_cols board 0 n 0 0;  // Start directly
-  println ("Solutions for " ++ (int_to_str n) ++ "-queens: " ++ (int_to_str solutions))
+  println ("Solutions for " ++ (int_to_str n) ++ "-queens: " ++ (int_to_str solutions));
 ;

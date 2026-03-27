@@ -1,4 +1,4 @@
 
 pub fn main(): Unit =
   println ((concat "Hola, ") "fede")
-;
+;;
