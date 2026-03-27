@@ -95,6 +95,27 @@ fn get_value(): Int = 42;
 let x = get_value ();
 ```
 
+**Inner functions** use the same `fn` syntax inside expression bodies. They are scoped
+to the surrounding expression and are equivalent to a local let-bound lambda with the
+same name, parameters, and return type:
+
+```mml
+pub fn countdown(from: Int): Unit =
+  fn loop(i: Int): Unit =
+    if i > 0 then
+      println (int_to_str i);
+      loop (i - 1);
+    ;
+  ;
+
+  loop from;
+;
+```
+
+This is surface syntax for the same core form as a local `let` binding whose value is a
+lambda. The inner function name is in scope inside its body, so recursion works the same
+way as with let-bound lambdas.
+
 **Inline hint:** Prefixing a function or operator declaration with `inline` requests that
 the compiler inline it at call sites. This emits the LLVM `inlinehint` attribute; the
 optimizer may still choose not to inline if the cost model disagrees.

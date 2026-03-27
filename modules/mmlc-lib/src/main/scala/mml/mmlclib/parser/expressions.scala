@@ -29,6 +29,38 @@ private def mkStatementChain(head: Expr, tail: List[Expr]): Expr =
     Expr(stmtSpan, List(App(stmtSpan, lambda, stmt)))
   }
 
+private def mkScopedBinding(
+  bindingName:    String,
+  bindingNameLoc: SrcSpan,
+  bindingTypeAsc: Option[Type],
+  bindingExpr:    Expr,
+  restExpr:       Expr,
+  fullSpan:       SrcSpan
+): App =
+  val param = FnParam(
+    SourceOrigin.Loc(bindingNameLoc),
+    Name(bindingNameLoc, bindingName),
+    typeAsc = bindingTypeAsc
+  )
+  val lambda = Lambda(
+    span     = fullSpan,
+    params   = List(param),
+    body     = restExpr,
+    captures = Nil
+  )
+  App(
+    span = fullSpan,
+    fn   = lambda,
+    arg  = bindingExpr
+  )
+
+private def mkFnBindingType(
+  source:     SourceOrigin,
+  params:     List[FnParam],
+  returnType: Option[Type]
+): Option[Type] =
+  returnType.flatMap(retType => params.traverse(_.typeAsc).map(TypeFn(source, _, retType)))
+
 private def exprFromTermsP(info: SourceInfo, termParser: => P[Term])(using P[Any]): P[Expr] =
   P(spP(info) ~ termParser.rep(1) ~ spNoWsP(info) ~ spP(info))
     .map { case (start, ts, end, _) =>
@@ -74,6 +106,7 @@ private[parser] def termP(info: SourceInfo)(using P[Any]): P[Term] =
   withTypeAsc(
     info,
     letExprP(info) |
+      innerFnExprP(info) |
       litBoolP(info) |
       nativeImplP(info) |
       ifExprP(info) |
@@ -96,6 +129,7 @@ private[parser] def termMemberP(info: SourceInfo)(using P[Any]): P[Term] =
   withTypeAsc(
     info,
     letExprP(info) |
+      innerFnExprP(info) |
       litBoolP(info) |
       nativeImplP(info) |
       ifExprMemberP(info) |
@@ -250,22 +284,63 @@ private[parser] def letExprP(info: SourceInfo)(using P[Any]): P[Term] =
           failedCode = Some(invalidId)
         )
       case Right(name) =>
-        val param = FnParam(
-          SourceOrigin.Loc(span(idStart, idEnd)),
-          Name(span(idStart, idEnd), name),
-          typeAsc = typeAsc
+        mkScopedBinding(
+          bindingName    = name,
+          bindingNameLoc = span(idStart, idEnd),
+          bindingTypeAsc = typeAsc,
+          bindingExpr    = bindingExpr,
+          restExpr       = restExpr,
+          fullSpan       = span(start, end)
         )
-        val lambda = Lambda(
-          span     = span(start, end),
-          params   = List(param),
-          body     = restExpr,
-          captures = Nil
-        )
-        App(
-          span = span(start, end),
-          fn   = lambda,
-          arg  = bindingExpr
-        )
+  }
+
+private[parser] def innerFnExprP(info: SourceInfo)(using P[Any]): P[Term] =
+  P(
+    spP(info) ~ fnKw ~ spP(info) ~ bindingIdOrError ~ spNoWsP(info) ~ spP(info) ~
+      "(" ~ fnParamListP(info) ~ ")" ~ typeAscP(info) ~ defAsKw ~ terminatedExprP(info) ~
+      semiKw ~ exprP(info) ~ spNoWsP(info) ~ spP(info)
+  ).map {
+    case (
+          start,
+          nameStart,
+          idOrError,
+          nameEnd,
+          lambdaStart,
+          params,
+          typeAsc,
+          (bodyExpr, bodyEnd),
+          restExpr,
+          end,
+          _
+        ) =>
+      idOrError match
+        case Left(invalidId) =>
+          TermError(
+            span       = span(start, end),
+            message    = s"Invalid identifier '$invalidId'",
+            failedCode = Some(invalidId)
+          )
+        case Right(name) =>
+          val lambdaSpan = span(lambdaStart, bodyEnd)
+          val bindingTypeAsc =
+            mkFnBindingType(SourceOrigin.Loc(lambdaSpan), params, typeAsc)
+          val lambda = Lambda(
+            span     = lambdaSpan,
+            params   = params,
+            body     = bodyExpr,
+            captures = Nil,
+            typeSpec = None,
+            typeAsc  = None
+          )
+          val bindingExpr = Expr(lambdaSpan, List(lambda), None, None)
+          mkScopedBinding(
+            bindingName    = name,
+            bindingNameLoc = span(nameStart, nameEnd),
+            bindingTypeAsc = bindingTypeAsc,
+            bindingExpr    = bindingExpr,
+            restExpr       = restExpr,
+            fullSpan       = span(start, end)
+          )
   }
 
 private def lambdaWithParamsP(info: SourceInfo)(using P[Any]): P[(List[FnParam], Expr)] =
