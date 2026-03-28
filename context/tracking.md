@@ -31,7 +31,7 @@
 - Pending follow-ups:
   - QA / codegen / ownership review
     - Spec: `context/specs/lambdas-work-review.md`
-    - [ ] 3.4-QA.6 [P1] Pass real closure env on recursive capturing lambdas (`Applications.scala`)
+    - [x] 3.4-QA.6 [P1] Pass real closure env on recursive capturing lambdas (`Applications.scala`)
     - [ ] 3.4-QA.10 [P2] mergeSubState fragile manual field sync (`ExpressionCompiler.scala`)
     - [ ] 3.4-QA.11 [P2] Two codepaths for closure free could diverge (`Applications.scala`)
     - [ ] 3.4-QA.13 [P3] Nullary/Unit thunk unification may mask type errors (`TypeChecker.scala`)
@@ -96,6 +96,12 @@
 * Add commentary with examples to the parsers
 
 ## Recent Changes
+
+- 2026-03-28: #188 3.4-QA.6 real closure env on recursive capturing lambdas
+  - Codegen: recursive let-bound capturing lambdas now rebuild their self fat-pointer from the live hidden `%env` parameter inside the deferred function body instead of self-calling through `{ ptr @fn, ptr null }`.
+  - Applications/codegen plumbing: recursive let-binding preallocation now reserves the non-capturing self stub only for non-capturing lambdas; capturing lambdas defer self binding until function-body codegen.
+  - Tests/samples: added `ClosureCodegenTest` coverage for the null-env regression and added `mml/samples/recursive-tail-inner-captures-sibling.mml` alongside the existing non-tail sibling-capture sample.
+  - Verification: `scalafmtAll`, `scalafixAll`, sanity samples (`hello`, `quicksort`, `astar2`), full suite (`350/350`), `mmlcPublishLocal`, `make -C benchmark clean`, `make -C benchmark mml`, and `./tests/mem/run.sh all` (`19/19` ASan+LSan) passed.
 
 - 2026-03-27: #188 3.4-QA.25 TypeFn closure env TBAA lowering
   - Codegen/TBAA: `TypeNameResolver` now gives `TypeFn` a stable MML type name (`Function`) so closure env structs with captured function values lower through TBAA/type-name resolution instead of failing.

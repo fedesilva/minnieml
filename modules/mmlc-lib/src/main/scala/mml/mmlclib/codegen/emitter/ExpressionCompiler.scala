@@ -192,7 +192,8 @@ private[emitter] def compileLambdaLiteral(
             fnName,
             returnType,
             paramTypes,
-            functionScope
+            functionScope,
+            bindingParam
           )
     yield result
   }
@@ -290,7 +291,8 @@ private def compileRegularLambdaLiteral(
   fnName:        String,
   returnType:    String,
   paramTypes:    List[String],
-  functionScope: Map[String, ScopeEntry]
+  functionScope: Map[String, ScopeEntry],
+  bindingParam:  Option[FnParam]
 ): Either[CodeGenError, CompileResult] =
   val filteredParamsWithTypes = filterVoidParams(lambda.params, paramTypes)
   val userParamDecls          = formatParamDecls(filteredParamsWithTypes, state.resolvables)
@@ -319,7 +321,8 @@ private def compileRegularLambdaLiteral(
       filteredParamsWithTypes,
       allParamDecls,
       envParamIdx,
-      functionScope
+      functionScope,
+      bindingParam
     )
 
 /** Non-capturing lambda: deferred function ignores env, returns { ptr @fn, ptr null }. */
@@ -364,6 +367,26 @@ private case class EnvSetupResult(
   envTypeRef:   String,
   captureTypes: List[(Ref, String)]
 )
+
+private def emitRecursiveSelfClosure(
+  fnName:       String,
+  envParamIdx:  Int,
+  state:        CodeGenState,
+  bindingParam: Option[FnParam]
+): (CodeGenState, Map[String, ScopeEntry]) =
+  bindingParam match
+    case None => (state, Map.empty)
+    case Some(param) =>
+      val selfFnReg = state.nextRegister
+      val selfFpReg = selfFnReg + 1
+      val insertFn =
+        emitInsertValue(selfFnReg, "{ ptr, ptr }", "undef", "ptr", s"@$fnName", 0)
+      val insertEnv =
+        emitInsertValue(selfFpReg, "{ ptr, ptr }", s"%$selfFnReg", "ptr", s"%$envParamIdx", 1)
+      val nextState =
+        state.withRegister(selfFpReg + 1).emit(insertFn).emit(insertEnv)
+      val selfScope = Map(param.name -> ScopeEntry(selfFpReg, "Function"))
+      (nextState, selfScope)
 
 /** Resolve capture types, create env struct, emit call-site IR (malloc, store dtor + captures,
   * build fat pointer). Shared between regular capturing lambdas and tail-recursive ones.
@@ -443,7 +466,8 @@ private def compileCapturingLambda(
   filteredParamsWithTypes: List[(FnParam, String)],
   allParamDecls:           String,
   envParamIdx:             Int,
-  functionScope:           Map[String, ScopeEntry]
+  functionScope:           Map[String, ScopeEntry],
+  bindingParam:            Option[FnParam]
 ): Either[CodeGenError, CompileResult] =
   emitCallSiteEnv(lambda, state, fnName, functionScope).flatMap { envResult =>
     val siteState  = envResult.siteState
@@ -458,11 +482,13 @@ private def compileCapturingLambda(
 
     val (bodyState, captureScope) =
       emitCaptureLoads(envTypeRef, envParamIdx, envResult.captureTypes, initialBodyState)
+    val (bodyStateWithSelf, selfScope) =
+      emitRecursiveSelfClosure(fnName, envParamIdx, bodyState, bindingParam)
 
-    val allScope = functionScope ++ paramScope ++ captureScope
+    val allScope = functionScope ++ paramScope ++ captureScope ++ selfScope
 
     for
-      bodyRes <- compileExpr(lambda.body, bodyState, allScope)
+      bodyRes <- compileExpr(lambda.body, bodyStateWithSelf, allScope)
       retLine =
         if returnType == "void" then "  ret void"
         else s"  ret $returnType ${bodyRes.operandStr}"
