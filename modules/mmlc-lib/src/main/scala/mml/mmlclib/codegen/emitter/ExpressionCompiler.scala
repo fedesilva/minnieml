@@ -181,7 +181,7 @@ private[emitter] def compileLambdaLiteral(
             stateWithId,
             fnName,
             returnType,
-            paramTypes,
+            paramTypes.toList,
             body,
             functionScope
           )
@@ -191,7 +191,7 @@ private[emitter] def compileLambdaLiteral(
             stateWithId,
             fnName,
             returnType,
-            paramTypes,
+            paramTypes.toList,
             functionScope,
             bindingParam
           )

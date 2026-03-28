@@ -1,5 +1,7 @@
 package mml.mmlclib.ast
 
+import cats.data.NonEmptyList
+
 // **Type Specifications**
 sealed trait Type extends AstNode, FromSource
 
@@ -51,7 +53,7 @@ case class TypeApplication(
 /** The type of a Fn `String -> Int` */
 case class TypeFn(
   source:     SourceOrigin,
-  paramTypes: List[Type],
+  paramTypes: NonEmptyList[Type],
   returnType: Type
 ) extends Type
 
@@ -111,7 +113,7 @@ case class Intersection(
   types:  List[Type]
 ) extends Type
 
-/** The unit type `()` */
+/** The Unit type. */
 case class TypeUnit(
   source: SourceOrigin
 ) extends Type

@@ -1,5 +1,6 @@
 package mml.mmlclib.parser
 
+import cats.data.NonEmptyList
 import cats.syntax.all.*
 import fastparse.*
 import mml.mmlclib.ast.*
@@ -14,7 +15,12 @@ private[parser] def typeSpecP(info: SourceInfo)(using P[Any]): P[Type] =
     .map { case (start, head, tail, end, _) =>
       val types = head :: tail.toList
       if types.size == 1 then head
-      else TypeFn(span(start, end), types.init, types.last)
+      else
+        types.init match
+          case paramHead :: paramTail =>
+            TypeFn(span(start, end), NonEmptyList(paramHead, paramTail), types.last)
+          case Nil =>
+            head
     }
 
 private[parser] def typeAtomP(info: SourceInfo)(using P[Any]): P[Type] =

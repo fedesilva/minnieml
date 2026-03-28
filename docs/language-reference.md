@@ -1147,8 +1147,8 @@ Float operators use a `.` suffix to distinguish them from integer operators.
 |------------------|-------------------|------------------------------------|
 | `print(s)`       | `String -> Unit`  | Print string to stdout             |
 | `println(s)`     | `String -> Unit`  | Print string with newline          |
-| `readline()`     | `() -> String`    | Read line from stdin. Allocates.   |
-| `mml_sys_flush()`| `() -> Unit`      | Flush stdout                       |
+| `readline()`     | `Unit -> String`  | Read line from stdin. Allocates.   |
+| `mml_sys_flush()`| `Unit -> Unit`    | Flush stdout                       |
 
 #### String operations
 
@@ -1180,7 +1180,7 @@ are flushed explicitly or when the buffer is freed.
 
 | Function                   | Type                        | Description                                  |
 |----------------------------|-----------------------------|----------------------------------------------|
-| `mkBuffer()`               | `() -> Buffer`              | Create buffer writing to stdout. Allocates.  |
+| `mkBuffer()`               | `Unit -> Buffer`            | Create buffer writing to stdout. Allocates.  |
 | `mkBufferWithFd(fd)`       | `Int -> Buffer`             | Create buffer for file descriptor. Allocates.|
 | `mkBufferWithSize(size)`   | `Int -> Buffer`             | Create buffer with custom capacity. Allocates.|
 | `flush(b)`                 | `Buffer -> Unit`            | Flush buffer contents                        |

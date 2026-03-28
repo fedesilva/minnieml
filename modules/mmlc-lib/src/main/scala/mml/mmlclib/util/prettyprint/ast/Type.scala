@@ -151,7 +151,7 @@ private def formatTypeSpecInline(
       s"TypeRef $name$spanStr$resolvedStr"
     case TypeUnit(sp) =>
       val spanStr = if showSourceSpans then s" ${printSourceOrigin(sp)}" else ""
-      s"()$spanStr"
+      s"Unit$spanStr"
     case TypeVariable(sp, name) =>
       val spanStr = if showSourceSpans then s" ${printSourceOrigin(sp)}" else ""
       s"$name$spanStr"
@@ -170,11 +170,10 @@ private def formatTypeFnInline(
   showTypes:       Boolean
 ): String =
   val paramsStr =
-    if typeFn.paramTypes.isEmpty then "()"
-    else
-      typeFn.paramTypes
-        .map(formatArrowParamType(_, showSourceSpans, showTypes))
-        .mkString(" -> ")
+    typeFn.paramTypes
+      .map(formatArrowParamType(_, showSourceSpans, showTypes))
+      .toList
+      .mkString(" -> ")
   val returnStr = formatArrowReturnType(typeFn.returnType, showSourceSpans, showTypes)
   s"$paramsStr -> $returnStr"
 

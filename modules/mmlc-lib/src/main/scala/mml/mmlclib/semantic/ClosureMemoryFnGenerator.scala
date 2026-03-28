@@ -183,7 +183,9 @@ object ClosureMemoryFnGenerator:
       syntheticSource,
       "mml_free_raw",
       resolvedId = Some("stdlib::bnd::mml_free_raw"),
-      typeSpec   = Some(TypeFn(syntheticSource, List(rawPtrTypeRef(syntheticSource)), unitTR))
+      typeSpec = Some(
+        TypeFn(syntheticSource, cats.data.NonEmptyList.one(rawPtrTypeRef(syntheticSource)), unitTR)
+      )
     )
     val ptrRef = Ref(
       syntheticSource,
@@ -197,7 +199,8 @@ object ClosureMemoryFnGenerator:
     val body     = Expr(syntheticSource, List(freeCall), typeSpec = Some(unitTR))
 
     // Function type: RawPtr -> Unit
-    val fnType = TypeFn(syntheticSource, List(rawPtrTypeRef(syntheticSource)), unitTR)
+    val fnType =
+      TypeFn(syntheticSource, cats.data.NonEmptyList.one(rawPtrTypeRef(syntheticSource)), unitTR)
 
     val lambda = Lambda(
       syntheticSource,
@@ -253,7 +256,9 @@ object ClosureMemoryFnGenerator:
       syntheticSource,
       "mml_free_raw",
       resolvedId = Some("stdlib::bnd::mml_free_raw"),
-      typeSpec   = Some(TypeFn(syntheticSource, List(rawPtrTypeRef(syntheticSource)), unitTR))
+      typeSpec = Some(
+        TypeFn(syntheticSource, cats.data.NonEmptyList.one(rawPtrTypeRef(syntheticSource)), unitTR)
+      )
     )
     val ptrRef = Ref(
       syntheticSource,
@@ -266,7 +271,8 @@ object ClosureMemoryFnGenerator:
     val freeCall = App(syntheticSource, freeRawRef, argExpr, typeSpec = Some(unitTR))
     val body     = Expr(syntheticSource, List(freeCall), typeSpec = Some(unitTR))
 
-    val fnType = TypeFn(syntheticSource, List(rawPtrTypeRef(syntheticSource)), unitTR)
+    val fnType =
+      TypeFn(syntheticSource, cats.data.NonEmptyList.one(rawPtrTypeRef(syntheticSource)), unitTR)
 
     val lambda = Lambda(
       syntheticSource,
