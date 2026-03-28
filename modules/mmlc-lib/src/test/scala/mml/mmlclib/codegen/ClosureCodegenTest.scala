@@ -4,6 +4,39 @@ import mml.mmlclib.test.BaseEffFunSuite
 
 class ClosureCodegenTest extends BaseEffFunSuite:
 
+  test("deferred lambda body preserves emitted metadata") {
+    val source = """
+      fn main(): String =
+        let f = { x: Int ->
+          println "lambda";
+          "lambda";
+        };
+        f 1;
+      ;
+    """
+
+    compileAndGenerate(source).map { llvmIr =>
+      val lambdaMatch =
+        """(?s)define internal %struct.String @(test_[A-Za-z0-9_]+)\(i64 %0, ptr %1\) #0 \{\n(.*?)\n\}""".r
+          .findFirstMatchIn(llvmIr)
+          .getOrElse(fail(s"Missing deferred lambda definition. IR:\n$llvmIr"))
+      val lambdaBody = lambdaMatch.group(2)
+
+      assert(
+        llvmIr.contains("""@str.0 = private constant [6 x i8] c"lambda""""),
+        s"Missing module-level string constant emitted from deferred lambda body. IR:\n$llvmIr"
+      )
+      assert(
+        lambdaBody.contains("call void @println"),
+        s"Expected deferred lambda body to keep its println call. Body:\n$lambdaBody"
+      )
+      assert(
+        lambdaBody.contains("!tbaa !10") && lambdaBody.contains("!tbaa !11"),
+        s"Expected deferred lambda body to keep TBAA-tagged String field stores. Body:\n$lambdaBody"
+      )
+    }
+  }
+
   test("recursive capturing lambda rebuilds self closure from env") {
     val source = """
       fn main(): Int =
