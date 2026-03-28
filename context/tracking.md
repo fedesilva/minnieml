@@ -6,6 +6,7 @@
 /!\ /!\ Do not edit without explicit approval or direct command. /!\ /!\
 /!\ /!\ Follow rules below strictly                              /!\ /!\
 /!\ /!\ COMPLETING A TASK? -> ADD [COMPLETE] TAG. NEVER DELETE.  /!\ /!\
+/!\ /!\ DO NOT ADD [COMPLETE] to the "recent changes" entry      /!\ /!\
 ------------------------------------------------------------------------
 
 * *Always read* `context/task-tracking-rules.md` 
@@ -17,202 +18,45 @@
 
 ## Active Tasks
 
-### #245 Inner function syntax [COMPLETE]
 
-- GitHub: https://github.com/fedesilva/minnieml/issues/245
-- Add inner function syntax as a nicer alternative to inner let-bound lambdas.
-- Main use case: recursive inner helpers with clearer syntax and cleaner return type annotations.
-- Current shape:
-  `let loop = { ... }: Unit;`
-- Desired shape:
-  `fn loop(): Unit = ... ;`
-- Final implementation state:
-  - Parser prototype is in place in `modules/mmlc-lib/src/main/scala/mml/mmlclib/parser/expressions.scala`.
-  - Tests added/updated in:
-    - `modules/mmlc-lib/src/test/scala/mml/mmlclib/grammar/LambdaLitTests.scala`
-    - `modules/mmlc-lib/src/test/scala/mml/mmlclib/semantic/CaptureAnalyzerTests.scala`
-    - `modules/mmlc-lib/src/test/scala/mml/mmlclib/semantic/TypeCheckerTests.scala`
-  - Docs updated in `docs/language-reference.md`.
-  - Samples:
-    - `mml/samples/readline-loop-inner-fn.mml` demonstrates the simple recursive local-helper case.
-    - `mml/samples/raytrace2.mml` is the sample-level compromise that keeps the fully-local-helper
-      closure bug out of the shipped example.
-- Important current lowering rule:
-  - typed inner `fn` is currently lowered to the equivalent of
-    `let loop: Int -> Unit = { i: Int -> ... };`
-    not
-    `let loop = { i: Int -> ... }: Unit;`
-  - This matches the current working typed-local-recursion path in the existing compiler.
-- Verified in this session:
-  - targeted grammar / capture / typechecker tests pass
-  - fast sample runs pass (`hello`, `quicksort`, `astar2`)
-  - full suite passes (`341/341`)
-  - `mmlcPublishLocal` passes
-  - `make -C benchmark clean && make -C benchmark mml` passes
-  - installed `mmlc` compiles a recursive typed inner-function example
-- Defer / ignore for `#245` pickup:
-  - `docs/brainstorming/compiler/lambda-unification.md` is separate design work, not part of this tracked item
-  - `mml/samples/raytrace2.mml` is part of this task as the intended showcase sample.
-    Current status: partial inner-`fn` variant works and the built sample runs, but the fully-local
-    helper version is still blocked by a callable/closure gap.
-    Minimal repro shape: a recursive local helper capturing a sibling local function value.
-    Current failure: codegen closure env field of `TypeFn` (for example `helper: TypeFn`) trips
-    struct/TBAA type-name resolution with
-    `In struct '__closure_env_0', field 'helper': Cannot extract type name from TypeFn`.
-    Revisit tonight / next session if we want the all-inner-helper `raytrace2` end state.
-  - `mml/samples/readline-loop-lambda.mml` was manually repaired during investigation and is not part of the inner-`fn` implementation itself
 
-# `check` compiler command and api
+### Update the design doc
 
-* only runs up to the end of sema stage.
-* cli entry point
-* lsp uses it
+* there are new phases in the semantic stage
+* there are lambdas now, and captures and the memory management model has changed.
+
 
 ### #188 Literal lambdas and captures
 
-* there are issues to address:
-  `context/specs/lambdas-work-review.md`
-
 - GitHub: https://github.com/fedesilva/minnieml/issues/188
 - Reference: `docs/brainstorming/language/lambda-syntax-design.md`
-- Phase 1 — Parser [COMPLETE]
-- Phase 2 — Codegen (non-capturing) [COMPLETE]
-- Phase 3 — Closures: capturing lambdas + ownership
-  - Spec: `context/specs/lambda-step3-closures.md`
-  - [x] 3.0 — Update tracking with Phase 3 subtasks
-  - [x] 3.1 — CaptureAnalyzer semantic phase
-  - [x] 3.2 — Fat pointer calling convention (`{ ptr fn, ptr env }`)
-  - [x] 3.3 — Env struct codegen (value-type captures)
-  - [ ] 3.4 — Ownership integration (env as owned value) — spec: `context/specs/lambda-step3-ownership.md`
-    - [x] 3.4.0 — Stdlib: RawPtr type + mml_free_raw C function
-    - [x] 3.4.1 — ClosureMemoryGenerator phase (env TypeStruct + free fn)
-    - [x] 3.4.2 — OwnershipAnalyzer: termAllocates, isOwnedType, mkFreeCall for TypeFn
-    - [x] 3.4.3 — Codegen: extractEnvPtr from fat pointer for free calls
-    - [x] 3.4.4 — TypeChecker: propagate typeSpec to Lambda.captures (pre-existing bug fix)
-    - [x] 3.4.5 — captures.mml: compiles, runs, 0 leaks
-    - [x] 3.4.6 — Fix: split lambdaAllocates from termAllocates (only let-bound, not arg-position)
-    - [x] 3.4.7 — Universal __free_closure with embedded dtor pointer in env struct field 0
-    - [x] 3.4.8 — All tests pass: 333 unit, 18/18 mem (including closure-capture 0 leaks)
-  - [ ] 3.4-QA — Codegen & ownership review fixes (spec: `context/specs/lambdas-work-review.md`)
-    - [ ] 3.4-QA.1 [P1] Keep emitted env setup for let-bound capturing lambdas (`Applications.scala`)
-    - [ ] 3.4-QA.2 [P1] Allocate unique symbols for let-bound lambda definitions (`Applications.scala`)
-    - [x] 3.4-QA.3 [P1] Size closure env allocations using LLVM struct layout (`ExpressionCompiler.scala`)
-    - [x] 3.4-QA.4 [P1] ClosureMemoryFnGenerator uses Lambda structural equality as map key (`ClosureMemoryFnGenerator.scala`)
-    - [x] 3.4-QA.5 [P1] Non-deterministic UUIDs in ClosureMemoryFnGenerator (`ClosureMemoryFnGenerator.scala`)
+- Pending follow-ups:
+  - QA / codegen / ownership review
+    - Spec: `context/specs/lambdas-work-review.md`
     - [ ] 3.4-QA.6 [P1] Pass real closure env on recursive capturing lambdas (`Applications.scala`)
-    - [ ] 3.4-QA.7 [P1] Keep capture support in tail-recursive lambda path (`ExpressionCompiler.scala`)
-    - [x] 3.4-QA.8 [P1] Stop freeing non-capturing function values as closures (`OwnershipAnalyzer.scala`)
-    - [x] 3.4-QA.9 [P2] Mutable var in compileCapturingLambda — replace with foldLeft (`ExpressionCompiler.scala`)
     - [ ] 3.4-QA.10 [P2] mergeSubState fragile manual field sync (`ExpressionCompiler.scala`)
     - [ ] 3.4-QA.11 [P2] Two codepaths for closure free could diverge (`Applications.scala`)
-    - [ ] 3.4-QA.12 [P2] No guard against capturing heap types before phase 3.5 (`ClosureMemoryFnGenerator.scala`)
     - [ ] 3.4-QA.13 [P3] Nullary/Unit thunk unification may mask type errors (`TypeChecker.scala`)
     - [ ] 3.4-QA.14 [P3] TypeFn globally mapped to fat pointer may affect non-closure contexts (`codegen/emitter/package.scala`)
     - [ ] 3.4-QA.15 [P3] OwnershipAnalyzer 5-tuples should be a case class (`OwnershipAnalyzer.scala`)
     - [ ] 3.4-QA.16 [P3] Term.withTypeAsc silently ignores unknown term types (`ast/terms.scala`)
     - [ ] 3.4-QA.17 [P3] FORCE_INLINE on non-hot-path runtime functions (`mml_runtime.c`)
-    - [x] 3.4-QA.18 [P3] sizeOfLlvmType ignores struct alignment/padding (`codegen/emitter/package.scala`)
     - [ ] 3.4-QA.19 [P2] Replace shape-coupled/name-coupled lambda semantic tests with semantic extractors (`CaptureAnalyzerTests.scala`, `TypeCheckerTests.scala`, `LambdaLitTests.scala`)
     - [ ] 3.4-QA.20 [P3] Remove new `TODO:QA` by extracting ownership test helpers or tracking them properly (`OwnershipAnalyzerTests.scala`)
     - [ ] 3.4-QA.21 [P2] Mutable traversals + early returns in ClosureMemoryFnGenerator — replace var/builder/return with folds and if-else (`ClosureMemoryFnGenerator.scala`)
     - [ ] 3.4-QA.22 [P2] asInstanceOf cast in ClosureMemoryFnGenerator.tagLambdas breaks no-exceptions rule (`ClosureMemoryFnGenerator.scala:312`)
     - [ ] 3.4-QA.23 [P3] Hardcoded string name matching for closure free dispatch (`Applications.scala:312,316`)
     - [ ] 3.4-QA.24 [P3] Inconsistent Cats syntax in new codegen code — use .asRight/.asLeft/.some/.none (`ExpressionCompiler.scala`, `Applications.scala`)
-    - [ ] 3.4-QA.25 [P2] Closure env fields of `TypeFn` fail struct/TBAA type-name lowering
-      (`TypeNameResolver.scala`, `TbaaEmitter.scala`, `raytrace2` fully-local helper case)
-  - [x] 3.5 — Heap-type captures (String, structs) + move/free [PENDING REVIEW]
-    - OwnershipAnalyzer: heap-type captures use move semantics (same as struct constructors)
-      - Owned capture → Moved in outer scope; Borrowed inside lambda body (env owns it)
-      - Borrowed capture of heap type → `CapturedBorrowedHeapBinding` error
-    - Codegen: env destructor (`__free___closure_env_N`) frees heap fields via GEP+load+free
-      before calling `mml_free_raw`, with ABI-lowered args
-    - Codegen: `sizeOfLlvmStructResolved` — state-aware struct size for env malloc
-    - New error wired into error printer, LSP diagnostics, source code extractor
-    - 336/336 tests, 19/19 mem tests (new `closure-heap-capture`), benchmarks compile
-  - [ ] 3.5.1 — Literal heap captures: design decision
-    - Literal String bindings (`let s = "hello"`) have `Literal` ownership state — data pointer
-      is static `.rodata`, not heap-allocated. If captured into env and the env destructor calls
-      `__free_String`, it frees static memory → crash.
-    - Struct constructors already auto-clone literals for consuming params (`argNeedsClone`).
-    - Options: (a) auto-clone literals at capture site (same as struct ctor precedent),
-      (b) error on literal heap captures (restrictive — no user-facing clone syntax yet),
-      (c) track "is heap-allocated" flag and skip free for static captures.
-    - Also surfaces the broader question: MML has no user-facing clone syntax (`__clone_*` uses
-      `__` prefix which is not valid in user code). Needed for any pattern where the user must
-      explicitly clone before capturing a borrowed binding.
-    - Related: `let-shadow-in-lambda.mml` sample reproduces the issue.
+    - [ ] 3.4-QA.25 [P1] Closure env fields of `TypeFn` fail struct/TBAA type-name lowering (`TypeNameResolver.scala`, `TbaaEmitter.scala`, `raytrace2` fully-local helper case)
+
+  - Heap-capture follow-up
+    - [ ] 3.5.1 Literal heap captures: design decision
+      - Literal String bindings (`let s = "hello"`) have `Literal` ownership state, so freeing a captured literal String can free `.rodata`.
+      - Struct constructors already auto-clone literals for consuming params (`argNeedsClone`).
+      - Options: auto-clone at capture site, reject literal heap captures for now, or track heap-vs-static captures explicitly.
+      - Related: `let-shadow-in-lambda.mml` sample reproduces the issue.
 
 
-#### Nested lambda / N-level nesting workstream — IN PROGRESS
-
-Addresses nested capturing lambdas producing malformed IR (undefined register for fat pointer).
-Plan: `.claude/plans/piped-scribbling-parnas.md`
-
-**Workstream A+B+C** (core codegen fixes):
-  - [x] Phase A — QA.1: Keep call-site IR for capturing lambdas (`Applications.scala:63-67`)
-    - Condition output reset on `res.isLiteral` — capturing lambdas preserve their malloc/GEP/store/insertvalue IR
-    - Code change is in place (uncommitted)
-  - [x] Phase B — QA.2: Unique symbols for let-bound lambda definitions (`Applications.scala:48-57`)
-    - Counter-suffixed naming: `mangleName(name + “_” + nextAnonFnId)` → `@module_loop_0`
-    - Code change is in place (uncommitted)
-  - [ ] Phase C — QA.7: TCO + captures (full fix, NOT disable-TCO) — CODE IN PLACE, HAS BUGS
-    - Recursion is the only looping construct — TCO is mandatory
-    - **Done (uncommitted):**
-      - Extracted `emitCallSiteEnv` helper from `compileCapturingLambda` (ExpressionCompiler.scala)
-        - Resolves capture types, creates env type, emits malloc/store dtor/store captures/insertvalue fat pointer
-        - Returns `EnvSetupResult(siteState, fpRegister, envTypeRef, captureTypes)`
-      - Extracted `emitCaptureLoads` as shared package-level function (FunctionEmitter.scala)
-        - GEP+load for each capture from env struct, returns `(CodeGenState, Map[String, ScopeEntry])`
-      - Refactored `compileCapturingLambda` to use both helpers (behavior unchanged)
-      - Updated `compileTailRecLambdaLiteral` to accept `functionScope` and dispatch:
-        - `lambda.captures.nonEmpty` → `compileTailRecCapturingLambda` (calls `emitCallSiteEnv` + passes captureInfo)
-        - else → `compileTailRecNonCapturing` (original behavior)
-      - Updated `compileTailRecursiveLambda` (FunctionEmitter.scala):
-        - New param `captureInfo: Option[(String, List[(Ref, String)])]`
-        - Entry block: emits capture loads before `br label %loop.header`
-        - `phiStart` adjusted: `paramCount + 1 + 2 * captureCount`
-        - Capture scope merged into body scope
-      - Fixed `extractBody` (FunctionEmitter.scala): OwnershipAnalyzer wraps tail calls as
-        `let __ownership_result = self_call(); frees; __ownership_result`. Added `extractSelfCallFromAccumulated`
-        to recognize this pattern — recursively extracts through the callExpr, reorders frees before back-edge.
-    - **Verified:**
-      - 336/336 unit tests pass
-      - 18/18 ASan memory tests pass
-      - Sanity samples (hello, quicksort, astar2) pass
-      - `captures.mml` (non-TCO capturing lambda) passes
-      - Benchmarks compile
-      - `mmlc run -aI mml/samples/nested-lambdas-multicapture.mml` runs correctly with TCO
-        (loops without stack overflow, captures work across iterations)
-    - **Remaining before marking complete:**
-      - Leaks-mode memory tests not yet run
-      - Heap-type capture ownership is shared, not cloned — known limitation, tracked as Phase 3.5
-        (see `context/specs/bad-id-nested-llambdas-multicapture.md`)
-    - **Files changed:**
-      - `ExpressionCompiler.scala`: `EnvSetupResult`, `emitCallSiteEnv`, `compileTailRecCapturingLambda`, `compileTailRecNonCapturing`, refactored `compileCapturingLambda`
-      - `FunctionEmitter.scala`: `emitCaptureLoads`, `captureInfo` param on `compileTailRecursiveLambda`, `extractSelfCallFromAccumulated`, Ref case in `extractBody`
-      - `Applications.scala`: pre-existing Phase A+B changes (unchanged this session)
-    - BUGS also in: `context/specs/bad-id-nested-llambdas-multicapture.md`
-      - IR GENERATED IS INVALID AND THE CLOSURES ARE NOT WORKING WELL WITH OWNERSHIP
-
-**Deferred workstream D+E** (follow-up):
-  - [ ] Phase D — QA.8: Null-guard in `__free_closure` for non-capturing function values
-    - Emit `icmp eq ptr %env, null` + branch around dtor call in `emitClosureFreeViaEnvDtor`
-  - [ ] Phase E — QA.6: Self-reference in env for recursive capturing lambdas
-    - Backpatch pattern: add `{ ptr, ptr }` field at end of env struct for closure's own fat pointer
-    - Thread `bindingParam` to `compileCapturingLambda` to detect self-referencing lambdas
-
-**IR feedback notes** (not blocking, cleanup later):
-  - Closure type naming inconsistent (`%closure_env_*` vs `%struct.__closure_env_*` + TBAA mismatch)
-  - Destructor slot is untyped/raw (convention-based, fine for now)
-  - Function pointer typing very loose (raw ptr called as function)
-
-
-### Update language ref and memory model docs. 
-
-* lambdas are in, need to update.
-* updates to the type checker (type annotations are not mandatory for lambdas but they might still be needed)
-* see the changelog below and the git history.
-* lang ref needs a link to the memory model doc.
 
 ### Protocols (ad-hoc polymorphism)
 
@@ -229,13 +73,6 @@ Plan: `.claude/plans/piped-scribbling-parnas.md`
 * Start simple: single-type instances, nothing fancy
 * Unblocks 3.5.1 once Clone protocol exists (user writes `clone x` via protocol dispatch)
 
-
-
-### Update the design doc
-
-* there are new phases in the semantic stage
-
-
 ### QA Test infra
 
 * add comments to each test, describing in plain english what they do, what they expect, etc
@@ -249,7 +86,7 @@ Plan: `.claude/plans/piped-scribbling-parnas.md`
 
 ## Recent Changes
 
-- 2026-03-27: #245 Inner function syntax [COMPLETE]
+- 2026-03-27: #245 Inner function syntax
   - Parser: added local `fn name(...): Ret = ... ; expr` surface syntax in `expressions.scala`.
   - Tests: grammar, capture analysis, and typechecker coverage added for typed and recursive inner functions.
   - Docs: language reference now documents inner functions as sugar for local let-bound lambdas.
