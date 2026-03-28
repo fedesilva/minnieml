@@ -33,7 +33,7 @@
   - QA / codegen / ownership review
     - Spec: `context/specs/lambdas-work-review.md`
     - [x] 3.4-QA.29 [P1] Capturing whole struct values in local-helper closures can emit invalid self-referential LLVM IR (`ExpressionCompiler.scala`, `raytracer3` whole-`Camera` capture case) — root cause: `CaptureAnalyzer` did not descend into `Ref.qualifier`, so struct field selections like `p.a` never detected `p` as a capture
-    - [ ] 3.4-QA.30 [P1] Multiple closures capturing the same owned value cause double-free (`OwnershipAnalyzer.scala`, `raytracer3` `buf` captured by `write_row` and `render_rows`)
+    - [x] 3.4-QA.30 [P1] Multiple closures capturing the same owned value cause double-free (`OwnershipAnalyzer.scala`, `raytracer3` `buf` captured by `write_row` and `render_rows`)
       - ❯ ./build/target/raytracer3 > r3.ppm
         raytracer3(31806,0x7ff85028dc00) malloc: *** error for object 0x600002539200: pointer being freed was not allocated
         raytracer3(31806,0x7ff85028dc00) malloc: *** set a breakpoint in malloc_error_break to debug
@@ -120,6 +120,11 @@
 * Add commentary with examples to the parsers
 
 ## Recent Changes
+
+- 2026-03-28: #188 3.4-QA.30 duplicate heap capture rejection
+  - Ownership: capturing the same owned heap binding into a second closure now fails during ownership analysis with a dedicated moved-capture diagnostic instead of slipping through to runtime double-free.
+  - Tests/samples: added `OwnershipAnalyzerTests` coverage for duplicate-vs-borrowed helper capture flows, and updated `mml/samples/raytracer3.mml` so `render_rows` is the sole heap-state owner while sibling helpers take `buf`/row arrays by parameter.
+  - Verification: fast sanity samples (`hello`, `quicksort`, `astar2`), `scalafmtAll`, `scalafixAll`, full suite (`355/355`), `mmlcPublishLocal`, `make -C benchmark clean`, `make -C benchmark mml`, `./tests/mem/run.sh all` (`19/19` ASan+LSan), direct `raytracer3` binary run, and `raytracer2` vs `raytracer3` PPM output comparison passed.
 
 - 2026-03-28: #188 Raytracer 3 sample follow-up in progress
   - Samples: added `mml/samples/raytracer3.mml` as the fully local-helper follow-up to `raytracer2`, keeping the original `raytracer2` header comments as historical context and documenting the current ownership/codegen caveats inline in the new sample.

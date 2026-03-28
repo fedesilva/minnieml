@@ -6,10 +6,11 @@
 // functions that capture sibling function values and render-time state.
 //
 // Notes:
-// - `buf` is intentionally written in `main` before the local helpers are
-//   defined, and it is flushed from `render_rows` instead of `main`. Once the
-//   helper closures capture `buf`, the outer scope can no longer use it. That
-//   is current ownership/capture behavior, not a codegen bug.
+// - `buf` and the row arrays are intentionally written in `main` before the
+//   local render loop is defined.
+// - `render_rows` is the single local helper that owns those heap values.
+//   Sibling helpers borrow them through ordinary parameters to preserve the
+//   current uniqueness rule for heap captures.
 
 // --- Linear Algebra ---
 
@@ -195,7 +196,13 @@ pub fn main(): Unit =
     Ray camera.origin direction;
   ;
 
-  fn compute_row(i: Int, j: Int): Unit =
+  fn compute_row(
+    r_arr: FloatArray,
+    g_arr: FloatArray,
+    b_arr: FloatArray,
+    i: Int,
+    j: Int
+  ): Unit =
     if i < camera.width then
       let r = pixel_ray i j;
       let color = ray_color r;
@@ -204,11 +211,17 @@ pub fn main(): Unit =
       unsafe_ar_float_set g_arr i color.y;
       unsafe_ar_float_set b_arr i color.z;
 
-      compute_row (i + 1) j;
+      compute_row r_arr g_arr b_arr (i + 1) j;
     ;
   ;
 
-  fn write_row(i: Int): Unit =
+  fn write_row(
+    buf: Buffer,
+    r_arr: FloatArray,
+    g_arr: FloatArray,
+    b_arr: FloatArray,
+    i: Int
+  ): Unit =
     if i < camera.width then
       let ir = 255.999 *. (unsafe_ar_float_get r_arr i);
       let ig = 255.999 *. (unsafe_ar_float_get g_arr i);
@@ -220,18 +233,18 @@ pub fn main(): Unit =
       buffer_write buf " ";
       buffer_writeln_int buf (float_to_int ib);
 
-      write_row (i + 1);
+      write_row buf r_arr g_arr b_arr (i + 1);
     ;
   ;
 
   fn render_rows(j: Int): Unit =
     if j >= 0 then
-      compute_row 0 j;
-      write_row 0;
+      compute_row r_arr g_arr b_arr 0 j;
+      write_row buf r_arr g_arr b_arr 0;
       render_rows (j - 1);
     else
-      // Once `buf` is captured, the final flush has to happen from inside the
-      // closure-owned render loop rather than in the outer scope.
+      // `render_rows` owns the render-time heap state, so the final flush
+      // stays inside that closure.
       flush buf;
     ;
   ;
