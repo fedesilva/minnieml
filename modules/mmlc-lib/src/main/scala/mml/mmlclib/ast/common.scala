@@ -136,6 +136,10 @@ enum BindingOrigin derives CanEqual:
   case Destructor
   case Constructor
 
+enum DestructorKind derives CanEqual:
+  case ClosureUniversal
+  case ClosureEnv(envStructName: String)
+
 object Precedence:
   val MaxUser:  Int = 100
   val Function: Int = 101
@@ -169,13 +173,14 @@ object OpMangling:
     s"op.$translated.$arity"
 
 final case class BindingMeta(
-  origin:        BindingOrigin,
-  arity:         CallableArity,
-  precedence:    Int,
-  associativity: Option[Associativity],
-  originalName:  String,
-  mangledName:   String,
-  inlineHint:    Boolean = false
+  origin:         BindingOrigin,
+  arity:          CallableArity,
+  precedence:     Int,
+  associativity:  Option[Associativity],
+  originalName:   String,
+  mangledName:    String,
+  inlineHint:     Boolean                = false,
+  destructorKind: Option[DestructorKind] = None
 )
 
 /** Marker trait for nodes that represent invalid/error constructs. These nodes allow the compiler

@@ -26,6 +26,16 @@
 
 ### #188 Literal lambdas and captures
 
+#### Raytracer 3
+
+- READ raytracer2.mml
+    - the header comment mentions a limitation
+        - this limitation should be lifted, confirm
+        - if this is true: write mml/samples/raytracer3.mml 
+            - use the new capabilities
+            - use inner functions for looping, 
+                reducing the number of required parameters
+
 - GitHub: https://github.com/fedesilva/minnieml/issues/188
 - Reference: `docs/brainstorming/language/lambda-syntax-design.md`
 - Pending follow-ups:
@@ -33,7 +43,7 @@
     - Spec: `context/specs/lambdas-work-review.md`
     - [x] 3.4-QA.6 [P1] Pass real closure env on recursive capturing lambdas (`Applications.scala`)
     - [x] 3.4-QA.10 [P2] mergeSubState fragile manual field sync (`ExpressionCompiler.scala`)
-    - [ ] 3.4-QA.11 [P2] Two codepaths for closure free could diverge (`Applications.scala`)
+    - [x] 3.4-QA.11 [P2] Two codepaths for closure free could diverge (`Applications.scala`)
     - [ ] 3.4-QA.13 [P3] Nullary/Unit thunk unification may mask type errors (`TypeChecker.scala`)
     - [ ] 3.4-QA.14 [P3] TypeFn globally mapped to fat pointer may affect non-closure contexts (`codegen/emitter/package.scala`)
     - [ ] 3.4-QA.15 [P3] OwnershipAnalyzer 5-tuples should be a case class (`OwnershipAnalyzer.scala`)
@@ -43,7 +53,7 @@
     - [ ] 3.4-QA.20 [P3] Remove new `TODO:QA` by extracting ownership test helpers or tracking them properly (`OwnershipAnalyzerTests.scala`)
     - [ ] 3.4-QA.21 [P2] Mutable traversals + early returns in ClosureMemoryFnGenerator — replace var/builder/return with folds and if-else (`ClosureMemoryFnGenerator.scala`)
     - [ ] 3.4-QA.22 [P2] asInstanceOf cast in ClosureMemoryFnGenerator.tagLambdas breaks no-exceptions rule (`ClosureMemoryFnGenerator.scala:312`)
-    - [ ] 3.4-QA.23 [P3] Hardcoded string name matching for closure free dispatch (`Applications.scala:312,316`)
+    - [x] 3.4-QA.23 [P3] Hardcoded string name matching for closure free dispatch (`Applications.scala:312,316`)
     - [ ] 3.4-QA.24 [P3] Inconsistent Cats syntax in new codegen code — use .asRight/.asLeft/.some/.none (`ExpressionCompiler.scala`, `Applications.scala`)
     - [x] 3.4-QA.25 [P1] Closure env fields of `TypeFn` fail struct/TBAA type-name lowering (`TypeNameResolver.scala`, `TbaaEmitter.scala`, `raytrace2` fully-local helper case)
     - [ ] 3.4-QA.26 [P3] getMmlTypeName helper consolidation (`codegen/emitter/package.scala`, `TypeNameResolver.scala`, emitter call sites`)
@@ -66,6 +76,8 @@
     - [x] Teach codegen helpers to emit opaque-pointer operand types correctly, avoiding invalid `ptr*` emission in load/store and similar helper paths.
     - [x] Audit pointer-like codegen/ABI classification that currently keys on `NativePointer` only, and include opaque `ptr` where required (for example allocating-return `noalias` decisions).
     - [x] Update closure-env expectations, sample comments, and tests to assert `ptr` for raw/opaque pointer slots where appropriate.
+
+
 
 
 
@@ -96,6 +108,12 @@
 * Add commentary with examples to the parsers
 
 ## Recent Changes
+
+- 2026-03-28: #188 3.4-QA.11 closure free dispatch consolidation
+  - Codegen: closure destructors now carry explicit `DestructorKind` metadata, closure free calls adapt fat pointers to env pointers once, and `__free_closure` now emits its null-guarded dtor dispatch in the generated function body instead of inlining it at each call site.
+  - Closure memory generation: generated per-env and universal closure destructors are tagged explicitly, removing raw string-prefix coupling from codegen dispatch and closing the paired QA.23 naming-coupling debt.
+  - Tests: added `ClosureCodegenTest` coverage for escaped closures freeing through generated `__free_closure` and local capturing closures freeing through their specific env destructor.
+  - Verification: `scalafmtAll`, `scalafixAll`, sanity samples (`hello`, `quicksort`, `astar2`), full suite (`353/353`), `mmlcPublishLocal`, `make -C benchmark clean`, `make -C benchmark mml`, and `./tests/mem/run.sh all` (`19/19` ASan+LSan) passed.
 
 - 2026-03-28: #188 3.4-QA.10 mergeSubState deferred-state sync
   - Codegen: deferred lambda-body state merge now preserves the sub-run `CodeGenState` wholesale and restores only the parent output/register context, removing the manual field-sync maintenance hazard in `ExpressionCompiler`.

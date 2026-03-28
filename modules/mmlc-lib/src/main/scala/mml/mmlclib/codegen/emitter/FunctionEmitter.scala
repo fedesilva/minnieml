@@ -175,8 +175,7 @@ private def resolveMemFnLlvmName(
     case _ => false
   if isNative then fnName else state.mangleName(fnName)
 
-/** Emit GEP+load+free for each heap-typed field in an env struct. Called when compiling
-  * `__free___closure_env_N` functions.
+/** Emit GEP+load+free for each heap-typed field in a closure env struct.
   */
 private def emitEnvHeapFieldFrees(
   envStructName: String,
@@ -219,6 +218,32 @@ private def emitEnvHeapFieldFrees(
                 val callLine =
                   emitCall(None, None, llvmFreeName, callArgs)
                 stWithDecl.emit(callLine)
+
+/** Emit the universal closure free body.
+  *
+  * `%0` is the raw env pointer. Non-capturing functions carry `null`, so guard before loading the
+  * env destructor pointer from field 0.
+  */
+private def emitUniversalClosureFreeBody(
+  state: CodeGenState
+): CompileResult =
+  val cmpReg  = state.nextRegister
+  val dtorReg = cmpReg + 1
+
+  val freeLabel = s"closure_free_${cmpReg}_dtor"
+  val endLabel  = s"closure_free_${cmpReg}_end"
+
+  val finalState = state
+    .withRegister(dtorReg + 1)
+    .emit(s"  %$cmpReg = icmp eq ptr %0, null")
+    .emit(s"  br i1 %$cmpReg, label %$endLabel, label %$freeLabel")
+    .emit(s"$freeLabel:")
+    .emit(s"  %$dtorReg = load ptr, ptr %0")
+    .emit(s"  call void %$dtorReg(ptr %0)")
+    .emit(s"  br label %$endLabel")
+    .emit(s"$endLabel:")
+
+  CompileResult(0, finalState, false, "Unit", exitBlock = Some(endLabel))
 
 /** Compiles a regular (non-tail-recursive) lambda to LLVM IR. */
 private def compileRegularLambda(
@@ -266,20 +291,25 @@ private def compileRegularLambda(
   // Register count starts after parameter setup
   val baseState = bodyState.withRegister(filteredParams.size)
 
-  // For env free functions, emit heap field frees before the body (mml_free_raw)
+  val destructorKind = bnd.meta.flatMap(_.destructorKind)
   val updatedStateE =
-    if bnd.name.startsWith("__free___closure_env_") then
-      val envStructName = bnd.name.stripPrefix("__free_")
-      emitEnvHeapFieldFrees(envStructName, baseState)
-    else Right(baseState)
+    destructorKind match
+      case Some(DestructorKind.ClosureEnv(envStructName)) =>
+        emitEnvHeapFieldFrees(envStructName, baseState)
+      case _ =>
+        Right(baseState)
 
   updatedStateE.flatMap { updatedState =>
     val bodyResult =
-      lambda.body.terms match
-        case List(_: DataConstructor) =>
-          compileStructConstructor(bnd, lambda, updatedState, paramScope)
+      destructorKind match
+        case Some(DestructorKind.ClosureUniversal) =>
+          Right(emitUniversalClosureFreeBody(updatedState))
         case _ =>
-          compileExpr(lambda.body, updatedState, paramScope)
+          lambda.body.terms match
+            case List(_: DataConstructor) =>
+              compileStructConstructor(bnd, lambda, updatedState, paramScope)
+            case _ =>
+              compileExpr(lambda.body, updatedState, paramScope)
 
     bodyResult.flatMap { bodyRes =>
       val returnLine =

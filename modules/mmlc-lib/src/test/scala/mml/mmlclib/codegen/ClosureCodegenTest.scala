@@ -4,6 +4,13 @@ import mml.mmlclib.test.BaseEffFunSuite
 
 class ClosureCodegenTest extends BaseEffFunSuite:
 
+  private def functionBody(llvmIr: String, signaturePattern: String): String =
+    val pattern = (s"(?s)define .*@$signaturePattern \\{\\n(.*?)\\n\\}").r
+    pattern
+      .findFirstMatchIn(llvmIr)
+      .map(_.group(1))
+      .getOrElse(fail(s"Missing function definition for $signaturePattern. IR:\n$llvmIr"))
+
   test("deferred lambda body preserves emitted metadata") {
     val source = """
       fn main(): String =
@@ -73,6 +80,69 @@ class ClosureCodegenTest extends BaseEffFunSuite:
       assert(
         !loopBody.contains(s"{ ptr @$loopName, ptr null }"),
         s"Recursive closure must not self-call through a null env stub. Body:\n$loopBody"
+      )
+    }
+  }
+
+  test("returned capturing closures free through generated __free_closure body") {
+    val source = """
+      fn makeAdder(a: Int): Int -> Int =
+        { x: Int -> x + a; };
+      ;
+
+      fn main(): Int =
+        let f = makeAdder 1;
+        f 41;
+      ;
+    """
+
+    compileAndGenerate(source).map { llvmIr =>
+      val mainBody = functionBody(llvmIr, "test_main\\(\\) #0")
+      val freeBody = functionBody(llvmIr, "test___free_closure\\(ptr %0\\) #0")
+
+      assert(
+        mainBody.contains("call void @test___free_closure(ptr %"),
+        s"Expected escaped closure cleanup to call the generated __free_closure. Body:\n$mainBody"
+      )
+      assert(
+        freeBody.contains("icmp eq ptr %0, null"),
+        s"Expected __free_closure to null-guard non-capturing closures. Body:\n$freeBody"
+      )
+      assert(
+        freeBody.contains("load ptr, ptr %0") && freeBody.contains("call void %") &&
+          freeBody.contains("(ptr %0)"),
+        s"Expected __free_closure to dispatch through env field 0. Body:\n$freeBody"
+      )
+      assert(
+        !mainBody.contains("call void %"),
+        s"Caller should not inline the closure destructor dispatch anymore. Body:\n$mainBody"
+      )
+    }
+  }
+
+  test("local capturing closures free through their specific env destructor") {
+    val source = """
+      fn main(): Int =
+        let a = 1;
+        let f = { x: Int -> x + a; };
+        f 41;
+      ;
+    """
+
+    compileAndGenerate(source).map { llvmIr =>
+      val mainBody = functionBody(llvmIr, "test_main\\(\\) #0")
+
+      assert(
+        """call void @test___free___closure_env_\d+\(ptr %\d+\)""".r.findFirstIn(mainBody).nonEmpty,
+        s"Expected local capturing closure cleanup to call its specific env destructor. Body:\n$mainBody"
+      )
+      assert(
+        !mainBody.contains("call void @test___free_closure"),
+        s"Known env cleanup should not route through the universal destructor. Body:\n$mainBody"
+      )
+      assert(
+        !mainBody.contains("call void %"),
+        s"Caller should not inline the env destructor dispatch. Body:\n$mainBody"
       )
     }
   }
