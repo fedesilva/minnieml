@@ -33,5 +33,7 @@ object TypeNameResolver:
         Right(llvmType)
       case NativePointer(_, llvmType, _, _) =>
         Right(llvmType)
+      case _: TypeFn =>
+        Right("Function")
       case other =>
         Left(CodeGenError(s"Cannot extract type name from ${other.getClass.getSimpleName}"))

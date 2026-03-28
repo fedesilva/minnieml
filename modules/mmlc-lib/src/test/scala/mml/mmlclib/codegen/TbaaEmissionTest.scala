@@ -141,6 +141,52 @@ class TbaaEmissionTest extends BaseEffFunSuite:
 
   private val span = SrcSpan(SrcPoint(0, 0, 0), SrcPoint(0, 0, 0))
 
+  test("StructLayout computes size and alignment for TypeFn fat pointers") {
+    val fnType = TypeFn(
+      span,
+      List(NativePrimitive(span, "i64")),
+      NativePrimitive(span, "i64")
+    )
+
+    assertEquals(StructLayout.sizeOf(fnType, ResolvablesIndex()), Right(16))
+    assertEquals(StructLayout.alignOf(fnType, ResolvablesIndex()), Right(8))
+  }
+
+  test("closure env TBAA handles captured function values") {
+    val source = """
+      fn main(): Int =
+        fn inc(x: Int): Int = x + 1;;
+        fn applyInc(y: Int): Int = inc y;;
+        applyInc 41;
+      ;
+    """
+
+    compileAndGenerate(source).map { llvmIr =>
+      val closureEnvTypePattern =
+        """%struct\.__closure_env_\d+ = type \{ i8\*, \{ ptr, ptr \} \}""".r
+      assert(
+        closureEnvTypePattern.findFirstIn(llvmIr).isDefined,
+        s"Missing closure env type with fat-pointer field. IR:\n$llvmIr"
+      )
+
+      val functionScalarId = """!(\d+) = !\{!"Function", !\d+, i64 0\}""".r
+        .findFirstMatchIn(llvmIr)
+        .map(_.group(1))
+      assert(functionScalarId.isDefined, s"Missing Function TBAA scalar node. IR:\n$llvmIr")
+
+      val closureEnvTbaaLines =
+        llvmIr.split("\n").filter(_.matches("""!\d+ = !\{!"__closure_env_\d+".*"""))
+      assert(
+        closureEnvTbaaLines.nonEmpty,
+        s"Missing closure env TBAA node. IR:\n$llvmIr"
+      )
+      assert(
+        closureEnvTbaaLines.exists(_.contains(s"!${functionScalarId.get}, i64 8")),
+        s"Expected closure env TBAA field at offset 8 to use Function scalar. Nodes:\n${closureEnvTbaaLines.mkString("\n")}"
+      )
+    }
+  }
+
   test("StructLayout computes correct size for nested structs") {
     // Create Inner = { i64, i64 } -> 16 bytes
     val innerStruct = NativeStruct(
