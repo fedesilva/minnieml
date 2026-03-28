@@ -1,0 +1,12 @@
+// Minimal test: capture a whole struct in a closure.
+// This triggers 3.4-QA.29 — invalid LLVM IR from struct-typed env field.
+
+struct Pair { a: Int, b: Int };
+
+pub fn main() =
+  let p = Pair 10 20;
+  fn get_sum(): Int =
+    p.a + p.b;
+  ;
+  println (int_to_str (get_sum ()));
+;
