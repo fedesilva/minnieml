@@ -261,16 +261,11 @@ private def emitBndLambda(
           // Add noalias for functions that allocate and return a pointer type
           // Check both the NativeImpl memEffect (stdlib) and the return type's own
           // memEffect (user-defined types like @native[t=*i8, mem=heap])
-          val returnTypeInfo = fnType.returnType match
-            case tr: TypeRef =>
-              tr.resolvedId
-                .flatMap(state.resolvables.lookupType)
-                .collect:
-                  case TypeDef(_, _, _, Some(np: NativePointer), _, _, _) => np
-            case _ => None
+          val returnNativeType = TypeUtils.resolveNativeType(fnType.returnType, state.resolvables)
 
-          val isAllocatingPointerReturn = returnTypeInfo.exists { np =>
-            memEffect.contains(MemEffect.Alloc) || np.memEffect.contains(MemEffect.Alloc)
+          val isAllocatingPointerReturn = returnNativeType.exists { nativeType =>
+            TypeUtils.isPointerNativeType(nativeType) &&
+            (memEffect.contains(MemEffect.Alloc) || nativeType.memEffect.contains(MemEffect.Alloc))
           }
 
           val finalReturnType =

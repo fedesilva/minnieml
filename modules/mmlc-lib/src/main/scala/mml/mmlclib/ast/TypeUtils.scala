@@ -2,6 +2,10 @@ package mml.mmlclib.ast
 
 /** Utilities for querying type properties from AST nodes. */
 object TypeUtils:
+  def isPointerNativeType(nativeType: NativeType): Boolean = nativeType match
+    case _: NativePointer => true
+    case NativePrimitive(_, "ptr", _, _) => true
+    case _ => false
 
   /** Get the type name from a Type */
   def getTypeName(t: Type): Option[String] = t match
@@ -22,6 +26,39 @@ object TypeUtils:
           case td: TypeDef => td.name == typeName
           case ta: TypeAlias => ta.name == typeName
           case ts: TypeStruct => ts.name == typeName
+
+  def resolveNativeType(
+    typeSpec:    Type,
+    resolvables: ResolvablesIndex
+  ): Option[NativeType] =
+    typeSpec match
+      case nt: NativeType => Some(nt)
+      case TypeGroup(_, types) if types.size == 1 =>
+        resolveNativeType(types.head, resolvables)
+      case TypeRef(_, name, resolvedId, _) =>
+        resolvedId
+          .flatMap(resolvables.lookupType)
+          .orElse(findTypeByName(name, resolvables))
+          .flatMap(resolveNativeType(_, resolvables))
+      case _ => None
+
+  private def resolveNativeType(
+    resolvableType: ResolvableType,
+    resolvables:    ResolvablesIndex
+  ): Option[NativeType] =
+    resolvableType match
+      case TypeDef(_, _, _, Some(nt: NativeType), _, _, _) => Some(nt)
+      case ta: TypeAlias =>
+        ta.typeSpec
+          .flatMap(resolveNativeType(_, resolvables))
+          .orElse(resolveNativeType(ta.typeRef, resolvables))
+      case _ => None
+
+  def isPointerLike(
+    typeSpec:    Type,
+    resolvables: ResolvablesIndex
+  ): Boolean =
+    resolveNativeType(typeSpec, resolvables).exists(isPointerNativeType)
 
   /** Check if a type is heap-allocated by looking at its NativeType.memEffect */
   def isHeapType(typeName: String, resolvables: ResolvablesIndex): Boolean =
@@ -61,8 +98,8 @@ object TypeUtils:
     if isHeapType(typeName, resolvables) then Some(s"__clone_$typeName")
     else None
 
-  /** Check if a type resolves to a NativePointer (actual LLVM pointer, not a struct). */
+  /** Check if a named type resolves to an LLVM pointer-like native type. */
   def isPointerType(typeName: String, resolvables: ResolvablesIndex): Boolean =
     findTypeByName(typeName, resolvables) match
-      case Some(TypeDef(_, _, _, Some(_: NativePointer), _, _, _)) => true
-      case _ => false
+      case Some(rt) => resolveNativeType(rt, resolvables).exists(isPointerNativeType)
+      case None => false

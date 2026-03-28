@@ -142,13 +142,13 @@ private[parser] def nativeBracketTypeP(info: SourceInfo)(using P[Any]): P[Native
     }
 
 private[parser] def nativePrimitiveTypeP(info: SourceInfo)(using P[Any]): P[NativePrimitive] =
-  P(spP(info) ~ llvmPrimitiveTypeP ~ spNoWsP(info) ~ spP(info))
+  P(spP(info) ~ llvmNativePrimitiveTypeP ~ spNoWsP(info) ~ spP(info))
     .map { case (start, llvmType, end, _) =>
       NativePrimitive(span(start, end), llvmType)
     }
 
 private[parser] def nativePointerTypeP(info: SourceInfo)(using P[Any]): P[NativePointer] =
-  P(spP(info) ~ "*" ~ llvmPrimitiveTypeP ~ spNoWsP(info) ~ spP(info))
+  P(spP(info) ~ "*" ~ llvmPointeeTypeP ~ spNoWsP(info) ~ spP(info))
     .map { case (start, llvmType, end, _) =>
       NativePointer(span(start, end), llvmType)
     }
@@ -183,7 +183,10 @@ private[parser] def nativeFieldP(info: SourceInfo)(using P[Any]): P[(String, Typ
 private[parser] def nativeIdentP(using P[Any]): P[String] =
   P(CharsWhileIn("a-zA-Z_", 1) ~ CharsWhileIn("a-zA-Z0-9_", 0)).!
 
-private[parser] def llvmPrimitiveTypeP(using P[Any]): P[String] =
+private[parser] def llvmNativePrimitiveTypeP(using P[Any]): P[String] =
+  P(llvmPointeeTypeP | "ptr".!)
+
+private[parser] def llvmPointeeTypeP(using P[Any]): P[String] =
   P(
     ("i" ~ CharIn("0-9").rep(1)).!.flatMap { t =>
       val bits = t.drop(1).toIntOption.getOrElse(0)

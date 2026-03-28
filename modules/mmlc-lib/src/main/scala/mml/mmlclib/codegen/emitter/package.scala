@@ -51,7 +51,7 @@ def emitLoad(
     noalias.map(tag => s"!noalias $tag")
   ).flatten
   val metadataSuffix = if metadataParts.isEmpty then "" else metadataParts.mkString(", ", ", ", "")
-  s"  %$result = load $typ, $typ* $ptr$metadataSuffix"
+  s"  %$result = load $typ, ptr $ptr$metadataSuffix"
 
 /** Helper for generating syntactically correct LLVM IR store instruction */
 def emitStore(
@@ -68,7 +68,7 @@ def emitStore(
     noalias.map(tag => s"!noalias $tag")
   ).flatten
   val metadataSuffix = if metadataParts.isEmpty then "" else metadataParts.mkString(", ", ", ", "")
-  s"  store $typ $value, $typ* $ptr$metadataSuffix"
+  s"  store $typ $value, ptr $ptr$metadataSuffix"
 
 /** Helper for generating syntactically correct LLVM IR getelementptr instruction */
 def emitGetElementPtr(
@@ -779,7 +779,7 @@ def getLlvmType(
       Right(np.llvmType)
     case ptr: NativePointer =>
       // Direct pointer type (shouldn't normally happen at this level)
-      Right(ptr.llvmType)
+      Right(s"${ptr.llvmType}*")
     case _: NativeStruct =>
       Left(CodeGenError("Unexpected inline native struct"))
     case ts: TypeStruct =>

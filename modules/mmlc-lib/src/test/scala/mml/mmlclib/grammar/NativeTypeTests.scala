@@ -66,6 +66,26 @@ class NativeTypeTests extends BaseEffFunSuite:
         }
       )
 
+  test("parse native opaque pointer type"):
+    val code = """
+      type RawPtr = @native[t=ptr];
+    """
+
+    Parser
+      .parseModule(code, "Test")
+      .fold(
+        e => fail(s"Parser failed: $e"),
+        module => {
+          val typeDef = module.members.collectFirst { case t: TypeDef => t }.get
+          assertEquals(typeDef.name, "RawPtr")
+          typeDef.typeSpec match
+            case Some(NativePrimitive(_, llvmType, _, _)) =>
+              assertEquals(llvmType, "ptr")
+            case _ =>
+              fail("Expected NativePrimitive")
+        }
+      )
+
   test("parse native struct type"):
     val code = """
       type MyStruct = @native {
@@ -247,6 +267,28 @@ class NativeTypeTests extends BaseEffFunSuite:
               assertEquals(freeFn, Some("close_handle"))
             case _ =>
               fail("Expected NativePointer with free attribute")
+        }
+      )
+
+  test("parse native opaque pointer with free attribute"):
+    val code = """
+      type Handle = @native[t=ptr, mem=heap, free=close_handle];
+    """
+
+    Parser
+      .parseModule(code, "Test")
+      .fold(
+        e => fail(s"Parser failed: $e"),
+        module => {
+          val typeDef = module.members.collectFirst { case t: TypeDef => t }.get
+          assertEquals(typeDef.name, "Handle")
+          typeDef.typeSpec match
+            case Some(NativePrimitive(_, llvmType, memEffect, freeFn)) =>
+              assertEquals(llvmType, "ptr")
+              assertEquals(memEffect, Some(MemEffect.Alloc))
+              assertEquals(freeFn, Some("close_handle"))
+            case _ =>
+              fail("Expected NativePrimitive with free attribute")
         }
       )
 

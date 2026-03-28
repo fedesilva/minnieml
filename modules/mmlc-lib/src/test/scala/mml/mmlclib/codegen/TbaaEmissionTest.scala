@@ -163,7 +163,7 @@ class TbaaEmissionTest extends BaseEffFunSuite:
 
     compileAndGenerate(source).map { llvmIr =>
       val closureEnvTypePattern =
-        """%struct\.__closure_env_\d+ = type \{ i8\*, \{ ptr, ptr \} \}""".r
+        """%struct\.__closure_env_\d+ = type \{ ptr, \{ ptr, ptr \} \}""".r
       assert(
         closureEnvTypePattern.findFirstIn(llvmIr).isDefined,
         s"Missing closure env type with fat-pointer field. IR:\n$llvmIr"

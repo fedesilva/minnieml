@@ -250,7 +250,7 @@ def injectBasicTypes(module: Module): Module =
     TypeDef(
       source   = SourceOrigin.Synth,
       nameNode = Name.synth("RawPtr"),
-      typeSpec = Some(NativePointer(syntheticSource, "i8")),
+      typeSpec = Some(NativePrimitive(syntheticSource, "ptr")),
       id       = stdlibId("typedef", "RawPtr")
     ),
     TypeDef(
