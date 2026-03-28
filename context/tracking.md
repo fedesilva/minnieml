@@ -45,7 +45,7 @@
     - [ ] 3.4-QA.22 [P2] asInstanceOf cast in ClosureMemoryFnGenerator.tagLambdas breaks no-exceptions rule (`ClosureMemoryFnGenerator.scala:312`)
     - [ ] 3.4-QA.23 [P3] Hardcoded string name matching for closure free dispatch (`Applications.scala:312,316`)
     - [ ] 3.4-QA.24 [P3] Inconsistent Cats syntax in new codegen code — use .asRight/.asLeft/.some/.none (`ExpressionCompiler.scala`, `Applications.scala`)
-    - [ ] 3.4-QA.25 [P1] Closure env fields of `TypeFn` fail struct/TBAA type-name lowering (`TypeNameResolver.scala`, `TbaaEmitter.scala`, `raytrace2` fully-local helper case)
+    - [x] 3.4-QA.25 [P1] Closure env fields of `TypeFn` fail struct/TBAA type-name lowering (`TypeNameResolver.scala`, `TbaaEmitter.scala`, `raytrace2` fully-local helper case)
     - [ ] 3.4-QA.26 [P3] getMmlTypeName helper consolidation (`codegen/emitter/package.scala`, `TypeNameResolver.scala`, emitter call sites`)
     - [ ] 3.4-QA.27 [P3] Converge closure env LLVM type naming with semantic env struct ids (`ExpressionCompiler.scala`, `ClosureMemoryFnGenerator.scala`, env TBAA/type emission`)
     - [ ] 3.4-QA.28 [P3] Attach TBAA metadata to closure env stores at capture sites (`ExpressionCompiler.scala`, `emitCallSiteEnv`)
@@ -96,6 +96,11 @@
 * Add commentary with examples to the parsers
 
 ## Recent Changes
+
+- 2026-03-27: #188 3.4-QA.25 TypeFn closure env TBAA lowering
+  - Codegen/TBAA: `TypeNameResolver` now gives `TypeFn` a stable MML type name (`Function`) so closure env structs with captured function values lower through TBAA/type-name resolution instead of failing.
+  - Struct layout: closure env TBAA generation now accepts captured `TypeFn` fields in env structs, including the sibling-local-helper shape exercised by inner functions.
+  - Tests/samples: added `TbaaEmissionTest` coverage for closure env fat-pointer fields and a focused sample for the inner-function sibling capture case.
 
 - 2026-03-27: #188 Ptr parsing and lowering
   - Parser/native types: `@native[t=ptr]` now parses as `NativePrimitive("ptr")`; `@native[t=*...]` remains `NativePointer(...)`.
