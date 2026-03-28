@@ -34,6 +34,10 @@
     - Spec: `context/specs/lambdas-work-review.md`
     - [x] 3.4-QA.29 [P1] Capturing whole struct values in local-helper closures can emit invalid self-referential LLVM IR (`ExpressionCompiler.scala`, `raytracer3` whole-`Camera` capture case) — root cause: `CaptureAnalyzer` did not descend into `Ref.qualifier`, so struct field selections like `p.a` never detected `p` as a capture
     - [ ] 3.4-QA.30 [P1] Multiple closures capturing the same owned value cause double-free (`OwnershipAnalyzer.scala`, `raytracer3` `buf` captured by `write_row` and `render_rows`)
+      - ❯ ./build/target/raytracer3 > r3.ppm
+        raytracer3(31806,0x7ff85028dc00) malloc: *** error for object 0x600002539200: pointer being freed was not allocated
+        raytracer3(31806,0x7ff85028dc00) malloc: *** set a breakpoint in malloc_error_break to debug
+        [1]    31806 abort      ./build/target/raytracer3 > r3.ppm
     - [x] 3.4-QA.6 [P1] Pass real closure env on recursive capturing lambdas (`Applications.scala`)
     - [x] 3.4-QA.10 [P2] mergeSubState fragile manual field sync (`ExpressionCompiler.scala`)
     - [x] 3.4-QA.11 [P2] Two codepaths for closure free could diverge (`Applications.scala`)
