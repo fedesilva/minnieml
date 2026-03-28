@@ -239,7 +239,7 @@ private def compileTailRecNonCapturing(
     linkage = "internal "
   ).map { finalSubState =>
     val fnBody      = finalSubState.output.reverse.mkString("\n")
-    val mergedState = mergeSubState(state, finalSubState).addDeferredDefinition(fnBody)
+    val mergedState = mergeDeferredBodyState(state, finalSubState).addDeferredDefinition(fnBody)
     CompileResult(
       register     = 0,
       state        = mergedState,
@@ -274,7 +274,7 @@ private def compileTailRecCapturingLambda(
     ).map { finalSubState =>
       val fnBody = finalSubState.output.reverse.mkString("\n")
       val mergedState =
-        mergeSubState(siteState, finalSubState).addDeferredDefinition(fnBody)
+        mergeDeferredBodyState(siteState, finalSubState).addDeferredDefinition(fnBody)
       CompileResult(
         register = envResult.fpRegister,
         state    = mergedState,
@@ -351,7 +351,7 @@ private def compileNonCapturingLambda(
     finalSubState = bodyRes.state.emit(retLine).emit("}")
     header        = s"define internal $returnType @$fnName($allParamDecls) #0 {"
     fnBody        = (header :: "entry:" :: finalSubState.output.reverse).mkString("\n")
-    mergedState   = mergeSubState(state, finalSubState).addDeferredDefinition(fnBody)
+    mergedState   = mergeDeferredBodyState(state, finalSubState).addDeferredDefinition(fnBody)
   yield CompileResult(
     register     = 0,
     state        = mergedState,
@@ -495,7 +495,8 @@ private def compileCapturingLambda(
       finalSubState = bodyRes.state.emit(retLine).emit("}")
       header        = s"define internal $returnType @$fnName($allParamDecls) #0 {"
       fnBody        = (header :: "entry:" :: finalSubState.output.reverse).mkString("\n")
-      mergedState   = mergeSubState(siteState, finalSubState).addDeferredDefinition(fnBody)
+      mergedState = mergeDeferredBodyState(siteState, finalSubState)
+        .addDeferredDefinition(fnBody)
     yield CompileResult(
       register = envResult.fpRegister,
       state    = mergedState,
@@ -504,27 +505,13 @@ private def compileCapturingLambda(
     )
   }
 
-/** Merge metadata from a sub-state back into the parent state. NOTE: must be updated when new
-  * metadata fields are added to CodeGenState.
+/** Deferred lambda bodies compile in an isolated output/register context, but all other metadata
+  * produced by that sub-run must flow back to the enclosing state.
   */
-private def mergeSubState(parent: CodeGenState, sub: CodeGenState): CodeGenState =
-  parent.copy(
-    stringConstants      = sub.stringConstants,
-    nextStringId         = sub.nextStringId,
-    tbaaNodes            = sub.tbaaNodes,
-    tbaaOutput           = sub.tbaaOutput,
-    nextTbaaId           = sub.nextTbaaId,
-    tbaaRootId           = sub.tbaaRootId,
-    tbaaScalarIds        = sub.tbaaScalarIds,
-    tbaaStructIds        = sub.tbaaStructIds,
-    aliasScopeOutput     = sub.aliasScopeOutput,
-    aliasScopeDomainId   = sub.aliasScopeDomainId,
-    aliasScopeIds        = sub.aliasScopeIds,
-    warnings             = sub.warnings,
-    deferredDefinitions  = sub.deferredDefinitions,
-    nextAnonFnId         = sub.nextAnonFnId,
-    nativeTypes          = sub.nativeTypes,
-    functionDeclarations = sub.functionDeclarations
+private def mergeDeferredBodyState(parent: CodeGenState, sub: CodeGenState): CodeGenState =
+  sub.copy(
+    output       = parent.output,
+    nextRegister = parent.nextRegister
   )
 
 private def compileSelectionRef(
