@@ -1,0 +1,21 @@
+// Minimal QA.25 sample:
+// - applyInc is a local callable
+// - it captures sibling local callable inc
+// - that forces a closure env field of function type (TypeFn)
+//
+// Useful checks:
+// - `sbtn "run run mml/samples/inner-fn-captures-sibling-fn.mml"`
+// - `sbtn "run ir mml/samples/inner-fn-captures-sibling-fn.mml"`
+//
+// In the generated IR, look for:
+// - %struct.__closure_env_N = type { i8*, { ptr, ptr } }
+// - a TBAA scalar node named "Function"
+// - a closure-env TBAA node using Function at offset 8
+
+pub fn main(): Unit =
+  fn inc(x: Int): Int = x + 1;;
+  fn applyInc(y: Int): Int = inc y;;
+
+  let result = applyInc 41;
+  println (int_to_str result);
+;
