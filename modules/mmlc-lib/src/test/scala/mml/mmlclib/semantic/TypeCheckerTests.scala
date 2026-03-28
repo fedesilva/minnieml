@@ -1,9 +1,16 @@
 package mml.mmlclib.semantic
 
+import cats.data.NonEmptyList
 import mml.mmlclib.ast.*
 import mml.mmlclib.test.BaseEffFunSuite
 
 class TypeCheckerTests extends BaseEffFunSuite:
+
+  private def isUnitParamType(params: NonEmptyList[Type]): Boolean =
+    params.toList match
+      case List(TypeRef(_, "Unit", _, _)) => true
+      case List(TypeUnit(_)) => true
+      case _ => false
 
   private def collectLambdaLiterals(module: Module): List[Lambda] =
     module.members.flatMap {
@@ -110,10 +117,46 @@ class TypeCheckerTests extends BaseEffFunSuite:
     semNotFailed(code).map { module =>
       val bnd = module.members.collectFirst { case b: Bnd if b.name == "partial" => b }.get
       bnd.typeSpec match
-        case Some(TypeFn(_, List(TypeRef(_, "Int", _, _)), TypeRef(_, "Int", _, _))) => // pass
+        case Some(TypeFn(_, NonEmptyList(TypeRef(_, "Int", _, _), Nil), TypeRef(_, "Int", _, _))) =>
         case other =>
           fail(s"Expected TypeFn(Int -> Int), got $other")
     }
+  }
+
+  test("nullary function reference has semantic type Unit -> Int") {
+    val code =
+      """
+        fn func(): Int = ???;;
+        let f = func;
+      """
+    semNotFailed(code).map { module =>
+      val bnd = module.members.collectFirst { case b: Bnd if b.name == "f" => b }.get
+      bnd.typeSpec match
+        case Some(TypeFn(_, params, TypeRef(_, "Int", _, _))) if isUnitParamType(params) => ()
+        case other => fail(s"Expected Unit -> Int, got $other")
+    }
+  }
+
+  test("nullary lambda has semantic type Unit -> Int") {
+    val code =
+      """
+        let thunk = { 42; };
+      """
+    semNotFailed(code).map { module =>
+      val bnd = module.members.collectFirst { case b: Bnd if b.name == "thunk" => b }.get
+      bnd.typeSpec match
+        case Some(TypeFn(_, params, TypeRef(_, "Int", _, _))) if isUnitParamType(params) => ()
+        case other => fail(s"Expected Unit -> Int, got $other")
+    }
+  }
+
+  test("explicit Unit -> Int ascription accepts a nullary function reference") {
+    val code =
+      """
+        fn func(): Int = ???;;
+        let f: Unit -> Int = func;
+      """
+    semNotFailed(code)
   }
 
   test("should fail when a nullary function is used where a value is expected") {
@@ -358,7 +401,7 @@ class TypeCheckerTests extends BaseEffFunSuite:
     semNotFailed(code).map { module =>
       val fn = module.members.collectFirst { case b: Bnd if b.name == "main" => b }.get
       fn.typeSpec match
-        case Some(TypeFn(_, Nil, TypeRef(_, "Int", _, _))) => // pass
+        case Some(TypeFn(_, params, TypeRef(_, "Int", _, _))) if isUnitParamType(params) => ()
         case other => fail(s"Expected fn returning Int, got $other")
     }
   }
@@ -375,7 +418,7 @@ class TypeCheckerTests extends BaseEffFunSuite:
     semNotFailed(code).map { module =>
       val fn = module.members.collectFirst { case b: Bnd if b.name == "main" => b }.get
       fn.typeSpec match
-        case Some(TypeFn(_, Nil, TypeRef(_, "Int", _, _))) => // pass
+        case Some(TypeFn(_, params, TypeRef(_, "Int", _, _))) if isUnitParamType(params) => ()
         case other => fail(s"Expected fn returning Int, got $other")
     }
   }
@@ -391,7 +434,7 @@ class TypeCheckerTests extends BaseEffFunSuite:
     semNotFailed(code).map { module =>
       val fn = module.members.collectFirst { case b: Bnd if b.name == "main" => b }.get
       fn.typeSpec match
-        case Some(TypeFn(_, Nil, TypeRef(_, "Int", _, _))) => // pass
+        case Some(TypeFn(_, params, TypeRef(_, "Int", _, _))) if isUnitParamType(params) => ()
         case other => fail(s"Expected fn returning Int, got $other")
     }
   }
@@ -412,7 +455,7 @@ class TypeCheckerTests extends BaseEffFunSuite:
     semNotFailed(code).map { module =>
       val fn = module.members.collectFirst { case b: Bnd if b.name == "main" => b }.get
       fn.typeSpec match
-        case Some(TypeFn(_, Nil, TypeRef(_, "Int", _, _))) => // pass
+        case Some(TypeFn(_, params, TypeRef(_, "Int", _, _))) if isUnitParamType(params) => ()
         case other => fail(s"Expected fn returning Int, got $other")
     }
   }
@@ -428,7 +471,7 @@ class TypeCheckerTests extends BaseEffFunSuite:
     semNotFailed(code).map { module =>
       val fn = module.members.collectFirst { case b: Bnd if b.name == "foo" => b }.get
       fn.typeSpec match
-        case Some(TypeFn(_, List(TypeRef(_, "Int", _, _)), TypeRef(_, "Int", _, _))) => // pass
+        case Some(TypeFn(_, NonEmptyList(TypeRef(_, "Int", _, _), Nil), TypeRef(_, "Int", _, _))) =>
         case other => fail(s"Expected Int -> Int, got $other")
     }
   }
@@ -448,7 +491,7 @@ class TypeCheckerTests extends BaseEffFunSuite:
     semNotFailed(code).map { module =>
       val fn = module.members.collectFirst { case b: Bnd if b.name == "main" => b }.get
       fn.typeSpec match
-        case Some(TypeFn(_, Nil, TypeRef(_, "Unit", _, _))) => ()
+        case Some(TypeFn(_, params, TypeRef(_, "Unit", _, _))) if isUnitParamType(params) => ()
         case other => fail(s"Expected main to typecheck as Unit, got $other")
     }
   }

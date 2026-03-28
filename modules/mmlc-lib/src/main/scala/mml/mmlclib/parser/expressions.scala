@@ -59,7 +59,17 @@ private def mkFnBindingType(
   params:     List[FnParam],
   returnType: Option[Type]
 ): Option[Type] =
-  returnType.flatMap(retType => params.traverse(_.typeAsc).map(TypeFn(source, _, retType)))
+  returnType.flatMap { retType =>
+    params
+      .traverse(_.typeAsc)
+      .map(paramTypes => TypeFn(source, canonicalCallableParamTypes(source, paramTypes), retType))
+  }
+
+private def canonicalCallableParamTypes(
+  source:     SourceOrigin,
+  paramTypes: List[Type]
+): NonEmptyList[Type] =
+  NonEmptyList.fromList(paramTypes).getOrElse(NonEmptyList.one(TypeRef(source, "Unit")))
 
 private def exprFromTermsP(info: SourceInfo, termParser: => P[Term])(using P[Any]): P[Expr] =
   P(spP(info) ~ termParser.rep(1) ~ spNoWsP(info) ~ spP(info))
