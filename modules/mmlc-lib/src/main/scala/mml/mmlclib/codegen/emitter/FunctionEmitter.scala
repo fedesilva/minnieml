@@ -110,12 +110,11 @@ def compileBndLambda(
         )
   else compileRegularLambda(bnd, lambda, state, returnType, paramTypes, emittedName, linkage)
 
-/** Check if a parameter is a NativePointer type at LLVM level. */
+/** Check if a parameter lowers to an LLVM pointer-like native type. */
 def isPointerParam(param: FnParam, resolvables: ResolvablesIndex): Boolean =
   param.typeSpec
     .orElse(param.typeAsc)
-    .flatMap(TypeUtils.getTypeName)
-    .exists(TypeUtils.isPointerType(_, resolvables))
+    .exists(TypeUtils.isPointerLike(_, resolvables))
 
 /** Filter out Unit params (void) — they can't be passed in LLVM. */
 def filterVoidParams(
