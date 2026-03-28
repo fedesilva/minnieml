@@ -320,16 +320,14 @@ def compileRegularCall(
           )
 
       fnReturnTypeResult.flatMap { fnReturnType =>
-        // __free_closure: emit inline dtor dispatch (extract env, load dtor, call it)
-        if fnRef.name == "__free_closure" then
-          emitClosureFreeViaEnvDtor(compiledArgs, app, finalState)
-        else
-          // For per-env free functions, extract env ptr from fat pointer arg
-          val isClosureEnvFree = fnRef.name.startsWith("__free___closure_env_")
-          val (adjustedArgs, stateAfterExtract) =
-            if isClosureEnvFree then extractEnvPtrFromArgs(compiledArgs, finalState)
-            else (compiledArgs, finalState)
+        val adjustedArgsAndState =
+          getClosureDestructorKind(fnRef, finalState) match
+            case Some(_) =>
+              extractClosureEnvArg(compiledArgs, app, finalState)
+            case None =>
+              Right((compiledArgs, finalState))
 
+        adjustedArgsAndState.flatMap { case (adjustedArgs, stateAfterExtract) =>
           // Check for function template (for LLVM intrinsics like llvm.sqrt)
           getFunctionTemplate(
             fnRef.resolvedId.flatMap(stateAfterExtract.resolvables.lookup)
@@ -338,78 +336,40 @@ def compileRegularCall(
               compileFunctionWithTemplate(fnRef, tpl, adjustedArgs, app, stateAfterExtract)
             case None =>
               compileStandardCall(fnRef, adjustedArgs, fnReturnType, app, stateAfterExtract)
+        }
       }
   }
 
 private case class CompiledArg(op: String, llvmType: String, typeSpec: Option[Type])
 
-/** Free a closure via the destructor pointer embedded in its env struct.
-  *
-  * The arg is a fat pointer `{ ptr fn, ptr env }`. The env struct's field 0 holds a pointer to the
-  * destructor function. We extract the env ptr, null-check it (non-capturing functions have null
-  * env), and if non-null load the dtor from field 0 and call it with the env ptr.
-  */
-private def emitClosureFreeViaEnvDtor(
+private def getClosureDestructorKind(
+  fnRef: Ref,
+  state: CodeGenState
+): Option[DestructorKind] =
+  fnRef.resolvedId
+    .flatMap(state.resolvables.lookup)
+    .collect { case bnd: Bnd => bnd.meta.flatMap(_.destructorKind) }
+    .flatten
+
+/** Closure destructors consume the raw env pointer, so adapt the fat pointer arg first. */
+private def extractClosureEnvArg(
   compiledArgs: List[CompiledArg],
   app:          App,
   state:        CodeGenState
-): Either[CodeGenError, CompileResult] =
-  compiledArgs match
-    case List(arg) if arg.llvmType == "{ ptr, ptr }" =>
-      val envReg  = state.nextRegister
-      val cmpReg  = envReg + 1
-      val dtorReg = cmpReg + 1
-
-      val freeLabel = s"closure_free_${envReg}_dtor"
-      val endLabel  = s"closure_free_${envReg}_end"
-
-      val extractEnv =
-        emitExtractValue(envReg, "{ ptr, ptr }", arg.op, 1)
-      val nullCheck =
-        s"  %$cmpReg = icmp eq ptr %$envReg, null"
-      val branch =
-        s"  br i1 %$cmpReg, label %$endLabel, label %$freeLabel"
-      val freeLbl  = s"$freeLabel:"
-      val loadDtor = s"  %$dtorReg = load ptr, ptr %$envReg"
-      val callDtor = s"  call void %$dtorReg(ptr %$envReg)"
-      val brEnd    = s"  br label %$endLabel"
-      val endLbl   = s"$endLabel:"
-
-      val finalState = state
-        .withRegister(dtorReg + 1)
-        .emit(extractEnv)
-        .emit(nullCheck)
-        .emit(branch)
-        .emit(freeLbl)
-        .emit(loadDtor)
-        .emit(callDtor)
-        .emit(brEnd)
-        .emit(endLbl)
-
-      Right(
-        CompileResult(0, finalState, false, "Unit", exitBlock = Some(endLabel))
-      )
-    case _ =>
-      Left(
-        CodeGenError(
-          "__free_closure expects a single { ptr, ptr } argument",
-          Some(app)
-        )
-      )
-
-/** For closure env free functions, extract the env pointer (index 1) from the fat pointer arg. */
-private def extractEnvPtrFromArgs(
-  compiledArgs: List[CompiledArg],
-  state:        CodeGenState
-): (List[CompiledArg], CodeGenState) =
+): Either[CodeGenError, (List[CompiledArg], CodeGenState)] =
   compiledArgs match
     case List(arg) if arg.llvmType == "{ ptr, ptr }" =>
       val envReg      = state.nextRegister
       val extractLine = emitExtractValue(envReg, "{ ptr, ptr }", arg.op, 1)
       val newArg      = CompiledArg(s"%$envReg", "ptr", None)
-      (List(newArg), state.withRegister(envReg + 1).emit(extractLine))
-    case other =>
-      (other, state)
+      Right((List(newArg), state.withRegister(envReg + 1).emit(extractLine)))
+    case _ =>
+      Left(
+        CodeGenError(
+          "Closure destructor expects a single { ptr, ptr } argument",
+          Some(app)
+        )
+      )
 
 /** Compiles all arguments to a function call. */
 private def compileArgs(
