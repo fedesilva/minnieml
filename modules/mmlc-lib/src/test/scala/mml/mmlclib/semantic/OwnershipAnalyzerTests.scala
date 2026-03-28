@@ -260,6 +260,56 @@ class OwnershipAnalyzerTests extends BaseEffFunSuite:
     }
   }
 
+  test("second closure cannot capture the same owned heap binding") {
+    val code =
+      """
+        fn main(): Unit =
+          let s = "hello" ++ " world";
+          let f = {
+            println s;
+          }: Unit;
+          let g = {
+            println s;
+          }: Unit;
+          f ();
+          g ();
+        ;
+      """
+
+    semState(code).map { result =>
+      val errors = result.errors.collect { case e: SemanticError.CapturedMovedHeapBinding => e }
+      assertEquals(errors.length, 1, s"Expected one duplicate capture error but got: $errors")
+      assertEquals(errors.head.ref.name, "s")
+    }
+  }
+
+  test("single owning closure may pass a captured heap binding to sibling helpers by parameter") {
+    val code =
+      """
+        fn main(): Unit =
+          let s = "hello" ++ " world";
+
+          fn show(msg: String): Unit =
+            println msg;
+          ;
+
+          fn run(): Unit =
+            show s;
+          ;
+
+          run ();
+        ;
+      """
+
+    semState(code).map { result =>
+      val errors = result.errors.collect {
+        case e: SemanticError.CapturedMovedHeapBinding => e
+        case e: SemanticError.CapturedBorrowedHeapBinding => e
+      }
+      assert(errors.isEmpty, s"Expected no capture ownership errors but got: $errors")
+    }
+  }
+
   test("consuming param only use accepted") {
     val code =
       """

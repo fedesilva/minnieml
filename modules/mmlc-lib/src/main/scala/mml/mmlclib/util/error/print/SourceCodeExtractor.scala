@@ -145,6 +145,12 @@ object SourceCodeExtractor:
           .map(s => s"\n$s")
           .getOrElse("")
 
+      case SemanticError.CapturedMovedHeapBinding(ref, _, _) =>
+        spanOf(ref)
+          .flatMap(extractSnippet(sourceInfo, _))
+          .map(s => s"\n$s")
+          .getOrElse("")
+
       case SemanticError.VisibilityViolation(ref, _, _) =>
         spanOf(ref)
           .flatMap(extractSnippet(sourceInfo, _))
