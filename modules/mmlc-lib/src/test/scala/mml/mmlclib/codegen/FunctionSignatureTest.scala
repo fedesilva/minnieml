@@ -424,6 +424,38 @@ class FunctionSignatureTest extends BaseEffFunSuite:
     }
   }
 
+  test("noalias on native function returning allocating opaque ptr") {
+    val source =
+      """
+        type MyOpaque = @native[t=ptr, mem=heap];
+        fn alloc_ptr(): MyOpaque = @native;;
+        fn main(): Unit = ();;
+      """
+
+    compileAndGenerate(source).map { llvmIr =>
+      assert(
+        llvmIr.contains("declare noalias ptr @alloc_ptr()"),
+        s"allocating opaque ptr return should have noalias, got:\n$llvmIr"
+      )
+    }
+  }
+
+  test("no noalias on native function returning non-allocating opaque ptr") {
+    val source =
+      """
+        type MyOpaque = @native[t=ptr];
+        fn get_ptr(): MyOpaque = @native;;
+        fn main(): Unit = ();;
+      """
+
+    compileAndGenerate(source).map { llvmIr =>
+      assert(
+        llvmIr.contains("declare ptr @get_ptr()"),
+        s"non-allocating opaque ptr return should NOT have noalias, got:\n$llvmIr"
+      )
+    }
+  }
+
   test("no noalias on native function returning NativeStruct with Alloc") {
     val source =
       """
@@ -494,6 +526,24 @@ class FunctionSignatureTest extends BaseEffFunSuite:
       assert(
         llvmIr.contains("declare void @read_ptr(i8*)"),
         s"non-consuming pointer param should NOT have noalias, got:\n$llvmIr"
+      )
+    }
+  }
+
+  test("noalias on consuming opaque ptr parameter in user function") {
+    val source =
+      """
+        type MyOpaque = @native[t=ptr, mem=heap];
+        fn alloc_ptr(): MyOpaque = @native;;
+        fn free_ptr(~p: MyOpaque): Unit = @native;;
+        fn take_ptr(~p: MyOpaque): Unit = free_ptr p;;
+        fn main(): Unit = take_ptr (alloc_ptr ());;
+      """
+
+    compileAndGenerate(source).map { llvmIr =>
+      assert(
+        llvmIr.contains("define internal void @test_take_ptr(ptr noalias %0)"),
+        s"consuming opaque ptr param should have noalias, got:\n$llvmIr"
       )
     }
   }

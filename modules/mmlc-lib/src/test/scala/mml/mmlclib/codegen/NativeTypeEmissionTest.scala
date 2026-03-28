@@ -84,3 +84,29 @@ class NativeTypeEmissionTest extends BaseEffFunSuite:
       assert(llvmIr.contains("%struct.MyStruct = type { i32 }"))
     }
   }
+
+  test("opaque ptr globals lower without ptr* loads or stores") {
+    val source = """
+      type Opaque = @native[t=ptr];
+      fn mk_opaque(): Opaque = @native;;
+      let handle = mk_opaque ();
+      fn read_handle(): Opaque = handle;;
+    """
+
+    compileAndGenerate(source).map { llvmIr =>
+      assert(llvmIr.contains("declare ptr @mk_opaque()"), s"missing ptr return:\n$llvmIr")
+      assert(
+        llvmIr.contains("@test_handle = global ptr zeroinitializer"),
+        s"missing ptr global:\n$llvmIr"
+      )
+      assert(
+        llvmIr.contains("store ptr %0, ptr @test_handle"),
+        s"missing ptr global store:\n$llvmIr"
+      )
+      assert(
+        llvmIr.contains("load ptr, ptr @test_handle"),
+        s"missing ptr global load:\n$llvmIr"
+      )
+      assert(!llvmIr.contains("ptr*"), s"opaque ptr lowering must not emit ptr*:\n$llvmIr")
+    }
+  }

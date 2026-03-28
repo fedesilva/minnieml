@@ -18,8 +18,6 @@
 
 ## Active Tasks
 
-
-
 ### Update the design doc
 
 * there are new phases in the semantic stage
@@ -59,6 +57,16 @@
       - Options: auto-clone at capture site, reject literal heap captures for now, or track heap-vs-static captures explicitly.
       - Related: `let-shadow-in-lambda.mml` sample reproduces the issue.
 
+  - [COMPLETE] Ptr parsing and lowering
+    - Goal: express LLVM opaque pointers directly in surface/native types via `@native[t=ptr]`, so `RawPtr` and closure env destructor slots lower naturally to `ptr` without `RawPtr`-specific codegen special casing.
+    - Note: `@native[t=ptr]` should parse as `NativePrimitive("ptr")`; `@native[t=*i64]` should remain `NativePointer("i64")`.
+    - Note: keep closure env `__dtor` as a raw pointer slot, not `TypeFn`, because `TypeFn` lowers to the closure fat-pointer shape `{ ptr, ptr }`.
+    - [x] Extend native type parsing/printing to accept and round-trip `t=ptr`.
+    - [x] Update stdlib/native typedefs that mean opaque raw pointer, especially `RawPtr`, to use the new `ptr` surface form.
+    - [x] Teach codegen helpers to emit opaque-pointer operand types correctly, avoiding invalid `ptr*` emission in load/store and similar helper paths.
+    - [x] Audit pointer-like codegen/ABI classification that currently keys on `NativePointer` only, and include opaque `ptr` where required (for example allocating-return `noalias` decisions).
+    - [x] Update closure-env expectations, sample comments, and tests to assert `ptr` for raw/opaque pointer slots where appropriate.
+
 
 
 ### Protocols (ad-hoc polymorphism)
@@ -88,6 +96,13 @@
 * Add commentary with examples to the parsers
 
 ## Recent Changes
+
+- 2026-03-27: #188 Ptr parsing and lowering
+  - Parser/native types: `@native[t=ptr]` now parses as `NativePrimitive("ptr")`; `@native[t=*...]` remains `NativePointer(...)`.
+  - Stdlib/codegen: `RawPtr` now lowers as opaque `ptr`; pointer-like classification and native `noalias` checks now include opaque pointers.
+  - LLVM emission: load/store helper paths now emit opaque-pointer operands as `ptr`, avoiding invalid `ptr*` IR in raw-pointer flows.
+  - Tests: added grammar/codegen coverage for `t=ptr`, opaque-pointer `noalias`, and closure env/TBAA expectations for raw-pointer slots.
+  - Verification: focused ptr tests, fast samples, full suite (`349/349`), `mmlcPublishLocal`, `make -C benchmark mml`, and `tests/mem/run.sh all` (`19/19` ASan+LSan) passed.
 
 - 2026-03-27: #245 Inner function syntax
   - Parser: added local `fn name(...): Ret = ... ; expr` surface syntax in `expressions.scala`.
