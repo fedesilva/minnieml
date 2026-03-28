@@ -50,13 +50,19 @@ def compileLambdaApp(
         val uniqueName  = s"${param.name}_${state.nextAnonFnId}"
         val stateWithId = state.copy(nextAnonFnId = state.nextAnonFnId + 1)
         val fnName      = stateWithId.mangleName(uniqueName)
-        val entry = ScopeEntry(
-          0,
-          "Function",
-          isLiteral    = true,
-          literalValue = Some(s"{ ptr @$fnName, ptr null }")
-        )
-        (Some((stateWithId, fnName)), functionScope + (param.name -> entry))
+        val recursiveScope =
+          arg match
+            case Expr(_, List(argLambda: Lambda), _, _) if argLambda.captures.nonEmpty =>
+              functionScope
+            case _ =>
+              val entry = ScopeEntry(
+                0,
+                "Function",
+                isLiteral    = true,
+                literalValue = Some(s"{ ptr @$fnName, ptr null }")
+              )
+              functionScope + (param.name -> entry)
+        (Some((stateWithId, fnName)), recursiveScope)
       case _ =>
         (None, functionScope)
     val compileState = preAlloc.map(_._1).getOrElse(state)
