@@ -1,0 +1,25 @@
+// Recursive inner function that captures a sibling local function value.
+//
+// This is the recursive form of the captured-TypeFn shape:
+// - inc is a local callable
+// - loop captures inc
+// - loop also recursively calls itself
+//
+// Useful checks:
+// - `sbtn "run ir mml/samples/recursive-inner-captures-sibling.mml"`
+// - `sbtn "run run mml/samples/recursive-inner-captures-sibling.mml"`
+
+pub fn main(): Unit =
+  fn inc(x: Int): Int = x + 1;;
+
+  fn loop(n: Int): Int =
+    if n == 0 then
+      0;
+    else
+      let m = inc n;
+      m + (loop (n - 1));
+    ;
+  ;
+
+  println (int_to_str (loop 5));
+;

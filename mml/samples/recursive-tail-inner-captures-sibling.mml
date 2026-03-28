@@ -1,0 +1,25 @@
+// Tail-recursive inner function that captures a sibling local function value.
+//
+// This is the tail-recursive form of the captured-TypeFn shape:
+// - inc is a local callable
+// - loop captures inc
+// - loop recursively calls itself in tail position
+//
+// Useful checks:
+// - `sbtn "run ir mml/samples/recursive-tail-inner-captures-sibling.mml"`
+// - `sbtn "run run mml/samples/recursive-tail-inner-captures-sibling.mml"`
+
+pub fn main(): Unit =
+  fn inc(x: Int): Int = x + 1;;
+
+  fn loop(n: Int, acc: Int): Int =
+    if n == 0 then
+      acc;
+    else
+      let m = inc n;
+      loop (n - 1) (acc + m);
+    ;
+  ;
+
+  println (int_to_str (loop 5 0));
+;
