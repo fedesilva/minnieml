@@ -209,12 +209,13 @@ object ClosureMemoryFnGenerator:
     )
 
     val meta = BindingMeta(
-      origin        = BindingOrigin.Destructor,
-      arity         = CallableArity.Unary,
-      precedence    = Precedence.Function,
-      associativity = None,
-      originalName  = fnName,
-      mangledName   = fnName
+      origin         = BindingOrigin.Destructor,
+      arity          = CallableArity.Unary,
+      precedence     = Precedence.Function,
+      associativity  = None,
+      originalName   = fnName,
+      mangledName    = fnName,
+      destructorKind = Some(DestructorKind.ClosureEnv(envName))
     )
 
     Bnd(
@@ -277,12 +278,13 @@ object ClosureMemoryFnGenerator:
     )
 
     val meta = BindingMeta(
-      origin        = BindingOrigin.Destructor,
-      arity         = CallableArity.Unary,
-      precedence    = Precedence.Function,
-      associativity = None,
-      originalName  = fnName,
-      mangledName   = fnName
+      origin         = BindingOrigin.Destructor,
+      arity          = CallableArity.Unary,
+      precedence     = Precedence.Function,
+      associativity  = None,
+      originalName   = fnName,
+      mangledName    = fnName,
+      destructorKind = Some(DestructorKind.ClosureUniversal)
     )
 
     Bnd(
