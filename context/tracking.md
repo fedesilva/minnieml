@@ -32,7 +32,7 @@
   - QA / codegen / ownership review
     - Spec: `context/specs/lambdas-work-review.md`
     - [x] 3.4-QA.6 [P1] Pass real closure env on recursive capturing lambdas (`Applications.scala`)
-    - [ ] 3.4-QA.10 [P2] mergeSubState fragile manual field sync (`ExpressionCompiler.scala`)
+    - [x] 3.4-QA.10 [P2] mergeSubState fragile manual field sync (`ExpressionCompiler.scala`)
     - [ ] 3.4-QA.11 [P2] Two codepaths for closure free could diverge (`Applications.scala`)
     - [ ] 3.4-QA.13 [P3] Nullary/Unit thunk unification may mask type errors (`TypeChecker.scala`)
     - [ ] 3.4-QA.14 [P3] TypeFn globally mapped to fat pointer may affect non-closure contexts (`codegen/emitter/package.scala`)
@@ -96,6 +96,11 @@
 * Add commentary with examples to the parsers
 
 ## Recent Changes
+
+- 2026-03-28: #188 3.4-QA.10 mergeSubState deferred-state sync
+  - Codegen: deferred lambda-body state merge now preserves the sub-run `CodeGenState` wholesale and restores only the parent output/register context, removing the manual field-sync maintenance hazard in `ExpressionCompiler`.
+  - Tests: added `ClosureCodegenTest` coverage that exercises deferred lambda-body string/TBAA emission so metadata produced inside deferred bodies must survive into the final module IR.
+  - Verification: `scalafmtAll`, `scalafixAll`, sanity samples (`hello`, `quicksort`, `astar2`), full suite (`351/351`), `mmlcPublishLocal`, `make -C benchmark clean`, and `make -C benchmark mml` passed.
 
 - 2026-03-28: #188 3.4-QA.6 real closure env on recursive capturing lambdas
   - Codegen: recursive let-bound capturing lambdas now rebuild their self fat-pointer from the live hidden `%env` parameter inside the deferred function body instead of self-calling through `{ ptr @fn, ptr null }`.
