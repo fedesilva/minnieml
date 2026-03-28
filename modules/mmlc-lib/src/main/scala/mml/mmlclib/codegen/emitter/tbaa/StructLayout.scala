@@ -32,6 +32,7 @@ object StructLayout:
       case ts: TypeStruct =>
         computeStructSize(ts.fields.toList.map(f => f.name -> f.typeSpec), resolvables)
       case TypeUnit(_) => Right(0)
+      case _: TypeFn => Right(sizeOfLlvmType("{ ptr, ptr }"))
       case other => Left(CodeGenError(s"Cannot compute size for: ${other.getClass.getSimpleName}"))
 
   /** Compute alignment of a TypeSpec in bytes. Handles nested structs recursively. */
@@ -59,6 +60,7 @@ object StructLayout:
       case ts: TypeStruct =>
         computeStructAlignment(ts.fields.toList.map(f => f.name -> f.typeSpec), resolvables)
       case TypeUnit(_) => Right(1)
+      case _: TypeFn => Right(alignOfLlvmType("{ ptr, ptr }"))
       case other =>
         Left(CodeGenError(s"Cannot compute alignment for: ${other.getClass.getSimpleName}"))
 
