@@ -1,30 +1,18 @@
 // Mini Ray Tracer in MML
-// Intermediate inner-function variant of raytracer.mml.
+// Fully local-helper inner-function variant of raytracer2.mml.
 //
-// Historical note: the comments below describe why this stopped short of the
-// fully-local helper layout when it was first written. That limitation has
-// since been lifted; see raytracer3.mml for the follow-up sample.
+// This follow-up keeps the same scene and output as raytracer2, but it moves
+// the remaining render helpers into main. It exercises recursive inner
+// functions that capture sibling function values and render-time state.
 //
-// What changed from version 1:
-// - camera setup is grouped into a Camera struct so render-time state can be
-//   passed around as one value instead of many separate arguments
-// - render_rows is now a local inner function inside main
-//
-// What is still intentionally top-level in this version:
-// - pixel_ray
-// - compute_row
-// - write_row
-//
-// Why they are not inner functions yet:
-// - the fully-local version wants render_rows to recursively call itself while
-//   also calling sibling local helpers such as compute_row and write_row
-// - that makes the recursive local helper capture sibling function values
-// - current compiler codegen cannot yet lower closure env fields of function
-//   type (TypeFn), so that shape fails during code generation
-//
-// So this sample demonstrates that inner fn works in a nontrivial program, but
-// it stops short of the fully local helper layout until the callable/closure
-// model is fixed in the compiler.
+// Notes:
+// - `buf` is intentionally written in `main` before the local helpers are
+//   defined, and it is flushed from `render_rows` instead of `main`. Once the
+//   helper closures capture `buf`, the outer scope can no longer use it. That
+//   is current ownership/capture behavior, not a codegen bug.
+// - Capturing the whole `Camera` struct directly inside the local helpers still
+//   hits a codegen bug that emits invalid LLVM IR. This sample projects the
+//   needed camera fields into locals first as a workaround.
 
 // --- Linear Algebra ---
 
@@ -162,61 +150,6 @@ struct Camera {
   vertical:   Vec3
 };
 
-fn pixel_ray(camera: Camera, i: Int, j: Int): Ray =
-  let u = (int_to_float i) /. (int_to_float (camera.width - 1));
-  let v = (int_to_float ((camera.height - 1) - j)) /. (int_to_float (camera.height - 1));
-
-  let hor_u = vec_scale camera.horizontal u;
-  let ver_v = vec_scale camera.vertical v;
-  let target = vec_add camera.ll_corner (vec_add hor_u ver_v);
-  let direction = vec_sub target camera.origin;
-
-  Ray camera.origin direction;
-;
-
-fn compute_row(
-  camera: Camera,
-  r_arr: FloatArray,
-  g_arr: FloatArray,
-  b_arr: FloatArray,
-  i: Int,
-  j: Int
-): Unit =
-  if i < camera.width then
-    let r = pixel_ray camera i j;
-    let color = ray_color r;
-
-    unsafe_ar_float_set r_arr i color.x;
-    unsafe_ar_float_set g_arr i color.y;
-    unsafe_ar_float_set b_arr i color.z;
-
-    compute_row camera r_arr g_arr b_arr (i + 1) j;
-  ;
-;
-
-fn write_row(
-  buf: Buffer,
-  r_arr: FloatArray,
-  g_arr: FloatArray,
-  b_arr: FloatArray,
-  width: Int,
-  i: Int
-): Unit =
-  if i < width then
-    let ir = 255.999 *. (unsafe_ar_float_get r_arr i);
-    let ig = 255.999 *. (unsafe_ar_float_get g_arr i);
-    let ib = 255.999 *. (unsafe_ar_float_get b_arr i);
-
-    buffer_write_int buf (float_to_int ir);
-    buffer_write buf " ";
-    buffer_write_int buf (float_to_int ig);
-    buffer_write buf " ";
-    buffer_writeln_int buf (float_to_int ib);
-
-    write_row buf r_arr g_arr b_arr width (i + 1);
-  ;
-;
-
 pub fn main(): Unit =
   let aspect_ratio = 16.0 /. 9.0;
   let image_width = 400;
@@ -246,30 +179,72 @@ pub fn main(): Unit =
     horizontal
     vertical;
 
-  // This is the part of the render loop that can already live locally: it is
-  // recursive, but it only captures plain values, not sibling function values.
-  fn render_rows(
-    camera: Camera,
-    buf: Buffer,
-    r_arr: FloatArray,
-    g_arr: FloatArray,
-    b_arr: FloatArray,
-    j: Int
-  ): Unit =
-    if j >= 0 then
-      compute_row camera r_arr g_arr b_arr 0 j;
-      write_row buf r_arr g_arr b_arr camera.width 0;
-      render_rows camera buf r_arr g_arr b_arr (j - 1);
+  let width = camera.width;
+  let height = camera.height;
+  let camera_origin = camera.origin;
+  let camera_ll_corner = camera.ll_corner;
+  let camera_horizontal = camera.horizontal;
+  let camera_vertical = camera.vertical;
+
+  // The header must be written before `buf` is captured by the local helpers.
+  buffer_writeln buf "P3";
+  buffer_write_int buf width;
+  buffer_write buf " ";
+  buffer_writeln_int buf height;
+  buffer_writeln buf "255";
+
+  fn pixel_ray(i: Int, j: Int): Ray =
+    let u = (int_to_float i) /. (int_to_float (width - 1));
+    let v = (int_to_float ((height - 1) - j)) /. (int_to_float (height - 1));
+
+    let hor_u = vec_scale camera_horizontal u;
+    let ver_v = vec_scale camera_vertical v;
+    let target = vec_add camera_ll_corner (vec_add hor_u ver_v);
+    let direction = vec_sub target camera_origin;
+
+    Ray camera_origin direction;
+  ;
+
+  fn compute_row(i: Int, j: Int): Unit =
+    if i < width then
+      let r = pixel_ray i j;
+      let color = ray_color r;
+
+      unsafe_ar_float_set r_arr i color.x;
+      unsafe_ar_float_set g_arr i color.y;
+      unsafe_ar_float_set b_arr i color.z;
+
+      compute_row (i + 1) j;
     ;
   ;
 
-  buffer_writeln buf "P3";
-  buffer_write_int buf camera.width;
-  buffer_write buf " ";
-  buffer_writeln_int buf camera.height;
-  buffer_writeln buf "255";
+  fn write_row(i: Int): Unit =
+    if i < width then
+      let ir = 255.999 *. (unsafe_ar_float_get r_arr i);
+      let ig = 255.999 *. (unsafe_ar_float_get g_arr i);
+      let ib = 255.999 *. (unsafe_ar_float_get b_arr i);
 
-  render_rows camera buf r_arr g_arr b_arr (camera.height - 1);
+      buffer_write_int buf (float_to_int ir);
+      buffer_write buf " ";
+      buffer_write_int buf (float_to_int ig);
+      buffer_write buf " ";
+      buffer_writeln_int buf (float_to_int ib);
 
+      write_row (i + 1);
+    ;
+  ;
+
+  fn render_rows(j: Int): Unit =
+    if j >= 0 then
+      compute_row 0 j;
+      write_row 0;
+      render_rows (j - 1);
+    else
+      // Once `buf` is captured, the final flush has to happen from inside the
+      // closure-owned render loop rather than in the outer scope.
+      flush buf;
+    ;
+  ;
   flush buf;
+  render_rows (height - 1);
 ;
