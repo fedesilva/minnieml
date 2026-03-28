@@ -1351,6 +1351,9 @@ object OwnershipAnalyzer:
           s.getState(ref.name) match
             case Some(OwnershipState.Owned) =>
               (s.withMoved(ref.name, span), errs)
+            case Some(OwnershipState.Moved) =>
+              val movedAt = s.getMovedAt(ref.name).getOrElse(SourceOrigin.Synth)
+              (s, errs :+ SemanticError.CapturedMovedHeapBinding(ref, movedAt, PhaseName))
             case Some(OwnershipState.Borrowed) | Some(OwnershipState.Literal) =>
               (s, errs :+ SemanticError.CapturedBorrowedHeapBinding(ref, PhaseName))
             case _ => acc
