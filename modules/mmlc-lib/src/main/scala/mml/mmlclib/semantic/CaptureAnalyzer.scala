@@ -159,7 +159,9 @@ object CaptureAnalyzer:
 
   private def collectRefsFromTerm(term: Term): List[Ref] =
     term match
-      case ref: Ref => List(ref)
+      case ref: Ref =>
+        val qualifierRefs = ref.qualifier.toList.flatMap(collectRefsFromTerm)
+        ref :: qualifierRefs
       case e:   Expr => collectRefsFromExpr(e)
       case app: App =>
         app.fn match
@@ -185,7 +187,9 @@ object CaptureAnalyzer:
 
   private def collectRefsFromAppFn(fn: Ref | App | Lambda): List[Ref] =
     fn match
-      case ref: Ref => List(ref)
+      case ref: Ref =>
+        val qualifierRefs = ref.qualifier.toList.flatMap(collectRefsFromTerm)
+        ref :: qualifierRefs
       case app: App =>
         collectRefsFromAppFn(app.fn) ++ collectRefsFromExpr(app.arg)
       case _: Lambda => Nil

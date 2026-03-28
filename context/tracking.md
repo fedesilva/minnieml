@@ -26,22 +26,14 @@
 
 ### #188 Literal lambdas and captures
 
-#### Raytracer 3
-
-- READ raytracer2.mml
-    - the header comment mentions a limitation
-        - this limitation should be lifted, confirm
-        - if this is true: write mml/samples/raytracer3.mml 
-            - use the new capabilities
-            - use inner functions for looping, 
-                reducing the number of required parameters
 
 - GitHub: https://github.com/fedesilva/minnieml/issues/188
 - Reference: `docs/brainstorming/language/lambda-syntax-design.md`
 - Pending follow-ups:
   - QA / codegen / ownership review
     - Spec: `context/specs/lambdas-work-review.md`
-    - [ ] 3.4-QA.29 [P1] Capturing whole struct values in local-helper closures can emit invalid self-referential LLVM IR (`ExpressionCompiler.scala`, `raytracer3` whole-`Camera` capture case)
+    - [x] 3.4-QA.29 [P1] Capturing whole struct values in local-helper closures can emit invalid self-referential LLVM IR (`ExpressionCompiler.scala`, `raytracer3` whole-`Camera` capture case) — root cause: `CaptureAnalyzer` did not descend into `Ref.qualifier`, so struct field selections like `p.a` never detected `p` as a capture
+    - [ ] 3.4-QA.30 [P1] Multiple closures capturing the same owned value cause double-free (`OwnershipAnalyzer.scala`, `raytracer3` `buf` captured by `write_row` and `render_rows`)
     - [x] 3.4-QA.6 [P1] Pass real closure env on recursive capturing lambdas (`Applications.scala`)
     - [x] 3.4-QA.10 [P2] mergeSubState fragile manual field sync (`ExpressionCompiler.scala`)
     - [x] 3.4-QA.11 [P2] Two codepaths for closure free could diverge (`Applications.scala`)
@@ -79,7 +71,22 @@
     - [x] Update closure-env expectations, sample comments, and tests to assert `ptr` for raw/opaque pointer slots where appropriate.
 
 
+#### Raytracer 3
 
+- READ raytracer2.mml
+    - the header comment mentions a limitation
+        - this limitation should be lifted, confirm
+        - if this is true: write mml/samples/raytracer3.mml 
+            - use the new capabilities
+            - use inner functions for looping, 
+                reducing the number of required parameters
+
+
+#### Unify lambdas
+
+  - top level fn, and let bound lambdas (or inner functions) should be treated identically.
+    - the code that handles them (sema and codegen diverges)
+  - discuss, make a plan
 
 
 ### Protocols (ad-hoc polymorphism)
