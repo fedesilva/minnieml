@@ -12,8 +12,9 @@ enum UnresolvableTypeContext derives CanEqual:
 private def showType(t: Type): String = t match
   case TypeRef(_, name, _, _) => name
   case ts: TypeStruct => ts.name
-  case TypeFn(_, params, ret) => s"(${params.map(showType).mkString(", ")}) -> ${showType(ret)}"
-  case TypeUnit(_) => "()"
+  case TypeFn(_, params, ret) =>
+    s"(${params.toList.map(showType).mkString(", ")}) -> ${showType(ret)}"
+  case TypeUnit(_) => "Unit"
   case TypeTuple(_, elems) => s"(${elems.map(showType).mkString(", ")})"
   case NativePrimitive(_, llvm, _, _) => llvm
   case NativePointer(_, llvm, _, _) => s"*$llvm"

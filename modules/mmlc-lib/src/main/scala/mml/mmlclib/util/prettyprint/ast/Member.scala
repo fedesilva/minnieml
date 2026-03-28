@@ -15,9 +15,9 @@ def typeSpecToSimpleName(typeSpec: Type): String =
     case NativePrimitive(_, llvmType, _, _) => s"@native[t=$llvmType]"
     case NativePointer(_, llvmType, _, _) => s"@native[t=*$llvmType]"
     case NativeStruct(_, fields, _, _) => s"@native {${fields.size} fields}"
-    case TypeUnit(_) => "()"
+    case TypeUnit(_) => "Unit"
     case TypeFn(_, params, ret) =>
-      s"(${params.map(typeSpecToSimpleName).mkString(" -> ")}) -> ${typeSpecToSimpleName(ret)}"
+      s"(${params.toList.map(typeSpecToSimpleName).mkString(" -> ")}) -> ${typeSpecToSimpleName(ret)}"
     case TypeTuple(_, elems) => s"(${elems.map(typeSpecToSimpleName).mkString(", ")})"
     case _ => typeSpec.getClass.getSimpleName
 

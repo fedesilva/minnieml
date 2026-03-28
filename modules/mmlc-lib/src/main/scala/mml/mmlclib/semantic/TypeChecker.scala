@@ -1,5 +1,6 @@
 package mml.mmlclib.semantic
 
+import cats.data.NonEmptyList
 import cats.implicits.*
 import mml.mmlclib.ast.*
 import mml.mmlclib.compiler.CompilerState
@@ -170,7 +171,7 @@ object TypeChecker:
             extractTypeFnFromRef(ref, module) match
               case Some(fnType) =>
                 args
-                  .zip(fnType.paramTypes)
+                  .zip(fnType.paramTypes.toList)
                   .foldLeft(state) { case (acc, (argExpr, argType)) =>
                     recordInferenceFromExpr(argExpr, argType, acc, tracked, module)
                   }
@@ -749,7 +750,7 @@ object TypeChecker:
     val lambdaTypeSpec = for
       paramType <- typedParam.typeSpec
       returnType <- bodyType
-    yield TypeFn(lambda.source, List(paramType), returnType)
+    yield TypeFn(lambda.source, NonEmptyList.one(paramType), returnType)
 
     val checkedLambda = lambda.copy(
       params   = List(typedParam),
@@ -1012,11 +1013,11 @@ object TypeChecker:
   private def expectedArgumentType(checkedFn: Term, module: Module): Option[Type] =
     checkedFn match
       case ref: Ref =>
-        extractTypeFnFromRef(ref, module).flatMap(_.paramTypes.headOption)
+        extractTypeFnFromRef(ref, module).map(_.paramTypes.head)
       case app: App =>
-        app.typeSpec.flatMap(extractTypeFn(_, module)).flatMap(_.paramTypes.headOption)
+        app.typeSpec.flatMap(extractTypeFn(_, module)).map(_.paramTypes.head)
       case lambda: Lambda =>
-        lambda.typeSpec.flatMap(extractTypeFn(_, module)).flatMap(_.paramTypes.headOption)
+        lambda.typeSpec.flatMap(extractTypeFn(_, module)).map(_.paramTypes.head)
       case _ =>
         None
 
@@ -1049,7 +1050,7 @@ object TypeChecker:
     argType match
       case Some(actualArgType) =>
         fnType.paramTypes match
-          case headParam :: tailParams =>
+          case NonEmptyList(headParam, tailParams) =>
             val returnType =
               buildRemainingFunctionTypeFromTypes(tailParams, fnType.returnType, app.source)
             if areTypesCompatible(headParam, actualArgType, module) then
@@ -1067,22 +1068,6 @@ object TypeChecker:
                   )
                 )
               )
-          case Nil =>
-            val returnType = fnType.returnType
-            actualArgType match
-              case TypeUnit(_) | TypeRef(_, "Unit", _, _) => CheckResult.ok(Some(returnType))
-              case other =>
-                CheckResult(
-                  Some(returnType),
-                  Vector(
-                    TypeError.InvalidApplication(
-                      app,
-                      fnType.returnType,
-                      other,
-                      phaseName
-                    )
-                  )
-                )
       case None =>
         CheckResult(
           None,
@@ -1110,15 +1095,18 @@ object TypeChecker:
   ): Option[Type] =
     params
       .traverse(_.typeSpec)
-      .map(paramTypes => TypeFn(source, paramTypes, returnType))
+      .map(paramTypes =>
+        TypeFn(source, canonicalCallableParamTypes(source, paramTypes), returnType)
+      )
 
   private def buildRemainingFunctionTypeFromTypes(
     remainingTypes: List[Type],
     returnType:     Type,
     source:         SourceOrigin
   ): Type =
-    if remainingTypes.isEmpty then returnType
-    else TypeFn(source, remainingTypes, returnType)
+    remainingTypes match
+      case head :: tail => TypeFn(source, NonEmptyList(head, tail), returnType)
+      case Nil => returnType
 
   /** Validate type ascription against computed type */
   private def validateTypeAscription(node: Typeable, module: Module): List[TypeError] =
@@ -1146,13 +1134,8 @@ object TypeChecker:
       case (TypeRef(_, expectedName, _, _), ts: TypeStruct) =>
         expectedName == ts.name
       case (TypeFn(_, p1, r1), TypeFn(_, p2, r2)) =>
-        // Nullary functions (no params) are compatible with Unit -> R thunks
-        val (np1, np2) = (p1, p2) match
-          case (Nil, List(u)) if isUnitType(u) => (Nil, Nil)
-          case (List(u), Nil) if isUnitType(u) => (Nil, Nil)
-          case other => other
-        np1.length == np2.length &&
-        np1.zip(np2).forall { case (pt1, pt2) => areTypesCompatible(pt1, pt2, module) } &&
+        p1.length == p2.length &&
+        p1.zip(p2).forall { case (pt1, pt2) => areTypesCompatible(pt1, pt2, module) } &&
         areTypesCompatible(r1, r2, module)
       case (TypeTuple(_, e1), TypeTuple(_, e2)) =>
         e1.length == e2.length &&
@@ -1181,10 +1164,13 @@ object TypeChecker:
           case _ => None
       case _ => None
 
-  private def isUnitType(t: Type): Boolean = t match
-    case TypeRef(_, "Unit", _, _) => true
-    case TypeUnit(_) => true
-    case _ => false
+  private def canonicalCallableParamTypes(
+    source:     SourceOrigin,
+    paramTypes: List[Type]
+  ): NonEmptyList[Type] =
+    NonEmptyList
+      .fromList(paramTypes)
+      .getOrElse(NonEmptyList.one(TypeRef(source, "Unit", Some("stdlib::typedef::Unit"), Nil)))
 
   private def unwrapTypeGroup(typeSpec: Type): Type =
     typeSpec match
@@ -1228,7 +1214,7 @@ object TypeChecker:
     val topDownParams = lambda.params.zipWithIndex.map { (p, i) =>
       if p.typeSpec.isDefined then p
       else if p.typeAsc.isDefined then p.copy(typeSpec = p.typeAsc)
-      else p.copy(typeSpec                             = expectedFn.flatMap(_.paramTypes.lift(i)))
+      else p.copy(typeSpec = expectedFn.flatMap(_.paramTypes.toList.lift(i)))
     }
     val stillUntyped = topDownParams.filter(_.typeSpec.isEmpty)
     val inferenceResult =

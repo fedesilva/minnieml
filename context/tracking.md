@@ -6,7 +6,7 @@
 /!\ /!\ Do not edit without explicit approval or direct command. /!\ /!\
 /!\ /!\ Follow rules below strictly                              /!\ /!\
 /!\ /!\ COMPLETING A TASK? -> ADD (COMPLETE) TAG. NEVER DELETE.  /!\ /!\
-/!\ /!\ DO NOT ADD (COMPLETE) to the "recent changes" entry      /!\ /!\
+/!\ /!\ DO NOT ADD (COMPLETE) to the "recent changes" section    /!\ /!\
 ------------------------------------------------------------------------
 
 * *Always read* `context/task-tracking-rules.md` 
@@ -41,7 +41,7 @@
     - [x] 3.4-QA.6 (P1) Pass real closure env on recursive capturing lambdas (`Applications.scala`)
     - [x] 3.4-QA.10 (P2) mergeSubState fragile manual field sync (`ExpressionCompiler.scala`)
     - [x] 3.4-QA.11 (P2) Two codepaths for closure free could diverge (`Applications.scala`)
-    - [ ] 3.4-QA.13 (P3) Nullary/Unit thunk unification may mask type errors (`TypeChecker.scala`)
+    - [x] 3.4-QA.13 (P3) Nullary/Unit thunk unification may mask type errors (`TypeChecker.scala`)
     - [ ] 3.4-QA.14 (P3) TypeFn globally mapped to fat pointer may affect non-closure contexts (`codegen/emitter/package.scala`)
     - [ ] 3.4-QA.15 (P3) OwnershipAnalyzer 5-tuples should be a case class (`OwnershipAnalyzer.scala`)
     - [ ] 3.4-QA.16 (P3) Term.withTypeAsc silently ignores unknown term types (`ast/terms.scala`)
@@ -120,6 +120,12 @@
 * Add commentary with examples to the parsers
 
 ## Recent Changes
+
+- 2026-03-28: #188 3.4-QA.13 nullary callable canonicalization
+  - Types/parser/typechecker: callable types now use a non-empty parameter list, nullary callables are canonicalized as `Unit -> R`, and the previous special compatibility path between zero-arity and `Unit` thunks was removed.
+  - Codegen/LSP/printing: `TypeFn` consumers now traverse `NonEmptyList` parameter types consistently, and user-facing formatting/docs now present nullary callable signatures as `Unit -> ...`.
+  - Tests: added semantic coverage for nullary function references and nullary lambdas having `Unit -> R` types, and updated affected grammar/codegen expectations.
+  - Verification: `sbtn scalafmtAll`, `sbtn scalafixAll`, `sbtn test` (`358/358`), `sbtn mmlcPublishLocal`, `sbtn "run run mml/samples/hello.mml"`, `sbtn "run run mml/samples/quicksort.mml"`, `sbtn "run run mml/samples/astar2.mml"`, `make -C benchmark clean`, `make -C benchmark mml`, and `./tests/mem/run.sh all` (`19/19` ASan+LSan) passed.
 
 - 2026-03-28: #188 3.4-QA.30 duplicate heap capture rejection
   - Ownership: capturing the same owned heap binding into a second closure now fails during ownership analysis with a dedicated moved-capture diagnostic instead of slipping through to runtime double-free.

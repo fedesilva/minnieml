@@ -1076,7 +1076,7 @@ object AstLookup:
         if matchesTypeTarget(tr, target, module) then tr.spanOpt.toList else Nil
 
       case TypeFn(_, params, ret) =>
-        params.flatMap(collectReferencesInType(_, target, module)) ++
+        params.toList.flatMap(collectReferencesInType(_, target, module)) ++
           collectReferencesInType(ret, target, module)
 
       case TypeTuple(_, elements) =>
@@ -1219,10 +1219,9 @@ object AstLookup:
       case TypeRef(_, name, _, _) => name
 
       case TypeFn(_, params, ret) =>
-        val paramStr = params.map(formatTypeInner).mkString(" -> ")
+        val paramStr = params.toList.map(formatTypeInner).mkString(" -> ")
         val retStr   = formatTypeInner(ret)
-        if params.isEmpty then s"() -> $retStr"
-        else s"$paramStr -> $retStr"
+        s"$paramStr -> $retStr"
 
       case TypeTuple(_, elements) =>
         elements.map(formatTypeInner).mkString("(", ", ", ")")
@@ -1234,7 +1233,7 @@ object AstLookup:
       case ts: TypeStruct =>
         ts.name
 
-      case TypeUnit(_) => "()"
+      case TypeUnit(_) => "Unit"
 
       case TypeVariable(_, name) => name
 
