@@ -380,7 +380,7 @@ object OwnershipAnalyzer:
       val paramType =
         if freeFnOverride.isDefined || tpe.isInstanceOf[TypeFn] then rawPtrTypeRef(span)
         else tpe
-      val fnType = Some(TypeFn(span, List(paramType), unitType.get))
+      val fnType = Some(TypeFn(span, cats.data.NonEmptyList.one(paramType), unitType.get))
       val fnRef  = Ref(SourceOrigin.Synth, freeFn, resolvedId = freeFnId, typeSpec = fnType)
       val argRef =
         Ref(
@@ -592,7 +592,7 @@ object OwnershipAnalyzer:
     val typeName    = getTypeName(tpe).getOrElse("String")
     val cloneFnName = cloneFnFor(typeName, resolvables).getOrElse(s"__clone_$typeName")
     val cloneFnId   = lookupCloneFnId(cloneFnName, typeName, resolvables)
-    val cloneFnType = Some(TypeFn(syntheticSource, List(tpe), tpe))
+    val cloneFnType = Some(TypeFn(syntheticSource, cats.data.NonEmptyList.one(tpe), tpe))
     val cloneFnRef =
       Ref(SourceOrigin.Synth, cloneFnName, resolvedId = cloneFnId, typeSpec = cloneFnType)
     val cloneApp = App(syntheticSource, cloneFnRef, expr, typeSpec = Some(tpe))
@@ -1378,7 +1378,7 @@ object OwnershipAnalyzer:
           val result = analyzeExpr(elem, curScope)
           (result.scope, errs ++ result.errors, acc :+ result.expr)
       }
-    val nel = cats.data.NonEmptyList.fromListUnsafe(newElements.toList)
+    val nel = cats.data.NonEmptyList(newElements.head, newElements.tail.toList)
     TermResult(finalScope, Tuple(span, nel, typeAsc, typeSpec), errors = errors)
 
   /** Analyze a term and track ownership changes */

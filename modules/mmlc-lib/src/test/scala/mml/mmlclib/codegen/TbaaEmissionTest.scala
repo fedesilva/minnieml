@@ -1,5 +1,6 @@
 package mml.mmlclib.codegen
 
+import cats.data.NonEmptyList
 import mml.mmlclib.ast.*
 import mml.mmlclib.codegen.emitter.tbaa.StructLayout
 import mml.mmlclib.test.BaseEffFunSuite
@@ -144,7 +145,7 @@ class TbaaEmissionTest extends BaseEffFunSuite:
   test("StructLayout computes size and alignment for TypeFn fat pointers") {
     val fnType = TypeFn(
       span,
-      List(NativePrimitive(span, "i64")),
+      NonEmptyList.one(NativePrimitive(span, "i64")),
       NativePrimitive(span, "i64")
     )
 

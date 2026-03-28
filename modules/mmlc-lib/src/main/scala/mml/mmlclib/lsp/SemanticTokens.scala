@@ -267,7 +267,7 @@ object SemanticTokens:
           .flatMap(tokenAt(_, TokenType.Type, lengthOverride = Some(tr.name.length)))
           .toList
       case tf: TypeFn =>
-        tf.paramTypes.flatMap(collectFromType) ++ collectFromType(tf.returnType)
+        tf.paramTypes.toList.flatMap(collectFromType) ++ collectFromType(tf.returnType)
       case tt: TypeTuple =>
         tt.elements.flatMap(collectFromType)
       case ta: TypeApplication =>

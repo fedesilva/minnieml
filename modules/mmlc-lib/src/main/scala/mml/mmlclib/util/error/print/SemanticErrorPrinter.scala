@@ -182,9 +182,9 @@ object SemanticErrorPrinter:
       case mml.mmlclib.ast.TypeRef(_, name, _, _) => name
       case ts: mml.mmlclib.ast.TypeStruct => ts.name
       case mml.mmlclib.ast.TypeFn(_, params, returnType) =>
-        val paramStr = params.map(formatTypeSpec).mkString(", ")
+        val paramStr = params.toList.map(formatTypeSpec).mkString(", ")
         s"($paramStr) -> ${formatTypeSpec(returnType)}"
-      case mml.mmlclib.ast.TypeUnit(_) => "()"
+      case mml.mmlclib.ast.TypeUnit(_) => "Unit"
       case other => other.getClass.getSimpleName
 
     error match
