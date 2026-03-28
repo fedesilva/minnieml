@@ -1,12 +1,16 @@
 // Mini Ray Tracer in MML
-// Partial inner-function variant of raytracer.mml.
+// Intermediate inner-function variant of raytracer.mml.
+//
+// Historical note: the comments below describe why this stopped short of the
+// fully-local helper layout when it was first written. That limitation has
+// since been lifted; see raytracer3.mml for the follow-up sample.
 //
 // What changed from version 1:
 // - camera setup is grouped into a Camera struct so render-time state can be
 //   passed around as one value instead of many separate arguments
 // - render_rows is now a local inner function inside main
 //
-// What is still intentionally top-level:
+// What is still intentionally top-level in this version:
 // - pixel_ray
 // - compute_row
 // - write_row

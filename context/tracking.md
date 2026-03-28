@@ -41,6 +41,7 @@
 - Pending follow-ups:
   - QA / codegen / ownership review
     - Spec: `context/specs/lambdas-work-review.md`
+    - [ ] 3.4-QA.29 [P1] Capturing whole struct values in local-helper closures can emit invalid self-referential LLVM IR (`ExpressionCompiler.scala`, `raytracer3` whole-`Camera` capture case)
     - [x] 3.4-QA.6 [P1] Pass real closure env on recursive capturing lambdas (`Applications.scala`)
     - [x] 3.4-QA.10 [P2] mergeSubState fragile manual field sync (`ExpressionCompiler.scala`)
     - [x] 3.4-QA.11 [P2] Two codepaths for closure free could diverge (`Applications.scala`)
@@ -108,6 +109,11 @@
 * Add commentary with examples to the parsers
 
 ## Recent Changes
+
+- 2026-03-28: #188 Raytracer 3 sample follow-up in progress
+  - Samples: added `mml/samples/raytracer3.mml` as the fully local-helper follow-up to `raytracer2`, keeping the original `raytracer2` header comments as historical context and documenting the current ownership/codegen caveats inline in the new sample.
+  - Tracking: added QA.29 under the lambda/codegen follow-ups for the newly exposed P1 bug where capturing a whole struct value in local-helper closures can emit invalid LLVM IR (`raytracer3` whole-`Camera` capture case).
+  - Verification: `sbtn "run mml/samples/raytracer3.mml"` passes, but direct output comparison between `build/target/raytracer2` and `build/target/raytracer3` fails because `raytracer3` corrupts the PPM tail with stray `[info]` text in the pixel stream, so the task is not signoff-ready.
 
 - 2026-03-28: #188 3.4-QA.11 closure free dispatch consolidation
   - Codegen: closure destructors now carry explicit `DestructorKind` metadata, closure free calls adapt fat pointers to env pointers once, and `__free_closure` now emits its null-guarded dtor dispatch in the generated function body instead of inlining it at each call site.
