@@ -1,0 +1,218 @@
+// Mini Ray Tracer in MML
+// Fully local-helper inner-function variant with fused compute + byte output.
+//
+// This variant keeps the same scene and camera as raytracer3_p6, but it
+// removes the per-row FloatArray staging buffers. Each pixel is computed,
+// quantized, and appended to the output buffer in a single pass.
+
+// --- Linear Algebra ---
+
+struct Vec3 { x: Float, y: Float, z: Float };
+
+inline fn vec_add(u: Vec3, v: Vec3): Vec3 =
+  Vec3 (u.x +. v.x) (u.y +. v.y) (u.z +. v.z);
+;
+
+inline fn vec_sub(u: Vec3, v: Vec3): Vec3 =
+  Vec3 (u.x -. v.x) (u.y -. v.y) (u.z -. v.z);
+;
+
+// Scalar multiplication: v * t
+inline fn vec_scale(v: Vec3, t: Float): Vec3 =
+  Vec3 (v.x *. t) (v.y *. t) (v.z *. t);
+;
+
+// Dot product
+inline fn dot(u: Vec3, v: Vec3): Float =
+  (u.x *. v.x) +. (u.y *. v.y) +. (u.z *. v.z);
+;
+
+inline fn length_squared(v: Vec3): Float = dot v v;;
+
+inline fn length(v: Vec3): Float = sqrt (length_squared v);;
+
+inline fn unit_vector(v: Vec3): Vec3 =
+  vec_scale v (1.0 /. (length v));
+;
+
+// --- Scene Geometry ---
+
+struct Ray { origin: Vec3, dir: Vec3 };
+
+inline fn ray_at(r: Ray, t: Float): Vec3 =
+  vec_add r.origin (vec_scale r.dir t);
+;
+
+struct Sphere { center: Vec3, radius: Float };
+
+// Hit record (simplified: only t and normal needed for this demo)
+struct Hit { t: Float, p: Vec3, normal: Vec3, did_hit: Bool };
+
+inline fn no_hit(): Hit =
+  let zero = Vec3 0.0 0.0 0.0;
+  Hit 0.0 zero zero false;
+;
+
+inline fn hit_sphere(s: Sphere, r: Ray, t_min: Float, t_max: Float): Hit =
+  let oc = vec_sub r.origin s.center;
+  let a = length_squared r.dir;
+  let half_b = dot oc r.dir;
+  let c = (length_squared oc) -. (s.radius *. s.radius);
+  let discriminant = (half_b *. half_b) -. (a *. c);
+
+  if discriminant <. 0.0 then
+    no_hit ();
+  else
+    let sqrtd = sqrt discriminant;
+    let root1 = ((0.0 -. half_b) -. sqrtd) /. a;
+
+    if (root1 <. t_max) and (root1 >. t_min) then
+      let p = ray_at r root1;
+      let normal = vec_scale (vec_sub p s.center) (1.0 /. s.radius);
+      Hit root1 p normal true;
+    else
+      let root2 = ((0.0 -. half_b) +. sqrtd) /. a;
+      if (root2 <. t_max) and (root2 >. t_min) then
+        let p = ray_at r root2;
+        let normal = vec_scale (vec_sub p s.center) (1.0 /. s.radius);
+        Hit root2 p normal true;
+      else
+        no_hit ();
+      ;
+    ;
+  ;
+;
+
+// --- World & Rendering ---
+
+fn world_hit(r: Ray, t_min: Float, t_max: Float): Hit =
+  let closest_so_far = t_max;
+  let final_hit = no_hit ();
+
+  let s1 = Sphere (Vec3 0.0 0.0 (0.0 -. 1.0)) 0.5;
+  let h1 = hit_sphere s1 r t_min closest_so_far;
+
+  let result1 =
+    if h1.did_hit then
+      h1;
+    else
+      final_hit;
+    ;
+
+  let t1 =
+    if h1.did_hit then
+      h1.t;
+    else
+      closest_so_far;
+    ;
+
+  let s2 = Sphere (Vec3 0.0 (0.0 -. 100.5) (0.0 -. 1.0)) 100.0;
+  let h2 = hit_sphere s2 r t_min t1;
+
+  if h2.did_hit then
+    h2;
+  else
+    result1;
+  ;
+;
+
+fn ray_color(r: Ray): Vec3 =
+  let hit = world_hit r 0.001 1000000.0;
+
+  if hit.did_hit then
+    let n = hit.normal;
+    let color_vec = Vec3 (n.x +. 1.0) (n.y +. 1.0) (n.z +. 1.0);
+    vec_scale color_vec 0.5;
+  else
+    let unit_dir = unit_vector r.dir;
+    let t = 0.5 *. (unit_dir.y +. 1.0);
+    let white = Vec3 1.0 1.0 1.0;
+    let blue = Vec3 0.5 0.7 1.0;
+    vec_add (vec_scale white (1.0 -. t)) (vec_scale blue t);
+  ;
+;
+
+struct Camera {
+  width:      Int,
+  height:     Int,
+  origin:     Vec3,
+  ll_corner:  Vec3,
+  horizontal: Vec3,
+  vertical:   Vec3
+};
+
+pub fn main(): Unit =
+  let aspect_ratio = 16.0 /. 9.0;
+  let image_width = 6000;
+  let image_height = float_to_int ((int_to_float image_width) /. aspect_ratio);
+
+  let origin          = Vec3 0.0 0.0 0.0;
+  let viewport_height = 2.0;
+  let viewport_width  = viewport_height *. aspect_ratio;
+  let focal_length    = 1.0;
+  let horizontal      = Vec3 viewport_width 0.0 0.0;
+  let vertical        = Vec3 0.0 viewport_height 0.0;
+  let ll_corner =
+    Vec3
+      (0.0 -. (viewport_width /. 2.0))
+      (0.0 -. (viewport_height /. 2.0))
+      (0.0 -. focal_length)
+    ;
+
+  let buf = mkBufferWithSize (64 * 1024);
+
+  let camera = Camera
+    image_width
+    image_height
+    origin
+    ll_corner
+    horizontal
+    vertical
+  ;
+
+  // The header must be written before `buf` is captured by the local helpers.
+  buffer_writeln buf "P6";
+  buffer_write_int buf camera.width;
+  buffer_write buf " ";
+  buffer_writeln_int buf camera.height;
+  buffer_writeln buf "255";
+
+  fn pixel_ray(i: Int, j: Int): Ray =
+    let u = (int_to_float i) /. (int_to_float (camera.width - 1));
+    let v = (int_to_float ((camera.height - 1) - j)) /. (int_to_float (camera.height - 1));
+
+    let hor_u = vec_scale camera.horizontal u;
+    let ver_v = vec_scale camera.vertical v;
+    let target = vec_add camera.ll_corner (vec_add hor_u ver_v);
+    let direction = vec_sub target camera.origin;
+
+    Ray camera.origin direction;
+  ;
+
+  fn render_row(buf: Buffer, i: Int, j: Int): Unit =
+    if i < camera.width then
+      let ray = pixel_ray i j;
+      let color = ray_color ray;
+      let ir = float_to_int (255.999 *. color.x);
+      let ig = float_to_int (255.999 *. color.y);
+      let ib = float_to_int (255.999 *. color.z);
+
+      buffer_write_byte buf ir;
+      buffer_write_byte buf ig;
+      buffer_write_byte buf ib;
+
+      render_row buf (i + 1) j;
+    ;
+  ;
+
+  fn render_rows(j: Int): Unit =
+    if j >= 0 then
+      render_row buf 0 j;
+      render_rows (j - 1);
+    else
+      flush buf;
+    ;
+  ;
+
+  render_rows (camera.height - 1);
+;
