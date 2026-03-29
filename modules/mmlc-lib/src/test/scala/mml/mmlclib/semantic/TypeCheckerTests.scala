@@ -135,6 +135,18 @@ class TypeCheckerTests extends BaseEffFunSuite:
     }
   }
 
+  test("buffer_write_byte is available from injected stdlib") {
+    val code =
+      """
+        pub fn main(): Unit =
+          let buf = mkBufferWithSize 16;
+          buffer_write_byte buf 255;
+          flush buf;
+        ;
+      """
+    semNotFailed(code)
+  }
+
   test("should fail on missing function parameter type") {
     val code =
       """

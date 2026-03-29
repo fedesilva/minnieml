@@ -94,6 +94,20 @@ Buffer mkBufferWithFd(int fd)
     return b;
 }
 
+Buffer mkBufferWithFdAndSize(int fd, int64_t size)
+{
+    Buffer b = (Buffer)malloc(sizeof(BufferImpl));
+    if (!b)
+        mml_sys_oom_abort();
+    b->capacity = size > 0 ? (size_t)size : 4096;
+    b->length = 0;
+    b->fd = fd;
+    b->data = (char *)malloc(b->capacity);
+    if (!b->data)
+        mml_sys_oom_abort();
+    return b;
+}
+
 Buffer mkBufferWithSize(int64_t size)
 {
     Buffer b = (Buffer)malloc(sizeof(BufferImpl));
@@ -163,6 +177,17 @@ FORCE_INLINE void buffer_writeln(Buffer b, String s)
         b->length += s.length;
     }
     b->data[b->length++] = '\n';
+}
+
+FORCE_INLINE void buffer_write_byte(Buffer b, int64_t value)
+{
+    if (!b)
+        return;
+
+    if (b->length + 1 >= b->capacity)
+        flush(b);
+
+    b->data[b->length++] = (char)((unsigned char)value);
 }
 
 FORCE_INLINE static size_t format_int64(char *buffer, size_t size, int64_t value)
