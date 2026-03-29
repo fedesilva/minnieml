@@ -38,14 +38,18 @@
   see `context/specs/optional-moves.md`
 
   - [x] Borrow-by-default captures with explicit `~` move syntax
-  - Deferred: **Call-site move (`~expr`)** — users cannot yet force-move a value at a call site
-    without a consuming parameter. Will be implemented after borrow-by-default captures ship.
 
-#### Unify lambdas
+### Unify lambdas
 
   - top level fn, and let bound lambdas (or inner functions) should be treated identically.
     - the code that handles them (sema and codegen diverges)
   - discuss, make a plan
+
+### Call-site move 
+
+  - (`~expr`) 
+  - users cannot yet force-move a value at a call site without a consuming parameter. 
+  - Will be implemented after borrow-by-default captures ship.
 
 
 ### Protocols (ad-hoc polymorphism)
