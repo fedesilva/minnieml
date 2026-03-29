@@ -56,12 +56,20 @@ The compiler needs to be installed before it's used if changes were made.
   - not for context changes
   - not for documentation changes
   - not for mml samples.
+
+- Enforce QA rules and style guidelines. 
+  - Non negotiable.
+
 - **Fast sanity check first (mandatory)**:
   - Before publishing the compiler or running expensive verification (benchmarks, full memory harness),
-    compile and run the following programs with `sbtn`:
-    - `sbtn "run run mml/samples/hello.mml"`
+    compile and run the following programs with `sbtn`:    
+    - do not attempt to run them in parallel until AT LEAST ONE is finished; they compete to compile the full compiler.
+      - after the first one is finished you can run the rest in parallel
+    - `sbtn "run run mml/samples/hola.mml"`
     - `sbtn "run run mml/samples/quicksort.mml"`
     - `sbtn "run run mml/samples/astar2.mml"`
+    - `sbtn "run run mml/samples/raytracer3.mml"`
+
 - **Validate**: Run the *full* test suite
 
 - **Run benchmarks**:
