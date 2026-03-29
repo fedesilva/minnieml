@@ -71,8 +71,7 @@ The compiler needs to be installed before it's used if changes were made.
 
 - **Run memory tests** (when changes touch memory management / ownership):
   - `./tests/mem/run.sh all`
-  - All 13 tests must pass ASan+LSan checks
-  - The script handles `mmlc clean` between modes automatically
+  - All tests must pass ASan+LSan checks  
 
 - **If a command session stalls during post-task verification**:
   - Kill the stalled session/process and rerun the same verification command once.
