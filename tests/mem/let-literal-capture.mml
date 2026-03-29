@@ -1,0 +1,17 @@
+
+// tests we don't try to free a captured literal.
+
+pub fn main() =
+  
+  // A literal
+  let name = "hola";
+  
+  // Captures name.
+  let f = {
+    // clones name, because it's a literal.
+    println name;  
+  };
+  
+  // execute thunk
+  f();
+;
