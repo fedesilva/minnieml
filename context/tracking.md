@@ -32,6 +32,7 @@
 - Pending follow-ups:
   - QA / codegen / ownership review
     - Spec: `context/specs/lambdas-work-review.md`
+    - [x] 3.4-QA.25 (P1) Closure env fields of `TypeFn` fail struct/TBAA type-name lowering (`TypeNameResolver.scala`, `TbaaEmitter.scala`, `raytrace2` fully-local helper case)
     - [x] 3.4-QA.29 (P1) Capturing whole struct values in local-helper closures can emit invalid self-referential LLVM IR (`ExpressionCompiler.scala`, `raytracer3` whole-`Camera` capture case) — root cause: `CaptureAnalyzer` did not descend into `Ref.qualifier`, so struct field selections like `p.a` never detected `p` as a capture
     - [x] 3.4-QA.30 (P1) Multiple closures capturing the same owned value cause double-free (`OwnershipAnalyzer.scala`, `raytracer3` `buf` captured by `write_row` and `render_rows`)
       - ❯ ./build/target/raytracer3 > r3.ppm
@@ -51,8 +52,7 @@
     - [ ] 3.4-QA.21 (P2) Mutable traversals + early returns in ClosureMemoryFnGenerator — replace var/builder/return with folds and if-else (`ClosureMemoryFnGenerator.scala`)
     - [ ] 3.4-QA.22 (P2) asInstanceOf cast in ClosureMemoryFnGenerator.tagLambdas breaks no-exceptions rule (`ClosureMemoryFnGenerator.scala:312`)
     - [x] 3.4-QA.23 (P3) Hardcoded string name matching for closure free dispatch (`Applications.scala:312,316`)
-    - [ ] 3.4-QA.24 (P3) Inconsistent Cats syntax in new codegen code — use .asRight/.asLeft/.some/.none (`ExpressionCompiler.scala`, `Applications.scala`)
-    - [x] 3.4-QA.25 (P1) Closure env fields of `TypeFn` fail struct/TBAA type-name lowering (`TypeNameResolver.scala`, `TbaaEmitter.scala`, `raytrace2` fully-local helper case)
+    - [ ] 3.4-QA.24 (P3) Inconsistent Cats syntax in new codegen code — use .asRight/.asLeft/.some/.none (`ExpressionCompiler.scala`, `Applications.scala`)    
     - [ ] 3.4-QA.26 (P3) getMmlTypeName helper consolidation (`codegen/emitter/package.scala`, `TypeNameResolver.scala`, emitter call sites`)
     - [ ] 3.4-QA.27 (P3) Converge closure env LLVM type naming with semantic env struct ids (`ExpressionCompiler.scala`, `ClosureMemoryFnGenerator.scala`, env TBAA/type emission`)
     - [ ] 3.4-QA.28 (P3) Attach TBAA metadata to closure env stores at capture sites (`ExpressionCompiler.scala`, `emitCallSiteEnv`)
