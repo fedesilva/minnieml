@@ -101,7 +101,7 @@ object TestExtractors:
       case _ => None
 
   def captureResolvedIds(lambda: Lambda): Set[String] =
-    lambda.captures.flatMap(_.resolvedId).toSet
+    lambda.captures.flatMap(_.ref.resolvedId).toSet
 
   /** Extractor for function applications (`App` nodes).
     *
