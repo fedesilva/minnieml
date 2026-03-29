@@ -26,18 +26,27 @@
 
 - GitHub: https://github.com/fedesilva/minnieml/issues/188
 - Reference: `docs/brainstorming/language/lambda-syntax-design.md`
-- Pending follow-ups:
-  - QA / codegen / ownership review
-    - Spec: `context/specs/lambdas-work-review.md`
     
-  - Heap-capture follow-up
-    - [x] 3.5.1 Literal heap captures: auto-clone at capture site (COMPLETE)
-
 #### Implement Optional Moves
 
   see `context/specs/optional-moves.md`
 
   - [x] Borrow-by-default captures with explicit `~` move syntax
+
+  - Bugs
+
+    - [ ] Reject borrow-capturing closures that escape via return — /Users/f/Workshop/mine/mml/mml/modules/mmlc-lib/src/main/scala/mml/mmlclib/semantic/
+      OwnershipAnalyzer.scala:1346-1351
+      When a function returns a borrow-by-default closure such as fn makeAdder(a): Int -> Int = { x -> x + a }, this new TypeFn escape check never fires because
+      returnedBorrowedRefs(...) only reports bare Refs, not a returned Lambda term. That means the closure is accepted even though codegen now builds its environment with alloca,
+      so the caller receives a fat pointer to dead stack storage as soon as the defining function returns.
+
+    - [ ] Hoist borrow closure env allocation out of repeated paths — /Users/f/Workshop/mine/mml/mml/modules/mmlc-lib/src/main/scala/mml/mmlclib/codegen/emitter/
+      ExpressionCompiler.scala:468-471
+      Borrow closures now allocate their environment with alloca exactly where the literal is evaluated. Because compileTailRecCapturingLambda reuses this helper for tail-recursive
+      functions lowered to loops, a borrow closure rebuilt on each iteration will reserve another stack slot that is not reclaimed until the function returns. In long-running loops
+      this causes unbounded stack growth; the env needs to be created in the entry block or otherwise given an explicit lifetime.
+
 
 ### Unify lambdas
 
