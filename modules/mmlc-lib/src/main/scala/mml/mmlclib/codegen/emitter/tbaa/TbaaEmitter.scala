@@ -1,7 +1,7 @@
 package mml.mmlclib.codegen.emitter.tbaa
 
 import mml.mmlclib.ast.*
-import mml.mmlclib.codegen.emitter.{CodeGenError, CodeGenState, TypeNameResolver}
+import mml.mmlclib.codegen.emitter.{CodeGenError, CodeGenState, getNominalTypeName}
 
 object TbaaEmitter:
 
@@ -9,21 +9,11 @@ object TbaaEmitter:
     * distinctions (e.g., Int64 vs SizeT even though both are i64).
     */
   def getTbaaTag(typeSpec: Type, state: CodeGenState): (CodeGenState, Option[String]) =
-    typeSpec match
-      case TypeRef(_, _, _, _) =>
-        TypeNameResolver.getMmlTypeName(typeSpec, state.resolvables) match
-          case Right(typeName) =>
-            state.getTbaaAccessTag(typeName) match
-              case (s2, tag) => (s2, Some(tag))
-          case Left(_) => (state, None)
-      case np: NativePrimitive =>
-        state.getTbaaAccessTag(np.llvmType) match
+    getNominalTypeName(typeSpec) match
+      case Right(typeName) =>
+        state.getTbaaAccessTag(typeName) match
           case (s2, tag) => (s2, Some(tag))
-      case np: NativePointer =>
-        state.getTbaaAccessTag(np.llvmType) match
-          case (s2, tag) => (s2, Some(tag))
-      case _ =>
-        (state, None)
+      case Left(_) => (state, None)
 
   /** Get TBAA access tag for a specific struct field.
     *
@@ -135,9 +125,7 @@ object TbaaEmitter:
       ) {
         case (Right((acc, currentOffset)), (fieldName, fieldTypeSpec)) =>
           for
-            typeName <- TypeNameResolver
-              .getMmlTypeName(fieldTypeSpec, resolvables)
-              .left
+            typeName <- getNominalTypeName(fieldTypeSpec).left
               .map(e => CodeGenError(s"In struct '$structName', field '$fieldName': ${e.message}"))
             fieldAlignment <- StructLayout
               .alignOf(fieldTypeSpec, resolvables)
