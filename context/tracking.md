@@ -22,7 +22,7 @@
 * there are lambdas now, and captures and the memory management model has changed.
 
 
-### TypeNameResolver purpose and contract audit (COMPLETE)
+### TypeNameResolver fuck up (COMPLETE)
 
 * Background:
   - `TypeNameResolver.scala` was introduced during the memory-management/TBAA merge as the extracted source of MML type names for metadata-oriented codegen decisions.
@@ -43,10 +43,10 @@
       Since the MML grammar doesn't allow bare native types in field ascriptions, these ASTs are "illegal" relative to what the parser produces. TypeNameResolver was written to
   guess "Int" or "Bool" so these tests wouldn't fail.
 * Plan:
-  - [ ] Delete `TypeNameResolver.scala`.
-  - [ ] Update TBAA, Alias Scopes, and Debugging emission to extract the nominal name directly from the `TypeRef` / `TypeStruct` AST nodes.
-  - [ ] Enforce correctness: If codegen encounters a bare `NativePrimitive` or `NativePointer` when it needs a nominal name, it must return a `Left(CodeGenError(...))` to expose the upstream type-leak rather than guessing. 
-  - [ ] Identify and fix the root cause type leaks: Ensure that literal instantiation, type inference, and semantic type resolution (e.g. `TypeResolver` / `TypeChecker`) never strip away the `TypeRef` wrappers to expose bare native layout types in an expression's `typeSpec`.
+  - [x] Delete `TypeNameResolver.scala`.
+  - [x] Update TBAA, Alias Scopes, and Debugging emission to extract the nominal name directly from the `TypeRef` / `TypeStruct` AST nodes.
+  - [x] Enforce correctness: If codegen encounters a bare `NativePrimitive` or `NativePointer` when it needs a nominal name, it must return a `Left(CodeGenError(...))` to expose the upstream type-leak rather than guessing. 
+  - [x] Identify and fix the root cause type leaks: Ensure that literal instantiation, type inference, and semantic type resolution (e.g. `TypeResolver` / `TypeChecker`) never strip away the `TypeRef` wrappers to expose bare native layout types in an expression's `typeSpec`.
 * Related existing follow-ups:
   - `#188` 3.4-QA.25 TypeFn closure env TBAA lowering
   - `#188` 3.4-QA.26 getMmlTypeName helper consolidation
@@ -106,6 +106,11 @@
 * Add commentary with examples to the parsers
 
 ## Change Log
+
+- 2026-03-29: TypeNameResolver nominal-metadata cleanup
+  - Codegen metadata: deleted `TypeNameResolver.scala`, added a standalone top-level nominal-name helper, and rewired emitter call sites so TBAA, alias-scope, and related metadata paths derive names from nominal AST types instead of reverse-mapping raw LLVM layouts.
+  - Correctness: metadata name resolution now fails fast when a bare `NativePrimitive` or `NativePointer` reaches a path that requires a nominal type name, exposing real upstream type leaks instead of guessing aliases such as `Int` or `Bool`.
+  - Tests: updated `TbaaEmissionTest` fixtures to use legal nominal refs/resolvables rather than illegal bare-native struct fields so the coverage matches parser-produced AST shapes.
 
 - 2026-03-28: #188 lambda/codegen QA batch — 3.4-QA.19, 3.4-QA.20, 3.4-QA.21, 3.4-QA.26, 3.4-QA.27, 3.4-QA.28
   - Test infra / lambda semantics: added shared `TX*` lambda/test extractors in `TestExtractors.scala` and rewrote the lambda grammar, capture-analysis, typechecker, and ownership tests to assert semantic intent through shared extractors/resolved ids instead of brittle shape- and name-coupled traversal helpers.

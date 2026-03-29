@@ -2,13 +2,7 @@ package mml.mmlclib.codegen.emitter.expression
 
 import cats.syntax.all.*
 import mml.mmlclib.ast.*
-import mml.mmlclib.codegen.emitter.{
-  CodeGenError,
-  CodeGenState,
-  CompileResult,
-  TypeNameResolver,
-  getLlvmType
-}
+import mml.mmlclib.codegen.emitter.{CodeGenError, CodeGenState, CompileResult, getLlvmType, getNominalTypeName}
 
 // ============================================================================
 // Template Extraction Helpers
@@ -117,10 +111,10 @@ def isNativeBinding(bnd: Bnd): Boolean =
 // ============================================================================
 
 /** Gets MML type name for operator return type. */
-def getMmlTypeForOp(opRef: Ref, resolvables: ResolvablesIndex): Option[String] =
+def getMmlTypeForOp(opRef: Ref): Option[String] =
   opRef.typeSpec.flatMap {
     case TypeFn(_, _, returnType) =>
-      TypeNameResolver.getMmlTypeName(returnType, resolvables).toOption
+      getNominalTypeName(returnType).toOption
     case _ => None
   }
 
@@ -144,7 +138,7 @@ def applyBinaryOp(
             case Right(llvmType) =>
               val instruction = substituteTemplate(tpl, llvmType, List(leftOp, rightOp))
               val line        = s"  %$resultReg = $instruction"
-              getMmlTypeForOp(opRef, rightRes.state.resolvables) match
+              getMmlTypeForOp(opRef) match
                 case Some(typeName) =>
                   CompileResult(
                     resultReg,
@@ -184,7 +178,7 @@ def applyUnaryOp(
             case Right(llvmType) =>
               val instruction = substituteTemplate(tpl, llvmType, List(argOp))
               val line        = s"  %$resultReg = $instruction"
-              getMmlTypeForOp(opRef, argRes.state.resolvables) match
+              getMmlTypeForOp(opRef) match
                 case Some(typeName) =>
                   CompileResult(
                     resultReg,

@@ -4,17 +4,7 @@ import cats.syntax.all.*
 import mml.mmlclib.ast.*
 import mml.mmlclib.codegen.emitter.alias.AliasScopeEmitter
 import mml.mmlclib.codegen.emitter.tbaa.TbaaEmitter
-import mml.mmlclib.codegen.emitter.{
-  CodeGenError,
-  CodeGenState,
-  CompileResult,
-  TypeNameResolver,
-  emitCall,
-  emitGetElementPtr,
-  emitLoad,
-  emitStore,
-  getLlvmType
-}
+import mml.mmlclib.codegen.emitter.{CodeGenError, CodeGenState, CompileResult, emitCall, emitGetElementPtr, emitLoad, emitStore, getLlvmType, getNominalTypeName}
 
 // ============================================================================
 // Hole Compilation
@@ -68,7 +58,7 @@ def compileHole(hole: Hole, state: CodeGenState): Either[CodeGenError, CompileRe
                 .withRegister(loadReg + 1)
                 .emit(loadLine)
 
-              TypeNameResolver.getMmlTypeName(typeSpec, stateWithLoad.resolvables) match
+              getNominalTypeName(typeSpec) match
                 case Right(typeName) =>
                   CompileResult(loadReg, stateWithLoad, false, typeName).asRight
                 case Left(_) =>

@@ -7,12 +7,12 @@ import mml.mmlclib.codegen.emitter.{
   CodeGenState,
   CompileResult,
   ScopeEntry,
-  TypeNameResolver,
   compileLambdaLiteral,
   emitCall,
   emitExtractValue,
   emitIndirectCall,
-  getLlvmType
+  getLlvmType,
+  getNominalTypeName
 }
 
 /** Collects all arguments from nested App nodes (handles curried applications).
@@ -144,7 +144,7 @@ private def compileBinaryNativeOp(
     line        = s"  %$resultReg = $instruction"
     finalState  = rightRes.state.withRegister(resultReg + 1).emit(line)
 
-    typeName <- getMmlTypeForOp(fnRef, finalState.resolvables) match
+    typeName <- getMmlTypeForOp(fnRef) match
       case Some(t) => t.asRight
       case None =>
         CodeGenError(
@@ -179,7 +179,7 @@ private def compileUnaryNativeOp(
     line        = s"  %$resultReg = $instruction"
     finalState  = operandRes.state.withRegister(resultReg + 1).emit(line)
 
-    typeName <- getMmlTypeForOp(fnRef, finalState.resolvables) match
+    typeName <- getMmlTypeForOp(fnRef) match
       case Some(t) => t.asRight
       case None =>
         CodeGenError(
@@ -242,7 +242,7 @@ def compileNullaryCall(
         )
       app.typeSpec match
         case Some(ts) =>
-          TypeNameResolver.getMmlTypeName(ts, finalState.resolvables) match
+          getNominalTypeName(ts) match
             case Right(typeName) =>
               CompileResult(loadReg, finalState, false, typeName).asRight
             case Left(_) =>
@@ -260,7 +260,7 @@ def compileNullaryCall(
       val callLine  = emitCall(resultReg.some, fnReturnType.some, fnName, List.empty)
       app.typeSpec match
         case Some(ts) =>
-          TypeNameResolver.getMmlTypeName(ts, state.resolvables) match
+          getNominalTypeName(ts) match
             case Right(typeName) =>
               CompileResult(
                 resultReg,
@@ -406,7 +406,7 @@ private def compileFunctionWithTemplate(
         .replace("%type", args.headOption.map(_.llvmType).getOrElse(""))
 
   val line = s"  %$resultReg = $instruction"
-  app.typeSpec.flatMap(TypeNameResolver.getMmlTypeName(_, state.resolvables).toOption) match
+  app.typeSpec.flatMap(getNominalTypeName(_).toOption) match
     case Some(typeName) =>
       CompileResult(
         resultReg,
@@ -457,7 +457,7 @@ private def compileStandardCall(
       )
     app.typeSpec match
       case Some(ts) =>
-        TypeNameResolver.getMmlTypeName(ts, finalState.resolvables) match
+        getNominalTypeName(ts) match
           case Right(typeName) =>
             CompileResult(loadReg, finalState, false, typeName).asRight
           case Left(_) =>
@@ -470,7 +470,7 @@ private def compileStandardCall(
       emitCall(resultReg.some, fnReturnType.some, fnName, args, aliasScopeTag, noaliasTag)
     app.typeSpec match
       case Some(ts) =>
-        TypeNameResolver.getMmlTypeName(ts, stateWithAlias.resolvables) match
+        getNominalTypeName(ts) match
           case Right(typeName) =>
             CompileResult(
               resultReg,
@@ -566,7 +566,7 @@ def compileIndirectCall(
               allArgs
             )
             app.typeSpec.flatMap(
-              TypeNameResolver.getMmlTypeName(_, stateAfterExtract.resolvables).toOption
+              getNominalTypeName(_).toOption
             ) match
               case Some(typeName) =>
                 CompileResult(

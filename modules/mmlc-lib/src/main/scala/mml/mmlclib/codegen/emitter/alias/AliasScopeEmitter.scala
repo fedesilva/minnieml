@@ -1,7 +1,7 @@
 package mml.mmlclib.codegen.emitter.alias
 
 import mml.mmlclib.ast.Type
-import mml.mmlclib.codegen.emitter.{CodeGenState, TypeNameResolver}
+import mml.mmlclib.codegen.emitter.{CodeGenState, getNominalTypeName}
 
 object AliasScopeEmitter:
 
@@ -12,7 +12,7 @@ object AliasScopeEmitter:
   ): (CodeGenState, Option[String], Option[String]) =
     if !state.emitAliasScopes then (state, None, None)
     else
-      TypeNameResolver.getMmlTypeName(typeSpec, state.resolvables) match
+      getNominalTypeName(typeSpec) match
         case Right(typeName) =>
           val (nextState, aliasTag, noaliasTag) = getAliasScopeTagsByNameImpl(typeName, state)
           (nextState, Some(aliasTag), noaliasTag)
