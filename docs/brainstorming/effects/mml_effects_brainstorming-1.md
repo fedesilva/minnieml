@@ -36,19 +36,19 @@ This allows dependency injection without boilerplate.
 import System.Log // Provides default 'Log' handler
 
 fn save_user(u) =
-    Log.info("Saving...") // Binds to System.Log
-    db_insert(u)
+    Log.info("Saving..."); // Binds to System.Log
+    db_insert(u);
 ;
 
 // Test Code (Uses Local Shadowing)
 fn test_save() =
     // LOCALLY handle the effect.
     // This shadows the global 'System.Log' for the scope of this block.
-    handle Log with MockLogger in {
-        save_user({name: "Test"}) 
+    handle Log with MockLogger in 
+        save_user({name: "Test"});
         // The compiler generates a SPECIALIZED version of 'save_user' 
         // that hardcodes calls to 'MockLogger'.
-    }
+    ;
 ;
 ```
 
