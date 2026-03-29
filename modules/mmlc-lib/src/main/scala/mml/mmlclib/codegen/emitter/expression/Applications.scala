@@ -560,67 +560,72 @@ def compileIndirectCall(
         )
 
     fnReturnTypeResult.flatMap { fnReturnType =>
-      // Look up the fat pointer { fn_ptr, env_ptr } from scope
-      val closureOp = functionScope.get(fnRef.name) match
-        case Some(entry) => Right(entry.operandStr)
-        case None =>
-          Left(
-            CodeGenError(
-              s"Function pointer '${fnRef.name}' not found in scope",
-              Some(fnRef)
+      resolveIndirectCallee(fnRef, argState, functionScope, compileExpr).flatMap {
+        case (closure, stateAfterCallee) =>
+          // Extract fn pointer and env from the fat pointer
+          val fnReg  = stateAfterCallee.nextRegister
+          val envReg = fnReg + 1
+          val extractFn =
+            emitExtractValue(fnReg, "{ ptr, ptr }", closure, 0)
+          val extractEnv =
+            emitExtractValue(envReg, "{ ptr, ptr }", closure, 1)
+          val stateAfterExtract = stateAfterCallee
+            .withRegister(envReg + 1)
+            .emit(extractFn)
+            .emit(extractEnv)
+
+          // Build args with env as the last parameter
+          val userArgs = compiledArgs.map(arg => (arg.llvmType, arg.op))
+          val allArgs  = userArgs :+ ("ptr", s"%$envReg")
+          val fnPtr    = s"%$fnReg"
+
+          if fnReturnType == "void" then
+            val callLine = emitIndirectCall(None, None, fnPtr, allArgs)
+            Right(
+              CompileResult(0, stateAfterExtract.emit(callLine), false, "Unit")
             )
-          )
-
-      closureOp.flatMap { closure =>
-        // Extract fn pointer and env from the fat pointer
-        val fnReg  = argState.nextRegister
-        val envReg = fnReg + 1
-        val extractFn =
-          emitExtractValue(fnReg, "{ ptr, ptr }", closure, 0)
-        val extractEnv =
-          emitExtractValue(envReg, "{ ptr, ptr }", closure, 1)
-        val stateAfterExtract = argState
-          .withRegister(envReg + 1)
-          .emit(extractFn)
-          .emit(extractEnv)
-
-        // Build args with env as the last parameter
-        val userArgs = compiledArgs.map(arg => (arg.llvmType, arg.op))
-        val allArgs  = userArgs :+ ("ptr", s"%$envReg")
-        val fnPtr    = s"%$fnReg"
-
-        if fnReturnType == "void" then
-          val callLine = emitIndirectCall(None, None, fnPtr, allArgs)
-          Right(
-            CompileResult(0, stateAfterExtract.emit(callLine), false, "Unit")
-          )
-        else
-          val resultReg = stateAfterExtract.nextRegister
-          val callLine = emitIndirectCall(
-            Some(resultReg),
-            Some(fnReturnType),
-            fnPtr,
-            allArgs
-          )
-          app.typeSpec.flatMap(getMmlTypeName) match
-            case Some(typeName) =>
-              Right(
-                CompileResult(
-                  resultReg,
-                  stateAfterExtract
-                    .withRegister(resultReg + 1)
-                    .emit(callLine),
-                  false,
-                  typeName
+          else
+            val resultReg = stateAfterExtract.nextRegister
+            val callLine = emitIndirectCall(
+              Some(resultReg),
+              Some(fnReturnType),
+              fnPtr,
+              allArgs
+            )
+            app.typeSpec.flatMap(getMmlTypeName) match
+              case Some(typeName) =>
+                Right(
+                  CompileResult(
+                    resultReg,
+                    stateAfterExtract
+                      .withRegister(resultReg + 1)
+                      .emit(callLine),
+                    false,
+                    typeName
+                  )
                 )
-              )
-            case None =>
-              Left(
-                CodeGenError(
-                  s"Could not determine MML type for indirect call result",
-                  Some(app)
+              case None =>
+                Left(
+                  CodeGenError(
+                    s"Could not determine MML type for indirect call result",
+                    Some(app)
+                  )
                 )
-              )
       }
     }
   }
+
+private def resolveIndirectCallee(
+  fnRef:         Ref,
+  state:         CodeGenState,
+  functionScope: Map[String, ScopeEntry],
+  compileExpr:   ExprCompiler
+): Either[CodeGenError, (String, CodeGenState)] =
+  functionScope.get(fnRef.name) match
+    case Some(entry) =>
+      Right((entry.operandStr, state))
+    case None =>
+      val calleeExpr = Expr(fnRef.source, List(fnRef), typeSpec = fnRef.typeSpec)
+      compileExpr(calleeExpr, state, functionScope).map { compiled =>
+        (compiled.operandStr, compiled.state)
+      }
