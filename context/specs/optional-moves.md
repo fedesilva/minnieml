@@ -112,9 +112,11 @@ Because escape analysis traces through callees, passing a borrowing closure to a
 
 Primitive types (Int, Float, Bool) are always copied. While `~` is allowed for consistency, it is a no-op for these types and does not restrict closure escape.
 
-## Protocols and `clone`
+## `clone`
 
 `clone` and `~` are distinct operations. `clone` (via the `Clone` protocol) creates a new owned value, while `~` transfers an existing one. Users decide which is appropriate based on whether they need to retain the original value.
+
+Note that protocols are not yet implemented and clones are not exposed to the user.
 
 ---
 
