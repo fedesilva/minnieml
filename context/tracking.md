@@ -31,11 +31,7 @@
     - Spec: `context/specs/lambdas-work-review.md`
     
   - Heap-capture follow-up
-    - [ ] 3.5.1 Literal heap captures: design decision
-      - Literal String bindings (`let s = "hello"`) have `Literal` ownership state, so freeing a captured literal String can free `.rodata`.
-      - Struct constructors already auto-clone literals for consuming params (`argNeedsClone`).
-      - Options: auto-clone at capture site, reject literal heap captures for now, or track heap-vs-static captures explicitly.
-      - Related: `let-shadow-in-lambda.mml` sample reproduces the issue.
+    - [x] 3.5.1 Literal heap captures: auto-clone at capture site (COMPLETE)
 
 #### Implement Optional Moves
  
@@ -75,6 +71,12 @@
 * Add commentary with examples to the parsers
 
 ## Change Log
+
+- 2026-03-29: #188 3.5.1 Literal heap capture auto-cloning
+  - AST: added `Capture` enum (`CapturedRef` / `CapturedLiteral`) to distinguish plain captures from literals that need cloning; `Lambda.captures` changed from `List[Ref]` to `List[Capture]`.
+  - Ownership: `Literal` state heap captures are no longer rejected; the ownership analyzer resolves the clone function ID and upgrades them to `CapturedLiteral`.
+  - Codegen: `emitCallSiteEnv` emits an ABI-lowered `__clone_T` call for `CapturedLiteral` captures before storing into the env struct.
+  - Mechanical: `CaptureAnalyzer`, `ClosureMemoryFnGenerator`, `TypeChecker`, `FunctionEmitter`, and tests updated for `Capture` unwrapping.
 
 - 2026-03-29: TypeNameResolver nominal-metadata cleanup
   - Codegen metadata: deleted `TypeNameResolver.scala`, added a standalone top-level nominal-name helper, and rewired emitter call sites so TBAA, alias-scope, and related metadata paths derive names from nominal AST types instead of reverse-mapping raw LLVM layouts.
