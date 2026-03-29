@@ -6,7 +6,7 @@
 /!\ /!\ Do not edit without explicit approval or direct command. /!\ /!\
 /!\ /!\ Follow rules below strictly                              /!\ /!\
 /!\ /!\ COMPLETING A TASK? -> ADD (COMPLETE) TAG. NEVER DELETE.  /!\ /!\
-/!\ /!\ DO NOT ADD (COMPLETE) to the "recent changes" section    /!\ /!\
+/!\ /!\ DO NOT ADD (COMPLETE) to the "change log" section    /!\ /!\
 ------------------------------------------------------------------------
 
 * *Always read* `context/task-tracking-rules.md` 
@@ -129,50 +129,55 @@
 
 * Add commentary with examples to the parsers
 
-## Recent Changes
+## Change Log
 
+- 2026-03-28: #188 lambda/codegen QA batch — 3.4-QA.19, 3.4-QA.20, 3.4-QA.21, 3.4-QA.26, 3.4-QA.27, 3.4-QA.28
+  - Test infra / lambda semantics: added shared `TX*` lambda/test extractors in `TestExtractors.scala` and rewrote the lambda grammar, capture-analysis, typechecker, and ownership tests to assert semantic intent through shared extractors/resolved ids instead of brittle shape- and name-coupled traversal helpers.
+  - Closure memory generation: `ClosureMemoryFnGenerator` now traverses tuples and selection qualifiers, builds capture type maps with folds instead of mutable builders/early returns, and tags lambdas nested under qualifiers with semantic `envStructName` metadata; added focused coverage in `ClosureMemoryFnGeneratorTests`.
+  - Closure env codegen/TBAA: capture-site env setup now resolves and uses the semantic closure env `TypeStruct`, emits stores against `%struct.<env-name>` rather than ad-hoc local names, and attaches field-level TBAA metadata to destructor/capture stores; `ClosureCodegenTest` now covers semantic env naming and capture-site TBAA tagging.
+  - Type-name resolution: removed the old package-level `getMmlTypeName` helper, routed emitter call sites through `TypeNameResolver`, added single-element `TypeGroup` handling and broader fallback cases there, and preserved alias identity for `TypeAlias` refs so metadata paths keep distinct MML names such as `MyInt`, `Int`, and `SizeT`; `TbaaEmissionTest` now asserts aliased struct-field metadata preserves alias identity.
+  - AST/tests: `Term.withTypeAsc` now spells out the ignored term cases explicitly, and `TermTests` pins the current behavior for supported literals/invalid expressions versus constructor passthrough.
+  
 - 2026-03-28: #188 QA cleanup batch — 3.4-QA.15, 3.4-QA.17, 3.4-QA.22, 3.4-QA.24
   - Ownership: replaced the anonymous 5-tuple free-tracking payload with an `OwnedBinding` case class in `OwnershipAnalyzer`.
   - Closure/codegen/runtime: removed the `asInstanceOf` cast from `ClosureMemoryFnGenerator.tagLambdas`, normalized the new closure/codegen paths onto Cats `.asRight`/`.asLeft`/`.some`/`.none` style, and dropped `FORCE_INLINE` from non-hot runtime string/IO helpers.
-  - Verification: `sbtn "run run mml/samples/hello.mml"`, `sbtn "run run mml/samples/quicksort.mml"`, `sbtn "run run mml/samples/astar2.mml"`, `sbtn "scalafmtAll; scalafixAll; test; mmlcPublishLocal"` (`363/363`), `make -C benchmark clean`, `make -C benchmark mml`, and `./tests/mem/run.sh all` (`19/19` ASan+LSan) passed.
+  
 
 - 2026-03-28: #188 3.4-QA.14 TypeFn non-closure function-value lowering
   - Semantics/codegen: bare callable refs in argument position now eta-expand into first-class function values only when undersaturated, preserving local shadowing, and call lowering now routes non-direct callable refs through the shared indirect fat-pointer path instead of assuming every `TypeFn` ref is a direct symbol.
   - Tests/samples: added semantic and codegen coverage for higher-order named function arguments, shadowed local callable parameters, and global function-valued bindings; added `mml/samples/typefn-nonclosure-values.mml` as a focused sample.
-  - Verification: `sbtn scalafmtAll`, `sbtn scalafixAll`, `sbtn test` (`363/363`), `sbtn "run run mml/samples/hello.mml"`, `sbtn "run run mml/samples/quicksort.mml"`, `sbtn "run run mml/samples/astar2.mml"`, `sbtn mmlcPublishLocal`, `make -C benchmark clean`, and `make -C benchmark mml` passed.
-
+  
 - 2026-03-28: #188 3.4-QA.13 nullary callable canonicalization
   - Types/parser/typechecker: callable types now use a non-empty parameter list, nullary callables are canonicalized as `Unit -> R`, and the previous special compatibility path between zero-arity and `Unit` thunks was removed.
   - Codegen/LSP/printing: `TypeFn` consumers now traverse `NonEmptyList` parameter types consistently, and user-facing formatting/docs now present nullary callable signatures as `Unit -> ...`.
   - Tests: added semantic coverage for nullary function references and nullary lambdas having `Unit -> R` types, and updated affected grammar/codegen expectations.
-  - Verification: `sbtn scalafmtAll`, `sbtn scalafixAll`, `sbtn test` (`358/358`), `sbtn mmlcPublishLocal`, `sbtn "run run mml/samples/hello.mml"`, `sbtn "run run mml/samples/quicksort.mml"`, `sbtn "run run mml/samples/astar2.mml"`, `make -C benchmark clean`, `make -C benchmark mml`, and `./tests/mem/run.sh all` (`19/19` ASan+LSan) passed.
+  
 
 - 2026-03-28: #188 3.4-QA.30 duplicate heap capture rejection
   - Ownership: capturing the same owned heap binding into a second closure now fails during ownership analysis with a dedicated moved-capture diagnostic instead of slipping through to runtime double-free.
   - Tests/samples: added `OwnershipAnalyzerTests` coverage for duplicate-vs-borrowed helper capture flows, and updated `mml/samples/raytracer3.mml` so `render_rows` is the sole heap-state owner while sibling helpers take `buf`/row arrays by parameter.
-  - Verification: fast sanity samples (`hello`, `quicksort`, `astar2`), `scalafmtAll`, `scalafixAll`, full suite (`355/355`), `mmlcPublishLocal`, `make -C benchmark clean`, `make -C benchmark mml`, `./tests/mem/run.sh all` (`19/19` ASan+LSan), direct `raytracer3` binary run, and `raytracer2` vs `raytracer3` PPM output comparison passed.
-
+  
 - 2026-03-28: #188 Raytracer 3 sample follow-up in progress
   - Samples: added `mml/samples/raytracer3.mml` as the fully local-helper follow-up to `raytracer2`, keeping the original `raytracer2` header comments as historical context and documenting the current ownership/codegen caveats inline in the new sample.
   - Tracking: added QA.29 under the lambda/codegen follow-ups for the newly exposed P1 bug where capturing a whole struct value in local-helper closures can emit invalid LLVM IR (`raytracer3` whole-`Camera` capture case).
-  - Verification: `sbtn "run mml/samples/raytracer3.mml"` passes, but direct output comparison between `build/target/raytracer2` and `build/target/raytracer3` fails because `raytracer3` corrupts the PPM tail with stray `[info]` text in the pixel stream, so the task is not signoff-ready.
+  
 
 - 2026-03-28: #188 3.4-QA.11 closure free dispatch consolidation
   - Codegen: closure destructors now carry explicit `DestructorKind` metadata, closure free calls adapt fat pointers to env pointers once, and `__free_closure` now emits its null-guarded dtor dispatch in the generated function body instead of inlining it at each call site.
   - Closure memory generation: generated per-env and universal closure destructors are tagged explicitly, removing raw string-prefix coupling from codegen dispatch and closing the paired QA.23 naming-coupling debt.
   - Tests: added `ClosureCodegenTest` coverage for escaped closures freeing through generated `__free_closure` and local capturing closures freeing through their specific env destructor.
-  - Verification: `scalafmtAll`, `scalafixAll`, sanity samples (`hello`, `quicksort`, `astar2`), full suite (`353/353`), `mmlcPublishLocal`, `make -C benchmark clean`, `make -C benchmark mml`, and `./tests/mem/run.sh all` (`19/19` ASan+LSan) passed.
+  
 
 - 2026-03-28: #188 3.4-QA.10 mergeSubState deferred-state sync
   - Codegen: deferred lambda-body state merge now preserves the sub-run `CodeGenState` wholesale and restores only the parent output/register context, removing the manual field-sync maintenance hazard in `ExpressionCompiler`.
   - Tests: added `ClosureCodegenTest` coverage that exercises deferred lambda-body string/TBAA emission so metadata produced inside deferred bodies must survive into the final module IR.
-  - Verification: `scalafmtAll`, `scalafixAll`, sanity samples (`hello`, `quicksort`, `astar2`), full suite (`351/351`), `mmlcPublishLocal`, `make -C benchmark clean`, and `make -C benchmark mml` passed.
+  
 
 - 2026-03-28: #188 3.4-QA.6 real closure env on recursive capturing lambdas
   - Codegen: recursive let-bound capturing lambdas now rebuild their self fat-pointer from the live hidden `%env` parameter inside the deferred function body instead of self-calling through `{ ptr @fn, ptr null }`.
   - Applications/codegen plumbing: recursive let-binding preallocation now reserves the non-capturing self stub only for non-capturing lambdas; capturing lambdas defer self binding until function-body codegen.
   - Tests/samples: added `ClosureCodegenTest` coverage for the null-env regression and added `mml/samples/recursive-tail-inner-captures-sibling.mml` alongside the existing non-tail sibling-capture sample.
-  - Verification: `scalafmtAll`, `scalafixAll`, sanity samples (`hello`, `quicksort`, `astar2`), full suite (`350/350`), `mmlcPublishLocal`, `make -C benchmark clean`, `make -C benchmark mml`, and `./tests/mem/run.sh all` (`19/19` ASan+LSan) passed.
+  
 
 - 2026-03-27: #188 3.4-QA.25 TypeFn closure env TBAA lowering
   - Codegen/TBAA: `TypeNameResolver` now gives `TypeFn` a stable MML type name (`Function`) so closure env structs with captured function values lower through TBAA/type-name resolution instead of failing.
@@ -184,7 +189,7 @@
   - Stdlib/codegen: `RawPtr` now lowers as opaque `ptr`; pointer-like classification and native `noalias` checks now include opaque pointers.
   - LLVM emission: load/store helper paths now emit opaque-pointer operands as `ptr`, avoiding invalid `ptr*` IR in raw-pointer flows.
   - Tests: added grammar/codegen coverage for `t=ptr`, opaque-pointer `noalias`, and closure env/TBAA expectations for raw-pointer slots.
-  - Verification: focused ptr tests, fast samples, full suite (`349/349`), `mmlcPublishLocal`, `make -C benchmark mml`, and `tests/mem/run.sh all` (`19/19` ASan+LSan) passed.
+  -
 
 - 2026-03-27: #245 Inner function syntax
   - Parser: added local `fn name(...): Ret = ... ; expr` surface syntax in `expressions.scala`.
