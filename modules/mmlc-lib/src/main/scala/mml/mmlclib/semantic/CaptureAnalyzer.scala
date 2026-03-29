@@ -121,7 +121,7 @@ object CaptureAnalyzer:
     val allCaptures = deduplicateRefs(directCaptures ++ nestedCaptures)
 
     if allCaptures.nonEmpty || (newBody ne lambda.body) then
-      lambda.copy(body = newBody, captures = allCaptures)
+      lambda.copy(body = newBody, captures = allCaptures.map(Capture.CapturedRef(_)))
     else lambda
 
   private def collectCaptureRefs(
@@ -144,7 +144,7 @@ object CaptureAnalyzer:
     ownParamIds: Set[String]
   ): List[Ref] =
     collectNestedLambdas(expr).flatMap { nested =>
-      nested.captures.filter { ref =>
+      nested.captures.map(_.ref).filter { ref =>
         ref.resolvedId.exists { id =>
           localIds.contains(id) && !ownParamIds.contains(id)
         }

@@ -1245,14 +1245,21 @@ object TypeChecker:
       else Vector.empty
     val lambdaTypeSpec = bodyType.flatMap(buildFunctionTypeSpec(lambda.source, paramsWithSpecs, _))
     // Update capture Refs with types resolved from param context or module
-    val typedCaptures = lambda.captures.map { ref =>
-      if ref.typeSpec.isDefined then ref
+    val typedCaptures = lambda.captures.map { cap =>
+      val ref = cap.ref
+      if ref.typeSpec.isDefined then cap
       else
         val captureType = lambdaParamContext
           .get(ref.name)
           .flatMap(p => p.typeSpec.orElse(p.typeAsc))
           .orElse(resolveRefType(ref, module))
-        captureType.map(t => ref.copy(typeSpec = Some(t))).getOrElse(ref)
+        captureType match
+          case Some(t) =>
+            val typedRef = ref.copy(typeSpec = Some(t))
+            cap match
+              case Capture.CapturedRef(_) => Capture.CapturedRef(typedRef)
+              case Capture.CapturedLiteral(_, id) => Capture.CapturedLiteral(typedRef, id)
+          case None => cap
     }
     CheckResult(
       lambda.copy(

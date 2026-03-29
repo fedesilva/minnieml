@@ -367,7 +367,7 @@ private case class EnvSetupResult(
   siteState:    CodeGenState,
   fpRegister:   Int,
   envTypeRef:   String,
-  captureTypes: List[(Ref, String)]
+  captureTypes: List[(Capture, String)]
 )
 
 private def resolveClosureEnvStruct(
@@ -416,9 +416,10 @@ private def emitCallSiteEnv(
 ): Either[CodeGenError, EnvSetupResult] =
   for
     envStruct <- resolveClosureEnvStruct(lambda, state)
-    captureTypes <- lambda.captures.traverse { ref =>
+    captureTypes <- lambda.captures.traverse { cap =>
+      val ref = cap.ref
       ref.typeSpec match
-        case Some(ts) => getLlvmType(ts, state).map(t => (ref, t))
+        case Some(ts) => getLlvmType(ts, state).map(t => (cap, t))
         case None =>
           CodeGenError(s"Capture '${ref.name}' has no type", ref.some).asLeft
     }
@@ -457,11 +458,54 @@ private def emitCallSiteEnv(
       stateWithDtorTag.withRegister(dtorGepReg + 1).emit(dtorGepLine).emit(dtorStoreLine)
 
     val siteStateAfterCaptures =
-      captureTypes.zipWithIndex.foldLeft(siteStateAfterDtor) { case (st, ((ref, llvmType), idx)) =>
-        val capOp = functionScope.get(ref.name) match
+      captureTypes.zipWithIndex.foldLeft(siteStateAfterDtor) { case (st, ((cap, llvmType), idx)) =>
+        val ref = cap.ref
+        val rawCapOp = functionScope.get(ref.name) match
           case Some(entry) => entry.operandStr
           case None => s"@${ref.name}"
-        val gepReg = st.nextRegister
+
+        // CapturedLiteral: emit ABI-lowered clone call before storing into env
+        val (stateBeforeStore, capOp) = cap match
+          case Capture.CapturedLiteral(_, cloneFnId) =>
+            val cloneFnMmlName = st.resolvables.resolvables
+              .collectFirst {
+                case (id, bnd: Bnd) if id == cloneFnId => bnd.name
+              }
+              .getOrElse(cloneFnId.split("::").last)
+            val cloneFnLlvmName = resolveMemFnLlvmName(cloneFnMmlName, st)
+            // ABI-lower the clone argument (struct types split into fields on x86_64)
+            val rawArgs          = List((rawCapOp, llvmType))
+            val (lowered, stLow) = st.abi.lowerArgs(rawArgs, st)
+            val callArgs         = lowered.map((op, typ) => (typ, op))
+            val declParamTypes   = lowered.map(_._2)
+            val needsSret        = stLow.abi.needsSret(llvmType, stLow)
+            if needsSret then
+              val (retReg, stAfterCall) = stLow.abi.emitSretCall(
+                cloneFnLlvmName,
+                llvmType,
+                callArgs,
+                stLow,
+                (reg, retTy, fn, args, _, _) => emitCall(reg, retTy, fn, args),
+                None,
+                None
+              )
+              val stWithDecl = stAfterCall
+                .withFunctionDeclaration(cloneFnLlvmName, "void", "ptr" :: declParamTypes)
+              (stWithDecl, s"%$retReg")
+            else
+              val cloneReg = stLow.nextRegister
+              val stWithDecl = stLow.withFunctionDeclaration(
+                cloneFnLlvmName,
+                llvmType,
+                declParamTypes
+              )
+              val cloneLine =
+                emitCall(cloneReg.some, llvmType.some, cloneFnLlvmName, callArgs)
+              (stWithDecl.withRegister(cloneReg + 1).emit(cloneLine), s"%$cloneReg")
+          case _ =>
+            (st, rawCapOp)
+
+        val gepReg = stateBeforeStore.nextRegister
         val gepLine = emitGetElementPtr(
           gepReg,
           envTypeRef,
@@ -470,7 +514,9 @@ private def emitCallSiteEnv(
           List(("i32", "0"), ("i32", (idx + 1).toString))
         )
         val (stateWithFieldTag, fieldTag) =
-          TbaaEmitter.getTbaaStructFieldTag(envStruct, idx + 1, st).getOrElse((st, ""))
+          TbaaEmitter
+            .getTbaaStructFieldTag(envStruct, idx + 1, stateBeforeStore)
+            .getOrElse((stateBeforeStore, ""))
         val storeLine = emitStore(
           capOp,
           llvmType,

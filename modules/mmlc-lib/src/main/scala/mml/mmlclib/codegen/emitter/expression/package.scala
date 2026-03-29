@@ -2,7 +2,13 @@ package mml.mmlclib.codegen.emitter.expression
 
 import cats.syntax.all.*
 import mml.mmlclib.ast.*
-import mml.mmlclib.codegen.emitter.{CodeGenError, CodeGenState, CompileResult, getLlvmType, getNominalTypeName}
+import mml.mmlclib.codegen.emitter.{
+  CodeGenError,
+  CodeGenState,
+  CompileResult,
+  getLlvmType,
+  getNominalTypeName
+}
 
 // ============================================================================
 // Template Extraction Helpers

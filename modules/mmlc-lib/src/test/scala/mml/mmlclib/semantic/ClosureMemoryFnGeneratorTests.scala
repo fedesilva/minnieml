@@ -28,7 +28,7 @@ class ClosureMemoryFnGeneratorTests extends BaseEffFunSuite:
       source   = synth,
       params   = List(FnParam(synth, Name.synth("x"), typeAsc = Some(intType))),
       body     = Expr(synth, List(capturedRef)),
-      captures = List(capturedRef)
+      captures = List(Capture.CapturedRef(capturedRef))
     )
     val selectedRef = Ref(
       source    = synth,

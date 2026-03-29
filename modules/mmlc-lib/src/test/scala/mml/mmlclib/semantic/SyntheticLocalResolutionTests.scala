@@ -39,7 +39,7 @@ class SyntheticLocalResolutionTests extends BaseEffFunSuite:
   private def collectRefs(term: Term): List[Ref] =
     term match
       case expr:   Expr => expr.terms.flatMap(collectRefs)
-      case lambda: Lambda => lambda.captures ++ collectRefs(lambda.body)
+      case lambda: Lambda => lambda.captures.map(_.ref) ++ collectRefs(lambda.body)
       case App(_, fn, arg, _, _) =>
         collectRefsFromAppFn(fn) ++ collectRefs(arg)
       case Cond(_, cond, ifTrue, ifFalse, _, _) =>
