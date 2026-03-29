@@ -3,6 +3,7 @@ package mml.mmlclib.semantic
 import cats.data.NonEmptyList
 import mml.mmlclib.ast.*
 import mml.mmlclib.test.BaseEffFunSuite
+import mml.mmlclib.test.TestExtractors.*
 
 class TypeCheckerTests extends BaseEffFunSuite:
 
@@ -11,64 +12,6 @@ class TypeCheckerTests extends BaseEffFunSuite:
       case List(TypeRef(_, "Unit", _, _)) => true
       case List(TypeUnit(_)) => true
       case _ => false
-
-  private def collectLambdaLiterals(module: Module): List[Lambda] =
-    module.members.flatMap {
-      case bnd: Bnd if bnd.meta.isDefined =>
-        bnd.value.terms match
-          case (lambda: Lambda) :: _ =>
-            collectLambdaLiteralsInExpr(lambda.body)
-          case _ => Nil
-      case bnd: Bnd =>
-        collectLambdaLiteralsInExpr(bnd.value)
-      case _ => Nil
-    }
-
-  private def collectLambdaLiteralsInExpr(expr: Expr): List[Lambda] =
-    expr.terms.flatMap {
-      case lambda: Lambda =>
-        lambda :: collectLambdaLiteralsInExpr(lambda.body)
-      case app: App =>
-        app.fn match
-          case fnLambda: Lambda if fnLambda.source != app.source =>
-            fnLambda :: collectLambdaLiteralsInExpr(fnLambda.body) ++
-              collectLambdaLiteralsInExpr(app.arg)
-          case fnLambda: Lambda =>
-            collectLambdaLiteralsInExpr(fnLambda.body) ++
-              collectLambdaLiteralsInExpr(app.arg)
-          case _ =>
-            collectLambdaLiteralsInAppFn(app.fn) ++
-              collectLambdaLiteralsInExpr(app.arg)
-      case cond: Cond =>
-        collectLambdaLiteralsInExpr(cond.cond) ++
-          collectLambdaLiteralsInExpr(cond.ifTrue) ++
-          collectLambdaLiteralsInExpr(cond.ifFalse)
-      case nested: Expr =>
-        collectLambdaLiteralsInExpr(nested)
-      case group: TermGroup =>
-        collectLambdaLiteralsInExpr(group.inner)
-      case tuple: Tuple =>
-        tuple.elements.toList.flatMap(collectLambdaLiteralsInExpr)
-      case _ =>
-        Nil
-    }
-
-  private def collectLambdaLiteralsInAppFn(fn: Ref | App | Lambda): List[Lambda] =
-    fn match
-      case _:   Ref => Nil
-      case app: App =>
-        collectLambdaLiteralsInAppFn(app.fn) ++
-          collectLambdaLiteralsInExpr(app.arg)
-      case lambda: Lambda =>
-        lambda :: collectLambdaLiteralsInExpr(lambda.body)
-
-  private def findLambdaLiteral(
-    module:     Module,
-    paramNames: List[String]
-  ): Lambda =
-    collectLambdaLiterals(module)
-      .find(_.params.map(_.name) == paramNames)
-      .getOrElse(fail(s"Expected lambda literal with params ${paramNames.mkString(", ")}"))
 
   test("should correctly type a multi-argument function application") {
     val code =
@@ -284,7 +227,7 @@ class TypeCheckerTests extends BaseEffFunSuite:
   test("lambda literal infers param type from operator usage") {
     val code = "let f = { x -> x + 1; };"
     semNotFailed(code).map { module =>
-      val lambda = findLambdaLiteral(module, List("x"))
+      val lambda = onlyUserLambda(module).getOrElse(fail("Expected one lambda literal"))
       lambda.params.head.typeSpec match
         case Some(TypeRef(_, "Int", _, _)) => ()
         case other => fail(s"Expected x: Int, got $other")
@@ -298,7 +241,7 @@ class TypeCheckerTests extends BaseEffFunSuite:
         let f = { y -> inc y; };
       """
     semNotFailed(code).map { module =>
-      val lambda = findLambdaLiteral(module, List("y"))
+      val lambda = onlyUserLambda(module).getOrElse(fail("Expected one lambda literal"))
       lambda.params.head.typeSpec match
         case Some(TypeRef(_, "Int", _, _)) => ()
         case other => fail(s"Expected y: Int, got $other")
@@ -308,7 +251,7 @@ class TypeCheckerTests extends BaseEffFunSuite:
   test("lambda literal infers param type through let alias") {
     val code = "let f = { x -> let y = x; y + 1; };"
     semNotFailed(code).map { module =>
-      val lambda = findLambdaLiteral(module, List("x"))
+      val lambda = onlyUserLambda(module).getOrElse(fail("Expected one lambda literal"))
       lambda.params.head.typeSpec match
         case Some(TypeRef(_, "Int", _, _)) => ()
         case other => fail(s"Expected x: Int, got $other")
@@ -324,7 +267,7 @@ class TypeCheckerTests extends BaseEffFunSuite:
         ;
       """
     semNotFailed(code).map { module =>
-      val lambda = findLambdaLiteral(module, List("x"))
+      val lambda = onlyUserLambda(module).getOrElse(fail("Expected one lambda literal"))
       lambda.params.head.typeSpec match
         case Some(TypeRef(_, "Int", _, _)) => ()
         case other => fail(s"Expected x: Int, got $other")
@@ -374,7 +317,7 @@ class TypeCheckerTests extends BaseEffFunSuite:
         let r = applyFloat { x -> x + 1; } 1.0;
       """
     semState(code).map { result =>
-      val lambda = findLambdaLiteral(result.module, List("x"))
+      val lambda = onlyUserLambda(result.module).getOrElse(fail("Expected one lambda literal"))
       lambda.params.head.typeSpec match
         case Some(TypeRef(_, "Float", _, _)) => ()
         case other => fail(s"Expected x: Float from call-site context, got $other")

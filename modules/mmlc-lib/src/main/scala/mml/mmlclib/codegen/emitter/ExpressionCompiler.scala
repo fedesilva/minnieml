@@ -4,7 +4,7 @@ import cats.syntax.all.*
 import mml.mmlclib.ast.*
 import mml.mmlclib.codegen.emitter.alias.AliasScopeEmitter
 import mml.mmlclib.codegen.emitter.expression.*
-import mml.mmlclib.codegen.emitter.tbaa.TbaaEmitter.getTbaaTag
+import mml.mmlclib.codegen.emitter.tbaa.TbaaEmitter
 
 /** Handles code generation for expressions, terms, and operators. */
 
@@ -73,7 +73,7 @@ def compileTerm(
                 case Right(llvmType) =>
                   val reg                      = state.nextRegister
                   val globalName               = getResolvedName(ref, state)
-                  val (stateWithTbaa, tbaaTag) = getTbaaTag(typeSpec, state)
+                  val (stateWithTbaa, tbaaTag) = TbaaEmitter.getTbaaTag(typeSpec, state)
                   val (stateWithAlias, aliasTag, noaliasTag) =
                     AliasScopeEmitter.getAliasScopeTags(typeSpec, stateWithTbaa)
                   val line = emitLoad(
@@ -85,15 +85,15 @@ def compileTerm(
                     noaliasTag
                   )
 
-                  getMmlTypeName(typeSpec) match {
-                    case Some(typeName) =>
+                  TypeNameResolver.getMmlTypeName(typeSpec, stateWithAlias.resolvables) match {
+                    case Right(typeName) =>
                       CompileResult(
                         reg,
                         stateWithAlias.withRegister(reg + 1).emit(line),
                         false,
                         typeName
                       ).asRight
-                    case None =>
+                    case Left(_) =>
                       CodeGenError(
                         s"Could not determine MML type name for global reference '${ref.name}'",
                         ref.some
@@ -332,7 +332,9 @@ private def compileNonCapturingLambda(
 ): Either[CodeGenError, CompileResult] =
   val subState = state.copy(output = List.empty, nextRegister = 0)
   val paramScope = filteredParamsWithTypes.zipWithIndex.map { case ((param, _), idx) =>
-    val mmlType = param.typeAsc.flatMap(getMmlTypeName).getOrElse("Unknown")
+    val mmlType = param.typeAsc
+      .flatMap(TypeNameResolver.getMmlTypeName(_, state.resolvables).toOption)
+      .getOrElse("Unknown")
     (param.name, ScopeEntry(idx, mmlType))
   }.toMap
   val bodyState = subState.withRegister(envParamIdx + 1)
@@ -361,6 +363,21 @@ private case class EnvSetupResult(
   envTypeRef:   String,
   captureTypes: List[(Ref, String)]
 )
+
+private def resolveClosureEnvStruct(
+  lambda: Lambda,
+  state:  CodeGenState
+): Either[CodeGenError, TypeStruct] =
+  lambda.meta.flatMap(_.envStructName) match
+    case Some(envStructName) =>
+      state.resolvables.resolvableTypes.values.collectFirst {
+        case ts: TypeStruct if ts.name == envStructName => ts
+      } match
+        case Some(envStruct) => envStruct.asRight
+        case None =>
+          CodeGenError(s"Missing closure env struct '$envStructName'", lambda.some).asLeft
+    case None =>
+      CodeGenError("Capturing lambda missing envStructName", lambda.some).asLeft
 
 private def emitRecursiveSelfClosure(
   fnName:       String,
@@ -391,41 +408,47 @@ private def emitCallSiteEnv(
   fnName:        String,
   functionScope: Map[String, ScopeEntry]
 ): Either[CodeGenError, EnvSetupResult] =
-  val captureTypesResult = lambda.captures.traverse { ref =>
-    ref.typeSpec match
-      case Some(ts) => getLlvmType(ts, state).map(t => (ref, t))
-      case None =>
-        CodeGenError(s"Capture '${ref.name}' has no type", ref.some).asLeft
-  }
-
-  captureTypesResult.map { captureTypes =>
-    val capLlvmTypes = captureTypes.map(_._2)
-    val envTypeName  = s"closure_env_$fnName"
-    val envTypeDef   = emitTypeDefinition(envTypeName, "ptr" :: capLlvmTypes)
-    val envTypeRef   = s"%$envTypeName"
-
+  for
+    envStruct <- resolveClosureEnvStruct(lambda, state)
+    captureTypes <- lambda.captures.traverse { ref =>
+      ref.typeSpec match
+        case Some(ts) => getLlvmType(ts, state).map(t => (ref, t))
+        case None =>
+          CodeGenError(s"Capture '${ref.name}' has no type", ref.some).asLeft
+    }
+  yield
+    val envTypeRef = s"%struct.${envStruct.name}"
     val stateWithEnv = state
-      .withNativeType(envTypeName, envTypeDef)
       .withFunctionDeclaration("malloc", "ptr", List("i64"))
       .withFunctionDeclaration("free", "void", List("ptr"))
 
-    val envSize   = sizeOfLlvmStructResolved("ptr" :: capLlvmTypes, stateWithEnv)
+    val envSize   = sizeOfLlvmTypeResolved(envTypeRef, stateWithEnv)
     val mallocReg = stateWithEnv.nextRegister
     val mallocLine =
       emitCall(mallocReg.some, "ptr".some, "malloc", List(("i64", envSize.toString)))
     val siteStateAfterMalloc = stateWithEnv.withRegister(mallocReg + 1).emit(mallocLine)
 
-    val dtorName = lambda.meta
-      .flatMap(_.envStructName)
-      .map(n => s"__free_$n")
-      .getOrElse("__free_closure")
+    val dtorName   = s"__free_${envStruct.name}"
     val dtorGepReg = siteStateAfterMalloc.nextRegister
-    val dtorGepLine =
-      s"  %$dtorGepReg = getelementptr $envTypeRef, ptr %$mallocReg, i32 0, i32 0"
-    val dtorStoreLine =
-      s"  store ptr @${state.mangleName(dtorName)}, ptr %$dtorGepReg"
+    val dtorGepLine = emitGetElementPtr(
+      dtorGepReg,
+      envTypeRef,
+      "ptr",
+      s"%$mallocReg",
+      List(("i32", "0"), ("i32", "0"))
+    )
+    val (stateWithDtorTag, dtorTag) =
+      TbaaEmitter
+        .getTbaaStructFieldTag(envStruct, 0, siteStateAfterMalloc)
+        .getOrElse((siteStateAfterMalloc, ""))
+    val dtorStoreLine = emitStore(
+      s"@${state.mangleName(dtorName)}",
+      "ptr",
+      s"%$dtorGepReg",
+      Option.when(dtorTag.nonEmpty)(dtorTag)
+    )
     val siteStateAfterDtor =
-      siteStateAfterMalloc.withRegister(dtorGepReg + 1).emit(dtorGepLine).emit(dtorStoreLine)
+      stateWithDtorTag.withRegister(dtorGepReg + 1).emit(dtorGepLine).emit(dtorStoreLine)
 
     val siteStateAfterCaptures =
       captureTypes.zipWithIndex.foldLeft(siteStateAfterDtor) { case (st, ((ref, llvmType), idx)) =>
@@ -433,10 +456,22 @@ private def emitCallSiteEnv(
           case Some(entry) => entry.operandStr
           case None => s"@${ref.name}"
         val gepReg = st.nextRegister
-        val gepLine =
-          s"  %$gepReg = getelementptr $envTypeRef, ptr %$mallocReg, i32 0, i32 ${idx + 1}"
-        val storeLine = s"  store $llvmType $capOp, ptr %$gepReg"
-        st.withRegister(gepReg + 1).emit(gepLine).emit(storeLine)
+        val gepLine = emitGetElementPtr(
+          gepReg,
+          envTypeRef,
+          "ptr",
+          s"%$mallocReg",
+          List(("i32", "0"), ("i32", (idx + 1).toString))
+        )
+        val (stateWithFieldTag, fieldTag) =
+          TbaaEmitter.getTbaaStructFieldTag(envStruct, idx + 1, st).getOrElse((st, ""))
+        val storeLine = emitStore(
+          capOp,
+          llvmType,
+          s"%$gepReg",
+          Option.when(fieldTag.nonEmpty)(fieldTag)
+        )
+        stateWithFieldTag.withRegister(gepReg + 1).emit(gepLine).emit(storeLine)
       }
 
     val fp0Reg = siteStateAfterCaptures.nextRegister
@@ -449,7 +484,6 @@ private def emitCallSiteEnv(
       siteStateAfterCaptures.withRegister(fp1Reg + 1).emit(insertFn).emit(insertEnv)
 
     EnvSetupResult(siteState, fp1Reg, envTypeRef, captureTypes)
-  }
 
 /** Capturing lambda: allocate env at call site, load captures in deferred function body. */
 private def compileCapturingLambda(
@@ -469,7 +503,9 @@ private def compileCapturingLambda(
 
     val subState = siteState.copy(output = List.empty, nextRegister = 0)
     val paramScope = filteredParamsWithTypes.zipWithIndex.map { case ((param, _), idx) =>
-      val mmlType = param.typeAsc.flatMap(getMmlTypeName).getOrElse("Unknown")
+      val mmlType = param.typeAsc
+        .flatMap(TypeNameResolver.getMmlTypeName(_, siteState.resolvables).toOption)
+        .getOrElse("Unknown")
       (param.name, ScopeEntry(idx, mmlType))
     }.toMap
     val initialBodyState = subState.withRegister(envParamIdx + 1)
@@ -537,8 +573,8 @@ private def compileSelectionRef(
                     val fieldReg  = qualifierRes.state.nextRegister
                     val line =
                       emitExtractValue(fieldReg, structLlvmType, baseValue, fieldIndex)
-                    getMmlTypeName(fieldType) match
-                      case Some(typeName) =>
+                    TypeNameResolver.getMmlTypeName(fieldType, qualifierRes.state.resolvables) match
+                      case Right(typeName) =>
                         CompileResult(
                           fieldReg,
                           qualifierRes.state.withRegister(fieldReg + 1).emit(line),
@@ -546,7 +582,7 @@ private def compileSelectionRef(
                           typeName,
                           qualifierRes.exitBlock
                         ).asRight
-                      case None =>
+                      case Left(_) =>
                         CodeGenError(
                           s"Could not determine type name for selected field '${ref.name}'",
                           ref.some

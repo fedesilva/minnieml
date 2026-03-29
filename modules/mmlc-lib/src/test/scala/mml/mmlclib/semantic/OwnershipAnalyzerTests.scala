@@ -2,36 +2,9 @@ package mml.mmlclib.semantic
 
 import mml.mmlclib.ast.*
 import mml.mmlclib.test.BaseEffFunSuite
-
-import scala.annotation.tailrec
+import mml.mmlclib.test.TestExtractors.*
 
 class OwnershipAnalyzerTests extends BaseEffFunSuite:
-
-  // TODO:QA: move this extractors to a common module, they might be useful elsewhere.
-  private object Unwrapped:
-    @tailrec
-    def unapply(term: Term): Option[Term] =
-      term match
-        case TermGroup(_, Expr(_, List(inner), _, _), _) => unapply(inner)
-        case _ => Some(term)
-
-  private object Call1:
-    def unapply(term: Term): Option[(Term, Term)] =
-      term match
-        case Unwrapped(App(_, fn, Expr(_, List(arg), _, _), _, _)) => Some((fn, arg))
-        case _ => None
-
-  private object RefNamed:
-    def unapply(term: Term): Option[String] =
-      term match
-        case Unwrapped(ref: Ref) => Some(ref.name)
-        case _ => None
-
-  private object RefResolved:
-    def unapply(term: Term): Option[String] =
-      term match
-        case Unwrapped(ref: Ref) => ref.resolvedId
-        case _ => None
 
   private def existsTerm(term: Term)(p: PartialFunction[Term, Boolean]): Boolean =
     p.applyOrElse(term, (_: Term) => false) || (term match
@@ -65,34 +38,34 @@ class OwnershipAnalyzerTests extends BaseEffFunSuite:
 
   private def containsFreeOf(freeName: String)(term: Term): Boolean =
     existsTerm(term) {
-      case Call1(RefResolved(id), _) if id.endsWith("::" + freeName) => true
-      case Call1(RefNamed(name), _) if name == freeName => true
+      case TXCall1(TXRefResolved(id), _) if id.endsWith("::" + freeName) => true
+      case TXCall1(TXRefNamed(name), _) if name == freeName => true
     }
 
   private def containsFreeString(term: Term): Boolean =
     existsTerm(term) {
-      case Call1(RefResolved(id), _) if id.endsWith("::__free_String") => true
-      case Call1(RefNamed(name), _) if name == "__free_String" => true
+      case TXCall1(TXRefResolved(id), _) if id.endsWith("::__free_String") => true
+      case TXCall1(TXRefNamed(name), _) if name == "__free_String" => true
     }
 
   private def countFreesOf(name: String, term: Term): Int =
     countTerm(term) {
-      case Call1(fn, RefNamed(argName)) if argName == name =>
+      case TXCall1(fn, TXRefNamed(argName)) if argName == name =>
         fn match
-          case RefResolved(id) if id.endsWith("::__free_String") => 1
-          case RefNamed(n) if n == "__free_String" => 1
+          case TXRefResolved(id) if id.endsWith("::__free_String") => 1
+          case TXRefNamed(n) if n == "__free_String" => 1
           case _ => 0
     }
 
   private def containsCloneString(term: Term): Boolean =
     existsTerm(term) {
-      case RefResolved(id) if id.endsWith("::__clone_String") => true
-      case RefNamed(name) if name == "__clone_String" => true
+      case TXRefResolved(id) if id.endsWith("::__clone_String") => true
+      case TXRefNamed(name) if name == "__clone_String" => true
     }
 
   private def containsRefName(name: String)(term: Term): Boolean =
     existsTerm(term) {
-      case RefNamed(n) if n == name => true
+      case TXRefNamed(n) if n == name => true
     }
 
   test("caller frees value returned by user function that allocates internally") {

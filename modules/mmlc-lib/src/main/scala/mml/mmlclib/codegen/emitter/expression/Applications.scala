@@ -7,12 +7,12 @@ import mml.mmlclib.codegen.emitter.{
   CodeGenState,
   CompileResult,
   ScopeEntry,
+  TypeNameResolver,
   compileLambdaLiteral,
   emitCall,
   emitExtractValue,
   emitIndirectCall,
-  getLlvmType,
-  getMmlTypeName
+  getLlvmType
 }
 
 /** Collects all arguments from nested App nodes (handles curried applications).
@@ -144,7 +144,7 @@ private def compileBinaryNativeOp(
     line        = s"  %$resultReg = $instruction"
     finalState  = rightRes.state.withRegister(resultReg + 1).emit(line)
 
-    typeName <- getMmlTypeForOp(fnRef) match
+    typeName <- getMmlTypeForOp(fnRef, finalState.resolvables) match
       case Some(t) => t.asRight
       case None =>
         CodeGenError(
@@ -179,7 +179,7 @@ private def compileUnaryNativeOp(
     line        = s"  %$resultReg = $instruction"
     finalState  = operandRes.state.withRegister(resultReg + 1).emit(line)
 
-    typeName <- getMmlTypeForOp(fnRef) match
+    typeName <- getMmlTypeForOp(fnRef, finalState.resolvables) match
       case Some(t) => t.asRight
       case None =>
         CodeGenError(
@@ -242,10 +242,10 @@ def compileNullaryCall(
         )
       app.typeSpec match
         case Some(ts) =>
-          getMmlTypeName(ts) match
-            case Some(typeName) =>
+          TypeNameResolver.getMmlTypeName(ts, finalState.resolvables) match
+            case Right(typeName) =>
               CompileResult(loadReg, finalState, false, typeName).asRight
-            case None =>
+            case Left(_) =>
               CodeGenError(
                 s"Could not determine MML type name for function application result from spec: $ts",
                 app.some
@@ -260,15 +260,15 @@ def compileNullaryCall(
       val callLine  = emitCall(resultReg.some, fnReturnType.some, fnName, List.empty)
       app.typeSpec match
         case Some(ts) =>
-          getMmlTypeName(ts) match
-            case Some(typeName) =>
+          TypeNameResolver.getMmlTypeName(ts, state.resolvables) match
+            case Right(typeName) =>
               CompileResult(
                 resultReg,
                 state.withRegister(resultReg + 1).emit(callLine),
                 false,
                 typeName
               ).asRight
-            case None =>
+            case Left(_) =>
               CodeGenError(
                 s"Could not determine MML type name for function application result from spec: $ts",
                 app.some
@@ -406,7 +406,7 @@ private def compileFunctionWithTemplate(
         .replace("%type", args.headOption.map(_.llvmType).getOrElse(""))
 
   val line = s"  %$resultReg = $instruction"
-  app.typeSpec.flatMap(getMmlTypeName) match
+  app.typeSpec.flatMap(TypeNameResolver.getMmlTypeName(_, state.resolvables).toOption) match
     case Some(typeName) =>
       CompileResult(
         resultReg,
@@ -457,10 +457,10 @@ private def compileStandardCall(
       )
     app.typeSpec match
       case Some(ts) =>
-        getMmlTypeName(ts) match
-          case Some(typeName) =>
+        TypeNameResolver.getMmlTypeName(ts, finalState.resolvables) match
+          case Right(typeName) =>
             CompileResult(loadReg, finalState, false, typeName).asRight
-          case None =>
+          case Left(_) =>
             CodeGenError(s"Could not determine MML type name for result: $ts", app.some).asLeft
       case None =>
         CodeGenError(s"Missing return type for function '${fnRef.name}'", app.some).asLeft
@@ -470,15 +470,15 @@ private def compileStandardCall(
       emitCall(resultReg.some, fnReturnType.some, fnName, args, aliasScopeTag, noaliasTag)
     app.typeSpec match
       case Some(ts) =>
-        getMmlTypeName(ts) match
-          case Some(typeName) =>
+        TypeNameResolver.getMmlTypeName(ts, stateWithAlias.resolvables) match
+          case Right(typeName) =>
             CompileResult(
               resultReg,
               stateWithAlias.withRegister(resultReg + 1).emit(callLine),
               false,
               typeName
             ).asRight
-          case None =>
+          case Left(_) =>
             CodeGenError(s"Could not determine MML type name for result: $ts", app.some).asLeft
       case None =>
         CodeGenError(s"Missing return type for function '${fnRef.name}'", app.some).asLeft
@@ -565,7 +565,9 @@ def compileIndirectCall(
               fnPtr,
               allArgs
             )
-            app.typeSpec.flatMap(getMmlTypeName) match
+            app.typeSpec.flatMap(
+              TypeNameResolver.getMmlTypeName(_, stateAfterExtract.resolvables).toOption
+            ) match
               case Some(typeName) =>
                 CompileResult(
                   resultReg,
