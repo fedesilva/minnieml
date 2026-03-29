@@ -22,21 +22,31 @@
 * there are lambdas now, and captures and the memory management model has changed.
 
 
-### TypeNameResolver purpose and contract audit
+### TypeNameResolver purpose and contract audit (COMPLETE)
 
 * Background:
   - `TypeNameResolver.scala` was introduced during the memory-management/TBAA merge as the extracted source of MML type names for metadata-oriented codegen decisions.
   - `#188` / 3.4-QA.25 later extended it with `TypeFn => "Function"` specifically to unblock closure-env TBAA/layout handling for captured function values.
   - The current emitter work expands that helper further and now routes more codegen sites through it instead of the older local `getMmlTypeName` helper.
-* Complaint to investigate:
-  - the file now appears to serve multiple contracts at once: debug/display-ish type labels, alias-scope identities, and TBAA/type-metadata identities.
-  - the core question is not "which cases are still missing?" but "why should this resolution exist at all, and which consumers actually need it?"
-  - several mappings are hardcoded (`i1 -> Bool`, `i64 -> Int`, `void -> Unit`, pointer/native fallbacks), which may be conceptually wrong if a caller needs nominal identity rather than a collapsed/native-ish label.
-* Track:
-  - inventory why each current caller wants a "type name" in the first place
-  - inventory every current consumer of `TypeNameResolver.getMmlTypeName`
-  - define the intended contract for each consumer class (TBAA, alias metadata, compile-result type labels, etc.)
-  - decide whether any shared resolver is justified, or whether these concerns should split into separate APIs with different semantics
+* Findings:
+  - `TypeNameResolver` is a crutch that attempts to reverse-engineer nominal types from raw LLVM layouts (e.g., `i1 -> Bool`, `i64 -> Int`).
+  - This is fundamentally wrong because MML has a nominal type system. Distinct native types sharing the same layout (e.g. `i1`) are not equivalent and cannot be safely reverse-mapped.
+  - The resolver only exists to mask bugs where earlier phases (like type resolution or inference) lose the nominal `TypeRef` wrapper and attach a bare `NativePrimitive` to a term's `typeSpec`.
+  - We already have the true nominal name in the `TypeRef` / `TypeStruct` AST nodes. We should just use it directly.
+  1. Does TypeResolver or TypeChecker strip nominal types?
+      NO. I verified the source of TypeResolver.scala and TypeChecker.scala. They both strictly preserve TypeRef wrappers. When resolving type Int = Int64, the typeSpec of the
+  alias becomes TypeRef("Int64"), not the underlying NativePrimitive. LiteralInt is also initialized with TypeRef("Int") and keeps it through all phases.
+   2. Why do the NativePrimitive and NativePointer fallbacks exist?
+      They only exist to support broken test fixtures. I found that TbaaEmissionTest.scala (and others) manually construct NativeStruct nodes with bare NativePrimitive fields:
+   1     // modules/mmlc-lib/src/test/scala/mml/mmlclib/codegen/TbaaEmissionTest.scala:227
+   2     ("a", NativePrimitive(span, "i64")), // <--- Bypasses nominal system
+      Since the MML grammar doesn't allow bare native types in field ascriptions, these ASTs are "illegal" relative to what the parser produces. TypeNameResolver was written to
+  guess "Int" or "Bool" so these tests wouldn't fail.
+* Plan:
+  - [ ] Delete `TypeNameResolver.scala`.
+  - [ ] Update TBAA, Alias Scopes, and Debugging emission to extract the nominal name directly from the `TypeRef` / `TypeStruct` AST nodes.
+  - [ ] Enforce correctness: If codegen encounters a bare `NativePrimitive` or `NativePointer` when it needs a nominal name, it must return a `Left(CodeGenError(...))` to expose the upstream type-leak rather than guessing. 
+  - [ ] Identify and fix the root cause type leaks: Ensure that literal instantiation, type inference, and semantic type resolution (e.g. `TypeResolver` / `TypeChecker`) never strip away the `TypeRef` wrappers to expose bare native layout types in an expression's `typeSpec`.
 * Related existing follow-ups:
   - `#188` 3.4-QA.25 TypeFn closure env TBAA lowering
   - `#188` 3.4-QA.26 getMmlTypeName helper consolidation
