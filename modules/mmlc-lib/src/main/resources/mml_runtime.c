@@ -275,7 +275,7 @@ FORCE_INLINE void buffer_writeln_float(Buffer b, float value)
 }
 
 // --- Read a line from stdin ---
-FORCE_INLINE String readline()
+String readline()
 {
     mml_sys_flush();
     size_t size = 1024;
@@ -300,7 +300,7 @@ FORCE_INLINE String readline()
 }
 
 // --- Print a string (no newline) ---
-FORCE_INLINE void print(String str)
+void print(String str)
 {
     Buffer out = get_stdout_buffer();
     if (out)
@@ -334,7 +334,7 @@ StringBuilder *string_builder_new(size_t initial_capacity)
     return sb;
 }
 
-FORCE_INLINE void string_builder_append(StringBuilder *sb, String str)
+void string_builder_append(StringBuilder *sb, String str)
 {
     if (!sb || !str.data)
         return;
@@ -352,7 +352,7 @@ FORCE_INLINE void string_builder_append(StringBuilder *sb, String str)
     sb->buffer[sb->length] = '\0';
 }
 
-FORCE_INLINE String string_builder_finalize(StringBuilder *sb)
+String string_builder_finalize(StringBuilder *sb)
 {
     if (!sb)
         return (String){0, NULL};
@@ -370,7 +370,7 @@ FORCE_INLINE String string_builder_finalize(StringBuilder *sb)
 }
 
 // --- Print a string with newline ---
-FORCE_INLINE void println(String str)
+void println(String str)
 {
     Buffer out = get_stdout_buffer();
     if (out)
@@ -393,7 +393,7 @@ FORCE_INLINE void println(String str)
 }
 
 // --- Substring ---
-FORCE_INLINE String substring(String s, size_t start, size_t len)
+String substring(String s, size_t start, size_t len)
 {
     if (start >= s.length || !s.data)
         return (String){0, NULL};
@@ -410,7 +410,7 @@ FORCE_INLINE String substring(String s, size_t start, size_t len)
 }
 
 // --- Free String Memory ---
-FORCE_INLINE void free_string(String str)
+void free_string(String str)
 {
     if (str.data)
     {
@@ -419,7 +419,7 @@ FORCE_INLINE void free_string(String str)
 }
 
 // --- String Concatenation ---
-FORCE_INLINE String concat(String a, String b)
+String concat(String a, String b)
 {
     // Return empty string if either input is invalid
     if (!a.data && !b.data)
@@ -560,7 +560,7 @@ int64_t str_to_int(String s)
 // --- File Handling ---
 
 // Helper: convert MML String to null-terminated C string
-FORCE_INLINE char *to_cstr(String s)
+char *to_cstr(String s)
 {
     char *cstr = (char *)malloc(s.length + 1);
     if (!cstr)

@@ -44,15 +44,15 @@
     - [x] 3.4-QA.11 (P2) Two codepaths for closure free could diverge (`Applications.scala`)
     - [x] 3.4-QA.13 (P3) Nullary/Unit thunk unification may mask type errors (`TypeChecker.scala`)
     - [x] 3.4-QA.14 (P3) TypeFn globally mapped to fat pointer may affect non-closure contexts (`codegen/emitter/package.scala`)
-    - [ ] 3.4-QA.15 (P3) OwnershipAnalyzer 5-tuples should be a case class (`OwnershipAnalyzer.scala`)
+    - [x] 3.4-QA.15 (P3) OwnershipAnalyzer 5-tuples should be a case class (`OwnershipAnalyzer.scala`)
     - [ ] 3.4-QA.16 (P3) Term.withTypeAsc silently ignores unknown term types (`ast/terms.scala`)
-    - [ ] 3.4-QA.17 (P3) FORCE_INLINE on non-hot-path runtime functions (`mml_runtime.c`)
+    - [x] 3.4-QA.17 (P3) FORCE_INLINE on non-hot-path runtime functions (`mml_runtime.c`)
     - [ ] 3.4-QA.19 (P2) Replace shape-coupled/name-coupled lambda semantic tests with semantic extractors (`CaptureAnalyzerTests.scala`, `TypeCheckerTests.scala`, `LambdaLitTests.scala`)
     - [ ] 3.4-QA.20 (P3) Remove new `TODO:QA` by extracting ownership test helpers or tracking them properly (`OwnershipAnalyzerTests.scala`)
     - [ ] 3.4-QA.21 (P2) Mutable traversals + early returns in ClosureMemoryFnGenerator — replace var/builder/return with folds and if-else (`ClosureMemoryFnGenerator.scala`)
-    - [ ] 3.4-QA.22 (P2) asInstanceOf cast in ClosureMemoryFnGenerator.tagLambdas breaks no-exceptions rule (`ClosureMemoryFnGenerator.scala:312`)
+    - [x] 3.4-QA.22 (P2) asInstanceOf cast in ClosureMemoryFnGenerator.tagLambdas breaks no-exceptions rule (`ClosureMemoryFnGenerator.scala:312`)
     - [x] 3.4-QA.23 (P3) Hardcoded string name matching for closure free dispatch (`Applications.scala:312,316`)
-    - [ ] 3.4-QA.24 (P3) Inconsistent Cats syntax in new codegen code — use .asRight/.asLeft/.some/.none (`ExpressionCompiler.scala`, `Applications.scala`)    
+    - [x] 3.4-QA.24 (P3) Inconsistent Cats syntax in new codegen code — use .asRight/.asLeft/.some/.none (`ExpressionCompiler.scala`, `Applications.scala`)    
     - [ ] 3.4-QA.26 (P3) getMmlTypeName helper consolidation (`codegen/emitter/package.scala`, `TypeNameResolver.scala`, emitter call sites`)
     - [ ] 3.4-QA.27 (P3) Converge closure env LLVM type naming with semantic env struct ids (`ExpressionCompiler.scala`, `ClosureMemoryFnGenerator.scala`, env TBAA/type emission`)
     - [ ] 3.4-QA.28 (P3) Attach TBAA metadata to closure env stores at capture sites (`ExpressionCompiler.scala`, `emitCallSiteEnv`)
@@ -110,6 +110,11 @@
 * Add commentary with examples to the parsers
 
 ## Recent Changes
+
+- 2026-03-28: #188 QA cleanup batch — 3.4-QA.15, 3.4-QA.17, 3.4-QA.22, 3.4-QA.24
+  - Ownership: replaced the anonymous 5-tuple free-tracking payload with an `OwnedBinding` case class in `OwnershipAnalyzer`.
+  - Closure/codegen/runtime: removed the `asInstanceOf` cast from `ClosureMemoryFnGenerator.tagLambdas`, normalized the new closure/codegen paths onto Cats `.asRight`/`.asLeft`/`.some`/`.none` style, and dropped `FORCE_INLINE` from non-hot runtime string/IO helpers.
+  - Verification: `sbtn "run run mml/samples/hello.mml"`, `sbtn "run run mml/samples/quicksort.mml"`, `sbtn "run run mml/samples/astar2.mml"`, `sbtn "scalafmtAll; scalafixAll; test; mmlcPublishLocal"` (`363/363`), `make -C benchmark clean`, `make -C benchmark mml`, and `./tests/mem/run.sh all` (`19/19` ASan+LSan) passed.
 
 - 2026-03-28: #188 3.4-QA.14 TypeFn non-closure function-value lowering
   - Semantics/codegen: bare callable refs in argument position now eta-expand into first-class function values only when undersaturated, preserving local shadowing, and call lowering now routes non-direct callable refs through the shared indirect fat-pointer path instead of assuming every `TypeFn` ref is a direct symbol.

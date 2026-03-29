@@ -1,5 +1,6 @@
 package mml.mmlclib.semantic
 
+import cats.syntax.all.*
 import mml.mmlclib.ast.*
 import mml.mmlclib.compiler.CompilerState
 
@@ -20,6 +21,14 @@ case class BindingInfo(
   bindingId:  Option[String] = None,
   witness:    Option[String] = None, // Name of __owns_<binding> if mixed ownership
   freeFn:     Option[String] = None // Override free function name (for closures)
+)
+
+case class OwnedBinding(
+  name:    String,
+  tpe:     Option[Type],
+  id:      Option[String],
+  witness: Option[String],
+  freeFn:  Option[String]
 )
 
 /** Tracks ownership for bindings within a scope */
@@ -85,11 +94,11 @@ case class OwnershipScope(
   def getMovedAt(name: String): Option[SourceOrigin] = movedAt.get(name)
 
   /** Get all owned bindings that need to be freed, with their types, IDs, and witnesses */
-  def ownedBindings: List[(String, Option[Type], Option[String], Option[String], Option[String])] =
+  def ownedBindings: List[OwnedBinding] =
     bindings
       .collect:
         case (name, BindingInfo(OwnershipState.Owned, tpe, id, witness, freeFn)) =>
-          (name, tpe, id, witness, freeFn)
+          OwnedBinding(name, tpe, id, witness, freeFn)
       .toList
 
 /** Result of analyzing an expression */
@@ -525,7 +534,7 @@ object OwnershipAnalyzer:
     */
   private def wrapWithFrees(
     expr:            Expr,
-    toFree:          List[(String, Option[Type], Option[String], Option[String], Option[String])],
+    toFree:          List[OwnedBinding],
     span:            SourceOrigin,
     owner:           SyntheticOwner,
     resolvables:     ResolvablesIndex,
@@ -553,21 +562,20 @@ object OwnershipAnalyzer:
     // let _ = freeN; ... let _ = free1; __r
     // For bindings with witnesses, generate conditional free instead
     val withFrees = toFree.foldRight(innermost): (binding, acc) =>
-      val (name, tpeOpt, id, witnessOpt, freeFnOpt) = binding
-      val freeTermOpt: Option[Term] = tpeOpt.flatMap { tpe =>
-        witnessOpt match
+      val freeTermOpt: Option[Term] = binding.tpe.flatMap { tpe =>
+        binding.witness match
           case Some(witnessName) =>
             mkConditionalFree(
-              name,
+              binding.name,
               tpe,
               witnessName,
               span,
-              id,
+              binding.id,
               resolvables,
               witnessBindings.get(witnessName)
             )
           case None =>
-            mkFreeCall(name, tpe, span, id, resolvables, freeFnOpt)
+            mkFreeCall(binding.name, tpe, span, binding.id, resolvables, binding.freeFn)
       }
       freeTermOpt match
         case Some(freeTerm) =>
@@ -840,7 +848,7 @@ object OwnershipAnalyzer:
     // Track bindings that already belonged to the outer scope so we don't free them
     // inside this CPS wrapper. Only bindings created in this let should be freed here.
     val inheritedOwned: Set[String] =
-      scope.ownedBindings.map(_._1).toSet
+      scope.ownedBindings.map(_.name).toSet
 
     val allocType = arg.terms.headOption.flatMap { t =>
       termAllocates(t, scope).orElse(lambdaAllocates(t))
@@ -908,11 +916,11 @@ object OwnershipAnalyzer:
     val witnessBinding = witnessOpt.flatMap(_ => params.headOption.map(_.name))
     val bindingsToFree =
       bodyResult.scope.ownedBindings.filter:
-        case (name, Some(tpe), _, _, _) =>
-          !inheritedOwned.contains(name) &&
+        case binding @ OwnedBinding(_, Some(tpe), _, _, _) =>
+          !inheritedOwned.contains(binding.name) &&
           !scope.insideTempWrapper &&
-          !escaping.contains(name) &&
-          !witnessBinding.contains(name) &&
+          !escaping.contains(binding.name) &&
+          !witnessBinding.contains(binding.name) &&
           isOwnedType(tpe, scope.resolvables)
         case _ => false
 
@@ -935,7 +943,8 @@ object OwnershipAnalyzer:
         val bindingId   = params.headOption.flatMap(_.id)
         bindingType match
           case Some(tpe) if isOwnedType(tpe, scope.resolvables) =>
-            val toFree = List((bindingName, Some(tpe), bindingId, Some(witnessParam.name), None))
+            val toFree =
+              List(OwnedBinding(bindingName, Some(tpe), bindingId, Some(witnessParam.name), None))
             wrapWithFrees(
               bodyWithTerminalFrees,
               toFree,
@@ -1163,7 +1172,7 @@ object OwnershipAnalyzer:
 
     // Mark inherited owned bindings as Borrowed inside the temp wrapper
     val borrowedScope = scope.ownedBindings
-      .foldLeft(finalScope) { case (s, (name, _, _, _, _)) => s.withBorrowed(name) }
+      .foldLeft(finalScope) { case (s, binding) => s.withBorrowed(binding.name) }
       .copy(insideTempWrapper = true)
 
     // Non-allocating args consumed by constructor params must be marked as Moved
@@ -1213,9 +1222,9 @@ object OwnershipAnalyzer:
       val isOwned    = info.bindingTpe.exists(isOwnedType(_, scope.resolvables))
       (trueState, falseState) match
         case (OwnershipState.Owned, OwnershipState.Moved) if isOwned =>
-          Some((name, info.bindingTpe, info.bindingId, None: Option[String], info.freeFn))
+          OwnedBinding(name, info.bindingTpe, info.bindingId, None, info.freeFn).some
         case _ =>
-          None
+          none
     }
 
     val freesInFalseBranch = outerOwnedBindings.toList.flatMap { case (name, info) =>
@@ -1224,9 +1233,9 @@ object OwnershipAnalyzer:
       val isOwned    = info.bindingTpe.exists(isOwnedType(_, scope.resolvables))
       (trueState, falseState) match
         case (OwnershipState.Moved, OwnershipState.Owned) if isOwned =>
-          Some((name, info.bindingTpe, info.bindingId, None: Option[String], info.freeFn))
+          OwnedBinding(name, info.bindingTpe, info.bindingId, None, info.freeFn).some
         case _ =>
-          None
+          none
     }
 
     val mergedScope = outerOwnedBindings.toList.foldLeft(condResult.scope) {
@@ -1318,8 +1327,8 @@ object OwnershipAnalyzer:
         pType.exists(isOwnedType(_, scope.resolvables)) &&
         !escaping.contains(p.name) &&
         !bodyResult.scope.getState(p.name).contains(OwnershipState.Moved)
-      then Some((p.name, pType, p.id, None: Option[String], None: Option[String]))
-      else None
+      then OwnedBinding(p.name, pType, p.id, None, None).some
+      else none
     }
     val finalBody =
       if consumingToFree.isEmpty then promotedBody
@@ -1479,10 +1488,10 @@ object OwnershipAnalyzer:
         // This covers cases where nested CPS wrappers skipped frees for inherited bindings.
         val escapingFinal = returnedOwnedNames(result.expr, result.scope)
         val finalToFree = result.scope.ownedBindings.collect {
-          case (name, Some(tpe), id, witness, freeFn)
-              if !escapingFinal.contains(name) &&
+          case binding @ OwnedBinding(_, Some(tpe), _, _, _)
+              if !escapingFinal.contains(binding.name) &&
                 isOwnedType(tpe, resolvables) =>
-            (name, Some(tpe), id, witness, freeFn)
+            binding
         }
 
         val cleanedValue =

@@ -34,7 +34,7 @@ def compileTerm(
       // LLVM rejects decimal float literals that aren't exactly representable in IEEE 754.
       // Emit as double-precision hex (LLVM truncates to float).
       val hexStr = f"0x${java.lang.Double.doubleToRawLongBits(lit.value.toDouble)}%016X"
-      CompileResult(0, state, true, "Float", literalValue = Some(hexStr)).asRight
+      CompileResult(0, state, true, "Float", literalValue = hexStr.some).asRight
 
     case _: LiteralUnit =>
       // Unit is a zero-sized type, just return a dummy result
@@ -94,23 +94,19 @@ def compileTerm(
                         typeName
                       ).asRight
                     case None =>
-                      Left(
-                        CodeGenError(
-                          s"Could not determine MML type name for global reference '${ref.name}'",
-                          Some(ref)
-                        )
-                      )
+                      CodeGenError(
+                        s"Could not determine MML type name for global reference '${ref.name}'",
+                        ref.some
+                      ).asLeft
                   }
                 case Left(err) =>
-                  Left(err)
+                  err.asLeft
               }
             case None =>
-              Left(
-                CodeGenError(
-                  s"Missing type information for global reference '${ref.name}' - TypeChecker should have provided this",
-                  Some(ref)
-                )
-              )
+              CodeGenError(
+                s"Missing type information for global reference '${ref.name}' - TypeChecker should have provided this",
+                ref.some
+              ).asLeft
           }
       }
     }
@@ -130,19 +126,17 @@ def compileTerm(
     case impl @ NativeImpl(_, _, _, _, _, _) => {
       // Native implementation should be handled at function declaration level (compileBndLambda).
       // If reached here, it implies it's being used as an expression, which is invalid.
-      Left(
-        CodeGenError(
-          "NativeImpl encountered in expression context - this is a malformed AST or compiler bug",
-          Some(impl)
-        )
-      )
+      CodeGenError(
+        "NativeImpl encountered in expression context - this is a malformed AST or compiler bug",
+        impl.some
+      ).asLeft
     }
 
     case lambda: Lambda =>
       compileLambdaLiteral(lambda, state, functionScope)
 
     case other =>
-      CodeGenError(s"Unsupported term: ${other.getClass.getSimpleName}", Some(other)).asLeft
+      CodeGenError(s"Unsupported term: ${other.getClass.getSimpleName}", other.some).asLeft
   }
 }
 
@@ -157,9 +151,9 @@ private[emitter] def compileLambdaLiteral(
   bindingParam:     Option[FnParam]                = None
 ): Either[CodeGenError, CompileResult] =
   val typeFn = lambda.typeSpec match
-    case Some(tf: TypeFn) => Right(tf)
+    case Some(tf: TypeFn) => tf.asRight
     case other =>
-      Left(CodeGenError(s"Lambda missing TypeFn typeSpec, got: $other", Some(lambda)))
+      CodeGenError(s"Lambda missing TypeFn typeSpec, got: $other", lambda.some).asLeft
 
   typeFn.flatMap { tf =>
     val (stateWithId, fnName) = preAllocatedName.getOrElse(state.allocAnonFnName)
@@ -245,7 +239,7 @@ private def compileTailRecNonCapturing(
       state        = mergedState,
       isLiteral    = true,
       typeName     = "Function",
-      literalValue = Some(s"{ ptr @$fnName, ptr null }")
+      literalValue = s"{ ptr @$fnName, ptr null }".some
     )
   }
 
@@ -270,7 +264,7 @@ private def compileTailRecCapturingLambda(
       fnName,
       body,
       linkage     = "internal ",
-      captureInfo = Some(capInfo)
+      captureInfo = capInfo.some
     ).map { finalSubState =>
       val fnBody = finalSubState.output.reverse.mkString("\n")
       val mergedState =
@@ -357,7 +351,7 @@ private def compileNonCapturingLambda(
     state        = mergedState,
     isLiteral    = true,
     typeName     = "Function",
-    literalValue = Some(s"{ ptr @$fnName, ptr null }")
+    literalValue = s"{ ptr @$fnName, ptr null }".some
   )
 
 /** Result of call-site env setup for a capturing lambda. */
@@ -401,7 +395,7 @@ private def emitCallSiteEnv(
     ref.typeSpec match
       case Some(ts) => getLlvmType(ts, state).map(t => (ref, t))
       case None =>
-        Left(CodeGenError(s"Capture '${ref.name}' has no type", Some(ref)))
+        CodeGenError(s"Capture '${ref.name}' has no type", ref.some).asLeft
   }
 
   captureTypesResult.map { captureTypes =>
@@ -418,7 +412,7 @@ private def emitCallSiteEnv(
     val envSize   = sizeOfLlvmStructResolved("ptr" :: capLlvmTypes, stateWithEnv)
     val mallocReg = stateWithEnv.nextRegister
     val mallocLine =
-      emitCall(Some(mallocReg), Some("ptr"), "malloc", List(("i64", envSize.toString)))
+      emitCall(mallocReg.some, "ptr".some, "malloc", List(("i64", envSize.toString)))
     val siteStateAfterMalloc = stateWithEnv.withRegister(mallocReg + 1).emit(mallocLine)
 
     val dtorName = lambda.meta
@@ -521,7 +515,7 @@ private def compileSelectionRef(
 ): Either[CodeGenError, CompileResult] =
   ref.qualifier match
     case None =>
-      Left(CodeGenError(s"Selection ref missing qualifier for '${ref.name}'", Some(ref)))
+      CodeGenError(s"Selection ref missing qualifier for '${ref.name}'", ref.some).asLeft
     case Some(qualifier) =>
       compileTerm(qualifier, state, functionScope).flatMap { qualifierRes =>
         val baseTypeSpec = qualifier.typeSpec
@@ -531,12 +525,10 @@ private def compileSelectionRef(
               case Some(structDef) =>
                 val fieldIndex = structDef.fields.indexWhere(_.name == ref.name)
                 if fieldIndex < 0 then
-                  Left(
-                    CodeGenError(
-                      s"Unknown struct field '${ref.name}' for selection",
-                      Some(ref)
-                    )
-                  )
+                  CodeGenError(
+                    s"Unknown struct field '${ref.name}' for selection",
+                    ref.some
+                  ).asLeft
                 else
                   val structTypeE = getLlvmType(baseType, qualifierRes.state)
                   val fieldType   = structDef.fields(fieldIndex).typeSpec
@@ -547,37 +539,29 @@ private def compileSelectionRef(
                       emitExtractValue(fieldReg, structLlvmType, baseValue, fieldIndex)
                     getMmlTypeName(fieldType) match
                       case Some(typeName) =>
-                        Right(
-                          CompileResult(
-                            fieldReg,
-                            qualifierRes.state.withRegister(fieldReg + 1).emit(line),
-                            false,
-                            typeName,
-                            qualifierRes.exitBlock
-                          )
-                        )
+                        CompileResult(
+                          fieldReg,
+                          qualifierRes.state.withRegister(fieldReg + 1).emit(line),
+                          false,
+                          typeName,
+                          qualifierRes.exitBlock
+                        ).asRight
                       case None =>
-                        Left(
-                          CodeGenError(
-                            s"Could not determine type name for selected field '${ref.name}'",
-                            Some(ref)
-                          )
-                        )
+                        CodeGenError(
+                          s"Could not determine type name for selected field '${ref.name}'",
+                          ref.some
+                        ).asLeft
                   }
               case None =>
-                Left(
-                  CodeGenError(
-                    s"Selection base is not a struct for field '${ref.name}'",
-                    Some(ref)
-                  )
-                )
+                CodeGenError(
+                  s"Selection base is not a struct for field '${ref.name}'",
+                  ref.some
+                ).asLeft
           case None =>
-            Left(
-              CodeGenError(
-                s"Missing type information for selection base '${ref.name}'",
-                Some(ref)
-              )
-            )
+            CodeGenError(
+              s"Missing type information for selection base '${ref.name}'",
+              ref.some
+            ).asLeft
       }
 
 /** Compiles an expression.
@@ -616,7 +600,7 @@ def compileExpr(
         } =>
       compileUnaryOp(op, arg, state, functionScope)
     case _ =>
-      CodeGenError(s"Invalid expression structure", Some(expr)).asLeft
+      CodeGenError(s"Invalid expression structure", expr.some).asLeft
   }
 }
 
