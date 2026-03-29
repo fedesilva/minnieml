@@ -1,0 +1,6 @@
+pub fn main(): Unit =
+  let out = mkBufferWithFdAndSize 1 4;
+  out write "ab";
+  out writeln "cdefgh";
+  flush out
+;;

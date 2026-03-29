@@ -6,6 +6,7 @@ type Float = @native[t=float];
 type Double = @native[t=double];
 type Bool = @native[t=i1];
 type CharPtr = @native[t=*i8];
+type RawPtr = @native[t=ptr];
 
 type String = @native[mem=heap, free=free_string] {
   length: Int64,
@@ -92,10 +93,12 @@ op ++(a: String, b: String): String 61 right = concat a b;
 
 fn mkBuffer(): Buffer = @native[mem=alloc];
 fn mkBufferWithFd(fd: Int): Buffer = @native[mem=alloc];
+fn mkBufferWithFdAndSize(fd: Int, size: Int): Buffer = @native[mem=alloc];
 fn mkBufferWithSize(size: Int): Buffer = @native[mem=alloc];
 fn flush(b: Buffer): Unit = @native;
 fn buffer_write(b: Buffer, s: String): Unit = @native;
 fn buffer_writeln(b: Buffer, s: String): Unit = @native;
+fn buffer_write_byte(b: Buffer, n: Int): Unit = @native;
 fn buffer_write_int(b: Buffer, n: Int): Unit = @native;
 fn buffer_writeln_int(b: Buffer, n: Int): Unit = @native;
 fn buffer_write_float(b: Buffer, n: Float): Unit = @native;
@@ -114,6 +117,7 @@ fn read_line_fd(fd: Int): String = @native[mem=alloc];
 
 fn free_string(~s: String): Unit = @native;
 fn free_buffer(~b: Buffer): Unit = @native;
+fn mml_free_raw(p: RawPtr): Unit = @native;
 
 fn ar_int_new(size: Int): IntArray = @native[mem=alloc];
 fn ar_int_set(arr: IntArray, idx: Int, value: Int): Unit = @native;
@@ -146,8 +150,8 @@ fn clone_FloatArray(a: FloatArray): FloatArray = @native[mem=alloc, name="__clon
 
 op write(a: Buffer, b: String): Unit 20 left = buffer_write a b;
 op writeln(a: Buffer, b: String): Unit 20 left = buffer_writeln a b;
+op write_byte(a: Buffer, b: Int): Unit 20 left = buffer_write_byte a b;
 op write_int(a: Buffer, b: Int): Unit 20 left = buffer_write_int a b;
 op writeln_int(a: Buffer, b: Int): Unit 20 left = buffer_writeln_int a b;
 op write_float(a: Buffer, b: Float): Unit 20 left = buffer_write_float a b;
 op writeln_float(a: Buffer, b: Float): Unit 20 left = buffer_writeln_float a b;
-
