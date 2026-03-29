@@ -194,7 +194,7 @@ object OwnershipAnalyzer:
           )
         case TermGroup(_, inner, _) =>
           exprReturnsOwned(inner, env, resolvables, returningOwned)
-        case lambda: Lambda if lambda.captures.nonEmpty =>
+        case lambda: Lambda if lambda.captures.nonEmpty && lambda.isMove =>
           lambda.typeSpec
         case _ => None
 
@@ -331,9 +331,9 @@ object OwnershipAnalyzer:
       mergeAllocTypes(trueAlloc, falseAlloc)
     case _ => None
 
-  /** Check if a term is a capturing lambda literal (used only in let-binding context). */
+  /** Check if a term is a move-capturing lambda literal (heap env allocation). */
   private def lambdaAllocates(term: Term): Option[Type] = term match
-    case lambda: Lambda if lambda.captures.nonEmpty => lambda.typeSpec
+    case lambda: Lambda if lambda.captures.nonEmpty && lambda.isMove => lambda.typeSpec
     case _ => None
 
   /** Look up the resolved ID for a free function by name */
@@ -682,7 +682,7 @@ object OwnershipAnalyzer:
         containsRefInExpr(name, ifFalse)
       case TermGroup(_, inner, _) => containsRefInExpr(name, inner)
       case Tuple(_, elements, _, _) => elements.exists(containsRefInExpr(name, _))
-      case Lambda(_, params, body, _, _, _, _) =>
+      case Lambda(_, params, body, _, _, _, _, _) =>
         // Skip if a param shadows the name
         if params.exists(_.name == name) then false
         else containsRefInExpr(name, body)
@@ -1296,6 +1296,7 @@ object OwnershipAnalyzer:
     typeSpec: Option[Type],
     typeAsc:  Option[Type],
     meta:     Option[LambdaMeta],
+    isMove:   Boolean,
     scope:    OwnershipScope
   ): TermResult =
     // Consuming params are Owned so they get freed at body end,
@@ -1342,24 +1343,25 @@ object OwnershipAnalyzer:
           scope.resolvables
         )
 
-    val borrowEscapeErrors = returnType
-      .flatMap(getTypeName)
-      .filter(isHeapType(_, scope.resolvables))
-      .map(_ => returnedBorrowedRefs(finalBody, bodyResult.scope))
-      .getOrElse(Nil)
-      .map(ref => SemanticError.BorrowEscapeViaReturn(ref, PhaseName))
+    // Escape check: borrowed refs in return position. Covers heap types and TypeFn.
+    val returnTypeIsOwned = returnType.exists(t => isOwnedType(t, scope.resolvables))
+    val borrowEscapeErrors =
+      if returnTypeIsOwned then
+        returnedBorrowedRefs(finalBody, bodyResult.scope)
+          .map(ref => SemanticError.BorrowEscapeViaReturn(ref, PhaseName))
+      else Nil
 
-    // Move heap-type captures in the outer scope; error if capturing borrowed heap binding.
-    // Literal heap captures are upgraded to CapturedLiteral with a resolved clone fn ID.
+    // Capture ownership: move lambdas move heap captures; borrow lambdas leave them in place.
     val (returnScope, captureErrors, updatedCaptures) =
       captures.foldLeft((scope, List.empty[SemanticError], List.empty[Capture])): (acc, cap) =>
         val (s, errs, caps) = acc
         val ref             = cap.ref
-        val isHeapCapture = ref.typeSpec
-          .flatMap(getTypeName)
-          .exists(isHeapType(_, s.resolvables))
-        if !isHeapCapture then (s, errs, caps :+ cap)
-        else
+        val isOwnedCapture = ref.typeSpec.exists(t =>
+          getTypeName(t).exists(isHeapType(_, s.resolvables)) || t.isInstanceOf[TypeFn]
+        )
+        if !isOwnedCapture then (s, errs, caps :+ cap)
+        else if isMove then
+          // Move lambda: transfer ownership into env
           s.getState(ref.name) match
             case Some(OwnershipState.Owned) =>
               (s.withMoved(ref.name, span), errs, caps :+ cap)
@@ -1379,10 +1381,19 @@ object OwnershipAnalyzer:
             case Some(OwnershipState.Borrowed) =>
               (s, errs :+ SemanticError.CapturedBorrowedHeapBinding(ref, PhaseName), caps :+ cap)
             case _ => (s, errs, caps :+ cap)
+        else
+          // Borrow lambda: outer scope keeps ownership
+          s.getState(ref.name) match
+            case Some(OwnershipState.Moved) =>
+              val movedAt = s.getMovedAt(ref.name).getOrElse(SourceOrigin.Synth)
+              (s, errs :+ SemanticError.UseAfterMove(ref, movedAt, PhaseName), caps :+ cap)
+            case _ =>
+              // Owned, Borrowed, Literal, Global — all fine to borrow
+              (s, errs, caps :+ cap)
 
     TermResult(
       returnScope,
-      Lambda(span, params, finalBody, updatedCaptures, typeSpec, typeAsc, meta),
+      Lambda(span, params, finalBody, updatedCaptures, typeSpec, typeAsc, meta, isMove),
       errors = bodyResult.errors ++ borrowEscapeErrors ++ captureErrors
     )
 
@@ -1434,8 +1445,8 @@ object OwnershipAnalyzer:
       case Cond(span, condExpr, ifTrue, ifFalse, typeSpec, typeAsc) =>
         analyzeCond(span, condExpr, ifTrue, ifFalse, typeSpec, typeAsc, scope)
 
-      case Lambda(span, params, body, captures, typeSpec, typeAsc, meta) =>
-        analyzeLambda(span, params, body, captures, typeSpec, typeAsc, meta, scope)
+      case Lambda(span, params, body, captures, typeSpec, typeAsc, meta, isMove) =>
+        analyzeLambda(span, params, body, captures, typeSpec, typeAsc, meta, isMove, scope)
 
       case expr: Expr =>
         val result = analyzeExpr(expr, scope)

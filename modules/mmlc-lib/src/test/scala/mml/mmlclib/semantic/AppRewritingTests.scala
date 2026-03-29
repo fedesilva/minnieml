@@ -370,7 +370,7 @@ class AppRewritingTests extends BaseEffFunSuite:
           case app @ App(_, Ref(_, n, _, _, _, _, _), _, _, _) if n == name => Some(app)
           case App(_, fn, arg, _, _) =>
             findAppByName(fn, name).orElse(arg.terms.flatMap(findAppByName(_, name)).headOption)
-          case Lambda(_, _, body, _, _, _, _) =>
+          case Lambda(_, _, body, _, _, _, _, _) =>
             body.terms.flatMap(findAppByName(_, name)).headOption
           case Expr(_, terms, _, _) =>
             terms.flatMap(findAppByName(_, name)).headOption

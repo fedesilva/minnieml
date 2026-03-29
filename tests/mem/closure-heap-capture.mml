@@ -1,6 +1,6 @@
 
 fn makeGreeter(~name: String): Unit -> Unit =
-  { println ("Hello, " ++ name); };
+  ~{ println ("Hello, " ++ name); };
 ;
 
 fn loop(n: Int): Unit =
