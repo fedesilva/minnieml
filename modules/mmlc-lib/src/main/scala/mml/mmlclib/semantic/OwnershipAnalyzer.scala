@@ -824,7 +824,7 @@ object OwnershipAnalyzer:
     lSource:   SourceOrigin,
     params:    List[FnParam],
     body:      Expr,
-    captures:  List[Ref],
+    captures:  List[Capture],
     lTypeSpec: Option[Type],
     lTypeAsc:  Option[Type],
     meta:      Option[LambdaMeta],
@@ -1292,7 +1292,7 @@ object OwnershipAnalyzer:
     span:     SourceOrigin,
     params:   List[FnParam],
     body:     Expr,
-    captures: List[Ref],
+    captures: List[Capture],
     typeSpec: Option[Type],
     typeAsc:  Option[Type],
     meta:     Option[LambdaMeta],
@@ -1307,7 +1307,8 @@ object OwnershipAnalyzer:
       else s.withBorrowed(p.name)
 
     // Heap-type captures are owned by the env — body borrows them
-    val captureScope = captures.foldLeft(paramScope): (s, ref) =>
+    val captureScope = captures.foldLeft(paramScope): (s, cap) =>
+      val ref = cap.ref
       val isHeapCapture = ref.typeSpec
         .flatMap(getTypeName)
         .exists(isHeapType(_, s.resolvables))
@@ -1348,28 +1349,40 @@ object OwnershipAnalyzer:
       .getOrElse(Nil)
       .map(ref => SemanticError.BorrowEscapeViaReturn(ref, PhaseName))
 
-    // Move heap-type captures in the outer scope; error if capturing borrowed heap binding
-    val (returnScope, captureErrors) =
-      captures.foldLeft((scope, List.empty[SemanticError])): (acc, ref) =>
-        val (s, errs) = acc
+    // Move heap-type captures in the outer scope; error if capturing borrowed heap binding.
+    // Literal heap captures are upgraded to CapturedLiteral with a resolved clone fn ID.
+    val (returnScope, captureErrors, updatedCaptures) =
+      captures.foldLeft((scope, List.empty[SemanticError], List.empty[Capture])): (acc, cap) =>
+        val (s, errs, caps) = acc
+        val ref             = cap.ref
         val isHeapCapture = ref.typeSpec
           .flatMap(getTypeName)
           .exists(isHeapType(_, s.resolvables))
-        if !isHeapCapture then acc
+        if !isHeapCapture then (s, errs, caps :+ cap)
         else
           s.getState(ref.name) match
             case Some(OwnershipState.Owned) =>
-              (s.withMoved(ref.name, span), errs)
+              (s.withMoved(ref.name, span), errs, caps :+ cap)
             case Some(OwnershipState.Moved) =>
               val movedAt = s.getMovedAt(ref.name).getOrElse(SourceOrigin.Synth)
-              (s, errs :+ SemanticError.CapturedMovedHeapBinding(ref, movedAt, PhaseName))
-            case Some(OwnershipState.Borrowed) | Some(OwnershipState.Literal) =>
-              (s, errs :+ SemanticError.CapturedBorrowedHeapBinding(ref, PhaseName))
-            case _ => acc
+              (
+                s,
+                errs :+ SemanticError.CapturedMovedHeapBinding(ref, movedAt, PhaseName),
+                caps :+ cap
+              )
+            case Some(OwnershipState.Literal) =>
+              val typeName    = ref.typeSpec.flatMap(getTypeName).getOrElse("String")
+              val cloneFnName = cloneFnFor(typeName, s.resolvables).getOrElse(s"__clone_$typeName")
+              val cloneId = lookupCloneFnId(cloneFnName, typeName, s.resolvables)
+                .getOrElse(s"stdlib::bnd::$cloneFnName")
+              (s, errs, caps :+ Capture.CapturedLiteral(ref, cloneId))
+            case Some(OwnershipState.Borrowed) =>
+              (s, errs :+ SemanticError.CapturedBorrowedHeapBinding(ref, PhaseName), caps :+ cap)
+            case _ => (s, errs, caps :+ cap)
 
     TermResult(
       returnScope,
-      Lambda(span, params, finalBody, captures, typeSpec, typeAsc, meta),
+      Lambda(span, params, finalBody, updatedCaptures, typeSpec, typeAsc, meta),
       errors = bodyResult.errors ++ borrowEscapeErrors ++ captureErrors
     )
 

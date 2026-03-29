@@ -82,6 +82,12 @@ object App:
   ): App =
     new App(SourceOrigin.Loc(span), fn, arg, None, None)
 
+enum Capture:
+  case CapturedRef(override val ref: Ref)
+  case CapturedLiteral(override val ref: Ref, cloneFnId: String)
+
+  def ref: Ref
+
 case class LambdaMeta(
   isTailRecursive: Boolean        = false,
   envStructName:   Option[String] = None
@@ -91,7 +97,7 @@ case class Lambda(
   source:   SourceOrigin,
   params:   List[FnParam],
   body:     Expr,
-  captures: List[Ref],
+  captures: List[Capture],
   typeSpec: Option[Type]       = None,
   typeAsc:  Option[Type]       = None,
   meta:     Option[LambdaMeta] = None
@@ -102,7 +108,7 @@ object Lambda:
     span:     SrcSpan,
     params:   List[FnParam],
     body:     Expr,
-    captures: List[Ref],
+    captures: List[Capture],
     typeSpec: Option[Type],
     typeAsc:  Option[Type],
     meta:     Option[LambdaMeta]
@@ -113,7 +119,7 @@ object Lambda:
     span:     SrcSpan,
     params:   List[FnParam],
     body:     Expr,
-    captures: List[Ref],
+    captures: List[Capture],
     typeSpec: Option[Type],
     typeAsc:  Option[Type]
   ): Lambda =
@@ -123,7 +129,7 @@ object Lambda:
     span:     SrcSpan,
     params:   List[FnParam],
     body:     Expr,
-    captures: List[Ref]
+    captures: List[Capture]
   ): Lambda =
     new Lambda(SourceOrigin.Loc(span), params, body, captures, None, None, None)
 

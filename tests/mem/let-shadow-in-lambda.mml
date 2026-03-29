@@ -1,0 +1,22 @@
+// Test: shadowing a captured binding inside a capturing thunk.
+// Outer `name` is captured, then a nested thunk shadows `n`.
+// Also tests we don't try to free a captured literal.
+
+pub fn main() =
+  
+  let name = "hola";
+  
+  let f = {
+    
+    let n = name;
+    
+    let g = {
+      let n = 2;
+      println (int_to_str n);
+  
+    }: Unit;
+
+    g();
+  };
+  f();
+;

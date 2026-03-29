@@ -4,7 +4,17 @@ import cats.syntax.all.*
 import mml.mmlclib.ast.*
 import mml.mmlclib.codegen.emitter.alias.AliasScopeEmitter
 import mml.mmlclib.codegen.emitter.tbaa.TbaaEmitter
-import mml.mmlclib.codegen.emitter.{CodeGenError, CodeGenState, CompileResult, emitCall, emitGetElementPtr, emitLoad, emitStore, getLlvmType, getNominalTypeName}
+import mml.mmlclib.codegen.emitter.{
+  CodeGenError,
+  CodeGenState,
+  CompileResult,
+  emitCall,
+  emitGetElementPtr,
+  emitLoad,
+  emitStore,
+  getLlvmType,
+  getNominalTypeName
+}
 
 // ============================================================================
 // Hole Compilation

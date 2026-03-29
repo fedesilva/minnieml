@@ -152,7 +152,8 @@ object ClosureMemoryFnGenerator:
       id       = Some(s"$moduleName::typedef::$envName::__dtor")
     )
 
-    val captureFields = lambda.captures.map { ref =>
+    val captureFields = lambda.captures.map { cap =>
+      val ref = cap.ref
       val fieldType = resolveCaptureType(ref, idTypeMap).getOrElse(
         TypeRef(syntheticSource, "Unknown")
       )

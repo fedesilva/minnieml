@@ -142,11 +142,12 @@ def formatParamDecls(
 def emitCaptureLoads(
   envTypeRef:   String,
   envParamIdx:  Int,
-  captureTypes: List[(Ref, String)],
+  captureTypes: List[(Capture, String)],
   bodyState:    CodeGenState
 ): (CodeGenState, Map[String, ScopeEntry]) =
   captureTypes.zipWithIndex.foldLeft((bodyState, Map.empty[String, ScopeEntry])) {
-    case ((st, scope), ((ref, llvmType), idx)) =>
+    case ((st, scope), ((cap, llvmType), idx)) =>
+      val ref     = cap.ref
       val gepReg  = st.nextRegister
       val loadReg = gepReg + 1
       val gepLine =
@@ -163,7 +164,7 @@ def emitCaptureLoads(
 /** Resolve the LLVM-level name for a memory function (__free_T, __clone_T). Native/stdlib functions
   * use their raw name; user-generated functions use mangled name.
   */
-private def resolveMemFnLlvmName(
+private[emitter] def resolveMemFnLlvmName(
   fnName: String,
   state:  CodeGenState
 ): String =
@@ -479,9 +480,9 @@ private[emitter] def compileTailRecursiveLambda(
   paramTypes:  List[String],
   emittedName: String,
   body:        TailRecBody,
-  inlineHint:  Boolean                               = false,
-  linkage:     String                                = "",
-  captureInfo: Option[(String, List[(Ref, String)])] = None
+  inlineHint:  Boolean                                   = false,
+  linkage:     String                                    = "",
+  captureInfo: Option[(String, List[(Capture, String)])] = None
 ): Either[CodeGenError, CodeGenState] =
   val nonVoidIndices          = paramTypes.indices.filter(i => paramTypes(i) != "void").toList
   val filteredParamsWithTypes = nonVoidIndices.map(i => (lambda.params(i), paramTypes(i)))
