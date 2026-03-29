@@ -1,105 +1,125 @@
-# Optional Moves with `~`
+# Closures: Optional moves, borrows by default
 
-## Core idea
+## Motivation
 
-`~` is the universal ownership-transfer sigil. It means "I'm moving this value."
-Without `~`, values are borrowed. With `~`, ownership transfers to the receiver.
+MML's current ownership model is rigid regarding closure captures. Capturing a heap-typed value (like a `String` or `Buffer`) currently triggers an eager **move**.
 
-## Three contexts
+This leads to "parameter threading" in programs that share state across multiple local functions. For example, in `mml/samples/raytracer3.mml`, sibling helpers cannot capture shared heap values; they must receive them as explicit parameters to avoid invalidating the source for other functions.
 
-### 1. Parameter declarations (existing)
+We are moving to a **borrowing-by-default** model for captures. The `~` sigil will act as an explicit "move" operator when a closure needs to outlive its scope.
+
+## Borrowing by default
+
+Ownership should only transfer when explicitly requested. By default, capturing a value in a closure is a **borrow**.
+
+- **No `~`**: Borrow. The closure holds a reference to the outer binding.
+- **With `~`**: Move. Ownership transfers to the closure's environment; the source is invalidated.
+
+This change mainly affects how lambdas interact with their environment.
+
+### Borrow captures (Default)
+
+When a closure captures a binding without `~`, it borrows from the enclosing scope.
 
 ```mml
-fn foo(~x: String): Unit = ...
+let buf = mkBufferWithSize 1024;
+
+// write_hello borrows 'buf'. It does not own it.
+fn write_hello() =
+  buffer_write buf "hello";
+;
+
+write_hello ();
+flush buf; // 'buf' remains available.
 ```
 
-`~x` declares a consuming parameter. The function takes ownership and is
-responsible for freeing `x`.
+Multiple local functions can capture the same value without conflict, and the outer scope remains responsible for deallocation.
 
-### 2. Call-site move (new)
+### Escape restrictions
+
+A closure that borrows from its environment cannot escape the scope of the borrowed value. The compiler prevents these closures from being returned from functions or stored in structs.
+
+Escape analysis needs to be extended, we already detect borrows escaping (being returned).
+
+
+---
+
+## Moving with `~`
+
+The `~` sigil is used to opt-in to ownership transfer in three contexts.
+
+### 1. Move closures and inner functions
+
+If a closure must escape (e.g., being returned or stored), it must own its captures. Prefixing a lambda literal with `~` or an inner function name with `~` moves all captured values into the closure's environment.
+
+**Move lambdas (`~{ ... }`):**
+```mml
+fn make_logger(name: String): Unit -> Unit =
+  // ~{} moves 'name' into the closure environment.
+  ~{ println ("Logger: " ++ name) }
+;
+```
+
+**Move inner functions (`fn ~name`):**
+```mml
+fn outer() =
+  let s = readline();
+  fn ~inner() = println s;; // s is moved into 'inner'
+  inner ();
+;
+```
+
+*Note: The `fn ~name` syntax is only valid for inner functions. It is not allowed for top-level functions.*
+*Note: `~` on the literal or the function name does not affect arguments. Arguments still need to be annotated with `~` (e.g., `~x: String`) if they consume ownership.*
+
+When values are moved into a closure:
+- The outer bindings become `Moved` and unusable.
+- The closure's destructor frees the captured values.
+- The closure can escape its creation scope.
+
+### 2. Call-site move
+
+A caller can force a move even if the function parameter is non-consuming. This is useful for early cleanup or when a value is no longer needed in the caller's scope.
 
 ```mml
-fn foo(x: String): Unit = ...
-
 let s = readline();
-foo (~s)
+process_string (~s); // 's' is moved here
 ```
 
-Even though `foo` doesn't declare `~x`, the caller can force a move with `~s`.
-After the call, `s` is Moved in the caller's scope. This is useful when the
-caller knows it won't use `s` again and wants to avoid keeping it alive.
+### 3. Consuming parameters
 
-### 3. Capture-site move (new)
+Function signatures use `~` to declare that a parameter consumes its argument.
 
 ```mml
-let name = readline();
-let f = { println (~name) };
+fn consume(~x: String): Unit = ...
 ```
 
-`~name` in the lambda body moves `name` into the closure's env struct. The env
-destructor frees it. The closure can escape (be returned, stored, passed around).
-
-Without `~`, captures borrow from the enclosing scope:
-
-```mml
-let name = readline();
-let f = { println (name) };
-f ();
-```
-
-`name` is borrowed — the closure holds a pointer into the enclosing scope. The
-closure cannot escape. If it does, the compiler errors.
-
-## Rules
-
-### Borrow captures (no `~`)
-
-- Closure holds a reference to the outer binding's storage
-- No ownership transfer — outer scope still owns and frees the value
-- Env destructor does NOT free borrowed fields
-- Closure must not escape (not returned, not stored, not passed to opaque consumers)
-- Compiler enforces non-escape statically
-
-### Move captures (`~`)
-
-- Value moves into the env struct — outer binding becomes Moved
-- Env destructor frees the moved-in value
-- Closure can escape freely (it owns its captures)
-- Use-after-move rules apply in the outer scope
-
-### Value-type captures (Int, Float, Bool)
-
-- Always copied — no ownership concern
-- `~` not needed or meaningful (value semantics)
+---
 
 ## Escape analysis
 
-A closure "escapes" if:
-- It is returned from a function
-- It is stored in a struct field
-- It is passed as an argument to a function (conservative: unless the param
-  is known to be non-escaping)
+The compiler enforces that borrowing closures do not outlive their captures by tracing their usage from the call site. A closure is considered to "escape" if it is:
+- Returned from a function.
+- Stored in a struct field.
+- Passed to a function parameter that takes ownership.
+- In general, if its ownership is transferred to a scope other than the one that owns its borrowed values.
 
-A first-pass rule: if the closure is let-bound and the binding is only called
-(applied with `()`) within the same scope, it is non-escaping. Borrowed
-captures are safe.
+Because escape analysis traces through callees, passing a borrowing closure to a function that only borrows it (and does not let it escape further) is safe and permitted. This mirrors the existing rules for borrowed values.
 
-More refined analysis can come later (non-escaping function parameters,
-lifetime tracking).
+---
 
-## Interaction with protocols
+## Value types
 
-Once protocols exist:
-- `Clone` protocol provides `clone x` syntax for explicit deep copy
-- `Drop` protocol provides the destructor
-- `clone` and `~` are orthogonal — `clone` creates a new owned value,
-  `~` transfers ownership. The user decides when each is needed.
-  No automatic cloning, ever.
+Primitive types (Int, Float, Bool) are always copied. While `~` is allowed for consistency, it is a no-op for these types and does not restrict closure escape.
 
-## Alignment with the language
+## Protocols and `clone`
 
-`~` already means ownership transfer in MML. Extending it to call sites and
-captures keeps the vocabulary small and the mental model consistent:
+`clone` and `~` are distinct operations. `clone` (via the `Clone` protocol) creates a new owned value, while `~` transfers an existing one. Users decide which is appropriate based on whether they need to retain the original value.
 
-- No `~` → borrow (temporary access, no ownership change)
-- `~` → move (permanent transfer, source invalidated)
+---
+
+## Mental model
+
+- **Local helpers:** Use the default (borrow). It is efficient and requires no extra syntax.
+- **Escaping closures:** Prefix the lambda with `~{}` or inner function with `fn ~name` to move heap state into the environment so the closure becomes self-contained.
+- **Explicit cleanup:** Use `~` at call sites or when passing to consuming parameters to transfer ownership and invalidate the local binding.
