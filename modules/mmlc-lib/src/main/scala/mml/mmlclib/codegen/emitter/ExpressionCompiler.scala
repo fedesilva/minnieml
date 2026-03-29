@@ -28,21 +28,25 @@ def compileTerm(
 ): Either[CodeGenError, CompileResult] = {
   term match {
     case lit: LiteralInt =>
-      CompileResult(lit.value, state, true, "Int").asRight
+      val typeName = lit.typeSpec.flatMap(getNominalTypeName(_).toOption).getOrElse("Int")
+      CompileResult(lit.value, state, true, typeName).asRight
 
     case lit: LiteralFloat =>
       // LLVM rejects decimal float literals that aren't exactly representable in IEEE 754.
       // Emit as double-precision hex (LLVM truncates to float).
-      val hexStr = f"0x${java.lang.Double.doubleToRawLongBits(lit.value.toDouble)}%016X"
-      CompileResult(0, state, true, "Float", literalValue = hexStr.some).asRight
+      val typeName = lit.typeSpec.flatMap(getNominalTypeName(_).toOption).getOrElse("Float")
+      val hexStr   = f"0x${java.lang.Double.doubleToRawLongBits(lit.value.toDouble)}%016X"
+      CompileResult(0, state, true, typeName, literalValue = hexStr.some).asRight
 
-    case _: LiteralUnit =>
+    case lit: LiteralUnit =>
       // Unit is a zero-sized type, just return a dummy result
-      CompileResult(0, state, true, "Unit").asRight
+      val typeName = lit.typeSpec.flatMap(getNominalTypeName(_).toOption).getOrElse("Unit")
+      CompileResult(0, state, true, typeName).asRight
 
     case lit: LiteralBool =>
+      val typeName     = lit.typeSpec.flatMap(getNominalTypeName(_).toOption).getOrElse("Bool")
       val literalValue = if lit.value then 1 else 0
-      CompileResult(literalValue, state, true, "Bool").asRight
+      CompileResult(literalValue, state, true, typeName).asRight
 
     case hole: Hole =>
       compileHole(hole, state)
@@ -76,7 +80,7 @@ def compileTerm(
                   val (stateWithTbaa, tbaaTag) = TbaaEmitter.getTbaaTag(typeSpec, state)
                   val (stateWithAlias, aliasTag, noaliasTag) =
                     AliasScopeEmitter.getAliasScopeTags(typeSpec, stateWithTbaa)
-                  val line = emitLoad(
+                  val loadLine = emitLoad(
                     reg,
                     llvmType,
                     s"@$globalName",
@@ -85,14 +89,15 @@ def compileTerm(
                     noaliasTag
                   )
 
-                  TypeNameResolver.getMmlTypeName(typeSpec, stateWithAlias.resolvables) match {
+                  getNominalTypeName(typeSpec) match {
                     case Right(typeName) =>
                       CompileResult(
                         reg,
-                        stateWithAlias.withRegister(reg + 1).emit(line),
+                        stateWithAlias.withRegister(reg + 1).emit(loadLine),
                         false,
                         typeName
                       ).asRight
+
                     case Left(_) =>
                       CodeGenError(
                         s"Could not determine MML type name for global reference '${ref.name}'",
@@ -333,9 +338,10 @@ private def compileNonCapturingLambda(
   val subState = state.copy(output = List.empty, nextRegister = 0)
   val paramScope = filteredParamsWithTypes.zipWithIndex.map { case ((param, _), idx) =>
     val mmlType = param.typeAsc
-      .flatMap(TypeNameResolver.getMmlTypeName(_, state.resolvables).toOption)
+      .flatMap(getNominalTypeName(_).toOption)
       .getOrElse("Unknown")
     (param.name, ScopeEntry(idx, mmlType))
+
   }.toMap
   val bodyState = subState.withRegister(envParamIdx + 1)
 
@@ -504,7 +510,7 @@ private def compileCapturingLambda(
     val subState = siteState.copy(output = List.empty, nextRegister = 0)
     val paramScope = filteredParamsWithTypes.zipWithIndex.map { case ((param, _), idx) =>
       val mmlType = param.typeAsc
-        .flatMap(TypeNameResolver.getMmlTypeName(_, siteState.resolvables).toOption)
+        .flatMap(getNominalTypeName(_).toOption)
         .getOrElse("Unknown")
       (param.name, ScopeEntry(idx, mmlType))
     }.toMap
@@ -573,7 +579,7 @@ private def compileSelectionRef(
                     val fieldReg  = qualifierRes.state.nextRegister
                     val line =
                       emitExtractValue(fieldReg, structLlvmType, baseValue, fieldIndex)
-                    TypeNameResolver.getMmlTypeName(fieldType, qualifierRes.state.resolvables) match
+                    getNominalTypeName(fieldType) match
                       case Right(typeName) =>
                         CompileResult(
                           fieldReg,
