@@ -6,14 +6,12 @@
 /!\ /!\ Do not edit without explicit approval or direct command. /!\ /!\
 /!\ /!\ Follow rules below strictly                              /!\ /!\
 /!\ /!\ COMPLETING A TASK? -> ADD (COMPLETE) TAG. NEVER DELETE.  /!\ /!\
-/!\ /!\ DO NOT ADD (COMPLETE) to the "change log" section    /!\ /!\
+/!\ /!\ DO NOT ADD (COMPLETE) to the "change log" section        /!\ /!\
 ------------------------------------------------------------------------
 
 * *Always read* `context/task-tracking-rules.md` 
   *before* working with this file - even if you read it before, 
   it might have changed in the meantime.
-
-* Follow the rules stated above.
 * These rules are mandatory unless the Author explicitly overrides them.
 
 ## Active Tasks
@@ -60,7 +58,7 @@
       - Options: auto-clone at capture site, reject literal heap captures for now, or track heap-vs-static captures explicitly.
       - Related: `let-shadow-in-lambda.mml` sample reproduces the issue.
 
-#### Implement Optional Moved
+#### Implement Optional Moves
  
   see `context/specs/optional-moves.md`
 

@@ -150,7 +150,7 @@ struct Camera {
 
 pub fn main(): Unit =
   let aspect_ratio = 16.0 /. 9.0;
-  let image_width = 400;
+  let image_width = 6000;
   let image_height = float_to_int ((int_to_float image_width) /. aspect_ratio);
 
   let origin = Vec3 0.0 0.0 0.0;
@@ -167,7 +167,7 @@ pub fn main(): Unit =
   let r_arr = ar_float_new image_width;
   let g_arr = ar_float_new image_width;
   let b_arr = ar_float_new image_width;
-  let buf = mkBufferWithFd 1;
+  let buf = mkBufferWithSize (64 * 1024);
 
   let camera = Camera
     image_width
@@ -175,7 +175,8 @@ pub fn main(): Unit =
     origin
     ll_corner
     horizontal
-    vertical;
+    vertical
+  ;
 
   // The header must be written before `buf` is captured by the local helpers.
   buffer_writeln buf "P3";
