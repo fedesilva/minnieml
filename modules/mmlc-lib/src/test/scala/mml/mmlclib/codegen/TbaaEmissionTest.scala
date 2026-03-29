@@ -188,6 +188,37 @@ class TbaaEmissionTest extends BaseEffFunSuite:
     }
   }
 
+  test("TBAA preserves alias identity for aliased struct fields") {
+    val source = """
+      type MyInt = Int64;
+      struct Box {
+        value: MyInt
+      };
+
+      fn main(): Int64 =
+        let b = Box 1;
+        0;
+      ;
+    """
+
+    compileAndGenerate(source).map { llvmIr =>
+      val myIntScalarId = """!(\d+) = !\{!"MyInt", !0, i64 0\}""".r
+        .findFirstMatchIn(llvmIr)
+        .map(_.group(1))
+        .getOrElse(fail(s"Expected distinct TBAA node for alias type. IR:\n$llvmIr"))
+
+      val boxNode = llvmIr
+        .split("\n")
+        .find(_.matches("""!\d+ = !\{!"Box", !\d+, i64 0\}"""))
+        .getOrElse(fail(s"Expected Box TBAA node. IR:\n$llvmIr"))
+
+      assert(
+        boxNode.contains(s"!$myIntScalarId, i64 0"),
+        s"Expected Box field TBAA to use alias identity, got: $boxNode"
+      )
+    }
+  }
+
   test("StructLayout computes correct size for nested structs") {
     // Create Inner = { i64, i64 } -> 16 bytes
     val innerStruct = NativeStruct(
