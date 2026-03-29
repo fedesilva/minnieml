@@ -316,7 +316,8 @@ object ClosureMemoryFnGenerator:
       if newTerms eq expr.terms then expr
       else expr.copy(terms = newTerms)
 
-    def rewriteTerm(term: Term): Term = term match
+    def rewriteCallable(term: Ref | App | Lambda): Ref | App | Lambda = term match
+      case ref:    Ref => ref
       case lambda: Lambda =>
         val newBody = rewriteExpr(lambda.body)
         Option(lambdaMap.get(lambda)) match
@@ -329,10 +330,14 @@ object ClosureMemoryFnGenerator:
             if newBody eq lambda.body then lambda
             else lambda.copy(body = newBody)
       case App(src, fn, arg, ts, ta) =>
-        val newFn  = rewriteTerm(fn).asInstanceOf[Ref | App | Lambda]
+        val newFn  = rewriteCallable(fn)
         val newArg = rewriteExpr(arg)
         if (newFn eq fn) && (newArg eq arg) then term
         else App(src, newFn, newArg, ts, ta)
+
+    def rewriteTerm(term: Term): Term = term match
+      case callable: (Ref | App | Lambda) =>
+        rewriteCallable(callable)
       case Cond(src, cond, ifTrue, ifFalse, ts, ta) =>
         val newCond    = rewriteExpr(cond)
         val newIfTrue  = rewriteExpr(ifTrue)
