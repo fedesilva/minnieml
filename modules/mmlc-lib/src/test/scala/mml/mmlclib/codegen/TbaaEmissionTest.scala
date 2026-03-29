@@ -142,11 +142,49 @@ class TbaaEmissionTest extends BaseEffFunSuite:
 
   private val span = SrcSpan(SrcPoint(0, 0, 0), SrcPoint(0, 0, 0))
 
+  private val int64Id   = "int64-id"
+  private val int32Id   = "int32-id"
+  private val charPtrId = "charptr-id"
+
+  private val int64Def =
+    TypeDef(
+      source   = SourceOrigin.Loc(span),
+      nameNode = Name.synth("Int64"),
+      typeSpec = Some(NativePrimitive(span, "i64")),
+      id       = Some(int64Id)
+    )
+
+  private val int32Def =
+    TypeDef(
+      source   = SourceOrigin.Loc(span),
+      nameNode = Name.synth("Int32"),
+      typeSpec = Some(NativePrimitive(span, "i32")),
+      id       = Some(int32Id)
+    )
+
+  private val charPtrDef =
+    TypeDef(
+      source   = SourceOrigin.Loc(span),
+      nameNode = Name.synth("CharPtr"),
+      typeSpec = Some(NativePointer(span, "i8")),
+      id       = Some(charPtrId)
+    )
+
+  private val int64   = TypeRef(span, "Int64", Some(int64Id), Nil)
+  private val int32   = TypeRef(span, "Int32", Some(int32Id), Nil)
+  private val charPtr = TypeRef(span, "CharPtr", Some(charPtrId), Nil)
+
+  private val layoutBuiltinTypes =
+    ResolvablesIndex()
+      .updatedType(int64Def)
+      .updatedType(int32Def)
+      .updatedType(charPtrDef)
+
   test("StructLayout computes size and alignment for TypeFn fat pointers") {
     val fnType = TypeFn(
       span,
-      NonEmptyList.one(NativePrimitive(span, "i64")),
-      NativePrimitive(span, "i64")
+      NonEmptyList.one(int64),
+      int64
     )
 
     assertEquals(StructLayout.sizeOf(fnType, ResolvablesIndex()), Right(16))
@@ -224,8 +262,8 @@ class TbaaEmissionTest extends BaseEffFunSuite:
     val innerStruct = NativeStruct(
       span,
       List(
-        ("a", NativePrimitive(span, "i64")),
-        ("b", NativePrimitive(span, "i64"))
+        ("a", int64),
+        ("b", int64)
       )
     )
     val innerTypeDef =
@@ -238,7 +276,7 @@ class TbaaEmissionTest extends BaseEffFunSuite:
     val innerTypeRef = TypeRef(span, "Inner", Some("inner-id"), Nil)
 
     // Create resolvables index for the lookup
-    val resolvables = ResolvablesIndex().updatedType(innerTypeDef)
+    val resolvables = layoutBuiltinTypes.updatedType(innerTypeDef)
 
     // Create Outer = { i64, Inner, i64 } -> should be 32 bytes
     // Field 0 (i64): offset 0, size 8
@@ -248,9 +286,9 @@ class TbaaEmissionTest extends BaseEffFunSuite:
     val outerStruct = NativeStruct(
       span,
       List(
-        ("x", NativePrimitive(span, "i64")),
+        ("x", int64),
         ("inner", innerTypeRef),
-        ("y", NativePrimitive(span, "i64"))
+        ("y", int64)
       )
     )
 
@@ -268,8 +306,8 @@ class TbaaEmissionTest extends BaseEffFunSuite:
     val innerStruct = NativeStruct(
       span,
       List(
-        ("len", NativePrimitive(span, "i64")),
-        ("data", NativePointer(span, "i8"))
+        ("len", int64),
+        ("data", charPtr)
       )
     )
     val innerTypeDef =
@@ -282,7 +320,7 @@ class TbaaEmissionTest extends BaseEffFunSuite:
     val innerTypeRef = TypeRef(span, "Inner", Some("inner-id"), Nil)
 
     // Create resolvables index for the lookup
-    val resolvables = ResolvablesIndex().updatedType(innerTypeDef)
+    val resolvables = layoutBuiltinTypes.updatedType(innerTypeDef)
 
     // Create Outer = { i32, Inner }
     // Field 0 (i32): offset 0, size 4
@@ -292,7 +330,7 @@ class TbaaEmissionTest extends BaseEffFunSuite:
     val outerStruct = NativeStruct(
       span,
       List(
-        ("tag", NativePrimitive(span, "i32")),
+        ("tag", int32),
         ("inner", innerTypeRef)
       )
     )

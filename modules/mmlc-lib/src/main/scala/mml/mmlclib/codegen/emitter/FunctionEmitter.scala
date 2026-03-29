@@ -154,8 +154,9 @@ def emitCaptureLoads(
       val loadLine = s"  %$loadReg = load $llvmType, ptr %$gepReg"
       val newState = st.withRegister(loadReg + 1).emit(gepLine).emit(loadLine)
       val mmlType = ref.typeSpec
-        .flatMap(TypeNameResolver.getMmlTypeName(_, bodyState.resolvables).toOption)
+        .flatMap(getNominalTypeName(_).toOption)
         .getOrElse("Unknown")
+
       (newState, scope + (ref.name -> ScopeEntry(loadReg, mmlType)))
   }
 
@@ -286,7 +287,7 @@ private def compileRegularLambda(
       bodyState.emit(allocLine).emit(storeLine).emit(loadLine)
 
       val mmlType = param.typeAsc
-        .flatMap(TypeNameResolver.getMmlTypeName(_, bodyState.resolvables).toOption)
+        .flatMap(getNominalTypeName(_).toOption)
         .getOrElse("Unknown")
       (param.name, ScopeEntry(regNum, mmlType))
     }
@@ -526,7 +527,7 @@ private[emitter] def compileTailRecursiveLambda(
     .zip(phiRegs)
     .map { case (param, reg) =>
       val mmlType = param.typeAsc
-        .flatMap(TypeNameResolver.getMmlTypeName(_, headerState.resolvables).toOption)
+        .flatMap(getNominalTypeName(_).toOption)
         .getOrElse("Unknown")
       param.name -> ScopeEntry(reg, mmlType)
     }
