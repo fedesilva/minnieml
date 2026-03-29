@@ -24,7 +24,9 @@ sealed trait Term extends AstNode, Typeable, FromSource:
     case x: LiteralFloat => x.copy(typeAsc = Some(t))
     case x: NativeImpl => x.copy(typeAsc = Some(t))
     case x: InvalidExpression => x.copy(typeAsc = Some(t))
-    case _: TermError | _: DataConstructor | _: DataDestructor => this
+    case _: TermError => this
+    case _: DataConstructor => this
+    case _: DataDestructor => this
 
 case class TermError(
   source:     SourceOrigin,
