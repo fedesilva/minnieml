@@ -72,6 +72,14 @@ object ClosureMemoryFnGenerator:
           (c ::: t ::: f, cnt3)
         case TermGroup(_, inner, _) =>
           walkExpr(inner, counter)
+        case Tuple(_, elements, _, _) =>
+          elements.toList.foldLeft((List.empty[(Lambda, String)], counter)) {
+            case ((acc, cnt), element) =>
+              val (found, next) = walkExpr(element, cnt)
+              (acc ::: found, next)
+          }
+        case ref: Ref =>
+          ref.qualifier.fold((Nil, counter))(walkTerm(_, counter))
         case _ => (Nil, counter)
 
     module.members
@@ -84,31 +92,41 @@ object ClosureMemoryFnGenerator:
 
   /** Build a map from param/binding IDs to their types by walking the module AST. */
   private def buildIdTypeMap(module: Module): Map[String, Type] =
-    val result = Map.newBuilder[String, Type]
+    def paramTypes(lambda: Lambda): Map[String, Type] =
+      lambda.params.flatMap { param =>
+        for
+          id <- param.id
+          tpe <- param.typeAsc.orElse(param.typeSpec)
+        yield id -> tpe
+      }.toMap
 
-    def walkExpr(expr: Expr): Unit = expr.terms.foreach(walkTerm)
+    def walkExpr(expr: Expr): Map[String, Type] =
+      expr.terms.foldLeft(Map.empty[String, Type]) { (acc, term) =>
+        acc ++ walkTerm(term)
+      }
 
-    def walkTerm(term: Term): Unit = term match
+    def walkTerm(term: Term): Map[String, Type] = term match
       case lambda: Lambda =>
-        lambda.params.foreach { p =>
-          p.id.foreach { id =>
-            p.typeAsc.orElse(p.typeSpec).foreach(t => result += (id -> t))
-          }
-        }
-        walkExpr(lambda.body)
+        paramTypes(lambda) ++ walkExpr(lambda.body)
       case App(_, fn, arg, _, _) =>
-        walkTerm(fn)
-        walkExpr(arg)
+        walkTerm(fn) ++ walkExpr(arg)
       case Cond(_, cond, ifTrue, ifFalse, _, _) =>
-        walkExpr(cond); walkExpr(ifTrue); walkExpr(ifFalse)
-      case TermGroup(_, inner, _) => walkExpr(inner)
-      case _ => ()
+        walkExpr(cond) ++ walkExpr(ifTrue) ++ walkExpr(ifFalse)
+      case TermGroup(_, inner, _) =>
+        walkExpr(inner)
+      case Tuple(_, elements, _, _) =>
+        elements.toList.foldLeft(Map.empty[String, Type]) { (acc, element) =>
+          acc ++ walkExpr(element)
+        }
+      case ref: Ref =>
+        ref.qualifier.fold(Map.empty[String, Type])(walkTerm)
+      case _ =>
+        Map.empty
 
-    module.members.foreach:
-      case bnd: Bnd => walkExpr(bnd.value)
-      case _ => ()
-
-    result.result()
+    module.members.foldLeft(Map.empty[String, Type]) {
+      case (acc, bnd: Bnd) => acc ++ walkExpr(bnd.value)
+      case (acc, _) => acc
+    }
 
   /** Resolve the type of a captured Ref. */
   private def resolveCaptureType(ref: Ref, idTypeMap: Map[String, Type]): Option[Type] =
@@ -309,90 +327,101 @@ object ClosureMemoryFnGenerator:
     members:   List[Member],
     lambdaMap: IdentityHashMap[Lambda, String]
   ): List[Member] =
-    if lambdaMap.isEmpty then return members
+    if lambdaMap.isEmpty then members
+    else
+      def rewriteExpr(expr: Expr): Expr =
+        val newTerms = expr.terms.map(rewriteTerm)
+        if newTerms == expr.terms then expr
+        else expr.copy(terms = newTerms)
 
-    def rewriteExpr(expr: Expr): Expr =
-      val newTerms = expr.terms.map(rewriteTerm)
-      if newTerms eq expr.terms then expr
-      else expr.copy(terms = newTerms)
+      def rewriteCallable(term: Ref | App | Lambda): Ref | App | Lambda = term match
+        case ref: Ref =>
+          val newQualifier = ref.qualifier.map(rewriteTerm)
+          if newQualifier == ref.qualifier then ref
+          else ref.copy(qualifier = newQualifier)
+        case lambda: Lambda =>
+          val newBody = rewriteExpr(lambda.body)
+          Option(lambdaMap.get(lambda)) match
+            case Some(envName) =>
+              val newMeta = lambda.meta
+                .getOrElse(LambdaMeta())
+                .copy(envStructName = Some(envName))
+              lambda.copy(body = newBody, meta = Some(newMeta))
+            case None =>
+              if newBody == lambda.body then lambda
+              else lambda.copy(body = newBody)
+        case App(src, fn, arg, ts, ta) =>
+          val newFn  = rewriteCallable(fn)
+          val newArg = rewriteExpr(arg)
+          if (newFn == fn) && (newArg == arg) then term
+          else App(src, newFn, newArg, ts, ta)
 
-    def rewriteCallable(term: Ref | App | Lambda): Ref | App | Lambda = term match
-      case ref:    Ref => ref
-      case lambda: Lambda =>
-        val newBody = rewriteExpr(lambda.body)
-        Option(lambdaMap.get(lambda)) match
-          case Some(envName) =>
-            val newMeta = lambda.meta
-              .getOrElse(LambdaMeta())
-              .copy(envStructName = Some(envName))
-            lambda.copy(body = newBody, meta = Some(newMeta))
-          case None =>
-            if newBody eq lambda.body then lambda
-            else lambda.copy(body = newBody)
-      case App(src, fn, arg, ts, ta) =>
-        val newFn  = rewriteCallable(fn)
-        val newArg = rewriteExpr(arg)
-        if (newFn eq fn) && (newArg eq arg) then term
-        else App(src, newFn, newArg, ts, ta)
+      def rewriteTerm(term: Term): Term = term match
+        case callable: (Ref | App | Lambda) =>
+          rewriteCallable(callable)
+        case Cond(src, cond, ifTrue, ifFalse, ts, ta) =>
+          val newCond    = rewriteExpr(cond)
+          val newIfTrue  = rewriteExpr(ifTrue)
+          val newIfFalse = rewriteExpr(ifFalse)
+          if (newCond == cond) && (newIfTrue == ifTrue) && (newIfFalse == ifFalse) then term
+          else Cond(src, newCond, newIfTrue, newIfFalse, ts, ta)
+        case TermGroup(src, inner, ts) =>
+          val newInner = rewriteExpr(inner)
+          if newInner == inner then term
+          else TermGroup(src, newInner, ts)
+        case Tuple(src, elements, ts, ta) =>
+          val newElements = elements.map(rewriteExpr)
+          if newElements.toList == elements.toList then term
+          else Tuple(src, newElements, ts, ta)
+        case other =>
+          other
 
-    def rewriteTerm(term: Term): Term = term match
-      case callable: (Ref | App | Lambda) =>
-        rewriteCallable(callable)
-      case Cond(src, cond, ifTrue, ifFalse, ts, ta) =>
-        val newCond    = rewriteExpr(cond)
-        val newIfTrue  = rewriteExpr(ifTrue)
-        val newIfFalse = rewriteExpr(ifFalse)
-        if (newCond eq cond) && (newIfTrue eq ifTrue) && (newIfFalse eq ifFalse) then term
-        else Cond(src, newCond, newIfTrue, newIfFalse, ts, ta)
-      case TermGroup(src, inner, ts) =>
-        val newInner = rewriteExpr(inner)
-        if newInner eq inner then term
-        else TermGroup(src, newInner, ts)
-      case other => other
-
-    members.map:
-      case bnd: Bnd =>
-        val newValue = rewriteExpr(bnd.value)
-        if newValue eq bnd.value then bnd
-        else bnd.copy(value = newValue)
-      case other => other
+      members.map:
+        case bnd: Bnd =>
+          val newValue = rewriteExpr(bnd.value)
+          if newValue == bnd.value then bnd
+          else bnd.copy(value = newValue)
+        case other => other
 
   def rewriteModule(state: CompilerState): CompilerState =
     val module     = state.module
     val moduleName = module.name
 
     val capturingLambdas = collectCapturingLambdas(module)
-    if capturingLambdas.isEmpty then return state
+    if capturingLambdas.isEmpty then state
+    else
+      // Build a map from Lambda identity (reference equality) to env struct name
+      val lambdaMap = capturingLambdas.foldLeft(new IdentityHashMap[Lambda, String]()) {
+        case (acc, (lambda, envName)) =>
+          acc.put(lambda, envName)
+          acc
+      }
 
-    // Build a map from Lambda identity (reference equality) to env struct name
-    val lambdaMap = new IdentityHashMap[Lambda, String]()
-    capturingLambdas.foreach((l, n) => lambdaMap.put(l, n))
+      // Build ID → type map for resolving capture types
+      val idTypeMap = buildIdTypeMap(module)
 
-    // Build ID → type map for resolving capture types
-    val idTypeMap = buildIdTypeMap(module)
+      // Generate env structs and free functions
+      val envStructs =
+        capturingLambdas.map((lambda, name) => mkEnvStruct(lambda, name, moduleName, idTypeMap))
+      val freeFunctions = envStructs.map(mkFreeFunction(_, moduleName))
 
-    // Generate env structs and free functions
-    val envStructs =
-      capturingLambdas.map((lambda, name) => mkEnvStruct(lambda, name, moduleName, idTypeMap))
-    val freeFunctions = envStructs.map(mkFreeFunction(_, moduleName))
+      // Generate universal __free_closure function (for closures returned from functions
+      // where we don't know the specific env struct at the call site)
+      val universalFree = mkUniversalClosureFree(moduleName)
 
-    // Generate universal __free_closure function (for closures returned from functions
-    // where we don't know the specific env struct at the call site)
-    val universalFree = mkUniversalClosureFree(moduleName)
+      // Tag lambdas with envStructName
+      val taggedMembers = tagLambdas(module.members, lambdaMap)
 
-    // Tag lambdas with envStructName
-    val taggedMembers = tagLambdas(module.members, lambdaMap)
+      // Add env structs, free functions, and universal free to members
+      val finalMembers = taggedMembers ++ envStructs ++ freeFunctions :+ universalFree
 
-    // Add env structs, free functions, and universal free to members
-    val finalMembers = taggedMembers ++ envStructs ++ freeFunctions :+ universalFree
+      // Update resolvables
+      val resolvablesWithStructs = envStructs.foldLeft(module.resolvables) { (idx, struct) =>
+        idx.updatedType(struct)
+      }
+      val resolvablesWithFrees = freeFunctions.foldLeft(resolvablesWithStructs) { (idx, fn) =>
+        idx.updated(fn)
+      }
+      val finalResolvables = resolvablesWithFrees.updated(universalFree)
 
-    // Update resolvables
-    val resolvablesWithStructs = envStructs.foldLeft(module.resolvables) { (idx, struct) =>
-      idx.updatedType(struct)
-    }
-    val resolvablesWithFrees = freeFunctions.foldLeft(resolvablesWithStructs) { (idx, fn) =>
-      idx.updated(fn)
-    }
-    val finalResolvables = resolvablesWithFrees.updated(universalFree)
-
-    state.withModule(module.copy(members = finalMembers, resolvables = finalResolvables))
+      state.withModule(module.copy(members = finalMembers, resolvables = finalResolvables))

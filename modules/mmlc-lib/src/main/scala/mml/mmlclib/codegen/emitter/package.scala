@@ -681,20 +681,6 @@ case class CompileResult(
     )
 }
 
-def getMmlTypeName(typeSpec: Type): Option[String] = typeSpec match {
-  case TypeRef(_, name, _, _) => Some(name)
-  case NativePrimitive(_, "i1", _, _) => Some("Bool")
-  case NativePrimitive(_, "i64", _, _) => Some("Int")
-  case NativePrimitive(_, "void", _, _) => Some("Unit")
-  case NativePointer(_, llvm, _, _) => Some(s"Pointer($llvm)")
-  case NativeStruct(_, _, _, _) => Some("NativeStruct")
-  case TypeUnit(_) => Some("Unit")
-  case TypeFn(_, _, _) => Some("Function")
-  case TypeTuple(_, _) => Some("Tuple")
-  case ts: TypeStruct => Some(ts.name)
-  case _ => None
-}
-
 /** Convert a NativeType AST node to LLVM type definition string.
   *
   * @param typeName

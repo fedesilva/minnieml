@@ -2,53 +2,64 @@ package mml.mmlclib.semantic
 
 import mml.mmlclib.ast.*
 import mml.mmlclib.test.BaseEffFunSuite
+import mml.mmlclib.test.TestExtractors.*
 
 class CaptureAnalyzerTests extends BaseEffFunSuite:
 
-  /** Collect all real lambda literals from a module (not let-desugaring lambdas in App.fn
-    * position).
-    */
-  private def collectAllLambdas(module: Module): List[Lambda] =
-    module.members.flatMap {
-      case bnd: Bnd =>
-        bnd.value.terms match
-          case (lambda: Lambda) :: _ =>
-            collectLambdasInExpr(lambda.body)
-          case _ => Nil
-      case _ => Nil
-    }
+  private def bindingId(module: Module, name: String): String =
+    def fromExpr(expr: Expr): Option[String] =
+      expr.terms.iterator.map(fromTerm).collectFirst { case Some(id) => id }
 
-  private def collectLambdasInExpr(expr: Expr): List[Lambda] =
-    expr.terms.flatMap {
-      case lambda: Lambda =>
-        lambda :: collectLambdasInExpr(lambda.body)
-      case app: App =>
-        app.fn match
-          case fnLambda: Lambda =>
-            collectLambdasInExpr(app.arg) ++
-              collectLambdasInExpr(fnLambda.body)
-          case _ =>
-            collectLambdasInAppFn(app.fn) ++
-              collectLambdasInExpr(app.arg)
-      case cond: Cond =>
-        collectLambdasInExpr(cond.cond) ++
-          collectLambdasInExpr(cond.ifTrue) ++
-          collectLambdasInExpr(cond.ifFalse)
-      case e:     Expr => collectLambdasInExpr(e)
-      case group: TermGroup => collectLambdasInExpr(group.inner)
-      case _ => Nil
-    }
+    def fromTerm(term: Term): Option[String] =
+      term match
+        case TXScopedBinding(bindingLambda, boundValue) =>
+          bindingLambda.params
+            .find(_.name == name)
+            .flatMap(_.id)
+            .orElse(fromExpr(bindingLambda.body))
+            .orElse(fromTerm(boundValue))
+        case lambda: Lambda =>
+          fromExpr(lambda.body)
+        case App(_, fn, arg, _, _) =>
+          fromTerm(fn).orElse(fromExpr(arg))
+        case Cond(_, cond, ifTrue, ifFalse, _, _) =>
+          fromExpr(cond).orElse(fromExpr(ifTrue)).orElse(fromExpr(ifFalse))
+        case TermGroup(_, inner, _) =>
+          fromExpr(inner)
+        case Tuple(_, elements, _, _) =>
+          elements.toList.iterator.map(fromExpr).collectFirst { case Some(id) => id }
+        case ref: Ref =>
+          ref.qualifier.flatMap(fromTerm)
+        case _ =>
+          None
 
-  private def collectLambdasInAppFn(
-    fn: Ref | App | Lambda
-  ): List[Lambda] =
-    fn match
-      case _:   Ref => Nil
-      case app: App =>
-        collectLambdasInAppFn(app.fn) ++
-          collectLambdasInExpr(app.arg)
-      case lambda: Lambda =>
-        lambda :: collectLambdasInExpr(lambda.body)
+    module.members
+      .collectFirst {
+        case b: Bnd if b.name == name => b.id
+      }
+      .flatten
+      .orElse(
+        module.members.iterator
+          .map {
+            case b: Bnd => fromExpr(b.value)
+            case _ => None
+          }
+          .collectFirst { case Some(id) => id }
+      )
+      .getOrElse(fail(s"Expected binding id for '$name'"))
+
+  private def fnParamId(module: Module, fnName: String, paramName: String): String =
+    module.members
+      .collectFirst {
+        case b: Bnd if b.name == fnName =>
+          b.value match
+            case TXExpr1(lambda: Lambda) =>
+              lambda.params.find(_.name == paramName).flatMap(_.id)
+            case _ =>
+              None
+      }
+      .flatten
+      .getOrElse(fail(s"Expected param id for '$fnName.$paramName'"))
 
   test("simple capture of a let-binding") {
     val code =
@@ -60,15 +71,8 @@ class CaptureAnalyzerTests extends BaseEffFunSuite:
         ;
       """
     semNotFailed(code).map { module =>
-      val lambdas = collectAllLambdas(module)
-      val userLambda =
-        lambdas.find(_.params.exists(_.name == "x"))
-      assert(userLambda.isDefined, "Expected a lambda literal")
-      val capNames = userLambda.get.captures.map(_.name)
-      assert(
-        capNames.contains("a"),
-        s"Expected capture of 'a', got $capNames"
-      )
+      val lambda = onlyUserLambda(module).getOrElse(fail("Expected one lambda literal"))
+      assertEquals(captureResolvedIds(lambda), Set(bindingId(module, "a")))
     }
   }
 
@@ -82,15 +86,8 @@ class CaptureAnalyzerTests extends BaseEffFunSuite:
         ;
       """
     semNotFailed(code).map { module =>
-      val lambdas = collectAllLambdas(module)
-      val userLambda =
-        lambdas.find(_.params.exists(_.name == "x"))
-      assert(userLambda.isDefined, "Expected a lambda literal")
-      val capNames = userLambda.get.captures.map(_.name)
-      assert(
-        !capNames.contains("g"),
-        s"Should NOT capture module-level 'g', got $capNames"
-      )
+      val lambda = onlyUserLambda(module).getOrElse(fail("Expected one lambda literal"))
+      assert(!captureResolvedIds(lambda).contains(bindingId(module, "g")))
     }
   }
 
@@ -103,14 +100,8 @@ class CaptureAnalyzerTests extends BaseEffFunSuite:
         ;
       """
     semNotFailed(code).map { module =>
-      val lambdas = collectAllLambdas(module)
-      val userLambda =
-        lambdas.find(_.params.exists(_.name == "x"))
-      assert(userLambda.isDefined, "Expected a lambda literal")
-      assert(
-        userLambda.get.captures.isEmpty,
-        s"Expected no captures, got ${userLambda.get.captures.map(_.name)}"
-      )
+      val lambda = onlyUserLambda(module).getOrElse(fail("Expected one lambda literal"))
+      assertEquals(captureResolvedIds(lambda), Set.empty[String])
     }
   }
 
@@ -125,14 +116,10 @@ class CaptureAnalyzerTests extends BaseEffFunSuite:
         ;
       """
     semNotFailed(code).map { module =>
-      val lambdas = collectAllLambdas(module)
-      val userLambda =
-        lambdas.find(_.params.exists(_.name == "x"))
-      assert(userLambda.isDefined, "Expected a lambda literal")
-      val capNames = userLambda.get.captures.map(_.name).toSet
-      assert(
-        capNames.contains("a") && capNames.contains("b"),
-        s"Expected captures of 'a' and 'b', got $capNames"
+      val lambda = onlyUserLambda(module).getOrElse(fail("Expected one lambda literal"))
+      assertEquals(
+        captureResolvedIds(lambda),
+        Set(bindingId(module, "a"), bindingId(module, "b"))
       )
     }
   }
@@ -146,15 +133,8 @@ class CaptureAnalyzerTests extends BaseEffFunSuite:
         ;
       """
     semNotFailed(code).map { module =>
-      val lambdas = collectAllLambdas(module)
-      val userLambda =
-        lambdas.find(_.params.exists(_.name == "x"))
-      assert(userLambda.isDefined, "Expected a lambda literal")
-      val capNames = userLambda.get.captures.map(_.name)
-      assert(
-        capNames.contains("a"),
-        s"Expected capture of 'a', got $capNames"
-      )
+      val lambda = onlyUserLambda(module).getOrElse(fail("Expected one lambda literal"))
+      assertEquals(captureResolvedIds(lambda), Set(fnParamId(module, "foo", "a")))
     }
   }
 
@@ -168,15 +148,8 @@ class CaptureAnalyzerTests extends BaseEffFunSuite:
         ;
       """
     semNotFailed(code).map { module =>
-      val lambdas = collectAllLambdas(module)
-      val userLambda =
-        lambdas.find(_.params.exists(_.name == "x"))
-      assert(userLambda.isDefined, "Expected a let-bound lambda")
-      val capNames = userLambda.get.captures.map(_.name)
-      assert(
-        capNames.contains("a"),
-        s"Expected capture of 'a', got $capNames"
-      )
+      val lambda = onlyUserLambda(module).getOrElse(fail("Expected one lambda literal"))
+      assertEquals(captureResolvedIds(lambda), Set(bindingId(module, "a")))
     }
   }
 
@@ -190,15 +163,8 @@ class CaptureAnalyzerTests extends BaseEffFunSuite:
         ;
       """
     semNotFailed(code).map { module =>
-      val lambdas = collectAllLambdas(module)
-      val userLambda =
-        lambdas.find(_.params.exists(_.name == "x"))
-      assert(userLambda.isDefined, "Expected an inner-fn lambda")
-      val capNames = userLambda.get.captures.map(_.name)
-      assert(
-        capNames.contains("a"),
-        s"Expected capture of 'a', got $capNames"
-      )
+      val lambda = onlyUserLambda(module).getOrElse(fail("Expected one inner-fn lambda"))
+      assertEquals(captureResolvedIds(lambda), Set(bindingId(module, "a")))
     }
   }
 
@@ -210,15 +176,8 @@ class CaptureAnalyzerTests extends BaseEffFunSuite:
         ;
       """
     semNotFailed(code).map { module =>
-      val lambdas = collectAllLambdas(module)
-      val outerLambda =
-        lambdas.find(_.params.exists(_.name == "x"))
-      assert(outerLambda.isDefined, "Expected outer lambda")
-      val outerCaps = outerLambda.get.captures.map(_.name)
-      assert(
-        outerCaps.contains("a"),
-        s"Lambda should capture 'a', got $outerCaps"
-      )
+      val lambda = onlyUserLambda(module).getOrElse(fail("Expected one lambda literal"))
+      assertEquals(captureResolvedIds(lambda), Set(fnParamId(module, "foo", "a")))
     }
   }
 
@@ -232,14 +191,7 @@ class CaptureAnalyzerTests extends BaseEffFunSuite:
         ;
       """
     semNotFailed(code).map { module =>
-      val allLambdas = collectAllLambdas(module)
-      val userLambdas =
-        allLambdas.filter(_.params.exists(_.name == "x"))
-      userLambdas.foreach { l =>
-        assert(
-          l.captures.isEmpty,
-          s"Expected no captures, got ${l.captures.map(_.name)}"
-        )
-      }
+      val lambda = onlyUserLambda(module).getOrElse(fail("Expected one lambda literal"))
+      assertEquals(captureResolvedIds(lambda), Set.empty[String])
     }
   }

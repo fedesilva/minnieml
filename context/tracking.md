@@ -67,15 +67,15 @@
     - [x] 3.4-QA.15 (P3) OwnershipAnalyzer 5-tuples should be a case class (`OwnershipAnalyzer.scala`)
     - [ ] 3.4-QA.16 (P3) Term.withTypeAsc silently ignores unknown term types (`ast/terms.scala`)
     - [x] 3.4-QA.17 (P3) FORCE_INLINE on non-hot-path runtime functions (`mml_runtime.c`)
-    - [ ] 3.4-QA.19 (P2) Replace shape-coupled/name-coupled lambda semantic tests with semantic extractors (`CaptureAnalyzerTests.scala`, `TypeCheckerTests.scala`, `LambdaLitTests.scala`)
-    - [ ] 3.4-QA.20 (P3) Remove new `TODO:QA` by extracting ownership test helpers or tracking them properly (`OwnershipAnalyzerTests.scala`)
-    - [ ] 3.4-QA.21 (P2) Mutable traversals + early returns in ClosureMemoryFnGenerator — replace var/builder/return with folds and if-else (`ClosureMemoryFnGenerator.scala`)
+    - [x] 3.4-QA.19 (P2) Replace shape-coupled/name-coupled lambda semantic tests with semantic extractors (`CaptureAnalyzerTests.scala`, `TypeCheckerTests.scala`, `LambdaLitTests.scala`)
+    - [x] 3.4-QA.20 (P3) Remove new `TODO:QA` by extracting ownership test helpers or tracking them properly (`OwnershipAnalyzerTests.scala`)
+    - [x] 3.4-QA.21 (P2) Mutable traversals + early returns in ClosureMemoryFnGenerator — replace var/builder/return with folds and if-else (`ClosureMemoryFnGenerator.scala`)
     - [x] 3.4-QA.22 (P2) asInstanceOf cast in ClosureMemoryFnGenerator.tagLambdas breaks no-exceptions rule (`ClosureMemoryFnGenerator.scala:312`)
     - [x] 3.4-QA.23 (P3) Hardcoded string name matching for closure free dispatch (`Applications.scala:312,316`)
     - [x] 3.4-QA.24 (P3) Inconsistent Cats syntax in new codegen code — use .asRight/.asLeft/.some/.none (`ExpressionCompiler.scala`, `Applications.scala`)    
-    - [ ] 3.4-QA.26 (P3) getMmlTypeName helper consolidation (`codegen/emitter/package.scala`, `TypeNameResolver.scala`, emitter call sites`)
-    - [ ] 3.4-QA.27 (P3) Converge closure env LLVM type naming with semantic env struct ids (`ExpressionCompiler.scala`, `ClosureMemoryFnGenerator.scala`, env TBAA/type emission`)
-    - [ ] 3.4-QA.28 (P3) Attach TBAA metadata to closure env stores at capture sites (`ExpressionCompiler.scala`, `emitCallSiteEnv`)
+    - [x] 3.4-QA.26 (P3) getMmlTypeName helper consolidation (`codegen/emitter/package.scala`, `TypeNameResolver.scala`, emitter call sites`)
+    - [x] 3.4-QA.27 (P3) Converge closure env LLVM type naming with semantic env struct ids (`ExpressionCompiler.scala`, `ClosureMemoryFnGenerator.scala`, env TBAA/type emission`)
+    - [x] 3.4-QA.28 (P3) Attach TBAA metadata to closure env stores at capture sites (`ExpressionCompiler.scala`, `emitCallSiteEnv`)
 
   - Heap-capture follow-up
     - [ ] 3.5.1 Literal heap captures: design decision

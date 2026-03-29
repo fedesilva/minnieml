@@ -2,6 +2,7 @@ package mml.mmlclib.grammar
 
 import mml.mmlclib.ast.*
 import mml.mmlclib.test.BaseEffFunSuite
+import mml.mmlclib.test.TestExtractors.*
 import mml.mmlclib.util.prettyprint.ast.prettyPrintAst
 
 class LambdaLitTests extends BaseEffFunSuite:
@@ -12,12 +13,12 @@ class LambdaLitTests extends BaseEffFunSuite:
         let f = { x -> x; };
       """
     ).map { m =>
-      val bnd = m.members.head.asInstanceOf[Bnd]
-      bnd.value.terms.head match
-        case lambda: Lambda =>
-          assert(lambda.params.size == 1, s"Expected 1 param: ${prettyPrintAst(bnd)}")
+      m.members.headOption match
+        case Some(TXBndLambda(lambda)) =>
+          assert(lambda.params.size == 1, s"Expected 1 param: ${prettyPrintAst(m)}")
           assertEquals(lambda.params.head.name, "x")
-        case other => fail(s"Expected Lambda, got ${prettyPrintAst(other)}")
+        case other =>
+          fail(s"Expected binding lambda, got ${other.map(prettyPrintAst(_)).getOrElse("<none>")}")
     }
   }
 
@@ -27,11 +28,11 @@ class LambdaLitTests extends BaseEffFunSuite:
         let f = { a, b -> a; };
       """
     ).map { m =>
-      val bnd = m.members.head.asInstanceOf[Bnd]
-      bnd.value.terms.head match
-        case lambda: Lambda =>
-          assert(lambda.params.size == 2, s"Expected 2 params: ${prettyPrintAst(bnd)}")
-        case other => fail(s"Expected Lambda, got ${prettyPrintAst(other)}")
+      m.members.headOption match
+        case Some(TXBndLambda(lambda)) =>
+          assert(lambda.params.size == 2, s"Expected 2 params: ${prettyPrintAst(m)}")
+        case other =>
+          fail(s"Expected binding lambda, got ${other.map(prettyPrintAst(_)).getOrElse("<none>")}")
     }
   }
 
@@ -41,12 +42,12 @@ class LambdaLitTests extends BaseEffFunSuite:
         let f = { x: Int -> x; };
       """
     ).map { m =>
-      val bnd = m.members.head.asInstanceOf[Bnd]
-      bnd.value.terms.head match
-        case lambda: Lambda =>
+      m.members.headOption match
+        case Some(TXBndLambda(lambda)) =>
           assert(lambda.params.size == 1)
           assert(lambda.params.head.typeAsc.isDefined, "Expected typed param")
-        case other => fail(s"Expected Lambda, got ${prettyPrintAst(other)}")
+        case other =>
+          fail(s"Expected binding lambda, got ${other.map(prettyPrintAst(_)).getOrElse("<none>")}")
     }
   }
 
@@ -56,11 +57,11 @@ class LambdaLitTests extends BaseEffFunSuite:
         let f = { 42; };
       """
     ).map { m =>
-      val bnd = m.members.head.asInstanceOf[Bnd]
-      bnd.value.terms.head match
-        case lambda: Lambda =>
-          assert(lambda.params.isEmpty, s"Expected 0 params: ${prettyPrintAst(bnd)}")
-        case other => fail(s"Expected Lambda, got ${prettyPrintAst(other)}")
+      m.members.headOption match
+        case Some(TXBndLambda(lambda)) =>
+          assert(lambda.params.isEmpty, s"Expected 0 params: ${prettyPrintAst(m)}")
+        case other =>
+          fail(s"Expected binding lambda, got ${other.map(prettyPrintAst(_)).getOrElse("<none>")}")
     }
   }
 
@@ -70,15 +71,14 @@ class LambdaLitTests extends BaseEffFunSuite:
         let f = { x -> let y = x; y; };
       """
     ).map { m =>
-      val bnd = m.members.head.asInstanceOf[Bnd]
-      bnd.value.terms.head match
-        case lambda: Lambda =>
+      m.members.headOption match
+        case Some(TXBndLambda(lambda)) =>
           assert(lambda.params.size == 1)
-          // body is a statement chain (let y = x; y) so it's an App wrapping another Lambda
-          lambda.body.terms.head match
-            case _: App => () // let-chain produces App(Lambda(...), ...)
+          lambda.body match
+            case TXExpr1(_: App) => ()
             case other => fail(s"Expected App for let-chain, got ${prettyPrintAst(other)}")
-        case other => fail(s"Expected Lambda, got ${prettyPrintAst(other)}")
+        case other =>
+          fail(s"Expected binding lambda, got ${other.map(prettyPrintAst(_)).getOrElse("<none>")}")
     }
   }
 
@@ -88,17 +88,16 @@ class LambdaLitTests extends BaseEffFunSuite:
         let f = { a -> { b -> a; }; };
       """
     ).map { m =>
-      val bnd = m.members.head.asInstanceOf[Bnd]
-      bnd.value.terms.head match
-        case outer: Lambda =>
-          assert(outer.params.size == 1)
-          assertEquals(outer.params.head.name, "a")
-          outer.body.terms.head match
-            case inner: Lambda =>
-              assert(inner.params.size == 1)
-              assertEquals(inner.params.head.name, "b")
-            case other => fail(s"Expected inner Lambda, got ${prettyPrintAst(other)}")
-        case other => fail(s"Expected outer Lambda, got ${prettyPrintAst(other)}")
+      m.members.headOption match
+        case Some(TXBndLambda(outer)) =>
+          assertEquals(outer.params.map(_.name), List("a"))
+          outer.body match
+            case TXExpr1(inner: Lambda) =>
+              assertEquals(inner.params.map(_.name), List("b"))
+            case other =>
+              fail(s"Expected inner Lambda, got ${prettyPrintAst(other)}")
+        case other =>
+          fail(s"Expected binding lambda, got ${other.map(prettyPrintAst(_)).getOrElse("<none>")}")
     }
   }
 
@@ -119,12 +118,12 @@ class LambdaLitTests extends BaseEffFunSuite:
         let f = { ~s -> s; };
       """
     ).map { m =>
-      val bnd = m.members.head.asInstanceOf[Bnd]
-      bnd.value.terms.head match
-        case lambda: Lambda =>
+      m.members.headOption match
+        case Some(TXBndLambda(lambda)) =>
           assert(lambda.params.size == 1)
           assert(lambda.params.head.consuming, "Expected consuming param")
-        case other => fail(s"Expected Lambda, got ${prettyPrintAst(other)}")
+        case other =>
+          fail(s"Expected binding lambda, got ${other.map(prettyPrintAst(_)).getOrElse("<none>")}")
     }
   }
 
@@ -137,38 +136,26 @@ class LambdaLitTests extends BaseEffFunSuite:
         ;
       """
     ).map { m =>
-      val mainBnd = m.members.head.asInstanceOf[Bnd]
-      mainBnd.value.terms.head match
-        case mainLambda: Lambda =>
-          mainLambda.body.terms match
-            case List(App(_, bindingLambda: Lambda, argExpr, _, _)) =>
-              assertEquals(bindingLambda.params.size, 1)
-              assertEquals(bindingLambda.params.head.name, "inc")
+      m.members.headOption match
+        case Some(TXBndLambda(mainLambda)) =>
+          mainLambda.body match
+            case TXExpr1(TXScopedBinding(bindingLambda, innerLambda: Lambda)) =>
+              assertEquals(bindingLambda.params.map(_.name), List("inc"))
               assert(
                 bindingLambda.params.head.typeAsc.isDefined,
                 "Expected synthesized binding type"
               )
-
-              argExpr.terms match
-                case List(innerLambda: Lambda) =>
-                  assertEquals(innerLambda.params.size, 1)
-                  assertEquals(innerLambda.params.head.name, "a")
-                  assert(innerLambda.params.head.typeAsc.isDefined, "Expected typed param")
-                  assert(innerLambda.typeAsc.isEmpty, "Expected return type on binding, not lambda")
-                case other =>
-                  fail(
-                    s"Expected scoped binding value to be a Lambda, got ${other
-                        .map(prettyPrintAst(_))
-                        .mkString(", ")}"
-                  )
+              assertEquals(innerLambda.params.map(_.name), List("a"))
+              assert(innerLambda.params.head.typeAsc.isDefined, "Expected typed param")
+              assert(innerLambda.typeAsc.isEmpty, "Expected return type on binding, not lambda")
             case other =>
               fail(
-                s"Expected main body to be App(Lambda(binding), Lambda(value)), got ${other
-                    .map(prettyPrintAst(_))
-                    .mkString(", ")}"
+                s"Expected main body to be scoped binding application, got ${prettyPrintAst(other)}"
               )
         case other =>
-          fail(s"Expected main binding Lambda, got ${prettyPrintAst(other)}")
+          fail(
+            s"Expected main binding lambda, got ${other.map(prettyPrintAst(_)).getOrElse("<none>")}"
+          )
     }
   }
 
@@ -181,36 +168,25 @@ class LambdaLitTests extends BaseEffFunSuite:
         ;
       """
     ).map { m =>
-      val mainBnd = m.members.head.asInstanceOf[Bnd]
-      mainBnd.value.terms.head match
-        case mainLambda: Lambda =>
-          mainLambda.body.terms match
-            case List(App(_, bindingLambda: Lambda, argExpr, _, _)) =>
-              assertEquals(bindingLambda.params.size, 1)
-              assertEquals(bindingLambda.params.head.name, "loop")
+      m.members.headOption match
+        case Some(TXBndLambda(mainLambda)) =>
+          mainLambda.body match
+            case TXExpr1(TXScopedBinding(bindingLambda, innerLambda: Lambda)) =>
+              assertEquals(bindingLambda.params.map(_.name), List("loop"))
               assert(
                 bindingLambda.params.head.typeAsc.isDefined,
                 "Expected synthesized binding type"
               )
-
-              argExpr.terms match
-                case List(innerLambda: Lambda) =>
-                  assert(innerLambda.params.isEmpty, "Expected nullary inner function")
-                  assert(innerLambda.typeAsc.isEmpty, "Expected return type on binding, not lambda")
-                case other =>
-                  fail(
-                    s"Expected recursive binding value to be a Lambda, got ${other
-                        .map(prettyPrintAst(_))
-                        .mkString(", ")}"
-                  )
+              assert(innerLambda.params.isEmpty, "Expected nullary inner function")
+              assert(innerLambda.typeAsc.isEmpty, "Expected return type on binding, not lambda")
             case other =>
               fail(
-                s"Expected main body to be App(Lambda(binding), Lambda(value)), got ${other
-                    .map(prettyPrintAst(_))
-                    .mkString(", ")}"
+                s"Expected main body to be scoped binding application, got ${prettyPrintAst(other)}"
               )
         case other =>
-          fail(s"Expected main binding Lambda, got ${prettyPrintAst(other)}")
+          fail(
+            s"Expected main binding lambda, got ${other.map(prettyPrintAst(_)).getOrElse("<none>")}"
+          )
     }
   }
 
@@ -220,15 +196,15 @@ class LambdaLitTests extends BaseEffFunSuite:
         let f = { a, b -> a + b; };
       """
     ).map { m =>
-      val bnd = m.members.head.asInstanceOf[Bnd]
-      bnd.value.terms.head match
-        case lambda: Lambda =>
+      m.members.headOption match
+        case Some(TXBndLambda(lambda)) =>
           assert(lambda.params.size == 2)
           assert(
             lambda.body.terms.size == 3,
-            s"Expected 3 terms in body: ${prettyPrintAst(bnd)}"
+            s"Expected 3 terms in body: ${prettyPrintAst(m)}"
           )
-        case other => fail(s"Expected Lambda, got ${prettyPrintAst(other)}")
+        case other =>
+          fail(s"Expected binding lambda, got ${other.map(prettyPrintAst(_)).getOrElse("<none>")}")
     }
   }
 

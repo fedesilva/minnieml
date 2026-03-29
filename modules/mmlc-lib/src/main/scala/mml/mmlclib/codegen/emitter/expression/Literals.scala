@@ -8,12 +8,12 @@ import mml.mmlclib.codegen.emitter.{
   CodeGenError,
   CodeGenState,
   CompileResult,
+  TypeNameResolver,
   emitCall,
   emitGetElementPtr,
   emitLoad,
   emitStore,
-  getLlvmType,
-  getMmlTypeName
+  getLlvmType
 }
 
 // ============================================================================
@@ -68,10 +68,10 @@ def compileHole(hole: Hole, state: CodeGenState): Either[CodeGenError, CompileRe
                 .withRegister(loadReg + 1)
                 .emit(loadLine)
 
-              getMmlTypeName(typeSpec) match
-                case Some(typeName) =>
+              TypeNameResolver.getMmlTypeName(typeSpec, stateWithLoad.resolvables) match
+                case Right(typeName) =>
                   CompileResult(loadReg, stateWithLoad, false, typeName).asRight
-                case None =>
+                case Left(_) =>
                   Left(
                     CodeGenError(
                       s"Could not determine MML type name for hole from spec: $typeSpec",

@@ -146,3 +146,36 @@ class ClosureCodegenTest extends BaseEffFunSuite:
       )
     }
   }
+
+  test("capture-site env stores use semantic env names and TBAA tags") {
+    val source = """
+      fn main(): Int =
+        let a = 1;
+        let f = { x: Int -> x + a; };
+        f 41;
+      ;
+    """
+
+    compileAndGenerate(source).map { llvmIr =>
+      val envName = """%struct\.(__closure_env_\d+) = type \{ ptr, i64 \}""".r
+        .findFirstMatchIn(llvmIr)
+        .map(_.group(1))
+        .getOrElse(fail(s"Expected closure env type definition. IR:\n$llvmIr"))
+      val mainBody = functionBody(llvmIr, "test_main\\(\\) #0")
+
+      assert(
+        mainBody.contains(s"getelementptr %struct.$envName, ptr %"),
+        s"Expected env setup to use semantic env struct name '$envName'. Body:\n$mainBody"
+      )
+      assert(
+        s"""store ptr @test___free_$envName, ptr %\\d+, !tbaa !\\d+""".r
+          .findFirstIn(mainBody)
+          .nonEmpty,
+        s"Expected destructor slot store with TBAA tag. Body:\n$mainBody"
+      )
+      assert(
+        """store i64 (?:%\d+|[-]?\d+), ptr %\d+, !tbaa !\d+""".r.findFirstIn(mainBody).nonEmpty,
+        s"Expected capture store with TBAA tag. Body:\n$mainBody"
+      )
+    }
+  }
