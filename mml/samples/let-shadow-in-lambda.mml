@@ -2,14 +2,20 @@
 // Outer `name` is captured, then a nested thunk shadows `n`.
 
 pub fn main() =
-  let name = 1;
+  
+  let name = "hola";
+  
   let f = {
+    
     let n = name;
+    
     let g = {
       let n = 2;
-      println (int_to_str n)
+      println (int_to_str n);
+  
     }: Unit;
-    g()
+
+    g();
   };
   f();
 ;

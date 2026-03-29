@@ -52,8 +52,7 @@
 - Pending follow-ups:
   - QA / codegen / ownership review
     - Spec: `context/specs/lambdas-work-review.md`
-    - [ ] 3.4-QA.16 (P3) Term.withTypeAsc silently ignores unknown term types (`ast/terms.scala`)
-
+    
   - Heap-capture follow-up
     - [ ] 3.5.1 Literal heap captures: design decision
       - Literal String bindings (`let s = "hello"`) have `Literal` ownership state, so freeing a captured literal String can free `.rodata`.
@@ -61,12 +60,9 @@
       - Options: auto-clone at capture site, reject literal heap captures for now, or track heap-vs-static captures explicitly.
       - Related: `let-shadow-in-lambda.mml` sample reproduces the issue.
 
-  - (COMPLETE) Ptr parsing and lowering
-    - Goal: express LLVM opaque pointers directly in surface/native types via `@native[t=ptr]`, so `RawPtr` and closure env destructor slots lower naturally to `ptr` without `RawPtr`-specific codegen special casing.
-    - Note: `@native[t=ptr]` should parse as `NativePrimitive("ptr")`; `@native[t=*i64]` should remain `NativePointer("i64")`.
-    - Note: keep closure env `__dtor` as a raw pointer slot, not `TypeFn`, because `TypeFn` lowers to the closure fat-pointer shape `{ ptr, ptr }`.
-
-
+#### Implement Optional Moved
+ 
+  see `context/specs/optional-moves.md`
 
 #### Unify lambdas
 
