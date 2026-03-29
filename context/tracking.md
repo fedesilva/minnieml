@@ -33,7 +33,7 @@
   - Heap-capture follow-up
     - [x] 3.5.1 Literal heap captures: auto-clone at capture site (COMPLETE)
 
-#### Implement Optional Moves (COMPLETE)
+#### Implement Optional Moves
 
   see `context/specs/optional-moves.md`
 
