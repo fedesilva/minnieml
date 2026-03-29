@@ -216,8 +216,8 @@ class LambdaLitTests extends BaseEffFunSuite:
     )
   }
 
-  test("reject missing lambda body terminator") {
-    parseFailed(
+  test("lambda body terminator is optional before closing brace") {
+    parseNotFailed(
       """
         let f = { x -> x };
       """

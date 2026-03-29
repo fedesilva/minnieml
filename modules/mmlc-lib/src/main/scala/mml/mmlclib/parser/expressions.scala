@@ -306,12 +306,13 @@ private[parser] def letExprP(info: SourceInfo)(using P[Any]): P[Term] =
 
 private[parser] def innerFnExprP(info: SourceInfo)(using P[Any]): P[Term] =
   P(
-    spP(info) ~ fnKw ~ spP(info) ~ bindingIdOrError ~ spNoWsP(info) ~ spP(info) ~
+    spP(info) ~ fnKw ~ "~".!.? ~ spP(info) ~ bindingIdOrError ~ spNoWsP(info) ~ spP(info) ~
       "(" ~ fnParamListP(info) ~ ")" ~ typeAscP(info) ~ defAsKw ~ terminatedExprP(info) ~
       semiKw ~ exprP(info) ~ spNoWsP(info) ~ spP(info)
   ).map {
     case (
           start,
+          tilde,
           nameStart,
           idOrError,
           nameEnd,
@@ -340,7 +341,9 @@ private[parser] def innerFnExprP(info: SourceInfo)(using P[Any]): P[Term] =
             body     = bodyExpr,
             captures = Nil,
             typeSpec = None,
-            typeAsc  = None
+            typeAsc  = None,
+            meta     = None,
+            isMove   = tilde.isDefined
           )
           val bindingExpr = Expr(lambdaSpan, List(lambda), None, None)
           mkScopedBinding(
@@ -353,20 +356,33 @@ private[parser] def innerFnExprP(info: SourceInfo)(using P[Any]): P[Term] =
           )
   }
 
+/** Lambda body: terminated by `;` or implicitly by lookahead `}`. */
+private def lambdaBodyExprP(info: SourceInfo)(using P[Any]): P[Expr] =
+  P(exprP(info) ~ (semiKw | &("}")) ~ spNoWsP(info)).map { case (expr, _) => expr }
+
 private def lambdaWithParamsP(info: SourceInfo)(using P[Any]): P[(List[FnParam], Expr)] =
-  P(fnParamListP(info).filter(_.nonEmpty) ~ arrowKw ~/ terminatedExprP(info))
-    .map { case (params, (body, _)) => params -> body }
+  P(fnParamListP(info).filter(_.nonEmpty) ~ arrowKw ~/ lambdaBodyExprP(info))
+    .map { case (params, body) => params -> body }
 
 private def lambdaNoParamsP(info: SourceInfo)(using P[Any]): P[(List[FnParam], Expr)] =
-  P(terminatedExprP(info)).map { case (body, _) => Nil -> body }
+  P(lambdaBodyExprP(info)).map(Nil -> _)
 
 private[parser] def lambdaLitP(info: SourceInfo)(using P[Any]): P[Term] =
   P(
-    spP(info) ~ "{" ~
+    spP(info) ~ "~".!.? ~ "{" ~
       (lambdaWithParamsP(info) | lambdaNoParamsP(info)) ~
       "}" ~ spNoWsP(info) ~ spP(info)
-  ).map { case (start, (params, body), end, _) =>
-    Lambda(span(start, end), params, body, captures = Nil)
+  ).map { case (start, tilde, (params, body), end, _) =>
+    Lambda(
+      span(start, end),
+      params,
+      body,
+      captures = Nil,
+      typeSpec = None,
+      typeAsc  = None,
+      meta     = None,
+      isMove   = tilde.isDefined
+    )
   }
 
 private[parser] def groupTermP(info: SourceInfo)(using P[Any]): P[Term] =

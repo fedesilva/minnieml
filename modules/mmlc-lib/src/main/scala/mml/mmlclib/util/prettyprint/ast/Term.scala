@@ -132,7 +132,7 @@ def prettyPrintTerm(
         s"${indentStr}  fn:\n$fnStr\n" +
         s"${indentStr}  arg:\n$argStr"
 
-    case Lambda(sp, params, body, captures, typeSpec, typeAsc, meta) =>
+    case Lambda(sp, params, body, captures, typeSpec, typeAsc, meta, isMove) =>
       val spanStr = if showSourceSpans then printSourceOrigin(sp) else ""
       val typeStr =
         if showTypes then

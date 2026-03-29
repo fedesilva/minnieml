@@ -405,8 +405,10 @@ private def emitRecursiveSelfClosure(
       val selfScope = Map(param.name -> ScopeEntry(selfFpReg, "Function"))
       (nextState, selfScope)
 
-/** Resolve capture types, create env struct, emit call-site IR (malloc, store dtor + captures,
-  * build fat pointer). Shared between regular capturing lambdas and tail-recursive ones.
+/** Resolve capture types, create env struct, emit call-site IR.
+  *
+  * Move lambdas: malloc env, store dtor + captures, build fat pointer. Borrow lambdas: alloca env,
+  * store captures (no dtor), build fat pointer.
   */
 private def emitCallSiteEnv(
   lambda:        Lambda,
@@ -425,37 +427,49 @@ private def emitCallSiteEnv(
     }
   yield
     val envTypeRef = s"%struct.${envStruct.name}"
-    val stateWithEnv = state
-      .withFunctionDeclaration("malloc", "ptr", List("i64"))
-      .withFunctionDeclaration("free", "void", List("ptr"))
+    // Field offset: move envs have __dtor at field 0, borrow envs start captures at field 0
+    val fieldOffset = if lambda.isMove then 1 else 0
 
-    val envSize   = sizeOfLlvmTypeResolved(envTypeRef, stateWithEnv)
-    val mallocReg = stateWithEnv.nextRegister
-    val mallocLine =
-      emitCall(mallocReg.some, "ptr".some, "malloc", List(("i64", envSize.toString)))
-    val siteStateAfterMalloc = stateWithEnv.withRegister(mallocReg + 1).emit(mallocLine)
+    // Allocate env: malloc for move, alloca for borrow
+    val (siteStateAfterDtor, envPtrOp) =
+      if lambda.isMove then
+        val stateWithEnv = state
+          .withFunctionDeclaration("malloc", "ptr", List("i64"))
+          .withFunctionDeclaration("free", "void", List("ptr"))
+        val envSize   = sizeOfLlvmTypeResolved(envTypeRef, stateWithEnv)
+        val mallocReg = stateWithEnv.nextRegister
+        val mallocLine =
+          emitCall(mallocReg.some, "ptr".some, "malloc", List(("i64", envSize.toString)))
+        val afterMalloc = stateWithEnv.withRegister(mallocReg + 1).emit(mallocLine)
 
-    val dtorName   = s"__free_${envStruct.name}"
-    val dtorGepReg = siteStateAfterMalloc.nextRegister
-    val dtorGepLine = emitGetElementPtr(
-      dtorGepReg,
-      envTypeRef,
-      "ptr",
-      s"%$mallocReg",
-      List(("i32", "0"), ("i32", "0"))
-    )
-    val (stateWithDtorTag, dtorTag) =
-      TbaaEmitter
-        .getTbaaStructFieldTag(envStruct, 0, siteStateAfterMalloc)
-        .getOrElse((siteStateAfterMalloc, ""))
-    val dtorStoreLine = emitStore(
-      s"@${state.mangleName(dtorName)}",
-      "ptr",
-      s"%$dtorGepReg",
-      Option.when(dtorTag.nonEmpty)(dtorTag)
-    )
-    val siteStateAfterDtor =
-      stateWithDtorTag.withRegister(dtorGepReg + 1).emit(dtorGepLine).emit(dtorStoreLine)
+        val dtorName   = s"__free_${envStruct.name}"
+        val dtorGepReg = afterMalloc.nextRegister
+        val dtorGepLine = emitGetElementPtr(
+          dtorGepReg,
+          envTypeRef,
+          "ptr",
+          s"%$mallocReg",
+          List(("i32", "0"), ("i32", "0"))
+        )
+        val (stateWithDtorTag, dtorTag) =
+          TbaaEmitter
+            .getTbaaStructFieldTag(envStruct, 0, afterMalloc)
+            .getOrElse((afterMalloc, ""))
+        val dtorStoreLine = emitStore(
+          s"@${state.mangleName(dtorName)}",
+          "ptr",
+          s"%$dtorGepReg",
+          Option.when(dtorTag.nonEmpty)(dtorTag)
+        )
+        val afterDtor =
+          stateWithDtorTag.withRegister(dtorGepReg + 1).emit(dtorGepLine).emit(dtorStoreLine)
+        (afterDtor, s"%$mallocReg")
+      else
+        // Borrow: stack-allocate env, no dtor
+        val allocaReg   = state.nextRegister
+        val allocaLine  = s"  %$allocaReg = alloca $envTypeRef"
+        val afterAlloca = state.withRegister(allocaReg + 1).emit(allocaLine)
+        (afterAlloca, s"%$allocaReg")
 
     val siteStateAfterCaptures =
       captureTypes.zipWithIndex.foldLeft(siteStateAfterDtor) { case (st, ((cap, llvmType), idx)) =>
@@ -464,7 +478,7 @@ private def emitCallSiteEnv(
           case Some(entry) => entry.operandStr
           case None => s"@${ref.name}"
 
-        // CapturedLiteral: emit ABI-lowered clone call before storing into env
+        // CapturedLiteral: emit ABI-lowered clone call before storing into env (move only)
         val (stateBeforeStore, capOp) = cap match
           case Capture.CapturedLiteral(_, cloneFnId) =>
             val cloneFnMmlName = st.resolvables.resolvables
@@ -472,8 +486,7 @@ private def emitCallSiteEnv(
                 case (id, bnd: Bnd) if id == cloneFnId => bnd.name
               }
               .getOrElse(cloneFnId.split("::").last)
-            val cloneFnLlvmName = resolveMemFnLlvmName(cloneFnMmlName, st)
-            // ABI-lower the clone argument (struct types split into fields on x86_64)
+            val cloneFnLlvmName  = resolveMemFnLlvmName(cloneFnMmlName, st)
             val rawArgs          = List((rawCapOp, llvmType))
             val (lowered, stLow) = st.abi.lowerArgs(rawArgs, st)
             val callArgs         = lowered.map((op, typ) => (typ, op))
@@ -510,12 +523,12 @@ private def emitCallSiteEnv(
           gepReg,
           envTypeRef,
           "ptr",
-          s"%$mallocReg",
-          List(("i32", "0"), ("i32", (idx + 1).toString))
+          envPtrOp,
+          List(("i32", "0"), ("i32", (idx + fieldOffset).toString))
         )
         val (stateWithFieldTag, fieldTag) =
           TbaaEmitter
-            .getTbaaStructFieldTag(envStruct, idx + 1, stateBeforeStore)
+            .getTbaaStructFieldTag(envStruct, idx + fieldOffset, stateBeforeStore)
             .getOrElse((stateBeforeStore, ""))
         val storeLine = emitStore(
           capOp,
@@ -531,7 +544,7 @@ private def emitCallSiteEnv(
     val insertFn =
       emitInsertValue(fp0Reg, "{ ptr, ptr }", "undef", "ptr", s"@$fnName", 0)
     val insertEnv =
-      emitInsertValue(fp1Reg, "{ ptr, ptr }", s"%$fp0Reg", "ptr", s"%$mallocReg", 1)
+      emitInsertValue(fp1Reg, "{ ptr, ptr }", s"%$fp0Reg", "ptr", envPtrOp, 1)
     val siteState =
       siteStateAfterCaptures.withRegister(fp1Reg + 1).emit(insertFn).emit(insertEnv)
 
@@ -562,8 +575,15 @@ private def compileCapturingLambda(
     }.toMap
     val initialBodyState = subState.withRegister(envParamIdx + 1)
 
+    val captureFieldOffset = if lambda.isMove then 1 else 0
     val (bodyState, captureScope) =
-      emitCaptureLoads(envTypeRef, envParamIdx, envResult.captureTypes, initialBodyState)
+      emitCaptureLoads(
+        envTypeRef,
+        envParamIdx,
+        envResult.captureTypes,
+        initialBodyState,
+        captureFieldOffset
+      )
     val (bodyStateWithSelf, selfScope) =
       emitRecursiveSelfClosure(fnName, envParamIdx, bodyState, bindingParam)
 

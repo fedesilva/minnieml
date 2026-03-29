@@ -33,9 +33,13 @@
   - Heap-capture follow-up
     - [x] 3.5.1 Literal heap captures: auto-clone at capture site (COMPLETE)
 
-#### Implement Optional Moves
- 
+#### Implement Optional Moves (COMPLETE)
+
   see `context/specs/optional-moves.md`
+
+  - [x] Borrow-by-default captures with explicit `~` move syntax
+  - Deferred: **Call-site move (`~expr`)** — users cannot yet force-move a value at a call site
+    without a consuming parameter. Will be implemented after borrow-by-default captures ship.
 
 #### Unify lambdas
 
@@ -71,6 +75,19 @@
 * Add commentary with examples to the parsers
 
 ## Change Log
+
+- 2026-03-29: Lambda body trailing semicolon now optional
+  - Parser: `lambdaBodyExprP` accepts either `;` or lookahead `}` as body terminator.
+  - `{ x -> x }` and `{ x -> x; }` are both valid; `}` acts as implicit terminator.
+
+- 2026-03-29: #188 Borrow-by-default captures with explicit `~` move syntax
+  - AST: added `Lambda.isMove: Boolean = false`; default = borrow captures, `true` = move.
+  - Parser: `~` removed from operator charset; `~{...}` parses as move lambda, `fn ~name(...)` as move inner function.
+  - ClosureMemoryFnGenerator: borrow env structs have no `__dtor` field; destructors and `__free_closure` generated only for move lambdas.
+  - OwnershipAnalyzer: borrow captures leave outer binding owned (multiple closures can share); move captures transfer ownership (current behavior). Escape analysis extended to cover `TypeFn` return types.
+  - Codegen: borrow closures use `alloca` (stack env, no malloc/free); move closures use `malloc` with destructors. Capture field offset parameterized (0 for borrow, 1 for move).
+  - Tests: updated ownership, codegen, TBAA tests for borrow-by-default; added borrow sharing and alloca codegen tests.
+  - Samples/mem: escaping closures updated to `~{...}`; new `borrow-capture.mml` mem test (21/21 ASan pass).
 
 - 2026-03-29: #188 3.5.1 Literal heap capture auto-cloning
   - AST: added `Capture` enum (`CapturedRef` / `CapturedLiteral`) to distinguish plain captures from literals that need cloning; `Lambda.captures` changed from `List[Ref]` to `List[Capture]`.

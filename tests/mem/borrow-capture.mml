@@ -1,0 +1,13 @@
+
+fn makeBuffer(): String =
+  "shared-buffer";
+;
+
+pub fn main() =
+  let buf = makeBuffer ();
+  fn writer() = println buf;;
+  fn reader() = println ("reading: " ++ buf);;
+  writer ();
+  reader ();
+  writer ();
+;
