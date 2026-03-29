@@ -150,7 +150,7 @@ struct Camera {
 
 pub fn main(): Unit =
   let aspect_ratio = 16.0 /. 9.0;
-  let image_width = 6000;
+  let image_width = 600;
   let image_height = float_to_int ((int_to_float image_width) /. aspect_ratio);
 
   let origin          = Vec3 0.0 0.0 0.0;

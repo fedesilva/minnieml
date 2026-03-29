@@ -67,8 +67,7 @@ The compiler needs to be installed before it's used if changes were made.
       - after the first one is finished you can run the rest in parallel
     - `sbtn "run run mml/samples/hola.mml"`
     - `sbtn "run run mml/samples/quicksort.mml"`
-    - `sbtn "run run mml/samples/astar2.mml"`
-    - `sbtn "run run mml/samples/raytracer3.mml"`
+    - `sbtn "run run mml/samples/astar2.mml"`    
 
 - **Validate**: Run the *full* test suite
 
