@@ -24,6 +24,26 @@
 * there are lambdas now, and captures and the memory management model has changed.
 
 
+### TypeNameResolver purpose and contract audit
+
+* Background:
+  - `TypeNameResolver.scala` was introduced during the memory-management/TBAA merge as the extracted source of MML type names for metadata-oriented codegen decisions.
+  - `#188` / 3.4-QA.25 later extended it with `TypeFn => "Function"` specifically to unblock closure-env TBAA/layout handling for captured function values.
+  - The current emitter work expands that helper further and now routes more codegen sites through it instead of the older local `getMmlTypeName` helper.
+* Complaint to investigate:
+  - the file now appears to serve multiple contracts at once: debug/display-ish type labels, alias-scope identities, and TBAA/type-metadata identities.
+  - the core question is not "which cases are still missing?" but "why should this resolution exist at all, and which consumers actually need it?"
+  - several mappings are hardcoded (`i1 -> Bool`, `i64 -> Int`, `void -> Unit`, pointer/native fallbacks), which may be conceptually wrong if a caller needs nominal identity rather than a collapsed/native-ish label.
+* Track:
+  - inventory why each current caller wants a "type name" in the first place
+  - inventory every current consumer of `TypeNameResolver.getMmlTypeName`
+  - define the intended contract for each consumer class (TBAA, alias metadata, compile-result type labels, etc.)
+  - decide whether any shared resolver is justified, or whether these concerns should split into separate APIs with different semantics
+* Related existing follow-ups:
+  - `#188` 3.4-QA.25 TypeFn closure env TBAA lowering
+  - `#188` 3.4-QA.26 getMmlTypeName helper consolidation
+
+
 ### #188 Literal lambdas and captures
 
 
