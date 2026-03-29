@@ -42,7 +42,7 @@
     - [x] 3.4-QA.10 (P2) mergeSubState fragile manual field sync (`ExpressionCompiler.scala`)
     - [x] 3.4-QA.11 (P2) Two codepaths for closure free could diverge (`Applications.scala`)
     - [x] 3.4-QA.13 (P3) Nullary/Unit thunk unification may mask type errors (`TypeChecker.scala`)
-    - [ ] 3.4-QA.14 (P3) TypeFn globally mapped to fat pointer may affect non-closure contexts (`codegen/emitter/package.scala`)
+    - [x] 3.4-QA.14 (P3) TypeFn globally mapped to fat pointer may affect non-closure contexts (`codegen/emitter/package.scala`)
     - [ ] 3.4-QA.15 (P3) OwnershipAnalyzer 5-tuples should be a case class (`OwnershipAnalyzer.scala`)
     - [ ] 3.4-QA.16 (P3) Term.withTypeAsc silently ignores unknown term types (`ast/terms.scala`)
     - [ ] 3.4-QA.17 (P3) FORCE_INLINE on non-hot-path runtime functions (`mml_runtime.c`)
@@ -120,6 +120,11 @@
 * Add commentary with examples to the parsers
 
 ## Recent Changes
+
+- 2026-03-28: #188 3.4-QA.14 TypeFn non-closure function-value lowering
+  - Semantics/codegen: bare callable refs in argument position now eta-expand into first-class function values only when undersaturated, preserving local shadowing, and call lowering now routes non-direct callable refs through the shared indirect fat-pointer path instead of assuming every `TypeFn` ref is a direct symbol.
+  - Tests/samples: added semantic and codegen coverage for higher-order named function arguments, shadowed local callable parameters, and global function-valued bindings; added `mml/samples/typefn-nonclosure-values.mml` as a focused sample.
+  - Verification: `sbtn scalafmtAll`, `sbtn scalafixAll`, `sbtn test` (`363/363`), `sbtn "run run mml/samples/hello.mml"`, `sbtn "run run mml/samples/quicksort.mml"`, `sbtn "run run mml/samples/astar2.mml"`, `sbtn mmlcPublishLocal`, `make -C benchmark clean`, and `make -C benchmark mml` passed.
 
 - 2026-03-28: #188 3.4-QA.13 nullary callable canonicalization
   - Types/parser/typechecker: callable types now use a non-empty parameter list, nullary callables are canonicalized as `Unit -> R`, and the previous special compatibility path between zero-arity and `Unit` thunks was removed.

@@ -93,6 +93,16 @@ def getResolvedName(ref: Ref, state: CodeGenState): String =
       else state.mangleName(bnd.name)
     case _ => ref.name
 
+/** True when a ref resolves to a directly emitted callable symbol rather than a fat-pointer value.
+  */
+def isDirectCallableRef(ref: Ref, state: CodeGenState): Boolean =
+  ref.resolvedId.flatMap(state.resolvables.lookup) match
+    case Some(bnd: Bnd) =>
+      bnd.value.terms match
+        case List(_: Lambda) => true
+        case _ => false
+    case _ => false
+
 /** Checks if a binding is a native function (has NativeImpl body). */
 def isNativeBinding(bnd: Bnd): Boolean =
   bnd.value.terms match

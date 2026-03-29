@@ -698,9 +698,13 @@ def compileApp(
       compileLambdaApp(lambda, allArgs, state, functionScope, compileExpr)
 
     case ref: Ref =>
-      // Indirect call: local binding with TypeFn typeSpec (function pointer)
-      val isIndirect = functionScope.contains(ref.name) &&
+      val hasFunctionType =
         ref.typeSpec.exists(t => resolveToTypeFn(t, state.resolvables).isDefined)
+      // Direct call only applies to refs that resolve to emitted callable symbols.
+      // First-class function values, including globals stored as { fn_ptr, env_ptr }, must use
+      // the shared indirect-call path.
+      val isIndirect = hasFunctionType &&
+        (functionScope.contains(ref.name) || !isDirectCallableRef(ref, state))
       if isIndirect then compileIndirectCall(ref, allArgs, app, state, functionScope, compileExpr)
       else
         getNativeOpTemplate(ref.resolvedId.flatMap(state.resolvables.lookup)) match

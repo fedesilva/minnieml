@@ -1,0 +1,22 @@
+// First-class function values from named callables and global value bindings.
+
+fn apply(f: Int -> Int, x: Int): Int =
+  f x
+;;
+
+fn inc(x: Int): Int =
+  x + 1
+;;
+
+let chooser =
+  if true then
+    inc;
+  else
+    { x: Int -> x + 10; };
+  ;
+
+pub fn main(): Unit =
+  let from_arg = apply inc 41;
+  let from_global = chooser 1;
+  println (int_to_str (from_arg + from_global));
+;
