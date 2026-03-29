@@ -136,8 +136,8 @@ object ClosureMemoryFnGenerator:
 
   /** Synthesize a TypeStruct for a closure environment.
     *
-    * Field 0 is always `__dtor: RawPtr` — a pointer to the env's destructor function. This allows
-    * the universal `__free_closure` to call the correct destructor without knowing the env layout.
+    * Move lambdas: field 0 = `__dtor: RawPtr` (destructor pointer), fields 1..N = captures. Borrow
+    * lambdas: fields 0..N-1 = captures only (no destructor, env is stack-allocated).
     */
   private def mkEnvStruct(
     lambda:     Lambda,
@@ -145,12 +145,17 @@ object ClosureMemoryFnGenerator:
     moduleName: String,
     idTypeMap:  Map[String, Type]
   ): TypeStruct =
-    val dtorField = Field(
-      source   = syntheticSource,
-      nameNode = Name.synth("__dtor"),
-      typeSpec = rawPtrTypeRef(syntheticSource),
-      id       = Some(s"$moduleName::typedef::$envName::__dtor")
-    )
+    val dtorFields =
+      if lambda.isMove then
+        Vector(
+          Field(
+            source   = syntheticSource,
+            nameNode = Name.synth("__dtor"),
+            typeSpec = rawPtrTypeRef(syntheticSource),
+            id       = Some(s"$moduleName::typedef::$envName::__dtor")
+          )
+        )
+      else Vector.empty
 
     val captureFields = lambda.captures.map { cap =>
       val ref = cap.ref
@@ -170,7 +175,7 @@ object ClosureMemoryFnGenerator:
       docComment = None,
       visibility = Visibility.Private,
       nameNode   = Name.synth(envName),
-      fields     = dtorField +: captureFields,
+      fields     = dtorFields ++ captureFields,
       id         = typeId(moduleName, envName)
     )
 
@@ -401,20 +406,29 @@ object ClosureMemoryFnGenerator:
       // Build ID → type map for resolving capture types
       val idTypeMap = buildIdTypeMap(module)
 
-      // Generate env structs and free functions
+      // Generate env structs for all capturing lambdas (move and borrow)
       val envStructs =
         capturingLambdas.map((lambda, name) => mkEnvStruct(lambda, name, moduleName, idTypeMap))
-      val freeFunctions = envStructs.map(mkFreeFunction(_, moduleName))
 
-      // Generate universal __free_closure function (for closures returned from functions
-      // where we don't know the specific env struct at the call site)
-      val universalFree = mkUniversalClosureFree(moduleName)
+      // Generate free functions only for move lambdas (borrow envs are stack-allocated)
+      val moveLambdaStructs =
+        capturingLambdas.zip(envStructs).collect {
+          case ((lambda, _), struct) if lambda.isMove =>
+            struct
+        }
+      val freeFunctions = moveLambdaStructs.map(mkFreeFunction(_, moduleName))
+
+      // Universal __free_closure only needed if there are move lambdas
+      val universalFreeOpt =
+        if moveLambdaStructs.nonEmpty then Some(mkUniversalClosureFree(moduleName))
+        else None
 
       // Tag lambdas with envStructName
       val taggedMembers = tagLambdas(module.members, lambdaMap)
 
-      // Add env structs, free functions, and universal free to members
-      val finalMembers = taggedMembers ++ envStructs ++ freeFunctions :+ universalFree
+      // Add env structs, free functions, and optional universal free to members
+      val finalMembers =
+        taggedMembers ++ envStructs ++ freeFunctions ++ universalFreeOpt.toList
 
       // Update resolvables
       val resolvablesWithStructs = envStructs.foldLeft(module.resolvables) { (idx, struct) =>
@@ -423,6 +437,8 @@ object ClosureMemoryFnGenerator:
       val resolvablesWithFrees = freeFunctions.foldLeft(resolvablesWithStructs) { (idx, fn) =>
         idx.updated(fn)
       }
-      val finalResolvables = resolvablesWithFrees.updated(universalFree)
+      val finalResolvables = universalFreeOpt.foldLeft(resolvablesWithFrees) { (idx, fn) =>
+        idx.updated(fn)
+      }
 
       state.withModule(module.copy(members = finalMembers, resolvables = finalResolvables))

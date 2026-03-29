@@ -10,7 +10,7 @@ class OwnershipAnalyzerTests extends BaseEffFunSuite:
     p.applyOrElse(term, (_: Term) => false) || (term match
       case App(_, fn, arg, _, _) => existsTerm(fn)(p) || existsExpr(arg)(p)
       case Expr(_, terms, _, _) => terms.exists(existsTerm(_)(p))
-      case Lambda(_, _, body, _, _, _, _) => existsExpr(body)(p)
+      case Lambda(_, _, body, _, _, _, _, _) => existsExpr(body)(p)
       case TermGroup(_, inner, _) => existsExpr(inner)(p)
       case Cond(_, cond, ifTrue, ifFalse, _, _) =>
         existsExpr(cond)(p) || existsExpr(ifTrue)(p) || existsExpr(ifFalse)(p)
@@ -25,7 +25,7 @@ class OwnershipAnalyzerTests extends BaseEffFunSuite:
     val childCount = term match
       case App(_, fn, arg, _, _) => countTerm(fn)(p) + countExpr(arg)(p)
       case Expr(_, terms, _, _) => terms.map(countTerm(_)(p)).sum
-      case Lambda(_, _, body, _, _, _, _) => countExpr(body)(p)
+      case Lambda(_, _, body, _, _, _, _, _) => countExpr(body)(p)
       case TermGroup(_, inner, _) => countExpr(inner)(p)
       case Cond(_, cond, ifTrue, ifFalse, _, _) =>
         countExpr(cond)(p) + countExpr(ifTrue)(p) + countExpr(ifFalse)(p)
@@ -233,7 +233,30 @@ class OwnershipAnalyzerTests extends BaseEffFunSuite:
     }
   }
 
-  test("second closure cannot capture the same owned heap binding") {
+  test("second move closure cannot capture the same owned heap binding") {
+    val code =
+      """
+        fn main(): Unit =
+          let s = "hello" ++ " world";
+          let f = ~{
+            println s;
+          }: Unit;
+          let g = ~{
+            println s;
+          }: Unit;
+          f ();
+          g ();
+        ;
+      """
+
+    semState(code).map { result =>
+      val errors = result.errors.collect { case e: SemanticError.CapturedMovedHeapBinding => e }
+      assertEquals(errors.length, 1, s"Expected one duplicate capture error but got: $errors")
+      assertEquals(errors.head.ref.name, "s")
+    }
+  }
+
+  test("multiple borrow closures can share the same heap binding") {
     val code =
       """
         fn main(): Unit =
@@ -249,11 +272,7 @@ class OwnershipAnalyzerTests extends BaseEffFunSuite:
         ;
       """
 
-    semState(code).map { result =>
-      val errors = result.errors.collect { case e: SemanticError.CapturedMovedHeapBinding => e }
-      assertEquals(errors.length, 1, s"Expected one duplicate capture error but got: $errors")
-      assertEquals(errors.head.ref.name, "s")
-    }
+    semNotFailed(code)
   }
 
   test("single owning closure may pass a captured heap binding to sibling helpers by parameter") {

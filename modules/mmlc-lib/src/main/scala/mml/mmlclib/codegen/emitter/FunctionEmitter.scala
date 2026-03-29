@@ -136,14 +136,15 @@ def formatParamDecls(
     }
     .mkString(", ")
 
-/** Load captures from env struct in a deferred function's entry block. Each capture gets a GEP
-  * (field index shifted by 1 for __dtor at field 0) and a load.
+/** Load captures from env struct in a deferred function's entry block. Each capture gets a GEP and
+  * a load. Field offset is 1 for move envs (__dtor at field 0), 0 for borrow envs.
   */
 def emitCaptureLoads(
   envTypeRef:   String,
   envParamIdx:  Int,
   captureTypes: List[(Capture, String)],
-  bodyState:    CodeGenState
+  bodyState:    CodeGenState,
+  fieldOffset:  Int = 1
 ): (CodeGenState, Map[String, ScopeEntry]) =
   captureTypes.zipWithIndex.foldLeft((bodyState, Map.empty[String, ScopeEntry])) {
     case ((st, scope), ((cap, llvmType), idx)) =>
@@ -151,7 +152,7 @@ def emitCaptureLoads(
       val gepReg  = st.nextRegister
       val loadReg = gepReg + 1
       val gepLine =
-        s"  %$gepReg = getelementptr $envTypeRef, ptr %$envParamIdx, i32 0, i32 ${idx + 1}"
+        s"  %$gepReg = getelementptr $envTypeRef, ptr %$envParamIdx, i32 0, i32 ${idx + fieldOffset}"
       val loadLine = s"  %$loadReg = load $llvmType, ptr %$gepReg"
       val newState = st.withRegister(loadReg + 1).emit(gepLine).emit(loadLine)
       val mmlType = ref.typeSpec
@@ -503,11 +504,12 @@ private[emitter] def compileTailRecursiveLambda(
   val baseState = state.emit(functionDecl).emit("entry:")
 
   // Load captures from env in entry block (before loop header branch)
-  val captureCount = captureInfo.fold(0)(_._2.size)
+  val captureCount       = captureInfo.fold(0)(_._2.size)
+  val captureFieldOffset = if lambda.isMove then 1 else 0
   val (stateAfterCaptures, captureScope) = captureInfo match
     case Some((envTypeRef, captureTypes)) =>
       val captureStartState = baseState.withRegister(envParamIdx + 1)
-      emitCaptureLoads(envTypeRef, envParamIdx, captureTypes, captureStartState)
+      emitCaptureLoads(envTypeRef, envParamIdx, captureTypes, captureStartState, captureFieldOffset)
     case None =>
       (baseState, Map.empty[String, ScopeEntry])
 
