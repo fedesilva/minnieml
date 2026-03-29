@@ -100,7 +100,8 @@ case class Lambda(
   captures: List[Capture],
   typeSpec: Option[Type]       = None,
   typeAsc:  Option[Type]       = None,
-  meta:     Option[LambdaMeta] = None
+  meta:     Option[LambdaMeta] = None,
+  isMove:   Boolean            = false
 ) extends Term
 
 object Lambda:
@@ -111,9 +112,10 @@ object Lambda:
     captures: List[Capture],
     typeSpec: Option[Type],
     typeAsc:  Option[Type],
-    meta:     Option[LambdaMeta]
+    meta:     Option[LambdaMeta],
+    isMove:   Boolean
   ): Lambda =
-    new Lambda(SourceOrigin.Loc(span), params, body, captures, typeSpec, typeAsc, meta)
+    new Lambda(SourceOrigin.Loc(span), params, body, captures, typeSpec, typeAsc, meta, isMove)
 
   def apply(
     span:     SrcSpan,
@@ -123,7 +125,7 @@ object Lambda:
     typeSpec: Option[Type],
     typeAsc:  Option[Type]
   ): Lambda =
-    new Lambda(SourceOrigin.Loc(span), params, body, captures, typeSpec, typeAsc, None)
+    new Lambda(SourceOrigin.Loc(span), params, body, captures, typeSpec, typeAsc)
 
   def apply(
     span:     SrcSpan,
@@ -131,7 +133,7 @@ object Lambda:
     body:     Expr,
     captures: List[Capture]
   ): Lambda =
-    new Lambda(SourceOrigin.Loc(span), params, body, captures, None, None, None)
+    new Lambda(SourceOrigin.Loc(span), params, body, captures)
 
 case class TermGroup(
   source:  SourceOrigin,

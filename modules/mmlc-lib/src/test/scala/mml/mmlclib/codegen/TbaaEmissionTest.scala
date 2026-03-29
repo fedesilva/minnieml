@@ -201,11 +201,12 @@ class TbaaEmissionTest extends BaseEffFunSuite:
     """
 
     compileAndGenerate(source).map { llvmIr =>
+      // Borrow env: no dtor field, just the captured fat pointer
       val closureEnvTypePattern =
-        """%struct\.__closure_env_\d+ = type \{ ptr, \{ ptr, ptr \} \}""".r
+        """%struct\.__closure_env_\d+ = type \{ \{ ptr, ptr \} \}""".r
       assert(
         closureEnvTypePattern.findFirstIn(llvmIr).isDefined,
-        s"Missing closure env type with fat-pointer field. IR:\n$llvmIr"
+        s"Missing borrow closure env type with fat-pointer field. IR:\n$llvmIr"
       )
 
       val functionScalarId = """!(\d+) = !\{!"Function", !\d+, i64 0\}""".r
@@ -219,9 +220,10 @@ class TbaaEmissionTest extends BaseEffFunSuite:
         closureEnvTbaaLines.nonEmpty,
         s"Missing closure env TBAA node. IR:\n$llvmIr"
       )
+      // Borrow env: captured fn at offset 0 (no dtor field)
       assert(
-        closureEnvTbaaLines.exists(_.contains(s"!${functionScalarId.get}, i64 8")),
-        s"Expected closure env TBAA field at offset 8 to use Function scalar. Nodes:\n${closureEnvTbaaLines.mkString("\n")}"
+        closureEnvTbaaLines.exists(_.contains(s"!${functionScalarId.get}, i64 0")),
+        s"Expected borrow closure env TBAA field at offset 0 to use Function scalar. Nodes:\n${closureEnvTbaaLines.mkString("\n")}"
       )
     }
   }

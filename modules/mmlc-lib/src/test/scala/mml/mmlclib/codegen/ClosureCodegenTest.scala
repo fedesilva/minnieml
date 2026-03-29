@@ -87,7 +87,7 @@ class ClosureCodegenTest extends BaseEffFunSuite:
   test("returned capturing closures free through generated __free_closure body") {
     val source = """
       fn makeAdder(a: Int): Int -> Int =
-        { x: Int -> x + a; };
+        ~{ x: Int -> x + a; };
       ;
 
       fn main(): Int =
@@ -120,7 +120,30 @@ class ClosureCodegenTest extends BaseEffFunSuite:
     }
   }
 
-  test("local capturing closures free through their specific env destructor") {
+  test("local move capturing closures free through their specific env destructor") {
+    val source = """
+      fn main(): Int =
+        let a = 1;
+        let f = ~{ x: Int -> x + a; };
+        f 41;
+      ;
+    """
+
+    compileAndGenerate(source).map { llvmIr =>
+      val mainBody = functionBody(llvmIr, "test_main\\(\\) #0")
+
+      assert(
+        """call void @test___free___closure_env_\d+\(ptr %\d+\)""".r.findFirstIn(mainBody).nonEmpty,
+        s"Expected local move closure cleanup to call its specific env destructor. Body:\n$mainBody"
+      )
+      assert(
+        !mainBody.contains("call void @test___free_closure"),
+        s"Known env cleanup should not route through the universal destructor. Body:\n$mainBody"
+      )
+    }
+  }
+
+  test("local borrow capturing closures use alloca and no free") {
     val source = """
       fn main(): Int =
         let a = 1;
@@ -133,16 +156,16 @@ class ClosureCodegenTest extends BaseEffFunSuite:
       val mainBody = functionBody(llvmIr, "test_main\\(\\) #0")
 
       assert(
-        """call void @test___free___closure_env_\d+\(ptr %\d+\)""".r.findFirstIn(mainBody).nonEmpty,
-        s"Expected local capturing closure cleanup to call its specific env destructor. Body:\n$mainBody"
+        mainBody.contains("alloca %struct.__closure_env_"),
+        s"Expected borrow closure to use alloca for env. Body:\n$mainBody"
       )
       assert(
-        !mainBody.contains("call void @test___free_closure"),
-        s"Known env cleanup should not route through the universal destructor. Body:\n$mainBody"
+        !mainBody.contains("call ptr @malloc"),
+        s"Borrow closure should not heap-allocate env. Body:\n$mainBody"
       )
       assert(
-        !mainBody.contains("call void %"),
-        s"Caller should not inline the env destructor dispatch. Body:\n$mainBody"
+        !mainBody.contains("call void @test___free_"),
+        s"Borrow closure should not generate free calls. Body:\n$mainBody"
       )
     }
   }
@@ -151,7 +174,7 @@ class ClosureCodegenTest extends BaseEffFunSuite:
     val source = """
       fn main(): Int =
         let a = 1;
-        let f = { x: Int -> x + a; };
+        let f = ~{ x: Int -> x + a; };
         f 41;
       ;
     """
