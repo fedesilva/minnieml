@@ -52,30 +52,7 @@
 - Pending follow-ups:
   - QA / codegen / ownership review
     - Spec: `context/specs/lambdas-work-review.md`
-    - [x] 3.4-QA.25 (P1) Closure env fields of `TypeFn` fail struct/TBAA type-name lowering (`TypeNameResolver.scala`, `TbaaEmitter.scala`, `raytrace2` fully-local helper case)
-    - [x] 3.4-QA.29 (P1) Capturing whole struct values in local-helper closures can emit invalid self-referential LLVM IR (`ExpressionCompiler.scala`, `raytracer3` whole-`Camera` capture case) — root cause: `CaptureAnalyzer` did not descend into `Ref.qualifier`, so struct field selections like `p.a` never detected `p` as a capture
-    - [x] 3.4-QA.30 (P1) Multiple closures capturing the same owned value cause double-free (`OwnershipAnalyzer.scala`, `raytracer3` `buf` captured by `write_row` and `render_rows`)
-      - ❯ ./build/target/raytracer3 > r3.ppm
-        raytracer3(31806,0x7ff85028dc00) malloc: *** error for object 0x600002539200: pointer being freed was not allocated
-        raytracer3(31806,0x7ff85028dc00) malloc: *** set a breakpoint in malloc_error_break to debug
-        [1]    31806 abort      ./build/target/raytracer3 > r3.ppm
-    - [x] 3.4-QA.6 (P1) Pass real closure env on recursive capturing lambdas (`Applications.scala`)
-    - [x] 3.4-QA.10 (P2) mergeSubState fragile manual field sync (`ExpressionCompiler.scala`)
-    - [x] 3.4-QA.11 (P2) Two codepaths for closure free could diverge (`Applications.scala`)
-    - [x] 3.4-QA.13 (P3) Nullary/Unit thunk unification may mask type errors (`TypeChecker.scala`)
-    - [x] 3.4-QA.14 (P3) TypeFn globally mapped to fat pointer may affect non-closure contexts (`codegen/emitter/package.scala`)
-    - [x] 3.4-QA.15 (P3) OwnershipAnalyzer 5-tuples should be a case class (`OwnershipAnalyzer.scala`)
     - [ ] 3.4-QA.16 (P3) Term.withTypeAsc silently ignores unknown term types (`ast/terms.scala`)
-    - [x] 3.4-QA.17 (P3) FORCE_INLINE on non-hot-path runtime functions (`mml_runtime.c`)
-    - [x] 3.4-QA.19 (P2) Replace shape-coupled/name-coupled lambda semantic tests with semantic extractors (`CaptureAnalyzerTests.scala`, `TypeCheckerTests.scala`, `LambdaLitTests.scala`)
-    - [x] 3.4-QA.20 (P3) Remove new `TODO:QA` by extracting ownership test helpers or tracking them properly (`OwnershipAnalyzerTests.scala`)
-    - [x] 3.4-QA.21 (P2) Mutable traversals + early returns in ClosureMemoryFnGenerator — replace var/builder/return with folds and if-else (`ClosureMemoryFnGenerator.scala`)
-    - [x] 3.4-QA.22 (P2) asInstanceOf cast in ClosureMemoryFnGenerator.tagLambdas breaks no-exceptions rule (`ClosureMemoryFnGenerator.scala:312`)
-    - [x] 3.4-QA.23 (P3) Hardcoded string name matching for closure free dispatch (`Applications.scala:312,316`)
-    - [x] 3.4-QA.24 (P3) Inconsistent Cats syntax in new codegen code — use .asRight/.asLeft/.some/.none (`ExpressionCompiler.scala`, `Applications.scala`)    
-    - [x] 3.4-QA.26 (P3) getMmlTypeName helper consolidation (`codegen/emitter/package.scala`, `TypeNameResolver.scala`, emitter call sites`)
-    - [x] 3.4-QA.27 (P3) Converge closure env LLVM type naming with semantic env struct ids (`ExpressionCompiler.scala`, `ClosureMemoryFnGenerator.scala`, env TBAA/type emission`)
-    - [x] 3.4-QA.28 (P3) Attach TBAA metadata to closure env stores at capture sites (`ExpressionCompiler.scala`, `emitCallSiteEnv`)
 
   - Heap-capture follow-up
     - [ ] 3.5.1 Literal heap captures: design decision
@@ -88,11 +65,6 @@
     - Goal: express LLVM opaque pointers directly in surface/native types via `@native[t=ptr]`, so `RawPtr` and closure env destructor slots lower naturally to `ptr` without `RawPtr`-specific codegen special casing.
     - Note: `@native[t=ptr]` should parse as `NativePrimitive("ptr")`; `@native[t=*i64]` should remain `NativePointer("i64")`.
     - Note: keep closure env `__dtor` as a raw pointer slot, not `TypeFn`, because `TypeFn` lowers to the closure fat-pointer shape `{ ptr, ptr }`.
-    - [x] Extend native type parsing/printing to accept and round-trip `t=ptr`.
-    - [x] Update stdlib/native typedefs that mean opaque raw pointer, especially `RawPtr`, to use the new `ptr` surface form.
-    - [x] Teach codegen helpers to emit opaque-pointer operand types correctly, avoiding invalid `ptr*` emission in load/store and similar helper paths.
-    - [x] Audit pointer-like codegen/ABI classification that currently keys on `NativePointer` only, and include opaque `ptr` where required (for example allocating-return `noalias` decisions).
-    - [x] Update closure-env expectations, sample comments, and tests to assert `ptr` for raw/opaque pointer slots where appropriate.
 
 
 
