@@ -108,6 +108,107 @@ class AppRewritingTests extends BaseEffFunSuite:
     }
   }
 
+  test("bare callable refs in argument position eta-expand to lambdas") {
+    semNotFailed(
+      """
+        fn apply(f: Int -> Int): Int = f 1;;
+        fn inc(x: Int): Int = x + 1;;
+        let result = apply inc;
+      """
+    ).map { m =>
+      val memberBnd =
+        lookupNames("result", m).headOption
+          .getOrElse(
+            fail(s"Member `result` not found in module: ${prettyPrintAst(m)}")
+          )
+
+      memberBnd match
+        case bnd: Bnd =>
+          bnd.value.terms match
+            case TXApp(applyRef, _, List(Expr(_, List(lambda: Lambda), _, _))) :: Nil =>
+              assertEquals(clue(applyRef.name), "apply", "Outer function should be `apply`")
+              assertEquals(clue(lambda.params.length), 1, "Eta-expanded lambda should have 1 param")
+              lambda.body.terms match
+                case TXApp(
+                      incRef,
+                      _,
+                      List(Expr(_, List(Ref(_, syntheticName, _, _, _, _, _)), _, _))
+                    ) :: Nil =>
+                  assertEquals(clue(incRef.name), "inc", "Eta-expanded body should call `inc`")
+                  assertEquals(
+                    clue(syntheticName),
+                    lambda.params.head.name,
+                    "Eta-expanded call should forward the synthetic param"
+                  )
+                case other =>
+                  fail(
+                    s"Expected eta-expanded lambda body to call inc, got:\n${other
+                        .map(t => prettyPrintAst(t, 0, false, false))
+                        .mkString("\n")}"
+                  )
+            case other =>
+              fail(
+                s"Expected apply to receive an eta-expanded lambda argument, got:\n${other
+                    .map(t => prettyPrintAst(t, 0, false, false))
+                    .mkString("\n")}"
+              )
+        case other =>
+          fail(s"Expected Bnd, got: ${prettyPrintAst(other)}")
+    }
+  }
+
+  test("bare callable refs in argument position preserve local shadowing") {
+    semNotFailed(
+      """
+        fn apply2(f: Int -> Int -> Int): Int = f 1 2;;
+        fn inc(x: Int): Int = x + 1;;
+        fn forward(inc: Int -> Int -> Int): Int = apply2 inc;;
+      """
+    ).map { m =>
+      val memberBnd =
+        lookupNames("forward", m).headOption
+          .getOrElse(
+            fail(s"Member `forward` not found in module: ${prettyPrintAst(m)}")
+          )
+
+      memberBnd match
+        case bnd: Bnd =>
+          bnd.value.terms match
+            case List(lambda: Lambda) =>
+              val localIncId = lambda.params.headOption
+                .flatMap(_.id)
+                .getOrElse(fail("Expected forward param `inc` to have a resolved id"))
+
+              lambda.body.terms match
+                case TXApp(applyRef, _, List(Expr(_, List(localRef: Ref), _, _))) :: Nil =>
+                  assertEquals(clue(applyRef.name), "apply2", "Outer function should be `apply2`")
+                  assertEquals(clue(localRef.name), "inc", "Argument should stay as the local ref")
+                  assertEquals(
+                    clue(localRef.resolvedId),
+                    Some(localIncId),
+                    "Argument should resolve to the local shadowing param"
+                  )
+                case TXApp(_, _, List(Expr(_, List(_: Lambda), _, _))) :: Nil =>
+                  fail(
+                    "Shadowed local callable should not eta-expand against the top-level binding"
+                  )
+                case other =>
+                  fail(
+                    s"Expected apply2 to receive the local ref unchanged, got:\n${other
+                        .map(t => prettyPrintAst(t, 0, false, false))
+                        .mkString("\n")}"
+                  )
+            case other =>
+              fail(
+                s"Expected forward to remain a lambda binding, got:\n${other
+                    .map(t => prettyPrintAst(t, 0, false, false))
+                    .mkString("\n")}"
+              )
+        case other =>
+          fail(s"Expected Bnd, got: ${prettyPrintAst(other)}")
+    }
+  }
+
   test("curried function application should work without boundaries") {
     semNotFailed(
       """
