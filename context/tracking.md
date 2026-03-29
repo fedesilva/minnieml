@@ -75,16 +75,6 @@
     - [x] Update closure-env expectations, sample comments, and tests to assert `ptr` for raw/opaque pointer slots where appropriate.
 
 
-#### Raytracer 3
-
-- READ raytracer2.mml
-    - the header comment mentions a limitation
-        - this limitation should be lifted, confirm
-        - if this is true: write mml/samples/raytracer3.mml 
-            - use the new capabilities
-            - use inner functions for looping, 
-                reducing the number of required parameters
-
 
 #### Unify lambdas
 
