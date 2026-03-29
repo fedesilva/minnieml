@@ -783,6 +783,15 @@ def injectCommonFunctions(module: Module): Module =
       Some(MemEffect.Alloc)
     ),
     mkFn(
+      "mkBufferWithFdAndSize",
+      List(
+        FnParam(SourceOrigin.Synth, Name.synth("fd"), typeAsc   = Some(intType)),
+        FnParam(SourceOrigin.Synth, Name.synth("size"), typeAsc = Some(intType))
+      ),
+      bufferType,
+      Some(MemEffect.Alloc)
+    ),
+    mkFn(
       "mkBufferWithSize",
       List(FnParam(SourceOrigin.Synth, Name.synth("size"), typeAsc = Some(intType))),
       bufferType,
@@ -806,6 +815,14 @@ def injectCommonFunctions(module: Module): Module =
       List(
         FnParam(SourceOrigin.Synth, Name.synth("b"), typeAsc = Some(bufferType)),
         FnParam(SourceOrigin.Synth, Name.synth("s"), typeAsc = Some(stringType))
+      ),
+      unitType
+    ),
+    mkFn(
+      "buffer_write_byte",
+      List(
+        FnParam(SourceOrigin.Synth, Name.synth("b"), typeAsc = Some(bufferType)),
+        FnParam(SourceOrigin.Synth, Name.synth("n"), typeAsc = Some(intType))
       ),
       unitType
     ),
@@ -1125,6 +1142,15 @@ def injectCommonFunctions(module: Module): Module =
       "buffer_writeln",
       bufferType,
       stringType,
+      unitType
+    ),
+    mkBinOpExpr(
+      "write_byte",
+      20,
+      Associativity.Left,
+      "buffer_write_byte",
+      bufferType,
+      intType,
       unitType
     ),
     mkBinOpExpr(

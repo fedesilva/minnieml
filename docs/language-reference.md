@@ -1186,6 +1186,7 @@ are flushed explicitly or when the buffer is freed.
 | `flush(b)`                 | `Buffer -> Unit`            | Flush buffer contents                        |
 | `buffer_write(b, s)`       | `Buffer -> String -> Unit`  | Write string                                 |
 | `buffer_writeln(b, s)`     | `Buffer -> String -> Unit`  | Write string with newline                    |
+| `buffer_write_byte(b, n)`  | `Buffer -> Int -> Unit`     | Write raw low 8 bits of integer              |
 | `buffer_write_int(b, n)`   | `Buffer -> Int -> Unit`     | Write integer                                |
 | `buffer_writeln_int(b, n)` | `Buffer -> Int -> Unit`     | Write integer with newline                   |
 | `buffer_write_float(b, f)` | `Buffer -> Float -> Unit`   | Write float                                  |
