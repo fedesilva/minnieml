@@ -35,12 +35,11 @@ object ExpressionRewriter:
     resolvables:         ResolvablesIndex
   ): Option[(Int, List[FnParam])] =
     getRootRef(fn).flatMap { ref =>
-      // First check transformed bindings (for chained partial application)
-      val bndOpt = transformedBindings
-        .get(ref.name)
-        .orElse(
-          ref.resolvedId.flatMap(resolvables.lookup).collect { case bnd: Bnd => bnd }
-        )
+      val bndOpt = ref.resolvedId
+        .flatMap(resolvables.lookup)
+        .collect { case bnd: Bnd =>
+          transformedBindings.get(bnd.name).filter(_.id == bnd.id).getOrElse(bnd)
+        }
       bndOpt.flatMap { bnd =>
         bnd.value.terms.headOption.collect { case lambda: Lambda =>
           (lambda.params.length, lambda.params)
@@ -394,10 +393,13 @@ object ExpressionRewriter:
           }
         }
       case (ref: Ref) :: restTerms =>
-        // Plain Ref as argument - don't start a new app chain, just use as argument
-        val argExpr = Expr(ref.source, List(ref))
-        buildSingleApp(fn, argExpr, source).flatMap { app =>
-          buildAppChain(app, restTerms, source, owner, transformedBindings, resolvables)
+        // Bare callable refs in argument position still need eta-expansion so higher-order uses
+        // like `apply inc` lower as first-class function values rather than raw symbols.
+        wrapIfUndersaturated(ref, ref.source, owner, transformedBindings, resolvables).flatMap {
+          argExpr =>
+            buildSingleApp(fn, argExpr, source).flatMap { app =>
+              buildAppChain(app, restTerms, source, owner, transformedBindings, resolvables)
+            }
         }
       case IsAtom(atom) :: restTerms =>
         // Literal or other atom as argument

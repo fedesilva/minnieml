@@ -5,6 +5,13 @@ import mml.mmlclib.test.BaseEffFunSuite
 
 class FunctionSignatureTest extends BaseEffFunSuite:
 
+  private def functionBody(llvmIr: String, signaturePattern: String): String =
+    val pattern = (s"(?s)define .*@$signaturePattern \\{\\n(.*?)\\n\\}").r
+    pattern
+      .findFirstMatchIn(llvmIr)
+      .map(_.group(1))
+      .getOrElse(fail(s"Missing function definition for $signaturePattern. IR:\n$llvmIr"))
+
   test("synthesized main passes argv as StringArray for unit-returning main(args)") {
     val source =
       """
@@ -288,6 +295,97 @@ class FunctionSignatureTest extends BaseEffFunSuite:
       assert(
         llvmIr.contains("call i64 @test_add("),
         s"alias function should call module-prefixed original, got:\n$llvmIr"
+      )
+    }
+  }
+
+  test("higher-order named function arguments lower as function values, not symbol loads") {
+    val source =
+      """
+        fn apply(f: Int -> Int): Int = f 1;;
+        fn inc(x: Int): Int = x + 1;;
+        fn main(): Int = apply inc;;
+      """
+
+    compileAndGenerate(source).map { llvmIr =>
+      val mainBody = functionBody(llvmIr, "test_main\\(\\) #0")
+
+      assert(
+        !llvmIr.contains("load { ptr, ptr }, ptr @test_inc"),
+        s"Named top-level function should not be loaded as a fat-pointer global. IR:\n$llvmIr"
+      )
+      assert(
+        """define internal i64 @test__anon_\d+\(i64 %0, ptr %1\) #0""".r
+          .findFirstIn(llvmIr)
+          .nonEmpty,
+        s"Expected an eta-expanded wrapper function for the higher-order arg. IR:\n$llvmIr"
+      )
+      assert(
+        """call i64 @test_apply\(\{ ptr, ptr \} \{ ptr @test__anon_\d+, ptr null \}\)""".r
+          .findFirstIn(mainBody)
+          .nonEmpty,
+        s"main should pass a first-class function value into apply. Body:\n$mainBody"
+      )
+    }
+  }
+
+  test("global function-valued bindings call through the indirect fat-pointer path") {
+    val source =
+      """
+        fn inc(x: Int): Int = x + 1;;
+        let chooser = if true then inc; else { x: Int -> x + 10; }; ;
+        fn main(): Int = chooser 41;;
+      """
+
+    compileAndGenerate(source).map { llvmIr =>
+      val mainBody = functionBody(llvmIr, "test_main\\(\\) #0")
+
+      assert(
+        llvmIr.contains("@test_chooser = global { ptr, ptr }"),
+        s"chooser should still lower as a fat-pointer global. IR:\n$llvmIr"
+      )
+      assert(
+        !mainBody.contains("call i64 @test_chooser("),
+        s"Global function-valued binding must not be called as a direct symbol. Body:\n$mainBody"
+      )
+      assert(
+        mainBody.contains("load { ptr, ptr }, ptr @test_chooser") &&
+          mainBody.contains("extractvalue { ptr, ptr } %") &&
+          """call i64 %\d+\(i64 41, ptr %\d+\)""".r.findFirstIn(mainBody).nonEmpty,
+        s"Global function-valued binding should load and call through the fat pointer. Body:\n$mainBody"
+      )
+    }
+  }
+
+  test("shadowed local callable args do not eta-expand from top-level names") {
+    val source =
+      """
+        fn apply2(f: Int -> Int -> Int): Int = f 1 2;;
+        fn inc(x: Int): Int = x + 1;;
+        fn add(a: Int, b: Int): Int = a + b;;
+        fn forward(inc: Int -> Int -> Int): Int = apply2 inc;;
+        fn main(): Int = forward add;;
+      """
+
+    compileAndGenerate(source).map { llvmIr =>
+      val forwardBody = functionBody(llvmIr, """test_forward\([^\n]*\) #0""")
+      val mainBody    = functionBody(llvmIr, "test_main\\(\\) #0")
+      val anonBody    = functionBody(llvmIr, """test__anon_\d+\([^\n]*\) #0""")
+
+      assert(
+        forwardBody.contains("call i64 @test_apply2({ ptr, ptr } %0)") &&
+          !forwardBody.contains("@test_inc"),
+        s"forward should pass its local callable param through unchanged. Body:\n$forwardBody"
+      )
+      assert(
+        """call i64 @test_forward\(\{ ptr, ptr \} \{ ptr @test__anon_\d+, ptr null \}\)""".r
+          .findFirstIn(mainBody)
+          .nonEmpty,
+        s"main should still eta-expand the bare top-level add ref. Body:\n$mainBody"
+      )
+      assert(
+        anonBody.contains("call i64 @test_add(i64 %0, i64 %1)"),
+        s"The top-level add wrapper should forward both arguments into test_add. Body:\n$anonBody"
       )
     }
   }
