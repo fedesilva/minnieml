@@ -20,56 +20,7 @@
 
 * there are new phases in the semantic stage
 * there are lambdas now, and captures and the memory management model has changed.
-
-### #188 Literal lambdas and captures
-
-
-- GitHub: https://github.com/fedesilva/minnieml/issues/188
-- Reference: `docs/brainstorming/language/lambda-syntax-design.md`
-    
-
-  - Bugs
-
-    - [x] Hoist borrow closure env allocation out of repeated paths — /Users/f/Workshop/mine/mml/mml/modules/mmlc-lib/src/main/scala/mml/mmlclib/codegen/emitter/
-      ExpressionCompiler.scala:468-471
-      Borrow closures now allocate their environment with alloca exactly where the literal is evaluated. Because compileTailRecCapturingLambda reuses this helper for tail-recursive
-      functions lowered to loops, a borrow closure rebuilt on each iteration will reserve another stack slot that is not reclaimed until the function returns. In long-running loops
-      this causes unbounded stack growth; the env needs to be created in the entry block or otherwise given an explicit lifetime.
-
-
-     (P2) [x] Stop treating shadowed names as active borrow closures — /Users/f/Workshop/mine/mml/mml/modules/mmlc-lib/src/main/scala/mml/mmlclib/codegen/emitter/
-    FunctionEmitter.scala:546-552
-    validateBorrowClosureStatement keeps activeClosures unchanged for any non-alias rebinding, so a later let f = <non-closure> inside a loopified function does not clear the
-    earlier borrow-closure binding for f. After that, any use of the new f is rejected by the new validator even though the closure has been shadowed away. A valid tail-recursive
-    pattern like let f = { ...n... }; let f = 0; ... f ... will now fail codegen solely because the tracker is name-based and never removes the old binding.
-  - (P2) [x] Respect lambda parameter shadowing in capture rejection — /Users/f/Workshop/mine/mml/mml/modules/mmlc-lib/src/main/scala/mml/mmlclib/codegen/emitter/
-    FunctionEmitter.scala:561-562
-    rejectBorrowClosureCaptureOfLoopLocal scans lambda.body for any Ref whose name matches an active borrow closure, but it does not account for inner binders shadowing outer
-    names. In a loopified function, let f = { ... }; let g = { f: Int -> f + 1; }; is now rejected as if g captured the outer f, even though the inner parameter shadows it and
-    MML explicitly allows that form of shadowing. This turns valid nested borrow closures into false-positive codegen errors.
-  - (P2) [x] Permit immediately-invoked borrow lambdas in loopified bodies — /Users/f/Workshop/mine/mml/mml/modules/mmlc-lib/src/main/scala/mml/mmlclib/codegen/emitter/
-    FunctionEmitter.scala:644-647
-    This branch rejects any capturing non-move lambda used directly as an App callee, so a tail-recursive function can no longer do ({ x: Int -> x + n; } acc) on a loopified
-    path. That closure is invoked immediately and does not survive across iterations, so it should still be valid; the new entry-prologue hoisting already makes its env
-    allocation safe. As written, the validator introduces a source-level regression for inline borrow-lambda calls that previously codegenerated correctly.
-
-
-    - (P1) [x] Handle App-wrapped tail returns in borrow-closure escape check — /Users/f/Workshop/mine/mml/mml/modules/mmlc-lib/src/main/scala/mml/mmlclib/semantic/
-    OwnershipAnalyzer.scala:674-682
-    This traversal only looks through Cond and TermGroup, but tail let bindings, local fn bindings, and multi-statement bodies are lowered by the parser into App(Lambda(...),
-    arg). In cases like fn make(a): Int -> Int = let f = { x: Int -> x + a; }; f;, analyzeLambda now sees only the outer App, so the returned borrow-capturing closure is still
-    accepted even though codegen builds its env with alloca and returns a dangling fat pointer.
-
-    Reviewing a2d16d3 (TypeChecker: support forward references and fix duplicate errors), I found one issue.
-
-  - [x] (P1) Topological reorder is not stable for unrelated bindings — modules/mmlc-lib/src/main/scala/mml/mmlclib/semantic/TypeChecker.scala:241
-    topologicalOrder takes needsReorder as a Set[String], seeds the Kahn queue from that set at modules/mmlc-lib/src/main/scala/mml/mmlclib/semantic/TypeChecker.scala:258, and
-    later writes topoOrder back into the original binding slots at modules/mmlc-lib/src/main/scala/mml/mmlclib/semantic/TypeChecker.scala:274. For zero-indegree members with no
-    dependency relation, iteration order now comes from hash-set/hash-map traversal rather than source order, so independent top-level bindings can be reshuffled
-    nondeterministically. That violates the patch’s “preserve source order” intent and can make downstream behavior unstable if any later phase relies on member order. The fix is
-    to drive the queue and adjacency traversal from a source-ordered sequence, not a Set, and add a test where several unrelated bindings keep their original order.
-
-
+      
 ### Unify lambdas
 
   (needs ticket)
