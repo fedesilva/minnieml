@@ -534,6 +534,57 @@ class OwnershipAnalyzerTests extends BaseEffFunSuite:
     }
   }
 
+  test("borrow-capturing lambda returned directly is rejected") {
+    val code =
+      """
+        fn makeAdder(a: Int): Int -> Int =
+          { x: Int -> x + a; };
+        ;
+      """
+
+    semState(code).map { result =>
+      val errors =
+        result.errors.collect { case e: SemanticError.BorrowClosureEscapeViaReturn => e }
+      assert(errors.nonEmpty, "Expected BorrowClosureEscapeViaReturn error")
+    }
+  }
+
+  test("move-capturing lambda returned directly is accepted") {
+    val code =
+      """
+        fn makeAdder(a: Int): Int -> Int =
+          ~{ x: Int -> x + a; };
+        ;
+      """
+
+    semState(code).map { result =>
+      val errors =
+        result.errors.collect { case e: SemanticError.BorrowClosureEscapeViaReturn => e }
+      assert(
+        errors.isEmpty,
+        s"Expected no BorrowClosureEscapeViaReturn errors but got: $errors"
+      )
+    }
+  }
+
+  test("non-capturing borrow lambda returned directly is accepted") {
+    val code =
+      """
+        fn makeInc(): Int -> Int =
+          { x: Int -> x + 1; };
+        ;
+      """
+
+    semState(code).map { result =>
+      val errors =
+        result.errors.collect { case e: SemanticError.BorrowClosureEscapeViaReturn => e }
+      assert(
+        errors.isEmpty,
+        s"Expected no BorrowClosureEscapeViaReturn errors but got: $errors"
+      )
+    }
+  }
+
   test("constructor consumes owned args without cloning") {
     val code =
       """
