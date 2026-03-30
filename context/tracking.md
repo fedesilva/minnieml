@@ -18,12 +18,14 @@
 
 ### Update the design doc
 
+- GitHub: https://github.com/fedesilva/minnieml/issues/251
+
 * there are new phases in the semantic stage
 * there are lambdas now, and captures and the memory management model has changed.
       
 ### Unify lambdas
 
-  (needs ticket)
+- GitHub: https://github.com/fedesilva/minnieml/issues/255
 
   - top level fn, and let bound lambdas (or inner functions) should be treated identically.
     - the code that handles them (sema and codegen diverges)
@@ -39,7 +41,7 @@
 
 ### Call-site move 
 
-  (needs ticket)
+- GitHub: https://github.com/fedesilva/minnieml/issues/254
 
   - (`~expr`) 
   - users cannot yet force-move a value at a call site without a consuming parameter. 
@@ -47,7 +49,7 @@
 
 ### carry escape metadata all the way to the codegen
 
-  (needs ticket)
+- GitHub: https://github.com/fedesilva/minnieml/issues/249
 
   - escape metadata in bnd
   - escape metadata in lambdas
@@ -58,6 +60,8 @@
 
 
 ### Protocols (ad-hoc polymorphism)
+
+- GitHub: https://github.com/fedesilva/minnieml/issues/165
 
 **Next major feature.** Gives us Clone, Drop, and a foundation for everything else.
 
@@ -74,12 +78,16 @@
 
 ### QA Test infra
 
+- GitHub: https://github.com/fedesilva/minnieml/issues/253
+
 * add comments to each test, describing in plain english what they do, what they expect, etc
 * move all the newer extractors to the test extractors module (or new subppackage)
   - prefix them with TX
   - are we still using TXApp and where not why? and if we can use them.
 
 ### QA Parser
+
+- GitHub: https://github.com/fedesilva/minnieml/issues/252
 
 * Add commentary with examples to the parsers
 
