@@ -45,7 +45,7 @@ trait Typeable extends AstNode {
 }
 
 trait FromSource extends AstNode {
-  def source: SourceOrigin
+  def source:        SourceOrigin
   final def spanOpt: Option[SrcSpan] = source.spanOpt
 }
 

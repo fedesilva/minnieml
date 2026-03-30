@@ -162,6 +162,23 @@ def emitCaptureLoads(
       (newState, scope + (ref.name -> ScopeEntry(loadReg, mmlType)))
   }
 
+private[emitter] def renderFunctionLines(
+  header: String,
+  state:  CodeGenState
+): List[String] =
+  header :: "entry:" :: state.entryPrologueOutput.reverse ::: state.output.reverse
+
+private[emitter] def mergeFunctionBodyState(
+  parent: CodeGenState,
+  child:  CodeGenState
+): CodeGenState =
+  child.copy(
+    output                  = parent.output,
+    entryPrologueOutput     = parent.entryPrologueOutput,
+    nextRegister            = parent.nextRegister,
+    insideLoopifiedFunction = parent.insideLoopifiedFunction
+  )
+
 /** Resolve the LLVM-level name for a memory function (__free_T, __clone_T). Native/stdlib functions
   * use their raw name; user-generated functions use mangled name.
   */
@@ -267,13 +284,13 @@ private def compileRegularLambda(
 
   val attrGroup    = if bnd.meta.exists(_.inlineHint) then "#1" else "#0"
   val functionDecl = s"define $linkage$returnType @$emittedName($paramDecls) $attrGroup {"
-  val entryLine    = "entry:"
-
-  // Setup function body state with initial lines
   val bodyState = state
-    .emit(functionDecl)
-    .emit(entryLine)
-    .withRegister(0) // Reset register counter for local function scope
+    .copy(
+      output                  = List.empty,
+      entryPrologueOutput     = List.empty,
+      nextRegister            = 0,
+      insideLoopifiedFunction = false
+    )
 
   // Create a scope map for lambda parameters
   val paramScope = filteredParams
@@ -325,12 +342,12 @@ private def compileRegularLambda(
           val returnOp = bodyRes.operandStr
           s"  ret $returnType $returnOp"
 
-      Right(
-        bodyRes.state
-          .emit(returnLine)
-          .emit("}")
-          .emit("")
-      )
+      val finalBodyState = bodyRes.state
+        .emit(returnLine)
+        .emit("}")
+        .emit("")
+      val mergedState = mergeFunctionBodyState(state, finalBodyState)
+      Right(mergedState.emitAll(renderFunctionLines(functionDecl, finalBodyState)))
     }
   }
 
@@ -474,6 +491,216 @@ private case class TailRecBranch(
 /** A back edge from a recursive call site to the loop header. */
 private case class BackEdge(blockLabel: String, argValues: List[String])
 
+private def validateLoopifiedBorrowClosures(body: TailRecBody): Either[CodeGenError, Unit] =
+  validateTailRecBorrowClosures(body, Set.empty).map(_ => ())
+
+private def validateTailRecBorrowClosures(
+  body:           TailRecBody,
+  activeClosures: Set[String]
+): Either[CodeGenError, Set[String]] =
+  body match
+    case TailRecExit(preStatements, exitExpr) =>
+      for
+        activeAfterPre <- validateBorrowClosureStatements(preStatements, activeClosures)
+        _ <- validateExprAgainstBorrowClosures(exitExpr, activeAfterPre)
+      yield activeAfterPre
+    case TailRecCall(preStatements, args) =>
+      for
+        activeAfterPre <- validateBorrowClosureStatements(preStatements, activeClosures)
+        _ <- args.foldLeft(Right(()): Either[CodeGenError, Unit]) { (acc, arg) =>
+          acc.flatMap(_ => validateExprAgainstBorrowClosures(arg, activeAfterPre))
+        }
+      yield activeAfterPre
+    case TailRecBranch(preStatements, condition, ifTrue, ifFalse) =>
+      for
+        activeAfterPre <- validateBorrowClosureStatements(preStatements, activeClosures)
+        _ <- validateExprAgainstBorrowClosures(condition, activeAfterPre)
+        _ <- validateTailRecBorrowClosures(ifTrue, activeAfterPre)
+        _ <- validateTailRecBorrowClosures(ifFalse, activeAfterPre)
+      yield activeAfterPre
+
+private def validateBorrowClosureStatements(
+  statements:      List[BoundStatement],
+  initialClosures: Set[String]
+): Either[CodeGenError, Set[String]] =
+  statements.foldLeft(initialClosures.asRight[CodeGenError]) { (activeE, stmt) =>
+    activeE.flatMap(validateBorrowClosureStatement(stmt, _))
+  }
+
+private def validateBorrowClosureStatement(
+  statement:      BoundStatement,
+  activeClosures: Set[String]
+): Either[CodeGenError, Set[String]] =
+  borrowClosureBinding(statement.expr) match
+    case Some(lambda) =>
+      statement.bindingName match
+        case Some(bindingName) =>
+          rejectBorrowClosureCaptureOfLoopLocal(lambda, activeClosures)
+            .map(_ => activeClosures + bindingName)
+        case None =>
+          CodeGenError(
+            "Borrow closure on a loopified path must be bound to a local name before use",
+            lambda.some
+          ).asLeft
+    case None =>
+      statement.bindingName match
+        case Some(bindingName) =>
+          aliasSource(statement.expr, activeClosures) match
+            case Some(_) => Right(activeClosures + bindingName)
+            case None =>
+              validateExprAgainstBorrowClosures(statement.expr, activeClosures)
+                .map(_ => activeClosures)
+        case None =>
+          validateExprAgainstBorrowClosures(statement.expr, activeClosures)
+            .map(_ => activeClosures)
+
+private def rejectBorrowClosureCaptureOfLoopLocal(
+  lambda:         Lambda,
+  activeClosures: Set[String]
+): Either[CodeGenError, Unit] =
+  activeBorrowRef(lambda.body, activeClosures)
+    .orElse(lambda.captures.iterator.map(_.ref).find(ref => activeClosures.contains(ref.name)))
+    .map { ref =>
+      CodeGenError(
+        "Borrow closure on a loopified path cannot capture another loop-local borrow closure",
+        ref.some
+      ).asLeft
+    }
+    .getOrElse(Right(()))
+
+private def validateExprAgainstBorrowClosures(
+  expr:           Expr,
+  activeClosures: Set[String]
+): Either[CodeGenError, Unit] =
+  expr.terms.foldLeft(Right(()): Either[CodeGenError, Unit]) { (acc, term) =>
+    acc.flatMap(_ => validateTermAgainstBorrowClosures(term, activeClosures))
+  }
+
+private def validateTermAgainstBorrowClosures(
+  term:           Term,
+  activeClosures: Set[String]
+): Either[CodeGenError, Unit] =
+  term match
+    case app: App =>
+      collectAppArgs(app) match
+        case Some((ref, args)) if activeClosures.contains(ref.name) =>
+          args.foldLeft(Right(()): Either[CodeGenError, Unit]) { (acc, arg) =>
+            acc.flatMap(_ => validateExprAgainstBorrowClosures(arg, activeClosures))
+          }
+        case _ =>
+          for
+            _ <- validateCalleeAgainstBorrowClosures(app.fn, activeClosures)
+            _ <- validateExprAgainstBorrowClosures(app.arg, activeClosures)
+          yield ()
+    case ref: Ref if activeClosures.contains(ref.name) =>
+      CodeGenError(
+        "Borrow closure on a loopified path may survive across iterations; use ~{...} or keep it iteration-local",
+        ref.some
+      ).asLeft
+    case ref: Ref =>
+      ref.qualifier match
+        case Some(qualifier) => validateTermAgainstBorrowClosures(qualifier, activeClosures)
+        case None => Right(())
+    case lambda: Lambda if lambda.captures.nonEmpty && !lambda.isMove =>
+      CodeGenError(
+        "Borrow closure on a loopified path must stay iteration-local; add ~{...} or restructure",
+        lambda.some
+      ).asLeft
+    case lambda: Lambda =>
+      validateExprAgainstBorrowClosures(lambda.body, activeClosures)
+    case group: TermGroup =>
+      validateExprAgainstBorrowClosures(group.inner, activeClosures)
+    case cond: Cond =>
+      for
+        _ <- validateExprAgainstBorrowClosures(cond.cond, activeClosures)
+        _ <- validateExprAgainstBorrowClosures(cond.ifTrue, activeClosures)
+        _ <- validateExprAgainstBorrowClosures(cond.ifFalse, activeClosures)
+      yield ()
+    case tuple: Tuple =>
+      tuple.elements.toList.foldLeft(Right(()): Either[CodeGenError, Unit]) { (acc, elem) =>
+        acc.flatMap(_ => validateExprAgainstBorrowClosures(elem, activeClosures))
+      }
+    case expr: Expr =>
+      validateExprAgainstBorrowClosures(expr, activeClosures)
+    case _ =>
+      Right(())
+
+private def validateCalleeAgainstBorrowClosures(
+  callee:         Ref | App | Lambda,
+  activeClosures: Set[String]
+): Either[CodeGenError, Unit] =
+  callee match
+    case ref: Ref if activeClosures.contains(ref.name) =>
+      CodeGenError(
+        "Borrow closure on a loopified path must be called directly, not forwarded as a value",
+        ref.some
+      ).asLeft
+    case ref: Ref =>
+      ref.qualifier match
+        case Some(qualifier) => validateTermAgainstBorrowClosures(qualifier, activeClosures)
+        case None => Right(())
+    case app: App =>
+      validateTermAgainstBorrowClosures(app, activeClosures)
+    case lambda: Lambda if lambda.captures.nonEmpty && !lambda.isMove =>
+      CodeGenError(
+        "Borrow closure on a loopified path must be bound locally before use",
+        lambda.some
+      ).asLeft
+    case lambda: Lambda =>
+      validateExprAgainstBorrowClosures(lambda.body, activeClosures)
+
+private def borrowClosureBinding(expr: Expr): Option[Lambda] =
+  unwrapSingleTerm(expr).collect {
+    case lambda: Lambda if lambda.captures.nonEmpty && !lambda.isMove => lambda
+  }
+
+private def aliasSource(
+  expr:           Expr,
+  activeClosures: Set[String]
+): Option[String] =
+  unwrapSingleTerm(expr).collect {
+    case ref: Ref if activeClosures.contains(ref.name) => ref.name
+  }
+
+private def unwrapSingleTerm(expr: Expr): Option[Term] =
+  expr.terms match
+    case List(group: TermGroup) => unwrapSingleTerm(group.inner)
+    case List(inner: Expr) => unwrapSingleTerm(inner)
+    case List(term) => term.some
+    case _ => None
+
+private def activeBorrowRef(
+  expr:           Expr,
+  activeClosures: Set[String]
+): Option[Ref] =
+  expr.terms.iterator.collectFirst(Function.unlift(term => activeBorrowRef(term, activeClosures)))
+
+private def activeBorrowRef(
+  term:           Term,
+  activeClosures: Set[String]
+): Option[Ref] =
+  term match
+    case ref: Ref if activeClosures.contains(ref.name) => ref.some
+    case ref: Ref => ref.qualifier.flatMap(activeBorrowRef(_, activeClosures))
+    case app: App =>
+      activeBorrowRef(app.fn, activeClosures).orElse(activeBorrowRef(app.arg, activeClosures))
+    case lambda: Lambda =>
+      activeBorrowRef(lambda.body, activeClosures)
+    case group: TermGroup =>
+      activeBorrowRef(group.inner, activeClosures)
+    case cond: Cond =>
+      activeBorrowRef(cond.cond, activeClosures)
+        .orElse(activeBorrowRef(cond.ifTrue, activeClosures))
+        .orElse(activeBorrowRef(cond.ifFalse, activeClosures))
+    case tuple: Tuple =>
+      tuple.elements.iterator.collectFirst(
+        Function.unlift(elem => activeBorrowRef(elem, activeClosures))
+      )
+    case expr: Expr =>
+      activeBorrowRef(expr, activeClosures)
+    case _ =>
+      None
+
 private[emitter] def compileTailRecursiveLambda(
   lambda:      Lambda,
   state:       CodeGenState,
@@ -501,63 +728,69 @@ private[emitter] def compileTailRecursiveLambda(
     s"define $linkage$returnType @$emittedName($allParamDecls) $attrGroup {"
   val loopHeader = "loop.header"
 
-  val baseState = state.emit(functionDecl).emit("entry:")
-
-  // Load captures from env in entry block (before loop header branch)
-  val captureCount       = captureInfo.fold(0)(_._2.size)
-  val captureFieldOffset = if lambda.isMove then 1 else 0
-  val (stateAfterCaptures, captureScope) = captureInfo match
-    case Some((envTypeRef, captureTypes)) =>
-      val captureStartState = baseState.withRegister(envParamIdx + 1)
-      emitCaptureLoads(envTypeRef, envParamIdx, captureTypes, captureStartState, captureFieldOffset)
-    case None =>
-      (baseState, Map.empty[String, ScopeEntry])
-
-  val stateAfterEntry = stateAfterCaptures.emit(s"  br label %$loopHeader")
-  val headerState     = stateAfterEntry.emit(s"$loopHeader:")
-
-  val paramCount = filteredParams.size
-  // +1 to skip the env param register; +2 per capture for GEP+load in entry
-  val phiStart = paramCount + 1 + 2 * captureCount
-  val phiRegs  = filteredParams.indices.map(i => phiStart + i).toList
-
-  // Emit placeholder phi lines — replaced after collecting all back edges
-  val phiPlaceholders = phiRegs.zip(filteredParamTypes).map { case (phiReg, llvmType) =>
-    s"  %$phiReg = phi $llvmType __PHI_PLACEHOLDER_$phiReg"
-  }
-
-  val paramScope = filteredParams
-    .zip(phiRegs)
-    .map { case (param, reg) =>
-      val mmlType = param.typeAsc
-        .flatMap(getNominalTypeName(_).toOption)
-        .getOrElse("Unknown")
-      param.name -> ScopeEntry(reg, mmlType)
+  val baseState = state.copy(
+    output                  = List.empty,
+    entryPrologueOutput     = List.empty,
+    nextRegister            = 0,
+    insideLoopifiedFunction = true
+  )
+  for
+    _ <- validateLoopifiedBorrowClosures(body)
+    captureCount       = captureInfo.fold(0)(_._2.size)
+    captureFieldOffset = if lambda.isMove then 1 else 0
+    captureData = captureInfo match
+      case Some((envTypeRef, captureTypes)) =>
+        val captureStartState = baseState.withRegister(envParamIdx + 1)
+        emitCaptureLoads(
+          envTypeRef,
+          envParamIdx,
+          captureTypes,
+          captureStartState,
+          captureFieldOffset
+        )
+      case None =>
+        (baseState, Map.empty[String, ScopeEntry])
+    (stateAfterCaptures, captureScope) = captureData
+    stateAfterEntry                    = stateAfterCaptures.emit(s"  br label %$loopHeader")
+    headerState                        = stateAfterEntry.emit(s"$loopHeader:")
+    paramCount                         = filteredParams.size
+    phiStart                           = paramCount + 1 + 2 * captureCount
+    phiRegs                            = filteredParams.indices.map(i => phiStart + i).toList
+    phiPlaceholders = phiRegs.zip(filteredParamTypes).map { case (phiReg, llvmType) =>
+      s"  %$phiReg = phi $llvmType __PHI_PLACEHOLDER_$phiReg"
     }
-    .toMap
-
-  val stateAfterPhi = headerState.emitAll(phiPlaceholders).withRegister(phiStart + paramCount)
-  val bodyScope     = paramScope ++ captureScope
-
-  compileTailRecBody(
-    body,
-    stateAfterPhi,
-    bodyScope,
-    returnType,
-    loopHeader,
-    loopHeader,
-    nonVoidIndices
-  ).map { case (stateAfterBody, backEdges) =>
+    paramScope = filteredParams
+      .zip(phiRegs)
+      .map { case (param, reg) =>
+        val mmlType = param.typeAsc
+          .flatMap(getNominalTypeName(_).toOption)
+          .getOrElse("Unknown")
+        param.name -> ScopeEntry(reg, mmlType)
+      }
+      .toMap
+    stateAfterPhi = headerState.emitAll(phiPlaceholders).withRegister(phiStart + paramCount)
+    bodyScope     = paramScope ++ captureScope
+    bodyResult <- compileTailRecBody(
+      body,
+      stateAfterPhi,
+      bodyScope,
+      returnType,
+      loopHeader,
+      loopHeader,
+      nonVoidIndices
+    )
+    (stateAfterBody, backEdges) = bodyResult
+  yield
     val finalState = stateAfterBody.emit("}").emit("")
-    // Build phi replacements from collected back edges
     val replacements = phiRegs.zipWithIndex.map { case (phiReg, paramIdx) =>
       val entryValue  = s"%$paramIdx"
       val backEntries = backEdges.map(e => s"[ ${e.argValues(paramIdx)}, %${e.blockLabel} ]")
       val allEntries  = s"[ $entryValue, %entry ]" :: backEntries
       s"__PHI_PLACEHOLDER_$phiReg" -> allEntries.mkString(", ")
     }.toMap
-    replacePlaceholders(finalState, replacements)
-  }
+    val replacedState = replacePlaceholders(finalState, replacements)
+    val mergedState   = mergeFunctionBodyState(state, replacedState)
+    mergedState.emitAll(renderFunctionLines(functionDecl, replacedState))
 
 /** Compile a tail-recursive body tree into LLVM IR.
   *
