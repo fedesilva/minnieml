@@ -151,6 +151,12 @@ object SourceCodeExtractor:
           .map(s => s"\n$s")
           .getOrElse("")
 
+      case SemanticError.BorrowClosureEscapeViaReturn(lambda, _) =>
+        spanOf(lambda)
+          .flatMap(extractSnippet(sourceInfo, _))
+          .map(s => s"\n$s")
+          .getOrElse("")
+
       case SemanticError.VisibilityViolation(ref, _, _) =>
         spanOf(ref)
           .flatMap(extractSnippet(sourceInfo, _))

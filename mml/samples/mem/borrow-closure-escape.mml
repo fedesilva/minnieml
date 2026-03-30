@@ -1,0 +1,13 @@
+// Borrow closure escape demonstration (expected: compile error)
+// A borrow-capturing closure uses alloca for its environment.
+// Returning it hands the caller a fat pointer to dead stack storage.
+// The compiler must reject this; use ~{ ... } (move closure) instead.
+fn makeAdder(a: Int) =
+  // { x -> x + a };
+  ~{ x -> x + a };
+;
+
+pub fn main(): Unit =
+  let add5 = makeAdder 5;
+  println (int_to_str (add5 10));
+;

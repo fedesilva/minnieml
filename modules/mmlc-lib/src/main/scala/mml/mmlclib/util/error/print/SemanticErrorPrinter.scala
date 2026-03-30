@@ -154,6 +154,10 @@ object SemanticErrorPrinter:
         val movedLocation = movedAt.spanOpt.map(LocationPrinter.printSpan).getOrElse("<unknown>")
         s"${Console.RED}Cannot capture moved heap binding '${ref.name}' at $location [phase: $phase]${Console.RESET}\nMoved at: $movedLocation"
 
+      case SemanticError.BorrowClosureEscapeViaReturn(lambda, phase) =>
+        val location = locationOf(lambda)
+        s"${Console.RED}Cannot return borrow-capturing closure at $location [phase: $phase]${Console.RESET}"
+
       case SemanticError.TypeCheckingError(error) =>
         prettyPrintTypeError(error)
 

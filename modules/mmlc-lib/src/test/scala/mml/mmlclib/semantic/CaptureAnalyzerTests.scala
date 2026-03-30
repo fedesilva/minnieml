@@ -172,7 +172,7 @@ class CaptureAnalyzerTests extends BaseEffFunSuite:
     val code =
       """
         fn foo(a: Int): Int -> Int =
-          { x: Int -> x + a; };
+          ~{ x: Int -> x + a; };
         ;
       """
     semNotFailed(code).map { module =>
