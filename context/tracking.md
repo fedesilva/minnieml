@@ -51,12 +51,14 @@
 
 - GitHub: https://github.com/fedesilva/minnieml/issues/249
 
-  - escape metadata in bnd
-  - escape metadata in lambdas
-  - reach the codegen
-    - codegen knows and can:
-      - alloca vs malloc
-      - among other opts
+* Propagate ownership / escape metadata to codegen
+* Carry escape metadata in bindings
+* Carry escape metadata in lambdas
+* Metadata such as `NoEscapes`, `NoAlias`, and related facts should let codegen decide when
+  `alloca` is safe instead of `malloc` and emit better IR
+* Codegen should use that information for decisions such as:
+  - `alloca` vs `malloc`
+  - other optimizations driven by escape / alias facts
 
 
 ### Protocols (ad-hoc polymorphism)
@@ -75,6 +77,14 @@
 * Touches: parser, ref resolver, type checker (NOT expression rewriter)
 * Start simple: single-type instances, nothing fancy
 * Unblocks 3.5.1 once Clone protocol exists (user writes `clone x` via protocol dispatch)
+* RefResolver should produce candidate sets, not resolved refs, for protocol-polymorphic
+  references
+  - overloading allowed by name + type signature; resolution deferred to the type checker
+  - one free overload max per operator / function name
+  - all overloads of an operator must share arity, precedence, and associativity so
+    `ExpressionRewriter` can build a determinate AST before types are known
+  - candidate entries for protocol members should carry symbolic `(ProtocolId, MemberName)` refs
+    that the type checker patches to concrete implementations later
 
 ### QA Test infra
 
