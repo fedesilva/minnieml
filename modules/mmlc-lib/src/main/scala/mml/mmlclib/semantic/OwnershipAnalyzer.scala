@@ -668,6 +668,20 @@ object OwnershipAnalyzer:
         case _ => List.empty
     expr.terms.lastOption.map(termReturned).getOrElse(List.empty)
 
+  /** Borrow-capturing lambda literals in return position. These are unsafe because borrow closures
+    * use stack-allocated environments.
+    */
+  private def returnedBorrowClosures(expr: Expr): List[Lambda] =
+    def termReturned(term: Term): List[Lambda] =
+      term match
+        case lambda: Lambda if lambda.captures.nonEmpty && !lambda.isMove =>
+          List(lambda)
+        case Cond(_, _, ifTrue, ifFalse, _, _) =>
+          returnedBorrowClosures(ifTrue) ++ returnedBorrowClosures(ifFalse)
+        case TermGroup(_, inner, _) => returnedBorrowClosures(inner)
+        case _ => List.empty
+    expr.terms.lastOption.map(termReturned).getOrElse(List.empty)
+
   /** Check if a binding name is referenced anywhere in an expression */
   private def containsRefInExpr(name: String, expr: Expr): Boolean =
     expr.terms.exists(containsRef(name, _))
@@ -1351,6 +1365,11 @@ object OwnershipAnalyzer:
           .map(ref => SemanticError.BorrowEscapeViaReturn(ref, PhaseName))
       else Nil
 
+    // Escape check: borrow-capturing closures can never be returned.
+    val borrowClosureEscapeErrors =
+      returnedBorrowClosures(finalBody)
+        .map(lambda => SemanticError.BorrowClosureEscapeViaReturn(lambda, PhaseName))
+
     // Capture ownership: move lambdas move heap captures; borrow lambdas leave them in place.
     val (returnScope, captureErrors, updatedCaptures) =
       captures.foldLeft((scope, List.empty[SemanticError], List.empty[Capture])): (acc, cap) =>
@@ -1394,7 +1413,7 @@ object OwnershipAnalyzer:
     TermResult(
       returnScope,
       Lambda(span, params, finalBody, updatedCaptures, typeSpec, typeAsc, meta, isMove),
-      errors = bodyResult.errors ++ borrowEscapeErrors ++ captureErrors
+      errors = bodyResult.errors ++ borrowEscapeErrors ++ borrowClosureEscapeErrors ++ captureErrors
     )
 
   /** Analyze a tuple expression */

@@ -139,6 +139,7 @@ enum SemanticError extends CompilationError:
   case BorrowEscapeViaReturn(ref: Ref, phase: String)
   case CapturedBorrowedHeapBinding(ref: Ref, phase: String)
   case CapturedMovedHeapBinding(ref: Ref, movedAt: SourceOrigin, phase: String)
+  case BorrowClosureEscapeViaReturn(lambda: Lambda, phase: String)
 
   def message: String = this match
     case UndefinedRef(ref, _, _) =>
@@ -185,6 +186,8 @@ enum SemanticError extends CompilationError:
           s"Cannot capture moved heap binding '${ref.name}' in a closure; it was already moved at ${span.start.line}:${span.start.col}"
         case None =>
           s"Cannot capture moved heap binding '${ref.name}' in a closure"
+    case BorrowClosureEscapeViaReturn(_, _) =>
+      "Cannot return a borrow-capturing closure; use ~{ ... } for a move closure"
 
 /** Generate a stable ID for stdlib members */
 private def stdlibId(declSegment: String, name: String): Option[String] =
