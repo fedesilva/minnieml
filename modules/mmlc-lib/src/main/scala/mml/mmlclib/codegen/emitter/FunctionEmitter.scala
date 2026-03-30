@@ -462,7 +462,7 @@ private def compileStructConstructor(
   * For sequence lambdas (__stmt), bindingName is None (side-effect only). For let-bindings,
   * bindingName is Some(name) and the result is bound to that name for use in subsequent code.
   */
-private case class BoundStatement(bindingName: Option[String], expr: Expr)
+private[emitter] case class BoundStatement(bindingName: Option[String], expr: Expr)
 
 /** Recursive tree representing the body of a tail-recursive function for loopification.
   *
@@ -470,18 +470,18 @@ private case class BoundStatement(bindingName: Option[String], expr: Expr)
   * condition — both branches may contain recursive calls, enabling patterns like astar2's
   * visit_neighbors where different paths recurse with different arguments.
   */
-sealed private trait TailRecBody
+sealed private[emitter] trait TailRecBody
 
 /** A leaf that exits the loop: compiles preStatements then returns exitExpr. */
-private case class TailRecExit(preStatements: List[BoundStatement], exitExpr: Expr)
+private[emitter] case class TailRecExit(preStatements: List[BoundStatement], exitExpr: Expr)
     extends TailRecBody
 
 /** A leaf that loops back: compiles preStatements then jumps to loop header with new args. */
-private case class TailRecCall(preStatements: List[BoundStatement], args: List[Expr])
+private[emitter] case class TailRecCall(preStatements: List[BoundStatement], args: List[Expr])
     extends TailRecBody
 
 /** A branch: compiles preStatements, evaluates condition, recurses into both subtrees. */
-private case class TailRecBranch(
+private[emitter] case class TailRecBranch(
   preStatements: List[BoundStatement],
   condition:     Expr,
   ifTrue:        TailRecBody,
@@ -491,7 +491,9 @@ private case class TailRecBranch(
 /** A back edge from a recursive call site to the loop header. */
 private case class BackEdge(blockLabel: String, argValues: List[String])
 
-private def validateLoopifiedBorrowClosures(body: TailRecBody): Either[CodeGenError, Unit] =
+private[emitter] def validateLoopifiedBorrowClosures(
+  body: TailRecBody
+): Either[CodeGenError, Unit] =
   validateTailRecBorrowClosures(body, Set.empty).map(_ => ())
 
 private def validateTailRecBorrowClosures(
@@ -549,7 +551,7 @@ private def validateBorrowClosureStatement(
             case Some(_) => Right(activeClosures + bindingName)
             case None =>
               validateExprAgainstBorrowClosures(statement.expr, activeClosures)
-                .map(_ => activeClosures)
+                .map(_ => activeClosures - bindingName)
         case None =>
           validateExprAgainstBorrowClosures(statement.expr, activeClosures)
             .map(_ => activeClosures)
@@ -558,7 +560,7 @@ private def rejectBorrowClosureCaptureOfLoopLocal(
   lambda:         Lambda,
   activeClosures: Set[String]
 ): Either[CodeGenError, Unit] =
-  activeBorrowRef(lambda.body, activeClosures)
+  activeBorrowRef(lambda.body, activeClosures, lambdaScopedNames(lambda))
     .orElse(lambda.captures.iterator.map(_.ref).find(ref => activeClosures.contains(ref.name)))
     .map { ref =>
       CodeGenError(
@@ -570,36 +572,40 @@ private def rejectBorrowClosureCaptureOfLoopLocal(
 
 private def validateExprAgainstBorrowClosures(
   expr:           Expr,
-  activeClosures: Set[String]
+  activeClosures: Set[String],
+  shadowedNames:  Set[String] = Set.empty
 ): Either[CodeGenError, Unit] =
   expr.terms.foldLeft(Right(()): Either[CodeGenError, Unit]) { (acc, term) =>
-    acc.flatMap(_ => validateTermAgainstBorrowClosures(term, activeClosures))
+    acc.flatMap(_ => validateTermAgainstBorrowClosures(term, activeClosures, shadowedNames))
   }
 
 private def validateTermAgainstBorrowClosures(
   term:           Term,
-  activeClosures: Set[String]
+  activeClosures: Set[String],
+  shadowedNames:  Set[String]
 ): Either[CodeGenError, Unit] =
   term match
     case app: App =>
       collectAppArgs(app) match
-        case Some((ref, args)) if activeClosures.contains(ref.name) =>
+        case Some((ref, args))
+            if activeClosures.contains(ref.name) && !shadowedNames.contains(ref.name) =>
           args.foldLeft(Right(()): Either[CodeGenError, Unit]) { (acc, arg) =>
-            acc.flatMap(_ => validateExprAgainstBorrowClosures(arg, activeClosures))
+            acc.flatMap(_ => validateExprAgainstBorrowClosures(arg, activeClosures, shadowedNames))
           }
         case _ =>
           for
-            _ <- validateCalleeAgainstBorrowClosures(app.fn, activeClosures)
-            _ <- validateExprAgainstBorrowClosures(app.arg, activeClosures)
+            _ <- validateCalleeAgainstBorrowClosures(app.fn, activeClosures, shadowedNames)
+            _ <- validateExprAgainstBorrowClosures(app.arg, activeClosures, shadowedNames)
           yield ()
-    case ref: Ref if activeClosures.contains(ref.name) =>
+    case ref: Ref if activeClosures.contains(ref.name) && !shadowedNames.contains(ref.name) =>
       CodeGenError(
         "Borrow closure on a loopified path may survive across iterations; use ~{...} or keep it iteration-local",
         ref.some
       ).asLeft
     case ref: Ref =>
       ref.qualifier match
-        case Some(qualifier) => validateTermAgainstBorrowClosures(qualifier, activeClosures)
+        case Some(qualifier) =>
+          validateTermAgainstBorrowClosures(qualifier, activeClosures, shadowedNames)
         case None => Right(())
     case lambda: Lambda if lambda.captures.nonEmpty && !lambda.isMove =>
       CodeGenError(
@@ -607,47 +613,55 @@ private def validateTermAgainstBorrowClosures(
         lambda.some
       ).asLeft
     case lambda: Lambda =>
-      validateExprAgainstBorrowClosures(lambda.body, activeClosures)
+      validateExprAgainstBorrowClosures(
+        lambda.body,
+        activeClosures,
+        shadowedNames ++ lambdaScopedNames(lambda)
+      )
     case group: TermGroup =>
-      validateExprAgainstBorrowClosures(group.inner, activeClosures)
+      validateExprAgainstBorrowClosures(group.inner, activeClosures, shadowedNames)
     case cond: Cond =>
       for
-        _ <- validateExprAgainstBorrowClosures(cond.cond, activeClosures)
-        _ <- validateExprAgainstBorrowClosures(cond.ifTrue, activeClosures)
-        _ <- validateExprAgainstBorrowClosures(cond.ifFalse, activeClosures)
+        _ <- validateExprAgainstBorrowClosures(cond.cond, activeClosures, shadowedNames)
+        _ <- validateExprAgainstBorrowClosures(cond.ifTrue, activeClosures, shadowedNames)
+        _ <- validateExprAgainstBorrowClosures(cond.ifFalse, activeClosures, shadowedNames)
       yield ()
     case tuple: Tuple =>
       tuple.elements.toList.foldLeft(Right(()): Either[CodeGenError, Unit]) { (acc, elem) =>
-        acc.flatMap(_ => validateExprAgainstBorrowClosures(elem, activeClosures))
+        acc.flatMap(_ => validateExprAgainstBorrowClosures(elem, activeClosures, shadowedNames))
       }
     case expr: Expr =>
-      validateExprAgainstBorrowClosures(expr, activeClosures)
+      validateExprAgainstBorrowClosures(expr, activeClosures, shadowedNames)
     case _ =>
       Right(())
 
 private def validateCalleeAgainstBorrowClosures(
   callee:         Ref | App | Lambda,
-  activeClosures: Set[String]
+  activeClosures: Set[String],
+  shadowedNames:  Set[String]
 ): Either[CodeGenError, Unit] =
   callee match
-    case ref: Ref if activeClosures.contains(ref.name) =>
+    case ref: Ref if activeClosures.contains(ref.name) && !shadowedNames.contains(ref.name) =>
       CodeGenError(
         "Borrow closure on a loopified path must be called directly, not forwarded as a value",
         ref.some
       ).asLeft
     case ref: Ref =>
       ref.qualifier match
-        case Some(qualifier) => validateTermAgainstBorrowClosures(qualifier, activeClosures)
+        case Some(qualifier) =>
+          validateTermAgainstBorrowClosures(qualifier, activeClosures, shadowedNames)
         case None => Right(())
     case app: App =>
-      validateTermAgainstBorrowClosures(app, activeClosures)
-    case lambda: Lambda if lambda.captures.nonEmpty && !lambda.isMove =>
-      CodeGenError(
-        "Borrow closure on a loopified path must be bound locally before use",
-        lambda.some
-      ).asLeft
+      validateTermAgainstBorrowClosures(app, activeClosures, shadowedNames)
     case lambda: Lambda =>
-      validateExprAgainstBorrowClosures(lambda.body, activeClosures)
+      validateExprAgainstBorrowClosures(
+        lambda.body,
+        activeClosures,
+        shadowedNames ++ lambdaScopedNames(lambda)
+      )
+
+private def lambdaScopedNames(lambda: Lambda): Set[String] =
+  lambda.params.iterator.map(_.name).toSet
 
 private def borrowClosureBinding(expr: Expr): Option[Lambda] =
   unwrapSingleTerm(expr).collect {
@@ -671,33 +685,39 @@ private def unwrapSingleTerm(expr: Expr): Option[Term] =
 
 private def activeBorrowRef(
   expr:           Expr,
-  activeClosures: Set[String]
+  activeClosures: Set[String],
+  shadowedNames:  Set[String] = Set.empty
 ): Option[Ref] =
-  expr.terms.iterator.collectFirst(Function.unlift(term => activeBorrowRef(term, activeClosures)))
+  expr.terms.iterator.collectFirst(
+    Function.unlift(term => activeBorrowRef(term, activeClosures, shadowedNames))
+  )
 
 private def activeBorrowRef(
   term:           Term,
-  activeClosures: Set[String]
+  activeClosures: Set[String],
+  shadowedNames:  Set[String]
 ): Option[Ref] =
   term match
-    case ref: Ref if activeClosures.contains(ref.name) => ref.some
-    case ref: Ref => ref.qualifier.flatMap(activeBorrowRef(_, activeClosures))
+    case ref: Ref if activeClosures.contains(ref.name) && !shadowedNames.contains(ref.name) =>
+      ref.some
+    case ref: Ref => ref.qualifier.flatMap(activeBorrowRef(_, activeClosures, shadowedNames))
     case app: App =>
-      activeBorrowRef(app.fn, activeClosures).orElse(activeBorrowRef(app.arg, activeClosures))
+      activeBorrowRef(app.fn, activeClosures, shadowedNames)
+        .orElse(activeBorrowRef(app.arg, activeClosures, shadowedNames))
     case lambda: Lambda =>
-      activeBorrowRef(lambda.body, activeClosures)
+      activeBorrowRef(lambda.body, activeClosures, shadowedNames ++ lambdaScopedNames(lambda))
     case group: TermGroup =>
-      activeBorrowRef(group.inner, activeClosures)
+      activeBorrowRef(group.inner, activeClosures, shadowedNames)
     case cond: Cond =>
-      activeBorrowRef(cond.cond, activeClosures)
-        .orElse(activeBorrowRef(cond.ifTrue, activeClosures))
-        .orElse(activeBorrowRef(cond.ifFalse, activeClosures))
+      activeBorrowRef(cond.cond, activeClosures, shadowedNames)
+        .orElse(activeBorrowRef(cond.ifTrue, activeClosures, shadowedNames))
+        .orElse(activeBorrowRef(cond.ifFalse, activeClosures, shadowedNames))
     case tuple: Tuple =>
       tuple.elements.iterator.collectFirst(
-        Function.unlift(elem => activeBorrowRef(elem, activeClosures))
+        Function.unlift(elem => activeBorrowRef(elem, activeClosures, shadowedNames))
       )
     case expr: Expr =>
-      activeBorrowRef(expr, activeClosures)
+      activeBorrowRef(expr, activeClosures, shadowedNames)
     case _ =>
       None
 
