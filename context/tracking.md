@@ -36,7 +36,7 @@
       functions lowered to loops, a borrow closure rebuilt on each iteration will reserve another stack slot that is not reclaimed until the function returns. In long-running loops
       this causes unbounded stack growth; the env needs to be created in the entry block or otherwise given an explicit lifetime.
 
-    - (P1) [ ] Handle App-wrapped tail returns in borrow-closure escape check — /Users/f/Workshop/mine/mml/mml/modules/mmlc-lib/src/main/scala/mml/mmlclib/semantic/
+    - (P1) [x] Handle App-wrapped tail returns in borrow-closure escape check — /Users/f/Workshop/mine/mml/mml/modules/mmlc-lib/src/main/scala/mml/mmlclib/semantic/
     OwnershipAnalyzer.scala:674-682
     This traversal only looks through Cond and TermGroup, but tail let bindings, local fn bindings, and multi-statement bodies are lowered by the parser into App(Lambda(...),
     arg). In cases like fn make(a): Int -> Int = let f = { x: Int -> x + a; }; f;, analyzeLambda now sees only the outer App, so the returned borrow-capturing closure is still
@@ -44,7 +44,7 @@
 
     Reviewing a2d16d3 (TypeChecker: support forward references and fix duplicate errors), I found one issue.
 
-  - [ ] (P1) Topological reorder is not stable for unrelated bindings — modules/mmlc-lib/src/main/scala/mml/mmlclib/semantic/TypeChecker.scala:241
+  - [x] (P1) Topological reorder is not stable for unrelated bindings — modules/mmlc-lib/src/main/scala/mml/mmlclib/semantic/TypeChecker.scala:241
     topologicalOrder takes needsReorder as a Set[String], seeds the Kahn queue from that set at modules/mmlc-lib/src/main/scala/mml/mmlclib/semantic/TypeChecker.scala:258, and
     later writes topoOrder back into the original binding slots at modules/mmlc-lib/src/main/scala/mml/mmlclib/semantic/TypeChecker.scala:274. For zero-indegree members with no
     dependency relation, iteration order now comes from hash-set/hash-map traversal rather than source order, so independent top-level bindings can be reshuffled
@@ -92,6 +92,11 @@
 * Add commentary with examples to the parsers
 
 ## Change Log
+
+- 2026-03-29: #188 stabilize forward-reference reorder and close borrow-closure return-wrapper escape
+  - TypeChecker: topological reordering now derives queue seeding, dependency release order, and cycle fill from source-ordered member ids so unrelated bindings keep source order while forward references still reorder correctly.
+  - OwnershipAnalyzer: `returnedBorrowClosures` now follows returned scoped-binding wrappers only when the wrapper body actually returns the bound value, covering parser-lowered `let` / local-`fn` `App(Lambda(...), arg)` escape cases without flagging non-escaping borrow closures.
+  - Tests: added regression coverage for stable reorder preservation and for borrow-capturing closure escape through both `let` bindings and local inner-function returns.
 
 - 2026-03-29: #188 Reject borrow-capturing closures that escape via return
   - OwnershipAnalyzer: added `returnedBorrowClosures` to detect borrow-capturing lambda literals in return position; unconditional check (not gated behind return type).

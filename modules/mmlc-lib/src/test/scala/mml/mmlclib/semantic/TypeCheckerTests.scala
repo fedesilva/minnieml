@@ -744,3 +744,22 @@ class TypeCheckerTests extends BaseEffFunSuite:
       assertEquals(userNames, List("first", "second"))
     }
   }
+
+  test("forward reference reorder keeps unrelated bindings in source order") {
+    val code =
+      """
+        fn alpha(x: Int) = x + 1;;
+        fn caller(x: Int): Int = callee x;;
+        fn beta(x: Int) = x * 2;;
+        fn callee(x: Int) = x - 1;;
+        fn gamma(x: Int) = x / 2;;
+      """
+
+    semNotFailed(code).map { module =>
+      val userNames = module.members.collect {
+        case b: Bnd if Set("alpha", "caller", "beta", "callee", "gamma").contains(b.name) =>
+          b.name
+      }
+      assertEquals(userNames, List("alpha", "caller", "beta", "callee", "gamma"))
+    }
+  }

@@ -549,6 +549,38 @@ class OwnershipAnalyzerTests extends BaseEffFunSuite:
     }
   }
 
+  test("borrow-capturing lambda returned through let binding is rejected") {
+    val code =
+      """
+        fn makeAdder(a: Int): Int -> Int =
+          let f = { x: Int -> x + a; };
+          f;
+        ;
+      """
+
+    semState(code).map { result =>
+      val errors =
+        result.errors.collect { case e: SemanticError.BorrowClosureEscapeViaReturn => e }
+      assert(errors.nonEmpty, "Expected BorrowClosureEscapeViaReturn error")
+    }
+  }
+
+  test("borrow-capturing inner fn returned through local binding is rejected") {
+    val code =
+      """
+        fn makeAdder(a: Int): Int -> Int =
+          fn addA(x: Int): Int = x + a;;
+          addA;
+        ;
+      """
+
+    semState(code).map { result =>
+      val errors =
+        result.errors.collect { case e: SemanticError.BorrowClosureEscapeViaReturn => e }
+      assert(errors.nonEmpty, "Expected BorrowClosureEscapeViaReturn error")
+    }
+  }
+
   test("move-capturing lambda returned directly is accepted") {
     val code =
       """
