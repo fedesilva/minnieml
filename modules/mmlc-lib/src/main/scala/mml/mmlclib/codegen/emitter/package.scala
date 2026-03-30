@@ -329,6 +329,7 @@ case class CodeGenState(
   abi:                  AbiStrategy         = AbiStrategy.forTarget(TargetAbi.Default),
   nextRegister:         Int                 = 0,
   output:               List[String]        = List.empty,
+  entryPrologueOutput:  List[String]        = List.empty,
   initializers:         List[String]        = List.empty,
   stringConstants:      Map[String, String] = Map.empty,
   nextStringId:         Int                 = 0,
@@ -353,8 +354,9 @@ case class CodeGenState(
   // Resolvables index for soft reference lookups
   resolvables: ResolvablesIndex = ResolvablesIndex(),
   // Deferred function definitions (expression-position lambdas compiled as separate functions)
-  deferredDefinitions: List[String] = List.empty,
-  nextAnonFnId:        Int          = 0
+  deferredDefinitions:     List[String] = List.empty,
+  nextAnonFnId:            Int          = 0,
+  insideLoopifiedFunction: Boolean      = false
 ):
   /** Returns a new state with an updated register counter. */
   def withRegister(reg: Int): CodeGenState =
@@ -381,6 +383,14 @@ case class CodeGenState(
   def emitAll(lines: List[String]): CodeGenState =
     copy(output = lines.reverse ::: output)
 
+  /** Emits a single line into the current function entry-block prologue. */
+  def emitEntryPrologue(line: String): CodeGenState =
+    copy(entryPrologueOutput = line :: entryPrologueOutput)
+
+  /** Emits multiple lines into the current function entry-block prologue. */
+  def emitAllEntryPrologue(lines: List[String]): CodeGenState =
+    copy(entryPrologueOutput = lines.reverse ::: entryPrologueOutput)
+
   /** Adds an initializer function to the list. */
   def addInitializer(fnName: String): CodeGenState =
     copy(initializers = fnName :: initializers)
@@ -391,6 +401,9 @@ case class CodeGenState(
   /** Adds a warning to the codegen state (will be lifted to CompilerState when done). */
   def addWarning(warning: CompilerWarning): CodeGenState =
     copy(warnings = warning :: warnings)
+
+  def withLoopifiedFunction(value: Boolean): CodeGenState =
+    copy(insideLoopifiedFunction = value)
 
   /** Returns the complete LLVM IR as a single string. */
   def result: String =

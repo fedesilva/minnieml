@@ -1,5 +1,9 @@
 package mml.mmlclib.codegen
 
+import cats.effect.IO
+import mml.mmlclib.api.FrontEndApi
+import mml.mmlclib.codegen.emitter.CodeGenError
+import mml.mmlclib.compiler.{CodegenStage, CompilerConfig}
 import mml.mmlclib.test.BaseEffFunSuite
 
 class ClosureCodegenTest extends BaseEffFunSuite:
@@ -10,6 +14,25 @@ class ClosureCodegenTest extends BaseEffFunSuite:
       .findFirstMatchIn(llvmIr)
       .map(_.group(1))
       .getOrElse(fail(s"Missing function definition for $signaturePattern. IR:\n$llvmIr"))
+
+  private def compileCodegenErrors(
+    source: String,
+    name:   String = "Test",
+    config: CompilerConfig
+  ): IO[List[CodeGenError]] =
+    FrontEndApi.compile(source, name, config).value.flatMap {
+      case Right(state) =>
+        if state.errors.nonEmpty then fail(s"Compilation failed before codegen: ${state.errors}")
+        else
+          val validated = CodegenStage.validate(state)
+          if validated.hasErrors then fail(s"Validation failed: ${validated.errors}")
+          else
+            CodegenStage.emitIrOnly(validated).map { codegenState =>
+              codegenState.errors.collect { case error: CodeGenError => error }.toList
+            }
+      case Left(error) =>
+        fail(s"Compilation failed: $error")
+    }
 
   test("deferred lambda body preserves emitted metadata") {
     val source = """
@@ -167,6 +190,72 @@ class ClosureCodegenTest extends BaseEffFunSuite:
         !mainBody.contains("call void @test___free_"),
         s"Borrow closure should not generate free calls. Body:\n$mainBody"
       )
+    }
+  }
+
+  test("loopified borrow closures hoist env alloca to function entry") {
+    val source =
+      """
+        fn loop(n: Int, acc: Int): Int =
+          if n == 0 then
+            acc;
+          else
+            let add = { x: Int -> x + n; };
+            let next = add acc;
+            loop (n - 1) next;
+          ;
+        ;
+      """
+
+    compileAndGenerate(source, config = CompilerConfig.default.copy(noTco = false)).map { llvmIr =>
+      val loopBody      = functionBody(llvmIr, "test_loop\\(i64 %0, i64 %1, ptr %2\\) #0")
+      val envAllocCount = "alloca %struct.__closure_env_".r.findAllIn(loopBody).length
+      val allocaIndex   = loopBody.indexOf("alloca %struct.__closure_env_")
+      val loopBrIndex   = loopBody.indexOf("br label %loop.header")
+      val loopHeaderIdx = loopBody.indexOf("loop.header:")
+
+      assertEquals(envAllocCount, 1, s"Expected one hoisted borrow env alloca. Body:\n$loopBody")
+      assert(allocaIndex >= 0, s"Missing borrow env alloca in loopified function. Body:\n$loopBody")
+      assert(loopBrIndex >= 0, s"Missing branch to loop header. Body:\n$loopBody")
+      assert(loopHeaderIdx >= 0, s"Missing loop header label. Body:\n$loopBody")
+      assert(
+        allocaIndex < loopBrIndex && allocaIndex < loopHeaderIdx,
+        s"Expected borrow env alloca in the entry block before loop control flow. Body:\n$loopBody"
+      )
+      assert(
+        !loopBody.contains("call ptr @malloc"),
+        s"Hoisted borrow closure should still use alloca, not malloc. Body:\n$loopBody"
+      )
+    }
+  }
+
+  test("loopified borrow closures carried across iterations are rejected") {
+    val source =
+      """
+        fn seed(x: Int): Int = x;;
+
+        fn loop(n: Int, current: Int -> Int): Int =
+          let next = { x: Int -> x + n; };
+          if n == 0 then
+            current 1;
+          else
+            loop (n - 1) next;
+          ;
+        ;
+
+        fn main(): Int =
+          loop 2 seed;
+        ;
+      """
+
+    compileCodegenErrors(source, config = CompilerConfig.default.copy(noTco = false)).map {
+      errors =>
+        assert(
+          errors.exists(
+            _.message.contains("Borrow closure on a loopified path may survive across iterations")
+          ),
+          s"Expected loopified borrow-closure reuse rejection, got: $errors"
+        )
     }
   }
 

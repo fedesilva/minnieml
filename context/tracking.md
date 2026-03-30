@@ -134,6 +134,11 @@
 
 ## Change Log
 
+- 2026-03-29: #188 loopified borrow-closure env hoist with tracked validator follow-ups pending
+  - Codegen: function emission now supports an entry-block prologue so borrow closure env `alloca`s created on loopified paths can be hoisted out of repeated execution while move closures keep their existing heap/destructor flow.
+  - Loopified borrow-closure validation: added conservative codegen-time checks for borrow closures that may survive across iterations; the current shadowing / immediate-invocation regressions are tracked above and remain pending.
+  - Tests: added closure codegen coverage for entry-block hoisting and for rejecting loop-carried borrow closures.
+
 - 2026-03-29: #188 stabilize forward-reference reorder and close borrow-closure return-wrapper escape
   - TypeChecker: topological reordering now derives queue seeding, dependency release order, and cycle fill from source-ordered member ids so unrelated bindings keep source order while forward references still reorder correctly.
   - OwnershipAnalyzer: `returnedBorrowClosures` now follows returned scoped-binding wrappers only when the wrapper body actually returns the bound value, covering parser-lowered `let` / local-`fn` `App(Lambda(...), arg)` escape cases without flagging non-escaping borrow closures.
