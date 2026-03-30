@@ -661,3 +661,86 @@ class TypeCheckerTests extends BaseEffFunSuite:
       """
     semNotFailed(code).map { _ => () }
   }
+
+  // -- Forward reference tests --
+
+  test("forward reference to function with inferred return type") {
+    val code =
+      """
+        fn caller(x: Int): Int = callee x;;
+        fn callee(x: Int) = x + 1;;
+        let y = caller 1;
+      """
+    semNotFailed(code).map { module =>
+      val bnd = module.members.collectFirst { case b: Bnd if b.name == "y" => b }.get
+      bnd.typeSpec match
+        case Some(TypeRef(_, "Int", _, _)) => // pass
+        case other => fail(s"Expected Some(TypeRef(\"Int\")), got $other")
+    }
+  }
+
+  test("chain of forward references") {
+    val code =
+      """
+        fn a(x: Int) = b x;;
+        fn b(x: Int) = c x;;
+        fn c(x: Int) = x + 1;;
+      """
+    semNotFailed(code).map { module =>
+      val bnd = module.members.collectFirst { case b: Bnd if b.name == "a" => b }.get
+      bnd.typeSpec match
+        case Some(TypeFn(_, _, TypeRef(_, "Int", _, _))) => // pass
+        case other => fail(s"Expected TypeFn returning Int, got $other")
+    }
+  }
+
+  test("mutual recursion without annotations errors") {
+    val code =
+      """
+        fn ping(x: Int) = pong x;;
+        fn pong(x: Int) = ping x;;
+      """
+    semFailed(code)
+  }
+
+  test("mutual recursion with one annotation works") {
+    val code =
+      """
+        fn ping(x: Int): Int = pong x;;
+        fn pong(x: Int) = ping x;;
+      """
+    semNotFailed(code).map { module =>
+      val pong = module.members.collectFirst { case b: Bnd if b.name == "pong" => b }.get
+      pong.typeSpec match
+        case Some(TypeFn(_, _, TypeRef(_, "Int", _, _))) => // pass
+        case other => fail(s"Expected TypeFn returning Int, got $other")
+    }
+  }
+
+  test("backward reference still works") {
+    val code =
+      """
+        fn callee(x: Int) = x + 1;;
+        fn caller(x: Int): Int = callee x;;
+      """
+    semNotFailed(code).map { module =>
+      val bnd = module.members.collectFirst { case b: Bnd if b.name == "caller" => b }.get
+      bnd.typeSpec match
+        case Some(TypeFn(_, _, TypeRef(_, "Int", _, _))) => // pass
+        case other => fail(s"Expected TypeFn returning Int, got $other")
+    }
+  }
+
+  test("forward reference preserves source order in output") {
+    val code =
+      """
+        fn first(x: Int): Int = second x;;
+        fn second(x: Int) = x + 1;;
+      """
+    semNotFailed(code).map { module =>
+      val userNames = module.members.collect {
+        case b: Bnd if b.name == "first" || b.name == "second" => b.name
+      }
+      assertEquals(userNames, List("first", "second"))
+    }
+  }
