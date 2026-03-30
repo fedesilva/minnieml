@@ -36,6 +36,24 @@
       functions lowered to loops, a borrow closure rebuilt on each iteration will reserve another stack slot that is not reclaimed until the function returns. In long-running loops
       this causes unbounded stack growth; the env needs to be created in the entry block or otherwise given an explicit lifetime.
 
+
+     (P2) [ ] Stop treating shadowed names as active borrow closures — /Users/f/Workshop/mine/mml/mml/modules/mmlc-lib/src/main/scala/mml/mmlclib/codegen/emitter/
+    FunctionEmitter.scala:546-552
+    validateBorrowClosureStatement keeps activeClosures unchanged for any non-alias rebinding, so a later let f = <non-closure> inside a loopified function does not clear the
+    earlier borrow-closure binding for f. After that, any use of the new f is rejected by the new validator even though the closure has been shadowed away. A valid tail-recursive
+    pattern like let f = { ...n... }; let f = 0; ... f ... will now fail codegen solely because the tracker is name-based and never removes the old binding.
+  - (P2) [ ] Respect lambda parameter shadowing in capture rejection — /Users/f/Workshop/mine/mml/mml/modules/mmlc-lib/src/main/scala/mml/mmlclib/codegen/emitter/
+    FunctionEmitter.scala:561-562
+    rejectBorrowClosureCaptureOfLoopLocal scans lambda.body for any Ref whose name matches an active borrow closure, but it does not account for inner binders shadowing outer
+    names. In a loopified function, let f = { ... }; let g = { f: Int -> f + 1; }; is now rejected as if g captured the outer f, even though the inner parameter shadows it and
+    MML explicitly allows that form of shadowing. This turns valid nested borrow closures into false-positive codegen errors.
+  - (P2) [ ] Permit immediately-invoked borrow lambdas in loopified bodies — /Users/f/Workshop/mine/mml/mml/modules/mmlc-lib/src/main/scala/mml/mmlclib/codegen/emitter/
+    FunctionEmitter.scala:644-647
+    This branch rejects any capturing non-move lambda used directly as an App callee, so a tail-recursive function can no longer do ({ x: Int -> x + n; } acc) on a loopified
+    path. That closure is invoked immediately and does not survive across iterations, so it should still be valid; the new entry-prologue hoisting already makes its env
+    allocation safe. As written, the validator introduces a source-level regression for inline borrow-lambda calls that previously codegenerated correctly.
+
+
     - (P1) [x] Handle App-wrapped tail returns in borrow-closure escape check — /Users/f/Workshop/mine/mml/mml/modules/mmlc-lib/src/main/scala/mml/mmlclib/semantic/
     OwnershipAnalyzer.scala:674-682
     This traversal only looks through Cond and TermGroup, but tail let bindings, local fn bindings, and multi-statement bodies are lowered by the parser into App(Lambda(...),
@@ -54,15 +72,38 @@
 
 ### Unify lambdas
 
+  (needs ticket)
+
   - top level fn, and let bound lambdas (or inner functions) should be treated identically.
     - the code that handles them (sema and codegen diverges)
+  - environment captures are also different for borrow and move lambdas
+    - should be unified 
+      - alloca vs malloc is an optimization that can be derived.
+  - lambdas and captures are a single thing, so both unifications 
+    above should unify too.
+  
   - discuss, make a plan
 
+
+
 ### Call-site move 
+
+  (needs ticket)
 
   - (`~expr`) 
   - users cannot yet force-move a value at a call site without a consuming parameter. 
   - Will be implemented after borrow-by-default captures ship.
+
+### carry escape metadata all the way to the codegen
+
+  (needs ticket)
+
+  - escape metadata in bnd
+  - escape metadata in lambdas
+  - reach the codegen
+    - codegen knows and can:
+      - alloca vs malloc
+      - among other opts
 
 
 ### Protocols (ad-hoc polymorphism)
