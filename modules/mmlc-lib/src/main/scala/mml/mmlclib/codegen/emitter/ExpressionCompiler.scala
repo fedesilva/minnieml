@@ -227,7 +227,10 @@ private def compileTailRecNonCapturing(
   paramTypes: List[String],
   body:       TailRecBody
 ): Either[CodeGenError, CompileResult] =
-  val subState = state.copy(output = List.empty)
+  val subState = state.copy(
+    output              = List.empty,
+    entryPrologueOutput = List.empty
+  )
   compileTailRecursiveLambda(
     lambda,
     subState,
@@ -259,8 +262,11 @@ private def compileTailRecCapturingLambda(
 ): Either[CodeGenError, CompileResult] =
   emitCallSiteEnv(lambda, state, fnName, functionScope).flatMap { envResult =>
     val siteState = envResult.siteState
-    val subState  = siteState.copy(output = List.empty)
-    val capInfo   = (envResult.envTypeRef, envResult.captureTypes)
+    val subState = siteState.copy(
+      output              = List.empty,
+      entryPrologueOutput = List.empty
+    )
+    val capInfo = (envResult.envTypeRef, envResult.captureTypes)
     compileTailRecursiveLambda(
       lambda,
       subState,
@@ -335,7 +341,12 @@ private def compileNonCapturingLambda(
   envParamIdx:             Int,
   functionScope:           Map[String, ScopeEntry]
 ): Either[CodeGenError, CompileResult] =
-  val subState = state.copy(output = List.empty, nextRegister = 0)
+  val subState = state.copy(
+    output                  = List.empty,
+    entryPrologueOutput     = List.empty,
+    nextRegister            = 0,
+    insideLoopifiedFunction = false
+  )
   val paramScope = filteredParamsWithTypes.zipWithIndex.map { case ((param, _), idx) =>
     val mmlType = param.typeAsc
       .flatMap(getNominalTypeName(_).toOption)
@@ -352,7 +363,7 @@ private def compileNonCapturingLambda(
       else s"  ret $returnType ${bodyRes.operandStr}"
     finalSubState = bodyRes.state.emit(retLine).emit("}")
     header        = s"define internal $returnType @$fnName($allParamDecls) #0 {"
-    fnBody        = (header :: "entry:" :: finalSubState.output.reverse).mkString("\n")
+    fnBody        = renderFunctionLines(header, finalSubState).mkString("\n")
     mergedState   = mergeDeferredBodyState(state, finalSubState).addDeferredDefinition(fnBody)
   yield CompileResult(
     register     = 0,
@@ -466,9 +477,12 @@ private def emitCallSiteEnv(
         (afterDtor, s"%$mallocReg")
       else
         // Borrow: stack-allocate env, no dtor
-        val allocaReg   = state.nextRegister
-        val allocaLine  = s"  %$allocaReg = alloca $envTypeRef"
-        val afterAlloca = state.withRegister(allocaReg + 1).emit(allocaLine)
+        val allocaReg  = state.nextRegister
+        val allocaLine = s"  %$allocaReg = alloca $envTypeRef"
+        val afterAlloca =
+          if state.insideLoopifiedFunction then
+            state.withRegister(allocaReg + 1).emitEntryPrologue(allocaLine)
+          else state.withRegister(allocaReg + 1).emit(allocaLine)
         (afterAlloca, s"%$allocaReg")
 
     val siteStateAfterCaptures =
@@ -566,7 +580,12 @@ private def compileCapturingLambda(
     val siteState  = envResult.siteState
     val envTypeRef = envResult.envTypeRef
 
-    val subState = siteState.copy(output = List.empty, nextRegister = 0)
+    val subState = siteState.copy(
+      output                  = List.empty,
+      entryPrologueOutput     = List.empty,
+      nextRegister            = 0,
+      insideLoopifiedFunction = false
+    )
     val paramScope = filteredParamsWithTypes.zipWithIndex.map { case ((param, _), idx) =>
       val mmlType = param.typeAsc
         .flatMap(getNominalTypeName(_).toOption)
@@ -596,7 +615,7 @@ private def compileCapturingLambda(
         else s"  ret $returnType ${bodyRes.operandStr}"
       finalSubState = bodyRes.state.emit(retLine).emit("}")
       header        = s"define internal $returnType @$fnName($allParamDecls) #0 {"
-      fnBody        = (header :: "entry:" :: finalSubState.output.reverse).mkString("\n")
+      fnBody        = renderFunctionLines(header, finalSubState).mkString("\n")
       mergedState = mergeDeferredBodyState(siteState, finalSubState)
         .addDeferredDefinition(fnBody)
     yield CompileResult(
@@ -612,8 +631,10 @@ private def compileCapturingLambda(
   */
 private def mergeDeferredBodyState(parent: CodeGenState, sub: CodeGenState): CodeGenState =
   sub.copy(
-    output       = parent.output,
-    nextRegister = parent.nextRegister
+    output                  = parent.output,
+    entryPrologueOutput     = parent.entryPrologueOutput,
+    nextRegister            = parent.nextRegister,
+    insideLoopifiedFunction = parent.insideLoopifiedFunction
   )
 
 private def compileSelectionRef(
