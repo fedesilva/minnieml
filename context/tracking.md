@@ -27,21 +27,29 @@
 - GitHub: https://github.com/fedesilva/minnieml/issues/188
 - Reference: `docs/brainstorming/language/lambda-syntax-design.md`
     
-#### Implement Optional Moves
-
-  see `context/specs/optional-moves.md`
-
-  - [x] Borrow-by-default captures with explicit `~` move syntax
 
   - Bugs
-
-    - [x] Reject borrow-capturing closures that escape via return (COMPLETE)
 
     - [ ] Hoist borrow closure env allocation out of repeated paths — /Users/f/Workshop/mine/mml/mml/modules/mmlc-lib/src/main/scala/mml/mmlclib/codegen/emitter/
       ExpressionCompiler.scala:468-471
       Borrow closures now allocate their environment with alloca exactly where the literal is evaluated. Because compileTailRecCapturingLambda reuses this helper for tail-recursive
       functions lowered to loops, a borrow closure rebuilt on each iteration will reserve another stack slot that is not reclaimed until the function returns. In long-running loops
       this causes unbounded stack growth; the env needs to be created in the entry block or otherwise given an explicit lifetime.
+
+    - (P1) [ ] Handle App-wrapped tail returns in borrow-closure escape check — /Users/f/Workshop/mine/mml/mml/modules/mmlc-lib/src/main/scala/mml/mmlclib/semantic/
+    OwnershipAnalyzer.scala:674-682
+    This traversal only looks through Cond and TermGroup, but tail let bindings, local fn bindings, and multi-statement bodies are lowered by the parser into App(Lambda(...),
+    arg). In cases like fn make(a): Int -> Int = let f = { x: Int -> x + a; }; f;, analyzeLambda now sees only the outer App, so the returned borrow-capturing closure is still
+    accepted even though codegen builds its env with alloca and returns a dangling fat pointer.
+
+    Reviewing a2d16d3 (TypeChecker: support forward references and fix duplicate errors), I found one issue.
+
+  - [ ] (P1) Topological reorder is not stable for unrelated bindings — modules/mmlc-lib/src/main/scala/mml/mmlclib/semantic/TypeChecker.scala:241
+    topologicalOrder takes needsReorder as a Set[String], seeds the Kahn queue from that set at modules/mmlc-lib/src/main/scala/mml/mmlclib/semantic/TypeChecker.scala:258, and
+    later writes topoOrder back into the original binding slots at modules/mmlc-lib/src/main/scala/mml/mmlclib/semantic/TypeChecker.scala:274. For zero-indegree members with no
+    dependency relation, iteration order now comes from hash-set/hash-map traversal rather than source order, so independent top-level bindings can be reshuffled
+    nondeterministically. That violates the patch’s “preserve source order” intent and can make downstream behavior unstable if any later phase relies on member order. The fix is
+    to drive the queue and adjacency traversal from a source-ordered sequence, not a Set, and add a test where several unrelated bindings keep their original order.
 
 
 ### Unify lambdas
@@ -84,12 +92,6 @@
 * Add commentary with examples to the parsers
 
 ## Change Log
-
-- 2026-03-29: TypeChecker forward reference support and duplicate error fix
-  - TypeChecker: top-level functions now type-check correctly regardless of definition order; added topological sort of members before the checking pass using Kahn's algorithm with slot-based reordering to preserve non-Bnd member positions.
-  - Dependency edges filtered to untyped members only, so mutual recursion with one annotated side resolves correctly (annotated member's type is known from first pass).
-  - Fixed duplicate `UnresolvableType` errors for `NamedValue` context in `filterDuplicateUnresolvable`.
-  - Tests: 6 new tests covering forward refs, chains, mutual recursion, backward refs, and source-order preservation.
 
 - 2026-03-29: #188 Reject borrow-capturing closures that escape via return
   - OwnershipAnalyzer: added `returnedBorrowClosures` to detect borrow-capturing lambda literals in return position; unconditional check (not gated behind return type).
