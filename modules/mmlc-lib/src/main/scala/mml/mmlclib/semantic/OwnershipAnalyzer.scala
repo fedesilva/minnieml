@@ -125,7 +125,8 @@ case class TermResult(
   *   - Handle conditional branches (both must have same ownership)
   */
 object OwnershipAnalyzer:
-  private val PhaseName = "ownership-analyzer"
+  private val PhaseName          = "ownership-analyzer"
+  private val statementParamName = "__stmt"
 
   private val syntheticSource = SourceOrigin.Synth
 
@@ -676,11 +677,42 @@ object OwnershipAnalyzer:
       term match
         case lambda: Lambda if lambda.captures.nonEmpty && !lambda.isMove =>
           List(lambda)
+        case app: App if administrativeReturnWrapper(app) =>
+          app.fn match
+            case lambda: Lambda =>
+              val bodyReturns = returnedBorrowClosures(lambda.body)
+              val argReturns =
+                lambda.params.headOption
+                  .filter(param => returnsBindingParam(lambda.body, param))
+                  .toList
+                  .flatMap(_ => returnedBorrowClosures(app.arg))
+              argReturns ++ bodyReturns
+            case _ => Nil
         case Cond(_, _, ifTrue, ifFalse, _, _) =>
           returnedBorrowClosures(ifTrue) ++ returnedBorrowClosures(ifFalse)
         case TermGroup(_, inner, _) => returnedBorrowClosures(inner)
         case _ => List.empty
     expr.terms.lastOption.map(termReturned).getOrElse(List.empty)
+
+  private def returnsBindingParam(expr: Expr, param: FnParam): Boolean =
+    def termReturned(term: Term): Boolean =
+      term match
+        case ref: Ref =>
+          ref.resolvedId.contains(param.id.getOrElse("")) || ref.name == param.name
+        case Cond(_, _, ifTrue, ifFalse, _, _) =>
+          returnsBindingParam(ifTrue, param) || returnsBindingParam(ifFalse, param)
+        case TermGroup(_, inner, _) => returnsBindingParam(inner, param)
+        case _ => false
+
+    expr.terms.lastOption.exists(termReturned)
+
+  private def administrativeReturnWrapper(app: App): Boolean =
+    app.fn match
+      case lambda: Lambda =>
+        lambda.params match
+          case List(param) => param.name != statementParamName
+          case _ => false
+      case _ => false
 
   /** Check if a binding name is referenced anywhere in an expression */
   private def containsRefInExpr(name: String, expr: Expr): Boolean =
