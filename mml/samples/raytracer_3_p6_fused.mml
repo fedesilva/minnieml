@@ -5,6 +5,89 @@
 // removes the per-row FloatArray staging buffers. Each pixel is computed,
 // quantized, and appended to the output buffer in a single pass.
 
+pub fn main() =
+  raytracer();
+;
+
+fn raytracer() = 
+
+  let aspect_ratio = 16.0 /. 9.0;
+  let image_width = 6000;
+  let image_height = float_to_int ((int_to_float image_width) /. aspect_ratio);
+
+  let origin          = Vec3 0.0 0.0 0.0;
+  let viewport_height = 2.0;
+  let viewport_width  = viewport_height *. aspect_ratio;
+  let focal_length    = 1.0;
+  let horizontal      = Vec3 viewport_width 0.0 0.0;
+  let vertical        = Vec3 0.0 viewport_height 0.0;
+  let ll_corner =
+    Vec3
+      (0.0 -. (viewport_width /. 2.0))
+      (0.0 -. (viewport_height /. 2.0))
+      (0.0 -. focal_length)
+    ;
+
+  let buf = mkBufferWithSize (64 * 1024);
+
+  let camera = Camera
+    image_width
+    image_height
+    origin
+    ll_corner
+    horizontal
+    vertical
+  ;
+
+  // The header must be written before `buf` is captured by the local helpers.
+  buffer_writeln buf "P6";
+  buffer_write_int buf camera.width;
+  buffer_write buf " ";
+  buffer_writeln_int buf camera.height;
+  buffer_writeln buf "255";
+
+  fn pixel_ray(i: Int, j: Int): Ray =
+    let u = (int_to_float i) /. (int_to_float (camera.width - 1));
+    let v = (int_to_float ((camera.height - 1) - j)) /. (int_to_float (camera.height - 1));
+
+    let hor_u = vec_scale camera.horizontal u;
+    let ver_v = vec_scale camera.vertical v;
+    let target = vec_add camera.ll_corner (vec_add hor_u ver_v);
+    let direction = vec_sub target camera.origin;
+
+    Ray camera.origin direction;
+  ;
+
+  fn render_row(i: Int, j: Int): Unit =
+    if i < camera.width then
+      let ray = pixel_ray i j;
+      let color = ray_color ray;
+      let ir = float_to_int (255.999 *. color.x);
+      let ig = float_to_int (255.999 *. color.y);
+      let ib = float_to_int (255.999 *. color.z);
+
+      buffer_write_byte buf ir;
+      buffer_write_byte buf ig;
+      buffer_write_byte buf ib;
+
+      render_row (i + 1) j;
+    ;
+  ;
+
+  fn render_rows(j: Int): Unit =
+    if j >= 0 then
+      render_row 0 j;
+      render_rows (j - 1);
+    else
+      flush buf;
+    ;
+  ;
+
+  render_rows (camera.height - 1);
+
+;
+
+
 // --- Linear Algebra ---
 
 struct Vec3 { x: Float, y: Float, z: Float };
@@ -141,78 +224,6 @@ struct Camera {
   vertical:   Vec3
 };
 
-pub fn main(): Unit =
-  let aspect_ratio = 16.0 /. 9.0;
-  let image_width = 6000;
-  let image_height = float_to_int ((int_to_float image_width) /. aspect_ratio);
 
-  let origin          = Vec3 0.0 0.0 0.0;
-  let viewport_height = 2.0;
-  let viewport_width  = viewport_height *. aspect_ratio;
-  let focal_length    = 1.0;
-  let horizontal      = Vec3 viewport_width 0.0 0.0;
-  let vertical        = Vec3 0.0 viewport_height 0.0;
-  let ll_corner =
-    Vec3
-      (0.0 -. (viewport_width /. 2.0))
-      (0.0 -. (viewport_height /. 2.0))
-      (0.0 -. focal_length)
-    ;
 
-  let buf = mkBufferWithSize (64 * 1024);
 
-  let camera = Camera
-    image_width
-    image_height
-    origin
-    ll_corner
-    horizontal
-    vertical
-  ;
-
-  // The header must be written before `buf` is captured by the local helpers.
-  buffer_writeln buf "P6";
-  buffer_write_int buf camera.width;
-  buffer_write buf " ";
-  buffer_writeln_int buf camera.height;
-  buffer_writeln buf "255";
-
-  fn pixel_ray(i: Int, j: Int): Ray =
-    let u = (int_to_float i) /. (int_to_float (camera.width - 1));
-    let v = (int_to_float ((camera.height - 1) - j)) /. (int_to_float (camera.height - 1));
-
-    let hor_u = vec_scale camera.horizontal u;
-    let ver_v = vec_scale camera.vertical v;
-    let target = vec_add camera.ll_corner (vec_add hor_u ver_v);
-    let direction = vec_sub target camera.origin;
-
-    Ray camera.origin direction;
-  ;
-
-  fn render_row(buf: Buffer, i: Int, j: Int): Unit =
-    if i < camera.width then
-      let ray = pixel_ray i j;
-      let color = ray_color ray;
-      let ir = float_to_int (255.999 *. color.x);
-      let ig = float_to_int (255.999 *. color.y);
-      let ib = float_to_int (255.999 *. color.z);
-
-      buffer_write_byte buf ir;
-      buffer_write_byte buf ig;
-      buffer_write_byte buf ib;
-
-      render_row buf (i + 1) j;
-    ;
-  ;
-
-  fn render_rows(j: Int): Unit =
-    if j >= 0 then
-      render_row buf 0 j;
-      render_rows (j - 1);
-    else
-      flush buf;
-    ;
-  ;
-
-  render_rows (camera.height - 1);
-;
