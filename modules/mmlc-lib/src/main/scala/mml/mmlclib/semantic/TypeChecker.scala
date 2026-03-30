@@ -246,30 +246,30 @@ object TypeChecker:
   ): List[Member] =
     // Only edges to untyped members matter — typed members' types are already known
     val filteredDeps = deps.view.mapValues(_.intersect(untyped)).toMap
-    val adjOut       = mutable.Map.empty[String, mutable.Set[String]]
-    val inDeg        = mutable.Map.from(needsReorder.map(_ -> 0))
-    filteredDeps.foreach { case (memberId, depIds) =>
-      if needsReorder.contains(memberId) then
-        depIds.foreach { depId =>
-          adjOut.getOrElseUpdate(depId, mutable.Set.empty) += memberId
-          inDeg(memberId) = inDeg.getOrElse(memberId, 0) + 1
-        }
+    val sourceOrderedIds = members.collect {
+      case bnd: Bnd if bnd.id.exists(needsReorder) => bnd.id.get
     }
-    val queue  = mutable.Queue.from(needsReorder.filter(inDeg.getOrElse(_, 0) == 0))
+    val adjOut = mutable.Map.empty[String, mutable.ListBuffer[String]]
+    val inDeg  = mutable.Map.from(sourceOrderedIds.map(_ -> 0))
+    sourceOrderedIds.foreach { memberId =>
+      filteredDeps.getOrElse(memberId, Set.empty).foreach { depId =>
+        adjOut.getOrElseUpdate(depId, mutable.ListBuffer.empty) += memberId
+        inDeg(memberId) = inDeg.getOrElse(memberId, 0) + 1
+      }
+    }
+    val queue  = mutable.Queue.from(sourceOrderedIds.filter(inDeg.getOrElse(_, 0) == 0))
     val sorted = mutable.ListBuffer.empty[String]
     while queue.nonEmpty do
       val id = queue.dequeue()
       sorted += id
-      adjOut.getOrElse(id, mutable.Set.empty).foreach { dep =>
+      adjOut.getOrElse(id, mutable.ListBuffer.empty).foreach { dep =>
         inDeg(dep) = inDeg(dep) - 1
         if inDeg(dep) == 0 then queue.enqueue(dep)
       }
     // Cycle members: not in sorted, append in source order
-    val sortedSet = sorted.toSet
-    val cycleMembers = members.collect {
-      case b: Bnd if b.id.exists(id => needsReorder(id) && !sortedSet(id)) => b.id.get
-    }
-    val topoOrder = sorted.toList ++ cycleMembers
+    val sortedSet    = sorted.toSet
+    val cycleMembers = sourceOrderedIds.filterNot(sortedSet)
+    val topoOrder    = sorted.toList ++ cycleMembers
     // Collect source positions of reorderable members, place topo-sorted members into those slots
     val reorderSlots = members.zipWithIndex.collect {
       case (bnd: Bnd, idx) if bnd.id.exists(needsReorder) => idx
