@@ -1,0 +1,13 @@
+
+fn consume(~s: String) = 
+  println ("Consumed: " ++ s);
+;
+
+fn borrow(s: String) = 
+  consume(s);
+;
+
+pub fn main(): Unit =
+  let x = "equis";
+  borrow(x);
+;
