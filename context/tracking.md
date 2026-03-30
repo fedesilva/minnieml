@@ -35,11 +35,7 @@
 
   - Bugs
 
-    - [ ] Reject borrow-capturing closures that escape via return — /Users/f/Workshop/mine/mml/mml/modules/mmlc-lib/src/main/scala/mml/mmlclib/semantic/
-      OwnershipAnalyzer.scala:1346-1351
-      When a function returns a borrow-by-default closure such as fn makeAdder(a): Int -> Int = { x -> x + a }, this new TypeFn escape check never fires because
-      returnedBorrowedRefs(...) only reports bare Refs, not a returned Lambda term. That means the closure is accepted even though codegen now builds its environment with alloca,
-      so the caller receives a fat pointer to dead stack storage as soon as the defining function returns.
+    - [x] Reject borrow-capturing closures that escape via return (COMPLETE)
 
     - [ ] Hoist borrow closure env allocation out of repeated paths — /Users/f/Workshop/mine/mml/mml/modules/mmlc-lib/src/main/scala/mml/mmlclib/codegen/emitter/
       ExpressionCompiler.scala:468-471
@@ -88,6 +84,12 @@
 * Add commentary with examples to the parsers
 
 ## Change Log
+
+- 2026-03-29: #188 Reject borrow-capturing closures that escape via return
+  - OwnershipAnalyzer: added `returnedBorrowClosures` to detect borrow-capturing lambda literals in return position; unconditional check (not gated behind return type).
+  - New error: `BorrowClosureEscapeViaReturn` with full printer/LSP/source-snippet wiring.
+  - Tests: added ownership tests for borrow-escape rejection, move-escape acceptance, and non-capturing acceptance.
+  - Sample: `mml/samples/mem/borrow-closure-escape.mml` demonstrates the error.
 
 - 2026-03-29: Lambda body trailing semicolon now optional
   - Parser: `lambdaBodyExprP` accepts either `;` or lookahead `}` as body terminator.
