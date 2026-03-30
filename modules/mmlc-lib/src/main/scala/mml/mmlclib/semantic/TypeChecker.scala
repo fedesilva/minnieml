@@ -6,6 +6,7 @@ import mml.mmlclib.ast.*
 import mml.mmlclib.compiler.CompilerState
 
 import scala.annotation.tailrec
+import scala.collection.mutable
 
 object TypeChecker:
   private val phaseName          = "mml.mmlclib.semantic.TypeChecker"
@@ -204,6 +205,84 @@ object TypeChecker:
       finalState.errors ++ missingErrors
     )
 
+  /** Collect IDs of top-level members that this member's body references. */
+  private def collectMemberDeps(member: Member, topLevelIds: Set[String]): Set[String] =
+    member match
+      case bnd: Bnd =>
+        val refs = mutable.Set.empty[String]
+        def walkExpr(expr: Expr): Unit = expr.terms.foreach(walkTerm)
+        def walkTerm(term: Term): Unit = term match
+          case ref: Ref =>
+            ref.resolvedId.foreach(id => if topLevelIds.contains(id) then refs += id)
+            ref.qualifier.foreach(walkTerm)
+          case app: App =>
+            walkAppFn(app.fn); walkExpr(app.arg)
+          case cond: Cond =>
+            walkExpr(cond.cond); walkExpr(cond.ifTrue); walkExpr(cond.ifFalse)
+          case group:  TermGroup => walkExpr(group.inner)
+          case tuple:  Tuple => tuple.elements.toList.foreach(walkExpr)
+          case lambda: Lambda => walkExpr(lambda.body)
+          case e:      Expr => walkExpr(e)
+          case _ => ()
+        def walkAppFn(fn: Ref | App | Lambda): Unit = fn match
+          case ref: Ref => ref.resolvedId.foreach(id => if topLevelIds.contains(id) then refs += id)
+          case app: App => walkAppFn(app.fn); walkExpr(app.arg)
+          case lambda: Lambda => walkExpr(lambda.body)
+        bnd.value.terms match
+          case (lambda: Lambda) :: _ => walkExpr(lambda.body)
+          case _ => walkExpr(bnd.value)
+        bnd.id.foreach(refs -= _) // exclude self-references
+        refs.toSet
+      case _ => Set.empty
+
+  /** Topologically sort members so callees are checked before callers. Members in cycles are
+    * appended in source order (they will produce errors requiring type annotations).
+    */
+  private def topologicalOrder(
+    members:      List[Member],
+    deps:         Map[String, Set[String]],
+    needsReorder: Set[String],
+    untyped:      Set[String]
+  ): List[Member] =
+    // Only edges to untyped members matter — typed members' types are already known
+    val filteredDeps = deps.view.mapValues(_.intersect(untyped)).toMap
+    val adjOut       = mutable.Map.empty[String, mutable.Set[String]]
+    val inDeg        = mutable.Map.from(needsReorder.map(_ -> 0))
+    filteredDeps.foreach { case (memberId, depIds) =>
+      if needsReorder.contains(memberId) then
+        depIds.foreach { depId =>
+          adjOut.getOrElseUpdate(depId, mutable.Set.empty) += memberId
+          inDeg(memberId) = inDeg.getOrElse(memberId, 0) + 1
+        }
+    }
+    val queue  = mutable.Queue.from(needsReorder.filter(inDeg.getOrElse(_, 0) == 0))
+    val sorted = mutable.ListBuffer.empty[String]
+    while queue.nonEmpty do
+      val id = queue.dequeue()
+      sorted += id
+      adjOut.getOrElse(id, mutable.Set.empty).foreach { dep =>
+        inDeg(dep) = inDeg(dep) - 1
+        if inDeg(dep) == 0 then queue.enqueue(dep)
+      }
+    // Cycle members: not in sorted, append in source order
+    val sortedSet = sorted.toSet
+    val cycleMembers = members.collect {
+      case b: Bnd if b.id.exists(id => needsReorder(id) && !sortedSet(id)) => b.id.get
+    }
+    val topoOrder = sorted.toList ++ cycleMembers
+    // Collect source positions of reorderable members, place topo-sorted members into those slots
+    val reorderSlots = members.zipWithIndex.collect {
+      case (bnd: Bnd, idx) if bnd.id.exists(needsReorder) => idx
+    }
+    val memberById = members.collect {
+      case bnd: Bnd if bnd.id.isDefined => bnd.id.get -> bnd
+    }.toMap
+    val result = members.toArray
+    topoOrder.zip(reorderSlots).foreach { case (id, slot) =>
+      memberById.get(id).foreach(result(slot) = _)
+    }
+    result.toList
+
   /** Main entry point - process module and accumulate errors */
   def rewriteModule(state: CompilerState): CompilerState =
     // First pass: lower type ascriptions to specs for all functions and operators
@@ -216,29 +295,56 @@ object TypeChecker:
       resolvables = resolvablesAfterSignatures
     )
 
-    // Second pass: check all members using the updated module
+    // Topological sort: check callees before callers so forward references resolve
+    val topLevelIds = membersWithSignatures.collect {
+      case bnd: Bnd if bnd.id.isDefined => bnd.id.get
+    }.toSet
+    val deps = membersWithSignatures.collect {
+      case bnd: Bnd if bnd.id.isDefined =>
+        bnd.id.get -> collectMemberDeps(bnd, topLevelIds)
+    }.toMap
+    // All Bnds participate in reordering — a member WITH a typeSpec can still
+    // depend on one WITHOUT, so limiting to typeSpec-less members is insufficient.
+    val needsReorder = topLevelIds
+    // Only edges to untyped members create real ordering constraints
+    val untyped = membersWithSignatures.collect {
+      case bnd: Bnd if bnd.id.isDefined && bnd.typeSpec.isEmpty => bnd.id.get
+    }.toSet
+    val sortedMembers = topologicalOrder(membersWithSignatures, deps, needsReorder, untyped)
+
+    // Second pass: check all members in topological order
     val initialState =
-      (Vector.empty[TypeError], Vector.empty[Member], moduleWithSignatures.resolvables)
-    val (checkErrors, checkedMembers, finalResolvables) =
-      membersWithSignatures.foldLeft(initialState) {
-        case ((accErrors, accMembers, resolvables), member) =>
-          // Build the current module state with already-checked members + remaining members
-          val currentModule = moduleWithSignatures.copy(
-            members     = accMembers.toList ++ membersWithSignatures.dropWhile(_ != member),
-            resolvables = resolvables
-          )
-          val result = checkMember(member, currentModule)
-          val newResolvables = result.value match
-            case bnd: Bnd => resolvables.updated(bnd)
-            case _ => resolvables
-          (accErrors ++ result.errors, accMembers :+ result.value, newResolvables)
+      (Vector.empty[TypeError], Map.empty[String, Member], moduleWithSignatures.resolvables)
+    val (checkErrors, checkedById, finalResolvables) =
+      sortedMembers.foldLeft(initialState) { case ((accErrors, accChecked, resolvables), member) =>
+        // Build module with checked versions of already-processed members
+        val currentMembers = membersWithSignatures.map {
+          case bnd: Bnd if bnd.id.isDefined => accChecked.getOrElse(bnd.id.get, bnd)
+          case other => other
+        }
+        val currentModule =
+          moduleWithSignatures.copy(members = currentMembers, resolvables = resolvables)
+        val result = checkMember(member, currentModule)
+        val newResolvables = result.value match
+          case bnd: Bnd => resolvables.updated(bnd)
+          case _ => resolvables
+        val newChecked = result.value match
+          case bnd: Bnd if bnd.id.isDefined => accChecked + (bnd.id.get -> result.value)
+          case _ => accChecked
+        (accErrors ++ result.errors, newChecked, newResolvables)
       }
+
+    // Restore source order
+    val checkedMembers = membersWithSignatures.map {
+      case bnd: Bnd if bnd.id.isDefined => checkedById.getOrElse(bnd.id.get, bnd)
+      case other => other
+    }
 
     val allErrors = (signatureErrors ++ checkErrors).map(SemanticError.TypeCheckingError.apply)
     state
       .addErrors(allErrors.toList)
       .withModule(
-        moduleWithSignatures.copy(members = checkedMembers.toList, resolvables = finalResolvables)
+        moduleWithSignatures.copy(members = checkedMembers, resolvables = finalResolvables)
       )
 
   /** First pass: lower mandatory type ascriptions to type specs */
@@ -1373,6 +1479,8 @@ object TypeChecker:
       case TypeError.UnresolvableType(_, Some(UnresolvableTypeContext.Argument), _) =>
         checkedArgErrors.nonEmpty
       case TypeError.UnresolvableType(_, Some(UnresolvableTypeContext.Function), _) =>
+        checkedFnErrors.nonEmpty
+      case TypeError.UnresolvableType(_, Some(UnresolvableTypeContext.NamedValue(_)), _) =>
         checkedFnErrors.nonEmpty
       case _ => false
     }

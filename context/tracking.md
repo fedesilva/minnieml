@@ -85,6 +85,12 @@
 
 ## Change Log
 
+- 2026-03-29: TypeChecker forward reference support and duplicate error fix
+  - TypeChecker: top-level functions now type-check correctly regardless of definition order; added topological sort of members before the checking pass using Kahn's algorithm with slot-based reordering to preserve non-Bnd member positions.
+  - Dependency edges filtered to untyped members only, so mutual recursion with one annotated side resolves correctly (annotated member's type is known from first pass).
+  - Fixed duplicate `UnresolvableType` errors for `NamedValue` context in `filterDuplicateUnresolvable`.
+  - Tests: 6 new tests covering forward refs, chains, mutual recursion, backward refs, and source-order preservation.
+
 - 2026-03-29: #188 Reject borrow-capturing closures that escape via return
   - OwnershipAnalyzer: added `returnedBorrowClosures` to detect borrow-capturing lambda literals in return position; unconditional check (not gated behind return type).
   - New error: `BorrowClosureEscapeViaReturn` with full printer/LSP/source-snippet wiring.

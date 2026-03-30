@@ -87,38 +87,16 @@ fn raytracer() =
 
 ;
 
-
-// --- Linear Algebra ---
-
-struct Vec3 { x: Float, y: Float, z: Float };
-
-inline fn vec_add(u: Vec3, v: Vec3): Vec3 =
-  Vec3 (u.x +. v.x) (u.y +. v.y) (u.z +. v.z);
-;
-
-inline fn vec_sub(u: Vec3, v: Vec3): Vec3 =
-  Vec3 (u.x -. v.x) (u.y -. v.y) (u.z -. v.z);
-;
-
-// Scalar multiplication: v * t
-inline fn vec_scale(v: Vec3, t: Float): Vec3 =
-  Vec3 (v.x *. t) (v.y *. t) (v.z *. t);
-;
-
-// Dot product
-inline fn dot(u: Vec3, v: Vec3): Float =
-  (u.x *. v.x) +. (u.y *. v.y) +. (u.z *. v.z);
-;
-
-inline fn length_squared(v: Vec3): Float = dot v v;;
-
-inline fn length(v: Vec3): Float = sqrt (length_squared v);;
-
-inline fn unit_vector(v: Vec3): Vec3 =
-  vec_scale v (1.0 /. (length v));
-;
-
 // --- Scene Geometry ---
+
+struct Camera {
+  width:      Int,
+  height:     Int,
+  origin:     Vec3,
+  ll_corner:  Vec3,
+  horizontal: Vec3,
+  vertical:   Vec3
+};
 
 struct Ray { origin: Vec3, dir: Vec3 };
 
@@ -215,15 +193,34 @@ fn ray_color(r: Ray): Vec3 =
   ;
 ;
 
-struct Camera {
-  width:      Int,
-  height:     Int,
-  origin:     Vec3,
-  ll_corner:  Vec3,
-  horizontal: Vec3,
-  vertical:   Vec3
-};
+// --- Linear Algebra ---
 
+struct Vec3 { x: Float, y: Float, z: Float };
 
+inline fn vec_add(u: Vec3, v: Vec3): Vec3 =
+  Vec3 (u.x +. v.x) (u.y +. v.y) (u.z +. v.z);
+;
+
+inline fn vec_sub(u: Vec3, v: Vec3): Vec3 =
+  Vec3 (u.x -. v.x) (u.y -. v.y) (u.z -. v.z);
+;
+
+// Scalar multiplication: v * t
+inline fn vec_scale(v: Vec3, t: Float): Vec3 =
+  Vec3 (v.x *. t) (v.y *. t) (v.z *. t);
+;
+
+// Dot product
+inline fn dot(u: Vec3, v: Vec3): Float =
+  (u.x *. v.x) +. (u.y *. v.y) +. (u.z *. v.z);
+;
+
+inline fn length_squared(v: Vec3): Float = dot v v;;
+
+inline fn length(v: Vec3): Float = sqrt (length_squared v);;
+
+inline fn unit_vector(v: Vec3): Vec3 =
+  vec_scale v (1.0 /. (length v));
+;
 
 
