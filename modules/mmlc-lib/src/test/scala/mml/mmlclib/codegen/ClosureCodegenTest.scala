@@ -259,6 +259,55 @@ class ClosureCodegenTest extends BaseEffFunSuite:
     }
   }
 
+  test("loopified borrow closures stop being tracked after shadowing rebinding") {
+    val source =
+      """
+        fn loop(n: Int, acc: Int): Int =
+          if n == 0 then
+            acc;
+          else
+            let f = { x: Int -> x + n; };
+            let f = acc + 1;
+            loop (n - 1) f;
+          ;
+        ;
+      """
+
+    compileAndGenerate(source, config = CompilerConfig.default.copy(noTco = false)).map { llvmIr =>
+      val loopBody = functionBody(llvmIr, "test_loop\\(i64 %0, i64 %1, ptr %2\\) #0")
+
+      assert(
+        loopBody.contains("alloca %struct.__closure_env_"),
+        s"Expected the shadowed borrow closure to still codegen successfully. Body:\n$loopBody"
+      )
+    }
+  }
+
+  test("loopified borrow closure validation respects lambda parameter shadowing") {
+    val source =
+      """
+        fn loop(n: Int, acc: Int): Int =
+          if n == 0 then
+            acc;
+          else
+            let f = { x: Int -> x + n; };
+            let g = { f: Int -> f + 1; };
+            let next = g acc;
+            loop (n - 1) next;
+          ;
+        ;
+      """
+
+    compileAndGenerate(source, config = CompilerConfig.default.copy(noTco = false)).map { llvmIr =>
+      val loopBody = functionBody(llvmIr, "test_loop\\(i64 %0, i64 %1, ptr %2\\) #0")
+
+      assert(
+        loopBody.contains("alloca %struct.__closure_env_"),
+        s"Expected the inner lambda param to shadow the outer borrow closure. Body:\n$loopBody"
+      )
+    }
+  }
+
   test("capture-site env stores use semantic env names and TBAA tags") {
     val source = """
       fn main(): Int =
