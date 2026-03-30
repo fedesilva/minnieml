@@ -5,9 +5,7 @@
 // removes the per-row FloatArray staging buffers. Each pixel is computed,
 // quantized, and appended to the output buffer in a single pass.
 
-pub fn main() =
-  raytracer();
-;
+pub fn main() = raytracer();;
 
 fn raytracer() = 
 
@@ -39,7 +37,6 @@ fn raytracer() =
     vertical
   ;
 
-  // The header must be written before `buf` is captured by the local helpers.
   buffer_writeln buf "P6";
   buffer_write_int buf camera.width;
   buffer_write buf " ";
@@ -50,9 +47,9 @@ fn raytracer() =
     let u = (int_to_float i) /. (int_to_float (camera.width - 1));
     let v = (int_to_float ((camera.height - 1) - j)) /. (int_to_float (camera.height - 1));
 
-    let hor_u = vec_scale camera.horizontal u;
-    let ver_v = vec_scale camera.vertical v;
-    let target = vec_add camera.ll_corner (vec_add hor_u ver_v);
+    let hor_u     = vec_scale camera.horizontal u;
+    let ver_v     = vec_scale camera.vertical v;
+    let target    = vec_add camera.ll_corner (vec_add hor_u ver_v);
     let direction = vec_sub target camera.origin;
 
     Ray camera.origin direction;
@@ -150,8 +147,22 @@ fn world_hit(r: Ray, t_min: Float, t_max: Float): Hit =
   let closest_so_far = t_max;
   let final_hit = no_hit ();
 
-  let s1 = Sphere (Vec3 0.0 0.0 (0.0 -. 1.0)) 0.5;
-  let h1 = hit_sphere s1 r t_min closest_so_far;
+  let s1 = 
+    Sphere 
+      (Vec3 
+        0.0 
+        0.0 
+        (0.0 -. 1.0)
+      ) 
+      0.5
+    ;
+  let h1 = 
+    hit_sphere 
+      s1 
+      r 
+      t_min 
+      closest_so_far
+    ;
 
   let result1 =
     if h1.did_hit then
