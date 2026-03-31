@@ -5,12 +5,6 @@
 // the remaining render helpers into main. It exercises recursive inner
 // functions that capture sibling function values and render-time state.
 //
-// Notes:
-// - `buf` and the row arrays are intentionally written in `main` before the
-//   local render loop is defined.
-// - `render_rows` is the single local helper that owns those heap values.
-//   Sibling helpers borrow them through ordinary parameters to preserve the
-//   current uniqueness rule for heap captures.
 
 // --- Linear Algebra ---
 
@@ -245,11 +239,9 @@ pub fn main(): Unit =
       compute_row r_arr g_arr b_arr 0 j;
       write_row buf r_arr g_arr b_arr 0;
       render_rows (j - 1);
-    else
-      // `render_rows` owns the render-time heap state, so the final flush
-      // stays inside that closure.
-      flush buf;
     ;
   ;
   render_rows (camera.height - 1);
+
+  flush buf;
 ;

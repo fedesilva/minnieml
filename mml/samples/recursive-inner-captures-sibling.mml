@@ -10,7 +10,8 @@
 // - `sbtn "run run mml/samples/recursive-inner-captures-sibling.mml"`
 
 pub fn main(): Unit =
-  fn inc(x: Int): Int = x + 1;;
+
+  fn inc(x)= x + 1;;
 
   fn loop(n: Int): Int =
     if n == 0 then
