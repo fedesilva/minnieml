@@ -44,7 +44,7 @@ Read before writing or modifying `.mml` files:
 - `docs/language-reference.md`
 - Reference programs: `mml/samples/nqueens.mml`, `mml/samples/mat-mul.mml`, `mml/samples/astar2.mml`, `mml/samples/raytracer.mml`
 - Memory model: 
-  - `design/memory-model.md` for a high level, technical overview.
+  - `docs/memory-model.md` for a high level, technical overview.
   - files under `mml/samples/mem` and tests in `modules/mmlc-lib/src/test/scala/mml/mmlclib/semantic/OwnershipAnalyzerTests.scala`
 
 ### Questions
@@ -64,10 +64,12 @@ Read only the documentation and code directly related to the target doc.
 
 - Questions are **not** commands.
   - Do not start changes because the Author asked a question.
+
 - You may do research without confirmation:
   - read code and docs
   - investigate
   - analyze options
+  
 - Ask for confirmation before making any code or documentation changes.
 - If a rule is unclear or conflicts with the current task, raise the conflict and wait for direction.
 - **For tracking updates**, treat Workstream signoff and Tracked Item status updates as separate steps:

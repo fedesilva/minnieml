@@ -16,6 +16,7 @@
 
 ## Active Tasks
 
+
 ### Update the design doc
 
 - GitHub: https://github.com/fedesilva/minnieml/issues/251

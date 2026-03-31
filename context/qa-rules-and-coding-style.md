@@ -88,4 +88,14 @@ Before considering a change ready, verify:
 
   - This codebase does not use exceptions. 
   - The compiler should accumulate errors.
+
+
+## Design code
+
+* Design code that is general and regular.
+  - example: 
+    - global functions, local functions, inner functions, lambdas
+      - they are all the same, we should treat them in a regular fashion in the most 
+        general way.
+
   
