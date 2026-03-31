@@ -16,6 +16,13 @@
 
 ## Active Tasks
 
+### LSP: inner fn and lambda symbol color
+
+
+* new inner function constructs are colored same as arguments.
+* consider applying function color to anything typed `TypeFn`.
+  This would signal partial application, lambdas, inner functions.
+
 
 ### Update the design doc
 
