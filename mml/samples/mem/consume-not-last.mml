@@ -1,6 +1,9 @@
 // Consuming parameter not-last-use demonstration (expected: compile error)
 // Passing a binding to a consuming (~) param when it's still used later is rejected.
-fn consume(~s: String): Unit = println s;;
+fn consume(~s: String): Unit = 
+  let a = s;
+  println s;
+;
 
 pub fn main(): Unit =
   let s = "hello" ++ " world";
