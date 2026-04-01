@@ -213,18 +213,33 @@ loop()
 The `inline` hint can be applied to let-bound lambdas the same way as to
 named functions.
 
-**Closures**: Lambdas can reference bindings from enclosing scopes. The
-referenced values are captured at the point the lambda is created:
+**Closures**: Lambdas can reference bindings from enclosing scopes. Those
+bindings are captured when the lambda is created:
 
 ```mml
-fn makeAdder(a: Int): Int -> Int =
-  { x: Int -> x + a }
+fn runWith(a: Int, x: Int): Int =
+  let addA = { y: Int -> y + a };
+  addA x;
 ;
 ```
 
-Here `a` is captured from the enclosing function's parameter. See
-[Memory management](#7-memory-management) for how captures interact with
-ownership.
+Here `a` is captured from the enclosing function's parameter.
+
+Capture is borrow by default. Prefix a lambda with `~` to create a
+move-capturing closure instead:
+
+```mml
+fn makeGreeter(name: String): Unit -> Unit =
+  ~{
+    println ("Hello, " ++ name);
+  }: Unit;
+;
+```
+
+Local inner functions follow the same rule: `fn name(...)` captures by borrow,
+while `fn ~name(...)` captures by move. See [Memory management](#7-memory-management)
+for the language-level summary and [the memory model](memory-model.md) for the full
+ownership rules.
 
 Module-level bindings are not captures; they are referenced directly like other
 global declarations.
@@ -948,42 +963,20 @@ fn transfer_example(): Unit =
 ;
 ```
 
-### Closure ownership
+### Closures and captures
 
-A **non-capturing lambda** (no references to enclosing bindings) is a plain
-function pointer — a value type with no allocation and no ownership cost.
+A **non-capturing lambda** is just a function value.
 
-A **capturing lambda** (closure) allocates an environment struct on the heap
-to hold the captured values. The closure is a heap type: it is freed when it
-goes out of scope, and it can be moved or returned like any other owned value.
+A **capturing lambda** carries an environment with references to enclosing
+bindings. Captures borrow by default. Prefix the closure with `~` to request
+move capture for the whole closure.
 
-Captured value-type bindings (integers, floats, booleans) are copied into the
-environment. The original binding remains usable.
+Borrow-capturing closures stay local to the scope that created them.
+Move-capturing closures may escape and transfer ownership like other owned
+values.
 
-```mml
-fn makeAdder(a: Int): Int -> Int =
-  { x: Int -> x + a }    // a (Int) is copied into the closure env
-;
-```
-
-Heap captures do not behave like value captures:
-
-- Capturing an **owned** heap binding moves ownership into the closure
-  environment.
-- The original outer binding is then considered moved.
-- The lambda body borrows the captured field from the environment.
-- Capturing a **borrowed** heap binding is rejected.
-
-```mml
-fn makeGreeter(name: String): Unit -> Unit =
-  {
-    println ("Hello, " ++ name);
-  }: Unit;
-;
-```
-
-See the [memory model](memory-model.md) for full details on ownership states
-and destruction rules.
+See the [memory model](memory-model.md) for the precise ownership, escape, and
+destruction rules.
 
 ### Return value ownership
 
@@ -1224,12 +1217,6 @@ The `StringArray` family uses `ar_str_*` and the `FloatArray` family uses
 ---
 
 ## 10. Current limitations
-
-**No explicit capture modes**: Closure capture policy is currently implicit.
-Value-type captures are copied, owned heap captures are moved into the closure
-environment, and borrowed heap bindings cannot be captured. There is not yet a
-surface syntax for explicit capture lists or for choosing borrow-vs-move
-capture behavior.
 
 **No generics**: The type checker does not support parametric polymorphism yet.
 Monomorphic workarounds (e.g., `IntArray`, `StringArray`, `FloatArray`) are used

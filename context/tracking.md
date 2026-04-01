@@ -27,16 +27,6 @@
     consuming parameter (`solve board ...` currently reports `must be the last use`, which is
     misleading).
 
-### Non-escaping local fn fusion
-
-- GitHub: https://github.com/fedesilva/minnieml/issues/259
-
-  - fuse non-escaping local inner functions / let-bound lambdas with their enclosing ownership
-    region instead of forcing full closure-style ownership boundaries for helpers that provably
-    never escape.
-  - target the remaining `nqueens` ownership shape directly instead of rewriting samples around
-    the current limitation.
-
 ### Update the design doc
 
 - GitHub: https://github.com/fedesilva/minnieml/issues/251
@@ -51,6 +41,14 @@
 * Add commentary with examples to the parsers
 
 ## Change Log
+
+- 2026-04-01: Refresh closure docs after borrow-by-default capture changes
+  - Docs: updated `docs/memory-model.md` to describe borrow closures vs move closures, stack vs
+    heap closure environments, borrow-closure escape restrictions, and the current `~` closure
+    syntax for both lambda literals and inner functions.
+  - Docs: trimmed `docs/language-reference.md` so it documents the surface closure syntax and
+    points to the memory-model doc for detailed ownership semantics, while removing stale
+    closure-capture wording that no longer matches the implementation.
 
 - 2026-03-31: #258 fix bogus borrow-escape on scalar returns in non-escaping local fns
   - OwnershipAnalyzer: scoped local helpers now derive their effective return type from the
