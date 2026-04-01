@@ -73,6 +73,101 @@ class SemanticTokensTests extends BaseEffFunSuite:
     }
   }
 
+  test("inner function declarations and refs use function tokens") {
+    val code =
+      """
+      fn main() =
+        fn helper(x: Int): Int = x + 1;
+        ;
+        helper 41;
+      ;
+      """
+
+    semNotFailed(code).map { module =>
+      val decodedTokens = decodeTokens(SemanticTokens.compute(module))
+      val mainBody      = bindingBody(module, "main")
+      val helperParam   = findParamByName(mainBody, "helper")
+      val helperRefs    = refsForParam(mainBody, helperParam)
+
+      assertTokenType(decodedTokens, helperParam, TokenType.Function, "inner fn declaration")
+      assert(helperRefs.nonEmpty, "Expected refs resolved to inner fn helper")
+      helperRefs.foreach(assertTokenType(decodedTokens, _, TokenType.Function, "inner fn ref"))
+    }
+  }
+
+  test("let-bound callable values use function tokens") {
+    val code =
+      """
+      fn add(a: Int, b: Int): Int = a + b;;
+
+      fn main() =
+        let add1 = add 1;
+        add1 2;
+      ;
+      """
+
+    semNotFailed(code).map { module =>
+      val decodedTokens = decodeTokens(SemanticTokens.compute(module))
+      val mainBody      = bindingBody(module, "main")
+      val add1Param     = findParamByName(mainBody, "add1")
+      val add1Refs      = refsForParam(mainBody, add1Param)
+
+      assertTokenType(decodedTokens, add1Param, TokenType.Function, "callable let declaration")
+      assert(add1Refs.nonEmpty, "Expected refs resolved to callable let binding")
+      add1Refs.foreach(assertTokenType(decodedTokens, _, TokenType.Function, "callable let ref"))
+    }
+  }
+
+  test("callable params use function tokens while ordinary params stay parameter tokens") {
+    val code =
+      """
+      fn apply(f: Int -> Int, x: Int): Int =
+        f x
+      ;;
+      """
+
+    semNotFailed(code).map { module =>
+      val decodedTokens = decodeTokens(SemanticTokens.compute(module))
+      val applyLambda   = bindingLambda(module, "apply")
+      val fParam        = applyLambda.params.find(_.name == "f").getOrElse(fail("Missing f param"))
+      val xParam        = applyLambda.params.find(_.name == "x").getOrElse(fail("Missing x param"))
+      val fRefs         = refsForParam(applyLambda.body, fParam)
+      val xRefs         = refsForParam(applyLambda.body, xParam)
+
+      assertTokenType(decodedTokens, fParam, TokenType.Function, "callable param declaration")
+      assertTokenType(decodedTokens, xParam, TokenType.Parameter, "ordinary param declaration")
+      assert(fRefs.nonEmpty, "Expected refs resolved to callable param f")
+      assert(xRefs.nonEmpty, "Expected refs resolved to ordinary param x")
+      fRefs.foreach(assertTokenType(decodedTokens, _, TokenType.Function, "callable param ref"))
+      xRefs.foreach(assertTokenType(decodedTokens, _, TokenType.Parameter, "ordinary param ref"))
+    }
+  }
+
+  test("elif does not color the first two chars of the following term as keyword") {
+    val code =
+      """
+      fn main(cell: Int): String =
+        if cell == 1 then
+          "#";
+        elif cell == 2 then
+          "*";
+        else
+          ".";
+      ;;
+      """
+
+    semNotFailed(code).map { module =>
+      val decodedTokens = decodeTokens(SemanticTokens.compute(module))
+      val mainLambda    = bindingLambda(module, "main")
+      val cellParam =
+        mainLambda.params.find(_.name == "cell").getOrElse(fail("Missing cell param"))
+      val cellRefs = refsForParam(mainLambda.body, cellParam)
+
+      assertEquals(cellRefs.length, 2, s"Expected two refs to cell, got ${cellRefs.length}")
+      cellRefs.foreach(assertTokenType(decodedTokens, _, TokenType.Parameter, "cell ref in cond"))
+    }
+  }
+
   test("string literal in function argument gets string token") {
     val code =
       """
@@ -197,6 +292,19 @@ class SemanticTokensTests extends BaseEffFunSuite:
   private def spanOrFail(node: FromSource, label: String): SrcSpan =
     node.source.spanOpt.getOrElse(fail(s"Missing source span for $label"))
 
+  private def bindingValue(module: Module, name: String): Expr =
+    module.members
+      .collectFirst { case bnd: Bnd if bnd.name == name => bnd.value }
+      .getOrElse(fail(s"Expected binding '$name'"))
+
+  private def bindingLambda(module: Module, name: String): Lambda =
+    bindingValue(module, name).terms
+      .collectFirst { case lambda: Lambda => lambda }
+      .getOrElse(fail(s"Expected lambda for binding '$name'"))
+
+  private def bindingBody(module: Module, name: String): Expr =
+    bindingLambda(module, name).body
+
   private def decodeTokens(result: SemanticTokensResult): List[DecodedToken] =
     val tokens   = ListBuffer.empty[DecodedToken]
     val data     = result.data
@@ -221,6 +329,15 @@ class SemanticTokensTests extends BaseEffFunSuite:
 
   private def tokenAt(tokens: List[DecodedToken], node: FromSource): Option[DecodedToken] =
     node.spanOpt.flatMap(span => tokenAt(tokens, span))
+
+  private def assertTokenType(
+    tokens:   List[DecodedToken],
+    node:     FromSource,
+    expected: TokenType,
+    label:    String
+  ): Unit =
+    val token = tokenAt(tokens, node).getOrElse(fail(s"Missing token for $label"))
+    assertEquals(token.tokenType, expected, s"Unexpected token type for $label")
 
   private def debugForRefs(
     refs:   List[Ref],
@@ -265,6 +382,48 @@ class SemanticTokensTests extends BaseEffFunSuite:
 
   private def collectRefsFromExpr(expr: Expr): List[Ref] =
     expr.terms.flatMap(collectRefsFromTerm)
+
+  private def collectParamsFromExpr(expr: Expr): List[FnParam] =
+    expr.terms.flatMap(collectParamsFromTerm)
+
+  private def collectParamsFromTerm(term: Term): List[FnParam] =
+    term match
+      case lambda: Lambda =>
+        lambda.params ++ collectParamsFromExpr(lambda.body)
+      case app: App =>
+        collectParamsFromAppFn(app.fn) ++ collectParamsFromExpr(app.arg)
+      case cond: Cond =>
+        collectParamsFromExpr(cond.cond) ++
+          collectParamsFromExpr(cond.ifTrue) ++
+          collectParamsFromExpr(cond.ifFalse)
+      case group: TermGroup =>
+        collectParamsFromExpr(group.inner)
+      case tuple: Tuple =>
+        tuple.elements.toList.flatMap(collectParamsFromExpr)
+      case expr: Expr =>
+        collectParamsFromExpr(expr)
+      case inv: InvalidExpression =>
+        collectParamsFromExpr(inv.originalExpr)
+      case _ =>
+        Nil
+
+  private def collectParamsFromAppFn(fn: Ref | App | Lambda): List[FnParam] =
+    fn match
+      case _: Ref =>
+        Nil
+      case app: App =>
+        collectParamsFromAppFn(app.fn) ++ collectParamsFromExpr(app.arg)
+      case lambda: Lambda =>
+        lambda.params ++ collectParamsFromExpr(lambda.body)
+
+  private def findParamByName(expr: Expr, name: String): FnParam =
+    collectParamsFromExpr(expr)
+      .find(_.name == name)
+      .getOrElse(fail(s"Expected param '$name'"))
+
+  private def refsForParam(expr: Expr, param: FnParam): List[Ref] =
+    val paramId = param.id.getOrElse(fail(s"Expected id for param '${param.name}'"))
+    collectRefsFromExpr(expr).filter(_.resolvedId.contains(paramId))
 
   private def collectRefsFromTerm(term: Term): List[Ref] =
     term match
