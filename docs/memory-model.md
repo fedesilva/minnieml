@@ -265,34 +265,70 @@ Native types implement their own free/clone in the runtime.
 A **non-capturing lambda** is a plain function pointer. It is a value type and requires
 no ownership tracking or deallocation.
 
-A **capturing lambda** (closure) allocates an environment struct on the heap to store
-captured values. The closure value itself — a fat pointer containing the function pointer
-and a pointer to the environment — is a heap type.
+A **capturing lambda** (closure) is represented as a fat pointer: a function pointer plus
+an environment pointer. What matters is how that closure captures.
 
 ### Capture semantics
 
-Captured bindings are stored in the environment struct when the lambda is created.
+Captured bindings are written into the environment when the lambda is created.
 
-For value types (`Int`, `Float`, `Bool`, etc.), this is a plain copy. The original
-binding remains usable.
+For value types (`Int`, `Float`, `Bool`, etc.), capture is just a copy. The original
+binding stays usable.
 
 ```mml
-fn makeAdder(a: Int): Int -> Int =
-  { x: Int -> x + a }   // a is copied into the closure env
+fn runWith(a: Int, x: Int): Int =
+  let addA = { y: Int -> y + a };   // a is copied into the closure env
+  addA x;
 ;
 ```
 
-Heap-typed captures follow ownership rules instead:
+Heap captures split into two cases.
 
-- If the captured binding is **Owned**, ownership moves into the closure environment.
+### Borrow closures (default)
+
+Borrow is the default:
+
+- lambda literals use `{ ... }`
+- local inner functions use `fn name(...) = ...`
+
+Borrow closures keep their environment on the stack.
+
+- Capturing an **owned** heap binding borrows it; the outer binding stays `Owned`.
+- Capturing a **borrowed**, **literal**, or **global** heap binding is also allowed.
+- Inside the lambda body, captured heap fields are treated as borrowed.
+- Multiple borrow closures may share the same enclosing heap binding.
+
+That stack lifetime is the key restriction: a borrow-capturing closure cannot escape its
+defining scope. Returning one is rejected.
+
+```mml
+fn withPrefix(prefix: String): Unit =
+  let printPrefixed = {
+    println (prefix ++ "!");
+  }: Unit;
+  printPrefixed ();
+;
+```
+
+### Move closures (`~`)
+
+Prefix the closure with `~` when it should own its heap captures:
+
+- lambda literals use `~{ ... }`
+- local inner functions use `fn ~name(...) = ...`
+
+Move closures allocate their environment on the heap, and the closure value owns it.
+
+- Capturing an **owned** heap binding moves it into the environment.
 - The original outer binding becomes `Moved`.
-- Inside the lambda body, the captured field is treated as **Borrowed** from the
+- Capturing a **borrowed** heap binding is rejected.
+- Heap literals are cloned into the environment as needed.
+- Inside the lambda body, captured heap fields are treated as borrowed from the
   environment.
-- If the captured binding is already **Borrowed** or a **Literal**, capture is rejected.
 
 ```mml
 fn makeGreeter(name: String): Unit -> Unit =
-  {
+  ~{
     println ("Hello, " ++ name);
   }: Unit;
 ;
@@ -300,13 +336,17 @@ fn makeGreeter(name: String): Unit -> Unit =
 
 ### Closure ownership
 
-A capturing lambda is `Owned` by the binding it is assigned to. Like any owned heap
-value, it is freed when it goes out of scope, can be passed to consuming parameters,
-and can be returned to transfer ownership to the caller.
+A move-capturing closure is an owned heap value. The binding that receives it is
+responsible for freeing it, just like any other owned heap object. It can also be passed
+to consuming parameters or returned to transfer ownership to the caller.
 
 ```mml
+fn makeAdder(a: Int): Int -> Int =
+  ~{ x: Int -> x + a };
+;
+
 fn main() =
-  let add5 = makeAdder 5;    // add5 owns the closure
+  let add5 = makeAdder 5;    // add5 owns the move closure
   let r = apply add5 37;     // add5 is borrowed by apply
   println (int_to_str r)
 ;                             // add5 is freed here
@@ -316,21 +356,18 @@ fn main() =
 
 When a capturing closure goes out of scope, its environment is destroyed automatically.
 
-For closures that capture only value types, this just releases the environment
-allocation. For closures with heap captures, the captured heap values are destroyed
-before the environment itself is released.
+For a borrow closure, that just ends the lifetime of the stack environment.
 
-### Current limitation
+For a move closure, the heap environment is released when the closure goes out of scope.
+If it holds heap captures, those are destroyed first.
 
-Closures do not yet expose explicit capture modes in the surface language. Capture policy
-is implicit:
+### Capture style
 
-- value captures are copied
-- owned heap captures are moved into the environment
-- borrowed heap bindings cannot be captured
+Closures capture referenced bindings implicitly from the body. The capture mode is
+chosen for the whole closure:
 
-There is no syntax yet for explicit capture lists or for choosing borrow-vs-move
-capture behavior directly.
+- default borrow capture with `{ ... }` / `fn name(...)`
+- explicit move capture with `~{ ... }` / `fn ~name(...)`
 
 ---
 
