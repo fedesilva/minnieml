@@ -31,6 +31,12 @@
 - **Warnings**: Do not tolerate compiler warnings; fix them all.
 - **Exhaustivity**: Fix exhaustivity errors; the compiler knows better than you.
 
+### Do not use sbt, use sbtn
+
+  * sbtn has a faster startup time, since it keeps a hot instance in the background.
+  * non negotiable
+  * if sbtn gets stuck `sbtn shutdown`
+
 ### Running the Compiler
 
 - **Prefer running via sbtn while developing**
