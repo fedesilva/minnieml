@@ -8,57 +8,73 @@ fn abs(x: Int): Int =
     x;
   ;
 ;
-// Check if placing queen at (row, col) is safe
-fn is_safe_loop(board: IntArray, row: Int, col: Int, check_row: Int): Bool =
-  if check_row >= row then
-    true;
-  else
-    let queen_col = unsafe_ar_int_get board check_row;
-    let same_col = queen_col == col;
-    let row_diff = abs (row - check_row);
-    let col_diff = abs (col - queen_col);
-    let same_diag = row_diff == col_diff;
 
-    if same_col then
-      false;
+fn is_safe(board: IntArray, row: Int, col: Int): Bool =
+  // Check if placing queen at (row, col) is safe
+  fn is_safe_loop(check_row: Int): Bool =
+    if check_row >= row then
+      true;
     else
-      if same_diag then
+      let queen_col = unsafe_ar_int_get board check_row;
+      let same_col = queen_col == col;
+      let row_diff = abs (row - check_row);
+      let col_diff = abs (col - queen_col);
+      let same_diag = row_diff == col_diff;
+
+      if same_col then
         false;
       else
-        is_safe_loop board row col (check_row + 1);
+        if same_diag then
+          false;
+        else
+          is_safe_loop (check_row + 1);
+        ;
       ;
     ;
   ;
-;
-fn is_safe(board: IntArray, row: Int, col: Int): Bool =
-  is_safe_loop board row col 0;
+  is_safe_loop 0;
 ;
 
-// Try to place queens starting from given row
-fn solve_loop(board: IntArray, row: Int, n: Int, col: Int, count: Int): Int =
-  if col >= n then
-    count;
-  else
-    let safe = is_safe board row col;
-    if safe then
-      unsafe_ar_int_set board row col;
-      let new_count =
-        if row == (n - 1) then
-          count + 1;
-        else
-          count + (solve board (row + 1) n 0);
-        ;
-      solve_loop board row n (col + 1) new_count;
+
+fn solve(~board: IntArray, row: Int, n: Int, count: Int): Int =
+
+    // Try to place queens starting from given row
+  fn ~solve_loop(col: Int, count: Int): Int =
+    if col >= n then
+      // BUG: we get the following error:
+      // `Cannot return borrowed value 'count' from a function that returns a heap type`
+      // this function does not return a heap type,
+      // and this function does not escape, so we should not care.
+      count;
     else
-      solve_loop board row n (col + 1) count;
+      let safe = is_safe board row col;
+      if safe then
+        unsafe_ar_int_set board row col;
+        let new_count =
+          if row == (n - 1) then
+            count + 1;
+          else
+            // Thiking out loud:
+            // `Consuming parameter 'board' must be the last use of 'board'`
+            // solve is local to the scope board belongs to.
+            // solve does not escape
+            // maybe purely local functions should merge ownership
+            // with their enclosing scope.
+            // and then the codegen just inlines them 
+            // and/or uses phi nodes and jumps 
+            count + (solve board (row + 1) n 0);
+          ;
+        solve_loop (col + 1) new_count;
+      else
+        solve_loop (col + 1) count;
+      ;
     ;
   ;
-;
-fn solve(board: IntArray, row: Int, n: Int, count: Int): Int =
+
   if row >= n then
     count;
   else
-    solve_loop board row n 0 count;
+    solve_loop 0 count;
   ;
 ;
 pub fn main(): Unit =
