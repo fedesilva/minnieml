@@ -64,7 +64,6 @@ fn demo(args: StringArray) =
 
   if show_help then
     println
-
 "- x is horizontal, valid grid range 0..29
 - y is vertical from the top, valid range 0..9
 - l is wall length downward from (x, y)
@@ -73,7 +72,8 @@ Current behavior is clipped, not rejected:
 
 - if part of the wall goes outside the grid, only in-bounds cells are written
 - if x or y are fully out of bounds, the wall effectively becomes empty
-- if l <= 0, no wall is built";
+- if l <= 0, no wall is built"
+;
   else
     // Read wall parameters from the command line, falling back to defaults.
     let wall_x =
@@ -254,6 +254,7 @@ fn astar(
   fn visit_neighbors(current: Int, dir: Int, heap_sz: Int): Int =
     if dir == 8 then
       // All eight directions have been considered.
+      // TODO:QA: Ownership issue? investigate.
       // Work around a current ownership-analyzer limitation: returning the
       // bare local Int param here is misclassified as a borrowed escape.
       heap_sz + 0;
