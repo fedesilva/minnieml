@@ -1,0 +1,118 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+usage() {
+  cat >&2 <<'EOF'
+Usage: gh-project-item-set-status <issue-number-or-url> --status <name> [--repo <repo>] [--owner <owner>] [--project <number>]
+Examples:
+  gh-project-item-set-status 239 --status "In progress"
+  gh-project-item-set-status 239 --repo fedesilva/minnieml --owner fedesilva --project 3 --status Ready
+  gh-project-item-set-status https://github.com/fedesilva/minnieml/issues/239 --status Done
+EOF
+}
+
+if [[ $# -eq 1 && ( "$1" == "-h" || "$1" == "--help" ) ]]; then
+  usage
+  exit 0
+fi
+
+if [[ $# -lt 3 ]]; then
+  usage
+  exit 1
+fi
+
+target="$1"
+shift
+
+repo="fedesilva/minnieml"
+owner="fedesilva"
+project="3"
+status=""
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --repo)
+      repo="${2:-}"
+      shift 2
+      ;;
+    --owner)
+      owner="${2:-}"
+      shift 2
+      ;;
+    --project)
+      project="${2:-}"
+      shift 2
+      ;;
+    --status)
+      status="${2:-}"
+      shift 2
+      ;;
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    *)
+      echo "Unknown option: $1" >&2
+      usage
+      exit 1
+      ;;
+  esac
+done
+
+if [[ -z "$status" ]]; then
+  echo "--status is required" >&2
+  usage
+  exit 1
+fi
+
+if [[ "$target" =~ ^https?:// ]]; then
+  issue_url="$target"
+else
+  issue_url="$(gh issue view "$target" --repo "$repo" --json url --jq .url)"
+fi
+
+project_id="$(gh project view "$project" --owner "$owner" --format json --jq .id)"
+status_field_id="$(gh project field-list "$project" --owner "$owner" --format json | jq -r '
+  .fields[]
+  | select(.name == "Status" and .type == "ProjectV2SingleSelectField")
+  | .id
+')"
+
+if [[ -z "$status_field_id" || "$status_field_id" == "null" ]]; then
+  echo "Could not find Status field for project $owner/$project" >&2
+  exit 1
+fi
+
+status_option_id="$(
+  gh project field-list "$project" --owner "$owner" --format json | jq -r --arg status "$status" '
+    .fields[]
+    | select(.id != null and .name == "Status" and .type == "ProjectV2SingleSelectField")
+    | .options[]
+    | select(.name == $status)
+    | .id
+  '
+)"
+
+if [[ -z "$status_option_id" || "$status_option_id" == "null" ]]; then
+  echo "Could not find status option '$status' for project $owner/$project" >&2
+  exit 1
+fi
+
+item_id="$(
+  gh project item-list "$project" --owner "$owner" --limit 200 --format json | jq -r --arg url "$issue_url" '
+    .items[]
+    | select(.content.url == $url)
+    | .id
+  ' | head -n 1
+)"
+
+if [[ -z "$item_id" || "$item_id" == "null" ]]; then
+  echo "Could not find project item for $issue_url in project $owner/$project" >&2
+  exit 1
+fi
+
+gh project item-edit \
+  --id "$item_id" \
+  --project-id "$project_id" \
+  --field-id "$status_field_id" \
+  --single-select-option-id "$status_option_id"
