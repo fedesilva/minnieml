@@ -255,10 +255,7 @@ fn astar(
   fn visit_neighbors(current: Int, dir: Int, heap_sz: Int): Int =
     if dir == 8 then
       // All eight directions have been considered.
-      // TODO:QA: Ownership issue? investigate.
-      // Work around a current ownership-analyzer limitation: returning the
-      // bare local Int param here is misclassified as a borrowed escape.
-      heap_sz + 0;
+      heap_sz;
     else
       // Convert the flattened current index into x/y coordinates.
       let cx = current % grid.width;
