@@ -27,7 +27,7 @@
     consuming parameter (`solve board ...` currently reports `must be the last use`, which is
     misleading).
 
-### Update the design doc
+### Update the design doc (COMPLETE)
 
 - GitHub: https://github.com/fedesilva/minnieml/issues/251
 
@@ -41,6 +41,16 @@
 * Add commentary with examples to the parsers
 
 ## Change Log
+
+- 2026-04-01: #251 update compiler design doc for current AST and semantic pipeline
+  - Docs: rewrote `docs/design/compiler-design.md` to describe the current single-AST pipeline,
+    parser lowering for lambdas, local bindings, and statement sequencing, plus the actual
+    semantic phase order now that capture analysis, closure env synthesis, and final reindexing are
+    part of the flow.
+  - Docs: refreshed the closure / ownership sections to match current borrow-vs-move closure
+    semantics, immediate lambda application behavior, and the current diagnostic/escape rules.
+  - Docs: tightened the prose and terminology in the design doc so it reads as technical design
+    documentation rather than a stale phase inventory.
 
 - 2026-04-01: Refresh closure docs after borrow-by-default capture changes
   - Docs: updated `docs/memory-model.md` to describe borrow closures vs move closures, stack vs

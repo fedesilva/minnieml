@@ -1,6 +1,12 @@
 # MinnieML: Compiler Implementation
 
-This document describes how the MML compiler processes programs: its internal data structures, algorithms, and transformation phases.
+This document describes how the MML compiler processes programs: the tree it works on, the main
+rewrites it performs, and how those rewrites flow into codegen.
+
+The compiler uses one evolving AST from parsing through codegen. There is no separate core tree or
+mid-level IR between the frontend and backend. Phases keep rewriting the same lambda-shaped model:
+they add synthetic nodes, assign stable IDs, record captures, attach metadata, insert ownership
+wrappers, and annotate types in place.
 
 ## Table of contents
 6. [AST structure](#6-ast-structure)
@@ -83,8 +89,29 @@ Expressions are built from terms:
 - **`TermGroup`**: Parenthesized expression `(expr)`
 - **`Cond`**: Conditional expression `if cond then expr1 else expr2`
 - **`App`**: Function application (curried: `f x y` becomes `((f x) y)`)
-  - Note: `fn` field is constrained to `Ref | App` to enforce curried structure
-- **`Lambda`**: Reserved node for lambda literals (parser does not emit these yet)
+  - Note: `fn` field is constrained to `Ref | App | Lambda`; parser-lowered scoped bindings and
+    direct lambda application rely on the `Lambda` case.
+- **`Lambda`**: First-class callable value used for:
+  - top-level `fn` / `op` bodies wrapped in `Bnd`
+  - literal lambdas (`{ x -> body }`, `~{ x -> body }`)
+  - local `fn` sugar lowered by the parser to a scoped binding of a `Lambda`
+  - synthetic statement / let wrappers introduced during parsing and later rewrites
+  - Carries `params`, `body`, `captures`, optional `LambdaMeta`, and `isMove` for explicit move
+    capture syntax
+
+#### Closure captures
+
+```scala
+enum Capture:
+  case CapturedRef(ref: Ref)
+  case CapturedLiteral(ref: Ref, cloneFnId: String)
+```
+
+- `CapturedRef` is the regular capture path.
+- `CapturedLiteral` marks a captured value that must be cloned when the closure environment is
+  materialized.
+- The parser always emits `captures = Nil`; later semantic phases discover, classify, and type
+  captures.
 
 #### Values
 - **`Ref`**: Reference to a declaration or parameter
@@ -182,6 +209,83 @@ let result = 1 + 2 * 3;
 
 **Rationale**: This approach simplifies parsing and defers precedence handling to semantic analysis, enabling better error recovery and making operator precedence extensible.
 
+### Lambda and local-binding lowering
+
+The parser now emits real `Lambda` terms in expression position.
+
+#### Literal lambdas
+
+Surface syntax:
+
+```mml
+{ x -> x + 1 }
+~{ x -> mk_user x }
+{ println "side effect" }
+```
+
+- `{ ... }` creates a borrow-capturing closure by default.
+- `~{ ... }` creates a move-capturing closure.
+- Parameterless lambdas are allowed.
+- Lambda bodies are terminated by `;` or implicitly by the closing `}`.
+
+#### Local `let`
+
+Expression-local bindings are lowered directly to immediate lambda application:
+
+```mml
+let x = value;
+rest
+```
+
+Conceptually:
+
+```mml
+({ x -> rest } value)
+```
+
+The parser builds this directly as `App(fn = Lambda(...), arg = value)`. Later phases treat that
+shape as scoped-binding sugar rather than as an ordinary closure literal.
+
+#### Local `fn`
+
+Inner functions use the same scoped-binding lowering strategy:
+
+```mml
+fn helper(a: Int): Int = a + 1;
+helper 41
+```
+
+The bound value is a `Lambda`. When parameter and return annotations are available, the parser also
+synthesizes a `TypeFn` ascription for the local binding. That keeps local `fn` and let-bound
+lambdas on the same path in later phases.
+
+#### Statement sequencing
+
+Expression sequences are also lowered immediately by the parser using the same scoped-lambda model.
+
+Surface syntax:
+
+```mml
+expr1;
+expr2;
+expr3
+```
+
+is lowered conceptually to nested immediate applications:
+
+```mml
+({ __stmt: Unit ->
+   ({ __stmt: Unit ->
+      expr3
+    } expr2)
+ } expr1)
+```
+
+The parser builds this shape directly with a synthetic `__stmt` parameter and nested
+`App(fn = Lambda(...), arg = ...)` nodes. It is CPS-like in the narrow sense that each statement
+runs before the rest of the expression continues. It still targets the same AST the compiler uses
+everywhere else.
+
 ### Member parsing
 
 Top-level module members are parsed independently:
@@ -241,8 +345,8 @@ case class CompilerState(
 )
 ```
 
-Each phase receives a `CompilerState`, transforms it, and returns the updated state; timings are
-captured via `CompilerState.timePhase`/`timePhaseIO`.
+Each phase takes a `CompilerState`, returns an updated `CompilerState`, and records timing through
+`CompilerState.timePhase` / `timePhaseIO`.
 
 `SemanticStage.rewrite` runs after stdlib injection and wires phases in this order:
 0. **Stdlib injection**: Adds prelude types, operators, and functions (with stable `stdlib::<name>` IDs).
@@ -254,10 +358,13 @@ captured via `CompilerState.timePhase`/`timePhaseIO`.
 6. **RefResolver**
 7. **ExpressionRewriter**
 8. **Simplifier**
-9. **TypeChecker**
-10. **ResolvablesIndexer**
-11. **TailRecursionDetector**
-12. **OwnershipAnalyzer**
+9. **CaptureAnalyzer**
+10. **TypeChecker**
+11. **ClosureMemoryFnGenerator**
+12. **ResolvablesIndexer**
+13. **TailRecursionDetector**
+14. **OwnershipAnalyzer**
+15. **ResolvablesIndexer (final)**
 
 ---
 
@@ -274,7 +381,7 @@ captured via `CompilerState.timePhase`/`timePhaseIO`.
 - `SemanticError.MemberErrorFound`
 - `SemanticError.ParsingIdErrorFound`
 
-**AST changes**: None, only reports errors
+**AST rewrites**: None, only reports errors
 
 ---
 
@@ -295,7 +402,7 @@ captured via `CompilerState.timePhase`/`timePhaseIO`.
 **Errors reported**:
 - `SemanticError.DuplicateName`
 
-**AST changes**:
+**AST rewrites**:
 - Wraps duplicate members in `DuplicateMember` nodes
 - Wraps members with duplicate parameters in `InvalidMember` nodes
 
@@ -303,12 +410,12 @@ captured via `CompilerState.timePhase`/`timePhaseIO`.
 
 ### Semantic Phase 2: IdAssigner
 
-Assigns stable IDs to all user declarations and lambda parameters and seeds the resolvables index
-before any resolving work happens.
+Assigns stable IDs to user declarations and lambda parameters, then seeds the resolvables index
+before any name or type resolution runs.
 
 **Errors reported**: None
 
-**AST changes**:
+**AST rewrites**:
 - Populates `id` fields for decls, params, and struct fields
 - Seeds `Module.resolvables` with the freshly assigned IDs
 
@@ -337,8 +444,8 @@ before any resolving work happens.
 **Errors reported**:
 - `SemanticError.UndefinedTypeRef`
 
-**AST changes**:
-- Updates `TypeRef.resolvedAs` to point to `TypeDef` or `TypeAlias`
+**AST rewrites**:
+- Updates `TypeRef.resolvedId` to point at the resolved `TypeDef` or `TypeAlias`
 - Computes `TypeAlias.typeSpec` by following resolution chain
 - Wraps unresolvable type refs in `InvalidType` nodes
 
@@ -354,36 +461,64 @@ before any resolving work happens.
 - The generated `Bnd` contains a `Lambda` with one `FnParam` per field, a `DataConstructor`
   body, and `BindingMeta` with `origin = Constructor`.
 
-**AST changes**:
+**AST rewrites**:
 - Inserts new constructor `Bnd` members into the module member list
 - Updates `resolvables` index with new constructor IDs
 
 ---
 
-### Semantic Phase 6: RefResolver
+### Semantic Phase 5: MemoryFunctionGenerator
 
-**Purpose**: Resolve all `Ref` nodes to their declarations or parameters.
+**Purpose**: Generate memory helpers for user-defined structs with heap fields and rewrite
+constructors so ownership transfer is visible in the callable signature.
 
 **Behavior**:
-- For each `Ref` in expressions, searches for matching declarations:
-  1. First checks **parameters** of the containing function/operator
-  2. Then checks **module-level members** (excluding self)
-- Populates `Ref.candidates` with all matches
-- If exactly one match: sets `Ref.resolvedAs = Some(match)`
-- If no matches: wraps expression in `InvalidExpression` node
+- Scans module members for `TypeStruct` definitions that are heap types directly or transitively
+  through their fields.
+- Generates:
+  - `__free_StructName(~s: StructName): Unit`
+  - `__clone_StructName(s: StructName): StructName`
+- Rewrites generated constructors so heap-typed fields become `consuming = true` parameters while
+  value-type fields stay borrowed.
+- Leaves native heap types to the runtime / stdlib path.
+
+**Why it runs here**:
+- It needs resolved field types from `TypeResolver`.
+- `RefResolver`, `TypeChecker`, and `OwnershipAnalyzer` must see the generated helpers and the
+  rewritten consuming constructor parameters.
+
+**AST rewrites**:
+- Adds generated `__free_*` and `__clone_*` `Bnd` members to the module
+- Rewrites constructor params to mark heap fields as consuming
+- Extends the resolvables index with the synthetic helpers
+
+---
+
+### Semantic Phase 6: RefResolver
+
+**Purpose**: Resolve `Ref` nodes to declarations or parameters using stable IDs.
+
+**Behavior**:
+- For each `Ref` in expressions, searches for matching declarations in this order:
+  1. parameters currently in scope, including parser-lowered local scoped bindings
+  2. module-level members
+- Populates `Ref.candidateIds` with all matching stable IDs.
+- If exactly one match is found, writes that ID to `Ref.resolvedId`.
+- If no matches are found, wraps the expression in `InvalidExpression`.
 
 **Errors reported**:
 - `SemanticError.UndefinedRef`
 
-**AST changes**:
-- Updates `Ref.candidates` and `Ref.resolvedAs` fields
+**AST rewrites**:
+- Updates `Ref.candidateIds` and `Ref.resolvedId`
 - Wraps unresolvable references in `InvalidExpression` nodes
 
 ---
 
 ### Semantic Phase 7: ExpressionRewriter
 
-**Purpose**: Restructure expressions using **precedence climbing** to build proper AST structure for operators and function application.
+**Purpose**: Restructure expressions using precedence climbing to build proper AST structure for
+operators and function application.
 
 **Algorithm**: Precedence climbing with support for:
 1. Prefix operators (unary with right associativity)
@@ -392,9 +527,10 @@ before any resolving work happens.
 4. Postfix operators (unary with left associativity)
 
 **Function application as juxtaposition**:
-Function application is treated as a **high-precedence operation** through juxtaposition.
+Function application is treated as a high-precedence operation through juxtaposition.
 
-**Example**: `f x y` is parsed as terms `[Ref("f"), Ref("x"), Ref("y")]` and rewritten to `App(App(Ref("f"), x), y)`.
+**Example**: `f x y` is parsed as terms `[Ref("f"), Ref("x"), Ref("y")]` and rewritten to
+`App(App(Ref("f"), x), y)`.
 
 **Nullary function handling**:
 Nullary functions are called explicitly with `()`; value position keeps a reference:
@@ -414,7 +550,7 @@ let f = get_value;
 - `SemanticError.DanglingTerms`
 - `SemanticError.InvalidExpressionFound`
 
-**AST changes**:
+**AST rewrites**:
 - Transforms flat `Expr(terms)` into nested `App` structures
 - Resolves operator references to their definitions
 - Leaves nullary references untouched; explicit `()` remains an application
@@ -444,32 +580,62 @@ let f = get_value;
 - Preserves `Expr` wrapper for member bodies and conditional branches
 - Transfers type ascriptions when unwrapping
 
-**AST changes**:
+**AST rewrites**:
 - Removes unnecessary `Expr` and `TermGroup` nesting
 - Flattens AST for easier processing in later phases
 
 ---
 
-### Semantic Phase 9: TypeChecker
+### Semantic Phase 9: CaptureAnalyzer
 
-**Purpose**: Validate member bodies, ensure parameter annotations are present, and infer return types
-where possible.
+**Purpose**: Fill in `Lambda.captures` for real closure literals.
+
+**Key distinction**:
+- Not every `Lambda` node is a closure boundary.
+- Parser-lowered scoped bindings, statement chains, and let-desugaring do produce
+  `App(fn = Lambda(...), arg = ...)` nodes whose `Lambda` acts as a scope-extending wrapper rather
+  than as a closure value.
+- User code can also produce `App(fn = Lambda(...), arg = ...)` directly through immediate lambda
+  application, for example `{ x -> x + a } 1`.
+- A `Lambda` in standalone value position is treated as a real closure literal.
+
+**Behavior**:
+- Runs after `RefResolver`, so capture discovery works from `resolvedId`s instead of raw names.
+- Tracks local scope IDs introduced by enclosing lambdas and parser-lowered scoped bindings.
+- Collects:
+  - **Direct captures**: refs in the lambda body that resolve to bindings from an enclosing local
+    scope
+  - **Propagated captures**: refs captured by nested lambdas that must also be carried by the
+    enclosing lambda env
+- Deduplicates captures by resolved ID and records them as `Capture.CapturedRef`.
+
+**AST rewrites**:
+- Rewrites nested lambda bodies where needed
+- Populates `Lambda.captures`
+
+---
+
+### Semantic Phase 10: TypeChecker
+
+**Purpose**: Validate member bodies, require parameter annotations where needed, and infer return
+types when possible.
 
 **Two-phase flow**
 
 1. **Lower mandatory ascriptions**
-   - For `Bnd` with `BindingMeta` (functions/operators), copy each Lambda parameter's `typeAsc` into
-     `typeSpec` and do the same for the declaration's return type.
+   - For `Bnd` with `BindingMeta` (functions/operators), copy each lambda parameter's `typeAsc`
+     into `typeSpec` and do the same for the declaration's return type.
    - Missing parameter annotations raise `MissingParameterType` or
      `MissingOperatorParameterType`. Return types may be inferred, so no warning is emitted if they
      are omitted.
 
 2. **Type-check members**
-   - Each function/operator body (Lambda) is checked in the context of its parameters. If a return
-     type was declared, the computed type must match unless the body is a `@native` stub (see note
-     below). Otherwise, the return type is inferred from the body.
+   - Each function/operator body (`Lambda`) is checked in the context of its parameters. If a
+     return type was declared, the computed type must match unless the body is a `@native` stub.
+     Otherwise, the return type is inferred from the body.
    - `Bnd` bindings without meta run through the same expression checker; their `typeSpec` mirrors
-     the computed expression type. Explicit `typeAsc` entries are validated against the inferred result.
+     the computed expression type. Explicit `typeAsc` entries are validated against the inferred
+     result.
 
 **Application checking**:
 - Works over nested `App` chains produced by the rewriter, validating one argument at a time.
@@ -480,18 +646,21 @@ where possible.
 **Additional rules**:
 - After checking, a function or operator's `typeSpec` stores its return type; parameter
   `typeSpec` entries hold the concrete argument types.
+- Lambda literals participate in both top-down and bottom-up inference:
+  - expected callable types seed missing parameter types
+  - unresolved lambda params are inferred from body usage when possible
+  - typed capture refs are written back into `Lambda.captures`
 - Conditional guards must be `Bool`; both branches must agree on type or trigger
   `ConditionalBranchTypeMismatch`.
 - Holes (`???`) require an expected type; otherwise `UntypedHoleInBinding` is reported.
-- All detected issues are wrapped as `SemanticError.TypeCheckingError` and accumulated in the phase
-  state.
+- All detected issues are wrapped as `SemanticError.TypeCheckingError` and accumulated in the
+  phase state.
 
 **Note on native implementations**:
 
-Functions and operators with `@native` bodies (containing `NativeImpl` nodes) lift native
-declarations and types into MML's type system. These declarations expose native (C/LLVM)
-functionality to MML by declaring their signatures. The type checker skips body verification for
-native implementations since the body is external.
+Functions and operators with `@native` bodies (containing `NativeImpl` nodes) expose native
+signatures inside MML's type system. The type checker does not verify those bodies because the
+implementation lives outside MML.
 
 **Plain `@native`**: The compiler generates forward declarations for native functions; the linker
 resolves them against the runtime or external libraries.
@@ -502,36 +671,70 @@ Generation section below.
 
 ---
 
-### Semantic Phase 5: MemoryFunctionGenerator
+### Semantic Phase 11: ClosureMemoryFnGenerator
 
-**Purpose**: Generate memory management functions for user-defined structs with heap fields and
-rewrite constructors for ownership semantics.
+**Purpose**: Synthesize closure-environment layouts and free helpers for capturing lambdas.
 
 **Behavior**:
-- Scans module for `TypeStruct` declarations with heap-allocated fields.
-- For each qualifying struct, generates:
-  - `__free_StructName(~s: StructName): Unit` — calls `__free_*` on each heap field
-  - `__clone_StructName(s: StructName): StructName` — calls `__clone_*` on heap fields,
-    passes non-heap fields directly to constructor
-- Native heap types (String, Buffer, IntArray, StringArray) have memory functions in the C runtime.
+- Runs after capture and type information are available.
+- For every capturing lambda, synthesizes a private env struct named `__closure_env_N`.
+- Tags the corresponding `Lambda` with `LambdaMeta.envStructName`.
+- Emits free helpers for move closures only:
+  - `__free___closure_env_N`
+  - `__free_closure` when at least one move closure exists
 
-**Constructor rewriting** (`rewriteConstructor`):
-- Marks constructor parameters corresponding to heap-typed fields as `consuming = true`.
-- This means constructors take ownership of heap values passed to them (move-in semantics).
-- Non-heap parameters (Int, Bool, Float, etc.) remain borrowed.
-- Example: `struct User { name: String, age: Int }` → parameter `name` becomes consuming,
-  `age` does not.
-- The ownership analyzer handles the caller side: non-owned arguments (literals, borrowed refs)
-  are auto-cloned before being passed to a consuming constructor parameter.
+**Environment layout**:
+- **Borrow closures** (`{ ... }`):
+  - env contains capture fields only
+  - no destructor field is stored
+  - codegen later stack-allocates the env with `alloca`
+- **Move closures** (`~{ ... }`, `fn ~name(...)`):
+  - env field `0` is `__dtor: RawPtr`
+  - remaining fields are captures
+  - codegen later heap-allocates the env with `malloc` and stores the destructor pointer
 
-**AST changes**:
-- Adds generated `__free_T` and `__clone_T` `Bnd` members to the module
-- Rewrites constructor `Bnd` members with updated `consuming` flags on params
-- Updates `resolvables` index with new and modified function IDs
+**Captured literals**:
+- `Capture.CapturedLiteral` entries survive this phase so codegen can clone captured heap literals
+  or other non-owned values before storing them into move environments.
+
+**AST rewrites**:
+- Appends generated env `TypeStruct` members
+- Appends generated closure free helpers
+- Rewrites lambdas with `LambdaMeta.envStructName`
+- Extends the resolvables index with the synthetic types and functions
 
 ---
 
-### Semantic Phase 12: OwnershipAnalyzer
+### Semantic Phase 12: ResolvablesIndexer
+
+**Purpose**: Rebuild `Module.resolvables` from the current rewritten module tree.
+
+**Behavior**:
+- Reindexes the current `Resolvable` / `ResolvableType` nodes using their stable IDs.
+- Ensures downstream phases observe the latest rewritten node instances after typechecking and
+  closure-env synthesis.
+
+**AST rewrites**:
+- Replaces `Module.resolvables` with a fresh index derived from current members.
+
+---
+
+### Semantic Phase 13: TailRecursionDetector
+
+**Purpose**: Mark top-level and let-bound lambdas that can use the loopified tail-recursive codegen
+path.
+
+**Behavior**:
+- Detects self-recursion for top-level function bodies represented as `Lambda`s.
+- Traverses parser-lowered let-binding chains to find recursive local lambdas as well.
+- Writes `LambdaMeta.isTailRecursive = true` when the body qualifies.
+
+**AST rewrites**:
+- Rewrites lambda metadata and any nested let-bound lambda bodies updated during traversal.
+
+---
+
+### Semantic Phase 14: OwnershipAnalyzer
 
 **Purpose**: Track ownership of heap-allocated values and insert `__free_*` calls.
 
@@ -539,15 +742,16 @@ rewrite constructors for ownership semantics.
 - `Owned` — Caller owns the value, must free at scope end
 - `Moved` — Ownership transferred, caller must not use
 - `Borrowed` — Lent to callee, caller retains ownership
-- `Literal` — Static memory, never freed
+- `Literal` — Compile-time/static value, never freed
+- `Global` — Module-level binding with static lifetime; borrow-only in local scopes
 
 **Key behaviors**:
 
-1. **Allocation detection**: Identifies allocating calls via:
+1. **Allocation detection**: Identifies allocating results via:
    - `NativeImpl.memEffect = Alloc`
-   - Intramodule fixed-point analysis for user functions returning heap values
-   - Struct constructors: detected by resolving the callee and checking for a `DataConstructor`
-     body term. Allocates when the struct has heap fields.
+   - intramodule fixed-point analysis for user functions returning heap values
+   - struct constructors, by resolving the callee and checking for a `DataConstructor` body
+   - move-capturing closures with non-empty `captures`, because their env allocation is owned
 
 2. **Free insertion**: Uses CPS-style AST rewriting at scope end:
    ```
@@ -559,7 +763,8 @@ rewrite constructors for ownership semantics.
    f (alloc())  →  let __tmp = alloc(); let __r = f __tmp; __free_T __tmp; __r
    ```
 
-4. **Mixed ownership conditionals**: When branches differ in allocation, generates witness boolean:
+4. **Mixed ownership conditionals**: When branches differ in allocation, generates a witness
+   boolean:
    ```
    let s = if c then alloc() else "lit"
    →
@@ -568,8 +773,8 @@ rewrite constructors for ownership semantics.
    // at scope end: if __owns_s then __free_T s else ()
    ```
 
-5. **Return escape**: Bindings escaping via return are not freed; ownership transfers to caller.
-   Static branches in mixed returns are wrapped with `__clone_T`.
+5. **Return escape**: Bindings that escape through `return` are not freed locally; ownership moves
+   to the caller. Static branches in mixed returns are wrapped with `__clone_T`.
 
 6. **Constructor auto-clone**: When calling a constructor with consuming parameters, non-owned
    arguments (literals, borrowed refs, field accesses) are automatically wrapped with
@@ -580,9 +785,40 @@ rewrite constructors for ownership semantics.
    let v = User "Alice" 30; // "Alice" auto-cloned (literal → consuming param)
    ```
 
+7. **Closure capture validation**:
+   - Borrowed heap bindings cannot be captured into **move** closures.
+   - Borrow closures may borrow owned, borrowed, literal, or global bindings. The restriction is on
+     escape and ownership transfer, not on borrowing itself.
+   - Already-moved heap bindings cannot be captured.
+   - Returning a borrow-capturing closure is rejected; escaping closures must be explicit move
+     closures (`~{ ... }` / `fn ~name(...)`).
+   - Borrowed values passed to consuming params get a dedicated diagnostic.
+
 **Errors reported**:
-- `UseAfterMove`, `ConsumingParamNotLastUse`, `PartialApplicationWithConsuming`,
-  `ConditionalOwnershipMismatch`
+- `UseAfterMove`
+- `ConsumingParamNotLastUse`
+- `BorrowedValuePassedToConsumingParam`
+- `PartialApplicationWithConsuming`
+- `ConditionalOwnershipMismatch`
+- `BorrowEscapeViaReturn`
+- `CapturedBorrowedHeapBinding`
+- `CapturedMovedHeapBinding`
+- `BorrowClosureEscapeViaReturn`
+
+---
+
+### Semantic Phase 15: ResolvablesIndexer (final)
+
+**Purpose**: Rebuild the resolvables index one more time after ownership rewriting.
+
+**Why it exists**:
+- `OwnershipAnalyzer` can synthesize fresh AST structure such as temporary bindings, inserted
+  frees, cloned branches, and wrapper lambdas.
+- Diagnostics, LSP, and codegen should all reify IDs against the final rewritten nodes, not a
+  pre-ownership tree.
+
+**AST rewrites**:
+- Refreshes `Module.resolvables` one last time so it matches the final semantic tree.
 
 ---
 
