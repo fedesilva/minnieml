@@ -51,6 +51,7 @@ object Diagnostics:
       case SemanticError.InvalidEntryPoint(_, source) => source.spanOpt.toList
       case SemanticError.UseAfterMove(ref, _, _) => ref.spanOpt.toList
       case SemanticError.ConsumingParamNotLastUse(_, ref, _) => ref.spanOpt.toList
+      case SemanticError.BorrowedValuePassedToConsumingParam(_, ref, _) => ref.spanOpt.toList
       case SemanticError.PartialApplicationWithConsuming(fn, _, _) => fn.spanOpt.toList
       case SemanticError.ConditionalOwnershipMismatch(cond, _) => cond.spanOpt.toList
       case SemanticError.BorrowEscapeViaReturn(ref, _) => ref.spanOpt.toList
@@ -127,6 +128,7 @@ object Diagnostics:
         s"Invalid entry point: $msg"
       case e: SemanticError.UseAfterMove => e.message
       case e: SemanticError.ConsumingParamNotLastUse => e.message
+      case e: SemanticError.BorrowedValuePassedToConsumingParam => e.message
       case e: SemanticError.PartialApplicationWithConsuming => e.message
       case e: SemanticError.ConditionalOwnershipMismatch => e.message
       case e: SemanticError.BorrowEscapeViaReturn => e.message

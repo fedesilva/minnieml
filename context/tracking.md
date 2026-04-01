@@ -16,14 +16,14 @@
 
 ## Active Tasks
 
-### P1: fix bogus borrow-escape on scalar returns in non-escaping local fns
+### P1: fix bogus borrow-escape on scalar returns in non-escaping local fns (COMPLETE)
 
 - GitHub: https://github.com/fedesilva/minnieml/issues/258
 
   - `mml/samples/nqueens.mml` currently reports a bogus `Cannot return borrowed value 'count'`
     inside `solve_loop`, even though the local helper returns `Int` and does not escape.
   - parser-lowered inner `fn` and local let-bound lambdas should stay aligned here.
-  - [ ] tighten the diagnostic emitted when a borrowed captured heap binding is passed to a
+  - [x] tighten the diagnostic emitted when a borrowed captured heap binding is passed to a
     consuming parameter (`solve board ...` currently reports `must be the last use`, which is
     misleading).
 
@@ -51,6 +51,18 @@
 * Add commentary with examples to the parsers
 
 ## Change Log
+
+- 2026-03-31: #258 fix bogus borrow-escape on scalar returns in non-escaping local fns
+  - OwnershipAnalyzer: scoped local helpers now derive their effective return type from the
+    computed `TypeFn` result instead of treating the whole callable type as a heap-return signal,
+    removing the bogus `Cannot return borrowed value 'count'` path for parser-lowered inner `fn`
+    and let-bound lambdas.
+  - Ownership diagnostics: added `BorrowedValuePassedToConsumingParam` and rewired the printer /
+    LSP / source-snippet paths so borrowed captured heap bindings passed to consuming params get a
+    specific error instead of the misleading `must be the last use` message.
+  - Tests/samples: added ownership regressions for inner-`fn` and let-bound scalar-return parity,
+    updated constructor/borrowed-capture expectations to the new diagnostic, and simplified
+    `mml/samples/nqueens.mml` so it compiles without unnecessary `~` annotations.
 
 - 2026-03-31: #257 LSP callable semantic token coloring
   - LSP: semantic token classification now colors source-level callable values as `function`

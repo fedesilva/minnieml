@@ -134,6 +134,7 @@ enum SemanticError extends CompilationError:
   // Ownership errors
   case UseAfterMove(ref: Ref, movedAt: SourceOrigin, phase: String)
   case ConsumingParamNotLastUse(param: FnParam, ref: Ref, phase: String)
+  case BorrowedValuePassedToConsumingParam(param: FnParam, ref: Ref, phase: String)
   case PartialApplicationWithConsuming(fn: Term, param: FnParam, phase: String)
   case ConditionalOwnershipMismatch(cond: Cond, phase: String)
   case BorrowEscapeViaReturn(ref: Ref, phase: String)
@@ -172,6 +173,8 @@ enum SemanticError extends CompilationError:
           s"Use of '${ref.name}' after move"
     case ConsumingParamNotLastUse(param, ref, _) =>
       s"Consuming parameter '${param.name}' must be the last use of '${ref.name}'"
+    case BorrowedValuePassedToConsumingParam(param, ref, _) =>
+      s"Cannot pass borrowed value '${ref.name}' to consuming parameter '${param.name}'"
     case PartialApplicationWithConsuming(_, param, _) =>
       s"Cannot partially apply function with consuming parameter '${param.name}'"
     case ConditionalOwnershipMismatch(_, _) =>
