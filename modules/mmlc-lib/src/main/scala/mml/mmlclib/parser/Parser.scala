@@ -15,8 +15,29 @@ enum ParserError extends CompilationError:
 
 type ParserResult = Either[ParserError, Module]
 
+/** Entry points for parsing full MML source files into a top-level [[Module]].
+  *
+  * Example:
+  * {{{
+  * let answer = 42;
+  *
+  * fn inc(x: Int): Int =
+  *   x + 1;
+  * ;
+  * }}}
+  */
 object Parser:
 
+  /** Parses one source file while also returning the [[SourceInfo]] index used to build spans.
+    *
+    * Example:
+    * {{{
+    * Parser.parseModuleWithInfo(
+    *   \"let greeting = \\\"hola\\\";\",
+    *   name = \"Sample\"
+    * )
+    * }}}
+    */
   def parseModuleWithInfo(
     source:     String,
     name:       String,
@@ -31,6 +52,13 @@ object Parser:
           ParserError.Failure(f.trace().longMsg).asLeft
     (info, result)
 
+  /** Parses one source file into a synthetic top-level module.
+    *
+    * Example:
+    * {{{
+    * Parser.parseModule(\"struct Person { name: String };\", name = \"Sample\")
+    * }}}
+    */
   def parseModule(
     source:     String,
     name:       String,
@@ -38,6 +66,16 @@ object Parser:
   ): ParserResult =
     parseModuleWithInfo(source, name, sourcePath)._2
 
+  /** Parses one source file and collects FastParse instrumentation counters for that run.
+    *
+    * Example:
+    * {{{
+    * Parser.parseModuleInstrumented(
+    *   \"fn id(x: Int): Int = x; ;\",
+    *   name = \"Metrics\"
+    * )
+    * }}}
+    */
   def parseModuleInstrumented(
     source:     String,
     name:       String,

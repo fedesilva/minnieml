@@ -28,13 +28,20 @@
     misleading).
 
             
-### QA Parser
+### QA Parser (COMPLETE)
 
 - GitHub: https://github.com/fedesilva/minnieml/issues/252
 
 * Add commentary with examples to the parsers
 
 ## Change Log
+
+- 2026-04-01: #252 QA Parser
+  - Parser docs: added syntax-oriented Scaladoc across the full parser package so the grammar
+    entry points, helper combinators, and support utilities read as a guided parser walkthrough.
+  - Examples: documented top-level members, expressions, local `let` / inner `fn` lowering,
+    lambdas, selections, conditionals, tuples, native syntax, literals, and type syntax with
+    concrete MML snippets next to the combinators that parse them.
 
 - 2026-04-01: #251 update compiler design doc for current AST and semantic pipeline
   - Docs: rewrote `docs/design/compiler-design.md` to describe the current single-AST pipeline,

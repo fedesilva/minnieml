@@ -5,6 +5,20 @@ import mml.mmlclib.ast.*
 
 import MmlWhitespace.*
 
+/** Parses a whole source file as a synthetic top-level module.
+  *
+  * There is no surface `module ...` declaration in source files. The parser simply reads members
+  * until end-of-file and wraps them in a [[Module]] named by the caller.
+  *
+  * Example:
+  * {{{
+  * let answer = 42;
+  *
+  * fn inc(x: Int): Int =
+  *   x + 1;
+  * ;
+  * }}}
+  */
 private[parser] def topLevelModuleP(
   name:       String,
   info:       SourceInfo,

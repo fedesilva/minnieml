@@ -5,6 +5,17 @@ import mml.mmlclib.ast.*
 
 import MmlWhitespace.*
 
+/** Parses any top-level module member.
+  *
+  * This is the entry point for declarations such as:
+  * {{{
+  * let answer = 42;
+  * fn inc(x: Int): Int = x + 1; ;
+  * op + (a: Int, b: Int): Int 60 left = a; ;
+  * struct Person { name: String };
+  * type UserId = Int;
+  * }}}
+  */
 private[parser] def membersP(info: SourceInfo)(using P[Any]): P[Member] =
   P(
     binOpDefP(info) |
@@ -17,6 +28,13 @@ private[parser] def membersP(info: SourceInfo)(using P[Any]): P[Member] =
       failedMemberP(info)
   )
 
+/** Parses a top-level value binding.
+  *
+  * Example:
+  * {{{
+  * let answer: Int = 42;
+  * }}}
+  */
 private[parser] def letBindingP(info: SourceInfo)(using P[Any]): P[Member] =
   P(
     docCommentP(info)
@@ -54,6 +72,14 @@ private[parser] def letBindingP(info: SourceInfo)(using P[Any]): P[Member] =
           )
     }
 
+/** Parses one function parameter.
+  *
+  * Examples:
+  * {{{
+  * value: Int
+  * ~buffer: RawPtr
+  * }}}
+  */
 private[parser] def fnParamP(info: SourceInfo)(using P[Any]): P[FnParam] =
   P(
     spP(info) ~ docCommentP(info) ~ "~".!.? ~ spP(info) ~ bindingIdP ~ spNoWsP(info) ~
@@ -68,13 +94,18 @@ private[parser] def fnParamP(info: SourceInfo)(using P[Any]): P[FnParam] =
     )
   }
 
+/** Parses the comma-separated parameter list inside `(...)`. */
 private[parser] def fnParamListP(info: SourceInfo)(using P[Any]): P[List[FnParam]] =
   P(fnParamP(info).rep(sep = ",")).map(_.toList)
 
-/** Parses a function definition into a Bnd(id, lambda(expr))
+/** Parses a top-level function declaration and lowers it to a [[Bnd]] whose value is a [[Lambda]].
   *
-  * @param info
-  * @return
+  * Example:
+  * {{{
+  * fn inc(x: Int): Int =
+  *   x + 1;
+  * ;
+  * }}}
   */
 private[parser] def fnDefP(info: SourceInfo)(using P[Any]): P[Member] =
   P(
@@ -157,12 +188,30 @@ private[parser] def fnDefP(info: SourceInfo)(using P[Any]): P[Member] =
           )
   }
 
+/** Parses the associativity marker that follows an operator precedence.
+  *
+  * Example:
+  * {{{
+  * left
+  * right
+  * }}}
+  */
 private[parser] def assocP[$: P]: P[Associativity] =
   P("left").map(_ => Associativity.Left) | P("right").map(_ => Associativity.Right)
 
+/** Parses an operator precedence level such as `50` or `120`. */
 private[parser] def precedenceP[$: P]: P[Int] =
   P(CharIn("0-9").rep(1).!).map(_.toInt)
 
+/** Parses a binary operator declaration.
+  *
+  * Example:
+  * {{{
+  * op + (a: Int, b: Int): Int 60 left =
+  *   a;
+  * ;
+  * }}}
+  */
 private[parser] def binOpDefP(info: SourceInfo)(using P[Any]): P[Member] =
   P(
     docCommentP(info)
@@ -252,6 +301,15 @@ private[parser] def binOpDefP(info: SourceInfo)(using P[Any]): P[Member] =
       }
   }
 
+/** Parses a unary operator declaration.
+  *
+  * Example:
+  * {{{
+  * op ! (value: Boolean): Boolean 90 right =
+  *   value;
+  * ;
+  * }}}
+  */
 private[parser] def unaryOpP(info: SourceInfo)(using P[Any]): P[Member] =
   P(
     docCommentP(info)
@@ -337,6 +395,10 @@ private[parser] def unaryOpP(info: SourceInfo)(using P[Any]): P[Member] =
       }
   }
 
+/** Parses one unrecognized top-level line as a recoverable parser error member.
+  *
+  * This keeps the surrounding module parse alive so later members can still be analyzed.
+  */
 private[parser] def failedMemberP(info: SourceInfo)(using P[Any]): P[Member] =
   P(
     spP(info) ~

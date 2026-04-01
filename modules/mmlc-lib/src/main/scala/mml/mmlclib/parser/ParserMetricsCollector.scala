@@ -40,6 +40,10 @@ class ParserMetricsCollector(inputLength: Int) extends Instrument:
           val (pName, pStart, pChild) = _callStack.pop()
           _callStack.push((pName, pStart, pChild + totalDuration))
 
+  /** Converts one instrumented parse run into compiler counters.
+    *
+    * The summary includes overall parse activity plus per-rule frequency and exclusive timing.
+    */
   def toCounters(stage: String): List[Counter] =
     val progressPct = if inputLength == 0 then 100L else (_maxIndex * 100L) / inputLength
 
