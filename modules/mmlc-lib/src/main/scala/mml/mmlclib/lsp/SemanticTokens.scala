@@ -43,13 +43,13 @@ object SemanticTokens:
 
   /** Collect all tokens from the module. */
   private def collectTokens(module: Module): List[RawToken] =
-    module.members.flatMap(collectFromMember(_, module.resolvables))
+    module.members.flatMap(collectFromMember(_, module))
 
   /** Collect tokens from a member. */
-  private def collectFromMember(member: Member, resolvables: ResolvablesIndex): List[RawToken] =
+  private def collectFromMember(member: Member, module: Module): List[RawToken] =
     member match
       case bnd: Bnd =>
-        collectFromBnd(bnd, resolvables)
+        collectFromBnd(bnd, module)
       case td: TypeDef =>
         collectFromTypeDef(td)
       case ta: TypeAlias =>
@@ -60,7 +60,7 @@ object SemanticTokens:
         Nil
 
   /** Collect tokens from a binding (let, fn, op). */
-  private def collectFromBnd(bnd: Bnd, resolvables: ResolvablesIndex): List[RawToken] =
+  private def collectFromBnd(bnd: Bnd, module: Module): List[RawToken] =
     if !bnd.source.isFromSource then return Nil
 
     val (keywordLen, nameTokenType) = bnd.meta match
@@ -70,7 +70,10 @@ object SemanticTokens:
             (2, TokenType.Function) // "fn"
           case BindingOrigin.Operator => (2, TokenType.Operator) // "op"
       case None =>
-        (3, TokenType.Variable) // "let"
+        val tokenType =
+          if hasCallableType(bnd.typeSpec.orElse(bnd.typeAsc), module) then TokenType.Function
+          else TokenType.Variable
+        (3, tokenType) // "let"
 
     val nameSpanOpt = bnd.nameNode.source.spanOpt
     val keywordToken = nameSpanOpt.flatMap { nameSpan =>
@@ -86,7 +89,7 @@ object SemanticTokens:
       )
     }
 
-    val bodyTokens = collectFromExpr(bnd.value, resolvables)
+    val bodyTokens = collectFromExpr(bnd.value, module)
 
     keywordToken.toList ++ nameToken.toList ++ bodyTokens
 
@@ -128,23 +131,23 @@ object SemanticTokens:
     keyword.toList ++ name.toList ++ fields
 
   /** Collect tokens from an expression. */
-  private def collectFromExpr(expr: Expr, resolvables: ResolvablesIndex): List[RawToken] =
-    expr.terms.flatMap(collectFromTerm(_, resolvables))
+  private def collectFromExpr(expr: Expr, module: Module): List[RawToken] =
+    expr.terms.flatMap(collectFromTerm(_, module))
 
   /** Collect tokens from a term. */
-  private def collectFromTerm(term: Term, resolvables: ResolvablesIndex): List[RawToken] =
+  private def collectFromTerm(term: Term, module: Module): List[RawToken] =
     term match
       case ref: Ref =>
-        collectFromRef(ref, resolvables)
+        collectFromRef(ref, module)
 
       case app: App =>
-        collectFromApp(app, resolvables)
+        collectFromApp(app, module)
 
       case lambda: Lambda =>
-        collectFromLambda(lambda, resolvables)
+        collectFromLambda(lambda, module)
 
       case cond: Cond =>
-        collectFromCond(cond, resolvables)
+        collectFromCond(cond, module)
 
       case lit: LiteralInt =>
         lit.spanOpt.flatMap(tokenAt(_, TokenType.Number)).toList
@@ -163,21 +166,22 @@ object SemanticTokens:
         Nil // () is just punctuation
 
       case group: TermGroup =>
-        collectFromExpr(group.inner, resolvables)
+        collectFromExpr(group.inner, module)
 
       case tuple: Tuple =>
-        tuple.elements.toList.flatMap(collectFromExpr(_, resolvables))
+        tuple.elements.toList.flatMap(collectFromExpr(_, module))
 
       case expr: Expr =>
-        collectFromExpr(expr, resolvables)
+        collectFromExpr(expr, module)
 
       case _: Placeholder | _: Hole | _: DataConstructor | _: DataDestructor | _: NativeImpl |
           _: TermError | _: InvalidExpression =>
         Nil
 
   /** Collect tokens from a reference. */
-  private def collectFromRef(ref: Ref, resolvables: ResolvablesIndex): List[RawToken] =
+  private def collectFromRef(ref: Ref, module: Module): List[RawToken] =
     if !ref.source.isFromSource then return Nil
+    val resolvables = module.resolvables
     val resolvedOpt =
       ref.resolvedId
         .flatMap(resolvables.lookup)
@@ -188,38 +192,30 @@ object SemanticTokens:
     resolvedOpt match
       case None => Nil
       case Some(resolved) =>
-        val tokenType = resolved match
-          case _:   FnParam => TokenType.Parameter
-          case bnd: Bnd =>
-            bnd.meta match
-              case Some(meta) =>
-                meta.origin match
-                  case BindingOrigin.Function | BindingOrigin.Constructor |
-                      BindingOrigin.Destructor =>
-                    TokenType.Function
-                  case BindingOrigin.Operator => TokenType.Operator
-              case None => TokenType.Variable
-          case _: TypeDef | _: TypeAlias | _: TypeStruct => TokenType.Type
-        val qualifierTokens = ref.qualifier.toList.flatMap(collectFromTerm(_, resolvables))
+        val tokenType       = refTokenType(ref, resolved, module)
+        val qualifierTokens = ref.qualifier.toList.flatMap(collectFromTerm(_, module))
         val nameToken       = refToken(ref, tokenType).toList
         qualifierTokens ++ nameToken
 
   /** Collect tokens from a function application. */
-  private def collectFromApp(app: App, resolvables: ResolvablesIndex): List[RawToken] =
+  private def collectFromApp(app: App, module: Module): List[RawToken] =
     val fnTokens = app.fn match
-      case ref:    Ref => collectFromRef(ref, resolvables)
-      case nested: App => collectFromApp(nested, resolvables)
-      case lambda: Lambda => collectFromLambda(lambda, resolvables)
-    fnTokens ++ collectFromExpr(app.arg, resolvables)
+      case ref:    Ref => collectFromRef(ref, module)
+      case nested: App => collectFromApp(nested, module)
+      case lambda: Lambda => collectFromLambda(lambda, module)
+    fnTokens ++ collectFromExpr(app.arg, module)
 
   /** Collect tokens from a lambda. */
-  private def collectFromLambda(lambda: Lambda, resolvables: ResolvablesIndex): List[RawToken] =
+  private def collectFromLambda(lambda: Lambda, module: Module): List[RawToken] =
     val paramTokens = lambda.params.flatMap { param =>
       if param.source.isFromSource then
+        val tokenType =
+          if hasCallableType(param.typeSpec.orElse(param.typeAsc), module) then TokenType.Function
+          else TokenType.Parameter
         val nameToken = param.nameNode.source.spanOpt.flatMap { span =>
           tokenAt(
             span,
-            TokenType.Parameter,
+            tokenType,
             modifiers = Set(TokenModifier.Declaration, TokenModifier.Readonly)
           )
         }
@@ -227,12 +223,15 @@ object SemanticTokens:
         nameToken.toList ++ typeTokens
       else Nil
     }
-    paramTokens ++ collectFromExpr(lambda.body, resolvables)
+    paramTokens ++ collectFromExpr(lambda.body, module)
 
   /** Collect tokens from a conditional. */
-  private def collectFromCond(cond: Cond, resolvables: ResolvablesIndex): List[RawToken] =
+  private def collectFromCond(cond: Cond, module: Module): List[RawToken] =
     // "if" at start of cond span
-    val ifKeyword = cond.spanOpt.flatMap(span => keywordAt(span.start, 2))
+    val ifKeyword =
+      cond.spanOpt.flatMap { span =>
+        if isElifLoweredCond(cond) then None else keywordAt(span.start, 2)
+      }
 
     // "then" is between cond.cond.end and cond.ifTrue.start
     val thenKeyword = for
@@ -248,9 +247,9 @@ object SemanticTokens:
       kw <- keywordBetween(ifTrueSpan.end, ifFalseSpan.start, 4)
     yield kw
 
-    val condTokens    = collectFromExpr(cond.cond, resolvables)
-    val ifTrueTokens  = collectFromExpr(cond.ifTrue, resolvables)
-    val ifFalseTokens = collectFromExpr(cond.ifFalse, resolvables)
+    val condTokens    = collectFromExpr(cond.cond, module)
+    val ifTrueTokens  = collectFromExpr(cond.ifTrue, module)
+    val ifFalseTokens = collectFromExpr(cond.ifFalse, module)
 
     ifKeyword.toList ++
       thenKeyword.toList ++
@@ -258,6 +257,14 @@ object SemanticTokens:
       condTokens ++
       ifTrueTokens ++
       ifFalseTokens
+
+  private def isElifLoweredCond(cond: Cond): Boolean =
+    (for
+      condSpan <- cond.spanOpt
+      condExprSpan <- cond.cond.spanOpt
+    yield condSpan.start.line == condExprSpan.start.line &&
+      condSpan.start.col == condExprSpan.start.col &&
+      condSpan.start.index == condExprSpan.start.index).getOrElse(false)
 
   /** Collect tokens from a type reference. */
   private def collectFromType(typ: Type): List[RawToken] =
@@ -283,6 +290,71 @@ object SemanticTokens:
       case _: NativePrimitive | _: NativePointer | _: NativeStruct | _: TypeUnit | _: TypeGroup |
           _: Union | _: Intersection | _: TypeRefinement | _: TypeStruct | _: InvalidType =>
         Nil
+
+  private def refTokenType(ref: Ref, resolved: Resolvable, module: Module): TokenType =
+    resolved match
+      case _: TypeDef | _: TypeAlias | _: TypeStruct =>
+        TokenType.Type
+      case bnd: Bnd if bnd.meta.exists(_.origin == BindingOrigin.Operator) =>
+        TokenType.Operator
+      case _ if refHasCallableType(ref, resolved, module) =>
+        TokenType.Function
+      case _: FnParam =>
+        TokenType.Parameter
+      case bnd: Bnd =>
+        bnd.meta match
+          case Some(meta) =>
+            meta.origin match
+              case BindingOrigin.Function | BindingOrigin.Constructor | BindingOrigin.Destructor =>
+                TokenType.Function
+              case BindingOrigin.Operator =>
+                TokenType.Operator
+          case None =>
+            TokenType.Variable
+      case _: Field =>
+        TokenType.Variable
+
+  private def refHasCallableType(ref: Ref, resolved: Resolvable, module: Module): Boolean =
+    val typeSpec =
+      ref.typeSpec.orElse {
+        resolved match
+          case param: FnParam =>
+            param.typeSpec.orElse(param.typeAsc)
+          case decl: Decl =>
+            decl.typeSpec.orElse(decl.typeAsc)
+          case field: Field =>
+            Some(field.typeSpec)
+          case _ =>
+            None
+      }
+    hasCallableType(typeSpec, module)
+
+  private def hasCallableType(typeSpec: Option[Type], module: Module): Boolean =
+    typeSpec.flatMap(resolveCallableType(_, module)).isDefined
+
+  private def resolveCallableType(typeSpec: Type, module: Module): Option[TypeFn] =
+    typeSpec match
+      case tf: TypeFn =>
+        Some(tf)
+      case TypeGroup(_, types) if types.size == 1 =>
+        resolveCallableType(types.head, module)
+      case TypeScheme(_, _, bodyType) =>
+        resolveCallableType(bodyType, module)
+      case TypeRef(_, name, resolvedId, _) =>
+        val resolved = resolvedId
+          .flatMap(module.resolvables.lookupType)
+          .orElse(module.members.collectFirst {
+            case ta: TypeAlias if ta.name == name => ta
+          })
+        resolved match
+          case Some(ta: TypeAlias) =>
+            ta.typeSpec
+              .flatMap(resolveCallableType(_, module))
+              .orElse(resolveCallableType(ta.typeRef, module))
+          case _ =>
+            None
+      case _ =>
+        None
 
   // --- Helper functions ---
 
