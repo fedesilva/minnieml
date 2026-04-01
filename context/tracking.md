@@ -16,14 +16,26 @@
 
 ## Active Tasks
 
-### LSP: inner fn and lambda symbol color (COMPLETE)
+### P1: fix bogus borrow-escape on scalar returns in non-escaping local fns
 
-- GitHub: https://github.com/fedesilva/minnieml/issues/257
+- GitHub: https://github.com/fedesilva/minnieml/issues/258
 
-* new inner function constructs are colored same as arguments.
-* consider applying function color to anything typed `TypeFn`.
-  This would signal partial application, lambdas, inner functions.
+  - `mml/samples/nqueens.mml` currently reports a bogus `Cannot return borrowed value 'count'`
+    inside `solve_loop`, even though the local helper returns `Int` and does not escape.
+  - parser-lowered inner `fn` and local let-bound lambdas should stay aligned here.
+  - [ ] tighten the diagnostic emitted when a borrowed captured heap binding is passed to a
+    consuming parameter (`solve board ...` currently reports `must be the last use`, which is
+    misleading).
 
+### Non-escaping local fn fusion
+
+- GitHub: https://github.com/fedesilva/minnieml/issues/259
+
+  - fuse non-escaping local inner functions / let-bound lambdas with their enclosing ownership
+    region instead of forcing full closure-style ownership boundaries for helpers that provably
+    never escape.
+  - target the remaining `nqueens` ownership shape directly instead of rewriting samples around
+    the current limitation.
 
 ### Update the design doc
 
@@ -31,79 +43,7 @@
 
 * there are new phases in the semantic stage
 * there are lambdas now, and captures and the memory management model has changed.
-      
-### Unify lambdas
-
-- GitHub: https://github.com/fedesilva/minnieml/issues/255
-
-  - top level fn, and let bound lambdas (or inner functions) should be treated identically.
-    - the code that handles them (sema and codegen diverges)
-  - environment captures are also different for borrow and move lambdas
-    - should be unified 
-      - alloca vs malloc is an optimization that can be derived.
-  - lambdas and captures are a single thing, so both unifications 
-    above should unify too.
-  
-  - discuss, make a plan
-
-
-
-### Call-site move 
-
-- GitHub: https://github.com/fedesilva/minnieml/issues/254
-
-  - (`~expr`) 
-  - users cannot yet force-move a value at a call site without a consuming parameter. 
-  - Will be implemented after borrow-by-default captures ship.
-
-### carry escape metadata all the way to the codegen
-
-- GitHub: https://github.com/fedesilva/minnieml/issues/249
-
-* Propagate ownership / escape metadata to codegen
-* Carry escape metadata in bindings
-* Carry escape metadata in lambdas
-* Metadata such as `NoEscapes`, `NoAlias`, and related facts should let codegen decide when
-  `alloca` is safe instead of `malloc` and emit better IR
-* Codegen should use that information for decisions such as:
-  - `alloca` vs `malloc`
-  - other optimizations driven by escape / alias facts
-
-
-### Protocols (ad-hoc polymorphism)
-
-- GitHub: https://github.com/fedesilva/minnieml/issues/165
-
-**Next major feature.** Gives us Clone, Drop, and a foundation for everything else.
-
-* Implement protocols (type classes / ad-hoc polymorphism)
-* Drop protocol → free functions (`__free_T`)
-* Clone protocol → clone functions (`__clone_T`)
-* Native types: user provides protocol instances
-* Structs: auto-derive both Drop and Clone
-* Reuse and extend existing MemoryFunctionGenerator machinery to generate protocol instances
-* Operators in protocols deferred for later (complex)
-* Touches: parser, ref resolver, type checker (NOT expression rewriter)
-* Start simple: single-type instances, nothing fancy
-* Unblocks 3.5.1 once Clone protocol exists (user writes `clone x` via protocol dispatch)
-* RefResolver should produce candidate sets, not resolved refs, for protocol-polymorphic
-  references
-  - overloading allowed by name + type signature; resolution deferred to the type checker
-  - one free overload max per operator / function name
-  - all overloads of an operator must share arity, precedence, and associativity so
-    `ExpressionRewriter` can build a determinate AST before types are known
-  - candidate entries for protocol members should carry symbolic `(ProtocolId, MemberName)` refs
-    that the type checker patches to concrete implementations later
-
-### QA Test infra
-
-- GitHub: https://github.com/fedesilva/minnieml/issues/253
-
-* add comments to each test, describing in plain english what they do, what they expect, etc
-* move all the newer extractors to the test extractors module (or new subppackage)
-  - prefix them with TX
-  - are we still using TXApp and where not why? and if we can use them.
-
+            
 ### QA Parser
 
 - GitHub: https://github.com/fedesilva/minnieml/issues/252
