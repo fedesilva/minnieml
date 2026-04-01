@@ -133,6 +133,10 @@ object SemanticErrorPrinter:
         val location = locationOf(ref)
         s"${Console.RED}Consuming parameter '${param.name}' must be the last use of '${ref.name}' at $location [phase: $phase]${Console.RESET}"
 
+      case SemanticError.BorrowedValuePassedToConsumingParam(param, ref, phase) =>
+        val location = locationOf(ref)
+        s"${Console.RED}Cannot pass borrowed value '${ref.name}' to consuming parameter '${param.name}' at $location [phase: $phase]${Console.RESET}"
+
       case SemanticError.PartialApplicationWithConsuming(fn, param, phase) =>
         val location = locationOf(fn)
         s"${Console.RED}Cannot partially apply function with consuming parameter '${param.name}' at $location [phase: $phase]${Console.RESET}"

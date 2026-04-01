@@ -139,6 +139,12 @@ object SourceCodeExtractor:
           .map(s => s"\n$s")
           .getOrElse("")
 
+      case SemanticError.BorrowedValuePassedToConsumingParam(_, ref, _) =>
+        spanOf(ref)
+          .flatMap(extractSnippet(sourceInfo, _))
+          .map(s => s"\n$s")
+          .getOrElse("")
+
       case SemanticError.CapturedBorrowedHeapBinding(ref, _) =>
         spanOf(ref)
           .flatMap(extractSnippet(sourceInfo, _))

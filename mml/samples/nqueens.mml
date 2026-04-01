@@ -36,15 +36,11 @@ fn is_safe(board: IntArray, row: Int, col: Int): Bool =
 ;
 
 
-fn solve(~board: IntArray, row: Int, n: Int, count: Int): Int =
+fn solve(board: IntArray, row: Int, n: Int, count: Int): Int =
 
-    // Try to place queens starting from given row
-  fn ~solve_loop(col: Int, count: Int): Int =
-    if col >= n then
-      // BUG: we get the following error:
-      // `Cannot return borrowed value 'count' from a function that returns a heap type`
-      // this function does not return a heap type,
-      // and this function does not escape, so we should not care.
+  // Try to place queens starting from given row
+  fn solve_loop(col: Int, count: Int): Int =
+    if col >= n then      
       count;
     else
       let safe = is_safe board row col;
@@ -53,15 +49,7 @@ fn solve(~board: IntArray, row: Int, n: Int, count: Int): Int =
         let new_count =
           if row == (n - 1) then
             count + 1;
-          else
-            // Thiking out loud:
-            // `Consuming parameter 'board' must be the last use of 'board'`
-            // solve is local to the scope board belongs to.
-            // solve does not escape
-            // maybe purely local functions should merge ownership
-            // with their enclosing scope.
-            // and then the codegen just inlines them 
-            // and/or uses phi nodes and jumps 
+          else            
             count + (solve board (row + 1) n 0);
           ;
         solve_loop (col + 1) new_count;

@@ -534,6 +534,36 @@ class OwnershipAnalyzerTests extends BaseEffFunSuite:
     }
   }
 
+  test("inner fn returning scalar param does not trigger borrow escape") {
+    val code =
+      """
+        fn main(): Int =
+          fn id(count: Int): Int = count;;
+          id 1;
+        ;
+      """
+
+    semState(code).map { result =>
+      val errors = result.errors.collect { case e: SemanticError.BorrowEscapeViaReturn => e }
+      assert(errors.isEmpty, s"Expected no BorrowEscapeViaReturn errors but got: $errors")
+    }
+  }
+
+  test("let-bound lambda returning scalar param does not trigger borrow escape") {
+    val code =
+      """
+        fn main(): Int =
+          let id = { count: Int -> count; };
+          id 1;
+        ;
+      """
+
+    semState(code).map { result =>
+      val errors = result.errors.collect { case e: SemanticError.BorrowEscapeViaReturn => e }
+      assert(errors.isEmpty, s"Expected no BorrowEscapeViaReturn errors but got: $errors")
+    }
+  }
+
   test("borrow-capturing lambda returned directly is rejected") {
     val code =
       """
@@ -680,9 +710,10 @@ class OwnershipAnalyzerTests extends BaseEffFunSuite:
       """
 
     semState(code).map { result =>
-      val consumeErrors = result.errors.collect { case e: SemanticError.ConsumingParamNotLastUse =>
-        e
-      }
+      val consumeErrors =
+        result.errors.collect { case e: SemanticError.BorrowedValuePassedToConsumingParam =>
+          e
+        }
       assert(
         consumeErrors.nonEmpty,
         s"Expected consuming-param ownership error for borrowed constructor args, got: ${result.errors}"
@@ -707,9 +738,10 @@ class OwnershipAnalyzerTests extends BaseEffFunSuite:
       """
 
     semState(code).map { result =>
-      val consumeErrors = result.errors.collect { case e: SemanticError.ConsumingParamNotLastUse =>
-        e
-      }
+      val consumeErrors =
+        result.errors.collect { case e: SemanticError.BorrowedValuePassedToConsumingParam =>
+          e
+        }
       assert(
         consumeErrors.exists(_.ref.name == "u"),
         s"Expected borrowed user-struct arg 'u' to be rejected, got: ${result.errors}"
@@ -1020,6 +1052,40 @@ class OwnershipAnalyzerTests extends BaseEffFunSuite:
       assert(
         containsCloneString(p2Body),
         "expected global 'name' inside TermGroup to be cloned when passed to Person constructor"
+      )
+    }
+  }
+
+  test("borrowed capture passed to consuming param reports borrowed-value error") {
+    val code =
+      """
+        fn consume_len(~s: String): Int = 1;;
+
+        fn main(): Int =
+          let s = "hello" ++ " world";
+          fn call(): Int = consume_len s;;
+          call ();
+        ;
+      """
+
+    semState(code).map { result =>
+      val borrowedErrors =
+        result.errors.collect { case e: SemanticError.BorrowedValuePassedToConsumingParam =>
+          e
+        }
+      val lastUseErrors =
+        result.errors.collect { case e: SemanticError.ConsumingParamNotLastUse => e }
+
+      assertEquals(
+        borrowedErrors.length,
+        1,
+        s"Expected one BorrowedValuePassedToConsumingParam error but got: $borrowedErrors"
+      )
+      assertEquals(borrowedErrors.head.ref.name, "s")
+      assertEquals(borrowedErrors.head.param.name, "s")
+      assert(
+        lastUseErrors.isEmpty,
+        s"Expected borrowed-value error instead of ConsumingParamNotLastUse, got: $lastUseErrors"
       )
     }
   }
