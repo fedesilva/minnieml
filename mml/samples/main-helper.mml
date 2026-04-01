@@ -1,15 +1,23 @@
 fn main() =
-  
-  
 
+  // note coloring:
+  // c1 is a function
   fn c1(a: Int, b: Int): Int = 
     a + b * a / b;
   ;
 
-  let c2 = c1 2;
+  let a = 2;
 
+  // note coloring: 
+  // c2 *is* a function because 
+  // we are partially applying c1
+  let c2 = c1 a;
+
+  // helper and c2 look the same, color-wise.
   fn helper(x: Int): Int =
     x + (c2 1);
   ;
- helper 41;
+
+  // function colored
+  helper 41;
 ;
