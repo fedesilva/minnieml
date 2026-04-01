@@ -16,8 +16,9 @@
 
 ## Active Tasks
 
-### LSP: inner fn and lambda symbol color
+### LSP: inner fn and lambda symbol color (COMPLETE)
 
+- GitHub: https://github.com/fedesilva/minnieml/issues/257
 
 * new inner function constructs are colored same as arguments.
 * consider applying function color to anything typed `TypeFn`.
@@ -110,6 +111,15 @@
 * Add commentary with examples to the parsers
 
 ## Change Log
+
+- 2026-03-31: #257 LSP callable semantic token coloring
+  - LSP: semantic token classification now colors source-level callable values as `function`
+    based on effective `TypeFn` type, covering inner functions, callable let-bindings, and
+    higher-order callable params.
+  - LSP: fixed `elif` token emission so nested lowered `Cond` nodes no longer paint the first two
+    characters of the following term as a keyword token.
+  - Tests: added focused `SemanticTokensTests` coverage for inner-function refs, callable locals,
+    callable params, and the `elif` coloring regression.
 
 - 2026-03-29: #188 close loopified borrow-closure validator follow-ups
   - Codegen: loopified borrow-closure validation now clears rebound active names, respects lambda binder shadowing, and permits immediately-invoked borrow lambdas while keeping the borrow-closure forwarding/reuse checks.
