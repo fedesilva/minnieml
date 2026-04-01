@@ -5,8 +5,16 @@ import fastparse.{ParsingRun, Whitespace}
 
 import scala.annotation.tailrec
 
-/** Whitespace syntax that supports // line-comments— but leaves the `/*` and `*/` tokens untouched
-  * for the doc-comment parser.
+/** Whitespace policy for the parser.
+  *
+  * The parser treats spaces, tabs, and newlines as regular whitespace and also skips `//` line
+  * comments:
+  * {{{
+  * let x = 1; // trailing comment
+  * }}}
+  *
+  * It deliberately does not consume `/*` or `*/`, because doc comments are parsed explicitly by
+  * [[docCommentP]].
   */
 object MmlWhitespace {
   implicit object whitespace extends Whitespace {

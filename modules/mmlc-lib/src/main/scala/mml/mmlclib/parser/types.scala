@@ -7,9 +7,25 @@ import mml.mmlclib.ast.*
 
 import MmlWhitespace.*
 
+/** Parses an optional type ascription that follows `:`.
+  *
+  * Examples:
+  * {{{
+  * let id: Int = 1;
+  * fn inc(x: Int): Int = x + 1; ;
+  * }}}
+  */
 private[parser] def typeAscP(info: SourceInfo)(using P[Any]): P[Option[Type]] =
   P(":" ~ typeSpecP(info)).?
 
+/** Parses a full type expression.
+  *
+  * Function arrows are right-associated by construction, so:
+  * {{{
+  * Int -> String -> Boolean
+  * }}}
+  * reads as a callable taking `Int` and `String` and returning `Boolean`.
+  */
 private[parser] def typeSpecP(info: SourceInfo)(using P[Any]): P[Type] =
   P(spP(info) ~ typeAtomP(info) ~ (arrowKw ~ typeAtomP(info)).rep ~ spNoWsP(info) ~ spP(info))
     .map { case (start, head, tail, end, _) =>
@@ -23,21 +39,45 @@ private[parser] def typeSpecP(info: SourceInfo)(using P[Any]): P[Type] =
             head
     }
 
+/** Parses one atomic type fragment: either a grouped type or a nominal type reference. */
 private[parser] def typeAtomP(info: SourceInfo)(using P[Any]): P[Type] =
   P(typeGroupP(info) | typeRefP(info))
 
+/** Parses a parenthesized type used for grouping inside larger type expressions.
+  *
+  * Example:
+  * {{{
+  * (Int -> String) -> Boolean
+  * }}}
+  */
 private[parser] def typeGroupP(info: SourceInfo)(using P[Any]): P[Type] =
   P(spP(info) ~ "(" ~ typeSpecP(info) ~ ")" ~ spNoWsP(info) ~ spP(info))
     .map { case (start, innerType, end, _) =>
       TypeGroup(span(start, end), List(innerType))
     }
 
+/** Parses a nominal type reference.
+  *
+  * Examples:
+  * {{{
+  * Int
+  * Person
+  * RawPtr
+  * }}}
+  */
 private[parser] def typeRefP(info: SourceInfo)(using P[Any]): P[Type] =
   P(spP(info) ~ typeIdP ~ spNoWsP(info) ~ spP(info))
     .map { case (start, id, end, _) =>
       TypeRef(span(start, end), id)
     }
 
+/** Parses a native type definition.
+  *
+  * Example:
+  * {{{
+  * type RawPtr = @native[t=ptr];
+  * }}}
+  */
 private[parser] def nativeTypeDefP(info: SourceInfo)(using P[Any]): P[TypeDef] =
   P(
     spP(info)
@@ -53,6 +93,16 @@ private[parser] def nativeTypeDefP(info: SourceInfo)(using P[Any]): P[TypeDef] =
     )
   }
 
+/** Parses a struct declaration.
+  *
+  * Example:
+  * {{{
+  * struct Person {
+  *   name: String,
+  *   age: Int
+  * };
+  * }}}
+  */
 private[parser] def structDefP(info: SourceInfo)(using P[Any]): P[Member] =
   P(
     spP(info)
@@ -79,10 +129,18 @@ private[parser] def structDefP(info: SourceInfo)(using P[Any]): P[Member] =
       )
   }
 
+/** Parses the comma-separated field list inside a `struct { ... }` body. */
 private[parser] def recordFieldsP(info: SourceInfo)(using P[Any]): P[Vector[Field]] =
   P(fieldP(info).rep(sep = ","))
     .map(_.toVector)
 
+/** Parses one named struct field.
+  *
+  * Example:
+  * {{{
+  * name: String
+  * }}}
+  */
 private[parser] def fieldP(info: SourceInfo)(using P[Any]): P[Field] =
   P(
     spP(info) ~
@@ -92,6 +150,13 @@ private[parser] def fieldP(info: SourceInfo)(using P[Any]): P[Field] =
     Field(span(start, end), Name(span(start, nameEnd), id), tpe)
   }
 
+/** Parses a nominal type alias.
+  *
+  * Example:
+  * {{{
+  * type UserId = Int;
+  * }}}
+  */
 private[parser] def typeAliasP(info: SourceInfo)(using P[Any]): P[TypeAlias] =
   P(
     spP(info)
@@ -108,6 +173,15 @@ private[parser] def typeAliasP(info: SourceInfo)(using P[Any]): P[TypeAlias] =
     )
   }
 
+/** Parses the body of a native type expression.
+  *
+  * Examples:
+  * {{{
+  * @native[t=i64]
+  * @native[t=*i8,mem=heap]
+  * @native[mem=heap] { ptr: RawPtr, len: Int }
+  * }}}
+  */
 private[parser] def nativeTypeP(info: SourceInfo)(using P[Any]): P[NativeType] =
   P(
     spP(info) ~ nativeKw ~ (nativeBracketTypeP(info) | nativeStructP(info)) ~ spNoWsP(info) ~
@@ -120,6 +194,7 @@ private[parser] def nativeTypeP(info: SourceInfo)(using P[Any]): P[NativeType] =
       case s: NativeStruct => s.copy(source = source)
   }
 
+/** Parses bracket-style native types such as `@native[t=i64]` or `@native[t=*i8]`. */
 private[parser] def nativeBracketTypeP(info: SourceInfo)(using P[Any]): P[NativeType] =
   enum Attr:
     case TAttr(t: NativeType)
@@ -147,18 +222,41 @@ private[parser] def nativeBracketTypeP(info: SourceInfo)(using P[Any]): P[Native
           Pass(result)
     }
 
+/** Parses a native primitive LLVM type.
+  *
+  * Examples:
+  * {{{
+  * i64
+  * ptr
+  * double
+  * }}}
+  */
 private[parser] def nativePrimitiveTypeP(info: SourceInfo)(using P[Any]): P[NativePrimitive] =
   P(spP(info) ~ llvmNativePrimitiveTypeP ~ spNoWsP(info) ~ spP(info))
     .map { case (start, llvmType, end, _) =>
       NativePrimitive(span(start, end), llvmType)
     }
 
+/** Parses a pointer-style native type.
+  *
+  * Example:
+  * {{{
+  * *i8
+  * }}}
+  */
 private[parser] def nativePointerTypeP(info: SourceInfo)(using P[Any]): P[NativePointer] =
   P(spP(info) ~ "*" ~ llvmPointeeTypeP ~ spNoWsP(info) ~ spP(info))
     .map { case (start, llvmType, end, _) =>
       NativePointer(span(start, end), llvmType)
     }
 
+/** Parses a native struct literal.
+  *
+  * Example:
+  * {{{
+  * @native[mem=heap] { ptr: RawPtr, len: Int }
+  * }}}
+  */
 private[parser] def nativeStructP(info: SourceInfo)(using P[Any]): P[NativeStruct] =
   enum StructAttr:
     case MemAttr(eff: MemEffect)
@@ -179,19 +277,32 @@ private[parser] def nativeStructP(info: SourceInfo)(using P[Any]): P[NativeStruc
       NativeStruct(span(start, end), fields, memOpt, freeOpt)
     }
 
+/** Parses the comma-separated field list inside a native struct literal. */
 private[parser] def nativeFieldListP(info: SourceInfo)(using P[Any]): P[List[(String, Type)]] =
   P(nativeFieldP(info).rep(sep = ","))
     .map(_.toList)
 
+/** Parses one native struct field such as `len: Int`. */
 private[parser] def nativeFieldP(info: SourceInfo)(using P[Any]): P[(String, Type)] =
   P(bindingIdP ~ ":" ~ typeSpecP(info))
 
+/** Parses an identifier used only inside native attributes such as `free=release_buf`. */
 private[parser] def nativeIdentP(using P[Any]): P[String] =
   P(CharsWhileIn("a-zA-Z_", 1) ~ CharsWhileIn("a-zA-Z0-9_", 0)).!
 
+/** Parses any supported LLVM primitive token accepted by `@native[t=...]`. */
 private[parser] def llvmNativePrimitiveTypeP(using P[Any]): P[String] =
   P(llvmPointeeTypeP | "ptr".!)
 
+/** Parses the pointee side of native primitive and pointer types.
+  *
+  * Examples:
+  * {{{
+  * i8
+  * i64
+  * float
+  * }}}
+  */
 private[parser] def llvmPointeeTypeP(using P[Any]): P[String] =
   P(
     ("i" ~ CharIn("0-9").rep(1)).!.flatMap { t =>
@@ -207,6 +318,15 @@ private[parser] def llvmPointeeTypeP(using P[Any]): P[String] =
       "fp128".!
   )
 
+/** Parses the optional declaration visibility modifier.
+  *
+  * Examples:
+  * {{{
+  * pub
+  * prot
+  * priv
+  * }}}
+  */
 private[parser] def visibilityP[$: P]: P[Visibility] =
   P("pub").map(_ => Visibility.Public) |
     P("prot").map(_ => Visibility.Protected) |
