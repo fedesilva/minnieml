@@ -1,0 +1,15 @@
+fn main() =
+  
+  
+
+  fn c1(a: Int, b: Int): Int = 
+    a + b * a / b;
+  ;
+
+  let c2 = c1 2;
+
+  fn helper(x: Int): Int =
+    x + (c2 1);
+  ;
+ helper 41;
+;
