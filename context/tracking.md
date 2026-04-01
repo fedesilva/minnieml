@@ -27,12 +27,6 @@
     consuming parameter (`solve board ...` currently reports `must be the last use`, which is
     misleading).
 
-### Update the design doc (COMPLETE)
-
-- GitHub: https://github.com/fedesilva/minnieml/issues/251
-
-* there are new phases in the semantic stage
-* there are lambdas now, and captures and the memory management model has changed.
             
 ### QA Parser
 
