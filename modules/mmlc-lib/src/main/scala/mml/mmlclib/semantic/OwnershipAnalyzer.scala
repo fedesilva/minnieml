@@ -669,6 +669,12 @@ object OwnershipAnalyzer:
         case _ => List.empty
     expr.terms.lastOption.map(termReturned).getOrElse(List.empty)
 
+  private def lambdaReturnType(typeAsc: Option[Type], typeSpec: Option[Type]): Option[Type] =
+    typeAsc.orElse:
+      typeSpec.flatMap:
+        case TypeFn(_, _, ret) => Some(ret)
+        case other => Some(other)
+
   /** Borrow-capturing lambda literals in return position. These are unsafe because borrow closures
     * use stack-allocated environments.
     */
@@ -801,7 +807,13 @@ object OwnershipAnalyzer:
                 else
                   (
                     scope,
-                    List(SemanticError.ConsumingParamNotLastUse(consumingParam, ref, PhaseName))
+                    List(
+                      SemanticError.BorrowedValuePassedToConsumingParam(
+                        consumingParam,
+                        ref,
+                        PhaseName
+                      )
+                    )
                   )
               case Some(OwnershipState.Global) =>
                 // Accepted; wrapper ensures clone
@@ -1364,7 +1376,7 @@ object OwnershipAnalyzer:
 
     val bodyResult = analyzeExpr(body, captureScope)
 
-    val returnType   = typeAsc.orElse(typeSpec)
+    val returnType   = lambdaReturnType(typeAsc, typeSpec)
     val promotedBody = promoteStaticBranchesInReturn(bodyResult.expr, returnType, captureScope)
 
     // Insert frees for consuming params that are still Owned (not returned, not moved)

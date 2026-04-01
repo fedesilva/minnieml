@@ -66,6 +66,7 @@ object ErrorPrinter:
     case SemanticError.InvalidEntryPoint(_, source) => startPosOf(source)
     case SemanticError.UseAfterMove(ref, _, _) => startPosOf(ref)
     case SemanticError.ConsumingParamNotLastUse(_, ref, _) => startPosOf(ref)
+    case SemanticError.BorrowedValuePassedToConsumingParam(_, ref, _) => startPosOf(ref)
     case SemanticError.PartialApplicationWithConsuming(fn, _, _) => startPosOf(fn)
     case SemanticError.ConditionalOwnershipMismatch(cond, _) => startPosOf(cond)
     case SemanticError.BorrowEscapeViaReturn(ref, _) => startPosOf(ref)
@@ -208,6 +209,9 @@ object ErrorPrinter:
 
       case SemanticError.ConsumingParamNotLastUse(param, ref, phase) =>
         s"${Console.RED}Consuming parameter '${param.name}' must be the last use of '${ref.name}' at ${locationOf(ref)}${Console.RESET}\n${Console.YELLOW}Phase: $phase${Console.RESET}"
+
+      case SemanticError.BorrowedValuePassedToConsumingParam(param, ref, phase) =>
+        s"${Console.RED}Cannot pass borrowed value '${ref.name}' to consuming parameter '${param.name}' at ${locationOf(ref)}${Console.RESET}\n${Console.YELLOW}Phase: $phase${Console.RESET}"
 
       case SemanticError.PartialApplicationWithConsuming(fn, param, phase) =>
         val location = locationOf(fn)
