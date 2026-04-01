@@ -28,12 +28,6 @@
     misleading).
 
             
-### QA Parser (COMPLETE)
-
-- GitHub: https://github.com/fedesilva/minnieml/issues/252
-
-* Add commentary with examples to the parsers
-
 ## Change Log
 
 - 2026-04-01: #252 QA Parser
