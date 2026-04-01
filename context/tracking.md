@@ -16,18 +16,6 @@
 
 ## Active Tasks
 
-### P1: fix bogus borrow-escape on scalar returns in non-escaping local fns (COMPLETE)
-
-- GitHub: https://github.com/fedesilva/minnieml/issues/258
-
-  - `mml/samples/nqueens.mml` currently reports a bogus `Cannot return borrowed value 'count'`
-    inside `solve_loop`, even though the local helper returns `Int` and does not escape.
-  - parser-lowered inner `fn` and local let-bound lambdas should stay aligned here.
-  - [x] tighten the diagnostic emitted when a borrowed captured heap binding is passed to a
-    consuming parameter (`solve board ...` currently reports `must be the last use`, which is
-    misleading).
-
-            
 ## Change Log
 
 - 2026-04-01: #252 QA Parser
