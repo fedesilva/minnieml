@@ -88,6 +88,7 @@ Current behavior is clipped, not rejected:
       else
         3;
       ;
+
     let wall_length =
       if argc > 2 then
         str_to_int (ar_str_get args 2);
