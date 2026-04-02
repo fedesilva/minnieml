@@ -7,7 +7,6 @@ import mml.mmlclib.test.BaseEffFunSuite
 class StructTests extends BaseEffFunSuite:
 
   test("parse data type"):
-
     val code =
       """
         struct Person {

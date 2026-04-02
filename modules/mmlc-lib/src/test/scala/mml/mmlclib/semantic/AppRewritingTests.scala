@@ -3,7 +3,7 @@ package mml.mmlclib.semantic
 import mml.mmlclib.ast.*
 import mml.mmlclib.semantic.lookupNames
 import mml.mmlclib.test.BaseEffFunSuite
-import mml.mmlclib.test.TestExtractors.*
+import mml.mmlclib.test.extractors.*
 import mml.mmlclib.util.*
 import mml.mmlclib.util.prettyprint.ast.prettyPrintAst
 import munit.*

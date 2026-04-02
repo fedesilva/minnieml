@@ -2,7 +2,7 @@ package mml.mmlclib.semantic
 
 import mml.mmlclib.ast.*
 import mml.mmlclib.test.BaseEffFunSuite
-import mml.mmlclib.test.TestExtractors.TXApp
+import mml.mmlclib.test.extractors.*
 import mml.mmlclib.util.prettyprint.ast.prettyPrintAst
 
 class AlphaOpTests extends BaseEffFunSuite:
