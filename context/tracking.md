@@ -16,25 +16,6 @@
 
 ## Active Tasks
 
-### QA Test infra (COMPLETE)
-
-- GitHub: https://github.com/fedesilva/minnieml/issues/253
-
-  - Move newer extractors into the shared test extractors module or a new test subpackage.
-  - Prefix the shared extractors with `TX`.
-  - Review where `TXApp` is still used and where it should be used.
-  - [x] Create a shared test extractor subpackage under `mml.mmlclib.test`, move shared
-    AST-shape extractors there, and ensure all shared extractors use the `TX*` prefix.
-  - [x] Migrate the high-churn semantic assertion suites to the shared `TX*` extractors and
-    normalize their AST-shape assertions onto the shared helpers.
-  - [x] Migrate the ownership/lambda-oriented suites to the shared `TX*` extractors or shared
-    traversal helpers and remove repeated local AST-shape logic where it is general enough to
-    share.
-  - [x] Document the shared `TX*` extractors with syntax-oriented Scaladoc and targeted inline
-    comments where the test-only traversal or lowering shape is non-obvious.
-  - [x] Remove the transitional `TestExtractors` shim, finish the `TXApp` usage review, and run
-    full verification.
-
 ## Change Log
 
 - 2026-04-01: #253 QA test infra cleanup
