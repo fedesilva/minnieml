@@ -1,0 +1,10 @@
+pub fn main() =
+  let text =
+"
+    |hello
+keep
+  |world
+|done";
+
+  println (str_strip_margin text);
+;

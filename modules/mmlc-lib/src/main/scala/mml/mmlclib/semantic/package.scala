@@ -764,6 +764,12 @@ def injectCommonFunctions(module: Module): Module =
       boolType
     ),
     mkFn(
+      "str_strip_margin",
+      List(FnParam(SourceOrigin.Synth, Name.synth("a"), typeAsc = Some(stringType))),
+      stringType,
+      Some(MemEffect.Alloc)
+    ),
+    mkFn(
       "int_to_str",
       List(FnParam(SourceOrigin.Synth, Name.synth("a"), typeAsc = Some(intType))),
       stringType,
