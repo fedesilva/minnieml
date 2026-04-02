@@ -16,6 +16,21 @@
 
 ## Active Tasks
 
+### define new tasks:
+
+* review the already existing ticket for check command
+  - add a phase that runs llvm-as only if and only if 
+    we detect native declarations with templates.
+  - the check command runs ingest, semantic and llvm validation if required.
+  - this new phase only runs during check, because otherwise we just run the normal
+    toolchain.
+
+* new: save llvm info file, local triple and compile runtime to
+  ~/.mml/ (the files) and ~/.mml/cache/runtime (the runtime)
+* when compiling with asan, do not compile the runtime with asan.
+* add commands to manage the cache (init, clean)
+
+
 ## Change Log
 
 - 2026-04-01: #253 QA test infra cleanup
