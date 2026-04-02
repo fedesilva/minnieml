@@ -33,6 +33,13 @@
 
 ## Change Log
 
+- 2026-04-02: Runtime strip-margin helper
+  - Runtime/stdlib: added `str_strip_margin` to the C runtime and injected it as a standard
+    library string helper that returns a freshly allocated `String`.
+  - Samples: updated `mml/samples/astar3.mml` so `main` parses command-line wall arguments and the
+    help text is rendered through `str_strip_margin`; added
+    `mml/samples/str_strip_margin.mml` as a focused sample for the helper.
+
 - 2026-04-01: #253 QA test infra cleanup
   - Tests: moved shared AST-shape helpers into `mml.mmlclib.test.extractors`, documented the
     `TX*` helpers with syntax-oriented Scaladoc/examples, and added small inline comments where the

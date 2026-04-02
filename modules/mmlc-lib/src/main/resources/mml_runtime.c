@@ -483,6 +483,53 @@ _Bool str_eq(String a, String b)
     return memcmp(a.data, b.data, a.length) == 0;
 }
 
+String str_strip_margin(String s)
+{
+    if (!s.data || s.length == 0)
+        return (String){0, NULL};
+
+    char *new_data = (char *)malloc(s.length + 1);
+    if (!new_data)
+        mml_sys_oom_abort();
+
+    size_t read_pos = 0;
+    size_t write_pos = 0;
+
+    while (read_pos < s.length)
+    {
+        size_t line_start = read_pos;
+        size_t line_end = read_pos;
+        size_t pipe_pos = s.length;
+
+        while (line_end < s.length && s.data[line_end] != '\n')
+        {
+            if (pipe_pos == s.length && s.data[line_end] == '|')
+                pipe_pos = line_end;
+            line_end++;
+        }
+
+        size_t copy_start = (pipe_pos < line_end) ? pipe_pos + 1 : line_start;
+        size_t copy_len = line_end - copy_start;
+        if (copy_len > 0)
+        {
+            memcpy(new_data + write_pos, s.data + copy_start, copy_len);
+            write_pos += copy_len;
+        }
+
+        if (line_end < s.length)
+        {
+            new_data[write_pos] = s.data[line_end];
+            write_pos++;
+            line_end++;
+        }
+
+        read_pos = line_end;
+    }
+
+    new_data[write_pos] = '\0';
+    return (String){write_pos, new_data};
+}
+
 // --- Integer to String Conversion ---
 String int_to_str(int64_t value)
 {
