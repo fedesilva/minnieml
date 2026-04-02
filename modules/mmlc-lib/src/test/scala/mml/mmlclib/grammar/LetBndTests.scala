@@ -8,7 +8,6 @@ import munit.*
 class LetBndTests extends BaseEffFunSuite:
 
   test("simple let") {
-
     parseNotFailed("""
         let a = 1;
         let b = 2;
@@ -29,7 +28,6 @@ class LetBndTests extends BaseEffFunSuite:
   }
 
   test("let with app") {
-
     parseNotFailed(
       """
         let c = a sum b;
@@ -49,7 +47,6 @@ class LetBndTests extends BaseEffFunSuite:
   }
 
   test("let with app with symbolic ref") {
-
     parseNotFailed(
       """
           let c = a + b;
@@ -69,7 +66,6 @@ class LetBndTests extends BaseEffFunSuite:
   }
 
   test("let with app with symbolic ref and NO SPACES") {
-
     parseNotFailed(
       """
             let c = a+b;
@@ -89,7 +85,6 @@ class LetBndTests extends BaseEffFunSuite:
   }
 
   test("let with symbolic ref multichar and no spaces") {
-
     parseNotFailed(
       """
               let c = a++b;
@@ -109,7 +104,6 @@ class LetBndTests extends BaseEffFunSuite:
   }
 
   test("let with app with symbolic ref prefix") {
-
     parseNotFailed(
       """
           let c = +b;
@@ -129,7 +123,6 @@ class LetBndTests extends BaseEffFunSuite:
   }
 
   test("let with app with symbolic ref postfix") {
-
     parseNotFailed(
       """
           let c = b!;

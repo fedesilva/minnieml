@@ -2,54 +2,24 @@ package mml.mmlclib.semantic
 
 import mml.mmlclib.ast.*
 import mml.mmlclib.test.BaseEffFunSuite
-import mml.mmlclib.test.TestExtractors.*
+import mml.mmlclib.test.extractors.*
 
 class OwnershipAnalyzerTests extends BaseEffFunSuite:
 
-  private def existsTerm(term: Term)(p: PartialFunction[Term, Boolean]): Boolean =
-    p.applyOrElse(term, (_: Term) => false) || (term match
-      case App(_, fn, arg, _, _) => existsTerm(fn)(p) || existsExpr(arg)(p)
-      case Expr(_, terms, _, _) => terms.exists(existsTerm(_)(p))
-      case Lambda(_, _, body, _, _, _, _, _) => existsExpr(body)(p)
-      case TermGroup(_, inner, _) => existsExpr(inner)(p)
-      case Cond(_, cond, ifTrue, ifFalse, _, _) =>
-        existsExpr(cond)(p) || existsExpr(ifTrue)(p) || existsExpr(ifFalse)(p)
-      case Tuple(_, elements, _, _) => elements.exists(existsExpr(_)(p))
-      case _ => false)
-
-  private def existsExpr(expr: Expr)(p: PartialFunction[Term, Boolean]): Boolean =
-    expr.terms.exists(existsTerm(_)(p))
-
-  private def countTerm(term: Term)(p: PartialFunction[Term, Int]): Int =
-    val matched = p.applyOrElse(term, (_: Term) => 0)
-    val childCount = term match
-      case App(_, fn, arg, _, _) => countTerm(fn)(p) + countExpr(arg)(p)
-      case Expr(_, terms, _, _) => terms.map(countTerm(_)(p)).sum
-      case Lambda(_, _, body, _, _, _, _, _) => countExpr(body)(p)
-      case TermGroup(_, inner, _) => countExpr(inner)(p)
-      case Cond(_, cond, ifTrue, ifFalse, _, _) =>
-        countExpr(cond)(p) + countExpr(ifTrue)(p) + countExpr(ifFalse)(p)
-      case Tuple(_, elements, _, _) => elements.toList.map(countTerm(_)(p)).sum
-      case _ => 0
-    matched + childCount
-
-  private def countExpr(expr: Expr)(p: PartialFunction[Term, Int]): Int =
-    expr.terms.map(countTerm(_)(p)).sum
-
   private def containsFreeOf(freeName: String)(term: Term): Boolean =
-    existsTerm(term) {
+    txExistsTerm(term) {
       case TXCall1(TXRefResolved(id), _) if id.endsWith("::" + freeName) => true
       case TXCall1(TXRefNamed(name), _) if name == freeName => true
     }
 
   private def containsFreeString(term: Term): Boolean =
-    existsTerm(term) {
+    txExistsTerm(term) {
       case TXCall1(TXRefResolved(id), _) if id.endsWith("::__free_String") => true
       case TXCall1(TXRefNamed(name), _) if name == "__free_String" => true
     }
 
   private def countFreesOf(name: String, term: Term): Int =
-    countTerm(term) {
+    txCountTerm(term) {
       case TXCall1(fn, TXRefNamed(argName)) if argName == name =>
         fn match
           case TXRefResolved(id) if id.endsWith("::__free_String") => 1
@@ -58,13 +28,13 @@ class OwnershipAnalyzerTests extends BaseEffFunSuite:
     }
 
   private def containsCloneString(term: Term): Boolean =
-    existsTerm(term) {
+    txExistsTerm(term) {
       case TXRefResolved(id) if id.endsWith("::__clone_String") => true
       case TXRefNamed(name) if name == "__clone_String" => true
     }
 
   private def containsRefName(name: String)(term: Term): Boolean =
-    existsTerm(term) {
+    txExistsTerm(term) {
       case TXRefNamed(n) if n == name => true
     }
 
