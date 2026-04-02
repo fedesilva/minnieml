@@ -28,16 +28,60 @@
 // 1. Demo and Main
 // ---------------------------------------------------------
 
-pub fn main(args: StringArray) = demo args;;
+pub fn main(args: StringArray): Unit =
+  // Number of command-line arguments.
+  let argc = ar_str_len args;
+
+  // Special help mode if the first argument is "help".
+  let show_help =
+    if argc > 0 then
+      str_eq (ar_str_get args 0) "help";
+    else
+      false;
+    ;
+
+  if show_help then
+    println ( str_strip_margin
+      "| - x is horizontal, valid grid range 0..29
+       | - y is vertical from the top, valid range 0..9
+       | - l is wall length downward from (x, y)
+       |
+       | Current behavior is clipped, not rejected:
+       | - if part of the wall goes outside the grid, only in-bounds cells are written
+       | - if x or y are fully out of bounds, the wall effectively becomes empty
+       | - if l <= 0, no wall is built"
+    );
+  else
+    // Parse wall parameters once at the entry point, falling back to defaults.
+    let wall_x = parse_wall_arg args argc 0 25;
+    let wall_y = parse_wall_arg args argc 1 3;
+    let wall_length = parse_wall_arg args argc 2 4;
+
+    demo wall_x wall_y wall_length;
+  ;
+;
+
+fn parse_wall_arg(
+  args: StringArray,
+  argc: Int,
+  idx: Int,
+  default_value: Int
+): Int =
+  if argc > idx then
+    str_to_int (ar_str_get args idx);
+  else
+    default_value;
+  ;
+;
 
 // Program entry point.
 // It:
 // 1. builds a small demo grid
-// 2. optionally places one vertical wall from command-line input
+// 2. places one vertical wall from already-parsed demo settings
 // 3. runs A*
 // 4. marks the resulting route
 // 5. prints the final grid
-fn demo(args: StringArray) =
+fn demo(wall_x: Int, wall_y: Int, wall_length: Int): Unit =
   // Demo grid dimensions.
   let width = 30;
   let height = 10;
@@ -51,145 +95,99 @@ fn demo(args: StringArray) =
   // Goal at the bottom-right corner.
   let goal = size - 1;
 
-  // Number of command-line arguments.
-  let argc = ar_str_len args;
+  // Grid and parent-link storage.
+  let grid = Grid
+    width
+    height
+    (ar_int_new size)
+  ;
+  let came_from = ar_int_new size;
 
-  // Special help mode if the first argument is "help".
-  let show_help =
-    if argc > 0 then
-      str_eq (ar_str_get args 0) "help";
-    else
-      false;
+  // Print the grid row by row.
+  //
+  // Display mapping:
+  // - # means wall
+  // - * means final path
+  // - . means open space
+  fn print_grid(i: Int): Unit =
+    if i < size then
+      // Read the stored cell value.
+      let cell = unsafe_ar_int_get grid.walls i;
+
+      // Convert the stored integer into a printable character.
+      let char =
+        if cell == 1 then
+          "#";
+        elif cell == 2 then
+          "*";
+        else
+          ".";
+        ;
+
+      print char;
+
+      // The grid lives in one flat array, so emit a newline after every row.
+      if (i + 1) % grid.width == 0 then
+        println "";
+      ;
+
+      // Continue printing the next cell.
+      print_grid (i + 1);
     ;
+  ;
 
-  if show_help then
-    println
-"- x is horizontal, valid grid range 0..29
-- y is vertical from the top, valid range 0..9
-- l is wall length downward from (x, y)
+  // Draw one vertical wall into the grid.
+  //
+  // This function clips naturally:
+  // out-of-bounds cells are ignored instead of causing an error.
+  fn build_vertical_wall(i: Int): Unit =
+    if i < wall_length then
+      // Current wall cell being considered.
+      let wx = wall_x;
+      let wy = wall_y + i;
 
-Current behavior is clipped, not rejected:
+      if wx >= 0 and wx < grid.width and wy >= 0 and wy < grid.height then
+        // Convert (wx, wy) into a flat index and store 1 for "wall".
+        unsafe_ar_int_set grid.walls (wy * grid.width + wx) 1;
+      ;
 
-- if part of the wall goes outside the grid, only in-bounds cells are written
-- if x or y are fully out of bounds, the wall effectively becomes empty
-- if l <= 0, no wall is built"
-;
+      // Continue with the next cell farther down the wall.
+      build_vertical_wall (i + 1);
+    ;
+  ;
+
+  // Walk backward from the goal to the start and mark the final path.
+  fn mark_path(current: Int): Unit =
+    if current != start then
+      if current != (0 - 1) then
+        // Store 2 only for printing later. It means:
+        // "this cell belongs to the final route".
+        unsafe_ar_int_set grid.walls current 2;
+
+        // Move to this cell's parent and continue walking backward.
+        mark_path (unsafe_ar_int_get came_from current);
+      ;
+    ;
+  ;
+
+  // Place one obstacle before running the search.
+  build_vertical_wall 0;
+
+  // Run A* from start to goal.
+  let result = astar grid start goal came_from;
+
+  if result != (0 - 1) then
+    // Turn the parent links discovered by A* into visible path markers.
+    mark_path goal;
+
+    // Keep the start cell visually open so the printed grid stays simple.
+    unsafe_ar_int_set grid.walls start 0;
+
+    // Show the final map.
+    print_grid 0;
+    println "Path found! '*' is path, '#' is wall.";
   else
-    // Read wall parameters from the command line, falling back to defaults.
-    let wall_x =
-      if argc > 0 then
-        str_to_int (ar_str_get args 0);
-      else
-        25;
-      ;
-    let wall_y =
-      if argc > 1 then
-        str_to_int (ar_str_get args 1);
-      else
-        3;
-      ;
-
-    let wall_length =
-      if argc > 2 then
-        str_to_int (ar_str_get args 2);
-      else
-        4;
-      ;
-
-    // Grid and parent-link storage.
-    let grid = Grid
-      width
-      height
-      (ar_int_new size)
-    ;
-    let came_from = ar_int_new size;
-
-    // Print the grid row by row.
-    //
-    // Display mapping:
-    // - # means wall
-    // - * means final path
-    // - . means open space
-    fn print_grid(i: Int): Unit =
-      if i < size then
-        // Read the stored cell value.
-        let cell = unsafe_ar_int_get grid.walls i;
-
-        // Convert the stored integer into a printable character.
-        let char =
-          if cell == 1 then
-            "#";
-          elif cell == 2 then
-            "*";
-          else
-            ".";
-          ;
-
-        print char;
-
-        // The grid lives in one flat array, so emit a newline after every row.
-        if (i + 1) % grid.width == 0 then
-          println "";
-        ;
-
-        // Continue printing the next cell.
-        print_grid (i + 1);
-      ;
-    ;
-
-    // Draw one vertical wall into the grid.
-    //
-    // This function clips naturally:
-    // out-of-bounds cells are ignored instead of causing an error.
-    fn build_vertical_wall(i: Int): Unit =
-      if i < wall_length then
-        // Current wall cell being considered.
-        let wx = wall_x;
-        let wy = wall_y + i;
-
-        if wx >= 0 and wx < grid.width and wy >= 0 and wy < grid.height then
-          // Convert (wx, wy) into a flat index and store 1 for "wall".
-          unsafe_ar_int_set grid.walls (wy * grid.width + wx) 1;
-        ;
-
-        // Continue with the next cell farther down the wall.
-        build_vertical_wall (i + 1);
-      ;
-    ;
-
-    // Walk backward from the goal to the start and mark the final path.
-    fn mark_path(current: Int): Unit =
-      if current != start then
-        if current != (0 - 1) then
-          // Store 2 only for printing later. It means:
-          // "this cell belongs to the final route".
-          unsafe_ar_int_set grid.walls current 2;
-
-          // Move to this cell's parent and continue walking backward.
-          mark_path (unsafe_ar_int_get came_from current);
-        ;
-      ;
-    ;
-
-    // Place one obstacle before running the search.
-    build_vertical_wall 0;
-
-    // Run A* from start to goal.
-    let result = astar grid start goal came_from;
-
-    if result != (0 - 1) then
-      // Turn the parent links discovered by A* into visible path markers.
-      mark_path goal;
-
-      // Keep the start cell visually open so the printed grid stays simple.
-      unsafe_ar_int_set grid.walls start 0;
-
-      // Show the final map.
-      print_grid 0;
-      println "Path found! '*' is path, '#' is wall.";
-    else
-      println "No path found.";
-    ;
+    println "No path found.";
   ;
 ;
 
