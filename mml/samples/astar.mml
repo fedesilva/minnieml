@@ -60,7 +60,7 @@ fn sift_down (h: MinHeap, size: Int, idx: Int): Unit =
   let s_score = unsafe_ar_int_get (h.scores) idx;
 
   // Find smallest among idx, left, right
-  let smallest_after_right =
+  let smallest_after_left =
     if left < size then
       if (unsafe_ar_int_get (h.scores) left) < s_score then
         left;
@@ -71,23 +71,23 @@ fn sift_down (h: MinHeap, size: Int, idx: Int): Unit =
       idx;
     ;
 
-  let smallest =
+  let smallest_after_right =
     if right < size then
       if
         (unsafe_ar_int_get (h.scores) right) <
-          (unsafe_ar_int_get (h.scores) smallest_after_right)
+          (unsafe_ar_int_get (h.scores) smallest_after_left)
       then
         right;
       else
-        smallest_after_right;
+        smallest_after_left;
       ;
     else
-      smallest_after_right;
+      smallest_after_left;
     ;
 
-  if smallest != idx then
-    heap_swap h idx smallest;
-    sift_down h size smallest;
+  if smallest_after_right != idx then
+    heap_swap h idx smallest_after_right;
+    sift_down h size smallest_after_right;
   ;
 ;
 
