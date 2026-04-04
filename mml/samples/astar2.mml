@@ -138,30 +138,35 @@ fn sift_down (h: MinHeap, size: Int, idx: Int): Unit =
   let right = 2 * idx + 2;
 
   // Start by assuming the current position is already the smallest.
-  let smallest = idx;
+  let smallest_initial = idx;
 
-  let smallest =
+  let smallest_after_right =
     if left < size then
       // If the left child exists and is smaller, it becomes the best candidate.
-      if (unsafe_ar_int_get (h.scores) left) < (unsafe_ar_int_get (h.scores) smallest) then
+      if
+        (unsafe_ar_int_get (h.scores) left) < (unsafe_ar_int_get (h.scores) smallest_initial)
+      then
         left;
       else
-        smallest;
+        smallest_initial;
       ;
     else
-      smallest;
+      smallest_initial;
     ;
 
   let smallest =
     if right < size then
       // Compare the right child against the best candidate so far.
-      if (unsafe_ar_int_get (h.scores) right) < (unsafe_ar_int_get (h.scores) smallest) then
+      if
+        (unsafe_ar_int_get (h.scores) right) <
+          (unsafe_ar_int_get (h.scores) smallest_after_right)
+      then
         right;
       else
-        smallest;
+        smallest_after_right;
       ;
     else
-      smallest;
+      smallest_after_right;
     ;
 
   if smallest != idx then

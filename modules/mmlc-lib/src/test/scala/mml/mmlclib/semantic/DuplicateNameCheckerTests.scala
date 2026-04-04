@@ -49,6 +49,72 @@ class DuplicateNameCheckerTests extends BaseEffFunSuite:
     assertEquals(duplicateMember.source, SourceOrigin.Synth)
     assertEquals(duplicateMember.source.spanOpt, None)
 
+  test("sequential local let rebindings are rejected as duplicate names"):
+    val code =
+      """
+      fn main(): Int =
+        let value = 1;
+        let value = 2;
+        value;
+      ;
+      """
+
+    semState(code).map { result =>
+      val duplicateError =
+        result.errors
+          .collectFirst {
+            case e: SemanticError.DuplicateName if e.name == "value" => e
+          }
+          .getOrElse(fail("Expected DuplicateName error for local rebindings"))
+
+      val duplicateParams = duplicateError.duplicates.collect { case param: FnParam => param }
+      assertEquals(duplicateParams.length, 2)
+      assert(duplicateParams.forall(_.source.isFromSource))
+    }
+
+  test("statement wrappers do not hide duplicate local rebindings"):
+    val code =
+      """
+      fn main(): Int =
+        let value = 1;
+        println "";
+        let value = 2;
+        value;
+      ;
+      """
+
+    semState(code).map { result =>
+      val duplicateError =
+        result.errors
+          .collectFirst {
+            case e: SemanticError.DuplicateName if e.name == "value" => e
+          }
+          .getOrElse(fail("Expected DuplicateName error across statement chain"))
+
+      val duplicateParams = duplicateError.duplicates.collect { case param: FnParam => param }
+      assertEquals(duplicateParams.length, 2)
+    }
+
+  test("nested lambda scopes may still shadow outer local names"):
+    val code =
+      """
+      fn main(): Int =
+        let value = 1;
+        let keep = {
+          x: Int ->
+            let value = x;
+            value;
+        };
+        value;
+      ;
+      """
+
+    semNotFailed(code).map { module =>
+      val duplicateErrors =
+        module.members.collect { case _: DuplicateMember => () }
+      assertEquals(duplicateErrors.length, 0)
+    }
+
   private def mkSyntheticBinding(name: String, value: Int): Bnd =
     val synthSpan = SrcSpan(SrcPoint(0, 0, -1), SrcPoint(0, 0, -1))
     Bnd(
