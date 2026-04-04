@@ -302,10 +302,10 @@ That stack lifetime is the key restriction: a borrow-capturing closure cannot es
 defining scope. Returning one is rejected.
 
 ```mml
-fn withPrefix(prefix: String): Unit =
+fn withPrefix(prefix: String) =
   let printPrefixed = {
     println (prefix ++ "!");
-  }: Unit;
+  };
   printPrefixed ();
 ;
 ```
@@ -330,7 +330,7 @@ Move closures allocate their environment on the heap, and the closure value owns
 fn makeGreeter(name: String): Unit -> Unit =
   ~{
     println ("Hello, " ++ name);
-  }: Unit;
+  };
 ;
 ```
 
@@ -373,9 +373,10 @@ chosen for the whole closure:
 
 ## Compile-time errors
 
-| Error | Cause |
-|-------|-------|
-| Use after move | Using a binding after ownership transfer |
-| Consuming param not last use | Value used after being consumed |
-| Borrow escape via return | Returning a borrowed value as owned |
-| Borrowed to consuming param | Passing a borrowed value to a `~` parameter |
+| Error                         | Cause                                        |
+|-------------------------------|----------------------------------------------|
+| Use after move                | Using a binding after ownership transfer     |
+| Consuming param not last use  | Value used after being consumed              |
+| Borrow escape via return      | Returning a borrowed value as owned          |
+| Borrowed to consuming param   | Passing a borrowed value to a `~` parameter  |
+|-------------------------------|----------------------------------------------
