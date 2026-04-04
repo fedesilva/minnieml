@@ -259,7 +259,7 @@ class ClosureCodegenTest extends BaseEffFunSuite:
     }
   }
 
-  test("loopified borrow closures stop being tracked after shadowing rebinding") {
+  test("loopified borrow closures stop being tracked after nested shadowing") {
     val source =
       """
         fn loop(n: Int, acc: Int): Int =
@@ -267,18 +267,21 @@ class ClosureCodegenTest extends BaseEffFunSuite:
             acc;
           else
             let f = { x: Int -> x + n; };
-            let f = acc + 1;
-            loop (n - 1) f;
+            fn step(dummy: Int): Int =
+              let f = acc + 1;
+              loop (n - 1) f;
+            ;
+            step 0;
           ;
         ;
       """
 
     compileAndGenerate(source, config = CompilerConfig.default.copy(noTco = false)).map { llvmIr =>
-      val loopBody = functionBody(llvmIr, "test_loop\\(i64 %0, i64 %1, ptr %2\\) #0")
+      val loopBody = functionBody(llvmIr, "test_loop\\(i64 %0, i64 %1\\) #0")
 
       assert(
         loopBody.contains("alloca %struct.__closure_env_"),
-        s"Expected the shadowed borrow closure to still codegen successfully. Body:\n$loopBody"
+        s"Expected the nested-shadowed borrow closure to still codegen successfully. Body:\n$loopBody"
       )
     }
   }

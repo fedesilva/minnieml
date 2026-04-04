@@ -5,7 +5,8 @@ import mml.mmlclib.compiler.CompilerState
 
 object DuplicateNameChecker:
 
-  private val phaseName = "mml.mmlclib.semantic.DuplicateNameChecker"
+  private val phaseName          = "mml.mmlclib.semantic.DuplicateNameChecker"
+  private val statementParamName = "__stmt"
 
   /** Rewrite module to replace duplicate members with invalid nodes, accumulating errors in the
     * state.
@@ -104,7 +105,12 @@ object DuplicateNameChecker:
         errors += SemanticError.DuplicateName(bnd.name, allWithSameName, phaseName)
     }
 
-    (finalDecls ++ otherMembers, errors.toList)
+    val localDuplicateErrors = finalDecls.flatMap {
+      case bnd: Bnd => localDuplicateErrorsInExpr(bnd.value)
+      case _ => Nil
+    }
+
+    (finalDecls ++ otherMembers, errors.toList ++ localDuplicateErrors)
 
   private def groupMembersByKey(members: List[Member]): Map[(String, String), List[Member]] =
     members
@@ -145,3 +151,73 @@ object DuplicateNameChecker:
     bnd.value.terms.headOption.collect { case lambda: Lambda =>
       lambda.params
     }
+
+  private def localDuplicateErrorsInExpr(expr: Expr): List[SemanticError] =
+    val (scopeBindings, nestedErrors) = walkScopeExpr(expr, Nil)
+    duplicateBindingErrors(scopeBindings) ++ nestedErrors
+
+  private def walkScopeExpr(
+    expr:          Expr,
+    scopeBindings: List[FnParam]
+  ): (List[FnParam], List[SemanticError]) =
+    expr.terms match
+      case List(app: App) =>
+        app.fn match
+          case lambda: Lambda if isScopedBindingApp(app, lambda) =>
+            val argErrors = localDuplicateErrorsInExpr(app.arg)
+            lambda.params match
+              case List(param) if param.name == statementParamName =>
+                val (bodyBindings, bodyErrors) = walkScopeExpr(lambda.body, scopeBindings)
+                (bodyBindings, argErrors ++ bodyErrors)
+              case List(param) =>
+                val (bodyBindings, bodyErrors) = walkScopeExpr(lambda.body, scopeBindings :+ param)
+                (bodyBindings, argErrors ++ bodyErrors)
+              case _ =>
+                (scopeBindings, argErrors ++ localDuplicateErrorsInExpr(lambda.body))
+          case _ =>
+            (scopeBindings, expr.terms.flatMap(localDuplicateErrorsInTerm))
+      case _ =>
+        (scopeBindings, expr.terms.flatMap(localDuplicateErrorsInTerm))
+
+  private def localDuplicateErrorsInTerm(term: Term): List[SemanticError] =
+    term match
+      case expr: Expr => localDuplicateErrorsInExpr(expr)
+      case app:  App =>
+        localDuplicateErrorsInExpr(
+          Expr(
+            source   = app.source,
+            terms    = List(app),
+            typeAsc  = app.typeAsc,
+            typeSpec = app.typeSpec
+          )
+        )
+      case lambda: Lambda => localDuplicateErrorsInExpr(lambda.body)
+      case group:  TermGroup => localDuplicateErrorsInExpr(group.inner)
+      case tuple:  Tuple => tuple.elements.toList.flatMap(localDuplicateErrorsInExpr)
+      case cond:   Cond =>
+        localDuplicateErrorsInExpr(cond.cond) ++
+          localDuplicateErrorsInExpr(cond.ifTrue) ++
+          localDuplicateErrorsInExpr(cond.ifFalse)
+      case invalid: InvalidExpression => localDuplicateErrorsInExpr(invalid.originalExpr)
+      case ref:     Ref => ref.qualifier.toList.flatMap(localDuplicateErrorsInTerm)
+      case _ => Nil
+
+  private def duplicateBindingErrors(bindings: List[FnParam]): List[SemanticError] =
+    bindings
+      .groupBy(_.name)
+      .toList
+      .collect {
+        case (name, duplicates) if duplicates.size > 1 =>
+          val orderedDuplicates = duplicates.sortBy(bindingSourceIndex)
+          (bindingSourceIndex(orderedDuplicates.head), name, orderedDuplicates)
+      }
+      .sortBy(_._1)
+      .map { case (_, name, duplicates) =>
+        SemanticError.DuplicateName(name, duplicates, phaseName)
+      }
+
+  private def bindingSourceIndex(param: FnParam): Int =
+    param.source.spanOpt.map(_.start.index).getOrElse(Int.MaxValue)
+
+  private def isScopedBindingApp(app: App, lambda: Lambda): Boolean =
+    app.source == lambda.source

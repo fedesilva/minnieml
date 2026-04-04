@@ -37,7 +37,7 @@
 - [ ] Let users force-move a value at a call site without requiring a consuming parameter.
 - [ ] Keep the work aligned with the borrow-by-default capture model.
 
-### BUG: Local duplicate-name check for sequential `let` rebindings
+### BUG: Local duplicate-name check for sequential `let` rebindings (COMPLETE)
 
   This is a loophole, the INTERNAL cps representation leaks to the source
   syntax and allows repeated definitions which are legal since each
@@ -45,16 +45,34 @@
   
   Case study source: mml/samples/astar3.mml
 
-- [ ] Source rule: reusing the same local binder name in the same user-local scope is a duplicate.
-- [ ] Treat this as a duplicate-name check, period; the user should not be exposed to the internal CPS / scoped-lambda lowering.
-- [ ] Keep lexical scope and real nested shadowing: nested lambdas, inner `fn`, and genuinely nested local scopes may still shadow outer names.
-- [ ] Reject sequential same-name local bindings such as repeated `let smallest = ...;` in one scope.
-- [ ] Implement this in duplicate checks, but define and report it in source-language terms, not lowered-tree terms.
-- [ ] Write regression tests.
-- [ ] Fix any other .mml source that uses this loophole.
+- [x] Source rule: reusing the same local binder name in the same user-local scope is a duplicate.
+- [x] Treat this as a duplicate-name check, period; the user should not be exposed to the internal CPS / scoped-lambda lowering.
+- [x] Keep lexical scope and real nested shadowing: nested lambdas, inner `fn`, and genuinely nested local scopes may still shadow outer names.
+- [x] Reject sequential same-name local bindings such as repeated `let smallest = ...;` in one scope.
+- [x] Implement this in duplicate checks, but define and report it in source-language terms, not lowered-tree terms.
+- [x] Write regression tests.
+- [x] Fix any other .mml source that uses this loophole.
+
+### BUG: Immediate lambda application from term adjacency (local)
+
+  The expression rewriter does not currently treat a lambda literal in head
+  position as an application target, so source like `{ x: Int -> x } 1`
+  survives as dangling adjacent terms instead of rewriting to `App`.
+
+- [ ] Let expression/application rewriting treat lambda literals as valid application heads.
+- [ ] Rewrite `{ ... } arg` into the same `App` shape used for other callable heads.
+- [ ] Add focused parser/semantic regression coverage once the rewriting path is fixed.
 
 
 ## Change Log
+
+- 2026-04-03: Local duplicate-name check for sequential `let` rebindings
+  - Semantic duplicate checking now walks parser-lowered scoped-binding chains so repeated local
+    binders in the same user scope are rejected while synthetic statement wrappers are ignored and
+    real nested shadowing remains legal.
+  - Tests/samples: added focused duplicate-name regressions for local rebinding and nested
+    shadowing, updated closure codegen coverage to use legal nested shadowing, and rewrote the
+    `astar`, `astar2`, and `astar3` heap-sift locals to avoid the old loophole.
 
 - 2026-04-02: Runtime strip-margin helper
   - Runtime/stdlib: added `str_strip_margin` to the C runtime and injected it as a standard
