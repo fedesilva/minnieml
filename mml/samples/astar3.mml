@@ -615,7 +615,7 @@ fn sift_down(h: MinHeap, size: Int, idx: Int): Unit =
 
   // Start by assuming the current position is already the smallest.
   let smallest_initial = idx;
-  let smallest_after_right =
+  let smallest_after_left =
     if left < size then
       // If the left child exists and is smaller, it becomes the best candidate.
       if
@@ -629,25 +629,25 @@ fn sift_down(h: MinHeap, size: Int, idx: Int): Unit =
       smallest_initial;
     ;
 
-  let smallest =
+  let smallest_after_right =
     if right < size then
       // Compare the right child against the best candidate so far.
       if
         (unsafe_ar_int_get (h.scores) right) <
-          (unsafe_ar_int_get (h.scores) smallest_after_right)
+          (unsafe_ar_int_get (h.scores) smallest_after_left)
       then
         right;
       else
-        smallest_after_right;
+        smallest_after_left;
       ;
     else
-      smallest_after_right;
+      smallest_after_left;
     ;
 
-  if smallest != idx then
+  if smallest_after_right != idx then
     // One child should come before the current entry, so swap and keep sinking.
-    heap_swap h idx smallest;
-    sift_down h size smallest;
+    heap_swap h idx smallest_after_right;
+    sift_down h size smallest_after_right;
   ;
 ;
 
