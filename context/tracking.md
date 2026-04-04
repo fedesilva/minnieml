@@ -37,22 +37,6 @@
 - [ ] Let users force-move a value at a call site without requiring a consuming parameter.
 - [ ] Keep the work aligned with the borrow-by-default capture model.
 
-### BUG: Local duplicate-name check for sequential `let` rebindings (COMPLETE)
-
-  This is a loophole, the INTERNAL cps representation leaks to the source
-  syntax and allows repeated definitions which are legal since each
-  expression in a sequence is its own scope but should not at surface level.
-  
-  Case study source: mml/samples/astar3.mml
-
-- [x] Source rule: reusing the same local binder name in the same user-local scope is a duplicate.
-- [x] Treat this as a duplicate-name check, period; the user should not be exposed to the internal CPS / scoped-lambda lowering.
-- [x] Keep lexical scope and real nested shadowing: nested lambdas, inner `fn`, and genuinely nested local scopes may still shadow outer names.
-- [x] Reject sequential same-name local bindings such as repeated `let smallest = ...;` in one scope.
-- [x] Implement this in duplicate checks, but define and report it in source-language terms, not lowered-tree terms.
-- [x] Write regression tests.
-- [x] Fix any other .mml source that uses this loophole.
-
 ### BUG: Immediate lambda application from term adjacency (local)
 
   The expression rewriter does not currently treat a lambda literal in head
