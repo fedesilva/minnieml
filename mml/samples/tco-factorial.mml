@@ -5,7 +5,8 @@ fn factorial_tco(n: Int, acc: Int): Int =
     acc;
   else
     factorial_tco (n - 1) (acc * n);
-  ;;
+  ;
+;
 
 // Wrapper with default accumulator
 fn factorial(n: Int): Int = factorial_tco n 1;;
