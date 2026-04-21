@@ -37,6 +37,15 @@
 - [ ] Let users force-move a value at a call site without requiring a consuming parameter.
 - [ ] Keep the work aligned with the borrow-by-default capture model.
 
+### #261 Separate direct-call ABI from closure-call ABI for non-capturing functions
+
+- GitHub: `https://github.com/fedesilva/minnieml/issues/261`
+- [ ] Make direct-callable non-capturing functions use a plain entry ABI.
+- [ ] Keep closure values as uniform `{ fn, env }` fat pointers.
+- [ ] Keep capturing closures on an env-bearing closure entry path.
+- [ ] Use a closure-entry thunk/wrapper for non-capturing callables that must also exist as first-class values.
+- [ ] Add regression coverage for loopified top-level direct calls and higher-order use of named loopified functions.
+
 ### BUG: Immediate lambda application from term adjacency (local)
 
   The expression rewriter does not currently treat a lambda literal in head
