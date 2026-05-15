@@ -81,7 +81,7 @@ fn parse_wall_arg(
 // 3. runs A*
 // 4. marks the resulting route
 // 5. prints the final grid
-fn demo(wall_x: Int, wall_y: Int, wall_length: Int): Unit =
+fn demo(wall_x: Int, wall_y: Int, wall_length: Int) =
   // Demo grid dimensions.
   let width = 30;
   let height = 10;

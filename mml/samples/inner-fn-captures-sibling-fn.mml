@@ -13,6 +13,7 @@
 // - a closure-env TBAA node using Function at offset 8
 
 pub fn main(): Unit =
+
   fn inc(x: Int): Int = x + 1;;
   fn applyInc(y: Int): Int = inc y;;
 
