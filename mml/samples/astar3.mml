@@ -41,7 +41,8 @@ pub fn main(args: StringArray): Unit =
     ;
 
   if show_help then
-    println ( str_strip_margin
+    println ( 
+      str_strip_margin
       "| - x is horizontal, valid grid range 0..29
        | - y is vertical from the top, valid range 0..9
        | - l is wall length downward from (x, y)
