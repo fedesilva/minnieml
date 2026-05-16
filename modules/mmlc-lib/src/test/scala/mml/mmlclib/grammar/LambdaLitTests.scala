@@ -112,6 +112,29 @@ class LambdaLitTests extends BaseEffFunSuite:
     }
   }
 
+  test("lambda literal can appear before an adjacent argument") {
+    parseNotFailed(
+      """
+        let result = { x: Int -> x; } 1;
+      """
+    ).map { m =>
+      m.members.headOption match
+        case Some(bnd: Bnd) =>
+          bnd.value.terms match
+            case List(lambda: Lambda, LiteralInt(_, 1)) =>
+              assertEquals(lambda.params.map(_.name), List("x"))
+              assert(lambda.params.head.typeAsc.isDefined, "Expected typed param")
+            case other =>
+              fail(
+                s"Expected lambda literal followed by integer argument, got:\n${other
+                    .map(t => prettyPrintAst(t, 0, false, false))
+                    .mkString("\n")}"
+              )
+        case other =>
+          fail(s"Expected result binding, got ${other.map(prettyPrintAst(_)).getOrElse("<none>")}")
+    }
+  }
+
   test("consuming param") {
     parseNotFailed(
       """
