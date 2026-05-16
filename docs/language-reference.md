@@ -1064,6 +1064,7 @@ the compiler design document.
 |---------------|--------------------------------------------------------------|
 | `String`      | Struct: `{ length: Int64, data: CharPtr }`. Heap-allocated.  |
 | `Buffer`      | Opaque pointer to a buffered I/O writer. Heap-allocated.     |
+| `Rng`         | Opaque pointer to a random number generator. Heap-allocated. |
 | `IntArray`    | Struct: `{ length: Int64, data: Int64Ptr }`. Heap-allocated. |
 | `StringArray` | Struct: `{ length: Int64, data: StringPtr }`. Heap-allocated.|
 | `FloatArray`  | Struct: `{ length: Int64, data: FloatPtr }`. Heap-allocated. |
@@ -1165,6 +1166,15 @@ Float operators use a `.` suffix to distinguish them from integer operators.
 |-----------|------------------|---------------------------------|
 | `sqrt(x)` | `Float -> Float` | Square root (LLVM intrinsic)   |
 | `fabs(x)` | `Float -> Float` | Absolute value (LLVM intrinsic)|
+
+#### Random number generation
+
+| Function        | Type         | Description                          |
+|-----------------|--------------|--------------------------------------|
+| `rng_new(seed)` | `Int -> Rng` | Create a deterministic RNG. Allocates. |
+| `rng_new_random()` | `Unit -> Rng` | Create an RNG with a runtime seed. Allocates. |
+| `rng_next(rng)` | `Rng -> Int` | Advance the RNG and return an integer. |
+| `rng_between(rng, min, max)` | `Rng -> Int -> Int -> Int` | Return an integer in `[min, max)`. |
 
 #### Buffered I/O
 
