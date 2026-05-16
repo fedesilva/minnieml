@@ -45,7 +45,7 @@
 - [x] Keep capturing closures on an env-bearing closure entry path.
 - [x] Use a closure-entry thunk/wrapper for non-capturing callables that must also exist as first-class values.
 - [x] Add regression coverage for loopified top-level direct calls and higher-order use of named loopified functions.
-- [ ] Follow up on newly found bug.
+- [x] Follow up on newly found bug.
 
 ### BUG: Immediate lambda application from term adjacency (local)
 
@@ -59,6 +59,12 @@
 
 
 ## Change Log
+
+- 2026-05-15: #261 local TCO ABI materialization follow-up
+  - Codegen: non-capturing let-bound tail-recursive lambdas now emit a plain loopified direct entry
+    plus a closure-entry wrapper for first-class materialization.
+  - Tests: added `lambda-factorial`-shaped coverage for the direct entry, wrapper forwarding, and
+    `{ ptr @wrapper, ptr null }` materialized value.
 
 - 2026-05-15: #261 separate direct-call ABI from closure-call ABI
   - Codegen: direct-callable non-capturing functions, including loopified tail-recursive functions,

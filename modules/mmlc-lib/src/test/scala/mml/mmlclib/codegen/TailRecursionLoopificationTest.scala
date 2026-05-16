@@ -111,6 +111,54 @@ class TailRecursionLoopificationTest extends BaseEffFunSuite:
     }
   }
 
+  test("local non-capturing loopified function materializes a closure-entry wrapper") {
+    val source =
+      """
+      pub fn main() =
+        let factorial_tco: Int -> Int -> Int =
+          { n: Int, acc: Int ->
+            if n <= 1 then acc;
+            else factorial_tco (n - 1) (acc * n);
+          }
+        ;
+
+        let fac = { n: Int -> factorial_tco n 1 };
+
+        fac 3;
+      ;
+      """
+
+    compileAndGenerate(source, config = CompilerConfig.default.copy(noTco = false)).map { llvmIr =>
+      val directMatch =
+        """define internal i64 @(test_factorial_tco_\d+)\(i64 %0, i64 %1\) #0 \{""".r
+          .findFirstMatchIn(llvmIr)
+          .getOrElse(fail(s"Missing plain direct factorial_tco entry. IR:\n$llvmIr"))
+      val directName  = directMatch.group(1)
+      val wrapperName = s"${directName}__closure_entry"
+      val directBody =
+        functionBody(llvmIr, s"$directName\\(i64 %0, i64 %1\\) #0")
+      val wrapperBody =
+        functionBody(llvmIr, s"$wrapperName\\(i64 %0, i64 %1, ptr %2\\) #0")
+
+      assert(
+        directBody.contains("loop.header:") && directBody.contains("phi i64"),
+        s"Direct factorial_tco entry should be loopified. Body:\n$directBody"
+      )
+      assert(
+        !llvmIr.contains(s"define internal i64 @$directName(i64 %0, i64 %1, ptr %2) #0"),
+        s"Direct factorial_tco entry must not accept a closure env. IR:\n$llvmIr"
+      )
+      assert(
+        wrapperBody.contains(s"call i64 @$directName(i64 %0, i64 %1)"),
+        s"Closure-entry wrapper should forward to plain direct symbol. Body:\n$wrapperBody"
+      )
+      assert(
+        llvmIr.contains(s"{ ptr @$wrapperName, ptr null }"),
+        s"First-class materialization should use the closure-entry wrapper. IR:\n$llvmIr"
+      )
+    }
+  }
+
   test("emits tail-recursive function with pre-statements as a loop") {
     val source =
       """
