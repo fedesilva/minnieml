@@ -483,6 +483,41 @@ private def compileStandardCall(
       case None =>
         CodeGenError(s"Missing return type for function '${fnRef.name}'", app.some).asLeft
 
+private val StaticNullEnvClosure = """^\{ ptr @([^,\s]+), ptr null \}$""".r
+
+private def staticNullEnvClosureTarget(closure: String): Option[String] =
+  closure match
+    case StaticNullEnvClosure(fnName) => fnName.some
+    case _ => none
+
+private def compileStaticNullEnvClosureCall(
+  fnName:       String,
+  compiledArgs: List[CompiledArg],
+  fnReturnType: String,
+  app:          App,
+  state:        CodeGenState
+): Either[CodeGenError, CompileResult] =
+  val allArgs = compiledArgs.map(arg => (arg.llvmType, arg.op)) :+ ("ptr", "null")
+  if fnReturnType == "void" then
+    val callLine = emitCall(none, none, fnName, allArgs)
+    CompileResult(0, state.emit(callLine), false, "Unit").asRight
+  else
+    val resultReg = state.nextRegister
+    val callLine  = emitCall(resultReg.some, fnReturnType.some, fnName, allArgs)
+    app.typeSpec.flatMap(getNominalTypeName(_).toOption) match
+      case Some(typeName) =>
+        CompileResult(
+          resultReg,
+          state.withRegister(resultReg + 1).emit(callLine),
+          false,
+          typeName
+        ).asRight
+      case None =>
+        CodeGenError(
+          s"Could not determine MML type for static closure call result",
+          app.some
+        ).asLeft
+
 private def sanitizeLabelPart(raw: String): String =
   raw.replace("%", "reg").replaceAll("[^A-Za-z0-9_\\.]", "_")
 
@@ -537,51 +572,61 @@ def compileIndirectCall(
     fnReturnTypeResult.flatMap { fnReturnType =>
       resolveIndirectCallee(fnRef, argState, functionScope, compileExpr).flatMap {
         case (closure, stateAfterCallee) =>
-          // Extract fn pointer and env from the fat pointer
-          val fnReg  = stateAfterCallee.nextRegister
-          val envReg = fnReg + 1
-          val extractFn =
-            emitExtractValue(fnReg, "{ ptr, ptr }", closure, 0)
-          val extractEnv =
-            emitExtractValue(envReg, "{ ptr, ptr }", closure, 1)
-          val stateAfterExtract = stateAfterCallee
-            .withRegister(envReg + 1)
-            .emit(extractFn)
-            .emit(extractEnv)
+          staticNullEnvClosureTarget(closure) match
+            case Some(fnName) =>
+              compileStaticNullEnvClosureCall(
+                fnName,
+                compiledArgs,
+                fnReturnType,
+                app,
+                stateAfterCallee
+              )
+            case None =>
+              // Extract fn pointer and env from the fat pointer
+              val fnReg  = stateAfterCallee.nextRegister
+              val envReg = fnReg + 1
+              val extractFn =
+                emitExtractValue(fnReg, "{ ptr, ptr }", closure, 0)
+              val extractEnv =
+                emitExtractValue(envReg, "{ ptr, ptr }", closure, 1)
+              val stateAfterExtract = stateAfterCallee
+                .withRegister(envReg + 1)
+                .emit(extractFn)
+                .emit(extractEnv)
 
-          // Build args with env as the last parameter
-          val userArgs = compiledArgs.map(arg => (arg.llvmType, arg.op))
-          val allArgs  = userArgs :+ ("ptr", s"%$envReg")
-          val fnPtr    = s"%$fnReg"
+              // Build args with env as the last parameter
+              val userArgs = compiledArgs.map(arg => (arg.llvmType, arg.op))
+              val allArgs  = userArgs :+ ("ptr", s"%$envReg")
+              val fnPtr    = s"%$fnReg"
 
-          if fnReturnType == "void" then
-            val callLine = emitIndirectCall(none, none, fnPtr, allArgs)
-            CompileResult(0, stateAfterExtract.emit(callLine), false, "Unit").asRight
-          else
-            val resultReg = stateAfterExtract.nextRegister
-            val callLine = emitIndirectCall(
-              resultReg.some,
-              fnReturnType.some,
-              fnPtr,
-              allArgs
-            )
-            app.typeSpec.flatMap(
-              getNominalTypeName(_).toOption
-            ) match
-              case Some(typeName) =>
-                CompileResult(
-                  resultReg,
-                  stateAfterExtract
-                    .withRegister(resultReg + 1)
-                    .emit(callLine),
-                  false,
-                  typeName
-                ).asRight
-              case None =>
-                CodeGenError(
-                  s"Could not determine MML type for indirect call result",
-                  app.some
-                ).asLeft
+              if fnReturnType == "void" then
+                val callLine = emitIndirectCall(none, none, fnPtr, allArgs)
+                CompileResult(0, stateAfterExtract.emit(callLine), false, "Unit").asRight
+              else
+                val resultReg = stateAfterExtract.nextRegister
+                val callLine = emitIndirectCall(
+                  resultReg.some,
+                  fnReturnType.some,
+                  fnPtr,
+                  allArgs
+                )
+                app.typeSpec.flatMap(
+                  getNominalTypeName(_).toOption
+                ) match
+                  case Some(typeName) =>
+                    CompileResult(
+                      resultReg,
+                      stateAfterExtract
+                        .withRegister(resultReg + 1)
+                        .emit(callLine),
+                      false,
+                      typeName
+                    ).asRight
+                  case None =>
+                    CodeGenError(
+                      s"Could not determine MML type for indirect call result",
+                      app.some
+                    ).asLeft
       }
     }
   }

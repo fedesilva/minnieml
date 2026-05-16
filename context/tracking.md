@@ -40,11 +40,12 @@
 ### #261 Separate direct-call ABI from closure-call ABI for non-capturing functions
 
 - GitHub: `https://github.com/fedesilva/minnieml/issues/261`
-- [ ] Make direct-callable non-capturing functions use a plain entry ABI.
-- [ ] Keep closure values as uniform `{ fn, env }` fat pointers.
-- [ ] Keep capturing closures on an env-bearing closure entry path.
-- [ ] Use a closure-entry thunk/wrapper for non-capturing callables that must also exist as first-class values.
-- [ ] Add regression coverage for loopified top-level direct calls and higher-order use of named loopified functions.
+- [x] Make direct-callable non-capturing functions use a plain entry ABI.
+- [x] Keep closure values as uniform `{ fn, env }` fat pointers.
+- [x] Keep capturing closures on an env-bearing closure entry path.
+- [x] Use a closure-entry thunk/wrapper for non-capturing callables that must also exist as first-class values.
+- [x] Add regression coverage for loopified top-level direct calls and higher-order use of named loopified functions.
+- [ ] Follow up on newly found bug.
 
 ### BUG: Immediate lambda application from term adjacency (local)
 
@@ -58,6 +59,17 @@
 
 
 ## Change Log
+
+- 2026-05-15: #261 separate direct-call ABI from closure-call ABI
+  - Codegen: direct-callable non-capturing functions, including loopified tail-recursive functions,
+    now use plain entry signatures while first-class function values keep the uniform `{ fn, env }`
+    closure representation.
+  - Codegen: non-capturing callable values use closure-entry wrappers where needed, capturing
+    closures stay on env-bearing entries, and static null-env closure calls now lower to direct
+    closure-entry calls instead of extract+indirect sequences.
+  - Tests/samples: added regression coverage for direct loopified calls, higher-order loopified
+    function values, dead recursive self-binding elimination, static null-env direct calls, and the
+    combined function/lambda ABI sample.
 
 - 2026-04-03: Local duplicate-name check for sequential `let` rebindings
   - Semantic duplicate checking now walks parser-lowered scoped-binding chains so repeated local
