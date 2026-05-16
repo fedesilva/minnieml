@@ -257,6 +257,17 @@ object ExpressionRewriter:
               case ref: Ref =>
                 // Any reference - handle as potential function application
                 buildAppChain(ref, rest, source, owner, transformedBindings, resolvables)
+              case lambda: Lambda =>
+                // Direct lambda-head calls lower to nested unary immediate-lambda apps so the
+                // regular application/type-checking path owns the remaining semantics.
+                buildDirectLambdaAppChain(
+                  lambda,
+                  rest,
+                  source,
+                  owner,
+                  transformedBindings,
+                  resolvables
+                )
               case IsAtom(atom) =>
                 // Simple atom (literal, hole, etc.)
                 (Expr(atom.source, List(atom)), rest).asRight
@@ -401,6 +412,11 @@ object ExpressionRewriter:
               buildAppChain(app, restTerms, source, owner, transformedBindings, resolvables)
             }
         }
+      case (lambda: Lambda) :: restTerms =>
+        val argExpr = Expr(lambda.source, List(lambda))
+        buildSingleApp(fn, argExpr, source).flatMap { app =>
+          buildAppChain(app, restTerms, source, owner, transformedBindings, resolvables)
+        }
       case IsAtom(atom) :: restTerms =>
         // Literal or other atom as argument
         val argExpr = Expr(atom.source, List(atom))
@@ -415,6 +431,119 @@ object ExpressionRewriter:
               buildAppChain(app, remainingTerms, source, owner, transformedBindings, resolvables)
             }
         }
+
+  private def buildDirectLambdaAppChain(
+    lambda:              Lambda,
+    terms:               List[Term],
+    source:              SourceOrigin,
+    owner:               SyntheticOwner,
+    transformedBindings: Map[String, Bnd],
+    resolvables:         ResolvablesIndex
+  ): Either[NEL[SemanticError], (Expr, List[Term])] =
+    consumeDirectLambdaArgs(
+      lambda.params.length,
+      terms,
+      owner,
+      transformedBindings,
+      resolvables
+    ).flatMap { case (args, remainingTerms) =>
+      val lowered = lowerDirectLambda(lambda, args, source)
+      remainingTerms match
+        case Nil =>
+          (Expr(source, List(lowered)), remainingTerms).asRight
+        case head :: _ if isOperator(head, resolvables) =>
+          (Expr(source, List(lowered)), remainingTerms).asRight
+        case _ =>
+          buildAppChain(lowered, remainingTerms, source, owner, transformedBindings, resolvables)
+    }
+
+  private def consumeDirectLambdaArgs(
+    remainingParamCount: Int,
+    terms:               List[Term],
+    owner:               SyntheticOwner,
+    transformedBindings: Map[String, Bnd],
+    resolvables:         ResolvablesIndex
+  ): Either[NEL[SemanticError], (List[Expr], List[Term])] =
+    if remainingParamCount == 0 then (Nil, terms).asRight
+    else
+      terms match
+        case Nil =>
+          (Nil, terms).asRight
+        case head :: _ if isOperator(head, resolvables) =>
+          (Nil, terms).asRight
+        case _ =>
+          rewriteDirectLambdaArg(terms, owner, transformedBindings, resolvables).flatMap {
+            case (arg, rest) =>
+              consumeDirectLambdaArgs(
+                remainingParamCount - 1,
+                rest,
+                owner,
+                transformedBindings,
+                resolvables
+              ).map { case (args, remainingTerms) =>
+                (arg :: args, remainingTerms)
+              }
+          }
+
+  private def rewriteDirectLambdaArg(
+    terms:               List[Term],
+    owner:               SyntheticOwner,
+    transformedBindings: Map[String, Bnd],
+    resolvables:         ResolvablesIndex
+  ): Either[NEL[SemanticError], (Expr, List[Term])] =
+    terms match
+      case (group: TermGroup) :: restTerms =>
+        rewriteGroupAtom(group, owner, transformedBindings, resolvables)
+          .map(term => (Expr(group.source, List(term)), restTerms))
+      case (ref: Ref) :: restTerms =>
+        wrapIfUndersaturated(ref, ref.source, owner, transformedBindings, resolvables)
+          .map(argExpr => (argExpr, restTerms))
+      case (lambda: Lambda) :: restTerms =>
+        (Expr(lambda.source, List(lambda)), restTerms).asRight
+      case IsAtom(atom) :: restTerms =>
+        (Expr(atom.source, List(atom)), restTerms).asRight
+      case other =>
+        rewriteAtom(other, other.head.source, owner, transformedBindings, resolvables)
+
+  private def lowerDirectLambda(
+    lambda: Lambda,
+    args:   List[Expr],
+    source: SourceOrigin
+  ): Term =
+    val paramArgs       = lambda.params.zip(args)
+    val remainingParams = lambda.params.drop(args.length)
+
+    paramArgs match
+      case Nil =>
+        lambda
+      case _ if remainingParams.nonEmpty =>
+        val residualLambda = lambda.copy(
+          params   = remainingParams,
+          captures = Nil,
+          typeSpec = None
+        )
+        wrapDirectLambdaParamApps(paramArgs, residualLambda, source)
+      case _ =>
+        val outerParamArgs       = paramArgs.init
+        val (lastParam, lastArg) = paramArgs.last
+        val bodyLambda = lambda.copy(
+          params   = List(lastParam),
+          captures = Nil,
+          typeSpec = None
+        )
+        val appliedBodyLambda = App(source, bodyLambda, lastArg)
+        wrapDirectLambdaParamApps(outerParamArgs, appliedBodyLambda, source)
+
+  private def wrapDirectLambdaParamApps(
+    paramArgs: List[(FnParam, Expr)],
+    inner:     Term,
+    source:    SourceOrigin
+  ): Term =
+    paramArgs.foldRight(inner) { case ((param, arg), bodyTerm) =>
+      val bodyExpr = Expr(source, List(bodyTerm))
+      val wrapper  = Lambda(source, List(param), bodyExpr, captures = Nil)
+      App(source, wrapper, arg)
+    }
 
   private def rewriteGroupAtom(
     group:               TermGroup,

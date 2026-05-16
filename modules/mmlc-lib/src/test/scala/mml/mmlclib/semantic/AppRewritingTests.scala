@@ -209,6 +209,291 @@ class AppRewritingTests extends BaseEffFunSuite:
     }
   }
 
+  test("lambda literal in head position rewrites as direct application") {
+    semNotFailed(
+      """
+        let result = { x: Int -> x; } 1;
+      """
+    ).map { m =>
+      val memberBnd =
+        lookupNames("result", m).headOption
+          .getOrElse(
+            fail(s"Member `result` not found in module: ${prettyPrintAst(m)}")
+          )
+
+      memberBnd match
+        case bnd: Bnd =>
+          bnd.value.terms match
+            case List(App(_, lambda: Lambda, Expr(_, List(LiteralInt(_, 1)), _, _), _, _)) =>
+              assertEquals(clue(lambda.params.map(_.name)), List("x"))
+              assert(!lambda.isMove, "Expected normal lambda literal")
+            case other =>
+              fail(
+                s"Expected App(Lambda, Expr(LiteralInt(1))), got:\n${other
+                    .map(t => prettyPrintAst(t, 0, false, false))
+                    .mkString("\n")}"
+              )
+        case other =>
+          fail(s"Expected Bnd, got: ${prettyPrintAst(other)}")
+    }
+  }
+
+  test("move lambda literal in head position rewrites as direct application") {
+    semNotFailed(
+      """
+        let result = ~{ x: Int -> x; } 1;
+      """
+    ).map { m =>
+      val memberBnd =
+        lookupNames("result", m).headOption
+          .getOrElse(
+            fail(s"Member `result` not found in module: ${prettyPrintAst(m)}")
+          )
+
+      memberBnd match
+        case bnd: Bnd =>
+          bnd.value.terms match
+            case List(App(_, lambda: Lambda, Expr(_, List(LiteralInt(_, 1)), _, _), _, _)) =>
+              assertEquals(clue(lambda.params.map(_.name)), List("x"))
+              assert(lambda.isMove, "Expected move lambda marker to be preserved")
+            case other =>
+              fail(
+                s"Expected App(move Lambda, Expr(LiteralInt(1))), got:\n${other
+                    .map(t => prettyPrintAst(t, 0, false, false))
+                    .mkString("\n")}"
+              )
+        case other =>
+          fail(s"Expected Bnd, got: ${prettyPrintAst(other)}")
+    }
+  }
+
+  test("multi-parameter lambda literal in head position rewrites as direct application") {
+    semNotFailed(
+      """
+        let result = { x: Int, y: Int -> x + y; } 1 2;
+      """
+    ).map { m =>
+      val memberBnd =
+        lookupNames("result", m).headOption
+          .getOrElse(
+            fail(s"Member `result` not found in module: ${prettyPrintAst(m)}")
+          )
+
+      memberBnd match
+        case bnd: Bnd =>
+          bnd.value.terms match
+            case List(
+                  App(
+                    _,
+                    outerLambda: Lambda,
+                    Expr(_, List(LiteralInt(_, 1)), _, _),
+                    _,
+                    _
+                  )
+                ) =>
+              assertEquals(clue(outerLambda.params.map(_.name)), List("x"))
+              outerLambda.body.terms match
+                case List(
+                      App(
+                        _,
+                        innerLambda: Lambda,
+                        Expr(_, List(LiteralInt(_, 2)), _, _),
+                        _,
+                        _
+                      )
+                    ) =>
+                  assertEquals(clue(innerLambda.params.map(_.name)), List("y"))
+                  innerLambda.body.terms match
+                    case List(TXApp(plusRef, _, List(TXExprRefNamed("x"), TXExprRefNamed("y")))) =>
+                      assertEquals(clue(plusRef.name), "+")
+                    case other =>
+                      fail(
+                        s"Expected inner lambda body to add x and y, got:\n${other
+                            .map(t => prettyPrintAst(t, 0, false, false))
+                            .mkString("\n")}"
+                      )
+                case other =>
+                  fail(
+                    s"Expected outer lambda body to apply residual y lambda, got:\n${other
+                        .map(t => prettyPrintAst(t, 0, false, false))
+                        .mkString("\n")}"
+                  )
+            case other =>
+              fail(
+                s"Expected nested unary direct lambda application, got:\n${other
+                    .map(t => prettyPrintAst(t, 0, false, false))
+                    .mkString("\n")}"
+              )
+        case other =>
+          fail(s"Expected Bnd, got: ${prettyPrintAst(other)}")
+    }
+  }
+
+  test("partial multi-parameter lambda literal direct application leaves residual lambda") {
+    semNotFailed(
+      """
+        let result = { x: Int, y: Int -> x + y; } 1;
+      """
+    ).map { m =>
+      val memberBnd =
+        lookupNames("result", m).headOption
+          .getOrElse(
+            fail(s"Member `result` not found in module: ${prettyPrintAst(m)}")
+          )
+
+      memberBnd match
+        case bnd: Bnd =>
+          bnd.value.terms match
+            case List(
+                  App(
+                    _,
+                    outerLambda: Lambda,
+                    Expr(_, List(LiteralInt(_, 1)), _, _),
+                    _,
+                    _
+                  )
+                ) =>
+              assertEquals(clue(outerLambda.params.map(_.name)), List("x"))
+              outerLambda.body.terms match
+                case List(residualLambda: Lambda) =>
+                  assertEquals(clue(residualLambda.params.map(_.name)), List("y"))
+                  residualLambda.body.terms match
+                    case List(TXApp(plusRef, _, List(TXExprRefNamed("x"), TXExprRefNamed("y")))) =>
+                      assertEquals(clue(plusRef.name), "+")
+                    case other =>
+                      fail(
+                        s"Expected residual lambda body to add x and y, got:\n${other
+                            .map(t => prettyPrintAst(t, 0, false, false))
+                            .mkString("\n")}"
+                      )
+                case other =>
+                  fail(
+                    s"Expected outer lambda body to be residual y lambda, got:\n${other
+                        .map(t => prettyPrintAst(t, 0, false, false))
+                        .mkString("\n")}"
+                  )
+            case other =>
+              fail(
+                s"Expected partial direct lambda application, got:\n${other
+                    .map(t => prettyPrintAst(t, 0, false, false))
+                    .mkString("\n")}"
+              )
+        case other =>
+          fail(s"Expected Bnd, got: ${prettyPrintAst(other)}")
+    }
+  }
+
+  test("extra direct lambda arguments apply to lambda result") {
+    semNotFailed(
+      """
+        let result = { x: Int -> { y: Int -> x + y; }; } 1 2;
+      """
+    ).map { m =>
+      val memberBnd =
+        lookupNames("result", m).headOption
+          .getOrElse(
+            fail(s"Member `result` not found in module: ${prettyPrintAst(m)}")
+          )
+
+      memberBnd match
+        case bnd: Bnd =>
+          bnd.value.terms match
+            case List(
+                  App(
+                    _,
+                    App(
+                      _,
+                      outerLambda: Lambda,
+                      Expr(_, List(LiteralInt(_, 1)), _, _),
+                      _,
+                      _
+                    ),
+                    Expr(_, List(LiteralInt(_, 2)), _, _),
+                    _,
+                    _
+                  )
+                ) =>
+              assertEquals(clue(outerLambda.params.map(_.name)), List("x"))
+              outerLambda.body.terms match
+                case List(resultLambda: Lambda) =>
+                  assertEquals(clue(resultLambda.params.map(_.name)), List("y"))
+                case other =>
+                  fail(
+                    s"Expected direct lambda result to be a y lambda, got:\n${other
+                        .map(t => prettyPrintAst(t, 0, false, false))
+                        .mkString("\n")}"
+                  )
+            case other =>
+              fail(
+                s"Expected extra argument to apply to direct lambda result, got:\n${other
+                    .map(t => prettyPrintAst(t, 0, false, false))
+                    .mkString("\n")}"
+              )
+        case other =>
+          fail(s"Expected Bnd, got: ${prettyPrintAst(other)}")
+    }
+  }
+
+  test("direct lambda over-application fails through type checking") {
+    semState(
+      """
+        let result = { x: Int, y: Int -> x + y; } 1 2 3;
+      """
+    ).map { result =>
+      val errors = result.errors
+      assert(
+        errors.exists {
+          case SemanticError.TypeCheckingError(TypeError.InvalidApplication(_, _, _, _)) => true
+          case _ => false
+        },
+        s"Expected InvalidApplication, got: $errors"
+      )
+      assert(
+        !errors.exists {
+          case SemanticError.DanglingTerms(_, _, _) => true
+          case _ => false
+        },
+        s"Expected no ExpressionRewriter dangling-term error, got: $errors"
+      )
+    }
+  }
+
+  test("lambda literal in argument position remains an atomic argument") {
+    semNotFailed(
+      """
+        fn apply(f: Int -> Int, x: Int): Int = f x;;
+        let result = apply { x: Int -> x + 1; } 41;
+      """
+    ).map { m =>
+      val memberBnd =
+        lookupNames("result", m).headOption
+          .getOrElse(
+            fail(s"Member `result` not found in module: ${prettyPrintAst(m)}")
+          )
+
+      memberBnd match
+        case bnd: Bnd =>
+          bnd.value.terms match
+            case List(
+                  TXApp(
+                    applyRef,
+                    _,
+                    List(Expr(_, List(argLambda: Lambda), _, _), TXExprInt(41))
+                  )
+                ) =>
+              assertEquals(clue(applyRef.name), "apply")
+              assertEquals(clue(argLambda.params.map(_.name)), List("x"))
+            case other =>
+              fail(
+                s"Expected apply to receive lambda literal and integer args, got:\n${other
+                    .map(t => prettyPrintAst(t, 0, false, false))
+                    .mkString("\n")}"
+              )
+        case other =>
+          fail(s"Expected Bnd, got: ${prettyPrintAst(other)}")
+    }
+  }
+
   test("curried function application should work without boundaries") {
     semNotFailed(
       """
