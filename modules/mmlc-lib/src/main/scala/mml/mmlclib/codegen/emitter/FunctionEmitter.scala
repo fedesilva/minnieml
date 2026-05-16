@@ -89,8 +89,9 @@ def compileBndLambda(
           paramTypes,
           emittedName,
           body,
-          bnd.meta.exists(_.inlineHint),
-          linkage
+          inlineHint = bnd.meta.exists(_.inlineHint),
+          linkage    = linkage,
+          entryAbi   = TailRecEntryAbi.PlainDirect
         )
       case None =>
         // Pattern not recognized - emit warning and fall back to regular codegen
@@ -491,6 +492,10 @@ private[emitter] case class TailRecBranch(
 /** A back edge from a recursive call site to the loop header. */
 private case class BackEdge(blockLabel: String, argValues: List[String])
 
+private[emitter] enum TailRecEntryAbi derives CanEqual:
+  case PlainDirect
+  case ClosureEntry
+
 private[emitter] def validateLoopifiedBorrowClosures(
   body: TailRecBody
 ): Either[CodeGenError, Unit] =
@@ -730,6 +735,7 @@ private[emitter] def compileTailRecursiveLambda(
   body:        TailRecBody,
   inlineHint:  Boolean                                   = false,
   linkage:     String                                    = "",
+  entryAbi:    TailRecEntryAbi                           = TailRecEntryAbi.PlainDirect,
   captureInfo: Option[(String, List[(Capture, String)])] = None
 ): Either[CodeGenError, CodeGenState] =
   val nonVoidIndices          = paramTypes.indices.filter(i => paramTypes(i) != "void").toList
@@ -737,11 +743,12 @@ private[emitter] def compileTailRecursiveLambda(
   val filteredParams          = filteredParamsWithTypes.map(_._1)
   val filteredParamTypes      = filteredParamsWithTypes.map(_._2)
   val userParamDecls          = formatParamDecls(filteredParamsWithTypes, state.resolvables)
-  // All lambda functions get a trailing ptr %env parameter (closure env)
-  val envParamIdx = filteredParamsWithTypes.size
-  val allParamDecls =
-    if userParamDecls.isEmpty then s"ptr %$envParamIdx"
-    else s"$userParamDecls, ptr %$envParamIdx"
+  val envParamIdx             = filteredParamsWithTypes.size
+  val allParamDecls = entryAbi match
+    case TailRecEntryAbi.PlainDirect => userParamDecls
+    case TailRecEntryAbi.ClosureEntry =>
+      if userParamDecls.isEmpty then s"ptr %$envParamIdx"
+      else s"$userParamDecls, ptr %$envParamIdx"
 
   val attrGroup = if inlineHint then "#1" else "#0"
   val functionDecl =
@@ -756,11 +763,21 @@ private[emitter] def compileTailRecursiveLambda(
   )
   for
     _ <- validateLoopifiedBorrowClosures(body)
+    _ <-
+      if entryAbi == TailRecEntryAbi.PlainDirect && captureInfo.nonEmpty then
+        CodeGenError(
+          "Plain direct tail-recursive functions cannot load captures from a closure env",
+          lambda.some
+        ).asLeft
+      else ().asRight
     captureCount       = captureInfo.fold(0)(_._2.size)
     captureFieldOffset = if lambda.isMove then 1 else 0
     captureData = captureInfo match
       case Some((envTypeRef, captureTypes)) =>
-        val captureStartState = baseState.withRegister(envParamIdx + 1)
+        val captureStartRegister = entryAbi match
+          case TailRecEntryAbi.PlainDirect => envParamIdx
+          case TailRecEntryAbi.ClosureEntry => envParamIdx + 1
+        val captureStartState = baseState.withRegister(captureStartRegister)
         emitCaptureLoads(
           envTypeRef,
           envParamIdx,
@@ -774,8 +791,10 @@ private[emitter] def compileTailRecursiveLambda(
     stateAfterEntry                    = stateAfterCaptures.emit(s"  br label %$loopHeader")
     headerState                        = stateAfterEntry.emit(s"$loopHeader:")
     paramCount                         = filteredParams.size
-    phiStart                           = paramCount + 1 + 2 * captureCount
-    phiRegs                            = filteredParams.indices.map(i => phiStart + i).toList
+    phiStart = entryAbi match
+      case TailRecEntryAbi.PlainDirect => paramCount + 2 * captureCount
+      case TailRecEntryAbi.ClosureEntry => paramCount + 1 + 2 * captureCount
+    phiRegs = filteredParams.indices.map(i => phiStart + i).toList
     phiPlaceholders = phiRegs.zip(filteredParamTypes).map { case (phiReg, llvmType) =>
       s"  %$phiReg = phi $llvmType __PHI_PLACEHOLDER_$phiReg"
     }

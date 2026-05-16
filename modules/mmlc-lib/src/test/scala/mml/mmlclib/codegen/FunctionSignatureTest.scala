@@ -357,6 +357,33 @@ class FunctionSignatureTest extends BaseEffFunSuite:
     }
   }
 
+  test("local static null-env closure calls use direct closure-entry call") {
+    val source =
+      """
+        fn main(): Int =
+          let f = { x: Int -> x + 1; };
+          f 41;
+        ;
+      """
+
+    compileAndGenerate(source).map { llvmIr =>
+      val mainBody = functionBody(llvmIr, "test_main\\(\\) #0")
+
+      assert(
+        """call i64 @test_f_\d+\(i64 41, ptr null\)""".r.findFirstIn(mainBody).nonEmpty,
+        s"Expected local static closure call to use a direct closure-entry call. Body:\n$mainBody"
+      )
+      assert(
+        !mainBody.contains("extractvalue { ptr, ptr }"),
+        s"Static null-env closure call should not extract from a fat pointer. Body:\n$mainBody"
+      )
+      assert(
+        """call i64 %\d+\(i64 41, ptr %\d+\)""".r.findFirstIn(mainBody).isEmpty,
+        s"Static null-env closure call should not use an indirect function pointer. Body:\n$mainBody"
+      )
+    }
+  }
+
   test("shadowed local callable args do not eta-expand from top-level names") {
     val source =
       """

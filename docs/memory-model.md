@@ -262,11 +262,17 @@ Native types implement their own free/clone in the runtime.
 
 ## Closures
 
-A **non-capturing lambda** is a plain function pointer. It is a value type and requires
-no ownership tracking or deallocation.
+A **non-capturing function value** is represented as the same fat pointer shape used for
+closures: a function entry pointer plus a null environment pointer. The entry pointer uses the
+closure-call ABI and accepts the environment pointer as its final argument, even though it ignores
+that value.
 
-A **capturing lambda** (closure) is represented as a fat pointer: a function pointer plus
-an environment pointer. What matters is how that closure captures.
+A **capturing lambda** (closure) is represented as a fat pointer with a non-null environment
+pointer. What matters is how that closure captures.
+
+Direct calls to top-level functions use the plain direct-call ABI. When a named function is used as
+a first-class value, codegen creates or reuses a closure-entry wrapper whose body calls the plain
+direct symbol.
 
 ### Capture semantics
 

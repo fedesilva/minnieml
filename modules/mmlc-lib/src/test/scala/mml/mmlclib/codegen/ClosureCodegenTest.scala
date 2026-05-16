@@ -107,6 +107,37 @@ class ClosureCodegenTest extends BaseEffFunSuite:
     }
   }
 
+  test("non-recursive named capturing lambda does not rebuild unused self closure") {
+    val source = """
+      fn main(): Int =
+        let seed = 1;
+        fn inner(x: Int): Int =
+          x + seed;
+        ;
+        inner 41;
+      ;
+    """
+
+    compileAndGenerate(source).map { llvmIr =>
+      val innerMatch =
+        """(?s)define internal i64 @(test_inner_\d+)\(i64 %0, ptr %1\) #0 \{\n(.*?)\n\}""".r
+          .findFirstMatchIn(llvmIr)
+          .getOrElse(fail(s"Missing named capturing closure body. IR:\n$llvmIr"))
+
+      val innerName = innerMatch.group(1)
+      val innerBody = innerMatch.group(2)
+
+      assert(
+        !innerBody.contains(s"insertvalue { ptr, ptr } undef, ptr @$innerName, 0"),
+        s"Non-recursive closure should not rebuild its own function pointer. Body:\n$innerBody"
+      )
+      assert(
+        !innerBody.contains("insertvalue { ptr, ptr }"),
+        s"Non-recursive closure body should not emit any self fat-pointer insertvalues. Body:\n$innerBody"
+      )
+    }
+  }
+
   test("returned capturing closures free through generated __free_closure body") {
     val source = """
       fn makeAdder(a: Int): Int -> Int =
@@ -208,7 +239,7 @@ class ClosureCodegenTest extends BaseEffFunSuite:
       """
 
     compileAndGenerate(source, config = CompilerConfig.default.copy(noTco = false)).map { llvmIr =>
-      val loopBody      = functionBody(llvmIr, "test_loop\\(i64 %0, i64 %1, ptr %2\\) #0")
+      val loopBody      = functionBody(llvmIr, "test_loop\\(i64 %0, i64 %1\\) #0")
       val envAllocCount = "alloca %struct.__closure_env_".r.findAllIn(loopBody).length
       val allocaIndex   = loopBody.indexOf("alloca %struct.__closure_env_")
       val loopBrIndex   = loopBody.indexOf("br label %loop.header")
@@ -302,7 +333,7 @@ class ClosureCodegenTest extends BaseEffFunSuite:
       """
 
     compileAndGenerate(source, config = CompilerConfig.default.copy(noTco = false)).map { llvmIr =>
-      val loopBody = functionBody(llvmIr, "test_loop\\(i64 %0, i64 %1, ptr %2\\) #0")
+      val loopBody = functionBody(llvmIr, "test_loop\\(i64 %0, i64 %1\\) #0")
 
       assert(
         loopBody.contains("alloca %struct.__closure_env_"),
