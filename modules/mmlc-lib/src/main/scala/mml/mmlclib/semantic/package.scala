@@ -329,6 +329,12 @@ def injectBasicTypes(module: Module): Module =
       typeSpec = Some(NativePointer(syntheticSource, "i8", memEffect = Some(MemEffect.Alloc))),
       id       = stdlibId("typedef", "Buffer")
     ),
+    TypeDef(
+      source   = SourceOrigin.Synth,
+      nameNode = Name.synth("Rng"),
+      typeSpec = Some(NativePointer(syntheticSource, "i8", memEffect = Some(MemEffect.Alloc))),
+      id       = stdlibId("typedef", "Rng")
+    ),
 
     // Pointer types for arrays
     TypeDef(
@@ -607,6 +613,7 @@ def injectCommonFunctions(module: Module): Module =
   def floatType  = stdlibTypeRef("Float")
   def unitType   = stdlibTypeRef("Unit")
   def bufferType = stdlibTypeRef("Buffer")
+  def rngType    = stdlibTypeRef("Rng")
 
   // Helper to create a function as Bnd(Lambda)
   def mkFn(
@@ -786,6 +793,28 @@ def injectCommonFunctions(module: Module): Module =
       List(FnParam(SourceOrigin.Synth, Name.synth("a"), typeAsc = Some(stringType))),
       intType
     ),
+    // Random number generator
+    mkFn(
+      "rng_new",
+      List(FnParam(SourceOrigin.Synth, Name.synth("seed"), typeAsc = Some(intType))),
+      rngType,
+      Some(MemEffect.Alloc)
+    ),
+    mkFn("rng_new_random", List(), rngType, Some(MemEffect.Alloc)),
+    mkFn(
+      "rng_next",
+      List(FnParam(SourceOrigin.Synth, Name.synth("rng"), typeAsc = Some(rngType))),
+      intType
+    ),
+    mkFn(
+      "rng_between",
+      List(
+        FnParam(SourceOrigin.Synth, Name.synth("rng"), typeAsc = Some(rngType)),
+        FnParam(SourceOrigin.Synth, Name.synth("min"), typeAsc = Some(intType)),
+        FnParam(SourceOrigin.Synth, Name.synth("max"), typeAsc = Some(intType))
+      ),
+      intType
+    ),
     // Buffer functions
     mkFn("mkBuffer", List(), bufferType, Some(MemEffect.Alloc)),
     mkFn(
@@ -934,6 +963,13 @@ def injectCommonFunctions(module: Module): Module =
       "__free_Buffer",
       List(
         FnParam(SourceOrigin.Synth, Name.synth("b"), typeAsc = Some(bufferType), consuming = true)
+      ),
+      unitType
+    ),
+    mkFn(
+      "__free_Rng",
+      List(
+        FnParam(SourceOrigin.Synth, Name.synth("rng"), typeAsc = Some(rngType), consuming = true)
       ),
       unitType
     ),
@@ -1122,6 +1158,12 @@ def injectCommonFunctions(module: Module): Module =
       "__clone_Buffer",
       List(FnParam(SourceOrigin.Synth, Name.synth("b"), typeAsc = Some(bufferType))),
       bufferType,
+      Some(MemEffect.Alloc)
+    ),
+    mkFn(
+      "__clone_Rng",
+      List(FnParam(SourceOrigin.Synth, Name.synth("rng"), typeAsc = Some(rngType))),
+      rngType,
       Some(MemEffect.Alloc)
     ),
     mkFn(

@@ -1,0 +1,14 @@
+fn print_randoms(rng: Rng, i: Int): Unit =
+  if i < 10 then
+    let n = rng_next rng;
+    println (int_to_str n);
+    print_randoms rng (i + 1);
+  ;
+;
+
+pub fn main() =
+  println "Seed:";
+  let seed = str_to_int (readline());
+  let rng = rng_new seed;
+  print_randoms rng 0;
+;

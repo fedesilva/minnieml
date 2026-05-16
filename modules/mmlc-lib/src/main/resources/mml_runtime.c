@@ -1,8 +1,10 @@
 #include <fcntl.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <stdatomic.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 #include <sys/types.h>
 #include <sys/uio.h>
 #include <sys/wait.h>
@@ -52,6 +54,58 @@ typedef struct FloatArray
     int64_t length;
     float *data;
 } FloatArray;
+
+// --- Random Number Generator ---
+typedef struct
+{
+    uint64_t state;
+} RngImpl;
+
+typedef RngImpl *Rng;
+
+static atomic_uint_fast64_t rng_random_counter;
+
+Rng rng_new(int64_t seed)
+{
+    Rng rng = (Rng)malloc(sizeof(RngImpl));
+    if (!rng)
+        mml_sys_oom_abort();
+    rng->state = (uint64_t)seed;
+    return rng;
+}
+
+Rng rng_new_random()
+{
+    uint64_t seed = (uint64_t)time(NULL);
+    seed ^= ((uint64_t)getpid()) << 32;
+    uint64_t sequence =
+        atomic_fetch_add_explicit(&rng_random_counter, 1, memory_order_relaxed) + 1;
+    seed ^= sequence * UINT64_C(0x9e3779b97f4a7c15);
+    return rng_new((int64_t)seed);
+}
+
+int64_t rng_next(Rng rng)
+{
+    if (!rng)
+        mml_panic("rng_next called with null Rng");
+
+    rng->state += UINT64_C(0x9e3779b97f4a7c15);
+    uint64_t z = rng->state;
+    z = (z ^ (z >> 30)) * UINT64_C(0xbf58476d1ce4e5b9);
+    z = (z ^ (z >> 27)) * UINT64_C(0x94d049bb133111eb);
+    z = z ^ (z >> 31);
+    return (int64_t)(z & UINT64_C(0x7fffffffffffffff));
+}
+
+int64_t rng_between(Rng rng, int64_t min, int64_t max)
+{
+    if (max <= min)
+        mml_panic("rng_between called with max <= min");
+
+    uint64_t width = (uint64_t)max - (uint64_t)min;
+    uint64_t value = (uint64_t)rng_next(rng);
+    return min + (int64_t)(value % width);
+}
 
 // --- Output Buffer ---
 typedef struct
@@ -943,6 +997,12 @@ void __free_Buffer(Buffer b)
     }
 }
 
+void __free_Rng(Rng rng)
+{
+    if (rng)
+        free(rng);
+}
+
 void __free_IntArray(IntArray arr)
 {
     if (arr.data)
@@ -1021,6 +1081,19 @@ Buffer __clone_Buffer(Buffer b)
         mml_sys_oom_abort();
     memcpy(new_b->data, b->data, b->length);
     return new_b;
+}
+
+Rng __clone_Rng(Rng rng)
+{
+    if (!rng)
+        return NULL;
+
+    Rng new_rng = (Rng)malloc(sizeof(RngImpl));
+    if (!new_rng)
+        mml_sys_oom_abort();
+
+    new_rng->state = rng->state;
+    return new_rng;
 }
 
 IntArray __clone_IntArray(IntArray arr)
