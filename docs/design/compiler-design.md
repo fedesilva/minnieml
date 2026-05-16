@@ -845,6 +845,7 @@ IntArray                       // Struct: { length: Int64, data: CharPtr }
 StringArray                    // Struct: { length: Int64, data: CharPtr }
 FloatArray                     // Struct: { length: Int64, data: FloatPtr }
 Buffer                         // Opaque pointer (i8*)
+Rng                            // Opaque pointer (i8*)
 
 // Type aliases
 Int   → Int64
@@ -915,6 +916,12 @@ fn concat(a: String, b: String): String = @native[mem=alloc];
 fn to_string(n: Int): String = @native[mem=alloc];
 fn float_to_str(a: Float): String = @native[mem=alloc];
 fn str_to_int(s: String): Int = @native;
+
+// Random number generator
+fn rng_new(seed: Int): Rng = @native[mem=alloc];
+fn rng_new_random(): Rng = @native[mem=alloc];
+fn rng_next(rng: Rng): Int = @native;
+fn rng_between(rng: Rng, min: Int, max: Int): Int = @native;
 
 // Float math
 fn int_to_float(n: Int): Float = @native[tpl="sitofp i64 %operand to float"];
