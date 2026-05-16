@@ -37,17 +37,6 @@
 - [ ] Let users force-move a value at a call site without requiring a consuming parameter.
 - [ ] Keep the work aligned with the borrow-by-default capture model.
 
-### BUG: Immediate lambda application from term adjacency (local) [COMPLETE]
-
-  The expression rewriter does not currently treat a lambda literal in head
-  position as an application target, so source like `{ x: Int -> x } 1`
-  survives as dangling adjacent terms instead of rewriting to `App`.
-
-- [x] Let expression/application rewriting treat lambda literals as valid application heads.
-- [x] Rewrite `{ ... } arg` into the same `App` shape used for other callable heads.
-- [x] Add focused parser/semantic regression coverage once the rewriting path is fixed.
-
-
 ## Change Log
 
 - 2026-05-15: Direct lambda-head application with partial application semantics
