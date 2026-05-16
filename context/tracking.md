@@ -37,18 +37,26 @@
 - [ ] Let users force-move a value at a call site without requiring a consuming parameter.
 - [ ] Keep the work aligned with the borrow-by-default capture model.
 
-### BUG: Immediate lambda application from term adjacency (local)
+### BUG: Immediate lambda application from term adjacency (local) [COMPLETE]
 
   The expression rewriter does not currently treat a lambda literal in head
   position as an application target, so source like `{ x: Int -> x } 1`
   survives as dangling adjacent terms instead of rewriting to `App`.
 
-- [ ] Let expression/application rewriting treat lambda literals as valid application heads.
-- [ ] Rewrite `{ ... } arg` into the same `App` shape used for other callable heads.
-- [ ] Add focused parser/semantic regression coverage once the rewriting path is fixed.
+- [x] Let expression/application rewriting treat lambda literals as valid application heads.
+- [x] Rewrite `{ ... } arg` into the same `App` shape used for other callable heads.
+- [x] Add focused parser/semantic regression coverage once the rewriting path is fixed.
 
 
 ## Change Log
+
+- 2026-05-15: Direct lambda-head application with partial application semantics
+  - ExpressionRewriter: direct lambda-head calls now lower multi-parameter lambdas into nested
+    unary immediate-lambda applications, preserve partial direct application as residual lambdas,
+    and route extra adjacent args through normal application/type-checking.
+  - Tests: added parser and semantic regressions for direct lambda-head application, move lambda
+    preservation, partial application, higher-order extra args, over-application diagnostics, and
+    lambda literals as atomic arguments.
 
 - 2026-05-15: #261 local TCO ABI materialization follow-up
   - Codegen: non-capturing let-bound tail-recursive lambdas now emit a plain loopified direct entry

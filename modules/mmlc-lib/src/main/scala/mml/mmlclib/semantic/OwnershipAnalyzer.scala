@@ -886,6 +886,7 @@ object OwnershipAnalyzer:
     lTypeSpec: Option[Type],
     lTypeAsc:  Option[Type],
     meta:      Option[LambdaMeta],
+    isMove:    Boolean,
     arg:       Expr,
     typeAsc:   Option[Type],
     typeSpec:  Option[Type],
@@ -1016,7 +1017,7 @@ object OwnershipAnalyzer:
       case None =>
         bodyWithTerminalFrees
 
-    val newLambda = Lambda(lSource, params, newBody, captures, lTypeSpec, lTypeAsc, meta)
+    val newLambda = Lambda(lSource, params, newBody, captures, lTypeSpec, lTypeAsc, meta, isMove)
     val innerApp  = App(span, newLambda, argResult.expr, typeAsc, typeSpec)
 
     val finalTerm = witnessOpt match
@@ -1496,6 +1497,7 @@ object OwnershipAnalyzer:
           fn.typeSpec,
           fn.typeAsc,
           fn.meta,
+          fn.isMove,
           arg,
           typeAsc,
           typeSpec,
