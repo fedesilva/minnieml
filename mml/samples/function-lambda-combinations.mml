@@ -1,0 +1,119 @@
+// Function/lambda ABI coverage sample.
+//
+// Why this exists:
+//   This is a small, runnable program to keep around after fixing the direct-call
+//   ABI vs closure-call ABI split. It intentionally uses the currently supported
+//   function and lambda shapes in one place so generated IR can be inspected
+//   after codegen changes.
+//
+// What to expect in the IR:
+//   - Top-level direct calls, including tail-recursive direct calls, should call
+//     plain function symbols with only user arguments.
+//   - Named functions used as first-class values should be materialized as
+//     `{ ptr, ptr }` fat pointers. Non-capturing named functions should use a
+//     closure-entry wrapper with `ptr null` for the env.
+//   - Indirect calls through `Int -> Int` and `Unit -> Int` should extract both
+//     fields from the fat pointer and pass the env as the final argument.
+//   - Borrow-capturing local lambdas and inner functions should use a stack env
+//     and stay local.
+//   - Move-capturing escaping lambdas and inner functions should use an owned env
+//     and be freed.
+//
+// Expected output:
+//   118
+
+type IntFn = Int -> Int;
+
+fn apply1(f: Int -> Int, x: Int) = f x;;
+
+fn apply0(f: Unit -> Int) = f ();;
+
+fn inc(x: Int) = x + 1;;
+
+fn add(a: Int, b: Int) = a + b;;
+
+fn tail_inc_until(x: Int): Int =
+  if x >= 5 then
+    x;
+  else
+    tail_inc_until (x + 1);
+  ;
+;
+
+let add_ten = add 10;
+
+let chosen =
+  if true then
+    inc;
+  else
+    { x: Int -> x + 100; };
+  ;
+
+fn make_move_adder(base: Int) = ~{ x: Int -> x + base; };;
+
+fn make_inner_move_adder(base: Int) =
+  fn ~inner_move(x: Int) = x + base;;
+
+  inner_move;
+;
+
+fn local_cases(seed: Int) =
+  fn inner(y: Int) = y + seed;;
+
+  let add_seed = { y: Int -> y + seed; };
+  let binary_lambda = { a: Int, b: Int -> a + b; };
+
+  let count: IntFn = {
+    x: Int ->
+      if x <= 0 then
+        0;
+      else
+        1 + (count (x - 1));
+      ;
+  };
+
+  let thunk = { seed + 1; };
+
+  let direct_lambda = apply1 { x: Int -> x * 2; } 3;
+
+  inner 1 + add_seed 2 + binary_lambda 2 3 + count 3 + apply0 thunk + direct_lambda;
+;
+
+fn nested_case(seed: Int) =
+  let outer = { x: Int ->
+    let y = x + seed;
+    apply1 { z: Int -> x + y + z; } 4;
+  };
+
+  apply1 outer 2;
+;
+
+pub fn main() =
+  let direct = inc 1;
+  let direct_tail = tail_inc_until 0;
+  let ho_named = apply1 inc 10;
+  let ho_tail = apply1 tail_inc_until 2;
+  let partial = add_ten 5;
+  let chosen_res = chosen 20;
+
+  let moved = make_move_adder 9;
+  let moved_res = moved 1;
+  let moved_inner = make_inner_move_adder 6;
+  let moved_inner_res = moved_inner 2;
+
+  let locals = local_cases 4;
+  let nested = nested_case 3;
+
+  println (int_to_str (
+    direct +
+    direct_tail +
+    ho_named +
+    ho_tail +
+    partial +
+    chosen_res +
+    moved_res +
+    moved_inner_res +
+    locals +
+    nested
+  ));
+;

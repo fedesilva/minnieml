@@ -238,7 +238,8 @@ private def compileTailRecNonCapturing(
     paramTypes,
     fnName,
     body,
-    linkage = "internal "
+    linkage  = "internal ",
+    entryAbi = TailRecEntryAbi.ClosureEntry
   ).map { finalSubState =>
     val fnBody      = finalSubState.output.reverse.mkString("\n")
     val mergedState = mergeDeferredBodyState(state, finalSubState).addDeferredDefinition(fnBody)
@@ -275,6 +276,7 @@ private def compileTailRecCapturingLambda(
       fnName,
       body,
       linkage     = "internal ",
+      entryAbi    = TailRecEntryAbi.ClosureEntry,
       captureInfo = capInfo.some
     ).map { finalSubState =>
       val fnBody = finalSubState.output.reverse.mkString("\n")
@@ -415,6 +417,53 @@ private def emitRecursiveSelfClosure(
         state.withRegister(selfFpReg + 1).emit(insertFn).emit(insertEnv)
       val selfScope = Map(param.name -> ScopeEntry(selfFpReg, "Function"))
       (nextState, selfScope)
+
+private def lambdaReferencesBinding(
+  lambda:       Lambda,
+  bindingParam: Option[FnParam]
+): Either[CodeGenError, Boolean] =
+  bindingParam match
+    case None => false.asRight
+    case Some(param) =>
+      param.id match
+        case None =>
+          CodeGenError(
+            s"Missing semantic ID for closure binding '${param.name}'",
+            lambda.some
+          ).asLeft
+        case Some(targetId) => exprReferencesBinding(lambda.body, targetId).asRight
+
+private def exprReferencesBinding(expr: Expr, targetId: String): Boolean =
+  expr.terms.exists(termReferencesBinding(_, targetId))
+
+private def termReferencesBinding(term: Term, targetId: String): Boolean =
+  term match
+    case ref: Ref =>
+      ref.resolvedId.contains(targetId) || ref.qualifier.exists(termReferencesBinding(_, targetId))
+    case expr: Expr =>
+      exprReferencesBinding(expr, targetId)
+    case app: App =>
+      appFnReferencesBinding(app.fn, targetId) || exprReferencesBinding(app.arg, targetId)
+    case lambda: Lambda if lambda.params.exists(_.id.contains(targetId)) =>
+      false
+    case lambda: Lambda =>
+      exprReferencesBinding(lambda.body, targetId)
+    case TermGroup(_, inner, _) =>
+      exprReferencesBinding(inner, targetId)
+    case Cond(_, cond, ifTrue, ifFalse, _, _) =>
+      List(cond, ifTrue, ifFalse).exists(exprReferencesBinding(_, targetId))
+    case Tuple(_, elements, _, _) =>
+      elements.toList.exists(exprReferencesBinding(_, targetId))
+    case invalid: InvalidExpression =>
+      exprReferencesBinding(invalid.originalExpr, targetId)
+    case _ =>
+      false
+
+private def appFnReferencesBinding(fn: Ref | App | Lambda, targetId: String): Boolean =
+  fn match
+    case ref:    Ref => termReferencesBinding(ref, targetId)
+    case app:    App => termReferencesBinding(app, targetId)
+    case lambda: Lambda => termReferencesBinding(lambda, targetId)
 
 /** Resolve capture types, create env struct, emit call-site IR.
   *
@@ -603,12 +652,13 @@ private def compileCapturingLambda(
         initialBodyState,
         captureFieldOffset
       )
-    val (bodyStateWithSelf, selfScope) =
-      emitRecursiveSelfClosure(fnName, envParamIdx, bodyState, bindingParam)
-
-    val allScope = functionScope ++ paramScope ++ captureScope ++ selfScope
-
     for
+      referencesSelf <- lambdaReferencesBinding(lambda, bindingParam)
+      (bodyStateWithSelf, selfScope) =
+        if referencesSelf then
+          emitRecursiveSelfClosure(fnName, envParamIdx, bodyState, bindingParam)
+        else (bodyState, Map.empty)
+      allScope = functionScope ++ paramScope ++ captureScope ++ selfScope
       bodyRes <- compileExpr(lambda.body, bodyStateWithSelf, allScope)
       retLine =
         if returnType == "void" then "  ret void"

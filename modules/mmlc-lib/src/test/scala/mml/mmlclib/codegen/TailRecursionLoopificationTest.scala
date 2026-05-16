@@ -5,6 +5,13 @@ import mml.mmlclib.test.BaseEffFunSuite
 
 class TailRecursionLoopificationTest extends BaseEffFunSuite:
 
+  private def functionBody(llvmIr: String, signaturePattern: String): String =
+    val pattern = (s"(?s)define .*@$signaturePattern \\{\\n(.*?)\\n\\}").r
+    pattern
+      .findFirstMatchIn(llvmIr)
+      .map(_.group(1))
+      .getOrElse(fail(s"Missing function definition for $signaturePattern. IR:\n$llvmIr"))
+
   test("emits tail-recursive function as a loop") {
     val source =
       """
@@ -21,6 +28,86 @@ class TailRecursionLoopificationTest extends BaseEffFunSuite:
       assert(llvmIr.contains("loop.header:"))
       assert(llvmIr.contains("phi i64"))
       assert(llvmIr.contains("br label %loop.header"))
+    }
+  }
+
+  test("top-level loopified function uses the plain direct-call ABI") {
+    val source =
+      """
+      fn sum(i: Int, acc: Int): Int =
+        if i < 10 then
+          sum (i + 1) (acc + i);
+        else
+          acc;
+        ;
+      ;
+
+      fn main(): Int = sum 0 0;;
+      """
+
+    compileAndGenerate(source, config = CompilerConfig.default.copy(noTco = false)).map { llvmIr =>
+      val mainBody = functionBody(llvmIr, "test_main\\(\\) #0")
+
+      assert(
+        llvmIr.contains("define internal i64 @test_sum(i64 %0, i64 %1) #0"),
+        s"Loopified top-level function should not accept a closure env. IR:\n$llvmIr"
+      )
+      assert(
+        !llvmIr.contains("define internal i64 @test_sum(i64 %0, i64 %1, ptr %2) #0"),
+        s"Loopified top-level function must not use closure-entry ABI. IR:\n$llvmIr"
+      )
+      assert(
+        mainBody.contains("call i64 @test_sum(i64 0, i64 0)") &&
+          !mainBody.contains("call i64 @test_sum(i64 0, i64 0, ptr null)"),
+        s"Direct caller should pass only user arguments. Body:\n$mainBody"
+      )
+    }
+  }
+
+  test("named loopified function used as a value keeps a closure-entry wrapper") {
+    val source =
+      """
+      fn apply(f: Int -> Int): Int = f 41;;
+
+      fn down(x: Int): Int =
+        if x == 0 then
+          0;
+        else
+          down (x - 1);
+        ;
+      ;
+
+      fn main(): Int = (apply down) + (down 3);;
+      """
+
+    compileAndGenerate(source, config = CompilerConfig.default.copy(noTco = false)).map { llvmIr =>
+      val applyBody = functionBody(llvmIr, "test_apply\\(\\{ ptr, ptr \\} %0\\) #0")
+      val mainBody  = functionBody(llvmIr, "test_main\\(\\) #0")
+      val wrapperMatch =
+        """(?s)define internal i64 @(test__anon_\d+)\(i64 %0, ptr %1\) #0 \{\n(.*?)\n\}""".r
+          .findFirstMatchIn(llvmIr)
+          .getOrElse(fail(s"Missing closure-entry wrapper. IR:\n$llvmIr"))
+      val wrapperName = wrapperMatch.group(1)
+      val wrapperBody = wrapperMatch.group(2)
+
+      assert(
+        llvmIr.contains("define internal i64 @test_down(i64 %0) #0"),
+        s"Direct loopified function should use plain ABI. IR:\n$llvmIr"
+      )
+      assert(
+        wrapperBody.contains("call i64 @test_down(i64 %0)"),
+        s"Wrapper should forward to the plain direct symbol. Body:\n$wrapperBody"
+      )
+      assert(
+        """call i64 %\d+\(i64 41, ptr %\d+\)""".r.findFirstIn(applyBody).nonEmpty,
+        s"Higher-order call should still pass the extracted env. Body:\n$applyBody"
+      )
+      assert(
+        mainBody.contains(s"call i64 @test_apply({ ptr, ptr } { ptr @$wrapperName, ptr null })") &&
+          mainBody.contains("call i64 @test_down(i64 3)") &&
+          !mainBody.contains("call i64 @test_down(i64 3, ptr null)"),
+        s"main should use both the wrapper value and the direct plain call. Body:\n$mainBody"
+      )
     }
   }
 
