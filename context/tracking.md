@@ -27,7 +27,11 @@
 
 * new: save llvm info file, local triple and compile runtime to
   ~/.mml/ (the files) and ~/.mml/cache/runtime (the runtime)
-* when compiling with asan, do not compile the runtime with asan.
+* when compiling with asan
+  - compile the runtime with a suffix _asan
+  - link to the _asan runtime
+   - the reason is we cache the runtime binary 
+    - and when we try to link with an asan compiled runtime if not on asan mode we fail.
 * add commands to manage the cache (init, clean)
 
 ### #254 Call-site move
@@ -36,6 +40,14 @@
 - [ ] Add call-site move syntax: `~expr`.
 - [ ] Let users force-move a value at a call site without requiring a consuming parameter.
 - [ ] Keep the work aligned with the borrow-by-default capture model.
+
+### #255 Unify lambdas
+
+- GitHub: `https://github.com/fedesilva/minnieml/issues/255`
+- [ ] Treat top-level functions and let-bound lambdas / inner functions identically in semantics and codegen.
+- [ ] Unify borrow and move capture handling.
+- [ ] Keep alloca vs malloc as a derivable optimization rather than separate closure models.
+- [ ] Discuss and write a plan before implementation.
 
 ## Change Log
 
