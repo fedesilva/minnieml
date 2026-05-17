@@ -28,7 +28,7 @@
 // 1. Demo and Main
 // ---------------------------------------------------------
 
-pub fn main(args: StringArray): Unit =
+pub fn main(args: StringArray) =
   // Number of command-line arguments.
   let argc = ar_str_len args;
 
