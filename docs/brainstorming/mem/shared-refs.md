@@ -95,11 +95,18 @@ After conversion:
 
 This must be explicit. There should be no silent promotion from `T` to `&T`.
 
-### Copying
+### Aliasing an existing shared ref
 
-Copying an `&T` value is allowed.
+`&b` where `b: &T` does not move `b`. It bumps the reference count and returns
+another `&T` handle. Both bindings are live afterwards.
 
-That copy increments the reference count.
+So `&` is overloaded by the row of its operand:
+
+- on a `unique T`, `&` moves the value into a fresh RC cell (rc = 1)
+- on an `&T`, `&` aliases the existing cell (rc++)
+
+This is one operator with one mental model: "give me a shared handle to this
+value." How the handle is produced depends on whether one already exists.
 
 ### Drop
 
@@ -107,10 +114,60 @@ Dropping an `&T` decrements the reference count.
 
 When the count reaches zero:
 
-1. the inner `T` value is dropped
+1. the inner `T` value is dropped via its `Drop` implementation (see
+   `mem-evolution.md`, Layer 2)
 2. the RC cell storage is freed
 
-This preserves deterministic destruction while allowing shared structure.
+This preserves deterministic destruction while allowing shared structure. `&T`
+does not need its own `Drop` derivation; it reuses the inner `T`'s.
+
+### Clone-out via `^`
+
+`^` is the dual operator: "give me a fresh unique value from this one."
+
+- `^x` where `x: unique T` and `T: Clone` produces a `unique T` deep copy;
+  `x` retains its ownership
+- `^x` where `x: &T` and `T: Clone` produces a `unique T` deep copy of the
+  inner value; the handle stays alive
+
+`^` requires `T: Clone`. `&` does not. That asymmetry is load-bearing: it makes
+resources (types that are `Drop` but not `Clone`) shareable but never
+duplicable. See "Resources" below.
+
+There is no `^` from `unique T` back to `&T` and no operator that converts `&T`
+back to `unique T` without copying. Once a value is shared, the only path to
+unique ownership is a clone.
+
+`^` is surface syntax for the `Clone` protocol:
+
+```mml
+^x   ≡   Clone.clone x
+```
+
+The compiler desugars `^` into a protocol call; nothing else about `^` is
+special. Users can implement `Clone` for their own types with whatever copy
+semantics make sense, and `^` will pick it up.
+
+### `&` is a primitive, `^` is a protocol operator
+
+The two operators are not symmetric in implementation, only in feel.
+
+`&` is a **compiler primitive**. The type checker has to understand that `&`
+consumes a `unique T` (or aliases an `&T`), and it has to track `&T` through
+the `Shared` row. Codegen has to emit the retain on `&` and the release at
+scope end. None of that can be expressed as a user-level protocol method,
+because none of it is a function call: it is typing rules plus IR emission.
+There is no `Share` protocol with a `share(self: T): &T` method; `&` lives in
+the language, not in user space.
+
+`^` is **just an operator**, as above: surface syntax for `Clone.clone`. The
+compiler does not need to know `^` exists beyond desugaring it into a protocol
+call.
+
+Removing `^` from the language would leave `Clone` intact and users would
+write `clone x` in source. Removing `&` would require deleting the `Shared`
+row, the refcount runtime, and the retain/release insertion pass. `&` does not
+survive without compiler support; `^` does.
 
 ### Borrowing
 
@@ -119,7 +176,51 @@ Borrowing and shared ownership are different concepts.
 - plain parameters still borrow by default
 - `&T` is not a borrow, it is a shared owner handle
 
+A function parameter of type `&T` participates in retain/release like any other
+`&T` binding. A function parameter of type `T` borrows whatever the caller
+hands it. Passing an `&T` to a `T` parameter is not allowed without an
+explicit `^` to clone the inner value out.
+
 This distinction should stay crisp in the type system and in diagnostics.
+
+---
+
+## Resources: `Drop` without `Clone`
+
+The split between `&` (needs no `Clone`) and `^` (needs `Clone`) makes resources
+expressible for the first time.
+
+A resource is a type that has cleanup semantics but cannot be duplicated:
+textures, file handles, sockets, locks. Each has identity tied to something the
+runtime cannot copy.
+
+```mml
+unique type Texture = @native { id: Int, width: Int, height: Int };
+
+fn unload_texture(~t: Texture): Unit = @native;
+
+implement Drop for Texture =
+  fn drop(~self: Texture): Unit = unload_texture self
+end
+
+// No Clone. Texture cannot be duplicated.
+```
+
+With this declaration, the capability matrix constrains usage:
+
+```mml
+let t  = load_texture "wall.png";    // unique Texture
+let t2 = ^t;                         // error: Texture: !Clone
+let s  = &t;                         // ok: unique → &Texture (rc = 1)
+let s2 = &s;                         // ok: alias (rc = 2)
+let u  = ^s;                         // error: Texture: !Clone
+                                     // scope end: s and s2 drop;
+                                     // last handle calls unload_texture
+```
+
+A `Texture` is aliasable but not duplicable. The compiler has no special case
+for "resource"; the behavior is what falls out of `Drop` without `Clone` once
+`&` and `^` are decoupled.
 
 ---
 
@@ -174,12 +275,12 @@ Shared refs do not replace cloning.
 
 These are different operations:
 
-- `clone x` duplicates a value
+- `^x` (clone) duplicates a value
 - `&x` changes the ownership regime of `x`
 
 That distinction matters.
 
-`clone` says:
+`^` says:
 
 - "I want two independent values"
 
@@ -188,6 +289,10 @@ That distinction matters.
 - "I want one value, but I want it to be shared"
 
 The language should support both because they solve different problems.
+
+`^` is the surface syntax for the `Clone` protocol (see `mem-evolution.md`,
+Layer 3). It works on both `unique T` and `&T` and requires `T: Clone` in both
+cases.
 
 ---
 
@@ -244,11 +349,19 @@ This is the main semantic question left open by the model.
 
 ### 2. Syntax surface
 
-Questions:
+Resolved for the value-level operators:
 
-- is `&expr` the final syntax for promotion into shared ownership?
-- how do we spell the type form in annotations and fields?
-- do we want pattern-level or parameter-level support for shared refs later?
+- `&expr` promotes a `unique T` into `&T`, or aliases an existing `&T`
+- `^expr` produces a `unique T` from a `unique T` or an `&T` (requires
+  `T: Clone`)
+- the type form is `&T` in annotations and fields
+
+Still open:
+
+- pattern-level support for shared refs (binding through `&` in patterns)
+- whether parameter sigils (analogous to `~` for consume) make sense for
+  expressing "this parameter takes a shared ref and bumps the count for the
+  duration of the call" vs the default of plain participation in retain/release
 
 ### 3. Runtime representation
 
@@ -260,24 +373,34 @@ Possible representations:
 
 This should be chosen based on codegen simplicity and predictable performance.
 
+Atomic refcounting fits the same machinery. An `&T` whose `T` also carries
+`Send` would compile to atomic increments; a non-`Send` `&T` stays non-atomic.
+No new type form, no new sigil. See `mem-evolution.md`, Layer 4.
+
 ### 4. Protocol integration
 
-Questions:
+Resolved:
 
-- does `&T` get its own `Drop` behavior via protocol derivation?
-- does `&T` require `Clone`-like protocol support for retain semantics, or is that
-  built in?
-- how does `&T` interact with future `Drop` / `Clone` / protocol dispatch design?
+- `&T` reuses the inner `T`'s `Drop` implementation when the count reaches zero.
+  No separate `Drop` derivation for `&T` itself.
+- `&` does not require `Clone` on `T`. That is what makes resources
+  (`Drop` without `Clone`) shareable.
+- `^` is the surface syntax for the `Clone` protocol. It requires `T: Clone` on
+  both `unique T` and `&T` inputs.
+- Retain semantics are built in to `&` (not protocol-dispatched). Refcount
+  bumps and drops are compiler-emitted, the same way `Drop` calls are
+  auto-inserted at scope end.
 
 ### 5. Borrowing from shared refs
 
-What does it mean to pass `&T` to a normal parameter?
+Resolved:
 
-Likely answer:
-
-- the parameter borrows the shared handle, not the inner value directly
-
-But this needs to be made precise.
+- a function parameter of type `&T` participates in retain/release like any
+  other `&T` binding
+- a function parameter of type `T` borrows whatever the caller hands it;
+  passing an `&T` to a `T` parameter is rejected
+- to feed an `&T` to a function that wants a plain `T`, clone the inner value
+  out with `^` and pass the result
 
 ---
 
@@ -286,10 +409,11 @@ But this needs to be made precise.
 The intended memory ladder is:
 
 1. unique ownership by default
-2. explicit `clone` for duplication
-3. explicit `&` for shared ownership
+2. explicit `^` for duplication (Clone protocol)
+3. explicit `&` for shared ownership (this document)
 
-That keeps the simple path fast and predictable while still giving a workable model
-for richer data structures.
+That keeps the simple path fast and predictable while still giving a workable
+model for richer data structures.
 
-This is the direction to return to after protocol-based `Clone` lands.
+Layer 3 of `mem-evolution.md` lands `Clone` and `^`. This document's design
+follows from that and from the row capability framing in Layer 4.

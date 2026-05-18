@@ -54,6 +54,16 @@
 
 ## Change Log
 
+- 2026-05-18: Mem evolution layer 4 — shared refs, `&` and `^` operators
+  - `docs/brainstorming/mem/mem-evolution.md`: added Layer 4 (shared refs, `&T` type,
+    opt-in refcount, resources as Drop without Clone); added "`&` is a primitive, `^`
+    is a protocol operator" subsection; extended hierarchy ladder with `&T`; updated
+    summary table and the uniqueness-tradeoff paragraph to point at Layer 4.
+  - `docs/brainstorming/mem/shared-refs.md`: added aliasing arm of `&`, clone-out via
+    `^` as Clone-protocol surface syntax, resources example, and the primitive-vs-protocol
+    distinction; resolved open questions 2/4/5 against Layer 3+4; updated the current-
+    direction ladder to use `^`.
+
 - 2026-05-15: Direct lambda-head application with partial application semantics
   - ExpressionRewriter: direct lambda-head calls now lower multi-parameter lambdas into nested
     unary immediate-lambda applications, preserve partial direct application as residual lambdas,
