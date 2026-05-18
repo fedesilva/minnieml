@@ -223,6 +223,141 @@ Make duplication explicit and protocol-driven.
 
 ---
 
+## Layer 4: Shared references and opt-in reference counting
+
+The default is affine ownership: one owner, deterministic destruction, no runtime
+cost. That is right for most code, but not all of it. Some values are genuinely
+shared between holders that have no single best owner — an interned string pool,
+a texture used by many sprites, a config record read from many places. Cloning
+wastes work; uniqueness misrepresents the relationship.
+
+For those cases MML adds a shared-reference type `&T` (the `Shared` row capability on `T`) and two operators.
+Reference counting is opt-in. You ask for it at the use site; nothing in the
+language pushes it on you by default.
+
+See `docs/brainstorming/mem/shared-refs.md` for the longer rationale.
+
+### Operators
+
+| op  | input        | result     | effect                                              | requires    |
+|-----|--------------|------------|-----------------------------------------------------|-------------|
+| `&` | `unique T`   | `&T`       | move into a fresh refcount cell (rc = 1)            | —           |
+| `&` | `&T`         | `&T`       | bump the refcount, return another handle            | —           |
+| `^` | `unique T`   | `unique T` | deep copy; original keeps ownership                 | `T: Clone`  |
+| `^` | `&T`         | `unique T` | deep copy of the inner value; handle stays alive    | `T: Clone`  |
+
+`&` is the only consumer of uniqueness. `^` is the only way to obtain a fresh
+unique value from an existing one, whether the source is `unique` or `Shared`.
+There is no implicit move in either direction.
+
+### `&` is a primitive, `^` is a protocol operator
+
+The two operators are not symmetric in implementation, only in feel.
+
+`&` is a **compiler primitive**. The type checker has to understand that `&`
+consumes a `unique T` (or aliases an `&T`), and it has to track `&T` through
+the `Shared` row. Codegen has to emit the retain on `&` and the release at scope
+end. None of that can be expressed as a user-level protocol method, because none
+of it is a function call: it is typing rules plus IR emission. There is no
+`Share` protocol with a `share(self: T): &T` method; `&` lives in the language,
+not in user space.
+
+`^` is **just an operator**. It is the surface syntax for the `Clone` protocol's
+`clone` method:
+
+```mml
+^x   ≡   Clone.clone x
+```
+
+Anything implementing `Clone` gets `^` automatically. Users can write their own
+`Clone` implementations with custom semantics (deep copy, shallow copy plus
+COW, reference-counted bump, whatever fits the type). The compiler does not
+need to know `^` exists beyond desugaring it into a protocol call that the
+normal monomorphisation path then handles.
+
+This asymmetry is structural. Removing `^` from the language would leave
+`Clone` intact and users would write `clone x` in source. Removing `&` would
+require deleting the `Shared` row, the refcount runtime, and the retain/release
+insertion pass. `&` does not survive without compiler support; `^` does.
+
+```mml
+let a = "String";    // unique String
+let b = &a;          // a moved; b is Shared (rc = 1)
+println a;           // error: use after move
+let c = &b;          // alias; rc = 2
+let x = ^b;          // deep copy; x: unique String, b still &String
+println c ++ b;      // both shared handles still live
+                     // scope end: c and b drop, rc hits 0, inner String dropped
+```
+
+### `Shared` as a row capability
+
+`Shared` lives in the same row as `Unique`, `Drop`, and `Clone`. The operators
+dispatch on the row of their operand; the programmer does not name a wrapper
+type. `&` does not require `Clone` on `T`. `^` does. When the last `&T`
+goes out of scope, the existing `Drop` machinery runs on the inner value.
+Nothing about destruction or auto-derivation changes.
+
+### Resources: Drop without Clone
+
+This is the case the older model could not express. The `Texture` from the FFI
+example (see Layer 2) implements `Drop` but not `Clone`. With `&` and `^`
+separated by capability, the type's behavior follows directly:
+
+```mml
+let t  = load_texture "wall.png";    // unique Texture
+let t2 = ^t;                         // error: Texture: !Clone
+let s  = &t;                         // ok: unique → &Texture (rc = 1)
+let s2 = &s;                         // ok: alias another handle (rc = 2)
+let u  = ^s;                         // error: Texture: !Clone
+                                     // s and s2 drop at scope end;
+                                     // last handle calls unload_texture
+```
+
+A `Texture` is aliasable but not duplicable. That is the right semantics for a
+unique resource shared across a program. The compiler does not need a "resource"
+category; the behavior falls out of `Drop` without `Clone`.
+
+### Why opt-in, not ambient
+
+Refcounting is a real runtime cost and a real shift in the ownership story.
+Roc, Koka, Lean 4, and Swift refcount by default and lean on optimizer-driven
+uniqueness inference to elide bumps where they can. That is convenient, but it
+hides the cost and ties the language to whatever the optimizer can prove on a
+given day.
+
+MML inverts that. Affine is the default. Affine has no runtime ownership cost.
+When you write `&`, the program pays for sharing in source where the reader can
+see it. The model stays small and the compiler stays honest.
+
+Atomic refcounting fits on the same machinery. A `&T` that also carries
+`Send` would compile to atomic increments; a non-`Send` `Shared` stays
+non-atomic. No new sigil, no new wrapper type.
+
+### What this eliminates
+
+- The need for a separate sharing mechanism bolted on later. `Shared` joins the
+  row alongside `Unique`, `Drop`, and `Clone` rather than living in user-space
+  as a generic wrapper.
+- The implicit assumption that aliasing is impossible without cloning. Resources
+  (`Drop`, no `Clone`) can now be shared at all.
+
+### Open questions
+
+- Whether `&T` surfaces in error messages and inference as a wrapper head
+  or as a row capability on `T`. The row framing is cleaner for inference, the
+  wrapper framing is clearer in diagnostics. Probably both, with the row as the
+  canonical form.
+- `^` on a deeply nested `Shared` graph is a deep copy. For nested shared
+  structures, that may not be what the user wanted. A lint, or a finer variant
+  of `^` that stops at `Shared` boundaries, may be worth the complexity. Worth
+  naming even if the answer is no.
+- Cycle detection. Reference counting cannot collect cycles. The current type
+  system makes cycles hard to construct (no mutation through `Shared`, no
+  `RefCell` analog) but the property should be stated, not implied.
+
+---
+
 ## Summary: before and after
 
 | Concern | Current | After evolution |
@@ -236,6 +371,8 @@ Make duplication explicit and protocol-driven.
 | Clone insertion | `wrapWithClone` + `__clone_T` | `clone` calls via `Clone` protocol |
 | Native type metadata | `memEffect` annotations | Protocol implementations |
 | Unique resources | Not expressible | `Drop` without `Clone` |
+| Aliasing without copy | Not expressible | `&` produces `&T` (opt-in refcount) |
+| Explicit duplication | Implicit via codegen | `^` invokes `Clone` at the use site |
 
 ---
 
@@ -345,14 +482,20 @@ The constraint propagates from fields to containers:
 ### The hierarchy
 
 ```
-T               — value type, freely copyable, no cleanup
-unique T        — unique/affine, must be consumed at most once, no automatic cleanup
-unique T + Drop — unique, compiler inserts drop at scope end
+T                       — value type, freely copyable, no cleanup
+unique T                — unique/affine, must be consumed at most once, no automatic cleanup
+unique T + Drop         — unique, compiler inserts drop at scope end
 unique T + Drop + Clone — unique, droppable, explicitly clonable (current heap types)
+Shared T                — refcounted handle on a previously-unique T:
+                          - `&` on `unique T` mints one (rc=1); further `&` aliases (rc++)
+                          - `^` deep-copies the inner value out, requires T: Clone
+                          - drop runs on the inner value when rc reaches 0
 ```
 
 Users can move *up* this ladder (make an `Int` unique if they want) but cannot
-move *down* — a struct containing a `Drop` field cannot opt out of `Drop`.
+move *down* — a struct containing a `Drop` field cannot opt out of `Drop`. Moving
+from `unique T` to `&T` is one-way: `&` consumes the unique value, and the only
+path back to `unique` is `^`, which is a clone, not a recovery.
 
 ### Auto-derivation
 
@@ -377,8 +520,10 @@ pay for a copy. Strings get copied more than strictly necessary, but the model
 stays simple and the compiler stays small. Every clone is explicit, every free is
 deterministic.
 
-If this becomes too expensive for specific use cases, an opt-in shared wrapper
-with reference counting could be added later without changing the core model.
+Layer 4 covers the cases where copying is genuinely too expensive. `&` on a
+unique value moves it into a refcounted handle; further `&` operations alias the
+handle. The default ownership story stays affine; the escape hatch is visible in
+source wherever it is used.
 
 ### Type rows
 
