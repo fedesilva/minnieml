@@ -12,14 +12,14 @@
 * *Always read* `context/task-tracking-rules.md` 
   *before* working with this file - even if you read it before, 
   it might have changed in the meantime.
-* These rules are mandatory unless the Author explicitly overrides them.
+* These rules are mandatory **unless** the Author explicitly overrides them.
 
 ## Active Tasks
 
 ### define new tasks
 
 * review the already existing ticket for check command
-  - add a phase that runs llvm-as only if and only if 
+  - add a phase that runs llvm-as only if 
     we detect native declarations with templates.
   - the check command runs ingest, semantic and llvm validation if required.
   - this new phase only runs during check, because otherwise we just run the normal
@@ -44,6 +44,9 @@
 ### #255 Unify lambdas
 
 - GitHub: `https://github.com/fedesilva/minnieml/issues/255`
+- Reference: `context/specs/unify-lambdas.md`
+    - this file requires discussion, not yet approved.
+- [ ] Finalize `unify-lambdas.md`
 - [ ] Treat top-level functions and let-bound lambdas / inner functions identically in semantics and codegen.
 - [ ] Unify borrow and move capture handling.
 - [ ] Keep alloca vs malloc as a derivable optimization rather than separate closure models.
