@@ -2,6 +2,17 @@
 
 ## Problem
 
+---
+fede note: 
+no, I refuse to pollute the mml code with out params.
+that is not the api I want and will not follow through.
+I am leaving this document here, because I still need to think 
+about why matmult-opt is slower under aarch (vs x86) 
+
+Sieve, Matumul, QuickSort, etc. All slower on aarch m5.
+Even things where we were at c level on x86. 
+--- 
+
 MML has owned values that are represented as aggregates containing pointers. Examples today include
 `String`, `IntArray`, `StringArray`, and `FloatArray`, but the issue is not specific to those names.
 Any struct-like value may contain pointer-like fields, and ownership may make those pointers
