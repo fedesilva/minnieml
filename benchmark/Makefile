@@ -78,7 +78,7 @@ $(BINDIR)/sieve-rs: sieve.rs | $(BINDIR)
 	rustc -O -o $@ $<
 
 $(BINDIR)/sieve-mml: sieve.mml | $(BINDIR)
-	mmlc -I -b $(BUILDDIR) -o $@ $<
+	mmlc -I -b $(BUILDDIR) -O 1 -o $@ $<
 
 # Self benchmark binaries (MML with various opt/TCO knobs)
 SELF_SIEVE_BINARIES = \
@@ -140,7 +140,7 @@ $(BINDIR)/quicksort-c: quicksort.c | $(BINDIR)
 	$(CC) $(CFLAGS) -o $@ $<
 
 $(BINDIR)/quicksort-mml: quicksort.mml | $(BINDIR)
-	mmlc -I -b $(BUILDDIR) -o $@ $<
+	mmlc -I -b $(BUILDDIR) -O 1 -o $@ $<
 
 # Matrix Multiplication
 $(BINDIR)/matmul-c: matmul.c | $(BINDIR)
@@ -162,10 +162,10 @@ $(BINDIR)/matmul-opt-go: matmul-opt.go | $(BINDIR)
 	go build -o $@ $<
 
 $(BINDIR)/matmul-mml: mat-mul.mml | $(BINDIR)
-	mmlc -I -b $(BUILDDIR) -o $@ $<
+	mmlc -I -b $(BUILDDIR) -O 1 -o $@ $<
 
 $(BINDIR)/matmul-opt-mml: mat-mul-opt.mml | $(BINDIR)
-	mmlc -I -b $(BUILDDIR) -o $@ $<
+	mmlc -I -b $(BUILDDIR) -O 1 -o $@ $<
 
 $(BINDIR)/matmul-mml-O0-tco: mat-mul.mml | $(BINDIR)
 	mmlc -I -b $(BUILDDIR) -O 0 -o $@ $<
@@ -230,7 +230,7 @@ $(BINDIR)/euclidean-ext-c: euclidean-ext.c | $(BINDIR)
 	$(CC) $(CFLAGS) -o $@ $<
 
 $(BINDIR)/euclidean-ext-mml: euclidean-ext.mml | $(BINDIR)
-	mmlc -I -b $(BUILDDIR) -o $@ $<
+	mmlc -I -b $(BUILDDIR) -O 1 -o $@ $<
 
 # Benchmarks
 bench-sieve: $(BINDIR)/sieve-c $(BINDIR)/sieve-go $(BINDIR)/sieve-rs $(BINDIR)/sieve-mml $(RESULTS_DEP)
