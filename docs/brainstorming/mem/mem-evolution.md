@@ -54,7 +54,7 @@ Most functions just take arguments, use them, and return. The caller never loses
 ownership. No annotation needed. `~` is the exception, not the rule.
 
 This must be preserved through the evolution. The layers below add structure
-(uniqueness on types, Drop/Clone protocols, type rows) but do not change the
+(Unique/Clone protocols, type rows, shared refs) but do not change the
 default: if a function doesn't say `~`, it borrows.
 
 ---
@@ -79,114 +79,174 @@ the evolution.
 
 ---
 
-## Layer 1: Uniqueness in the type system
+## Decisions
 
-Move linearity from the analyzer into the type checker.
+### Drop and Unique are one capability
+
+A type that needs cleanup *must* be unique: otherwise it can be silently
+duplicated and double-freed. A type that is unique *will* be cleaned up at scope
+end: that is what makes the linearity discipline observable. The two properties
+are co-extensive in every concrete case MML cares about, so they collapse into
+one row capability.
+
+The merged capability is named `Unique`. The protocol method that runs at scope
+end is named `drop`. There is no separate `Drop` protocol and no separate
+`unique` keyword on type declarations.
+
+**Why:** Keeping them split was paying complexity tax for a phantom rung
+("linear without cleanup", e.g. session-type tokens, type-state markers) that
+MML has no concrete user for today. If that category becomes load-bearing
+later, it can be reintroduced as a separate `MustConsume` capability that
+suppresses scope-end `drop`. That is additive; we do not need to keep the split
+around speculatively.
+
+### A type is unique iff it implements `Unique`
+
+Uniqueness is not declared by a keyword. It is declared by implementing the
+`Unique` protocol (directly, or via auto-derivation from members). A type's row
+contains `Unique` exactly when the protocol is implemented for it.
+
+The freely-copyable types in MML form a small island: numbers, booleans, unit,
+characters, and aggregates built only from those. Everything else --
+`String`, `Buffer`, `IntArray`, file handles, textures, sockets, user structs
+holding any of those -- is `Unique`.
+
+### `Unique` and `Clone` both propagate, dually
+
+Both capabilities are auto-derived for MML types. The compiler knows how to
+recurse on the fields of an MML aggregate, so it can derive both `drop` and
+`clone` automatically. The propagation rules are duals of each other:
+
+- An aggregate is `Unique` iff **at least one** of its members is `Unique`.
+  One unique field is enough to taint the whole -- you can't copy the
+  aggregate freely if any part can't be copied.
+- An aggregate is `Clone` iff **every** member is `Clone`. To duplicate the
+  whole, you must be able to duplicate every part; one non-cloneable member
+  is enough to make the aggregate non-cloneable.
+
+A `struct { name: String, age: Int }` is `Unique & Clone`: `String` is
+`Unique & Clone`, `Int` is freely copyable, so both capabilities flow through.
+A `struct { handle: FileHandle, label: String }` is `Unique` but not `Clone`:
+`FileHandle` is `Unique` without `Clone`, so the aggregate inherits the
+non-cloneability.
+
+Native types are the exception. The compiler has no insight into an opaque
+`@native` representation, so both protocols must be declared explicitly when
+they apply. Aggregates built on top of native types still auto-derive
+normally.
+
+Cost visibility is not lost by auto-deriving `Clone`. The cost shows up where
+it is paid: every duplication is an explicit `^x` in source, and the reader
+sees a copy happening regardless of whether the impl was derived or
+hand-written.
+
+---
+
+## Layer 1: Unique protocol
+
+Move linearity and cleanup into the type system as a single capability.
+
+### The protocol
+
+```mml
+protocol Unique for T =
+  fn drop(~self: T): Unit
+end
+```
+
+A type is `Unique` iff it implements this protocol. The type checker enforces
+linearity (single owner, no use-after-move, no silent duplication). The compiler
+inserts `drop` calls at scope end on owned `Unique` values that were not
+consumed by a `~` parameter or returned.
 
 ### Uniqueness vs ownership
 
-A type like `String` is *unique* -- declared as such at the type level. That
-is a permanent property of the type. There is no "non-unique String." Uniqueness
-means: this value must not be silently duplicated, and exactly one owner is
-responsible for its destruction.
+`String` is `Unique` -- a permanent property of the type. There is no
+"non-unique String." Uniqueness means: this value must not be silently
+duplicated, and exactly one owner is responsible for its destruction.
 
-But unique values can still be *borrowed*. Most functions borrow: `println` takes
-a `String`, uses it, and the caller keeps ownership. Borrowing a unique value is
-safe as long as the borrower doesn't outlive the owner or try to destroy it.
+But unique values can still be *borrowed*. Most functions borrow: `println`
+takes a `String`, uses it, and the caller keeps ownership. Borrowing a unique
+value is safe as long as the borrower doesn't outlive the owner or try to
+destroy it.
 
-`~` on a parameter is not about the type -- it's about the function's relationship
-to the argument. The type is `String` either way. `~` on the parameter says
-"I take responsibility for this value":
+`~` on a parameter is not about the type -- it's about the function's
+relationship to the argument. The type is `String` either way. `~` on the
+parameter says "I take responsibility for this value":
 
 - `fn println(s: String): Unit` -- borrows `s`. Caller keeps ownership.
-- `fn consume(~s: String): Unit` -- takes ownership. Caller loses it. Callee
-  is responsible for drop.
+- `fn consume(~s: String): Unit` -- takes ownership. Callee runs `drop` if it
+  doesn't transfer the value out.
 - `fn readline(): String` -- caller receives an owned value (return values are
   always owned).
 
 The type doesn't change. `String` is `String`. What changes is the declaration
 of responsibility.
 
-### What changes
+### Native types
 
-- Type declarations can mark a type as unique (exact syntax TBD -- possibly
-  `unique struct Foo { ... }` or a keyword in the `@native` annotation).
-  Uniqueness is a property of the type itself, not of individual values.
-- `~` on parameters means "I take ownership", same as today, but now the type
-  checker validates linearity (use-after-move becomes a type error).
-- The type checker tracks linearity. Use-after-move is a type error, not a
-  semantic analysis error.
+Native heap types declare `Unique` explicitly, calling their existing runtime
+free functions:
+
+```mml
+implement Unique for String =
+  fn drop(~self: String): Unit = free_string self
+end
+```
+
+This replaces the `__free_T` naming convention and `[mem=heap, free=...]`
+annotations. Native types are no longer special-cased -- they are just types
+that implement `Unique` (and optionally `Clone`).
+
+### Aggregates: auto-derivation by contagion
+
+A struct with at least one `Unique` field is itself `Unique`. The compiler
+auto-derives the implementation by recursing on members:
+
+```mml
+struct User { name: String, age: Int }
+// User: Unique  (because String: Unique)
+// User: Clone   (because every field is Clone: String is, Int is freely copyable)
+// auto-derived drop recurses into name; age is a value, ignored
+// auto-derived clone recurses into name; age is copied
+```
+
+The user only writes an explicit `Unique` implementation when the aggregate
+needs custom destruction (flush before close, refcount, custom allocator), or
+an explicit `Clone` implementation for custom copy semantics.
+
+The same rule applies to tuples, sum types (a variant carrying a `Unique`
+payload taints the whole sum), arrays of `Unique`, and any future aggregate
+form. Stated once: **an aggregate is `Unique` iff at least one of its members
+is `Unique`; it is `Clone` iff every member is `Clone`**.
 
 ### What this eliminates
 
 - **`ReturnOwnershipAnalysis`** — no more fixed-point inference. If a type is
-  unique, its return values are always owned. Cross-module calls are sound because
-  uniqueness is declared on the type.
-- **`memEffect` annotations** — a function returning a unique type is implicitly
-  returning an owned value. No side-channel needed.
-- **Most witness booleans** — if the result type is unique, the type checker
-  ensures both branches agree on ownership. The non-allocating
-  branch clones automatically (or errors, depending on the type). The analyzer no
-  longer needs runtime flags to track conditional ownership.
-
-### What stays the same
-
-- The ownership analyzer still inserts free/clone calls. It just has much better
-  information — the type checker has already validated the linearity invariants.
-- Default parameters still borrow. `~` on parameters still means consumption.
-- Struct constructors still consume heap fields.
-
----
-
-## Layer 2: Drop protocol
-
-Decouple "needs cleanup" from "is a heap type" by making cleanup a protocol
-obligation.
-
-### What changes
-
-- Introduce a `Drop` protocol:
-
-  ```mml
-  protocol Drop for T =
-    fn drop(~self: T): Unit
-  end
-  ```
-
-- Any type implementing `Drop` gets automatic scope-end cleanup. The compiler
-  calls `drop` when an owned unique value goes out of scope without being consumed.
-- Native heap types (`String`, `Buffer`, `IntArray`, etc.) implement `Drop` by
-  calling their existing runtime free functions — replacing the `__free_T` naming
-  convention and `[mem=heap, free=...]` annotations.
-- For user-defined structs with `Drop` fields, the compiler generates a `Drop`
-  implementation (recursive field destruction) and the protocol wiring. This is
-  the same work `MemoryFunctionGenerator` does today, but the output is a proper
-  protocol implementation rather than a `__free_T` function wired by naming
-  convention.
-- Non-heap types that need cleanup (file handles, sockets, locks) implement `Drop`
-  and get the same automatic cleanup as heap types.
-
-### What this eliminates
-
+  `Unique`, its return values are always owned. Cross-module calls are sound
+  because uniqueness is declared on the type.
+- **`memEffect` annotations** — a function returning a `Unique` type implicitly
+  returns an owned value. No side-channel needed.
+- **Most witness booleans** — if the result type is `Unique`, the type checker
+  ensures both branches agree on ownership. The non-allocating branch clones
+  (when `T: Clone`) or errors. No runtime flags.
 - **`isStructWithHeapFields` / `hasHeapFields`** — replaced by "does this type
-  implement `Drop`?"
-- **`MemoryFunctionGenerator`** synthesizing `__free_T` / `__clone_T` — replaced
-  by protocol derivation.
-- **`memEffect` annotations entirely** — a function returning a unique type that
-  implements `Drop` tells the compiler everything it needs to know.
+  implement `Unique`?"
+- **`MemoryFunctionGenerator` synthesizing `__free_T`** — replaced by protocol
+  derivation.
 - **The special-casing of native types** — native types are just types that
-  implement `Drop` (and optionally `Clone`).
+  implement `Unique` (and optionally `Clone`).
 
 ### What stays the same
 
 - The ownership analyzer still exists, but it's now a thin pass: insert `drop`
-  calls at scope end for `Drop` types, validate moves for unique types, done.
-- The type checker enforces linearity (Layer 1). The Drop protocol just tells the
-  compiler *what to do* when a linear value is consumed by scope exit.
+  calls at scope end for `Unique` types, validate moves, done.
+- Default parameters still borrow. `~` on parameters still means consumption.
+- Struct constructors still consume `Unique` fields.
 
 ---
 
-## Layer 3: Clone protocol
+## Layer 2: Clone protocol
 
 Make duplication explicit and protocol-driven.
 
@@ -200,40 +260,62 @@ Make duplication explicit and protocol-driven.
   end
   ```
 
-  Note the asymmetry with `Drop`: `drop(~self)` consumes because the value is
+  Note the asymmetry with `Unique`: `drop(~self)` consumes because the value is
   being destroyed. `clone(self)` borrows because the original must survive the
   operation.
 
 - When a value of type `T: Clone` is used in a context that requires duplication
   (passed to a consuming param while still needed, or explicitly cloned), the
   compiler calls `clone`.
-- Types that are `Drop` but not `Clone` are unique resources — they cannot be
-  duplicated at all (sockets, file handles, locks).
-- Types that are both `Drop + Clone` are the current heap types — they can be
-  cloned when needed and are freed when owned.
-- Types that are `Clone` but not `Drop` are value types with custom copy semantics
-  (unusual, but possible).
+- Types that are `Unique` but not `Clone` are unique resources — they cannot be
+  duplicated at all (sockets, file handles, locks, textures).
+- Types that are both `Unique + Clone` are the current heap types — they can be
+  cloned when needed and are dropped when owned.
+- A non-`Unique` type does not need `Clone`. It is freely copyable by virtue of
+  being made of primitives.
+
+### Clone is auto-derived for MML aggregates
+
+An MML aggregate is `Clone` iff every one of its members is `Clone`. The
+compiler derives the implementation by recursing on fields. This is the dual
+of the `Unique` rule (any one unique field makes the whole unique; every
+field must be cloneable to make the whole cloneable).
+
+A struct containing a `Unique`-without-`Clone` field (e.g. a `FileHandle`,
+`Texture`, socket) is itself `Unique` without `Clone`. Trying to `^` it is a
+type error.
+
+Native types are the exception. The compiler cannot derive `clone` for an
+opaque `@native` representation -- the binding author writes the
+implementation explicitly, calling whatever C-runtime clone routine the type
+uses.
+
+Cost visibility is preserved at the *use site*: every duplication is an
+explicit `^x` in source, and the reader sees a copy happening regardless of
+whether the impl was hand-written or derived. Literals and globals of a
+`Clone` type are auto-cloned at the use site (they have no owner to transfer
+from); everything else requires `^` or produces a compiler error.
 
 ### What this eliminates
 
 - **`wrapWithClone` / `argNeedsClone`** hard-coded logic — replaced by protocol
   dispatch.
-- **The implicit assumption that all heap types are clonable** — unique resources
-  are now expressible.
+- **The implicit assumption that all heap types are clonable** — unique
+  resources are now expressible as `Unique` without `Clone`.
 
 ---
 
-## Layer 4: Shared references and opt-in reference counting
+## Layer 3: Shared references and opt-in reference counting
 
-The default is affine ownership: one owner, deterministic destruction, no runtime
-cost. That is right for most code, but not all of it. Some values are genuinely
-shared between holders that have no single best owner — an interned string pool,
-a texture used by many sprites, a config record read from many places. Cloning
-wastes work; uniqueness misrepresents the relationship.
+The default is affine ownership: one owner, deterministic destruction, no
+runtime cost. That is right for most code, but not all of it. Some values are
+genuinely shared between holders that have no single best owner — an interned
+string pool, a texture used by many sprites, a config record read from many
+places. Cloning wastes work; plain uniqueness misrepresents the relationship.
 
-For those cases MML adds a shared-reference type `&T` (the `Shared` row capability on `T`) and two operators.
-Reference counting is opt-in. You ask for it at the use site; nothing in the
-language pushes it on you by default.
+For those cases MML adds a shared-reference type `&T` (the `Shared` row
+capability on `T`) and two operators. Reference counting is opt-in. You ask for
+it at the use site; nothing in the language pushes it on you by default.
 
 See `docs/brainstorming/mem/shared-refs.md` for the longer rationale.
 
@@ -241,13 +323,13 @@ See `docs/brainstorming/mem/shared-refs.md` for the longer rationale.
 
 | op  | input        | result     | effect                                              | requires    |
 |-----|--------------|------------|-----------------------------------------------------|-------------|
-| `&` | `unique T`   | `&T`       | move into a fresh refcount cell (rc = 1)            | —           |
+| `&` | `T: Unique`  | `&T`       | move into a fresh refcount cell (rc = 1)            | —           |
 | `&` | `&T`         | `&T`       | bump the refcount, return another handle            | —           |
-| `^` | `unique T`   | `unique T` | deep copy; original keeps ownership                 | `T: Clone`  |
-| `^` | `&T`         | `unique T` | deep copy of the inner value; handle stays alive    | `T: Clone`  |
+| `^` | `T: Unique`  | `T`        | deep copy; original keeps ownership                 | `T: Clone`  |
+| `^` | `&T`         | `T`        | deep copy of the inner value; handle stays alive    | `T: Clone`  |
 
 `&` is the only consumer of uniqueness. `^` is the only way to obtain a fresh
-unique value from an existing one, whether the source is `unique` or `Shared`.
+unique value from an existing one, whether the source is `Unique` or `Shared`.
 There is no implicit move in either direction.
 
 ### `&` is a primitive, `^` is a protocol operator
@@ -255,15 +337,15 @@ There is no implicit move in either direction.
 The two operators are not symmetric in implementation, only in feel.
 
 `&` is a **compiler primitive**. The type checker has to understand that `&`
-consumes a `unique T` (or aliases an `&T`), and it has to track `&T` through
-the `Shared` row. Codegen has to emit the retain on `&` and the release at scope
-end. None of that can be expressed as a user-level protocol method, because none
-of it is a function call: it is typing rules plus IR emission. There is no
-`Share` protocol with a `share(self: T): &T` method; `&` lives in the language,
-not in user space.
+consumes a `Unique` value (or aliases an `&T`), and it has to track `&T`
+through the `Shared` row. Codegen has to emit the retain on `&` and the release
+at scope end. None of that can be expressed as a user-level protocol method,
+because none of it is a function call: it is typing rules plus IR emission.
+There is no `Share` protocol with a `share(self: T): &T` method; `&` lives in
+the language, not in user space.
 
-`^` is **just an operator**. It is the surface syntax for the `Clone` protocol's
-`clone` method:
+`^` is **just an operator**. It is the surface syntax for the `Clone`
+protocol's `clone` method:
 
 ```mml
 ^x   ≡   Clone.clone x
@@ -281,33 +363,33 @@ require deleting the `Shared` row, the refcount runtime, and the retain/release
 insertion pass. `&` does not survive without compiler support; `^` does.
 
 ```mml
-let a = "String";    // unique String
-let b = &a;          // a moved; b is Shared (rc = 1)
+let a = "String";    // a: String (Unique)
+let b = &a;          // a moved; b: &String (rc = 1)
 println a;           // error: use after move
 let c = &b;          // alias; rc = 2
-let x = ^b;          // deep copy; x: unique String, b still &String
+let x = ^b;          // deep copy; x: String, b still &String
 println c ++ b;      // both shared handles still live
-                     // scope end: c and b drop, rc hits 0, inner String dropped
+                     // scope end: c and b drop, rc hits 0, inner String drops
 ```
 
 ### `Shared` as a row capability
 
-`Shared` lives in the same row as `Unique`, `Drop`, and `Clone`. The operators
-dispatch on the row of their operand; the programmer does not name a wrapper
-type. `&` does not require `Clone` on `T`. `^` does. When the last `&T`
-goes out of scope, the existing `Drop` machinery runs on the inner value.
-Nothing about destruction or auto-derivation changes.
+`Shared` lives in the same row as `Unique` and `Clone`. The operators dispatch
+on the row of their operand; the programmer does not name a wrapper type. `&`
+does not require `Clone` on `T`. `^` does. When the last `&T` goes out of
+scope, the existing `Unique` machinery runs `drop` on the inner value. Nothing
+about destruction or auto-derivation changes.
 
-### Resources: Drop without Clone
+### Resources: `Unique` without `Clone`
 
-This is the case the older model could not express. The `Texture` from the FFI
-example (see Layer 2) implements `Drop` but not `Clone`. With `&` and `^`
-separated by capability, the type's behavior follows directly:
+This is the case the older model could not express. A `Texture` from an FFI
+binding implements `Unique` but not `Clone`. With `&` and `^` separated by
+capability, the type's behavior follows directly:
 
 ```mml
-let t  = load_texture "wall.png";    // unique Texture
+let t  = load_texture "wall.png";    // t: Texture (Unique)
 let t2 = ^t;                         // error: Texture: !Clone
-let s  = &t;                         // ok: unique → &Texture (rc = 1)
+let s  = &t;                         // ok: Unique → &Texture (rc = 1)
 let s2 = &s;                         // ok: alias another handle (rc = 2)
 let u  = ^s;                         // error: Texture: !Clone
                                      // s and s2 drop at scope end;
@@ -315,8 +397,8 @@ let u  = ^s;                         // error: Texture: !Clone
 ```
 
 A `Texture` is aliasable but not duplicable. That is the right semantics for a
-unique resource shared across a program. The compiler does not need a "resource"
-category; the behavior falls out of `Drop` without `Clone`.
+unique resource shared across a program. The compiler does not need a
+"resource" category; the behavior falls out of `Unique` without `Clone`.
 
 ### Why opt-in, not ambient
 
@@ -337,15 +419,15 @@ non-atomic. No new sigil, no new wrapper type.
 ### What this eliminates
 
 - The need for a separate sharing mechanism bolted on later. `Shared` joins the
-  row alongside `Unique`, `Drop`, and `Clone` rather than living in user-space
-  as a generic wrapper.
-- The implicit assumption that aliasing is impossible without cloning. Resources
-  (`Drop`, no `Clone`) can now be shared at all.
+  row alongside `Unique` and `Clone` rather than living in user-space as a
+  generic wrapper.
+- The implicit assumption that aliasing is impossible without cloning.
+  Resources (`Unique`, no `Clone`) can now be shared at all.
 
 ### Open questions
 
-- Whether `&T` surfaces in error messages and inference as a wrapper head
-  or as a row capability on `T`. The row framing is cleaner for inference, the
+- Whether `&T` surfaces in error messages and inference as a wrapper head or as
+  a row capability on `T`. The row framing is cleaner for inference, the
   wrapper framing is clearer in diagnostics. Probably both, with the row as the
   canonical form.
 - `^` on a deeply nested `Shared` graph is a deep copy. For nested shared
@@ -362,15 +444,15 @@ non-atomic. No new sigil, no new wrapper type.
 
 | Concern | Current | After evolution |
 |---------|---------|-----------------|
-| Linearity enforcement | Flow analysis (OwnershipAnalyzer) | Type system (`unique` types) |
-| "Needs cleanup?" | `isStructWithHeapFields` | `T: Drop` |
+| "Is this unique / does it need cleanup?" | `isStructWithHeapFields` | `T: Unique` |
+| Linearity enforcement | Flow analysis (OwnershipAnalyzer) | Type system (`T: Unique`) |
 | "Can be duplicated?" | All heap types, always | `T: Clone` |
-| Return ownership | `ReturnOwnershipAnalysis` fixed-point | Implicit: unique types always return owned |
+| Return ownership | `ReturnOwnershipAnalysis` fixed-point | Implicit: `Unique` types always return owned |
 | Conditional ownership | Runtime witness `__owns_x` | Type checker rejects mixed branches |
-| Free insertion | `wrapWithFrees` + `__free_T` | `drop` calls via `Drop` protocol |
+| Free insertion | `wrapWithFrees` + `__free_T` | `drop` calls via `Unique` protocol |
 | Clone insertion | `wrapWithClone` + `__clone_T` | `clone` calls via `Clone` protocol |
 | Native type metadata | `memEffect` annotations | Protocol implementations |
-| Unique resources | Not expressible | `Drop` without `Clone` |
+| Unique resources | Not expressible | `Unique` without `Clone` |
 | Aliasing without copy | Not expressible | `&` produces `&T` (opt-in refcount) |
 | Explicit duplication | Implicit via codegen | `^` invokes `Clone` at the use site |
 
@@ -378,9 +460,9 @@ non-atomic. No new sigil, no new wrapper type.
 
 ## Concrete example: prelude before and after
 
-The prelude (`prelude.mml`) is where stdlib types are declared. It is the binding
-layer between MML and the C runtime. A raylib or any other FFI binding would be
-another `.mml` file with the same structure.
+The prelude (`prelude.mml`) is where stdlib types are declared. It is the
+binding layer between MML and the C runtime. A raylib or any other FFI binding
+would be another `.mml` file with the same structure.
 
 ### Current prelude (excerpt)
 
@@ -396,19 +478,20 @@ fn readline(): String = @native[mem=alloc];
 fn concat(a: String, b: String): String = @native[mem=alloc];
 ```
 
-Ownership information is scattered across ad-hoc annotations: `[mem=heap]` on the
-type, `[free=free_string]` linking to a free function by name, `[mem=alloc]` on
-every function that returns an owned value, `__clone_String` naming convention.
+Ownership information is scattered across ad-hoc annotations: `[mem=heap]` on
+the type, `[free=free_string]` linking to a free function by name, `[mem=alloc]`
+on every function that returns an owned value, `__clone_String` naming
+convention.
 
 ### After evolution
 
 ```mml
-unique type String = @native {
+type String = @native {
   length: Int64,
   data: CharPtr
 };
 
-implement Drop for String =
+implement Unique for String =
   fn drop(~self: String): Unit = free_string self
 end
 
@@ -422,19 +505,18 @@ fn readline(): String = @native;
 fn concat(a: String, b: String): String = @native;
 ```
 
-`unique` on the type declaration marks it. `Drop` and `Clone` implementations
-call the existing C runtime functions. Return types are just `String` -- the
-compiler knows `String` is unique, so return values are always owned. No
-`[mem=alloc]`, no naming conventions, no side-channel metadata.
+`String` is `Unique` because it implements the protocol. Return types are just
+`String` -- the compiler knows `String` is `Unique`, so return values are always
+owned. No `[mem=alloc]`, no naming conventions, no side-channel metadata.
 
 ### FFI binding (e.g. raylib)
 
 ```mml
-unique type Texture = @native { id: Int, width: Int, height: Int };
+type Texture = @native { id: Int, width: Int, height: Int };
 
 fn unload_texture(~t: Texture): Unit = @native;
 
-implement Drop for Texture =
+implement Unique for Texture =
   fn drop(~self: Texture): Unit = unload_texture self
 end
 
@@ -448,90 +530,104 @@ the protocols. The compiler enforces the rest.
 
 ---
 
-## Open question: enforcement of Drop and uniqueness
+## Enforcement of `Unique`
 
-A type system that allows the user to declare `unique` and `Drop` freely is only
-safe if the compiler prevents mistakes. The question is who decides that a type
-must be unique and must implement `Drop`: the user, the compiler, or both?
+A type system that allows the user to declare `Unique` freely is only safe if
+the compiler prevents mistakes. The question is who decides that a type must
+implement `Unique`: the user, the compiler, or both?
 
 ### The risk
 
-If it's purely opt-in, a user can define:
+If `Unique` is purely opt-in for aggregates, a user can define:
 
 ```mml
 struct Leaker { s: String }
 ```
 
-without implementing `Drop`. The `String` field is never freed. The compiler must
-prevent this.
+without implementing `Unique`. The `String` field is never dropped. The
+compiler must prevent this.
 
 ### The rule
 
-The constraint propagates from fields to containers:
+The constraint propagates from members to containers for both capabilities,
+in opposite directions:
 
-- **Contains a `Drop` field** → must implement `Drop`. Compiler error otherwise.
-  The compiler can auto-derive `Drop` (recursive field destruction) when all fields
-  are `Drop`, but the obligation is enforced.
-- **Contains a unique field** → the containing struct is implicitly unique. A
-  freely-copyable struct cannot contain a unique field — that would allow
-  duplicating the unique value by copying the struct.
-- **`Drop` implies unique**. If a value needs cleanup, it must be unique. Otherwise
-  you can copy it and get a double-free. `Drop` is a refinement of uniqueness, not
-  independent of it.
+- **Any `Unique` member** → the aggregate is `Unique`. The compiler
+  auto-derives the implementation (recursive `drop` on members). The user
+  cannot opt out -- a freely-copyable aggregate containing a `Unique` field
+  would allow duplicating the unique value by copying the aggregate.
+- **Every member is `Clone`** → the aggregate is `Clone`. The compiler
+  auto-derives the implementation (recursive `clone` on members). If any
+  member is not `Clone`, the aggregate is not `Clone`.
+
+Users may write an explicit `Unique` or `Clone` implementation to override the
+derived one (custom destruction order, flush-before-close, custom copy
+semantics, etc.). Native types must always be explicit -- the compiler has no
+insight into an opaque `@native` representation.
 
 ### The hierarchy
 
 ```
 T                       — value type, freely copyable, no cleanup
-unique T                — unique/affine, must be consumed at most once, no automatic cleanup
-unique T + Drop         — unique, compiler inserts drop at scope end
-unique T + Drop + Clone — unique, droppable, explicitly clonable (current heap types)
-Shared T                — refcounted handle on a previously-unique T:
-                          - `&` on `unique T` mints one (rc=1); further `&` aliases (rc++)
+T: Unique               — affine + auto drop at scope end (method: drop)
+T: Unique + Clone       — unique, droppable, explicitly clonable (current heap types)
+T: Shared               — refcounted handle on a previously-Unique T:
+                          - `&` on Unique mints one (rc=1); further `&` aliases (rc++)
                           - `^` deep-copies the inner value out, requires T: Clone
                           - drop runs on the inner value when rc reaches 0
 ```
 
-Users can move *up* this ladder (make an `Int` unique if they want) but cannot
-move *down* — a struct containing a `Drop` field cannot opt out of `Drop`. Moving
-from `unique T` to `&T` is one-way: `&` consumes the unique value, and the only
-path back to `unique` is `^`, which is a clone, not a recovery.
+Users can move *up* this ladder (a struct gains `Unique` by containing a
+`Unique` field) but cannot move *down* -- an aggregate containing a `Unique`
+field cannot opt out of `Unique`. Moving from `Unique` to `&T` is one-way: `&`
+consumes the unique value, and the only path back to a unique value is `^`,
+which is a clone, not a recovery.
 
 ### Auto-derivation
 
-For the common case (struct with heap fields), the compiler derives `Drop` and
-`Clone` automatically. The user only writes explicit implementations when they
-need custom logic (flush before close, reference counting, arena deallocation).
+For MML aggregates, the compiler derives both `Unique` and `Clone` from the
+member set:
+
+- `Unique` is derived when at least one member is `Unique`.
+- `Clone` is derived when every member is `Clone`.
+
+The user only writes explicit implementations when they need custom logic
+(flush before close, custom copy semantics, reference counting, arena
+deallocation).
+
+Native types must declare both protocols explicitly when they apply. The
+compiler cannot recurse on an opaque `@native` representation -- the binding
+author has to name the C-runtime functions that implement `drop` and `clone`.
 
 The default experience doesn't change: define a struct, the compiler handles
-cleanup. But the mechanism is uniform rather than hard-coded to heap-type
-detection.
+cleanup and (where the field set allows it) cloning. But the mechanism is
+uniform rather than hard-coded to heap-type detection.
 
 ### The uniqueness tradeoff
 
-Some types don't need to be unique from a semantic standpoint. An immutable string
-is safe to share -- multiple readers, nobody mutates, no data race. The only reason
-`String` must be unique is memory management: someone has to free it, and without
-uniqueness, answering "when is nobody using it anymore?" requires either lifetime
-annotations (Rust's borrow checker) or runtime tracking (reference counting, GC).
+Some types don't need to be unique from a semantic standpoint. An immutable
+string is safe to share -- multiple readers, nobody mutates, no data race. The
+only reason `String` must be `Unique` is memory management: someone has to free
+it, and without uniqueness, answering "when is nobody using it anymore?"
+requires either lifetime annotations (Rust's borrow checker) or runtime
+tracking (reference counting, GC).
 
-MML chose uniqueness + clone: only one owner, if you need a second reference you
-pay for a copy. Strings get copied more than strictly necessary, but the model
-stays simple and the compiler stays small. Every clone is explicit, every free is
-deterministic.
+MML chose uniqueness + clone: only one owner, if you need a second reference
+you pay for a copy. Strings get copied more than strictly necessary, but the
+model stays simple and the compiler stays small. Every clone is explicit, every
+free is deterministic.
 
-Layer 4 covers the cases where copying is genuinely too expensive. `&` on a
-unique value moves it into a refcounted handle; further `&` operations alias the
-handle. The default ownership story stays affine; the escape hatch is visible in
-source wherever it is used.
+Layer 3 covers the cases where copying is genuinely too expensive. `&` on a
+unique value moves it into a refcounted handle; further `&` operations alias
+the handle. The default ownership story stays affine; the escape hatch is
+visible in source wherever it is used.
 
 ### Type rows
 
-`Unique`, `Drop`, `Clone` are properties in the same space -- a row of
-capabilities attached to the type. The `unique` keyword on a declaration adds
-`Unique` to the row. Protocol implementations add `Drop`, `Clone`, etc.
-Propagation infers row members (a struct with a `Unique` field is itself
-`Unique`).
+`Unique`, `Clone`, `Shared` are properties in the same space -- a row of
+capabilities attached to the type. Protocol implementations add row members.
+Propagation infers row members for aggregates (`Unique` propagates from
+members; `Clone` does not).
 
 Uniqueness is not a separate mechanism from protocols -- it lives in the same
 row. Other properties (`Send`, `Sync`, etc.) can be added later without new
@@ -539,32 +635,42 @@ keywords each time.
 
 Exact syntax for type-level row constraints is TBD.
 
-
 ### Fundamental protocols
 
-`Drop` and `Clone` are **fundamental protocols**. They are defined in MML
+`Unique` and `Clone` are **fundamental protocols**. They are defined in MML
 (not special syntax), but the compiler knows about them and emits code based
 on their presence. Future additions (`Send`, `Sync`, effects) would work the
 same way.
 
 What makes a protocol fundamental:
-- The compiler auto-derives instances (`Drop` for structs with `Drop` fields).
-- The compiler inserts calls implicitly (`drop` at scope end).
-- The protocol participates in type-level rules (`Drop` implies `Unique`).
+- The compiler auto-derives instances for MML aggregates (`Unique` from any
+  unique member; `Clone` when every member is `Clone`). Native types declare
+  both explicitly.
+- The compiler inserts calls implicitly (`drop` at scope end; `clone` at every
+  `^x` use site and on literal/global use of `Clone` types).
+- The protocol participates in type-level rules (`Unique` and `Clone` both
+  propagate through aggregation, dually; `&` requires `Unique` on its operand;
+  `^` requires `Clone`).
 
 User-defined protocols are just dispatch mechanisms. The compiler doesn't
 care about their semantics, it only monomorphises the calls.
 
 ### Resolved questions
 
-- **Clone auto-derivation:** Clone is not auto-derived. Literals and globals
-  are auto-cloned (they have no owner to transfer). Everything else requires an
-  explicit clone or produces a compiler error. This keeps duplication costs
-  visible.
+- **Drop and Unique are merged.** One protocol named `Unique`, one method
+  named `drop`. There is no separate `Drop` protocol and no `unique` keyword.
+  See the Decisions section above.
 
-- **Protocol dispatch interaction:** None. `Drop` and `Clone` are monomorphised
-  at compile time. No vtable, no dynamic dispatch. The protocol is a structured
-  way to name the functions the compiler already generates.
+- **Clone auto-derivation:** Clone *is* auto-derived for MML aggregates whose
+  members are all `Clone`. Native types must declare it explicitly. Cost
+  visibility is preserved at the use site: every duplication is an explicit
+  `^x` regardless of whether the impl was derived or hand-written. Literals
+  and globals of `Clone` types are auto-cloned at the use site (they have no
+  owner to transfer from).
+
+- **Protocol dispatch interaction:** None. `Unique` and `Clone` are
+  monomorphised at compile time. No vtable, no dynamic dispatch. The protocol
+  is a structured way to name the functions the compiler already generates.
 
 ### Open questions
 
@@ -573,3 +679,8 @@ care about their semantics, it only monomorphises the calls.
   unconstrained, you can only borrow or move — no clone, no drop. Constraints
   like `T: Clone` would unlock specific operations. Exact syntax and semantics
   TBD.
+
+- Whether a `MustConsume` capability (unique without auto-drop, errors on
+  scope-end leak) is worth adding later for session-type tokens or type-state
+  markers. Not in scope for this evolution; recorded so the decision to merge
+  `Drop` and `Unique` does not foreclose it.
