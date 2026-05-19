@@ -362,6 +362,82 @@ The work should probably land in small slices:
 - Should move-capturing non-escaping lambdas initially stay heap-backed for simplicity, with stack
   promotion as a later optimization?
 
+## Decisions
+
+These resolve the open questions above. Detailed rationale, the multi-use join rule, the
+four-axis metadata factoring, and per-slice acceptance criteria live in
+`context/specs/unify-lambdas-plan.md`. The slice reference (S2, S3, …) points at that
+plan file.
+
+### Q1 — `Lambda.captures` is split (S2)
+
+Split into:
+
+- `Lambda.freeVars: List[Ref]` — semantic free-variable facts. Populated by
+  `CaptureAnalyzer` for every lambda scope, regardless of whether an env is built.
+- `Lambda.envFields: Option[List[Capture]]` — lowering artifact. Populated only when
+  materialization demands an env. `CapturedRef` / `CapturedLiteral` live only here.
+
+### Q2 — Materialization metadata is recorded on `LambdaMeta` (S3)
+
+A new pass `MaterializationAnalyzer` runs between `CaptureAnalyzer` and
+`ClosureMemoryFnGenerator`. It populates four orthogonal axes:
+
+```
+materialization: Direct | NullEnv | Materialized
+escape:          NonEscaping | EscapesAsParam | EscapesAsReturn | EscapesToStore
+captureMode:     Borrow | Move
+envFields:       Option[List[Capture]]
+```
+
+Multi-use sites are joined conservatively (max on the materialization and escape
+lattices: `Direct < NullEnv < Materialized` and
+`NonEscaping < EscapesAsParam < EscapesAsReturn < EscapesToStore`). Per-capture
+`CaptureMode` (Mixed) is out of scope; current model is per-lambda, mirroring
+`Lambda.isMove`.
+
+### Q3 — Immediate application avoids materialization (S3)
+
+Yes, with one principled exception: a lambda needs materialization iff any reference to
+its binding (or to it directly) occurs in non-application position, is passed as a HO
+argument, or appears in escaping position. Pure `App(Lambda(...), arg)` shape — and
+ownership wrappers around it — never require materialization. A binding occurrence
+whose binder is a lambda triggers materialization at the *binding occurrence* if that
+occurrence is used as a value.
+
+### Q4 — `BindingMeta` keeps shape; semantic phases never branch on `origin` (S10)
+
+`origin: BindingOrigin` (TopLevel | Local | Inner) stays on `BindingMeta` for
+diagnostics, source positions, and codegen entry-point naming. Semantic phases
+(capture, materialization, ownership, type checker) must not branch on `origin` —
+behavior is derived from materialization / escape / captureMode metadata only.
+`destructorKind` is removed from `BindingMeta` and lives only on env-struct metadata,
+where an env actually exists.
+
+### Q5 — Direct-entry eligibility is computed before codegen (S6)
+
+Recorded in `LambdaMeta.materialization`. Codegen consults this and never re-derives
+"is this called directly?". Lowering rules:
+
+- `Materialization.Direct` → direct entry only; no wrapper.
+- `Materialization.NullEnv` → direct entry + closure-entry wrapper; first-class value is
+  `{ ptr @entry, ptr null }`.
+- `Materialization.Materialized` → closure entry with env param + optional direct entry
+  when at least one statically-known direct call site exists.
+
+### Q6 — Non-escaping move-capturing lambdas stay heap-backed in phase 1 (S7; S11 deferred)
+
+Phase-1 allocation rule reads `captureMode` only:
+
+- `captureMode == Borrow` → env on stack (`alloca`).
+- `captureMode == Move`   → env on heap  (`malloc`).
+- `escape` is recorded by S3 and available, but **not** consulted by allocation in
+  phase 1.
+
+Stack-promotion for non-escaping Move (`captureMode == Move` AND
+`escape == NonEscaping` → `alloca`) is the deferred slice S11 in the plan — tracked but
+not scheduled as part of #255.
+
 ## Success criteria
 
 #255 is done when:
