@@ -1,0 +1,21 @@
+
+fn test(~s: String): Unit = 
+  let b = s;
+  // Use of 's' after move at 3:11;
+  // this does not compile which is what I want, but see main
+  //println s;
+  ();
+;
+
+
+pub fn main() = 
+  // This is a string and should be unique per string rules
+  // ( it's a heap type )
+  let a = "String!";
+  // ownershipt has been transferred
+  let b = a;
+  // bzzt! this should be illegal, 
+  // but as of 2026-05-18, it still compiles.
+  // I suspect we are treating literals specially.
+  println a;
+;
