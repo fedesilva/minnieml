@@ -46,6 +46,7 @@
 - GitHub: `https://github.com/fedesilva/minnieml/issues/255`
 - Reference: `context/specs/unify-lambdas.md`
     - this file requires discussion, not yet approved.
+- Plan: `context/specs/unify-lambdas-plan.md`
 - [ ] Finalize `unify-lambdas.md`
 - [ ] Treat top-level functions and let-bound lambdas / inner functions identically in semantics and codegen.
 - [ ] Unify borrow and move capture handling.
