@@ -35,14 +35,17 @@ just a borrow. It is a different ownership regime with an explicit runtime cost.
 
 The intended split is:
 
-- `T` means unique ownership
+- `T` (where `T: Unique`) means unique ownership
 - `&T` means shared ownership through a reference-counted cell
+
+Non-`Unique` types (numbers, booleans, unit, aggregates of those) are freely
+copyable and have no need for shared refs.
 
 ---
 
 ## Core idea
 
-Converting a unique value into a shared ref is a one-way ownership transfer.
+Converting a `Unique` value into a shared ref is a one-way ownership transfer.
 
 Example:
 
@@ -91,9 +94,10 @@ After conversion:
 
 ### Creation
 
-`&a` consumes `a` and produces `&T`.
+`&a` consumes `a` and produces `&T`. This requires `T: Unique`. Non-`Unique`
+types are freely copyable and have no sharing form.
 
-This must be explicit. There should be no silent promotion from `T` to `&T`.
+Creation must be explicit. There should be no silent promotion from `T` to `&T`.
 
 ### Aliasing an existing shared ref
 
@@ -102,7 +106,7 @@ another `&T` handle. Both bindings are live afterwards.
 
 So `&` is overloaded by the row of its operand:
 
-- on a `unique T`, `&` moves the value into a fresh RC cell (rc = 1)
+- on a `T: Unique`, `&` moves the value into a fresh RC cell (rc = 1)
 - on an `&T`, `&` aliases the existing cell (rc++)
 
 This is one operator with one mental model: "give me a shared handle to this
@@ -114,29 +118,29 @@ Dropping an `&T` decrements the reference count.
 
 When the count reaches zero:
 
-1. the inner `T` value is dropped via its `Drop` implementation (see
-   `mem-evolution.md`, Layer 2)
+1. the inner `T` value is dropped via its `Unique` implementation (see
+   `mem-evolution.md`, Layer 1)
 2. the RC cell storage is freed
 
 This preserves deterministic destruction while allowing shared structure. `&T`
-does not need its own `Drop` derivation; it reuses the inner `T`'s.
+does not need its own `Unique` derivation; it reuses the inner `T`'s.
 
 ### Clone-out via `^`
 
 `^` is the dual operator: "give me a fresh unique value from this one."
 
-- `^x` where `x: unique T` and `T: Clone` produces a `unique T` deep copy;
+- `^x` where `x: T` (`T: Unique & Clone`) produces a fresh `T` deep copy;
   `x` retains its ownership
-- `^x` where `x: &T` and `T: Clone` produces a `unique T` deep copy of the
-  inner value; the handle stays alive
+- `^x` where `x: &T` and `T: Clone` produces a `T` deep copy of the inner
+  value; the handle stays alive
 
 `^` requires `T: Clone`. `&` does not. That asymmetry is load-bearing: it makes
-resources (types that are `Drop` but not `Clone`) shareable but never
+resources (types that are `Unique` but not `Clone`) shareable but never
 duplicable. See "Resources" below.
 
-There is no `^` from `unique T` back to `&T` and no operator that converts `&T`
-back to `unique T` without copying. Once a value is shared, the only path to
-unique ownership is a clone.
+There is no `^` from `T` back to `&T` and no operator that converts `&T`
+back to a fresh unique value without copying. Once a value is shared, the only
+path to unique ownership is a clone.
 
 `^` is surface syntax for the `Clone` protocol:
 
@@ -153,9 +157,9 @@ semantics make sense, and `^` will pick it up.
 The two operators are not symmetric in implementation, only in feel.
 
 `&` is a **compiler primitive**. The type checker has to understand that `&`
-consumes a `unique T` (or aliases an `&T`), and it has to track `&T` through
-the `Shared` row. Codegen has to emit the retain on `&` and the release at
-scope end. None of that can be expressed as a user-level protocol method,
+consumes a `Unique` value (or aliases an `&T`), and it has to track `&T`
+through the `Shared` row. Codegen has to emit the retain on `&` and the release
+at scope end. None of that can be expressed as a user-level protocol method,
 because none of it is a function call: it is typing rules plus IR emission.
 There is no `Share` protocol with a `share(self: T): &T` method; `&` lives in
 the language, not in user space.
@@ -185,7 +189,7 @@ This distinction should stay crisp in the type system and in diagnostics.
 
 ---
 
-## Resources: `Drop` without `Clone`
+## Resources: `Unique` without `Clone`
 
 The split between `&` (needs no `Clone`) and `^` (needs `Clone`) makes resources
 expressible for the first time.
@@ -195,11 +199,11 @@ textures, file handles, sockets, locks. Each has identity tied to something the
 runtime cannot copy.
 
 ```mml
-unique type Texture = @native { id: Int, width: Int, height: Int };
+type Texture = @native { id: Int, width: Int, height: Int };
 
 fn unload_texture(~t: Texture): Unit = @native;
 
-implement Drop for Texture =
+implement Unique for Texture =
   fn drop(~self: Texture): Unit = unload_texture self
 end
 
@@ -209,9 +213,9 @@ end
 With this declaration, the capability matrix constrains usage:
 
 ```mml
-let t  = load_texture "wall.png";    // unique Texture
+let t  = load_texture "wall.png";    // t: Texture (Unique)
 let t2 = ^t;                         // error: Texture: !Clone
-let s  = &t;                         // ok: unique → &Texture (rc = 1)
+let s  = &t;                         // ok: Unique → &Texture (rc = 1)
 let s2 = &s;                         // ok: alias (rc = 2)
 let u  = ^s;                         // error: Texture: !Clone
                                      // scope end: s and s2 drop;
@@ -219,7 +223,7 @@ let u  = ^s;                         // error: Texture: !Clone
 ```
 
 A `Texture` is aliasable but not duplicable. The compiler has no special case
-for "resource"; the behavior is what falls out of `Drop` without `Clone` once
+for "resource"; the behavior is what falls out of `Unique` without `Clone` once
 `&` and `^` are decoupled.
 
 ---
@@ -291,7 +295,7 @@ That distinction matters.
 The language should support both because they solve different problems.
 
 `^` is the surface syntax for the `Clone` protocol (see `mem-evolution.md`,
-Layer 3). It works on both `unique T` and `&T` and requires `T: Clone` in both
+Layer 2). It works on both `T` and `&T` and requires `T: Clone` in both
 cases.
 
 ---
@@ -312,7 +316,7 @@ Destruction must remain deterministic.
 
 ### Interoperation with unique ownership
 
-The transition from `T` to `&T` must be simple and predictable.
+The transition from a `Unique` value to `&T` must be simple and predictable.
 
 The most important invariant is:
 
@@ -351,9 +355,8 @@ This is the main semantic question left open by the model.
 
 Resolved for the value-level operators:
 
-- `&expr` promotes a `unique T` into `&T`, or aliases an existing `&T`
-- `^expr` produces a `unique T` from a `unique T` or an `&T` (requires
-  `T: Clone`)
+- `&expr` promotes a `T: Unique` into `&T`, or aliases an existing `&T`
+- `^expr` produces a fresh `T` from a `T` or an `&T` (requires `T: Clone`)
 - the type form is `&T` in annotations and fields
 
 Still open:
@@ -375,20 +378,20 @@ This should be chosen based on codegen simplicity and predictable performance.
 
 Atomic refcounting fits the same machinery. An `&T` whose `T` also carries
 `Send` would compile to atomic increments; a non-`Send` `&T` stays non-atomic.
-No new type form, no new sigil. See `mem-evolution.md`, Layer 4.
+No new type form, no new sigil. See `mem-evolution.md`, Layer 3.
 
 ### 4. Protocol integration
 
 Resolved:
 
-- `&T` reuses the inner `T`'s `Drop` implementation when the count reaches zero.
-  No separate `Drop` derivation for `&T` itself.
-- `&` does not require `Clone` on `T`. That is what makes resources
-  (`Drop` without `Clone`) shareable.
-- `^` is the surface syntax for the `Clone` protocol. It requires `T: Clone` on
-  both `unique T` and `&T` inputs.
+- `&T` reuses the inner `T`'s `Unique` implementation when the count reaches
+  zero. No separate `Unique` derivation for `&T` itself.
+- `&` does not require `Clone` on `T`. That is what makes resources (`Unique`
+  without `Clone`) shareable.
+- `^` is the surface syntax for the `Clone` protocol. It requires `T: Clone`
+  on both `T` and `&T` inputs.
 - Retain semantics are built in to `&` (not protocol-dispatched). Refcount
-  bumps and drops are compiler-emitted, the same way `Drop` calls are
+  bumps and drops are compiler-emitted, the same way `drop` calls are
   auto-inserted at scope end.
 
 ### 5. Borrowing from shared refs
@@ -408,12 +411,12 @@ Resolved:
 
 The intended memory ladder is:
 
-1. unique ownership by default
-2. explicit `^` for duplication (Clone protocol)
+1. unique ownership by default (any `T: Unique`)
+2. explicit `^` for duplication (`Clone` protocol)
 3. explicit `&` for shared ownership (this document)
 
 That keeps the simple path fast and predictable while still giving a workable
 model for richer data structures.
 
-Layer 3 of `mem-evolution.md` lands `Clone` and `^`. This document's design
-follows from that and from the row capability framing in Layer 4.
+Layer 2 of `mem-evolution.md` lands `Clone` and `^`. This document's design
+follows from that and from the row capability framing in Layer 3.
