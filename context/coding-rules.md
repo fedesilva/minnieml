@@ -30,6 +30,8 @@
 - **Linting**: Run `sbtn "scalafixAll"` and manually fix all issues that scalafix can't fix, see next.
 - **Warnings**: Do not tolerate compiler warnings; fix them all.
 - **Exhaustivity**: Fix exhaustivity errors; the compiler knows better than you.
+- **QA Rules**: Follow the guidelines in `context/qa-rules-and-coding-style.md`, no excuses.
+  - do not handoff code for review BEFORE you go through them, and enforce them.
 
 ### Do not use sbt, use sbtn
 
