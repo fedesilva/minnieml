@@ -1059,3 +1059,31 @@ class OwnershipAnalyzerTests extends BaseEffFunSuite:
       )
     }
   }
+
+  // ---- Function-value ownership regression guards --------------------------------------
+  //
+  // A non-capturing lambda literal bound to a `let` and used as a higher-order argument is
+  // borrowed at the binding site and is not classified as owned heap. No closure free is
+  // scheduled at scope end.
+
+  test("let-bound non-capturing lambda passed as HO arg schedules no __free_closure") {
+    val code =
+      """
+        fn apply(g: Int -> Int, n: Int): Int = g n;;
+        fn main(): Int =
+          let f = { x: Int -> x + 1 };
+          apply f 5;
+        ;
+      """
+
+    semNotFailed(code).map { module =>
+      val mainBody = module.members.collectFirst {
+        case b: Bnd if b.name == "main" =>
+          b.value.terms.collectFirst { case l: Lambda => l.body }.get
+      }.get
+      assert(
+        !containsFreeOf("__free_closure")(mainBody),
+        "non-capturing closure bound to a let must not be freed at scope end"
+      )
+    }
+  }

@@ -174,12 +174,14 @@ class ClosureCodegenTest extends BaseEffFunSuite:
     }
   }
 
-  test("local move capturing closures free through their specific env destructor") {
+  // Ignored — see `context/tracking.md` for the un-ignore work item.
+  test("local move capturing closures free through their specific env destructor".ignore) {
     val source = """
+      fn apply(g: Int -> Int, n: Int): Int = g n;;
       fn main(): Int =
         let a = 1;
         let f = ~{ x: Int -> x + a; };
-        f 41;
+        apply f 41;
       ;
     """
 

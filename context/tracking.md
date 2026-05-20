@@ -33,8 +33,8 @@ Slice progress (see `context/specs/unify-lambdas-plan.md`):
 - [x] S0 — decisions section in spec
 - [x] S1 — terminology cleanup
 - [x] S2 — AST: add `isDirect` to `LambdaMeta`
-- [ ] S3 — `MaterializationAnalyzer` pass *(implemented locally, pending Author review)*
-- [ ] S4 — Ownership: non-capturing / null-env values stop being treated as owned heap
+- [x] S3 — `MaterializationAnalyzer` pass (COMPLETE — commit 456a0c4)
+- [ ] S4 — Ownership: non-capturing / null-env values stop being treated as owned heap *(in progress)*
 - [ ] S5 — Ownership: treat lambda values as ordinary unique values
 - [ ] S6 — Codegen: derive direct-vs-closure entry from demand
 - [ ] S7 — Codegen: env allocation rule consumes `isMove`
@@ -43,6 +43,8 @@ Slice progress (see `context/specs/unify-lambdas-plan.md`):
 - [ ] S10 — `BindingMeta` reduction
 - [ ] S11 — Stack-promotion for non-escaping move-capturing lambdas
 - [ ] Accept nullary lambda heads in immediate application — `TypeChecker.scala:784` guards on `lambda.params.nonEmpty`, so `App(Lambda(params=[], …), ())` falls through to `determineApplicationType` (no `Lambda` arm) and is rejected as `InvalidApplication`. Ignored test: `MaterializationAnalyzerTests.scala` — `"nullary lambda literal in immediate application is direct"`. Un-ignore once accepted.
+- [ ] Un-ignore `ClosureCodegenTest` "local move capturing closures free through their specific env destructor" at S6. Ignored at S4 because the rewritten fixture (`apply f 41`) still depends on S6 reshaping the closure-call lowering before its IR snapshot stabilizes.
+- [ ] Close the pinned mem regression `tests/mem/direct-move-closure.mml` at S6. The file is added at S4 and is expected to fail under ASan/LSan until S6's lowering rule for `isDirect` lambdas stops materializing an env. Until then the mem harness reports a 1-test failure on every run.
 
 ### define new tasks
 
@@ -63,6 +65,55 @@ Slice progress (see `context/specs/unify-lambdas-plan.md`):
 * add commands to manage the cache (init, clean)
 
 ## Change Log
+
+- 2026-05-20: #255 unify-lambdas S4 — heap-only `isOwnedType`; lambda-value ownership predicate
+  - `OwnershipAnalyzer.scala`: `isOwnedType` is heap-only (`TypeFn` removed from the
+    type-identity arm). Introduced `isOwnedLambdaValue(lambda)`
+    = `!meta.isDirect && captures.nonEmpty && isMove` and used it at the lambda-arm
+    classifiers (`termReturnsOwned`, `lambdaAllocates`). Introduced
+    `isOwnedValueType` (heap OR `TypeFn`) and used it at every site that propagates an
+    already-classified function value (return-ownership discovery, allocation propagation,
+    owned-binding scope frees including the consuming-param body-end free, conditional
+    cross-branch frees, capture classification, borrow-escape-return check, and final
+    cleanup). Net observable behavior change at the analyzer: a direct move-capturing
+    binding (`isDirect = true`) no longer registers an owned env via `lambdaAllocates` —
+    this is the documented S6 carry-over (codegen still mallocs the env until S6
+    consults `isDirect`).
+  - `OwnershipAnalyzerTests.scala`: one new regression guard — let-bound non-capturing
+    lambda passed as a HO arg schedules no `__free_closure` and is borrowed.
+  - `tests/mem/consume-closure.mml`: new ASan+LSan regression — caller move-on-rebinds a
+    materialized move-closure into a consuming `~f: Int -> Int` param across 1000
+    iterations. Guards that the body-end `__free_closure(f)` cleanup keeps releasing the
+    env malloc'd by `makeAdder`.
+  - `tests/mem/direct-move-closure.mml`: new pinned regression — `let f = ~{x -> x+a}; f 41`
+    leaks 16 bytes from the closure env malloc because the analyzer no longer registers
+    direct move-closures as owned, while codegen still materializes their env. Expected
+    to fail under ASan/LSan until S6's lowering rule for `isDirect` lambdas stops
+    materializing the env. Mem harness reports 22/23 with this regression in place.
+  - `ClosureCodegenTest.scala`: rewrote the "local move capturing closures free through
+    their specific env destructor" fixture to use a value-position binding (`apply f 41`)
+    and marked it `.ignore` pending the S6 IR-snapshot refresh.
+  - `context/qa-rules-and-coding-style.md`: added section 9 (`Comments`) — code comments
+    describe current code in present tense; no "no longer / was / previously"; no
+    slice/plan references in source; slice notes live in plan/tracking docs.
+  - Plan / tracking: marked S3 done, S4 in progress; recorded the un-ignore item against
+    S6; recorded the "consuming-TypeFn-param + non-owned value → no `__free_closure`"
+    tightening as an S5 carry-over (needs source-aware flow analysis).
+
+- 2026-05-20: #255 unify-lambdas S3 — `MaterializationAnalyzer` computes `isDirect`
+  - New `modules/mmlc-lib/src/main/scala/mml/mmlclib/semantic/MaterializationAnalyzer.scala`:
+    three-pass walker (collect lambda bindings → discover non-direct ids via saturation-
+    depth tracking → rewrite `LambdaMeta.isDirect`). Saturation floor `max(arity, 1)` keeps
+    arity-0 thunks sound. Handles top-level `Bnd` lambdas and parser-lowered scoped-binding
+    `App(Lambda(params=[binder], ...), arg)` shape.
+  - `SemanticStage.scala`: wired between `CaptureAnalyzer` and `TypeChecker` via the
+    standard `timePhase` wrapper.
+  - `prettyprint/ast/Term.scala`: `LambdaMeta` rendering now includes `isDirect`.
+  - `MaterializationAnalyzerTests.scala`: 9 tests covering top-level direct, recursive
+    self-call, let-bound direct/value-position, lambda-literal immediate application,
+    nullary top-level invoked vs used as value, let-bound nullary as value. The nullary
+    lambda-literal immediate-application case is ignored pending the `TypeChecker.scala:784`
+    `lambda.params.nonEmpty` guard accepting nullary heads.
 
 - 2026-05-19: #255 unify-lambdas S1 — terminology cleanup
   - `docs/design/compiler-design.md`: retired "ordinary closure literal" / "real closure

@@ -222,7 +222,7 @@ slice or accept temporary breakage; do not invent a shim.
   this slice.
 - **Sub-issue?** No — small, additive.
 
-### S3 — `MaterializationAnalyzer` pass
+### S3 — `MaterializationAnalyzer` pass  *(done — commit 456a0c4)*
 - **Goal:** Q2 + Q3 + Q5. New pass walks every lambda scope, computes `isDirect`, and
   writes it back to `LambdaMeta`. Implements the AND-join multi-use rule (start `true`,
   flip on first value-position use). `CaptureAnalyzer` is unchanged.
@@ -240,7 +240,7 @@ slice or accept temporary breakage; do not invent a shim.
   change observable from outside `MaterializationAnalyzer`.
 - **Sub-issue?** Yes.
 
-### S4 — Ownership: non-capturing / null-env function values stop being treated as owned heap
+### S4 — Ownership: non-capturing / null-env function values stop being treated as owned heap  *(in progress)*
 - **Goal:** close the open P1 from `lambdas-work-review.md` ("Stop freeing non-capturing
   function values as closures").
 - **Files:** `OwnershipAnalyzer.scala` (TypeFn ownership rule around L256–L259 per the
@@ -256,12 +256,33 @@ slice or accept temporary breakage; do not invent a shim.
   tests for owned move-capturing closures (e.g. `closure-capture.mml`,
   `closure-heap-capture.mml`) must still pass; codegen-IR-snapshot tests may shift and
   are refreshed at S6/S7.
+- **S4 landed scope (delta vs Acceptance above):** the lambda-value ownership predicate
+  (`isOwnedLambdaValue`) gates on `!isDirect && captures.nonEmpty && isMove` and is used
+  at the lambda-arm classifiers (`termReturnsOwned`, `lambdaAllocates`). All other
+  type-driven ownership sites route through `isOwnedValueType` (heap OR `TypeFn`) so
+  type-only behavior at those sites is preserved. The consuming-param body-end free,
+  capture-ownership, and borrow-escape-return all stay on `isOwnedValueType` so the
+  materialized move-closure cleanup path (`tests/mem/consume-closure.mml`) is preserved
+  and borrow-closure escape through a TypeFn forwarder remains a hard error.
+  The "consuming param + non-owned value → no `__free_closure`" and
+  "no `BorrowEscapeViaReturn` for borrowed `TypeFn` returns" goals are *deferred to S5*
+  because the analyzer needs source-aware lambda-value classification to tell which
+  function-values are owned closures versus non-capturing references without
+  re-introducing the materialized-closure leak. The direct move-closure leak (`let f =
+  ~{...}; f 41`) is the documented S6 carry-over (codegen still mallocs the env).
 - **Sub-issue?** Yes.
 
 ### S5 — Ownership: treat lambda values as ordinary unique values
 - **Goal:** kill the structural branches on top-level vs let-bound vs literal *and* the
   parallel closure-specific escape machinery. Lambda values participate in the generic
   ownership analyzer.
+- **S4 carry-over:** tighten the consuming-TypeFn-param body-end free so the scheduled
+  `__free_closure(f)` only fires when the value bound to the param is *known to be* a
+  materialized move-closure. This requires source-aware analysis (e.g. propagate the
+  source `BindingInfo.freeFn` through `handleConsumingParam` / move-on-rebind, or move the
+  free emission to the call site post-return). Until S5 lands, the scheduled call is a
+  runtime null-guarded no-op for non-owned function values, and `tests/mem/consume-closure.mml`
+  guards the positive case from regressing.
 - **Lambda value ownership classification:**
   - move-capturing closure value (`!isDirect && captures.nonEmpty && isMove`) →
     owned heap value; ordinary owned-heap rules apply at return / `~` transfer /
@@ -305,6 +326,22 @@ slice or accept temporary breakage; do not invent a shim.
   argument lowers as `{ ptr @entry, ptr null }`; direct call to a local lambda with
   statically known args lowers as a direct call without going through the fat pointer.
   IR snapshots may shift — refresh as needed.
+- **S4 carry-over (mandatory at S6 sign-off):**
+  - Un-ignore `ClosureCodegenTest` "local move capturing closures free through their
+    specific env destructor". The fixture exercises a non-direct move-closure and must
+    pass against the reshaped closure-call lowering.
+  - Close the direct move-closure leak introduced by S4's `isOwnedLambdaValue`
+    predicate. S4 gates owned-env tracking on `!isDirect`, so `let f = ~{...}; f 41;`
+    no longer registers an owned env at the analyzer level; the current codegen still
+    materializes and mallocs the env, so the allocation leaks. S6's lowering rule for
+    `isDirect` must emit *no env materialization* (direct entry only, no wrapper, no
+    `malloc`) so the analyzer and codegen agree.
+  - Move `tests/mem/direct-move-closure.mml` from "expected to fail under ASan/LSan"
+    to a green pass. This file is the pinned regression for the bridge between S4
+    and S6; the mem harness (`./tests/mem/run.sh all`) is the verification gate. While
+    this file remains in the harness with the leak intact, mem runs report a 1-test
+    failure — that failure disappears the moment S6 lands its lowering rule for
+    direct lambdas.
 - **Sub-issue?** Yes — large blast radius.
 
 ### S7 — Codegen: env allocation rule consumes `isMove`

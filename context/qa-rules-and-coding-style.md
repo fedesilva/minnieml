@@ -89,6 +89,29 @@ Before considering a change ready, verify:
   - This codebase does not use exceptions. 
   - The compiler should accumulate errors.
 
+## 9) Comments
+
+Comments describe the current code, in the present tense, grounded in what the reader
+sees on the page.
+
+- Do not reference prior state of the code: no "no longer", "was", "used to",
+  "previously", "this used to do X". The reader has the file, not the diff or the
+  git history. Temporal hedging rots fast and reads as noise to anyone who did not
+  live through the change.
+- Do not reference in-flight work or slice plans inside source: no "after S4",
+  "post-fix", "until S6 lands", "deferred to S5". Slice notes, deferrals, and
+  ticketing context belong in plan documents (`context/specs/*`), the tracking
+  changelog (`context/tracking.md`), or PR descriptions — never in code comments.
+- Do not leave breadcrumbs like "removed X" or "fixed Y" in code. Reach for `git blame`
+  for that.
+- Describe what the code *does* and *why*, not what it stopped doing.
+  - Bad: "TypeFn is no longer owned by type alone — function-value ownership now
+    depends on the lambda."
+  - Good: "Ownership by type identity: heap types only. Function-value ownership is
+    decided by the lambda producing the value (see `isOwnedLambdaValue`)."
+- Exception, narrow: a comment may pin a current workaround to a specific real bug
+  with a tracker reference. Even then, frame it as "workaround for #NNN" not "we
+  used to do Y".
 
 ## Design code
 

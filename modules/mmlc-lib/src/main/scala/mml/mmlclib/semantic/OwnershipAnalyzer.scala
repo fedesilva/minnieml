@@ -195,7 +195,7 @@ object OwnershipAnalyzer:
           )
         case TermGroup(_, inner, _) =>
           exprReturnsOwned(inner, env, resolvables, returningOwned)
-        case lambda: Lambda if lambda.captures.nonEmpty && lambda.isMove =>
+        case lambda: Lambda if isOwnedLambdaValue(lambda) =>
           lambda.typeSpec
         case _ => None
 
@@ -239,7 +239,7 @@ object OwnershipAnalyzer:
             case ((currentReturningOwned, changedAcc), (id, lambda, consumingEnv)) =>
               val resultOwned =
                 exprReturnsOwned(lambda.body, consumingEnv, resolvables, currentReturningOwned)
-                  .filter(t => isOwnedType(t, resolvables))
+                  .filter(t => isOwnedValueType(t, resolvables))
 
               resultOwned match
                 case Some(ownedType) if currentReturningOwned.get(id).flatten != Some(ownedType) =>
@@ -263,10 +263,32 @@ object OwnershipAnalyzer:
   def cloneFnFor(typeName: String, resolvables: ResolvablesIndex): Option[String] =
     TypeUtils.cloneFnFor(typeName, resolvables)
 
-  /** Check if a type is owned (heap type or capturing closure). */
+  /** Ownership by type identity: a value of this type is heap-owned and needs a free at scope end.
+    * Covers heap types only; function-value ownership is decided by the lambda producing the value
+    * (see `isOwnedLambdaValue`).
+    */
   private def isOwnedType(t: Type, resolvables: ResolvablesIndex): Boolean =
-    getTypeName(t).exists(isHeapType(_, resolvables)) ||
-      t.isInstanceOf[TypeFn]
+    getTypeName(t).exists(isHeapType(_, resolvables))
+
+  /** A lambda value owns a heap-materialized env that must be freed at scope end:
+    *
+    *   - `!isDirect` — appears in value position (not scope-only / direct-only)
+    *   - `captures.nonEmpty` — has an env to materialize
+    *   - `isMove` — env is heap-allocated; borrow lambdas use stack envs
+    */
+  private def isOwnedLambdaValue(lambda: Lambda): Boolean =
+    !lambda.meta.exists(_.isDirect) &&
+      lambda.captures.nonEmpty &&
+      lambda.isMove
+
+  /** Value-level ownership filter: heap types and `TypeFn` values are both owned. Use at sites that
+    * consume an ownership classification produced upstream (`lambdaAllocates`,
+    * `ReturnOwnershipAnalysis` results, bindings in `scope.ownedBindings`, or a consuming `TypeFn`
+    * param whose body-end cleanup must always be scheduled). Type-only sites that should reject
+    * `TypeFn` use `isOwnedType`.
+    */
+  private def isOwnedValueType(t: Type, resolvables: ResolvablesIndex): Boolean =
+    isOwnedType(t, resolvables) || t.isInstanceOf[TypeFn]
 
   /** Check if a Bnd has memory effect Alloc (native allocator or struct constructor with heap
     * fields)
@@ -302,7 +324,7 @@ object OwnershipAnalyzer:
           returningOwned
             .get(id)
             .flatten
-            .filter(t => isOwnedType(t, resolvables))
+            .filter(t => isOwnedValueType(t, resolvables))
 
         returned.orElse:
           resolvables
@@ -332,9 +354,9 @@ object OwnershipAnalyzer:
       mergeAllocTypes(trueAlloc, falseAlloc)
     case _ => None
 
-  /** Check if a term is a move-capturing lambda literal (heap env allocation). */
+  /** Check if a term is a materialized move-closure literal (heap env allocation). */
   private def lambdaAllocates(term: Term): Option[Type] = term match
-    case lambda: Lambda if lambda.captures.nonEmpty && lambda.isMove => lambda.typeSpec
+    case lambda: Lambda if isOwnedLambdaValue(lambda) => lambda.typeSpec
     case _ => None
 
   /** Look up the resolved ID for a free function by name */
@@ -935,7 +957,7 @@ object OwnershipAnalyzer:
         val paramTypeName =
           param.typeSpec.orElse(param.typeAsc).flatMap(getTypeName)
         val allocHeap =
-          allocType.filter(t => isOwnedType(t, scope.resolvables))
+          allocType.filter(t => isOwnedValueType(t, scope.resolvables))
         val owns =
           allocHeap.filter(t => paramTypeName.forall(_ == getTypeName(t).getOrElse("")))
         // Check if allocating expression is a capturing lambda with env struct name
@@ -980,7 +1002,7 @@ object OwnershipAnalyzer:
           !scope.insideTempWrapper &&
           !escaping.contains(binding.name) &&
           !witnessBinding.contains(binding.name) &&
-          isOwnedType(tpe, scope.resolvables)
+          isOwnedValueType(tpe, scope.resolvables)
         case _ => false
 
     val bodyWithTerminalFrees =
@@ -1001,7 +1023,7 @@ object OwnershipAnalyzer:
         val bindingType = params.headOption.flatMap(p => p.typeSpec.orElse(p.typeAsc))
         val bindingId   = params.headOption.flatMap(_.id)
         bindingType match
-          case Some(tpe) if isOwnedType(tpe, scope.resolvables) =>
+          case Some(tpe) if isOwnedValueType(tpe, scope.resolvables) =>
             val toFree =
               List(OwnedBinding(bindingName, Some(tpe), bindingId, Some(witnessParam.name), None))
             wrapWithFrees(
@@ -1278,7 +1300,7 @@ object OwnershipAnalyzer:
     val freesInTrueBranch = outerOwnedBindings.toList.flatMap { case (name, info) =>
       val trueState  = trueResult.scope.getState(name).getOrElse(info.state)
       val falseState = falseResult.scope.getState(name).getOrElse(info.state)
-      val isOwned    = info.bindingTpe.exists(isOwnedType(_, scope.resolvables))
+      val isOwned    = info.bindingTpe.exists(isOwnedValueType(_, scope.resolvables))
       (trueState, falseState) match
         case (OwnershipState.Owned, OwnershipState.Moved) if isOwned =>
           OwnedBinding(name, info.bindingTpe, info.bindingId, None, info.freeFn).some
@@ -1289,7 +1311,7 @@ object OwnershipAnalyzer:
     val freesInFalseBranch = outerOwnedBindings.toList.flatMap { case (name, info) =>
       val trueState  = trueResult.scope.getState(name).getOrElse(info.state)
       val falseState = falseResult.scope.getState(name).getOrElse(info.state)
-      val isOwned    = info.bindingTpe.exists(isOwnedType(_, scope.resolvables))
+      val isOwned    = info.bindingTpe.exists(isOwnedValueType(_, scope.resolvables))
       (trueState, falseState) match
         case (OwnershipState.Moved, OwnershipState.Owned) if isOwned =>
           OwnedBinding(name, info.bindingTpe, info.bindingId, None, info.freeFn).some
@@ -1380,12 +1402,15 @@ object OwnershipAnalyzer:
     val returnType   = lambdaReturnType(typeAsc, typeSpec)
     val promotedBody = promoteStaticBranchesInReturn(bodyResult.expr, returnType, captureScope)
 
-    // Insert frees for consuming params that are still Owned (not returned, not moved)
+    // Schedule body-end frees for consuming params whose type indicates an owned value
+    // (heap types or any `TypeFn`), unless the body already returned or moved them. For
+    // `TypeFn` params the scheduled call is `__free_closure(f)`, which the runtime
+    // null-guards so it is a no-op when env is null.
     val escaping = returnedOwnedNames(promotedBody, bodyResult.scope)
     val consumingToFree = params.filter(_.consuming).flatMap { p =>
       val pType = p.typeSpec.orElse(p.typeAsc)
       if !scope.skipConsumingOwnership &&
-        pType.exists(isOwnedType(_, scope.resolvables)) &&
+        pType.exists(isOwnedValueType(_, scope.resolvables)) &&
         !escaping.contains(p.name) &&
         !bodyResult.scope.getState(p.name).contains(OwnershipState.Moved)
       then OwnedBinding(p.name, pType, p.id, None, None).some
@@ -1402,8 +1427,10 @@ object OwnershipAnalyzer:
           scope.resolvables
         )
 
-    // Escape check: borrowed refs in return position. Covers heap types and TypeFn.
-    val returnTypeIsOwned = returnType.exists(t => isOwnedType(t, scope.resolvables))
+    // Escape check: a borrowed ref in return position whose type indicates ownership
+    // (heap type or `TypeFn`) escapes the scope. Borrow-closure literals returned through
+    // let/inner-fn wrappers are caught additionally by `returnedBorrowClosures` below.
+    val returnTypeIsOwned = returnType.exists(t => isOwnedValueType(t, scope.resolvables))
     val borrowEscapeErrors =
       if returnTypeIsOwned then
         returnedBorrowedRefs(finalBody, bodyResult.scope)
@@ -1420,9 +1447,7 @@ object OwnershipAnalyzer:
       captures.foldLeft((scope, List.empty[SemanticError], List.empty[Capture])): (acc, cap) =>
         val (s, errs, caps) = acc
         val ref             = cap.ref
-        val isOwnedCapture = ref.typeSpec.exists(t =>
-          getTypeName(t).exists(isHeapType(_, s.resolvables)) || t.isInstanceOf[TypeFn]
-        )
+        val isOwnedCapture  = ref.typeSpec.exists(t => isOwnedValueType(t, s.resolvables))
         if !isOwnedCapture then (s, errs, caps :+ cap)
         else if isMove then
           // Move lambda: transfer ownership into env
@@ -1579,7 +1604,7 @@ object OwnershipAnalyzer:
         val finalToFree = result.scope.ownedBindings.collect {
           case binding @ OwnedBinding(_, Some(tpe), _, _, _)
               if !escapingFinal.contains(binding.name) &&
-                isOwnedType(tpe, resolvables) =>
+                isOwnedValueType(tpe, resolvables) =>
             binding
         }
 
