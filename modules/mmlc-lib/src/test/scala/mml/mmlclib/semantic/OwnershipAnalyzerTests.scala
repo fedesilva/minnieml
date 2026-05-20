@@ -1077,6 +1077,8 @@ class OwnershipAnalyzerTests extends BaseEffFunSuite:
       """
 
     semNotFailed(code).map { module =>
+      // FIXME:QA brittle `.get.get` chain; replace with a shared test extractor for
+      // "lambda body of named top-level binding". Test-side only, no production impact.
       val mainBody = module.members.collectFirst {
         case b: Bnd if b.name == "main" =>
           b.value.terms.collectFirst { case l: Lambda => l.body }.get

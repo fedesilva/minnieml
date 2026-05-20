@@ -98,10 +98,6 @@ sees on the page.
   "previously", "this used to do X". The reader has the file, not the diff or the
   git history. Temporal hedging rots fast and reads as noise to anyone who did not
   live through the change.
-- Do not reference in-flight work or slice plans inside source: no "after S4",
-  "post-fix", "until S6 lands", "deferred to S5". Slice notes, deferrals, and
-  ticketing context belong in plan documents (`context/specs/*`), the tracking
-  changelog (`context/tracking.md`), or PR descriptions — never in code comments.
 - Do not leave breadcrumbs like "removed X" or "fixed Y" in code. Reach for `git blame`
   for that.
 - Describe what the code *does* and *why*, not what it stopped doing.
@@ -109,9 +105,15 @@ sees on the page.
     depends on the lambda."
   - Good: "Ownership by type identity: heap types only. Function-value ownership is
     decided by the lambda producing the value (see `isOwnedLambdaValue`)."
-- Exception, narrow: a comment may pin a current workaround to a specific real bug
-  with a tracker reference. Even then, frame it as "workaround for #NNN" not "we
-  used to do Y".
+- Forward-looking pointers are fine when they describe *what this code is waiting
+  for*: pending slices, planned follow-ups, or known gaps that will close later.
+  Pin them to plan/tracking docs so the reader has somewhere to go. Examples:
+  - OK: "Pinned regression: leaks env malloc until the `isDirect` lowering rule
+    in S6 stops materializing an env. See `context/specs/unify-lambdas-plan.md`."
+  - OK: "Ignored until the IR test fixture is updated at S6 — see
+    `context/tracking.md`."
+  - The rule against *backward*-looking hedging still stands: "no longer", "was",
+    "previously" still rot fast and add no value.
 
 ## Design code
 
