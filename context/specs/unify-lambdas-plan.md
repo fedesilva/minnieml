@@ -272,17 +272,30 @@ slice or accept temporary breakage; do not invent a shim.
   ~{...}; f 41`) is the documented S6 carry-over (codegen still mallocs the env).
 - **Sub-issue?** Yes.
 
-### S5 — Ownership: treat lambda values as ordinary unique values
+### S5 — Ownership: treat lambda values as ordinary unique values  *(in progress)*
 - **Goal:** kill the structural branches on top-level vs let-bound vs literal *and* the
   parallel closure-specific escape machinery. Lambda values participate in the generic
   ownership analyzer.
-- **S4 carry-over:** tighten the consuming-TypeFn-param body-end free so the scheduled
-  `__free_closure(f)` only fires when the value bound to the param is *known to be* a
-  materialized move-closure. This requires source-aware analysis (e.g. propagate the
-  source `BindingInfo.freeFn` through `handleConsumingParam` / move-on-rebind, or move the
-  free emission to the call site post-return). Until S5 lands, the scheduled call is a
-  runtime null-guarded no-op for non-owned function values, and `tests/mem/consume-closure.mml`
-  guards the positive case from regressing.
+- **S5 landed scope (delta vs the rest of this section):**
+  - The return-escape walkers (`returnedBorrowedRefs`, `returnedBorrowClosures`) are
+    unified at the call site through a single `ReturnEscape` result type. `RefEscape`
+    dispatches to `BorrowEscapeViaReturn` (gated on owned return type) and
+    `LambdaEscape` to `BorrowClosureEscapeViaReturn` (unconditional).
+  - Both walkers now descend through administrative `App` wrappers
+    (`let x = …; …` and `fn x …;; …`) via a tightened `returnsBindingParam`. Multi-level
+    aliasing patterns like `let x = s; let y = x; y` are flagged at any nesting depth for
+    both Ref and Lambda shapes — closing a preexisting analyzer hole the closure walker
+    half-fixed and the ref walker missed entirely.
+  - New regression tests cover single-level wrap, conditional inside wrap, two-level
+    nesting (both Ref and Lambda shapes), and the negative gate.
+  - The capture-ownership block at the `analyzeLambda` site is already generic over
+    `isOwnedValueType`; verified by inspection, no code change.
+- **S4 carry-over (deferred to S6):** tightening the consuming-TypeFn-param body-end free
+  so the scheduled `__free_closure(f)` only fires when the value is *known to be* a
+  materialized move-closure requires either caller-side cleanup emission or scope-info
+  propagation that this slice cannot land cleanly without breaking
+  `tests/mem/consume-closure.mml`. The runtime null-guarded no-op behavior is acceptable
+  in the interim; S6's codegen rework is the natural home for the change.
 - **Lambda value ownership classification:**
   - move-capturing closure value (`!isDirect && captures.nonEmpty && isMove`) →
     owned heap value; ordinary owned-heap rules apply at return / `~` transfer /

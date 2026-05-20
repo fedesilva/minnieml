@@ -66,6 +66,41 @@ Slice progress (see `context/specs/unify-lambdas-plan.md`):
 
 ## Change Log
 
+- 2026-05-20: #255 unify-lambdas S5 — unify return-escape walkers; close admin-wrapper aliasing hole
+  - `OwnershipAnalyzer.scala`: collapsed the two return-escape walkers
+    (`returnedBorrowedRefs`, `returnedBorrowClosures`) at the call site through a single
+    `ReturnEscape` sum. `RefEscape` dispatches to `BorrowEscapeViaReturn` (gated on owned
+    return type); `LambdaEscape` to `BorrowClosureEscapeViaReturn` (unconditional). The
+    `escapeErrors` flatMap in `analyzeLambda` replaces the prior two-list concatenation.
+  - Tightened `returnedBorrowedRefs` with administrative-`App`-wrapper descent (the same
+    shape the closure walker already had). Tightened `returnsBindingParam` with admin-
+    wrapper descent, closing a preexisting analyzer hole both walkers shared at depth
+    ≥ 2: patterns like `let x = s; let y = x; y` (and the lambda-shaped analog) now
+    raise the correct escape diagnostic. No existing fixture exercised this shape, so
+    no behavior change on the test corpus.
+  - Shadowing-safe descent: when descending into a wrapper body, the wrapper's own
+    params are masked from the descent scope so the body's Ref-by-name lookups can't
+    accidentally hit a shadowed outer binding. The body-returns-ours arm of
+    `returnsBindingParam` is gated on the wrapper not shadowing OUR param's name, so
+    the name-equality leaf check can't misread the wrapper's own param as a Ref to
+    ours. Codex P2 — `let s = "static"; s` inside `fn f(s: String): String` no longer
+    false-positives.
+  - `OwnershipAnalyzerTests.scala`: 5 new regression guards — single-level let-wrap +
+    Ref escape, let + Cond return + Ref escape, two-level nested let + Ref escape,
+    two-level nested let + Lambda escape, and a negative gate (let body returning a
+    static value is accepted).
+  - Capture-ownership block (`analyzeLambda`) verified by inspection to already gate on
+    `isOwnedValueType`; no code change. `CapturedMovedHeapBinding` and
+    `CapturedBorrowedHeapBinding` remain specialized renderings of the generic
+    capture-time ownership check.
+  - Phase A of the original S5 plan (source-aware consuming-TypeFn-param body-end free)
+    deferred to S6: the callee cannot statically know the caller's binding-source
+    `freeFn`, and closing the gap cleanly requires either caller-side cleanup emission
+    or a scope-info propagation that breaks `tests/mem/consume-closure.mml` if landed
+    in isolation. S6's codegen rework is the natural home.
+  - Plan: marked S5 in progress with a landed-scope delta paragraph and the S4→S6
+    carry-over for the consuming-param free.
+
 - 2026-05-20: #255 unify-lambdas S4 — heap-only `isOwnedType`; lambda-value ownership predicate
   - `OwnershipAnalyzer.scala`: `isOwnedType` is heap-only (`TypeFn` removed from the
     type-identity arm). Introduced `isOwnedLambdaValue(lambda)`

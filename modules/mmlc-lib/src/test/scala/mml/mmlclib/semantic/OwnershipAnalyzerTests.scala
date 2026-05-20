@@ -534,6 +534,100 @@ class OwnershipAnalyzerTests extends BaseEffFunSuite:
     }
   }
 
+  test("borrowed param returned through let-binding wrapper is rejected") {
+    val code =
+      """
+        fn echo(s: String): String =
+          let x = s;
+          x;
+        ;
+        fn main(): Unit = println "ok";;
+      """
+
+    semState(code).map { result =>
+      val errors = result.errors.collect { case e: SemanticError.BorrowEscapeViaReturn => e }
+      assert(errors.nonEmpty, "Expected BorrowEscapeViaReturn for borrowed param via let wrapper")
+    }
+  }
+
+  test("borrowed param returned through let-bound conditional is rejected") {
+    val code =
+      """
+        fn pick(s: String, b: Bool): String =
+          let x = s;
+          if b then
+            x;
+          else
+            "default";
+          ;
+        ;
+        fn main(): Unit = println "ok";;
+      """
+
+    semState(code).map { result =>
+      val errors = result.errors.collect { case e: SemanticError.BorrowEscapeViaReturn => e }
+      assert(
+        errors.nonEmpty,
+        "Expected BorrowEscapeViaReturn for borrowed param via let + Cond return"
+      )
+    }
+  }
+
+  test("borrowed param returned through two nested let-bindings is rejected") {
+    val code =
+      """
+        fn echo(s: String): String =
+          let x = s;
+          let y = x;
+          y;
+        ;
+        fn main(): Unit = println "ok";;
+      """
+
+    semState(code).map { result =>
+      val errors = result.errors.collect { case e: SemanticError.BorrowEscapeViaReturn => e }
+      assert(
+        errors.nonEmpty,
+        "Expected BorrowEscapeViaReturn for borrowed param via two nested let wrappers"
+      )
+    }
+  }
+
+  test("let-binding shadowing a borrowed outer param does not trigger borrow escape") {
+    val code =
+      """
+        fn f(s: String): String =
+          let s = "static";
+          s;
+        ;
+        fn main(): Unit = println "ok";;
+      """
+
+    semState(code).map { result =>
+      val errors = result.errors.collect { case e: SemanticError.BorrowEscapeViaReturn => e }
+      assert(
+        errors.isEmpty,
+        s"Expected no BorrowEscapeViaReturn (inner 's' shadows outer); got: $errors"
+      )
+    }
+  }
+
+  test("let-binding wrapper whose body returns a static value is accepted") {
+    val code =
+      """
+        fn echo(s: String): String =
+          let x = s;
+          "static";
+        ;
+        fn main(): Unit = println "ok";;
+      """
+
+    semState(code).map { result =>
+      val errors = result.errors.collect { case e: SemanticError.BorrowEscapeViaReturn => e }
+      assert(errors.isEmpty, s"Expected no BorrowEscapeViaReturn but got: $errors")
+    }
+  }
+
   test("borrow-capturing lambda returned directly is rejected") {
     val code =
       """
@@ -562,6 +656,26 @@ class OwnershipAnalyzerTests extends BaseEffFunSuite:
       val errors =
         result.errors.collect { case e: SemanticError.BorrowClosureEscapeViaReturn => e }
       assert(errors.nonEmpty, "Expected BorrowClosureEscapeViaReturn error")
+    }
+  }
+
+  test("borrow-capturing lambda returned through two nested let-bindings is rejected") {
+    val code =
+      """
+        fn makeAdder(a: Int): Int -> Int =
+          let f = { x: Int -> x + a; };
+          let g = f;
+          g;
+        ;
+      """
+
+    semState(code).map { result =>
+      val errors =
+        result.errors.collect { case e: SemanticError.BorrowClosureEscapeViaReturn => e }
+      assert(
+        errors.nonEmpty,
+        "Expected BorrowClosureEscapeViaReturn for borrow closure via two nested let wrappers"
+      )
     }
   }
 

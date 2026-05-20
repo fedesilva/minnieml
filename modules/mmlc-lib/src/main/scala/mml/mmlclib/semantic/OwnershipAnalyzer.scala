@@ -679,12 +679,31 @@ object OwnershipAnalyzer:
 
     expr.terms.lastOption.map(termReturned).getOrElse(Set.empty)
 
-  /** Refs of borrowed bindings that flow out through the returned expression */
+  /** Refs of borrowed bindings that flow out through the returned expression. Descends through
+    * administrative wrappers (let / inner-fn): the wrapper body is walked with the wrapper's own
+    * params masked out of the scope (so name lookups in the body can't accidentally hit a shadowed
+    * outer binding), and when the body returns the wrapper's own param the arg is walked under the
+    * outer scope (catches the source binding the wrapper's param aliases).
+    */
   private def returnedBorrowedRefs(expr: Expr, scope: OwnershipScope): List[Ref] =
     def termReturned(term: Term): List[Ref] =
       term match
         case ref: Ref if scope.getState(ref.name).contains(OwnershipState.Borrowed) =>
           List(ref)
+        case app: App if administrativeReturnWrapper(app) =>
+          app.fn match
+            case lambda: Lambda =>
+              val descentScope = lambda.params.foldLeft(scope) { (s, p) =>
+                s.copy(bindings = s.bindings - p.name)
+              }
+              val bodyReturns = returnedBorrowedRefs(lambda.body, descentScope)
+              val argReturns =
+                lambda.params.headOption
+                  .filter(param => returnsBindingParam(lambda.body, param))
+                  .toList
+                  .flatMap(_ => returnedBorrowedRefs(app.arg, scope))
+              argReturns ++ bodyReturns
+            case _ => Nil
         case Cond(_, _, ifTrue, ifFalse, _, _) =>
           returnedBorrowedRefs(ifTrue, scope) ++ returnedBorrowedRefs(ifFalse, scope)
         case TermGroup(_, inner, _) => returnedBorrowedRefs(inner, scope)
@@ -696,6 +715,24 @@ object OwnershipAnalyzer:
       typeSpec.flatMap:
         case TypeFn(_, _, ret) => Some(ret)
         case other => Some(other)
+
+  /** Categorizes a value escaping through a function's return position. The analyzer wraps both
+    * heap-borrow and borrow-closure escapes through this sum so a single match drives diagnostic
+    * dispatch at the return-check call site.
+    */
+  private enum ReturnEscape:
+    case RefEscape(ref: Ref)
+    case LambdaEscape(lambda: Lambda)
+
+  /** Walks the return position for values that would unsafely escape if returned. Runs two walks
+    * over the same AST and tags their results: `RefEscape` for borrowed Refs (classified against
+    * the scope), `LambdaEscape` for borrow-capturing lambda literals (whose stack envs can't
+    * survive the frame). Both walks descend through `Cond`, `TermGroup`, and administrative `App`
+    * wrappers so let / inner-fn aliasing is caught at any depth.
+    */
+  private def returnedBorrowingValues(expr: Expr, scope: OwnershipScope): List[ReturnEscape] =
+    returnedBorrowedRefs(expr, scope).map(ReturnEscape.RefEscape(_)) ++
+      returnedBorrowClosures(expr).map(ReturnEscape.LambdaEscape(_))
 
   /** Borrow-capturing lambda literals in return position. These are unsafe because borrow closures
     * use stack-allocated environments.
@@ -722,11 +759,31 @@ object OwnershipAnalyzer:
         case _ => List.empty
     expr.terms.lastOption.map(termReturned).getOrElse(List.empty)
 
+  /** Whether the returned expression flows the given param outward. Descends through administrative
+    * `App` wrappers so multi-level aliasing (`let y = x; y` inside another let) is caught: a
+    * wrapper returns OUR param either by referring to it directly (only when the wrapper doesn't
+    * shadow our param's name), or by returning its OWN param while passing OUR param through as the
+    * arg. The shadowing guard keeps the name-equality leg of the leaf check from misreading the
+    * wrapper's own param as a Ref to ours.
+    */
   private def returnsBindingParam(expr: Expr, param: FnParam): Boolean =
     def termReturned(term: Term): Boolean =
       term match
         case ref: Ref =>
           ref.resolvedId.contains(param.id.getOrElse("")) || ref.name == param.name
+        case app: App if administrativeReturnWrapper(app) =>
+          app.fn match
+            case lambda: Lambda =>
+              val ownParam = lambda.params.headOption
+              val bodyReturnsOurs =
+                ownParam.forall(_.name != param.name) &&
+                  returnsBindingParam(lambda.body, param)
+              val bodyAliasesOurs = ownParam.exists { p =>
+                returnsBindingParam(lambda.body, p) &&
+                returnsBindingParam(app.arg, param)
+              }
+              bodyReturnsOurs || bodyAliasesOurs
+            case _ => false
         case Cond(_, _, ifTrue, ifFalse, _, _) =>
           returnsBindingParam(ifTrue, param) || returnsBindingParam(ifFalse, param)
         case TermGroup(_, inner, _) => returnsBindingParam(inner, param)
@@ -1427,20 +1484,19 @@ object OwnershipAnalyzer:
           scope.resolvables
         )
 
-    // Escape check: a borrowed ref in return position whose type indicates ownership
-    // (heap type or `TypeFn`) escapes the scope. Borrow-closure literals returned through
-    // let/inner-fn wrappers are caught additionally by `returnedBorrowClosures` below.
+    // Escape checks at return position. A single walker yields both shapes:
+    //   - `RefEscape` fires only when the declared return type is owned (heap or `TypeFn`);
+    //     a borrowed binding sitting in return position is fine when ownership isn't expected.
+    //   - `LambdaEscape` fires unconditionally; a borrow-capturing lambda literal carries a
+    //     stack-allocated env that can't survive the frame regardless of return type.
     val returnTypeIsOwned = returnType.exists(t => isOwnedValueType(t, scope.resolvables))
-    val borrowEscapeErrors =
-      if returnTypeIsOwned then
-        returnedBorrowedRefs(finalBody, bodyResult.scope)
-          .map(ref => SemanticError.BorrowEscapeViaReturn(ref, PhaseName))
-      else Nil
-
-    // Escape check: borrow-capturing closures can never be returned.
-    val borrowClosureEscapeErrors =
-      returnedBorrowClosures(finalBody)
-        .map(lambda => SemanticError.BorrowClosureEscapeViaReturn(lambda, PhaseName))
+    val escapeErrors = returnedBorrowingValues(finalBody, bodyResult.scope).flatMap {
+      case ReturnEscape.RefEscape(ref) if returnTypeIsOwned =>
+        SemanticError.BorrowEscapeViaReturn(ref, PhaseName).some
+      case ReturnEscape.RefEscape(_) => none
+      case ReturnEscape.LambdaEscape(lambda) =>
+        SemanticError.BorrowClosureEscapeViaReturn(lambda, PhaseName).some
+    }
 
     // Capture ownership: move lambdas move heap captures; borrow lambdas leave them in place.
     val (returnScope, captureErrors, updatedCaptures) =
@@ -1483,7 +1539,7 @@ object OwnershipAnalyzer:
     TermResult(
       returnScope,
       Lambda(span, params, finalBody, updatedCaptures, typeSpec, typeAsc, meta, isMove),
-      errors = bodyResult.errors ++ borrowEscapeErrors ++ borrowClosureEscapeErrors ++ captureErrors
+      errors = bodyResult.errors ++ escapeErrors ++ captureErrors
     )
 
   /** Analyze a tuple expression */
