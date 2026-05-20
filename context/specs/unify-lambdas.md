@@ -63,6 +63,30 @@ Current ownership states:
 4. `Literal`: the binding refers to static/literal data and is never freed as owned local state.
 5. `Global`: the binding has module lifetime and is borrow-only in local ownership analysis.
 
+### Lambda values are ordinary unique values
+
+A core idea of this unification: a lambda value participates in the same ownership rules as any
+other value of its type class. Reasoning about closures stops being a parallel system.
+
+- A **move-capturing lambda value** behaves as an owned heap value. Standard owned-heap rules
+  govern transfer through `~` parameters, return-to-caller, struct-sink construction, rebind
+  moves, and use-after-move.
+- A **borrow-capturing lambda value** behaves as a borrowed value. Standard borrowed-value rules
+  govern what it can satisfy: not a consuming parameter, not an owned return, not a struct-sink.
+- A **non-capturing lambda value** has no owned environment. It is borrow-only at the ownership
+  layer — there is nothing to free.
+- A **captured borrowed value** remains owned by the enclosing scope.
+- A **captured moved value** becomes unavailable in the enclosing scope.
+
+How the lambda escapes (return, consuming-param transfer, struct sink, indirect store via HO
+argument) is *not* a closure-specific concept. The ownership analyzer already discovers each of
+those escape paths at the use site for any owned heap value. Lambda values use the same
+machinery.
+
+The rules below remain authoritative. Items 17–25 specialize the generic rules in items 1–16
+with closure-specific diagnostic phrasing; the underlying checks become instances of the generic
+ownership pipeline, not parallel closure-only logic.
+
 Rules to preserve:
 
 1. Heap-typed owned bindings are freed at the end of the scope that owns them.
@@ -305,13 +329,21 @@ env".
 
 ### 4. Unify ownership handling
 
-Ownership analysis should reason over lambda scopes and capture relationships uniformly:
+Treat lambda values as ordinary unique values. The ownership analyzer already encodes the rules;
+lambda values slot into them without a parallel closure-specific system.
 
-- captured borrowed values remain owned by the enclosing scope
-- captured moved values become unavailable in the enclosing scope
-- borrow-capturing lambda values cannot escape
-- move-capturing lambda values can escape if their captured values can be owned
-- non-capturing function values have no owned environment to free
+- A move-capturing lambda value is an owned heap value. Generic owned-heap rules govern transfer,
+  return, struct-sink, and consuming-parameter behavior.
+- A borrow-capturing lambda value is a borrowed value. Generic borrow rules govern what it can
+  and cannot satisfy.
+- A non-capturing lambda value has no owned environment; there is nothing to free.
+- Captured borrowed values remain owned by the enclosing scope; captured moved values become
+  unavailable there.
+
+Closure-specific diagnostic phrasing (`BorrowClosureEscapeViaReturn`,
+`CapturedBorrowedHeapBinding`) is kept for user experience, but the underlying checks become
+instances of the generic ownership rules at return-position, consuming-parameter, and
+struct-sink sites — not parallel closure-only entry points.
 
 ### 5. Derive codegen representation
 
@@ -345,8 +377,11 @@ The work should probably land in small slices:
 2. Free-variable analysis cleanup without changing codegen behavior.
 3. Ownership cleanup for non-capturing and materialized function values.
 4. Codegen unification for direct vs closure entries.
-5. Environment allocation/lifetime cleanup.
+5. Environment allocation phase 1: `malloc` for move closures, `alloca` for borrow.
 6. Tail-recursive local lambda follow-up after the unified model is stable.
+7. Stack-promotion for non-escaping move-capturing lambdas — env on the stack when the
+   closure's owner does not outlive the current frame; derived from the unified
+   ownership analysis introduced in (3).
 
 ## Open questions
 
@@ -382,14 +417,13 @@ No `freeVars` / `envFields` split. The 3-way materialization state (no value / v
 with empty env / value with real env) is fully derivable from one annotation
 (`isDirect`) plus `captures.isEmpty`.
 
-### Q2 — Materialization metadata is two fields on `LambdaMeta` (S3)
+### Q2 — Materialization metadata is one field on `LambdaMeta` (S3)
 
 A new pass `MaterializationAnalyzer` runs between `CaptureAnalyzer` and
 `ClosureMemoryFnGenerator`. It populates:
 
 ```
-isDirect: Boolean       // never materialized as a value — scope-only / immediate-application
-escape:   Escape        // NonEscaping | EscapesAsParam | EscapesAsReturn | EscapesToStore
+isDirect: Boolean   // never materialized as a value — scope-only / immediate-application
 ```
 
 The 3-way materialization state is derived, not stored:
@@ -401,16 +435,19 @@ The 3-way materialization state is derived, not stored:
 `Lambda.isMove: Boolean` stays as the borrow-vs-move marker (no `CaptureMode` enum;
 that would be a paint job over the existing field).
 
-Multi-use join rules. When a lambda value has multiple use sites:
+**No `escape` field.** Earlier drafts proposed an `Escape` enum recording how a closure
+value leaves its definition site. Reframing lambda values as ordinary unique values
+made it unnecessary: the ownership analyzer already discovers return-position,
+consuming-parameter, and struct-sink behavior at the use site for every value, and
+applies the same rules to lambda values. Re-encoding those distinctions on
+`LambdaMeta` would duplicate analysis the ownership pass already runs and would invite
+the kind of closure-specific reasoning this workstream is removing.
 
-- `isDirect` joins by AND: it starts `true` and downgrades to `false` on the first
-  value-position use (HO argument, return, store, alias).
-- `escape` joins by max on the lattice
-  `NonEscaping < EscapesAsParam < EscapesAsReturn < EscapesToStore`.
-
-So a lambda used once as a direct call and once stored into long-lived data joins to
-`isDirect = false, escape = EscapesToStore` and lowers as a Materialized closure that
-must hold its own captures.
+**Multi-use join rule.** `isDirect` joins by AND across use sites: it starts `true` and
+downgrades to `false` on the first value-position use (HO argument, return, store,
+alias). Once `isDirect = false`, the ownership rules for the resulting value-type
+classification (owned heap for move closures, borrowed for borrow closures) take over;
+no further metadata is needed to gate ownership decisions.
 
 ### Q3 — Immediate application avoids materialization (S3)
 
@@ -425,9 +462,9 @@ true. A binding occurrence whose binder is a lambda flips `isDirect` to false at
 `origin: BindingOrigin` (TopLevel | Local | Inner) stays on `BindingMeta` for
 diagnostics, source positions, and codegen entry-point naming. Semantic phases
 (capture, materialization, ownership, type checker) must not branch on `origin` —
-behavior is derived from `LambdaMeta.isDirect` / `LambdaMeta.escape` / `Lambda.isMove`
-only. `destructorKind` is removed from `BindingMeta` and lives only on env-struct
-metadata, where an env actually exists.
+behavior is derived from `LambdaMeta.isDirect` and `Lambda.isMove`, plus the generic
+ownership classification of the lambda value. `destructorKind` is removed from
+`BindingMeta` and lives only on env-struct metadata, where an env actually exists.
 
 ### Q5 — Direct-entry eligibility is computed before codegen (S6)
 
@@ -446,12 +483,13 @@ Phase-1 allocation rule reads `Lambda.isMove` only:
 
 - `isMove == false` → env on stack (`alloca`).
 - `isMove == true`  → env on heap  (`malloc`).
-- `escape` is recorded by S3 and available, but **not** consulted by allocation in
-  phase 1.
 
-Stack-promotion for non-escaping move closures (`isMove == true` AND
-`escape == NonEscaping` → `alloca`) is the deferred slice S11 in the plan — tracked
-but not scheduled as part of #255.
+Stack-promotion for non-escaping move closures is the deferred slice S11 in the plan
+— tracked but not scheduled as part of #255. When S11 lands, it needs to know whether
+the binding that owns the closure value outlives the current stack frame; that is an
+ownership-lifetime property of the binding, not a precomputed escape state on the
+lambda. The ownership analyzer's lifetime conclusions are the input, not a separate
+metadata field.
 
 ## Success criteria
 

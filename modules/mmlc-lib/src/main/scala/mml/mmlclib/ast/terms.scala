@@ -90,7 +90,8 @@ enum Capture:
 
 case class LambdaMeta(
   isTailRecursive: Boolean        = false,
-  envStructName:   Option[String] = None
+  envStructName:   Option[String] = None,
+  isDirect:        Boolean        = false
 )
 
 case class Lambda(
