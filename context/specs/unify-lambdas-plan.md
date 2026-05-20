@@ -25,90 +25,91 @@ Once approved, these answers fold into a `## Decisions` section on
 
 ### Q1 — Should `Lambda.captures` keep mixing free-variable facts and materialization fields, or be split?
 
-**Proposed: split.** Acted on by **S2**.
+**Proposed: no split. `Lambda.captures` stays.** Acted on by **S2**.
 
-- Add `Lambda.freeVars: List[Ref]` — pure semantic free-variable facts. Populated by
-  `CaptureAnalyzer` for every lambda scope, regardless of whether an env is ever
-  materialized.
-- Rename current `captures: List[Capture]` → `envFields: Option[List[Capture]]`.
-  Populated by demand analysis (S3): `None` when no env needed (immediate application,
-  null-env materialization), `Some(_)` when an env must be built. `CapturedRef` /
-  `CapturedLiteral` live only inside `envFields` (literal-clone is a lowering hint,
-  not a semantic fact).
+- `Lambda.captures: List[Capture]` continues to be the single list of bindings the
+  lambda references from enclosing scopes. `CaptureAnalyzer` populates it for every
+  lambda scope (no change in S2; behavior already covers value-position lambdas).
+- The decision "does this lambda need an env built?" is recorded separately on
+  `LambdaMeta` (see Q2). When an env *is* built, codegen reads `captures` as the layout
+  source. When no env is built (Direct / NullEnv), `captures` still describes the
+  semantic references — just nothing materializes them at runtime.
+- `CapturedRef` / `CapturedLiteral` and the literal-clone upgrade in ownership stay
+  where they are. They are lowering hints carried alongside the semantic facts.
 
-**Why:** today `captures` is read by both ownership (semantic) and codegen (lowering).
-The mix forces ownership to peek at lowering hints (`CapturedLiteral`) it does not care
-about, and forces codegen to re-derive semantic facts each time. Splitting kills both
-leaks.
+**Why we rejected the split.** A two-field design (`freeVars` + `envFields`) was
+considered. It only earns its keep in one case — "lambda has captures but no env" —
+which is exactly what the `isDirect` bit on `LambdaMeta` (Q2) already gates. For every
+other case the two fields hold the same information, and the split forces every reader
+through `Option[List[Capture]]` instead of `List[Capture]`. One field plus a clear gate
+on `LambdaMeta` is simpler and equally principled.
 
 ### Q2 — Where should materialization requirements be recorded?
 
-**Proposed: new semantic metadata on `LambdaMeta`, computed by a new pass.** Acted on by **S3**.
-
-Four orthogonal axes, each on its own:
+**Proposed: two fields on `LambdaMeta`, computed by a new pass.** Acted on by **S3**.
 
 ```
-enum Materialization:
-  case Direct        // never used as a value; immediate application only
-  case NullEnv       // used as a value but no FVs
-  case Materialized  // FVs present; an env must be built
-
 enum Escape:
   case NonEscaping
-  case EscapesAsParam
-  case EscapesAsReturn
-  case EscapesToStore
-
-enum CaptureMode:
-  case Borrow
-  case Move
-// Per-lambda for now (mirrors current Lambda.isMove). Per-capture (Mixed) is a
-// possible future refactor, out of scope here.
+  case EscapesAsParam     // passed as HO argument
+  case EscapesAsReturn    // returned
+  case EscapesToStore     // stored in struct / tuple / aggregate
 
 // LambdaMeta gains:
-//   materialization: Materialization
-//   escape:          Escape       // meaningful when materialization == Materialized
-//   captureMode:     CaptureMode  // meaningful when freeVars.nonEmpty
-// Lambda gains (from Q1):
-//   envFields: Option[List[Capture]]  // Some only when materialization == Materialized
+//   isDirect: Boolean        // never used as a value — scope-only / immediate-application
+//   escape:   Escape         // meaningful when !isDirect; cached for downstream consumers
+//
+// Lambda.isMove: Boolean     // unchanged — the borrow-vs-move marker stays here
+// Lambda.captures            // unchanged — semantic list of referenced bindings
 ```
 
-**Multi-use join rule.** When a lambda value has multiple use sites, materialization and
-escape are joined conservatively (take the maximum on these lattices):
+The 3-way materialization state is **derived**, not stored:
 
-```
-materialization:  Direct  <  NullEnv  <  Materialized
-escape:           NonEscaping  <  EscapesAsParam  <  EscapesAsReturn  <  EscapesToStore
-```
+- `meta.isDirect`                       → **Direct**: no env, no fat pointer, scope-only lowering.
+- `!isDirect && captures.isEmpty`       → **NullEnv**: first-class value is `{ ptr @entry, ptr null }`.
+- `!isDirect && captures.nonEmpty`      → **Materialized**: real env, fat pointer
+  `{ ptr @closure_entry, ptr env }`.
 
-So a lambda used once as a direct call and once stored into long-lived data joins to
-`Materialized` + `EscapesToStore`. Phase-1 allocation (S7) only reads the two-valued
-projection `NonEscaping vs Escapes-any`; the finer lattice is forward-looking for
-stack-promotion (S11) and any later policy splits.
+A helper (likely on `Lambda` or a shared codegen module) exposes this derivation so
+every consumer agrees on the lowering.
+
+`captureMode` as a separate enum is **not** added — `Lambda.isMove: Boolean` already
+carries the same information. Per-capture (Mixed) capture mode remains out of scope.
+
+**Multi-use join rule.** When a lambda value has multiple use sites:
+
+- `isDirect` joins by AND: starts `true` and flips to `false` on the first value-position
+  use (HO argument, return, store, alias).
+- `escape` joins by max on the lattice
+  `NonEscaping < EscapesAsParam < EscapesAsReturn < EscapesToStore`.
+
+A lambda used once as a direct call and once stored into long-lived data joins to
+`isDirect = false, escape = EscapesToStore` and lowers as a Materialized closure. Phase-1
+allocation (S7) reads `Lambda.isMove` only; `escape` is recorded for ownership escape
+checks (today's `BorrowClosureEscapeViaReturn` and friends) and for the deferred S11
+stack-promotion work.
 
 New pass `MaterializationAnalyzer` runs between `CaptureAnalyzer` and
-`ClosureMemoryFnGenerator`. Ownership analysis and codegen read the result; neither
-re-derives.
+`ClosureMemoryFnGenerator`. Ownership analysis and codegen read `LambdaMeta.isDirect`
+and `LambdaMeta.escape`; neither re-derives.
 
 **Why:** ownership needs to know whether to insert a `free` at scope end (depends on
-whether there is an owning env). Encoding this in semantic metadata (not codegen-local
-demand analysis) keeps the rules visible and unit-testable without running codegen — and
-gives ownership a clean source of truth. Splitting into four axes keeps each one
-decidable on its own and avoids overloading a single enum constructor with mixed
-concerns.
+whether an owning env exists). Encoding this as semantic metadata (not codegen-local
+demand analysis) keeps the rules visible and unit-testable without running codegen.
+Splitting into two minimal axes (`isDirect`, `escape`) keeps the storage tight: anything
+derivable from `captures` is derived, not stored.
 
 ### Q3 — Can immediate lambda application always avoid materialization?
 
 **Proposed: yes, with one principled exception.** Acted on by **S3**.
 
-Operational rule: a lambda needs materialization iff *any* reference to its binding (or
-to it directly) occurs in non-application position, is passed as a HO argument, or
-appears in escaping position. Immediate-application shape `App(Lambda(...), arg)` is
-preserved through ownership wrappers (the wrapper wraps the *result*, not the lambda).
+Operational rule: `meta.isDirect = true` iff every reference to the lambda (or to its
+binding) occurs in App.fn position with full arity. Pure `App(Lambda(...), arg)` shape —
+and ownership wrappers around it — leave `isDirect` true.
 
 Exception: if the lambda is bound and the binding itself is used as a value
-(`let f = { x -> x }; f`), the *binding occurrence* triggers materialization, not the
-lambda literal. Demand analysis (Q2) computes this.
+(`let f = { x -> x }; f`), the *binding occurrence* flips `isDirect` to false. Demand
+analysis (Q2) computes this.
 
 **Why:** keeps the common case (let / sequencing / direct call) zero-cost and the rule
 mechanical.
@@ -120,7 +121,7 @@ mechanical.
 Keep `origin: BindingOrigin` (TopLevel | Local | Inner) on `BindingMeta` for
 diagnostics, source positions, and codegen entry-point naming. *Enforce* that semantic
 phases (capture, materialization, ownership, type checker) never branch on `origin` for
-behavior — they branch on demand/escape/materialization facts.
+behavior — they branch on `LambdaMeta.isDirect`, `LambdaMeta.escape`, and `Lambda.isMove`.
 
 Move `destructorKind` off bindings; it belongs only on env structs, and only when an
 env actually exists. Trim `BindingMeta` accordingly.
@@ -132,29 +133,27 @@ must not be a hidden behavioral fork.
 
 **Proposed: all of it.** Acted on by **S6**.
 
-`LambdaMeta.materialization` (and, for capturing lambdas, `captureMode`) is what codegen
-consults. The lowering rules become:
+`LambdaMeta.isDirect` is the bit. Codegen consults it (alongside `captures.isEmpty`) and
+never re-derives "is this called directly?". The lowering rules:
 
-- `Materialization.Direct` → emit direct entry only; no wrapper.
-- `Materialization.NullEnv` → emit direct entry + closure-entry wrapper (so first-class
-  use works); first-class users see `{ ptr @entry, ptr null }`.
-- `Materialization.Materialized` → emit closure entry with env param + optional direct
-  entry when at least one statically-known direct call site exists.
-
-Codegen never re-derives "is this called directly?".
+- `isDirect`                              → emit direct entry only; no wrapper.
+- `!isDirect && captures.isEmpty`         → emit direct entry + closure-entry wrapper;
+  first-class users see `{ ptr @entry, ptr null }`.
+- `!isDirect && captures.nonEmpty`        → emit closure entry with env param + optional
+  direct entry when at least one statically-known direct call site exists.
 
 ### Q6 — Should non-escaping move-capturing lambdas stay heap-backed initially?
 
 **Proposed: yes. Stack-promotion is deferred.** Acted on by **S7**, deferred work in **S11**.
 
-Phase-1 allocation rule (S7) is driven by `captureMode` alone:
+Phase-1 allocation rule (S7) is driven by `Lambda.isMove` alone:
 
-- `captureMode == Borrow` → env on stack (`alloca`).
-- `captureMode == Move`   → env on heap  (`malloc`).
-- `escape` is recorded by S3 and available to consumers, but is **not** consulted by the
-  allocation rule in phase 1.
+- `isMove == false` → env on stack (`alloca`).
+- `isMove == true`  → env on heap  (`malloc`).
+- `escape` is recorded by S3 and available to consumers (ownership escape checks read
+  it), but is **not** consulted by the allocation rule in phase 1.
 
-Stack-promotion for non-escaping move-capturing lambdas (`captureMode == Move` AND
+Stack-promotion for non-escaping move closures (`isMove == true` AND
 `escape == NonEscaping` → `alloca`) is the deferred slice S11 — tracked but not
 scheduled as part of #255. This keeps unification PRs about *unifying*, not about
 optimization.
@@ -196,48 +195,44 @@ slice or accept temporary breakage; do not invent a shim.
   docs; terminology aligns with `unify-lambdas.md`.
 - **Sub-issue?** No — checklist item.
 
-### S2 — AST: split `Lambda.captures` into `freeVars` + `envFields`; add materialization metadata
-- **Goal:** mechanical AST change from Q1 + Q2. No new analysis logic in this slice.
-  S2 is **prep, not standalone-valuable** — closure semantics and codegen will be
-  intentionally broken between S2 and S3 (every lambda sees `envFields = None` and
-  default metadata). Do not try to make S2 pass closure tests in isolation.
+### S2 — AST: add materialization metadata (`isDirect`, `escape`)
+- **Goal:** mechanical AST change from Q2. Add the `Escape` enum and two new fields on
+  `LambdaMeta` (`isDirect: Boolean`, `escape: Escape`). `Lambda.captures` and
+  `Lambda.isMove` stay as they are — no rename, no split. No new analysis logic in this
+  slice; defaults of `isDirect = false` and `escape = NonEscaping` mean S2 keeps current
+  behavior intact (every lambda still materializes, every closure still escapes safely
+  per existing rules). Closure tests should still pass after S2.
 - **Files:**
-  - AST: `modules/mmlc-lib/src/main/scala/mml/mmlclib/ast/terms.scala` (`Lambda` case
-    class L96–L105 — add `freeVars: List[Ref]`, rename `captures` → `envFields:
-    Option[List[Capture]]`; `LambdaMeta` L91–L94 — add `materialization:
-    Materialization`, `escape: Escape`, `captureMode: CaptureMode`; new
-    `Materialization` / `Escape` / `CaptureMode` enums).
-  - Semantic readers: `CaptureAnalyzer.scala` (writes `freeVars`; `envFields` stays
-    `None` — populated by S3); `OwnershipAnalyzer.scala` (`analyzeLambda` L1350,
-    `returnedBorrowClosures` L681, all `.captures` reads renamed to `.envFields`);
-    `TypeChecker.scala` (lambda inference paths).
-  - Codegen readers: `ClosureMemoryFnGenerator.scala`, `ExpressionCompiler.scala`,
-    `Applications.scala`, `FunctionEmitter.scala` — all renamed to read `envFields`.
-  - Tests: `TXAstExtractors.scala`, `TXLambdaHelpers.scala` (`captureResolvedIds`)
-    updated.
-- **Acceptance:** code compiles end to end. Closure-related test failures are EXPECTED
-  here and unblock at S3; do not paper over them with shims, defaults, or placeholder
-  logic. No new tests in this slice.
-- **Sub-issue?** Yes — cross-cuts AST and every consumer.
+  - AST: `modules/mmlc-lib/src/main/scala/mml/mmlclib/ast/terms.scala` (`LambdaMeta`
+    L91–L94 — add `isDirect: Boolean = false`, `escape: Escape = Escape.NonEscaping`;
+    new `Escape` enum next to `LambdaMeta`).
+  - Optional small derivation helper (e.g. `Lambda.materialization: Materialization`
+    method or a top-level helper) that returns Direct / NullEnv / Materialized from
+    `(meta.isDirect, captures.isEmpty)`. Add only if S3+ consumers actually need it; do
+    not over-engineer here.
+  - No reader/writer churn elsewhere — `captures` and `isMove` are untouched.
+- **Acceptance:** code compiles end to end; full test suite remains green (this is a
+  pure additive change with defaults that preserve current behavior). No new tests in
+  this slice.
+- **Sub-issue?** No — small, additive.
 
 ### S3 — `MaterializationAnalyzer` pass
-- **Goal:** Q2 + Q3 + Q5. New pass computes the three metadata axes (`materialization`,
-  `escape`, `captureMode`) for every lambda and populates `envFields` when
-  `materialization == Materialized`. Implements the multi-use join rule from Q2.
-  `CaptureAnalyzer` is reduced to free-variable computation only.
+- **Goal:** Q2 + Q3 + Q5. New pass walks every lambda scope, computes `isDirect` and
+  `escape`, and writes them back to `LambdaMeta`. Implements the multi-use join rule
+  from Q2 (AND-join on `isDirect`; lattice-max on `escape`). `CaptureAnalyzer` is
+  unchanged.
 - **Files:**
   - NEW: `modules/mmlc-lib/src/main/scala/mml/mmlclib/semantic/MaterializationAnalyzer.scala`.
-  - `CaptureAnalyzer.scala`: simplified — only computes `freeVars`; no env logic.
   - Pipeline wiring: insert new pass between `CaptureAnalyzer` and
-    `ClosureMemoryFnGenerator` (which from this slice onward consumes demand to decide
-    which lambdas get env structs).
-  - Tests: new `MaterializationAnalyzerTests.scala` covering Direct / NullEnv /
-    Materialized; each `Escape` variant; both `CaptureMode` values; multi-use join
-    cases; resolved-id-based assertions.
-- **Acceptance:** new pass tests pass. Closure-related semantic / codegen tests that
-  rely on consumers migrated off structural shape (`Lambda.isMove`, "captures is the
-  source of truth") may still fail until S4–S7 land; that is expected here. No
-  full-suite green claim in this slice.
+    `ClosureMemoryFnGenerator` (which from S4 onward consumes the metadata to decide
+    lowering shape).
+  - Tests: new `MaterializationAnalyzerTests.scala` covering Direct (immediate
+    application, scope-only let / sequencing), NullEnv (non-capturing fn passed as
+    value), Materialized (lambda with captures used as value); each `Escape` variant;
+    multi-use join cases; resolved-id-based assertions.
+- **Acceptance:** new pass tests pass. Existing closure tests still pass because no
+  consumer has been migrated yet — `isDirect`/`escape` are written but ignored. No
+  behavioral change observable from outside `MaterializationAnalyzer`.
 - **Sub-issue?** Yes.
 
 ### S4 — Ownership: non-capturing / null-env function values stop being treated as owned heap
@@ -245,10 +240,10 @@ slice or accept temporary breakage; do not invent a shim.
   function values as closures").
 - **Files:** `OwnershipAnalyzer.scala` (TypeFn ownership rule around L256–L259 per the
   QA doc's reference; `analyzeLambda` L1350; consuming-param flows).
-- **Rule:** only lambdas with `materialization == Materialized` AND `captureMode == Move`
-  are tracked as owned heap by ownership analysis. `Direct`, `NullEnv`, and
-  borrow-capturing materialized lambdas are not freed at scope end and are not passed
-  to `__free_closure`.
+- **Rule:** only lambdas with `!isDirect && captures.nonEmpty && isMove` (i.e. real
+  materialized move closures) are tracked as owned heap by ownership analysis. Direct
+  lambdas, NullEnv values, and borrow-capturing materialized lambdas are not freed at
+  scope end and are not passed to `__free_closure`.
 - **Acceptance:** new ownership regressions pass — consuming param receives a top-level
   fn ref; consuming param receives a non-capturing lambda literal; HO param receives a
   non-capturing closure; old `__free_closure(f)` crash path no longer triggers. Mem
@@ -262,12 +257,12 @@ slice or accept temporary breakage; do not invent a shim.
 - **Files:** `OwnershipAnalyzer.scala` (`returnedBorrowClosures` L681; capture-heap
   analysis around L1446 for `CapturedBorrowedHeapBinding`; escape rules through
   `TypeFn` returns; `BorrowClosureEscapeViaReturn`).
-- **Rule:** route every decision through `LambdaMeta.materialization` + `Escape`;
-  structural shape of the binding does not matter. Existing ownership diagnostics
-  (`BorrowClosureEscapeViaReturn`, `CapturedBorrowedHeapBinding`,
+- **Rule:** route every decision through `LambdaMeta.isDirect`, `LambdaMeta.escape`,
+  and `Lambda.isMove`; structural shape of the binding does not matter. Existing
+  ownership diagnostics (`BorrowClosureEscapeViaReturn`, `CapturedBorrowedHeapBinding`,
   `BorrowedValuePassedToConsumingParam`) stay in the diagnostic set, but their
-  *triggers* are derived from demand/escape, not from structural pattern checks on
-  the AST shape.
+  *triggers* are derived from `escape` and `captures`, not from structural pattern
+  checks on the AST shape.
 - **Acceptance:** ownership unit tests pass for all four lambda forms (top-level,
   local-fn, let-bound, literal); existing ownership-error fixtures still produce the
   same error variants on the same input programs. Equivalence tests at S9 are the final
@@ -282,7 +277,7 @@ slice or accept temporary breakage; do not invent a shim.
   L518); `Applications.scala` (`compileIndirectCall` L555, `staticNullEnvClosureTarget`,
   `emitClosureFreeViaEnvDtor`); `FunctionEmitter.scala` (`renderFunctionLines` L166,
   closure-entry wrapper at L244, `emitCaptureLoads` L143).
-- **Lowering rules:** as in Q5.
+- **Lowering rules:** as in Q5 (driven by `(isDirect, captures.isEmpty)`).
 - **Acceptance:** `ClosureCodegenTest`, `TbaaEmissionTest`, `FunctionSignatureTest`
   refreshed against the new IR shapes and pass; first-class top-level fn passed as HO
   argument lowers as `{ ptr @entry, ptr null }`; direct call to a local lambda with
@@ -290,24 +285,24 @@ slice or accept temporary breakage; do not invent a shim.
   IR snapshots may shift — refresh as needed.
 - **Sub-issue?** Yes — large blast radius.
 
-### S7 — Codegen: env allocation rule consumes `captureMode` (escape recorded but unused)
-- **Goal:** the rule that decides `alloca` vs `malloc` reads `LambdaMeta.captureMode`,
-  replacing the structural `Lambda.isMove` check on the AST node. `escape` is recorded
-  by S3 and available, but **not** consulted by allocation in phase 1.
+### S7 — Codegen: env allocation rule consumes `isMove` (escape recorded but unused)
+- **Goal:** the rule that decides `alloca` vs `malloc` reads `Lambda.isMove` (already
+  present), explicitly *not* gated on `escape`. This slice mostly verifies that the
+  existing `isMove` plumbing remains the single allocation gate after S3–S6 land, and
+  documents the deferred S11 stack-promotion path.
 - **Phase-1 allocation rule** (the only rule shipped in this slice):
-  - `captureMode == Borrow` → `alloca`
-  - `captureMode == Move`   → `malloc`
-  - `escape` is observed (so call sites can read it) but does not gate allocation.
-  - Stack-promotion for non-escaping Move (`captureMode == Move` AND
+  - `isMove == false` → `alloca`
+  - `isMove == true`  → `malloc`
+  - `escape` is recorded by S3 (and read by S5 for ownership escape checks) but does
+    not gate allocation here.
+  - Stack-promotion for non-escaping Move (`isMove == true` AND
     `escape == NonEscaping` → `alloca`) is deferred to **S11**.
 - **Files:** `ExpressionCompiler.scala` (`emitCallSiteEnv` L518–L659);
   `FunctionEmitter.scala` (entry-block prologue path L166–L170, `emitEnvHeapFieldFrees`
   L203–L243); `ClosureMemoryFnGenerator.scala` (`mkEnvStruct` L142–L180,
   `mkFreeFunction` L189–L257).
-- **Acceptance:** mem tests for borrow and move closures pass; `rg "Lambda.isMove"` in
-  allocation paths returns no hits (all callers route through `captureMode`);
-  `Lambda.isMove` is consumed only by S3 (mapped into `captureMode`) and as a
-  source-level surface marker.
+- **Acceptance:** mem tests for borrow and move closures pass; the allocation gate
+  remains `Lambda.isMove` and is centralized in the call-site env emission paths.
 - **Sub-issue?** Optional — can fold into S6 if blast radius stays manageable.
 
 ### S8 — Tail-recursion follow-up under unified model
@@ -366,6 +361,7 @@ slice or accept temporary breakage; do not invent a shim.
 
 - Add a `## Decisions` section to `context/specs/unify-lambdas.md` mirroring the
   approved answers above.
-- Create GH sub-issues for slices marked `Sub-issue: Yes` (S2, S3, S4, S5, S6, S8, S9)
-  and add each to project `fedesilva/projects/3` via `bin/gh-issue-*` +
-  `bin/gh-project-item-add`.
+- Create GH sub-issues for slices marked `Sub-issue: Yes` (S3, S4, S5, S6, S8, S9) and
+  add each to project `fedesilva/projects/3` via `bin/gh-issue-*` +
+  `bin/gh-project-item-add`. S2 is now a small additive change and does not need its
+  own sub-issue.

@@ -364,79 +364,94 @@ The work should probably land in small slices:
 
 ## Decisions
 
-These resolve the open questions above. Detailed rationale, the multi-use join rule, the
-four-axis metadata factoring, and per-slice acceptance criteria live in
-`context/specs/unify-lambdas-plan.md`. The slice reference (S2, S3, …) points at that
-plan file.
+These resolve the open questions above. Detailed rationale, the multi-use join rule, and
+per-slice acceptance criteria live in `context/specs/unify-lambdas-plan.md`. The slice
+reference (S2, S3, …) points at that plan file.
 
-### Q1 — `Lambda.captures` is split (S2)
+### Q1 — `Lambda.captures` stays as a single field (S2)
 
-Split into:
+`Lambda.captures: List[Capture]` is the source of truth for the bindings a lambda
+references from enclosing scopes. It is populated by `CaptureAnalyzer` for every lambda
+scope, regardless of whether an env is ultimately built. Whether to build an env is a
+separate decision recorded on `LambdaMeta` (see Q2). When an env *is* built, codegen
+uses the same `captures` list as the layout source — `CapturedRef` / `CapturedLiteral`
+continue to live inside `Capture`, and literal-clone upgrades happen on this list as
+they do today.
 
-- `Lambda.freeVars: List[Ref]` — semantic free-variable facts. Populated by
-  `CaptureAnalyzer` for every lambda scope, regardless of whether an env is built.
-- `Lambda.envFields: Option[List[Capture]]` — lowering artifact. Populated only when
-  materialization demands an env. `CapturedRef` / `CapturedLiteral` live only here.
+No `freeVars` / `envFields` split. The 3-way materialization state (no value / value
+with empty env / value with real env) is fully derivable from one annotation
+(`isDirect`) plus `captures.isEmpty`.
 
-### Q2 — Materialization metadata is recorded on `LambdaMeta` (S3)
+### Q2 — Materialization metadata is two fields on `LambdaMeta` (S3)
 
 A new pass `MaterializationAnalyzer` runs between `CaptureAnalyzer` and
-`ClosureMemoryFnGenerator`. It populates four orthogonal axes:
+`ClosureMemoryFnGenerator`. It populates:
 
 ```
-materialization: Direct | NullEnv | Materialized
-escape:          NonEscaping | EscapesAsParam | EscapesAsReturn | EscapesToStore
-captureMode:     Borrow | Move
-envFields:       Option[List[Capture]]
+isDirect: Boolean       // never materialized as a value — scope-only / immediate-application
+escape:   Escape        // NonEscaping | EscapesAsParam | EscapesAsReturn | EscapesToStore
 ```
 
-Multi-use sites are joined conservatively (max on the materialization and escape
-lattices: `Direct < NullEnv < Materialized` and
-`NonEscaping < EscapesAsParam < EscapesAsReturn < EscapesToStore`). Per-capture
-`CaptureMode` (Mixed) is out of scope; current model is per-lambda, mirroring
-`Lambda.isMove`.
+The 3-way materialization state is derived, not stored:
+
+- `meta.isDirect`                       → **Direct**: no env, no fat pointer.
+- `!isDirect && captures.isEmpty`       → **NullEnv**: first-class value is `{ ptr @entry, ptr null }`.
+- `!isDirect && captures.nonEmpty`      → **Materialized**: real env, fat pointer `{ ptr @closure_entry, ptr env }`.
+
+`Lambda.isMove: Boolean` stays as the borrow-vs-move marker (no `CaptureMode` enum;
+that would be a paint job over the existing field).
+
+Multi-use join rules. When a lambda value has multiple use sites:
+
+- `isDirect` joins by AND: it starts `true` and downgrades to `false` on the first
+  value-position use (HO argument, return, store, alias).
+- `escape` joins by max on the lattice
+  `NonEscaping < EscapesAsParam < EscapesAsReturn < EscapesToStore`.
+
+So a lambda used once as a direct call and once stored into long-lived data joins to
+`isDirect = false, escape = EscapesToStore` and lowers as a Materialized closure that
+must hold its own captures.
 
 ### Q3 — Immediate application avoids materialization (S3)
 
-Yes, with one principled exception: a lambda needs materialization iff any reference to
-its binding (or to it directly) occurs in non-application position, is passed as a HO
-argument, or appears in escaping position. Pure `App(Lambda(...), arg)` shape — and
-ownership wrappers around it — never require materialization. A binding occurrence
-whose binder is a lambda triggers materialization at the *binding occurrence* if that
-occurrence is used as a value.
+Yes, with one principled exception: a lambda is `isDirect = true` iff every reference
+to it (or to its binding) is in App.fn position with full arity. Pure
+`App(Lambda(...), arg)` shape — and ownership wrappers around it — leave `isDirect`
+true. A binding occurrence whose binder is a lambda flips `isDirect` to false at the
+*binding occurrence* if that occurrence is used as a value.
 
 ### Q4 — `BindingMeta` keeps shape; semantic phases never branch on `origin` (S10)
 
 `origin: BindingOrigin` (TopLevel | Local | Inner) stays on `BindingMeta` for
 diagnostics, source positions, and codegen entry-point naming. Semantic phases
 (capture, materialization, ownership, type checker) must not branch on `origin` —
-behavior is derived from materialization / escape / captureMode metadata only.
-`destructorKind` is removed from `BindingMeta` and lives only on env-struct metadata,
-where an env actually exists.
+behavior is derived from `LambdaMeta.isDirect` / `LambdaMeta.escape` / `Lambda.isMove`
+only. `destructorKind` is removed from `BindingMeta` and lives only on env-struct
+metadata, where an env actually exists.
 
 ### Q5 — Direct-entry eligibility is computed before codegen (S6)
 
-Recorded in `LambdaMeta.materialization`. Codegen consults this and never re-derives
-"is this called directly?". Lowering rules:
+Recorded as `LambdaMeta.isDirect` and consumed alongside `captures.isEmpty`. Codegen
+consults these and never re-derives "is this called directly?". Lowering rules:
 
-- `Materialization.Direct` → direct entry only; no wrapper.
-- `Materialization.NullEnv` → direct entry + closure-entry wrapper; first-class value is
-  `{ ptr @entry, ptr null }`.
-- `Materialization.Materialized` → closure entry with env param + optional direct entry
-  when at least one statically-known direct call site exists.
+- `isDirect`                              → direct entry only; no wrapper.
+- `!isDirect && captures.isEmpty`         → direct entry + closure-entry wrapper; first-class
+  value is `{ ptr @entry, ptr null }`.
+- `!isDirect && captures.nonEmpty`        → closure entry with env param + optional direct
+  entry when at least one statically-known direct call site exists.
 
 ### Q6 — Non-escaping move-capturing lambdas stay heap-backed in phase 1 (S7; S11 deferred)
 
-Phase-1 allocation rule reads `captureMode` only:
+Phase-1 allocation rule reads `Lambda.isMove` only:
 
-- `captureMode == Borrow` → env on stack (`alloca`).
-- `captureMode == Move`   → env on heap  (`malloc`).
+- `isMove == false` → env on stack (`alloca`).
+- `isMove == true`  → env on heap  (`malloc`).
 - `escape` is recorded by S3 and available, but **not** consulted by allocation in
   phase 1.
 
-Stack-promotion for non-escaping Move (`captureMode == Move` AND
-`escape == NonEscaping` → `alloca`) is the deferred slice S11 in the plan — tracked but
-not scheduled as part of #255.
+Stack-promotion for non-escaping move closures (`isMove == true` AND
+`escape == NonEscaping` → `alloca`) is the deferred slice S11 in the plan — tracked
+but not scheduled as part of #255.
 
 ## Success criteria
 
