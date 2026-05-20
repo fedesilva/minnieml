@@ -14,7 +14,10 @@ This plan does two things:
 2. Slices the implementation into PR-sized chunks with concrete files, acceptance criteria,
    and ticketing intent.
 
-Status: **draft for Author review.** Nothing here is committed to until reviewed.
+Status: Reviewed and in progress.
+
+
+Keep the plan up to date as you work on it. Update status often, here and in tracking.md
 
 ---
 
@@ -185,13 +188,13 @@ later. The goal is a clean, principled, sound implementation — not a chain of
 transitional states. If a slice cannot land cleanly without scaffolding, expand the
 slice or accept temporary breakage; do not invent a shim.
 
-### S0 — Decisions section in design spec
+### S0 — Decisions section in design spec  *(done)*
 - **Goal:** lock the 6 answers above into the spec.
 - **Files:** `context/specs/unify-lambdas.md` (append `## Decisions`).
 - **Acceptance:** section exists; each decision cites the slice that acts on it.
 - **Tracking:** checklist item on #255.
 
-### S1 — Terminology cleanup
+### S1 — Terminology cleanup  *(done — commit 27d7f57)*
 - **Goal:** retire "real closure literal" language; speak the spec's vocabulary across
   docs and comments.
 - **Files:** `docs/design/compiler-design.md`, `docs/memory-model.md`,
@@ -201,7 +204,7 @@ slice or accept temporary breakage; do not invent a shim.
   docs; terminology aligns with `unify-lambdas.md`.
 - **Sub-issue?** No — checklist item.
 
-### S2 — AST: add `isDirect` to `LambdaMeta`
+### S2 — AST: add `isDirect` to `LambdaMeta`  *(done — commit 7ce9711)*
 - **Goal:** mechanical AST change from Q2. Add a single field `isDirect: Boolean = false`
   to `LambdaMeta`. `Lambda.captures` and `Lambda.isMove` stay. No `Escape` enum, no
   `escape` field. No new analysis logic in this slice; the default `isDirect = false`

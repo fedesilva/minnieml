@@ -141,7 +141,7 @@ def prettyPrintTerm(
         else ""
       val metaStr = meta match
         case Some(info) =>
-          s"\n${indentStr}  meta: LambdaMeta(isTailRecursive=${info.isTailRecursive})"
+          s"\n${indentStr}  meta: LambdaMeta(isTailRecursive=${info.isTailRecursive}, isDirect=${info.isDirect})"
         case None => s"\n${indentStr} meta: None"
       val paramsStr =
         if params.isEmpty then s"${indentStr}  params: []"
