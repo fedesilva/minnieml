@@ -244,7 +244,8 @@ Conceptually:
 ```
 
 The parser builds this directly as `App(fn = Lambda(...), arg = value)`. Later phases treat that
-shape as scoped-binding sugar rather than as an ordinary closure literal.
+shape as a scoped-binding lambda — an immediate application that extends the current scope rather
+than a value-position lambda that needs closure materialization.
 
 #### Local `fn`
 
@@ -588,16 +589,18 @@ let f = get_value;
 
 ### Semantic Phase 9: CaptureAnalyzer
 
-**Purpose**: Fill in `Lambda.captures` for real closure literals.
+**Purpose**: Compute free variables for every lambda scope and populate `Lambda.captures` for
+value-position lambdas whose value may need to be materialized as a closure.
 
 **Key distinction**:
-- Not every `Lambda` node is a closure boundary.
+- Not every `Lambda` node is a value-position lambda.
 - Parser-lowered scoped bindings, statement chains, and let-desugaring do produce
-  `App(fn = Lambda(...), arg = ...)` nodes whose `Lambda` acts as a scope-extending wrapper rather
-  than as a closure value.
+  `App(fn = Lambda(...), arg = ...)` nodes whose `Lambda` is a scoped-binding lambda — an
+  immediate application that extends the current scope rather than a value-position lambda.
 - User code can also produce `App(fn = Lambda(...), arg = ...)` directly through immediate lambda
   application, for example `{ x -> x + a } 1`.
-- A `Lambda` in standalone value position is treated as a real closure literal.
+- A `Lambda` in standalone value position is a value-position lambda and may require closure
+  materialization.
 
 **Behavior**:
 - Runs after `RefResolver`, so capture discovery works from `resolvedId`s instead of raw names.
