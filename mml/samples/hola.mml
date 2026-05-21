@@ -5,7 +5,6 @@ let name = "fede";
 
 pub fn main() =  
   let pepe = "pepe";
-  println (hola name);
-  println name;
-  println pepe;
+  println (hola name);  
+  println (hola pepe);
 ;
