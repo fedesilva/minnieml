@@ -179,6 +179,7 @@ This keeps work incremental while preserving the "true type" decision.
 ## Open decisions
 
 1. Canonical runtime representation type naming in prelude/runtime.
+   1. A: Array
 2. Final public API names for array ops under current overloading constraints.
 3. Bounds behavior policy (trap vs recoverable error) for indexed access.
 4. Whether array literal constant-packing optimizations are phase-1 or phase-2.
