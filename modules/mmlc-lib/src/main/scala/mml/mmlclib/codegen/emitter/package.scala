@@ -651,16 +651,32 @@ case class CodeGenState(
       val declaration = emitFunctionDeclaration(name, returnType, paramTypes)
       copy(functionDeclarations = functionDeclarations + (name -> declaration))
 
+/** A Direct lambda binding's call shape: the entry symbol plus the trailing capture operands
+  * to append at every call site.
+  *
+  * Direct lambdas have signature `(userParams..., captureTypes...)` with no env pointer. The
+  * binder is not a first-class value — `operandStr` on a direct-callable `ScopeEntry` is
+  * undefined; callers must consult `directCallable` and dispatch via [[compileApp]].
+  */
+case class DirectCallable(
+  entryName:       String,
+  captureOperands: List[(String, String)] // (operand, llvmType)
+)
+
 /** An entry in the function scope, tracking a binding's register and type info.
   *
   * When `isLiteral` is true, the value has not been materialized into a register — it will be
   * emitted inline by consumers (e.g. as an immediate operand).
+  *
+  * When `directCallable` is set, the binding is a Direct lambda — only callable, never a value.
+  * Consumers must check this before treating the entry as a value.
   */
 case class ScopeEntry(
-  register:     Int,
-  typeName:     String,
-  isLiteral:    Boolean        = false,
-  literalValue: Option[String] = None
+  register:        Int,
+  typeName:        String,
+  isLiteral:       Boolean                = false,
+  literalValue:    Option[String]         = None,
+  directCallable:  Option[DirectCallable] = None
 ):
   def operandStr: String =
     literalValue.getOrElse(

@@ -155,6 +155,16 @@ private[emitter] def compileLambdaLiteral(
   preAllocatedName: Option[(CodeGenState, String)] = None,
   bindingParam:     Option[FnParam]                = None
 ): Either[CodeGenError, CompileResult] =
+  // Direct lambdas have a dedicated lowering and must never reach the value-position path,
+  // except for tail-recursive ones — they fall back to the wrapper-based lowering until the
+  // Direct lowering grows tail-call loopification.
+  if lambda.materialization == Materialization.Direct &&
+    !lambda.meta.exists(_.isTailRecursive)
+  then
+    return CodeGenError(
+      "Direct lambda reached compileLambdaLiteral (value-position path); MaterializationAnalyzer should have set isDirect=false. This is a compiler bug.",
+      lambda.some
+    ).asLeft
   val typeFn = lambda.typeSpec match
     case Some(tf: TypeFn) => tf.asRight
     case other =>
@@ -334,6 +344,130 @@ private def compileTailRecCapturingLambda(
         "Function"
       )
     }
+  }
+
+/** A Direct lambda's value-shape captures — the ones that must be threaded as trailing arguments
+  * at every call site. Direct-callable captures (another Direct binding from the enclosing scope)
+  * and `CapturedLiteral` (top-level fn refs) are excluded: the former propagates via the inherited
+  * `functionScope` in the body, the latter resolves through the global symbol table.
+  */
+private[emitter] def valueShapedCaptures(
+  lambda:        Lambda,
+  functionScope: Map[String, ScopeEntry]
+): List[Capture] =
+  lambda.captures.filter {
+    case _: Capture.CapturedLiteral => false
+    case Capture.CapturedRef(ref) =>
+      !functionScope.get(ref.name).flatMap(_.directCallable).isDefined
+  }
+
+/** Pre-evaluate a Direct lambda's value-shape captures at the binder site.
+  *
+  * Each capture's operand is read from the enclosing `functionScope`. Direct-callable captures
+  * and top-level-fn (`CapturedLiteral`) captures are filtered out — they don't need runtime
+  * threading.
+  */
+private[emitter] def evaluateDirectCaptures(
+  lambda:        Lambda,
+  state:         CodeGenState,
+  functionScope: Map[String, ScopeEntry]
+): Either[CodeGenError, List[(String, String)]] =
+  valueShapedCaptures(lambda, functionScope).traverse { cap =>
+    val ref = cap.ref
+    val llvmTypeE = ref.typeSpec match
+      case Some(ts) => getLlvmType(ts, state)
+      case None     => CodeGenError(s"Capture '${ref.name}' has no type", ref.some).asLeft
+    llvmTypeE.flatMap { llvmType =>
+      functionScope.get(ref.name) match
+        case Some(entry) => (entry.operandStr, llvmType).asRight
+        case None =>
+          CodeGenError(
+            s"Capture '${ref.name}' missing from enclosing scope",
+            ref.some
+          ).asLeft
+    }
+  }
+
+/** Compiles a Direct lambda as a deferred LLVM function with no env parameter.
+  *
+  * Signature: `(userParams..., captureTypes...)`. Captures are passed as trailing arguments at
+  * every call site. The binder receives a [[DirectCallable]] scope entry; consumers must use
+  * [[compileApp]] to invoke it.
+  */
+private[emitter] def compileDirectLambda(
+  lambda:        Lambda,
+  state:         CodeGenState,
+  fnName:        String,
+  returnType:    String,
+  paramTypes:    List[String],
+  functionScope: Map[String, ScopeEntry],
+  selfBinder:    Option[FnParam]
+): Either[CodeGenError, CompileResult] =
+  val filteredParamsWithTypes = filterVoidParams(lambda.params, paramTypes)
+  val userParamDecls          = formatParamDecls(filteredParamsWithTypes, state.resolvables)
+  val userParamCount          = filteredParamsWithTypes.size
+
+  valueShapedCaptures(lambda, functionScope).traverse { cap =>
+    cap.ref.typeSpec match
+      case Some(ts) => getLlvmType(ts, state).map(t => (cap, t))
+      case None     => CodeGenError(s"Capture '${cap.ref.name}' has no type", cap.ref.some).asLeft
+  }.flatMap { captureTypes =>
+    val captureDecls = captureTypes.zipWithIndex.map { case ((_, ty), i) =>
+      s"$ty %${userParamCount + i}"
+    }
+    val allParamDecls =
+      val parts = (if userParamDecls.isEmpty then Nil else List(userParamDecls)) ++ captureDecls
+      parts.mkString(", ")
+
+    val subState = state.copy(
+      output                  = List.empty,
+      entryPrologueOutput     = List.empty,
+      nextRegister            = 0,
+      insideLoopifiedFunction = false
+    )
+    val paramScope = filteredParamsWithTypes.zipWithIndex.map { case ((param, _), idx) =>
+      val mmlType = param.typeAsc
+        .flatMap(getNominalTypeName(_).toOption)
+        .getOrElse("Unknown")
+      (param.name, ScopeEntry(idx, mmlType))
+    }.toMap
+    val captureScope = captureTypes.zipWithIndex.map { case ((cap, _), i) =>
+      val mmlType = cap.ref.typeSpec
+        .flatMap(getNominalTypeName(_).toOption)
+        .getOrElse("Unknown")
+      (cap.ref.name, ScopeEntry(userParamCount + i, mmlType))
+    }.toMap
+
+    val innerCaptureOps = captureTypes.zipWithIndex.map { case ((_, ty), i) =>
+      (s"%${userParamCount + i}", ty)
+    }
+    val selfScope = selfBinder.map { p =>
+      val entry = ScopeEntry(
+        0,
+        "Function",
+        directCallable = DirectCallable(fnName, innerCaptureOps).some
+      )
+      p.name -> entry
+    }.toMap
+
+    val bodyState = subState.withRegister(userParamCount + captureTypes.size)
+
+    for
+      bodyRes <-
+        compileExpr(lambda.body, bodyState, functionScope ++ paramScope ++ captureScope ++ selfScope)
+      retLine =
+        if returnType == "void" then "  ret void"
+        else s"  ret $returnType ${bodyRes.operandStr}"
+      finalSubState = bodyRes.state.emit(retLine).emit("}")
+      header        = s"define internal $returnType @$fnName($allParamDecls) #0 {"
+      fnBody        = renderFunctionLines(header, finalSubState).mkString("\n")
+      mergedState   = mergeDeferredBodyState(state, finalSubState).addDeferredDefinition(fnBody)
+    yield CompileResult(
+      register  = 0,
+      state     = mergedState,
+      isLiteral = true,
+      typeName  = "Function"
+    )
   }
 
 /** Compiles a regular (non-tail-recursive) lambda literal as a deferred LLVM function. */
@@ -906,19 +1040,24 @@ def compileApp(
       compileLambdaApp(lambda, allArgs, state, functionScope, compileExpr)
 
     case ref: Ref =>
-      val hasFunctionType =
-        ref.typeSpec.exists(t => resolveToTypeFn(t, state.resolvables).isDefined)
-      // Direct call only applies to refs that resolve to emitted callable symbols.
-      // First-class function values, including globals stored as { fn_ptr, env_ptr }, must use
-      // the shared indirect-call path.
-      val isIndirect = hasFunctionType &&
-        (functionScope.contains(ref.name) || !isDirectCallableRef(ref, state))
-      if isIndirect then compileIndirectCall(ref, allArgs, app, state, functionScope, compileExpr)
-      else
-        getNativeOpTemplate(ref.resolvedId.flatMap(state.resolvables.lookup)) match
-          case Some(tpl) =>
-            compileNativeOp(ref, tpl, allArgs, app, state, functionScope, compileExpr)
-          case None if isNullaryWithUnitArgs(ref, allArgs, state.resolvables) =>
-            compileNullaryCall(ref, app, state)
-          case None =>
-            compileRegularCall(ref, allArgs, app, state, functionScope, compileExpr)
+      functionScope.get(ref.name).flatMap(_.directCallable) match
+        case Some(direct) =>
+          compileDirectCall(ref, direct, allArgs, app, state, functionScope, compileExpr)
+        case None =>
+          val hasFunctionType =
+            ref.typeSpec.exists(t => resolveToTypeFn(t, state.resolvables).isDefined)
+          // Direct call only applies to refs that resolve to emitted callable symbols.
+          // First-class function values, including globals stored as { fn_ptr, env_ptr }, must use
+          // the shared indirect-call path.
+          val isIndirect = hasFunctionType &&
+            (functionScope.contains(ref.name) || !isDirectCallableRef(ref, state))
+          if isIndirect then
+            compileIndirectCall(ref, allArgs, app, state, functionScope, compileExpr)
+          else
+            getNativeOpTemplate(ref.resolvedId.flatMap(state.resolvables.lookup)) match
+              case Some(tpl) =>
+                compileNativeOp(ref, tpl, allArgs, app, state, functionScope, compileExpr)
+              case None if isNullaryWithUnitArgs(ref, allArgs, state.resolvables) =>
+                compileNullaryCall(ref, app, state)
+              case None =>
+                compileRegularCall(ref, allArgs, app, state, functionScope, compileExpr)

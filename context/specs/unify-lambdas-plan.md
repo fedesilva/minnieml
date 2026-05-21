@@ -325,9 +325,94 @@ slice or accept temporary breakage; do not invent a shim.
   are the final cross-form gate.
 - **Sub-issue?** Yes.
 
-### S6 — Codegen: derive direct-vs-closure entry from demand
+### S6 — Codegen: derive direct-vs-closure entry from demand  *(in progress)*
 - **Goal:** Q5 in codegen. One source of truth replaces the scattered structural
   reasoning.
+- **S6 landed scope so far (Phase 6.2):**
+  - `Materialization` enum + `Lambda.materialization` helper (`ast/terms.scala`) — single source
+    of truth derived from `(meta.isDirect, captures.isEmpty)`. Reads: `compileBoundLambdaArg`
+    and `ClosureMemoryFnGenerator.collectCapturingLambdas`.
+  - Direct lowering: `compileDirectLambda` emits one deferred LLVM fn with signature
+    `(userParams..., captureTypes...)`, no env ptr, no wrapper. At the binder site, `param` is
+    bound to a `DirectCallable(entryName, captureOperands)` scope entry; `compileApp` dispatches
+    to `compileDirectCall` which appends captures as trailing args at every call site.
+  - Captures that are themselves direct-callable bindings or top-level fn refs
+    (`Capture.CapturedLiteral`) are filtered out of the runtime trailing-args list:
+    direct-callable captures propagate via the inherited `functionScope`; top-level fn captures
+    resolve through the global symbol table at the body call site.
+  - `ClosureMemoryFnGenerator.collectCapturingLambdas` gated on
+    `materialization == Materialized` — Direct lambdas don't get env structs synthesized.
+  - `compileLambdaLiteral` errors if it sees a Direct lambda (analyzer/codegen disagreement is a
+    bug, not a fallback).
+  - **Pinned regression `tests/mem/direct-move-closure.mml` passes under ASan+LSan**; full mem
+    harness 23/23 green. All 216 semantic tests, tail-rec tests, and the three smoke samples
+    (hola, quicksort, astar2) pass.
+- **Tail-rec carve-out (deferred to S8):** tail-recursive Direct lambdas (e.g. `factorial_tco`)
+  still flow through the wrapper-based lowering. The Direct path doesn't yet implement
+  tail-call loopification. **S8** ("Tail-recursion follow-up under unified model") is the
+  natural home — its acceptance criterion already calls for
+  "immediate-application tail-recursive lambdas validated against the unified pipeline." S8
+  will route tail-rec Direct lambdas through `compileDirectLambda` with loopified bodies and
+  no wrapper. Current carve-out is sound (matches test corpus) but emits a redundant wrapper
+  for tail-rec lambdas that are only ever called directly.
+- **Phase 6.2 fixups — Codex review findings (must land before 6.3/6.4):**
+  Two real issues uncovered by `/codex:review` of the Phase 6.2 working tree. Each is
+  an independent restartable step; P1a is the larger refactor and grounds the
+  trailing-param layout that P1b also uses, so 6.2.b lands before 6.2.c.
+
+  - **Phase 6.2.a — Always synthesize env metadata for capturing lambdas (P2). *(moot)***
+    Codex flagged `ClosureMemoryFnGenerator.collectCapturingLambdas` (line 58) as
+    gated on `materialization == Materialized`, which would have skipped env struct
+    synthesis for Direct lambdas and broken the tail-rec wrapper carve-out. On
+    inspection the gate is and has always been `captures.nonEmpty` (since
+    2026-03-24) — Direct capturing lambdas already get an env struct + tag. No
+    code change. Step retained in the plan for traceability.
+
+  - **Phase 6.2.b — Thread direct-callable captures through nested Direct lambdas (P1a).**
+    When a Direct lambda `g` captures another Direct binding `f` whose
+    `DirectCallable.captureOperands` reference enclosing SSA registers (e.g. `%0` =
+    outer parameter), the current filter at `ExpressionCompiler.scala:361` drops `f`
+    from `g`'s trailing capture params while the body still inherits `f`'s
+    `DirectCallable`. Because `compileDirectLambda` emits a separate LLVM function,
+    a call to `f` from inside `g` appends operands like `%0` that now refer to `g`'s
+    parameters, not the outer's.
+    *Fix:* in `compileDirectLambda`, compute the inner lambda's "effective trailing
+    slots" as (value-shaped captures) ++ (transitively flattened captureOperands of
+    each direct-callable capture). Emit one trailing LLVM param per slot. Inside the
+    inner body, rebind each direct-callable capture to a fresh `DirectCallable` whose
+    `captureOperands` point at the new inner-slot registers. In
+    `compileBoundLambdaArg`, `evaluateDirectCaptures` emits operands aligned to the
+    new layout — value-shaped captures read from outer scope, direct-callable
+    transitive operands re-emit the outer captureOperands (already valid in outer
+    scope).
+    *Verify:* add a nested-direct-lambda test (outer captures `a`, inner refs `f y`);
+    `sbtn test`; `./tests/mem/run.sh all`.
+
+  - **Phase 6.2.c — Keep CapturedLiteral captures in the Direct call shape (P1b).**
+    `Capture.CapturedLiteral` marks heap-literal captures (e.g. string literals) that
+    `OwnershipAnalyzer` flags for `__clone_*` at the binder site. Filtering them out
+    in `valueShapedCaptures` (`ExpressionCompiler.scala:359`) makes the inner body
+    reference an undefined outer register and skips the clone / ownership transfer.
+    *Fix:* treat `CapturedLiteral` as a value-shaped capture. Extend
+    `evaluateDirectCaptures` to emit the same clone-call shape the env-materialization
+    path uses at `ExpressionCompiler.scala:723-761`, then pass the cloned operand as
+    the trailing arg. Inner body sees an ordinary trailing-param register.
+    *Verify:* add a Direct move-lambda test capturing a string literal; assert clone
+    is emitted at binder site and no outer register leaks into the inner LLVM body;
+    `sbtn test`; `./tests/mem/run.sh all`.
+
+- **Remaining S6 work (Phases 6.3 + 6.4):**
+  - Phase 6.3: source-aware `__free_closure(f)` elision at consuming-`TypeFn` param sites when
+    `f` is statically a NullEnv literal or a Ref to a top-level Bnd(Lambda); the runtime
+    null-guard remains the conditional-join correctness backstop (documented in
+    `docs/design/compiler-design.md` §OwnershipAnalyzer item 4).
+  - Phase 6.4: refresh IR-shape tests — `ClosureCodegenTest` (8 stale assertions on env-struct
+    materialization for Direct lambdas), `FunctionSignatureTest` "local static null-env closure
+    calls use direct closure-entry call" (now a clean direct call, no wrapper), `TbaaEmissionTest`
+    "closure env TBAA handles captured function values" (closure env disappears under Direct
+    lowering — re-aim at a deliberately non-Direct shape). Un-ignore `ClosureCodegenTest`
+    "local move capturing closures free through their specific env destructor". Retire
+    `isDirectCallableRef` if MaterializationAnalyzer's coverage proves complete.
 - **Files:** `ExpressionCompiler.scala` (`compileLambdaLiteral` L151,
   `compileCapturingLambda` L662, `compileNonCapturingLambda` L381, `emitCallSiteEnv`
   L518); `Applications.scala` (`compileIndirectCall` L555, `staticNullEnvClosureTarget`,

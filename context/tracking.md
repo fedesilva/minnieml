@@ -66,6 +66,18 @@ Slice progress (see `context/specs/unify-lambdas-plan.md`):
 
 ## Change Log
 
+- 2026-05-20: #255 unify-lambdas S6 Phase 6.2 — Direct lowering: no env, no wrapper, no malloc
+  - `ast/terms.scala`: `Materialization` enum (`Direct | NullEnv | Materialized`) + `Lambda.materialization` helper derived from `(meta.isDirect, captures.isEmpty)`. Single source of truth for lowering shape.
+  - `codegen/emitter/package.scala`: `ScopeEntry` extended with `directCallable: Option[DirectCallable]`. `DirectCallable(entryName, captureOperands)` records the entry symbol + ordered trailing-arg operands.
+  - `ExpressionCompiler.scala`: new `compileDirectLambda` emits one deferred LLVM fn with signature `(userParams..., captureTypes...)` — no env ptr, no closure-entry wrapper. Recursive self-references resolve through a self-DirectCallable injected into the body scope; `valueShapedCaptures` filters out direct-callable captures (propagated via inherited scope) and `Capture.CapturedLiteral` (top-level fn refs, resolved via global symbol). `compileLambdaLiteral` errors on non-tail-rec Direct lambdas (analyzer/codegen disagreement is a bug, not a fallback).
+  - `Applications.scala`: `compileBoundLambdaArg` dispatches on `Materialization` — Direct uses `compileDirectLambda` + DirectCallable scope entry; NullEnv and Materialized keep the wrapper-based path. `compileApp` consults `ScopeEntry.directCallable` before any indirect-call decision and routes through new `compileDirectCall` (`call @entry(args..., captureOps...)`).
+  - `ClosureMemoryFnGenerator.scala`: `collectCapturingLambdas` gated on `materialization == Materialized` — Direct lambdas never get env structs synthesized.
+  - `docs/design/compiler-design.md`: documented the closure-materialization runtime null-guard as the closure analog of the `__owns_*` heap-conditional-join witness. Logged the open design question of replacing the runtime backstop with stricter static reasoning.
+  - **Pinned regression `tests/mem/direct-move-closure.mml` passes under ASan+LSan**: the S4→S6 carry-over leak is closed. Full mem harness 23/23. 216 semantic tests + tail-rec tests + 3 smoke samples (hola/quicksort/astar2) all green.
+  - **Tail-rec carve-out (deferred to S8)**: tail-recursive Direct lambdas (e.g. `factorial_tco`) continue to flow through the wrapper-based lowering. S8 ("Tail-recursion follow-up under unified model") already targets "immediate-application tail-recursive lambdas validated against the unified pipeline" — Direct + loopification lands there.
+  - **IR-shape test refresh deferred to Phase 6.4**: `ClosureCodegenTest` (8), `FunctionSignatureTest` (1), `TbaaEmissionTest` (1) — assertions are stale w.r.t. the new Direct lowering. No functional regression; surfaced as expected drift.
+  - Plan: marked S6 in progress with the Phase 6.2 landed-scope delta + carve-out + remaining work (Phases 6.3 / 6.4).
+
 - 2026-05-20: #255 unify-lambdas S5 — unify return-escape walkers; close admin-wrapper aliasing hole
   - `OwnershipAnalyzer.scala`: collapsed the two return-escape walkers
     (`returnedBorrowedRefs`, `returnedBorrowClosures`) at the call site through a single

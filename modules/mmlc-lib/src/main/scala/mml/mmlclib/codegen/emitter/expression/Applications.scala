@@ -6,11 +6,14 @@ import mml.mmlclib.codegen.emitter.{
   CodeGenError,
   CodeGenState,
   CompileResult,
+  DirectCallable,
   ScopeEntry,
+  compileDirectLambda,
   compileLambdaLiteral,
   emitCall,
   emitExtractValue,
   emitIndirectCall,
+  evaluateDirectCaptures,
   getLlvmType,
   getNominalTypeName
 }
@@ -45,51 +48,175 @@ def compileLambdaApp(
     // Pre-allocate name for lambda args so the binding is in scope during
     // compilation — enables recursive let bindings (same as top-level fns
     // knowing their own name).
-    val (preAlloc, argScope) = arg.terms match
-      case List(_: Lambda) =>
-        val uniqueName  = s"${param.name}_${state.nextAnonFnId}"
-        val stateWithId = state.copy(nextAnonFnId = state.nextAnonFnId + 1)
-        val fnName      = stateWithId.mangleName(uniqueName)
-        val recursiveScope =
-          arg match
-            case Expr(_, List(argLambda: Lambda), _, _) if argLambda.captures.nonEmpty =>
-              functionScope
-            case _ =>
-              val entry = ScopeEntry(
-                0,
-                "Function",
-                isLiteral    = true,
-                literalValue = s"{ ptr @$fnName, ptr null }".some
-              )
-              functionScope + (param.name -> entry)
-        ((stateWithId, fnName).some, recursiveScope)
+    arg.terms match
+      case List(argLambda: Lambda) =>
+        compileBoundLambdaArg(lambda, param, argLambda, state, functionScope, compileExpr)
       case _ =>
-        (none, functionScope)
-    val compileState = preAlloc.map(_._1).getOrElse(state)
-    for
-      argRes <- arg.terms match
-        case List(lambdaLit: Lambda) =>
-          compileLambdaLiteral(lambdaLit, compileState, argScope, preAlloc, param.some)
-            .map { res =>
-              // Non-capturing: value is a constant literal, safe to discard sub-output.
-              // Capturing: call-site IR (malloc/store/insertvalue) defines the fat pointer
-              // register and must be preserved.
-              if res.isLiteral then res.copy(state = res.state.copy(output = state.output))
-              else res
-            }
-        case _ => compileExpr(arg, compileState, argScope)
-      // Store literal info in the scope entry — no materialization needed
-      entry = ScopeEntry(argRes.register, argRes.typeName, argRes.isLiteral, argRes.literalValue)
-      extendedScope = functionScope + (param.name -> entry)
-      bodyRes <- compileExpr(lambda.body, argRes.state, extendedScope)
-    // Preserve exit block from argument if body doesn't have one
-    // (needed when arg contains a conditional like `let x = if cond then a else b end`)
-    yield bodyRes.copy(exitBlock = bodyRes.exitBlock.orElse(argRes.exitBlock))
+        for
+          argRes <- compileExpr(arg, state, functionScope)
+          entry = ScopeEntry(argRes.register, argRes.typeName, argRes.isLiteral, argRes.literalValue)
+          extendedScope = functionScope + (param.name -> entry)
+          bodyRes <- compileExpr(lambda.body, argRes.state, extendedScope)
+        yield bodyRes.copy(exitBlock = bodyRes.exitBlock.orElse(argRes.exitBlock))
   else
     CodeGenError(
       "Immediate lambda application with multiple params/args not yet supported",
       lambda.some
     ).asLeft
+
+/** Compile a scoped-binding whose bound value is itself a lambda literal.
+  *
+  * The bound lambda's [[Lambda.materialization]] decides the lowering shape:
+  *   - `Direct` → emit `compileDirectLambda` (no env), bind `param` to a [[DirectCallable]] entry.
+  *   - `NullEnv` → emit `compileNonCapturingLambda` via `compileLambdaLiteral`, bind `param` to a
+  *     literal `{ ptr @fn, ptr null }` entry.
+  *   - `Materialized` → emit `compileCapturingLambda` via `compileLambdaLiteral`, bind `param` to
+  *     the fat-pointer register.
+  */
+private def compileBoundLambdaArg(
+  outerLambda:   Lambda,
+  param:         FnParam,
+  argLambda:     Lambda,
+  state:         CodeGenState,
+  functionScope: Map[String, ScopeEntry],
+  compileExpr:   ExprCompiler
+): Either[CodeGenError, CompileResult] =
+  val uniqueName  = s"${param.name}_${state.nextAnonFnId}"
+  val stateWithId = state.copy(nextAnonFnId = state.nextAnonFnId + 1)
+  val fnName      = stateWithId.mangleName(uniqueName)
+
+  // Tail-recursive direct lambdas still need the loopification path; defer Direct-specific
+  // lowering of tail-rec lambdas to a future slice.
+  val effectiveMaterialization =
+    if argLambda.meta.exists(_.isTailRecursive) && argLambda.materialization == Materialization.Direct
+    then
+      if argLambda.captures.isEmpty then Materialization.NullEnv else Materialization.Materialized
+    else argLambda.materialization
+
+  effectiveMaterialization match
+    case Materialization.Direct =>
+      val typeFnE = argLambda.typeSpec match
+        case Some(tf: TypeFn) => tf.asRight
+        case other =>
+          CodeGenError(s"Direct lambda missing TypeFn typeSpec, got: $other", argLambda.some).asLeft
+      for
+        tf         <- typeFnE
+        returnType <- getLlvmType(tf.returnType, stateWithId)
+        paramTypes <- tf.paramTypes.traverse(getLlvmType(_, stateWithId))
+        argRes <- compileDirectLambda(
+          argLambda,
+          stateWithId,
+          fnName,
+          returnType,
+          paramTypes.toList,
+          functionScope,
+          param.some
+        )
+        outerCaps <- evaluateDirectCaptures(argLambda, argRes.state, functionScope)
+        directEntry = ScopeEntry(
+          0,
+          "Function",
+          directCallable = DirectCallable(fnName, outerCaps).some
+        )
+        extendedScope = functionScope + (param.name -> directEntry)
+        bodyRes <- compileExpr(outerLambda.body, argRes.state, extendedScope)
+      yield bodyRes.copy(exitBlock = bodyRes.exitBlock.orElse(argRes.exitBlock))
+
+    case Materialization.NullEnv =>
+      val recursiveEntry = ScopeEntry(
+        0,
+        "Function",
+        isLiteral    = true,
+        literalValue = s"{ ptr @$fnName, ptr null }".some
+      )
+      val argScope = functionScope + (param.name -> recursiveEntry)
+      for
+        argRes <- compileLambdaLiteral(
+          argLambda,
+          stateWithId,
+          argScope,
+          (stateWithId, fnName).some,
+          param.some
+        )
+        // Non-capturing: value is a constant literal, safe to discard sub-output.
+        finalArgRes =
+          if argRes.isLiteral then argRes.copy(state = argRes.state.copy(output = state.output))
+          else argRes
+        entry = ScopeEntry(
+          finalArgRes.register,
+          finalArgRes.typeName,
+          finalArgRes.isLiteral,
+          finalArgRes.literalValue
+        )
+        extendedScope = functionScope + (param.name -> entry)
+        bodyRes <- compileExpr(outerLambda.body, finalArgRes.state, extendedScope)
+      yield bodyRes.copy(exitBlock = bodyRes.exitBlock.orElse(finalArgRes.exitBlock))
+
+    case Materialization.Materialized =>
+      // Recursive self-call inside the body goes through the fat-pointer register built by
+      // emitRecursiveSelfClosure; no literal entry pre-injected.
+      for
+        argRes <- compileLambdaLiteral(
+          argLambda,
+          stateWithId,
+          functionScope,
+          (stateWithId, fnName).some,
+          param.some
+        )
+        entry = ScopeEntry(argRes.register, argRes.typeName, argRes.isLiteral, argRes.literalValue)
+        extendedScope = functionScope + (param.name -> entry)
+        bodyRes <- compileExpr(outerLambda.body, argRes.state, extendedScope)
+      yield bodyRes.copy(exitBlock = bodyRes.exitBlock.orElse(argRes.exitBlock))
+
+/** Compile a direct call to a Direct lambda.
+  *
+  * Emits `call $ret @$entry(userArgs..., captureOps...)` with captures appended at the trailing
+  * positions. No env pointer; no fat-pointer extraction.
+  */
+def compileDirectCall(
+  fnRef:         Ref,
+  direct:        DirectCallable,
+  allArgs:       List[Expr],
+  app:           App,
+  state:         CodeGenState,
+  functionScope: Map[String, ScopeEntry],
+  compileExpr:   ExprCompiler
+): Either[CodeGenError, CompileResult] =
+  compileArgs(allArgs, state, functionScope, compileExpr).flatMap { case (compiledArgs, argState) =>
+    val fnReturnTypeE = app.typeSpec match
+      case Some(typeSpec) => getLlvmType(typeSpec, argState)
+      case None =>
+        CodeGenError(
+          s"Missing return type for direct call '${fnRef.name}'",
+          app.some
+        ).asLeft
+
+    fnReturnTypeE.flatMap { fnReturnType =>
+      val userArgs    = compiledArgs.map(a => (a.llvmType, a.op))
+      val captureArgs = direct.captureOperands.map { case (op, ty) => (ty, op) }
+      val callArgs    = userArgs ++ captureArgs
+
+      if fnReturnType == "void" then
+        val callLine = emitCall(none, none, direct.entryName, callArgs)
+        CompileResult(0, argState.emit(callLine), false, "Unit").asRight
+      else
+        val resultReg = argState.nextRegister
+        val callLine  = emitCall(resultReg.some, fnReturnType.some, direct.entryName, callArgs)
+        app.typeSpec.flatMap(getNominalTypeName(_).toOption) match
+          case Some(typeName) =>
+            CompileResult(
+              resultReg,
+              argState.withRegister(resultReg + 1).emit(callLine),
+              false,
+              typeName
+            ).asRight
+          case None =>
+            CodeGenError(
+              s"Could not determine MML type for direct call result on '${fnRef.name}'",
+              app.some
+            ).asLeft
+    }
+  }
 
 /** Compiles a native operator application using its template.
   *

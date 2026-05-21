@@ -94,6 +94,16 @@ case class LambdaMeta(
   isDirect:        Boolean        = false
 )
 
+/** Three-way lowering shape for a lambda value.
+  *
+  * Derived from `(LambdaMeta.isDirect, captures.isEmpty)`:
+  *   - `Direct` — scope-only; emit one entry with `(userParams..., captureTypes...)`, no env.
+  *   - `NullEnv` — first-class non-capturing value `{ ptr @entry, ptr null }`.
+  *   - `Materialized` — fat pointer `{ ptr @entry, ptr env }` with a real env struct.
+  */
+enum Materialization derives CanEqual:
+  case Direct, NullEnv, Materialized
+
 case class Lambda(
   source:   SourceOrigin,
   params:   List[FnParam],
@@ -103,7 +113,11 @@ case class Lambda(
   typeAsc:  Option[Type]       = None,
   meta:     Option[LambdaMeta] = None,
   isMove:   Boolean            = false
-) extends Term
+) extends Term:
+  def materialization: Materialization =
+    if meta.exists(_.isDirect) then Materialization.Direct
+    else if captures.isEmpty then Materialization.NullEnv
+    else Materialization.Materialized
 
 object Lambda:
   def apply(
