@@ -3,10 +3,13 @@
 ## And an upgrade of the error system
 
 Problem:
-The parser currently exhibits high backtrack counts (~66%) because it uses
-"Ordered Choice" (`|`) without "Cuts" (`~/`). For every simple identifier,
-the parser tentatively checks—and fails—against every keyword rule
-(`let`, `if`, `native`, etc.) before falling back to `refP`.
+Parsing (ingest) is the largest single stage of the compile pipeline,
+typically ~30% of total compile time on real samples — ahead of
+semantic analysis, LLVM lowering, and codegen. The parser exhibits
+high backtrack counts (~66%) because it uses "Ordered Choice" (`|`)
+without "Cuts" (`~/`). For every simple identifier, the parser
+tentatively checks—and fails—against every keyword rule (`let`, `if`,
+`native`, etc.) before falling back to `refP`.
 
 Constraint:
 We cannot simply add Cuts (`~/`) because standard Fastparse cuts cause
@@ -30,17 +33,31 @@ consuming the rest of the file if that character is missing), recovery
 uses a **Synchronization Set** — tokens that unambiguously signal
 "we are in a new context."
 
-For MML, the sync set includes:
-- Statement terminators: `;`
-- Block closers: `end`, `)`
-- Top-level keywords: `fn`, `struct`, `type`, `op`
+MML's block structure is built on `;`: every statement-position
+expression, every conditional branch, every lambda / function body
+terminates with `;`. That makes `;` the universal expression-level
+sync anchor; `)` and `}` close groups and lambdas respectively.
+
+Two sync scopes:
+
+- **Expression-level sync** (used inside a member when an inner term
+  fails): `;`, `)`, `}`. Bounded by construction — a `;` always closes
+  the current statement, so recovery never escapes the enclosing scope.
+- **Member-level sync** (used when a whole top-level form fails): the
+  top-level keywords that open a new member: `fn`, `struct`, `type`, `op`,
+  `module`, plus visibility markers `pub` / `priv` / `prot` / `inline`.
 
 ```scala
-def syncSet(using P[Any]) =
-  P(";" | "end" | "fn" | "struct" | "type" | "op")
+def exprSyncSet(using P[Any]) =
+  P(";" | ")" | "}")
+
+def memberSyncSet(using P[Any]) =
+  P("fn" | "struct" | "type" | "op" | "module"
+    | "pub" | "priv" | "prot" | "inline")
 
 // Consume garbage until a sync token, DO NOT consume the sync token
-def recover(using P[Any]) = (!syncSet ~ AnyChar).rep(1)
+def recoverExpr(using P[Any])   = (!exprSyncSet   ~ AnyChar).rep(1)
+def recoverMember(using P[Any]) = (!memberSyncSet ~ AnyChar).rep(1)
 ```
 
 ---
@@ -87,24 +104,50 @@ def letExprP(info: SourceInfo)(using P[Any]): P[Term] =
 ## 3. context-specific anchors (block structures)
 
 The generic `resilient` helper works for linear forms like `let`. For
-multi-keyword block structures (`if`/`elif`/`else`/`end`), recovery
-uses **context-specific anchors** — the keywords that delimit each
-sub-block.
+multi-keyword block structures (`if` / `elif` / `else`), recovery uses
+**context-specific anchors** — the keywords that delimit each
+sub-block. Each branch is itself a `;`-terminated expression, so the
+generic expression-sync set is the recovery target for branch bodies.
 
 ```scala
 def ifExprP(...) = P(
   "if" ~/
   (conditionP | recoverUntil("then")) ~
   "then" ~/
-  (trueBranchP | recoverUntil("else", "end")) ~
-  ("else" ~/ (falseBranchP | recoverUntil("end"))).? ~
-  "end"
+  (trueBranchP | recoverUntilExprOr("elif", "else")) ~
+  ("elif" ~/ (...) ).rep ~
+  ("else" ~/ (falseBranchP | recoverExpr)).?
 )
 ```
 
 This ensures that if the user writes `if x < . then`, the parser
 swallows the bad condition, resyncs at `then`, and correctly parses
-the rest of the block without aborting.
+the rest of the block without aborting. Branches close at `;`; the
+enclosing statement's `;` bounds the whole `if`.
+
+## 3.5 type-ascription cut
+
+`withTypeAsc` is the single hottest rule — roughly 28% of total parse
+time — because every term wrapped with `withTypeAsc` speculatively
+tries to consume a `:` and a type, succeeding for a small fraction of
+calls and failing for the rest. The `:` token is unambiguous: it
+appears only in type
+contexts (term ascription, `let x: T`, fn params, fn return, struct
+fields). Once `:` is seen, the parser is committed to a type — there
+is no alternative to backtrack into.
+
+```scala
+def typeAscP(using P[Any]): P[Type] =
+  P(":" ~/ resilient(typeRefP, bad => TypeError(bad)))
+
+def withTypeAsc[T](term: P[T])(using P[Any]): P[T] =
+  P(term ~ typeAscP.?).map { ... }
+```
+
+Cost target: collapse the "try `:`, fail" backtracks into a no-cut
+peek. Recovery target on failure inside the type is the
+surrounding context's expected token (`=` for `let`, `,` or `)` for
+params, `;` or `}` for terms).
 
 ---
 
@@ -154,8 +197,10 @@ trait Error extends InvalidNode:
 ## 5. review notes & decisions
 
 * Scope: We will apply this optimization to the recursive
-  "Big 3": `let`, `if`, and `fn`. Leaf nodes (`refP`, `litP`) do
-  not require optimization as they fail fast naturally.
+  "Big 3" — `let`, `if`, and `fn` — plus `withTypeAsc` (the single
+  hottest rule). Inner `fn` (local function) inherits the same shape
+  as top-level `fn`. Leaf nodes (`refP`, `litP`) do not require
+  optimization as they fail fast naturally.
 * Node Types: We will reuse the existing `TermError`,
   `ParsingMemberError`, and `ParsingIdError` types. No new
   `PoisonNode` class is required.
