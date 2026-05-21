@@ -361,11 +361,18 @@ private[emitter] sealed trait DirectTrailingSlot:
   def outerOperand: String
 
 private[emitter] object DirectTrailingSlot:
+  /** Value-shaped capture.
+    *
+    * When `cloneFnId` is `Some(id)`, the binder site must call the clone function on the raw outer
+    * operand and pass the cloned result as the trailing argument (heap-literal captures). When
+    * `None`, the outer operand is passed verbatim.
+    */
   case class Value(
     capName:      String,
     mmlType:      String,
     llvmType:     String,
-    outerOperand: String
+    outerOperand: String,
+    cloneFnId:    Option[String]
   ) extends DirectTrailingSlot
 
   case class DirectOp(
@@ -390,9 +397,6 @@ private[emitter] case class DirectTrailing(
   innerScope:      Map[String, ScopeEntry],
   innerDirectable: Map[String, DirectCallable]
 ):
-  def outerOperands: List[(String, String)] =
-    slots.map(s => (s.outerOperand, s.llvmType))
-
   def paramDecls(userParamCount: Int): List[String] =
     slots.zipWithIndex.map { case (s, i) => s"${s.llvmType} %${userParamCount + i}" }
 
@@ -401,10 +405,8 @@ private[emitter] case class DirectTrailing(
   * Walks `lambda.captures` in order. A `CapturedRef` that resolves to a direct-callable in the
   * enclosing scope is **expanded** into one slot per operand of that callable; the nested body gets
   * a rebound [[DirectCallable]] whose operands point at the new inner-slot registers. Plain value
-  * captures contribute one slot each.
-  *
-  * `CapturedLiteral` is currently filtered out (the Direct path doesn't yet clone-at-binder). Phase
-  * 6.2.c will replace that filter with a clone slot.
+  * captures (including [[Capture.CapturedLiteral]] heap-literal captures that need a binder-site
+  * clone) contribute one slot each.
   */
 private[emitter] def computeDirectTrailing(
   lambda:         Lambda,
@@ -412,13 +414,27 @@ private[emitter] def computeDirectTrailing(
   functionScope:  Map[String, ScopeEntry],
   userParamCount: Int
 ): Either[CodeGenError, DirectTrailing] =
+  def valueSlotFor(
+    ref:       Ref,
+    cloneFnId: Option[String]
+  ): Either[CodeGenError, DirectTrailingSlot] =
+    ref.typeSpec match
+      case None =>
+        CodeGenError(s"Capture '${ref.name}' has no type", ref.some).asLeft
+      case Some(ts) =>
+        getLlvmType(ts, state).map { ty =>
+          val mmlType = getNominalTypeName(ts).toOption.getOrElse("Unknown")
+          val outerOp = functionScope.get(ref.name).map(_.operandStr).getOrElse(s"@${ref.name}")
+          DirectTrailingSlot.Value(ref.name, mmlType, ty, outerOp, cloneFnId)
+        }
+
   val slotsE = lambda.captures.foldLeft[Either[CodeGenError, List[DirectTrailingSlot]]](
     Nil.asRight
   ) { (accE, cap) =>
     accE.flatMap { acc =>
       cap match
-        case Capture.CapturedLiteral(_, _) =>
-          acc.asRight
+        case Capture.CapturedLiteral(ref, cloneFnId) =>
+          valueSlotFor(ref, cloneFnId.some).map(acc :+ _)
         case Capture.CapturedRef(ref) =>
           functionScope.get(ref.name) match
             case None =>
@@ -434,14 +450,7 @@ private[emitter] def computeDirectTrailing(
                   }
                   (acc ++ expanded).asRight
                 case None =>
-                  ref.typeSpec match
-                    case None =>
-                      CodeGenError(s"Capture '${ref.name}' has no type", ref.some).asLeft
-                    case Some(ts) =>
-                      getLlvmType(ts, state).map { ty =>
-                        val mmlType = getNominalTypeName(ts).toOption.getOrElse("Unknown")
-                        acc :+ DirectTrailingSlot.Value(ref.name, mmlType, ty, entry.operandStr)
-                      }
+                  valueSlotFor(ref, None).map(acc :+ _)
     }
   }
 
@@ -452,7 +461,7 @@ private[emitter] def computeDirectTrailing(
         (Map.empty[String, ScopeEntry], Map.empty[String, DcAcc])
       ) { case ((scope, dcs), (slot, i)) =>
         slot match
-          case DirectTrailingSlot.Value(name, mmlType, _, _) =>
+          case DirectTrailingSlot.Value(name, mmlType, _, _, _) =>
             (scope + (name -> ScopeEntry(userParamCount + i, mmlType)), dcs)
           case DirectTrailingSlot.DirectOp(name, entryName, ty, _) =>
             val innerOp = s"%${userParamCount + i}"
@@ -468,18 +477,68 @@ private[emitter] def computeDirectTrailing(
     DirectTrailing(slots, innerScope, innerDirectable)
   }
 
+/** ABI-lowered clone call for a single capture.
+  *
+  * Used both by env-materialization and by Direct-path heap-literal captures. Emits the call,
+  * registers the function declaration, and returns the cloned-operand string aligned with the
+  * caller's expected `llvmType`.
+  */
+private[emitter] def emitCaptureCloneCall(
+  rawOp:     String,
+  llvmType:  String,
+  cloneFnId: String,
+  state:     CodeGenState
+): (CodeGenState, String) =
+  val cloneFnMmlName = state.resolvables.resolvables
+    .collectFirst {
+      case (id, bnd: Bnd) if id == cloneFnId => bnd.name
+    }
+    .getOrElse(cloneFnId.split("::").last)
+  val cloneFnLlvmName  = resolveMemFnLlvmName(cloneFnMmlName, state)
+  val rawArgs          = List((rawOp, llvmType))
+  val (lowered, stLow) = state.abi.lowerArgs(rawArgs, state)
+  val callArgs         = lowered.map((op, typ) => (typ, op))
+  val declParamTypes   = lowered.map(_._2)
+  if stLow.abi.needsSret(llvmType, stLow) then
+    val (retReg, stAfterCall) = stLow.abi.emitSretCall(
+      cloneFnLlvmName,
+      llvmType,
+      callArgs,
+      stLow,
+      (reg, retTy, fn, args, _, _) => emitCall(reg, retTy, fn, args),
+      None,
+      None
+    )
+    val stWithDecl =
+      stAfterCall.withFunctionDeclaration(cloneFnLlvmName, "void", "ptr" :: declParamTypes)
+    (stWithDecl, s"%$retReg")
+  else
+    val cloneReg   = stLow.nextRegister
+    val stWithDecl = stLow.withFunctionDeclaration(cloneFnLlvmName, llvmType, declParamTypes)
+    val cloneLine  = emitCall(cloneReg.some, llvmType.some, cloneFnLlvmName, callArgs)
+    (stWithDecl.withRegister(cloneReg + 1).emit(cloneLine), s"%$cloneReg")
+
 /** Pre-evaluate a Direct lambda's effective trailing operands at the binder site.
   *
-  * Returns the outer-scope operands aligned with the inner LLVM trailing-param order; pass these to
-  * [[compileDirectCall]] at every call site of the binder.
+  * For each slot, returns the outer-scope operand aligned with the inner LLVM trailing-param order.
+  * Heap-literal slots emit a clone call before yielding their operand; pass the resulting operands
+  * to [[compileDirectCall]] at every call site of the binder.
   */
 private[emitter] def evaluateDirectCaptures(
   lambda:        Lambda,
   state:         CodeGenState,
   functionScope: Map[String, ScopeEntry]
-): Either[CodeGenError, List[(String, String)]] =
-  // userParamCount only affects inner SSA indices; outerOperands is independent of it.
-  computeDirectTrailing(lambda, state, functionScope, userParamCount = 0).map(_.outerOperands)
+): Either[CodeGenError, (CodeGenState, List[(String, String)])] =
+  // userParamCount only affects inner SSA indices; the outer operand list is independent of it.
+  computeDirectTrailing(lambda, state, functionScope, userParamCount = 0).map { trailing =>
+    trailing.slots.foldLeft((state, List.empty[(String, String)])) {
+      case ((st, ops), DirectTrailingSlot.Value(_, _, ty, outerOp, Some(cloneId))) =>
+        val (stAfter, clonedOp) = emitCaptureCloneCall(outerOp, ty, cloneId, st)
+        (stAfter, ops :+ (clonedOp, ty))
+      case ((st, ops), slot) =>
+        (st, ops :+ (slot.outerOperand, slot.llvmType))
+    }
+  }
 
 /** Compiles a Direct lambda as a deferred LLVM function with no env parameter.
   *
@@ -811,43 +870,10 @@ private def emitCallSiteEnv(
           case Some(entry) => entry.operandStr
           case None => s"@${ref.name}"
 
-        // CapturedLiteral: emit ABI-lowered clone call before storing into env (move only)
+        // CapturedLiteral: clone the heap value into the env (move only); CapturedRef: store as-is.
         val (stateBeforeStore, capOp) = cap match
           case Capture.CapturedLiteral(_, cloneFnId) =>
-            val cloneFnMmlName = st.resolvables.resolvables
-              .collectFirst {
-                case (id, bnd: Bnd) if id == cloneFnId => bnd.name
-              }
-              .getOrElse(cloneFnId.split("::").last)
-            val cloneFnLlvmName  = resolveMemFnLlvmName(cloneFnMmlName, st)
-            val rawArgs          = List((rawCapOp, llvmType))
-            val (lowered, stLow) = st.abi.lowerArgs(rawArgs, st)
-            val callArgs         = lowered.map((op, typ) => (typ, op))
-            val declParamTypes   = lowered.map(_._2)
-            val needsSret        = stLow.abi.needsSret(llvmType, stLow)
-            if needsSret then
-              val (retReg, stAfterCall) = stLow.abi.emitSretCall(
-                cloneFnLlvmName,
-                llvmType,
-                callArgs,
-                stLow,
-                (reg, retTy, fn, args, _, _) => emitCall(reg, retTy, fn, args),
-                None,
-                None
-              )
-              val stWithDecl = stAfterCall
-                .withFunctionDeclaration(cloneFnLlvmName, "void", "ptr" :: declParamTypes)
-              (stWithDecl, s"%$retReg")
-            else
-              val cloneReg = stLow.nextRegister
-              val stWithDecl = stLow.withFunctionDeclaration(
-                cloneFnLlvmName,
-                llvmType,
-                declParamTypes
-              )
-              val cloneLine =
-                emitCall(cloneReg.some, llvmType.some, cloneFnLlvmName, callArgs)
-              (stWithDecl.withRegister(cloneReg + 1).emit(cloneLine), s"%$cloneReg")
+            emitCaptureCloneCall(rawCapOp, llvmType, cloneFnId, st)
           case _ =>
             (st, rawCapOp)
 

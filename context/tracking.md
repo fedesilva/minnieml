@@ -66,6 +66,15 @@ Slice progress (see `context/specs/unify-lambdas-plan.md`):
 
 ## Change Log
 
+- 2026-05-20: #255 unify-lambdas S6 Phase 6.2.c — keep `CapturedLiteral` captures in the Direct call shape
+  - `ExpressionCompiler.scala`: `DirectTrailingSlot.Value` gains `cloneFnId: Option[String]`. `computeDirectTrailing` now treats `Capture.CapturedLiteral` as a value-shaped slot carrying the clone fn id; the slot's `outerOperand` falls back to `@<name>` when the capture isn't in the enclosing function scope (top-level binding case).
+  - `evaluateDirectCaptures` returns `(CodeGenState, List[(op, ty)])`: for each clone-bearing slot it emits an ABI-lowered `__clone_<T>` call at the binder site and threads the cloned operand as the trailing argument. `Applications.compileBoundLambdaArg` Direct case threads the post-clone state into the body compile call.
+  - Factored the clone-call shape into `emitCaptureCloneCall`; the env-materialization path (`emitCallSiteEnv`) now delegates to the same helper instead of inlining the ABI-lowered call.
+  - Closes the P1b Codex finding: a Direct move lambda capturing a string literal no longer references an undefined outer SSA register; the cloned value flows through the lambda's own trailing param. End-to-end smoke (`let msg = "hello"; let greet = ~{ println msg; }; greet ();`) compiles and prints `hello`.
+  - `FunctionSignatureTest`: new regression `Direct move lambda capturing a heap literal clones at the binder site` asserts (1) `main` emits `__clone_String`, (2) `greet`'s signature carries `%struct.String`, (3) `greet`'s body consumes its own trailing param.
+  - Full mem harness 23/23. Smoke samples hola/quicksort/astar2 green. Test count 425 → 426; same 9 pre-existing Phase 6.4 stale-IR failures.
+  - **Known open issue (deferred):** the cloned heap value passed to a Direct move lambda has no free site emitted at the call frame; for `String` captures this is a leak. Pinned for follow-up under S6.x / S11 once the Direct-move ownership model is decided. Not exercised by the existing mem harness fixtures.
+
 - 2026-05-20: #255 unify-lambdas S6 Phase 6.2.b — thread direct-callable captures through nested Direct lambdas
   - `ExpressionCompiler.scala`: replaced `valueShapedCaptures` with `computeDirectTrailing` — for each `CapturedRef` whose enclosing-scope entry is a `DirectCallable`, expand the callable's `captureOperands` into fresh trailing slots and rebind the inner `DirectCallable` to point at the new inner-slot registers. `compileDirectLambda` and `evaluateDirectCaptures` both consume the unified trailing layout, keeping the call-site outer-operand order aligned with the inner LLVM signature.
   - Closes the P1a Codex finding: nested case `outer(a) { let f = { x -> x + a }; let g = { y -> f y }; g 1 }` no longer reuses g's `%0` (= `y`) as `f`'s captured `a` operand; `a` is threaded as a fresh trailing param of `g`.

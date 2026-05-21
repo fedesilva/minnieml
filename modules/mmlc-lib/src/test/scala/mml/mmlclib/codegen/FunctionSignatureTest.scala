@@ -789,6 +789,48 @@ class FunctionSignatureTest extends BaseEffFunSuite:
     }
   }
 
+  test("Direct move lambda capturing a heap literal clones at the binder site") {
+    // A Direct move-capturing lambda whose capture is a heap literal (string, etc.) must
+    // (a) emit a clone call at the binder site and (b) thread the cloned value as the
+    // lambda's trailing param so the inner body uses its own SSA register, not an outer one.
+    val source =
+      """
+        pub fn main(): Unit =
+          let msg = "hello";
+          let greet = ~{ println msg; };
+          greet ();
+        ;
+      """
+
+    compileAndGenerate(source).map { llvmIr =>
+      val mainBody  = functionBody(llvmIr, """test_main\(\) #0""")
+      val cloneCall = """%\d+ = call %struct\.String @__clone_String\(""".r
+      assert(
+        cloneCall.findFirstIn(mainBody).nonEmpty,
+        s"main must emit __clone_String for the captured literal. Body:\n$mainBody"
+      )
+      val greetCall = """call void @test_greet_\d+\(%struct\.String %\d+\)""".r
+      assert(
+        greetCall.findFirstIn(mainBody).nonEmpty,
+        s"main must call greet passing the cloned String as a trailing arg. Body:\n$mainBody"
+      )
+
+      val greetSig =
+        """define internal void @test_greet_\d+\(%struct\.String %0\) #0""".r
+      assert(
+        greetSig.findFirstIn(llvmIr).nonEmpty,
+        s"greet's signature must take the cloned String as a trailing param. IR:\n$llvmIr"
+      )
+
+      val greetBody = functionBody(llvmIr, """test_greet_\d+\(%struct\.String %0\) #0""")
+      assert(
+        greetBody.contains("extractvalue %struct.String %0"),
+        s"greet's body must consume its own trailing-param register, not an outer one. " +
+          s"Body:\n$greetBody"
+      )
+    }
+  }
+
   test("pub function emits no linkage qualifier in IR") {
     val source =
       """

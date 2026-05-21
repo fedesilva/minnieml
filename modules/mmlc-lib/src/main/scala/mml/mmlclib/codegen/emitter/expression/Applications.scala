@@ -119,14 +119,15 @@ private def compileBoundLambdaArg(
           functionScope,
           param.some
         )
-        outerCaps <- evaluateDirectCaptures(argLambda, argRes.state, functionScope)
+        evaluated <- evaluateDirectCaptures(argLambda, argRes.state, functionScope)
+        (stateAfterEval, outerCaps) = evaluated
         directEntry = ScopeEntry(
           0,
           "Function",
           directCallable = DirectCallable(fnName, outerCaps).some
         )
         extendedScope = functionScope + (param.name -> directEntry)
-        bodyRes <- compileExpr(outerLambda.body, argRes.state, extendedScope)
+        bodyRes <- compileExpr(outerLambda.body, stateAfterEval, extendedScope)
       yield bodyRes.copy(exitBlock = bodyRes.exitBlock.orElse(argRes.exitBlock))
 
     case Materialization.NullEnv =>

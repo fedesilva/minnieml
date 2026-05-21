@@ -377,18 +377,16 @@ slice or accept temporary breakage; do not invent a shim.
     same layout. Regression: `FunctionSignatureTest` *"nested Direct lambda threads
     outer Direct callable's captures"*.
 
-  - **Phase 6.2.c — Keep CapturedLiteral captures in the Direct call shape (P1b).**
-    `Capture.CapturedLiteral` marks heap-literal captures (e.g. string literals) that
-    `OwnershipAnalyzer` flags for `__clone_*` at the binder site. Filtering them out
-    in `valueShapedCaptures` (`ExpressionCompiler.scala:359`) makes the inner body
-    reference an undefined outer register and skips the clone / ownership transfer.
-    *Fix:* treat `CapturedLiteral` as a value-shaped capture. Extend
-    `evaluateDirectCaptures` to emit the same clone-call shape the env-materialization
-    path uses at `ExpressionCompiler.scala:723-761`, then pass the cloned operand as
-    the trailing arg. Inner body sees an ordinary trailing-param register.
-    *Verify:* add a Direct move-lambda test capturing a string literal; assert clone
-    is emitted at binder site and no outer register leaks into the inner LLVM body;
-    `sbtn test`; `./tests/mem/run.sh all`.
+  - **Phase 6.2.c — Keep CapturedLiteral captures in the Direct call shape (P1b). *(done)***
+    `DirectTrailingSlot.Value` carries an optional `cloneFnId`; `CapturedLiteral`
+    captures now contribute a value slot. `evaluateDirectCaptures` returns
+    `(CodeGenState, ops)` and emits the ABI-lowered clone at the binder site for any
+    clone-bearing slot; the cloned operand flows through the lambda's trailing param.
+    The clone-call shape is factored into `emitCaptureCloneCall`, shared with the
+    env-materialization path. Regression: `FunctionSignatureTest` *"Direct move
+    lambda capturing a heap literal clones at the binder site"*. Known follow-up:
+    the cloned heap value has no free site at the call frame — leak deferred until
+    Direct-move ownership lands (S6.x / S11).
 
 - **Remaining S6 work (Phases 6.3 + 6.4):**
   - Phase 6.3: source-aware `__free_closure(f)` elision at consuming-`TypeFn` param sites when
