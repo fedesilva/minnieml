@@ -748,6 +748,47 @@ class FunctionSignatureTest extends BaseEffFunSuite:
     }
   }
 
+  test("nested Direct lambda threads outer Direct callable's captures") {
+    // When an inner Direct lambda `g` calls an outer Direct binding `f` whose
+    // `captureOperands` reference enclosing-scope SSA registers, those operands must be
+    // threaded as `g`'s own trailing params and the inner DirectCallable rebound to point
+    // at the new inner-slot registers — otherwise `g`'s separately emitted body would
+    // reuse its own param registers as if they were the outer's.
+    val source =
+      """
+        pub fn outer(a: Int): Int =
+          let f = { x: Int -> x + a; };
+          let g = { y: Int -> f y; };
+          g 1;
+        ;
+      """
+
+    compileAndGenerate(source).map { llvmIr =>
+      val fSig = """define internal i64 @test_f_\d+\(i64 %0, i64 %1\) #0""".r
+      val gSig = """define internal i64 @test_g_\d+\(i64 %0, i64 %1\) #0""".r
+      assert(
+        fSig.findFirstIn(llvmIr).nonEmpty,
+        s"f should take (x, a) as two i64 params. IR:\n$llvmIr"
+      )
+      assert(
+        gSig.findFirstIn(llvmIr).nonEmpty,
+        s"g should take (y, a_threaded) as two i64 params. IR:\n$llvmIr"
+      )
+
+      val gBody = functionBody(llvmIr, """test_g_\d+\(i64 %0, i64 %1\) #0""")
+      assert(
+        """call i64 @test_f_\d+\(i64 %0, i64 %1\)""".r.findFirstIn(gBody).nonEmpty,
+        s"g's call to f must use g's own params (y=%0, a_threaded=%1). Body:\n$gBody"
+      )
+
+      val outerBody = functionBody(llvmIr, """test_outer\(i64 %0\) #0""")
+      assert(
+        """call i64 @test_g_\d+\(i64 1, i64 %0\)""".r.findFirstIn(outerBody).nonEmpty,
+        s"outer must call g with (1, a=%0). Body:\n$outerBody"
+      )
+    }
+  }
+
   test("pub function emits no linkage qualifier in IR") {
     val source =
       """

@@ -54,7 +54,12 @@ def compileLambdaApp(
       case _ =>
         for
           argRes <- compileExpr(arg, state, functionScope)
-          entry = ScopeEntry(argRes.register, argRes.typeName, argRes.isLiteral, argRes.literalValue)
+          entry = ScopeEntry(
+            argRes.register,
+            argRes.typeName,
+            argRes.isLiteral,
+            argRes.literalValue
+          )
           extendedScope = functionScope + (param.name -> entry)
           bodyRes <- compileExpr(lambda.body, argRes.state, extendedScope)
         yield bodyRes.copy(exitBlock = bodyRes.exitBlock.orElse(argRes.exitBlock))
@@ -88,7 +93,9 @@ private def compileBoundLambdaArg(
   // Tail-recursive direct lambdas still need the loopification path; defer Direct-specific
   // lowering of tail-rec lambdas to a future slice.
   val effectiveMaterialization =
-    if argLambda.meta.exists(_.isTailRecursive) && argLambda.materialization == Materialization.Direct
+    if argLambda.meta.exists(
+        _.isTailRecursive
+      ) && argLambda.materialization == Materialization.Direct
     then
       if argLambda.captures.isEmpty then Materialization.NullEnv else Materialization.Materialized
     else argLambda.materialization
@@ -100,7 +107,7 @@ private def compileBoundLambdaArg(
         case other =>
           CodeGenError(s"Direct lambda missing TypeFn typeSpec, got: $other", argLambda.some).asLeft
       for
-        tf         <- typeFnE
+        tf <- typeFnE
         returnType <- getLlvmType(tf.returnType, stateWithId)
         paramTypes <- tf.paramTypes.traverse(getLlvmType(_, stateWithId))
         argRes <- compileDirectLambda(

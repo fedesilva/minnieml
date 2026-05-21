@@ -346,47 +346,140 @@ private def compileTailRecCapturingLambda(
     }
   }
 
-/** A Direct lambda's value-shape captures — the ones that must be threaded as trailing arguments
-  * at every call site. Direct-callable captures (another Direct binding from the enclosing scope)
-  * and `CapturedLiteral` (top-level fn refs) are excluded: the former propagates via the inherited
-  * `functionScope` in the body, the latter resolves through the global symbol table.
+/** A single trailing-param slot of a Direct lambda's LLVM signature.
+  *
+  * Two kinds:
+  *   - [[Value]] — a value-shaped capture; binds `capName` to the slot in the inner body scope.
+  *   - [[DirectOp]] — one operand of an enclosing direct-callable's `captureOperands`, threaded so
+  *     the nested body can call `callableName` with operands valid in the inner SSA frame.
+  *
+  * `outerOperand` is the operand string in the **outer** scope; the inner-scope operand is
+  * `s"%$slotIndex"` (computed by position).
   */
-private[emitter] def valueShapedCaptures(
-  lambda:        Lambda,
-  functionScope: Map[String, ScopeEntry]
-): List[Capture] =
-  lambda.captures.filter {
-    case _: Capture.CapturedLiteral => false
-    case Capture.CapturedRef(ref) =>
-      !functionScope.get(ref.name).flatMap(_.directCallable).isDefined
+private[emitter] sealed trait DirectTrailingSlot:
+  def llvmType:     String
+  def outerOperand: String
+
+private[emitter] object DirectTrailingSlot:
+  case class Value(
+    capName:      String,
+    mmlType:      String,
+    llvmType:     String,
+    outerOperand: String
+  ) extends DirectTrailingSlot
+
+  case class DirectOp(
+    callableName: String,
+    entryName:    String,
+    llvmType:     String,
+    outerOperand: String
+  ) extends DirectTrailingSlot
+
+/** The effective trailing-capture layout for a Direct lambda.
+  *
+  * @param slots
+  *   one entry per LLVM trailing parameter, in declaration order.
+  * @param innerScope
+  *   value-shaped captures bound to their inner trailing-param register.
+  * @param innerDirectable
+  *   re-bound direct-callable captures whose operands now point at inner trailing-param registers
+  *   (replacing the outer operands that the body would otherwise inherit).
+  */
+private[emitter] case class DirectTrailing(
+  slots:           List[DirectTrailingSlot],
+  innerScope:      Map[String, ScopeEntry],
+  innerDirectable: Map[String, DirectCallable]
+):
+  def outerOperands: List[(String, String)] =
+    slots.map(s => (s.outerOperand, s.llvmType))
+
+  def paramDecls(userParamCount: Int): List[String] =
+    slots.zipWithIndex.map { case (s, i) => s"${s.llvmType} %${userParamCount + i}" }
+
+/** Compute the effective trailing-capture layout for a Direct lambda.
+  *
+  * Walks `lambda.captures` in order. A `CapturedRef` that resolves to a direct-callable in the
+  * enclosing scope is **expanded** into one slot per operand of that callable; the nested body gets
+  * a rebound [[DirectCallable]] whose operands point at the new inner-slot registers. Plain value
+  * captures contribute one slot each.
+  *
+  * `CapturedLiteral` is currently filtered out (the Direct path doesn't yet clone-at-binder). Phase
+  * 6.2.c will replace that filter with a clone slot.
+  */
+private[emitter] def computeDirectTrailing(
+  lambda:         Lambda,
+  state:          CodeGenState,
+  functionScope:  Map[String, ScopeEntry],
+  userParamCount: Int
+): Either[CodeGenError, DirectTrailing] =
+  val slotsE = lambda.captures.foldLeft[Either[CodeGenError, List[DirectTrailingSlot]]](
+    Nil.asRight
+  ) { (accE, cap) =>
+    accE.flatMap { acc =>
+      cap match
+        case Capture.CapturedLiteral(_, _) =>
+          acc.asRight
+        case Capture.CapturedRef(ref) =>
+          functionScope.get(ref.name) match
+            case None =>
+              CodeGenError(
+                s"Capture '${ref.name}' missing from enclosing scope",
+                ref.some
+              ).asLeft
+            case Some(entry) =>
+              entry.directCallable match
+                case Some(dc) =>
+                  val expanded = dc.captureOperands.map { case (op, ty) =>
+                    DirectTrailingSlot.DirectOp(ref.name, dc.entryName, ty, op)
+                  }
+                  (acc ++ expanded).asRight
+                case None =>
+                  ref.typeSpec match
+                    case None =>
+                      CodeGenError(s"Capture '${ref.name}' has no type", ref.some).asLeft
+                    case Some(ts) =>
+                      getLlvmType(ts, state).map { ty =>
+                        val mmlType = getNominalTypeName(ts).toOption.getOrElse("Unknown")
+                        acc :+ DirectTrailingSlot.Value(ref.name, mmlType, ty, entry.operandStr)
+                      }
+    }
   }
 
-/** Pre-evaluate a Direct lambda's value-shape captures at the binder site.
+  slotsE.map { slots =>
+    type DcAcc = (String, List[(String, String)]) // entryName + inner operands
+    val (innerScope, perCallable) =
+      slots.zipWithIndex.foldLeft(
+        (Map.empty[String, ScopeEntry], Map.empty[String, DcAcc])
+      ) { case ((scope, dcs), (slot, i)) =>
+        slot match
+          case DirectTrailingSlot.Value(name, mmlType, _, _) =>
+            (scope + (name -> ScopeEntry(userParamCount + i, mmlType)), dcs)
+          case DirectTrailingSlot.DirectOp(name, entryName, ty, _) =>
+            val innerOp = s"%${userParamCount + i}"
+            val prevOps = dcs.get(name).map(_._2).getOrElse(Nil)
+            val updated = dcs.updated(name, (entryName, prevOps :+ (innerOp, ty)))
+            (scope, updated)
+      }
+
+    val innerDirectable = perCallable.map { case (name, (entryName, innerOps)) =>
+      name -> DirectCallable(entryName, innerOps)
+    }
+
+    DirectTrailing(slots, innerScope, innerDirectable)
+  }
+
+/** Pre-evaluate a Direct lambda's effective trailing operands at the binder site.
   *
-  * Each capture's operand is read from the enclosing `functionScope`. Direct-callable captures
-  * and top-level-fn (`CapturedLiteral`) captures are filtered out — they don't need runtime
-  * threading.
+  * Returns the outer-scope operands aligned with the inner LLVM trailing-param order; pass these to
+  * [[compileDirectCall]] at every call site of the binder.
   */
 private[emitter] def evaluateDirectCaptures(
   lambda:        Lambda,
   state:         CodeGenState,
   functionScope: Map[String, ScopeEntry]
 ): Either[CodeGenError, List[(String, String)]] =
-  valueShapedCaptures(lambda, functionScope).traverse { cap =>
-    val ref = cap.ref
-    val llvmTypeE = ref.typeSpec match
-      case Some(ts) => getLlvmType(ts, state)
-      case None     => CodeGenError(s"Capture '${ref.name}' has no type", ref.some).asLeft
-    llvmTypeE.flatMap { llvmType =>
-      functionScope.get(ref.name) match
-        case Some(entry) => (entry.operandStr, llvmType).asRight
-        case None =>
-          CodeGenError(
-            s"Capture '${ref.name}' missing from enclosing scope",
-            ref.some
-          ).asLeft
-    }
-  }
+  // userParamCount only affects inner SSA indices; outerOperands is independent of it.
+  computeDirectTrailing(lambda, state, functionScope, userParamCount = 0).map(_.outerOperands)
 
 /** Compiles a Direct lambda as a deferred LLVM function with no env parameter.
   *
@@ -407,14 +500,8 @@ private[emitter] def compileDirectLambda(
   val userParamDecls          = formatParamDecls(filteredParamsWithTypes, state.resolvables)
   val userParamCount          = filteredParamsWithTypes.size
 
-  valueShapedCaptures(lambda, functionScope).traverse { cap =>
-    cap.ref.typeSpec match
-      case Some(ts) => getLlvmType(ts, state).map(t => (cap, t))
-      case None     => CodeGenError(s"Capture '${cap.ref.name}' has no type", cap.ref.some).asLeft
-  }.flatMap { captureTypes =>
-    val captureDecls = captureTypes.zipWithIndex.map { case ((_, ty), i) =>
-      s"$ty %${userParamCount + i}"
-    }
+  computeDirectTrailing(lambda, state, functionScope, userParamCount).flatMap { trailing =>
+    val captureDecls = trailing.paramDecls(userParamCount)
     val allParamDecls =
       val parts = (if userParamDecls.isEmpty then Nil else List(userParamDecls)) ++ captureDecls
       parts.mkString(", ")
@@ -431,15 +518,15 @@ private[emitter] def compileDirectLambda(
         .getOrElse("Unknown")
       (param.name, ScopeEntry(idx, mmlType))
     }.toMap
-    val captureScope = captureTypes.zipWithIndex.map { case ((cap, _), i) =>
-      val mmlType = cap.ref.typeSpec
-        .flatMap(getNominalTypeName(_).toOption)
-        .getOrElse("Unknown")
-      (cap.ref.name, ScopeEntry(userParamCount + i, mmlType))
-    }.toMap
 
-    val innerCaptureOps = captureTypes.zipWithIndex.map { case ((_, ty), i) =>
-      (s"%${userParamCount + i}", ty)
+    val directScope = trailing.innerDirectable.map { case (name, dc) =>
+      name -> ScopeEntry(0, "Function", directCallable = dc.some)
+    }
+
+    // Inner-scope operands for the self-recursive call site mirror the inner trailing-param
+    // layout (one operand per slot, in declaration order).
+    val innerCaptureOps = trailing.slots.zipWithIndex.map { case (slot, i) =>
+      (s"%${userParamCount + i}", slot.llvmType)
     }
     val selfScope = selfBinder.map { p =>
       val entry = ScopeEntry(
@@ -450,11 +537,15 @@ private[emitter] def compileDirectLambda(
       p.name -> entry
     }.toMap
 
-    val bodyState = subState.withRegister(userParamCount + captureTypes.size)
+    val bodyState = subState.withRegister(userParamCount + trailing.slots.size)
 
     for
       bodyRes <-
-        compileExpr(lambda.body, bodyState, functionScope ++ paramScope ++ captureScope ++ selfScope)
+        compileExpr(
+          lambda.body,
+          bodyState,
+          functionScope ++ paramScope ++ trailing.innerScope ++ directScope ++ selfScope
+        )
       retLine =
         if returnType == "void" then "  ret void"
         else s"  ret $returnType ${bodyRes.operandStr}"

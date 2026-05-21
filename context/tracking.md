@@ -66,6 +66,12 @@ Slice progress (see `context/specs/unify-lambdas-plan.md`):
 
 ## Change Log
 
+- 2026-05-20: #255 unify-lambdas S6 Phase 6.2.b — thread direct-callable captures through nested Direct lambdas
+  - `ExpressionCompiler.scala`: replaced `valueShapedCaptures` with `computeDirectTrailing` — for each `CapturedRef` whose enclosing-scope entry is a `DirectCallable`, expand the callable's `captureOperands` into fresh trailing slots and rebind the inner `DirectCallable` to point at the new inner-slot registers. `compileDirectLambda` and `evaluateDirectCaptures` both consume the unified trailing layout, keeping the call-site outer-operand order aligned with the inner LLVM signature.
+  - Closes the P1a Codex finding: nested case `outer(a) { let f = { x -> x + a }; let g = { y -> f y }; g 1 }` no longer reuses g's `%0` (= `y`) as `f`'s captured `a` operand; `a` is threaded as a fresh trailing param of `g`.
+  - `FunctionSignatureTest`: new regression `nested Direct lambda threads outer Direct callable's captures` asserts (1) `g`'s signature is `(i64 %0, i64 %1)`, (2) `g` calls `f` with `(%0, %1)` not `(%0, %0)`, (3) `outer` passes its own `%0` as `g`'s trailing arg.
+  - Full mem harness 23/23. Test count rises 424 → 425; same 9 pre-existing stale-IR failures (Phase 6.4 work).
+
 - 2026-05-20: #255 unify-lambdas S6 Phase 6.2 — Direct lowering: no env, no wrapper, no malloc
   - `ast/terms.scala`: `Materialization` enum (`Direct | NullEnv | Materialized`) + `Lambda.materialization` helper derived from `(meta.isDirect, captures.isEmpty)`. Single source of truth for lowering shape.
   - `codegen/emitter/package.scala`: `ScopeEntry` extended with `directCallable: Option[DirectCallable]`. `DirectCallable(entryName, captureOperands)` records the entry symbol + ordered trailing-arg operands.

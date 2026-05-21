@@ -368,25 +368,14 @@ slice or accept temporary breakage; do not invent a shim.
     2026-03-24) — Direct capturing lambdas already get an env struct + tag. No
     code change. Step retained in the plan for traceability.
 
-  - **Phase 6.2.b — Thread direct-callable captures through nested Direct lambdas (P1a).**
-    When a Direct lambda `g` captures another Direct binding `f` whose
-    `DirectCallable.captureOperands` reference enclosing SSA registers (e.g. `%0` =
-    outer parameter), the current filter at `ExpressionCompiler.scala:361` drops `f`
-    from `g`'s trailing capture params while the body still inherits `f`'s
-    `DirectCallable`. Because `compileDirectLambda` emits a separate LLVM function,
-    a call to `f` from inside `g` appends operands like `%0` that now refer to `g`'s
-    parameters, not the outer's.
-    *Fix:* in `compileDirectLambda`, compute the inner lambda's "effective trailing
-    slots" as (value-shaped captures) ++ (transitively flattened captureOperands of
-    each direct-callable capture). Emit one trailing LLVM param per slot. Inside the
-    inner body, rebind each direct-callable capture to a fresh `DirectCallable` whose
-    `captureOperands` point at the new inner-slot registers. In
-    `compileBoundLambdaArg`, `evaluateDirectCaptures` emits operands aligned to the
-    new layout — value-shaped captures read from outer scope, direct-callable
-    transitive operands re-emit the outer captureOperands (already valid in outer
-    scope).
-    *Verify:* add a nested-direct-lambda test (outer captures `a`, inner refs `f y`);
-    `sbtn test`; `./tests/mem/run.sh all`.
+  - **Phase 6.2.b — Thread direct-callable captures through nested Direct lambdas (P1a). *(done)***
+    `ExpressionCompiler.computeDirectTrailing` replaces `valueShapedCaptures`. Each
+    direct-callable `CapturedRef` is expanded into one trailing slot per operand of
+    the enclosing-scope `DirectCallable`; the nested body gets a rebound
+    `DirectCallable` whose operands point at the new inner-slot registers. Outer
+    and inner views (`evaluateDirectCaptures` / `compileDirectLambda`) share the
+    same layout. Regression: `FunctionSignatureTest` *"nested Direct lambda threads
+    outer Direct callable's captures"*.
 
   - **Phase 6.2.c — Keep CapturedLiteral captures in the Direct call shape (P1b).**
     `Capture.CapturedLiteral` marks heap-literal captures (e.g. string literals) that
