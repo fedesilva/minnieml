@@ -26,6 +26,7 @@ all: $(BINDIR)/fizzbuzz-c $(BINDIR)/fizzbuzz2-c $(BINDIR)/fizzbuzz-go $(BINDIR)/
      $(BINDIR)/ackermann-c $(BINDIR)/ackermann-go $(BINDIR)/ackermann-c-chacho $(BINDIR)/ackermann-unfair-c $(BINDIR)/ackermann-rs \
      $(BINDIR)/sieve-c $(BINDIR)/sieve-go $(BINDIR)/sieve-opt-go $(BINDIR)/sieve-rs \
      $(BINDIR)/quicksort-c $(BINDIR)/matmul-c $(BINDIR)/matmul-opt-c $(BINDIR)/matmul-restricted-c $(BINDIR)/matmul-go $(BINDIR)/matmul-bce-go $(BINDIR)/matmul-opt-go \
+     $(BINDIR)/matmul-rs $(BINDIR)/matmul-opt-rs \
      $(BINDIR)/nqueens-c $(BINDIR)/nqueens-go $(BINDIR)/euclidean-ext-c
 
 mml: $(BINDIR)/sieve-mml $(BINDIR)/quicksort-mml $(BINDIR)/matmul-mml \
@@ -158,6 +159,12 @@ $(BINDIR)/matmul-opt-c: matmul-opt.c | $(BINDIR)
 
 $(BINDIR)/matmul-restricted-c: matmul-restricted.c | $(BINDIR)
 	$(CC) $(CFLAGS) -o $@ $<
+
+$(BINDIR)/matmul-rs: matmul.rs | $(BINDIR)
+	rustc -O -o $@ $<
+
+$(BINDIR)/matmul-opt-rs: matmul-opt.rs | $(BINDIR)
+	rustc -O -o $@ $<
 
 $(BINDIR)/matmul-go: matmul.go | $(BINDIR)
 	go build -o $@ $<
@@ -331,26 +338,31 @@ bench-quicksort-time: $(BINDIR)/quicksort-c $(BINDIR)/quicksort-mml
 	/usr/bin/time -l $(BINDIR)/quicksort-mml
 
 bench-matmul: $(BINDIR)/matmul-c $(BINDIR)/matmul-restricted-c $(BINDIR)/matmul-go \
-	$(BINDIR)/matmul-bce-go $(BINDIR)/matmul-opt-go $(BINDIR)/matmul-mml $(BINDIR)/matmul-opt-mml $(BINDIR)/matmul-opt-c $(RESULTS_DEP)
-	hyperfine -N --warmup 20 --runs 200 \
+	$(BINDIR)/matmul-bce-go $(BINDIR)/matmul-opt-go $(BINDIR)/matmul-mml $(BINDIR)/matmul-opt-mml $(BINDIR)/matmul-opt-c \
+	$(BINDIR)/matmul-rs $(BINDIR)/matmul-opt-rs $(RESULTS_DEP)
+	hyperfine -N --warmup 20 --runs 50 \
 		$(call EXPORT_FLAGS,matmul) \
 		'$(BINDIR)/matmul-c' \
 		'$(BINDIR)/matmul-opt-c' \
 		'$(BINDIR)/matmul-restricted-c' \
 		'$(BINDIR)/matmul-mml' \
 		'$(BINDIR)/matmul-opt-mml' \
+		'$(BINDIR)/matmul-rs' \
+		'$(BINDIR)/matmul-opt-rs' \
 		'$(BINDIR)/matmul-go' \
 		'$(BINDIR)/matmul-bce-go' \
 		'$(BINDIR)/matmul-opt-go'
 
 bench-matmul-time: $(BINDIR)/matmul-c $(BINDIR)/matmul-restricted-c $(BINDIR)/matmul-go \
 	$(BINDIR)/matmul-bce-go $(BINDIR)/matmul-opt-go $(BINDIR)/matmul-mml $(BINDIR)/matmul-opt-mml \
-	$(BINDIR)/matmul-opt-c
+	$(BINDIR)/matmul-opt-c $(BINDIR)/matmul-rs $(BINDIR)/matmul-opt-rs
 	/usr/bin/time -l $(BINDIR)/matmul-c
 	/usr/bin/time -l $(BINDIR)/matmul-opt-c
 	/usr/bin/time -l $(BINDIR)/matmul-restricted-c
 	/usr/bin/time -l $(BINDIR)/matmul-mml
 	/usr/bin/time -l $(BINDIR)/matmul-opt-mml
+	/usr/bin/time -l $(BINDIR)/matmul-rs
+	/usr/bin/time -l $(BINDIR)/matmul-opt-rs
 	/usr/bin/time -l $(BINDIR)/matmul-go
 	/usr/bin/time -l $(BINDIR)/matmul-bce-go
 	/usr/bin/time -l $(BINDIR)/matmul-opt-go
