@@ -13,9 +13,8 @@ A refinement type is a base type plus a predicate the compiler can decide —
 `Int { i | 0 <= i && i < len }` and friends. The compiler proves what it can
 at compile time and falls back to a runtime validator for the rest. It's a
 middle ground between today's unrefined types and full dependent types: no
-types whose return or pair element is computed from a runtime value, no
-proofs-as-values, the checker always terminates, predicates live in a bounded
-logic.
+types computed from a runtime value, no proofs-as-values, 
+the checker always terminates, predicates live in a bounded logic.
 
 It matters here for one reason: combined with path-dependent index types
 (§ Path-dependent index types), refinements recover the safety property
@@ -61,7 +60,7 @@ validating-constructor lowering against the path-dependent index type and the
 
 ## Established decisions (from `refinements.mml`)
 
-These come from the sketch. Not re-litigating them here.
+These come from the sketch:
 
 ### D1. Refinement is a type with a predicate binder
 
@@ -88,8 +87,7 @@ the tier split this forces.
 When you can use a value of one refinement where another refinement is
 expected ("compatibility"), that's row polymorphism, not subtyping. An `Int`
 literal satisfying `IntChico` isn't modeled by saying `IntChico` is a subtype
-of `Int`; it's modeled by rows, consistent with the "NO SUBTYPING, use rows"
-stance in [`simp-and-seq-typers.md`](./simp-and-seq-typers.md). That resolves
+of `Int`; it's modeled by rows ( [NO SUBTYPING, use rows](./simp-and-seq-typers.md) ). That resolves
 the tension noted in token-types §4: refinement compatibility doesn't drag in
 structural or nominal subtyping. The mechanism still needs an implication
 checker — see O1.
