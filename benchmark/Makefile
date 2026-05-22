@@ -234,7 +234,7 @@ $(BINDIR)/euclidean-ext-mml: euclidean-ext.mml | $(BINDIR)
 
 # Benchmarks
 bench-sieve: $(BINDIR)/sieve-c $(BINDIR)/sieve-go $(BINDIR)/sieve-rs $(BINDIR)/sieve-mml $(RESULTS_DEP)
-	hyperfine -N --warmup 20 --runs 50 \
+	hyperfine -N --warmup 20 --runs 200 \
 		$(call EXPORT_FLAGS,sieve) \
 		'$(BINDIR)/sieve-c' \
 		'$(BINDIR)/sieve-mml' \
@@ -248,7 +248,7 @@ bench-sieve-time: $(BINDIR)/sieve-c $(BINDIR)/sieve-go $(BINDIR)/sieve-rs $(BIND
 	/usr/bin/time -l $(BINDIR)/sieve-go
 
 bench-self-sieve: $(SELF_SIEVE_BINARIES) $(RESULTS_DEP)
-	hyperfine -N --warmup 20 --runs 50 \
+	hyperfine -N --warmup 20 --runs 200 \
 		$(call EXPORT_FLAGS,self) \
 		'$(BINDIR)/sieve-mml-O0-tco' \
 		'$(BINDIR)/sieve-mml-O0-no-tco' \
@@ -270,7 +270,7 @@ bench-self-sieve-time: $(SELF_SIEVE_BINARIES)
 	/usr/bin/time -l $(BINDIR)/sieve-mml-O3-no-tco
 
 bench-self-matmul: $(SELF_MATMUL_BINARIES) $(RESULTS_DEP)
-	hyperfine -N --warmup 20 --runs 50 \
+	hyperfine -N --warmup 20 --runs 200 \
 		$(call EXPORT_FLAGS,self-matmul) \
 		'$(BINDIR)/matmul-mml-O0-tco' \
 		'$(BINDIR)/matmul-mml-O0-no-tco' \
@@ -292,7 +292,7 @@ bench-self-matmul-time: $(SELF_MATMUL_BINARIES)
 	/usr/bin/time -l $(BINDIR)/matmul-mml-O3-no-tco
 
 bench-self-matmul-opt: $(SELF_MATMUL_OPT_BINARIES) $(RESULTS_DEP)
-	hyperfine -N --warmup 20 --runs 50 \
+	hyperfine -N --warmup 20 --runs 200 \
 		$(call EXPORT_FLAGS,self-matmul-opt) \
 		'$(BINDIR)/matmul-opt-mml-O0-tco' \
 		'$(BINDIR)/matmul-opt-mml-O0-no-tco' \
@@ -314,7 +314,7 @@ bench-self-matmul-opt-time: $(SELF_MATMUL_OPT_BINARIES)
 	/usr/bin/time -l $(BINDIR)/matmul-opt-mml-O3-no-tco
 
 bench-quicksort: $(BINDIR)/quicksort-c $(BINDIR)/quicksort-mml $(RESULTS_DEP)
-	hyperfine -N --warmup 10 --runs 50 \
+	hyperfine -N --warmup 10 --runs 200 \
 		$(call EXPORT_FLAGS,quicksort) \
 		'$(BINDIR)/quicksort-c' \
 		'$(BINDIR)/quicksort-mml'
@@ -325,7 +325,7 @@ bench-quicksort-time: $(BINDIR)/quicksort-c $(BINDIR)/quicksort-mml
 
 bench-matmul: $(BINDIR)/matmul-c $(BINDIR)/matmul-restricted-c $(BINDIR)/matmul-go \
 	$(BINDIR)/matmul-bce-go $(BINDIR)/matmul-opt-go $(BINDIR)/matmul-mml $(BINDIR)/matmul-opt-mml $(BINDIR)/matmul-opt-c $(RESULTS_DEP)
-	hyperfine -N --warmup 20 --runs 50 \
+	hyperfine -N --warmup 20 --runs 200 \
 		$(call EXPORT_FLAGS,matmul) \
 		'$(BINDIR)/matmul-c' \
 		'$(BINDIR)/matmul-opt-c' \
@@ -361,7 +361,7 @@ bench-nqueens-time: $(BINDIR)/nqueens-c $(BINDIR)/nqueens-go $(BINDIR)/nqueens-m
 	/usr/bin/time -l $(BINDIR)/nqueens-mml
 
 bench-euclidean: $(BINDIR)/euclidean-ext-c $(BINDIR)/euclidean-ext-mml $(RESULTS_DEP)
-	hyperfine -N --warmup 10 --runs 50 \
+	hyperfine -N --warmup 10 --runs 200 \
 		$(call EXPORT_FLAGS,euclidean) \
 		'$(BINDIR)/euclidean-ext-c' \
 		'$(BINDIR)/euclidean-ext-mml'
