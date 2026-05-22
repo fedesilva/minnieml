@@ -1,6 +1,13 @@
 CC = clang
 CFLAGS = -O3 -flto -march=native -fomit-frame-pointer -fno-stack-protector  -DNDEBUG
 BINDIR = bin
+
+# MML optimization level: -O 1 on Apple Silicon, -O 3 on x86
+ifeq ($(shell uname -s)$(shell uname -m),Darwinarm64)
+MML_OPT = -O 1
+else
+MML_OPT = -O 3
+endif
 BUILDDIR = build
 RESULTSDIR = results/$(shell date +%Y-%m-%d)
 
@@ -62,7 +69,7 @@ $(BINDIR)/ackermann-rs: ackermann.rs | $(BINDIR)
 	rustc -O -o $@ $<
 
 $(BINDIR)/ackermann-mml: ackermann.mml | $(BINDIR)
-	mmlc -I -b $(BUILDDIR) -o $@ $<
+	mmlc -I -b $(BUILDDIR) $(MML_OPT) -o $@ $<
 
 # Sieve
 $(BINDIR)/sieve-c: sieve.c | $(BINDIR)
@@ -78,7 +85,7 @@ $(BINDIR)/sieve-rs: sieve.rs | $(BINDIR)
 	rustc -O -o $@ $<
 
 $(BINDIR)/sieve-mml: sieve.mml | $(BINDIR)
-	mmlc -I -b $(BUILDDIR) -O 1 -o $@ $<
+	mmlc -I -b $(BUILDDIR) $(MML_OPT) -o $@ $<
 
 # Self benchmark binaries (MML with various opt/TCO knobs)
 SELF_SIEVE_BINARIES = \
@@ -140,7 +147,7 @@ $(BINDIR)/quicksort-c: quicksort.c | $(BINDIR)
 	$(CC) $(CFLAGS) -o $@ $<
 
 $(BINDIR)/quicksort-mml: quicksort.mml | $(BINDIR)
-	mmlc -I -b $(BUILDDIR) -O 1 -o $@ $<
+	mmlc -I -b $(BUILDDIR) $(MML_OPT) -o $@ $<
 
 # Matrix Multiplication
 $(BINDIR)/matmul-c: matmul.c | $(BINDIR)
@@ -162,10 +169,10 @@ $(BINDIR)/matmul-opt-go: matmul-opt.go | $(BINDIR)
 	go build -o $@ $<
 
 $(BINDIR)/matmul-mml: mat-mul.mml | $(BINDIR)
-	mmlc -I -b $(BUILDDIR) -O 1 -o $@ $<
+	mmlc -I -b $(BUILDDIR) $(MML_OPT) -o $@ $<
 
 $(BINDIR)/matmul-opt-mml: mat-mul-opt.mml | $(BINDIR)
-	mmlc -I -b $(BUILDDIR) -O 1 -o $@ $<
+	mmlc -I -b $(BUILDDIR) $(MML_OPT) -o $@ $<
 
 $(BINDIR)/matmul-mml-O0-tco: mat-mul.mml | $(BINDIR)
 	mmlc -I -b $(BUILDDIR) -O 0 -o $@ $<
@@ -223,14 +230,14 @@ $(BINDIR)/nqueens-go: nqueens.go | $(BINDIR)
 	go build -o $@ $<
 
 $(BINDIR)/nqueens-mml: nqueens.mml | $(BINDIR)
-	mmlc -I -b $(BUILDDIR) -o $@ $<
+	mmlc -I -b $(BUILDDIR) $(MML_OPT) -o $@ $<
 
 # Euclidean Extended GCD
 $(BINDIR)/euclidean-ext-c: euclidean-ext.c | $(BINDIR)
 	$(CC) $(CFLAGS) -o $@ $<
 
 $(BINDIR)/euclidean-ext-mml: euclidean-ext.mml | $(BINDIR)
-	mmlc -I -b $(BUILDDIR) -O 1 -o $@ $<
+	mmlc -I -b $(BUILDDIR) $(MML_OPT) -o $@ $<
 
 # Benchmarks
 bench-sieve: $(BINDIR)/sieve-c $(BINDIR)/sieve-go $(BINDIR)/sieve-rs $(BINDIR)/sieve-mml $(RESULTS_DEP)
