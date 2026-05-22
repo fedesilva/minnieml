@@ -138,7 +138,7 @@ For `[v1, ..., vn]: Array 'T`:
 - allocate contiguous storage for `n` elements
 - initialize each element (constant bulk copy when safe; element stores otherwise)
 - construct array value (length + data pointer)
-- use llvm's ir [iii x iii] syntax
+- use llvm's ir `[iii x iii]` syntax
 
 ### 3. Ownership/memory interaction
 
@@ -179,7 +179,6 @@ This keeps work incremental while preserving the "true type" decision.
 ## Open decisions
 
 1. Canonical runtime representation type naming in prelude/runtime.
-   1. A: Array
 2. Final public API names for array ops under current overloading constraints.
 3. Bounds behavior policy (trap vs recoverable error) for indexed access.
 4. Whether array literal constant-packing optimizations are phase-1 or phase-2.
@@ -189,3 +188,4 @@ This keeps work incremental while preserving the "true type" decision.
 ## Cross-reference
 
 Tracked by issue `#202`: `https://github.com/fedesilva/minnieml/issues/202`
+Related to: `docs/brainstorming/language/seq-notation.md`
