@@ -400,6 +400,10 @@ slice or accept temporary breakage; do not invent a shim.
   cleanup to a direct `mml_free_raw` call when the surrounding call path is visible.
 
 - **Remaining S6 work (Phase 6.4):**
+  - Top priority bug: `mmlc -maI mml/samples/raytracer3_p6.mml` emits invalid LLVM IR:
+    `store { ptr, ptr } %0, ptr %54` where `%0` is a `float` in `raytracer3p6_main`.
+    This is an S6 direct/materialized closure capture bug around nested local helpers that
+    capture sibling function values. Fix before continuing the cleanup work.
   - Phase 6.4: refresh IR-shape tests — `ClosureCodegenTest` (8 stale assertions on env-struct
     materialization for Direct lambdas), `FunctionSignatureTest` "local static null-env closure
     calls use direct closure-entry call" (now a clean direct call, no wrapper), `TbaaEmissionTest`
