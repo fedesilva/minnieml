@@ -42,6 +42,7 @@ Slice progress (see `context/specs/unify-lambdas-plan.md`):
 - [ ] S9 — Equivalence test pass
 - [ ] S10 — `BindingMeta` reduction
 - [ ] S11 — Stack-promotion for non-escaping move-capturing lambdas
+- [ ] S6.5 — Codegen hygiene: deduplicate named-function closure thunks
 - [ ] Accept nullary lambda heads in immediate application — `TypeChecker.scala:784` guards on `lambda.params.nonEmpty`, so `App(Lambda(params=[], …), ())` falls through to `determineApplicationType` (no `Lambda` arm) and is rejected as `InvalidApplication`. Ignored test: `MaterializationAnalyzerTests.scala` — `"nullary lambda literal in immediate application is direct"`. Un-ignore once accepted.
 - [ ] Un-ignore `ClosureCodegenTest` "local move capturing closures free through their specific env destructor" at S6. Ignored at S4 because the rewritten fixture (`apply f 41`) still depends on S6 reshaping the closure-call lowering before its IR snapshot stabilizes.
 - [ ] Close the pinned mem regression `tests/mem/direct-move-closure.mml` at S6. The file is added at S4 and is expected to fail under ASan/LSan until S6's lowering rule for `isDirect` lambdas stops materializing an env. Until then the mem harness reports a 1-test failure on every run.

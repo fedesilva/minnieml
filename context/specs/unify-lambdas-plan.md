@@ -407,6 +407,32 @@ slice or accept temporary breakage; do not invent a shim.
     lowering — re-aim at a deliberately non-Direct shape). Un-ignore `ClosureCodegenTest`
     "local move capturing closures free through their specific env destructor". Retire
     `isDirectCallableRef` if MaterializationAnalyzer's coverage proves complete.
+
+- **Phase 6.5 — deduplicate named-function closure thunks. *(pending)***
+  Codegen hygiene only: when a named function is materialized as a first-class value,
+  reuse one closure-entry thunk per `(original resolved function symbol, closure ABI
+  signature)` instead of emitting a fresh anonymous forwarding thunk at every
+  materialization site. For example, every first-class use of
+  `functionlambdacombinations_inc : Int -> Int` should reuse:
+
+  ```llvm
+  define internal i64 @functionlambdacombinations_inc__closure_entry(i64 %x, ptr %env) {
+    %r = call i64 @functionlambdacombinations_inc(i64 %x)
+    ret i64 %r
+  }
+  ```
+
+  Materialization sites then use `{ ptr @functionlambdacombinations_inc__closure_entry,
+  ptr null }` rather than producing equivalent anonymous wrappers such as
+  `@functionlambdacombinations__anon_0` and `@functionlambdacombinations__anon_12`.
+  The same rule applies to other named functions such as
+  `functionlambdacombinations_tail_inc_until`.
+
+  This must not change runtime semantics, closure representation, capture handling, or
+  direct-call lowering. Direct calls continue to call the plain named function symbol;
+  only first-class named-function values use the shared closure-entry thunk with a null
+  environment. Validation target: unoptimized IR is more stable and inspectable while
+  optimized IR remains equivalent.
 - **Files:** `ExpressionCompiler.scala` (`compileLambdaLiteral` L151,
   `compileCapturingLambda` L662, `compileNonCapturingLambda` L381, `emitCallSiteEnv`
   L518); `Applications.scala` (`compileIndirectCall` L555, `staticNullEnvClosureTarget`,
