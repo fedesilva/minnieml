@@ -66,6 +66,12 @@ Slice progress (see `context/specs/unify-lambdas-plan.md`):
 
 ## Change Log
 
+- 2026-05-24: #255 unify-lambdas S6 Phase 6.3 — make universal closure free optimizer-visible
+  - `FunctionEmitter.scala`: generated universal closure destructors now use a dedicated LLVM attribute group.
+  - `Module.scala`: emits that group as `alwaysinline`, keeping the generated `__free_closure` as the semantic cleanup backstop while exposing its null-env guard and destructor dispatch to LLVM.
+  - `mml/samples/closure-free-shapes.mml`: added a retained sample covering both a non-capturing function value and a move-capturing closure with runtime input, so optimized cleanup shapes can be inspected without constant-folding the whole program.
+  - Plan updated: the source-aware consuming-param elision idea is dropped for this slice because a generic consuming `TypeFn` param cannot see call-site lambda materialization without specialization or caller-side cleanup emission. Phase 6.3 is now the inline-for-optimizer request; remaining S6 work is Phase 6.4's IR-shape refresh.
+
 - 2026-05-20: #255 unify-lambdas S6 Phase 6.2.c — keep `CapturedLiteral` captures in the Direct call shape
   - `ExpressionCompiler.scala`: `DirectTrailingSlot.Value` gains `cloneFnId: Option[String]`. `computeDirectTrailing` now treats `Capture.CapturedLiteral` as a value-shaped slot carrying the clone fn id; the slot's `outerOperand` falls back to `@<name>` when the capture isn't in the enclosing function scope (top-level binding case).
   - `evaluateDirectCaptures` returns `(CodeGenState, List[(op, ty)])`: for each clone-bearing slot it emits an ABI-lowered `__clone_<T>` call at the binder site and threads the cloned operand as the trailing argument. `Applications.compileBoundLambdaArg` Direct case threads the post-clone state into the body compile call.

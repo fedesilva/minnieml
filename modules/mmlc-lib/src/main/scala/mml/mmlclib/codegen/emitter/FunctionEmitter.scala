@@ -282,8 +282,13 @@ private def compileRegularLambda(
   val filteredParams          = filteredParamsWithTypes.map(_._1)
   val filteredParamTypes      = filteredParamsWithTypes.map(_._2)
   val paramDecls              = formatParamDecls(filteredParamsWithTypes, state.resolvables)
+  val destructorKind          = bnd.meta.flatMap(_.destructorKind)
 
-  val attrGroup    = if bnd.meta.exists(_.inlineHint) then "#1" else "#0"
+  val attrGroup =
+    destructorKind match
+      case Some(DestructorKind.ClosureUniversal) => "#2"
+      case _ if bnd.meta.exists(_.inlineHint) => "#1"
+      case _ => "#0"
   val functionDecl = s"define $linkage$returnType @$emittedName($paramDecls) $attrGroup {"
   val bodyState = state
     .copy(
@@ -316,7 +321,6 @@ private def compileRegularLambda(
   // Register count starts after parameter setup
   val baseState = bodyState.withRegister(filteredParams.size)
 
-  val destructorKind = bnd.meta.flatMap(_.destructorKind)
   val updatedStateE =
     destructorKind match
       case Some(DestructorKind.ClosureEnv(envStructName)) =>

@@ -388,11 +388,18 @@ slice or accept temporary breakage; do not invent a shim.
     the cloned heap value has no free site at the call frame — leak deferred until
     Direct-move ownership lands (S6.x / S11).
 
-- **Remaining S6 work (Phases 6.3 + 6.4):**
-  - Phase 6.3: source-aware `__free_closure(f)` elision at consuming-`TypeFn` param sites when
-    `f` is statically a NullEnv literal or a Ref to a top-level Bnd(Lambda); the runtime
-    null-guard remains the conditional-join correctness backstop (documented in
-    `docs/design/compiler-design.md` §OwnershipAnalyzer item 4).
+- **Phase 6.3 — make universal closure free visible to the optimizer. *(done)***
+  Source-aware `__free_closure(f)` elision at consuming-`TypeFn` param sites was dropped
+  as the implementation target for this slice: the source lambda materialization fact
+  exists at producer/call sites, but a generic consuming param only sees a `TypeFn`
+  value unless the callee is specialized or cleanup moves to the caller. Instead, the
+  generated universal `__free_closure` remains the semantic backstop and is marked
+  `alwaysinline`, exposing its null-env guard and destructor dispatch to LLVM. The
+  `closure-free-shapes.mml` sample pins the null-env + materialized-env inspection case;
+  optimized IR (`*_opt.ll`) inlines the universal helper away and reduces materialized-env
+  cleanup to a direct `mml_free_raw` call when the surrounding call path is visible.
+
+- **Remaining S6 work (Phase 6.4):**
   - Phase 6.4: refresh IR-shape tests — `ClosureCodegenTest` (8 stale assertions on env-struct
     materialization for Direct lambdas), `FunctionSignatureTest` "local static null-env closure
     calls use direct closure-entry call" (now a clean direct call, no wrapper), `TbaaEmissionTest`
