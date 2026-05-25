@@ -357,7 +357,7 @@ class FunctionSignatureTest extends BaseEffFunSuite:
     }
   }
 
-  test("local static null-env closure calls use direct closure-entry call") {
+  test("local Direct lambda calls use plain direct entry call") {
     val source =
       """
         fn main(): Int =
@@ -370,16 +370,16 @@ class FunctionSignatureTest extends BaseEffFunSuite:
       val mainBody = functionBody(llvmIr, "test_main\\(\\) #0")
 
       assert(
-        """call i64 @test_f_\d+\(i64 41, ptr null\)""".r.findFirstIn(mainBody).nonEmpty,
-        s"Expected local static closure call to use a direct closure-entry call. Body:\n$mainBody"
+        """call i64 @test_f_\d+\(i64 41\)""".r.findFirstIn(mainBody).nonEmpty,
+        s"Expected local Direct lambda call to use a plain direct entry call. Body:\n$mainBody"
       )
       assert(
         !mainBody.contains("extractvalue { ptr, ptr }"),
-        s"Static null-env closure call should not extract from a fat pointer. Body:\n$mainBody"
+        s"Local Direct lambda call should not extract from a fat pointer. Body:\n$mainBody"
       )
       assert(
         """call i64 %\d+\(i64 41, ptr %\d+\)""".r.findFirstIn(mainBody).isEmpty,
-        s"Static null-env closure call should not use an indirect function pointer. Body:\n$mainBody"
+        s"Local Direct lambda call should not use an indirect function pointer. Body:\n$mainBody"
       )
     }
   }
@@ -785,6 +785,53 @@ class FunctionSignatureTest extends BaseEffFunSuite:
       assert(
         """call i64 @test_g_\d+\(i64 1, i64 %0\)""".r.findFirstIn(outerBody).nonEmpty,
         s"outer must call g with (1, a=%0). Body:\n$outerBody"
+      )
+    }
+  }
+
+  test("materialized closure captures Direct sibling operands, not a fat pointer") {
+    val source =
+      """
+        pub fn main(): Unit =
+          let base = 10;
+
+          fn sibling(x: Int): Int =
+            x + base;
+          ;
+
+          fn loop(i: Int): Int =
+            if i > 0 then
+              let y = sibling i;
+              loop (i - 1);
+            else
+              0;
+            ;
+          ;
+
+          println (int_to_str (loop 2));
+        ;
+      """
+
+    compileAndGenerate(source).map { llvmIr =>
+      val envWithDirectOperand = """%struct\.__closure_env_\d+ = type \{ i64 \}""".r
+      assert(
+        envWithDirectOperand.findFirstIn(llvmIr).nonEmpty,
+        s"loop env should store sibling's captured Int operand, not a Function value. IR:\n$llvmIr"
+      )
+      assert(
+        !llvmIr.contains("store { ptr, ptr } %0"),
+        s"materialized closure env must not store a direct-call register as a Function. IR:\n$llvmIr"
+      )
+
+      val loopBody          = functionBody(llvmIr, """test_loop_\d+\(i64 %0, ptr %1\) #0""")
+      val directSiblingCall = """call i64 @test_sibling_\d+\(i64 %\d+, i64 %\d+\)""".r
+      assert(
+        directSiblingCall.findFirstIn(loopBody).nonEmpty,
+        s"loop should call sibling's Direct entry with the loaded captured operand. Body:\n$loopBody"
+      )
+      assert(
+        !loopBody.contains("extractvalue { ptr, ptr }"),
+        s"loop should not call sibling through a captured fat pointer. Body:\n$loopBody"
       )
     }
   }

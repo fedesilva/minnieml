@@ -399,18 +399,42 @@ slice or accept temporary breakage; do not invent a shim.
   optimized IR (`*_opt.ll`) inlines the universal helper away and reduces materialized-env
   cleanup to a direct `mml_free_raw` call when the surrounding call path is visible.
 
+- **Phase 6.3.d — fix Direct callable capture boundary. *(done)***
+  `mmlc -maI mml/samples/raytracer3_p6.mml` exposed invalid LLVM IR:
+  `store { ptr, ptr } %0, ptr %54` where `%0` was a `float` in `raytracer3p6_main`.
+  The root cause was that materialized closure envs were built from raw `lambda.captures`.
+  A closure capturing a Direct sibling tried to store that sibling as a first-class
+  `{ ptr, ptr }` value even though the sibling only exists as a `DirectCallable`.
+
+  The fix introduces one lowered capture layout for Direct trailing params and
+  materialized env fields. Captured Direct callables are expanded into their own
+  value-shaped operand slots; zero-capture Direct callables contribute no fields but
+  still rebind as `DirectCallable` entries in generated bodies. The `raytracer3_p6`
+  `compute_row` env now stores the `camera` operands needed by `pixel_ray`, and
+  `compute_row` calls the `pixel_ray` Direct entry with loaded operands instead of
+  capturing a fat pointer.
+
+  `TbaaEmissionTest`'s captured-function fixture was re-aimed at a deliberately
+  non-Direct local function value so it continues to test TBAA for real fat-pointer
+  env fields after Direct lowering.
+
+- **Phase 6.3.d follow-up — refresh Direct ABI IR tests. *(done)***
+  Full-suite verification exposed the stale Phase 6.4 IR-shape assertions that were
+  still expecting closure-entry wrappers or env allocation for Direct lambdas. The
+  refreshed `ClosureCodegenTest` and `FunctionSignatureTest` assertions now pin the
+  plain Direct entry ABI and keep materialized-env coverage on deliberately non-Direct
+  function-value paths.
+
+  The same run exposed a real tail-recursive codegen gap: bound statements inside the
+  loopified lowering still compiled let-bound Direct lambdas through `compileExpr`,
+  which sent them to the value-position lambda path. `FunctionEmitter` now lowers that
+  shape the same way as normal scoped lambda bindings: emit the Direct entry and bind a
+  `DirectCallable` in the local scope.
+
 - **Remaining S6 work (Phase 6.4):**
-  - Top priority bug: `mmlc -maI mml/samples/raytracer3_p6.mml` emits invalid LLVM IR:
-    `store { ptr, ptr } %0, ptr %54` where `%0` is a `float` in `raytracer3p6_main`.
-    This is an S6 direct/materialized closure capture bug around nested local helpers that
-    capture sibling function values. Fix before continuing the cleanup work.
-  - Phase 6.4: refresh IR-shape tests — `ClosureCodegenTest` (8 stale assertions on env-struct
-    materialization for Direct lambdas), `FunctionSignatureTest` "local static null-env closure
-    calls use direct closure-entry call" (now a clean direct call, no wrapper), `TbaaEmissionTest`
-    "closure env TBAA handles captured function values" (closure env disappears under Direct
-    lowering — re-aim at a deliberately non-Direct shape). Un-ignore `ClosureCodegenTest`
-    "local move capturing closures free through their specific env destructor". Retire
-    `isDirectCallableRef` if MaterializationAnalyzer's coverage proves complete.
+  - Un-ignore `ClosureCodegenTest` "local move capturing closures free through their specific env
+    destructor".
+  - Retire `isDirectCallableRef` if MaterializationAnalyzer's coverage proves complete.
 
 - **Phase 6.5 — deduplicate named-function closure thunks. *(pending)***
   Codegen hygiene only: when a named function is materialized as a first-class value,

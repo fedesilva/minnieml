@@ -140,10 +140,11 @@ object ClosureMemoryFnGenerator:
     * lambdas: fields 0..N-1 = captures only (no destructor, env is stack-allocated).
     */
   private def mkEnvStruct(
-    lambda:     Lambda,
-    envName:    String,
-    moduleName: String,
-    idTypeMap:  Map[String, Type]
+    lambda:       Lambda,
+    envName:      String,
+    moduleName:   String,
+    idTypeMap:    Map[String, Type],
+    bindingIndex: LambdaBindingIndex
   ): TypeStruct =
     val dtorFields =
       if lambda.isMove then
@@ -157,18 +158,21 @@ object ClosureMemoryFnGenerator:
         )
       else Vector.empty
 
-    val captureFields = lambda.captures.map { cap =>
-      val ref = cap.ref
-      val fieldType = resolveCaptureType(ref, idTypeMap).getOrElse(
-        TypeRef(syntheticSource, "Unknown")
-      )
-      Field(
-        source   = syntheticSource,
-        nameNode = Name.synth(ref.name),
-        typeSpec = fieldType,
-        id       = Some(s"$moduleName::typedef::$envName::${ref.name}")
-      )
-    }.toVector
+    val captureFields = LoweredCaptureLayout
+      .slotsFor(lambda, bindingIndex)
+      .map { slot =>
+        val ref = slot.fieldRef
+        val fieldType = resolveCaptureType(ref, idTypeMap).getOrElse(
+          TypeRef(syntheticSource, "Unknown")
+        )
+        Field(
+          source   = syntheticSource,
+          nameNode = Name.synth(slot.fieldName),
+          typeSpec = fieldType,
+          id       = Some(s"$moduleName::typedef::$envName::${slot.fieldName}")
+        )
+      }
+      .toVector
 
     TypeStruct(
       source     = syntheticSource,
@@ -404,11 +408,14 @@ object ClosureMemoryFnGenerator:
       }
 
       // Build ID → type map for resolving capture types
-      val idTypeMap = buildIdTypeMap(module)
+      val idTypeMap    = buildIdTypeMap(module)
+      val bindingIndex = LambdaBindingIndex.from(module)
 
       // Generate env structs for all capturing lambdas (move and borrow)
       val envStructs =
-        capturingLambdas.map((lambda, name) => mkEnvStruct(lambda, name, moduleName, idTypeMap))
+        capturingLambdas.map { (lambda, name) =>
+          mkEnvStruct(lambda, name, moduleName, idTypeMap, bindingIndex)
+        }
 
       // Generate free functions only for move lambdas (borrow envs are stack-allocated)
       val moveLambdaStructs =

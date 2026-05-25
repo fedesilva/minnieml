@@ -322,7 +322,7 @@ private def compileTailRecCapturingLambda(
       output              = List.empty,
       entryPrologueOutput = List.empty
     )
-    val capInfo = (envResult.envTypeRef, envResult.captureTypes)
+    val capInfo = (envResult.envTypeRef, envResult.captureLayout)
     compileTailRecursiveLambda(
       lambda,
       subState,
@@ -346,21 +346,21 @@ private def compileTailRecCapturingLambda(
     }
   }
 
-/** A single trailing-param slot of a Direct lambda's LLVM signature.
+/** A single lowered capture slot for Direct trailing params or materialized closure env fields.
   *
   * Two kinds:
   *   - [[Value]] — a value-shaped capture; binds `capName` to the slot in the inner body scope.
   *   - [[DirectOp]] — one operand of an enclosing direct-callable's `captureOperands`, threaded so
   *     the nested body can call `callableName` with operands valid in the inner SSA frame.
   *
-  * `outerOperand` is the operand string in the **outer** scope; the inner-scope operand is
-  * `s"%$slotIndex"` (computed by position).
+  * `outerOperand` is the operand string in the **outer** scope. Direct lambdas pass it as a
+  * trailing parameter; materialized closures store it into the env.
   */
-private[emitter] sealed trait DirectTrailingSlot:
+private[emitter] sealed trait CodegenCaptureSlot:
   def llvmType:     String
   def outerOperand: String
 
-private[emitter] object DirectTrailingSlot:
+private[emitter] object CodegenCaptureSlot:
   /** Value-shaped capture.
     *
     * When `cloneFnId` is `Some(id)`, the binder site must call the clone function on the raw outer
@@ -373,51 +373,55 @@ private[emitter] object DirectTrailingSlot:
     llvmType:     String,
     outerOperand: String,
     cloneFnId:    Option[String]
-  ) extends DirectTrailingSlot
+  ) extends CodegenCaptureSlot
 
   case class DirectOp(
     callableName: String,
     entryName:    String,
     llvmType:     String,
     outerOperand: String
-  ) extends DirectTrailingSlot
+  ) extends CodegenCaptureSlot
 
-/** The effective trailing-capture layout for a Direct lambda.
+/** Capture layout after expanding Direct-callable captures into value-shaped operands.
   *
   * @param slots
-  *   one entry per LLVM trailing parameter, in declaration order.
+  *   one entry per LLVM trailing parameter or env field, in declaration order.
   * @param innerScope
   *   value-shaped captures bound to their inner trailing-param register.
   * @param innerDirectable
   *   re-bound direct-callable captures whose operands now point at inner trailing-param registers
   *   (replacing the outer operands that the body would otherwise inherit).
+  * @param directEntries
+  *   Direct-callable captures by source name and emitted entry symbol, including zero-capture
+  *   Direct callables that contribute no slots.
   */
-private[emitter] case class DirectTrailing(
-  slots:           List[DirectTrailingSlot],
+private[emitter] case class CodegenCaptureLayout(
+  slots:           List[CodegenCaptureSlot],
   innerScope:      Map[String, ScopeEntry],
-  innerDirectable: Map[String, DirectCallable]
+  innerDirectable: Map[String, DirectCallable],
+  directEntries:   Map[String, String]
 ):
   def paramDecls(userParamCount: Int): List[String] =
     slots.zipWithIndex.map { case (s, i) => s"${s.llvmType} %${userParamCount + i}" }
 
-/** Compute the effective trailing-capture layout for a Direct lambda.
+/** Compute the shared codegen capture layout for Direct lambdas and materialized closure envs.
   *
   * Walks `lambda.captures` in order. A `CapturedRef` that resolves to a direct-callable in the
-  * enclosing scope is **expanded** into one slot per operand of that callable; the nested body gets
-  * a rebound [[DirectCallable]] whose operands point at the new inner-slot registers. Plain value
-  * captures (including [[Capture.CapturedLiteral]] heap-literal captures that need a binder-site
-  * clone) contribute one slot each.
+  * enclosing scope is **expanded** into one slot per operand of that callable; generated bodies get
+  * a rebound [[DirectCallable]] whose operands point at the loaded values or trailing-param
+  * registers. Plain value captures (including [[Capture.CapturedLiteral]] heap-literal captures
+  * that need a binder-site clone) contribute one slot each.
   */
-private[emitter] def computeDirectTrailing(
+private[emitter] def computeCodegenCaptureLayout(
   lambda:         Lambda,
   state:          CodeGenState,
   functionScope:  Map[String, ScopeEntry],
   userParamCount: Int
-): Either[CodeGenError, DirectTrailing] =
+): Either[CodeGenError, CodegenCaptureLayout] =
   def valueSlotFor(
     ref:       Ref,
     cloneFnId: Option[String]
-  ): Either[CodeGenError, DirectTrailingSlot] =
+  ): Either[CodeGenError, CodegenCaptureSlot] =
     ref.typeSpec match
       case None =>
         CodeGenError(s"Capture '${ref.name}' has no type", ref.some).asLeft
@@ -425,16 +429,17 @@ private[emitter] def computeDirectTrailing(
         getLlvmType(ts, state).map { ty =>
           val mmlType = getNominalTypeName(ts).toOption.getOrElse("Unknown")
           val outerOp = functionScope.get(ref.name).map(_.operandStr).getOrElse(s"@${ref.name}")
-          DirectTrailingSlot.Value(ref.name, mmlType, ty, outerOp, cloneFnId)
+          CodegenCaptureSlot.Value(ref.name, mmlType, ty, outerOp, cloneFnId)
         }
 
-  val slotsE = lambda.captures.foldLeft[Either[CodeGenError, List[DirectTrailingSlot]]](
-    Nil.asRight
+  type CaptureAcc = (List[CodegenCaptureSlot], Map[String, String])
+  val layoutE = lambda.captures.foldLeft[Either[CodeGenError, CaptureAcc]](
+    (List.empty[CodegenCaptureSlot], Map.empty[String, String]).asRight
   ) { (accE, cap) =>
-    accE.flatMap { acc =>
+    accE.flatMap { case (slots, directEntries) =>
       cap match
         case Capture.CapturedLiteral(ref, cloneFnId) =>
-          valueSlotFor(ref, cloneFnId.some).map(acc :+ _)
+          valueSlotFor(ref, cloneFnId.some).map(slot => (slots :+ slot, directEntries))
         case Capture.CapturedRef(ref) =>
           functionScope.get(ref.name) match
             case None =>
@@ -446,24 +451,28 @@ private[emitter] def computeDirectTrailing(
               entry.directCallable match
                 case Some(dc) =>
                   val expanded = dc.captureOperands.map { case (op, ty) =>
-                    DirectTrailingSlot.DirectOp(ref.name, dc.entryName, ty, op)
+                    CodegenCaptureSlot.DirectOp(ref.name, dc.entryName, ty, op)
                   }
-                  (acc ++ expanded).asRight
+                  (slots ++ expanded, directEntries.updated(ref.name, dc.entryName)).asRight
                 case None =>
-                  valueSlotFor(ref, None).map(acc :+ _)
+                  valueSlotFor(ref, None).map(slot => (slots :+ slot, directEntries))
     }
   }
 
-  slotsE.map { slots =>
-    type DcAcc = (String, List[(String, String)]) // entryName + inner operands
+  layoutE.map { case (slots, directEntries) =>
     val (innerScope, perCallable) =
       slots.zipWithIndex.foldLeft(
-        (Map.empty[String, ScopeEntry], Map.empty[String, DcAcc])
+        (
+          Map.empty[String, ScopeEntry],
+          directEntries.map { case (name, entryName) =>
+            name -> (entryName, List.empty[(String, String)])
+          }
+        )
       ) { case ((scope, dcs), (slot, i)) =>
         slot match
-          case DirectTrailingSlot.Value(name, mmlType, _, _, _) =>
+          case CodegenCaptureSlot.Value(name, mmlType, _, _, _) =>
             (scope + (name -> ScopeEntry(userParamCount + i, mmlType)), dcs)
-          case DirectTrailingSlot.DirectOp(name, entryName, ty, _) =>
+          case CodegenCaptureSlot.DirectOp(name, entryName, ty, _) =>
             val innerOp = s"%${userParamCount + i}"
             val prevOps = dcs.get(name).map(_._2).getOrElse(Nil)
             val updated = dcs.updated(name, (entryName, prevOps :+ (innerOp, ty)))
@@ -474,7 +483,7 @@ private[emitter] def computeDirectTrailing(
       name -> DirectCallable(entryName, innerOps)
     }
 
-    DirectTrailing(slots, innerScope, innerDirectable)
+    CodegenCaptureLayout(slots, innerScope, innerDirectable, directEntries)
   }
 
 /** ABI-lowered clone call for a single capture.
@@ -530,9 +539,9 @@ private[emitter] def evaluateDirectCaptures(
   functionScope: Map[String, ScopeEntry]
 ): Either[CodeGenError, (CodeGenState, List[(String, String)])] =
   // userParamCount only affects inner SSA indices; the outer operand list is independent of it.
-  computeDirectTrailing(lambda, state, functionScope, userParamCount = 0).map { trailing =>
+  computeCodegenCaptureLayout(lambda, state, functionScope, userParamCount = 0).map { trailing =>
     trailing.slots.foldLeft((state, List.empty[(String, String)])) {
-      case ((st, ops), DirectTrailingSlot.Value(_, _, ty, outerOp, Some(cloneId))) =>
+      case ((st, ops), CodegenCaptureSlot.Value(_, _, ty, outerOp, Some(cloneId))) =>
         val (stAfter, clonedOp) = emitCaptureCloneCall(outerOp, ty, cloneId, st)
         (stAfter, ops :+ (clonedOp, ty))
       case ((st, ops), slot) =>
@@ -559,7 +568,7 @@ private[emitter] def compileDirectLambda(
   val userParamDecls          = formatParamDecls(filteredParamsWithTypes, state.resolvables)
   val userParamCount          = filteredParamsWithTypes.size
 
-  computeDirectTrailing(lambda, state, functionScope, userParamCount).flatMap { trailing =>
+  computeCodegenCaptureLayout(lambda, state, functionScope, userParamCount).flatMap { trailing =>
     val captureDecls = trailing.paramDecls(userParamCount)
     val allParamDecls =
       val parts = (if userParamDecls.isEmpty then Nil else List(userParamDecls)) ++ captureDecls
@@ -706,10 +715,10 @@ private def compileNonCapturingLambda(
 
 /** Result of call-site env setup for a capturing lambda. */
 private case class EnvSetupResult(
-  siteState:    CodeGenState,
-  fpRegister:   Int,
-  envTypeRef:   String,
-  captureTypes: List[(Capture, String)]
+  siteState:     CodeGenState,
+  fpRegister:    Int,
+  envTypeRef:    String,
+  captureLayout: CodegenCaptureLayout
 )
 
 private def resolveClosureEnvStruct(
@@ -807,20 +816,10 @@ private def emitCallSiteEnv(
 ): Either[CodeGenError, EnvSetupResult] =
   for
     envStruct <- resolveClosureEnvStruct(lambda, state)
-    captureTypes <- lambda.captures.traverse { cap =>
-      val ref = cap.ref
-      ref.typeSpec match
-        case Some(ts) => getLlvmType(ts, state).map(t => (cap, t))
-        case None =>
-          CodeGenError(s"Capture '${ref.name}' has no type", ref.some).asLeft
-    }
-  yield
-    val envTypeRef = s"%struct.${envStruct.name}"
-    // Field offset: move envs have __dtor at field 0, borrow envs start captures at field 0
-    val fieldOffset = if lambda.isMove then 1 else 0
-
-    // Allocate env: malloc for move, alloca for borrow
-    val (siteStateAfterDtor, envPtrOp) =
+    captureLayout <- computeCodegenCaptureLayout(lambda, state, functionScope, userParamCount = 0)
+    envTypeRef  = s"%struct.${envStruct.name}"
+    fieldOffset = if lambda.isMove then 1 else 0
+    allocation =
       if lambda.isMove then
         val stateWithEnv = state
           .withFunctionDeclaration("malloc", "ptr", List("i64"))
@@ -830,9 +829,8 @@ private def emitCallSiteEnv(
         val mallocLine =
           emitCall(mallocReg.some, "ptr".some, "malloc", List(("i64", envSize.toString)))
         val afterMalloc = stateWithEnv.withRegister(mallocReg + 1).emit(mallocLine)
-
-        val dtorName   = s"__free_${envStruct.name}"
-        val dtorGepReg = afterMalloc.nextRegister
+        val dtorName    = s"__free_${envStruct.name}"
+        val dtorGepReg  = afterMalloc.nextRegister
         val dtorGepLine = emitGetElementPtr(
           dtorGepReg,
           envTypeRef,
@@ -854,7 +852,6 @@ private def emitCallSiteEnv(
           stateWithDtorTag.withRegister(dtorGepReg + 1).emit(dtorGepLine).emit(dtorStoreLine)
         (afterDtor, s"%$mallocReg")
       else
-        // Borrow: stack-allocate env, no dtor
         val allocaReg  = state.nextRegister
         val allocaLine = s"  %$allocaReg = alloca $envTypeRef"
         val afterAlloca =
@@ -862,42 +859,40 @@ private def emitCallSiteEnv(
             state.withRegister(allocaReg + 1).emitEntryPrologue(allocaLine)
           else state.withRegister(allocaReg + 1).emit(allocaLine)
         (afterAlloca, s"%$allocaReg")
+    (siteStateAfterDtor, envPtrOp) = allocation
+    siteStateAfterCaptures <-
+      captureLayout.slots.zipWithIndex.foldLeft(siteStateAfterDtor.asRight[CodeGenError]) {
+        case (stE, (slot, idx)) =>
+          stE.flatMap { st =>
+            val (stateBeforeStore, capOp) =
+              slot match
+                case CodegenCaptureSlot.Value(_, _, llvmType, outerOp, Some(cloneFnId)) =>
+                  emitCaptureCloneCall(outerOp, llvmType, cloneFnId, st)
+                case _ =>
+                  (st, slot.outerOperand)
 
-    val siteStateAfterCaptures =
-      captureTypes.zipWithIndex.foldLeft(siteStateAfterDtor) { case (st, ((cap, llvmType), idx)) =>
-        val ref = cap.ref
-        val rawCapOp = functionScope.get(ref.name) match
-          case Some(entry) => entry.operandStr
-          case None => s"@${ref.name}"
-
-        // CapturedLiteral: clone the heap value into the env (move only); CapturedRef: store as-is.
-        val (stateBeforeStore, capOp) = cap match
-          case Capture.CapturedLiteral(_, cloneFnId) =>
-            emitCaptureCloneCall(rawCapOp, llvmType, cloneFnId, st)
-          case _ =>
-            (st, rawCapOp)
-
-        val gepReg = stateBeforeStore.nextRegister
-        val gepLine = emitGetElementPtr(
-          gepReg,
-          envTypeRef,
-          "ptr",
-          envPtrOp,
-          List(("i32", "0"), ("i32", (idx + fieldOffset).toString))
-        )
-        val (stateWithFieldTag, fieldTag) =
-          TbaaEmitter
-            .getTbaaStructFieldTag(envStruct, idx + fieldOffset, stateBeforeStore)
-            .getOrElse((stateBeforeStore, ""))
-        val storeLine = emitStore(
-          capOp,
-          llvmType,
-          s"%$gepReg",
-          Option.when(fieldTag.nonEmpty)(fieldTag)
-        )
-        stateWithFieldTag.withRegister(gepReg + 1).emit(gepLine).emit(storeLine)
+            val gepReg = stateBeforeStore.nextRegister
+            val gepLine = emitGetElementPtr(
+              gepReg,
+              envTypeRef,
+              "ptr",
+              envPtrOp,
+              List(("i32", "0"), ("i32", (idx + fieldOffset).toString))
+            )
+            val (stateWithFieldTag, fieldTag) =
+              TbaaEmitter
+                .getTbaaStructFieldTag(envStruct, idx + fieldOffset, stateBeforeStore)
+                .getOrElse((stateBeforeStore, ""))
+            val storeLine = emitStore(
+              capOp,
+              slot.llvmType,
+              s"%$gepReg",
+              Option.when(fieldTag.nonEmpty)(fieldTag)
+            )
+            stateWithFieldTag.withRegister(gepReg + 1).emit(gepLine).emit(storeLine).asRight
+          }
       }
-
+  yield
     val fp0Reg = siteStateAfterCaptures.nextRegister
     val fp1Reg = fp0Reg + 1
     val insertFn =
@@ -907,7 +902,7 @@ private def emitCallSiteEnv(
     val siteState =
       siteStateAfterCaptures.withRegister(fp1Reg + 1).emit(insertFn).emit(insertEnv)
 
-    EnvSetupResult(siteState, fp1Reg, envTypeRef, captureTypes)
+    EnvSetupResult(siteState, fp1Reg, envTypeRef, captureLayout)
 
 /** Capturing lambda: allocate env at call site, load captures in deferred function body. */
 private def compileCapturingLambda(
@@ -944,7 +939,7 @@ private def compileCapturingLambda(
       emitCaptureLoads(
         envTypeRef,
         envParamIdx,
-        envResult.captureTypes,
+        envResult.captureLayout,
         initialBodyState,
         captureFieldOffset
       )

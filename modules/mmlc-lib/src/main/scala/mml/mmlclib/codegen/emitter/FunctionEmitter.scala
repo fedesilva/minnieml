@@ -137,31 +137,44 @@ def formatParamDecls(
     }
     .mkString(", ")
 
-/** Load captures from env struct in a deferred function's entry block. Each capture gets a GEP and
-  * a load. Field offset is 1 for move envs (__dtor at field 0), 0 for borrow envs.
+/** Load lowered captures from an env struct in a deferred function's entry block.
+  *
+  * Value slots become ordinary scope entries. Direct operand slots are grouped back into
+  * [[DirectCallable]] entries so captured Direct siblings remain direct inside the closure body.
+  * Field offset is 1 for move envs (__dtor at field 0), 0 for borrow envs.
   */
 def emitCaptureLoads(
-  envTypeRef:   String,
-  envParamIdx:  Int,
-  captureTypes: List[(Capture, String)],
-  bodyState:    CodeGenState,
-  fieldOffset:  Int = 1
+  envTypeRef:    String,
+  envParamIdx:   Int,
+  captureLayout: CodegenCaptureLayout,
+  bodyState:     CodeGenState,
+  fieldOffset:   Int = 1
 ): (CodeGenState, Map[String, ScopeEntry]) =
-  captureTypes.zipWithIndex.foldLeft((bodyState, Map.empty[String, ScopeEntry])) {
-    case ((st, scope), ((cap, llvmType), idx)) =>
-      val ref     = cap.ref
+  val directSeed = captureLayout.directEntries.map { case (name, entryName) =>
+    name -> (entryName, List.empty[(String, String)])
+  }
+  val (stateAfterLoads, valueScope, directScopeData) =
+    captureLayout.slots.zipWithIndex.foldLeft(
+      (bodyState, Map.empty[String, ScopeEntry], directSeed)
+    ) { case ((st, scope, directData), (slot, idx)) =>
       val gepReg  = st.nextRegister
       val loadReg = gepReg + 1
       val gepLine =
         s"  %$gepReg = getelementptr $envTypeRef, ptr %$envParamIdx, i32 0, i32 ${idx + fieldOffset}"
-      val loadLine = s"  %$loadReg = load $llvmType, ptr %$gepReg"
+      val loadLine = s"  %$loadReg = load ${slot.llvmType}, ptr %$gepReg"
       val newState = st.withRegister(loadReg + 1).emit(gepLine).emit(loadLine)
-      val mmlType = ref.typeSpec
-        .flatMap(getNominalTypeName(_).toOption)
-        .getOrElse("Unknown")
-
-      (newState, scope + (ref.name -> ScopeEntry(loadReg, mmlType)))
+      slot match
+        case CodegenCaptureSlot.Value(name, mmlType, _, _, _) =>
+          (newState, scope + (name -> ScopeEntry(loadReg, mmlType)), directData)
+        case CodegenCaptureSlot.DirectOp(name, entryName, ty, _) =>
+          val priorOps = directData.get(name).map(_._2).getOrElse(Nil)
+          val updated  = directData.updated(name, (entryName, priorOps :+ (s"%$loadReg", ty)))
+          (newState, scope, updated)
+    }
+  val directScope = directScopeData.map { case (name, (entryName, ops)) =>
+    name -> ScopeEntry(0, "Function", directCallable = DirectCallable(entryName, ops).some)
   }
+  (stateAfterLoads, valueScope ++ directScope)
 
 private[emitter] def renderFunctionLines(
   header: String,
@@ -737,10 +750,10 @@ private[emitter] def compileTailRecursiveLambda(
   paramTypes:  List[String],
   emittedName: String,
   body:        TailRecBody,
-  inlineHint:  Boolean                                   = false,
-  linkage:     String                                    = "",
-  entryAbi:    TailRecEntryAbi                           = TailRecEntryAbi.PlainDirect,
-  captureInfo: Option[(String, List[(Capture, String)])] = None
+  inlineHint:  Boolean                                = false,
+  linkage:     String                                 = "",
+  entryAbi:    TailRecEntryAbi                        = TailRecEntryAbi.PlainDirect,
+  captureInfo: Option[(String, CodegenCaptureLayout)] = None
 ): Either[CodeGenError, CodeGenState] =
   val nonVoidIndices          = paramTypes.indices.filter(i => paramTypes(i) != "void").toList
   val filteredParamsWithTypes = nonVoidIndices.map(i => (lambda.params(i), paramTypes(i)))
@@ -774,7 +787,7 @@ private[emitter] def compileTailRecursiveLambda(
           lambda.some
         ).asLeft
       else ().asRight
-    captureCount       = captureInfo.fold(0)(_._2.size)
+    captureCount       = captureInfo.fold(0)(_._2.slots.size)
     captureFieldOffset = if lambda.isMove then 1 else 0
     captureData = captureInfo match
       case Some((envTypeRef, captureTypes)) =>
@@ -968,19 +981,70 @@ private def compileBoundStatements(
 ): Either[CodeGenError, (CodeGenState, Map[String, ScopeEntry], Option[String])] =
   statements.foldLeft((state, functionScope, Option.empty[String]).asRight[CodeGenError]) {
     case (Right((currentState, currentScope, prevExitBlock)), BoundStatement(bindingName, expr)) =>
-      compileExpr(expr, currentState, currentScope).flatMap { res =>
+      val compiled =
+        (bindingName, expr.terms) match
+          case (Some(name), List(lambda: Lambda))
+              if lambda.materialization == Materialization.Direct &&
+                !lambda.meta.exists(_.isTailRecursive) =>
+            compileDirectBoundStatement(name, lambda, currentState, currentScope)
+          case _ =>
+            compileExpr(expr, currentState, currentScope).map { res =>
+              val entry = ScopeEntry(res.register, res.typeName, res.isLiteral, res.literalValue)
+              (res.state, entry, res.exitBlock)
+            }
+
+      compiled.flatMap { case (compiledState, entry, exitBlock) =>
         // Preserve exit block across statements (like compileTailRecArgs does)
-        val newExitBlock = res.exitBlock.orElse(prevExitBlock)
+        val newExitBlock = exitBlock.orElse(prevExitBlock)
         bindingName match
           case Some(name) =>
-            val entry = ScopeEntry(res.register, res.typeName, res.isLiteral, res.literalValue)
-            Right((res.state, currentScope + (name -> entry), newExitBlock))
+            Right((compiledState, currentScope + (name -> entry), newExitBlock))
           case None =>
             // Side-effect only: discard result
-            Right((res.state, currentScope, newExitBlock))
+            Right((compiledState, currentScope, newExitBlock))
       }
     case (Left(err), _) => Left(err)
   }
+
+private def compileDirectBoundStatement(
+  bindingName:   String,
+  lambda:        Lambda,
+  state:         CodeGenState,
+  functionScope: Map[String, ScopeEntry]
+): Either[CodeGenError, (CodeGenState, ScopeEntry, Option[String])] =
+  val uniqueName  = s"${bindingName}_${state.nextAnonFnId}"
+  val stateWithId = state.copy(nextAnonFnId = state.nextAnonFnId + 1)
+  val fnName      = stateWithId.mangleName(uniqueName)
+  val selfBinder =
+    FnParam(SourceOrigin.Synth, Name.synth(bindingName), typeAsc = lambda.typeSpec)
+
+  val typeFnE = lambda.typeSpec match
+    case Some(tf: TypeFn) => tf.asRight
+    case other =>
+      CodeGenError(s"Direct lambda missing TypeFn typeSpec, got: $other", lambda.some).asLeft
+
+  for
+    tf <- typeFnE
+    returnType <- getLlvmType(tf.returnType, stateWithId)
+    paramTypes <- tf.paramTypes.traverse(getLlvmType(_, stateWithId))
+    lambdaRes <- compileDirectLambda(
+      lambda,
+      stateWithId,
+      fnName,
+      returnType,
+      paramTypes.toList,
+      functionScope,
+      selfBinder.some
+    )
+    evaluated <- evaluateDirectCaptures(lambda, lambdaRes.state, functionScope)
+    (stateAfterEval, outerCaps) = evaluated
+  yield
+    val entry = ScopeEntry(
+      0,
+      "Function",
+      directCallable = DirectCallable(fnName, outerCaps).some
+    )
+    (stateAfterEval, entry, lambdaRes.exitBlock)
 
 /** Map MML type name to LLVM type for literal materialization. */
 private def mmlTypeNameToLlvm(typeName: String): Either[CodeGenError, String] =

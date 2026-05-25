@@ -45,6 +45,6 @@ object SemanticStage:
       |> CompilerState.timePhase("semantic", "ownership-analyzer")(
         OwnershipAnalyzer.rewriteModule
       )
-      |> CompilerState.timePhase("semantic", "resolvables-indexer-final")(
+      |> CompilerState.timePhase("semantic", "resolvables-indexer")(
         ResolvablesIndexer.rewriteModule
       )

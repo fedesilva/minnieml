@@ -47,7 +47,7 @@ class ClosureCodegenTest extends BaseEffFunSuite:
 
     compileAndGenerate(source).map { llvmIr =>
       val lambdaMatch =
-        """(?s)define internal %struct.String @(test_[A-Za-z0-9_]+)\(i64 %0, ptr %1\) #0 \{\n(.*?)\n\}""".r
+        """(?s)define internal %struct.String @(test_[A-Za-z0-9_]+)\(i64 %0\) #0 \{\n(.*?)\n\}""".r
           .findFirstMatchIn(llvmIr)
           .getOrElse(fail(s"Missing deferred lambda definition. IR:\n$llvmIr"))
       val lambdaBody = lambdaMatch.group(2)
@@ -67,7 +67,7 @@ class ClosureCodegenTest extends BaseEffFunSuite:
     }
   }
 
-  test("recursive capturing lambda rebuilds self closure from env") {
+  test("recursive Direct lambda calls its plain direct entry") {
     val source = """
       fn main(): Int =
         fn inc(x: Int): Int = x + 1;;
@@ -85,29 +85,26 @@ class ClosureCodegenTest extends BaseEffFunSuite:
 
     compileAndGenerate(source).map { llvmIr =>
       val loopMatch =
-        """(?s)define internal i64 @(test_loop_\d+)\(i64 %0, ptr %1\) #0 \{\n(.*?)\n\}""".r
+        """(?s)define internal i64 @(test_loop_\d+)\(i64 %0\) #0 \{\n(.*?)\n\}""".r
           .findFirstMatchIn(llvmIr)
-          .getOrElse(fail(s"Missing recursive closure body. IR:\n$llvmIr"))
+          .getOrElse(fail(s"Missing recursive Direct body. IR:\n$llvmIr"))
 
       val loopName = loopMatch.group(1)
       val loopBody = loopMatch.group(2)
 
       assert(
-        loopBody.contains(s"insertvalue { ptr, ptr } undef, ptr @$loopName, 0"),
-        s"Expected loop body to rebuild its own function pointer. Body:\n$loopBody"
+        loopBody.contains(s"call i64 @$loopName(i64 %"),
+        s"Expected loop body to recurse through its plain direct entry. Body:\n$loopBody"
       )
       assert(
-        loopBody.contains("insertvalue { ptr, ptr } %") && loopBody.contains("ptr %1, 1"),
-        s"Expected loop body to thread the live env pointer into self closure. Body:\n$loopBody"
-      )
-      assert(
-        !loopBody.contains(s"{ ptr @$loopName, ptr null }"),
-        s"Recursive closure must not self-call through a null env stub. Body:\n$loopBody"
+        !loopBody.contains("insertvalue { ptr, ptr }") &&
+          !loopBody.contains("extractvalue { ptr, ptr }"),
+        s"Recursive Direct body must not rebuild or unpack a fat pointer. Body:\n$loopBody"
       )
     }
   }
 
-  test("non-recursive named capturing lambda does not rebuild unused self closure") {
+  test("non-recursive named Direct lambda does not rebuild unused self closure") {
     val source = """
       fn main(): Int =
         let seed = 1;
@@ -120,20 +117,20 @@ class ClosureCodegenTest extends BaseEffFunSuite:
 
     compileAndGenerate(source).map { llvmIr =>
       val innerMatch =
-        """(?s)define internal i64 @(test_inner_\d+)\(i64 %0, ptr %1\) #0 \{\n(.*?)\n\}""".r
+        """(?s)define internal i64 @(test_inner_\d+)\(i64 %0, i64 %1\) #0 \{\n(.*?)\n\}""".r
           .findFirstMatchIn(llvmIr)
-          .getOrElse(fail(s"Missing named capturing closure body. IR:\n$llvmIr"))
+          .getOrElse(fail(s"Missing named Direct body. IR:\n$llvmIr"))
 
       val innerName = innerMatch.group(1)
       val innerBody = innerMatch.group(2)
 
       assert(
         !innerBody.contains(s"insertvalue { ptr, ptr } undef, ptr @$innerName, 0"),
-        s"Non-recursive closure should not rebuild its own function pointer. Body:\n$innerBody"
+        s"Non-recursive Direct lambda should not rebuild its own function pointer. Body:\n$innerBody"
       )
       assert(
         !innerBody.contains("insertvalue { ptr, ptr }"),
-        s"Non-recursive closure body should not emit any self fat-pointer insertvalues. Body:\n$innerBody"
+        s"Non-recursive Direct body should not emit any self fat-pointer insertvalues. Body:\n$innerBody"
       )
     }
   }
@@ -152,7 +149,7 @@ class ClosureCodegenTest extends BaseEffFunSuite:
 
     compileAndGenerate(source).map { llvmIr =>
       val mainBody = functionBody(llvmIr, "test_main\\(\\) #0")
-      val freeBody = functionBody(llvmIr, "test___free_closure\\(ptr %0\\) #0")
+      val freeBody = functionBody(llvmIr, "test___free_closure\\(ptr %0\\) #\\d+")
 
       assert(
         mainBody.contains("call void @test___free_closure(ptr %"),
@@ -201,10 +198,11 @@ class ClosureCodegenTest extends BaseEffFunSuite:
 
   test("local borrow capturing closures use alloca and no free") {
     val source = """
+      fn apply(g: Int -> Int): Int = g 41;;
       fn main(): Int =
         let a = 1;
         let f = { x: Int -> x + a; };
-        f 41;
+        apply f;
       ;
     """
 
@@ -226,7 +224,7 @@ class ClosureCodegenTest extends BaseEffFunSuite:
     }
   }
 
-  test("loopified borrow closures hoist env alloca to function entry") {
+  test("loopified Direct lambdas do not allocate borrow envs") {
     val source =
       """
         fn loop(n: Int, acc: Int): Int =
@@ -241,23 +239,19 @@ class ClosureCodegenTest extends BaseEffFunSuite:
       """
 
     compileAndGenerate(source, config = CompilerConfig.default.copy(noTco = false)).map { llvmIr =>
-      val loopBody      = functionBody(llvmIr, "test_loop\\(i64 %0, i64 %1\\) #0")
-      val envAllocCount = "alloca %struct.__closure_env_".r.findAllIn(loopBody).length
-      val allocaIndex   = loopBody.indexOf("alloca %struct.__closure_env_")
-      val loopBrIndex   = loopBody.indexOf("br label %loop.header")
-      val loopHeaderIdx = loopBody.indexOf("loop.header:")
+      val loopBody = functionBody(llvmIr, "test_loop\\(i64 %0, i64 %1\\) #0")
 
-      assertEquals(envAllocCount, 1, s"Expected one hoisted borrow env alloca. Body:\n$loopBody")
-      assert(allocaIndex >= 0, s"Missing borrow env alloca in loopified function. Body:\n$loopBody")
-      assert(loopBrIndex >= 0, s"Missing branch to loop header. Body:\n$loopBody")
-      assert(loopHeaderIdx >= 0, s"Missing loop header label. Body:\n$loopBody")
       assert(
-        allocaIndex < loopBrIndex && allocaIndex < loopHeaderIdx,
-        s"Expected borrow env alloca in the entry block before loop control flow. Body:\n$loopBody"
+        loopBody.contains("call i64 @test_add_"),
+        s"Expected loopified body to call the Direct lambda entry. Body:\n$loopBody"
+      )
+      assert(
+        !loopBody.contains("alloca %struct.__closure_env_"),
+        s"Loopified Direct lambda should not allocate a borrow env. Body:\n$loopBody"
       )
       assert(
         !loopBody.contains("call ptr @malloc"),
-        s"Hoisted borrow closure should still use alloca, not malloc. Body:\n$loopBody"
+        s"Loopified Direct lambda should not heap-allocate an env. Body:\n$loopBody"
       )
     }
   }
@@ -313,8 +307,8 @@ class ClosureCodegenTest extends BaseEffFunSuite:
       val loopBody = functionBody(llvmIr, "test_loop\\(i64 %0, i64 %1\\) #0")
 
       assert(
-        loopBody.contains("alloca %struct.__closure_env_"),
-        s"Expected the nested-shadowed borrow closure to still codegen successfully. Body:\n$loopBody"
+        loopBody.contains("call i64 @test_step_"),
+        s"Expected the nested-shadowed Direct lambda to still codegen successfully. Body:\n$loopBody"
       )
     }
   }
@@ -338,18 +332,19 @@ class ClosureCodegenTest extends BaseEffFunSuite:
       val loopBody = functionBody(llvmIr, "test_loop\\(i64 %0, i64 %1\\) #0")
 
       assert(
-        loopBody.contains("alloca %struct.__closure_env_"),
-        s"Expected the inner lambda param to shadow the outer borrow closure. Body:\n$loopBody"
+        loopBody.contains("call i64 @test_g_"),
+        s"Expected the inner lambda param to shadow the outer Direct lambda. Body:\n$loopBody"
       )
     }
   }
 
   test("capture-site env stores use semantic env names and TBAA tags") {
     val source = """
+      fn apply(g: Int -> Int): Int = g 41;;
       fn main(): Int =
         let a = 1;
         let f = ~{ x: Int -> x + a; };
-        f 41;
+        apply f;
       ;
     """
 

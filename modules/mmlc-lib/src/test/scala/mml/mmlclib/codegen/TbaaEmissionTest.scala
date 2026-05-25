@@ -195,8 +195,17 @@ class TbaaEmissionTest extends BaseEffFunSuite:
     val source = """
       fn main(): Int =
         fn inc(x: Int): Int = x + 1;;
-        fn applyInc(y: Int): Int = inc y;;
-        applyInc 41;
+        let f = if true then inc; else { x: Int -> x + 10; }; ;
+
+        fn loop(n: Int): Int =
+          if n == 0 then
+            f 41;
+          else
+            loop (n - 1);
+          ;
+        ;
+
+        loop 1;
       ;
     """
 
