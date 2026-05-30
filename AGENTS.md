@@ -51,6 +51,10 @@ Read before writing or modifying `.mml` files:
   - `docs/memory-model.md` for a high level, technical overview.
   - files under `mml/samples/mem` and tests in `modules/mmlc-lib/src/test/scala/mml/mmlclib/semantic/OwnershipAnalyzerTests.scala`
 
+#### Style Note
+
+Read `docs/mml-style-guide.md` for MML source-formatting conventions.
+
 ### Questions
 
 Do targeted research and answer. Do not treat questions as edit requests.

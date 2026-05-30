@@ -1,0 +1,267 @@
+// Compilable examples mirrored from docs/language-reference.md and
+// docs/mml-style-guide.md.
+
+prot let cache_size = 1024;
+
+priv fn helper(x: Int): Int = x;;
+
+let x = 42;
+let greeting: String = "hello";
+
+fn add(a: Int, b: Int): Int = a + b;;
+
+let sum = add 1 2;
+
+type AnInt = Int64;
+
+type DocSizeT = @native[t=i64];
+
+type DocCharPtr = @native[t=*i8];
+
+type DocNativeString = @native {
+  length: DocSizeT,
+  data: DocCharPtr
+};
+
+type AnotherInt64 = @native[t=i64];
+
+type DocBuffer = @native[mem=heap, t=*i8];
+
+type DocHandle = @native[t=*i8, mem=heap, free=close_handle];
+
+type DocMyStr = @native[mem=heap, free=destroy_str] {
+  length: Int64,
+  data: DocCharPtr
+};
+
+struct Vec3 { x: Float, y: Float, z: Float };
+
+inline fn dot(u: Vec3, v: Vec3): Float =
+  (u.x *. v.x) +. (u.y *. v.y) +. (u.z *. v.z);
+;
+
+struct Name { field1: Int, field2: String };
+
+struct Point { x: Int, y: Int };
+
+struct User { name: String, role: String };
+
+struct AgedUser { name: String, age: Int };
+
+let p = Point 10 20;
+let px = p.x;
+
+let u = User "Alice" "admin";
+let user_name = u.name;
+
+let answer = 42: Int;
+let label = "ok": String;
+
+let primitive_int64: Int64 = 1;
+let primitive_bool: Bool = true;
+let primitive_unit: Unit = ();
+let primitive_string: String = "string";
+
+fn greet(name: String): String = "Hello, " ++ name;;
+
+fn factorial(n: Int): Int =
+  if n == 0 then
+    1;
+  else
+    n * factorial (n - 1);
+  ;
+;
+
+fn get_value(): Int = 42;;
+let get_value_x = get_value ();
+
+fn apply(f: Int -> Int, x: Int): Int = f x;;
+
+let lambda_increment = { x: Int -> x + 1; };
+let lambda_result = apply { x -> x + 1 } 41;
+let lambda_consume = { ~s: String -> print s };
+let lambda_sum = { a: Int, b: Int -> a + b; };
+let lambda_thunk = { println "hello"; };
+let lambda_f = { x: Int ->
+  let y = x + 1;
+  y * 2;
+};
+
+type ForeverFn = Unit -> Unit;
+
+let recursive_loop: ForeverFn = {
+  println "tick";
+}: Unit;
+
+fn runWith(a: Int, x: Int): Int =
+  let addA = { y: Int -> y + a };
+  addA x;
+;
+
+fn makeGreeter(~name: String): Unit -> Unit =
+  ~{
+    println ("Hello, " ++ name);
+  };
+;
+
+let outer = { x: Int ->
+  let y = x + 1;
+  apply { z: Int -> x + y + z } 100;
+};
+
+op <+>(a: Int, b: Int): Int 60 left = a + b;;
+
+let operator_result = 1 <+> 2;
+let operator_add_result = 1 + 2;
+let operator_neg_result = -5;
+let operator_precedence_result = x * sum + cache_size;
+
+op %% (a: Int, b: Int): Int 80 left = @native[tpl="srem %type %operand1, %operand2"];;
+
+fn doc_ctpop(x: Int): Int = @native[tpl="call i64 @llvm.ctpop.i64(i64 %operand)"];;
+
+fn take_ownership(~s: String): Unit = ();;
+
+fn consume_string(~s: String): Unit = ();;
+
+fn constructor_clone_example(): Unit =
+  let name = "Alice";
+  let user = AgedUser name 25;
+  println name;
+  println user.name;
+;
+
+fn transfer_example(): Unit =
+  let s = concat "owned" " string";
+  consume_string s;
+;
+
+fn make_greeting(name: String): String =
+  "Hello, " ++ name;
+;
+
+fn return_ownership_example(): Unit =
+  let greeting = make_greeting "World";
+  println greeting;
+;
+
+fn example(): Int =
+  let x = 1;
+  let y = 2;
+  x + y;
+;
+
+fn process(name: String): Unit =
+  let greeting = "Hello, " ++ name;
+  println greeting;
+  println "done";
+;
+
+fn side_effects(): Unit =
+  println "first";
+  println "second";
+  println "third";
+;
+
+fn if_else_example(condition: Bool, expr1: Int, expr2: Int): Int =
+  if condition then expr1; else expr2; ;
+;
+
+fn if_elif_else_example(cond1: Bool, cond2: Bool, expr1: Int, expr2: Int, expr3: Int): Int =
+  if cond1 then
+    expr1;
+  elif cond2 then
+    expr2;
+  else
+    expr3;
+  ;
+;
+
+fn single_branch_if_example(condition: Bool): Unit =
+  if condition then
+    println "condition";
+  ;
+;
+
+fn fizzbuzz(n: Int): Unit =
+  if n % 15 == 0 then
+    println "FizzBuzz";
+  elif n % 3 == 0 then
+    println "Fizz";
+  elif n % 5 == 0 then
+    println "Buzz";
+  else
+    println (int_to_str n);
+  ;
+;
+
+fn count_down(n: Int): Unit =
+  if n > 0 then
+    println (int_to_str n);
+    count_down (n - 1);
+  ;
+;
+
+fn sum_loop(i: Int, limit: Int, acc: Int): Int =
+  if i == limit then
+    acc;
+  else
+    sum_loop (i + 1) limit (acc + i);
+  ;
+;
+
+fn count(arr: IntArray, i: Int, size: Int, acc: Int): Int =
+  if i < size then
+    let v = unsafe_ar_int_get arr i;
+    count arr (i + 1) size (acc + v);
+  else
+    acc;
+  ;
+;
+
+let add5 = add 5;
+let partial_result = add5 10;
+let function_value = get_value;
+
+let function_type_value: Int -> Int -> Int = add;
+
+fn style_something(): Int =
+  let a = 1;
+  let b = 2;
+  a + b;
+;
+
+fn style_one(): Int =
+  1;
+;
+
+fn style_sum(a: Int, b: Int): Int = a + b;;
+
+let style_d = if x + sum > 2 then 3; else 4;;
+
+fn style_let_conditionals(): Int =
+  let a = 1;
+  let b = 2;
+  let c =
+    if a + b > 2 then 3;
+    else 4;
+    ;
+  c;
+;
+
+pub fn countdown(from: Int): Unit =
+  fn loop(i: Int): Unit =
+    if i > 0 then
+      println (int_to_str i);
+      loop (i - 1);
+    ;
+  ;
+
+  loop from;
+;
+
+pub fn main(): Unit =
+  let n = helper cache_size;
+  println (greet (int_to_str n));
+  countdown 10;
+;

@@ -3,6 +3,8 @@
 This document describes the MinnieML language: its syntax, type system, and behavioral
 rules.
 
+For source-formatting conventions, see the [MML style guide](mml-style-guide.md).
+
 ## Table of contents
 
 1. [Declarations](#1-declarations)
@@ -51,7 +53,7 @@ executable, `main` must be declared `pub`.
 
 ### Let bindings
 
-```mml
+```text
 let name = expr;
 let name: Type = expr;
 ```
@@ -67,7 +69,7 @@ let sum = add 1 2;
 
 ### Function declarations
 
-```mml
+```text
 fn name(params): ReturnType = body;
 ```
 
@@ -84,14 +86,14 @@ fn factorial(n: Int): Int =
   else
     n * factorial (n - 1);
   ;
-;;
+;
 ```
 
 **Nullary functions** (zero parameters) are declared with empty parentheses and must
 be explicitly applied to `()` at call sites:
 
 ```mml
-fn get_value(): Int = 42;
+fn get_value(): Int = 42;;
 let x = get_value ();
 ```
 
@@ -122,7 +124,7 @@ optimizer may still choose not to inline if the cost model disagrees.
 
 ```mml
 inline fn dot(u: Vec3, v: Vec3): Float =
-  (u.x *. v.x) +. (u.y *. v.y) +. (u.z *. v.z)
+  (u.x *. v.x) +. (u.y *. v.y) +. (u.z *. v.z);
 ;
 ```
 
@@ -139,7 +141,7 @@ Lambda expressions create anonymous function values. The basic form is
 inferred, or marked as consuming with `~`:
 
 ```mml
-fn apply(f: Int -> Int, x: Int): Int = f x;
+fn apply(f: Int -> Int, x: Int): Int = f x;;
 
 let result = apply { x -> x + 1 } 41;   // x: Int inferred from f's type
 let consume = { ~s: String -> print s };
@@ -172,7 +174,7 @@ See [Literals](#literals).
 
 ```mml
 let greet = { println "hello" };
-greet ();
+let greet_result = greet ();
 ```
 
 **Body expressions** follow the same rules as function bodies — `let` bindings
@@ -181,7 +183,7 @@ followed by a final expression:
 ```mml
 let f = { x: Int ->
   let y = x + 1;
-  y * 2
+  y * 2;
 };
 ```
 
@@ -190,24 +192,18 @@ let f = { x: Int ->
 ```mml
 let loop = {
   println "tick";
-  loop()
+  ()
 }: Unit;
 ```
 
-**Let-bound lambdas** can be recursive. The binding name is in scope inside
-the lambda body:
+**Let-bound lambdas** can carry an explicit function type:
 
 ```mml
 type ForeverFn = Unit -> Unit;
 
 let loop: ForeverFn = {
   println "Type a number:";
-  let n = str_to_int (readline());
-  println ("Number is: " ++ (int_to_str n));
-  loop()
-};
-
-loop()
+}: Unit;
 ```
 
 The `inline` hint can be applied to let-bound lambdas the same way as to
@@ -229,10 +225,10 @@ Capture is borrow by default. Prefix a lambda with `~` to create a
 move-capturing closure instead:
 
 ```mml
-fn makeGreeter(name: String): Unit -> Unit =
+fn makeGreeter(~name: String): Unit -> Unit =
   ~{
     println ("Hello, " ++ name);
-  }: Unit;
+  };
 ;
 ```
 
@@ -263,7 +259,7 @@ environment.
 Operator names can be symbolic (from `=!#$%^&*+<>?/\|~-`, e.g. `+`, `==`, `|>`)
 or alphanumeric (same rules as binding names, e.g. `and`, `or`, `mod`).
 
-```mml
+```text
 op name(params): ReturnType precedence associativity = body;
 ```
 
@@ -271,8 +267,8 @@ Operators require a precedence (integer, higher binds tighter) and associativity
 (`left` or `right`). They can be unary (one parameter) or binary (two parameters).
 
 ```mml
-op ++(a: String, b: String): String 61 right = concat a b;  // string concatenation (standard library)
-op -(a: Int): Int 95 right = ???;
+op ++(a: String, b: String): String 61 right = concat a b;;  // string concatenation
+op -(a: Int): Int 95 right = ???;;
 ```
 
 See [Operator system](#5-operator-system) for details on precedence, fixity,
@@ -284,7 +280,7 @@ Type names start with an uppercase letter and may contain letters and digits:
 `[A-Z][a-zA-Z0-9]*`. This applies to structs, type aliases, and native type
 declarations.
 
-```mml
+```text
 struct Name { field1: Type1, field2: Type2 };
 ```
 
@@ -330,7 +326,7 @@ module regardless of declaration order.
 
 Semicolons are **terminators**, not separators. Every expression parser frame ends with
 `;`, and top-level declarations still end with their own `;`. In practice that means a
-multiline `fn` or `op` body usually finishes with `;;`: one `;` closes the body
+multiline `fn` or `op` body usually ends with two terminators: one `;` closes the body
 expression, the next closes the declaration.
 
 ```mml
@@ -338,11 +334,14 @@ fn example(): Int =
   let x = 1;
   let y = 2;
   x + y;
-;;
+;
 ```
 
 The two `let` bindings end with `;`. The final expression `x + y;` closes the function
 body, and the trailing `;` closes the `fn` declaration.
+
+For formatting conventions around semicolon placement, see the
+[MML style guide](mml-style-guide.md#semicolons).
 
 ### Expression sequencing
 
@@ -354,7 +353,7 @@ fn process(name: String): Unit =
   let greeting = "Hello, " ++ name;
   println greeting;
   println "done";
-;;
+;
 ```
 
 Expressions can be sequenced directly with `;` for side effects:
@@ -364,7 +363,7 @@ fn side_effects(): Unit =
   println "first";
   println "second";
   println "third";
-;;
+;
 ```
 
 ### Literals
@@ -383,7 +382,6 @@ Any term can be ascribed with `: Type`:
 ```mml
 let answer = 42: Int;
 let label = "ok": String;
-let pair = (1, "x"): (Int, String);
 ```
 
 The ascribed type must be compatible with the term's computed type.
@@ -394,7 +392,7 @@ type**, not the full function value:
 ```mml
 let loop = {
   println "tick";
-  loop()
+  ()
 }: Unit;
 ```
 
@@ -409,8 +407,8 @@ A hole adopts the type expected by its context (return type, let binding type
 annotation, etc.). If the compiler cannot determine the type, it reports an error
 requesting a type annotation.
 
-```mml
-fn todo(x: Int): Int = ???;         // compiles, crashes at runtime if called
+```text
+fn todo(x: Int): Int = ???;;        // compiles, crashes at runtime if called
 let y: String = ???;                // type inferred from annotation
 let z = ???;                        // error: can't infer type
 ```
@@ -475,7 +473,7 @@ fn fizzbuzz(n: Int): Unit =
   else
     println (int_to_str n);
   ;
-;;
+;
 ```
 
 ### Recursion and tail calls
@@ -490,10 +488,10 @@ returns:
 ```mml
 fn count_down(n: Int): Unit =
   if n > 0 then
-    println (to_string n);
+    println (int_to_str n);
     count_down (n - 1);
   ;
-;;
+;
 
 fn sum_loop(i: Int, limit: Int, acc: Int): Int =
   if i == limit then
@@ -501,7 +499,7 @@ fn sum_loop(i: Int, limit: Int, acc: Int): Int =
   else
     sum_loop (i + 1) limit (acc + i);
   ;
-;;
+;
 ```
 
 Loops with state use the accumulator pattern:
@@ -514,7 +512,7 @@ fn count(arr: IntArray, i: Int, size: Int, acc: Int): Int =
   else
     acc;
   ;
-;;
+;
 ```
 
 
@@ -526,7 +524,7 @@ fn count(arr: IntArray, i: Int, size: Int, acc: Int): Int =
 
 MML provides basic types that map directly to LLVM types:
 
-```mml
+```text
 Int64, Int32, Int16, Int8      // Signed integers
 Float, Double                  // Floating point
 Bool                           // Boolean
@@ -536,7 +534,7 @@ String                         // Struct with length and data pointer
 ```
 
 **Type aliases**:
-```mml
+```text
 Int   → Int64   // Default integer type
 Byte  → Int8
 Word  → Int8
@@ -623,14 +621,14 @@ automatically. See [Memory management](#7-memory-management) for ownership detai
 
 ### Function types
 
-Functions have types of the form `T1 → T2 → ... → Tn → R`:
+Functions have types of the form `T1 -> T2 -> ... -> Tn -> R`:
 
 ```mml
-fn add(a: Int, b: Int): Int = a + b;
-// Type: Int → Int → Int
+fn add(a: Int, b: Int): Int = a + b;;
+// Type: Int -> Int -> Int
 
-fn print(s: String): Unit = @native;
-// Type: String → Unit
+fn doc_print(s: String): Unit = @native;;
+// Type: String -> Unit
 ```
 
 Functions are curried — each arrow represents a function taking one argument.
@@ -639,11 +637,11 @@ Lambda expressions produce values with function types. A lambda can be used
 anywhere a function type is expected:
 
 ```mml
-fn apply(f: Int -> Int, x: Int): Int = f x;
+fn apply(f: Int -> Int, x: Int): Int = f x;;
 
-let inc = { x: Int -> x + 1 };     // inc: Int -> Int
+let inc = { x: Int -> x + 1; };    // inc: Int -> Int
 let r = apply inc 10;              // r = 11
-let r2 = apply { x -> x * 2 } 5;  // r2 = 10
+let r2 = apply { x -> x * 2 } 5;   // r2 = 10
 ```
 
 When a lambda appears in a context where the expected type is known (function
@@ -668,14 +666,11 @@ the underlying representation when comparing types.
 
 ### Compound types
 
-**Tuples**: `(T1, T2, ..., Tn)`
-```mml
-let pair: (Int, String) = (42, "hello");
-```
+**Tuples**: `(T1, T2, ..., Tn)` (tuple codegen is not implemented yet).
 
-**Function types**: `T1 → T2 → R`
+**Function types**: `T1 -> T2 -> R`
 ```mml
-let f: Int → Int → Int = add;
+let f: Int -> Int -> Int = add;
 ```
 
 ---
@@ -690,9 +685,9 @@ There are no built-in operators. The standard operators (`+`, `-`, `*`, `/`, `==
 declarations.
 
 ```mml
-op +(a: Int, b: Int): Int 60 left = @native[tpl="add %type %operand1, %operand2"];
-op *(a: Int, b: Int): Int 80 left = @native[tpl="mul %type %operand1, %operand2"];
-op %(a: Int, b: Int): Int 80 left = @native[tpl="srem %type %operand1, %operand2"];
+op +(a: Int, b: Int): Int 60 left = @native[tpl="add %type %operand1, %operand2"];;
+op *(a: Int, b: Int): Int 80 left = @native[tpl="mul %type %operand1, %operand2"];;
+op %(a: Int, b: Int): Int 80 left = @native[tpl="srem %type %operand1, %operand2"];;
 ```
 
 ### Operator kinds
@@ -724,14 +719,14 @@ on position and argument count.
 See [Current limitations](#10-current-limitations) for the current scope of
 overloading.
 
-```mml
+```text
 // Valid: unary and binary - coexist
-op -(a: Int): Int 95 right = @native[tpl="sub %type 0, %operand"];
-op -(a: Int, b: Int): Int 60 left = @native[tpl="sub %type %operand1, %operand2"];
+op -(a: Int): Int 95 right = @native[tpl="sub %type 0, %operand"];;
+op -(a: Int, b: Int): Int 60 left = @native[tpl="sub %type %operand1, %operand2"];;
 
 // Invalid: duplicate binary operator
-op +(a: Int, b: Int): Int 60 left = ...;
-op +(x: Float, y: Float): Float 60 left = ...;  // error: duplicate name
+op +(a: Int, b: Int): Int 60 left = ...;;
+op +(x: Float, y: Float): Float 60 left = ...;;  // error: duplicate name
 ```
 
 ### Precedence and associativity
@@ -763,7 +758,7 @@ arity and associativity are sufficient to determine operator position.
 ### Operators as functions
 
 Operators desugar to function calls:
-```mml
+```text
 1 + 2      // desugars to: + 1 2
 -5         // desugars to: - 5
 a * b + c  // desugars to: + (* a b) c
@@ -781,7 +776,7 @@ a * b + c  // desugars to: + (* a b) c
   declaration order (no forward-declaration needed).
 - Lambda bodies can reference bindings from enclosing scopes (closures). Captured
   bindings are resolved at the point the lambda is created, not when it is called.
-- Let-bound lambdas can reference their own binding name for recursion.
+- Inner functions can reference their own binding name for recursion.
 - Inner binders shadow outer names, including names that would otherwise be
   captured.
 
@@ -804,9 +799,9 @@ Functions are curried: `f a b` desugars to `((f a) b)`.
 
 **Partial application**:
 ```mml
-fn add(a: Int, b: Int): Int = a + b;
+fn add(a: Int, b: Int): Int = a + b;;
 
-let add5 = add 5;       // Partial application: Int → Int
+let add5 = add 5;       // Partial application: Int -> Int
 let result = add5 10;   // Full application: 15
 ```
 
@@ -819,7 +814,7 @@ all called the same way.
 Functions with zero parameters must be explicitly applied to `()`:
 
 ```mml
-fn get_value(): Int = 42;
+fn get_value(): Int = 42;;
 let x = get_value ();  // Call: explicit application to unit
 let f = get_value;     // Reference: no call
 ```
@@ -829,9 +824,9 @@ let f = get_value;     // Reference: no call
 Functions and operators can have `@native` bodies, indicating external implementation:
 
 ```mml
-fn print(s: String): Unit = @native;
-fn str_to_int(s: String): Int = @native;
-op +(a: Int, b: Int): Int 60 left = @native[tpl="add %type %operand1, %operand2"];
+fn doc_print(s: String): Unit = @native;;
+fn doc_str_to_int(s: String): Int = @native;;
+op +(a: Int, b: Int): Int 60 left = @native[tpl="add %type %operand1, %operand2"];;
 ```
 
 The codegen generates forward declarations and the linker resolves them. Unresolved
@@ -842,7 +837,7 @@ natives produce linker errors.
 Functions can use `@native[tpl="..."]` to emit inline LLVM IR:
 
 ```mml
-fn ctpop(x: Int): Int = @native[tpl="call i64 @llvm.ctpop.i64(i64 %operand)"];
+fn ctpop(x: Int): Int = @native[tpl="call i64 @llvm.ctpop.i64(i64 %operand)"];;
 ```
 
 **Template placeholders**:
@@ -855,9 +850,9 @@ fn ctpop(x: Int): Int = @native[tpl="call i64 @llvm.ctpop.i64(i64 %operand)"];
 Native functions that allocate memory can be annotated with `[mem=alloc]`:
 
 ```mml
-fn readline(): String = @native[mem=alloc];
-fn concat(a: String, b: String): String = @native[mem=alloc];
-fn to_string(n: Int): String = @native[mem=alloc];
+fn doc_readline(): String = @native[mem=alloc];;
+fn doc_concat(a: String, b: String): String = @native[mem=alloc];;
+fn doc_int_to_str(n: Int): String = @native[mem=alloc];;
 ```
 
 **Memory effect attributes**:
@@ -872,7 +867,7 @@ These can be combined with templates: `@native[mem=alloc, tpl="..."]`
 Parameters can be marked as consuming with the `~` prefix:
 
 ```mml
-fn take_ownership(~s: String): Unit = ...;
+fn take_ownership(~s: String): Unit = ();;
 ```
 
 **Rules**:
@@ -943,7 +938,7 @@ fn example(): Unit =
   let name = readline();       // name is owned
   let user = User name 25;     // Constructor clones name
   println name;                // OK: caller still owns name
-  println user.name            // OK: user owns its own copy
+  println user.name;           // OK: user owns its own copy
 ;
 ```
 
@@ -953,12 +948,12 @@ fn example(): Unit =
 fn example(): Unit =
   let s = readline();    // s is owned (readline allocates)
   println s;             // println borrows s
-  println s              // s can be used again (still owned)
+  println s;             // s can be used again (still owned)
 ;                        // s is automatically freed
 
 fn transfer_example(): Unit =
   let s = readline();
-  consume_string s       // If consume_string takes ~s, ownership transfers
+  consume_string s;      // If consume_string takes ~s, ownership transfers
   // println s;          // error: use after move
 ;
 ```
@@ -984,12 +979,12 @@ Functions returning heap types transfer ownership to the caller:
 
 ```mml
 fn make_greeting(name: String): String =
-  "Hello, " ++ name
+  "Hello, " ++ name;
 ;
 
 fn main(): Unit =
   let greeting = make_greeting "World";
-  println greeting
+  println greeting;
 ;                        // greeting is freed here
 ```
 
