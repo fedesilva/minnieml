@@ -44,6 +44,21 @@ fn sum(a, b) = a + b;;
 let d = if a + b > 2 then 3; else 4;;
 ```
 
+For vertically split expressions, a standalone terminator may close the whole
+expression when it aligns with the expression's indentation:
+
+```mml
+let grid = Grid
+  width
+  height
+  (ar_int_new size)
+;
+```
+
+The standalone terminator acts as a visual closing marker for the expression. Do not
+confuse this with writing both expression and declaration terminators together as `;;`
+for a multi-line body.
+
 ## Let Bindings
 
 Let bindings are single expressions. See
@@ -60,6 +75,11 @@ let c =
   if a + b > 2 then 3;
   else 4;
   ;
+let u = if n > 50 then
+  User (int_to_str n) "DynamicRole";
+else
+  User "StaticName" "StaticRole";
+;
 ```
 
 ## Conditionals
