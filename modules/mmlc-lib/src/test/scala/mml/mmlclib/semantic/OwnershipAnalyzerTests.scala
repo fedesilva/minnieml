@@ -1188,10 +1188,8 @@ class OwnershipAnalyzerTests extends BaseEffFunSuite:
 
   // ---- Function-value ownership regression guards --------------------------------------
   //
-  // A non-capturing lambda literal bound to a `let` and used as a higher-order argument is
-  // borrowed at the binding site and is not classified as owned heap. No closure free is
-  // scheduled at scope end.
-
+// Non-capturing function values have no closure environment to clean up. Passing them as
+  // higher-order arguments must not schedule universal or env-specific closure frees.
   test("top-level non-capturing function passed as HO arg schedules no __free_closure") {
     val code =
       """
