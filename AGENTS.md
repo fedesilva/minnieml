@@ -24,6 +24,10 @@ Read `Readme.md` for a general intro.
 Other context files are loaded **only when relevant** to the current work type.
 Do not go on tangents — read as much as you need but as little as you can.
 
+### Tools use instructions
+
+Read `context/dev-tools.md` and follow recommendations.
+
 ### Code or documentation changes
 
 Read before starting, re-read before finalizing:

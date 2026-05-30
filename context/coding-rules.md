@@ -85,7 +85,7 @@ The compiler needs to be installed before it's used if changes were made.
   - run `make -C benchmark clean`
   - run `make -C benchmark mml`
 
-- **Run memory tests** (when changes touch memory management / ownership):
+- **Run memory tests** (when changes touch memory management / ownership / lambdas):
   - `./tests/mem/run.sh all`
   - All tests must pass ASan+LSan checks  
 
@@ -98,10 +98,12 @@ The compiler needs to be installed before it's used if changes were made.
 ## Git usage
 
 - **Read Only** Freely use git to read history or fetching previous versions. No approval needed.
-- **Commiting** Never commit without explicit approval. Ever. 
+- **Commiting** *Never* commit without explicit approval. Ever. 
 - **Never revert changes** without explicit approval.
 - **Outside changes** If changes appear that you did not make, it was probably the Author, so ask before reverting.
 
 ## General rules and recommendations
 
 - Always read relevant code and documentation before starting a new task or answering questions.
+- Prefer running the full test suite, since it runs reasonably fast.
+  - Use targeted testing only when working on a specific test

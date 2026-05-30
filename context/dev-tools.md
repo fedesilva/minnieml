@@ -20,6 +20,11 @@ sbtn "run ir <file>.mml"           # emit LLVM IR
 sbtn "run run -s <file>.mml"       # compile and run with ASan
 ```
 
+## SBT subprojects
+
+The top level project aggregates the sub projects
+*Prefer* running tests, and other tasks from the top level, not specific modules.
+
 ## Tests
 
 ```
@@ -99,4 +104,4 @@ Run after publishing:
 make -C benchmark clean
 make -C benchmark mml
 ```
-
+s
