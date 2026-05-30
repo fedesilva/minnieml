@@ -12,6 +12,18 @@ class OwnershipAnalyzerTests extends BaseEffFunSuite:
       case TXCall1(TXRefNamed(name), _) if name == freeName => true
     }
 
+  private def containsClosureEnvFree(term: Term): Boolean =
+    txExistsTerm(term) {
+      case TXCall1(TXRefResolved(id), _) if id.contains("::__free___closure_env_") => true
+      case TXCall1(TXRefNamed(name), _) if name.startsWith("__free___closure_env_") => true
+    }
+
+  private def topLevelLambdaBody(module: Module, name: String): Expr =
+    module.members.collectFirst {
+      case b: Bnd if b.name == name =>
+        b.value.terms.collectFirst { case l: Lambda => l.body }.get
+    }.get
+
   private def containsFreeString(term: Term): Boolean =
     txExistsTerm(term) {
       case TXCall1(TXRefResolved(id), _) if id.endsWith("::__free_String") => true
@@ -1180,6 +1192,51 @@ class OwnershipAnalyzerTests extends BaseEffFunSuite:
   // borrowed at the binding site and is not classified as owned heap. No closure free is
   // scheduled at scope end.
 
+  test("top-level non-capturing function passed as HO arg schedules no __free_closure") {
+    val code =
+      """
+        fn inc(x: Int): Int = x + 1;;
+        fn apply(g: Int -> Int, n: Int): Int = g n;;
+        fn main(): Int =
+          apply inc 5;
+        ;
+      """
+
+    semNotFailed(code).map { module =>
+      val mainBody = topLevelLambdaBody(module, "main")
+      assert(
+        !containsFreeOf("__free_closure")(mainBody),
+        "top-level function value must not be freed by the caller scope"
+      )
+      assert(
+        !containsClosureEnvFree(mainBody),
+        "top-level function value must not schedule an env-specific free"
+      )
+    }
+  }
+
+  test("inline non-capturing lambda passed as HO arg schedules no __free_closure") {
+    val code =
+      """
+        fn apply(g: Int -> Int, n: Int): Int = g n;;
+        fn main(): Int =
+          apply { x: Int -> x + 1 } 5;
+        ;
+      """
+
+    semNotFailed(code).map { module =>
+      val mainBody = topLevelLambdaBody(module, "main")
+      assert(
+        !containsFreeOf("__free_closure")(mainBody),
+        "inline non-capturing lambda must not be freed by the caller scope"
+      )
+      assert(
+        !containsClosureEnvFree(mainBody),
+        "inline non-capturing lambda must not schedule an env-specific free"
+      )
+    }
+  }
+
   test("let-bound non-capturing lambda passed as HO arg schedules no __free_closure") {
     val code =
       """
@@ -1191,15 +1248,34 @@ class OwnershipAnalyzerTests extends BaseEffFunSuite:
       """
 
     semNotFailed(code).map { module =>
-      // FIXME:QA brittle `.get.get` chain; replace with a shared test extractor for
-      // "lambda body of named top-level binding". Test-side only, no production impact.
-      val mainBody = module.members.collectFirst {
-        case b: Bnd if b.name == "main" =>
-          b.value.terms.collectFirst { case l: Lambda => l.body }.get
-      }.get
+      val mainBody = topLevelLambdaBody(module, "main")
       assert(
         !containsFreeOf("__free_closure")(mainBody),
         "non-capturing closure bound to a let must not be freed at scope end"
+      )
+      assert(
+        !containsClosureEnvFree(mainBody),
+        "non-capturing closure bound to a let must not schedule an env-specific free"
+      )
+    }
+  }
+
+  test("move-capturing lambda value still schedules env cleanup") {
+    val code =
+      """
+        fn apply(g: Int -> Int, n: Int): Int = g n;;
+        fn main(): Int =
+          let a = 1;
+          let f = ~{ x: Int -> x + a };
+          apply f 5;
+        ;
+      """
+
+    semNotFailed(code).map { module =>
+      val mainBody = topLevelLambdaBody(module, "main")
+      assert(
+        containsClosureEnvFree(mainBody) || containsFreeOf("__free_closure")(mainBody),
+        "materialized move-capturing closure must still be cleaned up"
       )
     }
   }
