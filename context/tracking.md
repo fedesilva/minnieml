@@ -90,6 +90,11 @@ Slice progress (see `context/specs/unify-lambdas-plan.md`):
 
 ## Change Log
 
+- 2026-05-30: #255 unify-lambdas — fix zero-field closure-env TBAA emission
+  - `codegen/emitter/package.scala`: zero-field TBAA struct layouts now skip metadata emission; non-empty struct metadata is built from operand lists to avoid dangling separators.
+  - `TbaaEmissionTest.scala`: added `lambda-factorial`-shaped regression coverage for zero-field closure-env TBAA suppression.
+  - `context/coding-rules.md`: added `mml/samples/lambda-factorial.mml` to the mandatory post-task smoke checks.
+
 - 2026-05-25: #255 unify-lambdas S6 Phase 6.3.d — completed Direct callable capture boundary
   - `FunctionEmitter.scala`: tail-recursive bound statements now lower let-bound Direct lambdas as `DirectCallable` entries instead of sending them through value-position closure materialization.
   - `ClosureCodegenTest.scala` / `FunctionSignatureTest.scala`: refreshed stale Direct ABI IR assertions and kept materialized-env coverage on deliberately non-Direct function-value paths.

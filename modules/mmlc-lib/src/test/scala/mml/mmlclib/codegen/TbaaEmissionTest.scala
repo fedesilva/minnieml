@@ -3,6 +3,7 @@ package mml.mmlclib.codegen
 import cats.data.NonEmptyList
 import mml.mmlclib.ast.*
 import mml.mmlclib.codegen.emitter.tbaa.StructLayout
+import mml.mmlclib.compiler.CompilerConfig
 import mml.mmlclib.test.BaseEffFunSuite
 
 class TbaaEmissionTest extends BaseEffFunSuite:
@@ -233,6 +234,34 @@ class TbaaEmissionTest extends BaseEffFunSuite:
       assert(
         closureEnvTbaaLines.exists(_.contains(s"!${functionScalarId.get}, i64 0")),
         s"Expected borrow closure env TBAA field at offset 0 to use Function scalar. Nodes:\n${closureEnvTbaaLines.mkString("\n")}"
+      )
+    }
+  }
+
+  test("zero-field closure env TBAA is not emitted") {
+    val source = """
+      pub fn main() =
+        let factorial_tco: Int -> Int -> Int =
+          { n: Int, acc: Int ->
+            if n <= 1 then acc;
+            else factorial_tco (n - 1) (acc * n);
+          }
+        ;
+
+        let fac = { n: Int -> factorial_tco n 1 };
+
+        fac 3;
+      ;
+    """
+
+    compileAndGenerate(source, config = CompilerConfig.default.copy(noTco = false)).map { llvmIr =>
+      val closureEnvTbaaLines =
+        llvmIr.split("\n").filter(_.matches("""!\d+ = !\{!"__closure_env_\d+".*"""))
+
+      assert(closureEnvTbaaLines.isEmpty, s"Unexpected closure env TBAA nodes:\n$llvmIr")
+      assert(
+        closureEnvTbaaLines.forall(line => !line.contains(", }")),
+        s"Closure env TBAA nodes must not contain dangling separators. Nodes:\n${closureEnvTbaaLines.mkString("\n")}"
       )
     }
   }

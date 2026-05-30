@@ -486,30 +486,34 @@ case class CodeGenState(
     * @param fields
     *   list of (scalarTypeName, byteOffset) pairs
     * @return
-    *   (updated state, struct node ID)
+    *   (updated state, struct node ID if the layout has fields)
     */
-  def getTbaaStruct(name: String, fields: List[(String, Int)]): (CodeGenState, Int) =
-    tbaaStructIds.get(name) match
-      case Some(id) => (this, id)
-      case None =>
-        // First ensure all scalar types exist
-        val (stateWithScalars, scalarIds) = fields.foldLeft((this, List.empty[(Int, Int)])) {
-          case ((s, acc), (scalarName, offset)) =>
-            val (s2, scalarId) = s.getTbaaScalar(scalarName)
-            (s2, acc :+ (scalarId, offset))
-        }
-        val structId = stateWithScalars.nextTbaaId
-        // Struct node: !{!"name", !scalar1, i64 offset1, !scalar2, i64 offset2, ...}
-        val fieldParts = scalarIds.map { case (sid, off) => s"!$sid, i64 $off" }.mkString(", ")
-        val metadata   = s"""!$structId = !{!"$name", $fieldParts}"""
-        (
-          stateWithScalars.copy(
-            tbaaOutput    = metadata :: stateWithScalars.tbaaOutput,
-            nextTbaaId    = stateWithScalars.nextTbaaId + 1,
-            tbaaStructIds = stateWithScalars.tbaaStructIds + (name -> structId)
-          ),
-          structId
-        )
+  def getTbaaStruct(name: String, fields: List[(String, Int)]): (CodeGenState, Option[Int]) =
+    if fields.isEmpty then (this, None)
+    else
+      tbaaStructIds.get(name) match
+        case Some(id) => (this, Some(id))
+        case None =>
+          // First ensure all scalar types exist
+          val (stateWithScalars, scalarIds) = fields.foldLeft((this, List.empty[(Int, Int)])) {
+            case ((s, acc), (scalarName, offset)) =>
+              val (s2, scalarId) = s.getTbaaScalar(scalarName)
+              (s2, acc :+ (scalarId, offset))
+          }
+          val structId = stateWithScalars.nextTbaaId
+          // Struct node: !{!"name", !scalar1, i64 offset1, !scalar2, i64 offset2, ...}
+          val operands = (s"""!"$name"""" :: scalarIds.flatMap { case (sid, off) =>
+            List(s"!$sid", s"i64 $off")
+          }).mkString(", ")
+          val metadata = s"!$structId = !{$operands}"
+          (
+            stateWithScalars.copy(
+              tbaaOutput    = metadata :: stateWithScalars.tbaaOutput,
+              nextTbaaId    = stateWithScalars.nextTbaaId + 1,
+              tbaaStructIds = stateWithScalars.tbaaStructIds + (name -> structId)
+            ),
+            Some(structId)
+          )
 
   /** Get or create a TBAA field access tag for a struct field.
     * @param structName
@@ -526,26 +530,31 @@ case class CodeGenState(
     structFields: List[(String, Int)],
     fieldIndex:   Int
   ): (CodeGenState, String) =
-    val (scalarName, offset) = structFields(fieldIndex)
-    val tagKey               = s"tag_${structName}_field_$fieldIndex"
-    tbaaScalarIds.get(tagKey) match
-      case Some(id) => (this, s"!$id")
-      case None =>
-        // Ensure struct node exists
-        val (s1, structId) = getTbaaStruct(structName, structFields)
-        // Get scalar type ID for this field
-        val (s2, scalarId) = s1.getTbaaScalar(scalarName)
-        val tagId          = s2.nextTbaaId
-        // Access tag: !{!structId, !scalarId, i64 offset}
-        val metadata = s"!$tagId = !{!$structId, !$scalarId, i64 $offset}"
-        (
-          s2.copy(
-            tbaaOutput    = metadata :: s2.tbaaOutput,
-            nextTbaaId    = s2.nextTbaaId + 1,
-            tbaaScalarIds = s2.tbaaScalarIds + (tagKey -> tagId)
-          ),
-          s"!$tagId"
-        )
+    structFields.lift(fieldIndex) match
+      case None => (this, "")
+      case Some((scalarName, offset)) =>
+        val tagKey = s"tag_${structName}_field_$fieldIndex"
+        tbaaScalarIds.get(tagKey) match
+          case Some(id) => (this, s"!$id")
+          case None =>
+            // Ensure struct node exists
+            getTbaaStruct(structName, structFields) match
+              case (s1, Some(structId)) =>
+                // Get scalar type ID for this field
+                val (s2, scalarId) = s1.getTbaaScalar(scalarName)
+                val tagId          = s2.nextTbaaId
+                // Access tag: !{!structId, !scalarId, i64 offset}
+                val metadata = s"!$tagId = !{!$structId, !$scalarId, i64 $offset}"
+                (
+                  s2.copy(
+                    tbaaOutput    = metadata :: s2.tbaaOutput,
+                    nextTbaaId    = s2.nextTbaaId + 1,
+                    tbaaScalarIds = s2.tbaaScalarIds + (tagKey -> tagId)
+                  ),
+                  s"!$tagId"
+                )
+              case (s1, None) =>
+                (s1, "")
 
   /** Ensure an alias scope domain metadata node exists. */
   def ensureAliasScopeDomain: (CodeGenState, Int) =
