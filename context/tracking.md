@@ -21,27 +21,6 @@
 * Status: In progress
 
 
-FIRST THING, bug:
-
-```
-❯ mmlc mml/samples/lambda-factorial.mml
-llvm-as: /Users/f/Workshop/mine/mml/mml/build/LambdaFactorial-arm64-apple-macosx.ll:277:29: error: expected metadata operand
-!10 = !{!"__closure_env_0", }
-                            ^
-Command failed with exit code 1: CommandExecutionError(llvm-as /Users/f/Workshop/mine/mml/mml/build/LambdaFactorial-arm64-apple-macosx.ll -o /Users/f/Workshop/mine/mml/mml/build/out/arm64-apple-macosx/LambdaFactorial.bc,Failed to convert IR to Bitcode,1)
-
-Compilation failed:
-
-File: mml/samples/lambda-factorial.mml
-
-Command execution failed (exit code 1): llvm-as /Users/f/Workshop/mine/mml/mml/build/LambdaFactorial-arm64-apple-macosx.ll -o /Users/f/Workshop/mine/mml/mml/build/out/arm64-apple-macosx/LambdaFactorial.bc
-Failed to convert IR to Bitcode
-
-~/Workshop/mine/mml/mml dev-lambdas-unify* ⇡                                                                          15:11:32
-❯
-```
-
-
 - GitHub: `https://github.com/fedesilva/minnieml/issues/255`
 - Reference: `context/specs/unify-lambdas.md`
 - Plan: `context/specs/unify-lambdas-plan.md`
