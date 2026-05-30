@@ -2,18 +2,18 @@ package mml.mmlclib.semantic
 
 import mml.mmlclib.ast.*
 import mml.mmlclib.test.BaseEffFunSuite
-import mml.mmlclib.test.extractors.*
+import mml.mmlclib.test.ast.*
 
 class OwnershipAnalyzerTests extends BaseEffFunSuite:
 
   private def containsFreeOf(freeName: String)(term: Term): Boolean =
-    txExistsTerm(term) {
+    existsTerm(term) {
       case TXCall1(TXRefResolved(id), _) if id.endsWith("::" + freeName) => true
       case TXCall1(TXRefNamed(name), _) if name == freeName => true
     }
 
   private def containsClosureEnvFree(term: Term): Boolean =
-    txExistsTerm(term) {
+    existsTerm(term) {
       case TXCall1(TXRefResolved(id), _) if id.contains("::__free___closure_env_") => true
       case TXCall1(TXRefNamed(name), _) if name.startsWith("__free___closure_env_") => true
     }
@@ -25,13 +25,13 @@ class OwnershipAnalyzerTests extends BaseEffFunSuite:
     }.get
 
   private def containsFreeString(term: Term): Boolean =
-    txExistsTerm(term) {
+    existsTerm(term) {
       case TXCall1(TXRefResolved(id), _) if id.endsWith("::__free_String") => true
       case TXCall1(TXRefNamed(name), _) if name == "__free_String" => true
     }
 
   private def countFreesOf(name: String, term: Term): Int =
-    txCountTerm(term) {
+    countTerms(term) {
       case TXCall1(fn, TXRefNamed(argName)) if argName == name =>
         fn match
           case TXRefResolved(id) if id.endsWith("::__free_String") => 1
@@ -40,13 +40,13 @@ class OwnershipAnalyzerTests extends BaseEffFunSuite:
     }
 
   private def containsCloneString(term: Term): Boolean =
-    txExistsTerm(term) {
+    existsTerm(term) {
       case TXRefResolved(id) if id.endsWith("::__clone_String") => true
       case TXRefNamed(name) if name == "__clone_String" => true
     }
 
   private def containsRefName(name: String)(term: Term): Boolean =
-    txExistsTerm(term) {
+    existsTerm(term) {
       case TXRefNamed(n) if n == name => true
     }
 
@@ -1188,7 +1188,7 @@ class OwnershipAnalyzerTests extends BaseEffFunSuite:
 
   // ---- Function-value ownership regression guards --------------------------------------
   //
-// Non-capturing function values have no closure environment to clean up. Passing them as
+  // Non-capturing function values have no closure environment to clean up. Passing them as
   // higher-order arguments must not schedule universal or env-specific closure frees.
   test("top-level non-capturing function passed as HO arg schedules no __free_closure") {
     val code =

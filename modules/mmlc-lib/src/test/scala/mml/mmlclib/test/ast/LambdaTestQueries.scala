@@ -1,27 +1,19 @@
-package mml.mmlclib.test.extractors
+package mml.mmlclib.test.ast
 
 import mml.mmlclib.ast.*
 
-/** Collects user-authored lambdas from a module while skipping synthetic wrappers.
+/** Collects lambdas written by the user.
   *
-  * Example syntax:
-  * ```mml
-  * let add1 = (x) => x + 1;
-  *
-  * fn outer(y) =
-  *   let f = (x) => x + y;
-  *   f 1;;
-  * ```
+  * This skips the wrapper lambda stored in a top-level `fn` binding and keeps lambdas from the
+  * function body.
   */
 def collectUserLambdas(module: Module): List[Lambda] =
   module.members.flatMap(collectUserLambdas)
 
-/** Collects lambdas that originate from user code within a member. */
+/** Collects user-written lambdas inside one module member. */
 def collectUserLambdas(member: Member): List[Lambda] =
   member match
     case bnd: Bnd if bnd.meta.isDefined =>
-      // Function members wrap the user lambda in a binding node; descend into the lambda body so
-      // tests do not count the synthetic wrapper twice.
       bnd.value match
         case TXExprLambda(lambda) => collectUserLambdas(lambda.body)
         case expr: Expr => collectUserLambdas(expr)
@@ -30,14 +22,14 @@ def collectUserLambdas(member: Member): List[Lambda] =
     case _ =>
       Nil
 
-/** Collects lambdas reachable from an expression node. */
+/** Collects user-written lambdas inside an expression. */
 def collectUserLambdas(expr: Expr): List[Lambda] =
   expr.terms.flatMap(collectUserLambdas)
 
-/** Collects lambdas reachable from a term node.
+/** Collects user-written lambdas inside a term.
   *
-  * Expression-level `let` is rewritten to a synthetic application, so `TXScopedBinding` lets the
-  * traversal keep following the user-authored lambda body and the bound value directly.
+  * `let x = value; body` is stored as `App(bindingLambda, value)`. For that case this follows the
+  * binding body and the bound value, but does not count the binding wrapper as a user lambda.
   */
 def collectUserLambdas(term: Term): List[Lambda] =
   term match
@@ -62,12 +54,12 @@ def collectUserLambdas(term: Term): List[Lambda] =
     case _ =>
       Nil
 
-/** Returns the only user-authored lambda in the module when the test expects exactly one. */
+/** Returns the only user-written lambda in the module, or `None` when there is not exactly one. */
 def onlyUserLambda(module: Module): Option[Lambda] =
   collectUserLambdas(module) match
     case List(lambda) => Some(lambda)
     case _ => None
 
-/** Extracts the resolved ids captured by a lambda after capture analysis. */
+/** Returns the resolved ids captured by a lambda after capture analysis. */
 def captureResolvedIds(lambda: Lambda): Set[String] =
   lambda.captures.flatMap(_.ref.resolvedId).toSet

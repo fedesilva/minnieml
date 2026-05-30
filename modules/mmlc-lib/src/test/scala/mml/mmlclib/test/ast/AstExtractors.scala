@@ -1,26 +1,22 @@
-package mml.mmlclib.test.extractors
+package mml.mmlclib.test.ast
 
 import mml.mmlclib.ast.*
 
 import scala.annotation.tailrec
 
-/** Shared AST-shape extractors used across parser, semantic, and ownership tests.
+/** Pattern-match helpers for AST tests.
   *
-  * The `TX*` prefix makes it obvious that these helpers are test-only shape extractors rather than
-  * production AST nodes or semantic utilities.
+  * `TX` means "test extractor". These helpers make test assertions shorter without adding new AST
+  * nodes or compiler behavior.
   */
 object TXExpr1:
-  /** Extracts the single term stored in an expression node.
+  /** Matches an expression with exactly one term and returns that term.
     *
-    * Example syntax:
-    * ```mml
-    * 1
-    * name
-    * sum 1 2
+    * Example:
+    * ```scala
+    * Expr(terms = List(term)) match
+    *   case TXExpr1(found) => found == term
     * ```
-    *
-    * Tests use this when the parser or rewriter should collapse a construct to exactly one
-    * top-level term.
     */
   def unapply(expr: Expr): Option[Term] =
     expr.terms match
@@ -28,12 +24,12 @@ object TXExpr1:
       case _ => None
 
 object TXExprApp:
-  /** Extracts an expression that should contain a rewritten application term.
+  /** Matches a one-term expression whose term is a flattened call.
     *
-    * Example syntax:
-    * ```mml
-    * sum 1 2
-    * a + b
+    * Example:
+    * ```scala
+    * Expr(terms = List(App(App(sum, one), two))) match
+    *   case TXExprApp(fn, _, args) => fn == sum && args == List(one, two)
     * ```
     */
   def unapply(expr: Expr): Option[(Ref, Option[Bnd], List[Expr])] =
@@ -42,12 +38,12 @@ object TXExprApp:
       case _ => None
 
 object TXExprLambda:
-  /** Extracts an expression that consists of a single lambda literal.
+  /** Matches a one-term expression whose term is a lambda.
     *
-    * Example syntax:
-    * ```mml
-    * (x) => x + 1
-    * () => 1
+    * Example:
+    * ```scala
+    * Expr(terms = List(lambda)) match
+    *   case TXExprLambda(found) => found == lambda
     * ```
     */
   def unapply(expr: Expr): Option[Lambda] =
@@ -56,12 +52,12 @@ object TXExprLambda:
       case _ => None
 
 object TXExprRefNamed:
-  /** Extracts the unresolved display name from a single-term reference expression.
+  /** Matches a one-term expression whose term is a reference and returns the source name.
     *
-    * Example syntax:
-    * ```mml
-    * total
-    * math.sum
+    * Example:
+    * ```scala
+    * Expr(terms = List(Ref(name = "total"))) match
+    *   case TXExprRefNamed(name) => name == "total"
     * ```
     */
   def unapply(expr: Expr): Option[String] =
@@ -70,12 +66,12 @@ object TXExprRefNamed:
       case _ => None
 
 object TXExprInt:
-  /** Extracts the integer value from a single integer-literal expression.
+  /** Matches a one-term expression whose term is an integer literal.
     *
-    * Example syntax:
-    * ```mml
-    * 1
-    * 42
+    * Example:
+    * ```scala
+    * Expr(terms = List(LiteralInt(value = 42))) match
+    *   case TXExprInt(value) => value == 42
     * ```
     */
   def unapply(expr: Expr): Option[Int] =
@@ -84,12 +80,12 @@ object TXExprInt:
       case _ => None
 
 object TXBndLambda:
-  /** Extracts the lambda stored on the right-hand side of a binding or function member.
+  /** Matches a binding whose right-hand side is a lambda.
     *
-    * Example syntax:
-    * ```mml
-    * fn inc(x) = x + 1;;
-    * let add1 = (x) => x + 1;
+    * Example:
+    * ```scala
+    * Bnd(value = Expr(terms = List(lambda))) match
+    *   case TXBndLambda(found) => found == lambda
     * ```
     */
   def unapply(member: Member): Option[Lambda] =
@@ -101,17 +97,14 @@ object TXBndLambda:
       case _ => None
 
 object TXScopedBinding:
-  /** Extracts the synthetic scoped-binding form produced by expression-level `let`.
+  /** Matches the AST form used for expression-level `let`.
     *
-    * Example syntax:
-    * ```mml
-    * let answer =
-    *   let x = 1;
-    *   x + 2;
+    * Parser-lowered `let x = value; body` is stored as a lambda call:
+    * ```scala
+    * App(bindingLambda, value)
     * ```
     *
-    * After rewriting, the body above becomes an application of a synthetic lambda to the bound
-    * value. This extractor exposes both pieces directly.
+    * This returns `(bindingLambda, value)`.
     */
   def unapply(term: Term): Option[(Lambda, Term)] =
     term match
@@ -121,12 +114,12 @@ object TXScopedBinding:
         None
 
 object TXUnwrapped:
-  /** Removes redundant grouping wrappers before matching the inner term.
+  /** Removes one-term `TermGroup` wrappers and returns the inner term.
     *
-    * Example syntax:
-    * ```mml
-    * (1)
-    * ((sum 1 2))
+    * Example:
+    * ```scala
+    * TermGroup(Expr(terms = List(TermGroup(Expr(terms = List(term)))))) match
+    *   case TXUnwrapped(found) => found == term
     * ```
     */
   @tailrec
@@ -136,15 +129,19 @@ object TXUnwrapped:
       case _ => Some(term)
 
 object TXCall1:
-  /** Extracts a single application edge as `(callee, arg)`.
+  /** Extracts one layer of a function call as `(function, argument)`.
     *
-    * Example syntax:
-    * ```mml
-    * inc 1
-    * negate value
+    * `inc 1` is one call layer:
+    * ```scala
+    * TXCall1(inc, one)
     * ```
     *
-    * Prefer this over `TXApp` when the test only cares about one application step.
+    * `sum 1 2` is nested:
+    * ```scala
+    * TXCall1(TXCall1(sum, one), two)
+    * ```
+    *
+    * Use `TXApp` when the test wants the whole flattened call: `(sum, List(one, two))`.
     */
   def unapply(term: Term): Option[(Term, Term)] =
     term match
@@ -152,30 +149,29 @@ object TXCall1:
       case _ => None
 
 object TXRefNamed:
-  /** Extracts the display name from a reference term, ignoring surrounding groups. */
+  /** Matches a reference term and returns the source name, ignoring surrounding groups. */
   def unapply(term: Term): Option[String] =
     term match
       case TXUnwrapped(ref: Ref) => Some(ref.name)
       case _ => None
 
 object TXRefResolved:
-  /** Extracts the resolved symbol id from a reference term when name resolution has run. */
+  /** Matches a reference term and returns its resolved id, ignoring surrounding groups. */
   def unapply(term: Term): Option[String] =
     term match
       case TXUnwrapped(ref: Ref) => ref.resolvedId
       case _ => None
 
-/** Extracts a flattened call spine when a test wants to assert the callee and full arg list.
+/** Extracts a nested function call as `(function, ignoredBinding, arguments)`.
   *
-  * Example syntax:
-  * ```mml
-  * sum 1 2
-  * f (g x) y
-  * a + b
+  * Example:
+  * ```scala
+  * App(App(sum, one), two) match
+  *   case TXApp(fn, _, args) => fn == sum && args == List(one, two)
   * ```
   *
-  * This is intentionally reserved for tests that care about the whole application chain. Simpler
-  * tests should prefer `TXCall1`, `TXExprRefNamed`, or direct literal extractors.
+  * Use this when the test cares about the full call. Use `TXCall1` when it only needs one call
+  * layer.
   */
 object TXApp:
   def unapply(term: Term): Option[(Ref, Option[Bnd], List[Expr])] =
@@ -183,8 +179,7 @@ object TXApp:
     def collect(currentTerm: Term, accumulatedArgs: List[Expr]): Option[(Term, List[Expr])] =
       currentTerm match
         case App(_, fn, arg, _, _) =>
-          // Walk outward through nested App nodes so assertions can treat curried calls and
-          // rewritten operators as one flat call spine.
+          // Walk outward through nested App nodes so tests can assert one function plus all args.
           collect(fn, arg :: accumulatedArgs)
         case baseTerm =>
           Some((baseTerm, accumulatedArgs))
