@@ -11,16 +11,21 @@ import MmlWhitespace.*
   */
 private val statementParamName = "__stmt"
 
+private val sourceLocatedNodeMessage = "Parser expected source-located node"
+
 /** Extracts the concrete source span from a parser-produced node.
   *
-  * Parser lowering only calls this for nodes that came directly from source, not synthetic
-  * wrappers.
+  * Parser lowering reports a term error when an internal lowering path receives a synthetic node
+  * where a concrete source location is required.
   */
-private def locSpan(node: FromSource): SrcSpan =
+private def locSpan(node: FromSource): Either[TermError, SrcSpan] =
   node.source match
-    case SourceOrigin.Loc(s) => s
+    case SourceOrigin.Loc(s) => s.asRight
     case SourceOrigin.Synth =>
-      throw IllegalStateException("Parser expected source-located node")
+      TermError(SourceOrigin.Synth, sourceLocatedNodeMessage, None).asLeft
+
+private def exprError(error: TermError): Expr =
+  Expr(error.source, List(error))
 
 /** Lowers semicolon-separated expression statements into nested scoped lambdas.
   *
@@ -36,17 +41,25 @@ private def locSpan(node: FromSource): SrcSpan =
   */
 private def mkStatementChain(head: Expr, tail: List[Expr]): Expr =
   val statements = head :: tail
-  statements.reduceRight { (stmt, rest) =>
-    val stmtLoc   = locSpan(stmt)
-    val restLoc   = locSpan(rest)
-    val stmtSpan  = span(stmtLoc.start, restLoc.end)
-    val paramSpan = stmtLoc
-    val unitType  = TypeRef(paramSpan, "Unit")
-    val param =
-      FnParam(SourceOrigin.Synth, Name.synth(statementParamName), typeAsc = Some(unitType))
-    val lambda = Lambda(stmtSpan, List(param), rest, captures = Nil)
-    Expr(stmtSpan, List(App(stmtSpan, lambda, stmt)))
-  }
+  statements.reverse match
+    case last :: previous =>
+      previous
+        .foldLeft(last.asRight[TermError]) { (restE, stmt) =>
+          for
+            rest <- restE
+            stmtLoc <- locSpan(stmt)
+            restLoc <- locSpan(rest)
+          yield
+            val stmtSpan  = span(stmtLoc.start, restLoc.end)
+            val paramSpan = stmtLoc
+            val unitType  = TypeRef(paramSpan, "Unit")
+            val param =
+              FnParam(SourceOrigin.Synth, Name.synth(statementParamName), typeAsc = Some(unitType))
+            val lambda = Lambda(stmtSpan, List(param), rest, captures = Nil)
+            Expr(stmtSpan, List(App(stmtSpan, lambda, stmt)))
+        }
+        .fold(exprError, identity)
+    case Nil => exprError(TermError(SourceOrigin.Synth, sourceLocatedNodeMessage, None))
 
 /** Lowers a local binding into immediate lambda application.
   *
@@ -291,16 +304,21 @@ private def selectionP(info: SourceInfo, baseP: => P[Term])(using P[Any]): P[Ter
   ).map { case (_, base, fields, typeAsc, _, _) =>
     val fieldList = fields.toList
     val lastIndex = fieldList.size - 1
-    fieldList.zipWithIndex.foldLeft(base) { case (qualifier, ((fieldName, fieldSpan), idx)) =>
-      val qualifierLoc  = locSpan(qualifier)
-      val selectionSpan = span(qualifierLoc.start, fieldSpan.end)
-      Ref(
-        source    = SourceOrigin.Loc(selectionSpan),
-        name      = fieldName,
-        typeAsc   = if idx == lastIndex then typeAsc else None,
-        qualifier = Some(qualifier)
-      )
-    }
+    fieldList.zipWithIndex
+      .foldLeft(base.asRight[TermError]) { case (qualifierE, ((fieldName, fieldSpan), idx)) =>
+        for
+          qualifier <- qualifierE
+          qualifierLoc <- locSpan(qualifier)
+        yield
+          val selectionSpan = span(qualifierLoc.start, fieldSpan.end)
+          Ref(
+            source    = SourceOrigin.Loc(selectionSpan),
+            name      = fieldName,
+            typeAsc   = if idx == lastIndex then typeAsc else None,
+            qualifier = Some(qualifier)
+          )
+      }
+      .fold(identity, identity)
   }
 
 /** Parses tuple syntax.
@@ -362,13 +380,17 @@ private[parser] def ifExprP(info: SourceInfo)(using P[Any]): P[Term] =
   ).map { case (start, cond, (ifTrue, _), elsifs, (ifFalse, _), end) =>
     val finalSpan = span(start, end)
     // Build nested Cond from elsif chain (fold right)
-    val elseExpr = elsifs.toList.foldRight(ifFalse) { case ((elsifCond, (elsifBody, _)), acc) =>
-      val elsifCondLoc = locSpan(elsifCond)
-      val accLoc       = locSpan(acc)
-      val condSpan     = span(elsifCondLoc.start, accLoc.end)
-      Expr(condSpan, List(Cond(condSpan, elsifCond, elsifBody, acc)))
+    val elseExprE = elsifs.toList.foldRight(ifFalse.asRight[TermError]) {
+      case ((elsifCond, (elsifBody, _)), accE) =>
+        for
+          acc <- accE
+          elsifCondLoc <- locSpan(elsifCond)
+          accLoc <- locSpan(acc)
+        yield
+          val condSpan = span(elsifCondLoc.start, accLoc.end)
+          Expr(condSpan, List(Cond(condSpan, elsifCond, elsifBody, acc)))
     }
-    Cond(finalSpan, cond, ifTrue, elseExpr)
+    elseExprE.fold(identity, elseExpr => Cond(finalSpan, cond, ifTrue, elseExpr))
   }
 
 /** Parses an `if` expression with no explicit `else`, synthesizing `Unit` as the false branch.
@@ -390,16 +412,24 @@ private[parser] def ifSingleBranchExprP(info: SourceInfo)(using P[Any]): P[Term]
     // Synthesize LiteralUnit for the missing else branch
     val unitExpr = Expr(unitSpan, List(LiteralUnit(unitSpan)))
     // Build nested Cond from elsif chain (fold right), ending with unit
-    val elseExpr = elsifs.toList.foldRight(unitExpr) { case ((elsifCond, (elsifBody, _)), acc) =>
-      val elsifCondLoc = locSpan(elsifCond)
-      val accLoc       = locSpan(acc)
-      val condSpan     = span(elsifCondLoc.start, accLoc.end)
-      Expr(
-        condSpan,
-        List(Cond(condSpan, elsifCond, elsifBody, acc, typeSpec = Some(unitType)))
-      )
+    val elseExprE = elsifs.toList.foldRight(unitExpr.asRight[TermError]) {
+      case ((elsifCond, (elsifBody, _)), accE) =>
+        for
+          acc <- accE
+          elsifCondLoc <- locSpan(elsifCond)
+          accLoc <- locSpan(acc)
+        yield
+          val condSpan = span(elsifCondLoc.start, accLoc.end)
+          Expr(
+            condSpan,
+            List(Cond(condSpan, elsifCond, elsifBody, acc, typeSpec = Some(unitType)))
+          )
     }
-    Cond(finalSpan, cond, ifTrue, elseExpr, typeSpec = Some(unitType), typeAsc = Some(unitType))
+    elseExprE.fold(
+      identity,
+      elseExpr =>
+        Cond(finalSpan, cond, ifTrue, elseExpr, typeSpec = Some(unitType), typeAsc = Some(unitType))
+    )
   }
 
 /** Parses a local `let` binding and lowers it to immediate lambda application.
@@ -575,13 +605,17 @@ private[parser] def ifExprMemberP(info: SourceInfo)(using P[Any]): P[Term] =
   ).map { case (start, cond, (ifTrue, _), elsifs, (ifFalse, _), end) =>
     val finalSpan = span(start, end)
     // Build nested Cond from elsif chain (fold right)
-    val elseExpr = elsifs.toList.foldRight(ifFalse) { case ((elsifCond, (elsifBody, _)), acc) =>
-      val elsifCondLoc = locSpan(elsifCond)
-      val accLoc       = locSpan(acc)
-      val condSpan     = span(elsifCondLoc.start, accLoc.end)
-      Expr(condSpan, List(Cond(condSpan, elsifCond, elsifBody, acc)))
+    val elseExprE = elsifs.toList.foldRight(ifFalse.asRight[TermError]) {
+      case ((elsifCond, (elsifBody, _)), accE) =>
+        for
+          acc <- accE
+          elsifCondLoc <- locSpan(elsifCond)
+          accLoc <- locSpan(acc)
+        yield
+          val condSpan = span(elsifCondLoc.start, accLoc.end)
+          Expr(condSpan, List(Cond(condSpan, elsifCond, elsifBody, acc)))
     }
-    Cond(finalSpan, cond, ifTrue, elseExpr)
+    elseExprE.fold(identity, elseExpr => Cond(finalSpan, cond, ifTrue, elseExpr))
   }
 
 /** Parses a member-body `if` expression with an implicit `else ()`. */
@@ -597,16 +631,24 @@ private[parser] def ifSingleBranchExprMemberP(info: SourceInfo)(using P[Any]): P
     // Synthesize LiteralUnit for the missing else branch
     val unitExpr = Expr(unitSpan, List(LiteralUnit(unitSpan)))
     // Build nested Cond from elsif chain (fold right), ending with unit
-    val elseExpr = elsifs.toList.foldRight(unitExpr) { case ((elsifCond, (elsifBody, _)), acc) =>
-      val elsifCondLoc = locSpan(elsifCond)
-      val accLoc       = locSpan(acc)
-      val condSpan     = span(elsifCondLoc.start, accLoc.end)
-      Expr(
-        condSpan,
-        List(Cond(condSpan, elsifCond, elsifBody, acc, typeSpec = Some(unitType)))
-      )
+    val elseExprE = elsifs.toList.foldRight(unitExpr.asRight[TermError]) {
+      case ((elsifCond, (elsifBody, _)), accE) =>
+        for
+          acc <- accE
+          elsifCondLoc <- locSpan(elsifCond)
+          accLoc <- locSpan(acc)
+        yield
+          val condSpan = span(elsifCondLoc.start, accLoc.end)
+          Expr(
+            condSpan,
+            List(Cond(condSpan, elsifCond, elsifBody, acc, typeSpec = Some(unitType)))
+          )
     }
-    Cond(finalSpan, cond, ifTrue, elseExpr, typeSpec = Some(unitType), typeAsc = Some(unitType))
+    elseExprE.fold(
+      identity,
+      elseExpr =>
+        Cond(finalSpan, cond, ifTrue, elseExpr, typeSpec = Some(unitType), typeAsc = Some(unitType))
+    )
   }
 
 /** Parses a parenthesized expression group inside member bodies. */

@@ -550,24 +550,28 @@ object LlvmToolchain:
               }
             }
 
-            stream.getOrElse {
+            stream.orElse {
               val localPath =
                 Paths.get("modules/mmlc-lib/src/main/resources", mmlRuntimeResourcePath)
               logDebug(s"Trying to read from file system at: $localPath", verbose)
               if Files.exists(localPath) then
                 logDebug(s"Found file at: $localPath", verbose)
-                Files.newInputStream(localPath)
-              else
-                // FIXME:QA: Exceptions are not allowed in this codebase.
-                throw new Exception(
-                  s"Could not find resource: $mmlRuntimeResourcePath (tried multiple paths)"
-                )
+                Some(Files.newInputStream(localPath))
+              else None
             }
 
-          Files.copy(resourceStream, sourcePath, StandardCopyOption.REPLACE_EXISTING)
-          resourceStream.close()
-          logDebug(s"Successfully extracted runtime source to: $sourcePath", verbose)
-          sourcePath.toString.asRight
+          resourceStream match
+            case None =>
+              val error = LlvmCompilationError.RuntimeResourceError(
+                s"Could not find resource: $mmlRuntimeResourcePath (tried multiple paths)"
+              )
+              logError(error.toString)
+              error.asLeft
+            case Some(stream) =>
+              Files.copy(stream, sourcePath, StandardCopyOption.REPLACE_EXISTING)
+              stream.close()
+              logDebug(s"Successfully extracted runtime source to: $sourcePath", verbose)
+              sourcePath.toString.asRight
         catch
           case e: Exception =>
             val error = LlvmCompilationError.RuntimeResourceError(

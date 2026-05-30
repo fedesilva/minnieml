@@ -27,42 +27,13 @@
 - Scope decision: file-only now; optional follow-up scan across semantic tests for `__free_`,
   `__clone_`, and `__owns_` hardcoded name assertions.
 
-## Exceptions thrown in compiler main sources (No Exceptions rule)
-
-- Locations:
-  - `modules/mmlc-lib/src/main/scala/mml/mmlclib/parser/expressions.scala:23` -
-    `throw IllegalStateException("Parser expected source-located node")` inside `locSpan` for
-    `SourceOrigin.Synth`.
-  - `modules/mmlc-lib/src/main/scala/mml/mmlclib/codegen/LlvmToolchain.scala:562` -
-    `throw new Exception(...)` when runtime resource is not found.
-  - `modules/mmlc-lib/src/main/scala/mml/mmlclib/codegen/emitter/expression/Conditionals.scala`
-    `:144` -
-    `throw new RuntimeException(s"Codegen error: ${err.message}")`.
-  - `modules/mmlc-lib/src/main/scala/mml/mmlclib/codegen/emitter/expression/Conditionals.scala`
-    `:148` -
-    second `throw new RuntimeException(...)`.
-- Current status: fresh.
-- Problem: Violates `qa-rules-and-coding-style.md` rule 8, "No Exceptions, without exceptions".
-  The compiler should accumulate errors as typed values rather than raise.
-- Smell level: high
-- Impact: high. Any of these can crash the compiler instead of producing a diagnostic; they also
-  normalize the pattern for new code.
-- Suggested direction:
-  - `expressions.scala`: surface `SourceOrigin.Synth` as an `Either[CompilerError, SrcSpan]` or
-    accumulate into the existing parse/semantic error channel rather than throwing.
-  - `LlvmToolchain.scala`: thread the missing resource through the existing
-    `Either[LlvmCompilationError, A]` flow instead of raising and catching.
-  - `Conditionals.scala`: convert both compiler-bug paths into the codegen error channel and remove
-    the `FIXME:QA` comments once converted.
-- Scope decision: fix per site; do not bundle with unrelated refactors.
-
 ## try/catch blocks in LlvmToolchain (No Exceptions rule)
 
 - Location: `modules/mmlc-lib/src/main/scala/mml/mmlclib/codegen/LlvmToolchain.scala`
 - Current sites: `:100`, `:139`, `:152`, `:186`, `:203`, `:532`, `:571`, `:813`, `:825`,
   `:882`, `:891`, `:923`, `:927`, `:946`, `:956`, `:977`, `:1005`, `:1011`, `:1014`,
   `:1016`.
-- Current status: fresh; the older entry undercounted the file.
+- Current status: fresh.
 - Problem: These wrap genuinely throwing JDK/process APIs, but the exception boundary is scattered.
   Some paths intentionally degrade to missing-tool or typed error results, while others ignore
   failures, including the existing `// TODO: do not swallow exceptions` near marker invalidation.

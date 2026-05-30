@@ -29,8 +29,7 @@ class OpPrecedenceTests extends BaseEffFunSuite:
     ).map { m =>
 
       val bnd =
-        lookupNames("a", m)
-          .headOption
+        lookupNames("a", m).headOption
           .getOrElse(
             fail(s"Member `a` not found in module: ${prettyPrintAst(m)}")
           )

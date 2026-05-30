@@ -108,6 +108,11 @@ object SemanticErrorPrinter:
         val snippet  = error.failedCode.getOrElse("<no code available>")
         s"${Console.RED}Invalid identifier at $location: ${error.message} [phase: $phase]\n$snippet${Console.RESET}"
 
+      case SemanticError.TermErrorFound(error, phase) =>
+        val location = locationOf(error)
+        val snippet  = error.failedCode.getOrElse("<no code available>")
+        s"${Console.RED}Parser term error at $location: ${error.message} [phase: $phase]\n$snippet${Console.RESET}"
+
       case SemanticError.DanglingTerms(terms, message, phase) =>
         val locations = terms.map(t => locationOf(t)).mkString(", ")
         s"${Console.RED}$message at $locations [phase: $phase]${Console.RESET}"

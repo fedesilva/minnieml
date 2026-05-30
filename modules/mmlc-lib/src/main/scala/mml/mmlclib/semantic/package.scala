@@ -127,6 +127,7 @@ enum SemanticError extends CompilationError:
   case DanglingTerms(terms: List[Term], msg: String, phase: String)
   case MemberErrorFound(error: ParsingMemberError, phase: String)
   case ParsingIdErrorFound(error: ParsingIdError, phase: String)
+  case TermErrorFound(error: TermError, phase: String)
   case InvalidExpressionFound(invalidExpr: mml.mmlclib.ast.InvalidExpression, phase: String)
   case TypeCheckingError(error: TypeError)
   case InvalidEntryPoint(msg: String, source: SourceOrigin)
@@ -157,6 +158,8 @@ enum SemanticError extends CompilationError:
       s"Parse error in member: ${error.message}"
     case ParsingIdErrorFound(error, _) =>
       s"Parse error in identifier: ${error.message}"
+    case TermErrorFound(error, _) =>
+      s"Parse error in term: ${error.message}"
     case InvalidExpressionFound(_, _) =>
       "Invalid expression"
     case TypeCheckingError(error) =>

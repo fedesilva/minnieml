@@ -57,6 +57,7 @@ object ErrorPrinter:
     case SemanticError.InvalidExpression(expr, _, _) => startPosOf(expr)
     case SemanticError.MemberErrorFound(error, _) => startPosOf(error)
     case SemanticError.ParsingIdErrorFound(error, _) => startPosOf(error)
+    case SemanticError.TermErrorFound(error, _) => startPosOf(error)
     case SemanticError.DanglingTerms(terms, _, _) =>
       terms
         .collect { case fs: FromSource => startPosOf(fs) }
@@ -189,6 +190,10 @@ object ErrorPrinter:
       case SemanticError.ParsingIdErrorFound(error, phase) =>
         val location = locationOf(error)
         s"${Console.RED}Invalid identifier at $location: ${error.message}${Console.RESET}\n${Console.YELLOW}Phase: $phase${Console.RESET}"
+
+      case SemanticError.TermErrorFound(error, phase) =>
+        val location = locationOf(error)
+        s"${Console.RED}Parser term error at $location: ${error.message}${Console.RESET}\n${Console.YELLOW}Phase: $phase${Console.RESET}"
 
       case SemanticError.DanglingTerms(terms, message, phase) =>
         val locations = terms.collect { case fs: FromSource => locationOf(fs) }.mkString(", ")

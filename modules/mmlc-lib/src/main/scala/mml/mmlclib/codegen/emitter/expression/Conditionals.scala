@@ -53,7 +53,7 @@ def compileCond(
     stateWithReservedLabels = condRes.state.withRegister(mergeBB + 1)
 
     // Check if condition result is boolean (from boolean operations) or integer
-    (stateAfterCondition, branchCondition) = compileBranchCondition(
+    (stateAfterCondition, branchCondition) <- compileBranchCondition(
       condRes,
       condExpr,
       condOp,
@@ -120,11 +120,11 @@ private def compileBranchCondition(
   condOp:                  String,
   mergeBB:                 Int,
   stateWithReservedLabels: CodeGenState
-): (CodeGenState, String) =
+): Either[CodeGenError, (CodeGenState, String)] =
   // Boolean operations (and, or, not) have nativeTpl attributes and return i1 type
   if condRes.register > 0 && !condRes.isLiteral then
     // Non-literal result - likely from boolean operation, use directly as i1
-    (stateWithReservedLabels, condOp)
+    Right((stateWithReservedLabels, condOp))
   else
     // Literal or other - compare with 0 using actual type from condition
     val compareReg   = mergeBB
@@ -133,20 +133,17 @@ private def compileBranchCondition(
     // Get the actual LLVM type from the condition's typeSpec
     condExpr.typeSpec match
       case Some(typeSpec) =>
-        getLlvmType(typeSpec, compareState) match
-          case Right(llvmType) =>
-            val stateAfterCompare =
-              compareState.emit(s"  %$compareReg = icmp ne $llvmType $condOp, 0")
-            (stateAfterCompare, s"%$compareReg")
-          case Left(err) =>
-            // Type resolution failed - this is a compiler bug
-            // FIXME:QA: Exceptions are not acceptable
-            throw new RuntimeException(s"Codegen error: ${err.message}")
+        getLlvmType(typeSpec, compareState).map { llvmType =>
+          val stateAfterCompare =
+            compareState.emit(s"  %$compareReg = icmp ne $llvmType $condOp, 0")
+          (stateAfterCompare, s"%$compareReg")
+        }
       case None =>
-        // Missing type is a compiler bug - TypeChecker should have provided this
-        // FIXME:QA: Exceptions are not acceptable
-        throw new RuntimeException(
-          "Codegen error: Missing type information for conditional guard - TypeChecker bug"
+        Left(
+          CodeGenError(
+            "Missing type information for conditional guard - TypeChecker should have provided this",
+            Some(condExpr)
+          )
         )
 
 /** Emits the merge block with optional phi node. */
