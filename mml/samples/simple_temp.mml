@@ -2,20 +2,20 @@
 fn consume(s: String): Unit = println s;;
 
 fn test1(): Unit =
-  consume (int_to_str 42)
-;;
+  consume (int_to_str 42);
+;
 
 fn test2(): Unit =
   let s = (int_to_str 1) ++ (int_to_str 2);
-  println s
-;;
+  println s;
+;
 
 fn test3(): Unit =
   let part1 = int_to_str 1;
   let part2 = int_to_str 2;
   let s = (part1 ++ part2) ++ part1;
-  println s
-;;
+  println s;
+;
 
 pub fn main(): Unit =
   println "Test 1: simple temp";
@@ -24,5 +24,5 @@ pub fn main(): Unit =
   test2();
   println "Test 3: nested concat";
   test3();
-  println "Done"
-;;
+  println "Done";
+;

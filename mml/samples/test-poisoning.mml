@@ -10,5 +10,5 @@ let c = a + b;
 pub fn main() = 
 // third error: caused by c being bad
 
-  println (int_to_str c)
-;;
+  println (int_to_str c);
+;

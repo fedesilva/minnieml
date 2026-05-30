@@ -3,5 +3,5 @@ op **(a: Int, b: Int) 80 left = a + b;;
 let f: Int -> Int = { x: Int -> 2 ** x };
 
 pub fn main() = 
-  println (int_to_str (f 2))
-;;
+  println (int_to_str (f 2));
+;

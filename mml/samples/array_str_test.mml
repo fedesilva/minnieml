@@ -10,5 +10,5 @@ pub fn main(): Unit =
   println ("Length: " ++ (int_to_str len));
   println ("arr[0] = " ++ v0);
   println ("arr[1] = " ++ v1);
-  println ("arr[2] = " ++ v2)
-;;
+  println ("arr[2] = " ++ v2);
+;

@@ -3,6 +3,11 @@
 This document records source-formatting conventions for MML programs. For syntax and
 semantic rules, see the [language reference](language-reference.md).
 
+Use common sense and develop an MML formatting intuition from the existing samples.
+This guide calls out the most aggravating style problems explicitly; it is not meant
+to force mechanical rewrites of clear, readable code. Prefer preserving local
+aesthetics when the code already makes the expression structure evident.
+
 ## Semicolons
 
 MML uses semicolons as terminators, not separators. See the language reference on
@@ -58,6 +63,25 @@ let grid = Grid
 The standalone terminator acts as a visual closing marker for the expression. Do not
 confuse this with writing both expression and declaration terminators together as `;;`
 for a multi-line body.
+
+For a single vertically split expression, it is also acceptable to attach the
+expression terminator to the final closing delimiter when that delimiter closes the
+expression being bound:
+
+```mml
+fn make_test_results(): String =
+  concat
+    (concat "Zero: " (concat (int_to_str 0) ", "))
+    (concat
+      (concat "Positive: " (concat (int_to_str 123) ", "))
+      (concat "Large: " (int_to_str 1234567890))
+    );
+;
+```
+
+This is different from multi-branch constructs such as `if`, where each branch
+expression and the conditional expression should be terminated explicitly on their
+own aligned lines.
 
 ## Let Bindings
 

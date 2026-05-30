@@ -5,8 +5,8 @@ struct Person {
 };
 
 fn mkPerson(): Unit =
-  ???
-;;
+  ???;
+;
 
 pub fn main() =
   println "Enter name:";
