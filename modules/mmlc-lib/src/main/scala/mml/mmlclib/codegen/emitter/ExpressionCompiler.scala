@@ -1162,7 +1162,7 @@ def compileApp(
           // First-class function values, including globals stored as { fn_ptr, env_ptr }, must use
           // the shared indirect-call path.
           val isIndirect = hasFunctionType &&
-            (functionScope.contains(ref.name) || !isDirectCallableRef(ref, state))
+            (functionScope.contains(ref.name) || !resolvesToNamedFunctionSymbol(ref, state))
           if isIndirect then
             compileIndirectCall(ref, allArgs, app, state, functionScope, compileExpr)
           else

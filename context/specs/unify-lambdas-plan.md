@@ -431,10 +431,15 @@ slice or accept temporary breakage; do not invent a shim.
   shape the same way as normal scoped lambda bindings: emit the Direct entry and bind a
   `DirectCallable` in the local scope.
 
-- **Remaining S6 work (Phase 6.4):**
-  - Un-ignore `ClosureCodegenTest` "local move capturing closures free through their specific env
-    destructor".
-  - Retire `isDirectCallableRef` if MaterializationAnalyzer's coverage proves complete.
+- **Phase 6.4 — complete closure codegen cleanup. *(done)***
+  `ClosureCodegenTest`'s local move-capturing closure cleanup regression now runs and
+  pins the locally known env-specific destructor path. The codegen helper formerly
+  named `isDirectCallableRef` is retired in favor of `resolvesToNamedFunctionSymbol`,
+  because this call-site decision is about whether a ref can lower to an emitted
+  function symbol, not whether the producing lambda is `Materialization.Direct`.
+  `FunctionSignatureTest` covers a top-level function used both directly and as a
+  higher-order value, preserving the distinct direct-call and fat-pointer
+  materialization shapes.
 
 - **Phase 6.5 — deduplicate named-function closure thunks. *(pending)***
   Codegen hygiene only: when a named function is materialized as a first-class value,

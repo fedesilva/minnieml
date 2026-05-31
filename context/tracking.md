@@ -48,7 +48,7 @@ Slice progress (see `context/specs/unify-lambdas-plan.md`):
 - [x] S3 — `MaterializationAnalyzer` pass (COMPLETE — commit 456a0c4)
 - [ ] S4 — Ownership: non-capturing / null-env values stop being treated as owned heap *(in progress)*
 - [ ] S5 — Ownership: treat lambda values as ordinary unique values
-- [ ] S6 — Codegen: derive direct-vs-closure entry from demand
+- [x] S6 — Codegen: derive direct-vs-closure entry from demand (COMPLETE)
 - [x] S6 Phase 6.3.d — Direct callable capture boundary
 - [ ] S7 — Codegen: env allocation rule consumes `isMove`
 - [ ] S8 — Tail-recursion follow-up under unified model
@@ -57,8 +57,8 @@ Slice progress (see `context/specs/unify-lambdas-plan.md`):
 - [ ] S11 — Stack-promotion for non-escaping move-capturing lambdas
 - [ ] S6.5 — Codegen hygiene: deduplicate named-function closure thunks
 - [ ] Accept nullary lambda heads in immediate application — `TypeChecker.scala:784` guards on `lambda.params.nonEmpty`, so `App(Lambda(params=[], …), ())` falls through to `determineApplicationType` (no `Lambda` arm) and is rejected as `InvalidApplication`. Ignored test: `MaterializationAnalyzerTests.scala` — `"nullary lambda literal in immediate application is direct"`. Un-ignore once accepted.
-- [ ] Un-ignore `ClosureCodegenTest` "local move capturing closures free through their specific env destructor" at S6. Ignored at S4 because the rewritten fixture (`apply f 41`) still depends on S6 reshaping the closure-call lowering before its IR snapshot stabilizes.
-- [ ] Close the pinned mem regression `tests/mem/direct-move-closure.mml` at S6. The file is added at S4 and is expected to fail under ASan/LSan until S6's lowering rule for `isDirect` lambdas stops materializing an env. Until then the mem harness reports a 1-test failure on every run.
+- [x] Un-ignore `ClosureCodegenTest` "local move capturing closures free through their specific env destructor" at S6. (COMPLETE)
+- [x] Close the pinned mem regression `tests/mem/direct-move-closure.mml` at S6. (COMPLETE)
 
 ### define new tasks
 
@@ -79,6 +79,11 @@ Slice progress (see `context/specs/unify-lambdas-plan.md`):
 * add commands to manage the cache (init, clean)
 
 ## Change Log
+
+- 2026-05-31: #255 unify-lambdas S6 Phase 6.4 — complete closure codegen cleanup
+  - `ClosureCodegenTest.scala`: un-ignored the local move-capturing closure cleanup regression that pins direct calls to the generated env destructor.
+  - `codegen/emitter/expression/package.scala` / `ExpressionCompiler.scala`: replaced the misleading `isDirectCallableRef` helper with `resolvesToNamedFunctionSymbol`, making the direct-call fallback explicitly about emitted named-function symbols.
+  - `FunctionSignatureTest.scala`: added mixed direct and higher-order top-level function coverage so each use site keeps the correct call representation.
 
 - 2026-05-30: #255 unify-lambdas — fix zero-field closure-env TBAA emission
   - `codegen/emitter/package.scala`: zero-field TBAA struct layouts now skip metadata emission; non-empty struct metadata is built from operand lists to avoid dangling separators.

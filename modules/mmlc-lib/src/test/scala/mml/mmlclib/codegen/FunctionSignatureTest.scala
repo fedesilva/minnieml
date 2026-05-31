@@ -329,6 +329,34 @@ class FunctionSignatureTest extends BaseEffFunSuite:
     }
   }
 
+  test("mixed direct and higher-order top-level function uses keep both call shapes") {
+    val source =
+      """
+        fn apply(f: Int -> Int, n: Int): Int = f n;;
+        fn inc(x: Int): Int = x + 1;;
+        fn main(): Int = (inc 1) + (apply inc 2);;
+      """
+
+    compileAndGenerate(source).map { llvmIr =>
+      val mainBody = functionBody(llvmIr, "test_main\\(\\) #0")
+
+      assert(
+        mainBody.contains("call i64 @test_inc(i64 1)"),
+        s"Direct top-level call should use the emitted function symbol. Body:\n$mainBody"
+      )
+      assert(
+        """call i64 @test_apply\(\{ ptr, ptr \} \{ ptr @test__anon_\d+, ptr null \}, i64 2\)""".r
+          .findFirstIn(mainBody)
+          .nonEmpty,
+        s"Higher-order top-level use should pass a first-class function value. Body:\n$mainBody"
+      )
+      assert(
+        !llvmIr.contains("load { ptr, ptr }, ptr @test_inc"),
+        s"Named top-level function should not be loaded as a fat-pointer global. IR:\n$llvmIr"
+      )
+    }
+  }
+
   test("global function-valued bindings call through the indirect fat-pointer path") {
     val source =
       """

@@ -93,9 +93,13 @@ def getResolvedName(ref: Ref, state: CodeGenState): String =
       else state.mangleName(bnd.name)
     case _ => ref.name
 
-/** True when a ref resolves to a directly emitted callable symbol rather than a fat-pointer value.
+/** True when a ref resolves to a binding emitted as a callable symbol.
+  *
+  * This is a symbol-lowering property, not a `Materialization.Direct` predicate. A named function
+  * can be passed as a first-class `{ ptr, ptr }` value at one use site and still be called through
+  * its plain emitted symbol at another use site.
   */
-def isDirectCallableRef(ref: Ref, state: CodeGenState): Boolean =
+def resolvesToNamedFunctionSymbol(ref: Ref, state: CodeGenState): Boolean =
   ref.resolvedId.flatMap(state.resolvables.lookup) match
     case Some(bnd: Bnd) =>
       bnd.value.terms match
