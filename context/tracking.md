@@ -16,6 +16,17 @@
 
 ## Active Tasks
 
+### Add lambda test harness
+
+  like mem harness but with programs that do stuff with lambdas
+  and that may also include memory integrations.
+
+  discuss.
+
+### Context Tools
+
+Add verbiage and design for multiagent execution.
+
 ### #255 Unify lambdas
 
 * Status: In progress
