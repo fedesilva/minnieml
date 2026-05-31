@@ -83,6 +83,9 @@ The compiler needs to be installed before it's used if changes were made.
 
 - **Validate**: Run the *full* test suite
 
+- **Publish the compiler** with `sbtn mmlcPublishLocal` before running benchmarks or the test 
+    harness, since both use `mmlc`.
+
 - **Run benchmarks**:
   - after publishing the compiler:
   - run `make -C benchmark clean`
@@ -97,6 +100,9 @@ The compiler needs to be installed before it's used if changes were made.
   - If the retry also fails or stalls, explicitly report it as a verification failure and ask the Author
     to run it locally.
   - Prefer killing and retrying over waiting indefinitely on a stuck shell interaction.
+
+  - Do a qa enforcement pass before handing over the task
+    - use the qa-enforcer skill
 
 ## Git usage
 
