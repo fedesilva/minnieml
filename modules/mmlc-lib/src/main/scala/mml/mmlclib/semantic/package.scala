@@ -18,7 +18,7 @@ private def showType(t: Type): String = t match
   case TypeTuple(_, elems) => s"(${elems.map(showType).mkString(", ")})"
   case NativePrimitive(_, llvm, _, _) => llvm
   case NativePointer(_, llvm, _, _) => s"*$llvm"
-  case TypeVariable(_, name) => name
+  case TypeVariable(_, name, _) => name
   case _ => t.getClass.getSimpleName
 
 enum TypeError extends CompilationError:

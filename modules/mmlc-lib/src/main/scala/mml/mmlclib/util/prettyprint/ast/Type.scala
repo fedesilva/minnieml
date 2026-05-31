@@ -110,7 +110,7 @@ def prettyPrintTypeSpec(
           .mkString(",\n")
         s"@native {\n$fieldStrs\n${"  " * indent}}$spanStr"
 
-    case Some(TypeVariable(sp, name)) =>
+    case Some(TypeVariable(sp, name, _)) =>
       val spanStr = if showSourceSpans then s" ${printSourceOrigin(sp)}" else ""
       s"$name$spanStr"
 
@@ -152,7 +152,7 @@ private def formatTypeSpecInline(
     case TypeUnit(sp) =>
       val spanStr = if showSourceSpans then s" ${printSourceOrigin(sp)}" else ""
       s"Unit$spanStr"
-    case TypeVariable(sp, name) =>
+    case TypeVariable(sp, name, _) =>
       val spanStr = if showSourceSpans then s" ${printSourceOrigin(sp)}" else ""
       s"$name$spanStr"
     case NativePrimitive(sp, llvmType, _, _) =>

@@ -441,7 +441,7 @@ slice or accept temporary breakage; do not invent a shim.
   higher-order value, preserving the distinct direct-call and fat-pointer
   materialization shapes.
 
-- **Phase 6.5 — deduplicate named-function closure thunks. *(pending)***
+- **Phase 6.5 — deduplicate named-function closure thunks. *(done)***
   Codegen hygiene only: when a named function is materialized as a first-class value,
   reuse one closure-entry thunk per `(original resolved function symbol, closure ABI
   signature)` instead of emitting a fresh anonymous forwarding thunk at every
@@ -466,6 +466,12 @@ slice or accept temporary breakage; do not invent a shim.
   only first-class named-function values use the shared closure-entry thunk with a null
   environment. Validation target: unoptimized IR is more stable and inspectable while
   optimized IR remains equivalent.
+
+  Landed implementation: `CodeGenState` carries a named closure-entry cache keyed by
+  target symbol and closure ABI signature. `ExpressionCompiler` recognizes non-capturing
+  eta-forwarding lambdas produced for named-function values and routes them through the
+  stable `@<fn>__closure_entry` symbol. Repeated higher-order uses reuse the cached
+  deferred definition; direct calls still target the plain named function symbol.
 - **Files:** `ExpressionCompiler.scala` (`compileLambdaLiteral` L151,
   `compileCapturingLambda` L662, `compileNonCapturingLambda` L381, `emitCallSiteEnv`
   L518); `Applications.scala` (`compileIndirectCall` L555, `staticNullEnvClosureTarget`,

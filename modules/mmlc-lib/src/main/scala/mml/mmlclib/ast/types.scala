@@ -127,7 +127,8 @@ case class TypeGroup(
 /** A type variable (like 'T, 'R in the type system) */
 case class TypeVariable(
   source: SourceOrigin,
-  name:   String // "'T", "'R", "'A", etc.
+  name:   String, // "'T", "'R", "'A", etc.
+  constraints: List[Type] = Nil // "'R: Readable & Writable" would be TypeVariable("'R", List(TypeRef("Readable"), TypeRef("Writable")))
 ) extends Type
 
 /** A type scheme: ∀'T 'R 'A. Type
@@ -141,7 +142,8 @@ case class TypeVariable(
   */
 case class TypeScheme(
   source:   SourceOrigin,
-  vars:     List[String], // ["'T", "'R"] - the quantified variables
+  // TODO: this should not be String, it should be TypeVariable?
+  vars:     List[String], // ["'T", "'R"] - the quantified variables 
   bodyType: Type // The actual type with variables
 ) extends Type
 

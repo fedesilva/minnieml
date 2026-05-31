@@ -81,14 +81,10 @@ class TailRecursionLoopificationTest extends BaseEffFunSuite:
       """
 
     compileAndGenerate(source, config = CompilerConfig.default.copy(noTco = false)).map { llvmIr =>
-      val applyBody = functionBody(llvmIr, "test_apply\\(\\{ ptr, ptr \\} %0\\) #0")
-      val mainBody  = functionBody(llvmIr, "test_main\\(\\) #0")
-      val wrapperMatch =
-        """(?s)define internal i64 @(test__anon_\d+)\(i64 %0, ptr %1\) #0 \{\n(.*?)\n\}""".r
-          .findFirstMatchIn(llvmIr)
-          .getOrElse(fail(s"Missing closure-entry wrapper. IR:\n$llvmIr"))
-      val wrapperName = wrapperMatch.group(1)
-      val wrapperBody = wrapperMatch.group(2)
+      val applyBody   = functionBody(llvmIr, "test_apply\\(\\{ ptr, ptr \\} %0\\) #0")
+      val mainBody    = functionBody(llvmIr, "test_main\\(\\) #0")
+      val wrapperName = "test_down__closure_entry"
+      val wrapperBody = functionBody(llvmIr, s"$wrapperName\\(i64 %0, ptr %1\\) #0")
 
       assert(
         llvmIr.contains("define internal i64 @test_down(i64 %0) #0"),

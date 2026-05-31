@@ -354,9 +354,10 @@ case class CodeGenState(
   // Resolvables index for soft reference lookups
   resolvables: ResolvablesIndex = ResolvablesIndex(),
   // Deferred function definitions (expression-position lambdas compiled as separate functions)
-  deferredDefinitions:     List[String] = List.empty,
-  nextAnonFnId:            Int          = 0,
-  insideLoopifiedFunction: Boolean      = false
+  deferredDefinitions:     List[String]                      = List.empty,
+  namedClosureEntries:     Map[NamedClosureEntryKey, String] = Map.empty,
+  nextAnonFnId:            Int                               = 0,
+  insideLoopifiedFunction: Boolean                           = false
 ):
   /** Returns a new state with an updated register counter. */
   def withRegister(reg: Int): CodeGenState =
@@ -374,6 +375,9 @@ case class CodeGenState(
   /** Appends a deferred function definition (emitted after main output). */
   def addDeferredDefinition(defn: String): CodeGenState =
     copy(deferredDefinitions = defn :: deferredDefinitions)
+
+  def withNamedClosureEntry(key: NamedClosureEntryKey, entryName: String): CodeGenState =
+    copy(namedClosureEntries = namedClosureEntries + (key -> entryName))
 
   /** Emits a single line of LLVM IR code, returning the updated state. */
   def emit(line: String): CodeGenState =
@@ -670,6 +674,12 @@ case class CodeGenState(
 case class DirectCallable(
   entryName:       String,
   captureOperands: List[(String, String)] // (operand, llvmType)
+)
+
+case class NamedClosureEntryKey(
+  targetSymbol: String,
+  returnType:   String,
+  paramTypes:   List[String]
 )
 
 /** An entry in the function scope, tracking a binding's register and type info.

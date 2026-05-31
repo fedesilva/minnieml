@@ -171,10 +171,17 @@ private[emitter] def compileLambdaLiteral(
       CodeGenError(s"Lambda missing TypeFn typeSpec, got: $other", lambda.some).asLeft
 
   typeFn.flatMap { tf =>
-    val (stateWithId, fnName) = preAllocatedName.getOrElse(state.allocAnonFnName)
     for
-      returnType <- getLlvmType(tf.returnType, stateWithId)
-      paramTypes <- tf.paramTypes.traverse(getLlvmType(_, stateWithId))
+      returnType <- getLlvmType(tf.returnType, state)
+      paramTypes <- tf.paramTypes.traverse(getLlvmType(_, state))
+
+      namedClosureEntry = preAllocatedName match
+        case Some(_) => none
+        case None =>
+          reusableNamedClosureEntry(lambda, state, returnType, paramTypes.toList)
+      (stateWithId, fnName) = preAllocatedName
+        .orElse(namedClosureEntry.map(plan => (state, plan.entryName)))
+        .getOrElse(state.allocAnonFnName)
 
       // Check for tail recursion in let-bound lambdas
       tailRecBody = for
@@ -195,17 +202,109 @@ private[emitter] def compileLambdaLiteral(
             functionScope
           )
         case None =>
-          compileRegularLambdaLiteral(
-            lambda,
-            stateWithId,
-            fnName,
-            returnType,
-            paramTypes.toList,
-            functionScope,
-            bindingParam
-          )
+          namedClosureEntry match
+            case Some(plan) =>
+              compileReusableNamedClosureEntry(
+                plan,
+                lambda,
+                stateWithId,
+                fnName,
+                returnType,
+                paramTypes.toList
+              )
+            case None =>
+              compileRegularLambdaLiteral(
+                lambda,
+                stateWithId,
+                fnName,
+                returnType,
+                paramTypes.toList,
+                functionScope,
+                bindingParam
+              )
     yield result
   }
+
+private case class NamedClosureEntryPlan(
+  key:       NamedClosureEntryKey,
+  entryName: String
+)
+
+private def reusableNamedClosureEntry(
+  lambda:     Lambda,
+  state:      CodeGenState,
+  returnType: String,
+  paramTypes: List[String]
+): Option[NamedClosureEntryPlan] =
+  if lambda.captures.nonEmpty || lambda.isMove || lambda.meta.exists(_.isTailRecursive) then none
+  else
+    etaForwardTarget(lambda, state).map { ref =>
+      val targetSymbol = getResolvedName(ref, state)
+      val key          = NamedClosureEntryKey(targetSymbol, returnType, paramTypes)
+      val entryName    = state.namedClosureEntries.getOrElse(key, s"${targetSymbol}__closure_entry")
+      NamedClosureEntryPlan(key, entryName)
+    }
+
+private def etaForwardTarget(lambda: Lambda, state: CodeGenState): Option[Ref] =
+  lambda.body.terms match
+    case List(app: App) =>
+      val (fnOrLambda, args) = collectArgsAndFunction(app)
+      fnOrLambda match
+        case ref: Ref
+            if argsMatchParams(args, lambda.params) && resolvesToNamedUserFunction(ref, state) =>
+          ref.some
+        case _ => none
+    case List(ref: Ref) if lambda.params.isEmpty && resolvesToNamedUserFunction(ref, state) =>
+      ref.some
+    case _ => none
+
+private def argsMatchParams(args: List[Expr], params: List[FnParam]): Boolean =
+  args.length == params.length &&
+    args.zip(params).forall { case (arg, param) =>
+      arg.terms match
+        case List(ref: Ref) =>
+          (ref.resolvedId, param.id) match
+            case (Some(refId), Some(paramId)) => refId == paramId
+            case _ => ref.name == param.name
+        case _ => false
+    }
+
+private def resolvesToNamedUserFunction(ref: Ref, state: CodeGenState): Boolean =
+  ref.resolvedId.flatMap(state.resolvables.lookup) match
+    case Some(bnd: Bnd) =>
+      bnd.value.terms match
+        case List(_: Lambda) => !isNativeBinding(bnd)
+        case _ => false
+    case _ => false
+
+private def compileReusableNamedClosureEntry(
+  plan:       NamedClosureEntryPlan,
+  lambda:     Lambda,
+  state:      CodeGenState,
+  fnName:     String,
+  returnType: String,
+  paramTypes: List[String]
+): Either[CodeGenError, CompileResult] =
+  state.namedClosureEntries.get(plan.key) match
+    case Some(entryName) =>
+      CompileResult(
+        register     = 0,
+        state        = state,
+        isLiteral    = true,
+        typeName     = "Function",
+        literalValue = s"{ ptr @$entryName, ptr null }".some
+      ).asRight
+    case None =>
+      val cachedState = state.withNamedClosureEntry(plan.key, plan.entryName)
+      compileRegularLambdaLiteral(
+        lambda,
+        cachedState,
+        fnName,
+        returnType,
+        paramTypes,
+        Map.empty,
+        none
+      )
 
 /** Compiles a tail-recursive let-bound lambda as a deferred LLVM function. */
 private def compileTailRecLambdaLiteral(

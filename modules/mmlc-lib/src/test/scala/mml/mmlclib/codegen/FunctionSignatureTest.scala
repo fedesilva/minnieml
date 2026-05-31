@@ -315,17 +315,39 @@ class FunctionSignatureTest extends BaseEffFunSuite:
         s"Named top-level function should not be loaded as a fat-pointer global. IR:\n$llvmIr"
       )
       assert(
-        """define internal i64 @test__anon_\d+\(i64 %0, ptr %1\) #0""".r
-          .findFirstIn(llvmIr)
-          .nonEmpty,
-        s"Expected an eta-expanded wrapper function for the higher-order arg. IR:\n$llvmIr"
+        llvmIr.contains("define internal i64 @test_inc__closure_entry(i64 %0, ptr %1) #0"),
+        s"Expected a named closure-entry wrapper for the higher-order arg. IR:\n$llvmIr"
       )
       assert(
-        """call i64 @test_apply\(\{ ptr, ptr \} \{ ptr @test__anon_\d+, ptr null \}\)""".r
-          .findFirstIn(mainBody)
-          .nonEmpty,
+        mainBody.contains(
+          "call i64 @test_apply({ ptr, ptr } { ptr @test_inc__closure_entry, ptr null })"
+        ),
         s"main should pass a first-class function value into apply. Body:\n$mainBody"
       )
+    }
+  }
+
+  test("repeated higher-order named function arguments reuse one closure entry") {
+    val source =
+      """
+        fn apply(f: Int -> Int): Int = f 1;;
+        fn inc(x: Int): Int = x + 1;;
+        fn main(): Int = (apply inc) + (apply inc);;
+      """
+
+    compileAndGenerate(source).map { llvmIr =>
+      val mainBody = functionBody(llvmIr, "test_main\\(\\) #0")
+      val wrapperDefinitions =
+        """define internal i64 @test_inc__closure_entry\(i64 %0, ptr %1\) #0""".r
+          .findAllMatchIn(llvmIr)
+          .length
+      val materializations =
+        """\{ ptr @test_inc__closure_entry, ptr null \}""".r
+          .findAllMatchIn(mainBody)
+          .length
+
+      assertEquals(wrapperDefinitions, 1)
+      assertEquals(materializations, 2)
     }
   }
 
@@ -345,9 +367,9 @@ class FunctionSignatureTest extends BaseEffFunSuite:
         s"Direct top-level call should use the emitted function symbol. Body:\n$mainBody"
       )
       assert(
-        """call i64 @test_apply\(\{ ptr, ptr \} \{ ptr @test__anon_\d+, ptr null \}, i64 2\)""".r
-          .findFirstIn(mainBody)
-          .nonEmpty,
+        mainBody.contains(
+          "call i64 @test_apply({ ptr, ptr } { ptr @test_inc__closure_entry, ptr null }, i64 2)"
+        ),
         s"Higher-order top-level use should pass a first-class function value. Body:\n$mainBody"
       )
       assert(
@@ -425,7 +447,7 @@ class FunctionSignatureTest extends BaseEffFunSuite:
     compileAndGenerate(source).map { llvmIr =>
       val forwardBody = functionBody(llvmIr, """test_forward\([^\n]*\) #0""")
       val mainBody    = functionBody(llvmIr, "test_main\\(\\) #0")
-      val anonBody    = functionBody(llvmIr, """test__anon_\d+\([^\n]*\) #0""")
+      val wrapperBody = functionBody(llvmIr, """test_add__closure_entry\([^\n]*\) #0""")
 
       assert(
         forwardBody.contains("call i64 @test_apply2({ ptr, ptr } %0)") &&
@@ -433,14 +455,14 @@ class FunctionSignatureTest extends BaseEffFunSuite:
         s"forward should pass its local callable param through unchanged. Body:\n$forwardBody"
       )
       assert(
-        """call i64 @test_forward\(\{ ptr, ptr \} \{ ptr @test__anon_\d+, ptr null \}\)""".r
-          .findFirstIn(mainBody)
-          .nonEmpty,
+        mainBody.contains(
+          "call i64 @test_forward({ ptr, ptr } { ptr @test_add__closure_entry, ptr null })"
+        ),
         s"main should still eta-expand the bare top-level add ref. Body:\n$mainBody"
       )
       assert(
-        anonBody.contains("call i64 @test_add(i64 %0, i64 %1)"),
-        s"The top-level add wrapper should forward both arguments into test_add. Body:\n$anonBody"
+        wrapperBody.contains("call i64 @test_add(i64 %0, i64 %1)"),
+        s"The top-level add wrapper should forward both arguments into test_add. Body:\n$wrapperBody"
       )
     }
   }

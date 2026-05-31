@@ -55,7 +55,7 @@ Slice progress (see `context/specs/unify-lambdas-plan.md`):
 - [ ] S9 — Equivalence test pass
 - [ ] S10 — `BindingMeta` reduction
 - [ ] S11 — Stack-promotion for non-escaping move-capturing lambdas
-- [ ] S6.5 — Codegen hygiene: deduplicate named-function closure thunks
+- [x] S6.5 — Codegen hygiene: deduplicate named-function closure thunks (COMPLETE)
 - [ ] Accept nullary lambda heads in immediate application — `TypeChecker.scala:784` guards on `lambda.params.nonEmpty`, so `App(Lambda(params=[], …), ())` falls through to `determineApplicationType` (no `Lambda` arm) and is rejected as `InvalidApplication`. Ignored test: `MaterializationAnalyzerTests.scala` — `"nullary lambda literal in immediate application is direct"`. Un-ignore once accepted.
 - [x] Un-ignore `ClosureCodegenTest` "local move capturing closures free through their specific env destructor" at S6. (COMPLETE)
 - [x] Close the pinned mem regression `tests/mem/direct-move-closure.mml` at S6. (COMPLETE)
@@ -79,6 +79,11 @@ Slice progress (see `context/specs/unify-lambdas-plan.md`):
 * add commands to manage the cache (init, clean)
 
 ## Change Log
+
+- 2026-05-31: #255 unify-lambdas S6.5 — deduplicate named-function closure thunks
+  - `ExpressionCompiler.scala` / `codegen/emitter/package.scala`: added a named closure-entry cache so repeated first-class uses of the same named function reuse `@<fn>__closure_entry` instead of fresh anonymous forwarding thunks.
+  - `FunctionSignatureTest.scala`: pinned stable named-function closure entries and added repeated higher-order named-function coverage.
+  - `TailRecursionLoopificationTest.scala`: refreshed the tail-recursive named-function value assertion to the stable closure-entry shape.
 
 - 2026-05-31: #255 unify-lambdas S6 Phase 6.4 — complete closure codegen cleanup
   - `ClosureCodegenTest.scala`: un-ignored the local move-capturing closure cleanup regression that pins direct calls to the generated env destructor.

@@ -1235,7 +1235,7 @@ object AstLookup:
 
       case TypeUnit(_) => "Unit"
 
-      case TypeVariable(_, name) => name
+      case TypeVariable(_, name, _) => name
 
       case TypeScheme(_, vars, body) =>
         if vars.isEmpty then formatTypeInner(body)
