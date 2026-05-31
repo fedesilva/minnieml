@@ -534,6 +534,12 @@ slice or accept temporary breakage; do not invent a shim.
 - **Acceptance:** record the decision in this plan before starting implementation. If
   pulled forward, move S11's files and acceptance criteria into the new post-S7 slice;
   if left as S11, keep S7.5 purely structural and avoid stack-promotion behavior.
+- **S11 design note:** ownership analysis supplies the frame-local fact, and codegen
+  consumes it through the allocation classifier rather than re-inferring escape/lifetime
+  from the final AST. The first S11 implementation should likely add a `StackMoveEnv`
+  classification case. Because `closure-mem-gen` runs before ownership, S11 should
+  initially reuse the move-env struct layout and change only the call-site allocation /
+  cleanup choice; ownership should not reshape env structs earlier in the pipeline.
 - **Sub-issue?** No — planning gate only.
 
 ### S8 — Tail-recursion follow-up under unified model
@@ -615,15 +621,6 @@ slice or accept temporary breakage; do not invent a shim.
 - **Sub-issue?** Yes — non-trivial optimization with mem-safety implications.
 
 ---
-
-## Out of scope
-
-- Implementation of any slice (this doc is the plan, not the work).
-- Resolving items in `context/specs/lambdas-work-review.md` beyond noting which slice
-  subsumes which. Most P1s already closed in changelog; remaining P1 "Stop freeing
-  non-capturing function values as closures" is closed by S4; P2/P3 items not addressed
-  unless they fall naturally into a slice.
-- GH project mutations (creating sub-issues / project-add). Held until Author approval.
 
 ## Open follow-ups after approval
 
