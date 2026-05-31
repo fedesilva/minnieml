@@ -674,9 +674,15 @@ case class CodeGenState(
   */
 case class DirectCallable(
   entryName:       String,
-  captureOperands: List[(String, String)], // (operand, llvmType)
+  captureOperands: List[DirectOperand],
   paramTypes:      List[String]   = Nil,
   returnType:      Option[String] = None
+)
+
+case class DirectOperand(
+  operand:      String,
+  llvmType:     String,
+  tbaaTypeName: String
 )
 
 case class NamedClosureEntryKey(

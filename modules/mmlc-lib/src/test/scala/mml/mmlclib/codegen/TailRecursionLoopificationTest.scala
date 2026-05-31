@@ -246,12 +246,15 @@ class TailRecursionLoopificationTest extends BaseEffFunSuite:
           .findFirstMatchIn(makeFacBody)
           .map(_.group(1))
           .getOrElse(fail(s"Missing PAP env destructor store. Body:\n$makeFacBody"))
+      val envName =
+        """%struct\.(test_factorial_tco_pap_env_\d+) = type \{ ptr, i64 \}""".r
+          .findFirstMatchIn(llvmIr)
+          .map(_.group(1))
+          .getOrElse(fail(s"Missing returned PAP env type. IR:\n$llvmIr"))
       val dtorBody = functionBody(llvmIr, s"$dtorName\\(ptr %0\\) #0")
 
       assert(
-        """%struct\.test_factorial_tco_pap_env_\d+ = type \{ ptr, i64 \}""".r
-          .findFirstIn(llvmIr)
-          .nonEmpty,
+        llvmIr.contains(s"%struct.$envName = type { ptr, i64 }"),
         s"Returned PAP env should use slot 0 for the destructor and slot 1 for n. IR:\n$llvmIr"
       )
       assert(
@@ -288,6 +291,93 @@ class TailRecursionLoopificationTest extends BaseEffFunSuite:
           """call void @test___free_closure\(ptr %\d+\).*""").r
           .matches(mainBody),
         s"Caller should call the returned PAP and then drop its env. Body:\n$mainBody"
+      )
+      assert(
+        s"""store ptr @$dtorName, ptr %\\d+, !tbaa !\\d+""".r
+          .findFirstIn(makeFacBody)
+          .nonEmpty,
+        s"Returned PAP env destructor store should carry TBAA metadata. Body:\n$makeFacBody"
+      )
+      assert(
+        """store i64 %0, ptr %\d+, !tbaa !\d+""".r.findFirstIn(makeFacBody).nonEmpty,
+        s"Returned PAP env payload store should carry TBAA metadata. Body:\n$makeFacBody"
+      )
+      assert(
+        """load i64, ptr %\d+, !tbaa !\d+""".r.findFirstIn(papBody).nonEmpty,
+        s"PAP entry payload load should carry TBAA metadata. Body:\n$papBody"
+      )
+      val envTbaaLines = llvmIr.split("\n").filter(_.contains(s"""!"$envName""""))
+      assert(
+        envTbaaLines.exists(line => line.contains("i64 0") && line.contains("i64 8")),
+        s"Returned PAP env TBAA node should describe destructor and payload offsets. Nodes:\n${envTbaaLines.mkString("\n")}"
+      )
+    }
+  }
+
+  test("capturing partial application of local loopified Direct function tags PAP env fields") {
+    val source =
+      """
+      pub fn main(): Int =
+        let step = 2;
+        let loop: Int -> Int -> Int =
+          { n: Int, acc: Int ->
+            if n <= 0 then acc;
+            else loop (n - 1) (acc + step);
+            ;
+          }
+        ;
+
+        let from3: Int -> Int = loop 3;
+
+        from3 0;
+      ;
+      """
+
+    compileAndGenerate(source, config = CompilerConfig.default.copy(noTco = false)).map { llvmIr =>
+      val directMatch =
+        """define internal i64 @(test_loop_\d+)\(i64 %0, i64 %1, i64 %2\) #0 \{""".r
+          .findFirstMatchIn(llvmIr)
+          .getOrElse(fail(s"Missing capturing Direct loop entry. IR:\n$llvmIr"))
+      val papMatch =
+        """define internal i64 @(test_loop_pap_\d+)\(i64 %0, ptr %1\) #0 \{""".r
+          .findFirstMatchIn(llvmIr)
+          .getOrElse(fail(s"Missing capturing Direct PAP entry. IR:\n$llvmIr"))
+      val envName =
+        """%struct\.(test_loop_pap_env_\d+) = type \{ ptr, i64, i64 \}""".r
+          .findFirstMatchIn(llvmIr)
+          .map(_.group(1))
+          .getOrElse(fail(s"Missing capturing Direct PAP env type. IR:\n$llvmIr"))
+      val papName      = papMatch.group(1)
+      val directName   = directMatch.group(1)
+      val mainBody     = functionBody(llvmIr, "test_main\\(\\) #0")
+      val papBody      = functionBody(llvmIr, s"$papName\\(i64 %0, ptr %1\\) #0")
+      val envTbaaLines = llvmIr.split("\n").filter(_.contains(s"""!"$envName""""))
+
+      assert(
+        papBody.contains(s"call i64 @$directName") && papBody.contains(", i64 %0, i64 %"),
+        s"Capturing PAP entry should forward applied n, remaining acc, and captured step. Body:\n$papBody"
+      )
+      assert(
+        """store ptr @test___free_loop_pap_env_\d+, ptr %\d+, !tbaa !\d+""".r
+          .findFirstIn(mainBody)
+          .nonEmpty,
+        s"Capturing PAP env destructor store should carry TBAA metadata. Body:\n$mainBody"
+      )
+      assert(
+        """store i64 (?:%\d+|[-]?\d+), ptr %\d+, !tbaa !\d+""".r
+          .findAllIn(mainBody)
+          .length >= 2,
+        s"Capturing PAP env payload stores should carry TBAA metadata. Body:\n$mainBody"
+      )
+      assert(
+        """load i64, ptr %\d+, !tbaa !\d+""".r.findAllIn(papBody).length >= 2,
+        s"Capturing PAP entry payload loads should carry TBAA metadata. Body:\n$papBody"
+      )
+      assert(
+        envTbaaLines.exists(line =>
+          line.contains("i64 0") && line.contains("i64 8") && line.contains("i64 16")
+        ),
+        s"Capturing PAP env TBAA node should describe destructor, applied arg, and capture offsets. Nodes:\n${envTbaaLines.mkString("\n")}"
       )
     }
   }

@@ -454,6 +454,7 @@ private def compileTailRecCapturingLambda(
 private[emitter] sealed trait CodegenCaptureSlot:
   def llvmType:     String
   def outerOperand: String
+  def tbaaTypeName: String
 
 private[emitter] object CodegenCaptureSlot:
   /** Value-shaped capture.
@@ -468,13 +469,15 @@ private[emitter] object CodegenCaptureSlot:
     llvmType:     String,
     outerOperand: String,
     cloneFnId:    Option[String]
-  ) extends CodegenCaptureSlot
+  ) extends CodegenCaptureSlot:
+    def tbaaTypeName: String = mmlType
 
   case class DirectOp(
     callableName: String,
     entryName:    String,
     llvmType:     String,
-    outerOperand: String
+    outerOperand: String,
+    tbaaTypeName: String
   ) extends CodegenCaptureSlot
 
 /** Capture layout after expanding Direct-callable captures into value-shaped operands.
@@ -545,8 +548,14 @@ private[emitter] def computeCodegenCaptureLayout(
             case Some(entry) =>
               entry.directCallable match
                 case Some(dc) =>
-                  val expanded = dc.captureOperands.map { case (op, ty) =>
-                    CodegenCaptureSlot.DirectOp(ref.name, dc.entryName, ty, op)
+                  val expanded = dc.captureOperands.map { op =>
+                    CodegenCaptureSlot.DirectOp(
+                      ref.name,
+                      dc.entryName,
+                      op.llvmType,
+                      op.operand,
+                      op.tbaaTypeName
+                    )
                   }
                   (slots ++ expanded, directEntries.updated(ref.name, dc)).asRight
                 case None =>
@@ -560,18 +569,19 @@ private[emitter] def computeCodegenCaptureLayout(
         (
           Map.empty[String, ScopeEntry],
           directEntries.map { case (name, direct) =>
-            name -> (direct, List.empty[(String, String)])
+            name -> (direct, List.empty[DirectOperand])
           }
         )
       ) { case ((scope, dcs), (slot, i)) =>
         slot match
           case CodegenCaptureSlot.Value(name, mmlType, _, _, _) =>
             (scope + (name -> ScopeEntry(userParamCount + i, mmlType)), dcs)
-          case CodegenCaptureSlot.DirectOp(name, entryName, ty, _) =>
+          case CodegenCaptureSlot.DirectOp(name, entryName, ty, _, _) =>
             val innerOp = s"%${userParamCount + i}"
             val direct  = dcs.get(name).map(_._1).getOrElse(DirectCallable(entryName, Nil))
             val prevOps = dcs.get(name).map(_._2).getOrElse(Nil)
-            val updated = dcs.updated(name, (direct, prevOps :+ (innerOp, ty)))
+            val updated =
+              dcs.updated(name, (direct, prevOps :+ DirectOperand(innerOp, ty, slot.tbaaTypeName)))
             (scope, updated)
       }
 
@@ -633,15 +643,15 @@ private[emitter] def evaluateDirectCaptures(
   lambda:        Lambda,
   state:         CodeGenState,
   functionScope: Map[String, ScopeEntry]
-): Either[CodeGenError, (CodeGenState, List[(String, String)])] =
+): Either[CodeGenError, (CodeGenState, List[DirectOperand])] =
   // userParamCount only affects inner SSA indices; the outer operand list is independent of it.
   computeCodegenCaptureLayout(lambda, state, functionScope, userParamCount = 0).map { trailing =>
-    trailing.slots.foldLeft((state, List.empty[(String, String)])) {
-      case ((st, ops), CodegenCaptureSlot.Value(_, _, ty, outerOp, Some(cloneId))) =>
+    trailing.slots.foldLeft((state, List.empty[DirectOperand])) {
+      case ((st, ops), slot @ CodegenCaptureSlot.Value(_, _, ty, outerOp, Some(cloneId))) =>
         val (stAfter, clonedOp) = emitCaptureCloneCall(outerOp, ty, cloneId, st)
-        (stAfter, ops :+ (clonedOp, ty))
+        (stAfter, ops :+ DirectOperand(clonedOp, ty, slot.tbaaTypeName))
       case ((st, ops), slot) =>
-        (st, ops :+ (slot.outerOperand, slot.llvmType))
+        (st, ops :+ DirectOperand(slot.outerOperand, slot.llvmType, slot.tbaaTypeName))
     }
   }
 
@@ -722,7 +732,7 @@ private[emitter] def compileDirectLambda(
         // Inner-scope operands for the self-recursive call site mirror the inner trailing-param
         // layout (one operand per slot, in declaration order).
         val innerCaptureOps = trailing.slots.zipWithIndex.map { case (slot, i) =>
-          (s"%${userParamCount + i}", slot.llvmType)
+          DirectOperand(s"%${userParamCount + i}", slot.llvmType, slot.tbaaTypeName)
         }
         val selfScope = selfBinder.map { p =>
           val entry = ScopeEntry(

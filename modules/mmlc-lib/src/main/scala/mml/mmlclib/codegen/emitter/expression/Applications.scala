@@ -8,6 +8,8 @@ import mml.mmlclib.codegen.emitter.{
   CompileResult,
   DirectCallable,
   ScopeEntry,
+  alignOfLlvmTypeResolved,
+  alignTo,
   compileDirectLambda,
   compileLambdaLiteral,
   emitCall,
@@ -199,7 +201,7 @@ def compileDirectCall(
 
     fnReturnTypeE.flatMap { fnReturnType =>
       val userArgs    = compiledArgs.map(a => (a.llvmType, a.op))
-      val captureArgs = direct.captureOperands.map { case (op, ty) => (ty, op) }
+      val captureArgs = direct.captureOperands.map(op => (op.llvmType, op.operand))
       val callArgs    = userArgs ++ captureArgs
 
       if fnReturnType == "void" then
@@ -276,9 +278,11 @@ private def emitDirectPartialClosure(
   app:               App,
   state:             CodeGenState
 ): Either[CodeGenError, CompileResult] =
-  val appliedFields = compiledArgs.map(arg => (arg.llvmType, arg.op))
-  val captureFields = direct.captureOperands.map { case (op, llvmType) => (llvmType, op) }
-  val envFields     = appliedFields ++ captureFields
+  val appliedFields =
+    compiledArgs.map(arg => DirectPapEnvField(arg.llvmType, arg.op, arg.tbaaTypeName))
+  val captureFields =
+    direct.captureOperands.map(op => DirectPapEnvField(op.llvmType, op.operand, op.tbaaTypeName))
+  val envFields = appliedFields ++ captureFields
 
   if finalReturnType != partialReturnType then
     CodeGenError(
@@ -296,12 +300,14 @@ private def emitDirectPartialClosure(
     val entryName   = stateWithId.mangleName(s"${fnRef.name}_pap_$papId")
     val envTypeName = s"struct.${stateWithId.mangleName(s"${fnRef.name}_pap_env_$papId")}"
     val envTypeRef  = s"%$envTypeName"
+    val envTbaaName = envTypeName.stripPrefix("struct.")
     val dtorName    = stateWithId.mangleName(s"__free_${fnRef.name}_pap_env_$papId")
-    val envTypeDef  = emitTypeDefinition(envTypeName, "ptr" :: envFields.map(_._1))
+    val envTypeDef  = emitTypeDefinition(envTypeName, "ptr" :: envFields.map(_.llvmType))
     val stateWithEnvDef = stateWithId
       .withNativeType(envTypeName, envTypeDef)
       .withFunctionDeclaration("malloc", "ptr", List("i64"))
       .withFunctionDeclaration("mml_free_raw", "void", List("ptr"))
+    val envTbaaLayout = directPapEnvTbaaLayout(envFields, stateWithEnvDef)
 
     val envSize    = sizeOfLlvmTypeResolved(envTypeRef, stateWithEnvDef)
     val mallocReg  = stateWithEnvDef.nextRegister
@@ -317,12 +323,14 @@ private def emitDirectPartialClosure(
       s"%$mallocReg",
       List(("i32", "0"), ("i32", "0"))
     )
-    val dtorStoreLine = emitStore(s"@$dtorName", "ptr", s"%$dtorGepReg")
+    val (stateWithDtorTag, dtorTag) =
+      directPapEnvFieldTbaaTag(envTbaaName, envTbaaLayout, 0, stateAfterAlloc)
+    val dtorStoreLine = emitStore(s"@$dtorName", "ptr", s"%$dtorGepReg", dtorTag)
     val stateAfterDtorStore =
-      stateAfterAlloc.withRegister(dtorGepReg + 1).emit(dtorGepLine).emit(dtorStoreLine)
+      stateWithDtorTag.withRegister(dtorGepReg + 1).emit(dtorGepLine).emit(dtorStoreLine)
 
     val stateAfterStores = envFields.zipWithIndex.foldLeft(stateAfterDtorStore) {
-      case (st, ((llvmType, op), idx)) =>
+      case (st, (field, idx)) =>
         val gepReg = st.nextRegister
         val gepLine = emitGetElementPtr(
           gepReg,
@@ -331,23 +339,34 @@ private def emitDirectPartialClosure(
           s"%$mallocReg",
           List(("i32", "0"), ("i32", (idx + 1).toString))
         )
-        val storeLine = emitStore(op, llvmType, s"%$gepReg")
-        st.withRegister(gepReg + 1).emit(gepLine).emit(storeLine)
+        val (stateWithFieldTag, fieldTag) =
+          directPapEnvFieldTbaaTag(envTbaaName, envTbaaLayout, idx + 1, st)
+        val storeLine = emitStore(field.operand, field.llvmType, s"%$gepReg", fieldTag)
+        stateWithFieldTag.withRegister(gepReg + 1).emit(gepLine).emit(storeLine)
     }
 
-    val fp0Reg = stateAfterStores.nextRegister
+    val (stateWithLoadTags, loadTags) =
+      envFields.indices.foldLeft((stateAfterStores, List.empty[Option[String]])) {
+        case ((st, tags), idx) =>
+          val (stateWithTag, tag) =
+            directPapEnvFieldTbaaTag(envTbaaName, envTbaaLayout, idx + 1, st)
+          (stateWithTag, tags :+ tag)
+      }
+
+    val fp0Reg = stateWithLoadTags.nextRegister
     val fp1Reg = fp0Reg + 1
     val insertFn =
       emitInsertValue(fp0Reg, "{ ptr, ptr }", "undef", "ptr", s"@$entryName", 0)
     val insertEnv =
       emitInsertValue(fp1Reg, "{ ptr, ptr }", s"%$fp0Reg", "ptr", s"%$mallocReg", 1)
-    val siteState = stateAfterStores.withRegister(fp1Reg + 1).emit(insertFn).emit(insertEnv)
+    val siteState = stateWithLoadTags.withRegister(fp1Reg + 1).emit(insertFn).emit(insertEnv)
     val entryBody = renderDirectPartialEntry(
       direct,
       entryName,
       envTypeRef,
-      appliedFields.map(_._1),
-      captureFields.map(_._1),
+      appliedFields.map(_.llvmType),
+      captureFields.map(_.llvmType),
+      loadTags,
       remainingTypes,
       finalReturnType
     )
@@ -356,12 +375,41 @@ private def emitDirectPartialClosure(
 
     CompileResult(fp1Reg, finalState, false, "Function").asRight
 
+private case class DirectPapEnvField(
+  llvmType:     String,
+  operand:      String,
+  tbaaTypeName: String
+)
+
+private def directPapEnvTbaaLayout(
+  fields: List[DirectPapEnvField],
+  state:  CodeGenState
+): List[(String, Int)] =
+  val typedFields = ("RawPtr", "ptr") :: fields.map(field => field.tbaaTypeName -> field.llvmType)
+  typedFields
+    .foldLeft((List.empty[(String, Int)], 0)) { case ((layout, offset), (typeName, llvmType)) =>
+      val alignedOffset = alignTo(offset, alignOfLlvmTypeResolved(llvmType, state))
+      val nextOffset    = alignedOffset + sizeOfLlvmTypeResolved(llvmType, state)
+      (layout :+ (typeName, alignedOffset), nextOffset)
+    }
+    ._1
+
+private def directPapEnvFieldTbaaTag(
+  envTbaaName: String,
+  layout:      List[(String, Int)],
+  fieldIndex:  Int,
+  state:       CodeGenState
+): (CodeGenState, Option[String]) =
+  val (stateWithTag, tag) = state.getTbaaFieldAccessTag(envTbaaName, layout, fieldIndex)
+  (stateWithTag, Option.when(tag.nonEmpty)(tag))
+
 private def renderDirectPartialEntry(
   direct:          DirectCallable,
   entryName:       String,
   envTypeRef:      String,
   appliedTypes:    List[String],
   captureTypes:    List[String],
+  loadTags:        List[Option[String]],
   remainingTypes:  List[String],
   finalReturnType: String
 ): String =
@@ -386,7 +434,7 @@ private def renderDirectPartialEntry(
           s"%$envParamIdx",
           List(("i32", "0"), ("i32", (idx + 1).toString))
         )
-        val loadLine = emitLoad(loadReg, llvmType, s"%$gepReg")
+        val loadLine = emitLoad(loadReg, llvmType, s"%$gepReg", loadTags.lift(idx).flatten)
         (lines :+ gepLine :+ loadLine, ops :+ s"%$loadReg")
     }
 
@@ -658,7 +706,12 @@ def compileRegularCall(
       }
   }
 
-private case class CompiledArg(op: String, llvmType: String, typeSpec: Option[Type])
+private case class CompiledArg(
+  op:           String,
+  llvmType:     String,
+  typeSpec:     Option[Type],
+  tbaaTypeName: String
+)
 
 private def getClosureDestructorKind(
   fnRef: Ref,
@@ -679,7 +732,7 @@ private def extractClosureEnvArg(
     case List(arg) if arg.llvmType == "{ ptr, ptr }" =>
       val envReg      = state.nextRegister
       val extractLine = emitExtractValue(envReg, "{ ptr, ptr }", arg.op, 1)
-      val newArg      = CompiledArg(s"%$envReg", "ptr", none)
+      val newArg      = CompiledArg(s"%$envReg", "ptr", none, "RawPtr")
       (List(newArg), state.withRegister(envReg + 1).emit(extractLine)).asRight
     case _ =>
       CodeGenError(
@@ -706,8 +759,9 @@ private def compileArgs(
                 // Skip void/Unit args - they can't be passed in LLVM
                 if llvmType == "void" then (compiledArgs, argRes.state).asRight
                 else
+                  val tbaaTypeName = getNominalTypeName(typeSpec).getOrElse(llvmType)
                   (
-                    compiledArgs :+ CompiledArg(argOp, llvmType, arg.typeSpec),
+                    compiledArgs :+ CompiledArg(argOp, llvmType, arg.typeSpec, tbaaTypeName),
                     argRes.state
                   ).asRight
               case Left(err) => err.asLeft
@@ -730,13 +784,13 @@ private def compileFunctionWithTemplate(
 ): Either[CodeGenError, CompileResult] =
   val resultReg = state.nextRegister
   val instruction = compiledArgs match
-    case List(CompiledArg(argOp, argType, _)) =>
+    case List(CompiledArg(argOp, argType, _, _)) =>
       // Single arg: use %operand (like unary operators)
       tpl.replace("%type", argType).replace("%operand", argOp)
     case args =>
       // Multiple args: use %operand1, %operand2, ... (like binary operators)
       args.zipWithIndex
-        .foldLeft(tpl) { case (t, (CompiledArg(argOp, argType, _), i)) =>
+        .foldLeft(tpl) { case (t, (CompiledArg(argOp, argType, _, _), i)) =>
           t.replace(s"%operand${i + 1}", argOp).replace(s"%type${i + 1}", argType)
         }
         .replace("%type", args.headOption.map(_.llvmType).getOrElse(""))

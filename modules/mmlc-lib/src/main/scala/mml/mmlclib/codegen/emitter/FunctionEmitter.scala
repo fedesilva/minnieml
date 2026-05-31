@@ -151,7 +151,7 @@ def emitCaptureLoads(
   fieldOffset:   Int = 1
 ): (CodeGenState, Map[String, ScopeEntry]) =
   val directSeed = captureLayout.directEntries.map { case (name, direct) =>
-    name -> (direct, List.empty[(String, String)])
+    name -> (direct, List.empty[DirectOperand])
   }
   val (stateAfterLoads, valueScope, directScopeData) =
     captureLayout.slots.zipWithIndex.foldLeft(
@@ -166,10 +166,14 @@ def emitCaptureLoads(
       slot match
         case CodegenCaptureSlot.Value(name, mmlType, _, _, _) =>
           (newState, scope + (name -> ScopeEntry(loadReg, mmlType)), directData)
-        case CodegenCaptureSlot.DirectOp(name, entryName, ty, _) =>
+        case CodegenCaptureSlot.DirectOp(name, entryName, ty, _, tbaaTypeName) =>
           val direct   = directData.get(name).map(_._1).getOrElse(DirectCallable(entryName, Nil))
           val priorOps = directData.get(name).map(_._2).getOrElse(Nil)
-          val updated  = directData.updated(name, (direct, priorOps :+ (s"%$loadReg", ty)))
+          val updated =
+            directData.updated(
+              name,
+              (direct, priorOps :+ DirectOperand(s"%$loadReg", ty, tbaaTypeName))
+            )
           (newState, scope, updated)
     }
   val directScope = directScopeData.map { case (name, (direct, ops)) =>
