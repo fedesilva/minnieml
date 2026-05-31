@@ -611,6 +611,41 @@ slice or accept temporary breakage; do not invent a shim.
   the uniform `{ ptr, ptr }` value form until correctness and metadata are settled.
 - **Sub-issue?** No — immediate hardening follow-up before S9.
 
+### S8.6 — Review findings to clear before S9
+- **Goal:** resolve (or consciously accept) the items from the static review of this
+  branch against `dev-2026-03-21-lambdas` (2026-05-31) before the S9 soundness gate
+  runs. Items already tracked elsewhere are linked, not repeated.
+
+- **Correctness:**
+  - [ ] Direct move-lambda capturing a heap literal leaks. A Direct `~` lambda that
+    captures a heap literal (e.g. `let greet = ~{ println msg; }` over a `String`)
+    clones the value at the binder site but emits no free at the call frame. Not
+    exercised by the mem harness. Close it (emit the free / drop) or record an explicit
+    decision to defer, backed by a pinned failing mem test. Origin: Phase 6.2.c known
+    issue, currently parked under S6.x / S11.
+
+- **Build / QA:**
+  - [ ] Wrap lines over 100 cols added by this workstream; scalafmt does not reflow long
+    string/comment literals. Known spots: the Direct-lambda bug-guard message in
+    `ExpressionCompiler.scala` (~154 cols), the TypeChecker-bug messages in
+    `Conditionals.scala`, and the `TypeVariable.constraints` comment in `types.scala`.
+    Run the style pass and fix the rest by hand.
+
+- **Coverage to fold into S9:**
+  - [ ] Over-application of a Direct callable. Supplying more args than the callable's
+    arity falls through to `compileDirectCall`; add a case proving it lowers and runs.
+  - [ ] A `NullEnv` function value passed to a consuming `~f` param. Ownership schedules
+    `__free_closure`, which the null-env guard turns into a no-op. Pin a test so this
+    stays sound.
+
+- **Docs:**
+  - [ ] Reconcile S8.5. Its "Remaining" still lists PAP-env TBAA parity as open, but the
+    changelog marks S8.5b complete (commit 5da9c68). Update S8.5 to match.
+
+- **Already tracked, not repeated here:** `__stmt` sequence-lambda marker (#265);
+  nullary lambda head in immediate application (`TypeChecker.scala:784`, Active Tasks).
+- **Sub-issue?** No — review cleanup gate before S9.
+
 ### S9 — Equivalence test pass
 - **Goal:** the spec's success criterion — same MML expressed as top-level fn / local
   fn / let-bound lambda / lambda literal produces equivalent type, ownership, IR, and
