@@ -185,6 +185,16 @@ class ClosureCodegenTest extends BaseEffFunSuite:
       val mainBody = functionBody(llvmIr, "test_main\\(\\) #0")
 
       assert(
+        mainBody.contains("call ptr @malloc"),
+        s"Expected local move closure to heap-allocate its env. Body:\n$mainBody"
+      )
+      assert(
+        """store ptr @test___free___closure_env_\d+, ptr %\d+""".r
+          .findFirstIn(mainBody)
+          .nonEmpty,
+        s"Expected local move closure to store its env destructor. Body:\n$mainBody"
+      )
+      assert(
         """call void @test___free___closure_env_\d+\(ptr %\d+\)""".r.findFirstIn(mainBody).nonEmpty,
         s"Expected local move closure cleanup to call its specific env destructor. Body:\n$mainBody"
       )
@@ -208,6 +218,10 @@ class ClosureCodegenTest extends BaseEffFunSuite:
     compileAndGenerate(source).map { llvmIr =>
       val mainBody = functionBody(llvmIr, "test_main\\(\\) #0")
 
+      assert(
+        """%struct\.__closure_env_\d+ = type \{ i64 \}""".r.findFirstIn(llvmIr).nonEmpty,
+        s"Expected borrow closure env type to contain captures only. IR:\n$llvmIr"
+      )
       assert(
         mainBody.contains("alloca %struct.__closure_env_"),
         s"Expected borrow closure to use alloca for env. Body:\n$mainBody"

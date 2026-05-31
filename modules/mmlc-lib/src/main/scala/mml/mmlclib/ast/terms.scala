@@ -104,6 +104,24 @@ case class LambdaMeta(
 enum Materialization derives CanEqual:
   case Direct, NullEnv, Materialized
 
+/** Closure environment allocation shape derived from lambda materialization and capture mode. */
+enum ClosureEnvAllocation derives CanEqual:
+  case NoEnv, StackBorrowEnv, HeapMoveEnv
+
+  def hasEnv: Boolean = this match
+    case NoEnv => false
+    case StackBorrowEnv | HeapMoveEnv => true
+
+  def usesHeap: Boolean = this match
+    case HeapMoveEnv => true
+    case NoEnv | StackBorrowEnv => false
+
+  def hasDestructorField: Boolean =
+    usesHeap
+
+  def captureFieldOffset: Int =
+    if hasDestructorField then 1 else 0
+
 case class Lambda(
   source:   SourceOrigin,
   params:   List[FnParam],
@@ -118,6 +136,15 @@ case class Lambda(
     if meta.exists(_.isDirect) then Materialization.Direct
     else if captures.isEmpty then Materialization.NullEnv
     else Materialization.Materialized
+
+  def closureEnvAllocation: ClosureEnvAllocation =
+    materialization match
+      case Materialization.Direct | Materialization.NullEnv =>
+        ClosureEnvAllocation.NoEnv
+      case Materialization.Materialized if isMove =>
+        ClosureEnvAllocation.HeapMoveEnv
+      case Materialization.Materialized =>
+        ClosureEnvAllocation.StackBorrowEnv
 
 object Lambda:
   def apply(

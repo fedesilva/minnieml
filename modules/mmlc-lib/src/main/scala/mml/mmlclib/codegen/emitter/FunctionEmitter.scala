@@ -788,7 +788,7 @@ private[emitter] def compileTailRecursiveLambda(
         ).asLeft
       else ().asRight
     captureCount       = captureInfo.fold(0)(_._2.slots.size)
-    captureFieldOffset = if lambda.isMove then 1 else 0
+    captureFieldOffset = lambda.closureEnvAllocation.captureFieldOffset
     captureData = captureInfo match
       case Some((envTypeRef, captureTypes)) =>
         val captureStartRegister = entryAbi match
@@ -1079,11 +1079,10 @@ private[emitter] def findTailRecBody(
 
 /** Walk through let-binding/sequence chains, building TailRecBody tree.
   *
-  * At a Cond, recurse into both branches. Both-recursive is valid. 
-  * 
-  * At a self-call App, produce TailRecCall. Branches without recursive calls are
-  * wrapped as TailRecExit by the caller.
-  * 
+  * At a Cond, recurse into both branches. Both-recursive is valid.
+  *
+  * At a self-call App, produce TailRecCall. Branches without recursive calls are wrapped as
+  * TailRecExit by the caller.
   */
 private def extractBody(
   expr:          Expr,
@@ -1171,7 +1170,7 @@ private def extractSelfCallFromAccumulated(
 /** Detect sequence lambda: single param named __stmt */
 private def isSequenceLambda(lambda: Lambda): Boolean =
   lambda.params match
-    // TODO:QA - make this a more robust marker for sequence lambdas, rather than relying on a magic param name. 
+    // TODO:QA - make this a more robust marker for sequence lambdas, rather than relying on a magic param name.
     // We need to introduce a new lambda meta field or similar.
     // And the string itself should be a constant.
     case List(param) => param.name == "__stmt"

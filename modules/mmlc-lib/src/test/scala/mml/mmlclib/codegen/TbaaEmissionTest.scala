@@ -238,6 +238,33 @@ class TbaaEmissionTest extends BaseEffFunSuite:
     }
   }
 
+  test("move closure env TBAA accounts for destructor field offset") {
+    val source = """
+      fn apply(g: Int -> Int): Int = g 41;;
+      fn main(): Int =
+        let a = 1;
+        let f = ~{ x: Int -> x + a; };
+        apply f;
+      ;
+    """
+
+    compileAndGenerate(source).map { llvmIr =>
+      val closureEnvTypePattern =
+        """%struct\.__closure_env_\d+ = type \{ ptr, i64 \}""".r
+      assert(
+        closureEnvTypePattern.findFirstIn(llvmIr).isDefined,
+        s"Missing move closure env type with destructor and capture fields. IR:\n$llvmIr"
+      )
+
+      val closureEnvTbaaLines =
+        llvmIr.split("\n").filter(_.matches("""!\d+ = !\{!"__closure_env_\d+".*"""))
+      assert(
+        closureEnvTbaaLines.exists(line => line.contains("i64 0") && line.contains("i64 8")),
+        s"Expected move closure env TBAA fields at offsets 0 and 8. Nodes:\n${closureEnvTbaaLines.mkString("\n")}"
+      )
+    }
+  }
+
   test("zero-field closure env TBAA is not emitted") {
     val source = """
       pub fn main() =

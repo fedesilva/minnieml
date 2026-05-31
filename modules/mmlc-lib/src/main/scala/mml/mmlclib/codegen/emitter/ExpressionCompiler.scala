@@ -317,8 +317,13 @@ private def compileTailRecLambdaLiteral(
   functionScope: Map[String, ScopeEntry]
 ): Either[CodeGenError, CompileResult] =
   if lambda.captures.nonEmpty then
+    val materializedLambda =
+      if lambda.materialization == Materialization.Direct then
+        val updatedMeta = lambda.meta.getOrElse(LambdaMeta()).copy(isDirect = false)
+        lambda.copy(meta = updatedMeta.some)
+      else lambda
     compileTailRecCapturingLambda(
-      lambda,
+      materializedLambda,
       state,
       fnName,
       returnType,
@@ -904,8 +909,8 @@ private def appFnReferencesBinding(fn: Ref | App | Lambda, targetId: String): Bo
 
 /** Resolve capture types, create env struct, emit call-site IR.
   *
-  * Move lambdas: malloc env, store dtor + captures, build fat pointer. Borrow lambdas: alloca env,
-  * store captures (no dtor), build fat pointer.
+  * Heap move envs use malloc and carry a destructor field. Stack borrow envs use alloca and carry
+  * capture fields only.
   */
 private def emitCallSiteEnv(
   lambda:        Lambda,
@@ -916,48 +921,55 @@ private def emitCallSiteEnv(
   for
     envStruct <- resolveClosureEnvStruct(lambda, state)
     captureLayout <- computeCodegenCaptureLayout(lambda, state, functionScope, userParamCount = 0)
-    envTypeRef  = s"%struct.${envStruct.name}"
-    fieldOffset = if lambda.isMove then 1 else 0
-    allocation =
-      if lambda.isMove then
-        val stateWithEnv = state
-          .withFunctionDeclaration("malloc", "ptr", List("i64"))
-          .withFunctionDeclaration("free", "void", List("ptr"))
-        val envSize   = sizeOfLlvmTypeResolved(envTypeRef, stateWithEnv)
-        val mallocReg = stateWithEnv.nextRegister
-        val mallocLine =
-          emitCall(mallocReg.some, "ptr".some, "malloc", List(("i64", envSize.toString)))
-        val afterMalloc = stateWithEnv.withRegister(mallocReg + 1).emit(mallocLine)
-        val dtorName    = s"__free_${envStruct.name}"
-        val dtorGepReg  = afterMalloc.nextRegister
-        val dtorGepLine = emitGetElementPtr(
-          dtorGepReg,
-          envTypeRef,
-          "ptr",
-          s"%$mallocReg",
-          List(("i32", "0"), ("i32", "0"))
-        )
-        val (stateWithDtorTag, dtorTag) =
-          TbaaEmitter
-            .getTbaaStructFieldTag(envStruct, 0, afterMalloc)
-            .getOrElse((afterMalloc, ""))
-        val dtorStoreLine = emitStore(
-          s"@${state.mangleName(dtorName)}",
-          "ptr",
-          s"%$dtorGepReg",
-          Option.when(dtorTag.nonEmpty)(dtorTag)
-        )
-        val afterDtor =
-          stateWithDtorTag.withRegister(dtorGepReg + 1).emit(dtorGepLine).emit(dtorStoreLine)
-        (afterDtor, s"%$mallocReg")
-      else
-        val allocaReg  = state.nextRegister
-        val allocaLine = s"  %$allocaReg = alloca $envTypeRef"
-        val afterAlloca =
-          if state.insideLoopifiedFunction then
-            state.withRegister(allocaReg + 1).emitEntryPrologue(allocaLine)
-          else state.withRegister(allocaReg + 1).emit(allocaLine)
-        (afterAlloca, s"%$allocaReg")
+    envAllocation = lambda.closureEnvAllocation
+    envTypeRef    = s"%struct.${envStruct.name}"
+    fieldOffset   = envAllocation.captureFieldOffset
+    allocation <-
+      envAllocation match
+        case ClosureEnvAllocation.NoEnv =>
+          CodeGenError(
+            "Lambda without a closure env reached env materialization path",
+            lambda.some
+          ).asLeft
+        case ClosureEnvAllocation.HeapMoveEnv =>
+          val stateWithEnv = state
+            .withFunctionDeclaration("malloc", "ptr", List("i64"))
+            .withFunctionDeclaration("free", "void", List("ptr"))
+          val envSize   = sizeOfLlvmTypeResolved(envTypeRef, stateWithEnv)
+          val mallocReg = stateWithEnv.nextRegister
+          val mallocLine =
+            emitCall(mallocReg.some, "ptr".some, "malloc", List(("i64", envSize.toString)))
+          val afterMalloc = stateWithEnv.withRegister(mallocReg + 1).emit(mallocLine)
+          val dtorName    = s"__free_${envStruct.name}"
+          val dtorGepReg  = afterMalloc.nextRegister
+          val dtorGepLine = emitGetElementPtr(
+            dtorGepReg,
+            envTypeRef,
+            "ptr",
+            s"%$mallocReg",
+            List(("i32", "0"), ("i32", "0"))
+          )
+          val (stateWithDtorTag, dtorTag) =
+            TbaaEmitter
+              .getTbaaStructFieldTag(envStruct, 0, afterMalloc)
+              .getOrElse((afterMalloc, ""))
+          val dtorStoreLine = emitStore(
+            s"@${state.mangleName(dtorName)}",
+            "ptr",
+            s"%$dtorGepReg",
+            Option.when(dtorTag.nonEmpty)(dtorTag)
+          )
+          val afterDtor =
+            stateWithDtorTag.withRegister(dtorGepReg + 1).emit(dtorGepLine).emit(dtorStoreLine)
+          (afterDtor, s"%$mallocReg").asRight
+        case ClosureEnvAllocation.StackBorrowEnv =>
+          val allocaReg  = state.nextRegister
+          val allocaLine = s"  %$allocaReg = alloca $envTypeRef"
+          val afterAlloca =
+            if state.insideLoopifiedFunction then
+              state.withRegister(allocaReg + 1).emitEntryPrologue(allocaLine)
+            else state.withRegister(allocaReg + 1).emit(allocaLine)
+          (afterAlloca, s"%$allocaReg").asRight
     (siteStateAfterDtor, envPtrOp) = allocation
     siteStateAfterCaptures <-
       captureLayout.slots.zipWithIndex.foldLeft(siteStateAfterDtor.asRight[CodeGenError]) {
@@ -1033,7 +1045,7 @@ private def compileCapturingLambda(
     }.toMap
     val initialBodyState = subState.withRegister(envParamIdx + 1)
 
-    val captureFieldOffset = if lambda.isMove then 1 else 0
+    val captureFieldOffset = lambda.closureEnvAllocation.captureFieldOffset
     val (bodyState, captureScope) =
       emitCaptureLoads(
         envTypeRef,

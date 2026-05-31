@@ -483,7 +483,7 @@ slice or accept temporary breakage; do not invent a shim.
   - `tests/mem/direct-move-closure.mml` is a green regression for the S4/S6 bridge.
 - **Sub-issue?** Yes — large blast radius.
 
-### S7 — Codegen: env allocation rule consumes `isMove`
+### S7 — Codegen: env allocation rule consumes `isMove` *(done)*
 - **Goal:** the rule that decides `alloca` vs `malloc` reads `Lambda.isMove` (already
   present). This slice verifies that the existing `isMove` plumbing remains the single
   allocation gate after S3–S6 land.
@@ -498,9 +498,17 @@ slice or accept temporary breakage; do not invent a shim.
   `mkFreeFunction` L189–L257).
 - **Acceptance:** mem tests for borrow and move closures pass; the allocation gate
   remains `Lambda.isMove` and is centralized in the call-site env emission paths.
+- **Landed scope:** `ClosureEnvAllocation` is the model-level spelling for the
+  derived env allocation shape. Codegen now consumes that classifier for call-site
+  `malloc` vs `alloca`, capture field offsets, destructor-field layout, and env free
+  generation. The tail-recursive Direct wrapper carve-out still locally materializes
+  the lambda until S8 handles Direct loopification under the unified path.
+- **Tests:** `ClosureCodegenTest` and `TbaaEmissionTest` pin materialized borrow-env
+  stack layout, materialized move-env heap/dtor layout, Direct move-capturing no-env
+  behavior, and borrow/move TBAA offsets.
 - **Sub-issue?** Optional — can fold into S6 if blast radius stays manageable.
 
-### S7.5 — Push env allocation classification onto the lambda model
+### S7.5 — Push env allocation classification onto the lambda model *(done)*
 - **Goal:** promote the closure-env allocation classification out of scattered codegen
   branches and into a shared model-level derivation after S7 proves the current
   behavior. S7 keeps the simple `isMove` gate; S7.5 gives later phases one named
@@ -520,9 +528,12 @@ slice or accept temporary breakage; do not invent a shim.
 - **Acceptance:** codegen reads the shared classifier for env allocation, field
   offset, destructor-field presence, and free-function generation; S7's borrow/move
   mem and IR coverage stays green.
+- **Landed scope:** `ClosureEnvAllocation.NoEnv`, `StackBorrowEnv`, and
+  `HeapMoveEnv` live beside `Materialization`. `Lambda.closureEnvAllocation` is
+  derived only from existing materialization and move-capture facts.
 - **Sub-issue?** No — small model cleanup after S7.
 
-### S7.6 — Decide whether to pull S11 stack-promotion forward
+### S7.6 — Decide whether to pull S11 stack-promotion forward *(done — leave S11 separate)*
 - **Goal:** after S7 and S7.5, decide whether stack-promotion should stay as S11 or be
   folded into the immediate post-S7 work. The decision point exists because S7.5's
   allocation classifier is the natural hook for the frame-local move-closure case.
@@ -534,6 +545,8 @@ slice or accept temporary breakage; do not invent a shim.
 - **Acceptance:** record the decision in this plan before starting implementation. If
   pulled forward, move S11's files and acceptance criteria into the new post-S7 slice;
   if left as S11, keep S7.5 purely structural and avoid stack-promotion behavior.
+- **Decision:** leave stack-promotion as S11. S7.5 is structural cleanup only; it does
+  not change move-closure allocation behavior.
 - **S11 design note:** ownership analysis supplies the frame-local fact, and codegen
   consumes it through the allocation classifier rather than re-inferring escape/lifetime
   from the final AST. The first S11 implementation should likely add a `StackMoveEnv`

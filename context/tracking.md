@@ -50,7 +50,9 @@ Slice progress (see `context/specs/unify-lambdas-plan.md`):
 - [x] S5 — Ownership: treat lambda values as ordinary unique values (COMPLETE)
 - [x] S6 — Codegen: derive direct-vs-closure entry from demand (COMPLETE)
 - [x] S6 Phase 6.3.d — Direct callable capture boundary
-- [ ] S7 — Codegen: env allocation rule consumes `isMove`
+- [x] S7 — Codegen: env allocation rule consumes `isMove` (COMPLETE)
+- [x] S7.5 — Push env allocation classification onto the lambda model (COMPLETE)
+- [x] S7.6 — Stack-promotion decision gate: leave S11 separate (COMPLETE)
 - [ ] S8 — Tail-recursion follow-up under unified model
 - [ ] S9 — Equivalence test pass
 - [ ] S10 — `BindingMeta` reduction
@@ -79,6 +81,18 @@ Slice progress (see `context/specs/unify-lambdas-plan.md`):
 * add commands to manage the cache (init, clean)
 
 ## Change Log
+
+- 2026-05-31: #255 unify-lambdas S7/S7.5 — centralize closure env allocation classification
+  - `ast/terms.scala`: added `ClosureEnvAllocation` and `Lambda.closureEnvAllocation` as
+    the model-level derivation for no-env, stack borrow-env, and heap move-env shapes.
+  - `ExpressionCompiler.scala` / `FunctionEmitter.scala` / `ClosureMemoryFnGenerator.scala`:
+    routed call-site env allocation, capture field offsets, destructor-field layout, and
+    env free generation through the shared classifier while preserving the tail-recursive
+    Direct wrapper carve-out until S8.
+  - `ClosureCodegenTest.scala` / `TbaaEmissionTest.scala`: pinned materialized borrow-env
+    stack layout, materialized move-env heap/dtor layout, and move-env TBAA offsets.
+  - `context/specs/unify-lambdas-plan.md`: recorded the S7.5/S7.6 outcome and left
+    stack-promotion as S11 with ownership metadata as the future input.
 
 - 2026-05-31: #255 unify-lambdas S4/S5 — close ownership classification and return-escape cleanup
   - `OwnershipAnalyzer.scala`: collapsed return-position borrowed-ref and borrow-closure

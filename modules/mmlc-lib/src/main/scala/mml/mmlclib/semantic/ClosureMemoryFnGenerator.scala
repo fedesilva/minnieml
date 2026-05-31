@@ -136,8 +136,7 @@ object ClosureMemoryFnGenerator:
 
   /** Synthesize a TypeStruct for a closure environment.
     *
-    * Move lambdas: field 0 = `__dtor: RawPtr` (destructor pointer), fields 1..N = captures. Borrow
-    * lambdas: fields 0..N-1 = captures only (no destructor, env is stack-allocated).
+    * Heap move envs carry `__dtor: RawPtr` at field 0. Stack borrow envs carry capture fields only.
     */
   private def mkEnvStruct(
     lambda:       Lambda,
@@ -146,8 +145,9 @@ object ClosureMemoryFnGenerator:
     idTypeMap:    Map[String, Type],
     bindingIndex: LambdaBindingIndex
   ): TypeStruct =
+    val envAllocation = lambda.closureEnvAllocation
     val dtorFields =
-      if lambda.isMove then
+      if envAllocation.hasDestructorField then
         Vector(
           Field(
             source   = syntheticSource,
@@ -417,10 +417,10 @@ object ClosureMemoryFnGenerator:
           mkEnvStruct(lambda, name, moduleName, idTypeMap, bindingIndex)
         }
 
-      // Generate free functions only for move lambdas (borrow envs are stack-allocated)
+      // Generate free functions only for heap-allocated closure envs.
       val moveLambdaStructs =
         capturingLambdas.zip(envStructs).collect {
-          case ((lambda, _), struct) if lambda.isMove =>
+          case ((lambda, _), struct) if lambda.closureEnvAllocation.usesHeap =>
             struct
         }
       val freeFunctions = moveLambdaStructs.map(mkFreeFunction(_, moduleName))
