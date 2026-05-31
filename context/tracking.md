@@ -60,6 +60,16 @@ can disagree.
 
 Add verbiage and design for multiagent execution.
 
+### Replace magic `__stmt` detection for sequence lambdas
+
+- GitHub: `https://github.com/fedesilva/minnieml/issues/265`
+
+`FunctionEmitter.scala` currently recognizes parser-lowered statement sequencing by checking for a
+single param named `__stmt`.
+
+Expected fix: add explicit lambda metadata or a shared marker so parser, semantics, ownership, and
+codegen classify sequence lambdas without duplicating a string convention.
+
 ### #255 Unify lambdas
 
 * Status: In progress
@@ -88,7 +98,7 @@ Slice progress (see `context/specs/unify-lambdas-plan.md`):
 - [x] S7.6 — Stack-promotion decision gate: leave S11 separate (COMPLETE)
 - [x] S8 — Tail-recursion follow-up under unified model (COMPLETE)
 - [x] S8.5a — Direct partial-application env lifetime/drop hardening (COMPLETE)
-- [ ] S8.5b — Direct partial-application env TBAA parity
+- [x] S8.5b — Direct partial-application env TBAA parity (COMPLETE — commit 5da9c68)
 - [ ] S9 — Equivalence test pass
 - [ ] S10 — `BindingMeta` reduction
 - [ ] S11 — Stack-promotion for non-escaping move-capturing lambdas
@@ -116,6 +126,20 @@ Slice progress (see `context/specs/unify-lambdas-plan.md`):
 * add commands to manage the cache (init, clean)
 
 ## Change Log
+
+- 2026-05-31: #255 unify-lambdas S8.5b — Direct partial-application env TBAA parity
+  - `Applications.scala` / `ExpressionCompiler.scala` / `FunctionEmitter.scala`:
+    Direct callable capture operands now carry semantic TBAA type names through nested
+    Direct captures, Direct-call lowering, and Direct partial-application generation.
+  - `Applications.scala`: Direct partial-application env stores and PAP-entry env loads
+    carry field-specific `!tbaa` metadata, including the destructor slot and payload
+    fields for applied args and captured operands.
+  - `TailRecursionLoopificationTest.scala`: pinned escaped and captured Direct PAP env
+    layouts, TBAA offsets, and load/store tags.
+
+- 2026-05-31: QA follow-up — expression-oriented Direct lambda guard
+  - `ExpressionCompiler.scala`: rewrote the Direct-lambda value-position guard in
+    `compileLambdaLiteral` without an early `return`.
 
 - 2026-05-31: #255 unify-lambdas S8.5a — Direct partial-application env lifetime/drop hardening
   - `Applications.scala` / `OwnershipAnalyzer.scala` / `ClosureMemoryFnGenerator.scala`:

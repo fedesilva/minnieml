@@ -157,69 +157,70 @@ private[emitter] def compileLambdaLiteral(
 ): Either[CodeGenError, CompileResult] =
   // Direct lambdas have a dedicated lowering and must never reach the value-position path.
   if lambda.materialization == Materialization.Direct then
-    return CodeGenError(
+    CodeGenError(
       "Direct lambda reached compileLambdaLiteral (value-position path); MaterializationAnalyzer should have set isDirect=false. This is a compiler bug.",
       lambda.some
     ).asLeft
-  val typeFn = lambda.typeSpec match
-    case Some(tf: TypeFn) => tf.asRight
-    case other =>
-      CodeGenError(s"Lambda missing TypeFn typeSpec, got: $other", lambda.some).asLeft
+  else
+    val typeFn = lambda.typeSpec match
+      case Some(tf: TypeFn) => tf.asRight
+      case other =>
+        CodeGenError(s"Lambda missing TypeFn typeSpec, got: $other", lambda.some).asLeft
 
-  typeFn.flatMap { tf =>
-    for
-      returnType <- getLlvmType(tf.returnType, state)
-      paramTypes <- tf.paramTypes.traverse(getLlvmType(_, state))
+    typeFn.flatMap { tf =>
+      for
+        returnType <- getLlvmType(tf.returnType, state)
+        paramTypes <- tf.paramTypes.traverse(getLlvmType(_, state))
 
-      namedClosureEntry = preAllocatedName match
-        case Some(_) => none
-        case None =>
-          reusableNamedClosureEntry(lambda, state, returnType, paramTypes.toList)
-      (stateWithId, fnName) = preAllocatedName
-        .orElse(namedClosureEntry.map(plan => (state, plan.entryName)))
-        .getOrElse(state.allocAnonFnName)
+        namedClosureEntry = preAllocatedName match
+          case Some(_) => none
+          case None =>
+            reusableNamedClosureEntry(lambda, state, returnType, paramTypes.toList)
+        (stateWithId, fnName) = preAllocatedName
+          .orElse(namedClosureEntry.map(plan => (state, plan.entryName)))
+          .getOrElse(state.allocAnonFnName)
 
-      // Check for tail recursion in let-bound lambdas
-      tailRecBody = for
-        param <- bindingParam
-        if lambda.meta.exists(_.isTailRecursive)
-        body <- findTailRecBody(lambda, param.name, param.id)
-      yield body
+        // Check for tail recursion in let-bound lambdas
+        tailRecBody = for
+          param <- bindingParam
+          if lambda.meta.exists(_.isTailRecursive)
+          body <- findTailRecBody(lambda, param.name, param.id)
+        yield body
 
-      result <- tailRecBody match
-        case Some(body) =>
-          compileTailRecLambdaLiteral(
-            lambda,
-            stateWithId,
-            fnName,
-            returnType,
-            paramTypes.toList,
-            body,
-            functionScope
-          )
-        case None =>
-          namedClosureEntry match
-            case Some(plan) =>
-              compileReusableNamedClosureEntry(
-                plan,
-                lambda,
-                stateWithId,
-                fnName,
-                returnType,
-                paramTypes.toList
-              )
-            case None =>
-              compileRegularLambdaLiteral(
-                lambda,
-                stateWithId,
-                fnName,
-                returnType,
-                paramTypes.toList,
-                functionScope,
-                bindingParam
-              )
-    yield result
-  }
+        result <- tailRecBody match
+          case Some(body) =>
+            compileTailRecLambdaLiteral(
+              lambda,
+              stateWithId,
+              fnName,
+              returnType,
+              paramTypes.toList,
+              body,
+              functionScope
+            )
+          case None =>
+            namedClosureEntry match
+              case Some(plan) =>
+                compileReusableNamedClosureEntry(
+                  plan,
+                  lambda,
+                  stateWithId,
+                  fnName,
+                  returnType,
+                  paramTypes.toList
+                )
+              case None =>
+                compileRegularLambdaLiteral(
+                  lambda,
+                  stateWithId,
+                  fnName,
+                  returnType,
+                  paramTypes.toList,
+                  functionScope,
+                  bindingParam
+                )
+      yield result
+    }
 
 private case class NamedClosureEntryPlan(
   key:       NamedClosureEntryKey,
