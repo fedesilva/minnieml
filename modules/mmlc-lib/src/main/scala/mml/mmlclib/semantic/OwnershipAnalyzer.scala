@@ -679,37 +679,6 @@ object OwnershipAnalyzer:
 
     expr.terms.lastOption.map(termReturned).getOrElse(Set.empty)
 
-  /** Refs of borrowed bindings that flow out through the returned expression. Descends through
-    * administrative wrappers (let / inner-fn): the wrapper body is walked with the wrapper's own
-    * params masked out of the scope (so name lookups in the body can't accidentally hit a shadowed
-    * outer binding), and when the body returns the wrapper's own param the arg is walked under the
-    * outer scope (catches the source binding the wrapper's param aliases).
-    */
-  private def returnedBorrowedRefs(expr: Expr, scope: OwnershipScope): List[Ref] =
-    def termReturned(term: Term): List[Ref] =
-      term match
-        case ref: Ref if scope.getState(ref.name).contains(OwnershipState.Borrowed) =>
-          List(ref)
-        case app: App if administrativeReturnWrapper(app) =>
-          app.fn match
-            case lambda: Lambda =>
-              val descentScope = lambda.params.foldLeft(scope) { (s, p) =>
-                s.copy(bindings = s.bindings - p.name)
-              }
-              val bodyReturns = returnedBorrowedRefs(lambda.body, descentScope)
-              val argReturns =
-                lambda.params.headOption
-                  .filter(param => returnsBindingParam(lambda.body, param))
-                  .toList
-                  .flatMap(_ => returnedBorrowedRefs(app.arg, scope))
-              argReturns ++ bodyReturns
-            case _ => Nil
-        case Cond(_, _, ifTrue, ifFalse, _, _) =>
-          returnedBorrowedRefs(ifTrue, scope) ++ returnedBorrowedRefs(ifFalse, scope)
-        case TermGroup(_, inner, _) => returnedBorrowedRefs(inner, scope)
-        case _ => List.empty
-    expr.terms.lastOption.map(termReturned).getOrElse(List.empty)
-
   private def lambdaReturnType(typeAsc: Option[Type], typeSpec: Option[Type]): Option[Type] =
     typeAsc.orElse:
       typeSpec.flatMap:
@@ -724,38 +693,35 @@ object OwnershipAnalyzer:
     case RefEscape(ref: Ref)
     case LambdaEscape(lambda: Lambda)
 
-  /** Walks the return position for values that would unsafely escape if returned. Runs two walks
-    * over the same AST and tags their results: `RefEscape` for borrowed Refs (classified against
-    * the scope), `LambdaEscape` for borrow-capturing lambda literals (whose stack envs can't
-    * survive the frame). Both walks descend through `Cond`, `TermGroup`, and administrative `App`
-    * wrappers so let / inner-fn aliasing is caught at any depth.
+  /** Walks the return position for values that would unsafely escape if returned. Borrowed Refs are
+    * classified against the current scope; borrow-capturing lambda literals are classified by their
+    * capture mode. Administrative wrappers are followed so let / inner-fn aliasing is caught at any
+    * depth.
     */
   private def returnedBorrowingValues(expr: Expr, scope: OwnershipScope): List[ReturnEscape] =
-    returnedBorrowedRefs(expr, scope).map(ReturnEscape.RefEscape(_)) ++
-      returnedBorrowClosures(expr).map(ReturnEscape.LambdaEscape(_))
-
-  /** Borrow-capturing lambda literals in return position. These are unsafe because borrow closures
-    * use stack-allocated environments.
-    */
-  private def returnedBorrowClosures(expr: Expr): List[Lambda] =
-    def termReturned(term: Term): List[Lambda] =
+    def termReturned(term: Term): List[ReturnEscape] =
       term match
+        case ref: Ref if scope.getState(ref.name).contains(OwnershipState.Borrowed) =>
+          List(ReturnEscape.RefEscape(ref))
         case lambda: Lambda if lambda.captures.nonEmpty && !lambda.isMove =>
-          List(lambda)
+          List(ReturnEscape.LambdaEscape(lambda))
         case app: App if administrativeReturnWrapper(app) =>
           app.fn match
             case lambda: Lambda =>
-              val bodyReturns = returnedBorrowClosures(lambda.body)
+              val descentScope = lambda.params.foldLeft(scope) { (s, p) =>
+                s.copy(bindings = s.bindings - p.name)
+              }
+              val bodyReturns = returnedBorrowingValues(lambda.body, descentScope)
               val argReturns =
                 lambda.params.headOption
                   .filter(param => returnsBindingParam(lambda.body, param))
                   .toList
-                  .flatMap(_ => returnedBorrowClosures(app.arg))
+                  .flatMap(_ => returnedBorrowingValues(app.arg, scope))
               argReturns ++ bodyReturns
             case _ => Nil
         case Cond(_, _, ifTrue, ifFalse, _, _) =>
-          returnedBorrowClosures(ifTrue) ++ returnedBorrowClosures(ifFalse)
-        case TermGroup(_, inner, _) => returnedBorrowClosures(inner)
+          returnedBorrowingValues(ifTrue, scope) ++ returnedBorrowingValues(ifFalse, scope)
+        case TermGroup(_, inner, _) => returnedBorrowingValues(inner, scope)
         case _ => List.empty
     expr.terms.lastOption.map(termReturned).getOrElse(List.empty)
 

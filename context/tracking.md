@@ -46,8 +46,8 @@ Slice progress (see `context/specs/unify-lambdas-plan.md`):
 - [x] S1 — terminology cleanup
 - [x] S2 — AST: add `isDirect` to `LambdaMeta`
 - [x] S3 — `MaterializationAnalyzer` pass (COMPLETE — commit 456a0c4)
-- [ ] S4 — Ownership: non-capturing / null-env values stop being treated as owned heap *(in progress)*
-- [ ] S5 — Ownership: treat lambda values as ordinary unique values
+- [x] S4 — Ownership: non-capturing / null-env values stop being treated as owned heap (COMPLETE)
+- [x] S5 — Ownership: treat lambda values as ordinary unique values (COMPLETE)
 - [x] S6 — Codegen: derive direct-vs-closure entry from demand (COMPLETE)
 - [x] S6 Phase 6.3.d — Direct callable capture boundary
 - [ ] S7 — Codegen: env allocation rule consumes `isMove`
@@ -79,6 +79,17 @@ Slice progress (see `context/specs/unify-lambdas-plan.md`):
 * add commands to manage the cache (init, clean)
 
 ## Change Log
+
+- 2026-05-31: #255 unify-lambdas S4/S5 — close ownership classification and return-escape cleanup
+  - `OwnershipAnalyzer.scala`: collapsed return-position borrowed-ref and borrow-closure
+    discovery into a single tagged `ReturnEscape` walker while preserving closure-specific
+    diagnostics as renderings of generic ownership checks.
+  - `OwnershipAnalyzerTests.scala`: added consuming higher-order parameter regressions for
+    top-level and inline non-capturing function values, keeping caller-side closure cleanup
+    suppressed while callee-side consuming cleanup remains universal.
+  - `context/specs/unify-lambdas-plan.md` / `tests/mem/direct-move-closure.mml`: marked
+    S4/S5/S6 status current and replaced stale direct-move-closure failure notes with the
+    passing direct-lowering behavior.
 
 - 2026-05-31: #255 unify-lambdas S6.5 — deduplicate named-function closure thunks
   - `ExpressionCompiler.scala` / `codegen/emitter/package.scala`: added a named closure-entry cache so repeated first-class uses of the same named function reuse `@<fn>__closure_entry` instead of fresh anonymous forwarding thunks.

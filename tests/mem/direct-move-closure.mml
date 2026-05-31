@@ -1,14 +1,8 @@
-// Pinned mem regression: direct move-capturing closure leaks its env malloc.
+// Direct move-capturing closure regression.
 //
-// Pattern: a let-bound move-capturing lambda used only in saturated calls.
-// MaterializationAnalyzer marks the binding `isDirect = true`; the ownership
-// predicate `isOwnedLambdaValue` gates on `!isDirect`, so no `__free_*` is
-// scheduled at scope end. Codegen materializes and mallocs the env regardless,
-// so the allocation never gets released.
-//
-// Expected to fail under ASan/LSan in the current state of the codebase. Un-ignore
-// item is recorded in `context/tracking.md` and the un-ignore work is part of S6
-// in `context/specs/unify-lambdas-plan.md`.
+// A let-bound move-capturing lambda used only in saturated calls is Direct, so
+// codegen emits a direct entry with captured values as trailing operands and no
+// closure env allocation.
 pub fn main(): Unit =
   let a = 1;
   let f = ~{ x: Int -> x + a; };

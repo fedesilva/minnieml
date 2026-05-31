@@ -1258,6 +1258,61 @@ class OwnershipAnalyzerTests extends BaseEffFunSuite:
     }
   }
 
+  test("top-level non-capturing function passed to consuming HO param schedules no caller free") {
+    val code =
+      """
+        fn inc(x: Int): Int = x + 1;;
+        fn consume(~g: Int -> Int): Int = g 5;;
+        fn main(): Int =
+          consume inc;
+        ;
+      """
+
+    semNotFailed(code).map { module =>
+      val consumeBody = topLevelLambdaBody(module, "consume")
+      val mainBody    = topLevelLambdaBody(module, "main")
+      assert(
+        containsFreeOf("__free_closure")(consumeBody),
+        "consuming TypeFn param cleanup must stay in the callee"
+      )
+      assert(
+        !containsFreeOf("__free_closure")(mainBody),
+        "top-level function value must not be freed by the caller scope"
+      )
+      assert(
+        !containsClosureEnvFree(mainBody),
+        "top-level function value must not schedule an env-specific free"
+      )
+    }
+  }
+
+  test("inline non-capturing lambda passed to consuming HO param schedules no caller free") {
+    val code =
+      """
+        fn consume(~g: Int -> Int): Int = g 5;;
+        fn main(): Int =
+          consume { x: Int -> x + 1 };
+        ;
+      """
+
+    semNotFailed(code).map { module =>
+      val consumeBody = topLevelLambdaBody(module, "consume")
+      val mainBody    = topLevelLambdaBody(module, "main")
+      assert(
+        containsFreeOf("__free_closure")(consumeBody),
+        "consuming TypeFn param cleanup must stay in the callee"
+      )
+      assert(
+        !containsFreeOf("__free_closure")(mainBody),
+        "inline non-capturing lambda must not be freed by the caller scope"
+      )
+      assert(
+        !containsClosureEnvFree(mainBody),
+        "inline non-capturing lambda must not schedule an env-specific free"
+      )
+    }
+  }
+
   test("move-capturing lambda value still schedules env cleanup") {
     val code =
       """
