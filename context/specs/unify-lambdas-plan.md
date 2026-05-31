@@ -500,6 +500,42 @@ slice or accept temporary breakage; do not invent a shim.
   remains `Lambda.isMove` and is centralized in the call-site env emission paths.
 - **Sub-issue?** Optional — can fold into S6 if blast radius stays manageable.
 
+### S7.5 — Push env allocation classification onto the lambda model
+- **Goal:** promote the closure-env allocation classification out of scattered codegen
+  branches and into a shared model-level derivation after S7 proves the current
+  behavior. S7 keeps the simple `isMove` gate; S7.5 gives later phases one named
+  classification to consume.
+- **Candidate shape:** add a small derived classifier near `Lambda.materialization`
+  that combines materialization and capture mode, for example:
+  - `Direct` / `NullEnv` → no env allocation
+  - `Materialized && !isMove` → stack borrow env
+  - `Materialized && isMove` → heap move env
+- **Design constraint:** this should remain derived from existing facts
+  (`materialization`, `captures`, `isMove`) rather than becoming a second source of
+  truth. S11 stack-promotion can extend the classification with ownership/lifetime
+  facts, but S7.5 should not implement stack-promotion.
+- **Files:** likely `terms.scala` for the derived classifier, plus the current
+  codegen consumers in `ExpressionCompiler.scala`, `FunctionEmitter.scala`, and
+  `ClosureMemoryFnGenerator.scala`.
+- **Acceptance:** codegen reads the shared classifier for env allocation, field
+  offset, destructor-field presence, and free-function generation; S7's borrow/move
+  mem and IR coverage stays green.
+- **Sub-issue?** No — small model cleanup after S7.
+
+### S7.6 — Decide whether to pull S11 stack-promotion forward
+- **Goal:** after S7 and S7.5, decide whether stack-promotion should stay as S11 or be
+  folded into the immediate post-S7 work. The decision point exists because S7.5's
+  allocation classifier is the natural hook for the frame-local move-closure case.
+- **Decision criteria:**
+  - Pull forward if S7.5 exposes a clean ownership/lifetime input and the change stays
+    localized to env allocation plus cleanup.
+  - Leave as S11 if deriving frame-local ownership requires broader ownership-analysis
+    changes, new escape-state plumbing, or substantial mem-harness expansion.
+- **Acceptance:** record the decision in this plan before starting implementation. If
+  pulled forward, move S11's files and acceptance criteria into the new post-S7 slice;
+  if left as S11, keep S7.5 purely structural and avoid stack-promotion behavior.
+- **Sub-issue?** No — planning gate only.
+
 ### S8 — Tail-recursion follow-up under unified model
 - **Goal:** TCO/loopification consults materialization metadata.
 - **Files:** `FunctionEmitter.scala` (`findTailRecBody` L1005, `extractBody` L1018,
