@@ -107,7 +107,7 @@ class TailRecursionLoopificationTest extends BaseEffFunSuite:
     }
   }
 
-  test("local non-capturing loopified function materializes a closure-entry wrapper") {
+  test("local non-capturing loopified Direct function emits no closure-entry wrapper") {
     val source =
       """
       pub fn main() =
@@ -133,8 +133,6 @@ class TailRecursionLoopificationTest extends BaseEffFunSuite:
       val wrapperName = s"${directName}__closure_entry"
       val directBody =
         functionBody(llvmIr, s"$directName\\(i64 %0, i64 %1\\) #0")
-      val wrapperBody =
-        functionBody(llvmIr, s"$wrapperName\\(i64 %0, i64 %1, ptr %2\\) #0")
 
       assert(
         directBody.contains("loop.header:") && directBody.contains("phi i64"),
@@ -145,12 +143,53 @@ class TailRecursionLoopificationTest extends BaseEffFunSuite:
         s"Direct factorial_tco entry must not accept a closure env. IR:\n$llvmIr"
       )
       assert(
-        wrapperBody.contains(s"call i64 @$directName(i64 %0, i64 %1)"),
-        s"Closure-entry wrapper should forward to plain direct symbol. Body:\n$wrapperBody"
+        !llvmIr.contains(wrapperName) && !llvmIr.contains(s"{ ptr @$wrapperName, ptr null }"),
+        s"Direct-only local tail-recursive function should not materialize a wrapper. IR:\n$llvmIr"
+      )
+    }
+  }
+
+  test("local capturing loopified Direct function uses trailing captures") {
+    val source =
+      """
+      pub fn main(): Int =
+        let step = 2;
+        let loop: Int -> Int -> Int =
+          { n: Int, acc: Int ->
+            if n <= 0 then acc;
+            else loop (n - 1) (acc + step);
+            ;
+          }
+        ;
+
+        loop 3 0;
+      ;
+      """
+
+    compileAndGenerate(source, config = CompilerConfig.default.copy(noTco = false)).map { llvmIr =>
+      val directMatch =
+        """define internal i64 @(test_loop_\d+)\(i64 %0, i64 %1, i64 %2\) #0 \{""".r
+          .findFirstMatchIn(llvmIr)
+          .getOrElse(fail(s"Missing loopified direct loop entry with capture param. IR:\n$llvmIr"))
+      val directName = directMatch.group(1)
+      val directBody =
+        functionBody(llvmIr, s"$directName\\(i64 %0, i64 %1, i64 %2\\) #0")
+
+      assert(
+        directBody.contains("loop.header:") && directBody.contains("phi i64"),
+        s"Capturing Direct loop entry should be loopified. Body:\n$directBody"
       )
       assert(
-        llvmIr.contains(s"{ ptr @$wrapperName, ptr null }"),
-        s"First-class materialization should use the closure-entry wrapper. IR:\n$llvmIr"
+        !llvmIr.contains(s"define internal i64 @$directName(i64 %0, i64 %1, ptr %2) #0"),
+        s"Capturing Direct loop entry must not accept a closure env. IR:\n$llvmIr"
+      )
+      assert(
+        !directBody.contains(s"call i64 @$directName"),
+        s"Loopified body should jump through the loop header, not recurse. Body:\n$directBody"
+      )
+      assert(
+        !llvmIr.contains("__closure_env") && !llvmIr.contains("malloc"),
+        s"Capturing Direct loop entry should use trailing captures, not env allocation. IR:\n$llvmIr"
       )
     }
   }

@@ -555,7 +555,7 @@ slice or accept temporary breakage; do not invent a shim.
   cleanup choice; ownership should not reshape env structs earlier in the pipeline.
 - **Sub-issue?** No — planning gate only.
 
-### S8 — Tail-recursion follow-up under unified model
+### S8 — Tail-recursion follow-up under unified model *(done)*
 - **Goal:** TCO/loopification consults materialization metadata.
 - **Files:** `FunctionEmitter.scala` (`findTailRecBody` L1005, `extractBody` L1018,
   `isSelfRef` L1127, `extractSelfCallFromAccumulated` L1077); `ExpressionCompiler.scala`
@@ -565,6 +565,13 @@ slice or accept temporary breakage; do not invent a shim.
   the post-S6/S7 IR (snapshots refreshed as needed); `compileTailRecCapturingLambda`
   reuses the shared env setup; immediate-application tail-recursive lambdas validated
   against the unified pipeline.
+- **Landed scope:** Direct tail-recursive local lambdas now lower through the Direct
+  pipeline. `compileLambdaLiteral` rejects all Direct lambdas, including tail-recursive
+  ones. The loopified plain-direct ABI accepts Direct trailing captures as stable entry
+  parameters while user parameters remain loop PHIs. Materialized tail-recursive closure
+  values still use the shared env setup and closure-entry ABI. Closure env synthesis
+  collects only lambdas whose allocation classifier reports an env, so Direct capturing
+  lambdas do not get unused env structs.
 - **Sub-issue?** Yes.
 
 ### S9 — Equivalence test pass

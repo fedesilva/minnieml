@@ -839,7 +839,7 @@ class FunctionSignatureTest extends BaseEffFunSuite:
     }
   }
 
-  test("materialized closure captures Direct sibling operands, not a fat pointer") {
+  test("loopified Direct closure captures Direct sibling operands as trailing params") {
     val source =
       """
         pub fn main(): Unit =
@@ -863,21 +863,25 @@ class FunctionSignatureTest extends BaseEffFunSuite:
       """
 
     compileAndGenerate(source).map { llvmIr =>
-      val envWithDirectOperand = """%struct\.__closure_env_\d+ = type \{ i64 \}""".r
+      val loopSig = """define internal i64 @test_loop_\d+\(i64 %0, i64 %1\) #0""".r
       assert(
-        envWithDirectOperand.findFirstIn(llvmIr).nonEmpty,
-        s"loop env should store sibling's captured Int operand, not a Function value. IR:\n$llvmIr"
+        loopSig.findFirstIn(llvmIr).nonEmpty,
+        s"loop should take its Direct sibling operand as a trailing capture param. IR:\n$llvmIr"
       )
       assert(
-        !llvmIr.contains("store { ptr, ptr } %0"),
-        s"materialized closure env must not store a direct-call register as a Function. IR:\n$llvmIr"
+        !llvmIr.contains("__closure_env") && !llvmIr.contains("store { ptr, ptr } %0"),
+        s"Direct loop should not materialize a closure env or store a Function value. IR:\n$llvmIr"
       )
 
-      val loopBody          = functionBody(llvmIr, """test_loop_\d+\(i64 %0, ptr %1\) #0""")
+      val loopBody          = functionBody(llvmIr, """test_loop_\d+\(i64 %0, i64 %1\) #0""")
       val directSiblingCall = """call i64 @test_sibling_\d+\(i64 %\d+, i64 %\d+\)""".r
       assert(
+        loopBody.contains("loop.header:") && loopBody.contains("phi i64"),
+        s"loop should remain loopified. Body:\n$loopBody"
+      )
+      assert(
         directSiblingCall.findFirstIn(loopBody).nonEmpty,
-        s"loop should call sibling's Direct entry with the loaded captured operand. Body:\n$loopBody"
+        s"loop should call sibling's Direct entry with the trailing captured operand. Body:\n$loopBody"
       )
       assert(
         !loopBody.contains("extractvalue { ptr, ptr }"),

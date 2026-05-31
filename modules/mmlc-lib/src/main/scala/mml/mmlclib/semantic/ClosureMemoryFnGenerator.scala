@@ -5,10 +5,10 @@ import mml.mmlclib.compiler.CompilerState
 
 import java.util.IdentityHashMap
 
-/** Generates closure environment types and memory functions for capturing lambdas.
+/** Generates closure environment types and memory functions for materialized closure envs.
   *
   * Runs after CaptureAnalyzer (which populates Lambda.captures) and before TypeChecker. For each
-  * capturing lambda, this phase:
+  * lambda that materializes an env, this phase:
   *   1. Synthesizes a TypeStruct for the environment (`__closure_env_N`)
   *   2. Generates a free function (`__free_closure_env_N`) that frees heap fields + the env pointer
   *   3. Tags the Lambda with the env struct name via LambdaMeta.envStructName
@@ -37,13 +37,13 @@ object ClosureMemoryFnGenerator:
   ): Option[String] =
     Some(s"$moduleName::bnd::$fnName::$paramName")
 
-  /** Collect all capturing lambdas from a module, paired with a stable name for each.
+  /** Collect lambdas that materialize closure envs from a module, paired with a stable name.
     *
     * The name is derived from the enclosing binding name + a counter for disambiguation.
     */
   private type Collected = (List[(Lambda, String)], Int)
 
-  private def collectCapturingLambdas(
+  private def collectEnvLambdas(
     module: Module
   ): List[(Lambda, String)] =
 
@@ -55,7 +55,7 @@ object ClosureMemoryFnGenerator:
 
     def walkTerm(term: Term, counter: Int): Collected =
       term match
-        case lambda: Lambda if lambda.captures.nonEmpty =>
+        case lambda: Lambda if lambda.closureEnvAllocation.hasEnv =>
           val name          = s"__closure_env_$counter"
           val (inner, next) = walkExpr(lambda.body, counter + 1)
           ((lambda, name) :: inner, next)
@@ -397,11 +397,11 @@ object ClosureMemoryFnGenerator:
     val module     = state.module
     val moduleName = module.name
 
-    val capturingLambdas = collectCapturingLambdas(module)
-    if capturingLambdas.isEmpty then state
+    val envLambdas = collectEnvLambdas(module)
+    if envLambdas.isEmpty then state
     else
       // Build a map from Lambda identity (reference equality) to env struct name
-      val lambdaMap = capturingLambdas.foldLeft(new IdentityHashMap[Lambda, String]()) {
+      val lambdaMap = envLambdas.foldLeft(new IdentityHashMap[Lambda, String]()) {
         case (acc, (lambda, envName)) =>
           acc.put(lambda, envName)
           acc
@@ -411,15 +411,15 @@ object ClosureMemoryFnGenerator:
       val idTypeMap    = buildIdTypeMap(module)
       val bindingIndex = LambdaBindingIndex.from(module)
 
-      // Generate env structs for all capturing lambdas (move and borrow)
+      // Generate env structs for all materialized closure envs (move and borrow)
       val envStructs =
-        capturingLambdas.map { (lambda, name) =>
+        envLambdas.map { (lambda, name) =>
           mkEnvStruct(lambda, name, moduleName, idTypeMap, bindingIndex)
         }
 
       // Generate free functions only for heap-allocated closure envs.
       val moveLambdaStructs =
-        capturingLambdas.zip(envStructs).collect {
+        envLambdas.zip(envStructs).collect {
           case ((lambda, _), struct) if lambda.closureEnvAllocation.usesHeap =>
             struct
         }

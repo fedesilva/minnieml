@@ -142,8 +142,7 @@ case class TypeVariable(
   *   - Int → Int (monomorphic, vars = Nil)
   */
 case class TypeScheme(
-  source: SourceOrigin,
-
+  source:   SourceOrigin,
   vars:     List[String], // ["'T", "'R"] - the quantified variables
   bodyType: Type // The actual type with variables
 ) extends Type

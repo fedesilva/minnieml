@@ -513,6 +513,18 @@ private[emitter] enum TailRecEntryAbi derives CanEqual:
   case PlainDirect
   case ClosureEntry
 
+private[emitter] enum TailRecCaptureInfo:
+  case DirectTrailing(layout: CodegenCaptureLayout)
+  case ClosureEnv(envTypeRef: String, layout: CodegenCaptureLayout)
+
+private[emitter] def directTrailingCaptureScope(
+  layout: CodegenCaptureLayout
+): Map[String, ScopeEntry] =
+  val directScope = layout.innerDirectable.map { case (name, dc) =>
+    name -> ScopeEntry(0, "Function", directCallable = dc.some)
+  }
+  layout.innerScope ++ directScope
+
 private[emitter] def validateLoopifiedBorrowClosures(
   body: TailRecBody
 ): Either[CodeGenError, Unit] =
@@ -750,10 +762,10 @@ private[emitter] def compileTailRecursiveLambda(
   paramTypes:  List[String],
   emittedName: String,
   body:        TailRecBody,
-  inlineHint:  Boolean                                = false,
-  linkage:     String                                 = "",
-  entryAbi:    TailRecEntryAbi                        = TailRecEntryAbi.PlainDirect,
-  captureInfo: Option[(String, CodegenCaptureLayout)] = None
+  inlineHint:  Boolean                    = false,
+  linkage:     String                     = "",
+  entryAbi:    TailRecEntryAbi            = TailRecEntryAbi.PlainDirect,
+  captureInfo: Option[TailRecCaptureInfo] = None
 ): Either[CodeGenError, CodeGenState] =
   val nonVoidIndices          = paramTypes.indices.filter(i => paramTypes(i) != "void").toList
   val filteredParamsWithTypes = nonVoidIndices.map(i => (lambda.params(i), paramTypes(i)))
@@ -761,8 +773,13 @@ private[emitter] def compileTailRecursiveLambda(
   val filteredParamTypes      = filteredParamsWithTypes.map(_._2)
   val userParamDecls          = formatParamDecls(filteredParamsWithTypes, state.resolvables)
   val envParamIdx             = filteredParamsWithTypes.size
+  val directCaptureDecls = captureInfo match
+    case Some(TailRecCaptureInfo.DirectTrailing(layout)) => layout.paramDecls(envParamIdx)
+    case _ => Nil
   val allParamDecls = entryAbi match
-    case TailRecEntryAbi.PlainDirect => userParamDecls
+    case TailRecEntryAbi.PlainDirect =>
+      ((if userParamDecls.isEmpty then Nil else List(userParamDecls)) ++ directCaptureDecls)
+        .mkString(", ")
     case TailRecEntryAbi.ClosureEntry =>
       if userParamDecls.isEmpty then s"ptr %$envParamIdx"
       else s"$userParamDecls, ptr %$envParamIdx"
@@ -781,37 +798,42 @@ private[emitter] def compileTailRecursiveLambda(
   for
     _ <- validateLoopifiedBorrowClosures(body)
     _ <-
-      if entryAbi == TailRecEntryAbi.PlainDirect && captureInfo.nonEmpty then
-        CodeGenError(
-          "Plain direct tail-recursive functions cannot load captures from a closure env",
-          lambda.some
-        ).asLeft
-      else ().asRight
-    captureCount       = captureInfo.fold(0)(_._2.slots.size)
+      (entryAbi, captureInfo) match
+        case (TailRecEntryAbi.PlainDirect, Some(TailRecCaptureInfo.ClosureEnv(_, _))) =>
+          CodeGenError(
+            "Plain direct tail-recursive functions cannot load captures from a closure env",
+            lambda.some
+          ).asLeft
+        case (TailRecEntryAbi.ClosureEntry, Some(TailRecCaptureInfo.DirectTrailing(_))) =>
+          CodeGenError(
+            "Closure-entry tail-recursive functions cannot use Direct trailing captures",
+            lambda.some
+          ).asLeft
+        case _ => ().asRight
     captureFieldOffset = lambda.closureEnvAllocation.captureFieldOffset
     captureData = captureInfo match
-      case Some((envTypeRef, captureTypes)) =>
+      case Some(TailRecCaptureInfo.ClosureEnv(envTypeRef, captureTypes)) =>
         val captureStartRegister = entryAbi match
           case TailRecEntryAbi.PlainDirect => envParamIdx
           case TailRecEntryAbi.ClosureEntry => envParamIdx + 1
         val captureStartState = baseState.withRegister(captureStartRegister)
-        emitCaptureLoads(
+        val (loadedState, loadedScope) = emitCaptureLoads(
           envTypeRef,
           envParamIdx,
           captureTypes,
           captureStartState,
           captureFieldOffset
         )
+        (loadedState, loadedScope, envParamIdx + 1 + 2 * captureTypes.slots.size)
+      case Some(TailRecCaptureInfo.DirectTrailing(layout)) =>
+        (baseState, directTrailingCaptureScope(layout), envParamIdx + layout.slots.size)
       case None =>
-        (baseState, Map.empty[String, ScopeEntry])
-    (stateAfterCaptures, captureScope) = captureData
-    stateAfterEntry                    = stateAfterCaptures.emit(s"  br label %$loopHeader")
-    headerState                        = stateAfterEntry.emit(s"$loopHeader:")
-    paramCount                         = filteredParams.size
-    phiStart = entryAbi match
-      case TailRecEntryAbi.PlainDirect => paramCount + 2 * captureCount
-      case TailRecEntryAbi.ClosureEntry => paramCount + 1 + 2 * captureCount
-    phiRegs = filteredParams.indices.map(i => phiStart + i).toList
+        (baseState, Map.empty[String, ScopeEntry], envParamIdx)
+    (stateAfterCaptures, captureScope, phiStart) = captureData
+    stateAfterEntry = stateAfterCaptures.emit(s"  br label %$loopHeader")
+    headerState     = stateAfterEntry.emit(s"$loopHeader:")
+    paramCount      = filteredParams.size
+    phiRegs         = filteredParams.indices.map(i => phiStart + i).toList
     phiPlaceholders = phiRegs.zip(filteredParamTypes).map { case (phiReg, llvmType) =>
       s"  %$phiReg = phi $llvmType __PHI_PLACEHOLDER_$phiReg"
     }
@@ -984,8 +1006,7 @@ private def compileBoundStatements(
       val compiled =
         (bindingName, expr.terms) match
           case (Some(name), List(lambda: Lambda))
-              if lambda.materialization == Materialization.Direct &&
-                !lambda.meta.exists(_.isTailRecursive) =>
+              if lambda.materialization == Materialization.Direct =>
             compileDirectBoundStatement(name, lambda, currentState, currentScope)
           case _ =>
             compileExpr(expr, currentState, currentScope).map { res =>
@@ -1200,5 +1221,5 @@ private def isSelfRef(ref: Ref, selfName: String, selfId: Option[String]): Boole
   if ref.qualifier.isDefined then false
   else
     ref.resolvedId match
-      case Some(id) => selfId.contains(id)
+      case Some(id) => selfId.fold(ref.name == selfName)(_ == id)
       case None => ref.name == selfName

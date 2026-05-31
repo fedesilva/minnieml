@@ -90,17 +90,7 @@ private def compileBoundLambdaArg(
   val stateWithId = state.copy(nextAnonFnId = state.nextAnonFnId + 1)
   val fnName      = stateWithId.mangleName(uniqueName)
 
-  // Tail-recursive direct lambdas still need the loopification path; defer Direct-specific
-  // lowering of tail-rec lambdas to a future slice.
-  val effectiveMaterialization =
-    if argLambda.meta.exists(
-        _.isTailRecursive
-      ) && argLambda.materialization == Materialization.Direct
-    then
-      if argLambda.captures.isEmpty then Materialization.NullEnv else Materialization.Materialized
-    else argLambda.materialization
-
-  effectiveMaterialization match
+  argLambda.materialization match
     case Materialization.Direct =>
       val typeFnE = argLambda.typeSpec match
         case Some(tf: TypeFn) => tf.asRight

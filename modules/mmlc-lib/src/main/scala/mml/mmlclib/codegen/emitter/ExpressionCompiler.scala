@@ -155,12 +155,8 @@ private[emitter] def compileLambdaLiteral(
   preAllocatedName: Option[(CodeGenState, String)] = None,
   bindingParam:     Option[FnParam]                = None
 ): Either[CodeGenError, CompileResult] =
-  // Direct lambdas have a dedicated lowering and must never reach the value-position path,
-  // except for tail-recursive ones — they fall back to the wrapper-based lowering until the
-  // Direct lowering grows tail-call loopification.
-  if lambda.materialization == Materialization.Direct &&
-    !lambda.meta.exists(_.isTailRecursive)
-  then
+  // Direct lambdas have a dedicated lowering and must never reach the value-position path.
+  if lambda.materialization == Materialization.Direct then
     return CodeGenError(
       "Direct lambda reached compileLambdaLiteral (value-position path); MaterializationAnalyzer should have set isDirect=false. This is a compiler bug.",
       lambda.some
@@ -317,13 +313,8 @@ private def compileTailRecLambdaLiteral(
   functionScope: Map[String, ScopeEntry]
 ): Either[CodeGenError, CompileResult] =
   if lambda.captures.nonEmpty then
-    val materializedLambda =
-      if lambda.materialization == Materialization.Direct then
-        val updatedMeta = lambda.meta.getOrElse(LambdaMeta()).copy(isDirect = false)
-        lambda.copy(meta = updatedMeta.some)
-      else lambda
     compileTailRecCapturingLambda(
-      materializedLambda,
+      lambda,
       state,
       fnName,
       returnType,
@@ -426,7 +417,6 @@ private def compileTailRecCapturingLambda(
       output              = List.empty,
       entryPrologueOutput = List.empty
     )
-    val capInfo = (envResult.envTypeRef, envResult.captureLayout)
     compileTailRecursiveLambda(
       lambda,
       subState,
@@ -434,9 +424,10 @@ private def compileTailRecCapturingLambda(
       paramTypes,
       fnName,
       body,
-      linkage     = "internal ",
-      entryAbi    = TailRecEntryAbi.ClosureEntry,
-      captureInfo = capInfo.some
+      linkage  = "internal ",
+      entryAbi = TailRecEntryAbi.ClosureEntry,
+      captureInfo =
+        TailRecCaptureInfo.ClosureEnv(envResult.envTypeRef, envResult.captureLayout).some
     ).map { finalSubState =>
       val fnBody = finalSubState.output.reverse.mkString("\n")
       val mergedState =
@@ -673,64 +664,96 @@ private[emitter] def compileDirectLambda(
   val userParamCount          = filteredParamsWithTypes.size
 
   computeCodegenCaptureLayout(lambda, state, functionScope, userParamCount).flatMap { trailing =>
-    val captureDecls = trailing.paramDecls(userParamCount)
-    val allParamDecls =
-      val parts = (if userParamDecls.isEmpty then Nil else List(userParamDecls)) ++ captureDecls
-      parts.mkString(", ")
+    val tailRecBody = for
+      param <- selfBinder
+      if lambda.meta.exists(_.isTailRecursive)
+      body <- findTailRecBody(lambda, param.name, param.id)
+    yield body
 
-    val subState = state.copy(
-      output                  = List.empty,
-      entryPrologueOutput     = List.empty,
-      nextRegister            = 0,
-      insideLoopifiedFunction = false
-    )
-    val paramScope = filteredParamsWithTypes.zipWithIndex.map { case ((param, _), idx) =>
-      val mmlType = param.typeAsc
-        .flatMap(getNominalTypeName(_).toOption)
-        .getOrElse("Unknown")
-      (param.name, ScopeEntry(idx, mmlType))
-    }.toMap
-
-    val directScope = trailing.innerDirectable.map { case (name, dc) =>
-      name -> ScopeEntry(0, "Function", directCallable = dc.some)
-    }
-
-    // Inner-scope operands for the self-recursive call site mirror the inner trailing-param
-    // layout (one operand per slot, in declaration order).
-    val innerCaptureOps = trailing.slots.zipWithIndex.map { case (slot, i) =>
-      (s"%${userParamCount + i}", slot.llvmType)
-    }
-    val selfScope = selfBinder.map { p =>
-      val entry = ScopeEntry(
-        0,
-        "Function",
-        directCallable = DirectCallable(fnName, innerCaptureOps).some
-      )
-      p.name -> entry
-    }.toMap
-
-    val bodyState = subState.withRegister(userParamCount + trailing.slots.size)
-
-    for
-      bodyRes <-
-        compileExpr(
-          lambda.body,
-          bodyState,
-          functionScope ++ paramScope ++ trailing.innerScope ++ directScope ++ selfScope
+    tailRecBody match
+      case Some(body) =>
+        val subState = state.copy(
+          output              = List.empty,
+          entryPrologueOutput = List.empty
         )
-      retLine =
-        if returnType == "void" then "  ret void"
-        else s"  ret $returnType ${bodyRes.operandStr}"
-      finalSubState = bodyRes.state.emit(retLine).emit("}")
-      header        = s"define internal $returnType @$fnName($allParamDecls) #0 {"
-      fnBody        = renderFunctionLines(header, finalSubState).mkString("\n")
-      mergedState   = mergeDeferredBodyState(state, finalSubState).addDeferredDefinition(fnBody)
-    yield CompileResult(
-      register  = 0,
-      state     = mergedState,
-      isLiteral = true,
-      typeName  = "Function"
-    )
+        compileTailRecursiveLambda(
+          lambda,
+          subState,
+          returnType,
+          paramTypes,
+          fnName,
+          body,
+          linkage     = "internal ",
+          entryAbi    = TailRecEntryAbi.PlainDirect,
+          captureInfo = TailRecCaptureInfo.DirectTrailing(trailing).some
+        ).map { finalSubState =>
+          val fnBody = finalSubState.output.reverse.mkString("\n")
+          val mergedState =
+            mergeDeferredBodyState(state, finalSubState).addDeferredDefinition(fnBody)
+          CompileResult(
+            register  = 0,
+            state     = mergedState,
+            isLiteral = true,
+            typeName  = "Function"
+          )
+        }
+
+      case None =>
+        val captureDecls = trailing.paramDecls(userParamCount)
+        val allParamDecls =
+          val parts =
+            (if userParamDecls.isEmpty then Nil else List(userParamDecls)) ++ captureDecls
+          parts.mkString(", ")
+
+        val subState = state.copy(
+          output                  = List.empty,
+          entryPrologueOutput     = List.empty,
+          nextRegister            = 0,
+          insideLoopifiedFunction = false
+        )
+        val paramScope = filteredParamsWithTypes.zipWithIndex.map { case ((param, _), idx) =>
+          val mmlType = param.typeAsc
+            .flatMap(getNominalTypeName(_).toOption)
+            .getOrElse("Unknown")
+          (param.name, ScopeEntry(idx, mmlType))
+        }.toMap
+
+        // Inner-scope operands for the self-recursive call site mirror the inner trailing-param
+        // layout (one operand per slot, in declaration order).
+        val innerCaptureOps = trailing.slots.zipWithIndex.map { case (slot, i) =>
+          (s"%${userParamCount + i}", slot.llvmType)
+        }
+        val selfScope = selfBinder.map { p =>
+          val entry = ScopeEntry(
+            0,
+            "Function",
+            directCallable = DirectCallable(fnName, innerCaptureOps).some
+          )
+          p.name -> entry
+        }.toMap
+
+        val bodyState = subState.withRegister(userParamCount + trailing.slots.size)
+
+        for
+          bodyRes <-
+            compileExpr(
+              lambda.body,
+              bodyState,
+              functionScope ++ paramScope ++ directTrailingCaptureScope(trailing) ++ selfScope
+            )
+          retLine =
+            if returnType == "void" then "  ret void"
+            else s"  ret $returnType ${bodyRes.operandStr}"
+          finalSubState = bodyRes.state.emit(retLine).emit("}")
+          header        = s"define internal $returnType @$fnName($allParamDecls) #0 {"
+          fnBody        = renderFunctionLines(header, finalSubState).mkString("\n")
+          mergedState   = mergeDeferredBodyState(state, finalSubState).addDeferredDefinition(fnBody)
+        yield CompileResult(
+          register  = 0,
+          state     = mergedState,
+          isLiteral = true,
+          typeName  = "Function"
+        )
   }
 
 /** Compiles a regular (non-tail-recursive) lambda literal as a deferred LLVM function. */

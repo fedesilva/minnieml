@@ -53,7 +53,7 @@ Slice progress (see `context/specs/unify-lambdas-plan.md`):
 - [x] S7 — Codegen: env allocation rule consumes `isMove` (COMPLETE)
 - [x] S7.5 — Push env allocation classification onto the lambda model (COMPLETE)
 - [x] S7.6 — Stack-promotion decision gate: leave S11 separate (COMPLETE)
-- [ ] S8 — Tail-recursion follow-up under unified model
+- [x] S8 — Tail-recursion follow-up under unified model (COMPLETE)
 - [ ] S9 — Equivalence test pass
 - [ ] S10 — `BindingMeta` reduction
 - [ ] S11 — Stack-promotion for non-escaping move-capturing lambdas
@@ -81,6 +81,18 @@ Slice progress (see `context/specs/unify-lambdas-plan.md`):
 * add commands to manage the cache (init, clean)
 
 ## Change Log
+
+- 2026-05-31: #255 unify-lambdas S8 — direct loopification for tail-recursive lambdas
+  - `ExpressionCompiler.scala` / `Applications.scala`: Direct tail-recursive scoped
+    bindings stay on the Direct lowering path; `compileLambdaLiteral` now rejects every
+    Direct lambda that reaches value-position lowering.
+  - `FunctionEmitter.scala`: loopified plain-direct entries can carry Direct trailing
+    captures as stable entry parameters while user parameters remain loop PHIs.
+  - `ClosureMemoryFnGenerator.scala`: closure env structs are synthesized only for
+    lambdas whose allocation classifier reports a real env.
+  - `TailRecursionLoopificationTest.scala` / `FunctionSignatureTest.scala` /
+    `TbaaEmissionTest.scala`: refreshed assertions for Direct loopified capture params
+    and retained materialized-env coverage on non-Direct closure paths.
 
 - 2026-05-31: #255 unify-lambdas S7/S7.5 — centralize closure env allocation classification
   - `ast/terms.scala`: added `ClosureEnvAllocation` and `Lambda.closureEnvAllocation` as

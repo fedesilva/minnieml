@@ -194,19 +194,15 @@ class TbaaEmissionTest extends BaseEffFunSuite:
 
   test("closure env TBAA handles captured function values") {
     val source = """
+      fn apply(g: Int -> Int): Int = g 41;;
+
       fn main(): Int =
         fn inc(x: Int): Int = x + 1;;
         let f = if true then inc; else { x: Int -> x + 10; }; ;
 
-        fn loop(n: Int): Int =
-          if n == 0 then
-            f 41;
-          else
-            loop (n - 1);
-          ;
-        ;
+        let g = { x: Int -> f x; };
 
-        loop 1;
+        apply g;
       ;
     """
 
