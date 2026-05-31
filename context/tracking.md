@@ -16,6 +16,13 @@
 
 ## Active Tasks
 
+
+### Bug: can't use ??? in an annotated fn.
+
+`Typed hole in binding 'escape_attempt' requires type annotationmmlc`
+
+`mml/samples/borrow-escape-test.mml`
+
 ### Add lambda test harness
 
   like mem harness but with programs that do stuff with lambdas
