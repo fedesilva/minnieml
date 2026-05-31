@@ -108,6 +108,21 @@ class MaterializationAnalyzerTests extends BaseEffFunSuite:
     }
   }
 
+  test("let-bound lambda used through partial application remains direct") {
+    val code =
+      """
+        fn main(dummy: Int): Int =
+          let add: Int -> Int -> Int = { x: Int, y: Int -> x + y };
+          let addDummy: Int -> Int = add dummy;
+          addDummy 1;
+        ;
+      """
+    semNotFailed(code).map { module =>
+      val add = letBoundLambda(module, "main", "add")
+      assert(isDirect(add), "partial application builds a derived closure, not a value of add")
+    }
+  }
+
   // ---- lambda literals ----------------------------------------------------
 
   test("lambda literal in immediate application is direct") {

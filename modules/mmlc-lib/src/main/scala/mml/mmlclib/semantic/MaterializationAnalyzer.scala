@@ -5,21 +5,18 @@ import mml.mmlclib.compiler.CompilerState
 
 /** Computes [[LambdaMeta.isDirect]] for every lambda in the module.
   *
-  * A lambda is *direct* when every reference to it (or to its binding) appears as the saturated
-  * head of a call chain — the lambda is only ever invoked, never used as a first-class value.
-  * Direct lambdas can lower as pure scope constructs; non-direct lambdas must materialize as
+  * A lambda is *direct* when every reference to it (or to its binding) appears as the head of a
+  * call chain — the lambda is only ever invoked or partially applied, never used as a first-class
+  * value. Direct lambdas can lower as pure scope constructs; non-direct lambdas must materialize as
   * fat-pointer closure values.
   *
   * The field defaults to `false`. This pass walks the AST and flips it to `true` for lambdas whose
-  * every reachable use is a saturated call. Multi-use sites join by AND: any value-position use
-  * (higher-order argument, return, partial application, alias, struct sink) keeps the lambda
-  * non-direct.
+  * every reachable use is a call-head use. Multi-use sites join by AND: any value-position use
+  * (higher-order argument, return, alias, struct sink) keeps the lambda non-direct.
   *
-  * Saturation check: a reference is direct iff `depth >= max(arity, 1)`. The `max(_, 1)` floor
-  * keeps arity-0 lambdas (thunks, `fn nada() = …`, parameterless lambda literals `{ expr }`) sound:
-  * invocation always passes an explicit unit argument, so a called thunk's ref sits under one
-  * `App.fn` descent (depth 1), while a value-position thunk ref sits at depth 0. Without the floor,
-  * every thunk ref would trivially satisfy `depth >= 0`.
+  * Call-head check: a binding reference is direct iff `depth > 0`. An undersaturated call creates a
+  * partial-application closure for the result; it does not require the original callable to
+  * materialize as a full function value.
   *
   * Parser-lowered scoped-binding lambdas (`App(Lambda(params=[binder], ...), arg)` shape produced
   * by `let`, statement sequencing, and immediate application) are always recognized as direct: at
@@ -98,9 +95,9 @@ object MaterializationAnalyzer:
 
   // ----- Pass 2: non-direct binding ids -----
   //
-  // Walk the AST tracking saturation depth: each descent into `App.fn` increments,
+  // Walk the AST tracking call-head depth: each descent into `App.fn` increments,
   // every other descent resets to 0. At each Ref whose resolvedId matches a tracked
-  // lambda binding, the binding is direct iff `depth >= arity`. Any failing use site
+  // lambda binding, the binding is direct iff `depth > 0`. Any failing use site
   // flips the binding to non-direct.
 
   private def collectNonDirect(module: Module, bindings: Bindings): NonDirectIds =
@@ -132,7 +129,7 @@ object MaterializationAnalyzer:
       ref.resolvedId match
         case Some(id) =>
           bindings.get(id) match
-            case Some(binding) if depth < saturationFloor(binding.arity) => withQualifier + id
+            case Some(_) if depth == 0 => withQualifier + id
             case _ => withQualifier
         case None => withQualifier
     case app: App =>

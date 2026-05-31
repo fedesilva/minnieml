@@ -76,6 +76,7 @@ The compiler needs to be installed before it's used if changes were made.
     - `sbtn "run run mml/samples/hola.mml"`
     - `sbtn "run run mml/samples/quicksort.mml"`
     - `sbtn "run run mml/samples/astar2.mml"`    
+    - `sbtn "run run mml/samples/partial-fac1.mml"`
     - `sbtn "run mml/samples/style-guide.mml"`
     - `sbtn "run mml/samples/lambda-factorial.mml"`
     - `sbtn "run mml/samples/raytracer3_p6.mml"`

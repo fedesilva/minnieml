@@ -23,6 +23,32 @@
 
 `mml/samples/borrow-escape-test.mml`
 
+### Bug: function annotation arity must be disambiguated by the binder
+
+`Int -> Int -> Int` is intentionally valid for the common uncurried definition-site
+case: a two-param binding reads it as `fn(Int, Int): Int`. The bug is that the checker
+also commits to arity 2 from the arrow count before looking at how many parameters the
+lambda actually binds.
+
+That makes this shape fail even though the produced value type exists:
+
+```mml
+let make_fac: Int -> Int -> Int =
+  { n: Int -> factorial_tco n }
+;
+```
+
+`make_fac` binds one parameter, so the annotation should peel one arrow segment and
+leave `Int -> Int` as the return type. Downstream, `make_fac 5 : Int -> Int` already
+matches the language's partial-application behavior.
+
+Expected fix: keep uncurried-by-default definition semantics, but reconcile function
+annotations against the lambda's binder arity. A two-param `factorial_tco:
+Int -> Int -> Int` consumes two arrow segments and returns `Int`; a one-param
+`make_fac: Int -> Int -> Int` consumes one segment and returns `Int -> Int`.
+The bug is having arrow-count and binder-count act as independent arity sources that
+can disagree.
+
 ### Add lambda test harness
 
   like mem harness but with programs that do stuff with lambdas
@@ -61,6 +87,8 @@ Slice progress (see `context/specs/unify-lambdas-plan.md`):
 - [x] S7.5 — Push env allocation classification onto the lambda model (COMPLETE)
 - [x] S7.6 — Stack-promotion decision gate: leave S11 separate (COMPLETE)
 - [x] S8 — Tail-recursion follow-up under unified model (COMPLETE)
+- [x] S8.5a — Direct partial-application env lifetime/drop hardening (COMPLETE)
+- [ ] S8.5b — Direct partial-application env TBAA parity
 - [ ] S9 — Equivalence test pass
 - [ ] S10 — `BindingMeta` reduction
 - [ ] S11 — Stack-promotion for non-escaping move-capturing lambdas
@@ -88,6 +116,27 @@ Slice progress (see `context/specs/unify-lambdas-plan.md`):
 * add commands to manage the cache (init, clean)
 
 ## Change Log
+
+- 2026-05-31: #255 unify-lambdas S8.5a — Direct partial-application env lifetime/drop hardening
+  - `Applications.scala` / `OwnershipAnalyzer.scala` / `ClosureMemoryFnGenerator.scala`:
+    generated Direct partial-application closures now use heap envs with destructor slot
+    0 when they become first-class function values, and returned function values are
+    dropped through `__free_closure`.
+  - `ExpressionCompiler.scala` / `FunctionEmitter.scala`: Direct callable scope entries
+    carry enough signature information for undersaturated Direct calls while preserving
+    saturated Direct calls that return function values.
+  - `TailRecursionLoopificationTest.scala` / `tests/mem/escaping-paps.mml`: pinned the
+    PAP env layout, capture offset, destructor dispatch, and ASan/LSan escaping-PAP
+    regression.
+  - `mml/samples/partial-fac1.mml` / `context/coding-rules.md`: kept the original
+    local tail-recursive partial-application sample in the mandatory smoke list.
+
+- 2026-05-31: #255 unify-lambdas follow-up planning — Direct partial-application env hardening
+  - `context/specs/unify-lambdas-plan.md` / `context/tracking.md`: added S8.5 to
+    harden Direct partial-application closure envs before S9. The next slice should
+    prove escaping partial-application closures do not dangle, stop treating every
+    generated partial-application env as stack-local, and add TBAA metadata parity
+    for generated partial-application env load/store fields.
 
 - 2026-05-31: #255 unify-lambdas S8 — direct loopification for tail-recursive lambdas
   - `ExpressionCompiler.scala` / `Applications.scala`: Direct tail-recursive scoped

@@ -664,16 +664,19 @@ case class CodeGenState(
       val declaration = emitFunctionDeclaration(name, returnType, paramTypes)
       copy(functionDeclarations = functionDeclarations + (name -> declaration))
 
-/** A Direct lambda binding's call shape: the entry symbol plus the trailing capture operands to
-  * append at every call site.
+/** A Direct lambda binding's call shape: the entry symbol, user-parameter signature, and trailing
+  * capture operands to append at call sites.
   *
   * Direct lambdas have signature `(userParams..., captureTypes...)` with no env pointer. The binder
   * is not a first-class value — `operandStr` on a direct-callable `ScopeEntry` is undefined;
-  * callers must consult `directCallable` and dispatch via [[compileApp]].
+  * callers must consult `directCallable` and dispatch via [[compileApp]]. Undersaturated calls use
+  * the signature fields to build a partial-application closure.
   */
 case class DirectCallable(
   entryName:       String,
-  captureOperands: List[(String, String)] // (operand, llvmType)
+  captureOperands: List[(String, String)], // (operand, llvmType)
+  paramTypes:      List[String]   = Nil,
+  returnType:      Option[String] = None
 )
 
 case class NamedClosureEntryKey(
@@ -780,6 +783,8 @@ def getLlvmType(
 ): Either[CodeGenError, String] =
 
   typeSpec match
+    case TypeGroup(_, types) if types.size == 1 =>
+      getLlvmType(types.head, state)
     case TypeRef(_, name, resolvedId, _) =>
       resolvedId.flatMap(state.resolvables.lookupType) match
         case Some(typeDef: TypeDef) =>

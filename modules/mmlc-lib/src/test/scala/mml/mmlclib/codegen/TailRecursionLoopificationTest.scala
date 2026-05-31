@@ -149,6 +149,149 @@ class TailRecursionLoopificationTest extends BaseEffFunSuite:
     }
   }
 
+  test("partial application of local loopified Direct function emits a PAP entry") {
+    val source =
+      """
+      pub fn main(): Int =
+        let factorial_tco: Int -> Int -> Int =
+          { n: Int, acc: Int ->
+            if n <= 1 then acc;
+            else factorial_tco (n - 1) (acc * n);
+            ;
+          }
+        ;
+
+        let from5: Int -> Int = factorial_tco 5;
+
+        from5 1;
+      ;
+      """
+
+    compileAndGenerate(source, config = CompilerConfig.default.copy(noTco = false)).map { llvmIr =>
+      val directMatch =
+        """define internal i64 @(test_factorial_tco_\d+)\(i64 %0, i64 %1\) #0 \{""".r
+          .findFirstMatchIn(llvmIr)
+          .getOrElse(fail(s"Missing plain Direct factorial_tco entry. IR:\n$llvmIr"))
+      val directName = directMatch.group(1)
+      val papMatch =
+        """define internal i64 @(test_factorial_tco_pap_\d+)\(i64 %0, ptr %1\) #0 \{""".r
+          .findFirstMatchIn(llvmIr)
+          .getOrElse(fail(s"Missing partial-application entry. IR:\n$llvmIr"))
+      val papName  = papMatch.group(1)
+      val papBody  = functionBody(llvmIr, s"$papName\\(i64 %0, ptr %1\\) #0")
+      val mainBody = functionBody(llvmIr, "test_main\\(\\) #0")
+
+      assert(
+        papBody.contains(s"call i64 @$directName(i64 %") && papBody.contains(", i64 %0)"),
+        s"PAP entry should load fixed n and forward acc into Direct entry. Body:\n$papBody"
+      )
+      assert(
+        !llvmIr.contains(s"${directName}__closure_entry"),
+        s"Partial application should not materialize the full-arity closure wrapper. IR:\n$llvmIr"
+      )
+      assert(
+        !mainBody.contains(s"call { ptr, ptr } @${directName}__closure_entry"),
+        s"main must not reinterpret the scalar closure-entry ABI as a closure pair. Body:\n$mainBody"
+      )
+      assert(
+        mainBody.contains(s"ptr @$papName"),
+        s"main should build a closure pair with the PAP entry. Body:\n$mainBody"
+      )
+    }
+  }
+
+  test("escaped partial application of local loopified Direct function uses heap env") {
+    val source =
+      """
+      pub fn main(): Int =
+        let factorial_tco: Int -> Int -> Int =
+          { n: Int, acc: Int ->
+            if n <= 1 then acc;
+            else factorial_tco (n - 1) (acc * n);
+            ;
+          }
+        ;
+
+        let make_fac: Int -> (Int -> Int) =
+          { n: Int -> factorial_tco n }
+        ;
+
+        let f5: Int -> Int = make_fac 5;
+
+        f5 1;
+      ;
+      """
+
+    compileAndGenerate(source, config = CompilerConfig.default.copy(noTco = false)).map { llvmIr =>
+      val directMatch =
+        """define internal i64 @(test_factorial_tco_\d+)\(i64 %0, i64 %1\) #0 \{""".r
+          .findFirstMatchIn(llvmIr)
+          .getOrElse(fail(s"Missing plain Direct factorial_tco entry. IR:\n$llvmIr"))
+      val makeFacMatch =
+        """define internal \{ ptr, ptr \} @(test_make_fac_\d+)\(i64 %0\) #0 \{""".r
+          .findFirstMatchIn(llvmIr)
+          .getOrElse(fail(s"Missing Direct make_fac entry returning a closure pair. IR:\n$llvmIr"))
+      val papMatch =
+        """define internal i64 @(test_factorial_tco_pap_\d+)\(i64 %0, ptr %1\) #0 \{""".r
+          .findFirstMatchIn(llvmIr)
+          .getOrElse(fail(s"Missing returned partial-application entry. IR:\n$llvmIr"))
+      val directName  = directMatch.group(1)
+      val makeFacName = makeFacMatch.group(1)
+      val papName     = papMatch.group(1)
+      val makeFacBody = functionBody(llvmIr, s"$makeFacName\\(i64 %0\\) #0")
+      val papBody     = functionBody(llvmIr, s"$papName\\(i64 %0, ptr %1\\) #0")
+      val mainBody    = functionBody(llvmIr, "test_main\\(\\) #0")
+      val dtorName =
+        """store ptr @(test___free_factorial_tco_pap_env_\d+), ptr %\d+""".r
+          .findFirstMatchIn(makeFacBody)
+          .map(_.group(1))
+          .getOrElse(fail(s"Missing PAP env destructor store. Body:\n$makeFacBody"))
+      val dtorBody = functionBody(llvmIr, s"$dtorName\\(ptr %0\\) #0")
+
+      assert(
+        """%struct\.test_factorial_tco_pap_env_\d+ = type \{ ptr, i64 \}""".r
+          .findFirstIn(llvmIr)
+          .nonEmpty,
+        s"Returned PAP env should use slot 0 for the destructor and slot 1 for n. IR:\n$llvmIr"
+      )
+      assert(
+        papBody.contains("i32 0, i32 1") &&
+          !papBody.contains("i32 0, i32 0") &&
+          papBody.contains(s"call i64 @$directName(i64 %") &&
+          papBody.contains(", i64 %0)"),
+        s"PAP entry should load fixed n from field 1 and forward acc into Direct entry. Body:\n$papBody"
+      )
+      assert(
+        dtorBody.contains("call void @mml_free_raw(ptr %0)"),
+        s"PAP env destructor should free the raw env pointer. Body:\n$dtorBody"
+      )
+      assert(
+        makeFacBody.contains("call ptr @malloc(i64 16)") &&
+          !makeFacBody.contains("alloca %struct.test_factorial_tco_pap_env_"),
+        s"Returned PAP env must not point at make_fac stack storage. Body:\n$makeFacBody"
+      )
+      assert(
+        makeFacBody.contains(s"store ptr @$dtorName") &&
+          makeFacBody.contains("i32 0, i32 0") &&
+          makeFacBody.contains("i32 0, i32 1") &&
+          makeFacBody.contains("store i64 %0"),
+        s"Returned PAP env should store a destructor in field 0. Body:\n$makeFacBody"
+      )
+      assert(
+        makeFacBody.contains(s"ptr @$papName"),
+        s"make_fac should return a real closure pair backed by the generated PAP entry. Body:\n$makeFacBody"
+      )
+      assert(
+        (s"""(?s).*call \\{ ptr, ptr \\} @$makeFacName\\(i64 5\\).*""" +
+          """%\d+ = call i64 %\d+\(i64 1, ptr %\d+\).*""" +
+          """%\d+ = extractvalue \{ ptr, ptr \} %\d+, 1.*""" +
+          """call void @test___free_closure\(ptr %\d+\).*""").r
+          .matches(mainBody),
+        s"Caller should call the returned PAP and then drop its env. Body:\n$mainBody"
+      )
+    }
+  }
+
   test("local capturing loopified Direct function uses trailing captures") {
     val source =
       """

@@ -487,14 +487,14 @@ private[emitter] object CodegenCaptureSlot:
   *   re-bound direct-callable captures whose operands now point at inner trailing-param registers
   *   (replacing the outer operands that the body would otherwise inherit).
   * @param directEntries
-  *   Direct-callable captures by source name and emitted entry symbol, including zero-capture
-  *   Direct callables that contribute no slots.
+  *   Direct-callable captures by source name, including zero-capture Direct callables that
+  *   contribute no slots.
   */
 private[emitter] case class CodegenCaptureLayout(
   slots:           List[CodegenCaptureSlot],
   innerScope:      Map[String, ScopeEntry],
   innerDirectable: Map[String, DirectCallable],
-  directEntries:   Map[String, String]
+  directEntries:   Map[String, DirectCallable]
 ):
   def paramDecls(userParamCount: Int): List[String] =
     slots.zipWithIndex.map { case (s, i) => s"${s.llvmType} %${userParamCount + i}" }
@@ -527,9 +527,9 @@ private[emitter] def computeCodegenCaptureLayout(
           CodegenCaptureSlot.Value(ref.name, mmlType, ty, outerOp, cloneFnId)
         }
 
-  type CaptureAcc = (List[CodegenCaptureSlot], Map[String, String])
+  type CaptureAcc = (List[CodegenCaptureSlot], Map[String, DirectCallable])
   val layoutE = lambda.captures.foldLeft[Either[CodeGenError, CaptureAcc]](
-    (List.empty[CodegenCaptureSlot], Map.empty[String, String]).asRight
+    (List.empty[CodegenCaptureSlot], Map.empty[String, DirectCallable]).asRight
   ) { (accE, cap) =>
     accE.flatMap { case (slots, directEntries) =>
       cap match
@@ -548,7 +548,7 @@ private[emitter] def computeCodegenCaptureLayout(
                   val expanded = dc.captureOperands.map { case (op, ty) =>
                     CodegenCaptureSlot.DirectOp(ref.name, dc.entryName, ty, op)
                   }
-                  (slots ++ expanded, directEntries.updated(ref.name, dc.entryName)).asRight
+                  (slots ++ expanded, directEntries.updated(ref.name, dc)).asRight
                 case None =>
                   valueSlotFor(ref, None).map(slot => (slots :+ slot, directEntries))
     }
@@ -559,8 +559,8 @@ private[emitter] def computeCodegenCaptureLayout(
       slots.zipWithIndex.foldLeft(
         (
           Map.empty[String, ScopeEntry],
-          directEntries.map { case (name, entryName) =>
-            name -> (entryName, List.empty[(String, String)])
+          directEntries.map { case (name, direct) =>
+            name -> (direct, List.empty[(String, String)])
           }
         )
       ) { case ((scope, dcs), (slot, i)) =>
@@ -569,13 +569,14 @@ private[emitter] def computeCodegenCaptureLayout(
             (scope + (name -> ScopeEntry(userParamCount + i, mmlType)), dcs)
           case CodegenCaptureSlot.DirectOp(name, entryName, ty, _) =>
             val innerOp = s"%${userParamCount + i}"
+            val direct  = dcs.get(name).map(_._1).getOrElse(DirectCallable(entryName, Nil))
             val prevOps = dcs.get(name).map(_._2).getOrElse(Nil)
-            val updated = dcs.updated(name, (entryName, prevOps :+ (innerOp, ty)))
+            val updated = dcs.updated(name, (direct, prevOps :+ (innerOp, ty)))
             (scope, updated)
       }
 
-    val innerDirectable = perCallable.map { case (name, (entryName, innerOps)) =>
-      name -> DirectCallable(entryName, innerOps)
+    val innerDirectable = perCallable.map { case (name, (direct, innerOps)) =>
+      name -> direct.copy(captureOperands = innerOps)
     }
 
     CodegenCaptureLayout(slots, innerScope, innerDirectable, directEntries)
@@ -727,7 +728,8 @@ private[emitter] def compileDirectLambda(
           val entry = ScopeEntry(
             0,
             "Function",
-            directCallable = DirectCallable(fnName, innerCaptureOps).some
+            directCallable =
+              DirectCallable(fnName, innerCaptureOps, paramTypes, returnType.some).some
           )
           p.name -> entry
         }.toMap
@@ -1288,7 +1290,24 @@ def compileApp(
     case ref: Ref =>
       functionScope.get(ref.name).flatMap(_.directCallable) match
         case Some(direct) =>
-          compileDirectCall(ref, direct, allArgs, app, state, functionScope, compileExpr)
+          val suppliedUserArgCount = allArgs.size
+          val directUserParamCount = direct.paramTypes.count(_ != "void")
+          app.typeSpec
+            .flatMap(t => resolveToTypeFn(t, state.resolvables))
+            .filter(_ => suppliedUserArgCount < directUserParamCount) match
+            case Some(resultFnType) =>
+              compileDirectPartialApplication(
+                ref,
+                direct,
+                allArgs,
+                resultFnType,
+                app,
+                state,
+                functionScope,
+                compileExpr
+              )
+            case None =>
+              compileDirectCall(ref, direct, allArgs, app, state, functionScope, compileExpr)
         case None =>
           val hasFunctionType =
             ref.typeSpec.exists(t => resolveToTypeFn(t, state.resolvables).isDefined)

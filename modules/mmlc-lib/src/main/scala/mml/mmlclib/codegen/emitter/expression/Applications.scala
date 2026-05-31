@@ -12,10 +12,17 @@ import mml.mmlclib.codegen.emitter.{
   compileLambdaLiteral,
   emitCall,
   emitExtractValue,
+  emitGetElementPtr,
   emitIndirectCall,
+  emitInsertValue,
+  emitLoad,
+  emitStore,
+  emitTypeDefinition,
   evaluateDirectCaptures,
   getLlvmType,
-  getNominalTypeName
+  getNominalTypeName,
+  renderFunctionLines,
+  sizeOfLlvmTypeResolved
 }
 
 /** Collects all arguments from nested App nodes (handles curried applications).
@@ -114,7 +121,8 @@ private def compileBoundLambdaArg(
         directEntry = ScopeEntry(
           0,
           "Function",
-          directCallable = DirectCallable(fnName, outerCaps).some
+          directCallable =
+            DirectCallable(fnName, outerCaps, paramTypes.toList, returnType.some).some
         )
         extendedScope = functionScope + (param.name -> directEntry)
         bodyRes <- compileExpr(outerLambda.body, stateAfterEval, extendedScope)
@@ -215,6 +223,209 @@ def compileDirectCall(
             ).asLeft
     }
   }
+
+/** Builds a first-class closure for an undersaturated Direct callable.
+  *
+  * The original callable keeps its plain Direct ABI. The generated partial-entry closure stores
+  * already-applied operands and trailing Direct captures in a small env, then forwards remaining
+  * user arguments to the Direct entry.
+  */
+def compileDirectPartialApplication(
+  fnRef:         Ref,
+  direct:        DirectCallable,
+  allArgs:       List[Expr],
+  resultFnType:  TypeFn,
+  app:           App,
+  state:         CodeGenState,
+  functionScope: Map[String, ScopeEntry],
+  compileExpr:   ExprCompiler
+): Either[CodeGenError, CompileResult] =
+  compileArgs(allArgs, state, functionScope, compileExpr).flatMap { case (compiledArgs, argState) =>
+    direct.returnType match
+      case None =>
+        CodeGenError(
+          s"Direct callable '${fnRef.name}' is missing call signature for partial application",
+          app.some
+        ).asLeft
+      case Some(finalReturnType) =>
+        for
+          remainingTypes <- resultFnType.paramTypes
+            .traverse(getLlvmType(_, argState))
+            .map(_.filterNot(_ == "void"))
+          partialReturnType <- getLlvmType(resultFnType.returnType, argState)
+          result <- emitDirectPartialClosure(
+            fnRef,
+            direct,
+            compiledArgs,
+            remainingTypes,
+            partialReturnType,
+            finalReturnType,
+            app,
+            argState
+          )
+        yield result
+  }
+
+private def emitDirectPartialClosure(
+  fnRef:             Ref,
+  direct:            DirectCallable,
+  compiledArgs:      List[CompiledArg],
+  remainingTypes:    List[String],
+  partialReturnType: String,
+  finalReturnType:   String,
+  app:               App,
+  state:             CodeGenState
+): Either[CodeGenError, CompileResult] =
+  val appliedFields = compiledArgs.map(arg => (arg.llvmType, arg.op))
+  val captureFields = direct.captureOperands.map { case (op, llvmType) => (llvmType, op) }
+  val envFields     = appliedFields ++ captureFields
+
+  if finalReturnType != partialReturnType then
+    CodeGenError(
+      s"Direct partial application return mismatch: $finalReturnType vs $partialReturnType",
+      app.some
+    ).asLeft
+  else if envFields.isEmpty then
+    CodeGenError(
+      s"Direct partial application for '${fnRef.name}' has no env fields",
+      app.some
+    ).asLeft
+  else
+    val papId       = state.nextAnonFnId
+    val stateWithId = state.copy(nextAnonFnId = papId + 1)
+    val entryName   = stateWithId.mangleName(s"${fnRef.name}_pap_$papId")
+    val envTypeName = s"struct.${stateWithId.mangleName(s"${fnRef.name}_pap_env_$papId")}"
+    val envTypeRef  = s"%$envTypeName"
+    val dtorName    = stateWithId.mangleName(s"__free_${fnRef.name}_pap_env_$papId")
+    val envTypeDef  = emitTypeDefinition(envTypeName, "ptr" :: envFields.map(_._1))
+    val stateWithEnvDef = stateWithId
+      .withNativeType(envTypeName, envTypeDef)
+      .withFunctionDeclaration("malloc", "ptr", List("i64"))
+      .withFunctionDeclaration("mml_free_raw", "void", List("ptr"))
+
+    val envSize    = sizeOfLlvmTypeResolved(envTypeRef, stateWithEnvDef)
+    val mallocReg  = stateWithEnvDef.nextRegister
+    val mallocLine = emitCall(mallocReg.some, "ptr".some, "malloc", List(("i64", envSize.toString)))
+    val stateAfterAlloc =
+      stateWithEnvDef.withRegister(mallocReg + 1).emit(mallocLine)
+
+    val dtorGepReg = stateAfterAlloc.nextRegister
+    val dtorGepLine = emitGetElementPtr(
+      dtorGepReg,
+      envTypeRef,
+      "ptr",
+      s"%$mallocReg",
+      List(("i32", "0"), ("i32", "0"))
+    )
+    val dtorStoreLine = emitStore(s"@$dtorName", "ptr", s"%$dtorGepReg")
+    val stateAfterDtorStore =
+      stateAfterAlloc.withRegister(dtorGepReg + 1).emit(dtorGepLine).emit(dtorStoreLine)
+
+    val stateAfterStores = envFields.zipWithIndex.foldLeft(stateAfterDtorStore) {
+      case (st, ((llvmType, op), idx)) =>
+        val gepReg = st.nextRegister
+        val gepLine = emitGetElementPtr(
+          gepReg,
+          envTypeRef,
+          "ptr",
+          s"%$mallocReg",
+          List(("i32", "0"), ("i32", (idx + 1).toString))
+        )
+        val storeLine = emitStore(op, llvmType, s"%$gepReg")
+        st.withRegister(gepReg + 1).emit(gepLine).emit(storeLine)
+    }
+
+    val fp0Reg = stateAfterStores.nextRegister
+    val fp1Reg = fp0Reg + 1
+    val insertFn =
+      emitInsertValue(fp0Reg, "{ ptr, ptr }", "undef", "ptr", s"@$entryName", 0)
+    val insertEnv =
+      emitInsertValue(fp1Reg, "{ ptr, ptr }", s"%$fp0Reg", "ptr", s"%$mallocReg", 1)
+    val siteState = stateAfterStores.withRegister(fp1Reg + 1).emit(insertFn).emit(insertEnv)
+    val entryBody = renderDirectPartialEntry(
+      direct,
+      entryName,
+      envTypeRef,
+      appliedFields.map(_._1),
+      captureFields.map(_._1),
+      remainingTypes,
+      finalReturnType
+    )
+    val dtorBody   = renderDirectPartialEnvFree(dtorName)
+    val finalState = siteState.addDeferredDefinition(entryBody).addDeferredDefinition(dtorBody)
+
+    CompileResult(fp1Reg, finalState, false, "Function").asRight
+
+private def renderDirectPartialEntry(
+  direct:          DirectCallable,
+  entryName:       String,
+  envTypeRef:      String,
+  appliedTypes:    List[String],
+  captureTypes:    List[String],
+  remainingTypes:  List[String],
+  finalReturnType: String
+): String =
+  val remainingDecls = remainingTypes.zipWithIndex.map { case (llvmType, idx) =>
+    s"$llvmType %$idx"
+  }
+  val envParamIdx = remainingTypes.size
+  val allParamDecls =
+    (remainingDecls :+ s"ptr %$envParamIdx").mkString(", ")
+
+  val envFieldTypes  = appliedTypes ++ captureTypes
+  val fieldLoadStart = envParamIdx + 1
+  val (loadLines, loadedOps) =
+    envFieldTypes.zipWithIndex.foldLeft((List.empty[String], List.empty[String])) {
+      case ((lines, ops), (llvmType, idx)) =>
+        val gepReg  = fieldLoadStart + idx * 2
+        val loadReg = gepReg + 1
+        val gepLine = emitGetElementPtr(
+          gepReg,
+          envTypeRef,
+          "ptr",
+          s"%$envParamIdx",
+          List(("i32", "0"), ("i32", (idx + 1).toString))
+        )
+        val loadLine = emitLoad(loadReg, llvmType, s"%$gepReg")
+        (lines :+ gepLine :+ loadLine, ops :+ s"%$loadReg")
+    }
+
+  val (loadedApplied, loadedCaptures) = loadedOps.splitAt(appliedTypes.size)
+  val remainingArgs = remainingTypes.zipWithIndex.map { case (llvmType, idx) =>
+    (llvmType, s"%$idx")
+  }
+  val appliedArgs = appliedTypes.zip(loadedApplied).map { case (llvmType, op) =>
+    (llvmType, op)
+  }
+  val captureArgs = captureTypes.zip(loadedCaptures).map { case (llvmType, op) =>
+    (llvmType, op)
+  }
+  val callArgs = appliedArgs ++ remainingArgs ++ captureArgs
+
+  val callStartReg = fieldLoadStart + envFieldTypes.size * 2
+  val bodyLines =
+    if finalReturnType == "void" then
+      loadLines :+ emitCall(none, none, direct.entryName, callArgs) :+ "  ret void"
+    else
+      loadLines :+
+        emitCall(callStartReg.some, finalReturnType.some, direct.entryName, callArgs) :+
+        s"  ret $finalReturnType %$callStartReg"
+
+  val functionLines = bodyLines :+ "}" :+ ""
+  renderFunctionLines(
+    s"define internal $finalReturnType @$entryName($allParamDecls) #0 {",
+    CodeGenState(output = functionLines.reverse)
+  ).mkString("\n")
+
+private def renderDirectPartialEnvFree(dtorName: String): String =
+  List(
+    s"define internal void @$dtorName(ptr %0) #0 {",
+    "entry:",
+    "  call void @mml_free_raw(ptr %0)",
+    "  ret void",
+    "}",
+    ""
+  ).mkString("\n")
 
 /** Compiles a native operator application using its template.
   *

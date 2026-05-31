@@ -10,6 +10,6 @@ pub fn main() =
 
   let from5: Int -> Int = factorial_tco 5;
 
-  from5 1;
+  println (int_to_str (from5 1));
 
 ;

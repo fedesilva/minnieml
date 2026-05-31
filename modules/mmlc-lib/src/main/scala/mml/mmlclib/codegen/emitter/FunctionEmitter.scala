@@ -150,8 +150,8 @@ def emitCaptureLoads(
   bodyState:     CodeGenState,
   fieldOffset:   Int = 1
 ): (CodeGenState, Map[String, ScopeEntry]) =
-  val directSeed = captureLayout.directEntries.map { case (name, entryName) =>
-    name -> (entryName, List.empty[(String, String)])
+  val directSeed = captureLayout.directEntries.map { case (name, direct) =>
+    name -> (direct, List.empty[(String, String)])
   }
   val (stateAfterLoads, valueScope, directScopeData) =
     captureLayout.slots.zipWithIndex.foldLeft(
@@ -167,12 +167,13 @@ def emitCaptureLoads(
         case CodegenCaptureSlot.Value(name, mmlType, _, _, _) =>
           (newState, scope + (name -> ScopeEntry(loadReg, mmlType)), directData)
         case CodegenCaptureSlot.DirectOp(name, entryName, ty, _) =>
+          val direct   = directData.get(name).map(_._1).getOrElse(DirectCallable(entryName, Nil))
           val priorOps = directData.get(name).map(_._2).getOrElse(Nil)
-          val updated  = directData.updated(name, (entryName, priorOps :+ (s"%$loadReg", ty)))
+          val updated  = directData.updated(name, (direct, priorOps :+ (s"%$loadReg", ty)))
           (newState, scope, updated)
     }
-  val directScope = directScopeData.map { case (name, (entryName, ops)) =>
-    name -> ScopeEntry(0, "Function", directCallable = DirectCallable(entryName, ops).some)
+  val directScope = directScopeData.map { case (name, (direct, ops)) =>
+    name -> ScopeEntry(0, "Function", directCallable = direct.copy(captureOperands = ops).some)
   }
   (stateAfterLoads, valueScope ++ directScope)
 
@@ -1063,7 +1064,7 @@ private def compileDirectBoundStatement(
     val entry = ScopeEntry(
       0,
       "Function",
-      directCallable = DirectCallable(fnName, outerCaps).some
+      directCallable = DirectCallable(fnName, outerCaps, paramTypes.toList, returnType.some).some
     )
     (stateAfterEval, entry, lambdaRes.exitBlock)
 

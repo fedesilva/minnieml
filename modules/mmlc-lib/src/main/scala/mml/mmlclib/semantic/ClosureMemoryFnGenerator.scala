@@ -332,6 +332,45 @@ object ClosureMemoryFnGenerator:
       id         = genId(moduleName, fnName)
     )
 
+  private def typeMentionsFunction(tpe: Type): Boolean =
+    tpe match
+      case _: TypeFn => true
+      case TypeGroup(_, types) => types.exists(typeMentionsFunction)
+      case _ => false
+
+  private def moduleMentionsFunctionType(module: Module): Boolean =
+    def exprMentionsFunctionType(expr: Expr): Boolean =
+      expr.typeSpec.exists(typeMentionsFunction) ||
+        expr.typeAsc.exists(typeMentionsFunction) ||
+        expr.terms.exists(termMentionsFunctionType)
+
+    def termMentionsFunctionType(term: Term): Boolean =
+      term.typeSpec.exists(typeMentionsFunction) ||
+        term.typeAsc.exists(typeMentionsFunction) ||
+        (term match
+          case lambda: Lambda =>
+            lambda.params.exists(p =>
+              p.typeSpec.exists(typeMentionsFunction) || p.typeAsc.exists(typeMentionsFunction)
+            ) || exprMentionsFunctionType(lambda.body)
+          case App(_, fn, arg, _, _) =>
+            termMentionsFunctionType(fn) || exprMentionsFunctionType(arg)
+          case Cond(_, cond, ifTrue, ifFalse, _, _) =>
+            exprMentionsFunctionType(cond) ||
+            exprMentionsFunctionType(ifTrue) ||
+            exprMentionsFunctionType(ifFalse)
+          case TermGroup(_, inner, _) =>
+            exprMentionsFunctionType(inner)
+          case Tuple(_, elements, _, _) =>
+            elements.exists(exprMentionsFunctionType)
+          case _ => false)
+
+    module.members.exists:
+      case bnd: Bnd =>
+        bnd.typeSpec.exists(typeMentionsFunction) ||
+        bnd.typeAsc.exists(typeMentionsFunction) ||
+        exprMentionsFunctionType(bnd.value)
+      case _ => false
+
   /** Rewrite lambdas in the AST to tag them with envStructName. */
   private def tagLambdas(
     members:   List[Member],
@@ -397,8 +436,10 @@ object ClosureMemoryFnGenerator:
     val module     = state.module
     val moduleName = module.name
 
-    val envLambdas = collectEnvLambdas(module)
-    if envLambdas.isEmpty then state
+    val envLambdas         = collectEnvLambdas(module)
+    val needsUniversalFree = moduleMentionsFunctionType(module)
+
+    if envLambdas.isEmpty && !needsUniversalFree then state
     else
       // Build a map from Lambda identity (reference equality) to env struct name
       val lambdaMap = envLambdas.foldLeft(new IdentityHashMap[Lambda, String]()) {
@@ -425,9 +466,10 @@ object ClosureMemoryFnGenerator:
         }
       val freeFunctions = moveLambdaStructs.map(mkFreeFunction(_, moduleName))
 
-      // Universal __free_closure only needed if there are move lambdas
+      // Universal __free_closure is needed for heap move envs and generated PAP envs.
       val universalFreeOpt =
-        if moveLambdaStructs.nonEmpty then Some(mkUniversalClosureFree(moduleName))
+        if moveLambdaStructs.nonEmpty || needsUniversalFree then
+          Some(mkUniversalClosureFree(moduleName))
         else None
 
       // Tag lambdas with envStructName

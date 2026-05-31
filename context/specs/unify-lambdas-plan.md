@@ -574,6 +574,43 @@ slice or accept temporary breakage; do not invent a shim.
   lambdas do not get unused env structs.
 - **Sub-issue?** Yes.
 
+### S8.5 — Direct partial-application env lifetime and TBAA hardening
+- **Goal:** harden Direct partial-application closure generation before S9. A Direct
+  callable can still produce a first-class function value when an application is
+  undersaturated; that generated partial-application closure needs the same lifetime
+  and metadata discipline as other closure envs.
+- **Correctness issue:** generated partial-application envs must not always use
+  `alloca`. A local single-use partial application such as `let from5 = factorial_tco 5`
+  can use stack lifetime, but a partial-application closure returned from a function,
+  stored, or otherwise escaping the current frame must not point at stack storage.
+- **Implementation direction:** add an explicit allocation decision for generated
+  partial-application envs instead of letting codegen assume stack lifetime. The
+  conservative first implementation may heap-allocate generated partial-application
+  envs until ownership/lifetime facts can safely identify frame-local cases. Do not
+  fold this into S11 stack-promotion; S8.5 is about making generated partial
+  applications correct and metadata-complete.
+- **TBAA parity:** generated partial-application env struct fields should get TBAA
+  nodes and field tags for both stores at the creation site and loads in the generated
+  partial-application entry, matching materialized closure-env load/store behavior.
+- **Tests:** add an escaping partial-application regression, e.g. a function returns
+  `factorial_tco n` and the caller invokes the returned function later; it must print
+  or return `120` and pass ASan/LSan. Add IR assertions that escaped generated
+  partial-application envs do not use stack storage and that generated env load/store
+  operations carry TBAA metadata.
+- **Landed scope:** Direct partial application now builds generated PAP closures without
+  materializing the full-arity closure wrapper. Returned/escaping PAP envs are
+  heap-allocated, use the same destructor-at-field-0 convention as heap closure envs,
+  and are dropped via `__free_closure`. The generated PAP entry reads captured values
+  from field 1+, preserving field 0 for the env destructor. The mem harness includes an
+  accumulating escaping-PAP regression under ASan/LSan.
+- **Remaining:** TBAA parity for generated PAP env stores and loads is still open.
+  Frame-local PAP env stack allocation is also a later optimization once ownership or
+  lifetime facts can classify non-escaping PAP values.
+- **Out of scope:** direct-call elision for single-use generated partial applications
+  (`insertvalue` immediately followed by `extractvalue`) is an optimization only; keep
+  the uniform `{ ptr, ptr }` value form until correctness and metadata are settled.
+- **Sub-issue?** No — immediate hardening follow-up before S9.
+
 ### S9 — Equivalence test pass
 - **Goal:** the spec's success criterion — same MML expressed as top-level fn / local
   fn / let-bound lambda / lambda literal produces equivalent type, ownership, IR, and

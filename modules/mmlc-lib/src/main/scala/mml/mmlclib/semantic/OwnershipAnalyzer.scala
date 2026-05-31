@@ -318,22 +318,31 @@ object OwnershipAnalyzer:
     resolvables:    ResolvablesIndex,
     returningOwned: Map[String, Option[Type]]
   ): Option[Type] =
-    getBaseFn(app.fn).flatMap: ref =>
-      ref.resolvedId.flatMap { id =>
-        val returned =
-          returningOwned
-            .get(id)
-            .flatten
-            .filter(t => isOwnedValueType(t, resolvables))
+    app.typeSpec
+      .flatMap(functionType)
+      .orElse:
+        getBaseFn(app.fn).flatMap: ref =>
+          ref.resolvedId.flatMap { id =>
+            val returned =
+              returningOwned
+                .get(id)
+                .flatten
+                .filter(t => isOwnedValueType(t, resolvables))
 
-        returned.orElse:
-          resolvables
-            .lookup(id)
-            .collect { case bnd: Bnd => bnd }
-            .filter(bndAllocates(_, resolvables))
-            .flatMap(_.typeAsc)
-            .filter(t => isOwnedType(t, resolvables))
-      }
+            returned.orElse:
+              resolvables
+                .lookup(id)
+                .collect { case bnd: Bnd => bnd }
+                .filter(bndAllocates(_, resolvables))
+                .flatMap(_.typeAsc)
+                .filter(t => isOwnedType(t, resolvables))
+          }
+
+  private def functionType(tpe: Type): Option[TypeFn] =
+    tpe match
+      case typeFn: TypeFn => Some(typeFn)
+      case TypeGroup(_, types) if types.size == 1 => functionType(types.head)
+      case _ => None
 
   private def mergeAllocTypes(t1: Option[Type], t2: Option[Type]): Option[Type] = (t1, t2) match
     case (Some(a), Some(b)) if a == b => Some(a)
