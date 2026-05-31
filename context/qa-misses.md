@@ -3,7 +3,7 @@
 ## Agent Instructions
 
 * When asked to present this list, present it as a numbered list and use whiteline spacing between them
-  * This makes reading easier 
+  * This makes reading easier
   * Allows for a faster, menu style interaction
 
 

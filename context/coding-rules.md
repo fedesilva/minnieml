@@ -23,7 +23,7 @@
 ### Comments and Documentation
 - **Purpose**: Comment complex logic, use doc-comments for public API
 - **Content**: Comments should ONLY describe functionality, not implementation mechanics
-- **Avoid**: Do not leave comments like "removed this, fixed that" 
+- **Avoid**: Do not leave comments like "removed this, fixed that"
 
 ### Code Quality
 - **Formatting**: Follow `.scalafmt.conf` settings; run `sbtn scalafmtAll` before finishing
@@ -55,7 +55,7 @@ The compiler needs to be installed before it's used if changes were made.
 
 ### Before finish - Post Task Chores
 
-**Critical**: 
+**Critical**:
   - Go through all these steps
   - Do not wait for confirmation, or ask to run this, do it or the task is not done.
     - **don't ask to do your job, just do your job**
@@ -65,17 +65,17 @@ The compiler needs to be installed before it's used if changes were made.
   - not for documentation changes
   - not for mml samples.
 
-- Enforce QA rules and style guidelines. 
+- Enforce QA rules and style guidelines.
   - Non negotiable.
 
 - **Fast sanity check first (mandatory)**:
   - Before publishing the compiler or running expensive verification (benchmarks, full memory harness),
-    compile and run the following programs with `sbtn`:    
+    compile and run the following programs with `sbtn`:
     - do not attempt to run them in parallel until AT LEAST ONE is finished; they compete to compile the full compiler.
       - after the first one is finished you can run the rest in parallel
     - `sbtn "run run mml/samples/hola.mml"`
     - `sbtn "run run mml/samples/quicksort.mml"`
-    - `sbtn "run run mml/samples/astar2.mml"`    
+    - `sbtn "run run mml/samples/astar2.mml"`
     - `sbtn "run run mml/samples/partial-fac1.mml"`
     - `sbtn "run mml/samples/style-guide.mml"`
     - `sbtn "run mml/samples/lambda-factorial.mml"`
@@ -83,7 +83,7 @@ The compiler needs to be installed before it's used if changes were made.
 
 - **Validate**: Run the *full* test suite
 
-- **Publish the compiler** with `sbtn mmlcPublishLocal` before running benchmarks or the test 
+- **Publish the compiler** with `sbtn mmlcPublishLocal` before running benchmarks or the test
     harness, since both use `mmlc`.
 
 - **Run benchmarks**:
@@ -93,7 +93,7 @@ The compiler needs to be installed before it's used if changes were made.
 
 - **Run memory tests** (when changes touch memory management / ownership / lambdas):
   - `./tests/mem/run.sh all`
-  - All tests must pass ASan+LSan checks  
+  - All tests must pass ASan+LSan checks
 
 - **If a command session stalls during post-task verification**:
   - Kill the stalled session/process and rerun the same verification command once.
@@ -107,7 +107,7 @@ The compiler needs to be installed before it's used if changes were made.
 ## Git usage
 
 - **Read Only** Freely use git to read history or fetching previous versions. No approval needed.
-- **Commiting** *Never* commit without explicit approval. Ever. 
+- **Commiting** *Never* commit without explicit approval. Ever.
 - **Never revert changes** without explicit approval.
 - **Outside changes** If changes appear that you did not make, it was probably the Author, so ask before reverting.
 

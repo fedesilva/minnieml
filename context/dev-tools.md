@@ -12,7 +12,7 @@ Always run tasks from the root — aggregation handles subprojects automatically
 ## Running the compiler during development
 
 The following applies *only if you are working with the compiler*.
-If you are working with mml sources and you know the compiler is fresh and 
+If you are working with mml sources and you know the compiler is fresh and
 there are no changes, sbtn only adds overhead and is not parallelizable.
 
 Use `sbtn` to run the in-development compiler directly, without publishing.

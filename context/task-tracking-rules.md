@@ -38,7 +38,7 @@ If a rule is unclear or conflicts with the current task, raise the conflict and 
   - log codebase or documentation changes **only**.
 - Never delete Tracked Items. Mark status only.
   - if explicitely told to delete, ask for confirmation.
-  
+
 
 ## Recent Changes
 

@@ -3,8 +3,8 @@ fn hola(a: String) = "Hola, " ++ a;;
 
 let name = "fede";
 
-pub fn main() =  
+pub fn main() =
   let pepe = "pepe";
-  println (hola name);  
+  println (hola name);
   println (hola pepe);
 ;

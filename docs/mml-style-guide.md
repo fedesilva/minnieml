@@ -120,7 +120,7 @@ let a =
   else 4;
   ;
 let b =
-  if a + b > 2 
+  if a + b > 2
   then 3;
   else 4;
   ;

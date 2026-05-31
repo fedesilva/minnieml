@@ -13,7 +13,7 @@ A refinement type is a base type plus a predicate the compiler can decide —
 `Int { i | 0 <= i && i < len }` and friends. The compiler proves what it can
 at compile time and falls back to a runtime validator for the rest. It's a
 middle ground between today's unrefined types and full dependent types: no
-types computed from a runtime value, no proofs-as-values, 
+types computed from a runtime value, no proofs-as-values,
 the checker always terminates, predicates live in a bounded logic.
 
 It matters here for one reason: combined with path-dependent index types
