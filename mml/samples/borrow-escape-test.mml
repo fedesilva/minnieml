@@ -1,0 +1,17 @@
+// mml/samples/borrow-escape-test.mml
+
+fn escape_attempt(x: Int): Int -> Int =
+  let local_val = x * 10;
+  
+  // This captures `local_val`. It has no `~`, so it defaults to borrowing.
+  // We then attempt to return it out of the function's scope.
+  //{ y: Int -> y + local_val; };
+  ???;
+;
+
+pub fn main() =
+  let runaway_closure = escape_attempt 5;
+  let result = runaway_closure 2;
+  
+  println (int_to_str result);
+;
