@@ -1,0 +1,21 @@
+// Direct move-lambda capturing a heap String literal must free its clone.
+//
+// The literal is cloned at the binder site and moved into the Direct lambda. A Direct
+// lambda has no env destructor, so the binder scope frees the clone at scope exit.
+// `main` exercises the sequence-let path; `run_loop` exercises the loopified path.
+
+fn run_loop(i: Int): Unit =
+  if i > 0 then
+    let m = "loop literal";
+    let g = ~{ println m; };
+    g ();
+    run_loop (i - 1);
+  ;
+;
+
+pub fn main(): Unit =
+  let msg = "literal capture";
+  let greet = ~{ println msg; };
+  greet ();
+  run_loop 1000;
+;

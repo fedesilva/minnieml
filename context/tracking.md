@@ -127,6 +127,24 @@ Slice progress (see `context/specs/unify-lambdas-plan.md`):
 
 ## Change Log
 
+- 2026-05-31: #255 unify-lambdas S8.6.1 — free Direct move-lambda owned-heap captures
+  - `ExpressionCompiler.scala` / `codegen/emitter/package.scala`: `evaluateDirectCaptures`
+    returns `DirectCaptureCleanup`s for the owned heap captures of a move Direct lambda; new
+    `emitDirectCaptureFrees` emits one `__free_<T>` per capture at the binder's scope exit,
+    gated on `isNativeMemFn` so module-defined struct destructors are not re-declared.
+  - `FunctionEmitter.scala`: extracted `isNativeMemFn` from `resolveMemFnLlvmName`; threaded
+    capture cleanups through `compileBoundStatements` / `compileDirectBoundStatement` and
+    `compileTailRecBody` so loopified paths free per iteration before the back-edge.
+  - `expression/Applications.scala`: the sequence-let Direct binder frees its owned heap
+    captures after the body.
+  - `ClosureCodegenTest.scala`: IR coverage for literal, owned-String, owned-struct, and
+    loopified Direct captures.
+  - `tests/mem/direct-move-literal-capture.mml` / `direct-move-owned-string-capture.mml` /
+    `direct-move-owned-struct-capture.mml`: pinned ASan+LSan regressions.
+  - `context/specs/unify-lambdas-plan.md`: recorded S8.6.1 and S8.6.1a — the escaping
+    Direct partial-application heap-capture use-after-free this fix exposes, open and to be
+    resolved before the S8.6 correctness item is closed.
+
 - 2026-05-31: #255 unify-lambdas S8.5b — Direct partial-application env TBAA parity
   - `Applications.scala` / `ExpressionCompiler.scala` / `FunctionEmitter.scala`:
     Direct callable capture operands now carry semantic TBAA type names through nested

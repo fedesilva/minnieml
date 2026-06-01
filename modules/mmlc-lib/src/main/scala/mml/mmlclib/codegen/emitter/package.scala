@@ -685,6 +685,19 @@ case class DirectOperand(
   tbaaTypeName: String
 )
 
+/** An owned heap value moved into a Direct move lambda's captures.
+  *
+  * A Direct lambda has no env to destruct, so the binder scope frees these captures once at scope
+  * exit. The operand is the value the lambda received (a binder-site clone for heap literals, or
+  * the moved-in binding operand for owned captures). Direct lambdas are non-escaping, so the
+  * captures' lifetime is the binder scope.
+  */
+case class DirectCaptureCleanup(
+  operand:     String,
+  llvmType:    String,
+  mmlTypeName: String
+)
+
 case class NamedClosureEntryKey(
   targetSymbol: String,
   returnType:   String,

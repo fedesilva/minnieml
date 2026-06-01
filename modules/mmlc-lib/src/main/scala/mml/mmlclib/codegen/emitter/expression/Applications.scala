@@ -2,30 +2,7 @@ package mml.mmlclib.codegen.emitter.expression
 
 import cats.syntax.all.*
 import mml.mmlclib.ast.*
-import mml.mmlclib.codegen.emitter.{
-  CodeGenError,
-  CodeGenState,
-  CompileResult,
-  DirectCallable,
-  ScopeEntry,
-  alignOfLlvmTypeResolved,
-  alignTo,
-  compileDirectLambda,
-  compileLambdaLiteral,
-  emitCall,
-  emitExtractValue,
-  emitGetElementPtr,
-  emitIndirectCall,
-  emitInsertValue,
-  emitLoad,
-  emitStore,
-  emitTypeDefinition,
-  evaluateDirectCaptures,
-  getLlvmType,
-  getNominalTypeName,
-  renderFunctionLines,
-  sizeOfLlvmTypeResolved
-}
+import mml.mmlclib.codegen.emitter.{CodeGenError, CodeGenState, CompileResult, DirectCallable, ScopeEntry, alignOfLlvmTypeResolved, alignTo, compileDirectLambda, compileLambdaLiteral, emitCall, emitDirectCaptureFrees, emitExtractValue, emitGetElementPtr, emitIndirectCall, emitInsertValue, emitLoad, emitStore, emitTypeDefinition, evaluateDirectCaptures, getLlvmType, getNominalTypeName, renderFunctionLines, sizeOfLlvmTypeResolved}
 
 /** Collects all arguments from nested App nodes (handles curried applications).
   *
@@ -119,7 +96,7 @@ private def compileBoundLambdaArg(
           param.some
         )
         evaluated <- evaluateDirectCaptures(argLambda, argRes.state, functionScope)
-        (stateAfterEval, outerCaps) = evaluated
+        (stateAfterEval, outerCaps, cleanups) = evaluated
         directEntry = ScopeEntry(
           0,
           "Function",
@@ -128,7 +105,11 @@ private def compileBoundLambdaArg(
         )
         extendedScope = functionScope + (param.name -> directEntry)
         bodyRes <- compileExpr(outerLambda.body, stateAfterEval, extendedScope)
-      yield bodyRes.copy(exitBlock = bodyRes.exitBlock.orElse(argRes.exitBlock))
+        stateAfterFrees <- emitDirectCaptureFrees(cleanups, bodyRes.state)
+      yield bodyRes.copy(
+        state     = stateAfterFrees,
+        exitBlock = bodyRes.exitBlock.orElse(argRes.exitBlock)
+      )
 
     case Materialization.NullEnv =>
       val recursiveEntry = ScopeEntry(

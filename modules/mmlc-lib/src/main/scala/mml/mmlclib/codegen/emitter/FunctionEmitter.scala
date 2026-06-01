@@ -201,11 +201,11 @@ private[emitter] def mergeFunctionBodyState(
 /** Resolve the LLVM-level name for a memory function (__free_T, __clone_T). Native/stdlib functions
   * use their raw name; user-generated functions use mangled name.
   */
-private[emitter] def resolveMemFnLlvmName(
+private[emitter] def isNativeMemFn(
   fnName: String,
   state:  CodeGenState
-): String =
-  val isNative = state.resolvables.resolvables.values.exists:
+): Boolean =
+  state.resolvables.resolvables.values.exists:
     case bnd: Bnd if bnd.name == fnName =>
       bnd.value.terms match
         case List(l: Lambda) =>
@@ -214,7 +214,12 @@ private[emitter] def resolveMemFnLlvmName(
             case _ => false
         case _ => false
     case _ => false
-  if isNative then fnName else state.mangleName(fnName)
+
+private[emitter] def resolveMemFnLlvmName(
+  fnName: String,
+  state:  CodeGenState
+): String =
+  if isNativeMemFn(fnName, state) then fnName else state.mangleName(fnName)
 
 /** Emit GEP+load+free for each heap-typed field in a closure env struct.
   */
@@ -884,30 +889,33 @@ private[emitter] def compileTailRecursiveLambda(
   *   updated state and list of back edges for phi node construction
   */
 private def compileTailRecBody(
-  body:           TailRecBody,
-  state:          CodeGenState,
-  scope:          Map[String, ScopeEntry],
-  returnType:     String,
-  loopHeader:     String,
-  currentBlock:   String,
-  nonVoidIndices: List[Int]
+  body:            TailRecBody,
+  state:           CodeGenState,
+  scope:           Map[String, ScopeEntry],
+  returnType:      String,
+  loopHeader:      String,
+  currentBlock:    String,
+  nonVoidIndices:  List[Int],
+  pendingCleanups: List[DirectCaptureCleanup] = Nil
 ): Either[CodeGenError, (CodeGenState, List[BackEdge])] =
   body match
     case TailRecExit(preStmts, exitExpr) =>
       for
         preResult <- compileBoundStatements(preStmts, state, scope)
-        (stateAfterPre, scopeAfterPre, _) = preResult
+        (stateAfterPre, scopeAfterPre, _, stmtCleanups) = preResult
         exitRes <- compileExpr(exitExpr, stateAfterPre, scopeAfterPre)
+        // Free this path's owned Direct captures before returning.
+        stateAfterFrees <- emitDirectCaptureFrees(pendingCleanups ++ stmtCleanups, exitRes.state)
         returnLine =
           if returnType == "void" then "  ret void"
           else s"  ret $returnType ${exitRes.operandStr}"
-      yield (exitRes.state.emit(returnLine), Nil)
+      yield (stateAfterFrees.emit(returnLine), Nil)
 
     case TailRecCall(preStmts, args) =>
       for
         preResult <- compileBoundStatements(preStmts, state, scope)
-        (stateAfterPre, scopeAfterPre, preExitBlock) = preResult
-        filteredArgs                                 = nonVoidIndices.map(args(_))
+        (stateAfterPre, scopeAfterPre, preExitBlock, stmtCleanups) = preResult
+        filteredArgs                                               = nonVoidIndices.map(args(_))
         argsResult <- compileTailRecArgs(
           filteredArgs,
           stateAfterPre,
@@ -915,15 +923,19 @@ private def compileTailRecBody(
           preExitBlock
         )
         (argValues, stateAfterArgs, lastExitBlock) = argsResult
+        // Free this iteration's owned Direct captures before the back-edge.
+        stateAfterFrees <- emitDirectCaptureFrees(pendingCleanups ++ stmtCleanups, stateAfterArgs)
       yield
         val backBlock   = lastExitBlock.orElse(preExitBlock).getOrElse(currentBlock)
-        val stateWithBr = stateAfterArgs.emit(s"  br label %$loopHeader")
+        val stateWithBr = stateAfterFrees.emit(s"  br label %$loopHeader")
         (stateWithBr, List(BackEdge(backBlock, argValues)))
 
     case TailRecBranch(preStmts, condition, ifTrue, ifFalse) =>
       for
         preResult <- compileBoundStatements(preStmts, state, scope)
-        (stateAfterPre, scopeAfterPre, _) = preResult
+        (stateAfterPre, scopeAfterPre, _, stmtCleanups) = preResult
+        // Captures bound before the split are live in both branches; carry them to the leaves.
+        carried = pendingCleanups ++ stmtCleanups
         condRes <- compileExpr(condition, stateAfterPre, scopeAfterPre)
         branchResult <- compileBranchCondition(condition, condRes)
         (stateAfterCond, branchCond) = branchResult
@@ -941,7 +953,8 @@ private def compileTailRecBody(
           returnType,
           loopHeader,
           trueLabel,
-          nonVoidIndices
+          nonVoidIndices,
+          carried
         )
         (stateAfterTrue, trueEdges) = trueResult
         falseResult <- compileTailRecBody(
@@ -951,7 +964,8 @@ private def compileTailRecBody(
           returnType,
           loopHeader,
           falseLabel,
-          nonVoidIndices
+          nonVoidIndices,
+          carried
         )
         (stateAfterFalse, falseEdges) = falseResult
       yield (stateAfterFalse, trueEdges ++ falseEdges)
@@ -1005,9 +1019,18 @@ private def compileBoundStatements(
   statements:    List[BoundStatement],
   state:         CodeGenState,
   functionScope: Map[String, ScopeEntry]
-): Either[CodeGenError, (CodeGenState, Map[String, ScopeEntry], Option[String])] =
-  statements.foldLeft((state, functionScope, Option.empty[String]).asRight[CodeGenError]) {
-    case (Right((currentState, currentScope, prevExitBlock)), BoundStatement(bindingName, expr)) =>
+): Either[
+  CodeGenError,
+  (CodeGenState, Map[String, ScopeEntry], Option[String], List[DirectCaptureCleanup])
+] =
+  statements.foldLeft(
+    (state, functionScope, Option.empty[String], List.empty[DirectCaptureCleanup])
+      .asRight[CodeGenError]
+  ) {
+    case (
+          Right((currentState, currentScope, prevExitBlock, accCleanups)),
+          BoundStatement(bindingName, expr)
+        ) =>
       val compiled =
         (bindingName, expr.terms) match
           case (Some(name), List(lambda: Lambda))
@@ -1016,18 +1039,19 @@ private def compileBoundStatements(
           case _ =>
             compileExpr(expr, currentState, currentScope).map { res =>
               val entry = ScopeEntry(res.register, res.typeName, res.isLiteral, res.literalValue)
-              (res.state, entry, res.exitBlock)
+              (res.state, entry, res.exitBlock, List.empty[DirectCaptureCleanup])
             }
 
-      compiled.flatMap { case (compiledState, entry, exitBlock) =>
+      compiled.flatMap { case (compiledState, entry, exitBlock, cleanups) =>
         // Preserve exit block across statements (like compileTailRecArgs does)
         val newExitBlock = exitBlock.orElse(prevExitBlock)
+        val newCleanups  = accCleanups ++ cleanups
         bindingName match
           case Some(name) =>
-            Right((compiledState, currentScope + (name -> entry), newExitBlock))
+            Right((compiledState, currentScope + (name -> entry), newExitBlock, newCleanups))
           case None =>
             // Side-effect only: discard result
-            Right((compiledState, currentScope, newExitBlock))
+            Right((compiledState, currentScope, newExitBlock, newCleanups))
       }
     case (Left(err), _) => Left(err)
   }
@@ -1037,7 +1061,7 @@ private def compileDirectBoundStatement(
   lambda:        Lambda,
   state:         CodeGenState,
   functionScope: Map[String, ScopeEntry]
-): Either[CodeGenError, (CodeGenState, ScopeEntry, Option[String])] =
+): Either[CodeGenError, (CodeGenState, ScopeEntry, Option[String], List[DirectCaptureCleanup])] =
   val uniqueName  = s"${bindingName}_${state.nextAnonFnId}"
   val stateWithId = state.copy(nextAnonFnId = state.nextAnonFnId + 1)
   val fnName      = stateWithId.mangleName(uniqueName)
@@ -1063,14 +1087,14 @@ private def compileDirectBoundStatement(
       selfBinder.some
     )
     evaluated <- evaluateDirectCaptures(lambda, lambdaRes.state, functionScope)
-    (stateAfterEval, outerCaps) = evaluated
+    (stateAfterEval, outerCaps, cleanups) = evaluated
   yield
     val entry = ScopeEntry(
       0,
       "Function",
       directCallable = DirectCallable(fnName, outerCaps, paramTypes.toList, returnType.some).some
     )
-    (stateAfterEval, entry, lambdaRes.exitBlock)
+    (stateAfterEval, entry, lambdaRes.exitBlock, cleanups)
 
 /** Map MML type name to LLVM type for literal materialization. */
 private def mmlTypeNameToLlvm(typeName: String): Either[CodeGenError, String] =

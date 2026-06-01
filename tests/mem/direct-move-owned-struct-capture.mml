@@ -1,0 +1,27 @@
+// Direct move-lambda capturing an owned struct with heap fields must free it.
+//
+// The owned Pair is moved into the Direct lambda with no env destructor, so the binder
+// scope frees it through the generated struct destructor at scope exit, releasing both
+// heap String fields. `main` exercises the sequence-let path; `run_loop` exercises the
+// loopified path.
+
+struct Pair {
+  a: String,
+  b: String
+};
+
+fn run_loop(i: Int): Unit =
+  if i > 0 then
+    let p = Pair "loop a" "loop b";
+    let show = ~{ println p.a; };
+    show ();
+    run_loop (i - 1);
+  ;
+;
+
+pub fn main(): Unit =
+  let pair = Pair "hello" "world";
+  let show = ~{ println pair.a; };
+  show ();
+  run_loop 1000;
+;

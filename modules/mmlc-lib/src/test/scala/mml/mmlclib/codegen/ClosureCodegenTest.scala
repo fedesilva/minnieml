@@ -237,6 +237,89 @@ class ClosureCodegenTest extends BaseEffFunSuite:
     }
   }
 
+  test("Direct move lambda capturing a heap literal frees its clone once") {
+    val source = """
+      fn main(): Unit =
+        let msg = "hello";
+        let greet = ~{ println msg; };
+        greet ();
+      ;
+    """
+
+    compileAndGenerate(source).map { llvmIr =>
+      val mainBody = functionBody(llvmIr, "test_main\\(\\) #0")
+      val clones   = "call %struct.String @__clone_String".r.findAllIn(mainBody).size
+      val frees    = "call void @__free_String".r.findAllIn(mainBody).size
+      assert(clones == 1, s"Expected one clone of the captured literal. Body:\n$mainBody")
+      assert(frees == 1, s"Expected the captured clone to be freed once. Body:\n$mainBody")
+    }
+  }
+
+  test("Direct move lambda capturing an owned String frees it once without cloning") {
+    val source = """
+      fn main(): Unit =
+        let msg = int_to_str 42;
+        let greet = ~{ println msg; };
+        greet ();
+      ;
+    """
+
+    compileAndGenerate(source).map { llvmIr =>
+      val mainBody = functionBody(llvmIr, "test_main\\(\\) #0")
+      assert(
+        !mainBody.contains("@__clone_String"),
+        s"Owned String capture should be moved, not cloned. Body:\n$mainBody"
+      )
+      val frees = "call void @__free_String".r.findAllIn(mainBody).size
+      assert(frees == 1, s"Expected the moved-in owned String to be freed once. Body:\n$mainBody")
+    }
+  }
+
+  test("Direct move lambda capturing an owned struct frees it through its destructor") {
+    val source = """
+      struct Pair { a: String, b: String };
+      fn main(): Unit =
+        let p = Pair "hello" "world";
+        let show = ~{ println p.a; };
+        show ();
+      ;
+    """
+
+    compileAndGenerate(source).map { llvmIr =>
+      val mainBody = functionBody(llvmIr, "test_main\\(\\) #0")
+      val frees =
+        """call void @test___free_Pair\(%struct.Pair %\d+\)""".r.findAllIn(mainBody).size
+      assert(
+        frees == 1,
+        s"Expected the moved-in owned struct to be freed once via its destructor. Body:\n$mainBody"
+      )
+    }
+  }
+
+  test("loopified Direct move lambda frees its heap capture once before the back-edge") {
+    val source = """
+      fn run(i: Int): Unit =
+        if i > 0 then
+          let m = int_to_str i;
+          let g = ~{ println m; };
+          g ();
+          run (i - 1);
+        ;
+      ;
+    """
+
+    compileAndGenerate(source, config = CompilerConfig.default.copy(noTco = false)).map { llvmIr =>
+      val loopBody = functionBody(llvmIr, "test_run\\(i64 %0\\) #0")
+      val frees    = "call void @__free_String".r.findAllIn(loopBody).size
+      val freeIdx  = loopBody.indexOf("call void @__free_String")
+      // The back-edge is the last jump to the header; the entry block also jumps in.
+      val backEdgeIdx = loopBody.lastIndexOf("br label %loop.header")
+      assert(frees == 1, s"Expected one per-iteration free of the heap capture. Body:\n$loopBody")
+      assert(backEdgeIdx >= 0, s"Expected a loop back-edge. Body:\n$loopBody")
+      assert(freeIdx < backEdgeIdx, s"Free must precede the back-edge. Body:\n$loopBody")
+    }
+  }
+
   test("loopified Direct lambdas do not allocate borrow envs") {
     val source =
       """

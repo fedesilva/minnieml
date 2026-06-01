@@ -644,15 +644,64 @@ private[emitter] def evaluateDirectCaptures(
   lambda:        Lambda,
   state:         CodeGenState,
   functionScope: Map[String, ScopeEntry]
-): Either[CodeGenError, (CodeGenState, List[DirectOperand])] =
+): Either[CodeGenError, (CodeGenState, List[DirectOperand], List[DirectCaptureCleanup])] =
   // userParamCount only affects inner SSA indices; the outer operand list is independent of it.
   computeCodegenCaptureLayout(lambda, state, functionScope, userParamCount = 0).map { trailing =>
-    trailing.slots.foldLeft((state, List.empty[DirectOperand])) {
-      case ((st, ops), slot @ CodegenCaptureSlot.Value(_, _, ty, outerOp, Some(cloneId))) =>
+    trailing.slots.foldLeft(
+      (state, List.empty[DirectOperand], List.empty[DirectCaptureCleanup])
+    ) {
+      case (
+            (st, ops, cleanups),
+            slot @ CodegenCaptureSlot.Value(_, _, ty, outerOp, Some(cloneId))
+          ) =>
         val (stAfter, clonedOp) = emitCaptureCloneCall(outerOp, ty, cloneId, st)
-        (stAfter, ops :+ DirectOperand(clonedOp, ty, slot.tbaaTypeName))
-      case ((st, ops), slot) =>
-        (st, ops :+ DirectOperand(slot.outerOperand, slot.llvmType, slot.tbaaTypeName))
+        // A move lambda owns the cloned heap literal; the binder scope frees it at scope exit.
+        val newCleanups =
+          if lambda.isMove then cleanups :+ DirectCaptureCleanup(clonedOp, ty, slot.tbaaTypeName)
+          else cleanups
+        (stAfter, ops :+ DirectOperand(clonedOp, ty, slot.tbaaTypeName), newCleanups)
+      case (
+            (st, ops, cleanups),
+            slot @ CodegenCaptureSlot.Value(_, _, ty, outerOp, None)
+          ) =>
+        // A move lambda takes ownership of owned heap captures moved in by value.
+        val newCleanups =
+          if lambda.isMove && TypeUtils.isHeapType(slot.tbaaTypeName, st.resolvables) then
+            cleanups :+ DirectCaptureCleanup(outerOp, ty, slot.tbaaTypeName)
+          else cleanups
+        (st, ops :+ DirectOperand(outerOp, ty, slot.tbaaTypeName), newCleanups)
+      case ((st, ops, cleanups), slot) =>
+        (st, ops :+ DirectOperand(slot.outerOperand, slot.llvmType, slot.tbaaTypeName), cleanups)
+    }
+  }
+
+/** Free owned heap captures of a Direct move lambda once at the binder scope exit.
+  *
+  * Direct lambdas have no env destructor, so the binder scope owns the moved-in captures. The free
+  * convention mirrors [[emitEnvHeapFieldFrees]]: ABI-lower the operand and declare the free
+  * function with the lowered parameter types.
+  */
+private[emitter] def emitDirectCaptureFrees(
+  cleanups: List[DirectCaptureCleanup],
+  state:    CodeGenState
+): Either[CodeGenError, CodeGenState] =
+  cleanups.foldLeft(state.asRight[CodeGenError]) { (stE, cleanup) =>
+    stE.flatMap { st =>
+      TypeUtils.freeFnFor(cleanup.mmlTypeName, st.resolvables) match
+        case None => st.asRight
+        case Some(freeFnName) =>
+          val llvmFreeName         = resolveMemFnLlvmName(freeFnName, st)
+          val rawArgs              = List((cleanup.operand, cleanup.llvmType))
+          val (lowered, stLowered) = st.abi.lowerArgs(rawArgs, st)
+          val callArgs             = lowered.map((op, typ) => (typ, op))
+          val declParamTypes       = lowered.map(_._2)
+          // Runtime free functions need a declaration; generated struct destructors are
+          // defined in this module, so declaring them would conflict with their definition.
+          val stWithDecl =
+            if isNativeMemFn(freeFnName, stLowered) then
+              stLowered.withFunctionDeclaration(llvmFreeName, "void", declParamTypes)
+            else stLowered
+          stWithDecl.emit(emitCall(None, None, llvmFreeName, callArgs)).asRight
     }
   }
 

@@ -617,12 +617,88 @@ slice or accept temporary breakage; do not invent a shim.
   runs. Items already tracked elsewhere are linked, not repeated.
 
 - **Correctness:**
-  - [ ] Direct move-lambda capturing a heap literal leaks. A Direct `~` lambda that
-    captures a heap literal (e.g. `let greet = ~{ println msg; }` over a `String`)
-    clones the value at the binder site but emits no free at the call frame. Not
-    exercised by the mem harness. Close it (emit the free / drop) or record an explicit
-    decision to defer, backed by a pinned failing mem test. Origin: Phase 6.2.c known
-    issue, currently parked under S6.x / S11.
+  - [~] Direct move-lambda owned-heap captures leak (reframed from "heap literal").
+    A Direct `~` move lambda that captures ANY owned heap value never frees it: a string
+    literal (clone leaks), an owned `String` from `int_to_str` (the value leaks, no clone),
+    and an owned struct with heap fields (whole struct leaks). Confirmed by IR: `main`
+    builds/clones the value, calls the lambda, and returns with no free. **Broad fix
+    IMPLEMENTED in the working tree** (see S8.6.1 below) — frees every owned heap capture
+    at the Direct binder's scope exit. BUT a Codex review found the fix introduces a
+    use-after-free for escaping Direct partial applications; see S8.6.1a. This item is NOT
+    done until S8.6.1a is resolved.
+
+#### S8.6.1 — Broad owned-heap-capture free at Direct binder scope (IMPLEMENTED, uncommitted)
+- **Mechanism:** new `DirectCaptureCleanup(operand, llvmType, mmlTypeName)` returned as a
+  third element from `evaluateDirectCaptures`; a shared `emitDirectCaptureFrees` helper
+  (mirrors `emitEnvHeapFieldFrees`, gated on `isNativeMemFn` so generated struct destructors
+  are not re-declared); wired into the sequence-let path (`compileBoundLambdaArg`) and the
+  loopified path (`compileBoundStatements` → `compileDirectBoundStatement`, with a
+  `pendingCleanups` accumulator threaded through `compileTailRecBody` and freed at the
+  terminating leaves so each runtime path frees exactly once before its terminator/back-edge).
+  Extracted `isNativeMemFn` out of `resolveMemFnLlvmName`.
+- **Files (all uncommitted working-tree changes on `dev-lambdas-unify`):**
+  `codegen/emitter/package.scala` (DirectCaptureCleanup),
+  `codegen/emitter/ExpressionCompiler.scala` (evaluateDirectCaptures + emitDirectCaptureFrees),
+  `codegen/emitter/expression/Applications.scala` (Path 1),
+  `codegen/emitter/FunctionEmitter.scala` (isNativeMemFn, Path 2),
+  `test/.../codegen/ClosureCodegenTest.scala` (4 IR tests),
+  `tests/mem/direct-move-literal-capture.mml`, `direct-move-owned-string-capture.mml`,
+  `direct-move-owned-struct-capture.mml` (3 pinned ASan+LSan regressions, thunk + loop forms).
+- **Verification done:** full suite 447/447 (1 ignored); ClosureCodegenTest 15/15; mem harness
+  27/27 ASan+LSan; smoke samples + benchmarks green; scalafmt/scalafix clean; qa-enforcer pass
+  (only low/style nits). This covers the non-escaping case fully.
+
+#### S8.6.1a — Direct PAP heap-capture ownership: escaping use-after-free (OPEN — fix before commit)
+- **Discovered by:** Codex review of the S8.6.1 working tree (2026-05-31). Confirmed real with
+  ASan.
+- **The bug:** when a Direct move lambda with a heap capture is UNDERSATURATED, the call site
+  builds a heap partial-application (PAP) env via `emitDirectPartialClosure`
+  (`codegen/emitter/expression/Applications.scala:252`). That env stores the captured operand
+  **borrowed**, and the PAP closure value can ESCAPE the binder scope (be returned / outlive it).
+  The S8.6.1 binder-scope free then frees the capture while the escaped PAP still points at it
+  → heap-use-after-free. Before S8.6.1 this same shape merely LEAKED; S8.6.1 turns the leak into
+  a UAF, which is worse. The mem harness missed it because `tests/mem/escaping-paps.mml` captures
+  only `Int`, never a heap value.
+- **ASan evidence (reproduce tomorrow — re-create these two programs; /tmp copies are transient):**
+  - In-scope PAP — `let msg = "hello"; let f = ~{ x: Int, y: Int -> println msg; }; let g = f 1; g 2;`
+    inside `main`. ASan CLEAN (prints `hello`, exit 0). My free frees the binder clone; the env
+    free and the data free hit different allocations; PAP consumed before scope exit.
+  - Escaping PAP — `fn make(): Int -> Unit = let msg = "hello"; let f = ~{ x: Int, y: Int -> println msg; }; f 1; ;`
+    then `main`: `let g = make (); g 2;`. ASan ABORTS with heap-use-after-free: `make` frees the
+    clone at its scope exit, then `main` calls the escaped `g`.
+- **Root cause detail:** `renderDirectPartialEnvFree`
+  (`codegen/emitter/expression/Applications.scala:449`) is only
+  `call void @mml_free_raw(ptr %0)` — it frees the env buffer but NEVER deep-frees the heap
+  capture fields stored in the env. So the PAP env does not own its captures; ownership is
+  ambiguously shared with the binder scope. The escaping PAP closure IS dropped by the caller
+  (`papescape___free_closure(%3)` in the escaping case's `main`), so a destructor-side deep-free
+  WOULD run.
+- **Proposed fix — clone-per-PAP (handles escape, multiplicity, and nesting without
+  whole-program escape analysis):**
+  1. Keep S8.6.1's binder-scope free unchanged (the binder owns its single capture clone).
+  2. In `emitDirectPartialClosure`, deep-CLONE each heap-typed capture (`__clone_T`) into the
+     PAP env instead of storing the borrowed operand, so each PAP owns an independent copy.
+  3. In the PAP env destructor (`renderDirectPartialEnvFree`), deep-free the heap capture fields
+     (GEP + load + `__free_T`, ABI-lowered like `emitEnvHeapFieldFrees`) before `mml_free_raw`.
+     The destructor renderer must thread `CodeGenState` (for `abi.lowerArgs`, free-fn
+     declarations, register numbering, TBAA) instead of returning a static string.
+- **Complications / watch-outs for tomorrow:**
+  - `emitCaptureCloneCall` (`ExpressionCompiler.scala:602`) declares the clone fn
+    UNCONDITIONALLY. Cloning a generated STRUCT clone (`__clone_Pair`) would re-trigger the same
+    invalid-redefinition that the `isNativeMemFn` gate fixed for frees. Gate its `declare` on
+    `isNativeMemFn` too (no-op for the native String path; safe general fix) before reusing it
+    for struct captures.
+  - Pinned tests will break and need rewriting: `TailRecursionLoopificationTest` pins exact PAP
+    env layouts, TBAA offsets, and load/store tags (S8.5b). Adding clones + destructor deep-free
+    changes that IR.
+  - Scope line: own heap CAPTURES in the PAP. Heap APPLIED ARGS (e.g. `f "str"`) are a separate
+    pre-existing ownership question (also currently borrowed/unfreed in the env) — leave as-is;
+    do not expand into it here.
+  - Add two pinned mem regressions: escaping PAP with heap capture, and in-scope PAP with heap
+    capture.
+- **Alternative if clone-per-PAP proves too invasive:** scope S8.6.1 down to free only when the
+  capture cannot reach a PAP, leaving the escaping-PAP case as a tracked LEAK (not a UAF) until
+  this is done properly. (The Author chose the full fix; this is only a fallback.)
 
 - **Build / QA:**
   - [ ] Wrap lines over 100 cols added by this workstream; scalafmt does not reflow long
