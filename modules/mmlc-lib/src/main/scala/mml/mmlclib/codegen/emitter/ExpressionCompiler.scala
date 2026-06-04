@@ -626,12 +626,17 @@ private[emitter] def emitCaptureCloneCall(
       None
     )
     val stWithDecl =
-      stAfterCall.withFunctionDeclaration(cloneFnLlvmName, "void", "ptr" :: declParamTypes)
+      if isNativeMemFn(cloneFnMmlName, stAfterCall) then
+        stAfterCall.withFunctionDeclaration(cloneFnLlvmName, "void", "ptr" :: declParamTypes)
+      else stAfterCall
     (stWithDecl, s"%$retReg")
   else
-    val cloneReg   = stLow.nextRegister
-    val stWithDecl = stLow.withFunctionDeclaration(cloneFnLlvmName, llvmType, declParamTypes)
-    val cloneLine  = emitCall(cloneReg.some, llvmType.some, cloneFnLlvmName, callArgs)
+    val cloneReg = stLow.nextRegister
+    val stWithDecl =
+      if isNativeMemFn(cloneFnMmlName, stLow) then
+        stLow.withFunctionDeclaration(cloneFnLlvmName, llvmType, declParamTypes)
+      else stLow
+    val cloneLine = emitCall(cloneReg.some, llvmType.some, cloneFnLlvmName, callArgs)
     (stWithDecl.withRegister(cloneReg + 1).emit(cloneLine), s"%$cloneReg")
 
 /** Pre-evaluate a Direct lambda's effective trailing operands at the binder site.

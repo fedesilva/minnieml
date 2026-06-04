@@ -60,8 +60,41 @@ object TypeUtils:
   ): Boolean =
     resolveNativeType(typeSpec, resolvables).exists(isPointerNativeType)
 
+  private def resolveAliasTarget(
+    typeName:    String,
+    resolvables: ResolvablesIndex,
+    seen:        Set[String] = Set.empty
+  ): Option[String] =
+    if seen(typeName) then None
+    else
+      findTypeByName(typeName, resolvables) match
+        case Some(ta: TypeAlias) =>
+          getTypeName(ta.typeSpec.getOrElse(ta.typeRef))
+            .flatMap(resolveAliasTarget(_, resolvables, seen + typeName))
+        case Some(_) => Some(typeName)
+        case None => None
+
+  def sameResolvedTypeName(
+    left:        String,
+    right:       String,
+    resolvables: ResolvablesIndex
+  ): Boolean =
+    val resolvedLeft  = resolveAliasTarget(left, resolvables).getOrElse(left)
+    val resolvedRight = resolveAliasTarget(right, resolvables).getOrElse(right)
+    resolvedLeft == resolvedRight
+
+  private def resolveHeapTypeName(
+    typeName:    String,
+    resolvables: ResolvablesIndex
+  ): Option[String] =
+    resolveAliasTarget(typeName, resolvables)
+      .filter(resolvedName => isHeapTypeResolved(resolvedName, resolvables))
+
   /** Check if a type is heap-allocated by looking at its NativeType.memEffect */
   def isHeapType(typeName: String, resolvables: ResolvablesIndex): Boolean =
+    resolveHeapTypeName(typeName, resolvables).isDefined
+
+  private def isHeapTypeResolved(typeName: String, resolvables: ResolvablesIndex): Boolean =
     findTypeByName(typeName, resolvables) match
       case Some(TypeDef(_, _, _, Some(nt: NativeType), _, _, _)) =>
         nt.memEffect.contains(MemEffect.Alloc)
@@ -79,24 +112,25 @@ object TypeUtils:
     * this excludes native TypeDef types (String, IntArray, etc.).
     */
   def isStructWithHeapFields(typeName: String, resolvables: ResolvablesIndex): Boolean =
-    findTypeByName(typeName, resolvables) match
+    resolveAliasTarget(typeName, resolvables).flatMap(findTypeByName(_, resolvables)) match
       case Some(s: TypeStruct) => hasHeapFields(s, resolvables)
       case _ => false
 
   /** Get free function name for a type, or None if not heap type */
   def freeFnFor(typeName: String, resolvables: ResolvablesIndex): Option[String] =
-    findTypeByName(typeName, resolvables) match
-      case Some(TypeDef(_, _, _, Some(nt: NativeType), _, _, _))
-          if nt.memEffect.contains(MemEffect.Alloc) =>
-        Some(nt.freeFn.getOrElse(s"__free_$typeName"))
-      case Some(s: TypeStruct) if hasHeapFields(s, resolvables) =>
-        Some(s"__free_$typeName")
-      case _ => None
+    resolveHeapTypeName(typeName, resolvables).flatMap { resolvedName =>
+      findTypeByName(resolvedName, resolvables) match
+        case Some(TypeDef(_, _, _, Some(nt: NativeType), _, _, _))
+            if nt.memEffect.contains(MemEffect.Alloc) =>
+          Some(nt.freeFn.getOrElse(s"__free_$resolvedName"))
+        case Some(s: TypeStruct) if hasHeapFields(s, resolvables) =>
+          Some(s"__free_${s.name}")
+        case _ => None
+    }
 
   /** Get clone function name for a type, or None if not heap type */
   def cloneFnFor(typeName: String, resolvables: ResolvablesIndex): Option[String] =
-    if isHeapType(typeName, resolvables) then Some(s"__clone_$typeName")
-    else None
+    resolveHeapTypeName(typeName, resolvables).map(resolvedName => s"__clone_$resolvedName")
 
   /** Check if a named type resolves to an LLVM pointer-like native type. */
   def isPointerType(typeName: String, resolvables: ResolvablesIndex): Boolean =

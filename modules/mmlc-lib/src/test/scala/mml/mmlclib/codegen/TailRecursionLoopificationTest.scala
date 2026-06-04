@@ -382,6 +382,135 @@ class TailRecursionLoopificationTest extends BaseEffFunSuite:
     }
   }
 
+  test("escaped Direct PAP with heap capture owns an env clone") {
+    val source =
+      """
+      fn make(): Int -> Unit =
+        let msg = "hello";
+        let say: Int -> Int -> Unit =
+          ~{ x: Int, y: Int ->
+            println msg;
+          }
+        ;
+
+        say 1;
+      ;
+
+      pub fn main(): Unit =
+        let g: Int -> Unit = make ();
+        g 2;
+      ;
+      """
+
+    compileAndGenerate(source, config = CompilerConfig.default.copy(noTco = false)).map { llvmIr =>
+      val makeBody = functionBody(llvmIr, "test_make\\(\\) #0")
+      val mainBody = functionBody(llvmIr, "test_main\\(\\) #0")
+      val dtorName =
+        """store ptr @(test___free_say_pap_env_\d+), ptr %\d+""".r
+          .findFirstMatchIn(makeBody)
+          .map(_.group(1))
+          .getOrElse(fail(s"Missing Direct PAP env destructor store. Body:\n$makeBody"))
+      val dtorBody = functionBody(llvmIr, s"$dtorName\\(ptr %0\\) #0")
+      val cloneCount =
+        """call %struct\.String @__clone_String""".r.findAllIn(makeBody).size
+      val freeIdx = dtorBody.indexOf("call void @__free_String")
+      val rawIdx  = dtorBody.indexOf("call void @mml_free_raw")
+
+      assert(
+        cloneCount >= 2,
+        s"Escaped heap capture should be cloned for the binder and the PAP env. Body:\n$makeBody"
+      )
+      assert(
+        freeIdx >= 0 && rawIdx > freeIdx,
+        s"PAP env destructor should free heap payloads before freeing the env. Body:\n$dtorBody"
+      )
+      assert(
+        mainBody.contains("call void @test___free_closure(ptr %"),
+        s"Caller should drop the escaped PAP env through __free_closure. Body:\n$mainBody"
+      )
+    }
+  }
+
+  test("Direct PAP with heap applied arg owns an env clone") {
+    val source =
+      """
+      pub fn main(): Unit =
+        let say: String -> Int -> Unit =
+          { msg: String, n: Int ->
+            println msg;
+          }
+        ;
+
+        let msg = int_to_str 7;
+        let f: Int -> Unit = say msg;
+
+        f 0;
+      ;
+      """
+
+    compileAndGenerate(source, config = CompilerConfig.default.copy(noTco = false)).map { llvmIr =>
+      val mainBody = functionBody(llvmIr, "test_main\\(\\) #0")
+      val dtorName =
+        """store ptr @(test___free_say_pap_env_\d+), ptr %\d+""".r
+          .findFirstMatchIn(mainBody)
+          .map(_.group(1))
+          .getOrElse(fail(s"Missing Direct PAP env destructor store. Body:\n$mainBody"))
+      val dtorBody = functionBody(llvmIr, s"$dtorName\\(ptr %0\\) #0")
+      val freeIdx  = dtorBody.indexOf("call void @__free_String")
+      val rawIdx   = dtorBody.indexOf("call void @mml_free_raw")
+
+      assert(
+        """call %struct\.String @__clone_String""".r.findFirstIn(mainBody).nonEmpty,
+        s"Heap applied arg should be cloned before storage in the PAP env. Body:\n$mainBody"
+      )
+      assert(
+        freeIdx >= 0 && rawIdx > freeIdx,
+        s"PAP env destructor should free cloned applied arg before raw env free. Body:\n$dtorBody"
+      )
+    }
+  }
+
+  test("Direct PAP with aliased heap applied arg owns an env clone") {
+    val source =
+      """
+      type Name = String;
+
+      pub fn main(): Unit =
+        let say: Name -> Int -> Unit =
+          { msg: Name, n: Int ->
+            println msg;
+          }
+        ;
+
+        let msg: Name = int_to_str 7;
+        let f: Int -> Unit = say msg;
+
+        f 0;
+      ;
+      """
+
+    compileAndGenerate(source, config = CompilerConfig.default.copy(noTco = false)).map { llvmIr =>
+      val mainBody = functionBody(llvmIr, "test_main\\(\\) #0")
+      val dtorName =
+        """store ptr @(test___free_say_pap_env_\d+), ptr %\d+""".r
+          .findFirstMatchIn(mainBody)
+          .map(_.group(1))
+          .getOrElse(fail(s"Missing Direct PAP env destructor store. Body:\n$mainBody"))
+      val dtorBody = functionBody(llvmIr, s"$dtorName\\(ptr %0\\) #0")
+      val freeIdx  = dtorBody.indexOf("call void @__free_String")
+      val rawIdx   = dtorBody.indexOf("call void @mml_free_raw")
+
+      assert(
+        """call %struct\.String @__clone_String""".r.findFirstIn(mainBody).nonEmpty,
+        s"Aliased heap applied arg should be cloned with the underlying clone. Body:\n$mainBody"
+      )
+      assert(
+        freeIdx >= 0 && rawIdx > freeIdx,
+        s"PAP env destructor should free aliased heap arg with the underlying free. Body:\n$dtorBody"
+      )
+    }
+  }
+
   test("local capturing loopified Direct function uses trailing captures") {
     val source =
       """

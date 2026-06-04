@@ -2,7 +2,34 @@ package mml.mmlclib.codegen.emitter.expression
 
 import cats.syntax.all.*
 import mml.mmlclib.ast.*
-import mml.mmlclib.codegen.emitter.{CodeGenError, CodeGenState, CompileResult, DirectCallable, ScopeEntry, alignOfLlvmTypeResolved, alignTo, compileDirectLambda, compileLambdaLiteral, emitCall, emitDirectCaptureFrees, emitExtractValue, emitGetElementPtr, emitIndirectCall, emitInsertValue, emitLoad, emitStore, emitTypeDefinition, evaluateDirectCaptures, getLlvmType, getNominalTypeName, renderFunctionLines, sizeOfLlvmTypeResolved}
+import mml.mmlclib.codegen.emitter.{
+  CodeGenError,
+  CodeGenState,
+  CompileResult,
+  DirectCallable,
+  ScopeEntry,
+  alignOfLlvmTypeResolved,
+  alignTo,
+  compileDirectLambda,
+  compileLambdaLiteral,
+  emitCall,
+  emitCaptureCloneCall,
+  emitDirectCaptureFrees,
+  emitExtractValue,
+  emitGetElementPtr,
+  emitIndirectCall,
+  emitInsertValue,
+  emitLoad,
+  emitStore,
+  emitTypeDefinition,
+  evaluateDirectCaptures,
+  getLlvmType,
+  getNominalTypeName,
+  isNativeMemFn,
+  renderFunctionLines,
+  resolveMemFnLlvmName,
+  sizeOfLlvmTypeResolved
+}
 
 /** Collects all arguments from nested App nodes (handles curried applications).
   *
@@ -260,9 +287,11 @@ private def emitDirectPartialClosure(
   state:             CodeGenState
 ): Either[CodeGenError, CompileResult] =
   val appliedFields =
-    compiledArgs.map(arg => DirectPapEnvField(arg.llvmType, arg.op, arg.tbaaTypeName))
+    compiledArgs.map(arg => directPapEnvField(arg.llvmType, arg.op, arg.tbaaTypeName, state))
   val captureFields =
-    direct.captureOperands.map(op => DirectPapEnvField(op.llvmType, op.operand, op.tbaaTypeName))
+    direct.captureOperands.map(op =>
+      directPapEnvField(op.llvmType, op.operand, op.tbaaTypeName, state)
+    )
   val envFields = appliedFields ++ captureFields
 
   if finalReturnType != partialReturnType then
@@ -310,57 +339,102 @@ private def emitDirectPartialClosure(
     val stateAfterDtorStore =
       stateWithDtorTag.withRegister(dtorGepReg + 1).emit(dtorGepLine).emit(dtorStoreLine)
 
-    val stateAfterStores = envFields.zipWithIndex.foldLeft(stateAfterDtorStore) {
-      case (st, (field, idx)) =>
-        val gepReg = st.nextRegister
-        val gepLine = emitGetElementPtr(
-          gepReg,
-          envTypeRef,
-          "ptr",
-          s"%$mallocReg",
-          List(("i32", "0"), ("i32", (idx + 1).toString))
-        )
-        val (stateWithFieldTag, fieldTag) =
-          directPapEnvFieldTbaaTag(envTbaaName, envTbaaLayout, idx + 1, st)
-        val storeLine = emitStore(field.operand, field.llvmType, s"%$gepReg", fieldTag)
-        stateWithFieldTag.withRegister(gepReg + 1).emit(gepLine).emit(storeLine)
-    }
-
-    val (stateWithLoadTags, loadTags) =
-      envFields.indices.foldLeft((stateAfterStores, List.empty[Option[String]])) {
-        case ((st, tags), idx) =>
-          val (stateWithTag, tag) =
-            directPapEnvFieldTbaaTag(envTbaaName, envTbaaLayout, idx + 1, st)
-          (stateWithTag, tags :+ tag)
+    val stateAfterStoresE =
+      envFields.zipWithIndex.foldLeft(stateAfterDtorStore.asRight[CodeGenError]) {
+        case (stE, (field, idx)) =>
+          stE.flatMap { st =>
+            for
+              cloned <- cloneDirectPapEnvField(field, st, app)
+              (stateWithClone, storedField) = cloned
+              gepReg                        = stateWithClone.nextRegister
+              gepLine = emitGetElementPtr(
+                gepReg,
+                envTypeRef,
+                "ptr",
+                s"%$mallocReg",
+                List(("i32", "0"), ("i32", (idx + 1).toString))
+              )
+              (stateWithFieldTag, fieldTag) =
+                directPapEnvFieldTbaaTag(envTbaaName, envTbaaLayout, idx + 1, stateWithClone)
+              storeLine = emitStore(
+                storedField.operand,
+                storedField.llvmType,
+                s"%$gepReg",
+                fieldTag
+              )
+            yield stateWithFieldTag.withRegister(gepReg + 1).emit(gepLine).emit(storeLine)
+          }
       }
 
-    val fp0Reg = stateWithLoadTags.nextRegister
-    val fp1Reg = fp0Reg + 1
-    val insertFn =
-      emitInsertValue(fp0Reg, "{ ptr, ptr }", "undef", "ptr", s"@$entryName", 0)
-    val insertEnv =
-      emitInsertValue(fp1Reg, "{ ptr, ptr }", s"%$fp0Reg", "ptr", s"%$mallocReg", 1)
-    val siteState = stateWithLoadTags.withRegister(fp1Reg + 1).emit(insertFn).emit(insertEnv)
-    val entryBody = renderDirectPartialEntry(
-      direct,
-      entryName,
-      envTypeRef,
-      appliedFields.map(_.llvmType),
-      captureFields.map(_.llvmType),
-      loadTags,
-      remainingTypes,
-      finalReturnType
-    )
-    val dtorBody   = renderDirectPartialEnvFree(dtorName)
-    val finalState = siteState.addDeferredDefinition(entryBody).addDeferredDefinition(dtorBody)
+    stateAfterStoresE.flatMap { stateAfterStores =>
+      val (stateWithLoadTags, loadTags) =
+        envFields.indices.foldLeft((stateAfterStores, List.empty[Option[String]])) {
+          case ((st, tags), idx) =>
+            val (stateWithTag, tag) =
+              directPapEnvFieldTbaaTag(envTbaaName, envTbaaLayout, idx + 1, st)
+            (stateWithTag, tags :+ tag)
+        }
 
-    CompileResult(fp1Reg, finalState, false, "Function").asRight
+      val fp0Reg = stateWithLoadTags.nextRegister
+      val fp1Reg = fp0Reg + 1
+      val insertFn =
+        emitInsertValue(fp0Reg, "{ ptr, ptr }", "undef", "ptr", s"@$entryName", 0)
+      val insertEnv =
+        emitInsertValue(fp1Reg, "{ ptr, ptr }", s"%$fp0Reg", "ptr", s"%$mallocReg", 1)
+      val siteState = stateWithLoadTags.withRegister(fp1Reg + 1).emit(insertFn).emit(insertEnv)
+      val entryBody = renderDirectPartialEntry(
+        direct,
+        entryName,
+        envTypeRef,
+        appliedFields.map(_.llvmType),
+        captureFields.map(_.llvmType),
+        loadTags,
+        remainingTypes,
+        finalReturnType
+      )
+      renderDirectPartialEnvFree(dtorName, envTypeRef, envFields, siteState, app).map {
+        case (stateAfterDtor, dtorBody) =>
+          val finalState =
+            stateAfterDtor.addDeferredDefinition(entryBody).addDeferredDefinition(dtorBody)
+          CompileResult(fp1Reg, finalState, false, "Function")
+      }
+    }
 
 private case class DirectPapEnvField(
   llvmType:     String,
   operand:      String,
-  tbaaTypeName: String
+  tbaaTypeName: String,
+  ownedHeap:    Option[String]
 )
+
+private def directPapEnvField(
+  llvmType:     String,
+  operand:      String,
+  tbaaTypeName: String,
+  state:        CodeGenState
+): DirectPapEnvField =
+  val ownedHeap =
+    Option.when(TypeUtils.isHeapType(tbaaTypeName, state.resolvables))(tbaaTypeName)
+  DirectPapEnvField(llvmType, operand, tbaaTypeName, ownedHeap)
+
+private def cloneDirectPapEnvField(
+  field: DirectPapEnvField,
+  state: CodeGenState,
+  app:   App
+): Either[CodeGenError, (CodeGenState, DirectPapEnvField)] =
+  field.ownedHeap match
+    case None => (state, field).asRight
+    case Some(typeName) =>
+      TypeUtils.cloneFnFor(typeName, state.resolvables) match
+        case None =>
+          CodeGenError(
+            s"Direct partial application payload of heap type '$typeName' has no clone function",
+            app.some
+          ).asLeft
+        case Some(cloneFnName) =>
+          val (stateAfterClone, clonedOperand) =
+            emitCaptureCloneCall(field.operand, field.llvmType, cloneFnName, state)
+          (stateAfterClone, field.copy(operand = clonedOperand)).asRight
 
 private def directPapEnvTbaaLayout(
   fields: List[DirectPapEnvField],
@@ -446,15 +520,77 @@ private def renderDirectPartialEntry(
     CodeGenState(output = functionLines.reverse)
   ).mkString("\n")
 
-private def renderDirectPartialEnvFree(dtorName: String): String =
-  List(
-    s"define internal void @$dtorName(ptr %0) #0 {",
-    "entry:",
-    "  call void @mml_free_raw(ptr %0)",
-    "  ret void",
-    "}",
-    ""
-  ).mkString("\n")
+private def renderDirectPartialEnvFree(
+  dtorName:   String,
+  envTypeRef: String,
+  envFields:  List[DirectPapEnvField],
+  state:      CodeGenState,
+  app:        App
+): Either[CodeGenError, (CodeGenState, String)] =
+  val bodyState = state.copy(
+    output              = List.empty,
+    entryPrologueOutput = List.empty,
+    nextRegister        = 1
+  )
+  val stateAfterFieldFreesE =
+    envFields.zipWithIndex.foldLeft(bodyState.asRight[CodeGenError]) { case (stE, (field, idx)) =>
+      stE.flatMap(st => emitDirectPapHeapFieldFree(envTypeRef, field, idx + 1, st, app))
+    }
+
+  stateAfterFieldFreesE.map { stateAfterFieldFrees =>
+    val finalBodyState = stateAfterFieldFrees
+      .emit(emitCall(none, none, "mml_free_raw", List(("ptr", "%0"))))
+      .emit("  ret void")
+      .emit("}")
+      .emit("")
+    val body = renderFunctionLines(
+      s"define internal void @$dtorName(ptr %0) #0 {",
+      finalBodyState
+    ).mkString("\n")
+    val stateWithDtorDecls =
+      state.copy(functionDeclarations = finalBodyState.functionDeclarations)
+    (stateWithDtorDecls, body)
+  }
+
+private def emitDirectPapHeapFieldFree(
+  envTypeRef: String,
+  field:      DirectPapEnvField,
+  fieldIndex: Int,
+  state:      CodeGenState,
+  app:        App
+): Either[CodeGenError, CodeGenState] =
+  field.ownedHeap match
+    case None => state.asRight
+    case Some(typeName) =>
+      TypeUtils.freeFnFor(typeName, state.resolvables) match
+        case None =>
+          CodeGenError(
+            s"Direct partial application payload of heap type '$typeName' has no free function",
+            app.some
+          ).asLeft
+        case Some(freeFnName) =>
+          val llvmFreeName = resolveMemFnLlvmName(freeFnName, state)
+          val gepReg       = state.nextRegister
+          val loadReg      = gepReg + 1
+          val gepLine = emitGetElementPtr(
+            gepReg,
+            envTypeRef,
+            "ptr",
+            "%0",
+            List(("i32", "0"), ("i32", fieldIndex.toString))
+          )
+          val loadLine = emitLoad(loadReg, field.llvmType, s"%$gepReg")
+          val stateAfterLoad =
+            state.withRegister(loadReg + 1).emit(gepLine).emit(loadLine)
+          val rawArgs              = List((s"%$loadReg", field.llvmType))
+          val (lowered, stLowered) = stateAfterLoad.abi.lowerArgs(rawArgs, stateAfterLoad)
+          val callArgs             = lowered.map((op, typ) => (typ, op))
+          val declParamTypes       = lowered.map(_._2)
+          val stWithDecl =
+            if isNativeMemFn(freeFnName, stLowered) then
+              stLowered.withFunctionDeclaration(llvmFreeName, "void", declParamTypes)
+            else stLowered
+          stWithDecl.emit(emitCall(none, none, llvmFreeName, callArgs)).asRight
 
 /** Compiles a native operator application using its template.
   *

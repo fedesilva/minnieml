@@ -991,7 +991,13 @@ object OwnershipAnalyzer:
         val allocHeap =
           allocType.filter(t => isOwnedValueType(t, scope.resolvables))
         val owns =
-          allocHeap.filter(t => paramTypeName.forall(_ == getTypeName(t).getOrElse("")))
+          allocHeap.filter { t =>
+            paramTypeName.forall { paramName =>
+              getTypeName(t).exists { allocName =>
+                TypeUtils.sameResolvedTypeName(paramName, allocName, scope.resolvables)
+              }
+            }
+          }
         // Check if allocating expression is a capturing lambda with env struct name
         val closureFreeFn = arg.terms.headOption.collect {
           case lambda: Lambda if lambda.captures.nonEmpty =>

@@ -602,10 +602,10 @@ slice or accept temporary breakage; do not invent a shim.
   heap-allocated, use the same destructor-at-field-0 convention as heap closure envs,
   and are dropped via `__free_closure`. The generated PAP entry reads captured values
   from field 1+, preserving field 0 for the env destructor. The mem harness includes an
-  accumulating escaping-PAP regression under ASan/LSan.
-- **Remaining:** TBAA parity for generated PAP env stores and loads is still open.
-  Frame-local PAP env stack allocation is also a later optimization once ownership or
-  lifetime facts can classify non-escaping PAP values.
+  accumulating escaping-PAP regression under ASan/LSan. Generated PAP env stores and
+  loads carry field-specific TBAA metadata as of S8.5b.
+- **Remaining:** Frame-local PAP env stack allocation is a later optimization once
+  ownership or lifetime facts can classify non-escaping PAP values.
 - **Out of scope:** direct-call elision for single-use generated partial applications
   (`insertvalue` immediately followed by `extractvalue`) is an optimization only; keep
   the uniform `{ ptr, ptr }` value form until correctness and metadata are settled.
@@ -617,17 +617,16 @@ slice or accept temporary breakage; do not invent a shim.
   runs. Items already tracked elsewhere are linked, not repeated.
 
 - **Correctness:**
-  - [~] Direct move-lambda owned-heap captures leak (reframed from "heap literal").
+  - [x] Direct move-lambda owned-heap captures leak (reframed from "heap literal").
     A Direct `~` move lambda that captures ANY owned heap value never frees it: a string
     literal (clone leaks), an owned `String` from `int_to_str` (the value leaks, no clone),
     and an owned struct with heap fields (whole struct leaks). Confirmed by IR: `main`
     builds/clones the value, calls the lambda, and returns with no free. **Broad fix
-    IMPLEMENTED in the working tree** (see S8.6.1 below) — frees every owned heap capture
-    at the Direct binder's scope exit. BUT a Codex review found the fix introduces a
-    use-after-free for escaping Direct partial applications; see S8.6.1a. This item is NOT
-    done until S8.6.1a is resolved.
+    landed in commit `0bf58f78`** (see S8.6.1 below) — frees every owned heap capture
+    at the Direct binder's scope exit. S8.6.1a resolves the escaping Direct partial
+    application ownership follow-up required to close this item.
 
-#### S8.6.1 — Broad owned-heap-capture free at Direct binder scope (IMPLEMENTED, uncommitted)
+#### S8.6.1 — Broad owned-heap-capture free at Direct binder scope (landed — commit 0bf58f78)
 - **Mechanism:** new `DirectCaptureCleanup(operand, llvmType, mmlTypeName)` returned as a
   third element from `evaluateDirectCaptures`; a shared `emitDirectCaptureFrees` helper
   (mirrors `emitEnvHeapFieldFrees`, gated on `isNativeMemFn` so generated struct destructors
@@ -636,7 +635,7 @@ slice or accept temporary breakage; do not invent a shim.
   `pendingCleanups` accumulator threaded through `compileTailRecBody` and freed at the
   terminating leaves so each runtime path frees exactly once before its terminator/back-edge).
   Extracted `isNativeMemFn` out of `resolveMemFnLlvmName`.
-- **Files (all uncommitted working-tree changes on `dev-lambdas-unify`):**
+- **Files:**
   `codegen/emitter/package.scala` (DirectCaptureCleanup),
   `codegen/emitter/ExpressionCompiler.scala` (evaluateDirectCaptures + emitDirectCaptureFrees),
   `codegen/emitter/expression/Applications.scala` (Path 1),
@@ -648,7 +647,7 @@ slice or accept temporary breakage; do not invent a shim.
   27/27 ASan+LSan; smoke samples + benchmarks green; scalafmt/scalafix clean; qa-enforcer pass
   (only low/style nits). This covers the non-escaping case fully.
 
-#### S8.6.1a — Direct PAP heap-capture ownership: escaping use-after-free (OPEN — fix before commit)
+#### S8.6.1a — Direct PAP heap-payload ownership: escaping use-after-free (do not land as-is)
 - **Discovered by:** Codex review of the S8.6.1 working tree (2026-05-31). Confirmed real with
   ASan.
 - **The bug:** when a Direct move lambda with a heap capture is UNDERSATURATED, the call site
@@ -659,7 +658,7 @@ slice or accept temporary breakage; do not invent a shim.
   → heap-use-after-free. Before S8.6.1 this same shape merely LEAKED; S8.6.1 turns the leak into
   a UAF, which is worse. The mem harness missed it because `tests/mem/escaping-paps.mml` captures
   only `Int`, never a heap value.
-- **ASan evidence (reproduce tomorrow — re-create these two programs; /tmp copies are transient):**
+- **ASan evidence:**
   - In-scope PAP — `let msg = "hello"; let f = ~{ x: Int, y: Int -> println msg; }; let g = f 1; g 2;`
     inside `main`. ASan CLEAN (prints `hello`, exit 0). My free frees the binder clone; the env
     free and the data free hit different allocations; PAP consumed before scope exit.
@@ -673,32 +672,52 @@ slice or accept temporary breakage; do not invent a shim.
   ambiguously shared with the binder scope. The escaping PAP closure IS dropped by the caller
   (`papescape___free_closure(%3)` in the escaping case's `main`), so a destructor-side deep-free
   WOULD run.
-- **Proposed fix — clone-per-PAP (handles escape, multiplicity, and nesting without
-  whole-program escape analysis):**
+- **Rejected implementation direction — clone-per-PAP:**
   1. Keep S8.6.1's binder-scope free unchanged (the binder owns its single capture clone).
-  2. In `emitDirectPartialClosure`, deep-CLONE each heap-typed capture (`__clone_T`) into the
+  2. In `emitDirectPartialClosure`, deep-CLONE each heap-typed payload (`__clone_T`) into the
      PAP env instead of storing the borrowed operand, so each PAP owns an independent copy.
-  3. In the PAP env destructor (`renderDirectPartialEnvFree`), deep-free the heap capture fields
+     This applies to heap captures and heap applied arguments.
+  3. In the PAP env destructor (`renderDirectPartialEnvFree`), deep-free the heap payload fields
      (GEP + load + `__free_T`, ABI-lowered like `emitEnvHeapFieldFrees`) before `mml_free_raw`.
-     The destructor renderer must thread `CodeGenState` (for `abi.lowerArgs`, free-fn
-     declarations, register numbering, TBAA) instead of returning a static string.
-- **Complications / watch-outs for tomorrow:**
-  - `emitCaptureCloneCall` (`ExpressionCompiler.scala:602`) declares the clone fn
-    UNCONDITIONALLY. Cloning a generated STRUCT clone (`__clone_Pair`) would re-trigger the same
-    invalid-redefinition that the `isNativeMemFn` gate fixed for frees. Gate its `declare` on
-    `isNativeMemFn` too (no-op for the native String path; safe general fix) before reusing it
-    for struct captures.
-  - Pinned tests will break and need rewriting: `TailRecursionLoopificationTest` pins exact PAP
-    env layouts, TBAA offsets, and load/store tags (S8.5b). Adding clones + destructor deep-free
-    changes that IR.
-  - Scope line: own heap CAPTURES in the PAP. Heap APPLIED ARGS (e.g. `f "str"`) are a separate
-    pre-existing ownership question (also currently borrowed/unfreed in the env) — leave as-is;
-    do not expand into it here.
-  - Add two pinned mem regressions: escaping PAP with heap capture, and in-scope PAP with heap
-    capture.
-- **Alternative if clone-per-PAP proves too invasive:** scope S8.6.1 down to free only when the
-  capture cannot reach a PAP, leaving the escaping-PAP case as a tracked LEAK (not a UAF) until
-  this is done properly. (The Author chose the full fix; this is only a fallback.)
+     The destructor renderer threads `CodeGenState` for ABI lowering, free-fn declarations, and
+     register numbering instead of returning a static string.
+- **Author direction:** clone-per-PAP is wrong. PAP creation must not insert hidden heap clones.
+  S8.6.1b replaces this approach with explicit PAP ownership/lifetime rules.
+
+#### S8.6.1b — PAP ownership without implicit cloning (OPEN)
+- **Status:** Next subtask. This replaces the clone-per-PAP direction in S8.6.1a. Do not land an
+  implementation that silently clones heap payloads into a PAP env.
+- **Spec:** `context/specs/pap-ownership-model.md`.
+- **Bug:** generated PAP envs currently lack an explicit ownership/lifetime model for heap
+  payloads. A PAP over a borrowed heap argument or borrowed Direct trailing payload is valid only
+  while the owner is alive. If the PAP escapes, the borrow escapes. Cloning the payload hides that
+  lifetime error and violates the source-level ownership model.
+- **Rules to implement:**
+  - Non-consuming parameters are borrowed. A PAP storing such a heap argument may not escape the
+    owner scope.
+  - Consuming `~` parameters are moved. A PAP storing an already-applied consuming heap argument may
+    own that value only through the explicit move.
+  - Partial application with any remaining consuming parameter stays rejected.
+  - No implicit clone may be inserted by PAP creation to make ownership work.
+- **Implementation direction:**
+  1. Back out Direct PAP clone-per-payload behavior from S8.6.1a.
+  2. Add PAP payload metadata that records borrowed vs owned heap payloads.
+  3. Teach ownership analysis to reject escaping PAPs containing borrowed heap payloads. A
+     conservative first slice may reject all heap-borrow PAP payloads until a non-escape proof is
+     available.
+  4. If accepting already-applied consuming heap arguments, mark the source binding moved into the
+     PAP and make the PAP env destructor free that moved payload exactly once.
+  5. Keep scalar payload behavior and saturated Direct calls unchanged.
+- **Tests:**
+  - Non-escaping PAP over borrowed heap argument accepted when proven local.
+  - Escaping PAP over borrowed heap argument rejected.
+  - Escaping Direct PAP over borrowed heap trailing payload rejected.
+  - Partial application with a remaining consuming parameter still rejected.
+  - If moved already-applied heap arguments are accepted, use-after-move and exactly-once destructor
+    behavior are pinned.
+  - Generated PAP creation IR contains no implicit heap clone calls.
+- **Acceptance:** full compiler verification plus `./tests/mem/run.sh all`; S8.6.1a ASan UAF shape
+  must be either rejected at semantic time or accepted only through explicit move ownership.
 
 - **Build / QA:**
   - [ ] Wrap lines over 100 cols added by this workstream; scalafmt does not reflow long
@@ -715,7 +734,7 @@ slice or accept temporary breakage; do not invent a shim.
     stays sound.
 
 - **Docs:**
-  - [ ] Reconcile S8.5. Its "Remaining" still lists PAP-env TBAA parity as open, but the
+  - [x] Reconcile S8.5. Its "Remaining" listed PAP-env TBAA parity as open, but the
     changelog marks S8.5b complete (commit 5da9c68). Update S8.5 to match.
 
 - **Already tracked, not repeated here:** `__stmt` sequence-lambda marker (#265);

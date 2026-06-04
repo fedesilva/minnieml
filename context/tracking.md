@@ -23,6 +23,17 @@
 
 `mml/samples/borrow-escape-test.mml`
 
+### QA: unify alias resolution
+
+there are several implementations most of them private to a phase.
+consider something like:
+
+```
+def resolveAlias(typeName: String, resolvables: ResolvablesIndex): Option[ResolvableType]
+def resolvedTypeName(typeName: String, resolvables: ResolvablesIndex): Option[String]
+def sameResolvedTypeName(...)
+```
+
 ### Bug: function annotation arity must be disambiguated by the binder
 
 `Int -> Int -> Int` is intentionally valid for the common uncurried definition-site
@@ -59,6 +70,39 @@ can disagree.
 ### Context Tools
 
 Add verbiage and design for multiagent execution.
+
+  * controller agent 
+    * keeps a tight focus on the task and the spec
+    * keeps the repo rules (coding rules, dev tools, qa) fresh in memory
+      * and advises fresh sub agents about them.
+    * keeps tracking info in tracking.md so we can reset or compact often
+    * schedules and delegates agents to
+      * research, each answering a specific question
+      * execution
+        * it depends on the task but might benefit from spawning parallel agents
+        * even if not parallelizabe separate agents keep the controller agent free to focus on its main responsability with an uncluttered context.
+      * qa enforcement
+        * run an agent to review the changes using the qa enforcement skill
+  
+
+
+### Document and encode the ownership rules
+
+* no cloning
+  * and where we do now (globals), how we plan to avoid it
+* ownership of regular values
+* ownership of lambdas 
+  * track like a struct
+    * particularly if the have move arguments
+* lifeline/ownership and escaping
+
+first generate a document out of the current implementation and we can iterate over 
+it if things are not in good taste or shape.
+
+
+### Unify ownership model
+
+this is partially defined in mem-evolution document
 
 ### Replace magic `__stmt` detection for sequence lambdas
 
@@ -99,6 +143,21 @@ Slice progress (see `context/specs/unify-lambdas-plan.md`):
 - [x] S8 — Tail-recursion follow-up under unified model (COMPLETE)
 - [x] S8.5a — Direct partial-application env lifetime/drop hardening (COMPLETE)
 - [x] S8.5b — Direct partial-application env TBAA parity (COMPLETE — commit 5da9c68)
+- [x] S8.6.1 — Broad owned-heap-capture free at Direct binder scope (COMPLETE — commit 0bf58f78)
+- [ ] S8.6.1a — Direct PAP heap-payload ownership for escaping partial applications (clone-per-PAP
+  draft rejected; see S8.6.1b)
+- [ ] S8.6.1b — PAP ownership without implicit cloning
+  - Spec: `context/specs/pap-ownership-model.md`
+  - Bug: PAP envs may carry heap payloads without an explicit ownership/lifetime model. Borrowed
+    heap payloads must not escape their owner scope, and moved heap payloads must enter the PAP
+    only through explicit `~` ownership transfer.
+  - Task: replace clone-per-PAP with borrowed-vs-owned PAP payload classification. Reject escaping
+    PAPs containing borrowed heap payloads; keep partial application with remaining consuming
+    parameters rejected; accept moved already-applied heap arguments only if the analyzer marks the
+    source moved and the PAP destructor frees the moved payload exactly once.
+  - Acceptance: no implicit heap clone calls during PAP creation; semantic/codegen regressions for
+    escaping borrowed PAP rejection, non-escaping borrowed PAP acceptance when proven local, and
+    moved already-applied heap payload ownership if supported.
 - [ ] S9 — Equivalence test pass
 - [ ] S10 — `BindingMeta` reduction
 - [ ] S11 — Stack-promotion for non-escaping move-capturing lambdas
@@ -126,6 +185,15 @@ Slice progress (see `context/specs/unify-lambdas-plan.md`):
 * add commands to manage the cache (init, clean)
 
 ## Change Log
+
+- 2026-06-02: #255 unify-lambdas S8.6.1a/S8.6.1b — Direct PAP heap-payload ownership
+  - S8.6.1a identified the escaping Direct PAP heap-payload bug, but the clone-per-PAP
+    implementation direction is rejected because PAP creation must not insert hidden heap clones.
+  - `context/specs/pap-ownership-model.md`: added the accepted PAP ownership model: borrowed heap
+    PAP payloads may not escape their owner scope; moved heap PAP payloads require explicit `~`
+    ownership transfer; partial application with remaining consuming parameters stays rejected.
+  - `context/specs/unify-lambdas-plan.md` / `context/tracking.md`: added S8.6.1b as the next bug
+    subtask to replace clone-per-PAP with explicit borrowed-vs-owned PAP payload rules.
 
 - 2026-05-31: #255 unify-lambdas S8.6.1 — free Direct move-lambda owned-heap captures
   - `ExpressionCompiler.scala` / `codegen/emitter/package.scala`: `evaluateDirectCaptures`

@@ -47,3 +47,65 @@ class TypeUtilsTests extends BaseEffFunSuite:
       val result = TypeUtils.freeFnFor("MyStr", module.resolvables)
       assertEquals(result, Some("destroy_str"))
     }
+
+  test("heap native aliases resolve to the underlying memory functions"):
+    val code = """
+      type HeapName = String;
+      type OtherHeapName = HeapName;
+    """
+
+    semNotFailed(code).map { module =>
+      assert(TypeUtils.isHeapType("HeapName", module.resolvables))
+      assert(TypeUtils.isHeapType("OtherHeapName", module.resolvables))
+      assertEquals(TypeUtils.freeFnFor("HeapName", module.resolvables), Some("__free_String"))
+      assertEquals(
+        TypeUtils.freeFnFor("OtherHeapName", module.resolvables),
+        Some("__free_String")
+      )
+      assert(TypeUtils.sameResolvedTypeName("HeapName", "String", module.resolvables))
+      assert(TypeUtils.sameResolvedTypeName("OtherHeapName", "String", module.resolvables))
+      assertEquals(TypeUtils.cloneFnFor("HeapName", module.resolvables), Some("__clone_String"))
+      assertEquals(
+        TypeUtils.cloneFnFor("OtherHeapName", module.resolvables),
+        Some("__clone_String")
+      )
+    }
+
+  test("heap native aliases without explicit free use the underlying type name"):
+    val code = """
+      type BaseBuf = @native[t=*i8, mem=heap];
+      type AliasBuf = BaseBuf;
+    """
+
+    semNotFailed(code).map { module =>
+      assert(TypeUtils.isHeapType("AliasBuf", module.resolvables))
+      assertEquals(TypeUtils.freeFnFor("AliasBuf", module.resolvables), Some("__free_BaseBuf"))
+      assertEquals(TypeUtils.cloneFnFor("AliasBuf", module.resolvables), Some("__clone_BaseBuf"))
+    }
+
+  test("heap struct aliases resolve to the underlying struct memory functions"):
+    val code = """
+      struct Person { name: String };
+      type PersonAlias = Person;
+      type OtherPersonAlias = PersonAlias;
+    """
+
+    semNotFailed(code).map { module =>
+      assert(TypeUtils.isHeapType("PersonAlias", module.resolvables))
+      assert(TypeUtils.isHeapType("OtherPersonAlias", module.resolvables))
+      assert(TypeUtils.isStructWithHeapFields("PersonAlias", module.resolvables))
+      assert(TypeUtils.isStructWithHeapFields("OtherPersonAlias", module.resolvables))
+      assertEquals(TypeUtils.freeFnFor("PersonAlias", module.resolvables), Some("__free_Person"))
+      assertEquals(
+        TypeUtils.freeFnFor("OtherPersonAlias", module.resolvables),
+        Some("__free_Person")
+      )
+      assertEquals(
+        TypeUtils.cloneFnFor("PersonAlias", module.resolvables),
+        Some("__clone_Person")
+      )
+      assertEquals(
+        TypeUtils.cloneFnFor("OtherPersonAlias", module.resolvables),
+        Some("__clone_Person")
+      )
+    }

@@ -83,6 +83,26 @@ class OwnershipAnalyzerTests extends BaseEffFunSuite:
     }
   }
 
+  test("alias-typed allocating let binding is freed at scope end") {
+    val code =
+      """
+        type Name = String;
+
+        fn main(): Unit =
+          let s: Name = int_to_str 5;
+          println s;
+        ;
+      """
+
+    semNotFailed(code).map { module =>
+      val mainBody = topLevelLambdaBody(module, "main")
+      assert(
+        containsFreeString(mainBody),
+        "expected alias-typed String returned from int_to_str to be freed"
+      )
+    }
+  }
+
   test("use after move to consuming param") {
     val code =
       """

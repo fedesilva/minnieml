@@ -1,0 +1,17 @@
+// Escaping Direct partial application owns cloned heap captures in its env.
+
+fn make(): Int -> Unit =
+  let msg = "escaping capture";
+  let say: Int -> Int -> Unit =
+    ~{ x: Int, y: Int ->
+      println msg;
+    }
+  ;
+
+  say 1;
+;
+
+pub fn main(): Unit =
+  let g: Int -> Unit = make ();
+  g 2;
+;
