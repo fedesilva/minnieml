@@ -23,6 +23,33 @@
 
 `mml/samples/borrow-escape-test.mml`
 
+### Document and encode the ownership rules
+
+This is important, urgent even.
+While working on lambdas we have drifted a couple of times
+from the intended design and are relying on cloning where 
+we should not.
+
+This needs to be a deeper reference than the lang ref
+and less implementation details oriented than the design doc.
+It needs to also describe lowering stragegies, where appropriate
+but this is secondary related to specifying the behaviour and 
+describing the model.
+
+This will serve as a focused reference as we continue to develop the model.
+
+* no cloning, erradicate implicit, behind the scenes cloning.
+  * and where we do now (globals), how we plan to avoid it
+* ownership of regular values
+* ownership of lambdas 
+  * track like a struct
+    * particularly if the have move arguments
+* lifeline/ownership and escaping
+
+first generate a document out of the current implementation and we can iterate over 
+it if things are not in good taste or shape.
+
+
 ### QA: unify alias resolution
 
 there are several implementations most of them private to a phase.
@@ -33,6 +60,12 @@ def resolveAlias(typeName: String, resolvables: ResolvablesIndex): Option[Resolv
 def resolvedTypeName(typeName: String, resolvables: ResolvablesIndex): Option[String]
 def sameResolvedTypeName(...)
 ```
+
+### Owned Strings
+
+* Review the document elsewhere.
+* I need to think about it, having literals be shareable could be beneficial, if a bit weird
+    because it's kind of irregular.
 
 ### Bug: function annotation arity must be disambiguated by the binder
 
@@ -84,21 +117,6 @@ Add verbiage and design for multiagent execution.
       * qa enforcement
         * run an agent to review the changes using the qa enforcement skill
   
-
-
-### Document and encode the ownership rules
-
-* no cloning
-  * and where we do now (globals), how we plan to avoid it
-* ownership of regular values
-* ownership of lambdas 
-  * track like a struct
-    * particularly if the have move arguments
-* lifeline/ownership and escaping
-
-first generate a document out of the current implementation and we can iterate over 
-it if things are not in good taste or shape.
-
 
 ### Unify ownership model
 
