@@ -176,6 +176,8 @@ Slice progress (see `context/specs/unify-lambdas-plan.md`):
   - Acceptance: no implicit heap clone calls during PAP creation; semantic/codegen regressions for
     escaping borrowed PAP rejection, non-escaping borrowed PAP acceptance when proven local, and
     moved already-applied heap payload ownership if supported.
+  - Cleanup: when this lands, remove the temporary PAP implementation note from
+    `docs/memory-model.md`.
 - [ ] S9 — Equivalence test pass
 - [ ] S10 — `BindingMeta` reduction
 - [ ] S11 — Stack-promotion for non-escaping move-capturing lambdas

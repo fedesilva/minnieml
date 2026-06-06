@@ -673,6 +673,8 @@ slice or accept temporary breakage; do not invent a shim.
   (`papescape___free_closure(%3)` in the escaping case's `main`), so a destructor-side deep-free
   WOULD run.
 - **Rejected implementation direction — clone-per-PAP:**
+  -- IMPORTANT: this should have never happened and needs to be rectified asap.
+    - this happened for ignorig the language reference, memory model and related documents.
   1. Keep S8.6.1's binder-scope free unchanged (the binder owns its single capture clone).
   2. In `emitDirectPartialClosure`, deep-CLONE each heap-typed payload (`__clone_T`) into the
      PAP env instead of storing the borrowed operand, so each PAP owns an independent copy.
