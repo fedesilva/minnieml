@@ -88,16 +88,17 @@ fn consume(a: Int, ~s: String): Unit = ...;;
 let p = consume 1; // rejected: remaining parameter is consuming
 ```
 
-This is separate from already-applied consuming arguments. A future implementation may
-accept:
+This is separate from already-applied consuming arguments. An already-applied consuming
+argument moves into the generated PAP environment:
 
 ```mml
 fn consume_first(~s: String, n: Int): Unit = ...;;
 let p = consume_first s; // explicit move into the PAP
 ```
 
-That acceptance requires PAP env ownership metadata and destructor support for moved
-payload fields.
+The source binding is moved at PAP creation. If the PAP is dropped before full application,
+the PAP env destructor frees the moved payload field. If the PAP is fully applied, the moved
+payload is forwarded to the consuming callee and later PAP cleanup frees only the raw env.
 
 ## Direct Callables
 
@@ -125,8 +126,8 @@ Required work:
 - Keep non-escaping borrowed heap PAPs valid when the lifetime proof is available.
 - Preserve the existing rejection for partial application with remaining consuming
   parameters.
-- Add explicit move-into-PAP support only if the analyzer and destructor can prove
-  ownership transfer and cleanup correctly.
+- Move already-applied consuming heap arguments into the PAP and make the PAP env
+  destructor free those owned payload fields exactly once.
 
 Initial conservative implementation may reject all heap-borrow PAP payloads until a
 non-escape proof is wired in. That is preferable to hidden cloning.
@@ -139,6 +140,6 @@ Pin these cases:
 - escaping PAP over borrowed heap argument is rejected;
 - escaping Direct PAP over borrowed heap trailing payload is rejected;
 - partial application with remaining consuming parameter remains rejected;
-- if moved already-applied heap arguments are accepted, the source binding is moved and
-  the PAP env destructor frees the moved payload exactly once;
+- moved already-applied heap arguments mark the source binding moved and the PAP env
+  destructor frees the moved payload exactly once;
 - no generated IR for PAP creation contains implicit heap clone calls.

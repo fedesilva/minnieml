@@ -162,9 +162,9 @@ Slice progress (see `context/specs/unify-lambdas-plan.md`):
 - [x] S8.5a — Direct partial-application env lifetime/drop hardening (COMPLETE)
 - [x] S8.5b — Direct partial-application env TBAA parity (COMPLETE — commit 5da9c68)
 - [x] S8.6.1 — Broad owned-heap-capture free at Direct binder scope (COMPLETE — commit 0bf58f78)
-- [ ] S8.6.1a — Direct PAP heap-payload ownership for escaping partial applications (clone-per-PAP
+- [x] S8.6.1a — Direct PAP heap-payload ownership for escaping partial applications (clone-per-PAP
   draft rejected; see S8.6.1b)
-- [ ] S8.6.1b — PAP ownership without implicit cloning
+- [x] S8.6.1b — PAP ownership without implicit cloning (COMPLETE)
   - Spec: `context/specs/pap-ownership-model.md`
   - Bug: PAP envs may carry heap payloads without an explicit ownership/lifetime model. Borrowed
     heap payloads must not escape their owner scope, and moved heap payloads must enter the PAP
@@ -205,6 +205,22 @@ Slice progress (see `context/specs/unify-lambdas-plan.md`):
 * add commands to manage the cache (init, clean)
 
 ## Change Log
+
+- 2026-06-07: #255 unify-lambdas S8.6.1b — PAP ownership without implicit cloning
+  - `OwnershipAnalyzer.scala` / `ExpressionRewriter.scala`: PAPs and lambda values now carry
+    struct-like env ownership metadata. Borrowed heap payloads reject escaping returns, while
+    already-applied consuming heap arguments move into the generated PAP env.
+  - `Applications.scala` and Direct-call metadata: Direct PAP creation now stores borrowed or
+    moved operands directly, with no hidden heap clone calls. PAP env destructors free only owned
+    fields, and full application of owned payloads switches later cleanup to raw-env-only.
+  - Error printers and tests: added the borrowed-PAP escape diagnostic and regressions for
+    escaping/non-escaping borrowed PAPs, moved heap payloads, no implicit clones, and owned-field
+    destructor behavior.
+  - Docs/specs/mem programs: removed the temporary PAP implementation note from
+    `docs/memory-model.md`, updated the PAP ownership spec/plan, and rewrote Direct PAP mem
+    samples to use explicit `~` ownership transfer instead of clone-based ownership.
+  - `context/dev-tools.md` / `context/coding-rules.md`: documented that `sbtn` commands must not
+    be run in parallel; batch tasks into one `sbtn` invocation or run them sequentially.
 
 - 2026-06-02: #255 unify-lambdas S8.6.1a/S8.6.1b — Direct PAP heap-payload ownership
   - S8.6.1a identified the escaping Direct PAP heap-payload bug, but the clone-per-PAP

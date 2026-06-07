@@ -1,10 +1,10 @@
-// Escaping Direct partial application owns cloned aliased heap applied args in its env.
+// Escaping Direct partial application owns a moved aliased heap applied arg in its env.
 
 type Name = String;
 
 fn make(): Int -> Unit =
   let say: Name -> Int -> Unit =
-    { msg: Name, n: Int ->
+    { ~msg: Name, n: Int ->
       println msg;
     }
   ;

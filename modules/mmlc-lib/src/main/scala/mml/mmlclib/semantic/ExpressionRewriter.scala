@@ -77,6 +77,7 @@ object ExpressionRewriter:
         getArityAndParams(fn, transformedBindings, resolvables).flatMap { case (arity, params) =>
           val appliedCount = countAppliedArgs(fn)
           if appliedCount < arity then
+            val appliedParams   = params.take(appliedCount)
             val remainingParams = params.drop(appliedCount)
             // Ban partial application when any remaining param is consuming
             remainingParams.find(_.consuming) match
@@ -105,7 +106,13 @@ object ExpressionRewriter:
                   App(source, acc, Expr(source, List(ref)))
                 }
                 val lambda =
-                  Lambda(source, syntheticParams, Expr(source, List(fullApp)), captures = Nil)
+                  Lambda(
+                    source,
+                    syntheticParams,
+                    Expr(source, List(fullApp)),
+                    captures = Nil,
+                    isMove   = appliedParams.exists(_.consuming)
+                  )
                 Some(Expr(source, List(lambda)).asRight)
           else None
         }

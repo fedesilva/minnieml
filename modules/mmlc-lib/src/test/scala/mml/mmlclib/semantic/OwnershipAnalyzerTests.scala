@@ -199,6 +199,117 @@ class OwnershipAnalyzerTests extends BaseEffFunSuite:
     }
   }
 
+  test("escaping PAP over borrowed heap argument is rejected") {
+    val code =
+      """
+        fn say(msg: String, n: Int): Unit = println msg;;
+
+        fn make(msg: String): Int -> Unit =
+          say msg;
+        ;
+      """
+
+    semState(code).map { result =>
+      val errors = result.errors.collect { case e: SemanticError.BorrowClosureEscapeViaReturn =>
+        e
+      }
+      assert(errors.nonEmpty, "Expected borrowed PAP escape error")
+    }
+  }
+
+  test("non-escaping PAP over borrowed heap argument is accepted") {
+    val code =
+      """
+        fn say(msg: String, n: Int): Unit = println msg;;
+
+        fn main(): Unit =
+          let msg = int_to_str 7;
+          let f: Int -> Unit = say msg;
+          f 0;
+        ;
+      """
+
+    semState(code).map { result =>
+      val escapeErrors = result.errors.collect {
+        case e: SemanticError.BorrowClosureEscapeViaReturn => e
+        case e: SemanticError.BorrowedPapEscapeViaReturn => e
+      }
+      assert(
+        escapeErrors.isEmpty,
+        s"Expected non-escaping borrowed PAP to be accepted, got: $escapeErrors"
+      )
+    }
+  }
+
+  test("escaping Direct PAP over borrowed heap capture is rejected") {
+    val code =
+      """
+        fn make(): Int -> Unit =
+          let msg = int_to_str 7;
+          let say: Int -> Int -> Unit =
+            ~{ x: Int, y: Int ->
+              println msg;
+            }
+          ;
+
+          say 1;
+        ;
+      """
+
+    semState(code).map { result =>
+      val escapeErrors = result.errors.collect { case e: SemanticError.BorrowedPapEscapeViaReturn =>
+        e
+      }
+      assert(escapeErrors.nonEmpty, "Expected borrowed Direct PAP escape error")
+    }
+  }
+
+  test("non-escaping Direct PAP over borrowed heap capture is accepted") {
+    val code =
+      """
+        fn main(): Unit =
+          let msg = int_to_str 7;
+          let say: Int -> Int -> Unit =
+            ~{ x: Int, y: Int ->
+              println msg;
+            }
+          ;
+
+          let g: Int -> Unit = say 1;
+          g 2;
+        ;
+      """
+
+    semState(code).map { result =>
+      val escapeErrors = result.errors.collect { case e: SemanticError.BorrowedPapEscapeViaReturn =>
+        e
+      }
+      assert(
+        escapeErrors.isEmpty,
+        s"Expected non-escaping borrowed Direct PAP to be accepted, got: $escapeErrors"
+      )
+    }
+  }
+
+  test("PAP over already-applied consuming heap arg moves source binding") {
+    val code =
+      """
+        fn consume_first(~msg: String, n: Int): Unit = println msg;;
+
+        fn main(): Unit =
+          let msg = int_to_str 7;
+          let f: Int -> Unit = consume_first msg;
+          println msg;
+          f 0;
+        ;
+      """
+
+    semState(code).map { result =>
+      val errors = result.errors.collect { case e: SemanticError.UseAfterMove => e }
+      assert(errors.nonEmpty, "Expected UseAfterMove after moving heap arg into PAP")
+    }
+  }
+
   test("consuming param not last use detected") {
     val code =
       """

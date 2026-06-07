@@ -676,7 +676,8 @@ case class DirectCallable(
   entryName:       String,
   captureOperands: List[DirectOperand],
   paramTypes:      List[String]   = Nil,
-  returnType:      Option[String] = None
+  returnType:      Option[String] = None,
+  params:          List[FnParam]  = Nil
 )
 
 case class DirectOperand(

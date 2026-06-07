@@ -167,6 +167,10 @@ object SemanticErrorPrinter:
         val location = locationOf(lambda)
         s"${Console.RED}Cannot return borrow-capturing closure at $location [phase: $phase]${Console.RESET}"
 
+      case SemanticError.BorrowedPapEscapeViaReturn(term, phase) =>
+        val location = locationOf(term)
+        s"${Console.RED}Cannot return partial application with borrowed heap payloads at $location [phase: $phase]${Console.RESET}"
+
       case SemanticError.TypeCheckingError(error) =>
         prettyPrintTypeError(error)
 

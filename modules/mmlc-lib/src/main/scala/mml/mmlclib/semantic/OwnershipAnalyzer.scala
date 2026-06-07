@@ -16,11 +16,13 @@ enum OwnershipState derives CanEqual:
 
 /** Binding info: ownership state, type, ID for selecting __free_T, and optional witness boolean */
 case class BindingInfo(
-  state:      OwnershipState,
-  bindingTpe: Option[Type]   = None,
-  bindingId:  Option[String] = None,
-  witness:    Option[String] = None, // Name of __owns_<binding> if mixed ownership
-  freeFn:     Option[String] = None // Override free function name (for closures)
+  state:           OwnershipState,
+  bindingTpe:      Option[Type]   = None,
+  bindingId:       Option[String] = None,
+  witness:         Option[String] = None, // Name of __owns_<binding> if mixed ownership
+  freeFn:          Option[String] = None, // Override free function name (for closures)
+  borrowedHeapEnv: Boolean        = false,
+  fnParams:        List[FnParam]  = Nil
 )
 
 case class OwnedBinding(
@@ -51,13 +53,35 @@ case class OwnershipScope(
     copy(bindings = bindings + (name -> BindingInfo(OwnershipState.Owned, tpe, id)))
 
   def withOwnedClosure(
-    name:   String,
-    tpe:    Option[Type],
-    id:     Option[String],
-    freeFn: String
+    name:            String,
+    tpe:             Option[Type],
+    id:              Option[String],
+    freeFn:          String,
+    borrowedHeapEnv: Boolean = false
   ): OwnershipScope =
     copy(bindings =
-      bindings + (name -> BindingInfo(OwnershipState.Owned, tpe, id, freeFn = Some(freeFn)))
+      bindings + (name -> BindingInfo(
+        OwnershipState.Owned,
+        tpe,
+        id,
+        freeFn          = Some(freeFn),
+        borrowedHeapEnv = borrowedHeapEnv
+      ))
+    )
+
+  def withOwnedFunction(
+    name:            String,
+    tpe:             Option[Type],
+    id:              Option[String],
+    borrowedHeapEnv: Boolean
+  ): OwnershipScope =
+    copy(bindings =
+      bindings + (name -> BindingInfo(
+        OwnershipState.Owned,
+        tpe,
+        id,
+        borrowedHeapEnv = borrowedHeapEnv
+      ))
     )
 
   def withMixedOwnership(
@@ -76,13 +100,32 @@ case class OwnershipScope(
   def withMoved(name: String, source: SourceOrigin): OwnershipScope =
     val existing = bindings.get(name)
     copy(
-      bindings =
-        bindings + (name -> BindingInfo(OwnershipState.Moved, existing.flatMap(_.bindingTpe))),
+      bindings = bindings + (name -> BindingInfo(
+        OwnershipState.Moved,
+        existing.flatMap(_.bindingTpe),
+        existing.flatMap(_.bindingId),
+        freeFn          = existing.flatMap(_.freeFn),
+        borrowedHeapEnv = existing.exists(_.borrowedHeapEnv),
+        fnParams        = existing.map(_.fnParams).getOrElse(Nil)
+      )),
       movedAt = movedAt + (name -> source)
     )
 
   def withBorrowed(name: String): OwnershipScope =
     copy(bindings = bindings + (name -> BindingInfo(OwnershipState.Borrowed)))
+
+  def withBorrowedFunction(
+    name:            String,
+    borrowedHeapEnv: Boolean,
+    fnParams:        List[FnParam]
+  ): OwnershipScope =
+    copy(bindings =
+      bindings + (name -> BindingInfo(
+        OwnershipState.Borrowed,
+        borrowedHeapEnv = borrowedHeapEnv,
+        fnParams        = fnParams
+      ))
+    )
 
   def withLiteral(name: String): OwnershipScope =
     copy(bindings = bindings + (name -> BindingInfo(OwnershipState.Literal)))
@@ -97,7 +140,7 @@ case class OwnershipScope(
   def ownedBindings: List[OwnedBinding] =
     bindings
       .collect:
-        case (name, BindingInfo(OwnershipState.Owned, tpe, id, witness, freeFn)) =>
+        case (name, BindingInfo(OwnershipState.Owned, tpe, id, witness, freeFn, _, _)) =>
           OwnedBinding(name, tpe, id, witness, freeFn)
       .toList
 
@@ -701,6 +744,111 @@ object OwnershipAnalyzer:
   private enum ReturnEscape:
     case RefEscape(ref: Ref)
     case LambdaEscape(lambda: Lambda)
+    case PapEscape(term: Term)
+
+  private def typeNameIsHeap(tpe: Option[Type], resolvables: ResolvablesIndex): Boolean =
+    tpe.flatMap(getTypeName).exists(isHeapType(_, resolvables))
+
+  private def refIsHeap(ref: Ref, scope: OwnershipScope): Boolean =
+    typeNameIsHeap(ref.typeSpec.orElse(ref.typeAsc), scope.resolvables) ||
+      scope.getInfo(ref.name).exists(info => typeNameIsHeap(info.bindingTpe, scope.resolvables)) ||
+      ref.resolvedId
+        .flatMap(scope.resolvables.lookup)
+        .exists:
+          case param: FnParam =>
+            typeNameIsHeap(param.typeSpec.orElse(param.typeAsc), scope.resolvables)
+          case bnd: Bnd => typeNameIsHeap(bnd.typeSpec.orElse(bnd.typeAsc), scope.resolvables)
+          case _ => false
+
+  private def exprHasLocalHeapPayload(expr: Expr, scope: OwnershipScope): Boolean =
+    val heapTyped = typeNameIsHeap(expr.typeSpec.orElse(expr.typeAsc), scope.resolvables)
+    if !heapTyped then false
+    else
+      expr.terms.headOption match
+        case Some(ref: Ref) =>
+          scope
+            .getState(ref.name)
+            .exists:
+              case OwnershipState.Owned | OwnershipState.Borrowed | OwnershipState.Moved => true
+              case OwnershipState.Literal | OwnershipState.Global => false
+        case Some(_: LiteralString) => false
+        case _ => true
+
+  private def getBaseLambda(term: Ref | App | Lambda, scope: OwnershipScope): Option[Lambda] =
+    getBaseFn(term)
+      .flatMap: ref =>
+        ref.resolvedId
+          .flatMap(scope.resolvables.lookup)
+          .collect { case bnd: Bnd => bnd }
+          .flatMap(_.value.terms.collectFirst { case lambda: Lambda => lambda })
+      .orElse:
+        term match
+          case lambda: Lambda => lambda.some
+          case _ => none
+
+  private def appDepth(term: Ref | App | Lambda): Int =
+    term match
+      case App(_, fn, _, _, _) => 1 + appDepth(fn)
+      case _ => 0
+
+  private def appArgs(term: Ref | App | Lambda): List[Expr] =
+    term match
+      case App(_, fn, arg, _, _) => appArgs(fn) :+ arg
+      case _ => Nil
+
+  private def appReturnsFunction(app: App): Boolean =
+    app.typeSpec.flatMap(functionType).nonEmpty
+
+  private def lambdaHasHeapCaptures(lambda: Lambda, scope: OwnershipScope): Boolean =
+    lambda.captures.exists(cap => refIsHeap(cap.ref, scope))
+
+  private def baseBindingHasBorrowedHeapEnv(app: App, scope: OwnershipScope): Boolean =
+    getBaseFn(app).exists(ref => scope.getInfo(ref.name).exists(_.borrowedHeapEnv))
+
+  private def partialApplicationBorrowedHeapPayload(app: App, scope: OwnershipScope): Boolean =
+    if !appReturnsFunction(app) then false
+    else
+      getBaseLambda(app, scope) match
+        case None => baseBindingHasBorrowedHeapEnv(app, scope)
+        case Some(lambda) =>
+          val appliedCount = appDepth(app)
+          if appliedCount >= lambda.params.size then false
+          else
+            val appliedArgs = appArgs(app)
+            val borrowedAppliedArg =
+              appliedArgs.zip(lambda.params).exists { case (arg, param) =>
+                !param.consuming && exprHasLocalHeapPayload(arg, scope)
+              }
+            val borrowedDirectCapture =
+              lambdaHasHeapCaptures(lambda, scope) || baseBindingHasBorrowedHeapEnv(app, scope)
+            borrowedAppliedArg || borrowedDirectCapture
+
+  private def scopeWithAdministrativeParam(
+    scope: OwnershipScope,
+    param: FnParam,
+    arg:   Expr
+  ): OwnershipScope =
+    val shadowed = scope.copy(bindings = scope.bindings - param.name)
+    arg.terms.headOption.map(unwrapTerm) match
+      case Some(lambda: Lambda) =>
+        shadowed.withBorrowedFunction(
+          param.name,
+          borrowedHeapEnv = lambdaHasHeapCaptures(lambda, scope),
+          fnParams        = lambda.params
+        )
+      case Some(app: App) if appReturnsFunction(app) =>
+        shadowed.withOwnedFunction(
+          param.name,
+          arg.typeSpec.orElse(arg.typeAsc),
+          param.id,
+          borrowedHeapEnv = partialApplicationBorrowedHeapPayload(app, scope)
+        )
+      case Some(ref: Ref) =>
+        scope.getInfo(ref.name) match
+          case Some(info) =>
+            shadowed.copy(bindings = shadowed.bindings + (param.name -> info))
+          case None => shadowed
+      case _ => shadowed
 
   /** Walks the return position for values that would unsafely escape if returned. Borrowed Refs are
     * classified against the current scope; borrow-capturing lambda literals are classified by their
@@ -712,14 +860,21 @@ object OwnershipAnalyzer:
       term match
         case ref: Ref if scope.getState(ref.name).contains(OwnershipState.Borrowed) =>
           List(ReturnEscape.RefEscape(ref))
+        case ref: Ref if scope.getInfo(ref.name).exists(_.borrowedHeapEnv) =>
+          List(ReturnEscape.PapEscape(ref))
         case lambda: Lambda if lambda.captures.nonEmpty && !lambda.isMove =>
           List(ReturnEscape.LambdaEscape(lambda))
+        case app: App if partialApplicationBorrowedHeapPayload(app, scope) =>
+          List(ReturnEscape.PapEscape(app))
         case app: App if administrativeReturnWrapper(app) =>
           app.fn match
             case lambda: Lambda =>
-              val descentScope = lambda.params.foldLeft(scope) { (s, p) =>
-                s.copy(bindings = s.bindings - p.name)
-              }
+              val descentScope = lambda.params match
+                case List(param) => scopeWithAdministrativeParam(scope, param, app.arg)
+                case _ =>
+                  lambda.params.foldLeft(scope) { (s, p) =>
+                    s.copy(bindings = s.bindings - p.name)
+                  }
               val bodyReturns = returnedBorrowingValues(lambda.body, descentScope)
               val argReturns =
                 lambda.params.headOption
@@ -799,8 +954,8 @@ object OwnershipAnalyzer:
     * if it's consuming, None otherwise.
     */
   private def getConsumingParam(
-    fn:          Ref | App | Lambda,
-    resolvables: ResolvablesIndex
+    fn:    Ref | App | Lambda,
+    scope: OwnershipScope
   ): Option[FnParam] =
     // For an App chain like App(App(Ref(f), x), y), we need to figure out
     // which parameter position 'y' corresponds to.
@@ -811,15 +966,18 @@ object OwnershipAnalyzer:
 
     val depth = countAppDepth(fn)
     getBaseFn(fn).flatMap: ref =>
-      ref.resolvedId
-        .flatMap(resolvables.lookup)
-        .collect { case bnd: Bnd => bnd }
-        .flatMap: bnd =>
-          // Get lambda from bnd.value
-          bnd.value.terms.collectFirst { case l: Lambda => l }
-        .flatMap: lambda =>
-          // depth=0 means we're applying to first param, depth=1 to second, etc.
-          lambda.params.lift(depth).filter(_.consuming)
+      val localParam =
+        scope.getInfo(ref.name).flatMap(_.fnParams.lift(depth).filter(_.consuming))
+      localParam.orElse:
+        ref.resolvedId
+          .flatMap(scope.resolvables.lookup)
+          .collect { case bnd: Bnd => bnd }
+          .flatMap: bnd =>
+            // Get lambda from bnd.value
+            bnd.value.terms.collectFirst { case l: Lambda => l }
+          .flatMap: lambda =>
+            // depth=0 means applying to first param, depth=1 to second, etc.
+            lambda.params.lift(depth).filter(_.consuming)
 
   @tailrec
   private def unwrapTerm(term: Term): Term = term match
@@ -835,7 +993,7 @@ object OwnershipAnalyzer:
     arg:   Expr,
     scope: OwnershipScope
   ): (OwnershipScope, List[SemanticError]) =
-    getConsumingParam(fn, scope.resolvables) match
+    getConsumingParam(fn, scope) match
       case Some(consumingParam) =>
         // Get the ref being passed (if it's a simple ref)
         arg.terms.headOption.map(unwrapTerm) match
@@ -887,7 +1045,7 @@ object OwnershipAnalyzer:
     */
   private def isMoveOnRebind(name: String, scope: OwnershipScope): Boolean =
     scope.getInfo(name) match
-      case Some(BindingInfo(OwnershipState.Owned, Some(tpe), _, None, _)) =>
+      case Some(BindingInfo(OwnershipState.Owned, Some(tpe), _, None, _, _, _)) =>
         TypeUtils.getTypeName(tpe).exists(TypeUtils.isHeapType(_, scope.resolvables))
       case _ => false
 
@@ -1005,18 +1163,42 @@ object OwnershipAnalyzer:
         }.flatten
         val newScope = owns
           .map { t =>
+            val borrowedPapEnv = arg.terms.headOption
+              .map(unwrapTerm)
+              .exists:
+                case app: App => partialApplicationBorrowedHeapPayload(app, argResult.scope)
+                case _ => false
             closureFreeFn match
               case Some(freeFn) =>
-                argResult.scope.withOwnedClosure(param.name, Some(t), param.id, freeFn)
+                argResult.scope.withOwnedClosure(
+                  param.name,
+                  Some(t),
+                  param.id,
+                  freeFn,
+                  borrowedHeapEnv = borrowedPapEnv
+                )
               case None =>
-                argResult.scope.withOwned(param.name, Some(t), param.id)
+                if t.isInstanceOf[TypeFn] then
+                  argResult.scope.withOwnedFunction(
+                    param.name,
+                    Some(t),
+                    param.id,
+                    borrowedHeapEnv = borrowedPapEnv
+                  )
+                else argResult.scope.withOwned(param.name, Some(t), param.id)
           }
           .getOrElse(argResult.scope.withBorrowed(param.name))
         (newScope, None)
       case Some(param) =>
-        val newScope = arg.terms.headOption match
+        val newScope = arg.terms.headOption.map(unwrapTerm) match
           case Some(_: LiteralString) =>
             argResult.scope.withLiteral(param.name)
+          case Some(lambda: Lambda) =>
+            argResult.scope.withBorrowedFunction(
+              param.name,
+              borrowedHeapEnv = lambdaHasHeapCaptures(lambda, argResult.scope),
+              fnParams        = lambda.params
+            )
           case Some(ref: Ref) if isMoveOnRebind(ref.name, argResult.scope) =>
             val srcInfo = argResult.scope.getInfo(ref.name).get
             argResult.scope
@@ -1332,7 +1514,7 @@ object OwnershipAnalyzer:
     val falseResult = analyzeExpr(ifFalse, condResult.scope)
 
     val outerOwnedBindings = condResult.scope.bindings.collect {
-      case (name, info @ BindingInfo(OwnershipState.Owned, _, _, _, _)) => (name, info)
+      case (name, info @ BindingInfo(OwnershipState.Owned, _, _, _, _, _, _)) => (name, info)
     }
 
     val freesInTrueBranch = outerOwnedBindings.toList.flatMap { case (name, info) =>
@@ -1477,6 +1659,8 @@ object OwnershipAnalyzer:
       case ReturnEscape.RefEscape(_) => none
       case ReturnEscape.LambdaEscape(lambda) =>
         SemanticError.BorrowClosureEscapeViaReturn(lambda, PhaseName).some
+      case ReturnEscape.PapEscape(term) =>
+        SemanticError.BorrowedPapEscapeViaReturn(term, PhaseName).some
     }
 
     // Capture ownership: move lambdas move heap captures; borrow lambdas leave them in place.

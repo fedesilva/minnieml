@@ -686,9 +686,9 @@ slice or accept temporary breakage; do not invent a shim.
 - **Author direction:** clone-per-PAP is wrong. PAP creation must not insert hidden heap clones.
   S8.6.1b replaces this approach with explicit PAP ownership/lifetime rules.
 
-#### S8.6.1b — PAP ownership without implicit cloning (OPEN)
-- **Status:** Next subtask. This replaces the clone-per-PAP direction in S8.6.1a. Do not land an
-  implementation that silently clones heap payloads into a PAP env.
+#### S8.6.1b — PAP ownership without implicit cloning (landed)
+- **Status:** Landed. This replaces the clone-per-PAP direction in S8.6.1a. PAP creation does not
+  silently clone heap payloads into a PAP env.
 - **Spec:** `context/specs/pap-ownership-model.md`.
 - **Bug:** generated PAP envs currently lack an explicit ownership/lifetime model for heap
   payloads. A PAP over a borrowed heap argument or borrowed Direct trailing payload is valid only
@@ -701,15 +701,18 @@ slice or accept temporary breakage; do not invent a shim.
     own that value only through the explicit move.
   - Partial application with any remaining consuming parameter stays rejected.
   - No implicit clone may be inserted by PAP creation to make ownership work.
-- **Implementation direction:**
-  1. Back out Direct PAP clone-per-payload behavior from S8.6.1a.
-  2. Add PAP payload metadata that records borrowed vs owned heap payloads.
-  3. Teach ownership analysis to reject escaping PAPs containing borrowed heap payloads. A
-     conservative first slice may reject all heap-borrow PAP payloads until a non-escape proof is
-     available.
-  4. If accepting already-applied consuming heap arguments, mark the source binding moved into the
-     PAP and make the PAP env destructor free that moved payload exactly once.
-  5. Keep scalar payload behavior and saturated Direct calls unchanged.
+- **Landed scope:**
+  1. Direct PAP clone-per-payload behavior is removed. PAP env creation stores the actual borrowed
+     or moved operand.
+  2. Ownership analysis records borrowed heap env state for lambda/PAP values and rejects escaping
+     PAPs that contain borrowed heap payloads.
+  3. Already-applied consuming heap arguments move into the PAP env; the source binding is marked
+     moved at PAP creation.
+  4. Direct PAP env destructors free owned heap fields when the PAP is dropped before full
+     application. When the PAP is fully applied, owned fields are forwarded to the consuming callee
+     and the env destructor slot is rewritten to raw-env-only cleanup.
+  5. Partial application with any remaining consuming parameter stays rejected. Scalar payload
+     behavior and saturated Direct calls are unchanged.
 - **Tests:**
   - Non-escaping PAP over borrowed heap argument accepted when proven local.
   - Escaping PAP over borrowed heap argument rejected.
@@ -718,8 +721,10 @@ slice or accept temporary breakage; do not invent a shim.
   - If moved already-applied heap arguments are accepted, use-after-move and exactly-once destructor
     behavior are pinned.
   - Generated PAP creation IR contains no implicit heap clone calls.
-- **Acceptance:** full compiler verification plus `./tests/mem/run.sh all`; S8.6.1a ASan UAF shape
-  must be either rejected at semantic time or accepted only through explicit move ownership.
+- **Acceptance:** S8.6.1a's borrowed escaping UAF shape is rejected at semantic time unless
+  rewritten so the PAP owns the heap payload through explicit `~` ownership transfer. PAP creation
+  IR contains no implicit heap clone calls, and owned PAP env fields are freed exactly once across
+  both drop-before-call and full-application paths.
 
 - **Build / QA:**
   - [ ] Wrap lines over 100 cols added by this workstream; scalafmt does not reflow long

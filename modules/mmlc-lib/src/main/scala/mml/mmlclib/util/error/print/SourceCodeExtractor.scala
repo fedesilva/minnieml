@@ -169,6 +169,12 @@ object SourceCodeExtractor:
           .map(s => s"\n$s")
           .getOrElse("")
 
+      case SemanticError.BorrowedPapEscapeViaReturn(term, _) =>
+        spanOf(term)
+          .flatMap(extractSnippet(sourceInfo, _))
+          .map(s => s"\n$s")
+          .getOrElse("")
+
       case SemanticError.VisibilityViolation(ref, _, _) =>
         spanOf(ref)
           .flatMap(extractSnippet(sourceInfo, _))

@@ -451,14 +451,13 @@ The same ownership rules apply to PAP payloads as to ordinary values:
 - An escaping PAP must not contain borrowed heap payloads.
 - Owned heap payloads are destroyed by the PAP environment if the PAP is dropped before it is
   fully applied.
+- When a PAP with owned payloads is fully applied, those payloads are forwarded to the consuming
+  callee and later PAP cleanup frees only the raw environment.
 - Partial application is rejected when any remaining unapplied parameter is consuming.
 
 This rule applies equally to ordinary callables and direct-callable lowering. The source callable
 may be direct and non-escaping while the generated PAP value itself escapes; ownership is checked
 on the generated value that actually stores the payloads.
-
-Implementation note: PAP heap-payload ownership enforcement is currently being implemented. The
-rules above are the model; this note exists while implementation catches up.
 
 ---
 

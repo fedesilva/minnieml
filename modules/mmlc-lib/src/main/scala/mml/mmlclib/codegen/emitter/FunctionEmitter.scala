@@ -1092,7 +1092,8 @@ private def compileDirectBoundStatement(
     val entry = ScopeEntry(
       0,
       "Function",
-      directCallable = DirectCallable(fnName, outerCaps, paramTypes.toList, returnType.some).some
+      directCallable =
+        DirectCallable(fnName, outerCaps, paramTypes.toList, returnType.some, lambda.params).some
     )
     (stateAfterEval, entry, lambdaRes.exitBlock, cleanups)
 

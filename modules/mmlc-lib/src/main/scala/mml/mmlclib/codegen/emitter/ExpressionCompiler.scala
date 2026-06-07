@@ -793,8 +793,13 @@ private[emitter] def compileDirectLambda(
           val entry = ScopeEntry(
             0,
             "Function",
-            directCallable =
-              DirectCallable(fnName, innerCaptureOps, paramTypes, returnType.some).some
+            directCallable = DirectCallable(
+              fnName,
+              innerCaptureOps,
+              paramTypes,
+              returnType.some,
+              filteredParamsWithTypes.map(_._1)
+            ).some
           )
           p.name -> entry
         }.toMap

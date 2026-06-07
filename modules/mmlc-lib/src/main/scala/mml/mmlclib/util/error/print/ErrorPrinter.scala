@@ -74,6 +74,7 @@ object ErrorPrinter:
     case SemanticError.CapturedBorrowedHeapBinding(ref, _) => startPosOf(ref)
     case SemanticError.CapturedMovedHeapBinding(ref, _, _) => startPosOf(ref)
     case SemanticError.BorrowClosureEscapeViaReturn(lambda, _) => startPosOf(lambda)
+    case SemanticError.BorrowedPapEscapeViaReturn(term, _) => startPosOf(term)
     case SemanticError.VisibilityViolation(ref, _, _) => startPosOf(ref)
     case SemanticError.TypeCheckingError(error) =>
       // For type errors, we need to extract the position from the nested error
@@ -236,6 +237,9 @@ object ErrorPrinter:
 
       case SemanticError.BorrowClosureEscapeViaReturn(lambda, phase) =>
         s"${Console.RED}Cannot return borrow-capturing closure at ${locationOf(lambda)}${Console.RESET}\n${Console.YELLOW}Phase: $phase${Console.RESET}"
+
+      case SemanticError.BorrowedPapEscapeViaReturn(term, phase) =>
+        s"${Console.RED}Cannot return partial application with borrowed heap payloads at ${locationOf(term)}${Console.RESET}\n${Console.YELLOW}Phase: $phase${Console.RESET}"
 
       case SemanticError.TypeCheckingError(error) =>
         // Delegate to SemanticErrorPrinter to avoid duplication

@@ -37,6 +37,11 @@
 
   * sbtn has a faster startup time, since it keeps a hot instance in the background.
   * non negotiable
+  * do not run multiple `sbtn` commands in parallel. The thin client/server socket is
+    single-session in practice, and concurrent invocations collide or fail with connection
+    errors.
+  * if multiple sbt tasks are needed, batch them into one `sbtn "task1" "task2"` command
+    or run separate `sbtn` commands sequentially.
   * if sbtn gets stuck `sbtn shutdown`
 
 ### Running the Compiler
