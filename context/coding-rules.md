@@ -40,7 +40,7 @@
   * do not run multiple `sbtn` commands in parallel. The thin client/server socket is
     single-session in practice, and concurrent invocations collide or fail with connection
     errors.
-  * if multiple sbt tasks are needed, batch them into one `sbtn "task1" "task2"` command
+  * if multiple sbt tasks are needed, batch them into one `sbtn "clean;compile;test"` command
     or run separate `sbtn` commands sequentially.
   * if sbtn gets stuck `sbtn shutdown`
 
