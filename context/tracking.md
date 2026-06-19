@@ -182,7 +182,11 @@ Slice progress (see `context/specs/unify-lambdas-plan.md`):
 - [ ] S10 — `BindingMeta` reduction
 - [ ] S11 — Stack-promotion for non-escaping move-capturing lambdas
 - [x] S6.5 — Codegen hygiene: deduplicate named-function closure thunks (COMPLETE)
-- [ ] Accept nullary lambda heads in immediate application — `TypeChecker.scala:784` guards on `lambda.params.nonEmpty`, so `App(Lambda(params=[], …), ())` falls through to `determineApplicationType` (no `Lambda` arm) and is rejected as `InvalidApplication`. Ignored test: `MaterializationAnalyzerTests.scala` — `"nullary lambda literal in immediate application is direct"`. Un-ignore once accepted.
+- [x] Accept nullary lambda heads in immediate application (COMPLETE) —
+  `TypeChecker.scala` routes nullary lambda heads through immediate-lambda checking,
+  validates the explicit `Unit` argument, and types the lambda as `Unit -> T`.
+  `MaterializationAnalyzerTests.scala` now runs the `"nullary lambda literal in
+  immediate application is direct"` regression.
 - [x] Un-ignore `ClosureCodegenTest` "local move capturing closures free through their specific env destructor" at S6. (COMPLETE)
 - [x] Close the pinned mem regression `tests/mem/direct-move-closure.mml` at S6. (COMPLETE)
 
@@ -205,6 +209,12 @@ Slice progress (see `context/specs/unify-lambdas-plan.md`):
 * add commands to manage the cache (init, clean)
 
 ## Change Log
+
+- 2026-06-18: #255 unify-lambdas — accept nullary lambda heads in immediate application
+  - `TypeChecker.scala`: immediately-applied nullary lambdas now use the lambda application path,
+    check the explicit `Unit` argument, and compute a `Unit -> T` function type for the lambda.
+  - `MaterializationAnalyzerTests.scala`: un-ignored the nullary immediate-application regression
+    so arity-0 direct-call materialization remains pinned.
 
 - 2026-06-07: #255 unify-lambdas S8.6.1b — PAP ownership without implicit cloning
   - `OwnershipAnalyzer.scala` / `ExpressionRewriter.scala`: PAPs and lambda values now carry

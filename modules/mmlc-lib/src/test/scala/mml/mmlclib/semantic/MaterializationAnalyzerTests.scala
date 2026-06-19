@@ -149,13 +149,7 @@ class MaterializationAnalyzerTests extends BaseEffFunSuite:
   // lambdas sound: invocation is `App(ref, unit-literal)` so a called thunk's ref
   // sits at depth 1, while a value-position thunk ref sits at depth 0.
 
-  // Ignored: blocked by a pre-existing TypeChecker gap. `App(Lambda(params=[], ...), unit)`
-  // is rejected as InvalidApplication because the dispatch at TypeChecker.scala:784 guards
-  // `lambda.params.nonEmpty`, so arity-0 lambda heads never reach `checkImmediatelyAppliedLambda`
-  // and fall through to `determineApplicationType`, which has no Lambda arm. The analyzer
-  // logic exercised here (depth >= max(arity, 1) for arity-0 immediate application) is sound;
-  // un-ignore once the TypeChecker accepts nullary immediate application. See tracking.md.
-  test("nullary lambda literal in immediate application is direct".ignore) {
+  test("nullary lambda literal in immediate application is direct") {
     val code =
       """
         fn main(): Int = ({ 42; } ());;

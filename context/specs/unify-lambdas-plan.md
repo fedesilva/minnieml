@@ -744,9 +744,21 @@ slice or accept temporary breakage; do not invent a shim.
   - [x] Reconcile S8.5. Its "Remaining" listed PAP-env TBAA parity as open, but the
     changelog marks S8.5b complete (commit 5da9c68). Update S8.5 to match.
 
-- **Already tracked, not repeated here:** `__stmt` sequence-lambda marker (#265);
-  nullary lambda head in immediate application (`TypeChecker.scala:784`, Active Tasks).
+- **Already tracked, not repeated here:** `__stmt` sequence-lambda marker (#265).
 - **Sub-issue?** No — review cleanup gate before S9.
+
+#### Nullary lambda heads in immediate application (landed)
+- **Status:** Landed. `App(Lambda(params = Nil, body), ())` is accepted by the
+  immediate-lambda typechecking path.
+- **Bug:** nullary lambda heads in immediate application fell through to normal application,
+  where `determineApplicationType` has no `Lambda` arm and reported `InvalidApplication`.
+- **Landed scope:**
+  1. `TypeChecker.scala` dispatches every lambda head to immediate-lambda checking.
+  2. Nullary lambdas check their explicit `Unit` argument and receive a `Unit -> T` type.
+  3. Parameterized immediate lambdas keep their existing argument-first inference behavior.
+- **Tests:** `MaterializationAnalyzerTests.scala` runs the
+  `"nullary lambda literal in immediate application is direct"` regression.
+- **Sub-issue?** No — small bugfix before S9.
 
 ### S9 — Equivalence test pass
 - **Goal:** the spec's success criterion — same MML expressed as top-level fn / local

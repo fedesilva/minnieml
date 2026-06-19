@@ -778,19 +778,20 @@ object TypeChecker:
     paramContext: Map[String, FnParam],
     bindingName:  String
   ): CheckResult[App] =
-    // Special case: immediately-applied lambda (from let-expression desugaring)
-    // Must check arg first to infer lambda param type
+    // Special case: immediately-applied lambda.
+    // Parameterized forms check the argument first to infer the lambda parameter type.
     app.fn match
-      case lambda: Lambda if lambda.params.nonEmpty =>
+      case lambda: Lambda =>
         checkImmediatelyAppliedLambda(app, lambda, module, paramContext, bindingName)
       case _ =>
         checkNormalApplication(app, module, paramContext, bindingName)
 
-  /** Check immediately-applied lambda: App(Lambda([param], body), arg)
+  /** Check immediately-applied lambda: App(Lambda(params, body), arg)
     *
     * For let-expressions like `let a = 1; a + 1`, the parser desugars to
     * `App(Lambda([a], a + 1), 1)`. The param has no type annotation, so we must check the arg first
-    * to infer the param type, then check the body.
+    * to infer the param type, then check the body. Nullary lambdas are called with an explicit Unit
+    * argument and typed as `Unit -> T`.
     */
   private def checkImmediatelyAppliedLambda(
     app:          App,
@@ -799,8 +800,21 @@ object TypeChecker:
     paramContext: Map[String, FnParam],
     bindingName:  String
   ): CheckResult[App] =
+    lambda.params.headOption match
+      case Some(param) =>
+        checkAppliedLambdaWithParam(app, lambda, param, module, paramContext, bindingName)
+      case None =>
+        checkAppliedNullaryLambda(app, lambda, module, paramContext, bindingName)
+
+  private def checkAppliedLambdaWithParam(
+    app:          App,
+    lambda:       Lambda,
+    param:        FnParam,
+    module:       Module,
+    paramContext: Map[String, FnParam],
+    bindingName:  String
+  ): CheckResult[App] =
     // Step 1: Check arg first to get its type
-    val param          = lambda.params.head
     val argBindingName = normalizeBindingName(param.name)
     // For recursive let bindings: if the arg is a lambda with a return type
     // ascription, pre-seed the binding's type so the lambda body can
@@ -878,6 +892,51 @@ object TypeChecker:
     CheckResult(
       app.copy(fn = checkedLambda, arg = checkedArg.value, typeSpec = bodyType),
       checkedArg.errors ++ paramErrors ++ checkedBody.errors ++ argErrors ++ bodyErrors
+    )
+
+  private def checkAppliedNullaryLambda(
+    app:          App,
+    lambda:       Lambda,
+    module:       Module,
+    paramContext: Map[String, FnParam],
+    bindingName:  String
+  ): CheckResult[App] =
+    val expectedArgType = unitTypeRef(app.arg.source)
+    val checkedArg =
+      checkExprWithContext(app.arg, module, paramContext, Some(expectedArgType), bindingName)
+    val argType = checkedArg.value.typeSpec
+
+    val argErrors =
+      argType match
+        case Some(actualType) if !areTypesCompatible(expectedArgType, actualType, module) =>
+          Vector(TypeError.TypeMismatch(app.arg, expectedArgType, actualType, phaseName, None))
+        case None if checkedArg.errors.isEmpty =>
+          Vector(
+            TypeError.UnresolvableType(
+              app.arg,
+              Some(UnresolvableTypeContext.Argument),
+              phaseName
+            )
+          )
+        case _ => Vector.empty
+
+    val checkedBody =
+      checkExprWithContext(lambda.body, module, paramContext, None, bindingName)
+    val bodyType = checkedBody.value.typeSpec
+    val bodyErrors =
+      if bodyType.isEmpty && checkedBody.errors.isEmpty then
+        Vector(TypeError.UnresolvableType(lambda.body, None, phaseName))
+      else Vector.empty
+
+    val lambdaTypeSpec =
+      bodyType.map(returnType =>
+        TypeFn(lambda.source, canonicalCallableParamTypes(lambda.source, Nil), returnType)
+      )
+    val checkedLambda = lambda.copy(body = checkedBody.value, typeSpec = lambdaTypeSpec)
+
+    CheckResult(
+      app.copy(fn = checkedLambda, arg = checkedArg.value, typeSpec = bodyType),
+      checkedArg.errors ++ argErrors ++ checkedBody.errors ++ bodyErrors
     )
 
   /** Check normal application (non-lambda function) */
@@ -1276,7 +1335,10 @@ object TypeChecker:
   ): NonEmptyList[Type] =
     NonEmptyList
       .fromList(paramTypes)
-      .getOrElse(NonEmptyList.one(TypeRef(source, "Unit", Some("stdlib::typedef::Unit"), Nil)))
+      .getOrElse(NonEmptyList.one(unitTypeRef(source)))
+
+  private def unitTypeRef(source: SourceOrigin): TypeRef =
+    TypeRef(source, "Unit", Some("stdlib::typedef::Unit"), Nil)
 
   private def unwrapTypeGroup(typeSpec: Type): Type =
     typeSpec match
