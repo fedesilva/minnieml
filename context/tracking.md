@@ -199,6 +199,14 @@ Slice progress (see `context/specs/unify-lambdas-plan.md`):
 - [x] Un-ignore `ClosureCodegenTest` "local move capturing closures free through their specific env destructor" at S6. (COMPLETE)
 - [x] Close the pinned mem regression `tests/mem/direct-move-closure.mml` at S6. (COMPLETE)
 
+
+### Lambda lifting bug
+
+as seen in `context/specs/bug-lambda-lifter.md`
+
+beware the reporter know nothing about mmlc, so while the report is based on a real
+ir and the referenced file (astar3.mml) exists, things like "phase names" are just suggestions.
+
 ### define new tasks
 
 * review the already existing ticket for check command
