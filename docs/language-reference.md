@@ -619,6 +619,10 @@ struct Point { x: Int, y: Int };         // Not a heap type
 The compiler generates `__free_T` and `__clone_T` functions for heap structs
 automatically. See [Memory management](#7-memory-management) for ownership details.
 
+Struct construction owns its fields. Passing a value to a heap-typed struct field is
+an ownership transfer, so the argument must be owned. Borrowed values cannot be
+assigned into owning struct fields.
+
 ### Function types
 
 Functions have types of the form `T1 -> T2 -> ... -> Tn -> R`:
@@ -928,17 +932,18 @@ When `free=` is provided, the ownership system calls the specified function inst
 This only affects `@native` types. User-defined `struct` types always use automatically
 generated `__free_<Name>` functions.
 
-### Struct construction and cloning
+### Struct construction
 
-Struct constructors clone their arguments. For heap-typed fields, the constructor
-calls `__clone_T` to deep-copy the value. The caller retains ownership of the original.
+Struct construction owns its fields. Passing a value to a heap-typed field is an
+ownership transfer, so the argument must be owned. Borrowed values cannot be assigned
+into owning struct fields.
 
 ```mml
 fn example(): Unit =
   let name = readline();       // name is owned
-  let user = User name 25;     // Constructor clones name
-  println name;                // OK: caller still owns name
-  println user.name;           // OK: user owns its own copy
+  let user = User name 25;     // Constructor moves name into user
+  // println name;             // error: use after move
+  println user.name;           // OK: user owns the field
 ;
 ```
 

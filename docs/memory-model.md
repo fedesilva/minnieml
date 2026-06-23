@@ -219,6 +219,10 @@ Constructors of structs with heap fields consume those fields:
 struct User { name: String, role: String };
 ```
 
+Struct construction is an ownership sink. Passing a value to a heap-typed struct
+field transfers ownership to the constructed struct, so the argument must be owned.
+Borrowed values cannot be assigned into owning struct fields.
+
 You can think of that as:
 
 ```mml

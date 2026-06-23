@@ -83,6 +83,31 @@ argument) is *not* a closure-specific concept. The ownership analyzer already di
 those escape paths at the use site for any owned heap value. Lambda values use the same
 machinery.
 
+Struct construction is an ownership sink. Storing a function value into a struct field must apply
+the same transfer rules as any other sink: a borrow-capturing closure cannot enter the struct,
+a move-capturing closure transfers ownership into the struct, and a non-capturing/null-env function
+value carries no owned environment to free.
+
+Open bug found during S9 inspection: a borrowed closure can currently be laundered through a struct
+field and later passed to a consuming function parameter. Direct argument and `let` alias paths
+reject the borrowed closure, and return escape rejects, but this shape compiles and can detonate at
+runtime:
+
+```mml
+struct Holder { f: Int -> Int };
+
+fn consume_fn(~f: Int -> Int, x: Int): Int =
+  f x;
+;
+
+pub fn main(): Int =
+  let seed = 10;
+  let add_seed = { x: Int -> x + seed; };
+  let holder = Holder add_seed;
+  consume_fn holder.f 10;
+;
+```
+
 The rules below remain authoritative. Items 17–25 specialize the generic rules in items 1–16
 with closure-specific diagnostic phrasing; the underlying checks become instances of the generic
 ownership pipeline, not parallel closure-only logic.

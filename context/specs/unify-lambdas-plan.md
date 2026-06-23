@@ -760,6 +760,29 @@ slice or accept temporary breakage; do not invent a shim.
   `"nullary lambda literal in immediate application is direct"` regression.
 - **Sub-issue?** No — small bugfix before S9.
 
+#### Items Pending Review
+
+- [ ] **Nullary immediate lambdas need codegen support.** Typechecking accepts
+  `({ 42; } ())` by routing every `App(Lambda(...), ...)` through immediate-lambda
+  checking, including zero-parameter lambdas. Codegen still sends lambda heads through
+  `compileLambdaApp`, whose supported shape is one lambda parameter and one argument.
+  Either codegen must lower nullary immediate lambdas correctly, or typechecking must
+  reject the shape until codegen supports it.
+
+- [ ] **Direct partial-application arity must count non-void applied arguments.**
+  Direct callables with `Unit` parameters currently compare source argument count
+  against the non-void LLVM parameter count. Since `compileArgs` drops `Unit`
+  arguments, a partial call such as `f ()` for `Unit -> Int -> Int` can be treated as
+  saturated instead of building a PAP closure. The partial-call decision must use the
+  same non-void argument accounting as lowering.
+
+- [ ] **PAP field ownership must align with non-void params.** Direct PAP creation zips
+  already-compiled arguments, which have had `Unit` arguments removed, with the full
+  source parameter list. After a leading `Unit` parameter, a stored heap argument can
+  be paired with the wrong `FnParam`, so consuming ownership metadata and destructor
+  generation can be assigned to the wrong field. Filter or otherwise align the
+  parameter metadata to the compiled non-void argument list before building PAP fields.
+
 ### S9 — Equivalence test pass
 - **Goal:** the spec's success criterion — same MML expressed as top-level fn / local
   fn / let-bound lambda / lambda literal produces equivalent type, ownership, IR, and
