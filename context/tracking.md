@@ -180,7 +180,8 @@ Slice progress (see `context/specs/unify-lambdas-plan.md`):
     `docs/memory-model.md`.
 - [ ] S9 — Equivalence test pass
   - GitHub: `https://github.com/fedesilva/minnieml/issues/268`
-  - Bug found during S9 inspection: borrowed closure values can be laundered through a struct
+  - Bug: Struct arguments are not being correctly treated as move arguments.
+    - borrowed closure values can be laundered through a struct
     field and later passed to a consuming `~f: Int -> Int` parameter. Direct argument and `let`
     alias cases reject with `BorrowedValuePassedToConsumingParam`, and return escape rejects, but
     `struct Holder { f: Int -> Int }; let h = Holder add_seed; consume_fn h.f 10;` currently
@@ -188,6 +189,15 @@ Slice progress (see `context/specs/unify-lambdas-plan.md`):
     in a struct field must apply the same ownership-transfer rules as any other consuming sink:
     borrow-capturing closures cannot enter the sink, move-capturing closures move ownership, and
     non-capturing/null-env function values remain sound because there is no owned env.
+
+  - THE CORE PROBLEM:
+    - we did not follow the invariants defined for the language.
+      - a struct is an ownership sink.
+      - any check that we do related to escaping of borrowed values or 
+        assignement of borrowed values to move annotated (~) args should be applied here.
+      - Moving BORROWED VALUES IS ILEGAL.
+        
+
 - [ ] S10 — `BindingMeta` reduction
 - [ ] S11 — Stack-promotion for non-escaping move-capturing lambdas
 - [x] S6.5 — Codegen hygiene: deduplicate named-function closure thunks (COMPLETE)
