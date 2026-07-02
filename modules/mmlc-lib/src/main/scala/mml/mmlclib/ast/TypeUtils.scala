@@ -102,11 +102,46 @@ object TypeUtils:
         hasHeapFields(s, resolvables)
       case _ => false
 
-  /** Check if a user struct has any heap-typed fields */
+  /** True when a type is, or reduces to, a function type. */
+  def isFunctionType(t: Type): Boolean = t match
+    case _: TypeFn => true
+    case TypeGroup(_, types) if types.size == 1 => isFunctionType(types.head)
+    case _ => false
+
+  /** A struct field is owned when it holds heap memory or a function value. A capturing closure
+    * owns a heap env; a null-env function value frees as a safe no-op through the closure
+    * destructor. Owned fields make the struct an ownership sink: its constructor consumes them and
+    * its destructor frees them.
+    */
+  def isOwnedFieldType(fieldType: Type, resolvables: ResolvablesIndex): Boolean =
+    isFunctionType(fieldType) || getTypeName(fieldType).exists(isHeapType(_, resolvables))
+
+  /** True when a struct has a directly function-typed field. Such a struct's destructor must free
+    * that field through the closure destructor.
+    */
+  def hasFunctionField(struct: TypeStruct): Boolean =
+    struct.fields.exists(field => isFunctionType(field.typeSpec))
+
+  /** True when a struct holds a function value directly or transitively through struct fields. Such
+    * a struct is not clonable: a captured env is not deep-copied, and neither is a struct that
+    * contains one.
+    */
+  def containsFunctionField(struct: TypeStruct, resolvables: ResolvablesIndex): Boolean =
+    def loop(s: TypeStruct, seen: Set[String]): Boolean =
+      !seen(s.name) && s.fields.exists { field =>
+        isFunctionType(field.typeSpec) || (getTypeName(field.typeSpec)
+          .flatMap(resolveAliasTarget(_, resolvables))
+          .flatMap(findTypeByName(_, resolvables)) match
+          case Some(inner: TypeStruct) => loop(inner, seen + s.name)
+          case _ => false)
+      }
+    loop(struct, Set.empty)
+
+  /** Check if a user struct owns resources: any heap-typed field, or any function-value field (a
+    * capturing closure owns a heap env).
+    */
   def hasHeapFields(struct: TypeStruct, resolvables: ResolvablesIndex): Boolean =
-    struct.fields.exists { field =>
-      getTypeName(field.typeSpec).exists(isHeapType(_, resolvables))
-    }
+    struct.fields.exists(field => isOwnedFieldType(field.typeSpec, resolvables))
 
   /** Check if a type resolves to a user-defined TypeStruct with heap fields. Unlike isHeapType,
     * this excludes native TypeDef types (String, IntArray, etc.).
@@ -128,9 +163,15 @@ object TypeUtils:
         case _ => None
     }
 
-  /** Get clone function name for a type, or None if not heap type */
+  /** Get clone function name for a type, or None if not heap type. A struct with a function-value
+    * field is not clonable (a captured env is not deep-copied), so no clone name is produced.
+    */
   def cloneFnFor(typeName: String, resolvables: ResolvablesIndex): Option[String] =
-    resolveHeapTypeName(typeName, resolvables).map(resolvedName => s"__clone_$resolvedName")
+    resolveHeapTypeName(typeName, resolvables).flatMap { resolvedName =>
+      findTypeByName(resolvedName, resolvables) match
+        case Some(s: TypeStruct) if containsFunctionField(s, resolvables) => None
+        case _ => Some(s"__clone_$resolvedName")
+    }
 
   /** Check if a named type resolves to an LLVM pointer-like native type. */
   def isPointerType(typeName: String, resolvables: ResolvablesIndex): Boolean =

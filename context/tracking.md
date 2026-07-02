@@ -196,6 +196,14 @@ Slice progress (see `context/specs/unify-lambdas-plan.md`):
       - any check that we do related to escaping of borrowed values or 
         assignement of borrowed values to move annotated (~) args should be applied here.
       - Moving BORROWED VALUES IS ILEGAL.
+
+  - Review findings:
+    - Function-type aliases must be resolved when classifying struct fields. Otherwise,
+      function-bearing structs bypass consuming construction and destruction and can retain
+      dangling closure environments.
+    - Clone-required uses of function-bearing structs must be rejected semantically or given a
+      supported ownership path. Generating `__clone_<Struct>` is invalid when the corresponding
+      clone binding is intentionally omitted.
         
 
 - [ ] S10 — `BindingMeta` reduction

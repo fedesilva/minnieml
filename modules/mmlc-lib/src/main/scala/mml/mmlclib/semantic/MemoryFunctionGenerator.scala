@@ -19,6 +19,9 @@ object MemoryFunctionGenerator:
   private def unitTypeRef(source: SourceOrigin): TypeRef =
     TypeRef(source, "Unit", Some("stdlib::typedef::Unit"), Nil)
 
+  private def rawPtrTypeRef(source: SourceOrigin): TypeRef =
+    TypeRef(source, "RawPtr", Some("stdlib::typedef::RawPtr"), Nil)
+
   /** Generate a stable ID for generated memory functions */
   private def genId(moduleName: String, fnName: String): Option[String] =
     Some(s"$moduleName::bnd::$fnName")
@@ -48,21 +51,110 @@ object MemoryFunctionGenerator:
   private def isNativeHeapField(fieldType: Type, resolvables: ResolvablesIndex): Boolean =
     TypeUtils.getTypeName(fieldType).exists(TypeUtils.isHeapType(_, resolvables))
 
-  private def structHasHeapFields(struct: TypeStruct, resolvables: ResolvablesIndex): Boolean =
-    struct.fields.exists(isHeapField(_, resolvables))
+  private def isFunctionField(field: Field): Boolean =
+    TypeUtils.isFunctionType(field.typeSpec)
 
-  private def heapFieldsOf(struct: TypeStruct, resolvables: ResolvablesIndex): Vector[Field] =
-    struct.fields.filter(isHeapField(_, resolvables))
+  /** A field is an ownership sink when it holds heap memory or a function value: the constructor
+    * consumes it and the destructor frees it.
+    */
+  private def isOwnedField(field: Field, resolvables: ResolvablesIndex): Boolean =
+    isHeapField(field, resolvables) || isFunctionField(field)
+
+  private def structHasOwnedFields(struct: TypeStruct, resolvables: ResolvablesIndex): Boolean =
+    struct.fields.exists(isOwnedField(_, resolvables))
+
+  /** Build the free call for one owned struct field: `__free_T s.field` for a heap field, or
+    * `__free_closure s.field` for a function-value field. The universal closure destructor extracts
+    * the env pointer from the fat pointer, so a null-env value frees as a safe no-op.
+    */
+  private def mkFieldFreeCall(
+    field:       Field,
+    paramName:   String,
+    structTR:    TypeRef,
+    moduleName:  String,
+    unitTR:      TypeRef,
+    resolvables: ResolvablesIndex
+  ): Option[App] =
+    val paramRef = Ref(SourceOrigin.Synth, paramName, typeSpec = Some(structTR))
+    val fieldRef = Ref(
+      SourceOrigin.Synth,
+      field.name,
+      qualifier = Some(paramRef),
+      typeSpec  = Some(field.typeSpec)
+    )
+    val argExpr = Expr(syntheticSource, List(fieldRef), typeSpec = Some(field.typeSpec))
+    if isFunctionField(field) then
+      val freeFnRef = Ref(
+        SourceOrigin.Synth,
+        "__free_closure",
+        resolvedId = Some(s"$moduleName::bnd::__free_closure"),
+        typeSpec = Some(
+          TypeFn(
+            syntheticSource,
+            cats.data.NonEmptyList.one(rawPtrTypeRef(syntheticSource)),
+            unitTR
+          )
+        )
+      )
+      Some(App(syntheticSource, freeFnRef, argExpr, typeSpec = Some(unitTR)))
+    else
+      TypeUtils.getTypeName(field.typeSpec).flatMap { typeName =>
+        TypeUtils.freeFnFor(typeName, resolvables).map { freeFnName =>
+          val freeFnRef = Ref(
+            SourceOrigin.Synth,
+            freeFnName,
+            resolvedId = resolveMemFnId(typeName, freeFnName, moduleName, resolvables),
+            typeSpec =
+              Some(TypeFn(syntheticSource, cats.data.NonEmptyList.one(field.typeSpec), unitTR))
+          )
+          App(syntheticSource, freeFnRef, argExpr, typeSpec = Some(unitTR))
+        }
+      }
+
+  /** Chain free calls into a destructor body: `let _ = free1; ... ; freeN`, or unit when empty. */
+  private def mkFreeBody(freeCalls: List[Term], unitTR: TypeRef): Expr =
+    if freeCalls.isEmpty then
+      Expr(
+        syntheticSource,
+        List(LiteralUnit(syntheticSource, typeSpec = Some(unitTR), typeAsc = None))
+      )
+    else
+      val lastCall  = freeCalls.last
+      val initCalls = freeCalls.init
+
+      val innerBody = Expr(syntheticSource, List(lastCall), typeSpec = Some(unitTR))
+      initCalls.foldRight(innerBody) { (call, acc) =>
+        val discardParam =
+          FnParam(
+            SourceOrigin.Synth,
+            Name.synth("_"),
+            typeSpec = Some(unitTR),
+            typeAsc  = Some(unitTR)
+          )
+        val wrapper =
+          Lambda(syntheticSource, List(discardParam), acc, Nil, typeSpec = Some(unitTR))
+        val callExpr = Expr(syntheticSource, List(call), typeSpec = Some(unitTR))
+        Expr(
+          syntheticSource,
+          List(App(syntheticSource, wrapper, callExpr, typeSpec = Some(unitTR))),
+          typeSpec = Some(unitTR)
+        )
+      }
 
   /** Build a `__free_StructName` function for a user struct.
     *
     * Generated pattern: {{{ fn __free_User(~u: User): Unit = let _ = __free_String u.name;
     * __free_String u.role }}}
+    *
+    * Function-value fields are freed through `__free_closure`, which only exists after
+    * `ClosureMemoryFnGenerator` runs. They are included via `includeFunctionFields` when this
+    * destructor is regenerated by `wireStructClosureFrees` after type checking.
     */
   private def mkFreeFunction(
-    struct:      TypeStruct,
-    moduleName:  String,
-    resolvables: ResolvablesIndex
+    struct:                TypeStruct,
+    moduleName:            String,
+    resolvables:           ResolvablesIndex,
+    includeFunctionFields: Boolean
   ): Bnd =
     val structName = struct.name
     val fnName     = s"__free_$structName"
@@ -81,64 +173,17 @@ object MemoryFunctionGenerator:
       consuming = true
     )
 
-    // Get heap fields to free
-    val heapFields = heapFieldsOf(struct, resolvables)
-
-    // Build free calls for each heap field
-    val freeCalls: List[Term] = heapFields.toList.flatMap { field =>
-      TypeUtils.getTypeName(field.typeSpec).flatMap { typeName =>
-        TypeUtils.freeFnFor(typeName, resolvables).map { freeFnName =>
-          // Build: __free_T s.fieldName
-          val freeFnRef = Ref(
-            SourceOrigin.Synth,
-            freeFnName,
-            resolvedId = resolveMemFnId(typeName, freeFnName, moduleName, resolvables),
-            typeSpec =
-              Some(TypeFn(syntheticSource, cats.data.NonEmptyList.one(field.typeSpec), unitTR))
-          )
-          val paramRef = Ref(SourceOrigin.Synth, paramName, typeSpec = Some(structTypeRef))
-          val fieldRef = Ref(
-            SourceOrigin.Synth,
-            field.name,
-            qualifier = Some(paramRef),
-            typeSpec  = Some(field.typeSpec)
-          )
-          val argExpr = Expr(syntheticSource, List(fieldRef), typeSpec = Some(field.typeSpec))
-          App(syntheticSource, freeFnRef, argExpr, typeSpec = Some(unitTR))
-        }
-      }
+    // Fields to free: heap fields always; function-value fields only once __free_closure exists.
+    val fieldsToFree = struct.fields.filter { field =>
+      isHeapField(field, resolvables) || (includeFunctionFields && isFunctionField(field))
     }
 
-    // Build the body - sequence of let _ = free; statements ending with unit
-    val body =
-      if freeCalls.isEmpty then
-        Expr(
-          syntheticSource,
-          List(LiteralUnit(syntheticSource, typeSpec = Some(unitTR), typeAsc = None))
-        )
-      else
-        // Chain free calls with let _ = ...; pattern
-        val lastCall  = freeCalls.last
-        val initCalls = freeCalls.init
+    // Build free calls for each owned field
+    val freeCalls: List[Term] = fieldsToFree.toList.flatMap { field =>
+      mkFieldFreeCall(field, paramName, structTypeRef, moduleName, unitTR, resolvables)
+    }
 
-        val innerBody = Expr(syntheticSource, List(lastCall), typeSpec = Some(unitTR))
-        initCalls.foldRight(innerBody) { (call, acc) =>
-          val discardParam =
-            FnParam(
-              SourceOrigin.Synth,
-              Name.synth("_"),
-              typeSpec = Some(unitTR),
-              typeAsc  = Some(unitTR)
-            )
-          val wrapper =
-            Lambda(syntheticSource, List(discardParam), acc, Nil, typeSpec = Some(unitTR))
-          val callExpr = Expr(syntheticSource, List(call), typeSpec = Some(unitTR))
-          Expr(
-            syntheticSource,
-            List(App(syntheticSource, wrapper, callExpr, typeSpec = Some(unitTR))),
-            typeSpec = Some(unitTR)
-          )
-        }
+    val body = mkFreeBody(freeCalls, unitTR)
 
     // Build the function type: StructName -> Unit
     val fnType = TypeFn(syntheticSource, cats.data.NonEmptyList.one(structTypeRef), unitTR)
@@ -205,7 +250,7 @@ object MemoryFunctionGenerator:
         lambdaOpt match
           case Some(lambda) =>
             val newParams = lambda.params.zip(struct.fields.toList).map { (param, field) =>
-              if isHeapField(field, resolvables) then param.copy(consuming = true)
+              if isOwnedField(field, resolvables) then param.copy(consuming = true)
               else param
             }
             val newLambda = lambda.copy(params = newParams)
@@ -345,8 +390,8 @@ object MemoryFunctionGenerator:
     // Find all user structs
     val structs = module.members.collect { case s: TypeStruct => s }
 
-    // Find structs that have heap fields
-    val structsNeedingMemFns = structs.filter(structHasHeapFields(_, module.resolvables))
+    // Find structs that own resources (heap fields or function-value fields)
+    val structsNeedingMemFns = structs.filter(structHasOwnedFields(_, module.resolvables))
 
     // Find native structs with heap fields (constructor rewrite only, no free/clone generation)
     val nativeStructsWithHeapFields = module.members.collect { case td: TypeDef =>
@@ -382,12 +427,14 @@ object MemoryFunctionGenerator:
         idx.updated(bnd)
       }
 
-      // Generate __free_T and __clone_T for user structs only (not native structs)
+      // Generate __free_T for every owning struct. Function-value fields are wired in later by
+      // `wireStructClosureFrees` once `__free_closure` exists. Generate __clone_T only for structs
+      // that hold no function value (directly or transitively): a captured env is not deep-copied,
+      // so such structs are not clonable.
       val generatedFns = structsNeedingMemFns.flatMap { struct =>
-        List(
-          mkFreeFunction(struct, moduleName, resolvablesWithCtors),
-          mkCloneFunction(struct, moduleName, resolvablesWithCtors)
-        )
+        val freeFn = mkFreeFunction(struct, moduleName, resolvablesWithCtors, false)
+        if TypeUtils.containsFunctionField(struct, resolvablesWithCtors) then List(freeFn)
+        else List(freeFn, mkCloneFunction(struct, moduleName, resolvablesWithCtors))
       }
 
       val finalMembers = membersWithAllCtors ++ generatedFns
@@ -396,3 +443,36 @@ object MemoryFunctionGenerator:
       }
 
       state.withModule(module.copy(members = finalMembers, resolvables = finalResolvables))
+
+  /** Regenerate struct destructors so they free function-value fields through `__free_closure`.
+    *
+    * `__free_closure` is created by `ClosureMemoryFnGenerator` after type checking, so the closure
+    * field frees cannot be emitted when the destructor is first generated (`__free_closure` is
+    * neither resolvable nor typeable at that point). This runs from the closure generator, after
+    * `__free_closure` exists, and replaces each function-bearing struct's `__free_StructName` with
+    * one that also frees its function-value fields.
+    */
+  def wireStructClosureFrees(state: CompilerState): CompilerState =
+    val module     = state.module
+    val moduleName = module.name
+
+    val functionBearingStructs = module.members.collect {
+      case s: TypeStruct if TypeUtils.hasFunctionField(s) => s
+    }
+
+    if functionBearingStructs.isEmpty then state
+    else
+      val rewrittenFrees = functionBearingStructs.map { struct =>
+        mkFreeFunction(struct, moduleName, module.resolvables, true)
+      }
+      val freeById = rewrittenFrees.map(bnd => bnd.name -> bnd).toMap
+
+      val newMembers = module.members.map {
+        case bnd: Bnd if freeById.contains(bnd.name) => freeById(bnd.name)
+        case other => other
+      }
+      val newResolvables = rewrittenFrees.foldLeft(module.resolvables) { (idx, bnd) =>
+        idx.updated(bnd)
+      }
+
+      state.withModule(module.copy(members = newMembers, resolvables = newResolvables))

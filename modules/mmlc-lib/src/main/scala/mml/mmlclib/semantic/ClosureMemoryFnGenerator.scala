@@ -433,6 +433,11 @@ object ClosureMemoryFnGenerator:
         case other => other
 
   def rewriteModule(state: CompilerState): CompilerState =
+    // Generate closure env structs and `__free_closure`, then wire struct destructors so they free
+    // function-value fields through `__free_closure` (which only exists after this phase).
+    MemoryFunctionGenerator.wireStructClosureFrees(generateClosureFns(state))
+
+  private def generateClosureFns(state: CompilerState): CompilerState =
     val module     = state.module
     val moduleName = module.name
 

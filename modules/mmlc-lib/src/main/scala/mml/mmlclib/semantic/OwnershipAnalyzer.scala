@@ -224,11 +224,15 @@ object OwnershipAnalyzer:
         case app: App =>
           app.fn match
             case lambda: Lambda =>
+              // `let x = arg; body` lowers to `App(Lambda([x], body), arg)`. The let returns what
+              // `body` returns; a bound owned value that `body` does not return is freed at scope
+              // end, so it must not be reported as returned. Aliasing (`let x = arg; x`) is covered
+              // by binding `x -> argOwned` in the body env.
               val argOwned  = argReturnsOwned(app.arg, env, resolvables, returningOwned)
               val paramName = lambda.params.headOption.map(_.name)
               val bodyEnv =
                 paramName.map(n => env + (n -> argOwned)).getOrElse(env)
-              exprReturnsOwned(lambda.body, bodyEnv, resolvables, returningOwned).orElse(argOwned)
+              exprReturnsOwned(lambda.body, bodyEnv, resolvables, returningOwned)
             case _ =>
               appReturnsOwned(app, resolvables, returningOwned)
         case cond: Cond =>

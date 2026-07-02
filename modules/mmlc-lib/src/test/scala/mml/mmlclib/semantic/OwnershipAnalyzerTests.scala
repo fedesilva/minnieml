@@ -39,6 +39,12 @@ class OwnershipAnalyzerTests extends BaseEffFunSuite:
           case _ => 0
     }
 
+  private def countFreeCallsOf(freeName: String, term: Term): Int =
+    countTerms(term) {
+      case TXCall1(TXRefResolved(id), _) if id.endsWith("::" + freeName) => 1
+      case TXCall1(TXRefNamed(n), _) if n == freeName => 1
+    }
+
   private def containsCloneString(term: Term): Boolean =
     existsTerm(term) {
       case TXRefResolved(id) if id.endsWith("::__clone_String") => true
@@ -972,6 +978,150 @@ class OwnershipAnalyzerTests extends BaseEffFunSuite:
       assert(
         consumeErrors.exists(_.ref.name == "u"),
         s"Expected borrowed user-struct arg 'u' to be rejected, got: ${result.errors}"
+      )
+    }
+  }
+
+  test("struct field is an ownership sink: borrow-capturing closure into a field is rejected") {
+    val code =
+      """
+        struct Holder { f: Int -> Int };
+
+        fn main(seed: Int): Int =
+          let add_seed = { x: Int -> x + seed; };
+          let h = Holder add_seed;
+          h.f 10;
+        ;
+      """
+
+    semState(code).map { result =>
+      val errs = result.errors.collect {
+        case e: SemanticError.BorrowedValuePassedToConsumingParam => e
+      }
+      assert(
+        errs.exists(_.ref.name == "add_seed"),
+        s"Expected borrow closure laundered through a struct field to be rejected, got: ${result.errors}"
+      )
+    }
+  }
+
+  test("struct field is an ownership sink: move-capturing closure moves in and is freed once") {
+    val code =
+      """
+        struct Holder { f: Int -> Int };
+
+        fn build(seed: Int): Int =
+          let add_seed = ~{ x: Int -> x + seed; };
+          let h = Holder add_seed;
+          h.f 10;
+        ;
+
+        fn main(): Unit = println (int_to_str (build 5));;
+      """
+
+    semNotFailed(code).map { module =>
+      val buildBody = topLevelLambdaBody(module, "build")
+      assertEquals(
+        countFreeCallsOf("__free_Holder", buildBody),
+        1,
+        "expected the moved-in struct to be freed exactly once at binder scope"
+      )
+    }
+  }
+
+  test("struct field is an ownership sink: non-capturing function value is accepted") {
+    val code =
+      """
+        struct Holder { f: Int -> Int };
+
+        fn inc(x: Int): Int = x + 1;;
+
+        fn build(): Int =
+          let h = Holder inc;
+          h.f 10;
+        ;
+
+        fn main(): Unit = println (int_to_str (build ()));;
+      """
+
+    semState(code).map { result =>
+      val errs = result.errors.collect {
+        case e: SemanticError.BorrowedValuePassedToConsumingParam => e
+      }
+      assert(
+        errs.isEmpty,
+        s"Non-capturing function value into a struct field should be accepted, got: ${result.errors}"
+      )
+    }
+  }
+
+  test(
+    "struct holding a function-bearing struct compiles and frees through the nested destructor"
+  ) {
+    val code =
+      """
+        struct Inner { f: Int -> Int };
+        struct Outer { inner: Inner };
+
+        fn use_outer(o: Outer, x: Int): Int =
+          o.inner.f x;
+        ;
+
+        fn build(seed: Int): Int =
+          let add_seed = ~{ x: Int -> x + seed; };
+          let inner = Inner add_seed;
+          let o = Outer inner;
+          use_outer o 1;
+        ;
+
+        fn main(): Unit = println (int_to_str (build 5));;
+      """
+
+    semNotFailed(code).map { module =>
+      val innerFreeBody = topLevelLambdaBody(module, "__free_Inner")
+      assert(
+        containsFreeOf("__free_closure")(innerFreeBody),
+        "nested struct's destructor should free the closure field through __free_closure"
+      )
+      // A struct holding a function value transitively is not clonable.
+      assert(
+        !module.members.exists {
+          case b: Bnd => b.name == "__clone_Outer"
+          case _ => false
+        },
+        "a struct transitively holding a function value must not get a clone function"
+      )
+    }
+  }
+
+  test(
+    "scalar-returning function that owns a local struct is not treated as returning the struct"
+  ) {
+    val code =
+      """
+        struct Box { name: String };
+
+        fn call_box(b: Box, x: Int): Int = x + 1;;
+
+        fn build(): Int =
+          let b = Box "hi";
+          call_box b 10;
+        ;
+
+        fn main(): Unit = println (int_to_str (build ()));;
+      """
+
+    semNotFailed(code).map { module =>
+      val buildBody = topLevelLambdaBody(module, "build")
+      val mainBody  = topLevelLambdaBody(module, "main")
+      assertEquals(
+        countFreeCallsOf("__free_Box", buildBody),
+        1,
+        "build should free its local Box exactly once"
+      )
+      assert(
+        !containsFreeOf("__free_Box")(mainBody),
+        "caller must not free a scalar return value as a struct"
       )
     }
   }
