@@ -6,14 +6,14 @@ Problem:
 Parsing (ingest) is the largest single stage of the compile pipeline,
 typically ~30% of total compile time on real samples — ahead of
 semantic analysis, LLVM lowering, and codegen. The parser exhibits
-high backtrack counts (~66%) because it uses "Ordered Choice" (`|`)
-without "Cuts" (`~/`). For every simple identifier, the parser
-tentatively checks—and fails—against every keyword rule (`let`, `if`,
-`native`, etc.) before falling back to `refP`.
+high backtrack counts (~66%) with "Ordered Choice" (`|`) and no
+"Cuts" (`~/`). The counter counts rule entries behind the furthest
+position reached, not distinct rewinds. Separate cheap initial keyword
+failures from deep reparsing: cuts address the latter, not the former.
 
 Constraint:
-We cannot simply add Cuts (`~/`) because standard Fastparse cuts cause
-immediate termination on failure. The compiler must remain resilient,
+We cannot simply add Cuts (`~/`) because failures after a cut can bypass
+fallback recovery alternatives. The compiler must remain resilient,
 generating error nodes for analysis in later phases rather than aborting
 the compilation.
 
@@ -41,10 +41,10 @@ sync anchor; `)` and `}` close groups and lambdas respectively.
 Two sync scopes:
 
 - **Expression-level sync** (used inside a member when an inner term
-  fails): `;`, `)`, `}`. Bounded by construction — a `;` always closes
-  the current statement, so recovery never escapes the enclosing scope.
+  fails): `;`, `)`, `}` at the relevant nesting depth, with EOF as a
+  final boundary. Missing delimiters must not cause unbounded scanning.
 - **Member-level sync** (used when a whole top-level form fails): the
-  top-level keywords that open a new member: `fn`, `struct`, `type`, `op`,
+  top-level keywords that open a new member: `let`, `fn`, `struct`, `type`, `op`,
   `module`, plus visibility markers `pub` / `priv` / `prot` / `inline`.
 
 ```scala
@@ -52,52 +52,53 @@ def exprSyncSet(using P[Any]) =
   P(";" | ")" | "}")
 
 def memberSyncSet(using P[Any]) =
-  P("fn" | "struct" | "type" | "op" | "module"
+  P("let" | "fn" | "struct" | "type" | "op" | "module"
     | "pub" | "priv" | "prot" | "inline")
-
-// Consume garbage until a sync token, DO NOT consume the sync token
-def recoverExpr(using P[Any])   = (!exprSyncSet   ~ AnyChar).rep(1)
-def recoverMember(using P[Any]) = (!memberSyncSet ~ AnyChar).rep(1)
 ```
+
+These are anchor sketches, not raw character scanners: keyword anchors
+need word boundaries, and recovery must respect strings, comments, and
+nesting. Leave the anchor for the enclosing parser. At an anchor or EOF,
+emit a missing-input error without consuming it; the caller must then
+consume input or exit the construct, so repetition cannot stall.
+Enforce progress at repetition boundaries. Share recovery machinery with
+explicit nesting/context and source positions; anchor sets alone cannot
+implement it, especially when delimiters are unmatched.
 
 ---
 
 ## 2. implementation pattern
 
 We introduce a `resilient` helper that attempts a parser, and on
-failure, consumes input until the sync set and emits an error node.
+failure, recovers to a context-specific boundary and emits an error node.
+Isolate cuts inside the attempted parser so recovery remains reachable.
+`NoCut` preserves internal commitments but allows recovery at its boundary;
+the enclosing keyword cut still commits to the selected construct.
 
 ```scala
-// Helper: try parser, on failure consume garbage until sync set
-// and emit error node.
+// Sketch: recovery includes missing input at an anchor or EOF.
 def resilient[T](
-  parser: => P[T], toError: String => T
+  parser: => P[T], recovery: => P[String], toError: String => T
 )(using P[Any]): P[T] =
-  P(parser | recover.!.map(toError))
+  P(NoCut(parser) | recovery.map(toError))
 
-// Example: Optimized 'Let' Binding
+// Sketch: recover the whole tail, including a missing '='.
 def letExprP(info: SourceInfo)(using P[Any]): P[Term] =
   P(
-    "let" ~/  // CUT: commit to Let. No backtracking past this.
-    (
-      // If bindingIdP fails, consume garbage until sync set
-      resilient(
-        bindingIdP,
-        bad => TermError(span, "Expected binding identifier", bad)
-      )
-    ) ~
-    "=" ~/    // CUT: expect assignment.
-    (
-      // If exprP fails, consume garbage until sync set
-      resilient(
-        exprP,
-        bad => TermError(span, "Expected expression", bad)
-      )
+    letKw ~/ resilient(
+      letTailP(info),
+      recoverExpr,
+      bad => TermError(span, "Invalid let binding", bad)
     )
-  ).map { case (binding, expr) =>
-    Let(binding, expr)
-  }
+  )
 ```
+
+`letTailP` retains the existing lambda/application lowering. Expected
+identifier, separator, and value errors must recover locally to preserve
+valid structure and precise errors. The outer fallback is a last resort:
+an unrecovered failure there loses the tail's structure. Recovery must
+capture start/end positions explicitly for diagnostic spans.
+See [Fastparse cut isolation](https://com-lihaoyi.github.io/fastparse/#IsolatingCuts).
 
 ---
 
@@ -109,43 +110,39 @@ multi-keyword block structures (`if` / `elif` / `else`), recovery uses
 sub-block. Each branch is itself a `;`-terminated expression, so the
 generic expression-sync set is the recovery target for branch bodies.
 
-```scala
-def ifExprP(...) = P(
-  "if" ~/
-  (conditionP | recoverUntil("then")) ~
-  "then" ~/
-  (trueBranchP | recoverUntilExprOr("elif", "else")) ~
-  ("elif" ~/ (...) ).rep ~
-  ("else" ~/ (falseBranchP | recoverExpr)).?
-)
-```
+First factor the shared prefix of `ifExprP` and `ifSingleBranchExprP`.
+The full form is tried first and fails at a missing `else`, reparsing a
+valid no-`else` conditional through the second rule. A cut after `if`
+in the full form would block that valid alternative; parse the shared
+condition/branches once, then handle the optional `else`.
 
-This ensures that if the user writes `if x < . then`, the parser
-swallows the bad condition, resyncs at `then`, and correctly parses
-the rest of the block without aborting. Branches close at `;`; the
-enclosing statement's `;` bounds the whole `if`.
+For `if x < . then`, recover the condition at `then` and continue with
+the branch. Use the same cut-isolated recovery for branch bodies, adding
+`elif` / `else` as anchors at the current conditional's depth. If `then`
+is missing, stop at an enclosing boundary or EOF instead of scanning
+indefinitely for it. Missing required keywords need recovery too.
 
 ## 3.5 type-ascription cut
 
 `withTypeAsc` is the single hottest rule — roughly 28% of total parse
-time — because every term wrapped with `withTypeAsc` speculatively
-tries to consume a `:` and a type, succeeding for a small fraction of
-calls and failing for the rest. The `:` token is unambiguous: it
-appears only in type
+time. The collector attributes exclusive time, but this does not establish
+that optional-colon checks cause the cost: profile uninstrumented runs
+and distinguish combinator work, allocation, and instrumentation overhead.
+The `:` token is unambiguous: it appears only in type
 contexts (term ascription, `let x: T`, fn params, fn return, struct
 fields). Once `:` is seen, the parser is committed to a type — there
 is no alternative to backtrack into.
 
 ```scala
 def typeAscP(using P[Any]): P[Type] =
-  P(":" ~/ resilient(typeRefP, bad => TypeError(bad)))
+  P(":" ~/ resilient(typeRefP, recoverType, bad => TypeError(bad)))
 
 def withTypeAsc[T](term: P[T])(using P[Any]): P[T] =
   P(term ~ typeAscP.?).map { ... }
 ```
 
-Cost target: collapse the "try `:`, fail" backtracks into a no-cut
-peek. Recovery target on failure inside the type is the
+The cut prevents reconsidering an ascription after `:`; it does not
+remove the initial optional-colon check. Recovery target inside the type is the
 surrounding context's expected token (`=` for `let`, `,` or `)` for
 params, `;` or `}` for terms).
 
@@ -153,9 +150,9 @@ params, `;` or `}` for terms).
 
 ## 4. downstream impact: error-aware phases
 
-With this change, `TermError` nodes will appear **inside** valid AST
-nodes (e.g., `Let(TermError(...), ...)`). Previously, errors only
-appeared at the member level.
+With this change, error nodes can appear **inside** otherwise valid
+expressions and lambda/application trees. Later phases must preserve
+the surrounding structure while recognizing the invalid subtree.
 
 ### Error classification
 
@@ -168,34 +165,41 @@ between the **root cause** and **consequences**.
    failing on a `TermError`). (`cause = Some(primary)`). Suppressed
    by default unless verbose logging is on.
 
+Continue reporting independent errors; only suppress diagnostics linked
+to an existing cause. Merely visiting an error node need not emit another
+diagnostic in every phase.
+
 ```scala
 trait Error extends InvalidNode:
   def cause: Option[Error] = None // None → primary, Some → secondary
 ```
 
+Cause identity must survive bindings and later uses, not just direct
+visits to error nodes. Carry it through existing invalid types, binding
+metadata, or diagnostic dependencies; avoid turning invalid input into
+ordinary type/ownership facts. A single cause is sufficient for suppression
+only if all independent primary errors remain reported; multiple causes
+can retain fuller dependency information.
+
 ### Phase handling table
 
-| Phase                  | Action on `case _: TermError`                      |
-| :--------------------- | :------------------------------------------------- |
-| **TypeChecker**        | Emit secondary: "Cannot type-check erroneous       |
-|                        | expression". Link to primary.                      |
-| **OwnershipAnalyzer**  | Emit secondary: "Cannot analyze ownership of       |
-|                        | erroneous expression". Treat as `Borrowed`.        |
-| **ExpressionRewriter** | Emit secondary: "Cannot rewrite erroneous          |
-|                        | expression". Pass through.                         |
-| **Simplifier**         | Emit secondary: "Cannot simplify erroneous         |
-|                        | expression". Pass through.                         |
-| **RefResolver**        | Emit secondary: "Cannot resolve references in      |
-|                        | erroneous expression". Pass through.               |
-| **ResolvablesIndexer** | Already returns `Nil` — safe, no change needed.    |
-| **SemanticTokens**     | Already returns `Nil` — safe, no change needed.    |
-| **Codegen**            | **STOP.** Pipeline must gate on *any* primary      |
-|                        | errors before entering codegen.                    |
+| Phase                  | Action on `case _: TermError`                                              |
+| :--------------------- | :------------------------------------------------------------------------- |
+| **TypeChecker**        | Preserve invalid status; link dependent failures to the primary error.     |
+| **OwnershipAnalyzer**  | Preserve invalid status; do not infer ownership for the erroneous subtree. |
+| **ExpressionRewriter** | Pass through; link dependent failures to the primary error.                |
+| **Simplifier**         | Pass through.                                                              |
+| **RefResolver**        | Pass through; link dependent failures to the primary error.                |
+| **ResolvablesIndexer** | Already returns `Nil` — safe, no change needed.                            |
+| **SemanticTokens**     | Already returns `Nil` — safe, no change needed.                            |
+| **Codegen**            | **STOP.** Gate on any primary errors before entering codegen.              |
 
 ---
 
 ## 5. review notes & decisions
 
+* Sequence: Implement after lambda salvage, against the settled AST and
+  ownership behavior.
 * Scope: We will apply this optimization to the recursive
   "Big 3" — `let`, `if`, and `fn` — plus `withTypeAsc` (the single
   hottest rule). Inner `fn` (local function) inherits the same shape
@@ -205,5 +209,11 @@ trait Error extends InvalidNode:
   `ParsingMemberError`, and `ParsingIdError` types. No new
   `PoisonNode` class is required.
 * Ordering: The ordered choice in `termP` remains unchanged.
-  The performance gain comes from eliminating backtracking *after*
-  a keyword match, not from reordering the initial checks.
+  Factor shared prefixes before adding cuts. Investigate keyword dispatch
+  separately if profiling identifies initial alternative checks as costly.
+* Validation: Compare representative valid and malformed programs, with
+  uninstrumented timings alongside parser counters. Avoid exact assertions
+  on the current backtrack counter. Test precise spans, preserved surrounding
+  structure, independent diagnostics, and termination for missing `=`, empty
+  values, truncated types, nested conditionals, unmatched delimiters, and
+  synchronization characters inside strings/comments.
