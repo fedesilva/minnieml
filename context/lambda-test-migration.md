@@ -3,7 +3,7 @@
 The noncompiler transfer is complete on `dev-lambdas-migration`. All source-tip test declarations,
 helpers, memory programs, samples, documentation, and independent benchmark/tooling changes are
 present. The compiler matched parent `c7e9078` at that checkpoint; current compiler work is
-recorded in the active-workstream section below.
+recorded in the workstream sections below.
 
 The transfer baseline passed **430 tests**, with **62 ignored** and no failures or errors. Ignored tests
 are unfinished compiler work, not passing coverage. Every ignore has its reason in a comment
@@ -64,6 +64,304 @@ To resume, the Author can use:
 > migration branch and current changes. The Author has signed off the borrowed-return workstream;
 > read its results and remaining native failures below. Preserve existing approvals
 > and the ownership contract. Discuss and approve the next bounded compiler slice before editing.
+
+## Signed-off workstream: typed closure destruction
+
+### Final review and local commit approval — 2026-09-10
+
+The Author finished review, approved the compiler-design updates, and authorized a local commit.
+The Author explicitly prohibited pushing. This checkpoint supersedes the pending-review and
+pending-signoff statements in the historical verification notes below. No top-level Tracked Item
+status change or GitHub synchronization is authorized; the broader lambda work remains open.
+
+The final review identified alias comparisons in `DestructionValidator` as a correctness issue.
+Fresh primary review completed, but the agent thread limit blocked an independent verifier.
+The Author explicitly approved parent verification and a fix if confirmed. Both reported cases
+reproduced: an `Int64 -> Int64` closure with an `Int` parameter and a native destructor returning
+an alias of `Unit`. The validator follows resolved aliases and single-type groups while preserving
+native declaration identity. Five regressions cover compatible aliases and incompatible native
+types; the three positive regressions failed before the fix. Verification and the narrow re-review
+used the approved parent fallback, without per-claim independence.
+
+Final formatting, lint and the full suite pass: **470 passed, 58 ignored**, without warnings
+(`/tmp/mml-alias-tests.log`). The alias closure runs under ASan and prints `3`; the aliased
+destructor emits IR accepted by `llvm-as`. Required native checks and the typed closure ASan
+sample pass (`/tmp/mml-alias-smokes-final.log`), except the known `partial-fac1` exit 139
+(`/tmp/mml-alias-partial-fac1.log`). The compiler is installed in `~/bin`
+(`/tmp/mml-alias-publish.log`), and all seven benchmark builds pass
+(`/tmp/mml-alias-benchmarks.log`). The memory harness remains **29/34** with the same five PAP
+failures (`/tmp/mml-alias-memory.log`). Linux sanitizer verification remains deferred.
+
+The design reference documents alias-aware validation, `OwnedClosure`, and the full semantic
+pipeline. Scoped QA and whitespace checks pass. All verification processes are finished.
+The next work is the planned local workflow port, before another compiler slice; that migration
+has not started.
+
+### Next work after Author review
+
+The Author scheduled [the local workflow port](specs/local-workflow-port.md) after reviewing
+the current code and before the next compiler slice. Its local tracking entry and spec are
+created; the migration has not started. Destructor review is signed off above. GitHub tracking
+is not part of this task.
+
+The Author approved bringing over the code-review skill first. The local skill and discovery
+metadata are ported with Scala/compiler criteria and linked from `AGENTS.md`; the rest of the
+workflow migration remains deferred. The independent review and its follow-up fixes are recorded
+below. The skill port changes documentation only and does not alter prior test evidence.
+
+### Shared LLVM test assertions
+
+The Author authorized sharing the destructor tests' LLVM inspection helpers on 2026-09-10.
+`BaseEffFunSuite` exposes `functionBody`, `functionBodyMatching`, `phiCount`, and
+`assertPhiPredecessors` through `test/llvm/LlvmAssertions.scala`. All five codegen suites share
+function lookup, preserving literal-name lookup and regex signature/ABI constraints separately.
+Missing or ambiguous matches fail explicitly.
+
+Phi checking handles conditional and unconditional branches, loop backedges, and repeated edges.
+The destructor regressions retain their explicit two-phi expectation; the existing tail-recursive
+sum regression also checks predecessors. The helper supports explicit unquoted block labels and
+`br`, `ret`, and `unreachable` terminators, rejecting unsupported control flow. It checks predecessor
+edges, not all LLVM invariants. Destructor-specific AST construction remains local.
+
+Formatting, lint, and **465 tests pass, 58 ignored**, without compiler warnings
+(`/tmp/mml-llvm-helpers-tests.log`). Nine helper tests cover lookup boundaries and positive/negative
+phi cases. LLVM 23.1.1 accepts the conditional, loop, and repeated-edge fixtures independently.
+This follow-up changes test code only; native publishing, smokes, benchmarks and the memory harness
+retain the preceding compiler verification. A fresh scoped review through the local skill found no
+actionable issues and independently reran LLVM verification on all three positive fixtures. QA and
+whitespace checks pass. Changes remain uncommitted; Author review/signoff is next.
+
+### Independent review fixes: missing cleanup and CPU cache identity
+
+The Author authorized fixing both independently confirmed findings on 2026-09-10.
+Final destruction validation requires a registered destructor and matching cleanup entry for
+every native/struct heap field. Missing explicit and default destructor registrations accumulate
+errors per capture. Regression tests also reject omitted cleanup with a registered target and
+check valid cleanup by field and destructor identity. Scalar and borrowed function captures
+retain their existing behavior.
+
+Runtime bitcode and object cache filenames include a digest of the compilation flags and
+optimization level, alongside the target triple. Distinct resolved/explicit/default CPU choices
+use distinct entries; legacy triple-only cache artifacts are bypassed. Tests cover both artifact
+kinds, repeat selection, x86 CPU flags, optimization, sanitizer and stack-check options.
+
+Formatting, lint and **456 tests pass, 58 ignored**, without compiler warnings. The missing-target
+and omitted-cleanup assertions fail before the fix. Logs: `/tmp/mml-review-fixes-red.log` and
+`/tmp/mml-review-fixes-tests.log`. The six previously successful required smokes and the typed
+closure ASan sample pass (`/tmp/mml-review-fixes-smokes.log`). `partial-fac1` retains runner
+exit 139 (`/tmp/mml-review-fixes-partial-fac1.log`).
+
+On ARM64 macOS with LLVM/Clang 23.1.1, the original reused-directory CPU reproduction passes:
+host M5, explicit M1, repeat M1, and no-CPU selections compile and run successfully. Library-mode
+checks also pass, with one runtime compilation per distinct selection and cache reuse on repeat.
+Independent inspection confirms target attributes in cached bitcode/objects and verifies the
+delivered library runtime matches the selected cache entry. Logs:
+`/tmp/mml-review-fixes-cpu-transitions.log` and
+`/tmp/mml-review-fixes-cpu-library-publish-final.log`. Local publishing succeeds in the latter log.
+The first library command attempt used an invalid option; final checks use `--target-type lib`.
+
+All seven benchmark builds pass after cleaning (`/tmp/mml-review-fixes-benchmarks.log`). The full
+memory harness remains **29/34**, with the same five PAP failures and the typed closure regression
+passing (`/tmp/mml-review-fixes-memory.log`). Linux sanitizer verification remains deferred.
+Native x86 CPU-transition execution is not part of this follow-up.
+
+Each fix received a fresh, narrowly scoped primary re-review through the local skill; neither
+review produced actionable findings. QA enforcement and staged/unstaged whitespace checks pass.
+All verification sessions are finished. Changes remain uncommitted, existing staging is preserved,
+and Author review/signoff is next. Tracked-item status, commit and push approvals remain separate;
+no GitHub changes.
+
+### Review follow-up: destruction operand exit blocks
+
+The Author authorized regression tests and the fix for the review's lost `exitBlock` finding.
+The new codegen tests reproduce wrong outer-phi predecessors for conditional operands in
+`DestroyClosure` and `DestroyClosureEnvironment`; the dispatcher control case already passes.
+Both straight-line emitters now preserve the operand's exit block. All seven destruction
+codegen tests pass, covering AArch64 and x86-64. LLVM assembly verification also passes for all
+six emitted regression modules. Logs: `/tmp/mml-destruction-exit-red.log` and
+`/tmp/mml-destruction-exit-green-ir.log`; passing IR:
+`/tmp/mml-destruction-exit-{closure,environment,dispatch}_{AArch64,X86_64}.ll`.
+Reconstructing the failing function bodies from the red test log in those modules also makes
+`llvm-as` reject both with `PHI node entries do not match predecessors!`
+(`/tmp/mml-destruction-exit-{closure,environment}-reproduced-invalid.ll`).
+
+Final verification: formatting, lint and **451 tests pass, 58 ignored**, with no compiler
+warnings. The six previously successful required smokes and local compiler publishing pass
+(`/tmp/mml-destruction-exit-full.log`). `partial-fac1` retains its known runner exit 139
+(`/tmp/mml-destruction-exit-partial-fac1.log`). All seven benchmark builds pass after cleaning
+(`/tmp/mml-destruction-exit-benchmarks.log`). The memory harness remains **29/34**, with the
+same five PAP failures listed below and the typed closure destruction sample passing
+(`/tmp/mml-destruction-exit-memory.log`). Linux verification remains deferred.
+
+QA review of this follow-up found no further issues; staged and unstaged whitespace checks pass.
+All verification commands have finished. Changes remain uncommitted, existing staging is preserved,
+and the next step is Author review. Workstream signoff and tracked-item status are still pending.
+No GitHub changes.
+
+### Implementation and previous verification
+
+The Author approved implementation of [typed closure destruction](specs/typed-closure-destruction.md)
+and its full verification in the fresh-context request. This approval supersedes the older
+next-slice planning note below. No tracked-item completion, commit, or push is authorized.
+
+Implementation checkpoint (uncommitted): intrinsic AST nodes, resolved field/target IDs,
+helper registration and ownership-aware body completion, expression lowering, final-index
+validation, traversal/editor/printing support, and removal of metadata/body/call overrides are
+implemented. Ordinary struct destructors retain their bodies. Owning function captures carry
+an explicit ownership witness in `Capture.OwnedClosure`; helper bodies are completed after
+ownership analysis so borrowed functions cannot acquire destruction by type alone.
+
+The first full run passed 434 tests with three old-helper assertion failures (58 ignored).
+After helper updates and five new contract/ownership tests, 441 passed; one new alias test
+incorrectly expected ownership transfer on function aliasing. Existing semantics retain the
+original owner; its identity assertion is corrected without changing transfer decisions.
+Logs: `/tmp/mml-destruction-tests.log`, `/tmp/mml-destruction-tests2.log`.
+
+Verification checkpoint: 445 tests passed with 58 ignored before the final ABI regression test.
+`hola`, `quicksort`, and the new nested-closure program compiled and ran successfully via sbtn
+(`/tmp/mml-destruction-tests-smoke2.log`). QA caught native ABI lowering being applied to
+MML struct destructors; the emitter now lowers native targets only and keeps generated struct
+calls in the MML ABI. A new test exercises both AArch64 and x86-64. Validator checks include
+actual helper parameter types; native implementation bodies are governed by their registered
+signatures. Intermediate test-only expectation failures are recorded in
+`/tmp/mml-destruction-final-tests-smokes{,2}.log` and corrected.
+
+Final Scala verification passes: **446 passed, 58 ignored**, no failures or compiler warnings.
+Formatting and lint pass, including the final operand-ID test helper review.
+Logs: `/tmp/mml-destruction-final-tests-smokes3.log` and
+`/tmp/mml-destruction-signoff-tests.log`. Required smokes passed except `astar2` (CSSC assembler
+compatibility) and `partial-fac1` (exit 139). Local publishing succeeded in
+`/tmp/mml-destruction-publish.log`. Benchmark builds passed except `nqueens` (same CSSC issue).
+
+The full memory harness passed **29/34**, compared with the prior **27/33**. The added
+`typed-closure-destruction` case and existing `direct-move-owned-struct-capture` pass.
+The five remaining failures concern PAP ownership/codegen: `direct-pap-escaping-heap-alias-arg`,
+`direct-pap-escaping-heap-arg`, `direct-pap-escaping-heap-capture`,
+`direct-pap-inscope-heap-capture`, and `escaping-paps`. Logs and baseline IR comparisons:
+`/tmp/mml-destruction-memory.log`, `/tmp/mml-destruction-diagnostics/results.json`, and
+`/tmp/mml-destruction-diagnostics/baseline-comparisons.json`. Common function definitions in the
+four emitted PAP programs match the borrowed-return baseline exactly. PartialFac1 and Astar2
+also retain their common function definitions; added universal helpers/entry wrappers account
+for the differences. PAP fixes remain outside this slice.
+
+The Author additionally authorized fixing the CSSC toolchain compatibility drift and explicitly
+rejected hardcoding the machine CPU. LLVM emits assembly for the resolved host CPU, but final
+Clang assembly lacked that CPU selection. The portable change in `LlvmToolchain.scala` forwards
+the resolved CPU consistently to Clang using `-march` for x86 and `-mcpu` for ARM. Explicit
+cross targets without a CPU continue to omit host CPU flags. Runtime compilation uses the same
+flags. No CPU model or operating system is hardcoded. The portable change passed formatting, lint, **446 tests (58 ignored)** and the six successful
+required smokes, including `astar2`, in `/tmp/mml-cpu-portable-verification.log`. A fresh native
+Astar2 build/run also passed, and local publishing succeeded in `/tmp/mml-cpu-publish-final.log`.
+A full x86 macOS executable built with `--cpu x86-64` and ran successfully; verbose output confirms
+`-march=x86-64` on runtime compilation and final assembly/linking
+(`/tmp/mml-cpu-portable-publish.log`). Clang C-to-assembly-to-object checks also passed for x86-64
+and AArch64 Linux in `/tmp/mml-cpu-linux-objects`; Linux runtime execution is untested.
+
+The optional cross-target check without `--cpu` exposed an existing, independent LLVM rejection:
+`attributes #0 = {}` in `codegen/emitter/Module.scala`. The same emission exists at HEAD; CPU flag
+forwarding does not cause it. This check stopped the initial publish batch; publishing was rerun
+successfully after a fresh native smoke. `partial-fac1` still exits 139
+(`/tmp/mml-cpu-partial-fac1.log`). All benchmark builds now pass after `make -C benchmark clean` and `make -C benchmark mml`,
+including `nqueens` (`/tmp/mml-cpu-benchmarks.log`). The repeated memory harness remains
+**29/34 passing**, with exactly the same five PAP failures (`/tmp/mml-cpu-memory.log`).
+All verification commands are terminal; no background work remains. `git diff --check` passes.
+The next action is Author review and workstream signoff; tracked-item status and commit/push
+approval remain separate.
+QA reviewed the closure diff and portable CPU change against the coding rules. Native/MML ABI
+and semantic identity findings are fixed. No new QA findings remain; the recorded PAP failures,
+ignored coverage and Linux sanitizer assembly failures remain explicit limits; the Linux follow-up
+below resolves the no-CPU cross-target rejection and verifies ordinary Linux execution.
+
+The new memory case covers nested owned closures, strings, structs, consuming parameters,
+alias use, recursion and resource-free function values. All changes remain uncommitted;
+workstream signoff, tracked-item updates, commit and push remain separate approval steps.
+
+## Linux verification follow-up
+
+The Author pointed out the existing Docker setup and directed use of its shell scripts.
+Docker Desktop was stopped; it is now running. The Ubuntu image built successfully, and
+`packaging/docker/linux-builder-shell.sh` started and entered the `mml` Compose service.
+The container is ARM64 Linux with LLVM/Clang 20.1.8 and GraalVM 21.0.3.
+
+The first runtime attempt exposed LLVM's `Host CPU: (unknown)` report being forwarded literally
+as a CPU name. Every program failed compilation before runtime; preserve these results as
+`/tmp/mml-linux-verification-initial.log`. This establishes a remaining portability gap in the
+CPU fix, not a passing Linux check. The follow-up treats unknown CPU reports as absent and omits
+the invalid empty attribute definition in default-CPU IR. No replacement CPU is hardcoded.
+Two regression tests cover CPU discovery and default-CPU attributes. An initial test fixture
+missed the function-body terminator; it was corrected. Final formatting, lint and full suite pass:
+**448 passed, 58 ignored**, no warnings. The six successful native smokes, default-CPU x86 macOS
+cross-compilation and local publishing pass in `/tmp/mml-linux-cpu-fallback-tests-final.log`.
+The x86 executable also ran successfully. `partial-fac1` retains exit 139
+(`/tmp/mml-linux-followup-partial-fac1.log`). Repeated macOS benchmark builds pass and the memory
+harness remains **29/34** with the same five PAP failures
+(`/tmp/mml-linux-followup-mac-{benchmarks,memory}.log`). QA review and `git diff --check` pass.
+
+Final Docker results are saved in `/tmp/mml-linux-verification-final.log`. `hola`, `quicksort`,
+`astar2`, and `nqueens` compile and run; `style-guide`, `lambda-factorial`, and `raytracer3_p6`
+compile; all benchmark builds pass. Linux `partial-fac1` also exits 139. The memory harness
+reports **0/34**, all compile failures, so it provides no Linux memory-safety result. A standalone
+`arrays-mem` diagnostic shows LLVM 20's generated `asan_globals` assembly rejected by Clang 20
+with `Linkage must be 'comdat'`. Its assembly remains at
+`/tmp/mml-linux-asan-diagnostic/out/aarch64-unknown-linux-gnu/ArraysMem.s` inside the container.
+Other individual compile failures have not been classified beyond the harness results.
+
+ASan itself works in this container: a tiny C probe compiled with Clang's `-fsanitize=address`
+and reported the deliberately introduced heap-use-after-free, with a source line and stack trace
+(`/tmp/mml-linux-asan-probe.log`). The remaining blocker is MML's sanitizer assembly path;
+it must not be described as lack of Linux ASan support or as detected MML runtime memory errors.
+No sanitizer workaround or Docker/source-script changes were made.
+
+All commands are terminal and the interactive shell is closed. Docker Desktop and the Compose
+service remain running. Linux build outputs are isolated inside the container. The Author deferred Linux sanitizer work to the separate local item
+[Revisit Linux sanitizer verification](tracking.md#revisit-linux-sanitizer-verification).
+The Author explicitly requires `tracking.md` only, with no GitHub synchronization for this item.
+An issue-creation command already in flight created GitHub issue #271 before the interruption;
+it has not been added to the project or modified further. The Author was informed. No further
+GitHub changes are authorized. Workstream signoff, other tracked-item statuses, commit and push
+remain separate approvals.
+
+The Author additionally requested compiling/running `mml/samples/astar3.mml` and the MML
+benchmarks in Linux. The existing Docker shell script reopened the service. `astar3` compiled and ran successfully,
+printed its path map and `Path found!`, and exited 0. All seven MML benchmark executables ran
+once and exited 0: sieve (`78498` primes), quicksort (median `-85`), matmul and matmul-opt
+(trace `381460`), nqueens (`14200` solutions), euclidean-ext (`5010954496756`), and ackermann
+(`8189`). Their Linux builds were already current from the successful full benchmark build;
+`make mml` reconfirmed that state. These are successful execution checks, not a statistical
+performance comparison. Log copied to the host: `/tmp/mml-linux-astar3-benchmarks.log`.
+The shell is closed and no checks remain running. The local deferred Linux item is recorded;
+the closure destruction and portable CPU work is ready for review/signoff with the documented
+sanitizer and PAP limits.
+
+## Review follow-up: separate phase files
+
+The Author requires each semantic phase to live in its own file. Body completion is extracted
+from `ClosureMemoryFnGenerator.completeBodies` into
+`semantic/ClosureDestructorBodyGenerator.scala`, exposing `rewriteModule`. The first generator
+registers layouts/helpers after type checking; the new phase completes field cleanup after
+ownership analysis. The pipeline and design reference name the two phases separately. This is
+a structural extraction with the same phase order and cleanup behavior. The Author also requires
+shared implementation to live outside the phase files. Shared intrinsic-body construction is
+in `semantic/ClosureDestructorAst.scala`; both phase objects retain a single
+`rewriteModule` entry point and no phase calls the other.
+
+The Author accepted this organization and asked to finish. A common semantic-phase trait was
+discussed and left for later; none is introduced. Formatting, lint and the full suite pass after
+the final shared-helper extraction: **448 passed, 58 ignored**, no warnings. The six successful
+required native smokes and local publishing pass in `/tmp/mml-destructor-phase-split-final.log`.
+QA reviewed both separate phases, their shared helper and pipeline/docs references; no new issues
+were found. Staged and unstaged whitespace checks pass; existing staging is left untouched.
+
+Final benchmark builds pass (`/tmp/mml-phase-split-benchmarks.log`). The memory harness remains
+**29/34** with the same five PAP failures (`/tmp/mml-phase-split-memory.log`); the new nested
+closure regression passes. `partial-fac1` retains exit 139
+(`/tmp/mml-phase-split-partial-fac1.log`). All verification processes are terminal, and the final
+compiler is published locally. Linux sanitizer work remains deferred in the local tracking item.
+
+The Author will read the final phase walkthrough and finish review tomorrow. Workstream signoff
+is still pending; no tracked-item completion, commit or push has been performed. No further GitHub
+changes were made. Resume from the two phase files and `SemanticStage.scala`, preserving the
+current staging. The next action is Author review, not another implementation or test cycle.
 
 ## Signed-off workstream: borrowed returns through aliases
 

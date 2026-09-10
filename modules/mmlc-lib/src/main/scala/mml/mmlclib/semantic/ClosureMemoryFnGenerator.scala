@@ -1,19 +1,16 @@
 package mml.mmlclib.semantic
 
+import cats.syntax.all.*
 import mml.mmlclib.ast.*
 import mml.mmlclib.compiler.CompilerState
 
 import java.util.IdentityHashMap
 
-/** Generates closure environment types and memory functions for capturing lambdas.
+/** Registers closure environment layouts and destructor helpers after type checking.
   *
-  * Runs after CaptureAnalyzer (which populates Lambda.captures) and before TypeChecker. For each
-  * capturing lambda, this phase:
-  *   1. Synthesizes a TypeStruct for the environment (`__closure_env_N`)
-  *   2. Generates a free function (`__free_closure_env_N`) that frees heap fields + the env pointer
-  *   3. Tags the Lambda with the env struct name via LambdaMeta.envStructName
-  *
-  * Follows the same patterns as ConstructorGenerator and MemoryFunctionGenerator.
+  * Capturing lambdas receive environment metadata. Move environments receive specific destructors,
+  * and each module receives a universal dispatcher. ClosureDestructorBodyGenerator fills field
+  * cleanup entries after ownership analysis establishes capture ownership.
   */
 object ClosureMemoryFnGenerator:
   private val syntheticSource = SourceOrigin.Synth
@@ -90,60 +87,16 @@ object ClosureMemoryFnGenerator:
         case (state, _) => state
       ._1
 
-  /** Build a map from param/binding IDs to their types by walking the module AST. */
-  private def buildIdTypeMap(module: Module): Map[String, Type] =
-    def paramTypes(lambda: Lambda): Map[String, Type] =
-      lambda.params.flatMap { param =>
-        for
-          id <- param.id
-          tpe <- param.typeAsc.orElse(param.typeSpec)
-        yield id -> tpe
-      }.toMap
-
-    def walkExpr(expr: Expr): Map[String, Type] =
-      expr.terms.foldLeft(Map.empty[String, Type]) { (acc, term) =>
-        acc ++ walkTerm(term)
-      }
-
-    def walkTerm(term: Term): Map[String, Type] = term match
-      case lambda: Lambda =>
-        paramTypes(lambda) ++ walkExpr(lambda.body)
-      case App(_, fn, arg, _, _) =>
-        walkTerm(fn) ++ walkExpr(arg)
-      case Cond(_, cond, ifTrue, ifFalse, _, _) =>
-        walkExpr(cond) ++ walkExpr(ifTrue) ++ walkExpr(ifFalse)
-      case TermGroup(_, inner, _) =>
-        walkExpr(inner)
-      case Tuple(_, elements, _, _) =>
-        elements.toList.foldLeft(Map.empty[String, Type]) { (acc, element) =>
-          acc ++ walkExpr(element)
-        }
-      case ref: Ref =>
-        ref.qualifier.fold(Map.empty[String, Type])(walkTerm)
-      case _ =>
-        Map.empty
-
-    module.members.foldLeft(Map.empty[String, Type]) {
-      case (acc, bnd: Bnd) => acc ++ walkExpr(bnd.value)
-      case (acc, _) => acc
-    }
-
-  /** Resolve the type of a captured Ref. */
-  private def resolveCaptureType(ref: Ref, idTypeMap: Map[String, Type]): Option[Type] =
-    ref.typeSpec
-      .orElse(ref.typeAsc)
-      .orElse(ref.resolvedId.flatMap(idTypeMap.get))
-
   /** Synthesize a TypeStruct for a closure environment.
     *
     * Move lambdas: field 0 = `__dtor: RawPtr` (destructor pointer), fields 1..N = captures. Borrow
     * lambdas: fields 0..N-1 = captures only (no destructor, env is stack-allocated).
     */
   private def mkEnvStruct(
-    lambda:     Lambda,
-    envName:    String,
-    moduleName: String,
-    idTypeMap:  Map[String, Type]
+    lambda:      Lambda,
+    envName:     String,
+    moduleName:  String,
+    resolvables: ResolvablesIndex
   ): TypeStruct =
     val dtorFields =
       if lambda.isMove then
@@ -159,9 +112,17 @@ object ClosureMemoryFnGenerator:
 
     val captureFields = lambda.captures.map { cap =>
       val ref = cap.ref
-      val fieldType = resolveCaptureType(ref, idTypeMap).getOrElse(
-        TypeRef(syntheticSource, "Unknown")
-      )
+      val fieldType = ref.typeSpec
+        .orElse(ref.typeAsc)
+        .orElse(
+          ref.resolvedId
+            .flatMap(resolvables.lookup)
+            .collect { case r: Typeable => r }
+            .flatMap(r => r.typeSpec.orElse(r.typeAsc))
+        )
+        .getOrElse(
+          TypeRef(syntheticSource, "Unknown")
+        )
       Field(
         source   = syntheticSource,
         nameNode = Name.synth(ref.name),
@@ -179,154 +140,60 @@ object ClosureMemoryFnGenerator:
       id         = typeId(moduleName, envName)
     )
 
-  /** Generate a __free_closure_env_N function.
-    *
-    * For 3.4 (value-type captures), the body is just: mml_free_raw(ptr)
-    *
-    * For 3.5 (heap-type captures), the body will be extended to free each heap field before freeing
-    * the pointer.
-    */
-  private def mkFreeFunction(
-    envStruct:  TypeStruct,
-    moduleName: String
-  ): Bnd =
-    val envName = envStruct.name
-    val fnName  = s"__free_$envName"
-    val unitTR  = unitTypeRef(syntheticSource)
-
-    // The free function takes a RawPtr parameter (the env pointer)
-    val ptrParam = FnParam(
-      syntheticSource,
-      Name.synth("p"),
-      typeAsc = Some(rawPtrTypeRef(syntheticSource)),
-      id      = paramId(moduleName, fnName, "p")
-    )
-
-    // Body: mml_free_raw(p)
-    val freeRawRef = Ref(
-      syntheticSource,
-      "mml_free_raw",
-      resolvedId = Some("stdlib::bnd::mml_free_raw"),
-      typeSpec = Some(
-        TypeFn(syntheticSource, cats.data.NonEmptyList.one(rawPtrTypeRef(syntheticSource)), unitTR)
-      )
-    )
-    val ptrRef = Ref(
-      syntheticSource,
-      "p",
-      typeSpec   = Some(rawPtrTypeRef(syntheticSource)),
-      resolvedId = ptrParam.id
-    )
-    val argExpr =
-      Expr(syntheticSource, List(ptrRef), typeSpec = Some(rawPtrTypeRef(syntheticSource)))
-    val freeCall = App(syntheticSource, freeRawRef, argExpr, typeSpec = Some(unitTR))
-    val body     = Expr(syntheticSource, List(freeCall), typeSpec = Some(unitTR))
-
-    // Function type: RawPtr -> Unit
-    val fnType =
-      TypeFn(syntheticSource, cats.data.NonEmptyList.one(rawPtrTypeRef(syntheticSource)), unitTR)
-
-    val lambda = Lambda(
-      syntheticSource,
-      List(ptrParam),
-      body,
-      Nil,
-      typeSpec = Some(fnType),
-      typeAsc  = Some(unitTR)
-    )
-
-    val meta = BindingMeta(
-      origin         = BindingOrigin.Destructor,
-      arity          = CallableArity.Unary,
-      precedence     = Precedence.Function,
-      associativity  = None,
-      originalName   = fnName,
-      mangledName    = fnName,
-      destructorKind = Some(DestructorKind.ClosureEnv(envName))
-    )
-
-    Bnd(
-      source     = syntheticSource,
-      nameNode   = Name.synth(fnName),
-      value      = Expr(syntheticSource, List(lambda)),
-      typeSpec   = Some(fnType),
-      typeAsc    = Some(unitTR),
-      docComment = None,
-      meta       = Some(meta),
-      id         = genId(moduleName, fnName)
-    )
-
-  /** Universal closure free function — frees the env pointer of any closure.
-    *
-    * Used when a closure is returned from a function and the caller doesn't know which specific env
-    * struct is inside. For 3.4 (value-type captures), this is sufficient since all env structs only
-    * need their malloc'd pointer freed. For 3.5 (heap captures), this will need to be replaced with
-    * per-layout free functions.
-    *
-    * The codegen extracts the env ptr from the fat pointer before calling this function.
-    */
-  private def mkUniversalClosureFree(moduleName: String): Bnd =
-    val fnName = "__free_closure"
+  /** Register the real helper signature before ownership chooses capture cleanup targets. */
+  private def mkFreeFunction(fnName: String, moduleName: String): Bnd =
     val unitTR = unitTypeRef(syntheticSource)
-
+    val ptrTR  = rawPtrTypeRef(syntheticSource)
     val ptrParam = FnParam(
       syntheticSource,
       Name.synth("p"),
-      typeAsc = Some(rawPtrTypeRef(syntheticSource)),
-      id      = paramId(moduleName, fnName, "p")
+      typeAsc  = ptrTR.some,
+      typeSpec = ptrTR.some,
+      id       = paramId(moduleName, fnName, "p")
     )
-
-    val freeRawRef = Ref(
-      syntheticSource,
-      "mml_free_raw",
-      resolvedId = Some("stdlib::bnd::mml_free_raw"),
-      typeSpec = Some(
-        TypeFn(syntheticSource, cats.data.NonEmptyList.one(rawPtrTypeRef(syntheticSource)), unitTR)
-      )
-    )
-    val ptrRef = Ref(
-      syntheticSource,
-      "p",
-      typeSpec   = Some(rawPtrTypeRef(syntheticSource)),
-      resolvedId = ptrParam.id
-    )
-    val argExpr =
-      Expr(syntheticSource, List(ptrRef), typeSpec = Some(rawPtrTypeRef(syntheticSource)))
-    val freeCall = App(syntheticSource, freeRawRef, argExpr, typeSpec = Some(unitTR))
-    val body     = Expr(syntheticSource, List(freeCall), typeSpec = Some(unitTR))
-
-    val fnType =
-      TypeFn(syntheticSource, cats.data.NonEmptyList.one(rawPtrTypeRef(syntheticSource)), unitTR)
-
+    val fnType = TypeFn(syntheticSource, cats.data.NonEmptyList.one(ptrTR), unitTR)
+    val body =
+      Expr(syntheticSource, List(LiteralUnit(syntheticSource, unitTR.some)), typeSpec = unitTR.some)
     val lambda = Lambda(
       syntheticSource,
       List(ptrParam),
       body,
       Nil,
-      typeSpec = Some(fnType),
-      typeAsc  = Some(unitTR)
+      typeSpec = fnType.some,
+      typeAsc  = unitTR.some
     )
-
-    val meta = BindingMeta(
-      origin         = BindingOrigin.Destructor,
-      arity          = CallableArity.Unary,
-      precedence     = Precedence.Function,
-      associativity  = None,
-      originalName   = fnName,
-      mangledName    = fnName,
-      destructorKind = Some(DestructorKind.ClosureUniversal)
-    )
-
     Bnd(
-      source     = syntheticSource,
-      nameNode   = Name.synth(fnName),
-      value      = Expr(syntheticSource, List(lambda)),
-      typeSpec   = Some(fnType),
-      typeAsc    = Some(unitTR),
-      docComment = None,
-      meta       = Some(meta),
-      id         = genId(moduleName, fnName)
+      source   = syntheticSource,
+      nameNode = Name.synth(fnName),
+      value    = Expr(syntheticSource, List(lambda), typeSpec = fnType.some),
+      typeSpec = fnType.some,
+      typeAsc  = unitTR.some,
+      meta = BindingMeta(
+        BindingOrigin.Destructor,
+        CallableArity.Unary,
+        Precedence.Function,
+        None,
+        fnName,
+        fnName
+      ).some,
+      id = genId(moduleName, fnName)
     )
+
+  private def initializeBody(binding: Bnd, layoutId: Option[String]): Bnd =
+    binding.value.terms match
+      case List(lambda: Lambda) =>
+        val operand  = pointerOperand(lambda)
+        val unitType = unitTypeRef(syntheticSource).some
+        val body = layoutId.fold[Destruction](
+          DispatchClosureDestructor(syntheticSource, operand, unitType)
+        )(id => DestroyClosureEnvironment(syntheticSource, operand, id, Nil, unitType))
+        ClosureDestructorAst.withBody(binding, lambda, body)
+      case _ => binding
+
+  private def pointerOperand(lambda: Lambda): Expr =
+    val refs =
+      lambda.params.map(p => Ref(syntheticSource, p.name, resolvedId = p.id, typeSpec = p.typeSpec))
+    Expr(syntheticSource, refs, typeSpec = rawPtrTypeRef(syntheticSource).some)
 
   /** Rewrite lambdas in the AST to tag them with envStructName. */
   private def tagLambdas(
@@ -394,51 +261,22 @@ object ClosureMemoryFnGenerator:
     val moduleName = module.name
 
     val capturingLambdas = collectCapturingLambdas(module)
-    if capturingLambdas.isEmpty then state
-    else
-      // Build a map from Lambda identity (reference equality) to env struct name
-      val lambdaMap = capturingLambdas.foldLeft(new IdentityHashMap[Lambda, String]()) {
-        case (acc, (lambda, envName)) =>
-          acc.put(lambda, envName)
-          acc
-      }
-
-      // Build ID → type map for resolving capture types
-      val idTypeMap = buildIdTypeMap(module)
-
-      // Generate env structs for all capturing lambdas (move and borrow)
-      val envStructs =
-        capturingLambdas.map((lambda, name) => mkEnvStruct(lambda, name, moduleName, idTypeMap))
-
-      // Generate free functions only for move lambdas (borrow envs are stack-allocated)
-      val moveLambdaStructs =
-        capturingLambdas.zip(envStructs).collect {
-          case ((lambda, _), struct) if lambda.isMove =>
-            struct
-        }
-      val freeFunctions = moveLambdaStructs.map(mkFreeFunction(_, moduleName))
-
-      // Universal __free_closure only needed if there are move lambdas
-      val universalFreeOpt =
-        if moveLambdaStructs.nonEmpty then Some(mkUniversalClosureFree(moduleName))
-        else None
-
-      // Tag lambdas with envStructName
-      val taggedMembers = tagLambdas(module.members, lambdaMap)
-
-      // Add env structs, free functions, and optional universal free to members
-      val finalMembers =
-        taggedMembers ++ envStructs ++ freeFunctions ++ universalFreeOpt.toList
-
-      // Update resolvables
-      val resolvablesWithStructs = envStructs.foldLeft(module.resolvables) { (idx, struct) =>
-        idx.updatedType(struct)
-      }
-      val resolvablesWithFrees = freeFunctions.foldLeft(resolvablesWithStructs) { (idx, fn) =>
-        idx.updated(fn)
-      }
-      val finalResolvables = universalFreeOpt.foldLeft(resolvablesWithFrees) { (idx, fn) =>
-        idx.updated(fn)
-      }
-
-      state.withModule(module.copy(members = finalMembers, resolvables = finalResolvables))
+    // Lambda nodes have no stable IDs; this boundary tags their exact AST instances.
+    val lambdaMap = capturingLambdas.foldLeft(new IdentityHashMap[Lambda, String]()) {
+      case (acc, (lambda, envName)) =>
+        acc.put(lambda, envName)
+        acc
+    }
+    val envStructs = capturingLambdas.map((lambda, name) =>
+      mkEnvStruct(lambda, name, moduleName, module.resolvables)
+    )
+    val registrations = capturingLambdas.zip(envStructs).collect {
+      case ((lambda, _), struct) if lambda.isMove =>
+        (mkFreeFunction(s"__free_${struct.name}", moduleName), struct.id)
+    } :+ (mkFreeFunction("__free_closure", moduleName), none[String])
+    val index = module.resolvables
+      .updatedAllTypes(envStructs)
+      .updatedAll(registrations.map(_._1))
+    val freeFunctions = registrations.map(initializeBody)
+    val members       = tagLambdas(module.members, lambdaMap) ++ envStructs ++ freeFunctions
+    state.withModule(module.copy(members = members, resolvables = index.updatedAll(freeFunctions)))

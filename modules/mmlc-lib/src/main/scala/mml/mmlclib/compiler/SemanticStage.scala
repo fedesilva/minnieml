@@ -36,12 +36,18 @@ object SemanticStage:
       |> CompilerState.timePhase("semantic", "resolvables-indexer")(
         ResolvablesIndexer.rewriteModule
       )
-      |> CompilerState.timePhase("semantic", "tailrec-detector")(
-        TailRecursionDetector.rewriteModule
-      )
       |> CompilerState.timePhase("semantic", "ownership-analyzer")(
         OwnershipAnalyzer.rewriteModule
       )
+      |> CompilerState.timePhase("semantic", "closure-destructor-bodies")(
+        ClosureDestructorBodyGenerator.rewriteModule
+      )
+      |> CompilerState.timePhase("semantic", "tailrec-detector")(
+        TailRecursionDetector.rewriteModule
+      )
       |> CompilerState.timePhase("semantic", "resolvables-indexer-final")(
         ResolvablesIndexer.rewriteModule
+      )
+      |> CompilerState.timePhase("semantic", "destruction-validation")(
+        DestructionValidator.rewriteModule
       )

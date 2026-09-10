@@ -68,6 +68,9 @@ object AstLookup:
         findRefsInExprAt(group.inner, line, col)
       case tuple: Tuple =>
         tuple.elements.toList.flatMap(findRefsInExprAt(_, line, col))
+      case d: Destruction =>
+        findRefsInExprAt(d.operand, line, col)
+
       case expr: Expr =>
         findRefsInExprAt(expr, line, col)
       case inv: InvalidExpression =>
@@ -245,8 +248,8 @@ object AstLookup:
       case dc: DataConstructor =>
         Some(LookupResult(dc.typeSpec, None, dc.spanOpt))
 
-      case dd: DataDestructor =>
-        Some(LookupResult(dd.typeSpec, None, dd.spanOpt))
+      case d: Destruction =>
+        findInExpr(d.operand, line, col)
 
       case ni: NativeImpl =>
         Some(LookupResult(ni.typeSpec, Some("@native"), ni.spanOpt))
@@ -403,6 +406,9 @@ object AstLookup:
               findDefinitionInExpr(e, line, col, module)
           }
           .getOrElse(Nil)
+
+      case d: Destruction =>
+        findDefinitionInExpr(d.operand, line, col, module)
 
       case expr: Expr =>
         findDefinitionInExpr(expr, line, col, module)
@@ -779,6 +785,9 @@ object AstLookup:
             findReferenceTargetInExpr(e, line, col, module)
         }.flatten
 
+      case d: Destruction =>
+        findReferenceTargetInExpr(d.operand, line, col, module)
+
       case expr: Expr =>
         findReferenceTargetInExpr(expr, line, col, module)
 
@@ -1022,6 +1031,9 @@ object AstLookup:
         tuple.elements.toList.flatMap(
           collectReferencesInExpr(_, target, includeDeclaration, module)
         )
+
+      case d: Destruction =>
+        collectReferencesInExpr(d.operand, target, includeDeclaration, module)
 
       case expr: Expr =>
         collectReferencesInExpr(expr, target, includeDeclaration, module)

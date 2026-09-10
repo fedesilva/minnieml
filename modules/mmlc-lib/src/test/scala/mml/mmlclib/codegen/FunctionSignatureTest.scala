@@ -5,13 +5,6 @@ import mml.mmlclib.test.BaseEffFunSuite
 
 class FunctionSignatureTest extends BaseEffFunSuite:
 
-  private def functionBody(llvmIr: String, signaturePattern: String): String =
-    val pattern = (s"(?s)define .*@$signaturePattern \\{\\n(.*?)\\n\\}").r
-    pattern
-      .findFirstMatchIn(llvmIr)
-      .map(_.group(1))
-      .getOrElse(fail(s"Missing function definition for $signaturePattern. IR:\n$llvmIr"))
-
   test("synthesized main passes argv as StringArray for unit-returning main(args)") {
     val source =
       """
@@ -309,7 +302,7 @@ class FunctionSignatureTest extends BaseEffFunSuite:
       """
 
     compileAndGenerate(source).map { llvmIr =>
-      val mainBody = functionBody(llvmIr, "test_main\\(\\) #0")
+      val mainBody = functionBodyMatching(llvmIr, "test_main\\(\\) #0")
 
       assert(
         !llvmIr.contains("load { ptr, ptr }, ptr @test_inc"),
@@ -338,7 +331,7 @@ class FunctionSignatureTest extends BaseEffFunSuite:
       """
 
     compileAndGenerate(source).map { llvmIr =>
-      val mainBody = functionBody(llvmIr, "test_main\\(\\) #0")
+      val mainBody = functionBodyMatching(llvmIr, "test_main\\(\\) #0")
       val wrapperDefinitions =
         """define internal i64 @test_inc__closure_entry\(i64 %0, ptr %1\) #0""".r
           .findAllMatchIn(llvmIr)
@@ -363,7 +356,7 @@ class FunctionSignatureTest extends BaseEffFunSuite:
       """
 
     compileAndGenerate(source).map { llvmIr =>
-      val mainBody = functionBody(llvmIr, "test_main\\(\\) #0")
+      val mainBody = functionBodyMatching(llvmIr, "test_main\\(\\) #0")
 
       assert(
         mainBody.contains("call i64 @test_inc(i64 1)"),
@@ -391,7 +384,7 @@ class FunctionSignatureTest extends BaseEffFunSuite:
       """
 
     compileAndGenerate(source).map { llvmIr =>
-      val mainBody = functionBody(llvmIr, "test_main\\(\\) #0")
+      val mainBody = functionBodyMatching(llvmIr, "test_main\\(\\) #0")
 
       assert(
         llvmIr.contains("@test_chooser = global { ptr, ptr }"),
@@ -421,7 +414,7 @@ class FunctionSignatureTest extends BaseEffFunSuite:
       """
 
     compileAndGenerate(source).map { llvmIr =>
-      val mainBody = functionBody(llvmIr, "test_main\\(\\) #0")
+      val mainBody = functionBodyMatching(llvmIr, "test_main\\(\\) #0")
 
       assert(
         """call i64 @test_f_\d+\(i64 41\)""".r.findFirstIn(mainBody).nonEmpty,
@@ -450,9 +443,9 @@ class FunctionSignatureTest extends BaseEffFunSuite:
       """
 
     compileAndGenerate(source).map { llvmIr =>
-      val forwardBody = functionBody(llvmIr, """test_forward\([^\n]*\) #0""")
-      val mainBody    = functionBody(llvmIr, "test_main\\(\\) #0")
-      val wrapperBody = functionBody(llvmIr, """test_add__closure_entry\([^\n]*\) #0""")
+      val forwardBody = functionBodyMatching(llvmIr, """test_forward\([^\n]*\) #0""")
+      val mainBody    = functionBodyMatching(llvmIr, "test_main\\(\\) #0")
+      val wrapperBody = functionBodyMatching(llvmIr, """test_add__closure_entry\([^\n]*\) #0""")
 
       assert(
         forwardBody.contains("call i64 @test_apply2({ ptr, ptr } %0)") &&
@@ -831,13 +824,13 @@ class FunctionSignatureTest extends BaseEffFunSuite:
         s"g should take (y, a_threaded) as two i64 params. IR:\n$llvmIr"
       )
 
-      val gBody = functionBody(llvmIr, """test_g_\d+\(i64 %0, i64 %1\) #0""")
+      val gBody = functionBodyMatching(llvmIr, """test_g_\d+\(i64 %0, i64 %1\) #0""")
       assert(
         """call i64 @test_f_\d+\(i64 %0, i64 %1\)""".r.findFirstIn(gBody).nonEmpty,
         s"g's call to f must use g's own params (y=%0, a_threaded=%1). Body:\n$gBody"
       )
 
-      val outerBody = functionBody(llvmIr, """test_outer\(i64 %0\) #0""")
+      val outerBody = functionBodyMatching(llvmIr, """test_outer\(i64 %0\) #0""")
       assert(
         """call i64 @test_g_\d+\(i64 1, i64 %0\)""".r.findFirstIn(outerBody).nonEmpty,
         s"outer must call g with (1, a=%0). Body:\n$outerBody"
@@ -880,7 +873,7 @@ class FunctionSignatureTest extends BaseEffFunSuite:
         s"Direct loop should not materialize a closure env or store a Function value. IR:\n$llvmIr"
       )
 
-      val loopBody          = functionBody(llvmIr, """test_loop_\d+\(i64 %0, i64 %1\) #0""")
+      val loopBody          = functionBodyMatching(llvmIr, """test_loop_\d+\(i64 %0, i64 %1\) #0""")
       val directSiblingCall = """call i64 @test_sibling_\d+\(i64 %\d+, i64 %\d+\)""".r
       assert(
         loopBody.contains("loop.header:") && loopBody.contains("phi i64"),
@@ -912,7 +905,7 @@ class FunctionSignatureTest extends BaseEffFunSuite:
       """
 
     compileAndGenerate(source).map { llvmIr =>
-      val mainBody  = functionBody(llvmIr, """test_main\(\) #0""")
+      val mainBody  = functionBodyMatching(llvmIr, """test_main\(\) #0""")
       val cloneCall = """%\d+ = call %struct\.String @__clone_String\(""".r
       assert(
         cloneCall.findFirstIn(mainBody).nonEmpty,
@@ -931,7 +924,7 @@ class FunctionSignatureTest extends BaseEffFunSuite:
         s"greet's signature must take the cloned String as a trailing param. IR:\n$llvmIr"
       )
 
-      val greetBody = functionBody(llvmIr, """test_greet_\d+\(%struct\.String %0\) #0""")
+      val greetBody = functionBodyMatching(llvmIr, """test_greet_\d+\(%struct\.String %0\) #0""")
       assert(
         greetBody.contains("extractvalue %struct.String %0"),
         s"greet's body must consume its own trailing-param register, not an outer one. " +
@@ -970,7 +963,7 @@ class FunctionSignatureTest extends BaseEffFunSuite:
       """
 
     compileAndGenerate(source).map { llvmIr =>
-      val mainBody = functionBody(llvmIr, "test_main\\(\\) #0")
+      val mainBody = functionBodyMatching(llvmIr, "test_main\\(\\) #0")
 
       assert(
         !llvmIr.contains("load { ptr, ptr }, ptr @test_inc"),
@@ -1001,7 +994,7 @@ class FunctionSignatureTest extends BaseEffFunSuite:
       """
 
     compileAndGenerate(source).map { llvmIr =>
-      val mainBody = functionBody(llvmIr, "test_main\\(\\) #0")
+      val mainBody = functionBodyMatching(llvmIr, "test_main\\(\\) #0")
 
       assert(
         """call i64 @test_f_\d+\(i64 41, ptr null\)""".r.findFirstIn(mainBody).nonEmpty,
@@ -1029,9 +1022,9 @@ class FunctionSignatureTest extends BaseEffFunSuite:
       """
 
     compileAndGenerate(source).map { llvmIr =>
-      val forwardBody = functionBody(llvmIr, """test_forward\([^\n]*\) #0""")
-      val mainBody    = functionBody(llvmIr, "test_main\\(\\) #0")
-      val anonBody    = functionBody(llvmIr, """test__anon_\d+\([^\n]*\) #0""")
+      val forwardBody = functionBodyMatching(llvmIr, """test_forward\([^\n]*\) #0""")
+      val mainBody    = functionBodyMatching(llvmIr, "test_main\\(\\) #0")
+      val anonBody    = functionBodyMatching(llvmIr, """test__anon_\d+\([^\n]*\) #0""")
 
       assert(
         forwardBody.contains("call i64 @test_apply2({ ptr, ptr } %0)") &&

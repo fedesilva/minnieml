@@ -125,6 +125,9 @@ def compileTerm(
     case app: App =>
       compileApp(app, state, functionScope)
 
+    case destruction: Destruction =>
+      compileDestruction(destruction, state, functionScope)
+
     case Cond(_, condExpr, ifTrue, ifFalse, _, _) =>
       compileCond(condExpr, ifTrue, ifFalse, state, functionScope, compileExpr)
 

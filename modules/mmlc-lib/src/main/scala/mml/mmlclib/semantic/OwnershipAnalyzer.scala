@@ -16,19 +16,19 @@ enum OwnershipState derives CanEqual:
 
 /** Binding info: ownership state, type, ID for selecting __free_T, and optional witness boolean */
 case class BindingInfo(
-  state:      OwnershipState,
-  bindingTpe: Option[Type]   = None,
-  bindingId:  Option[String] = None,
-  witness:    Option[String] = None, // Name of __owns_<binding> if mixed ownership
-  freeFn:     Option[String] = None // Override free function name (for closures)
+  state:              OwnershipState,
+  bindingTpe:         Option[Type]   = None,
+  bindingId:          Option[String] = None,
+  witness:            Option[String] = None, // Name of __owns_<binding> if mixed ownership
+  destructorTargetId: Option[String] = None // Resolved closure destructor target
 )
 
 case class OwnedBinding(
-  name:    String,
-  tpe:     Option[Type],
-  id:      Option[String],
-  witness: Option[String],
-  freeFn:  Option[String]
+  name:               String,
+  tpe:                Option[Type],
+  id:                 Option[String],
+  witness:            Option[String],
+  destructorTargetId: Option[String]
 )
 
 /** Tracks ownership for bindings within a scope */
@@ -47,17 +47,34 @@ case class OwnershipScope(
   def nextTemp: (String, OwnershipScope) =
     (s"__tmp_$tempCounter", copy(tempCounter = tempCounter + 1))
 
-  def withOwned(name: String, tpe: Option[Type], id: Option[String] = None): OwnershipScope =
-    copy(bindings = bindings + (name -> BindingInfo(OwnershipState.Owned, tpe, id)))
-
-  def withOwnedClosure(
-    name:   String,
-    tpe:    Option[Type],
-    id:     Option[String],
-    freeFn: String
+  def withOwned(
+    name:               String,
+    tpe:                Option[Type],
+    id:                 Option[String] = None,
+    destructorTargetId: Option[String] = None
   ): OwnershipScope =
     copy(bindings =
-      bindings + (name -> BindingInfo(OwnershipState.Owned, tpe, id, freeFn = Some(freeFn)))
+      bindings + (name -> BindingInfo(
+        OwnershipState.Owned,
+        tpe,
+        id,
+        destructorTargetId = destructorTargetId
+      ))
+    )
+
+  def withOwnedClosure(
+    name:               String,
+    tpe:                Option[Type],
+    id:                 Option[String],
+    destructorTargetId: String
+  ): OwnershipScope =
+    copy(bindings =
+      bindings + (name -> BindingInfo(
+        OwnershipState.Owned,
+        tpe,
+        id,
+        destructorTargetId = Some(destructorTargetId)
+      ))
     )
 
   def withMixedOwnership(
@@ -97,8 +114,8 @@ case class OwnershipScope(
   def ownedBindings: List[OwnedBinding] =
     bindings
       .collect:
-        case (name, BindingInfo(OwnershipState.Owned, tpe, id, witness, freeFn)) =>
-          OwnedBinding(name, tpe, id, witness, freeFn)
+        case (name, BindingInfo(OwnershipState.Owned, tpe, id, witness, destructorTargetId)) =>
+          OwnedBinding(name, tpe, id, witness, destructorTargetId)
       .toList
 
 /** Result of analyzing an expression */
@@ -134,9 +151,6 @@ object OwnershipAnalyzer:
 
   private def unitTypeRef(source: SourceOrigin): TypeRef =
     TypeRef(source, "Unit", Some(UnitTypeId), Nil)
-
-  private def rawPtrTypeRef(source: SourceOrigin): TypeRef =
-    TypeRef(source, "RawPtr", Some("stdlib::typedef::RawPtr"), Nil)
 
   private def boolTypeRef(source: SourceOrigin): TypeRef =
     TypeRef(source, "Bool", Some(BoolTypeId), Nil)
@@ -336,16 +350,6 @@ object OwnershipAnalyzer:
     case lambda: Lambda if lambda.captures.nonEmpty && lambda.isMove => lambda.typeSpec
     case _ => None
 
-  /** Look up the resolved ID for a free function by name */
-  private def lookupFreeFnId(freeFn: String, resolvables: ResolvablesIndex): Option[String] =
-    // Try stdlib first, then search resolvables for user-defined free functions
-    val stdlibId = s"stdlib::bnd::$freeFn"
-    if resolvables.lookup(stdlibId).isDefined then Some(stdlibId)
-    else
-      // Search for a binding with this name in resolvables
-      resolvables.resolvables.collectFirst:
-        case (id, bnd: Bnd) if bnd.name == freeFn => id
-
   /** Look up the resolved ID for a clone function by name.
     *
     * For user-defined structs, prefer the generated module-local clone function. For native/stdlib
@@ -370,38 +374,34 @@ object OwnershipAnalyzer:
     * exists for the type.
     */
   private def mkFreeCall(
-    bindingName:    String,
-    tpe:            Type,
-    span:           SourceOrigin,
-    bindingId:      Option[String],
-    resolvables:    ResolvablesIndex,
-    freeFnOverride: Option[String] = None
-  ): Option[App] =
-    val freeFnOpt = freeFnOverride
-      .orElse(getTypeName(tpe).flatMap(freeFnFor(_, resolvables)))
-      .orElse(tpe match
-        case _: TypeFn => Some("__free_closure")
-        case _ => None)
-    freeFnOpt.map { freeFn =>
-      val freeFnId = lookupFreeFnId(freeFn, resolvables)
-      val unitType: Option[Type] = Some(unitTypeRef(span))
-      // For closure free functions, the param type is RawPtr (the env pointer)
-      val paramType =
-        if freeFnOverride.isDefined || tpe.isInstanceOf[TypeFn] then rawPtrTypeRef(span)
-        else tpe
-      val fnType = Some(TypeFn(span, cats.data.NonEmptyList.one(paramType), unitType.get))
-      val fnRef  = Ref(SourceOrigin.Synth, freeFn, resolvedId = freeFnId, typeSpec = fnType)
-      val argRef =
-        Ref(
-          SourceOrigin.Synth,
-          bindingName,
-          typeSpec     = Some(tpe),
-          resolvedId   = bindingId,
-          candidateIds = bindingId.toList
-        )
-      val argExpr = Expr(span, List(argRef), typeSpec = Some(tpe))
-      App(span, fnRef, argExpr, typeSpec = unitType)
-    }
+    bindingName:              String,
+    tpe:                      Type,
+    span:                     SourceOrigin,
+    bindingId:                Option[String],
+    resolvables:              ResolvablesIndex,
+    destructorTargetOverride: Option[String] = None
+  ): Option[Term] =
+    val argRef = Ref(
+      SourceOrigin.Synth,
+      bindingName,
+      typeSpec     = tpe.some,
+      resolvedId   = bindingId,
+      candidateIds = bindingId.toList
+    )
+    val argExpr  = Expr(span, List(argRef), typeSpec = tpe.some)
+    val unitType = unitTypeRef(span).some
+    tpe match
+      case _: TypeFn =>
+        destructorTargetOverride
+          .orElse(DestructionTargets.named("__free_closure", resolvables))
+          .map(id => DestroyClosure(span, argExpr, id, unitType))
+      case _ =>
+        DestructionTargets.forType(tpe, resolvables).flatMap { id =>
+          resolvables.lookup(id).collect { case b: Bnd =>
+            val fnRef = Ref(SourceOrigin.Synth, b.name, resolvedId = id.some, typeSpec = b.typeSpec)
+            App(span, fnRef, argExpr, typeSpec = unitType)
+          }
+        }
 
   private enum ConditionalOwnership derives CanEqual:
     case AlwaysOwned(tpe: Type)
@@ -575,7 +575,7 @@ object OwnershipAnalyzer:
               witnessBindings.get(witnessName)
             )
           case None =>
-            mkFreeCall(binding.name, tpe, span, binding.id, resolvables, binding.freeFn)
+            mkFreeCall(binding.name, tpe, span, binding.id, resolvables, binding.destructorTargetId)
       }
       freeTermOpt match
         case Some(freeTerm) =>
@@ -930,13 +930,15 @@ object OwnershipAnalyzer:
         // Check if allocating expression is a capturing lambda with env struct name
         val closureFreeFn = arg.terms.headOption.collect {
           case lambda: Lambda if lambda.captures.nonEmpty =>
-            lambda.meta.flatMap(_.envStructName).map(n => s"__free_$n")
+            lambda.meta
+              .flatMap(_.envStructName)
+              .flatMap(n => DestructionTargets.named(s"__free_$n", scope.resolvables))
         }.flatten
         val newScope = owns
           .map { t =>
             closureFreeFn match
-              case Some(freeFn) =>
-                argResult.scope.withOwnedClosure(param.name, Some(t), param.id, freeFn)
+              case Some(destructorTargetId) =>
+                argResult.scope.withOwnedClosure(param.name, Some(t), param.id, destructorTargetId)
               case None =>
                 argResult.scope.withOwned(param.name, Some(t), param.id)
           }
@@ -950,7 +952,7 @@ object OwnershipAnalyzer:
             val srcInfo = argResult.scope.getInfo(ref.name).get
             argResult.scope
               .withMoved(ref.name, ref.source)
-              .withOwned(param.name, srcInfo.bindingTpe, param.id)
+              .withOwned(param.name, srcInfo.bindingTpe, param.id, srcInfo.destructorTargetId)
           case _ =>
             argResult.scope.withBorrowed(param.name)
         (newScope, None)
@@ -1270,7 +1272,7 @@ object OwnershipAnalyzer:
       val isOwned    = info.bindingTpe.exists(isOwnedType(_, scope.resolvables))
       (trueState, falseState) match
         case (OwnershipState.Owned, OwnershipState.Moved) if isOwned =>
-          OwnedBinding(name, info.bindingTpe, info.bindingId, None, info.freeFn).some
+          OwnedBinding(name, info.bindingTpe, info.bindingId, None, info.destructorTargetId).some
         case _ =>
           none
     }
@@ -1281,7 +1283,7 @@ object OwnershipAnalyzer:
       val isOwned    = info.bindingTpe.exists(isOwnedType(_, scope.resolvables))
       (trueState, falseState) match
         case (OwnershipState.Moved, OwnershipState.Owned) if isOwned =>
-          OwnedBinding(name, info.bindingTpe, info.bindingId, None, info.freeFn).some
+          OwnedBinding(name, info.bindingTpe, info.bindingId, None, info.destructorTargetId).some
         case _ =>
           none
     }
@@ -1361,7 +1363,7 @@ object OwnershipAnalyzer:
       val isHeapCapture = ref.typeSpec
         .flatMap(getTypeName)
         .exists(isHeapType(_, s.resolvables))
-      if isHeapCapture then s.withBorrowed(ref.name)
+      if isHeapCapture || ref.typeSpec.exists(_.isInstanceOf[TypeFn]) then s.withBorrowed(ref.name)
       else s
 
     val bodyResult = analyzeExpr(body, captureScope)
@@ -1431,7 +1433,14 @@ object OwnershipAnalyzer:
           // Move lambda: transfer ownership into env
           s.getState(ref.name) match
             case Some(OwnershipState.Owned) =>
-              (s.withMoved(ref.name, span), errs, caps :+ cap)
+              val ownedCap = ref.typeSpec match
+                case Some(_: TypeFn) =>
+                  s.getInfo(ref.name)
+                    .flatMap(_.destructorTargetId)
+                    .orElse(DestructionTargets.named("__free_closure", s.resolvables))
+                    .fold(cap)(id => Capture.OwnedClosure(ref, id))
+                case _ => cap
+              (s.withMoved(ref.name, span), errs, caps :+ ownedCap)
             case Some(OwnershipState.Moved) =>
               val movedAt = s.getMovedAt(ref.name).getOrElse(SourceOrigin.Synth)
               (

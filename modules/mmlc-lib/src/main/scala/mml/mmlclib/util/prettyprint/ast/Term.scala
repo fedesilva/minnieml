@@ -182,11 +182,15 @@ def prettyPrintTerm(
         if showTypes then s"\n${indentStr}  typeSpec: ${prettyPrintTypeSpec(typeSpec)}" else ""
       s"${indentStr}DataConstructor $spanStr$typeStr"
 
-    case DataDestructor(sp, typeSpec) =>
-      val spanStr = if showSourceSpans then printSourceOrigin(sp) else ""
-      val typeStr =
-        if showTypes then s"\n${indentStr}  typeSpec: ${prettyPrintTypeSpec(typeSpec)}" else ""
-      s"${indentStr}DataDestructor $spanStr$typeStr"
+    case d: Destruction =>
+      val details = d match
+        case c: DestroyClosure => s" target=${c.targetId}"
+        case e: DestroyClosureEnvironment =>
+          s" layout=${e.layoutId} fields=${e.fields.mkString("[", ", ", "]")}"
+        case _: DispatchClosureDestructor => ""
+      val operand    = prettyPrintTerm(d.operand, indent + 1, showSourceSpans, showTypes)
+      val resultType = if showTypes then s" typeSpec=${prettyPrintTypeSpec(d.typeSpec)}" else ""
+      s"$indentStr${d.getClass.getSimpleName}$details$resultType\n$operand"
 
     case NativeImpl(sp, typeSpec, typeAsc, _, memEffect, nativeSymbol) =>
       val spanStr = if showSourceSpans then printSourceOrigin(sp) else ""

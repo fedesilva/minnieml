@@ -105,11 +105,14 @@ Expressions are built from terms:
 enum Capture:
   case CapturedRef(ref: Ref)
   case CapturedLiteral(ref: Ref, cloneFnId: String)
+  case OwnedClosure(ref: Ref, targetId: String)
 ```
 
 - `CapturedRef` is the regular capture path.
 - `CapturedLiteral` marks a captured value that must be cloned when the closure environment is
   materialized.
+- `OwnedClosure` records a function capture whose ownership transfers to the environment,
+  including the resolved destructor target ID used for cleanup.
 - The parser always emits `captures = Nil`; later semantic phases discover, classify, and type
   captures.
 
@@ -127,8 +130,21 @@ enum Capture:
   function—it signals to codegen that the enclosing function should emit struct assembly
   (alloca, store fields, load, return). The constructor's parameters become the field values.
   Only appears as the sole term in a generated `__mk_StructName` function body.
-- **`DataDestructor`**: Vestigial marker, currently unused. Was planned for struct destructors
-  but the approach changed to generating `__free_T` as regular AST with `App` nodes.
+
+#### Destruction operations
+
+These compiler-internal expressions all return `Unit`:
+
+- **`DestroyClosure`** evaluates a function operand once, extracts its environment pointer,
+  and calls a destructor identified by its resolved ID.
+- **`DestroyClosureEnvironment`** takes a `RawPtr` operand, a layout ID, and ordered field
+  cleanup entries. It destroys those fields and then releases the environment storage.
+- **`DispatchClosureDestructor`** takes a `RawPtr` operand. Null is a no-op; otherwise it
+  invokes the destructor pointer stored in the environment, which owns the storage release.
+
+Field cleanup entries identify both the field and destructor by stable IDs. `Value` entries
+call native or struct destructors; `Closure` entries destroy owned function captures.
+Ordinary struct destructors contain generated field calls in their normal function bodies.
 
 ### Type Specifications (`TypeSpec`)
 
@@ -363,9 +379,11 @@ Each phase takes a `CompilerState`, returns an updated `CompilerState`, and reco
 10. **TypeChecker**
 11. **ClosureMemoryFnGenerator**
 12. **ResolvablesIndexer**
-13. **TailRecursionDetector**
-14. **OwnershipAnalyzer**
-15. **ResolvablesIndexer (final)**
+13. **OwnershipAnalyzer**
+14. **ClosureDestructorBodyGenerator**
+15. **TailRecursionDetector**
+16. **ResolvablesIndexer (final)**
+17. **DestructionValidator**
 
 ---
 
@@ -682,9 +700,11 @@ Generation section below.
 - Runs after capture and type information are available.
 - For every capturing lambda, synthesizes a private env struct named `__closure_env_N`.
 - Tags the corresponding `Lambda` with `LambdaMeta.envStructName`.
-- Emits free helpers for move closures only:
-  - `__free___closure_env_N`
-  - `__free_closure` when at least one move closure exists
+- Registers a specific `__free___closure_env_N` helper for each move environment.
+- Registers `__free_closure` once per module, including modules with only consuming function
+  parameters and no locally declared move closure.
+- Both helper signatures are `RawPtr -> Unit`. Layouts and signatures enter `Module.resolvables`
+  before their intrinsic bodies are constructed.
 
 **Environment layout**:
 - **Borrow closures** (`{ ... }`):
@@ -722,24 +742,9 @@ Generation section below.
 
 ---
 
-### Semantic Phase 13: TailRecursionDetector
+### Semantic Phase 13: OwnershipAnalyzer
 
-**Purpose**: Mark top-level and let-bound lambdas that can use the loopified tail-recursive codegen
-path.
-
-**Behavior**:
-- Detects self-recursion for top-level function bodies represented as `Lambda`s.
-- Traverses parser-lowered let-binding chains to find recursive local lambdas as well.
-- Writes `LambdaMeta.isTailRecursive = true` when the body qualifies.
-
-**AST rewrites**:
-- Rewrites lambda metadata and any nested let-bound lambda bodies updated during traversal.
-
----
-
-### Semantic Phase 14: OwnershipAnalyzer
-
-**Purpose**: Track ownership of heap-allocated values and insert `__free_*` calls.
+**Purpose**: Track ownership and insert native/struct free calls or `DestroyClosure` operations.
 
 **Ownership states**:
 - `Owned` — Caller owns the value, must free at scope end
@@ -776,25 +781,12 @@ path.
    // at scope end: if __owns_s then __free_T s else ()
    ```
 
-   **Closure-materialization analog.** Function values carry the same dilemma when a binding's
-   materialization state varies by branch (a NullEnv literal in one arm, a Materialized
-   move-closure in the other). The fat-pointer representation embeds the witness directly:
-   `{ ptr @entry, ptr env }` has `env == null` iff the value is non-materialized. The universal
-   `__free_closure(f)` runtime helper null-guards `env` and dispatches to the env's specific
-   destructor (loaded from field 0 of the env struct) when `env != null`. No separate `__owns_*`
-   boolean is needed — the witness is already in the value.
-
-   The codegen optimization at consuming-`TypeFn` param body-end frees elides the call entirely
-   when the value is statically known to be non-owned (NullEnv literal or top-level fn `Ref`).
-   The runtime null-guard remains the correctness backstop for the conditional-join case where
-   static analysis genuinely loses information.
-
-   **Open design question.** Whether to replace the conditional-join backstop with stricter
-   static reasoning — e.g., a non-overly-restrictive analyzer rule that splits / specializes the
-   consuming-param call by materialization state, or a representation refinement that makes the
-   ambiguity unrepresentable at the AST level. Tracked for future work; the current runtime
-   null-guard is principled (same shape as `__owns_*` for heap values) and correct, but a static
-   solution would let us delete the universal `__free_closure` helper.
+   **Closure cleanup.** Ownership witnesses and transfer decisions determine whether cleanup
+   is needed. `DestroyClosure` carries the typed function operand and resolved helper target.
+   Known local environments use their specific helper; returned values and consuming function
+   parameters use universal dispatch. The universal helper guards null environments so resource-free
+   function values are safe. A non-null environment alone does not establish ownership: borrowed
+   closures have environments too, and receive no owning cleanup.
 
 5. **Return escape**: Bindings that escape through `return` are not freed locally; ownership moves
    to the caller. Static branches in mixed returns are wrapped with `__clone_T`.
@@ -830,7 +822,37 @@ path.
 
 ---
 
-### Semantic Phase 15: ResolvablesIndexer (final)
+### Semantic Phase 14: ClosureDestructorBodyGenerator
+
+`ClosureDestructorBodyGenerator` fills environment field cleanup entries using the
+ownership-analyzed captures. `Capture.OwnedClosure` records a transferred function capture and
+its destructor target. Native and struct captures use their registered destructors. Scalars and
+borrowed function captures have no cleanup entry. Field cleanup follows layout order, with
+storage release handled last by the intrinsic.
+
+Each generator is a separate phase file with a `rewriteModule` entry point. Shared construction
+of typed destructor bodies lives in `ClosureDestructorAst`; neither phase calls the other.
+
+---
+
+### Semantic Phase 15: TailRecursionDetector
+
+**Purpose**: Mark top-level and let-bound lambdas that can use the loopified tail-recursive codegen
+path.
+
+**Behavior**:
+- Detects self-recursion for top-level function bodies represented as `Lambda`s.
+- Traverses parser-lowered let-binding chains to find recursive local lambdas as well.
+- Runs after ownership cleanup is inserted. A recursive call with destruction in its
+  continuation uses ordinary recursion, preserving the order of effects.
+- Writes `LambdaMeta.isTailRecursive = true` when the body qualifies.
+
+**AST rewrites**:
+- Rewrites lambda metadata and any nested let-bound lambda bodies updated during traversal.
+
+---
+
+### Semantic Phase 16: ResolvablesIndexer (final)
 
 **Purpose**: Rebuild the resolvables index one more time after ownership rewriting.
 
@@ -842,6 +864,22 @@ path.
 
 **AST rewrites**:
 - Refreshes `Module.resolvables` one last time so it matches the final semantic tree.
+
+---
+
+### Semantic Phase 17: DestructionValidator
+
+The pass accumulates compiler errors for malformed destruction operations after the final index
+rebuild. It checks result and operand types, operand references, target signatures, layout and
+field identities, unique field cleanup entries, and layout order. Every heap field must have a
+registered destructor and a matching cleanup entry; missing registrations accumulate errors.
+
+Type comparisons follow resolved aliases and unwrap single-type groups. Function parameters and
+return types are compared recursively, so `Int` and `Int64` are compatible inside function types,
+and a destructor may return an alias of `Unit`. Named types retain their resolved declaration
+identities: separate native declarations remain distinct even when their LLVM representations match.
+
+Expression codegen lowers the validated operations with the normal target ABI.
 
 ---
 
@@ -1100,11 +1138,16 @@ flowchart TD
     MFG --> RR[RefResolver]
     RR --> ER[ExpressionRewriter]
     ER --> S[Simplifier]
-    S --> TC[TypeChecker]
-    TC --> RI[ResolvablesIndexer]
-    RI --> TRD[TailRecursionDetector]
-    TRD --> OA[OwnershipAnalyzer]
-    OA --> VAL[Pre-Codegen Validation]
+    S --> CA[CaptureAnalyzer]
+    CA --> TC[TypeChecker]
+    TC --> CMG[ClosureMemoryFnGenerator]
+    CMG --> RI[ResolvablesIndexer]
+    RI --> OA[OwnershipAnalyzer]
+    OA --> DB[Closure Destructor Bodies]
+    DB --> TRD[TailRecursionDetector]
+    TRD --> RIF[Final Resolvables Index]
+    RIF --> DV[DestructionValidator]
+    DV --> VAL[Pre-Codegen Validation]
     VAL --> RT[Resolve Triple]
     RT --> LI[Llvm Info]
     LI --> EM[Emit LLVM IR]
@@ -1137,7 +1180,7 @@ flowchart TD
 The MML compiler flows through staged pipelines:
 
 1. **IngestStage**: Parse source, collect parser counters, lift parse errors.
-2. **SemanticStage**: Stdlib injection → DuplicateNameChecker → IdAssigner → TypeResolver → ConstructorGenerator → MemoryFunctionGenerator → RefResolver → ExpressionRewriter → Simplifier → TypeChecker → ResolvablesIndexer → TailRecursionDetector → OwnershipAnalyzer.
+2. **SemanticStage**: Stdlib injection → DuplicateNameChecker → IdAssigner → TypeResolver → ConstructorGenerator → MemoryFunctionGenerator → RefResolver → ExpressionRewriter → Simplifier → CaptureAnalyzer → TypeChecker → ClosureMemoryFnGenerator → ResolvablesIndexer → OwnershipAnalyzer → ClosureDestructorBodyGenerator → TailRecursionDetector → final ResolvablesIndexer → DestructionValidator.
 3. **CodegenStage**: Pre-codegen validation → resolve target triple/CPU → gather LLVM tool info → emit LLVM IR → write IR → native compilation.
 
 Each phase takes a `CompilerState` and returns an updated one. Timings are recorded via `CompilerState.timePhase`/`timePhaseIO`. Errors accumulate without halting compilation, so partial results remain available for the LSP.

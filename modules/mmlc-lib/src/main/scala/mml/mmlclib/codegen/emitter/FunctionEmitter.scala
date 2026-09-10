@@ -198,76 +198,6 @@ private[emitter] def resolveMemFnLlvmName(
     case _ => false
   if isNative then fnName else state.mangleName(fnName)
 
-/** Emit GEP+load+free for each heap-typed field in a closure env struct.
-  */
-private def emitEnvHeapFieldFrees(
-  envStructName: String,
-  state:         CodeGenState
-): Either[CodeGenError, CodeGenState] =
-  val resolvables = state.resolvables
-  val envStruct = resolvables.resolvableTypes.values.collectFirst:
-    case ts: TypeStruct if ts.name == envStructName => ts
-
-  envStruct match
-    case None => Right(state)
-    case Some(ts) =>
-      val envLlvmType = s"%struct.$envStructName"
-      ts.fields.toList.zipWithIndex.tail.foldLeft(state.asRight[CodeGenError]):
-        case (stE, (field, fieldIdx)) =>
-          stE.flatMap: st =>
-            val typeName = TypeUtils.getTypeName(field.typeSpec)
-            val isHeap   = typeName.exists(TypeUtils.isHeapType(_, resolvables))
-            if !isHeap then Right(st)
-            else
-              getLlvmType(field.typeSpec, st).map: fieldLlvmType =>
-                val freeFnName =
-                  typeName.flatMap(TypeUtils.freeFnFor(_, resolvables)).getOrElse("")
-                val llvmFreeName = resolveMemFnLlvmName(freeFnName, st)
-                val gepReg       = st.nextRegister
-                val loadReg      = gepReg + 1
-                val gepLine =
-                  s"  %$gepReg = getelementptr $envLlvmType, ptr %0, i32 0, i32 $fieldIdx"
-                val loadLine =
-                  s"  %$loadReg = load $fieldLlvmType, ptr %$gepReg"
-                val stAfterLoad = st.withRegister(loadReg + 1).emit(gepLine).emit(loadLine)
-                // ABI-lower the argument (struct types split into fields on x86_64)
-                val rawArgs              = List((s"%$loadReg", fieldLlvmType))
-                val (lowered, stLowered) = stAfterLoad.abi.lowerArgs(rawArgs, stAfterLoad)
-                val callArgs             = lowered.map((op, typ) => (typ, op))
-                // Ensure function declared with ABI-lowered param types
-                val declParamTypes = lowered.map(_._2)
-                val stWithDecl =
-                  stLowered.withFunctionDeclaration(llvmFreeName, "void", declParamTypes)
-                val callLine =
-                  emitCall(None, None, llvmFreeName, callArgs)
-                stWithDecl.emit(callLine)
-
-/** Emit the universal closure free body.
-  *
-  * `%0` is the raw env pointer. Non-capturing functions carry `null`, so guard before loading the
-  * env destructor pointer from field 0.
-  */
-private def emitUniversalClosureFreeBody(
-  state: CodeGenState
-): CompileResult =
-  val cmpReg  = state.nextRegister
-  val dtorReg = cmpReg + 1
-
-  val freeLabel = s"closure_free_${cmpReg}_dtor"
-  val endLabel  = s"closure_free_${cmpReg}_end"
-
-  val finalState = state
-    .withRegister(dtorReg + 1)
-    .emit(s"  %$cmpReg = icmp eq ptr %0, null")
-    .emit(s"  br i1 %$cmpReg, label %$endLabel, label %$freeLabel")
-    .emit(s"$freeLabel:")
-    .emit(s"  %$dtorReg = load ptr, ptr %0")
-    .emit(s"  call void %$dtorReg(ptr %0)")
-    .emit(s"  br label %$endLabel")
-    .emit(s"$endLabel:")
-
-  CompileResult(0, finalState, false, "Unit", exitBlock = Some(endLabel))
-
 /** Compiles a regular (non-tail-recursive) lambda to LLVM IR. */
 private def compileRegularLambda(
   bnd:         Bnd,
@@ -316,40 +246,25 @@ private def compileRegularLambda(
   // Register count starts after parameter setup
   val baseState = bodyState.withRegister(filteredParams.size)
 
-  val destructorKind = bnd.meta.flatMap(_.destructorKind)
-  val updatedStateE =
-    destructorKind match
-      case Some(DestructorKind.ClosureEnv(envStructName)) =>
-        emitEnvHeapFieldFrees(envStructName, baseState)
-      case _ =>
-        Right(baseState)
+  val bodyResult = lambda.body.terms match
+    case List(_: DataConstructor) =>
+      compileStructConstructor(bnd, lambda, baseState, paramScope)
+    case _ =>
+      compileExpr(lambda.body, baseState, paramScope)
 
-  updatedStateE.flatMap { updatedState =>
-    val bodyResult =
-      destructorKind match
-        case Some(DestructorKind.ClosureUniversal) =>
-          Right(emitUniversalClosureFreeBody(updatedState))
-        case _ =>
-          lambda.body.terms match
-            case List(_: DataConstructor) =>
-              compileStructConstructor(bnd, lambda, updatedState, paramScope)
-            case _ =>
-              compileExpr(lambda.body, updatedState, paramScope)
+  bodyResult.flatMap { bodyRes =>
+    val returnLine =
+      if returnType == "void" then "  ret void"
+      else
+        val returnOp = bodyRes.operandStr
+        s"  ret $returnType $returnOp"
 
-    bodyResult.flatMap { bodyRes =>
-      val returnLine =
-        if returnType == "void" then "  ret void"
-        else
-          val returnOp = bodyRes.operandStr
-          s"  ret $returnType $returnOp"
-
-      val finalBodyState = bodyRes.state
-        .emit(returnLine)
-        .emit("}")
-        .emit("")
-      val mergedState = mergeFunctionBodyState(state, finalBodyState)
-      Right(mergedState.emitAll(renderFunctionLines(functionDecl, finalBodyState)))
-    }
+    val finalBodyState = bodyRes.state
+      .emit(returnLine)
+      .emit("}")
+      .emit("")
+    val mergedState = mergeFunctionBodyState(state, finalBodyState)
+    Right(mergedState.emitAll(renderFunctionLines(functionDecl, finalBodyState)))
   }
 
 private def compileStructConstructor(
@@ -1063,7 +978,7 @@ private def extractBody(
     // Ownership wrapper: the OwnershipAnalyzer may rewrite a tail call into
     //   let __ownership_result = self_call(args); free_calls...; __ownership_result
     // Detect when a Ref in tail position refers to a binding whose value is a self-call.
-    // Reorder: run cleanup statements before the back-edge jump.
+    // Effects following the self-call keep the call in ordinary recursion.
     case List(ref: Ref) =>
       extractSelfCallFromAccumulated(ref.name, accStatements, lambda, selfName, selfId)
 
@@ -1071,8 +986,7 @@ private def extractBody(
 
 /** When the tail position is a Ref, check if it refers to a binding in the accumulated statements
   * whose value is a self-call. This handles the OwnershipAnalyzer's pattern: let __ownership_result =
-  * self_call(args); cleanup; __ownership_result Returns a TailRecCall with cleanup statements moved
-  * before the back-edge.
+  * self_call(args); __ownership_result. A continuation containing effects prevents loopification.
   */
 private def extractSelfCallFromAccumulated(
   refName:       String,
@@ -1085,7 +999,7 @@ private def extractSelfCallFromAccumulated(
     case BoundStatement(Some(n), _) => n == refName
     case _ => false
   }
-  if idx < 0 then None
+  if idx < 0 || accStatements.drop(idx + 1).nonEmpty then None
   else
     val BoundStatement(_, callExpr) = accStatements(idx): @unchecked
     // The self-call may be wrapped in additional lambda chains (ownership frees).

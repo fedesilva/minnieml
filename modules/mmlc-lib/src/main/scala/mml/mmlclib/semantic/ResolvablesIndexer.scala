@@ -33,6 +33,8 @@ object ResolvablesIndexer:
 
   private def collectParamsFromTerm(term: Term): List[FnParam] =
     term match
+      case d: Destruction =>
+        collectParamsFromExpr(d.operand)
       case lambda: Lambda =>
         lambda.params ++ collectParamsFromExpr(lambda.body)
       case app: App =>
