@@ -776,6 +776,26 @@ path.
    // at scope end: if __owns_s then __free_T s else ()
    ```
 
+   **Closure-materialization analog.** Function values carry the same dilemma when a binding's
+   materialization state varies by branch (a NullEnv literal in one arm, a Materialized
+   move-closure in the other). The fat-pointer representation embeds the witness directly:
+   `{ ptr @entry, ptr env }` has `env == null` iff the value is non-materialized. The universal
+   `__free_closure(f)` runtime helper null-guards `env` and dispatches to the env's specific
+   destructor (loaded from field 0 of the env struct) when `env != null`. No separate `__owns_*`
+   boolean is needed — the witness is already in the value.
+
+   The codegen optimization at consuming-`TypeFn` param body-end frees elides the call entirely
+   when the value is statically known to be non-owned (NullEnv literal or top-level fn `Ref`).
+   The runtime null-guard remains the correctness backstop for the conditional-join case where
+   static analysis genuinely loses information.
+
+   **Open design question.** Whether to replace the conditional-join backstop with stricter
+   static reasoning — e.g., a non-overly-restrictive analyzer rule that splits / specializes the
+   consuming-param call by materialization state, or a representation refinement that makes the
+   ambiguity unrepresentable at the AST level. Tracked for future work; the current runtime
+   null-guard is principled (same shape as `__owns_*` for heap values) and correct, but a static
+   solution would let us delete the universal `__free_closure` helper.
+
 5. **Return escape**: Bindings that escape through `return` are not freed locally; ownership moves
    to the caller. Static branches in mixed returns are wrapped with `__clone_T`.
 

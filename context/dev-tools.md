@@ -9,7 +9,16 @@ The project uses sbt with a thin client (`sbtn`). Always use `sbtn`.
 The root project `mml` aggregates `mmlclib` (compiler library) and `mmlc` (CLI).
 Always run tasks from the root — aggregation handles subprojects automatically.
 
+Do not run multiple `sbtn` commands in parallel. The thin client/server socket is
+single-session in practice, and concurrent invocations collide or fail with connection
+errors. If multiple sbt tasks are needed, batch them into one `sbtn "task1" "task2"`
+command or run separate `sbtn` commands sequentially.
+
 ## Running the compiler during development
+
+The following applies *only if you are working with the compiler*.
+If you are working with mml sources and you know the compiler is fresh and
+there are no changes, sbtn only adds overhead and is not parallelizable.
 
 Use `sbtn` to run the in-development compiler directly, without publishing.
 
@@ -19,6 +28,11 @@ sbtn "run <file>.mml"              # compile only
 sbtn "run ir <file>.mml"           # emit LLVM IR
 sbtn "run run -s <file>.mml"       # compile and run with ASan
 ```
+
+## SBT subprojects
+
+The top level project aggregates the sub projects
+*Prefer* running tests, and other tasks from the top level, not specific modules.
 
 ## Tests
 
@@ -99,4 +113,3 @@ Run after publishing:
 make -C benchmark clean
 make -C benchmark mml
 ```
-

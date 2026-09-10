@@ -15,6 +15,18 @@ If a rule is unclear or conflicts with the current task, raise the conflict and 
 - Never change a Tracked Item description unless explicitly instructed.
 - If a Tracked Item is misleading or incorrect, raise it and stand by.
 
+## Working in stages
+
+* It is imperative that long tasks are divided in stages
+* After each stage, seek review and approval
+  * Present a clear summary of the changes
+  * Do not continue without green light.
+* Once approval has been granted update every relevant tracking entry
+  * do not ever commit changes without first
+    * updating relevant tracking entries
+    * so they can be commited alongside the changes.
+
+
 ## Completion Flow
 
 - Workstream completion and Tracked Item completion are separate actions.
@@ -26,6 +38,7 @@ If a rule is unclear or conflicts with the current task, raise the conflict and 
   - log codebase or documentation changes **only**.
 - Never delete Tracked Items. Mark status only.
   - if explicitely told to delete, ask for confirmation.
+
 
 ## Recent Changes
 
