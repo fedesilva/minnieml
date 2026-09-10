@@ -72,7 +72,7 @@ Examples:
 - Centralize repeated test traversal logic into shared helper functions or extractors.
 
 Current QA debt reference:
-- `context/qa-misses.md`
+- Individual `context/tasks/qa-*.md` task files.
 
 ## 7) Practical Review Checklist
 
@@ -109,9 +109,9 @@ sees on the page.
   for*: pending slices, planned follow-ups, or known gaps that will close later.
   Pin them to plan/tracking docs so the reader has somewhere to go. Examples:
   - OK: "Pinned regression: leaks env malloc until the `isDirect` lowering rule
-    in S6 stops materializing an env. See `context/specs/unify-lambdas-plan.md`."
+    in S6 stops materializing an env. See `context/tasks/unify-lambdas.md`."
   - OK: "Ignored until the IR test fixture is updated at S6 — see
-    `context/tracking.md`."
+    `context/tasks/unify-lambdas.md`."
   - The rule against *backward*-looking hedging still stands: "no longer", "was",
     "previously" still rot fast and add no value.
 
@@ -124,3 +124,18 @@ sees on the page.
         general way.
 
   
+
+## Design and review expectations
+
+Require each boundary to earn its existence through a protected invariant, clear ownership,
+reuse, or a real dependency boundary. Judge simplicity by reader effort: domain APIs and
+named records should expose intent without compressed cleverness or mechanical repetition.
+Keep immutable state threading and accumulated errors visible through compiler transformations.
+
+Review compiler phase contracts, type and symbol resolution, ownership transfers, evaluation
+order, and ABI boundaries against their authoritative designs. Distinguish semantic assertions,
+LLVM validity, runtime behavior, sanitizer evidence, and performance measurements.
+
+Use `.skills/code-review/SKILL.md` for the independent adversarial review and per-claim
+verification protocol. Use `.skills/qa-enforcer/SKILL.md` for focused rule compliance;
+tracking consistency belongs to `.skills/tracking-doc-review/SKILL.md`.

@@ -76,8 +76,8 @@ The compiler needs to be installed before it's used if changes were made.
 - **Fast sanity check first (mandatory)**:
   - Before publishing the compiler or running expensive verification (benchmarks, full memory harness),
     compile and run the following programs with `sbtn`:
-    - do not attempt to run them in parallel until AT LEAST ONE is finished; they compete to compile the full compiler.
-      - after the first one is finished you can run the rest in parallel
+    - run all `sbtn` commands sequentially or batch tasks into one invocation.
+      Concurrent thin-client sessions collide, including after the compiler is warm.
     - `sbtn "run run mml/samples/hola.mml"`
     - `sbtn "run run mml/samples/quicksort.mml"`
     - `sbtn "run run mml/samples/astar2.mml"`
@@ -106,13 +106,36 @@ The compiler needs to be installed before it's used if changes were made.
     to run it locally.
   - Prefer killing and retrying over waiting indefinitely on a stuck shell interaction.
 
-  - Do a qa enforcement pass before handing over the task
-    - use the qa-enforcer skill
+- Do a QA enforcement pass before handing over the task.
+  Use local `post-chores`, which routes to `qa-enforcer` and the independent `code-review`.
+
+## Workstream handoff
+
+Use `.skills/post-chores/SKILL.md` to derive the applicable finish checklist.
+The compiler gates above remain mandatory for compiler changes. Context-only and
+documentation-only work needs focused consistency, link, and diff checks rather than
+compiler builds, publishing, benchmarks, or memory runs. MML samples need verification
+appropriate to their changed behavior; they do not trigger the full compiler checklist.
+Review tracking documents with local `tracking-doc-review` in the current agent.
+Review code, tooling, workflow rules, and affected technical documents with local
+`code-review`; keep its fresh primary review and independent per-claim verification.
+Do not claim a required check passed if it failed, was ignored, or could not run.
 
 ## Git usage
 
 - **Read Only** Freely use git to read history or fetching previous versions. No approval needed.
-- **Commiting** *Never* commit without explicit approval. Ever.
+- **Commits** are authorized by an explicit commit request or by `finish task`,
+  `complete task`, or `finish errand`. Follow `context/task-tracking-rules.md`.
+  Push only when requested; finishing does not authorize remote publication.
+- Use Git Town for the branch lifecycle: `git town hack <name>` creates a feature branch,
+  `git town sync` syncs/publishes, and `git town ship` merges. Do not use raw branch-creation
+  or merge commands instead. Verify the intended parent before changing branch configuration.
+- For authorized shipping in agent sessions, use
+  `git town ship --non-interactive --message "<ship commit message>"` to avoid an editor wait.
+  `--message-file <path>` is also available for a prepared message.
+- Branch creation can also sync or publish with this repo's configuration. Check the intended
+  parent and remote effects before running it. Task approval alone does not authorize a push,
+  merge, or publication. Use the installed command's help to select appropriate options.
 - **Never revert changes** without explicit approval.
 - **Outside changes** If changes appear that you did not make, it was probably the Author, so ask before reverting.
 

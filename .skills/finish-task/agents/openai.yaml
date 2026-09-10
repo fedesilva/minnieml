@@ -1,0 +1,3 @@
+interface:
+  display_name: "Finish Task"
+  short_description: "Verify, log, complete, and commit a task"

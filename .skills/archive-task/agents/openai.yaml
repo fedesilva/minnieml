@@ -1,0 +1,3 @@
+interface:
+  display_name: "Archive Task"
+  short_description: "Archive completed tracked work"

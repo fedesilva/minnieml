@@ -1,0 +1,4 @@
+interface:
+  display_name: "Draft commit"
+  short_description: "Review staged work and draft a commit"
+  default_prompt: "Use $draft-commit to review the current changes and prepare a commit for approval."
