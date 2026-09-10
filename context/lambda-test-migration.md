@@ -33,6 +33,23 @@ This requirement also applies to future phases that have not yet been planned.
 
 ## Resume from this checkpoint
 
+### Current focus — 2026-09-10
+
+The Author directed the session back to the lambda migration and requested a missing
+entry in `tracking.md`. Its Current Workstream section now links this handoff and records
+progress on the migration branch. The Author explicitly requested deleting the old checklist
+from tracking: this is a fresh start, and source-branch completion claims do not carry forward.
+This direction supersedes the workflow-port-first scheduling below; the workflow port remains
+planned.
+
+The next compiler discussion follows step 6 of the salvage sequence: common ownership and PAP
+elaboration. Select a bounded slice using the preserved regressions, establish its semantic
+contract, and obtain approval before implementation. No particular compiler slice is approved.
+The signed-off compiler checkpoint is `2efeb8c`; this tracking/handoff update is uncommitted.
+No compiler checks were rerun for this documentation-only update.
+
+### Transfer checkpoint and recovery
+
 The pushed documentation/helper checkpoint is `35c87bd9cb89da4f48b8fe2fa2cbae70129e3beb`
 (`Start lambda migration with docs and test helpers`). The complete transfer is committed as
 `6e33ee4` (`Preserve lambda regressions and remaining source files`). At the start of the compiler

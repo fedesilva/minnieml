@@ -14,6 +14,28 @@
   it might have changed in the meantime.
 * These rules are mandatory **unless** the Author explicitly overrides them.
 
+## Current Workstream: lambda migration
+
+**Branch:** `dev-lambdas-migration`. Fresh implementation of #255 Unify lambdas.
+Progress is recorded for this branch only; the abandoned implementation's checklist does
+not carry forward.
+
+The Author confirmed the migration as the current focus on 2026-09-10. The workflow port
+remains planned; do not select it as the next task for this workstream.
+
+- Test, sample, documentation, and helper preservation is complete (`6e33ee4`).
+- Borrowed returns through local aliases are implemented and signed off (`323b8ca`).
+- Typed closure destruction is implemented and signed off (`2efeb8c`).
+- Next: discuss and approve a bounded slice of common ownership and partial-application
+  (PAP) elaboration, following the salvage sequence. Establish evaluation-once semantics,
+  borrowed payload lifetimes, and explicit ownership transfers before implementation.
+  Use the preserved regressions to select the first slice; no compiler changes are
+  authorized by this entry.
+
+Current evidence, remaining failures, and approvals:
+[Migration handoff](lambda-test-migration.md). Architecture and restart sequence:
+[Lambda salvage](unify-lambdas-salvage.md#suggested-restart-sequence).
+
 ## Active Tasks
 
 ### Port the local collaboration workflow from y0y
@@ -170,85 +192,10 @@ codegen classify sequence lambdas without duplicating a string convention.
 
 
 - GitHub: `https://github.com/fedesilva/minnieml/issues/255`
-- Reference: `context/specs/unify-lambdas.md`
-- Plan: `context/specs/unify-lambdas-plan.md`
-- [x] Finalize `unify-lambdas.md`
-- [ ] Treat top-level functions and let-bound lambdas / inner functions identically in semantics and codegen.
-- [ ] Unify borrow and move capture handling.
-- [ ] Keep alloca vs malloc as a derivable optimization rather than separate closure models.
-- [x] Discuss and write a plan before implementation.
 
-Slice progress (see `context/specs/unify-lambdas-plan.md`):
-- [x] S0 — decisions section in spec
-- [x] S1 — terminology cleanup
-- [x] S2 — AST: add `isDirect` to `LambdaMeta`
-- [x] S3 — `MaterializationAnalyzer` pass (COMPLETE — commit 456a0c4)
-- [x] S4 — Ownership: non-capturing / null-env values stop being treated as owned heap (COMPLETE)
-- [x] S5 — Ownership: treat lambda values as ordinary unique values (COMPLETE)
-- [x] S6 — Codegen: derive direct-vs-closure entry from demand (COMPLETE)
-- [x] S6 Phase 6.3.d — Direct callable capture boundary
-- [x] S7 — Codegen: env allocation rule consumes `isMove` (COMPLETE)
-- [x] S7.5 — Push env allocation classification onto the lambda model (COMPLETE)
-- [x] S7.6 — Stack-promotion decision gate: leave S11 separate (COMPLETE)
-- [x] S8 — Tail-recursion follow-up under unified model (COMPLETE)
-- [x] S8.5a — Direct partial-application env lifetime/drop hardening (COMPLETE)
-- [x] S8.5b — Direct partial-application env TBAA parity (COMPLETE — commit 5da9c68)
-- [x] S8.6.1 — Broad owned-heap-capture free at Direct binder scope (COMPLETE — commit 0bf58f78)
-- [x] S8.6.1a — Direct PAP heap-payload ownership for escaping partial applications (clone-per-PAP
-  draft rejected; see S8.6.1b)
-- [x] S8.6.1b — PAP ownership without implicit cloning (COMPLETE)
-  - Spec: `context/specs/pap-ownership-model.md`
-  - Bug: PAP envs may carry heap payloads without an explicit ownership/lifetime model. Borrowed
-    heap payloads must not escape their owner scope, and moved heap payloads must enter the PAP
-    only through explicit `~` ownership transfer.
-  - Task: replace clone-per-PAP with borrowed-vs-owned PAP payload classification. Reject escaping
-    PAPs containing borrowed heap payloads; keep partial application with remaining consuming
-    parameters rejected; accept moved already-applied heap arguments only if the analyzer marks the
-    source moved and the PAP destructor frees the moved payload exactly once.
-  - Acceptance: no implicit heap clone calls during PAP creation; semantic/codegen regressions for
-    escaping borrowed PAP rejection, non-escaping borrowed PAP acceptance when proven local, and
-    moved already-applied heap payload ownership if supported.
-  - Cleanup: when this lands, remove the temporary PAP implementation note from
-    `docs/memory-model.md`.
-- [ ] S9 — Equivalence test pass
-  - GitHub: `https://github.com/fedesilva/minnieml/issues/268`
-  - Bug: Struct arguments are not being correctly treated as move arguments.
-    - borrowed closure values can be laundered through a struct
-    field and later passed to a consuming `~f: Int -> Int` parameter. Direct argument and `let`
-    alias cases reject with `BorrowedValuePassedToConsumingParam`, and return escape rejects, but
-    `struct Holder { f: Int -> Int }; let h = Holder add_seed; consume_fn h.f 10;` currently
-    compiles and detonates at runtime. A struct is an ownership sink, so storing a function value
-    in a struct field must apply the same ownership-transfer rules as any other consuming sink:
-    borrow-capturing closures cannot enter the sink, move-capturing closures move ownership, and
-    non-capturing/null-env function values remain sound because there is no owned env.
-
-  - THE CORE PROBLEM:
-    - we did not follow the invariants defined for the language.
-      - a struct is an ownership sink.
-      - any check that we do related to escaping of borrowed values or 
-        assignement of borrowed values to move annotated (~) args should be applied here.
-      - Moving BORROWED VALUES IS ILEGAL.
-
-  - Review findings:
-    - Function-type aliases must be resolved when classifying struct fields. Otherwise,
-      function-bearing structs bypass consuming construction and destruction and can retain
-      dangling closure environments.
-    - Clone-required uses of function-bearing structs must be rejected semantically or given a
-      supported ownership path. Generating `__clone_<Struct>` is invalid when the corresponding
-      clone binding is intentionally omitted.
-        
-
-- [ ] S10 — `BindingMeta` reduction
-- [ ] S11 — Stack-promotion for non-escaping move-capturing lambdas
-- [x] S6.5 — Codegen hygiene: deduplicate named-function closure thunks (COMPLETE)
-- [x] Accept nullary lambda heads in immediate application (COMPLETE) —
-  `TypeChecker.scala` routes nullary lambda heads through immediate-lambda checking,
-  validates the explicit `Unit` argument, and types the lambda as `Unit -> T`.
-  `MaterializationAnalyzerTests.scala` now runs the `"nullary lambda literal in
-  immediate application is direct"` regression.
-- [x] Un-ignore `ClosureCodegenTest` "local move capturing closures free through their specific env destructor" at S6. (COMPLETE)
-- [x] Close the pinned mem regression `tests/mem/direct-move-closure.mml` at S6. (COMPLETE)
-
+Fresh start on `dev-lambdas-migration`. See
+[Current Workstream](#current-workstream-lambda-migration) and the
+[migration handoff](lambda-test-migration.md) for current progress and the next discussion.
 
 ### Lambda lifting bug
 
