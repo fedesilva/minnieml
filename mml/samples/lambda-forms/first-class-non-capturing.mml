@@ -1,0 +1,12 @@
+fn apply(f: Int -> Int, x: Int): Int =
+  f x;
+;
+
+fn top_inc(x: Int): Int =
+  x + 1;
+;
+
+pub fn main(): Unit =
+  let local_inc = { x: Int -> x + 1; };
+  println (int_to_str ((apply top_inc 10) + (apply local_inc 10)));
+;

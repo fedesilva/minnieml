@@ -3,6 +3,7 @@ package mml.mmlclib.codegen
 import cats.data.NonEmptyList
 import mml.mmlclib.ast.*
 import mml.mmlclib.codegen.emitter.tbaa.StructLayout
+import mml.mmlclib.compiler.CompilerConfig
 import mml.mmlclib.test.BaseEffFunSuite
 
 class TbaaEmissionTest extends BaseEffFunSuite:
@@ -193,10 +194,15 @@ class TbaaEmissionTest extends BaseEffFunSuite:
 
   test("closure env TBAA handles captured function values") {
     val source = """
+      fn apply(g: Int -> Int): Int = g 41;;
+
       fn main(): Int =
         fn inc(x: Int): Int = x + 1;;
-        fn applyInc(y: Int): Int = inc y;;
-        applyInc 41;
+        let f = if true then inc; else { x: Int -> x + 10; }; ;
+
+        let g = { x: Int -> f x; };
+
+        apply g;
       ;
     """
 
@@ -224,6 +230,62 @@ class TbaaEmissionTest extends BaseEffFunSuite:
       assert(
         closureEnvTbaaLines.exists(_.contains(s"!${functionScalarId.get}, i64 0")),
         s"Expected borrow closure env TBAA field at offset 0 to use Function scalar. Nodes:\n${closureEnvTbaaLines.mkString("\n")}"
+      )
+    }
+  }
+
+  test("move closure env TBAA accounts for destructor field offset") {
+    val source = """
+      fn apply(g: Int -> Int): Int = g 41;;
+      fn main(): Int =
+        let a = 1;
+        let f = ~{ x: Int -> x + a; };
+        apply f;
+      ;
+    """
+
+    compileAndGenerate(source).map { llvmIr =>
+      val closureEnvTypePattern =
+        """%struct\.__closure_env_\d+ = type \{ ptr, i64 \}""".r
+      assert(
+        closureEnvTypePattern.findFirstIn(llvmIr).isDefined,
+        s"Missing move closure env type with destructor and capture fields. IR:\n$llvmIr"
+      )
+
+      val closureEnvTbaaLines =
+        llvmIr.split("\n").filter(_.matches("""!\d+ = !\{!"__closure_env_\d+".*"""))
+      assert(
+        closureEnvTbaaLines.exists(line => line.contains("i64 0") && line.contains("i64 8")),
+        s"Expected move closure env TBAA fields at offsets 0 and 8. Nodes:\n${closureEnvTbaaLines.mkString("\n")}"
+      )
+    }
+  }
+
+  // Pending migration: Parent emits closure environment metadata for this Direct-only program.
+  test("zero-field closure env TBAA is not emitted".ignore) {
+    val source = """
+      pub fn main() =
+        let factorial_tco: Int -> Int -> Int =
+          { n: Int, acc: Int ->
+            if n <= 1 then acc;
+            else factorial_tco (n - 1) (acc * n);
+          }
+        ;
+
+        let fac = { n: Int -> factorial_tco n 1 };
+
+        fac 3;
+      ;
+    """
+
+    compileAndGenerate(source, config = CompilerConfig.default.copy(noTco = false)).map { llvmIr =>
+      val closureEnvTbaaLines =
+        llvmIr.split("\n").filter(_.matches("""!\d+ = !\{!"__closure_env_\d+".*"""))
+
+      assert(closureEnvTbaaLines.isEmpty, s"Unexpected closure env TBAA nodes:\n$llvmIr")
+      assert(
+        closureEnvTbaaLines.forall(line => !line.contains(", }")),
+        s"Closure env TBAA nodes must not contain dangling separators. Nodes:\n${closureEnvTbaaLines.mkString("\n")}"
       )
     }
   }
@@ -339,4 +401,41 @@ class TbaaEmissionTest extends BaseEffFunSuite:
 
     assertEquals(StructLayout.sizeOf(outerStruct, resolvables), Right(24))
     assertEquals(StructLayout.alignOf(outerStruct, resolvables), Right(8))
+  }
+
+  test("closure env TBAA handles captured function values [parent c7e9078]") {
+    val source = """
+      fn main(): Int =
+        fn inc(x: Int): Int = x + 1;;
+        fn applyInc(y: Int): Int = inc y;;
+        applyInc 41;
+      ;
+    """
+
+    compileAndGenerate(source).map { llvmIr =>
+      // Borrow env: no dtor field, just the captured fat pointer
+      val closureEnvTypePattern =
+        """%struct\.__closure_env_\d+ = type \{ \{ ptr, ptr \} \}""".r
+      assert(
+        closureEnvTypePattern.findFirstIn(llvmIr).isDefined,
+        s"Missing borrow closure env type with fat-pointer field. IR:\n$llvmIr"
+      )
+
+      val functionScalarId = """!(\d+) = !\{!"Function", !\d+, i64 0\}""".r
+        .findFirstMatchIn(llvmIr)
+        .map(_.group(1))
+      assert(functionScalarId.isDefined, s"Missing Function TBAA scalar node. IR:\n$llvmIr")
+
+      val closureEnvTbaaLines =
+        llvmIr.split("\n").filter(_.matches("""!\d+ = !\{!"__closure_env_\d+".*"""))
+      assert(
+        closureEnvTbaaLines.nonEmpty,
+        s"Missing closure env TBAA node. IR:\n$llvmIr"
+      )
+      // Borrow env: captured fn at offset 0 (no dtor field)
+      assert(
+        closureEnvTbaaLines.exists(_.contains(s"!${functionScalarId.get}, i64 0")),
+        s"Expected borrow closure env TBAA field at offset 0 to use Function scalar. Nodes:\n${closureEnvTbaaLines.mkString("\n")}"
+      )
+    }
   }

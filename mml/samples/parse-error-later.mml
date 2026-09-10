@@ -16,5 +16,5 @@ fn bad() =
 ;
 pub fn main() = 
   println (good 21);
-  bad()
-;;
+  bad();
+;

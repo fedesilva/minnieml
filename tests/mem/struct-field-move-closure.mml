@@ -1,0 +1,25 @@
+// Mem regression: a struct field is an ownership sink for a move-capturing closure.
+// `Holder add_seed` moves the move-closure (heap env) into the struct; the struct's
+// generated destructor `__free_Holder` must free that env exactly once when `h` drops.
+// Iterating 1000 times surfaces any leak or double-free under ASan+LSan.
+struct Holder { f: Int -> Int };
+
+fn use_holder(h: Holder, x: Int): Int =
+  h.f x;
+;
+
+fn loop(n: Int, acc: Int): Int =
+  if n > 0 then
+    let add_seed = ~{ x -> x + n; };
+    let h = Holder add_seed;
+    let r = use_holder h 1;
+    loop (n - 1) r;
+  else
+    acc;
+  ;
+;
+
+pub fn main(): Unit =
+  let result = loop 1000 0;
+  println (int_to_str result);
+;

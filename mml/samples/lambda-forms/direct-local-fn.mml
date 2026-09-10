@@ -1,0 +1,7 @@
+pub fn main(): Unit =
+  fn local_inc(x: Int): Int =
+    x + 1;
+  ;
+
+  println (int_to_str (local_inc 10));
+;

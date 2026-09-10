@@ -1,12 +1,12 @@
 // First-class function values from named callables and global value bindings.
 
 fn apply(f: Int -> Int, x: Int): Int =
-  f x
-;;
+  f x;
+;
 
 fn inc(x: Int): Int =
-  x + 1
-;;
+  x + 1;
+;
 
 let chooser =
   if true then

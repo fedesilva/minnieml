@@ -1,0 +1,3 @@
+pub fn main(): Unit =
+  println (int_to_str ({ x: Int -> x + 1; } 10));
+;

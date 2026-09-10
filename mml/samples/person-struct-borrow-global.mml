@@ -3,5 +3,5 @@ let name = "fede"; // Global String
 let p = Person name 25; // Analyzer inserts __clone_String(name)
 
 pub fn main() =
-  println name // Valid: name was never moved
-;;
+  println name; // Valid: name was never moved
+;

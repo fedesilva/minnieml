@@ -12,6 +12,18 @@ class OwnershipAnalyzerTests extends BaseEffFunSuite:
       case TXCall1(TXRefNamed(name), _) if name == freeName => true
     }
 
+  private def containsClosureEnvFree(term: Term): Boolean =
+    existsTerm(term) {
+      case TXCall1(TXRefResolved(id), _) if id.contains("::__free___closure_env_") => true
+      case TXCall1(TXRefNamed(name), _) if name.startsWith("__free___closure_env_") => true
+    }
+
+  private def topLevelLambdaBody(module: Module, name: String): Expr =
+    module.members.collectFirst {
+      case b: Bnd if b.name == name =>
+        b.value.terms.collectFirst { case l: Lambda => l.body }.get
+    }.get
+
   private def containsFreeString(term: Term): Boolean =
     existsTerm(term) {
       case TXCall1(TXRefResolved(id), _) if id.endsWith("::__free_String") => true
@@ -25,6 +37,12 @@ class OwnershipAnalyzerTests extends BaseEffFunSuite:
           case TXRefResolved(id) if id.endsWith("::__free_String") => 1
           case TXRefNamed(n) if n == "__free_String" => 1
           case _ => 0
+    }
+
+  private def countFreeCallsOf(freeName: String, term: Term): Int =
+    countTerms(term) {
+      case TXCall1(TXRefResolved(id), _) if id.endsWith("::" + freeName) => 1
+      case TXCall1(TXRefNamed(n), _) if n == freeName => 1
     }
 
   private def containsCloneString(term: Term): Boolean =
@@ -67,6 +85,27 @@ class OwnershipAnalyzerTests extends BaseEffFunSuite:
       assert(
         !containsFreeString(getBody),
         "callee should not free the returned String"
+      )
+    }
+  }
+
+  // Pending migration: Parent omits cleanup for the allocating String alias binding.
+  test("alias-typed allocating let binding is freed at scope end".ignore) {
+    val code =
+      """
+        type Name = String;
+
+        fn main(): Unit =
+          let s: Name = int_to_str 5;
+          println s;
+        ;
+      """
+
+    semNotFailed(code).map { module =>
+      val mainBody = topLevelLambdaBody(module, "main")
+      assert(
+        containsFreeString(mainBody),
+        "expected alias-typed String returned from int_to_str to be freed"
       )
     }
   }
@@ -164,6 +203,136 @@ class OwnershipAnalyzerTests extends BaseEffFunSuite:
         e
       }
       assert(errors.nonEmpty, "Expected PartialApplicationWithConsuming error")
+    }
+  }
+
+  test("escaping PAP over borrowed heap argument is rejected") {
+    val code =
+      """
+        fn say(msg: String, n: Int): Unit = println msg;;
+
+        fn make(msg: String): Int -> Unit =
+          say msg;
+        ;
+      """
+
+    semState(code).map { result =>
+      val errors = result.errors.collect { case e: SemanticError.BorrowClosureEscapeViaReturn =>
+        e
+      }
+      assert(errors.nonEmpty, "Expected borrowed PAP escape error")
+    }
+  }
+
+  // Pending migration: Parent compiler has no BorrowedPapEscapeViaReturn diagnostic.
+  test("non-escaping PAP over borrowed heap argument is accepted".ignore) {
+    // Source body requires the pending compiler API.
+    /* {
+    val code =
+      """
+        fn say(msg: String, n: Int): Unit = println msg;;
+
+        fn main(): Unit =
+          let msg = int_to_str 7;
+          let f: Int -> Unit = say msg;
+          f 0;
+        ;
+      """
+
+    semState(code).map { result =>
+      val escapeErrors = result.errors.collect {
+        case e: SemanticError.BorrowClosureEscapeViaReturn => e
+        case e: SemanticError.BorrowedPapEscapeViaReturn => e
+      }
+      assert(
+        escapeErrors.isEmpty,
+        s"Expected non-escaping borrowed PAP to be accepted, got: $escapeErrors"
+      )
+    }
+  }
+     */
+    fail("Parent compiler has no BorrowedPapEscapeViaReturn diagnostic.")
+  }
+
+  // Pending migration: Parent compiler has no BorrowedPapEscapeViaReturn diagnostic.
+  test("escaping Direct PAP over borrowed heap capture is rejected".ignore) {
+    // Source body requires the pending compiler API.
+    /* {
+    val code =
+      """
+        fn make(): Int -> Unit =
+          let msg = int_to_str 7;
+          let say: Int -> Int -> Unit =
+            ~{ x: Int, y: Int ->
+              println msg;
+            }
+          ;
+
+          say 1;
+        ;
+      """
+
+    semState(code).map { result =>
+      val escapeErrors = result.errors.collect { case e: SemanticError.BorrowedPapEscapeViaReturn =>
+        e
+      }
+      assert(escapeErrors.nonEmpty, "Expected borrowed Direct PAP escape error")
+    }
+  }
+     */
+    fail("Parent compiler has no BorrowedPapEscapeViaReturn diagnostic.")
+  }
+
+  // Pending migration: Parent compiler has no BorrowedPapEscapeViaReturn diagnostic.
+  test("non-escaping Direct PAP over borrowed heap capture is accepted".ignore) {
+    // Source body requires the pending compiler API.
+    /* {
+    val code =
+      """
+        fn main(): Unit =
+          let msg = int_to_str 7;
+          let say: Int -> Int -> Unit =
+            ~{ x: Int, y: Int ->
+              println msg;
+            }
+          ;
+
+          let g: Int -> Unit = say 1;
+          g 2;
+        ;
+      """
+
+    semState(code).map { result =>
+      val escapeErrors = result.errors.collect { case e: SemanticError.BorrowedPapEscapeViaReturn =>
+        e
+      }
+      assert(
+        escapeErrors.isEmpty,
+        s"Expected non-escaping borrowed Direct PAP to be accepted, got: $escapeErrors"
+      )
+    }
+  }
+     */
+    fail("Parent compiler has no BorrowedPapEscapeViaReturn diagnostic.")
+  }
+
+  // Pending migration: Parent misses UseAfterMove after the argument enters the PAP.
+  test("PAP over already-applied consuming heap arg moves source binding".ignore) {
+    val code =
+      """
+        fn consume_first(~msg: String, n: Int): Unit = println msg;;
+
+        fn main(): Unit =
+          let msg = int_to_str 7;
+          let f: Int -> Unit = consume_first msg;
+          println msg;
+          f 0;
+        ;
+      """
+
+    semState(code).map { result =>
+      val errors = result.errors.collect { case e: SemanticError.UseAfterMove => e }
+      assert(errors.nonEmpty, "Expected UseAfterMove after moving heap arg into PAP")
     }
   }
 
@@ -534,6 +703,103 @@ class OwnershipAnalyzerTests extends BaseEffFunSuite:
     }
   }
 
+  // Pending migration: Parent accepts a borrowed return through a let alias.
+  test("borrowed param returned through let-binding wrapper is rejected".ignore) {
+    val code =
+      """
+        fn echo(s: String): String =
+          let x = s;
+          x;
+        ;
+        fn main(): Unit = println "ok";;
+      """
+
+    semState(code).map { result =>
+      val errors = result.errors.collect { case e: SemanticError.BorrowEscapeViaReturn => e }
+      assert(errors.nonEmpty, "Expected BorrowEscapeViaReturn for borrowed param via let wrapper")
+    }
+  }
+
+  // Pending migration: Parent misses the borrowed return through a let-bound conditional.
+  test("borrowed param returned through let-bound conditional is rejected".ignore) {
+    val code =
+      """
+        fn pick(s: String, b: Bool): String =
+          let x = s;
+          if b then
+            x;
+          else
+            "default";
+          ;
+        ;
+        fn main(): Unit = println "ok";;
+      """
+
+    semState(code).map { result =>
+      val errors = result.errors.collect { case e: SemanticError.BorrowEscapeViaReturn => e }
+      assert(
+        errors.nonEmpty,
+        "Expected BorrowEscapeViaReturn for borrowed param via let + Cond return"
+      )
+    }
+  }
+
+  // Pending migration: Parent accepts a borrowed return through two nested let aliases.
+  test("borrowed param returned through two nested let-bindings is rejected".ignore) {
+    val code =
+      """
+        fn echo(s: String): String =
+          let x = s;
+          let y = x;
+          y;
+        ;
+        fn main(): Unit = println "ok";;
+      """
+
+    semState(code).map { result =>
+      val errors = result.errors.collect { case e: SemanticError.BorrowEscapeViaReturn => e }
+      assert(
+        errors.nonEmpty,
+        "Expected BorrowEscapeViaReturn for borrowed param via two nested let wrappers"
+      )
+    }
+  }
+
+  test("let-binding shadowing a borrowed outer param does not trigger borrow escape") {
+    val code =
+      """
+        fn f(s: String): String =
+          let s = "static";
+          s;
+        ;
+        fn main(): Unit = println "ok";;
+      """
+
+    semState(code).map { result =>
+      val errors = result.errors.collect { case e: SemanticError.BorrowEscapeViaReturn => e }
+      assert(
+        errors.isEmpty,
+        s"Expected no BorrowEscapeViaReturn (inner 's' shadows outer); got: $errors"
+      )
+    }
+  }
+
+  test("let-binding wrapper whose body returns a static value is accepted") {
+    val code =
+      """
+        fn echo(s: String): String =
+          let x = s;
+          "static";
+        ;
+        fn main(): Unit = println "ok";;
+      """
+
+    semState(code).map { result =>
+      val errors = result.errors.collect { case e: SemanticError.BorrowEscapeViaReturn => e }
+      assert(errors.isEmpty, s"Expected no BorrowEscapeViaReturn but got: $errors")
+    }
+  }
+
   test("borrow-capturing lambda returned directly is rejected") {
     val code =
       """
@@ -562,6 +828,27 @@ class OwnershipAnalyzerTests extends BaseEffFunSuite:
       val errors =
         result.errors.collect { case e: SemanticError.BorrowClosureEscapeViaReturn => e }
       assert(errors.nonEmpty, "Expected BorrowClosureEscapeViaReturn error")
+    }
+  }
+
+  // Pending migration: Parent misses the borrowed closure escape through two let aliases.
+  test("borrow-capturing lambda returned through two nested let-bindings is rejected".ignore) {
+    val code =
+      """
+        fn makeAdder(a: Int): Int -> Int =
+          let f = { x: Int -> x + a; };
+          let g = f;
+          g;
+        ;
+      """
+
+    semState(code).map { result =>
+      val errors =
+        result.errors.collect { case e: SemanticError.BorrowClosureEscapeViaReturn => e }
+      assert(
+        errors.nonEmpty,
+        "Expected BorrowClosureEscapeViaReturn for borrow closure via two nested let wrappers"
+      )
     }
   }
 
@@ -715,6 +1002,158 @@ class OwnershipAnalyzerTests extends BaseEffFunSuite:
       assert(
         consumeErrors.exists(_.ref.name == "u"),
         s"Expected borrowed user-struct arg 'u' to be rejected, got: ${result.errors}"
+      )
+    }
+  }
+
+  // Pending migration: Parent accepts a borrowed closure in an owning struct field.
+  test(
+    "struct field is an ownership sink: borrow-capturing closure into a field is rejected".ignore
+  ) {
+    val code =
+      """
+        struct Holder { f: Int -> Int };
+
+        fn main(seed: Int): Int =
+          let add_seed = { x: Int -> x + seed; };
+          let h = Holder add_seed;
+          h.f 10;
+        ;
+      """
+
+    semState(code).map { result =>
+      val errs = result.errors.collect {
+        case e: SemanticError.BorrowedValuePassedToConsumingParam => e
+      }
+      assert(
+        errs.exists(_.ref.name == "add_seed"),
+        s"Expected borrow closure laundered through a struct field to be rejected, got: ${result.errors}"
+      )
+    }
+  }
+
+  // Pending migration: Parent omits the expected struct cleanup at the binder scope.
+  test(
+    "struct field is an ownership sink: move-capturing closure moves in and is freed once".ignore
+  ) {
+    val code =
+      """
+        struct Holder { f: Int -> Int };
+
+        fn build(seed: Int): Int =
+          let add_seed = ~{ x: Int -> x + seed; };
+          let h = Holder add_seed;
+          h.f 10;
+        ;
+
+        fn main(): Unit = println (int_to_str (build 5));;
+      """
+
+    semNotFailed(code).map { module =>
+      val buildBody = topLevelLambdaBody(module, "build")
+      assertEquals(
+        countFreeCallsOf("__free_Holder", buildBody),
+        1,
+        "expected the moved-in struct to be freed exactly once at binder scope"
+      )
+    }
+  }
+
+  test("struct field is an ownership sink: non-capturing function value is accepted") {
+    val code =
+      """
+        struct Holder { f: Int -> Int };
+
+        fn inc(x: Int): Int = x + 1;;
+
+        fn build(): Int =
+          let h = Holder inc;
+          h.f 10;
+        ;
+
+        fn main(): Unit = println (int_to_str (build ()));;
+      """
+
+    semState(code).map { result =>
+      val errs = result.errors.collect {
+        case e: SemanticError.BorrowedValuePassedToConsumingParam => e
+      }
+      assert(
+        errs.isEmpty,
+        s"Non-capturing function value into a struct field should be accepted, got: ${result.errors}"
+      )
+    }
+  }
+
+  // Pending migration: Parent has no inner struct destructor for this function-bearing field.
+  test(
+    "struct holding a function-bearing struct compiles and frees through the nested destructor".ignore
+  ) {
+    val code =
+      """
+        struct Inner { f: Int -> Int };
+        struct Outer { inner: Inner };
+
+        fn use_outer(o: Outer, x: Int): Int =
+          o.inner.f x;
+        ;
+
+        fn build(seed: Int): Int =
+          let add_seed = ~{ x: Int -> x + seed; };
+          let inner = Inner add_seed;
+          let o = Outer inner;
+          use_outer o 1;
+        ;
+
+        fn main(): Unit = println (int_to_str (build 5));;
+      """
+
+    semNotFailed(code).map { module =>
+      val innerFreeBody = topLevelLambdaBody(module, "__free_Inner")
+      assert(
+        containsFreeOf("__free_closure")(innerFreeBody),
+        "nested struct's destructor should free the closure field through __free_closure"
+      )
+      // A struct holding a function value transitively is not clonable.
+      assert(
+        !module.members.exists {
+          case b: Bnd => b.name == "__clone_Outer"
+          case _ => false
+        },
+        "a struct transitively holding a function value must not get a clone function"
+      )
+    }
+  }
+
+  // Pending migration: Parent inserts struct cleanup for a scalar return at the caller.
+  test(
+    "scalar-returning function that owns a local struct is not treated as returning the struct".ignore
+  ) {
+    val code =
+      """
+        struct Box { name: String };
+
+        fn call_box(b: Box, x: Int): Int = x + 1;;
+
+        fn build(): Int =
+          let b = Box "hi";
+          call_box b 10;
+        ;
+
+        fn main(): Unit = println (int_to_str (build ()));;
+      """
+
+    semNotFailed(code).map { module =>
+      val buildBody = topLevelLambdaBody(module, "build")
+      val mainBody  = topLevelLambdaBody(module, "main")
+      assertEquals(
+        countFreeCallsOf("__free_Box", buildBody),
+        1,
+        "build should free its local Box exactly once"
+      )
+      assert(
+        !containsFreeOf("__free_Box")(mainBody),
+        "caller must not free a scalar return value as a struct"
       )
     }
   }
@@ -1056,6 +1495,153 @@ class OwnershipAnalyzerTests extends BaseEffFunSuite:
       assert(
         lastUseErrors.isEmpty,
         s"Expected borrowed-value error instead of ConsumingParamNotLastUse, got: $lastUseErrors"
+      )
+    }
+  }
+
+  // ---- Function-value ownership regression guards --------------------------------------
+  //
+  // Non-capturing function values have no closure environment to clean up. Passing them as
+  // higher-order arguments must not schedule universal or env-specific closure frees.
+  test("top-level non-capturing function passed as HO arg schedules no __free_closure") {
+    val code =
+      """
+        fn inc(x: Int): Int = x + 1;;
+        fn apply(g: Int -> Int, n: Int): Int = g n;;
+        fn main(): Int =
+          apply inc 5;
+        ;
+      """
+
+    semNotFailed(code).map { module =>
+      val mainBody = topLevelLambdaBody(module, "main")
+      assert(
+        !containsFreeOf("__free_closure")(mainBody),
+        "top-level function value must not be freed by the caller scope"
+      )
+      assert(
+        !containsClosureEnvFree(mainBody),
+        "top-level function value must not schedule an env-specific free"
+      )
+    }
+  }
+
+  test("inline non-capturing lambda passed as HO arg schedules no __free_closure") {
+    val code =
+      """
+        fn apply(g: Int -> Int, n: Int): Int = g n;;
+        fn main(): Int =
+          apply { x: Int -> x + 1 } 5;
+        ;
+      """
+
+    semNotFailed(code).map { module =>
+      val mainBody = topLevelLambdaBody(module, "main")
+      assert(
+        !containsFreeOf("__free_closure")(mainBody),
+        "inline non-capturing lambda must not be freed by the caller scope"
+      )
+      assert(
+        !containsClosureEnvFree(mainBody),
+        "inline non-capturing lambda must not schedule an env-specific free"
+      )
+    }
+  }
+
+  test("let-bound non-capturing lambda passed as HO arg schedules no __free_closure") {
+    val code =
+      """
+        fn apply(g: Int -> Int, n: Int): Int = g n;;
+        fn main(): Int =
+          let f = { x: Int -> x + 1 };
+          apply f 5;
+        ;
+      """
+
+    semNotFailed(code).map { module =>
+      val mainBody = topLevelLambdaBody(module, "main")
+      assert(
+        !containsFreeOf("__free_closure")(mainBody),
+        "non-capturing closure bound to a let must not be freed at scope end"
+      )
+      assert(
+        !containsClosureEnvFree(mainBody),
+        "non-capturing closure bound to a let must not schedule an env-specific free"
+      )
+    }
+  }
+
+  test("top-level non-capturing function passed to consuming HO param schedules no caller free") {
+    val code =
+      """
+        fn inc(x: Int): Int = x + 1;;
+        fn consume(~g: Int -> Int): Int = g 5;;
+        fn main(): Int =
+          consume inc;
+        ;
+      """
+
+    semNotFailed(code).map { module =>
+      val consumeBody = topLevelLambdaBody(module, "consume")
+      val mainBody    = topLevelLambdaBody(module, "main")
+      assert(
+        containsFreeOf("__free_closure")(consumeBody),
+        "consuming TypeFn param cleanup must stay in the callee"
+      )
+      assert(
+        !containsFreeOf("__free_closure")(mainBody),
+        "top-level function value must not be freed by the caller scope"
+      )
+      assert(
+        !containsClosureEnvFree(mainBody),
+        "top-level function value must not schedule an env-specific free"
+      )
+    }
+  }
+
+  test("inline non-capturing lambda passed to consuming HO param schedules no caller free") {
+    val code =
+      """
+        fn consume(~g: Int -> Int): Int = g 5;;
+        fn main(): Int =
+          consume { x: Int -> x + 1 };
+        ;
+      """
+
+    semNotFailed(code).map { module =>
+      val consumeBody = topLevelLambdaBody(module, "consume")
+      val mainBody    = topLevelLambdaBody(module, "main")
+      assert(
+        containsFreeOf("__free_closure")(consumeBody),
+        "consuming TypeFn param cleanup must stay in the callee"
+      )
+      assert(
+        !containsFreeOf("__free_closure")(mainBody),
+        "inline non-capturing lambda must not be freed by the caller scope"
+      )
+      assert(
+        !containsClosureEnvFree(mainBody),
+        "inline non-capturing lambda must not schedule an env-specific free"
+      )
+    }
+  }
+
+  test("move-capturing lambda value still schedules env cleanup") {
+    val code =
+      """
+        fn apply(g: Int -> Int, n: Int): Int = g n;;
+        fn main(): Int =
+          let a = 1;
+          let f = ~{ x: Int -> x + a };
+          apply f 5;
+        ;
+      """
+
+    semNotFailed(code).map { module =>
+      val mainBody = topLevelLambdaBody(module, "main")
+      assert(
+        containsClosureEnvFree(mainBody) || containsFreeOf("__free_closure")(mainBody),
+        "materialized move-capturing closure must still be cleaned up"
       )
     }
   }

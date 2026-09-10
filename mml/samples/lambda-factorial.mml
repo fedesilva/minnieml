@@ -5,6 +5,7 @@ pub fn main() =
     { n: Int, acc: Int ->
       if n <= 1 then acc;
       else factorial_tco (n - 1) (acc * n);
+      ;
     }
   ; 
 

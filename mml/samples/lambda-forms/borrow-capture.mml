@@ -1,0 +1,9 @@
+fn apply(f: Int -> Int, x: Int): Int =
+  f x;
+;
+
+pub fn main(): Unit =
+  let seed = 10;
+  let add_seed = { x: Int -> x + seed; };
+  println (int_to_str (apply add_seed 10));
+;

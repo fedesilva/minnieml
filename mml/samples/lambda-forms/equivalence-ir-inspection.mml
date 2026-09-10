@@ -1,0 +1,104 @@
+// Lambda-form IR inspection sample.
+//
+// Compile and emit optimized IR with:
+//   mmlc -I mml/samples/lambda-forms/equivalence-ir-inspection.mml
+//
+// Run with:
+//   mmlc run mml/samples/lambda-forms/equivalence-ir-inspection.mml
+//
+// Expected output when run:
+//   117
+//
+// IR checks:
+//   - direct_* forms should call plain direct entries.
+//   - first_class_top and first_class_lambda should pass `{ ptr, ptr null }`
+//     or a closure-entry wrapper for non-capturing values.
+//   - borrow_capture should use a stack closure env and no closure free.
+//   - move_capture should use a heap env and a cleanup path.
+//   - consume_null_env should be sound: universal closure free must null-guard.
+
+fn apply(f: Int -> Int, x: Int): Int =
+  f x;
+;
+
+fn consume_fn(~f: Int -> Int, x: Int): Int =
+  f x;
+;
+
+fn top_inc(x: Int): Int =
+  x + 1;
+;
+
+fn direct_top(x: Int): Int =
+  top_inc x;
+;
+
+fn direct_local(x: Int): Int =
+  fn local_inc(y: Int): Int =
+    y + 1;
+  ;
+
+  local_inc x;
+;
+
+fn direct_let_lambda(x: Int): Int =
+  let local_inc = { y: Int -> y + 1; };
+  local_inc x;
+;
+
+fn direct_inline_lambda(x: Int): Int =
+  { y: Int -> y + 1; } x;
+;
+
+fn first_class_top(x: Int): Int =
+  apply top_inc x;
+;
+
+fn first_class_lambda(x: Int): Int =
+  let inc = { y: Int -> y + 1; };
+  apply inc x;
+;
+
+fn borrow_capture(seed: Int, x: Int): Int =
+  let add_seed = { y: Int -> y + seed; };
+  apply add_seed x;
+;
+
+fn make_move_adder(seed: Int): Int -> Int =
+  ~{ y: Int -> y + seed; };
+;
+
+fn move_capture(seed: Int, x: Int): Int =
+  let add_seed = make_move_adder seed;
+  add_seed x;
+;
+
+fn consume_null_env(x: Int): Int =
+  consume_fn top_inc x;
+;
+
+pub fn main(): Unit =
+  let direct_top_result = direct_top 10;
+  let direct_local_result = direct_local 10;
+  let direct_let_lambda_result = direct_let_lambda 10;
+  let direct_inline_lambda_result = direct_inline_lambda 10;
+  let first_class_top_result = first_class_top 10;
+  let first_class_lambda_result = first_class_lambda 10;
+  let borrow_capture_result = borrow_capture 10 10;
+  let move_capture_result = move_capture 10 10;
+  let consume_null_env_result = consume_null_env 10;
+
+  let total =
+    direct_top_result +
+    direct_local_result +
+    direct_let_lambda_result +
+    direct_inline_lambda_result +
+    first_class_top_result +
+    first_class_lambda_result +
+    borrow_capture_result +
+    move_capture_result +
+    consume_null_env_result
+  ;
+
+  println (int_to_str total);
+;

@@ -299,7 +299,8 @@ class FunctionSignatureTest extends BaseEffFunSuite:
     }
   }
 
-  test("higher-order named function arguments lower as function values, not symbol loads") {
+  // Pending migration: Parent uses anonymous eta wrappers instead of named closure entries.
+  test("higher-order named function arguments lower as function values, not symbol loads".ignore) {
     val source =
       """
         fn apply(f: Int -> Int): Int = f 1;;
@@ -315,16 +316,68 @@ class FunctionSignatureTest extends BaseEffFunSuite:
         s"Named top-level function should not be loaded as a fat-pointer global. IR:\n$llvmIr"
       )
       assert(
-        """define internal i64 @test__anon_\d+\(i64 %0, ptr %1\) #0""".r
-          .findFirstIn(llvmIr)
-          .nonEmpty,
-        s"Expected an eta-expanded wrapper function for the higher-order arg. IR:\n$llvmIr"
+        llvmIr.contains("define internal i64 @test_inc__closure_entry(i64 %0, ptr %1) #0"),
+        s"Expected a named closure-entry wrapper for the higher-order arg. IR:\n$llvmIr"
       )
       assert(
-        """call i64 @test_apply\(\{ ptr, ptr \} \{ ptr @test__anon_\d+, ptr null \}\)""".r
-          .findFirstIn(mainBody)
-          .nonEmpty,
+        mainBody.contains(
+          "call i64 @test_apply({ ptr, ptr } { ptr @test_inc__closure_entry, ptr null })"
+        ),
         s"main should pass a first-class function value into apply. Body:\n$mainBody"
+      )
+    }
+  }
+
+  // Pending migration: Parent uses anonymous eta wrappers instead of named closure entries.
+  test("repeated higher-order named function arguments reuse one closure entry".ignore) {
+    val source =
+      """
+        fn apply(f: Int -> Int): Int = f 1;;
+        fn inc(x: Int): Int = x + 1;;
+        fn main(): Int = (apply inc) + (apply inc);;
+      """
+
+    compileAndGenerate(source).map { llvmIr =>
+      val mainBody = functionBody(llvmIr, "test_main\\(\\) #0")
+      val wrapperDefinitions =
+        """define internal i64 @test_inc__closure_entry\(i64 %0, ptr %1\) #0""".r
+          .findAllMatchIn(llvmIr)
+          .length
+      val materializations =
+        """\{ ptr @test_inc__closure_entry, ptr null \}""".r
+          .findAllMatchIn(mainBody)
+          .length
+
+      assertEquals(wrapperDefinitions, 1)
+      assertEquals(materializations, 2)
+    }
+  }
+
+  // Pending migration: Parent uses anonymous eta wrappers instead of named closure entries.
+  test("mixed direct and higher-order top-level function uses keep both call shapes".ignore) {
+    val source =
+      """
+        fn apply(f: Int -> Int, n: Int): Int = f n;;
+        fn inc(x: Int): Int = x + 1;;
+        fn main(): Int = (inc 1) + (apply inc 2);;
+      """
+
+    compileAndGenerate(source).map { llvmIr =>
+      val mainBody = functionBody(llvmIr, "test_main\\(\\) #0")
+
+      assert(
+        mainBody.contains("call i64 @test_inc(i64 1)"),
+        s"Direct top-level call should use the emitted function symbol. Body:\n$mainBody"
+      )
+      assert(
+        mainBody.contains(
+          "call i64 @test_apply({ ptr, ptr } { ptr @test_inc__closure_entry, ptr null }, i64 2)"
+        ),
+        s"Higher-order top-level use should pass a first-class function value. Body:\n$mainBody"
+      )
+      assert(
+        !llvmIr.contains("load { ptr, ptr }, ptr @test_inc"),
+        s"Named top-level function should not be loaded as a fat-pointer global. IR:\n$llvmIr"
       )
     }
   }
@@ -357,7 +410,8 @@ class FunctionSignatureTest extends BaseEffFunSuite:
     }
   }
 
-  test("local static null-env closure calls use direct closure-entry call") {
+  // Pending migration: Parent emits closure entries; these assertions require Direct entries and captures.
+  test("local Direct lambda calls use plain direct entry call".ignore) {
     val source =
       """
         fn main(): Int =
@@ -370,21 +424,22 @@ class FunctionSignatureTest extends BaseEffFunSuite:
       val mainBody = functionBody(llvmIr, "test_main\\(\\) #0")
 
       assert(
-        """call i64 @test_f_\d+\(i64 41, ptr null\)""".r.findFirstIn(mainBody).nonEmpty,
-        s"Expected local static closure call to use a direct closure-entry call. Body:\n$mainBody"
+        """call i64 @test_f_\d+\(i64 41\)""".r.findFirstIn(mainBody).nonEmpty,
+        s"Expected local Direct lambda call to use a plain direct entry call. Body:\n$mainBody"
       )
       assert(
         !mainBody.contains("extractvalue { ptr, ptr }"),
-        s"Static null-env closure call should not extract from a fat pointer. Body:\n$mainBody"
+        s"Local Direct lambda call should not extract from a fat pointer. Body:\n$mainBody"
       )
       assert(
         """call i64 %\d+\(i64 41, ptr %\d+\)""".r.findFirstIn(mainBody).isEmpty,
-        s"Static null-env closure call should not use an indirect function pointer. Body:\n$mainBody"
+        s"Local Direct lambda call should not use an indirect function pointer. Body:\n$mainBody"
       )
     }
   }
 
-  test("shadowed local callable args do not eta-expand from top-level names") {
+  // Pending migration: Parent uses anonymous eta wrappers instead of named closure entries.
+  test("shadowed local callable args do not eta-expand from top-level names".ignore) {
     val source =
       """
         fn apply2(f: Int -> Int -> Int): Int = f 1 2;;
@@ -397,7 +452,7 @@ class FunctionSignatureTest extends BaseEffFunSuite:
     compileAndGenerate(source).map { llvmIr =>
       val forwardBody = functionBody(llvmIr, """test_forward\([^\n]*\) #0""")
       val mainBody    = functionBody(llvmIr, "test_main\\(\\) #0")
-      val anonBody    = functionBody(llvmIr, """test__anon_\d+\([^\n]*\) #0""")
+      val wrapperBody = functionBody(llvmIr, """test_add__closure_entry\([^\n]*\) #0""")
 
       assert(
         forwardBody.contains("call i64 @test_apply2({ ptr, ptr } %0)") &&
@@ -405,14 +460,14 @@ class FunctionSignatureTest extends BaseEffFunSuite:
         s"forward should pass its local callable param through unchanged. Body:\n$forwardBody"
       )
       assert(
-        """call i64 @test_forward\(\{ ptr, ptr \} \{ ptr @test__anon_\d+, ptr null \}\)""".r
-          .findFirstIn(mainBody)
-          .nonEmpty,
+        mainBody.contains(
+          "call i64 @test_forward({ ptr, ptr } { ptr @test_add__closure_entry, ptr null })"
+        ),
         s"main should still eta-expand the bare top-level add ref. Body:\n$mainBody"
       )
       assert(
-        anonBody.contains("call i64 @test_add(i64 %0, i64 %1)"),
-        s"The top-level add wrapper should forward both arguments into test_add. Body:\n$anonBody"
+        wrapperBody.contains("call i64 @test_add(i64 %0, i64 %1)"),
+        s"The top-level add wrapper should forward both arguments into test_add. Body:\n$wrapperBody"
       )
     }
   }
@@ -748,6 +803,143 @@ class FunctionSignatureTest extends BaseEffFunSuite:
     }
   }
 
+  // Pending migration: Parent emits closure entries; these assertions require Direct entries and captures.
+  test("nested Direct lambda threads outer Direct callable's captures".ignore) {
+    // When an inner Direct lambda `g` calls an outer Direct binding `f` whose
+    // `captureOperands` reference enclosing-scope SSA registers, those operands must be
+    // threaded as `g`'s own trailing params and the inner DirectCallable rebound to point
+    // at the new inner-slot registers — otherwise `g`'s separately emitted body would
+    // reuse its own param registers as if they were the outer's.
+    val source =
+      """
+        pub fn outer(a: Int): Int =
+          let f = { x: Int -> x + a; };
+          let g = { y: Int -> f y; };
+          g 1;
+        ;
+      """
+
+    compileAndGenerate(source).map { llvmIr =>
+      val fSig = """define internal i64 @test_f_\d+\(i64 %0, i64 %1\) #0""".r
+      val gSig = """define internal i64 @test_g_\d+\(i64 %0, i64 %1\) #0""".r
+      assert(
+        fSig.findFirstIn(llvmIr).nonEmpty,
+        s"f should take (x, a) as two i64 params. IR:\n$llvmIr"
+      )
+      assert(
+        gSig.findFirstIn(llvmIr).nonEmpty,
+        s"g should take (y, a_threaded) as two i64 params. IR:\n$llvmIr"
+      )
+
+      val gBody = functionBody(llvmIr, """test_g_\d+\(i64 %0, i64 %1\) #0""")
+      assert(
+        """call i64 @test_f_\d+\(i64 %0, i64 %1\)""".r.findFirstIn(gBody).nonEmpty,
+        s"g's call to f must use g's own params (y=%0, a_threaded=%1). Body:\n$gBody"
+      )
+
+      val outerBody = functionBody(llvmIr, """test_outer\(i64 %0\) #0""")
+      assert(
+        """call i64 @test_g_\d+\(i64 1, i64 %0\)""".r.findFirstIn(outerBody).nonEmpty,
+        s"outer must call g with (1, a=%0). Body:\n$outerBody"
+      )
+    }
+  }
+
+  // Pending migration: Parent emits closure entries; these assertions require Direct entries and captures.
+  test("loopified Direct closure captures Direct sibling operands as trailing params".ignore) {
+    val source =
+      """
+        pub fn main(): Unit =
+          let base = 10;
+
+          fn sibling(x: Int): Int =
+            x + base;
+          ;
+
+          fn loop(i: Int): Int =
+            if i > 0 then
+              let y = sibling i;
+              loop (i - 1);
+            else
+              0;
+            ;
+          ;
+
+          println (int_to_str (loop 2));
+        ;
+      """
+
+    compileAndGenerate(source).map { llvmIr =>
+      val loopSig = """define internal i64 @test_loop_\d+\(i64 %0, i64 %1\) #0""".r
+      assert(
+        loopSig.findFirstIn(llvmIr).nonEmpty,
+        s"loop should take its Direct sibling operand as a trailing capture param. IR:\n$llvmIr"
+      )
+      assert(
+        !llvmIr.contains("__closure_env") && !llvmIr.contains("store { ptr, ptr } %0"),
+        s"Direct loop should not materialize a closure env or store a Function value. IR:\n$llvmIr"
+      )
+
+      val loopBody          = functionBody(llvmIr, """test_loop_\d+\(i64 %0, i64 %1\) #0""")
+      val directSiblingCall = """call i64 @test_sibling_\d+\(i64 %\d+, i64 %\d+\)""".r
+      assert(
+        loopBody.contains("loop.header:") && loopBody.contains("phi i64"),
+        s"loop should remain loopified. Body:\n$loopBody"
+      )
+      assert(
+        directSiblingCall.findFirstIn(loopBody).nonEmpty,
+        s"loop should call sibling's Direct entry with the trailing captured operand. Body:\n$loopBody"
+      )
+      assert(
+        !loopBody.contains("extractvalue { ptr, ptr }"),
+        s"loop should not call sibling through a captured fat pointer. Body:\n$loopBody"
+      )
+    }
+  }
+
+  // Pending migration: Parent emits closure entries; these assertions require Direct entries and captures.
+  test("Direct move lambda capturing a heap literal clones at the binder site".ignore) {
+    // A Direct move-capturing lambda whose capture is a heap literal (string, etc.) must
+    // (a) emit a clone call at the binder site and (b) thread the cloned value as the
+    // lambda's trailing param so the inner body uses its own SSA register, not an outer one.
+    val source =
+      """
+        pub fn main(): Unit =
+          let msg = "hello";
+          let greet = ~{ println msg; };
+          greet ();
+        ;
+      """
+
+    compileAndGenerate(source).map { llvmIr =>
+      val mainBody  = functionBody(llvmIr, """test_main\(\) #0""")
+      val cloneCall = """%\d+ = call %struct\.String @__clone_String\(""".r
+      assert(
+        cloneCall.findFirstIn(mainBody).nonEmpty,
+        s"main must emit __clone_String for the captured literal. Body:\n$mainBody"
+      )
+      val greetCall = """call void @test_greet_\d+\(%struct\.String %\d+\)""".r
+      assert(
+        greetCall.findFirstIn(mainBody).nonEmpty,
+        s"main must call greet passing the cloned String as a trailing arg. Body:\n$mainBody"
+      )
+
+      val greetSig =
+        """define internal void @test_greet_\d+\(%struct\.String %0\) #0""".r
+      assert(
+        greetSig.findFirstIn(llvmIr).nonEmpty,
+        s"greet's signature must take the cloned String as a trailing param. IR:\n$llvmIr"
+      )
+
+      val greetBody = functionBody(llvmIr, """test_greet_\d+\(%struct\.String %0\) #0""")
+      assert(
+        greetBody.contains("extractvalue %struct.String %0"),
+        s"greet's body must consume its own trailing-param register, not an outer one. " +
+          s"Body:\n$greetBody"
+      )
+    }
+  }
+
   test("pub function emits no linkage qualifier in IR") {
     val source =
       """
@@ -763,6 +955,98 @@ class FunctionSignatureTest extends BaseEffFunSuite:
       assert(
         !llvmIr.contains("define internal i64 @test_exported()"),
         s"pub function must not have internal linkage, got:\n$llvmIr"
+      )
+    }
+  }
+
+  test(
+    "higher-order named function arguments lower as function values, not symbol loads [parent c7e9078]"
+  ) {
+    val source =
+      """
+        fn apply(f: Int -> Int): Int = f 1;;
+        fn inc(x: Int): Int = x + 1;;
+        fn main(): Int = apply inc;;
+      """
+
+    compileAndGenerate(source).map { llvmIr =>
+      val mainBody = functionBody(llvmIr, "test_main\\(\\) #0")
+
+      assert(
+        !llvmIr.contains("load { ptr, ptr }, ptr @test_inc"),
+        s"Named top-level function should not be loaded as a fat-pointer global. IR:\n$llvmIr"
+      )
+      assert(
+        """define internal i64 @test__anon_\d+\(i64 %0, ptr %1\) #0""".r
+          .findFirstIn(llvmIr)
+          .nonEmpty,
+        s"Expected an eta-expanded wrapper function for the higher-order arg. IR:\n$llvmIr"
+      )
+      assert(
+        """call i64 @test_apply\(\{ ptr, ptr \} \{ ptr @test__anon_\d+, ptr null \}\)""".r
+          .findFirstIn(mainBody)
+          .nonEmpty,
+        s"main should pass a first-class function value into apply. Body:\n$mainBody"
+      )
+    }
+  }
+
+  test("local static null-env closure calls use direct closure-entry call") {
+    val source =
+      """
+        fn main(): Int =
+          let f = { x: Int -> x + 1; };
+          f 41;
+        ;
+      """
+
+    compileAndGenerate(source).map { llvmIr =>
+      val mainBody = functionBody(llvmIr, "test_main\\(\\) #0")
+
+      assert(
+        """call i64 @test_f_\d+\(i64 41, ptr null\)""".r.findFirstIn(mainBody).nonEmpty,
+        s"Expected local static closure call to use a direct closure-entry call. Body:\n$mainBody"
+      )
+      assert(
+        !mainBody.contains("extractvalue { ptr, ptr }"),
+        s"Static null-env closure call should not extract from a fat pointer. Body:\n$mainBody"
+      )
+      assert(
+        """call i64 %\d+\(i64 41, ptr %\d+\)""".r.findFirstIn(mainBody).isEmpty,
+        s"Static null-env closure call should not use an indirect function pointer. Body:\n$mainBody"
+      )
+    }
+  }
+
+  test("shadowed local callable args do not eta-expand from top-level names [parent c7e9078]") {
+    val source =
+      """
+        fn apply2(f: Int -> Int -> Int): Int = f 1 2;;
+        fn inc(x: Int): Int = x + 1;;
+        fn add(a: Int, b: Int): Int = a + b;;
+        fn forward(inc: Int -> Int -> Int): Int = apply2 inc;;
+        fn main(): Int = forward add;;
+      """
+
+    compileAndGenerate(source).map { llvmIr =>
+      val forwardBody = functionBody(llvmIr, """test_forward\([^\n]*\) #0""")
+      val mainBody    = functionBody(llvmIr, "test_main\\(\\) #0")
+      val anonBody    = functionBody(llvmIr, """test__anon_\d+\([^\n]*\) #0""")
+
+      assert(
+        forwardBody.contains("call i64 @test_apply2({ ptr, ptr } %0)") &&
+          !forwardBody.contains("@test_inc"),
+        s"forward should pass its local callable param through unchanged. Body:\n$forwardBody"
+      )
+      assert(
+        """call i64 @test_forward\(\{ ptr, ptr \} \{ ptr @test__anon_\d+, ptr null \}\)""".r
+          .findFirstIn(mainBody)
+          .nonEmpty,
+        s"main should still eta-expand the bare top-level add ref. Body:\n$mainBody"
+      )
+      assert(
+        anonBody.contains("call i64 @test_add(i64 %0, i64 %1)"),
+        s"The top-level add wrapper should forward both arguments into test_add. Body:\n$anonBody"
       )
     }
   }

@@ -1,20 +1,18 @@
 # Lambda restart: test preservation map
 
-The migration branch is `dev-lambdas-migration`, based on `c7e9078`. The shared test helpers and
-their seven existing callers are migrated. All 410 tests discovered on the parent still pass.
-The remaining source regressions, memory programs, and sample changes are pending migration.
+The noncompiler transfer is complete on `dev-lambdas-migration`. All source-tip test declarations,
+helpers, memory programs, samples, documentation, and independent benchmark/tooling changes are
+present. The compiler implementation still matches parent `c7e9078`.
 
-The complete inventory is [lambda-test-migration.json](lambda-test-migration.json). It records
-each original test declaration, its destination when present, and recoverable source provenance.
-This is a preservation inventory, not a claim that the restart implements the source branch.
-Tracked-item statuses in `tracking.md` remain the preserved source history.
+The current suite passes **430 tests**, with **62 ignored** and no failures or errors. Ignored tests
+are unfinished compiler work, not passing coverage. Every ignore has its reason in a comment
+immediately above the test. One preexisting nested TBAA declaration remains undiscovered.
 
 ## Resume from this checkpoint
 
-The Author signed off the documentation/helper workstream on 2026-09-09 and requested committing
-and pushing `dev-lambdas-migration` before further migration. The checkpoint commit subject is
-`Start lambda migration with docs and test helpers`; its push destination is
-`origin/dev-lambdas-migration`. Establish the actual local and remote state when resuming:
+The pushed documentation/helper checkpoint is `35c87bd9cb89da4f48b8fe2fa2cbae70129e3beb`
+(`Start lambda migration with docs and test helpers`). This transfer checkpoint is titled
+`Preserve lambda regressions and remaining source files`. Verify its commit/push state when resuming:
 
 ```sh
 git status --short --branch
@@ -24,172 +22,178 @@ git ls-remote --heads origin dev-lambdas-migration dev-lambdas-unify
 git cat-file -t c16231a8753d214617a88a089341033fefe803d7
 ```
 
-Read `AGENTS.md`, this document, and the salvage handoff before choosing the next workstream.
-Read `docs/memory-model.md` and `context/specs/pap-ownership-model.md` before proposing compiler
-changes. Preserve intervening edits; the JSON describes this checkpoint, not a live status service.
-The full migration is incomplete, and the next workstream still needs discussion and approval.
+The Author waived confirmation requirements while moving material from the source branch. The
+Author also authorized ignored tests and required a reason comment beside each one. **Normal
+confirmation rules apply again before compiler changes.** No compiler implementation workstream
+is approved by the transfer. Tracked-item statuses remain the preserved source history.
 
-The completed work consists of the documentation/instruction transfer, the complete test/corpus
-inventory, and the shared helper migration described below. Source programs and assertions in
-the parent test suite are unchanged. Formatting, linting, and all 410 discovered tests passed.
-One nested TBAA declaration is preserved but undiscovered. No compiler was published, so an
-installed `mmlc` must not be assumed to represent this branch. Local JUnit reports may be absent
-in a new checkout; rerun `sbtn test` to establish a fresh baseline there.
-
-The next proposed workstream is to transfer the 12 added memory programs and 67 changed sample
-entries from `c16231a`, preserving exact contents and intentional compilation failures. Read the
-MML-specific rules first. Compare destination files before copying and update their inventory
-locations and hashes. Establish which programs the parent accepts; transferred programs are not
-automatically passing coverage. Keep expected failures out of the memory harness's run-all set.
-Review this batch before starting compiler changes to satisfy its regressions.
-
-Then migrate the remaining Scala regressions in small batches, retaining parent tests and the
-historical replacements below. Borrowed-return and shadowing regressions are an initial candidate
-because they exercise ownership through existing semantic test APIs. Discuss any necessary
-compiler changes separately. Representation-dependent tests need an explicit adaptation that
-preserves their source programs, diagnostics, and cleanup requirements.
-
-The independent remaining files are `benchmark/Makefile`, `benchmark/matmul.rs`,
-`benchmark/matmul-opt.rs`, and `tooling/vscode-llvm-ir/package-lock.json`. Preserve and review them
-in their own scope. Reconcile historical documentation claims and tracked-item statuses in
-separate reviewed work; this checkpoint does not mark lambda unification complete.
+Read `AGENTS.md`, this document, and [unify-lambdas-salvage.md](unify-lambdas-salvage.md). Before
+proposing compiler work, read `docs/memory-model.md`, `context/specs/pap-ownership-model.md`, and
+the relevant compiler design/rules. Keep the source branch and immutable provenance recoverable.
+No compiler was published; an installed `mmlc` must not be assumed to represent this branch.
 
 To resume, the Author can use:
 
-> Read AGENTS.md, context/lambda-test-migration.md, and context/unify-lambdas-salvage.md. Continue
-> the restart on dev-lambdas-migration from its pushed checkpoint. Verify the current state,
-> then discuss the proposed memory/sample transfer. Preserve every source test and its history.
-> Read the memory model and PAP ownership spec before compiler changes. Use MML examples.
+> Read AGENTS.md, context/lambda-test-migration.md, and context/unify-lambdas-salvage.md. Verify the
+> migration branch and current tests. The noncompiler transfer is complete; ignored regressions
+> have nearby reasons. Discuss a bounded compiler workstream before editing the compiler. Preserve
+> the ownership contract and explain language behavior using MML examples.
 
-## References and scope
+## References and transferred scope
 
 - Parent: `c7e90780897d202d857292b029baedc5b5f9b7e3`.
-- Test source: `c16231a8753d214617a88a089341033fefe803d7`.
-- Retained source branch: `dev-lambdas-unify`, currently at `8e83506`.
-- Documentation source: `8e83506`, including the handoff, both reviews, and parser design updates.
-- Contract and recovery instructions: [unify-lambdas-salvage.md](unify-lambdas-salvage.md).
+- Test/program source: `c16231a8753d214617a88a089341033fefe803d7`.
+- Documentation source: `8e83506`, retained on local `dev-lambdas-unify`.
+- Complete inventory: [lambda-test-migration.json](lambda-test-migration.json).
 
-The inventory covers every Scala file under `modules/**/src/test/`, and every tracked file under
-`tests/mem/` and `mml/samples/`, across the parent and all 72 commits through the test source.
-Unchanged files are included. Helper renames, deleted paths, intermediate programs, and rewritten
-test declarations retain their original blob references.
+The complete `context/` and `docs/` trees and root instruction changes were transferred at the
+first checkpoint, including additions, edits, renames, and deletions. Migration handoff updates
+and these inventory files are intentional additions on the destination branch.
 
-The complete `context/` and `docs/` source trees were transferred before this workstream. The two
-test-migration inventory files are additions on the migration branch. Root instruction changes,
-including the `GEMINI.md` deletion, are also present. The JSON records the verified worktree before
-this checkpoint; its `destination_head` identifies the parent commit at that time.
+The subsequent transfer includes 67 changed sample entries, 12 added memory programs, all
+remaining Scala test changes, `benchmark/Makefile`, both Rust matrix benchmarks, and
+`tooling/vscode-llvm-ir/package-lock.json`. All 83 sample/memory/benchmark/tooling files match the
+source bytes exactly. None of the source branch's 28 changed compiler implementation files were
+transferred.
 
-## Inventory counts
+Three shared test helpers moved from `test/extractors/` to `test/ast/`:
+
+| Parent file | Destination file |
+| --- | --- |
+| `TXAstExtractors.scala` | `AstExtractors.scala` |
+| `TXLambdaHelpers.scala` | `LambdaTestQueries.scala` |
+| `TXTermTraversal.scala` | `AstTraversal.scala` |
+
+`AstTraversal` accesses the lambda body through typed `Lambda` matches instead of matching all
+eight constructor fields. Its traversal behavior is unchanged. The other helpers match the source
+blobs exactly. Existing caller imports and the four traversal helper names were updated.
+
+## Test preservation and ignores
 
 | Measure | Count |
 | --- | ---: |
-| Parent test declarations | 411 |
-| Source-tip test declarations | 477 |
-| Migration-branch test declarations | 411 |
-| Distinct file/name pairs across history | 486 |
-| Distinct declaration versions across history | 507 |
-| Corpus paths across history | 266 |
-| Distinct path/blob versions across history | 367 |
+| Parent declarations retained | 411 |
+| Source-tip declarations transferred | 477 |
+| Current declarations, including retained parent variants | 493 |
+| Passing tests | 430 |
+| Ignored tests | 62 |
+| Undiscovered nested declarations | 1 |
+| Original file/name pairs across source history | 486 |
+| Distinct declaration versions across source history | 507 |
+| Corpus paths / distinct path-and-blob versions | 266 / 367 |
 
-Declaration counts include nested test registrations. They are not executed-test counts.
-The source-tip declarations divide into 395 identical declaration texts, 71 absent names, and
-11 changed declarations. Absent names include source replacements for parent test names; 71 is
-not a count of net new behaviors. Matching text does not establish equivalent helper behavior or
-compiler semantics. The inventory also records complete file versions for that review.
+The 16 parent cases replaced or changed in source are retained alongside their successors. Eleven
+same-name cases have a `[parent c7e9078]` suffix; five keep their original names. All 410 parent
+cases that the runner discovered before migration still run and pass. Parent assertions remain
+unchanged after helper-name normalization and test-header formatting.
 
-## Completed helper migration
+The first transferred suite failed to compile with 14 errors in five suites. Eighteen tests
+require absent materialization metadata, PAP/parser diagnostics, or the type-name comparison API.
+Five test bodies are preserved inside comments next to explicit failing placeholders. Three
+helper bodies likewise preserve their source assertions in comments and fail explicitly. Restore
+those bodies against the agreed compiler API before enabling their dependent tests. Removing an
+ignore alone cannot make these placeholders pass.
 
-All helper paths below are relative to `modules/mmlc-lib/src/test/scala/mml/mmlclib/test/`.
+With those API-dependent tests ignored, the suite ran 430 passing and 44 failing tests. Those 44
+source regressions are now ignored, with the observed gap explained directly above each test.
+Their programs and assertions remain executable and unchanged. The inventory records each reason
+and a short failure excerpt. The final suite has 430 passing and 62 ignored tests.
 
-| Parent path | Destination |
-| --- | --- |
-| `extractors/TXAstExtractors.scala` | `ast/AstExtractors.scala` |
-| `extractors/TXLambdaHelpers.scala` | `ast/LambdaTestQueries.scala` |
-| `extractors/TXTermTraversal.scala` | `ast/AstTraversal.scala` |
+The pending cases include borrowed returns through aliases, PAP argument moves and escapes,
+struct ownership and destruction, heap type aliases, Direct call shapes, capture cleanup, and
+named closure entries. Some code-generation assertions pin the source implementation's exact IR
+shape. Their preservation does not authorize reproducing that architecture. Parent and source
+representation expectations must be reconciled deliberately while preserving their semantic and
+ownership coverage.
 
-The source-tip helper files supply the destination contents. `AstTraversal` uses typed `Lambda`
-matches to access `body` instead of matching all eight constructor fields. Its traversal behavior
-is unchanged. The other two helpers match their source-tip blobs exactly.
+For example, these aliases must not manufacture ownership:
 
-The seven callers are `LambdaLitTests`, `AlphaOpTests`, `AppRewritingTests`, `CaptureAnalyzerTests`,
-`OpPrecedenceTests`, `OwnershipAnalyzerTests`, and `TypeCheckerTests`. Their imports use `test.ast`.
-Ownership helper calls use `existsTerm` and `countTerms`. No test program or assertion changes in
-this workstream. No compiler implementation changes are included.
+```mml
+fn echo(s: String): String =
+  let x = s;
+  let y = x;
+  y;
+;
+```
+
+The parent accepts this borrowed return. Its source rejection regression is retained and ignored
+with that reason. The shadowing and static-return companion regressions run and pass.
+
+`TbaaEmissionTest.scala` still declares `loads and stores include alias scope metadata` inside
+`TBAA field offsets honor alignment (String has ptr at offset 8, not 4)`. This preexisting nested
+registration is recorded as `not-discovered`, not passing or ignored.
 
 ## Reading the inventory
 
-`scala_cases` contains one record per original file/name pair. `parent` and `source` identify the
-declaration at the fixed commits above. `destination` records the current location and execution
-result, or is null when that name is absent. `history` records each distinct declaration version
-with its first observed commit, complete file blob, inclusive line range, SHA-256, ignored state,
-and enclosing test when nested. Declaration hashes cover the original text with trailing
-whitespace removed; file blob hashes cover the complete file.
+Schema version 2 keeps every immutable source/history reference from the first checkpoint.
+`scala_cases` records original file/name identities, source and parent declarations, their current
+`destination`, and a separate `parent_destination` where applicable. `pending` records ignore
+reasons and whether an unsupported body is commented. Execution is recorded independently from
+preservation status.
 
 | Case status | Meaning |
 | --- | --- |
-| `source-case-identical` | Declaration text matches the source tip. Execution is recorded separately. |
-| `source-case-helper-adapted` | Only the four traversal helper identifiers differ. Currently no rows. |
-| `pending-new` | The source file/name pair has no current destination. |
-| `pending-changed` | The destination has that name, but its declaration differs from the source. |
-| `historical-name-present` | A name superseded in source history remains in the parent suite. |
-| `historical-name-absent` | A historical name is absent from both source tip and destination. |
+| `source-case-identical` | Current declaration text matches the source tip. |
+| `source-case-format-adapted` | Only formatting or an adjacent migration comment differs. |
+| `source-case-ignored` | Source program/assertions preserved; the test is explicitly pending. |
+| `historical-name-present` | Superseded source name remains in the parent suite. |
+| `historical-name-absent` | Intermediate name is retained through source history and successor mapping. |
 
-`corpus_files` records whole-file versions, including shared helpers and all memory/sample files.
-File statuses describe byte-level transfer, helper moves, or pending differences. They do not
-claim successful execution. `verification` records the test command and hashes of the generated
-JUnit reports; those reports are local build outputs, not committed artifacts.
+`history` stores commit, blob, inclusive line range, declaration SHA-256, ignored state, and any
+enclosing test. Declaration hashes cover text with trailing whitespace removed. File blob hashes
+cover complete files. Recover a complete original with `git cat-file blob <blob>` or
+`git show <commit>:<path>`.
 
-For example, recover a recorded complete file with `git cat-file blob <blob>`, or inspect its
-original location with `git show <commit>:<path>`. Preserve these immutable references when
-adapting a test. A source-only record is recoverable history, not migrated passing coverage.
+`corpus_files` records all file versions and current hashes. `independent_files` records the four
+benchmark/tooling paths outside the test/sample corpus. `verification` contains current JUnit
+report hashes and outcomes; `previous_checkpoint_verification` retains the 410-test baseline.
+Reports are local build outputs and may be absent in a new checkout. Rerun the suite there.
+`destination_head` identifies HEAD when the working-tree snapshot was recorded.
 
-## Historical replacements
+Nine historical names have explicit successor mappings. Five remain active as parent tests; four
+intermediate-only names remain recoverable in immutable source blobs. Three of the latter assert
+rejected clone-per-PAP behavior. Their successors are preserved, but the rejected cloning contract
+is not restored. The other intermediate replacement changes sibling-capture representation.
 
-Every one of the nine names absent from the source tip has a `source_successor` mapping. These
-links describe source history and do not authorize replacing a parent semantic regression.
-
-- `61c7735` changes three closure-codegen expectations and one local function-call expectation
-  from environment/wrapper emission to Direct entry emission.
-- `1fc9f4e` changes the sibling-capture expectation to trailing parameters, and the local
-  tail-recursive function expectation to eliding its closure-entry wrapper.
-- `bc41865` replaces three clone-per-PAP expectations. The escaping heap-capture program becomes
-  a rejection test. The ordinary and aliased heap-argument programs become local borrow tests
-  with no clone and no payload destruction by the PAP. The consuming-argument test is a separate
-  source case. The map follows the programs and ownership contract, not adjacent diff lines.
-
-All three rejected clone expectations retain their source programs and assertions through their
-blob/line provenance. Their successors remain pending. No hidden cloning is authorized by this
-inventory. The move-closure cleanup test and nullary immediate-lambda test also retain their
-ignored and enabled versions; the original surrounding comments are in the referenced blobs.
-
-## Verification and discovered gap
-
-Both the parent baseline and the helper migration passed 410 discovered tests, with zero failures
-or errors. The migration verification command was:
+## Verification and limits
 
 ```sh
 sbtn 'scalafmtAll;scalafixAll;test'
 ```
 
-Formatting and linting succeeded without compiler warnings. Every parent declaration remains
-identical after normalizing the four helper renames. Whole-file comparisons verify that the
-compiler, memory programs, and samples still match the parent.
+Formatting and linting pass without warnings. Final result: 430 passed, 62 ignored, zero failures
+or errors. Checks verify every source declaration's preserved body, every parent declaration's
+retained destination, all corpus file hashes, and unchanged compiler implementation.
 
-`TbaaEmissionTest.scala:111` declares `loads and stores include alias scope metadata` inside the
-`TBAA field offsets honor alignment (String has ptr at offset 8, not 4)` test. It is present in
-both parent and source but absent from the runner's discovered cases. Its inventory execution
-status is `not-discovered`, and its enclosing declaration is recorded. This explains the
-411-declaration versus 410-executed-test counts. Fixing the registration is a separate change;
-the test is preserved here without claiming it passes.
+Both Rust matrix benchmarks build and run with checksum `381460`. The transferred lockfile's
+root dependencies match `package.json`; its source updates esbuild to `0.25.12`, Node types to
+`20.19.41`, and VS Code types to `1.120.0`. Dependencies were not installed or refreshed.
 
-## Remaining migration
+All 79 transferred MML files were checked for IR generation using this freshly built compiler.
+The CLI classpath came from `sbtn 'export mmlc / Compile / fullClasspath'`; each file was then
+checked with `java -cp <classpath> mml.mmlc.Main ir -b <temporary-directory> <file>`. Results and
+diagnostics are recorded in each corpus entry's `ir_check` and summarized in `program_verification`.
+There were 67 generated-IR results and 12 rejections, including intentional negative examples.
 
-The 71 absent source names and 11 changed declarations require reviewed migrations. Their source
-files and historical variants are all mapped; they have not been copied into the running suite.
-The 12 added memory programs and 67 changed sample entries also remain pending, alongside the
-benchmark and VS Code dependency changes listed in the salvage handoff.
+Of the 12 memory programs, 11 generate IR. `tests/mem/escaping-paps.mml` and sample
+`partial-fac2-escape.mml` fail codegen because the parent has no LLVM mapping for `TypeGroup` in
+the grouped function-return type. `lambda-forms/direct-inline-lambda.mml` fails parsing.
+`borrow-escape-test.mml` is rejected for its untyped hole, so it does not validate borrow escape.
+The negative `lambda-forms/struct-field-borrow-fail.mml` sample generates IR: the parent wrongly
+accepts that borrowed closure in an owning field, matching the ignored semantic regression.
 
-Before changing representation assertions, retain the source program, intended result or
-diagnostic, and ownership purpose. Preserve parent behaviors through renamed tests. Review the
-memory model and PAP ownership spec before compiler changes, and agree each compiler workstream
-with the Author. Neither a green parent suite nor this inventory closes the full migration.
+IR generation does not establish runtime correctness or memory safety. No MML program was run
+under sanitizers during this transfer. The memory harness cannot be called passing while
+`escaping-paps.mml` fails to compile. Full ASan/LSan checks and MML benchmarks remain required
+when implementing the relevant compiler changes.
+
+## Next compiler workstream
+
+Discuss and approve the next bounded slice before changing compiler code. The salvage review's
+candidate is complete executable destructor ASTs; the preserved ownership regressions provide
+additional concrete entry points. Establish the invariant and MML examples first, then identify
+which ignored tests should become enabled for that slice. Do not silently clone values to repair
+ownership, weaken assertions to obtain a green suite, or import the failed compiler wholesale.
+
+Reconcile stale design-document claims and historical tracked-item statuses through their own
+reviewed work. Neither this transfer nor the green suite with ignores completes lambda unification.

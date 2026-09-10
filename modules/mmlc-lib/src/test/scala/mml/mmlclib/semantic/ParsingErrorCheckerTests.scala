@@ -41,6 +41,31 @@ class ParsingErrorCheckerTests extends BaseEffFunSuite:
     }
   }
 
+  // Pending migration: Parent compiler has no TermErrorFound diagnostic.
+  test("MemberErrorChecker should catch term errors nested inside expressions".ignore) {
+    // Source body requires the pending compiler API.
+    /* {
+    justParse(
+      """
+      let x =
+        let 123invalid = 5;
+        6;
+      ;
+      """
+    ).map { module =>
+      val state  = CompilerState.empty(module, SourceInfo(""), CompilerConfig.default)
+      val result = ParsingErrorChecker.checkModule(state)
+      assert(result.errors.exists {
+        case SemanticError.TermErrorFound(error, _) =>
+          error.message.contains("Invalid identifier")
+        case _ => false
+      })
+    }
+  }
+     */
+    fail("Parent compiler has no TermErrorFound diagnostic.")
+  }
+
   test("MemberErrorChecker should catch member errors as shown in the example") {
     semState(
       """
