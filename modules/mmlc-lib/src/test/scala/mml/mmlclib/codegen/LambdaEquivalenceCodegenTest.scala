@@ -4,13 +4,6 @@ import mml.mmlclib.test.BaseEffFunSuite
 
 class LambdaEquivalenceCodegenTest extends BaseEffFunSuite:
 
-  private def functionBody(llvmIr: String, signaturePattern: String): String =
-    val pattern = (s"(?s)define .*@$signaturePattern \\{\\n(.*?)\\n\\}").r
-    pattern
-      .findFirstMatchIn(llvmIr)
-      .map(_.group(1))
-      .getOrElse(fail(s"Missing function definition for $signaturePattern. IR:\n$llvmIr"))
-
   private def countMatches(pattern: String, text: String): Int =
     pattern.r.findAllMatchIn(text).length
 
@@ -33,7 +26,7 @@ class LambdaEquivalenceCodegenTest extends BaseEffFunSuite:
       """
 
     compileAndGenerate(source).map { llvmIr =>
-      val mainBody = functionBody(llvmIr, "test_main\\(\\) #0")
+      val mainBody = functionBodyMatching(llvmIr, "test_main\\(\\) #0")
 
       assert(
         mainBody.contains("call i64 @test_top_inc(i64 10)"),
@@ -72,7 +65,7 @@ class LambdaEquivalenceCodegenTest extends BaseEffFunSuite:
       """
 
     compileAndGenerate(source).map { llvmIr =>
-      val mainBody = functionBody(llvmIr, "test_main\\(\\) #0")
+      val mainBody = functionBodyMatching(llvmIr, "test_main\\(\\) #0")
 
       assert(
         llvmIr.contains("define internal i64 @test_top_inc__closure_entry"),
@@ -106,7 +99,7 @@ class LambdaEquivalenceCodegenTest extends BaseEffFunSuite:
       """
 
     compileAndGenerate(source).map { llvmIr =>
-      val mainBody = functionBody(llvmIr, "test_main\\(\\) #0")
+      val mainBody = functionBodyMatching(llvmIr, "test_main\\(\\) #0")
 
       assert(
         """%struct\.__closure_env_\d+ = type \{ i64 \}""".r.findFirstIn(llvmIr).nonEmpty,
@@ -138,7 +131,7 @@ class LambdaEquivalenceCodegenTest extends BaseEffFunSuite:
       """
 
     compileAndGenerate(source).map { llvmIr =>
-      val mainBody = functionBody(llvmIr, "test_main\\(\\) #0")
+      val mainBody = functionBodyMatching(llvmIr, "test_main\\(\\) #0")
       val directEnvFrees =
         countMatches("""call void @test___free___closure_env_\d+\(ptr %\d+\)""", mainBody)
 

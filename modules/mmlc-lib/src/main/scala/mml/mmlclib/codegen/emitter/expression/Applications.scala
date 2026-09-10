@@ -302,54 +302,15 @@ def compileRegularCall(
           ).asLeft
 
       fnReturnTypeResult.flatMap { fnReturnType =>
-        val adjustedArgsAndState =
-          getClosureDestructorKind(fnRef, finalState) match
-            case Some(_) =>
-              extractClosureEnvArg(compiledArgs, app, finalState)
-            case None =>
-              (compiledArgs, finalState).asRight
-
-        adjustedArgsAndState.flatMap { case (adjustedArgs, stateAfterExtract) =>
-          // Check for function template (for LLVM intrinsics like llvm.sqrt)
-          getFunctionTemplate(
-            fnRef.resolvedId.flatMap(stateAfterExtract.resolvables.lookup)
-          ) match
-            case Some(tpl) =>
-              compileFunctionWithTemplate(fnRef, tpl, adjustedArgs, app, stateAfterExtract)
-            case None =>
-              compileStandardCall(fnRef, adjustedArgs, fnReturnType, app, stateAfterExtract)
-        }
+        getFunctionTemplate(fnRef.resolvedId.flatMap(finalState.resolvables.lookup)) match
+          case Some(tpl) =>
+            compileFunctionWithTemplate(fnRef, tpl, compiledArgs, app, finalState)
+          case None =>
+            compileStandardCall(fnRef, compiledArgs, fnReturnType, app, finalState)
       }
   }
 
 private case class CompiledArg(op: String, llvmType: String, typeSpec: Option[Type])
-
-private def getClosureDestructorKind(
-  fnRef: Ref,
-  state: CodeGenState
-): Option[DestructorKind] =
-  fnRef.resolvedId
-    .flatMap(state.resolvables.lookup)
-    .collect { case bnd: Bnd => bnd.meta.flatMap(_.destructorKind) }
-    .flatten
-
-/** Closure destructors consume the raw env pointer, so adapt the fat pointer arg first. */
-private def extractClosureEnvArg(
-  compiledArgs: List[CompiledArg],
-  app:          App,
-  state:        CodeGenState
-): Either[CodeGenError, (List[CompiledArg], CodeGenState)] =
-  compiledArgs match
-    case List(arg) if arg.llvmType == "{ ptr, ptr }" =>
-      val envReg      = state.nextRegister
-      val extractLine = emitExtractValue(envReg, "{ ptr, ptr }", arg.op, 1)
-      val newArg      = CompiledArg(s"%$envReg", "ptr", none)
-      (List(newArg), state.withRegister(envReg + 1).emit(extractLine)).asRight
-    case _ =>
-      CodeGenError(
-        "Closure destructor expects a single { ptr, ptr } argument",
-        app.some
-      ).asLeft
 
 /** Compiles all arguments to a function call. */
 private def compileArgs(

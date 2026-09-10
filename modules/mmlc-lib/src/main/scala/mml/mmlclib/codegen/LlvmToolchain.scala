@@ -6,7 +6,10 @@ import mml.mmlclib.compiler.CompilerConfig
 import mml.mmlclib.errors.CompilationError
 
 import java.io.{File, InputStream}
+import java.nio.charset.StandardCharsets.UTF_8
 import java.nio.file.{Files, Path, Paths, StandardCopyOption}
+import java.security.MessageDigest
+import java.util.HexFormat
 import scala.jdk.CollectionConverters.*
 import scala.sys.process.{Process, ProcessLogger}
 
@@ -55,6 +58,12 @@ object LlvmToolchain:
 
   private def clangAsanFlags(asan: Boolean): List[String] =
     if asan then List("-fsanitize=address", "-fno-omit-frame-pointer") else Nil
+
+  private def clangTargetCpuFlags(targetTriple: String, targetCpu: Option[String]): List[String] =
+    val flag = targetTriple.takeWhile(_ != '-').toLowerCase match
+      case "x86_64" | "amd64" | "i386" | "i486" | "i586" | "i686" => "-march"
+      case _ => "-mcpu"
+    targetCpu.toList.map(cpu => s"$flag=$cpu")
 
   private def timedStep[A](
     name:         String,
@@ -206,7 +215,7 @@ object LlvmToolchain:
           .asScala
           .find(_.stripLeading().startsWith(hostCpuPrefix))
           .map(_.stripLeading().stripPrefix(hostCpuPrefix).trim)
-          .filter(_.nonEmpty)
+          .filter(cpu => cpu.nonEmpty && cpu != "(unknown)" && cpu != "unknown")
       catch case _: Exception => None
     }
 
@@ -343,7 +352,8 @@ object LlvmToolchain:
     import cats.data.EitherT
 
     val programBitcode = outputDir.resolve(s"$programName.bc").toAbsolutePath.toString
-    val clangFlags     = clangStackProbeFlags(config.noStackCheck) ++ clangAsanFlags(config.asan)
+    val clangFlags = clangStackProbeFlags(config.noStackCheck) ++ clangAsanFlags(config.asan) ++
+      clangTargetCpuFlags(targetTriple, targetCpu)
 
     (for
       _ <- EitherT(
@@ -513,9 +523,16 @@ object LlvmToolchain:
   private def mmlRuntimeObjectFilename(targetTriple: String): String =
     s"mml_runtime-$targetTriple.o"
 
-  /** Get the filename for the compiled MML runtime bitcode for a specific target */
-  private def mmlRuntimeBitcodeFilename(targetTriple: String): String =
-    s"mml_runtime-$targetTriple.bc"
+  /** Runtime cache entries are specific to the flags that compile their target code. */
+  private[codegen] def runtimeCacheFilename(
+    targetTriple: String,
+    optLevel:     Int,
+    clangFlags:   List[String],
+    extension:    String
+  ): String =
+    val options = (s"-O$optLevel" :: clangFlags).mkString("\u0000").getBytes(UTF_8)
+    val digest  = HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(options))
+    s"mml_runtime-$targetTriple-$digest.$extension"
 
   private def extractRuntimeResource(
     outputDir:   Path,
@@ -584,7 +601,7 @@ object LlvmToolchain:
     config:       CompilerConfig,
     clangFlags:   List[String]
   ): IO[Either[LlvmCompilationError, String]] = IO.defer {
-    val runtimeFilename = mmlRuntimeObjectFilename(targetTriple)
+    val runtimeFilename = runtimeCacheFilename(targetTriple, config.optLevel, clangFlags, "o")
     val objPath         = outputDir.resolve(runtimeFilename).toAbsolutePath
 
     logPhase("Compiling runtime", config.printPhases)
@@ -627,7 +644,7 @@ object LlvmToolchain:
     config:       CompilerConfig,
     clangFlags:   List[String]
   ): IO[Either[LlvmCompilationError, String]] = IO.defer {
-    val runtimeFilename = mmlRuntimeBitcodeFilename(targetTriple)
+    val runtimeFilename = runtimeCacheFilename(targetTriple, config.optLevel, clangFlags, "bc")
     val bcPath          = outputDir.resolve(runtimeFilename).toAbsolutePath
 
     logPhase("Compiling runtime bitcode", config.printPhases)
@@ -644,7 +661,6 @@ object LlvmToolchain:
             logDebug(s"Input file: $sourcePath", config.verbose)
             logDebug(s"Output file: $bcPath", config.verbose)
 
-            val cpuFlags = config.targetCpu.map(cpu => List(s"-mcpu=$cpu")).getOrElse(Nil)
             val cmd = (List(
               "clang",
               "-target",
@@ -653,7 +669,7 @@ object LlvmToolchain:
               "-c",
               "-std=c17",
               s"-O${config.optLevel}"
-            ) ++ cpuFlags ++ clangFlags ++ List("-fPIC", "-o", bcPath.toString, sourcePath))
+            ) ++ clangFlags ++ List("-fPIC", "-o", bcPath.toString, sourcePath))
               .mkString(" ")
             executeCommand(
               cmd,

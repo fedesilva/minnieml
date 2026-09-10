@@ -16,6 +16,38 @@
 
 ## Active Tasks
 
+### Port the local collaboration workflow from y0y
+
+**Status:** planned. Do after the Author's current code review, before the next compiler
+slice in the lambda workstream. Local tracking only; no GitHub synchronization.
+
+Port the context structure and repo-local skills from y0y, adapting QA and verification
+to Scala/compiler work. Separate active/near-term working memory, durable tasks, and history;
+use Git Town and preserve isolated adversarial review with independent per-claim verification.
+
+Scope, migration steps, acceptance, and unresolved lifecycle decisions:
+[Local workflow port](specs/local-workflow-port.md).
+
+### Revisit Linux sanitizer verification
+
+Deferred at the Author's request; keep this item local to `tracking.md`.
+
+The Docker setup (`packaging/docker/linux-builder-shell.sh`) runs ARM64 Ubuntu 25.10
+with LLVM/Clang 20.1.8. Ordinary smoke programs and benchmark builds pass, except for
+the known `partial-fac1` exit 139. The memory harness reports 0/34: all fail compilation
+before sanitizer execution. An `arrays-mem.mml` diagnostic shows generated
+`asan_globals` assembly rejected with `Linkage must be 'comdat'`.
+
+ASan itself works in the container: a C probe correctly reports a deliberate
+heap-use-after-free. This is a sanitizer build blocker, not a memory-safety result.
+
+- [ ] Reproduce and isolate the assembly rejection using the existing Docker scripts.
+- [ ] Fix the toolchain/integration issue without hardcoded CPUs or disabling sanitizers.
+- [ ] Rerun Linux smokes, benchmarks and the full memory harness; classify remaining
+  compiler failures separately from runtime ownership failures.
+
+Details and logs: [Linux verification follow-up](lambda-test-migration.md#linux-verification-follow-up).
+
 
 ### Bug: can't use ??? in an annotated fn.
 

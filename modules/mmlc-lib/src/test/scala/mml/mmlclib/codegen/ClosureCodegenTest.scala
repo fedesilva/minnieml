@@ -8,13 +8,6 @@ import mml.mmlclib.test.BaseEffFunSuite
 
 class ClosureCodegenTest extends BaseEffFunSuite:
 
-  private def functionBody(llvmIr: String, signaturePattern: String): String =
-    val pattern = (s"(?s)define .*@$signaturePattern \\{\\n(.*?)\\n\\}").r
-    pattern
-      .findFirstMatchIn(llvmIr)
-      .map(_.group(1))
-      .getOrElse(fail(s"Missing function definition for $signaturePattern. IR:\n$llvmIr"))
-
   private def compileCodegenErrors(
     source: String,
     name:   String = "Test",
@@ -151,8 +144,8 @@ class ClosureCodegenTest extends BaseEffFunSuite:
     """
 
     compileAndGenerate(source).map { llvmIr =>
-      val mainBody = functionBody(llvmIr, "test_main\\(\\) #0")
-      val freeBody = functionBody(llvmIr, "test___free_closure\\(ptr %0\\) #\\d+")
+      val mainBody = functionBodyMatching(llvmIr, "test_main\\(\\) #0")
+      val freeBody = functionBodyMatching(llvmIr, "test___free_closure\\(ptr %0\\) #\\d+")
 
       assert(
         mainBody.contains("call void @test___free_closure(ptr %"),
@@ -185,7 +178,7 @@ class ClosureCodegenTest extends BaseEffFunSuite:
     """
 
     compileAndGenerate(source).map { llvmIr =>
-      val mainBody = functionBody(llvmIr, "test_main\\(\\) #0")
+      val mainBody = functionBodyMatching(llvmIr, "test_main\\(\\) #0")
 
       assert(
         mainBody.contains("call ptr @malloc"),
@@ -219,7 +212,7 @@ class ClosureCodegenTest extends BaseEffFunSuite:
     """
 
     compileAndGenerate(source).map { llvmIr =>
-      val mainBody = functionBody(llvmIr, "test_main\\(\\) #0")
+      val mainBody = functionBodyMatching(llvmIr, "test_main\\(\\) #0")
 
       assert(
         """%struct\.__closure_env_\d+ = type \{ i64 \}""".r.findFirstIn(llvmIr).nonEmpty,
@@ -251,7 +244,7 @@ class ClosureCodegenTest extends BaseEffFunSuite:
     """
 
     compileAndGenerate(source).map { llvmIr =>
-      val mainBody = functionBody(llvmIr, "test_main\\(\\) #0")
+      val mainBody = functionBodyMatching(llvmIr, "test_main\\(\\) #0")
       val clones   = "call %struct.String @__clone_String".r.findAllIn(mainBody).size
       val frees    = "call void @__free_String".r.findAllIn(mainBody).size
       assert(clones == 1, s"Expected one clone of the captured literal. Body:\n$mainBody")
@@ -270,7 +263,7 @@ class ClosureCodegenTest extends BaseEffFunSuite:
     """
 
     compileAndGenerate(source).map { llvmIr =>
-      val mainBody = functionBody(llvmIr, "test_main\\(\\) #0")
+      val mainBody = functionBodyMatching(llvmIr, "test_main\\(\\) #0")
       assert(
         !mainBody.contains("@__clone_String"),
         s"Owned String capture should be moved, not cloned. Body:\n$mainBody"
@@ -292,7 +285,7 @@ class ClosureCodegenTest extends BaseEffFunSuite:
     """
 
     compileAndGenerate(source).map { llvmIr =>
-      val mainBody = functionBody(llvmIr, "test_main\\(\\) #0")
+      val mainBody = functionBodyMatching(llvmIr, "test_main\\(\\) #0")
       val frees =
         """call void @test___free_Pair\(%struct.Pair %\d+\)""".r.findAllIn(mainBody).size
       assert(
@@ -316,7 +309,7 @@ class ClosureCodegenTest extends BaseEffFunSuite:
     """
 
     compileAndGenerate(source, config = CompilerConfig.default.copy(noTco = false)).map { llvmIr =>
-      val loopBody = functionBody(llvmIr, "test_run\\(i64 %0\\) #0")
+      val loopBody = functionBodyMatching(llvmIr, "test_run\\(i64 %0\\) #0")
       val frees    = "call void @__free_String".r.findAllIn(loopBody).size
       val freeIdx  = loopBody.indexOf("call void @__free_String")
       // The back-edge is the last jump to the header; the entry block also jumps in.
@@ -343,7 +336,7 @@ class ClosureCodegenTest extends BaseEffFunSuite:
       """
 
     compileAndGenerate(source, config = CompilerConfig.default.copy(noTco = false)).map { llvmIr =>
-      val loopBody = functionBody(llvmIr, "test_loop\\(i64 %0, i64 %1\\) #0")
+      val loopBody = functionBodyMatching(llvmIr, "test_loop\\(i64 %0, i64 %1\\) #0")
 
       assert(
         loopBody.contains("call i64 @test_add_"),
@@ -409,7 +402,7 @@ class ClosureCodegenTest extends BaseEffFunSuite:
       """
 
     compileAndGenerate(source, config = CompilerConfig.default.copy(noTco = false)).map { llvmIr =>
-      val loopBody = functionBody(llvmIr, "test_loop\\(i64 %0, i64 %1\\) #0")
+      val loopBody = functionBodyMatching(llvmIr, "test_loop\\(i64 %0, i64 %1\\) #0")
 
       assert(
         loopBody.contains("call i64 @test_step_"),
@@ -435,7 +428,7 @@ class ClosureCodegenTest extends BaseEffFunSuite:
       """
 
     compileAndGenerate(source, config = CompilerConfig.default.copy(noTco = false)).map { llvmIr =>
-      val loopBody = functionBody(llvmIr, "test_loop\\(i64 %0, i64 %1\\) #0")
+      val loopBody = functionBodyMatching(llvmIr, "test_loop\\(i64 %0, i64 %1\\) #0")
 
       assert(
         loopBody.contains("call i64 @test_g_"),
@@ -459,7 +452,7 @@ class ClosureCodegenTest extends BaseEffFunSuite:
         .findFirstMatchIn(llvmIr)
         .map(_.group(1))
         .getOrElse(fail(s"Expected closure env type definition. IR:\n$llvmIr"))
-      val mainBody = functionBody(llvmIr, "test_main\\(\\) #0")
+      val mainBody = functionBodyMatching(llvmIr, "test_main\\(\\) #0")
 
       assert(
         mainBody.contains(s"getelementptr %struct.$envName, ptr %"),
@@ -595,8 +588,8 @@ class ClosureCodegenTest extends BaseEffFunSuite:
     """
 
     compileAndGenerate(source).map { llvmIr =>
-      val mainBody = functionBody(llvmIr, "test_main\\(\\) #0")
-      val freeBody = functionBody(llvmIr, "test___free_closure\\(ptr %0\\) #0")
+      val mainBody = functionBodyMatching(llvmIr, "test_main\\(\\) #0")
+      val freeBody = functionBodyMatching(llvmIr, "test___free_closure\\(ptr %0\\) #0")
 
       assert(
         mainBody.contains("call void @test___free_closure(ptr %"),
@@ -630,7 +623,7 @@ class ClosureCodegenTest extends BaseEffFunSuite:
     """
 
     compileAndGenerate(source).map { llvmIr =>
-      val mainBody = functionBody(llvmIr, "test_main\\(\\) #0")
+      val mainBody = functionBodyMatching(llvmIr, "test_main\\(\\) #0")
 
       assert(
         """call void @test___free___closure_env_\d+\(ptr %\d+\)""".r.findFirstIn(mainBody).nonEmpty,
@@ -653,7 +646,7 @@ class ClosureCodegenTest extends BaseEffFunSuite:
     """
 
     compileAndGenerate(source).map { llvmIr =>
-      val mainBody = functionBody(llvmIr, "test_main\\(\\) #0")
+      val mainBody = functionBodyMatching(llvmIr, "test_main\\(\\) #0")
 
       assert(
         mainBody.contains("alloca %struct.__closure_env_"),
@@ -685,7 +678,7 @@ class ClosureCodegenTest extends BaseEffFunSuite:
       """
 
     compileAndGenerate(source, config = CompilerConfig.default.copy(noTco = false)).map { llvmIr =>
-      val loopBody      = functionBody(llvmIr, "test_loop\\(i64 %0, i64 %1\\) #0")
+      val loopBody      = functionBodyMatching(llvmIr, "test_loop\\(i64 %0, i64 %1\\) #0")
       val envAllocCount = "alloca %struct.__closure_env_".r.findAllIn(loopBody).length
       val allocaIndex   = loopBody.indexOf("alloca %struct.__closure_env_")
       val loopBrIndex   = loopBody.indexOf("br label %loop.header")
@@ -724,7 +717,7 @@ class ClosureCodegenTest extends BaseEffFunSuite:
       """
 
     compileAndGenerate(source, config = CompilerConfig.default.copy(noTco = false)).map { llvmIr =>
-      val loopBody = functionBody(llvmIr, "test_loop\\(i64 %0, i64 %1\\) #0")
+      val loopBody = functionBodyMatching(llvmIr, "test_loop\\(i64 %0, i64 %1\\) #0")
 
       assert(
         loopBody.contains("alloca %struct.__closure_env_"),
@@ -749,7 +742,7 @@ class ClosureCodegenTest extends BaseEffFunSuite:
       """
 
     compileAndGenerate(source, config = CompilerConfig.default.copy(noTco = false)).map { llvmIr =>
-      val loopBody = functionBody(llvmIr, "test_loop\\(i64 %0, i64 %1\\) #0")
+      val loopBody = functionBodyMatching(llvmIr, "test_loop\\(i64 %0, i64 %1\\) #0")
 
       assert(
         loopBody.contains("alloca %struct.__closure_env_"),
@@ -772,7 +765,7 @@ class ClosureCodegenTest extends BaseEffFunSuite:
         .findFirstMatchIn(llvmIr)
         .map(_.group(1))
         .getOrElse(fail(s"Expected closure env type definition. IR:\n$llvmIr"))
-      val mainBody = functionBody(llvmIr, "test_main\\(\\) #0")
+      val mainBody = functionBodyMatching(llvmIr, "test_main\\(\\) #0")
 
       assert(
         mainBody.contains(s"getelementptr %struct.$envName, ptr %"),

@@ -174,8 +174,10 @@ object SemanticTokens:
       case expr: Expr =>
         collectFromExpr(expr, module)
 
-      case _: Placeholder | _: Hole | _: DataConstructor | _: DataDestructor | _: NativeImpl |
-          _: TermError | _: InvalidExpression =>
+      case d: Destruction => collectFromExpr(d.operand, module)
+
+      case _: Placeholder | _: Hole | _: DataConstructor | _: NativeImpl | _: TermError |
+          _: InvalidExpression =>
         Nil
 
   /** Collect tokens from a reference. */

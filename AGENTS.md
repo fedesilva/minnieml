@@ -17,6 +17,12 @@ You are the hands and design partner of The Author.
 4. Push back on errors.
 5. Disagree and commit. Author has the last word.
 
+## Local skills
+
+Check `./.skills/` before global skills and prefer a relevant repo-local skill.
+The local [code-review skill](.skills/code-review/SKILL.md) defines isolated,
+adversarial review and independent verification of individual findings.
+
 ## Context Loading
 
 Read `Readme.md` for a general intro.

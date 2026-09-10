@@ -5,11 +5,12 @@ import mml.mmlclib.api.{FrontEndApi, ParserApi}
 import mml.mmlclib.ast.{Error, Member, Module}
 import mml.mmlclib.compiler.{CodegenStage, CompilerConfig}
 import mml.mmlclib.semantic.*
+import mml.mmlclib.test.llvm.LlvmAssertions
 import mml.mmlclib.util.prettyprint.ast.prettyPrintAst
 import munit.CatsEffectSuite
 
 /** Base trait for effectful tests; adds common MML specific assertions. */
-trait BaseEffFunSuite extends CatsEffectSuite:
+trait BaseEffFunSuite extends CatsEffectSuite with LlvmAssertions:
 
   final case class SemanticResult(module: Module, errors: List[SemanticError])
 

@@ -12,10 +12,40 @@ class OwnershipAnalyzerTests extends BaseEffFunSuite:
       case TXCall1(TXRefNamed(name), _) if name == freeName => true
     }
 
-  private def containsClosureEnvFree(term: Term): Boolean =
-    existsTerm(term) {
-      case TXCall1(TXRefResolved(id), _) if id.contains("::__free___closure_env_") => true
-      case TXCall1(TXRefNamed(name), _) if name.startsWith("__free___closure_env_") => true
+  private def containsClosureTarget(module: Module, term: Term)(
+    targetBody: PartialFunction[Term, Boolean]
+  ): Boolean =
+    existsTerm(term) { case d: DestroyClosure =>
+      module.resolvables.lookup(d.targetId).exists {
+        case b: Bnd => existsTerm(b.value)(targetBody)
+        case _ => false
+      }
+    }
+
+  private def containsClosureEnvFree(module: Module, term: Term): Boolean =
+    containsClosureTarget(module, term) { case _: DestroyClosureEnvironment => true }
+
+  private def containsClosureDispatch(module: Module, term: Term): Boolean =
+    containsClosureTarget(module, term) { case _: DispatchClosureDestructor => true }
+
+  private def containsClosureCleanupOf(
+    module:      Module,
+    owner:       String,
+    bindingName: String,
+    term:        Term
+  ): Boolean =
+    val bindingId = module.members
+      .collectFirst { case b: Bnd if b.name == owner => b }
+      .toList
+      .flatMap(b => TermTraversal.collect(b.value) { case l: Lambda => l.params }.flatten)
+      .find(_.name == bindingName)
+      .flatMap(_.id)
+    assert(bindingId.nonEmpty, s"Missing binding $bindingName in $owner")
+    existsTerm(term) { case d: DestroyClosure =>
+      d.operand.terms.exists {
+        case r: Ref => r.resolvedId == bindingId
+        case _ => false
+      }
     }
 
   private def topLevelLambdaBody(module: Module, name: String): Expr =
@@ -1170,7 +1200,7 @@ class OwnershipAnalyzerTests extends BaseEffFunSuite:
     semNotFailed(code).map { module =>
       val innerFreeBody = topLevelLambdaBody(module, "__free_Inner")
       assert(
-        containsFreeOf("__free_closure")(innerFreeBody),
+        containsClosureDispatch(module, innerFreeBody),
         "nested struct's destructor should free the closure field through __free_closure"
       )
       // A struct holding a function value transitively is not clonable.
@@ -1575,11 +1605,11 @@ class OwnershipAnalyzerTests extends BaseEffFunSuite:
     semNotFailed(code).map { module =>
       val mainBody = topLevelLambdaBody(module, "main")
       assert(
-        !containsFreeOf("__free_closure")(mainBody),
+        !containsClosureDispatch(module, mainBody),
         "top-level function value must not be freed by the caller scope"
       )
       assert(
-        !containsClosureEnvFree(mainBody),
+        !containsClosureEnvFree(module, mainBody),
         "top-level function value must not schedule an env-specific free"
       )
     }
@@ -1597,11 +1627,11 @@ class OwnershipAnalyzerTests extends BaseEffFunSuite:
     semNotFailed(code).map { module =>
       val mainBody = topLevelLambdaBody(module, "main")
       assert(
-        !containsFreeOf("__free_closure")(mainBody),
+        !containsClosureDispatch(module, mainBody),
         "inline non-capturing lambda must not be freed by the caller scope"
       )
       assert(
-        !containsClosureEnvFree(mainBody),
+        !containsClosureEnvFree(module, mainBody),
         "inline non-capturing lambda must not schedule an env-specific free"
       )
     }
@@ -1620,11 +1650,11 @@ class OwnershipAnalyzerTests extends BaseEffFunSuite:
     semNotFailed(code).map { module =>
       val mainBody = topLevelLambdaBody(module, "main")
       assert(
-        !containsFreeOf("__free_closure")(mainBody),
+        !containsClosureDispatch(module, mainBody),
         "non-capturing closure bound to a let must not be freed at scope end"
       )
       assert(
-        !containsClosureEnvFree(mainBody),
+        !containsClosureEnvFree(module, mainBody),
         "non-capturing closure bound to a let must not schedule an env-specific free"
       )
     }
@@ -1644,15 +1674,16 @@ class OwnershipAnalyzerTests extends BaseEffFunSuite:
       val consumeBody = topLevelLambdaBody(module, "consume")
       val mainBody    = topLevelLambdaBody(module, "main")
       assert(
-        containsFreeOf("__free_closure")(consumeBody),
+        containsClosureCleanupOf(module, "consume", "g", consumeBody) &&
+          containsClosureDispatch(module, consumeBody),
         "consuming TypeFn param cleanup must stay in the callee"
       )
       assert(
-        !containsFreeOf("__free_closure")(mainBody),
+        !containsClosureDispatch(module, mainBody),
         "top-level function value must not be freed by the caller scope"
       )
       assert(
-        !containsClosureEnvFree(mainBody),
+        !containsClosureEnvFree(module, mainBody),
         "top-level function value must not schedule an env-specific free"
       )
     }
@@ -1671,15 +1702,16 @@ class OwnershipAnalyzerTests extends BaseEffFunSuite:
       val consumeBody = topLevelLambdaBody(module, "consume")
       val mainBody    = topLevelLambdaBody(module, "main")
       assert(
-        containsFreeOf("__free_closure")(consumeBody),
+        containsClosureCleanupOf(module, "consume", "g", consumeBody) &&
+          containsClosureDispatch(module, consumeBody),
         "consuming TypeFn param cleanup must stay in the callee"
       )
       assert(
-        !containsFreeOf("__free_closure")(mainBody),
+        !containsClosureDispatch(module, mainBody),
         "inline non-capturing lambda must not be freed by the caller scope"
       )
       assert(
-        !containsClosureEnvFree(mainBody),
+        !containsClosureEnvFree(module, mainBody),
         "inline non-capturing lambda must not schedule an env-specific free"
       )
     }
@@ -1699,7 +1731,8 @@ class OwnershipAnalyzerTests extends BaseEffFunSuite:
     semNotFailed(code).map { module =>
       val mainBody = topLevelLambdaBody(module, "main")
       assert(
-        containsClosureEnvFree(mainBody) || containsFreeOf("__free_closure")(mainBody),
+        containsClosureCleanupOf(module, "main", "f", mainBody) &&
+          (containsClosureEnvFree(module, mainBody) || containsClosureDispatch(module, mainBody)),
         "materialized move-capturing closure must still be cleaned up"
       )
     }

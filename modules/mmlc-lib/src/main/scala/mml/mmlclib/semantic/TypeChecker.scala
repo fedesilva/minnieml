@@ -1364,6 +1364,7 @@ object TypeChecker:
             val typedRef = ref.copy(typeSpec = Some(t))
             cap match
               case Capture.CapturedRef(_) => Capture.CapturedRef(typedRef)
+              case Capture.OwnedClosure(_, id) => Capture.OwnedClosure(typedRef, id)
               case Capture.CapturedLiteral(_, id) => Capture.CapturedLiteral(typedRef, id)
           case None => cap
     }

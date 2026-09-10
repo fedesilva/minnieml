@@ -163,7 +163,6 @@ def emitModule(
         output.append(s"""\nattributes #0 = { "target-cpu"="$cpu" }""")
         output.append(s"""\nattributes #1 = { inlinehint "target-cpu"="$cpu" }\n""")
       case None =>
-        output.append("\nattributes #0 = {}")
         output.append("\nattributes #1 = { inlinehint }\n")
     }
 

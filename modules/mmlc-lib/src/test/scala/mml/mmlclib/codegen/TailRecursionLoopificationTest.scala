@@ -5,13 +5,6 @@ import mml.mmlclib.test.BaseEffFunSuite
 
 class TailRecursionLoopificationTest extends BaseEffFunSuite:
 
-  private def functionBody(llvmIr: String, signaturePattern: String): String =
-    val pattern = (s"(?s)define .*@$signaturePattern \\{\\n(.*?)\\n\\}").r
-    pattern
-      .findFirstMatchIn(llvmIr)
-      .map(_.group(1))
-      .getOrElse(fail(s"Missing function definition for $signaturePattern. IR:\n$llvmIr"))
-
   test("emits tail-recursive function as a loop") {
     val source =
       """
@@ -28,6 +21,7 @@ class TailRecursionLoopificationTest extends BaseEffFunSuite:
       assert(llvmIr.contains("loop.header:"))
       assert(llvmIr.contains("phi i64"))
       assert(llvmIr.contains("br label %loop.header"))
+      assertPhiPredecessors(functionBody(llvmIr, "test_sum"))
     }
   }
 
@@ -46,7 +40,7 @@ class TailRecursionLoopificationTest extends BaseEffFunSuite:
       """
 
     compileAndGenerate(source, config = CompilerConfig.default.copy(noTco = false)).map { llvmIr =>
-      val mainBody = functionBody(llvmIr, "test_main\\(\\) #0")
+      val mainBody = functionBodyMatching(llvmIr, "test_main\\(\\) #0")
 
       assert(
         llvmIr.contains("define internal i64 @test_sum(i64 %0, i64 %1) #0"),
@@ -82,10 +76,10 @@ class TailRecursionLoopificationTest extends BaseEffFunSuite:
       """
 
     compileAndGenerate(source, config = CompilerConfig.default.copy(noTco = false)).map { llvmIr =>
-      val applyBody   = functionBody(llvmIr, "test_apply\\(\\{ ptr, ptr \\} %0\\) #0")
-      val mainBody    = functionBody(llvmIr, "test_main\\(\\) #0")
+      val applyBody   = functionBodyMatching(llvmIr, "test_apply\\(\\{ ptr, ptr \\} %0\\) #0")
+      val mainBody    = functionBodyMatching(llvmIr, "test_main\\(\\) #0")
       val wrapperName = "test_down__closure_entry"
-      val wrapperBody = functionBody(llvmIr, s"$wrapperName\\(i64 %0, ptr %1\\) #0")
+      val wrapperBody = functionBodyMatching(llvmIr, s"$wrapperName\\(i64 %0, ptr %1\\) #0")
 
       assert(
         llvmIr.contains("define internal i64 @test_down(i64 %0) #0"),
@@ -134,7 +128,7 @@ class TailRecursionLoopificationTest extends BaseEffFunSuite:
       val directName  = directMatch.group(1)
       val wrapperName = s"${directName}__closure_entry"
       val directBody =
-        functionBody(llvmIr, s"$directName\\(i64 %0, i64 %1\\) #0")
+        functionBodyMatching(llvmIr, s"$directName\\(i64 %0, i64 %1\\) #0")
 
       assert(
         directBody.contains("loop.header:") && directBody.contains("phi i64"),
@@ -181,8 +175,8 @@ class TailRecursionLoopificationTest extends BaseEffFunSuite:
           .findFirstMatchIn(llvmIr)
           .getOrElse(fail(s"Missing partial-application entry. IR:\n$llvmIr"))
       val papName  = papMatch.group(1)
-      val papBody  = functionBody(llvmIr, s"$papName\\(i64 %0, ptr %1\\) #0")
-      val mainBody = functionBody(llvmIr, "test_main\\(\\) #0")
+      val papBody  = functionBodyMatching(llvmIr, s"$papName\\(i64 %0, ptr %1\\) #0")
+      val mainBody = functionBodyMatching(llvmIr, "test_main\\(\\) #0")
 
       assert(
         papBody.contains(s"call i64 @$directName(i64 %") && papBody.contains(", i64 %0)"),
@@ -242,9 +236,9 @@ class TailRecursionLoopificationTest extends BaseEffFunSuite:
       val directName  = directMatch.group(1)
       val makeFacName = makeFacMatch.group(1)
       val papName     = papMatch.group(1)
-      val makeFacBody = functionBody(llvmIr, s"$makeFacName\\(i64 %0\\) #0")
-      val papBody     = functionBody(llvmIr, s"$papName\\(i64 %0, ptr %1\\) #0")
-      val mainBody    = functionBody(llvmIr, "test_main\\(\\) #0")
+      val makeFacBody = functionBodyMatching(llvmIr, s"$makeFacName\\(i64 %0\\) #0")
+      val papBody     = functionBodyMatching(llvmIr, s"$papName\\(i64 %0, ptr %1\\) #0")
+      val mainBody    = functionBodyMatching(llvmIr, "test_main\\(\\) #0")
       val dtorName =
         """store ptr @(test___free_factorial_tco_pap_env_\d+), ptr %\d+""".r
           .findFirstMatchIn(makeFacBody)
@@ -255,7 +249,7 @@ class TailRecursionLoopificationTest extends BaseEffFunSuite:
           .findFirstMatchIn(llvmIr)
           .map(_.group(1))
           .getOrElse(fail(s"Missing returned PAP env type. IR:\n$llvmIr"))
-      val dtorBody = functionBody(llvmIr, s"$dtorName\\(ptr %0\\) #0")
+      val dtorBody = functionBodyMatching(llvmIr, s"$dtorName\\(ptr %0\\) #0")
 
       assert(
         llvmIr.contains(s"%struct.$envName = type { ptr, i64 }"),
@@ -356,8 +350,8 @@ class TailRecursionLoopificationTest extends BaseEffFunSuite:
           .getOrElse(fail(s"Missing capturing Direct PAP env type. IR:\n$llvmIr"))
       val papName      = papMatch.group(1)
       val directName   = directMatch.group(1)
-      val mainBody     = functionBody(llvmIr, "test_main\\(\\) #0")
-      val papBody      = functionBody(llvmIr, s"$papName\\(i64 %0, ptr %1\\) #0")
+      val mainBody     = functionBodyMatching(llvmIr, "test_main\\(\\) #0")
+      val papBody      = functionBodyMatching(llvmIr, s"$papName\\(i64 %0, ptr %1\\) #0")
       val envTbaaLines = llvmIr.split("\n").filter(_.contains(s"""!"$envName""""))
 
       assert(
@@ -440,13 +434,13 @@ class TailRecursionLoopificationTest extends BaseEffFunSuite:
       """
 
     compileAndGenerate(source, config = CompilerConfig.default.copy(noTco = false)).map { llvmIr =>
-      val mainBody = functionBody(llvmIr, "test_main\\(\\) #0")
+      val mainBody = functionBodyMatching(llvmIr, "test_main\\(\\) #0")
       val dtorName =
         """store ptr @(test___free_say_pap_env_\d+), ptr %\d+""".r
           .findFirstMatchIn(mainBody)
           .map(_.group(1))
           .getOrElse(fail(s"Missing Direct PAP env destructor store. Body:\n$mainBody"))
-      val dtorBody = functionBody(llvmIr, s"$dtorName\\(ptr %0\\) #0")
+      val dtorBody = functionBodyMatching(llvmIr, s"$dtorName\\(ptr %0\\) #0")
 
       assert(
         """call %struct\.String @__clone_String""".r.findFirstIn(mainBody).isEmpty,
@@ -480,13 +474,13 @@ class TailRecursionLoopificationTest extends BaseEffFunSuite:
       """
 
     compileAndGenerate(source, config = CompilerConfig.default.copy(noTco = false)).map { llvmIr =>
-      val mainBody = functionBody(llvmIr, "test_main\\(\\) #0")
+      val mainBody = functionBodyMatching(llvmIr, "test_main\\(\\) #0")
       val dtorName =
         """store ptr @(test___free_say_pap_env_\d+), ptr %\d+""".r
           .findFirstMatchIn(mainBody)
           .map(_.group(1))
           .getOrElse(fail(s"Missing Direct PAP env destructor store. Body:\n$mainBody"))
-      val dtorBody = functionBody(llvmIr, s"$dtorName\\(ptr %0\\) #0")
+      val dtorBody = functionBodyMatching(llvmIr, s"$dtorName\\(ptr %0\\) #0")
 
       assert(
         """call %struct\.String @__clone_String""".r.findFirstIn(mainBody).isEmpty,
@@ -518,7 +512,7 @@ class TailRecursionLoopificationTest extends BaseEffFunSuite:
       """
 
     compileAndGenerate(source, config = CompilerConfig.default.copy(noTco = false)).map { llvmIr =>
-      val mainBody = functionBody(llvmIr, "test_main\\(\\) #0")
+      val mainBody = functionBodyMatching(llvmIr, "test_main\\(\\) #0")
       val dtorName =
         """store ptr @(test___free_say_pap_env_\d+), ptr %\d+""".r
           .findFirstMatchIn(mainBody)
@@ -531,11 +525,11 @@ class TailRecursionLoopificationTest extends BaseEffFunSuite:
           .getOrElse(fail(s"Missing Direct PAP entry. Body:\n$mainBody"))
       val rawDtorName =
         """store ptr @(test___free_say_pap_env_raw_\d+), ptr %\d+""".r
-          .findFirstMatchIn(functionBody(llvmIr, s"$papName\\(i64 %0, ptr %1\\) #0"))
+          .findFirstMatchIn(functionBodyMatching(llvmIr, s"$papName\\(i64 %0, ptr %1\\) #0"))
           .map(_.group(1))
           .getOrElse(fail(s"Missing raw-only destructor rewrite for $papName"))
-      val dtorBody    = functionBody(llvmIr, s"$dtorName\\(ptr %0\\) #0")
-      val rawDtorBody = functionBody(llvmIr, s"$rawDtorName\\(ptr %0\\) #0")
+      val dtorBody    = functionBodyMatching(llvmIr, s"$dtorName\\(ptr %0\\) #0")
+      val rawDtorBody = functionBodyMatching(llvmIr, s"$rawDtorName\\(ptr %0\\) #0")
       val freeIdx     = dtorBody.indexOf("call void @__free_String")
       val rawIdx      = dtorBody.indexOf("call void @mml_free_raw")
 
@@ -583,7 +577,7 @@ class TailRecursionLoopificationTest extends BaseEffFunSuite:
           .getOrElse(fail(s"Missing loopified direct loop entry with capture param. IR:\n$llvmIr"))
       val directName = directMatch.group(1)
       val directBody =
-        functionBody(llvmIr, s"$directName\\(i64 %0, i64 %1, i64 %2\\) #0")
+        functionBodyMatching(llvmIr, s"$directName\\(i64 %0, i64 %1, i64 %2\\) #0")
 
       assert(
         directBody.contains("loop.header:") && directBody.contains("phi i64"),
@@ -757,8 +751,8 @@ class TailRecursionLoopificationTest extends BaseEffFunSuite:
       """
 
     compileAndGenerate(source, config = CompilerConfig.default.copy(noTco = false)).map { llvmIr =>
-      val applyBody = functionBody(llvmIr, "test_apply\\(\\{ ptr, ptr \\} %0\\) #0")
-      val mainBody  = functionBody(llvmIr, "test_main\\(\\) #0")
+      val applyBody = functionBodyMatching(llvmIr, "test_apply\\(\\{ ptr, ptr \\} %0\\) #0")
+      val mainBody  = functionBodyMatching(llvmIr, "test_main\\(\\) #0")
       val wrapperMatch =
         """(?s)define internal i64 @(test__anon_\d+)\(i64 %0, ptr %1\) #0 \{\n(.*?)\n\}""".r
           .findFirstMatchIn(llvmIr)
@@ -812,9 +806,9 @@ class TailRecursionLoopificationTest extends BaseEffFunSuite:
       val directName  = directMatch.group(1)
       val wrapperName = s"${directName}__closure_entry"
       val directBody =
-        functionBody(llvmIr, s"$directName\\(i64 %0, i64 %1\\) #0")
+        functionBodyMatching(llvmIr, s"$directName\\(i64 %0, i64 %1\\) #0")
       val wrapperBody =
-        functionBody(llvmIr, s"$wrapperName\\(i64 %0, i64 %1, ptr %2\\) #0")
+        functionBodyMatching(llvmIr, s"$wrapperName\\(i64 %0, i64 %1, ptr %2\\) #0")
 
       assert(
         directBody.contains("loop.header:") && directBody.contains("phi i64"),

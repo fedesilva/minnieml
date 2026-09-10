@@ -1,0 +1,4 @@
+interface:
+  display_name: "Code Review"
+  short_description: "Strict Scala and compiler code review"
+  default_prompt: "Use $code-review to review the current changes for correctness, compiler invariants, simplicity, readability, modularity, and useful tests."

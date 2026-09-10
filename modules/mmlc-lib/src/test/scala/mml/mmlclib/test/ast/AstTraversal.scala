@@ -20,6 +20,7 @@ def existsTerm(term: Term)(predicate: PartialFunction[Term, Boolean]): Boolean =
       existsExpr(ifTrue)(predicate) ||
       existsExpr(ifFalse)(predicate)
     case Tuple(_, elements, _, _) => elements.exists(existsExpr(_)(predicate))
+    case d: Destruction => existsExpr(d.operand)(predicate)
     case _ => false)
 
 /** Returns true when any term inside this expression matches the predicate. */
@@ -45,6 +46,7 @@ def countTerms(term: Term)(predicate: PartialFunction[Term, Int]): Int =
         countExprTerms(ifTrue)(predicate) +
         countExprTerms(ifFalse)(predicate)
     case Tuple(_, elements, _, _) => elements.toList.map(countTerms(_)(predicate)).sum
+    case d: Destruction => countExprTerms(d.operand)(predicate)
     case _ => 0
   matched + childCount
 

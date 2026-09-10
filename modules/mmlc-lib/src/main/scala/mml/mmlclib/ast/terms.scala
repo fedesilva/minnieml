@@ -26,7 +26,7 @@ sealed trait Term extends AstNode, Typeable, FromSource:
     case x: InvalidExpression => x.copy(typeAsc = Some(t))
     case _: TermError => this
     case _: DataConstructor => this
-    case _: DataDestructor => this
+    case _: Destruction => this
 
 case class TermError(
   source:     SourceOrigin,
@@ -85,6 +85,8 @@ object App:
 enum Capture:
   case CapturedRef(override val ref: Ref)
   case CapturedLiteral(override val ref: Ref, cloneFnId: String)
+
+  case OwnedClosure(override val ref: Ref, targetId: String)
 
   def ref: Ref
 
@@ -279,14 +281,38 @@ case class DataConstructor(
 ) extends Term:
   val typeAsc: Option[Type] = None
 
-/** Marks the body of a destructor function for a data type. The codegen will use the type to
-  * determine how to free the memory. Generated alongside DataConstructor for structs.
-  */
-case class DataDestructor(
-  source:   SourceOrigin,
-  typeSpec: Option[Type] = None
-) extends Term:
+/** Compiler-internal destruction operations have explicit operands and return Unit. */
+sealed trait Destruction extends Term:
+  def operand: Expr
   val typeAsc: Option[Type] = None
+
+case class DestroyClosure(
+  source:   SourceOrigin,
+  operand:  Expr,
+  targetId: String,
+  typeSpec: Option[Type]
+) extends Destruction
+
+enum FieldCleanup:
+  case Value(override val fieldId: String, override val targetId: String)
+  case Closure(override val fieldId: String, override val targetId: String)
+
+  def fieldId:  String
+  def targetId: String
+
+case class DestroyClosureEnvironment(
+  source:   SourceOrigin,
+  operand:  Expr,
+  layoutId: String,
+  fields:   List[FieldCleanup],
+  typeSpec: Option[Type]
+) extends Destruction
+
+case class DispatchClosureDestructor(
+  source:   SourceOrigin,
+  operand:  Expr,
+  typeSpec: Option[Type]
+) extends Destruction
 
 case class NativeImpl(
   source:       SourceOrigin,
