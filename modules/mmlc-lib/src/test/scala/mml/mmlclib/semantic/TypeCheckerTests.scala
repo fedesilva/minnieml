@@ -3,7 +3,7 @@ package mml.mmlclib.semantic
 import cats.data.NonEmptyList
 import mml.mmlclib.ast.*
 import mml.mmlclib.test.BaseEffFunSuite
-import mml.mmlclib.test.extractors.*
+import mml.mmlclib.test.ast.*
 
 class TypeCheckerTests extends BaseEffFunSuite:
 

@@ -24,6 +24,10 @@ Read `Readme.md` for a general intro.
 Other context files are loaded **only when relevant** to the current work type.
 Do not go on tangents — read as much as you need but as little as you can.
 
+### Tools use instructions
+
+Read `context/dev-tools.md` and follow recommendations.
+
 ### Code or documentation changes
 
 Read before starting, re-read before finalizing:
@@ -46,6 +50,10 @@ Read before writing or modifying `.mml` files:
 - Memory model: 
   - `docs/memory-model.md` for a high level, technical overview.
   - files under `mml/samples/mem` and tests in `modules/mmlc-lib/src/test/scala/mml/mmlclib/semantic/OwnershipAnalyzerTests.scala`
+
+#### Style Note
+
+Read `docs/mml-style-guide.md` for MML source-formatting conventions.
 
 ### Questions
 

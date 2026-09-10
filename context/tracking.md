@@ -16,17 +16,214 @@
 
 ## Active Tasks
 
+
+### Bug: can't use ??? in an annotated fn.
+
+`Typed hole in binding 'escape_attempt' requires type annotationmmlc`
+
+`mml/samples/borrow-escape-test.mml`
+
+### Document and encode the ownership rules
+
+This is important, urgent even.
+While working on lambdas we have drifted a couple of times
+from the intended design and are relying on cloning where 
+we should not.
+
+This needs to be a deeper reference than the lang ref
+and less implementation details oriented than the design doc.
+It needs to also describe lowering stragegies, where appropriate
+but this is secondary related to specifying the behaviour and 
+describing the model.
+
+This will serve as a focused reference as we continue to develop the model.
+
+* no cloning, erradicate implicit, behind the scenes cloning.
+  * and where we do now (globals), how we plan to avoid it
+* ownership of regular values
+* ownership of lambdas 
+  * track like a struct
+    * particularly if the have move arguments
+* lifeline/ownership and escaping
+
+first generate a document out of the current implementation and we can iterate over 
+it if things are not in good taste or shape.
+
+
+### QA: unify alias resolution
+
+there are several implementations most of them private to a phase.
+consider something like:
+
+```
+def resolveAlias(typeName: String, resolvables: ResolvablesIndex): Option[ResolvableType]
+def resolvedTypeName(typeName: String, resolvables: ResolvablesIndex): Option[String]
+def sameResolvedTypeName(...)
+```
+
+### Owned Strings
+
+* Review the document elsewhere.
+* I need to think about it, having literals be shareable could be beneficial, if a bit weird
+    because it's kind of irregular.
+
+### Bug: function annotation arity must be disambiguated by the binder
+
+`Int -> Int -> Int` is intentionally valid for the common uncurried definition-site
+case: a two-param binding reads it as `fn(Int, Int): Int`. The bug is that the checker
+also commits to arity 2 from the arrow count before looking at how many parameters the
+lambda actually binds.
+
+That makes this shape fail even though the produced value type exists:
+
+```mml
+let make_fac: Int -> Int -> Int =
+  { n: Int -> factorial_tco n }
+;
+```
+
+`make_fac` binds one parameter, so the annotation should peel one arrow segment and
+leave `Int -> Int` as the return type. Downstream, `make_fac 5 : Int -> Int` already
+matches the language's partial-application behavior.
+
+Expected fix: keep uncurried-by-default definition semantics, but reconcile function
+annotations against the lambda's binder arity. A two-param `factorial_tco:
+Int -> Int -> Int` consumes two arrow segments and returns `Int`; a one-param
+`make_fac: Int -> Int -> Int` consumes one segment and returns `Int -> Int`.
+The bug is having arrow-count and binder-count act as independent arity sources that
+can disagree.
+
+### Add lambda test harness
+
+  like mem harness but with programs that do stuff with lambdas
+  and that may also include memory integrations.
+
+  discuss.
+
+### Context Tools
+
+Add verbiage and design for multiagent execution.
+
+  * controller agent 
+    * keeps a tight focus on the task and the spec
+    * keeps the repo rules (coding rules, dev tools, qa) fresh in memory
+      * and advises fresh sub agents about them.
+    * keeps tracking info in tracking.md so we can reset or compact often
+    * schedules and delegates agents to
+      * research, each answering a specific question
+      * execution
+        * it depends on the task but might benefit from spawning parallel agents
+        * even if not parallelizabe separate agents keep the controller agent free to focus on its main responsability with an uncluttered context.
+      * qa enforcement
+        * run an agent to review the changes using the qa enforcement skill
+  
+
+### Unify ownership model
+
+this is partially defined in mem-evolution document
+
+### Replace magic `__stmt` detection for sequence lambdas
+
+- GitHub: `https://github.com/fedesilva/minnieml/issues/265`
+
+`FunctionEmitter.scala` currently recognizes parser-lowered statement sequencing by checking for a
+single param named `__stmt`.
+
+Expected fix: add explicit lambda metadata or a shared marker so parser, semantics, ownership, and
+codegen classify sequence lambdas without duplicating a string convention.
+
 ### #255 Unify lambdas
+
+* Status: In progress
+
 
 - GitHub: `https://github.com/fedesilva/minnieml/issues/255`
 - Reference: `context/specs/unify-lambdas.md`
-    - this file requires discussion, not yet approved.
 - Plan: `context/specs/unify-lambdas-plan.md`
-- [ ] Finalize `unify-lambdas.md`
+- [x] Finalize `unify-lambdas.md`
 - [ ] Treat top-level functions and let-bound lambdas / inner functions identically in semantics and codegen.
 - [ ] Unify borrow and move capture handling.
 - [ ] Keep alloca vs malloc as a derivable optimization rather than separate closure models.
-- [ ] Discuss and write a plan before implementation.
+- [x] Discuss and write a plan before implementation.
+
+Slice progress (see `context/specs/unify-lambdas-plan.md`):
+- [x] S0 — decisions section in spec
+- [x] S1 — terminology cleanup
+- [x] S2 — AST: add `isDirect` to `LambdaMeta`
+- [x] S3 — `MaterializationAnalyzer` pass (COMPLETE — commit 456a0c4)
+- [x] S4 — Ownership: non-capturing / null-env values stop being treated as owned heap (COMPLETE)
+- [x] S5 — Ownership: treat lambda values as ordinary unique values (COMPLETE)
+- [x] S6 — Codegen: derive direct-vs-closure entry from demand (COMPLETE)
+- [x] S6 Phase 6.3.d — Direct callable capture boundary
+- [x] S7 — Codegen: env allocation rule consumes `isMove` (COMPLETE)
+- [x] S7.5 — Push env allocation classification onto the lambda model (COMPLETE)
+- [x] S7.6 — Stack-promotion decision gate: leave S11 separate (COMPLETE)
+- [x] S8 — Tail-recursion follow-up under unified model (COMPLETE)
+- [x] S8.5a — Direct partial-application env lifetime/drop hardening (COMPLETE)
+- [x] S8.5b — Direct partial-application env TBAA parity (COMPLETE — commit 5da9c68)
+- [x] S8.6.1 — Broad owned-heap-capture free at Direct binder scope (COMPLETE — commit 0bf58f78)
+- [x] S8.6.1a — Direct PAP heap-payload ownership for escaping partial applications (clone-per-PAP
+  draft rejected; see S8.6.1b)
+- [x] S8.6.1b — PAP ownership without implicit cloning (COMPLETE)
+  - Spec: `context/specs/pap-ownership-model.md`
+  - Bug: PAP envs may carry heap payloads without an explicit ownership/lifetime model. Borrowed
+    heap payloads must not escape their owner scope, and moved heap payloads must enter the PAP
+    only through explicit `~` ownership transfer.
+  - Task: replace clone-per-PAP with borrowed-vs-owned PAP payload classification. Reject escaping
+    PAPs containing borrowed heap payloads; keep partial application with remaining consuming
+    parameters rejected; accept moved already-applied heap arguments only if the analyzer marks the
+    source moved and the PAP destructor frees the moved payload exactly once.
+  - Acceptance: no implicit heap clone calls during PAP creation; semantic/codegen regressions for
+    escaping borrowed PAP rejection, non-escaping borrowed PAP acceptance when proven local, and
+    moved already-applied heap payload ownership if supported.
+  - Cleanup: when this lands, remove the temporary PAP implementation note from
+    `docs/memory-model.md`.
+- [ ] S9 — Equivalence test pass
+  - GitHub: `https://github.com/fedesilva/minnieml/issues/268`
+  - Bug: Struct arguments are not being correctly treated as move arguments.
+    - borrowed closure values can be laundered through a struct
+    field and later passed to a consuming `~f: Int -> Int` parameter. Direct argument and `let`
+    alias cases reject with `BorrowedValuePassedToConsumingParam`, and return escape rejects, but
+    `struct Holder { f: Int -> Int }; let h = Holder add_seed; consume_fn h.f 10;` currently
+    compiles and detonates at runtime. A struct is an ownership sink, so storing a function value
+    in a struct field must apply the same ownership-transfer rules as any other consuming sink:
+    borrow-capturing closures cannot enter the sink, move-capturing closures move ownership, and
+    non-capturing/null-env function values remain sound because there is no owned env.
+
+  - THE CORE PROBLEM:
+    - we did not follow the invariants defined for the language.
+      - a struct is an ownership sink.
+      - any check that we do related to escaping of borrowed values or 
+        assignement of borrowed values to move annotated (~) args should be applied here.
+      - Moving BORROWED VALUES IS ILEGAL.
+
+  - Review findings:
+    - Function-type aliases must be resolved when classifying struct fields. Otherwise,
+      function-bearing structs bypass consuming construction and destruction and can retain
+      dangling closure environments.
+    - Clone-required uses of function-bearing structs must be rejected semantically or given a
+      supported ownership path. Generating `__clone_<Struct>` is invalid when the corresponding
+      clone binding is intentionally omitted.
+        
+
+- [ ] S10 — `BindingMeta` reduction
+- [ ] S11 — Stack-promotion for non-escaping move-capturing lambdas
+- [x] S6.5 — Codegen hygiene: deduplicate named-function closure thunks (COMPLETE)
+- [x] Accept nullary lambda heads in immediate application (COMPLETE) —
+  `TypeChecker.scala` routes nullary lambda heads through immediate-lambda checking,
+  validates the explicit `Unit` argument, and types the lambda as `Unit -> T`.
+  `MaterializationAnalyzerTests.scala` now runs the `"nullary lambda literal in
+  immediate application is direct"` regression.
+- [x] Un-ignore `ClosureCodegenTest` "local move capturing closures free through their specific env destructor" at S6. (COMPLETE)
+- [x] Close the pinned mem regression `tests/mem/direct-move-closure.mml` at S6. (COMPLETE)
+
+
+### Lambda lifting bug
+
+as seen in `context/specs/bug-lambda-lifter.md`
+
+beware the reporter know nothing about mmlc, so while the report is based on a real
+ir and the referenced file (astar3.mml) exists, things like "phase names" are just suggestions.
 
 ### define new tasks
 
@@ -47,6 +244,293 @@
 * add commands to manage the cache (init, clean)
 
 ## Change Log
+
+- 2026-06-18: #255 unify-lambdas — accept nullary lambda heads in immediate application
+  - `TypeChecker.scala`: immediately-applied nullary lambdas now use the lambda application path,
+    check the explicit `Unit` argument, and compute a `Unit -> T` function type for the lambda.
+  - `MaterializationAnalyzerTests.scala`: un-ignored the nullary immediate-application regression
+    so arity-0 direct-call materialization remains pinned.
+
+- 2026-06-07: #255 unify-lambdas S8.6.1b — PAP ownership without implicit cloning
+  - `OwnershipAnalyzer.scala` / `ExpressionRewriter.scala`: PAPs and lambda values now carry
+    struct-like env ownership metadata. Borrowed heap payloads reject escaping returns, while
+    already-applied consuming heap arguments move into the generated PAP env.
+  - `Applications.scala` and Direct-call metadata: Direct PAP creation now stores borrowed or
+    moved operands directly, with no hidden heap clone calls. PAP env destructors free only owned
+    fields, and full application of owned payloads switches later cleanup to raw-env-only.
+  - Error printers and tests: added the borrowed-PAP escape diagnostic and regressions for
+    escaping/non-escaping borrowed PAPs, moved heap payloads, no implicit clones, and owned-field
+    destructor behavior.
+  - Docs/specs/mem programs: removed the temporary PAP implementation note from
+    `docs/memory-model.md`, updated the PAP ownership spec/plan, and rewrote Direct PAP mem
+    samples to use explicit `~` ownership transfer instead of clone-based ownership.
+  - `context/dev-tools.md` / `context/coding-rules.md`: documented that `sbtn` commands must not
+    be run in parallel; batch tasks into one `sbtn` invocation or run them sequentially.
+
+- 2026-06-02: #255 unify-lambdas S8.6.1a/S8.6.1b — Direct PAP heap-payload ownership
+  - S8.6.1a identified the escaping Direct PAP heap-payload bug, but the clone-per-PAP
+    implementation direction is rejected because PAP creation must not insert hidden heap clones.
+  - `context/specs/pap-ownership-model.md`: added the accepted PAP ownership model: borrowed heap
+    PAP payloads may not escape their owner scope; moved heap PAP payloads require explicit `~`
+    ownership transfer; partial application with remaining consuming parameters stays rejected.
+  - `context/specs/unify-lambdas-plan.md` / `context/tracking.md`: added S8.6.1b as the next bug
+    subtask to replace clone-per-PAP with explicit borrowed-vs-owned PAP payload rules.
+
+- 2026-05-31: #255 unify-lambdas S8.6.1 — free Direct move-lambda owned-heap captures
+  - `ExpressionCompiler.scala` / `codegen/emitter/package.scala`: `evaluateDirectCaptures`
+    returns `DirectCaptureCleanup`s for the owned heap captures of a move Direct lambda; new
+    `emitDirectCaptureFrees` emits one `__free_<T>` per capture at the binder's scope exit,
+    gated on `isNativeMemFn` so module-defined struct destructors are not re-declared.
+  - `FunctionEmitter.scala`: extracted `isNativeMemFn` from `resolveMemFnLlvmName`; threaded
+    capture cleanups through `compileBoundStatements` / `compileDirectBoundStatement` and
+    `compileTailRecBody` so loopified paths free per iteration before the back-edge.
+  - `expression/Applications.scala`: the sequence-let Direct binder frees its owned heap
+    captures after the body.
+  - `ClosureCodegenTest.scala`: IR coverage for literal, owned-String, owned-struct, and
+    loopified Direct captures.
+  - `tests/mem/direct-move-literal-capture.mml` / `direct-move-owned-string-capture.mml` /
+    `direct-move-owned-struct-capture.mml`: pinned ASan+LSan regressions.
+  - `context/specs/unify-lambdas-plan.md`: recorded S8.6.1 and S8.6.1a — the escaping
+    Direct partial-application heap-capture use-after-free this fix exposes, open and to be
+    resolved before the S8.6 correctness item is closed.
+
+- 2026-05-31: #255 unify-lambdas S8.5b — Direct partial-application env TBAA parity
+  - `Applications.scala` / `ExpressionCompiler.scala` / `FunctionEmitter.scala`:
+    Direct callable capture operands now carry semantic TBAA type names through nested
+    Direct captures, Direct-call lowering, and Direct partial-application generation.
+  - `Applications.scala`: Direct partial-application env stores and PAP-entry env loads
+    carry field-specific `!tbaa` metadata, including the destructor slot and payload
+    fields for applied args and captured operands.
+  - `TailRecursionLoopificationTest.scala`: pinned escaped and captured Direct PAP env
+    layouts, TBAA offsets, and load/store tags.
+
+- 2026-05-31: QA follow-up — expression-oriented Direct lambda guard
+  - `ExpressionCompiler.scala`: rewrote the Direct-lambda value-position guard in
+    `compileLambdaLiteral` without an early `return`.
+
+- 2026-05-31: #255 unify-lambdas S8.5a — Direct partial-application env lifetime/drop hardening
+  - `Applications.scala` / `OwnershipAnalyzer.scala` / `ClosureMemoryFnGenerator.scala`:
+    generated Direct partial-application closures now use heap envs with destructor slot
+    0 when they become first-class function values, and returned function values are
+    dropped through `__free_closure`.
+  - `ExpressionCompiler.scala` / `FunctionEmitter.scala`: Direct callable scope entries
+    carry enough signature information for undersaturated Direct calls while preserving
+    saturated Direct calls that return function values.
+  - `TailRecursionLoopificationTest.scala` / `tests/mem/escaping-paps.mml`: pinned the
+    PAP env layout, capture offset, destructor dispatch, and ASan/LSan escaping-PAP
+    regression.
+  - `mml/samples/partial-fac1.mml` / `context/coding-rules.md`: kept the original
+    local tail-recursive partial-application sample in the mandatory smoke list.
+
+- 2026-05-31: #255 unify-lambdas follow-up planning — Direct partial-application env hardening
+  - `context/specs/unify-lambdas-plan.md` / `context/tracking.md`: added S8.5 to
+    harden Direct partial-application closure envs before S9. The next slice should
+    prove escaping partial-application closures do not dangle, stop treating every
+    generated partial-application env as stack-local, and add TBAA metadata parity
+    for generated partial-application env load/store fields.
+
+- 2026-05-31: #255 unify-lambdas S8 — direct loopification for tail-recursive lambdas
+  - `ExpressionCompiler.scala` / `Applications.scala`: Direct tail-recursive scoped
+    bindings stay on the Direct lowering path; `compileLambdaLiteral` now rejects every
+    Direct lambda that reaches value-position lowering.
+  - `FunctionEmitter.scala`: loopified plain-direct entries can carry Direct trailing
+    captures as stable entry parameters while user parameters remain loop PHIs.
+  - `ClosureMemoryFnGenerator.scala`: closure env structs are synthesized only for
+    lambdas whose allocation classifier reports a real env.
+  - `TailRecursionLoopificationTest.scala` / `FunctionSignatureTest.scala` /
+    `TbaaEmissionTest.scala`: refreshed assertions for Direct loopified capture params
+    and retained materialized-env coverage on non-Direct closure paths.
+
+- 2026-05-31: #255 unify-lambdas S7/S7.5 — centralize closure env allocation classification
+  - `ast/terms.scala`: added `ClosureEnvAllocation` and `Lambda.closureEnvAllocation` as
+    the model-level derivation for no-env, stack borrow-env, and heap move-env shapes.
+  - `ExpressionCompiler.scala` / `FunctionEmitter.scala` / `ClosureMemoryFnGenerator.scala`:
+    routed call-site env allocation, capture field offsets, destructor-field layout, and
+    env free generation through the shared classifier while preserving the tail-recursive
+    Direct wrapper carve-out until S8.
+  - `ClosureCodegenTest.scala` / `TbaaEmissionTest.scala`: pinned materialized borrow-env
+    stack layout, materialized move-env heap/dtor layout, and move-env TBAA offsets.
+  - `context/specs/unify-lambdas-plan.md`: recorded the S7.5/S7.6 outcome and left
+    stack-promotion as S11 with ownership metadata as the future input.
+
+- 2026-05-31: #255 unify-lambdas S4/S5 — close ownership classification and return-escape cleanup
+  - `OwnershipAnalyzer.scala`: collapsed return-position borrowed-ref and borrow-closure
+    discovery into a single tagged `ReturnEscape` walker while preserving closure-specific
+    diagnostics as renderings of generic ownership checks.
+  - `OwnershipAnalyzerTests.scala`: added consuming higher-order parameter regressions for
+    top-level and inline non-capturing function values, keeping caller-side closure cleanup
+    suppressed while callee-side consuming cleanup remains universal.
+  - `context/specs/unify-lambdas-plan.md` / `tests/mem/direct-move-closure.mml`: marked
+    S4/S5/S6 status current and replaced stale direct-move-closure failure notes with the
+    passing direct-lowering behavior.
+
+- 2026-05-31: #255 unify-lambdas S6.5 — deduplicate named-function closure thunks
+  - `ExpressionCompiler.scala` / `codegen/emitter/package.scala`: added a named closure-entry cache so repeated first-class uses of the same named function reuse `@<fn>__closure_entry` instead of fresh anonymous forwarding thunks.
+  - `FunctionSignatureTest.scala`: pinned stable named-function closure entries and added repeated higher-order named-function coverage.
+  - `TailRecursionLoopificationTest.scala`: refreshed the tail-recursive named-function value assertion to the stable closure-entry shape.
+
+- 2026-05-31: #255 unify-lambdas S6 Phase 6.4 — complete closure codegen cleanup
+  - `ClosureCodegenTest.scala`: un-ignored the local move-capturing closure cleanup regression that pins direct calls to the generated env destructor.
+  - `codegen/emitter/expression/package.scala` / `ExpressionCompiler.scala`: replaced the misleading `isDirectCallableRef` helper with `resolvesToNamedFunctionSymbol`, making the direct-call fallback explicitly about emitted named-function symbols.
+  - `FunctionSignatureTest.scala`: added mixed direct and higher-order top-level function coverage so each use site keeps the correct call representation.
+
+- 2026-05-30: #255 unify-lambdas — fix zero-field closure-env TBAA emission
+  - `codegen/emitter/package.scala`: zero-field TBAA struct layouts now skip metadata emission; non-empty struct metadata is built from operand lists to avoid dangling separators.
+  - `TbaaEmissionTest.scala`: added `lambda-factorial`-shaped regression coverage for zero-field closure-env TBAA suppression.
+  - `context/coding-rules.md`: added `mml/samples/lambda-factorial.mml` to the mandatory post-task smoke checks.
+
+- 2026-05-25: #255 unify-lambdas S6 Phase 6.3.d — completed Direct callable capture boundary
+  - `FunctionEmitter.scala`: tail-recursive bound statements now lower let-bound Direct lambdas as `DirectCallable` entries instead of sending them through value-position closure materialization.
+  - `ClosureCodegenTest.scala` / `FunctionSignatureTest.scala`: refreshed stale Direct ABI IR assertions and kept materialized-env coverage on deliberately non-Direct function-value paths.
+  - Verification: full `sbtn test` passes after scalafmt/scalafix.
+
+- 2026-05-24: #255 unify-lambdas S6 Phase 6.3.d — fix Direct callable capture boundary
+  - `LoweredCaptureLayout.scala`: added `LambdaBindingIndex` plus a lowered capture-layout helper that expands captured Direct callables into the value operands their entries need.
+  - `ClosureMemoryFnGenerator.scala`: synthesized closure env structs from lowered capture slots instead of raw `lambda.captures`, so env fields match the runtime representation generated by codegen.
+  - `ExpressionCompiler.scala` / `FunctionEmitter.scala`: shared the lowered capture layout between Direct trailing params and materialized closure env setup/load; closure bodies now rebuild captured Direct sibling entries from loaded operands rather than treating them as first-class `{ ptr, ptr }` values.
+  - `FunctionSignatureTest.scala`: added a regression for a materialized local helper that captures a Direct sibling helper, asserting the env stores the sibling's operands and calls the Direct entry.
+  - `TbaaEmissionTest.scala`: re-aimed the captured-function TBAA fixture at a deliberately non-Direct function value so it still exercises real fat-pointer env fields under Direct lowering.
+
+- 2026-05-24: #255 unify-lambdas S6 Phase 6.3 — make universal closure free optimizer-visible
+  - `FunctionEmitter.scala`: generated universal closure destructors now use a dedicated LLVM attribute group.
+  - `Module.scala`: emits that group as `alwaysinline`, keeping the generated `__free_closure` as the semantic cleanup backstop while exposing its null-env guard and destructor dispatch to LLVM.
+  - `mml/samples/closure-free-shapes.mml`: added a retained sample covering both a non-capturing function value and a move-capturing closure with runtime input, so optimized cleanup shapes can be inspected without constant-folding the whole program.
+  - Plan updated: the source-aware consuming-param elision idea is dropped for this slice because a generic consuming `TypeFn` param cannot see call-site lambda materialization without specialization or caller-side cleanup emission. Phase 6.3 is now the inline-for-optimizer request; remaining S6 work is Phase 6.4's IR-shape refresh.
+
+- 2026-05-20: #255 unify-lambdas S6 Phase 6.2.c — keep `CapturedLiteral` captures in the Direct call shape
+  - `ExpressionCompiler.scala`: `DirectTrailingSlot.Value` gains `cloneFnId: Option[String]`. `computeDirectTrailing` now treats `Capture.CapturedLiteral` as a value-shaped slot carrying the clone fn id; the slot's `outerOperand` falls back to `@<name>` when the capture isn't in the enclosing function scope (top-level binding case).
+  - `evaluateDirectCaptures` returns `(CodeGenState, List[(op, ty)])`: for each clone-bearing slot it emits an ABI-lowered `__clone_<T>` call at the binder site and threads the cloned operand as the trailing argument. `Applications.compileBoundLambdaArg` Direct case threads the post-clone state into the body compile call.
+  - Factored the clone-call shape into `emitCaptureCloneCall`; the env-materialization path (`emitCallSiteEnv`) now delegates to the same helper instead of inlining the ABI-lowered call.
+  - Closes the P1b Codex finding: a Direct move lambda capturing a string literal no longer references an undefined outer SSA register; the cloned value flows through the lambda's own trailing param. End-to-end smoke (`let msg = "hello"; let greet = ~{ println msg; }; greet ();`) compiles and prints `hello`.
+  - `FunctionSignatureTest`: new regression `Direct move lambda capturing a heap literal clones at the binder site` asserts (1) `main` emits `__clone_String`, (2) `greet`'s signature carries `%struct.String`, (3) `greet`'s body consumes its own trailing param.
+  - Full mem harness 23/23. Smoke samples hola/quicksort/astar2 green. Test count 425 → 426; same 9 pre-existing Phase 6.4 stale-IR failures.
+  - **Known open issue (deferred):** the cloned heap value passed to a Direct move lambda has no free site emitted at the call frame; for `String` captures this is a leak. Pinned for follow-up under S6.x / S11 once the Direct-move ownership model is decided. Not exercised by the existing mem harness fixtures.
+
+- 2026-05-20: #255 unify-lambdas S6 Phase 6.2.b — thread direct-callable captures through nested Direct lambdas
+  - `ExpressionCompiler.scala`: replaced `valueShapedCaptures` with `computeDirectTrailing` — for each `CapturedRef` whose enclosing-scope entry is a `DirectCallable`, expand the callable's `captureOperands` into fresh trailing slots and rebind the inner `DirectCallable` to point at the new inner-slot registers. `compileDirectLambda` and `evaluateDirectCaptures` both consume the unified trailing layout, keeping the call-site outer-operand order aligned with the inner LLVM signature.
+  - Closes the P1a Codex finding: nested case `outer(a) { let f = { x -> x + a }; let g = { y -> f y }; g 1 }` no longer reuses g's `%0` (= `y`) as `f`'s captured `a` operand; `a` is threaded as a fresh trailing param of `g`.
+  - `FunctionSignatureTest`: new regression `nested Direct lambda threads outer Direct callable's captures` asserts (1) `g`'s signature is `(i64 %0, i64 %1)`, (2) `g` calls `f` with `(%0, %1)` not `(%0, %0)`, (3) `outer` passes its own `%0` as `g`'s trailing arg.
+  - Full mem harness 23/23. Test count rises 424 → 425; same 9 pre-existing stale-IR failures (Phase 6.4 work).
+
+- 2026-05-20: #255 unify-lambdas S6 Phase 6.2 — Direct lowering: no env, no wrapper, no malloc
+  - `ast/terms.scala`: `Materialization` enum (`Direct | NullEnv | Materialized`) + `Lambda.materialization` helper derived from `(meta.isDirect, captures.isEmpty)`. Single source of truth for lowering shape.
+  - `codegen/emitter/package.scala`: `ScopeEntry` extended with `directCallable: Option[DirectCallable]`. `DirectCallable(entryName, captureOperands)` records the entry symbol + ordered trailing-arg operands.
+  - `ExpressionCompiler.scala`: new `compileDirectLambda` emits one deferred LLVM fn with signature `(userParams..., captureTypes...)` — no env ptr, no closure-entry wrapper. Recursive self-references resolve through a self-DirectCallable injected into the body scope; `valueShapedCaptures` filters out direct-callable captures (propagated via inherited scope) and `Capture.CapturedLiteral` (top-level fn refs, resolved via global symbol). `compileLambdaLiteral` errors on non-tail-rec Direct lambdas (analyzer/codegen disagreement is a bug, not a fallback).
+  - `Applications.scala`: `compileBoundLambdaArg` dispatches on `Materialization` — Direct uses `compileDirectLambda` + DirectCallable scope entry; NullEnv and Materialized keep the wrapper-based path. `compileApp` consults `ScopeEntry.directCallable` before any indirect-call decision and routes through new `compileDirectCall` (`call @entry(args..., captureOps...)`).
+  - `ClosureMemoryFnGenerator.scala`: `collectCapturingLambdas` gated on `materialization == Materialized` — Direct lambdas never get env structs synthesized.
+  - `docs/design/compiler-design.md`: documented the closure-materialization runtime null-guard as the closure analog of the `__owns_*` heap-conditional-join witness. Logged the open design question of replacing the runtime backstop with stricter static reasoning.
+  - **Pinned regression `tests/mem/direct-move-closure.mml` passes under ASan+LSan**: the S4→S6 carry-over leak is closed. Full mem harness 23/23. 216 semantic tests + tail-rec tests + 3 smoke samples (hola/quicksort/astar2) all green.
+  - **Tail-rec carve-out (deferred to S8)**: tail-recursive Direct lambdas (e.g. `factorial_tco`) continue to flow through the wrapper-based lowering. S8 ("Tail-recursion follow-up under unified model") already targets "immediate-application tail-recursive lambdas validated against the unified pipeline" — Direct + loopification lands there.
+  - **IR-shape test refresh deferred to Phase 6.4**: `ClosureCodegenTest` (8), `FunctionSignatureTest` (1), `TbaaEmissionTest` (1) — assertions are stale w.r.t. the new Direct lowering. No functional regression; surfaced as expected drift.
+  - Plan: marked S6 in progress with the Phase 6.2 landed-scope delta + carve-out + remaining work (Phases 6.3 / 6.4).
+
+- 2026-05-20: #255 unify-lambdas S5 — unify return-escape walkers; close admin-wrapper aliasing hole
+  - `OwnershipAnalyzer.scala`: collapsed the two return-escape walkers
+    (`returnedBorrowedRefs`, `returnedBorrowClosures`) at the call site through a single
+    `ReturnEscape` sum. `RefEscape` dispatches to `BorrowEscapeViaReturn` (gated on owned
+    return type); `LambdaEscape` to `BorrowClosureEscapeViaReturn` (unconditional). The
+    `escapeErrors` flatMap in `analyzeLambda` replaces the prior two-list concatenation.
+  - Tightened `returnedBorrowedRefs` with administrative-`App`-wrapper descent (the same
+    shape the closure walker already had). Tightened `returnsBindingParam` with admin-
+    wrapper descent, closing a preexisting analyzer hole both walkers shared at depth
+    ≥ 2: patterns like `let x = s; let y = x; y` (and the lambda-shaped analog) now
+    raise the correct escape diagnostic. No existing fixture exercised this shape, so
+    no behavior change on the test corpus.
+  - Shadowing-safe descent: when descending into a wrapper body, the wrapper's own
+    params are masked from the descent scope so the body's Ref-by-name lookups can't
+    accidentally hit a shadowed outer binding. The body-returns-ours arm of
+    `returnsBindingParam` is gated on the wrapper not shadowing OUR param's name, so
+    the name-equality leaf check can't misread the wrapper's own param as a Ref to
+    ours. Codex P2 — `let s = "static"; s` inside `fn f(s: String): String` no longer
+    false-positives.
+  - `OwnershipAnalyzerTests.scala`: 5 new regression guards — single-level let-wrap +
+    Ref escape, let + Cond return + Ref escape, two-level nested let + Ref escape,
+    two-level nested let + Lambda escape, and a negative gate (let body returning a
+    static value is accepted).
+  - Capture-ownership block (`analyzeLambda`) verified by inspection to already gate on
+    `isOwnedValueType`; no code change. `CapturedMovedHeapBinding` and
+    `CapturedBorrowedHeapBinding` remain specialized renderings of the generic
+    capture-time ownership check.
+  - Phase A of the original S5 plan (source-aware consuming-TypeFn-param body-end free)
+    deferred to S6: the callee cannot statically know the caller's binding-source
+    `freeFn`, and closing the gap cleanly requires either caller-side cleanup emission
+    or a scope-info propagation that breaks `tests/mem/consume-closure.mml` if landed
+    in isolation. S6's codegen rework is the natural home.
+  - Plan: marked S5 in progress with a landed-scope delta paragraph and the S4→S6
+    carry-over for the consuming-param free.
+
+- 2026-05-20: #255 unify-lambdas S4 — heap-only `isOwnedType`; lambda-value ownership predicate
+  - `OwnershipAnalyzer.scala`: `isOwnedType` is heap-only (`TypeFn` removed from the
+    type-identity arm). Introduced `isOwnedLambdaValue(lambda)`
+    = `!meta.isDirect && captures.nonEmpty && isMove` and used it at the lambda-arm
+    classifiers (`termReturnsOwned`, `lambdaAllocates`). Introduced
+    `isOwnedValueType` (heap OR `TypeFn`) and used it at every site that propagates an
+    already-classified function value (return-ownership discovery, allocation propagation,
+    owned-binding scope frees including the consuming-param body-end free, conditional
+    cross-branch frees, capture classification, borrow-escape-return check, and final
+    cleanup). Net observable behavior change at the analyzer: a direct move-capturing
+    binding (`isDirect = true`) no longer registers an owned env via `lambdaAllocates` —
+    this is the documented S6 carry-over (codegen still mallocs the env until S6
+    consults `isDirect`).
+  - `OwnershipAnalyzerTests.scala`: one new regression guard — let-bound non-capturing
+    lambda passed as a HO arg schedules no `__free_closure` and is borrowed.
+  - `tests/mem/consume-closure.mml`: new ASan+LSan regression — caller move-on-rebinds a
+    materialized move-closure into a consuming `~f: Int -> Int` param across 1000
+    iterations. Guards that the body-end `__free_closure(f)` cleanup keeps releasing the
+    env malloc'd by `makeAdder`.
+  - `tests/mem/direct-move-closure.mml`: new pinned regression — `let f = ~{x -> x+a}; f 41`
+    leaks 16 bytes from the closure env malloc because the analyzer no longer registers
+    direct move-closures as owned, while codegen still materializes their env. Expected
+    to fail under ASan/LSan until S6's lowering rule for `isDirect` lambdas stops
+    materializing the env. Mem harness reports 22/23 with this regression in place.
+  - `ClosureCodegenTest.scala`: rewrote the "local move capturing closures free through
+    their specific env destructor" fixture to use a value-position binding (`apply f 41`)
+    and marked it `.ignore` pending the S6 IR-snapshot refresh.
+  - `context/qa-rules-and-coding-style.md`: added section 9 (`Comments`) — code comments
+    describe current code in present tense; no "no longer / was / previously"; no
+    slice/plan references in source; slice notes live in plan/tracking docs.
+  - Plan / tracking: marked S3 done, S4 in progress; recorded the un-ignore item against
+    S6; recorded the "consuming-TypeFn-param + non-owned value → no `__free_closure`"
+    tightening as an S5 carry-over (needs source-aware flow analysis).
+
+- 2026-05-20: #255 unify-lambdas S3 — `MaterializationAnalyzer` computes `isDirect`
+  - New `modules/mmlc-lib/src/main/scala/mml/mmlclib/semantic/MaterializationAnalyzer.scala`:
+    three-pass walker (collect lambda bindings → discover non-direct ids via saturation-
+    depth tracking → rewrite `LambdaMeta.isDirect`). Saturation floor `max(arity, 1)` keeps
+    arity-0 thunks sound. Handles top-level `Bnd` lambdas and parser-lowered scoped-binding
+    `App(Lambda(params=[binder], ...), arg)` shape.
+  - `SemanticStage.scala`: wired between `CaptureAnalyzer` and `TypeChecker` via the
+    standard `timePhase` wrapper.
+  - `prettyprint/ast/Term.scala`: `LambdaMeta` rendering now includes `isDirect`.
+  - `MaterializationAnalyzerTests.scala`: 9 tests covering top-level direct, recursive
+    self-call, let-bound direct/value-position, lambda-literal immediate application,
+    nullary top-level invoked vs used as value, let-bound nullary as value. The nullary
+    lambda-literal immediate-application case is ignored pending the `TypeChecker.scala:784`
+    `lambda.params.nonEmpty` guard accepting nullary heads.
+
+- 2026-05-19: #255 unify-lambdas S1 — terminology cleanup
+  - `docs/design/compiler-design.md`: retired "ordinary closure literal" / "real closure
+    literal" phrasing in the local-`let` and CaptureAnalyzer phase sections; aligned with
+    the spec's "scoped-binding lambda" vs "value-position lambda" vocabulary.
+  - `modules/mmlc-lib/src/main/scala/mml/mmlclib/semantic/CaptureAnalyzer.scala`: comments
+    and scaladoc updated to use "value-position lambda" / "scoped-binding lambda";
+    behaviour unchanged.
+
+- 2026-05-19: #255 unify-lambdas spec reframe + S2 AST addition
+  - `context/specs/unify-lambdas.md`: rewrote the `## Decisions` section. Q2 collapsed to
+    a single `isDirect: Boolean` field on `LambdaMeta` (3-way materialization derived
+    from `(isDirect, captures.isEmpty)`); dropped the `freeVars`/`envFields` split, the
+    `Escape` enum, and the `CaptureMode` enum. Added a "Lambda values are ordinary unique
+    values" subsection framing the unification thesis. Extended the implementation-notes
+    slice list with stack-promotion as goal 7.
+  - `context/specs/unify-lambdas-plan.md`: rewrote the Q1/Q2/Q4/Q5/Q6 proposed answers
+    and the matching slice descriptions to match the simplified metadata. S2 reduced to
+    a single additive field; S5 reframed as "treat lambda values as ordinary unique
+    values"; S11 promoted from DEFERRED to an in-scope slice with concrete files and
+    acceptance criteria. Sub-issue list updated.
+  - `modules/mmlc-lib/src/main/scala/mml/mmlclib/ast/terms.scala`: added
+    `isDirect: Boolean = false` to `LambdaMeta`. Pure additive change; no consumer reads
+    it yet, behaviour preserved by the default.
 
 - 2026-05-18: Mem evolution layer 4 — shared refs, `&` and `^` operators
   - `docs/brainstorming/mem/mem-evolution.md`: added Layer 4 (shared refs, `&T` type,
