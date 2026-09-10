@@ -1,0 +1,3 @@
+interface:
+  display_name: "Task Pick"
+  short_description: "Recommend the next focused task"

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Tracking Document Review"
+  short_description: "Fast tracking consistency review"
+  default_prompt: "Use $tracking-doc-review to quickly review tracking documents for consistency, factual support, and rule compliance."

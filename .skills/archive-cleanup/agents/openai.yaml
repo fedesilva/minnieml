@@ -1,0 +1,3 @@
+interface:
+  display_name: "Archive Cleanup"
+  short_description: "Delete old completed task history"
