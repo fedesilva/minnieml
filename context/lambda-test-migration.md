@@ -2,17 +2,41 @@
 
 The noncompiler transfer is complete on `dev-lambdas-migration`. All source-tip test declarations,
 helpers, memory programs, samples, documentation, and independent benchmark/tooling changes are
-present. The compiler implementation still matches parent `c7e9078`.
+present. The compiler matched parent `c7e9078` at that checkpoint; current compiler work is
+recorded in the active-workstream section below.
 
-The current suite passes **430 tests**, with **62 ignored** and no failures or errors. Ignored tests
+The transfer baseline passed **430 tests**, with **62 ignored** and no failures or errors. Ignored tests
 are unfinished compiler work, not passing coverage. Every ignore has its reason in a comment
 immediately above the test. One preexisting nested TBAA declaration remains undiscovered.
+
+## Standing handoff requirement: every migration phase
+
+The Author requires this document to stay current throughout **all phases of the migration**,
+including documentation, tests, compiler changes, verification, and follow-up work. This applies
+to every workstream, not only the currently approved borrowed-return work.
+
+Update the handoff at each meaningful checkpoint, before pausing or ending a workstream, and
+before handing work to a fresh session. Record:
+
+- Work completed and the files or commits containing it; distinguish committed, pushed, and
+  uncommitted changes.
+- Work in progress, unresolved findings, blockers, and the exact next action.
+- Checks actually run and their results, including failures, ignores, and checks still pending.
+  Keep prior baseline results distinct from verification of the current changes.
+- Decisions and approvals already given, their scope, and decisions still needed from the Author.
+- Any live command or process and how to resume checking it; do not infer completion from silence.
+
+A session reset must not require reconstructing progress from the conversation. Start a resumed
+session by reading this handoff and verifying the recorded state against the repository. Preserve
+existing approvals, avoid repeating completed work, and update the note as the phase advances.
+This requirement also applies to future phases that have not yet been planned.
 
 ## Resume from this checkpoint
 
 The pushed documentation/helper checkpoint is `35c87bd9cb89da4f48b8fe2fa2cbae70129e3beb`
-(`Start lambda migration with docs and test helpers`). This transfer checkpoint is titled
-`Preserve lambda regressions and remaining source files`. Verify its commit/push state when resuming:
+(`Start lambda migration with docs and test helpers`). The complete transfer is committed as
+`6e33ee4` (`Preserve lambda regressions and remaining source files`). At the start of the compiler
+workstream, it is one commit ahead of `origin/dev-lambdas-migration`. Verify this when resuming:
 
 ```sh
 git status --short --branch
@@ -24,20 +48,117 @@ git cat-file -t c16231a8753d214617a88a089341033fefe803d7
 
 The Author waived confirmation requirements while moving material from the source branch. The
 Author also authorized ignored tests and required a reason comment beside each one. **Normal
-confirmation rules apply again before compiler changes.** No compiler implementation workstream
-is approved by the transfer. Tracked-item statuses remain the preserved source history.
+confirmation rules apply again before compiler changes.** The Author subsequently approved the
+borrowed-return workstream recorded below. That approval persists across session resets; do not
+ask for it again within this scope. Tracked-item statuses remain the preserved source history.
 
 Read `AGENTS.md`, this document, and [unify-lambdas-salvage.md](unify-lambdas-salvage.md). Before
 proposing compiler work, read `docs/memory-model.md`, `context/specs/pap-ownership-model.md`, and
 the relevant compiler design/rules. Keep the source branch and immutable provenance recoverable.
-No compiler was published; an installed `mmlc` must not be assumed to represent this branch.
+The transfer checkpoint did not publish a compiler. The borrowed-return workstream has since
+published its compiler locally; see its verification record below.
 
 To resume, the Author can use:
 
 > Read AGENTS.md, context/lambda-test-migration.md, and context/unify-lambdas-salvage.md. Verify the
-> migration branch and current tests. The noncompiler transfer is complete; ignored regressions
-> have nearby reasons. Discuss a bounded compiler workstream before editing the compiler. Preserve
-> the ownership contract and explain language behavior using MML examples.
+> migration branch and current changes. The Author has signed off the borrowed-return workstream;
+> read its results and remaining native failures below. Preserve existing approvals
+> and the ownership contract. Discuss and approve the next bounded compiler slice before editing.
+
+## Signed-off workstream: borrowed returns through aliases
+
+Approved by the Author after the migration commit and discussion of the existing symbol indexes.
+The scope is return-escape analysis through local aliases and conditional results, including
+aliases of borrow-capturing closures. Preserve valid shadowing, static returns, and owned returns;
+reject invalid escapes without adding implicit clones.
+
+The checkpoint commit is titled `Reject borrowed returns through local aliases` and contains
+`semantic/OwnershipAnalyzer.scala`, `semantic/OwnershipAnalyzerTests.scala`, and both handoff
+documents. Four preserved regressions
+are enabled. Three new checks cover parameter identity after shadowing, valid consuming returns
+through aliases, and rejection of a borrowed branch alongside an allocating branch.
+
+`sbtn 'scalafmtAll;scalafixAll;test'` passed **437 tests, 58 ignored**, with no failures or
+errors. This includes all four enabled regressions and all three new checks. The log is
+`/tmp/mml-borrow-return-final-tests.log`; its process is terminal. Earlier syntax and
+unused-member build errors were fixed before this pass.
+
+Verification checkpoint:
+
+- Required smoke passes: `hola` and `quicksort` compile/run; `style-guide`, `lambda-factorial`,
+  and `raytracer3_p6` compile. Logs: `/tmp/mml-borrow-return-smoke-hola.log`,
+  `/tmp/mml-borrow-return-smokes.log`, and `/tmp/mml-borrow-return-smokes-compile.log`.
+- `astar2` fails assembly because `umin`/`umax` require `cssc`; `partial-fac1` exits 139 at
+  runtime (log `/tmp/mml-borrow-return-smokes-rest.log`). Their newly generated LLVM IR is
+  byte-for-byte identical to the saved parent-compiler migration IR in
+  `/tmp/mml-migration-ir/3/` and `/tmp/mml-migration-ir/42/`, respectively. The new copies are
+  in `/tmp/mml-borrow-return-ir/`. These failures are not caused by changed IR in this slice.
+- `sbtn mmlcPublishLocal` succeeded after smoke verification, installing this workstream's
+  compiler into `~/bin`. Log: `/tmp/mml-borrow-return-publish.log`.
+- Benchmark clean succeeded. `make -C benchmark mml` built sieve, quicksort, matmul, and
+  matmul-opt, then failed assembling nqueens: `abs` requires `cssc`. The remaining targets
+  were not built. Log: `/tmp/mml-borrow-return-benchmarks.log`.
+- `./tests/mem/run.sh all` completed: **27/33 pass ASan/LSan, six fail**. Log:
+  `/tmp/mml-borrow-return-memory.log`. All five failing programs that generate IR produce
+  byte-for-byte identical IR to their saved parent-compiler migration baseline. The sixth,
+  `escaping-paps`, retains its baseline `TypeGroup` codegen rejection. Diagnostic reruns
+  and comparisons are in `/tmp/mml-borrow-return-memory-diagnostics/results.json` and the
+  adjacent per-program logs. Failures are detailed below; the memory gate is not green.
+- QA reviewed all changed hunks against coding and QA rules: immutable origin propagation,
+  indexed identities, existing test helpers, unchanged migrated assertions, no new ignores,
+  and no inserted clones. Formatting, lint, and `git diff --check` pass. No additional defect
+  was found in this bounded change; native verification failures remain open.
+- All verification commands are terminal. No command or session handle remains to resume.
+
+| Memory program | Failure |
+| --- | --- |
+| `direct-move-owned-struct-capture` | LLVM rejects duplicate `__free_Pair` definition. |
+| `direct-pap-escaping-heap-alias-arg` | LLVM sees a closure pair where `%struct.String` is expected. |
+| `direct-pap-escaping-heap-arg` | LLVM sees a closure pair where `%struct.String` is expected. |
+| `direct-pap-escaping-heap-capture` | ASan reports double-free in `__free_String`. |
+| `direct-pap-inscope-heap-capture` | ASan reports a segmentation fault in the local `say` function. |
+| `escaping-paps` | No LLVM type mapping for grouped function-return `TypeGroup`. |
+
+Implementation and index findings:
+
+- `Module.resolvables` supplies the existing stable-ID value/type index. `ResolvablesIndexer`
+  includes nested lambda parameters and runs before and after ownership analysis.
+- `returnedOrigins` follows the result of immediate lambda applications, groups, and conditional
+  branches. Supplied argument origins are associated with parameter IDs. The existing index is
+  used for reference lookup and updated with the current lambda parameters during traversal.
+- Both borrowed-reference and borrowed-closure return checks use those origins. Reference checks
+  use indexed parameter consumption and captured-value IDs, without name-based fallback.
+- Return escape is checked on the typed body before cleanup and static-return promotion, so
+  an inserted clone cannot conceal a borrowed return path.
+- The prior separate closure walker, shallow borrowed-reference walker, name fallback, and
+  special `__stmt` constant used by that walker are removed.
+- General ownership-state maps and owned-value cleanup are unchanged by this slice. The work
+  does not claim to resolve every name-based ownership operation, PAP, or struct-field gap.
+
+Implementation and verification are complete for this bounded slice, with the failed native
+gates explicitly recorded above. The Author signed off this workstream after reviewing those
+results and approved the four-file checkpoint commit. Next action: discuss the next bounded
+compiler slice. Do not mark a Tracked Item complete; this signoff covers only the borrowed-return
+slice. The checkpoint follows `6e33ee4`; use `git log -2 --oneline` and `git status --short --branch`
+to verify its commit and working-tree state when resuming. No push is included in this checkpoint;
+the branch will be two commits ahead of the local origin tracking ref after the commit.
+The transfer inventory JSON remains the immutable `6e33ee4` preservation snapshot; its test
+results and destination hashes describe that checkpoint, not these new compiler changes.
+
+These four preserved `OwnershipAnalyzerTests` cases are enabled without weakened assertions:
+
+- `borrowed param returned through let-binding wrapper is rejected`
+- `borrowed param returned through let-bound conditional is rejected`
+- `borrowed param returned through two nested let-bindings is rejected`
+- `borrow-capturing lambda returned through two nested let-bindings is rejected`
+
+The shadowing and static-return companions remain enabled. The focused new cases cover resolved
+identity, valid consuming returns without clone/free insertion, and a mixed borrowed/allocating
+return. The known grouped-return codegen failure is not resolved by this approval.
+
+Keep this checkpoint current so a new session can identify the changes, results, and remaining work.
+Workstream review is complete; do not request the same signoff again.
+Further compiler workstreams and tracked-item status changes require separate approval.
 
 ## References and transferred scope
 
@@ -187,9 +308,9 @@ under sanitizers during this transfer. The memory harness cannot be called passi
 `escaping-paps.mml` fails to compile. Full ASan/LSan checks and MML benchmarks remain required
 when implementing the relevant compiler changes.
 
-## Next compiler workstream
+## Later compiler workstreams
 
-Discuss and approve the next bounded slice before changing compiler code. The salvage review's
+After the approved borrowed-return workstream, discuss and approve the next bounded slice. The salvage review's
 candidate is complete executable destructor ASTs; the preserved ownership regressions provide
 additional concrete entry points. Establish the invariant and MML examples first, then identify
 which ignored tests should become enabled for that slice. Do not silently clone values to repair

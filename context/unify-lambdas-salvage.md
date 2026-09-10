@@ -6,13 +6,19 @@ Resume on `dev-lambdas-migration`. Read [lambda-test-migration.md](lambda-test-m
 validation, pending corpus, and next proposed workstream. The Author approved the documentation/helper workstream and
 requested a commit and push before further migration work.
 
+For every migration phase, keep that document's handoff current with completed work, current changes,
+verification results, approvals, blockers, and the next action. This is a standing Author requirement
+so the session can be reset and resumed at any stage; see its "Standing handoff requirement" section.
+
 The branch starts at `c7e9078`. Documentation and helpers were committed and pushed as `35c87bd`.
 The subsequent transfer checkpoint includes all remaining source tests, memory programs, samples, benchmarks,
-and dependency changes. The parent compiler implementation is unchanged. Verification passes 430 tests with
-62 ignored; each ignore has an adjacent reason comment. All 410 previously discovered parent tests still pass.
+and dependency changes. At that transfer checkpoint the compiler matched the parent, and verification
+passed 430 tests with 62 ignored; each ignore had an adjacent reason comment. All 410 previously discovered
+parent tests passed. Current compiler changes and verification are recorded in the linked handoff.
 
 The Author waived confirmation requirements for moving source material and authorized reasoned test ignores.
-Normal confirmation rules resume before compiler changes. No compiler implementation workstream is approved.
+Normal confirmation rules resume before compiler changes. The Author has since approved the borrowed-return
+workstream; its scope and current implementation checkpoint are in [lambda-test-migration.md](lambda-test-migration.md).
 
 The original handoff below preserves the source inventory and design decisions. Its statements about untracked files,
 branch switching, and work not yet transferred describe the initial handoff, not this checkpoint. Keep `c16231a`

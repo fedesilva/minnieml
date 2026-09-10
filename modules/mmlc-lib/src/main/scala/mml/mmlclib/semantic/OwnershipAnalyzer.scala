@@ -125,8 +125,7 @@ case class TermResult(
   *   - Handle conditional branches (both must have same ownership)
   */
 object OwnershipAnalyzer:
-  private val PhaseName          = "ownership-analyzer"
-  private val statementParamName = "__stmt"
+  private val PhaseName = "ownership-analyzer"
 
   private val syntheticSource = SourceOrigin.Synth
 
@@ -657,68 +656,58 @@ object OwnershipAnalyzer:
 
     expr.terms.lastOption.map(termReturned).getOrElse(Set.empty)
 
-  /** Refs of borrowed bindings that flow out through the returned expression */
-  private def returnedBorrowedRefs(expr: Expr, scope: OwnershipScope): List[Ref] =
-    def termReturned(term: Term): List[Ref] =
+  /** References and lambda values that reach the result through argument bindings and branches.
+    * Argument origins are keyed by parameter identity; declarations come from the symbol index.
+    */
+  private def returnedOrigins(expr: Expr, resolvables: ResolvablesIndex): List[Ref | Lambda] =
+    type Origins   = List[Ref | Lambda]
+    type Arguments = Map[String, Origins]
+
+    def fromExpr(value: Expr, arguments: Arguments, index: ResolvablesIndex): Origins =
+      value.terms.lastOption.toList.flatMap(fromTerm(_, arguments, index)).distinct
+
+    def fromTerm(term: Term, arguments: Arguments, index: ResolvablesIndex): Origins =
       term match
-        case ref: Ref if scope.getState(ref.name).contains(OwnershipState.Borrowed) =>
-          List(ref)
-        case Cond(_, _, ifTrue, ifFalse, _, _) =>
-          returnedBorrowedRefs(ifTrue, scope) ++ returnedBorrowedRefs(ifFalse, scope)
-        case TermGroup(_, inner, _) => returnedBorrowedRefs(inner, scope)
-        case _ => List.empty
-    expr.terms.lastOption.map(termReturned).getOrElse(List.empty)
+        case ref: Ref =>
+          ref.resolvedId
+            .flatMap(index.lookup)
+            .flatMap(_.id)
+            .flatMap(arguments.get)
+            .getOrElse(List(ref))
+        case lambda: Lambda => List(lambda)
+        case app:    App =>
+          val (callee, args) = collectArgsAndBase(
+            app.fn,
+            List((app.arg, app.source, app.typeAsc, app.typeSpec))
+          )
+          callee match
+            case lambda: Lambda
+                if lambda.params.length == args.length ||
+                  (lambda.params.isEmpty && args.length == 1) =>
+              val supplied = lambda.params
+                .zip(args)
+                .flatMap:
+                  case (param, (argument, _, _, _)) =>
+                    param.id.map(_ -> fromExpr(argument, arguments, index))
+              fromExpr(
+                lambda.body,
+                arguments ++ supplied,
+                index.updatedAll(lambda.params)
+              )
+            case _ => Nil
+        case cond: Cond =>
+          fromExpr(cond.ifTrue, arguments, index) ++ fromExpr(cond.ifFalse, arguments, index)
+        case group:  TermGroup => fromExpr(group.inner, arguments, index)
+        case nested: Expr => fromExpr(nested, arguments, index)
+        case _ => Nil
+
+    fromExpr(expr, Map.empty, resolvables).distinct
 
   private def lambdaReturnType(typeAsc: Option[Type], typeSpec: Option[Type]): Option[Type] =
     typeAsc.orElse:
       typeSpec.flatMap:
         case TypeFn(_, _, ret) => Some(ret)
         case other => Some(other)
-
-  /** Borrow-capturing lambda literals in return position. These are unsafe because borrow closures
-    * use stack-allocated environments.
-    */
-  private def returnedBorrowClosures(expr: Expr): List[Lambda] =
-    def termReturned(term: Term): List[Lambda] =
-      term match
-        case lambda: Lambda if lambda.captures.nonEmpty && !lambda.isMove =>
-          List(lambda)
-        case app: App if administrativeReturnWrapper(app) =>
-          app.fn match
-            case lambda: Lambda =>
-              val bodyReturns = returnedBorrowClosures(lambda.body)
-              val argReturns =
-                lambda.params.headOption
-                  .filter(param => returnsBindingParam(lambda.body, param))
-                  .toList
-                  .flatMap(_ => returnedBorrowClosures(app.arg))
-              argReturns ++ bodyReturns
-            case _ => Nil
-        case Cond(_, _, ifTrue, ifFalse, _, _) =>
-          returnedBorrowClosures(ifTrue) ++ returnedBorrowClosures(ifFalse)
-        case TermGroup(_, inner, _) => returnedBorrowClosures(inner)
-        case _ => List.empty
-    expr.terms.lastOption.map(termReturned).getOrElse(List.empty)
-
-  private def returnsBindingParam(expr: Expr, param: FnParam): Boolean =
-    def termReturned(term: Term): Boolean =
-      term match
-        case ref: Ref =>
-          ref.resolvedId.contains(param.id.getOrElse("")) || ref.name == param.name
-        case Cond(_, _, ifTrue, ifFalse, _, _) =>
-          returnsBindingParam(ifTrue, param) || returnsBindingParam(ifFalse, param)
-        case TermGroup(_, inner, _) => returnsBindingParam(inner, param)
-        case _ => false
-
-    expr.terms.lastOption.exists(termReturned)
-
-  private def administrativeReturnWrapper(app: App): Boolean =
-    app.fn match
-      case lambda: Lambda =>
-        lambda.params match
-          case List(param) => param.name != statementParamName
-          case _ => false
-      case _ => false
 
   /** Check if a binding name is referenced anywhere in an expression */
   private def containsRefInExpr(name: String, expr: Expr): Boolean =
@@ -1402,18 +1391,32 @@ object OwnershipAnalyzer:
           scope.resolvables
         )
 
-    // Escape check: borrowed refs in return position. Covers heap types and TypeFn.
+    // Validate the typed source flow before cleanup and return-promotion rewrites.
+    val origins = returnedOrigins(body, scope.resolvables)
+    val borrowedCaptureIds = captures.flatMap: capture =>
+      capture.ref.resolvedId.filter: _ =>
+        capture.ref.typeSpec.exists(isOwnedType(_, scope.resolvables))
+
+    // Parameters borrow unless consuming; captured heap values borrow from their environment.
+    def isBorrowedReturn(ref: Ref): Boolean =
+      ref.resolvedId.exists: id =>
+        borrowedCaptureIds.contains(id) || scope.resolvables
+          .lookup(id)
+          .exists:
+            case param: FnParam => !param.consuming
+            case _ => false
+
     val returnTypeIsOwned = returnType.exists(t => isOwnedType(t, scope.resolvables))
     val borrowEscapeErrors =
       if returnTypeIsOwned then
-        returnedBorrowedRefs(finalBody, bodyResult.scope)
-          .map(ref => SemanticError.BorrowEscapeViaReturn(ref, PhaseName))
+        origins.collect:
+          case ref: Ref if isBorrowedReturn(ref) =>
+            SemanticError.BorrowEscapeViaReturn(ref, PhaseName)
       else Nil
 
-    // Escape check: borrow-capturing closures can never be returned.
-    val borrowClosureEscapeErrors =
-      returnedBorrowClosures(finalBody)
-        .map(lambda => SemanticError.BorrowClosureEscapeViaReturn(lambda, PhaseName))
+    val borrowClosureEscapeErrors = origins.collect:
+      case lambda: Lambda if lambda.captures.nonEmpty && !lambda.isMove =>
+        SemanticError.BorrowClosureEscapeViaReturn(lambda, PhaseName)
 
     // Capture ownership: move lambdas move heap captures; borrow lambdas leave them in place.
     val (returnScope, captureErrors, updatedCaptures) =

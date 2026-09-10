@@ -703,8 +703,7 @@ class OwnershipAnalyzerTests extends BaseEffFunSuite:
     }
   }
 
-  // Pending migration: Parent accepts a borrowed return through a let alias.
-  test("borrowed param returned through let-binding wrapper is rejected".ignore) {
+  test("borrowed param returned through let-binding wrapper is rejected") {
     val code =
       """
         fn echo(s: String): String =
@@ -720,8 +719,7 @@ class OwnershipAnalyzerTests extends BaseEffFunSuite:
     }
   }
 
-  // Pending migration: Parent misses the borrowed return through a let-bound conditional.
-  test("borrowed param returned through let-bound conditional is rejected".ignore) {
+  test("borrowed param returned through let-bound conditional is rejected") {
     val code =
       """
         fn pick(s: String, b: Bool): String =
@@ -744,8 +742,7 @@ class OwnershipAnalyzerTests extends BaseEffFunSuite:
     }
   }
 
-  // Pending migration: Parent accepts a borrowed return through two nested let aliases.
-  test("borrowed param returned through two nested let-bindings is rejected".ignore) {
+  test("borrowed param returned through two nested let-bindings is rejected") {
     val code =
       """
         fn echo(s: String): String =
@@ -800,6 +797,69 @@ class OwnershipAnalyzerTests extends BaseEffFunSuite:
     }
   }
 
+  test("borrowed return retains its parameter identity after the name is shadowed") {
+    val code =
+      """
+        fn echo(s: String): String =
+          let alias = s;
+          let s = "static";
+          alias;
+        ;
+      """
+
+    semState(code).map { result =>
+      val parameterId = result.module.members.collectFirst {
+        case bnd: Bnd if bnd.name == "echo" =>
+          bnd.value match
+            case TXExprLambda(lambda) => lambda.params.headOption.flatMap(_.id)
+            case _ => None
+      }.flatten
+      val errors = result.errors.collect { case error: SemanticError.BorrowEscapeViaReturn =>
+        error
+      }
+      assert(parameterId.nonEmpty, "expected the indexed function parameter")
+      assertEquals(errors.map(_.ref.resolvedId).toSet, Set(parameterId))
+    }
+  }
+
+  test("allocating return branch does not make a borrowed alias return valid") {
+    val code =
+      """
+        fn choose(s: String, take_borrow: Bool): String =
+          if take_borrow then
+            let alias = s;
+            alias;
+          else
+            int_to_str 1;
+          ;
+        ;
+      """
+
+    semState(code).map { result =>
+      val errors = result.errors.collect { case error: SemanticError.BorrowEscapeViaReturn =>
+        error
+      }
+      assertEquals(errors.size, 1, "the borrowed branch must be rejected before clone promotion")
+    }
+  }
+
+  test("consuming parameter returned through two aliases remains owned by the caller") {
+    val code =
+      """
+        fn echo(~s: String): String =
+          let x = s;
+          let y = x;
+          y;
+        ;
+      """
+
+    semNotFailed(code).map { module =>
+      val body = topLevelLambdaBody(module, "echo")
+      assert(!containsFreeString(body), "returned ownership must not be freed in the callee")
+      assert(!containsCloneString(body), "returning the moved value must not clone it")
+    }
+  }
+
   test("borrow-capturing lambda returned directly is rejected") {
     val code =
       """
@@ -831,8 +891,7 @@ class OwnershipAnalyzerTests extends BaseEffFunSuite:
     }
   }
 
-  // Pending migration: Parent misses the borrowed closure escape through two let aliases.
-  test("borrow-capturing lambda returned through two nested let-bindings is rejected".ignore) {
+  test("borrow-capturing lambda returned through two nested let-bindings is rejected") {
     val code =
       """
         fn makeAdder(a: Int): Int -> Int =
