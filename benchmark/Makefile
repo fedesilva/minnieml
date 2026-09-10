@@ -26,7 +26,8 @@ endif
 all: $(BINDIR)/fizzbuzz-c $(BINDIR)/fizzbuzz2-c $(BINDIR)/fizzbuzz-go $(BINDIR)/fizzbuzz2-go \
      $(BINDIR)/ackermann-c $(BINDIR)/ackermann-go $(BINDIR)/ackermann-c-chacho $(BINDIR)/ackermann-unfair-c $(BINDIR)/ackermann-rs \
      $(BINDIR)/sieve-c $(BINDIR)/sieve-go $(BINDIR)/sieve-opt-go $(BINDIR)/sieve-rs \
-     $(BINDIR)/quicksort-c $(BINDIR)/matmul-c $(BINDIR)/matmul-opt-c $(BINDIR)/matmul-restricted-c $(BINDIR)/matmul-go $(BINDIR)/matmul-bce-go $(BINDIR)/matmul-opt-go \
+     $(BINDIR)/quicksort-c $(BINDIR)/quicksort-go $(BINDIR)/quicksort-rs \
+     $(BINDIR)/matmul-c $(BINDIR)/matmul-opt-c $(BINDIR)/matmul-restricted-c $(BINDIR)/matmul-go $(BINDIR)/matmul-bce-go $(BINDIR)/matmul-opt-go \
      $(BINDIR)/matmul-rs $(BINDIR)/matmul-opt-rs \
      $(BINDIR)/nqueens-c $(BINDIR)/nqueens-go $(BINDIR)/euclidean-ext-c
 
@@ -147,6 +148,12 @@ $(BINDIR)/sieve-mml-O3-no-tco: sieve.mml | $(BINDIR)
 # Quicksort
 $(BINDIR)/quicksort-c: quicksort.c | $(BINDIR)
 	$(CC) $(CFLAGS) -o $@ $<
+
+$(BINDIR)/quicksort-go: quicksort.go | $(BINDIR)
+	go build -o $@ $<
+
+$(BINDIR)/quicksort-rs: quicksort.rs | $(BINDIR)
+	rustc -O -o $@ $<
 
 $(BINDIR)/quicksort-mml: quicksort.mml | $(BINDIR)
 	mmlc -I -b $(BUILDDIR) -O $(MML_OPT) -o $@ $<
@@ -328,15 +335,21 @@ bench-self-matmul-opt-time: $(SELF_MATMUL_OPT_BINARIES)
 	/usr/bin/time -l $(BINDIR)/matmul-opt-mml-O3-tco
 	/usr/bin/time -l $(BINDIR)/matmul-opt-mml-O3-no-tco
 
-bench-quicksort: $(BINDIR)/quicksort-c $(BINDIR)/quicksort-mml $(RESULTS_DEP)
+bench-quicksort: $(BINDIR)/quicksort-c $(BINDIR)/quicksort-mml \
+	$(BINDIR)/quicksort-go $(BINDIR)/quicksort-rs $(RESULTS_DEP)
 	hyperfine -N --warmup 10 --runs 200 \
 		$(call EXPORT_FLAGS,quicksort) \
 		'$(BINDIR)/quicksort-c' \
-		'$(BINDIR)/quicksort-mml'
+		'$(BINDIR)/quicksort-mml' \
+		'$(BINDIR)/quicksort-rs' \
+		'$(BINDIR)/quicksort-go'
 
-bench-quicksort-time: $(BINDIR)/quicksort-c $(BINDIR)/quicksort-mml
+bench-quicksort-time: $(BINDIR)/quicksort-c $(BINDIR)/quicksort-mml \
+	$(BINDIR)/quicksort-go $(BINDIR)/quicksort-rs
 	/usr/bin/time -l $(BINDIR)/quicksort-c
 	/usr/bin/time -l $(BINDIR)/quicksort-mml
+	/usr/bin/time -l $(BINDIR)/quicksort-rs
+	/usr/bin/time -l $(BINDIR)/quicksort-go
 
 bench-matmul: $(BINDIR)/matmul-c $(BINDIR)/matmul-restricted-c $(BINDIR)/matmul-go \
 	$(BINDIR)/matmul-bce-go $(BINDIR)/matmul-opt-go $(BINDIR)/matmul-mml $(BINDIR)/matmul-opt-mml $(BINDIR)/matmul-opt-c \
