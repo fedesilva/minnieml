@@ -53,7 +53,6 @@ fn make_move_adder(base: Int) = ~{ x: Int -> x + base; };;
 
 fn make_inner_move_adder(base: Int) =
   fn ~inner_move(x: Int) = x + base;;
-
   inner_move;
 ;
 

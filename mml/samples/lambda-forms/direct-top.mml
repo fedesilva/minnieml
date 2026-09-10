@@ -1,0 +1,7 @@
+fn top_inc(x: Int): Int =
+  x + 1;
+;
+
+pub fn main(): Unit =
+  println (int_to_str (top_inc 10));
+;

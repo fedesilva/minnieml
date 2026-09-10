@@ -2,7 +2,7 @@
 pub fn main(): Int =
   let f = { x: Int ->
     let y = x + 1;
-    y
+    y;
   };
   f 1;
 ;

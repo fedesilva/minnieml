@@ -9,5 +9,5 @@ let pf = Person "fede";
 pub fn main() =  
   let p = pf 20;
   println ("Name: " ++ p.name);
-  println ("Age: " ++ (int_to_str p.age))
-;;
+  println ("Age: " ++ (int_to_str p.age));
+;

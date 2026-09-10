@@ -1,0 +1,15 @@
+pub fn main() =
+
+  let factorial_tco: Int -> Int -> Int =
+    { n: Int, acc: Int ->
+      if n <= 1 then acc;
+      else factorial_tco (n - 1) (acc * n);
+      ;
+    }
+  ;
+
+  let from5: Int -> Int = factorial_tco 5;
+
+  println (int_to_str (from5 1));
+
+;

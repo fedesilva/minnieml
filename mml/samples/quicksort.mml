@@ -2,8 +2,8 @@
 fn swap(arr: IntArray, a: Int, b: Int): Unit =
   let tmp = unsafe_ar_int_get arr a; 
   unsafe_ar_int_set arr a (unsafe_ar_int_get arr b);
-  unsafe_ar_int_set arr b tmp
-;;
+  unsafe_ar_int_set arr b tmp;
+;
 
 // The inner loop of partition: for (j = low; j < high; j++)
 // Returns the final value of 'i' (the pivot index)
@@ -28,8 +28,8 @@ fn partition(arr: IntArray, low: Int, high: Int): Int =
   let final_i = partition_loop arr low high pivot i_start;
   // Place pivot in the correct spot
   swap arr (final_i + 1) high;
-  final_i + 1
-;;
+  final_i + 1;
+;
 
 fn quicksort(arr: IntArray, low: Int, high: Int): Unit =
   if low < high then
@@ -55,8 +55,8 @@ fn run_sort(size: Int): Int =
   let arr = ar_int_new size;
   fill_random arr 42 0 size;
   quicksort arr 0 (size - 1);
-  unsafe_ar_int_get arr (size / 2)
-;;
+  unsafe_ar_int_get arr (size / 2);
+;
 
 /*
 the entry point
@@ -64,5 +64,5 @@ the entry point
 pub fn main(): Unit =
   // Sort 1 million integers
   let result = run_sort 1000000;
-  println ("Median checksum: " ++ (int_to_str result))
-;;
+  println ("Median checksum: " ++ (int_to_str result));
+;

@@ -1,19 +1,19 @@
 
 fn loop(): Unit =
   println "Type a number:";
-  let s = readline();
+  let s = readline ();
   let n = str_to_int s;
   println ("Number is: " ++ (int_to_str n));
-  loop()
-;;
+  loop();
+;
 
 pub fn main() = 
-  loop()
-;;
+  loop();
+;
 
 //
 // loop = 
-//   (println "Type a number:" |>
+//   (println "Type a number:") |>
 //     () -> { 
 //       readline () |> 
 //         (s) -> {    

@@ -23,5 +23,5 @@ pub fn main() =
   println ("Age: "    ++ int_to_str p.age);
   println ("City: "   ++ p.address.city);
   println ("Street: " ++ p.address.street);
-  println "--------------------------------"
-;;
+  println "--------------------------------";
+;

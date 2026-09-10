@@ -1,6 +1,14 @@
 CC = clang
 CFLAGS = -O3 -flto -march=native -fomit-frame-pointer -fno-stack-protector  -DNDEBUG
 BINDIR = bin
+
+# MML optimization level: 1 on Apple Silicon, 3 on x86.
+# Override with the MML_OPT env var or `make MML_OPT=...`.
+ifeq ($(shell uname -s)$(shell uname -m),Darwinarm64)
+MML_OPT ?= 1
+else
+MML_OPT ?= 3
+endif
 BUILDDIR = build
 RESULTSDIR = results/$(shell date +%Y-%m-%d)
 
@@ -19,6 +27,7 @@ all: $(BINDIR)/fizzbuzz-c $(BINDIR)/fizzbuzz2-c $(BINDIR)/fizzbuzz-go $(BINDIR)/
      $(BINDIR)/ackermann-c $(BINDIR)/ackermann-go $(BINDIR)/ackermann-c-chacho $(BINDIR)/ackermann-unfair-c $(BINDIR)/ackermann-rs \
      $(BINDIR)/sieve-c $(BINDIR)/sieve-go $(BINDIR)/sieve-opt-go $(BINDIR)/sieve-rs \
      $(BINDIR)/quicksort-c $(BINDIR)/matmul-c $(BINDIR)/matmul-opt-c $(BINDIR)/matmul-restricted-c $(BINDIR)/matmul-go $(BINDIR)/matmul-bce-go $(BINDIR)/matmul-opt-go \
+     $(BINDIR)/matmul-rs $(BINDIR)/matmul-opt-rs \
      $(BINDIR)/nqueens-c $(BINDIR)/nqueens-go $(BINDIR)/euclidean-ext-c
 
 mml: $(BINDIR)/sieve-mml $(BINDIR)/quicksort-mml $(BINDIR)/matmul-mml \
@@ -62,7 +71,7 @@ $(BINDIR)/ackermann-rs: ackermann.rs | $(BINDIR)
 	rustc -O -o $@ $<
 
 $(BINDIR)/ackermann-mml: ackermann.mml | $(BINDIR)
-	mmlc -I -b $(BUILDDIR) -o $@ $<
+	mmlc -I -b $(BUILDDIR) -O $(MML_OPT) -o $@ $<
 
 # Sieve
 $(BINDIR)/sieve-c: sieve.c | $(BINDIR)
@@ -78,7 +87,7 @@ $(BINDIR)/sieve-rs: sieve.rs | $(BINDIR)
 	rustc -O -o $@ $<
 
 $(BINDIR)/sieve-mml: sieve.mml | $(BINDIR)
-	mmlc -I -b $(BUILDDIR) -O 1 -o $@ $<
+	mmlc -I -b $(BUILDDIR) -O $(MML_OPT) -o $@ $<
 
 # Self benchmark binaries (MML with various opt/TCO knobs)
 SELF_SIEVE_BINARIES = \
@@ -140,7 +149,7 @@ $(BINDIR)/quicksort-c: quicksort.c | $(BINDIR)
 	$(CC) $(CFLAGS) -o $@ $<
 
 $(BINDIR)/quicksort-mml: quicksort.mml | $(BINDIR)
-	mmlc -I -b $(BUILDDIR) -O 1 -o $@ $<
+	mmlc -I -b $(BUILDDIR) -O $(MML_OPT) -o $@ $<
 
 # Matrix Multiplication
 $(BINDIR)/matmul-c: matmul.c | $(BINDIR)
@@ -152,6 +161,12 @@ $(BINDIR)/matmul-opt-c: matmul-opt.c | $(BINDIR)
 $(BINDIR)/matmul-restricted-c: matmul-restricted.c | $(BINDIR)
 	$(CC) $(CFLAGS) -o $@ $<
 
+$(BINDIR)/matmul-rs: matmul.rs | $(BINDIR)
+	rustc -O -o $@ $<
+
+$(BINDIR)/matmul-opt-rs: matmul-opt.rs | $(BINDIR)
+	rustc -O -o $@ $<
+
 $(BINDIR)/matmul-go: matmul.go | $(BINDIR)
 	go build -o $@ $<
 
@@ -162,10 +177,10 @@ $(BINDIR)/matmul-opt-go: matmul-opt.go | $(BINDIR)
 	go build -o $@ $<
 
 $(BINDIR)/matmul-mml: mat-mul.mml | $(BINDIR)
-	mmlc -I -b $(BUILDDIR) -O 1 -o $@ $<
+	mmlc -I -b $(BUILDDIR) -O $(MML_OPT) -o $@ $<
 
 $(BINDIR)/matmul-opt-mml: mat-mul-opt.mml | $(BINDIR)
-	mmlc -I -b $(BUILDDIR) -O 1 -o $@ $<
+	mmlc -I -b $(BUILDDIR) -O $(MML_OPT) -o $@ $<
 
 $(BINDIR)/matmul-mml-O0-tco: mat-mul.mml | $(BINDIR)
 	mmlc -I -b $(BUILDDIR) -O 0 -o $@ $<
@@ -223,14 +238,14 @@ $(BINDIR)/nqueens-go: nqueens.go | $(BINDIR)
 	go build -o $@ $<
 
 $(BINDIR)/nqueens-mml: nqueens.mml | $(BINDIR)
-	mmlc -I -b $(BUILDDIR) -o $@ $<
+	mmlc -I -b $(BUILDDIR) -O $(MML_OPT) -o $@ $<
 
 # Euclidean Extended GCD
 $(BINDIR)/euclidean-ext-c: euclidean-ext.c | $(BINDIR)
 	$(CC) $(CFLAGS) -o $@ $<
 
 $(BINDIR)/euclidean-ext-mml: euclidean-ext.mml | $(BINDIR)
-	mmlc -I -b $(BUILDDIR) -O 1 -o $@ $<
+	mmlc -I -b $(BUILDDIR) -O $(MML_OPT) -o $@ $<
 
 # Benchmarks
 bench-sieve: $(BINDIR)/sieve-c $(BINDIR)/sieve-go $(BINDIR)/sieve-rs $(BINDIR)/sieve-mml $(RESULTS_DEP)
@@ -324,26 +339,31 @@ bench-quicksort-time: $(BINDIR)/quicksort-c $(BINDIR)/quicksort-mml
 	/usr/bin/time -l $(BINDIR)/quicksort-mml
 
 bench-matmul: $(BINDIR)/matmul-c $(BINDIR)/matmul-restricted-c $(BINDIR)/matmul-go \
-	$(BINDIR)/matmul-bce-go $(BINDIR)/matmul-opt-go $(BINDIR)/matmul-mml $(BINDIR)/matmul-opt-mml $(BINDIR)/matmul-opt-c $(RESULTS_DEP)
-	hyperfine -N --warmup 20 --runs 200 \
+	$(BINDIR)/matmul-bce-go $(BINDIR)/matmul-opt-go $(BINDIR)/matmul-mml $(BINDIR)/matmul-opt-mml $(BINDIR)/matmul-opt-c \
+	$(BINDIR)/matmul-rs $(BINDIR)/matmul-opt-rs $(RESULTS_DEP)
+	hyperfine -N --warmup 20 --runs 50 \
 		$(call EXPORT_FLAGS,matmul) \
 		'$(BINDIR)/matmul-c' \
 		'$(BINDIR)/matmul-opt-c' \
 		'$(BINDIR)/matmul-restricted-c' \
 		'$(BINDIR)/matmul-mml' \
 		'$(BINDIR)/matmul-opt-mml' \
+		'$(BINDIR)/matmul-rs' \
+		'$(BINDIR)/matmul-opt-rs' \
 		'$(BINDIR)/matmul-go' \
 		'$(BINDIR)/matmul-bce-go' \
 		'$(BINDIR)/matmul-opt-go'
 
 bench-matmul-time: $(BINDIR)/matmul-c $(BINDIR)/matmul-restricted-c $(BINDIR)/matmul-go \
 	$(BINDIR)/matmul-bce-go $(BINDIR)/matmul-opt-go $(BINDIR)/matmul-mml $(BINDIR)/matmul-opt-mml \
-	$(BINDIR)/matmul-opt-c
+	$(BINDIR)/matmul-opt-c $(BINDIR)/matmul-rs $(BINDIR)/matmul-opt-rs
 	/usr/bin/time -l $(BINDIR)/matmul-c
 	/usr/bin/time -l $(BINDIR)/matmul-opt-c
 	/usr/bin/time -l $(BINDIR)/matmul-restricted-c
 	/usr/bin/time -l $(BINDIR)/matmul-mml
 	/usr/bin/time -l $(BINDIR)/matmul-opt-mml
+	/usr/bin/time -l $(BINDIR)/matmul-rs
+	/usr/bin/time -l $(BINDIR)/matmul-opt-rs
 	/usr/bin/time -l $(BINDIR)/matmul-go
 	/usr/bin/time -l $(BINDIR)/matmul-bce-go
 	/usr/bin/time -l $(BINDIR)/matmul-opt-go

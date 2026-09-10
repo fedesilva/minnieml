@@ -6,10 +6,13 @@ Resume on `dev-lambdas-migration`. Read [lambda-test-migration.md](lambda-test-m
 validation, pending corpus, and next proposed workstream. The Author approved the documentation/helper workstream and
 requested a commit and push before further migration work.
 
-The branch starts at `c7e9078`. All source `context/` and `docs/` files and root instruction changes have been
-transferred, including the handoff and both reviews saved in source commit `8e83506`. Three shared test helpers and
-their seven existing callers are migrated. The parent compiler implementation is unchanged; 410 discovered tests
-pass. The remaining source tests, memory programs, samples, benchmarks, and dependency changes are still pending.
+The branch starts at `c7e9078`. Documentation and helpers were committed and pushed as `35c87bd`.
+The subsequent transfer checkpoint includes all remaining source tests, memory programs, samples, benchmarks,
+and dependency changes. The parent compiler implementation is unchanged. Verification passes 430 tests with
+62 ignored; each ignore has an adjacent reason comment. All 410 previously discovered parent tests still pass.
+
+The Author waived confirmation requirements for moving source material and authorized reasoned test ignores.
+Normal confirmation rules resume before compiler changes. No compiler implementation workstream is approved.
 
 The original handoff below preserves the source inventory and design decisions. Its statements about untracked files,
 branch switching, and work not yet transferred describe the initial handoff, not this checkpoint. Keep `c16231a`

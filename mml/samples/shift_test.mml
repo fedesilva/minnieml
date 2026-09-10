@@ -5,5 +5,5 @@ pub fn main(): Unit =
   let y = 8192 >> 3;
   println ("8192 >> 3 = " ++ (int_to_str y));
   let ack = (1 << 13) - 3;
-  println ("ackermann(3,10) via shift = " ++ (int_to_str ack))
-;;
+  println ("ackermann(3,10) via shift = " ++ (int_to_str ack));
+;

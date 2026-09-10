@@ -1,0 +1,28 @@
+pub fn main() =
+
+  let factorial_tco: Int -> Int -> Int =
+    { n: Int, acc: Int ->
+      if n <= 1 then acc;
+      else factorial_tco (n - 1) (acc * n);
+      ;
+    }
+  ;
+
+  let make_fac: Int -> (Int -> Int) =
+    { n: Int -> factorial_tco n }
+  ;
+
+  let loop: Int -> Int -> Int =
+    { i: Int, acc: Int ->
+      if i <= 0 then
+        acc;
+      else
+        let f: Int -> Int = make_fac 5;
+        let r = f 1;
+        loop (i - 1) (acc + (r % 7));
+    }
+  ;
+
+  println (int_to_str (loop 1000000 0));
+
+;

@@ -4,5 +4,5 @@ let concat_results =
     ++ "Large: " ++ (int_to_str 1234567890);
 
 pub fn main(): Unit =
-  println concat_results
-;;
+  println concat_results;
+;

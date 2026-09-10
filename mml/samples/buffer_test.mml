@@ -6,5 +6,5 @@ pub fn main(): Unit =
   out write " ";
   out writeln "World!";
   out writeln "This is buffered output.";
-  flush out
-;;
+  flush out;
+;

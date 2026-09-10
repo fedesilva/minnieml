@@ -6,9 +6,9 @@ let result =
   if not flag1 or not flag1 and not flag2 then
     "NADA";
   else
-    "ALGO"
-  ;;
+    "ALGO";
+  ;
 
 pub fn main(): Unit =
-  println result
-;;
+  println result;
+;

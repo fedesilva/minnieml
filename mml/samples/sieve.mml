@@ -43,8 +43,8 @@ fn count_loop(arr: IntArray, i: Int, size: Int, acc: Int): Int =
   ;
 ;
 fn count_primes(arr: IntArray, size: Int): Int =
-  count_loop arr 0 size 1
-;;
+  count_loop arr 0 size 1;
+;
 
 fn isqrt(n: Int, guess: Int): Int =
   let next = (guess + n / guess) / 2;
@@ -61,10 +61,10 @@ fn run_sieve(limit: Int): Int =
   let u2 = ar_int_set arr 0 0;
   let q = isqrt limit (limit / 2);
   let u3 = sieve_loop arr 3 q size;
-  count_primes arr size
-;;
+  count_primes arr size;
+;
 
 pub fn main(): Unit =
   let count = run_sieve 1000000;
-  println ("Primes found: " ++ (int_to_str count))
-;;
+  println ("Primes found: " ++ (int_to_str count));
+;

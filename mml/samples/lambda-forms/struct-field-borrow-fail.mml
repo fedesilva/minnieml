@@ -1,0 +1,14 @@
+// Expected compile error.
+//
+// A struct field is an ownership sink: constructing `Holder add_seed` moves the field
+// value into the struct. A borrow-capturing closure owns no transferable env and cannot
+// be moved into a sink, so ownership rejects the construction with
+// BorrowedValuePassedToConsumingParam instead of letting the borrowed env be laundered
+// through the field.
+struct Holder { f: Int -> Int };
+
+pub fn main(seed: Int): Int =
+  let add_seed = { x: Int -> x + seed; };
+  let h = Holder add_seed;
+  h.f 10;
+;

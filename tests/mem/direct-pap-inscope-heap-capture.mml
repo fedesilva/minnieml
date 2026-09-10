@@ -1,0 +1,13 @@
+// In-scope Direct partial application does not double-free heap captures.
+
+pub fn main(): Unit =
+  let msg = "in scope capture";
+  let say: Int -> Int -> Unit =
+    ~{ x: Int, y: Int ->
+      println msg;
+    }
+  ;
+
+  let g: Int -> Unit = say 1;
+  g 2;
+;

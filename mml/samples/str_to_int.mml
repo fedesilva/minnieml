@@ -1,5 +1,5 @@
 
 pub fn main() = 
   let n = str_to_int "12";
-  println (int_to_str n)
-;;
+  println (int_to_str n);
+;

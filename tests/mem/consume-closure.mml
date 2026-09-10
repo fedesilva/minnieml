@@ -1,0 +1,25 @@
+// Mem regression: consuming higher-order parameter receives a materialized move-closure.
+// At the call site `consume_closure adder`, the caller transfers ownership of adder into
+// the consuming `~f` param; the callee body-end is the only place where the env
+// allocated by `makeAdder` can be released. Iterating 1000 times surfaces any leak under
+// ASan+LSan.
+fn consume_closure(~f: Int -> Int): Int = f 0;;
+
+fn makeAdder(a: Int): Int -> Int =
+  ~{ x -> x + a; };
+;
+
+fn loop(n: Int, acc: Int): Int =
+  if n > 0 then
+    let adder = makeAdder n;
+    let r = consume_closure adder;
+    loop (n - 1) r;
+  else
+    acc;
+  ;
+;
+
+pub fn main(): Unit =
+  let result = loop 1000 0;
+  println (int_to_str result);
+;

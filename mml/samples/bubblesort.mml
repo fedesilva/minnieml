@@ -1,0 +1,63 @@
+// Bubble Sort Implementation
+
+fn bubble_sort(arr: IntArray): Unit =
+  let n = ar_int_len arr;
+
+  fn loop(i: Int, j: Int): Unit =
+    if i >= n - 1 then
+      ();
+    elif j >= n - i - 1 then
+      loop (i + 1) 0;
+    elif (unsafe_ar_int_get arr j) > (unsafe_ar_int_get arr (j + 1)) then
+      let temp = unsafe_ar_int_get arr j;
+      unsafe_ar_int_set arr j (unsafe_ar_int_get arr (j + 1));
+      unsafe_ar_int_set arr (j + 1) temp;
+      loop i (j + 1);
+    else
+      loop i (j + 1);
+    ;
+  ;
+
+  loop 0 0;
+;
+
+fn fill_random(arr: IntArray, seed: Int, i: Int, size: Int): Unit =
+  if i < size then
+    let next = (seed * 1664525) + 1013904223;
+    let value = next % 100000;
+    unsafe_ar_int_set arr i value;
+    fill_random arr next (i + 1) size;
+  ;
+;
+
+fn checksum(arr: IntArray, i: Int, size: Int, acc: Int): Int =
+  if i < size then
+    checksum arr (i + 1) size (acc + (unsafe_ar_int_get arr i));
+  else
+    acc;
+  ;
+;
+
+pub fn main(): Unit =
+  let size = 1000;
+  let arr = ar_int_new size;
+
+  fill_random arr 42 0 size;
+  bubble_sort arr;
+
+  let first = unsafe_ar_int_get arr 0;
+  let middle = unsafe_ar_int_get arr (size / 2);
+  let last = unsafe_ar_int_get arr (size - 1);
+  let total = checksum arr 0 size 0;
+
+  println (
+    "Bubble sort checksum: "
+      ++ (int_to_str first)
+      ++ ", "
+      ++ (int_to_str middle)
+      ++ ", "
+      ++ (int_to_str last)
+      ++ ", "
+      ++ (int_to_str total)
+  );
+;

@@ -1,0 +1,22 @@
+// Direct move-lambda capturing an owned heap String must free it.
+//
+// The owned String produced by `int_to_str` is moved into the Direct lambda with no
+// clone. The original binding is consumed, and the Direct lambda has no env destructor,
+// so the binder scope frees the moved-in value at scope exit. `main` exercises the
+// sequence-let path; `run_loop` exercises the loopified path.
+
+fn run_loop(i: Int): Unit =
+  if i > 0 then
+    let m = int_to_str i;
+    let g = ~{ println m; };
+    g ();
+    run_loop (i - 1);
+  ;
+;
+
+pub fn main(): Unit =
+  let msg = int_to_str 42;
+  let greet = ~{ println msg; };
+  greet ();
+  run_loop 1000;
+;

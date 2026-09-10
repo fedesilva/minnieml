@@ -194,7 +194,7 @@ fn heap_push (h: MinHeap, size: Int, grid_idx: Int, f_score: Int): Int =
 
   // One more entry is now active.
   size + 1;
- ;
+;
 
 // Remove the best cell from the priority queue.
 // Parameters:
