@@ -36,7 +36,8 @@ object ResolvablesIndexer:
       case d: Destruction =>
         collectParamsFromExpr(d.operand)
       case lambda: Lambda =>
-        lambda.params ++ collectParamsFromExpr(lambda.body)
+        lambda.params ++ lambda.meta.flatMap(_.environmentParam).toList ++
+          collectParamsFromExpr(lambda.body)
       case app: App =>
         collectParamsFromAppFn(app.fn) ++ collectParamsFromExpr(app.arg)
       case cond: Cond =>
@@ -58,7 +59,8 @@ object ResolvablesIndexer:
   private def collectParamsFromAppFn(fn: Ref | App | Lambda): List[FnParam] =
     fn match
       case lambda: Lambda =>
-        lambda.params ++ collectParamsFromExpr(lambda.body)
+        lambda.params ++ lambda.meta.flatMap(_.environmentParam).toList ++
+          collectParamsFromExpr(lambda.body)
       case app: App =>
         collectParamsFromAppFn(app.fn) ++ collectParamsFromExpr(app.arg)
       case ref: Ref =>

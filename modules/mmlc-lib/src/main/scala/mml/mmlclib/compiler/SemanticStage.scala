@@ -30,6 +30,9 @@ object SemanticStage:
         CaptureAnalyzer.rewriteModule
       )
       |> CompilerState.timePhase("semantic", "type-checker")(TypeChecker.rewriteModule)
+      |> CompilerState.timePhase("semantic", "partial-application-elaborator")(
+        PartialApplicationElaborator.rewriteModule
+      )
       |> CompilerState.timePhase("semantic", "closure-mem-gen")(
         ClosureMemoryFnGenerator.rewriteModule
       )

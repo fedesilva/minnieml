@@ -90,27 +90,36 @@ object ExpressionRewriter:
                     .asLeft
                 )
               case None =>
-                val syntheticLocals = remainingParams.zipWithIndex.map { (p, i) =>
-                  SyntheticLocals.local(
-                    owner,
-                    s"$$p$i",
-                    typeSpec = p.typeSpec,
-                    typeAsc  = p.typeAsc
-                  )
-                }
-                val syntheticParams = syntheticLocals.map(_.param)
-                val syntheticRefs   = syntheticLocals.map(_.ref)
-                // Build App chain with synthetic args
-                val fullApp = syntheticRefs.foldLeft[Ref | App](callable) { (acc, ref) =>
-                  App(source, acc, Expr(source, List(ref)))
-                }
-                val lambda =
-                  Lambda(source, syntheticParams, Expr(source, List(fullApp)), captures = Nil)
-                Some(Expr(source, List(lambda)).asRight)
+                if appliedCount > 0 then Some(Expr(source, List(fn)).asRight)
+                else Some(etaExpand(callable, remainingParams, source, owner).asRight)
           else None
         }
       }
       .getOrElse(Expr(fn.source, List(fn)).asRight)
+
+  private def etaExpand(
+    callable: Ref | App,
+    params:   List[FnParam],
+    source:   SourceOrigin,
+    owner:    SyntheticOwner
+  ): Expr =
+    val syntheticLocals = params.zipWithIndex.map { (p, i) =>
+      SyntheticLocals.local(
+        owner,
+        s"$$p$i",
+        typeSpec = p.typeSpec,
+        typeAsc  = p.typeAsc
+      )
+    }
+    val syntheticParams = syntheticLocals.map(_.param)
+    val syntheticRefs   = syntheticLocals.map(_.ref)
+    // Build App chain with synthetic args
+    val fullApp = syntheticRefs.foldLeft[Ref | App](callable) { (acc, ref) =>
+      App(source, acc, Expr(source, List(ref)))
+    }
+    val lambda =
+      Lambda(source, syntheticParams, Expr(source, List(fullApp)), captures = Nil)
+    Expr(source, List(lambda))
 
   /** Rewrite a module, accumulating errors in the state. */
   def rewriteModule(state: CompilerState): CompilerState =
@@ -447,14 +456,27 @@ object ExpressionRewriter:
       transformedBindings,
       resolvables
     ).flatMap { case (args, remainingTerms) =>
-      val lowered = lowerDirectLambda(lambda, args, source)
-      remainingTerms match
-        case Nil =>
-          (Expr(source, List(lowered)), remainingTerms).asRight
-        case head :: _ if isOperator(head, resolvables) =>
-          (Expr(source, List(lowered)), remainingTerms).asRight
+      val consumingRemaining = lambda.params.drop(args.size).filter(_.consuming)
+      val lowered            = lowerDirectLambda(lambda, args, source)
+      NEL.fromList(consumingRemaining.map { param =>
+        SemanticError.PartialApplicationWithConsuming(lowered, param, phaseName)
+      }) match
+        case Some(errors) if args.nonEmpty => errors.asLeft
         case _ =>
-          buildAppChain(lowered, remainingTerms, source, owner, transformedBindings, resolvables)
+          remainingTerms match
+            case Nil =>
+              (Expr(source, List(lowered)), remainingTerms).asRight
+            case head :: _ if isOperator(head, resolvables) =>
+              (Expr(source, List(lowered)), remainingTerms).asRight
+            case _ =>
+              buildAppChain(
+                lowered,
+                remainingTerms,
+                source,
+                owner,
+                transformedBindings,
+                resolvables
+              )
     }
 
   private def consumeDirectLambdaArgs(
@@ -520,7 +542,17 @@ object ExpressionRewriter:
         val residualLambda = lambda.copy(
           params   = remainingParams,
           captures = Nil,
-          typeSpec = None
+          typeSpec = None,
+          meta = lambda.meta
+            .getOrElse(LambdaMeta())
+            .copy(
+              isPartialApplication = true,
+              transferredCaptures =
+                paramArgs.collect { case (p, _) if p.consuming => p.id }.flatten.toSet,
+              borrowedCaptures =
+                paramArgs.collect { case (p, _) if !p.consuming => p.id }.flatten.toSet
+            )
+            .some
         )
         wrapDirectLambdaParamApps(paramArgs, residualLambda, source)
       case _ =>

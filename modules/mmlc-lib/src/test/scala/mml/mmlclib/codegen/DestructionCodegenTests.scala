@@ -21,7 +21,7 @@ class DestructionCodegenTests extends BaseEffFunSuite:
     val lambda = Lambda(source, List(param), result, Nil, typeSpec = fnType.some)
     expression(App(source, lambda, effect, typeSpec = result.typeSpec))
 
-  List("closure", "environment", "dispatch").foreach { kind =>
+  List("closure", "environment", "dispatch", "disarm").foreach { kind =>
     test(s"$kind destruction with a conditional operand preserves phi predecessors") {
       semNotFailed("""
         fn consume(~f: Unit -> Unit): Unit = f ();;
@@ -40,6 +40,7 @@ class DestructionCodegenTests extends BaseEffFunSuite:
               case ("closure", _: DestroyClosure) => true
               case ("environment", _: DestroyClosureEnvironment) => true
               case ("dispatch", _: DispatchClosureDestructor) => true
+              case ("disarm", _: DispatchClosureDestructor) => true
               case _ => false
           }
           .getOrElse(fail(s"Missing $kind destruction"))
@@ -59,7 +60,10 @@ class DestructionCodegenTests extends BaseEffFunSuite:
         val cleanup = destruction match
           case d: DestroyClosure => d.copy(operand = operand)
           case d: DestroyClosureEnvironment => d.copy(operand = operand)
+          case d: DispatchClosureDestructor if kind == "disarm" =>
+            DisarmClosureEnvironment(d.source, operand, "stdlib::bnd::mml_free_raw", d.typeSpec)
           case d: DispatchClosureDestructor => d.copy(operand = operand)
+          case d: DisarmClosureEnvironment => d.copy(operand = operand)
         assertEquals(DestructionValidator.validate(cleanup, module.resolvables), Nil)
         val value  = expression(LiteralInt(source, 7, intType.some))
         val branch = sequence(expression(cleanup), value)

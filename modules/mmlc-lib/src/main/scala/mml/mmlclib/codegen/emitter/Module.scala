@@ -283,7 +283,7 @@ private def emitBndLambda(
             lambda,
             state,
             returnType,
-            filteredParamTypes,
+            paramTypes.toList,
             emittedName,
             linkage
           )

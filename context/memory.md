@@ -11,5 +11,7 @@ This is the Author's active and near-term focus. The backlog lives in [tasks/](t
 
 - **Tracker:** [Unify lambdas](tasks/unify-lambdas.md)
 - **Status:** in_progress
-- **Current focus:** typed closure destruction is signed off. Discuss and approve the next
-  bounded common-ownership/PAP slice; implementation is pending.
+- **Current focus:** PAP creation/ownership signed off; general branch audit deferred by the Author.
+  Select the next bounded slice: nested consuming-PAP calls or the two
+  [near-term bug-fix steps](tasks/unify-lambdas.md#near-term-bug-fix-steps) for consuming
+  arguments supplied later and owned PAPs moved into struct fields.

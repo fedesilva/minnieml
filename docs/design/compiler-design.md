@@ -377,13 +377,16 @@ Each phase takes a `CompilerState`, returns an updated `CompilerState`, and reco
 8. **Simplifier**
 9. **CaptureAnalyzer**
 10. **TypeChecker**
-11. **ClosureMemoryFnGenerator**
-12. **ResolvablesIndexer**
-13. **OwnershipAnalyzer**
-14. **ClosureDestructorBodyGenerator**
-15. **TailRecursionDetector**
-16. **ResolvablesIndexer (final)**
-17. **DestructionValidator**
+11. **PartialApplicationElaborator**: binds supplied expressions in source order and constructs
+    a typed residual lambda with explicit borrowed and transferred capture identities. Refreshes
+    captures and callable flow until ownership also agrees for chained PAPs.
+12. **ClosureMemoryFnGenerator**
+13. **ResolvablesIndexer**
+14. **OwnershipAnalyzer**
+15. **ClosureDestructorBodyGenerator**
+16. **TailRecursionDetector**
+17. **ResolvablesIndexer (final)**
+18. **DestructionValidator**
 
 ---
 

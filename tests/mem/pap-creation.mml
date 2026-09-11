@@ -1,0 +1,47 @@
+fn record(trace: IntArray, digit: Int): Int =
+  ar_int_set trace 0 ((ar_int_get trace 0) * 10 + digit);
+  digit;
+;
+
+fn signal(trace: IntArray): Unit =
+  ar_int_set trace 0 ((ar_int_get trace 0) * 10 + 3);
+;
+
+fn sum(a: Int, b: Int, c: Int): Int = a + b + c;;
+fn after(u: Unit, n: Int): Int = n;;
+fn text_length(text: String, n: Int): Int = text.length + n;;
+fn apply(n: Int, f: Int -> Int): Int = f n;;
+fn add(a: Int, b: Int): Int = a + b;;
+
+fn make_adder(n: Int): Int -> Int = add n;;
+
+pub fn main(): Int =
+  let trace = ar_int_new 1;
+  ar_int_set trace 0 0;
+
+  let p = sum (record trace 1) (record trace 2);
+  let unused = after (signal trace);
+  let creation_trace = ar_int_get trace 0;
+  let first = p 10;
+  let second = p 20;
+
+  let text = int_to_str 12345;
+  let borrowed = text_length text;
+  let temporary = text_length (int_to_str 123);
+  let borrowed_result = (borrowed 1) + (borrowed 2);
+  let temporary_result = (temporary 1) + (temporary 2);
+
+  let nested_result = apply (record trace 4) (add (record trace 5));
+  let returned = make_adder 6;
+  let returned_result = (returned 1) + (returned 2);
+
+  if creation_trace == 123 and (ar_int_get trace 0) == 12345
+    and first == 13 and second == 23
+    and borrowed_result == 13 and temporary_result == 9
+    and nested_result == 9 and returned_result == 15
+  then
+    0;
+  else
+    1;
+  ;
+;

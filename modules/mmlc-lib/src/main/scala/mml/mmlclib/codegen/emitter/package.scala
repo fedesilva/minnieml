@@ -745,6 +745,7 @@ def getLlvmType(
 ): Either[CodeGenError, String] =
 
   typeSpec match
+    case TypeGroup(_, List(inner)) => getLlvmType(inner, state)
     case TypeRef(_, name, resolvedId, _) =>
       resolvedId.flatMap(state.resolvables.lookupType) match
         case Some(typeDef: TypeDef) =>

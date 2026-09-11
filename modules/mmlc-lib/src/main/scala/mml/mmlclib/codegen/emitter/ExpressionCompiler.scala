@@ -706,7 +706,13 @@ private def compileCapturingLambda(
         if referencesSelf then
           emitRecursiveSelfClosure(fnName, envParamIdx, bodyState, bindingParam)
         else (bodyState, Map.empty)
-      allScope = functionScope ++ paramScope ++ captureScope ++ selfScope
+      environmentScope = lambda.meta
+        .flatMap(_.environmentParam)
+        .map { param =>
+          param.name -> ScopeEntry(envParamIdx, "RawPtr")
+        }
+        .toMap
+      allScope = functionScope ++ paramScope ++ captureScope ++ selfScope ++ environmentScope
       bodyRes <- compileExpr(lambda.body, bodyStateWithSelf, allScope)
       retLine =
         if returnType == "void" then "  ret void"

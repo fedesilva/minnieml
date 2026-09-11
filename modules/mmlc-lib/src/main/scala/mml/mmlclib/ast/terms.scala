@@ -84,6 +84,7 @@ object App:
 
 enum Capture:
   case CapturedRef(override val ref: Ref)
+  case BorrowedRef(override val ref: Ref)
   case CapturedLiteral(override val ref: Ref, cloneFnId: String)
 
   case OwnedClosure(override val ref: Ref, targetId: String)
@@ -91,8 +92,12 @@ enum Capture:
   def ref: Ref
 
 case class LambdaMeta(
-  isTailRecursive: Boolean        = false,
-  envStructName:   Option[String] = None
+  isPartialApplication: Boolean         = false,
+  isTailRecursive:      Boolean         = false,
+  envStructName:        Option[String]  = None,
+  transferredCaptures:  Set[String]     = Set.empty,
+  borrowedCaptures:     Set[String]     = Set.empty,
+  environmentParam:     Option[FnParam] = None
 )
 
 case class Lambda(
@@ -301,10 +306,19 @@ enum FieldCleanup:
   def targetId: String
 
 case class DestroyClosureEnvironment(
+  source:         SourceOrigin,
+  operand:        Expr,
+  layoutId:       String,
+  fields:         List[FieldCleanup],
+  typeSpec:       Option[Type],
+  borrowedFields: Set[String] = Set.empty
+) extends Destruction
+
+/** Payload ownership leaves the environment; its destructor releases only the raw allocation. */
+case class DisarmClosureEnvironment(
   source:   SourceOrigin,
   operand:  Expr,
-  layoutId: String,
-  fields:   List[FieldCleanup],
+  targetId: String,
   typeSpec: Option[Type]
 ) extends Destruction
 

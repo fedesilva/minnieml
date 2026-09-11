@@ -1,0 +1,32 @@
+// Owned PAP payloads are released on drop or transferred exactly once on invocation.
+fn take(~text: String, n: Int): Int = text.length + n;;
+fn keep(~text: String, n: Int): String = text;;
+fn invoke(~f: Int -> Int): Int = f 1;;
+fn make(n: Int): Int -> Int = take (int_to_str n);;
+fn sum(~text: String, a: Int, b: Int): Int = text.length + a + b;;
+fn two(~left: String, right: String): Int = left.length + right.length;;
+
+fn loop(n: Int, total: Int): Int =
+  if n == 0 then total;
+  else
+    let dropped = take (int_to_str 123);
+    let direct = take (int_to_str 123);
+    let alias = direct;
+    let a = alias 1;
+    let returned = make 123;
+    let b = returned 1;
+    let c = invoke (take (int_to_str 123));
+    let d = keep (int_to_str 123);
+    let text = d 0;
+    let chain = sum (int_to_str 123);
+    let rest = chain 1;
+    let e = rest 2;
+    let inline_pap = { ~s: String, x: Int -> s.length + x; } (int_to_str 123);
+    let f = inline_pap 1;
+    let pair = two (int_to_str 123);
+    let g = pair (int_to_str 456);
+    loop (n - 1) (total + a + b + c + text.length + e + f + g);
+  ;
+;
+
+pub fn main(): Int = if loop 1000 0 == 31000 then 0; else 1; ;;

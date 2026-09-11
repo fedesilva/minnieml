@@ -50,7 +50,7 @@ class DestructionTests extends BaseEffFunSuite:
       val owner = TermTraversal
         .collect(main) { case l: Lambda => l.params }
         .flatten
-        .find(_.name == "outer")
+        .find(_.name == "alias")
         .getOrElse(fail("Missing owner"))
       val cleanup = destroys(main)
       assertEquals(cleanup.size, 1)
