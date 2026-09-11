@@ -1,8 +1,7 @@
 # MinnieML
 
 A statically typed, functional language, with an ML inspired syntax, 
-a rich type system, great ergonomics, 
-modern tooling and strong mechanical sympathy.
+a rich type system, great ergonomics, modern tooling and strong mechanical sympathy.
 
 ## Why
 

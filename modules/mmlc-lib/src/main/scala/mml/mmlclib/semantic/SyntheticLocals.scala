@@ -59,10 +59,17 @@ object SyntheticLocals:
     )
 
   def local(
-    owner:    SyntheticOwner,
-    name:     String,
-    typeSpec: Option[Type] = None,
-    typeAsc:  Option[Type] = None
+    owner:     SyntheticOwner,
+    name:      String,
+    typeSpec:  Option[Type] = None,
+    typeAsc:   Option[Type] = None,
+    consuming: Boolean      = false
   ): Local =
-    val param = SyntheticLocals.param(owner, name, typeSpec = typeSpec, typeAsc = typeAsc)
+    val param = SyntheticLocals.param(
+      owner,
+      name,
+      typeSpec  = typeSpec,
+      typeAsc   = typeAsc,
+      consuming = consuming
+    )
     Local(param, ref(param, typeSpec = typeSpec, typeAsc = typeAsc))

@@ -44,7 +44,8 @@ object CaptureAnalyzer:
     moduleIds: Set[String]
   ): Expr =
     val newTerms = expr.terms.map(analyzeTerm(_, localIds, moduleIds))
-    if termsChanged(expr.terms, newTerms) then expr.copy(terms = newTerms)
+    if termsChanged(expr.terms, newTerms)
+    then expr.copy(terms = newTerms)
     else expr
 
   private def analyzeTerm(

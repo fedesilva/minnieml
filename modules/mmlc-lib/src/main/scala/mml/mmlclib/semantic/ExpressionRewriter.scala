@@ -78,20 +78,8 @@ object ExpressionRewriter:
           val appliedCount = countAppliedArgs(fn)
           if appliedCount < arity then
             val remainingParams = params.drop(appliedCount)
-            // Ban partial application when any remaining param is consuming
-            remainingParams.find(_.consuming) match
-              case Some(consumingParam) =>
-                Some(
-                  NEL
-                    .one(
-                      SemanticError
-                        .PartialApplicationWithConsuming(fn, consumingParam, phaseName)
-                    )
-                    .asLeft
-                )
-              case None =>
-                if appliedCount > 0 then Some(Expr(source, List(fn)).asRight)
-                else Some(etaExpand(callable, remainingParams, source, owner).asRight)
+            if appliedCount > 0 then Some(Expr(source, List(fn)).asRight)
+            else Some(etaExpand(callable, remainingParams, source, owner).asRight)
           else None
         }
       }
@@ -107,8 +95,9 @@ object ExpressionRewriter:
       SyntheticLocals.local(
         owner,
         s"$$p$i",
-        typeSpec = p.typeSpec,
-        typeAsc  = p.typeAsc
+        typeSpec  = p.typeSpec,
+        typeAsc   = p.typeAsc,
+        consuming = p.consuming
       )
     }
     val syntheticParams = syntheticLocals.map(_.param)
@@ -456,27 +445,21 @@ object ExpressionRewriter:
       transformedBindings,
       resolvables
     ).flatMap { case (args, remainingTerms) =>
-      val consumingRemaining = lambda.params.drop(args.size).filter(_.consuming)
-      val lowered            = lowerDirectLambda(lambda, args, source)
-      NEL.fromList(consumingRemaining.map { param =>
-        SemanticError.PartialApplicationWithConsuming(lowered, param, phaseName)
-      }) match
-        case Some(errors) if args.nonEmpty => errors.asLeft
+      val lowered = lowerDirectLambda(lambda, args, source)
+      remainingTerms match
+        case Nil =>
+          (Expr(source, List(lowered)), remainingTerms).asRight
+        case head :: _ if isOperator(head, resolvables) =>
+          (Expr(source, List(lowered)), remainingTerms).asRight
         case _ =>
-          remainingTerms match
-            case Nil =>
-              (Expr(source, List(lowered)), remainingTerms).asRight
-            case head :: _ if isOperator(head, resolvables) =>
-              (Expr(source, List(lowered)), remainingTerms).asRight
-            case _ =>
-              buildAppChain(
-                lowered,
-                remainingTerms,
-                source,
-                owner,
-                transformedBindings,
-                resolvables
-              )
+          buildAppChain(
+            lowered,
+            remainingTerms,
+            source,
+            owner,
+            transformedBindings,
+            resolvables
+          )
     }
 
   private def consumeDirectLambdaArgs(

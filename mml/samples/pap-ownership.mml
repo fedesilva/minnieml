@@ -2,6 +2,7 @@
 // Owning a value does not make a function call-once. Moving that value out does.
 // Run with: mmlc run mml/samples/pap-ownership.mml
 
+
 // read_length borrows text. The caller keeps ownership after every call.
 fn read_length(text: String, extra: Int): Int = text.length + extra;;
 
@@ -30,9 +31,9 @@ pub fn main(): Unit =
   // read_length has no ~ parameter, so this PAP borrows borrowed_text.
   let borrowing = read_length borrowed_text;
 
-  println (int_to_str (borrowing 0));  // 3
-  println (int_to_str (borrowing 1));  // 4
-  println borrowed_text;             // 456: the outer binding still owns it.
+  println (int_to_str (borrowing 0));   // 3
+  println (int_to_str (borrowing 1));   // 4
+  println borrowed_text;                // 456: the outer binding still owns it.
   // borrowing must stay within borrowed_text's lifetime.
 
   println "3. Consuming PAP: one call transfers the value out";
@@ -42,6 +43,8 @@ pub fn main(): Unit =
   // At this point, consuming owns the String; take_length has not run yet.
   let consuming = take_length consumed_text;
 
+  //println consumed_text;
+
   // Invocation moves the String FROM the PAP TO take_length.
   // take_length destroys it after computing the result; the PAP is consumed.
   // Compiler limitation: nesting this call inside int_to_str is rejected;
@@ -50,6 +53,7 @@ pub fn main(): Unit =
 
   // Uncomment this line to see the second call rejected as use after move:
   // let again = consuming 1;
+  // println (int_to_str again);  // 3
 
   println (int_to_str result);  // 3
 
