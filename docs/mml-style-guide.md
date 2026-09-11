@@ -15,8 +15,21 @@ MML uses semicolons as terminators, not separators. See the language reference o
 [semicolons](language-reference.md#semicolons), and
 [expression sequencing](language-reference.md#expression-sequencing).
 
-Put each semicolon in the same line and column as the statement or expression it
-terminates.
+Keep an attached terminator on the final line of the expression it terminates:
+
+```mml
+let total = sum 1 2;
+```
+
+Put a standalone terminator that closes a vertically structured expression or construct
+on its own line, aligned with the beginning of what it closes, like a closing delimiter:
+
+```mml
+let total = sum
+  1
+  2
+;
+```
 
 For multi-line function bodies, put the expression terminator and declaration
 terminator on separate lines:
