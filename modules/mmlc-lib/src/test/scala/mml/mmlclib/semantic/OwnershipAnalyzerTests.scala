@@ -1055,9 +1055,8 @@ class OwnershipAnalyzerTests extends BaseEffFunSuite:
     }
   }
 
-  // Pending migration: Parent accepts a borrowed closure in an owning struct field.
   test(
-    "struct field is an ownership sink: borrow-capturing closure into a field is rejected".ignore
+    "struct field is an ownership sink: borrow-capturing closure into a field is rejected"
   ) {
     val code =
       """
@@ -1081,9 +1080,8 @@ class OwnershipAnalyzerTests extends BaseEffFunSuite:
     }
   }
 
-  // Pending migration: Parent omits the expected struct cleanup at the binder scope.
   test(
-    "struct field is an ownership sink: move-capturing closure moves in and is freed once".ignore
+    "struct field is an ownership sink: move-capturing closure moves in and is freed once"
   ) {
     val code =
       """
@@ -1134,9 +1132,8 @@ class OwnershipAnalyzerTests extends BaseEffFunSuite:
     }
   }
 
-  // Pending migration: Parent has no inner struct destructor for this function-bearing field.
   test(
-    "struct holding a function-bearing struct compiles and frees through the nested destructor".ignore
+    "struct holding a function-bearing struct compiles and frees through the nested destructor"
   ) {
     val code =
       """

@@ -123,10 +123,9 @@ the same transfer rules as any other sink: a borrow-capturing closure cannot ent
 a move-capturing closure transfers ownership into the struct, and a non-capturing/null-env function
 value carries no owned environment to free.
 
-Open bug found during S9 inspection: a borrowed closure can currently be laundered through a struct
-field and later passed to a consuming function parameter. Direct argument and `let` alias paths
-reject the borrowed closure, and return escape rejects, but this shape compiles and can detonate at
-runtime:
+Preserved regression from S9 inspection: a borrowed closure must not be laundered through a struct
+field and later passed to a consuming function parameter. Direct arguments, aliases, return escape,
+and struct construction must all reject the borrowed ownership transfer:
 
 ```mml
 struct Holder { f: Int -> Int };
@@ -481,9 +480,9 @@ case first. The struct-field step shares the function-field ownership work descr
 
 #### Bug: store an owned PAP in a struct field
 
-- **Status:** planned.
-- **Reproduction:** with `struct Holder { f: Int -> Int };` and ordinary two-argument `add`,
-  `let p = add 1; let holder = Holder p;` is rejected by the PAP constructor-argument guard.
+- **Status:** in_progress; implementation and review fixes verified; commit and push authorized.
+- **Original reproduction:** with `struct Holder { f: Int -> Int };` and ordinary two-argument
+  `add`, `let p = add 1; let holder = Holder p;` was rejected by the PAP constructor-argument guard.
 - **Expected behavior:** construction transfers the owned function environment into `holder`;
   `holder.f 2` produces `3`, and destruction of the holder releases its owned environment.
   The original `p` binding is moved. Borrowing PAPs must not enter owning fields.
@@ -498,7 +497,7 @@ case first. The struct-field step shares the function-field ownership work descr
   unused holders, moves, aliases, and calls. Do not synthesize implicit clones of function
   environments. Restore the relevant ignored ownership/destruction regressions, add native
   sanitizer coverage, and update the documented limitation when support is verified.
-- **Reference:** [memory-model limitation](../../docs/memory-model.md#paps-in-struct-fields).
+- **Reference:** [field ownership contract](../../docs/memory-model.md#paps-in-struct-fields).
 
 ### Later-stage documentation
 
@@ -545,6 +544,67 @@ are in `context/history/` for Author review. No compiler slice is authorized by 
 ## Task Working Memory
 
 **Branch:** `dev-lambdas-migration`.
+
+- **Current slice — owned PAP struct fields:** The Author approved proceeding through
+  implementation and verification, then waiting for review. Start: clean `0f4f586`.
+  Plan: integrate function-bearing struct classification/destruction, preserve callable contracts
+  through fields, enforce ownership at construction/invocation, restore regressions, add sanitizer
+  coverage, update docs, and run compiler gates plus QA and independent review. The Author later
+  requested direct fixes to the review findings and authorized commit and push. Parent-task
+  completion is not included.
+- Implementation: consuming constructors and typed field cleanup cover nested function-bearing
+  structs, without clone helpers. Stable field identities and callable flow preserve ownership
+  through aliases, returns, moves, and conditionals. Consumed fields retain holder cleanup;
+  siblings remain usable. Field-call result ownership follows callable origins, including static
+  results. Callable alternatives must agree on return ownership and consuming parameters.
+  Captured field aliases borrow their owner. Borrowed aggregate origins cannot reach ownership
+  sinks through conditionals or local aliases. Generated destructors retain internal field
+  destruction authority. Two name-collision paths in last-use checks and indirect codegen are
+  fixed. Three preserved tests are enabled; `PapStructOwnershipTest` has 43 passing cases.
+- **Initial verification — 2026-09-11:** **576 tests pass, 51 existing ignored**, with formatting,
+  lint, all seven smokes, and the expanded ASan field fixture passing. Formatting/focused log:
+  `/tmp/mml-fields-conditional-focused2.log`; full gates/publish:
+  `/tmp/mml-fields-conditional-gates.log`. Assembly-reported jar hash:
+  `aaf8e4d4f0b09c2cd78cc578b797d3241f5835ac`; published file SHA1:
+  `e00b465750d6498a5da2bfb70bc857516d0791e5`. The full memory harness passes **38/38 ASan+LSan**
+  in 41 seconds (`/tmp/mml-fields-conditional-memory.log`). All seven benchmark programs build
+  after clean (`/tmp/mml-fields-conditional-benchmark-clean.log`,
+  `/tmp/mml-fields-conditional-benchmarks.log`). Builds do not establish performance.
+  Native execution is macOS arm64; Linux validation remains deferred. All command sessions are
+  terminal. QA compliance and whitespace checks pass.
+- Review findings fixed: an independently verified remaining-parameter contract mismatch leaked
+  four bytes when an indirect target borrowed an argument marked moved. The compiler now rejects
+  mixed contracts; homogeneous borrow/consume controls pass ASan+LSan. A surviving verifier from
+  the third review independently confirmed conditional nested-field borrowing caused duplicate
+  ownership/destruction. That reproducer now receives the intended diagnostic; four negative
+  tests and two positive controls cover the fix, with native conditional-owned construction in
+  the memory fixture. Parent validation also corrected static field-result cleanup and borrowing
+  through captured field aliases before final verification.
+- Independent review coverage is incomplete: `/root/field_review`, `/root/field_review_recovery`,
+  and `/root/field_review_final` each stopped with "This content was flagged for possible
+  cybersecurity risk." Preserve the two independently confirmed findings above; partial coverage
+  is not a clean review. Focused conditional-fix review `/root/conditional_fix_review` completed
+  with no actionable findings. It independently rejected the original reproducer, ran the native
+  field fixture with ASan, and checked whitespace; its conclusion is limited to that fix.
+  A separate contract-fix reviewer could not start: "agent thread limit reached." These are
+  historical review limits, not current permission gates. The Author subsequently requested
+  direct fixes and explicitly stopped further delegation. The broader independent review is
+  not claimed complete. Earlier failing logs are debugging evidence, not final verification.
+- **Review fixes and final verification — 2026-09-11:** Guard recursive heap classification;
+  preserve arguments supplied to staged constructors; reject unavailable clone operations;
+  canonicalize grouped field cleanup and cloning; support grouped LLVM size/alignment; check
+  qualifier borrow dependencies after owner moves. Return-ownership keys use lambda identity,
+  argument dependency checks are reused, and destructor sequencing is shared. Documented field
+  borrows remain non-transferable. Nine regression tests and a grouped-field memory program cover
+  the fixes. No new ignores were added.
+  Final formatting, lint, and full suite pass: **585 tests, 51 existing ignored**, no failures or
+  warnings (`/tmp/mml-review-probes/final-verification.log`). All seven required smokes pass
+  (`/tmp/mml-review-probes/verification.log`); the grouped-field ASan compile/run also passes
+  (`/tmp/mml-review-probes/grouped-verification.log`). The final compiler is published locally.
+  Benchmark builds pass after clean (`/tmp/mml-review-probes/benchmark.log`); no performance
+  comparison is claimed. The final memory harness passes **39/39 ASan+LSan** in 39 seconds
+  (`/tmp/mml-review-probes/memory-final.log`). QA and whitespace checks pass. All command sessions
+  are terminal. The Author explicitly requested commit and push; the parent task stays in progress.
 
 - **Documentation follow-up — 2026-09-10:** The Author requested the PAP ownership tutorial
   become part of the language reference later. Recorded above; tutorial integration is deferred.
@@ -709,10 +769,11 @@ This requirement also applies to future phases that have not yet been planned.
 
 The PAP creation and ownership slice is signed off. The deferred-consuming-argument follow-up
 is implemented, verified, independently reviewed, and signed off; see
-[Task Working Memory](#task-working-memory). Next action: select the next bounded slice with
-the Author. The parent task remains in progress. PAP struct-field support,
-nested consuming-PAP call rejection, the general branch audit, and Linux sanitizer validation
-remain deferred; the latter has its own local task.
+[Task Working Memory](#task-working-memory). Owned PAP struct-field support and confirmed review
+fixes are implemented and verified. The Author requested direct fixes, stopped further delegation,
+and authorized commit and push. The broader independent review is not claimed complete. The parent
+task remains in progress. Nested consuming-PAP call rejection, the general branch audit, and Linux
+sanitizer validation remain deferred; the latter has its own local task.
 
 ##### Transfer checkpoint and recovery
 

@@ -144,7 +144,10 @@ These compiler-internal expressions all return `Unit`:
 
 Field cleanup entries identify both the field and destructor by stable IDs. `Value` entries
 call native or struct destructors; `Closure` entries destroy owned function captures.
-Ordinary struct destructors contain generated field calls in their normal function bodies.
+Ordinary struct destructors contain generated field calls and `DestroyClosure` operations in
+field declaration order. `StructDestructorBodyGenerator` completes function-bearing struct
+bodies after closure helpers are registered and before ownership analysis. Function fields have
+resolved field IDs, and the resolvables index includes their declarations.
 
 ### Type Specifications (`TypeSpec`)
 
@@ -385,11 +388,12 @@ Each phase takes a `CompilerState`, returns an updated `CompilerState`, and reco
     callable arguments propagate at every application stage, including before saturation.
 12. **ClosureMemoryFnGenerator**
 13. **ResolvablesIndexer**
-14. **OwnershipAnalyzer**
-15. **ClosureDestructorBodyGenerator**
-16. **TailRecursionDetector**
-17. **ResolvablesIndexer (final)**
-18. **DestructionValidator**
+14. **StructDestructorBodyGenerator**
+15. **OwnershipAnalyzer**
+16. **ClosureDestructorBodyGenerator**
+17. **TailRecursionDetector**
+18. **ResolvablesIndexer (final)**
+19. **DestructionValidator**
 
 ---
 
@@ -502,8 +506,9 @@ constructors so ownership transfer is visible in the callable signature.
   through their fields.
 - Generates:
   - `__free_StructName(~s: StructName): Unit`
-  - `__clone_StructName(s: StructName): StructName`
-- Rewrites generated constructors so heap-typed fields become `consuming = true` parameters while
+  - `__clone_StructName(s: StructName): StructName` only for structs without function fields,
+    directly or transitively.
+- Rewrites generated constructors so owned fields, including functions, become consuming while
   value-type fields stay borrowed.
 - Leaves native heap types to the runtime / stdlib path.
 
@@ -748,6 +753,14 @@ Generation section below.
 
 ---
 
+### StructDestructorBodyGenerator
+
+Function-bearing structs require destruction and consuming constructor parameters. They do not
+receive clone helpers, including through nested fields. After closure helper registration and
+indexing, this phase builds typed field cleanup in declaration order, using universal closure
+dispatch for function fields and registered native or struct destructors for other owned fields.
+Missing destruction targets accumulate compiler errors.
+
 ### Semantic Phase 13: OwnershipAnalyzer
 
 **Purpose**: Track ownership and insert native/struct free calls or `DestroyClosure` operations.
@@ -795,11 +808,12 @@ Generation section below.
    closures have environments too, and receive no owning cleanup.
 
 5. **Return escape**: Bindings that escape through `return` are not freed locally; ownership moves
-   to the caller. Static branches in mixed returns are wrapped with `__clone_T`.
+   to the caller. Static branches in mixed returns use the type's clone helper. Types without a
+   clone contract produce a diagnostic at this boundary.
 
-6. **Constructor auto-clone**: When calling a constructor with consuming parameters, non-owned
-   arguments (literals, borrowed refs, field accesses) are automatically wrapped with
-   `__clone_T` at the call site. Owned values move in directly without cloning:
+6. **Constructor auto-clone**: When calling a constructor with consuming parameters, literal and
+   global arguments use the type's clone helper when available. Borrowed references and field
+   projections cannot supply ownership. Owned values move in directly without cloning:
    ```
    let name = make_name();  // owned
    let u = User name 30;    // name moves in, no clone
@@ -814,6 +828,12 @@ Generation section below.
    - Returning a borrow-capturing closure is rejected; escaping closures must be explicit move
      closures (`~{ ... }` / `fn ~name(...)`).
    - Borrowed values passed to consuming params get a dedicated diagnostic.
+
+Field projections retain the root binding ID and field IDs. Callable value flow follows struct
+constructor arguments, aliases, and returned aggregates to preserve invocation contracts. A
+call that transfers a field's PAP payload records that projection as consumed while retaining
+the aggregate's cleanup obligation. Aliases and conditional branches share the consumed-field
+state; sibling fields remain available. Field borrows cannot satisfy ownership sinks or returns.
 
 **Errors reported**:
 - `UseAfterMove`
@@ -1147,7 +1167,8 @@ flowchart TD
     CA --> TC[TypeChecker]
     TC --> CMG[ClosureMemoryFnGenerator]
     CMG --> RI[ResolvablesIndexer]
-    RI --> OA[OwnershipAnalyzer]
+    RI --> SD[Struct Destructor Bodies]
+    SD --> OA[OwnershipAnalyzer]
     OA --> DB[Closure Destructor Bodies]
     DB --> TRD[TailRecursionDetector]
     TRD --> RIF[Final Resolvables Index]
@@ -1185,7 +1206,7 @@ flowchart TD
 The MML compiler flows through staged pipelines:
 
 1. **IngestStage**: Parse source, collect parser counters, lift parse errors.
-2. **SemanticStage**: Stdlib injection → DuplicateNameChecker → IdAssigner → TypeResolver → ConstructorGenerator → MemoryFunctionGenerator → RefResolver → ExpressionRewriter → Simplifier → CaptureAnalyzer → TypeChecker → ClosureMemoryFnGenerator → ResolvablesIndexer → OwnershipAnalyzer → ClosureDestructorBodyGenerator → TailRecursionDetector → final ResolvablesIndexer → DestructionValidator.
+2. **SemanticStage**: Stdlib injection → DuplicateNameChecker → IdAssigner → TypeResolver → ConstructorGenerator → MemoryFunctionGenerator → RefResolver → ExpressionRewriter → Simplifier → CaptureAnalyzer → TypeChecker → PartialApplicationElaborator → ClosureMemoryFnGenerator → ResolvablesIndexer → StructDestructorBodyGenerator → OwnershipAnalyzer → ClosureDestructorBodyGenerator → TailRecursionDetector → final ResolvablesIndexer → DestructionValidator.
 3. **CodegenStage**: Pre-codegen validation → resolve target triple/CPU → gather LLVM tool info → emit LLVM IR → write IR → native compilation.
 
 Each phase takes a `CompilerState` and returns an updated one. Timings are recorded via `CompilerState.timePhase`/`timePhaseIO`. Errors accumulate without halting compilation, so partial results remain available for the LSP.

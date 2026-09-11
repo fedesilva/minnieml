@@ -623,7 +623,7 @@ let name = u.name;
 let px = p.x;
 ```
 
-**Heap classification**: A struct is a heap type if any of its fields are heap types.
+**Heap classification**: A struct is a heap type if any field is a heap type or function type.
 Heap structs are tracked by the ownership system and freed automatically:
 
 ```mml
@@ -631,12 +631,20 @@ struct User { name: String, age: Int };  // Heap type (String is heap-allocated)
 struct Point { x: Int, y: Int };         // Not a heap type
 ```
 
-The compiler generates `__free_T` and `__clone_T` functions for heap structs
-automatically. See [Memory management](#7-memory-management) for ownership details.
+The compiler generates `__free_T` for heap structs and `__clone_T` when they contain no
+function fields, directly or transitively. See [Memory management](#7-memory-management)
+for ownership details.
 
 Struct construction owns its fields. Passing a value to a heap-typed struct field is
 an ownership transfer, so the argument must be owned. Borrowed values cannot be
 assigned into owning struct fields.
+
+Owned PAPs and move closures can move into function fields. The struct owns their environments
+and destroys them at scope end, including through nested structs. Non-capturing function values
+are accepted; borrow-capturing closures and borrowing PAPs are rejected. Field calls preserve
+remaining consuming parameters. Calling a PAP that transfers a stored payload requires an owned
+holder and prevents another call through that field or an alias. See
+[PAPs in struct fields](memory-model.md#paps-in-struct-fields) for field borrowing and cleanup.
 
 ### Function types
 
@@ -927,7 +935,7 @@ type String = @native[mem=heap] { length: Int64, data: CharPtr };
 type Buffer = @native[mem=heap, t=*i8];
 ```
 
-User-defined structs are heap types if they contain any heap-typed fields:
+User-defined structs are heap types if they contain any heap-typed or function-typed fields:
 
 ```mml
 struct User { name: String, age: Int };  // Heap type (contains String)

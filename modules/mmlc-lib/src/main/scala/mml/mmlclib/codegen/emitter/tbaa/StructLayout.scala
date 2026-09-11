@@ -10,6 +10,7 @@ object StructLayout:
   /** Compute size of a TypeSpec in bytes. Handles nested structs recursively. */
   def sizeOf(typeSpec: Type, resolvables: ResolvablesIndex): Either[CodeGenError, Int] =
     typeSpec match
+      case TypeGroup(_, List(inner)) => sizeOf(inner, resolvables)
       case TypeRef(_, name, resolvedId, _) =>
         resolvedId.flatMap(resolvables.lookupType) match
           case Some(td: TypeDef) =>
@@ -38,6 +39,7 @@ object StructLayout:
   /** Compute alignment of a TypeSpec in bytes. Handles nested structs recursively. */
   def alignOf(typeSpec: Type, resolvables: ResolvablesIndex): Either[CodeGenError, Int] =
     typeSpec match
+      case TypeGroup(_, List(inner)) => alignOf(inner, resolvables)
       case TypeRef(_, name, resolvedId, _) =>
         resolvedId.flatMap(resolvables.lookupType) match
           case Some(td: TypeDef) =>

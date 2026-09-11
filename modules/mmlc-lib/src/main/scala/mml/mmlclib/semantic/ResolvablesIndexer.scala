@@ -23,7 +23,7 @@ object ResolvablesIndexer:
         idx.updated(bnd).updatedAll(params)
       case td: TypeDef => idx.updatedType(td)
       case ta: TypeAlias => idx.updatedType(ta)
-      case ts: TypeStruct => idx.updatedType(ts)
+      case ts: TypeStruct => idx.updatedType(ts).updatedAll(ts.fields)
       case dm: DuplicateMember => updateIndexForMember(idx, dm.originalMember)
       case im: InvalidMember => updateIndexForMember(idx, im.originalMember)
       case _ => idx

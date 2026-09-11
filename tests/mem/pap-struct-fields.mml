@@ -1,0 +1,105 @@
+// Owning function fields keep one cleanup obligation through moves, returns, and calls.
+struct Holder { f: Int -> Int };
+struct Outer { inner: Holder, text: String };
+struct Pair { first: Int -> Int, second: Int -> Int };
+struct Measure { f: String -> Int };
+struct TextHolder { f: Int -> String };
+
+fn add(a: Int, b: Int): Int = a + b;;
+fn take(~text: String, n: Int): Int = text.length + n;;
+fn measure(extra: Int, ~text: String): Int = extra + text.length;;
+fn inc(x: Int): Int = x + 1;;
+fn keep(~text: String, n: Int): String = text;;
+fn constant(n: Int): String = "hello";;
+
+fn make(n: Int): Holder =
+  let p = add n;
+  Holder p;
+;
+
+fn make_once(~text: String): Holder =
+  let p = take text;
+  Holder p;
+;
+
+fn make_outer(~text: String): Outer =
+  let inner = make_once text;
+  Outer inner (int_to_str 456);
+;
+
+fn use(h: Holder, x: Int): Int = h.f x;;
+fn consume(~h: Holder, x: Int): Int = h.f x;;
+
+fn conditional(flag: Bool): Int =
+  let first = take (int_to_str 123);
+  let second = take (int_to_str 4567);
+  let pair = Pair first second;
+  let a = if flag then pair.first 1; else 0;;
+  let b = pair.second 2;
+  a + b;
+;
+
+fn conditional_nested(flag: Bool): Int =
+  let outer = Outer (if flag then make 1; else make 2;) (int_to_str 0);
+  outer.inner.f 2;
+;
+
+fn iteration(): Int =
+  let h = make 1;
+  let alias = h.f;
+  let a = alias 2;
+  let b = use h 3;
+  let moved = h;
+  let c = moved.f 4;
+
+  let once = make_once (int_to_str 123);
+  let invoke_once = once.f;
+  let d = invoke_once 2;
+  let dropped = make_once (int_to_str 123);
+  let outer = make_outer (int_to_str 123);
+  let e = outer.inner.f 2;
+  let nested_dropped = make_outer (int_to_str 123);
+  let f = consume (make_once (int_to_str 123)) 2;
+
+  let left = take (int_to_str 123);
+  let right = take (int_to_str 4567);
+  let pair = Pair left right;
+  let g = pair.first 2;
+  let k = pair.second 2;
+
+  let seed = int_to_str 123;
+  let closure = ~{ n: Int -> seed.length + n; };
+  let retained = Holder closure;
+  let i = retained.f 2;
+  let j = retained.f 3;
+  let static_holder = Holder inc;
+  let l = static_holder.f 2;
+
+  let deferred = Measure (measure 10);
+  let m = deferred.f (int_to_str 123);
+  let n = deferred.f (int_to_str 456);
+  let text_holder = TextHolder (keep (int_to_str 123));
+  let owned_result = text_holder.f 0;
+  let literal_holder = TextHolder constant;
+  let literal_result = literal_holder.f 0;
+  let literal_alias = literal_holder.f;
+  let another_literal = literal_alias 1;
+  let nested_true = conditional_nested true;
+  let nested_false = conditional_nested false;
+  let when_called = conditional true;
+  let when_dropped = conditional false;
+  a + b + c + d + e + f + g + k + i + j + l + m + n + owned_result.length
+    + when_called + when_dropped + literal_result.length + another_literal.length
+    + nested_true + nested_false;
+;
+
+fn loop(n: Int, total: Int): Int =
+  if n == 0 then
+    total;
+  else
+    let result = iteration ();
+    loop (n - 1) (total + result);
+  ;
+;
+
+pub fn main(): Int = if loop 1000 0 == 114000 then 0; else 1; ;;

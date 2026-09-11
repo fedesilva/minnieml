@@ -598,7 +598,7 @@ private def resolveIndirectCallee(
   functionScope: Map[String, ScopeEntry],
   compileExpr:   ExprCompiler
 ): Either[CodeGenError, (String, CodeGenState)] =
-  functionScope.get(fnRef.name) match
+  functionScope.get(fnRef.name).filter(_ => fnRef.qualifier.isEmpty) match
     case Some(entry) =>
       (entry.operandStr, state).asRight
     case None =>

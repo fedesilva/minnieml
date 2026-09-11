@@ -687,12 +687,12 @@ object TypeChecker:
             Vector(TypeError.UnresolvableType(checkedQualifier.value, None, phaseName))
           else Vector.empty
 
-        val (fieldType, selectionErrors) = baseType match
+        val (selectedField, selectionErrors) = baseType match
           case Some(resolvedBase) =>
             resolveStructType(resolvedBase, module) match
               case Some(struct) =>
                 struct.fields.find(_.name == ref.name) match
-                  case Some(field) => (Some(field.typeSpec), Vector.empty)
+                  case Some(field) => (Some(field), Vector.empty)
                   case None =>
                     (None, Vector(TypeError.UnknownField(ref, struct, phaseName)))
               case None =>
@@ -701,7 +701,11 @@ object TypeChecker:
             (None, Vector.empty)
 
         CheckResult(
-          ref.copy(qualifier = Some(checkedQualifier.value), typeSpec = fieldType),
+          ref.copy(
+            qualifier  = Some(checkedQualifier.value),
+            typeSpec   = selectedField.map(_.typeSpec),
+            resolvedId = selectedField.flatMap(_.id)
+          ),
           checkedQualifier.errors ++ baseErrors ++ selectionErrors
         )
 
