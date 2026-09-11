@@ -185,6 +185,7 @@ def prettyPrintTerm(
     case d: Destruction =>
       val details = d match
         case c: DestroyClosure => s" target=${c.targetId}"
+        case c: DisarmClosureEnvironment => s" target=${c.targetId}"
         case e: DestroyClosureEnvironment =>
           s" layout=${e.layoutId} fields=${e.fields.mkString("[", ", ", "]")}"
         case _: DispatchClosureDestructor => ""

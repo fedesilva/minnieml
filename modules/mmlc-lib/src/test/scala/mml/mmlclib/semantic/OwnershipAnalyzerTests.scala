@@ -254,10 +254,7 @@ class OwnershipAnalyzerTests extends BaseEffFunSuite:
     }
   }
 
-  // Pending migration: Parent compiler has no BorrowedPapEscapeViaReturn diagnostic.
-  test("non-escaping PAP over borrowed heap argument is accepted".ignore) {
-    // Source body requires the pending compiler API.
-    /* {
+  test("non-escaping PAP over borrowed heap argument is accepted") {
     val code =
       """
         fn say(msg: String, n: Int): Unit = println msg;;
@@ -269,25 +266,10 @@ class OwnershipAnalyzerTests extends BaseEffFunSuite:
         ;
       """
 
-    semState(code).map { result =>
-      val escapeErrors = result.errors.collect {
-        case e: SemanticError.BorrowClosureEscapeViaReturn => e
-        case e: SemanticError.BorrowedPapEscapeViaReturn => e
-      }
-      assert(
-        escapeErrors.isEmpty,
-        s"Expected non-escaping borrowed PAP to be accepted, got: $escapeErrors"
-      )
-    }
-  }
-     */
-    fail("Parent compiler has no BorrowedPapEscapeViaReturn diagnostic.")
+    semNotFailed(code).void
   }
 
-  // Pending migration: Parent compiler has no BorrowedPapEscapeViaReturn diagnostic.
-  test("escaping Direct PAP over borrowed heap capture is rejected".ignore) {
-    // Source body requires the pending compiler API.
-    /* {
+  test("escaping Direct PAP over borrowed heap capture is rejected") {
     val code =
       """
         fn make(): Int -> Unit =
@@ -303,20 +285,15 @@ class OwnershipAnalyzerTests extends BaseEffFunSuite:
       """
 
     semState(code).map { result =>
-      val escapeErrors = result.errors.collect { case e: SemanticError.BorrowedPapEscapeViaReturn =>
-        e
+      val escapeErrors = result.errors.collect {
+        case e: SemanticError.BorrowClosureEscapeViaReturn =>
+          e
       }
       assert(escapeErrors.nonEmpty, "Expected borrowed Direct PAP escape error")
     }
   }
-     */
-    fail("Parent compiler has no BorrowedPapEscapeViaReturn diagnostic.")
-  }
 
-  // Pending migration: Parent compiler has no BorrowedPapEscapeViaReturn diagnostic.
-  test("non-escaping Direct PAP over borrowed heap capture is accepted".ignore) {
-    // Source body requires the pending compiler API.
-    /* {
+  test("non-escaping Direct PAP over borrowed heap capture is accepted") {
     val code =
       """
         fn main(): Unit =
@@ -332,22 +309,10 @@ class OwnershipAnalyzerTests extends BaseEffFunSuite:
         ;
       """
 
-    semState(code).map { result =>
-      val escapeErrors = result.errors.collect { case e: SemanticError.BorrowedPapEscapeViaReturn =>
-        e
-      }
-      assert(
-        escapeErrors.isEmpty,
-        s"Expected non-escaping borrowed Direct PAP to be accepted, got: $escapeErrors"
-      )
-    }
-  }
-     */
-    fail("Parent compiler has no BorrowedPapEscapeViaReturn diagnostic.")
+    semNotFailed(code).void
   }
 
-  // Pending migration: Parent misses UseAfterMove after the argument enters the PAP.
-  test("PAP over already-applied consuming heap arg moves source binding".ignore) {
+  test("PAP over already-applied consuming heap arg moves source binding") {
     val code =
       """
         fn consume_first(~msg: String, n: Int): Unit = println msg;;

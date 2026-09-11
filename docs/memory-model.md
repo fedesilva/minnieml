@@ -4,9 +4,13 @@ MML uses deterministic, compile-time memory management. There is no garbage coll
 and no ambient reference counting. The compiler tracks ownership of heap-allocated
 values and inserts cleanup calls for values that still belong to the current scope.
 
-The model is affine: each owned value is used at most once. There are no lifetime
-annotations, no borrow checker in the Rust sense, and no sigils for borrowing. Parameters
-borrow by default. Ownership transfer requires an explicit `~`.
+The model is affine: a binding cannot be used after transferring ownership. While it owns
+a value, it may lend that value repeatedly. There are no lifetime annotations or sigils for
+borrowing. Parameters borrow by default; consuming parameters and move captures use `~`.
+
+Restrictions that follow from ownership are stated with their reasons in the relevant sections.
+[Implementation limitations](#implementation-limitations) lists compiler restrictions and gaps
+that do not follow from those ownership rules.
 
 ---
 
@@ -27,10 +31,8 @@ movement, destruction, and duplication should have a clear cost model.
 - **Reject unclear ownership.** If the compiler cannot prove that a borrow stays within the
   owner's lifetime, the program is rejected.
 
-Currently, user-accessible clone syntax and clone protocols are not implemented. The compiler
-therefore inserts clones at a small number of boundaries where there is no source-level way to
-ask for a clone yet. This is an implementation gap, not a design principle. The intended protocol
-direction is sketched in [Memory Model Evolution](brainstorming/mem/mem-evolution.md).
+The compiler's implicit clone insertion is an exception to source-visible duplication;
+see [Clone operations](#clone-operations).
 
 ---
 
@@ -83,10 +85,8 @@ When a global-backed value is stored inside an owned aggregate, the aggregate is
 ordinary owned local value, but its global-backed fields are not released by the aggregate's
 destructor.
 
-Currently, global-origin ownership is only partially represented. The compiler still uses magic
-clones for globals at some consuming boundaries because user-facing clone protocols and
-global-aware aggregate destruction are not implemented yet. This is a gap in the implementation,
-not the desired ownership model.
+The compiler's incomplete handling of global-backed fields is described under
+[Global-backed aggregates](#global-backed-aggregates).
 
 ---
 
@@ -123,9 +123,8 @@ A value passed to a consuming parameter must:
 1. Be owned.
 2. Not be used along any later control-flow path.
 
-Literals and globals have no local owner to transfer. When a consuming boundary needs a fresh
-owned value from one of them, the compiler currently inserts a clone because explicit user-level
-clone syntax is not implemented yet.
+Literals and globals have no local owner to transfer. The compiler's handling of fresh ownership
+at these boundaries is described under [Clone operations](#clone-operations).
 
 ---
 
@@ -232,8 +231,9 @@ fn User(~name: String, ~role: String): User
 What happens to each argument depends on its state:
 
 - **Owned** -> moved
-- **Literal** -> currently cloned to create an owned field value
-- **Global** -> accepted without invalidating the global; currently cloned at some boundaries
+- **Literal** -> cloned to create an owned field value (see [Clone operations](#clone-operations))
+- **Global** -> accepted without invalidating the global; see
+  [Global-backed aggregates](#global-backed-aggregates) for implementation limits
 - **Borrowed** -> compile error
 
 ---
@@ -298,15 +298,14 @@ Returning a borrowed value from a heap-returning function is invalid:
 fn identity(s: String): String = s;   // error
 ```
 
-Fix by consuming (`~s`) so the function receives ownership, or by explicitly duplicating the
-value once user-facing clone support exists.
+Use a consuming parameter (`~s`) so the function receives ownership to return. A borrow does
+not give the function ownership to transfer to its caller.
 
 ### Mixed return branches
 
 If a function returns a heap type, every return path must produce ownership for the caller.
-Currently, when only some branches allocate, the compiler clones non-allocating literal/global
-branches so the returned value is owned on every path. This is another temporary clone insertion
-boundary until clone protocols are user-accessible.
+The compiler clones non-allocating literal/global branches when other branches allocate;
+see [Clone operations](#clone-operations) for this implicit duplication boundary.
 
 ---
 
@@ -319,8 +318,8 @@ For each struct with heap fields, the compiler generates:
 
 Native types implement their own free/clone in the runtime.
 
-Generated clone functions are currently compiler-facing helpers. The intended direction is for
-cloneability to become a protocol-level capability with a visible source-level clone operation.
+Generated clone functions are compiler-facing helpers. Source-level clone support is described
+under [Clone operations](#clone-operations).
 
 ---
 
@@ -392,12 +391,13 @@ Move closures allocate their environment on the heap, and the closure value owns
 - Capturing an **owned** heap binding moves it into the environment.
 - The original outer binding becomes `Moved`.
 - Capturing a **borrowed** heap binding is rejected.
-- Heap literals are currently cloned into the environment when an owned capture is needed.
+- Heap literals are cloned into the environment when an owned capture is needed; see
+  [Clone operations](#clone-operations).
 - Inside the lambda body, captured heap fields are treated as borrowed from the
   environment.
 
 ```mml
-fn makeGreeter(name: String): Unit -> Unit =
+fn makeGreeter(~name: String): Unit -> Unit =
   ~{
     println ("Hello, " ++ name);
   };
@@ -409,6 +409,10 @@ fn makeGreeter(name: String): Unit -> Unit =
 A move-capturing closure is an owned heap value. The binding that receives it is
 responsible for freeing it, just like any other owned heap object. It can also be passed
 to consuming parameters or returned to move ownership to the caller.
+
+Owning captures does not make the closure call-once. Its body can borrow those captures
+repeatedly while the environment retains ownership. Transferring a captured value out gives
+up that ownership, so the same value cannot be transferred again.
 
 ```mml
 fn makeAdder(a: Int): Int -> Int =
@@ -447,6 +451,12 @@ A partial application is a function value that stores the arguments already supp
 for the remaining arguments. If a stored payload has a heap type, the PAP environment must know
 whether that payload is borrowed or owned.
 
+Supplied expressions run once, in source order, when the PAP is created. Calling the PAP
+reuses those stored values. This includes `Unit` expressions: their effects occur at creation
+even though `Unit` occupies no payload field.
+
+### Ownership rules
+
 The same ownership rules apply to PAP payloads as to ordinary values:
 
 - An already-applied non-consuming parameter stores a borrow.
@@ -457,11 +467,95 @@ The same ownership rules apply to PAP payloads as to ordinary values:
   fully applied.
 - When a PAP with owned payloads is fully applied, those payloads are forwarded to the consuming
   callee and later PAP cleanup frees only the raw environment.
-- Partial application is rejected when any remaining unapplied parameter is consuming.
+- A full call consumes a PAP that transfers an owned payload. A second call or use through a
+  moved alias is rejected because the first call gives up ownership of the payload. The callee
+  may destroy it, return it, or transfer it elsewhere; the PAP cannot supply it again. Passing
+  such a PAP to another function requires a consuming `~` parameter because invocation
+  consumes the PAP. Borrowing PAPs remain reusable while their owners remain valid.
 
 This rule applies equally to ordinary callables and direct-callable lowering. The source callable
 may be direct and non-escaping while the generated PAP value itself escapes; ownership is checked
 on the generated value that actually stores the payloads.
+
+See [pap-ownership.mml](../mml/samples/pap-ownership.mml) for a commented example comparing
+a reusable owning closure, a borrowing PAP, and a PAP that transfers its payload on invocation.
+
+### Environment cleanup
+
+For a transfer-bearing PAP, the generated entry changes its environment destructor to the raw
+deallocator before forwarding the payload. The consuming caller dispatches destruction after
+the call. A dropped, uncalled PAP retains its payload destructor. This keeps the same closure
+representation for borrowing and consuming higher-order calls.
+
+PAP environments with only scalar payloads can be released after their last use, before a
+terminal call. Payload destructors retain their ordering relative to user effects.
+
+---
+
+## Implementation limitations
+
+These restrictions describe compiler support. Ownership alone does not require them.
+Use-after-move rejection and keeping borrows within their owners' lifetimes remain model rules.
+
+### Nested consuming PAP calls
+
+A consuming PAP call nested inside an allocating argument expression can be rejected with
+`Calling this function consumes its environment and requires ownership`, even when the PAP
+is owned and the call is its only use.
+
+For the `consuming` PAP in [pap-ownership.mml](../mml/samples/pap-ownership.mml), this form
+is rejected:
+
+```mml
+println (int_to_str (consuming 0));
+```
+
+Binding the result separately works:
+
+```mml
+let result = consuming 0;
+println (int_to_str result);
+```
+
+Both forms call the PAP once and pass its `Int` result to `int_to_str`. The ownership model
+does not require the intermediate binding; the restriction is in expression ownership analysis.
+
+### Remaining consuming parameters
+
+Partial application is rejected when any remaining unapplied parameter is consuming. A consuming
+parameter that is supplied at PAP creation can transfer its value into the PAP.
+
+The remaining arguments have not been captured. Their ownership could be transferred when
+supplied without duplicating ownership of a stored value; this rejection is a compiler restriction.
+
+### PAPs in struct fields
+
+Storing a PAP in a struct field is rejected. The compiler does not implement the ownership
+transfer and destruction needed for that storage. Copying the environment pointer without
+transferring ownership would leave the field dangling when the local PAP is destroyed.
+
+An owning struct can own a function environment under the ownership model. The restriction on
+PAP storage reflects missing compiler support, independently of the rule forbidding borrowed
+values in owning fields.
+
+### Clone operations
+
+There is no user-accessible clone syntax or clone protocol. Generated clone functions are
+compiler-facing helpers. The compiler inserts implicit clones at these boundaries:
+
+- Literal and some global values passed to consuming parameters or owning struct fields.
+- Heap literals captured by move closures.
+- Non-allocating literal/global return branches when other branches allocate.
+
+These insertions provide owned storage but conceal duplication in the source. They are
+implementation exceptions to the model's source-visible clone operation.
+
+### Global-backed aggregates
+
+Global-origin ownership is only partially represented, and aggregate destruction does not
+fully distinguish global-backed fields. Some consuming boundaries clone global values into
+owned storage. This limits the model's ability to retain static backing without duplication;
+it does not permit freeing global-backed storage during local cleanup.
 
 ---
 

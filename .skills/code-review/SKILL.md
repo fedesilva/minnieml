@@ -53,6 +53,25 @@ were skipped. The approval covers narrow re-reviews for the same review
 workstream while subagents remain unavailable. Never substitute a parent review
 silently.
 
+### Automated flags and interrupted reviews
+
+An automated cybersecurity/content flag can interrupt an authorized local code or
+memory-correctness review. Treat the flag as an execution failure, not a code finding
+or evidence that the Author requested harmful work. Report the exact error and
+affected review scope promptly; do not invent a trigger or claim the flag is harmless.
+
+Preserve completed evidence and independently confirmed findings, but keep the
+interrupted review marked incomplete. Passing tests, sanitizer runs, and a clean
+narrow re-review of known fixes do not establish completion of the original review.
+An interrupted claim verifier leaves that claim unresolved under the existing rules.
+
+To recover missing review coverage, use a fresh reviewer with the same authorized
+scope and an accurate description of the local debugging work. Preserve substantive
+memory-safety checks; do not conceal the task or weaken the review to avoid a flag.
+The narrow re-review rule below does not prevent completing an interrupted original
+review. If review remains blocked, report the coverage gap and use the explicit
+fallback-approval rule above. Never present partial coverage as a clean overall review.
+
 ### Re-review a fix narrowly
 
 Dispatch each re-review to a new fresh-context primary reviewer. Build a new

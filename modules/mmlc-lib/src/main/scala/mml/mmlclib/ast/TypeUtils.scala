@@ -2,6 +2,25 @@ package mml.mmlclib.ast
 
 /** Utilities for querying type properties from AST nodes. */
 object TypeUtils:
+  /** Follow resolved aliases and single-type groups without changing nominal declarations. */
+  def canonical(tpe: Type, index: ResolvablesIndex): Option[Type] =
+    @scala.annotation.tailrec
+    def loop(current: Type, seen: Set[String]): Option[Type] = current match
+      case TypeGroup(_, List(inner)) => loop(inner, seen)
+      case ref: TypeRef =>
+        ref.resolvedId.flatMap(index.lookupType) match
+          case Some(alias: TypeAlias) if !ref.resolvedId.exists(seen.contains) =>
+            loop(alias.typeSpec.getOrElse(alias.typeRef), seen ++ ref.resolvedId)
+          case Some(_: TypeAlias) => None
+          case _ => Some(ref)
+      case other => Some(other)
+    loop(tpe, Set.empty)
+
+  def requiresDestruction(tpe: Type, index: ResolvablesIndex): Boolean =
+    canonical(tpe, index).exists {
+      case _: TypeFn => true
+      case other => getTypeName(other).exists(isHeapType(_, index))
+    }
   def isPointerNativeType(nativeType: NativeType): Boolean = nativeType match
     case _: NativePointer => true
     case NativePrimitive(_, "ptr", _, _) => true
@@ -67,6 +86,11 @@ object TypeUtils:
         nt.memEffect.contains(MemEffect.Alloc)
       case Some(s: TypeStruct) =>
         hasHeapFields(s, resolvables)
+      case Some(alias: TypeAlias) =>
+        canonical(alias.typeRef, resolvables)
+          .flatMap(getTypeName)
+          .filterNot(_ == typeName)
+          .exists(isHeapType(_, resolvables))
       case _ => false
 
   /** Check if a user struct has any heap-typed fields */
@@ -91,6 +115,11 @@ object TypeUtils:
         Some(nt.freeFn.getOrElse(s"__free_$typeName"))
       case Some(s: TypeStruct) if hasHeapFields(s, resolvables) =>
         Some(s"__free_$typeName")
+      case Some(alias: TypeAlias) =>
+        canonical(alias.typeRef, resolvables)
+          .flatMap(getTypeName)
+          .filterNot(_ == typeName)
+          .flatMap(freeFnFor(_, resolvables))
       case _ => None
 
   /** Get clone function name for a type, or None if not heap type */

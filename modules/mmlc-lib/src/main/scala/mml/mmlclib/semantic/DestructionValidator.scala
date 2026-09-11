@@ -99,6 +99,9 @@ object DestructionValidator:
         ) ++ target(d.targetId, ptr.some)
       case _: DispatchClosureDestructor =>
         check(nominal(node.operand.typeSpec, "RawPtr"), "Dispatch requires RawPtr")
+      case d: DisarmClosureEnvironment =>
+        check(nominal(d.operand.typeSpec, "RawPtr"), "Environment transfer requires RawPtr") ++
+          target(d.targetId, ptr.some)
       case d: DestroyClosureEnvironment =>
         val operandErrors =
           check(nominal(d.operand.typeSpec, "RawPtr"), "Environment destruction requires RawPtr")
@@ -125,6 +128,7 @@ object DestructionValidator:
               layout.fields.toList.drop(1).flatMap { field =>
                 TypeUtils.getTypeName(field.typeSpec).flatMap(TypeUtils.freeFnFor(_, index)) match
                   case None => Nil
+                  case Some(_) if field.id.exists(d.borrowedFields.contains) => Nil
                   case Some(name) =>
                     DestructionTargets.named(name, index) match
                       case None =>
@@ -138,7 +142,11 @@ object DestructionValidator:
                           s"Missing required field cleanup: ${field.name}"
                         )
               } ++
-              d.fields.flatMap { cleanup =>
+              check(
+                d.borrowedFields.subsetOf(layout.fields.toList.drop(1).flatMap(_.id).toSet) &&
+                  !d.fields.exists(f => d.borrowedFields.contains(f.fieldId)),
+                "Borrowed environment fields must exist and have no cleanup"
+              ) ++ d.fields.flatMap { cleanup =>
                 layout.fields.find(_.id.contains(cleanup.fieldId)) match
                   case None => List(error(s"Missing destruction field: ${cleanup.fieldId}"))
                   case Some(field) =>

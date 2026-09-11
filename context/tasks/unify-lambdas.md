@@ -359,8 +359,9 @@ alive.
 
 #### Consuming Parameters
 
-The current rule that rejects partial application when any remaining parameter is
-consuming stays in place.
+The PAP creation slice preserves rejection when any remaining parameter is consuming.
+The Author selected removing that restriction as a
+[follow-up bug-fix step](#bug-supply-a-consuming-argument-after-pap-creation).
 
 ```mml
 fn consume(a: Int, ~s: String): Unit = ...;;
@@ -404,7 +405,7 @@ Required work:
 - Reject escaping PAPs that contain borrowed heap payloads.
 - Keep non-escaping borrowed heap PAPs valid when the lifetime proof is available.
 - Preserve the existing rejection for partial application with remaining consuming
-  parameters.
+  parameters within the creation slice; the follow-up bug-fix step covers lifting it.
 - Move already-applied consuming heap arguments into the PAP and make the PAP env
   destructor free those owned payload fields exactly once.
 
@@ -418,21 +419,25 @@ Pin these cases:
 - non-escaping PAP over borrowed heap argument is accepted when proven local;
 - escaping PAP over borrowed heap argument is rejected;
 - escaping Direct PAP over borrowed heap trailing payload is rejected;
-- partial application with remaining consuming parameter remains rejected;
+- partial application with remaining consuming parameter remains rejected in the creation-slice
+  checkpoint; replace this expectation with ownership coverage in the selected follow-up;
 - moved already-applied heap arguments mark the source binding moved and the PAP env
   destructor frees the moved payload exactly once;
 - no generated IR for PAP creation contains implicit heap clone calls.
 
 ## Plan (Approval Gate)
 
-- [ ] Discuss and approve a bounded slice of common ownership and partial-application
+- [x] Discuss and approve a bounded slice of common ownership and partial-application
   elaboration, using the salvage sequence and preserved regressions.
-- [ ] Establish evaluation-once semantics, borrowed payload lifetimes, and explicit
-  ownership transfers before implementing that slice.
+- [x] Establish evaluation-once semantics, borrowed payload lifetimes, and explicit
+  ownership transfers for the PAP creation slice.
+- [x] Implement and verify PAP creation semantics; Author signoff recorded on 2026-09-10.
 - [ ] Complete and verify the remaining fresh implementation in reviewed stages.
 
 Approval: Preservation, borrowed returns, and typed closure destruction are recorded below.
-The next compiler slice requires a new bounded plan and approval.
+The Author signed off the bounded PAP creation-semantics slice on 2026-09-10 and authorized
+its local commit. The general branch audit is deferred at the Author's request. Broader
+lambda work and the documented follow-up bugs remain pending.
 
 ## Implementation Checklist
 
@@ -440,12 +445,65 @@ The branch-specific remaining work and evidence are in the
 [migration handoff](#migration-handoff). Source-branch checked items are history,
 not a checklist to carry into this implementation.
 
+### Near-term bug-fix steps
+
+The Author considers these restrictions bugs and selected them as steps in this workstream.
+Holding them for follow-up is acceptable. Keep them separate from the PAP creation slice;
+this records scope and priority, not implementation or signoff. Tackle the smaller parameter
+case first. The struct-field step shares the function-field ownership work described above.
+
+- [ ] [Allow a consuming argument to be supplied after PAP creation](#bug-supply-a-consuming-argument-after-pap-creation).
+- [ ] [Allow an owned PAP to move into a struct field](#bug-store-an-owned-pap-in-a-struct-field).
+
+#### Bug: supply a consuming argument after PAP creation
+
+- **Status:** planned.
+- **Reproduction:** for `fn measure(extra: Int, ~text: String): Int = text.length + extra;;`,
+  `let f = measure 10;` is rejected because `text` has not been supplied.
+- **Expected behavior:** create `f`, then transfer an owned String when calling it. A PAP
+  that retains all its stored captures can be called repeatedly with fresh consuming arguments.
+  A PAP that transfers a stored payload still obeys the call-once rule.
+- **Scope and sizing:** likely the smaller, bounded step; provisional assessment from source.
+  Rejection exists in `ExpressionRewriter` and `PartialApplicationElaborator`. Generated
+  remaining parameters are made from types, so preserve the source parameters' consuming
+  metadata and carry it through `CallableValues` and argument ownership checks. Removing
+  the guards alone is insufficient.
+- **Acceptance:** named and inline forms accept the deferred consuming argument; aliases,
+  returned PAPs, and higher-order calls retain its consuming contract. The supplied String
+  moves at invocation, borrowed inputs and later use of moved inputs are rejected, repeated
+  calls with fresh arguments work when captures are retained, and payload cleanup occurs
+  exactly once. Cover mixed stored/remaining consuming arguments and staged application.
+  Replace the relevant rejection tests in `PapOwnershipTest` and other affected suites;
+  add native sanitizer coverage and synchronize the language reference and memory model.
+- **Reference:** [memory-model limitation](../../docs/memory-model.md#remaining-consuming-parameters).
+
+#### Bug: store an owned PAP in a struct field
+
+- **Status:** planned.
+- **Reproduction:** with `struct Holder { f: Int -> Int };` and ordinary two-argument `add`,
+  `let p = add 1; let holder = Holder p;` is rejected by the PAP constructor-argument guard.
+- **Expected behavior:** construction transfers the owned function environment into `holder`;
+  `holder.f 2` produces `3`, and destruction of the holder releases its owned environment.
+  The original `p` binding is moved. Borrowing PAPs must not enter owning fields.
+- **Scope and sizing:** larger than the parameter step; integrate with existing function-field
+  ownership and destruction work, rather than adding a separate PAP storage mechanism.
+  Inspect constructor ownership, function-bearing struct classification, field value flow,
+  nested destructors, and consumption through field access. Removing the guard alone is unsafe.
+- **Acceptance:** owned scalar and heap-payload PAPs survive transfer and return inside a holder;
+  repeated calls work for reusable PAPs. A call that consumes a stored PAP prevents a second
+  call and avoids duplicate environment/payload cleanup when the holder is destroyed.
+  Preserve borrowed-field rejection and non-capturing function support; cover nested holders,
+  unused holders, moves, aliases, and calls. Do not synthesize implicit clones of function
+  environments. Restore the relevant ignored ownership/destruction regressions, add native
+  sanitizer coverage, and update the documented limitation when support is verified.
+- **Reference:** [memory-model limitation](../../docs/memory-model.md#paps-in-struct-fields).
+
 ## Verification
 
-See the [migration handoff](#migration-handoff) for exact commands and limits.
-At the signed-off typed-destruction checkpoint: 470 passed, 58 ignored; memory harness
-29/34 with five PAP failures; `partial-fac1` exits 139. Linux sanitizer work is deferred.
-These are recorded checkpoint results, not checks rerun during this workflow migration.
+The PAP creation checkpoint passes 504 tests with 54 ignored, all seven required smokes,
+and all 36 macOS ASan+LSan fixtures. Formatting, lint, local publishing, and all seven
+benchmark builds pass. See [Task Working Memory](#task-working-memory) for commands and
+evidence. Linux sanitizer validation and the general branch audit remain deferred.
 
 ## Risks / Notes
 
@@ -459,19 +517,79 @@ are in `context/history/` for Author review. No compiler slice is authorized by 
 ## Signoff
 
 - Workstream signoff: Preservation complete; borrowed returns and typed closure destruction signed off.
-  Next compiler workstream pending.
-- Tracked item completion: Pending.
-- Commit authorization: Not granted for this task by the migration request.
+  PAP creation semantics signed off on 2026-09-10, including its documented limitations.
+  The Author considers the review sufficient for this checkpoint and defers the general
+  branch audit; the interrupted overall compiler review is not represented as complete.
+- Tracked item completion: Pending; the broader lambda implementation and follow-ups remain open.
+- Commit authorization: Granted for the PAP creation checkpoint by the Author's finish request.
+  No push authorized.
 
 ## Task Working Memory
 
 **Branch:** `dev-lambdas-migration`.
 
+- **Approved current slice — PAP creation semantics:** The Author approved the selected
+  task and requested implementation through verification, then a pause for review.
+  Supplied arguments must evaluate once at creation, in source order; borrowed payloads
+  must remain within their owners' lifetimes; consuming payloads transfer explicitly and
+  are destroyed exactly once, whether dropped or forwarded at full application. No
+  implicit cloning. Preserve the remaining-consuming-parameter rejection and relevant
+  migrated regressions. The finish request on 2026-09-10 supplies slice signoff and local
+  commit authorization; it does not complete the parent lambda task.
+- Implementation plan: pin creation-time effects and ownership regressions; elaborate
+  PAPs through the existing lambda/local-binding representation; integrate capture
+  ownership and cleanup; run the compiler gates and independent review before handoff.
+  Implementation uses the stated affine-call assumption: invoking a PAP with transferred
+  payloads consumes it. The Author reviewed the ownership explanation and sample and
+  accepted the slice with the finish request.
+- Current implementation: typed PAP elaboration, source-order argument bindings, borrowed
+  dependency checks, explicit payload transfers, and disarmed cleanup after invocation.
+  Callable-origin analysis carries ownership information through aliases, returns, and
+  higher-order arguments. Regression coverage includes creation effects and consuming PAPs.
+- Review corrections: call arguments' borrowed dependencies are checked again after later
+  arguments evaluate, and inline PAPs retain their source lambda's enclosing borrow captures.
+  Both findings were independently confirmed and fixed. A fresh narrow re-review found no
+  actionable findings. The initial primary review's final report was interrupted by an
+  automated content flag; its two independent verifiers completed. The fresh re-review
+  covered those corrections and directly affected code, not the whole migration again.
+- Final verification checkpoint: `sbtn 'scalafmtAll;test'` passed 504 tests, with 54 ignored;
+  `PapOwnershipTest` has 24 passing tests. `scalafixAll`, all seven required compiler smoke
+  checks, and `mmlcPublishLocal` passed without compiler warnings; `partial-fac1` prints `120`.
+  Installed artifact: `897059e00cf1b1a0f3c4f93be3430b122ebb62f2`.
+  `./tests/mem/run.sh all` passed all 36 ASan+LSan fixtures (39 seconds), and
+  `make -C benchmark clean` followed by `make -C benchmark mml` built all seven programs.
+  These are build checks, not performance measurements. The inline borrowing regression
+  also ran under ASan, printing `123` twice and returning its expected result, `3`.
+  Local QA compliance, focused tracking review, and `git diff --check` passed.
+  Native execution evidence is macOS arm64; Linux sanitizer validation remains deferred.
+- Lifetime coverage includes argument evaluation, aliases, chained/inline PAPs, owned results,
+  and borrowed struct fields. Scalar-only PAP cleanup preserves the million-iteration
+  `escaping-paps` loop. PAP storage in struct fields is explicitly rejected until the broader
+  function-field ownership implementation is available; this slice does not complete that work.
+- **Selected follow-ups:** the Author classifies remaining-consuming-argument rejection and
+  PAP struct-field storage rejection as bugs, accepts holding them, and prefers near-term
+  steps within this workstream. Both are recorded under [Near-term bug-fix steps](#near-term-bug-fix-steps)
+  with reproduction, scope, acceptance criteria, and provisional sizing. No implementation ran.
+- The commented `mml/samples/pap-ownership.mml` and memory model distinguish owning a value
+  from transferring it out. Sample execution exposed a separate nested-call rejection:
+  `println (int_to_str (consuming 0))` fails ownership analysis, while binding the `Int`
+  result separately works. This remains a documented follow-up after slice signoff; the sample and
+  [memory model](../../docs/memory-model.md#nested-consuming-pap-calls) record the workaround.
+
 - Test, sample, documentation, and helper preservation: `6e33ee4`, complete.
 - Borrowed returns through local aliases: `323b8ca`, implemented and signed off.
 - Typed closure destruction: `2efeb8c`, implemented and signed off.
-- Current session: the Author selected the workflow port before the next compiler slice.
-  Resume the common-ownership/PAP discussion after the approved workflow phase is reviewed.
+- **Finished slice — 2026-09-10:** The Author signed off PAP creation/ownership and authorized
+  the local checkpoint commit, stating that review is sufficient and the general branch
+  audit will follow later. The interrupted overall compiler review remains incomplete;
+  completing that review is deferred by this explicit direction, not claimed as passed.
+  The nested-call rejection and the two selected bug-fix steps remain open. The parent
+  task stays `in_progress`; next work requires selection of a bounded follow-up.
+- Finish verification rechecked the successful logs: `/tmp/mml-pap-review-fixes.log`,
+  `/tmp/mml-pap-final-smokes.log`, `/tmp/mml-pap-final-memory.log`, and
+  `/tmp/mml-pap-final-benchmark.log`. No compiler/test sources changed after that checkpoint.
+  The sample and memory documentation passed their focused reviews; final cleanup removes
+  trailing whitespace from the sample. Builds were not repeated for bookkeeping edits.
 
 Read the [handoff](#migration-handoff) and
 [salvage sequence](../history/unify-lambdas-salvage.md#suggested-restart-sequence) to resume.
@@ -520,17 +638,13 @@ This requirement also applies to future phases that have not yet been planned.
 
 ##### Current focus — 2026-09-10
 
-The Author selected the local workflow migration for this session. Current focus is in
-[memory.md](../memory.md), and the lambda task is [Unify lambdas](../tasks/unify-lambdas.md).
-The workflow migration moves current design material into task files and archives superseded
-specifications under `context/history/` for Author review. `context/specs/` is removed. This scheduling supersedes the earlier instruction
-to keep the port planned. It does not approve a new compiler slice.
-
-The next compiler discussion follows step 6 of the salvage sequence: common ownership and PAP
-elaboration. Select a bounded slice using the preserved regressions, establish its semantic
-contract, and obtain approval before implementation. No particular compiler slice is approved.
-The signed-off compiler checkpoint is `2efeb8c`. Source-branch completion claims do not carry
-forward to this fresh implementation. No compiler checks were rerun for the workflow port.
+The PAP creation and ownership slice is implemented, verified, and signed off by the Author.
+See [Task Working Memory](#task-working-memory) for the accepted checkpoint and evidence.
+The general branch audit is deferred at the Author's request; the interrupted overall review
+remains incomplete. The parent task is still in progress. Next candidates are the nested
+consuming-PAP call rejection and the two [near-term bug-fix steps](#near-term-bug-fix-steps).
+Select and approve the next bounded slice before implementation. Linux sanitizer validation
+remains deferred to its existing local task.
 
 ##### Transfer checkpoint and recovery
 

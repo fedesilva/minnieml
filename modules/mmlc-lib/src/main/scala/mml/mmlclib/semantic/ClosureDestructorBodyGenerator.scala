@@ -32,6 +32,7 @@ object ClosureDestructorBodyGenerator:
                     layout.fields.toList.drop(1).zip(lambda.captures).flatMap { (field, cap) =>
                       field.id.flatMap { fieldId =>
                         cap match
+                          case _: Capture.BorrowedRef => none
                           case Capture.OwnedClosure(_, targetId) =>
                             FieldCleanup.Closure(fieldId, targetId).some
                           case _ =>
@@ -40,7 +41,17 @@ object ClosureDestructorBodyGenerator:
                               .map(id => FieldCleanup.Value(fieldId, id))
                       }
                     }
-                  ClosureDestructorAst.withBody(b, l, d.copy(fields = fields))
+                  val borrowedFields = layout.fields.toList
+                    .drop(1)
+                    .zip(lambda.captures)
+                    .collect { case (field, _: Capture.BorrowedRef) => field.id }
+                    .flatten
+                    .toSet
+                  ClosureDestructorAst.withBody(
+                    b,
+                    l,
+                    d.copy(fields = fields, borrowedFields = borrowedFields)
+                  )
                 }
               case _ => b
           case _ => b

@@ -15,6 +15,16 @@ def compileDestruction(
       case d: DestroyClosure =>
         destroyClosureValue(operand.operandStr, d.targetId, operand.state, d)
           .map(st => CompileResult(0, st, false, "Unit", exitBlock = operand.exitBlock))
+      case d: DisarmClosureEnvironment =>
+        operand.state.resolvables.lookup(d.targetId) match
+          case Some(binding: Bnd) =>
+            val ref =
+              Ref(d.source, binding.name, resolvedId = binding.id, typeSpec = binding.typeSpec)
+            val name     = getResolvedName(ref, operand.state)
+            val declared = operand.state.withFunctionDeclaration(name, "void", List("ptr"))
+            val updated  = declared.emit(s"  store ptr @$name, ptr ${operand.operandStr}")
+            CompileResult(0, updated, false, "Unit", exitBlock = operand.exitBlock).asRight
+          case _ => CodeGenError("Missing raw environment destructor", d.some).asLeft
       case _: DispatchClosureDestructor =>
         val st        = operand.state
         val ptr       = operand.operandStr

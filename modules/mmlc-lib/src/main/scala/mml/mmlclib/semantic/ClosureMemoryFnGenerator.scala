@@ -197,8 +197,9 @@ object ClosureMemoryFnGenerator:
 
   /** Rewrite lambdas in the AST to tag them with envStructName. */
   private def tagLambdas(
-    members:   List[Member],
-    lambdaMap: IdentityHashMap[Lambda, String]
+    members:    List[Member],
+    lambdaMap:  IdentityHashMap[Lambda, String],
+    moduleName: String
   ): List[Member] =
     if lambdaMap.isEmpty then members
     else
@@ -219,7 +220,10 @@ object ClosureMemoryFnGenerator:
               val newMeta = lambda.meta
                 .getOrElse(LambdaMeta())
                 .copy(envStructName = Some(envName))
-              lambda.copy(body = newBody, meta = Some(newMeta))
+              prepareClosureInvocation(
+                lambda.copy(body = newBody, meta = Some(newMeta)),
+                SyntheticOwner.binding(moduleName, envName)
+              )
             case None =>
               if newBody == lambda.body then lambda
               else lambda.copy(body = newBody)
@@ -278,5 +282,5 @@ object ClosureMemoryFnGenerator:
       .updatedAllTypes(envStructs)
       .updatedAll(registrations.map(_._1))
     val freeFunctions = registrations.map(initializeBody)
-    val members       = tagLambdas(module.members, lambdaMap) ++ envStructs ++ freeFunctions
+    val members = tagLambdas(module.members, lambdaMap, moduleName) ++ envStructs ++ freeFunctions
     state.withModule(module.copy(members = members, resolvables = index.updatedAll(freeFunctions)))

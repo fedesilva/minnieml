@@ -1,0 +1,92 @@
+package mml.mmlclib.semantic
+
+import mml.mmlclib.ast.*
+
+/** Resolved value flow preserves callable ownership through bindings, returns, and arguments. */
+final case class CallableValues private (bindings: Map[String, List[Expr]]):
+
+  def lambdas(term: Term): List[Lambda] =
+    def resolve(value: Term, seen: Set[String]): List[Lambda] = value match
+      case lambda: Lambda => List(lambda)
+      case expr:   Expr => expr.terms.lastOption.toList.flatMap(resolve(_, seen))
+      case group:  TermGroup => resolve(group.inner, seen)
+      case cond:   Cond => resolve(cond.ifTrue, seen) ++ resolve(cond.ifFalse, seen)
+      case ref:    Ref =>
+        ref.resolvedId.toList.filterNot(seen.contains).flatMap { id =>
+          bindings.getOrElse(id, Nil).flatMap(resolve(_, seen + id))
+        }
+      case app: App =>
+        val (callee, arguments) = CallableValues.application(app)
+        val calleeId = callee match
+          case ref: Ref => ref.resolvedId
+          case _:   Lambda => None
+        resolve(callee, seen)
+          .filter(_.params.size <= arguments.size)
+          .flatMap(lambda => resolve(lambda.body, seen ++ calleeId))
+      case _ => Nil
+    resolve(term, Set.empty).distinct
+
+  def consumesOnCall(term: Term): Boolean =
+    lambdas(term).exists(_.meta.exists(_.transferredCaptures.nonEmpty))
+
+  /** Include captures reached through callable operands when checking a value's last use. */
+  def referencedCaptureIds(term: Term): Set[String] =
+    @scala.annotation.tailrec
+    def collect(pending: List[Ref], seen: Set[String]): Set[String] = pending match
+      case Nil => seen
+      case ref :: rest if ref.resolvedId.forall(seen.contains) => collect(rest, seen)
+      case ref :: rest =>
+        val captures = lambdas(ref).flatMap(_.captures.map(_.ref))
+        collect(captures ++ rest, seen ++ ref.resolvedId)
+    collect(TermTraversal.collect(term) { case ref: Ref => ref }, Set.empty)
+
+  def parameters(term: Term): List[FnParam] =
+    val candidates = lambdas(term).map(_.params)
+    candidates.headOption.toList.flatten.zipWithIndex.map { (param, position) =>
+      param.copy(consuming = candidates.exists(_.lift(position).exists(_.consuming)))
+    }
+
+object CallableValues:
+  val empty: CallableValues = CallableValues(Map.empty)
+  def applications(term: Term): List[App] = term match
+    case app: App =>
+      val (callee, args) = application(app)
+      app :: (applications(callee) ++ args.flatMap(applications))
+    case other => TermTraversal.children(other).flatMap(applications)
+
+  def application(app: App): (Ref | Lambda, List[Expr]) =
+    @scala.annotation.tailrec
+    def loop(fn: Ref | App | Lambda, args: List[Expr]): (Ref | Lambda, List[Expr]) = fn match
+      case inner:  App => loop(inner.fn, inner.arg :: args)
+      case callee: (Ref | Lambda) => (callee, args)
+    loop(app.fn, List(app.arg))
+
+  def fromModule(module: Module): CallableValues =
+    val members = module.members.collect { case binding: Bnd => binding }
+    val applications = members.flatMap { binding =>
+      CallableValues.applications(binding.value)
+    }
+    val initial = members.flatMap(binding => binding.id.map(_ -> binding.value)) ++
+      applications.flatMap { app =>
+        app.fn match
+          case lambda: Lambda => lambda.params.headOption.flatMap(_.id).map(_ -> app.arg)
+          case _ => Nil
+      }
+    val values = initial.groupMap(_._1)(_._2)
+
+    @scala.annotation.tailrec
+    def propagate(current: Map[String, List[Expr]]): CallableValues =
+      val flow = CallableValues(current)
+      val incoming = applications.flatMap { app =>
+        val (callee, args) = application(app)
+        flow.lambdas(callee).filter(_.params.size <= args.size).flatMap { lambda =>
+          lambda.params.zip(args).flatMap((param, arg) => param.id.map(_ -> arg))
+        }
+      }
+      val next = (current.toList.flatMap((id, expressions) => expressions.map(id -> _)) ++ incoming)
+        .groupMap(_._1)(_._2)
+        .view
+        .mapValues(_.distinct)
+        .toMap
+      if next == current then flow else propagate(next)
+    propagate(values)

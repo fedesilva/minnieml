@@ -4,6 +4,13 @@ Durable product changes belong here. Task administration belongs in task working
 
 ## 2026-09-10
 
+- Evaluate partial-application arguments once at creation, in source order. Track borrowed
+  payload lifetimes and explicit ownership transfers through aliases and higher-order calls;
+  release owned payloads exactly once when dropped or forwarded by a consuming call.
+- Document PAP ownership rules and implementation limitations, with a commented sample
+  contrasting reusable owning closures, borrowing PAPs, and consuming PAPs.
+- Clarify review recovery after automated interruptions, preserving confirmed findings and
+  distinguishing incomplete coverage from a completed review.
 - Clarify semicolon termination, expression sequencing, and local binding scope in the
   language reference; illustrate attached and standalone terminator placement in the style guide.
 - Port the local collaboration workflow from y0y: use task files and selected working memory,
