@@ -4,6 +4,8 @@ Durable product changes belong here. Task administration belongs in task working
 
 ## 2026-09-10
 
+- Clarify semicolon termination, expression sequencing, and local binding scope in the
+  language reference; illustrate attached and standalone terminator placement in the style guide.
 - Port the local collaboration workflow from y0y: use task files and selected working memory,
   retain useful designs with their tasks, and preserve older plans and tracking in history.
 - Remove the GitHub helper scripts and the retired tracking/specs layout.

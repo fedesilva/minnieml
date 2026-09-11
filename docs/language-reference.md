@@ -324,10 +324,16 @@ module regardless of declaration order.
 
 ### Semicolons
 
-Semicolons are **terminators**, not separators. Every expression parser frame ends with
-`;`, and top-level declarations still end with their own `;`. In practice that means a
-multiline `fn` or `op` body usually ends with two terminators: one `;` closes the body
-expression, the next closes the declaration.
+Semicolons are **terminators**, not separators. Every expression is terminated by `;`,
+including each branch body and the enclosing `if` expression. Declarations that require
+termination, such as `struct`, have their own `;`, independently of any expression they
+contain. These rules apply at every nesting level.
+
+Within an expression body, these terminators also delimit a
+[scoped sequence](#expression-sequencing).
+
+When a function or operator body is an expression, its terminator and the declaration's
+terminator are distinct; in compact syntax they may appear as `;;`.
 
 ```mml
 fn example(): Int =
@@ -337,22 +343,31 @@ fn example(): Int =
 ;
 ```
 
-The two `let` bindings end with `;`. The final expression `x + y;` closes the function
-body, and the trailing `;` closes the `fn` declaration.
+The two `let` binding expressions each end with `;`. The `;` after `x + y` terminates
+the final body expression, and the final standalone `;` terminates the function declaration.
 
 For formatting conventions around semicolon placement, see the
 [MML style guide](mml-style-guide.md#semicolons).
 
 ### Expression sequencing
 
-Function bodies can contain a sequence of `let` bindings followed by a final
-expression. The value of the body is the value of its last expression.
+Expression sequencing is scoped and right-associated: in `first; second; result;`,
+`first` is evaluated before the remainder `second; result;`. Intermediate expression
+statements must have type `Unit`; the final expression supplies the value and type of
+the sequence. A semicolon can terminate a component of the sequence without closing
+the enclosing scope.
+
+A local `let` evaluates its value, then makes the name available to the code that follows
+in the same scope. An inner `fn` is also available after its declaration and can call
+itself recursively. Bindings and expression statements can be mixed freely; they run
+in source order.
 
 ```mml
 fn process(name: String): Unit =
   let greeting = "Hello, " ++ name;
-  println greeting;
-  println "done";
+  println greeting; // greeting is available here and below.
+  let farewell = "Goodbye, " ++ name;
+  println farewell; // farewell is available only after its binding.
 ;
 ```
 
