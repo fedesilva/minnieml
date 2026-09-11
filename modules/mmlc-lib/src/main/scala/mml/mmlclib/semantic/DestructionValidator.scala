@@ -85,8 +85,11 @@ object DestructionValidator:
         check(resolved.isDefined, "Unresolved destruction operand reference") ++
           check(
             resolved
-              .collect { case r: Typeable => r }
-              .flatMap(r => r.typeSpec.orElse(r.typeAsc))
+              .flatMap {
+                case field: Field => field.typeSpec.some
+                case value: Typeable => value.typeSpec.orElse(value.typeAsc)
+                case _ => none
+              }
               .exists(t => ref.typeSpec.exists(same(t, _))),
             "Destruction operand reference type mismatch"
           )

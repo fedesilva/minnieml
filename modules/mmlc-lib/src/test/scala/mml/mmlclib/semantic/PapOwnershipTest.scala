@@ -238,8 +238,8 @@ class PapOwnershipTest extends BaseEffFunSuite:
     }
   }
 
-  test("PAP storage rejects an unsupported function-field ownership transfer") {
-    semState("""
+  test("owned PAP moves into a function field") {
+    semNotFailed("""
       struct Holder { f: Int -> Int };
       fn add(a: Int, b: Int): Int = a + b;;
       fn main(): Int =
@@ -247,7 +247,5 @@ class PapOwnershipTest extends BaseEffFunSuite:
         let holder = Holder p;
         holder.f 2;
       ;
-    """).map { result =>
-      assert(result.errors.exists(_.isInstanceOf[SemanticError.InvalidExpression]), result.errors)
-    }
+    """).void
   }

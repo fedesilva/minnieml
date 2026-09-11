@@ -51,7 +51,7 @@ A type is a **heap type** if values of that type require destruction.
 
 - **Native types** that allocate memory (e.g. `String`, `Buffer`, `IntArray`,
   `StringArray`, `FloatArray`).
-- **User-defined structs** that contain at least one heap-typed field (transitively).
+- **User-defined structs** that contain a heap-typed or function-typed field (transitively).
 
 Primitive types (`Int`, `Float`, `Bool`, `Unit`) and structs with only primitive fields
 are value types and require no ownership tracking.
@@ -314,7 +314,8 @@ see [Clone operations](#clone-operations) for this implicit duplication boundary
 For each struct with heap fields, the compiler generates:
 
 - A destructor that frees each heap field
-- A clone function that deep-copies heap fields
+- A clone function that deep-copies heap fields, unless the struct contains a function field
+  directly or transitively. Function environments cannot be cloned.
 
 Native types implement their own free/clone in the runtime.
 
@@ -507,6 +508,46 @@ arguments remain. That PAP must either destroy the payload on drop or transfer i
 invocation. A PAP with both stored and remaining consuming arguments still obeys this
 call-once rule for its stored payloads.
 
+### PAPs in struct fields
+
+An owning struct can receive an owned PAP or move closure. Construction moves the function
+value into the field, and the original binding becomes unavailable. This applies to scalar
+PAPs even when a constant payload allows codegen to omit the environment allocation.
+Non-capturing ordinary functions are also accepted; their null environments need no cleanup.
+Borrowing PAPs and borrow-capturing closures cannot enter owning fields.
+
+```mml
+struct Holder { f: Int -> Int };
+fn add(a: Int, b: Int): Int = a + b;;
+
+fn example(): Int =
+  let p = add 1;
+  let holder = Holder p;
+  let first = holder.f 2;
+  holder.f first;
+;
+```
+
+The holder owns the environment through moves, returns, and nesting in other structs. Its
+destructor releases the environment once. Function-bearing structs have no generated clone
+helper, including structs that contain them transitively.
+
+Field calls preserve the callable's return ownership: allocated results need cleanup, while
+static results do not. Callable alternatives reaching the same indirect call must agree on
+result ownership and which remaining parameters consume their arguments. Mixing either
+contract at that call is rejected.
+
+A field access lends the function value. A local alias can call it while its owner is alive;
+it cannot return the borrowed field or transfer it into another owning field or consuming
+function parameter. Pass the whole holder to a consuming parameter to transfer its ownership.
+
+Calling a PAP that transfers a stored payload requires ownership of the enclosing aggregate.
+The call marks that field consumed; later calls through the field or its aliases are rejected.
+Other fields remain usable, but the aggregate cannot be passed or returned as a whole after
+one of its fields is consumed. At scope end its destructor releases the consumed field's raw
+environment and destroys any remaining fields. Conditional calls retain this cleanup behavior.
+Remaining consuming arguments still move at invocation and do not make a reusable PAP call-once.
+
 ### Environment cleanup
 
 For a transfer-bearing PAP, the generated entry changes its environment destructor to the raw
@@ -546,16 +587,6 @@ println (int_to_str result);
 
 Both forms call the PAP once and pass its `Int` result to `int_to_str`. The ownership model
 does not require the intermediate binding; the restriction is in expression ownership analysis.
-
-### PAPs in struct fields
-
-Storing a PAP in a struct field is rejected. The compiler does not implement the ownership
-transfer and destruction needed for that storage. Copying the environment pointer without
-transferring ownership would leave the field dangling when the local PAP is destroyed.
-
-An owning struct can own a function environment under the ownership model. The restriction on
-PAP storage reflects missing compiler support, independently of the rule forbidding borrowed
-values in owning fields.
 
 ### Clone operations
 

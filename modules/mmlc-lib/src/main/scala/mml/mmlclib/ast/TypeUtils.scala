@@ -17,9 +17,16 @@ object TypeUtils:
     loop(tpe, Set.empty)
 
   def requiresDestruction(tpe: Type, index: ResolvablesIndex): Boolean =
+    requiresDestruction(tpe, index, Set.empty)
+
+  private def requiresDestruction(
+    tpe:   Type,
+    index: ResolvablesIndex,
+    seen:  Set[String]
+  ): Boolean =
     canonical(tpe, index).exists {
       case _: TypeFn => true
-      case other => getTypeName(other).exists(isHeapType(_, index))
+      case other => getTypeName(other).exists(isHeapType(_, index, seen))
     }
   def isPointerNativeType(nativeType: NativeType): Boolean = nativeType match
     case _: NativePointer => true
@@ -81,22 +88,33 @@ object TypeUtils:
 
   /** Check if a type is heap-allocated by looking at its NativeType.memEffect */
   def isHeapType(typeName: String, resolvables: ResolvablesIndex): Boolean =
-    findTypeByName(typeName, resolvables) match
-      case Some(TypeDef(_, _, _, Some(nt: NativeType), _, _, _)) =>
-        nt.memEffect.contains(MemEffect.Alloc)
-      case Some(s: TypeStruct) =>
-        hasHeapFields(s, resolvables)
-      case Some(alias: TypeAlias) =>
-        canonical(alias.typeRef, resolvables)
-          .flatMap(getTypeName)
-          .filterNot(_ == typeName)
-          .exists(isHeapType(_, resolvables))
-      case _ => false
+    isHeapType(typeName, resolvables, Set.empty)
 
-  /** Check if a user struct has any heap-typed fields */
+  private def isHeapType(
+    typeName:    String,
+    resolvables: ResolvablesIndex,
+    seen:        Set[String]
+  ): Boolean =
+    if seen.contains(typeName) then false
+    else
+      findTypeByName(typeName, resolvables) match
+        case Some(TypeDef(_, _, _, Some(nt: NativeType), _, _, _)) =>
+          nt.memEffect.contains(MemEffect.Alloc)
+        case Some(s: TypeStruct) =>
+          s.fields.exists(field =>
+            requiresDestruction(field.typeSpec, resolvables, seen + typeName)
+          )
+        case Some(alias: TypeAlias) =>
+          canonical(alias.typeRef, resolvables)
+            .flatMap(getTypeName)
+            .filterNot(_ == typeName)
+            .exists(isHeapType(_, resolvables, seen + typeName))
+        case _ => false
+
+  /** Structs own heap values and function environments, including through nested fields. */
   def hasHeapFields(struct: TypeStruct, resolvables: ResolvablesIndex): Boolean =
     struct.fields.exists { field =>
-      getTypeName(field.typeSpec).exists(isHeapType(_, resolvables))
+      requiresDestruction(field.typeSpec, resolvables, Set(struct.name))
     }
 
   /** Check if a type resolves to a user-defined TypeStruct with heap fields. Unlike isHeapType,
@@ -122,9 +140,31 @@ object TypeUtils:
           .flatMap(freeFnFor(_, resolvables))
       case _ => None
 
-  /** Get clone function name for a type, or None if not heap type */
+  /** Function environments cannot be duplicated, including through aggregate fields. */
+  def containsFunction(tpe: Type, index: ResolvablesIndex): Boolean =
+    def loop(current: Type, seen: Set[String]): Boolean =
+      canonical(current, index).exists {
+        case _:      TypeFn => true
+        case struct: TypeStruct => struct.fields.exists(field => loop(field.typeSpec, seen))
+        case ref:    TypeRef if !ref.resolvedId.exists(seen.contains) =>
+          ref.resolvedId.flatMap(index.lookupType).exists {
+            case struct: TypeStruct =>
+              struct.fields.exists(field => loop(field.typeSpec, seen ++ ref.resolvedId))
+            case _ => false
+          }
+        case _ => false
+      }
+    loop(tpe, Set.empty)
+
+  /** Get clone function name for a type, or None if its ownership cannot be duplicated. */
   def cloneFnFor(typeName: String, resolvables: ResolvablesIndex): Option[String] =
-    if isHeapType(typeName, resolvables) then Some(s"__clone_$typeName")
+    if isHeapType(typeName, resolvables) &&
+      !findTypeByName(typeName, resolvables).exists {
+        case struct: TypeStruct => containsFunction(struct, resolvables)
+        case alias:  TypeAlias => containsFunction(alias.typeRef, resolvables)
+        case _ => false
+      }
+    then Some(s"__clone_$typeName")
     else None
 
   /** Check if a named type resolves to an LLVM pointer-like native type. */

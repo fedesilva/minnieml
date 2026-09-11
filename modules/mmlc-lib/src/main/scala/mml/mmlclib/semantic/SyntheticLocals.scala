@@ -16,6 +16,21 @@ object SyntheticOwner:
 
 object SyntheticLocals:
 
+  /** Sequence cleanup expressions in declaration order and return Unit. */
+  def cleanup(calls: List[Term], owner: SyntheticOwner, unitType: Type): Expr =
+    val source = SourceOrigin.Synth
+    val result = Expr(source, List(LiteralUnit(source, Some(unitType))), typeSpec = Some(unitType))
+    calls.foldRight(result) { (call, rest) =>
+      val discard  = param(owner, "_", typeSpec = Some(unitType))
+      val scope    = Lambda(source, List(discard), rest, Nil, typeSpec = Some(unitType))
+      val argument = Expr(source, List(call), typeSpec = Some(unitType))
+      Expr(
+        source,
+        List(App(source, scope, argument, typeSpec = Some(unitType))),
+        typeSpec = Some(unitType)
+      )
+    }
+
   final case class Local(
     param: FnParam,
     ref:   Ref

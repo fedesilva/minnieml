@@ -39,6 +39,9 @@ object SemanticStage:
       |> CompilerState.timePhase("semantic", "resolvables-indexer")(
         ResolvablesIndexer.rewriteModule
       )
+      |> CompilerState.timePhase("semantic", "struct-destructor-bodies")(
+        StructDestructorBodyGenerator.rewriteModule
+      )
       |> CompilerState.timePhase("semantic", "ownership-analyzer")(
         OwnershipAnalyzer.rewriteModule
       )
