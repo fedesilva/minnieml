@@ -500,6 +500,13 @@ case first. The struct-field step shares the function-field ownership work descr
   sanitizer coverage, and update the documented limitation when support is verified.
 - **Reference:** [memory-model limitation](../../docs/memory-model.md#paps-in-struct-fields).
 
+### Later-stage documentation
+
+- [ ] Adapt the [PAP ownership tutorial](../../mml/samples/pap-ownership.mml) into the
+  [language reference](../../docs/language-reference.md) at a later stage of the lambda work.
+  Preserve its concrete, step-by-step explanation of owning, borrowing, and consuming PAPs,
+  following values through creation, calls, and cleanup.
+
 ## Verification
 
 The deferred-consuming-argument slice passes **530 tests, 54 ignored**, all seven required
@@ -538,6 +545,9 @@ are in `context/history/` for Author review. No compiler slice is authorized by 
 ## Task Working Memory
 
 **Branch:** `dev-lambdas-migration`.
+
+- **Documentation follow-up — 2026-09-10:** The Author requested the PAP ownership tutorial
+  become part of the language reference later. Recorded above; tutorial integration is deferred.
 
 - **Signed-off current slice — deferred consuming arguments:** The Author approved this slice
   on 2026-09-10. Preserve consuming contracts through PAP creation, aliases, returns, and
