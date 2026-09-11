@@ -217,7 +217,7 @@ class OwnershipAnalyzerTests extends BaseEffFunSuite:
     }
   }
 
-  test("partial application of function with consuming param is rejected") {
+  test("unused partial application may leave a consuming parameter unapplied") {
     val code =
       """
         fn consume(a: Int, ~s: String): Unit = println s;;
@@ -228,12 +228,7 @@ class OwnershipAnalyzerTests extends BaseEffFunSuite:
         ;
       """
 
-    semState(code).map { result =>
-      val errors = result.errors.collect { case e: SemanticError.PartialApplicationWithConsuming =>
-        e
-      }
-      assert(errors.nonEmpty, "Expected PartialApplicationWithConsuming error")
-    }
+    semNotFailed(code).void
   }
 
   test("escaping PAP over borrowed heap argument is rejected") {

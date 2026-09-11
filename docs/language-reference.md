@@ -893,7 +893,10 @@ fn take_ownership(~s: String): Unit = ();;
 - `~` appears only in the declaration, not at call sites
 - A consuming parameter transfers ownership from caller to callee
 - The caller must not use the value after passing it to a consuming parameter
-- Consuming parameters in partial applications are not allowed
+- Partial application preserves consuming parameters: supplied consuming arguments move into the PAP;
+  remaining consuming arguments move when supplied in a later application
+- A PAP can receive fresh consuming arguments repeatedly while retaining its stored captures.
+  If a call transfers a stored payload, that PAP can be called only once
 
 ---
 

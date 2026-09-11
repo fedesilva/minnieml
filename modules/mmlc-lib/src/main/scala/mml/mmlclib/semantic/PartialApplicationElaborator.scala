@@ -33,23 +33,7 @@ object PartialApplicationElaborator:
     }
 
   def rewriteModule(state: CompilerState): CompilerState =
-    if state.hasErrors then state
-    else
-      val values = CallableValues.fromModule(state.module)
-      val errors =
-        state.module.members.collect { case binding: Bnd => binding }.flatMap { binding =>
-          CallableValues.applications(binding.value).flatMap { app =>
-            val (callee, args) = CallableValues.application(app)
-            values.parameters(callee).drop(args.size).filter(_.consuming).map { param =>
-              SemanticError.PartialApplicationWithConsuming(
-                app,
-                param,
-                "partial-application-elaborator"
-              )
-            }
-          }
-        }
-      stabilizeCaptures(state.addErrors(errors))
+    stabilizeCaptures(state)
 
   /** Generated PAPs can themselves be partially applied. Refresh their value flow and captures
     * until each enclosing PAP knows whether invoking its captured callee transfers ownership.
@@ -198,9 +182,13 @@ object PartialApplicationElaborator:
       case result: App => result
       case _ => app
 
-  private def fresh(owner: SyntheticOwner, tpe: Type): SyntheticLocals.Local =
+  private def fresh(
+    owner:     SyntheticOwner,
+    tpe:       Type,
+    consuming: Boolean = false
+  ): SyntheticLocals.Local =
     val name = s"$$pap_${UUID.randomUUID().toString.take(8)}"
-    SyntheticLocals.local(owner, name, typeSpec = tpe.some)
+    SyntheticLocals.local(owner, name, typeSpec = tpe.some, consuming = consuming)
 
   private def prepareArgument(
     arg:          PreparedValue,
@@ -232,8 +220,11 @@ object PartialApplicationElaborator:
     index:     ResolvablesIndex,
     values:    CallableValues
   ): PreparedValue =
-    val remaining = signature.paramTypes.toList.drop(args.size).map(fresh(owner, _))
-    val params    = values.parameters(callee)
+    val params = values.parameters(callee)
+    val remaining =
+      signature.paramTypes.toList.zipWithIndex.drop(args.size).map { (tpe, position) =>
+        fresh(owner, tpe, consuming = params.lift(position).exists(_.consuming))
+      }
     val supplied =
       args.zip(signature.paramTypes.toList).zipWithIndex.map { case ((arg, tpe), position) =>
         val consumes =

@@ -480,6 +480,33 @@ on the generated value that actually stores the payloads.
 See [pap-ownership.mml](../mml/samples/pap-ownership.mml) for a commented example comparing
 a reusable owning closure, a borrowing PAP, and a PAP that transfers its payload on invocation.
 
+### Remaining consuming parameters
+
+A remaining consuming parameter transfers its argument when that argument is supplied.
+Creating the PAP does not transfer an argument that has not been supplied yet.
+
+```mml
+fn measure(extra: Int, ~text: String): Int = extra + text.length;;
+
+fn example(): Int =
+  let measure10 = measure 10;
+  let text = int_to_str 123;
+  let first = measure10 text;
+  let second = measure10 (int_to_str 456);
+  first + second;
+;
+```
+
+The first invocation moves `text`. Each invocation supplies a fresh owned String, and
+`measure10` retains its scalar capture, so it can be reused. Borrowed arguments and later
+uses of moved arguments are rejected. Aliases, returned PAPs, and higher-order calls preserve
+the consuming contract.
+
+In staged application, supplying a consuming argument moves it into the next PAP if more
+arguments remain. That PAP must either destroy the payload on drop or transfer it once on
+invocation. A PAP with both stored and remaining consuming arguments still obeys this
+call-once rule for its stored payloads.
+
 ### Environment cleanup
 
 For a transfer-bearing PAP, the generated entry changes its environment destructor to the raw
@@ -519,14 +546,6 @@ println (int_to_str result);
 
 Both forms call the PAP once and pass its `Int` result to `int_to_str`. The ownership model
 does not require the intermediate binding; the restriction is in expression ownership analysis.
-
-### Remaining consuming parameters
-
-Partial application is rejected when any remaining unapplied parameter is consuming. A consuming
-parameter that is supplied at PAP creation can transfer its value into the PAP.
-
-The remaining arguments have not been captured. Their ownership could be transferred when
-supplied without duplicating ownership of a stored value; this rejection is a compiler restriction.
 
 ### PAPs in struct fields
 

@@ -379,7 +379,10 @@ Each phase takes a `CompilerState`, returns an updated `CompilerState`, and reco
 10. **TypeChecker**
 11. **PartialApplicationElaborator**: binds supplied expressions in source order and constructs
     a typed residual lambda with explicit borrowed and transferred capture identities. Refreshes
-    captures and callable flow until ownership also agrees for chained PAPs.
+    captures and callable flow until ownership also agrees for chained PAPs. Remaining parameters
+    preserve their consuming flags. Callable origins retain the applied argument count before
+    elaboration so staged PAPs inherit the source's remaining ownership contract. Supplied
+    callable arguments propagate at every application stage, including before saturation.
 12. **ClosureMemoryFnGenerator**
 13. **ResolvablesIndexer**
 14. **OwnershipAnalyzer**
@@ -816,7 +819,6 @@ Generation section below.
 - `UseAfterMove`
 - `ConsumingParamNotLastUse`
 - `BorrowedValuePassedToConsumingParam`
-- `PartialApplicationWithConsuming`
 - `ConditionalOwnershipMismatch`
 - `BorrowEscapeViaReturn`
 - `CapturedBorrowedHeapBinding`

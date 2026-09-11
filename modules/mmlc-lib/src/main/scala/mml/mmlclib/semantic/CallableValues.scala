@@ -5,9 +5,12 @@ import mml.mmlclib.ast.*
 /** Resolved value flow preserves callable ownership through bindings, returns, and arguments. */
 final case class CallableValues private (bindings: Map[String, List[Expr]]):
 
-  def lambdas(term: Term): List[Lambda] =
-    def resolve(value: Term, seen: Set[String]): List[Lambda] = value match
-      case lambda: Lambda => List(lambda)
+  private case class Origin(lambda: Lambda, applied: Int = 0):
+    def remainingParams: List[FnParam] = lambda.params.drop(applied)
+
+  private def origins(term: Term): List[Origin] =
+    def resolve(value: Term, seen: Set[String]): List[Origin] = value match
+      case lambda: Lambda => List(Origin(lambda))
       case expr:   Expr => expr.terms.lastOption.toList.flatMap(resolve(_, seen))
       case group:  TermGroup => resolve(group.inner, seen)
       case cond:   Cond => resolve(cond.ifTrue, seen) ++ resolve(cond.ifFalse, seen)
@@ -20,11 +23,17 @@ final case class CallableValues private (bindings: Map[String, List[Expr]]):
         val calleeId = callee match
           case ref: Ref => ref.resolvedId
           case _:   Lambda => None
-        resolve(callee, seen)
-          .filter(_.params.size <= arguments.size)
-          .flatMap(lambda => resolve(lambda.body, seen ++ calleeId))
+        resolve(callee, seen).flatMap { origin =>
+          if arguments.size < origin.remainingParams.size then
+            List(origin.copy(applied = origin.applied + arguments.size))
+          else resolve(origin.lambda.body, seen ++ calleeId)
+        }
       case _ => Nil
+
     resolve(term, Set.empty).distinct
+
+  def lambdas(term: Term): List[Lambda] =
+    origins(term).collect { case Origin(lambda, 0) => lambda }
 
   def consumesOnCall(term: Term): Boolean =
     lambdas(term).exists(_.meta.exists(_.transferredCaptures.nonEmpty))
@@ -38,10 +47,12 @@ final case class CallableValues private (bindings: Map[String, List[Expr]]):
       case ref :: rest =>
         val captures = lambdas(ref).flatMap(_.captures.map(_.ref))
         collect(captures ++ rest, seen ++ ref.resolvedId)
+
     collect(TermTraversal.collect(term) { case ref: Ref => ref }, Set.empty)
 
   def parameters(term: Term): List[FnParam] =
-    val candidates = lambdas(term).map(_.params)
+    // A source PAP has a residual signature even before its lambda is elaborated.
+    val candidates = origins(term).map(_.remainingParams)
     candidates.headOption.toList.flatten.zipWithIndex.map { (param, position) =>
       param.copy(consuming = candidates.exists(_.lift(position).exists(_.consuming)))
     }
@@ -79,8 +90,8 @@ object CallableValues:
       val flow = CallableValues(current)
       val incoming = applications.flatMap { app =>
         val (callee, args) = application(app)
-        flow.lambdas(callee).filter(_.params.size <= args.size).flatMap { lambda =>
-          lambda.params.zip(args).flatMap((param, arg) => param.id.map(_ -> arg))
+        flow.origins(callee).flatMap { origin =>
+          origin.remainingParams.zip(args).flatMap((param, arg) => param.id.map(_ -> arg))
         }
       }
       val next = (current.toList.flatMap((id, expressions) => expressions.map(id -> _)) ++ incoming)

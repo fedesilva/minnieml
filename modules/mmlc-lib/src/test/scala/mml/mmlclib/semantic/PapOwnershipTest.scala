@@ -130,18 +130,13 @@ class PapOwnershipTest extends BaseEffFunSuite:
     """).void
   }
 
-  test("inline PAP rejects remaining consuming parameters") {
-    semState("""
+  test("inline PAP accepts remaining consuming parameters") {
+    semNotFailed("""
       fn main(): Int =
         let p = { n: Int, ~text: String -> text.length + n; } 1;
         p (int_to_str 123);
       ;
-    """).map { result =>
-      assert(
-        result.errors.exists(_.isInstanceOf[SemanticError.PartialApplicationWithConsuming]),
-        result.errors
-      )
-    }
+    """).void
   }
 
   test("PAP use is rejected after its borrowed heap payload moves") {

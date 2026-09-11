@@ -4,6 +4,10 @@ Durable product changes belong here. Task administration belongs in task working
 
 ## 2026-09-10
 
+- Allow consuming arguments to be supplied after partial application, preserving ownership
+  through aliases, returns, higher-order calls, and staged application. PAPs that retain
+  their captures accept fresh consuming arguments repeatedly; transferred payloads remain
+  call-once.
 - Evaluate partial-application arguments once at creation, in source order. Track borrowed
   payload lifetimes and explicit ownership transfers through aliases and higher-order calls;
   release owned payloads exactly once when dropped or forwarded by a consuming call.

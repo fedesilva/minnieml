@@ -169,7 +169,8 @@ Rules to preserve:
     `BorrowedValuePassedToConsumingParam`.
 13. A move caused by a consuming parameter must be the last use in the enclosing body; otherwise
     `ConsumingParamNotLastUse` is reported.
-14. Partial application is rejected when any remaining unapplied parameter is consuming.
+14. Partial application preserves consuming parameters. A supplied consuming argument moves
+    at that application stage; remaining consuming arguments move when supplied later.
 15. Constructor calls with consuming parameters auto-clone supported non-owned inputs such as
     string literals and globals; owned values move in without cloning.
 16. Rebinding an owned heap value through local `let` moves ownership into the new binding when the
@@ -210,8 +211,8 @@ Concrete ownership references:
   parameter.
 - `mml/samples/mem/borrow-escape.mml`: returning borrowed heap data as an owned result is
   rejected.
-- `mml/samples/mem/partial-consume.mml`: partially applying a function while leaving a consuming
-  parameter unapplied is rejected.
+- `mml/samples/mem/partial-consume.mml`: a PAP may be dropped with a consuming parameter
+  still unapplied; no argument ownership has transferred for that parameter.
 
 
 #### Semantic model
@@ -432,12 +433,14 @@ Pin these cases:
 - [x] Establish evaluation-once semantics, borrowed payload lifetimes, and explicit
   ownership transfers for the PAP creation slice.
 - [x] Implement and verify PAP creation semantics; Author signoff recorded on 2026-09-10.
+- [x] Support deferred consuming arguments; Author signoff recorded on 2026-09-10.
 - [ ] Complete and verify the remaining fresh implementation in reviewed stages.
 
 Approval: Preservation, borrowed returns, and typed closure destruction are recorded below.
 The Author signed off the bounded PAP creation-semantics slice on 2026-09-10 and authorized
-its local commit. The general branch audit is deferred at the Author's request. Broader
-lambda work and the documented follow-up bugs remain pending.
+its local commit. The Author also signed off the deferred-consuming-argument slice on
+2026-09-10 and authorized its local commit, including the current review edits. The general
+branch audit is deferred at the Author's request. Broader lambda work remains pending.
 
 ## Implementation Checklist
 
@@ -452,22 +455,21 @@ Holding them for follow-up is acceptable. Keep them separate from the PAP creati
 this records scope and priority, not implementation or signoff. Tackle the smaller parameter
 case first. The struct-field step shares the function-field ownership work described above.
 
-- [ ] [Allow a consuming argument to be supplied after PAP creation](#bug-supply-a-consuming-argument-after-pap-creation).
+- [x] [Allow a consuming argument to be supplied after PAP creation](#bug-supply-a-consuming-argument-after-pap-creation).
 - [ ] [Allow an owned PAP to move into a struct field](#bug-store-an-owned-pap-in-a-struct-field).
 
 #### Bug: supply a consuming argument after PAP creation
 
-- **Status:** planned.
-- **Reproduction:** for `fn measure(extra: Int, ~text: String): Int = text.length + extra;;`,
-  `let f = measure 10;` is rejected because `text` has not been supplied.
+- **Status:** complete; signed off by the Author on 2026-09-10.
+- **Original reproduction:** for `fn measure(extra: Int, ~text: String): Int = text.length + extra;;`,
+  `let f = measure 10;` was rejected because `text` had not been supplied.
 - **Expected behavior:** create `f`, then transfer an owned String when calling it. A PAP
   that retains all its stored captures can be called repeatedly with fresh consuming arguments.
   A PAP that transfers a stored payload still obeys the call-once rule.
-- **Scope and sizing:** likely the smaller, bounded step; provisional assessment from source.
-  Rejection exists in `ExpressionRewriter` and `PartialApplicationElaborator`. Generated
-  remaining parameters are made from types, so preserve the source parameters' consuming
-  metadata and carry it through `CallableValues` and argument ownership checks. Removing
-  the guards alone is insufficient.
+- **Implementation scope:** remove the `ExpressionRewriter` and `PartialApplicationElaborator`
+  rejection guards, preserve consuming metadata in generated remaining/eta-expanded parameters,
+  and retain unapplied parameter contracts through `CallableValues` before staged elaboration.
+  Existing argument ownership checks enforce those contracts.
 - **Acceptance:** named and inline forms accept the deferred consuming argument; aliases,
   returned PAPs, and higher-order calls retain its consuming contract. The supplied String
   moves at invocation, borrowed inputs and later use of moved inputs are rejected, repeated
@@ -475,7 +477,7 @@ case first. The struct-field step shares the function-field ownership work descr
   exactly once. Cover mixed stored/remaining consuming arguments and staged application.
   Replace the relevant rejection tests in `PapOwnershipTest` and other affected suites;
   add native sanitizer coverage and synchronize the language reference and memory model.
-- **Reference:** [memory-model limitation](../../docs/memory-model.md#remaining-consuming-parameters).
+- **Reference:** [deferred consuming arguments](../../docs/memory-model.md#remaining-consuming-parameters).
 
 #### Bug: store an owned PAP in a struct field
 
@@ -500,6 +502,13 @@ case first. The struct-field step shares the function-field ownership work descr
 
 ## Verification
 
+The deferred-consuming-argument slice passes **530 tests, 54 ignored**, all seven required
+smokes, and all **37 macOS ASan+LSan fixtures**. Formatting, lint, local publishing, and all
+seven benchmark builds pass. Independent review confirmed a staged higher-order propagation
+gap; its fix and added regressions pass verification, and a fresh narrow re-review found no
+actionable findings. The Author signed off this slice on 2026-09-10.
+Commands and logs are recorded in [Task Working Memory](#task-working-memory).
+
 The PAP creation checkpoint passes 504 tests with 54 ignored, all seven required smokes,
 and all 36 macOS ASan+LSan fixtures. Formatting, lint, local publishing, and all seven
 benchmark builds pass. See [Task Working Memory](#task-working-memory) for commands and
@@ -520,15 +529,64 @@ are in `context/history/` for Author review. No compiler slice is authorized by 
   PAP creation semantics signed off on 2026-09-10, including its documented limitations.
   The Author considers the review sufficient for this checkpoint and defers the general
   branch audit; the interrupted overall compiler review is not represented as complete.
+  Deferred consuming arguments signed off on 2026-09-10 by the Author's finish request.
 - Tracked item completion: Pending; the broader lambda implementation and follow-ups remain open.
-- Commit authorization: Granted for the PAP creation checkpoint by the Author's finish request.
+- Commit authorization: Granted for both checkpoints by the Author's finish requests.
+  The current commit includes all working-tree changes, as explicitly requested.
   No push authorized.
 
 ## Task Working Memory
 
 **Branch:** `dev-lambdas-migration`.
 
-- **Approved current slice — PAP creation semantics:** The Author approved the selected
+- **Signed-off current slice — deferred consuming arguments:** The Author approved this slice
+  on 2026-09-10. Preserve consuming contracts through PAP creation, aliases, returns, and
+  higher-order calls; verify invocation-time moves, borrowed-input rejection, reuse with fresh
+  arguments, mixed/staged application, and exactly-once cleanup. Update affected documentation
+  and regression/native sanitizer coverage, then run compiler gates and independent review.
+  Implementation starts from clean checkpoint `ea803e2`. The Author's finish request supplies
+  slice signoff and local commit authorization on 2026-09-10.
+  Struct-field support, nested-call rejection, and the general branch audit remain separate.
+- Implementation: remaining and eta-expanded parameters preserve consuming flags; callable
+  origins retain applied argument counts and propagate supplied callable arguments before
+  saturation. Existing ownership checks enforce moves and borrows, without a separate PAP
+  argument-ownership path. Two former rejection tests now assert valid behavior;
+  `DeferredPapOwnershipTest` adds 26 acceptance/move/rejection regressions. The language reference,
+  memory model, and compiler design describe the supported contract.
+- Independent review confirmed one gap: a partial call such as `let builder = use measure`
+  did not propagate its supplied callable before an inner `let p = f n` was elaborated. A fresh
+  verifier reproduced the rejection and confirmed direct-call controls. The fix propagates
+  supplied arguments through residual callable origins at every stage. Three regressions and
+  the native fixture cover the combined staged/higher-order case. A fresh narrow independent
+  re-review found no actionable findings and independently compiled/executed the updated native
+  fixture with ASan at `-O 0`, exit 0 without diagnostics. The initial review found no other
+  actionable issues. Review and Author signoff are complete for this slice.
+- Final verification after that fix:
+  - `sbtn 'scalafmtAll;testOnly mml.mmlclib.semantic.DeferredPapOwnershipTest;run run -s -O 0
+    tests/mem/pap-deferred-consuming.mml'`: 26 focused tests and the native ASan fixture pass
+    (`/tmp/mml-deferred-pap-review-fix.log`). The fixture checks 1,000 iterations of repeated
+    calls, dropped PAPs, returned/aliased/higher-order PAPs, staged mixed transfers, returned
+    String ownership, and consuming closure arguments via its result/exit status.
+  - `sbtn 'scalafixAll;test'` followed in the same invocation by all seven required smoke commands
+    and `mmlcPublishLocal`: **530 passed, 54 existing ignored**, all smokes and publishing pass,
+    no warnings/errors (`/tmp/mml-deferred-pap-final-gates.log`). `partial-fac1` prints `120`;
+    `astar2` finds its path. Installed jar: `9abd2611aec15b6fe0a9cc528baf299b1ceeee2f`.
+  - `./tests/mem/run.sh all`: **37/37 ASan+LSan fixtures pass** in 63 seconds
+    (`/tmp/mml-deferred-pap-final-memory.log`). Native evidence is macOS arm64;
+    Linux sanitizer validation remains separately deferred.
+  - `make -C benchmark clean`, then `make -C benchmark mml`: all seven programs build
+    (`/tmp/mml-deferred-pap-final-benchmarks.log`). These are build checks, not performance
+    measurements.
+  - QA compliance, local links, whitespace checks, and focused tracking review pass.
+    All verification processes have exited. The Author has signed off and authorized a local
+    commit of all current changes, including README, sample-comment, and formatting edits.
+    No push is authorized.
+- Initial staged tests exposed missing residual signatures before elaboration; retaining
+  applied argument counts resolved that gap. The initial sandboxed test attempt could not
+  access the sbt lock; escalated runs succeeded. Earlier passing logs are superseded by the
+  final verification above. The parent task remains open.
+
+- **Signed-off prior slice — PAP creation semantics:** The Author approved the selected
   task and requested implementation through verification, then a pause for review.
   Supplied arguments must evaluate once at creation, in source order; borrowed payloads
   must remain within their owners' lifetimes; consuming payloads transfer explicitly and
@@ -569,7 +627,8 @@ are in `context/history/` for Author review. No compiler slice is authorized by 
 - **Selected follow-ups:** the Author classifies remaining-consuming-argument rejection and
   PAP struct-field storage rejection as bugs, accepts holding them, and prefers near-term
   steps within this workstream. Both are recorded under [Near-term bug-fix steps](#near-term-bug-fix-steps)
-  with reproduction, scope, acceptance criteria, and provisional sizing. No implementation ran.
+  with reproduction, scope, acceptance criteria, and provisional sizing. This prior checkpoint
+  predates their implementation; current deferred-consuming progress is recorded above.
 - The commented `mml/samples/pap-ownership.mml` and memory model distinguish owning a value
   from transferring it out. Sample execution exposed a separate nested-call rejection:
   `println (int_to_str (consuming 0))` fails ownership analysis, while binding the `Int`
@@ -638,13 +697,12 @@ This requirement also applies to future phases that have not yet been planned.
 
 ##### Current focus — 2026-09-10
 
-The PAP creation and ownership slice is implemented, verified, and signed off by the Author.
-See [Task Working Memory](#task-working-memory) for the accepted checkpoint and evidence.
-The general branch audit is deferred at the Author's request; the interrupted overall review
-remains incomplete. The parent task is still in progress. Next candidates are the nested
-consuming-PAP call rejection and the two [near-term bug-fix steps](#near-term-bug-fix-steps).
-Select and approve the next bounded slice before implementation. Linux sanitizer validation
-remains deferred to its existing local task.
+The PAP creation and ownership slice is signed off. The deferred-consuming-argument follow-up
+is implemented, verified, independently reviewed, and signed off; see
+[Task Working Memory](#task-working-memory). Next action: select the next bounded slice with
+the Author. The parent task remains in progress. PAP struct-field support,
+nested consuming-PAP call rejection, the general branch audit, and Linux sanitizer validation
+remain deferred; the latter has its own local task.
 
 ##### Transfer checkpoint and recovery
 
