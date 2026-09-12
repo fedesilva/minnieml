@@ -503,6 +503,7 @@ case first. The struct-field step shares the function-field ownership work descr
 - [x] [Allow a consuming argument to be supplied after PAP creation](#bug-supply-a-consuming-argument-after-pap-creation).
 - [ ] [Allow an owned PAP to move into a struct field](#bug-store-an-owned-pap-in-a-struct-field).
 - [x] [Allow nested consuming-PAP calls](#bug-nested-consuming-pap-calls).
+- [ ] [Preserve counters and argument expressions across ownership analysis](#preserve-counters-and-argument-expressions-across-ownership-analysis).
 - [ ] [Preserve mixed ownership through consuming transfers](#bug-preserve-mixed-ownership-through-consuming-transfers).
 
 #### Bug: supply a consuming argument after PAP creation
@@ -559,6 +560,42 @@ case first. The struct-field step shares the function-field ownership work descr
 - **Acceptance:** both forms in `mml/samples/pap-nested-consuming.mml` print `3`; later calls
   and aliases remain rejected after consumption. Nested heap results, struct fields,
   conditional calls, argument order, and exactly-once cleanup pass sanitizer coverage.
+
+#### Preserve counters and argument expressions across ownership analysis
+
+- **Status:** planned.
+- **Source:** [OwnershipAnalyzer.scala](../../modules/mmlc-lib/src/main/scala/mml/mmlclib/semantic/OwnershipAnalyzer.scala),
+  `analyzeCond`, `analyzeLambda`, `analyzeArgument`, and `prepareConsumingArgument`.
+- **Counter problem:** `analyzeCond` starts both branch analyses from `condResult.scope` and
+  returns a merge based on that scope, discarding counters reached within either branch.
+  `analyzeLambda` analyzes its body but returns a capture-ownership scope folded from its input
+  scope, also discarding body counter increments. Generated condition and temporary names can
+  therefore be reused by later analysis within the same enclosing owner.
+- **Expression problem:** consuming-argument helpers select `value.terms.lastOption` and then
+  rebuild with `value.copy(terms = List(...))`. Any preceding terms are silently discarded.
+  Related ownership predicates disagree on whether to inspect the first or last term.
+- **Expected behavior:** preserve generated-name counter progression through branches, nested
+  lambdas, and subsequent arguments while keeping branch/body ownership state properly scoped.
+  Argument analysis must honor an explicit expression-shape contract and must never silently
+  drop terms or their effects.
+- **Implementation plan:**
+  - [ ] Add focused regressions for counter continuity through both conditional branches,
+    lambda bodies, and subsequent arguments; check distinct generated names and binding IDs.
+  - [ ] Thread counter allocation through those analyses independently of ownership-state
+    isolation and merging.
+  - [ ] Establish whether multi-term argument expressions are valid at this phase. Preserve
+    and analyze preceding terms in source order if supported; otherwise enforce the singleton
+    invariant with a diagnostic. Align the affected ownership predicates with that contract.
+  - [ ] Add focused expression-shape coverage proving that preceding effects and ownership
+    transitions survive, or that unsupported shapes are explicitly rejected.
+  - [ ] Add one entry in [QA misses](qa-misses.md) covering both lambda-decomposition markers
+    and linking [Eliminate unnecessary AST field decomposition](preserve-ast-nodes-in-helper-apis.md).
+  - [ ] Run applicable compiler gates and focused independent review.
+- **Evidence:** source inspection confirms counter loss and replacement of the entire term
+  list. Focused failing regressions and runtime impact verification are pending.
+- **Boundary:** the allocated/static consuming-transfer and return failures belong to
+  [conditional-ownership hardening](conditional-ownership-witnesses.md). This subtask addresses
+  counter propagation, expression preservation, and the QA cross-reference.
 
 #### Bug: preserve mixed ownership through consuming transfers
 
@@ -676,6 +713,12 @@ are in `context/history/` for Author review. No compiler slice is authorized by 
 ## Task Working Memory
 
 **Branch:** `dev-lambdas-migration`.
+
+- **Planned ownership-analysis follow-up (2026-09-12):** Recorded
+  [counter and argument-expression preservation](#preserve-counters-and-argument-expressions-across-ownership-analysis)
+  at the Author's request. Tracking consistency, links, and whitespace checks pass; the
+  Author signed off the tracking errand and authorized its commit. Implementation and
+  focused regressions are pending.
 
 - **Completed review follow-up (2026-09-12):** The Author authorized finishing and committing
   the remaining work. Nested consuming-PAP calls and their review repairs are complete;
