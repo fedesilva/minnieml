@@ -30,6 +30,34 @@ and their directly relevant records. Read out-of-focus tasks only when the reque
 that information, such as listing the backlog or investigating an explicit dependency.
 Read coding rules before code work. Avoid loading the backlog to steer an unrelated session.
 
+## Writing for the reader
+
+Reading is cognitive work. Every sentence must help the reader understand the task or act
+on it. Write self-contained current facts: the problem, outcome, scope, dependencies,
+decisions, verification, blockers, and next action.
+
+- Do not refer to conversations, requests, sessions, tracking errands, or the act of recording
+  a task. The reader must not need the conversation to understand the document.
+- Do not narrate previous states or transitions with phrases such as "previously",
+  "now", "selected by the Author on", or "implementation has not started" beside `planned`.
+  State the current status once and describe the work itself.
+- State technical decisions and their rationale directly. Record approval, signoff, and
+  commit authorization as concise states with explicit scope, not stories about who said what.
+- Describe dependencies by the required result and link the relevant task. Avoid references
+  such as "the current repair", "the previous slice", or "this workstream" without a clear,
+  self-contained referent.
+- Keep dates in metadata or verification evidence when they identify something useful.
+  Do not decorate task prose with selection, conversation, or bookkeeping dates.
+- Keep task working memory as a compact current handoff, not an append-only session log.
+  Replace stale notes instead of requiring the reader to reconstruct state from checkpoints.
+
+Product history belongs in `context/changelog.md`; historical technical evidence belongs in
+`context/history/`. Those records describe concrete changes and evidence, never conversation
+or administrative narration. Do not move useless prose into another file to preserve it.
+
+For example, write `- **Status:** planned.` rather than a paragraph about task selection,
+permission to record it, and implementation not having started.
+
 ## Working memory
 
 Always retain **Global Working Memory** and **Active Tasks**, even when empty.
@@ -46,7 +74,7 @@ existing entries with task files; absence from memory is intentional. Remove com
 workstream notes instead of accumulating history there.
 
 Update the relevant task's **Task Working Memory** at meaningful checkpoints before,
-during, and after approved work: what changed, evidence, decisions, blockers, and the next
+during, and after approved work: current implementation, evidence, decisions, blockers, and the next
 action. Keep detail there or in linked evidence records, not duplicated in active memory.
 Do not rewrite historical evidence or treat another branch's completed checklist as current.
 
