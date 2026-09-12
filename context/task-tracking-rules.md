@@ -83,7 +83,8 @@ that task; do not ask for them again. `finish errand` authorizes verification, l
 and a local commit without tracked-task completion. Explicit limits such as "do not commit"
 override these defaults. Push only when the Author requests it.
 
-1. Run applicable verification from `context/coding-rules.md` and local `post-chores`.
+1. Run applicable verification from `context/coding-rules.md`. Use local `post-chores` for
+   tracked-task completion and compiler work; non-compiler errands need only relevant checks.
    Record failures, ignores, and explicit waivers accurately. A finish command does not
    waive required checks or authorize unrelated implementation.
 2. Before completing a task, verify that no open subtasks or unchecked plan items remain.
@@ -140,6 +141,7 @@ links. External actions require an explicit request; do not recreate a sync obli
 ## Review routing
 
 For tracking consistency, use `.skills/tracking-doc-review/SKILL.md` in the current agent.
-For code and affected technical documents, use `.skills/code-review/SKILL.md` with its
-independent reviewer and per-claim verification. Finish checks are routed by local
-`post-chores`; QA rules and verification commands remain owned by their repository files.
+For code and affected technical documents, use `.skills/code-review/SKILL.md` when
+post-chores applies or the Author requests review. Post-chores covers tracked-task completion
+and compiler handoffs, including compiler errands, not non-compiler errands or simple asks.
+QA rules and verification commands remain owned by their repository files.

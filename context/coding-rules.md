@@ -111,14 +111,16 @@ The compiler needs to be installed before it's used if changes were made.
 
 ## Workstream handoff
 
-Use `.skills/post-chores/SKILL.md` to derive the applicable finish checklist.
+Use `.skills/post-chores/SKILL.md` when finishing a tracked task or handing off compiler
+changes, including compiler errands. Non-compiler errands, simple asks, and intermediate
+artifacts do not trigger post-chores; perform only checks relevant to the change.
 The compiler gates above remain mandatory for compiler changes. Context-only and
 documentation-only work needs focused consistency, link, and diff checks rather than
 compiler builds, publishing, benchmarks, or memory runs. MML samples need verification
 appropriate to their changed behavior; they do not trigger the full compiler checklist.
 Review tracking documents with local `tracking-doc-review` in the current agent.
-Review code, tooling, workflow rules, and affected technical documents with local
-`code-review`; keep its fresh primary review and independent per-claim verification.
+When post-chores applies or the Author requests review, review code, tooling, workflow rules,
+and affected technical documents with local `code-review`, following its independence rules.
 Do not claim a required check passed if it failed, was ignored, or could not run.
 
 ## Git usage
