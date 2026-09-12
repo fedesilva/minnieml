@@ -4,6 +4,8 @@ Durable product changes belong here. Current task state belongs in task files.
 
 ## 2026-09-12
 
+- Require task recommendations to show the full path from the memory entry through the task
+  file to the selected entry, with verified clickable locations and selection rationale.
 - Require self-contained tracking documentation with concise status and approval fields,
   current working memory, and no conversation or administrative narration. Apply the same
   requirements to the task template and tracking review checklist.
