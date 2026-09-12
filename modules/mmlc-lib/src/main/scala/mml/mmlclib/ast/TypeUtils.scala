@@ -2,18 +2,26 @@ package mml.mmlclib.ast
 
 /** Utilities for querying type properties from AST nodes. */
 object TypeUtils:
+
   /** Follow resolved aliases and single-type groups without changing nominal declarations. */
   def canonical(tpe: Type, index: ResolvablesIndex): Option[Type] =
+
     @scala.annotation.tailrec
     def loop(current: Type, seen: Set[String]): Option[Type] = current match
+
       case TypeGroup(_, List(inner)) => loop(inner, seen)
+
       case ref: TypeRef =>
         ref.resolvedId.flatMap(index.lookupType) match
+
           case Some(alias: TypeAlias) if !ref.resolvedId.exists(seen.contains) =>
             loop(alias.typeSpec.getOrElse(alias.typeRef), seen ++ ref.resolvedId)
+
           case Some(_: TypeAlias) => None
+
           case _ => Some(ref)
       case other => Some(other)
+
     loop(tpe, Set.empty)
 
   def requiresDestruction(tpe: Type, index: ResolvablesIndex): Boolean =
@@ -45,6 +53,8 @@ object TypeUtils:
     resolvables: ResolvablesIndex
   ): Option[ResolvableType] =
     resolvables
+      // FIXME:QA: Preserve resolved type identity instead of looking up types by name.
+      // See QA-001 in context/tasks/qa-misses.md.
       .lookupType(s"stdlib::typedef::$typeName")
       .orElse(resolvables.lookupType(s"stdlib::typealias::$typeName"))
       .orElse:

@@ -1,0 +1,98 @@
+// Mixed conditional arguments borrow or own according to the branch actually selected.
+fn length(text: String): Int = text.length;;
+fn lengths(left: String, right: String): Int = left.length + right.length;;
+fn apply(f: Int -> Int, text: String): Int = f 1 + text.length;;
+fn take(~text: String): Int = text.length;;
+
+fn step(trace: IntArray, digit: Int): Int =
+  unsafe_ar_int_set trace 0 ((unsafe_ar_int_get trace 0) * 10 + digit);
+  digit;
+;
+
+fn decide(trace: IntArray, digit: Int, result: Bool): Bool =
+  let ignored = step trace digit;
+  result;
+;
+
+fn loop(n: Int, total: Int): Int =
+  if n == 0 then
+    total;
+  else
+    let text = int_to_str 123;
+    let flag = n % 2 == 0;
+    let inner = n % 4 < 2;
+    let a = length (if flag then int_to_str 456; else text;);
+    let b = length (if flag then "abc"; else int_to_str 789;);
+    let c = length (int_to_str 123);
+
+    let trace = ar_int_new 1;
+    unsafe_ar_int_set trace 0 0;
+    let d = lengths
+      (if decide trace 1 flag then
+        if decide trace 2 inner then int_to_str (step trace 4); else text; ;
+      else
+        if decide trace 3 inner then text; else int_to_str (step trace 5); ;
+      )
+      (int_to_str (step trace 6));
+    let expected_trace =
+      if flag then
+        if inner then 1246; else 126; ;
+      else
+        if inner then 136; else 1356; ;
+      ;
+    let expected_length = if n % 4 == 0 or n % 4 == 3 then 2; else 4; ;
+
+    let captured = int_to_str 123;
+    let e = apply ~{ x: Int -> captured.length + x; } (int_to_str 2);
+
+    // Inline consuming parameters release their arguments, including fresh temporaries.
+    let consumed = int_to_str 123;
+    let f = { ~owned: String, borrowed: String -> owned.length + borrowed.length; }
+      consumed (int_to_str 456);
+    let transferred = int_to_str 123;
+    let g = take (if flag then int_to_str 456; else transferred;);
+    let h = take (if flag then "abc"; else int_to_str 789;);
+    let inline_source = int_to_str 123;
+    let i = { ~s: String, n: Int -> s.length + n; }
+      (if flag then int_to_str 456; else inline_source;) 1;
+    let j = { ~s: String, n: Int -> s.length + n; } "abc" 1;
+    let shadowed = int_to_str 123;
+    let k = { ~shadowed: String -> shadowed.length; } shadowed;
+    let retained = int_to_str 123;
+    let l = { ~retained: String -> retained.length; } (int_to_str 456);
+    let scoped_source = int_to_str 123;
+    let m = take (if flag then int_to_str 456; else let alias = scoped_source; alias;);
+    let inline_scoped = int_to_str 123;
+    let o = { ~s: String -> s.length; }
+      (if flag then int_to_str 456; else let alias = inline_scoped; alias;);
+    let p = take (if flag then "abc"; else let value = "def"; value;);
+    let inline_capture = int_to_str 123;
+    let q = { ~action: Int -> Int, offset: Int -> action offset; }
+      ~{ x: Int -> inline_capture.length + x; } 0;
+    let r = { ~action: Int -> Int, offset: Int -> action offset; } { x: Int -> x + 3; } 0;
+
+    // Let bindings and call arguments share the same saved branch decisions.
+    let binding_trace = ar_int_new 1;
+    unsafe_ar_int_set binding_trace 0 0;
+    let selected = if decide binding_trace 1 flag then
+      if decide binding_trace 2 inner then int_to_str 456; else text; ;
+    else
+      text;
+    ;
+    let expected_binding_trace = if flag then 12; else 1; ;
+
+    if a + b + c == 9 and d == expected_length and e == 5 and f == 6
+      and g + h == 6 and i + j == 8 and selected.length == 3
+      and k + l + m + o + p == 15 and retained.length == 3
+      and q + r == 6
+      and text.length == 3 and unsafe_ar_int_get trace 0 == expected_trace
+      and unsafe_ar_int_get binding_trace 0 == expected_binding_trace
+    then
+      loop (n - 1) (total + 1);
+    else
+      0;
+    ;
+  ;
+;
+
+pub fn main(): Int = if loop 1000 0 == 1000 then 0; else 1; ;;

@@ -907,6 +907,8 @@ fn take_ownership(~s: String): Unit = ();;
   If a call transfers a stored payload, that PAP can be called only once
 - Consuming PAP calls can be nested inside argument expressions. Arguments run once in source
   order, and ownership moves remain visible to later arguments and statements
+- A conditional argument to a consuming parameter transfers ownership on either branch.
+  Borrowed branches are rejected; literal/global branches use the type's clone contract
 
 ---
 

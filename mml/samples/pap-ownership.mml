@@ -47,8 +47,8 @@ pub fn main(): Unit =
 
   // Invocation moves the String FROM the PAP TO take_length.
   // take_length destroys it after computing the result; the PAP is consumed.
-  // Compiler limitation: nesting this call inside int_to_str is rejected;
-  // bind the result separately to keep the ownership analysis working.
+  // Naming the result makes the transfer easy to follow. Using the call directly
+  // inside int_to_str also works; see pap-nested-consuming.mml for both forms.
   let result = consuming 0;
 
   // Uncomment this line to see the second call rejected as use after move:

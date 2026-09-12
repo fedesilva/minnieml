@@ -108,7 +108,7 @@ After this, the only remaining auto-clone path is for globals.
 `Literal` currently threads through more than `let`-bindings. The change has to
 land at each of these sites, or the leak just moves:
 
-- `analyzeLetBinding`: the `LiteralString` arm at `OwnershipAnalyzer.scala:958`
+- `analyzeLambdaApplication`: the `LiteralString` arm at `OwnershipAnalyzer.scala:958`
   collapses into the `Owned` / `isMoveOnRebind` path.
 - `argNeedsClone`: the `LiteralString` arm at `:845` and the `Literal`-state `Ref`
   arm at `:852` collapse.

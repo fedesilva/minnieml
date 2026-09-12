@@ -6,6 +6,9 @@ Durable product changes belong here. Task administration belongs in task working
 
 - Define paragraph-style spacing for Scala and code review, with compact simple case sequences
   permitted when they remain easy to read.
+- Preserve generated-local counters through scoped call arguments so subsequent arguments
+  receive distinct temporary and condition names. Name direct lambda-application analysis
+  explicitly in the ownership pass.
 
 ## 2026-09-11
 
@@ -14,6 +17,9 @@ Durable product changes belong here. Task administration belongs in task working
   by those moves; destroy borrowed inline move-closure temporaries after their call.
 - Add a commented nested-call sample and regressions for consumption, closure cleanup, and
   argument evaluation order.
+- Preserve branch ownership for conditional arguments: free only owned results, transfer
+  consuming branches individually, and reject borrowed sources. Ordinary calls, inline calls,
+  and let bindings share condition decisions so effectful predicates run once.
 
 ## 2026-09-10
 
