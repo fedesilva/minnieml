@@ -1,0 +1,44 @@
+//
+// A consuming PAP should work whether its result is named or used directly.
+// Run with: mmlc run mml/samples/pap-nested-consuming.mml
+//
+// Both forms should print their heading followed by 3. The nested call stays
+// active as a regression check for ownership through allocating expressions.
+// See context/tasks/unify-lambdas.md (nested consuming-PAP calls).
+
+
+// The ~ parameter makes take_length receive ownership of text.
+// It returns an Int and destroys the String when the call finishes.
+fn take_length(~text: String, extra: Int): Int = text.length + extra;;
+
+pub fn main(): Unit =
+  println "1. Named result: the working form";
+
+  // int_to_str allocates a String containing "789".
+  let named_text = int_to_str 789;
+
+  // Supplying text creates a partial application (PAP) waiting for extra.
+  // named_text moves into named; take_length has not run yet.
+  let named = take_length named_text;
+
+  // Calling named moves the String FROM the PAP TO take_length.
+  // The String is destroyed there. The returned Int needs no heap ownership.
+  let result = named 0;
+  println (int_to_str result);  // 3
+
+  println "2. Nested result: the same ownership transfer";
+
+  // Use a fresh String and a fresh PAP: named has already been consumed.
+  let nested_text = int_to_str 789;
+  let nested = take_length nested_text;
+
+  // This calls nested exactly once, then converts its Int result to a String.
+  // The new String belongs to this scope; println borrows it for printing.
+  // Nesting the expression should not change who owns the PAP's stored String.
+  println (int_to_str (nested 0));  // Expected: 3
+
+  // Equivalent form: replace the line above with these two lines:
+  // let nested_result = nested 0;
+  // println (int_to_str nested_result);  // 3
+  // Keep only one form active: calling the same consuming PAP twice is invalid.
+;

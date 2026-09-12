@@ -793,13 +793,22 @@ Missing destruction targets accumulate compiler errors.
    f (alloc())  →  let __tmp = alloc(); let __r = f __tmp; __free_T __tmp; __r
    ```
 
-4. **Mixed ownership conditionals**: When branches differ in allocation, generates a witness
-   boolean:
+   Call arguments retain their parameter contracts and allocation types in named records.
+   Reference validation at the call boundary also checks earlier borrows against later moves.
+   A mixed conditional argument saves its branch decisions once, guarding nested predicates
+   by their parent decisions; its temporary destructor runs only for an allocating branch.
+   Consuming conditional arguments transfer owned sources branch by branch, reject borrowed
+   sources, and clone static branches through the registered clone contract. A temporary and
+   its destructor operand use the same type.
+
+4. **Mixed ownership conditionals**: Let bindings and call arguments share saved branch
+   decisions and an ownership witness. Each predicate runs once, including nested predicates:
    ```
    let s = if c then alloc() else "lit"
    →
-   let __owns_s = if c then true else false;
-   let s = if c then alloc() else "lit";
+   let __condition = c;
+   let __owns_s = if __condition then true else false;
+   let s = if __condition then alloc() else "lit";
    // at scope end: if __owns_s then __free_T s else ()
    ```
 

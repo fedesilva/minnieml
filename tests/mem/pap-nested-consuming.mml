@@ -1,0 +1,61 @@
+// Nested calls transfer each PAP payload once; temporary Strings are freed after use.
+struct Holder { f: Int -> Int };
+
+fn take(~text: String, extra: Int): Int = text.length + extra;;
+fn keep(~text: String, extra: Int): String = text;;
+fn length(text: String): Int = text.length;;
+fn lengths(left: String, right: String): Int = left.length + right.length;;
+fn add_length(n: Int, text: String): Int = n + text.length;;
+fn apply(f: Int -> Int, text: String): Int = f 1 + text.length;;
+fn apply_owned(~f: Int -> Int, text: String): Int = f 1 + text.length;;
+
+// Record argument evaluation order and count in one decimal sequence.
+fn step(trace: IntArray, digit: Int): Int =
+  unsafe_ar_int_set trace 0 ((unsafe_ar_int_get trace 0) * 10 + digit);
+  digit;
+;
+
+fn loop(n: Int, total: Int): Int =
+  if n == 0 then
+    total;
+  else
+    let scalar = take (int_to_str 123);
+    let a = length (int_to_str (scalar 0));
+    let heap = keep (int_to_str 456);
+    let b = length (heap 0);
+
+    let left = take (int_to_str 123);
+    let right = take (int_to_str 456);
+    let c = lengths (int_to_str (left 0)) (int_to_str (right 0));
+
+    let holder = Holder (take (int_to_str 789));
+    let d = length (int_to_str (holder.f 0));
+
+    let branch = take (int_to_str 123);
+    let e = length (int_to_str (if n % 2 == 0 then branch 0; else branch 1;));
+
+    let trace = ar_int_new 1;
+    unsafe_ar_int_set trace 0 0;
+    let f = add_length (step trace 1) (int_to_str (step trace 2));
+    let order = unsafe_ar_int_get trace 0;
+
+    // A borrowed inline move closure owns its capture until the call's temp cleanup.
+    let borrowed_closure_text = int_to_str 123;
+    let g = apply ~{ x: Int -> borrowed_closure_text.length + x; } (int_to_str 2);
+    // A consuming parameter owns the inline closure and its cleanup.
+    let consumed_closure_text = int_to_str 456;
+    let h = apply_owned ~{ x: Int -> consumed_closure_text.length + x; } (int_to_str 2);
+    // A borrow-capturing closure leaves the String with the enclosing scope.
+    let retained_text = int_to_str 789;
+    let i = apply { x: Int -> retained_text.length + x; } (int_to_str 2);
+
+    // a=1, b=3, c=2, d=1, e=1, f=2, g=h=i=5, order=12 on every iteration.
+    if a + b + c + d + e + f + g + h + i == 25 and order == 12 then
+      loop (n - 1) (total + 1);
+    else
+      0;
+    ;
+  ;
+;
+
+pub fn main(): Int = if loop 1000 0 == 1000 then 0; else 1; ;;

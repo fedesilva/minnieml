@@ -503,6 +503,7 @@ case first. The struct-field step shares the function-field ownership work descr
 - [x] [Allow a consuming argument to be supplied after PAP creation](#bug-supply-a-consuming-argument-after-pap-creation).
 - [ ] [Allow an owned PAP to move into a struct field](#bug-store-an-owned-pap-in-a-struct-field).
 - [x] [Allow nested consuming-PAP calls](#bug-nested-consuming-pap-calls).
+- [ ] [Preserve mixed ownership through consuming transfers](#bug-preserve-mixed-ownership-through-consuming-transfers).
 
 #### Bug: supply a consuming argument after PAP creation
 
@@ -548,8 +549,8 @@ case first. The struct-field step shares the function-field ownership work descr
 
 #### Bug: nested consuming-PAP calls
 
-- **Status:** complete; approved implementation, verification, and independent review complete
-  on 2026-09-11.
+- **Status:** complete; review follow-up verified and signed off by the Author's finish
+  request on 2026-09-12.
 - **Original reproduction:** `println (int_to_str (consuming 0))` incorrectly required ownership
   even when `consuming` owned its payload and was called once. A separate result binding worked.
 - **Approved scope:** analyze argument ownership once, preserve source evaluation order and
@@ -558,6 +559,59 @@ case first. The struct-field step shares the function-field ownership work descr
 - **Acceptance:** both forms in `mml/samples/pap-nested-consuming.mml` print `3`; later calls
   and aliases remain rejected after consumption. Nested heap results, struct fields,
   conditional calls, argument order, and exactly-once cleanup pass sanitizer coverage.
+
+#### Bug: preserve mixed ownership through consuming transfers
+
+- **Status:** planned; the Author requested this action item and its evidence on 2026-09-11.
+  Implementation has not started.
+- **Implementation task:** [Make conditional ownership explicit in ownership operations](conditional-ownership-witnesses.md).
+  Repair this bug together with the shared handling of witnesses across cleanup, consumption,
+  and returns, as one ownership workstream within Unify lambdas.
+- **Problem:** a scoped local that selects an allocated String or a literal can reach a
+  consuming parameter with incorrect cleanup on both paths. The allocated value is freed
+  before the consuming call, then freed again by the callee. The literal reaches the callee
+  without owned storage and is incorrectly freed there.
+- **Expected behavior:** preserve the selected branch's ownership through the scoped result
+  and consuming boundary. Transfer allocated storage once and suppress the former owner's
+  cleanup after transfer. Literal storage must use the existing consuming-boundary clone
+  contract; borrowed heap storage must remain rejected.
+- **Acceptance:** add semantic and native regressions for both branches of the reproducer
+  below, named and inline consuming calls, and scoped aliases. Verify exactly-once evaluation,
+  valid transfer, cleanup only by the final owner, and borrowed-source rejection. Both native
+  branches must return exit code 0 and pass ASan+LSan without double-free, invalid free, or leak.
+- **Relevant implementation:** the witness-based cleanup in
+  [OwnershipAnalyzer.scala](../../modules/mmlc-lib/src/main/scala/mml/mmlclib/semantic/OwnershipAnalyzer.scala),
+  particularly `analyzeLambdaApplication`, `prepareConsumingArgument`, and `handleConsumingParam`.
+
+Reproducer preserved from the independent verifier's `true.mml`:
+
+```mml
+fn take(~text: String): Int = text.length;;
+fn check(flag: Bool): Int =
+  take (if true then let value = if flag then int_to_str 123; else "abc"; ; value; else "def";);
+;
+pub fn main(): Int = check true - 3;;
+```
+
+For the literal branch, change only `check true` to `check false` in `main`.
+Compile each variant with `mmlc -s -O 0`, then run with
+`ASAN_OPTIONS=detect_leaks=1:halt_on_error=1:abort_on_error=1`.
+
+Evidence collected on 2026-09-11, macOS arm64:
+
+- **Allocated branch (`true`):** exit 134; ASan reports `attempting double-free`.
+  The first free is in `check`; the second is `take -> __free_String -> free`.
+  Emitted IR shows witness-guarded `__free_String` before the result reaches `take`.
+- **Literal branch (`false`):** exit 134; ASan reports a BUS during deallocation through
+  `take -> __free_String -> free`. IR passes the literal-backed String without a clone.
+- A fresh independent verifier reproduced the failures; the root agent subsequently reran
+  both saved binaries and confirmed the same ASan failures. Scratch sources, binaries, and
+  IR remain under `/tmp/scoped-witness-verifier/`; the source and observed results above are
+  the durable evidence and do not depend on retaining that temporary directory.
+- The reviewer excluded this from the four-repair re-review because the witness-cleanup
+  block already exists at commit `234b6e1`. This attribution is based on source comparison;
+  the exact reproducer was not run against a rebuilt older compiler. The bug remains open.
+  The passing 41-fixture harness does not include this reproducer.
 
 ### Later-stage documentation
 
@@ -568,8 +622,17 @@ case first. The struct-field step shares the function-field ownership work descr
 
 ## Verification
 
-The nested consuming-PAP slice passes **595 tests, 51 existing ignored**, all seven required
-smokes, and **40/40 macOS ASan+LSan fixtures**. Formatting, lint, publishing, and all seven
+The completed nested consuming-PAP review follow-up passes **611 tests, 51 existing ignored**,
+all seven required smokes, formatting, lint, publishing, all seven benchmark builds, and
+**41/41 macOS ASan+LSan fixtures**. The counter-continuity regression, method rename, and QA
+comments pass fresh independent narrow review with no actionable findings. The preceding
+conditional-argument repairs have their own completed narrow reviews recorded below.
+The mixed-ownership consuming-transfer bug remains planned and is not covered by these
+passing fixtures. The general branch audit remains deferred.
+
+Before the additional review, the nested consuming-PAP slice passed **595 tests, 51 existing
+ignored**, all seven required smokes, and **40/40 macOS ASan+LSan fixtures**. Formatting,
+lint, publishing, and all seven
 benchmark builds pass. Independent review confirmed an inline-closure cleanup gap; its fix
 passes the exact reproducer and expanded regressions. Fresh narrow re-review found no actionable
 findings.
@@ -603,6 +666,8 @@ are in `context/history/` for Author review. No compiler slice is authorized by 
   The Author considers the review sufficient for this checkpoint and defers the general
   branch audit; the interrupted overall compiler review is not represented as complete.
   Deferred consuming arguments signed off on 2026-09-10 by the Author's finish request.
+  Nested consuming-PAP calls and their review follow-up signed off on 2026-09-12 by the
+  Author's finish request.
 - Tracked item completion: Pending; the broader lambda implementation and follow-ups remain open.
 - Commit authorization: Granted for both checkpoints by the Author's finish requests.
   The current commit includes all working-tree changes, as explicitly requested.
@@ -612,6 +677,48 @@ are in `context/history/` for Author review. No compiler slice is authorized by 
 
 **Branch:** `dev-lambdas-migration`.
 
+- **Completed review follow-up (2026-09-12):** The Author authorized finishing and committing
+  the remaining work. Nested consuming-PAP calls and their review repairs are complete;
+  the parent task remains in progress. `analyzeLambdaApplication` names the direct lambda
+  application path, preserves generated-local counters through scoped arguments, and carries
+  QA markers for the planned AST-field cleanup. TypeUtils retains paragraph spacing and a
+  `FIXME:QA` reference to the resolved-type-identity finding.
+  Formatting, lint, **611 passed / 51 existing ignored**, seven smokes, and publishing pass
+  in `/tmp/mml-finish-20260912/gates.log`. The final QA-comment normalization passes formatting
+  and lint again in `final-style.log`; it changes no executable behavior. All seven clean
+  benchmark builds pass (`bench-clean.log`, `benchmarks.log`), and **41/41 ASan+LSan** fixtures
+  pass in 77 seconds (`memory.log`). Installed/build jar SHA256:
+  `ce49a34bdc22017b804d8a3334c5ca5c12237e0d7fcc9018594324abb915ec9b`.
+  Fresh independent review of the counter repair, regression, rename, and comments finds no
+  actionable issues (`final-code.diff`, `final-code-review.md` in that directory). No candidate
+  required a claim verifier. QA compliance, tracking links, and whitespace checks pass.
+  Next: the selected binding identity and local-construction step. Conditional-ownership
+  repair/hardening and AST-field cleanup remain planned. The branch-rename errand is pending.
+
+- **PAP review follow-up (2026-09-12):** The Author approved repairing let-binding counter
+  propagation and correcting the QA marker. `analyzeLambdaApplication` returns the counter reached
+  after body analysis while preserving its existing outer-scope ownership propagation.
+  The focused `PapOwnershipTest` case covers two scoped arguments with allocating predicates
+  and bodies: before the fix eight generated bindings shared four names; after the fix the
+  regression passes with distinct names and identities. Logs:
+  `/tmp/mml-pap-counter-review/before.log` and `/tmp/mml-pap-counter-review/after.log`.
+  `TODO:QA` is corrected to `FIXME:QA`; passing a whole `Lambda` remains the noted follow-up.
+  Formatting, lint, the full suite (**611 passed, 51 existing ignored**), all seven required
+  smoke checks, and local publishing pass (`/tmp/mml-pap-counter-review/gates.log`). Clean
+  benchmark builds pass for all seven programs (`bench-clean.log`, `benchmarks.log` in that
+  directory); no performance comparison was run. The memory harness passes **41/41 ASan+LSan**
+  in 45 seconds (`memory.log`). Installed/build jar SHA256:
+  `ba0e82bf5bb3dafdc7edf9a33ab748e44192c443fc36939549fea1c7da39d561`.
+  Local QA, tracking consistency, and staged/unstaged whitespace checks pass.
+  Fresh narrow review could not start: `agent thread limit reached`. The exact repair diff,
+  pre-repair snapshots, and review packet are in `/tmp/mml-pap-counter-review/`. The Author
+  approved parent-agent review; that narrow review completed with no actionable findings.
+  It traced predicate/argument/body counter flow into the next call argument, checked that
+  only the counter is added to the existing scope merge, and checked the regression's
+  before/after evidence. Primary-review and per-claim independence were skipped under the
+  approved fallback. No additional code changes or test reruns were needed.
+  This records the counter-repair checkpoint; completion and final review evidence are above.
+
 - **Construction planning (2026-09-11):** The Author requested the
   [intermediate construction item](#establish-binding-identity-and-local-construction-invariants)
   within this workstream and a linked [scope-analysis follow-up](lambda-scope-classification.md).
@@ -619,6 +726,140 @@ are in `context/history/` for Author review. No compiler slice is authorized by 
   Tracking review, link/anchor checks, and the scoped diff check pass. The finish request
   authorizes a local commit of this bookkeeping only; compiler implementation and repair
   signoff remain pending. Administrative task creation does not receive a product changelog entry.
+
+- **Prior checkpoint (2026-09-11, resumed review repair):** The approved review
+  repair passes compiler gates and fresh independent narrow re-review. Compiler, test, sample,
+  and documentation changes remain uncommitted on `dev-lambdas-migration`; the parent task
+  remains in progress. No commands or reviewers remain running. Next: Author review/signoff
+  of the bounded repair and its implementation tour. No commit or push is authorized by
+  this resume.
+
+  Isolated the static-alias case in `/tmp/mml-static-alias.mml`. Before the fix, ASan
+  exited 134 in `__free_String`; emitted IR cloned the direct literal branch but passed
+  static storage from `let value = "def"; value` directly to the consuming callee.
+  `argNeedsClone` now recognizes `Literal` bindings at consuming boundaries. Both branches
+  now call the registered String clone helper. Three semantic regressions check clone
+  identities/counts for named calls, inline calls, and a scoped conditional.
+  Evidence: `/tmp/mml-static-alias-before.log`, `/tmp/mml-resume-native-after.log`, and
+  `/tmp/mml-resume-focused.log` (49 focused tests passed).
+
+  The expanded native fixture initially failed type inference in its positive inline
+  closure controls: their function parameter `f` shadowed an earlier scalar local `f`.
+  Controls use distinct `action`/`offset` parameters and both execute successfully.
+  The negative closure test now asserts the ownership-sink diagnostic explicitly.
+  The separate type-inference collision remains outside this repair: minimal probe
+  `/tmp/mml-inline-name-collision.mml` and output `/tmp/mml-inline-name-collision.log`
+  reproduce it with the fresh compiler. No TypeChecker changes were made.
+
+  Current verification:
+  - `sbtn 'scalafmtAll; scalafixAll; test; run run mml/samples/hola.mml;
+    run run mml/samples/quicksort.mml; run run mml/samples/astar2.mml;
+    run run mml/samples/partial-fac1.mml; run mml/samples/style-guide.mml;
+    run mml/samples/lambda-factorial.mml; run mml/samples/raytracer3_p6.mml;
+    mmlcPublishLocal'`: **610 passed, 51 existing ignored**, all seven smokes,
+    formatting/lint, and publishing pass (`/tmp/mml-resume-gates.log`).
+  - `make -C benchmark clean`, then `make -C benchmark mml`: all seven benchmark
+    builds pass (`/tmp/mml-resume-benchmarks.log`); no performance measurements claimed.
+  - `./tests/mem/run.sh all`: **41/41 ASan+LSan fixtures pass**, 47 seconds
+    (`/tmp/mml-resume-memory.log`), including the expanded argument-ownership fixture.
+  - Exact shadowing reproducer and expanded fixture pass via `sbtn run run -s -O 0`
+    (`/tmp/mml-resume-controls.log`). Both affected tutorials run under ASan and print
+    their expected values; named/nested consuming forms both print `3`
+    (`/tmp/mml-resume-samples.log`).
+  - Installed/build jar SHA256:
+    `740ac010a437b9dd1fb60d335c83a839547d2919179d67b272ef5f456b8735ef`.
+  - Local QA passes. Fresh independent reviewer `/root/repair_independent_review` completed
+    the narrow re-review with no actionable findings in sink validation, scoped result
+    consumption, binding-identity cleanup, and literal cloning. It read the full analyzer
+    diff and affected tests/docs, independently ran the expanded fixture under ASan, and
+    checked emitted IR for shadowed cleanup, scoped transfers, literal clones, and owned/static
+    closure destruction. Packet: `/tmp/mml-independent-repair-review.md`; isolated fixture
+    output: `/tmp/mml-repair-independent-fixture`. Compiler SHA256 matches the verified build.
+  - The reviewer's only candidate received a fresh independent verifier and was excluded as
+    pre-existing general branch-ownership behavior. Evidence is preserved under
+    `/tmp/scoped-witness-verifier/`. The Author subsequently requested the
+    [mixed-ownership transfer action item](#bug-preserve-mixed-ownership-through-consuming-transfers)
+    above, which preserves the reproducer and observed failures. No implementation was added.
+    The reviewer's optional `leaks --atExit` run could not acquire the process task port;
+    its fresh runtime evidence is ASan only, separate from the parent-run 41/41 ASan+LSan
+    harness above. It did not repeat broad gates or Linux validation.
+  - The earlier local fallback review is superseded by this independent re-review. The Author
+    asked why reviewers were not independent, then directed continuation; fresh reviewer
+    creation succeeded. General branch audit and Linux sanitizer validation remain deferred.
+
+  Implementation tour: `analyzeCall` threads argument ownership once in source order;
+  `prepareConditionalArgument` saves branch decisions and cleanup witnesses;
+  `analyzeArgument` propagates consuming contracts through conditionals/scoped expressions;
+  `ownershipSinkErrors` rejects borrowed closure transfers; `sameBinding`/`bindingMoved`
+  retain cleanup identity under shadowing; `argNeedsClone` supplies owned storage for
+  literal bindings at consuming boundaries.
+
+- **Previous stopping point (2026-09-11, recorded at the Author's request; resolved above):** Review repairs remain
+  uncommitted and in progress. The latest work addresses three locally reproduced review
+  cases: an inline consuming parameter accepted a borrowed closure; a parameter shadowing
+  its caller's binding leaked its owned value; and a borrowed conditional result escaped
+  consuming checks through a local alias. Implemented shared ownership-sink validation,
+  binding-identity cleanup, and propagation of consuming-result checks through scoped
+  expressions. The new semantic regressions pass: **607 passed, 51 existing ignored**
+  (`/tmp/mml-review-local-fixes.log`). Native verification of these fixes is not complete.
+  Primary-review evidence: `/tmp/mml-inline-sink-claim.md`,
+  `/tmp/mml-shadow-cleanup-claim.md`, `/tmp/mml-scoped-branch-claim.md`; local reproductions:
+  `/tmp/mml-local-claim.log`, `/tmp/mml-shadow-check.log`, `/tmp/mml-branch-check.log`.
+
+  Current failure: `sbtn 'run run -s -O 0 tests/mem/pap-argument-ownership.mml'`
+  compiles, then exits 134. ASan reports a BUS caused by a write inside allocator
+  deallocation, with `loop -> take -> __free_String -> free`
+  (`/tmp/mml-review-local-native.log`). Suspected trigger:
+  `take (if flag then "abc"; else let value = "def"; value;)`.
+  `argNeedsClone` clones a direct string literal but explicitly returns false for a
+  reference whose ownership state is `Literal`. Theory: the scoped alias returns static
+  string storage without a heap clone, and the consuming function frees it. The trace
+  confirms the destructor failure; this exact branch has not yet been isolated as its cause.
+
+  **Next:** isolate that static-alias case, verify the emitted ownership/clone path, fix
+  the confirmed cause, and run the expanded native fixture plus the exact shadowing
+  reproducer. The latter did not run because the batched command stopped at the first
+  failure. Positive owned/static closure controls added to the fixture also await native
+  execution. Then run the compiler gates, republish, run the full memory harness and
+  benchmark builds, and finish the narrow local re-review and implementation tour.
+  Installed `mmlc` is still the earlier 605-test build; use `sbtn` for current source.
+  No new agents are needed: the Author approved local verification and narrow re-review.
+  This checkpoint records unfinished work, not signoff or commit authorization.
+
+- **Review repair (approved 2026-09-11):** The Author requested the relevant fixes and an
+  implementation tour. A mixed conditional argument reproduces an ASan double-free
+  (`/tmp/mml-review-mixed-before.log`). Two new tests also reproduce missing consuming-branch
+  moves and acceptance of borrowed branches (`/tmp/mml-review-conditional-consuming-before.log`).
+  Calls use named argument records, shared reference validation, parameter-based moves,
+  consistent temporary/destructor types, and typed callee analysis after operands. Conditional
+  arguments save branch decisions once and guard nested predicates. Consuming branches validate
+  and transfer individually. Parentheses use the common allocation classifier, including closures.
+  Source inline calls already lower to unary scoped bindings; new tests retain their move/reuse
+  behavior. A further failing test found that those bindings accepted borrowed conditional
+  branches at consuming parameters (`/tmp/mml-review-inline-conditional-before.log`). Scoped
+  bindings now share consuming-branch checks and saved condition decisions with ordinary calls;
+  let-binding predicates also run once. Staged PAP capture transfer already rejects source reuse,
+  so the full-application guard is retained. Earlier checkpoint gates pass **605 tests (51 existing ignored)**,
+  all seven smokes, formatting/lint, publishing, and all seven benchmark builds. The full native
+  harness passes **41/41 ASan+LSan fixtures** in 45 seconds. Both tutorial forms print `3` under
+  ASan. Logs: `/tmp/mml-review-complete-gates.log`, `/tmp/mml-review-complete-memory.log`,
+  `/tmp/mml-review-complete-benchmarks.log`, `/tmp/mml-review-complete-sample.log`, and
+  `/tmp/mml-review-complete-tutorial.log`. Installed/build jar SHA256:
+  `56d8e3c75c3d43510bd0176eed58766b3bc3afc2305124137241c6fe50678935`.
+  Fresh reviewer `/root/argument_ownership_review` completed the primary review. Its mandatory
+  claim verifier could not start: both the reviewer and root dispatch received
+  `agent thread limit reached`. The Author approved local verification and narrow re-review;
+  subsequent findings, fixes, and the unresolved native crash are recorded above. The prior
+  completion record below is a historical checkpoint, superseded by this review repair.
+
+  Review-item disposition: consuming moves use resolved parameter records rather than a
+  Ref-only callee lookup; mixed cleanup uses witnesses; allocation classification unwraps
+  parentheses and includes owned closures; callee analysis follows argument evaluation;
+  temporaries and destructor operands share one type; lifetime checks reuse `analyzeRef`;
+  returned origins are computed once per argument; named records replace positional tuples;
+  typed callee results remove the unreachable fallback/non-local return. The full-application
+  guard stays because PAP creation already transfers captured callees. The three memory.md
+  blank lines are pre-existing Author edits and remain untouched.
 
 - **Completed slice — nested consuming-PAP calls (approved 2026-09-11):** Fix ownership
   propagation through nested allocating expressions while preserving call-once and
@@ -888,10 +1129,10 @@ This requirement also applies to future phases that have not yet been planned.
 
 ##### Current focus — 2026-09-11
 
-The nested consuming-PAP implementation is complete and uncommitted, with final gates and
-independent review recorded in [Task Working Memory](#task-working-memory). Owned PAP struct-field support
-is committed at `2b55e82`. The parent task stays in progress; the next bounded slice requires
-Author selection. The general branch audit and separate Linux sanitizer validation remain deferred.
+The nested consuming-PAP implementation and review repairs are verified and uncommitted, with
+current evidence in [Task Working Memory](#task-working-memory). Owned PAP struct-field support
+is committed at `2b55e82`. The parent task stays in progress. The general branch audit and
+separate Linux sanitizer validation remain deferred.
 
 ##### Transfer checkpoint and recovery
 

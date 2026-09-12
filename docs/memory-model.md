@@ -564,6 +564,12 @@ Arguments are evaluated once, in source order. A move in an argument remains vis
 later arguments and statements; nesting does not permit another call to the consumed PAP.
 See [pap-nested-consuming.mml](../mml/samples/pap-nested-consuming.mml) for both forms.
 
+An argument conditional can select an allocated value or borrow an existing value. When the
+parameter borrows, the caller destroys only an allocated result after the call. Conditions
+run once, including effectful nested predicates. When the parameter consumes, each branch
+must supply ownership: owned sources move, borrowed sources are rejected, and static values
+use the implicit clone boundary described below.
+
 ### Environment cleanup
 
 For a transfer-bearing PAP, the generated entry changes its environment destructor to the raw
