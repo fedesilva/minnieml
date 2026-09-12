@@ -46,7 +46,7 @@ Durable product changes belong here. Task administration belongs in task working
 
 The entries below preserve the former tracker's change log verbatim. They include claims
 from earlier branches, including the abandoned lambda implementation; they do not establish
-completion on `dev-lambdas-migration`. For that branch's evidence, use the
+completion on `dev-lambda-unify`. For that branch's evidence, use the
 [lambda task](tasks/unify-lambdas.md) and [migration handoff](tasks/unify-lambdas.md#migration-handoff).
 Historical paths and issue references describe their original context.
 

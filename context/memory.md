@@ -16,7 +16,7 @@ This is the Author's active and near-term focus. The backlog lives in [tasks/](t
 
 - **Tracker:** [Unify lambdas](tasks/unify-lambdas.md)
 - **Status:** in_progress
-- **Current focus:** [Binding identity and local construction](tasks/unify-lambdas.md#establish-binding-identity-and-local-construction-invariants),
+- **Current focus:** On `dev-lambda-unify`, [Binding identity and local construction](tasks/unify-lambdas.md#establish-binding-identity-and-local-construction-invariants),
   selected before further ownership changes. The nested consuming-PAP review follow-up is
   complete; verification and signoff are recorded in task working memory.
 
