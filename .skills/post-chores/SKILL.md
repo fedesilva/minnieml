@@ -1,9 +1,13 @@
 ---
 name: post-chores
-description: Run MML's applicable finish checks, focused tracking review, and independent adversarial review before handing off compiler, tooling, technical documentation, or workflow work.
+description: Run finish checks and review when finishing a tracked task or handing off compiler changes, including compiler errands. Excludes non-compiler errands and simple asks.
 ---
 
 # Post Chores
+
+Apply only when finishing a tracked task or handing off compiler changes. A sample,
+wording edit, or other intermediate artifact does not itself trigger this workflow.
+For non-compiler errands and simple asks, perform only checks relevant to the change.
 
 Read `AGENTS.md`, `context/coding-rules.md`, `context/qa-rules-and-coding-style.md`,
 and `context/dev-tools.md` directly. When tracking is involved, also read tracking rules,

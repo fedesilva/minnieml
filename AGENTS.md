@@ -105,5 +105,6 @@ Read only the documentation and code directly related to the target doc.
   Follow `context/task-tracking-rules.md`; passing checks alone does not authorize finishing.
 - **For big tasks or projects**
   - Split your work into smaller chunks, stop on completion and ask for review and signoff.
-- **Before handing off work**, use local `post-chores` for applicable verification and review.
-  Compiler QA remains mandatory; tracking-document review stays focused and in the current agent.
+- Use local `post-chores` when finishing a tracked task or handing off compiler changes,
+  including compiler errands. Non-compiler errands and simple asks need only relevant checks;
+  delivering an intermediate artifact does not trigger post-chores or independent review.
