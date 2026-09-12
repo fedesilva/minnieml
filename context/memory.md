@@ -16,9 +16,9 @@ This is the Author's active and near-term focus. The backlog lives in [tasks/](t
 
 - **Tracker:** [Unify lambdas](tasks/unify-lambdas.md)
 - **Status:** in_progress
-- **Current focus:** On `dev-lambda-unify`, [Binding identity and local construction](tasks/unify-lambdas.md#establish-binding-identity-and-local-construction-invariants),
-  stage 1 identity allocation and index consistency is complete. Stage 2 binding construction
-  and type propagation remains open.
+- **Current focus:** [Execution checklist](tasks/unify-lambdas.md#execution-checklist), binding
+  identity and local construction: stage 2 is `ready_for_signoff`, verified and uncommitted.
+  Next: stage 2 signoff. Stage 1 is complete at `dbd65d9`.
 
 ### Conditional ownership hardening
 

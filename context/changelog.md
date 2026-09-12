@@ -4,6 +4,10 @@ Durable product changes belong here. Current task state belongs in task files.
 
 ## 2026-09-12
 
+- Require a compact execution checklist in task documents and the template, showing completed,
+  active, and pending steps in delivery order. Keep detailed plans and historical evidence
+  separate from the current overview; expand only the active subitem and its next action.
+
 - Centralize readable binding identities with immutable allocation history across semantic
   rewrites. Preserve reference targets while refreshing indexes to current definitions; assign
   identities to generated helper parameters and reject duplicate parameters in nested lambdas.
