@@ -8,16 +8,35 @@
 - **Target Branch:** dev-lambda-unify
 - **External Reference (optional):** https://github.com/fedesilva/minnieml/issues/255
 
+## Execution Checklist
+
+Top-level delivery order; details and checkpoint evidence are linked below. Pending steps
+remain subject to bounded plan approval. Only the active step exposes its current subitem.
+
+1. [x] **complete** — [Preserve tests, samples, docs, and helpers](#lambda-restart-test-preservation-map) (`6e33ee4`).
+2. [x] **complete** — [Reject borrowed returns through aliases](#signed-off-workstream-borrowed-returns-through-aliases) (`323b8ca`).
+3. [x] **complete** — [Typed closure destruction](#signed-off-workstream-typed-closure-destruction) (`2efeb8c`).
+4. [x] **complete** — [PAP creation and ownership semantics](#partial-application-ownership-contract) (`ea803e2`).
+5. [x] **complete** — [Deferred consuming arguments](#bug-supply-a-consuming-argument-after-pap-creation) (`c66e309`).
+6. [x] **complete** — [Owned PAPs in struct fields](#bug-store-an-owned-pap-in-a-struct-field) (`2b55e82`).
+7. [x] **complete** — [Nested consuming-PAP calls and review repairs](#bug-nested-consuming-pap-calls) (`234b6e1`, `dc29582`).
+8. [ ] **ready_for_signoff** — [Binding identity and local construction](#establish-binding-identity-and-local-construction-invariants).
+   - Stage 2 binding/cleanup construction and type propagation: verified, uncommitted;
+     next: obtain signoff.
+9. [ ] **planned** — [Counter and argument-expression preservation](#preserve-counters-and-argument-expressions-across-ownership-analysis).
+10. [ ] **planned** — [Mixed-ownership transfer repair and conditional-ownership hardening](#bug-preserve-mixed-ownership-through-consuming-transfers).
+11. [ ] **planned** — [Remaining lambda semantics and lowering](#remaining-lambda-implementation).
+12. [ ] **planned** — [Integrate the PAP tutorial into the language reference](#later-stage-documentation).
+13. [ ] **planned** — General branch audit (deferred) and final task signoff.
+
+Linux sanitizer validation is deferred to the separate
+[Linux verification task](linux-sanitizer-verification.md).
+
 ## Problem
 
-* Status: In progress
-
-
-- GitHub: `https://github.com/fedesilva/minnieml/issues/255`
-
-The fresh lambda implementation lives on `dev-lambda-unify`. See
-[Task Working Memory](#task-working-memory) and the
-[migration handoff](#migration-handoff) for current progress and the next discussion.
+Lambda semantics, ownership, and lowering need a common model on `dev-lambda-unify`.
+The [Execution Checklist](#execution-checklist) is the current progress overview;
+[Task Working Memory](#task-working-memory) holds the active handoff.
 
 ## Outcome
 
@@ -427,33 +446,24 @@ Pin these cases:
 
 ## Plan (Approval Gate)
 
-- [x] Discuss and approve a bounded slice of common ownership and partial-application
-  elaboration, using the salvage sequence and preserved regressions.
-- [x] Establish evaluation-once semantics, borrowed payload lifetimes, and explicit
-  ownership transfers for the PAP creation slice.
-- [x] Implement and verify PAP creation semantics; Author signoff recorded on 2026-09-10.
-- [x] Support deferred consuming arguments; Author signoff recorded on 2026-09-10.
-- [ ] Complete and verify the remaining fresh implementation in reviewed stages.
-
-Approval: Preservation, borrowed returns, and typed closure destruction are recorded below.
-The Author signed off the bounded PAP creation-semantics slice on 2026-09-10 and authorized
-its local commit. The Author also signed off the deferred-consuming-argument slice on
-2026-09-10 and authorized its local commit, including the current review edits. The general
-branch audit is deferred at the Author's request. Broader lambda work remains pending.
+Preservation, borrowed returns, typed closure destruction, PAP creation, deferred consuming
+arguments, owned PAP struct fields, and nested consuming-PAP repairs are complete.
+Binding identity and local construction has an approved two-stage implementation plan;
+stage 2 signoff is pending. Remaining work requires bounded approval before implementation.
+The general branch audit is deferred.
 
 ## Implementation Checklist
 
-The branch-specific remaining work and evidence are in the
-[migration handoff](#migration-handoff). Source-branch checked items are history,
-not a checklist to carry into this implementation.
+The [Execution Checklist](#execution-checklist) owns the top-level sequence and statuses.
+The sections below retain detailed scope, acceptance criteria, and internal implementation
+steps. Checked items from the source branch remain historical evidence, not completion on
+this branch.
 
 ### Intermediate construction step
 
-- [ ] [Establish binding identity and local-construction invariants](#establish-binding-identity-and-local-construction-invariants).
-
 #### Establish binding identity and local-construction invariants
 
-- **Status:** in_progress.
+- **Status:** ready_for_signoff.
 - **Sequence:** before further ownership changes. Review this construction step independently
   before resuming the remaining lambda fixes.
 - **Problem and evidence:** binding identity, reference construction, wrapper typing, and
@@ -488,25 +498,20 @@ not a checklist to carry into this implementation.
   ID stability is not required.
 - **Delivery:** stage 1 covers identity allocation, allocating callers, and index consistency.
   Stage 2 covers binding/cleanup construction and type propagation.
-- [x] Stage 1: shared identity allocation, allocating callers, and index consistency.
-- [ ] Stage 2: shared binding/cleanup construction, type propagation, and remaining callers.
-- **Next action:** implement stage 2 binding/cleanup construction and type propagation.
+- [x] **complete** — Stage 1: shared identity allocation, allocating callers, and index
+  consistency (`dbd65d9`); signed off.
+- [ ] **ready_for_signoff** — Stage 2: shared binding/cleanup construction, type propagation,
+  and remaining callers; implementation and verification complete, signoff pending.
+- **Next action:** obtain construction-step signoff before resuming ownership changes.
 - **Follow-up:** [Remove provenance heuristics from lambda scope analysis](lambda-scope-classification.md).
   That task addresses AST interpretation and reconciles the existing sequence-lambda item;
   it is separate from this construction step.
 
 ### Near-term bug-fix steps
 
-The Author considers these restrictions bugs and selected them as steps in this workstream.
-Holding them for follow-up is acceptable. Keep them separate from the PAP creation slice;
-this records scope and priority, not implementation or signoff. Tackle the smaller parameter
-case first. The struct-field step shares the function-field ownership work described above.
-
-- [x] [Allow a consuming argument to be supplied after PAP creation](#bug-supply-a-consuming-argument-after-pap-creation).
-- [ ] [Allow an owned PAP to move into a struct field](#bug-store-an-owned-pap-in-a-struct-field).
-- [x] [Allow nested consuming-PAP calls](#bug-nested-consuming-pap-calls).
-- [ ] [Preserve counters and argument expressions across ownership analysis](#preserve-counters-and-argument-expressions-across-ownership-analysis).
-- [ ] [Preserve mixed ownership through consuming transfers](#bug-preserve-mixed-ownership-through-consuming-transfers).
+These steps cover PAP invocation/storage bugs and ownership-analysis follow-ups. Their
+current statuses appear in the [Execution Checklist](#execution-checklist); each section
+retains its reproduction, scope, and acceptance criteria.
 
 #### Bug: supply a consuming argument after PAP creation
 
@@ -531,7 +536,9 @@ case first. The struct-field step shares the function-field ownership work descr
 
 #### Bug: store an owned PAP in a struct field
 
-- **Status:** in_progress; implementation and review fixes verified; commit and push authorized.
+- **Status:** complete; implementation and review fixes committed at `2b55e82`, included
+  in the recorded `origin/dev-lambda-unify` history. Broader review coverage remains limited
+  as documented in [completed-slice evidence](#completed-slice-evidence).
 - **Original reproduction:** with `struct Holder { f: Int -> Int };` and ordinary two-argument
   `add`, `let p = add 1; let holder = Holder p;` was rejected by the PAP constructor-argument guard.
 - **Expected behavior:** construction transfers the owned function environment into `holder`;
@@ -568,11 +575,11 @@ case first. The struct-field step shares the function-field ownership work descr
 - **Status:** planned.
 - **Source:** [OwnershipAnalyzer.scala](../../modules/mmlc-lib/src/main/scala/mml/mmlclib/semantic/OwnershipAnalyzer.scala),
   `analyzeCond`, `analyzeLambda`, `analyzeArgument`, and `prepareConsumingArgument`.
-- **Counter problem:** `analyzeCond` starts both branch analyses from `condResult.scope` and
-  returns a merge based on that scope, discarding counters reached within either branch.
-  `analyzeLambda` analyzes its body but returns a capture-ownership scope folded from its input
-  scope, also discarding body counter increments. Generated condition and temporary names can
-  therefore be reused by later analysis within the same enclosing owner.
+- **Counter scope:** verify generated condition/temporary name continuity through branches,
+  lambda bodies, and subsequent arguments. Shared binding identity allocation in `dbd65d9`
+  threads `bindingIds` through conditional branches and lambda cleanup. That implementation
+  is recorded under the construction step; the focused counter/name coverage and remaining
+  argument-expression work below still require reconciliation against it.
 - **Expression problem:** consuming-argument helpers select `value.terms.lastOption` and then
   rebuild with `value.copy(terms = List(...))`. Any preceding terms are silently discarded.
   Related ownership predicates disagree on whether to inspect the first or last term.
@@ -583,8 +590,8 @@ case first. The struct-field step shares the function-field ownership work descr
 - **Implementation plan:**
   - [ ] Add focused regressions for counter continuity through both conditional branches,
     lambda bodies, and subsequent arguments; check distinct generated names and binding IDs.
-  - [ ] Thread counter allocation through those analyses independently of ownership-state
-    isolation and merging.
+  - [ ] Reconcile the shared identity allocator with condition/temporary name progression;
+    address any remaining gaps independently of ownership-state isolation and merging.
   - [ ] Establish whether multi-term argument expressions are valid at this phase. Preserve
     and analyze preceding terms in source order if supported; otherwise enforce the singleton
     invariant with a diagnostic. Align the affected ownership predicates with that contract.
@@ -593,16 +600,17 @@ case first. The struct-field step shares the function-field ownership work descr
   - [ ] Add one entry in [QA misses](qa-misses.md) covering both lambda-decomposition markers
     and linking [Eliminate unnecessary AST field decomposition](preserve-ast-nodes-in-helper-apis.md).
   - [ ] Run applicable compiler gates and focused independent review.
-- **Evidence:** source inspection confirms counter loss and replacement of the entire term
-  list. Focused failing regressions and runtime impact verification are pending.
+- **Evidence:** `analyzeCond` and `analyzeLambda` retain the shared binding-ID supply.
+  Consuming-argument helpers still select the final term and replace the entire term list.
+  Focused counter/name regressions, the expression-shape contract, and runtime impact
+  verification remain pending; this tracking check does not establish compiler correctness.
 - **Boundary:** the allocated/static consuming-transfer and return failures belong to
   [conditional-ownership hardening](conditional-ownership-witnesses.md). This subtask addresses
   counter propagation, expression preservation, and the QA cross-reference.
 
 #### Bug: preserve mixed ownership through consuming transfers
 
-- **Status:** planned; the Author requested this action item and its evidence on 2026-09-11.
-  Implementation has not started.
+- **Status:** planned.
 - **Implementation task:** [Make conditional ownership explicit in ownership operations](conditional-ownership-witnesses.md).
   Repair this bug together with the shared handling of witnesses across cleanup, consumption,
   and returns, as one ownership workstream within Unify lambdas.
@@ -652,8 +660,20 @@ Evidence collected on 2026-09-11, macOS arm64:
   the exact reproducer was not run against a rebuilt older compiler. The bug remains open.
   The passing 41-fixture harness does not include this reproducer.
 
+### Remaining lambda implementation
+
+- **Status:** planned.
+- Complete the [semantic goals](#semantic-goals) and reconcile the remaining preserved
+  regressions against the agreed model in bounded, reviewed slices.
+- The [scope-analysis follow-up](lambda-scope-classification.md) addresses provenance
+  heuristics separately from binding construction. The
+  [salvage sequence](../history/unify-lambdas-salvage.md#suggested-restart-sequence) and
+  [migration inventory](unify-lambdas-migration.json) provide evidence for selecting further
+  slices; neither supplies implementation approval or current completion status.
+
 ### Later-stage documentation
 
+- **Status:** planned.
 - [ ] Adapt the [PAP ownership tutorial](../../mml/samples/pap-ownership.mml) into the
   [language reference](../../docs/language-reference.md) at a later stage of the lambda work.
   Preserve its concrete, step-by-step explanation of owning, borrowing, and consuming PAPs,
@@ -661,33 +681,17 @@ Evidence collected on 2026-09-11, macOS arm64:
 
 ## Verification
 
-The completed nested consuming-PAP review follow-up passes **611 tests, 51 existing ignored**,
-all seven required smokes, formatting, lint, publishing, all seven benchmark builds, and
-**41/41 macOS ASan+LSan fixtures**. The counter-continuity regression, method rename, and QA
-comments pass fresh independent narrow review with no actionable findings. The preceding
-conditional-argument repairs have their own completed narrow reviews recorded below.
-The mixed-ownership consuming-transfer bug remains planned and is not covered by these
-passing fixtures. The general branch audit remains deferred.
+Binding construction stage 2 has recorded formatting/lint, **636 passed / 51 existing ignores**,
+all seven compiler smokes, publishing, seven clean benchmark builds, **41/41 Darwin arm64
+ASan+LSan cases**, and completed focused independent review. Signoff is pending.
+The [binding construction evidence](#binding-construction-evidence) retains the stage 1
+checkpoint; detailed stage 2 logs and implementation notes remain uncommitted with its code.
+These results do not cover the separate mixed-ownership reproducer or establish Linux
+sanitizer coverage. General branch audit and Linux sanitizer validation remain deferred.
 
-Before the additional review, the nested consuming-PAP slice passed **595 tests, 51 existing
-ignored**, all seven required smokes, and **40/40 macOS ASan+LSan fixtures**. Formatting,
-lint, publishing, and all seven
-benchmark builds pass. Independent review confirmed an inline-closure cleanup gap; its fix
-passes the exact reproducer and expanded regressions. Fresh narrow re-review found no actionable
-findings.
-Commands, logs, and review status are in [Task Working Memory](#task-working-memory).
-
-The deferred-consuming-argument slice passes **530 tests, 54 ignored**, all seven required
-smokes, and all **37 macOS ASan+LSan fixtures**. Formatting, lint, local publishing, and all
-seven benchmark builds pass. Independent review confirmed a staged higher-order propagation
-gap; its fix and added regressions pass verification, and a fresh narrow re-review found no
-actionable findings. The Author signed off this slice on 2026-09-10.
-Commands and logs are recorded in [Task Working Memory](#task-working-memory).
-
-The PAP creation checkpoint passes 504 tests with 54 ignored, all seven required smokes,
-and all 36 macOS ASan+LSan fixtures. Formatting, lint, local publishing, and all seven
-benchmark builds pass. See [Task Working Memory](#task-working-memory) for commands and
-evidence. Linux sanitizer validation and the general branch audit remain deferred.
+Completed slices retain their own results and review limits in
+[completed-slice evidence](#completed-slice-evidence) and the
+[migration evidence](#migration-evidence). Historical test counts describe those checkpoints.
 
 ## Risks / Notes
 
@@ -700,24 +704,36 @@ are in `context/history/` for Author review. No compiler slice is authorized by 
 
 ## Signoff
 
-- Workstream signoff: Preservation complete; borrowed returns and typed closure destruction signed off.
-  PAP creation semantics signed off on 2026-09-10, including its documented limitations.
-  The Author considers the review sufficient for this checkpoint and defers the general
-  branch audit; the interrupted overall compiler review is not represented as complete.
-  Deferred consuming arguments signed off on 2026-09-10 by the Author's finish request.
-  Nested consuming-PAP calls and their review follow-up signed off on 2026-09-12 by the
-  Author's finish request.
-- Tracked item completion: Pending; the broader lambda implementation and follow-ups remain open.
-- Commit authorization: Granted for both checkpoints by the Author's finish requests.
-  The current commit includes all working-tree changes, as explicitly requested.
-  No push authorized.
+- Workstream signoff: complete for preservation, borrowed returns, typed closure destruction,
+  PAP creation, deferred consuming arguments, owned PAP struct fields, nested consuming-PAP
+  repairs, and binding identity stage 1. Stage 2 binding construction awaits signoff.
+- Tracked item completion: pending; open work remains in the
+  [Execution Checklist](#execution-checklist).
+- Commit authorization: completed slices are committed. Stage 2 signoff and local commit
+  authorization are pending; no push is authorized for stage 2.
 
 ## Task Working Memory
 
-**Branch:** `dev-lambda-unify`.
+- **Branch:** `dev-lambda-unify`.
+- **Active step:** [Binding identity and local construction](#establish-binding-identity-and-local-construction-invariants),
+  stage 2 `ready_for_signoff`. Implementation and review are verified; compiler changes are
+  uncommitted. Stage 1 is signed off and committed at `dbd65d9`.
+- **Next action:** obtain stage 2 signoff before resuming ownership changes.
+- **Evidence:** [Binding construction verification](#binding-construction-evidence).
+- **Open limits:** the mixed-ownership reproducer remains unresolved; the general branch
+  audit and separate Linux sanitizer validation are deferred. The broader counter/expression
+  follow-up remains planned and must account for the shared identity allocator.
 
-- **Binding identity and local construction:** stage 1 is `complete` and signed off;
-  stage 2 remains open. Shared allocation preserves existing IDs and registers new
+## Checkpoint Evidence
+
+Verification results and review limits below apply to their named checkpoints. Current status,
+approvals, and next action belong to the [Execution Checklist](#execution-checklist),
+[Signoff](#signoff), and [Task Working Memory](#task-working-memory).
+
+### Binding construction evidence
+
+- **Stage 1 checkpoint (`dbd65d9`):** complete and signed off.
+  Shared allocation preserves existing IDs and registers new
   declaration, field, and local IDs. The shared declaration formatter supplies matching definition,
   reference, and owner paths. Rewriting phases publish one fresh output index; PAP refreshes its
   index between iterations. Lexical resolution selects the nearest shadowing parameter, and
@@ -745,6 +761,15 @@ are in `context/history/` for Author review. No compiler slice is authorized by 
   Stage 1 signoff and local commit authorization are granted. Push is not authorized.
   The [mixed-ownership transfer repair](#bug-preserve-mixed-ownership-through-consuming-transfers)
   retains its separate failure evidence and remains open.
+
+### Completed-slice evidence
+
+<details>
+<summary>Completed slice records and earlier verification checkpoints</summary>
+
+These records preserve implementation, verification, and review evidence. References to
+unfinished work, current changes, next actions, branch names, and authorization describe the
+named checkpoint only; they do not carry forward as live task state.
 
 - **Branch names (2026-09-12):** Git Town renamed `dev-lambdas-migration` to
   `dev-lambda-unify` and `dev-lambdas-unify` to `abandoned-dev-lambda-unify`, locally
@@ -1166,11 +1191,52 @@ Read the [handoff](#migration-handoff) and
 [salvage sequence](../history/unify-lambdas-salvage.md#suggested-restart-sequence) to resume.
 Keep that handoff current at every migration checkpoint as its standing requirement directs.
 
+</details>
+
 ### Migration handoff
 
-The detailed checkpoint log and standing handoff requirement are merged here. Dated
-verification records describe their own checkpoints; use this task’s current working memory
-for the next action and active approvals.
+Use the [Execution Checklist](#execution-checklist) and
+[Task Working Memory](#task-working-memory) to resume. The migration evidence records the
+transfer baseline and completed workstreams, with their original verification limits.
+
+#### Standing handoff requirement: every migration phase
+
+The Author requires this document to stay current throughout **all phases of the migration**,
+including documentation, tests, compiler changes, verification, and follow-up work. This applies
+to every workstream.
+
+Update the Execution Checklist and Task Working Memory at each meaningful checkpoint,
+before pausing or ending a workstream, and before handoff. Keep the checklist top-level,
+with only the active subitem and at most its next action. Record detailed evidence below:
+
+- Work completed and the files or commits containing it; distinguish committed, pushed, and
+  uncommitted changes.
+- Work in progress, unresolved findings, blockers, and the exact next action.
+- Checks actually run and their results, including failures, ignores, and checks still pending.
+  Keep prior baseline results distinct from verification of the current changes.
+- Decisions and approvals already given, their scope, and decisions still needed from the Author.
+- Any live command or process and how to resume checking it; do not infer completion from silence.
+
+A session reset must not require reconstructing progress from the conversation. Start a resumed
+session by reading the Execution Checklist and Task Working Memory, then verifying the
+recorded state against the repository. Preserve existing approvals, avoid repeating completed
+work, and update the note as the phase advances.
+This requirement also applies to future phases that have not yet been planned.
+
+#### Resume from this checkpoint
+
+The active step is binding construction stage 2; its implementation and verification are
+complete and signoff is pending. See [Task Working Memory](#task-working-memory) for the
+handoff and [Signoff](#signoff) for current authorization.
+
+### Migration evidence
+
+<details>
+<summary>Transfer baseline and completed migration workstreams</summary>
+
+All counts, failures, pending-work statements, process states, and approvals below describe
+historical checkpoints, not the current compiler or active work. The migration inventory is
+also a historical snapshot; use the Execution Checklist for current completion status.
 
 ### Lambda restart: test preservation map
 
@@ -1182,37 +1248,6 @@ recorded in the workstream sections below.
 The transfer baseline passed **430 tests**, with **62 ignored** and no failures or errors. Ignored tests
 are unfinished compiler work, not passing coverage. Every ignore has its reason in a comment
 immediately above the test. One preexisting nested TBAA declaration remains undiscovered.
-
-#### Standing handoff requirement: every migration phase
-
-The Author requires this document to stay current throughout **all phases of the migration**,
-including documentation, tests, compiler changes, verification, and follow-up work. This applies
-to every workstream, not only the currently approved borrowed-return work.
-
-Update the handoff at each meaningful checkpoint, before pausing or ending a workstream, and
-before handing work to a fresh session. Record:
-
-- Work completed and the files or commits containing it; distinguish committed, pushed, and
-  uncommitted changes.
-- Work in progress, unresolved findings, blockers, and the exact next action.
-- Checks actually run and their results, including failures, ignores, and checks still pending.
-  Keep prior baseline results distinct from verification of the current changes.
-- Decisions and approvals already given, their scope, and decisions still needed from the Author.
-- Any live command or process and how to resume checking it; do not infer completion from silence.
-
-A session reset must not require reconstructing progress from the conversation. Start a resumed
-session by reading this handoff and verifying the recorded state against the repository. Preserve
-existing approvals, avoid repeating completed work, and update the note as the phase advances.
-This requirement also applies to future phases that have not yet been planned.
-
-#### Resume from this checkpoint
-
-##### Current focus — 2026-09-11
-
-The nested consuming-PAP implementation and review repairs are verified and uncommitted, with
-current evidence in [Task Working Memory](#task-working-memory). Owned PAP struct-field support
-is committed at `2b55e82`. The parent task stays in progress. The general branch audit and
-separate Linux sanitizer validation remain deferred.
 
 ##### Transfer checkpoint and recovery
 
@@ -1776,11 +1811,8 @@ when implementing the relevant compiler changes.
 
 #### Later compiler workstreams
 
-After the approved borrowed-return workstream, discuss and approve the next bounded slice. The salvage review's
-candidate is complete executable destructor ASTs; the preserved ownership regressions provide
-additional concrete entry points. Establish the invariant and MML examples first, then identify
-which ignored tests should become enabled for that slice. Do not silently clone values to repair
-ownership, weaken assertions to obtain a green suite, or import the failed compiler wholesale.
+Current remaining work is listed in the [Execution Checklist](#execution-checklist) and
+[remaining lambda implementation](#remaining-lambda-implementation). The evidence above
+records the migration baseline and completed workstreams; it does not set the next action.
 
-Reconcile stale design-document claims and historical tracked-item statuses through their own
-reviewed work. Neither this transfer nor the green suite with ignores completes lambda unification.
+</details>

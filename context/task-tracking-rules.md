@@ -58,6 +58,25 @@ or administrative narration. Do not move useless prose into another file to pres
 For example, write `- **Status:** planned.` rather than a paragraph about task selection,
 permission to record it, and implementation not having started.
 
+## Execution checklist
+
+Every task must have one `## Execution Checklist` directly after Metadata. Keep it as the
+single current overview of the task's sequential, top-level work: completed, active, and
+pending steps together in delivery order. Add it when creating a task, and bring existing
+tasks into this format when updating their plans or progress.
+
+- Use a numbered checklist with an explicit status from the allowed task statuses on each
+  item. Check an item only when it is `complete`; keep `ready_for_signoff` unchecked.
+- Keep one concise row per top-level step, linking its detailed plan or evidence where useful.
+  Detailed sections may retain their own internal checklists, but cannot replace this overview.
+- Surface only the active subitem beneath its top-level step, with at most its immediate next
+  action. Do not expand completed or future subitems into the overview.
+- Update the overview at each meaningful checkpoint and before handoff. Reconcile it with
+  internal checklists, status fields, signoff, commit evidence, and any active-memory entry.
+  Replace stale current-state prose; keep historical evidence clearly separate.
+- Preserve the agreed scope and order. Listing pending work does not approve implementation;
+  verification, signoff, commit, and push remain distinct states under the lifecycle rules.
+
 ## Working memory
 
 Always retain **Global Working Memory** and **Active Tasks**, even when empty.

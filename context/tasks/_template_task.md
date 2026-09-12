@@ -8,6 +8,15 @@
 - **Target Branch:** [branch-name or unassigned]
 - **External Reference (optional):** [link or none]
 
+## Execution Checklist
+
+<!-- Keep top-level steps in delivery order, with an explicit status on each row.
+Check only complete steps. Link details instead of expanding internal checklists here.
+Only the active step may show its current subitem and, optionally, one next action.
+Keep this overview synchronized with detailed plans, working memory, and signoff. -->
+
+1. [ ] **planned** — [top-level step; link to details where useful]
+
 ## Problem
 
 [Describe what is wrong or missing.]
@@ -28,6 +37,8 @@
 Approval: [pending | approved; exact scope]
 
 ## Implementation Checklist
+
+<!-- Optional internal detail. Keep top-level status in Execution Checklist current. -->
 
 - [ ] [change required by the approved plan]
 
