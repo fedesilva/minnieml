@@ -456,6 +456,7 @@ case first. The struct-field step shares the function-field ownership work descr
 
 - [x] [Allow a consuming argument to be supplied after PAP creation](#bug-supply-a-consuming-argument-after-pap-creation).
 - [ ] [Allow an owned PAP to move into a struct field](#bug-store-an-owned-pap-in-a-struct-field).
+- [x] [Allow nested consuming-PAP calls](#bug-nested-consuming-pap-calls).
 
 #### Bug: supply a consuming argument after PAP creation
 
@@ -499,6 +500,19 @@ case first. The struct-field step shares the function-field ownership work descr
   sanitizer coverage, and update the documented limitation when support is verified.
 - **Reference:** [field ownership contract](../../docs/memory-model.md#paps-in-struct-fields).
 
+#### Bug: nested consuming-PAP calls
+
+- **Status:** complete; approved implementation, verification, and independent review complete
+  on 2026-09-11.
+- **Original reproduction:** `println (int_to_str (consuming 0))` incorrectly required ownership
+  even when `consuming` owned its payload and was called once. A separate result binding worked.
+- **Approved scope:** analyze argument ownership once, preserve source evaluation order and
+  cleanup, reject reuse and invalid borrowing, add semantic/native regressions, update docs,
+  and run compiler gates plus independent review.
+- **Acceptance:** both forms in `mml/samples/pap-nested-consuming.mml` print `3`; later calls
+  and aliases remain rejected after consumption. Nested heap results, struct fields,
+  conditional calls, argument order, and exactly-once cleanup pass sanitizer coverage.
+
 ### Later-stage documentation
 
 - [ ] Adapt the [PAP ownership tutorial](../../mml/samples/pap-ownership.mml) into the
@@ -507,6 +521,13 @@ case first. The struct-field step shares the function-field ownership work descr
   following values through creation, calls, and cleanup.
 
 ## Verification
+
+The nested consuming-PAP slice passes **595 tests, 51 existing ignored**, all seven required
+smokes, and **40/40 macOS ASan+LSan fixtures**. Formatting, lint, publishing, and all seven
+benchmark builds pass. Independent review confirmed an inline-closure cleanup gap; its fix
+passes the exact reproducer and expanded regressions. Fresh narrow re-review found no actionable
+findings.
+Commands, logs, and review status are in [Task Working Memory](#task-working-memory).
 
 The deferred-consuming-argument slice passes **530 tests, 54 ignored**, all seven required
 smokes, and all **37 macOS ASan+LSan fixtures**. Formatting, lint, local publishing, and all
@@ -545,7 +566,53 @@ are in `context/history/` for Author review. No compiler slice is authorized by 
 
 **Branch:** `dev-lambdas-migration`.
 
-- **Current slice — owned PAP struct fields:** The Author approved proceeding through
+- **Completed slice — nested consuming-PAP calls (approved 2026-09-11):** Fix ownership
+  propagation through nested allocating expressions while preserving call-once and
+  use-after-move checks. Add semantic and sanitizer regressions, verify the unchanged
+  `pap-nested-consuming.mml` reproducer, update affected docs, and run compiler gates and
+  independent review. Starting compiler commit: `2b55e82`. At that baseline the sample failed at
+  `nested 0` with the ownership-required diagnostic; the separate-binding control passed under ASan.
+  The fix analyzes operands once with immutable scope threading, then constructs ordered
+  bindings and cleanup without re-analysis. It also rejects an earlier borrowed argument whose
+  owner moves in a later argument. Nine semantic regressions cover acceptance, reuse, field
+  aliases, and borrow lifetimes. The native fixture exercises 1,000 iterations of scalar/heap
+  results, fields, conditionals, and an asserted evaluation-order trace.
+  Formatting, lint, **594 tests (51 existing ignored)**, all seven required smokes, the unchanged
+  reproducer under ASan, and the new native fixture pass. Compiler publishing succeeds.
+  Logs: `/tmp/mml-nested-pap-full-gates.log`, `/tmp/mml-nested-pap-smokes.log`, and
+  `/tmp/mml-nested-pap-reproducer.log`. The baseline regression run had four expected failures
+  (`/tmp/mml-nested-pap-before.log`). Early logs record a command invocation error and a fixture
+  syntax error; both are corrected. Full memory verification passes **40/40 ASan+LSan** in
+  44 seconds (`/tmp/mml-nested-pap-memory-all.log`); all seven benchmark programs build after
+  clean (`/tmp/mml-nested-pap-benchmarks.log`). The final published sample prints both expected
+  results under ASan (`/tmp/mml-nested-pap-final-sample.log`). Native evidence is macOS arm64;
+  benchmark builds do not establish performance. Primary reviewer `/root/nested_pap_review` was
+  interrupted by "This content was flagged for possible cybersecurity risk." It returned no
+  findings or final verdict. Fresh reviewer `/root/nested_pap_review_retry` completed the scope
+  and independently confirmed one cleanup gap: inline move closures passed to borrowing
+  parameters alongside allocating arguments received no temporary destructor. Native evidence
+  showed a leaked closure environment and captured String. No other actionable findings remained.
+  The fix includes owned lambda values in argument allocation classification. Native regressions
+  cover borrowed/consumed move closures and borrow-capturing controls; a semantic regression
+  preserves the captured source's moved state. Final formatting, lint, **595 tests (51 existing
+  ignored)**, the expanded native fixture, all seven smokes, and publishing pass in
+  `/tmp/mml-nested-pap-final-gates.log`. Final memory verification passes **40/40 ASan+LSan**
+  in 43 seconds (`/tmp/mml-nested-pap-final-memory.log`); all seven benchmark builds pass after
+  clean (`/tmp/mml-nested-pap-final-benchmarks.log`). The exact review reproducer prints `5`
+  and exits 0 at `-O 0` under ASan+LSan (`/tmp/mml-nested-pap-closure-fixed.log`). The final
+  published sample also prints both expected `3` results under ASan. Build and installed jar
+  SHA256: `110d7a997ee7b762afcfa7f3855a336dcf88e44ec6f7fbdbdb46cb2993698d38`.
+  Fresh narrow review `/root/nested_pap_cleanup_review` found no actionable findings. It
+  independently compiled and ran the expanded fixture at `-O 0` under ASan+LSan, checked the
+  three closure cleanup boundaries in IR, and reran the exact reported reproducer. QA compliance,
+  focused tracking review, and whitespace checks pass. This completes the approved bounded slice;
+  broader lambda implementation, the general branch audit, and Linux validation remain outside
+  this completion. All command sessions are terminal. Compiler and sample changes remain
+  uncommitted; the Author requested a separate commit of the documentation.
+  Existing workflow edits, the Author's separate context notes, and unrelated memory whitespace
+  are outside this compiler slice. The parent lambda task remains in progress.
+
+- **Previous slice — owned PAP struct fields:** The Author approved proceeding through
   implementation and verification, then waiting for review. Start: clean `0f4f586`.
   Plan: integrate function-bearing struct classification/destruction, preserve callable contracts
   through fields, enforce ownership at construction/invocation, restore regressions, add sanitizer
@@ -765,15 +832,12 @@ This requirement also applies to future phases that have not yet been planned.
 
 #### Resume from this checkpoint
 
-##### Current focus — 2026-09-10
+##### Current focus — 2026-09-11
 
-The PAP creation and ownership slice is signed off. The deferred-consuming-argument follow-up
-is implemented, verified, independently reviewed, and signed off; see
-[Task Working Memory](#task-working-memory). Owned PAP struct-field support and confirmed review
-fixes are implemented and verified. The Author requested direct fixes, stopped further delegation,
-and authorized commit and push. The broader independent review is not claimed complete. The parent
-task remains in progress. Nested consuming-PAP call rejection, the general branch audit, and Linux
-sanitizer validation remain deferred; the latter has its own local task.
+The nested consuming-PAP implementation is complete and uncommitted, with final gates and
+independent review recorded in [Task Working Memory](#task-working-memory). Owned PAP struct-field support
+is committed at `2b55e82`. The parent task stays in progress; the next bounded slice requires
+Author selection. The general branch audit and separate Linux sanitizer validation remain deferred.
 
 ##### Transfer checkpoint and recovery
 

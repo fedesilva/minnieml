@@ -548,6 +548,22 @@ one of its fields is consumed. At scope end its destructor releases the consumed
 environment and destroys any remaining fields. Conditional calls retain this cleanup behavior.
 Remaining consuming arguments still move at invocation and do not make a reusable PAP call-once.
 
+### Nested consuming PAP calls
+
+A consuming PAP can be called inside an allocating argument expression:
+
+```mml
+println (int_to_str (consuming 0));
+```
+
+This transfers the stored payload once, just as binding `consuming 0` to a local result
+would. The returned `Int` needs no heap ownership. The String allocated by `int_to_str`
+is borrowed by `println` and destroyed after the call.
+
+Arguments are evaluated once, in source order. A move in an argument remains visible to
+later arguments and statements; nesting does not permit another call to the consumed PAP.
+See [pap-nested-consuming.mml](../mml/samples/pap-nested-consuming.mml) for both forms.
+
 ### Environment cleanup
 
 For a transfer-bearing PAP, the generated entry changes its environment destructor to the raw
@@ -564,29 +580,6 @@ terminal call. Payload destructors retain their ordering relative to user effect
 
 These restrictions describe compiler support. Ownership alone does not require them.
 Use-after-move rejection and keeping borrows within their owners' lifetimes remain model rules.
-
-### Nested consuming PAP calls
-
-A consuming PAP call nested inside an allocating argument expression can be rejected with
-`Calling this function consumes its environment and requires ownership`, even when the PAP
-is owned and the call is its only use.
-
-For the `consuming` PAP in [pap-ownership.mml](../mml/samples/pap-ownership.mml), this form
-is rejected:
-
-```mml
-println (int_to_str (consuming 0));
-```
-
-Binding the result separately works:
-
-```mml
-let result = consuming 0;
-println (int_to_str result);
-```
-
-Both forms call the PAP once and pass its `Int` result to `int_to_str`. The ownership model
-does not require the intermediate binding; the restriction is in expression ownership analysis.
 
 ### Clone operations
 
