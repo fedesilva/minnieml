@@ -5,6 +5,7 @@
 // The conditional returns either a static string (__cap == -1) or
 // a heap-allocated string (__cap > 0). The __free_String function
 // must check __cap before freeing to avoid crashing on static strings.
+// (__cap describes a retired design; current codegen uses clone/shadow-flag witnesses instead.)
 
 // Returns either a heap string (int_to_str) or static literal
 fn get_string(use_heap: Bool, n: Int): String =
