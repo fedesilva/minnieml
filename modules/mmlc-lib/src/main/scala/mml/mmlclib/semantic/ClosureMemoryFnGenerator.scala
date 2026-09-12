@@ -6,6 +6,8 @@ import mml.mmlclib.compiler.CompilerState
 
 import java.util.IdentityHashMap
 
+import BindingIds.Allocation
+
 /** Registers closure environment layouts and destructor helpers after type checking.
   *
   * Capturing lambdas receive environment metadata. Move environments receive specific destructors,
@@ -21,18 +23,8 @@ object ClosureMemoryFnGenerator:
   private def rawPtrTypeRef(source: SourceOrigin): TypeRef =
     TypeRef(source, "RawPtr", Some("stdlib::typedef::RawPtr"), Nil)
 
-  private def genId(moduleName: String, name: String): Option[String] =
-    Some(s"$moduleName::bnd::$name")
-
   private def typeId(moduleName: String, name: String): Option[String] =
-    Some(s"$moduleName::typedef::$name")
-
-  private def paramId(
-    moduleName: String,
-    fnName:     String,
-    paramName:  String
-  ): Option[String] =
-    Some(s"$moduleName::bnd::$fnName::$paramName")
+    BindingIds.declaration(moduleName, name, "typedef").some
 
   /** Collect all capturing lambdas from a module, paired with a stable name for each.
     *
@@ -141,43 +133,50 @@ object ClosureMemoryFnGenerator:
     )
 
   /** Register the real helper signature before ownership chooses capture cleanup targets. */
-  private def mkFreeFunction(fnName: String, moduleName: String): Bnd =
+  private def mkFreeFunction(fnName: String, moduleName: String): Allocation[Bnd] =
     val unitTR = unitTypeRef(syntheticSource)
     val ptrTR  = rawPtrTypeRef(syntheticSource)
-    val ptrParam = FnParam(
-      syntheticSource,
-      Name.synth("p"),
-      typeAsc  = ptrTR.some,
-      typeSpec = ptrTR.some,
-      id       = paramId(moduleName, fnName, "p")
-    )
-    val fnType = TypeFn(syntheticSource, cats.data.NonEmptyList.one(ptrTR), unitTR)
-    val body =
-      Expr(syntheticSource, List(LiteralUnit(syntheticSource, unitTR.some)), typeSpec = unitTR.some)
-    val lambda = Lambda(
-      syntheticSource,
-      List(ptrParam),
-      body,
-      Nil,
-      typeSpec = fnType.some,
-      typeAsc  = unitTR.some
-    )
-    Bnd(
-      source   = syntheticSource,
-      nameNode = Name.synth(fnName),
-      value    = Expr(syntheticSource, List(lambda), typeSpec = fnType.some),
-      typeSpec = fnType.some,
-      typeAsc  = unitTR.some,
-      meta = BindingMeta(
-        BindingOrigin.Destructor,
-        CallableArity.Unary,
-        Precedence.Function,
-        None,
-        fnName,
-        fnName
-      ).some,
-      id = genId(moduleName, fnName)
-    )
+    LocalBindings
+      .param(
+        BindingOwner.binding(moduleName, fnName),
+        "p",
+        typeAsc  = ptrTR.some,
+        typeSpec = ptrTR.some,
+        purpose  = "destructor"
+      )
+      .map { ptrParam =>
+        val fnType = TypeFn(syntheticSource, cats.data.NonEmptyList.one(ptrTR), unitTR)
+        val body =
+          Expr(
+            syntheticSource,
+            List(LiteralUnit(syntheticSource, unitTR.some)),
+            typeSpec = unitTR.some
+          )
+        val lambda = Lambda(
+          syntheticSource,
+          List(ptrParam),
+          body,
+          Nil,
+          typeSpec = fnType.some,
+          typeAsc  = unitTR.some
+        )
+        Bnd(
+          source   = syntheticSource,
+          nameNode = Name.synth(fnName),
+          value    = Expr(syntheticSource, List(lambda), typeSpec = fnType.some),
+          typeSpec = fnType.some,
+          typeAsc  = unitTR.some,
+          meta = BindingMeta(
+            BindingOrigin.Destructor,
+            CallableArity.Unary,
+            Precedence.Function,
+            None,
+            fnName,
+            fnName
+          ).some,
+          id = BindingIds.declaration(moduleName, fnName).some
+        )
+      }
 
   private def initializeBody(binding: Bnd, layoutId: Option[String]): Bnd =
     binding.value.terms match
@@ -195,70 +194,54 @@ object ClosureMemoryFnGenerator:
       lambda.params.map(p => Ref(syntheticSource, p.name, resolvedId = p.id, typeSpec = p.typeSpec))
     Expr(syntheticSource, refs, typeSpec = rawPtrTypeRef(syntheticSource).some)
 
-  /** Rewrite lambdas in the AST to tag them with envStructName. */
+  /** Tag exact lambda instances and allocate invocation parameters in traversal order. */
   private def tagLambdas(
     members:    List[Member],
     lambdaMap:  IdentityHashMap[Lambda, String],
     moduleName: String
-  ): List[Member] =
-    if lambdaMap.isEmpty then members
-    else
-      def rewriteExpr(expr: Expr): Expr =
-        val newTerms = expr.terms.map(rewriteTerm)
-        if newTerms == expr.terms then expr
-        else expr.copy(terms = newTerms)
+  ): Allocation[List[Member]] =
+    def rewriteExpr(expr: Expr): Allocation[Expr] =
+      expr.terms.traverse(rewriteTerm).map(terms => expr.copy(terms = terms))
 
-      def rewriteCallable(term: Ref | App | Lambda): Ref | App | Lambda = term match
-        case ref: Ref =>
-          val newQualifier = ref.qualifier.map(rewriteTerm)
-          if newQualifier == ref.qualifier then ref
-          else ref.copy(qualifier = newQualifier)
-        case lambda: Lambda =>
-          val newBody = rewriteExpr(lambda.body)
+    def rewriteCallable(term: Ref | App | Lambda): Allocation[Ref | App | Lambda] = term match
+      case ref: Ref =>
+        ref.qualifier.traverse(rewriteTerm).map(q => ref.copy(qualifier = q))
+      case lambda: Lambda =>
+        rewriteExpr(lambda.body).flatMap { body =>
           Option(lambdaMap.get(lambda)) match
             case Some(envName) =>
-              val newMeta = lambda.meta
-                .getOrElse(LambdaMeta())
-                .copy(envStructName = Some(envName))
+              val meta = lambda.meta.getOrElse(LambdaMeta()).copy(envStructName = envName.some)
               prepareClosureInvocation(
-                lambda.copy(body = newBody, meta = Some(newMeta)),
-                SyntheticOwner.binding(moduleName, envName)
-              )
-            case None =>
-              if newBody == lambda.body then lambda
-              else lambda.copy(body = newBody)
-        case App(src, fn, arg, ts, ta) =>
-          val newFn  = rewriteCallable(fn)
-          val newArg = rewriteExpr(arg)
-          if (newFn == fn) && (newArg == arg) then term
-          else App(src, newFn, newArg, ts, ta)
+                lambda.copy(body = body, meta = meta.some),
+                BindingOwner.binding(moduleName, envName)
+              ).widen
+            case None => lambda.copy(body = body).pure[Allocation].widen
+        }
+      case app: App =>
+        for
+          fn <- rewriteCallable(app.fn)
+          arg <- rewriteExpr(app.arg)
+        yield app.copy(fn = fn, arg = arg)
 
-      def rewriteTerm(term: Term): Term = term match
-        case callable: (Ref | App | Lambda) =>
-          rewriteCallable(callable)
-        case Cond(src, cond, ifTrue, ifFalse, ts, ta) =>
-          val newCond    = rewriteExpr(cond)
-          val newIfTrue  = rewriteExpr(ifTrue)
-          val newIfFalse = rewriteExpr(ifFalse)
-          if (newCond == cond) && (newIfTrue == ifTrue) && (newIfFalse == ifFalse) then term
-          else Cond(src, newCond, newIfTrue, newIfFalse, ts, ta)
-        case TermGroup(src, inner, ts) =>
-          val newInner = rewriteExpr(inner)
-          if newInner == inner then term
-          else TermGroup(src, newInner, ts)
-        case Tuple(src, elements, ts, ta) =>
-          val newElements = elements.map(rewriteExpr)
-          if newElements.toList == elements.toList then term
-          else Tuple(src, newElements, ts, ta)
-        case other =>
-          other
+    def rewriteTerm(term: Term): Allocation[Term] = term match
+      case callable: (Ref | App | Lambda) => rewriteCallable(callable).widen
+      case cond:     Cond =>
+        for
+          predicate <- rewriteExpr(cond.cond)
+          yes <- rewriteExpr(cond.ifTrue)
+          no <- rewriteExpr(cond.ifFalse)
+        yield cond.copy(cond = predicate, ifTrue = yes, ifFalse = no)
+      case group: TermGroup => rewriteExpr(group.inner).map(inner => group.copy(inner = inner))
+      case expr:  Expr => rewriteExpr(expr).widen
+      case tuple: Tuple =>
+        tuple.elements.traverse(rewriteExpr).map(elements => tuple.copy(elements = elements))
+      case other => other.pure[Allocation]
 
-      members.map:
-        case bnd: Bnd =>
-          val newValue = rewriteExpr(bnd.value)
-          if newValue == bnd.value then bnd
-          else bnd.copy(value = newValue)
-        case other => other
+    members.traverse {
+      case binding: Bnd =>
+        rewriteExpr(binding.value).map(value => binding.copy(value = value): Member)
+      case other => other.pure[Allocation]
+    }
 
   def rewriteModule(state: CompilerState): CompilerState =
     val module     = state.module
@@ -274,13 +257,20 @@ object ClosureMemoryFnGenerator:
     val envStructs = capturingLambdas.map((lambda, name) =>
       mkEnvStruct(lambda, name, moduleName, module.resolvables)
     )
-    val registrations = capturingLambdas.zip(envStructs).collect {
-      case ((lambda, _), struct) if lambda.isMove =>
-        (mkFreeFunction(s"__free_${struct.name}", moduleName), struct.id)
-    } :+ (mkFreeFunction("__free_closure", moduleName), none[String])
-    val index = module.resolvables
-      .updatedAllTypes(envStructs)
-      .updatedAll(registrations.map(_._1))
-    val freeFunctions = registrations.map(initializeBody)
-    val members = tagLambdas(module.members, lambdaMap, moduleName) ++ envStructs ++ freeFunctions
-    state.withModule(module.copy(members = members, resolvables = index.updatedAll(freeFunctions)))
+    val targets = capturingLambdas.zip(envStructs).collect {
+      case ((lambda, _), struct) if lambda.isMove => (s"__free_${struct.name}", struct.id)
+    } :+ ("__free_closure", none[String])
+    val allocation = for
+      _ <- envStructs.traverse_(BindingIds.reserveDeclaration)
+      registrations <- targets.traverse { (name, layout) =>
+        mkFreeFunction(name, moduleName)
+          .flatTap(BindingIds.reserveDeclaration)
+          .map(binding => (binding, layout))
+      }
+      tagged <- tagLambdas(module.members, lambdaMap, moduleName)
+    yield tagged ++ envStructs ++ registrations.map(initializeBody)
+
+    val (supply, members) = allocation.run(state.bindingIds.include(module)).value
+    state
+      .copy(bindingIds = supply)
+      .withModule(ResolvablesIndexer.refresh(module.copy(members = members)))

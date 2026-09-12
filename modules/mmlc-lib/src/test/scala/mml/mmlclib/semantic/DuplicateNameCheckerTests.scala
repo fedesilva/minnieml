@@ -7,6 +7,45 @@ import mml.mmlclib.test.BaseEffFunSuite
 
 class DuplicateNameCheckerTests extends BaseEffFunSuite:
 
+  List(
+    "inline" -> "fn main(): Int = { x: Int, x: Int -> x + x } 1 2;;",
+    "top-level value" -> "let duplicate = { x: Int, x: Int -> x + x };",
+    "local value" -> """
+      fn main(): Int =
+        let duplicate = { x: Int, x: Int -> x + x };
+        duplicate 1 2;
+      ;
+    """,
+    "argument" -> """
+      fn apply(f: Int -> Int -> Int): Int = f 1 2;;
+      fn main(): Int = apply { x: Int, x: Int -> x + x };;
+    """,
+    "named function" -> "fn duplicate(x: Int, x: Int): Int = x + x;;"
+  ).foreach { (position, source) =>
+    test(s"duplicate parameters in a $position lambda are rejected explicitly") {
+      semState(source).map { result =>
+        val duplicates = result.errors.collect { case error: SemanticError.DuplicateName => error }
+        assertEquals(duplicates.size, 1)
+        val params = duplicates.head.duplicates.collect { case param: FnParam => param }
+        assertEquals(params.size, 2)
+        assert(params.forall(_.source.isFromSource))
+      }
+    }
+  }
+
+  test("duplicate parameter errors accumulate across sibling lambdas") {
+    semState("""
+      fn main(): Int =
+        let first = { x: Int, x: Int -> x + x };
+        let second = { y: Int, y: Int -> y + y };
+        0;
+      ;
+    """).map { result =>
+      val duplicates = result.errors.collect { case error: SemanticError.DuplicateName => error }
+      assertEquals(duplicates.size, 2)
+    }
+  }
+
   test("duplicate members parsed from source preserve real source origin"):
     val code =
       """

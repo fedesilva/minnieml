@@ -113,8 +113,8 @@ class PapOwnershipTest extends BaseEffFunSuite:
         )
       assert(closures.nonEmpty)
       val scope = OwnershipScope(
-        syntheticOwner = SyntheticOwner.binding(module.name, "make"),
-        resolvables    = module.resolvables
+        bindingOwner = BindingOwner.binding(module.name, "make"),
+        resolvables  = module.resolvables
       )
       closures.foreach { closure =>
         val expression = Expr(closure.source, List(closure), typeSpec = closure.typeSpec)

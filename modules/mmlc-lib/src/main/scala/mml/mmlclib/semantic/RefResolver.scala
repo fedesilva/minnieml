@@ -232,8 +232,8 @@ object RefResolver:
           bnd
       }
 
-    // Check extra params first (from enclosing lambdas)
-    val fromExtra = extraParams.filter(_.name == ref.name)
+    // Enclosing parameters are ordered innermost first; a nearer binding shadows outer names.
+    val fromExtra = extraParams.find(_.name == ref.name).toList
     if fromExtra.nonEmpty then return fromExtra
 
     // Extract params from Bnd with Lambda

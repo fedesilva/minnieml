@@ -4,6 +4,10 @@ Durable product changes belong here. Current task state belongs in task files.
 
 ## 2026-09-12
 
+- Centralize readable binding identities with immutable allocation history across semantic
+  rewrites. Preserve reference targets while refreshing indexes to current definitions; assign
+  identities to generated helper parameters and reject duplicate parameters in nested lambdas.
+
 - Require task recommendations to show the full path from the memory entry through the task
   file to the selected entry, with verified clickable locations and selection rationale.
 - Require self-contained tracking documentation with concise status and approval fields,
