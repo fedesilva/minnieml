@@ -5,7 +5,7 @@
 - **Owner:** The Author
 - **Status:** planned
 - **Created:** 2026-09-12
-- **Target Branch:** dev-lambdas-migration
+- **Target Branch:** dev-lambda-unify
 - **External Reference (optional):** None
 
 ## Problem

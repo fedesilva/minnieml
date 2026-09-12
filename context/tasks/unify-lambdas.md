@@ -5,7 +5,7 @@
 - **Owner:** The Author
 - **Status:** in_progress
 - **Created:** 2026-09-10
-- **Target Branch:** dev-lambdas-migration
+- **Target Branch:** dev-lambda-unify
 - **External Reference (optional):** https://github.com/fedesilva/minnieml/issues/255
 
 ## Problem
@@ -15,7 +15,7 @@
 
 - GitHub: `https://github.com/fedesilva/minnieml/issues/255`
 
-Fresh start on `dev-lambdas-migration`. See
+The fresh lambda implementation lives on `dev-lambda-unify`. See
 [Task Working Memory](#task-working-memory) and the
 [migration handoff](#migration-handoff) for current progress and the next discussion.
 
@@ -712,7 +712,12 @@ are in `context/history/` for Author review. No compiler slice is authorized by 
 
 ## Task Working Memory
 
-**Branch:** `dev-lambdas-migration`.
+**Branch:** `dev-lambda-unify`.
+
+- **Branch names (2026-09-12):** Git Town renamed `dev-lambdas-migration` to
+  `dev-lambda-unify` and `dev-lambdas-unify` to `abandoned-dev-lambda-unify`, locally
+  and on `origin`. Both retain `dev-2026-03-21-lambdas` as their parent. Historical
+  checkpoints and the migration inventory retain the names used when recorded.
 
 - **Planned ownership-analysis follow-up (2026-09-12):** Recorded
   [counter and argument-expression preservation](#preserve-counters-and-argument-expressions-across-ownership-analysis)
@@ -1188,7 +1193,7 @@ workstream, it is one commit ahead of `origin/dev-lambdas-migration`. Verify thi
 git status --short --branch
 git log -3 --oneline
 git rev-parse HEAD
-git ls-remote --heads origin dev-lambdas-migration dev-lambdas-unify
+git ls-remote --heads origin dev-lambda-unify abandoned-dev-lambda-unify
 git cat-file -t c16231a8753d214617a88a089341033fefe803d7
 ```
 
@@ -1593,7 +1598,7 @@ Further compiler workstreams and tracked-item status changes require separate ap
 
 - Parent: `c7e90780897d202d857292b029baedc5b5f9b7e3`.
 - Test/program source: `c16231a8753d214617a88a089341033fefe803d7`.
-- Documentation source: `8e83506`, retained on local `dev-lambdas-unify`.
+- Documentation source: `8e83506`, retained on `abandoned-dev-lambda-unify`.
 - Complete inventory: [lambda-test-migration.json](unify-lambdas-migration.json).
 
 The complete `context/` and `docs/` trees and root instruction changes were transferred at the
