@@ -2,6 +2,11 @@
 
 Durable product changes belong here. Task administration belongs in task working memory.
 
+## 2026-09-12
+
+- Define paragraph-style spacing for Scala and code review, with compact simple case sequences
+  permitted when they remain easy to read.
+
 ## 2026-09-11
 
 - Support nested consuming-PAP calls by analyzing arguments once in source order, preserving

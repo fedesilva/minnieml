@@ -168,6 +168,11 @@ Seek the smallest sufficient boundary. Neither a blob nor a layer cake.
 Judge simplicity by the mental work required of the reader, not by line count.
 Prefer code that an experienced, tired human can scan without decoding.
 
+Read the spacing as paragraphs in prose: related statements form one thought, and blank
+lines separate thoughts or substantial case alternatives. Very small sequences of simple
+cases can stay compact. Apply the vertical-spacing guidance in the QA rules with judgment;
+do not demand blank lines mechanically at every syntactic boundary.
+
 Favor:
 
 - domain words and APIs that read like the intent;

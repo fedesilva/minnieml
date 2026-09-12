@@ -115,6 +115,26 @@ sees on the page.
   - The rule against *backward*-looking hedging still stands: "no longer", "was",
     "previously" still rot fast and add no value.
 
+## 10) Vertical Spacing
+
+Use paragraphs, as when writing prose: keep one coherent thought together and separate it
+from the next with a blank line. Spacing should help a tired reader follow the code.
+
+- Give object bodies and multiline method bodies breathing room after their opening line.
+- In nested or substantial matches, leave space before the first case and between cases so
+  each alternative is visually distinct, especially when a case contains another match.
+- Separate local helper definitions from the expression that uses them, and separate distinct
+  stages within a method.
+- Keep closely related statements together. Use single blank lines deliberately; concise
+  one-line definitions and very small sequences of simple cases can stay compact.
+
+These are readability guidelines, not a demand for a blank line at every syntactic boundary.
+Let the grouping of ideas guide the spacing.
+
+The `canonical` method in
+[TypeUtils.scala](../modules/mmlc-lib/src/main/scala/mml/mmlclib/ast/TypeUtils.scala)
+illustrates the intended spacing. Formatter compliance alone does not establish readability.
+
 ## Design code
 
 * Design code that is general and regular.

@@ -27,6 +27,8 @@
 
 ### Code Quality
 - **Formatting**: Follow `.scalafmt.conf` settings; run `sbtn scalafmtAll` before finishing
+- **Spacing**: Use deliberate blank lines at block boundaries and between logical steps;
+  follow [Vertical Spacing](qa-rules-and-coding-style.md#10-vertical-spacing).
 - **Linting**: Run `sbtn "scalafixAll"` and manually fix all issues that scalafix can't fix, see next.
 - **Warnings**: Do not tolerate compiler warnings; fix them all.
 - **Exhaustivity**: Fix exhaustivity errors; the compiler knows better than you.
