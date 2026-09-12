@@ -453,8 +453,7 @@ not a checklist to carry into this implementation.
 
 #### Establish binding identity and local-construction invariants
 
-- **Status:** planned; selected for this workstream by the Author on 2026-09-11.
-  The tracking errand authorizes recording this item; implementation has not started.
+- **Status:** planned.
 - **Sequence:** after Author review/signoff of the current nested consuming-PAP repair,
   before further ownership changes. Review this intermediate step independently before
   resuming the remaining lambda fixes.

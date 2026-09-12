@@ -25,7 +25,7 @@
 
 - [ ] [bounded stage or step]
 
-Approval: [pending | approved by the Author on YYYY-MM-DD; scope]
+Approval: [pending | approved; exact scope]
 
 ## Implementation Checklist
 
@@ -37,15 +37,16 @@ Approval: [pending | approved by the Author on YYYY-MM-DD; scope]
 
 ## Risks / Notes
 
-[Open decisions, dependencies, and limits of historical evidence.]
+[Open decisions, dependencies, and evidence limits.]
 
 ## Signoff
 
-- Workstream signoff: [pending | approved by the Author on YYYY-MM-DD; scope]
-- Tracked item completion: [pending | explicitly approved by the Author on YYYY-MM-DD]
-- Commit authorization: [not granted | explicit instruction and scope]
+- Workstream signoff: [pending | approved; exact scope]
+- Tracked item completion: [pending | approved]
+- Commit authorization: [not granted | granted; exact scope]
 
 ## Task Working Memory
 
 [Current work, decisions and approvals, evidence, blockers, and the exact next action.
-Update at meaningful checkpoints; link detailed records rather than duplicating them.]
+Keep this self-contained and current. No conversation references, administrative narration,
+or sequence of previous states. Link technical evidence rather than duplicating it.]

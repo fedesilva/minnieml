@@ -1,9 +1,12 @@
 # MML Changelog
 
-Durable product changes belong here. Task administration belongs in task working memory.
+Durable product changes belong here. Current task state belongs in task files.
 
 ## 2026-09-12
 
+- Require self-contained tracking documentation with concise status and approval fields,
+  current working memory, and no conversation or administrative narration. Apply the same
+  requirements to the task template and tracking review checklist.
 - Define paragraph-style spacing for Scala and code review, with compact simple case sequences
   permitted when they remain easy to read.
 - Preserve generated-local counters through scoped call arguments so subsequent arguments

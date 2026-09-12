@@ -57,6 +57,9 @@ Check only what applies:
   lifecycle rules;
 - completion and verification claims have recorded support;
 - changelog entries describe product changes, not tracking administration;
+- prose states self-contained current facts without conversation references, administrative
+  narration, redundant status explanations, or previous-state chronology, following
+  `context/task-tracking-rules.md#writing-for-the-reader`;
 - links, headings, dates, branch metadata, and Markdown remain coherent;
 - the diff contains no duplicate bookkeeping, accidental churn, or unrelated
   tracking edits.
