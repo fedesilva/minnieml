@@ -447,6 +447,52 @@ The branch-specific remaining work and evidence are in the
 [migration handoff](#migration-handoff). Source-branch checked items are history,
 not a checklist to carry into this implementation.
 
+### Intermediate construction step
+
+- [ ] [Establish binding identity and local-construction invariants](#establish-binding-identity-and-local-construction-invariants).
+
+#### Establish binding identity and local-construction invariants
+
+- **Status:** planned; selected for this workstream by the Author on 2026-09-11.
+  The tracking errand authorizes recording this item; implementation has not started.
+- **Sequence:** after Author review/signoff of the current nested consuming-PAP repair,
+  before further ownership changes. Review this intermediate step independently before
+  resuming the remaining lambda fixes.
+- **Problem and evidence:** `IdAssigner.nestedId` and `SyntheticLocals.nestedId` duplicate
+  the nested binding ID recipe. `SyntheticLocals.local` already constructs a `FnParam` and
+  matching `Ref`, but binding identity, type propagation, and index maintenance remain
+  responsibilities that callers and phases must coordinate. This is construction debt;
+  the evidence does not establish an identity-related runtime failure.
+- **Source landmarks (2026-09-11):**
+  [IdAssigner.scala](../../modules/mmlc-lib/src/main/scala/mml/mmlclib/semantic/IdAssigner.scala),
+  `nestedId`, lines 28–37;
+  [SyntheticLocals.scala](../../modules/mmlc-lib/src/main/scala/mml/mmlclib/semantic/SyntheticLocals.scala),
+  `SyntheticOwner`, line 7, `nestedId`, line 39, and `local`, line 76.
+- **Outcome:** one nested binding identity-generation policy and one coherent API for
+  local construction, shared by initial ID assignment and subsequent rewrites as appropriate.
+  Ordinary `FnParam`, `Ref`, `Lambda`, and `App` nodes remain the representation.
+- **Invariants:** fresh bindings receive defined, distinct identities; references created
+  for a binding resolve to that identity; rewrites preserving a binding preserve its identity;
+  deliberately fresh bindings receive fresh identities and correctly rebound references.
+  Construction preserves types and consuming contracts. Enclosing context is explicit,
+  and responsibility for keeping the resolvables index consistent is documented.
+- **Scope:** consolidate existing identity generation and local construction; migrate the
+  affected consumers in PAP elaboration, expression rewriting, closure invocation, ownership
+  temporaries/cleanup, and generated memory helpers. Assess whether `SyntheticOwner` remains
+  useful after consolidation. Renaming helpers alone does not satisfy the outcome.
+- **Boundary:** no compiler-wide AST phase redesign, new semantic lambda category, or scope
+  classification change. This refactor does not itself fix mixed-ownership transfer failures
+  involving allocated and literal branches; those require a separate ownership change.
+- **Acceptance:** verify shadowing, repeated generated names, reference resolution after
+  rewriting/index refresh, preserved identities, and consuming-contract propagation through
+  the affected paths. Run applicable compiler gates and independent review. Keep the known
+  mixed-ownership failures explicit as separate baseline evidence.
+- **Next action:** inspect the affected constructors and phase/index contracts, then present
+  the concrete API and bounded migration plan for approval before implementation.
+- **Follow-up:** [Remove provenance heuristics from lambda scope analysis](lambda-scope-classification.md).
+  That task addresses AST interpretation and reconciles the existing sequence-lambda item;
+  it is separate from this construction step.
+
 ### Near-term bug-fix steps
 
 The Author considers these restrictions bugs and selected them as steps in this workstream.
@@ -565,6 +611,14 @@ are in `context/history/` for Author review. No compiler slice is authorized by 
 ## Task Working Memory
 
 **Branch:** `dev-lambdas-migration`.
+
+- **Construction planning (2026-09-11):** The Author requested the
+  [intermediate construction item](#establish-binding-identity-and-local-construction-invariants)
+  within this workstream and a linked [scope-analysis follow-up](lambda-scope-classification.md).
+  Both are planned. The Author signed off this tracking errand with `finish errand`.
+  Tracking review, link/anchor checks, and the scoped diff check pass. The finish request
+  authorizes a local commit of this bookkeeping only; compiler implementation and repair
+  signoff remain pending. Administrative task creation does not receive a product changelog entry.
 
 - **Completed slice — nested consuming-PAP calls (approved 2026-09-11):** Fix ownership
   propagation through nested allocating expressions while preserving call-once and

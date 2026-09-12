@@ -13,3 +13,5 @@ This is the Author's active and near-term focus. The backlog lives in [tasks/](t
 - **Status:** in_progress
 - **Current focus:** Nested consuming-PAP calls are implemented, verified, and independently
   reviewed; compiler and sample changes remain uncommitted. Ready for the next bounded slice.
+  Next selected step: [binding identity and local construction](tasks/unify-lambdas.md#establish-binding-identity-and-local-construction-invariants),
+  planned after repair review and before further ownership changes.
