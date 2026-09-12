@@ -785,7 +785,10 @@ Missing destruction targets accumulate compiler errors.
    let x = alloc(); body  →  let x = alloc(); let __r = body; __free_T x; __r
    ```
 
-3. **Expression temporaries**: Allocating args not bound to variables get synthetic bindings:
+3. **Expression temporaries**: Calls with allocating arguments analyze each operand once,
+   threading ownership moves in source order. Synthetic bindings preserve that evaluation order;
+   generated wrappers are not analyzed again. Unconsumed allocating temporaries are destroyed
+   after the call, while consumed arguments belong to the callee:
    ```
    f (alloc())  →  let __tmp = alloc(); let __r = f __tmp; __free_T __tmp; __r
    ```

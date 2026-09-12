@@ -905,6 +905,8 @@ fn take_ownership(~s: String): Unit = ();;
   remaining consuming arguments move when supplied in a later application
 - A PAP can receive fresh consuming arguments repeatedly while retaining its stored captures.
   If a call transfers a stored payload, that PAP can be called only once
+- Consuming PAP calls can be nested inside argument expressions. Arguments run once in source
+  order, and ownership moves remain visible to later arguments and statements
 
 ---
 

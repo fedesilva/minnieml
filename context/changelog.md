@@ -2,6 +2,14 @@
 
 Durable product changes belong here. Task administration belongs in task working memory.
 
+## 2026-09-11
+
+- Support nested consuming-PAP calls by analyzing arguments once in source order, preserving
+  ownership moves and temporary cleanup. Reject later uses and argument borrows invalidated
+  by those moves; destroy borrowed inline move-closure temporaries after their call.
+- Add a commented nested-call sample and regressions for consumption, closure cleanup, and
+  argument evaluation order.
+
 ## 2026-09-10
 
 - Allow consuming arguments to be supplied after partial application, preserving ownership
