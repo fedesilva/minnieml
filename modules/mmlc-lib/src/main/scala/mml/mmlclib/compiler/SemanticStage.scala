@@ -5,6 +5,10 @@ import mml.mmlclib.util.pipe.*
 
 object SemanticStage:
 
+  /** Publish phases that do not rebuild their own indexes. Allocating phases seed their supply. */
+  private def indexed(phase: CompilerState => CompilerState)(state: CompilerState): CompilerState =
+    ResolvablesIndexer.rewriteModule(phase(state))
+
   def rewrite(state: CompilerState): CompilerState =
 
     val withStdlib = CompilerState.timePhase("semantic", "inject-stdlib") { current =>
@@ -17,42 +21,38 @@ object SemanticStage:
     withStdlib
       |> CompilerState.timePhase("semantic", "duplicate-names")(DuplicateNameChecker.rewriteModule)
       |> CompilerState.timePhase("semantic", "id-assigner")(IdAssigner.rewriteModule)
-      |> CompilerState.timePhase("semantic", "type-resolver")(TypeResolver.rewriteModule)
-      |> CompilerState.timePhase("semantic", "ctor-gen")(ConstructorGenerator.rewriteModule)
+      |> CompilerState.timePhase("semantic", "type-resolver")(indexed(TypeResolver.rewriteModule))
+      |> CompilerState.timePhase("semantic", "ctor-gen")(
+        ConstructorGenerator.rewriteModule
+      )
       |> CompilerState.timePhase("semantic", "mem-fn-gen")(
         MemoryFunctionGenerator.rewriteModule
       )
-      |> CompilerState.timePhase("semantic", "ref-resolver")(RefResolver.rewriteModule)
+      |> CompilerState.timePhase("semantic", "ref-resolver")(indexed(RefResolver.rewriteModule))
       |> CompilerState
-        .timePhase("semantic", "expression-rewriter")(ExpressionRewriter.rewriteModule)
-      |> CompilerState.timePhase("semantic", "simplifier")(Simplifier.rewriteModule)
+        .timePhase("semantic", "expression-rewriter")(indexed(ExpressionRewriter.rewriteModule))
+      |> CompilerState.timePhase("semantic", "simplifier")(indexed(Simplifier.rewriteModule))
       |> CompilerState.timePhase("semantic", "capture-analyzer")(
-        CaptureAnalyzer.rewriteModule
+        indexed(CaptureAnalyzer.rewriteModule)
       )
-      |> CompilerState.timePhase("semantic", "type-checker")(TypeChecker.rewriteModule)
+      |> CompilerState.timePhase("semantic", "type-checker")(indexed(TypeChecker.rewriteModule))
       |> CompilerState.timePhase("semantic", "partial-application-elaborator")(
         PartialApplicationElaborator.rewriteModule
       )
       |> CompilerState.timePhase("semantic", "closure-mem-gen")(
         ClosureMemoryFnGenerator.rewriteModule
       )
-      |> CompilerState.timePhase("semantic", "resolvables-indexer")(
-        ResolvablesIndexer.rewriteModule
-      )
       |> CompilerState.timePhase("semantic", "struct-destructor-bodies")(
-        StructDestructorBodyGenerator.rewriteModule
+        indexed(StructDestructorBodyGenerator.rewriteModule)
       )
       |> CompilerState.timePhase("semantic", "ownership-analyzer")(
-        OwnershipAnalyzer.rewriteModule
+        indexed(OwnershipAnalyzer.rewriteModule)
       )
       |> CompilerState.timePhase("semantic", "closure-destructor-bodies")(
-        ClosureDestructorBodyGenerator.rewriteModule
+        indexed(ClosureDestructorBodyGenerator.rewriteModule)
       )
       |> CompilerState.timePhase("semantic", "tailrec-detector")(
-        TailRecursionDetector.rewriteModule
-      )
-      |> CompilerState.timePhase("semantic", "resolvables-indexer-final")(
-        ResolvablesIndexer.rewriteModule
+        indexed(TailRecursionDetector.rewriteModule)
       )
       |> CompilerState.timePhase("semantic", "destruction-validation")(
         DestructionValidator.rewriteModule

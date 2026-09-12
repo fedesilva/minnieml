@@ -453,20 +453,17 @@ not a checklist to carry into this implementation.
 
 #### Establish binding identity and local-construction invariants
 
-- **Status:** planned.
-- **Sequence:** after Author review/signoff of the current nested consuming-PAP repair,
-  before further ownership changes. Review this intermediate step independently before
-  resuming the remaining lambda fixes.
-- **Problem and evidence:** `IdAssigner.nestedId` and `SyntheticLocals.nestedId` duplicate
-  the nested binding ID recipe. `SyntheticLocals.local` already constructs a `FnParam` and
-  matching `Ref`, but binding identity, type propagation, and index maintenance remain
-  responsibilities that callers and phases must coordinate. This is construction debt;
-  the evidence does not establish an identity-related runtime failure.
-- **Source landmarks (2026-09-11):**
+- **Status:** in_progress.
+- **Sequence:** before further ownership changes. Review this construction step independently
+  before resuming the remaining lambda fixes.
+- **Problem and evidence:** binding identity, reference construction, wrapper typing, and
+  index maintenance require a common contract across semantic rewrites. Focused regressions
+  cover missing clone-helper parameter IDs, unresolved shadowed locals, and ownership wrappers
+  carrying result types where function types are required.
+- **Implementation landmarks:**
+  [BindingIds.scala](../../modules/mmlc-lib/src/main/scala/mml/mmlclib/semantic/BindingIds.scala),
   [IdAssigner.scala](../../modules/mmlc-lib/src/main/scala/mml/mmlclib/semantic/IdAssigner.scala),
-  `nestedId`, lines 28–37;
-  [SyntheticLocals.scala](../../modules/mmlc-lib/src/main/scala/mml/mmlclib/semantic/SyntheticLocals.scala),
-  `SyntheticOwner`, line 7, `nestedId`, line 39, and `local`, line 76.
+  and [LocalBindings.scala](../../modules/mmlc-lib/src/main/scala/mml/mmlclib/semantic/LocalBindings.scala).
 - **Outcome:** one nested binding identity-generation policy and one coherent API for
   local construction, shared by initial ID assignment and subsequent rewrites as appropriate.
   Ordinary `FnParam`, `Ref`, `Lambda`, and `App` nodes remain the representation.
@@ -477,17 +474,23 @@ not a checklist to carry into this implementation.
   and responsibility for keeping the resolvables index consistent is documented.
 - **Scope:** consolidate existing identity generation and local construction; migrate the
   affected consumers in PAP elaboration, expression rewriting, closure invocation, ownership
-  temporaries/cleanup, and generated memory helpers. Assess whether `SyntheticOwner` remains
-  useful after consolidation. Renaming helpers alone does not satisfy the outcome.
-- **Boundary:** no compiler-wide AST phase redesign, new semantic lambda category, or scope
-  classification change. This refactor does not itself fix mixed-ownership transfer failures
-  involving allocated and literal branches; those require a separate ownership change.
+  temporaries/cleanup, and generated memory helpers. `BindingOwner` carries scope provenance;
+  `BindingIdSupply` retains allocation history through the compilation.
+- **Boundary:** preserve ordinary AST nodes and the existing scope interpretation. Mixed-ownership
+  transfer failures involving allocated and literal branches require the separate ownership repair.
 - **Acceptance:** verify shadowing, repeated generated names, reference resolution after
   rewriting/index refresh, preserved identities, and consuming-contract propagation through
   the affected paths. Run applicable compiler gates and independent review. Keep the known
   mixed-ownership failures explicit as separate baseline evidence.
-- **Next action:** inspect the affected constructors and phase/index contracts, then present
-  the concrete API and bounded migration plan for approval before implementation.
+- **Approved implementation:** readable scope-path IDs retained throughout one compilation;
+  immutable allocation state shared by initial assignment and generated locals; phase-boundary
+  index refresh; shared parameter/reference, binding, and cleanup construction. Cross-compilation
+  ID stability is not required.
+- **Delivery:** stage 1 covers identity allocation, allocating callers, and index consistency.
+  Stage 2 covers binding/cleanup construction and type propagation.
+- [x] Stage 1: shared identity allocation, allocating callers, and index consistency.
+- [ ] Stage 2: shared binding/cleanup construction, type propagation, and remaining callers.
+- **Next action:** implement stage 2 binding/cleanup construction and type propagation.
 - **Follow-up:** [Remove provenance heuristics from lambda scope analysis](lambda-scope-classification.md).
   That task addresses AST interpretation and reconciles the existing sequence-lambda item;
   it is separate from this construction step.
@@ -712,6 +715,36 @@ are in `context/history/` for Author review. No compiler slice is authorized by 
 ## Task Working Memory
 
 **Branch:** `dev-lambda-unify`.
+
+- **Binding identity and local construction:** stage 1 is `complete` and signed off;
+  stage 2 remains open. Shared allocation preserves existing IDs and registers new
+  declaration, field, and local IDs. The shared declaration formatter supplies matching definition,
+  reference, and owner paths. Rewriting phases publish one fresh output index; PAP refreshes its
+  index between iterations. Lexical resolution selects the nearest shadowing parameter, and
+  duplicate-name checking rejects duplicate parameters in nested and inline lambdas.
+  Generated scope provenance retains its purpose and ordinal; regression tests establish stable
+  re-entry after relocation. Ownership temporaries retain unique names because ownership maps
+  still use names. The clone-helper identity regression passes; the ownership-wrapper function-type
+  regression is linked to this plan and ignored pending stage 2.
+  Verification (2026-09-12): formatting, lint, and **627 passed / 52 ignored** in
+  `/tmp/mml-binding-fixes-gates.log`; 51 ignores are existing baseline tests and one is the stage 2
+  regression. All seven required compiler smokes and local publishing pass in the same log.
+  Commands: `sbtn 'scalafmtAll;scalafixAll;test;run run mml/samples/hola.mml;run run mml/samples/quicksort.mml;run run mml/samples/astar2.mml;run run mml/samples/partial-fac1.mml;run mml/samples/style-guide.mml;run mml/samples/lambda-factorial.mml;run mml/samples/raytracer3_p6.mml;mmlcPublishLocal'`.
+  Published and build jars share SHA-256
+  `9fcddf4fa69c66d4ae13bd7316b36d97af4106ad20c03f2eee21e1bcef2008b3`.
+  `make -C benchmark clean` and `make -C benchmark mml` pass all seven builds;
+  logs: `/tmp/mml-binding-fixes-benchmark-clean.log` and
+  `/tmp/mml-binding-fixes-benchmarks.log`. These are build checks, not timing comparisons.
+  `./tests/mem/run.sh all` passes **41/41 ASan+LSan tests (48s)** in
+  `/tmp/mml-binding-fixes-memory.log` on Darwin arm64, Clang 23.1.1,
+  target `arm64-apple-darwin25.6.0`. QA enforcement and focused tracking review pass;
+  fresh independent review finds no actionable issues in the correction diff and directly affected
+  compiler paths. The reviewer reran the duplicate-parameter semantic reproducer, confirmed both
+  source parameters in the diagnostic, and checked jar hashes and verification logs. No candidate
+  findings required claim-verifier delegation. Other gates were inspected, not rerun by the reviewer.
+  Stage 1 signoff and local commit authorization are granted. Push is not authorized.
+  The [mixed-ownership transfer repair](#bug-preserve-mixed-ownership-through-consuming-transfers)
+  retains its separate failure evidence and remains open.
 
 - **Branch names (2026-09-12):** Git Town renamed `dev-lambdas-migration` to
   `dev-lambda-unify` and `dev-lambdas-unify` to `abandoned-dev-lambda-unify`, locally

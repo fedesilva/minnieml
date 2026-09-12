@@ -11,6 +11,21 @@ object ResolvablesIndexer:
     val updatedResolvables = rebuildIndex(module)
     state.withModule(module.copy(resolvables = updatedResolvables))
 
+  def refresh(module: Module): Module = module.copy(resolvables = rebuildIndex(module))
+
+  /** Definition occurrences are collected independently of the map, including duplicate IDs. */
+  def definitions(module: Module): List[Resolvable] =
+    def memberDefinitions(member: Member): List[Resolvable] = member match
+      case binding:    Bnd => binding :: collectParamsFromExpr(binding.value)
+      case struct:     TypeStruct => struct :: struct.fields.toList
+      case definition: TypeDef => List(definition)
+      case alias:      TypeAlias => List(alias)
+      case duplicate:  DuplicateMember => memberDefinitions(duplicate.originalMember)
+      case invalid:    InvalidMember => memberDefinitions(invalid.originalMember)
+      case _ => Nil
+
+    module.members.flatMap(memberDefinitions)
+
   private def rebuildIndex(module: Module): ResolvablesIndex =
     module.members.foldLeft(ResolvablesIndex()) { (idx, member) =>
       updateIndexForMember(idx, member)

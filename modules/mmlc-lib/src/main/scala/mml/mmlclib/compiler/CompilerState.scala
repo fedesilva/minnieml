@@ -4,7 +4,7 @@ import cats.effect.IO
 import mml.mmlclib.ast.Module
 import mml.mmlclib.errors.{CompilationError, CompilerWarning}
 import mml.mmlclib.parser.{ParserError, SourceInfo}
-import mml.mmlclib.semantic.SemanticError
+import mml.mmlclib.semantic.{BindingIdSupply, SemanticError}
 
 final case class Timing(stage: String, name: String, durationNanos: Long)
 
@@ -22,7 +22,8 @@ case class CompilerState(
   canEmitCode:    Boolean         = false,
   llvmIr:         Option[String]  = None,
   nativeResult:   Option[Int]     = None,
-  resolvedTriple: Option[String]  = None
+  resolvedTriple: Option[String]  = None,
+  bindingIds:     BindingIdSupply = BindingIdSupply()
 ):
   def addErrors(newErrors: List[CompilationError]): CompilerState =
     copy(errors = errors ++ newErrors)

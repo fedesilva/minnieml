@@ -173,7 +173,7 @@ object DuplicateNameChecker:
                 val (bodyBindings, bodyErrors) = walkScopeExpr(lambda.body, scopeBindings :+ param)
                 (bodyBindings, argErrors ++ bodyErrors)
               case _ =>
-                (scopeBindings, argErrors ++ localDuplicateErrorsInExpr(lambda.body))
+                (scopeBindings, argErrors ++ localDuplicateErrorsInLambda(lambda))
           case _ =>
             (scopeBindings, expr.terms.flatMap(localDuplicateErrorsInTerm))
       case _ =>
@@ -191,7 +191,7 @@ object DuplicateNameChecker:
             typeSpec = app.typeSpec
           )
         )
-      case lambda: Lambda => localDuplicateErrorsInExpr(lambda.body)
+      case lambda: Lambda => localDuplicateErrorsInLambda(lambda)
       case group:  TermGroup => localDuplicateErrorsInExpr(group.inner)
       case tuple:  Tuple => tuple.elements.toList.flatMap(localDuplicateErrorsInExpr)
       case cond:   Cond =>
@@ -201,6 +201,9 @@ object DuplicateNameChecker:
       case invalid: InvalidExpression => localDuplicateErrorsInExpr(invalid.originalExpr)
       case ref:     Ref => ref.qualifier.toList.flatMap(localDuplicateErrorsInTerm)
       case _ => Nil
+
+  private def localDuplicateErrorsInLambda(lambda: Lambda): List[SemanticError] =
+    duplicateBindingErrors(lambda.params) ++ localDuplicateErrorsInExpr(lambda.body)
 
   private def duplicateBindingErrors(bindings: List[FnParam]): List[SemanticError] =
     bindings

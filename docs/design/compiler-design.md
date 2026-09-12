@@ -197,6 +197,36 @@ For error recovery and LSP support:
   phases rewrite members. Consumers (LSP, codegen, printers) always reify through this index to get
   the latest node instance.
 
+Binding IDs are readable allocation paths. Initial parameter IDs include the enclosing declaration,
+ordinal lambda-scope segments, and parameter name. Anonymous and parameterless lambdas introduce
+scopes as well. Generated locals add a `generated::<purpose>::<ordinal>` segment. Top-level
+declaration and field IDs retain their declaration-based naming conventions. `BindingIds.declaration`
+provides the shared declaration format used by definitions, references, and allocation owners.
+
+`BindingIdSupply` carries allocation history immutably through `CompilerState` and allocating
+rewrites. It reserves IDs from definitions in the AST, including definitions missing from a stale
+index. Branch traversal and repeated PAP elaboration share that history. Removing a definition
+does not make its ID available for reuse. IDs remain stable during a compilation; their spelling
+is not a cross-compilation interface.
+
+The path records allocation provenance. Updating or relocating an existing definition preserves
+its ID; constructing a distinct binding allocates a fresh ID and matching references. `LocalBindings`
+provides generated parameter/reference construction, and reports a construction error when asked
+to reference an unassigned parameter. References retain `resolvedId` across definition updates.
+
+Nested allocation uses the prefix of the first assigned parameter as its scope anchor. For a
+generated parameter, that anchor includes its generation purpose and ordinal. Re-entering the
+same definition, including after relocation, yields the same anchor. This gives distinct generated
+lambdas distinct provenance without changing the identities already attached to their parameters.
+
+`SemanticStage` publishes fresh indexes at rewriting phase boundaries from initial ID assignment
+onward. Phases that rebuild their own output index run directly; other rewrites use the shared
+indexing wrapper. Validation-only phases retain their input index. Allocating phases seed ID
+history from their input definitions and register new declaration IDs at construction. A phase
+that looks up definitions during its own rewrite maintains its intermediate index; PAP
+stabilization refreshes between iterations. Reindexing rebuilds ID-to-node mappings only. It does
+not assign IDs, remap references, or refresh type information stored on reference nodes.
+
 ---
 
 ## 7. Parser architecture
@@ -361,7 +391,8 @@ case class CompilerState(
   canEmitCode:    Boolean = false,
   llvmIr:         Option[String] = None,
   nativeResult:   Option[Int] = None,
-  resolvedTriple: Option[String] = None
+  resolvedTriple: Option[String] = None,
+  bindingIds:     BindingIdSupply = BindingIdSupply()
 )
 ```
 
@@ -387,13 +418,11 @@ Each phase takes a `CompilerState`, returns an updated `CompilerState`, and reco
     elaboration so staged PAPs inherit the source's remaining ownership contract. Supplied
     callable arguments propagate at every application stage, including before saturation.
 12. **ClosureMemoryFnGenerator**
-13. **ResolvablesIndexer**
-14. **StructDestructorBodyGenerator**
-15. **OwnershipAnalyzer**
-16. **ClosureDestructorBodyGenerator**
-17. **TailRecursionDetector**
-18. **ResolvablesIndexer (final)**
-19. **DestructionValidator**
+13. **StructDestructorBodyGenerator**
+14. **OwnershipAnalyzer**
+15. **ClosureDestructorBodyGenerator**
+16. **TailRecursionDetector**
+17. **DestructionValidator**
 
 ---
 
@@ -426,7 +455,8 @@ Each phase takes a `CompilerState`, returns an updated `CompilerState`, and reco
 - Allows **unary and binary operators** with the same name (e.g., unary `-` and binary `-`)
 - **Does NOT allow** functions to have the same name as operators
 - First occurrence is kept valid, duplicates are wrapped in `DuplicateMember` nodes
-- Also checks for **duplicate parameter names** within functions/operators (via Lambda params)
+- Checks each lambda parameter list for **duplicate parameter names**, including nested and inline
+  lambdas. Distinct nested scopes may shadow outer names.
 
 **Errors reported**:
 - `SemanticError.DuplicateName`
@@ -439,8 +469,9 @@ Each phase takes a `CompilerState`, returns an updated `CompilerState`, and reco
 
 ### Semantic Phase 2: IdAssigner
 
-Assigns stable IDs to user declarations and lambda parameters, then seeds the resolvables index
-before any name or type resolution runs.
+Assigns missing IDs to user declarations and lambda parameters, preserving existing identities,
+then seeds the resolvables index before any name or type resolution runs. Anonymous and
+parameterless lambdas each introduce an ordinal scope path for nested allocation.
 
 **Errors reported**: None
 
@@ -703,7 +734,7 @@ Generation section below.
 
 ---
 
-### Semantic Phase 11: ClosureMemoryFnGenerator
+### Semantic Phase 12: ClosureMemoryFnGenerator
 
 **Purpose**: Synthesize closure-environment layouts and free helpers for capturing lambdas.
 
@@ -714,8 +745,8 @@ Generation section below.
 - Registers a specific `__free___closure_env_N` helper for each move environment.
 - Registers `__free_closure` once per module, including modules with only consuming function
   parameters and no locally declared move closure.
-- Both helper signatures are `RawPtr -> Unit`. Layouts and signatures enter `Module.resolvables`
-  before their intrinsic bodies are constructed.
+- Both helper signatures are `RawPtr -> Unit`. The phase publishes the generated layouts and
+  helper definitions in its refreshed `Module.resolvables`.
 
 **Environment layout**:
 - **Borrow closures** (`{ ... }`):
@@ -739,21 +770,7 @@ Generation section below.
 
 ---
 
-### Semantic Phase 12: ResolvablesIndexer
-
-**Purpose**: Rebuild `Module.resolvables` from the current rewritten module tree.
-
-**Behavior**:
-- Reindexes the current `Resolvable` / `ResolvableType` nodes using their stable IDs.
-- Ensures downstream phases observe the latest rewritten node instances after typechecking and
-  closure-env synthesis.
-
-**AST rewrites**:
-- Replaces `Module.resolvables` with a fresh index derived from current members.
-
----
-
-### StructDestructorBodyGenerator
+### Semantic Phase 13: StructDestructorBodyGenerator
 
 Function-bearing structs require destruction and consuming constructor parameters. They do not
 receive clone helpers, including through nested fields. After closure helper registration and
@@ -761,7 +778,7 @@ indexing, this phase builds typed field cleanup in declaration order, using univ
 dispatch for function fields and registered native or struct destructors for other owned fields.
 Missing destruction targets accumulate compiler errors.
 
-### Semantic Phase 13: OwnershipAnalyzer
+### Semantic Phase 14: OwnershipAnalyzer
 
 **Purpose**: Track ownership and insert native/struct free calls or `DestroyClosure` operations.
 
@@ -859,7 +876,7 @@ state; sibling fields remain available. Field borrows cannot satisfy ownership s
 
 ---
 
-### Semantic Phase 14: ClosureDestructorBodyGenerator
+### Semantic Phase 15: ClosureDestructorBodyGenerator
 
 `ClosureDestructorBodyGenerator` fills environment field cleanup entries using the
 ownership-analyzed captures. `Capture.OwnedClosure` records a transferred function capture and
@@ -872,7 +889,7 @@ of typed destructor bodies lives in `ClosureDestructorAst`; neither phase calls 
 
 ---
 
-### Semantic Phase 15: TailRecursionDetector
+### Semantic Phase 16: TailRecursionDetector
 
 **Purpose**: Mark top-level and let-bound lambdas that can use the loopified tail-recursive codegen
 path.
@@ -886,21 +903,6 @@ path.
 
 **AST rewrites**:
 - Rewrites lambda metadata and any nested let-bound lambda bodies updated during traversal.
-
----
-
-### Semantic Phase 16: ResolvablesIndexer (final)
-
-**Purpose**: Rebuild the resolvables index one more time after ownership rewriting.
-
-**Why it exists**:
-- `OwnershipAnalyzer` can synthesize fresh AST structure such as temporary bindings, inserted
-  frees, cloned branches, and wrapper lambdas.
-- Diagnostics, LSP, and codegen should all reify IDs against the final rewritten nodes, not a
-  pre-ownership tree.
-
-**AST rewrites**:
-- Refreshes `Module.resolvables` one last time so it matches the final semantic tree.
 
 ---
 
@@ -1177,14 +1179,13 @@ flowchart TD
     ER --> S[Simplifier]
     S --> CA[CaptureAnalyzer]
     CA --> TC[TypeChecker]
-    TC --> CMG[ClosureMemoryFnGenerator]
-    CMG --> RI[ResolvablesIndexer]
-    RI --> SD[Struct Destructor Bodies]
+    TC --> PAP[PartialApplicationElaborator]
+    PAP --> CMG[ClosureMemoryFnGenerator]
+    CMG --> SD[Struct Destructor Bodies]
     SD --> OA[OwnershipAnalyzer]
     OA --> DB[Closure Destructor Bodies]
     DB --> TRD[TailRecursionDetector]
-    TRD --> RIF[Final Resolvables Index]
-    RIF --> DV[DestructionValidator]
+    TRD --> DV[DestructionValidator]
     DV --> VAL[Pre-Codegen Validation]
     VAL --> RT[Resolve Triple]
     RT --> LI[Llvm Info]
@@ -1218,7 +1219,7 @@ flowchart TD
 The MML compiler flows through staged pipelines:
 
 1. **IngestStage**: Parse source, collect parser counters, lift parse errors.
-2. **SemanticStage**: Stdlib injection → DuplicateNameChecker → IdAssigner → TypeResolver → ConstructorGenerator → MemoryFunctionGenerator → RefResolver → ExpressionRewriter → Simplifier → CaptureAnalyzer → TypeChecker → PartialApplicationElaborator → ClosureMemoryFnGenerator → ResolvablesIndexer → StructDestructorBodyGenerator → OwnershipAnalyzer → ClosureDestructorBodyGenerator → TailRecursionDetector → final ResolvablesIndexer → DestructionValidator.
+2. **SemanticStage**: Stdlib injection → DuplicateNameChecker → IdAssigner → TypeResolver → ConstructorGenerator → MemoryFunctionGenerator → RefResolver → ExpressionRewriter → Simplifier → CaptureAnalyzer → TypeChecker → PartialApplicationElaborator → ClosureMemoryFnGenerator → StructDestructorBodyGenerator → OwnershipAnalyzer → ClosureDestructorBodyGenerator → TailRecursionDetector → DestructionValidator.
 3. **CodegenStage**: Pre-codegen validation → resolve target triple/CPU → gather LLVM tool info → emit LLVM IR → write IR → native compilation.
 
 Each phase takes a `CompilerState` and returns an updated one. Timings are recorded via `CompilerState.timePhase`/`timePhaseIO`. Errors accumulate without halting compilation, so partial results remain available for the LSP.
