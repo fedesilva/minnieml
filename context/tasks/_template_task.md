@@ -4,6 +4,8 @@
 
 - **Owner:** [name]
 - **Status:** [planned | in_progress | blocked | ready_for_signoff | complete]
+- **Kind**: [ BUG | CORRECTNESS | CRASH | feature | improvement | janitorial ]*
+- **Priority** [HIGH, MID, LOW]
 - **Created:** YYYY-MM-DD
 - **Target Branch:** [branch-name or unassigned]
 - **External Reference (optional):** [link or none]

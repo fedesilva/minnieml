@@ -39,13 +39,15 @@ The intended split is:
 - `&T` means shared ownership through a reference-counted cell
 
 Non-`Unique` types (numbers, booleans, unit, aggregates of those) are freely
-copyable and have no need for shared refs.
+copyable and do not require shared ownership. They can still be shared, for
+example to avoid repeated copies of a large aggregate.
 
 ---
 
 ## Core idea
 
-Converting a `Unique` value into a shared ref is a one-way ownership transfer.
+Creating a shared ref moves a `Unique` value into the cell or copies a freely
+copyable value into it. The following example assumes `Struct1` is `Unique`.
 
 Example:
 
@@ -94,8 +96,15 @@ After conversion:
 
 ### Creation
 
-`&a` consumes `a` and produces `&T`. This requires `T: Unique`. Non-`Unique`
-types are freely copyable and have no sharing form.
+`&a` produces `&T`. For a `Unique` value, it transfers ownership and `a` becomes
+moved. For a freely copyable value, it copies the value into the cell and `a`
+remains usable. Neither case requires `Clone`.
+
+```mml
+let n = 1;
+let x = &n;  // copies 1 into a new cell; n remains usable
+let y = &1;  // also valid; creates a separate cell
+```
 
 Creation must be explicit. There should be no silent promotion from `T` to `&T`.
 
@@ -107,10 +116,8 @@ another `&T` handle. Both bindings are live afterwards.
 So `&` is overloaded by the row of its operand:
 
 - on a `T: Unique`, `&` moves the value into a fresh RC cell (rc = 1)
+- on a freely copyable `T`, `&` copies the value into a fresh RC cell (rc = 1)
 - on an `&T`, `&` aliases the existing cell (rc++)
-
-This is one operator with one mental model: "give me a shared handle to this
-value." How the handle is produced depends on whether one already exists.
 
 ### Drop
 
@@ -118,12 +125,12 @@ Dropping an `&T` decrements the reference count.
 
 When the count reaches zero:
 
-1. the inner `T` value is dropped via its `Unique` implementation (see
-   `mem-evolution.md`, Layer 1)
+1. if the inner `T` needs cleanup, it is dropped via its `Unique` implementation
+   (see `mem-evolution.md`, Layer 1); freely copyable contents need no cleanup
 2. the RC cell storage is freed
 
-This preserves deterministic destruction while allowing shared structure. `&T`
-does not need its own `Unique` derivation; it reuses the inner `T`'s.
+Every owned `&T` handle needs release, even when the inner value needs no cleanup.
+The handle's release operation and the inner value's cleanup are separate steps.
 
 ### Clone-out via `^`
 
@@ -157,7 +164,8 @@ semantics make sense, and `^` will pick it up.
 The two operators are not symmetric in implementation, only in feel.
 
 `&` is a **compiler primitive**. The type checker has to understand that `&`
-consumes a `Unique` value (or aliases an `&T`), and it has to track `&T`
+consumes a `Unique` value, copies a freely copyable value, or aliases an `&T`,
+and it has to track `&T`
 through the `Shared` row. Codegen has to emit the retain on `&` and the release
 at scope end. None of that can be expressed as a user-level protocol method,
 because none of it is a function call: it is typing rules plus IR emission.
@@ -168,10 +176,6 @@ the language, not in user space.
 compiler does not need to know `^` exists beyond desugaring it into a protocol
 call.
 
-Removing `^` from the language would leave `Clone` intact and users would
-write `clone x` in source. Removing `&` would require deleting the `Shared`
-row, the refcount runtime, and the retain/release insertion pass. `&` does not
-survive without compiler support; `^` does.
 
 ### Borrowing
 
@@ -192,7 +196,7 @@ This distinction should stay crisp in the type system and in diagnostics.
 ## Resources: `Unique` without `Clone`
 
 The split between `&` (needs no `Clone`) and `^` (needs `Clone`) makes resources
-expressible for the first time.
+expressible.
 
 A resource is a type that has cleanup semantics but cannot be duplicated:
 textures, file handles, sockets, locks. Each has identity tied to something the
@@ -320,7 +324,8 @@ The transition from a `Unique` value to `&T` must be simple and predictable.
 
 The most important invariant is:
 
-- after `let b = &a`, `a` is moved and cannot be used as a unique owner anymore
+- after `let b = &a`, a `Unique` value `a` is moved and cannot be used again;
+  a freely copyable `a` remains usable
 
 ### Cost visibility
 
@@ -355,7 +360,8 @@ This is the main semantic question left open by the model.
 
 Resolved for the value-level operators:
 
-- `&expr` promotes a `T: Unique` into `&T`, or aliases an existing `&T`
+- `&expr` moves a `Unique` value or copies a freely copyable value into a new
+  `&T`, or aliases an existing `&T`
 - `^expr` produces a fresh `T` from a `T` or an `&T` (requires `T: Clone`)
 - the type form is `&T` in annotations and fields
 
@@ -384,8 +390,9 @@ No new type form, no new sigil. See `mem-evolution.md`, Layer 3.
 
 Resolved:
 
-- `&T` reuses the inner `T`'s `Unique` implementation when the count reaches
-  zero. No separate `Unique` derivation for `&T` itself.
+- Every owned `&T` handle releases a reference. At count zero, the inner value
+  is dropped if it needs cleanup, then the cell is freed.
+- Creating a shared reference does not require `Unique` on `T`.
 - `&` does not require `Clone` on `T`. That is what makes resources (`Unique`
   without `Clone`) shareable.
 - `^` is the surface syntax for the `Clone` protocol. It requires `T: Clone`

@@ -93,10 +93,9 @@ The merged capability is named `Unique`. The protocol method that runs at scope
 end is named `drop`. There is no separate `Drop` protocol and no separate
 `unique` keyword on type declarations.
 
-**Why:** Keeping them split was paying complexity tax for a phantom rung
-("linear without cleanup", e.g. session-type tokens, type-state markers) that
-MML has no concrete user for today. If that category becomes load-bearing
-later, it can be reintroduced as a separate `MustConsume` capability that
+**Why:** We haven't identified a use case in MML for unique values without
+automatic cleanup, such as session-type tokens or type-state markers. If we
+need them later, they could have a separate `MustConsume` capability that
 suppresses scope-end `drop`. That is additive; we do not need to keep the split
 around speculatively.
 
@@ -324,6 +323,7 @@ See `docs/brainstorming/mem/shared-refs.md` for the longer rationale.
 | op  | input        | result     | effect                                              | requires    |
 |-----|--------------|------------|-----------------------------------------------------|-------------|
 | `&` | `T: Unique`  | `&T`       | move into a fresh refcount cell (rc = 1)            | —           |
+| `&` | freely copyable `T` | `&T` | copy into a fresh refcount cell (rc = 1); source stays usable | — |
 | `&` | `&T`         | `&T`       | bump the refcount, return another handle            | —           |
 | `^` | `T: Unique`  | `T`        | deep copy; original keeps ownership                 | `T: Clone`  |
 | `^` | `&T`         | `T`        | deep copy of the inner value; handle stays alive    | `T: Clone`  |
@@ -337,7 +337,8 @@ There is no implicit move in either direction.
 The two operators are not symmetric in implementation, only in feel.
 
 `&` is a **compiler primitive**. The type checker has to understand that `&`
-consumes a `Unique` value (or aliases an `&T`), and it has to track `&T`
+consumes a `Unique` value, copies a freely copyable value, or aliases an `&T`,
+and it has to track `&T`
 through the `Shared` row. Codegen has to emit the retain on `&` and the release
 at scope end. None of that can be expressed as a user-level protocol method,
 because none of it is a function call: it is typing rules plus IR emission.
@@ -376,9 +377,9 @@ println c ++ b;      // both shared handles still live
 
 `Shared` lives in the same row as `Unique` and `Clone`. The operators dispatch
 on the row of their operand; the programmer does not name a wrapper type. `&`
-does not require `Clone` on `T`. `^` does. When the last `&T` goes out of
-scope, the existing `Unique` machinery runs `drop` on the inner value. Nothing
-about destruction or auto-derivation changes.
+does not require `Unique` or `Clone` on `T`. `^` requires `Clone`. Each owned
+handle releases a reference. At count zero, the inner value is dropped if it
+needs cleanup, then the cell is freed. Freely copyable contents need no cleanup.
 
 ### Resources: `Unique` without `Clone`
 
@@ -571,10 +572,11 @@ insight into an opaque `@native` representation.
 T                       — value type, freely copyable, no cleanup
 T: Unique               — affine + auto drop at scope end (method: drop)
 T: Unique + Clone       — unique, droppable, explicitly clonable (current heap types)
-T: Shared               — refcounted handle on a previously-Unique T:
-                          - `&` on Unique mints one (rc=1); further `&` aliases (rc++)
+T: Shared               — refcounted handle on a T:
+                          - `&` moves Unique or copies freely copyable T into a cell (rc=1)
+                          - further `&` aliases the existing cell (rc++)
                           - `^` deep-copies the inner value out, requires T: Clone
-                          - drop runs on the inner value when rc reaches 0
+                          - at rc=0, clean up the inner value if needed and free the cell
 ```
 
 Users can move *up* this ladder (a struct gains `Unique` by containing a
@@ -649,7 +651,7 @@ What makes a protocol fundamental:
 - The compiler inserts calls implicitly (`drop` at scope end; `clone` at every
   `^x` use site and on literal/global use of `Clone` types).
 - The protocol participates in type-level rules (`Unique` and `Clone` both
-  propagate through aggregation, dually; `&` requires `Unique` on its operand;
+  propagate through aggregation, dually; `&` accepts Unique and freely copyable values;
   `^` requires `Clone`).
 
 User-defined protocols are just dispatch mechanisms. The compiler doesn't
