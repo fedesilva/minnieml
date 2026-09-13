@@ -1,6 +1,5 @@
 package mml.mmlclib.semantic
 
-import cats.data.NonEmptyList
 import cats.syntax.all.*
 import mml.mmlclib.ast.*
 
@@ -20,22 +19,22 @@ def prepareClosureInvocation(lambda: Lambda, owner: BindingOwner): Allocation[La
           typeSpec = pointerType.some,
           purpose  = "environment"
         )
-        discard <- LocalBindings.param(owner, "_", typeSpec = unitType.some, purpose = "disarm")
-      yield
-        val operand =
-          Expr(source, List(environment.ref), typeSpec = pointerType.some)
-        val disarm =
-          DisarmClosureEnvironment(source, operand, "stdlib::bnd::mml_free_raw", unitType.some)
-        val scopeType = lambda.body.typeSpec.map(TypeFn(source, NonEmptyList.one(unitType), _))
-        val scope     = Lambda(source, List(discard), lambda.body, Nil, typeSpec = scopeType)
-        val call = App(
-          source,
-          scope,
-          Expr(source, List(disarm), typeSpec = unitType.some),
-          typeSpec = lambda.body.typeSpec
+        disarm =
+          DisarmClosureEnvironment(
+            source,
+            environment.expression,
+            "stdlib::bnd::mml_free_raw",
+            unitType.some
+          )
+        body <- LocalBindings.sequence(
+          disarm,
+          lambda.body,
+          owner,
+          unitType,
+          purpose = "disarm"
         )
-        lambda.copy(
-          body = lambda.body.copy(terms = List(call)),
-          meta = meta.copy(environmentParam = environment.param.some).some
-        )
+      yield lambda.copy(
+        body = body,
+        meta = meta.copy(environmentParam = environment.param.some).some
+      )
     case _ => lambda.pure[Allocation]

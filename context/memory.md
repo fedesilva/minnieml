@@ -16,9 +16,8 @@ This is the Author's active and near-term focus. The backlog lives in [tasks/](t
 
 - **Tracker:** [Unify lambdas](tasks/unify-lambdas.md)
 - **Status:** in_progress
-- **Current focus:** [Execution checklist](tasks/unify-lambdas.md#execution-checklist), binding
-  identity and local construction: stage 2 is `ready_for_signoff`, verified and uncommitted.
-  Next: stage 2 signoff. Stage 1 is complete at `dbd65d9`.
+- **Current focus:** The next bounded slice in the
+  [Execution checklist](tasks/unify-lambdas.md#execution-checklist) awaits selection and approval.
 
 ### Conditional ownership hardening
 

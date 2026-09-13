@@ -20,9 +20,7 @@ remain subject to bounded plan approval. Only the active step exposes its curren
 5. [x] **complete** — [Deferred consuming arguments](#bug-supply-a-consuming-argument-after-pap-creation) (`c66e309`).
 6. [x] **complete** — [Owned PAPs in struct fields](#bug-store-an-owned-pap-in-a-struct-field) (`2b55e82`).
 7. [x] **complete** — [Nested consuming-PAP calls and review repairs](#bug-nested-consuming-pap-calls) (`234b6e1`, `dc29582`).
-8. [ ] **ready_for_signoff** — [Binding identity and local construction](#establish-binding-identity-and-local-construction-invariants).
-   - Stage 2 binding/cleanup construction and type propagation: verified, uncommitted;
-     next: obtain signoff.
+8. [x] **complete** — [Binding identity and local construction](#establish-binding-identity-and-local-construction-invariants); signed off.
 9. [ ] **planned** — [Counter and argument-expression preservation](#preserve-counters-and-argument-expressions-across-ownership-analysis).
 10. [ ] **planned** — [Mixed-ownership transfer repair and conditional-ownership hardening](#bug-preserve-mixed-ownership-through-consuming-transfers).
 11. [ ] **planned** — [Remaining lambda semantics and lowering](#remaining-lambda-implementation).
@@ -448,8 +446,8 @@ Pin these cases:
 
 Preservation, borrowed returns, typed closure destruction, PAP creation, deferred consuming
 arguments, owned PAP struct fields, and nested consuming-PAP repairs are complete.
-Binding identity and local construction has an approved two-stage implementation plan;
-stage 2 signoff is pending. Remaining work requires bounded approval before implementation.
+Both stages of binding identity and local construction are complete and signed off.
+Remaining work requires bounded approval before implementation.
 The general branch audit is deferred.
 
 ## Implementation Checklist
@@ -463,9 +461,8 @@ this branch.
 
 #### Establish binding identity and local-construction invariants
 
-- **Status:** ready_for_signoff.
-- **Sequence:** before further ownership changes. Review this construction step independently
-  before resuming the remaining lambda fixes.
+- **Status:** complete; both stages verified, independently reviewed, and signed off.
+- **Sequence:** construction prerequisite for further ownership changes is satisfied.
 - **Problem and evidence:** binding identity, reference construction, wrapper typing, and
   index maintenance require a common contract across semantic rewrites. Focused regressions
   cover missing clone-helper parameter IDs, unresolved shadowed locals, and ownership wrappers
@@ -500,9 +497,8 @@ this branch.
   Stage 2 covers binding/cleanup construction and type propagation.
 - [x] **complete** — Stage 1: shared identity allocation, allocating callers, and index
   consistency (`dbd65d9`); signed off.
-- [ ] **ready_for_signoff** — Stage 2: shared binding/cleanup construction, type propagation,
-  and remaining callers; implementation and verification complete, signoff pending.
-- **Next action:** obtain construction-step signoff before resuming ownership changes.
+- [x] **complete** — Stage 2: shared binding/cleanup construction, type propagation,
+  and remaining callers; verified and signed off.
 - **Follow-up:** [Remove provenance heuristics from lambda scope analysis](lambda-scope-classification.md).
   That task addresses AST interpretation and reconciles the existing sequence-lambda item;
   it is separate from this construction step.
@@ -706,19 +702,19 @@ are in `context/history/` for Author review. No compiler slice is authorized by 
 
 - Workstream signoff: complete for preservation, borrowed returns, typed closure destruction,
   PAP creation, deferred consuming arguments, owned PAP struct fields, nested consuming-PAP
-  repairs, and binding identity stage 1. Stage 2 binding construction awaits signoff.
+  repairs, and both binding identity and local-construction stages.
 - Tracked item completion: pending; open work remains in the
   [Execution Checklist](#execution-checklist).
-- Commit authorization: completed slices are committed. Stage 2 signoff and local commit
-  authorization are pending; no push is authorized for stage 2.
+- Commit authorization: earlier slices and binding identity stage 1 are committed.
+  Local commit authorization is granted for stage 2 and its completion records; no push is authorized.
 
 ## Task Working Memory
 
 - **Branch:** `dev-lambda-unify`.
-- **Active step:** [Binding identity and local construction](#establish-binding-identity-and-local-construction-invariants),
-  stage 2 `ready_for_signoff`. Implementation and review are verified; compiler changes are
-  uncommitted. Stage 1 is signed off and committed at `dbd65d9`.
-- **Next action:** obtain stage 2 signoff before resuming ownership changes.
+- **Implementation:** [Binding identity and local construction](#establish-binding-identity-and-local-construction-invariants)
+  is complete and signed off. Stage 1 is committed at `dbd65d9`; stage 2 includes the shared
+  construction helpers, caller migrations, regressions, and completion records.
+- **Next action:** select and approve the next bounded implementation plan.
 - **Evidence:** [Binding construction verification](#binding-construction-evidence).
 - **Open limits:** the mixed-ownership reproducer remains unresolved; the general branch
   audit and separate Linux sanitizer validation are deferred. The broader counter/expression
@@ -732,7 +728,30 @@ approvals, and next action belong to the [Execution Checklist](#execution-checkl
 
 ### Binding construction evidence
 
-- **Stage 1 checkpoint (`dbd65d9`):** complete and signed off.
+- **Binding construction:** shared binding and cleanup construction in ownership analysis,
+  PAP elaboration, direct-lambda lowering, and closure invocation, with typed-wrapper and
+  consuming-contract regressions.
+  Those callers use `LocalBindings.bind` and `LocalBindings.sequence`; generated struct
+  destructors share the sequencing path through `LocalBindings.cleanup`. Scope signatures
+  derive from parameter and continuation types. Sequencing preserves continuation source
+  and annotations. Remaining direct lambda constructors create callable definitions or
+  preserve existing lambda metadata rather than constructing local binding wrappers.
+  Stage 2 verification (2026-09-12): formatting, lint, **636 passed / 51 existing ignores**,
+  all seven compiler smokes, and local publishing pass in `/tmp/mml-stage2-final-gates.log`.
+  Commands use the same compiler gate sequence recorded below for stage 1.
+  `sbtn 'scalafmtCheckAll;testOnly mml.mmlclib.semantic.LocalBindingsTest'` also passes
+  with **19 passed / 0 ignored** in `/tmp/mml-stage2-final-focused.log`.
+  `make -C benchmark clean` and `make -C benchmark mml` pass all seven builds;
+  logs: `/tmp/mml-stage2-benchmark-clean.log` and `/tmp/mml-stage2-benchmarks.log`.
+  These are build checks, not timing comparisons. `./tests/mem/run.sh all` passes
+  **41/41 ASan+LSan cases at -O 0 (49s)** in `/tmp/mml-stage2-memory.log`, on Darwin arm64,
+  Clang 23.1.1, target `arm64-apple-darwin25.6.0`. Published and build jars share SHA-256
+  `78e49fc07925555411fdc5ba5771ab907b9c99129e5c7b749f0da386e8980961`.
+  Stage 2 QA enforcement, focused tracking review, and fresh independent code review pass.
+  No actionable findings remain. The reviewer independently checked the gate logs and jar
+  hashes and ran the nested consuming-PAP sample at `-O 0 -s` with expected output and no
+  ASan diagnostic; the full gates were inspected, not rerun. No candidate findings required
+  claim-verifier delegation. Runtime evidence is limited to Darwin arm64.
   Shared allocation preserves existing IDs and registers new
   declaration, field, and local IDs. The shared declaration formatter supplies matching definition,
   reference, and owner paths. Rewriting phases publish one fresh output index; PAP refreshes its
@@ -740,11 +759,11 @@ approvals, and next action belong to the [Execution Checklist](#execution-checkl
   duplicate-name checking rejects duplicate parameters in nested and inline lambdas.
   Generated scope provenance retains its purpose and ordinal; regression tests establish stable
   re-entry after relocation. Ownership temporaries retain unique names because ownership maps
-  still use names. The clone-helper identity regression passes; the ownership-wrapper function-type
-  regression is linked to this plan and ignored pending stage 2.
-  Verification (2026-09-12): formatting, lint, and **627 passed / 52 ignored** in
-  `/tmp/mml-binding-fixes-gates.log`; 51 ignores are existing baseline tests and one is the stage 2
-  regression. All seven required compiler smokes and local publishing pass in the same log.
+  still use names. The clone-helper identity and ownership-wrapper function-type regressions
+  pass; the latter is enabled by stage 2.
+  Stage 1 verification (2026-09-12): formatting, lint, and **627 passed / 52 ignored** in
+  `/tmp/mml-binding-fixes-gates.log`; that checkpoint includes the ownership-wrapper regression
+  among its ignores. All seven required compiler smokes and local publishing pass in the same log.
   Commands: `sbtn 'scalafmtAll;scalafixAll;test;run run mml/samples/hola.mml;run run mml/samples/quicksort.mml;run run mml/samples/astar2.mml;run run mml/samples/partial-fac1.mml;run mml/samples/style-guide.mml;run mml/samples/lambda-factorial.mml;run mml/samples/raytracer3_p6.mml;mmlcPublishLocal'`.
   Published and build jars share SHA-256
   `9fcddf4fa69c66d4ae13bd7316b36d97af4106ad20c03f2eee21e1bcef2008b3`.

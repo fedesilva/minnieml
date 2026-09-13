@@ -4,6 +4,10 @@ Durable product changes belong here. Current task state belongs in task files.
 
 ## 2026-09-12
 
+- Share local binding and cleanup construction across ownership analysis, PAP elaboration,
+  direct-lambda lowering, and closure invocation. Preserve wrapper function types, binding
+  identities, consuming contracts, and continuation source locations and annotations.
+
 - Require a compact execution checklist in task documents and the template, showing completed,
   active, and pending steps in delivery order. Keep detailed plans and historical evidence
   separate from the current overview; expand only the active subitem and its next action.

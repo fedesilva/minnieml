@@ -214,6 +214,18 @@ its ID; constructing a distinct binding allocates a fresh ID and matching refere
 provides generated parameter/reference construction, and reports a construction error when asked
 to reference an unassigned parameter. References retain `resolvedId` across definition updates.
 
+`LocalBindings.bind` constructs an immediate application from an existing parameter, its value,
+and a continuation body. It preserves the parameter's identity, annotations, and consuming flag.
+The scope receives a `TypeFn` from the parameter's computed or declared input type to the body's
+computed result type; the application retains that result type. Before type checking, missing
+input or result information leaves the scope untyped for inference. Ownership temporaries and
+witnesses, PAP payload bindings, and direct-lambda parameter wrappers share this construction.
+
+`LocalBindings.sequence` allocates a discard parameter for a Unit-valued effect and runs the
+continuation afterward. It preserves the continuation's result type and ascription. Ownership
+cleanup and closure-invocation disarming use this operation; generated struct destructors use
+`LocalBindings.cleanup` to sequence field destruction in declaration order and return Unit.
+
 Nested allocation uses the prefix of the first assigned parameter as its scope anchor. For a
 generated parameter, that anchor includes its generation purpose and ordinal. Re-entering the
 same definition, including after relocation, yields the same anchor. This gives distinct generated

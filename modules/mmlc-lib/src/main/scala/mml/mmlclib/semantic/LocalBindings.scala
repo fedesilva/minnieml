@@ -40,11 +40,17 @@ object LocalBindings:
     App(source, scope, value, typeSpec = body.typeSpec)
 
   /** Run one Unit-valued effect before the body. */
-  def sequence(call: Term, body: Expr, owner: BindingOwner, unitType: Type): Allocation[Expr] =
-    val source = SourceOrigin.Synth
-    param(owner, "_", typeSpec = unitType.some, purpose = "cleanup").map { discard =>
+  def sequence(
+    call:     Term,
+    body:     Expr,
+    owner:    BindingOwner,
+    unitType: Type,
+    source:   SourceOrigin = SourceOrigin.Synth,
+    purpose:  String       = "cleanup"
+  ): Allocation[Expr] =
+    param(owner, "_", typeSpec = unitType.some, purpose = purpose).map { discard =>
       val argument = Expr(source, List(call), typeSpec = unitType.some)
-      Expr(source, List(bind(discard, argument, body)), typeSpec = body.typeSpec)
+      body.copy(terms = List(bind(discard, argument, body, source)))
     }
 
   /** Create a synthetic parameter with a fresh identity. */
