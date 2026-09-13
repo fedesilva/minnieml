@@ -26,7 +26,7 @@ object TailRecursionDetector:
       case bnd: Bnd =>
         bnd.value.terms match
           case (lambda: Lambda) :: rest =>
-            val isTailRec     = hasTailRecursiveCallById(lambda.body, bnd.name, bnd.id)
+            val isTailRec     = hasTailRecursiveCallById(lambda.body, bnd)
             val rewrittenBody = rewriteLetBoundLambdas(lambda.body)
             val updatedMeta =
               if isTailRec then
@@ -58,48 +58,44 @@ object TailRecursionDetector:
   /** Check if the arg of a let-binding is a lambda that self-recurses via the param. */
   private def rewriteLetBoundArg(arg: Expr, param: FnParam): Expr =
     arg.terms match
-      case List(innerLambda: Lambda)
-          if hasTailRecursiveCallById(innerLambda.body, param.name, param.id) =>
+      case List(innerLambda: Lambda) if hasTailRecursiveCallById(innerLambda.body, param) =>
         val meta    = innerLambda.meta.getOrElse(LambdaMeta())
         val updated = innerLambda.copy(meta = Some(meta.copy(isTailRecursive = true)))
         Expr(arg.source, List(updated), arg.typeSpec)
       case _ => arg
 
   private def hasTailRecursiveCallById(
-    expr:     Expr,
-    selfName: String,
-    selfId:   Option[String]
+    expr:    Expr,
+    binding: Resolvable
   ): Boolean =
     expr.terms match
-      case List(term) => hasTailRecursiveCallInTerm(term, selfName, selfId)
+      case List(term) => hasTailRecursiveCallInTerm(term, binding)
       case _ => false
 
   private def hasTailRecursiveCallInTerm(
-    term:     Term,
-    selfName: String,
-    selfId:   Option[String]
+    term:    Term,
+    binding: Resolvable
   ): Boolean =
     term match
       case cond: Cond =>
-        hasTailRecursiveCallById(cond.ifTrue, selfName, selfId) ||
-        hasTailRecursiveCallById(cond.ifFalse, selfName, selfId)
+        hasTailRecursiveCallById(cond.ifTrue, binding) ||
+        hasTailRecursiveCallById(cond.ifFalse, binding)
 
       case app: App =>
         app.fn match
           case lambda: Lambda =>
-            hasTailRecursiveCallById(lambda.body, selfName, selfId)
+            hasTailRecursiveCallById(lambda.body, binding)
           case _ =>
-            isSelfCall(app, selfName, selfId)
+            isSelfCall(app, binding)
 
       case _ => false
 
   private def isSelfCall(
-    app:      App,
-    selfName: String,
-    selfId:   Option[String]
+    app:     App,
+    binding: Resolvable
   ): Boolean =
     collectCallee(app) match
-      case Some(ref) => isSelfRef(ref, selfName, selfId)
+      case Some(ref) => isSelfRef(ref, binding)
       case None => false
 
   /** Extract the callee Ref from a curried application chain */
@@ -109,9 +105,9 @@ object TailRecursionDetector:
       case next: App => collectCallee(next)
       case _ => None
 
-  private def isSelfRef(ref: Ref, selfName: String, selfId: Option[String]): Boolean =
+  private def isSelfRef(ref: Ref, binding: Resolvable): Boolean =
     if ref.qualifier.isDefined then false
     else
       ref.resolvedId match
-        case Some(id) => selfId.contains(id)
-        case None => ref.name == selfName
+        case Some(id) => binding.id.contains(id)
+        case None => ref.name == binding.name

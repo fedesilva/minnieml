@@ -17,12 +17,8 @@ type ExprCompiler =
   *
   * Generates LLVM basic blocks for then/else branches with a phi node to merge results.
   *
-  * @param condExpr
-  *   the condition expression
-  * @param ifTrue
-  *   the then-branch expression
-  * @param ifFalse
-  *   the else-branch expression
+  * @param cond
+  *   the conditional expression
   * @param state
   *   the current code generation state
   * @param functionScope
@@ -31,15 +27,14 @@ type ExprCompiler =
   *   the expression compiler function (passed to avoid circular dependency)
   */
 def compileCond(
-  condExpr:      Expr,
-  ifTrue:        Expr,
-  ifFalse:       Expr,
+  cond:          Cond,
   state:         CodeGenState,
   functionScope: Map[String, ScopeEntry],
   compileExpr:   ExprCompiler
 ): Either[CodeGenError, CompileResult] =
+
   for
-    condRes <- compileExpr(condExpr, state, functionScope)
+    condRes <- compileExpr(cond.cond, state, functionScope)
 
     // Create basic blocks (use condRes.state to avoid label collisions in nested conditionals)
     thenBB  = condRes.state.nextRegister
@@ -55,7 +50,7 @@ def compileCond(
     // Check if condition result is boolean (from boolean operations) or integer
     (stateAfterCondition, branchCondition) = compileBranchCondition(
       condRes,
-      condExpr,
+      cond.cond,
       condOp,
       mergeBB,
       stateWithReservedLabels
@@ -68,7 +63,7 @@ def compileCond(
 
     // Then block
     thenState = stateAfterBranch.emit(s"then$thenBB:")
-    thenRes <- compileExpr(ifTrue, thenState, functionScope)
+    thenRes <- compileExpr(cond.ifTrue, thenState, functionScope)
     thenValue = thenRes.operandStr
     // Track the actual exit block (may differ from then$thenBB if nested conditional)
     thenExitBlock        = thenRes.exitBlock.getOrElse(s"then$thenBB")
@@ -76,7 +71,7 @@ def compileCond(
 
     // Else block
     elseState = stateAfterThenBranch.emit(s"else$elseBB:")
-    elseRes <- compileExpr(ifFalse, elseState, functionScope)
+    elseRes <- compileExpr(cond.ifFalse, elseState, functionScope)
     elseValue = elseRes.operandStr
     // Track the actual exit block (may differ from else$elseBB if nested conditional)
     elseExitBlock        = elseRes.exitBlock.getOrElse(s"else$elseBB")
@@ -86,13 +81,13 @@ def compileCond(
     resultReg = stateAfterElseBranch.nextRegister
 
     // Get the type from the then branch result (both branches should have same type)
-    phiType <- ifTrue.typeSpec match
+    phiType <- cond.ifTrue.typeSpec match
       case Some(typeSpec) => getLlvmType(typeSpec, stateAfterElseBranch)
       case None =>
         Left(
           CodeGenError(
             "Missing type information for conditional expression - TypeChecker should have provided this",
-            Some(condExpr)
+            Some(cond.cond)
           )
         )
 

@@ -80,7 +80,7 @@ def compileBndLambda(
 ): Either[CodeGenError, CodeGenState] =
   // Try loopification for tail-recursive functions, fall back to regular codegen if pattern unsupported
   if lambda.meta.exists(_.isTailRecursive) then
-    findTailRecBody(lambda, bnd.name, bnd.id) match
+    findTailRecBody(lambda, bnd) match
       case Some(body) =>
         compileTailRecursiveLambda(
           lambda,
@@ -918,11 +918,10 @@ private def replacePlaceholders(
 
 /** Extract a tail-recursive body tree from a lambda. */
 private[emitter] def findTailRecBody(
-  lambda:   Lambda,
-  selfName: String,
-  selfId:   Option[String]
+  lambda:  Lambda,
+  binding: Resolvable
 ): Option[TailRecBody] =
-  extractBody(lambda.body, lambda, selfName, selfId, Nil)
+  extractBody(lambda.body, lambda, binding, Nil)
 
 /** Walk through let-binding/sequence chains, building TailRecBody tree.
   *
@@ -933,29 +932,28 @@ private[emitter] def findTailRecBody(
 private def extractBody(
   expr:          Expr,
   lambda:        Lambda,
-  selfName:      String,
-  selfId:        Option[String],
+  binding:       Resolvable,
   accStatements: List[BoundStatement]
 ): Option[TailRecBody] =
   expr.terms match
     case List(app: App) =>
       app.fn match
         case innerLambda: Lambda =>
-          val binding =
+          val boundName =
             if isSequenceLambda(innerLambda) then None
             else innerLambda.params.headOption.map(_.name)
-          val stmt = BoundStatement(binding, app.arg)
-          extractBody(innerLambda.body, lambda, selfName, selfId, accStatements :+ stmt)
+          val stmt = BoundStatement(boundName, app.arg)
+          extractBody(innerLambda.body, lambda, binding, accStatements :+ stmt)
         case _ =>
           collectAppArgs(app).flatMap { case (ref, args) =>
-            if isSelfRef(ref, selfName, selfId) && arityMatches(args, lambda) then
+            if isSelfRef(ref, binding) && arityMatches(args, lambda) then
               TailRecCall(accStatements, args).some
             else None
           }
 
     case List(cond: Cond) =>
-      val trueBody  = extractBody(cond.ifTrue, lambda, selfName, selfId, Nil)
-      val falseBody = extractBody(cond.ifFalse, lambda, selfName, selfId, Nil)
+      val trueBody  = extractBody(cond.ifTrue, lambda, binding, Nil)
+      val falseBody = extractBody(cond.ifFalse, lambda, binding, Nil)
       (trueBody, falseBody) match
         case (Some(tb), Some(fb)) =>
           TailRecBranch(accStatements, cond.cond, tb, fb).some
@@ -980,7 +978,7 @@ private def extractBody(
     // Detect when a Ref in tail position refers to a binding whose value is a self-call.
     // Effects following the self-call keep the call in ordinary recursion.
     case List(ref: Ref) =>
-      extractSelfCallFromAccumulated(ref.name, accStatements, lambda, selfName, selfId)
+      extractSelfCallFromAccumulated(ref.name, accStatements, lambda, binding)
 
     case _ => None
 
@@ -992,8 +990,7 @@ private def extractSelfCallFromAccumulated(
   refName:       String,
   accStatements: List[BoundStatement],
   lambda:        Lambda,
-  selfName:      String,
-  selfId:        Option[String]
+  binding:       Resolvable
 ): Option[TailRecBody] =
   val idx = accStatements.indexWhere {
     case BoundStatement(Some(n), _) => n == refName
@@ -1004,7 +1001,7 @@ private def extractSelfCallFromAccumulated(
     val BoundStatement(_, callExpr) = accStatements(idx): @unchecked
     // The self-call may be wrapped in additional lambda chains (ownership frees).
     // Recursively extract through the callExpr to find the self-call.
-    extractBody(callExpr, lambda, selfName, selfId, Nil).flatMap {
+    extractBody(callExpr, lambda, binding, Nil).flatMap {
       case TailRecCall(innerStmts, args) =>
         val stmtsBefore = accStatements.take(idx)
         val stmtsAfter  = accStatements.drop(idx + 1)
@@ -1038,9 +1035,9 @@ private def isUnitExpr(expr: Expr): Boolean =
     case List(_: LiteralUnit) => true
     case _ => false
 
-private def isSelfRef(ref: Ref, selfName: String, selfId: Option[String]): Boolean =
+private def isSelfRef(ref: Ref, binding: Resolvable): Boolean =
   if ref.qualifier.isDefined then false
   else
     ref.resolvedId match
-      case Some(id) => selfId.contains(id)
-      case None => ref.name == selfName
+      case Some(id) => binding.id.contains(id)
+      case None => ref.name == binding.name

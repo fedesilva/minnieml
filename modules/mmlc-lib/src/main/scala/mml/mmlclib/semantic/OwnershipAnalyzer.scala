@@ -302,7 +302,7 @@ object OwnershipAnalyzer:
                       case _ => false
                     }
                     Option
-                      .when(nativeAllocates)(lambdaReturnType(lambda.typeAsc, lambda.typeSpec))
+                      .when(nativeAllocates)(lambdaReturnType(lambda))
                       .flatten
                   .filter(t => isOwnedType(t, resolvables))
 
@@ -639,10 +639,7 @@ object OwnershipAnalyzer:
             .getOrElse(List(ref))
         case lambda: Lambda => List(lambda)
         case app:    App =>
-          val (callee, args) = collectArgsAndBase(
-            app.fn,
-            List(CallArgument(app.arg, app.source, app.typeAsc, app.typeSpec))
-          )
+          val (callee, args) = collectApplicationsAndBase(app, Nil)
           callee match
             case lambda: Lambda
                 if lambda.params.length == args.length ||
@@ -651,7 +648,7 @@ object OwnershipAnalyzer:
                 .zip(args)
                 .flatMap:
                   case (param, argument) =>
-                    param.id.map(_ -> fromExpr(argument.value, arguments, index))
+                    param.id.map(_ -> fromExpr(argument.arg, arguments, index))
               fromExpr(
                 lambda.body,
                 arguments ++ supplied,
@@ -666,9 +663,9 @@ object OwnershipAnalyzer:
 
     fromExpr(expr, Map.empty, resolvables).distinct
 
-  private def lambdaReturnType(typeAsc: Option[Type], typeSpec: Option[Type]): Option[Type] =
-    typeAsc.orElse:
-      typeSpec.flatMap:
+  private def lambdaReturnType(lambda: Lambda): Option[Type] =
+    lambda.typeAsc.orElse:
+      lambda.typeSpec.flatMap:
         case TypeFn(_, _, ret) => Some(ret)
         case other => Some(other)
 
@@ -964,23 +961,14 @@ object OwnershipAnalyzer:
 
   /** Analyze a direct lambda application: App(Lambda(params, body), arg) */
   private def analyzeLambdaApplication(
-    span:           SourceOrigin,
-    lSource:        SourceOrigin,
-    params:         List[FnParam],
-    body:           Expr,
-    captures:       List[Capture],
-    lTypeSpec:      Option[Type],
-    lTypeAsc:       Option[Type],
-    meta:           Option[LambdaMeta],
-    isMove:         Boolean,
-    arg:            Expr,
-    typeAsc:        Option[Type],
-    typeSpec:       Option[Type],
+    app:            App,
+    lambda:         Lambda,
     scope:          OwnershipScope,
     resultConsumer: Option[FnParam] = none
   ): TermResult[Term] =
-    val consumingParam = params.headOption.filter(_.consuming)
-    val cloned         = prepareConsumingArgument(arg, consumingParam, scope)
+
+    val consumingParam = lambda.params.headOption.filter(_.consuming)
+    val cloned         = prepareConsumingArgument(app.arg, consumingParam, scope)
     val prepared =
       if consumingParam.isDefined then
         ConditionalArgument(cloned.expr, Vector.empty, none, scope.tempCounter, scope.bindingIds)
@@ -991,7 +979,7 @@ object OwnershipAnalyzer:
     // Forward-scan: check if any newly-moved bindings are still used in the body
     val newlyMoved = argResult.scope.movedAt.keySet -- scope.movedAt.keySet
     val lastUseErrors = newlyMoved.toList.flatMap: name =>
-      if !params.exists(_.name == name) && containsRefInExpr(name, body) then
+      if !lambda.params.exists(_.name == name) && containsRefInExpr(name, lambda.body) then
         argResult.scope.consumedVia
           .get(name)
           .map: (ref, param) =>
@@ -1013,7 +1001,7 @@ object OwnershipAnalyzer:
     val mixedCond = allocType.zip(prepared.witness)
 
     // Set up scope for lambda body - handle mixed conditionals specially
-    val (bodyScope, witnessOpt) = params.headOption match
+    val (bodyScope, witnessOpt) = lambda.params.headOption match
       case Some(param) if param.consuming && !scope.skipConsumingOwnership =>
         (
           argResult.scope.withOwned(param.name, param.typeSpec.orElse(param.typeAsc), param.id),
@@ -1054,7 +1042,7 @@ object OwnershipAnalyzer:
             )
           )
         // Check if allocating expression is a capturing lambda with env struct name
-        val closureFreeFn = arg.terms.headOption.collect {
+        val closureFreeFn = app.arg.terms.headOption.collect {
           case lambda: Lambda if lambda.captures.nonEmpty =>
             lambda.meta
               .flatMap(_.envStructName)
@@ -1071,7 +1059,7 @@ object OwnershipAnalyzer:
           .getOrElse(argResult.scope.withBorrowed(param.name))
         (newScope, None)
       case Some(param) =>
-        val newScope = arg.terms.headOption match
+        val newScope = app.arg.terms.headOption match
           case Some(_: LiteralString) =>
             argResult.scope.withLiteral(param.name)
           case Some(ref: Ref)
@@ -1090,25 +1078,25 @@ object OwnershipAnalyzer:
     val sinkErrors =
       if consumingParam.isDefined then ownershipSinkErrors(cloned.expr, dependencies, scope)
       else Nil
-    val nestedBodyScope = enterScope(params, bodyScope)
-    val scopeWithDependencies = params.headOption.flatMap(_.id).fold(nestedBodyScope) { id =>
+    val nestedBodyScope = enterScope(lambda.params, bodyScope)
+    val scopeWithDependencies = lambda.params.headOption.flatMap(_.id).fold(nestedBodyScope) { id =>
       nestedBodyScope
         .copy(borrowedDependencies = bodyScope.borrowedDependencies.updated(id, dependencies))
     }
     val fieldAlias = for
-      param <- params.headOption
+      param <- lambda.params.headOption
       id <- param.id
-      ref <- arg.terms.headOption.map(unwrapTerm).collect { case ref: Ref => ref }
+      ref <- app.arg.terms.headOption.map(unwrapTerm).collect { case ref: Ref => ref }
       path <- ownershipPath(ref, argResult.scope).filter(_.fields.nonEmpty)
     yield id -> path
     val scopeWithAliases =
       scopeWithDependencies.copy(fieldAliases = scopeWithDependencies.fieldAliases ++ fieldAlias)
-    val preparedBody = prepareConsumingArgument(body, resultConsumer, scopeWithAliases)
+    val preparedBody = prepareConsumingArgument(lambda.body, resultConsumer, scopeWithAliases)
     val bodyResult   = analyzeArgument(preparedBody.expr, resultConsumer, scopeWithAliases)
     val escaping     = returnedOwnedNames(bodyResult.expr, bodyResult.scope)
 
     // Free all owned bindings at terminal body
-    val witnessBinding = witnessOpt.flatMap(_ => params.headOption.map(_.name))
+    val witnessBinding = witnessOpt.flatMap(_ => lambda.params.headOption.map(_.name))
     val bindingsToFree =
       bodyResult.scope.ownedBindings.filter:
         case binding @ OwnedBinding(_, Some(tpe), _, _, _) =>
@@ -1130,7 +1118,7 @@ object OwnershipAnalyzer:
     val (terminalIds, bodyWithTerminalFrees) = wrapWithFrees(
       bodyWithEarlyFrees,
       terminalFrees,
-      body.source,
+      lambda.body.source,
       scopeWithAliases.bindingOwner,
       scope.resolvables
     ).run(earlyIds).value
@@ -1139,9 +1127,9 @@ object OwnershipAnalyzer:
     val cleanup = witnessOpt match
       case Some((witnessLocal, _)) =>
         val witnessParam = witnessLocal.param
-        val bindingName  = params.headOption.map(_.name).getOrElse("")
-        val bindingType  = params.headOption.flatMap(p => p.typeSpec.orElse(p.typeAsc))
-        val bindingId    = params.headOption.flatMap(_.id)
+        val bindingName  = lambda.params.headOption.map(_.name).getOrElse("")
+        val bindingType  = lambda.params.headOption.flatMap(p => p.typeSpec.orElse(p.typeAsc))
+        val bindingId    = lambda.params.headOption.flatMap(_.id)
         bindingType match
           case Some(tpe) if isOwnedType(tpe, scope.resolvables) =>
             val toFree =
@@ -1149,7 +1137,7 @@ object OwnershipAnalyzer:
             wrapWithFrees(
               bodyWithTerminalFrees,
               toFree,
-              body.source,
+              lambda.body.source,
               scopeWithAliases.bindingOwner,
               scope.resolvables,
               witnessBindings = Map(witnessParam.name -> witnessLocal)
@@ -1160,13 +1148,13 @@ object OwnershipAnalyzer:
         bodyWithTerminalFrees.pure[Allocation]
 
     val (cleanupIds, newBody) = cleanup.run(terminalIds).value
-    val newLambda = Lambda(lSource, params, newBody, captures, lTypeSpec, lTypeAsc, meta, isMove)
-    val innerApp  = App(span, newLambda, argResult.expr, typeAsc, typeSpec)
+    val newLambda             = lambda.copy(body = newBody)
+    val innerApp              = app.copy(fn = newLambda, arg = argResult.expr)
 
     val finalTerm = witnessOpt match
       case Some((witnessLocal, witnessExpr)) =>
         val witnessParam = witnessLocal.param
-        val innerAppExpr = Expr(syntheticSource, List(innerApp), typeSpec = typeSpec)
+        val innerAppExpr = Expr(syntheticSource, List(innerApp), typeSpec = app.typeSpec)
         LocalBindings.bind(witnessParam, witnessExpr, innerAppExpr)
       case None =>
         innerApp
@@ -1185,7 +1173,7 @@ object OwnershipAnalyzer:
       else s
     }
 
-    val finalExpr = Expr(span, List(finalTerm), typeSpec = typeSpec)
+    val finalExpr = Expr(app.source, List(finalTerm), typeSpec = app.typeSpec)
     val wrapped   = predicates.bindings.foldRight(finalExpr)((binding, body) => binding.wrap(body))
     TermResult(
       returnScope.copy(
@@ -1253,37 +1241,12 @@ object OwnershipAnalyzer:
   ): ExprResult =
     value.terms.lastOption.map(unwrapTerm) match
       case Some(cond: Cond) if parameter.exists(_.consuming) =>
-        val result = analyzeCond(
-          cond.source,
-          cond.cond,
-          cond.ifTrue,
-          cond.ifFalse,
-          cond.typeSpec,
-          cond.typeAsc,
-          scope,
-          parameter
-        )
+        val result = analyzeCond(cond, scope, parameter)
         ExprResult(result.scope, value.copy(terms = List(result.term)), result.errors)
       case Some(app: App) if parameter.exists(_.consuming) =>
         app.fn match
           case lambda: Lambda =>
-            // FIXME:QA: Pass lambda directly instead of decomposing it into fields.
-            val result = analyzeLambdaApplication(
-              app.source,
-              lambda.source,
-              lambda.params,
-              lambda.body,
-              lambda.captures,
-              lambda.typeSpec,
-              lambda.typeAsc,
-              lambda.meta,
-              lambda.isMove,
-              app.arg,
-              app.typeAsc,
-              app.typeSpec,
-              scope,
-              parameter
-            )
+            val result = analyzeLambdaApplication(app, lambda, scope, parameter)
             ExprResult(result.scope, value.copy(terms = List(result.term)), result.errors)
           case _ =>
             val result              = analyzeExpr(value, scope)
@@ -1294,15 +1257,8 @@ object OwnershipAnalyzer:
         val (nextScope, errors) = handleConsumingParam(parameter, result.expr, result.scope)
         result.copy(scope = nextScope, errors = result.errors ++ errors)
 
-  private case class CallArgument(
-    value:    Expr,
-    source:   SourceOrigin,
-    typeAsc:  Option[Type],
-    typeSpec: Option[Type]
-  )
-
   private case class ArgumentOwnership(
-    argument:     CallArgument,
+    application:  App,
     parameter:    Option[FnParam],
     allocation:   Option[Type],
     dependencies: List[Ref],
@@ -1312,37 +1268,33 @@ object OwnershipAnalyzer:
 
   /** Collect arguments in source evaluation order, retaining each application's result type. */
   @tailrec
-  private def collectArgsAndBase(
+  private def collectApplicationsAndBase(
     term: Ref | App | Lambda,
-    args: List[CallArgument]
-  ): (Ref | Lambda, List[CallArgument]) = term match
+    args: List[App]
+  ): (Ref | Lambda, List[App]) = term match
     case app: App =>
-      val argument = CallArgument(app.arg, app.source, app.typeAsc, app.typeSpec)
-      collectArgsAndBase(app.fn, argument :: args)
+      collectApplicationsAndBase(app.fn, app :: args)
     case callee: (Ref | Lambda) => (callee, args)
 
   /** Analyze a regular function application (not a let-binding) */
   private def analyzeRegularApp(
-    span:     SourceOrigin,
-    fn:       Ref | App | Lambda,
-    arg:      Expr,
-    typeAsc:  Option[Type],
-    typeSpec: Option[Type],
-    scope:    OwnershipScope
+    app:   App,
+    scope: OwnershipScope
   ): TermResult[Term] =
-    val (baseFn, allArgsWithMeta) =
-      collectArgsAndBase(fn, List(CallArgument(arg, span, typeAsc, typeSpec)))
+
+    val (baseFn, applications) =
+      collectApplicationsAndBase(app, Nil)
 
     // Resolve base function's param list to detect consuming params
     val baseFnParams = scope.callableValues.parameters(baseFn)
 
-    val cloneResults = allArgsWithMeta.zipWithIndex.map { (argument, position) =>
-      val prepared = prepareConsumingArgument(argument.value, baseFnParams.lift(position), scope)
-      (argument.copy(value = prepared.expr), prepared.errors)
+    val cloneResults = applications.zipWithIndex.map { (argument, position) =>
+      val prepared = prepareConsumingArgument(argument.arg, baseFnParams.lift(position), scope)
+      (argument.copy(arg = prepared.expr), prepared.errors)
     }
     val cloneErrors = cloneResults.flatMap(_._2)
     val arguments = cloneResults.zipWithIndex.map { case ((argument, _), position) =>
-      val origins      = returnedOrigins(argument.value, scope.resolvables)
+      val origins      = returnedOrigins(argument.arg, scope.resolvables)
       val dependencies = borrowedDependencies(origins, scope)
       val parameter    = baseFnParams.lift(position)
       val borrowedValues =
@@ -1351,7 +1303,7 @@ object OwnershipAnalyzer:
           origins.collect {
             case ref: Ref if ref.typeSpec.exists(isOwnedType(_, scope.resolvables)) => ref
           }
-      val allocation = exprAllocates(argument.value, scope)
+      val allocation = exprAllocates(argument.arg, scope)
       ArgumentOwnership(
         argument,
         parameter,
@@ -1360,7 +1312,7 @@ object OwnershipAnalyzer:
         (dependencies ++ borrowedValues).distinct
       )
     }
-    val result = analyzeCall(baseFn, arguments, typeSpec, scope)
+    val result = analyzeCall(baseFn, arguments, app.typeSpec, scope)
 
     val isConstructor = baseFn match
       case ref: Ref =>
@@ -1370,7 +1322,7 @@ object OwnershipAnalyzer:
         }
       case _: Lambda => false
     val argumentErrors = arguments.flatMap { argument =>
-      val value = argument.argument.value
+      val value = argument.application.arg
       if argument.consumed || isConstructor then
         ownershipSinkErrors(value, argument.dependencies, scope)
       else if scope.callableValues.consumesOnCall(value) then
@@ -1388,7 +1340,7 @@ object OwnershipAnalyzer:
     }
     val fullyApplied = baseFn.typeSpec
       .flatMap(TypeUtils.canonical(_, scope.resolvables))
-      .collect { case tpe: TypeFn => allArgsWithMeta.size >= tpe.paramTypes.size }
+      .collect { case tpe: TypeFn => applications.size >= tpe.paramTypes.size }
       .contains(true)
     val resultOwnership = scope.callableValues
       .lambdas(baseFn)
@@ -1397,12 +1349,12 @@ object OwnershipAnalyzer:
       }
       .distinct
     val resultOwnershipErrors =
-      if fullyApplied && typeSpec.exists(isOwnedType(_, scope.resolvables)) &&
+      if fullyApplied && app.typeSpec.exists(isOwnedType(_, scope.resolvables)) &&
         resultOwnership.size > 1
       then
         List(
           SemanticError.InvalidExpression(
-            Expr(span, List(baseFn)),
+            Expr(app.source, List(baseFn)),
             "Callable alternatives must agree on result ownership",
             PhaseName
           )
@@ -1413,7 +1365,7 @@ object OwnershipAnalyzer:
       else
         List(
           SemanticError.InvalidExpression(
-            Expr(span, List(baseFn)),
+            Expr(app.source, List(baseFn)),
             "Callable alternatives must agree on consuming parameters",
             PhaseName
           )
@@ -1430,12 +1382,13 @@ object OwnershipAnalyzer:
           case Some(path) =>
             if pathOwner(path, result.scope).exists(_.state == OwnershipState.Owned) then
               checked.copy(scope =
-                result.scope.copy(consumedFields = result.scope.consumedFields.updated(path, span))
+                result.scope
+                  .copy(consumedFields = result.scope.consumedFields.updated(path, app.source))
               )
             else
               checked.copy(errors =
                 checked.errors :+ SemanticError.InvalidExpression(
-                  Expr(span, List(ref)),
+                  Expr(app.source, List(ref)),
                   "Calling this field consumes its payload and requires an owned aggregate",
                   PhaseName
                 )
@@ -1443,7 +1396,7 @@ object OwnershipAnalyzer:
           case None =>
             result.scope.getInfo(ref.name) match
               case Some(info) if info.state == OwnershipState.Owned =>
-                val expression = Expr(span, List(result.term), typeSpec = typeSpec)
+                val expression = Expr(app.source, List(result.term), typeSpec = app.typeSpec)
                 val cleanup = OwnedBinding(
                   ref.name,
                   ref.typeSpec,
@@ -1454,19 +1407,20 @@ object OwnershipAnalyzer:
                 val (cleanupIds, wrapped) = wrapWithFrees(
                   expression,
                   List(cleanup),
-                  span,
+                  app.source,
                   scope.bindingOwner,
                   scope.resolvables
                 ).run(result.scope.bindingIds).value
                 checked.copy(
-                  scope = result.scope.withMoved(ref.name, span).copy(bindingIds = cleanupIds),
-                  term  = wrapped.terms.head
+                  scope =
+                    result.scope.withMoved(ref.name, app.source).copy(bindingIds = cleanupIds),
+                  term = wrapped.terms.head
                 )
               case Some(info) if info.state == OwnershipState.Moved => checked
               case _ =>
                 checked.copy(errors =
                   checked.errors :+ SemanticError.InvalidExpression(
-                    Expr(span, List(ref)),
+                    Expr(app.source, List(ref)),
                     "Calling this function consumes its environment and requires ownership",
                     PhaseName
                   )
@@ -1565,7 +1519,7 @@ object OwnershipAnalyzer:
 
   private case class AnalyzedArguments(
     scope:     OwnershipScope,
-    arguments: Vector[CallArgument]             = Vector.empty,
+    arguments: Vector[App]                      = Vector.empty,
     bindings:  Vector[ArgumentBinding]          = Vector.empty,
     cleanup:   List[OwnedBinding]               = Nil,
     witnesses: Map[String, LocalBindings.Local] = Map.empty,
@@ -1584,13 +1538,13 @@ object OwnershipAnalyzer:
       val prepared =
         if argument.consumed then
           ConditionalArgument(
-            argument.argument.value,
+            argument.application.arg,
             Vector.empty,
             none,
             call.scope.tempCounter,
             call.scope.bindingIds
           )
-        else prepareConditionalArgument(argument.argument.value, call.scope)
+        else prepareConditionalArgument(argument.application.arg, call.scope)
       val predicates = analyzeConditions(prepared, call.scope)
       val result     = analyzeArgument(prepared.value, argument.parameter, predicates.scope)
       val next = call.copy(
@@ -1604,7 +1558,7 @@ object OwnershipAnalyzer:
           .local(
             scope.bindingOwner,
             name,
-            typeSpec = argument.allocation.orElse(argument.argument.value.typeSpec)
+            typeSpec = argument.allocation.orElse(argument.application.arg.typeSpec)
           )
           .run(nextScope.bindingIds)
           .value
@@ -1630,17 +1584,17 @@ object OwnershipAnalyzer:
         }
         next.copy(
           scope     = nextScope.copy(bindingIds = witnessIds),
-          arguments = next.arguments :+ argument.argument.copy(value = binding.reference),
+          arguments = next.arguments :+ argument.application.copy(arg = binding.reference),
           bindings  = next.bindings ++ Vector(binding) ++ witness,
           cleanup   = cleanup.toList ++ next.cleanup,
           witnesses = next.witnesses ++ witness.map(w => w.local.param.name -> w.local)
         )
-      else next.copy(arguments = next.arguments :+ argument.argument.copy(value = result.expr))
+      else next.copy(arguments = next.arguments :+ argument.application.copy(arg = result.expr))
     }
     val fnResult = analyzeCallee(baseFn, analyzed.scope)
     val applied = analyzed.arguments.foldLeft[Ref | App | Lambda](fnResult.term) {
       (callee, argument) =>
-        App(argument.source, callee, argument.value, argument.typeAsc, argument.typeSpec)
+        argument.copy(fn = callee)
     }
     val callExpr = Expr(syntheticSource, List(applied), typeSpec = typeSpec)
     val (cleanupIds, withCleanup) = wrapWithFrees(
@@ -1660,19 +1614,15 @@ object OwnershipAnalyzer:
 
   /** Analyze a conditional expression */
   private def analyzeCond(
-    span:           SourceOrigin,
-    condExpr:       Expr,
-    ifTrue:         Expr,
-    ifFalse:        Expr,
-    typeSpec:       Option[Type],
-    typeAsc:        Option[Type],
+    cond:           Cond,
     scope:          OwnershipScope,
     consumingParam: Option[FnParam] = none
   ): TermResult[Term] =
-    val condResult = analyzeExpr(condExpr, scope)
-    val trueResult = analyzeArgument(ifTrue, consumingParam, condResult.scope)
+
+    val condResult = analyzeExpr(cond.cond, scope)
+    val trueResult = analyzeArgument(cond.ifTrue, consumingParam, condResult.scope)
     val falseResult = analyzeArgument(
-      ifFalse,
+      cond.ifFalse,
       consumingParam,
       condResult.scope.copy(bindingIds = trueResult.scope.bindingIds)
     )
@@ -1727,7 +1677,7 @@ object OwnershipAnalyzer:
     val (trueIds, mergedTrueExpr) = wrapWithFrees(
       trueResult.expr,
       freesInTrueBranch,
-      ifTrue.source,
+      cond.ifTrue.source,
       scope.bindingOwner,
       scope.resolvables
     ).run(falseResult.scope.bindingIds).value
@@ -1735,7 +1685,7 @@ object OwnershipAnalyzer:
     val (falseIds, mergedFalseExpr) = wrapWithFrees(
       falseResult.expr,
       freesInFalseBranch,
-      ifFalse.source,
+      cond.ifFalse.source,
       scope.bindingOwner,
       scope.resolvables
     ).run(trueIds).value
@@ -1746,32 +1696,26 @@ object OwnershipAnalyzer:
         consumedFields = trueResult.scope.consumedFields ++
           falseResult.scope.consumedFields
       ),
-      Cond(span, condResult.expr, mergedTrueExpr, mergedFalseExpr, typeSpec, typeAsc),
+      cond.copy(cond = condResult.expr, ifTrue = mergedTrueExpr, ifFalse = mergedFalseExpr),
       errors = condResult.errors ++ trueResult.errors ++ falseResult.errors
     )
 
   /** Analyze a standalone lambda definition */
   private def analyzeLambda(
-    span:     SourceOrigin,
-    params:   List[FnParam],
-    body:     Expr,
-    captures: List[Capture],
-    typeSpec: Option[Type],
-    typeAsc:  Option[Type],
-    meta:     Option[LambdaMeta],
-    isMove:   Boolean,
-    scope:    OwnershipScope
+    lambda: Lambda,
+    scope:  OwnershipScope
   ): TermResult[Lambda] =
+
     // Consuming params are Owned so they get freed at body end,
     // unless skipConsumingOwnership is set (for destructor/constructor functions)
-    val paramScope = params.foldLeft(enterScope(params, scope)): (s, p) =>
+    val paramScope = lambda.params.foldLeft(enterScope(lambda.params, scope)): (s, p) =>
       if p.consuming && !scope.skipConsumingOwnership then
         s.withOwned(p.name, p.typeSpec.orElse(p.typeAsc), p.id)
       else if p.consuming then s
       else s.withBorrowed(p.name)
 
     // Capturing a field alias borrows its aggregate; the lambda cannot consume that owner.
-    val captureScope = captures.foldLeft(paramScope): (s, cap) =>
+    val captureScope = lambda.captures.foldLeft(paramScope): (s, cap) =>
       val ref = cap.ref
       val borrowedOwner = ownershipPath(ref, s).filter(_.fields.nonEmpty).fold(s) { path =>
         s.copy(bindings = s.bindings.map { (name, info) =>
@@ -1782,23 +1726,25 @@ object OwnershipAnalyzer:
         })
       }
       val isTransferred =
-        ref.resolvedId.exists(id => meta.exists(_.transferredCaptures.contains(id)))
+        ref.resolvedId.exists(id => lambda.meta.exists(_.transferredCaptures.contains(id)))
       if isTransferred then borrowedOwner.withOwned(ref.name, ref.typeSpec, ref.resolvedId)
       else if ref.typeSpec.exists(isOwnedType(_, s.resolvables)) then
         borrowedOwner.withBorrowed(ref.name)
       else borrowedOwner
 
-    val bodyResult = analyzeExpr(body, captureScope)
+    val bodyResult = analyzeExpr(lambda.body, captureScope)
 
-    val returnType   = lambdaReturnType(typeAsc, typeSpec)
+    val returnType   = lambdaReturnType(lambda)
     val promotion    = promoteStaticBranchesInReturn(bodyResult.expr, returnType, captureScope)
     val promotedBody = promotion.getOrElse(bodyResult.expr)
 
     // Insert frees for consuming params that are still Owned (not returned, not moved)
     val escaping = returnedOwnedNames(promotedBody, bodyResult.scope)
-    val consumedCaptureParams = captures
+    val consumedCaptureParams = lambda.captures
       .map(_.ref)
-      .filter(ref => ref.resolvedId.exists(id => meta.exists(_.transferredCaptures.contains(id))))
+      .filter(ref =>
+        ref.resolvedId.exists(id => lambda.meta.exists(_.transferredCaptures.contains(id)))
+      )
       .map(ref =>
         FnParam(
           ref.source,
@@ -1808,29 +1754,30 @@ object OwnershipAnalyzer:
           consuming = true
         )
       )
-    val consumingToFree = (params.filter(_.consuming) ++ consumedCaptureParams).flatMap { p =>
-      val pType = p.typeSpec.orElse(p.typeAsc)
-      if !scope.skipConsumingOwnership &&
-        pType.exists(isOwnedType(_, scope.resolvables)) &&
-        !escaping.contains(p.name) &&
-        !bodyResult.scope.getState(p.name).contains(OwnershipState.Moved)
-      then OwnedBinding(p.name, pType, p.id, None, None).some
-      else none
+    val consumingToFree = (lambda.params.filter(_.consuming) ++ consumedCaptureParams).flatMap {
+      p =>
+        val pType = p.typeSpec.orElse(p.typeAsc)
+        if !scope.skipConsumingOwnership &&
+          pType.exists(isOwnedType(_, scope.resolvables)) &&
+          !escaping.contains(p.name) &&
+          !bodyResult.scope.getState(p.name).contains(OwnershipState.Moved)
+        then OwnedBinding(p.name, pType, p.id, None, None).some
+        else none
     }
     val (cleanupIds, finalBody) = wrapWithFrees(
       promotedBody,
       consumingToFree,
-      body.source,
+      lambda.body.source,
       captureScope.bindingOwner,
       scope.resolvables
     ).run(bodyResult.scope.bindingIds).value
 
     // Validate the typed source flow before cleanup and return-promotion rewrites.
-    val origins = returnedOrigins(body, scope.resolvables)
-    val borrowedCaptureIds = captures.flatMap: capture =>
+    val origins = returnedOrigins(lambda.body, scope.resolvables)
+    val borrowedCaptureIds = lambda.captures.flatMap: capture =>
       capture.ref.resolvedId.filter: id =>
         capture.ref.typeSpec.exists(isOwnedType(_, scope.resolvables)) &&
-          !meta.exists(_.transferredCaptures.contains(id))
+          !lambda.meta.exists(_.transferredCaptures.contains(id))
 
     // Parameters borrow unless consuming; captured heap values borrow from their environment.
     def isBorrowedReturn(ref: Ref): Boolean =
@@ -1859,113 +1806,103 @@ object OwnershipAnalyzer:
 
     // Capture ownership: move lambdas move heap captures; borrow lambdas leave them in place.
     val (returnScope, captureErrors, updatedCaptures) =
-      captures.foldLeft((scope, List.empty[SemanticError], List.empty[Capture])): (acc, cap) =>
-        val (s, errs, caps) = acc
-        val ref             = cap.ref
-        val isOwnedCapture  = ref.typeSpec.exists(isOwnedType(_, s.resolvables))
-        val isTransferred =
-          ref.resolvedId.exists(id => meta.exists(_.transferredCaptures.contains(id)))
-        val isBorrowed = ref.resolvedId.exists(id => meta.exists(_.borrowedCaptures.contains(id)))
-        val sourceLambdas    = scope.callableValues.lambdas(ref)
-        val isStaticFunction = sourceLambdas.nonEmpty && sourceLambdas.forall(_.captures.isEmpty)
-        if !isOwnedCapture then (s, errs, caps :+ cap)
-        else if isBorrowed || isStaticFunction then
-          val errors = ref.resolvedId.flatMap(s.movedBindingIds.get).toList.map { movedAt =>
-            SemanticError.UseAfterMove(ref, movedAt, PhaseName)
-          }
-          (s, errs ++ errors, caps :+ Capture.BorrowedRef(ref))
-        else if isMove then
-          // Move lambda: transfer ownership into env
-          s.getState(ref.name) match
-            case Some(OwnershipState.Owned) =>
-              val ownedCap = ref.typeSpec.flatMap(TypeUtils.canonical(_, s.resolvables)) match
-                case Some(_: TypeFn) =>
-                  s.getInfo(ref.name)
-                    .flatMap(_.destructorTargetId)
-                    .orElse(DestructionTargets.named("__free_closure", s.resolvables))
-                    .fold(cap)(id => Capture.OwnedClosure(ref, id))
-                case _ => cap
-              (s.withMoved(ref.name, span), errs, caps :+ ownedCap)
-            case Some(OwnershipState.Moved) =>
-              val movedAt = s.getMovedAt(ref.name).getOrElse(SourceOrigin.Synth)
-              (
-                s,
-                errs :+ SemanticError.CapturedMovedHeapBinding(ref, movedAt, PhaseName),
-                caps :+ cap
-              )
-            case Some(OwnershipState.Literal | OwnershipState.Global) if isTransferred =>
-              (s, errs :+ SemanticError.CapturedBorrowedHeapBinding(ref, PhaseName), caps :+ cap)
-            case Some(OwnershipState.Literal) =>
-              val cloneId = for
-                tpe <- ref.typeSpec.flatMap(TypeUtils.canonical(_, s.resolvables))
-                typeName <- getTypeName(tpe)
-                function <- cloneFnFor(typeName, s.resolvables)
-                id <- lookupCloneFnId(function, typeName, s.resolvables)
-              yield id
-              cloneId match
-                case Some(id) => (s, errs, caps :+ Capture.CapturedLiteral(ref, id))
-                case None =>
-                  (
-                    s,
-                    errs :+ SemanticError.InvalidExpression(
-                      Expr(ref.source, List(ref)),
-                      "This type cannot be cloned",
-                      PhaseName
-                    ),
-                    caps :+ cap
-                  )
-            case Some(OwnershipState.Borrowed) =>
-              (s, errs :+ SemanticError.CapturedBorrowedHeapBinding(ref, PhaseName), caps :+ cap)
-            case _ => (s, errs, caps :+ cap)
-        else
-          // Borrow lambda: outer scope keeps ownership
-          s.getState(ref.name) match
-            case Some(OwnershipState.Moved) =>
-              val movedAt = s.getMovedAt(ref.name).getOrElse(SourceOrigin.Synth)
-              (s, errs :+ SemanticError.UseAfterMove(ref, movedAt, PhaseName), caps :+ cap)
-            case _ =>
-              // Owned, Borrowed, Literal, Global — all fine to borrow
-              (s, errs, caps :+ cap)
+      lambda.captures.foldLeft((scope, List.empty[SemanticError], List.empty[Capture])):
+        (acc, cap) =>
+          val (s, errs, caps) = acc
+          val ref             = cap.ref
+          val isOwnedCapture  = ref.typeSpec.exists(isOwnedType(_, s.resolvables))
+          val isTransferred =
+            ref.resolvedId.exists(id => lambda.meta.exists(_.transferredCaptures.contains(id)))
+          val isBorrowed =
+            ref.resolvedId.exists(id => lambda.meta.exists(_.borrowedCaptures.contains(id)))
+          val sourceLambdas    = scope.callableValues.lambdas(ref)
+          val isStaticFunction = sourceLambdas.nonEmpty && sourceLambdas.forall(_.captures.isEmpty)
+          if !isOwnedCapture then (s, errs, caps :+ cap)
+          else if isBorrowed || isStaticFunction then
+            val errors = ref.resolvedId.flatMap(s.movedBindingIds.get).toList.map { movedAt =>
+              SemanticError.UseAfterMove(ref, movedAt, PhaseName)
+            }
+            (s, errs ++ errors, caps :+ Capture.BorrowedRef(ref))
+          else if lambda.isMove then
+            // Move lambda: transfer ownership into env
+            s.getState(ref.name) match
+              case Some(OwnershipState.Owned) =>
+                val ownedCap = ref.typeSpec.flatMap(TypeUtils.canonical(_, s.resolvables)) match
+                  case Some(_: TypeFn) =>
+                    s.getInfo(ref.name)
+                      .flatMap(_.destructorTargetId)
+                      .orElse(DestructionTargets.named("__free_closure", s.resolvables))
+                      .fold(cap)(id => Capture.OwnedClosure(ref, id))
+                  case _ => cap
+                (s.withMoved(ref.name, lambda.source), errs, caps :+ ownedCap)
+              case Some(OwnershipState.Moved) =>
+                val movedAt = s.getMovedAt(ref.name).getOrElse(SourceOrigin.Synth)
+                (
+                  s,
+                  errs :+ SemanticError.CapturedMovedHeapBinding(ref, movedAt, PhaseName),
+                  caps :+ cap
+                )
+              case Some(OwnershipState.Literal | OwnershipState.Global) if isTransferred =>
+                (s, errs :+ SemanticError.CapturedBorrowedHeapBinding(ref, PhaseName), caps :+ cap)
+              case Some(OwnershipState.Literal) =>
+                val cloneId = for
+                  tpe <- ref.typeSpec.flatMap(TypeUtils.canonical(_, s.resolvables))
+                  typeName <- getTypeName(tpe)
+                  function <- cloneFnFor(typeName, s.resolvables)
+                  id <- lookupCloneFnId(function, typeName, s.resolvables)
+                yield id
+                cloneId match
+                  case Some(id) => (s, errs, caps :+ Capture.CapturedLiteral(ref, id))
+                  case None =>
+                    (
+                      s,
+                      errs :+ SemanticError.InvalidExpression(
+                        Expr(ref.source, List(ref)),
+                        "This type cannot be cloned",
+                        PhaseName
+                      ),
+                      caps :+ cap
+                    )
+              case Some(OwnershipState.Borrowed) =>
+                (s, errs :+ SemanticError.CapturedBorrowedHeapBinding(ref, PhaseName), caps :+ cap)
+              case _ => (s, errs, caps :+ cap)
+          else
+            // Borrow lambda: outer scope keeps ownership
+            s.getState(ref.name) match
+              case Some(OwnershipState.Moved) =>
+                val movedAt = s.getMovedAt(ref.name).getOrElse(SourceOrigin.Synth)
+                (s, errs :+ SemanticError.UseAfterMove(ref, movedAt, PhaseName), caps :+ cap)
+              case _ =>
+                // Owned, Borrowed, Literal, Global — all fine to borrow
+                (s, errs, caps :+ cap)
 
     TermResult(
       returnScope.copy(bindingIds = cleanupIds),
-      Lambda(span, params, finalBody, updatedCaptures, typeSpec, typeAsc, meta, isMove),
+      lambda.copy(body            = finalBody, captures = updatedCaptures),
       errors = bodyResult.errors ++ promotion.left.toOption.toList ++ borrowEscapeErrors ++
         borrowClosureEscapeErrors ++ captureErrors
     )
 
   /** Analyze a tuple expression */
   private def analyzeTuple(
-    span:     SourceOrigin,
-    elements: cats.data.NonEmptyList[Expr],
-    typeAsc:  Option[Type],
-    typeSpec: Option[Type],
-    scope:    OwnershipScope
+    tuple: Tuple,
+    scope: OwnershipScope
   ): TermResult[Term] =
+
     val (finalScope, errors, newElements) =
-      elements.toList.foldLeft((scope, List.empty[SemanticError], Vector.empty[Expr])) {
+      tuple.elements.toList.foldLeft((scope, List.empty[SemanticError], Vector.empty[Expr])) {
         case ((curScope, errs, acc), elem) =>
           val result = analyzeExpr(elem, curScope)
           (result.scope, errs ++ result.errors, acc :+ result.expr)
       }
     val nel = cats.data.NonEmptyList(newElements.head, newElements.tail.toList)
-    TermResult(finalScope, Tuple(span, nel, typeAsc, typeSpec), errors = errors)
+    TermResult(finalScope, tuple.copy(elements = nel), errors = errors)
 
   private def analyzeCallee(callee: Ref | Lambda, scope: OwnershipScope): TermResult[Ref | Lambda] =
     callee match
       case ref:    Ref => analyzeRef(ref, scope)
       case lambda: Lambda =>
-        analyzeLambda(
-          lambda.source,
-          lambda.params,
-          lambda.body,
-          lambda.captures,
-          lambda.typeSpec,
-          lambda.typeAsc,
-          lambda.meta,
-          lambda.isMove,
-          scope
-        )
+        analyzeLambda(lambda, scope)
 
   /** Analyze a term and track ownership changes */
   private def analyzeTerm(
@@ -1976,32 +1913,16 @@ object OwnershipAnalyzer:
       case ref: Ref =>
         analyzeRef(ref, scope)
 
-      case App(span, fn: Lambda, arg, typeAsc, typeSpec) =>
-        // FIXME:QA: so many fn fields. just pass fn.
-        analyzeLambdaApplication(
-          span,
-          fn.source,
-          fn.params,
-          fn.body,
-          fn.captures,
-          fn.typeSpec,
-          fn.typeAsc,
-          fn.meta,
-          fn.isMove,
-          arg,
-          typeAsc,
-          typeSpec,
-          scope
-        )
+      case app: App =>
+        app.fn match
+          case lambda: Lambda => analyzeLambdaApplication(app, lambda, scope)
+          case _ => analyzeRegularApp(app, scope)
 
-      case App(span, fn, arg, typeAsc, typeSpec) =>
-        analyzeRegularApp(span, fn, arg, typeAsc, typeSpec, scope)
+      case cond: Cond =>
+        analyzeCond(cond, scope)
 
-      case Cond(span, condExpr, ifTrue, ifFalse, typeSpec, typeAsc) =>
-        analyzeCond(span, condExpr, ifTrue, ifFalse, typeSpec, typeAsc, scope)
-
-      case Lambda(span, params, body, captures, typeSpec, typeAsc, meta, isMove) =>
-        analyzeLambda(span, params, body, captures, typeSpec, typeAsc, meta, isMove, scope)
+      case lambda: Lambda =>
+        analyzeLambda(lambda, scope)
 
       case expr: Expr =>
         val result = analyzeExpr(expr, scope)
@@ -2011,8 +1932,8 @@ object OwnershipAnalyzer:
         val result = analyzeExpr(inner, scope)
         TermResult(result.scope, TermGroup(span, result.expr, typeAsc), errors = result.errors)
 
-      case Tuple(span, elements, typeAsc, typeSpec) =>
-        analyzeTuple(span, elements, typeAsc, typeSpec, scope)
+      case tuple: Tuple =>
+        analyzeTuple(tuple, scope)
 
       case lit: LiteralValue =>
         TermResult(scope, lit)
