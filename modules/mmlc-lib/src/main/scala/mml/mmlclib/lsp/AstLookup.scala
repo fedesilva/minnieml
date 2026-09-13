@@ -690,7 +690,7 @@ object AstLookup:
         else ta.id.map(TypeTarget(_))
 
       case ts: TypeStruct =>
-        findReferenceTargetInFields(ts.fields.toList, line, col, module, ts.name)
+        findReferenceTargetInStructFields(ts, line, col, module)
           .orElse(ts.id.map(TypeTarget(_)))
 
       case dm: DuplicateMember =>
@@ -701,18 +701,18 @@ object AstLookup:
 
       case _ => None
 
-  private def findReferenceTargetInFields(
-    fields:     List[Field],
-    line:       Int,
-    col:        Int,
-    module:     Module,
-    structName: String
+  private def findReferenceTargetInStructFields(
+    struct: TypeStruct,
+    line:   Int,
+    col:    Int,
+    module: Module
   ): Option[ReferenceTarget] =
-    fields.collectFirst {
+
+    struct.fields.toList.collectFirst {
       case field if containsPosition(field, line, col) =>
         if containsPosition(field.typeSpec, line, col) then
           findReferenceTargetInType(field.typeSpec, line, col, module)
-        else Some(FieldTarget(structName, field.name))
+        else Some(FieldTarget(struct.name, field.name))
     }.flatten
 
   private def findReferenceTargetInExpr(
@@ -866,7 +866,7 @@ object AstLookup:
           }.flatten
 
         case ts: TypeStruct =>
-          findReferenceTargetInFields(ts.fields.toList, line, col, module, ts.name)
+          findReferenceTargetInStructFields(ts, line, col, module)
 
         case NativeStruct(_, fields, _, _) =>
           fields.collectFirst {

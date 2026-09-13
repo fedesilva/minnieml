@@ -26,10 +26,3 @@ This is the Author's active and near-term focus. The backlog lives in [tasks/](t
 - **Current focus:** Planned within Unify lambdas, together with its mixed-ownership
   consuming-transfer bug repair. Retain Boolean witnesses and make cleanup, consumption,
   and return operations consistently respect conditional ownership.
-
-### Eliminate unnecessary AST field decomposition
-
-- **Tracker:** [Eliminate unnecessary AST field decomposition](tasks/preserve-ast-nodes-in-helper-apis.md)
-- **Status:** planned
-- **Current focus:** Find and remove unnecessary node unpacking and reassembly throughout
-  compiler helper APIs, starting with OwnershipAnalyzer.

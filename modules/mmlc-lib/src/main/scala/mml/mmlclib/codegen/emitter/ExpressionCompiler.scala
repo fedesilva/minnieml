@@ -128,8 +128,8 @@ def compileTerm(
     case destruction: Destruction =>
       compileDestruction(destruction, state, functionScope)
 
-    case Cond(_, condExpr, ifTrue, ifFalse, _, _) =>
-      compileCond(condExpr, ifTrue, ifFalse, state, functionScope, compileExpr)
+    case cond: Cond =>
+      compileCond(cond, state, functionScope, compileExpr)
 
     case impl @ NativeImpl(_, _, _, _, _, _) => {
       // Native implementation should be handled at function declaration level (compileBndLambda).
@@ -173,7 +173,7 @@ private[emitter] def compileLambdaLiteral(
       tailRecBody = for
         param <- bindingParam
         if lambda.meta.exists(_.isTailRecursive)
-        body <- findTailRecBody(lambda, param.name, param.id)
+        body <- findTailRecBody(lambda, param)
       yield body
 
       result <- tailRecBody match

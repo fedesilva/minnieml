@@ -4,6 +4,10 @@ Durable product changes belong here. Current task state belongs in task files.
 
 ## 2026-09-12
 
+- Preserve AST nodes in ownership analysis, conditional code generation, tail-recursion
+  helpers, and struct-field lookup. Keep application nodes through argument analysis and
+  use node copies for rewrites to retain metadata and evaluation order.
+
 - Share local binding and cleanup construction across ownership analysis, PAP elaboration,
   direct-lambda lowering, and closure invocation. Preserve wrapper function types, binding
   identities, consuming contracts, and continuation source locations and annotations.
