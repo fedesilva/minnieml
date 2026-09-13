@@ -4,6 +4,10 @@ Durable product changes belong here. Current task state belongs in task files.
 
 ## 2026-09-13
 
+- Document operator definitions as lambda bindings and operator uses as application chains,
+  including stable reference IDs and candidate selection. Set postfix factorial below prefix
+  signs in the expression-rewriting examples and the tail-recursive factorial sample.
+
 - Show the `~` prefix on consuming parameters in Lambda AST output.
 
 ## 2026-09-12
