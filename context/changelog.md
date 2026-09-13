@@ -4,6 +4,10 @@ Durable product changes belong here. Current task state belongs in task files.
 
 ## 2026-09-13
 
+- Add the September Apple M5 benchmark report and full results for 58 configurations.
+  Compare four earlier rounds, trace relevant codegen and build-flag changes, and include
+  standalone memory, instruction, and cycle measurements with their source logs.
+
 - Attach matching field TBAA tags to closure capture loads and stores. Describe known
   capture-environment storage with LLVM alignment and dereferenceable attributes for
   regular and tail-recursive entries, while keeping null and unknown-layout environments

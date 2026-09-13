@@ -1,0 +1,116 @@
+/usr/bin/time -l bin/sieve-c
+Primes found: 78498
+/usr/bin/time -l bin/sieve-mml
+Primes found: 78498
+/usr/bin/time -l bin/sieve-rs
+Primes found: 78498
+/usr/bin/time -l bin/sieve-go
+Primes found: 78498
+/usr/bin/time -l java -cp bin Sieve
+Primes found: 78498
+/usr/bin/time -l bin/sieve-java-native
+Primes found: 78498
+/usr/bin/time -l bin/quicksort-c
+Median checksum: -85
+/usr/bin/time -l bin/quicksort-mml
+Median checksum: -85
+/usr/bin/time -l bin/quicksort-rs
+Median checksum: -85
+/usr/bin/time -l bin/quicksort-go
+Median checksum: -85
+/usr/bin/time -l java -cp bin Quicksort
+Median checksum: -85
+/usr/bin/time -l bin/quicksort-java-native
+Median checksum: -85
+/usr/bin/time -l bin/matmul-c
+Trace Checksum: 381460
+/usr/bin/time -l bin/matmul-opt-c
+Trace Checksum: 381460
+/usr/bin/time -l bin/matmul-restricted-c
+Trace Checksum: 381460
+/usr/bin/time -l bin/matmul-mml
+Trace Checksum: 381460
+/usr/bin/time -l bin/matmul-opt-mml
+Trace Checksum: 381460
+/usr/bin/time -l bin/matmul-rs
+Trace Checksum: 381460
+/usr/bin/time -l bin/matmul-opt-rs
+Trace Checksum: 381460
+/usr/bin/time -l bin/matmul-go
+Trace Checksum: 381460
+/usr/bin/time -l bin/matmul-bce-go
+Trace Checksum: 381460
+/usr/bin/time -l bin/matmul-opt-go
+Trace Checksum: 381460
+/usr/bin/time -l bin/matmul-opt-bce-go
+Trace Checksum: 381460
+/usr/bin/time -l bin/matmul-java-native
+Trace Checksum: 381460
+/usr/bin/time -l bin/nqueens-c
+Solutions: 14200
+/usr/bin/time -l bin/nqueens-go
+Solutions for 12-queens: 14200
+/usr/bin/time -l bin/nqueens-mml
+Solutions for 12-queens: 14200
+/usr/bin/time -l bin/euclidean-ext-c
+Checksum: 5010954496756
+/usr/bin/time -l bin/euclidean-ext-mml
+Checksum: 5010954496756
+/usr/bin/time -l bin/ackermann-c
+ackermann(3, 10) = 8189
+/usr/bin/time -l bin/ackermann-c-chacho
+ackermann(3, 10) = 8189
+/usr/bin/time -l bin/ackermann-mml
+ackermann(3, 10) = 8189
+/usr/bin/time -l bin/ackermann-rs
+ackermann(3, 10) = 8189
+/usr/bin/time -l bin/ackermann-go
+ackermann(3, 10) = 8189
+/usr/bin/time -l bin/sieve-mml-O0-tco
+Primes found: 78498
+/usr/bin/time -l bin/sieve-mml-O0-no-tco
+Primes found: 78498
+/usr/bin/time -l bin/sieve-mml-O1-tco
+Primes found: 78498
+/usr/bin/time -l bin/sieve-mml-O1-no-tco
+Primes found: 78498
+/usr/bin/time -l bin/sieve-mml-O2-tco
+Primes found: 78498
+/usr/bin/time -l bin/sieve-mml-O2-no-tco
+Primes found: 78498
+/usr/bin/time -l bin/sieve-mml-O3-tco
+Primes found: 78498
+/usr/bin/time -l bin/sieve-mml-O3-no-tco
+Primes found: 78498
+/usr/bin/time -l bin/matmul-mml-O0-tco
+Trace Checksum: 381460
+/usr/bin/time -l bin/matmul-mml-O0-no-tco
+Trace Checksum: 381460
+/usr/bin/time -l bin/matmul-mml-O1-tco
+Trace Checksum: 381460
+/usr/bin/time -l bin/matmul-mml-O1-no-tco
+Trace Checksum: 381460
+/usr/bin/time -l bin/matmul-mml-O2-tco
+Trace Checksum: 381460
+/usr/bin/time -l bin/matmul-mml-O2-no-tco
+Trace Checksum: 381460
+/usr/bin/time -l bin/matmul-mml-O3-tco
+Trace Checksum: 381460
+/usr/bin/time -l bin/matmul-mml-O3-no-tco
+Trace Checksum: 381460
+/usr/bin/time -l bin/matmul-opt-mml-O0-tco
+Trace Checksum: 381460
+/usr/bin/time -l bin/matmul-opt-mml-O0-no-tco
+Trace Checksum: 381460
+/usr/bin/time -l bin/matmul-opt-mml-O1-tco
+Trace Checksum: 381460
+/usr/bin/time -l bin/matmul-opt-mml-O1-no-tco
+Trace Checksum: 381460
+/usr/bin/time -l bin/matmul-opt-mml-O2-tco
+Trace Checksum: 381460
+/usr/bin/time -l bin/matmul-opt-mml-O2-no-tco
+Trace Checksum: 381460
+/usr/bin/time -l bin/matmul-opt-mml-O3-tco
+Trace Checksum: 381460
+/usr/bin/time -l bin/matmul-opt-mml-O3-no-tco
+Trace Checksum: 381460
