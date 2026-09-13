@@ -20,10 +20,10 @@ object CommandLineConfig:
       timings:         Boolean        = false,
       outputName:      Option[String] = None,
       printPhases:     Boolean        = false,
-      optLevel:        Int            = 3,
       emitScopedAlias: Boolean        = false,
       targetType:      String         = "exe",
-      asan:            Boolean        = false
+      asan:            Boolean        = false,
+      llvmOptArgs:     List[String]   = Nil
     )
     case Run(
       file:            Option[Path]   = None,
@@ -38,9 +38,9 @@ object CommandLineConfig:
       timings:         Boolean        = false,
       outputName:      Option[String] = None,
       printPhases:     Boolean        = false,
-      optLevel:        Int            = 3,
       emitScopedAlias: Boolean        = false,
-      asan:            Boolean        = false
+      asan:            Boolean        = false,
+      llvmOptArgs:     List[String]   = Nil
     )
     case Ast(
       file:      Option[Path] = None,
@@ -71,8 +71,10 @@ object CommandLineConfig:
     case Lsp()
 
   case class Config(
-    command: Command = Command.Build()
-  )
+    command:            Command   = Command.Build(),
+    optimizationLevels: List[Int] = Nil
+  ):
+    def optLevel: Int = optimizationLevels.headOption.getOrElse(3)
 
   def createParser: OParser[Unit, Config] =
     val builder = OParser.builder[Config]
@@ -114,12 +116,16 @@ object CommandLineConfig:
     val printPhasesOpt = opt[Unit]('p', "print-phases")
       .text("Print detailed compilation phase information")
 
-    val optLevelOpt = opt[Int]('O', "opt")
-      .validate(o =>
-        if o >= 0 && o <= 3 then success
-        else failure("Optimization level must be between 0 and 3")
-      )
-      .text("Optimization level (0-3, default: 3)")
+    def optimizationFlag(level: Int) =
+      opt[Unit](s"O$level")
+        .abbr(s"O$level")
+        .action((_, config) => config.copy(optimizationLevels = config.optimizationLevels :+ level))
+        .text(s"Optimization level $level${if level == 3 then " (default)" else ""}")
+
+    val llvmOptArgOpt = opt[String]("llvm-opt-arg")
+      .unbounded()
+      .valueName("<argument>")
+      .text("Forward one argument to LLVM opt (repeatable; use --llvm-opt-arg=-flag=value)")
 
     val emitScopedAliasOpt = opt[Unit]("emit-scoped-alias")
       .text("Emit scoped alias metadata (disabled by default)")
@@ -217,9 +223,9 @@ object CommandLineConfig:
         case _ => c
     )
 
-    def topLevelOptLevelOpt = optLevelOpt.action((l, c) =>
+    def topLevelLlvmOptArgOpt = llvmOptArgOpt.action((arg, c) =>
       c.command match
-        case b: Command.Build => c.copy(command = b.copy(optLevel = l))
+        case b: Command.Build => c.copy(command = b.copy(llvmOptArgs = b.llvmOptArgs :+ arg))
         case _ => c
     )
 
@@ -313,11 +319,10 @@ object CommandLineConfig:
               case cmd => cmd
             })
           ),
-          optLevelOpt.action((level, config) =>
-            config.copy(command = config.command match {
-              case run: Command.Run => run.copy(optLevel = level)
-              case cmd => cmd
-            })
+          llvmOptArgOpt.action((arg, config) =>
+            config.copy(command = config.command match
+              case run: Command.Run => run.copy(llvmOptArgs = run.llvmOptArgs :+ arg)
+              case cmd => cmd)
           ),
           emitScopedAliasOpt.action((_, config) =>
             config.copy(command = config.command match {
@@ -499,7 +504,15 @@ object CommandLineConfig:
       topLevelEmitOptIrOpt,
       topLevelNoTcoOpt,
       topLevelPrintPhasesOpt,
-      topLevelOptLevelOpt,
+      optimizationFlag(0),
+      optimizationFlag(1),
+      optimizationFlag(2),
+      optimizationFlag(3),
+      checkConfig(config =>
+        if config.optimizationLevels.size <= 1 then success
+        else failure("Optimization flags -O0, -O1, -O2 and -O3 are mutually exclusive")
+      ),
+      topLevelLlvmOptArgOpt,
       topLevelEmitScopedAliasOpt,
       topLevelAsanOpt,
       // Subcommands (override the default Build when matched)

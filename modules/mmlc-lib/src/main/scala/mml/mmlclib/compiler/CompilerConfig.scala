@@ -19,7 +19,8 @@ case class CompilerConfig(
   printPhases:     Boolean,
   optLevel:        Int,
   emitScopedAlias: Boolean,
-  asan:            Boolean
+  asan:            Boolean,
+  llvmOptArgs:     List[String] = Nil
 )
 
 object CompilerConfig:
@@ -57,7 +58,8 @@ object CompilerConfig:
     printPhases:     Boolean        = false,
     optLevel:        Int            = 3,
     emitScopedAlias: Boolean        = false,
-    asan:            Boolean        = false
+    asan:            Boolean        = false,
+    llvmOptArgs:     List[String]   = Nil
   ): CompilerConfig =
     CompilerConfig(
       mode            = CompilationMode.Exe,
@@ -74,7 +76,8 @@ object CompilerConfig:
       printPhases     = printPhases,
       optLevel        = optLevel,
       emitScopedAlias = emitScopedAlias,
-      asan            = asan
+      asan            = asan,
+      llvmOptArgs     = llvmOptArgs
     )
 
   def library(
@@ -91,7 +94,8 @@ object CompilerConfig:
     printPhases:     Boolean        = false,
     optLevel:        Int            = 3,
     emitScopedAlias: Boolean        = false,
-    asan:            Boolean        = false
+    asan:            Boolean        = false,
+    llvmOptArgs:     List[String]   = Nil
   ): CompilerConfig =
     CompilerConfig(
       mode            = CompilationMode.Library,
@@ -108,7 +112,8 @@ object CompilerConfig:
       printPhases     = printPhases,
       optLevel        = optLevel,
       emitScopedAlias = emitScopedAlias,
-      asan            = asan
+      asan            = asan,
+      llvmOptArgs     = llvmOptArgs
     )
 
   def ast(

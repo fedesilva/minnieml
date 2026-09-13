@@ -90,6 +90,23 @@ mmlc -s <file>.mml                 # ASan instrumented
 mmlc -h                            # Compiler arguments help
 ```
 
+Select optimization with `-O0`, `-O1`, `-O2`, or `-O3` (the default). These flags
+are mutually exclusive.
+
+Use repeatable `--llvm-opt-arg` options to forward individual arguments to LLVM `opt`
+when compiling an executable or library, or using `mmlc run`:
+
+```sh
+mmlc -O3 --llvm-opt-arg=-force-vector-interleave=4 benchmark/mat-mul-opt.mml
+mmlc run -O3 --llvm-opt-arg=-pass-remarks=loop-vectorize \
+  --llvm-opt-arg=-pass-remarks-missed=loop-vectorize benchmark/mat-mul-opt.mml
+```
+
+Each occurrence forwards one argument, in order. Quote the whole option if its value
+contains spaces. Arguments go only to `opt`; LLVM validates them, and availability
+depends on the installed LLVM version. Without this option, the optimizer defaults
+are unchanged. Forced interleaving is a tuning experiment, not a guarantee of SIMD.
+
 ## Distribution
 
 ```

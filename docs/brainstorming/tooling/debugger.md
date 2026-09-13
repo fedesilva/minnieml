@@ -43,18 +43,18 @@ Introduce build-profile and debug-symbol controls in compiler config/CLI:
 - `--dev` and `--release` as profile flags
 - `-D` / `--debug` to enable debug symbols
 - `--no-debug` to explicitly disable debug symbols
-- `--opt N` remains available and overrides profile optimization defaults
+- `-O0`, `-O1`, `-O2`, and `-O3` override profile optimization defaults (mutually exclusive)
 
 Defaults:
 
-- `--dev` defaults to `--opt 0` and `--debug`
-- `--release` defaults to `--opt 3` and `--no-debug`
+- `--dev` defaults to `-O0` and `--debug`
+- `--release` defaults to `-O3` and `--no-debug`
 - TCO remains enabled by language design in all profiles
 
 Precedence:
 
 1. Profile (`--dev`/`--release`) sets baseline defaults.
-2. Explicit `--opt N` overrides profile optimization.
+2. An explicit `-O0`, `-O1`, `-O2`, or `-O3` overrides profile optimization.
 3. Explicit `-D`/`--debug`/`--no-debug` overrides profile debug default.
 
 Flag compatibility notes:
