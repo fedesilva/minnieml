@@ -2,6 +2,7 @@ package mml.mmlclib.compiler
 
 import cats.effect.IO
 import mml.mmlclib.ast.Module
+import mml.mmlclib.codegen.ClangTarget
 import mml.mmlclib.errors.{CompilationError, CompilerWarning}
 import mml.mmlclib.parser.{ParserError, SourceInfo}
 import mml.mmlclib.semantic.{BindingIdSupply, SemanticError}
@@ -17,13 +18,14 @@ case class CompilerState(
   errors:         Vector[CompilationError],
   warnings:       Vector[CompilerWarning],
   timings:        Vector[Timing],
-  counters:       Vector[Counter] = Vector.empty,
-  entryPoint:     Option[String]  = None,
-  canEmitCode:    Boolean         = false,
-  llvmIr:         Option[String]  = None,
-  nativeResult:   Option[Int]     = None,
-  resolvedTriple: Option[String]  = None,
-  bindingIds:     BindingIdSupply = BindingIdSupply()
+  counters:       Vector[Counter]     = Vector.empty,
+  entryPoint:     Option[String]      = None,
+  canEmitCode:    Boolean             = false,
+  llvmIr:         Option[String]      = None,
+  nativeResult:   Option[Int]         = None,
+  resolvedTriple: Option[String]      = None,
+  clangTarget:    Option[ClangTarget] = None,
+  bindingIds:     BindingIdSupply     = BindingIdSupply()
 ):
   def addErrors(newErrors: List[CompilationError]): CompilerState =
     copy(errors = errors ++ newErrors)

@@ -31,11 +31,33 @@ class TargetCpuTests extends BaseEffFunSuite:
       }
   }
 
-  test("default CPU emission contains no empty attribute definitions") {
+  test("cross-target default emission includes Clang CPU and feature attributes") {
     val config = CompilerConfig.default.copy(targetTriple = "x86_64-unknown-linux-gnu".some)
     compileAndGenerate("fn value(): Int = 42;;", config = config).map { ir =>
-      assert(!ir.contains("target-cpu"), ir)
+      val groups = ir.linesIterator.filter(_.startsWith("attributes #")).toList
+      assertEquals(groups.size, 2)
+      groups.foreach { group =>
+        assert(group.contains("\"target-cpu\"=\"x86-64\""), group)
+        assert(group.contains("\"target-features\"="), group)
+      }
       assert("attributes\\s+#\\d+\\s*=\\s*\\{\\s*\\}".r.findFirstIn(ir).isEmpty, ir)
+    }
+  }
+
+  test("global initializers share the target attributes of ordinary functions") {
+    val source = """fn seed(): Int = 41;;
+                   |let answer: Int = seed();
+                   |fn value(): Int = answer;
+                   |;
+                   |""".stripMargin
+    val config = CompilerConfig.default.copy(targetTriple = "x86_64-unknown-linux-gnu".some)
+    compileAndGenerate(source, config = config).map { ir =>
+      assert(ir.contains("@llvm.global_ctors"), ir)
+      val definitions = ir.linesIterator.filter(_.startsWith("define ")).toList
+      assert(definitions.size >= 3, ir)
+      definitions.foreach { definition =>
+        assert(definition.endsWith(" #0 {") || definition.endsWith(" #1 {"), definition)
+      }
     }
   }
 

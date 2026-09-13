@@ -12,6 +12,10 @@ Durable product changes belong here. Current task state belongs in task files.
 
 - Keep passing tests and local compiler publication quiet while retaining failure diagnostics.
 
+- Probe Clang for target CPU and feature attributes and apply them consistently to emitted
+  functions and global initializers. Cache probes by Clang identity and target flags, and
+  separate runtime caches across toolchain configurations.
+
 - Document operator definitions as lambda bindings and operator uses as application chains,
   including stable reference IDs and candidate selection. Set postfix factorial below prefix
   signs in the expression-rewriting examples and the tail-recursive factorial sample.

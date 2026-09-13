@@ -37,7 +37,7 @@ def compileBinding(bnd: Bnd, state: CodeGenState): Either[CodeGenError, CodeGenS
           val initFnName = s"_init_global_${bnd.name}"
           val state2 = origState
             .emit(s"@${bnd.name} = global $llvmType 0")
-            .emit(s"define internal void @$initFnName() {")
+            .emit(s"define internal void @$initFnName() #0 {")
             .emit(s"entry:")
           compileExpr(bnd.value, state2.withRegister(0)).map { compileRes2 =>
             val (stateWithAlias, aliasTag, noaliasTag) = bnd.typeSpec match
