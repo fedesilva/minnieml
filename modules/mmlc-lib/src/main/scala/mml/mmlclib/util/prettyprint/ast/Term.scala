@@ -148,7 +148,10 @@ def prettyPrintTerm(
         else
           s"${indentStr}  params:\n" +
             params
-              .map(p => s"${indentStr}    ${p.name}: ${prettyPrintTypeSpec(p.typeSpec)}")
+              .map { p =>
+                val consumingPrefix = if p.consuming then "~" else ""
+                s"${indentStr}    $consumingPrefix${p.name}: ${prettyPrintTypeSpec(p.typeSpec)}"
+              }
               .mkString("\n")
       val bodyStr = prettyPrintExpr(body, indent + 2, showSourceSpans, showTypes)
       s"${indentStr}Lambda $spanStr$typeStr$metaStr\n" +

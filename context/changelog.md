@@ -2,6 +2,10 @@
 
 Durable product changes belong here. Current task state belongs in task files.
 
+## 2026-09-13
+
+- Show the `~` prefix on consuming parameters in Lambda AST output.
+
 ## 2026-09-12
 
 - Preserve AST nodes in ownership analysis, conditional code generation, tail-recursion
