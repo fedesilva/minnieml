@@ -10,7 +10,7 @@ import BindingIds.Allocation
 /** Supplied arguments become values before a partial application's lambda is created. */
 object PartialApplicationElaborator:
 
-  private case class PayloadBinding(local: LocalBindings.Local, value: Expr, tpe: Type)
+  private case class PayloadBinding(local: LocalBindings.Local, value: Expr)
 
   private case class PreparedValue(value: Term, bindings: List[PayloadBinding] = Nil):
     def expression: Expr = value match
@@ -19,17 +19,7 @@ object PartialApplicationElaborator:
 
     def materialize: Term = bindings.foldRight(value) { (binding, result) =>
       val body = Expr(result.source, List(result), typeSpec = result.typeSpec)
-      val scopeType = result.typeSpec.map { tpe =>
-        TypeFn(result.source, NonEmptyList.one(binding.tpe), tpe)
-      }
-      val scope = Lambda(
-        result.source,
-        List(binding.local.param),
-        body,
-        Nil,
-        typeSpec = scopeType
-      )
-      App(result.source, scope, binding.value, typeSpec = result.typeSpec)
+      LocalBindings.bind(binding.local.param, binding.value, body, result.source)
     }
 
   def rewriteModule(state: CompilerState): CompilerState =
@@ -232,7 +222,7 @@ object PartialApplicationElaborator:
               }
             then LiteralUnit(arg.value.source, tpe.some)
             else local.ref
-          PreparedValue(value, arg.bindings :+ PayloadBinding(local, arg.expression, tpe))
+          PreparedValue(value, arg.bindings :+ PayloadBinding(local, arg.expression))
         }
 
   private def elaborate(

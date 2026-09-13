@@ -523,7 +523,7 @@ object OwnershipAnalyzer:
         val resultRef   = resultLocal.ref
 
         // Unit type for free call results
-        val unitType = Some(unitTypeRef(span))
+        val unitType = unitTypeRef(span)
 
         // Build the innermost expression: just the result reference
         val innermost = Expr(span, List(resultRef), typeSpec = resultType)
@@ -557,21 +557,14 @@ object OwnershipAnalyzer:
             }
             freeTermOpt match
               case Some(freeTerm) =>
-                LocalBindings.param(owner, "_", typeSpec = unitType, typeAsc = unitType).map {
-                  discardParam =>
-                    val discardLam =
-                      Lambda(span, List(discardParam), acc, Nil, typeSpec = resultType)
-                    val freeAppExpr = Expr(span, List(freeTerm), typeSpec = unitType)
-                    Expr(span, List(App(span, discardLam, freeAppExpr, typeSpec = resultType)))
-                }
+                LocalBindings.sequence(freeTerm, acc, owner, unitType, span)
               case None => acc.pure[Allocation]
           }
         }
 
         // Wrap with: let __r = expr; <withFrees>
         withFrees.map { body =>
-          val resultLam = Lambda(span, List(resultParam), body, Nil, typeSpec = resultType)
-          Expr(span, List(App(span, resultLam, expr, typeSpec = resultType)), typeSpec = resultType)
+          expr.copy(terms = List(LocalBindings.bind(resultParam, expr, body, span)))
         }
     }
 
@@ -929,22 +922,9 @@ object OwnershipAnalyzer:
             })
           case _
               if scope.callableValues.referencedCaptureIds(app).intersect(dependentIds).isEmpty =>
-            val unitType = unitTypeRef(value.source).some
-            LocalBindings.param(scope.bindingOwner, "_", typeSpec = unitType).map { discard =>
-              val body = Lambda(value.source, List(discard), value, Nil, typeSpec = value.typeSpec)
-              Some(
-                value.copy(terms =
-                  List(
-                    App(
-                      value.source,
-                      body,
-                      Expr(value.source, List(free), typeSpec = unitType),
-                      typeSpec = value.typeSpec
-                    )
-                  )
-                )
-              )
-            }
+            LocalBindings
+              .sequence(free, value, scope.bindingOwner, unitTypeRef(value.source), value.source)
+              .map(_.some)
           case _ => none[Expr].pure[Allocation]
       case List(cond: Cond) =>
         for
@@ -1185,9 +1165,7 @@ object OwnershipAnalyzer:
       case Some((witnessLocal, witnessExpr)) =>
         val witnessParam = witnessLocal.param
         val innerAppExpr = Expr(syntheticSource, List(innerApp), typeSpec = typeSpec)
-        val witnessLambda =
-          Lambda(syntheticSource, List(witnessParam), innerAppExpr, Nil, typeSpec = typeSpec)
-        App(syntheticSource, witnessLambda, witnessExpr, typeSpec = typeSpec)
+        LocalBindings.bind(witnessParam, witnessExpr, innerAppExpr)
       case None =>
         innerApp
 
@@ -1495,15 +1473,10 @@ object OwnershipAnalyzer:
 
   private case class ArgumentBinding(local: LocalBindings.Local, value: Expr):
     def reference: Expr =
-      Expr(syntheticSource, List(local.ref), typeSpec = local.param.typeSpec)
+      local.expression
 
     def wrap(body: Expr): Expr =
-      val lambda = Lambda(syntheticSource, List(local.param), body, Nil, typeSpec = body.typeSpec)
-      Expr(
-        syntheticSource,
-        List(App(syntheticSource, lambda, value, typeSpec = body.typeSpec)),
-        typeSpec = body.typeSpec
-      )
+      body.copy(terms = List(LocalBindings.bind(local.param, value, body)))
 
   private case class ConditionalArgument(
     value:      Expr,

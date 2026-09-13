@@ -571,9 +571,8 @@ object ExpressionRewriter:
     source:    SourceOrigin
   ): Term =
     paramArgs.foldRight(inner) { case ((param, arg), bodyTerm) =>
-      val bodyExpr = Expr(source, List(bodyTerm))
-      val wrapper  = Lambda(source, List(param), bodyExpr, captures = Nil)
-      App(source, wrapper, arg)
+      val bodyExpr = Expr(source, List(bodyTerm), typeSpec = bodyTerm.typeSpec)
+      LocalBindings.bind(param, arg, bodyExpr, source)
     }
 
   private def rewriteGroupAtom(

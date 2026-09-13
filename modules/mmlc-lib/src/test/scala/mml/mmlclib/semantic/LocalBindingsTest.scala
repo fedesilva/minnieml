@@ -33,9 +33,7 @@ class LocalBindingsTest extends BaseEffFunSuite:
     }
   }
 
-  // Stage 2 migrates ownership cleanup wrappers to LocalBindings.bind.
-  // See context/tasks/unify-lambdas.md#establish-binding-identity-and-local-construction-invariants.
-  test("ownership binding wrappers retain function types and indexed local identities".ignore) {
+  test("ownership binding wrappers retain function types and indexed local identities") {
     semNotFailed("""
       fn example(): Int =
         let text = int_to_str 123;
@@ -47,24 +45,151 @@ class LocalBindingsTest extends BaseEffFunSuite:
           case binding: Bnd if binding.name == "example" => binding
         }
         .getOrElse(fail("Expected example binding"))
-      val wrappers = TermTraversal.collect(binding.value) {
-        case app: App if app.fn.isInstanceOf[Lambda] => app
-      }
-      assert(wrappers.nonEmpty)
-      wrappers.foreach { app =>
-        app.fn match
-          case lambda: Lambda =>
-            val param = lambda.params.headOption.getOrElse(fail("Expected binding parameter"))
-            val id    = param.id.getOrElse(fail("Expected binding identity"))
-            assertEquals(module.resolvables.lookup(id), Some(param))
-            lambda.typeSpec match
-              case Some(signature: TypeFn) =>
-                assertEquals(signature.paramTypes.toList, param.typeSpec.toList)
-                assertEquals(Some(signature.returnType), app.typeSpec)
-              case other => fail(s"Expected function type on binding lambda, found $other")
-          case _ => fail("Expected lambda application")
+      assertBindingTypes(binding.value, module)
+    }
+  }
+
+  private def bindingApplications(expr: Expr): List[App] =
+    TermTraversal.collect(expr) {
+      case app: App if app.fn.isInstanceOf[Lambda] => app
+    }
+
+  private def assertBindingTypes(expr: Expr, module: Module): Unit =
+    val wrappers = bindingApplications(expr)
+    assert(wrappers.nonEmpty)
+    wrappers.foreach { app =>
+      app.fn match
+        case lambda: Lambda =>
+          val param = lambda.params.headOption.getOrElse(fail("Expected binding parameter"))
+          val id    = param.id.getOrElse(fail("Expected binding identity"))
+          assertEquals(module.resolvables.lookup(id), Some(param))
+          lambda.typeSpec match
+            case Some(signature: TypeFn) =>
+              assertEquals(signature.paramTypes.toList, param.typeSpec.toList)
+              assertEquals(Some(signature.returnType), app.typeSpec)
+              assertEquals(lambda.body.typeSpec, app.typeSpec)
+            case other => fail(s"Expected function type on binding lambda, found $other")
+        case _ => fail("Expected lambda application")
+    }
+
+  List(
+    "conditional witness" -> """
+      fn example(flag: Bool): Int =
+        let text = if flag then int_to_str 123; else "abc"; ;
+        text.length;
+      ;
+    """,
+    "allocating arguments and saved predicates" -> """
+      fn length(text: String): Int = text.length;;
+      fn example(flag: Bool): Int =
+        length (if flag then int_to_str 123; else "abc";);
+      ;
+    """,
+    "direct consuming lambda" -> """
+      fn example(): Int =
+        { ~text: String, n: Int -> text.length + n; } (int_to_str 123) 1;
+      ;
+    """,
+    "PAP payload and invocation cleanup" -> """
+      fn take(~text: String, n: Int): Int = text.length + n;;
+      fn example(): Int =
+        let partial = take (int_to_str 123);
+        partial 1;
+      ;
+    """,
+    "early scalar PAP release" -> """
+      fn add(a: Int, b: Int): Int = a + b;;
+      fn example(): Int =
+        let partial = add 1;
+        let result = partial 2;
+        add result 3;
+      ;
+    """,
+    "generated struct cleanup" -> """
+      struct Label { first: String, second: String };
+      fn example(): Int =
+        let label = Label (int_to_str 123) (int_to_str 456);
+        label.first.length;
+      ;
+    """
+  ).foreach { (name, source) =>
+    test(s"binding types survive $name") {
+      semNotFailed(source).map { module =>
+        assertLocalIndex(module)
+        module.members.collect { case binding: Bnd => binding }.foreach { binding =>
+          val hasBindings = bindingApplications(binding.value).nonEmpty
+          if hasBindings then assertBindingTypes(binding.value, module)
+        }
       }
     }
+  }
+
+  test("binding construction preserves consuming parameters and declared input types") {
+    val source = SourceOrigin.Synth
+    val input  = TypeRef(source, "String", "stdlib::typedef::String".some)
+    val output = TypeRef(source, "Int", "stdlib::typealias::Int".some)
+    val allocation = LocalBindings.local(
+      BindingOwner.binding("Test", "main"),
+      "text",
+      typeAsc   = input.some,
+      consuming = true
+    )
+    val (_, local) = allocation.run(BindingIdSupply()).value
+    val value =
+      Expr(source, List(LiteralString(source, "abc", typeSpec = input.some)), typeSpec = input.some)
+    val body =
+      Expr(source, List(LiteralInt(source, 1, typeSpec = output.some)), typeSpec = output.some)
+    val app = LocalBindings.bind(local.param, value, body)
+    app.fn match
+      case lambda: Lambda =>
+        assertEquals(lambda.params, List(local.param))
+        assert(lambda.params.head.consuming)
+        assertEquals(lambda.body, body)
+        lambda.typeSpec match
+          case Some(signature: TypeFn) =>
+            assertEquals(signature.paramTypes.toList, List(input))
+            assertEquals(signature.returnType, output)
+          case other => fail(s"Expected function type, found $other")
+      case _ => fail("Expected binding scope")
+    assertEquals(app.arg, value)
+    assertEquals(app.typeSpec, body.typeSpec)
+    assertEquals(local.ref.resolvedId, local.param.id)
+    assertEquals(local.ref.typeSpec, input.some)
+  }
+
+  test("cleanup sequencing preserves continuation annotations and effect placement") {
+    val source   = SourceOrigin.Loc(SrcSpan(SrcPoint(1, 1, 0), SrcPoint(1, 2, 1)))
+    val output   = TypeRef(source, "Int", "stdlib::typealias::Int".some)
+    val unitType = TypeRef(SourceOrigin.Synth, "Unit", "stdlib::typedef::Unit".some)
+    val body = Expr(
+      source,
+      List(LiteralInt(source, 1, typeSpec = output.some)),
+      typeAsc  = output.some,
+      typeSpec = output.some
+    )
+    val effect = LiteralUnit(SourceOrigin.Synth, typeSpec = unitType.some)
+    val (_, result) = LocalBindings
+      .sequence(effect, body, BindingOwner.binding("Test", "main"), unitType)
+      .run(BindingIdSupply())
+      .value
+    assertEquals(result.source, body.source)
+    assertEquals(result.typeAsc, body.typeAsc)
+    assertEquals(result.typeSpec, body.typeSpec)
+    assertEquals(TermTraversal.collect(result) { case unit: LiteralUnit => unit }, List(effect))
+    result.terms match
+      case List(app: App) =>
+        assertEquals(app.arg.terms, List(effect))
+        app.fn match
+          case lambda: Lambda =>
+            assertEquals(lambda.body, body)
+            assert(lambda.params.forall(_.id.nonEmpty))
+            lambda.typeSpec match
+              case Some(signature: TypeFn) =>
+                assertEquals(signature.paramTypes.toList, List(unitType))
+                assertEquals(signature.returnType, output)
+              case other => fail(s"Expected function type, found $other")
+          case _ => fail("Expected cleanup scope")
+      case _ => fail("Expected effect before continuation")
   }
 
   private def parameters(module: Module): List[FnParam] =
