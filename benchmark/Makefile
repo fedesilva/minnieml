@@ -38,7 +38,7 @@ all: $(BINDIR)/fizzbuzz-c $(BINDIR)/fizzbuzz2-c $(BINDIR)/fizzbuzz-go $(BINDIR)/
      $(BINDIR)/sieve-c $(BINDIR)/sieve-go $(BINDIR)/sieve-opt-go $(BINDIR)/sieve-rs \
      $(BINDIR)/quicksort-c $(BINDIR)/quicksort-go $(BINDIR)/quicksort-rs \
      $(BINDIR)/matmul-c $(BINDIR)/matmul-opt-c $(BINDIR)/matmul-restricted-c $(BINDIR)/matmul-go $(BINDIR)/matmul-bce-go $(BINDIR)/matmul-opt-go \
-     $(BINDIR)/matmul-rs $(BINDIR)/matmul-opt-rs \
+     $(BINDIR)/matmul-opt-bce-go $(BINDIR)/matmul-rs $(BINDIR)/matmul-opt-rs \
      $(BINDIR)/nqueens-c $(BINDIR)/nqueens-go $(BINDIR)/euclidean-ext-c \
      $(BINDIR)/Sieve.class $(BINDIR)/Quicksort.class $(BINDIR)/Matmul.class \
      $(BINDIR)/sieve-java-native $(BINDIR)/quicksort-java-native $(BINDIR)/matmul-java-native
@@ -215,6 +215,9 @@ $(BINDIR)/matmul-bce-go: matmul-bce.go | $(BINDIR)
 	go build -o $@ $<
 
 $(BINDIR)/matmul-opt-go: matmul-opt.go | $(BINDIR)
+	go build -o $@ $<
+
+$(BINDIR)/matmul-opt-bce-go: matmul-opt-bce.go | $(BINDIR)
 	go build -o $@ $<
 
 $(BINDIR)/matmul-mml: mat-mul.mml | $(BINDIR)
@@ -409,7 +412,7 @@ endif
 
 bench-matmul: $(BINDIR)/matmul-c $(BINDIR)/matmul-restricted-c $(BINDIR)/matmul-go \
 	$(BINDIR)/matmul-bce-go $(BINDIR)/matmul-opt-go $(BINDIR)/matmul-mml $(BINDIR)/matmul-opt-mml $(BINDIR)/matmul-opt-c \
-	$(BINDIR)/matmul-rs $(BINDIR)/matmul-opt-rs $(BINDIR)/matmul-java-native $(RESULTS_DEP)
+	$(BINDIR)/matmul-opt-bce-go $(BINDIR)/matmul-rs $(BINDIR)/matmul-opt-rs $(BINDIR)/matmul-java-native $(RESULTS_DEP)
 	hyperfine -N --warmup 20 --runs 50 \
 		$(call EXPORT_FLAGS,matmul) \
 		'$(BINDIR)/matmul-c' \
@@ -422,11 +425,12 @@ bench-matmul: $(BINDIR)/matmul-c $(BINDIR)/matmul-restricted-c $(BINDIR)/matmul-
 		'$(BINDIR)/matmul-go' \
 		'$(BINDIR)/matmul-bce-go' \
 		'$(BINDIR)/matmul-opt-go' \
+		'$(BINDIR)/matmul-opt-bce-go' \
 		'$(BINDIR)/matmul-java-native'
 
 bench-matmul-time: $(BINDIR)/matmul-c $(BINDIR)/matmul-restricted-c $(BINDIR)/matmul-go \
 	$(BINDIR)/matmul-bce-go $(BINDIR)/matmul-opt-go $(BINDIR)/matmul-mml $(BINDIR)/matmul-opt-mml \
-	$(BINDIR)/matmul-opt-c $(BINDIR)/matmul-rs $(BINDIR)/matmul-opt-rs $(BINDIR)/matmul-java-native
+	$(BINDIR)/matmul-opt-bce-go $(BINDIR)/matmul-opt-c $(BINDIR)/matmul-rs $(BINDIR)/matmul-opt-rs $(BINDIR)/matmul-java-native
 	/usr/bin/time -l $(BINDIR)/matmul-c
 	/usr/bin/time -l $(BINDIR)/matmul-opt-c
 	/usr/bin/time -l $(BINDIR)/matmul-restricted-c
@@ -437,6 +441,7 @@ bench-matmul-time: $(BINDIR)/matmul-c $(BINDIR)/matmul-restricted-c $(BINDIR)/ma
 	/usr/bin/time -l $(BINDIR)/matmul-go
 	/usr/bin/time -l $(BINDIR)/matmul-bce-go
 	/usr/bin/time -l $(BINDIR)/matmul-opt-go
+	/usr/bin/time -l $(BINDIR)/matmul-opt-bce-go
 	/usr/bin/time -l $(BINDIR)/matmul-java-native
 
 bench-nqueens: $(BINDIR)/nqueens-c $(BINDIR)/nqueens-go $(BINDIR)/nqueens-mml $(RESULTS_DEP)

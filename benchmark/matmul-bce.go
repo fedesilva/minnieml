@@ -15,9 +15,8 @@ func matMul(A []int64, B []int64, C []int64, n int64) {
 	N := int(n)
 	size := N * N
 
-	// BCE Hint: Prove to the compiler that all arrays are large enough.
-	// This single check allows the compiler to eliminate bounds checks 
-	// inside the loops because i, j, k are bounded by N.
+	// Check that all buffers cover the matrix. These checks do not eliminate
+	// the inner-loop bounds checks with Go 1.27.1 on darwin/arm64.
 	_ = A[size-1]
 	_ = B[size-1]
 	_ = C[size-1]
