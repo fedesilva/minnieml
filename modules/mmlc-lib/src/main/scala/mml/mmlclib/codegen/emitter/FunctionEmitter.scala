@@ -137,16 +137,55 @@ def formatParamDecls(
     }
     .mkString(", ")
 
+/** Describe storage available at a capturing closure entry. */
+private[emitter] def formatClosureEnvParam(
+  envStruct: TypeStruct,
+  paramIdx:  Int,
+  state:     CodeGenState
+): String =
+  if hasKnownClosureLayout(envStruct, state.resolvables) then
+    val envTypeRef = s"%struct.${envStruct.name}"
+    val size       = sizeOfLlvmTypeResolved(envTypeRef, state)
+    val alignment  = alignOfLlvmTypeResolved(envTypeRef, state)
+    if size > 0 then s"ptr align $alignment dereferenceable($size) %$paramIdx"
+    else s"ptr %$paramIdx"
+  else s"ptr %$paramIdx"
+
+/** Native LLVM types outside the layout helpers' explicit cases carry no storage promises. */
+private def hasKnownClosureLayout(typeSpec: Type, resolvables: ResolvablesIndex): Boolean =
+  typeSpec match
+    case TypeGroup(_, List(inner)) => hasKnownClosureLayout(inner, resolvables)
+    case ref: TypeRef =>
+      ref.resolvedId.flatMap(resolvables.lookupType).exists {
+        case td: TypeDef => td.typeSpec.exists(hasKnownClosureLayout(_, resolvables))
+        case ts: TypeStruct => hasKnownClosureLayout(ts, resolvables)
+        case ta: TypeAlias =>
+          hasKnownClosureLayout(ta.typeSpec.getOrElse(ta.typeRef), resolvables)
+      }
+    case ts: TypeStruct =>
+      ts.fields.forall(field => hasKnownClosureLayout(field.typeSpec, resolvables))
+    case ns: NativeStruct =>
+      ns.fields.nonEmpty && ns.fields.forall { case (_, fieldType) =>
+        hasKnownClosureLayout(fieldType, resolvables)
+      }
+    case np: NativePrimitive =>
+      np.llvmType match
+        case "i1" | "i8" | "i16" | "i32" | "i64" | "float" | "double" | "ptr" => true
+        case _ => false
+    case _: NativePointer | _: TypeFn => true
+    case _ => false
+
 /** Load captures from env struct in a deferred function's entry block. Each capture gets a GEP and
   * a load. Field offset is 1 for move envs (__dtor at field 0), 0 for borrow envs.
   */
 def emitCaptureLoads(
-  envTypeRef:   String,
+  envStruct:    TypeStruct,
   envParamIdx:  Int,
   captureTypes: List[(Capture, String)],
   bodyState:    CodeGenState,
   fieldOffset:  Int = 1
 ): (CodeGenState, Map[String, ScopeEntry]) =
+  val envTypeRef = s"%struct.${envStruct.name}"
   captureTypes.zipWithIndex.foldLeft((bodyState, Map.empty[String, ScopeEntry])) {
     case ((st, scope), ((cap, llvmType), idx)) =>
       val ref     = cap.ref
@@ -154,8 +193,12 @@ def emitCaptureLoads(
       val loadReg = gepReg + 1
       val gepLine =
         s"  %$gepReg = getelementptr $envTypeRef, ptr %$envParamIdx, i32 0, i32 ${idx + fieldOffset}"
-      val loadLine = s"  %$loadReg = load $llvmType, ptr %$gepReg"
-      val newState = st.withRegister(loadReg + 1).emit(gepLine).emit(loadLine)
+      val (stateWithTag, fieldTag) = TbaaEmitter
+        .getTbaaStructFieldTag(envStruct, idx + fieldOffset, st)
+        .getOrElse((st, ""))
+      val loadLine =
+        emitLoad(loadReg, llvmType, s"%$gepReg", Option.when(fieldTag.nonEmpty)(fieldTag))
+      val newState = stateWithTag.withRegister(loadReg + 1).emit(gepLine).emit(loadLine)
       val mmlType = ref.typeSpec
         .flatMap(getNominalTypeName(_).toOption)
         .getOrElse("Unknown")
@@ -648,10 +691,10 @@ private[emitter] def compileTailRecursiveLambda(
   paramTypes:  List[String],
   emittedName: String,
   body:        TailRecBody,
-  inlineHint:  Boolean                                   = false,
-  linkage:     String                                    = "",
-  entryAbi:    TailRecEntryAbi                           = TailRecEntryAbi.PlainDirect,
-  captureInfo: Option[(String, List[(Capture, String)])] = None
+  inlineHint:  Boolean                                       = false,
+  linkage:     String                                        = "",
+  entryAbi:    TailRecEntryAbi                               = TailRecEntryAbi.PlainDirect,
+  captureInfo: Option[(TypeStruct, List[(Capture, String)])] = None
 ): Either[CodeGenError, CodeGenState] =
   val nonVoidIndices          = paramTypes.indices.filter(i => paramTypes(i) != "void").toList
   val filteredParamsWithTypes = nonVoidIndices.map(i => (lambda.params(i), paramTypes(i)))
@@ -662,8 +705,11 @@ private[emitter] def compileTailRecursiveLambda(
   val allParamDecls = entryAbi match
     case TailRecEntryAbi.PlainDirect => userParamDecls
     case TailRecEntryAbi.ClosureEntry =>
-      if userParamDecls.isEmpty then s"ptr %$envParamIdx"
-      else s"$userParamDecls, ptr %$envParamIdx"
+      val envParamDecl = captureInfo.fold(s"ptr %$envParamIdx") { case (envStruct, _) =>
+        formatClosureEnvParam(envStruct, envParamIdx, state)
+      }
+      if userParamDecls.isEmpty then envParamDecl
+      else s"$userParamDecls, $envParamDecl"
 
   val attrGroup = if inlineHint then "#1" else "#0"
   val functionDecl =
@@ -688,13 +734,13 @@ private[emitter] def compileTailRecursiveLambda(
     captureCount       = captureInfo.fold(0)(_._2.size)
     captureFieldOffset = if lambda.isMove then 1 else 0
     captureData = captureInfo match
-      case Some((envTypeRef, captureTypes)) =>
+      case Some((envStruct, captureTypes)) =>
         val captureStartRegister = entryAbi match
           case TailRecEntryAbi.PlainDirect => envParamIdx
           case TailRecEntryAbi.ClosureEntry => envParamIdx + 1
         val captureStartState = baseState.withRegister(captureStartRegister)
         emitCaptureLoads(
-          envTypeRef,
+          envStruct,
           envParamIdx,
           captureTypes,
           captureStartState,

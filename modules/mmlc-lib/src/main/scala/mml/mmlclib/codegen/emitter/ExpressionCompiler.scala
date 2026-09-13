@@ -315,7 +315,7 @@ private def compileTailRecCapturingLambda(
       output              = List.empty,
       entryPrologueOutput = List.empty
     )
-    val capInfo = (envResult.envTypeRef, envResult.captureTypes)
+    val capInfo = (envResult.envStruct, envResult.captureTypes)
     compileTailRecursiveLambda(
       lambda,
       subState,
@@ -374,7 +374,6 @@ private def compileRegularLambdaLiteral(
       fnName,
       returnType,
       filteredParamsWithTypes,
-      allParamDecls,
       envParamIdx,
       functionScope,
       bindingParam
@@ -427,7 +426,7 @@ private def compileNonCapturingLambda(
 private case class EnvSetupResult(
   siteState:    CodeGenState,
   fpRegister:   Int,
-  envTypeRef:   String,
+  envStruct:    TypeStruct,
   captureTypes: List[(Capture, String)]
 )
 
@@ -659,7 +658,7 @@ private def emitCallSiteEnv(
     val siteState =
       siteStateAfterCaptures.withRegister(fp1Reg + 1).emit(insertFn).emit(insertEnv)
 
-    EnvSetupResult(siteState, fp1Reg, envTypeRef, captureTypes)
+    EnvSetupResult(siteState, fp1Reg, envStruct, captureTypes)
 
 /** Capturing lambda: allocate env at call site, load captures in deferred function body. */
 private def compileCapturingLambda(
@@ -668,14 +667,17 @@ private def compileCapturingLambda(
   fnName:                  String,
   returnType:              String,
   filteredParamsWithTypes: List[(FnParam, String)],
-  allParamDecls:           String,
   envParamIdx:             Int,
   functionScope:           Map[String, ScopeEntry],
   bindingParam:            Option[FnParam]
 ): Either[CodeGenError, CompileResult] =
   emitCallSiteEnv(lambda, state, fnName, functionScope).flatMap { envResult =>
-    val siteState  = envResult.siteState
-    val envTypeRef = envResult.envTypeRef
+    val siteState      = envResult.siteState
+    val userParamDecls = formatParamDecls(filteredParamsWithTypes, siteState.resolvables)
+    val envParamDecl   = formatClosureEnvParam(envResult.envStruct, envParamIdx, siteState)
+    val allParamDecls =
+      if userParamDecls.isEmpty then envParamDecl
+      else s"$userParamDecls, $envParamDecl"
 
     val subState = siteState.copy(
       output                  = List.empty,
@@ -694,7 +696,7 @@ private def compileCapturingLambda(
     val captureFieldOffset = if lambda.isMove then 1 else 0
     val (bodyState, captureScope) =
       emitCaptureLoads(
-        envTypeRef,
+        envResult.envStruct,
         envParamIdx,
         envResult.captureTypes,
         initialBodyState,

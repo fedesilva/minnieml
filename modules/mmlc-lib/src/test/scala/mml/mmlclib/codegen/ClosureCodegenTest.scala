@@ -522,7 +522,8 @@ class ClosureCodegenTest extends BaseEffFunSuite:
 
     compileAndGenerate(source).map { llvmIr =>
       val loopMatch =
-        """(?s)define internal i64 @(test_loop_\d+)\(i64 %0, ptr %1\) #0 \{\n(.*?)\n\}""".r
+        ("""(?s)define internal i64 @(test_loop_\d+)\(i64 %0, """ +
+          """ptr align 8 dereferenceable\(16\) %1\) #0 \{\n(.*?)\n\}""").r
           .findFirstMatchIn(llvmIr)
           .getOrElse(fail(s"Missing recursive closure body. IR:\n$llvmIr"))
 
@@ -557,7 +558,8 @@ class ClosureCodegenTest extends BaseEffFunSuite:
 
     compileAndGenerate(source).map { llvmIr =>
       val innerMatch =
-        """(?s)define internal i64 @(test_inner_\d+)\(i64 %0, ptr %1\) #0 \{\n(.*?)\n\}""".r
+        ("""(?s)define internal i64 @(test_inner_\d+)\(i64 %0, """ +
+          """ptr align 8 dereferenceable\(8\) %1\) #0 \{\n(.*?)\n\}""").r
           .findFirstMatchIn(llvmIr)
           .getOrElse(fail(s"Missing named capturing closure body. IR:\n$llvmIr"))
 
