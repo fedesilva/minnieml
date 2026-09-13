@@ -38,6 +38,8 @@ fn check(flag: Bool): Int =
 pub fn main(): Int = check true - 3;;
 ```
 
+see `mml/samples/mixed-test-double-free.mml`
+
 When `flag` is true, `value` holds an allocated String. The consuming function `take` destroys
 it, but the caller also emits witness-guarded destruction, causing a double-free. With
 `check false`, `value` holds static storage. Treating it as unconditionally owned lets it
