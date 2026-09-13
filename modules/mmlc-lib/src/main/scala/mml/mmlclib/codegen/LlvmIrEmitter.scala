@@ -23,11 +23,11 @@ object LlvmIrEmitter:
     *   Either a CodeGenError or the EmitResult containing IR and accumulated warnings.
     */
   def module(
-    module:          Module,
-    entryPoint:      Option[String],
-    targetTriple:    String,
-    targetAbi:       TargetAbi,
-    targetCpu:       Option[String],
-    emitAliasScopes: Boolean
+    module:           Module,
+    entryPoint:       Option[String],
+    targetTriple:     String,
+    targetAbi:        TargetAbi,
+    targetAttributes: TargetAttributes,
+    emitAliasScopes:  Boolean
   ): Either[CodeGenError, EmitResult] =
-    emitModule(module, entryPoint, targetTriple, targetAbi, targetCpu, emitAliasScopes)
+    emitModule(module, entryPoint, targetTriple, targetAbi, targetAttributes, emitAliasScopes)

@@ -42,3 +42,6 @@ object LlvmErrorPrinter:
       s"MML runtime resource error: $message"
     case LlvmCompilationError.TripleResolutionError(message) =>
       s"Target triple resolution failed: $message"
+
+    case LlvmCompilationError.TargetResolutionError(message) =>
+      s"Target attributes resolution failed: $message"

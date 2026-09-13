@@ -84,7 +84,7 @@ class DestructionCodegenTests extends BaseEffFunSuite:
         )
         List(TargetAbi.AArch64, TargetAbi.X86_64).foreach { abi =>
           val ir = LlvmIrEmitter
-            .module(updated, none, "", abi, none, false)
+            .module(updated, none, "", abi, TargetAttributes(none, none), false)
             .fold(e => fail(e.toString), _.ir)
           val emittedBody = functionBody(ir, s"test_${binding.name}")
           assertEquals(phiCount(emittedBody), 2, emittedBody)
@@ -181,7 +181,7 @@ class DestructionCodegenTests extends BaseEffFunSuite:
       )
       List(TargetAbi.AArch64, TargetAbi.X86_64).foreach { abi =>
         val ir = LlvmIrEmitter
-          .module(updated, none, "", abi, none, false)
+          .module(updated, none, "", abi, TargetAttributes(none, none), false)
           .fold(e => fail(e.toString), _.ir)
         val mainBody = functionBody(ir, "test_main")
         assertEquals("call \\{ ptr, ptr \\} @test_make".r.findAllIn(mainBody).size, 1)
@@ -202,7 +202,7 @@ class DestructionCodegenTests extends BaseEffFunSuite:
     """).map { module =>
       List(TargetAbi.AArch64, TargetAbi.X86_64).foreach { abi =>
         val ir = LlvmIrEmitter
-          .module(module, none, "", abi, none, false)
+          .module(module, none, "", abi, TargetAttributes(none, none), false)
           .fold(e => fail(e.toString), _.ir)
         assertEquals("call void @test___free_Pair\\(%struct.Pair %".r.findAllIn(ir).size, 1)
         assert(!ir.contains("declare void @test___free_Pair"), ir)

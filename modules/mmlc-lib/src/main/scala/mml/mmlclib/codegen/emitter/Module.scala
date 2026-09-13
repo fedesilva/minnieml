@@ -2,11 +2,11 @@ package mml.mmlclib.codegen.emitter
 
 import cats.syntax.all.*
 import mml.mmlclib.ast.*
-import mml.mmlclib.codegen.TargetAbi
 import mml.mmlclib.codegen.emitter.abis.AbiStrategy
 import mml.mmlclib.codegen.emitter.alias.AliasScopeEmitter
 import mml.mmlclib.codegen.emitter.expression.escapeString
 import mml.mmlclib.codegen.emitter.tbaa.TbaaEmitter
+import mml.mmlclib.codegen.{TargetAbi, TargetAttributes}
 import mml.mmlclib.errors.CompilerWarning
 
 /** Main entry point for LLVM IR emission.
@@ -26,12 +26,12 @@ import mml.mmlclib.errors.CompilerWarning
 case class EmitResult(ir: String, warnings: List[CompilerWarning])
 
 def emitModule(
-  module:          Module,
-  entryPoint:      Option[String],
-  targetTriple:    String,
-  targetAbi:       TargetAbi,
-  targetCpu:       Option[String],
-  emitAliasScopes: Boolean
+  module:           Module,
+  entryPoint:       Option[String],
+  targetTriple:     String,
+  targetAbi:        TargetAbi,
+  targetAttributes: TargetAttributes,
+  emitAliasScopes:  Boolean
 ): Either[CodeGenError, EmitResult] = {
   // Setup the initial state with the module name, resolvables and header
   val initialState = CodeGenState(
@@ -119,7 +119,7 @@ def emitModule(
 
   // Construct the final output with all components in the proper order
   stateWithMain.map { finalState =>
-    val cpuAttrValue = targetCpu.filter(_.nonEmpty)
+    val attributes = targetAttributes.llvm
     // Assemble the full output in the correct order
     val output = new StringBuilder()
 
@@ -158,13 +158,8 @@ def emitModule(
       finalState.deferredDefinitions.reverse.foreach(d => output.append(d).append("\n"))
 
     // 6. Attributes
-    cpuAttrValue match {
-      case Some(cpu) =>
-        output.append(s"""\nattributes #0 = { "target-cpu"="$cpu" }""")
-        output.append(s"""\nattributes #1 = { inlinehint "target-cpu"="$cpu" }\n""")
-      case None =>
-        output.append("\nattributes #1 = { inlinehint }\n")
-    }
+    if attributes.nonEmpty then output.append(s"\nattributes #0 = { $attributes }")
+    output.append(s"\nattributes #1 = { inlinehint $attributes }\n")
 
     // 6. Global initializers
     if finalState.initializers.nonEmpty then
@@ -374,7 +369,7 @@ private def emitValueBinding(bnd: Bnd, state: CodeGenState): Either[CodeGenError
               val initValue = "zeroinitializer" // Safe default for all types
               val state2 = origState
                 .emit(emitGlobalVariable(mangledName, llvmType, initValue))
-                .emit(s"define internal void @$initFnName() {")
+                .emit(s"define internal void @$initFnName() #0 {")
                 .emit(s"entry:")
               compileExpr(bnd.value, state2.withRegister(0)).map { compileRes2 =>
                 val (stateWithAlias, aliasTag, noaliasTag) = bnd.typeSpec match
@@ -414,7 +409,7 @@ private def emitValueBinding(bnd: Bnd, state: CodeGenState): Either[CodeGenError
           val initValue = "zeroinitializer"
           val state2 = origState
             .emit(emitGlobalVariable(mangledName, llvmType, initValue))
-            .emit(s"define internal void @$initFnName() {")
+            .emit(s"define internal void @$initFnName() #0 {")
             .emit(s"entry:")
           compileExpr(bnd.value, state2.withRegister(0)).map { compileRes2 =>
             val (stateWithAlias, aliasTag, noaliasTag) = bnd.typeSpec match

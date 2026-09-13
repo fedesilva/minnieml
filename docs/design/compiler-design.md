@@ -1201,7 +1201,8 @@ flowchart TD
     DV --> VAL[Pre-Codegen Validation]
     VAL --> RT[Resolve Triple]
     RT --> LI[Llvm Info]
-    LI --> EM[Emit LLVM IR]
+    LI --> TA[Resolve cached Clang target attributes]
+    TA --> EM[Emit LLVM IR]
     EM --> WI[Write LLVM IR]
     WI --> TOOL[LlvmToolchain Compile]
     TOOL --> Binary[Native Binary / Output]
@@ -1232,7 +1233,7 @@ The MML compiler flows through staged pipelines:
 
 1. **IngestStage**: Parse source, collect parser counters, lift parse errors.
 2. **SemanticStage**: Stdlib injection → DuplicateNameChecker → IdAssigner → TypeResolver → ConstructorGenerator → MemoryFunctionGenerator → RefResolver → ExpressionRewriter → Simplifier → CaptureAnalyzer → TypeChecker → PartialApplicationElaborator → ClosureMemoryFnGenerator → StructDestructorBodyGenerator → OwnershipAnalyzer → ClosureDestructorBodyGenerator → TailRecursionDetector → DestructionValidator.
-3. **CodegenStage**: Pre-codegen validation → resolve target triple/CPU → gather LLVM tool info → emit LLVM IR → write IR → native compilation.
+3. **CodegenStage**: Pre-codegen validation → resolve target triple → gather LLVM tool info → resolve cached Clang CPU/features → emit LLVM IR → write IR → native compilation.
 
 Each phase takes a `CompilerState` and returns an updated one. Timings are recorded via `CompilerState.timePhase`/`timePhaseIO`. Errors accumulate without halting compilation, so partial results remain available for the LSP.
 

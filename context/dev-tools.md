@@ -107,6 +107,19 @@ contains spaces. Arguments go only to `opt`; LLVM validates them, and availabili
 depends on the installed LLVM version. Without this option, the optimizer defaults
 are unchanged. Forced interleaving is a tuning experiment, not a guarantee of SIMD.
 
+Target CPU and feature attributes come from the selected Clang using the same target
+flags as the runtime. Local builds use Clang's native CPU selection; `--target`
+without `--cpu` uses that target's default CPU. The probe emits LLVM IR without
+running target code, so it also works for cross-compilation.
+
+Probe responses are cached under `<build-dir>/toolchain/target-<hash>.ll`. The key
+includes the resolved Clang executable path, its size and modification time, the
+compilation flags, and the probe format version. Warm builds read the cached response
+without launching Clang for the probe. Missing or malformed entries are regenerated,
+and writes are atomic. Runtime cache entries include the same key. These caches are
+local build artifacts; clean them when moving a build directory to another host.
+`llvm-info` remains a separate tool-discovery report.
+
 ## Distribution
 
 ```
