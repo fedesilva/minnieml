@@ -11,30 +11,20 @@ func fillMatrix(arr []int64, n int64, seed int64) {
 	}
 }
 
-func matMul(A []int64, B []int64, C []int64, n int64) {
+// matMul uses i-k-j order with equal-length row slices so the inner range
+// loop needs no bounds checks for B or C.
+func matMul(A, B, C []int64, n int64) {
 	N := int(n)
-	size := N * N
-
-	// Check that all buffers cover the matrix. These checks do not eliminate
-	// the inner-loop bounds checks with Go 1.27.1 on darwin/arm64.
-	_ = A[size-1]
-	_ = B[size-1]
-	_ = C[size-1]
-
 	for i := 0; i < N; i++ {
-		rowOffset := i * N
-		for j := 0; j < N; j++ {
-			var acc int64 = 0
-			for k := 0; k < N; k++ {
-				// Naive i-j-k access pattern
-				// A[i*N + k]
-				valA := A[rowOffset+k]
-				// B[k*N + j]
-				valB := B[k*N+j]
+		aRow := A[i*N : (i+1)*N]
+		cRow := C[i*N : (i+1)*N]
+		clear(cRow)
 
-				acc += valA * valB
+		for k, a := range aRow {
+			bRow := B[k*N : (k+1)*N]
+			for j, b := range bRow {
+				cRow[j] += a * b
 			}
-			C[rowOffset+j] = acc
 		}
 	}
 }

@@ -4,6 +4,11 @@ Durable product changes belong here. Current task state belongs in task files.
 
 ## 2026-09-13
 
+- Add a Go matrix benchmark using i-k-j order and row slices to eliminate inner-loop
+  bounds checks. Include it alongside the existing variants in timing and memory runs,
+  and correct the original BCE variant's comment. Keep the restricted C variant in
+  i-j-k order to isolate the effect of `restrict` from loop interchange.
+
 - Add Java JVM and GraalVM native-image benchmarks for quicksort, sieve, and matrix
   multiplication, plus Python quicksort. Include Python in drag races only with `BENCH_SLOW=1`.
 
