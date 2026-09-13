@@ -4,9 +4,12 @@
 
 - **Owner:** The Author
 - **Status:** planned
+- **Kind**: BUG, CORRECTNESS, CRASH
+- **Priority** HIGH
 - **Created:** 2026-09-12
 - **Target Branch:** dev-lambda-unify
 - **External Reference (optional):** None
+
 
 ## Problem
 
@@ -24,7 +27,12 @@ A concrete failure illustrates the need:
 ```mml
 fn take(~text: String): Int = text.length;;
 fn check(flag: Bool): Int =
-  let value = if flag then int_to_str 123; else "abc"; ;
+  let value = 
+    if flag then 
+      int_to_str 123; 
+    else 
+      "abc"; 
+    ;
   take value;
 ;
 pub fn main(): Int = check true - 3;;

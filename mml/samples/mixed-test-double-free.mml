@@ -1,0 +1,38 @@
+
+fn take(~text: String): Int = text.length;;
+
+fn check(flag: Bool): Int =
+  let value = 
+    if flag then 
+      int_to_str 123; 
+    else 
+      "abc"; 
+    ;
+  take value;
+;
+pub fn main(): Int = check true - 3;;
+
+
+// ❯ mmlc -saI mml/samples/mixed-test-double-free.mml
+// AST written to build/MixedTestDoubleFree.ast
+// ❯ ./build/target/mixedtestdoublefree
+// =================================================================
+// ==4473==ERROR: AddressSanitizer: attempting double-free on 0x6020000000f0 in thread T0:
+//     #0 0x0001047f14fc in free+0x74 (libclang_rt.asan_osx_dynamic.dylib:arm64+0x554fc)
+//     #1 0x00010433c814 in main+0x24 (mixedtestdoublefree:arm64+0x100000814)
+
+// 0x6020000000f0 is located 0 bytes inside of 4-byte region [0x6020000000f0,0x6020000000f4)
+// freed by thread T0 here:
+//     #0 0x0001047f14fc in free+0x74 (libclang_rt.asan_osx_dynamic.dylib:arm64+0x554fc)
+//     #1 0x00010433c808 in main+0x18 (mixedtestdoublefree:arm64+0x100000808)
+
+// previously allocated by thread T0 here:
+//     #0 0x0001047f140c in malloc+0x70 (libclang_rt.asan_osx_dynamic.dylib:arm64+0x5540c)
+//     #1 0x00010433ca68 in int_to_str+0x50 (mixedtestdoublefree:arm64+0x100000a68)
+//     #2 0x00010433c7fc in main+0xc (mixedtestdoublefree:arm64+0x1000007fc)
+
+// SUMMARY: AddressSanitizer: double-free (mixedtestdoublefree:arm64+0x100000814) in main+0x24
+// ==4473==ABORTING
+// [1]    4473 abort      ./build/target/mixedtestdoublefree
+// ~/Workshop/mine/mml/mml dev-lambda-unify*                                                                                                    10:06:59
+// ❯

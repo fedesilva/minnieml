@@ -8,8 +8,6 @@ This is the Author's active and near-term focus. The backlog lives in [tasks/](t
 - Record QA findings in [QA misses](tasks/qa-misses.md). Select individual items or related
   groups for cleanup; create dedicated tasks when they need their own plans.
 
-
-
 ## Active Tasks
 
 ### Lambda migration
@@ -19,7 +17,7 @@ This is the Author's active and near-term focus. The backlog lives in [tasks/](t
 - **Current focus:** The next bounded slice in the
   [Execution checklist](tasks/unify-lambdas.md#execution-checklist) awaits selection and approval.
 
-### Conditional ownership hardening
+### BUG: Conditional ownership hardening
 
 - **Tracker:** [Make conditional ownership explicit in ownership operations](tasks/conditional-ownership-witnesses.md)
 - **Status:** planned
