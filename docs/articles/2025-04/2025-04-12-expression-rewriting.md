@@ -58,6 +58,9 @@ Consider this expression with mixed unary and binary operators:
 let a = +4! - 2!;
 ```
 
+Prefix `+` has precedence 95 and postfix `!` has precedence 94, so this groups as
+`(+4)! - (2!)`.
+
 ### Original flat AST
 
 ```
@@ -106,15 +109,15 @@ precedence and associativity.
 Bnd a
     Expr
       Expr
-        Ref +
-          resolvedAs: UnaryOpDef +
-          candidates: [BinOpDef +, UnaryOpDef +]
         Expr
+          Ref +
+            resolvedAs: UnaryOpDef +
+            candidates: [BinOpDef +, UnaryOpDef +]
           Expr
             LiteralInt 4
-          Ref !
-            resolvedAs: UnaryOpDef !
-            candidates: [UnaryOpDef !]
+        Ref !
+          resolvedAs: UnaryOpDef !
+          candidates: [UnaryOpDef !]
       Ref -
         resolvedAs: BinOpDef -
         candidates: [BinOpDef -, UnaryOpDef -]
@@ -351,7 +354,8 @@ with the prelude - a sane operator set, working as they expect.
 1. **Precedence levels**:
 
    - Function application: 100 (highest)
-   - Unary operators: 95
+   - Prefix unary operators: 95
+   - Postfix factorial: 94
    - Exponentiation: 90
    - Multiplication/Division: 80
    - Addition/Subtraction: 60
@@ -389,7 +393,7 @@ op or (a b) 30 left  = ???; # Logical OR
 ```mml
 op - (a) 95 right = ???;  # Unary minus
 op + (a) 95 right = ???;  # Unary plus
-op ! (a) 95 left  = ???;  # Factorial (postfix)
+op ! (a) 94 left  = ???;  # Factorial (postfix)
 op not (a) 95 right = ???; # Logical NOT (prefix)
 ```
 
