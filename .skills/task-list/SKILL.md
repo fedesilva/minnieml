@@ -14,6 +14,15 @@ status before loading details. Include completed-but-unarchived tasks only when 
 Do not treat memory membership as the full backlog. Do not modify tracking state while
 listing.
 
+## App session name
+
+Once the Author confirms which task or subtask to work on, including in a later follow-up,
+rename the current app session using `set_thread_title` when available. Use the selected
+task or subtask title, including its identifier if present, and omit the thread ID to target
+the current session. Selection confirmation authorizes this rename without another prompt.
+Update the session name if the Author changes the selection. Listing tasks alone does
+not trigger a rename.
+
 ## Trigger Keywords
 
 - `task list`

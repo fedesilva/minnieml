@@ -29,6 +29,15 @@ chosen work and why it is next, so the Author can verify the selection and regai
 An entry name alone is insufficient. If broader backlog selection is requested and the task
 has no memory entry, state that explicitly instead of inventing a memory path.
 
+## App session name
+
+Once the Author confirms which task or subtask to work on, including in a later follow-up,
+rename the current app session using `set_thread_title` when available. Use the selected
+task or subtask title, including its identifier if present, and omit the thread ID to target
+the current session. Selection confirmation authorizes this rename without another prompt.
+Update the session name if the Author changes the selection. A recommendation alone does
+not trigger a rename.
+
 ## Trigger Keywords
 
 - `task pick`
