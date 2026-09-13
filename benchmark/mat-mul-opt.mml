@@ -18,6 +18,13 @@ fn fill_matrix(arr: IntArray, n: Int, seed: Int): Unit =
   fill_matrix_loop arr 0 size seed;
 ;
 
+fn zero_matrix_loop(arr: IntArray, i: Int, size: Int): Unit =
+  if i < size then
+    unsafe_ar_int_set arr i 0;
+    zero_matrix_loop arr (i + 1) size;
+  ;
+;
+
 // --- Matrix Multiplication (Interchanged) ---
 
 // Inner loop: j from 0 to n
@@ -68,6 +75,7 @@ fn mat_mul_i(a: IntArray, b: IntArray, c: IntArray, i: Int, n: Int): Unit =
 ;
 
 fn mat_mul(a: IntArray, b: IntArray, c: IntArray, n: Int): Unit =
+  zero_matrix_loop c 0 (n * n);
   mat_mul_i a b c 0 n;
 ;
 
@@ -91,8 +99,6 @@ fn trace(arr: IntArray, n: Int): Int =
 
 pub fn main(): Unit =
   let n = 500;
-  // Note: 'ar_int_new' is assumed to return zeroed memory. 
-  // If not, C must be manually zeroed before use in this algorithm.
   let a = ar_int_new (n * n);
   let b = ar_int_new (n * n);
   let c = ar_int_new (n * n);
