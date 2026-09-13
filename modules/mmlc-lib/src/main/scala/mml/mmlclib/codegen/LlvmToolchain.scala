@@ -429,16 +429,20 @@ object LlvmToolchain:
     targetCpu:   Option[String]
   ): IO[Either[LlvmCompilationError, Int]] =
     val outputFile = outputDir.resolve(s"${programName}_opt.bc").toAbsolutePath.toString
-    val cpuFlag    = targetCpu.map(cpu => s" --mcpu=$cpu").getOrElse("")
+    val cpuFlags   = targetCpu.toList.map(cpu => s"--mcpu=$cpu")
     val internalize =
       if config.mode == CompilationMode.Exe then ",internalize,globaldce" else ""
     val internalizeFlags =
-      if config.mode == CompilationMode.Exe then " --internalize-public-api-list=main" else ""
+      if config.mode == CompilationMode.Exe then List("--internalize-public-api-list=main")
+      else Nil
+    val command =
+      List("opt", s"--passes=default<O${config.optLevel}>$internalize") ++
+        cpuFlags ++ internalizeFlags ++ config.llvmOptArgs ++ List(inputFile, "-o", outputFile)
     logPhase(s"Optimizing Bitcode", config.printPhases)
     logDebug(s"Input file: $inputFile", config.verbose)
     logDebug(s"Output file: $outputFile", config.verbose)
     executeCommand(
-      s"opt --passes='default<O${config.optLevel}>$internalize'$cpuFlag$internalizeFlags $inputFile -o $outputFile",
+      command,
       "Failed to optimize bitcode",
       config.outputDir,
       config.verbose
@@ -881,6 +885,23 @@ object LlvmToolchain:
     workingDir: Path,
     verbose:    Boolean
   ): IO[Either[LlvmCompilationError, Int]] =
+    executeProcess(dir => Process(cmd, dir), cmd, errorMsg, workingDir, verbose)
+
+  private def executeCommand(
+    args:       Seq[String],
+    errorMsg:   String,
+    workingDir: Path,
+    verbose:    Boolean
+  ): IO[Either[LlvmCompilationError, Int]] =
+    executeProcess(dir => Process(args, dir), args.mkString(" "), errorMsg, workingDir, verbose)
+
+  private def executeProcess(
+    process:    java.io.File => scala.sys.process.ProcessBuilder,
+    cmd:        String,
+    errorMsg:   String,
+    workingDir: Path,
+    verbose:    Boolean
+  ): IO[Either[LlvmCompilationError, Int]] =
     IO.defer {
       val setupDir = IO.blocking {
         val absPath        = workingDir.toAbsolutePath
@@ -896,7 +917,7 @@ object LlvmToolchain:
       setupDir.flatMap { workingDirFile =>
         IO.blocking {
           try
-            val exitCode = Process(cmd, workingDirFile).!
+            val exitCode = process(workingDirFile).!
             if exitCode != 0 then
               val error = LlvmCompilationError.CommandExecutionError(cmd, errorMsg, exitCode)
               logError(s"Command failed with exit code $exitCode: $error")
