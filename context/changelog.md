@@ -4,6 +4,11 @@ Durable product changes belong here. Current task state belongs in task files.
 
 ## 2026-09-13
 
+- Attach matching field TBAA tags to closure capture loads and stores. Describe known
+  capture-environment storage with LLVM alignment and dereferenceable attributes for
+  regular and tail-recursive entries, while keeping null and unknown-layout environments
+  free of storage promises.
+
 - Add a Go matrix benchmark using i-k-j order and row slices to eliminate inner-loop
   bounds checks. Include it alongside the existing variants in timing and memory runs,
   and correct the original BCE variant's comment. Keep the restricted C variant in
