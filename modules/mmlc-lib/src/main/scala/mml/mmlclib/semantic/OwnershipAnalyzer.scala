@@ -177,9 +177,11 @@ object OwnershipAnalyzer:
     scope.copy(bindingOwner = nested, bindingIds = ids)
 
   private def unitTypeRef(source: SourceOrigin): TypeRef =
+    // TODO: QA: Use a canonical type reference for Unit instead of creating a new TypeRef each time.
     TypeRef(source, "Unit", Some(UnitTypeId), Nil)
 
   private def boolTypeRef(source: SourceOrigin): TypeRef =
+    // TODO: QA: Use a canonical type reference for Unit instead of creating a new TypeRef each time.
     TypeRef(source, "Bool", Some(BoolTypeId), Nil)
 
   /** Infer which functions return owned heap values (even if not annotated with MemEffect.Alloc).
