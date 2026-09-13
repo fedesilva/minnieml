@@ -10,6 +10,8 @@ Durable product changes belong here. Current task state belongs in task files.
 - Select optimization with mutually exclusive `-O0`, `-O1`, `-O2`, and `-O3` flags.
   Forward repeatable `--llvm-opt-arg` values to LLVM `opt`, preserving argument boundaries.
 
+- Keep passing tests and local compiler publication quiet while retaining failure diagnostics.
+
 - Document operator definitions as lambda bindings and operator uses as application chains,
   including stable reference IDs and candidate selection. Set postfix factorial below prefix
   signs in the expression-rewriting examples and the tail-recursive factorial sample.

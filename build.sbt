@@ -11,6 +11,9 @@ lazy val commonSettings =
     // because for tests, yolo.
     Test / scalacOptions --= Seq("-Ywarn-unused:imports", "-Xfatal-warnings"),
     Test / scalacOptions --= Seq("-Ywarn-dead-code", "-Ywarn-unused:locals", "-Xfatal-warnings"),
+    Test / testOptions += Tests.Argument(
+      new TestFramework("munit.Framework"), "--log=error", "--summary=0"
+    ),
     // Global / onChangedBuildSource := ReloadOnSourceChanges,
     resolvers ++= Dependencies.resolvers,
     semanticdbEnabled := true,
@@ -165,6 +168,7 @@ lazy val mmlc =
       libraryDependencies ++= Dependencies.mmlc,
 
       assembly / assemblyJarName := s"mmlc.jar",
+      assembly / logLevel := Level.Warn,
 
       assembly / test := (Test / test).value,
 
@@ -202,12 +206,9 @@ lazy val mmlc =
         val scriptTarget = binDir / "mmlc"
         val jarTarget    = binDir / jarPath.getName
 
-        println(s"Installing assembled jar to ${binDir.getAbsolutePath}")
-
         // Create bin directory if it doesn't exist
         if (!binDir.exists()) {
           IO.createDirectory(binDir)
-          println(s"Created directory: ${binDir.getAbsolutePath}")
         }
 
         // Copy the jar
@@ -219,7 +220,7 @@ lazy val mmlc =
         // Ensure the script is executable
         IO.chmod("rwxr-xr-x", scriptTarget)
 
-        println(s"Successfully installed mmlc.jar and script to ${binDir.getAbsolutePath}")
+        streams.value.log.info(s"Installed mmlc.jar and script to ${binDir.getAbsolutePath}")
         scriptTarget
       }
 
