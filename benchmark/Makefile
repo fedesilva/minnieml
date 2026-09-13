@@ -220,8 +220,8 @@ $(BINDIR)/matmul-opt-go: matmul-opt.go | $(BINDIR)
 $(BINDIR)/matmul-mml: mat-mul.mml | $(BINDIR)
 	mmlc -I -b $(BUILDDIR) -O$(MML_OPT) -o $@ $<
 
-$(BINDIR)/matmul-opt-mml: mat-mul-opt.mml | $(BINDIR)
-	mmlc -I -b $(BUILDDIR) -O$(MML_OPT) -o $@ $<
+$(BINDIR)/matmul-opt-mml: mat-mul-opt.mml Makefile | $(BINDIR)
+	mmlc -I -b $(BUILDDIR) -O$(MML_OPT) --llvm-opt-arg=-force-vector-interleave=4 -o $@ $<
 
 $(BINDIR)/matmul-mml-O0-tco: mat-mul.mml | $(BINDIR)
 	mmlc -I -b $(BUILDDIR) -O0 -o $@ $<
