@@ -1,0 +1,19 @@
+// Counterexample to returned-lambda-pap.mml: the outer lambda borrows its PAP.
+// Run with: mmlc run mml/samples/returned-lambda-pap-borrow-fail.mml
+// Returning a borrowing closure must fail: its environment cannot escape.
+
+fn take_length(~text: String, extra: Int): Int = text.length + extra;;
+
+fn make_counter(~text: String): Int -> Int =
+  // The PAP owns text, but the outer lambda only borrows the PAP.
+  let consuming = take_length text;
+
+  // Without ~, returning this lambda lets a borrowed capture escape.
+  { extra: Int -> consuming extra; };
+;
+
+pub fn main(): Unit =
+  let counter = make_counter (int_to_str 123);
+  let result = counter 1;
+  println (int_to_str result);
+;

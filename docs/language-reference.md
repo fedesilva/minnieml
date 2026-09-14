@@ -1005,6 +1005,13 @@ Borrow-capturing closures stay local to the scope that created them.
 Move-capturing closures may escape and transfer ownership like other owned
 values.
 
+A move closure can consume an owned capture directly or move it into a local binding.
+Doing so makes the outer closure call-once; later invocations are use-after-move errors.
+Passing such a closure to another function requires a consuming parameter. A move closure
+that only borrows its captures remains reusable.
+Returning an owned PAP capture consumes the outer closure and preserves the returned
+PAP's call-once contract.
+
 See the [memory model](memory-model.md) for the precise ownership, escape, and
 destruction rules.
 

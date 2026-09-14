@@ -429,6 +429,9 @@ Each phase takes a `CompilerState`, returns an updated `CompilerState`, and reco
     preserve their consuming flags. Callable origins retain the applied argument count before
     elaboration so staged PAPs inherit the source's remaining ownership contract. Supplied
     callable arguments propagate at every application stage, including before saturation.
+    `CaptureTransfers` identifies ownership sinks in source move-lambda bodies, including
+    consuming calls, local moves, returns, and nested move captures. Capture stabilization
+    propagates their call-once contract through enclosing lambdas and callable value flow.
 12. **ClosureMemoryFnGenerator**
 13. **StructDestructorBodyGenerator**
 14. **OwnershipAnalyzer**
@@ -869,6 +872,9 @@ Missing destruction targets accumulate compiler errors.
    - Returning a borrow-capturing closure is rejected; escaping closures must be explicit move
      closures (`~{ ... }` / `fn ~name(...)`).
    - Borrowed values passed to consuming params get a dedicated diagnostic.
+   - A move lambda that transfers an owned capture consumes its environment on invocation.
+     Its entry disarms the environment destructor, and the invocation owns and cleans up all
+     non-borrowed captures. An uncalled lambda retains its full environment destructor.
 
 Field projections retain the root binding ID and field IDs. Callable value flow follows struct
 constructor arguments, aliases, and returned aggregates to preserve invocation contracts. A

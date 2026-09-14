@@ -1,5 +1,6 @@
 package mml.mmlclib.semantic
 
+
 import cats.data.{EitherT, NonEmptyList as NEL}
 import cats.syntax.all.*
 import mml.mmlclib.ast.*

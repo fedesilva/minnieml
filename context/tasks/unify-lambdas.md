@@ -21,11 +21,13 @@ remain subject to bounded plan approval. Only the active step exposes its curren
 6. [x] **complete** — [Owned PAPs in struct fields](#bug-store-an-owned-pap-in-a-struct-field) (`2b55e82`).
 7. [x] **complete** — [Nested consuming-PAP calls and review repairs](#bug-nested-consuming-pap-calls) (`234b6e1`, `dc29582`).
 8. [x] **complete** — [Binding identity and local construction](#establish-binding-identity-and-local-construction-invariants); signed off.
-9. [ ] **planned** — [Counter and argument-expression preservation](#preserve-counters-and-argument-expressions-across-ownership-analysis).
-10. [ ] **planned** — [Mixed-ownership transfer repair and conditional-ownership hardening](#bug-preserve-mixed-ownership-through-consuming-transfers).
-11. [ ] **planned** — [Remaining lambda semantics and lowering](#remaining-lambda-implementation).
-12. [ ] **planned** — [Integrate the PAP tutorial into the language reference](#later-stage-documentation).
-13. [ ] **planned** — General branch audit (deferred) and final task signoff.
+9. [x] **complete** — [BUG: consume an owned PAP captured by a move lambda](#bug-consume-an-owned-pap-captured-by-a-move-lambda); signed off.
+10. [ ] **planned** — **Urgent, immediate next:** [BUG: continue elaboration after independent errors](#bug-continue-elaboration-after-independent-errors).
+11. [ ] **planned** — [Counter and argument-expression preservation](#preserve-counters-and-argument-expressions-across-ownership-analysis).
+12. [ ] **planned** — [Mixed-ownership transfer repair and conditional-ownership hardening](#bug-preserve-mixed-ownership-through-consuming-transfers).
+13. [ ] **planned** — [Remaining lambda semantics and lowering](#remaining-lambda-implementation).
+14. [ ] **planned** — [Integrate the PAP tutorial into the language reference](#later-stage-documentation).
+15. [ ] **planned** — General branch audit (deferred) and final task signoff.
 
 Linux sanitizer validation is deferred to the separate
 [Linux verification task](linux-sanitizer-verification.md).
@@ -199,7 +201,9 @@ Rules to preserve:
 21. Capturing a borrowed heap binding into a move lambda remains an error.
 22. Capturing a literal/static heap value into a move lambda uses the appropriate clone function and
     records a literal capture.
-23. Heap captures inside the lambda body are treated as borrowed from the environment.
+23. Borrow-lambda captures remain borrowed. Move lambdas can borrow their owned captures
+    repeatedly or transfer them during a call-once invocation, with ownership and cleanup
+    propagated to the outer callable.
 24. Capturing function values must continue to honor the same ownership and escape restrictions as
     other owned values when a real environment is owned.
 25. Non-capturing/null-environment function values must be handled explicitly so unification does
@@ -656,6 +660,94 @@ Evidence collected on 2026-09-11, macOS arm64:
   the exact reproducer was not run against a rebuilt older compiler. The bug remains open.
   The passing 41-fixture harness does not include this reproducer.
 
+#### Bug: consume an owned PAP captured by a move lambda
+
+- **Status:** complete; signed off.
+- **Approved scope:** infer consumption through direct calls and local moves of owned captures,
+  preserve reusable borrowing, propagate the outer callable contract, and verify destruction,
+  rejection cases, samples, and documentation under the compiler gates.
+- **Regression:** rejecting invocation of an owned PAP capture with
+  `Calling this function consumes its environment and requires ownership`. Treating every
+  capture as borrowed inside a move-lambda body also prevents moving the capture into a local.
+- **Sample:** [returned-lambda-pap.mml](../../mml/samples/returned-lambda-pap.mml), with the
+  second-call rejection probe commented out, prints four
+  `4`s: an ordinary function returns an owning PAP; move lambdas call a captured PAP directly
+  and through a local move; a returned move lambda returns its PAP capture to the caller.
+- **Implementation:** `CaptureTransfers` discovers capture ownership sinks by resolved ID.
+  PAP elaboration stabilizes the call-once contract through source move lambdas and callable
+  flow. Call-once invocations own all non-borrowed captures and clean up those they retain
+  after disarming the environment destructor. Result ownership also follows immediately
+  applied scopes, preserving owning PAPs returned by scoped factory expressions.
+- **Expected behavior:** a move lambda can transfer its owned PAP capture into a local and
+  consume it. Direct invocation must obey the same ownership rules. Consuming the capture
+  makes the enclosing lambda call-once; merely owning and borrowing captures remains reusable.
+- **Fix scope:** carry capture transfers through ownership analysis, callable consumption
+  contracts, aliases, and environment destruction. Reconcile ownership constraint 23 above
+  and the memory model's blanket borrowed-capture wording with consumption of owned move
+  captures. Preserve borrowing semantics for borrow lambdas and reusable move lambdas.
+- **Acceptance:** both direct and locally rebound calls compile and produce `4` after the
+  factory returns. Returning the owned PAP also works and preserves its call-once contract
+  through aliases and higher-order calls. Cover both an ordinary function returning its
+  owning PAP and a returned move lambda returning its PAP capture, including a scoped
+  factory expression. Reject reuse of the moved capture, its aliases, and the consumed
+  outer lambda, including through higher-order calls. Destroy the String and both environments
+  exactly once on invocation or when dropped uncalled, including conditional consumption;
+  do not clone function environments. Add semantic and native sanitizer regressions.
+  The [borrowing counterexample](../../mml/samples/returned-lambda-pap-borrow-fail.mml)
+  must retain its `Cannot return borrow-capturing closure` rejection.
+- **Verification (2026-09-14, macOS arm64):** formatting and lint pass; full suite
+  **690 passed / 51 existing ignores** (681 library, 9 CLI). All seven required compiler
+  smokes pass, and the compiler is published locally. All seven MML benchmarks build.
+  The memory harness passes **42/42 ASan+LSan**, including 1,000 iterations of the new capture
+  and return cases. The sample prints four `4`s under ASan; the borrowing sample retains
+  its escape and invocation ownership errors. The 28 focused semantic regressions cover
+  both return forms, call-once propagation, aliases, shadowing, reuse, and borrowing.
+  Logs: `/tmp/mml-move-capture-review-fix-gates.log`, `/tmp/mml-move-capture-return-forms.log`,
+  `/tmp/mml-move-capture-review-fix-memory.log`, `/tmp/mml-move-capture-review-fix-benchmarks.log`.
+  Independent review identified and verified incorrect consumption of noncapturing function
+  aliases. Transfer inference excludes those non-owning values; repeated-invocation and
+  owning-scalar-PAP regressions pass. Fresh narrow re-review finds no actionable issues;
+  it also independently runs the expanded native fixture at `-O0` with ASan and verifies
+  both static-wrapper calls and later cleanup in IR. Final native gates pass.
+  QA compliance and focused tracking checks pass.
+  Linux sanitizer validation remains separate.
+
+#### Bug: continue elaboration after independent errors
+
+- **Status:** planned.
+- **Priority:** urgent; immediate next implementation work. Module-wide abandonment of
+  elaboration violates the compiler's error-accumulating architecture.
+- **Reproducer:** in [returned-lambda-pap.mml](../../mml/samples/returned-lambda-pap.mml),
+  uncomment the second `plain_pap 1;` statement. This produces five errors: the legitimate
+  `statement` expected `Unit`, got `Int` mismatch, three false borrowed-capture errors
+  for `consuming`, and one false borrowed-return error. The expected call-once reuse
+  diagnostic is absent. The probe is commented out in the runnable sample.
+- **Controls (2026-09-14):** replacing that statement with `1;` produces the same four
+  false ownership errors alongside the type mismatch. Replacing it with
+  `let second = plain_pap 1;` produces only the correct use-after-move error.
+  Logs: `/tmp/mml-returned-pap-reuse-errors.log`, `/tmp/mml-pap-unrelated-type-error.log`,
+  `/tmp/mml-pap-reuse-bound.log`.
+- **Cause:** `PartialApplicationElaborator.stabilizeCaptures` returns the entire state
+  unchanged when `state.hasErrors`. An unrelated type error therefore prevents valid
+  PAPs and move lambdas from acquiring their capture and callable contracts.
+  `SemanticStage` still runs `OwnershipAnalyzer`, which diagnoses the unelaborated tree.
+  The demonstrated cascade concerns PAP/capture ownership; the module-wide recovery
+  defect is broader than ownership-specific input errors.
+- **Fix scope:** establish recovery boundaries so elaboration continues through valid
+  independent members and expressions while preserving accumulated diagnostics. Represent
+  failed or incomplete regions explicitly enough that downstream phases can recognize
+  missing prerequisites and avoid inventing secondary errors. Preserve capture ownership,
+  return ownership, and call-once contracts in successfully elaborated regions.
+  Globally skipping subsequent phases would discard independent diagnostics; blindly
+  removing the elaboration guard would leave invalid input handling unresolved.
+- **Acceptance:** add regressions for an unrelated error in another member and within a
+  statement chain, including the three variants above. Valid PAP regions must still be
+  elaborated; independent genuine errors must accumulate; unavailable prerequisites must
+  not cause false capture/return diagnostics. Verify CLI and LSP diagnostic paths. The
+  bare `Int` statement remains a real `Unit` mismatch, and the locally bound second call
+  remains a real use-after-move error. Investigate broader application-chain/typechecker
+  symptoms separately unless a reproducer establishes the same recovery cause.
+
 ### Remaining lambda implementation
 
 - **Status:** planned.
@@ -714,11 +806,17 @@ are in `context/history/` for Author review. No compiler slice is authorized by 
 - **Implementation:** [Binding identity and local construction](#establish-binding-identity-and-local-construction-invariants)
   is complete and signed off. Stage 1 is committed at `dbd65d9`; stage 2 includes the shared
   construction helpers, caller migrations, regressions, and completion records.
-- **Next action:** select and approve the next bounded implementation plan.
+- **Current focus:** [Elaboration error recovery](#bug-continue-elaboration-after-independent-errors)
+  is urgent and immediate next. Uncommenting the sample's second-call probe demonstrates
+  four false ownership diagnostics caused by an independent statement type error.
+- **Next action:** prepare the bounded recovery implementation plan.
 - **Evidence:** [Binding construction verification](#binding-construction-evidence).
 - **Open limits:** the mixed-ownership reproducer remains unresolved; the general branch
   audit and separate Linux sanitizer validation are deferred. The broader counter/expression
   follow-up remains planned and must account for the shared identity allocator.
+  [Consuming an owned PAP captured by a move lambda](#bug-consume-an-owned-pap-captured-by-a-move-lambda)
+  has passing semantic, smoke, benchmark-build, native sanitizer, and independent review
+  gates and is complete and signed off.
 
 ## Checkpoint Evidence
 
