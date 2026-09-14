@@ -394,8 +394,9 @@ Move closures allocate their environment on the heap, and the closure value owns
 - Capturing a **borrowed** heap binding is rejected.
 - Heap literals are cloned into the environment when an owned capture is needed; see
   [Clone operations](#clone-operations).
-- Inside the lambda body, captured heap fields are treated as borrowed from the
-  environment.
+- A move lambda can borrow its owned captures repeatedly, or transfer them through
+  consuming calls, local moves, returns, and nested move captures. Transferring a capture
+  makes invocation consume the outer lambda too.
 
 ```mml
 fn makeGreeter(~name: String): Unit -> Unit =
@@ -414,6 +415,22 @@ to consuming parameters or returned to move ownership to the caller.
 Owning captures does not make the closure call-once. Its body can borrow those captures
 repeatedly while the environment retains ownership. Transferring a captured value out gives
 up that ownership, so the same value cannot be transferred again.
+
+A move lambda that invokes a consuming PAP capture is call-once. A local binding of the
+capture is optional: calling it directly and moving it into a local before calling both
+transfer ownership. The invocation takes responsibility for the owned captures, destroys
+those it retains, and leaves only the raw outer environment for caller cleanup. Dropping
+the lambda uncalled destroys its captures through the environment destructor.
+A move lambda can also return its owned PAP instead of invoking it. Returning consumes
+the outer lambda, and the returned PAP retains its own call-once contract through local
+bindings and higher-order calls.
+An ordinary function can likewise receive or allocate an owned argument, move it into a
+PAP, and return that PAP. The caller owns the returned environment and may invoke a PAP
+that transfers its stored payload only once.
+See [returned-lambda-pap.mml](../mml/samples/returned-lambda-pap.mml) for both call forms,
+returning the PAP, and
+[returned-lambda-pap-borrow-fail.mml](../mml/samples/returned-lambda-pap-borrow-fail.mml)
+for the rejected borrowing version.
 
 ```mml
 fn makeAdder(a: Int): Int -> Int =

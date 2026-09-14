@@ -343,8 +343,9 @@ object OwnershipAnalyzer:
 
   /** Result ownership follows the callable value, including qualified fields and aliases. */
   private def appAllocates(app: App, scope: OwnershipScope): Option[Type] =
-    getBaseFn(app.fn).toList
-      .flatMap(scope.callableValues.lambdas)
+    val (callee, _) = CallableValues.application(app)
+    scope.callableValues
+      .lambdas(callee)
       .flatMap(lambda => scope.returningOwned.get(CallableIdentity(lambda)).flatten)
       .find(isOwnedType(_, scope.resolvables))
 
@@ -1714,6 +1715,8 @@ object OwnershipAnalyzer:
       else if p.consuming then s
       else s.withBorrowed(p.name)
 
+    val invocationCaptures = CaptureTransfers.ownedByInvocation(lambda)
+
     // Capturing a field alias borrows its aggregate; the lambda cannot consume that owner.
     val captureScope = lambda.captures.foldLeft(paramScope): (s, cap) =>
       val ref = cap.ref
@@ -1725,9 +1728,8 @@ object OwnershipAnalyzer:
           name -> binding
         })
       }
-      val isTransferred =
-        ref.resolvedId.exists(id => lambda.meta.exists(_.transferredCaptures.contains(id)))
-      if isTransferred then borrowedOwner.withOwned(ref.name, ref.typeSpec, ref.resolvedId)
+      val ownsCapture = ref.resolvedId.exists(invocationCaptures.contains)
+      if ownsCapture then borrowedOwner.withOwned(ref.name, ref.typeSpec, ref.resolvedId)
       else if ref.typeSpec.exists(isOwnedType(_, s.resolvables)) then
         borrowedOwner.withBorrowed(ref.name)
       else borrowedOwner
@@ -1742,9 +1744,7 @@ object OwnershipAnalyzer:
     val escaping = returnedOwnedNames(promotedBody, bodyResult.scope)
     val consumedCaptureParams = lambda.captures
       .map(_.ref)
-      .filter(ref =>
-        ref.resolvedId.exists(id => lambda.meta.exists(_.transferredCaptures.contains(id)))
-      )
+      .filter(ref => ref.resolvedId.exists(invocationCaptures.contains))
       .map(ref =>
         FnParam(
           ref.source,
@@ -1777,16 +1777,16 @@ object OwnershipAnalyzer:
     val borrowedCaptureIds = lambda.captures.flatMap: capture =>
       capture.ref.resolvedId.filter: id =>
         capture.ref.typeSpec.exists(isOwnedType(_, scope.resolvables)) &&
-          !lambda.meta.exists(_.transferredCaptures.contains(id))
+          !invocationCaptures.contains(id)
 
-    // Parameters borrow unless consuming; captured heap values borrow from their environment.
+    // Call-once entries own their captures; other captures and non-consuming parameters borrow.
     def isBorrowedReturn(ref: Ref): Boolean =
       ref.resolvedId.exists: id =>
-        borrowedCaptureIds.contains(id) || scope.resolvables
+        !invocationCaptures.contains(id) && (borrowedCaptureIds.contains(id) || scope.resolvables
           .lookup(id)
           .exists:
             case param: FnParam => !param.consuming
-            case _ => false
+            case _ => false)
 
     val returnTypeIsOwned = returnType.exists(t => isOwnedType(t, scope.resolvables))
     val borrowEscapeErrors =
@@ -1842,7 +1842,8 @@ object OwnershipAnalyzer:
                   errs :+ SemanticError.CapturedMovedHeapBinding(ref, movedAt, PhaseName),
                   caps :+ cap
                 )
-              case Some(OwnershipState.Literal | OwnershipState.Global) if isTransferred =>
+              case Some(OwnershipState.Literal | OwnershipState.Global)
+                  if isTransferred && lambda.meta.exists(_.isPartialApplication) =>
                 (s, errs :+ SemanticError.CapturedBorrowedHeapBinding(ref, PhaseName), caps :+ cap)
               case Some(OwnershipState.Literal) =>
                 val cloneId = for

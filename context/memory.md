@@ -14,8 +14,9 @@ This is the Author's active and near-term focus. The backlog lives in [tasks/](t
 
 - **Tracker:** [Unify lambdas](tasks/unify-lambdas.md)
 - **Status:** in_progress
-- **Current focus:** The next bounded slice in the
-  [Execution checklist](tasks/unify-lambdas.md#execution-checklist) awaits selection and approval.
+- **Current focus:** Urgent, immediate next:
+  [elaboration error recovery](tasks/unify-lambdas.md#bug-continue-elaboration-after-independent-errors).
+  Continue valid regions after independent errors and prevent false downstream diagnostics.
 
 ### BUG: Conditional ownership hardening
 

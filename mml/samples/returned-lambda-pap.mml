@@ -1,0 +1,57 @@
+// Owning PAPs returned directly, called inside move lambdas, or returned by move lambdas.
+// Run with: mmlc run mml/samples/returned-lambda-pap.mml
+// Expected output: 4, 4, 4, 4.
+
+type Counter = Int -> Int;
+
+fn take_length(~text: String, extra: Int): Int = text.length + extra;;
+
+fn make_pap(~text: String): Counter =
+  // Reserve text for take_length, then move the owning PAP to the caller.
+  take_length text;
+;
+
+fn make_counter(~text: String): Int -> Int =
+  // take_length consumes text, so supplying it moves the String into the PAP.
+  let consuming = take_length text;
+
+  // Move the PAP into the returned lambda's environment.
+  // Calling consuming transfers its stored String to take_length.
+  // Consuming the captured PAP makes this outer lambda call-once too.
+  ~{ extra: Int -> consuming extra; };
+;
+
+fn make_counter_local(~text: String): Int -> Int =
+  let consuming = take_length text;
+  ~{ extra: Int ->
+    // A local binding moves the owned capture; direct invocation needs no binding.
+    let inner_consume = consuming;
+    inner_consume extra;
+  };
+;
+
+fn make_pap_returner(~text: String): Unit -> Counter =
+  let consuming = take_length text;
+  // Calling this lambda moves the PAP out; the returned PAP is still call-once.
+  ~{ consuming; };
+;
+
+pub fn main(): Unit =
+  let plain_pap = make_pap (int_to_str 123);
+  println (int_to_str (plain_pap 1));  // 4
+  // plain_pap 1;  // Rejected: the first call transferred its String.
+
+  let counter = make_counter (int_to_str 123);
+  let result = counter 1;
+  println (int_to_str result);  // 4
+  // counter 1;  // Rejected: counter was consumed by its first call.
+
+  let local_counter = make_counter_local (int_to_str 123);
+  println (int_to_str (local_counter 1));  // 4
+
+  let returner = make_pap_returner (int_to_str 123);
+  let returned_pap = returner ();
+  println (int_to_str (returned_pap 1));  // 4
+  // let another = returner ();  // Rejected: returner already moved its capture out.
+  // returned_pap 1;             // Rejected: returned_pap already transferred its String.
+;

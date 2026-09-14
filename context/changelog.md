@@ -2,6 +2,14 @@
 
 Durable product changes belong here. Current task state belongs in task files.
 
+## 2026-09-14
+
+- Allow move lambdas to consume owned PAP captures directly, move them into locals, or
+  return them. Preserve call-once contracts for owning PAPs returned by ordinary functions
+  and move lambdas, and clean up captured values exactly once when invoked or dropped.
+  Keep closures that only borrow their captures and noncapturing function aliases reusable.
+  Add passing and rejected samples, semantic regressions, and native sanitizer coverage.
+
 ## 2026-09-13
 
 - Add the September Apple M5 benchmark report and full results for 58 configurations.

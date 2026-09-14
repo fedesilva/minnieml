@@ -117,7 +117,8 @@ object PartialApplicationElaborator:
         }
         .flatMap(_.resolvedId)
         .toSet
-      val meta = lambda.meta.map { meta =>
+      val bodyTransfers = CaptureTransfers.consumedByBody(lambda, values).intersect(ownedCaptureIds)
+      val meta = lambda.meta.orElse(Option.when(bodyTransfers.nonEmpty)(LambdaMeta())).map { meta =>
         val sourceBorrows =
           if lambda.isMove then Set.empty[String]
           else ownedCaptureIds -- meta.transferredCaptures
@@ -130,7 +131,7 @@ object PartialApplicationElaborator:
           .toSet
         meta.copy(
           transferredCaptures = meta.transferredCaptures.intersect(ownedCaptureIds) ++
-            transferredCallees,
+            transferredCallees ++ bodyTransfers,
           borrowedCaptures = (meta.borrowedCaptures.intersect(ownedCaptureIds) ++ sourceBorrows) --
             transferredCallees
         )
