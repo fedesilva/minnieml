@@ -11,7 +11,7 @@ fn make_pap(~text: String): Counter =
   take_length text;
 ;
 
-fn make_counter(~text: String): Int -> Int =
+fn make_counter(~text: String): Counter =
   // take_length consumes text, so supplying it moves the String into the PAP.
   let consuming = take_length text;
 
@@ -21,7 +21,7 @@ fn make_counter(~text: String): Int -> Int =
   ~{ extra: Int -> consuming extra; };
 ;
 
-fn make_counter_local(~text: String): Int -> Int =
+fn make_counter_local(~text: String): Counter =
   let consuming = take_length text;
   ~{ extra: Int ->
     // A local binding moves the owned capture; direct invocation needs no binding.
@@ -34,6 +34,19 @@ fn make_pap_returner(~text: String): Unit -> Counter =
   let consuming = take_length text;
   // Calling this lambda moves the PAP out; the returned PAP is still call-once.
   ~{ consuming; };
+;
+
+fn make_direct_pap_returner(~text: String): Counter =
+  let consuming = take_length text;
+  // Returning the PAP directly moves it out; the returned PAP is still call-once.
+  consuming;
+;
+
+fn does_not_work(text: String): Counter =
+  // let consuming = take_length text;
+  // Returning the PAP directly moves it out; the returned PAP is still call-once.
+  // consuming;
+  ???; // just so it compiles, this will crash if called.
 ;
 
 pub fn main(): Unit =

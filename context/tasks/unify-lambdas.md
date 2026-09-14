@@ -711,6 +711,23 @@ Evidence collected on 2026-09-11, macOS arm64:
   both static-wrapper calls and later cleanup in IR. Final native gates pass.
   QA compliance and focused tracking checks pass.
   Linux sanitizer validation remains separate.
+- **Coverage extension (2026-09-14, macOS arm64):**
+  [MoveCaptureConsumptionTest](../../modules/mmlc-lib/src/test/scala/mml/mmlclib/semantic/MoveCaptureConsumptionTest.scala)
+  has **64 passing cases**. Six PAP-return forms cover consuming invocation, repeated-call
+  rejection, alias/higher-order reuse rejection, and the consuming-parameter requirement:
+  ordinary direct return, ordinary local return, local allocation, captured-PAP return,
+  captured-PAP return through a local, and PAP construction inside the returned lambda.
+  Borrowed inputs and a borrowing outer lambda have explicit rejection cases; each capture
+  consumption path also checks the outer lambda's call-once contract.
+  [The memory fixture](../../tests/mem/move-capture-consuming-pap.mml) exercises local PAP
+  returns, allocation, invocation-time PAP construction, aliases, higher-order calls,
+  reusable borrowing, and scalar-PAP transfers. It drops outer lambdas uncalled and returned
+  PAPs unused, repeating the checks 1,000 times. Formatting, lint, and the full suite pass:
+  **726 tests / 51 existing ignores**; memory harness **42/42 ASan+LSan**.
+  Direct alias-call regressions test call-once preservation separately from the explicit
+  ownership transfer through a consuming higher-order parameter.
+  Independent review and narrow re-review pass; the re-review also runs all 15 alias tests.
+  Logs: `/tmp/mml-pap-coverage-final-suite.log`, `/tmp/mml-pap-coverage-memory.log`.
 
 #### Bug: continue elaboration after independent errors
 

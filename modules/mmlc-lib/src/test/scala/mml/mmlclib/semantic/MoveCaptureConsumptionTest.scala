@@ -10,6 +10,15 @@ class MoveCaptureConsumptionTest extends BaseEffFunSuite:
     fn invoke(~f: Int -> Int): Int = f 1;;
     fn borrow(f: Int -> Int): Int = f 1;;
     fn make_pap(~text: String): Counter = take text;;
+    fn make_pap_local(~text: String): Counter =
+      let p = take text;
+      p;
+    ;
+    fn make_pap_allocated(): Counter =
+      let text = int_to_str 123;
+      let p = take text;
+      p;
+    ;
     fn make(~text: String): Int -> Int =
       let p = take text;
       ~{ extra: Int -> p extra; };
@@ -18,6 +27,11 @@ class MoveCaptureConsumptionTest extends BaseEffFunSuite:
       let p = take text;
       ~{ p; };
     ;
+    fn make_returner_local(~text: String): Unit -> Counter =
+      let p = take text;
+      ~{ let local = p; local; };
+    ;
+    fn make_builder(~text: String): Unit -> Counter = ~{ take text; };;
   """
 
   List(
@@ -39,6 +53,23 @@ class MoveCaptureConsumptionTest extends BaseEffFunSuite:
           f 1;
         ;
       """)
+    }
+
+    test(s"transferring a PAP through $name makes the returned move lambda call-once") {
+      semState(s"""
+        $prelude
+        fn make_case(~text: String): Counter =
+          let p = take text;
+          ~{ extra: Int -> $body; };
+        ;
+        fn main(): Int =
+          let f = make_case (int_to_str 123);
+          let first = f 1;
+          f first;
+        ;
+      """).map { result =>
+        assert(result.errors.exists(_.isInstanceOf[SemanticError.UseAfterMove]), result.errors)
+      }
     }
   }
 
@@ -192,21 +223,6 @@ class MoveCaptureConsumptionTest extends BaseEffFunSuite:
     """)
   }
 
-  test("move lambda returns its owned PAP through a local move") {
-    semNotFailed(s"""
-      $prelude
-      fn make_local(~text: String): Unit -> Counter =
-        let p = take text;
-        ~{ let local = p; local; };
-      ;
-      fn main(): Int =
-        let f = make_local (int_to_str 123);
-        let p = f ();
-        invoke p;
-      ;
-    """)
-  }
-
   List(
     "returned PAP" -> "let p = f (); let first = p 1; p first",
     "returned PAP alias" -> "let p = f (); let alias = p; let first = alias 1; alias first",
@@ -240,7 +256,11 @@ class MoveCaptureConsumptionTest extends BaseEffFunSuite:
 
   List(
     "plain function" -> "make_pap (int_to_str 123)",
-    "returned lambda" -> "let f = make_returner (int_to_str 123); f ()"
+    "plain function through a local" -> "make_pap_local (int_to_str 123)",
+    "plain function with a local allocation" -> "make_pap_allocated ()",
+    "returned lambda" -> "let f = make_returner (int_to_str 123); f ()",
+    "returned lambda through a local" -> "let f = make_returner_local (int_to_str 123); f ()",
+    "returned lambda creating a PAP" -> "let f = make_builder (int_to_str 123); f ()"
   ).foreach { (name, factory) =>
     test(s"owning PAP returned by $name can be consumed by its caller") {
       semNotFailed(s"""
@@ -259,6 +279,102 @@ class MoveCaptureConsumptionTest extends BaseEffFunSuite:
           let p = ($factory);
           let first = p 1;
           p first;
+        ;
+      """).map { result =>
+        assert(result.errors.exists(_.isInstanceOf[SemanticError.UseAfterMove]), result.errors)
+      }
+    }
+
+    test(s"owning PAP returned by $name retains call-once through an alias") {
+      semState(s"""
+        $prelude
+        fn main(): Int =
+          let p = ($factory);
+          let alias = p;
+          let first = alias 1;
+          alias first;
+        ;
+      """).map { result =>
+        assert(result.errors.exists(_.isInstanceOf[SemanticError.UseAfterMove]), result.errors)
+      }
+    }
+
+    test(s"owning PAP returned by $name rejects alias reuse after a higher-order transfer") {
+      semState(s"""
+        $prelude
+        fn main(): Int =
+          let p = ($factory);
+          let alias = p;
+          let first = invoke alias;
+          alias first;
+        ;
+      """).map { result =>
+        assert(result.errors.exists(_.isInstanceOf[SemanticError.UseAfterMove]), result.errors)
+      }
+    }
+
+    test(s"owning PAP returned by $name cannot be passed to a borrowing parameter") {
+      semState(s"""
+        $prelude
+        fn main(): Int =
+          let p = ($factory);
+          borrow p;
+        ;
+      """).map { result =>
+        assert(
+          result.errors.exists {
+            case error: SemanticError.InvalidExpression =>
+              error.msg == "A call-once function requires a consuming parameter"
+            case _ => false
+          },
+          result.errors
+        )
+      }
+    }
+  }
+
+  List(
+    "direct return" -> "take text",
+    "local return" -> "let p = take text; p",
+    "move lambda call" -> "let p = take text; ~{ extra: Int -> p extra; }"
+  ).foreach { (name, body) =>
+    test(s"borrowed input cannot supply an owning PAP for $name") {
+      semState(s"""
+        $prelude
+        fn invalid(text: String): Counter = $body ;;
+      """).map { result =>
+        assert(
+          result.errors.exists(_.isInstanceOf[SemanticError.CapturedBorrowedHeapBinding]),
+          result.errors
+        )
+      }
+    }
+  }
+
+  test("borrow lambda cannot return its owned PAP capture") {
+    semState(s"""
+      $prelude
+      fn invalid(~text: String): Unit -> Counter =
+        let p = take text;
+        { p; };
+      ;
+    """).map { result =>
+      assert(
+        result.errors.exists(_.isInstanceOf[SemanticError.BorrowClosureEscapeViaReturn]),
+        result.errors
+      )
+    }
+  }
+
+  List("make_returner_local", "make_builder").foreach { factory =>
+    test(s"returning a PAP from $factory consumes the outer lambda") {
+      semState(s"""
+        $prelude
+        fn main(): Int =
+          let f = $factory (int_to_str 123);
+          let p = f ();
+          let q = f ();
+          p 1 + q 1;
         ;
       """).map { result =>
         assert(result.errors.exists(_.isInstanceOf[SemanticError.UseAfterMove]), result.errors)
