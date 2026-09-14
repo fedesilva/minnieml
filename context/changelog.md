@@ -4,6 +4,11 @@ Durable product changes belong here. Current task state belongs in task files.
 
 ## 2026-09-14
 
+- Expand owning-PAP coverage across direct and local returns, local allocation, and PAP
+  creation inside returned lambdas. Check call-once behavior through aliases and higher-order
+  calls, borrowed-input rejection, and cleanup of uncalled lambdas and unused returned PAPs.
+  Extend the sample with a local-return example and its borrowed-parameter counterexample.
+
 - Allow move lambdas to consume owned PAP captures directly, move them into locals, or
   return them. Preserve call-once contracts for owning PAPs returned by ordinary functions
   and move lambdas, and clean up captured values exactly once when invoked or dropped.
