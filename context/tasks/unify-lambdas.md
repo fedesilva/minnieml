@@ -22,12 +22,13 @@ remain subject to bounded plan approval. Only the active step exposes its curren
 7. [x] **complete** — [Nested consuming-PAP calls and review repairs](#bug-nested-consuming-pap-calls) (`234b6e1`, `dc29582`).
 8. [x] **complete** — [Binding identity and local construction](#establish-binding-identity-and-local-construction-invariants); signed off.
 9. [x] **complete** — [BUG: consume an owned PAP captured by a move lambda](#bug-consume-an-owned-pap-captured-by-a-move-lambda); signed off.
-10. [ ] **planned** — **Urgent, immediate next:** [BUG: continue elaboration after independent errors](#bug-continue-elaboration-after-independent-errors).
-11. [ ] **planned** — [Counter and argument-expression preservation](#preserve-counters-and-argument-expressions-across-ownership-analysis).
-12. [ ] **planned** — [Mixed-ownership transfer repair and conditional-ownership hardening](#bug-preserve-mixed-ownership-through-consuming-transfers).
-13. [ ] **planned** — [Remaining lambda semantics and lowering](#remaining-lambda-implementation).
-14. [ ] **planned** — [Integrate the PAP tutorial into the language reference](#later-stage-documentation).
-15. [ ] **planned** — General branch audit (deferred) and final task signoff.
+10. [ ] **planned** — **Urgent, highest priority, immediate next:** [BUG: preserve valid LLVM and TCO for nested capturing recursion](#bug-preserve-valid-llvm-and-tco-for-nested-capturing-recursion).
+11. [ ] **planned** — **Urgent:** [BUG: continue elaboration after independent errors](#bug-continue-elaboration-after-independent-errors).
+12. [ ] **planned** — [Counter and argument-expression preservation](#preserve-counters-and-argument-expressions-across-ownership-analysis).
+13. [ ] **planned** — [Mixed-ownership transfer repair and conditional-ownership hardening](#bug-preserve-mixed-ownership-through-consuming-transfers).
+14. [ ] **planned** — [Remaining lambda semantics and lowering](#remaining-lambda-implementation).
+15. [ ] **planned** — [Integrate the PAP tutorial into the language reference](#later-stage-documentation).
+16. [ ] **planned** — General branch audit (deferred) and final task signoff.
 
 Linux sanitizer validation is deferred to the separate
 [Linux verification task](linux-sanitizer-verification.md).
@@ -509,7 +510,7 @@ this branch.
 
 ### Near-term bug-fix steps
 
-These steps cover PAP invocation/storage bugs and ownership-analysis follow-ups. Their
+These steps cover lambda lowering, PAP invocation/storage, and ownership-analysis bugs. Their
 current statuses appear in the [Execution Checklist](#execution-checklist); each section
 retains its reproduction, scope, and acceptance criteria.
 
@@ -729,11 +730,48 @@ Evidence collected on 2026-09-11, macOS arm64:
   Independent review and narrow re-review pass; the re-review also runs all 15 alias tests.
   Logs: `/tmp/mml-pap-coverage-final-suite.log`, `/tmp/mml-pap-coverage-memory.log`.
 
+#### Bug: preserve valid LLVM and TCO for nested capturing recursion
+
+- **Status:** planned.
+- **Priority:** urgent; highest priority and immediate next, ahead of elaboration error recovery.
+- **Reproducer:** [mat-mul-nested.mml](../../benchmark/mat-mul-nested.mml) nests
+  `mat_mul_i(i)`, `mat_mul_j(j)`, and `mat_mul_k(k, acc)` inside `mat_mul`.
+  The helpers capture matrices, dimensions, and enclosing loop indices.
+  Build with TCO enabled:
+
+  ```sh
+  sbtn "run -I -b benchmark/build -O1 -o benchmark/bin/matmul-nested-mml benchmark/mat-mul-nested.mml"
+  ```
+
+- **Observed failure (2026-09-15, Darwin arm64):** both the installed compiler and the
+  source build emit invalid numeric SSA ordering in `mat_mul_i`. Its entry block begins
+  with `%11 = alloca %struct.__closure_env_1`, followed by
+  `%2 = getelementptr %struct.__closure_env_0, ptr %1, i32 0, i32 0`.
+  `llvm-as` rejects the latter with `instruction expected to be numbered '%12' or greater`.
+  Moving the nested declarations outside the `if` branches still fails.
+- **Diagnostic control:** `--no-tco -O1` compiles and runs with trace checksum `381460`,
+  matching the original matrix benchmark. Disabling TCO is not an acceptable fix or
+  benchmark configuration. The source remains a bug reproducer, excluded from benchmark
+  build and timing targets until the TCO-enabled build succeeds.
+- **Suspected cause:** closure-environment allocation hoisting in tail-recursive codegen
+  places a later-numbered instruction before capture loads. The emitted IR establishes
+  the ordering defect; the responsible compiler path still needs investigation.
+- **Investigation and fix:** reduce the reproducer with TCO enabled, trace closure allocation
+  and tail-recursive emission, and fix the responsible boundary while preserving capture
+  values and environment lifetimes. Check recursive binding resolution and loopification
+  for every nested helper, not just the first LLVM rejection.
+- **Acceptance:** add a regression that fails on the current compiler and assembles/verifies
+  generated LLVM. Verify eligible nested tail recursion becomes loops with TCO enabled;
+  successful execution alone does not establish this. Build and run the nested benchmark
+  with normal flags, match checksum `381460`, validate closure lifetimes with sanitizers,
+  and compare performance with the original. Complete required compiler checks and
+  independent review before handoff.
+
 #### Bug: continue elaboration after independent errors
 
 - **Status:** planned.
-- **Priority:** urgent; immediate next implementation work. Module-wide abandonment of
-  elaboration violates the compiler's error-accumulating architecture.
+- **Priority:** urgent; follows the nested capturing-recursion TCO repair. Module-wide
+  abandonment of elaboration violates the compiler's error-accumulating architecture.
 - **Reproducer:** in [returned-lambda-pap.mml](../../mml/samples/returned-lambda-pap.mml),
   uncomment the second `plain_pap 1;` statement. This produces five errors: the legitimate
   `statement` expected `Unit`, got `Int` mismatch, three false borrowed-capture errors
@@ -823,10 +861,11 @@ are in `context/history/` for Author review. No compiler slice is authorized by 
 - **Implementation:** [Binding identity and local construction](#establish-binding-identity-and-local-construction-invariants)
   is complete and signed off. Stage 1 is committed at `dbd65d9`; stage 2 includes the shared
   construction helpers, caller migrations, regressions, and completion records.
-- **Current focus:** [Elaboration error recovery](#bug-continue-elaboration-after-independent-errors)
-  is urgent and immediate next. Uncommenting the sample's second-call probe demonstrates
-  four false ownership diagnostics caused by an independent statement type error.
-- **Next action:** prepare the bounded recovery implementation plan.
+- **Current focus:** [Nested capturing-recursion TCO repair](#bug-preserve-valid-llvm-and-tco-for-nested-capturing-recursion)
+  is urgent, highest priority, and immediate next. The nested matrix benchmark emits invalid
+  LLVM numeric SSA ordering with TCO enabled. Elaboration error recovery follows this repair.
+- **Next action:** reduce the TCO-enabled reproducer, confirm the compiler cause, and present
+  a bounded repair plan before compiler edits.
 - **Evidence:** [Binding construction verification](#binding-construction-evidence).
 - **Open limits:** the mixed-ownership reproducer remains unresolved; the general branch
   audit and separate Linux sanitizer validation are deferred. The broader counter/expression

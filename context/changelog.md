@@ -2,6 +2,12 @@
 
 Durable product changes belong here. Current task state belongs in task files.
 
+## 2026-09-15
+
+- Add a matrix multiplication variant with nested, capturing loop helpers as a reproducer
+  for invalid LLVM emission with TCO enabled. Exclude it from benchmark build and timing
+  targets until the compiler defect is fixed.
+
 ## 2026-09-14
 
 - Expand owning-PAP coverage across direct and local returns, local allocation, and PAP
