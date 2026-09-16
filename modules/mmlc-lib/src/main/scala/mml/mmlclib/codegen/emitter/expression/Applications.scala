@@ -42,42 +42,8 @@ def compileLambdaApp(
   if lambda.params.size == 1 && allArgs.size == 1 then
     val param = lambda.params.head
     val arg   = allArgs.head
-    // Pre-allocate name for lambda args so the binding is in scope during
-    // compilation — enables recursive let bindings (same as top-level fns
-    // knowing their own name).
-    val (preAlloc, argScope) = arg.terms match
-      case List(_: Lambda) =>
-        val uniqueName  = s"${param.name}_${state.nextAnonFnId}"
-        val stateWithId = state.copy(nextAnonFnId = state.nextAnonFnId + 1)
-        val fnName      = stateWithId.mangleName(uniqueName)
-        val recursiveScope =
-          arg match
-            case Expr(_, List(argLambda: Lambda), _, _) if argLambda.captures.nonEmpty =>
-              functionScope
-            case _ =>
-              val entry = ScopeEntry(
-                0,
-                "Function",
-                isLiteral    = true,
-                literalValue = s"{ ptr @$fnName, ptr null }".some
-              )
-              functionScope + (param.name -> entry)
-        ((stateWithId, fnName).some, recursiveScope)
-      case _ =>
-        (none, functionScope)
-    val compileState = preAlloc.map(_._1).getOrElse(state)
     for
-      argRes <- arg.terms match
-        case List(lambdaLit: Lambda) =>
-          compileLambdaLiteral(lambdaLit, compileState, argScope, preAlloc, param.some)
-            .map { res =>
-              // Non-capturing: value is a constant literal, safe to discard sub-output.
-              // Capturing: call-site IR (malloc/store/insertvalue) defines the fat pointer
-              // register and must be preserved.
-              if res.isLiteral then res.copy(state = res.state.copy(output = state.output))
-              else res
-            }
-        case _ => compileExpr(arg, compileState, argScope)
+      argRes <- compileLocalBindingValue(param, arg, state, functionScope, compileExpr)
       // Store literal info in the scope entry — no materialization needed
       entry = ScopeEntry(argRes.register, argRes.typeName, argRes.isLiteral, argRes.literalValue)
       extendedScope = functionScope + (param.name -> entry)
@@ -90,6 +56,45 @@ def compileLambdaApp(
       "Immediate lambda application with multiple params/args not yet supported",
       lambda.some
     ).asLeft
+
+/** Compile a local value with its binding identity available for recursive lambda calls. */
+private[emitter] def compileLocalBindingValue(
+  param:         FnParam,
+  arg:           Expr,
+  state:         CodeGenState,
+  functionScope: Map[String, ScopeEntry],
+  compileExpr:   ExprCompiler
+): Either[CodeGenError, CompileResult] =
+  val (preAlloc, argScope) = arg.terms match
+    case List(lambda: Lambda) =>
+      val uniqueName  = s"${param.name}_${state.nextAnonFnId}"
+      val stateWithId = state.copy(nextAnonFnId = state.nextAnonFnId + 1)
+      val fnName      = stateWithId.mangleName(uniqueName)
+      val recursiveScope =
+        if lambda.captures.nonEmpty then functionScope
+        else
+          val entry = ScopeEntry(
+            0,
+            "Function",
+            isLiteral    = true,
+            literalValue = s"{ ptr @$fnName, ptr null }".some
+          )
+          functionScope + (param.name -> entry)
+      ((stateWithId, fnName).some, recursiveScope)
+    case _ => (none, functionScope)
+
+  val compileState = preAlloc.map(_._1).getOrElse(state)
+  arg.terms match
+    case List(lambdaLit: Lambda) =>
+      compileLambdaLiteral(lambdaLit, compileState, argScope, preAlloc, param.some)
+        .map { res =>
+          // Non-capturing: value is a constant literal, safe to discard sub-output.
+          // Capturing: call-site IR (malloc/store/insertvalue) defines the fat pointer
+          // register and must be preserved.
+          if res.isLiteral then res.copy(state = res.state.copy(output = state.output))
+          else res
+        }
+    case _ => compileExpr(arg, compileState, argScope)
 
 /** Compiles a native operator application using its template.
   *

@@ -36,6 +36,16 @@ The top level project aggregates the sub projects
 
 ## Tests
 
+Run the compiler smoke collection before publishing:
+
+```sh
+./tests/smoke/run.sh all
+```
+
+It checks the `.mml` copies in `tests/smoke/` using sequential `sbtn` invocations.
+See [the smoke-test guide](../tests/smoke/Readme.md) for run modes and logs.
+Do not run another `sbtn` session while the harness is active.
+
 ```
 sbtn test                          # full test suite (all modules)
 sbtn "testOnly <fully.qualified.TestClass>"   # single test class

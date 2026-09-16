@@ -12,15 +12,15 @@ ifeq ($(BENCH_SLOW),1)
 PYTHON_BENCH = '$(PYTHON) $(1).py'
 endif
 
-# MML optimization level: 1 on Apple Silicon, 3 on x86.
+# MML optimization level: 3 on all platforms.
 # Override with the MML_OPT env var or `make MML_OPT=...`.
-ifeq ($(shell uname -s)$(shell uname -m),Darwinarm64)
-MML_OPT ?= 1
-else
 MML_OPT ?= 3
-endif
 BUILDDIR = build
 RESULTSDIR = results/$(shell date +%Y-%m-%d)
+
+# Override measured runs for all Hyperfine targets; unset keeps each target's default.
+# Example: BENCH_RUNS=10 make bench-matmul
+BENCH_RUNS ?=
 
 # Conditional export flags for hyperfine (set LOG_BENCH_RESULTS=1 to enable)
 ifdef LOG_BENCH_RESULTS
@@ -47,9 +47,10 @@ java: $(BINDIR)/Sieve.class $(BINDIR)/Quicksort.class $(BINDIR)/Matmul.class
 
 java-native: $(BINDIR)/sieve-java-native $(BINDIR)/quicksort-java-native $(BINDIR)/matmul-java-native
 
-mml: $(BINDIR)/matmul-safe-mml $(BINDIR)/matmul-opt-safe-mml \
-     $(BINDIR)/sieve-mml $(BINDIR)/quicksort-mml $(BINDIR)/matmul-mml \
-     $(BINDIR)/matmul-opt-mml $(BINDIR)/nqueens-mml $(BINDIR)/euclidean-ext-mml \
+mml: $(BINDIR)/sieve-mml $(BINDIR)/quicksort-mml $(BINDIR)/matmul-mml \
+     $(BINDIR)/matmul-nested-mml $(BINDIR)/matmul-safe-mml \
+     $(BINDIR)/matmul-opt-mml $(BINDIR)/matmul-opt-nested-mml $(BINDIR)/matmul-opt-safe-mml \
+     $(BINDIR)/nqueens-mml $(BINDIR)/euclidean-ext-mml \
      $(BINDIR)/ackermann-mml \
      $(SELF_SIEVE_BINARIES) $(SELF_MATMUL_BINARIES) $(SELF_MATMUL_OPT_BINARIES)
 
@@ -224,11 +225,17 @@ $(BINDIR)/matmul-opt-bce-go: matmul-opt-bce.go | $(BINDIR)
 $(BINDIR)/matmul-mml: mat-mul.mml | $(BINDIR)
 	mmlc -I -b $(BUILDDIR) -O$(MML_OPT) -o $@ $<
 
-$(BINDIR)/matmul-opt-mml: mat-mul-opt.mml Makefile | $(BINDIR)
-	mmlc -I -b $(BUILDDIR) -O$(MML_OPT) --llvm-opt-arg=-force-vector-interleave=4 -o $@ $<
+$(BINDIR)/matmul-nested-mml: mat-mul-nested.mml Makefile | $(BINDIR)
+	mmlc -I -b $(BUILDDIR) -O$(MML_OPT) -o $@ $<
 
 $(BINDIR)/matmul-safe-mml: mat-mul-safe.mml Makefile | $(BINDIR)
 	mmlc -I -b $(BUILDDIR) -O$(MML_OPT) -o $@ $<
+
+$(BINDIR)/matmul-opt-mml: mat-mul-opt.mml Makefile | $(BINDIR)
+	mmlc -I -b $(BUILDDIR) -O$(MML_OPT) --llvm-opt-arg=-force-vector-interleave=4 -o $@ $<
+
+$(BINDIR)/matmul-opt-nested-mml: mat-mul-opt-nested.mml Makefile | $(BINDIR)
+	mmlc -I -b $(BUILDDIR) -O$(MML_OPT) --llvm-opt-arg=-force-vector-interleave=4 -o $@ $<
 
 $(BINDIR)/matmul-opt-safe-mml: mat-mul-opt-safe.mml Makefile | $(BINDIR)
 	mmlc -I -b $(BUILDDIR) -O$(MML_OPT) --llvm-opt-arg=-force-vector-interleave=4 -o $@ $<
@@ -303,7 +310,7 @@ $(BINDIR)/euclidean-ext-mml: euclidean-ext.mml | $(BINDIR)
 # timing. JVM entries launch a separate JVM per run, including hyperfine warmups.
 bench-sieve: $(BINDIR)/sieve-c $(BINDIR)/sieve-go $(BINDIR)/sieve-rs $(BINDIR)/sieve-mml \
 	$(BINDIR)/Sieve.class $(BINDIR)/sieve-java-native sieve.py $(RESULTS_DEP)
-	hyperfine -N --warmup 20 --runs 200 \
+	hyperfine -N --warmup 20 --runs $(or $(BENCH_RUNS),200) \
 		$(call EXPORT_FLAGS,sieve) \
 		'$(BINDIR)/sieve-c' \
 		'$(BINDIR)/sieve-mml' \
@@ -326,7 +333,7 @@ ifeq ($(BENCH_SLOW),1)
 endif
 
 bench-self-sieve: $(SELF_SIEVE_BINARIES) $(RESULTS_DEP)
-	hyperfine -N --warmup 20 --runs 200 \
+	hyperfine -N --warmup 20 --runs $(or $(BENCH_RUNS),200) \
 		$(call EXPORT_FLAGS,self) \
 		'$(BINDIR)/sieve-mml-O0-tco' \
 		'$(BINDIR)/sieve-mml-O0-no-tco' \
@@ -348,7 +355,7 @@ bench-self-sieve-time: $(SELF_SIEVE_BINARIES)
 	/usr/bin/time -l $(BINDIR)/sieve-mml-O3-no-tco
 
 bench-self-matmul: $(SELF_MATMUL_BINARIES) $(RESULTS_DEP)
-	hyperfine -N --warmup 20 --runs 200 \
+	hyperfine -N --warmup 20 --runs $(or $(BENCH_RUNS),200) \
 		$(call EXPORT_FLAGS,self-matmul) \
 		'$(BINDIR)/matmul-mml-O0-tco' \
 		'$(BINDIR)/matmul-mml-O0-no-tco' \
@@ -370,7 +377,7 @@ bench-self-matmul-time: $(SELF_MATMUL_BINARIES)
 	/usr/bin/time -l $(BINDIR)/matmul-mml-O3-no-tco
 
 bench-self-matmul-opt: $(SELF_MATMUL_OPT_BINARIES) $(RESULTS_DEP)
-	hyperfine -N --warmup 20 --runs 200 \
+	hyperfine -N --warmup 20 --runs $(or $(BENCH_RUNS),200) \
 		$(call EXPORT_FLAGS,self-matmul-opt) \
 		'$(BINDIR)/matmul-opt-mml-O0-tco' \
 		'$(BINDIR)/matmul-opt-mml-O0-no-tco' \
@@ -394,7 +401,7 @@ bench-self-matmul-opt-time: $(SELF_MATMUL_OPT_BINARIES)
 bench-quicksort: $(BINDIR)/quicksort-c $(BINDIR)/quicksort-mml \
 	$(BINDIR)/quicksort-go $(BINDIR)/quicksort-rs $(BINDIR)/Quicksort.class \
 	$(BINDIR)/quicksort-java-native quicksort.py $(RESULTS_DEP)
-	hyperfine -N --warmup 10 --runs 200 \
+	hyperfine -N --warmup 10 --runs $(or $(BENCH_RUNS),200) \
 		$(call EXPORT_FLAGS,quicksort) \
 		'$(BINDIR)/quicksort-c' \
 		'$(BINDIR)/quicksort-mml' \
@@ -417,18 +424,21 @@ ifeq ($(BENCH_SLOW),1)
 	/usr/bin/time -l $(PYTHON) quicksort.py
 endif
 
-bench-matmul: $(BINDIR)/matmul-safe-mml $(BINDIR)/matmul-opt-safe-mml \
-	$(BINDIR)/matmul-c $(BINDIR)/matmul-restricted-c $(BINDIR)/matmul-go \
-	$(BINDIR)/matmul-bce-go $(BINDIR)/matmul-opt-go $(BINDIR)/matmul-mml $(BINDIR)/matmul-opt-mml $(BINDIR)/matmul-opt-c \
+bench-matmul: $(BINDIR)/matmul-c $(BINDIR)/matmul-restricted-c $(BINDIR)/matmul-go \
+	$(BINDIR)/matmul-bce-go $(BINDIR)/matmul-opt-go $(BINDIR)/matmul-mml \
+	$(BINDIR)/matmul-nested-mml $(BINDIR)/matmul-safe-mml $(BINDIR)/matmul-opt-mml \
+	$(BINDIR)/matmul-opt-nested-mml $(BINDIR)/matmul-opt-safe-mml $(BINDIR)/matmul-opt-c \
 	$(BINDIR)/matmul-opt-bce-go $(BINDIR)/matmul-rs $(BINDIR)/matmul-opt-rs $(BINDIR)/matmul-java-native $(RESULTS_DEP)
-	hyperfine -N --warmup 20 --runs 50 \
+	hyperfine -N --warmup 20 --runs $(or $(BENCH_RUNS),50) \
 		$(call EXPORT_FLAGS,matmul) \
 		'$(BINDIR)/matmul-c' \
 		'$(BINDIR)/matmul-opt-c' \
 		'$(BINDIR)/matmul-restricted-c' \
 		'$(BINDIR)/matmul-mml' \
+		'$(BINDIR)/matmul-nested-mml' \
 		'$(BINDIR)/matmul-safe-mml' \
 		'$(BINDIR)/matmul-opt-mml' \
+		'$(BINDIR)/matmul-opt-nested-mml' \
 		'$(BINDIR)/matmul-opt-safe-mml' \
 		'$(BINDIR)/matmul-rs' \
 		'$(BINDIR)/matmul-opt-rs' \
@@ -438,16 +448,19 @@ bench-matmul: $(BINDIR)/matmul-safe-mml $(BINDIR)/matmul-opt-safe-mml \
 		'$(BINDIR)/matmul-opt-bce-go' \
 		'$(BINDIR)/matmul-java-native'
 
-bench-matmul-time: $(BINDIR)/matmul-safe-mml $(BINDIR)/matmul-opt-safe-mml \
-	$(BINDIR)/matmul-c $(BINDIR)/matmul-restricted-c $(BINDIR)/matmul-go \
-	$(BINDIR)/matmul-bce-go $(BINDIR)/matmul-opt-go $(BINDIR)/matmul-mml $(BINDIR)/matmul-opt-mml \
+bench-matmul-time: $(BINDIR)/matmul-c $(BINDIR)/matmul-restricted-c $(BINDIR)/matmul-go \
+	$(BINDIR)/matmul-bce-go $(BINDIR)/matmul-opt-go $(BINDIR)/matmul-mml \
+	$(BINDIR)/matmul-nested-mml $(BINDIR)/matmul-opt-mml $(BINDIR)/matmul-opt-nested-mml \
+	$(BINDIR)/matmul-safe-mml $(BINDIR)/matmul-opt-safe-mml \
 	$(BINDIR)/matmul-opt-bce-go $(BINDIR)/matmul-opt-c $(BINDIR)/matmul-rs $(BINDIR)/matmul-opt-rs $(BINDIR)/matmul-java-native
 	/usr/bin/time -l $(BINDIR)/matmul-c
 	/usr/bin/time -l $(BINDIR)/matmul-opt-c
 	/usr/bin/time -l $(BINDIR)/matmul-restricted-c
 	/usr/bin/time -l $(BINDIR)/matmul-mml
+	/usr/bin/time -l $(BINDIR)/matmul-nested-mml
 	/usr/bin/time -l $(BINDIR)/matmul-safe-mml
 	/usr/bin/time -l $(BINDIR)/matmul-opt-mml
+	/usr/bin/time -l $(BINDIR)/matmul-opt-nested-mml
 	/usr/bin/time -l $(BINDIR)/matmul-opt-safe-mml
 	/usr/bin/time -l $(BINDIR)/matmul-rs
 	/usr/bin/time -l $(BINDIR)/matmul-opt-rs
@@ -458,7 +471,7 @@ bench-matmul-time: $(BINDIR)/matmul-safe-mml $(BINDIR)/matmul-opt-safe-mml \
 	/usr/bin/time -l $(BINDIR)/matmul-java-native
 
 bench-nqueens: $(BINDIR)/nqueens-c $(BINDIR)/nqueens-go $(BINDIR)/nqueens-mml $(RESULTS_DEP)
-	hyperfine -N --warmup 5 --runs 20 \
+	hyperfine -N --warmup 5 --runs $(or $(BENCH_RUNS),20) \
 		$(call EXPORT_FLAGS,nqueens) \
 		'$(BINDIR)/nqueens-c' \
 		'$(BINDIR)/nqueens-go' \
@@ -470,7 +483,7 @@ bench-nqueens-time: $(BINDIR)/nqueens-c $(BINDIR)/nqueens-go $(BINDIR)/nqueens-m
 	/usr/bin/time -l $(BINDIR)/nqueens-mml
 
 bench-euclidean: $(BINDIR)/euclidean-ext-c $(BINDIR)/euclidean-ext-mml $(RESULTS_DEP)
-	hyperfine -N --warmup 10 --runs 200 \
+	hyperfine -N --warmup 10 --runs $(or $(BENCH_RUNS),200) \
 		$(call EXPORT_FLAGS,euclidean) \
 		'$(BINDIR)/euclidean-ext-c' \
 		'$(BINDIR)/euclidean-ext-mml'
@@ -481,7 +494,7 @@ bench-euclidean-time: $(BINDIR)/euclidean-ext-c $(BINDIR)/euclidean-ext-mml
 
 bench-ackermann: $(BINDIR)/ackermann-c $(BINDIR)/ackermann-c-chacho $(BINDIR)/ackermann-mml \
                  $(BINDIR)/ackermann-rs $(BINDIR)/ackermann-go $(RESULTS_DEP)
-	hyperfine -N --warmup 5 --runs 20 \
+	hyperfine -N --warmup 5 --runs $(or $(BENCH_RUNS),20) \
 		$(call EXPORT_FLAGS,ackermann) \
 		'$(BINDIR)/ackermann-c' \
 		'$(BINDIR)/ackermann-c-chacho' \

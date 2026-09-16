@@ -1,4 +1,3 @@
-
 pub fn main() =
 
   let factorial_tco: Int -> Int -> Int =
@@ -9,8 +8,8 @@ pub fn main() =
     }
   ;
 
-  let fac = { n: Int -> factorial_tco n 1 };
+  let from5: Int -> Int = factorial_tco 5;
 
-  fac 3;
+  println (int_to_str (from5 1));
 
 ;

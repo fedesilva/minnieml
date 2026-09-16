@@ -22,7 +22,7 @@ remain subject to bounded plan approval. Only the active step exposes its curren
 7. [x] **complete** — [Nested consuming-PAP calls and review repairs](#bug-nested-consuming-pap-calls) (`234b6e1`, `dc29582`).
 8. [x] **complete** — [Binding identity and local construction](#establish-binding-identity-and-local-construction-invariants); signed off.
 9. [x] **complete** — [BUG: consume an owned PAP captured by a move lambda](#bug-consume-an-owned-pap-captured-by-a-move-lambda); signed off.
-10. [ ] **planned** — **Urgent, highest priority, immediate next:** [BUG: preserve valid LLVM and TCO for nested capturing recursion](#bug-preserve-valid-llvm-and-tco-for-nested-capturing-recursion).
+10. [x] **complete** — [BUG: preserve valid LLVM and TCO for nested capturing recursion](#bug-preserve-valid-llvm-and-tco-for-nested-capturing-recursion); signed off.
 11. [ ] **planned** — **Urgent:** [BUG: continue elaboration after independent errors](#bug-continue-elaboration-after-independent-errors).
 12. [ ] **planned** — [Counter and argument-expression preservation](#preserve-counters-and-argument-expressions-across-ownership-analysis).
 13. [ ] **planned** — [Mixed-ownership transfer repair and conditional-ownership hardening](#bug-preserve-mixed-ownership-through-consuming-transfers).
@@ -732,8 +732,17 @@ Evidence collected on 2026-09-11, macOS arm64:
 
 #### Bug: preserve valid LLVM and TCO for nested capturing recursion
 
-- **Status:** planned.
-- **Priority:** urgent; highest priority and immediate next, ahead of elaboration error recovery.
+- **Status:** complete.
+- **Approved repair plan:** use named registers for hoisted closure storage; preserve local
+  binding identity and share recursive-lambda compilation between ordinary and loopified
+  scopes; detect tail recursion throughout nested bodies and conditional branches. Add
+  regressions for LLVM validity and loopification, then verify runtime results, closure
+  lifetimes, performance, compiler gates, and independent review.
+- **Smoke and benchmark integration:** add a nested TCO sample, copy all smoke samples to
+  `tests/smoke/`, provide a sequential source-compiler harness, and include the nested matrix
+  benchmarks in i-j-k and i-k-j order in the MML build and matrix timing targets. The benchmark
+  default is `-O3` on all platforms; `BENCH_RUNS` overrides measured runs without changing
+  each target's default count.
 - **Reproducer:** [mat-mul-nested.mml](../../benchmark/mat-mul-nested.mml) nests
   `mat_mul_i(i)`, `mat_mul_j(j)`, and `mat_mul_k(k, acc)` inside `mat_mul`.
   The helpers capture matrices, dimensions, and enclosing loop indices.
@@ -751,21 +760,86 @@ Evidence collected on 2026-09-11, macOS arm64:
   Moving the nested declarations outside the `if` branches still fails.
 - **Diagnostic control:** `--no-tco -O1` compiles and runs with trace checksum `381460`,
   matching the original matrix benchmark. Disabling TCO is not an acceptable fix or
-  benchmark configuration. The source remains a bug reproducer, excluded from benchmark
-  build and timing targets until the TCO-enabled build succeeds.
-- **Suspected cause:** closure-environment allocation hoisting in tail-recursive codegen
-  places a later-numbered instruction before capture loads. The emitted IR establishes
-  the ordering defect; the responsible compiler path still needs investigation.
+  benchmark configuration. The nested source participates in `make -C benchmark mml`,
+  `bench-matmul`, and `bench-matmul-time` with the normal optimization flags and TCO enabled.
+- **Confirmed causes:** closure-environment allocation hoisting emits later-numbered storage
+  before capture loads. Loopified pre-statements discard the recursive binding parameter,
+  producing an undefined `@mat_mul_j`; renaming numeric registers in a scratch IR copy exposes
+  that second assembler failure. Tail-recursion detection does not traverse nested value-lambda
+  bodies or conditional branches, leaving eligible inner helpers on ordinary recursion.
 - **Investigation and fix:** reduce the reproducer with TCO enabled, trace closure allocation
   and tail-recursive emission, and fix the responsible boundary while preserving capture
   values and environment lifetimes. Check recursive binding resolution and loopification
   for every nested helper, not just the first LLVM rejection.
-- **Acceptance:** add a regression that fails on the current compiler and assembles/verifies
+- **Acceptance:** add a regression that fails on the baseline compiler and assembles/verifies
   generated LLVM. Verify eligible nested tail recursion becomes loops with TCO enabled;
   successful execution alone does not establish this. Build and run the nested benchmark
   with normal flags, match checksum `381460`, validate closure lifetimes with sanitizers,
   and compare performance with the original. Complete required compiler checks and
   independent review before handoff.
+- **Implementation:** named entry-storage registers preserve LLVM ordering; loopified
+  statements retain `FnParam` identity and share recursive binding compilation with ordinary
+  scopes. Detection traverses nested bodies and conditionals. Both capturing and non-capturing
+  local loop entries retain a self closure for calls that remain ordinary recursion.
+  Ordinary calls accept named iteration-local borrows; closures carried across a loop back
+  edge remain rejected.
+- **Verification (2026-09-15, Darwin arm64, LLVM 23.1.1):**
+  - Six codegen regressions assemble with `llvm-as` and check loop structure, including
+    nested captures, branch-local helpers, synchronous higher-order borrows, mixed tail/ordinary
+    recursion, and `--no-tco`. A seventh case checks semantic rejection of a borrowed closure
+    returned through a higher-order identity function; existing coverage checks direct back-edge
+    rejection.
+    Before the detector repair, two of three initial cases failed loopification checks;
+    the native stress regression also fails LLVM assembly on the baseline installed compiler.
+  - `scalafmtAll`, `scalafixAll`, the full test suite (**733 passed, 51 existing ignored**),
+    and local publishing pass. The JVM emits its existing
+    `sun.misc.Unsafe::objectFieldOffset` deprecation warning; Scala compilation is warning-free.
+  - `./tests/smoke/run.sh all` passes **8/8** using the source compiler. Its copies match the
+    seven original samples plus `nested-tco.mml`, which checks checksum `6048`. Shell syntax,
+    failure propagation, continued execution after failure, run/compile modes, and invalid
+    arguments are checked. The harness replaces the individual smoke commands in the coding
+    rules and tool guide.
+  - `make -C benchmark clean` and `make -C benchmark mml` pass. The nested benchmark builds
+    with the normal Apple Silicon `-O1` flags and returns checksum `381460`. Its raw IR passes
+    `llvm-as` and `opt -passes=verify`; all three nested helpers have back edges and no
+    loop-body allocations.
+    The Makefile includes the nested executable in the default MML build and both matrix
+    comparison targets; `make -n` checks their command lists.
+  - The full nested benchmark returns `381460` under `-s -O0` with ASan/LSan enabled.
+    `./tests/mem/run.sh all` passes **43/43** at `-O0`, including the new nested-capture stress
+    case, zero/one/many iteration results, mixed tail/ordinary recursion, and 10,000 synchronous
+    higher-order borrows.
+  - A 15-run `hyperfine` comparison after three warmups measures 25.1 ms mean for the original
+    and 23.0 ms for the nested benchmark. The original has an outlier up to 50.3 ms; these
+    measurements do not establish a speedup.
+  - Final gate logs: `/tmp/mml-nested-tco-final-gates.log`,
+    `/tmp/mml-nested-tco-final-smoke.log`, `/tmp/mml-nested-tco-final-publish.log`,
+    `/tmp/mml-nested-tco-final-benchmarks.log`, and `/tmp/mml-nested-tco-final-memory.log`.
+    Full matrix sanitizer and timing evidence: `/tmp/mml-nested-tco-benchmark-asan.log` and
+    `/tmp/mml-nested-tco-performance.json`.
+- **Review:** independent review confirmed rejection of valid synchronous higher-order borrows
+  exposed by nested TCO detection. The validator accepts named borrowed call arguments, with
+  positive LLVM/runtime coverage and negative escape coverage. Fresh narrow re-review reports
+  no actionable findings and independently runs the original reproducer under `-s -O0`.
+  Focused QA and tracking consistency checks pass.
+- **Finish verification (2026-09-16, Darwin arm64, LLVM 23.1.1):** formatting and lint pass;
+  the full suite passes **733 tests with 51 existing ignored**; source smoke checks pass
+  **8/8**; local publishing and a clean MML benchmark build pass; ASan/LSan checks pass
+  **43/43**. All six flat, nested, and checked matrix variants return checksum `381460`
+  with the default `-O3` build. Smoke copies match their samples and shell syntax passes.
+  The formatter also removes one extra blank line in `ExpressionRewriter.scala`.
+  Logs: `/tmp/mml-nested-tco-finish-checks.log`, `/tmp/mml-nested-tco-finish-smoke.log`,
+  `/tmp/mml-nested-tco-finish-publish.log`, `/tmp/mml-nested-tco-finish-benchmarks.log`, and
+  `/tmp/mml-nested-tco-finish-memory.log`. Comparative timing evidence is in the
+  [checked matrix report](../../benchmark/results/2026-09-16-safe/Readme.md).
+- **Finish review:** fresh independent review reports no actionable findings. It compiles
+  and runs the nested-capture stress test under `-s -O0` with ASan/LSan, assembles and verifies
+  its raw LLVM, and checks nested back edges, entry storage, capture writes, smoke copies,
+  shell syntax, and benchmark integration with `BENCH_RUNS=7`. Focused QA, tracking review,
+  local links, and diff checks pass.
+- **Signoff:** nested capturing-recursion repair, smoke harness, and benchmark integration
+  are complete and signed off with local commit authorization.
+  Target execution evidence is Darwin arm64 only.
 
 #### Bug: continue elaboration after independent errors
 
@@ -849,11 +923,12 @@ are in `context/history/` for Author review. No compiler slice is authorized by 
 
 - Workstream signoff: complete for preservation, borrowed returns, typed closure destruction,
   PAP creation, deferred consuming arguments, owned PAP struct fields, nested consuming-PAP
-  repairs, and both binding identity and local-construction stages.
+  repairs, both binding identity and local-construction stages, and the nested
+  capturing-recursion TCO repair with its smoke and benchmark integration.
 - Tracked item completion: pending; open work remains in the
   [Execution Checklist](#execution-checklist).
-- Commit authorization: earlier slices and binding identity stage 1 are committed.
-  Local commit authorization is granted for stage 2 and its completion records; no push is authorized.
+- Commit authorization: local commit authorization covers the nested capturing-recursion
+  TCO repair, smoke and benchmark integration, and completion records; no push is authorized.
 
 ## Task Working Memory
 
@@ -861,12 +936,14 @@ are in `context/history/` for Author review. No compiler slice is authorized by 
 - **Implementation:** [Binding identity and local construction](#establish-binding-identity-and-local-construction-invariants)
   is complete and signed off. Stage 1 is committed at `dbd65d9`; stage 2 includes the shared
   construction helpers, caller migrations, regressions, and completion records.
-- **Current focus:** [Nested capturing-recursion TCO repair](#bug-preserve-valid-llvm-and-tco-for-nested-capturing-recursion)
-  is urgent, highest priority, and immediate next. The nested matrix benchmark emits invalid
-  LLVM numeric SSA ordering with TCO enabled. Elaboration error recovery follows this repair.
-- **Next action:** reduce the TCO-enabled reproducer, confirm the compiler cause, and present
-  a bounded repair plan before compiler edits.
-- **Evidence:** [Binding construction verification](#binding-construction-evidence).
+- **Completed repair:** [Nested capturing-recursion TCO repair](#bug-preserve-valid-llvm-and-tco-for-nested-capturing-recursion)
+  is complete and signed off with passing LLVM, runtime, sanitizer, benchmark-build, compiler,
+  QA, and independent review gates.
+- **Current focus:** [Elaboration error recovery](#bug-continue-elaboration-after-independent-errors)
+  is planned; implementation awaits bounded plan approval.
+- **Next action:** prepare the elaboration error-recovery repair plan.
+- **Evidence:** [Nested TCO repair verification](#bug-preserve-valid-llvm-and-tco-for-nested-capturing-recursion)
+  and [binding construction verification](#binding-construction-evidence).
 - **Open limits:** the mixed-ownership reproducer remains unresolved; the general branch
   audit and separate Linux sanitizer validation are deferred. The broader counter/expression
   follow-up remains planned and must account for the shared identity allocator.
