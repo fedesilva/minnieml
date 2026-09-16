@@ -2,6 +2,13 @@
 
 Durable product changes belong here. Current task state belongs in task files.
 
+## 2026-09-16
+
+- Add checked-array matrix multiplication benchmarks with nested loop helpers in i-j-k
+  and i-k-j order. Include both in build and timing targets, and record their overhead
+  against unchecked MML and their performance against Go in the
+  [checked matrix benchmark report](../benchmark/results/2026-09-16-safe/Readme.md).
+
 ## 2026-09-15
 
 - Add a matrix multiplication variant with nested, capturing loop helpers as a reproducer
