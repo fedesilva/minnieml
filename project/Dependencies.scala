@@ -4,15 +4,15 @@ object Dependencies {
 
   val monocleVersion:       String = "3.3.0"
   val catsVersion:          String = "2.12.0"
-  val catsEffectVersion:    String = "3.7.0"
-  val refinedVersion:       String = "0.11.3"
+  val catsEffectVersion:    String = "3.7.1"
+  val refinedVersion:       String = "0.11.4"
   val lucumaRefinedVersion: String = "0.1.4"
   val fastparseVersion:     String = "3.1.1"
   val scoptVersion:         String = "4.1.0"
   val upickleVersion:       String = "4.4.3"
   val log4catsVersion:      String = "2.8.0"
 
-  val munitVersion:     String = "1.2.4"
+  val munitVersion:     String = "1.3.6"
   val munitCatsVersion: String = "2.2.0"
 
   lazy val commonDependencies: Seq[ModuleID] =
