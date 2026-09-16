@@ -2,17 +2,19 @@
 // Matrices are N x N, flattened into 1D arrays of size N*N
 // Access: index = row * N + col
 
-fn fill_matrix_loop(arr: IntArray, i: Int, size: Int, current_seed: Int): Unit =
-  if i < size then
-    let next_seed = (current_seed * 1664525) + 1013904223;
-    // Keep numbers small to avoid immediate overflow during multiplication
-    unsafe_ar_int_set arr i (next_seed % 100);
-    fill_matrix_loop arr (i + 1) size next_seed;
-  ;
-;
 fn fill_matrix(arr: IntArray, n: Int, seed: Int): Unit =
   let size = n * n;
-  fill_matrix_loop arr 0 size seed;
+
+  fn fill_matrix_loop(i: Int, current_seed: Int): Unit =
+    if i < size then
+      let next_seed = (current_seed * 1664525) + 1013904223;
+      // Keep numbers small to avoid immediate overflow during multiplication.
+      unsafe_ar_int_set arr i (next_seed % 100);
+      fill_matrix_loop (i + 1) next_seed;
+    ;
+  ;
+
+  fill_matrix_loop 0 seed;
 ;
 
 fn mat_mul(a: IntArray, b: IntArray, c: IntArray, n: Int): Unit =
@@ -55,17 +57,18 @@ fn mat_mul(a: IntArray, b: IntArray, c: IntArray, n: Int): Unit =
 ;
 
 // Verify result (Trace)
-fn trace_loop(arr: IntArray, i: Int, n: Int, acc: Int): Int =
-  if i < n then
-    let idx = (i * n) + i;
-    let val = unsafe_ar_int_get arr idx;
-    trace_loop arr (i + 1) n (acc + val);
-  else
-    acc;
-  ;
-;
 fn trace(arr: IntArray, n: Int): Int =
-  trace_loop arr 0 n 0;
+  fn trace_loop(i: Int, acc: Int): Int =
+    if i < n then
+      let idx = (i * n) + i;
+      let val = unsafe_ar_int_get arr idx;
+      trace_loop (i + 1) (acc + val);
+    else
+      acc;
+    ;
+  ;
+
+  trace_loop 0 0;
 ;
 
 pub fn main(): Unit =

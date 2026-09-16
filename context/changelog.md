@@ -4,6 +4,15 @@ Durable product changes belong here. Current task state belongs in task files.
 
 ## 2026-09-16
 
+- Compile nested capturing recursion to valid LLVM loops while preserving local binding
+  identity and ordinary recursive calls. Reuse borrowed closure storage with refreshed
+  captures and allow synchronous higher-order borrows. Cover nested loops, mixed recursion,
+  and closure lifetimes with codegen regressions, a smoke sample, and sanitizer checks.
+
+- Add a sequential source-compiler smoke harness and nested matrix benchmarks in i-j-k
+  and i-k-j order. Use `-O3` as the benchmark default on all platforms and allow measured
+  run counts to be overridden with `BENCH_RUNS`.
+
 - Add checked-array matrix multiplication benchmarks with nested loop helpers in i-j-k
   and i-k-j order. Include both in build and timing targets, and record their overhead
   against unchecked MML and their performance against Go in the

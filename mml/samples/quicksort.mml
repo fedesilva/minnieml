@@ -1,6 +1,6 @@
 // Helper to swap two elements
 fn swap(arr: IntArray, a: Int, b: Int): Unit =
-  let tmp = unsafe_ar_int_get arr a; 
+  let tmp = unsafe_ar_int_get arr a;
   unsafe_ar_int_set arr a (unsafe_ar_int_get arr b);
   unsafe_ar_int_set arr b tmp;
 ;

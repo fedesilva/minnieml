@@ -77,20 +77,15 @@ The compiler needs to be installed before it's used if changes were made.
 
 - **Fast sanity check first (mandatory)**:
   - Before publishing the compiler or running expensive verification (benchmarks, full memory harness),
-    compile and run the following programs with `sbtn`:
-    - run all `sbtn` commands sequentially or batch tasks into one invocation.
-      Concurrent thin-client sessions collide, including after the compiler is warm.
-    - `sbtn "run run mml/samples/hola.mml"`
-    - `sbtn "run run mml/samples/quicksort.mml"`
-    - `sbtn "run run mml/samples/astar2.mml"`
-    - `sbtn "run run mml/samples/partial-fac1.mml"`
-    - `sbtn "run mml/samples/style-guide.mml"`
-    - `sbtn "run mml/samples/lambda-factorial.mml"`
-    - `sbtn "run mml/samples/raytracer3_p6.mml"`
+    run `./tests/smoke/run.sh all` from the repository root.
+  - The harness uses `sbtn` sequentially on the copies in `tests/smoke/`.
+    It compiles and runs `hola`, `quicksort`, `astar2`, `partial-fac1`, and `nested-tco`;
+    `style-guide`, `lambda-factorial`, and `raytracer3_p6` are compile-only checks.
+    Do not run another `sbtn` command concurrently with the harness.
 
 - **Validate**: Run the *full* test suite
 
-- **Publish the compiler** with `sbtn mmlcPublishLocal` before running benchmarks or the test
+- **Publish the compiler** with `sbtn mmlcPublishLocal` before running benchmarks or the memory
     harness, since both use `mmlc`.
 
 - **Run benchmarks**:

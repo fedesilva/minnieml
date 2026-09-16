@@ -174,10 +174,10 @@ private[emitter] def compileLambdaLiteral(
         param <- bindingParam
         if lambda.meta.exists(_.isTailRecursive)
         body <- findTailRecBody(lambda, param)
-      yield body
+      yield (param, body)
 
       result <- tailRecBody match
-        case Some(body) =>
+        case Some((param, body)) =>
           compileTailRecLambdaLiteral(
             lambda,
             stateWithId,
@@ -185,7 +185,8 @@ private[emitter] def compileLambdaLiteral(
             returnType,
             paramTypes.toList,
             body,
-            functionScope
+            functionScope,
+            param
           )
         case None =>
           compileRegularLambdaLiteral(
@@ -208,7 +209,8 @@ private def compileTailRecLambdaLiteral(
   returnType:    String,
   paramTypes:    List[String],
   body:          TailRecBody,
-  functionScope: Map[String, ScopeEntry]
+  functionScope: Map[String, ScopeEntry],
+  bindingParam:  FnParam
 ): Either[CodeGenError, CompileResult] =
   if lambda.captures.nonEmpty then
     compileTailRecCapturingLambda(
@@ -218,17 +220,19 @@ private def compileTailRecLambdaLiteral(
       returnType,
       paramTypes,
       body,
-      functionScope
+      functionScope,
+      bindingParam
     )
-  else compileTailRecNonCapturing(lambda, state, fnName, returnType, paramTypes, body)
+  else compileTailRecNonCapturing(lambda, state, fnName, returnType, paramTypes, body, bindingParam)
 
 private def compileTailRecNonCapturing(
-  lambda:     Lambda,
-  state:      CodeGenState,
-  fnName:     String,
-  returnType: String,
-  paramTypes: List[String],
-  body:       TailRecBody
+  lambda:       Lambda,
+  state:        CodeGenState,
+  fnName:       String,
+  returnType:   String,
+  paramTypes:   List[String],
+  body:         TailRecBody,
+  bindingParam: FnParam
 ): Either[CodeGenError, CompileResult] =
   val subState = state.copy(
     output              = List.empty,
@@ -241,8 +245,9 @@ private def compileTailRecNonCapturing(
     paramTypes,
     fnName,
     body,
-    linkage  = "internal ",
-    entryAbi = TailRecEntryAbi.PlainDirect
+    linkage      = "internal ",
+    entryAbi     = TailRecEntryAbi.PlainDirect,
+    bindingParam = bindingParam.some
   ).map { finalSubState =>
     val wrapperName = s"${fnName}__closure_entry"
     val fnBody      = finalSubState.output.reverse.mkString("\n")
@@ -307,7 +312,8 @@ private def compileTailRecCapturingLambda(
   returnType:    String,
   paramTypes:    List[String],
   body:          TailRecBody,
-  functionScope: Map[String, ScopeEntry]
+  functionScope: Map[String, ScopeEntry],
+  bindingParam:  FnParam
 ): Either[CodeGenError, CompileResult] =
   emitCallSiteEnv(lambda, state, fnName, functionScope).flatMap { envResult =>
     val siteState = envResult.siteState
@@ -323,9 +329,10 @@ private def compileTailRecCapturingLambda(
       paramTypes,
       fnName,
       body,
-      linkage     = "internal ",
-      entryAbi    = TailRecEntryAbi.ClosureEntry,
-      captureInfo = capInfo.some
+      linkage      = "internal ",
+      entryAbi     = TailRecEntryAbi.ClosureEntry,
+      captureInfo  = capInfo.some,
+      bindingParam = bindingParam.some
     ).map { finalSubState =>
       val fnBody = finalSubState.output.reverse.mkString("\n")
       val mergedState =
@@ -445,7 +452,7 @@ private def resolveClosureEnvStruct(
     case None =>
       CodeGenError("Capturing lambda missing envStructName", lambda.some).asLeft
 
-private def emitRecursiveSelfClosure(
+private[emitter] def emitRecursiveSelfClosure(
   fnName:       String,
   envParamIdx:  Int,
   state:        CodeGenState,
@@ -573,13 +580,19 @@ private def emitCallSiteEnv(
         (afterDtor, s"%$mallocReg")
       else
         // Borrow: stack-allocate env, no dtor
-        val allocaReg  = state.nextRegister
-        val allocaLine = s"  %$allocaReg = alloca $envTypeRef"
-        val afterAlloca =
-          if state.insideLoopifiedFunction then
-            state.withRegister(allocaReg + 1).emitEntryPrologue(allocaLine)
-          else state.withRegister(allocaReg + 1).emit(allocaLine)
-        (afterAlloca, s"%$allocaReg")
+        if state.insideLoopifiedFunction then
+          // Named registers remain valid when storage precedes earlier numeric capture loads.
+          val envPtr = s"%closure.env.${state.nextRegister}"
+          val afterAlloca = state
+            .withRegister(state.nextRegister + 1)
+            .emitEntryPrologue(s"  $envPtr = alloca $envTypeRef")
+          (afterAlloca, envPtr)
+        else
+          val allocaReg = state.nextRegister
+          val afterAlloca = state
+            .withRegister(allocaReg + 1)
+            .emit(s"  %$allocaReg = alloca $envTypeRef")
+          (afterAlloca, s"%$allocaReg")
 
     val siteStateAfterCaptures =
       captureTypes.zipWithIndex.foldLeft(siteStateAfterDtor) { case (st, ((cap, llvmType), idx)) =>

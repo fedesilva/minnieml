@@ -1,5 +1,6 @@
 package mml.mmlclib.semantic
 
+import cats.syntax.all.*
 import mml.mmlclib.ast.*
 import mml.mmlclib.compiler.CompilerState
 
@@ -39,29 +40,65 @@ object TailRecursionDetector:
           case _ => bnd
       case other => other
 
-  /** Traverse let-binding chains to find and mark tail-recursive let-bound lambdas. */
+  /** Visit every expression scope, preserving the binding used to recognize local self-calls. */
   private def rewriteLetBoundLambdas(expr: Expr): Expr =
-    expr.terms match
-      case List(app: App) =>
-        app.fn match
-          case lambda: Lambda if lambda.params.size == 1 =>
-            val param         = lambda.params.head
-            val updatedArg    = rewriteLetBoundArg(app.arg, param)
-            val updatedBody   = rewriteLetBoundLambdas(lambda.body)
-            val updatedLambda = lambda.copy(body = updatedBody)
-            if (updatedArg ne app.arg) || (updatedBody ne lambda.body) then
-              Expr(expr.source, List(app.copy(fn = updatedLambda, arg = updatedArg)), expr.typeSpec)
-            else expr
-          case _ => expr
-      case _ => expr
+    expr.copy(terms = expr.terms.map(rewriteTerm))
 
-  /** Check if the arg of a let-binding is a lambda that self-recurses via the param. */
-  private def rewriteLetBoundArg(arg: Expr, param: FnParam): Expr =
+  private def rewriteTerm(term: Term): Term = term match
+
+    case expr: Expr => rewriteLetBoundLambdas(expr)
+
+    case app: App => rewriteApp(app)
+
+    case lambda: Lambda => lambda.copy(body = rewriteLetBoundLambdas(lambda.body))
+
+    case cond: Cond =>
+      cond.copy(
+        cond    = rewriteLetBoundLambdas(cond.cond),
+        ifTrue  = rewriteLetBoundLambdas(cond.ifTrue),
+        ifFalse = rewriteLetBoundLambdas(cond.ifFalse)
+      )
+
+    case group: TermGroup => group.copy(inner = rewriteLetBoundLambdas(group.inner))
+
+    case tuple: Tuple => tuple.copy(elements = tuple.elements.map(rewriteLetBoundLambdas))
+
+    case ref: Ref => ref.copy(qualifier = ref.qualifier.map(rewriteTerm))
+
+    case destroy: DestroyClosure =>
+      destroy.copy(operand = rewriteLetBoundLambdas(destroy.operand))
+
+    case destroy: DestroyClosureEnvironment =>
+      destroy.copy(operand = rewriteLetBoundLambdas(destroy.operand))
+
+    case disarm: DisarmClosureEnvironment =>
+      disarm.copy(operand = rewriteLetBoundLambdas(disarm.operand))
+
+    case dispatch: DispatchClosureDestructor =>
+      dispatch.copy(operand = rewriteLetBoundLambdas(dispatch.operand))
+
+    case invalid: InvalidExpression =>
+      invalid.copy(originalExpr = rewriteLetBoundLambdas(invalid.originalExpr))
+
+    case other => other
+
+  private def rewriteApp(app: App): App =
+    val updatedFn: Ref | App | Lambda = app.fn match
+      case lambda: Lambda => lambda.copy(body = rewriteLetBoundLambdas(lambda.body))
+      case nested: App => rewriteApp(nested)
+      case ref:    Ref => ref.copy(qualifier = ref.qualifier.map(rewriteTerm))
+    val updatedArg = rewriteLetBoundLambdas(app.arg)
+    val boundArg = app.fn match
+      case lambda: Lambda if lambda.params.size == 1 =>
+        markBoundLambda(updatedArg, lambda.params.head)
+      case _ => updatedArg
+    app.copy(fn = updatedFn, arg = boundArg)
+
+  private def markBoundLambda(arg: Expr, param: FnParam): Expr =
     arg.terms match
-      case List(innerLambda: Lambda) if hasTailRecursiveCallById(innerLambda.body, param) =>
-        val meta    = innerLambda.meta.getOrElse(LambdaMeta())
-        val updated = innerLambda.copy(meta = Some(meta.copy(isTailRecursive = true)))
-        Expr(arg.source, List(updated), arg.typeSpec)
+      case List(lambda: Lambda) if hasTailRecursiveCallById(lambda.body, param) =>
+        val meta = lambda.meta.getOrElse(LambdaMeta()).copy(isTailRecursive = true)
+        arg.copy(terms = List(lambda.copy(meta = meta.some)))
       case _ => arg
 
   private def hasTailRecursiveCallById(

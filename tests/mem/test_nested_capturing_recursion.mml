@@ -1,0 +1,78 @@
+// Each helper captures its enclosing indices and the caller's heap-backed array.
+// Entry storage is reused, but captures must be refreshed on every loop iteration.
+fn compute(data: IntArray, n: Int): Int =
+  fn outer(i: Int, total: Int): Int =
+    fn middle(j: Int, subtotal: Int): Int =
+      fn inner(k: Int, acc: Int): Int =
+        if k < 3 then
+          let value = unsafe_ar_int_get data 0;
+          inner (k + 1) (acc + i * 100 + j * 10 + k + value);
+        else
+          acc;
+        ;
+      ;
+
+      if j < 3 then
+        middle (j + 1) (subtotal + inner 0 0);
+      else
+        subtotal;
+      ;
+    ;
+
+    if i < n then
+      outer (i + 1) (total + middle 0 0);
+    else
+      total;
+    ;
+  ;
+
+  outer 0 0;
+;
+
+fn mixed(base: Int): Int =
+  if base > 0 then
+    fn walk(i: Int, acc: Int): Int =
+      if i == 0 then acc + base;
+      elif i == 1 then 1 + walk 0 acc;
+      else walk (i - 1) (acc + i);
+      ;
+    ;
+    walk 4 0;
+  else
+    0;
+  ;
+;
+
+fn apply(f: Int -> Int, x: Int): Int = f x;;
+
+fn forwarded(n: Int): Int =
+  if n > 0 then
+    fn walk(i: Int, acc: Int): Int =
+      if i > 0 then
+        fn add(x: Int): Int = i + x;;
+        walk (i - 1) (acc + apply add 1);
+      else
+        acc;
+      ;
+    ;
+    walk n 0;
+  else
+    0;
+  ;
+;
+
+pub fn main(): Int =
+  let data = ar_int_new 1;
+  unsafe_ar_int_set data 0 7;
+  let empty = compute data 0;
+  let one = compute data 1;
+  let many = compute data 10000;
+  let mixed_result = mixed (unsafe_ar_int_get data 0);
+  let forwarded_result = forwarded 10000;
+  if empty == 0 and one == 162 and many == (4499712 * 10000)
+    and mixed_result == 17 and forwarded_result == 50015000 then
+    0;
+  else
+    1;
+  ;
+;

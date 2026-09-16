@@ -24,8 +24,8 @@ class FunctionEmitterBorrowClosureValidatorTest extends FunSuite:
     val body = TailRecCall(
       preStatements = List(
         BoundStatement(
-          bindingName = Some("next"),
-          expr        = synthExpr(App(synth, lambda, synthExpr(synthRef("acc"))))
+          binding = Some(FnParam(synth, Name.synth("next"))),
+          expr    = synthExpr(App(synth, lambda, synthExpr(synthRef("acc"))))
         )
       ),
       args = List(synthExpr(synthRef("next")))

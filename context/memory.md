@@ -14,9 +14,8 @@ This is the Author's active and near-term focus. The backlog lives in [tasks/](t
 
 - **Tracker:** [Unify lambdas](tasks/unify-lambdas.md)
 - **Status:** in_progress
-- **Current focus:** Urgent, highest priority, immediate next:
-  [nested capturing-recursion TCO repair](tasks/unify-lambdas.md#bug-preserve-valid-llvm-and-tco-for-nested-capturing-recursion).
-  Fix invalid LLVM emission with TCO enabled; elaboration error recovery follows.
+- **Current focus:** [Elaboration error recovery](tasks/unify-lambdas.md#bug-continue-elaboration-after-independent-errors).
+  Planned; implementation awaits bounded plan approval.
 
 ### BUG: Conditional ownership hardening
 

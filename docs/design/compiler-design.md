@@ -914,13 +914,23 @@ path.
 
 **Behavior**:
 - Detects self-recursion for top-level function bodies represented as `Lambda`s.
-- Traverses parser-lowered let-binding chains to find recursive local lambdas as well.
+- Traverses nested lambda bodies, application arguments, and conditional branches to find
+  recursive local lambdas, retaining their resolved binding identities.
 - Runs after ownership cleanup is inserted. A recursive call with destruction in its
   continuation uses ordinary recursion, preserving the order of effects.
 - Writes `LambdaMeta.isTailRecursive = true` when the body qualifies.
 
 **AST rewrites**:
 - Rewrites lambda metadata and any nested let-bound lambda bodies updated during traversal.
+
+Loopified codegen retains each local binding parameter when compiling statements before a
+tail call. Local lambda values use the same recursive-binding setup as ordinary scoped
+bindings. Calls that remain ordinary recursion use the local closure entry and its environment.
+Borrow-closure storage on a loopified path is allocated in the function entry block with named
+LLVM registers; capture stores stay at the closure's creation point on each iteration.
+Calls may borrow an iteration-local closure synchronously;
+ownership analysis rejects callee escape, while loopification rejects carrying the closure
+itself across a back edge.
 
 ---
 
