@@ -47,7 +47,8 @@ java: $(BINDIR)/Sieve.class $(BINDIR)/Quicksort.class $(BINDIR)/Matmul.class
 
 java-native: $(BINDIR)/sieve-java-native $(BINDIR)/quicksort-java-native $(BINDIR)/matmul-java-native
 
-mml: $(BINDIR)/sieve-mml $(BINDIR)/quicksort-mml $(BINDIR)/matmul-mml \
+mml: $(BINDIR)/matmul-safe-mml $(BINDIR)/matmul-opt-safe-mml \
+     $(BINDIR)/sieve-mml $(BINDIR)/quicksort-mml $(BINDIR)/matmul-mml \
      $(BINDIR)/matmul-opt-mml $(BINDIR)/nqueens-mml $(BINDIR)/euclidean-ext-mml \
      $(BINDIR)/ackermann-mml \
      $(SELF_SIEVE_BINARIES) $(SELF_MATMUL_BINARIES) $(SELF_MATMUL_OPT_BINARIES)
@@ -224,6 +225,12 @@ $(BINDIR)/matmul-mml: mat-mul.mml | $(BINDIR)
 	mmlc -I -b $(BUILDDIR) -O$(MML_OPT) -o $@ $<
 
 $(BINDIR)/matmul-opt-mml: mat-mul-opt.mml Makefile | $(BINDIR)
+	mmlc -I -b $(BUILDDIR) -O$(MML_OPT) --llvm-opt-arg=-force-vector-interleave=4 -o $@ $<
+
+$(BINDIR)/matmul-safe-mml: mat-mul-safe.mml Makefile | $(BINDIR)
+	mmlc -I -b $(BUILDDIR) -O$(MML_OPT) -o $@ $<
+
+$(BINDIR)/matmul-opt-safe-mml: mat-mul-opt-safe.mml Makefile | $(BINDIR)
 	mmlc -I -b $(BUILDDIR) -O$(MML_OPT) --llvm-opt-arg=-force-vector-interleave=4 -o $@ $<
 
 $(BINDIR)/matmul-mml-O0-tco: mat-mul.mml | $(BINDIR)
@@ -410,7 +417,8 @@ ifeq ($(BENCH_SLOW),1)
 	/usr/bin/time -l $(PYTHON) quicksort.py
 endif
 
-bench-matmul: $(BINDIR)/matmul-c $(BINDIR)/matmul-restricted-c $(BINDIR)/matmul-go \
+bench-matmul: $(BINDIR)/matmul-safe-mml $(BINDIR)/matmul-opt-safe-mml \
+	$(BINDIR)/matmul-c $(BINDIR)/matmul-restricted-c $(BINDIR)/matmul-go \
 	$(BINDIR)/matmul-bce-go $(BINDIR)/matmul-opt-go $(BINDIR)/matmul-mml $(BINDIR)/matmul-opt-mml $(BINDIR)/matmul-opt-c \
 	$(BINDIR)/matmul-opt-bce-go $(BINDIR)/matmul-rs $(BINDIR)/matmul-opt-rs $(BINDIR)/matmul-java-native $(RESULTS_DEP)
 	hyperfine -N --warmup 20 --runs 50 \
@@ -419,7 +427,9 @@ bench-matmul: $(BINDIR)/matmul-c $(BINDIR)/matmul-restricted-c $(BINDIR)/matmul-
 		'$(BINDIR)/matmul-opt-c' \
 		'$(BINDIR)/matmul-restricted-c' \
 		'$(BINDIR)/matmul-mml' \
+		'$(BINDIR)/matmul-safe-mml' \
 		'$(BINDIR)/matmul-opt-mml' \
+		'$(BINDIR)/matmul-opt-safe-mml' \
 		'$(BINDIR)/matmul-rs' \
 		'$(BINDIR)/matmul-opt-rs' \
 		'$(BINDIR)/matmul-go' \
@@ -428,14 +438,17 @@ bench-matmul: $(BINDIR)/matmul-c $(BINDIR)/matmul-restricted-c $(BINDIR)/matmul-
 		'$(BINDIR)/matmul-opt-bce-go' \
 		'$(BINDIR)/matmul-java-native'
 
-bench-matmul-time: $(BINDIR)/matmul-c $(BINDIR)/matmul-restricted-c $(BINDIR)/matmul-go \
+bench-matmul-time: $(BINDIR)/matmul-safe-mml $(BINDIR)/matmul-opt-safe-mml \
+	$(BINDIR)/matmul-c $(BINDIR)/matmul-restricted-c $(BINDIR)/matmul-go \
 	$(BINDIR)/matmul-bce-go $(BINDIR)/matmul-opt-go $(BINDIR)/matmul-mml $(BINDIR)/matmul-opt-mml \
 	$(BINDIR)/matmul-opt-bce-go $(BINDIR)/matmul-opt-c $(BINDIR)/matmul-rs $(BINDIR)/matmul-opt-rs $(BINDIR)/matmul-java-native
 	/usr/bin/time -l $(BINDIR)/matmul-c
 	/usr/bin/time -l $(BINDIR)/matmul-opt-c
 	/usr/bin/time -l $(BINDIR)/matmul-restricted-c
 	/usr/bin/time -l $(BINDIR)/matmul-mml
+	/usr/bin/time -l $(BINDIR)/matmul-safe-mml
 	/usr/bin/time -l $(BINDIR)/matmul-opt-mml
+	/usr/bin/time -l $(BINDIR)/matmul-opt-safe-mml
 	/usr/bin/time -l $(BINDIR)/matmul-rs
 	/usr/bin/time -l $(BINDIR)/matmul-opt-rs
 	/usr/bin/time -l $(BINDIR)/matmul-go
