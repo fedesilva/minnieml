@@ -2,6 +2,9 @@
 
 ## Status: brainstorming
 
+See [Modal reasoning for MML memory evolution](modal-memory.md), a living companion
+document to work on toward a more precise revision of this proposal.
+
 ---
 
 ## Motivation
@@ -320,13 +323,13 @@ See `docs/brainstorming/mem/shared-refs.md` for the longer rationale.
 
 ### Operators
 
-| op  | input        | result     | effect                                              | requires    |
-|-----|--------------|------------|-----------------------------------------------------|-------------|
-| `&` | `T: Unique`  | `&T`       | move into a fresh refcount cell (rc = 1)            | —           |
-| `&` | freely copyable `T` | `&T` | copy into a fresh refcount cell (rc = 1); source stays usable | — |
-| `&` | `&T`         | `&T`       | bump the refcount, return another handle            | —           |
-| `^` | `T: Unique`  | `T`        | deep copy; original keeps ownership                 | `T: Clone`  |
-| `^` | `&T`         | `T`        | deep copy of the inner value; handle stays alive    | `T: Clone`  |
+| op  | input               | result | effect                                                        | requires   |
+|-----|---------------------|--------|---------------------------------------------------------------|------------|
+| `&` | `T: Unique`         | `&T`   | move into a fresh refcount cell (rc = 1)                      | —          |
+| `&` | freely copyable `T` | `&T`   | copy into a fresh refcount cell (rc = 1); source stays usable | —          |
+| `&` | `&T`                | `&T`   | bump the refcount, return another handle                      | —          |
+| `^` | `T: Unique`         | `T`    | deep copy; original keeps ownership                           | `T: Clone` |
+| `^` | `&T`                | `T`    | deep copy of the inner value; handle stays alive              | `T: Clone` |
 
 `&` is the only consumer of uniqueness. `^` is the only way to obtain a fresh
 unique value from an existing one, whether the source is `Unique` or `Shared`.
@@ -443,19 +446,19 @@ non-atomic. No new sigil, no new wrapper type.
 
 ## Summary: before and after
 
-| Concern | Current | After evolution |
-|---------|---------|-----------------|
-| "Is this unique / does it need cleanup?" | `isStructWithHeapFields` | `T: Unique` |
-| Linearity enforcement | Flow analysis (OwnershipAnalyzer) | Type system (`T: Unique`) |
-| "Can be duplicated?" | All heap types, always | `T: Clone` |
-| Return ownership | `ReturnOwnershipAnalysis` fixed-point | Implicit: `Unique` types always return owned |
-| Conditional ownership | Runtime witness `__owns_x` | Type checker rejects mixed branches |
-| Free insertion | `wrapWithFrees` + `__free_T` | `drop` calls via `Unique` protocol |
-| Clone insertion | `wrapWithClone` + `__clone_T` | `clone` calls via `Clone` protocol |
-| Native type metadata | `memEffect` annotations | Protocol implementations |
-| Unique resources | Not expressible | `Unique` without `Clone` |
-| Aliasing without copy | Not expressible | `&` produces `&T` (opt-in refcount) |
-| Explicit duplication | Implicit via codegen | `^` invokes `Clone` at the use site |
+| Concern                                  | Current                               | After evolution                              |
+|------------------------------------------|---------------------------------------|----------------------------------------------|
+| "Is this unique / does it need cleanup?" | `isStructWithHeapFields`              | `T: Unique`                                  |
+| Linearity enforcement                    | Flow analysis (OwnershipAnalyzer)     | Type system (`T: Unique`)                    |
+| "Can be duplicated?"                     | All heap types, always                | `T: Clone`                                   |
+| Return ownership                         | `ReturnOwnershipAnalysis` fixed-point | Implicit: `Unique` types always return owned |
+| Conditional ownership                    | Runtime witness `__owns_x`            | Type checker rejects mixed branches          |
+| Free insertion                           | `wrapWithFrees` + `__free_T`          | `drop` calls via `Unique` protocol           |
+| Clone insertion                          | `wrapWithClone` + `__clone_T`         | `clone` calls via `Clone` protocol           |
+| Native type metadata                     | `memEffect` annotations               | Protocol implementations                     |
+| Unique resources                         | Not expressible                       | `Unique` without `Clone`                     |
+| Aliasing without copy                    | Not expressible                       | `&` produces `&T` (opt-in refcount)          |
+| Explicit duplication                     | Implicit via codegen                  | `^` invokes `Clone` at the use site          |
 
 ---
 
