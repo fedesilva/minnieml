@@ -51,6 +51,8 @@ def collectUserLambdas(term: Term): List[Lambda] =
       ref.qualifier.toList.flatMap(collectUserLambdas)
     case expr: Expr =>
       collectUserLambdas(expr)
+    case invalid: InvalidExpression =>
+      collectUserLambdas(invalid.originalExpr)
     case _ =>
       Nil
 

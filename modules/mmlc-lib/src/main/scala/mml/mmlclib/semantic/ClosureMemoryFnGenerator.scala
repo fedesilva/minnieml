@@ -36,6 +36,8 @@ object ClosureMemoryFnGenerator:
     module: Module
   ): List[(Lambda, String)] =
 
+    val recovery = ValueAvailability.fromModule(module)
+
     def walkExpr(expr: Expr, counter: Int): Collected =
       expr.terms.foldLeft((List.empty[(Lambda, String)], counter)):
         case ((acc, cnt), term) =>
@@ -44,7 +46,7 @@ object ClosureMemoryFnGenerator:
 
     def walkTerm(term: Term, counter: Int): Collected =
       term match
-        case lambda: Lambda if lambda.captures.nonEmpty =>
+        case lambda: Lambda if lambda.captures.nonEmpty && recovery.isAvailable(lambda) =>
           val name          = s"__closure_env_$counter"
           val (inner, next) = walkExpr(lambda.body, counter + 1)
           ((lambda, name) :: inner, next)
@@ -69,6 +71,7 @@ object ClosureMemoryFnGenerator:
           }
         case ref: Ref =>
           ref.qualifier.fold((Nil, counter))(walkTerm(_, counter))
+        case invalid: InvalidExpression => walkExpr(invalid.originalExpr, counter)
         case _ => (Nil, counter)
 
     module.members
@@ -224,6 +227,8 @@ object ClosureMemoryFnGenerator:
         yield app.copy(fn = fn, arg = arg)
 
     def rewriteTerm(term: Term): Allocation[Term] = term match
+      case invalid: InvalidExpression =>
+        rewriteExpr(invalid.originalExpr).map(original => invalid.copy(originalExpr = original))
       case callable: (Ref | App | Lambda) => rewriteCallable(callable).widen
       case cond:     Cond =>
         for

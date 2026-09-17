@@ -26,6 +26,10 @@ object TypeChecker:
   private object CheckResult:
     def ok[A](value: A): CheckResult[A] = CheckResult(value, Vector.empty)
 
+  /** Preserve the operand for diagnostics without giving a failed application a usable value. */
+  private def invalidArgument(expr: Expr): Expr =
+    expr.copy(terms = List(InvalidExpression(expr.source, expr, typeSpec = expr.typeSpec)))
+
   private case class LambdaInferenceState(
     inferred:   Map[String, Type],
     aliases:    Map[String, String],
@@ -880,7 +884,11 @@ object TypeChecker:
       else Vector.empty
 
     CheckResult(
-      app.copy(fn = checkedLambda, arg = checkedArg.value, typeSpec = bodyType),
+      app.copy(
+        fn  = checkedLambda,
+        arg = if paramErrors.nonEmpty then invalidArgument(checkedArg.value) else checkedArg.value,
+        typeSpec = bodyType
+      ),
       checkedArg.errors ++ paramErrors ++ checkedBody.errors ++ argErrors ++ bodyErrors
     )
 
@@ -939,7 +947,11 @@ object TypeChecker:
       )
 
     CheckResult(
-      app.copy(fn = normalizedFn, arg = checkedArg, typeSpec = appTypeResult.value),
+      app.copy(
+        fn  = normalizedFn,
+        arg = if appTypeResult.errors.nonEmpty then invalidArgument(checkedArg) else checkedArg,
+        typeSpec = appTypeResult.value
+      ),
       checkedFnEither.errors ++ checkedArgEither.errors ++ fnErrors ++ typeErrors
     )
 

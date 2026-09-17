@@ -1098,6 +1098,15 @@ The compiler wraps invalid constructs in special nodes to continue analysis:
 
 Partial compilation continues, LSP features work despite errors, and error messages include more context.
 
+Application type mismatches wrap the failed argument in `InvalidExpression`, retaining its
+typed source expression for diagnostics and editor queries. PAP elaboration continues across
+independent members and through statement continuations even when the module has errors.
+`ValueAvailability` propagates unavailable results through binding identities and aliases.
+Callable flow, capture contracts, and closure layouts require available prerequisites;
+ownership analysis still visits the preserved operands to report independent errors. An
+unavailable PAP result cannot establish capture or return ownership. A discarded result's
+type mismatch does not hide a genuine use-after-move inside that expression.
+
 ### Error types
 
 #### `SemanticError`
