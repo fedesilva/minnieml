@@ -17,6 +17,13 @@ This is the Author's active and near-term focus. The backlog lives in [tasks/](t
 - **Current focus:** [Elaboration error recovery](tasks/unify-lambdas.md#bug-continue-elaboration-after-independent-errors).
   Planned; implementation awaits bounded plan approval.
 
+### Module naming
+
+- **Tracker:** [Prevent module symbol and output-name collisions](tasks/module-name-collisions.md)
+- **Status:** planned
+- **Priority:** HIGH
+- **Current focus:** Define module identity and naming rules that prevent symbol and output collisions.
+
 ### BUG: Conditional ownership hardening
 
 - **Tracker:** [Make conditional ownership explicit in ownership operations](tasks/conditional-ownership-witnesses.md)
