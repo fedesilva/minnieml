@@ -2,6 +2,12 @@
 
 Durable product changes belong here. Current task state belongs in task files.
 
+## 2026-09-17
+
+- Add modal memory design notes connecting MML's ownership and PAP contracts to OxCaml's
+  modes. Outline refinements to memory evolution, async borrowing restrictions, and shared
+  handle ownership, with source references and commented syntax proposals.
+
 ## 2026-09-16
 
 - Compile nested capturing recursion to valid LLVM loops while preserving local binding
