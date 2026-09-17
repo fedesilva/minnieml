@@ -30,23 +30,21 @@ object PartialApplicationElaborator:
     */
   @scala.annotation.tailrec
   private def stabilizeCaptures(state: CompilerState): CompilerState =
-    if state.hasErrors then state
-    else
-      val values = CallableValues.fromModule(state.module)
-      val allocation = state.module.members.traverse {
-        case binding: Bnd =>
-          val owner = BindingOwner.binding(state.module.name, binding.name)
-          rewriteExpr(binding.value, owner, state.module.resolvables, values)
-            .map(value => binding.copy(value = value): Member)
-        case other => other.pure[Allocation]
-      }
-      val (supply, members) = allocation.run(state.bindingIds.include(state.module)).value
-      val captured = CaptureAnalyzer.rewriteModule(
-        state.copy(bindingIds = supply).withModule(state.module.copy(members = members))
-      )
-      val next = ResolvablesIndexer.rewriteModule(captured)
-      if next.module.members == state.module.members then next
-      else stabilizeCaptures(next)
+    val values = CallableValues.fromModule(state.module)
+    val allocation = state.module.members.traverse {
+      case binding: Bnd =>
+        val owner = BindingOwner.binding(state.module.name, binding.name)
+        rewriteExpr(binding.value, owner, state.module.resolvables, values)
+          .map(value => binding.copy(value = value): Member)
+      case other => other.pure[Allocation]
+    }
+    val (supply, members) = allocation.run(state.bindingIds.include(state.module)).value
+    val captured = CaptureAnalyzer.rewriteModule(
+      state.copy(bindingIds = supply).withModule(state.module.copy(members = members))
+    )
+    val next = ResolvablesIndexer.rewriteModule(captured)
+    if next.module.members == state.module.members then next
+    else stabilizeCaptures(next)
 
   private def rewriteExpr(
     expr:   Expr,
@@ -91,7 +89,9 @@ object PartialApplicationElaborator:
             callee.typeSpec.flatMap(TypeUtils.canonical(_, index)).collect {
               case signature: TypeFn => signature
             } match
-              case Some(signature) if rewrittenArgs.size < signature.paramTypes.length =>
+              case Some(signature)
+                  if values.recovery.isAvailable(app) &&
+                    rewrittenArgs.size < signature.paramTypes.length =>
                 elaborate(app, callee, rewrittenArgs, signature, owner, index, values)
               case _ =>
                 val prepared =
@@ -113,6 +113,7 @@ object PartialApplicationElaborator:
       val ownedCaptureIds = lambda.captures
         .map(_.ref)
         .filter { ref =>
+          values.recovery.isAvailable(ref) &&
           ref.typeSpec.exists(TypeUtils.requiresDestruction(_, index))
         }
         .flatMap(_.resolvedId)
@@ -152,6 +153,9 @@ object PartialApplicationElaborator:
             )
           )
         }
+    case invalid: InvalidExpression =>
+      rewriteExpr(invalid.originalExpr, owner, index, values)
+        .map(original => PreparedValue(invalid.copy(originalExpr = original)))
     case expr:  Expr => prepareExpr(expr, owner, index, values)
     case group: TermGroup =>
       prepareExpr(group.inner, owner, index, values).map { inner =>

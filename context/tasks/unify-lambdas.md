@@ -23,7 +23,7 @@ remain subject to bounded plan approval. Only the active step exposes its curren
 8. [x] **complete** — [Binding identity and local construction](#establish-binding-identity-and-local-construction-invariants); signed off.
 9. [x] **complete** — [BUG: consume an owned PAP captured by a move lambda](#bug-consume-an-owned-pap-captured-by-a-move-lambda); signed off.
 10. [x] **complete** — [BUG: preserve valid LLVM and TCO for nested capturing recursion](#bug-preserve-valid-llvm-and-tco-for-nested-capturing-recursion); signed off.
-11. [ ] **planned** — **Urgent:** [BUG: continue elaboration after independent errors](#bug-continue-elaboration-after-independent-errors).
+11. [x] **complete** — [BUG: continue elaboration after independent errors](#bug-continue-elaboration-after-independent-errors); signed off.
 12. [ ] **planned** — [Counter and argument-expression preservation](#preserve-counters-and-argument-expressions-across-ownership-analysis).
 13. [ ] **planned** — [Mixed-ownership transfer repair and conditional-ownership hardening](#bug-preserve-mixed-ownership-through-consuming-transfers).
 14. [ ] **planned** — [Remaining lambda semantics and lowering](#remaining-lambda-implementation).
@@ -843,23 +843,27 @@ Evidence collected on 2026-09-11, macOS arm64:
 
 #### Bug: continue elaboration after independent errors
 
-- **Status:** planned.
+- **Status:** complete; verified, reviewed, and signed off.
+- **Approved plan:** add regressions for independent member and statement errors; replace
+  module-wide elaboration skipping with local recovery boundaries; preserve independent
+  diagnostics while downstream phases recognize unavailable contracts; verify CLI and LSP
+  diagnostics and run compiler checks and reviews.
 - **Priority:** urgent; follows the nested capturing-recursion TCO repair. Module-wide
   abandonment of elaboration violates the compiler's error-accumulating architecture.
-- **Reproducer:** in [returned-lambda-pap.mml](../../mml/samples/returned-lambda-pap.mml),
-  uncomment the second `plain_pap 1;` statement. This produces five errors: the legitimate
+- **Baseline reproducer:** in [returned-lambda-pap.mml](../../mml/samples/returned-lambda-pap.mml),
+  uncommenting the second `plain_pap 1;` statement produced five errors: the legitimate
   `statement` expected `Unit`, got `Int` mismatch, three false borrowed-capture errors
   for `consuming`, and one false borrowed-return error. The expected call-once reuse
-  diagnostic is absent. The probe is commented out in the runnable sample.
+  diagnostic was absent. The probe is commented out in the runnable sample.
 - **Controls (2026-09-14):** replacing that statement with `1;` produces the same four
   false ownership errors alongside the type mismatch. Replacing it with
   `let second = plain_pap 1;` produces only the correct use-after-move error.
   Logs: `/tmp/mml-returned-pap-reuse-errors.log`, `/tmp/mml-pap-unrelated-type-error.log`,
   `/tmp/mml-pap-reuse-bound.log`.
-- **Cause:** `PartialApplicationElaborator.stabilizeCaptures` returns the entire state
-  unchanged when `state.hasErrors`. An unrelated type error therefore prevents valid
+- **Baseline cause:** `PartialApplicationElaborator.stabilizeCaptures` returned the entire state
+  unchanged when `state.hasErrors`. An unrelated type error prevented valid
   PAPs and move lambdas from acquiring their capture and callable contracts.
-  `SemanticStage` still runs `OwnershipAnalyzer`, which diagnoses the unelaborated tree.
+  `SemanticStage` ran `OwnershipAnalyzer` on the unelaborated tree.
   The demonstrated cascade concerns PAP/capture ownership; the module-wide recovery
   defect is broader than ownership-specific input errors.
 - **Fix scope:** establish recovery boundaries so elaboration continues through valid
@@ -876,6 +880,22 @@ Evidence collected on 2026-09-11, macOS arm64:
   bare `Int` statement remains a real `Unit` mismatch, and the locally bound second call
   remains a real use-after-move error. Investigate broader application-chain/typechecker
   symptoms separately unless a reproducer establishes the same recovery cause.
+- **Implementation:** application mismatches retain typed operands in `InvalidExpression`.
+  `ValueAvailability` propagates unavailable results through binding identities and aliases;
+  callable flow, PAP elaboration, capture contracts, closure layouts, and ownership checks
+  recognize those boundaries. Valid operands and statement continuations remain analyzable.
+  Editor queries and semantic highlighting retain the preserved expressions.
+- **Verification:** formatting and lint passed; full suite: 734 compiler tests and 9 additional
+  tests passed, 51 existing ignores. Recovery tests cover all three reproducer variants,
+  independent members, unavailable aliases, and independent argument/continuation diagnostics.
+  LSP tests verify diagnostic messages, ranges, and tokens within a failed statement.
+  Smoke: 8/8 passed. Local compiler installation and all 11 MML benchmark builds passed.
+  CLI controls report only the expected statement mismatch or use-after-move diagnostic.
+  ASan+LSan: 43/43 passed. The unmodified sample runs and prints `4` on four lines.
+  QA enforcement, tracking consistency, and independent code review found no actionable issues.
+  The reviewer additionally checked six isolated malformed-input CLI probes. Native checks
+  cover this macOS host; Linux sanitizer validation remains separately deferred.
+- **Signoff:** complete for the recovery repair. Local commit authorized; push is not authorized.
 
 ### Remaining lambda implementation
 
@@ -898,13 +918,13 @@ Evidence collected on 2026-09-11, macOS arm64:
 
 ## Verification
 
-Binding construction stage 2 has recorded formatting/lint, **636 passed / 51 existing ignores**,
-all seven compiler smokes, publishing, seven clean benchmark builds, **41/41 Darwin arm64
-ASan+LSan cases**, and completed focused independent review. Signoff is pending.
-The [binding construction evidence](#binding-construction-evidence) retains the stage 1
-checkpoint; detailed stage 2 logs and implementation notes remain uncommitted with its code.
-These results do not cover the separate mixed-ownership reproducer or establish Linux
-sanitizer coverage. General branch audit and Linux sanitizer validation remain deferred.
+The [elaboration recovery repair](#bug-continue-elaboration-after-independent-errors) has
+passing formatting/lint, **734 compiler tests and 9 additional tests / 51 existing ignores**,
+**8/8 smokes**, local compiler publication, **11 MML benchmark builds**, and **43/43 macOS
+ASan+LSan cases**. QA and independent code review are complete; the repair is signed off.
+These results do not resolve the separate mixed-ownership reproducer or establish Linux
+sanitizer coverage. General branch audit, final task signoff, and Linux sanitizer validation
+remain pending or separately deferred.
 
 Completed slices retain their own results and review limits in
 [completed-slice evidence](#completed-slice-evidence) and the
@@ -923,12 +943,13 @@ are in `context/history/` for Author review. No compiler slice is authorized by 
 
 - Workstream signoff: complete for preservation, borrowed returns, typed closure destruction,
   PAP creation, deferred consuming arguments, owned PAP struct fields, nested consuming-PAP
-  repairs, both binding identity and local-construction stages, and the nested
-  capturing-recursion TCO repair with its smoke and benchmark integration.
+  repairs, both binding identity and local-construction stages, the nested
+  capturing-recursion TCO repair with its smoke and benchmark integration, and elaboration
+  error recovery.
 - Tracked item completion: pending; open work remains in the
   [Execution Checklist](#execution-checklist).
-- Commit authorization: local commit authorization covers the nested capturing-recursion
-  TCO repair, smoke and benchmark integration, and completion records; no push is authorized.
+- Commit authorization: local commit authorization covers elaboration error recovery and
+  its completion records; no push is authorized.
 
 ## Task Working Memory
 
@@ -939,9 +960,13 @@ are in `context/history/` for Author review. No compiler slice is authorized by 
 - **Completed repair:** [Nested capturing-recursion TCO repair](#bug-preserve-valid-llvm-and-tco-for-nested-capturing-recursion)
   is complete and signed off with passing LLVM, runtime, sanitizer, benchmark-build, compiler,
   QA, and independent review gates.
-- **Current focus:** [Elaboration error recovery](#bug-continue-elaboration-after-independent-errors)
-  is planned; implementation awaits bounded plan approval.
-- **Next action:** prepare the elaboration error-recovery repair plan.
+- **Completed repair:** [Elaboration error recovery](#bug-continue-elaboration-after-independent-errors)
+  is complete and signed off with passing verification and independent review.
+- **Next action:** agree the next bounded slice from the execution checklist. Final task
+  and branch closing review remain pending until the remaining work is complete.
+- **Recovery evidence:** CLI controls preserve the statement type mismatch and bound-call
+  use-after-move diagnostic without false ownership errors. Regression, smoke, benchmark-build,
+  and sanitizer results are recorded in the recovery section.
 - **Evidence:** [Nested TCO repair verification](#bug-preserve-valid-llvm-and-tco-for-nested-capturing-recursion)
   and [binding construction verification](#binding-construction-evidence).
 - **Open limits:** the mixed-ownership reproducer remains unresolved; the general branch

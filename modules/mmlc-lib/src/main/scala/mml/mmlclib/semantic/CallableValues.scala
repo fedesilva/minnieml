@@ -5,7 +5,8 @@ import mml.mmlclib.ast.*
 /** Resolved value flow preserves callable ownership through bindings, returns, and arguments. */
 final case class CallableValues private (
   bindings: Map[String, List[Expr]],
-  index:    ResolvablesIndex
+  index:    ResolvablesIndex,
+  recovery: ValueAvailability
 ):
 
   private case class Origin(lambda: Lambda, supplied: List[Expr] = Nil):
@@ -13,6 +14,7 @@ final case class CallableValues private (
 
   private def origins(term: Term): List[Origin] =
     def resolve(value: Term, fields: List[String], seen: Set[String]): List[Origin] = value match
+      case _ if !recovery.isAvailable(value) => Nil
       case lambda: Lambda if fields.isEmpty => List(Origin(lambda))
       case expr:   Expr => expr.terms.lastOption.toList.flatMap(resolve(_, fields, seen))
       case group:  TermGroup => resolve(group.inner, fields, seen)
@@ -97,7 +99,7 @@ final case class CallableValues private (
     }
 
 object CallableValues:
-  val empty: CallableValues = CallableValues(Map.empty, ResolvablesIndex())
+  val empty: CallableValues = CallableValues(Map.empty, ResolvablesIndex(), ValueAvailability.empty)
   def applications(term: Term): List[App] = term match
     case app: App =>
       val (callee, args) = application(app)
@@ -113,7 +115,8 @@ object CallableValues:
     loop(app.fn, List(app.arg))
 
   def fromModule(module: Module): CallableValues =
-    val members = module.members.collect { case binding: Bnd => binding }
+    val recovery = ValueAvailability.fromModule(module)
+    val members  = module.members.collect { case binding: Bnd => binding }
     val applications = members.flatMap { binding =>
       CallableValues.applications(binding.value)
     }
@@ -127,7 +130,7 @@ object CallableValues:
 
     @scala.annotation.tailrec
     def propagate(current: Map[String, List[Expr]]): CallableValues =
-      val flow = CallableValues(current, module.resolvables)
+      val flow = CallableValues(current, module.resolvables, recovery)
       val incoming = applications.flatMap { app =>
         val (callee, args) = application(app)
         flow.origins(callee).flatMap { origin =>

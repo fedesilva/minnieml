@@ -14,8 +14,9 @@ This is the Author's active and near-term focus. The backlog lives in [tasks/](t
 
 - **Tracker:** [Unify lambdas](tasks/unify-lambdas.md)
 - **Status:** in_progress
-- **Current focus:** [Elaboration error recovery](tasks/unify-lambdas.md#bug-continue-elaboration-after-independent-errors).
-  Planned; implementation awaits bounded plan approval.
+- **Current focus:** Agree the next bounded slice from the
+  [execution checklist](tasks/unify-lambdas.md#execution-checklist).
+  Final task and branch closing review remain pending.
 
 ### Module naming
 

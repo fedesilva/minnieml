@@ -4,6 +4,10 @@ Durable product changes belong here. Current task state belongs in task files.
 
 ## 2026-09-17
 
+- Continue PAP and closure elaboration through independent type errors. Track unavailable
+  values through aliases to prevent false ownership diagnostics while preserving genuine
+  use-after-move errors and editor highlighting inside failed expressions.
+
 - Add modal memory design notes connecting MML's ownership and PAP contracts to OxCaml's
   modes. Outline refinements to memory evolution, async borrowing restrictions, and shared
   handle ownership, with source references and commented syntax proposals.

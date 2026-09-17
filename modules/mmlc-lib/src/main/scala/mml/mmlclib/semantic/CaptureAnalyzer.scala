@@ -88,6 +88,9 @@ object CaptureAnalyzer:
       case e: Expr =>
         analyzeExpr(e, localIds, moduleIds)
 
+      case invalid: InvalidExpression =>
+        invalid.copy(originalExpr = analyzeExpr(invalid.originalExpr, localIds, moduleIds))
+
       case group: TermGroup =>
         val newInner = analyzeExpr(group.inner, localIds, moduleIds)
         if newInner ne group.inner then group.copy(inner = newInner)
@@ -162,7 +165,8 @@ object CaptureAnalyzer:
 
   private def collectRefsFromTerm(term: Term): List[Ref] =
     term match
-      case ref: Ref =>
+      case invalid: InvalidExpression => collectRefsFromExpr(invalid.originalExpr)
+      case ref:     Ref =>
         val qualifierRefs = ref.qualifier.toList.flatMap(collectRefsFromTerm)
         ref :: qualifierRefs
       case e:   Expr => collectRefsFromExpr(e)
@@ -203,8 +207,9 @@ object CaptureAnalyzer:
 
   private def collectNestedLambdasTerm(term: Term): List[Lambda] =
     term match
-      case lambda: Lambda => List(lambda)
-      case app:    App =>
+      case invalid: InvalidExpression => collectNestedLambdas(invalid.originalExpr)
+      case lambda:  Lambda => List(lambda)
+      case app:     App =>
         app.fn match
           case fnLambda: Lambda =>
             collectNestedLambdas(app.arg) ++

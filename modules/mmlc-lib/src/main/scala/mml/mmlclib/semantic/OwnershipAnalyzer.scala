@@ -1774,6 +1774,7 @@ object OwnershipAnalyzer:
 
     // Validate the typed source flow before cleanup and return-promotion rewrites.
     val origins = returnedOrigins(lambda.body, scope.resolvables)
+      .filter(scope.callableValues.recovery.isAvailable)
     val borrowedCaptureIds = lambda.captures.flatMap: capture =>
       capture.ref.resolvedId.filter: id =>
         capture.ref.typeSpec.exists(isOwnedType(_, scope.resolvables)) &&
@@ -1817,7 +1818,8 @@ object OwnershipAnalyzer:
             ref.resolvedId.exists(id => lambda.meta.exists(_.borrowedCaptures.contains(id)))
           val sourceLambdas    = scope.callableValues.lambdas(ref)
           val isStaticFunction = sourceLambdas.nonEmpty && sourceLambdas.forall(_.captures.isEmpty)
-          if !isOwnedCapture then (s, errs, caps :+ cap)
+          if !isOwnedCapture || !scope.callableValues.recovery.isAvailable(ref) then
+            (s, errs, caps :+ cap)
           else if isBorrowed || isStaticFunction then
             val errors = ref.resolvedId.flatMap(s.movedBindingIds.get).toList.map { movedAt =>
               SemanticError.UseAfterMove(ref, movedAt, PhaseName)
@@ -1911,12 +1913,24 @@ object OwnershipAnalyzer:
     scope: OwnershipScope
   ): TermResult[Term] =
     term match
+      case invalid: InvalidExpression =>
+        val result = analyzeExpr(invalid.originalExpr, scope)
+        TermResult(result.scope, invalid.copy(originalExpr = result.expr), result.errors)
+
       case ref: Ref =>
         analyzeRef(ref, scope)
 
       case app: App =>
         app.fn match
           case lambda: Lambda => analyzeLambdaApplication(app, lambda, scope)
+          case _ if !scope.callableValues.recovery.isAvailable(app) =>
+            val callee   = analyzeTerm(app.fn, scope)
+            val argument = analyzeExpr(app.arg, callee.scope)
+            TermResult(
+              argument.scope,
+              app.copy(arg = argument.expr),
+              callee.errors ++ argument.errors
+            )
           case _ => analyzeRegularApp(app, scope)
 
       case cond: Cond =>
