@@ -65,6 +65,9 @@ pub fn main(): Unit =
   let returner = make_pap_returner (int_to_str 123);
   let returned_pap = returner ();
   println (int_to_str (returned_pap 1));  // 4
-  // let another = returner ();  // Rejected: returner already moved its capture out.
-  // returned_pap 1;             // Rejected: returned_pap already transferred its String.
+  // Rejected: returner already moved its capture out.
+  // let another = returner ();
+  // Rejected: returned_pap already transferred its String.
+  // let impossible_counter = returned_pap 1;
+  ();
 ;

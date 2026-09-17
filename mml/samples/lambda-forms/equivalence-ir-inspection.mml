@@ -4,7 +4,7 @@
 //   mmlc -I mml/samples/lambda-forms/equivalence-ir-inspection.mml
 //
 // Run with:
-//   mmlc run mml/samples/lambda-forms/equivalence-ir-inspection.mml
+//   build/target/equivalence-ir-inspection
 //
 // Expected output when run:
 //   117

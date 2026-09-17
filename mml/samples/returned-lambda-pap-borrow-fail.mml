@@ -9,7 +9,7 @@ fn make_counter(~text: String): Int -> Int =
   let consuming = take_length text;
 
   // Without ~, returning this lambda lets a borrowed capture escape.
-  { extra: Int -> consuming extra; };
+  ~{ extra: Int -> consuming extra; };
 ;
 
 pub fn main(): Unit =
