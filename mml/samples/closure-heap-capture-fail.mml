@@ -1,4 +1,5 @@
-fn makeGreeter(name: String): Unit -> Unit =
+
+fn makeGreeter(~name: String) =
   ~{
     println ("Hello, " ++ name);
   };

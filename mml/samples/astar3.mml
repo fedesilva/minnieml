@@ -360,7 +360,16 @@ fn astar(
   // Its f-score is:
   // - g = 0 because we are already there
   // - h = estimated distance from start to goal
-  let h_size = heap_push open_set 0 start_idx (heuristic start_idx goal_idx grid.width);
+  let h_size =
+    heap_push
+      open_set
+      0
+      start_idx
+      ( heuristic
+        start_idx
+        goal_idx
+        grid.width
+      );
   solve h_size;
 ;
 
