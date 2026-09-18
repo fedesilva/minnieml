@@ -4,6 +4,10 @@ Durable product changes belong here. Current task state belongs in task files.
 
 ## 2026-09-17
 
+- Add bounds-checked quicksort benchmarks in MML and C, with matching deterministic
+  inputs and median checksums. Include both variants in build and timing targets;
+  the C generator uses defined 64-bit wrapping arithmetic.
+
 - Outline a candidate `noalias` mode in the modal memory notes, distinguishing absence
   of aliases from exclusive borrowing through loops, recursion, and callbacks.
 
