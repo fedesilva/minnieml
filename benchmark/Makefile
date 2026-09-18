@@ -36,7 +36,7 @@ endif
 all: $(BINDIR)/fizzbuzz-c $(BINDIR)/fizzbuzz2-c $(BINDIR)/fizzbuzz-go $(BINDIR)/fizzbuzz2-go \
      $(BINDIR)/ackermann-c $(BINDIR)/ackermann-go $(BINDIR)/ackermann-c-chacho $(BINDIR)/ackermann-unfair-c $(BINDIR)/ackermann-rs \
      $(BINDIR)/sieve-c $(BINDIR)/sieve-go $(BINDIR)/sieve-opt-go $(BINDIR)/sieve-rs \
-     $(BINDIR)/quicksort-c $(BINDIR)/quicksort-go $(BINDIR)/quicksort-rs \
+     $(BINDIR)/quicksort-c $(BINDIR)/quicksort-safe-c $(BINDIR)/quicksort-go $(BINDIR)/quicksort-rs \
      $(BINDIR)/matmul-c $(BINDIR)/matmul-opt-c $(BINDIR)/matmul-restricted-c $(BINDIR)/matmul-go $(BINDIR)/matmul-bce-go $(BINDIR)/matmul-opt-go \
      $(BINDIR)/matmul-opt-bce-go $(BINDIR)/matmul-rs $(BINDIR)/matmul-opt-rs \
      $(BINDIR)/nqueens-c $(BINDIR)/nqueens-go $(BINDIR)/euclidean-ext-c \
@@ -47,7 +47,7 @@ java: $(BINDIR)/Sieve.class $(BINDIR)/Quicksort.class $(BINDIR)/Matmul.class
 
 java-native: $(BINDIR)/sieve-java-native $(BINDIR)/quicksort-java-native $(BINDIR)/matmul-java-native
 
-mml: $(BINDIR)/sieve-mml $(BINDIR)/quicksort-mml $(BINDIR)/matmul-mml \
+mml: $(BINDIR)/sieve-mml $(BINDIR)/quicksort-mml $(BINDIR)/quicksort-safe-mml $(BINDIR)/matmul-mml \
      $(BINDIR)/matmul-nested-mml $(BINDIR)/matmul-safe-mml \
      $(BINDIR)/matmul-opt-mml $(BINDIR)/matmul-opt-nested-mml $(BINDIR)/matmul-opt-safe-mml \
      $(BINDIR)/nqueens-mml $(BINDIR)/euclidean-ext-mml \
@@ -179,6 +179,9 @@ $(BINDIR)/quicksort-java-native: $(BINDIR)/Quicksort.class
 $(BINDIR)/quicksort-c: quicksort.c | $(BINDIR)
 	$(CC) $(CFLAGS) -o $@ $<
 
+$(BINDIR)/quicksort-safe-c: quicksort-safe.c Makefile | $(BINDIR)
+	$(CC) $(CFLAGS) -o $@ $<
+
 $(BINDIR)/quicksort-go: quicksort.go | $(BINDIR)
 	go build -o $@ $<
 
@@ -186,6 +189,9 @@ $(BINDIR)/quicksort-rs: quicksort.rs | $(BINDIR)
 	rustc -O -o $@ $<
 
 $(BINDIR)/quicksort-mml: quicksort.mml | $(BINDIR)
+	mmlc -I -b $(BUILDDIR) -O$(MML_OPT) -o $@ $<
+
+$(BINDIR)/quicksort-safe-mml: quicksort-safe.mml Makefile | $(BINDIR)
 	mmlc -I -b $(BUILDDIR) -O$(MML_OPT) -o $@ $<
 
 # Matrix Multiplication
@@ -398,24 +404,30 @@ bench-self-matmul-opt-time: $(SELF_MATMUL_OPT_BINARIES)
 	/usr/bin/time -l $(BINDIR)/matmul-opt-mml-O3-tco
 	/usr/bin/time -l $(BINDIR)/matmul-opt-mml-O3-no-tco
 
-bench-quicksort: $(BINDIR)/quicksort-c $(BINDIR)/quicksort-mml \
+bench-quicksort: $(BINDIR)/quicksort-c $(BINDIR)/quicksort-safe-c \
+	$(BINDIR)/quicksort-mml $(BINDIR)/quicksort-safe-mml \
 	$(BINDIR)/quicksort-go $(BINDIR)/quicksort-rs $(BINDIR)/Quicksort.class \
 	$(BINDIR)/quicksort-java-native quicksort.py $(RESULTS_DEP)
 	hyperfine -N --warmup 10 --runs $(or $(BENCH_RUNS),200) \
 		$(call EXPORT_FLAGS,quicksort) \
 		'$(BINDIR)/quicksort-c' \
+		'$(BINDIR)/quicksort-safe-c' \
 		'$(BINDIR)/quicksort-mml' \
+		'$(BINDIR)/quicksort-safe-mml' \
 		'$(BINDIR)/quicksort-rs' \
 		'$(BINDIR)/quicksort-go' \
 		'$(JAVA) -cp $(BINDIR) Quicksort' \
 		'$(BINDIR)/quicksort-java-native' \
 		$(call PYTHON_BENCH,quicksort)
 
-bench-quicksort-time: $(BINDIR)/quicksort-c $(BINDIR)/quicksort-mml \
+bench-quicksort-time: $(BINDIR)/quicksort-c $(BINDIR)/quicksort-safe-c \
+	$(BINDIR)/quicksort-mml $(BINDIR)/quicksort-safe-mml \
 	$(BINDIR)/quicksort-go $(BINDIR)/quicksort-rs $(BINDIR)/Quicksort.class \
 	$(BINDIR)/quicksort-java-native quicksort.py
 	/usr/bin/time -l $(BINDIR)/quicksort-c
+	/usr/bin/time -l $(BINDIR)/quicksort-safe-c
 	/usr/bin/time -l $(BINDIR)/quicksort-mml
+	/usr/bin/time -l $(BINDIR)/quicksort-safe-mml
 	/usr/bin/time -l $(BINDIR)/quicksort-rs
 	/usr/bin/time -l $(BINDIR)/quicksort-go
 	/usr/bin/time -l $(JAVA) -cp $(BINDIR) Quicksort
