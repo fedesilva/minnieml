@@ -57,10 +57,38 @@ higher-order calls with one consistent set of rules.
 
 ### Type capabilities and value usage
 
-The proposed `Unique` protocol answers a question about a type's resource discipline.
-A binding of that type can still be owned or borrowed. `Clone` describes an available
-duplication operation. Neither capability alone tells us which binding is responsible
-for cleanup or whether a particular invocation consumes a closure.
+The proposed `Unique` protocol describes a type’s resource discipline. Every value of
+that type must have an owner. It can be borrowed without transferring ownership.
+`Drop` supplies cleanup when the type requires it; the owner is responsible for that
+cleanup. `Clone` describes an available duplication operation. These capabilities
+alone do not tell us which binding is responsible for cleanup or whether a particular
+invocation consumes a closure.
+
+### Decision: separate Unique, Drop, and Clone
+
+`Unique` constrains ownership and forbids implicit duplication. It is a marker
+protocol with no runtime method. `Drop` supplies a consuming cleanup operation;
+`Clone` supplies a duplication operation that borrows the original. They describe
+separate properties even when a type implements all three.
+
+An opaque newtype around an `Int` can represent a one-use initialization permission.
+Construction is controlled, and initialization consumes the token. The token can
+move or be borrowed, but cannot be copied or cloned. Abandoning the permission
+requires no cleanup: this type is `Unique`, without `Drop` or `Clone`.
+
+An integer file handle, by contrast, is `Unique + Drop` without `Clone`: an unused
+owner must close the file. The distinction is cleanup obligation, not allocation.
+An owned string can implement all three capabilities.
+
+Ownership and cleanup derive separately through aggregates. A unique member requires
+ownership tracking; a member needing cleanup requires aggregate cleanup. An aggregate
+containing only the permission token needs `Unique`, but neither `Drop` nor `Clone`.
+An opaque newtype's hidden representation must not silently grant it cloning.
+
+Separating the protocols still requires controlled ownership of cleanup obligations.
+It does not permit freely copying file handles or duplicating destruction obligations.
+
+### Questions to keep separate
 
 Separate these questions in the revised proposal:
 
@@ -75,15 +103,17 @@ Separate these questions in the revised proposal:
 These categories constrain one another. They need not all become public syntax, nor
 must their implementation occupy separate compiler passes.
 
-Use *affine* for at-most-once consumption with automatic cleanup of an unused owner.
-Reserve an exactly-once obligation without implicit cleanup for a separate decision.
+Use *affine* for at-most-once consumption. An unused owner runs cleanup when `Drop`
+applies; a value without a cleanup obligation can simply expire. Reserve an
+exactly-once obligation for a separate decision. `Unique` without `Drop` does not
+require the value to be used.
 
 ### MML's `Unique` is not OxCaml's `unique`
 
-MML's proposal makes `Unique` a persistent type capability combining affine ownership
-and `drop`. OxCaml's `unique` is an aliasing guarantee about a value. MML permits
-temporary borrowed aliases while retaining one cleanup owner; one owner does not mean
-only one reference exists at every instant.
+MML's proposal makes `Unique` a persistent type capability for affine ownership,
+with cleanup expressed separately by `Drop`. OxCaml's `unique` is an aliasing
+guarantee about a value. MML permits temporary borrowed aliases while retaining
+one owner; one owner does not mean only one reference exists at every instant.
 
 MML also has a stricter default resource discipline. OxCaml can relinquish uniqueness
 and rely on the GC. MML must preserve or transfer cleanup responsibility. The proposed
@@ -91,11 +121,12 @@ sharing operation introduces a runtime cell and release obligations; it cannot b
 treated as merely forgetting a static guarantee. See OxCaml's
 [uniqueness reference](https://oxcaml.org/documentation/uniqueness/reference/).
 
-Keep the existing decision to merge `Unique` and `drop` as a policy to evaluate, rather
-than treating destruction and absence of aliases as equivalent facts. Shared handles
-are the immediate test: each owned handle needs release even though the payload has
-multiple holders. Specify how an aggregate containing only a shared handle acquires
-cleanup responsibility, including when the cell contains a freely copyable value.
+Shared handles illustrate why cleanup and exclusive access to the payload must
+remain distinct: each owned handle needs release even though the payload has multiple
+holders. An aggregate containing an owned shared handle needs cleanup even when the
+cell contains a value without `Drop`. The handle's release obligation is separate
+from payload cleanup. Specify how the shared ownership form and its cleanup appear
+in capability rows and function contracts.
 
 ### Borrowing needs an owner relationship
 
@@ -147,11 +178,10 @@ The proposal describes duplication as explicit, with literal/global exceptions, 
 also suggests cloning a consumed argument that is needed later. Settle that boundary:
 does the programmer request the clone, or does the compiler insert it?
 
-Likewise, define aggregate cloneability using both freely copyable members and members
-with `Clone`. The statements that every member must implement `Clone` and that freely
-copyable types need no `Clone` instance need a common rule. Specify whether cloning a
-shared handle means cloning its payload or retaining the cell; those have different
-results and costs.
+Aggregate clone derivation accepts both freely copyable members and members with
+`Clone`; opaque newtypes such as the permission token do not inherit cloning from
+their hidden representation. Specify whether cloning a shared handle means cloning
+its payload or retaining the cell; those have different results and costs.
 
 ### Keep effects and access guarantees distinct
 
@@ -170,8 +200,9 @@ provides a useful comparison through contention and portability modes.
 
 Start with the three PAP cases and write their ownership, borrowing, invocation, and
 cleanup rules without choosing new syntax. Extend those rules through fields,
-higher-order parameters, returned callables, and branch joins. Use a non-heap resource
-and an aggregate containing a shared handle to test the proposed capability rules.
+higher-order parameters, returned callables, and branch joins. Use an integer file
+handle, a permission token without cleanup, and an aggregate containing a shared
+handle to test the separate `Unique`, `Drop`, and `Clone` rules.
 
 Then revisit the claims in `mem-evolution.md`: separate preserved behavior from intended
 changes, identify runtime distinctions that remain necessary, and record which rules
@@ -240,6 +271,35 @@ The question to resolve is which operations require only a live owner, which req
 non-interference during a borrow, and how those requirements survive callbacks and
 higher-order calls. Absence of concurrency is useful evidence, but not the entire
 proof of exclusivity.
+
+### Candidate: noalias and exclusive borrowing
+
+A separate `noalias` mode could express a stronger access guarantee than MML's
+`Unique` ownership discipline. Its strict form would require a single live
+reference, with no other aliases. This would still permit loops and recursion
+that move the reference onward, returning it if the caller needs it again.
+
+A more permissive form could allow sequential, exclusive borrows: other references
+may remain, but only the current borrower has a usable access path during the
+borrow. The owner retains cleanup responsibility while its access is suspended.
+A loop could finish one borrow before starting the next. A recursive call could
+reborrow, suspending the outer borrow until the inner one ends.
+
+This relaxation requires proof of exclusive access over the whole borrow interval,
+including intervening calls. A callback reaching the same value through a captured
+alias would violate that contract even without concurrency. Merely observing that
+individual accesses execute one after another is insufficient.
+
+OxCaml's [borrowing rules](https://oxcaml.org/documentation/uniqueness/borrow/)
+temporarily permit `aliased`, `local` access and restore unique use after the
+region ends, subject to their restrictions. Multiple borrows may coexist in that
+region. This is useful precedent for recovering a guarantee after borrowing,
+but does not establish exclusive borrowed access for MML.
+
+Keep literal absence of aliases distinct from temporary exclusivity. Decide which
+operations accept each guarantee, whether it extends through fields and reachable
+values, and how it is preserved through higher-order calls. `noalias` is a candidate
+mode, not an additional meaning of `Unique` or a settled implementation requirement.
 
 Future non-sequential access should interact with the effect system. Effects could
 identify where execution may suspend, spawn work, or permit overlapping access;
@@ -331,9 +391,10 @@ too verbose.
    contract accepts sharing, passing a shared argument gives the callee an owned
    handle, retaining it when the caller keeps its handle. Passing a unique argument
    moves ownership. `~` alone must not imply exclusive access to a shared payload.
-6. **Drop follows the ownership form.** An untransferred unique owner destroys its
-   resource at scope end. An untransferred shared handle releases one reference.
-   The last release destroys the payload and frees the cell. Borrowers do neither.
+6. **Drop follows the ownership form.** An untransferred unique owner runs cleanup
+   at scope end when its type implements `Drop`; `Unique` alone requires no call.
+   An untransferred shared handle releases one reference. The last release drops
+   the payload if it implements `Drop` and frees the cell. Borrowers do neither.
 7. **Reference-count elision preserves those semantics.** The compiler may transfer
    a handle at its last use or eliminate redundant retain/release pairs when it proves
    the resource remains alive. Escape analysis can inform that proof; non-escape
@@ -404,7 +465,8 @@ the existing handle to a consuming callee may avoid a retain entirely.
 
 For `takes shared` to work as sketched, `~s` must accept ownership of a shared handle.
 It cannot promise exclusive ownership of the underlying `Struct`. Dropping this
-argument releases a handle; dropping a uniquely owned argument destroys its resource.
+argument releases a handle; a uniquely owned argument needs a cleanup call only
+when its type implements `Drop`.
 
 The compiler must preserve that distinction even if both forms display the ordinary
 type `Struct`. A callee cannot move a resource field out of a shared payload or assume
