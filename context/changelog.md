@@ -4,6 +4,13 @@ Durable product changes belong here. Current task state belongs in task files.
 
 ## 2026-09-17
 
+- Outline a candidate `noalias` mode in the modal memory notes, distinguishing absence
+  of aliases from exclusive borrowing through loops, recursion, and callbacks.
+
+- Separate `Unique` ownership, `Drop` cleanup, and `Clone` duplication in the memory
+  evolution proposal and modal design notes. Distinguish integer-backed permission tokens
+  from file handles, and update aggregate derivation and cleanup examples.
+
 - Continue PAP and closure elaboration through independent type errors. Track unavailable
   values through aliases to prevent false ownership diagnostics while preserving genuine
   use-after-move errors and editor highlighting inside failed expressions.
