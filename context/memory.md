@@ -14,9 +14,9 @@ This is the Author's active and near-term focus. The backlog lives in [tasks/](t
 
 - **Tracker:** [Unify lambdas](tasks/unify-lambdas.md)
 - **Status:** in_progress
-- **Current focus:** Agree the next bounded slice from the
-  [execution checklist](tasks/unify-lambdas.md#execution-checklist).
-  Final task and branch closing review remain pending.
+- **Current focus:** Agree the argument-expression shape contract and next bounded plan in
+  [step 12](tasks/unify-lambdas.md#preserve-counters-and-argument-expressions-across-ownership-analysis).
+  Expression-shape implementation and final task review remain pending.
 
 ### Module naming
 

@@ -24,7 +24,9 @@ remain subject to bounded plan approval. Only the active step exposes its curren
 9. [x] **complete** — [BUG: consume an owned PAP captured by a move lambda](#bug-consume-an-owned-pap-captured-by-a-move-lambda); signed off.
 10. [x] **complete** — [BUG: preserve valid LLVM and TCO for nested capturing recursion](#bug-preserve-valid-llvm-and-tco-for-nested-capturing-recursion); signed off.
 11. [x] **complete** — [BUG: continue elaboration after independent errors](#bug-continue-elaboration-after-independent-errors); signed off.
-12. [ ] **planned** — [Counter and argument-expression preservation](#preserve-counters-and-argument-expressions-across-ownership-analysis).
+12. [ ] **in_progress** — [Counter and argument-expression preservation](#preserve-counters-and-argument-expressions-across-ownership-analysis).
+    - **planned** — Argument-expression preservation: agree the ownership-phase shape contract
+      and bounded implementation plan.
 13. [ ] **planned** — [Mixed-ownership transfer repair and conditional-ownership hardening](#bug-preserve-mixed-ownership-through-consuming-transfers).
 14. [ ] **planned** — [Remaining lambda semantics and lowering](#remaining-lambda-implementation).
 15. [ ] **planned** — [Integrate the PAP tutorial into the language reference](#later-stage-documentation).
@@ -573,14 +575,16 @@ retains its reproduction, scope, and acceptance criteria.
 
 #### Preserve counters and argument expressions across ownership analysis
 
-- **Status:** planned.
+- **Status:** in_progress.
+- **Approved slice:** counter-continuity regressions, counter threading through branches and
+  lambda bodies, task reconciliation, required compiler verification, and independent review.
+  The counter slice is complete and signed off; its local commit is authorized.
+  Expression-shape implementation requires a separate plan decision.
 - **Source:** [OwnershipAnalyzer.scala](../../modules/mmlc-lib/src/main/scala/mml/mmlclib/semantic/OwnershipAnalyzer.scala),
   `analyzeCond`, `analyzeLambda`, `analyzeArgument`, and `prepareConsumingArgument`.
-- **Counter scope:** verify generated condition/temporary name continuity through branches,
-  lambda bodies, and subsequent arguments. Shared binding identity allocation in `dbd65d9`
-  threads `bindingIds` through conditional branches and lambda cleanup. That implementation
-  is recorded under the construction step; the focused counter/name coverage and remaining
-  argument-expression work below still require reconciliation against it.
+- **Counter scope:** generated condition/temporary names must remain distinct through branches,
+  lambda bodies, and subsequent arguments. The shared binding-ID supply and temporary-name
+  counter both advance across these traversals; branch/body ownership states remain scoped.
 - **Expression problem:** consuming-argument helpers select `value.terms.lastOption` and then
   rebuild with `value.copy(terms = List(...))`. Any preceding terms are silently discarded.
   Related ownership predicates disagree on whether to inspect the first or last term.
@@ -589,22 +593,42 @@ retains its reproduction, scope, and acceptance criteria.
   Argument analysis must honor an explicit expression-shape contract and must never silently
   drop terms or their effects.
 - **Implementation plan:**
-  - [ ] Add focused regressions for counter continuity through both conditional branches,
+  - [x] Add focused regressions for counter continuity through both conditional branches,
     lambda bodies, and subsequent arguments; check distinct generated names and binding IDs.
-  - [ ] Reconcile the shared identity allocator with condition/temporary name progression;
+  - [x] Reconcile the shared identity allocator with condition/temporary name progression;
     address any remaining gaps independently of ownership-state isolation and merging.
   - [ ] Establish whether multi-term argument expressions are valid at this phase. Preserve
     and analyze preceding terms in source order if supported; otherwise enforce the singleton
     invariant with a diagnostic. Align the affected ownership predicates with that contract.
   - [ ] Add focused expression-shape coverage proving that preceding effects and ownership
     transitions survive, or that unsupported shapes are explicitly rejected.
-  - [ ] Add one entry in [QA misses](qa-misses.md) covering both lambda-decomposition markers
-    and linking [Eliminate unnecessary AST field decomposition](preserve-ast-nodes-in-helper-apis.md).
-  - [ ] Run applicable compiler gates and focused independent review.
-- **Evidence:** `analyzeCond` and `analyzeLambda` retain the shared binding-ID supply.
-  Consuming-argument helpers still select the final term and replace the entire term list.
-  Focused counter/name regressions, the expression-shape contract, and runtime impact
-  verification remain pending; this tracking check does not establish compiler correctness.
+  - [x] Reconcile the lambda-decomposition follow-up with
+    [Eliminate unnecessary AST field decomposition](preserve-ast-nodes-in-helper-apis.md).
+    That task is complete; the ownership helpers accept whole AST nodes and the two markers
+    are absent. No open QA miss remains to add for those markers.
+  - [ ] Run applicable compiler gates and focused independent review for all changes in this
+    subtask. The counter slice passes; expression-shape changes require their own verification.
+- **Counter evidence:** before the counter repair, the conditional-branch regression produced
+  nine generated locals with five distinct names; the nested-lambda regression produced seven
+  with four distinct names. Both retained distinct binding IDs. The existing scoped-argument
+  regression passed. Log: `/tmp/mml-counter-before.log`. All three regressions pass with the
+  repair. Formatting, lint, and the full suite pass: 736 compiler-library tests and nine CLI
+  tests, with 51 existing ignores (`/tmp/mml-counter-gates.log`). Smoke checks pass 8/8
+  (`/tmp/mml-counter-smoke.log`). Local installation passes (`/tmp/mml-counter-publish.log`);
+  clean benchmark builds pass for all 12 MML programs (`/tmp/mml-counter-bench-clean.log`,
+  `/tmp/mml-counter-bench.log`). ASan+LSan passes 43/43 fixtures at `-O0` on macOS arm64
+  (`/tmp/mml-counter-memory.log`). No performance comparison or Linux validation was run.
+  QA compliance, focused tracking checks, and fresh independent code review pass with no
+  actionable findings. The reviewer inspected the diff, allocation/cleanup paths, regression
+  failures, and passing reports; no candidate finding required a claim verifier. The new
+  fixtures establish semantic counter continuity, not isolated native execution behavior.
+- **Expression decision:** `ExpressionRewriter` normalizes successful source expressions and
+  rejects dangling terms; the parser represents statement sequences as nested lambda
+  applications. `TypeChecker` and generic ownership traversal nevertheless accept multiple
+  terms, while codegen accepts singleton terms and specific operator forms, not arbitrary
+  sequences. Consuming helpers select a final term and replace the entire term list. The
+  remaining plan must settle the ownership-phase shape contract and error-recovery behavior
+  before changing those helpers. No source-level loss of effects has been reproduced.
 - **Boundary:** the allocated/static consuming-transfer and return failures belong to
   [conditional-ownership hardening](conditional-ownership-witnesses.md). This subtask addresses
   counter propagation, expression preservation, and the QA cross-reference.
@@ -944,12 +968,12 @@ are in `context/history/` for Author review. No compiler slice is authorized by 
 - Workstream signoff: complete for preservation, borrowed returns, typed closure destruction,
   PAP creation, deferred consuming arguments, owned PAP struct fields, nested consuming-PAP
   repairs, both binding identity and local-construction stages, the nested
-  capturing-recursion TCO repair with its smoke and benchmark integration, and elaboration
-  error recovery.
+  capturing-recursion TCO repair with its smoke and benchmark integration, elaboration
+  error recovery, and counter preservation through conditional branches and nested lambdas.
 - Tracked item completion: pending; open work remains in the
   [Execution Checklist](#execution-checklist).
-- Commit authorization: local commit authorization covers elaboration error recovery and
-  its completion records; no push is authorized.
+- Commit authorization: local commit authorization covers counter preservation, its regressions,
+  and completion records; no push is authorized.
 
 ## Task Working Memory
 
@@ -962,8 +986,11 @@ are in `context/history/` for Author review. No compiler slice is authorized by 
   QA, and independent review gates.
 - **Completed repair:** [Elaboration error recovery](#bug-continue-elaboration-after-independent-errors)
   is complete and signed off with passing verification and independent review.
-- **Next action:** agree the next bounded slice from the execution checklist. Final task
-  and branch closing review remain pending until the remaining work is complete.
+- **Completed repair:** [counter preservation](#preserve-counters-and-argument-expressions-across-ownership-analysis)
+  is complete and signed off. Counter threading, focused regressions, required compiler gates,
+  QA, tracking checks, and independent review pass.
+- **Next action:** agree the ownership-phase argument-expression shape contract and a bounded
+  implementation plan. The remaining expression work and overall lambda migration are open.
 - **Recovery evidence:** CLI controls preserve the statement type mismatch and bound-call
   use-after-move diagnostic without false ownership errors. Regression, smoke, benchmark-build,
   and sanitizer results are recorded in the recovery section.
@@ -971,7 +998,7 @@ are in `context/history/` for Author review. No compiler slice is authorized by 
   and [binding construction verification](#binding-construction-evidence).
 - **Open limits:** the mixed-ownership reproducer remains unresolved; the general branch
   audit and separate Linux sanitizer validation are deferred. The broader counter/expression
-  follow-up remains planned and must account for the shared identity allocator.
+  follow-up is in progress; expression-shape implementation still requires a plan decision.
   [Consuming an owned PAP captured by a move lambda](#bug-consume-an-owned-pap-captured-by-a-move-lambda)
   has passing semantic, smoke, benchmark-build, native sanitizer, and independent review
   gates and is complete and signed off.

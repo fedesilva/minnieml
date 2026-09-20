@@ -5,6 +5,24 @@ import mml.mmlclib.test.BaseEffFunSuite
 
 class PapOwnershipTest extends BaseEffFunSuite:
 
+  private def assertFreshGeneratedLocals(module: Module, expectedConditions: Int): Unit =
+
+    val body = module.members.collectFirst {
+      case binding: Bnd if binding.name == "example" => binding.value
+    }.get
+    val parameters = TermTraversal
+      .collect(body) { case lambda: Lambda => lambda.params }
+      .flatten
+    val conditions  = parameters.filter(_.name.startsWith("__condition_"))
+    val temporaries = parameters.filter(_.name.startsWith("__tmp_"))
+    assertEquals(conditions.size, expectedConditions)
+    assert(temporaries.nonEmpty)
+    val generated = conditions ++ temporaries
+    assert(generated.forall(_.id.nonEmpty))
+    assertEquals(generated.flatMap(_.id).distinct.size, generated.size)
+    // Counter continuity is observable in generated names, independently of fresh binding IDs.
+    assertEquals(generated.map(_.name).distinct.size, generated.size)
+
   test("scoped call arguments preserve generated-local counters") {
     semNotFailed("""
       fn lengths(a: String, b: String): Int = a.length + b.length;;
@@ -20,23 +38,46 @@ class PapOwnershipTest extends BaseEffFunSuite:
         );
       ;
     """).map { module =>
-      val body = module.members.collectFirst {
-        case binding: Bnd if binding.name == "example" => binding.value
-      }.get
-      val parameters = TermTraversal
-        .collect(body) { case lambda: Lambda =>
-          lambda.params
-        }
-        .flatten
-      val conditions  = parameters.filter(_.name.startsWith("__condition_"))
-      val temporaries = parameters.filter(_.name.startsWith("__tmp_"))
-      assertEquals(conditions.size, 2)
-      assert(temporaries.nonEmpty)
-      val generated = conditions ++ temporaries
-      assert(generated.forall(_.id.nonEmpty))
-      assertEquals(generated.flatMap(_.id).distinct.size, generated.size)
-      // Counter continuity is observable in generated names, independently of fresh binding IDs.
-      assertEquals(generated.map(_.name).distinct.size, generated.size)
+      assertFreshGeneratedLocals(module, expectedConditions = 2)
+    }
+  }
+
+  test("conditional branches and following arguments preserve generated-local counters") {
+    semNotFailed("""
+      fn lengths(a: String, b: String): Int = a.length + b.length;;
+      fn single(text: String): Bool = text.length == 1;;
+      fn total(a: Int, b: Int): Int = a + b;;
+      fn example(flag: Bool): Int =
+        total (
+          if single (int_to_str 1) then
+            let value = if flag then int_to_str 123; else "abc"; ;
+            lengths value (int_to_str 456);
+          else
+            let value = if flag then int_to_str 789; else "def"; ;
+            lengths value (int_to_str 123);
+        ) (lengths (int_to_str 456) (int_to_str 789));
+      ;
+    """).map { module =>
+      assertFreshGeneratedLocals(module, expectedConditions = 2)
+    }
+  }
+
+  test("nested lambda bodies and following arguments preserve generated-local counters") {
+    semNotFailed("""
+      fn lengths(a: String, b: String): Int = a.length + b.length;;
+      fn total(a: Int, b: Int): Int = a + b;;
+      fn example(flag: Bool): Int =
+        let outer = { n: Int ->
+          let inner = { m: Int ->
+            let value = if flag then int_to_str m; else "abc"; ;
+            lengths value (int_to_str n);
+          };
+          total (inner n) (lengths (int_to_str 456) (int_to_str 789));
+        };
+        total (outer 123) (lengths (int_to_str 123) (int_to_str 456));
+      ;
+    """).map { module =>
+      assertFreshGeneratedLocals(module, expectedConditions = 1)
     }
   }
 

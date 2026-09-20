@@ -1625,7 +1625,10 @@ object OwnershipAnalyzer:
     val falseResult = analyzeArgument(
       cond.ifFalse,
       consumingParam,
-      condResult.scope.copy(bindingIds = trueResult.scope.bindingIds)
+      condResult.scope.copy(
+        bindingIds  = trueResult.scope.bindingIds,
+        tempCounter = trueResult.scope.tempCounter
+      )
     )
 
     val outerOwnedBindings = condResult.scope.bindings.collect {
@@ -1693,7 +1696,8 @@ object OwnershipAnalyzer:
 
     TermResult(
       mergedScope.copy(
-        bindingIds = falseIds,
+        bindingIds  = falseIds,
+        tempCounter = falseResult.scope.tempCounter,
         consumedFields = trueResult.scope.consumedFields ++
           falseResult.scope.consumedFields
       ),
@@ -1880,8 +1884,8 @@ object OwnershipAnalyzer:
                 (s, errs, caps :+ cap)
 
     TermResult(
-      returnScope.copy(bindingIds = cleanupIds),
-      lambda.copy(body            = finalBody, captures = updatedCaptures),
+      returnScope.copy(bindingIds = cleanupIds, tempCounter = bodyResult.scope.tempCounter),
+      lambda.copy(body            = finalBody, captures     = updatedCaptures),
       errors = bodyResult.errors ++ promotion.left.toOption.toList ++ borrowEscapeErrors ++
         borrowClosureEscapeErrors ++ captureErrors
     )

@@ -2,6 +2,13 @@
 
 Durable product changes belong here. Current task state belongs in task files.
 
+## 2026-09-20
+
+- Preserve ownership-analysis temporary-name counters through conditional branches and nested
+  lambda bodies. Keep generated condition and argument-temporary names distinct across branches,
+  bodies, and subsequent arguments while retaining ownership-scope isolation. Add regressions
+  for generated-name and binding-ID uniqueness.
+
 ## 2026-09-17
 
 - Add bounds-checked quicksort benchmarks in MML and C, with matching deterministic
