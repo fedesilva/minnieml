@@ -12,7 +12,10 @@ final case class ValueAvailability private (
 
     case _: InvalidExpression | _: TermError => false
     case _: NativeImpl | _: DataConstructor => true
-    case expr:  Expr => expr.terms.lastOption.exists(isAvailable)
+    case expr: Expr =>
+      expr.terms match
+        case List(term) => isAvailable(term)
+        case _ => false
     case group: TermGroup => isAvailable(group.inner)
 
     case ref: Ref =>

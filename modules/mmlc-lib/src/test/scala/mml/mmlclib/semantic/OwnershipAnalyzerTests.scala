@@ -119,8 +119,7 @@ class OwnershipAnalyzerTests extends BaseEffFunSuite:
     }
   }
 
-  // Pending migration: Parent omits cleanup for the allocating String alias binding.
-  test("alias-typed allocating let binding is freed at scope end".ignore) {
+  test("alias-typed allocating let binding is freed at scope end") {
     val code =
       """
         type Name = String;
@@ -1171,9 +1170,8 @@ class OwnershipAnalyzerTests extends BaseEffFunSuite:
     }
   }
 
-  // Pending migration: Parent inserts struct cleanup for a scalar return at the caller.
   test(
-    "scalar-returning function that owns a local struct is not treated as returning the struct".ignore
+    "scalar-returning function that owns a local struct is not treated as returning the struct"
   ) {
     val code =
       """

@@ -24,11 +24,9 @@ remain subject to bounded plan approval. Only the active step exposes its curren
 9. [x] **complete** — [BUG: consume an owned PAP captured by a move lambda](#bug-consume-an-owned-pap-captured-by-a-move-lambda); signed off.
 10. [x] **complete** — [BUG: preserve valid LLVM and TCO for nested capturing recursion](#bug-preserve-valid-llvm-and-tco-for-nested-capturing-recursion); signed off.
 11. [x] **complete** — [BUG: continue elaboration after independent errors](#bug-continue-elaboration-after-independent-errors); signed off.
-12. [ ] **in_progress** — [Counter and argument-expression preservation](#preserve-counters-and-argument-expressions-across-ownership-analysis).
-    - **planned** — Argument-expression preservation: agree the ownership-phase shape contract
-      and bounded implementation plan.
+12. [x] **complete** — [Counter and argument-expression preservation](#preserve-counters-and-argument-expressions-across-ownership-analysis); signed off.
 13. [ ] **planned** — [Mixed-ownership transfer repair and conditional-ownership hardening](#bug-preserve-mixed-ownership-through-consuming-transfers).
-14. [ ] **planned** — [Remaining lambda semantics and lowering](#remaining-lambda-implementation).
+14. [ ] **in_progress** — [Remaining lambda semantics and lowering](#remaining-lambda-implementation), including [restoration of all ignored regressions](#restore-ignored-regressions).
 15. [ ] **planned** — [Integrate the PAP tutorial into the language reference](#later-stage-documentation).
 16. [ ] **planned** — General branch audit (deferred) and final task signoff.
 
@@ -575,19 +573,22 @@ retains its reproduction, scope, and acceptance criteria.
 
 #### Preserve counters and argument expressions across ownership analysis
 
-- **Status:** in_progress.
+- **Status:** complete; verified, reviewed, and signed off.
 - **Approved slice:** counter-continuity regressions, counter threading through branches and
   lambda bodies, task reconciliation, required compiler verification, and independent review.
   The counter slice is complete and signed off; its local commit is authorized.
-  Expression-shape implementation requires a separate plan decision.
+  Expression-shape implementation is approved: enforce the existing single-term contract,
+  preserve malformed syntax and independent diagnostics, align ownership classification and
+  value availability, add regressions, document the contract, and run compiler handoff gates.
+  Expression-slice signoff, scoped commit, and push to `origin/dev-lambda-unify` are authorized.
 - **Source:** [OwnershipAnalyzer.scala](../../modules/mmlc-lib/src/main/scala/mml/mmlclib/semantic/OwnershipAnalyzer.scala),
   `analyzeCond`, `analyzeLambda`, `analyzeArgument`, and `prepareConsumingArgument`.
 - **Counter scope:** generated condition/temporary names must remain distinct through branches,
   lambda bodies, and subsequent arguments. The shared binding-ID supply and temporary-name
   counter both advance across these traversals; branch/body ownership states remain scoped.
-- **Expression problem:** consuming-argument helpers select `value.terms.lastOption` and then
-  rebuild with `value.copy(terms = List(...))`. Any preceding terms are silently discarded.
-  Related ownership predicates disagree on whether to inspect the first or last term.
+- **Expression contract:** normalized expressions contain one term. Retained empty or multi-term
+  syntax has no result ownership; argument rewrites must preserve it and report its unsupported
+  shape while continuing independent diagnostics.
 - **Expected behavior:** preserve generated-name counter progression through branches, nested
   lambdas, and subsequent arguments while keeping branch/body ownership state properly scoped.
   Argument analysis must honor an explicit expression-shape contract and must never silently
@@ -597,17 +598,17 @@ retains its reproduction, scope, and acceptance criteria.
     lambda bodies, and subsequent arguments; check distinct generated names and binding IDs.
   - [x] Reconcile the shared identity allocator with condition/temporary name progression;
     address any remaining gaps independently of ownership-state isolation and merging.
-  - [ ] Establish whether multi-term argument expressions are valid at this phase. Preserve
-    and analyze preceding terms in source order if supported; otherwise enforce the singleton
-    invariant with a diagnostic. Align the affected ownership predicates with that contract.
-  - [ ] Add focused expression-shape coverage proving that preceding effects and ownership
-    transitions survive, or that unsupported shapes are explicitly rejected.
+  - [x] Enforce the single-term contract in argument preparation, ownership classification,
+    consumption, binding transfers, and result-origin queries. Keep malformed syntax unavailable
+    through aliases and preserve its children for diagnostics.
+  - [x] Add expression-shape and recovery coverage, plus native verification of valid argument
+    statement order and exactly-once evaluation through both conditional branches.
   - [x] Reconcile the lambda-decomposition follow-up with
     [Eliminate unnecessary AST field decomposition](preserve-ast-nodes-in-helper-apis.md).
     That task is complete; the ownership helpers accept whole AST nodes and the two markers
     are absent. No open QA miss remains to add for those markers.
-  - [ ] Run applicable compiler gates and focused independent review for all changes in this
-    subtask. The counter slice passes; expression-shape changes require their own verification.
+  - [x] Run applicable compiler gates and focused independent review for all changes in this
+    subtask. Compiler gates, QA, tracking consistency, and independent review pass for both slices.
 - **Counter evidence:** before the counter repair, the conditional-branch regression produced
   nine generated locals with five distinct names; the nested-lambda regression produced seven
   with four distinct names. Both retained distinct binding IDs. The existing scoped-argument
@@ -624,11 +625,30 @@ retains its reproduction, scope, and acceptance criteria.
   fixtures establish semantic counter continuity, not isolated native execution behavior.
 - **Expression decision:** `ExpressionRewriter` normalizes successful source expressions and
   rejects dangling terms; the parser represents statement sequences as nested lambda
-  applications. `TypeChecker` and generic ownership traversal nevertheless accept multiple
-  terms, while codegen accepts singleton terms and specific operator forms, not arbitrary
-  sequences. Consuming helpers select a final term and replace the entire term list. The
-  remaining plan must settle the ownership-phase shape contract and error-recovery behavior
-  before changing those helpers. No source-level loss of effects has been reproduced.
+  applications. Ownership operations require a single term and never give flat lists sequencing
+  semantics. Malformed expressions receive a phase-labelled diagnostic; existing invalid-node
+  payloads retain independent diagnostics without another shape error. Source information and
+  type annotations remain attached to preserved syntax. No source-level loss of effects has
+  been reproduced.
+- **Expression verification (2026-09-22, macOS arm64, Clang 23.1.1):** formatting, lint,
+  and the full suite pass: 759 compiler-library tests and nine CLI tests, with 51 existing
+  ignores (`/tmp/mml-expression-final-gates.log`). All 23 focused shape/recovery regressions
+  pass, including complete-term and explicit-ascription preservation, qualifier traversal,
+  unavailable aliases, genuine child/continuation diagnostics, and observational call-boundary
+  validation (`OwnershipExpressionTests` in the full suite). The native
+  `tests/mem/argument-expression-order.mml` fixture passes at `-O0` in the full-gates log.
+  Smoke checks pass 8/8 (`/tmp/mml-expression-final-smoke.log`); local installation passes
+  (`/tmp/mml-expression-final-publish.log`). Clean builds pass for all 12 MML benchmarks
+  (`/tmp/mml-expression-final-bench-clean.log`, `/tmp/mml-expression-final-bench.log`).
+  ASan+LSan passes 44/44 fixtures at `-O0` (`/tmp/mml-expression-final-memory.log`).
+  No performance comparison or Linux validation was run. Scala compilation is warning-free;
+  forked CLI runs emit the existing JDK `sun.misc.Unsafe` runtime deprecation warning.
+  Independently confirmed review findings are resolved: qualifier traversal reaches retained
+  malformed children even when an independent continuation supplies an available result, and
+  call-boundary lifetime validation observes reference state without repeating qualifier effects.
+  The latter regression proves typed phase-input behavior; equivalent grouped source syntax
+  is not established. Fresh narrow re-review reports no actionable findings. All compiler gates,
+  focused QA, tracking consistency, links, and diff checks pass. Expression-slice signoff is complete.
 - **Boundary:** the allocated/static consuming-transfer and return failures belong to
   [conditional-ownership hardening](conditional-ownership-witnesses.md). This subtask addresses
   counter propagation, expression preservation, and the QA cross-reference.
@@ -923,7 +943,7 @@ Evidence collected on 2026-09-11, macOS arm64:
 
 ### Remaining lambda implementation
 
-- **Status:** planned.
+- **Status:** in_progress; ignored-test restoration is the active bounded slice.
 - Complete the [semantic goals](#semantic-goals) and reconcile the remaining preserved
   regressions against the agreed model in bounded, reviewed slices.
 - The [scope-analysis follow-up](lambda-scope-classification.md) addresses provenance
@@ -931,6 +951,43 @@ Evidence collected on 2026-09-11, macOS arm64:
   [salvage sequence](../history/unify-lambdas-salvage.md#suggested-restart-sequence) and
   [migration inventory](unify-lambdas-migration.json) provide evidence for selecting further
   slices; neither supplies implementation approval or current completion status.
+
+#### Restore ignored regressions
+
+- **Status:** in_progress; four cases enabled, 47 pending.
+- **Inventory:** [Ignored regression audit](unify-lambdas-ignored-tests.md) accounts for all
+  51 runner-discovered ignored tests by suite and name. Reconcile this inventory after each
+  bounded compiler slice; passing ignored cases must not wait for the final branch audit.
+- **Audit (2026-09-23):** temporary suites execute the existing assertions unchanged:
+  **four pass, 47 fail**. Four stale ignores are removed without assertion changes:
+  alias-typed allocating-local cleanup; scalar-return ownership classification; consuming-use
+  error equivalence; and loopified lambda-parameter shadowing. The borrowed-PAP escape case
+  already produces the intended rejection but expects an obsolete diagnostic name.
+- **Plan:**
+  - [x] Execute and account for every ignored case; distinguish stale ignores, placeholder
+    helpers, diagnostic changes, representation assumptions, and observed compiler failures.
+  - [x] Re-enable the four unchanged passing cases and remove their stale reason comments.
+  - [ ] Adapt the borrowed-PAP escape case to a typed `BorrowClosureEscapeViaReturn` assertion
+    using existing semantic helpers, then re-enable it.
+  - [ ] Restore or replace 14 placeholder-based cases against the agreed compiler API;
+    investigate the separate nullary immediate-application rejection.
+  - [ ] Reconcile 29 failing IR/lowering assertions and two heap-alias cases with the agreed
+    semantics. Assign each to a bounded repair or an explicitly approved replacement;
+    historical Direct-entry names and representation choices are not implementation mandates.
+  - [ ] Re-enable each case alongside its repair, preserve its semantic intent, run the affected
+    suites and required gates, and update the inventory with execution and review evidence.
+  - [ ] Before migration signoff, account for every original case as enabled and passing or
+    explicitly approved for replacement/retirement with linked coverage and rationale.
+    Any remaining deferral requires an explicit scope decision and tracked follow-up.
+- **Restoration verification (2026-09-23):** formatting and lint pass; full suite passes
+  763 library tests and nine CLI tests, with 47 ignored. All four restored cases execute and pass.
+  Log: `/tmp/mml-unignore-four-gates.log`. Test assertions and compiler implementation are unchanged
+  by this restoration. Independent review reports no actionable findings; focused QA and
+  tracking checks pass. The four-case restoration is signed off; commit and push are authorized.
+- **Acceptance:** no unexplained or stale ignores; no placeholder counted as restored;
+  no weakened assertion merely to obtain a pass. Track undiscovered declarations separately
+  from the 51 audited cases. Further assertion changes and compiler fixes require their
+  bounded plans; enabling four tests does not complete the remaining lambda implementation.
 
 ### Later-stage documentation
 
@@ -969,11 +1026,12 @@ are in `context/history/` for Author review. No compiler slice is authorized by 
   PAP creation, deferred consuming arguments, owned PAP struct fields, nested consuming-PAP
   repairs, both binding identity and local-construction stages, the nested
   capturing-recursion TCO repair with its smoke and benchmark integration, elaboration
-  error recovery, and counter preservation through conditional branches and nested lambdas.
+  error recovery, counter preservation through conditional branches and nested lambdas,
+  argument-expression preservation, and restoration of four unchanged passing regressions.
 - Tracked item completion: pending; open work remains in the
   [Execution Checklist](#execution-checklist).
-- Commit authorization: local commit authorization covers counter preservation, its regressions,
-  and completion records; no push is authorized.
+- Commit and push authorization: expression preservation, the ignored-test inventory and plan,
+  four restored regressions, and their completion records; push to `origin/dev-lambda-unify`.
 
 ## Task Working Memory
 
@@ -989,8 +1047,16 @@ are in `context/history/` for Author review. No compiler slice is authorized by 
 - **Completed repair:** [counter preservation](#preserve-counters-and-argument-expressions-across-ownership-analysis)
   is complete and signed off. Counter threading, focused regressions, required compiler gates,
   QA, tracking checks, and independent review pass.
-- **Next action:** agree the ownership-phase argument-expression shape contract and a bounded
-  implementation plan. The remaining expression work and overall lambda migration are open.
+- **Completed repair:** argument-expression preservation implements the approved single-term
+  contract. Shape/recovery regressions, full compiler tests, formatting, lint, native argument
+  order, smoke checks, local installation, benchmark builds, and sanitizer checks pass, including
+  the selection-qualifier recovery repair and observational call-boundary validation.
+  QA, tracking checks, and independent review pass. The slice is signed off with commit and
+  push authorization. Overall migration remains open.
+- **Ignored-test restoration:** the [51-case audit](unify-lambdas-ignored-tests.md) identifies
+  four unchanged passing tests, all enabled and signed off, and one pending stale diagnostic assertion.
+  [The explicit regression plan](#restore-ignored-regressions) accounts for the remaining
+  47 cases. Further assertion/API/representation changes and compiler fixes remain pending.
 - **Recovery evidence:** CLI controls preserve the statement type mismatch and bound-call
   use-after-move diagnostic without false ownership errors. Regression, smoke, benchmark-build,
   and sanitizer results are recorded in the recovery section.
@@ -998,7 +1064,8 @@ are in `context/history/` for Author review. No compiler slice is authorized by 
   and [binding construction verification](#binding-construction-evidence).
 - **Open limits:** the mixed-ownership reproducer remains unresolved; the general branch
   audit and separate Linux sanitizer validation are deferred. The broader counter/expression
-  follow-up is in progress; expression-shape implementation still requires a plan decision.
+  follow-up is complete and signed off. Remaining lambda implementation and 47 ignored cases
+  require further bounded work.
   [Consuming an owned PAP captured by a move lambda](#bug-consume-an-owned-pap-captured-by-a-move-lambda)
   has passing semantic, smoke, benchmark-build, native sanitizer, and independent review
   gates and is complete and signed off.

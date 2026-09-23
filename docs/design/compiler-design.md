@@ -797,6 +797,20 @@ Missing destruction targets accumulate compiler errors.
 
 **Purpose**: Track ownership and insert native/struct free calls or `DestroyClosure` operations.
 
+**Expression contract**: A normalized `Expr` contains exactly one term. Calls and operators
+form application trees; bindings and statement sequences use immediate lambda applications.
+Ownership operations inspect that single result term, unwrapping groups and nested expressions
+only when they also contain one term.
+
+Empty or multi-term expressions retain syntax from failed normalization. They have no available
+result and cannot establish ownership through allocation, cloning, consumption, or aliases.
+Ownership analysis preserves their terms, order, source information, and type annotations while
+visiting children for independent diagnostics. This traversal does not assign sequencing semantics
+to a flat term list. Each malformed expression receives an ownership-phase `InvalidExpression`
+diagnostic; retained payloads inside an existing `InvalidExpression` are traversed without another
+shape diagnostic. Valid child applications and independent continuations still receive ownership
+analysis, including use-after-move checks.
+
 **Ownership states**:
 - `Owned` — Caller owns the value, must free at scope end
 - `Moved` — Ownership transferred, caller must not use
