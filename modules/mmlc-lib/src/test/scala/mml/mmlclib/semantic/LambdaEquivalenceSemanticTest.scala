@@ -251,8 +251,7 @@ class LambdaEquivalenceSemanticTest extends BaseEffFunSuite:
     }
   }
 
-  // Pending migration: Parent misses UseAfterMove for the local consuming helper.
-  test("consuming-use invalid programs report equivalent use-after-move class".ignore) {
+  test("consuming-use invalid programs report equivalent use-after-move class") {
     val cases = List(
       "top-level helper" ->
         """

@@ -256,7 +256,9 @@ object OwnershipAnalyzer:
       values:         CallableValues,
       returningOwned: Map[CallableIdentity, Option[Type]]
     ): Option[Type] =
-      expr.terms.lastOption.flatMap(termReturnsOwned(_, env, resolvables, values, returningOwned))
+      if values.recovery.isAvailable(expr) then
+        singleTerm(expr).flatMap(termReturnsOwned(_, env, resolvables, values, returningOwned))
+      else none
 
     def discover(module: Module, values: CallableValues): Map[CallableIdentity, Option[Type]] =
       val resolvables = module.resolvables
@@ -357,7 +359,9 @@ object OwnershipAnalyzer:
     case _ => None
 
   private def exprAllocates(expr: Expr, scope: OwnershipScope): Option[Type] =
-    expr.terms.lastOption.flatMap(termAllocates(_, scope))
+    if scope.callableValues.recovery.isAvailable(expr) then
+      singleTerm(expr).flatMap(termAllocates(_, scope))
+    else none
 
   /** Check if a term is an allocating expression */
   def termAllocates(term: Term, scope: OwnershipScope): Option[Type] = unwrapTerm(term) match
@@ -452,7 +456,7 @@ object OwnershipAnalyzer:
     scope: OwnershipScope
   ): ConditionalOwnership =
     def classifyExpr(e: Expr): ConditionalOwnership =
-      e.terms.lastOption.map(unwrapTerm) match
+      singleTerm(e).map(unwrapTerm) match
         case Some(cond: Cond) =>
           classifyCond(cond)
         case _ =>
@@ -470,7 +474,8 @@ object OwnershipAnalyzer:
         case (_, AlwaysOwned(tpe)) => MixedOwned(tpe)
         case (_, MixedOwned(tpe)) => MixedOwned(tpe)
 
-    classifyExpr(expr)
+    if scope.callableValues.recovery.isAvailable(expr) then classifyExpr(expr)
+    else ConditionalOwnership.NeverOwned
 
   /** Create a conditional free: if __owns_x then __free_T x else () */
   private def mkConditionalFree(
@@ -596,20 +601,22 @@ object OwnershipAnalyzer:
     returnType: Option[Type],
     scope:      OwnershipScope
   ): Either[SemanticError, Expr] =
-    if !returnType.exists(isOwnedType(_, scope.resolvables)) then expr.asRight
+    if !returnType.exists(isOwnedType(_, scope.resolvables)) ||
+      !scope.callableValues.recovery.isAvailable(expr)
+    then expr.asRight
     else
-      expr.terms.lastOption match
+      singleTerm(expr) match
         case Some(cond: Cond) =>
           val trueAlloc  = exprAllocates(cond.ifTrue, scope)
           val falseAlloc = exprAllocates(cond.ifFalse, scope)
           (trueAlloc, falseAlloc, returnType) match
             case (Some(_), None, Some(tpe)) =>
               wrapWithClone(cond.ifFalse, tpe, scope.resolvables).map { cloned =>
-                expr.copy(terms = expr.terms.init :+ cond.copy(ifFalse = cloned))
+                expr.copy(terms = List(cond.copy(ifFalse = cloned)))
               }
             case (None, Some(_), Some(tpe)) =>
               wrapWithClone(cond.ifTrue, tpe, scope.resolvables).map { cloned =>
-                expr.copy(terms = expr.terms.init :+ cond.copy(ifTrue = cloned))
+                expr.copy(terms = List(cond.copy(ifTrue = cloned)))
               }
             case _ => expr.asRight
         case _ => expr.asRight
@@ -628,7 +635,7 @@ object OwnershipAnalyzer:
     type Arguments = Map[String, Origins]
 
     def fromExpr(value: Expr, arguments: Arguments, index: ResolvablesIndex): Origins =
-      value.terms.lastOption.toList.flatMap(fromTerm(_, arguments, index)).distinct
+      singleTerm(value).toList.flatMap(fromTerm(_, arguments, index)).distinct
 
     def fromTerm(term: Term, arguments: Arguments, index: ResolvablesIndex): Origins =
       term match
@@ -691,9 +698,20 @@ object OwnershipAnalyzer:
       case expr: Expr => containsRefInExpr(name, expr)
       case _ => false
 
+  /** Only normalized expressions have a result term; retained syntax has no result contract. */
+  private def singleTerm(expr: Expr): Option[Term] = expr.terms match
+    case List(term) => term.some
+    case _ => none
+
+  private val ExpressionShapeMessage = "Ownership analysis requires a single-term expression"
+
+  private def isExpressionShapeError(error: SemanticError): Boolean = error match
+    case SemanticError.InvalidExpression(_, ExpressionShapeMessage, PhaseName) => true
+    case _ => false
+
   @tailrec
   private def unwrapTerm(term: Term): Term = term match
-    case TermGroup(_, inner, _) if inner.terms.size == 1 => unwrapTerm(inner.terms.head)
+    case TermGroup(_, Expr(_, List(single), _, _), _) => unwrapTerm(single)
     case Expr(_, List(single), _, _) => unwrapTerm(single)
     case _ => term
 
@@ -705,10 +723,10 @@ object OwnershipAnalyzer:
     arg:   Expr,
     scope: OwnershipScope
   ): (OwnershipScope, List[SemanticError]) =
-    param.filter(_.consuming) match
+    param.filter(_ => scope.callableValues.recovery.isAvailable(arg)).filter(_.consuming) match
       case Some(consumingParam) =>
         // Get the ref being passed (if it's a simple ref)
-        arg.terms.headOption.map(unwrapTerm) match
+        singleTerm(arg).map(unwrapTerm) match
           case Some(ref: Ref) =>
             // Check if it's owned - can only move owned values
             val staticFunction = scope.callableValues.lambdas(ref) match
@@ -777,7 +795,7 @@ object OwnershipAnalyzer:
 
   /** Static strings and global values need owned storage at consuming boundaries. */
   private def argNeedsClone(argExpr: Expr, scope: OwnershipScope): Boolean =
-    argExpr.terms.headOption.map(unwrapTerm) match
+    singleTerm(argExpr).map(unwrapTerm) match
       case Some(_: LiteralString) => true
       case Some(ref: Ref) =>
         if ref.qualifier.isDefined then false
@@ -791,7 +809,7 @@ object OwnershipAnalyzer:
 
   /** Check if an argument is a freshly allocating expression */
   private def argAllocates(argExpr: Expr, scope: OwnershipScope): Boolean =
-    argExpr.terms.lastOption.flatMap(termAllocates(_, scope)).isDefined
+    exprAllocates(argExpr, scope).isDefined
 
   private def ownershipPath(ref: Ref, scope: OwnershipScope): Option[OwnershipPath] =
     ref.qualifier match
@@ -806,8 +824,23 @@ object OwnershipAnalyzer:
   private def pathOwner(path: OwnershipPath, scope: OwnershipScope): Option[BindingInfo] =
     scope.bindings.values.find(_.bindingId.contains(path.ownerId))
 
-  /** Check binding moves, consumed fields, and the lifetimes of borrowed projections. */
+  /** Qualifier expressions retain their ownership effects and diagnostic context. */
+  private def analyzeQualifier(ref: Ref, scope: OwnershipScope): TermResult[Ref] =
+    val qualifierResult = ref.qualifier.collect {
+      case parent: Ref => analyzeQualifier(parent, scope)
+      case value => analyzeTerm(value, scope)
+    }
+    qualifierResult.fold(TermResult(scope, ref)) { result =>
+      TermResult(result.scope, ref.copy(qualifier = result.term.some), result.errors)
+    }
+
   private def analyzeRef(ref: Ref, scope: OwnershipScope): TermResult[Ref] =
+    val qualifier = analyzeQualifier(ref, scope)
+    val checked   = checkRef(qualifier.term, qualifier.scope)
+    checked.copy(errors = qualifier.errors ++ checked.errors)
+
+  /** Check binding moves and borrowed lifetimes without evaluating qualifier expressions. */
+  private def checkRef(ref: Ref, scope: OwnershipScope): TermResult[Ref] =
     val path = ownershipPath(ref, scope)
     val movedAt = path
       .flatMap { path =>
@@ -862,7 +895,9 @@ object OwnershipAnalyzer:
     )
 
   private def borrowedDependencies(expr: Expr, scope: OwnershipScope): List[Ref] =
-    borrowedDependencies(returnedOrigins(expr, scope.resolvables), scope)
+    if scope.callableValues.recovery.isAvailable(expr) then
+      borrowedDependencies(returnedOrigins(expr, scope.resolvables), scope)
+    else Nil
 
   private def borrowedDependencies(origins: List[Ref | Lambda], scope: OwnershipScope): List[Ref] =
     origins
@@ -991,8 +1026,8 @@ object OwnershipAnalyzer:
     // inside this CPS wrapper. Only bindings created in this let should be freed here.
     val inheritedOwned = scope.ownedBindings
 
-    val allocType = prepared.value.terms.headOption
-      .flatMap(termAllocates(_, scope))
+    val argumentAvailable = scope.callableValues.recovery.isAvailable(app.arg)
+    val allocType = exprAllocates(prepared.value, scope)
       .orElse(returnedOrigins(prepared.value, scope.resolvables).collectFirst {
         case lambda: Lambda
             if lambda.isMove &&
@@ -1003,6 +1038,8 @@ object OwnershipAnalyzer:
 
     // Set up scope for lambda body - handle mixed conditionals specially
     val (bodyScope, witnessOpt) = lambda.params.headOption match
+      case Some(param) if !argumentAvailable =>
+        (argResult.scope.withBorrowed(param.name), None)
       case Some(param) if param.consuming && !scope.skipConsumingOwnership =>
         (
           argResult.scope.withOwned(param.name, param.typeSpec.orElse(param.typeAsc), param.id),
@@ -1043,7 +1080,7 @@ object OwnershipAnalyzer:
             )
           )
         // Check if allocating expression is a capturing lambda with env struct name
-        val closureFreeFn = app.arg.terms.headOption.collect {
+        val closureFreeFn = singleTerm(app.arg).collect {
           case lambda: Lambda if lambda.captures.nonEmpty =>
             lambda.meta
               .flatMap(_.envStructName)
@@ -1060,7 +1097,7 @@ object OwnershipAnalyzer:
           .getOrElse(argResult.scope.withBorrowed(param.name))
         (newScope, None)
       case Some(param) =>
-        val newScope = app.arg.terms.headOption match
+        val newScope = singleTerm(app.arg) match
           case Some(_: LiteralString) =>
             argResult.scope.withLiteral(param.name)
           case Some(ref: Ref)
@@ -1087,7 +1124,7 @@ object OwnershipAnalyzer:
     val fieldAlias = for
       param <- lambda.params.headOption
       id <- param.id
-      ref <- app.arg.terms.headOption.map(unwrapTerm).collect { case ref: Ref => ref }
+      ref <- singleTerm(app.arg).map(unwrapTerm).collect { case ref: Ref => ref }
       path <- ownershipPath(ref, argResult.scope).filter(_.fields.nonEmpty)
     yield id -> path
     val scopeWithAliases =
@@ -1216,9 +1253,10 @@ object OwnershipAnalyzer:
     parameter: Option[FnParam],
     scope:     OwnershipScope
   ): ExprResult =
-    if !parameter.exists(_.consuming) then ExprResult(scope, value)
+    if !parameter.exists(_.consuming) || !scope.callableValues.recovery.isAvailable(value) then
+      ExprResult(scope, value)
     else
-      value.terms.lastOption.map(unwrapTerm) match
+      singleTerm(value).map(unwrapTerm) match
         case Some(cond: Cond) =>
           val yes = prepareConsumingArgument(cond.ifTrue, parameter, scope)
           val no  = prepareConsumingArgument(cond.ifFalse, parameter, scope)
@@ -1240,11 +1278,13 @@ object OwnershipAnalyzer:
     parameter: Option[FnParam],
     scope:     OwnershipScope
   ): ExprResult =
-    value.terms.lastOption.map(unwrapTerm) match
-      case Some(cond: Cond) if parameter.exists(_.consuming) =>
+    singleTerm(value).map(unwrapTerm) match
+      case Some(cond: Cond)
+          if parameter.exists(_.consuming) && scope.callableValues.recovery.isAvailable(value) =>
         val result = analyzeCond(cond, scope, parameter)
         ExprResult(result.scope, value.copy(terms = List(result.term)), result.errors)
-      case Some(app: App) if parameter.exists(_.consuming) =>
+      case Some(app: App)
+          if parameter.exists(_.consuming) && scope.callableValues.recovery.isAvailable(value) =>
         app.fn match
           case lambda: Lambda =>
             val result = analyzeLambdaApplication(app, lambda, scope, parameter)
@@ -1295,7 +1335,10 @@ object OwnershipAnalyzer:
     }
     val cloneErrors = cloneResults.flatMap(_._2)
     val arguments = cloneResults.zipWithIndex.map { case ((argument, _), position) =>
-      val origins      = returnedOrigins(argument.arg, scope.resolvables)
+      val origins =
+        if scope.callableValues.recovery.isAvailable(argument.arg) then
+          returnedOrigins(argument.arg, scope.resolvables)
+        else Nil
       val dependencies = borrowedDependencies(origins, scope)
       val parameter    = baseFnParams.lift(position)
       val borrowedValues =
@@ -1337,7 +1380,7 @@ object OwnershipAnalyzer:
       else Nil
     }
     val argumentLifetimeErrors = arguments.flatMap { argument =>
-      argument.borrows.flatMap(ref => analyzeRef(ref, result.scope).errors)
+      argument.borrows.flatMap(ref => checkRef(ref, result.scope).errors)
     }
     val fullyApplied = baseFn.typeSpec
       .flatMap(TypeUtils.canonical(_, scope.resolvables))
@@ -1446,7 +1489,7 @@ object OwnershipAnalyzer:
   /** Bind each branch decision once. Nested predicates run only on their selected path. */
   private def prepareConditionalArgument(expr: Expr, scope: OwnershipScope): ConditionalArgument =
     def prepare(value: Expr, counter: Int, ids: BindingIdSupply): ConditionalArgument =
-      value.terms.lastOption.map(unwrapTerm) match
+      singleTerm(value).map(unwrapTerm) match
         case Some(cond: Cond) =>
           val (nextIds, local) = LocalBindings
             .local(
@@ -1919,7 +1962,11 @@ object OwnershipAnalyzer:
     term match
       case invalid: InvalidExpression =>
         val result = analyzeExpr(invalid.originalExpr, scope)
-        TermResult(result.scope, invalid.copy(originalExpr = result.expr), result.errors)
+        TermResult(
+          result.scope,
+          invalid.copy(originalExpr = result.expr),
+          result.errors.filterNot(isExpressionShapeError)
+        )
 
       case ref: Ref =>
         analyzeRef(ref, scope)
@@ -1965,6 +2012,11 @@ object OwnershipAnalyzer:
     expr:  Expr,
     scope: OwnershipScope
   ): ExprResult =
+    val shapeErrors = Option
+      .when(singleTerm(expr).isEmpty)(
+        SemanticError.InvalidExpression(expr, ExpressionShapeMessage, PhaseName)
+      )
+      .toList
     val (finalScope, revTerms, errors) =
       expr.terms.foldLeft((scope, List.empty[Term], List.empty[SemanticError])):
         case ((s, ts, errs), term) =>
@@ -1974,7 +2026,7 @@ object OwnershipAnalyzer:
     ExprResult(
       finalScope,
       expr.copy(terms = revTerms.reverse),
-      errors = errors
+      errors = shapeErrors ++ errors
     )
 
   /** Analyze a member and insert free calls */

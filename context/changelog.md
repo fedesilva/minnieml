@@ -2,6 +2,16 @@
 
 Durable product changes belong here. Current task state belongs in task files.
 
+## 2026-09-23
+
+- Enforce the single-term expression contract during ownership analysis. Preserve malformed
+  argument syntax and independent diagnostics without inventing ownership, clones, or cleanup.
+  Traverse qualifier expressions once and keep call-boundary lifetime checks observational.
+  Cover recovery syntax and exactly-once argument statement effects.
+
+- Restore regression coverage for alias-typed local cleanup, scalar-return ownership,
+  consuming-call use-after-move, and lambda-parameter shadowing in loopified code.
+
 ## 2026-09-20
 
 - Preserve ownership-analysis temporary-name counters through conditional branches and nested

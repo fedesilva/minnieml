@@ -14,9 +14,11 @@ This is the Author's active and near-term focus. The backlog lives in [tasks/](t
 
 - **Tracker:** [Unify lambdas](tasks/unify-lambdas.md)
 - **Status:** in_progress
-- **Current focus:** Agree the argument-expression shape contract and next bounded plan in
-  [step 12](tasks/unify-lambdas.md#preserve-counters-and-argument-expressions-across-ownership-analysis).
-  Expression-shape implementation and final task review remain pending.
+- **Current focus:** [Step 12](tasks/unify-lambdas.md#preserve-counters-and-argument-expressions-across-ownership-analysis)
+  and restoration of four unchanged passing regressions are complete and signed off.
+  The [ignored-test restoration plan](tasks/unify-lambdas.md#restore-ignored-regressions)
+  accounts for the 47 remaining ignores. Further bounded work and overall migration signoff
+  remain pending. Commit and push of the completed slice are authorized.
 
 ### Module naming
 

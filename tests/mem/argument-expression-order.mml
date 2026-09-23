@@ -1,0 +1,45 @@
+// Argument statements and selected branches run exactly once, in source order.
+fn mark(trace: IntArray, digit: Int): Unit =
+  ar_int_set trace 0 ((ar_int_get trace 0) * 10 + digit);
+;
+
+fn take(~text: String): Int = text.length;;
+fn borrow(text: String): Int = text.length;;
+
+fn take_inline(trace: IntArray, flag: Bool): Int =
+  { ~text: String ->
+    mark trace 5;
+    text.length;
+  } (if flag then
+    mark trace 3;
+    int_to_str 456;
+  else
+    mark trace 4;
+    int_to_str 789;
+  );
+;
+
+fn check(flag: Bool): Int =
+  let trace = ar_int_new 1;
+  ar_int_set trace 0 0;
+
+  let first = take (
+    mark trace 1;
+    mark trace 2;
+    int_to_str 123
+  );
+  let second = take_inline trace flag;
+  let third = borrow (
+    mark trace 6;
+    int_to_str 123
+  );
+
+  let expected = if flag then 12356; else 12456; ;
+  if (ar_int_get trace 0) == expected and first + second + third == 9 then
+    0;
+  else
+    1;
+  ;
+;
+
+pub fn main(): Int = check true + check false;;

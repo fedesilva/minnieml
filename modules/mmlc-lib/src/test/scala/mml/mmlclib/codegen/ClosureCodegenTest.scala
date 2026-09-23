@@ -411,8 +411,7 @@ class ClosureCodegenTest extends BaseEffFunSuite:
     }
   }
 
-  // Pending migration: Parent emits closure entries; these assertions require Direct entries and captures.
-  test("loopified borrow closure validation respects lambda parameter shadowing".ignore) {
+  test("loopified borrow closure validation respects lambda parameter shadowing") {
     val source =
       """
         fn loop(n: Int, acc: Int): Int =
