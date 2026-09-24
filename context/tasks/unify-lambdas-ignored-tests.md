@@ -9,13 +9,25 @@ Supporting evidence for [Unify lambdas](unify-lambdas.md#restore-ignored-regress
 - **Audit result (2026-09-23):** four pass unchanged; 47 fail. One failing case rejects the
   intended invalid program but expects an obsolete diagnostic name. The other 46 need assertion/API
   reconciliation or compiler investigation.
-- **Repository test status:** ten cases are enabled: four unchanged assertions and six
-  emitted-IR replacements; 41 remain ignored.
+- **Repository test status:** eleven cases are enabled: four unchanged assertions, one typed
+  diagnostic assertion, and six emitted-IR replacements; 40 remain ignored.
 - **Restoration verification (2026-09-23):** formatting and lint pass; full suite passes
   763 library tests and nine CLI tests, with 47 ignored. All four restored cases execute and pass.
   Test assertions and compiler implementation are unchanged
   by this restoration. Independent review reports no actionable findings; focused QA and
   tracking checks pass. The four-case restoration is signed off; commit and push are authorized.
+
+## Borrowed-PAP restoration verification
+
+- **Date:** 2026-09-24.
+- The source program is unchanged; `semState` checks for a typed
+  `BorrowClosureEscapeViaReturn` diagnostic, and the case is enabled.
+- `sbtn 'scalafmtAll;scalafixAll;test'` passes: 764 library tests and nine CLI tests,
+  with 46 ignored and no warnings.
+- QA and focused tracking checks pass; independent review reports no actionable findings.
+  The subtask is complete and signed off; local commit is authorized and push is not authorized.
+- Test-only change: compiler implementation and the source fixture are unchanged. No smoke,
+  publishing, benchmark, or memory harness run applies to this slice.
 
 ## Method and limits
 
@@ -35,11 +47,11 @@ failures do not execute their preserved commented-out assertions.
 
 1. The four unchanged passing cases are enabled and their stale ignore explanations removed.
    Strengthening naming-sensitive checks remains a separate change.
-2. Restore the borrowed-PAP escape case with a typed `BorrowClosureEscapeViaReturn`
-   assertion through `semState`.
+2. The borrowed-PAP escape case is enabled with a typed `BorrowClosureEscapeViaReturn`
+   assertion through `semState`; verification and independent review pass. The subtask is signed off.
 3. Six materialization cases are enabled in `MaterializationCodegenTest`, preserving their
    original names and source fixtures. Verification and review are recorded below.
-4. Resolve each of the remaining 41 entries against the agreed model, preserving its semantic
+4. Resolve each of the remaining 40 entries against the agreed model, preserving its semantic
    intent. Record a linked fix or an approved replacement/retirement for obsolete expectations.
    Re-enable each case with its corresponding repair, rather than accumulating working ignores.
 
@@ -53,10 +65,10 @@ failures do not execute their preserved commented-out assertions.
 | Enabled; assertions unchanged | 4 |
 | Reconcile IR/lowering assertions | 29 |
 | Nullary application rejection | 1 |
-| Update diagnostic assertion | 1 |
+| Enabled; typed diagnostic assertion | 1 |
 | Reconcile heap-alias behavior | 2 |
 
-Ten rows are enabled; the other 41 remain pending. Lines below identify the audit snapshot,
+Eleven rows are enabled; the other 40 remain pending. Lines below identify the audit snapshot,
 not subsequent source line shifts.
 
 ### ClosureCodegenTest
@@ -157,7 +169,7 @@ not subsequent source line shifts.
 | partial application of local loopified Direct function emits a PAP entry | 149 | Reconcile IR/lowering assertions |
 | escaped partial application of local loopified Direct function uses heap env | 201 | Reconcile IR/lowering assertions |
 | capturing partial application of local loopified Direct function tags PAP env fields | 317 | Reconcile IR/lowering assertions |
-| escaped Direct PAP with borrowed heap capture is rejected by ownership | 387 | Update diagnostic assertion |
+| escaped Direct PAP with borrowed heap capture is rejected by ownership | 387 | Enabled; typed diagnostic assertion |
 | Direct PAP with borrowed heap applied arg stores without cloning | 419 | Reconcile IR/lowering assertions |
 | Direct PAP with aliased borrowed heap applied arg stores without cloning | 457 | Reconcile IR/lowering assertions |
 | Direct PAP with consuming heap applied arg owns env field | 497 | Reconcile IR/lowering assertions |
@@ -194,8 +206,6 @@ not subsequent source line shifts.
   indirect call using the entry and environment extracted from the same closure.
 - **Focused verification:** `sbtn 'scalafmtAll;scalafixAll;testOnly *Materialization*'`
   passes six tests with four pending ignores.
-- **Verification scope:** the full-suite run includes the separate uncommitted borrowed-PAP
-  diagnostic restoration, which enables one additional test beyond this commit.
 - **Full verification:** `sbtn 'scalafmtAll;scalafixAll;test'` passes 770 library tests and
   nine CLI tests, with 40 ignores and no warnings. QA and focused tracking checks pass; independent
   code review reports no actionable findings. The slice is complete and signed off.
