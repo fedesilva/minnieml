@@ -4,6 +4,11 @@ Durable product changes belong here. Current task state belongs in task files.
 
 ## 2026-09-23
 
+- Clarify the combined type, mode, and effect contracts in the renamed
+  [design discussion](../docs/brainstorming/mem/types-modes-effects-discussion.md).
+  Consolidate sequential borrowing rules, define candidate `noalias` as one live
+  reference, and state how borrowed closures inherit their owners' lifetime bounds.
+
 - Enforce the single-term expression contract during ownership analysis. Preserve malformed
   argument syntax and independent diagnostics without inventing ownership, clones, or cleanup.
   Traverse qualifier expressions once and keep call-boundary lifetime checks observational.

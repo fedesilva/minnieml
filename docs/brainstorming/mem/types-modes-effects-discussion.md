@@ -138,10 +138,10 @@ Sequential borrows may use aliases within that ownership relationship. The compi
 tracks which owner keeps a borrow valid and when ownership may move or end. Locality
 provides a useful vocabulary for expressing the corresponding escape restrictions.
 
-Keep escape permission separate from physical allocation. A heap-allocated environment
-can still contain a borrow that must not escape; owning the environment storage does
-not extend the borrowed payload's lifetime. The current stack/heap closure choices
-implement MML's rules but should not be their entire semantic definition.
+A borrow's lifetime is nested within its owner's lifetime. A closure containing a
+borrow inherits that lifetime bound, regardless of where its environment is allocated.
+The current stack/heap closure choices implement MML's rules but should not be their
+entire semantic definition.
 
 OxCaml's [borrowing documentation](https://oxcaml.org/documentation/uniqueness/borrow/)
 is useful here: it describes borrow regions, restrictions on unique use during a
