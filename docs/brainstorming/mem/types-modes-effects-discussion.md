@@ -1,4 +1,4 @@
-# Modal reasoning for MML memory evolution
+# Types, modes, and effects discussion
 
 **Status: living design notes.** Work on this document to develop a better version of
 [Memory Model Evolution](mem-evolution.md). It collects connections, corrections, and
@@ -12,7 +12,9 @@ not mean the two languages have identical memory models.
 
 ## A light introduction
 
-Types describe what a value is. Modes describe how it may be used.
+Types describe what a value is. Modes describe how it may be used. Effects describe
+what a computation does. The intended design combines all three in the rules for
+using values and crossing effect boundaries.
 
 A value can have type `String` while the compiler also tracks whether it may escape a
 scope, whether references to it may be aliased, or whether a closure may be invoked
@@ -98,6 +100,8 @@ Separate these questions in the revised proposal:
   and which operations remain permitted?
 - **Callable contracts:** which parameters consume, what the result supplies, whether
   invocation consumes the environment, and what may escape?
+- **Effect contracts:** which effects a computation performs, which combinations
+  with value modes are permitted, and which effect boundaries a borrow may cross?
 - **Representation:** where storage lives and what runtime cleanup mechanism it uses.
 
 These categories constrain one another. They need not all become public syntax, nor
@@ -121,18 +125,18 @@ sharing operation introduces a runtime cell and release obligations; it cannot b
 treated as merely forgetting a static guarantee. See OxCaml's
 [uniqueness reference](https://oxcaml.org/documentation/uniqueness/reference/).
 
-Shared handles illustrate why cleanup and exclusive access to the payload must
-remain distinct: each owned handle needs release even though the payload has multiple
-holders. An aggregate containing an owned shared handle needs cleanup even when the
-cell contains a value without `Drop`. The handle's release obligation is separate
-from payload cleanup. Specify how the shared ownership form and its cleanup appear
-in capability rows and function contracts.
+Shared handles carry cleanup responsibility for a payload with multiple holders.
+Each owned handle needs release. An aggregate containing an owned shared handle needs
+cleanup even when the cell contains a value without `Drop`. The handle's release
+obligation is separate from payload cleanup. Specify how the shared ownership form
+and its cleanup appear in capability rows and function contracts.
 
 ### Borrowing needs an owner relationship
 
-Locality provides a useful vocabulary for escape restrictions. MML still needs to
-know which owner keeps a borrow valid and when moving or destroying that owner is
-permitted. Being in the same lexical scope is insufficient by itself.
+The owner manages storage and retains cleanup responsibility while lending access.
+Sequential borrows may use aliases within that ownership relationship. The compiler
+tracks which owner keeps a borrow valid and when ownership may move or end. Locality
+provides a useful vocabulary for expressing the corresponding escape restrictions.
 
 Keep escape permission separate from physical allocation. A heap-allocated environment
 can still contain a borrow that must not escape; owning the environment storage does
@@ -143,8 +147,7 @@ OxCaml's [borrowing documentation](https://oxcaml.org/documentation/uniqueness/b
 is useful here: it describes borrow regions, restrictions on unique use during a
 borrow, and limitations around closure capture and locality. Check its current status
 when using examples. In particular, `global` is escape permission, not an equivalent
-of MML's move-capture syntax. Repeated borrowing of owned captures also does not by
-itself establish a non-reentrancy restriction in MML.
+of MML's move-capture syntax.
 
 ## Corrections to resolve before revising the evolution
 
@@ -183,16 +186,23 @@ Aggregate clone derivation accepts both freely copyable members and members with
 their hidden representation. Specify whether cloning a shared handle means cloning
 its payload or retaining the cell; those have different results and costs.
 
-### Keep effects and access guarantees distinct
+### Define the interaction between types, modes, and effects
 
-Effects can describe computation, while modes can constrain value usage. They can
-inform one another without being interchangeable.
+A sequential call may mutate a value through an alias, and its caller may observe
+that change afterward. This is ordinary mutation behavior. Borrowing preserves the
+ownership relationship; it does not by itself promise that the value stays unchanged.
 
-An async boundary does not necessarily introduce parallel access. Atomic reference
-counting protects the count, not arbitrary mutation of the payload. Neither `Send`
-alone nor the presence of async establishes that shared mutation is safe, and CAS
-cannot make every operation safe automatically. Define transfer, simultaneous access,
-and synchronization requirements before selecting a representation. OxCaml's
+Mutation is a first-class tracked effect. Types, modes, and effects jointly
+determine which combinations are legal, such as whether mutation is
+permitted through a borrow. Async boundaries, suspension, and continuation resumption
+also have effects and corresponding modal rules. These contracts give precise meaning
+to permitted access and passage across effect boundaries.
+
+The [effect-system notes](../effects/mml_effects_brainstorming-1.md) propose `Mut` as
+mutation permission. The specific rules for combining effects with types and modes
+remain open design work. Sequential borrowing is the foundation on which those rules
+are defined. Representation and optimization follow the language contracts.
+OxCaml's
 [parallelism introduction](https://oxcaml.org/documentation/tutorials/01-intro-to-parallelism-part-1/)
 provides a useful comparison through contention and portability modes.
 
@@ -206,9 +216,10 @@ handle to test the separate `Unique`, `Drop`, and `Clone` rules.
 
 Then revisit the claims in `mem-evolution.md`: separate preserved behavior from intended
 changes, identify runtime distinctions that remain necessary, and record which rules
-are type capabilities, value modes, or representation choices. Resolve questions here
-before folding the resulting decisions into the evolution proposal. Adoption of a full
-OxCaml-style mode system remains a design option, not a settled requirement.
+are type capabilities, value modes, effect contracts, or representation choices.
+Resolve questions here before folding the resulting decisions into the evolution
+proposal. Adoption of a full OxCaml-style mode system remains a design option, not a
+settled requirement.
 
 ## Reading path
 
@@ -229,86 +240,32 @@ Documentation consulted on 2026-09-17. The paper, current implementation, and ev
 documentation may describe different stages of the design; a conceptual translation
 of an MML example is not evidence that the corresponding OxCaml program compiles.
 
-## Appendix: sequential borrowing and temporal exclusivity
+## Appendix: borrowing, modes, and effect boundaries
 
-Without concurrency, accesses through different aliases execute sequentially. This
-suggests a useful intuition: a borrow may give its user temporary control of access
-even though other references exist. Multiple read-only aliases need not undermine
-ownership or introduce runtime ownership tracking, provided the owner remains alive.
+Sequential borrowing is a foundation of MML's memory model. The owner manages
+storage and retains cleanup responsibility; borrowers receive access bounded by
+that ownership.
 
-There are three distinct guarantees to keep apart:
+Types, modes, and effects jointly determine which uses are valid, including which
+effects may occur during a borrow and which effect boundaries a borrow may cross.
+Restrictions such as prohibiting borrowed mutation or carrying a borrow across an
+async boundary express this principle. Suspension and continuation resumption are
+governed by the same interaction between types, modes, and effects.
 
-| Guarantee                    | Meaning                                         |
-|------------------------------|-------------------------------------------------|
-| Single cleanup owner         | One owner is responsible for destruction        |
-| Sequential execution         | Accesses do not execute concurrently            |
-| Exclusive access over a span | Other aliases cannot interfere during that span |
+### Candidate: noalias
 
-MML's ownership discipline supplies the first. Excluding concurrency supplies the
-second. The third requires restrictions or proof about aliases and intervening calls.
-Sequential execution alone does not make a borrow unique in the aliasing sense.
+A separate `noalias` mode would require one live reference. Creating an alias with
+`let b = a` while leaving `a` usable would be forbidden. Ordinary borrowing would
+also be forbidden because it creates another reference.
 
-Consider a possible interaction involving a borrowed view and a callback:
+Moving the reference remains valid: `b` takes it and `a` becomes unavailable.
+Loops and recursion can move the reference onward, returning it if the caller needs
+it again. Normal ownership permits one owner with borrowed aliases; `noalias` adds
+the stronger requirement of one live reference.
 
-1. A function borrows a value and retains a view into its storage.
-2. It invokes a callback before finishing with the view.
-3. The callback reaches the value through another alias and changes or invalidates
-   the storage.
-4. The function resumes using the retained view.
-
-Every step is sequential. Safety depends on whether the callback's operations are
-permitted while the view is live. This is a design example, not a claim that MML
-currently accepts such a program. Nested calls and reentrancy can create interference
-without threads; mutation that preserves the view may be harmless, while freeing or
-invalidating its storage is not.
-
-For the evolution, describe a borrow as preserving the owner's ownership while
-granting bounded access. Investigate when that access can also be proven exclusive
-for a particular operation or interval. Such a proof could allow stronger operations
-or optimizations without requiring that every other reference cease to exist.
-
-The question to resolve is which operations require only a live owner, which require
-non-interference during a borrow, and how those requirements survive callbacks and
-higher-order calls. Absence of concurrency is useful evidence, but not the entire
-proof of exclusivity.
-
-### Candidate: noalias and exclusive borrowing
-
-A separate `noalias` mode could express a stronger access guarantee than MML's
-`Unique` ownership discipline. Its strict form would require a single live
-reference, with no other aliases. This would still permit loops and recursion
-that move the reference onward, returning it if the caller needs it again.
-
-A more permissive form could allow sequential, exclusive borrows: other references
-may remain, but only the current borrower has a usable access path during the
-borrow. The owner retains cleanup responsibility while its access is suspended.
-A loop could finish one borrow before starting the next. A recursive call could
-reborrow, suspending the outer borrow until the inner one ends.
-
-This relaxation requires proof of exclusive access over the whole borrow interval,
-including intervening calls. A callback reaching the same value through a captured
-alias would violate that contract even without concurrency. Merely observing that
-individual accesses execute one after another is insufficient.
-
-OxCaml's [borrowing rules](https://oxcaml.org/documentation/uniqueness/borrow/)
-temporarily permit `aliased`, `local` access and restore unique use after the
-region ends, subject to their restrictions. Multiple borrows may coexist in that
-region. This is useful precedent for recovering a guarantee after borrowing,
-but does not establish exclusive borrowed access for MML.
-
-Keep literal absence of aliases distinct from temporary exclusivity. Decide which
-operations accept each guarantee, whether it extends through fields and reachable
-values, and how it is preserved through higher-order calls. `noalias` is a candidate
-mode, not an additional meaning of `Unique` or a settled implementation requirement.
-
-Future non-sequential access should interact with the effect system. Effects could
-identify where execution may suspend, spawn work, or permit overlapping access;
-ownership and borrow contracts would constrain the values available across those
-boundaries. This could let the compiler preserve simpler access rules where it proves
-execution remains sequential and require stronger guarantees where access may overlap.
-The effect rules must distinguish suspension from parallel execution and account for
-effects propagated through callbacks. The exact contracts and their consequences for
-synchronization and reference-count representation remain to be designed.
+Whether MML needs this mode depends on the operations and effect contracts it chooses.
+Its scope through fields, reachable values, and higher-order calls belongs to that
+design. Ordinary sequential borrowing remains valid without requiring this mode.
 
 ### Proposed rule: borrows cannot cross async boundaries
 
@@ -319,18 +276,16 @@ borrows would inherit this restriction.
 
 A computation that needs a resource beyond the boundary would need ownership, an
 explicit clone, or a shared handle permitted by the relevant transfer and access
-rules. A shared handle alone would not authorize mutation of its payload.
+rules.
 
-This would particularly constrain borrowing combined with mutation effects: borrowed
-mutation must finish, and the borrow must end, before yielding or handing work off
-across the boundary. Effects must propagate through higher-order calls so a callback
-cannot conceal an async boundary from a caller holding a live borrow.
+The effect contract of a higher-order call must account for effects performed by its
+callbacks. The same boundary rule then applies to direct and higher-order calls.
+Mutation has its own mode-effect rules; whether a borrowed mutation is permitted is
+a separate part of that contract.
 
-This is a proposed conservative policy, not an implemented rule. It could reject
-programs whose safety a more elaborate lifetime system could prove, in exchange for
-simpler contracts. Define exactly which effects create such boundaries, whether the
-restriction covers unrelated live borrows, and how borrow endings are inferred.
-Synchronous callback interference still needs its own rules.
+This proposed policy favors simple boundary contracts. Define exactly which effects
+create such boundaries, whether the restriction covers unrelated live borrows, and
+how borrow endings are inferred.
 
 ### Shared references across async boundaries
 
@@ -344,26 +299,16 @@ lifetime annotations or a clone of the payload:
 - Move ownership for an exclusive handoff to async work.
 - Share explicitly with `&` when both sides need continued access.
 
-Shared mutation would remain subject to effect-based access restrictions. Sharing
-extends the resource's lifetime; it does not grant unrestricted mutation. The effect
-system should establish where access can overlap and which operations are permitted
-there, including effects propagated through callbacks.
+Each handle supplies an ownership relationship that keeps the payload alive. The
+payload's permitted uses are governed by its type, mode, and the computation's tracked
+effects, including mutation and any overlapping execution.
 
-One possible implementation direction is to lower supported operations on references
-shared across async boundaries to atomic operations, including compare-and-swap (CAS).
-This would connect effect and sharing information to representation and operation
-selection. Async alone would not require CAS if access remains sequential.
-
-Distinguish atomic reference-count updates, which protect lifetime bookkeeping, from
-atomic payload operations, which coordinate access to the shared value. CAS-based
-payload updates need a defined atomic unit and retry semantics. A compiler cannot
-safely retry arbitrary effectful update code or make a multi-step invariant atomic
-merely by replacing individual writes with CAS. Specify which operations admit this
-lowering and which require another synchronization mechanism or remain disallowed.
-
-These are directions for the effect and shared-reference design, not settled lowering
-rules. They let MML keep the source-level sharing decision explicit while using proven
-access constraints to select its runtime implementation.
+Implementation choices follow those contracts. Atomic reference-count updates may
+implement handle bookkeeping; atomic payload operations, including compare-and-swap
+(CAS), are a separate candidate for operations with defined atomicity and retry
+semantics. Suspension and parallel execution have different effects and may call for
+different representations. The representation for each permitted combination remains
+an implementation choice to specify.
 
 ## Appendix: shared-handle ownership and transparent access
 
@@ -390,7 +335,8 @@ too verbose.
 5. **Consuming parameters receive cleanup responsibility.** Where the parameter's
    contract accepts sharing, passing a shared argument gives the callee an owned
    handle, retaining it when the caller keeps its handle. Passing a unique argument
-   moves ownership. `~` alone must not imply exclusive access to a shared payload.
+   moves ownership. The parameter's type, mode, and effect contract determines the
+   permitted payload operations.
 6. **Drop follows the ownership form.** An untransferred unique owner runs cleanup
    at scope end when its type implements `Drop`; `Unique` alone requires no call.
    An untransferred shared handle releases one reference. The last release drops
@@ -469,11 +415,11 @@ argument releases a handle; a uniquely owned argument needs a cleanup call only
 when its type implements `Drop`.
 
 The compiler must preserve that distinction even if both forms display the ordinary
-type `Struct`. A callee cannot move a resource field out of a shared payload or assume
-exclusive mutation merely because its parameter is consuming. Existing effects and
-access requirements still apply.
+type `Struct`. A callee cannot move a resource field out of a shared payload merely
+because its parameter is consuming. Mutation permissions belong to the combined type,
+mode, and effect contract described above.
 
 Determine whether such functions are polymorphic over ownership forms, whether the
 sharing capability appears in their signatures, and how a function requires exclusive
 ownership when necessary. The plain `Struct` annotation above leaves those questions
-open; it does not authorize silently treating a shared payload as uniquely owned.
+open.

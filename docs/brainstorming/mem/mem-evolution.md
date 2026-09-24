@@ -2,7 +2,7 @@
 
 ## Status: brainstorming
 
-See [Modal reasoning for MML memory evolution](modal-memory.md), a living companion
+See [Types, modes, and effects discussion](types-modes-effects-discussion.md), a living companion
 document to work on toward a more precise revision of this proposal.
 
 ---
