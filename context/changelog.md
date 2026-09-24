@@ -2,6 +2,12 @@
 
 Durable product changes belong here. Current task state belongs in task files.
 
+## 2026-09-24
+
+- Restore six materialization regressions with emitted-IR assertions for direct calls and
+  null-environment function values, preserving their source programs.
+
+
 ## 2026-09-23
 
 - Clarify the combined type, mode, and effect contracts in the renamed
