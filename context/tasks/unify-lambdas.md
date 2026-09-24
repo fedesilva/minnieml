@@ -954,7 +954,11 @@ Evidence collected on 2026-09-11, macOS arm64:
 
 #### Restore ignored regressions
 
-- **Status:** in_progress; four cases enabled, 47 pending.
+- **Status:** in_progress; ten cases enabled, 41 pending.
+- **Approved bounded slice:** investigate the nine placeholder-based materialization cases;
+  restore six supported cases as codegen regressions with unchanged source fixtures, and
+  prepare compiler-repair plans for the other three. The separate nullary immediate-application
+  rejection remains outside this slice. Compiler implementation changes are not approved.
 - **Inventory:** [Ignored regression audit](unify-lambdas-ignored-tests.md) accounts for all
   51 runner-discovered ignored tests by suite and name. Reconcile this inventory after each
   bounded compiler slice; passing ignored cases must not wait for the final branch audit.
@@ -962,14 +966,16 @@ Evidence collected on 2026-09-11, macOS arm64:
   **four pass, 47 fail**. Four stale ignores are removed without assertion changes:
   alias-typed allocating-local cleanup; scalar-return ownership classification; consuming-use
   error equivalence; and loopified lambda-parameter shadowing. The borrowed-PAP escape case
-  already produces the intended rejection but expects an obsolete diagnostic name.
+  produced the intended rejection with an obsolete diagnostic-name assertion.
 - **Plan:**
   - [x] Execute and account for every ignored case; distinguish stale ignores, placeholder
     helpers, diagnostic changes, representation assumptions, and observed compiler failures.
   - [x] Re-enable the four unchanged passing cases and remove their stale reason comments.
   - [ ] Adapt the borrowed-PAP escape case to a typed `BorrowClosureEscapeViaReturn` assertion
     using existing semantic helpers, then re-enable it.
-  - [ ] Restore or replace 14 placeholder-based cases against the agreed compiler API;
+  - [x] Replace six materialization placeholders with emitted-IR assertions and unchanged fixtures.
+  - [ ] Restore or replace the other eight placeholder-based cases, including the three
+    [materialization repairs](unify-lambdas-ignored-tests.md#materialization-repair-plans);
     investigate the separate nullary immediate-application rejection.
   - [ ] Reconcile 29 failing IR/lowering assertions and two heap-alias cases with the agreed
     semantics. Assign each to a bounded repair or an explicitly approved replacement;
@@ -981,13 +987,20 @@ Evidence collected on 2026-09-11, macOS arm64:
     Any remaining deferral requires an explicit scope decision and tracked follow-up.
 - **Restoration verification (2026-09-23):** formatting and lint pass; full suite passes
   763 library tests and nine CLI tests, with 47 ignored. All four restored cases execute and pass.
-  Log: `/tmp/mml-unignore-four-gates.log`. Test assertions and compiler implementation are unchanged
+  Test assertions and compiler implementation are unchanged
   by this restoration. Independent review reports no actionable findings; focused QA and
   tracking checks pass. The four-case restoration is signed off; commit and push are authorized.
+- **Materialization restoration:** six cases have emitted-IR replacements with unchanged
+  source fixtures. Verification includes the separate uncommitted borrowed-PAP restoration.
+  Formatting, lint, 770 library tests, and nine CLI tests pass, with 40 ignores
+  and no warnings. QA, focused tracking checks, and independent review pass.
+  [Evidence and repair plans](unify-lambdas-ignored-tests.md#materialization-restoration-evidence)
+  record the three pending compiler repairs. The six-case slice is complete and signed off;
+  local commit is authorized. Compiler implementation and push are not authorized.
 - **Acceptance:** no unexplained or stale ignores; no placeholder counted as restored;
   no weakened assertion merely to obtain a pass. Track undiscovered declarations separately
   from the 51 audited cases. Further assertion changes and compiler fixes require their
-  bounded plans; enabling four tests does not complete the remaining lambda implementation.
+  bounded plans; restoring ten tests does not complete the remaining lambda implementation.
 
 ### Later-stage documentation
 
@@ -1027,7 +1040,8 @@ are in `context/history/` for Author review. No compiler slice is authorized by 
   repairs, both binding identity and local-construction stages, the nested
   capturing-recursion TCO repair with its smoke and benchmark integration, elaboration
   error recovery, counter preservation through conditional branches and nested lambdas,
-  argument-expression preservation, and restoration of four unchanged passing regressions.
+  argument-expression preservation, restoration of four unchanged passing regressions,
+  and six materialization regressions.
 - Tracked item completion: pending; open work remains in the
   [Execution Checklist](#execution-checklist).
 - Commit and push authorization: expression preservation, the ignored-test inventory and plan,
@@ -1054,9 +1068,15 @@ are in `context/history/` for Author review. No compiler slice is authorized by 
   QA, tracking checks, and independent review pass. The slice is signed off with commit and
   push authorization. Overall migration remains open.
 - **Ignored-test restoration:** the [51-case audit](unify-lambdas-ignored-tests.md) identifies
-  four unchanged passing tests, all enabled and signed off, and one pending stale diagnostic assertion.
+  four unchanged passing tests, all enabled and signed off. The borrowed-PAP diagnostic
+  assertion remains pending in this commit.
   [The explicit regression plan](#restore-ignored-regressions) accounts for the remaining
-  47 cases. Further assertion/API/representation changes and compiler fixes remain pending.
+  41 cases. Six materialization cases have emitted-IR replacements; formatting, lint,
+  770 library tests, and nine CLI tests pass, with 40 ignores and no warnings. QA and
+  tracking checks pass; independent review reports no actionable findings. The six-case
+  restoration is complete and signed off; local commit is authorized and push is not authorized. The three remaining selected
+  cases have [bounded repair plans](unify-lambdas-ignored-tests.md#materialization-repair-plans);
+  compiler implementation approval is pending.
 - **Recovery evidence:** CLI controls preserve the statement type mismatch and bound-call
   use-after-move diagnostic without false ownership errors. Regression, smoke, benchmark-build,
   and sanitizer results are recorded in the recovery section.
@@ -1064,7 +1084,7 @@ are in `context/history/` for Author review. No compiler slice is authorized by 
   and [binding construction verification](#binding-construction-evidence).
 - **Open limits:** the mixed-ownership reproducer remains unresolved; the general branch
   audit and separate Linux sanitizer validation are deferred. The broader counter/expression
-  follow-up is complete and signed off. Remaining lambda implementation and 47 ignored cases
+  follow-up is complete and signed off. Remaining lambda implementation and 41 ignored cases
   require further bounded work.
   [Consuming an owned PAP captured by a move lambda](#bug-consume-an-owned-pap-captured-by-a-move-lambda)
   has passing semantic, smoke, benchmark-build, native sanitizer, and independent review

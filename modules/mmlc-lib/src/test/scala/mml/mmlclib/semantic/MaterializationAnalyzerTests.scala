@@ -47,45 +47,8 @@ class MaterializationAnalyzerTests extends BaseEffFunSuite:
      */
     fail("LambdaMeta.isDirect is absent from the parent AST.")
 
-  // ---- top-level functions -----------------------------------------------
-
-  // Pending migration: Parent LambdaMeta has no isDirect classification.
-  test("top-level fn called directly is direct".ignore) {
-    val code =
-      """
-        fn id(x: Int): Int = x;;
-        fn main(): Int = id 1;;
-      """
-    semNotFailed(code).map { module =>
-      assert(isDirect(topLambda(module, "id")), "id should be direct")
-    }
-  }
-
-  // Note on top-level fn "aliasing": ExpressionRewriter eta-expands bare callable refs
-  // in argument position. `let f = id` becomes `let f = { $p0 -> id $p0 }`. When `f` is
-  // only used in saturated calls, the analyzer correctly marks every lambda direct —
-  // there is no observable closure to materialize. The remaining non-direct cases
-  // appear when a *user-written lambda literal* is bound and the binder is then used as
-  // a value (covered by "let-bound lambda used as value" below).
-
-  // Pending migration: Parent LambdaMeta has no isDirect classification.
-  test("recursive self-call keeps fn direct".ignore) {
-    val code =
-      """
-        fn fact(n: Int): Int =
-          if n <= 1 then 1;
-          else n * (fact (n - 1));
-          ;
-        ;
-      """
-    semNotFailed(code).map { module =>
-      assert(isDirect(topLambda(module, "fact")), "fact's only use is a direct self-call")
-    }
-  }
-
-  // ---- let-bound lambdas --------------------------------------------------
-
-  // Pending migration: Parent LambdaMeta has no isDirect classification.
+  // Pending direct-entry lowering.
+  // See context/tasks/unify-lambdas-ignored-tests.md, Materialization repair plans.
   test("let-bound lambda used only directly is direct".ignore) {
     val code =
       """
@@ -100,23 +63,8 @@ class MaterializationAnalyzerTests extends BaseEffFunSuite:
     }
   }
 
-  // Pending migration: Parent LambdaMeta has no isDirect classification.
-  test("let-bound lambda used as value is not direct".ignore) {
-    val code =
-      """
-        fn apply(g: Int -> Int, n: Int): Int = g n;;
-        fn main(dummy: Int): Int =
-          let id = { x: Int -> x };
-          apply id dummy;
-        ;
-      """
-    semNotFailed(code).map { module =>
-      val id = letBoundLambda(module, "main", "id")
-      assert(!isDirect(id), "let-bound id passed as a value")
-    }
-  }
-
-  // Pending migration: Parent LambdaMeta has no isDirect classification.
+  // Pending PAP target lowering.
+  // See context/tasks/unify-lambdas-ignored-tests.md, Materialization repair plans.
   test("let-bound lambda used through partial application remains direct".ignore) {
     val code =
       """
@@ -132,34 +80,7 @@ class MaterializationAnalyzerTests extends BaseEffFunSuite:
     }
   }
 
-  // ---- lambda literals ----------------------------------------------------
-
-  // Pending migration: Parent LambdaMeta has no isDirect classification.
-  test("lambda literal in immediate application is direct".ignore) {
-    val code =
-      """
-        fn main(): Int = { x: Int -> x } 5;;
-      """
-    semNotFailed(code).map { module =>
-      val main = topLambda(module, "main")
-      val lit = main.body.terms
-        .collectFirst { case app: App =>
-          app.fn match
-            case l: Lambda => l
-            case _ => fail("expected lambda head application")
-        }
-        .getOrElse(fail("expected immediate-application body"))
-      assert(isDirect(lit), "immediate-application lambda is direct")
-    }
-  }
-
-  // ---- nullary (arity-0) lambdas -----------------------------------------
-  //
-  // Saturation check is `depth >= max(arity, 1)`. The `max(_, 1)` floor keeps arity-0
-  // lambdas sound: invocation is `App(ref, unit-literal)` so a called thunk's ref
-  // sits at depth 1, while a value-position thunk ref sits at depth 0.
-
-  // Pending migration: Parent LambdaMeta has no isDirect classification.
+  // Pending nullary immediate-application rejection; see unify-lambdas-ignored-tests.md.
   test("nullary lambda literal in immediate application is direct".ignore) {
     val code =
       """
@@ -183,35 +104,8 @@ class MaterializationAnalyzerTests extends BaseEffFunSuite:
     }
   }
 
-  // Pending migration: Parent LambdaMeta has no isDirect classification.
-  test("let-bound nullary lambda used as value is not direct".ignore) {
-    val code =
-      """
-        fn force(g: Unit -> Int): Int = g ();;
-        fn main(): Int =
-          let t = { 42; };
-          force t;
-        ;
-      """
-    semNotFailed(code).map { module =>
-      val t = letBoundLambda(module, "main", "t")
-      assert(!isDirect(t), "nullary t passed as a value must not be direct")
-    }
-  }
-
-  // Pending migration: Parent LambdaMeta has no isDirect classification.
-  test("nullary top-level fn invoked is direct".ignore) {
-    val code =
-      """
-        fn nada(): Int = 42;;
-        let a = nada ();
-      """
-    semNotFailed(code).map { module =>
-      assert(isDirect(topLambda(module, "nada")), "nada is only ever called")
-    }
-  }
-
-  // Pending migration: Parent LambdaMeta has no isDirect classification.
+  // Pending function-value lowering.
+  // See context/tasks/unify-lambdas-ignored-tests.md, Materialization repair plans.
   test("nullary top-level fn used as value is not direct".ignore) {
     val code =
       """
