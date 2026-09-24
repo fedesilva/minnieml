@@ -954,7 +954,7 @@ Evidence collected on 2026-09-11, macOS arm64:
 
 #### Restore ignored regressions
 
-- **Status:** in_progress; ten cases enabled, 41 pending.
+- **Status:** in_progress; eleven cases enabled, 40 pending.
 - **Approved bounded slice:** investigate the nine placeholder-based materialization cases;
   restore six supported cases as codegen regressions with unchanged source fixtures, and
   prepare compiler-repair plans for the other three. The separate nullary immediate-application
@@ -971,7 +971,7 @@ Evidence collected on 2026-09-11, macOS arm64:
   - [x] Execute and account for every ignored case; distinguish stale ignores, placeholder
     helpers, diagnostic changes, representation assumptions, and observed compiler failures.
   - [x] Re-enable the four unchanged passing cases and remove their stale reason comments.
-  - [ ] Adapt the borrowed-PAP escape case to a typed `BorrowClosureEscapeViaReturn` assertion
+  - [x] Adapt the borrowed-PAP escape case to a typed `BorrowClosureEscapeViaReturn` assertion
     using existing semantic helpers, then re-enable it.
   - [x] Replace six materialization placeholders with emitted-IR assertions and unchanged fixtures.
   - [ ] Restore or replace the other eight placeholder-based cases, including the three
@@ -990,9 +990,16 @@ Evidence collected on 2026-09-11, macOS arm64:
   Test assertions and compiler implementation are unchanged
   by this restoration. Independent review reports no actionable findings; focused QA and
   tracking checks pass. The four-case restoration is signed off; commit and push are authorized.
+- **Borrowed-PAP restoration (2026-09-24):** the unchanged source program is enabled with a
+  typed `BorrowClosureEscapeViaReturn` assertion through `semState`.
+  `sbtn 'scalafmtAll;scalafixAll;test'` passes: 764 library tests, nine CLI tests,
+  46 ignored, no warnings.
+  QA and focused tracking checks pass; independent review reports no actionable findings.
+  Smoke, publishing, benchmarks, and memory runs are not applicable to this test-only change;
+  compiler implementation and the embedded source program are unchanged.
+  Subtask complete and signed off. Local commit is authorized; push is not authorized.
 - **Materialization restoration:** six cases have emitted-IR replacements with unchanged
-  source fixtures. Verification includes the separate uncommitted borrowed-PAP restoration.
-  Formatting, lint, 770 library tests, and nine CLI tests pass, with 40 ignores
+  source fixtures. Formatting, lint, 770 library tests, and nine CLI tests pass, with 40 ignores
   and no warnings. QA, focused tracking checks, and independent review pass.
   [Evidence and repair plans](unify-lambdas-ignored-tests.md#materialization-restoration-evidence)
   record the three pending compiler repairs. The six-case slice is complete and signed off;
@@ -1000,7 +1007,7 @@ Evidence collected on 2026-09-11, macOS arm64:
 - **Acceptance:** no unexplained or stale ignores; no placeholder counted as restored;
   no weakened assertion merely to obtain a pass. Track undiscovered declarations separately
   from the 51 audited cases. Further assertion changes and compiler fixes require their
-  bounded plans; restoring ten tests does not complete the remaining lambda implementation.
+  bounded plans; restoring eleven tests does not complete the remaining lambda implementation.
 
 ### Later-stage documentation
 
@@ -1041,7 +1048,7 @@ are in `context/history/` for Author review. No compiler slice is authorized by 
   capturing-recursion TCO repair with its smoke and benchmark integration, elaboration
   error recovery, counter preservation through conditional branches and nested lambdas,
   argument-expression preservation, restoration of four unchanged passing regressions,
-  and six materialization regressions.
+  the typed borrowed-PAP escape regression, and six materialization regressions.
 - Tracked item completion: pending; open work remains in the
   [Execution Checklist](#execution-checklist).
 - Commit and push authorization: expression preservation, the ignored-test inventory and plan,
@@ -1068,10 +1075,12 @@ are in `context/history/` for Author review. No compiler slice is authorized by 
   QA, tracking checks, and independent review pass. The slice is signed off with commit and
   push authorization. Overall migration remains open.
 - **Ignored-test restoration:** the [51-case audit](unify-lambdas-ignored-tests.md) identifies
-  four unchanged passing tests, all enabled and signed off. The borrowed-PAP diagnostic
-  assertion remains pending in this commit.
+  four unchanged passing tests, all enabled and signed off. The borrowed-PAP escape regression
+  is enabled with a typed `BorrowClosureEscapeViaReturn` assertion through `semState`;
+  formatting, lint, all tests, QA, tracking checks, and independent review pass.
+  The subtask is complete and signed off; local commit is authorized and push is not authorized.
   [The explicit regression plan](#restore-ignored-regressions) accounts for the remaining
-  41 cases. Six materialization cases have emitted-IR replacements; formatting, lint,
+  40 cases. Six materialization cases have emitted-IR replacements; formatting, lint,
   770 library tests, and nine CLI tests pass, with 40 ignores and no warnings. QA and
   tracking checks pass; independent review reports no actionable findings. The six-case
   restoration is complete and signed off; local commit is authorized and push is not authorized. The three remaining selected
@@ -1084,7 +1093,7 @@ are in `context/history/` for Author review. No compiler slice is authorized by 
   and [binding construction verification](#binding-construction-evidence).
 - **Open limits:** the mixed-ownership reproducer remains unresolved; the general branch
   audit and separate Linux sanitizer validation are deferred. The broader counter/expression
-  follow-up is complete and signed off. Remaining lambda implementation and 41 ignored cases
+  follow-up is complete and signed off. Remaining lambda implementation and 40 ignored cases
   require further bounded work.
   [Consuming an owned PAP captured by a move lambda](#bug-consume-an-owned-pap-captured-by-a-move-lambda)
   has passing semantic, smoke, benchmark-build, native sanitizer, and independent review

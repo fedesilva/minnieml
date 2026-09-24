@@ -1,6 +1,7 @@
 package mml.mmlclib.codegen
 
 import mml.mmlclib.compiler.CompilerConfig
+import mml.mmlclib.semantic.SemanticError
 import mml.mmlclib.test.BaseEffFunSuite
 
 class TailRecursionLoopificationTest extends BaseEffFunSuite:
@@ -383,8 +384,7 @@ class TailRecursionLoopificationTest extends BaseEffFunSuite:
     }
   }
 
-  // Pending migration: Parent accepts the escaping PAP with a borrowed heap capture.
-  test("escaped Direct PAP with borrowed heap capture is rejected by ownership".ignore) {
+  test("escaped Direct PAP with borrowed heap capture is rejected by ownership") {
     val source =
       """
       fn make(): Int -> Unit =
@@ -404,14 +404,11 @@ class TailRecursionLoopificationTest extends BaseEffFunSuite:
       ;
       """
 
-    compileAndGenerate(source, config = CompilerConfig.default.copy(noTco = false)).attempt.map {
-      case Left(error) =>
-        assert(
-          error.getMessage.contains("BorrowedPapEscapeViaReturn"),
-          s"Expected borrowed heap capture rejection, got: ${error.getMessage}"
-        )
-      case Right(llvmIr) =>
-        fail(s"Expected borrowed heap capture rejection, got IR:\n$llvmIr")
+    semState(source).map { result =>
+      assert(
+        result.errors.exists(_.isInstanceOf[SemanticError.BorrowClosureEscapeViaReturn]),
+        result.errors
+      )
     }
   }
 

@@ -15,7 +15,7 @@ This is the Author's active and near-term focus. The backlog lives in [tasks/](t
 - **Tracker:** [Unify lambdas](tasks/unify-lambdas.md)
 - **Status:** in_progress
 - **Current focus:** The [ignored-test restoration plan](tasks/unify-lambdas.md#restore-ignored-regressions)
-  accounts for 41 remaining ignores. The three materialization compiler-repair plans
+  accounts for 40 remaining ignores. The three materialization compiler-repair plans
   await implementation approval, starting with function-value repair. Overall migration
   signoff remains pending.
 

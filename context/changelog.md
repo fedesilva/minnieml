@@ -7,6 +7,7 @@ Durable product changes belong here. Current task state belongs in task files.
 - Restore six materialization regressions with emitted-IR assertions for direct calls and
   null-environment function values, preserving their source programs.
 
+- Restore the borrowed-PAP return-escape regression with a typed ownership diagnostic assertion.
 
 ## 2026-09-23
 
