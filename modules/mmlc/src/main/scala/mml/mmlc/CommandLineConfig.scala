@@ -23,7 +23,8 @@ object CommandLineConfig:
       emitScopedAlias: Boolean        = false,
       targetType:      String         = "exe",
       asan:            Boolean        = false,
-      llvmOptArgs:     List[String]   = Nil
+      llvmOptArgs:     List[String]   = Nil,
+      parserMetrics:   Boolean        = false
     )
     case Run(
       file:            Option[Path]   = None,
@@ -40,22 +41,25 @@ object CommandLineConfig:
       printPhases:     Boolean        = false,
       emitScopedAlias: Boolean        = false,
       asan:            Boolean        = false,
-      llvmOptArgs:     List[String]   = Nil
+      llvmOptArgs:     List[String]   = Nil,
+      parserMetrics:   Boolean        = false
     )
     case Ast(
-      file:      Option[Path] = None,
-      outputDir: String       = "build",
-      verbose:   Boolean      = false,
-      timings:   Boolean      = false,
-      noTco:     Boolean      = false
+      file:          Option[Path] = None,
+      outputDir:     String       = "build",
+      verbose:       Boolean      = false,
+      timings:       Boolean      = false,
+      noTco:         Boolean      = false,
+      parserMetrics: Boolean      = false
     )
     case Ir(
-      file:      Option[Path] = None,
-      outputDir: String       = "build",
-      outputAst: Boolean      = false,
-      verbose:   Boolean      = false,
-      timings:   Boolean      = false,
-      noTco:     Boolean      = false
+      file:          Option[Path] = None,
+      outputDir:     String       = "build",
+      outputAst:     Boolean      = false,
+      verbose:       Boolean      = false,
+      timings:       Boolean      = false,
+      noTco:         Boolean      = false,
+      parserMetrics: Boolean      = false
     )
     case Clean(
       outputDir: String = "build"
@@ -111,7 +115,10 @@ object CommandLineConfig:
       .text("Disable tail-call optimization")
 
     val timingOpt = opt[Unit]('m', "metrics")
-      .text("Print compilation metrics (timings, parser stats)")
+      .text("Print compilation timings")
+
+    val parserMetricsOpt = opt[Unit]('P', "parser-metrics")
+      .text("Print parser metrics")
 
     val printPhasesOpt = opt[Unit]('p', "print-phases")
       .text("Print detailed compilation phase information")
@@ -184,6 +191,12 @@ object CommandLineConfig:
     def topLevelTimingOpt = timingOpt.action((_, c) =>
       c.command match
         case b: Command.Build => c.copy(command = b.copy(timings = true))
+        case _ => c
+    )
+
+    def topLevelParserMetricsOpt = parserMetricsOpt.action((_, c) =>
+      c.command match
+        case b: Command.Build => c.copy(command = b.copy(parserMetrics = true))
         case _ => c
     )
 
@@ -283,6 +296,12 @@ object CommandLineConfig:
               case cmd => cmd
             })
           ),
+          parserMetricsOpt.action((_, config) =>
+            config.copy(command = config.command match {
+              case run: Command.Run => run.copy(parserMetrics = true)
+              case cmd => cmd
+            })
+          ),
           targetOpt.action((triple, config) =>
             config.copy(command = config.command match {
               case run: Command.Run => run.copy(targetTriple = Some(triple))
@@ -368,6 +387,12 @@ object CommandLineConfig:
               case cmd => cmd
             })
           ),
+          parserMetricsOpt.action((_, config) =>
+            config.copy(command = config.command match {
+              case ast: Command.Ast => ast.copy(parserMetrics = true)
+              case cmd => cmd
+            })
+          ),
           noTcoOpt.action((_, config) =>
             config.copy(command = config.command match {
               case ast: Command.Ast => ast.copy(noTco = true)
@@ -409,6 +434,12 @@ object CommandLineConfig:
           timingOpt.action((_, config) =>
             config.copy(command = config.command match {
               case ir: Command.Ir => ir.copy(timings = true)
+              case cmd => cmd
+            })
+          ),
+          parserMetricsOpt.action((_, config) =>
+            config.copy(command = config.command match {
+              case ir: Command.Ir => ir.copy(parserMetrics = true)
               case cmd => cmd
             })
           ),
@@ -498,6 +529,7 @@ object CommandLineConfig:
       topLevelAstOpt,
       topLevelVerboseOpt,
       topLevelTimingOpt,
+      topLevelParserMetricsOpt,
       topLevelTargetOpt,
       topLevelTargetCpuOpt,
       topLevelNoStackCheckOpt,

@@ -29,6 +29,13 @@ sbtn "run ir <file>.mml"           # emit LLVM IR
 sbtn "run run -s <file>.mml"       # compile and run with ASan
 ```
 
+Metrics flags are independent and can be combined:
+
+- `-m` / `--metrics`: compilation timings and stage totals.
+- `-P` / `--parser-metrics`: parser counters and per-rule timings.
+
+Both flags are available for default compilation, `run`, `ast`, and `ir`.
+
 ## SBT subprojects
 
 The top level project aggregates the sub projects
