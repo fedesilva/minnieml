@@ -3,7 +3,7 @@
 ## Metadata
 
 - **Owner:** [name]
-- **Status:** [planned | in_progress | blocked | ready_for_signoff | complete]
+- **Status:** [design | planned | in_progress | needs_work | blocked | ready_for_signoff | complete]
 - **Kind**: [ BUG | CORRECTNESS | CRASH | feature | improvement | janitorial ]*
 - **Priority** [HIGH, MID, LOW]
 - **Created:** YYYY-MM-DD
