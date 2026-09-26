@@ -9,6 +9,9 @@ Durable product changes belong here. Current task state belongs in task files.
 
 - Define `design` and `needs_work` task states and include them in the task template.
 
+- Document the expression-normalization diagnostic cascade with a standalone reproducer
+  and define recovery requirements for preserving valid structure across semantic failures.
+
 ## 2026-09-24
 
 - Restore six materialization regressions with emitted-IR assertions for direct calls and
