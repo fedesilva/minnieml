@@ -67,7 +67,8 @@ object Main extends IOApp:
                     config.optLevel,
                     build.emitScopedAlias,
                     build.asan,
-                    build.llvmOptArgs
+                    build.llvmOptArgs,
+                    showParserMetrics = build.parserMetrics
                   )
                 else
                   CompilerConfig.exe(
@@ -85,7 +86,8 @@ object Main extends IOApp:
                     config.optLevel,
                     build.emitScopedAlias,
                     build.asan,
-                    build.llvmOptArgs
+                    build.llvmOptArgs,
+                    showParserMetrics = build.parserMetrics
                   )
               CompilerApi.processNative(path, cfg)
             }
@@ -109,7 +111,8 @@ object Main extends IOApp:
                 config.optLevel,
                 run.emitScopedAlias,
                 run.asan,
-                run.llvmOptArgs
+                run.llvmOptArgs,
+                showParserMetrics = run.parserMetrics
               )
               CompilerApi.processRun(path, cfg)
             }
@@ -118,7 +121,13 @@ object Main extends IOApp:
             ast.file.fold(
               stdout("Error: Source file is required for ast command").as(ExitCode(1))
             ) { path =>
-              val cfg = CompilerConfig.ast(ast.outputDir, ast.verbose, ast.timings, ast.noTco)
+              val cfg = CompilerConfig.ast(
+                ast.outputDir,
+                ast.verbose,
+                ast.timings,
+                ast.noTco,
+                showParserMetrics = ast.parserMetrics
+              )
               CompilerApi.processAstOnly(path, cfg)
             }
 
@@ -127,7 +136,14 @@ object Main extends IOApp:
               stdout("Error: Source file is required for ir command").as(ExitCode(1))
             ) { path =>
               val cfg =
-                CompilerConfig.ir(ir.outputDir, ir.verbose, ir.timings, ir.outputAst, ir.noTco)
+                CompilerConfig.ir(
+                  ir.outputDir,
+                  ir.verbose,
+                  ir.timings,
+                  ir.outputAst,
+                  ir.noTco,
+                  showParserMetrics = ir.parserMetrics
+                )
               CompilerApi.processIrOnly(path, cfg)
             }
 

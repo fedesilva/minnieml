@@ -58,7 +58,7 @@ object CompilerApi:
         case Right(state) =>
           if state.hasErrors then
             IO.println(compilationFailed(prettyPrintStateErrors(state)))
-              *> maybePrintTimings(state).as(Left(ExitCode.Error))
+              *> maybePrintMetrics(state).as(Left(ExitCode.Error))
           else IO.pure(Right(state))
     yield outcome
 
@@ -73,7 +73,7 @@ object CompilerApi:
         val validated = CodegenStage.validate(state)
         if validated.hasErrors then
           IO.println(compilationFailed(prettyPrintStateErrors(validated)))
-            *> maybePrintTimings(validated).as(Left(ExitCode.Error))
+            *> maybePrintMetrics(validated).as(Left(ExitCode.Error))
         else IO.pure(Right(validated))
     }
 
@@ -225,7 +225,7 @@ object CompilerApi:
       case Right(state) =>
         FileOperations
           .writeAstToFile(state.module, config.outputDir.toString)
-          .flatMap(_ => maybePrintTimings(state).as(ExitCode.Success))
+          .flatMap(_ => maybePrintMetrics(state).as(ExitCode.Success))
     }
 
   def processIrOnly(path: Path, config: CompilerConfig): IO[ExitCode] =
@@ -248,7 +248,7 @@ object CompilerApi:
                 )
               case None =>
                 IO.println(compilationFailed(prettyPrintStateErrors(finalState))).as(ExitCode.Error)
-            _ <- maybePrintTimings(finalState)
+            _ <- maybePrintMetrics(finalState)
           yield exit
         }
     }
@@ -311,7 +311,7 @@ object CompilerApi:
         case None =>
           IO.println(compilationFailed(prettyPrintStateErrors(finalState)))
             .as(ExitCode.Error)
-      _ <- maybePrintTimings(finalState)
+      _ <- maybePrintMetrics(finalState)
     yield exit
 
   private def processNativeRun(state: CompilerState): IO[ExitCode] =
@@ -321,7 +321,7 @@ object CompilerApi:
           FileOperations.writeAstToFile(state.module, state.config.outputDir.toString)
         else IO.unit
       finalState <- CodegenStage.processNative(state)
-      _ <- maybePrintTimings(finalState)
+      _ <- maybePrintMetrics(finalState)
       exit <- finalState.nativeResult match
         case Some(_) => executeBinary(finalState)
         case None =>
@@ -366,6 +366,10 @@ object CompilerApi:
       }.flatMap(path => IO.println(s"LLVM IR written to $path").as(ExitCode.Success))
     else IO.unit.as(ExitCode.Success)
 
+  private def maybePrintMetrics(state: CompilerState): IO[Unit] =
+    maybePrintTimings(state) *>
+      (if state.config.showParserMetrics then printCounters(state.counters) else IO.unit)
+
   private def maybePrintTimings(state: CompilerState): IO[Unit] =
     if !state.config.showTimings then IO.unit
     else if state.timings.isEmpty then IO.println("No timings recorded.")
@@ -395,8 +399,7 @@ object CompilerApi:
         lines.traverse_(IO.println) *>
         IO.println(stageHeader) *>
         stageLines.traverse_(IO.println) *>
-        IO.println(totalLine) *>
-        printCounters(state.counters)
+        IO.println(totalLine)
 
   private def printCounters(counters: Vector[Counter]): IO[Unit] =
     if counters.isEmpty then IO.unit

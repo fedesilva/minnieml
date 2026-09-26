@@ -4,6 +4,10 @@ Durable product changes belong here. Current task state belongs in task files.
 
 ## 2026-09-25
 
+- Add `-P` / `--parser-metrics` for parser counters and per-rule timings.
+  Keep `-m` / `--metrics` for compilation timings and stage totals. Both flags
+  work independently or together for compilation, `run`, `ast`, and `ir`.
+
 - Add struct-field mutation and array-element replacement probes. Document the array
   setter's leaked original string and the unresolved borrow-invalidation contract.
 
