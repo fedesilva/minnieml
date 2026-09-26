@@ -8,6 +8,7 @@ import scala.annotation.tailrec
 
 /** Check compiler-generated destruction contracts against the final symbol index. */
 object DestructionValidator:
+
   def rewriteModule(state: CompilerState): CompilerState =
     val index = state.module.resolvables
     val nodes = state.module.members
