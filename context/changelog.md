@@ -2,6 +2,13 @@
 
 Durable product changes belong here. Current task state belongs in task files.
 
+## 2026-09-25
+
+- Add struct-field mutation and array-element replacement probes. Document the array
+  setter's leaked original string and the unresolved borrow-invalidation contract.
+
+- Define `design` and `needs_work` task states and include them in the task template.
+
 ## 2026-09-24
 
 - Restore six materialization regressions with emitted-IR assertions for direct calls and

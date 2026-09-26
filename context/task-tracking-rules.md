@@ -120,7 +120,15 @@ Git Town parent from a branch name or historical checklist.
 
 ## Status and completion
 
-Use `planned`, `in_progress`, `blocked`, `ready_for_signoff`, and `complete`.
+Use `design`, `planned`, `in_progress`, `needs_work`, `blocked`, `ready_for_signoff`, and
+`complete`.
+
+`design` means the task's semantics or approach need to be settled before implementation
+planning. It does not authorize implementation.
+
+`needs_work` means review or verification identified revisions required before signoff.
+It does not expand the approved scope.
+
 Record deferral and missing approvals in task working memory; do not turn them into a
 claim that implementation ran. Migrating an old task does not approve its implementation.
 

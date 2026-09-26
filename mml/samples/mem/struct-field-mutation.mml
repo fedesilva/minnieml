@@ -1,0 +1,10 @@
+// Design example: field mutation is unsupported and '=' is rejected.
+// Borrows across replacement need a rule before this program can be accepted.
+struct Thing { name: String };
+
+pub fn main(): Unit =
+  let thing = Thing "Fede";
+  let x = thing.name;
+  thing.name = "coco";
+  println x;
+;
