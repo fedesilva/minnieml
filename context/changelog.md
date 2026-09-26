@@ -12,6 +12,11 @@ Durable product changes belong here. Current task state belongs in task files.
 - Document the expression-normalization diagnostic cascade with a standalone reproducer
   and define recovery requirements for preserving valid structure across semantic failures.
 
+- Refine the intrinsic-array draft with owned elements, scope-dependent storage,
+  intrinsic AST nodes, indexing, replacement cleanup, and element-dependent cloning.
+  Describe mutation effects and a proposed array-wide borrow-invalidation rule;
+  keep invalidation policy and resource initialization open.
+
 ## 2026-09-24
 
 - Restore six materialization regressions with emitted-IR assertions for direct calls and

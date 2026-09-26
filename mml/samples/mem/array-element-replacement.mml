@@ -1,9 +1,11 @@
+
 // Probe element replacement while a borrow of the original element remains live.
 // Prints Fede and coco. ar_str_set overwrites without freeing the original string;
 // LeakSanitizer reports its 5-byte allocation (including the null terminator).
-// Run: sbtn "run run -s mml/samples/mem/array-element-replacement.mml"
+// Compile: mmlc mml/samples/mem/array-element-replacement.mml
 // Check leaks: ASAN_OPTIONS=detect_leaks=1 ./build/target/arrayelementreplacement
 pub fn main(): Unit =
+
   let names = ar_str_new 1;
   ar_str_set names 0 ("Fe" ++ "de");
   let x = ar_str_get names 0;
@@ -11,4 +13,5 @@ pub fn main(): Unit =
   ar_str_set names 0 ("co" ++ "co");
   println x;
   println (ar_str_get names 0);
+
 ;
