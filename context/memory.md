@@ -19,6 +19,14 @@ This is the Author's active and near-term focus. The backlog lives in [tasks/](t
   await implementation approval, starting with function-value repair. Overall migration
   signoff remains pending.
 
+### Error recovery and parser backtracking
+
+- **Tracker:** [Error recovery and parser backtracking](tasks/error-recovery-and-parser-backtracking.md)
+- **Status:** planned
+- **Current focus:** Next workstream after lambda completion and any necessary correctness
+  fixes. Preserve valid expression structure and causal diagnostics, then introduce parser
+  commitment with local recovery using the linked design.
+
 ### Module naming
 
 - **Tracker:** [Prevent module symbol and output-name collisions](tasks/module-name-collisions.md)
