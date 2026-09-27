@@ -2,6 +2,11 @@
 
 Durable product changes belong here. Current task state belongs in task files.
 
+## 2026-09-27
+
+- Document built-in pipe rewriting with first-argument insertion, stage grouping,
+  token reservation, source diagnostics, and composition with placeholder expressions.
+
 ## 2026-09-25
 
 - Add `-P` / `--parser-metrics` for parser counters and per-rule timings.
