@@ -27,8 +27,12 @@ remain subject to bounded plan approval. Only the active step exposes its curren
 12. [x] **complete** — [Counter and argument-expression preservation](#preserve-counters-and-argument-expressions-across-ownership-analysis); signed off.
 13. [ ] **planned** — [Mixed-ownership transfer repair and conditional-ownership hardening](#bug-preserve-mixed-ownership-through-consuming-transfers).
 14. [ ] **in_progress** — [Remaining lambda semantics and lowering](#remaining-lambda-implementation), including [restoration of all ignored regressions](#restore-ignored-regressions).
-15. [ ] **planned** — [Integrate the PAP tutorial into the language reference](#later-stage-documentation).
-16. [ ] **planned** — General branch audit (deferred) and final task signoff.
+15. [ ] **planned** — [Preserve capture transfers through evaluated callees](#bug-preserve-capture-transfers-through-evaluated-callees).
+16. [ ] **planned** — [Preserve the complete application callee type in Simplifier](#fix-preserve-the-complete-application-callee-type-in-simplifier).
+17. [ ] **planned** — [Elaborate partial applications inside callees](#bug-elaborate-partial-applications-inside-callees).
+18. [ ] **planned** — [Harden closure environment lookup](#harden-closure-environment-lookup).
+19. [ ] **planned** — [Integrate the PAP tutorial into the language reference](#later-stage-documentation).
+20. [ ] **planned** — General branch audit (deferred) and final task signoff.
 
 Linux sanitizer validation is deferred to the separate
 [Linux verification task](linux-sanitizer-verification.md).
@@ -952,6 +956,123 @@ Evidence collected on 2026-09-11, macOS arm64:
   [migration inventory](unify-lambdas-migration.json) provide evidence for selecting further
   slices; neither supplies implementation approval or current completion status.
 
+#### Bug: preserve capture transfers through evaluated callees
+
+- **Status:** planned.
+- **Problem:** [CaptureTransfers.scala](../../modules/mmlc-lib/src/main/scala/mml/mmlclib/semantic/CaptureTransfers.scala)
+  flattens chained applications but visits only their arguments when collecting transfer
+  sinks. An evaluated callee can contain a consuming call whose transfer is omitted from
+  the enclosing move lambda's contract. Ownership analysis then treats that capture as
+  borrowed and rejects a valid transfer.
+- **Semantic reproducer:**
+
+  ```mml
+  fn take(~s: String): Int -> Int =
+    println s;
+    { x: Int -> x; };
+  ;
+  pub fn main(): Unit =
+    let s = int_to_str 42;
+    let outer = ~{ { u: Unit -> take s; } () 2; };
+    println (int_to_str (outer ()));
+  ;
+  ```
+
+  Semantic compilation reports `Cannot pass borrowed value 's' to consuming parameter 's'`.
+  Replacing the outer body with `let f = { u: Unit -> take s; } (); f 2;` passes semantic
+  compilation. The chained form also encounters an independent immediate-application
+  codegen restriction; that restriction does not satisfy the transfer-analysis contract.
+- **Scope:** collect transfers from callee evaluation, including applied lambda bodies and
+  expression qualifiers, while distinguishing evaluation from construction of an uncalled
+  lambda value. Preserve transfer identities and the enclosing call-once contract.
+- **Acceptance:**
+  - [ ] Add phase-level regressions for chained applications and callee qualifiers, with
+    equivalent local-binding controls and an uncalled-lambda negative control.
+  - [ ] Preserve the transferred capture IDs and invocation ownership for each evaluated
+    transfer; eliminate the false borrowed-value diagnostic in the reproducer.
+  - [ ] Verify that a second invocation of the consuming outer lambda is rejected.
+    Keep semantic coverage executable independently of unrelated codegen restrictions.
+- **Implementation approval:** pending a bounded repair plan.
+
+#### Fix: preserve the complete application callee type in Simplifier
+
+- **Status:** planned.
+- **Problem:** [Simplifier.scala](../../modules/mmlc-lib/src/main/scala/mml/mmlclib/semantic/Simplifier.scala)
+  reconstructs applications with `simplifiedFn.asInstanceOf[Ref | App]`, although
+  [App.fn](../../modules/mmlc-lib/src/main/scala/mml/mmlclib/ast/terms.scala) accepts
+  `Ref | App | Lambda`. The cast states an incorrect invariant and bypasses static checking
+  of the unified callee representation. JVM erasure accepting `Lambda` does not make the
+  source-level contract correct.
+- **Scope:** make application-callee simplification preserve the complete allowed type,
+  preferably through a typed helper rather than an unchecked narrowing cast. Keep recursive
+  simplification of applications and qualified references intact.
+- **Acceptance:**
+  - [ ] Remove the incorrect narrowing assertion and make all three callee alternatives
+    explicit in the simplifier's type contract.
+  - [ ] Cover direct lambda heads, nested applications, and qualified references, asserting
+    preservation of binding identity, types, and argument simplification.
+- **Implementation approval:** pending a bounded repair plan.
+
+#### Bug: elaborate partial applications inside callees
+
+- **Status:** planned.
+- **Problem:** [PartialApplicationElaborator.scala](../../modules/mmlc-lib/src/main/scala/mml/mmlclib/semantic/PartialApplicationElaborator.scala)
+  flattens an application chain and prepares its arguments without visiting the callee's
+  lambda body. A partial application inside that body survives elaboration unchanged.
+- **Reproducer and control:**
+
+  ```mml
+  fn add(a: Int, b: Int): Int = a + b;;
+  fn example(): Int = { a: Int -> add a; } 1 2;;
+  fn control(): Int -> Int = { a: Int -> add a; } 1;;
+  ```
+
+- **Phase evidence:** a focused phase test accepts both functions through type checking.
+  `ValueAvailability` marks the outer application and inner `add a` available. In `example`,
+  the outer callee is an `App`, so it bypasses the immediate-lambda branch. Flattening
+  produces the unary lambda and arguments `[1, 2]`; elaboration visits only those arguments
+  and rebuilds the unchanged callee. The output contains zero generated PAP lambdas,
+  whereas `control` contains one. Capture stabilization does not repair the skipped body.
+  This violates the elaboration contract independently of downstream codegen support.
+- **Scope:** traverse callee lambda bodies and reference qualifiers while preserving lexical
+  binding identities, types, the complete application chain, and evaluation order. Retain
+  local recovery behavior. Avoid elaborating every prefix of a saturated call separately.
+- **Acceptance:**
+  - [ ] Add a permanent phase-level regression for the reproducer and control, checking that
+    the inner partial application becomes a typed residual lambda with the correct captures.
+  - [ ] Cover partial applications inside callee qualifiers, nested application chains,
+    effectful supplied arguments, and recovery boundaries.
+  - [ ] Preserve single evaluation in source order and avoid introducing unnecessary PAPs
+    for fully applied calls. Verify stable binding identities across stabilization.
+- **Implementation approval:** pending a bounded repair plan.
+
+#### Harden closure environment lookup
+
+- **Status:** planned.
+- **Problem:** [ClosureDestructorBodyGenerator.scala](../../modules/mmlc-lib/src/main/scala/mml/mmlclib/semantic/ClosureDestructorBodyGenerator.scala)
+  joins a destructor's layout ID to lambda capture metadata through the layout's name.
+  Its `envStructName -> Lambda` map uses unchecked `.toMap`, which silently chooses one
+  entry when names repeat. [ClosureMemoryFnGenerator.scala](../../modules/mmlc-lib/src/main/scala/mml/mmlclib/semantic/ClosureMemoryFnGenerator.scala)
+  generates unique names with a module-wide counter, but the consumer does not enforce
+  the association after intervening transformations. The destruction validator checks
+  layouts and cleanup entries, not uniqueness of lambda environment metadata.
+- **Classification:** validation hardening of a lambda-phase invariant. A current source-level
+  collision is not established; the missing check permits inconsistent metadata to be
+  silently accepted at the lookup boundary.
+- **Scope:** enforce an unambiguous association between each generated environment layout
+  and its lambda capture metadata before constructing destructor cleanup. Assess carrying
+  the stable layout identity directly instead of reconstructing the association by name.
+  Accumulate a compiler diagnostic for conflicting associations rather than overwriting
+  an entry or raising an exception.
+- **Acceptance:**
+  - [ ] Add phase-level fixtures with conflicting environment metadata and require a
+    deterministic diagnostic before destructor generation can select the wrong captures.
+  - [ ] Cover nested move lambdas and distinct layouts with different capture ownership;
+    each destructor must retain the matching field identities and cleanup behavior.
+  - [ ] Document and enforce the producer/consumer identity contract across ownership
+    rewriting. Preserve ordinary generated environments without extra runtime work.
+- **Implementation approval:** pending a bounded repair plan.
+
 #### Restore ignored regressions
 
 - **Status:** in_progress; eleven cases enabled, 40 pending.
@@ -1057,6 +1178,11 @@ are in `context/history/` for Author review. No compiler slice is authorized by 
 ## Task Working Memory
 
 - **Branch:** `dev-lambda-unify`.
+- **Planned correctness repairs:** [capture transfers through evaluated callees](#bug-preserve-capture-transfers-through-evaluated-callees)
+  and [the Simplifier callee type](#fix-preserve-the-complete-application-callee-type-in-simplifier),
+  together with [PAP callee traversal](#bug-elaborate-partial-applications-inside-callees)
+  and [closure environment lookup hardening](#harden-closure-environment-lookup), belong to
+  remaining lambda implementation. Bounded repair plans await approval.
 - **Implementation:** [Binding identity and local construction](#establish-binding-identity-and-local-construction-invariants)
   is complete and signed off. Stage 1 is committed at `dbd65d9`; stage 2 includes the shared
   construction helpers, caller migrations, regressions, and completion records.
