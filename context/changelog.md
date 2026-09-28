@@ -4,6 +4,10 @@ Durable product changes belong here. Current task state belongs in task files.
 
 ## 2026-09-27
 
+- Document callee-traversal failures in PAP elaboration and capture-transfer analysis,
+  with reproducers and phase-level repair criteria. Define the Simplifier callee-type
+  correction and closure environment identity-validation requirements.
+
 - Document built-in pipe rewriting with first-argument insertion, stage grouping,
   token reservation, source diagnostics, and composition with placeholder expressions.
 
