@@ -57,6 +57,9 @@ def compileTerm(
     case ref: Ref if ref.qualifier.isDefined =>
       compileSelectionRef(ref, state, functionScope)
 
+    case ref: Ref if isDirectCallableRef(ref, state) =>
+      compileCallableValue(ref, state)
+
     case ref: Ref => {
       // Check if reference exists in the function's local scope
       functionScope.get(ref.name) match {
@@ -248,62 +251,33 @@ private def compileTailRecNonCapturing(
     linkage      = "internal ",
     entryAbi     = TailRecEntryAbi.PlainDirect,
     bindingParam = bindingParam.some
-  ).map { finalSubState =>
+  ).flatMap { finalSubState =>
     val wrapperName = s"${fnName}__closure_entry"
     val fnBody      = finalSubState.output.reverse.mkString("\n")
-    val wrapperBody = renderNonCapturingTailRecClosureWrapper(
-      lambda,
-      state,
-      fnName,
-      wrapperName,
-      returnType,
-      paramTypes
-    )
-    val mergedState = mergeDeferredBodyState(state, finalSubState)
-      .addDeferredDefinition(fnBody)
-      .addDeferredDefinition(wrapperBody)
-    CompileResult(
-      register     = 0,
-      state        = mergedState,
-      isLiteral    = true,
-      typeName     = "Function",
-      literalValue = s"{ ptr @$wrapperName, ptr null }".some
-    )
+    val mergedState = mergeDeferredBodyState(state, finalSubState).addDeferredDefinition(fnBody)
+    compileClosureEntry(lambda, mergedState, wrapperName, returnType, paramTypes) {
+      (bodyState, args) =>
+        val operands   = args.map(arg => (arg.llvmType, arg.op))
+        val reg        = bodyState.nextRegister
+        val resultReg  = Option.when(returnType != "void")(reg)
+        val resultType = Option.when(returnType != "void")(returnType)
+        val line       = emitCall(resultReg, resultType, fnName, operands)
+        CompileResult(
+          reg,
+          bodyState.withRegister(reg + (if resultReg.isDefined then 1 else 0)).emit(line),
+          false,
+          "Function"
+        ).asRight
+    }.map { emitted =>
+      CompileResult(
+        0,
+        emitted,
+        true,
+        "Function",
+        literalValue = s"{ ptr @$wrapperName, ptr null }".some
+      )
+    }
   }
-
-private def renderNonCapturingTailRecClosureWrapper(
-  lambda:      Lambda,
-  state:       CodeGenState,
-  directName:  String,
-  wrapperName: String,
-  returnType:  String,
-  paramTypes:  List[String]
-): String =
-  val filteredParamsWithTypes = filterVoidParams(lambda.params, paramTypes)
-  val userParamDecls          = formatParamDecls(filteredParamsWithTypes, state.resolvables)
-  val envParamIdx             = filteredParamsWithTypes.size
-  val allParamDecls =
-    if userParamDecls.isEmpty then s"ptr %$envParamIdx"
-    else s"$userParamDecls, ptr %$envParamIdx"
-  val callArgs = filteredParamsWithTypes.zipWithIndex.map { case ((_, llvmType), idx) =>
-    (llvmType, s"%$idx")
-  }
-  val resultReg = envParamIdx + 1
-  val callLine =
-    if returnType == "void" then emitCall(none, none, directName, callArgs)
-    else emitCall(resultReg.some, returnType.some, directName, callArgs)
-  val retLine =
-    if returnType == "void" then "  ret void"
-    else s"  ret $returnType %$resultReg"
-
-  List(
-    s"define internal $returnType @$wrapperName($allParamDecls) #0 {",
-    "entry:",
-    callLine,
-    retLine,
-    "}",
-    ""
-  ).mkString("\n")
 
 private def compileTailRecCapturingLambda(
   lambda:        Lambda,

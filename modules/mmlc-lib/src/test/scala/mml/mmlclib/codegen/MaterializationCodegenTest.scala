@@ -132,3 +132,23 @@ class MaterializationCodegenTest extends BaseEffFunSuite:
       assertNoClosureValue(body)
     }
   }
+
+  test("nullary top-level fn used as value is not direct") {
+    val code =
+      """
+        fn nada(): Int = 42;;
+        let a = nada;
+      """
+
+    compileAndGenerate(code).map { ir =>
+      val initializer = functionBody(ir, "_init_global_test_a")
+      val pair = """store \{ ptr, ptr \} \{ ptr @([^, ]+), ptr null \}""".r
+        .findFirstMatchIn(initializer)
+        .getOrElse(fail(s"Expected a callable value in the global initializer:\n$initializer"))
+      val entry = functionBodyMatching(ir, s"${Regex.quote(pair.group(1))}\\(ptr %\\d+\\).*")
+      assert(entry.contains("call i64 @test_nada()"), entry)
+      assert(!initializer.contains("load "), initializer)
+      assert(!initializer.contains("call "), initializer)
+      assert(!initializer.contains("@malloc"), initializer)
+    }
+  }

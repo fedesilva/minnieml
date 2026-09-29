@@ -377,7 +377,7 @@ private def emitValueBinding(bnd: Bnd, state: CodeGenState): Either[CodeGenError
                   case None => (compileRes2.state, None, None)
                 val storeLine =
                   emitStore(
-                    s"%${compileRes2.register}",
+                    compileRes2.operandStr,
                     llvmType,
                     s"@$mangledName",
                     aliasScope = aliasTag,
@@ -417,7 +417,7 @@ private def emitValueBinding(bnd: Bnd, state: CodeGenState): Either[CodeGenError
               case None => (compileRes2.state, None, None)
             val storeLine =
               emitStore(
-                s"%${compileRes2.register}",
+                compileRes2.operandStr,
                 llvmType,
                 s"@$mangledName",
                 aliasScope = aliasTag,

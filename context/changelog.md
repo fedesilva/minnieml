@@ -2,6 +2,12 @@
 
 Durable product changes belong here. Current task state belongs in task files.
 
+## 2026-09-28
+
+- Construct callable values with reusable null-environment adapters instead of loading from
+  function symbols. Share native ABI and template call lowering, preserve literal closure
+  operands in global initialization, and restore the nullary function-value regression.
+
 ## 2026-09-27
 
 - Document callee-traversal failures in PAP elaboration and capture-transfer analysis,
