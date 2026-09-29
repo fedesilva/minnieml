@@ -322,6 +322,8 @@ enum TbaaNode derives CanEqual:
   *   map of native type names to their LLVM IR definitions
   * @param functionDeclarations
   *   map of function names to their declarations
+  * 
+  * TODO: QA: This struct is getting large. Consider splitting into smaller components (e.g., TBAAState, AliasScopeState, etc.)
   */
 case class CodeGenState(
   moduleName:           String              = "",
