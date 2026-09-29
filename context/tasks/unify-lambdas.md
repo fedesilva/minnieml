@@ -31,8 +31,9 @@ remain subject to bounded plan approval. Only the active step exposes its curren
 16. [ ] **planned** — [Preserve the complete application callee type in Simplifier](#fix-preserve-the-complete-application-callee-type-in-simplifier).
 17. [ ] **planned** — [Elaborate partial applications inside callees](#bug-elaborate-partial-applications-inside-callees).
 18. [ ] **planned** — [Harden closure environment lookup](#harden-closure-environment-lookup).
-19. [ ] **planned** — [Integrate the PAP tutorial into the language reference](#later-stage-documentation).
-20. [ ] **planned** — General branch audit (deferred) and final task signoff.
+19. [ ] **planned** — [BUG: preserve tail recursion across owned-closure cleanup](#bug-preserve-tail-recursion-across-owned-closure-cleanup).
+20. [ ] **planned** — [Integrate the PAP tutorial into the language reference](#later-stage-documentation).
+21. [ ] **planned** — General branch audit (deferred) and final task signoff.
 
 Linux sanitizer validation is deferred to the separate
 [Linux verification task](linux-sanitizer-verification.md).
@@ -1073,6 +1074,48 @@ Evidence collected on 2026-09-11, macOS arm64:
     rewriting. Preserve ordinary generated environments without extra runtime work.
 - **Implementation approval:** pending a bounded repair plan.
 
+#### Bug: preserve tail recursion across owned-closure cleanup
+
+- **Status:** planned.
+- **Reproducer:** [closure-heap-capture-fail.mml](../../mml/samples/closure-heap-capture-fail.mml)
+  creates a move closure owning a freshly allocated `String`, invokes it, then calls
+  `loop (n - 1)` in source tail position. The `if true` condition deliberately runs forever
+  to expose unbounded stack and live heap growth; it must remain in the reproducer.
+- **Failure:** ownership cleanup follows the recursive call, preventing loopification.
+  Calling `greet ()` borrows its capture; the closure remains owned by the enclosing scope.
+  The emitted IR contains this sequence:
+
+  ```llvm
+  call void @closureheapcapturefail_loop(i64 %19)
+  %20 = extractvalue { ptr, ptr } %16, 1
+  call void @closureheapcapturefail___free_closure(ptr %20)
+  ```
+
+  The optimized arm64 executable retains a 48-byte frame and the captured string for each
+  iteration, with string destruction after the recursive call. Native runs on macOS arm64
+  terminate with SIGSEGV after approximately 21,600 printed iterations with a 1 MiB stack,
+  43,300 with 2 MiB, and 174,000 with 8,176 KiB. Printed counts are approximate because output
+  is buffered. This is distinct from the completed nested-capturing-recursion repair above.
+- **Outcome:** preserve source-level tail recursion while releasing iteration-local owned
+  closures and captures before the loop back-edge when their lifetimes permit it. The
+  reproducer must run with bounded stack usage and bounded live heap allocations.
+- **Repair planning:** trace cleanup insertion through tail-recursion detection and lowering;
+  define when cleanup can precede the recursive transfer. Account for argument evaluation,
+  borrowed aliases and recursive arguments, ownership transfers, and observable destructor
+  effects. Do not move arbitrary destruction across user effects or special-case this sample.
+- **Acceptance:**
+  - [ ] Preserve the infinite-loop sample and add a finite stress regression for automated
+    completion and sanitizer checks.
+  - [ ] Verify generated IR has a loop back-edge and required cleanup before it; successful
+    execution at a shallow recursion depth alone does not establish tail-call preservation.
+  - [ ] Verify bounded stack and live heap usage over a sustained run of the reproducer;
+    terminate the infinite probe under harness control.
+  - [ ] Verify exactly-once destruction without implicit capture cloning, use-after-free,
+    or double-free; cover aliases, borrowed recursive arguments, conditional paths, and
+    destructor ordering where effects are observable.
+  - [ ] Run applicable compiler gates, native sanitizer checks, and independent review.
+- **Implementation approval:** pending a bounded repair plan.
+
 #### Restore ignored regressions
 
 - **Status:** in_progress; twelve cases enabled, 39 pending.
@@ -1190,8 +1233,9 @@ are in `context/history/` for Author review. No compiler slice is authorized by 
 - **Planned correctness repairs:** [capture transfers through evaluated callees](#bug-preserve-capture-transfers-through-evaluated-callees)
   and [the Simplifier callee type](#fix-preserve-the-complete-application-callee-type-in-simplifier),
   together with [PAP callee traversal](#bug-elaborate-partial-applications-inside-callees)
-  and [closure environment lookup hardening](#harden-closure-environment-lookup), belong to
-  remaining lambda implementation. Bounded repair plans await approval.
+  and [closure environment lookup hardening](#harden-closure-environment-lookup), plus
+  [tail recursion across owned-closure cleanup](#bug-preserve-tail-recursion-across-owned-closure-cleanup),
+  belong to remaining lambda implementation. Bounded repair plans await approval.
 - **Implementation:** [Binding identity and local construction](#establish-binding-identity-and-local-construction-invariants)
   is complete and signed off. Stage 1 is committed at `dbd65d9`; stage 2 includes the shared
   construction helpers, caller migrations, regressions, and completion records.
