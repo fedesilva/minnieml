@@ -2,7 +2,7 @@
 // Probe element replacement while a borrow of the original element remains live.
 // Prints Fede and coco. ar_str_set overwrites without freeing the original string;
 // LeakSanitizer reports its 5-byte allocation (including the null terminator).
-// Compile: mmlc mml/samples/mem/array-element-replacement.mml
+// Compile: mmlc -l mml/samples/mem/array-element-replacement.mml
 // Check leaks: ASAN_OPTIONS=detect_leaks=1 ./build/target/arrayelementreplacement
 pub fn main(): Unit =
 
