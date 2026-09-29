@@ -103,16 +103,3 @@ class MaterializationAnalyzerTests extends BaseEffFunSuite:
       assert(isDirect(lit), "immediately-applied nullary lambda is direct")
     }
   }
-
-  // Pending function-value lowering.
-  // See context/tasks/unify-lambdas-ignored-tests.md, Materialization repair plans.
-  test("nullary top-level fn used as value is not direct".ignore) {
-    val code =
-      """
-        fn nada(): Int = 42;;
-        let a = nada;
-      """
-    semNotFailed(code).map { module =>
-      assert(!isDirect(topLambda(module, "nada")), "bare nada ref is a value-position use")
-    }
-  }

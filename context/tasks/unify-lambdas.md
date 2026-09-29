@@ -1075,11 +1075,12 @@ Evidence collected on 2026-09-11, macOS arm64:
 
 #### Restore ignored regressions
 
-- **Status:** in_progress; eleven cases enabled, 40 pending.
+- **Status:** in_progress; twelve cases enabled, 39 pending.
 - **Approved bounded slice:** investigate the nine placeholder-based materialization cases;
   restore six supported cases as codegen regressions with unchanged source fixtures, and
   prepare compiler-repair plans for the other three. The separate nullary immediate-application
-  rejection remains outside this slice. Compiler implementation changes are not approved.
+  rejection remains outside this slice. Function-value repair is complete and signed off;
+  the other two materialization repairs await approval.
 - **Inventory:** [Ignored regression audit](unify-lambdas-ignored-tests.md) accounts for all
   51 runner-discovered ignored tests by suite and name. Reconcile this inventory after each
   bounded compiler slice; passing ignored cases must not wait for the final branch audit.
@@ -1095,8 +1096,10 @@ Evidence collected on 2026-09-11, macOS arm64:
   - [x] Adapt the borrowed-PAP escape case to a typed `BorrowClosureEscapeViaReturn` assertion
     using existing semantic helpers, then re-enable it.
   - [x] Replace six materialization placeholders with emitted-IR assertions and unchanged fixtures.
-  - [ ] Restore or replace the other eight placeholder-based cases, including the three
-    [materialization repairs](unify-lambdas-ignored-tests.md#materialization-repair-plans);
+  - [x] Repair callable-symbol value lowering and restore the nullary function-value regression;
+    verification and independent review pass, and the slice is signed off.
+  - [ ] Restore or replace the remaining seven placeholder-based cases, including the two
+    pending [materialization repairs](unify-lambdas-ignored-tests.md#materialization-repair-plans);
     investigate the separate nullary immediate-application rejection.
   - [ ] Reconcile 29 failing IR/lowering assertions and two heap-alias cases with the agreed
     semantics. Assign each to a bounded repair or an explicitly approved replacement;
@@ -1123,12 +1126,18 @@ Evidence collected on 2026-09-11, macOS arm64:
   source fixtures. Formatting, lint, 770 library tests, and nine CLI tests pass, with 40 ignores
   and no warnings. QA, focused tracking checks, and independent review pass.
   [Evidence and repair plans](unify-lambdas-ignored-tests.md#materialization-restoration-evidence)
-  record the three pending compiler repairs. The six-case slice is complete and signed off;
+  record the bounded compiler repairs. The six-case slice is complete and signed off;
   local commit is authorized. Compiler implementation and push are not authorized.
+- **Function-value repair:** the original fixture has executable codegen coverage. Shared
+  adapters and native/template call lowering pass 776 library tests and nine CLI tests, with
+  39 ignores; formatting and lint pass. [Verification](unify-lambdas-ignored-tests.md#function-value-verification)
+  records passing LLVM, host execution, smoke, benchmark-build, and memory gates. Independent
+  review reports no actionable findings. The slice is complete and signed off; local commit
+  is authorized, and push is not authorized.
 - **Acceptance:** no unexplained or stale ignores; no placeholder counted as restored;
   no weakened assertion merely to obtain a pass. Track undiscovered declarations separately
   from the 51 audited cases. Further assertion changes and compiler fixes require their
-  bounded plans; restoring eleven tests does not complete the remaining lambda implementation.
+  bounded plans; restoring twelve tests does not complete the remaining lambda implementation.
 
 ### Later-stage documentation
 
@@ -1200,18 +1209,14 @@ are in `context/history/` for Author review. No compiler slice is authorized by 
   the selection-qualifier recovery repair and observational call-boundary validation.
   QA, tracking checks, and independent review pass. The slice is signed off with commit and
   push authorization. Overall migration remains open.
-- **Ignored-test restoration:** the [51-case audit](unify-lambdas-ignored-tests.md) identifies
-  four unchanged passing tests, all enabled and signed off. The borrowed-PAP escape regression
-  is enabled with a typed `BorrowClosureEscapeViaReturn` assertion through `semState`;
-  formatting, lint, all tests, QA, tracking checks, and independent review pass.
-  The subtask is complete and signed off; local commit is authorized and push is not authorized.
-  [The explicit regression plan](#restore-ignored-regressions) accounts for the remaining
-  40 cases. Six materialization cases have emitted-IR replacements; formatting, lint,
-  770 library tests, and nine CLI tests pass, with 40 ignores and no warnings. QA and
-  tracking checks pass; independent review reports no actionable findings. The six-case
-  restoration is complete and signed off; local commit is authorized and push is not authorized. The three remaining selected
-  cases have [bounded repair plans](unify-lambdas-ignored-tests.md#materialization-repair-plans);
-  compiler implementation approval is pending.
+- **Ignored-test restoration:** twelve of the [51 audited cases](unify-lambdas-ignored-tests.md)
+  are enabled; 39 remain ignored. The four unchanged assertions, borrowed-PAP diagnostic
+  restoration, and six materialization replacements are complete and signed off.
+  [Function-value repair](unify-lambdas-ignored-tests.md#function-value-repair) restores the
+  twelfth case under its approved plan. Formatting, lint, 776 library tests, nine CLI tests,
+  LLVM assembly, host execution, smoke checks, benchmark builds, and all 44 memory checks pass.
+  QA, focused tracking checks, and independent review pass. The slice is complete and signed
+  off, with local commit authorization. Direct local-entry and PAP target repairs await approval.
 - **Recovery evidence:** CLI controls preserve the statement type mismatch and bound-call
   use-after-move diagnostic without false ownership errors. Regression, smoke, benchmark-build,
   and sanitizer results are recorded in the recovery section.
@@ -1219,7 +1224,7 @@ are in `context/history/` for Author review. No compiler slice is authorized by 
   and [binding construction verification](#binding-construction-evidence).
 - **Open limits:** the mixed-ownership reproducer remains unresolved; the general branch
   audit and separate Linux sanitizer validation are deferred. The broader counter/expression
-  follow-up is complete and signed off. Remaining lambda implementation and 40 ignored cases
+  follow-up is complete and signed off. Remaining lambda implementation and 39 ignored cases
   require further bounded work.
   [Consuming an owned PAP captured by a move lambda](#bug-consume-an-owned-pap-captured-by-a-move-lambda)
   has passing semantic, smoke, benchmark-build, native sanitizer, and independent review

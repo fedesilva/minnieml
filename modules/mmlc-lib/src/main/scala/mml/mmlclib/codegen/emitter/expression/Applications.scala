@@ -214,76 +214,7 @@ def compileNullaryCall(
   app:   App,
   state: CodeGenState
 ): Either[CodeGenError, CompileResult] =
-  val fnReturnTypeResult = app.typeSpec match
-    case Some(typeSpec) => getLlvmType(typeSpec, state)
-    case None =>
-      CodeGenError(
-        s"Missing return type information for function application '${fnRef.name}' - TypeChecker should have provided this",
-        app.some
-      ).asLeft
-
-  fnReturnTypeResult.flatMap { fnReturnType =>
-    val fnName = getResolvedName(fnRef, state)
-    val isNative = fnRef.resolvedId.flatMap(state.resolvables.lookup).exists {
-      case bnd: Bnd => isNativeBinding(bnd)
-      case _ => false
-    }
-    val useSret = isNative && state.abi.needsSret(fnReturnType, state)
-
-    if fnReturnType == "void" then
-      val callLine = emitCall(none, none, fnName, List.empty)
-      CompileResult(0, state.emit(callLine), false, "Unit").asRight
-    else if useSret then
-      // Sret call for nullary function returning large struct
-      val (loadReg, finalState) =
-        state.abi.emitSretCall(
-          fnName,
-          fnReturnType,
-          List.empty,
-          state,
-          emitCall,
-          none,
-          none
-        )
-      app.typeSpec match
-        case Some(ts) =>
-          getNominalTypeName(ts) match
-            case Right(typeName) =>
-              CompileResult(loadReg, finalState, false, typeName).asRight
-            case Left(_) =>
-              CodeGenError(
-                s"Could not determine MML type name for function application result from spec: $ts",
-                app.some
-              ).asLeft
-        case None =>
-          CodeGenError(
-            s"Missing return type information for function application '${fnRef.name}'",
-            app.some
-          ).asLeft
-    else
-      val resultReg = state.nextRegister
-      val callLine  = emitCall(resultReg.some, fnReturnType.some, fnName, List.empty)
-      app.typeSpec match
-        case Some(ts) =>
-          getNominalTypeName(ts) match
-            case Right(typeName) =>
-              CompileResult(
-                resultReg,
-                state.withRegister(resultReg + 1).emit(callLine),
-                false,
-                typeName
-              ).asRight
-            case Left(_) =>
-              CodeGenError(
-                s"Could not determine MML type name for function application result from spec: $ts",
-                app.some
-              ).asLeft
-        case None =>
-          CodeGenError(
-            s"Missing return type information for function application '${fnRef.name}'",
-            app.some
-          ).asLeft
-  }
+  compileCallableCall(fnRef, Nil, app.typeSpec, state)
 
 /** Compiles a regular function call with arguments. */
 def compileRegularCall(
@@ -294,28 +225,32 @@ def compileRegularCall(
   functionScope: Map[String, ScopeEntry],
   compileExpr:   ExprCompiler
 ): Either[CodeGenError, CompileResult] =
-  // Compile all arguments
   compileArgs(allArgs, state, functionScope, compileExpr).flatMap {
     case (compiledArgs, finalState) =>
-      // Get function return type from the application's typeSpec
-      val fnReturnTypeResult = app.typeSpec match
-        case Some(typeSpec) => getLlvmType(typeSpec, finalState)
-        case None =>
-          CodeGenError(
-            s"Missing return type information for function application '${fnRef.name}' - TypeChecker should have provided this",
-            app.some
-          ).asLeft
-
-      fnReturnTypeResult.flatMap { fnReturnType =>
-        getFunctionTemplate(fnRef.resolvedId.flatMap(finalState.resolvables.lookup)) match
-          case Some(tpl) =>
-            compileFunctionWithTemplate(fnRef, tpl, compiledArgs, app, finalState)
-          case None =>
-            compileStandardCall(fnRef, compiledArgs, fnReturnType, app, finalState)
-      }
+      compileCallableCall(fnRef, compiledArgs, app.typeSpec, finalState)
   }
 
-private case class CompiledArg(op: String, llvmType: String, typeSpec: Option[Type])
+/** A typed operand at the boundary between evaluation and call emission. */
+private[emitter] case class CompiledArg(op: String, llvmType: String, typeSpec: Option[Type])
+
+/** Emits a call to a resolved callable using its native template or target ABI when required. */
+private[emitter] def compileCallableCall(
+  fnRef:      Ref,
+  args:       List[CompiledArg],
+  resultType: Option[Type],
+  state:      CodeGenState
+): Either[CodeGenError, CompileResult] =
+  resultType.toRight(CodeGenError("Missing callable result type", fnRef.some)).flatMap { tpe =>
+    for
+      llvmType <- getLlvmType(tpe, state)
+      typeName <- getNominalTypeName(tpe)
+      result <- getFunctionTemplate(fnRef.resolvedId.flatMap(state.resolvables.lookup)) match
+        case Some(tpl) =>
+          compileFunctionWithTemplate(tpl, args, llvmType, typeName, state)
+        case None =>
+          compileStandardCall(fnRef, args, llvmType, typeName, state)
+    yield result
+  }
 
 /** Compiles all arguments to a function call. */
 private def compileArgs(
@@ -352,43 +287,39 @@ private def compileArgs(
 
 /** Compiles a function with inline template (LLVM intrinsics like llvm.sqrt). */
 private def compileFunctionWithTemplate(
-  fnRef:        Ref,
   tpl:          String,
   compiledArgs: List[CompiledArg],
-  app:          App,
+  returnType:   String,
+  typeName:     String,
   state:        CodeGenState
 ): Either[CodeGenError, CompileResult] =
-  val resultReg = state.nextRegister
   val instruction = compiledArgs match
     case List(CompiledArg(argOp, argType, _)) =>
-      // Single arg: use %operand (like unary operators)
       tpl.replace("%type", argType).replace("%operand", argOp)
     case args =>
-      // Multiple args: use %operand1, %operand2, ... (like binary operators)
       args.zipWithIndex
         .foldLeft(tpl) { case (t, (CompiledArg(argOp, argType, _), i)) =>
           t.replace(s"%operand${i + 1}", argOp).replace(s"%type${i + 1}", argType)
         }
         .replace("%type", args.headOption.map(_.llvmType).getOrElse(""))
 
-  val line = s"  %$resultReg = $instruction"
-  app.typeSpec.flatMap(getNominalTypeName(_).toOption) match
-    case Some(typeName) =>
-      CompileResult(
-        resultReg,
-        state.withRegister(resultReg + 1).emit(line),
-        false,
-        typeName
-      ).asRight
-    case None =>
-      CodeGenError(s"Could not determine return type for function '${fnRef.name}'", app.some).asLeft
+  if returnType == "void" then
+    CompileResult(0, state.emit(s"  $instruction"), false, typeName).asRight
+  else
+    val reg = state.nextRegister
+    CompileResult(
+      reg,
+      state.withRegister(reg + 1).emit(s"  %$reg = $instruction"),
+      false,
+      typeName
+    ).asRight
 
 /** Compiles a standard function call (non-template). */
 private def compileStandardCall(
   fnRef:        Ref,
   compiledArgs: List[CompiledArg],
   fnReturnType: String,
-  app:          App,
+  typeName:     String,
   state:        CodeGenState
 ): Either[CodeGenError, CompileResult] =
   val isNative = fnRef.resolvedId.flatMap(state.resolvables.lookup).exists {
@@ -409,45 +340,22 @@ private def compileStandardCall(
 
   if fnReturnType == "void" then
     val callLine = emitCall(none, none, fnName, args, aliasScopeTag, noaliasTag)
-    CompileResult(0, stateWithAlias.emit(callLine), false, "Unit").asRight
+    CompileResult(0, stateWithAlias.emit(callLine), false, typeName).asRight
   else if useSret then
-    val (loadReg, finalState) =
-      stateWithAlias.abi.emitSretCall(
-        fnName,
-        fnReturnType,
-        args,
-        stateWithAlias,
-        emitCall,
-        aliasScopeTag,
-        noaliasTag
-      )
-    app.typeSpec match
-      case Some(ts) =>
-        getNominalTypeName(ts) match
-          case Right(typeName) =>
-            CompileResult(loadReg, finalState, false, typeName).asRight
-          case Left(_) =>
-            CodeGenError(s"Could not determine MML type name for result: $ts", app.some).asLeft
-      case None =>
-        CodeGenError(s"Missing return type for function '${fnRef.name}'", app.some).asLeft
+    val (loadReg, finalState) = stateWithAlias.abi.emitSretCall(
+      fnName,
+      fnReturnType,
+      args,
+      stateWithAlias,
+      emitCall,
+      aliasScopeTag,
+      noaliasTag
+    )
+    CompileResult(loadReg, finalState, false, typeName).asRight
   else
-    val resultReg = stateWithAlias.nextRegister
-    val callLine =
-      emitCall(resultReg.some, fnReturnType.some, fnName, args, aliasScopeTag, noaliasTag)
-    app.typeSpec match
-      case Some(ts) =>
-        getNominalTypeName(ts) match
-          case Right(typeName) =>
-            CompileResult(
-              resultReg,
-              stateWithAlias.withRegister(resultReg + 1).emit(callLine),
-              false,
-              typeName
-            ).asRight
-          case Left(_) =>
-            CodeGenError(s"Could not determine MML type name for result: $ts", app.some).asLeft
-      case None =>
-        CodeGenError(s"Missing return type for function '${fnRef.name}'", app.some).asLeft
+    val reg      = stateWithAlias.nextRegister
+    val callLine = emitCall(reg.some, fnReturnType.some, fnName, args, aliasScopeTag, noaliasTag)
+    CompileResult(reg, stateWithAlias.withRegister(reg + 1).emit(callLine), false, typeName).asRight
 
 private val StaticNullEnvClosure = """^\{ ptr @([^,\s]+), ptr null \}$""".r
 

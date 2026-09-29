@@ -9,8 +9,8 @@ Supporting evidence for [Unify lambdas](unify-lambdas.md#restore-ignored-regress
 - **Audit result (2026-09-23):** four pass unchanged; 47 fail. One failing case rejects the
   intended invalid program but expects an obsolete diagnostic name. The other 46 need assertion/API
   reconciliation or compiler investigation.
-- **Repository test status:** eleven cases are enabled: four unchanged assertions, one typed
-  diagnostic assertion, and six emitted-IR replacements; 40 remain ignored.
+- **Repository test status:** twelve cases are enabled: four unchanged assertions, one typed
+  diagnostic assertion, and seven emitted-IR replacements; 39 remain ignored.
 - **Restoration verification (2026-09-23):** formatting and lint pass; full suite passes
   763 library tests and nine CLI tests, with 47 ignored. All four restored cases execute and pass.
   Test assertions and compiler implementation are unchanged
@@ -51,7 +51,7 @@ failures do not execute their preserved commented-out assertions.
    assertion through `semState`; verification and independent review pass. The subtask is signed off.
 3. Six materialization cases are enabled in `MaterializationCodegenTest`, preserving their
    original names and source fixtures. Verification and review are recorded below.
-4. Resolve each of the remaining 40 entries against the agreed model, preserving its semantic
+4. Resolve each of the remaining 39 entries against the agreed model, preserving its semantic
    intent. Record a linked fix or an approved replacement/retirement for obsolete expectations.
    Re-enable each case with its corresponding repair, rather than accumulating working ignores.
 
@@ -60,15 +60,15 @@ failures do not execute their preserved commented-out assertions.
 | Disposition | Cases |
 | --- | ---: |
 | Restore placeholder assertion/helper | 5 |
-| Materialization lowering repair | 3 |
-| Enabled; emitted-IR replacement | 6 |
+| Materialization lowering repair | 2 |
+| Enabled; emitted-IR replacement | 7 |
 | Enabled; assertions unchanged | 4 |
 | Reconcile IR/lowering assertions | 29 |
 | Nullary application rejection | 1 |
 | Enabled; typed diagnostic assertion | 1 |
 | Reconcile heap-alias behavior | 2 |
 
-Eleven rows are enabled; the other 40 remain pending. Lines below identify the audit snapshot,
+Twelve rows are enabled; the other 39 remain pending. Lines below identify the audit snapshot,
 not subsequent source line shifts.
 
 ### ClosureCodegenTest
@@ -139,7 +139,7 @@ not subsequent source line shifts.
 | nullary lambda literal in immediate application is direct | 163 | Nullary application rejection |
 | let-bound nullary lambda used as value is not direct | 187 | Enabled in MaterializationCodegenTest; emitted-IR assertion |
 | nullary top-level fn invoked is direct | 203 | Enabled in MaterializationCodegenTest; emitted-IR assertion |
-| nullary top-level fn used as value is not direct | 215 | [Function-value repair](#function-value-repair) |
+| nullary top-level fn used as value is not direct | 215 | Enabled in MaterializationCodegenTest; [function-value repair](#function-value-repair) |
 
 ### OwnershipAnalyzerTests
 
@@ -221,38 +221,74 @@ not subsequent source line shifts.
 
 ## Materialization repair plans
 
-**Status:** planned; compiler implementation approval is pending. Preserve all three ignored
-source regressions until each has executable replacement coverage. The steps below follow
-correctness-first delivery order and require separate bounded approval and signoff.
+**Status:** function-value repair is complete and signed off; the other two
+compiler repairs await approval. Preserve each source fixture when replacing placeholder
+assertions. The repairs follow correctness-first delivery order and require separate signoff.
 
 ### Function-value repair
 
+- **Status:** complete; implementation, verification, and independent review pass.
+- **Implementation plan:** distinguish emitted callables from function-valued storage at value
+  lowering; emit and reuse null-environment adapters by resolved binding identity. Share closure
+  entry emission and native/template call lowering. Preserve direct calls, ownership contracts,
+  and unary eta-expansion. Restore the original fixture as codegen coverage, add ABI and runtime
+  regressions, run compiler gates and independent review, and reconcile this inventory.
+- **Boundaries:** no local direct-entry optimization, PAP target repair, nullary immediate-lambda
+  repair, or whole-migration completion.
 - **Case:** `nullary top-level fn used as value is not direct`.
-- **Evidence:** the fixture initializes the function-valued global by loading `{ ptr, ptr }`
-  from the emitted `nada` function symbol. It reads code as data instead of constructing a
-  callable value. This is emitted-IR evidence; no native execution was performed.
-  The observed initialization instructions are:
+- **Failure evidence before repair:** the fixture loaded `{ ptr, ptr }` from the emitted `nada`
+  function symbol to initialize the global, reading code as data. The original emitted IR was:
 
   ```llvm
   %0 = load { ptr, ptr }, ptr @test_nada, !tbaa !19
   store { ptr, ptr } %0, ptr @test_a
   ```
 
-- **Relevant code:** `ExpressionCompiler.compileTerm` sends a non-local `Ref` through the
-  global-load path; `expression.isDirectCallableRef` already identifies callable symbols by
-  resolved binding. `ExpressionRewriter.wrapIfUndersaturated` only eta-expands when applied
-  arguments are fewer than parameters, so it does not wrap a zero-parameter function.
-- **Proposed repair:** distinguish callable symbols from function-valued storage by resolved
-  identity at the value-lowering boundary. Give callable values an ABI-compatible entry and
-  null environment; preserve ordinary loads for globals that actually store function values.
-  Keep explicit `nada ()` on its plain call path. Settle wrapper reuse and native/template
-  callable handling in the bounded implementation plan before editing compiler code.
+- **Relevant code:** `ExpressionCompiler.compileTerm` uses `expression.isDirectCallableRef`
+  to distinguish callable symbols from storage by resolved binding.
+  `ExpressionRewriter.wrapIfUndersaturated` only eta-expands when applied arguments are fewer
+  than parameters, so it does not wrap a zero-parameter function.
+- **Implementation:** `ClosureEntries` emits null-environment adapters, reuses entries by
+  resolved binding identity, and shares wrapper emission with non-capturing recursive lambdas.
+  Shared typed-operand call emission preserves native ABI lowering and template substitution.
+  Global initialization stores the literal closure operand. Explicit `nada ()` uses its plain entry.
 - **Acceptance:** replace the ignored case with a function-value construction assertion;
   check global initialization, local aliases, higher-order arguments, returned values, and
   subsequent invocation. Verify symbol identity under shadowing, preserve consuming parameter
   contracts, and cover nullary and unary signatures. LLVM verification and native execution
   must show that invoking the stored nullary value returns `42` without calling it during
   value construction. Run the applicable compiler gates.
+
+#### Function-value verification
+
+- **Date:** 2026-09-28.
+- `sbtn 'scalafmtAll;scalafixAll;test'`: 776 library tests and nine CLI tests pass;
+  39 remain ignored; no compiler warnings.
+- [FunctionValueCodegenTests](../../modules/mmlc-lib/src/test/scala/mml/mmlclib/codegen/FunctionValueCodegenTests.scala)
+  verifies adapter reuse across globals and deferred bodies, stored/global and local aliases,
+  returned values, higher-order calls, shadowing, native symbol overrides, Unit and value
+  templates, consuming pointer contracts, and x86-64/AArch64 native structure-return IR.
+- All five new regression cases pass LLVM assembly. The host executable exits 0 and prints
+  `0, 2, 1, 1, 91, 3, 42, 4, 4, 42, 1` on separate lines: the first target invocation follows
+  construction markers `0` and `2`. Stored ordinary, native, and template functions return `42`.
+  The fixture links a small C support file after dead-function elimination; this is host native
+  execution, not cross-target execution or sanitizer evidence.
+- The original nullary source fixture is enabled in
+  [MaterializationCodegenTest](../../modules/mmlc-lib/src/test/scala/mml/mmlclib/codegen/MaterializationCodegenTest.scala)
+  with assertions for literal construction, a callable adapter, no code-as-data load, and no
+  invocation or allocation during initialization.
+- `./tests/smoke/run.sh all`: 8/8 pass. `sbtn mmlcPublishLocal` succeeds.
+- `make -C benchmark clean` and `make -C benchmark mml` succeed; these are build checks,
+  not performance measurements.
+- `./tests/mem/run.sh all`: 44/44 ASan+LSan checks pass.
+- Host: macOS arm64, Homebrew LLVM/clang 23.1.1. Native execution covers the host only;
+  x86-64 evidence is emitted IR and LLVM assembly.
+- Focused QA, tracking consistency, local links, and whitespace checks pass. A fresh independent
+  code review reports no actionable findings after tracing callable identity, adapter reuse,
+  deferred-state merging, global initialization, native ABI/template calls, consuming parameters,
+  and recursive wrappers. No candidate findings required claim verification.
+- **Signoff:** function-value repair accepted. Local commit is authorized for the repair,
+  its regressions, documentation, and completion records. Push is not authorized.
 
 ### Direct local-entry repair
 

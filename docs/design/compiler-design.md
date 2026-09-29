@@ -1136,6 +1136,24 @@ All type errors are wrapped as `SemanticError.TypeCheckingError` for uniform han
 When the compiler encounters a call to a function or operator with `@native[tpl="..."]`, it emits
 the template inline rather than generating a function call.
 
+### Callable values
+
+Value lowering distinguishes emitted callable symbols from globals that store function values
+using resolved binding identity. A callable symbol produces `{ entry pointer, null environment }`;
+reading stored function values uses the ordinary load path. Global initializers store the
+result operand directly, including literal closure pairs.
+
+`ClosureEntries` emits an adapter with the ordinary MML arguments and a trailing environment
+pointer. The adapter ignores its environment and forwards to the target using shared call
+lowering. Native argument packing, structure returns, symbol overrides, and inline templates
+follow the same rules as ordinary calls. Unit parameters have no LLVM operand; Unit-returning
+entries emit `ret void`. Consuming pointer parameters retain their `noalias` attributes.
+
+Adapters are generated on demand and reused by resolved binding ID in `CodeGenState`.
+Their definitions and registry survive deferred-body compilation. Non-capturing tail-recursive
+local functions share the closure-entry emitter. Constructing a callable value neither invokes
+its target nor allocates an environment. Explicit direct calls retain the target's plain entry.
+
 ### Template extraction
 
 The codegen extracts templates from the AST:

@@ -354,9 +354,10 @@ case class CodeGenState(
   // Resolvables index for soft reference lookups
   resolvables: ResolvablesIndex = ResolvablesIndex(),
   // Deferred function definitions (expression-position lambdas compiled as separate functions)
-  deferredDefinitions:     List[String] = List.empty,
-  nextAnonFnId:            Int          = 0,
-  insideLoopifiedFunction: Boolean      = false
+  deferredDefinitions:     List[String]        = List.empty,
+  callableEntries:         Map[String, String] = Map.empty,
+  nextAnonFnId:            Int                 = 0,
+  insideLoopifiedFunction: Boolean             = false
 ):
   /** Returns a new state with an updated register counter. */
   def withRegister(reg: Int): CodeGenState =
