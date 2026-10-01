@@ -2,6 +2,13 @@
 
 Durable product changes belong here. Current task state belongs in task files.
 
+## 2026-09-30
+
+- Define `Unique` and `Clone` as fundamental protocols in the future memory design,
+  with the consuming `drop` operation supplied by `Unique`. Describe user implementations,
+  aggregate derivation, and compiler-enforced rules. Mark the companion notes as consumable
+  input to the design documents and align their Markdown tables.
+
 ## 2026-09-28
 
 - Construct callable values with reusable null-environment adapters instead of loading from
