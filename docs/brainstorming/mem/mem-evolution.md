@@ -59,7 +59,7 @@ Most functions just take arguments, use them, and return. The caller never loses
 ownership. No annotation needed. `~` is the exception, not the rule.
 
 This must be preserved through the evolution. The layers below add structure
-(Drop/Clone protocols, type rows, shared refs) but do not change the
+(`Unique` and `Clone` protocols, type rows, shared refs) but do not change the
 default: if a function doesn't say `~`, it borrows.
 
 ---
@@ -89,21 +89,22 @@ source examples where explicit cloning becomes required.
 - Ownership is the base rule. Each owned value has one owner.
 - Moves transfer ownership. Borrows leave ownership with the owner.
 - Only scalars may be implicitly duplicated. Scalar-only aggregates are still aggregates.
-- `Drop` consumes an owned value and performs its cleanup. Cleanup may be empty.
+- `Unique` provides the consuming `drop` operation. The compiler enforces its
+  ownership rules. The operation may perform cleanup or be a no-op.
 - `Clone` borrows a value and produces a separate owned value. Duplication is explicit.
-- No separate `Unique` marker is needed. Ownership does not imply `noalias`.
+- Ownership does not imply `noalias`.
 
-| Example | Protocols | Drop behavior |
-|---------|-----------|---------------|
-| Permission token | `Drop`, no `Clone` | Consume; no runtime cleanup |
-| File handle | `Drop`, no `Clone` | Close the file |
-| String | `Drop + Clone` | Free its storage |
+| Example          | Protocols            | Drop behavior               |
+|------------------|----------------------|-----------------------------|
+| Permission token | `Unique`, no `Clone` | Consume; no runtime cleanup |
+| File handle      | `Unique`, no `Clone` | Close the file              |
+| String           | `Unique + Clone`     | Free its storage            |
 
 An opaque token's integer representation does not make it implicitly copyable
 or grant it `Clone`. Its drop operation can simply be:
 
 ```mml
-instance Drop for Token =
+implement Unique for Token =
   fn drop(~s: Token): Unit = ();;
 ;
 ```
@@ -112,14 +113,14 @@ The compiler may eliminate a no-op drop while retaining ownership checks.
 
 ---
 
-## Layer 1: Drop protocol
+## Layer 1: Unique protocol
 
 ### The protocol
 
 Proposal syntax:
 
 ```mml
-protocol Drop for T =
+protocol Unique for T =
   fn drop(~self: T): Unit
 ;
 ```
@@ -138,10 +139,10 @@ move or destroy the value. Borrows must remain valid while used.
 
 ### Native types
 
-Native resource types implement `Drop` explicitly:
+Native resource types implement `Unique` explicitly:
 
 ```mml
-implement Drop for String =
+implement Unique for String =
   fn drop(~self: String): Unit = free_string self;;
 ;
 ```
@@ -152,22 +153,27 @@ separate concerns.
 
 ### Aggregates
 
+Users can implement `Unique` for native types and for MML types.
+For MML types it is generally derived automatically. In particular, a struct
+with one or more `Unique`-typed fields is itself `Unique`; its derived drop
+fulfills the owned fields' drop obligations.
+
 - Aggregates own their elements, including aggregates containing only scalars.
-- Derived `Drop` drops owned members and releases any container storage.
+- The derived `Unique.drop` operation drops owned members and releases any container storage.
 - A scalar-only inline aggregate can have a no-op drop.
-- Custom `Drop` implementations must satisfy the members' cleanup obligations.
+- Custom `Unique` implementations must satisfy the members' cleanup obligations.
 - Opaque native types declare their cleanup contract explicitly.
 
 ### Intended simplifications
 
 - Replace heap-field predicates for ownership with ownership rules.
-- Replace generated `__free_T` contracts with `Drop` implementations.
+- Replace generated `__free_T` contracts with `Unique` implementations.
 - Express owned results in signatures so callers need no body inspection.
 - Remove return-ownership inference only once signatures carry that contract.
 - Remove conditional witnesses only where branch ownership is statically established.
   A branch needing duplication must explicitly clone or fail checking.
 
-`Drop` alone does not establish a function's result ownership or allocation effect.
+`Unique` alone does not establish a function's result ownership or allocation effect.
 The ownership analyzer still tracks moves, borrows, and cleanup responsibility.
 Default parameters borrow; `~` parameters and constructors consume owned arguments.
 
@@ -201,7 +207,7 @@ representation does not grant `Clone`.
 
 ## Layer 3: Shared references and opt-in reference counting
 
-The default is affine ownership: one owner, deterministic cleanup when `Drop`
+The default is affine ownership: one owner, deterministic cleanup when `Unique`
 applies, no runtime ownership cost. That is right for most code, but not all of it.
 Some values are genuinely shared between holders that have no single best owner — an interned
 string pool, a texture used by many sprites, a config record read from many
@@ -215,13 +221,13 @@ See `docs/brainstorming/mem/shared-refs.md` for the longer rationale.
 
 ### Operators
 
-| Op | Input | Result | Effect | Requires |
-|----|-------|--------|--------|----------|
-| `&` | Owned non-scalar `T` | `&T` | Move into a fresh cell; rc = 1 | — |
-| `&` | Scalar `T` | `&T` | Copy into a fresh cell; rc = 1 | — |
-| `&` | `&T` | `&T` | Retain another handle; rc++ | — |
-| `^` | Borrowed `T` | `T` | Clone; original stays valid | `T: Clone` |
-| `^` | Borrowed `&T` | `T` | Clone the payload; handle stays valid | `T: Clone` |
+| Op  | Input                | Result | Effect                                | Requires   |
+|-----|----------------------|--------|---------------------------------------|------------|
+| `&` | Owned non-scalar `T` | `&T`   | Move into a fresh cell; rc = 1        | —          |
+| `&` | Scalar `T`           | `&T`   | Copy into a fresh cell; rc = 1        | —          |
+| `&` | `&T`                 | `&T`   | Retain another handle; rc++           | —          |
+| `^` | Borrowed `T`         | `T`    | Clone; original stays valid           | `T: Clone` |
+| `^` | Borrowed `&T`        | `T`    | Clone the payload; handle stays valid | `T: Clone` |
 
 `&` transfers ownership into shared storage or explicitly retains a shared handle.
 `^` duplicates the payload through `Clone`. Neither operation happens implicitly.
@@ -254,12 +260,12 @@ println c ++ b;      // both shared handles still live
 
 ### `Shared` as a row capability
 
-`Shared` participates in the row alongside `Drop` and `Clone`. Each handle
+`Shared` participates in the row alongside `Unique` and `Clone`. Each handle
 is owned and releases one reference when dropped. At count zero, the payload
 is dropped and the cell freed. A scalar or no-op-drop payload still requires
 release of the cell. Shared handles are not implicitly duplicated.
 
-### Resources: Drop without Clone
+### Resources: Unique without Clone
 
 A texture can be shared without duplicating the resource:
 
@@ -294,10 +300,10 @@ non-atomic. No new sigil, no new wrapper type.
 ### What this eliminates
 
 - The need for a separate sharing mechanism bolted on later. `Shared` joins the
-  row alongside `Drop` and `Clone` rather than living in user-space as a
+  row alongside `Unique` and `Clone` rather than living in user-space as a
   generic wrapper.
 - The need to clone a resource for independently owned holders.
-  Resources with `Drop` and no `Clone` can use shared handles.
+  Resources with `Unique` and no `Clone` can use shared handles.
 
 ### Open questions
 
@@ -317,16 +323,16 @@ non-atomic. No new sigil, no new wrapper type.
 
 ## Summary
 
-| Concern | Proposed rule |
-|---------|---------------|
-| Ownership | One owner; moves transfer responsibility |
-| Borrowing | Owner retains responsibility; borrow must remain valid |
-| Destruction | Consuming `Drop`, possibly a no-op |
-| Duplication | Implicit only for scalars; otherwise explicit `Clone` |
-| Aggregate protocols | Derived from member contracts |
-| Native protocols | Declared by the binding author |
-| Shared ownership | Explicit `&`; reference counting |
-| Result ownership | Signature contract; details remain open |
+| Concern             | Proposed rule                                          |
+|---------------------|--------------------------------------------------------|
+| Ownership           | One owner; moves transfer responsibility               |
+| Borrowing           | Owner retains responsibility; borrow must remain valid |
+| Destruction         | Consuming `Unique.drop`, possibly a no-op              |
+| Duplication         | Implicit only for scalars; otherwise explicit `Clone`  |
+| Aggregate protocols | Derived from member contracts                          |
+| Native protocols    | Declared by the binding author                         |
+| Shared ownership    | Explicit `&`; reference counting                       |
+| Result ownership    | Signature contract; details remain open                |
 
 ---
 
@@ -363,7 +369,7 @@ type String = @native {
   data: CharPtr
 };
 
-implement Drop for String =
+implement Unique for String =
   fn drop(~self: String): Unit = free_string self;;
 ;
 
@@ -377,7 +383,7 @@ fn concat(a: String, b: String): String = @native;
 ```
 
 These proposed functions return owned values. Omitting `[mem=alloc]` assumes
-that the result ownership contract is available from the signature; `Drop`
+that the result ownership contract is available from the signature; `Unique`
 alone does not provide that information.
 
 ### FFI binding (e.g. raylib)
@@ -387,7 +393,7 @@ type Texture = @native { id: Int, width: Int, height: Int };
 
 fn unload_texture(~t: Texture): Unit = @native;
 
-implement Drop for Texture =
+implement Unique for Texture =
   fn drop(~self: Texture): Unit = unload_texture self;;
 ;
 
@@ -405,7 +411,7 @@ the protocols. The compiler enforces the rest.
 
 - Ownership is mandatory for non-scalar values; it is not an opt-in protocol.
 - Aggregates cannot opt out of their members' cleanup obligations.
-- Derived `Drop` may be a no-op. That does not remove ownership checks.
+- The derived `Unique.drop` operation may be a no-op. That does not remove ownership checks.
 - Derived `Clone` requires every member to be scalar or `Clone`.
 - Opaque native types and newtypes declare their public protocols explicitly.
 - Custom implementations must preserve these contracts.
@@ -415,15 +421,29 @@ owned copy requires `Clone`; shared ownership uses explicit `&` operations.
 
 ### Type rows
 
-`Drop`, `Clone`, and `Shared` participate in the proposed type rows.
+`Unique`, `Clone`, and `Shared` participate in the proposed type rows.
 Ownership remains a language rule. Exact row syntax and generic constraints are TBD.
 
 ### Fundamental protocols
 
-`Drop` and `Clone` are defined in MML and recognized by the compiler:
+`Unique` and `Clone` are **fundamental protocols**. They
+give users a way to interact with the language at a fundamental level:
+implementing them defines how a type participates in ownership, dropping,
+and explicit duplication. The language assigns specific rules to these
+protocols, and the compiler enforces them for user-supplied and derived
+implementations alike.
+
+Users supply the operations for native types or MML types; the compiler
+applies the associated language rules. `Unique` supplies `drop: ~T -> Unit`
+and its ownership discipline. `Clone` borrows a value and produces a separate
+owned value. The consuming `drop` operation belongs to `Unique`; this is a
+settled design decision.
+
+These protocols are defined in MML and recognized by the compiler:
 
 - Aggregate derivation supplies implementations where valid.
-- Scope-end cleanup invokes `Drop`; explicit duplication invokes `Clone`.
+- Scope-end cleanup invokes `Unique.drop`; explicit duplication invokes `Clone`.
+- A no-op drop retains the ownership rules, even when the call is optimized away.
 - Calls are monomorphised. No vtable or dynamic dispatch is required.
 
 ### Open questions
@@ -432,5 +452,5 @@ Ownership remains a language rule. Exact row syntax and generic constraints are 
 - Which conditional ownership cases still require witnesses.
 - How generic constraints provide destruction and cloning operations.
 - Migration of existing literal/global implicit-clone boundaries to explicit duplication.
-- Whether to add `MustConsume` later. A no-op `Drop` permits an unused token
+- Whether to add `MustConsume` later. A no-op `drop` permits an unused token
   to expire; requiring an explicit use is a separate obligation.

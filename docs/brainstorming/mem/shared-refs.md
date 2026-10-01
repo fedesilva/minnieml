@@ -94,6 +94,25 @@ After conversion:
 
 ## Semantics
 
+### Fundamental protocols
+
+`Unique` and `Clone` are fundamental protocols: users implement their operations
+to make types participate in the language's ownership, dropping, and duplication
+rules. The compiler enforces those rules for both user-supplied and derived
+implementations. This is the user's interface to these fundamental language
+behaviors.
+
+`Unique` provides the consuming operation `drop: ~T -> Unit`, as specified in
+[Memory Model Evolution](mem-evolution.md#fundamental-protocols). The compiler
+enforces its ownership rules. The operation may perform cleanup or be a no-op.
+`Clone` remains separate and supplies explicit duplication by borrowing the original.
+
+Users can implement `Unique` for native types and MML types. It is generally
+derived for MML types: a struct with `Unique`-typed fields is itself `Unique`,
+and its derived drop fulfills those fields' drop obligations. A custom
+implementation must preserve those obligations. `Clone` derivation requires
+that each member can be duplicated under its own contract.
+
 ### Creation
 
 `&a` produces `&T`. For a `Unique` value, it transfers ownership and `a` becomes
@@ -155,9 +174,9 @@ path to unique ownership is a clone.
 ^x   ≡   Clone.clone x
 ```
 
-The compiler desugars `^` into a protocol call; nothing else about `^` is
-special. Users can implement `Clone` for their own types with whatever copy
-semantics make sense, and `^` will pick it up.
+The compiler desugars `^` into a protocol call. Users can implement `Clone`
+for their own types; the implementation must borrow the original and produce
+a separate owned value under the language's duplication rules.
 
 ### `&` is a primitive, `^` is a protocol operator
 
@@ -172,9 +191,9 @@ because none of it is a function call: it is typing rules plus IR emission.
 There is no `Share` protocol with a `share(self: T): &T` method; `&` lives in
 the language, not in user space.
 
-`^` is **just an operator**, as above: surface syntax for `Clone.clone`. The
-compiler does not need to know `^` exists beyond desugaring it into a protocol
-call.
+`^` is a protocol operator. Its implementation can be user-supplied or derived,
+and its call is monomorphised. The compiler also recognizes `Clone` as a
+fundamental protocol and enforces its duplication rules.
 
 
 ### Borrowing

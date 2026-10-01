@@ -1,9 +1,15 @@
 # Types, modes, and effects discussion
 
-**Status: living design notes.** Work on this document to develop a better version of
-[Memory Model Evolution](mem-evolution.md). It collects connections, corrections, and
-questions for that revision; it does not replace the proposal or the
-[current memory contract](../../memory-model.md).
+**Status: living, consumable design notes — not the source of truth for the latest
+decisions.**
+
+This document collects connections, corrections, and open questions to
+inform the main documents: [Memory Model Evolution](mem-evolution.md),
+[Shared References](shared-refs.md), and the
+[current memory contract](../../memory-model.md). Incorporate accepted conclusions
+into the relevant main document; these notes may then be revised, condensed, or
+discarded. Read the main documents for current decisions and implementation status.
+Exploration here does not reopen settled decisions or override those documents.
 
 MML reached its ownership and callable rules through concrete compiler problems before
 the Author encountered OxCaml's modal type work. The close correspondence gives us a
@@ -59,36 +65,52 @@ higher-order calls with one consistent set of rules.
 
 ### Type capabilities and value usage
 
-The proposed `Unique` protocol describes a type’s resource discipline. Every value of
-that type must have an owner. It can be borrowed without transferring ownership.
-`Drop` supplies cleanup when the type requires it; the owner is responsible for that
-cleanup. `Clone` describes an available duplication operation. These capabilities
-alone do not tell us which binding is responsible for cleanup or whether a particular
-invocation consumes a closure.
+The proposed `Unique` protocol describes a type's ownership and drop contract. Every
+value of that type must have an owner, responsible for dropping it unless ownership
+is transferred. It can be borrowed without transferring ownership. `Clone` describes
+an available duplication operation. These capabilities alone do not tell us which
+binding is responsible for cleanup or whether a particular invocation consumes a
+closure.
 
-### Decision: separate Unique, Drop, and Clone
+### Settled decision: Unique provides drop
 
-`Unique` constrains ownership and forbids implicit duplication. It is a marker
-protocol with no runtime method. `Drop` supplies a consuming cleanup operation;
-`Clone` supplies a duplication operation that borrows the original. They describe
-separate properties even when a type implements all three.
+`Unique` is a fundamental protocol that provides the consuming operation
+`drop: ~T -> Unit`. The compiler enforces its ownership rules. The operation may
+perform cleanup or be a no-op. This contract is settled, not an open question for
+these notes.
+
+See [Memory Model Evolution](mem-evolution.md#decisions) and
+[Shared References](shared-refs.md#fundamental-protocols) for the design.
+`Clone` remains separate: it borrows the original and produces a separate owned value.
 
 An opaque newtype around an `Int` can represent a one-use initialization permission.
 Construction is controlled, and initialization consumes the token. The token can
-move or be borrowed, but cannot be copied or cloned. Abandoning the permission
-requires no cleanup: this type is `Unique`, without `Drop` or `Clone`.
+move or be borrowed, but cannot be copied or cloned. Its `Unique` implementation has
+a no-op `drop`; it has no `Clone`. The compiler may eliminate the no-op call while
+retaining ownership checks.
 
-An integer file handle, by contrast, is `Unique + Drop` without `Clone`: an unused
-owner must close the file. The distinction is cleanup obligation, not allocation.
-An owned string can implement all three capabilities.
+An integer file handle also implements `Unique` without `Clone`: its `drop` closes
+the file. An owned string can implement `Unique` and `Clone`. Empty cleanup does not
+require another protocol or remove ownership obligations. An opaque newtype's hidden
+representation must not silently grant it cloning.
 
-Ownership and cleanup derive separately through aggregates. A unique member requires
-ownership tracking; a member needing cleanup requires aggregate cleanup. An aggregate
-containing only the permission token needs `Unique`, but neither `Drop` nor `Clone`.
-An opaque newtype's hidden representation must not silently grant it cloning.
+### Vocabulary: fundamental protocols
 
-Separating the protocols still requires controlled ownership of cleanup obligations.
-It does not permit freely copying file handles or duplicating destruction obligations.
+The [evolution proposal](mem-evolution.md#fundamental-protocols) calls `Unique` and
+`Clone` **fundamental protocols** because the language assigns
+specific rules to them and the compiler enforces those rules. They give users a way
+to interact with the language at this fundamental level: implementing a protocol
+defines how a type participates in the language's ownership, dropping, or duplication
+rules. `Unique` governs moves, borrowing, and scope-end dropping; `Clone` governs
+explicit duplication. Users supply the operations for their types, and the compiler
+enforces the associated language rules.
+
+Users can implement `Unique` for native types, such as file handles, and for MML
+types. For MML types it is generally derived automatically: a struct with one or more
+`Unique`-typed fields is itself `Unique`, and its derived `drop` drops the owned fields.
+An aggregate containing only the permission token still has this ownership contract,
+even when its derived drop is a no-op. A custom implementation must satisfy its
+members' drop obligations. Deriving `Unique` does not by itself grant `Clone`.
 
 ### Questions to keep separate
 
@@ -107,16 +129,16 @@ Separate these questions in the revised proposal:
 These categories constrain one another. They need not all become public syntax, nor
 must their implementation occupy separate compiler passes.
 
-Use *affine* for at-most-once consumption. An unused owner runs cleanup when `Drop`
-applies; a value without a cleanup obligation can simply expire. Reserve an
-exactly-once obligation for a separate decision. `Unique` without `Drop` does not
-require the value to be used.
+Use *affine* for at-most-once consumption. An unused `Unique` owner is dropped at
+scope end, and its drop may be a no-op. Reserve an exactly-once use obligation for
+a separate decision. `Unique` does not require the program to use the value before
+scope-end dropping.
 
 ### MML's `Unique` is not OxCaml's `unique`
 
-MML's proposal makes `Unique` a persistent type capability for affine ownership,
-with cleanup expressed separately by `Drop`. OxCaml's `unique` is an aliasing
-guarantee about a value. MML permits temporary borrowed aliases while retaining
+MML's proposal makes `Unique` a fundamental protocol for affine ownership and
+dropping. OxCaml's `unique` is an aliasing guarantee about a value. MML permits
+temporary borrowed aliases while retaining
 one owner; one owner does not mean only one reference exists at every instant.
 
 MML also has a stricter default resource discipline. OxCaml can relinquish uniqueness
@@ -127,9 +149,9 @@ treated as merely forgetting a static guarantee. See OxCaml's
 
 Shared handles carry cleanup responsibility for a payload with multiple holders.
 Each owned handle needs release. An aggregate containing an owned shared handle needs
-cleanup even when the cell contains a value without `Drop`. The handle's release
-obligation is separate from payload cleanup. Specify how the shared ownership form
-and its cleanup appear in capability rows and function contracts.
+cleanup even when the cell contains a scalar or a value with a no-op drop. The handle's
+release obligation is separate from payload cleanup. Specify how the shared ownership
+form and its cleanup appear in capability rows and function contracts.
 
 ### Borrowing needs an owner relationship
 
@@ -211,8 +233,8 @@ provides a useful comparison through contention and portability modes.
 Start with the three PAP cases and write their ownership, borrowing, invocation, and
 cleanup rules without choosing new syntax. Extend those rules through fields,
 higher-order parameters, returned callables, and branch joins. Use an integer file
-handle, a permission token without cleanup, and an aggregate containing a shared
-handle to test the separate `Unique`, `Drop`, and `Clone` rules.
+handle, a permission token with a no-op drop, and an aggregate containing a shared
+handle to test the settled `Unique` and `Clone` rules.
 
 Then revisit the claims in `mem-evolution.md`: separate preserved behavior from intended
 changes, identify runtime distinctions that remain necessary, and record which rules
@@ -337,10 +359,10 @@ too verbose.
    handle, retaining it when the caller keeps its handle. Passing a unique argument
    moves ownership. The parameter's type, mode, and effect contract determines the
    permitted payload operations.
-6. **Drop follows the ownership form.** An untransferred unique owner runs cleanup
-   at scope end when its type implements `Drop`; `Unique` alone requires no call.
+6. **Drop follows the ownership form.** An untransferred `Unique` owner is dropped
+   at scope end through its `Unique` implementation; the drop may be a no-op.
    An untransferred shared handle releases one reference. The last release drops
-   the payload if it implements `Drop` and frees the cell. Borrowers do neither.
+   the payload through `Unique` where applicable and frees the cell. Borrowers do neither.
 7. **Reference-count elision preserves those semantics.** The compiler may transfer
    a handle at its last use or eliminate redundant retain/release pairs when it proves
    the resource remains alive. Escape analysis can inform that proof; non-escape
@@ -411,8 +433,8 @@ the existing handle to a consuming callee may avoid a retain entirely.
 
 For `takes shared` to work as sketched, `~s` must accept ownership of a shared handle.
 It cannot promise exclusive ownership of the underlying `Struct`. Dropping this
-argument releases a handle; a uniquely owned argument needs a cleanup call only
-when its type implements `Drop`.
+argument releases a handle; dropping a uniquely owned resource invokes its `Unique`
+implementation, whose drop may be a no-op.
 
 The compiler must preserve that distinction even if both forms display the ordinary
 type `Struct`. A callee cannot move a resource field out of a shared payload merely
