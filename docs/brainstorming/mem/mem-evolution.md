@@ -252,7 +252,7 @@ user-defined; dispatch is monomorphised.
 let a = readline();  // a: owned String
 let b = &a;          // a moved; b: &String (rc = 1)
 println a;           // error: use after move
-let c = &b;          // alias; rc = 2
+let c = b;          // alias; rc = 2
 let x = ^b;          // deep copy; x: String, b still &String
 println c ++ b;      // both shared handles still live
                      // scope end: c and b drop, rc hits 0, inner String drops
