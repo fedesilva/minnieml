@@ -2,6 +2,13 @@
 
 Durable product changes belong here. Current task state belongs in task files.
 
+## 2026-10-04
+
+- Document the module-level `@link` design: ordered library names with default, static,
+  and shared selection; static partial linking for `.o` output; and an error for explicit
+  shared inputs in object builds. Include the compiler-state integration and consolidation
+  of timed and untimed native compilation entry points in the implementation plan.
+
 ## 2026-09-30
 
 - Define `Unique` and `Clone` as fundamental protocols in the future memory design,
