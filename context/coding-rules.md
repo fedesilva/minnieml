@@ -138,10 +138,15 @@ Do not claim a required check passed if it failed, was ignored, or could not run
 - **Commits** are authorized by an explicit commit request or by `finish task`,
   `complete task`, or `finish errand`. Follow `context/task-tracking-rules.md`.
   Push only when requested; finishing does not authorize remote publication.
-- Use Git Town for the branch lifecycle: `git town hack <name>` creates a feature branch,
-  `git town sync` syncs/publishes, and `git town ship` merges. Do not use raw branch-creation
-  or merge commands instead. Verify the intended parent before changing branch configuration.
-- For authorized shipping in agent sessions, use
+- Use Git Town for the branch lifecycle: `git town hack <name>` creates a feature branch
+  and `git town sync` syncs/publishes. Do not use raw branch-creation or merge commands
+  instead. Verify the intended parent before changing branch configuration.
+- Prefer `git town combine --non-interactive` when merging stacked feature branches.
+  Preserve the existing commits unless the Author explicitly asks to squash into the parent.
+- Use `git town ship` for explicitly authorized delivery to `main`, or with `--to-parent`
+  when the Author explicitly requests a squash into a feature parent. Finishing a task
+  does not authorize either operation.
+- For authorized `ship` operations in agent sessions, use
   `git town ship --non-interactive --message "<ship commit message>"` to avoid an editor wait.
   `--message-file <path>` is also available for a prepared message.
 - Branch creation can also sync or publish with this repo's configuration. Check the intended
