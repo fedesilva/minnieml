@@ -10,6 +10,13 @@ This is the Author's active and near-term focus. The backlog lives in [tasks/](t
 
 ## Active Tasks
 
+### Module link directive
+
+- **Tracker:** [Module link directive](tasks/link-directive.md)
+- **Status:** planned
+- **Current focus:** Implement `@link` for executable linking and static partial linking into
+  `.o` output. Rules are settled; implementation plan awaits approval.
+
 ### Lambda migration
 
 - **Tracker:** [Unify lambdas](tasks/unify-lambdas.md)
