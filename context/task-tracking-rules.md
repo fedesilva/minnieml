@@ -137,6 +137,8 @@ and commit. The command supplies workstream signoff and local commit authorizati
 that task; do not ask for them again. `finish errand` authorizes verification, logging,
 and a local commit without tracked-task completion. Explicit limits such as "do not commit"
 override these defaults. Push only when the Author requests it.
+All logging instructions in this lifecycle are conditional on the [Changelog](#changelog)
+rules below. Finishing or committing work does not by itself require a changelog entry.
 
 1. Run applicable verification from `context/coding-rules.md`. Use local `post-chores` for
    tracked-task completion and compiler work; non-compiler errands need only relevant checks.
@@ -181,9 +183,22 @@ additional step, using the repository's Git Town guidance and the intended remot
 
 ## Changelog
 
-Log completed work when finishing a task or errand, including durable codebase, architecture,
-documentation, feature, and workflow changes. Describe the result, not task administration,
-ticket operations, or verification command transcripts.
+The changelog records completed product changes, including implemented compiler behavior
+and changes to product documentation. It does not record administrative work.
+
+**Do not add changelog entries for:**
+
+- Creating, editing, planning, prioritizing, completing, or archiving tasks.
+- Recording discussions, proposed architecture, design options, or future implementation plans
+  in task files or working notes. Summarizing a proposal as "define the architecture" does
+  not make task creation a product change.
+- Updating tracking state, memory, author notes, agent instructions, skills, or task workflows.
+- Verification transcripts, signoff, commits, or synchronization operations.
+
+For an administrative-only task or errand, leave the changelog unchanged, including when
+the Author says `finish task` or `finish errand`. For mixed work, log only the completed
+product change. Do not log corrections to these administrative rules themselves.
+
 Keep verification details in task files or linked evidence. Historical imported entries are
 preserved as evidence even if they do not follow today's logging conventions.
 
