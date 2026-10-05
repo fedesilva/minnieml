@@ -8,12 +8,12 @@ object Dependencies {
   val refinedVersion:       String = "0.11.4"
   val lucumaRefinedVersion: String = "0.1.4"
   val fastparseVersion:     String = "3.1.1"
-  val scoptVersion:         String = "4.1.0"
+  val scoptVersion:         String = "4.2.0"
   val upickleVersion:       String = "4.4.3"
   val log4catsVersion:      String = "2.8.0"
 
   val munitVersion:     String = "1.3.6"
-  val munitCatsVersion: String = "2.2.0"
+  val munitCatsVersion: String = "2.2.1"
 
   lazy val commonDependencies: Seq[ModuleID] =
     Seq(

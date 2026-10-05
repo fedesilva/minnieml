@@ -6,7 +6,7 @@ import sbtrelease.ReleaseStateTransformations._
 lazy val commonSettings =
   Seq(
     organization := "minnie-ml",
-    scalaVersion := "3.8.2",
+    scalaVersion := "3.9.0",
     scalacOptions ++= ScalacConfig.opts,
     // because for tests, yolo.
     Test / scalacOptions --= Seq("-Ywarn-unused:imports", "-Xfatal-warnings"),
