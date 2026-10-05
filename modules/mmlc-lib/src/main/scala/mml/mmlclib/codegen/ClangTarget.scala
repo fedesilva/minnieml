@@ -12,7 +12,12 @@ import java.util.HexFormat
 import scala.sys.process.{Process, ProcessLogger}
 
 /** Target-dependent function attributes shared by all MML definitions. */
-case class TargetAttributes(cpu: Option[String], features: Option[String]):
+case class TargetAttributes(
+  cpu:        Option[String],
+  features:   Option[String],
+  dataLayout: String         = "e-i64:64",
+  triple:     Option[String] = None
+):
 
   def llvm: String =
     List("target-cpu" -> cpu, "target-features" -> features)
@@ -72,7 +77,7 @@ object ClangTarget:
         IO.blocking {
           val realPath = executable.toRealPath()
           val keyParts = List(
-            "mml-target-probe-v1",
+            "mml-target-probe-v3",
             realPath.toString,
             Files.size(realPath).toString,
             Files.getLastModifiedTime(realPath).toString
@@ -148,6 +153,8 @@ object ClangTarget:
 
   private[codegen] def parseAttributes(ir: String): Option[TargetAttributes] =
     for
+      layout <- "(?m)^target datalayout = \"([^\"]+)\"$".r.findFirstMatchIn(ir).map(_.group(1))
+      triple <- "(?m)^target triple = \"([^\"]+)\"$".r.findFirstMatchIn(ir).map(_.group(1))
       definition <- probeDefinition.findFirstMatchIn(ir)
       group <- attributeGroup.findAllMatchIn(ir).find(_.group(1) == definition.group(1))
       entries = targetAttribute
@@ -161,7 +168,7 @@ object ClangTarget:
       features = attributes.get("target-features")
       if cpu.forall(_.matches("[A-Za-z0-9_.+\\-]+"))
       if features.forall(_.matches("[+\\-][A-Za-z0-9_.\\-]+(,[+\\-][A-Za-z0-9_.\\-]+)*"))
-    yield TargetAttributes(cpu, features)
+    yield TargetAttributes(cpu, features, layout, triple.some)
 
   private def resolutionError(message: String): LlvmCompilationError =
     LlvmCompilationError.TargetResolutionError(message)

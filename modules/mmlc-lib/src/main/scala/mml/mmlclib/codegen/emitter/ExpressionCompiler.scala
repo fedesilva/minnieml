@@ -2,6 +2,7 @@ package mml.mmlclib.codegen.emitter
 
 import cats.syntax.all.*
 import mml.mmlclib.ast.*
+import mml.mmlclib.codegen.emitter.abis.NativeAbiPlan
 import mml.mmlclib.codegen.emitter.alias.AliasScopeEmitter
 import mml.mmlclib.codegen.emitter.expression.*
 import mml.mmlclib.codegen.emitter.tbaa.TbaaEmitter
@@ -29,7 +30,7 @@ def compileTerm(
   term match {
     case lit: LiteralInt =>
       val typeName = lit.typeSpec.flatMap(getNominalTypeName(_).toOption).getOrElse("Int")
-      CompileResult(lit.value, state, true, typeName).asRight
+      CompileResult(0, state, true, typeName, literalValue = lit.value.toString.some).asRight
 
     case lit: LiteralFloat =>
       // LLVM rejects decimal float literals that aren't exactly representable in IEEE 754.
@@ -513,6 +514,15 @@ private def emitCallSiteEnv(
         case None =>
           CodeGenError(s"Capture '${ref.name}' has no type", ref.some).asLeft
     }
+    envLayout <- state.layout.of(s"%struct.${envStruct.name}", state)
+    clonePlans <- captureTypes
+      .traverse { case (capture, typ) =>
+        capture match
+          case Capture.CapturedLiteral(_, id) =>
+            NativeAbiPlan.classify(typ, List(typ), state).map(plan => (id -> plan).some)
+          case _ => none[(String, NativeAbiPlan)].asRight[CodeGenError]
+      }
+      .map(_.flatten.toMap)
   yield
     val envTypeRef = s"%struct.${envStruct.name}"
     // Field offset: move envs have __dtor at field 0, borrow envs start captures at field 0
@@ -524,7 +534,7 @@ private def emitCallSiteEnv(
         val stateWithEnv = state
           .withFunctionDeclaration("malloc", "ptr", List("i64"))
           .withFunctionDeclaration("free", "void", List("ptr"))
-        val envSize   = sizeOfLlvmTypeResolved(envTypeRef, stateWithEnv)
+        val envSize   = envLayout.size
         val mallocReg = stateWithEnv.nextRegister
         val mallocLine =
           emitCall(mallocReg.some, "ptr".some, "malloc", List(("i64", envSize.toString)))
@@ -583,35 +593,14 @@ private def emitCallSiteEnv(
                 case (id, bnd: Bnd) if id == cloneFnId => bnd.name
               }
               .getOrElse(cloneFnId.split("::").last)
-            val cloneFnLlvmName  = resolveMemFnLlvmName(cloneFnMmlName, st)
-            val rawArgs          = List((rawCapOp, llvmType))
-            val (lowered, stLow) = st.abi.lowerArgs(rawArgs, st)
-            val callArgs         = lowered.map((op, typ) => (typ, op))
-            val declParamTypes   = lowered.map(_._2)
-            val needsSret        = stLow.abi.needsSret(llvmType, stLow)
-            if needsSret then
-              val (retReg, stAfterCall) = stLow.abi.emitSretCall(
-                cloneFnLlvmName,
-                llvmType,
-                callArgs,
-                stLow,
-                (reg, retTy, fn, args, _, _) => emitCall(reg, retTy, fn, args),
-                None,
-                None
-              )
-              val stWithDecl = stAfterCall
-                .withFunctionDeclaration(cloneFnLlvmName, "void", "ptr" :: declParamTypes)
-              (stWithDecl, s"%$retReg")
-            else
-              val cloneReg = stLow.nextRegister
-              val stWithDecl = stLow.withFunctionDeclaration(
-                cloneFnLlvmName,
-                llvmType,
-                declParamTypes
-              )
-              val cloneLine =
-                emitCall(cloneReg.some, llvmType.some, cloneFnLlvmName, callArgs)
-              (stWithDecl.withRegister(cloneReg + 1).emit(cloneLine), s"%$cloneReg")
+            val cloneFnLlvmName = resolveMemFnLlvmName(cloneFnMmlName, st)
+            val plan            = clonePlans(cloneFnId)
+            val (cloneReg, cloned) = plan.emitCall(
+              cloneFnLlvmName,
+              List(rawCapOp),
+              plan.declare(cloneFnLlvmName, st)
+            )
+            (cloned, s"%$cloneReg")
           case _ =>
             (st, rawCapOp)
 

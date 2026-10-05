@@ -43,8 +43,8 @@ class AppRewritingTests extends BaseEffFunSuite:
                   )
                 ) :: Nil =>
               assertEquals(clue(ref.name), "mult", "Function name mismatch")
-              assertEquals(clue(arg1Val), 2, "First argument mismatch")
-              assertEquals(clue(arg2Val), 2, "Second argument mismatch")
+              assertEquals(clue(arg1Val), 2L, "First argument mismatch")
+              assertEquals(clue(arg2Val), 2L, "Second argument mismatch")
             case other =>
               fail(
                 s"Expected nested App structure App(App(Ref(mult), Expr(Lit(2))), Expr(Lit(2))), got: \n${other
@@ -91,12 +91,12 @@ class AppRewritingTests extends BaseEffFunSuite:
                       _
                     ) =>
                   assertEquals(clue(doubleRef.name), "double", "Inner function should be `double`")
-                  assertEquals(clue(firstArg), 1, "Inner literal argument mismatch")
+                  assertEquals(clue(firstArg), 1L, "Inner literal argument mismatch")
                 case _ =>
                   fail(
                     s"First argument should contain App(Ref(double), Expr(LiteralInt(1))) but was:\n${prettyPrintAst(innerExpr)}"
                   )
-              assertEquals(clue(secondArg), 2, "Second argument literal mismatch")
+              assertEquals(clue(secondArg), 2L, "Second argument literal mismatch")
             case other =>
               fail(
                 s"Expected App(App(Ref(sum), Expr(App(Ref(double), Expr(LiteralInt(1))))), Expr(LiteralInt(2))) but got:\n${other
@@ -522,10 +522,10 @@ class AppRewritingTests extends BaseEffFunSuite:
                   )
                 ) :: Nil =>
               assertEquals(clue(ref.name), "func", "Function name mismatch")
-              assertEquals(clue(arg1Val), 1, "Arg 1 mismatch")
-              assertEquals(clue(arg2Val), 2, "Arg 2 mismatch")
-              assertEquals(clue(arg3Val), 3, "Arg 3 mismatch")
-              assertEquals(clue(arg4Val), 4, "Arg 4 mismatch")
+              assertEquals(clue(arg1Val), 1L, "Arg 1 mismatch")
+              assertEquals(clue(arg2Val), 2L, "Arg 2 mismatch")
+              assertEquals(clue(arg3Val), 3L, "Arg 3 mismatch")
+              assertEquals(clue(arg4Val), 4L, "Arg 4 mismatch")
             case other =>
               fail(s"Expected deeply nested App structure, got: \n${other
                   .map(t => prettyPrintAst(t, 0, false, false))
@@ -567,14 +567,14 @@ class AppRewritingTests extends BaseEffFunSuite:
                   // Check all arguments are correct literals
                   funcArgs(0).terms.headOption match
                     case Some(LiteralInt(_, arg1Val)) =>
-                      assertEquals(clue(arg1Val), 1, "Func 2 Arg 1")
+                      assertEquals(clue(arg1Val), 1L, "Func 2 Arg 1")
                     case Some(other) =>
                       fail(s"Expected literal 1 for arg1, got: ${prettyPrintAst(other)}")
                     case None => fail("Expected literal 1 for arg1, got: None")
 
                   funcArgs(1).terms.headOption match
                     case Some(LiteralInt(_, arg2Val)) =>
-                      assertEquals(clue(arg2Val), 2, "Func 2 Arg 2")
+                      assertEquals(clue(arg2Val), 2L, "Func 2 Arg 2")
                     case Some(other) =>
                       fail(s"Expected literal 2 for arg2, got: ${prettyPrintAst(other)}")
                     case None => fail("Expected literal 2 for arg2, got: None")
@@ -592,7 +592,7 @@ class AppRewritingTests extends BaseEffFunSuite:
                   // Right side of plus should be literal 3
                   plusArgs(1).terms.headOption match
                     case Some(LiteralInt(_, litVal)) =>
-                      assertEquals(clue(litVal), 3, "Literal value")
+                      assertEquals(clue(litVal), 3L, "Literal value")
                     case Some(other) => fail(s"Expected literal 3, got: ${prettyPrintAst(other)}")
                     case None => fail("Expected literal 3, got: None")
 
@@ -605,14 +605,14 @@ class AppRewritingTests extends BaseEffFunSuite:
                       // Check both args are literal 1
                       funcArgs(0).terms.headOption match
                         case Some(LiteralInt(_, arg1Val)) =>
-                          assertEquals(clue(arg1Val), 1, "Func 1 Arg 1")
+                          assertEquals(clue(arg1Val), 1L, "Func 1 Arg 1")
                         case Some(other) =>
                           fail(s"Expected literal 1 for arg1, got: ${prettyPrintAst(other)}")
                         case None => fail("Expected literal 1 for arg1, got: None")
 
                       funcArgs(1).terms.headOption match
                         case Some(LiteralInt(_, arg2Val)) =>
-                          assertEquals(clue(arg2Val), 1, "Func 1 Arg 2")
+                          assertEquals(clue(arg2Val), 1L, "Func 1 Arg 2")
                         case Some(other) =>
                           fail(s"Expected literal 1 for arg2, got: ${prettyPrintAst(other)}")
                         case None => fail("Expected literal 1 for arg2, got: None")
@@ -799,7 +799,7 @@ class AppRewritingTests extends BaseEffFunSuite:
                   // Check argument is literal 1
                   thenArgs(0).terms.headOption match
                     case Some(LiteralInt(_, thenArgVal)) =>
-                      assertEquals(clue(thenArgVal), 1, "Then branch argument")
+                      assertEquals(clue(thenArgVal), 1L, "Then branch argument")
                     case Some(other) =>
                       fail(s"Expected literal 1 in then branch, got: ${prettyPrintAst(other)}")
                     case None => fail("Expected literal 1 in then branch, got: None")
@@ -816,7 +816,7 @@ class AppRewritingTests extends BaseEffFunSuite:
                   // Check argument is literal 2
                   elseArgs(0).terms.headOption match
                     case Some(LiteralInt(_, elseArgVal)) =>
-                      assertEquals(clue(elseArgVal), 2, "Else branch argument")
+                      assertEquals(clue(elseArgVal), 2L, "Else branch argument")
                     case Some(other) =>
                       fail(s"Expected literal 2 in else branch, got: ${prettyPrintAst(other)}")
                     case None => fail("Expected literal 2 in else branch, got: None")
@@ -853,7 +853,7 @@ class AppRewritingTests extends BaseEffFunSuite:
               // Check the right side (literal 2)
               plusArgs(1).terms.headOption match
                 case Some(LiteralInt(_, lit2Val)) =>
-                  assertEquals(clue(lit2Val), 2, "Right side should be literal 2")
+                  assertEquals(clue(lit2Val), 2L, "Right side should be literal 2")
                 case Some(other) =>
                   fail(s"Expected literal 2 on right side, got: ${prettyPrintAst(other)}")
                 case None => fail("Expected literal 2 on right side, got: None")
@@ -873,7 +873,7 @@ class AppRewritingTests extends BaseEffFunSuite:
                       // The arg should be literal 1
                       func2Args(0).terms.headOption match
                         case Some(LiteralInt(_, lit1Val)) =>
-                          assertEquals(clue(lit1Val), 1, "func2 arg should be 1")
+                          assertEquals(clue(lit1Val), 1L, "func2 arg should be 1")
                         case Some(other) =>
                           fail(s"Expected literal 1 as func2 arg, got: ${prettyPrintAst(other)}")
                         case None => fail("Expected literal 1 as func2 arg, got: None")
@@ -913,7 +913,7 @@ class AppRewritingTests extends BaseEffFunSuite:
             // Use AssertApp for single argument function
             case TXApp(ref, _, List(Expr(_, List(LiteralInt(_, arg1Val)), _, _))) :: Nil =>
               assertEquals(clue(ref.name), "func", "Function name mismatch")
-              assertEquals(clue(arg1Val), 1, "Argument mismatch")
+              assertEquals(clue(arg1Val), 1L, "Argument mismatch")
             case other =>
               fail(
                 s"Expected App(Ref(func), Expr(Lit(1))), got: ${other.map(t => prettyPrintAst(t, 0, false, false)).mkString(", ")}"

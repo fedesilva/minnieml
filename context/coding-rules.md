@@ -85,6 +85,18 @@ The compiler needs to be installed before it's used if changes were made.
 
 - **Validate**: Run the *full* test suite
 
+- **ABI changes require Linux container verification**:
+  - Run the affected ABI and C interoperability tests in both `mml-linux-arm64` and
+    `mml-linux-amd64`, in addition to host verification. Execute fixtures inside each
+    container; cross-compilation alone does not satisfy this gate.
+  - Use the existing compiler APIs and toolchain command runner for fixtures. Do not add
+    separate subprocess machinery for Clang.
+  - Run the container checks sequentially, with no concurrent host or container `sbtn`
+    commands. See [Linux builder instructions](../packaging/docker/Readme.md) for setup.
+  - Record each container's architecture, toolchain, commands, and results. Distinguish
+    native execution, emulated execution, and cross-compilation. Report an unavailable or
+    failing container check as an unmet gate; do not silently omit it or claim it passed.
+
 - **Publish the compiler** with `sbtn mmlcPublishLocal` before running benchmarks or the memory
     harness, since both use `mmlc`.
 

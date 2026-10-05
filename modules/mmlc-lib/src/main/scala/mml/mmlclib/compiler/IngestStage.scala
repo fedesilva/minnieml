@@ -37,5 +37,10 @@ object IngestStage:
     val (_, result, collector) = Parser.parseModuleInstrumented(source, name, sourcePath)
     val withCounters           = state.addCounters(collector.toCounters("ingest"))
     result match
-      case Right(module) => withCounters.withModule(module)
+      case Right(module) =>
+        withCounters
+          .withModule(module)
+          .copy(
+            linkEntries = module.linkDirective.toList.flatMap(_.entries)
+          )
       case Left(error) => withCounters.addError(error)

@@ -1,0 +1,10 @@
+// Run: mmlc run mml/samples/link-zlib.mml
+// Requires zlib's linker library (provided by the macOS SDK; zlib1g-dev on Debian/Ubuntu).
+@link["z"];
+
+// zlib returns an unsigned long; Int64 has the same width on 64-bit macOS and Linux.
+fn zlibCompileFlags(): Int64 = @native;;
+
+pub fn main(): Unit =
+  println ("zlib compile flags: " ++ int64_to_str (zlibCompileFlags ()));
+;

@@ -143,11 +143,11 @@ def compileLiteralString(
       )
       val stateWithLenPtr = stateWithAlloc.withRegister(lenPtrReg + 1).emit(lenPtrLine)
       val (stateWithLenAlias, lenAliasTag, lenNoaliasTag) =
-        AliasScopeEmitter.getAliasScopeTagsByName("Int64", stateWithLenPtr)
+        AliasScopeEmitter.getAliasScopeTagsByName("Int32", stateWithLenPtr)
       val lenStoreLine =
         emitStore(
           s"$strLen",
-          "i64",
+          "i32",
           s"%$lenPtrReg",
           Some(lenTag),
           lenAliasTag,

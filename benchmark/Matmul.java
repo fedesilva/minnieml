@@ -1,21 +1,21 @@
 public class Matmul {
 
-    static void fillMatrix(long[] arr, long seed) {
-        long currentSeed = seed;
+    static void fillMatrix(int[] arr, int seed) {
+        int currentSeed = seed;
         for (int i = 0; i < arr.length; i++) {
-            currentSeed = currentSeed * 1664525 + 1013904223;
-            arr[i] = currentSeed % 100;
+            currentSeed = (currentSeed * 25173 + 13849) % 65536;
+            arr[i] = (currentSeed % 100) - 50;
         }
     }
 
     // Naive i-j-k multiplication with strided access on B.
-    static void matMul(long[] a, long[] b, long[] c, int n) {
+    static void matMul(int[] a, int[] b, int[] c, int n) {
         for (int i = 0; i < n; i++) {
             for (int j = 0; j < n; j++) {
-                long acc = 0;
+                int acc = 0;
                 for (int k = 0; k < n; k++) {
-                    long valA = a[i * n + k];
-                    long valB = b[k * n + j];
+                    int valA = a[i * n + k];
+                    int valB = b[k * n + j];
                     acc += valA * valB;
                 }
                 c[i * n + j] = acc;
@@ -23,8 +23,8 @@ public class Matmul {
         }
     }
 
-    static long trace(long[] arr, int n) {
-        long acc = 0;
+    static int trace(int[] arr, int n) {
+        int acc = 0;
         for (int i = 0; i < n; i++) {
             acc += arr[i * n + i];
         }
@@ -33,9 +33,9 @@ public class Matmul {
 
     public static void main(String[] args) {
         int n = 500;
-        long[] a = new long[n * n];
-        long[] b = new long[n * n];
-        long[] c = new long[n * n];
+        int[] a = new int[n * n];
+        int[] b = new int[n * n];
+        int[] c = new int[n * n];
 
         fillMatrix(a, 42);
         fillMatrix(b, 1337);

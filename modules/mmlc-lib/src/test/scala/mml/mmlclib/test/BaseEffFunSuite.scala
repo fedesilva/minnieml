@@ -3,14 +3,23 @@ package mml.mmlclib.test
 import cats.effect.IO
 import mml.mmlclib.api.{FrontEndApi, ParserApi}
 import mml.mmlclib.ast.{Error, Member, Module}
+import mml.mmlclib.codegen.LlvmToolchain
 import mml.mmlclib.compiler.{CodegenStage, CompilerConfig}
 import mml.mmlclib.semantic.*
 import mml.mmlclib.test.llvm.LlvmAssertions
 import mml.mmlclib.util.prettyprint.ast.prettyPrintAst
 import munit.CatsEffectSuite
 
+import java.nio.file.Path
+
 /** Base trait for effectful tests; adds common MML specific assertions. */
 trait BaseEffFunSuite extends CatsEffectSuite with LlvmAssertions:
+
+  /** Assert success through the compiler's shared toolchain command execution. */
+  protected def commandNotFailed(command: List[String], workingDir: Path): IO[Unit] =
+    LlvmToolchain
+      .executeCommand(command, "Fixture command failed", workingDir, verbose = false)
+      .map(_.fold(error => fail(error.message), code => assertEquals(code, 0)))
 
   final case class SemanticResult(module: Module, errors: List[SemanticError])
 

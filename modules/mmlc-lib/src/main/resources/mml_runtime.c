@@ -29,29 +29,36 @@ static void mml_sys_oom_abort(void)
     mml_panic("out of memory");
 }
 
+static int32_t checked_length(size_t length)
+{
+    if (length > INT32_MAX)
+        mml_panic("length exceeds Int32 range");
+    return (int32_t)length;
+}
+
 // --- String Struct ---
 typedef struct String
 {
-    size_t length;
+    int32_t length;
     char *data;
 } String;
 
 // --- Array Structs ---
 typedef struct IntArray
 {
-    int64_t length;
-    int64_t *data;
+    int32_t length;
+    int32_t *data;
 } IntArray;
 
 typedef struct StringArray
 {
-    int64_t length;
+    int32_t length;
     String *data;
 } StringArray;
 
 typedef struct FloatArray
 {
-    int64_t length;
+    int32_t length;
     float *data;
 } FloatArray;
 
@@ -65,13 +72,18 @@ typedef RngImpl *Rng;
 
 static atomic_uint_fast64_t rng_random_counter;
 
-Rng rng_new(int64_t seed)
+static Rng rng_from_state(uint64_t seed)
 {
     Rng rng = (Rng)malloc(sizeof(RngImpl));
     if (!rng)
         mml_sys_oom_abort();
-    rng->state = (uint64_t)seed;
+    rng->state = seed;
     return rng;
+}
+
+Rng rng_new(int32_t seed)
+{
+    return rng_from_state((uint64_t)(int64_t)seed);
 }
 
 Rng rng_new_random()
@@ -81,10 +93,10 @@ Rng rng_new_random()
     uint64_t sequence =
         atomic_fetch_add_explicit(&rng_random_counter, 1, memory_order_relaxed) + 1;
     seed ^= sequence * UINT64_C(0x9e3779b97f4a7c15);
-    return rng_new((int64_t)seed);
+    return rng_from_state(seed);
 }
 
-int64_t rng_next(Rng rng)
+static uint64_t rng_next_bits(Rng rng)
 {
     if (!rng)
         mml_panic("rng_next called with null Rng");
@@ -94,17 +106,22 @@ int64_t rng_next(Rng rng)
     z = (z ^ (z >> 30)) * UINT64_C(0xbf58476d1ce4e5b9);
     z = (z ^ (z >> 27)) * UINT64_C(0x94d049bb133111eb);
     z = z ^ (z >> 31);
-    return (int64_t)(z & UINT64_C(0x7fffffffffffffff));
+    return z;
 }
 
-int64_t rng_between(Rng rng, int64_t min, int64_t max)
+int32_t rng_next(Rng rng)
+{
+    return (int32_t)(rng_next_bits(rng) & UINT64_C(0x7fffffff));
+}
+
+int32_t rng_between(Rng rng, int32_t min, int32_t max)
 {
     if (max <= min)
         mml_panic("rng_between called with max <= min");
 
-    uint64_t width = (uint64_t)max - (uint64_t)min;
-    uint64_t value = (uint64_t)rng_next(rng);
-    return min + (int64_t)(value % width);
+    uint64_t width = (uint64_t)((int64_t)max - (int64_t)min);
+    uint64_t value = rng_next_bits(rng);
+    return (int32_t)((int64_t)min + (int64_t)(value % width));
 }
 
 // --- Output Buffer ---
@@ -148,7 +165,7 @@ Buffer mkBufferWithFd(int fd)
     return b;
 }
 
-Buffer mkBufferWithFdAndSize(int fd, int64_t size)
+Buffer mkBufferWithFdAndSize(int fd, int32_t size)
 {
     Buffer b = (Buffer)malloc(sizeof(BufferImpl));
     if (!b)
@@ -162,7 +179,7 @@ Buffer mkBufferWithFdAndSize(int fd, int64_t size)
     return b;
 }
 
-Buffer mkBufferWithSize(int64_t size)
+Buffer mkBufferWithSize(int32_t size)
 {
     Buffer b = (Buffer)malloc(sizeof(BufferImpl));
     if (!b)
@@ -233,7 +250,7 @@ FORCE_INLINE void buffer_writeln(Buffer b, String s)
     b->data[b->length++] = '\n';
 }
 
-FORCE_INLINE void buffer_write_byte(Buffer b, int64_t value)
+FORCE_INLINE void buffer_write_byte(Buffer b, int32_t value)
 {
     if (!b)
         return;
@@ -252,14 +269,14 @@ FORCE_INLINE static size_t format_int64(char *buffer, size_t size, int64_t value
     char digits[24];
     size_t d = 0;
     size_t pos = 0;
-    int64_t abs_value = value;
+    uint64_t abs_value = (uint64_t)value;
 
     if (value < 0)
     {
         if (pos + 1 >= size)
             return 0;
         buffer[pos++] = '-';
-        abs_value = -value;
+        abs_value = UINT64_C(0) - (uint64_t)value;
     }
 
     if (abs_value == 0)
@@ -272,8 +289,8 @@ FORCE_INLINE static size_t format_int64(char *buffer, size_t size, int64_t value
 
     while (abs_value > 0 && d < sizeof(digits))
     {
-        int64_t q = abs_value / 10;
-        int64_t r = abs_value - q * 10;
+        uint64_t q = abs_value / 10;
+        uint64_t r = abs_value - q * 10;
         digits[d++] = (char)('0' + r);
         abs_value = q;
     }
@@ -289,7 +306,7 @@ FORCE_INLINE static size_t format_int64(char *buffer, size_t size, int64_t value
     return pos;
 }
 
-FORCE_INLINE void buffer_write_int(Buffer b, int64_t value)
+FORCE_INLINE void buffer_write_int(Buffer b, int32_t value)
 {
     if (!b)
         return;
@@ -306,7 +323,7 @@ FORCE_INLINE void buffer_write_int(Buffer b, int64_t value)
     b->length += len;
 }
 
-FORCE_INLINE void buffer_writeln_int(Buffer b, int64_t value)
+FORCE_INLINE void buffer_writeln_int(Buffer b, int32_t value)
 {
     if (!b)
         return;
@@ -365,7 +382,7 @@ String readline()
     if (fgets(buffer, size, stdin))
     {
         buffer[strcspn(buffer, "\n")] = 0;
-        return (String){strlen(buffer), buffer};
+        return (String){checked_length(strlen(buffer)), buffer};
     }
 
     // Check if we hit EOF
@@ -418,6 +435,7 @@ void string_builder_append(StringBuilder *sb, String str)
     if (!sb || !str.data)
         return;
 
+    checked_length(sb->length + (size_t)str.length);
     if (sb->length + str.length >= sb->capacity)
     {
         sb->capacity *= 2;
@@ -436,11 +454,12 @@ String string_builder_finalize(StringBuilder *sb)
     if (!sb)
         return (String){0, NULL};
 
+    checked_length(sb->length);
     char *data = (char *)malloc(sb->length + 1);
     if (!data)
         mml_sys_oom_abort();
 
-    String result = {sb->length, data};
+    String result = {checked_length(sb->length), data};
     memcpy(result.data, sb->buffer, sb->length);
     result.data[result.length] = '\0';
     free(sb->buffer);
@@ -472,14 +491,16 @@ void println(String str)
 }
 
 // --- Substring ---
-String substring(String s, size_t start, size_t len)
+String substring(String s, int32_t start, int32_t len)
 {
+    if (start < 0 || len < 0)
+        mml_panic("substring: negative index or length");
     if (start >= s.length || !s.data)
         return (String){0, NULL};
-    if (start + len > s.length)
+    if (len > s.length - start)
         len = s.length - start;
 
-    char *new_data = (char *)malloc(len + 1);
+    char *new_data = (char *)malloc((size_t)len + 1);
     if (!new_data)
         mml_sys_oom_abort();
 
@@ -511,8 +532,8 @@ String concat(String a, String b)
         return substring(a, 0, a.length);
 
     // Allocate memory for the combined string
-    size_t total_length = a.length + b.length;
-    char *new_data = (char *)malloc(total_length + 1);
+    int32_t total_length = checked_length((size_t)a.length + (size_t)b.length);
+    char *new_data = (char *)malloc((size_t)total_length + 1);
     if (!new_data)
         mml_sys_oom_abort();
 
@@ -542,18 +563,18 @@ String str_strip_margin(String s)
     if (!s.data || s.length == 0)
         return (String){0, NULL};
 
-    char *new_data = (char *)malloc(s.length + 1);
+    char *new_data = (char *)malloc((size_t)s.length + 1);
     if (!new_data)
         mml_sys_oom_abort();
 
-    size_t read_pos = 0;
-    size_t write_pos = 0;
+    int32_t read_pos = 0;
+    int32_t write_pos = 0;
 
     while (read_pos < s.length)
     {
-        size_t line_start = read_pos;
-        size_t line_end = read_pos;
-        size_t pipe_pos = s.length;
+        int32_t line_start = read_pos;
+        int32_t line_end = read_pos;
+        int32_t pipe_pos = s.length;
 
         while (line_end < s.length && s.data[line_end] != '\n')
         {
@@ -562,8 +583,8 @@ String str_strip_margin(String s)
             line_end++;
         }
 
-        size_t copy_start = (pipe_pos < line_end) ? pipe_pos + 1 : line_start;
-        size_t copy_len = line_end - copy_start;
+        int32_t copy_start = (pipe_pos < line_end) ? pipe_pos + 1 : line_start;
+        int32_t copy_len = line_end - copy_start;
         if (copy_len > 0)
         {
             memcpy(new_data + write_pos, s.data + copy_start, copy_len);
@@ -581,56 +602,25 @@ String str_strip_margin(String s)
     }
 
     new_data[write_pos] = '\0';
-    return (String){write_pos, new_data};
+    return (String){checked_length(write_pos), new_data};
 }
 
 // --- Integer to String Conversion ---
-String int_to_str(int64_t value)
+String int64_to_str(int64_t value)
 {
-    // Handle special case of 0
-    if (value == 0)
-    {
-        char *data = (char *)malloc(2);
-        if (!data)
-            mml_sys_oom_abort();
-        data[0] = '0';
-        data[1] = '\0';
-        return (String){1, data};
-    }
-
-    // Determine sign and make value positive for processing
-    int is_negative = (value < 0);
-    int64_t abs_value = is_negative ? -value : value;
-
-    // Calculate number of digits needed
-    int digit_count = 0;
-    int64_t temp = abs_value;
-    while (temp > 0)
-    {
-        digit_count++;
-        temp /= 10;
-    }
-
-    // Allocate memory: digits + potential minus sign + null terminator
-    size_t total_length = digit_count + (is_negative ? 1 : 0);
-    char *data = (char *)malloc(total_length + 1);
+    char buffer[32];
+    size_t length = format_int64(buffer, sizeof(buffer), value);
+    char *data = (char *)malloc(length + 1);
     if (!data)
         mml_sys_oom_abort();
+    memcpy(data, buffer, length);
+    data[length] = '\0';
+    return (String){(int32_t)length, data};
+}
 
-    // Fill in digits from right to left
-    data[total_length] = '\0';
-    int pos = total_length - 1;
-    while (abs_value > 0)
-    {
-        data[pos--] = '0' + (abs_value % 10);
-        abs_value /= 10;
-    }
-
-    // Add minus sign if negative
-    if (is_negative)
-        data[0] = '-';
-
-    return (String){total_length, data};
+String int_to_str(int32_t value)
+{
+    return int64_to_str(value);
 }
 
 // --- Float to String Conversion ---
@@ -647,20 +637,20 @@ String float_to_str(float value)
         data[1] = '\0';
         return (String){1, data};
     }
-    char *data = (char *)malloc(len + 1);
+    char *data = (char *)malloc((size_t)len + 1);
     if (!data)
         mml_sys_oom_abort();
     memcpy(data, buf, len + 1);
-    return (String){(size_t)len, data};
+    return (String){len, data};
 }
 
 // --- String to Integer Conversion (strict) ---
-int64_t str_to_int(String s)
+int32_t str_to_int(String s)
 {
     if (!s.data || s.length == 0)
         mml_panic("str_to_int: empty string");
 
-    size_t i = 0;
+    int32_t i = 0;
     int sign = 1;
     if (s.data[0] == '-' || s.data[0] == '+')
     {
@@ -672,15 +662,19 @@ int64_t str_to_int(String s)
         mml_panic("str_to_int: no digits after sign");
 
     int64_t value = 0;
+    int64_t limit = sign < 0 ? -(int64_t)INT32_MIN : INT32_MAX;
     for (; i < s.length; i++)
     {
         char c = s.data[i];
         if (c < '0' || c > '9')
             mml_panic("str_to_int: non-digit character");
-        value = (value * 10) + (c - '0');
+        int digit = c - '0';
+        if (value > (limit - digit) / 10)
+            mml_panic("str_to_int: integer out of range");
+        value = (value * 10) + digit;
     }
 
-    return value * sign;
+    return (int32_t)(value * sign);
 }
 
 // --- File Handling ---
@@ -688,7 +682,7 @@ int64_t str_to_int(String s)
 // Helper: convert MML String to null-terminated C string
 char *to_cstr(String s)
 {
-    char *cstr = (char *)malloc(s.length + 1);
+    char *cstr = (char *)malloc((size_t)s.length + 1);
     if (!cstr)
         mml_sys_oom_abort();
     memcpy(cstr, s.data, s.length);
@@ -760,6 +754,7 @@ String read_line_fd(int fd)
     char c;
     while (read(fd, &c, 1) == 1 && c != '\n')
     {
+        checked_length(len + 1);
         if (len + 1 >= size)
         {
             size *= 2;
@@ -771,7 +766,7 @@ String read_line_fd(int fd)
         buffer[len++] = c;
     }
     buffer[len] = '\0';
-    return (String){len, buffer};
+    return (String){checked_length(len), buffer};
 }
 
 // --- Process Execution ---
@@ -814,19 +809,19 @@ int run_process_with_output(const char *cmd, char *const argv[], char *output, s
 }
 
 // --- IntArray Functions ---
-FORCE_INLINE IntArray ar_int_new(int64_t size)
+FORCE_INLINE IntArray ar_int_new(int32_t size)
 {
     if (size <= 0)
         return (IntArray){0, NULL};
 
-    int64_t *storage = (int64_t *)malloc((size_t)size * sizeof(int64_t));
+    int32_t *storage = (int32_t *)malloc((size_t)size * sizeof(int32_t));
     if (!storage)
         mml_sys_oom_abort();
 
     return (IntArray){size, storage};
 }
 
-FORCE_INLINE void ar_int_set(IntArray arr, int64_t idx, int64_t value)
+FORCE_INLINE void ar_int_set(IntArray arr, int32_t idx, int32_t value)
 {
     if (!arr.data || idx < 0 || idx >= arr.length)
     {
@@ -838,12 +833,12 @@ FORCE_INLINE void ar_int_set(IntArray arr, int64_t idx, int64_t value)
     arr.data[idx] = value;
 }
 
-FORCE_INLINE void unsafe_ar_int_set(IntArray arr, int64_t idx, int64_t value)
+FORCE_INLINE void unsafe_ar_int_set(IntArray arr, int32_t idx, int32_t value)
 {    
     arr.data[idx] = value;
 }
 
-FORCE_INLINE int64_t ar_int_get(IntArray arr, int64_t idx)
+FORCE_INLINE int32_t ar_int_get(IntArray arr, int32_t idx)
 {
     if (!arr.data || idx < 0 || idx >= arr.length)
     {
@@ -856,18 +851,18 @@ FORCE_INLINE int64_t ar_int_get(IntArray arr, int64_t idx)
     return arr.data[idx];
 }
 
-FORCE_INLINE int64_t unsafe_ar_int_get(IntArray arr, int64_t idx)
+FORCE_INLINE int32_t unsafe_ar_int_get(IntArray arr, int32_t idx)
 {    
     return arr.data[idx];
 }
 
-FORCE_INLINE int64_t ar_int_len(IntArray arr)
+FORCE_INLINE int32_t ar_int_len(IntArray arr)
 {
     return arr.length;
 }
 
 // --- StringArray Functions ---
-FORCE_INLINE StringArray ar_str_new(int64_t size)
+FORCE_INLINE StringArray ar_str_new(int32_t size)
 {
     if (size <= 0)
         return (StringArray){0, NULL};
@@ -879,7 +874,7 @@ FORCE_INLINE StringArray ar_str_new(int64_t size)
     return (StringArray){size, storage};
 }
 
-FORCE_INLINE void ar_str_set(StringArray arr, int64_t idx, String value)
+FORCE_INLINE void ar_str_set(StringArray arr, int32_t idx, String value)
 {
     if (!arr.data || idx < 0 || idx >= arr.length)
     {
@@ -892,7 +887,7 @@ FORCE_INLINE void ar_str_set(StringArray arr, int64_t idx, String value)
     arr.data[idx] = value;
 }
 
-FORCE_INLINE String ar_str_get(StringArray arr, int64_t idx)
+FORCE_INLINE String ar_str_get(StringArray arr, int32_t idx)
 {
     if (!arr.data || idx < 0 || idx >= arr.length)
     {
@@ -905,13 +900,13 @@ FORCE_INLINE String ar_str_get(StringArray arr, int64_t idx)
     return arr.data[idx];
 }
 
-FORCE_INLINE int64_t ar_str_len(StringArray arr)
+FORCE_INLINE int32_t ar_str_len(StringArray arr)
 {
     return arr.length;
 }
 
 // --- FloatArray Functions ---
-FORCE_INLINE FloatArray ar_float_new(int64_t size)
+FORCE_INLINE FloatArray ar_float_new(int32_t size)
 {
     if (size <= 0)
         return (FloatArray){0, NULL};
@@ -923,7 +918,7 @@ FORCE_INLINE FloatArray ar_float_new(int64_t size)
     return (FloatArray){size, storage};
 }
 
-FORCE_INLINE void ar_float_set(FloatArray arr, int64_t idx, float value)
+FORCE_INLINE void ar_float_set(FloatArray arr, int32_t idx, float value)
 {
     if (!arr.data || idx < 0 || idx >= arr.length)
     {
@@ -935,12 +930,12 @@ FORCE_INLINE void ar_float_set(FloatArray arr, int64_t idx, float value)
     arr.data[idx] = value;
 }
 
-FORCE_INLINE void unsafe_ar_float_set(FloatArray arr, int64_t idx, float value)
+FORCE_INLINE void unsafe_ar_float_set(FloatArray arr, int32_t idx, float value)
 {    
     arr.data[idx] = value;
 }
 
-FORCE_INLINE float ar_float_get(FloatArray arr, int64_t idx)
+FORCE_INLINE float ar_float_get(FloatArray arr, int32_t idx)
 {
     if (!arr.data || idx < 0 || idx >= arr.length)
     {
@@ -952,12 +947,12 @@ FORCE_INLINE float ar_float_get(FloatArray arr, int64_t idx)
     return arr.data[idx];
 }
 
-FORCE_INLINE float unsafe_ar_float_get(FloatArray arr, int64_t idx)
+FORCE_INLINE float unsafe_ar_float_get(FloatArray arr, int32_t idx)
 {    
     return arr.data[idx];
 }
 
-FORCE_INLINE int64_t ar_float_len(FloatArray arr)
+FORCE_INLINE int32_t ar_float_len(FloatArray arr)
 {
     return arr.length;
 }
@@ -1013,7 +1008,7 @@ void __free_StringArray(StringArray arr)
 {
     if (arr.data)
     {
-        for (int64_t i = 0; i < arr.length; i++)
+        for (int32_t i = 0; i < arr.length; i++)
         {
             __free_String(arr.data[i]);
         }
@@ -1040,7 +1035,7 @@ String __clone_String(String s)
     if (!s.data || s.length == 0)
         return (String){0, NULL};
 
-    char *new_data = (char *)malloc(s.length + 1);
+    char *new_data = (char *)malloc((size_t)s.length + 1);
     if (!new_data)
         mml_sys_oom_abort();
 
@@ -1051,13 +1046,13 @@ String __clone_String(String s)
 
 StringArray mml_args_to_array(int argc, char **argv)
 {
-    int64_t user_argc = (argc > 1) ? (int64_t)(argc - 1) : 0;
+    int32_t user_argc = (argc > 1) ? (int32_t)(argc - 1) : 0;
     StringArray arr = ar_str_new(user_argc);
 
-    for (int64_t i = 0; i < user_argc; i++)
+    for (int32_t i = 0; i < user_argc; i++)
     {
         char *raw = argv[i + 1];
-        String borrowed = (String){strlen(raw), raw};
+        String borrowed = (String){checked_length(strlen(raw)), raw};
         ar_str_set(arr, i, __clone_String(borrowed));
     }
 
@@ -1101,11 +1096,11 @@ IntArray __clone_IntArray(IntArray arr)
     if (!arr.data || arr.length <= 0)
         return (IntArray){0, NULL};
 
-    int64_t *new_data = (int64_t *)malloc((size_t)arr.length * sizeof(int64_t));
+    int32_t *new_data = (int32_t *)malloc((size_t)arr.length * sizeof(int32_t));
     if (!new_data)
         mml_sys_oom_abort();
 
-    memcpy(new_data, arr.data, (size_t)arr.length * sizeof(int64_t));
+    memcpy(new_data, arr.data, (size_t)arr.length * sizeof(int32_t));
     return (IntArray){arr.length, new_data};
 }
 
@@ -1118,7 +1113,7 @@ StringArray __clone_StringArray(StringArray arr)
     if (!new_data)
         mml_sys_oom_abort();
 
-    for (int64_t i = 0; i < arr.length; i++)
+    for (int32_t i = 0; i < arr.length; i++)
     {
         new_data[i] = __clone_String(arr.data[i]);
     }

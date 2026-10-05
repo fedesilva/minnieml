@@ -84,7 +84,7 @@ class TypeResolverTests extends BaseEffFunSuite:
   test("TypeResolver should resolve type aliases"):
     val code = """      
       type TestNumber = Int64;
-      let x: TestNumber = 42;
+      let x: TestNumber = int_to_int64 42;
     """
 
     semNotFailed(code).map { module =>
@@ -137,21 +137,21 @@ class TypeResolverTests extends BaseEffFunSuite:
         case t: TypeAlias if t.name == "X" => t
       }.get
 
-      // Check that the typeSpec resolves to Int64 (the MML type), not @native[t=i64]
+      // Check that the typeSpec resolves to Int32 (the MML type), not @native[t=i32]
       typeAlias.typeSpec match
-        case Some(TypeRef(_, "Int64", resolvedId, _)) =>
-          assert(resolvedId.isDefined, "Expected Int64 to be resolved")
+        case Some(TypeRef(_, "Int32", resolvedId, _)) =>
+          assert(resolvedId.isDefined, "Expected Int32 to be resolved")
           val td =
             resolvedId.flatMap(module.resolvables.lookupType).collect { case t: TypeDef => t }
           assert(td.isDefined, "Expected to resolve to TypeDef")
-          assertEquals(td.get.name, "Int64")
-          // Verify that Int64 itself has the native type, but that's not propagated to X
-          assert(td.get.typeSpec.isDefined, "Int64 should have a native typeSpec")
+          assertEquals(td.get.name, "Int32")
+          // Verify that Int32 itself has the native type, but that's not propagated to X
+          assert(td.get.typeSpec.isDefined, "Int32 should have a native typeSpec")
           td.get.typeSpec match
-            case Some(NativePrimitive(_, "i64", _, _)) => // correct
-            case other => fail(s"Expected Int64 to have @native[t=i64], got $other")
+            case Some(NativePrimitive(_, "i32", _, _)) => // correct
+            case other => fail(s"Expected Int32 to have @native[t=i32], got $other")
         case other =>
-          fail(s"Expected X to resolve to TypeRef(Int64), got $other")
+          fail(s"Expected X to resolve to TypeRef(Int32), got $other")
     }
 
   test("TypeResolver should resolve type references to struct declarations"):

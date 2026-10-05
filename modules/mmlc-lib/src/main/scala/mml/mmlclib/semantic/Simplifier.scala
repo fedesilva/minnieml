@@ -15,9 +15,9 @@ object Simplifier:
         case other =>
           (accMembers :+ other, resolvables)
     }
-    module
-      .copy(members = updatedMembers, resolvables = updatedResolvables)
-      .asRight[List[SemanticError]]
+    val rewritten = module.copy(members = updatedMembers, resolvables = updatedResolvables)
+    val errors    = integerRangeErrors(rewritten)
+    if errors.isEmpty then rewritten.asRight else errors.asLeft
 
   def rewriteModule(state: CompilerState): CompilerState =
     val (updatedMembers, updatedResolvables) = state.module.members.foldLeft(
@@ -29,7 +29,20 @@ object Simplifier:
         case other =>
           (accMembers :+ other, resolvables)
     }
-    state.withModule(state.module.copy(members = updatedMembers, resolvables = updatedResolvables))
+    val rewritten = state.module.copy(members = updatedMembers, resolvables = updatedResolvables)
+    state.withModule(rewritten).addErrors(integerRangeErrors(rewritten))
+
+  private def integerRangeErrors(module: Module): List[SemanticError] =
+    module.members.collect { case b: Bnd => b }.flatMap { b =>
+      TermTraversal.collect(b.value) {
+        case lit: LiteralInt if lit.value < Int.MinValue || lit.value > Int.MaxValue =>
+          SemanticError.InvalidExpression(
+            Expr(lit.source, List(lit)),
+            "Integer literal is outside the Int32 range",
+            "Simplifier"
+          )
+      }
+    }
 
   def simplifyMember(member: Member): Member =
     member match
@@ -93,7 +106,7 @@ object Simplifier:
         // Simplify the function and argument (simplifyExpr calls simplifyTerm)
         val simplifiedArg = simplifyExpr(app.arg) // Use simplifyExpr for args
         val simplifiedFn  = simplifyTerm(app.fn) // Use simplifyTerm for fn part
-        app.copy(fn = simplifiedFn.asInstanceOf[Ref | App], arg = simplifiedArg)
+        app.copy(fn = simplifiedFn.asInstanceOf[Ref | App | Lambda], arg = simplifiedArg)
 
       case ref: Ref =>
         ref.qualifier match

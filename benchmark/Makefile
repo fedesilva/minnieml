@@ -238,13 +238,13 @@ $(BINDIR)/matmul-safe-mml: mat-mul-safe.mml Makefile | $(BINDIR)
 	mmlc -I -b $(BUILDDIR) -O$(MML_OPT) -o $@ $<
 
 $(BINDIR)/matmul-opt-mml: mat-mul-opt.mml Makefile | $(BINDIR)
-	mmlc -I -b $(BUILDDIR) -O$(MML_OPT) --llvm-opt-arg=-force-vector-interleave=4 -o $@ $<
+	mmlc -I -b $(BUILDDIR) -O$(MML_OPT)  -o $@ $<
 
 $(BINDIR)/matmul-opt-nested-mml: mat-mul-opt-nested.mml Makefile | $(BINDIR)
-	mmlc -I -b $(BUILDDIR) -O$(MML_OPT) --llvm-opt-arg=-force-vector-interleave=4 -o $@ $<
+	mmlc -I -b $(BUILDDIR) -O$(MML_OPT)  -o $@ $<
 
 $(BINDIR)/matmul-opt-safe-mml: mat-mul-opt-safe.mml Makefile | $(BINDIR)
-	mmlc -I -b $(BUILDDIR) -O$(MML_OPT) --llvm-opt-arg=-force-vector-interleave=4 -o $@ $<
+	mmlc -I -b $(BUILDDIR) -O$(MML_OPT)  -o $@ $<
 
 $(BINDIR)/matmul-mml-O0-tco: mat-mul.mml | $(BINDIR)
 	mmlc -I -b $(BUILDDIR) -O0 -o $@ $<

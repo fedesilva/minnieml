@@ -2,21 +2,28 @@ package mml.mmlclib.compiler
 
 import mml.mmlclib.ast.*
 import mml.mmlclib.codegen.CompilationMode
+import mml.mmlclib.errors.CompilerWarning
 import mml.mmlclib.semantic.SemanticError
 
 object PreCodegenValidator:
 
   private type Check = (CompilationMode, CompilerState) => CompilerState
 
-  private val allowedReturnNames       = Set("Unit", "Int64", "Int")
-  private val allowedNativeReturnLlvmT = Set("i64")
+  private val allowedReturnNames       = Set("Unit", "Int64", "Int32", "Int")
+  private val allowedNativeReturnLlvmT = Set("i32", "i64")
 
   private val checks: List[Check] = List(
-    validateEntryPoint
+    validateEntryPoint,
+    warnDiscardedLinks
   )
 
   def validate(mode: CompilationMode)(state: CompilerState): CompilerState =
     checks.foldLeft(state)((currentState, check) => check(mode, currentState))
+
+  private def warnDiscardedLinks(mode: CompilationMode, state: CompilerState): CompilerState =
+    if mode == CompilationMode.Library then
+      state.addWarnings(state.linkEntries.map(CompilerWarning.DiscardedLinkDirective.apply))
+    else state
 
   private def validateEntryPoint(
     mode:  CompilationMode,
@@ -50,14 +57,14 @@ object PreCodegenValidator:
                     case _ =>
                       state.addError(
                         SemanticError.InvalidEntryPoint(
-                          "Entry point 'main' must have a return type of 'Unit' or 'Int64'",
+                          "Entry point 'main' must have a return type of 'Unit', 'Int32', or 'Int64'",
                           bnd.source
                         )
                       )
                 case None =>
                   state.addError(
                     SemanticError.InvalidEntryPoint(
-                      "Entry point 'main' must have a return type of 'Unit' or 'Int64'",
+                      "Entry point 'main' must have a return type of 'Unit', 'Int32', or 'Int64'",
                       bnd.source
                     )
                   )

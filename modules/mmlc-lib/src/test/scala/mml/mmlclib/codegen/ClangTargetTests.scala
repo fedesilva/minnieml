@@ -12,7 +12,9 @@ import scala.jdk.CollectionConverters.*
 class ClangTargetTests extends BaseEffFunSuite:
 
   private val probeIr =
-    """define i32 @mml_target_probe(i32 %x) #7 {
+    """target datalayout = "e-i64:64"
+      |target triple = "x86_64-unknown-linux-gnu"
+      |define i32 @mml_target_probe(i32 %x) #7 {
       |  ret i32 %x
       |}
       |attributes #0 = { "target-cpu"="wrong" }
@@ -50,7 +52,11 @@ class ClangTargetTests extends BaseEffFunSuite:
   test("probe attributes follow the probe function's group and preserve disabled features") {
     assertEquals(
       ClangTarget.parseAttributes(probeIr),
-      TargetAttributes("x86-64".some, "+sse2,-avx".some).some
+      TargetAttributes(
+        "x86-64".some,
+        "+sse2,-avx".some,
+        triple = "x86_64-unknown-linux-gnu".some
+      ).some
     )
     List(
       "",

@@ -322,6 +322,38 @@ prefixed by an optional visibility modifier (`pub`, `prot`, `priv`).
 Module-level declarations are visible to all other declarations in the same
 module regardless of declaration order.
 
+### Native library linking
+
+An optional `@link` directive before all module members supplies native libraries when
+building an executable:
+
+```mml
+@link["z"];
+
+fn zlibCompileFlags(): Int64 = @native;;
+
+pub fn main(): Unit =
+  println (int64_to_str (zlibCompileFlags ()));
+;
+```
+
+The directive requires at least one quoted library name and a trailing semicolon. Multiple
+names are comma-separated: `@link["one", "two"];`. Whitespace and line comments are allowed.
+Only one directive is permitted, before every declaration; it cannot appear in expressions.
+Names start with an ASCII letter, digit, or underscore and may then contain letters, digits,
+underscores, dots, plus signs, and hyphens. Paths, raw linker flags, and `static` / `shared`
+qualifiers are not accepted.
+
+Each name becomes a separate `-l<name>` argument after the program input. Names retain their
+order and repetitions. The target linker discovers libraries and chooses static or shared
+linkage using its normal rules. The compiler does not install libraries or configure their
+runtime search paths. Native declarations still use `@native` and must match the library ABI.
+
+Library mode produces a relocatable `.o` and discards these inputs, warning once per name:
+`linking directives are discarded in library mode`. The consumer supplies the libraries at
+its final link. AST output and an IR comment retain the directive without looking up libraries.
+See [the zlib sample](../mml/samples/link-zlib.mml) for a complete executable.
+
 ### Semicolons
 
 Semicolons are **terminators**, not separators. Every expression is terminated by `;`,
@@ -550,10 +582,19 @@ String                         // Struct with length and data pointer
 
 **Type aliases**:
 ```text
-Int   → Int64   // Default integer type
+Int   → Int32   // Default integer type
 Byte  → Int8
 Word  → Int8
 ```
+
+`Int` literals range from `-2147483648` to `2147483647`. Out-of-range literals
+produce diagnostics. Integer addition, subtraction, and multiplication wrap at 32 bits.
+Use `int_to_int64` and explicitly typed native arithmetic when a calculation needs 64 bits;
+`Int64` remains a distinct type. `SizeT`, pointers, and allocation byte counts retain the
+target's 64-bit width on supported targets.
+
+Executable `main` may return `Unit`, `Int`/`Int32`, or `Int64`. Unit returns exit status 0;
+Int32 returns its value directly, and Int64 is truncated to the C entry point's 32-bit status.
 
 ### Arrays
 
@@ -562,6 +603,9 @@ native types: `IntArray`, `StringArray`, and `FloatArray`. These are backed by C
 runtime implementations with dedicated accessor functions (`ar_int_get`,
 `ar_int_set`, `ar_float_get`, `ar_float_set`, etc.). Once the type checker
 supports generics, these will be replaced by a single polymorphic array type.
+
+String and array lengths and indexes use signed Int32. `IntArray` stores 32-bit elements.
+Runtime lengths are checked before narrowing to Int32.
 
 ### Native type declarations
 
@@ -864,7 +908,7 @@ natives produce linker errors.
 Functions can use `@native[tpl="..."]` to emit inline LLVM IR:
 
 ```mml
-fn ctpop(x: Int): Int = @native[tpl="call i64 @llvm.ctpop.i64(i64 %operand)"];;
+fn ctpop(x: Int): Int = @native[tpl="call i32 @llvm.ctpop.i32(i32 %operand)"];;
 ```
 
 **Template placeholders**:
@@ -935,7 +979,7 @@ parameters.
 A type is heap-allocated if declared with `[mem=heap]`:
 
 ```mml
-type String = @native[mem=heap] { length: Int64, data: CharPtr };
+type String = @native[mem=heap] { length: Int32, data: CharPtr };
 type Buffer = @native[mem=heap, t=*i8];
 ```
 
@@ -953,7 +997,7 @@ their deallocation function. The `free=<name>` attribute overrides this:
 
 ```mml
 type Handle = @native[t=*i8, mem=heap, free=close_handle];
-type MyStr = @native[mem=heap, free=destroy_str] { length: Int64, data: CharPtr };
+type MyStr = @native[mem=heap, free=destroy_str] { length: Int32, data: CharPtr };
 ```
 
 When `free=` is provided, the ownership system calls the specified function instead of
@@ -1091,7 +1135,7 @@ the compiler design document.
 
 | Alias  | Target |
 |--------|--------|
-| `Int`  | `Int64` |
+| `Int`  | `Int32` |
 | `Byte` | `Int8`  |
 | `Word` | `Int8`  |
 
@@ -1099,12 +1143,13 @@ the compiler design document.
 
 | Type          | Description                                                  |
 |---------------|--------------------------------------------------------------|
-| `String`      | Struct: `{ length: Int64, data: CharPtr }`. Heap-allocated.  |
+| `CString`     | Owned NUL-terminated C string pointer. Freed automatically. |
+| `String`      | Struct: `{ length: Int32, data: CharPtr }`. Heap-allocated.  |
 | `Buffer`      | Opaque pointer to a buffered I/O writer. Heap-allocated.     |
 | `Rng`         | Opaque pointer to a random number generator. Heap-allocated. |
-| `IntArray`    | Struct: `{ length: Int64, data: Int64Ptr }`. Heap-allocated. |
-| `StringArray` | Struct: `{ length: Int64, data: StringPtr }`. Heap-allocated.|
-| `FloatArray`  | Struct: `{ length: Int64, data: FloatPtr }`. Heap-allocated. |
+| `IntArray`    | Struct: `{ length: Int32, data: Int32Ptr }`. Heap-allocated. |
+| `StringArray` | Struct: `{ length: Int32, data: StringPtr }`. Heap-allocated.|
+| `FloatArray`  | Struct: `{ length: Int32, data: FloatPtr }`. Heap-allocated. |
 
 ### Operators
 
@@ -1188,12 +1233,24 @@ Float operators use a `.` suffix to distinguish them from integer operators.
 | `concat(a, b)`   | `String -> String -> String` | Concatenate two strings. Allocates.  |
 | `int_to_str(n)`  | `Int -> String`              | Integer to string. Allocates.        |
 | `float_to_str(f)`| `Float -> String`            | Float to string. Allocates.          |
-| `str_to_int(s)`  | `String -> Int`              | Parse integer from string            |
+| `str_to_int(s)`  | `String -> Int`              | Parse signed Int32; panic on invalid or out-of-range input            |
+| `to_cstr(s)`     | `String -> CString`          | Copy into an owned NUL-terminated C string. |
+
+`to_cstr` borrows its input and allocates an independent `CString`. Native bindings can
+accept `CString` for C string parameters; ordinary parameters borrow it for the call.
+The compiler inserts `free_cstr` at the end of the owning scope. C code must not retain
+the pointer beyond that lifetime. Embedded NUL bytes remain in the copy and terminate
+ordinary C string operations at the first NUL.
+
+`CString` uses the injected consuming destructor `free_cstr(~s: CString): Unit`, bound
+to C's `free`. Explicit early release is possible, but ordinary code needs no manual free.
 
 #### Type conversion
 
 | Function          | Type             | Description                |
 |-------------------|------------------|----------------------------|
+| `int_to_int64(n)` | `Int -> Int64` | Sign-extend a 32-bit integer |
+| `int64_to_str(n)` | `Int64 -> String` | Format a signed 64-bit integer |
 | `int_to_float(n)` | `Int -> Float`  | Convert integer to float   |
 | `float_to_int(f)` | `Float -> Int`  | Truncate float to integer  |
 
@@ -1210,7 +1267,7 @@ Float operators use a `.` suffix to distinguish them from integer operators.
 |-----------------|--------------|--------------------------------------|
 | `rng_new(seed)` | `Int -> Rng` | Create a deterministic RNG. Allocates. |
 | `rng_new_random()` | `Unit -> Rng` | Create an RNG with a runtime seed. Allocates. |
-| `rng_next(rng)` | `Rng -> Int` | Advance the RNG and return an integer. |
+| `rng_next(rng)` | `Rng -> Int` | Advance the 64-bit RNG state and return a nonnegative 31-bit integer. |
 | `rng_between(rng, min, max)` | `Rng -> Int -> Int -> Int` | Return an integer in `[min, max)`. |
 
 #### Buffered I/O

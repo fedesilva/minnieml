@@ -18,7 +18,8 @@ import MmlWhitespace.*
   */
 private[parser] def membersP(info: SourceInfo)(using P[Any]): P[Member] =
   P(
-    binOpDefP(info) |
+    misplacedLinkP(info) |
+      binOpDefP(info) |
       unaryOpP(info) |
       letBindingP(info) |
       fnDefP(info) |

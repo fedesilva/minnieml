@@ -26,9 +26,11 @@ private[parser] def numericLitP(info: SourceInfo)(using P[Any]): P[LiteralValue]
         case (start, s, end, _) =>
           LiteralFloat(span(start, end), s.toFloat)
       } |
-      P(spP(info) ~ CharIn("0-9").rep(1).! ~ spNoWsP(info) ~ spP(info)).map {
+      P(spP(info) ~ CharIn("0-9").rep(1).! ~ spNoWsP(info) ~ spP(info)).flatMap {
         case (start, s, end, _) =>
-          LiteralInt(span(start, end), s.toInt)
+          s.toLongOption.filter(_ <= 2147483648L) match
+            case Some(value) => Pass(LiteralInt(span(start, end), value))
+            case None => Fail
       }
   )
 

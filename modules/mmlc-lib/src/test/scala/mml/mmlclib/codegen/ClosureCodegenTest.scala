@@ -41,10 +41,10 @@ class ClosureCodegenTest extends BaseEffFunSuite:
 
     compileAndGenerate(source).map { llvmIr =>
       val lambdaMatch =
-        """(?s)define internal %struct.String @(test_[A-Za-z0-9_]+)\(i64 %0\) #0 \{\n(.*?)\n\}""".r
+        """(?s)define internal %struct.String @(test_[A-Za-z0-9_]+)\(i32 %0\) #0 \{\n(.*?)\n\}""".r
           .findFirstMatchIn(llvmIr)
           .getOrElse(fail(s"Missing deferred lambda definition. IR:\n$llvmIr"))
-      val lambdaBody = lambdaMatch.group(2)
+      val lambdaBody = expandNativeAdapters(llvmIr, lambdaMatch.group(2))
 
       assert(
         llvmIr.contains("""@str.0 = private constant [6 x i8] c"lambda""""),
@@ -80,7 +80,7 @@ class ClosureCodegenTest extends BaseEffFunSuite:
 
     compileAndGenerate(source).map { llvmIr =>
       val loopMatch =
-        """(?s)define internal i64 @(test_loop_\d+)\(i64 %0\) #0 \{\n(.*?)\n\}""".r
+        """(?s)define internal i32 @(test_loop_\d+)\(i32 %0\) #0 \{\n(.*?)\n\}""".r
           .findFirstMatchIn(llvmIr)
           .getOrElse(fail(s"Missing recursive Direct body. IR:\n$llvmIr"))
 
@@ -88,7 +88,7 @@ class ClosureCodegenTest extends BaseEffFunSuite:
       val loopBody = loopMatch.group(2)
 
       assert(
-        loopBody.contains(s"call i64 @$loopName(i64 %"),
+        loopBody.contains(s"call i32 @$loopName(i32 %"),
         s"Expected loop body to recurse through its plain direct entry. Body:\n$loopBody"
       )
       assert(
@@ -113,7 +113,7 @@ class ClosureCodegenTest extends BaseEffFunSuite:
 
     compileAndGenerate(source).map { llvmIr =>
       val innerMatch =
-        """(?s)define internal i64 @(test_inner_\d+)\(i64 %0, i64 %1\) #0 \{\n(.*?)\n\}""".r
+        """(?s)define internal i32 @(test_inner_\d+)\(i32 %0, i32 %1\) #0 \{\n(.*?)\n\}""".r
           .findFirstMatchIn(llvmIr)
           .getOrElse(fail(s"Missing named Direct body. IR:\n$llvmIr"))
 
@@ -215,7 +215,7 @@ class ClosureCodegenTest extends BaseEffFunSuite:
       val mainBody = functionBodyMatching(llvmIr, "test_main\\(\\) #0")
 
       assert(
-        """%struct\.__closure_env_\d+ = type \{ i64 \}""".r.findFirstIn(llvmIr).nonEmpty,
+        """%struct\.__closure_env_\d+ = type \{ i32 \}""".r.findFirstIn(llvmIr).nonEmpty,
         s"Expected borrow closure env type to contain captures only. IR:\n$llvmIr"
       )
       assert(
@@ -309,7 +309,7 @@ class ClosureCodegenTest extends BaseEffFunSuite:
     """
 
     compileAndGenerate(source, config = CompilerConfig.default.copy(noTco = false)).map { llvmIr =>
-      val loopBody = functionBodyMatching(llvmIr, "test_run\\(i64 %0\\) #0")
+      val loopBody = functionBodyMatching(llvmIr, "test_run\\(i32 %0\\) #0")
       val frees    = "call void @__free_String".r.findAllIn(loopBody).size
       val freeIdx  = loopBody.indexOf("call void @__free_String")
       // The back-edge is the last jump to the header; the entry block also jumps in.
@@ -336,10 +336,10 @@ class ClosureCodegenTest extends BaseEffFunSuite:
       """
 
     compileAndGenerate(source, config = CompilerConfig.default.copy(noTco = false)).map { llvmIr =>
-      val loopBody = functionBodyMatching(llvmIr, "test_loop\\(i64 %0, i64 %1\\) #0")
+      val loopBody = functionBodyMatching(llvmIr, "test_loop\\(i32 %0, i32 %1\\) #0")
 
       assert(
-        loopBody.contains("call i64 @test_add_"),
+        loopBody.contains("call i32 @test_add_"),
         s"Expected loopified body to call the Direct lambda entry. Body:\n$loopBody"
       )
       assert(
@@ -402,10 +402,10 @@ class ClosureCodegenTest extends BaseEffFunSuite:
       """
 
     compileAndGenerate(source, config = CompilerConfig.default.copy(noTco = false)).map { llvmIr =>
-      val loopBody = functionBodyMatching(llvmIr, "test_loop\\(i64 %0, i64 %1\\) #0")
+      val loopBody = functionBodyMatching(llvmIr, "test_loop\\(i32 %0, i32 %1\\) #0")
 
       assert(
-        loopBody.contains("call i64 @test_step_"),
+        loopBody.contains("call i32 @test_step_"),
         s"Expected the nested-shadowed Direct lambda to still codegen successfully. Body:\n$loopBody"
       )
     }
@@ -427,10 +427,10 @@ class ClosureCodegenTest extends BaseEffFunSuite:
       """
 
     compileAndGenerate(source, config = CompilerConfig.default.copy(noTco = false)).map { llvmIr =>
-      val loopBody = functionBodyMatching(llvmIr, "test_loop\\(i64 %0, i64 %1\\) #0")
+      val loopBody = functionBodyMatching(llvmIr, "test_loop\\(i32 %0, i32 %1\\) #0")
 
       assert(
-        loopBody.contains("call i64 @test_g_"),
+        loopBody.contains("call i32 @test_g_"),
         s"Expected the inner lambda param to shadow the outer Direct lambda. Body:\n$loopBody"
       )
     }
@@ -447,7 +447,7 @@ class ClosureCodegenTest extends BaseEffFunSuite:
     """
 
     compileAndGenerate(source).map { llvmIr =>
-      val envName = """%struct\.(__closure_env_\d+) = type \{ ptr, i64 \}""".r
+      val envName = """%struct\.(__closure_env_\d+) = type \{ ptr, i32 \}""".r
         .findFirstMatchIn(llvmIr)
         .map(_.group(1))
         .getOrElse(fail(s"Expected closure env type definition. IR:\n$llvmIr"))
@@ -464,7 +464,7 @@ class ClosureCodegenTest extends BaseEffFunSuite:
         s"Expected destructor slot store with TBAA tag. Body:\n$mainBody"
       )
       assert(
-        """store i64 (?:%\d+|[-]?\d+), ptr %\d+, !tbaa !\d+""".r.findFirstIn(mainBody).nonEmpty,
+        """store i32 (?:%\d+|[-]?\d+), ptr %\d+, !tbaa !\d+""".r.findFirstIn(mainBody).nonEmpty,
         s"Expected capture store with TBAA tag. Body:\n$mainBody"
       )
     }
@@ -483,10 +483,10 @@ class ClosureCodegenTest extends BaseEffFunSuite:
 
     compileAndGenerate(source).map { llvmIr =>
       val lambdaMatch =
-        """(?s)define internal %struct.String @(test_[A-Za-z0-9_]+)\(i64 %0, ptr %1\) #0 \{\n(.*?)\n\}""".r
+        """(?s)define internal %struct.String @(test_[A-Za-z0-9_]+)\(i32 %0, ptr %1\) #0 \{\n(.*?)\n\}""".r
           .findFirstMatchIn(llvmIr)
           .getOrElse(fail(s"Missing deferred lambda definition. IR:\n$llvmIr"))
-      val lambdaBody = lambdaMatch.group(2)
+      val lambdaBody = expandNativeAdapters(llvmIr, lambdaMatch.group(2))
 
       assert(
         llvmIr.contains("""@str.0 = private constant [6 x i8] c"lambda""""),
@@ -521,7 +521,7 @@ class ClosureCodegenTest extends BaseEffFunSuite:
 
     compileAndGenerate(source).map { llvmIr =>
       val loopMatch =
-        ("""(?s)define internal i64 @(test_loop_\d+)\(i64 %0, """ +
+        ("""(?s)define internal i32 @(test_loop_\d+)\(i32 %0, """ +
           """ptr align 8 dereferenceable\(16\) %1\) #0 \{\n(.*?)\n\}""").r
           .findFirstMatchIn(llvmIr)
           .getOrElse(fail(s"Missing recursive closure body. IR:\n$llvmIr"))
@@ -557,8 +557,8 @@ class ClosureCodegenTest extends BaseEffFunSuite:
 
     compileAndGenerate(source).map { llvmIr =>
       val innerMatch =
-        ("""(?s)define internal i64 @(test_inner_\d+)\(i64 %0, """ +
-          """ptr align 8 dereferenceable\(8\) %1\) #0 \{\n(.*?)\n\}""").r
+        ("""(?s)define internal i32 @(test_inner_\d+)\(i32 %0, """ +
+          """ptr align 4 dereferenceable\(4\) %1\) #0 \{\n(.*?)\n\}""").r
           .findFirstMatchIn(llvmIr)
           .getOrElse(fail(s"Missing named capturing closure body. IR:\n$llvmIr"))
 
@@ -679,7 +679,7 @@ class ClosureCodegenTest extends BaseEffFunSuite:
       """
 
     compileAndGenerate(source, config = CompilerConfig.default.copy(noTco = false)).map { llvmIr =>
-      val loopBody      = functionBodyMatching(llvmIr, "test_loop\\(i64 %0, i64 %1\\) #0")
+      val loopBody      = functionBodyMatching(llvmIr, "test_loop\\(i32 %0, i32 %1\\) #0")
       val envAllocCount = "alloca %struct.__closure_env_".r.findAllIn(loopBody).length
       val allocaIndex   = loopBody.indexOf("alloca %struct.__closure_env_")
       val loopBrIndex   = loopBody.indexOf("br label %loop.header")
@@ -718,7 +718,7 @@ class ClosureCodegenTest extends BaseEffFunSuite:
       """
 
     compileAndGenerate(source, config = CompilerConfig.default.copy(noTco = false)).map { llvmIr =>
-      val loopBody = functionBodyMatching(llvmIr, "test_loop\\(i64 %0, i64 %1\\) #0")
+      val loopBody = functionBodyMatching(llvmIr, "test_loop\\(i32 %0, i32 %1\\) #0")
 
       assert(
         loopBody.contains("alloca %struct.__closure_env_"),
@@ -743,7 +743,7 @@ class ClosureCodegenTest extends BaseEffFunSuite:
       """
 
     compileAndGenerate(source, config = CompilerConfig.default.copy(noTco = false)).map { llvmIr =>
-      val loopBody = functionBodyMatching(llvmIr, "test_loop\\(i64 %0, i64 %1\\) #0")
+      val loopBody = functionBodyMatching(llvmIr, "test_loop\\(i32 %0, i32 %1\\) #0")
 
       assert(
         loopBody.contains("alloca %struct.__closure_env_"),
@@ -762,7 +762,7 @@ class ClosureCodegenTest extends BaseEffFunSuite:
     """
 
     compileAndGenerate(source).map { llvmIr =>
-      val envName = """%struct\.(__closure_env_\d+) = type \{ ptr, i64 \}""".r
+      val envName = """%struct\.(__closure_env_\d+) = type \{ ptr, i32 \}""".r
         .findFirstMatchIn(llvmIr)
         .map(_.group(1))
         .getOrElse(fail(s"Expected closure env type definition. IR:\n$llvmIr"))
@@ -779,7 +779,7 @@ class ClosureCodegenTest extends BaseEffFunSuite:
         s"Expected destructor slot store with TBAA tag. Body:\n$mainBody"
       )
       assert(
-        """store i64 (?:%\d+|[-]?\d+), ptr %\d+, !tbaa !\d+""".r.findFirstIn(mainBody).nonEmpty,
+        """store i32 (?:%\d+|[-]?\d+), ptr %\d+, !tbaa !\d+""".r.findFirstIn(mainBody).nonEmpty,
         s"Expected capture store with TBAA tag. Body:\n$mainBody"
       )
     }

@@ -35,7 +35,7 @@ class PapCreationTest extends BaseEffFunSuite:
     """).map { ir =>
       val body = functionBody(ir, "test_loop")
       assert(body.contains("loop.header"), body)
-      assert(!body.contains("call i64 @test_loop"), body)
+      assert(!body.contains("call i32 @test_loop"), body)
       assert(body.contains("call void @test___free_"), body)
     }
   }
@@ -55,15 +55,15 @@ class PapCreationTest extends BaseEffFunSuite:
       """
 
     compileAndGenerate(source).map { ir =>
-      val body        = functionBody(ir, "test_main")
-      val firstCalls  = body.linesIterator.filter(_.contains("call i64 @test_first(")).toList
-      val secondCalls = body.linesIterator.filter(_.contains("call i64 @test_second(")).toList
+      val body        = expandNativeAdapters(ir, functionBody(ir, "test_main"))
+      val firstCalls  = body.linesIterator.filter(_.contains("call i32 @test_first(")).toList
+      val secondCalls = body.linesIterator.filter(_.contains("call i32 @test_second(")).toList
       assertEquals(firstCalls.size, 1, body)
       assertEquals(secondCalls.size, 1, body)
       assert(body.indexOf(firstCalls.head) < body.indexOf(secondCalls.head), body)
       assert(body.indexOf(secondCalls.head) < body.indexOf("call void @println("), body)
-      assertEquals(ir.linesIterator.count(_.contains("call i64 @test_first(")), 1, ir)
-      assertEquals(ir.linesIterator.count(_.contains("call i64 @test_second(")), 1, ir)
+      assertEquals(ir.linesIterator.count(_.contains("call i32 @test_first(")), 1, ir)
+      assertEquals(ir.linesIterator.count(_.contains("call i32 @test_second(")), 1, ir)
     }
   }
 
@@ -84,7 +84,7 @@ class PapCreationTest extends BaseEffFunSuite:
       assertEquals(body.linesIterator.count(_.contains("call void @test_signal(")), 1, body)
       assertEquals(ir.linesIterator.count(_.contains("call void @test_signal(")), 1, ir)
       val afterBody = functionBody(ir, "test_after")
-      assert(afterBody.contains("ret i64 %0"), afterBody)
+      assert(afterBody.contains("ret i32 %0"), afterBody)
     }
   }
 
@@ -101,8 +101,8 @@ class PapCreationTest extends BaseEffFunSuite:
 
     compileAndGenerate(source).map { ir =>
       val body   = functionBody(ir, "test_main")
-      val first  = body.indexOf("call i64 @test_first(")
-      val second = body.indexOf("call i64 @test_second(")
+      val first  = body.indexOf("call i32 @test_first(")
+      val second = body.indexOf("call i32 @test_second(")
       assert(first >= 0 && second > first, body)
     }
   }

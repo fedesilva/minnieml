@@ -1,8 +1,9 @@
 package mml.mmlclib.codegen.emitter
 
+import cats.syntax.all.*
 import mml.mmlclib.ast.*
 import mml.mmlclib.codegen.TargetAbi
-import mml.mmlclib.codegen.emitter.abis.AbiStrategy
+import mml.mmlclib.codegen.emitter.abis.NativeCallKey
 import mml.mmlclib.errors.{CompilationError, CompilerWarning}
 
 /** Helper for generating syntactically correct LLVM IR type definitions */
@@ -173,16 +174,19 @@ def getStructFieldTypesFromTypeSpec(
   * stored type definition to extract field types. Returns None if not a struct or parsing fails.
   */
 def getStructFieldTypes(llvmType: String, state: CodeGenState): Option[List[String]] =
-  if !llvmType.startsWith("%") then None
-  else
-    val typeName = llvmType.drop(1)
-    state.nativeTypes.get(typeName).flatMap { typeDef =>
-      // Parse "%TypeName = type { field1, field2 }" to extract fields
-      val pattern = """type \{ (.+) \}""".r
-      pattern.findFirstMatchIn(typeDef).map { m =>
-        m.group(1).split(",").map(_.trim).toList
-      }
-    }
+  val definition = state.nativeTypes
+    .get(llvmType.stripPrefix("%"))
+    .flatMap(_.split(" = type ", 2).lift(1))
+  TargetLayout.fields(definition.getOrElse(llvmType)).orElse {
+    state.resolvables.resolvables.values.collectFirst {
+      case ts: TypeStruct if llvmType == s"%struct.${ts.name}" =>
+        getStructFieldTypesFromTypeSpec(ts, state)
+      case td: TypeDef if llvmType == s"%struct.${td.name}" =>
+        td.typeSpec.collect { case ns: NativeStruct =>
+          ns.fields.traverse(f => getLlvmType(f._2, state)).toOption
+        }.flatten
+    }.flatten
+  }
 
 def resolveTypeStruct(typeSpec: Type, resolvables: ResolvablesIndex): Option[TypeStruct] =
   typeSpec match
@@ -234,68 +238,10 @@ def emitFunctionDeclaration(name: String, returnType: String, params: List[Strin
 /** Represents an error that occurred during code generation. */
 case class CodeGenError(message: String, node: Option[AstNode] = None) extends CompilationError
 
-/** Get size of LLVM type in bytes */
-def sizeOfLlvmType(llvmType: String): Int = llvmType match
-  case "i1" | "i8" => 1
-  case "i16" => 2
-  case "i32" | "float" => 4
-  case "i64" | "double" | "ptr" => 8
-  case "{ ptr, ptr }" => 16
-  case t if t.endsWith("*") => 8
-  case _ => 8
-
-/** Get alignment of LLVM type in bytes (for struct field offset calculation) */
-def alignOfLlvmType(llvmType: String): Int = llvmType match
-  case "i1" | "i8" => 1
-  case "i16" => 2
-  case "i32" | "float" => 4
-  case "i64" | "double" | "ptr" => 8
-  case "{ ptr, ptr }" => 8
-  case t if t.endsWith("*") => 8
-  case _ => 8
-
-/** Align offset to the given alignment boundary */
+/** Align offset to the given alignment boundary. */
 def alignTo(offset: Int, alignment: Int): Int =
   val mask = alignment - 1
   (offset + mask) & ~mask
-
-/** Compute size of an LLVM struct with proper alignment padding. */
-def sizeOfLlvmStruct(fields: List[String]): Int =
-  val endOffset = fields.foldLeft(0) { (offset, field) =>
-    alignTo(offset, alignOfLlvmType(field)) + sizeOfLlvmType(field)
-  }
-  val maxAlign =
-    if fields.isEmpty then 1
-    else fields.map(alignOfLlvmType).max
-  alignTo(endOffset, maxAlign)
-
-/** State-aware size of LLVM type — resolves named struct types via nativeTypes. */
-def sizeOfLlvmTypeResolved(llvmType: String, state: CodeGenState): Int =
-  if llvmType.startsWith("%") then
-    getStructFieldTypes(llvmType, state) match
-      case Some(fields) => sizeOfLlvmStructResolved(fields, state)
-      case None => sizeOfLlvmType(llvmType)
-  else sizeOfLlvmType(llvmType)
-
-/** State-aware alignment of LLVM type — resolves named struct types via nativeTypes. */
-def alignOfLlvmTypeResolved(llvmType: String, state: CodeGenState): Int =
-  if llvmType.startsWith("%") then
-    getStructFieldTypes(llvmType, state) match
-      case Some(fields) if fields.nonEmpty => fields.map(alignOfLlvmTypeResolved(_, state)).max
-      case _ => alignOfLlvmType(llvmType)
-  else alignOfLlvmType(llvmType)
-
-/** State-aware struct size with proper alignment padding for named field types. */
-def sizeOfLlvmStructResolved(fields: List[String], state: CodeGenState): Int =
-  val endOffset = fields.foldLeft(0) { (offset, field) =>
-    alignTo(offset, alignOfLlvmTypeResolved(field, state)) +
-      sizeOfLlvmTypeResolved(field, state)
-  }
-  val maxAlign =
-    if fields.isEmpty then 1
-    else fields.map(alignOfLlvmTypeResolved(_, state)).max
-  alignTo(endOffset, maxAlign)
-  alignTo(endOffset, maxAlign)
 
 enum TbaaNode derives CanEqual:
   case Root(name: String)
@@ -322,13 +268,14 @@ enum TbaaNode derives CanEqual:
   *   map of native type names to their LLVM IR definitions
   * @param functionDeclarations
   *   map of function names to their declarations
-  * 
-  * TODO: QA: This struct is getting large. Consider splitting into smaller components (e.g., TBAAState, AliasScopeState, etc.)
+  *
+  * TODO: QA: This struct is getting large. Consider splitting into smaller components (e.g.,
+  * TBAAState, AliasScopeState, etc.)
   */
 case class CodeGenState(
   moduleName:           String              = "",
+  layout:               TargetLayout        = TargetLayout.default,
   targetAbi:            TargetAbi           = TargetAbi.Default,
-  abi:                  AbiStrategy         = AbiStrategy.forTarget(TargetAbi.Default),
   nextRegister:         Int                 = 0,
   output:               List[String]        = List.empty,
   entryPrologueOutput:  List[String]        = List.empty,
@@ -356,10 +303,11 @@ case class CodeGenState(
   // Resolvables index for soft reference lookups
   resolvables: ResolvablesIndex = ResolvablesIndex(),
   // Deferred function definitions (expression-position lambdas compiled as separate functions)
-  deferredDefinitions:     List[String]        = List.empty,
-  callableEntries:         Map[String, String] = Map.empty,
-  nextAnonFnId:            Int                 = 0,
-  insideLoopifiedFunction: Boolean             = false
+  deferredDefinitions:     List[String]               = List.empty,
+  callableEntries:         Map[String, String]        = Map.empty,
+  nativeCallAdapters:      Map[NativeCallKey, String] = Map.empty,
+  nextAnonFnId:            Int                        = 0,
+  insideLoopifiedFunction: Boolean                    = false
 ):
   /** Returns a new state with an updated register counter. */
   def withRegister(reg: Int): CodeGenState =

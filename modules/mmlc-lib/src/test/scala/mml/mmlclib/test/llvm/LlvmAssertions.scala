@@ -6,13 +6,14 @@ import scala.util.matching.Regex
 
 /** Inspection assertions for the textual LLVM IR emitted by the compiler. */
 trait LlvmAssertions extends Assertions:
+  private val definitions = "(?ms)^define [^\\n]*?@([^\\n]+?)\\s+\\{\\n(.*?)^\\}".r
+
   /** Find exactly one definition by its literal LLVM symbol name. */
   protected def functionBody(ir: String, name: String)(using Location): String =
     functionBodyMatching(ir, s"${Regex.quote(name)}\\([^\\n]*")
 
   /** Match the entire signature after `@`, including parameters and attributes. */
   protected def functionBodyMatching(ir: String, signaturePattern: String)(using Location): String =
-    val definitions = "(?ms)^define [^\\n]*?@([^\\n]+?)\\s+\\{\\n(.*?)^\\}".r
     val matching = definitions
       .findAllMatchIn(ir.replace("\r\n", "\n"))
       .filter(m => signaturePattern.r.matches(m.group(1)))
@@ -21,6 +22,24 @@ trait LlvmAssertions extends Assertions:
       case List(definition) => definition.group(2).stripSuffix("\n")
       case Nil => fail(s"Missing function definition for $signaturePattern. IR:\n$ir")
       case _ => fail(s"Ambiguous function definition for $signaturePattern. IR:\n$ir")
+
+  /** Include native adapter bodies at their call sites for call-order assertions. The result is
+    * inspection text, not valid LLVM IR.
+    */
+  protected def expandNativeAdapters(ir: String, body: String): String =
+    val adapters = definitions
+      .findAllMatchIn(ir)
+      .filter(_.group(1).contains("inlinehint"))
+      .map(m => m.group(1).takeWhile(_ != '(') -> m.group(2))
+      .toMap
+    val call = "\\bcall\\b[^@\\n]*@([^\\s(]+)\\(".r
+    body.linesIterator
+      .map { line =>
+        call.findFirstMatchIn(line).flatMap(m => adapters.get(m.group(1))) match
+          case Some(adapter) => s"$line\n$adapter"
+          case None => line
+      }
+      .mkString("\n")
 
   private case class Block(label: String, instructions: List[String]):
     def phis: List[String] = instructions.filter(_.matches("%\\S+\\s*=\\s*phi\\b.*"))

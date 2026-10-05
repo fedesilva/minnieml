@@ -22,9 +22,10 @@ struct Big {
   a20: Int
 };
 
-// LCG constants (glibc-ish)
+// Bound the seed before multiplication so every Int input is safe.
 fn next(seed: Int): Int =
-  (seed * 1103515245 + 12345) % 2147483647;
+  let bounded = ((seed % 65536) + 65536) % 65536;
+  (bounded * 25173 + 13849) % 65536;
 ;
 
 pub fn main(): Unit =

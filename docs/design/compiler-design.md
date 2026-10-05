@@ -51,11 +51,16 @@ Module(
   members: List[Member],
   docComment: Option[DocComment],
   sourcePath: Option[String],
-  resolvables: ResolvablesIndex
+  resolvables: ResolvablesIndex,
+  linkDirective: Option[LinkDirective]
 )
 ```
 
-- **Top-level modules**: The CLI/test harness always provides a module name derived from the source path; there is no `module` keyword at file scope. The parser simply collects top-level members until EOF and wraps them in a `Module` with `Visibility.Public`.
+- **Top-level modules**: The CLI/test harness always provides a module name derived from the source path; there is no `module` keyword at file scope. The parser reads the optional link header and top-level members until EOF, wrapping them in a `Module`.
+- **Link header**: One optional `@link["name", ...];` precedes the members. `LinkDirective`
+  retains its span and ordered `LinkEntry` values, each with a name and source span.
+  Ingestion copies entries into `CompilerState.linkEntries`; semantic module copies preserve
+  the header. Malformed or misplaced headers produce recoverable `ParsingMemberError` nodes.
 - **Doc comments**: File-level doc comments apply to the first member; the parser does not attach them to the synthetic top-level module node.
 - **Visibility**: Three levels (`Public`, `Protected`, `Private`) are carried in the AST for future access control; not enforced yet. See semantics doc for meaning.
 
@@ -413,6 +418,9 @@ Each phase takes a `CompilerState`, returns an updated `CompilerState`, and reco
 
 `SemanticStage.rewrite` runs after stdlib injection and wires phases in this order:
 0. **Stdlib injection**: Adds prelude types, operators, and functions (with stable `stdlib::<name>` IDs).
+   `CString` is an owned native byte pointer. `to_cstr` borrows a `String` and returns an
+   allocated copy; its consuming `free_cstr` destructor binds to C's `free`. These use the
+   ordinary native allocation and scope-destruction rules, including borrowed captures.
 1. **DuplicateNameChecker**
 2. **IdAssigner**
 3. **TypeResolver**
@@ -956,7 +964,7 @@ field identities, unique field cleanup entries, and layout order. Every heap fie
 registered destructor and a matching cleanup entry; missing registrations accumulate errors.
 
 Type comparisons follow resolved aliases and unwrap single-type groups. Function parameters and
-return types are compared recursively, so `Int` and `Int64` are compatible inside function types,
+return types are compared recursively, so `Int` and `Int32` are compatible inside function types,
 and a destructor may return an alias of `Unit`. Named types retain their resolved declaration
 identities: separate native declarations remain distinct even when their LLVM representations match.
 
@@ -982,15 +990,15 @@ SizeT                          // i64
 Unit                           // void
 CharPtr                        // i8*
 FloatPtr                       // float*
-String                         // Struct: { length: Int64, data: CharPtr }
-IntArray                       // Struct: { length: Int64, data: CharPtr }
-StringArray                    // Struct: { length: Int64, data: CharPtr }
-FloatArray                     // Struct: { length: Int64, data: FloatPtr }
+String                         // Struct: { length: Int32, data: CharPtr }
+IntArray                       // Struct: { length: Int32, data: Int32Ptr }
+StringArray                    // Struct: { length: Int32, data: StringPtr }
+FloatArray                     // Struct: { length: Int32, data: FloatPtr }
 Buffer                         // Opaque pointer (i8*)
 Rng                            // Opaque pointer (i8*)
 
 // Type aliases
-Int   → Int64
+Int   → Int32
 Byte  → Int8
 Word  → Int8
 ```
@@ -1065,9 +1073,12 @@ fn rng_new_random(): Rng = @native[mem=alloc];
 fn rng_next(rng: Rng): Int = @native;
 fn rng_between(rng: Rng, min: Int, max: Int): Int = @native;
 
+fn int_to_int64(n: Int): Int64 = @native[tpl="sext i32 %operand to i64"];
+fn int64_to_str(n: Int64): String = @native[mem=alloc];
+
 // Float math
-fn int_to_float(n: Int): Float = @native[tpl="sitofp i64 %operand to float"];
-fn float_to_int(f: Float): Int = @native[tpl="fptosi float %operand to i64"];
+fn int_to_float(n: Int): Float = @native[tpl="sitofp i32 %operand to float"];
+fn float_to_int(f: Float): Int = @native[tpl="fptosi float %operand to i32"];
 fn sqrt(x: Float): Float = @native[tpl="call float @llvm.sqrt.f32(float %operand)"];
 fn fabs(x: Float): Float = @native[tpl="call float @llvm.fabs.f32(float %operand)"];
 
@@ -1136,6 +1147,55 @@ All type errors are wrapped as `SemanticError.TypeCheckingError` for uniform han
 When the compiler encounters a call to a function or operator with `@native[tpl="..."]`, it emits
 the template inline rather than generating a function call.
 
+### Native library inputs
+
+`CodegenStage` supplies `CompilerState.linkEntries` to one `LlvmToolchain.compile` entry point.
+It returns the compilation result and pipeline timings; `config.showTimings` controls timing
+collection, with an empty vector when disabled. Executable linking appends ordered, repeated
+`-l<name>` arguments after the program input. Runtime compilation, probing, optimization,
+assembly, and object emission receive no directive-derived library arguments.
+
+Library-mode validation adds one `DiscardedLinkDirective` warning per entry. The CLI prints
+`linking directives are discarded in library mode` at each entry's source location; quiet
+compilation APIs retain warnings in compiler state. Library output keeps its separate module
+and runtime objects, leaving dependencies to the consumer's final link. AST and IR modes
+retain the directive without library lookup; IR carries it in a comment.
+
+Runtime object and bitcode cache keys include the embedded runtime source contents as well
+as target and compiler flags. A cache miss refreshes the extracted C source before compiling.
+Changes to runtime layouts require rebuilding generated program objects and libraries.
+
+### Native aggregate ABI
+
+`TargetLayout` uses Clang's LLVM data layout to calculate recursive field offsets, padding,
+size, and alignment. Native argument packing, closure allocation, closure parameter metadata,
+and TBAA field offsets share this calculation.
+
+`NativeAbiPlan` classifies a complete native signature before emitting its declaration or
+call. The supported targets are x86-64 System V on Linux/macOS and AArch64 on Linux/macOS;
+other target ABIs produce a diagnostic. x86-64 classification merges integer and SSE fields
+into eightbytes, accounts for the return-buffer register, and spills an entire aggregate when
+either register bank is exhausted. AArch64 classification recognizes nested homogeneous
+floating aggregates and passes other small aggregates in general registers. LLVM lowers
+the resulting aggregate operands according to the target's register and stack rules. Apple
+AArch64 also requires narrow scalar extension attributes.
+
+The immutable plan contains direct, coerced, and indirect arguments and returns, with their
+attributes and alignment. Declarations, native calls, function-value adapters, destructors,
+and generated runtime calls use the same planner. Packing temporaries include space for
+rounded register loads and initialize storage; unpacking reconstructs the source aggregate.
+Calls needing scratch storage share a generated adapter for each native symbol and signature.
+The adapter owns packing and return temporaries until it returns, bounding their lifetime
+across loops and recursion. Its `inlinehint` attribute lets LLVM remove the boundary during
+optimization. Ordinary MML function entry and loopification use their existing lowering.
+Ordinary MML calls retain the MML function ABI.
+
+The deterministic C fixtures in `AggregateAbiTests` exercise mixed, nested, padded, small,
+large, and empty aggregates, argument-register exhaustion, and return values. Separate tests
+cross-compile against Clang for all four targets and execute on the host with sanitizers.
+The MML integration fixture runs frontend and codegen APIs, links their emitted module and
+runtime objects with a C driver, and checks native calls, function values, and destruction.
+
 ### Callable values
 
 Value lowering distinguishes emitted callable symbols from globals that store function values
@@ -1177,11 +1237,11 @@ Templates use placeholders that are substituted at compile time:
 3. Prepend `%result =` to the instruction
 4. Emit the instruction inline
 
-**Example**: For `fn ctpop(x: Int): Int = @native[tpl="call i64 @llvm.ctpop.i64(i64 %operand)"]`
+**Example**: For `fn ctpop(x: Int): Int = @native[tpl="call i32 @llvm.ctpop.i32(i32 %operand)"]`
 called as `ctpop 255`:
 
 ```llvm
-%1 = call i64 @llvm.ctpop.i64(i64 255)
+%1 = call i32 @llvm.ctpop.i32(i32 255)
 ```
 
 ### Use cases
@@ -1212,13 +1272,13 @@ consuming by `MemoryFunctionGenerator`), so no cloning happens inside the constr
 Given `struct Point { x: Int, y: Int }`, the generated LLVM IR is:
 
 ```llvm
-define %struct.Point @Point(i64 %0, i64 %1) #0 {
+define %struct.Point @Point(i32 %0, i32 %1) #0 {
 entry:
   %2 = alloca %struct.Point
   %3 = getelementptr %struct.Point, ptr %2, i32 0, i32 0
-  store i64 %0, ptr %3          ; x
+  store i32 %0, ptr %3          ; x
   %4 = getelementptr %struct.Point, ptr %2, i32 0, i32 1
-  store i64 %1, ptr %4          ; y
+  store i32 %1, ptr %4          ; y
   %5 = load %struct.Point, ptr %2
   ret %struct.Point %5
 }

@@ -7,8 +7,8 @@ import MmlWhitespace.*
 
 /** Parses a whole source file as a synthetic top-level module.
   *
-  * There is no surface `module ...` declaration in source files. The parser simply reads members
-  * until end-of-file and wraps them in a [[Module]] named by the caller.
+  * There is no surface `module ...` declaration in source files. The parser reads an optional link
+  * header followed by members until end-of-file and wraps them in a [[Module]] named by the caller.
   *
   * Example:
   * {{{
@@ -26,21 +26,23 @@ private[parser] def topLevelModuleP(
 )(using P[Any]): P[Module] =
   P(
     spP(info) ~
+      linkHeaderP(info).? ~
       membersP(info).rep ~
       spNoWsP(info) ~
       spP(info) ~
       End
-  ).map { case (start, members, end, _) =>
-    val membersList = members.toList
+  ).map { case (start, header, members, end, _) =>
+    val membersList = header.toList.flatMap(_.left.toOption) ++ members.toList
     val filteredMembers = membersList.lastOption match
       case Some(ParsingMemberError(_, _, None)) => membersList.dropRight(1)
       case _ => membersList
     Module(
-      source     = SourceOrigin.Loc(span(start, end)),
-      name       = name,
-      visibility = Visibility.Protected,
-      members    = filteredMembers,
-      docComment = None,
-      sourcePath = sourcePath
+      source        = SourceOrigin.Loc(span(start, end)),
+      name          = name,
+      visibility    = Visibility.Protected,
+      members       = filteredMembers,
+      docComment    = None,
+      sourcePath    = sourcePath,
+      linkDirective = header.flatMap(_.toOption)
     )
   }

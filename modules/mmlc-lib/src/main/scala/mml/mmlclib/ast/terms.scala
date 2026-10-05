@@ -187,15 +187,16 @@ case class Hole(
 
 sealed trait LiteralValue extends Term, FromSource
 
+/** Retains the magnitude of Int32.MinValue until prefix-operator rewriting applies its sign. */
 case class LiteralInt(
   source:   SourceOrigin,
-  value:    Int,
+  value:    Long,
   typeSpec: Option[Type],
   typeAsc:  Option[Type] = None
 ) extends LiteralValue
 
 object LiteralInt:
-  def apply(span: SrcSpan, value: Int): LiteralInt =
+  def apply(span: SrcSpan, value: Long): LiteralInt =
     new LiteralInt(
       SourceOrigin.Loc(span),
       value,
@@ -203,7 +204,7 @@ object LiteralInt:
       None
     )
 
-  def unapply(lit: LiteralInt): Option[(SourceOrigin, Int)] =
+  def unapply(lit: LiteralInt): Option[(SourceOrigin, Long)] =
     Some((lit.source, lit.value))
 
 case class LiteralString(

@@ -15,9 +15,9 @@ class FunctionSignatureTest extends BaseEffFunSuite:
 
     compileAndGenerate(source, config = config).map { llvmIr =>
       assert(llvmIr.contains("define i32 @main(i32 %0, ptr %1) #0"))
-      assert(llvmIr.contains("%args = call %struct.StringArray @mml_args_to_array(i32 %0, ptr %1)"))
-      assert(llvmIr.contains("call void @test_main(%struct.StringArray %args)"))
-      assert(llvmIr.contains("call void @__free_StringArray(%struct.StringArray %args)"))
+      assert(llvmIr.contains("call { i32, i64 } @mml_args_to_array(i32 %0, ptr %1)"))
+      assert(llvmIr.contains("call void @test_main(%struct.StringArray %"))
+      assert(llvmIr.contains("call void @__free_StringArray(i32 %"))
       assert(llvmIr.contains("call void @mml_sys_flush()"))
     }
   }
@@ -32,10 +32,10 @@ class FunctionSignatureTest extends BaseEffFunSuite:
 
     compileAndGenerate(source, config = config).map { llvmIr =>
       assert(llvmIr.contains("define i32 @main(i32 %0, ptr %1) #0"))
-      assert(llvmIr.contains("%args = call %struct.StringArray @mml_args_to_array(i32 %0, ptr %1)"))
-      assert(llvmIr.contains("%ret = call i64 @test_main(%struct.StringArray %args)"))
-      assert(llvmIr.contains("call void @__free_StringArray(%struct.StringArray %args)"))
-      assert(llvmIr.contains("%exitcode = trunc i64 %ret to i32"))
+      assert(llvmIr.contains("call { i32, i64 } @mml_args_to_array(i32 %0, ptr %1)"))
+      assert(llvmIr.contains("call i32 @test_main(%struct.StringArray %"))
+      assert(llvmIr.contains("call void @__free_StringArray(i32 %"))
+      assert("ret i32 %\\d+".r.findFirstIn(llvmIr).nonEmpty)
     }
   }
 
@@ -55,19 +55,19 @@ class FunctionSignatureTest extends BaseEffFunSuite:
     compileAndGenerate(source, config = config).map { llvmIr =>
 
       // Native functions keep original names (declarations)
-      // String is now 16 bytes (2 fields: length, data), decomposed to (i64, i8*) on x86_64 SysV ABI
+      // String occupies two integer eightbytes on x86_64 System V.
       assert(
-        llvmIr.contains("declare void @debug_print(i64, i8*)"),
+        llvmIr.contains("declare void @debug_print(i32, i64)"),
         s"debug_print declaration, got:\n$llvmIr"
       )
       assert(
-        llvmIr.contains("declare void @log_message(i64, i8*)"),
+        llvmIr.contains("declare void @log_message(i32, i64)"),
         s"log_message declaration, got:\n$llvmIr"
       )
       // join_strings: two String params (each decomposed) + struct return
       assert(
         llvmIr.contains(
-          "declare %struct.String @join_strings(i64, i8*, i64, i8*)"
+          "declare { i32, i64 } @join_strings(i32, i64, i32, i64)"
         ),
         s"join_strings declaration, got:\n$llvmIr"
       )
@@ -103,12 +103,12 @@ class FunctionSignatureTest extends BaseEffFunSuite:
         llvmIr.contains("declare void @log_message([2 x i64])"),
         s"log_message should use [2 x i64] param on aarch64, got:\n$llvmIr"
       )
-      // join_strings returns String (16 bytes) - returned as struct, params as [2 x i64]
+      // join_strings uses a two-word register image for its result and arguments.
       assert(
         llvmIr.contains(
-          "declare %struct.String @join_strings([2 x i64], [2 x i64])"
+          "declare [2 x i64] @join_strings([2 x i64], [2 x i64])"
         ),
-        s"join_strings should return struct directly on aarch64, got:\n$llvmIr"
+        s"join_strings should return its register image on aarch64, got:\n$llvmIr"
       )
     }
   }
@@ -154,19 +154,19 @@ class FunctionSignatureTest extends BaseEffFunSuite:
 
     compileAndGenerate(source, config = config).map { llvmIr =>
       assert(
-        llvmIr.contains("declare i64 @hfa_arg_d(%struct.Vec3d)"),
+        llvmIr.contains("declare i32 @hfa_arg_d([3 x double])"),
         s"HFA double arg should not be byval/split:\n$llvmIr"
       )
       assert(
-        llvmIr.contains("declare %struct.Vec3d @hfa_ret_d()"),
+        llvmIr.contains("declare [3 x double] @hfa_ret_d()"),
         s"HFA double return should not use sret:\n$llvmIr"
       )
       assert(
-        llvmIr.contains("declare i64 @hfa_arg_f(%struct.Vec4f)"),
+        llvmIr.contains("declare i32 @hfa_arg_f([4 x float])"),
         s"HFA float arg should not be byval/split:\n$llvmIr"
       )
       assert(
-        llvmIr.contains("declare %struct.Vec4f @hfa_ret_f()"),
+        llvmIr.contains("declare [4 x float] @hfa_ret_f()"),
         s"HFA float return should not use sret:\n$llvmIr"
       )
       assert(
@@ -190,12 +190,12 @@ class FunctionSignatureTest extends BaseEffFunSuite:
     compileAndGenerate(source).map { llvmIr =>
       // Definition should use module-prefixed mangled name
       assert(
-        llvmIr.contains("define internal i64 @test_op.star_star.2(i64 %0, i64 %1)"),
+        llvmIr.contains("define internal i32 @test_op.star_star.2(i32 %0, i32 %1)"),
         s"operator definition should use module-prefixed mangled name, got:\n$llvmIr"
       )
       // Call should use module-prefixed mangled name
       assert(
-        llvmIr.contains("call i64 @test_op.star_star.2("),
+        llvmIr.contains("call i32 @test_op.star_star.2("),
         s"operator call should use module-prefixed mangled name, got:\n$llvmIr"
       )
       // Should NOT contain unmangled operator name
@@ -216,12 +216,12 @@ class FunctionSignatureTest extends BaseEffFunSuite:
     compileAndGenerate(source).map { llvmIr =>
       // Definition should use module-prefixed mangled name
       assert(
-        llvmIr.contains("define internal i64 @test_op.bang.1(i64 %0)"),
+        llvmIr.contains("define internal i32 @test_op.bang.1(i32 %0)"),
         s"unary operator definition should use module-prefixed mangled name, got:\n$llvmIr"
       )
       // Call should use module-prefixed mangled name
       assert(
-        llvmIr.contains("call i64 @test_op.bang.1("),
+        llvmIr.contains("call i32 @test_op.bang.1("),
         s"unary operator call should use module-prefixed mangled name, got:\n$llvmIr"
       )
     }
@@ -259,12 +259,12 @@ class FunctionSignatureTest extends BaseEffFunSuite:
     compileAndGenerate(source).map { llvmIr =>
       // add10 should be a function with 2 params and module prefix
       assert(
-        llvmIr.contains("define internal i64 @test_add10(i64 %0, i64 %1)"),
+        llvmIr.contains("define internal i32 @test_add10(i32 %0, i32 %1)"),
         s"partial should have 2 params with module prefix, got:\n$llvmIr"
       )
       // main should call add10 with module prefix
       assert(
-        llvmIr.contains("call i64 @test_add10("),
+        llvmIr.contains("call i32 @test_add10("),
         s"main should call test_add10, got:\n$llvmIr"
       )
     }
@@ -281,12 +281,12 @@ class FunctionSignatureTest extends BaseEffFunSuite:
     compileAndGenerate(source).map { llvmIr =>
       // f should be a wrapper function with module prefix
       assert(
-        llvmIr.contains("define internal i64 @test_f(i64 %0, i64 %1)"),
+        llvmIr.contains("define internal i32 @test_f(i32 %0, i32 %1)"),
         s"alias should be eta-expanded to a module-prefixed function, got:\n$llvmIr"
       )
       // alias function should call original (also module-prefixed)
       assert(
-        llvmIr.contains("call i64 @test_add("),
+        llvmIr.contains("call i32 @test_add("),
         s"alias function should call module-prefixed original, got:\n$llvmIr"
       )
     }
@@ -309,12 +309,12 @@ class FunctionSignatureTest extends BaseEffFunSuite:
         s"Named top-level function should not be loaded as a fat-pointer global. IR:\n$llvmIr"
       )
       assert(
-        llvmIr.contains("define internal i64 @test_inc__closure_entry(i64 %0, ptr %1) #0"),
+        llvmIr.contains("define internal i32 @test_inc__closure_entry(i32 %0, ptr %1) #0"),
         s"Expected a named closure-entry wrapper for the higher-order arg. IR:\n$llvmIr"
       )
       assert(
         mainBody.contains(
-          "call i64 @test_apply({ ptr, ptr } { ptr @test_inc__closure_entry, ptr null })"
+          "call i32 @test_apply({ ptr, ptr } { ptr @test_inc__closure_entry, ptr null })"
         ),
         s"main should pass a first-class function value into apply. Body:\n$mainBody"
       )
@@ -333,7 +333,7 @@ class FunctionSignatureTest extends BaseEffFunSuite:
     compileAndGenerate(source).map { llvmIr =>
       val mainBody = functionBodyMatching(llvmIr, "test_main\\(\\) #0")
       val wrapperDefinitions =
-        """define internal i64 @test_inc__closure_entry\(i64 %0, ptr %1\) #0""".r
+        """define internal i32 @test_inc__closure_entry\(i32 %0, ptr %1\) #0""".r
           .findAllMatchIn(llvmIr)
           .length
       val materializations =
@@ -359,12 +359,12 @@ class FunctionSignatureTest extends BaseEffFunSuite:
       val mainBody = functionBodyMatching(llvmIr, "test_main\\(\\) #0")
 
       assert(
-        mainBody.contains("call i64 @test_inc(i64 1)"),
+        mainBody.contains("call i32 @test_inc(i32 1)"),
         s"Direct top-level call should use the emitted function symbol. Body:\n$mainBody"
       )
       assert(
         mainBody.contains(
-          "call i64 @test_apply({ ptr, ptr } { ptr @test_inc__closure_entry, ptr null }, i64 2)"
+          "call i32 @test_apply({ ptr, ptr } { ptr @test_inc__closure_entry, ptr null }, i32 2)"
         ),
         s"Higher-order top-level use should pass a first-class function value. Body:\n$mainBody"
       )
@@ -391,13 +391,13 @@ class FunctionSignatureTest extends BaseEffFunSuite:
         s"chooser should still lower as a fat-pointer global. IR:\n$llvmIr"
       )
       assert(
-        !mainBody.contains("call i64 @test_chooser("),
+        !mainBody.contains("call i32 @test_chooser("),
         s"Global function-valued binding must not be called as a direct symbol. Body:\n$mainBody"
       )
       assert(
         mainBody.contains("load { ptr, ptr }, ptr @test_chooser") &&
           mainBody.contains("extractvalue { ptr, ptr } %") &&
-          """call i64 %\d+\(i64 41, ptr %\d+\)""".r.findFirstIn(mainBody).nonEmpty,
+          """call i32 %\d+\(i32 41, ptr %\d+\)""".r.findFirstIn(mainBody).nonEmpty,
         s"Global function-valued binding should load and call through the fat pointer. Body:\n$mainBody"
       )
     }
@@ -417,7 +417,7 @@ class FunctionSignatureTest extends BaseEffFunSuite:
       val mainBody = functionBodyMatching(llvmIr, "test_main\\(\\) #0")
 
       assert(
-        """call i64 @test_f_\d+\(i64 41\)""".r.findFirstIn(mainBody).nonEmpty,
+        """call i32 @test_f_\d+\(i32 41\)""".r.findFirstIn(mainBody).nonEmpty,
         s"Expected local Direct lambda call to use a plain direct entry call. Body:\n$mainBody"
       )
       assert(
@@ -425,7 +425,7 @@ class FunctionSignatureTest extends BaseEffFunSuite:
         s"Local Direct lambda call should not extract from a fat pointer. Body:\n$mainBody"
       )
       assert(
-        """call i64 %\d+\(i64 41, ptr %\d+\)""".r.findFirstIn(mainBody).isEmpty,
+        """call i32 %\d+\(i32 41, ptr %\d+\)""".r.findFirstIn(mainBody).isEmpty,
         s"Local Direct lambda call should not use an indirect function pointer. Body:\n$mainBody"
       )
     }
@@ -448,18 +448,18 @@ class FunctionSignatureTest extends BaseEffFunSuite:
       val wrapperBody = functionBodyMatching(llvmIr, """test_add__closure_entry\([^\n]*\) #0""")
 
       assert(
-        forwardBody.contains("call i64 @test_apply2({ ptr, ptr } %0)") &&
+        forwardBody.contains("call i32 @test_apply2({ ptr, ptr } %0)") &&
           !forwardBody.contains("@test_inc"),
         s"forward should pass its local callable param through unchanged. Body:\n$forwardBody"
       )
       assert(
         mainBody.contains(
-          "call i64 @test_forward({ ptr, ptr } { ptr @test_add__closure_entry, ptr null })"
+          "call i32 @test_forward({ ptr, ptr } { ptr @test_add__closure_entry, ptr null })"
         ),
         s"main should still eta-expand the bare top-level add ref. Body:\n$mainBody"
       )
       assert(
-        wrapperBody.contains("call i64 @test_add(i64 %0, i64 %1)"),
+        wrapperBody.contains("call i32 @test_add(i32 %0, i32 %1)"),
         s"The top-level add wrapper should forward both arguments into test_add. Body:\n$wrapperBody"
       )
     }
@@ -477,17 +477,17 @@ class FunctionSignatureTest extends BaseEffFunSuite:
     compileAndGenerate(source).map { llvmIr =>
       // add10 should be a function with 2 params and module prefix
       assert(
-        llvmIr.contains("define internal i64 @test_add10(i64 %0, i64 %1)"),
+        llvmIr.contains("define internal i32 @test_add10(i32 %0, i32 %1)"),
         s"add10 should have 2 params with module prefix, got:\n$llvmIr"
       )
       // add10and20 should be a function with 1 param and module prefix
       assert(
-        llvmIr.contains("define internal i64 @test_add10and20(i64 %0)"),
+        llvmIr.contains("define internal i32 @test_add10and20(i32 %0)"),
         s"add10and20 should have 1 param with module prefix, got:\n$llvmIr"
       )
       // add10and20 should call add10 with module prefix
       assert(
-        llvmIr.contains("call i64 @test_add10("),
+        llvmIr.contains("call i32 @test_add10("),
         s"add10and20 should call test_add10, got:\n$llvmIr"
       )
     }
@@ -503,7 +503,7 @@ class FunctionSignatureTest extends BaseEffFunSuite:
     compileAndGenerate(source).map { llvmIr =>
       // main should call add3 with module prefix and 3 arguments
       assert(
-        llvmIr.contains("call i64 @test_add3(i64 1, i64 2, i64 3)"),
+        llvmIr.contains("call i32 @test_add3(i32 1, i32 2, i32 3)"),
         s"main should call test_add3 with all args, got:\n$llvmIr"
       )
     }
@@ -520,7 +520,7 @@ class FunctionSignatureTest extends BaseEffFunSuite:
     compileAndGenerate(source).map { llvmIr =>
       // wrapper should call helper with module prefix, x and 10
       assert(
-        llvmIr.contains("call i64 @test_helper(i64 %0, i64 10)"),
+        llvmIr.contains("call i32 @test_helper(i32 %0, i32 10)"),
         s"wrapper should call test_helper with param and literal, got:\n$llvmIr"
       )
     }
@@ -529,19 +529,19 @@ class FunctionSignatureTest extends BaseEffFunSuite:
   test("function with native template emits inline LLVM IR") {
     val source =
       """
-        fn ctpop(x: Int): Int = @native[tpl="call i64 @llvm.ctpop.i64(i64 %operand)"];;
+        fn ctpop(x: Int): Int = @native[tpl="call i32 @llvm.ctpop.i32(i32 %operand)"];;
         fn main(): Int = ctpop 255;;
       """
 
     compileAndGenerate(source).map { llvmIr =>
       // Should emit inline call to intrinsic, not a function call to ctpop
       assert(
-        llvmIr.contains("call i64 @llvm.ctpop.i64(i64"),
+        llvmIr.contains("call i32 @llvm.ctpop.i32(i32"),
         s"should emit inline intrinsic call, got:\n$llvmIr"
       )
       // Should NOT generate a function definition for ctpop
       assert(
-        !llvmIr.contains("define i64 @test_ctpop"),
+        !llvmIr.contains("define i32 @test_ctpop"),
         s"should NOT define ctpop as a function, got:\n$llvmIr"
       )
     }
@@ -550,15 +550,15 @@ class FunctionSignatureTest extends BaseEffFunSuite:
   test("function with native template and multiple args uses operand1, operand2") {
     val source =
       """
-        fn mymax(a: Int, b: Int): Int = @native[tpl="call i64 @llvm.smax.i64(i64 %operand1, i64 %operand2)"];;
+        fn mymax(a: Int, b: Int): Int = @native[tpl="call i32 @llvm.smax.i32(i32 %operand1, i32 %operand2)"];;
         fn main(): Int = mymax 10 20;;
       """
 
     compileAndGenerate(source).map { llvmIr =>
       // Should emit inline call with both operands substituted
       assert(
-        llvmIr.contains("call i64 @llvm.smax.i64(i64") &&
-          llvmIr.contains("i64 10") && llvmIr.contains("i64 20"),
+        llvmIr.contains("call i32 @llvm.smax.i32(i32") &&
+          llvmIr.contains("i32 10") && llvmIr.contains("i32 20"),
         s"should emit inline intrinsic call with both args, got:\n$llvmIr"
       )
     }
@@ -637,7 +637,7 @@ class FunctionSignatureTest extends BaseEffFunSuite:
       """
 
     compileAndGenerate(source).map { llvmIr =>
-      // String is NativeStruct (passed as {i64, i8*}), not a pointer — no noalias on return
+      // String is NativeStruct (passed as {i32, i8*}), not a pointer — no noalias on return
       assert(
         !llvmIr.contains("noalias %struct.String @join_strings"),
         s"String return should NOT have noalias, got:\n$llvmIr"
@@ -671,7 +671,7 @@ class FunctionSignatureTest extends BaseEffFunSuite:
       """
 
     compileAndGenerate(source).map { llvmIr =>
-      // String is a NativeStruct ({i64, ptr}), not a pointer type
+      // String is a NativeStruct ({i32, ptr}), not a pointer type
       // The user function definition should NOT have noalias on the struct param
       assert(
         llvmIr.contains("define internal void @test_consume_str(%struct.String %0)"),
@@ -771,11 +771,11 @@ class FunctionSignatureTest extends BaseEffFunSuite:
 
     compileAndGenerate(source).map { llvmIr =>
       assert(
-        llvmIr.contains("declare i1 @str_eq("),
+        llvmIr.contains("declare zeroext i1 @str_eq("),
         s"declaration should use stdlib symbol str_eq, got:\n$llvmIr"
       )
       assert(
-        llvmIr.contains("call i1 @str_eq("),
+        llvmIr.contains("call zeroext i1 @str_eq("),
         s"call should use stdlib symbol str_eq, got:\n$llvmIr"
       )
     }
@@ -790,7 +790,7 @@ class FunctionSignatureTest extends BaseEffFunSuite:
 
     compileAndGenerate(source).map { llvmIr =>
       assert(
-        llvmIr.contains("define internal i64 @test_helper()"),
+        llvmIr.contains("define internal i32 @test_helper()"),
         s"non-pub function should have internal linkage, got:\n$llvmIr"
       )
     }
@@ -813,26 +813,26 @@ class FunctionSignatureTest extends BaseEffFunSuite:
       """
 
     compileAndGenerate(source).map { llvmIr =>
-      val fSig = """define internal i64 @test_f_\d+\(i64 %0, i64 %1\) #0""".r
-      val gSig = """define internal i64 @test_g_\d+\(i64 %0, i64 %1\) #0""".r
+      val fSig = """define internal i32 @test_f_\d+\(i32 %0, i32 %1\) #0""".r
+      val gSig = """define internal i32 @test_g_\d+\(i32 %0, i32 %1\) #0""".r
       assert(
         fSig.findFirstIn(llvmIr).nonEmpty,
-        s"f should take (x, a) as two i64 params. IR:\n$llvmIr"
+        s"f should take (x, a) as two i32 params. IR:\n$llvmIr"
       )
       assert(
         gSig.findFirstIn(llvmIr).nonEmpty,
-        s"g should take (y, a_threaded) as two i64 params. IR:\n$llvmIr"
+        s"g should take (y, a_threaded) as two i32 params. IR:\n$llvmIr"
       )
 
-      val gBody = functionBodyMatching(llvmIr, """test_g_\d+\(i64 %0, i64 %1\) #0""")
+      val gBody = functionBodyMatching(llvmIr, """test_g_\d+\(i32 %0, i32 %1\) #0""")
       assert(
-        """call i64 @test_f_\d+\(i64 %0, i64 %1\)""".r.findFirstIn(gBody).nonEmpty,
+        """call i32 @test_f_\d+\(i32 %0, i32 %1\)""".r.findFirstIn(gBody).nonEmpty,
         s"g's call to f must use g's own params (y=%0, a_threaded=%1). Body:\n$gBody"
       )
 
-      val outerBody = functionBodyMatching(llvmIr, """test_outer\(i64 %0\) #0""")
+      val outerBody = functionBodyMatching(llvmIr, """test_outer\(i32 %0\) #0""")
       assert(
-        """call i64 @test_g_\d+\(i64 1, i64 %0\)""".r.findFirstIn(outerBody).nonEmpty,
+        """call i32 @test_g_\d+\(i32 1, i32 %0\)""".r.findFirstIn(outerBody).nonEmpty,
         s"outer must call g with (1, a=%0). Body:\n$outerBody"
       )
     }
@@ -863,7 +863,7 @@ class FunctionSignatureTest extends BaseEffFunSuite:
       """
 
     compileAndGenerate(source).map { llvmIr =>
-      val loopSig = """define internal i64 @test_loop_\d+\(i64 %0, i64 %1\) #0""".r
+      val loopSig = """define internal i32 @test_loop_\d+\(i32 %0, i32 %1\) #0""".r
       assert(
         loopSig.findFirstIn(llvmIr).nonEmpty,
         s"loop should take its Direct sibling operand as a trailing capture param. IR:\n$llvmIr"
@@ -873,10 +873,10 @@ class FunctionSignatureTest extends BaseEffFunSuite:
         s"Direct loop should not materialize a closure env or store a Function value. IR:\n$llvmIr"
       )
 
-      val loopBody          = functionBodyMatching(llvmIr, """test_loop_\d+\(i64 %0, i64 %1\) #0""")
-      val directSiblingCall = """call i64 @test_sibling_\d+\(i64 %\d+, i64 %\d+\)""".r
+      val loopBody          = functionBodyMatching(llvmIr, """test_loop_\d+\(i32 %0, i32 %1\) #0""")
+      val directSiblingCall = """call i32 @test_sibling_\d+\(i32 %\d+, i32 %\d+\)""".r
       assert(
-        loopBody.contains("loop.header:") && loopBody.contains("phi i64"),
+        loopBody.contains("loop.header:") && loopBody.contains("phi i32"),
         s"loop should remain loopified. Body:\n$loopBody"
       )
       assert(
@@ -942,11 +942,11 @@ class FunctionSignatureTest extends BaseEffFunSuite:
 
     compileAndGenerate(source).map { llvmIr =>
       assert(
-        llvmIr.contains("define i64 @test_exported()"),
+        llvmIr.contains("define i32 @test_exported()"),
         s"pub function should have no internal linkage, got:\n$llvmIr"
       )
       assert(
-        !llvmIr.contains("define internal i64 @test_exported()"),
+        !llvmIr.contains("define internal i32 @test_exported()"),
         s"pub function must not have internal linkage, got:\n$llvmIr"
       )
     }
@@ -970,13 +970,13 @@ class FunctionSignatureTest extends BaseEffFunSuite:
         s"Named top-level function should not be loaded as a fat-pointer global. IR:\n$llvmIr"
       )
       assert(
-        """define internal i64 @test__anon_\d+\(i64 %0, ptr %1\) #0""".r
+        """define internal i32 @test__anon_\d+\(i32 %0, ptr %1\) #0""".r
           .findFirstIn(llvmIr)
           .nonEmpty,
         s"Expected an eta-expanded wrapper function for the higher-order arg. IR:\n$llvmIr"
       )
       assert(
-        """call i64 @test_apply\(\{ ptr, ptr \} \{ ptr @test__anon_\d+, ptr null \}\)""".r
+        """call i32 @test_apply\(\{ ptr, ptr \} \{ ptr @test__anon_\d+, ptr null \}\)""".r
           .findFirstIn(mainBody)
           .nonEmpty,
         s"main should pass a first-class function value into apply. Body:\n$mainBody"
@@ -997,7 +997,7 @@ class FunctionSignatureTest extends BaseEffFunSuite:
       val mainBody = functionBodyMatching(llvmIr, "test_main\\(\\) #0")
 
       assert(
-        """call i64 @test_f_\d+\(i64 41, ptr null\)""".r.findFirstIn(mainBody).nonEmpty,
+        """call i32 @test_f_\d+\(i32 41, ptr null\)""".r.findFirstIn(mainBody).nonEmpty,
         s"Expected local static closure call to use a direct closure-entry call. Body:\n$mainBody"
       )
       assert(
@@ -1005,7 +1005,7 @@ class FunctionSignatureTest extends BaseEffFunSuite:
         s"Static null-env closure call should not extract from a fat pointer. Body:\n$mainBody"
       )
       assert(
-        """call i64 %\d+\(i64 41, ptr %\d+\)""".r.findFirstIn(mainBody).isEmpty,
+        """call i32 %\d+\(i32 41, ptr %\d+\)""".r.findFirstIn(mainBody).isEmpty,
         s"Static null-env closure call should not use an indirect function pointer. Body:\n$mainBody"
       )
     }
@@ -1027,18 +1027,18 @@ class FunctionSignatureTest extends BaseEffFunSuite:
       val anonBody    = functionBodyMatching(llvmIr, """test__anon_\d+\([^\n]*\) #0""")
 
       assert(
-        forwardBody.contains("call i64 @test_apply2({ ptr, ptr } %0)") &&
+        forwardBody.contains("call i32 @test_apply2({ ptr, ptr } %0)") &&
           !forwardBody.contains("@test_inc"),
         s"forward should pass its local callable param through unchanged. Body:\n$forwardBody"
       )
       assert(
-        """call i64 @test_forward\(\{ ptr, ptr \} \{ ptr @test__anon_\d+, ptr null \}\)""".r
+        """call i32 @test_forward\(\{ ptr, ptr \} \{ ptr @test__anon_\d+, ptr null \}\)""".r
           .findFirstIn(mainBody)
           .nonEmpty,
         s"main should still eta-expand the bare top-level add ref. Body:\n$mainBody"
       )
       assert(
-        anonBody.contains("call i64 @test_add(i64 %0, i64 %1)"),
+        anonBody.contains("call i32 @test_add(i32 %0, i32 %1)"),
         s"The top-level add wrapper should forward both arguments into test_add. Body:\n$anonBody"
       )
     }

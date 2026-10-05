@@ -74,7 +74,7 @@ object TXExprInt:
     *   case TXExprInt(value) => value == 42
     * ```
     */
-  def unapply(expr: Expr): Option[Int] =
+  def unapply(expr: Expr): Option[Long] =
     expr match
       case TXExpr1(LiteralInt(_, value)) => Some(value)
       case _ => None

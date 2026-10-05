@@ -102,15 +102,14 @@ private def callDestructor(
 ): Either[CodeGenError, CodeGenState] =
   state.resolvables.lookup(targetId) match
     case Some(b: Bnd) =>
-      val ref     = Ref(node.source, b.name, resolvedId = targetId.some, typeSpec = b.typeSpec)
-      val name    = getResolvedName(ref, state)
-      val native  = isNativeBinding(b)
-      val rawArgs = List((value, llvmType))
-      val (args, lowered) =
-        if native then state.abi.lowerArgs(rawArgs, state)
-        else (rawArgs, state)
-      val withDeclaration =
-        if native then lowered.withFunctionDeclaration(name, "void", args.map(_._2))
-        else lowered
-      withDeclaration.emit(emitCall(None, None, name, args.map((op, tpe) => (tpe, op)))).asRight
+      val ref    = Ref(node.source, b.name, resolvedId = targetId.some, typeSpec = b.typeSpec)
+      val name   = getResolvedName(ref, state)
+      val native = isNativeBinding(b)
+      if native then
+        mml.mmlclib.codegen.emitter.abis.NativeAbiPlan
+          .classify("void", List(llvmType), state)
+          .map { plan =>
+            plan.emitCall(name, List(value), plan.declare(name, state))._2
+          }
+      else state.emit(emitCall(None, None, name, List((llvmType, value)))).asRight
     case _ => CodeGenError("Missing destruction target", node.some).asLeft

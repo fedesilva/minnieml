@@ -1,0 +1,22 @@
+// CString allocations remain alive through borrowed captures and are freed at scope exit.
+fn c_strlen(s: CString): Int = @native[name="strlen"];;
+
+pub fn main(): Int =
+  let source = "Hello " ++ "Raylib!";
+  let text = to_cstr source;
+  let empty = to_cstr "";
+
+  fn check(n: Int): Bool =
+    if n == 0 then
+      c_strlen empty == 0;
+    else
+      if c_strlen text == 13 then check (n - 1);
+      else false;
+      ;
+    ;
+  ;
+
+  if check 10000 and str_eq source "Hello Raylib!" then 0;
+  else 1;
+  ;
+;

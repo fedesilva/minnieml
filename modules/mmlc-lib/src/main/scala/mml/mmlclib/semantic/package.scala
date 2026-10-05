@@ -263,6 +263,17 @@ def injectBasicTypes(module: Module): Module =
     ),
     TypeDef(
       source   = SourceOrigin.Synth,
+      nameNode = Name.synth("CString"),
+      typeSpec = NativePointer(
+        syntheticSource,
+        "i8",
+        memEffect = MemEffect.Alloc.some,
+        freeFn    = "free_cstr".some
+      ).some,
+      id = stdlibId("typedef", "CString")
+    ),
+    TypeDef(
+      source   = SourceOrigin.Synth,
       nameNode = Name.synth("RawPtr"),
       typeSpec = Some(NativePrimitive(syntheticSource, "ptr")),
       id       = stdlibId("typedef", "RawPtr")
@@ -274,7 +285,7 @@ def injectBasicTypes(module: Module): Module =
         NativeStruct(
           syntheticSource,
           List(
-            "length" -> stdlibTypeRef("Int64"),
+            "length" -> stdlibTypeRef("Int32"),
             "data" -> stdlibTypeRef("CharPtr")
           ),
           memEffect = Some(MemEffect.Alloc)
@@ -307,7 +318,7 @@ def injectBasicTypes(module: Module): Module =
     TypeAlias(
       source   = SourceOrigin.Synth,
       nameNode = Name.synth("Int"),
-      typeRef  = stdlibTypeRef("Int64"),
+      typeRef  = stdlibTypeRef("Int32"),
       id       = stdlibId("typealias", "Int")
     ),
     TypeAlias(
@@ -345,6 +356,12 @@ def injectBasicTypes(module: Module): Module =
     ),
     TypeDef(
       source   = SourceOrigin.Synth,
+      nameNode = Name.synth("Int32Ptr"),
+      typeSpec = Some(NativePointer(syntheticSource, "i32")),
+      id       = stdlibId("typedef", "Int32Ptr")
+    ),
+    TypeDef(
+      source   = SourceOrigin.Synth,
       nameNode = Name.synth("StringPtr"),
       typeSpec = Some(NativePointer(syntheticSource, "%struct.String")),
       id       = stdlibId("typedef", "StringPtr")
@@ -364,8 +381,8 @@ def injectBasicTypes(module: Module): Module =
         NativeStruct(
           syntheticSource,
           List(
-            "length" -> stdlibTypeRef("Int64"),
-            "data" -> stdlibTypeRef("Int64Ptr")
+            "length" -> stdlibTypeRef("Int32"),
+            "data" -> stdlibTypeRef("Int32Ptr")
           ),
           memEffect = Some(MemEffect.Alloc)
         )
@@ -379,7 +396,7 @@ def injectBasicTypes(module: Module): Module =
         NativeStruct(
           syntheticSource,
           List(
-            "length" -> stdlibTypeRef("Int64"),
+            "length" -> stdlibTypeRef("Int32"),
             "data" -> stdlibTypeRef("StringPtr")
           ),
           memEffect = Some(MemEffect.Alloc)
@@ -394,7 +411,7 @@ def injectBasicTypes(module: Module): Module =
         NativeStruct(
           syntheticSource,
           List(
-            "length" -> stdlibTypeRef("Int64"),
+            "length" -> stdlibTypeRef("Int32"),
             "data" -> stdlibTypeRef("FloatPtr")
           ),
           memEffect = Some(MemEffect.Alloc)
@@ -607,20 +624,22 @@ def injectCommonFunctions(module: Module): Module =
     TypeRef(syntheticSource, name, stdlibTypeId(name), Nil)
 
   // Helper function to create TypeRef for basic types
-  def stringType = stdlibTypeRef("String")
-  def intType    = stdlibTypeRef("Int")
-  def boolType   = stdlibTypeRef("Bool")
-  def floatType  = stdlibTypeRef("Float")
-  def unitType   = stdlibTypeRef("Unit")
-  def bufferType = stdlibTypeRef("Buffer")
-  def rngType    = stdlibTypeRef("Rng")
+  def stringType  = stdlibTypeRef("String")
+  def cstringType = stdlibTypeRef("CString")
+  def intType     = stdlibTypeRef("Int")
+  def boolType    = stdlibTypeRef("Bool")
+  def floatType   = stdlibTypeRef("Float")
+  def unitType    = stdlibTypeRef("Unit")
+  def bufferType  = stdlibTypeRef("Buffer")
+  def rngType     = stdlibTypeRef("Rng")
 
   // Helper to create a function as Bnd(Lambda)
   def mkFn(
-    name:       String,
-    params:     List[FnParam],
-    returnType: Type,
-    memEffect:  Option[MemEffect] = None
+    name:         String,
+    params:       List[FnParam],
+    returnType:   Type,
+    memEffect:    Option[MemEffect] = None,
+    nativeSymbol: Option[String]    = None
   ): Bnd =
     val arity = params.size match
       case 0 => CallableArity.Nullary
@@ -635,7 +654,10 @@ def injectCommonFunctions(module: Module): Module =
       originalName  = name,
       mangledName   = name
     )
-    val body = Expr(syntheticSource, List(NativeImpl(syntheticSource, memEffect = memEffect)))
+    val body = Expr(
+      syntheticSource,
+      List(NativeImpl(syntheticSource, memEffect = memEffect, nativeSymbol = nativeSymbol))
+    )
     val lambda = Lambda(
       source   = SourceOrigin.Synth,
       params   = params,
@@ -793,6 +815,12 @@ def injectCommonFunctions(module: Module): Module =
       List(FnParam(SourceOrigin.Synth, Name.synth("a"), typeAsc = Some(stringType))),
       intType
     ),
+    mkFn(
+      "to_cstr",
+      List(FnParam(SourceOrigin.Synth, Name.synth("s"), typeAsc = stringType.some)),
+      cstringType,
+      MemEffect.Alloc.some
+    ),
     // Random number generator
     mkFn(
       "rng_new",
@@ -899,18 +927,30 @@ def injectCommonFunctions(module: Module): Module =
       ),
       unitType
     ),
+    mkFn(
+      "int64_to_str",
+      List(FnParam(SourceOrigin.Synth, Name.synth("a"), typeAsc = stdlibTypeRef("Int64").some)),
+      stringType,
+      MemEffect.Alloc.some
+    ),
+    mkFnWithTpl(
+      "int_to_int64",
+      List(FnParam(SourceOrigin.Synth, Name.synth("i"), typeAsc = intType.some)),
+      stdlibTypeRef("Int64"),
+      "sext i32 %operand to i64"
+    ),
     // Conversion functions (template-based)
     mkFnWithTpl(
       "int_to_float",
       List(FnParam(SourceOrigin.Synth, Name.synth("i"), typeAsc = Some(intType))),
       floatType,
-      "sitofp i64 %operand to float"
+      "sitofp i32 %operand to float"
     ),
     mkFnWithTpl(
       "float_to_int",
       List(FnParam(SourceOrigin.Synth, Name.synth("f"), typeAsc = Some(floatType))),
       intType,
-      "fptosi float %operand to i64"
+      "fptosi float %operand to i32"
     ),
     mkFnWithTpl(
       "sqrt",
@@ -952,6 +992,14 @@ def injectCommonFunctions(module: Module): Module =
       Some(MemEffect.Alloc)
     ),
     // Memory management free functions - params are consuming (take ownership)
+    mkFn(
+      "free_cstr",
+      List(
+        FnParam(SourceOrigin.Synth, Name.synth("s"), typeAsc = cstringType.some, consuming = true)
+      ),
+      unitType,
+      nativeSymbol = "free".some
+    ),
     mkFn(
       "__free_String",
       List(
