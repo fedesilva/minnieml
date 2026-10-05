@@ -1,7 +1,5 @@
 #!/usr/bin/env python3
 
-from random import Random
-
 
 def partition(arr, low, high):
     pivot = arr[high]
@@ -24,9 +22,11 @@ def quicksort(arr, low, high):
 
 
 def run_sort(size):
-    # Same value range as the signed LCG benchmarks, with Python's own seeded input.
-    rng = Random(42)
-    arr = [rng.randrange(-99999, 100000) for _ in range(size)]
+    arr = []
+    seed = 42
+    for _ in range(size):
+        seed = (seed * 25173 + 13849) % 65536
+        arr.append(seed)
     quicksort(arr, 0, size - 1)
     return arr[size // 2]
 

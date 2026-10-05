@@ -6,7 +6,6 @@ import mml.mmlclib.codegen.{
   LlvmCompilationError,
   LlvmIrEmitter,
   LlvmToolchain,
-  PipelineTiming,
   TargetAbi
 }
 import mml.mmlclib.util.pipe.*
@@ -84,7 +83,8 @@ object CodegenStage:
               case Right(result) =>
                 // Lift codegen warnings to compiler state
                 val stateWithWarnings = result.warnings.foldLeft(abiState)(_.addWarning(_))
-                stateWithWarnings.withLlvmIr(result.ir)
+                val header = state.module.linkDirective.map(d => s"; ${d.syntax}\n").getOrElse("")
+                stateWithWarnings.withLlvmIr(header + result.ir)
               case Left(error) => abiState.addError(error).withCanEmitCode(false)
           case _ => state
     }
@@ -141,13 +141,13 @@ object CodegenStage:
       case Some(target) if state.canEmitCode && state.llvmIr.nonEmpty =>
         val irPath = llvmIrPath(state)
 
-        val compileIo =
-          if state.config.showTimings then
-            LlvmToolchain.compileWithTimings(irPath, state.config, state.resolvedTriple, target)
-          else
-            LlvmToolchain
-              .compile(irPath, state.config, state.resolvedTriple, target)
-              .map(_ -> Vector.empty[PipelineTiming])
+        val compileIo = LlvmToolchain.compile(
+          irPath,
+          state.config,
+          state.resolvedTriple,
+          target,
+          state.linkEntries
+        )
 
         compileIo.map { case (result, stepTimings) =>
           val withSteps = stepTimings.foldLeft(state) { (s, t) =>

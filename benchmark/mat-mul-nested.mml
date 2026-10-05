@@ -7,9 +7,9 @@ fn fill_matrix(arr: IntArray, n: Int, seed: Int): Unit =
 
   fn fill_matrix_loop(i: Int, current_seed: Int): Unit =
     if i < size then
-      let next_seed = (current_seed * 1664525) + 1013904223;
-      // Keep numbers small to avoid immediate overflow during multiplication.
-      unsafe_ar_int_set arr i (next_seed % 100);
+      let next_seed = (current_seed * 25173 + 13849) % 65536;
+      // Values in [-50, 49] keep the 500x500 products and trace within Int32.
+      unsafe_ar_int_set arr i ((next_seed % 100) - 50);
       fill_matrix_loop (i + 1) next_seed;
     ;
   ;

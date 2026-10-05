@@ -42,12 +42,9 @@ fn quicksort(arr: IntArray, low: Int, high: Int): Unit =
 // Standard Linear Congruential Generator for deterministic random numbers
 fn fill_random(arr: IntArray, seed: Int, i: Int, size: Int): Unit =
   if i < size then
-    // LCG: next = (prev * 1664525 + 1013904223) % 2^32
-    // We simulate 32-bit wrap with bitwise AND if needed, or just let it ride on 64-bit
-    let next = (seed * 1664525) + 1013904223;
-    // Keep it positive and manageable for sort checking
-    let val = next % 100000;
-    unsafe_ar_int_set arr i val;
+    // LCG state stays in [0, 65535]; multiply and add fit Int32.
+    let next = (seed * 25173 + 13849) % 65536;
+    unsafe_ar_int_set arr i next;
     fill_random arr next (i + 1) size;
   ;
 ;

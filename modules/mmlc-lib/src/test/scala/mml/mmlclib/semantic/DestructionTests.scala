@@ -186,7 +186,7 @@ class DestructionTests extends BaseEffFunSuite:
     }
   }
 
-  List("Int64", "Count").foreach { annotation =>
+  List("Int32", "Count").foreach { annotation =>
     test(s"closure destruction accepts $annotation aliases in function types") {
       semNotFailed(s"""
         type Number = Int;

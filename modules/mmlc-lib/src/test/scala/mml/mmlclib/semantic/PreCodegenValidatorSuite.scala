@@ -83,11 +83,12 @@ class PreCodegenValidatorSuite extends BaseEffFunSuite:
       }
   }
 
-  test("binary mode main function must have Unit or Int64 return type") {
-    val source          = """
+  test("binary mode main function must have Unit, Int32 or Int64 return type") {
+    val source = """
       pub fn main(): String = "hello";;
     """
-    val expectedMessage = "Entry point 'main' must have a return type of 'Unit' or 'Int64'"
+    val expectedMessage =
+      "Entry point 'main' must have a return type of 'Unit', 'Int32', or 'Int64'"
     FrontEndApi
       .compile(source, "Test", CompilerConfig.default.copy(mode = CompilationMode.Exe))
       .value

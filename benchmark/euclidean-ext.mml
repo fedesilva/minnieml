@@ -60,7 +60,7 @@ fn rsa_bench_loop(i: Int, n: Int, p: Int, sum: Int): Int =
 ;
 
 pub fn main(): Unit =
-  let p = 1000000007;  // Large prime
+  let p = 10007;  // Prime small enough for Int32 products and checksum
   let n = 10000;
   
   let result = rsa_bench_loop 2 n p 0;

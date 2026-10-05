@@ -83,7 +83,7 @@ class OpPrecedenceTests extends BaseEffFunSuite:
               // First argument should be literal 1
               args.head match
                 case Expr(_, List(LiteralInt(_, firstVal)), _, _) =>
-                  assertEquals(clue(firstVal), clue(1), "First argument should be 1")
+                  assertEquals(clue(firstVal), clue(1L), "First argument should be 1")
                 case _ =>
                   fail(
                     s"Expected first argument to be literal 1, got: ${prettyPrintAst(args.head)}"
@@ -101,7 +101,7 @@ class OpPrecedenceTests extends BaseEffFunSuite:
                   // Check first inner arg is literal 1
                   timesArgs.head match
                     case Expr(_, List(LiteralInt(_, innerFirstVal)), _, _) =>
-                      assertEquals(clue(innerFirstVal), clue(1), "Inner first arg should be 1")
+                      assertEquals(clue(innerFirstVal), clue(1L), "Inner first arg should be 1")
                     case _ =>
                       fail(
                         s"Expected inner first arg to be literal 1, got: ${prettyPrintAst(timesArgs.head)}"
@@ -110,7 +110,7 @@ class OpPrecedenceTests extends BaseEffFunSuite:
                   // Check second inner arg is literal 2
                   timesArgs(1) match
                     case Expr(_, List(LiteralInt(_, innerSecondVal)), _, _) =>
-                      assertEquals(clue(innerSecondVal), clue(2), "Inner second arg should be 2")
+                      assertEquals(clue(innerSecondVal), clue(2L), "Inner second arg should be 2")
                     case _ =>
                       fail(
                         s"Expected inner second arg to be literal 2, got: ${prettyPrintAst(timesArgs(1))}"
@@ -154,7 +154,7 @@ class OpPrecedenceTests extends BaseEffFunSuite:
               // First argument should be literal 1
               firstArg match
                 case Expr(_, List(LiteralInt(_, firstVal)), _, _) =>
-                  assertEquals(clue(firstVal), clue(1), "First argument should be 1")
+                  assertEquals(clue(firstVal), clue(1L), "First argument should be 1")
                 case _ =>
                   fail(s"Expected first argument to be literal 1, got: ${prettyPrintAst(firstArg)}")
 
@@ -175,7 +175,7 @@ class OpPrecedenceTests extends BaseEffFunSuite:
                         case Expr(_, List(LiteralInt(_, multFirstVal)), _, _) =>
                           assertEquals(
                             clue(multFirstVal),
-                            clue(1),
+                            clue(1L),
                             "Multiplication first arg should be 1"
                           )
                         case _ =>
@@ -188,7 +188,7 @@ class OpPrecedenceTests extends BaseEffFunSuite:
                         case Expr(_, List(LiteralInt(_, multSecondVal)), _, _) =>
                           assertEquals(
                             clue(multSecondVal),
-                            clue(2),
+                            clue(2L),
                             "Multiplication second arg should be 2"
                           )
                         case _ =>
@@ -203,7 +203,7 @@ class OpPrecedenceTests extends BaseEffFunSuite:
                   // Second argument should be literal 3
                   lit3Expr match
                     case Expr(_, List(LiteralInt(_, divSecondVal)), _, _) =>
-                      assertEquals(clue(divSecondVal), clue(3), "Division second arg should be 3")
+                      assertEquals(clue(divSecondVal), clue(3L), "Division second arg should be 3")
                     case _ =>
                       fail(
                         s"Expected division second arg to be literal 3, got: ${prettyPrintAst(lit3Expr)}"
@@ -246,7 +246,7 @@ class OpPrecedenceTests extends BaseEffFunSuite:
               // First argument should be literal 1
               firstArg match
                 case Expr(_, List(LiteralInt(_, firstVal)), _, _) =>
-                  assertEquals(clue(firstVal), clue(1), "First argument should be 1")
+                  assertEquals(clue(firstVal), clue(1L), "First argument should be 1")
                 case _ =>
                   fail(s"Expected first argument to be literal 1, got: ${prettyPrintAst(firstArg)}")
 
@@ -261,7 +261,7 @@ class OpPrecedenceTests extends BaseEffFunSuite:
                     case Expr(_, List(LiteralInt(_, multFirstVal)), _, _) =>
                       assertEquals(
                         clue(multFirstVal),
-                        clue(1),
+                        clue(1L),
                         "Multiplication first arg should be 1"
                       )
                     case _ =>
@@ -285,7 +285,7 @@ class OpPrecedenceTests extends BaseEffFunSuite:
                         case Expr(_, List(LiteralInt(_, expFirstVal)), _, _) =>
                           assertEquals(
                             clue(expFirstVal),
-                            clue(2),
+                            clue(2L),
                             "Exponentiation first arg should be 2"
                           )
                         case _ =>
@@ -298,7 +298,7 @@ class OpPrecedenceTests extends BaseEffFunSuite:
                         case Expr(_, List(LiteralInt(_, expSecondVal)), _, _) =>
                           assertEquals(
                             clue(expSecondVal),
-                            clue(3),
+                            clue(3L),
                             "Exponentiation second arg should be 3"
                           )
                         case _ =>
@@ -350,7 +350,7 @@ class OpPrecedenceTests extends BaseEffFunSuite:
               // Argument should be literal 4
               args.head match
                 case Expr(_, List(LiteralInt(_, factVal)), _, _) =>
-                  assertEquals(clue(factVal), clue(4), "Argument should be 4")
+                  assertEquals(clue(factVal), clue(4L), "Argument should be 4")
                 case _ =>
                   fail(s"Expected argument to be literal 4, got: ${prettyPrintAst(args.head)}")
             case other =>
@@ -401,7 +401,7 @@ class OpPrecedenceTests extends BaseEffFunSuite:
                       // Check factorial argument is 4
                       factArgs.head match
                         case Expr(_, List(LiteralInt(_, factVal)), _, _) =>
-                          assertEquals(clue(factVal), clue(4), "Factorial argument should be 4")
+                          assertEquals(clue(factVal), clue(4L), "Factorial argument should be 4")
                         case _ =>
                           fail(
                             s"Expected factorial argument to be 4, got: ${prettyPrintAst(factArgs.head)}"
@@ -425,7 +425,7 @@ class OpPrecedenceTests extends BaseEffFunSuite:
                   // Check factorial argument is 2
                   factArgs.head match
                     case Expr(_, List(LiteralInt(_, factVal)), _, _) =>
-                      assertEquals(clue(factVal), clue(2), "Factorial argument should be 2")
+                      assertEquals(clue(factVal), clue(2L), "Factorial argument should be 2")
                     case _ =>
                       fail(
                         s"Expected factorial argument to be 2, got: ${prettyPrintAst(factArgs.head)}"
@@ -484,7 +484,7 @@ class OpPrecedenceTests extends BaseEffFunSuite:
                       // Check factorial argument is 4
                       factArgs.head match
                         case Expr(_, List(LiteralInt(_, factVal)), _, _) =>
-                          assertEquals(clue(factVal), clue(4), "Factorial argument should be 4")
+                          assertEquals(clue(factVal), clue(4L), "Factorial argument should be 4")
                         case _ =>
                           fail(
                             s"Expected factorial argument to be 4, got: ${prettyPrintAst(factArgs.head)}"
@@ -508,7 +508,7 @@ class OpPrecedenceTests extends BaseEffFunSuite:
                   // Check factorial argument is 2
                   factArgs.head match
                     case Expr(_, List(LiteralInt(_, factVal)), _, _) =>
-                      assertEquals(clue(factVal), clue(2), "Factorial argument should be 2")
+                      assertEquals(clue(factVal), clue(2L), "Factorial argument should be 2")
                     case _ =>
                       fail(
                         s"Expected factorial argument to be 2, got: ${prettyPrintAst(factArgs.head)}"
@@ -553,7 +553,7 @@ class OpPrecedenceTests extends BaseEffFunSuite:
               // Argument should be literal 3
               args.head match
                 case Expr(_, List(LiteralInt(_, val3)), _, _) =>
-                  assertEquals(clue(val3), clue(3), "Argument should be 3")
+                  assertEquals(clue(val3), clue(3L), "Argument should be 3")
                 case _ =>
                   fail(s"Expected argument to be literal 3, got: ${prettyPrintAst(args.head)}")
             case other =>
@@ -596,7 +596,7 @@ class OpPrecedenceTests extends BaseEffFunSuite:
                   // Check unary minus argument is 3
                   unaryArgs.head match
                     case Expr(_, List(LiteralInt(_, val3)), _, _) =>
-                      assertEquals(clue(val3), clue(3), "Unary minus argument should be 3")
+                      assertEquals(clue(val3), clue(3L), "Unary minus argument should be 3")
                     case _ =>
                       fail(
                         s"Expected unary minus argument to be 3, got: ${prettyPrintAst(unaryArgs.head)}"
@@ -616,7 +616,7 @@ class OpPrecedenceTests extends BaseEffFunSuite:
                   // Check unary minus argument is 2
                   unaryArgs.head match
                     case Expr(_, List(LiteralInt(_, val2)), _, _) =>
-                      assertEquals(clue(val2), clue(2), "Unary minus argument should be 2")
+                      assertEquals(clue(val2), clue(2L), "Unary minus argument should be 2")
                     case _ =>
                       fail(
                         s"Expected unary minus argument to be 2, got: ${prettyPrintAst(unaryArgs.head)}"
@@ -667,14 +667,18 @@ class OpPrecedenceTests extends BaseEffFunSuite:
                     case firstArg :: secondArg :: Nil =>
                       firstArg match
                         case Expr(_, List(LiteralInt(_, firstVal)), _, _) =>
-                          assertEquals(clue(firstVal), clue(1), "First argument to + should be 1")
+                          assertEquals(clue(firstVal), clue(1L), "First argument to + should be 1")
                         case _ =>
                           fail(s"Expected first argument to + to be literal 1, got: $firstArg")
 
                       // Second argument to + should be 2
                       secondArg match
                         case Expr(_, List(LiteralInt(_, secondVal)), _, _) =>
-                          assertEquals(clue(secondVal), clue(2), "Second argument to + should be 2")
+                          assertEquals(
+                            clue(secondVal),
+                            clue(2L),
+                            "Second argument to + should be 2"
+                          )
                         case _ =>
                           fail(
                             s"Expected second argument to + to be literal 2, got: ${prettyPrintAst(secondArg)}"
@@ -691,7 +695,7 @@ class OpPrecedenceTests extends BaseEffFunSuite:
               // Right argument should be literal 3
               rightArg match
                 case Expr(_, List(LiteralInt(_, val3)), _, _) =>
-                  assertEquals(clue(val3), clue(3), "Right argument should be 3")
+                  assertEquals(clue(val3), clue(3L), "Right argument should be 3")
                 case _ =>
                   fail(s"Expected right argument to be literal 3, got: ${prettyPrintAst(rightArg)}")
             case other =>
@@ -737,7 +741,7 @@ class OpPrecedenceTests extends BaseEffFunSuite:
                   // First inner argument should be literal 1
                   innerFirstArg match
                     case Expr(_, List(LiteralInt(_, firstVal)), _, _) =>
-                      assertEquals(clue(firstVal), clue(1), "First argument should be 1")
+                      assertEquals(clue(firstVal), clue(1L), "First argument should be 1")
                     case _ =>
                       fail(
                         s"Expected first inner argument to be literal 1, got: ${prettyPrintAst(innerFirstArg)}"
@@ -746,7 +750,7 @@ class OpPrecedenceTests extends BaseEffFunSuite:
                   // Second inner argument should be literal 2
                   innerSecondArg match
                     case Expr(_, List(LiteralInt(_, secondVal)), _, _) =>
-                      assertEquals(clue(secondVal), clue(2), "Second inner argument should be 2")
+                      assertEquals(clue(secondVal), clue(2L), "Second inner argument should be 2")
                     case _ =>
                       fail(
                         s"Expected second inner argument to be literal 2, got: ${prettyPrintAst(innerSecondArg)}"
@@ -759,7 +763,7 @@ class OpPrecedenceTests extends BaseEffFunSuite:
               // Second argument to outer subtraction should be literal 3
               secondArg match
                 case Expr(_, List(LiteralInt(_, thirdVal)), _, _) =>
-                  assertEquals(clue(thirdVal), clue(3), "Second outer argument should be 3")
+                  assertEquals(clue(thirdVal), clue(3L), "Second outer argument should be 3")
                 case _ =>
                   fail(
                     s"Expected second outer argument to be literal 3, got: ${prettyPrintAst(secondArg)}"
@@ -797,7 +801,7 @@ class OpPrecedenceTests extends BaseEffFunSuite:
               // First argument should be literal 2
               firstArg match
                 case Expr(_, List(LiteralInt(_, firstVal)), _, _) =>
-                  assertEquals(clue(firstVal), clue(2), "First argument should be 2")
+                  assertEquals(clue(firstVal), clue(2L), "First argument should be 2")
                 case _ =>
                   fail(s"Expected first argument to be literal 2, got: ${prettyPrintAst(firstArg)}")
 
@@ -815,7 +819,7 @@ class OpPrecedenceTests extends BaseEffFunSuite:
                   // First inner argument should be literal 3
                   innerFirstArg match
                     case Expr(_, List(LiteralInt(_, thirdVal)), _, _) =>
-                      assertEquals(clue(thirdVal), clue(3), "First inner argument should be 3")
+                      assertEquals(clue(thirdVal), clue(3L), "First inner argument should be 3")
                     case _ =>
                       fail(
                         s"Expected first inner argument to be literal 3, got: ${prettyPrintAst(innerFirstArg)}"
@@ -824,7 +828,7 @@ class OpPrecedenceTests extends BaseEffFunSuite:
                   // Second inner argument should be literal 2
                   innerSecondArg match
                     case Expr(_, List(LiteralInt(_, fourthVal)), _, _) =>
-                      assertEquals(clue(fourthVal), clue(2), "Second inner argument should be 2")
+                      assertEquals(clue(fourthVal), clue(2L), "Second inner argument should be 2")
                     case _ =>
                       fail(
                         s"Expected second inner argument to be literal 2, got: ${prettyPrintAst(innerSecondArg)}"
@@ -873,7 +877,7 @@ class OpPrecedenceTests extends BaseEffFunSuite:
                   // The argument to unary minus should be literal 2
                   minusArgs.head match
                     case Expr(_, List(LiteralInt(_, firstVal)), _, _) =>
-                      assertEquals(clue(firstVal), clue(2), "Argument to unary - should be 2")
+                      assertEquals(clue(firstVal), clue(2L), "Argument to unary - should be 2")
                     case _ =>
                       fail(
                         s"Expected argument to unary - to be literal 2, got: ${prettyPrintAst(minusArgs.head)}"
@@ -886,7 +890,7 @@ class OpPrecedenceTests extends BaseEffFunSuite:
               // Second argument should be literal 2
               secondArg match
                 case Expr(_, List(LiteralInt(_, secondVal)), _, _) =>
-                  assertEquals(clue(secondVal), clue(2), "Second argument should be 2")
+                  assertEquals(clue(secondVal), clue(2L), "Second argument should be 2")
                 case _ =>
                   fail(
                     s"Expected second argument to be literal 2, got: ${prettyPrintAst(secondArg)}"
@@ -937,7 +941,7 @@ class OpPrecedenceTests extends BaseEffFunSuite:
                   // Inner argument should be literal 3
                   innerArgs.head match
                     case Expr(_, List(LiteralInt(_, val3)), _, _) =>
-                      assertEquals(clue(val3), clue(3), "Inner argument should be 3")
+                      assertEquals(clue(val3), clue(3L), "Inner argument should be 3")
                     case _ =>
                       fail(
                         s"Expected inner argument to be literal 3, got: ${prettyPrintAst(innerArgs.head)}"
@@ -997,7 +1001,7 @@ class OpPrecedenceTests extends BaseEffFunSuite:
                         case Expr(_, List(LiteralInt(_, firstVal)), _, _) =>
                           assertEquals(
                             clue(firstVal),
-                            clue(1),
+                            clue(1L),
                             "First argument in addition should be 1"
                           )
                         case _ =>
@@ -1009,7 +1013,7 @@ class OpPrecedenceTests extends BaseEffFunSuite:
                         case Expr(_, List(LiteralInt(_, secondVal)), _, _) =>
                           assertEquals(
                             clue(secondVal),
-                            clue(2),
+                            clue(2L),
                             "Second argument in addition should be 2"
                           )
                         case _ =>
@@ -1041,7 +1045,7 @@ class OpPrecedenceTests extends BaseEffFunSuite:
                         case Expr(_, List(LiteralInt(_, thirdVal)), _, _) =>
                           assertEquals(
                             clue(thirdVal),
-                            clue(3),
+                            clue(3L),
                             "First argument in subtraction should be 3"
                           )
                         case _ =>
@@ -1053,7 +1057,7 @@ class OpPrecedenceTests extends BaseEffFunSuite:
                         case Expr(_, List(LiteralInt(_, fourthVal)), _, _) =>
                           assertEquals(
                             clue(fourthVal),
-                            clue(4),
+                            clue(4L),
                             "Second argument in subtraction should be 4"
                           )
                         case _ =>
@@ -1072,7 +1076,7 @@ class OpPrecedenceTests extends BaseEffFunSuite:
               // Second argument to division should be literal 5
               secondArg match
                 case Expr(_, List(LiteralInt(_, fifthVal)), _, _) =>
-                  assertEquals(clue(fifthVal), clue(5), "Second division argument should be 5")
+                  assertEquals(clue(fifthVal), clue(5L), "Second division argument should be 5")
                 case _ =>
                   fail(
                     s"Expected second division argument to be literal 5, got: ${prettyPrintAst(secondArg)}"
@@ -1135,7 +1139,7 @@ class OpPrecedenceTests extends BaseEffFunSuite:
                   // Inner argument should be literal 3
                   innerArgs.head match
                     case Expr(_, List(LiteralInt(_, val3)), _, _) =>
-                      assertEquals(clue(val3), clue(3), "Inner argument should be 3")
+                      assertEquals(clue(val3), clue(3L), "Inner argument should be 3")
                     case _ =>
                       fail(
                         s"Expected inner argument to be literal 3, got: ${prettyPrintAst(innerArgs.head)}"
@@ -1174,7 +1178,7 @@ class OpPrecedenceTests extends BaseEffFunSuite:
               // First argument should be literal 3
               firstArg match
                 case Expr(_, List(LiteralInt(_, firstVal)), _, _) =>
-                  assertEquals(clue(firstVal), clue(3), "First argument should be 3")
+                  assertEquals(clue(firstVal), clue(3L), "First argument should be 3")
                 case _ =>
                   fail(s"Expected first argument to be literal 3, got: $firstArg")
 
@@ -1188,7 +1192,7 @@ class OpPrecedenceTests extends BaseEffFunSuite:
                   // Check unary minus argument is 4
                   minusArgs.head match
                     case Expr(_, List(LiteralInt(_, val4)), _, _) =>
-                      assertEquals(clue(val4), clue(4), "Unary minus argument should be 4")
+                      assertEquals(clue(val4), clue(4L), "Unary minus argument should be 4")
                     case _ =>
                       fail(
                         s"Expected unary minus argument to be 4, got: ${prettyPrintAst(minusArgs.head)}"
@@ -1242,7 +1246,11 @@ class OpPrecedenceTests extends BaseEffFunSuite:
                   // First inner argument should be literal 1
                   innerFirstArg match
                     case Expr(_, List(LiteralInt(_, firstVal)), _, _) =>
-                      assertEquals(clue(firstVal), clue(1), "First argument to inner + should be 1")
+                      assertEquals(
+                        clue(firstVal),
+                        clue(1L),
+                        "First argument to inner + should be 1"
+                      )
                     case _ =>
                       fail(
                         s"Expected first argument to inner + to be literal 1, got: $innerFirstArg"
@@ -1262,13 +1270,13 @@ class OpPrecedenceTests extends BaseEffFunSuite:
                       // Check exponentiation arguments
                       expFirstArg match
                         case Expr(_, List(LiteralInt(_, secondVal)), _, _) =>
-                          assertEquals(clue(secondVal), clue(2), "First argument to ^ should be 2")
+                          assertEquals(clue(secondVal), clue(2L), "First argument to ^ should be 2")
                         case _ =>
                           fail(s"Expected first argument to ^ to be literal 2, got: $expFirstArg")
 
                       expSecondArg match
                         case Expr(_, List(LiteralInt(_, thirdVal)), _, _) =>
-                          assertEquals(clue(thirdVal), clue(3), "Second argument to ^ should be 3")
+                          assertEquals(clue(thirdVal), clue(3L), "Second argument to ^ should be 3")
                         case _ =>
                           fail(s"Expected second argument to ^ to be literal 3, got: $expSecondArg")
                     case _ =>
@@ -1283,7 +1291,7 @@ class OpPrecedenceTests extends BaseEffFunSuite:
               // Second argument to outer addition should be literal 4
               secondArg match
                 case Expr(_, List(LiteralInt(_, fourthVal)), _, _) =>
-                  assertEquals(clue(fourthVal), clue(4), "Second argument to outer + should be 4")
+                  assertEquals(clue(fourthVal), clue(4L), "Second argument to outer + should be 4")
                 case _ =>
                   fail(s"Expected second argument to outer + to be literal 4, got: $secondArg")
             case other =>
@@ -1330,14 +1338,14 @@ class OpPrecedenceTests extends BaseEffFunSuite:
               // First argument should be literal 1
               firstArg match
                 case Expr(_, List(LiteralInt(_, firstVal)), _, _) =>
-                  assertEquals(clue(firstVal), clue(1), "First argument should be 1")
+                  assertEquals(clue(firstVal), clue(1L), "First argument should be 1")
                 case _ =>
                   fail(s"Expected first argument to be literal 1, got: ${prettyPrintAst(firstArg)}")
 
               // Second argument should be literal 2
               secondArg match
                 case Expr(_, List(LiteralInt(_, secondVal)), _, _) =>
-                  assertEquals(clue(secondVal), clue(2), "Second argument should be 2")
+                  assertEquals(clue(secondVal), clue(2L), "Second argument should be 2")
                 case _ =>
                   fail(
                     s"Expected second argument to be literal 2, got: ${prettyPrintAst(secondArg)}"
@@ -1360,7 +1368,7 @@ class OpPrecedenceTests extends BaseEffFunSuite:
               // Argument should be literal 1
               args.head match
                 case Expr(_, List(LiteralInt(_, val1)), _, _) =>
-                  assertEquals(clue(val1), clue(1), "Argument should be 1")
+                  assertEquals(clue(val1), clue(1L), "Argument should be 1")
                 case _ =>
                   fail(s"Expected argument to be literal 1, got: ${prettyPrintAst(args.head)}")
             case other =>

@@ -106,7 +106,7 @@ class DestructionCodegenTests extends BaseEffFunSuite:
     compileAndGenerate(source).map { ir =>
       val bodies = "(?s)define [^\\n]*\\{\\n(.*?)\\n\\}".r
         .findAllMatchIn(ir)
-        .map(_.group(1))
+        .map(m => expandNativeAdapters(ir, m.group(1)))
         .toList
       val destructor = bodies
         .find(b =>
@@ -206,9 +206,9 @@ class DestructionCodegenTests extends BaseEffFunSuite:
           .fold(e => fail(e.toString), _.ir)
         assertEquals("call void @test___free_Pair\\(%struct.Pair %".r.findAllIn(ir).size, 1)
         assert(!ir.contains("declare void @test___free_Pair"), ir)
-        val pairBody = functionBody(ir, "test___free_Pair")
+        val pairBody = expandNativeAdapters(ir, functionBody(ir, "test___free_Pair"))
         val nativeSignature =
-          if abi == TargetAbi.X86_64 then "call void @__free_String(i64 "
+          if abi == TargetAbi.X86_64 then "call void @__free_String(i32 "
           else "call void @__free_String([2 x i64] "
         assert(pairBody.contains(nativeSignature), pairBody)
       }

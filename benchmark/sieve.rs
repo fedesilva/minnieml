@@ -1,18 +1,18 @@
-fn init_sieve(arr: &mut [i64], mut i: i64, size: i64) {
+fn init_sieve(arr: &mut [i32], mut i: i32, size: i32) {
     while i < size {
         arr[i as usize] = 1;
         i += 1;
     }
 }
 
-fn clear_multiples(arr: &mut [i64], factor: i64, mut num: i64, size: i64) {
+fn clear_multiples(arr: &mut [i32], factor: i32, mut num: i32, size: i32) {
     while num < size {
         arr[num as usize] = 0;
         num += factor;
     }
 }
 
-fn find_next_prime(arr: &[i64], mut i: i64, limit: i64) -> i64 {
+fn find_next_prime(arr: &[i32], mut i: i32, limit: i32) -> i32 {
     while i <= limit {
         if arr[i as usize] == 1 {
             return i;
@@ -22,7 +22,7 @@ fn find_next_prime(arr: &[i64], mut i: i64, limit: i64) -> i64 {
     0
 }
 
-fn isqrt(n: i64, mut guess: i64) -> i64 {
+fn isqrt(n: i32, mut guess: i32) -> i32 {
     loop {
         let next = (guess + n / guess) / 2;
         if next >= guess {
@@ -32,9 +32,9 @@ fn isqrt(n: i64, mut guess: i64) -> i64 {
     }
 }
 
-fn count_primes(arr: &[i64], size: i64) -> i64 {
-    let mut count: i64 = 1;
-    let mut i: i64 = 0;
+fn count_primes(arr: &[i32], size: i32) -> i32 {
+    let mut count: i32 = 1;
+    let mut i: i32 = 0;
     while i < size {
         if arr[i as usize] == 1 {
             count += 1;
@@ -44,15 +44,15 @@ fn count_primes(arr: &[i64], size: i64) -> i64 {
     count
 }
 
-fn run_sieve(limit: i64) -> i64 {
+fn run_sieve(limit: i32) -> i32 {
     let size = (limit + 1) / 2;
-    let mut arr = vec![0i64; size as usize];
+    let mut arr = vec![0i32; size as usize];
     init_sieve(&mut arr, 0, size);
     arr[0] = 0;
 
     let q = isqrt(limit, limit / 2);
 
-    let mut factor: i64 = 3;
+    let mut factor: i32 = 3;
     while factor <= q {
         let next = find_next_prime(&arr, factor / 2, q / 2);
         if next == 0 {

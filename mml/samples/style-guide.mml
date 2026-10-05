@@ -30,7 +30,7 @@ type DocBuffer = @native[mem=heap, t=*i8];
 type DocHandle = @native[t=*i8, mem=heap, free=close_handle];
 
 type DocMyStr = @native[mem=heap, free=destroy_str] {
-  length: Int64,
+  length: Int32,
   data: DocCharPtr
 };
 
@@ -57,7 +57,7 @@ let user_name = u.name;
 let answer = 42: Int;
 let label = "ok": String;
 
-let primitive_int64: Int64 = 1;
+let primitive_int64: Int64 = int_to_int64 1;
 let primitive_bool: Bool = true;
 let primitive_unit: Unit = ();
 let primitive_string: String = "string";
@@ -118,7 +118,7 @@ let operator_precedence_result = x * sum + cache_size;
 
 op %% (a: Int, b: Int): Int 80 left = @native[tpl="srem %type %operand1, %operand2"];;
 
-fn doc_ctpop(x: Int): Int = @native[tpl="call i64 @llvm.ctpop.i64(i64 %operand)"];;
+fn doc_ctpop(x: Int): Int = @native[tpl="call i32 @llvm.ctpop.i32(i32 %operand)"];;
 
 fn take_ownership(~s: String): Unit = ();;
 

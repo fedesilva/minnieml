@@ -23,9 +23,8 @@ fn bubble_sort(arr: IntArray): Unit =
 
 fn fill_random(arr: IntArray, seed: Int, i: Int, size: Int): Unit =
   if i < size then
-    let next = (seed * 1664525) + 1013904223;
-    let value = next % 100000;
-    unsafe_ar_int_set arr i value;
+    let next = (seed * 25173 + 13849) % 65536;
+    unsafe_ar_int_set arr i next;
     fill_random arr next (i + 1) size;
   ;
 ;

@@ -327,35 +327,32 @@ private def compileStandardCall(
     case _ => false
   }
   val rawArgs = compiledArgs.map(arg => (arg.op, arg.llvmType))
-  val (finalArgs, stateAfterSplit) =
-    if isNative then state.abi.lowerArgs(rawArgs, state)
-    else (rawArgs, state)
   val (stateWithAlias, aliasScopeTag, noaliasTag) =
-    buildCallAliasMetadata(getResolvedName(fnRef, stateAfterSplit), compiledArgs, stateAfterSplit)
+    buildCallAliasMetadata(getResolvedName(fnRef, state), compiledArgs, state)
   val fnName = getResolvedName(fnRef, stateWithAlias)
-  val args   = finalArgs.map { case (value, typ) => (typ, value) }
 
-  // Check if this native function needs sret (large struct return on x86_64)
-  val useSret = isNative && stateWithAlias.abi.needsSret(fnReturnType, stateWithAlias)
-
-  if fnReturnType == "void" then
-    val callLine = emitCall(none, none, fnName, args, aliasScopeTag, noaliasTag)
-    CompileResult(0, stateWithAlias.emit(callLine), false, typeName).asRight
-  else if useSret then
-    val (loadReg, finalState) = stateWithAlias.abi.emitSretCall(
-      fnName,
-      fnReturnType,
-      args,
-      stateWithAlias,
-      emitCall,
-      aliasScopeTag,
-      noaliasTag
-    )
-    CompileResult(loadReg, finalState, false, typeName).asRight
+  if isNative then
+    mml.mmlclib.codegen.emitter.abis.NativeAbiPlan
+      .classify(fnReturnType, rawArgs.map(_._2), stateWithAlias)
+      .map { plan =>
+        val (reg, emitted) = plan.emitCall(
+          fnName,
+          rawArgs.map(_._1),
+          stateWithAlias,
+          aliasScopeTag,
+          noaliasTag
+        )
+        CompileResult(reg, emitted, false, typeName)
+      }
   else
-    val reg      = stateWithAlias.nextRegister
-    val callLine = emitCall(reg.some, fnReturnType.some, fnName, args, aliasScopeTag, noaliasTag)
-    CompileResult(reg, stateWithAlias.withRegister(reg + 1).emit(callLine), false, typeName).asRight
+    val args = rawArgs.map { case (value, typ) => (typ, value) }
+    if fnReturnType == "void" then
+      val line = emitCall(none, none, fnName, args, aliasScopeTag, noaliasTag)
+      CompileResult(0, stateWithAlias.emit(line), false, typeName).asRight
+    else
+      val reg  = stateWithAlias.nextRegister
+      val line = emitCall(reg.some, fnReturnType.some, fnName, args, aliasScopeTag, noaliasTag)
+      CompileResult(reg, stateWithAlias.withRegister(reg + 1).emit(line), false, typeName).asRight
 
 private val StaticNullEnvClosure = """^\{ ptr @([^,\s]+), ptr null \}$""".r
 

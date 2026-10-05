@@ -43,9 +43,9 @@ class FunctionValueCodegenTests extends BaseEffFunSuite:
       val entry = globalEntry(ir, "first")
       assertEquals(globalEntry(ir, "second"), entry)
       val body = functionBodyMatching(ir, s"${Regex.quote(entry)}\\(ptr %\\d+\\).*")
-      assert(body.contains("call i64 @test_nada()"), body)
+      assert(body.contains("call i32 @test_nada()"), body)
       assert(functionBody(ir, "test_make").contains(s"{ ptr @$entry, ptr null }"), ir)
-      assertEquals("call i64 @test_nada()".r.findAllIn(ir).size, 1, ir)
+      assertEquals("call i32 @test_nada()".r.findAllIn(ir).size, 1, ir)
       assemble(ir)
     }
   }
@@ -58,7 +58,7 @@ class FunctionValueCodegenTests extends BaseEffFunSuite:
       fn give(): Unit -> Int = nada;;
       fn native_nada(): Int = @native[name="host_nada"];;
       fn native_unit(): Unit = @native[name="host_unit"];;
-      fn templ(): Int = @native[tpl="add i64 40, 2"];;
+      fn templ(): Int = @native[tpl="add i32 40, 2"];;
       fn unit_template(): Unit = @native[tpl="call void @host_unit()"];;
       let global = nada;
       let alias = global;
@@ -86,8 +86,8 @@ class FunctionValueCodegenTests extends BaseEffFunSuite:
     val runtime = """
       #include <stdint.h>
       #include <stdio.h>
-      void observe(int64_t n) { printf("%lld\n", (long long)n); }
-      int64_t host_nada(void) { observe(3); return 42; }
+      void observe(int32_t n) { printf("%lld\n", (long long)n); }
+      int32_t host_nada(void) { observe(3); return 42; }
       void host_unit(void) { observe(4); }
       void mml_sys_flush(void) { fflush(stdout); }
     """
@@ -138,7 +138,7 @@ class FunctionValueCodegenTests extends BaseEffFunSuite:
   for target <- List("x86_64-apple-macosx", "aarch64-apple-macosx") do
     test(s"native callable value preserves large structure return ABI on $target") {
       val source = """
-        type Triple = @native { a: Int, b: Int, c: Int };
+        type Triple = @native { a: Int64, b: Int64, c: Int64 };
         fn produce(): Triple = @native[name="host_produce"];;
         let value = produce;
         fn invoke(): Triple = value ();;
@@ -146,7 +146,7 @@ class FunctionValueCodegenTests extends BaseEffFunSuite:
       compileAndGenerate(source, config = CompilerConfig.default.copy(targetTriple = Some(target)))
         .flatMap { ir =>
           val entry = globalEntry(ir, "value")
-          val body  = functionBody(ir, entry)
+          val body  = expandNativeAdapters(ir, functionBody(ir, entry))
           assert(body.contains("call void @host_produce(ptr sret(%struct.Triple)"), body)
           assert(body.contains("load %struct.Triple"), body)
           assert(body.contains("ret %struct.Triple"), body)
@@ -163,7 +163,7 @@ class FunctionValueCodegenTests extends BaseEffFunSuite:
         let f = consume;
         f p;
       ;
-      fn increment(x: Int): Int = @native[tpl="add i64 %operand, 1"];;
+      fn increment(x: Int): Int = @native[tpl="add i32 %operand, 1"];;
       fn calculate(x: Int): Int =
         let f = increment;
         f x;
@@ -172,8 +172,8 @@ class FunctionValueCodegenTests extends BaseEffFunSuite:
     compileAndGenerate(source).flatMap { ir =>
       val consumer = functionBodyMatching(ir, "test_f_\\d+\\(ptr noalias %\\d+, ptr %\\d+\\).*")
       assert(consumer.contains("call void @test_consume(ptr"), consumer)
-      val increment = functionBodyMatching(ir, "test_f_\\d+\\(i64 %\\d+, ptr %\\d+\\).*")
-      assert(increment.contains("add i64 %0, 1"), increment)
+      val increment = functionBodyMatching(ir, "test_f_\\d+\\(i32 %\\d+, ptr %\\d+\\).*")
+      assert(increment.contains("add i32 %0, 1"), increment)
       assert(!increment.contains("@increment"), increment)
       assemble(ir)
     }

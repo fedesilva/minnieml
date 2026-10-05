@@ -20,7 +20,7 @@ class TailRecursionLoopificationTest extends BaseEffFunSuite:
 
     compileAndGenerate(source, config = CompilerConfig.default.copy(noTco = false)).map { llvmIr =>
       assert(llvmIr.contains("loop.header:"))
-      assert(llvmIr.contains("phi i64"))
+      assert(llvmIr.contains("phi i32"))
       assert(llvmIr.contains("br label %loop.header"))
       assertPhiPredecessors(functionBody(llvmIr, "test_sum"))
     }
@@ -44,16 +44,16 @@ class TailRecursionLoopificationTest extends BaseEffFunSuite:
       val mainBody = functionBodyMatching(llvmIr, "test_main\\(\\) #0")
 
       assert(
-        llvmIr.contains("define internal i64 @test_sum(i64 %0, i64 %1) #0"),
+        llvmIr.contains("define internal i32 @test_sum(i32 %0, i32 %1) #0"),
         s"Loopified top-level function should not accept a closure env. IR:\n$llvmIr"
       )
       assert(
-        !llvmIr.contains("define internal i64 @test_sum(i64 %0, i64 %1, ptr %2) #0"),
+        !llvmIr.contains("define internal i32 @test_sum(i32 %0, i32 %1, ptr %2) #0"),
         s"Loopified top-level function must not use closure-entry ABI. IR:\n$llvmIr"
       )
       assert(
-        mainBody.contains("call i64 @test_sum(i64 0, i64 0)") &&
-          !mainBody.contains("call i64 @test_sum(i64 0, i64 0, ptr null)"),
+        mainBody.contains("call i32 @test_sum(i32 0, i32 0)") &&
+          !mainBody.contains("call i32 @test_sum(i32 0, i32 0, ptr null)"),
         s"Direct caller should pass only user arguments. Body:\n$mainBody"
       )
     }
@@ -80,24 +80,24 @@ class TailRecursionLoopificationTest extends BaseEffFunSuite:
       val applyBody   = functionBodyMatching(llvmIr, "test_apply\\(\\{ ptr, ptr \\} %0\\) #0")
       val mainBody    = functionBodyMatching(llvmIr, "test_main\\(\\) #0")
       val wrapperName = "test_down__closure_entry"
-      val wrapperBody = functionBodyMatching(llvmIr, s"$wrapperName\\(i64 %0, ptr %1\\) #0")
+      val wrapperBody = functionBodyMatching(llvmIr, s"$wrapperName\\(i32 %0, ptr %1\\) #0")
 
       assert(
-        llvmIr.contains("define internal i64 @test_down(i64 %0) #0"),
+        llvmIr.contains("define internal i32 @test_down(i32 %0) #0"),
         s"Direct loopified function should use plain ABI. IR:\n$llvmIr"
       )
       assert(
-        wrapperBody.contains("call i64 @test_down(i64 %0)"),
+        wrapperBody.contains("call i32 @test_down(i32 %0)"),
         s"Wrapper should forward to the plain direct symbol. Body:\n$wrapperBody"
       )
       assert(
-        """call i64 %\d+\(i64 41, ptr %\d+\)""".r.findFirstIn(applyBody).nonEmpty,
+        """call i32 %\d+\(i32 41, ptr %\d+\)""".r.findFirstIn(applyBody).nonEmpty,
         s"Higher-order call should still pass the extracted env. Body:\n$applyBody"
       )
       assert(
-        mainBody.contains(s"call i64 @test_apply({ ptr, ptr } { ptr @$wrapperName, ptr null })") &&
-          mainBody.contains("call i64 @test_down(i64 3)") &&
-          !mainBody.contains("call i64 @test_down(i64 3, ptr null)"),
+        mainBody.contains(s"call i32 @test_apply({ ptr, ptr } { ptr @$wrapperName, ptr null })") &&
+          mainBody.contains("call i32 @test_down(i32 3)") &&
+          !mainBody.contains("call i32 @test_down(i32 3, ptr null)"),
         s"main should use both the wrapper value and the direct plain call. Body:\n$mainBody"
       )
     }
@@ -123,20 +123,20 @@ class TailRecursionLoopificationTest extends BaseEffFunSuite:
 
     compileAndGenerate(source, config = CompilerConfig.default.copy(noTco = false)).map { llvmIr =>
       val directMatch =
-        """define internal i64 @(test_factorial_tco_\d+)\(i64 %0, i64 %1\) #0 \{""".r
+        """define internal i32 @(test_factorial_tco_\d+)\(i32 %0, i32 %1\) #0 \{""".r
           .findFirstMatchIn(llvmIr)
           .getOrElse(fail(s"Missing plain direct factorial_tco entry. IR:\n$llvmIr"))
       val directName  = directMatch.group(1)
       val wrapperName = s"${directName}__closure_entry"
       val directBody =
-        functionBodyMatching(llvmIr, s"$directName\\(i64 %0, i64 %1\\) #0")
+        functionBodyMatching(llvmIr, s"$directName\\(i32 %0, i32 %1\\) #0")
 
       assert(
-        directBody.contains("loop.header:") && directBody.contains("phi i64"),
+        directBody.contains("loop.header:") && directBody.contains("phi i32"),
         s"Direct factorial_tco entry should be loopified. Body:\n$directBody"
       )
       assert(
-        !llvmIr.contains(s"define internal i64 @$directName(i64 %0, i64 %1, ptr %2) #0"),
+        !llvmIr.contains(s"define internal i32 @$directName(i32 %0, i32 %1, ptr %2) #0"),
         s"Direct factorial_tco entry must not accept a closure env. IR:\n$llvmIr"
       )
       assert(
@@ -167,20 +167,20 @@ class TailRecursionLoopificationTest extends BaseEffFunSuite:
 
     compileAndGenerate(source, config = CompilerConfig.default.copy(noTco = false)).map { llvmIr =>
       val directMatch =
-        """define internal i64 @(test_factorial_tco_\d+)\(i64 %0, i64 %1\) #0 \{""".r
+        """define internal i32 @(test_factorial_tco_\d+)\(i32 %0, i32 %1\) #0 \{""".r
           .findFirstMatchIn(llvmIr)
           .getOrElse(fail(s"Missing plain Direct factorial_tco entry. IR:\n$llvmIr"))
       val directName = directMatch.group(1)
       val papMatch =
-        """define internal i64 @(test_factorial_tco_pap_\d+)\(i64 %0, ptr %1\) #0 \{""".r
+        """define internal i32 @(test_factorial_tco_pap_\d+)\(i32 %0, ptr %1\) #0 \{""".r
           .findFirstMatchIn(llvmIr)
           .getOrElse(fail(s"Missing partial-application entry. IR:\n$llvmIr"))
       val papName  = papMatch.group(1)
-      val papBody  = functionBodyMatching(llvmIr, s"$papName\\(i64 %0, ptr %1\\) #0")
+      val papBody  = functionBodyMatching(llvmIr, s"$papName\\(i32 %0, ptr %1\\) #0")
       val mainBody = functionBodyMatching(llvmIr, "test_main\\(\\) #0")
 
       assert(
-        papBody.contains(s"call i64 @$directName(i64 %") && papBody.contains(", i64 %0)"),
+        papBody.contains(s"call i32 @$directName(i32 %") && papBody.contains(", i32 %0)"),
         s"PAP entry should load fixed n and forward acc into Direct entry. Body:\n$papBody"
       )
       assert(
@@ -223,22 +223,22 @@ class TailRecursionLoopificationTest extends BaseEffFunSuite:
 
     compileAndGenerate(source, config = CompilerConfig.default.copy(noTco = false)).map { llvmIr =>
       val directMatch =
-        """define internal i64 @(test_factorial_tco_\d+)\(i64 %0, i64 %1\) #0 \{""".r
+        """define internal i32 @(test_factorial_tco_\d+)\(i32 %0, i32 %1\) #0 \{""".r
           .findFirstMatchIn(llvmIr)
           .getOrElse(fail(s"Missing plain Direct factorial_tco entry. IR:\n$llvmIr"))
       val makeFacMatch =
-        """define internal \{ ptr, ptr \} @(test_make_fac_\d+)\(i64 %0\) #0 \{""".r
+        """define internal \{ ptr, ptr \} @(test_make_fac_\d+)\(i32 %0\) #0 \{""".r
           .findFirstMatchIn(llvmIr)
           .getOrElse(fail(s"Missing Direct make_fac entry returning a closure pair. IR:\n$llvmIr"))
       val papMatch =
-        """define internal i64 @(test_factorial_tco_pap_\d+)\(i64 %0, ptr %1\) #0 \{""".r
+        """define internal i32 @(test_factorial_tco_pap_\d+)\(i32 %0, ptr %1\) #0 \{""".r
           .findFirstMatchIn(llvmIr)
           .getOrElse(fail(s"Missing returned partial-application entry. IR:\n$llvmIr"))
       val directName  = directMatch.group(1)
       val makeFacName = makeFacMatch.group(1)
       val papName     = papMatch.group(1)
-      val makeFacBody = functionBodyMatching(llvmIr, s"$makeFacName\\(i64 %0\\) #0")
-      val papBody     = functionBodyMatching(llvmIr, s"$papName\\(i64 %0, ptr %1\\) #0")
+      val makeFacBody = functionBodyMatching(llvmIr, s"$makeFacName\\(i32 %0\\) #0")
+      val papBody     = functionBodyMatching(llvmIr, s"$papName\\(i32 %0, ptr %1\\) #0")
       val mainBody    = functionBodyMatching(llvmIr, "test_main\\(\\) #0")
       val dtorName =
         """store ptr @(test___free_factorial_tco_pap_env_\d+), ptr %\d+""".r
@@ -246,21 +246,21 @@ class TailRecursionLoopificationTest extends BaseEffFunSuite:
           .map(_.group(1))
           .getOrElse(fail(s"Missing PAP env destructor store. Body:\n$makeFacBody"))
       val envName =
-        """%struct\.(test_factorial_tco_pap_env_\d+) = type \{ ptr, i64 \}""".r
+        """%struct\.(test_factorial_tco_pap_env_\d+) = type \{ ptr, i32 \}""".r
           .findFirstMatchIn(llvmIr)
           .map(_.group(1))
           .getOrElse(fail(s"Missing returned PAP env type. IR:\n$llvmIr"))
       val dtorBody = functionBodyMatching(llvmIr, s"$dtorName\\(ptr %0\\) #0")
 
       assert(
-        llvmIr.contains(s"%struct.$envName = type { ptr, i64 }"),
+        llvmIr.contains(s"%struct.$envName = type { ptr, i32 }"),
         s"Returned PAP env should use slot 0 for the destructor and slot 1 for n. IR:\n$llvmIr"
       )
       assert(
         papBody.contains("i32 0, i32 1") &&
           !papBody.contains("i32 0, i32 0") &&
-          papBody.contains(s"call i64 @$directName(i64 %") &&
-          papBody.contains(", i64 %0)"),
+          papBody.contains(s"call i32 @$directName(i32 %") &&
+          papBody.contains(", i32 %0)"),
         s"PAP entry should load fixed n from field 1 and forward acc into Direct entry. Body:\n$papBody"
       )
       assert(
@@ -276,7 +276,7 @@ class TailRecursionLoopificationTest extends BaseEffFunSuite:
         makeFacBody.contains(s"store ptr @$dtorName") &&
           makeFacBody.contains("i32 0, i32 0") &&
           makeFacBody.contains("i32 0, i32 1") &&
-          makeFacBody.contains("store i64 %0"),
+          makeFacBody.contains("store i32 %0"),
         s"Returned PAP env should store a destructor in field 0. Body:\n$makeFacBody"
       )
       assert(
@@ -284,8 +284,8 @@ class TailRecursionLoopificationTest extends BaseEffFunSuite:
         s"make_fac should return a real closure pair backed by the generated PAP entry. Body:\n$makeFacBody"
       )
       assert(
-        (s"""(?s).*call \\{ ptr, ptr \\} @$makeFacName\\(i64 5\\).*""" +
-          """%\d+ = call i64 %\d+\(i64 1, ptr %\d+\).*""" +
+        (s"""(?s).*call \\{ ptr, ptr \\} @$makeFacName\\(i32 5\\).*""" +
+          """%\d+ = call i32 %\d+\(i32 1, ptr %\d+\).*""" +
           """%\d+ = extractvalue \{ ptr, ptr \} %\d+, 1.*""" +
           """call void @test___free_closure\(ptr %\d+\).*""").r
           .matches(mainBody),
@@ -298,11 +298,11 @@ class TailRecursionLoopificationTest extends BaseEffFunSuite:
         s"Returned PAP env destructor store should carry TBAA metadata. Body:\n$makeFacBody"
       )
       assert(
-        """store i64 %0, ptr %\d+, !tbaa !\d+""".r.findFirstIn(makeFacBody).nonEmpty,
+        """store i32 %0, ptr %\d+, !tbaa !\d+""".r.findFirstIn(makeFacBody).nonEmpty,
         s"Returned PAP env payload store should carry TBAA metadata. Body:\n$makeFacBody"
       )
       assert(
-        """load i64, ptr %\d+, !tbaa !\d+""".r.findFirstIn(papBody).nonEmpty,
+        """load i32, ptr %\d+, !tbaa !\d+""".r.findFirstIn(papBody).nonEmpty,
         s"PAP entry payload load should carry TBAA metadata. Body:\n$papBody"
       )
       val envTbaaLines = llvmIr.split("\n").filter(_.contains(s"""!"$envName""""))
@@ -337,26 +337,26 @@ class TailRecursionLoopificationTest extends BaseEffFunSuite:
 
     compileAndGenerate(source, config = CompilerConfig.default.copy(noTco = false)).map { llvmIr =>
       val directMatch =
-        """define internal i64 @(test_loop_\d+)\(i64 %0, i64 %1, i64 %2\) #0 \{""".r
+        """define internal i32 @(test_loop_\d+)\(i32 %0, i32 %1, i32 %2\) #0 \{""".r
           .findFirstMatchIn(llvmIr)
           .getOrElse(fail(s"Missing capturing Direct loop entry. IR:\n$llvmIr"))
       val papMatch =
-        """define internal i64 @(test_loop_pap_\d+)\(i64 %0, ptr %1\) #0 \{""".r
+        """define internal i32 @(test_loop_pap_\d+)\(i32 %0, ptr %1\) #0 \{""".r
           .findFirstMatchIn(llvmIr)
           .getOrElse(fail(s"Missing capturing Direct PAP entry. IR:\n$llvmIr"))
       val envName =
-        """%struct\.(test_loop_pap_env_\d+) = type \{ ptr, i64, i64 \}""".r
+        """%struct\.(test_loop_pap_env_\d+) = type \{ ptr, i32, i32 \}""".r
           .findFirstMatchIn(llvmIr)
           .map(_.group(1))
           .getOrElse(fail(s"Missing capturing Direct PAP env type. IR:\n$llvmIr"))
       val papName      = papMatch.group(1)
       val directName   = directMatch.group(1)
       val mainBody     = functionBodyMatching(llvmIr, "test_main\\(\\) #0")
-      val papBody      = functionBodyMatching(llvmIr, s"$papName\\(i64 %0, ptr %1\\) #0")
+      val papBody      = functionBodyMatching(llvmIr, s"$papName\\(i32 %0, ptr %1\\) #0")
       val envTbaaLines = llvmIr.split("\n").filter(_.contains(s"""!"$envName""""))
 
       assert(
-        papBody.contains(s"call i64 @$directName") && papBody.contains(", i64 %0, i64 %"),
+        papBody.contains(s"call i32 @$directName") && papBody.contains(", i32 %0, i32 %"),
         s"Capturing PAP entry should forward applied n, remaining acc, and captured step. Body:\n$papBody"
       )
       assert(
@@ -366,18 +366,18 @@ class TailRecursionLoopificationTest extends BaseEffFunSuite:
         s"Capturing PAP env destructor store should carry TBAA metadata. Body:\n$mainBody"
       )
       assert(
-        """store i64 (?:%\d+|[-]?\d+), ptr %\d+, !tbaa !\d+""".r
+        """store i32 (?:%\d+|[-]?\d+), ptr %\d+, !tbaa !\d+""".r
           .findAllIn(mainBody)
           .length >= 2,
         s"Capturing PAP env payload stores should carry TBAA metadata. Body:\n$mainBody"
       )
       assert(
-        """load i64, ptr %\d+, !tbaa !\d+""".r.findAllIn(papBody).length >= 2,
+        """load i32, ptr %\d+, !tbaa !\d+""".r.findAllIn(papBody).length >= 2,
         s"Capturing PAP entry payload loads should carry TBAA metadata. Body:\n$papBody"
       )
       assert(
         envTbaaLines.exists(line =>
-          line.contains("i64 0") && line.contains("i64 8") && line.contains("i64 16")
+          line.contains("i64 0") && line.contains("i64 8") && line.contains("i64 12")
         ),
         s"Capturing PAP env TBAA node should describe destructor, applied arg, and capture offsets. Nodes:\n${envTbaaLines.mkString("\n")}"
       )
@@ -522,7 +522,7 @@ class TailRecursionLoopificationTest extends BaseEffFunSuite:
           .getOrElse(fail(s"Missing Direct PAP entry. Body:\n$mainBody"))
       val rawDtorName =
         """store ptr @(test___free_say_pap_env_raw_\d+), ptr %\d+""".r
-          .findFirstMatchIn(functionBodyMatching(llvmIr, s"$papName\\(i64 %0, ptr %1\\) #0"))
+          .findFirstMatchIn(functionBodyMatching(llvmIr, s"$papName\\(i32 %0, ptr %1\\) #0"))
           .map(_.group(1))
           .getOrElse(fail(s"Missing raw-only destructor rewrite for $papName"))
       val dtorBody    = functionBodyMatching(llvmIr, s"$dtorName\\(ptr %0\\) #0")
@@ -569,23 +569,23 @@ class TailRecursionLoopificationTest extends BaseEffFunSuite:
 
     compileAndGenerate(source, config = CompilerConfig.default.copy(noTco = false)).map { llvmIr =>
       val directMatch =
-        """define internal i64 @(test_loop_\d+)\(i64 %0, i64 %1, i64 %2\) #0 \{""".r
+        """define internal i32 @(test_loop_\d+)\(i32 %0, i32 %1, i32 %2\) #0 \{""".r
           .findFirstMatchIn(llvmIr)
           .getOrElse(fail(s"Missing loopified direct loop entry with capture param. IR:\n$llvmIr"))
       val directName = directMatch.group(1)
       val directBody =
-        functionBodyMatching(llvmIr, s"$directName\\(i64 %0, i64 %1, i64 %2\\) #0")
+        functionBodyMatching(llvmIr, s"$directName\\(i32 %0, i32 %1, i32 %2\\) #0")
 
       assert(
-        directBody.contains("loop.header:") && directBody.contains("phi i64"),
+        directBody.contains("loop.header:") && directBody.contains("phi i32"),
         s"Capturing Direct loop entry should be loopified. Body:\n$directBody"
       )
       assert(
-        !llvmIr.contains(s"define internal i64 @$directName(i64 %0, i64 %1, ptr %2) #0"),
+        !llvmIr.contains(s"define internal i32 @$directName(i32 %0, i32 %1, ptr %2) #0"),
         s"Capturing Direct loop entry must not accept a closure env. IR:\n$llvmIr"
       )
       assert(
-        !directBody.contains(s"call i64 @$directName"),
+        !directBody.contains(s"call i32 @$directName"),
         s"Loopified body should jump through the loop header, not recurse. Body:\n$directBody"
       )
       assert(
@@ -610,7 +610,7 @@ class TailRecursionLoopificationTest extends BaseEffFunSuite:
 
     compileAndGenerate(source, config = CompilerConfig.default.copy(noTco = false)).map { llvmIr =>
       assert(llvmIr.contains("loop.header:"))
-      assert(llvmIr.contains("phi i64"))
+      assert(llvmIr.contains("phi i32"))
       assert(llvmIr.contains("br label %loop.header"))
       assert(llvmIr.contains("call void @println"))
     }
@@ -629,7 +629,7 @@ class TailRecursionLoopificationTest extends BaseEffFunSuite:
 
     compileAndGenerate(source, config = CompilerConfig.default.copy(noTco = false)).map { llvmIr =>
       assert(llvmIr.contains("loop.header:"))
-      assert(llvmIr.contains("phi i64"))
+      assert(llvmIr.contains("phi i32"))
       assert(llvmIr.contains("br label %loop.header"))
     }
   }
@@ -649,7 +649,7 @@ class TailRecursionLoopificationTest extends BaseEffFunSuite:
 
     compileAndGenerate(source, config = CompilerConfig.default.copy(noTco = false)).map { llvmIr =>
       assert(llvmIr.contains("loop.header:"))
-      assert(llvmIr.contains("phi i64"))
+      assert(llvmIr.contains("phi i32"))
       assert(llvmIr.contains("br label %loop.header"))
     }
   }
@@ -667,12 +667,12 @@ class TailRecursionLoopificationTest extends BaseEffFunSuite:
 
     compileAndGenerate(source, config = CompilerConfig.default.copy(noTco = false)).map { llvmIr =>
       assert(llvmIr.contains("loop.header:"))
-      assert(llvmIr.contains("phi i64"))
+      assert(llvmIr.contains("phi i32"))
       assert(
         llvmIr.split("br label %loop.header").length >= 3,
         "expected at least 2 back edges"
       )
-      assert(!llvmIr.contains("call i64 @walk"))
+      assert(!llvmIr.contains("call i32 @walk"))
     }
   }
 
@@ -694,12 +694,12 @@ class TailRecursionLoopificationTest extends BaseEffFunSuite:
 
     compileAndGenerate(source, config = CompilerConfig.default.copy(noTco = false)).map { llvmIr =>
       assert(llvmIr.contains("loop.header:"))
-      assert(llvmIr.contains("phi i64"))
+      assert(llvmIr.contains("phi i32"))
       assert(
         llvmIr.split("br label %loop.header").length >= 3,
         "expected at least 2 back edges"
       )
-      assert(!llvmIr.contains("call i64 @search"))
+      assert(!llvmIr.contains("call i32 @search"))
     }
   }
 
@@ -725,9 +725,9 @@ class TailRecursionLoopificationTest extends BaseEffFunSuite:
 
     compileAndGenerate(source, config = CompilerConfig.default.copy(noTco = false)).map { llvmIr =>
       assert(llvmIr.contains("loop.header:"))
-      assert(llvmIr.contains("phi i64"))
+      assert(llvmIr.contains("phi i32"))
       assert(llvmIr.contains("br label %loop.header"))
-      assert(!llvmIr.contains("call i64 @deep"))
+      assert(!llvmIr.contains("call i32 @deep"))
     }
   }
 
@@ -751,28 +751,28 @@ class TailRecursionLoopificationTest extends BaseEffFunSuite:
       val applyBody = functionBodyMatching(llvmIr, "test_apply\\(\\{ ptr, ptr \\} %0\\) #0")
       val mainBody  = functionBodyMatching(llvmIr, "test_main\\(\\) #0")
       val wrapperMatch =
-        """(?s)define internal i64 @(test__anon_\d+)\(i64 %0, ptr %1\) #0 \{\n(.*?)\n\}""".r
+        """(?s)define internal i32 @(test__anon_\d+)\(i32 %0, ptr %1\) #0 \{\n(.*?)\n\}""".r
           .findFirstMatchIn(llvmIr)
           .getOrElse(fail(s"Missing closure-entry wrapper. IR:\n$llvmIr"))
       val wrapperName = wrapperMatch.group(1)
       val wrapperBody = wrapperMatch.group(2)
 
       assert(
-        llvmIr.contains("define internal i64 @test_down(i64 %0) #0"),
+        llvmIr.contains("define internal i32 @test_down(i32 %0) #0"),
         s"Direct loopified function should use plain ABI. IR:\n$llvmIr"
       )
       assert(
-        wrapperBody.contains("call i64 @test_down(i64 %0)"),
+        wrapperBody.contains("call i32 @test_down(i32 %0)"),
         s"Wrapper should forward to the plain direct symbol. Body:\n$wrapperBody"
       )
       assert(
-        """call i64 %\d+\(i64 41, ptr %\d+\)""".r.findFirstIn(applyBody).nonEmpty,
+        """call i32 %\d+\(i32 41, ptr %\d+\)""".r.findFirstIn(applyBody).nonEmpty,
         s"Higher-order call should still pass the extracted env. Body:\n$applyBody"
       )
       assert(
-        mainBody.contains(s"call i64 @test_apply({ ptr, ptr } { ptr @$wrapperName, ptr null })") &&
-          mainBody.contains("call i64 @test_down(i64 3)") &&
-          !mainBody.contains("call i64 @test_down(i64 3, ptr null)"),
+        mainBody.contains(s"call i32 @test_apply({ ptr, ptr } { ptr @$wrapperName, ptr null })") &&
+          mainBody.contains("call i32 @test_down(i32 3)") &&
+          !mainBody.contains("call i32 @test_down(i32 3, ptr null)"),
         s"main should use both the wrapper value and the direct plain call. Body:\n$mainBody"
       )
     }
@@ -797,26 +797,26 @@ class TailRecursionLoopificationTest extends BaseEffFunSuite:
 
     compileAndGenerate(source, config = CompilerConfig.default.copy(noTco = false)).map { llvmIr =>
       val directMatch =
-        """define internal i64 @(test_factorial_tco_\d+)\(i64 %0, i64 %1\) #0 \{""".r
+        """define internal i32 @(test_factorial_tco_\d+)\(i32 %0, i32 %1\) #0 \{""".r
           .findFirstMatchIn(llvmIr)
           .getOrElse(fail(s"Missing plain direct factorial_tco entry. IR:\n$llvmIr"))
       val directName  = directMatch.group(1)
       val wrapperName = s"${directName}__closure_entry"
       val directBody =
-        functionBodyMatching(llvmIr, s"$directName\\(i64 %0, i64 %1\\) #0")
+        functionBodyMatching(llvmIr, s"$directName\\(i32 %0, i32 %1\\) #0")
       val wrapperBody =
-        functionBodyMatching(llvmIr, s"$wrapperName\\(i64 %0, i64 %1, ptr %2\\) #0")
+        functionBodyMatching(llvmIr, s"$wrapperName\\(i32 %0, i32 %1, ptr %2\\) #0")
 
       assert(
-        directBody.contains("loop.header:") && directBody.contains("phi i64"),
+        directBody.contains("loop.header:") && directBody.contains("phi i32"),
         s"Direct factorial_tco entry should be loopified. Body:\n$directBody"
       )
       assert(
-        !llvmIr.contains(s"define internal i64 @$directName(i64 %0, i64 %1, ptr %2) #0"),
+        !llvmIr.contains(s"define internal i32 @$directName(i32 %0, i32 %1, ptr %2) #0"),
         s"Direct factorial_tco entry must not accept a closure env. IR:\n$llvmIr"
       )
       assert(
-        wrapperBody.contains(s"call i64 @$directName(i64 %0, i64 %1)"),
+        wrapperBody.contains(s"call i32 @$directName(i32 %0, i32 %1)"),
         s"Closure-entry wrapper should forward to plain direct symbol. Body:\n$wrapperBody"
       )
       assert(

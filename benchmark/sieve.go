@@ -2,24 +2,24 @@ package main
 
 import "fmt"
 
-func initSieve(arr []int64) {
+func initSieve(arr []int32) {
 	// Optimization: Use range to eliminate bounds checks
 	for i := range arr {
 		arr[i] = 1
 	}
 }
 
-func clearMultiples(arr []int64, factor, num int64) {
+func clearMultiples(arr []int32, factor, num int32) {
 	// Optimization: Hoist the length check to help the compiler
 	// eliminate bounds checks inside the loop
-	size := int64(len(arr))
+	size := int32(len(arr))
 	for num < size {
 		arr[num] = 0
 		num += factor
 	}
 }
 
-func findNextPrime(arr []int64, i, limit int64) int64 {
+func findNextPrime(arr []int32, i, limit int32) int32 {
 	// We iterate manually, but we can hint the compiler
 	for i <= limit {
 		// Optimization: Branchless return is hard here,
@@ -32,7 +32,7 @@ func findNextPrime(arr []int64, i, limit int64) int64 {
 	return 0
 }
 
-func isqrt(n, guess int64) int64 {
+func isqrt(n, guess int32) int32 {
 	for {
 		next := (guess + n/guess) / 2
 		if next >= guess {
@@ -42,8 +42,8 @@ func isqrt(n, guess int64) int64 {
 	}
 }
 
-func countPrimes(arr []int64) int64 {
-	var count int64 = 1
+func countPrimes(arr []int32) int32 {
+	var count int32 = 1
 	// Optimization 1: Use range for BCE (Bounds Check Elimination)
 	// Optimization 2: Branchless summation
 	for _, v := range arr {
@@ -52,9 +52,9 @@ func countPrimes(arr []int64) int64 {
 	return count
 }
 
-func runSieve(limit int64) int64 {
+func runSieve(limit int32) int32 {
 	size := (limit + 1) / 2
-	arr := make([]int64, size)
+	arr := make([]int32, size)
 
 	initSieve(arr)
 	arr[0] = 0
@@ -62,7 +62,7 @@ func runSieve(limit int64) int64 {
 	q := isqrt(limit, limit/2)
 
 	// Note: We use an explicit loop here because the stride is irregular
-	for factor := int64(3); factor <= q; {
+	for factor := int32(3); factor <= q; {
 		next := findNextPrime(arr, factor/2, q/2)
 		if next == 0 {
 			break

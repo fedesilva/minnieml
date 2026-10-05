@@ -1,20 +1,20 @@
 public class Sieve {
 
-    static void initSieve(long[] arr, int i, int size) {
+    static void initSieve(int[] arr, int i, int size) {
         while (i < size) {
             arr[i] = 1;
             i++;
         }
     }
 
-    static void clearMultiples(long[] arr, int factor, int num, int size) {
+    static void clearMultiples(int[] arr, int factor, int num, int size) {
         while (num < size) {
             arr[num] = 0;
             num += factor;
         }
     }
 
-    static int findNextPrime(long[] arr, int i, int limit) {
+    static int findNextPrime(int[] arr, int i, int limit) {
         while (i <= limit) {
             if (arr[i] == 1) {
                 return i;
@@ -34,17 +34,17 @@ public class Sieve {
         }
     }
 
-    static long countPrimes(long[] arr, int size) {
-        long count = 1;
+    static int countPrimes(int[] arr, int size) {
+        int count = 1;
         for (int i = 0; i < size; i++) {
             count += arr[i];
         }
         return count;
     }
 
-    static long runSieve(int limit) {
+    static int runSieve(int limit) {
         int size = (limit + 1) / 2;
-        long[] arr = new long[size];
+        int[] arr = new int[size];
         initSieve(arr, 0, size);
         arr[0] = 0;
 

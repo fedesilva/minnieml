@@ -4,6 +4,18 @@ Durable product changes belong here. Current task state belongs in task files.
 
 ## 2026-10-04
 
+- Add module `@link` directives with ordered native-library inputs and per-entry warnings
+  for object builds. Share target layouts and generic aggregate C ABI lowering across
+  native calls, returns, callable adapters, and destructors on x86-64 and AArch64.
+  Add owned CString conversion and zlib/raylib examples.
+- Make `Int` a signed 32-bit type, including runtime lengths, indexes, and IntArray data.
+  Preserve pointer and allocation widths and explicit Int64 support. Check literal and
+  parsing boundaries, refresh runtime caches by source content, and use bounded inputs
+  across matching benchmark implementations.
+- Record the ABI-only and Int32 benchmark datasets and
+  [historical comparison report](../benchmark/results/report-2026-10-04-aarch.md), including
+  checked-access costs and the two-stage improvement in default optimized matrix loops.
+
 - Document the module-level `@link` design: ordered library names with default, static,
   and shared selection; static partial linking for `.o` output; and an error for explicit
   shared inputs in object builds. Include the compiler-state integration and consolidation

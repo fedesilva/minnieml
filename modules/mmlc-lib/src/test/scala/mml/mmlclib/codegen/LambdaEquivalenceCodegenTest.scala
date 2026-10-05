@@ -29,15 +29,15 @@ class LambdaEquivalenceCodegenTest extends BaseEffFunSuite:
       val mainBody = functionBodyMatching(llvmIr, "test_main\\(\\) #0")
 
       assert(
-        mainBody.contains("call i64 @test_top_inc(i64 10)"),
+        mainBody.contains("call i32 @test_top_inc(i32 10)"),
         s"Expected direct top-level call. Body:\n$mainBody"
       )
       assert(
-        """call i64 @test_local_inc_\d+\(i64 10\)""".r.findFirstIn(mainBody).nonEmpty,
+        """call i32 @test_local_inc_\d+\(i32 10\)""".r.findFirstIn(mainBody).nonEmpty,
         s"Expected direct local function call. Body:\n$mainBody"
       )
       assert(
-        """call i64 @test_let_inc_\d+\(i64 10\)""".r.findFirstIn(mainBody).nonEmpty,
+        """call i32 @test_let_inc_\d+\(i32 10\)""".r.findFirstIn(mainBody).nonEmpty,
         s"Expected direct let-bound lambda call. Body:\n$mainBody"
       )
       assert(
@@ -45,7 +45,7 @@ class LambdaEquivalenceCodegenTest extends BaseEffFunSuite:
           !mainBody.contains("insertvalue { ptr, ptr }") &&
           !mainBody.contains("extractvalue { ptr, ptr }") &&
           !mainBody.contains("call ptr @malloc") &&
-          """call i64 %\d+\(""".r.findFirstIn(mainBody).isEmpty,
+          """call i32 %\d+\(""".r.findFirstIn(mainBody).isEmpty,
         s"Direct-only forms should not materialize closure values. Body:\n$mainBody"
       )
     }
@@ -68,7 +68,7 @@ class LambdaEquivalenceCodegenTest extends BaseEffFunSuite:
       val mainBody = functionBodyMatching(llvmIr, "test_main\\(\\) #0")
 
       assert(
-        llvmIr.contains("define internal i64 @test_top_inc__closure_entry"),
+        llvmIr.contains("define internal i32 @test_top_inc__closure_entry"),
         s"Expected named closure-entry wrapper for top_inc. IR:\n$llvmIr"
       )
       assert(
@@ -102,7 +102,7 @@ class LambdaEquivalenceCodegenTest extends BaseEffFunSuite:
       val mainBody = functionBodyMatching(llvmIr, "test_main\\(\\) #0")
 
       assert(
-        """%struct\.__closure_env_\d+ = type \{ i64 \}""".r.findFirstIn(llvmIr).nonEmpty,
+        """%struct\.__closure_env_\d+ = type \{ i32 \}""".r.findFirstIn(llvmIr).nonEmpty,
         s"Expected one-field borrow env type. IR:\n$llvmIr"
       )
       assert(
@@ -136,7 +136,7 @@ class LambdaEquivalenceCodegenTest extends BaseEffFunSuite:
         countMatches("""call void @test___free___closure_env_\d+\(ptr %\d+\)""", mainBody)
 
       assert(
-        """%struct\.__closure_env_\d+ = type \{ ptr, i64 \}""".r.findFirstIn(llvmIr).nonEmpty,
+        """%struct\.__closure_env_\d+ = type \{ ptr, i32 \}""".r.findFirstIn(llvmIr).nonEmpty,
         s"Expected move env type with destructor field. IR:\n$llvmIr"
       )
       assert(

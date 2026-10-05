@@ -5,7 +5,7 @@ import cats.syntax.all.*
 import mml.mmlclib.MmlLibBuildInfo
 import mml.mmlclib.codegen.LlvmToolchain
 import mml.mmlclib.compiler.{CodegenStage, CompilerConfig, CompilerState, Counter, FileOperations}
-import mml.mmlclib.errors.CompilationError
+import mml.mmlclib.errors.{CompilationError, CompilerWarning}
 import mml.mmlclib.parser.{ParserError, SourceInfo}
 import mml.mmlclib.semantic.SemanticError
 import mml.mmlclib.util.error.print.ErrorPrinter
@@ -72,9 +72,10 @@ object CompilerApi:
       case Right(state) =>
         val validated = CodegenStage.validate(state)
         if validated.hasErrors then
-          IO.println(compilationFailed(prettyPrintStateErrors(validated)))
+          printLinkWarnings(validated) *>
+            IO.println(compilationFailed(prettyPrintStateErrors(validated)))
             *> maybePrintMetrics(validated).as(Left(ExitCode.Error))
-        else IO.pure(Right(validated))
+        else printLinkWarnings(validated).as(Right(validated))
     }
 
   def processNative(path: Path, config: CompilerConfig): IO[ExitCode] =
@@ -297,6 +298,18 @@ object CompilerApi:
     else
       val fileHeader = state.module.sourcePath.map(path => s"File: $path")
       (fileHeader.toList ++ messages).mkString("\n\n")
+
+  private def printLinkWarnings(state: CompilerState): IO[Unit] =
+    state.warnings.toList.traverse_ {
+      case CompilerWarning.DiscardedLinkDirective(entry) =>
+        val path  = state.module.sourcePath.getOrElse(state.module.name)
+        val point = entry.span.start
+        IO.consoleForIO.errorln(
+          s"$path:${point.line}:${point.col}: warning: " +
+            "linking directives are discarded in library mode"
+        )
+      case _ => IO.unit
+    }
 
   private def processNativeBinary(state: CompilerState): IO[ExitCode] =
     for

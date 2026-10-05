@@ -19,7 +19,7 @@ class MaterializationCodegenTest extends BaseEffFunSuite:
   ): Unit =
     val body = functionBody(ir, caller)
     val argument =
-      s"call i64 @${Regex.quote(callee)}\\(\\{ ptr, ptr \\} \\{ ptr @([^, ]+), ptr null \\}".r
+      s"call i32 @${Regex.quote(callee)}\\(\\{ ptr, ptr \\} \\{ ptr @([^, ]+), ptr null \\}".r
     val entries = argument.findAllMatchIn(body).map(_.group(1)).toList
     val entry = entries match
       case List(symbol) => symbol
@@ -39,7 +39,7 @@ class MaterializationCodegenTest extends BaseEffFunSuite:
         .getOrElse(fail(s"Expected the same closure's environment:\n$calleeBody"))
     val target     = Regex.quote(pointer.group(1))
     val envArg     = Regex.quote(environment.group(1))
-    val invocation = s"call i64 $target\\((?:i64 %\\d+, )?ptr $envArg\\)".r
+    val invocation = s"call i32 $target\\((?:i32 %\\d+, )?ptr $envArg\\)".r
     assert(invocation.findFirstIn(calleeBody).nonEmpty, calleeBody)
 
   test("top-level fn called directly is direct") {
@@ -51,8 +51,8 @@ class MaterializationCodegenTest extends BaseEffFunSuite:
 
     compileAndGenerate(code).map { ir =>
       val body = functionBody(ir, "test_main")
-      functionBodyMatching(ir, "test_id\\(i64 %\\d+\\).*")
-      assert(body.contains("call i64 @test_id(i64 1)"), body)
+      functionBodyMatching(ir, "test_id\\(i32 %\\d+\\).*")
+      assert(body.contains("call i32 @test_id(i32 1)"), body)
       assertNoClosureValue(body)
     }
   }
@@ -68,8 +68,8 @@ class MaterializationCodegenTest extends BaseEffFunSuite:
       """
 
     compileAndGenerate(code).map { ir =>
-      val body = functionBodyMatching(ir, "test_fact\\(i64 %\\d+\\).*")
-      assert("""call i64 @test_fact\(i64 %\d+\)""".r.findFirstIn(body).nonEmpty, body)
+      val body = functionBodyMatching(ir, "test_fact\\(i32 %\\d+\\).*")
+      assert("""call i32 @test_fact\(i32 %\d+\)""".r.findFirstIn(body).nonEmpty, body)
       assertNoClosureValue(body)
     }
   }
@@ -85,7 +85,7 @@ class MaterializationCodegenTest extends BaseEffFunSuite:
       """
 
     compileAndGenerate(code).map { ir =>
-      assertNullEnvArgument(ir, "test_main", "test_apply", "i64 %\\d+, ptr %\\d+")
+      assertNullEnvArgument(ir, "test_main", "test_apply", "i32 %\\d+, ptr %\\d+")
     }
   }
 
@@ -97,7 +97,7 @@ class MaterializationCodegenTest extends BaseEffFunSuite:
 
     compileAndGenerate(code).map { ir =>
       val body = functionBody(ir, "test_main")
-      assert(body.contains("ret i64 5"), body)
+      assert(body.contains("ret i32 5"), body)
       assert(!body.contains("call "), body)
       assertNoClosureValue(body)
     }
@@ -128,7 +128,7 @@ class MaterializationCodegenTest extends BaseEffFunSuite:
     compileAndGenerate(code).map { ir =>
       val body = functionBody(ir, "_init_global_test_a")
       functionBodyMatching(ir, "test_nada\\(\\).*")
-      assert(body.contains("call i64 @test_nada()"), body)
+      assert(body.contains("call i32 @test_nada()"), body)
       assertNoClosureValue(body)
     }
   }
@@ -146,7 +146,7 @@ class MaterializationCodegenTest extends BaseEffFunSuite:
         .findFirstMatchIn(initializer)
         .getOrElse(fail(s"Expected a callable value in the global initializer:\n$initializer"))
       val entry = functionBodyMatching(ir, s"${Regex.quote(pair.group(1))}\\(ptr %\\d+\\).*")
-      assert(entry.contains("call i64 @test_nada()"), entry)
+      assert(entry.contains("call i32 @test_nada()"), entry)
       assert(!initializer.contains("load "), initializer)
       assert(!initializer.contains("call "), initializer)
       assert(!initializer.contains("@malloc"), initializer)

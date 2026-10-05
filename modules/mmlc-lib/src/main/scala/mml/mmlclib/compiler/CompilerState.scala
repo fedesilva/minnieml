@@ -1,7 +1,7 @@
 package mml.mmlclib.compiler
 
 import cats.effect.IO
-import mml.mmlclib.ast.Module
+import mml.mmlclib.ast.{LinkEntry, Module}
 import mml.mmlclib.codegen.ClangTarget
 import mml.mmlclib.errors.{CompilationError, CompilerWarning}
 import mml.mmlclib.parser.{ParserError, SourceInfo}
@@ -25,7 +25,8 @@ case class CompilerState(
   nativeResult:   Option[Int]         = None,
   resolvedTriple: Option[String]      = None,
   clangTarget:    Option[ClangTarget] = None,
-  bindingIds:     BindingIdSupply     = BindingIdSupply()
+  bindingIds:     BindingIdSupply     = BindingIdSupply(),
+  linkEntries:    List[LinkEntry]     = Nil
 ):
   def addErrors(newErrors: List[CompilationError]): CompilerState =
     copy(errors = errors ++ newErrors)

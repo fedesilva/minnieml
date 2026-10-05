@@ -7,9 +7,10 @@ type Double = @native[t=double];
 type Bool = @native[t=i1];
 type CharPtr = @native[t=*i8];
 type RawPtr = @native[t=ptr];
+type CString = @native[t=*i8, mem=heap, free=free_cstr];
 
 type String = @native[mem=heap, free=free_string] {
-  length: Int64,
+  length: Int32,
   data: CharPtr
 };
 
@@ -17,26 +18,27 @@ type SizeT = @native[t=i64];
 type Char = @native[t=i8];
 type Unit = @native[t=void];
 
-type Int = Int64;
+type Int = Int32;
 type Byte = Int8;
 type Word = Int8;
 
 type Buffer = @native[t=*i8, mem=heap, free=free_buffer];
 
 type Int64Ptr = @native[t=*i64];
+type Int32Ptr = @native[t=*i32];
 type StringPtr = @native[t=*%struct.String];
 type FloatPtr = @native[t=*float];
 
 type IntArray = @native[mem=heap, free=free_int_array] {
-  length: Int64,
-  data: Int64Ptr
+  length: Int32,
+  data: Int32Ptr
 };
 type StringArray = @native[mem=heap, free=free_string_array] {
-  length: Int64,
+  length: Int32,
   data: StringPtr
 };
 type FloatArray = @native[mem=heap, free=free_float_array] {
-  length: Int64,
+  length: Int32,
   data: FloatPtr
 };
 
@@ -88,6 +90,7 @@ fn str_eq(a: String, b: String): Bool = @native;
 fn int_to_str(a: Int): String = @native[mem=alloc];
 fn float_to_str(a: Float): String = @native[mem=alloc];
 fn str_to_int(a: String): Int = @native;
+fn to_cstr(s: String): CString = @native[mem=alloc];
 
 op ++(a: String, b: String): String 61 right = concat a b;
 
@@ -104,8 +107,8 @@ fn buffer_writeln_int(b: Buffer, n: Int): Unit = @native;
 fn buffer_write_float(b: Buffer, n: Float): Unit = @native;
 fn buffer_writeln_float(b: Buffer, n: Float): Unit = @native;
 
-fn int_to_float(i: Int): Float = @native[tpl="sitofp i64 %operand to float"];
-fn float_to_int(f: Float): Int = @native[tpl="fptosi float %operand to i64"];
+fn int_to_float(i: Int): Float = @native[tpl="sitofp i32 %operand to float"];
+fn float_to_int(f: Float): Int = @native[tpl="fptosi float %operand to i32"];
 fn sqrt(x: Float): Float = @native[tpl="call float @llvm.sqrt.f32(float %operand)"];
 fn fabs(x: Float): Float = @native[tpl="call float @llvm.fabs.f32(float %operand)"];
 
@@ -116,6 +119,7 @@ fn close_file(fd: Int): Unit = @native;
 fn read_line_fd(fd: Int): String = @native[mem=alloc];
 
 fn free_string(~s: String): Unit = @native;
+fn free_cstr(~s: CString): Unit = @native[name="free"];
 fn free_buffer(~b: Buffer): Unit = @native;
 fn mml_free_raw(p: RawPtr): Unit = @native;
 
@@ -155,3 +159,6 @@ op write_int(a: Buffer, b: Int): Unit 20 left = buffer_write_int a b;
 op writeln_int(a: Buffer, b: Int): Unit 20 left = buffer_writeln_int a b;
 op write_float(a: Buffer, b: Float): Unit 20 left = buffer_write_float a b;
 op writeln_float(a: Buffer, b: Float): Unit 20 left = buffer_writeln_float a b;
+
+fn int_to_int64(i: Int): Int64 = @native[tpl="sext i32 %operand to i64"];
+fn int64_to_str(i: Int64): String = @native[mem=alloc];

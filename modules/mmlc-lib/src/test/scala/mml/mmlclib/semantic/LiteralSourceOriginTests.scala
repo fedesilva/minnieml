@@ -12,8 +12,8 @@ class LiteralSourceOriginTests extends BaseEffFunSuite:
   test("literal extractors are total for source and synthetic origins"):
     val locInt   = LiteralInt(span, 42)
     val synthInt = LiteralInt(synth, 42, Some(TypeRef(synth, "Int")), None)
-    assertEquals(LiteralInt.unapply(locInt), Some((locOrigin, 42)))
-    assertEquals(LiteralInt.unapply(synthInt), Some((synth, 42)))
+    assertEquals(LiteralInt.unapply(locInt), Some((locOrigin, 42L)))
+    assertEquals(LiteralInt.unapply(synthInt), Some((synth, 42L)))
 
     val locString   = LiteralString(span, "hello")
     val synthString = LiteralString(synth, "hello", Some(TypeRef(synth, "String")), None)

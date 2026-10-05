@@ -1,4 +1,4 @@
-fn ackermann(m: i64, n: i64) -> i64 {
+fn ackermann(m: i32, n: i32) -> i32 {
     if m == 0 {
         n + 1
     } else if n == 0 {

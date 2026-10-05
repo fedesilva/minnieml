@@ -41,10 +41,11 @@ class ClosureEnvironmentMetadataTest extends BaseEffFunSuite:
       """
 
       compileAndGenerate(source).map { ir =>
-        val size = if move then 24 else 16
+        val size  = if move then 16 else 8
+        val align = if move then 8 else 4
         val body = functionBodyMatching(
           ir,
-          s"test_choose_\\d+\\(i64 %0, ptr align 8 dereferenceable\\($size\\) %1\\) #0"
+          s"test_choose_\\d+\\(i32 %0, ptr align $align dereferenceable\\($size\\) %1\\) #0"
         )
         val stores       = captureAccesses(functionBody(ir, "test_main"), "store")
         val loads        = captureAccesses(body, "load")
@@ -90,7 +91,7 @@ class ClosureEnvironmentMetadataTest extends BaseEffFunSuite:
     compileAndGenerate(source).map { ir =>
       val body = functionBodyMatching(
         ir,
-        "test_applyInc_\\d+\\(i64 %0, ptr align 8 dereferenceable\\(16\\) %1\\) #0"
+        "test_applyInc_\\d+\\(i32 %0, ptr align 8 dereferenceable\\(16\\) %1\\) #0"
       )
       val loads  = captureAccesses(body, "load")
       val stores = captureAccesses(functionBody(ir, "test_main"), "store")
@@ -115,18 +116,18 @@ class ClosureEnvironmentMetadataTest extends BaseEffFunSuite:
         val closure = """\{ ptr @([^, ]+), ptr null \}""".r
           .findFirstMatchIn(functionBody(ir, "test_main"))
           .getOrElse(fail(s"Missing null environment closure:\n$ir"))
-        functionBodyMatching(ir, s"${Regex.quote(closure.group(1))}\\(i64 %0, ptr %1\\) #0")
+        functionBodyMatching(ir, s"${Regex.quote(closure.group(1))}\\(i32 %0, ptr %1\\) #0")
       }
     }
 
   for nested <- List(false, true) do
-    test(s"unknown native capture layout keeps a plain environment parameter: nested=$nested") {
+    test(s"half capture layout uses two-byte storage: nested=$nested") {
       val capturedType = if nested then "Box" else "Half"
       val readCapture  = if nested then "h.value" else "h"
       val source = s"""
         type Half = @native[t=half];
         struct Box { value: Half };
-        fn to_int(h: Half): Int = @native[tpl="fptosi half %operand to i64"];;
+        fn to_int(h: Half): Int = @native[tpl="fptosi half %operand to i32"];;
         fn with_half(h: $capturedType): Int =
           let f = { u: Unit -> to_int $readCapture; };
           f ();
@@ -134,7 +135,8 @@ class ClosureEnvironmentMetadataTest extends BaseEffFunSuite:
       """
 
       compileAndGenerate(source).map { ir =>
-        val body = functionBodyMatching(ir, "test_f_\\d+\\(ptr %0\\) #0")
+        val body =
+          functionBodyMatching(ir, "test_f_\\d+\\(ptr align 2 dereferenceable\\(2\\) %0\\) #0")
         assertEquals(captureAccesses(body, "load").size, 1)
       }
     }
@@ -142,7 +144,7 @@ class ClosureEnvironmentMetadataTest extends BaseEffFunSuite:
   test("empty native capture layout keeps a plain environment parameter") {
     val source = """
       type Empty = @native {};
-      fn inspect(e: Empty): Int = @native[tpl="add i64 0, 42"];;
+      fn inspect(e: Empty): Int = @native[tpl="add i32 0, 42"];;
       fn with_empty(e: Empty): Int =
         let f = { u: Unit -> inspect e; };
         f ();

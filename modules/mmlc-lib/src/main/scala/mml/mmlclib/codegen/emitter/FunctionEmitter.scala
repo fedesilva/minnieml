@@ -144,37 +144,10 @@ private[emitter] def formatClosureEnvParam(
   paramIdx:  Int,
   state:     CodeGenState
 ): String =
-  if hasKnownClosureLayout(envStruct, state.resolvables) then
-    val envTypeRef = s"%struct.${envStruct.name}"
-    val size       = sizeOfLlvmTypeResolved(envTypeRef, state)
-    val alignment  = alignOfLlvmTypeResolved(envTypeRef, state)
-    if size > 0 then s"ptr align $alignment dereferenceable($size) %$paramIdx"
-    else s"ptr %$paramIdx"
-  else s"ptr %$paramIdx"
-
-/** Native LLVM types outside the layout helpers' explicit cases carry no storage promises. */
-private def hasKnownClosureLayout(typeSpec: Type, resolvables: ResolvablesIndex): Boolean =
-  typeSpec match
-    case TypeGroup(_, List(inner)) => hasKnownClosureLayout(inner, resolvables)
-    case ref: TypeRef =>
-      ref.resolvedId.flatMap(resolvables.lookupType).exists {
-        case td: TypeDef => td.typeSpec.exists(hasKnownClosureLayout(_, resolvables))
-        case ts: TypeStruct => hasKnownClosureLayout(ts, resolvables)
-        case ta: TypeAlias =>
-          hasKnownClosureLayout(ta.typeSpec.getOrElse(ta.typeRef), resolvables)
-      }
-    case ts: TypeStruct =>
-      ts.fields.forall(field => hasKnownClosureLayout(field.typeSpec, resolvables))
-    case ns: NativeStruct =>
-      ns.fields.nonEmpty && ns.fields.forall { case (_, fieldType) =>
-        hasKnownClosureLayout(fieldType, resolvables)
-      }
-    case np: NativePrimitive =>
-      np.llvmType match
-        case "i1" | "i8" | "i16" | "i32" | "i64" | "float" | "double" | "ptr" => true
-        case _ => false
-    case _: NativePointer | _: TypeFn => true
-    case _ => false
+  state.layout.of(s"%struct.${envStruct.name}", state) match
+    case Right(layout) if layout.size > 0 =>
+      s"ptr align ${layout.alignment} dereferenceable(${layout.size}) %$paramIdx"
+    case _ => s"ptr %$paramIdx"
 
 /** Load captures from env struct in a deferred function's entry block. Each capture gets a GEP and
   * a load. Field offset is 1 for move envs (__dtor at field 0), 0 for borrow envs.
@@ -973,8 +946,8 @@ private def compileBoundStatements(
 private def mmlTypeNameToLlvm(typeName: String): Either[CodeGenError, String] =
   typeName match
     case "Bool" => Right("i1")
-    case "Int64" | "Int" | "SizeT" => Right("i64")
-    case "Int32" => Right("i32")
+    case "Int64" | "SizeT" => Right("i64")
+    case "Int32" | "Int" => Right("i32")
     case "Int16" => Right("i16")
     case "Int8" | "Byte" | "Word" | "Char" => Right("i8")
     case "Float" => Right("float")

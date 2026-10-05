@@ -1,10 +1,13 @@
 #!/bin/bash
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" &>/dev/null && pwd)"
-PROJECT_ROOT="$(cd "${SCRIPT_DIR}/../../" &>/dev/null && pwd)"
+set -euo pipefail
 
-# Build the Docker image with the name matching docker-compose.yml
-docker build -t ubuntu-graal-sbt "${SCRIPT_DIR}"
+case "${1:-}" in
+  arm64|amd64) builder_service="mml-linux-$1" ;;
+  *) echo "Usage: $0 {arm64|amd64}" >&2; exit 2 ;;
+esac
 
-echo "Docker image built successfully. To use it:"
-echo "1. Run './packaging/docker/linux-builder-shell.sh' to get a shell"
-echo "2. Run './packaging/docker/linux-builder-distro.sh' to build the distro"
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+project_root="$(cd "$script_dir/../.." && pwd)"
+
+docker compose --project-directory "$project_root" build "$builder_service"
+echo "Builder ready. Open it with: ./packaging/docker/linux-builder-shell.sh $1"

@@ -1,20 +1,21 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdint.h>
+#include <inttypes.h>
 
 // Simple swap helper
-void swap(int64_t* arr, int64_t a, int64_t b) {
-    int64_t tmp = arr[a];
+void swap(int32_t* arr, int32_t a, int32_t b) {
+    int32_t tmp = arr[a];
     arr[a] = arr[b];
     arr[b] = tmp;
 }
 
 // Partition logic
-int64_t partition(int64_t* arr, int64_t low, int64_t high) {
-    int64_t pivot = arr[high];
-    int64_t i = low - 1;
+int32_t partition(int32_t* arr, int32_t low, int32_t high) {
+    int32_t pivot = arr[high];
+    int32_t i = low - 1;
 
-    for (int64_t j = low; j < high; j++) {
+    for (int32_t j = low; j < high; j++) {
         if (arr[j] < pivot) {
             i++;
             swap(arr, i, j);
@@ -25,33 +26,33 @@ int64_t partition(int64_t* arr, int64_t low, int64_t high) {
 }
 
 // Recursive Quicksort
-void quicksort(int64_t* arr, int64_t low, int64_t high) {
+void quicksort(int32_t* arr, int32_t low, int32_t high) {
     if (low < high) {
-        int64_t p = partition(arr, low, high);
+        int32_t p = partition(arr, low, high);
         quicksort(arr, low, p - 1);
         quicksort(arr, p + 1, high);
     }
 }
 
-int64_t run_sort(int64_t size) {
-    int64_t* arr = (int64_t*)malloc(size * sizeof(int64_t));
+int32_t run_sort(int32_t size) {
+    int32_t* arr = (int32_t*)malloc(size * sizeof(int32_t));
     
     // Fill random (Same LCG logic as MML)
-    int64_t next = 42;
-    for (int64_t i = 0; i < size; i++) {
-        next = (next * 1664525) + 1013904223;
-        arr[i] = next % 100000;
+    int32_t next = 42;
+    for (int32_t i = 0; i < size; i++) {
+        next = (next * 25173 + 13849) % 65536;
+        arr[i] = next;
     }
 
     quicksort(arr, 0, size - 1);
     
-    int64_t result = arr[size / 2];
+    int32_t result = arr[size / 2];
     free(arr);
     return result;
 }
 
 int main() {
-    int64_t result = run_sort(1000000);
-    printf("Median checksum: %lld\n", result);
+    int32_t result = run_sort(1000000);
+    printf("Median checksum: %" PRId32 "\n", result);
     return 0;
 }

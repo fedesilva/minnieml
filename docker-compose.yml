@@ -1,11 +1,35 @@
+x-builder: &builder
+  volumes:
+    - .:/workspace
+    - /workspace/target
+    - /workspace/project/target
+    - /workspace/project/project/target
+    - /workspace/project/project/project/target
+    - /workspace/modules/mmlc/target
+    - /workspace/modules/mmlc-lib/target
+    - /workspace/build
+  working_dir: /workspace
+  tty: true
+  stdin_open: true
+  command: bash
+
 services:
-  mml:
-    image: ubuntu-graal-sbt
+  mml-linux-arm64:
+    <<: *builder
     build:
       context: ./packaging/docker
-    volumes:
-      - .:/workspace
-    working_dir: /workspace
-    tty: true
-    stdin_open: true
-    command: bash
+      platforms: [linux/arm64]
+    image: mml-linux-arm64
+    container_name: mml-linux-arm64
+    platform: linux/arm64
+    profiles: [arm64]
+
+  mml-linux-amd64:
+    <<: *builder
+    build:
+      context: ./packaging/docker
+      platforms: [linux/amd64]
+    image: mml-linux-amd64
+    container_name: mml-linux-amd64
+    platform: linux/amd64
+    profiles: [amd64]

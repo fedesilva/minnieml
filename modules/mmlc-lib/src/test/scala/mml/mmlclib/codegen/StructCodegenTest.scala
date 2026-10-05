@@ -14,7 +14,7 @@ class StructCodegenTest extends BaseEffFunSuite:
       """
 
     compileAndGenerate(source).map { llvmIr =>
-      assert(llvmIr.contains("%struct.Person = type { %struct.String, i64 }"))
+      assert(llvmIr.contains("%struct.Person = type { %struct.String, i32 }"))
     }
   }
 

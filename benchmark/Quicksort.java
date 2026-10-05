@@ -1,13 +1,13 @@
 public class Quicksort {
 
-    static void swap(long[] arr, int a, int b) {
-        long tmp = arr[a];
+    static void swap(int[] arr, int a, int b) {
+        int tmp = arr[a];
         arr[a] = arr[b];
         arr[b] = tmp;
     }
 
-    static int partition(long[] arr, int low, int high) {
-        long pivot = arr[high];
+    static int partition(int[] arr, int low, int high) {
+        int pivot = arr[high];
         int i = low - 1;
 
         for (int j = low; j < high; j++) {
@@ -21,7 +21,7 @@ public class Quicksort {
         return i + 1;
     }
 
-    static void quicksort(long[] arr, int low, int high) {
+    static void quicksort(int[] arr, int low, int high) {
         if (low < high) {
             int p = partition(arr, low, high);
             quicksort(arr, low, p - 1);
@@ -29,13 +29,13 @@ public class Quicksort {
         }
     }
 
-    static long runSort(int size) {
-        long[] arr = new long[size];
-        long next = 42;
+    static int runSort(int size) {
+        int[] arr = new int[size];
+        int next = 42;
 
         for (int i = 0; i < size; i++) {
-            next = next * 1664525 + 1013904223;
-            arr[i] = next % 100000;
+            next = (next * 25173 + 13849) % 65536;
+            arr[i] = next;
         }
 
         quicksort(arr, 0, size - 1);

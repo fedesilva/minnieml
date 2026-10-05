@@ -2,16 +2,16 @@ package main
 
 import "fmt"
 
-func fillMatrix(arr []int64, n int64, seed int64) {
+func fillMatrix(arr []int32, n int32, seed int32) {
 	currentSeed := seed
 	// Range loop allows BCE (Bounds Check Elimination)
 	for i := range arr {
-		currentSeed = (currentSeed * 1664525) + 1013904223
-		arr[i] = currentSeed % 100
+		currentSeed = (currentSeed*25173 + 13849) % 65536
+		arr[i] = (currentSeed % 100) - 50
 	}
 }
 
-func matMul(A []int64, B []int64, C []int64, n int64) {
+func matMul(A []int32, B []int32, C []int32, n int32) {
 	N := int(n)
 	size := N * N
 
@@ -24,7 +24,7 @@ func matMul(A []int64, B []int64, C []int64, n int64) {
 	for i := 0; i < N; i++ {
 		rowOffset := i * N
 		for j := 0; j < N; j++ {
-			var acc int64 = 0
+			var acc int32 = 0
 			for k := 0; k < N; k++ {
 				// Naive i-j-k access pattern
 				// A[i*N + k]
@@ -39,8 +39,8 @@ func matMul(A []int64, B []int64, C []int64, n int64) {
 	}
 }
 
-func trace(arr []int64, n int64) int64 {
-	var acc int64 = 0
+func trace(arr []int32, n int32) int32 {
+	var acc int32 = 0
 	N := int(n)
 	for i := 0; i < N; i++ {
 		acc += arr[(i*N)+i]
@@ -49,10 +49,10 @@ func trace(arr []int64, n int64) int64 {
 }
 
 func main() {
-	var n int64 = 500
-	A := make([]int64, n*n)
-	B := make([]int64, n*n)
-	C := make([]int64, n*n)
+	var n int32 = 500
+	A := make([]int32, n*n)
+	B := make([]int32, n*n)
+	C := make([]int32, n*n)
 
 	fillMatrix(A, n, 42)
 	fillMatrix(B, n, 1337)

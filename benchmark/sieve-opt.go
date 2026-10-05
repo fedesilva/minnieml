@@ -2,7 +2,7 @@ package main
 
 import "fmt"
 
-func initSieve(arr []int64) {
+func initSieve(arr []int32) {
 	// Optimization 1: Use range loop.
 	// Go compiler proves index is safe -> Removes bounds checks.
 	// likely compiles to efficient memclr/memset logic.
@@ -11,19 +11,19 @@ func initSieve(arr []int64) {
 	}
 }
 
-func clearMultiples(arr []int64, factor, num, size int64) {
+func clearMultiples(arr []int32, factor, num, size int32) {
 	// Optimization 2: Slice the array up front.
 	// This proves to the compiler that 'arr' has at least 'size' elements.
 	// It removes bounds checks inside the loop logic below.
-	arr = arr[:size] 
-	
+	arr = arr[:size]
+
 	for num < size {
 		arr[num] = 0
 		num += factor
 	}
 }
 
-func findNextPrime(arr []int64, i, limit int64) int64 {
+func findNextPrime(arr []int32, i, limit int32) int32 {
 	for i <= limit {
 		if arr[i] == 1 {
 			return i
@@ -33,7 +33,7 @@ func findNextPrime(arr []int64, i, limit int64) int64 {
 	return 0
 }
 
-func isqrt(n, guess int64) int64 {
+func isqrt(n, guess int32) int32 {
 	for {
 		next := (guess + n/guess) / 2
 		if next >= guess {
@@ -43,8 +43,8 @@ func isqrt(n, guess int64) int64 {
 	}
 }
 
-func countPrimes(arr []int64) int64 {
-	var count int64 = 1
+func countPrimes(arr []int32) int32 {
+	var count int32 = 1
 	// Optimization 3: Range loop + Branchless addition.
 	// - Range eliminates bounds checks.
 	// - Adding 'v' eliminates branch misprediction.
@@ -54,16 +54,16 @@ func countPrimes(arr []int64) int64 {
 	return count
 }
 
-func runSieve(limit int64) int64 {
+func runSieve(limit int32) int32 {
 	size := (limit + 1) / 2
-	arr := make([]int64, size)
+	arr := make([]int32, size)
 
 	initSieve(arr)
 	arr[0] = 0
 
 	q := isqrt(limit, limit/2)
 
-	for factor := int64(3); factor <= q; {
+	for factor := int32(3); factor <= q; {
 		next := findNextPrime(arr, factor/2, q/2)
 		if next == 0 {
 			break

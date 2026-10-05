@@ -262,8 +262,13 @@ object ExpressionRewriter:
               resolvables
             ).map { case (operand, remaining) =>
               // Transform prefix operator to function application
-              val opApp = App(source, resolvedRef, operand)
-              (Expr(source, List(opApp)), remaining)
+              val value = operand.terms match
+                case (lit: LiteralInt) :: Nil
+                    if bnd.id.contains(s"stdlib::bnd::${OpMangling.mangleOp("-", 1)}") &&
+                      lit.value == 2147483648L =>
+                  lit.copy(source = source, value = Int.MinValue.toLong)
+                case _ => App(source, resolvedRef, operand)
+              (Expr(source, List(value)), remaining)
             }
           case None =>
             // Not a prefix operator - check for ref, atom, or error

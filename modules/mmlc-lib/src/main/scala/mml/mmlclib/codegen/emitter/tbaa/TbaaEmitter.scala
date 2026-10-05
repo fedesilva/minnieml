@@ -1,5 +1,6 @@
 package mml.mmlclib.codegen.emitter.tbaa
 
+import cats.syntax.all.*
 import mml.mmlclib.ast.*
 import mml.mmlclib.codegen.emitter.{CodeGenError, CodeGenState, getNominalTypeName}
 
@@ -33,7 +34,7 @@ object TbaaEmitter:
   ): Either[CodeGenError, (CodeGenState, String)] =
     for
       (structName, fields) <- resolveStructFields(structTypeSpec, state.resolvables)
-      fieldLayout <- computeStructFieldLayout(structName, fields, state.resolvables)
+      fieldLayout <- computeStructFieldLayout(structName, fields, state)
       _ <- Either.cond(
         fieldIndex < fieldLayout.size,
         (),
@@ -92,7 +93,7 @@ object TbaaEmitter:
   ): Either[CodeGenError, CodeGenState] =
     typeDef.typeSpec match
       case Some(ns: NativeStruct) =>
-        computeStructFieldLayout(typeDef.name, ns.fields, state.resolvables).map { layout =>
+        computeStructFieldLayout(typeDef.name, ns.fields, state).map { layout =>
           val (stateWithTbaa, _) = state.getTbaaStruct(typeDef.name, layout)
           stateWithTbaa
         }
@@ -105,7 +106,7 @@ object TbaaEmitter:
     computeStructFieldLayout(
       typeStruct.name,
       typeStruct.fields.toList.map(f => f.name -> f.typeSpec),
-      state.resolvables
+      state
     ).map { layout =>
       val (stateWithTbaa, _) = state.getTbaaStruct(typeStruct.name, layout)
       stateWithTbaa
@@ -115,29 +116,18 @@ object TbaaEmitter:
     * preserve type distinctions in TBAA metadata.
     */
   private def computeStructFieldLayout(
-    structName:  String,
-    fields:      List[(String, Type)],
-    resolvables: ResolvablesIndex
+    structName: String,
+    fields:     List[(String, Type)],
+    state:      CodeGenState
   ): Either[CodeGenError, List[(String, Int)]] =
     fields
-      .foldLeft(
-        Right((List.empty[(String, Int)], 0)): Either[CodeGenError, (List[(String, Int)], Int)]
-      ) {
-        case (Right((acc, currentOffset)), (fieldName, fieldTypeSpec)) =>
-          for
-            typeName <- getNominalTypeName(fieldTypeSpec).left
-              .map(e => CodeGenError(s"In struct '$structName', field '$fieldName': ${e.message}"))
-            fieldAlignment <- StructLayout
-              .alignOf(fieldTypeSpec, resolvables)
-              .left
-              .map(e => CodeGenError(s"In struct '$structName', field '$fieldName': ${e.message}"))
-            fieldSize <- StructLayout
-              .sizeOf(fieldTypeSpec, resolvables)
-              .left
-              .map(e => CodeGenError(s"In struct '$structName', field '$fieldName': ${e.message}"))
-          yield
-            val alignedOffset = mml.mmlclib.codegen.emitter.alignTo(currentOffset, fieldAlignment)
-            (acc :+ (typeName, alignedOffset), alignedOffset + fieldSize)
-        case (left @ Left(_), _) => left
+      .traverse { case (_, typ) =>
+        for
+          typeName <- getNominalTypeName(typ)
+          layout <- state.layout.fromType(typ, state)
+        yield (typeName, layout)
       }
-      .map(_._1)
+      .map { members =>
+        val layout = state.layout.aggregate(structName, members.map(_._2))
+        members.map(_._1).zip(layout.fields.map(_.offset))
+      }

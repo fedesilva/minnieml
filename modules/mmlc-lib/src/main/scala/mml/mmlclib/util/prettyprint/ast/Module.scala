@@ -17,7 +17,12 @@ def prettyPrintModule(
     module.docComment.map(doc => s"\n${prettyPrintDocComment(doc, indent + 1)}").getOrElse("")
   val membersStr =
     module.members.map(prettyPrintMember(_, indent + 1, showSourceSpans, showTypes)).mkString("\n")
-  s"$header$docStr\n$membersStr"
+  val linkStr = module.linkDirective
+    .map { directive =>
+      s"\n$indentStr  ${directive.syntax}"
+    }
+    .getOrElse("")
+  s"$header$docStr$linkStr\n$membersStr"
 
 def prettyPrintDocComment(doc: DocComment, indent: Int): String =
   val indentStr = "  " * indent

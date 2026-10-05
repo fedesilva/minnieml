@@ -45,11 +45,9 @@ fn quicksort(arr: IntArray, low: Int, high: Int): Unit =
 // Standard Linear Congruential Generator for deterministic random numbers
 fn fill_random(arr: IntArray, seed: Int, i: Int, size: Int): Unit =
   if i < size then
-    // Use the same 64-bit recurrence as the unchecked benchmark.
-    let next = (seed * 1664525) + 1013904223;
-    // Limit the magnitude; signed remainders can be negative.
-    let val = next % 100000;
-    ar_int_set arr i val;
+    // Use the same bounded recurrence as the unchecked benchmark.
+    let next = (seed * 25173 + 13849) % 65536;
+    ar_int_set arr i next;
     fill_random arr next (i + 1) size;
   ;
 ;

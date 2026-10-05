@@ -41,12 +41,12 @@ class TbaaEmissionTest extends BaseEffFunSuite:
     """
 
     compileAndGenerate(source).map { llvmIr =>
-      // Verify MML type nodes exist (String fields are Int64 and CharPtr)
-      assert(llvmIr.contains("!{!\"Int64\""), "Missing Int64 TBAA node")
+      // Verify MML type nodes exist (String fields are Int32 and CharPtr)
+      assert(llvmIr.contains("!{!\"Int32\""), "Missing Int32 TBAA node")
       assert(llvmIr.contains("!{!\"CharPtr\""), "Missing CharPtr TBAA node")
 
       // Verify struct node references MML types with correct offsets
-      // String has 2 fields: length (Int64 @ 0), data (CharPtr @ 8)
+      // String has 2 fields: length (Int32 @ 0), data (CharPtr @ 8)
       val stringMatch = """!\{!"String", !(\d+), i64 0, !(\d+), i64 8\}""".r
       assert(
         stringMatch.findFirstIn(llvmIr).isDefined,
@@ -93,8 +93,8 @@ class TbaaEmissionTest extends BaseEffFunSuite:
     """
 
     compileAndGenerate(source).map { llvmIr =>
-      // String is { i64, ptr } - both fields are 8-byte aligned
-      // Field 0 (i64): offset 0
+      // String is { i32, ptr }; the pointer is 8-byte aligned
+      // Field 0 (i32): offset 0
       // Field 1 (ptr): offset 8 (not 4, because ptr needs 8-byte alignment)
       val stringNode = llvmIr.split("\n").find(_.contains("\"String\""))
       assert(stringNode.isDefined, "Missing String TBAA struct node")
@@ -120,7 +120,7 @@ class TbaaEmissionTest extends BaseEffFunSuite:
         assert(llvmIr.contains("!alias.scope"), "Alias scope metadata missing")
         assert(llvmIr.contains("!noalias"), "Noalias metadata missing")
         assert(
-          llvmIr.contains("alias.scope:Int64") || llvmIr.contains("alias.scope:String"),
+          llvmIr.contains("alias.scope:Int32") || llvmIr.contains("alias.scope:String"),
           s"Alias scope metadata should mention a known MML type. IR snippet:\n${llvmIr.split("\n").filter(_.contains("alias.scope")).mkString("\n")}"
         )
 
@@ -246,7 +246,7 @@ class TbaaEmissionTest extends BaseEffFunSuite:
 
     compileAndGenerate(source).map { llvmIr =>
       val closureEnvTypePattern =
-        """%struct\.__closure_env_\d+ = type \{ ptr, i64 \}""".r
+        """%struct\.__closure_env_\d+ = type \{ ptr, i32 \}""".r
       assert(
         closureEnvTypePattern.findFirstIn(llvmIr).isDefined,
         s"Missing move closure env type with destructor and capture fields. IR:\n$llvmIr"
@@ -292,12 +292,12 @@ class TbaaEmissionTest extends BaseEffFunSuite:
 
   test("TBAA preserves alias identity for aliased struct fields") {
     val source = """
-      type MyInt = Int64;
+      type MyInt = Int32;
       struct Box {
         value: MyInt
       };
 
-      fn main(): Int64 =
+      fn main(): Int32 =
         let b = Box 1;
         0;
       ;
