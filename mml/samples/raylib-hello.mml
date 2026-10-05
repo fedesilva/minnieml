@@ -32,8 +32,7 @@ pub fn main(): Int =
     else
       begin_drawing ();
       clear_background (raywhite ());
-      draw_text text 350 280 20
-        (black ());
+      draw_text text 350 280 20 (black ());
       end_drawing ();
       draw_loop ();
     ;
