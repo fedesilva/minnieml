@@ -2,12 +2,6 @@
 
 Durable product changes belong here. Current task state belongs in task files.
 
-## 2026-10-05
-
-- Prefer Git Town `combine` for merging stacked feature branches while preserving commits.
-  Use `ship` for authorized delivery to `main`, or `ship --to-parent` for an explicitly
-  requested squash into a feature parent.
-
 ## 2026-10-04
 
 - Add module `@link` directives with ordered native-library inputs and per-entry warnings
