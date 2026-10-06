@@ -13,7 +13,7 @@ Use the narrower skills for execution:
 - `task-add`
 - `task-list`
 - `task-pick`
-- `complete-subtask`
+- `complete-subtask` (handles `finish subtask` and `complete subtask`)
 - `finish-task` (also handles `complete task`)
 - `archive-task`
 - `archive-cleanup`

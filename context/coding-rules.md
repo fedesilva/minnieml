@@ -158,7 +158,8 @@ or introduces references that it does not explain within the tour itself.
 
 - **Read Only** Freely use git to read history or fetching previous versions. No approval needed.
 - **Commits** are authorized by an explicit commit request or by `finish task`,
-  `complete task`, or `finish errand`. Follow `context/task-tracking-rules.md`.
+  `complete task`, `finish subtask`, `complete subtask`, or `finish errand`. Follow
+  `context/task-tracking-rules.md`.
   Push only when requested; finishing does not authorize remote publication.
 - Use Git Town for the branch lifecycle: `git town hack <name>` creates a feature branch
   and `git town sync` syncs/publishes. Do not use raw branch-creation or merge commands

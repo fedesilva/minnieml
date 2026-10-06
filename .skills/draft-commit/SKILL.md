@@ -54,7 +54,8 @@ Present:
 Drafting is read-only unless the author separately authorized staging or tracking
 updates. Never create the commit merely because a draft was requested.
 
-A `finish task`, `complete task`, or `finish errand` command authorizes the scoped commit.
+A `finish task`, `complete task`, `finish subtask`, `complete subtask`, or
+`finish errand` command authorizes the scoped commit.
 When a commit was already authorized for this scope, execute that authorization
 without requesting it again. Otherwise wait for explicit approval of the draft. A direct response such as `yes`, `y`,
 `commit it`, or an approved replacement message is sufficient.

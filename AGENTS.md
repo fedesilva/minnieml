@@ -98,11 +98,13 @@ Read only the documentation and code directly related to the target doc.
   authorize their stated writes. Research and planning need no approval.
 - Pure review, audit, inspect, and look-at requests are read-only unless fixes are requested.
 - Commit when authorized by an explicit commit request or by `finish task`, `complete task`,
-  or `finish errand`, as defined in `context/task-tracking-rules.md`. Push only when requested.
+  `finish subtask`, `complete subtask`, or `finish errand`, as defined in
+  `context/task-tracking-rules.md`. Push only when requested.
 - Use Git Town for branch lifecycle operations, following `context/coding-rules.md`.
 - If a rule is unclear or conflicts with the current task, raise the conflict and wait for direction.
-- Finishing a task combines signoff, tracked completion, logging, and a local commit.
-  Follow `context/task-tracking-rules.md`; passing checks alone does not authorize finishing.
+- Finishing a task or subtask combines verification, signoff, scoped completion, logging,
+  and a local commit. Finishing a subtask leaves the parent task open. Follow
+  `context/task-tracking-rules.md`; passing checks alone does not authorize finishing.
 - **For big tasks or projects**
   - Split your work into smaller chunks, stop on completion and ask for review and signoff.
 - Use local `post-chores` when finishing a tracked task or handing off compiler changes,
