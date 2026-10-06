@@ -170,9 +170,20 @@ class FunctionValueCodegenTests extends BaseEffFunSuite:
       ;
     """
     compileAndGenerate(source).flatMap { ir =>
-      val consumer = functionBodyMatching(ir, "test_f_\\d+\\(ptr noalias %\\d+, ptr %\\d+\\).*")
+      // Discover the symbol at the call site; adapter creation can change generated-name numbering.
+      def localEntry(caller: String, result: String, argument: String): String =
+        val body = functionBody(ir, caller)
+        s"call $result @([^ (]+)\\($argument %\\d+\\)".r
+          .findFirstMatchIn(body)
+          .map(_.group(1))
+          .getOrElse(fail(body))
+
+      val consumerName = localEntry("test_apply", "void", "ptr")
+      val consumer =
+        functionBodyMatching(ir, s"${Regex.quote(consumerName)}\\(ptr noalias %\\d+\\).*")
       assert(consumer.contains("call void @test_consume(ptr"), consumer)
-      val increment = functionBodyMatching(ir, "test_f_\\d+\\(i32 %\\d+, ptr %\\d+\\).*")
+      val incrementName = localEntry("test_calculate", "i32", "i32")
+      val increment = functionBodyMatching(ir, s"${Regex.quote(incrementName)}\\(i32 %\\d+\\).*")
       assert(increment.contains("add i32 %0, 1"), increment)
       assert(!increment.contains("@increment"), increment)
       assemble(ir)

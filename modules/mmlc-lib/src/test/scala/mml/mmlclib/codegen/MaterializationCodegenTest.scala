@@ -74,6 +74,25 @@ class MaterializationCodegenTest extends BaseEffFunSuite:
     }
   }
 
+  test("let-bound lambda used only directly is direct") {
+    val code =
+      """
+        fn main(dummy: Int): Int =
+          let id = { x: Int -> x };
+          id dummy;
+        ;
+      """
+    compileAndGenerate(code).map { ir =>
+      val body = functionBody(ir, "test_main")
+      val call = """call i32 @([^ (]+)\(i32 %\d+\)""".r
+        .findFirstMatchIn(body)
+        .getOrElse(fail(s"Expected a plain local call:\n$body"))
+      functionBodyMatching(ir, s"${Regex.quote(call.group(1))}\\(i32 %\\d+\\).*")
+      assertNoClosureValue(body)
+      assert(!ir.contains("{ ptr, ptr }"), ir)
+    }
+  }
+
   test("let-bound lambda used as value is not direct") {
     val code =
       """

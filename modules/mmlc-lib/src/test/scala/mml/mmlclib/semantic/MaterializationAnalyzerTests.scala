@@ -41,27 +41,12 @@ class MaterializationAnalyzerTests extends BaseEffFunSuite:
     searchExpr(outer.body).getOrElse(fail(s"No let-bound lambda '$binder' in fn '$fnName'"))
 
   private def isDirect(lambda: Lambda): Boolean =
-    // Pending compiler API; the source assertion is preserved below.
+    // The assertion depends on AST metadata that the compiler does not expose. Its replacement
+    // must check lowering: plain entries are an emitter optimization, not a lambda category.
     /*
     lambda.meta.exists(_.isDirect)
      */
     fail("LambdaMeta.isDirect is absent from the parent AST.")
-
-  // Pending direct-entry lowering.
-  // See context/tasks/unify-lambdas-ignored-tests.md, Materialization repair plans.
-  test("let-bound lambda used only directly is direct".ignore) {
-    val code =
-      """
-        fn main(dummy: Int): Int =
-          let id = { x: Int -> x };
-          id dummy;
-        ;
-      """
-    semNotFailed(code).map { module =>
-      val id = letBoundLambda(module, "main", "id")
-      assert(isDirect(id), "let-bound id is only invoked")
-    }
-  }
 
   // Pending PAP target lowering.
   // See context/tasks/unify-lambdas-ignored-tests.md, Materialization repair plans.

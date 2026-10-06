@@ -292,7 +292,8 @@ class FunctionSignatureTest extends BaseEffFunSuite:
     }
   }
 
-  // Pending migration: Parent uses anonymous eta wrappers instead of named closure entries.
+  // Preserved assertions pin closure-entry names. Reconcile them with the shared-adapter behavior
+  // covered by FunctionValueCodegenTests; see context/tasks/unify-lambdas-ignored-tests.md.
   test("higher-order named function arguments lower as function values, not symbol loads".ignore) {
     val source =
       """
@@ -321,7 +322,8 @@ class FunctionSignatureTest extends BaseEffFunSuite:
     }
   }
 
-  // Pending migration: Parent uses anonymous eta wrappers instead of named closure entries.
+  // Preserved assertions pin closure-entry names. Reconcile them with the shared-adapter behavior
+  // covered by FunctionValueCodegenTests; see context/tasks/unify-lambdas-ignored-tests.md.
   test("repeated higher-order named function arguments reuse one closure entry".ignore) {
     val source =
       """
@@ -346,7 +348,8 @@ class FunctionSignatureTest extends BaseEffFunSuite:
     }
   }
 
-  // Pending migration: Parent uses anonymous eta wrappers instead of named closure entries.
+  // Preserved assertions pin closure-entry names. Reconcile them with the shared-adapter behavior
+  // covered by FunctionValueCodegenTests; see context/tasks/unify-lambdas-ignored-tests.md.
   test("mixed direct and higher-order top-level function uses keep both call shapes".ignore) {
     val source =
       """
@@ -403,7 +406,8 @@ class FunctionSignatureTest extends BaseEffFunSuite:
     }
   }
 
-  // Pending migration: Parent emits closure entries; these assertions require Direct entries and captures.
+  // Preserved generated-name assertions await reconciliation with the active plain-entry tests in
+  // LocalCallableCodegenTests; see context/tasks/unify-lambdas-ignored-tests.md.
   test("local Direct lambda calls use plain direct entry call".ignore) {
     val source =
       """
@@ -431,7 +435,8 @@ class FunctionSignatureTest extends BaseEffFunSuite:
     }
   }
 
-  // Pending migration: Parent uses anonymous eta wrappers instead of named closure entries.
+  // Preserved assertions pin closure-entry names. Reconcile them with the shared-adapter behavior
+  // covered by FunctionValueCodegenTests; see context/tasks/unify-lambdas-ignored-tests.md.
   test("shadowed local callable args do not eta-expand from top-level names".ignore) {
     val source =
       """
@@ -770,12 +775,13 @@ class FunctionSignatureTest extends BaseEffFunSuite:
       """
 
     compileAndGenerate(source).map { llvmIr =>
+      // Boolean return extension depends on the target C ABI; this test checks symbol routing.
       assert(
-        llvmIr.contains("declare zeroext i1 @str_eq("),
+        """declare (?:zeroext )?i1 @str_eq\(""".r.findFirstIn(llvmIr).nonEmpty,
         s"declaration should use stdlib symbol str_eq, got:\n$llvmIr"
       )
       assert(
-        llvmIr.contains("call zeroext i1 @str_eq("),
+        """call (?:zeroext )?i1 @str_eq\(""".r.findFirstIn(llvmIr).nonEmpty,
         s"call should use stdlib symbol str_eq, got:\n$llvmIr"
       )
     }
@@ -796,7 +802,8 @@ class FunctionSignatureTest extends BaseEffFunSuite:
     }
   }
 
-  // Pending migration: Parent emits closure entries; these assertions require Direct entries and captures.
+  // These assertions require passing captures as trailing parameters. The local-entry optimization
+  // only selects non-capturing lambdas; capture elimination remains separate work.
   test("nested Direct lambda threads outer Direct callable's captures".ignore) {
     // When an inner Direct lambda `g` calls an outer Direct binding `f` whose
     // `captureOperands` reference enclosing-scope SSA registers, those operands must be
@@ -838,7 +845,8 @@ class FunctionSignatureTest extends BaseEffFunSuite:
     }
   }
 
-  // Pending migration: Parent emits closure entries; these assertions require Direct entries and captures.
+  // These assertions require passing captures as trailing parameters. The local-entry optimization
+  // only selects non-capturing lambdas; capture elimination remains separate work.
   test("loopified Direct closure captures Direct sibling operands as trailing params".ignore) {
     val source =
       """
@@ -890,7 +898,8 @@ class FunctionSignatureTest extends BaseEffFunSuite:
     }
   }
 
-  // Pending migration: Parent emits closure entries; these assertions require Direct entries and captures.
+  // These assertions require passing captures as trailing parameters. The local-entry optimization
+  // only selects non-capturing lambdas; capture elimination remains separate work.
   test("Direct move lambda capturing a heap literal clones at the binder site".ignore) {
     // A Direct move-capturing lambda whose capture is a heap literal (string, etc.) must
     // (a) emit a clone call at the binder site and (b) thread the cloned value as the
@@ -984,7 +993,7 @@ class FunctionSignatureTest extends BaseEffFunSuite:
     }
   }
 
-  test("local static null-env closure calls use direct closure-entry call") {
+  test("local direct-only call uses a plain entry") {
     val source =
       """
         fn main(): Int =
@@ -996,18 +1005,14 @@ class FunctionSignatureTest extends BaseEffFunSuite:
     compileAndGenerate(source).map { llvmIr =>
       val mainBody = functionBodyMatching(llvmIr, "test_main\\(\\) #0")
 
-      assert(
-        """call i32 @test_f_\d+\(i32 41, ptr null\)""".r.findFirstIn(mainBody).nonEmpty,
-        s"Expected local static closure call to use a direct closure-entry call. Body:\n$mainBody"
-      )
-      assert(
-        !mainBody.contains("extractvalue { ptr, ptr }"),
-        s"Static null-env closure call should not extract from a fat pointer. Body:\n$mainBody"
-      )
-      assert(
-        """call i32 %\d+\(i32 41, ptr %\d+\)""".r.findFirstIn(mainBody).isEmpty,
-        s"Static null-env closure call should not use an indirect function pointer. Body:\n$mainBody"
-      )
+      val target = """call i32 @([^ (]+)\(i32 41\)""".r
+        .findFirstMatchIn(mainBody)
+        .getOrElse(fail(mainBody))
+        .group(1)
+      assert(functionBody(llvmIr, target).contains("add i32 %0, 1"), llvmIr)
+      assert(!mainBody.contains("{ ptr, ptr }"), mainBody)
+      assert(!mainBody.contains("ptr null"), mainBody)
+
     }
   }
 

@@ -248,7 +248,9 @@ enum TbaaNode derives CanEqual:
   case Scalar(name: String, parentId: Int)
   case Struct(name: String, fields: List[(Int, Int)]) // (typeId, offset) pairs
 
-/** Represents the state during code generation.
+/** Carries both the current LLVM body's output and the module registries used by nested emission.
+  * Deferred bodies isolate output and register numbering, then merge their registries back so later
+  * uses can reuse entries and adapters already emitted inside those bodies.
   *
   * @param targetAbi
   *   the target ABI for native lowering
@@ -268,6 +270,16 @@ enum TbaaNode derives CanEqual:
   *   map of native type names to their LLVM IR definitions
   * @param functionDeclarations
   *   map of function names to their declarations
+  *
+  * @param localCallablePlan
+  *   immutable use analysis computed before emission chooses local entry conventions
+  * @param localCallableTargets
+  *   original binding IDs mapped to allocated plain entries, registered before compiling their
+  *   bodies
+  * @param callableEntries
+  *   closure entry symbols keyed by original binding ID, shared across aliases and deferred bodies
+  * @param nativeCallAdapters
+  *   adapters for native ABI signatures, independently cached by native call key
   *
   * TODO: QA: This struct is getting large. Consider splitting into smaller components (e.g.,
   * TBAAState, AliasScopeState, etc.)
@@ -303,11 +315,13 @@ case class CodeGenState(
   // Resolvables index for soft reference lookups
   resolvables: ResolvablesIndex = ResolvablesIndex(),
   // Deferred function definitions (expression-position lambdas compiled as separate functions)
-  deferredDefinitions:     List[String]               = List.empty,
-  callableEntries:         Map[String, String]        = Map.empty,
-  nativeCallAdapters:      Map[NativeCallKey, String] = Map.empty,
-  nextAnonFnId:            Int                        = 0,
-  insideLoopifiedFunction: Boolean                    = false
+  deferredDefinitions:     List[String]                     = List.empty,
+  localCallablePlan:       LocalCallablePlan                = LocalCallablePlan(),
+  localCallableTargets:    Map[String, LocalCallableTarget] = Map.empty,
+  callableEntries:         Map[String, String]              = Map.empty,
+  nativeCallAdapters:      Map[NativeCallKey, String]       = Map.empty,
+  nextAnonFnId:            Int                              = 0,
+  insideLoopifiedFunction: Boolean                          = false
 ):
   /** Returns a new state with an updated register counter. */
   def withRegister(reg: Int): CodeGenState =
@@ -602,21 +616,69 @@ case class CodeGenState(
       val declaration = emitFunctionDeclaration(name, returnType, paramTypes)
       copy(functionDeclarations = functionDeclarations + (name -> declaration))
 
-/** An entry in the function scope, tracking a binding's register and type info.
-  *
-  * When `isLiteral` is true, the value has not been materialized into a register — it will be
-  * emitted inline by consumers (e.g. as an immediate operand).
+/** Keeps known local call targets in scope without forcing closure construction at each binding. A
+  * direct call can use a Callable target immediately; a value consumer must materialize it. Runtime
+  * also holds function values whose target is unknown, such as function parameters.
   */
-case class ScopeEntry(
-  register:     Int,
-  typeName:     String,
-  isLiteral:    Boolean        = false,
-  literalValue: Option[String] = None
-):
-  def operandStr: String =
-    literalValue.getOrElse(
-      if isLiteral then register.toString else s"%$register"
-    )
+enum ScopeEntry:
+  /** A value already available as a register or literal operand. */
+  case Runtime(
+    register:     Int,
+    typeName:     String,
+    isLiteral:    Boolean        = false,
+    literalValue: Option[String] = None
+  )
+
+  /** A callable known without constructing a runtime closure value. `bindingId` identifies this
+    * scope binding, which may be an alias; `target.bindingId` identifies the original lambda
+    * binding shared by every alias.
+    */
+  case Callable(bindingId: String, target: LocalCallableTarget)
+
+object ScopeEntry:
+
+  /** Creates a runtime binding from an emitted register or literal operand. */
+  def apply(
+    register:     Int,
+    typeName:     String,
+    isLiteral:    Boolean        = false,
+    literalValue: Option[String] = None
+  ): ScopeEntry = Runtime(register, typeName, isLiteral, literalValue)
+
+  /** Retains the runtime value produced by expression emission as a scope binding. */
+  def fromResult(result: CompileResult): ScopeEntry =
+    Runtime(result.register, result.typeName, result.isLiteral, result.literalValue)
+
+  /** Finds a known callable only when the reference resolves to this exact scope binding. Matching
+    * the name alone would allow a shadowed reference to select an outer callable.
+    */
+  def callable(ref: Ref, scope: Map[String, ScopeEntry]): Option[LocalCallableTarget] =
+    scope.get(ref.name).collect {
+      case Callable(id, target) if ref.qualifier.isEmpty && ref.resolvedId.contains(id) => target
+    }
+
+  /** Supplies an operand when a consumer needs a value, such as a return or capture store. A known
+    * callable becomes a constant closure pair with a shared adapter and null environment. The
+    * caller must retain the returned state because materialization may emit that adapter.
+    */
+  def materialize(entry: ScopeEntry, state: CodeGenState): Either[CodeGenError, CompileResult] =
+    entry match
+      case Runtime(register, typeName, isLiteral, literalValue) =>
+        CompileResult(register, state, isLiteral, typeName, literalValue = literalValue).asRight
+      case Callable(_, target) => compileLocalCallableValue(target, state)
+
+/** Lets binding emission extend lexical scope even when no runtime operand is produced.
+  * CompileResult serves expression consumers that need an operand; a direct-only function binding
+  * instead establishes a Callable entry. Keeping the entry here avoids inventing a register for it.
+  *
+  * @param state
+  *   code generation state after emitting the binding's value or callable entry
+  * @param entry
+  *   the runtime value or known callable to introduce into the enclosing scope
+  * @param exitBlock
+  *   the value's exit block, when needed as a predecessor of an enclosing conditional's phi node
+  */
+case class LocalBindingResult(state: CodeGenState, entry: ScopeEntry, exitBlock: Option[String])
 
 /** Represents the result of compiling a term or expression.
   *

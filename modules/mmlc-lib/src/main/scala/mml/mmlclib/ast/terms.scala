@@ -7,6 +7,10 @@ enum MemEffect derives CanEqual:
   case Static // returns pointer to static/existing memory
 
 sealed trait Term extends AstNode, Typeable, FromSource:
+  /** Since Term has no shared copy method, dispatches to each concrete subtype's copy so the
+    * generic parser can attach an ascription without knowing which kind of term it parsed.
+    * TermError, DataConstructor, and Destruction are returned unchanged.
+    */
   def withTypeAsc(t: Type): Term = this match
     case x: Expr => x.copy(typeAsc = Some(t))
     case x: Cond => x.copy(typeAsc = Some(t))
