@@ -27,6 +27,54 @@ class RuntimeTests extends BaseEffFunSuite:
         .map(_.fold(error => fail(error.message), identity))
     yield (triple, target)
 
+  List(true, false).foreach { forward =>
+    val order = if forward then "before" else "after"
+    test(s"global literals referenced $order their declarations execute correctly"):
+      val declarations = """
+        let inferred = 30;
+        let annotated: Int = 30;
+        let int32: Int32 = 30;
+        let term = 30: Int32;
+        let flag = true;
+        let message = "hello";
+        let fraction = 1.5;
+      """
+      val main         = """
+        pub fn main(): Int =
+          let boolean = if flag then 0; else 1;;
+          boolean +
+          check (inferred == 30) + check (annotated == 30) +
+          check (int32 == 30) + check (term == 30) +
+          check (str_eq (int_to_str inferred) "30") +
+          check (str_eq message "hello") + check (fraction ==. 1.5);
+        ;
+      """
+      val check        = "fn check(ok: Bool): Int = if ok then 0; else 1;;;"
+      val source =
+        if forward then s"$check\n$main\n$declarations"
+        else s"$check\n$declarations\n$main"
+
+      withDirectory { directory =>
+        val binary = directory.resolve("program")
+        val config = CompilerConfig.default.copy(
+          mode       = CompilationMode.Exe,
+          outputDir  = directory,
+          outputName = binary.toString.some,
+          asan       = true
+        )
+        for
+          ir <- compileAndGenerate(source, "GlobalLiterals", config)
+          pair <- targetAt(directory, config)
+          (triple, target) = pair
+          path <- IO.blocking(Files.writeString(directory.resolve("GlobalLiterals.ll"), ir))
+          _ <- commandNotFailed(List("llvm-as", path.toString, "-o", "/dev/null"), directory)
+          result <- LlvmToolchain.compile(path, config, triple.some, target)
+          _ = assertEquals(result._1, Right(0))
+          _ <- programExits(List(binary.toString), directory, expectedCode = 0)
+        yield ()
+      }
+  }
+
   test("Int32 literal boundaries and explicit widening execute correctly") {
     val source = """
       fn check(ok: Bool): Int = if ok then 0; else 1;;;

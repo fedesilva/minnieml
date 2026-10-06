@@ -3,18 +3,18 @@
 ## Metadata
 
 - **Owner:** The Author
-- **Status:** planned
+- **Status:** in_progress
 - **Kind:** BUG, CORRECTNESS, CRASH
 - **Priority:** HIGH
 - **Created:** 2026-10-06
-- **Target Branch:** unassigned
+- **Target Branch:** dev-2026-03-21-lambdas
 - **External Reference:** None
 
 ## Execution Checklist
 
-1. [ ] **planned** — Reproduce and reduce the five findings below; establish repair boundaries.
-2. [ ] **planned** — Repair global integer constants, conditional IR generation, and string
-   return ownership with focused regression coverage.
+1. [ ] **in_progress** — Establish repair boundaries for findings 2–5.
+2. [ ] **in_progress** — [Global literal repair](#global-literal-repair) is complete;
+   conditional IR generation and string return ownership repairs remain pending.
 3. [ ] **planned** — Initialize every wall-map cell in `astar3.mml` before searching or printing.
 4. [ ] **planned** — Diagnose the copied executable's failure on macOS M2 and verify a
    compatible build configuration.
@@ -24,8 +24,9 @@
 
 Five findings concern ordinary MML source patterns, the console A* sample, and portability
 of the animated executable to macOS M2.
-The [animated sample](../../mml/samples/astar3_animated.mml) uses working source forms and
-explicit grid initialization, but does not repair the compiler or the console sample.
+The [animated sample](../../mml/samples/astar3_animated.mml) uses plain global integer
+constants and explicit grid initialization. It retains the conditional-argument and
+caption-return workarounds for findings 2–3.
 Keep these findings together for triage; separate repair tasks only when their boundaries
 are established.
 
@@ -48,11 +49,18 @@ Code generation error: Unresolved type reference: Int
 Explicit annotations did not solve the failure: the standalone `Int32`-annotated form
 and an `Int`-annotated version of the sample's integer constants also failed. The minimal
 program compiled when its initializer was `0 + 30`; this difference is diagnostic evidence,
-not an acceptable source requirement. The animated sample expresses named codes as fields
-of scalar records and uses nullary inline functions for individual integer constants.
+not an acceptable source requirement. The animated sample defines its named codes and scalar
+constants with plain global integer bindings.
 
 Acceptance: inferred and explicitly typed integer constants compile and execute correctly
 without arithmetic or record wrappers. Cover references before and after their declaration.
+
+The reduced failure depends on declaration order and also affects Boolean, string, and
+float literals. `TypeResolver` resolves the initializer's literal type but leaves the
+binding's cached type unresolved. `TypeChecker` treats a nonempty cached type as ready,
+so an earlier reference copies that unresolved type before the binding is checked.
+An arithmetic initializer has no cached type and therefore creates an ordering dependency.
+The affected resolution and ordering logic predates the Int32 change in `a201c4bc`.
 
 ### 2. Conditional expressions can produce invalid LLVM PHI nodes
 
@@ -92,13 +100,13 @@ messages replaced by concatenations:
 
 ```mml
 // Terminal branches of event_caption:
-elif event.kind == event_kind.found then "Goal reached! " ++ "Reveal the final path.";
+elif event.kind == event_kind_found then "Goal reached! " ++ "Reveal the final path.";
 else "No path found. " ++ "The queue is empty. Close the window when done.";
 
 // First branch of event_detail:
-if event.kind == event_kind.exhausted then
+if event.kind == event_kind_exhausted then
   "All reachable candidates " ++ "have been processed.";
-elif event.kind == event_kind.skip then
+elif event.kind == event_kind_skip then
   // Keep the remaining skip and cost branches from the linked sample.
 ```
 
@@ -122,16 +130,16 @@ The failing caption version can be reconstructed from the linked animated sample
 2. In `event_caption`, replace its final `else` branch with:
 
    ```mml
-   elif event.kind == event_kind.finish then "Finished checking neighbors of " ++ pos ++ ".";
-   elif event.kind == event_kind.found then "Goal reached! Reveal the final path.";
+   elif event.kind == event_kind_finish then "Finished checking neighbors of " ++ pos ++ ".";
+   elif event.kind == event_kind_found then "Goal reached! Reveal the final path.";
    else "No path found. The queue is empty. Close the window when done.";
    ```
 
 3. In `event_detail`, prepend the following branch and change the existing first `if`
-   for `event_kind.skip` to `elif`:
+   for `event_kind_skip` to `elif`:
 
    ```mml
-   if event.kind == event_kind.exhausted then "All reachable candidates have been processed.";
+   if event.kind == event_kind_exhausted then "All reachable candidates have been processed.";
    ```
 
 Compile with AddressSanitizer (`-s`) and exercise a full-height barrier with wall arguments
@@ -205,7 +213,27 @@ finding has a focused regression or sample check that fails for the defective be
 - [ ] Diagnose the macOS M2 launch failure and establish a compatible build configuration.
 - [ ] Implement approved repairs, add regressions, and run applicable verification.
 
-Approval: pending for bug-fix implementation.
+Approval: granted for the global literal repair below. Implementation approval for findings
+2–5 remains pending.
+
+### Global literal repair
+
+- [x] **complete** — Resolve global literal types before forward references use them.
+- [x] **complete** — Remove the animated sample's integer-constant workarounds.
+- `TypeResolver` resolves existing binding and expression `typeSpec` values with
+  `resolveTypeSpecWithMap`, preserving absent types, nominal aliases, diagnostics, and indexes.
+- The resolver boundary and resolved reference identities are covered in
+  [TypeResolverTests.scala](../../modules/mmlc-lib/src/test/scala/mml/mmlclib/semantic/TypeResolverTests.scala).
+  Cases include both declaration orders, `Int` and `Int32` binding annotations, a term annotation,
+  Boolean/string/float literals, arithmetic initialization, and incompatible annotations.
+- Both declaration orders pass LLVM assembly and sanitizer execution in
+  [RuntimeTests.scala](../../modules/mmlc-lib/src/test/scala/mml/mmlclib/codegen/RuntimeTests.scala).
+- The animated sample replaces `infinity` and `event_width` functions and the `EventKinds`,
+  `RejectionReasons`, `CellStates`, and `Layout` constant records with 24 plain global
+  integer bindings. Values, declaration placement, and group prefixes are preserved.
+- Compiler handoff checks and independent review pass. Global literal repair and sample
+  cleanup are complete and signed off. Local commit: `Fix forward references to global literals`.
+  Findings 2–5 remain open.
 
 ## Verification
 
@@ -221,7 +249,51 @@ Evidence for findings 1–4: 2026-10-06, macOS arm64, repository base `8143f27`.
 - Finding 5 is a user-reported macOS M2 launch failure dated 2026-10-06; independent
   reproduction, binary identification, and diagnosis remain pending.
 - Minimal headless reductions for the PHI and string-return findings remain pending.
-  No compiler repair or regression-suite pass is claimed for this task.
+
+Global literal repair evidence: 2026-10-06, macOS arm64, base `60651b1`.
+
+- Before the resolver fix, the 20 new global-literal checks reported 9 failures and 11 passes:
+  the resolver-boundary check, seven forward-reference semantic cases, and the forward
+  runtime case failed. Backward references, arithmetic controls, and negative validation passed.
+- After the fix, `sbtn "testOnly mml.mmlclib.semantic.TypeResolverTests
+  mml.mmlclib.semantic.TypeCheckerTests mml.mmlclib.codegen.RuntimeTests"` passed all 84 tests.
+  Runtime cases verify LLVM with `llvm-as` and execute with AddressSanitizer enabled.
+- The published compiler executed the embedded minimal program with its constant after
+  `main`, printed `30`, and exited successfully.
+- `sbtn ";scalafmtAll;scalafixAll"` passed; no compiler warnings were reported.
+- `./tests/smoke/run.sh all` passed all 8 checks, including native execution before publishing.
+- `sbtn test` passed 880 compiler-library tests and 9 CLI tests. The existing 37 ignored
+  tests remain ignored and are not counted as passing coverage.
+- `sbtn mmlcPublishLocal` passed. `make -C benchmark clean` and `make -C benchmark mml`
+  passed, rebuilding the 12 MML benchmark executables. No performance measurement is claimed.
+- Memory-harness and Linux ABI gates do not apply: ownership, lambdas, runtime layouts,
+  and ABI lowering are unchanged. The new native regressions execute with AddressSanitizer.
+- QA enforcement and tracking consistency checks passed. A fresh independent reviewer found
+  no actionable findings in the compiler repair and reran all 20 global-literal checks
+  successfully. Native verification covers macOS arm64; no cross-target execution or
+  performance measurement is claimed.
+
+Animated sample cleanup verification: 2026-10-06, macOS arm64.
+
+- The cleaned sample compiled with the published compiler and `-s`. Its help and zero-speed
+  argument paths ran successfully without opening a window.
+- Headless copies of the sample at `60651b1` and the cleaned source replaced only the call
+  to `animate` in `demo` with search-result reporting. Both compiled with `-s`; all four
+  cases below exited successfully with no sanitizer diagnostics and identical output.
+- Each checksum starts at zero and folds `acc * 31 + value` with MML Int32 wrapping.
+  The event checksum covers exactly `event_count * 8` integers; the path checksum covers
+  exactly `path_length` cells. The normal search and event-recording code is unchanged.
+
+| Wall arguments | Found | Events | Path length | Event checksum | Path checksum |
+| --- | --- | --- | --- | --- | --- |
+| Defaults (`25 3 4`) | yes | 1767 | 30 | 1713252100 | -1707470363 |
+| No wall (`25 3 0`) | yes | 1767 | 30 | -709202489 | -1707470363 |
+| Clipped wall (`25 -2 5`) | yes | 1767 | 30 | -709202489 | -1707470363 |
+| Full barrier (`25 0 10`) | no | 4604 | 0 | 2137441252 | 0 |
+
+Automated verification did not exercise window playback. Author verification confirms that
+the cleaned animated sample works with the published compiler. The conditional-argument and
+caption-return workarounds remain because their compiler repairs are separate findings.
 
 ## Risks / Notes
 
@@ -234,13 +306,16 @@ Evidence for findings 1–4: 2026-10-06, macOS arm64, repository base `8143f27`.
 
 ## Signoff
 
-- Workstream signoff: pending for bug repairs.
+- Global literal repair and animated sample cleanup signoff: granted.
+- Remaining bug-repair signoff: pending.
 - Tracked item completion: pending.
-- Commit authorization: granted for this task definition only; bug-fix implementation pending.
+- Global literal repair and animated sample cleanup commit: complete
+  (`Fix forward references to global literals`).
+- Commit authorization: pending for remaining repairs.
 
 ## Task Working Memory
 
-The five findings are retained as one planned task. Reproduction details and evidence limits
-are embedded in this file and reference versioned source. Next action: reduce the compiler
-failures, diagnose the M2 launch failure, reconcile the ownership overlap, and propose repair
-boundaries before implementation.
+Global literal repair and animated sample cleanup are complete, signed off, and locally
+committed as `Fix forward references to global literals`; verification evidence is recorded above.
+Findings 2–5 need reduction, diagnosis, and repair boundaries before implementation approval.
+Commit authorization for remaining repairs is pending.
