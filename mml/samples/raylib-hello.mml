@@ -15,7 +15,7 @@ pub fn main() =
       ();
     else
       begin_drawing ();
-      clear_background raywhite;
+      clear_background white;
       draw_text text 350 280 20 black;
       end_drawing ();
       draw_loop ();
@@ -31,7 +31,7 @@ fn byte(n: Int): Int8 = @native[tpl="trunc i32 %operand to i8"];;
 
 type Color = @native { r: Int8, g: Int8, b: Int8, a: Int8 };
 
-let raywhite = Color (byte 245) (byte 245) (byte 245) (byte 255);
+let white = Color (byte 245) (byte 245) (byte 245) (byte 255);
 let black  = Color (byte 0) (byte 0) (byte 0) (byte 255);
 
 fn init_window(width: Int, height: Int, title: CString): Unit =
