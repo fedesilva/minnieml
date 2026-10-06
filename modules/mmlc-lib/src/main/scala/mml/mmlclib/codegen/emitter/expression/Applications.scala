@@ -7,7 +7,7 @@ import mml.mmlclib.codegen.emitter.{
   CodeGenState,
   CompileResult,
   LocalBindingResult,
-  LocalCallablePlan,
+  LocalCallableAnalysis,
   ScopeEntry,
   compileLambdaLiteral,
   compileLocalCallable,
@@ -72,11 +72,11 @@ private[emitter] def compileLocalBindingValue(
   functionScope: Map[String, ScopeEntry],
   compileExpr:   ExprCompiler
 ): Either[CodeGenError, LocalBindingResult] =
-  val candidate = param.id.flatMap(id => state.localCallablePlan.candidate(id).map(id -> _))
+  val candidate = param.id.flatMap(id => state.localCallableAnalysis.candidate(id).map(id -> _))
   val alias = for
     id <- param.id
-    canonical <- state.localCallablePlan.aliases.get(id)
-    ref <- LocalCallablePlan.reference(arg)
+    canonical <- state.localCallableAnalysis.aliases.get(id)
+    ref <- LocalCallableAnalysis.reference(arg)
     target <- ScopeEntry.callable(ref, functionScope)
     if target.bindingId == canonical
   yield ScopeEntry.Callable(id, target)
@@ -105,7 +105,10 @@ private def compileRuntimeBinding(
     case List(lambda: Lambda) =>
       val uniqueName  = s"${param.name}_${state.nextAnonFnId}"
       val stateWithId = state.copy(nextAnonFnId = state.nextAnonFnId + 1)
-      val fnName      = stateWithId.mangleName(uniqueName)
+      val fnName = state.callableTargetAnalysis.lambdas
+        .get(lambda)
+        .flatMap(state.knownCallableEntries.get)
+        .fold(stateWithId.mangleName(uniqueName))(_.bodySymbol)
       val recursiveScope =
         if lambda.captures.nonEmpty then functionScope
         else

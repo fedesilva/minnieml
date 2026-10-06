@@ -20,6 +20,7 @@ class LocalCallableCodegenTests extends BaseEffFunSuite:
     static int trace = 0;
     static int live = 0;
     void mml_sys_flush(void) {}
+    void mml_free_raw(void *p) { free(p); }
     int32_t observe(int32_t n) { trace = trace * 10 + n; return n; }
     void effect(void) { observe(1); }
     int32_t observed(void) { return trace; }
@@ -31,7 +32,7 @@ class LocalCallableCodegenTests extends BaseEffFunSuite:
   /** Assembles the original IR, then removes unused library definitions so the executable can link
     * against the small support runtime above. The program's exit status checks its computed result.
     */
-  private def verify(ir: String, expected: Int): IO[Unit] =
+  private def verify(ir: String, expected: Int, sanitized: Boolean = false): IO[Unit] =
     IO.blocking(Files.createTempDirectory("mml-local-callable"))
       .bracket { dir =>
         val input   = dir.resolve("program.ll")
@@ -54,7 +55,7 @@ class LocalCallableCodegenTests extends BaseEffFunSuite:
               support.toString,
               "-o",
               binary.toString
-            ),
+            ) ++ (if sanitized then List("-fsanitize=address", "-fno-omit-frame-pointer") else Nil),
             dir
           ) *>
           programExits(List(binary.toString), dir, expected)
@@ -377,5 +378,270 @@ class LocalCallableCodegenTests extends BaseEffFunSuite:
       assert(body.contains("phi { ptr, ptr }"), body)
       assert(body.contains("extractvalue { ptr, ptr }"), body)
       verify(ir, 42)
+    }
+  }
+
+  private def assertKnownPapCall(ir: String, hasEnvironment: Boolean): Unit =
+    val residual = "test_addDummy_\\d+\\([^\\n]*".r
+      .findFirstIn(ir)
+      .fold(ir)(_ => functionBodyMatching(ir, "test_addDummy_\\d+\\([^\\n]*"))
+    val scalar      = "i32 (?:%\\d+|\\d+)"
+    val environment = if hasEnvironment then ", ptr %\\d+" else "(?:, ptr null)?"
+    val call = s"call i32 @([^ (]+)\\($scalar, $scalar$environment\\)".r
+      .findFirstMatchIn(residual)
+      .getOrElse(fail(residual))
+    val entryEnvironment =
+      if hasEnvironment || call.matched.contains("ptr null") then ", ptr[^)]*" else ""
+    assertPlainEntry(ir, call.group(1), s"i32 %\\d+, i32 %\\d+$entryEnvironment")
+
+  test("PAP aliases, staged applications, and ordinary value uses retain the known entry") {
+    val source = """
+      fn apply(f: Int -> Int -> Int): Int = f 20 1;;
+      fn make(dummy: Int): Int -> Int =
+        let add = { x: Int, y: Int -> x + y };
+        let alias = (add);
+        let value = apply alias;
+        alias dummy;
+      ;
+      pub fn main(): Int =
+        let add = { x: Int, y: Int, z: Int -> x + y + z };
+        let alias = (add);
+        let first = alias 10;
+        let second = first 10;
+        let returned = make 20;
+        second 1 + returned 1;
+      ;
+    """
+    compile(source).flatMap { ir =>
+      assert(!"""store \{ ptr, ptr \}""".r.findAllIn(functionBody(ir, "test_make")).hasNext, ir)
+      assertKnownPapCall(ir, false)
+      verify(ir, 42, sanitized = true)
+    }
+  }
+
+  test("shadowed PAP targets keep distinct entry identities") {
+    val source = """
+      fn check(dummy: Int): Int =
+        let add = { x: Int, y: Int -> x + y };
+        let first = add dummy;
+        let result = first 1;
+        let second = if true then
+          let add = { x: Int, y: Int -> x + y + 20 };
+          let addDummy = add dummy;
+          addDummy 1;
+        else 0;;
+        result + second;
+      ;
+      pub fn main(): Int = check 10;;
+    """
+    compile(source).flatMap { ir =>
+      val call = """call i32 @([^ (]+)\(i32 %\d+, i32 %\d+\)""".r
+      val first = call
+        .findFirstMatchIn(functionBodyMatching(ir, "test_first_\\d+\\([^\\n]*"))
+        .getOrElse(fail(ir))
+        .group(1)
+      val second = call
+        .findFirstMatchIn(functionBodyMatching(ir, "test_addDummy_\\d+\\([^\\n]*"))
+        .getOrElse(fail(ir))
+        .group(1)
+      assertNotEquals(first, second)
+      verify(ir, 42, sanitized = true)
+    }
+  }
+
+  test("capturing PAPs save the environment and directly call one entry for different values") {
+    val source = """
+      fn check(offset: Int, dummy: Int): Int =
+        let add = { x: Int, y: Int -> x + y + offset };
+        let alias = (add);
+        let addDummy = alias dummy;
+        addDummy 1;
+      ;
+      pub fn main(): Int = check 5 10 + check 6 19;;
+    """
+    compile(source).flatMap { ir =>
+      assertKnownPapCall(ir, true)
+      assert(!functionBody(ir, "test_check").contains("store { ptr, ptr }"), ir)
+      verify(ir, 42, sanitized = true)
+    }
+  }
+
+  test("returned callable instances retain one entry and distinct environment pointers") {
+    val source = """
+      fn make(offset: Int): Int -> Int -> Int = ~{ x: Int, y: Int -> x + y + offset };;
+      fn check(offset: Int, dummy: Int): Int =
+        let add = make offset;
+        let addDummy = add dummy;
+        addDummy 1;
+      ;
+      pub fn main(): Int = check 5 10 + check 6 19;;
+    """
+    compile(source).flatMap { ir =>
+      assertKnownPapCall(ir, true)
+      assert(!functionBody(ir, "test_check").contains("store { ptr, ptr }"), ir)
+      verify(ir, 42, sanitized = true)
+    }
+  }
+
+  test("same-entry conditional selection keeps its selected environment") {
+    val source = """
+      fn make(offset: Int): Int -> Int -> Int = ~{ x: Int, y: Int -> x + y + offset };;
+      fn check(flag: Bool, dummy: Int): Int =
+        let add = if flag then make 5; else make 6;;
+        let addDummy = add dummy;
+        addDummy 1;
+      ;
+      pub fn main(): Int = check true 10 + check false 19;;
+    """
+    compile(source).flatMap { ir =>
+      assertKnownPapCall(ir, true)
+      assert(functionBody(ir, "test_check").contains("phi { ptr, ptr }"), ir)
+      assert(!functionBody(ir, "test_check").contains("store { ptr, ptr }"), ir)
+      verify(ir, 42, sanitized = true)
+    }
+  }
+
+  test("a known branch beside an unknown parameter remains an indirect PAP target") {
+    val source = """
+      fn check(flag: Bool, unknown: Int -> Int -> Int): Int =
+        let add = { x: Int, y: Int -> x + y };
+        let selected = if flag then add; else unknown;;
+        let addDummy = selected 10;
+        addDummy 1;
+      ;
+      pub fn main(): Int =
+        let other = { x: Int, y: Int -> x + y + 20 };
+        check true other + check false other;
+      ;
+    """
+    compile(source).flatMap { ir =>
+      assert(
+        """call i32 %\d+\(i32 (?:%\d+|\d+), i32 (?:%\d+|\d+), ptr %\d+\)""".r
+          .findFirstIn(ir)
+          .nonEmpty,
+        ir
+      )
+      assert(functionBody(ir, "test_check").contains("store { ptr, ptr }"), ir)
+      verify(ir, 42, sanitized = true)
+    }
+  }
+
+  test("different known conditional entries remain an indirect PAP target") {
+    val source = """
+      fn check(flag: Bool): Int =
+        let add = { x: Int, y: Int -> x + y };
+        let other = { x: Int, y: Int -> x + y + 20 };
+        let selected = if flag then add; else other;;
+        let addDummy = selected 10;
+        addDummy 1;
+      ;
+      pub fn main(): Int = check true + check false;;
+    """
+    compile(source).flatMap { ir =>
+      assert(
+        """call i32 %\d+\(i32 (?:%\d+|\d+), i32 (?:%\d+|\d+), ptr %\d+\)""".r
+          .findFirstIn(ir)
+          .nonEmpty,
+        ir
+      )
+      verify(ir, 42, sanitized = true)
+    }
+  }
+
+  test("constructor field flow proves an entry and preserves construction effects") {
+    val source = """
+      struct Holder { f: Int -> Int -> Int };
+      fn observe(n: Int): Int = @native;;
+      fn observed(): Int = @native;;
+      fn make(n: Int): Holder =
+        let ignored = observe n;
+        Holder { x: Int, y: Int -> x + y };
+      ;
+      pub fn main(): Int =
+        let holder = make 1;
+        let addDummy = holder.f 10;
+        let result = addDummy 1;
+        result + observed ();
+      ;
+    """
+    compile(source).flatMap { ir =>
+      assertKnownPapCall(ir, false)
+      verify(ir, 12, sanitized = true)
+    }
+  }
+
+  test("PAP creation and invocation evaluate Unit and scalar effects once in order") {
+    val source = """
+      fn effect(): Unit = @native;;
+      fn observe(n: Int): Int = @native;;
+      fn observed(): Int = @native;;
+      pub fn main(): Int =
+        let add = { u: Unit, x: Int, y: Int -> x + y };
+        let addDummy = add (effect ()) (observe 2);
+        let result = addDummy (observe 3);
+        observed ();
+      ;
+    """
+    compile(source).flatMap(ir => verify(ir, 123, sanitized = true))
+  }
+
+  private val heapPrelude = """
+    type Handle = @native[t=ptr, mem=heap, free=release];
+    fn allocate(): Handle = @native[mem=alloc];;
+    fn release(~p: Handle): Unit = @native;;
+    fn outstanding(): Int = @native;;
+  """
+
+  for invoked <- List(false, true) do
+    test(
+      s"known static PAP target preserves supplied consuming-payload cleanup, invoked=$invoked"
+    ) {
+      val call = if invoked then "let result = addDummy 1;" else ""
+      val source = s"""
+        $heapPrelude
+        fn check(): Unit =
+          let add = { ~h: Handle, y: Int -> release h; y; };
+          let addDummy = add (allocate ());
+          $call
+          ();
+        ;
+        pub fn main(): Int = check (); outstanding ();;
+      """
+      compile(source).flatMap(ir => verify(ir, 0, sanitized = true))
+    }
+
+  for invoked <- List(false, true) do
+    test(s"environment-only PAP payload preserves capturing-callee destruction, invoked=$invoked") {
+      val call = if invoked then "let result = addDummy (allocate ());" else ""
+      val source = s"""
+        $heapPrelude
+        fn check(): Unit =
+          let owned = allocate ();
+          let add = ~{ x: Int, ~other: Handle -> release owned; release other; x; };
+          let addDummy = add 10;
+          $call
+          ();
+        ;
+        pub fn main(): Int = check (); outstanding ();;
+      """
+      compile(source).flatMap { ir =>
+        assert(!functionBody(ir, "test_check").contains("store { ptr, ptr }"), ir)
+        verify(ir, 0, sanitized = true)
+      }
+    }
+
+  test("omitting a known function-value payload leaves valid empty borrow-environment metadata") {
+    val source = """
+      fn use(f: Int -> Int, n: Int): Int = f n;;
+      pub fn main(): Int =
+        let add = { x: Int -> x + 1 };
+        let addDummy = use add;
+        addDummy 41;
+      ;
+    """
+    compile(source).flatMap { ir =>
+      assert("""%struct\.__closure_env_\d+ = type \{  \}""".r.findFirstIn(ir).nonEmpty, ir)
+      assert(!functionBody(ir, "test_main").contains("store { ptr, ptr }"), ir)
+      verify(ir, 42, sanitized = true)
     }
   }

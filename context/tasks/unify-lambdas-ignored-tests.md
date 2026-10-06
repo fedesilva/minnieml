@@ -9,8 +9,8 @@ Supporting evidence for [Unify lambdas](unify-lambdas.md#restore-ignored-regress
 - **Audit result (2026-09-23):** four pass unchanged; 47 fail. One failing case rejects the
   intended invalid program but expects an obsolete diagnostic name. The other 46 need assertion/API
   reconciliation or compiler investigation.
-- **Repository test status:** thirteen cases are enabled: four unchanged assertions, one typed
-  diagnostic assertion, and eight emitted-IR replacements; 38 remain ignored.
+- **Repository test status:** fourteen cases are enabled: four unchanged assertions, one typed
+  diagnostic assertion, and nine emitted-IR replacements; 37 remain ignored.
 - **Restoration verification (2026-09-23):** formatting and lint pass; full suite passes
   763 library tests and nine CLI tests, with 47 ignored. All four restored cases execute and pass.
   Test assertions and compiler implementation are unchanged
@@ -51,7 +51,7 @@ failures do not execute their preserved commented-out assertions.
    assertion through `semState`; verification and independent review pass. The subtask is signed off.
 3. Six materialization cases are enabled in `MaterializationCodegenTest`, preserving their
    original names and source fixtures. Verification and review are recorded below.
-4. Resolve each of the remaining 38 entries against the agreed model, preserving its semantic
+4. Resolve each of the remaining 37 entries against the agreed model, preserving its semantic
    intent. Record a linked fix or an approved replacement/retirement for obsolete expectations.
    Re-enable each case with its corresponding repair, rather than accumulating working ignores.
 
@@ -60,15 +60,14 @@ failures do not execute their preserved commented-out assertions.
 | Disposition | Cases |
 | --- | ---: |
 | Restore placeholder assertion/helper | 5 |
-| Materialization lowering repair | 1 |
-| Enabled; emitted-IR replacement | 8 |
+| Enabled; emitted-IR replacement | 9 |
 | Enabled; assertions unchanged | 4 |
 | Reconcile IR/lowering assertions | 29 |
 | Nullary application rejection | 1 |
 | Enabled; typed diagnostic assertion | 1 |
 | Reconcile heap-alias behavior | 2 |
 
-Thirteen rows are enabled; the other 38 remain pending. Lines below identify the audit snapshot,
+Fourteen rows are enabled; the other 37 remain pending. Lines below identify the audit snapshot,
 not subsequent source line shifts.
 
 ### ClosureCodegenTest
@@ -134,7 +133,7 @@ not subsequent source line shifts.
 | recursive self-call keeps fn direct | 72 | Enabled in MaterializationCodegenTest; emitted-IR assertion |
 | let-bound lambda used only directly is direct | 89 | Enabled in MaterializationCodegenTest; [optimization evidence](#direct-local-entry-optimization) |
 | let-bound lambda used as value is not direct | 104 | Enabled in MaterializationCodegenTest; emitted-IR assertion |
-| let-bound lambda used through partial application remains direct | 120 | [PAP target repair](#pap-target-repair) |
+| let-bound lambda used through partial application remains direct | 120 | Enabled in MaterializationCodegenTest; [PAP target repair](#pap-target-repair) |
 | lambda literal in immediate application is direct | 138 | Enabled in MaterializationCodegenTest; emitted-IR assertion |
 | nullary lambda literal in immediate application is direct | 163 | Nullary application rejection |
 | let-bound nullary lambda used as value is not direct | 187 | Enabled in MaterializationCodegenTest; emitted-IR assertion |
@@ -222,7 +221,7 @@ not subsequent source line shifts.
 ## Materialization repair plans
 
 **Status:** function-value repair and direct local-entry optimization are complete and signed off.
-PAP target optimization awaits approval. Preserve
+PAP target optimization is complete and signed off under its approved bounded plan. Preserve
 each source fixture when replacing placeholder assertions. Each bounded change requires signoff.
 
 ### Function-value repair
@@ -298,7 +297,7 @@ each source fixture when replacing placeholder assertions. Each bounded change r
   source fixture in `MaterializationCodegenTest`. The assertion discovers the local symbol from
   its call, checks a plain entry and call without an environment argument, and rejects closure
   construction. The ignored semantic placeholder is removed.
-- **Implementation:** `LocalCallablePlan` runs once on the final typed module, identifying
+- **Implementation:** `LocalCallableAnalysis` runs once on the final typed module, identifying
   non-capturing local functions and simple aliases by binding ID. It distinguishes saturated
   direct calls from value uses and limits target knowledge to lexical scope. `ScopeEntry`
   distinguishes runtime operands from known callable targets. `LocalCallableEmitter` registers
@@ -360,42 +359,75 @@ docker exec -w /workspace mml-linux-amd64 sbtn "testOnly ${suites[*]}"
 
 ### PAP target repair
 
+- **Status:** complete; implementation, required verification, and independent review pass.
+- **Signoff:** PAP target preservation and descriptive analysis/layout names are accepted;
+  local commit is authorized. Overall lambda migration remains open; push is not authorized.
 - **Case:** `let-bound lambda used through partial application remains direct`.
-- **Dependency:** the direct local-entry optimization exposes a safe, identity-based target
-  representation that PAP lowering can use.
-- **Evidence:** the fixture stores a `{ ptr, ptr }` value for `add` in the PAP environment;
-  the residual entry extracts that closure and invokes it indirectly.
-  `PartialApplicationElaborator.elaborate` constructs a residual lambda referring to the
-  original local callee; capture discovery and codegen retain it as a function-value payload.
-  The observed caller stores the original callable in field 1:
+- **Approved plan:** preserve proven entry identity independently of each closure's environment.
+  Include capturing and non-capturing targets. Use direct calls when complete value-flow evidence
+  identifies one entry; otherwise preserve indirect calls. Follow aliases, parentheses, PAP chains,
+  captures, returns, constructor fields, and complete same-entry conditional merges. Unknown sources
+  and branches remain unknown; observed callers do not specialize function parameters.
+- **Storage:** omit a known target's null-environment closure field in PAPs; retain only the
+  environment pointer for known capturing targets. Share one physical plan for declarations,
+  allocation, stores, loads, destruction, alignment, and alias metadata. Preserve semantic captures,
+  borrowing, consuming transfers, environment disarming, and ordinary function-value pairs.
+- **Acceptance:** restore the unchanged scalar fixture with direct-entry and payload assertions.
+  Cover differing environments sharing an entry, staged and returned PAPs, aliases, shadowing,
+  mixed value uses, proven merges, unknown fallbacks, exactly-once effects, Unit parameters,
+  supplied/deferred consuming arguments, drop cleanup, borrow errors, and use-after-move errors.
+  Run LLVM/native fixtures, full compiler checks, smoke checks, local publishing, benchmark builds,
+  ASan/LSan memory tests, both Linux architectures, QA, tracking checks, and independent review.
+- **Boundaries:** no environment flattening, speculative specialization, implicit heap clones,
+  source-language changes, or new ownership semantics. Overall migration signoff, local commit,
+  and push are separate authorizations.
+- **Task working memory:** `CallableTargetAnalysis` establishes complete target-flow evidence;
+  `KnownCallableEmitter` registers entries and emits calls and values; `ClosureEnvironmentLayout`
+  projects PAP capture storage consistently across emission and destruction. The original fixture
+  is enabled byte-for-byte unchanged in codegen coverage. Empty borrowing environments have valid
+  alias metadata and LLVM/native regression coverage. Host gates, both Linux architectures, QA,
+  tracking checks, and independent review pass. The bounded slice is signed off.
+- **Host verification (2026-10-05):** macOS arm64, Homebrew Clang/LLVM 23.1.1.
+  `sbtn 'scalafmtAll; scalafixAll; test'` passes 860 library tests and nine CLI tests, with
+  37 existing ignores and no compiler warnings. Native PAP fixtures pass LLVM assembly, native
+  exit-code checks, and ASan. `./tests/smoke/run.sh all` passes 8/8; `sbtn mmlcPublishLocal`
+  installs the compiler; `make -C benchmark clean` followed by `make -C benchmark mml` builds
+  all 12 MML benchmarks; `./tests/mem/run.sh all` passes 45/45 ASan+LSan cases.
+  Benchmark checks establish successful builds, not a speedup measurement.
+- **Linux arm64 verification:** `mml-linux-arm64`, native AArch64 execution in Docker,
+  Ubuntu Clang/LLVM 20.1.8. The suite selection below passes 113 tests with 26 existing ignores.
+  It includes native PAP execution with ASan, native aggregate ABI and C interoperability,
+  function-value adapters, destruction, and cross-compilation controls for all four supported targets.
+- **Linux amd64 verification:** `mml-linux-amd64`, x86-64 execution emulated on an arm64 host,
+  Ubuntu Clang/LLVM 20.1.8. The same selection passes 113 tests with 26 existing ignores.
+  Fixtures execute inside the container; cross-compilation alone is not the execution evidence.
+- **Review:** focused QA, tracking consistency, local links, and whitespace checks pass. A fresh
+  independent reviewer inspects all scoped changes, including new sources and technical documents,
+  and reports no actionable findings. Independent execution of `CallableTargetAnalysisTests`,
+  `LocalCallableCodegenTests`, and `MaterializationCodegenTest` passes 38/38; `git diff --check`
+  also passes. The broader execution results rely on the recorded gate evidence above.
+- **Naming verification (2026-10-06):** the analysis and layout types, source filenames, state
+  fields, test suite, and documentation use the descriptive names above. Formatting, lint,
+  860 library tests, nine CLI tests, 8/8 smoke checks, local publishing, all 12 benchmark builds,
+  and 45/45 ASan+LSan checks pass; 37 existing ignores remain. A fresh independent review of the
+  rename reports no actionable findings. The executable changes consist only of identifier
+  substitutions and formatting; Linux execution evidence remains the 2026-10-05 run.
 
-  ```llvm
-  %3 = getelementptr %struct.__closure_env_0, ptr %1, i32 0, i32 1
-  store { ptr, ptr } { ptr @test_add_0, ptr null }, ptr %3, !tbaa !23
-  ```
+The verification references use current suite names; the 2026-10-05 runs preceded the
+`CallableTargetAnalysisTests` rename. Both Linux builders run the following suite selection
+sequentially, without another host or container build running:
 
-  The residual entry loads that field and calls through the extracted pointers:
-
-  ```llvm
-  define internal i64 @test_addDummy_1(i64 %0, ptr align 8 dereferenceable(32) %1) #0 {
-  entry:
-    %2 = getelementptr %struct.__closure_env_0, ptr %1, i32 0, i32 1
-    %3 = load { ptr, ptr }, ptr %2, !tbaa !23
-    %4 = getelementptr %struct.__closure_env_0, ptr %1, i32 0, i32 2
-    %5 = load i64, ptr %4, !tbaa !24
-    %6 = extractvalue { ptr, ptr } %3, 0
-    %7 = extractvalue { ptr, ptr } %3, 1
-    %8 = call i64 %6(i64 %5, i64 %0, ptr %7)
-    ret i64 %8
-  }
-  ```
-
-- **Proposed repair:** let a PAP invoke a proven direct target without materializing the original
-  callable as a closure. Preserve the derived PAP value, supplied-argument evaluation order,
-  capture identities, and consuming/borrowing contracts. Define how target operands survive
-  beyond their source scope before extending the optimization to capturing callables.
-- **Acceptance:** restore the unchanged scalar fixture with assertions that the residual
-  entry calls the plain original target and its environment has no redundant original-callable
-  closure field. Preserve returned-PAP behavior, staged application, supplied and deferred
-  consuming arguments, use-after-move diagnostics, and exactly-once cleanup. Run emitted-IR,
-  native, sanitizer, and applicable compiler gates. Do not introduce implicit heap clones.
+```sh
+suites=(
+  mml.mmlclib.codegen.CallableTargetAnalysisTests
+  mml.mmlclib.codegen.LocalCallableCodegenTests
+  mml.mmlclib.codegen.MaterializationCodegenTest
+  mml.mmlclib.codegen.FunctionValueCodegenTests
+  mml.mmlclib.codegen.FunctionSignatureTest
+  mml.mmlclib.codegen.TailRecursionLoopificationTest
+  mml.mmlclib.codegen.ClosureCodegenTest
+  mml.mmlclib.codegen.AggregateAbiTests
+)
+docker exec -w /workspace mml-linux-arm64 sbtn "testOnly ${suites[*]}"
+docker exec -w /workspace mml-linux-amd64 sbtn "testOnly ${suites[*]}"
+```

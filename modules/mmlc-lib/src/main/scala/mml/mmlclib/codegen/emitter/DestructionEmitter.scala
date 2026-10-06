@@ -67,7 +67,13 @@ def compileDestruction(
                           .emit(s"  %$value = load $llvmType, ptr %$gep")
                         cleanup match
                           case _: FieldCleanup.Closure =>
-                            destroyClosureValue(s"%$value", cleanup.targetId, loaded, d)
+                            val environmentOnly = loaded.closureEnvironments
+                              .get(d.layoutId)
+                              .flatMap(_.storage(cleanup.fieldId))
+                              .exists(_.isInstanceOf[CaptureStorage.Environment])
+                            if environmentOnly then
+                              callDestructor(cleanup.targetId, s"%$value", "ptr", loaded, d)
+                            else destroyClosureValue(s"%$value", cleanup.targetId, loaded, d)
                           case _: FieldCleanup.Value =>
                             callDestructor(cleanup.targetId, s"%$value", llvmType, loaded, d)
                       }

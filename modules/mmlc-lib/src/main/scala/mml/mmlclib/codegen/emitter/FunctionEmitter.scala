@@ -149,8 +149,9 @@ private[emitter] def formatClosureEnvParam(
       s"ptr align ${layout.alignment} dereferenceable(${layout.size}) %$paramIdx"
     case _ => s"ptr %$paramIdx"
 
-/** Load captures from env struct in a deferred function's entry block. Each capture gets a GEP and
-  * a load. Field offset is 1 for move envs (__dtor at field 0), 0 for borrow envs.
+/** Loads physical captures in a deferred entry. Known PAP entries combine with loaded environment
+  * pointers or null without a code-pointer field. Field offset is 1 for move environments, whose
+  * first field is the destructor pointer, and 0 for borrow environments.
   */
 def emitCaptureLoads(
   envStruct:    TypeStruct,
@@ -160,7 +161,17 @@ def emitCaptureLoads(
   fieldOffset:  Int = 1
 ): (CodeGenState, Map[String, ScopeEntry]) =
   val envTypeRef = s"%struct.${envStruct.name}"
-  captureTypes.zipWithIndex.foldLeft((bodyState, Map.empty[String, ScopeEntry])) {
+  val plan       = envStruct.id.flatMap(bodyState.closureEnvironments.get)
+  val staticScope = plan.toList
+    .flatMap(_.captures)
+    .collect { case PlannedCapture(capture, _, CaptureStorage.Static(targetId)) =>
+      capture.ref.resolvedId.map(id =>
+        capture.ref.name -> ScopeEntry.KnownCallable(id, targetId, "null")
+      )
+    }
+    .flatten
+    .toMap
+  captureTypes.zipWithIndex.foldLeft((bodyState, staticScope)) {
     case ((st, scope), ((cap, llvmType), idx)) =>
       val ref     = cap.ref
       val gepReg  = st.nextRegister
@@ -177,7 +188,13 @@ def emitCaptureLoads(
         .flatMap(getNominalTypeName(_).toOption)
         .getOrElse("Unknown")
 
-      (newState, scope + (ref.name -> ScopeEntry(loadReg, mmlType)))
+      val entry = plan.flatMap(_.runtimeCaptures.lift(idx)).map(_.storage) match
+        case Some(CaptureStorage.Environment(_, targetId)) =>
+          ref.resolvedId.fold[ScopeEntry](ScopeEntry(loadReg, mmlType))(id =>
+            ScopeEntry.KnownCallable(id, targetId, s"%$loadReg")
+          )
+        case _ => ScopeEntry(loadReg, mmlType)
+      (newState, scope + (ref.name -> entry))
   }
 
 /** Places hoisted allocations in the entry block before the body. In a loopified function this
