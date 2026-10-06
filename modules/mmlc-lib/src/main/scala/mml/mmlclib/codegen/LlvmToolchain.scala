@@ -929,14 +929,23 @@ object LlvmToolchain:
       }
 
       setupDir.flatMap { workingDirFile =>
-        IO.blocking {
+        IO.blocking[Either[LlvmCompilationError, Int]] {
           try
-            val exitCode = process(workingDirFile).!
+            // Process callbacks collect diagnostics until the child exits.
+            val stderr = new StringBuffer
+            val logger = ProcessLogger(
+              line => Console.out.println(line),
+              line =>
+                stderr.append(s"$line\n")
+                ()
+            )
+            val exitCode = process(workingDirFile).!(logger)
             if exitCode != 0 then
-              val error = LlvmCompilationError.CommandExecutionError(cmd, errorMsg, exitCode)
-              logError(s"Command failed with exit code $exitCode: $error")
-              error.asLeft
+              val diagnostics = stderr.toString.stripTrailing()
+              val message     = if diagnostics.isEmpty then errorMsg else s"$errorMsg\n$diagnostics"
+              LlvmCompilationError.CommandExecutionError(cmd, message, exitCode).asLeft
             else
+              Console.err.print(stderr.toString)
               logDebug(s"Command completed successfully with exit code $exitCode", verbose)
               exitCode.asRight
           catch

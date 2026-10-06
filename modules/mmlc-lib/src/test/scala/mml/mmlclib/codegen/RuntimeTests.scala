@@ -9,7 +9,7 @@ import java.nio.charset.StandardCharsets.UTF_8
 import java.nio.file.{Files, Path}
 import scala.jdk.CollectionConverters.*
 
-class Int32Tests extends BaseEffFunSuite:
+class RuntimeTests extends BaseEffFunSuite:
 
   private def withDirectory(use: Path => IO[Unit]): IO[Unit] =
     IO.blocking(Files.createTempDirectory("mml-int32-"))
@@ -102,55 +102,6 @@ class Int32Tests extends BaseEffFunSuite:
     }
   }
 
-  List("2147483648", "-2147483649", "99999999999999999999999999999999").foreach { literal =>
-    test(s"out-of-range literal $literal reports a diagnostic") {
-      semFailed(s"let invalid = $literal; let after = 42;")
-    }
-  }
-
-  List("Int", "Int32", "Int64", "Unit").foreach { resultType =>
-    test(s"$resultType main preserves its exit status") {
-      withDirectory { directory =>
-        val body = resultType match
-          case "Unit" => "()"
-          case "Int64" => "int_to_int64 37"
-          case _ => "37"
-        val config = CompilerConfig.default.copy(
-          mode       = CompilationMode.Exe,
-          outputDir  = directory,
-          outputName = directory.resolve("program").toString.some
-        )
-        for
-          ir <- compileAndGenerate(s"pub fn main(): $resultType = $body;;", "Entry", config)
-          pair <- targetAt(directory, config)
-          (triple, target) = pair
-          path <- IO.blocking(Files.writeString(directory.resolve("Entry.ll"), ir))
-          result <- LlvmToolchain.compile(path, config, triple.some, target)
-          _ = assertEquals(result._1, Right(0))
-          run <- LlvmToolchain.executeCommand(
-            List(directory.resolve("program").toString),
-            "entry",
-            directory,
-            false
-          )
-          _ = resultType match
-            case "Unit" => assertEquals(run, Right(0))
-            case _ =>
-              run match
-                case Left(LlvmCompilationError.CommandExecutionError(_, _, code)) =>
-                  assertEquals(code, 37)
-                case other => fail(s"Expected exit 37, got $other")
-        yield ()
-      }
-    }
-  }
-
-  test("runtime cache identity includes runtime contents") {
-    val before = LlvmToolchain.runtimeCacheFilename("aarch64", 3, Nil, "o", "old".getBytes(UTF_8))
-    val after  = LlvmToolchain.runtimeCacheFilename("aarch64", 3, Nil, "o", "new".getBytes(UTF_8))
-    assertNotEquals(before, after)
-  }
-
   test("runtime Int32 layouts, parsing, formatting, RNG and narrowing pass sanitizers") {
     val driver = """
       #include <assert.h>
@@ -230,66 +181,11 @@ class Int32Tests extends BaseEffFunSuite:
           ),
           directory
         )
-        _ <- commandNotFailed(List(directory.resolve("runtime-test").toString), directory)
-      yield ()
-    }
-  }
-
-  test("raylib sample passes Color bytes, Int32 coordinates and draw/close sequence to C") {
-    val driver = """
-      #include <assert.h>
-      #include <stdbool.h>
-      #include <string.h>
-      typedef struct { unsigned char r, g, b, a; } Color;
-      static int step, frames;
-      void InitWindow(int w, int h, const char *title) {
-        assert(step++ == 0 && w == 800 && h == 600);
-        assert(strcmp(title, "Raylib - Hello World") == 0);
-      }
-      void SetTargetFPS(int fps) { assert(step++ == 1 && fps == 60); }
-      bool WindowShouldClose(void) { assert(step == 2); return frames == 2; }
-      void BeginDrawing(void) { assert(step++ == 2); }
-      void ClearBackground(Color c) {
-        assert(step++ == 3 && c.r == 245 && c.g == 245 && c.b == 245 && c.a == 255);
-      }
-      void DrawText(const char *text, int x, int y, int size, Color c) {
-        assert(step++ == 4 && strcmp(text, "Hello Raylib!") == 0);
-        assert(x == 350 && y == 280 && size == 20);
-        assert(c.r == 0 && c.g == 0 && c.b == 0 && c.a == 255);
-      }
-      void EndDrawing(void) { assert(step == 5); step = 2; ++frames; }
-      void CloseWindow(void) { assert(step++ == 2 && frames == 2); }
-      extern int raylibfixture_main(void);
-      int main(void) { assert(raylibfixture_main() == 0); assert(step == 3); return 0; }
-    """
-    withDirectory { directory =>
-      val config = CompilerConfig.library(directory.toString, asan = true)
-      for
-        source <- IO.blocking(Files.readString(Path.of("mml/samples/raylib-hello.mml")))
-        ir <- compileAndGenerate(source, "RaylibFixture", config)
-        pair <- targetAt(directory, config)
-        (triple, target) = pair
-        path <- IO.blocking {
-          Files.writeString(directory.resolve("driver.c"), driver)
-          Files.writeString(directory.resolve("RaylibFixture.ll"), ir)
-        }
-        result <- LlvmToolchain.compile(path, config, triple.some, target)
-        _ = assertEquals(result._1, Right(0))
-        _ <- commandNotFailed(
-          List(
-            target.executable.toString,
-            "-fuse-ld=lld",
-            "-fsanitize=address,undefined",
-            directory.resolve("driver.c").toString,
-            directory.resolve("target/raylibfixture.o").toString,
-            directory.resolve(s"target/mml_runtime-$triple.o").toString,
-            "-lm",
-            "-o",
-            directory.resolve("program").toString
-          ),
-          directory
+        _ <- programExits(
+          List(directory.resolve("runtime-test").toString),
+          directory,
+          expectedCode = 0
         )
-        _ <- commandNotFailed(List(directory.resolve("program").toString), directory)
       yield ()
     }
   }

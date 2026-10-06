@@ -11,6 +11,7 @@ import mml.mmlclib.util.prettyprint.ast.prettyPrintAst
 import munit.CatsEffectSuite
 
 import java.nio.file.Path
+import scala.sys.process.{Process, ProcessLogger}
 
 /** Base trait for effectful tests; adds common MML specific assertions. */
 trait BaseEffFunSuite extends CatsEffectSuite with LlvmAssertions:
@@ -20,6 +21,23 @@ trait BaseEffFunSuite extends CatsEffectSuite with LlvmAssertions:
     LlvmToolchain
       .executeCommand(command, "Fixture command failed", workingDir, verbose = false)
       .map(_.fold(error => fail(error.message), code => assertEquals(code, 0)))
+
+  /** Assert a fixture program's exit code, showing captured output only on failure. */
+  protected def programExits(
+    command:      List[String],
+    workingDir:   Path,
+    expectedCode: Int
+  ): IO[Unit] =
+    IO.blocking {
+      // The child's stdout and stderr callbacks can run concurrently.
+      val output = new StringBuffer
+      val logger = ProcessLogger(line =>
+        output.append(s"$line\n")
+        ()
+      )
+      val code = Process(command, workingDir.toFile).!(logger)
+      assertEquals(code, expectedCode, s"${command.mkString(" ")}\n$output")
+    }
 
   final case class SemanticResult(module: Module, errors: List[SemanticError])
 

@@ -181,12 +181,26 @@ class LinkingTests extends BaseEffFunSuite:
     withFixture() { fixture =>
       for
         missing <- fixture.compile(List("mml_missing_fixture"))
-        _ = assert(missing._1.isLeft)
+        _ = assert(
+          missing._1.left.exists {
+            case LlvmCompilationError.CommandExecutionError(_, diagnostic, _) =>
+              diagnostic.contains("mml_missing_fixture")
+            case _ => false
+          },
+          missing._1.toString
+        )
         _ <- IO.blocking(
           Files.writeString(fixture.source, ir.replace("link_fixture", "missing_symbol"))
         )
         unresolved <- fixture.compile(List("mmlfixture"))
-        _ = assert(unresolved._1.isLeft)
+        _ = assert(
+          unresolved._1.left.exists {
+            case LlvmCompilationError.CommandExecutionError(_, diagnostic, _) =>
+              diagnostic.contains("missing_symbol")
+            case _ => false
+          },
+          unresolved._1.toString
+        )
       yield ()
     }
   }
