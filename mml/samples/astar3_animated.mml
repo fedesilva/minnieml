@@ -1,0 +1,819 @@
+// Run: mmlc run mml/samples/astar3_animated.mml
+// Requires raylib in the target linker's library search path.
+// A* records its decisions first; the window then animates that history once.
+@link["raylib"];
+
+// ---------------------------------------------------------
+// 1. Demo and Main
+// ---------------------------------------------------------
+
+pub fn main(args: StringArray): Unit =
+  let argc = ar_str_len args;
+  let show_help =
+    if argc > 0 then str_eq (ar_str_get args 0) "help";
+    else false;
+    ;
+
+  if show_help then
+    println (str_strip_margin
+      "|A* animated search: [wall_x wall_y wall_length events_per_second]
+       |Defaults: 25 3 4 30
+       | - x is horizontal, valid grid range 0..29
+       | - y is vertical from the top, valid grid range 0..9
+       | - wall_length extends downward from (x, y)
+       | - only in-bounds wall cells are written; length <= 0 builds no wall
+       | - events_per_second must be a positive integer (default: 30)
+       | - high speeds may show several decisions in one frame
+       |Requires raylib in the target linker's library search path.
+       |Playback starts automatically and holds the result until you close the window."
+    );
+  else
+    let wall_x = parse_arg args argc 0 25;
+    let wall_y = parse_arg args argc 1 3;
+    let wall_length = parse_arg args argc 2 4;
+    let speed = parse_arg args argc 3 30;
+
+    if speed <= 0 then
+      println "events_per_second must be a positive integer. Use help for usage.";
+    else
+      demo wall_x wall_y wall_length speed;
+    ;
+  ;
+;
+
+fn parse_arg(args: StringArray, argc: Int, idx: Int, fallback: Int): Int =
+  if argc > idx then str_to_int (ar_str_get args idx);
+  else fallback;
+  ;
+;
+
+fn demo(wall_x: Int, wall_y: Int, wall_length: Int, speed: Int): Unit =
+  let grid = make_grid wall_x wall_y wall_length;
+  let start = 0;
+  let goal = grid.width * grid.height - 1;
+  let result = astar grid start goal;
+
+  animate grid start goal result speed;
+;
+
+fn make_grid(wall_x: Int, wall_y: Int, wall_length: Int): Grid =
+  let width = 30;
+  let height = 10;
+  let walls = ar_int_new (width * height);
+
+  // Visit every cell so even open cells are initialized. Comparing y - length
+  // avoids overflowing wall_y + length when clipping extreme CLI arguments.
+  fn fill(i: Int): Unit =
+    if i < width * height then
+      let x = i % width;
+      let y = i / width;
+      let wall =
+        if wall_length > 0 then
+          x == wall_x and y >= wall_y and wall_y > y - wall_length;
+        else false;
+        ;
+      let value = if wall then 1; else 0;;
+      ar_int_set walls i value;
+      fill (i + 1);
+    ;
+  ;
+
+  fill 0;
+  Grid width height walls;
+;
+
+// ---------------------------------------------------------
+// 2. Search and Decision Recording
+// ---------------------------------------------------------
+
+struct SearchResult {
+  events: IntArray,
+  event_count: Int,
+  path: IntArray,
+  path_length: Int,
+  found: Bool
+};
+
+struct SearchOutcome { found: Bool, event_count: Int };
+struct SearchProgress { heap_size: Int, event_count: Int };
+
+fn astar(grid: Grid, start: Int, goal: Int): SearchResult =
+  let size = grid.width * grid.height;
+  let g_score = ar_int_new size;
+  let came_from = ar_int_new size;
+  let closed = ar_int_new size;
+
+  // Each cell expands once, with at most eight insertions. Every pop records
+  // one selected/skipped event; every neighbor records consideration + decision.
+  // Including finished cells, seed and termination needs at most 25*size + 3
+  // events. Both buffers use checked writes, including heap swaps.
+  let open_set = heap_new (8 * size + 1);
+  let events = ar_int_new ((32 * size + 4) * (event_width ()));
+
+  init_array g_score (infinity ()) size 0;
+  init_array came_from (0 - 1) size 0;
+  init_array closed 0 size 0;
+  ar_int_set g_score start 0;
+
+  fn visit_neighbors(current: Int, dir: Int, progress: SearchProgress): SearchProgress =
+    if dir == 8 then
+      progress;
+    else
+      let nx = current % grid.width + (dir_dx dir);
+      let ny = current / grid.width + (dir_dy dir);
+      let tentative_g = (ar_int_get g_score current) + (move_cost dir);
+      let f = tentative_g + (distance nx ny (goal % grid.width) (goal / grid.width));
+      let previous_g =
+        if in_bounds grid nx ny then ar_int_get g_score (ny * grid.width + nx);
+        else (infinity ());
+        ;
+      let considered = append_event events progress.event_count
+        (Event event_kind.consider current nx ny tentative_g f rejection.none previous_g);
+      let reason = rejection_reason grid closed current dir nx ny tentative_g previous_g;
+
+      let next_heap =
+        if reason == rejection.none then
+          let neighbor = ny * grid.width + nx;
+          ar_int_set g_score neighbor tentative_g;
+          ar_int_set came_from neighbor current;
+          heap_push open_set progress.heap_size neighbor f;
+        else progress.heap_size;
+        ;
+      let kind = if reason == rejection.none then event_kind.accept; else event_kind.reject;;
+      let decided = append_event events considered
+        (Event kind current nx ny tentative_g f reason previous_g);
+
+      visit_neighbors current (dir + 1) (SearchProgress next_heap decided);
+    ;
+  ;
+
+  fn solve(heap_size: Int, count: Int): SearchOutcome =
+    if heap_size == 0 then
+      let done = append_event events count
+        (Event event_kind.exhausted (0 - 1) (0 - 1) (0 - 1) 0 0 rejection.none (infinity ()));
+      SearchOutcome false done;
+    else
+      let popped = heap_pop open_set heap_size;
+      let current = popped.idx;
+      let x = current % grid.width;
+      let y = current / grid.width;
+      let g = ar_int_get g_score current;
+
+      if current == goal then
+        let selected = append_event events count
+          (Event event_kind.select current x y g popped.score rejection.none g);
+        let done = append_event events selected
+          (Event event_kind.found current x y g popped.score rejection.none g);
+        SearchOutcome true done;
+      elif (ar_int_get closed current) == 1 then
+        let skipped = append_event events count
+          (Event event_kind.skip current x y g popped.score rejection.closed g);
+        solve popped.size skipped;
+      else
+        let selected = append_event events count
+          (Event event_kind.select current x y g popped.score rejection.none g);
+        ar_int_set closed current 1;
+        let next = visit_neighbors current 0 (SearchProgress popped.size selected);
+        let finished = append_event events next.event_count
+          (Event event_kind.finish current x y g popped.score rejection.none g);
+        solve next.heap_size finished;
+      ;
+    ;
+  ;
+
+  let start_f = heuristic start goal grid.width;
+  let heap_size = heap_push open_set 0 start start_f;
+  let seeded = append_event events 0
+    (Event event_kind.seed start (start % grid.width) (start / grid.width) 0 start_f
+      rejection.none (infinity ()));
+  let outcome = solve heap_size seeded;
+  let path_length =
+    if outcome.found then count_path came_from goal 0;
+    else 0;
+    ;
+  let path = ar_int_new path_length;
+  fill_path came_from path goal (path_length - 1);
+
+  SearchResult events outcome.event_count path path_length outcome.found;
+;
+
+fn rejection_reason(
+  grid: Grid, closed: IntArray, current: Int, dir: Int,
+  nx: Int, ny: Int, tentative_g: Int, previous_g: Int
+): Int =
+  if not (in_bounds grid nx ny) then rejection.outside;
+  elif not (is_open grid (ny * grid.width + nx)) then rejection.wall;
+  elif is_diagonal dir and not (diagonal_clear grid
+    (current % grid.width) (current / grid.width) (dir_dx dir) (dir_dy dir))
+  then rejection.corner;
+  elif (ar_int_get closed (ny * grid.width + nx)) == 1 then rejection.closed;
+  elif tentative_g >= previous_g then rejection.cost;
+  else rejection.none;
+  ;
+;
+
+fn count_path(parents: IntArray, current: Int, count: Int): Int =
+  if current == (0 - 1) then count;
+  else count_path parents (ar_int_get parents current) (count + 1);
+  ;
+;
+
+fn fill_path(parents: IntArray, path: IntArray, current: Int, i: Int): Unit =
+  if i >= 0 then
+    ar_int_set path i current;
+    fill_path parents path (ar_int_get parents current) (i - 1);
+  ;
+;
+
+// ---------------------------------------------------------
+// 3. Event Storage
+// ---------------------------------------------------------
+
+inline fn infinity(): Int = 999999999;;
+
+struct EventKinds {
+  seed: Int,
+  select: Int,
+  skip: Int,
+  consider: Int,
+  accept: Int,
+  reject: Int,
+  finish: Int,
+  found: Int,
+  exhausted: Int
+};
+let event_kind = EventKinds 1 2 3 4 5 6 7 8 9;
+
+struct RejectionReasons { none: Int, outside: Int, wall: Int, corner: Int, closed: Int, cost: Int };
+let rejection = RejectionReasons 0 1 2 3 4 5;
+
+// For neighbors, g/f describe the proposed route, and previous_g is the best
+// known cost before the decision. For a stale pop, f is that queue entry's score.
+// Coordinates keep outside-grid attempts representable without a cell index.
+struct Event {
+  kind: Int,
+  current: Int,
+  x: Int,
+  y: Int,
+  g: Int,
+  f: Int,
+  reason: Int,
+  previous_g: Int
+};
+
+inline fn event_width(): Int = 8;;
+
+fn append_event(events: IntArray, count: Int, event: Event): Int =
+  let base = count * (event_width ());
+  ar_int_set events base event.kind;
+  ar_int_set events (base + 1) event.current;
+  ar_int_set events (base + 2) event.x;
+  ar_int_set events (base + 3) event.y;
+  ar_int_set events (base + 4) event.g;
+  ar_int_set events (base + 5) event.f;
+  ar_int_set events (base + 6) event.reason;
+  ar_int_set events (base + 7) event.previous_g;
+  count + 1;
+;
+
+fn read_event(events: IntArray, i: Int): Event =
+  let base = i * (event_width ());
+  Event
+    (ar_int_get events base)
+    (ar_int_get events (base + 1))
+    (ar_int_get events (base + 2))
+    (ar_int_get events (base + 3))
+    (ar_int_get events (base + 4))
+    (ar_int_get events (base + 5))
+    (ar_int_get events (base + 6))
+    (ar_int_get events (base + 7))
+  ;
+;
+
+// ---------------------------------------------------------
+// 4. Timed Playback and Drawing
+// ---------------------------------------------------------
+
+struct CellStates { open: Int, queued: Int, processed: Int, path: Int };
+let cell_state = CellStates 0 1 2 3;
+struct Layout { cell_size: Int, grid_left: Int, grid_top: Int };
+let layout = Layout 30 32 96;
+
+struct Playback { step: Int, elapsed: Float };
+
+fn animate(grid: Grid, start: Int, goal: Int, result: SearchResult, speed: Int): Unit =
+  let cells = ar_int_new (grid.width * grid.height);
+  init_array cells cell_state.open (grid.width * grid.height) 0;
+  let interval = 1.0 /. (int_to_float speed);
+  let title = to_cstr "MML - A* search decisions";
+  init_window (grid.width * layout.cell_size + layout.grid_left * 2) 600 title;
+  set_target_fps 60;
+
+  fn draw_loop(playback: Playback): Unit =
+    if not (window_should_close ()) then
+      begin_drawing ();
+      clear_background canvas_color;
+      draw_scene grid cells start goal result playback.step speed;
+      end_drawing ();
+
+      let next = advance_playback grid cells result interval
+        (Playback playback.step (playback.elapsed +. (get_frame_time ())));
+      draw_loop next;
+    ;
+  ;
+
+  if is_window_ready () then
+    draw_loop (Playback 0 0.0);
+    close_window ();
+  else
+    println "Could not open the raylib window.";
+  ;
+;
+
+// Every elapsed event is applied, even when rendering cannot show each one.
+// The end state stays in the draw loop until the user closes the window.
+fn advance_playback(
+  grid: Grid, cells: IntArray, result: SearchResult, interval: Float, playback: Playback
+): Playback =
+  if playback.step >= result.event_count + result.path_length then
+    Playback playback.step 0.0;
+  elif playback.elapsed >=. interval then
+    if playback.step < result.event_count then
+      apply_event grid cells (read_event result.events playback.step);
+    else
+      let cell = ar_int_get result.path (playback.step - result.event_count);
+      ar_int_set cells cell cell_state.path;
+    ;
+    advance_playback grid cells result interval
+      (Playback (playback.step + 1) (playback.elapsed -. interval));
+  else playback;
+  ;
+;
+
+fn apply_event(grid: Grid, cells: IntArray, event: Event): Unit =
+  if event.kind == event_kind.seed or event.kind == event_kind.accept then
+    ar_int_set cells (event.y * grid.width + event.x) cell_state.queued;
+  elif event.kind == event_kind.finish or event.kind == event_kind.found then
+    ar_int_set cells event.current cell_state.processed;
+  ;
+;
+
+fn draw_scene(
+  grid: Grid, cells: IntArray, start: Int, goal: Int,
+  result: SearchResult, step: Int, speed: Int
+): Unit =
+  draw_label "A* / search decisions" layout.grid_left 16 28 ink_color;
+  draw_label "S = start     G = goal     Straight move: 10     Diagonal: 14"
+    layout.grid_left 48 16 muted_color;
+  draw_grid grid cells start goal 0;
+
+  draw_legend "Open" open_color 32;
+  draw_legend "Wall" wall_color 145;
+  draw_legend "Queued" queued_color 258;
+  draw_legend "Processed" processed_color 405;
+  draw_legend "Path" path_color 575;
+  draw_label "Orange outline: current cell" 700 440 14 muted_color;
+
+  if step == 0 then
+    draw_label "Ready to explore from S." layout.grid_left 470 20 ink_color;
+  elif step <= result.event_count then
+    let event = read_event result.events (step - 1);
+    draw_event grid event;
+    if event.kind == event_kind.found then
+      draw_label "Goal reached! Reveal the final path." layout.grid_left 470 20 ink_color;
+    elif event.kind == event_kind.exhausted then
+      draw_label "No path found. Close the window when done."
+        layout.grid_left 470 20 ink_color;
+      draw_label "The queue is empty; all reachable candidates have been processed."
+        layout.grid_left 500 18 muted_color;
+    else
+      draw_label (event_caption event) layout.grid_left 470 20 ink_color;
+      draw_label (event_detail event) layout.grid_left 500 18 muted_color;
+    ;
+  else
+    let revealed = step - result.event_count;
+    let current = ar_int_get result.path (revealed - 1);
+    outline_cell (current % grid.width) (current / grid.width) current_color;
+    let caption =
+      if revealed == result.path_length then "Path found! Close the window when done.";
+      else "Path found! Following the final route from S to G.";
+      ;
+    draw_label caption layout.grid_left 470 20 ink_color;
+    draw_label
+      ((int_to_str revealed) ++ " / " ++ (int_to_str result.path_length) ++ " path cells")
+      layout.grid_left 500 18 muted_color;
+  ;
+
+  draw_label
+    ("Decisions: " ++ (int_to_str (min step result.event_count)) ++ " / " ++
+      (int_to_str result.event_count) ++ "     Speed: " ++ (int_to_str speed) ++
+      " events/s     Close window to exit")
+    layout.grid_left 558 16 muted_color;
+;
+
+fn draw_grid(grid: Grid, cells: IntArray, start: Int, goal: Int, i: Int): Unit =
+  if i < grid.width * grid.height then
+    let x = layout.grid_left + (i % grid.width) * layout.cell_size;
+    let y = layout.grid_top + (i / grid.width) * layout.cell_size;
+    let state = ar_int_get cells i;
+    let wall = (ar_int_get grid.walls i) == 1;
+    let color =
+      if state == cell_state.path then path_color;
+      elif wall then wall_color;
+      elif state == cell_state.queued then queued_color;
+      elif state == cell_state.processed then processed_color;
+      else open_color;
+      ;
+    draw_rectangle x y (layout.cell_size - 2) (layout.cell_size - 2) color;
+
+    if i == start or i == goal then
+      let label = if i == start then "S"; else "G";;
+      let text_color = if wall and state != cell_state.path then canvas_color; else ink_color;;
+      draw_label label (x + 7) (y + 4) 20 text_color;
+    ;
+    draw_grid grid cells start goal (i + 1);
+  ;
+;
+
+fn draw_event(grid: Grid, event: Event): Unit =
+  if event.current >= 0 then
+    let cx = event.current % grid.width;
+    let cy = event.current / grid.width;
+    outline_cell cx cy current_color;
+
+    if is_neighbor_event event.kind then
+      let color =
+        if event.kind == event_kind.accept then accept_color;
+        elif event.kind == event_kind.reject then reject_color;
+        else consider_color;
+        ;
+      draw_line
+        (layout.grid_left + cx * layout.cell_size + 14)
+        (layout.grid_top + cy * layout.cell_size + 14)
+        (layout.grid_left + event.x * layout.cell_size + 14)
+        (layout.grid_top + event.y * layout.cell_size + 14)
+        color;
+      // Even outside candidates lie only one cell beyond the grid, in its margin.
+      outline_cell event.x event.y color;
+    ;
+  ;
+;
+
+fn outline_cell(x: Int, y: Int, color: Color): Unit =
+  let px = layout.grid_left + x * layout.cell_size;
+  let py = layout.grid_top + y * layout.cell_size;
+  draw_rectangle_lines px py (layout.cell_size - 2) (layout.cell_size - 2) color;
+  draw_rectangle_lines (px + 1) (py + 1) (layout.cell_size - 4) (layout.cell_size - 4) color;
+;
+
+fn draw_legend(label: String, color: Color, x: Int): Unit =
+  draw_rectangle x 440 14 14 color;
+  draw_label label (x + 20) 438 18 muted_color;
+;
+
+fn draw_label(text: String, x: Int, y: Int, size: Int, color: Color): Unit =
+  let c_text = to_cstr text;
+  draw_text c_text x y size color;
+;
+
+fn is_neighbor_event(kind: Int): Bool =
+  kind == event_kind.consider or kind == event_kind.accept or kind == event_kind.reject;
+;
+
+fn coordinates(x: Int, y: Int): String =
+  "(" ++ (int_to_str x) ++ ", " ++ (int_to_str y) ++ ")";
+;
+
+fn event_caption(event: Event): String =
+  let pos = coordinates event.x event.y;
+  if event.kind == event_kind.seed then "Queue the start " ++ pos ++ ".";
+  elif event.kind == event_kind.select then "Explore " ++ pos ++ ": best priority in the queue.";
+  elif event.kind == event_kind.skip then "Skip stale queue entry for " ++ pos ++ ".";
+  elif event.kind == event_kind.consider then "Try neighbor " ++ pos ++ "?";
+  elif event.kind == event_kind.accept then "Yes, a better route to " ++ pos ++ ". Queue it.";
+  elif event.kind == event_kind.reject then "Reject " ++ pos ++ ": " ++ (reason_text event.reason);
+  else "Finished checking neighbors of " ++ pos ++ ".";
+  ;
+;
+
+fn event_detail(event: Event): String =
+  if event.kind == event_kind.skip then
+    "Already processed; discard queue entry with f = " ++ (int_to_str event.f);
+  else
+    let costs = "g = " ++ (int_to_str event.g) ++ "    h = " ++
+      (int_to_str (event.f - event.g)) ++ "    f = g + h = " ++ (int_to_str event.f);
+    if is_neighbor_event event.kind then
+      let previous =
+        if event.previous_g == (infinity ()) then "unreached";
+        else int_to_str event.previous_g;
+        ;
+      "Proposed " ++ costs ++ "    Best known g: " ++ previous;
+    else costs ++ "    (g: cost so far, h: estimate to goal)";
+    ;
+  ;
+;
+
+fn reason_text(reason: Int): String =
+  if reason == rejection.outside then "outside the grid.";
+  elif reason == rejection.wall then "there is a wall.";
+  elif reason == rejection.corner then "the diagonal cuts a blocked corner.";
+  elif reason == rejection.closed then "already processed.";
+  else "this route is no cheaper.";
+  ;
+;
+
+let canvas_color = Color (byte 248) (byte 249) (byte 252) (byte 255);
+let ink_color = Color (byte 28) (byte 38) (byte 52) (byte 255);
+let muted_color = Color (byte 76) (byte 88) (byte 105) (byte 255);
+let open_color = Color (byte 228) (byte 233) (byte 240) (byte 255);
+let wall_color = Color (byte 48) (byte 58) (byte 73) (byte 255);
+let queued_color = Color (byte 144) (byte 205) (byte 249) (byte 255);
+let processed_color = Color (byte 172) (byte 180) (byte 195) (byte 255);
+let path_color = Color (byte 126) (byte 221) (byte 160) (byte 255);
+let current_color = Color (byte 214) (byte 116) (byte 0) (byte 255);
+let consider_color = Color (byte 51) (byte 95) (byte 225) (byte 255);
+let accept_color = Color (byte 0) (byte 130) (byte 70) (byte 255);
+let reject_color = Color (byte 215) (byte 40) (byte 60) (byte 255);
+
+// ---------------------------------------------------------
+// 5. Grid, Movement and Min-Heap Helpers
+// ---------------------------------------------------------
+
+struct Grid {
+  width:  Int,
+  height: Int,
+  walls:  IntArray
+};
+
+fn in_bounds(grid: Grid, x: Int, y: Int): Bool =
+  x >= 0 and x < grid.width and y >= 0 and y < grid.height;
+;
+
+fn distance(x: Int, y: Int, goal_x: Int, goal_y: Int): Int =
+  let dx = abs (x - goal_x);
+  let dy = abs (y - goal_y);
+  let diagonal_steps = min dx dy;
+  let straight_steps = (max dx dy) - diagonal_steps;
+  diagonal_steps * 14 + straight_steps * 10;
+;
+
+inline fn abs(x: Int): Int =
+  if x < 0 then
+    0 - x;
+  else
+    x;
+  ;
+;
+
+inline fn min(a: Int, b: Int): Int =
+  if a < b then
+    a;
+  else
+    b;
+  ;
+;
+
+inline fn max(a: Int, b: Int): Int =
+  if a > b then
+    a;
+  else
+    b;
+  ;
+;
+
+inline fn dir_dx(dir: Int): Int =
+  if dir == 0 then
+    1;
+  elif dir == 1 then
+    (0 - 1);
+  elif dir == 2 then
+    0;
+  elif dir == 3 then
+    0;
+  elif dir == 4 then
+    1;
+  elif dir == 5 then
+    (0 - 1);
+  elif dir == 6 then
+    1;
+  else
+    (0 - 1);
+  ;
+;
+
+inline fn dir_dy(dir: Int): Int =
+  if dir == 0 then
+    0;
+  elif dir == 1 then
+    0;
+  elif dir == 2 then
+    1;
+  elif dir == 3 then
+    (0 - 1);
+  elif dir == 4 then
+    1;
+  elif dir == 5 then
+    1;
+  elif dir == 6 then
+    (0 - 1);
+  else
+    (0 - 1);
+  ;
+;
+
+inline fn is_diagonal(dir: Int): Bool =
+  dir >= 4;
+;
+
+inline fn move_cost(dir: Int): Int =
+  if is_diagonal dir then
+    14;
+  else
+    10;
+  ;
+;
+
+inline fn is_open(grid: Grid, idx: Int): Bool =
+  (ar_int_get grid.walls idx) != 1;
+;
+
+fn diagonal_clear(
+  grid: Grid,
+  cx: Int,
+  cy: Int,
+  dx: Int,
+  dy: Int
+): Bool =
+  let horizontal_idx = cy * grid.width + (cx + dx);
+
+  let vertical_idx = (cy + dy) * grid.width + cx;
+
+  is_open grid horizontal_idx and is_open grid vertical_idx;
+;
+
+fn heuristic(idx_a: Int, idx_b: Int, width: Int): Int =
+  let dx = abs ((idx_a % width) - (idx_b % width));
+  let dy = abs ((idx_a / width) - (idx_b / width));
+
+  let diagonal_steps = min dx dy;
+
+  let straight_steps = (max dx dy) - diagonal_steps;
+
+  diagonal_steps * 14 + straight_steps * 10;
+;
+
+fn init_array(arr: IntArray, value: Int, total: Int, i: Int): Unit =
+  if i < total then
+    ar_int_set arr i value;
+
+    init_array arr value total (i + 1);
+  ;
+;
+
+struct MinHeap {
+  indices:  IntArray,
+  scores:   IntArray,
+  capacity: Int
+};
+
+struct PopResult {
+  size: Int,
+  idx: Int,
+  score: Int
+};
+
+fn heap_new(cap: Int): MinHeap =
+  MinHeap
+    (ar_int_new cap)
+    (ar_int_new cap)
+    cap
+  ;
+;
+
+fn heap_swap(h: MinHeap, i: Int, j: Int): Unit =
+  let idx_i = ar_int_get (h.indices) i;
+  let scr_i = ar_int_get (h.scores) i;
+
+  let idx_j = ar_int_get (h.indices) j;
+  let scr_j = ar_int_get (h.scores) j;
+
+  ar_int_set (h.indices) i idx_j;
+  ar_int_set (h.scores) i scr_j;
+
+  ar_int_set (h.indices) j idx_i;
+  ar_int_set (h.scores) j scr_i;
+;
+
+fn sift_up(h: MinHeap, idx: Int): Unit =
+  if idx > 0 then
+    let parent = (idx - 1) / 2;
+
+    let p_score = ar_int_get (h.scores) parent;
+    let c_score = ar_int_get (h.scores) idx;
+
+    if c_score < p_score then
+      heap_swap h idx parent;
+
+      sift_up h parent;
+    ;
+  ;
+;
+
+fn sift_down(h: MinHeap, size: Int, idx: Int): Unit =
+  let left = 2 * idx + 1;
+  let right = 2 * idx + 2;
+
+  let smallest_initial = idx;
+  let smallest_after_left =
+    if left < size then
+      if
+        (ar_int_get (h.scores) left) < (ar_int_get (h.scores) smallest_initial)
+      then
+        left;
+      else
+        smallest_initial;
+      ;
+    else
+      smallest_initial;
+    ;
+
+  let smallest_after_right =
+    if right < size then
+      if
+        (ar_int_get (h.scores) right) <
+          (ar_int_get (h.scores) smallest_after_left)
+      then
+        right;
+      else
+        smallest_after_left;
+      ;
+    else
+      smallest_after_left;
+    ;
+
+  if smallest_after_right != idx then
+    heap_swap h idx smallest_after_right;
+    sift_down h size smallest_after_right;
+  ;
+;
+
+fn heap_push(h: MinHeap, size: Int, grid_idx: Int, f_score: Int): Int =
+  ar_int_set (h.indices) size grid_idx;
+  ar_int_set (h.scores) size f_score;
+
+  sift_up h size;
+
+  size + 1;
+;
+
+fn heap_pop(h: MinHeap, size: Int): PopResult =
+  if size == 0 then
+    PopResult 0 (0 - 1) 0;
+  else
+    let root = ar_int_get (h.indices) 0;
+    let score = ar_int_get (h.scores) 0;
+
+    let last = size - 1;
+    let last_idx = ar_int_get (h.indices) last;
+    let last_scr = ar_int_get (h.scores) last;
+
+    ar_int_set (h.indices) 0 last_idx;
+    ar_int_set (h.scores) 0 last_scr;
+
+    sift_down h last 0;
+
+    PopResult last root score;
+  ;
+;
+
+// ---------------------------------------------------------
+// 6. Native Raylib Declarations
+// ---------------------------------------------------------
+
+type Color = @native { r: Int8, g: Int8, b: Int8, a: Int8 };
+
+fn byte(n: Int): Int8 = @native[tpl="trunc i32 %operand to i8"];;
+
+fn init_window(width: Int, height: Int, title: CString): Unit =
+  @native[name="InitWindow"];
+;
+fn set_target_fps(fps: Int): Unit = @native[name="SetTargetFPS"];;
+fn window_should_close(): Bool = @native[name="WindowShouldClose"];;
+fn is_window_ready(): Bool = @native[name="IsWindowReady"];;
+fn begin_drawing(): Unit = @native[name="BeginDrawing"];;
+fn clear_background(color: Color): Unit = @native[name="ClearBackground"];;
+fn draw_text(text: CString, x: Int, y: Int, size: Int, color: Color): Unit =
+  @native[name="DrawText"];
+;
+fn draw_rectangle(x: Int, y: Int, width: Int, height: Int, color: Color): Unit =
+  @native[name="DrawRectangle"];
+;
+fn draw_rectangle_lines(x: Int, y: Int, width: Int, height: Int, color: Color): Unit =
+  @native[name="DrawRectangleLines"];
+;
+fn draw_line(x1: Int, y1: Int, x2: Int, y2: Int, color: Color): Unit =
+  @native[name="DrawLine"];
+;
+fn get_frame_time(): Float = @native[name="GetFrameTime"];;
+fn end_drawing(): Unit = @native[name="EndDrawing"];;
+fn close_window(): Unit = @native[name="CloseWindow"];;
