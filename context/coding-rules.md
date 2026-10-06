@@ -132,6 +132,25 @@ When post-chores applies or the Author requests review, review code, tooling, wo
 and affected technical documents with local `code-review`, following its independence rules.
 Do not claim a required check passed if it failed, was ignored, or could not run.
 
+### Required change tour
+
+After finishing coding or other changes, include a full tour of the changes in the handoff,
+before requesting approval.
+
+- Start with the problem being addressed and what the changes accomplish.
+- Give an explicit, logical reading order: first read this, then read that. Order the tour
+  so each explanation supplies the context needed for the next one.
+- Link to the relevant files with current line numbers. Explain what changed at each stop,
+  why it changed, and how it connects to the parts already introduced. Cover all changes,
+  including moves and deletions; a file list or diff summary alone is not a tour.
+- Write in plain language. Define technical terms, abbreviations, and referenced components
+  within the tour before relying on them. Do not assume knowledge of the implementation,
+  prior conversations, or unexplained references. Links supplement the explanation; they
+  do not replace it.
+
+Approval is denied if the tour is missing, too jargon-heavy, assumes unstated knowledge,
+or introduces references that it does not explain within the tour itself.
+
 ## Git usage
 
 - **Read Only** Freely use git to read history or fetching previous versions. No approval needed.
