@@ -6,6 +6,9 @@ Durable product changes belong here. Current task state belongs in task files.
 
 - Preserve failed tool diagnostics in compiler errors without printing duplicate failures.
   Keep expected exit codes and runtime panic output quiet in passing tests.
+- Add a standalone MML/C aggregate sample with two- and four-float structures and a
+  24-byte integer structure passed and returned by value. Include commands to generate
+  optimized IR for comparison and build the executable in `build/target`.
 
 ## 2026-10-04
 
