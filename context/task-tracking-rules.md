@@ -134,9 +134,12 @@ claim that implementation ran. Migrating an old task does not approve its implem
 
 `finish task` and `complete task` mean the same operation: verify, log, mark complete,
 and commit. The command supplies workstream signoff and local commit authorization for
-that task; do not ask for them again. `finish errand` authorizes verification, logging,
-and a local commit without tracked-task completion. Explicit limits such as "do not commit"
-override these defaults. Push only when the Author requests it.
+that task; do not ask for them again. `finish subtask` and `complete subtask` supply
+signoff and local commit authorization for the named subtask: verify it, log its product
+change, mark it complete, and commit only its changes and bookkeeping. Keep the parent
+task open and preserve unfinished siblings. Do not request commit approval again.
+`finish errand` authorizes verification, logging, and a local commit without tracked-task
+completion. Explicit limits such as "do not commit" override these defaults. Push only when the Author requests it.
 All logging instructions in this lifecycle are conditional on the [Changelog](#changelog)
 rules below. Finishing or committing work does not by itself require a changelog entry.
 
@@ -145,8 +148,10 @@ rules below. Finishing or committing work does not by itself require a changelog
    Record failures, ignores, and explicit waivers accurately. A finish command does not
    waive required checks or authorize unrelated implementation.
 2. Before completing a task, verify that no open subtasks or unchecked plan items remain.
-   Record the signoff supplied by the finish command. Report unfinished work or failing
-   checks instead of claiming completion; scope reductions require Author direction.
+   For a subtask, verify only its scoped checklist and leave unfinished sibling items and
+   the parent open. Record the signoff supplied by the finish command. Report unfinished
+   scoped work or failing checks instead of claiming completion; scope reductions require
+   Author direction.
 3. Reconcile the task, active memory, and changelog using the operations below.
 4. Use local `draft-commit` to inspect the exact scope and prepare a plain commit message,
    then commit the finished work and its bookkeeping under the existing authorization.
@@ -154,17 +159,20 @@ rules below. Finishing or committing work does not by itself require a changelog
    task or errand note that the commit remains pending; do not report the finish as done.
 
 Subtasks can be checked off within approved work when supported by evidence. Passing checks
-alone does not authorize whole-task completion or a commit. Task creation, subtask completion,
-and archive operations do not authorize commits. Never delete task history except under
-explicit archive-cleanup authorization.
+alone and automatic checklist updates do not authorize whole-task completion or a commit.
+An explicit `finish subtask` or `complete subtask` command authorizes the scoped commit.
+Task creation and archive operations do not authorize commits. Never delete task history
+except under explicit archive-cleanup authorization.
 
 ## Lifecycle operations
 
 - **`task add`**: create a task from the template. Add it to memory only if selected by the
   Author. Do not log administrative creation to the changelog or automatically commit.
-- **`complete subtask`**: verify the named checklist item's evidence, update that item and
-  any existing memory reference, and log the completed product change. Leave the parent
-  task open unless separately instructed and eligible for completion.
+- **`finish subtask` / `complete subtask`**: verify the named checklist item's evidence,
+  record its signoff, mark that item complete, update any existing memory reference, log
+  the completed product change, and commit the scoped changes and bookkeeping. Leave
+  the parent task and unfinished siblings open. This command supplies local commit
+  authorization; do not ask for another approval. Push only when requested.
 - **`finish task` / `complete task`**: verify the task, record signoff, mark it `complete`,
   remove its active-memory entry, log the completed work, and commit the scoped changes.
   Keep its file in `context/tasks/` until archival is requested.
