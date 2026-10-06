@@ -31,15 +31,49 @@ def emitModule(
   if targetAbi == TargetAbi.Default && targetTriple.nonEmpty then
     return CodeGenError(s"Unsupported target C ABI: $targetTriple").asLeft
 
+  val targets = CallableTargetAnalysis.analyze(module)
+  val locals  = LocalCallableAnalysis.analyze(module, targets)
+  ClosureEnvironmentLayout.analyze(module, targets).flatMap { environments =>
+    emitPlannedModule(
+      module,
+      entryPoint,
+      targetTriple,
+      targetAbi,
+      targetAttributes,
+      emitAliasScopes,
+      targets,
+      locals,
+      environments
+    )
+  }
+}
+
+private def emitPlannedModule(
+  module:           Module,
+  entryPoint:       Option[String],
+  targetTriple:     String,
+  targetAbi:        TargetAbi,
+  targetAttributes: TargetAttributes,
+  emitAliasScopes:  Boolean,
+  targets:          CallableTargetAnalysis,
+  locals:           LocalCallableAnalysis,
+  environments:     Map[String, ClosureEnvironmentLayout]
+): Either[CodeGenError, EmitResult] = {
   // Setup the initial state with the module name, resolvables and header
-  val initialState = CodeGenState(
-    localCallablePlan = LocalCallablePlan.analyze(module),
-    moduleName        = module.name,
-    targetAbi         = targetAbi,
-    layout            = TargetLayout(targetAttributes.dataLayout),
-    resolvables       = module.resolvables,
-    emitAliasScopes   = emitAliasScopes
+  val plannedState = CodeGenState(
+    callableTargetAnalysis = targets,
+    closureEnvironments    = environments,
+    nextAnonFnId           = targets.definitions.size,
+    localCallableAnalysis  = locals,
+    moduleName             = module.name,
+    targetAbi              = targetAbi,
+    layout                 = TargetLayout(targetAttributes.dataLayout),
+    resolvables            = module.resolvables.updatedAllTypes(environments.values.map(_.layout)),
+    emitAliasScopes        = emitAliasScopes
   ).withModuleHeader(module.name, targetTriple)
+
+  val initialState =
+    plannedState.copy(knownCallableEntries = KnownCallableEntry.allocate(plannedState))
 
   // Collect all TypeDef members with native type specifications
   // Currently we emit LLVM type definitions for native types and struct declarations
@@ -49,7 +83,9 @@ def emitModule(
       td
   }
 
-  val typeStructs = module.members.collect { case ts: TypeStruct => ts }
+  val typeStructs = module.members.collect { case ts: TypeStruct =>
+    ts.id.flatMap(environments.get).fold(ts)(_.layout)
+  }
 
   // Generate LLVM type definitions for all native structs.
   // Primitives and pointers do not require forward declarations.

@@ -271,7 +271,13 @@ enum TbaaNode derives CanEqual:
   * @param functionDeclarations
   *   map of function names to their declarations
   *
-  * @param localCallablePlan
+  * @param callableTargetAnalysis
+  *   complete binding and result-flow evidence for direct calls
+  * @param knownCallableEntries
+  *   module entry symbols and conventions, independent of runtime closure environments
+  * @param closureEnvironments
+  *   physical capture layouts shared by allocation, access, metadata, and destruction
+  * @param localCallableAnalysis
   *   immutable use analysis computed before emission chooses local entry conventions
   * @param localCallableTargets
   *   original binding IDs mapped to allocated plain entries, registered before compiling their
@@ -315,13 +321,16 @@ case class CodeGenState(
   // Resolvables index for soft reference lookups
   resolvables: ResolvablesIndex = ResolvablesIndex(),
   // Deferred function definitions (expression-position lambdas compiled as separate functions)
-  deferredDefinitions:     List[String]                     = List.empty,
-  localCallablePlan:       LocalCallablePlan                = LocalCallablePlan(),
-  localCallableTargets:    Map[String, LocalCallableTarget] = Map.empty,
-  callableEntries:         Map[String, String]              = Map.empty,
-  nativeCallAdapters:      Map[NativeCallKey, String]       = Map.empty,
-  nextAnonFnId:            Int                              = 0,
-  insideLoopifiedFunction: Boolean                          = false
+  deferredDefinitions:     List[String]                          = List.empty,
+  callableTargetAnalysis:  CallableTargetAnalysis                = CallableTargetAnalysis(),
+  knownCallableEntries:    Map[String, KnownCallableEntry]       = Map.empty,
+  closureEnvironments:     Map[String, ClosureEnvironmentLayout] = Map.empty,
+  localCallableAnalysis:   LocalCallableAnalysis                 = LocalCallableAnalysis(),
+  localCallableTargets:    Map[String, LocalCallableTarget]      = Map.empty,
+  callableEntries:         Map[String, String]                   = Map.empty,
+  nativeCallAdapters:      Map[NativeCallKey, String]            = Map.empty,
+  nextAnonFnId:            Int                                   = 0,
+  insideLoopifiedFunction: Boolean                               = false
 ):
   /** Returns a new state with an updated register counter. */
   def withRegister(reg: Int): CodeGenState =
@@ -465,8 +474,9 @@ case class CodeGenState(
         }
         val structId = stateWithScalars.nextTbaaId
         // Struct node: !{!"name", !scalar1, i64 offset1, !scalar2, i64 offset2, ...}
-        val fieldParts = scalarIds.map { case (sid, off) => s"!$sid, i64 $off" }.mkString(", ")
-        val metadata   = s"""!$structId = !{!"$name", $fieldParts}"""
+        val fieldParts = scalarIds.map { case (sid, off) => s"!$sid, i64 $off" }
+        val parts      = s"!\"$name\"" :: fieldParts
+        val metadata   = s"!$structId = !{${parts.mkString(", ")}}"
         (
           stateWithScalars.copy(
             tbaaOutput    = metadata :: stateWithScalars.tbaaOutput,
@@ -635,6 +645,9 @@ enum ScopeEntry:
     */
   case Callable(bindingId: String, target: LocalCallableTarget)
 
+  /** A known entry paired with the environment of this particular runtime closure. */
+  case KnownCallable(bindingId: String, targetId: String, environment: String)
+
 object ScopeEntry:
 
   /** Creates a runtime binding from an emitted register or literal operand. */
@@ -666,6 +679,8 @@ object ScopeEntry:
       case Runtime(register, typeName, isLiteral, literalValue) =>
         CompileResult(register, state, isLiteral, typeName, literalValue = literalValue).asRight
       case Callable(_, target) => compileLocalCallableValue(target, state)
+      case KnownCallable(_, targetId, environment) =>
+        compileKnownCallableValue(targetId, environment, state)
 
 /** Lets binding emission extend lexical scope even when no runtime operand is produced.
   * CompileResult serves expression consumers that need an operand; a direct-only function binding

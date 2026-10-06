@@ -1216,7 +1216,7 @@ its target nor allocates an environment. Explicit direct calls retain the target
 
 ### Direct local-entry optimization
 
-Binding emission must choose an entry before it reaches the binding's uses. `LocalCallablePlan`
+Binding emission must choose an entry before it reaches the binding's uses. `LocalCallableAnalysis`
 therefore analyzes the final typed module once, before LLVM emission. It records uses of
 non-capturing local lambda bindings and maps simple aliases to their original binding IDs,
 counting fully applied direct calls separately from value uses. Parenthesized references preserve
@@ -1241,11 +1241,39 @@ body has environment loads, not access to the enclosing function's scope or SSA 
 calls the stored value through the ordinary closure ABI. Direct calls and adapters share
 a body; value-only local lambdas keep their existing emission path.
 
-This is an optimization, with no source-language or ownership changes. PAP direct-target
-optimization, capture elimination, and tail recursion across owned-closure cleanup are separate
-work. `LocalCallableCodegenTests` checks entry signatures, aliasing and shadowing, recursion,
+This is an optimization, with no source-language or ownership changes. Proven PAP captures also
+qualify their non-capturing targets for plain entries. General capture elimination and tail
+recursion across owned-closure cleanup are separate work. `LocalCallableCodegenTests` checks entry signatures, aliasing and shadowing, recursion,
 value adapters and captures, effect order, and consuming parameters with LLVM assembly and
 native execution.
+
+### Known targets through partial application
+
+`CallableTargetAnalysis` follows immutable binding IDs, aliases, parentheses, captures, application
+results, constructor fields, and conditional results. Its complete value-flow result includes
+unknown sources: a known branch merged with an unknown branch stays unknown. Different closures
+may share one entry while carrying different environments. Function parameters receive evidence
+only from the application whose result is being analyzed; collecting observed callers does not
+specialize an emitted function body. Recursive or unresolved result flow falls back to unknown.
+
+Entry symbols are registered before body emission. `KnownCallableEntry` distinguishes plain
+entries, closure entries with a trailing environment operand, and existing top-level call lowering.
+Known calls name that entry directly; unknown calls retain the closure-pair indirect path. Source
+conditions, qualified callees, supplied arguments, and Unit effects keep their evaluation behavior.
+Ordinary value consumers receive the existing closure pair, using an adapter for a plain entry.
+
+`ClosureEnvironmentLayout` describes physical PAP payloads independently of semantic captures.
+A known non-capturing callable needs no payload field; a known capturing callable stores only
+its environment pointer. Other captures retain their ordinary representation. Allocation size,
+field stores and loads, environment parameter attributes, destruction, and alias metadata use
+the same projected layout. Captured environment pointers enter the residual body's scope together
+with the known entry identity. Removing a field that has payload cleanup is rejected.
+
+Ownership analysis and its typed destruction nodes remain unchanged. For an environment-only
+callable field, destruction invokes the same cleanup target on the loaded pointer without extracting
+it from a closure pair. Transfer-bearing entries retain their existing environment disarming.
+The public function-value ABI remains `{ entry pointer, environment pointer }`; environment
+flattening and new ownership semantics are outside this optimization.
 
 ### Template extraction
 

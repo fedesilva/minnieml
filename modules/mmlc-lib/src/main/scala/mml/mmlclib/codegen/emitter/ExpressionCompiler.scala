@@ -64,6 +64,8 @@ def compileTerm(
       functionScope.get(ref.name) match {
         case Some(entry) =>
           entry match
+            case ScopeEntry.KnownCallable(id, _, _) if !ref.resolvedId.contains(id) =>
+              CodeGenError("Known callable reference identity mismatch", ref.some).asLeft
             case ScopeEntry.Callable(id, _) if !ref.resolvedId.contains(id) =>
               CodeGenError("Local callable reference identity mismatch", ref.some).asLeft
             case _ => ScopeEntry.materialize(entry, state)
@@ -164,7 +166,12 @@ private[emitter] def compileLambdaLiteral(
       CodeGenError(s"Lambda missing TypeFn typeSpec, got: $other", lambda.some).asLeft
 
   typeFn.flatMap { tf =>
-    val (stateWithId, fnName) = preAllocatedName.getOrElse(state.allocAnonFnName)
+    val allocated = preAllocatedName.getOrElse(state.allocAnonFnName)
+    val fnName = state.callableTargetAnalysis.lambdas
+      .get(lambda)
+      .flatMap(state.knownCallableEntries.get)
+      .fold(allocated._2)(_.bodySymbol)
+    val stateWithId = allocated._1
     for
       returnType <- getLlvmType(tf.returnType, stateWithId)
       paramTypes <- tf.paramTypes.traverse(getLlvmType(_, stateWithId))
@@ -499,11 +506,10 @@ private def appFnReferencesBinding(fn: Ref | App | Lambda, targetId: String): Bo
     case app:    App => termReferencesBinding(app, targetId)
     case lambda: Lambda => termReferencesBinding(lambda, targetId)
 
-/** Builds the closure value using the environment layout registered by semantic analysis. Captures
-  * need runtime operands: a known local callable is materialized before storing it, since the
-  * receiving body accesses captures through environment loads rather than the outer scope. Move
-  * lambdas allocate a heap environment with a destructor; borrow lambdas use stack storage without
-  * a destructor field.
+/** Builds a closure using its physical environment plan. Ordinary captures store runtime values; a
+  * PAP stores only the environment of a known callable, or omits its null-environment payload. The
+  * receiving body combines loaded environments with known entries. Move lambdas allocate a heap
+  * environment with a destructor; borrow lambdas use stack storage without a destructor field.
   */
 private def emitCallSiteEnv(
   lambda:        Lambda,
@@ -513,20 +519,27 @@ private def emitCallSiteEnv(
 ): Either[CodeGenError, EnvSetupResult] =
   for
     envStruct <- resolveClosureEnvStruct(lambda, state)
-    captureTypes <- lambda.captures.traverse { cap =>
-      val ref = cap.ref
-      ref.typeSpec match
-        case Some(ts) => getLlvmType(ts, state).map(t => (cap, t))
-        case None =>
-          CodeGenError(s"Capture '${ref.name}' has no type", ref.some).asLeft
+    plan <- envStruct.id
+      .flatMap(state.closureEnvironments.get)
+      .toRight(CodeGenError("Missing physical closure environment plan", lambda.some))
+    captureTypes <- plan.runtimeCaptures.traverse { capture =>
+      capture.storage.field
+        .toRight(CodeGenError("Missing runtime capture field", lambda.some))
+        .flatMap(field => getLlvmType(field.typeSpec, state).map(tpe => (capture.capture, tpe)))
     }
-    captureValues <- lambda.captures.foldLeft(
+    captureValues <- plan.runtimeCaptures.foldLeft(
       (state, Map.empty[String, String]).asRight[CodeGenError]
-    ) { (result, capture) =>
+    ) { (result, planned) =>
       result.flatMap { case (current, values) =>
-        compileTerm(capture.ref, current, functionScope).map { value =>
-          (value.state, values.updated(capture.ref.name, value.operandStr))
-        }
+        val capture = planned.capture
+        val operand = planned.storage match
+          case CaptureStorage.Environment(_, targetId) =>
+            compileKnownEnvironment(capture.ref, targetId, current, functionScope)
+          case _ =>
+            compileTerm(capture.ref, current, functionScope).map(value =>
+              (value.operandStr, value.state)
+            )
+        operand.map { (value, next) => (next, values.updated(capture.ref.name, value)) }
       }
     }
     (captureState, captureOperands) = captureValues
@@ -915,6 +928,16 @@ def compileApp(
         .callable(ref, functionScope)
         .toRight(CodeGenError("Missing local callable target", ref.some))
         .flatMap(compileLocalCallableCall(_, allArgs, state, functionScope))
+
+    case ref: Ref
+        if state.callableTargetAnalysis
+          .target(ref)
+          .flatMap(state.knownCallableEntries.get)
+          .exists(_.definition.signature.paramTypes.size == allArgs.size) =>
+      state.callableTargetAnalysis
+        .target(ref)
+        .toRight(CodeGenError("Missing proven callable target", ref.some))
+        .flatMap(compileKnownCallableCall(_, ref, allArgs, state, functionScope))
 
     case ref: Ref =>
       val hasFunctionType =

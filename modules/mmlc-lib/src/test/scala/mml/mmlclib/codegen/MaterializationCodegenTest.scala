@@ -171,3 +171,23 @@ class MaterializationCodegenTest extends BaseEffFunSuite:
       assert(!initializer.contains("@malloc"), initializer)
     }
   }
+
+  test("let-bound lambda used through partial application remains direct") {
+    val code =
+      """
+        fn main(dummy: Int): Int =
+          let add: Int -> Int -> Int = { x: Int, y: Int -> x + y };
+          let addDummy: Int -> Int = add dummy;
+          addDummy 1;
+        ;
+      """
+    compileAndGenerate(code).map { ir =>
+      val call = """call i32 @([^ (]+)\(i32 %\d+, i32 %\d+\)""".r
+        .findFirstMatchIn(ir)
+        .getOrElse(fail(ir))
+      functionBodyMatching(ir, s"${Regex.quote(call.group(1))}\\(i32 %\\d+, i32 %\\d+\\).*")
+      val main = functionBody(ir, "test_main")
+      assert(!main.contains("store { ptr, ptr }"), main)
+      assert("""%struct\.__closure_env_\d+ = type \{ ptr, i32 \}""".r.findFirstIn(ir).nonEmpty, ir)
+    }
+  }

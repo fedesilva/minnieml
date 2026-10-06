@@ -6,7 +6,7 @@ import mml.mmlclib.codegen.emitter.expression.{CompiledArg, compileArgs}
 
 /** Connects a planned binding to its allocated plain entry so calls can bypass closure values.
   * Scope entries for the original binding and its aliases hold this same target. The lambda body
-  * remains in LocalCallablePlan; this record supplies the identity, types, and symbol needed at
+  * remains in LocalCallableAnalysis; this record supplies the identity, types, and symbol needed at
   * call sites and when creating a value adapter.
   *
   * @param bindingId
@@ -28,7 +28,11 @@ private[emitter] def compileLocalCallable(
   callable: LocalCallableUse,
   state:    CodeGenState
 ): Either[CodeGenError, LocalBindingResult] =
-  val name      = state.mangleName(s"${param.name}_${state.nextAnonFnId}")
+  val name = state.knownCallableEntries
+    .get(id)
+    .fold(
+      state.mangleName(s"${param.name}_${state.nextAnonFnId}")
+    )(_.bodySymbol)
   val allocated = state.copy(nextAnonFnId = state.nextAnonFnId + 1)
   val target    = LocalCallableTarget(id, callable.signature, name)
   val registered =
@@ -139,7 +143,7 @@ private[emitter] def compileLocalCallableValue(
     case Some(name) => (state, name).asRight[CodeGenError]
     case None =>
       for
-        callable <- state.localCallablePlan.targets
+        callable <- state.localCallableAnalysis.targets
           .get(target.bindingId)
           .toRight(CodeGenError("Missing planned local callable"))
         returnType <- getLlvmType(target.signature.returnType, state)

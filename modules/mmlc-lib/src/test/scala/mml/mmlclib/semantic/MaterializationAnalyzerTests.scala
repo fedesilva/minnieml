@@ -19,27 +19,6 @@ class MaterializationAnalyzerTests extends BaseEffFunSuite:
       }
       .getOrElse(fail(s"No binding named '$name'"))
 
-  /** Walk a function's body to find a let-bound lambda by binder name. */
-  private def letBoundLambda(module: Module, fnName: String, binder: String): Lambda =
-    def search(term: Term): Option[Lambda] = term match
-      case TXScopedBinding(bindingLambda, boundValue) =>
-        if bindingLambda.params.exists(_.name == binder) then
-          boundValue match
-            case lambda: Lambda => Some(lambda)
-            case _ => searchExpr(bindingLambda.body)
-        else searchExpr(bindingLambda.body).orElse(search(boundValue))
-      case lambda: Lambda => searchExpr(lambda.body)
-      case App(_, fn, arg, _, _) => search(fn).orElse(searchExpr(arg))
-      case Cond(_, c, t, f, _, _) => searchExpr(c).orElse(searchExpr(t)).orElse(searchExpr(f))
-      case TermGroup(_, inner, _) => searchExpr(inner)
-      case _ => None
-
-    def searchExpr(expr: Expr): Option[Lambda] =
-      expr.terms.iterator.map(search).collectFirst { case Some(l) => l }
-
-    val outer = topLambda(module, fnName)
-    searchExpr(outer.body).getOrElse(fail(s"No let-bound lambda '$binder' in fn '$fnName'"))
-
   private def isDirect(lambda: Lambda): Boolean =
     // The assertion depends on AST metadata that the compiler does not expose. Its replacement
     // must check lowering: plain entries are an emitter optimization, not a lambda category.
@@ -47,23 +26,6 @@ class MaterializationAnalyzerTests extends BaseEffFunSuite:
     lambda.meta.exists(_.isDirect)
      */
     fail("LambdaMeta.isDirect is absent from the parent AST.")
-
-  // Pending PAP target lowering.
-  // See context/tasks/unify-lambdas-ignored-tests.md, Materialization repair plans.
-  test("let-bound lambda used through partial application remains direct".ignore) {
-    val code =
-      """
-        fn main(dummy: Int): Int =
-          let add: Int -> Int -> Int = { x: Int, y: Int -> x + y };
-          let addDummy: Int -> Int = add dummy;
-          addDummy 1;
-        ;
-      """
-    semNotFailed(code).map { module =>
-      val add = letBoundLambda(module, "main", "add")
-      assert(isDirect(add), "partial application builds a derived closure, not a value of add")
-    }
-  }
 
   // Pending nullary immediate-application rejection; see unify-lambdas-ignored-tests.md.
   test("nullary lambda literal in immediate application is direct".ignore) {

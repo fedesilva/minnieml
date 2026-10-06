@@ -2,6 +2,14 @@
 
 Durable product changes belong here. Current task state belongs in task files.
 
+## 2026-10-06
+
+- Preserve proven function entries through partial application for capturing and non-capturing
+  targets. Call known entries directly with their actual environments, omit redundant callable
+  payloads, and retain indirect calls when value flow cannot prove one target. Keep argument
+  effects, ownership, and the public closure representation intact; restore the original
+  partial-application regression and document the analysis and environment layout.
+
 ## 2026-10-05
 
 - Call non-capturing local functions directly without a closure environment argument.
