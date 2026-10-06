@@ -143,6 +143,9 @@ before requesting approval.
 - Link to the relevant files with current line numbers. Explain what changed at each stop,
   why it changed, and how it connects to the parts already introduced. Cover all changes,
   including moves and deletions; a file list or diff summary alone is not a tour.
+- Alongside each clickable link, provide the repository-relative `path:line` in a fenced
+  plain-text code block, with only the reference inside. It must copy directly without
+  list numbers, bold markers, link markup, or explanatory text that the Author must remove.
 - Write in plain language. Define technical terms, abbreviations, and referenced components
   within the tour before relying on them. Do not assume knowledge of the implementation,
   prior conversations, or unexplained references. Links supplement the explanation; they
