@@ -4,6 +4,10 @@ Durable product changes belong here. Current task state belongs in task files.
 
 ## 2026-10-06
 
+- Add `astar3_animated.mml`, which records A* decisions and animates them with raylib.
+  Show neighbor rejection reasons, search costs, and the final path; retain wall arguments
+  and add an optional speed argument defaulting to 30 events per second. Keep the final
+  display open until the user closes the window.
 - Preserve proven function entries through partial application for capturing and non-capturing
   targets. Call known entries directly with their actual environments, omit redundant callable
   payloads, and retain indirect calls when value flow cannot prove one target. Keep argument
