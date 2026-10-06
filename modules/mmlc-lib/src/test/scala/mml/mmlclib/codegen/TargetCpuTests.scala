@@ -5,6 +5,7 @@ import cats.syntax.all.*
 import mml.mmlclib.compiler.CompilerConfig
 import mml.mmlclib.test.BaseEffFunSuite
 
+import java.nio.charset.StandardCharsets.UTF_8
 import java.nio.file.Files
 
 class TargetCpuTests extends BaseEffFunSuite:
@@ -97,4 +98,10 @@ class TargetCpuTests extends BaseEffFunSuite:
     )
     assert(!alternatives.contains(base))
     assertEquals(alternatives.distinct.size, alternatives.size)
+  }
+
+  test("runtime cache identity includes runtime contents") {
+    val before = LlvmToolchain.runtimeCacheFilename("aarch64", 3, Nil, "o", "old".getBytes(UTF_8))
+    val after  = LlvmToolchain.runtimeCacheFilename("aarch64", 3, Nil, "o", "new".getBytes(UTF_8))
+    assertNotEquals(before, after)
   }

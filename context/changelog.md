@@ -2,6 +2,11 @@
 
 Durable product changes belong here. Current task state belongs in task files.
 
+## 2026-10-05
+
+- Preserve failed tool diagnostics in compiler errors without printing duplicate failures.
+  Keep expected exit codes and runtime panic output quiet in passing tests.
+
 ## 2026-10-04
 
 - Add module `@link` directives with ordered native-library inputs and per-entry warnings

@@ -763,3 +763,9 @@ class TypeCheckerTests extends BaseEffFunSuite:
       assertEquals(userNames, List("alpha", "caller", "beta", "callee", "gamma"))
     }
   }
+
+  List("2147483648", "-2147483649", "99999999999999999999999999999999").foreach { literal =>
+    test(s"out-of-range literal $literal reports a diagnostic") {
+      semFailed(s"let invalid = $literal; let after = 42;")
+    }
+  }
