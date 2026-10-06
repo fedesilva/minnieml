@@ -6,8 +6,11 @@ import mml.mmlclib.codegen.emitter.{
   CodeGenError,
   CodeGenState,
   CompileResult,
+  LocalBindingResult,
+  LocalCallablePlan,
   ScopeEntry,
   compileLambdaLiteral,
+  compileLocalCallable,
   emitCall,
   emitExtractValue,
   emitIndirectCall,
@@ -30,7 +33,9 @@ def collectArgsAndFunction(
 
 /** Compiles an immediate lambda application (from let-expression desugaring).
   *
-  * `let x = E; body` desugars to `App(Lambda([x], body), E)`.
+  * `let x = E; body` desugars to `App(Lambda([x], body), E)`. Emitting the binding and continuation
+  * in the current LLVM function preserves lexical scope without constructing or calling a closure
+  * for this desugaring lambda.
   */
 def compileLambdaApp(
   lambda:        Lambda,
@@ -44,9 +49,7 @@ def compileLambdaApp(
     val arg   = allArgs.head
     for
       argRes <- compileLocalBindingValue(param, arg, state, functionScope, compileExpr)
-      // Store literal info in the scope entry — no materialization needed
-      entry = ScopeEntry(argRes.register, argRes.typeName, argRes.isLiteral, argRes.literalValue)
-      extendedScope = functionScope + (param.name -> entry)
+      extendedScope = functionScope + (param.name -> argRes.entry)
       bodyRes <- compileExpr(lambda.body, argRes.state, extendedScope)
     // Preserve exit block from argument if body doesn't have one
     // (needed when arg contains a conditional like `let x = if cond then a else b end`)
@@ -57,8 +60,41 @@ def compileLambdaApp(
       lambda.some
     ).asLeft
 
-/** Compile a local value with its binding identity available for recursive lambda calls. */
+/** Chooses the scope entry for a let binding before compiling its continuation. Planned lambdas
+  * emit a plain entry; aliases reuse an existing target without constructing a closure. Other
+  * expressions produce runtime values. Returning LocalBindingResult lets callers extend their scope
+  * in all three cases without requiring an LLVM operand for a known callable.
+  */
 private[emitter] def compileLocalBindingValue(
+  param:         FnParam,
+  arg:           Expr,
+  state:         CodeGenState,
+  functionScope: Map[String, ScopeEntry],
+  compileExpr:   ExprCompiler
+): Either[CodeGenError, LocalBindingResult] =
+  val candidate = param.id.flatMap(id => state.localCallablePlan.candidate(id).map(id -> _))
+  val alias = for
+    id <- param.id
+    canonical <- state.localCallablePlan.aliases.get(id)
+    ref <- LocalCallablePlan.reference(arg)
+    target <- ScopeEntry.callable(ref, functionScope)
+    if target.bindingId == canonical
+  yield ScopeEntry.Callable(id, target)
+
+  candidate match
+    case Some((id, callable)) => compileLocalCallable(param, id, callable, state)
+    case None =>
+      alias match
+        case Some(entry) => LocalBindingResult(state, entry, none).asRight
+        case None =>
+          compileRuntimeBinding(param, arg, state, functionScope, compileExpr).map { result =>
+            LocalBindingResult(result.state, ScopeEntry.fromResult(result), result.exitBlock)
+          }
+
+/** Preserves the binding identity while emitting a runtime value. A lambda needs its entry symbol
+  * before body emission so recursive references can construct the correct self closure.
+  */
+private def compileRuntimeBinding(
   param:         FnParam,
   arg:           Expr,
   state:         CodeGenState,
@@ -230,7 +266,10 @@ def compileRegularCall(
       compileCallableCall(fnRef, compiledArgs, app.typeSpec, finalState)
   }
 
-/** A typed operand at the boundary between evaluation and call emission. */
+/** Retains an evaluated argument for call emission, which must not evaluate the expression again.
+  * llvmType describes the emitted operand; typeSpec retains source type information needed for
+  * native ABI lowering and alias metadata.
+  */
 private[emitter] case class CompiledArg(op: String, llvmType: String, typeSpec: Option[Type])
 
 /** Emits a call to a resolved callable using its native template or target ABI when required. */
@@ -252,8 +291,10 @@ private[emitter] def compileCallableCall(
     yield result
   }
 
-/** Compiles all arguments to a function call. */
-private def compileArgs(
+/** Evaluates arguments once in source order, threading their effects through the returned state.
+  * Unit expressions still execute, but contribute no operand to the LLVM argument list.
+  */
+private[emitter] def compileArgs(
   allArgs:       List[Expr],
   state:         CodeGenState,
   functionScope: Map[String, ScopeEntry],
@@ -422,7 +463,9 @@ private def buildAliasTags(
       if sortedNoalias.isEmpty then none else s"!{${sortedNoalias.mkString(", ")}}".some
     (stateWithScopes, aliasScopeTag.some, noaliasTagOpt)
 
-/** Compiles an indirect call through a function pointer (e.g. calling a lambda parameter). */
+/** Calls a function value using its closure entry and environment. A constant null-environment pair
+  * can call its entry symbol directly, but still passes the closure ABI's environment operand.
+  */
 def compileIndirectCall(
   fnRef:         Ref,
   allArgs:       List[Expr],
@@ -502,17 +545,16 @@ def compileIndirectCall(
     }
   }
 
+/** Uses ordinary reference emission so identity checks, field loads, and on-demand adapters also
+  * apply when obtaining a callee value.
+  */
 private def resolveIndirectCallee(
   fnRef:         Ref,
   state:         CodeGenState,
   functionScope: Map[String, ScopeEntry],
   compileExpr:   ExprCompiler
 ): Either[CodeGenError, (String, CodeGenState)] =
-  functionScope.get(fnRef.name).filter(_ => fnRef.qualifier.isEmpty) match
-    case Some(entry) =>
-      (entry.operandStr, state).asRight
-    case None =>
-      val calleeExpr = Expr(fnRef.source, List(fnRef), typeSpec = fnRef.typeSpec)
-      compileExpr(calleeExpr, state, functionScope).map { compiled =>
-        (compiled.operandStr, compiled.state)
-      }
+  val calleeExpr = Expr(fnRef.source, List(fnRef), typeSpec = fnRef.typeSpec)
+  compileExpr(calleeExpr, state, functionScope).map { compiled =>
+    (compiled.operandStr, compiled.state)
+  }

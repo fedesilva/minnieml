@@ -27,7 +27,8 @@ class ClosureCodegenTest extends BaseEffFunSuite:
         fail(s"Compilation failed: $error")
     }
 
-  // Pending migration: Parent emits closure entries; these assertions require Direct entries and captures.
+  // Preserves checks with fixed string and TBAA IDs. Reconcile those generated-ID assumptions;
+  // deferred emission must retain module metadata regardless of entry convention.
   test("deferred lambda body preserves emitted metadata".ignore) {
     val source = """
       fn main(): String =
@@ -61,7 +62,8 @@ class ClosureCodegenTest extends BaseEffFunSuite:
     }
   }
 
-  // Pending migration: Parent emits closure entries; these assertions require Direct entries and captures.
+  // loop captures inc, so a plain entry here requires eliminating that callable capture.
+  // Non-capturing recursive entries are covered by LocalCallableCodegenTests.
   test("recursive Direct lambda calls its plain direct entry".ignore) {
     val source = """
       fn main(): Int =
@@ -99,7 +101,8 @@ class ClosureCodegenTest extends BaseEffFunSuite:
     }
   }
 
-  // Pending migration: Parent emits closure entries; these assertions require Direct entries and captures.
+  // These assertions require passing captures as trailing parameters. The local-entry optimization
+  // only selects non-capturing lambdas; capture elimination remains separate work.
   test("non-recursive named Direct lambda does not rebuild unused self closure".ignore) {
     val source = """
       fn main(): Int =
@@ -233,7 +236,8 @@ class ClosureCodegenTest extends BaseEffFunSuite:
     }
   }
 
-  // Pending migration: Parent uses closure-environment cleanup; these checks require Direct capture cleanup.
+  // These assertions require capture cleanup without a closure environment. Capturing lambdas
+  // currently use environment destructors; this needs a separate capture-elimination decision.
   test("Direct move lambda capturing a heap literal frees its clone once".ignore) {
     val source = """
       fn main(): Unit =
@@ -252,7 +256,8 @@ class ClosureCodegenTest extends BaseEffFunSuite:
     }
   }
 
-  // Pending migration: Parent uses closure-environment cleanup; these checks require Direct capture cleanup.
+  // These assertions require capture cleanup without a closure environment. Capturing lambdas
+  // currently use environment destructors; this needs a separate capture-elimination decision.
   test("Direct move lambda capturing an owned String frees it once without cloning".ignore) {
     val source = """
       fn main(): Unit =
@@ -273,7 +278,8 @@ class ClosureCodegenTest extends BaseEffFunSuite:
     }
   }
 
-  // Pending migration: Parent uses closure-environment cleanup; these checks require Direct capture cleanup.
+  // These assertions require capture cleanup without a closure environment. Capturing lambdas
+  // currently use environment destructors; this needs a separate capture-elimination decision.
   test("Direct move lambda capturing an owned struct frees it through its destructor".ignore) {
     val source = """
       struct Pair { a: String, b: String };
@@ -295,7 +301,8 @@ class ClosureCodegenTest extends BaseEffFunSuite:
     }
   }
 
-  // Pending migration: Parent uses closure-environment cleanup; these checks require Direct capture cleanup.
+  // These assertions require capture cleanup without a closure environment. Capturing lambdas
+  // currently use environment destructors; this needs a separate capture-elimination decision.
   test("loopified Direct move lambda frees its heap capture once before the back-edge".ignore) {
     val source = """
       fn run(i: Int): Unit =
@@ -320,7 +327,8 @@ class ClosureCodegenTest extends BaseEffFunSuite:
     }
   }
 
-  // Pending migration: Parent emits closure entries; these assertions require Direct entries and captures.
+  // add captures n. Avoiding its environment requires capture elimination, beyond selecting plain
+  // entries for non-capturing lambdas; see context/tasks/unify-lambdas-ignored-tests.md.
   test("loopified Direct lambdas do not allocate borrow envs".ignore) {
     val source =
       """
@@ -383,7 +391,8 @@ class ClosureCodegenTest extends BaseEffFunSuite:
     }
   }
 
-  // Pending migration: Parent emits closure entries; these assertions require Direct entries and captures.
+  // The shadowing fixture also assumes a direct call to capturing step. Reconcile that call-shape
+  // assertion, keeping the shadowing check; see context/tasks/unify-lambdas-ignored-tests.md.
   test("loopified borrow closures stop being tracked after nested shadowing".ignore) {
     val source =
       """
@@ -482,11 +491,12 @@ class ClosureCodegenTest extends BaseEffFunSuite:
     """
 
     compileAndGenerate(source).map { llvmIr =>
-      val lambdaMatch =
-        """(?s)define internal %struct.String @(test_[A-Za-z0-9_]+)\(i32 %0, ptr %1\) #0 \{\n(.*?)\n\}""".r
-          .findFirstMatchIn(llvmIr)
-          .getOrElse(fail(s"Missing deferred lambda definition. IR:\n$llvmIr"))
-      val lambdaBody = expandNativeAdapters(llvmIr, lambdaMatch.group(2))
+      val mainBody = functionBody(llvmIr, "test_main")
+      val symbol = """call %struct.String @([^ (]+)\(i32 1\)""".r
+        .findFirstMatchIn(mainBody)
+        .getOrElse(fail(mainBody))
+        .group(1)
+      val lambdaBody = expandNativeAdapters(llvmIr, functionBody(llvmIr, symbol))
 
       assert(
         llvmIr.contains("""@str.0 = private constant [6 x i8] c"lambda""""),

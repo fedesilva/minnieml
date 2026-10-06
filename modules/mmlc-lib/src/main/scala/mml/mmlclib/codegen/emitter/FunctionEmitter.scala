@@ -180,12 +180,19 @@ def emitCaptureLoads(
       (newState, scope + (ref.name -> ScopeEntry(loadReg, mmlType)))
   }
 
+/** Places hoisted allocations in the entry block before the body. In a loopified function this
+  * allocates their storage once, while capture stores remain at their original evaluation sites.
+  */
 private[emitter] def renderFunctionLines(
   header: String,
   state:  CodeGenState
 ): List[String] =
   header :: "entry:" :: state.entryPrologueOutput.reverse ::: state.output.reverse
 
+/** Retains symbols, adapters, and metadata discovered in a function body while restoring the
+  * enclosing output and SSA numbering. Registers belong to one LLVM function; registries serve the
+  * whole module and must survive deferred emission.
+  */
 private[emitter] def mergeFunctionBodyState(
   parent: CodeGenState,
   child:  CodeGenState
@@ -334,37 +341,39 @@ private def compileStructConstructor(
                         )
                       )
                     case Some(entry) =>
-                      getLlvmType(field.typeSpec, currentState).flatMap { fieldLlvmType =>
-                        val fieldPtrReg = currentState.nextRegister
-                        val ptrLine = emitGetElementPtr(
-                          fieldPtrReg,
-                          structLlvmType,
-                          s"$structLlvmType*",
-                          s"%$allocReg",
-                          List(("i32", "0"), ("i32", fieldIndex.toString))
-                        )
-                        val stateWithPtr =
-                          currentState.withRegister(fieldPtrReg + 1).emit(ptrLine)
+                      ScopeEntry.materialize(entry, currentState).flatMap { value =>
+                        getLlvmType(field.typeSpec, value.state).flatMap { fieldLlvmType =>
+                          val fieldPtrReg = value.state.nextRegister
+                          val ptrLine = emitGetElementPtr(
+                            fieldPtrReg,
+                            structLlvmType,
+                            s"$structLlvmType*",
+                            s"%$allocReg",
+                            List(("i32", "0"), ("i32", fieldIndex.toString))
+                          )
+                          val stateWithPtr =
+                            value.state.withRegister(fieldPtrReg + 1).emit(ptrLine)
 
-                        val valueToStore    = entry.operandStr
-                        val stateAfterClone = stateWithPtr
+                          val valueToStore    = value.operandStr
+                          val stateAfterClone = stateWithPtr
 
-                        TbaaEmitter
-                          .getTbaaStructFieldTag(returnTypeSpec, fieldIndex, stateAfterClone)
-                          .map { case (stateWithTag, tag) =>
-                            val (stateWithAlias, aliasTag, noaliasTag) =
-                              AliasScopeEmitter.getAliasScopeTags(field.typeSpec, stateWithTag)
-                            val storeLine =
-                              emitStore(
-                                valueToStore,
-                                fieldLlvmType,
-                                s"%$fieldPtrReg",
-                                Some(tag),
-                                aliasTag,
-                                noaliasTag
-                              )
-                            stateWithAlias.emit(storeLine)
-                          }
+                          TbaaEmitter
+                            .getTbaaStructFieldTag(returnTypeSpec, fieldIndex, stateAfterClone)
+                            .map { case (stateWithTag, tag) =>
+                              val (stateWithAlias, aliasTag, noaliasTag) =
+                                AliasScopeEmitter.getAliasScopeTags(field.typeSpec, stateWithTag)
+                              val storeLine =
+                                emitStore(
+                                  valueToStore,
+                                  fieldLlvmType,
+                                  s"%$fieldPtrReg",
+                                  Some(tag),
+                                  aliasTag,
+                                  noaliasTag
+                                )
+                              stateWithAlias.emit(storeLine)
+                            }
+                        }
                       }
                 }
             }
@@ -390,7 +399,10 @@ private def compileStructConstructor(
           }
   }
 
-/** A statement on a loopified path, retaining the local binding's semantic identity. */
+/** Retains the binding while let/sequence chains are flattened for loopification. Keeping FnParam
+  * lets shared binding emission recognize planned callables, aliases, and recursive self references
+  * by semantic identity. A sequence effect has no binding.
+  */
 private[emitter] case class BoundStatement(binding: Option[FnParam], expr: Expr):
   def bindingName: Option[String] = binding.map(_.name)
 
@@ -421,6 +433,9 @@ private[emitter] case class TailRecBranch(
 /** A back edge from a recursive call site to the loop header. */
 private case class BackEdge(blockLabel: String, argValues: List[String])
 
+/** Selects whether the loopified entry receives an environment in addition to user parameters. The
+  * loop construction is shared by plain functions and closure entries.
+  */
 private[emitter] enum TailRecEntryAbi derives CanEqual:
   case PlainDirect
   case ClosureEntry
@@ -759,12 +774,16 @@ private[emitter] def compileTailRecursiveLambda(
         emitRecursiveSelfClosure(emittedName, envParamIdx, stateAfterPhi, bindingParam)
       case TailRecEntryAbi.PlainDirect =>
         val selfScope = bindingParam.map { param =>
-          param.name -> ScopeEntry(
-            0,
-            "Function",
-            isLiteral    = true,
-            literalValue = s"{ ptr @${emittedName}__closure_entry, ptr null }".some
-          )
+          val entry = param.id.flatMap(state.localCallableTargets.get) match
+            case Some(target) => ScopeEntry.Callable(target.bindingId, target)
+            case None =>
+              ScopeEntry(
+                0,
+                "Function",
+                isLiteral    = true,
+                literalValue = s"{ ptr @${emittedName}__closure_entry, ptr null }".some
+              )
+          param.name -> entry
         }.toMap
         (stateAfterPhi, selfScope)
     (stateWithSelf, selfScope) = selfBinding
@@ -924,21 +943,20 @@ private def compileBoundStatements(
 ): Either[CodeGenError, (CodeGenState, Map[String, ScopeEntry], Option[String])] =
   statements.foldLeft((state, functionScope, Option.empty[String]).asRight[CodeGenError]) {
     case (Right((currentState, currentScope, prevExitBlock)), BoundStatement(binding, expr)) =>
-      val value = binding match
+      binding match
         case Some(param) =>
-          compileLocalBindingValue(param, expr, currentState, currentScope, compileExpr)
-        case None => compileExpr(expr, currentState, currentScope)
-      value.flatMap { res =>
-        // Preserve exit block across statements (like compileTailRecArgs does)
-        val newExitBlock = res.exitBlock.orElse(prevExitBlock)
-        binding match
-          case Some(param) =>
-            val entry = ScopeEntry(res.register, res.typeName, res.isLiteral, res.literalValue)
-            Right((res.state, currentScope + (param.name -> entry), newExitBlock))
-          case None =>
-            // Side-effect only: discard result
-            Right((res.state, currentScope, newExitBlock))
-      }
+          compileLocalBindingValue(param, expr, currentState, currentScope, compileExpr).map {
+            res =>
+              (
+                res.state,
+                currentScope + (param.name -> res.entry),
+                res.exitBlock.orElse(prevExitBlock)
+              )
+          }
+        case None =>
+          compileExpr(expr, currentState, currentScope).map { res =>
+            (res.state, currentScope, res.exitBlock.orElse(prevExitBlock))
+          }
     case (Left(err), _) => Left(err)
   }
 
@@ -974,9 +992,9 @@ private[emitter] def findTailRecBody(
 
 /** Walk through let-binding/sequence chains, building TailRecBody tree.
   *
-  * At a Cond, recurse into both branches. Both-recursive is valid — the key improvement over the
-  * old flat model. At a self-call App, produce TailRecCall. Branches without recursive calls are
-  * wrapped as TailRecExit by the caller.
+  * At a Cond, recurse into both branches so each path can supply its own loop arguments or return
+  * value. At a self-call App, produce TailRecCall. Branches without recursive calls are wrapped as
+  * TailRecExit by the caller.
   */
 private def extractBody(
   expr:          Expr,

@@ -7,18 +7,16 @@ import mml.mmlclib.codegen.emitter.alias.AliasScopeEmitter
 import mml.mmlclib.codegen.emitter.expression.*
 import mml.mmlclib.codegen.emitter.tbaa.TbaaEmitter
 
-/** Handles code generation for expressions, terms, and operators. */
-
-/** Compiles a term (the smallest unit in an expression).
-  *
-  * Terms include literals, references, grouped expressions, or nested expressions.
+/** Emits a term in value position. A reference to a known local callable materializes its closure
+  * adapter here because the consumer needs an operand. Fully applied calls can bypass that step
+  * through compileApp.
   *
   * @param term
   *   the term to compile
   * @param state
   *   the current code generation state
   * @param functionScope
-  *   optional map of local function parameters to their registers
+  *   local bindings available in this body, as runtime operands or known callable targets
   * @return
   *   Either a CodeGenError or a CompileResult for the term.
   */
@@ -65,14 +63,10 @@ def compileTerm(
       // Check if reference exists in the function's local scope
       functionScope.get(ref.name) match {
         case Some(entry) =>
-          // Reference to a function parameter or local binding
-          CompileResult(
-            entry.register,
-            state,
-            entry.isLiteral,
-            entry.typeName,
-            literalValue = entry.literalValue
-          ).asRight
+          entry match
+            case ScopeEntry.Callable(id, _) if !ref.resolvedId.contains(id) =>
+              CodeGenError("Local callable reference identity mismatch", ref.some).asLeft
+            case _ => ScopeEntry.materialize(entry, state)
         case None =>
           // Global reference - get actual type from typeSpec
           ref.typeSpec match {
@@ -152,8 +146,10 @@ def compileTerm(
   }
 }
 
-/** Compiles an expression-position lambda literal to a deferred LLVM function, returning its
-  * address as a function pointer.
+/** Emits a lambda needed as a value and returns its closure pair, `{ entry pointer, environment }`.
+  * Non-capturing lambdas use a null environment. The body is emitted separately with the closure
+  * calling convention. A let binding can supply preAllocatedName and bindingParam so recursive
+  * references find this same entry while its body is being compiled.
   */
 private[emitter] def compileLambdaLiteral(
   lambda:           Lambda,
@@ -347,7 +343,7 @@ private def compileRegularLambdaLiteral(
       filteredParamsWithTypes,
       allParamDecls,
       envParamIdx,
-      functionScope
+      functionScope.filter { case (name, _) => bindingParam.exists(_.name == name) }
     )
   else
     compileCapturingLambda(
@@ -361,7 +357,10 @@ private def compileRegularLambdaLiteral(
       bindingParam
     )
 
-/** Non-capturing lambda: deferred function ignores env, returns { ptr @fn, ptr null }. */
+/** Emits a non-capturing lambda directly with the closure ABI, so value-only lambdas need no
+  * adapter. The emitted function ignores its environment parameter; this helper returns the
+  * constant closure operand `{ ptr @fn, ptr null }` for use in the enclosing body.
+  */
 private def compileNonCapturingLambda(
   lambda:                  Lambda,
   state:                   CodeGenState,
@@ -404,7 +403,10 @@ private def compileNonCapturingLambda(
     literalValue = s"{ ptr @$fnName, ptr null }".some
   )
 
-/** Result of call-site env setup for a capturing lambda. */
+/** Carries the closure operand in the enclosing body and the layout needed to compile its entry.
+  * fpRegister belongs to siteState; the deferred body uses envStruct and captureTypes to load its
+  * own capture operands instead of reusing registers from the enclosing function.
+  */
 private case class EnvSetupResult(
   siteState:    CodeGenState,
   fpRegister:   Int,
@@ -427,6 +429,9 @@ private def resolveClosureEnvStruct(
     case None =>
       CodeGenError("Capturing lambda missing envStructName", lambda.some).asLeft
 
+/** Makes the recursive self value from the current entry and its incoming environment. Reusing that
+  * environment keeps captured state available without allocating or copying it on recursion.
+  */
 private[emitter] def emitRecursiveSelfClosure(
   fnName:       String,
   envParamIdx:  Int,
@@ -494,10 +499,11 @@ private def appFnReferencesBinding(fn: Ref | App | Lambda, targetId: String): Bo
     case app:    App => termReferencesBinding(app, targetId)
     case lambda: Lambda => termReferencesBinding(lambda, targetId)
 
-/** Resolve capture types, create env struct, emit call-site IR.
-  *
-  * Move lambdas: malloc env, store dtor + captures, build fat pointer. Borrow lambdas: alloca env,
-  * store captures (no dtor), build fat pointer.
+/** Builds the closure value using the environment layout registered by semantic analysis. Captures
+  * need runtime operands: a known local callable is materialized before storing it, since the
+  * receiving body accesses captures through environment loads rather than the outer scope. Move
+  * lambdas allocate a heap environment with a destructor; borrow lambdas use stack storage without
+  * a destructor field.
   */
 private def emitCallSiteEnv(
   lambda:        Lambda,
@@ -514,6 +520,16 @@ private def emitCallSiteEnv(
         case None =>
           CodeGenError(s"Capture '${ref.name}' has no type", ref.some).asLeft
     }
+    captureValues <- lambda.captures.foldLeft(
+      (state, Map.empty[String, String]).asRight[CodeGenError]
+    ) { (result, capture) =>
+      result.flatMap { case (current, values) =>
+        compileTerm(capture.ref, current, functionScope).map { value =>
+          (value.state, values.updated(capture.ref.name, value.operandStr))
+        }
+      }
+    }
+    (captureState, captureOperands) = captureValues
     envLayout <- state.layout.of(s"%struct.${envStruct.name}", state)
     clonePlans <- captureTypes
       .traverse { case (capture, typ) =>
@@ -531,7 +547,7 @@ private def emitCallSiteEnv(
     // Allocate env: malloc for move, alloca for borrow
     val (siteStateAfterDtor, envPtrOp) =
       if lambda.isMove then
-        val stateWithEnv = state
+        val stateWithEnv = captureState
           .withFunctionDeclaration("malloc", "ptr", List("i64"))
           .withFunctionDeclaration("free", "void", List("ptr"))
         val envSize   = envLayout.size
@@ -554,7 +570,7 @@ private def emitCallSiteEnv(
             .getTbaaStructFieldTag(envStruct, 0, afterMalloc)
             .getOrElse((afterMalloc, ""))
         val dtorStoreLine = emitStore(
-          s"@${state.mangleName(dtorName)}",
+          s"@${captureState.mangleName(dtorName)}",
           "ptr",
           s"%$dtorGepReg",
           Option.when(dtorTag.nonEmpty)(dtorTag)
@@ -564,26 +580,24 @@ private def emitCallSiteEnv(
         (afterDtor, s"%$mallocReg")
       else
         // Borrow: stack-allocate env, no dtor
-        if state.insideLoopifiedFunction then
+        if captureState.insideLoopifiedFunction then
           // Named registers remain valid when storage precedes earlier numeric capture loads.
-          val envPtr = s"%closure.env.${state.nextRegister}"
-          val afterAlloca = state
-            .withRegister(state.nextRegister + 1)
+          val envPtr = s"%closure.env.${captureState.nextRegister}"
+          val afterAlloca = captureState
+            .withRegister(captureState.nextRegister + 1)
             .emitEntryPrologue(s"  $envPtr = alloca $envTypeRef")
           (afterAlloca, envPtr)
         else
-          val allocaReg = state.nextRegister
-          val afterAlloca = state
+          val allocaReg = captureState.nextRegister
+          val afterAlloca = captureState
             .withRegister(allocaReg + 1)
             .emit(s"  %$allocaReg = alloca $envTypeRef")
           (afterAlloca, s"%$allocaReg")
 
     val siteStateAfterCaptures =
       captureTypes.zipWithIndex.foldLeft(siteStateAfterDtor) { case (st, ((cap, llvmType), idx)) =>
-        val ref = cap.ref
-        val rawCapOp = functionScope.get(ref.name) match
-          case Some(entry) => entry.operandStr
-          case None => s"@${ref.name}"
+        val ref      = cap.ref
+        val rawCapOp = captureOperands(ref.name)
 
         // CapturedLiteral: emit ABI-lowered clone call before storing into env (move only)
         val (stateBeforeStore, capOp) = cap match
@@ -690,7 +704,7 @@ private def compileCapturingLambda(
           param.name -> ScopeEntry(envParamIdx, "RawPtr")
         }
         .toMap
-      allScope = functionScope ++ paramScope ++ captureScope ++ selfScope ++ environmentScope
+      allScope = paramScope ++ captureScope ++ selfScope ++ environmentScope
       bodyRes <- compileExpr(lambda.body, bodyStateWithSelf, allScope)
       retLine =
         if returnType == "void" then "  ret void"
@@ -708,8 +722,9 @@ private def compileCapturingLambda(
     )
   }
 
-/** Deferred lambda bodies compile in an isolated output/register context, but all other metadata
-  * produced by that sub-run must flow back to the enclosing state.
+/** Resumes the enclosing body's output and register sequence while retaining module additions made
+  * by a deferred body. In particular, dropping its adapter registry would make later value uses
+  * emit duplicate adapters instead of reusing the existing entry.
   */
 private def mergeDeferredBodyState(parent: CodeGenState, sub: CodeGenState): CodeGenState =
   sub.copy(
@@ -788,7 +803,7 @@ private def compileSelectionRef(
   * @param state
   *   the current code generation state
   * @param functionScope
-  *   optional map of local function parameters to their registers
+  *   local bindings available in this body, as runtime operands or known callable targets
   * @return
   *   Either a CodeGenError or a CompileResult for the expression.
   */
@@ -826,7 +841,7 @@ def compileExpr(
   * @param state
   *   the current code generation state
   * @param functionScope
-  *   optional map of local function parameters to their registers
+  *   local bindings available in this body, as runtime operands or known callable targets
   * @return
   *   Either a CodeGenError or a CompileResult with the updated state.
   */
@@ -852,7 +867,7 @@ def compileBinaryOp(
   * @param state
   *   the current code generation state
   * @param functionScope
-  *   optional map of local function parameters to their registers
+  *   local bindings available in this body, as runtime operands or known callable targets
   * @return
   *   Either a CodeGenError or a CompileResult with the updated state.
   */
@@ -867,17 +882,17 @@ def compileUnaryOp(
     result <- applyUnaryOp(opRef, arg, argCompileResult)
   yield result
 
-/** Compiles a function application.
-  *
-  * Handles function calls in MML, including nested applications for curried functions. For example,
-  * `mult 2 2` is represented as App(App(Ref(mult), Expr(2)), Expr(2)).
+/** Chooses call emission after collecting the full source argument list from nested applications. A
+  * known local target with matching source arity calls its plain entry without an environment.
+  * Arity includes Unit arguments even though they produce no LLVM operands. Other function values
+  * use their closure entry and environment; resolved module callables retain their direct path.
   *
   * @param app
   *   the function application to compile
   * @param state
   *   the current code generation state
   * @param functionScope
-  *   optional map of local function parameters to their registers
+  *   local bindings available in this body, as runtime operands or known callable targets
   * @return
   *   Either a CodeGenError or a CompileResult for the function application.
   */
@@ -891,6 +906,15 @@ def compileApp(
   fnOrLambda match
     case lambda: Lambda =>
       compileLambdaApp(lambda, allArgs, state, functionScope, compileExpr)
+
+    case ref: Ref
+        if ScopeEntry
+          .callable(ref, functionScope)
+          .exists(_.signature.paramTypes.size == allArgs.size) =>
+      ScopeEntry
+        .callable(ref, functionScope)
+        .toRight(CodeGenError("Missing local callable target", ref.some))
+        .flatMap(compileLocalCallableCall(_, allArgs, state, functionScope))
 
     case ref: Ref =>
       val hasFunctionType =

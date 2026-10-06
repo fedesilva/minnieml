@@ -1214,6 +1214,39 @@ Their definitions and registry survive deferred-body compilation. Non-capturing 
 local functions share the closure-entry emitter. Constructing a callable value neither invokes
 its target nor allocates an environment. Explicit direct calls retain the target's plain entry.
 
+### Direct local-entry optimization
+
+Binding emission must choose an entry before it reaches the binding's uses. `LocalCallablePlan`
+therefore analyzes the final typed module once, before LLVM emission. It records uses of
+non-capturing local lambda bindings and maps simple aliases to their original binding IDs,
+counting fully applied direct calls separately from value uses. Parenthesized references preserve
+alias identity.
+Passing, returning, storing, or capturing a callable requires a value. A separately emitted
+lambda body sees its runtime captures and its recursive self target; outer callable knowledge
+does not cross that boundary. Conditional and field-selected callees retain value lowering.
+
+A candidate with a direct call gets a plain entry in `LocalCallableEmitter`. Local scope entries
+distinguish runtime operands from callable targets carrying canonical identity, typed signature,
+and entry symbol. Binding emission returns state, scope entry, and exit block without inventing
+a register for a callable. Aliases retain the target, and callable lookup checks resolved identity.
+
+The entry is registered before body emission to support recursion. Ordinary bodies accept only
+user arguments; tail-recursive bodies reuse plain-entry loopification. Arguments execute once
+in source order, including Unit expressions whose results need no LLVM operand. Value uses
+materialize a null-environment closure through `ClosureEntries`, sharing one adapter per
+canonical binding. Adapters are created when emitting value uses, rather than preallocated from
+the analysis counts. Their registry survives deferred-body emission so a later use can reuse an
+adapter first requested inside another body. Captures store that closure value: the receiving
+body has environment loads, not access to the enclosing function's scope or SSA registers, and
+calls the stored value through the ordinary closure ABI. Direct calls and adapters share
+a body; value-only local lambdas keep their existing emission path.
+
+This is an optimization, with no source-language or ownership changes. PAP direct-target
+optimization, capture elimination, and tail recursion across owned-closure cleanup are separate
+work. `LocalCallableCodegenTests` checks entry signatures, aliasing and shadowing, recursion,
+value adapters and captures, effect order, and consuming parameters with LLVM assembly and
+native execution.
+
 ### Template extraction
 
 The codegen extracts templates from the AST:

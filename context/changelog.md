@@ -4,6 +4,10 @@ Durable product changes belong here. Current task state belongs in task files.
 
 ## 2026-10-05
 
+- Call non-capturing local functions directly without a closure environment argument.
+  Follow local aliases by binding identity and share one closure adapter when the same
+  function is also passed or returned as a value. Preserve recursion, argument effects,
+  and ownership behavior; restore the direct-only local-lambda regression.
 - Preserve failed tool diagnostics in compiler errors without printing duplicate failures.
   Keep expected exit codes and runtime panic output quiet in passing tests.
 - Add a standalone MML/C aggregate sample with two- and four-float structures and a

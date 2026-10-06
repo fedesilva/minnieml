@@ -27,6 +27,7 @@ remain subject to bounded plan approval. Only the active step exposes its curren
 12. [x] **complete** — [Counter and argument-expression preservation](#preserve-counters-and-argument-expressions-across-ownership-analysis); signed off.
 13. [ ] **planned** — [Mixed-ownership transfer repair and conditional-ownership hardening](#bug-preserve-mixed-ownership-through-consuming-transfers).
 14. [ ] **in_progress** — [Remaining lambda semantics and lowering](#remaining-lambda-implementation), including [restoration of all ignored regressions](#restore-ignored-regressions).
+    - **planned** — PAP target optimization; bounded implementation approval pending.
 15. [ ] **planned** — [Preserve capture transfers through evaluated callees](#bug-preserve-capture-transfers-through-evaluated-callees).
 16. [ ] **planned** — [Preserve the complete application callee type in Simplifier](#fix-preserve-the-complete-application-callee-type-in-simplifier).
 17. [ ] **planned** — [Elaborate partial applications inside callees](#bug-elaborate-partial-applications-inside-callees).
@@ -1118,12 +1119,12 @@ Evidence collected on 2026-09-11, macOS arm64:
 
 #### Restore ignored regressions
 
-- **Status:** in_progress; twelve cases enabled, 39 pending.
+- **Status:** in_progress; thirteen cases enabled, 38 pending.
 - **Approved bounded slice:** investigate the nine placeholder-based materialization cases;
   restore six supported cases as codegen regressions with unchanged source fixtures, and
   prepare compiler-repair plans for the other three. The separate nullary immediate-application
   rejection remains outside this slice. Function-value repair is complete and signed off;
-  the other two materialization repairs await approval.
+  direct local-entry optimization is complete and signed off; PAP target optimization awaits approval.
 - **Inventory:** [Ignored regression audit](unify-lambdas-ignored-tests.md) accounts for all
   51 runner-discovered ignored tests by suite and name. Reconcile this inventory after each
   bounded compiler slice; passing ignored cases must not wait for the final branch audit.
@@ -1141,8 +1142,10 @@ Evidence collected on 2026-09-11, macOS arm64:
   - [x] Replace six materialization placeholders with emitted-IR assertions and unchanged fixtures.
   - [x] Repair callable-symbol value lowering and restore the nullary function-value regression;
     verification and independent review pass, and the slice is signed off.
-  - [ ] Restore or replace the remaining seven placeholder-based cases, including the two
-    pending [materialization repairs](unify-lambdas-ignored-tests.md#materialization-repair-plans);
+  - [x] Optimize non-capturing local functions with direct calls and restore the direct-only fixture;
+    verification and independent review pass, and the bounded optimization is signed off.
+  - [ ] Restore or replace the remaining six placeholder-based cases, including the
+    pending [materialization repair](unify-lambdas-ignored-tests.md#materialization-repair-plans);
     investigate the separate nullary immediate-application rejection.
   - [ ] Reconcile 29 failing IR/lowering assertions and two heap-alias cases with the agreed
     semantics. Assign each to a bounded repair or an explicitly approved replacement;
@@ -1177,10 +1180,15 @@ Evidence collected on 2026-09-11, macOS arm64:
   records passing LLVM, host execution, smoke, benchmark-build, and memory gates. Independent
   review reports no actionable findings. The slice is complete and signed off; local commit
   is authorized, and push is not authorized.
+- **Direct local-entry optimization:** the
+  [bounded optimization](unify-lambdas-ignored-tests.md#direct-local-entry-optimization)
+  is complete and signed off with local commit authorization. The original direct-only fixture
+  is restored in codegen coverage. Host and both Linux-container verification, QA, tracking checks,
+  and fresh independent review pass. PAP target optimization and capture elimination remain separate.
 - **Acceptance:** no unexplained or stale ignores; no placeholder counted as restored;
   no weakened assertion merely to obtain a pass. Track undiscovered declarations separately
   from the 51 audited cases. Further assertion changes and compiler fixes require their
-  bounded plans; restoring twelve tests does not complete the remaining lambda implementation.
+  bounded plans; restoring thirteen tests does not complete the remaining lambda implementation.
 
 ### Later-stage documentation
 
@@ -1253,14 +1261,17 @@ are in `context/history/` for Author review. No compiler slice is authorized by 
   the selection-qualifier recovery repair and observational call-boundary validation.
   QA, tracking checks, and independent review pass. The slice is signed off with commit and
   push authorization. Overall migration remains open.
-- **Ignored-test restoration:** twelve of the [51 audited cases](unify-lambdas-ignored-tests.md)
-  are enabled; 39 remain ignored. The four unchanged assertions, borrowed-PAP diagnostic
+- **Ignored-test restoration:** thirteen of the [51 audited cases](unify-lambdas-ignored-tests.md)
+  are enabled; 38 remain ignored. The four unchanged assertions, borrowed-PAP diagnostic
   restoration, and six materialization replacements are complete and signed off.
   [Function-value repair](unify-lambdas-ignored-tests.md#function-value-repair) restores the
   twelfth case under its approved plan. Formatting, lint, 776 library tests, nine CLI tests,
   LLVM assembly, host execution, smoke checks, benchmark builds, and all 44 memory checks pass.
   QA, focused tracking checks, and independent review pass. The slice is complete and signed
-  off, with local commit authorization. Direct local-entry and PAP target repairs await approval.
+  off, with local commit authorization.
+  [Direct local-entry optimization](unify-lambdas-ignored-tests.md#direct-local-entry-optimization)
+  is complete and signed off with passing host and Linux verification, QA, tracking checks, and
+  fresh independent review. PAP target optimization awaits approval.
 - **Recovery evidence:** CLI controls preserve the statement type mismatch and bound-call
   use-after-move diagnostic without false ownership errors. Regression, smoke, benchmark-build,
   and sanitizer results are recorded in the recovery section.
@@ -1268,7 +1279,7 @@ are in `context/history/` for Author review. No compiler slice is authorized by 
   and [binding construction verification](#binding-construction-evidence).
 - **Open limits:** the mixed-ownership reproducer remains unresolved; the general branch
   audit and separate Linux sanitizer validation are deferred. The broader counter/expression
-  follow-up is complete and signed off. Remaining lambda implementation and 39 ignored cases
+  follow-up is complete and signed off. Remaining lambda implementation and 38 ignored cases
   require further bounded work.
   [Consuming an owned PAP captured by a move lambda](#bug-consume-an-owned-pap-captured-by-a-move-lambda)
   has passing semantic, smoke, benchmark-build, native sanitizer, and independent review

@@ -9,22 +9,17 @@ import mml.mmlclib.codegen.emitter.tbaa.TbaaEmitter
 import mml.mmlclib.codegen.{TargetAbi, TargetAttributes}
 import mml.mmlclib.errors.CompilerWarning
 
-/** Main entry point for LLVM IR emission.
-  *
-  * Provides module-level code emission functionality.
-  *
-  * @param module
-  *   the module to emit
-  * @param entryPoint
-  *   the mangled name of the entry point function (for binary mode)
-  * @param targetTriple
-  *   the target triple for code generation
-  * @param targetAbi
-  *   the ABI strategy for native lowering
-  */
-/** Result of LLVM IR emission: IR string and any accumulated warnings. */
+/** Holds the emitted module text and warnings accumulated while emitting its members. */
 case class EmitResult(ir: String, warnings: List[CompilerWarning])
 
+/** Emits the final typed module after semantic transformations have resolved bindings and captures.
+  * Local callable analysis runs before member emission because later uses determine whether an
+  * earlier binding gets a plain entry. targetAbi controls native calls; targetAttributes supplies
+  * the data layout and CPU attributes for the emitted module.
+  *
+  * @param entryPoint
+  *   the mangled entry function name when producing a binary
+  */
 def emitModule(
   module:           Module,
   entryPoint:       Option[String],
@@ -38,11 +33,12 @@ def emitModule(
 
   // Setup the initial state with the module name, resolvables and header
   val initialState = CodeGenState(
-    moduleName      = module.name,
-    targetAbi       = targetAbi,
-    layout          = TargetLayout(targetAttributes.dataLayout),
-    resolvables     = module.resolvables,
-    emitAliasScopes = emitAliasScopes
+    localCallablePlan = LocalCallablePlan.analyze(module),
+    moduleName        = module.name,
+    targetAbi         = targetAbi,
+    layout            = TargetLayout(targetAttributes.dataLayout),
+    resolvables       = module.resolvables,
+    emitAliasScopes   = emitAliasScopes
   ).withModuleHeader(module.name, targetTriple)
 
   // Collect all TypeDef members with native type specifications

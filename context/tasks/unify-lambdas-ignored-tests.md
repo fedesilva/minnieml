@@ -9,8 +9,8 @@ Supporting evidence for [Unify lambdas](unify-lambdas.md#restore-ignored-regress
 - **Audit result (2026-09-23):** four pass unchanged; 47 fail. One failing case rejects the
   intended invalid program but expects an obsolete diagnostic name. The other 46 need assertion/API
   reconciliation or compiler investigation.
-- **Repository test status:** twelve cases are enabled: four unchanged assertions, one typed
-  diagnostic assertion, and seven emitted-IR replacements; 39 remain ignored.
+- **Repository test status:** thirteen cases are enabled: four unchanged assertions, one typed
+  diagnostic assertion, and eight emitted-IR replacements; 38 remain ignored.
 - **Restoration verification (2026-09-23):** formatting and lint pass; full suite passes
   763 library tests and nine CLI tests, with 47 ignored. All four restored cases execute and pass.
   Test assertions and compiler implementation are unchanged
@@ -51,7 +51,7 @@ failures do not execute their preserved commented-out assertions.
    assertion through `semState`; verification and independent review pass. The subtask is signed off.
 3. Six materialization cases are enabled in `MaterializationCodegenTest`, preserving their
    original names and source fixtures. Verification and review are recorded below.
-4. Resolve each of the remaining 39 entries against the agreed model, preserving its semantic
+4. Resolve each of the remaining 38 entries against the agreed model, preserving its semantic
    intent. Record a linked fix or an approved replacement/retirement for obsolete expectations.
    Re-enable each case with its corresponding repair, rather than accumulating working ignores.
 
@@ -60,15 +60,15 @@ failures do not execute their preserved commented-out assertions.
 | Disposition | Cases |
 | --- | ---: |
 | Restore placeholder assertion/helper | 5 |
-| Materialization lowering repair | 2 |
-| Enabled; emitted-IR replacement | 7 |
+| Materialization lowering repair | 1 |
+| Enabled; emitted-IR replacement | 8 |
 | Enabled; assertions unchanged | 4 |
 | Reconcile IR/lowering assertions | 29 |
 | Nullary application rejection | 1 |
 | Enabled; typed diagnostic assertion | 1 |
 | Reconcile heap-alias behavior | 2 |
 
-Twelve rows are enabled; the other 39 remain pending. Lines below identify the audit snapshot,
+Thirteen rows are enabled; the other 38 remain pending. Lines below identify the audit snapshot,
 not subsequent source line shifts.
 
 ### ClosureCodegenTest
@@ -132,7 +132,7 @@ not subsequent source line shifts.
 | --- | ---: | --- |
 | top-level fn called directly is direct | 53 | Enabled in MaterializationCodegenTest; emitted-IR assertion |
 | recursive self-call keeps fn direct | 72 | Enabled in MaterializationCodegenTest; emitted-IR assertion |
-| let-bound lambda used only directly is direct | 89 | [Direct local-entry repair](#direct-local-entry-repair) |
+| let-bound lambda used only directly is direct | 89 | Enabled in MaterializationCodegenTest; [optimization evidence](#direct-local-entry-optimization) |
 | let-bound lambda used as value is not direct | 104 | Enabled in MaterializationCodegenTest; emitted-IR assertion |
 | let-bound lambda used through partial application remains direct | 120 | [PAP target repair](#pap-target-repair) |
 | lambda literal in immediate application is direct | 138 | Enabled in MaterializationCodegenTest; emitted-IR assertion |
@@ -221,9 +221,9 @@ not subsequent source line shifts.
 
 ## Materialization repair plans
 
-**Status:** function-value repair is complete and signed off; the other two
-compiler repairs await approval. Preserve each source fixture when replacing placeholder
-assertions. The repairs follow correctness-first delivery order and require separate signoff.
+**Status:** function-value repair and direct local-entry optimization are complete and signed off.
+PAP target optimization awaits approval. Preserve
+each source fixture when replacing placeholder assertions. Each bounded change requires signoff.
 
 ### Function-value repair
 
@@ -290,42 +290,78 @@ assertions. The repairs follow correctness-first delivery order and require sepa
 - **Signoff:** function-value repair accepted. Local commit is authorized for the repair,
   its regressions, documentation, and completion records. Push is not authorized.
 
-### Direct local-entry repair
+### Direct local-entry optimization
 
-- **Case:** `let-bound lambda used only directly is direct`.
-- **Evidence:** the fixture calls the local entry with `i64` plus `ptr null`; the entry accepts
-  an environment parameter. The call names a symbol, but still uses the closure ABI.
-  `compileLocalBindingValue` routes lambda bindings to `compileLambdaLiteral`, and
-  `compileRegularLambdaLiteral` appends the environment parameter regardless of later use.
-  The observed caller and entry are:
+- **Status:** complete; implementation, verification, and review pass. The bounded optimization
+  is signed off with local commit authorization. Overall lambda migration remains open.
+- **Restored case:** `let-bound lambda used only directly is direct` retains its original
+  source fixture in `MaterializationCodegenTest`. The assertion discovers the local symbol from
+  its call, checks a plain entry and call without an environment argument, and rejects closure
+  construction. The ignored semantic placeholder is removed.
+- **Implementation:** `LocalCallablePlan` runs once on the final typed module, identifying
+  non-capturing local functions and simple aliases by binding ID. It distinguishes saturated
+  direct calls from value uses and limits target knowledge to lexical scope. `ScopeEntry`
+  distinguishes runtime operands from known callable targets. `LocalCallableEmitter` registers
+  plain entries before compiling bodies and reuses tail-recursive emission. Value uses share
+  one adapter per canonical binding through the existing closure-entry emitter, including
+  uses in deferred bodies. Captures store the materialized closure value.
+- **Boundaries:** this is an optimization, with no language or ownership changes. PAP
+  direct-target optimization, capture elimination, and the owned-closure tail-recursion bug
+  are excluded. Value-only locals, conditional selection, and field selection retain ordinary
+  value lowering.
+- **Coverage:** `LocalCallableCodegenTests` checks aliases, local and parameter shadowing,
+  ordinary and tail recursion, TCO disabled, mixed and repeated value uses, returned values,
+  captures, Unit effects, argument order, consuming parameters, and conditional callable
+  values. Generated symbols are discovered from calls or closure operands. The suite assembles
+  LLVM and executes fixtures through the existing toolchain test helpers.
+- **Host verification (2026-10-05):** macOS arm64, Homebrew Clang/LLVM 23.1.1.
+  `sbtn 'scalafmtAll; scalafixAll; test'` passes 844 library tests and nine CLI tests,
+  with 38 existing ignores and no compiler warnings. The local-callable fixtures pass LLVM
+  assembly and native exit-code assertions. `./tests/smoke/run.sh all` passes 8/8;
+  `sbtn mmlcPublishLocal` installs the compiler; `make -C benchmark clean` followed by
+  `make -C benchmark mml` builds all 12 MML benchmarks. `./tests/mem/run.sh all` passes
+  45/45 ASan+LSan cases. No benchmark timing or speedup is claimed.
+- **Linux arm64 verification:** `mml-linux-arm64`, native AArch64 execution in Docker,
+  Ubuntu Clang/LLVM 20.1.8; 97 tests pass with 26 existing ignores.
+  It includes native local-callable execution, the native C aggregate matrix, MML/C function-value
+  and destructor interoperability, and Clang cross-compilation controls for all four supported
+  targets. The `str_eq` native-symbol assertion accepts the target-dependent Boolean extension
+  attribute; Linux AArch64 emits `i1`, while Apple AArch64 emits `zeroext i1`.
+- **Linux amd64 verification:** `mml-linux-amd64`, Ubuntu Clang/LLVM 20.1.8, x86-64
+  execution emulated on an arm64 host; the same selection passes 97 tests with 26 existing
+  ignores. Both containers execute fixtures; cross-compilation alone is not the evidence.
+  All required execution checks for this bounded optimization pass.
+- **Review:** QA compliance, focused tracking review, added links, and whitespace checks pass.
+  A fresh independent code review finds no actionable issues after inspecting the complete scoped
+  diff, all three new Scala files, connected emission paths, technical documentation, and test
+  helpers. No candidate finding requires independent claim verification. The review relies on
+  the recorded execution results; it makes no performance claim.
+- **Final documentation checks:** comments explain entry selection, capture storage, argument
+  effects, and the state shared between emitted bodies. Executable Scala text matches the
+  implementation verified above. Formatting, lint, whitespace checks, and a fresh independent
+  review of the comment and design changes pass. The ignored test fixtures and assertions
+  are unchanged by the documentation edits.
 
-  ```llvm
-  define internal i64 @test_main(i64 %0) #0 {
-  entry:
-    %1 = call i64 @test_id_0(i64 %0, ptr null)
-    ret i64 %1
-  }
-  define internal i64 @test_id_0(i64 %0, ptr %1) #0 {
-  entry:
-    ret i64 %0
-  }
-  ```
+The container commands run sequentially with this suite selection:
 
-- **Proposed repair:** derive local callable usage through resolved binding IDs, including
-  aliases and shadowing. Separate plain entry availability from materialized function-value
-  use; both may coexist. Lower the non-capturing, saturated direct-call case to a plain entry,
-  preserving closure entry behavior wherever a value is required. Specify the analysis phase,
-  result representation, and mixed-use behavior before implementation; do not recreate a
-  semantic distinction between scope lambdas and callable lambdas.
-- **Acceptance:** restore the original fixture with a plain-entry assertion and no closure
-  construction. Add alias, shadowing, recursion, and mixed direct/value controls. Capturing
-  and escaping paths must retain ownership and lifetime checks. Run LLVM/native checks and
-  the applicable compiler gates. General capture-operand optimization requires its own scope.
+```sh
+suites=(
+  mml.mmlclib.codegen.LocalCallableCodegenTests
+  mml.mmlclib.codegen.MaterializationCodegenTest
+  mml.mmlclib.codegen.FunctionValueCodegenTests
+  mml.mmlclib.codegen.FunctionSignatureTest
+  mml.mmlclib.codegen.TailRecursionLoopificationTest
+  mml.mmlclib.codegen.ClosureCodegenTest
+  mml.mmlclib.codegen.AggregateAbiTests
+)
+docker exec -w /workspace mml-linux-arm64 sbtn "testOnly ${suites[*]}"
+docker exec -w /workspace mml-linux-amd64 sbtn "testOnly ${suites[*]}"
+```
 
 ### PAP target repair
 
 - **Case:** `let-bound lambda used through partial application remains direct`.
-- **Dependency:** the direct local-entry repair must expose a safe, identity-based target
+- **Dependency:** the direct local-entry optimization exposes a safe, identity-based target
   representation that PAP lowering can use.
 - **Evidence:** the fixture stores a `{ ptr, ptr }` value for `add` in the PAP environment;
   the residual entry extracts that closure and invokes it indirectly.

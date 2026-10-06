@@ -59,7 +59,8 @@ class TailRecursionLoopificationTest extends BaseEffFunSuite:
     }
   }
 
-  // Pending migration: Parent uses anonymous eta wrappers instead of named closure entries.
+  // Preserved assertions pin closure-entry names. Reconcile them with the shared-adapter behavior
+  // covered by FunctionValueCodegenTests; see context/tasks/unify-lambdas-ignored-tests.md.
   test("named loopified function used as a value keeps a closure-entry wrapper".ignore) {
     val source =
       """
@@ -103,7 +104,8 @@ class TailRecursionLoopificationTest extends BaseEffFunSuite:
     }
   }
 
-  // Pending migration: Parent emits a closure-entry wrapper for this Direct-only local function.
+  // fac captures factorial_tco, which requires a function value and therefore an adapter.
+  // Removing that adapter requires capture elimination beyond the local-entry optimization.
   test("local non-capturing loopified Direct function emits no closure-entry wrapper".ignore) {
     val source =
       """
@@ -146,7 +148,8 @@ class TailRecursionLoopificationTest extends BaseEffFunSuite:
     }
   }
 
-  // Pending migration: Parent emits no dedicated Direct PAP entry matching this assertion.
+  // Requires PAPs to target plain local entries. PAP direct-target optimization is separate from
+  // fully applied local calls; its entry-shape assertions still need reconciliation.
   test("partial application of local loopified Direct function emits a PAP entry".ignore) {
     val source =
       """
@@ -198,7 +201,8 @@ class TailRecursionLoopificationTest extends BaseEffFunSuite:
     }
   }
 
-  // Pending migration: Parent codegen rejects the grouped function return type before PAP checks.
+  // Preserves direct-PAP entry and heap-environment assertions that still need reconciliation.
+  // See context/tasks/unify-lambdas-ignored-tests.md for the pending assertion review.
   test("escaped partial application of local loopified Direct function uses heap env".ignore) {
     val source =
       """
@@ -313,7 +317,8 @@ class TailRecursionLoopificationTest extends BaseEffFunSuite:
     }
   }
 
-  // Pending migration: Parent emits closure entries; these assertions require Direct entries and captures.
+  // These assertions require passing captures as trailing parameters. The local-entry optimization
+  // only selects non-capturing lambdas; capture elimination remains separate work.
   test(
     "capturing partial application of local loopified Direct function tags PAP env fields".ignore
   ) {
@@ -412,7 +417,8 @@ class TailRecursionLoopificationTest extends BaseEffFunSuite:
     }
   }
 
-  // Pending migration: Parent emits no dedicated Direct PAP destructor matching these ownership checks.
+  // Preserves ownership checks tied to a particular direct-PAP environment and destructor layout.
+  // Reconcile with current PAP cleanup before enabling; see unify-lambdas-ignored-tests.md.
   test("Direct PAP with borrowed heap applied arg stores without cloning".ignore) {
     val source =
       """
@@ -450,7 +456,8 @@ class TailRecursionLoopificationTest extends BaseEffFunSuite:
     }
   }
 
-  // Pending migration: Parent emits no dedicated Direct PAP destructor matching these ownership checks.
+  // Preserves ownership checks tied to a particular direct-PAP environment and destructor layout.
+  // Reconcile with current PAP cleanup before enabling; see unify-lambdas-ignored-tests.md.
   test("Direct PAP with aliased borrowed heap applied arg stores without cloning".ignore) {
     val source =
       """
@@ -490,7 +497,8 @@ class TailRecursionLoopificationTest extends BaseEffFunSuite:
     }
   }
 
-  // Pending migration: Parent emits no dedicated Direct PAP destructor matching these ownership checks.
+  // Preserves ownership checks tied to a particular direct-PAP environment and destructor layout.
+  // Reconcile with current PAP cleanup before enabling; see unify-lambdas-ignored-tests.md.
   test("Direct PAP with consuming heap applied arg owns env field".ignore) {
     val source =
       """
@@ -549,7 +557,8 @@ class TailRecursionLoopificationTest extends BaseEffFunSuite:
     }
   }
 
-  // Pending migration: Parent emits closure entries; these assertions require Direct entries and captures.
+  // These assertions require passing captures as trailing parameters. The local-entry optimization
+  // only selects non-capturing lambdas; capture elimination remains separate work.
   test("local capturing loopified Direct function uses trailing captures".ignore) {
     val source =
       """
@@ -796,16 +805,17 @@ class TailRecursionLoopificationTest extends BaseEffFunSuite:
       """
 
     compileAndGenerate(source, config = CompilerConfig.default.copy(noTco = false)).map { llvmIr =>
-      val directMatch =
-        """define internal i32 @(test_factorial_tco_\d+)\(i32 %0, i32 %1\) #0 \{""".r
-          .findFirstMatchIn(llvmIr)
-          .getOrElse(fail(s"Missing plain direct factorial_tco entry. IR:\n$llvmIr"))
-      val directName  = directMatch.group(1)
-      val wrapperName = s"${directName}__closure_entry"
-      val directBody =
-        functionBodyMatching(llvmIr, s"$directName\\(i32 %0, i32 %1\\) #0")
-      val wrapperBody =
-        functionBodyMatching(llvmIr, s"$wrapperName\\(i32 %0, i32 %1, ptr %2\\) #0")
+      val mainBody = functionBody(llvmIr, "test_main")
+      val wrapperName = """store \{ ptr, ptr \} \{ ptr @([^, ]+), ptr null \}""".r
+        .findFirstMatchIn(mainBody)
+        .getOrElse(fail(mainBody))
+        .group(1)
+      val wrapperBody = functionBody(llvmIr, wrapperName)
+      val directName = """call i32 @([^ (]+)\(i32 %\d+, i32 %\d+\)""".r
+        .findFirstMatchIn(wrapperBody)
+        .getOrElse(fail(wrapperBody))
+        .group(1)
+      val directBody = functionBody(llvmIr, directName)
 
       assert(
         directBody.contains("loop.header:") && directBody.contains("phi i32"),
