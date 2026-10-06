@@ -1,0 +1,28 @@
+// Build and emit optimized IR: mmlc -x lib -O3 -I mml/samples/native-aggregates.mml
+// See native-aggregates.c for the C implementations and build commands.
+
+pub fn main(): Unit =
+
+  let point = shift_point (Vec2 1.5 (0.0 -. 2.5));
+  println ("Vec2: " ++ (float_to_str point.x) ++ ", " ++ (float_to_str point.y));
+
+  let rect = grow_rect (Rect 3.0 4.0 5.0 6.0);
+  println (
+    "Rect: " ++ (float_to_str rect.x) ++ ", " ++ (float_to_str rect.y)
+      ++ ", " ++ (float_to_str rect.width) ++ ", " ++ (float_to_str rect.height)
+  );
+
+  let wide = rotate_wide (Wide (int_to_int64 11) (int_to_int64 22) (int_to_int64 33));
+  println (
+    "Wide: " ++ (int64_to_str wide.a) ++ ", " ++ (int64_to_str wide.b)
+      ++ ", " ++ (int64_to_str wide.c)
+  );
+;
+
+type Vec2 = @native { x: Float, y: Float };
+type Rect = @native { x: Float, y: Float, width: Float, height: Float };
+type Wide = @native { a: Int64, b: Int64, c: Int64 };
+
+fn shift_point(point: Vec2): Vec2 = @native;;
+fn grow_rect(rect: Rect): Rect = @native;;
+fn rotate_wide(wide: Wide): Wide = @native;;
