@@ -28,9 +28,13 @@ independent reviewer or per-finding subagents.
 Judge simplicity by the reader's effort, not by line count. An experienced, tired
 reader should be able to follow the explanation without decoding it.
 
-- Use familiar words and direct verbs. Keep necessary technical terms; explain
-  unfamiliar ones when the audience needs that help. Do not replace a precise
-  term with a vague everyday approximation.
+- Say things simply. No jargon: do not string together abstract or technical
+  words that leave the reader guessing what happens or why.
+- Prefer plain terms to technical terms whenever they express the same meaning.
+  Use concrete nouns and direct verbs.
+- If a technical term is necessary, define it in plain language when introducing
+  it. Name the actual thing or action it refers to; do not explain jargon with
+  more jargon. A short parenthetical definition is often enough.
 - Give each paragraph one coherent thought. Use blank lines to separate thoughts,
   and place an explanation close to the claim or example it supports.
 - State a rule once in the place where the reader needs it. Consolidate repeated
@@ -116,6 +120,63 @@ Do not present an option as a necessity before establishing why it is required.
 Delete the passage if the document needs only to explain the layer's behavior.
 If an actual dependency matters, name it and explain why it exists. Do not replace
 filler with another concluding slogan.
+
+## Code comments
+
+Explain the decision or contract the reader cannot recover from the declaration
+alone. Naming the fields in prose does not explain why the abstraction exists.
+
+- Identify what the declaration actually represents. A record of analysis results
+  is not the function being analyzed. State which decision consumes those results.
+- Explain why a helper or result type is needed when its role is not obvious.
+  Name the constraint that motivates it, rather than calling it a "helper".
+- Apply the plain-language rules to comments too. Prefer "the LLVM function to
+  call"; if the term "target" matters here, write "a known target (the LLVM
+  function to call)" when introducing it.
+- Attribute assumptions to the code that establishes them. If an analyzer only
+  creates records for non-capturing lambdas, say so; the record's fields alone do
+  not enforce that restriction.
+- Include implementation details when they explain a contract or a consequence
+  for callers. Avoid narrating statements, teaching concepts the reader already
+  knows, or inventing a rationale that the surrounding code does not support.
+
+For example, compiling an expression normally produces a runtime value. When a
+local function has no captures and is only called directly, the compiler can
+record which LLVM function the local name refers to. It does not need to build
+a closure value. The result of compiling a binding must support both cases.
+
+**Restates the declaration**
+
+```scala
+/** The result of compiling a local binding, including its state and scope entry. */
+case class LocalBindingResult(
+  state: CodeGenState,
+  entry: ScopeEntry,
+  exitBlock: Option[String]
+)
+```
+
+The comment names the contents but leaves the reader asking why ordinary
+expression results cannot serve the same purpose.
+
+**Explains why the type exists**
+
+```scala
+/** Compiling a let binding does not always produce a runtime value.
+  * For a non-capturing function used only in direct calls, the compiler records
+  * a known target (the LLVM function to call) for the local name. This result
+  * can carry that information without requiring an unused closure value.
+  */
+case class LocalBindingResult(
+  state: CodeGenState,
+  entry: ScopeEntry,
+  exitBlock: Option[String]
+)
+```
+
+The replacement explains what the compiler needs to remember and why it does
+not need a closure value in this case. Apply that reasoning where needed; do
+not expand every comment into a design essay.
 
 ## Review and delivery
 
