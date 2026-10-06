@@ -60,15 +60,13 @@ so diagnostics can identify the correct file and source text.
 
 ## Scope
 
-- In scope: Package, nested modules, module-aware resolution and type checking, and the
+- In scope: Package, nested modules, module-aware resolution, visibility and type checking, and the
   pipeline changes needed to compile the resulting hierarchy.
 - In scope: top-level `include`, independent file parsing, folder/file module assembly,
   source identity, package pragmas, and executable/library entry-module selection.
 - In scope: preserving native declarations and `@link` requirements across source inclusion.
 - Out of scope: parallel compilation, separately compiled module artifacts, dependency
   scheduling, package distribution, and a general package manager.
-- Out of scope: intrinsic arrays, game implementation, and moving the complete prelude
-  into source files. Those can exercise the module system in separate work.
 
 ## Plan (Approval Gate)
 
