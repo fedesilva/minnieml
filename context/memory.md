@@ -13,10 +13,9 @@ This is the Author's active and near-term focus. The backlog lives in [tasks/](t
 ### A* animation correctness bugs
 
 - **Tracker:** [Fix correctness bugs exposed by the animated A* sample](tasks/astar-animation-correctness-bugs.md)
-- **Status:** planned
-- **Current focus:** Reproduce and reduce the five findings, including the macOS M2 launch
-  failure, reconcile the conditional ownership overlap, and establish repair boundaries
-  before implementation.
+- **Status:** in_progress
+- **Current focus:** Reproduce and reduce findings 2–5, reconcile the conditional ownership
+  overlap, and establish repair boundaries before implementation.
 
 ### Lambda migration
 

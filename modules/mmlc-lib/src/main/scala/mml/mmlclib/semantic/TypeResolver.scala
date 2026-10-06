@@ -369,7 +369,12 @@ object TypeResolver:
         for
           updatedValue <- resolvedValue
           updatedTypeAsc <- bnd.typeAsc.traverse(resolveTypeSpecWithMap(_, member, typeMap))
-        yield bnd.copy(value = updatedValue, typeAsc = updatedTypeAsc)
+          updatedTypeSpec <- bnd.typeSpec.traverse(resolveTypeSpecWithMap(_, member, typeMap))
+        yield bnd.copy(
+          value    = updatedValue,
+          typeAsc  = updatedTypeAsc,
+          typeSpec = updatedTypeSpec
+        )
 
       case alias: TypeAlias =>
         resolveTypeSpecWithMap(alias.typeRef, member, typeMap).map { updatedTypeRef =>
@@ -504,7 +509,12 @@ object TypeResolver:
     for
       updatedTerms <- expr.terms.traverse(resolveTerm(_, member, typeMap))
       updatedTypeAsc <- expr.typeAsc.traverse(resolveTypeSpecWithMap(_, member, typeMap))
-    yield expr.copy(terms = updatedTerms, typeAsc = updatedTypeAsc)
+      updatedTypeSpec <- expr.typeSpec.traverse(resolveTypeSpecWithMap(_, member, typeMap))
+    yield expr.copy(
+      terms    = updatedTerms,
+      typeAsc  = updatedTypeAsc,
+      typeSpec = updatedTypeSpec
+    )
 
   /** Resolve type references in a term using the type map. */
   private def resolveTerm(

@@ -1,9 +1,98 @@
 package mml.mmlclib.semantic
 
 import mml.mmlclib.ast.*
+import mml.mmlclib.compiler.{CompilerConfig, CompilerState}
+import mml.mmlclib.parser.SourceInfo
 import mml.mmlclib.test.BaseEffFunSuite
 
 class TypeResolverTests extends BaseEffFunSuite:
+
+  private def resolvedTypeId(tpe: Option[Type], module: Module): String =
+    tpe match
+      case Some(ref: TypeRef) =>
+        val id = ref.resolvedId.getOrElse(fail(s"Unresolved type: $ref"))
+        assert(module.resolvables.lookupType(id).nonEmpty, s"Missing type identity: $id")
+        id
+
+      case other => fail(s"Expected a nominal type, got $other")
+
+  test("TypeResolver resolves cached global literal types at the phase boundary"):
+    val code = """
+      type Number = Int;
+      let integer: Number = 30;
+      let boolean = true;
+      let string = "hello";
+      let float = 1.5;
+      let computed = 0 + 30;
+    """
+
+    parseNotFailed(code).map { parsed =>
+      val initial = CompilerState.empty(
+        injectBasicTypes(parsed),
+        SourceInfo(code),
+        CompilerConfig.default
+      )
+      val resolved = TypeResolver.rewriteModule(IdAssigner.rewriteModule(initial))
+      assertEquals(resolved.errors, Vector.empty)
+
+      val bindings = resolved.module.members.collect { case b: Bnd => b }
+      bindings.filterNot(_.name == "computed").foreach { binding =>
+        val bindingType = resolvedTypeId(binding.typeSpec, resolved.module)
+        assertEquals(resolvedTypeId(binding.value.typeSpec, resolved.module), bindingType)
+        val literals = TermTraversal.collect(binding.value) { case lit: LiteralValue => lit }
+        assertEquals(literals.size, 1)
+        assertEquals(resolvedTypeId(literals.head.typeSpec, resolved.module), bindingType)
+        assertEquals(resolved.module.resolvables.lookup(binding.id.get), Some(binding))
+      }
+
+      val integer = bindings.find(_.name == "integer").get
+      val alias = resolved.module.members.collectFirst {
+        case a: TypeAlias if a.name == "Number" => a
+      }.get
+      assertEquals(resolvedTypeId(integer.typeAsc, resolved.module), alias.id.get)
+
+      val computed = bindings.find(_.name == "computed").get
+      assertEquals(computed.typeSpec, None)
+      assertEquals(computed.value.typeSpec, None)
+    }
+
+  private val literalCases = List(
+    ("inferred integer", "let value = 30;", "int_to_str value"),
+    ("Int annotation", "let value: Int = 30;", "int_to_str value"),
+    ("Int32 annotation", "let value: Int32 = 30;", "int_to_str value"),
+    ("term annotation", "let value = 30: Int32;", "int_to_str value"),
+    ("arithmetic initializer", "let value = 0 + 30;", "int_to_str value"),
+    ("boolean", "let value = true;", "if value then \"yes\"; else \"no\";"),
+    ("string", "let value = \"hello\";", "value"),
+    ("float", "let value = 1.5;", "int_to_str (float_to_int value)")
+  )
+
+  literalCases.foreach { (label, declaration, use) =>
+    List(true, false).foreach { forward =>
+      val order = if forward then "before" else "after"
+      test(s"global $label references $order its declaration have resolved types"):
+        val reader = s"fn read(): String = $use;;"
+        val code =
+          if forward then s"$reader\n$declaration"
+          else s"$declaration\n$reader"
+
+        semNotFailed(code).map { module =>
+          val binding = module.members.collectFirst { case b: Bnd if b.name == "value" => b }.get
+          val readerBinding = module.members.collectFirst {
+            case b: Bnd if b.name == "read" => b
+          }.get
+          val refs = TermTraversal.collect(readerBinding.value) {
+            case ref: Ref if ref.resolvedId == binding.id => ref
+          }
+          assert(refs.nonEmpty)
+          val bindingType = resolvedTypeId(binding.typeSpec, module)
+          refs.foreach(ref => assertEquals(resolvedTypeId(ref.typeSpec, module), bindingType))
+        }
+    }
+  }
+
+  test("global literal annotations still reject incompatible types"):
+    semFailed("fn read(): Int = value;; let value: Bool = 30;")
 
   test("TypeResolver should resolve simple type references in bindings"):
     val code = """

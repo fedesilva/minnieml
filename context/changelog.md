@@ -4,6 +4,10 @@ Durable product changes belong here. Current task state belongs in task files.
 
 ## 2026-10-06
 
+- Fix forward references to global integer, Boolean, string, and float literals by resolving
+  cached binding and expression types. Preserve explicit Int/Int32 annotations and allow
+  literals to be declared before or after their uses. Replace the animated A* sample's
+  constant-returning functions and integer constant records with plain global bindings.
 - Add `astar3_animated.mml`, which records A* decisions and animates them with raylib.
   Show neighbor rejection reasons, search costs, and the final path; retain wall arguments
   and add an optional speed argument defaulting to 30 events per second. Keep the final
