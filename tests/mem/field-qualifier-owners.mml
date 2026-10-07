@@ -1,0 +1,187 @@
+// Field borrows keep temporary owners alive through their local uses.
+struct Box { value: Int, text: String };
+struct Outer { inner: Box };
+struct Ops { call: Int -> Int };
+struct TextOps { call: Int -> String };
+struct BinaryOps { call: Int -> Int -> Int };
+
+fn length(text: String): Int = text.length;;
+fn make_box(value: Int): Box = Box value (int_to_str value);;
+fn make_outer(value: Int): Outer = Outer (make_box value);;
+fn take(~text: String, extra: Int): Int = text.length + extra;;
+fn keep(~text: String, extra: Int): String = text;;
+fn allocated(value: Int): String = int_to_str value;;
+fn constant(value: Int): String = "static";;
+fn add(a: Int, b: Int): Int = a + b;;
+fn make_binary(): BinaryOps = BinaryOps add;;
+
+fn make_ops(value: Int): Ops =
+  let text = int_to_str value;
+  Ops ~{ extra: Int -> text.length + extra };
+;
+
+fn make_once(value: Int): Ops =
+  let call = take (int_to_str value);
+  Ops call;
+;
+
+fn make_keep(value: Int): TextOps =
+  let call = keep (int_to_str value);
+  TextOps call;
+;
+
+fn make_allocated(): TextOps = TextOps allocated;;
+fn make_static(): TextOps = TextOps constant;;
+
+fn returned(value: Int): String = (make_keep value).call 0;;
+
+fn returned_alias(value: Int): String =
+  let call = (make_keep value).call;
+  call 0;
+;
+
+fn projection_cases(): Bool =
+  let primitive = (make_box 123).value;
+  let direct = length (make_box 123).text;
+  let text = (make_box 4567).text;
+  let aliases = length text + length text;
+  let nested = length (make_outer 12345).inner.text;
+  let inner = (make_outer 456).inner;
+  let nested_alias = length inner.text;
+  primitive == 123 and direct == 3 and aliases == 8
+    and nested == 5 and nested_alias == 3;
+;
+
+fn scoped_owner_cases(): Bool =
+  let box = make_box 123;
+  let projected = (let ignored = (); box).value;
+  let other = make_box 456;
+  let selected = (let ignored = (); other);
+  projected == 123 and selected.value == 456;
+;
+
+fn callable_cases(): Bool =
+  let direct = (make_ops 123).call 2;
+  let reusable = (make_ops 4567).call;
+  let first = reusable 1;
+  let second = reusable 2;
+  let consuming = (make_once 123).call 2;
+  let once = (make_once 4567).call;
+  let consumed_alias = once 2;
+  let partial = (make_binary ()).call 1;
+  let partial_first = partial 2;
+  let partial_second = partial 3;
+  let binary = (make_binary ()).call;
+  let partial_alias = binary 2;
+  let aliased_result = partial_alias 3;
+  direct == 5 and first == 5 and second == 6
+    and consuming == 5 and consumed_alias == 6 and partial_first == 3 and partial_second == 4
+    and aliased_result == 5;
+;
+
+fn result_cases(): Bool =
+  let transferred = returned 123;
+  let transferred_alias = returned_alias 4567;
+  let allocated_direct = (make_allocated ()).call 123;
+  let allocating = (make_allocated ()).call;
+  let allocated_alias = allocating 12345;
+  let static_direct = (make_static ()).call 0;
+  let static_call = (make_static ()).call;
+  let static_alias = static_call 1;
+  transferred.length == 3 and transferred_alias.length == 4
+    and allocated_direct.length == 3 and allocated_alias.length == 5
+    and static_direct.length == 6 and static_alias.length == 6;
+;
+
+fn mixed_text(box: Box, flag: Bool): Int =
+  let text = (if flag then make_box 123; else box;).text;
+  length text + length box.text;
+;
+
+fn mixed_call(box: Ops, flag: Bool): Int =
+  (if flag then make_ops 123; else box;).call 2;
+;
+
+fn conditional_cases(enabled: Bool, flag: Bool): Bool =
+  if enabled then
+    let text = (if flag then make_box 123; else make_box 4567;).text;
+    let selected_text = length text;
+    let callable = (if flag then make_ops 123; else make_ops 4567;).call;
+    let selected_call = callable 2;
+    let selected_once = (if flag then make_once 123; else make_once 4567;).call 2;
+    let retained_text = make_box 12345;
+    let mixed_length = mixed_text retained_text flag;
+    let retained_call = make_ops 12345;
+    let mixed_result = mixed_call retained_call flag;
+    let after_borrow = retained_call.call 3;
+    let selected_length = if flag then 3; else 4;;
+    let mixed_expected = if flag then 8; else 10;;
+    let mixed_call_expected = if flag then 5; else 7;;
+    selected_text == selected_length and selected_call == selected_length + 2
+      and selected_once == selected_length + 2 and mixed_length == mixed_expected
+      and retained_text.text.length == 5 and mixed_result == mixed_call_expected
+      and after_borrow == 8;
+  else true;
+  ;
+;
+
+fn mark(trace: IntArray, digit: Int, value: Int): Int =
+  ar_int_set trace 0 (ar_int_get trace 0 * 10 + digit);
+  value;
+;
+
+fn choose(trace: IntArray, flag: Bool): Bool =
+  let ignored = mark trace 2 0;
+  flag;
+;
+
+fn marked_ops(trace: IntArray, digit: Int, value: Int): Ops =
+  let ignored = mark trace digit 0;
+  make_ops value;
+;
+
+fn ordered_call(enabled: Bool, flag: Bool, trace: IntArray): Int =
+  if enabled then
+    (if choose trace flag then
+      marked_ops trace 3 123;
+    else
+      marked_ops trace 4 4567;
+    ).call (mark trace 1 5);
+  else 3;
+  ;
+;
+
+fn ordered_mixed(box: Ops, enabled: Bool, flag: Bool, trace: IntArray): Int =
+  if enabled then
+    (if choose trace flag then marked_ops trace 3 123; else box;).call (mark trace 1 5);
+  else 3;
+  ;
+;
+
+fn order_cases(enabled: Bool, flag: Bool): Bool =
+  let trace = ar_int_new 1;
+  ar_int_fill trace 0;
+  let selected = ordered_call enabled flag trace;
+  let selected_trace = ar_int_get trace 0;
+  ar_int_fill trace 0;
+  let box = make_ops 4567;
+  let mixed = ordered_mixed box enabled flag trace;
+  let mixed_trace = ar_int_get trace 0;
+  let after_borrow = box.call 1;
+  let expected = if enabled then (if flag then 8; else 9;); else 3;;
+  let expected_trace = if enabled then (if flag then 123; else 124;); else 0;;
+  let expected_mixed_trace = if enabled then (if flag then 123; else 12;); else 0;;
+  selected == expected and selected_trace == expected_trace
+    and mixed == expected and mixed_trace == expected_mixed_trace and after_borrow == 5;
+;
+
+pub fn main(args: StringArray): Int =
+  let count = ar_str_len args;
+  let enabled = count < 2;
+  let flag = count == 0;
+  if projection_cases () and scoped_owner_cases () and callable_cases () and result_cases ()
+    and conditional_cases enabled flag and order_cases enabled flag
+  then 0;
+  else 1;
+  ;
+;

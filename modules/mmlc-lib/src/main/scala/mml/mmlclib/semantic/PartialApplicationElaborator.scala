@@ -7,17 +7,20 @@ import mml.mmlclib.compiler.CompilerState
 
 import BindingIds.Allocation
 
-/** Supplied arguments become values before a partial application's lambda is created. */
+/** Supplied arguments become values before a partial application's lambda is created. Field
+  * qualifiers retain their owners in local bindings around the field's consumer.
+  */
 object PartialApplicationElaborator:
 
   private case class PayloadBinding(local: LocalBindings.Local, value: Expr)
 
-  private case class PreparedValue(value: Term, bindings: List[PayloadBinding] = Nil):
+  private case class PreparedValue[+T <: Term](value: T, bindings: List[PayloadBinding] = Nil):
+
     def expression: Expr = value match
       case expr: Expr => expr
       case _ => Expr(value.source, List(value), typeSpec = value.typeSpec)
 
-    def materialize: Term = bindings.foldRight(value) { (binding, result) =>
+    def materialize: Term = bindings.foldRight[Term](value) { (binding, result) =>
       val body = Expr(result.source, List(result), typeSpec = result.typeSpec)
       LocalBindings.bind(binding.local.param, binding.value, body, result.source)
     }
@@ -61,7 +64,7 @@ object PartialApplicationElaborator:
     owner:  BindingOwner,
     index:  ResolvablesIndex,
     values: CallableValues
-  ): Allocation[PreparedValue] =
+  ): Allocation[PreparedValue[Term]] =
     expr.terms match
       case List(term) => rewriteTerm(term, owner, index, values)
       case _ => rewriteExpr(expr, owner, index, values).map(PreparedValue(_))
@@ -71,7 +74,7 @@ object PartialApplicationElaborator:
     owner:  BindingOwner,
     index:  ResolvablesIndex,
     values: CallableValues
-  ): Allocation[PreparedValue] = term match
+  ): Allocation[PreparedValue[Term]] = term match
     case app: App =>
       app.fn match
         case scope: Lambda =>
@@ -85,17 +88,23 @@ object PartialApplicationElaborator:
           )
         case _ =>
           val (callee, args) = CallableValues.application(app)
-          args.traverse(prepareExpr(_, owner, index, values)).flatMap { rewrittenArgs =>
-            callee.typeSpec.flatMap(TypeUtils.canonical(_, index)).collect {
+          val preparedCallee = callee match
+            case ref:    Ref => rewriteRef(ref, owner, index, values)
+            case lambda: Lambda => PreparedValue(lambda).pure[Allocation]
+          for
+            rewrittenArgs <- args.traverse(prepareExpr(_, owner, index, values))
+            function <- preparedCallee
+            result <- callee.typeSpec.flatMap(TypeUtils.canonical(_, index)).collect {
               case signature: TypeFn => signature
             } match
+              // Fresh qualifier bindings need indexed callable origins before PAP capture analysis.
               case Some(signature)
-                  if values.recovery.isAvailable(app) &&
+                  if values.recovery.isAvailable(app) && function.bindings.isEmpty &&
                     rewrittenArgs.size < signature.paramTypes.length =>
-                elaborate(app, callee, rewrittenArgs, signature, owner, index, values)
+                elaborate(app, function.value, rewrittenArgs, signature, owner, index, values)
               case _ =>
                 val prepared =
-                  if rewrittenArgs.exists(_.bindings.nonEmpty) then
+                  if function.bindings.nonEmpty || rewrittenArgs.exists(_.bindings.nonEmpty) then
                     rewrittenArgs.traverse { arg =>
                       arg.value.typeSpec.fold(arg.pure[Allocation])(
                         prepareArgument(arg, _, owner, index)
@@ -104,11 +113,11 @@ object PartialApplicationElaborator:
                   else rewrittenArgs.pure[Allocation]
                 prepared.map { args =>
                   PreparedValue(
-                    rebuild(app, callee, args.map(_.expression)),
-                    args.flatMap(_.bindings)
+                    rebuild(app, function.value, args.map(_.expression)),
+                    args.flatMap(_.bindings) ++ function.bindings
                   )
                 }
-          }
+          yield result
     case lambda: Lambda =>
       val ownedCaptureIds = lambda.captures
         .map(_.ref)
@@ -126,7 +135,8 @@ object PartialApplicationElaborator:
         val transferredCallees = lambda.captures
           .map(_.ref)
           .filter { ref =>
-            ref.resolvedId.exists(meta.borrowedCaptures.contains) && values.consumesOnCall(ref)
+            ref.resolvedId.exists(meta.borrowedCaptures.contains) && values.consumesOnCall(ref) &&
+            !values.isFieldBorrow(ref)
           }
           .flatMap(_.resolvedId)
           .toSet
@@ -171,11 +181,28 @@ object PartialApplicationElaborator:
       tuple.elements
         .traverse(rewriteExpr(_, owner, index, values))
         .map(elements => PreparedValue(tuple.copy(elements = elements)))
-    case ref: Ref =>
-      ref.qualifier
-        .traverse(rewriteTerm(_, owner, index, values))
-        .map(q => PreparedValue(ref.copy(qualifier = q.map(_.materialize))))
+    case ref: Ref => rewriteRef(ref, owner, index, values).map[PreparedValue[Term]](identity)
     case other => PreparedValue(other).pure[Allocation]
+
+  /** A field borrow keeps its qualifier binding around the enclosing consumer. */
+  private def rewriteRef(
+    ref:    Ref,
+    owner:  BindingOwner,
+    index:  ResolvablesIndex,
+    values: CallableValues
+  ): Allocation[PreparedValue[Ref]] =
+    ref.qualifier.traverse(rewriteTerm(_, owner, index, values)).flatMap {
+
+      case Some(qualifier) =>
+        val prepared = qualifier.value.typeSpec
+          .filter(TypeUtils.requiresDestruction(_, index))
+          .fold(qualifier.pure[Allocation])(prepareArgument(qualifier, _, owner, index))
+        prepared.map { result =>
+          PreparedValue(ref.copy(qualifier = result.value.some), result.bindings)
+        }
+
+      case None => PreparedValue(ref).pure[Allocation]
+    }
 
   private def appliedType(signature: TypeFn, count: Int): Type =
     NonEmptyList
@@ -209,12 +236,12 @@ object PartialApplicationElaborator:
     }
 
   private def prepareArgument(
-    arg:          PreparedValue,
+    arg:          PreparedValue[Term],
     tpe:          Type,
     owner:        BindingOwner,
     index:        ResolvablesIndex,
     forceBinding: Boolean = false
-  ): Allocation[PreparedValue] =
+  ): Allocation[PreparedValue[Term]] =
     arg.value match
       case ref: Ref if ref.qualifier.isEmpty => arg.pure[Allocation]
       case _:   LiteralValue if !forceBinding => arg.pure[Allocation]
@@ -233,12 +260,12 @@ object PartialApplicationElaborator:
   private def elaborate(
     app:       App,
     callee:    Ref | Lambda,
-    args:      List[PreparedValue],
+    args:      List[PreparedValue[Term]],
     signature: TypeFn,
     owner:     BindingOwner,
     index:     ResolvablesIndex,
     values:    CallableValues
-  ): Allocation[PreparedValue] =
+  ): Allocation[PreparedValue[Term]] =
     val params = values.parameters(callee)
     val remaining =
       signature.paramTypes.toList.zipWithIndex.drop(args.size).traverse { (tpe, position) =>
@@ -266,8 +293,9 @@ object PartialApplicationElaborator:
           (prepared.value, params.lift(position).exists(_.consuming))
       }
       val consumesCallee = values.consumesOnCall(callee)
+      val borrowsField   = values.isFieldBorrow(callee)
       val transferredCallee = callee match
-        case ref: Ref if consumesCallee => ref.resolvedId.toSet
+        case ref: Ref if consumesCallee && !borrowsField => ref.resolvedId.toSet
         case _ => Set.empty[String]
       val transferred =
         payloads.collect { case (ref: Ref, true) => ref.resolvedId }.flatten.toSet ++
@@ -277,11 +305,20 @@ object PartialApplicationElaborator:
       val calleeLambdas = values.lambdas(callee)
       val borrowsCallee = callee match
         case ref: Ref =>
-          !ref.resolvedId.flatMap(index.lookup).exists(_.isInstanceOf[Bnd]) &&
-          (calleeLambdas.isEmpty || calleeLambdas.exists(_.captures.nonEmpty))
+          borrowsField ||
+          (!ref.resolvedId.flatMap(index.lookup).exists(_.isInstanceOf[Bnd]) &&
+            (calleeLambdas.isEmpty || calleeLambdas.exists(_.captures.nonEmpty)))
         case _: Lambda => true
       val borrowedCallee = callee match
-        case ref: Ref if borrowsCallee && !consumesCallee => ref.resolvedId.toSet
+        case ref: Ref if ref.qualifier.isDefined =>
+          ref.qualifier.toList.flatMap { qualifier =>
+            TermTraversal
+              .collect(qualifier) {
+                case owner: Ref if owner.qualifier.isEmpty => owner
+              }
+              .flatMap(_.resolvedId)
+          }.toSet
+        case ref: Ref if borrowsField || (borrowsCallee && !consumesCallee) => ref.resolvedId.toSet
         case _ => Set.empty[String]
       val lambda = Lambda(
         app.source,

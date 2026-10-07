@@ -12,7 +12,7 @@
 
 ## Execution Checklist
 
-1. [ ] **in_progress** — Findings 1–4 have signed-off repairs; findings 5 and 6 need diagnosis.
+1. [ ] **in_progress** — Findings 1–4 and 6 have signed-off repairs; findings 5 and 7 remain open.
 2. [x] **complete** — [Global literal repair](#global-literal-repair),
    [string-return ownership repair](#string-return-ownership-repair), and
    [conditional IR repair](#conditional-ir-repair) are complete and signed off.
@@ -20,13 +20,13 @@
    passes compiler checks, sample verification, and independent review; repair signoff is granted.
 4. [ ] **planned** — Diagnose the copied executable's failure on macOS M2 and verify a
    compatible build configuration.
-5. [ ] **planned** — [Finding 6: calls inside conditional field qualifiers fail type resolution](#6-calls-inside-conditional-field-qualifiers-fail-type-resolution).
-   Reduce the frontend failure and propose a bounded repair.
-6. [ ] **planned** — Run applicable compiler and sample verification and obtain signoff.
+5. [x] **complete** — [Finding 6: calls inside conditional field qualifiers fail type resolution](#6-calls-inside-conditional-field-qualifiers-fail-type-resolution).
+6. [ ] **planned** — [Finding 7: conditional field-alias lifetime](#7-conditional-field-aliases-can-outlive-their-temporary-owner).
+7. [ ] **planned** — Run applicable compiler and sample verification and obtain signoff.
 
 ## Problem
 
-Six findings concern ordinary MML source patterns, the console A* sample, and portability
+Seven findings concern ordinary MML source patterns, the console A* sample, and portability
 of the animated executable to macOS M2.
 The [animated sample](../../mml/samples/astar3_animated.mml) uses plain global integer
 constants and explicit grid initialization. It uses an inline conditional array argument for finding 2 and ordinary caption returns
@@ -270,30 +270,276 @@ and verify that an executable built for that configuration runs on the macOS M2 
 
 ### 6. Calls inside conditional field qualifiers fail type resolution
 
-- **Status:** planned.
-- **Implementation approval:** pending.
+- **Status:** complete.
+- **Implementation approval:** granted for complete qualifier traversal in normal and error-recovery
+  reference resolution, callee-qualifier dependencies, capture traversal, temporary-owner lifetime,
+  focused regressions, and verification.
+- **Repair signoff:** granted for the implemented scope, with the remaining
+  [nested-conditional alias lifetime defect](#7-conditional-field-aliases-can-outlive-their-temporary-owner) explicitly deferred.
+- **Local commit:** `Resolve field qualifiers and retain temporary owners`.
 
-A conditional expression used to select the record before a field access fails when its
-predicate contains function and operator calls. In the runtime fixture's `qualified`
-function in [call-exit-blocks.mml](../../tests/mem/call-exit-blocks.mml),
-replace the qualifier with:
+At `fd8a15c`, a conditional expression used to select a record fails when its predicate
+contains function and operator calls. The `qualified` function in
+[call-exit-blocks.mml](../../tests/mem/call-exit-blocks.mml) reproduces the failure with:
 
 ```mml
 (if mark trace 2 1 == 1 then box; else box;).call
 ```
 
-The recorded diagnostic is `UnresolvableType` for `mark` and `==`. This failure occurs in
-the frontend, before LLVM generation. The conditional IR repair tests use supported
-conditional references and do not establish correctness for this expression. The root cause
-and smallest standalone reproduction remain unconfirmed.
+The recorded diagnostic is `UnresolvableType` for `mark` and `==`, before LLVM generation.
+At that revision, `RefResolver.resolveTerm` and `rewriteTermWithInvalidExpressions` handle
+references and expressions but skip `TermGroup`; names inside parenthesized field qualifiers
+receive no resolved IDs or operator candidates. The type checker
+can recover local parameter types by name, masking the gap for simple `flag` and `box` references.
 
-Next action: reduce the fixture to a standalone regression, trace reference and type
-resolution inside the qualifier, and propose a bounded repair.
+Diagnosis at `fd8a15c` reproduces the original fixture failure and this smaller form:
+
+```mml
+struct Box { value: Int };
+fn read(box: Box): Int = (if 1 == 1 then box; else box;).value;;
+pub fn main(): Int = read (Box 7);;
+```
+
+Literal and parameter predicates emit LLVM IR. Function predicates, operator predicates,
+branch calls, and `(make flag).value` fail; binding the result before selection emits IR.
+An undefined name inside the qualifier produces a type-inference error, while the bound
+form reports an undefined reference.
+
+The same revision has a related dependency omission: `TypeChecker.collectMemberDeps.walkAppFn`
+skips `Ref.qualifier`. Calling `box.call 7` before an inferred `let box = Ops identity`
+fails to infer `box`; placing the binding first or binding `box.call` before calling it succeeds.
+
+The repair moves complete per-term traversal into the resolver's term helpers and routes
+expression traversal through them. Dependency collection uses the same reference walk in
+value and callee positions. Lexical scope, field-name lookup, and evaluation order stay intact.
+
+Regression coverage is in
+[FieldQualifierResolutionTests.scala](../../modules/mmlc-lib/src/test/scala/mml/mmlclib/semantic/FieldQualifierResolutionTests.scala)
+and [CallExitBlockTests.scala](../../modules/mmlc-lib/src/test/scala/mml/mmlclib/codegen/CallExitBlockTests.scala).
+The semantic suite checks successful field resolution, local shadowing identities, inferred
+forward dependencies, undefined-reference recovery, and invalid types and fields. Phase-level
+checks require declaration IDs before type checking can recover local names.
+
+The [runtime fixture](../../tests/mem/call-exit-blocks.mml) selects distinct callable branches
+with results `7` and `8`. Its argument records digit `1` and its predicate records digit `2`;
+trace `12` requires exactly one evaluation of each in the compiler's argument-before-callee
+order. The capturing case returns `17` or `27` with traces `12` or `22`; a disabled enclosing
+branch returns `3` without effects. The suite executes all three paths at `-O0` and `-O3`
+with LLVM verification and ASan/LSan.
+
+Verification including capture traversal and temporary-owner retention: 2026-10-07,
+macOS arm64, Homebrew LLVM 23.1.1.
+
+| Check | Result |
+| --- | --- |
+| `./tests/smoke/run.sh all` | Pass: 8/8. |
+| `sbtn "scalafmtAll;scalafixAll;test"` | Pass: 1010 library and 9 CLI tests, 37 existing ignores, no failures or compiler warnings. Includes 15 qualifier-resolution tests, 54 qualifier-ownership tests, and 33 call-exit tests. |
+| `sbtn mmlcPublishLocal` | Pass after smoke and development-compiler verification. |
+| `make -C benchmark clean`, then `make -C benchmark mml` | Pass: 12 targets build; no timing measurements. |
+| `./tests/mem/run.sh all` | Pass: 48/48 under ASan/LSan at `-O0`. |
+| QA and tracking consistency | Pass. |
+| Code review | Capture follow-up passes narrow independent re-review. Ownership review is complete through the explicitly approved implementing-agent fallback; primary and per-claim independence are waived. One confirmed P1 remains, explicitly deferred to [conditional field-alias lifetime](#7-conditional-field-aliases-can-outlive-their-temporary-owner). |
+
+No ABI contract changes are included; Linux ABI checks are not applicable. M2 portability
+remains under finding 5. CLI startup retains the existing JVM `sun.misc.Unsafe` deprecation
+notice. Repair signoff and local commit authorization are granted for finding 6 with the
+documented deferral. Push authorization is pending.
+
+#### Review follow-ups
+
+The newly accepted expressions expose two downstream omissions. Both findings have independent
+confirmation; their unresolved name references prevented code generation at `fd8a15c`.
+
+1. **Capture traversal — repaired and signed off.** Missing qualifier traversal in
+   `CaptureAnalyzer` leaves lambdas without captures. The regression below protects against
+   LLVM assembly receiving an undefined `@flag` instead of an environment capture:
+
+   ```mml
+   struct Box { value: Int };
+   fn invoke(f: Unit -> Bool): Bool = f ();;
+   fn read(box: Box, flag: Bool): Int =
+     (if invoke { flag } then box; else box;).value;
+   ;
+   pub fn main(): Unit = println (int_to_str (read (Box 42) true));;
+   ```
+
+   The repair traverses qualifier expressions in value and callee positions and propagates
+   nested captures. Four semantic regressions require exact capture IDs and types in direct
+   and nested closures. LLVM and native regressions exercise captured predicates selecting
+   primitive and callable fields. Both paths pass at `-O0` and `-O3` under ASan/LSan. Narrow
+   independent re-review reports no actionable findings. Nested getters have semantic coverage;
+   native capture regressions exercise immediate borrow closures on macOS arm64.
+
+2. **Temporary-owner lifetime — bounded repair signed off, conditional alias gap deferred.**
+   The failing reduction selects a primitive field from a newly allocated owning record:
+
+   ```mml
+   struct Box { text: String, value: Int };
+   fn make(): Box = Box (int_to_str 123) 0;;
+   pub fn main(): Int = (make ()).value;;
+   ```
+
+   The pre-repair `-O0` IR calls `make`, extracts the field, and returns without a
+   destructor call. An explicit `let box = make (); box.value;` control emits `__free_Box`.
+   Native execution succeeds, but the allocated String has no remaining owner. Missing
+   cleanup is established by LLVM IR; the review's leak detector could not access the
+   process task port in its sandbox. The qualifier analysis visits effects
+   without itself retaining ownership of the qualifier result. Cleanup placement must account
+   for primitive projections, borrowed heap fields, and calls through function fields.
+   Implementation approval is granted to retain temporary owners through field use, clean them
+   up exactly once, and cover borrowed fields and callable fields.
+
+   Qualifier preparation reuses the partial-application elaborator's local bindings. Binding
+   lifetimes enclose field consumers and local alias bodies, with arguments evaluated before
+   callable qualifiers. Ownership analysis retains borrowed alias dependencies, treats copied
+   scalar fields as independent values, and rejects the covered borrows escaping a scope that
+   destroys their owner. Mixed owned/borrowed qualifiers cannot authorize consuming field calls.
+   Partial applications preserve borrowed field origins through aliases and capture the
+   aggregate binding identity. Conditional branches remain scope boundaries; escaping projections
+   require rejection. Nested conditional aliases have the remaining dependency gap linked below.
+
+   Regressions are in
+   [FieldQualifierOwnershipTests.scala](../../modules/mmlc-lib/src/test/scala/mml/mmlclib/semantic/FieldQualifierOwnershipTests.scala)
+   and [field-qualifier-owners.mml](../../tests/mem/field-qualifier-owners.mml).
+   The qualifier-ownership semantic cases check cleanup targets by resolved identity and reject invalid ownership
+   escapes and later moves. Native ASan/LSan execution at `-O0` and `-O3` verifies both
+   conditional branches, a disabled enclosing branch, and effect traces. Full compiler gates
+   pass, including the two additional review fixes below.
+
+Two additional review defects have focused regressions and repairs:
+
+- A conditional branch can export a String through a nested aggregate alias after temporary
+  root-owner cleanup. An independent verifier reported an `-O0` ASan failure when `println`
+  reads the freed String. Borrow dependencies retain alias identities across local scope results,
+  so the branch is rejected before code generation.
+- `(let ignored = (); box).value` can duplicate cleanup of an existing owned `box`. An
+  independent verifier reported two aggregate destructor calls and an `-O0` ASan double-free;
+  the explicit scoped-result binding has the same defect. Owning initializers transfer their
+  results through the consuming-result analysis, producing one cleanup and rejecting later use
+  of the source owner.
+
+The focused regressions reproduced four failures before these repairs and pass afterward.
+Both primary review attempts and the claim verifiers were interrupted by the automated error
+`This content was flagged for possible cybersecurity risk.` Their reported findings remain
+preserved evidence. The explicitly approved
+[code-review fallback](../../.skills/code-review/SKILL.md#automated-flags-and-interrupted-reviews)
+completes the outstanding ownership review and fix checks in the implementing agent.
+Primary-review and per-claim independence are waived; no clean independent ownership review
+is claimed.
+
+The fallback review confirms one remaining P1: conditional merging drops branch-local field-alias
+dependencies, allowing a String to outlive temporary-record cleanup. Emitted IR and native ASan
+execution at `-O0` establish destruction before `println` reads the String. The complete reproducer,
+diagnosis, evidence, and repair plan are in
+[conditional field-alias lifetime](#7-conditional-field-aliases-can-outlive-their-temporary-owner).
+Deferral to finding 7 is approved, and finding 6's implemented scope is signed off
+for a local checkpoint. The P1 remains open; this completion does not claim its repair.
 
 Acceptance: valid calls and operators inside conditional field qualifiers resolve and type
 check; the selected field can be called successfully. Verify branch selection and exactly-once
 predicate evaluation, preserve diagnostics for invalid expressions, and cover LLVM validity
 and native execution.
+
+### 7. Conditional field aliases can outlive their temporary owner
+
+- **Status:** planned.
+- **Priority:** HIGH; confirmed P1.
+- **Implementation approval:** pending.
+
+`OwnershipAnalyzer.analyzeCond` merges moves and consumed fields but drops borrow dependencies
+introduced inside either branch. A returned field reference can still name a branch-local alias,
+so an enclosing cleanup check cannot follow that alias back to its owner. The compiler accepts
+a String borrow after its temporary record has been destroyed.
+
+The affected path is exposed by the qualifier repair in
+[A* finding 6](#6-calls-inside-conditional-field-qualifiers-fail-type-resolution).
+That repair retains dependency maps across local-scope results; conditional merges also need
+to retain the identities required by those results. This remaining defect is deferred from
+the signed-off qualifier-repair checkpoint.
+
+#### Reproducer
+
+```mml
+struct Box { text: String, value: Int };
+struct Outer { inner: Box };
+fn make_outer(): Outer = Outer (Box (int_to_str 123) 7);;
+fn example(flag: Bool): Unit =
+  let text = if flag then
+    let inner = (make_outer ()).inner;
+    (if flag then let alias = inner; alias.text; else "static";);
+  else "static";
+  ;
+  println text;
+;
+pub fn main(): Unit = example true;;
+```
+
+Expected: reject the result with an ownership diagnostic because the String cannot outlive
+the temporary `Outer` created in the outer conditional's true branch.
+
+Observed: compilation succeeds. The generated code destroys `Outer` after the inner
+conditional merges, then passes the selected String to `println` after the outer merge.
+Native execution reads freed String storage.
+
+#### Outcome
+
+Conditional results retain the owner dependencies of branch-local aliases. Local cleanup
+rejects escaping field borrows, while valid borrows used entirely within their owner's
+lifetime remain accepted. Branch selection and exactly-once evaluation remain unchanged.
+
+#### Scope
+
+- In scope: conditional dependency merging in
+  [OwnershipAnalyzer.scala](../../modules/mmlc-lib/src/main/scala/mml/mmlclib/semantic/OwnershipAnalyzer.scala),
+  directly affected escape and use-after-move checks, and focused semantic/runtime regressions.
+- Out of scope: new lifetime syntax, implicit cloning, M2 deployment, and the separate
+  [conditional ownership witness work](conditional-ownership-witnesses.md).
+
+#### Plan (Approval Gate)
+
+- [ ] Add a semantic regression for the embedded program that requires an ownership error.
+- [ ] Preserve branch result dependencies by resolved binding identity when merging scopes.
+  Retain the transitive path from aliases to root owners without exporting local ownership.
+- [ ] Cover both branches, nested conditions, shadowed aliases, and live-owner controls.
+- [ ] Run applicable compiler gates and review the changed dependency contract.
+
+Approval: pending for implementation; deferral from finding 6 is approved.
+
+#### Verification
+
+Evidence: 2026-10-07, macOS arm64, Homebrew LLVM 23.1.1, qualifier-repair sources on
+`dev-2026-03-21-lambdas` based on `fd8a15c`.
+
+- Compile the embedded program with `mmlc -s -O0`. Compilation succeeds; linking emits
+  the environment warning `directory not found for option -L/usr/local/lib`.
+- Execute with `ASAN_OPTIONS=detect_leaks=0:halt_on_error=1:abort_on_error=1`.
+  The process terminates with SIGABRT (subprocess return code `-6`). ASan reports
+  `heap-use-after-free`, a read of size 3 in `println`, and deallocation through `__free_String`.
+  Symbolizer warnings accompany the report; the memory error and named runtime frames are present.
+- The emitted `example` function selects `alias.text` at the inner merge, calls the aggregate
+  destructor before leaving the outer true branch, and invokes the `println` wrapper after
+  the outer merge. This establishes destruction before use independently of symbolization.
+- Primary review and per-claim independence were explicitly waived. The implementing agent
+  confirmed the failure through source tracing, emitted IR, and native execution.
+
+Replacing only `example` with this control prints `123` and exits zero under ASan at `-O0`:
+
+```mml
+fn example(flag: Bool): Unit =
+  let text = (let inner = (make_outer ()).inner;
+    if flag then let alias = inner; alias.text; else "static";);
+  println text;
+;
+```
+
+This is a confirmed P1 finding. Leak detection was disabled for this focused read-lifetime
+check; no `-O3`, cross-target, or repaired-program result is claimed. A permanent regression
+and repair verification remain pending. The passing qualifier suite does not cover this case.
+
+#### Risks / Notes
+
+Dependencies use stable binding identities. Merging them must retain shadowing distinctions
+and must not transfer ownership or authorize consumption of borrowed fields.
 
 ## Outcome
 
@@ -304,7 +550,7 @@ finding has a focused regression or sample check that fails for the defective be
 
 ## Scope
 
-- In scope: the six findings, their reductions, directly affected compiler paths, regression
+- In scope: the seven findings, their reductions, directly affected compiler paths, regression
   coverage, wall-map initialization in `astar3.mml`, and executable portability diagnosis.
 - Out of scope: animation controls, new language features, raylib changes, and unrelated cleanup.
 
@@ -314,12 +560,15 @@ finding has a focused regression or sample check that fails for the defective be
 - [ ] Establish whether the PHI occurrences share a cause and whether string-return repair
   belongs with [conditional ownership hardening](conditional-ownership-witnesses.md).
 - [ ] Diagnose the macOS M2 launch failure and establish a compatible build configuration.
-- [ ] Reduce and diagnose finding 6's frontend qualifier-resolution failure, then propose a repair.
+- [x] Reduce and diagnose finding 6's frontend qualifier-resolution failure; bounded repair approved.
+- [x] Complete finding 6's approved qualifier repairs and verification, with
+  [nested-conditional alias lifetime](#7-conditional-field-aliases-can-outlive-their-temporary-owner) deferred to finding 7.
 - [ ] Implement approved repairs, add regressions, and run applicable verification.
 
 Approval: granted for the global literal repair, integer-array fill repair, and bounded
-string-return ownership repair below, and conditional IR repair. Implementation approval for
-findings 5 and 6 remains pending.
+string-return ownership repair below, conditional IR repair, and finding 6 qualifier resolution,
+capture traversal, and temporary-owner lifetime.
+Implementation approval for findings 5 and 7 remains pending.
 
 ### Conditional IR repair
 
@@ -451,7 +700,7 @@ caption substitutions recorded in finding 2; both variants pass at `-O0` and `-O
 | `sbtn 'run -s -O0 -b build/astar-phi-check mml/samples/astar3_animated.mml'` | Pass: restored graphical sample compiles and links; no window execution. |
 | `sbtn mmlcPublishLocal` | Pass: local compiler installed after smoke and development-compiler execution. |
 | `make -C benchmark clean`, then `make -C benchmark mml` | Pass: 12 MML targets build; no timing measurements. |
-| `./tests/mem/run.sh all` | Pass: 47/47 under ASan/LSan at `-O0`. |
+| `./tests/mem/run.sh all` | Pass: 48/48 under ASan/LSan at `-O0`. |
 | QA and tracking consistency | Pass. |
 | Independent code review | No actionable findings; independent rerun passes all 26 focused tests and `git diff --check`. |
 
@@ -635,6 +884,8 @@ initialization correctness; the explicit cell-value oracle exposes the defect.
 
 ## Risks / Notes
 
+- Nested conditional field aliases can escape owner cleanup; the confirmed P1 and its
+  reproducer are tracked in [conditional field-alias lifetime](#7-conditional-field-aliases-can-outlive-their-temporary-owner).
 - Witness-based returns and branch-dependent transfer cleanup remain under
   [conditional ownership hardening](conditional-ownership-witnesses.md).
 - A raylib window-initialization failure is a separate environmental condition, not evidence
@@ -649,14 +900,18 @@ initialization correctness; the explicit cell-value oracle exposes the defect.
 - String-return ownership repair signoff: granted.
 - Conditional IR repair signoff: granted.
 - Finding 5 signoff: pending.
-- Finding 6 signoff: pending.
+- Finding 6 signoff: granted for the implemented qualifier repairs with the conditional alias
+  lifetime defect deferred to finding 7.
+- Finding 7 signoff: pending.
 - Tracked item completion: pending.
 - Global literal repair and animated sample cleanup commit: complete
   (`Fix forward references to global literals`).
 - Integer-array fill and wall-map repair commit: complete (`Add runtime integer-array fill`).
 - String-return ownership repair commit: complete (`Fix nested mixed string returns`).
 - Conditional IR repair commit: complete (`Preserve exit blocks through call evaluation`).
-- Commit authorization: pending for findings 5 and 6. Push authorization: pending.
+- Finding 6 commit: `Resolve field qualifiers and retain temporary owners`.
+- Commit authorization: granted for finding 6 and the finding 7 record; pending for repairs to
+  findings 5 and 7. Push authorization: pending.
 
 ## Task Working Memory
 
@@ -673,6 +928,15 @@ Named mixed-binding returns, consuming transfers, and the documented conditional
 gap remain with conditional ownership hardening. Finding 2's conditional IR repair is
 complete, signed off, and locally committed as `Preserve exit blocks through call evaluation`.
 Propagation, all compiler gates, QA enforcement, tracking checks, and independent code review pass.
-Findings 5 and 6 still need diagnosis and implementation approval. Finding 6's next action is
-a standalone reduction and frontend resolution trace. Float and string array fill
-extensions are deferred.
+Finding 5 needs diagnosis and implementation approval. Finding 7 needs approval of its bounded
+conditional dependency plan. Finding 6 is complete and signed off:
+it repairs reference traversal, callee-qualifier dependencies, capture traversal, and
+temporary-owner lifetime. Smoke,
+formatting, lint, 1010 library and 9 CLI tests, local publication, benchmark builds, and
+all 48 memory programs pass. Capture traversal passes narrow independent re-review.
+Ownership review is complete through the approved implementing-agent fallback, with primary
+and per-claim independence waived. Two reported lifetime defects have verified repairs; the
+remaining P1 is explicitly deferred to
+[conditional field-alias lifetime](#7-conditional-field-aliases-can-outlive-their-temporary-owner).
+The local checkpoint is `Resolve field qualifiers and retain temporary owners`; no push is authorized.
+Float and string array fill extensions are deferred.

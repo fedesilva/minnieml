@@ -437,6 +437,12 @@ Each phase takes a `CompilerState`, returns an updated `CompilerState`, and reco
     preserve their consuming flags. Callable origins retain the applied argument count before
     elaboration so staged PAPs inherit the source's remaining ownership contract. Supplied
     callable arguments propagate at every application stage, including before saturation.
+    Complex qualifiers of destruction-requiring types become local bindings around their field's
+    consumer. Their bindings propagate through arguments and local initializers; callable
+    qualifiers run after supplied arguments. Branch-local bindings stay within their branch.
+    Fresh qualifier bindings are indexed before a partial call's capture contracts are inferred.
+    Partially applying a field borrows the captured aggregate's binding identity, including when
+    the selected target is a static function; the field declaration ID is not a captured owner.
     `CaptureTransfers` identifies ownership sinks in source move-lambda bodies, including
     consuming calls, local moves, returns, and nested move captures. Capture stabilization
     propagates their call-once contract through enclosing lambdas and callable value flow.
@@ -906,6 +912,15 @@ constructor arguments, aliases, and returned aggregates to preserve invocation c
 call that transfers a field's PAP payload records that projection as consumed while retaining
 the aggregate's cleanup obligation. Aliases and conditional branches share the consumed-field
 state; sibling fields remain available. Field borrows cannot satisfy ownership sinks or returns.
+Local cleanup rejects a result borrowing an owner destroyed by that scope. This also applies to
+temporary qualifier owners inside conditional branches. A mixed owned/borrowed qualifier can
+lend a field but cannot authorize a call that consumes its payload; such a call requires an
+unconditionally owned aggregate.
+Borrow dependencies retain local alias identities across nested scope results so cleanup checks
+can still reach the root owner. An unconditionally owning initializer transfers its result through
+the existing consuming-result analysis, including when a nested scope returns an outer binding.
+Conditional merges do not retain dependencies introduced by branch-local aliases, leaving a
+[known gap in escape checking](../../context/tasks/astar-animation-correctness-bugs.md#7-conditional-field-aliases-can-outlive-their-temporary-owner).
 
 **Errors reported**:
 - `UseAfterMove`

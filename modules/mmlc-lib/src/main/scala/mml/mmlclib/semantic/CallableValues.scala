@@ -76,6 +76,38 @@ final case class CallableValues private (
   def consumesOnCall(term: Term): Boolean =
     lambdas(term).exists(_.meta.exists(_.transferredCaptures.nonEmpty))
 
+  /** A projected value retains its aggregate loan through aliases and local results. */
+  def isFieldBorrow(term: Term): Boolean =
+
+    def resolve(value: Term, seen: Set[String]): Boolean = value match
+
+      case _ if !recovery.isAvailable(value) => false
+      case ref: Ref if ref.qualifier.isDefined => true
+
+      case ref: Ref =>
+        ref.resolvedId.filterNot(seen.contains).exists { id =>
+          val sources = bindings.getOrElse(
+            id,
+            index.lookup(id).collect { case binding: Bnd => binding.value }.toList
+          )
+          sources.exists(resolve(_, seen + id))
+        }
+
+      case expr:  Expr => expr.terms.lastOption.exists(resolve(_, seen))
+      case group: TermGroup => resolve(group.inner, seen)
+      case cond:  Cond => resolve(cond.ifTrue, seen) || resolve(cond.ifFalse, seen)
+
+      case app: App =>
+        val (callee, arguments) = CallableValues.application(app)
+        callee match
+          case lambda: Lambda if arguments.size >= lambda.params.size =>
+            resolve(lambda.body, seen)
+          case _ => false
+
+      case _ => false
+
+    resolve(term, Set.empty)
+
   /** Include captures reached through callable operands when checking a value's last use. */
   def referencedCaptureIds(term: Term): Set[String] =
     @scala.annotation.tailrec

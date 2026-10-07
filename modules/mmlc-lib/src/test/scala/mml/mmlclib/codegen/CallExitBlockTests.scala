@@ -14,8 +14,11 @@ class CallExitBlockTests extends BaseEffFunSuite:
 
     def source: String = s"""
       struct Ops { call: Int -> Int };
+      struct Value { value: Int };
       fn identity(x: Int): Int = x;;
       fn combine(x: Int, y: Int): Int = x + y;;
+      fn predicate(flag: Bool): Bool = flag;;
+      fn invoke(f: Unit -> Bool): Bool = f ();;
       fn encode(flag: Bool): Int = if flag then 1; else 2;;;
       fn increment(x: Int): Int = @native[tpl="add i32 %operand, 1"];;
       fn keep(effect: Unit, value: Int): Int = value;;
@@ -44,6 +47,21 @@ class CallExitBlockTests extends BaseEffFunSuite:
     CallCase("indirect call", "f (if flag then 1; else 2;)"),
     CallCase("indirect Unit call", "u (if flag then 1; else 2;); 7"),
     CallCase("qualified callee", "(if flag then box; else box;).call 7"),
+    CallCase("qualified callee predicate call", "(if predicate flag then box; else box;).call 7"),
+    CallCase("qualified callee predicate operator", "(if not flag then box; else box;).call 7"),
+    CallCase(
+      "qualified callee predicate call and operator",
+      "(if encode flag == 1 then box; else box;).call 7"
+    ),
+    CallCase(
+      "qualified callee capturing predicate",
+      "(if invoke { flag } then box; else box;).call 7"
+    ),
+    CallCase(
+      "qualified value capturing predicate",
+      "(if invoke { flag } then yes; else no;).value",
+      "let yes = Value 1; let no = Value 2;"
+    ),
     CallCase(
       "arguments then qualified callee",
       "(if flag then box; else box;).call (if flag then 1; else 2;)"
@@ -170,6 +188,11 @@ class CallExitBlockTests extends BaseEffFunSuite:
   for optimization <- List(0, 3) do
     test(s"call exits preserve loop results and effect order at O$optimization") {
       IO.blocking(Files.readString(Path.of("tests/mem/call-exit-blocks.mml")))
+        .flatMap(execute(_, optimization, List(0, 1, 2)))
+    }
+
+    test(s"temporary field owners survive projections and calls at O$optimization") {
+      IO.blocking(Files.readString(Path.of("tests/mem/field-qualifier-owners.mml")))
         .flatMap(execute(_, optimization, List(0, 1, 2)))
     }
 

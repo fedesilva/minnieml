@@ -2,6 +2,14 @@
 
 Durable product changes belong here. Current task state belongs in task files.
 
+## 2026-10-07
+
+- Resolve calls and operators inside field qualifiers, including recovery, forward dependencies,
+  and closure captures. Retain temporary record owners through field use and callable-field
+  invocation, preserve argument-before-callee evaluation, and reject covered borrowed-field
+  escapes. Nested conditional aliases still have a
+  [known lifetime defect](tasks/astar-animation-correctness-bugs.md#7-conditional-field-aliases-can-outlive-their-temporary-owner).
+
 ## 2026-10-06
 
 - Preserve expression exit blocks through call arguments, evaluated callees, and operators,

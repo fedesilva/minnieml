@@ -46,38 +46,7 @@ object RefResolver:
     extraParams: List[FnParam] = Nil
   ): Term =
     term match
-      case ref: Ref =>
-        ref.qualifier match
-          case Some(qualifier) =>
-            val updatedQualifier =
-              rewriteTermWithInvalidExpressions(qualifier, member, module, extraParams)
-            ref.copy(qualifier = Some(updatedQualifier))
-          case None =>
-            val candidates = lookupRefs(ref, member, module, extraParams)
-            if candidates.isEmpty then
-              InvalidExpression(
-                source       = ref.source,
-                originalExpr = Expr(ref.source, List(ref)),
-                typeSpec     = ref.typeSpec,
-                typeAsc      = ref.typeAsc
-              )
-            else
-              val ids = candidates.flatMap(_.id)
-              if candidates.length == 1 then
-                ref.copy(candidateIds    = ids, resolvedId = ids.headOption)
-              else ref.copy(candidateIds = ids)
-      case e: Expr =>
-        rewriteExprWithInvalidExpressions(e, member, module, extraParams)
-      case other => other
 
-  /** Rewrite expression to use InvalidExpression for undefined references */
-  private def rewriteExprWithInvalidExpressions(
-    expr:        Expr,
-    member:      Member,
-    module:      Module,
-    extraParams: List[FnParam] = Nil
-  ): Expr =
-    val rewrittenTerms = expr.terms.map {
       case ref: Ref =>
         ref.qualifier match
           case Some(qualifier) =>
@@ -87,7 +56,6 @@ object RefResolver:
           case None =>
             val candidates = lookupRefs(ref, member, module, extraParams)
             if candidates.isEmpty then
-              // Create InvalidExpression wrapping the undefined ref
               InvalidExpression(
                 source       = ref.source,
                 originalExpr = Expr(ref.source, List(ref)),
@@ -134,8 +102,17 @@ object RefResolver:
         lambda.copy(body = newBody)
 
       case term => term
-    }
-    expr.copy(terms = rewrittenTerms)
+
+  /** Rewrite expression to use InvalidExpression for undefined references */
+  private def rewriteExprWithInvalidExpressions(
+    expr:        Expr,
+    member:      Member,
+    module:      Module,
+    extraParams: List[FnParam] = Nil
+  ): Expr =
+    expr.copy(terms =
+      expr.terms.map(rewriteTermWithInvalidExpressions(_, member, module, extraParams))
+    )
 
   /** Rewrite App.fn to use InvalidExpression for undefined references */
   private def rewriteAppFnWithInvalidExpressions(
@@ -194,70 +171,6 @@ object RefResolver:
     extraParams: List[FnParam] = Nil
   ): Either[List[SemanticError], Term] =
     term match
-      case ref: Ref =>
-        ref.qualifier match
-          case Some(qualifier) =>
-            resolveTerm(qualifier, member, module, extraParams)
-              .map(updatedQualifier => ref.copy(qualifier = Some(updatedQualifier)))
-          case None =>
-            val candidates = lookupRefs(ref, member, module, extraParams)
-            if candidates.isEmpty then
-              List(SemanticError.UndefinedRef(ref, member, phaseName)).asLeft
-            else
-              val ids = candidates.flatMap(_.id)
-              if candidates.length == 1 then
-                ref.copy(candidateIds = ids, resolvedId = ids.headOption).asRight
-              else ref.copy(candidateIds = ids).asRight
-      case e: Expr =>
-        resolveExpr(e, member, module, extraParams)
-      case other =>
-        other.asRight
-
-  /** Returns all members (bindings, functions, operators) whose name matches the reference.
-    */
-  private def lookupRefs(
-    ref:         Ref,
-    member:      Member,
-    module:      Module,
-    extraParams: List[FnParam]
-  ): List[Resolvable] =
-    if ref.qualifier.isDefined then return Nil
-
-    def collectMembers =
-      module.members.collect {
-        // Match Bnd by name or originalName from meta (for operators)
-        case bnd: Bnd
-            if bnd.name == ref.name ||
-              bnd.meta.exists(_.originalName == ref.name) =>
-          bnd
-      }
-
-    // Enclosing parameters are ordered innermost first; a nearer binding shadows outer names.
-    val fromExtra = extraParams.find(_.name == ref.name).toList
-    if fromExtra.nonEmpty then return fromExtra
-
-    // Extract params from Bnd with Lambda
-    val params = member match
-      case bnd: Bnd =>
-        bnd.value.terms.headOption match
-          case Some(lambda: Lambda) => lambda.params.filter(_.name == ref.name)
-          case _ => Nil
-      case _ => Nil
-
-    if params.nonEmpty then params else collectMembers
-
-  /** Resolve references in an expression.
-    *
-    * Returns either a list of errors or a new expression with resolved references.
-    */
-  private def resolveExpr(
-    expr:        Expr,
-    member:      Member,
-    module:      Module,
-    extraParams: List[FnParam] = Nil
-  ): Either[List[SemanticError], Expr] =
-
-    expr.terms.traverse {
 
       case ref: Ref =>
         ref.qualifier match
@@ -315,7 +228,47 @@ object RefResolver:
       case term =>
         term.asRight[List[SemanticError]]
 
-    } map { updatedTerms =>
+  /** Returns all members (bindings, functions, operators) whose name matches the reference.
+    */
+  private def lookupRefs(
+    ref:         Ref,
+    member:      Member,
+    module:      Module,
+    extraParams: List[FnParam]
+  ): List[Resolvable] =
+    if ref.qualifier.isDefined then return Nil
+
+    def collectMembers =
+      module.members.collect {
+        // Match Bnd by name or originalName from meta (for operators)
+        case bnd: Bnd
+            if bnd.name == ref.name ||
+              bnd.meta.exists(_.originalName == ref.name) =>
+          bnd
+      }
+
+    // Enclosing parameters are ordered innermost first; a nearer binding shadows outer names.
+    val fromExtra = extraParams.find(_.name == ref.name).toList
+    if fromExtra.nonEmpty then return fromExtra
+
+    // Extract params from Bnd with Lambda
+    val params = member match
+      case bnd: Bnd =>
+        bnd.value.terms.headOption match
+          case Some(lambda: Lambda) => lambda.params.filter(_.name == ref.name)
+          case _ => Nil
+      case _ => Nil
+
+    if params.nonEmpty then params else collectMembers
+
+  /** Resolve references in an expression. */
+  private def resolveExpr(
+    expr:        Expr,
+    member:      Member,
+    module:      Module,
+    extraParams: List[FnParam] = Nil
+  ): Either[List[SemanticError], Expr] =
+    expr.terms.traverse(resolveTerm(_, member, module, extraParams)).map { updatedTerms =>
       expr.copy(terms = updatedTerms)
     }
 
