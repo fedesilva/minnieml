@@ -79,16 +79,22 @@ private[emitter] def compileKnownEnvironment(
   targetId: String,
   state:    CodeGenState,
   scope:    Map[String, ScopeEntry]
-): Either[CodeGenError, (String, CodeGenState)] =
+): Either[CodeGenError, CompileResult] =
   scope.get(ref.name) match
     case Some(ScopeEntry.KnownCallable(id, known, environment))
         if ref.qualifier.isEmpty && ref.resolvedId.contains(id) && known == targetId =>
-      (environment, state).asRight
+      CompileResult(0, state, true, "RawPtr", literalValue = environment.some).asRight
     case _ =>
       compileTerm(ref, state, scope).map { result =>
         val register = result.state.nextRegister
         val line     = emitExtractValue(register, "{ ptr, ptr }", result.operandStr, 1)
-        (s"%$register", result.state.withRegister(register + 1).emit(line))
+        CompileResult(
+          register,
+          result.state.withRegister(register + 1).emit(line),
+          false,
+          "RawPtr",
+          exitBlock = result.exitBlock
+        )
       }
 
 /** A proof changes call selection, not evaluation or ownership. Unknown targets use ordinary calls.
@@ -104,18 +110,36 @@ private[emitter] def compileKnownCallableCall(
     entry <- state.knownCallableEntries
       .get(targetId)
       .toRight(CodeGenError("Missing known callable entry", callee.some))
-    (operands, evaluated) <- compileArgs(args, state, scope, compileExpr)
+    evaluated <- compileArgs(args, state, scope, compileExpr)
     environment <-
-      if entry.needsEnvironment then compileKnownEnvironment(callee, targetId, evaluated, scope)
+      if entry.needsEnvironment then
+        compileKnownEnvironment(callee, targetId, evaluated.state, scope)
       else if callee.qualifier.isDefined then
-        compileTerm(callee, evaluated, scope).map(value => ("null", value.state))
-      else ("null", evaluated).asRight[CodeGenError]
-    (env, ready) = environment
+        compileTerm(callee, evaluated.state, scope).map { value =>
+          CompileResult(
+            0,
+            value.state,
+            true,
+            "RawPtr",
+            exitBlock    = value.exitBlock,
+            literalValue = "null".some
+          )
+        }
+      else
+        CompileResult(0, evaluated.state, true, "RawPtr", literalValue = "null".some)
+          .asRight[CodeGenError]
+    env   = environment.operandStr
+    ready = environment.state
     result <- entry.definition.binding match
       case Some(binding) =>
         val ref =
           Ref(binding.source, binding.name, resolvedId = binding.id, typeSpec = binding.typeSpec)
-        compileCallableCall(ref, operands, entry.definition.signature.returnType.some, ready)
+        compileCallableCall(
+          ref,
+          evaluated.operands,
+          entry.definition.signature.returnType.some,
+          ready
+        )
       case None =>
         for
           returnType <- getLlvmType(entry.definition.signature.returnType, ready)
@@ -123,7 +147,7 @@ private[emitter] def compileKnownCallableCall(
         yield
           val register = ready.nextRegister
           val result   = Option.when(returnType != "void")(register)
-          val arguments = operands.map(arg => (arg.llvmType, arg.op)) ++
+          val arguments = evaluated.operands.map(arg => (arg.llvmType, arg.op)) ++
             Option.when(entry.closureAbi)(("ptr", env)).toList
           val line = emitCall(
             result,
@@ -137,4 +161,6 @@ private[emitter] def compileKnownCallableCall(
             false,
             typeName
           )
-  yield result
+  yield result.copy(
+    exitBlock = result.exitBlock.orElse(environment.exitBlock).orElse(evaluated.exitBlock)
+  )

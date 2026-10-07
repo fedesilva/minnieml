@@ -195,7 +195,13 @@ private def compileBinaryNativeOp(
           s"Could not determine return type for binary operator '${fnRef.name}'",
           fnRef.some
         ).asLeft
-  yield CompileResult(resultReg, finalState, false, typeName)
+  yield CompileResult(
+    resultReg,
+    finalState,
+    false,
+    typeName,
+    exitBlock = rightRes.exitBlock.orElse(leftRes.exitBlock)
+  )
 
 private def compileUnaryNativeOp(
   fnRef:         Ref,
@@ -230,7 +236,7 @@ private def compileUnaryNativeOp(
           s"Could not determine return type for unary operator '${fnRef.name}'",
           fnRef.some
         ).asLeft
-  yield CompileResult(resultReg, finalState, false, typeName)
+  yield CompileResult(resultReg, finalState, false, typeName, exitBlock = operandRes.exitBlock)
 
 /** Checks if all arguments are unit literals. */
 def allArgsAreUnitLiterals(allArgs: List[Expr]): Boolean =
@@ -264,9 +270,9 @@ def compileRegularCall(
   functionScope: Map[String, ScopeEntry],
   compileExpr:   ExprCompiler
 ): Either[CodeGenError, CompileResult] =
-  compileArgs(allArgs, state, functionScope, compileExpr).flatMap {
-    case (compiledArgs, finalState) =>
-      compileCallableCall(fnRef, compiledArgs, app.typeSpec, finalState)
+  compileArgs(allArgs, state, functionScope, compileExpr).flatMap { args =>
+    compileCallableCall(fnRef, args.operands, app.typeSpec, args.state)
+      .map(result => result.copy(exitBlock = result.exitBlock.orElse(args.exitBlock)))
   }
 
 /** Retains an evaluated argument for call emission, which must not evaluate the expression again.
@@ -274,6 +280,13 @@ def compileRegularCall(
   * native ABI lowering and alias metadata.
   */
 private[emitter] case class CompiledArg(op: String, llvmType: String, typeSpec: Option[Type])
+
+/** Argument evaluation retains control flow even when Unit contributes no LLVM operand. */
+private[emitter] case class CompiledArgs(
+  operands:  List[CompiledArg],
+  state:     CodeGenState,
+  exitBlock: Option[String]
+)
 
 /** Emits a call to a resolved callable using its native template or target ABI when required. */
 private[emitter] def compileCallableCall(
@@ -302,23 +315,24 @@ private[emitter] def compileArgs(
   state:         CodeGenState,
   functionScope: Map[String, ScopeEntry],
   compileExpr:   ExprCompiler
-): Either[CodeGenError, (List[CompiledArg], CodeGenState)] =
-  allArgs.foldLeft((List.empty[CompiledArg], state).asRight[CodeGenError]) {
-    case (Right((compiledArgs, currentState)), arg) =>
-      compileExpr(arg, currentState, functionScope).flatMap { argRes =>
+): Either[CodeGenError, CompiledArgs] =
+  allArgs.foldLeft(CompiledArgs(Nil, state, none).asRight[CodeGenError]) {
+    case (Right(args), arg) =>
+      compileExpr(arg, args.state, functionScope).flatMap { argRes =>
         val argOp = argRes.operandStr
 
         arg.typeSpec match
           case Some(typeSpec) =>
             getLlvmType(typeSpec, argRes.state) match
               case Right(llvmType) =>
-                // Skip void/Unit args - they can't be passed in LLVM
-                if llvmType == "void" then (compiledArgs, argRes.state).asRight
-                else
-                  (
-                    compiledArgs :+ CompiledArg(argOp, llvmType, arg.typeSpec),
-                    argRes.state
-                  ).asRight
+                val operands =
+                  if llvmType == "void" then args.operands
+                  else args.operands :+ CompiledArg(argOp, llvmType, arg.typeSpec)
+                CompiledArgs(
+                  operands,
+                  argRes.state,
+                  argRes.exitBlock.orElse(args.exitBlock)
+                ).asRight
               case Left(err) => err.asLeft
           case None =>
             CodeGenError(
@@ -477,9 +491,9 @@ def compileIndirectCall(
   functionScope: Map[String, ScopeEntry],
   compileExpr:   ExprCompiler
 ): Either[CodeGenError, CompileResult] =
-  compileArgs(allArgs, state, functionScope, compileExpr).flatMap { case (compiledArgs, argState) =>
+  compileArgs(allArgs, state, functionScope, compileExpr).flatMap { args =>
     val fnReturnTypeResult = app.typeSpec match
-      case Some(typeSpec) => getLlvmType(typeSpec, argState)
+      case Some(typeSpec) => getLlvmType(typeSpec, args.state)
       case None =>
         CodeGenError(
           s"Missing return type for indirect call '${fnRef.name}'",
@@ -487,63 +501,72 @@ def compileIndirectCall(
         ).asLeft
 
     fnReturnTypeResult.flatMap { fnReturnType =>
-      resolveIndirectCallee(fnRef, argState, functionScope, compileExpr).flatMap {
-        case (closure, stateAfterCallee) =>
-          staticNullEnvClosureTarget(closure) match
-            case Some(fnName) =>
-              compileStaticNullEnvClosureCall(
-                fnName,
-                compiledArgs,
-                fnReturnType,
-                app,
-                stateAfterCallee
+      resolveIndirectCallee(fnRef, args.state, functionScope, compileExpr).flatMap { callee =>
+        val closure          = callee.operandStr
+        val stateAfterCallee = callee.state
+        val exitBlock        = callee.exitBlock.orElse(args.exitBlock)
+        staticNullEnvClosureTarget(closure) match
+          case Some(fnName) =>
+            compileStaticNullEnvClosureCall(
+              fnName,
+              args.operands,
+              fnReturnType,
+              app,
+              stateAfterCallee
+            ).map(result => result.copy(exitBlock = result.exitBlock.orElse(exitBlock)))
+          case None =>
+            // Extract fn pointer and env from the fat pointer
+            val fnReg  = stateAfterCallee.nextRegister
+            val envReg = fnReg + 1
+            val extractFn =
+              emitExtractValue(fnReg, "{ ptr, ptr }", closure, 0)
+            val extractEnv =
+              emitExtractValue(envReg, "{ ptr, ptr }", closure, 1)
+            val stateAfterExtract = stateAfterCallee
+              .withRegister(envReg + 1)
+              .emit(extractFn)
+              .emit(extractEnv)
+
+            // Build args with env as the last parameter
+            val userArgs = args.operands.map(arg => (arg.llvmType, arg.op))
+            val allArgs  = userArgs :+ ("ptr", s"%$envReg")
+            val fnPtr    = s"%$fnReg"
+
+            if fnReturnType == "void" then
+              val callLine = emitIndirectCall(none, none, fnPtr, allArgs)
+              CompileResult(
+                0,
+                stateAfterExtract.emit(callLine),
+                false,
+                "Unit",
+                exitBlock = exitBlock
+              ).asRight
+            else
+              val resultReg = stateAfterExtract.nextRegister
+              val callLine = emitIndirectCall(
+                resultReg.some,
+                fnReturnType.some,
+                fnPtr,
+                allArgs
               )
-            case None =>
-              // Extract fn pointer and env from the fat pointer
-              val fnReg  = stateAfterCallee.nextRegister
-              val envReg = fnReg + 1
-              val extractFn =
-                emitExtractValue(fnReg, "{ ptr, ptr }", closure, 0)
-              val extractEnv =
-                emitExtractValue(envReg, "{ ptr, ptr }", closure, 1)
-              val stateAfterExtract = stateAfterCallee
-                .withRegister(envReg + 1)
-                .emit(extractFn)
-                .emit(extractEnv)
-
-              // Build args with env as the last parameter
-              val userArgs = compiledArgs.map(arg => (arg.llvmType, arg.op))
-              val allArgs  = userArgs :+ ("ptr", s"%$envReg")
-              val fnPtr    = s"%$fnReg"
-
-              if fnReturnType == "void" then
-                val callLine = emitIndirectCall(none, none, fnPtr, allArgs)
-                CompileResult(0, stateAfterExtract.emit(callLine), false, "Unit").asRight
-              else
-                val resultReg = stateAfterExtract.nextRegister
-                val callLine = emitIndirectCall(
-                  resultReg.some,
-                  fnReturnType.some,
-                  fnPtr,
-                  allArgs
-                )
-                app.typeSpec.flatMap(
-                  getNominalTypeName(_).toOption
-                ) match
-                  case Some(typeName) =>
-                    CompileResult(
-                      resultReg,
-                      stateAfterExtract
-                        .withRegister(resultReg + 1)
-                        .emit(callLine),
-                      false,
-                      typeName
-                    ).asRight
-                  case None =>
-                    CodeGenError(
-                      s"Could not determine MML type for indirect call result",
-                      app.some
-                    ).asLeft
+              app.typeSpec.flatMap(
+                getNominalTypeName(_).toOption
+              ) match
+                case Some(typeName) =>
+                  CompileResult(
+                    resultReg,
+                    stateAfterExtract
+                      .withRegister(resultReg + 1)
+                      .emit(callLine),
+                    false,
+                    typeName,
+                    exitBlock = exitBlock
+                  ).asRight
+                case None =>
+                  CodeGenError(
+                    s"Could not determine MML type for indirect call result",
+                    app.some
+                  ).asLeft
       }
     }
   }
@@ -556,8 +579,6 @@ private def resolveIndirectCallee(
   state:         CodeGenState,
   functionScope: Map[String, ScopeEntry],
   compileExpr:   ExprCompiler
-): Either[CodeGenError, (String, CodeGenState)] =
+): Either[CodeGenError, CompileResult] =
   val calleeExpr = Expr(fnRef.source, List(fnRef), typeSpec = fnRef.typeSpec)
-  compileExpr(calleeExpr, state, functionScope).map { compiled =>
-    (compiled.operandStr, compiled.state)
-  }
+  compileExpr(calleeExpr, state, functionScope)

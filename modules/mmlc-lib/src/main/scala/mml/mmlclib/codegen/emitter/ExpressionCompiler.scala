@@ -536,10 +536,10 @@ private def emitCallSiteEnv(
           case CaptureStorage.Environment(_, targetId) =>
             compileKnownEnvironment(capture.ref, targetId, current, functionScope)
           case _ =>
-            compileTerm(capture.ref, current, functionScope).map(value =>
-              (value.operandStr, value.state)
-            )
-        operand.map { (value, next) => (next, values.updated(capture.ref.name, value)) }
+            compileTerm(capture.ref, current, functionScope)
+        operand.map { value =>
+          (value.state, values.updated(capture.ref.name, value.operandStr))
+        }
       }
     }
     (captureState, captureOperands) = captureValues

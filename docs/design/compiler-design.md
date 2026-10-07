@@ -1151,6 +1151,15 @@ All type errors are wrapped as `SemanticError.TypeCheckingError` for uniform han
 When the compiler encounters a call to a function or operator with `@native[tpl="..."]`, it emits
 the template inline rather than generating a function call.
 
+### Expression control flow
+
+Expression emission returns its last introduced block in `CompileResult.exitBlock`. `None`
+means evaluation remains in its incoming block. Sequential evaluation retains the latest
+nonempty exit, including Unit arguments without LLVM operands. Calls preserve argument and
+evaluated-callee exits in evaluation order; operators preserve operand exits. Enclosing
+conditionals and loop back edges use these results as PHI predecessors. Deferred function
+bodies keep their block labels separate from the enclosing expression.
+
 ### Native library inputs
 
 `CodegenStage` supplies `CompilerState.linkEntries` to one `LlvmToolchain.compile` entry point.

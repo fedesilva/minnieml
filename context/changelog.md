@@ -4,6 +4,9 @@ Durable product changes belong here. Current task state belongs in task files.
 
 ## 2026-10-06
 
+- Preserve expression exit blocks through call arguments, evaluated callees, and operators,
+  including conditional Unit arguments. Keep enclosing conditional PHIs and recursive loop
+  back edges valid, and restore the animated A* sample's inline conditional array argument.
 - Fix mixed string returns through nested conditionals and local scopes. Clone static result
   paths before cleanup while preserving owned results, borrowed-return rejection, and evaluation
   order. Restore ordinary caption calls in the animated A* sample.

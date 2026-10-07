@@ -99,8 +99,9 @@ private[emitter] def compileLocalCallableCall(
   state:  CodeGenState,
   scope:  Map[String, ScopeEntry]
 ): Either[CodeGenError, CompileResult] =
-  compileArgs(args, state, scope, compileExpr).flatMap { case (operands, evaluated) =>
-    emitLocalCallableCall(target, operands, evaluated)
+  compileArgs(args, state, scope, compileExpr).flatMap { evaluated =>
+    emitLocalCallableCall(target, evaluated.operands, evaluated.state)
+      .map(result => result.copy(exitBlock = result.exitBlock.orElse(evaluated.exitBlock)))
   }
 
 /** Accepts evaluated operands so direct calls and adapter bodies share call emission without

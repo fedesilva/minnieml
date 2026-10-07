@@ -12,10 +12,10 @@
 
 ## Execution Checklist
 
-1. [ ] **in_progress** — Establish repair boundaries for findings 2 and 5.
-2. [ ] **in_progress** — [Global literal repair](#global-literal-repair) and
-   [string-return ownership repair](#string-return-ownership-repair) are complete;
-   conditional IR generation remains pending.
+1. [ ] **in_progress** — Finding 2 repair boundary is established; finding 5 still needs diagnosis.
+2. [x] **complete** — [Global literal repair](#global-literal-repair),
+   [string-return ownership repair](#string-return-ownership-repair), and
+   [conditional IR repair](#conditional-ir-repair) are complete and signed off.
 3. [x] **complete** — [Integer-array fill and wall-map repair](#integer-array-fill-and-wall-map-repair)
    passes compiler checks, sample verification, and independent review; repair signoff is granted.
 4. [ ] **planned** — Diagnose the copied executable's failure on macOS M2 and verify a
@@ -27,8 +27,8 @@
 Five findings concern ordinary MML source patterns, the console A* sample, and portability
 of the animated executable to macOS M2.
 The [animated sample](../../mml/samples/astar3_animated.mml) uses plain global integer
-constants and explicit grid initialization. It retains the conditional-argument workaround
-for finding 2. Finding 3 restores ordinary caption returns with literal terminal messages.
+constants and explicit grid initialization. It uses an inline conditional array argument for finding 2 and ordinary caption returns
+with literal terminal messages for finding 3.
 Keep these findings together for triage; separate repair tasks only when their boundaries
 are established.
 
@@ -68,14 +68,14 @@ The affected resolution and ordering logic predates the Int32 change in `a201c4b
 
 #### Conditional call argument in a tail-recursive local function
 
-In `make_grid` in the linked animated sample, replace:
+At `c31058d`, `make_grid` in the linked animated sample used this workaround:
 
 ```mml
 let value = if wall then 1; else 0;;
 ar_int_set walls i value;
 ```
 
-with the observed failing form:
+The ordinary inline form exposed the failure:
 
 ```mml
 ar_int_set walls i (if wall then 1; else 0;);
@@ -91,9 +91,8 @@ Instruction does not dominate all uses!
 
 The emitted loop PHI named an earlier conditional merge as its back-edge predecessor,
 while the recursive call followed another merge. Binding the argument before the call
-compiled successfully. The diagnostic appeared with the installed compiler; the corrected
-source also compiled with the repository compiler. Reduce and recheck the failing form
-against the repository compiler when beginning repair.
+compiled successfully. Both the installed compiler and the repository compiler at `c31058d` reproduce the inline
+argument failure. The bound form passes. The conditional IR repair below restores the inline form.
 
 #### Allocating caption-return branches
 
@@ -289,7 +288,33 @@ finding has a focused regression or sample check that fails for the defective be
 - [ ] Implement approved repairs, add regressions, and run applicable verification.
 
 Approval: granted for the global literal repair, integer-array fill repair, and bounded
-string-return ownership repair below. Implementation approval for findings 2 and 5 remains pending.
+string-return ownership repair below, and conditional IR repair. Implementation approval for
+finding 5 remains pending.
+
+### Conditional IR repair
+
+- **Status:** complete.
+- **Implementation approval:** granted for exit-block propagation through calls and operators,
+  focused regressions, sample restoration, verification, and directly affected documentation.
+- [x] Preserve the last evaluated exit block through argument lists, including Unit arguments,
+  direct/native/local/proven/indirect calls, evaluated callees, and unary/binary operators.
+- [x] Verify LLVM predecessors, loopification, runtime branches, and exactly-once effect order.
+  Restore the inline conditional array argument in the animated sample.
+- [x] Retain literal and allocating caption fixtures; run ASan/LSan at `-O0` and `-O3`.
+- [x] Run compiler gates, QA enforcement, tracking review, and independent code review.
+- Repair signoff: granted. Local commit: `Preserve exit blocks through call evaluation`.
+- Push authorization: pending.
+
+At `c31058d`, LLVM 23.1.1 on macOS arm64 rejects the grid-loop inline conditional argument,
+ordinary/local/indirect calls, operators, conditional Unit arguments, and conditional qualified
+callees inside enclosing branches. Argument and callee evaluation discard `CompileResult.exitBlock`,
+so enclosing PHIs name an earlier block. The bound grid argument and disabled-TCO control pass.
+The allocating-caption substitutions pass LLVM verification and ASan/LSan at `-O0` and `-O3`;
+the historical caption PHI failure is not reproduced, and no common root cause is established.
+
+The contract stays local to emitted expression results: `None` means no new exit block;
+a later nonempty exit replaces an earlier exit. Evaluation order and ownership semantics stay
+unchanged. Conditional ownership hardening and M2 portability remain separate work.
 
 ### String-return ownership repair
 
@@ -367,6 +392,49 @@ branch and checks that its returned owned value is neither cloned nor freed in t
   Findings 2, 3, and 5 remain open.
 
 ## Verification
+
+### Conditional IR verification
+
+Host: macOS arm64, LLVM/Clang 23.1.1, GraalVM Java 25; baseline `c31058d`.
+
+[CallExitBlockTests.scala](../../modules/mmlc-lib/src/test/scala/mml/mmlclib/codegen/CallExitBlockTests.scala)
+contains 26 regressions: 18 call/operator/qualified-callee cases, two loopification controls,
+two native loop/effect-order runs, and four literal/allocating-caption runs.
+Before the emitter repair, the ordinary-call and loop tests fail the PHI predecessor assertion;
+the disabled-TCO control passes. The repaired suite passes structural predecessor checks and
+`llvm-as` verification. Tests compare actual control-flow edges rather than generated label numbers.
+
+[call-exit-blocks.mml](../../tests/mem/call-exit-blocks.mml) checks selected branch values,
+argument effect order, one evaluation per selected argument, qualified calls with known and
+unknown targets, capturing-environment cleanup, and a 10,000-iteration loop. Native tests run
+with zero, one, and two arguments to select both inner branches and the skipped outer branch.
+The unchanged [caption fixture](../../tests/mem/caption-returns.mml) supplies expected text for
+all event kinds and rejection reasons. Its allocating variant makes exactly the three terminal
+caption substitutions recorded in finding 2; both variants pass at `-O0` and `-O3` with
+`ASAN_OPTIONS=detect_leaks=1:halt_on_error=1:abort_on_error=1`.
+
+| Check | Result |
+| --- | --- |
+| `sbtn 'scalafmtAll;scalafixAll;test'` | Pass: 934 library tests, nine CLI tests, 37 existing ignores; no Scala compiler warnings. |
+| `./tests/smoke/run.sh all` | Pass: 8/8. |
+| `sbtn 'run run -s -O0 -b build/call-exit-check tests/mem/call-exit-blocks.mml'` | Pass: native fixture exits zero. |
+| `sbtn 'run -s -O0 -b build/astar-phi-check mml/samples/astar3_animated.mml'` | Pass: restored graphical sample compiles and links; no window execution. |
+| `sbtn mmlcPublishLocal` | Pass: local compiler installed after smoke and development-compiler execution. |
+| `make -C benchmark clean`, then `make -C benchmark mml` | Pass: 12 MML targets build; no timing measurements. |
+| `./tests/mem/run.sh all` | Pass: 47/47 under ASan/LSan at `-O0`. |
+| QA and tracking consistency | Pass. |
+| Independent code review | No actionable findings; independent rerun passes all 26 focused tests and `git diff --check`. |
+
+Verification commands run sequentially where they use `sbtn`. JVM startup emits existing
+`sun.misc.Unsafe` deprecation notices during CLI execution. No ABI changes are made; Linux
+container ABI checks are not applicable. M2 deployment remains unverified under finding 5.
+
+Calls inside a field-qualified conditional are rejected by the frontend before code generation.
+For example, replacing the qualifier in the runtime fixture's `qualified` function with
+`(if mark trace 2 1 == 1 then box; else box;).call` produces `UnresolvableType` for `mark`
+and `==`. Qualified-callee tests use supported conditional references; effect counters test
+argument evaluation. Frontend qualifier resolution is outside this repair.
+
 
 Evidence for findings 1–4: 2026-10-06, macOS arm64, repository base `8143f27`.
 
@@ -551,13 +619,15 @@ initialization correctness; the explicit cell-value oracle exposes the defect.
 - Global literal repair and animated sample cleanup signoff: granted.
 - Integer-array fill and wall-map repair signoff: granted.
 - String-return ownership repair signoff: granted.
-- Remaining bug-repair signoff: pending.
+- Conditional IR repair signoff: granted.
+- Finding 5 signoff: pending.
 - Tracked item completion: pending.
 - Global literal repair and animated sample cleanup commit: complete
   (`Fix forward references to global literals`).
 - Integer-array fill and wall-map repair commit: complete (`Add runtime integer-array fill`).
 - String-return ownership repair commit: complete (`Fix nested mixed string returns`).
-- Commit authorization: pending for findings 2 and 5.
+- Conditional IR repair commit: complete (`Preserve exit blocks through call evaluation`).
+- Commit authorization: pending for finding 5. Push authorization: pending.
 
 ## Task Working Memory
 
@@ -571,5 +641,8 @@ Finding 3 is complete, signed off, and locally committed as `Fix nested mixed st
 Direct results through local scopes and nested conditionals, sample caption restoration,
 compiler verification, and independent review pass.
 Named mixed-binding returns, consuming transfers, and the documented conditional return-lifetime
-gap remain with conditional ownership hardening. Findings 2 and 5 still need reduction,
-diagnosis, and implementation approval. Float and string array fill extensions are deferred.
+gap remain with conditional ownership hardening. Finding 2's conditional IR repair is
+complete, signed off, and locally committed as `Preserve exit blocks through call evaluation`.
+Propagation, all compiler gates, QA enforcement, tracking checks, and independent code review pass.
+Finding 5 still needs diagnosis and implementation approval. Float and string array fill
+extensions are deferred.
