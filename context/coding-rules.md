@@ -132,17 +132,33 @@ When post-chores applies or the Author requests review, review code, tooling, wo
 and affected technical documents with local `code-review`, following its independence rules.
 Do not claim a required check passed if it failed, was ignored, or could not run.
 
-### Required change tour
+### Required code tour
 
-After finishing coding or other changes, include a full tour of the changes in the handoff,
-before requesting approval.
+For a code handoff, include a code tour before requesting approval. Cover source and test
+code only. Its purpose is to explain the changes so the Author can understand and assess
+them without reconstructing the explanation from the linked files.
+
+- Do not include documentation, task files, working memory, changelogs, signoff records,
+  instructions, or commit bookkeeping in the code tour.
+- Do not repeat a code tour already delivered for the same changes. A subsequent
+  finish or commit request needs only a concise report of completion, the commit hash,
+  verification status, working-tree status, push status, and any remaining work.
+- If code changes follow the tour, explain only those new code changes.
+- Non-code changes need a brief description of the result, not a file-by-file tour or
+  copyable path blocks, unless the Author explicitly requests a walkthrough.
+
+When a tour is required:
 
 - Start with the problem being addressed and what the changes accomplish.
-- Give an explicit, logical reading order: first read this, then read that. Order the tour
-  so each explanation supplies the context needed for the next one.
-- Link to the relevant files with current line numbers. Explain what changed at each stop,
-  why it changed, and how it connects to the parts already introduced. Cover all changes,
-  including moves and deletions; a file list or diff summary alone is not a tour.
+- Explain the old behavior, the new behavior, why the change is needed, and how the code
+  produces the new behavior. Describe how the changed pieces work together and what the
+  tests establish. Include relevant tradeoffs or limitations.
+- Build the explanation in a logical order, with each part supplying context for the next.
+  Give a matching code reading order, but do not substitute "look here, then here" for
+  explaining the changes.
+- Link to the relevant files with current line numbers as evidence for the explanation.
+  Cover code changes, including moves and deletions; a file list or diff summary alone
+  is not a tour.
 - Alongside each clickable link, provide the repository-relative `path:line` in a fenced
   plain-text code block, with only the reference inside. It must copy directly without
   list numbers, bold markers, link markup, or explanatory text that the Author must remove.
@@ -151,8 +167,8 @@ before requesting approval.
   prior conversations, or unexplained references. Links supplement the explanation; they
   do not replace it.
 
-Approval is denied if the tour is missing, too jargon-heavy, assumes unstated knowledge,
-or introduces references that it does not explain within the tour itself.
+When a tour is required, approval is denied if it is missing, too jargon-heavy, assumes
+unstated knowledge, or introduces references that it does not explain within the tour itself.
 
 ## Git usage
 
