@@ -4,6 +4,9 @@ Durable product changes belong here. Current task state belongs in task files.
 
 ## 2026-10-06
 
+- Fix mixed string returns through nested conditionals and local scopes. Clone static result
+  paths before cleanup while preserving owned results, borrowed-return rejection, and evaluation
+  order. Restore ordinary caption calls in the animated A* sample.
 - Add runtime `ar_int_fill` to fill an entire borrowed integer array, including empty arrays.
   Initialize the console A* wall map before placing obstacles.
 - Fix forward references to global integer, Boolean, string, and float literals by resolving
