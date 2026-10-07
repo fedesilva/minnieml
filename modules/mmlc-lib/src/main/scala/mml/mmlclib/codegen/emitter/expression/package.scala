@@ -150,7 +150,8 @@ def applyBinaryOp(
                     resultReg,
                     rightRes.state.withRegister(resultReg + 1).emit(line),
                     false,
-                    typeName
+                    typeName,
+                    exitBlock = rightRes.exitBlock.orElse(leftRes.exitBlock)
                   ).asRight
                 case None =>
                   Left(
@@ -190,7 +191,8 @@ def applyUnaryOp(
                     resultReg,
                     argRes.state.withRegister(resultReg + 1).emit(line),
                     false,
-                    typeName
+                    typeName,
+                    exitBlock = argRes.exitBlock
                   ).asRight
                 case None =>
                   Left(

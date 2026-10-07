@@ -706,7 +706,9 @@ case class LocalBindingResult(state: CodeGenState, entry: ScopeEntry, exitBlock:
   * @param typeName
   *   the MML type name of the result
   * @param exitBlock
-  *   the block label where control exits (for phi node predecessors in nested conditionals)
+  *   the final block introduced by evaluation, used by enclosing PHIs and loop back edges. None
+  *   means evaluation stays in its incoming block. Sequential evaluation retains the latest
+  *   nonempty exit, including effects whose result has type Unit.
   */
 case class CompileResult(
   register:     Int,

@@ -81,8 +81,7 @@ fn make_grid(wall_x: Int, wall_y: Int, wall_length: Int): Grid =
           x == wall_x and y >= wall_y and wall_y > y - wall_length;
         else false;
         ;
-      let value = if wall then 1; else 0;;
-      ar_int_set walls i value;
+      ar_int_set walls i (if wall then 1; else 0;);
       fill (i + 1);
     ;
   ;
