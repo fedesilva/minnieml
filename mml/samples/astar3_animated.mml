@@ -231,6 +231,8 @@ fn fill_path(parents: IntArray, path: IntArray, current: Int, i: Int): Unit =
 
 let infinity = 999999999;
 
+
+// Currently we lack enums, sigh.
 let event_kind_seed = 1;
 let event_kind_select = 2;
 let event_kind_skip = 3;
@@ -311,7 +313,11 @@ fn animate(grid: Grid, start: Int, goal: Int, result: SearchResult, speed: Int):
   init_array cells cell_state_open (grid.width * grid.height) 0;
   let interval = 1.0 /. (int_to_float speed);
   let title = to_cstr "MML - A* search decisions";
-  init_window (grid.width * layout_cell_size + layout_grid_left * 2) 600 title;
+  init_window
+    (grid.width * layout_cell_size + layout_grid_left * 2)
+    600
+    title
+  ;
   set_target_fps 60;
 
   fn draw_loop(playback: Playback): Unit =
@@ -321,8 +327,14 @@ fn animate(grid: Grid, start: Int, goal: Int, result: SearchResult, speed: Int):
       draw_scene grid cells start goal result playback.step speed;
       end_drawing ();
 
-      let next = advance_playback grid cells result interval
-        (Playback playback.step (playback.elapsed +. (get_frame_time ())));
+      let next =
+        advance_playback
+          grid
+          cells
+          result
+          interval
+          (Playback playback.step (playback.elapsed +. (get_frame_time ())))
+      ;
       draw_loop next;
     ;
   ;
