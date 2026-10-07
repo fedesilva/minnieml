@@ -14,8 +14,9 @@ This is the Author's active and near-term focus. The backlog lives in [tasks/](t
 
 - **Tracker:** [Fix correctness bugs exposed by the animated A* sample](tasks/astar-animation-correctness-bugs.md)
 - **Status:** in_progress
-- **Current focus:** Reproduce and reduce findings 2–5, reconcile the conditional ownership
-  overlap, and establish repair boundaries before implementation.
+- **Current focus:** Reproduce and reduce findings 2, 3, and 5, reconcile the conditional
+  ownership overlap, and establish repair boundaries before implementation. Float and
+  string array fill extensions are deferred.
 
 ### Lambda migration
 

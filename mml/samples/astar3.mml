@@ -171,7 +171,8 @@ fn demo(wall_x: Int, wall_y: Int, wall_length: Int) =
     ;
   ;
 
-  // Place one obstacle before running the search.
+  // Initialize open cells, then place one obstacle before running the search.
+  ar_int_fill grid.walls 0;
   build_vertical_wall 0;
 
   // Run A* from start to goal.

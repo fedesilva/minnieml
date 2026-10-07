@@ -12,10 +12,11 @@
 
 ## Execution Checklist
 
-1. [ ] **in_progress** — Establish repair boundaries for findings 2–5.
+1. [ ] **in_progress** — Establish repair boundaries for findings 2, 3, and 5.
 2. [ ] **in_progress** — [Global literal repair](#global-literal-repair) is complete;
    conditional IR generation and string return ownership repairs remain pending.
-3. [ ] **planned** — Initialize every wall-map cell in `astar3.mml` before searching or printing.
+3. [x] **complete** — [Integer-array fill and wall-map repair](#integer-array-fill-and-wall-map-repair)
+   passes compiler checks, sample verification, and independent review; repair signoff is granted.
 4. [ ] **planned** — Diagnose the copied executable's failure on macOS M2 and verify a
    compatible build configuration.
 5. [ ] **planned** — Run applicable compiler and sample verification and obtain signoff.
@@ -161,13 +162,14 @@ the failure to a headless regression so raylib and monitor access are not test d
 ### 4. `astar3.mml` reads uninitialized wall-map cells
 
 In [astar3.mml](../../mml/samples/astar3.mml), `demo` constructs `Grid` with
-`ar_int_new size`, then writes only obstacle cells in `build_vertical_wall`. Search and
-printing read the other cells without initialization.
+`ar_int_new size`. Allocation leaves the cells uninitialized; writing only the obstacle
+cells is insufficient because search and printing read the other cells.
 
 The `ar_int_new` implementation in
 [mml_runtime.c](../../modules/mmlc-lib/src/main/resources/mml_runtime.c) allocates with
-`malloc` and returns that storage without clearing it. Open cells therefore have unspecified
-contents; apparent success with fresh zero-filled memory does not establish correctness.
+`malloc` and returns that storage without clearing it. Apparent success with fresh
+zero-filled memory does not establish correctness. `demo` calls `ar_int_fill grid.walls 0`
+before `build_vertical_wall` to initialize every open cell.
 
 Acceptance: initialize all cells to open before placing walls. Verify the default obstacle,
 no wall, clipped walls, and a full-height barrier without relying on allocator contents.
@@ -213,8 +215,8 @@ finding has a focused regression or sample check that fails for the defective be
 - [ ] Diagnose the macOS M2 launch failure and establish a compatible build configuration.
 - [ ] Implement approved repairs, add regressions, and run applicable verification.
 
-Approval: granted for the global literal repair below. Implementation approval for findings
-2–5 remains pending.
+Approval: granted for the global literal repair and integer-array fill repair below.
+Implementation approval for findings 2, 3, and 5 remains pending.
 
 ### Global literal repair
 
@@ -233,7 +235,20 @@ Approval: granted for the global literal repair below. Implementation approval f
   integer bindings. Values, declaration placement, and group prefixes are preserved.
 - Compiler handoff checks and independent review pass. Global literal repair and sample
   cleanup are complete and signed off. Local commit: `Fix forward references to global literals`.
-  Findings 2–5 remain open.
+  Findings 2, 3, and 5 remain open.
+
+### Integer-array fill and wall-map repair
+
+- [x] **complete** — Expose `ar_int_fill(arr: IntArray, value: Int): Unit` through the
+  native runtime, compiler injection, and prelude. Fill the array's full stored length;
+  borrow its storage and accept empty arrays without changing allocation behavior.
+- [x] **complete** — Initialize `grid.walls` to zero before placing the console sample's wall.
+- [x] **complete** — Verify empty, single-element, and multi-element arrays, nonzero values,
+  Int32 limits, and repeat fills. Check every grid cell independently of allocator contents
+  and exercise the default, empty, clipped, and full-barrier cases.
+- [x] **complete** — Compiler handoff checks, QA enforcement, and independent review pass.
+- Repair signoff: granted. Local commit: `Add runtime integer-array fill`.
+  Findings 2, 3, and 5 remain open.
 
 ## Verification
 
@@ -295,6 +310,80 @@ Automated verification did not exercise window playback. Author verification con
 the cleaned animated sample works with the published compiler. The conditional-argument and
 caption-return workarounds remain because their compiler repairs are separate findings.
 
+Integer-array fill verification: 2026-10-06, macOS arm64.
+
+- The focused `RuntimeTests` fill regression failed before the API existed with undefined
+  `ar_int_fill` references. All five tests in that suite pass with the implementation.
+- The versioned fill regression compiles through the normal frontend and native toolchain,
+  verifies LLVM assembly, and executes under ASan. It checks empty arrays (including a
+  negative size normalized by `ar_int_new`), one and 17 elements, repeat fills, zero,
+  `123456789`, and both Int32 limits. Every multi-element result is read back; borrowing
+  allows repeated writes and reads before ordinary scope cleanup.
+- `sbtn "run run -s ..."` compiled and executed the same fill fixture successfully.
+- A deterministic sample probe starts every grid cell at wall value `1`. To reproduce,
+  replace only `demo`'s `(ar_int_new size)` with `(dirty_array size)`, append the helpers
+  below, and insert this check immediately after `build_vertical_wall 0`:
+
+  ```mml
+  println ("wrong cells: " ++
+    (int_to_str (wrong_cells grid wall_x wall_y wall_length 0 0)));
+  ```
+
+  ```mml
+  fn dirty_array(size: Int): IntArray =
+    let arr = ar_int_new size;
+    init_array arr 1 size 0;
+    arr;
+  ;
+  fn wrong_cells(grid: Grid, wx: Int, wy: Int, length: Int, i: Int, wrong: Int): Int =
+    if i < grid.width * grid.height then
+      let x = i % grid.width;
+      let y = i / grid.width;
+      let expected = if x == wx and y >= wy and y < wy + length then 1; else 0;;
+      let mismatch = if ar_int_get grid.walls i == expected then 0; else 1;;
+      wrong_cells grid wx wy length (i + 1) (wrong + mismatch);
+    else
+      wrong;
+    ;
+  ;
+  ```
+
+  Compile the probe with `sbtn "run -s <probe.mml>"`. Remove only
+  `ar_int_fill grid.walls 0;` for the defective control. Compile the unchanged sample with
+  `sbtn "run -s mml/samples/astar3.mml"`. Execute each binary with the arguments below.
+  All 12 runs exited zero with no ASan diagnostics. The probe checks all 300 cells before
+  search; successful unmodified sample runs also print ten 30-cell rows with exactly the
+  expected obstacle cells and only `.`, `#`, and `*` characters.
+
+| Wall arguments | Defective wrong cells | Fixed wrong cells | Fixed/sample result |
+| --- | --- | --- | --- |
+| Defaults (`25 3 4`) | 296 | 0 | path found |
+| No wall (`25 3 0`) | 300 | 0 | path found |
+| Clipped wall (`25 -2 5`) | 297 | 0 | path found |
+| Full barrier (`25 0 10`) | 290 | 0 | no path |
+
+The defective probe reports no path in all four cases. ASan alone does not establish
+initialization correctness; the explicit cell-value oracle exposes the defect.
+
+- `sbtn ";scalafmtAll;scalafixAll"` passed with no Scala compiler warnings.
+- `./tests/smoke/run.sh all` passed 8/8.
+- `sbtn test` passed 881 compiler-library and nine CLI tests (890 total); 37 existing ignores
+  remain excluded from passing coverage.
+- `sbtn mmlcPublishLocal` passed after successful compiler execution and smoke checks.
+- `make -C benchmark clean` and `make -C benchmark mml` passed, building 12 MML
+  executables. No performance measurements are claimed.
+- Host toolchain: Homebrew Clang and LLVM 23.1.1, `arm64-apple-darwin25.6.0`.
+  Verification covers macOS arm64. Aggregate layouts, calling-convention lowering,
+  allocation, ownership analysis, and destruction are unchanged; Linux ABI and the memory
+  harness gates do not apply. JVM startup emits existing Scala-library `sun.misc.Unsafe`
+  deprecation warnings during CLI execution.
+- QA enforcement and focused tracking consistency checks pass. A fresh independent reviewer
+  found no actionable findings and independently reran the fill regression (one test) and
+  all 12 sanitized sample cases, reproducing the recorded cell counts and map assertions.
+  The review also traced the existing AArch64 aggregate adapter for the native fill call.
+  Repair signoff is granted; the verified changes are locally committed as
+  `Add runtime integer-array fill`.
+
 ## Risks / Notes
 
 - [Conditional ownership hardening](conditional-ownership-witnesses.md) already covers mixed
@@ -307,15 +396,21 @@ caption-return workarounds remain because their compiler repairs are separate fi
 ## Signoff
 
 - Global literal repair and animated sample cleanup signoff: granted.
+- Integer-array fill and wall-map repair signoff: granted.
 - Remaining bug-repair signoff: pending.
 - Tracked item completion: pending.
 - Global literal repair and animated sample cleanup commit: complete
   (`Fix forward references to global literals`).
-- Commit authorization: pending for remaining repairs.
+- Integer-array fill and wall-map repair commit: complete (`Add runtime integer-array fill`).
+- Commit authorization: pending for findings 2, 3, and 5.
 
 ## Task Working Memory
 
 Global literal repair and animated sample cleanup are complete, signed off, and locally
 committed as `Fix forward references to global literals`; verification evidence is recorded above.
-Findings 2–5 need reduction, diagnosis, and repair boundaries before implementation approval.
-Commit authorization for remaining repairs is pending.
+Integer-array fill and wall-map initialization are complete, signed off, and locally
+committed as `Add runtime integer-array fill`. Focused tests, smoke, the full suite, local
+publication, benchmark builds, QA enforcement, and independent review pass. Findings 2, 3,
+and 5 need reduction, diagnosis, and repair boundaries before implementation approval.
+Float and string array fill extensions are deferred. Commit authorization for findings
+2, 3, and 5 remains pending.
