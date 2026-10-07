@@ -12,7 +12,7 @@
 
 ## Execution Checklist
 
-1. [ ] **in_progress** — Finding 2 repair boundary is established; finding 5 still needs diagnosis.
+1. [ ] **in_progress** — Findings 1–4 have signed-off repairs; findings 5 and 6 need diagnosis.
 2. [x] **complete** — [Global literal repair](#global-literal-repair),
    [string-return ownership repair](#string-return-ownership-repair), and
    [conditional IR repair](#conditional-ir-repair) are complete and signed off.
@@ -20,11 +20,13 @@
    passes compiler checks, sample verification, and independent review; repair signoff is granted.
 4. [ ] **planned** — Diagnose the copied executable's failure on macOS M2 and verify a
    compatible build configuration.
-5. [ ] **planned** — Run applicable compiler and sample verification and obtain signoff.
+5. [ ] **planned** — [Finding 6: calls inside conditional field qualifiers fail type resolution](#6-calls-inside-conditional-field-qualifiers-fail-type-resolution).
+   Reduce the frontend failure and propose a bounded repair.
+6. [ ] **planned** — Run applicable compiler and sample verification and obtain signoff.
 
 ## Problem
 
-Five findings concern ordinary MML source patterns, the console A* sample, and portability
+Six findings concern ordinary MML source patterns, the console A* sample, and portability
 of the animated executable to macOS M2.
 The [animated sample](../../mml/samples/astar3_animated.mml) uses plain global integer
 constants and explicit grid initialization. It uses an inline conditional array argument for finding 2 and ordinary caption returns
@@ -266,6 +268,33 @@ alone does not establish the cause or identify which executable or library instr
 Acceptance: identify the cause, document the supported build and deployment configuration,
 and verify that an executable built for that configuration runs on the macOS M2 machine.
 
+### 6. Calls inside conditional field qualifiers fail type resolution
+
+- **Status:** planned.
+- **Implementation approval:** pending.
+
+A conditional expression used to select the record before a field access fails when its
+predicate contains function and operator calls. In the runtime fixture's `qualified`
+function in [call-exit-blocks.mml](../../tests/mem/call-exit-blocks.mml),
+replace the qualifier with:
+
+```mml
+(if mark trace 2 1 == 1 then box; else box;).call
+```
+
+The recorded diagnostic is `UnresolvableType` for `mark` and `==`. This failure occurs in
+the frontend, before LLVM generation. The conditional IR repair tests use supported
+conditional references and do not establish correctness for this expression. The root cause
+and smallest standalone reproduction remain unconfirmed.
+
+Next action: reduce the fixture to a standalone regression, trace reference and type
+resolution inside the qualifier, and propose a bounded repair.
+
+Acceptance: valid calls and operators inside conditional field qualifiers resolve and type
+check; the selected field can be called successfully. Verify branch selection and exactly-once
+predicate evaluation, preserve diagnostics for invalid expressions, and cover LLVM validity
+and native execution.
+
 ## Outcome
 
 Ordinary global constants, conditional expressions, and mixed string return paths compile
@@ -275,7 +304,7 @@ finding has a focused regression or sample check that fails for the defective be
 
 ## Scope
 
-- In scope: the five findings, their reductions, directly affected compiler paths, regression
+- In scope: the six findings, their reductions, directly affected compiler paths, regression
   coverage, wall-map initialization in `astar3.mml`, and executable portability diagnosis.
 - Out of scope: animation controls, new language features, raylib changes, and unrelated cleanup.
 
@@ -285,11 +314,12 @@ finding has a focused regression or sample check that fails for the defective be
 - [ ] Establish whether the PHI occurrences share a cause and whether string-return repair
   belongs with [conditional ownership hardening](conditional-ownership-witnesses.md).
 - [ ] Diagnose the macOS M2 launch failure and establish a compatible build configuration.
+- [ ] Reduce and diagnose finding 6's frontend qualifier-resolution failure, then propose a repair.
 - [ ] Implement approved repairs, add regressions, and run applicable verification.
 
 Approval: granted for the global literal repair, integer-array fill repair, and bounded
 string-return ownership repair below, and conditional IR repair. Implementation approval for
-finding 5 remains pending.
+findings 5 and 6 remains pending.
 
 ### Conditional IR repair
 
@@ -429,11 +459,9 @@ Verification commands run sequentially where they use `sbtn`. JVM startup emits 
 `sun.misc.Unsafe` deprecation notices during CLI execution. No ABI changes are made; Linux
 container ABI checks are not applicable. M2 deployment remains unverified under finding 5.
 
-Calls inside a field-qualified conditional are rejected by the frontend before code generation.
-For example, replacing the qualifier in the runtime fixture's `qualified` function with
-`(if mark trace 2 1 == 1 then box; else box;).call` produces `UnresolvableType` for `mark`
-and `==`. Qualified-callee tests use supported conditional references; effect counters test
-argument evaluation. Frontend qualifier resolution is outside this repair.
+[Finding 6](#6-calls-inside-conditional-field-qualifiers-fail-type-resolution) records the
+frontend failure for calls inside conditional field qualifiers. It remains an open task item;
+the conditional IR repair does not cover it.
 
 
 Evidence for findings 1–4: 2026-10-06, macOS arm64, repository base `8143f27`.
@@ -621,13 +649,14 @@ initialization correctness; the explicit cell-value oracle exposes the defect.
 - String-return ownership repair signoff: granted.
 - Conditional IR repair signoff: granted.
 - Finding 5 signoff: pending.
+- Finding 6 signoff: pending.
 - Tracked item completion: pending.
 - Global literal repair and animated sample cleanup commit: complete
   (`Fix forward references to global literals`).
 - Integer-array fill and wall-map repair commit: complete (`Add runtime integer-array fill`).
 - String-return ownership repair commit: complete (`Fix nested mixed string returns`).
 - Conditional IR repair commit: complete (`Preserve exit blocks through call evaluation`).
-- Commit authorization: pending for finding 5. Push authorization: pending.
+- Commit authorization: pending for findings 5 and 6. Push authorization: pending.
 
 ## Task Working Memory
 
@@ -644,5 +673,6 @@ Named mixed-binding returns, consuming transfers, and the documented conditional
 gap remain with conditional ownership hardening. Finding 2's conditional IR repair is
 complete, signed off, and locally committed as `Preserve exit blocks through call evaluation`.
 Propagation, all compiler gates, QA enforcement, tracking checks, and independent code review pass.
-Finding 5 still needs diagnosis and implementation approval. Float and string array fill
+Findings 5 and 6 still need diagnosis and implementation approval. Finding 6's next action is
+a standalone reduction and frontend resolution trace. Float and string array fill
 extensions are deferred.

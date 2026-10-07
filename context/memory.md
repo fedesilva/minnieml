@@ -15,6 +15,8 @@ This is the Author's active and near-term focus. The backlog lives in [tasks/](t
 - **Tracker:** [Fix correctness bugs exposed by the animated A* sample](tasks/astar-animation-correctness-bugs.md)
 - **Status:** in_progress
 - **Current focus:** Finding 5 needs M2 crash evidence and diagnosis before implementation approval.
+  Finding 6 tracks calls inside conditional field qualifiers failing frontend type resolution;
+  a standalone reduction and diagnosis are pending.
   Named mixed-binding returns and conditional escape cleanup remain
   with conditional ownership hardening. Float and string array fills are deferred.
 
