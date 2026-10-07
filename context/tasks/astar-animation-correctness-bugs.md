@@ -536,6 +536,13 @@ This is a confirmed P1 finding. Leak detection was disabled for this focused rea
 check; no `-O3`, cross-target, or repaired-program result is claimed. A permanent regression
 and repair verification remain pending. The passing qualifier suite does not cover this case.
 
+##### Linux verification blocker
+
+Linux native sanitizer verification remains blocked by
+[Fix Linux ASan assembly failure after internalization](linux-asan-internalization.md).
+That task holds the container results, standalone C reproducer, and passing controls.
+Resolve the assembly/link failure and rerun both Linux suites before finding 7 signoff.
+
 #### Risks / Notes
 
 Dependencies use stable binding identities. Merging them must retain shadowing distinctions
