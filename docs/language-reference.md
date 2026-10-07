@@ -1314,6 +1314,10 @@ the appropriate types for the other families.
 | `unsafe_ar_int_get(arr, i)` | `IntArray -> Int -> Int`       | Unchecked get      |
 | `ar_int_len(arr)`           | `IntArray -> Int`              | Array length       |
 
+`ar_int_fill(arr, value): IntArray -> Int -> Unit` fills every element of an
+integer array with the given value. It borrows the array, allocates no storage,
+and accepts empty arrays. This operation is specific to `IntArray`.
+
 The `StringArray` family uses `ar_str_*` and the `FloatArray` family uses
 `ar_float_*`. The `StringArray` family does not have `unsafe_ar_str_set` or
 `unsafe_ar_str_get` variants.

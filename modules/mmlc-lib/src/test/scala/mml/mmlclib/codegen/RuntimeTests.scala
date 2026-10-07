@@ -75,6 +75,58 @@ class RuntimeTests extends BaseEffFunSuite:
       }
   }
 
+  test("IntArray fill initializes every element and accepts empty arrays") {
+    val source = """
+      fn check(ok: Bool): Int = if ok then 0; else 1;;;
+      fn all_equal(arr: IntArray, value: Int, i: Int): Bool =
+        if i < ar_int_len arr then
+          ar_int_get arr i == value and all_equal arr value (i + 1);
+        else
+          true;
+        ;
+      ;
+      pub fn main(): Int =
+        let empty = ar_int_new 0;
+        let negative = ar_int_new (0 - 5);
+        let single = ar_int_new 1;
+        let many = ar_int_new 17;
+        ar_int_fill empty 123456789;
+        ar_int_fill negative (-2147483648);
+        ar_int_fill single 2147483647;
+        ar_int_fill many 123456789;
+        let initial = check (ar_int_len empty == 0) + check (ar_int_len negative == 0) +
+          check (ar_int_get single 0 == 2147483647) +
+          check (all_equal many 123456789 0);
+        ar_int_fill many 0;
+        let zero = check (all_equal many 0 0);
+        ar_int_fill many (-2147483648);
+        let minimum = check (all_equal many (-2147483648) 0);
+        ar_int_fill many 2147483647;
+        initial + zero + minimum + check (all_equal many 2147483647 0) +
+          check (ar_int_len many == 17);
+      ;
+    """
+    withDirectory { directory =>
+      val binary = directory.resolve("program")
+      val config = CompilerConfig.default.copy(
+        mode       = CompilationMode.Exe,
+        outputDir  = directory,
+        outputName = binary.toString.some,
+        asan       = true
+      )
+      for
+        ir <- compileAndGenerate(source, "ArrayFill", config)
+        pair <- targetAt(directory, config)
+        (triple, target) = pair
+        path <- IO.blocking(Files.writeString(directory.resolve("ArrayFill.ll"), ir))
+        _ <- commandNotFailed(List("llvm-as", path.toString, "-o", "/dev/null"), directory)
+        result <- LlvmToolchain.compile(path, config, triple.some, target)
+        _ = assertEquals(result._1, Right(0))
+        _ <- programExits(List(binary.toString), directory, expectedCode = 0)
+      yield ()
+    }
+  }
+
   test("Int32 literal boundaries and explicit widening execute correctly") {
     val source = """
       fn check(ok: Bool): Int = if ok then 0; else 1;;;

@@ -124,6 +124,8 @@ fn free_buffer(~b: Buffer): Unit = @native;
 fn mml_free_raw(p: RawPtr): Unit = @native;
 
 fn ar_int_new(size: Int): IntArray = @native[mem=alloc];
+// Fill every element; an empty array is unchanged. Borrows arr.
+fn ar_int_fill(arr: IntArray, value: Int): Unit = @native;
 fn ar_int_set(arr: IntArray, idx: Int, value: Int): Unit = @native;
 fn ar_int_get(arr: IntArray, idx: Int): Int = @native;
 fn unsafe_ar_int_set(arr: IntArray, idx: Int, value: Int): Unit = @native;

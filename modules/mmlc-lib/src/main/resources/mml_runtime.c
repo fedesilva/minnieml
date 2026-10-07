@@ -821,6 +821,13 @@ FORCE_INLINE IntArray ar_int_new(int32_t size)
     return (IntArray){size, storage};
 }
 
+/** Fill every element of a borrowed array; empty arrays require no writes. */
+FORCE_INLINE void ar_int_fill(IntArray arr, int32_t value)
+{
+    for (int32_t i = 0; i < arr.length; ++i)
+        arr.data[i] = value;
+}
+
 FORCE_INLINE void ar_int_set(IntArray arr, int32_t idx, int32_t value)
 {
     if (!arr.data || idx < 0 || idx >= arr.length)

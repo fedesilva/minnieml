@@ -1094,6 +1094,7 @@ fn buffer_writeln_float(b: Buffer, n: Float): Unit = @native;
 
 // IntArray, StringArray, FloatArray
 fn ar_int_new(size: Int): IntArray = @native[mem=alloc];
+fn ar_int_fill(arr: IntArray, value: Int): Unit = @native;
 fn ar_int_set(arr: IntArray, i: Int, value: Int): Unit = @native;
 fn ar_int_get(arr: IntArray, i: Int): Int = @native;
 // ... unsafe variants, ar_int_len, plus analogous ar_str_* and ar_float_* families

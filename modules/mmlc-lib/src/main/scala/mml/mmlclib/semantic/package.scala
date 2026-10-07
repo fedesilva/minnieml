@@ -1045,6 +1045,14 @@ def injectCommonFunctions(module: Module): Module =
       Some(MemEffect.Alloc)
     ),
     mkFn(
+      "ar_int_fill",
+      List(
+        FnParam(SourceOrigin.Synth, Name.synth("arr"), typeAsc   = Some(intArrayType)),
+        FnParam(SourceOrigin.Synth, Name.synth("value"), typeAsc = Some(intType))
+      ),
+      unitType
+    ),
+    mkFn(
       "ar_int_set",
       List(
         FnParam(SourceOrigin.Synth, Name.synth("arr"), typeAsc   = Some(intArrayType)),
