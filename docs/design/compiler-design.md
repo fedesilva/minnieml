@@ -919,8 +919,9 @@ unconditionally owned aggregate.
 Borrow dependencies retain local alias identities across nested scope results so cleanup checks
 can still reach the root owner. An unconditionally owning initializer transfers its result through
 the existing consuming-result analysis, including when a nested scope returns an outer binding.
-Conditional merges do not retain dependencies introduced by branch-local aliases, leaving a
-[known gap in escape checking](../../context/tasks/astar-animation-correctness-bugs.md#7-conditional-field-aliases-can-outlive-their-temporary-owner).
+Conditional merges retain both branches' borrow dependencies by resolved binding identity,
+including branch-local aliases. This preserves the path to an owner for enclosing cleanup and
+use-after-move checks without exporting the branches' local ownership bindings.
 
 **Errors reported**:
 - `UseAfterMove`

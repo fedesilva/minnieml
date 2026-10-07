@@ -12,7 +12,7 @@
 
 ## Execution Checklist
 
-1. [ ] **in_progress** — Findings 1–4 and 6 have signed-off repairs; findings 5 and 7 remain open.
+1. [ ] **in_progress** — Findings 1–4, 6, and 7 have signed-off repairs; finding 5 remains open.
 2. [x] **complete** — [Global literal repair](#global-literal-repair),
    [string-return ownership repair](#string-return-ownership-repair), and
    [conditional IR repair](#conditional-ir-repair) are complete and signed off.
@@ -21,7 +21,7 @@
 4. [ ] **planned** — Diagnose the copied executable's failure on macOS M2 and verify a
    compatible build configuration.
 5. [x] **complete** — [Finding 6: calls inside conditional field qualifiers fail type resolution](#6-calls-inside-conditional-field-qualifiers-fail-type-resolution).
-6. [ ] **planned** — [Finding 7: conditional field-alias lifetime](#7-conditional-field-aliases-can-outlive-their-temporary-owner).
+6. [x] **complete** — [Finding 7: conditional field-alias lifetime](#7-conditional-field-aliases-can-outlive-their-temporary-owner).
 7. [ ] **planned** — Run applicable compiler and sample verification and obtain signoff.
 
 ## Problem
@@ -442,20 +442,19 @@ and native execution.
 
 ### 7. Conditional field aliases can outlive their temporary owner
 
-- **Status:** planned.
+- **Status:** complete.
 - **Priority:** HIGH; confirmed P1.
-- **Implementation approval:** pending.
+- **Implementation approval:** granted for the bounded conditional dependency plan below.
 
-`OwnershipAnalyzer.analyzeCond` merges moves and consumed fields but drops borrow dependencies
-introduced inside either branch. A returned field reference can still name a branch-local alias,
-so an enclosing cleanup check cannot follow that alias back to its owner. The compiler accepts
-a String borrow after its temporary record has been destroyed.
+At `cd73f28`, `OwnershipAnalyzer.analyzeCond` merges moves and consumed fields but drops
+borrow dependencies introduced inside either branch. A returned field reference can still name
+a branch-local alias, so an enclosing cleanup check cannot follow that alias back to its owner.
+The compiler accepts a String borrow after its temporary record has been destroyed.
 
 The affected path is exposed by the qualifier repair in
 [A* finding 6](#6-calls-inside-conditional-field-qualifiers-fail-type-resolution).
-That repair retains dependency maps across local-scope results; conditional merges also need
-to retain the identities required by those results. This remaining defect is deferred from
-the signed-off qualifier-repair checkpoint.
+The conditional dependency repair extends that retention to branch-local alias identities.
+Local cleanup can follow conditional results back to their root owners.
 
 #### Reproducer
 
@@ -477,8 +476,9 @@ pub fn main(): Unit = example true;;
 Expected: reject the result with an ownership diagnostic because the String cannot outlive
 the temporary `Outer` created in the outer conditional's true branch.
 
-Observed: compilation succeeds. The generated code destroys `Outer` after the inner
-conditional merges, then passes the selected String to `println` after the outer merge.
+Observed at the qualifier-repair checkpoint: compilation succeeds. The generated code destroys
+`Outer` after the inner conditional merges, then passes the selected String to `println` after
+the outer merge.
 Native execution reads freed String storage.
 
 #### Outcome
@@ -497,13 +497,16 @@ lifetime remain accepted. Branch selection and exactly-once evaluation remain un
 
 #### Plan (Approval Gate)
 
-- [ ] Add a semantic regression for the embedded program that requires an ownership error.
-- [ ] Preserve branch result dependencies by resolved binding identity when merging scopes.
+- [x] Add a semantic regression for the embedded program that requires an ownership error.
+- [x] Preserve branch result dependencies by resolved binding identity when merging scopes.
   Retain the transitive path from aliases to root owners without exporting local ownership.
-- [ ] Cover both branches, nested conditions, shadowed aliases, and live-owner controls.
-- [ ] Run applicable compiler gates and review the changed dependency contract.
+- [x] Cover both branches, nested conditions, shadowed aliases, and live-owner controls.
+- [x] Run applicable compiler gates and review the changed dependency contract: host gates and
+  independent review pass; Linux sanitizer verification is explicitly deferred below.
 
-Approval: pending for implementation; deferral from finding 6 is approved.
+Approval: implementation, repair signoff, and scoped local commit authorization are granted.
+Completion is approved using the passing host checks and independent review, with Linux
+sanitizer verification explicitly deferred to the separate BUG task.
 
 #### Verification
 
@@ -532,16 +535,46 @@ fn example(flag: Bool): Unit =
 ;
 ```
 
-This is a confirmed P1 finding. Leak detection was disabled for this focused read-lifetime
-check; no `-O3`, cross-target, or repaired-program result is claimed. A permanent regression
-and repair verification remain pending. The passing qualifier suite does not cover this case.
+This pre-repair reproduction confirms a P1 finding. Leak detection was disabled for this
+focused read-lifetime check; it does not establish `-O3` or cross-target behavior.
+
+Repair evidence: 2026-10-07, macOS arm64, Homebrew LLVM 23.1.1.
+
+The conditional merge combines both branches' borrow dependencies by resolved binding ID
+and deduplicates their owner references. Branch-local ownership bindings stay local.
+`FieldQualifierOwnershipTests` covers the original nested escape, all true/false branch
+placements, transitive aliases, shadowing, use after moving an owner, and valid live-owner
+borrows. The original regression fails at `cd73f28` because no ownership error is emitted;
+all 64 qualifier-ownership tests pass with the repair.
+
+`CallExitBlockTests` runs the extended `tests/mem/field-qualifier-owners.mml` fixture with
+zero through three arguments at `-O0` and `-O3`. The fixture reads the selected String's
+bytes, checks all nested branch choices and exactly-once effects, and reads the live owner
+again. LLVM assembly verification and ASan/LSan execution pass. Both focused suites pass
+97 tests in total.
+
+| Check | Result |
+| --- | --- |
+| `./tests/smoke/run.sh all` | Pass: 8/8 after granting filesystem access for sbt's lock. The sandbox-only attempt could not start sbt. |
+| `sbtn 'scalafmtAll;scalafixAll;test'` | Pass: 1020 library and 9 CLI tests, 37 existing ignores, no failures or compiler warnings. |
+| `sbtn mmlcPublishLocal` | Pass after development-compiler execution and smoke verification. |
+| `make -C benchmark clean`, then `make -C benchmark mml` | Pass: 12 programs build; no timing measurements. |
+| `./tests/mem/run.sh all` | Pass: 48/48 under ASan/LSan at `-O0`. |
+| QA enforcement | Pass. |
+| Independent code review | Pass: no actionable findings. Fresh reviewer reran both focused suites, 97/97 passing. |
+
+Host verification covers macOS arm64. Repair signoff and scoped local commit authorization
+are granted. Completion is approved with the Linux sanitizer failures deferred below; no
+passing Linux native sanitizer or M2 deployment result is claimed.
 
 ##### Linux verification blocker
 
 Linux native sanitizer verification remains blocked by
 [Fix Linux ASan assembly failure after internalization](linux-asan-internalization.md).
 That task holds the container results, standalone C reproducer, and passing controls.
-Resolve the assembly/link failure and rerun both Linux suites before finding 7 signoff.
+Deferral approval: granted for completing finding 7 using the passing host checks and
+independent review. The separate BUG task owns the assembly/link repair and Linux reruns;
+its failures remain recorded and are not counted as passing verification.
 
 #### Risks / Notes
 
@@ -891,8 +924,10 @@ initialization correctness; the explicit cell-value oracle exposes the defect.
 
 ## Risks / Notes
 
-- Nested conditional field aliases can escape owner cleanup; the confirmed P1 and its
-  reproducer are tracked in [conditional field-alias lifetime](#7-conditional-field-aliases-can-outlive-their-temporary-owner).
+- The [conditional field-alias lifetime repair](#7-conditional-field-aliases-can-outlive-their-temporary-owner)
+  passes host verification and independent review. Linux sanitizer verification is blocked
+  by the [Linux ASan assembly failure](linux-asan-internalization.md), with explicit approval
+  to defer that verification from finding 7 completion.
 - Witness-based returns and branch-dependent transfer cleanup remain under
   [conditional ownership hardening](conditional-ownership-witnesses.md).
 - A raylib window-initialization failure is a separate environmental condition, not evidence
@@ -909,7 +944,8 @@ initialization correctness; the explicit cell-value oracle exposes the defect.
 - Finding 5 signoff: pending.
 - Finding 6 signoff: granted for the implemented qualifier repairs with the conditional alias
   lifetime defect deferred to finding 7.
-- Finding 7 signoff: pending.
+- Finding 7 signoff: granted for the bounded conditional dependency repair, with Linux
+  sanitizer verification explicitly deferred to the separate BUG task.
 - Tracked item completion: pending.
 - Global literal repair and animated sample cleanup commit: complete
   (`Fix forward references to global literals`).
@@ -917,8 +953,9 @@ initialization correctness; the explicit cell-value oracle exposes the defect.
 - String-return ownership repair commit: complete (`Fix nested mixed string returns`).
 - Conditional IR repair commit: complete (`Preserve exit blocks through call evaluation`).
 - Finding 6 commit: `Resolve field qualifiers and retain temporary owners`.
-- Commit authorization: granted for finding 6 and the finding 7 record; pending for repairs to
-  findings 5 and 7. Push authorization: pending.
+- Finding 7 commit: `Preserve conditional field-alias dependencies`.
+- Commit authorization: granted for findings 6 and 7; pending for finding 5.
+  Push authorization: pending.
 
 ## Task Working Memory
 
@@ -935,15 +972,21 @@ Named mixed-binding returns, consuming transfers, and the documented conditional
 gap remain with conditional ownership hardening. Finding 2's conditional IR repair is
 complete, signed off, and locally committed as `Preserve exit blocks through call evaluation`.
 Propagation, all compiler gates, QA enforcement, tracking checks, and independent code review pass.
-Finding 5 needs diagnosis and implementation approval. Finding 7 needs approval of its bounded
-conditional dependency plan. Finding 6 is complete and signed off:
+Finding 5 needs diagnosis and implementation approval. Finding 7's bounded conditional dependency
+repair is complete and signed off. Conditional dependency merging, all 97 focused semantic,
+LLVM, and native checks, smoke, full tests, publication, benchmark builds, and all 48 memory
+programs pass. Independent review found no actionable findings and reran all 97 focused checks.
+Both Linux builders pass the 64 qualifier-ownership checks but fail 29 native tests at ASan
+assembly/linking. The [Linux ASan task](linux-asan-internalization.md) holds the standalone
+reproducer, pipeline diagnosis, and required Linux reruns. Completion of finding 7 is approved
+using the passing host checks and independent review; Linux sanitizer verification is explicitly
+deferred to that BUG task. The scoped local commit is `Preserve conditional field-alias dependencies`.
+Finding 6 is complete and signed off:
 it repairs reference traversal, callee-qualifier dependencies, capture traversal, and
 temporary-owner lifetime. Smoke,
 formatting, lint, 1010 library and 9 CLI tests, local publication, benchmark builds, and
 all 48 memory programs pass. Capture traversal passes narrow independent re-review.
-Ownership review is complete through the approved implementing-agent fallback, with primary
-and per-claim independence waived. Two reported lifetime defects have verified repairs; the
-remaining P1 is explicitly deferred to
-[conditional field-alias lifetime](#7-conditional-field-aliases-can-outlive-their-temporary-owner).
-The local checkpoint is `Resolve field qualifiers and retain temporary owners`; no push is authorized.
+Finding 6 ownership review used the approved implementing-agent fallback, with primary
+and per-claim independence waived. Finding 7 has a fresh independent review and its scoped
+Linux verification deferral. No push is authorized.
 Float and string array fill extensions are deferred.

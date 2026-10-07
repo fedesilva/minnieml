@@ -4,11 +4,13 @@ Durable product changes belong here. Current task state belongs in task files.
 
 ## 2026-10-07
 
+- Preserve branch-local borrow dependencies through conditional merges. Reject nested field
+  aliases that outlive their temporary owners, while accepting borrows within live-owner scopes
+  and retaining use-after-move diagnostics across aliases.
 - Resolve calls and operators inside field qualifiers, including recovery, forward dependencies,
   and closure captures. Retain temporary record owners through field use and callable-field
   invocation, preserve argument-before-callee evaluation, and reject covered borrowed-field
-  escapes. Nested conditional aliases still have a
-  [known lifetime defect](tasks/astar-animation-correctness-bugs.md#7-conditional-field-aliases-can-outlive-their-temporary-owner).
+  escapes.
 
 ## 2026-10-06
 

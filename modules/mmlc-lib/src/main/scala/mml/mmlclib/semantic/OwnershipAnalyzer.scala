@@ -1828,10 +1828,16 @@ object OwnershipAnalyzer:
       scope.resolvables
     ).run(trueIds).value
 
+    // Branch-local aliases remain reachable from the conditional's result.
+    val branchDependencies =
+      (trueResult.scope.borrowedDependencies |+| falseResult.scope.borrowedDependencies)
+        .map { case (id, refs) => id -> refs.distinctBy(_.resolvedId) }
+
     TermResult(
       mergedScope.copy(
-        bindingIds  = falseIds,
-        tempCounter = falseResult.scope.tempCounter,
+        bindingIds           = falseIds,
+        tempCounter          = falseResult.scope.tempCounter,
+        borrowedDependencies = branchDependencies,
         consumedFields = trueResult.scope.consumedFields ++
           falseResult.scope.consumedFields
       ),

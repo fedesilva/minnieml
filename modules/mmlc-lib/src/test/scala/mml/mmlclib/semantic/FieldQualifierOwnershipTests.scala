@@ -259,6 +259,113 @@ class FieldQualifierOwnershipTests extends BaseEffFunSuite:
     }
   }
 
+  test("nested conditional aliases cannot outlive their temporary owner") {
+    semState(values + """
+      fn example(flag: Bool): Unit =
+        let text = if flag then
+          let inner = (make_outer 123).inner;
+          (if flag then let alias = inner; alias.text; else "static";);
+        else "static";
+        ;
+        println text;
+      ;
+    """).map { result =>
+      assertOwnershipError(result.errors)
+      assert(result.errors.exists(_.isInstanceOf[SemanticError.BorrowEscapeViaReturn]))
+    }
+  }
+
+  for
+    outerTrue <- List(true, false)
+    innerTrue <- List(true, false)
+  do
+    test(s"conditional alias escape is rejected (outerTrue=$outerTrue, innerTrue=$innerTrue)") {
+      val projection = "let alias = inner; let next = alias; next.text"
+      val nested =
+        if innerTrue then s"if inner_flag then $projection; else \"static\";"
+        else s"if inner_flag then \"static\"; else $projection;"
+      val branch = s"let inner = (make_outer 123).inner; ($nested)"
+      val conditional =
+        if outerTrue then s"if flag then $branch; else \"static\";"
+        else s"if flag then \"static\"; else $branch;"
+      semState(values + s"""
+        fn example(flag: Bool, inner_flag: Bool): Int =
+          let text = $conditional;
+          read text;
+        ;
+      """).map { result =>
+        assertOwnershipError(result.errors)
+        assert(result.errors.exists(_.isInstanceOf[SemanticError.BorrowEscapeViaReturn]))
+      }
+    }
+
+  test("conditional alias dependencies distinguish shadowed owners") {
+    semState(values + """
+      fn example(flag: Bool): Int =
+        let inner = (make_outer 456).inner;
+        let text = if flag then
+          let inner = (make_outer 123).inner;
+          (if flag then let alias = inner; alias.text;
+           else let alias = inner; alias.text;);
+        else inner.text;
+        ;
+        read text;
+      ;
+    """).map { result =>
+      assertOwnershipError(result.errors)
+      assert(result.errors.exists(_.isInstanceOf[SemanticError.BorrowEscapeViaReturn]))
+    }
+  }
+
+  test("conditional aliases retain their dependencies after an owner moves") {
+    semState(values + """
+      fn example(flag: Bool): Int =
+        let box = make 123;
+        let text = if flag then let alias = box.text; alias;
+                   else let alias = box.text; alias;;
+        let ignored = drop_box box;
+        read text;
+      ;
+    """).map { result =>
+      assertOwnershipError(result.errors)
+      assert(result.errors.exists(_.isInstanceOf[SemanticError.UseAfterMove]))
+    }
+  }
+
+  List(
+    "borrowed owner" -> "",
+    "temporary owner shadowing the parameter" -> "let inner = (make_outer 123).inner;"
+  ).foreach { (name, setup) =>
+    test(s"nested conditional aliases remain valid within their $name lifetime") {
+      semNotFailed(values + s"""
+        fn example(inner: Box, flag: Bool, inner_flag: Bool): Int =
+          $setup
+          let text = if flag then
+            (if inner_flag then let alias = inner; alias.text; else "static";);
+          else let alias = inner; alias.text;
+          ;
+          read text;
+        ;
+      """).void
+    }
+  }
+
+  test("a completed branch borrow does not replace an outer alias dependency") {
+    semNotFailed(values + """
+      fn example(flag: Bool): Int =
+        let inner = (make_outer 123).inner;
+        let alias = inner;
+        let ignored = if flag then
+          let inner = (make_outer 4567).inner;
+          let alias = inner;
+          read alias.text;
+        else 0;
+        ;
+        read alias.text;
+      ;
+    """).void
+  }
+
   List(
     "qualifier" -> "(let ignored = (); box).value",
     "local binding" -> "let selected = (let ignored = (); box); selected.value"

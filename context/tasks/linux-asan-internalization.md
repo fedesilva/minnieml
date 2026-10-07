@@ -34,6 +34,8 @@ The exact defective pass, interaction, and affected LLVM versions remain undeter
 
 This blocks Linux native sanitizer verification of
 [A* finding 7: conditional field-alias lifetime](astar-animation-correctness-bugs.md#7-conditional-field-aliases-can-outlive-their-temporary-owner).
+Finding 7 completion is approved using host verification and independent review; its Linux
+sanitizer verification is explicitly deferred to this task.
 
 ## Outcome
 

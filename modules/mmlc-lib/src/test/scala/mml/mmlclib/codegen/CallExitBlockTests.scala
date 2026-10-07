@@ -193,7 +193,7 @@ class CallExitBlockTests extends BaseEffFunSuite:
 
     test(s"temporary field owners survive projections and calls at O$optimization") {
       IO.blocking(Files.readString(Path.of("tests/mem/field-qualifier-owners.mml")))
-        .flatMap(execute(_, optimization, List(0, 1, 2)))
+        .flatMap(execute(_, optimization, List(0, 1, 2, 3)))
     }
 
     for allocating <- List(false, true) do
