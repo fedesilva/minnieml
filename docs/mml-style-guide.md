@@ -15,7 +15,7 @@ MML uses semicolons as terminators, not separators. See the language reference o
 [semicolons](language-reference.md#semicolons), and
 [expression sequencing](language-reference.md#expression-sequencing).
 
-Keep an attached terminator on the final line of the expression it terminates:
+For a single-line expression, attach its terminator to the same line:
 
 ```mml
 let total = sum 1 2;
@@ -25,10 +25,11 @@ Put a standalone terminator that closes a vertically structured expression or co
 on its own line, aligned with the beginning of what it closes, like a closing delimiter:
 
 ```mml
-let total = sum
-  1
-  2
-;
+let total =
+  sum
+    1
+    2
+  ;
 ```
 
 For multi-line function bodies, put the expression terminator and declaration
@@ -66,35 +67,66 @@ For vertically split expressions, a standalone terminator may close the whole
 expression when it aligns with the expression's indentation:
 
 ```mml
-let grid = Grid
-  width
-  height
-  (ar_int_new size)
-;
+let grid =
+  Grid
+    width
+    height
+    (ar_int_new size)
+  ;
 ```
 
 The standalone terminator acts as a visual closing marker for the expression. Do not
 confuse this with writing both expression and declaration terminators together as `;;`
 for a multi-line body.
 
-For a single vertically split expression, it is also acceptable to attach the
-expression terminator to the final closing delimiter when that delimiter closes the
-expression being bound:
+## Function Calls
+
+Keep a call entirely on one line, or lay it out entirely vertically. Short, clear
+calls can stay inline:
 
 ```mml
-fn make_test_results(): String =
-  concat
-    (concat "Zero: " (concat (int_to_str 0) ", "))
-    (concat
-      (concat "Positive: " (concat (int_to_str 123) ", "))
-      (concat "Large: " (int_to_str 1234567890))
-    );
+draw_loop next;
+```
+
+Prefer vertical layout when a call has many arguments or complex argument expressions
+that make an inline call difficult to scan. Put the function reference on its own line,
+then each argument on a separate line indented one level farther. Put the terminating
+semicolon on its own line, aligned with the function reference:
+
+```mml
+advance_playback
+  grid
+  cells
+  result
+  interval
+  (Playback (playback.step + 1) (playback.elapsed -. interval))
 ;
 ```
 
-This is different from multi-branch constructs such as `if`, where each branch
-expression and the conditional expression should be terminated explicitly on their
-own aligned lines.
+Do not put some arguments beside the function reference and wrap only the remaining
+arguments onto another line:
+
+```text
+advance_playback grid cells result interval
+  (Playback (playback.step + 1) (playback.elapsed -. interval));
+```
+
+The same rule applies to constructor calls. An argument may contain an inline nested
+call, as `Playback` does above.
+
+When binding a vertical call, put the function reference below `let name =`. Align
+the call's semicolon with the function reference, not with `let`:
+
+```mml
+let next =
+  advance_playback
+    grid
+    cells
+    result
+    interval
+    (Playback playback.step (playback.elapsed +. (get_frame_time ())))
+  ;
+```
 
 ## Let Bindings
 
