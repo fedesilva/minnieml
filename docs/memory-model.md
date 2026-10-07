@@ -614,13 +614,6 @@ terminal call. Payload destructors retain their ordering relative to user effect
 These restrictions describe compiler support. Ownership alone does not require them.
 Use-after-move rejection and keeping borrows within their owners' lifetimes remain model rules.
 
-### Conditional field aliases
-
-Nested conditional results can lose a field alias's owner dependency, allowing a borrowed
-String to escape temporary-record cleanup. This violates the lifetime rule above; the
-[reproducer and repair entry](../context/tasks/astar-animation-correctness-bugs.md#7-conditional-field-aliases-can-outlive-their-temporary-owner) record the
-confirmed gap.
-
 ### Clone operations
 
 There is no user-accessible clone syntax or clone protocol. Generated clone functions are

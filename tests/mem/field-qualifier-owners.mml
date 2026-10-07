@@ -130,6 +130,32 @@ fn mark(trace: IntArray, digit: Int, value: Int): Int =
   value;
 ;
 
+fn nested_alias_cases(outer_flag: Bool, inner_flag: Bool): Bool =
+  let trace = ar_int_new 1;
+  ar_int_fill trace 0;
+  let inner = (make_outer 123).inner;
+  let text = if mark trace 1 0 == 0 and outer_flag then
+    (if mark trace 2 0 == 0 and inner_flag then
+      let alias = inner;
+      let next = alias;
+      let ignored = mark trace 3 0;
+      next.text;
+    else
+      let ignored = mark trace 4 0;
+      "4567";
+    );
+  else
+    let alias = inner;
+    let ignored = mark trace 5 0;
+    alias.text;
+  ;
+  let actual = str_to_int text;
+  let expected = if outer_flag and not inner_flag then 4567; else 123;;
+  let expected_trace = if outer_flag then (if inner_flag then 123; else 124;); else 15;;
+  actual == expected and ar_int_get trace 0 == expected_trace
+    and str_to_int inner.text == 123;
+;
+
 fn choose(trace: IntArray, flag: Bool): Bool =
   let ignored = mark trace 2 0;
   flag;
@@ -181,6 +207,7 @@ pub fn main(args: StringArray): Int =
   let flag = count == 0;
   if projection_cases () and scoped_owner_cases () and callable_cases () and result_cases ()
     and conditional_cases enabled flag and order_cases enabled flag
+    and nested_alias_cases enabled (count % 2 == 0)
   then 0;
   else 1;
   ;
