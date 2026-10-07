@@ -594,44 +594,19 @@ fn draw_scene(
   elif step <= result.event_count then
     let event = read_event result.events (step - 1);
     draw_event grid event;
-    if event.kind == event_kind_found then
-      draw_label
-        "Goal reached! Reveal the final path."
-        layout_grid_left
-        470
-        20
-        ink_color
-      ;
-    elif event.kind == event_kind_exhausted then
-      draw_label
-        "No path found. Close the window when done."
-        layout_grid_left
-        470
-        20
-        ink_color
-      ;
-      draw_label
-        "The queue is empty; all reachable candidates have been processed."
-        layout_grid_left
-        500
-        18
-        muted_color
-      ;
-    else
-      draw_label
-        (event_caption event)
-        layout_grid_left
-        470
-        20
-        ink_color
-      ;
-      draw_label
-        (event_detail event)
-        layout_grid_left
-        500
-        18
-        muted_color
-      ;
+    draw_label
+      (event_caption event)
+      layout_grid_left
+      470
+      20
+      ink_color
+    ;
+    draw_label
+      (event_detail event)
+      layout_grid_left
+      500
+      18
+      muted_color
     ;
   else
     let revealed = step - result.event_count;
@@ -798,12 +773,15 @@ fn event_caption(event: Event): String =
   elif event.kind == event_kind_consider then "Try neighbor " ++ pos ++ "?";
   elif event.kind == event_kind_accept then "Yes, a better route to " ++ pos ++ ". Queue it.";
   elif event.kind == event_kind_reject then "Reject " ++ pos ++ ": " ++ (reason_text event.reason);
-  else "Finished checking neighbors of " ++ pos ++ ".";
+  elif event.kind == event_kind_finish then "Finished checking neighbors of " ++ pos ++ ".";
+  elif event.kind == event_kind_found then "Goal reached! Reveal the final path.";
+  else "No path found. The queue is empty. Close the window when done.";
   ;
 ;
 
 fn event_detail(event: Event): String =
-  if event.kind == event_kind_skip then
+  if event.kind == event_kind_exhausted then "All reachable candidates have been processed.";
+  elif event.kind == event_kind_skip then
     "Already processed; discard queue entry with f = " ++ (int_to_str event.f);
   else
     let costs = "g = " ++ (int_to_str event.g) ++ "    h = " ++

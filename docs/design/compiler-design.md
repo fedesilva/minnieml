@@ -875,7 +875,10 @@ analysis, including use-after-move checks.
 
 5. **Return escape**: Bindings that escape through `return` are not freed locally; ownership moves
    to the caller. Static branches in mixed returns use the type's clone helper. Types without a
-   clone contract produce a diagnostic at this boundary.
+   clone contract produce a diagnostic at this boundary. Return promotion follows nested branches
+   and local-scope continuations before cleanup is inserted, cloning static result leaves rather
+   than whole mixed subexpressions. Scoped allocation queries follow the returned value through
+   bindings, so incidental allocations do not turn a static result into an owned result.
 
 6. **Constructor auto-clone**: When calling a constructor with consuming parameters, literal and
    global arguments use the type's clone helper when available. Borrowed references and field

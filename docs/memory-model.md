@@ -303,9 +303,11 @@ not give the function ownership to transfer to its caller.
 
 ### Mixed return branches
 
-If a function returns a heap type, every return path must produce ownership for the caller.
-The compiler clones non-allocating literal/global branches when other branches allocate;
-see [Clone operations](#clone-operations) for this implicit duplication boundary.
+When a function returns owned storage on one path, its static result branches must also produce
+ownership for the caller. The compiler clones literal/global results through nested branches
+and local scopes; see [Clone operations](#clone-operations) for this implicit duplication boundary.
+Functions whose results are entirely static need no caller cleanup, even if they allocate and
+release local temporaries.
 
 ---
 

@@ -14,9 +14,9 @@ This is the Author's active and near-term focus. The backlog lives in [tasks/](t
 
 - **Tracker:** [Fix correctness bugs exposed by the animated A* sample](tasks/astar-animation-correctness-bugs.md)
 - **Status:** in_progress
-- **Current focus:** Reproduce and reduce findings 2, 3, and 5, reconcile the conditional
-  ownership overlap, and establish repair boundaries before implementation. Float and
-  string array fill extensions are deferred.
+- **Current focus:** Findings 2 and 5 need reduction, diagnosis, and repair boundaries before
+  implementation approval. Named mixed-binding returns and conditional escape cleanup remain
+  with conditional ownership hardening. Float and string array fills are deferred.
 
 ### Lambda migration
 

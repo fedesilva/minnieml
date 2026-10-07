@@ -12,9 +12,10 @@
 
 ## Execution Checklist
 
-1. [ ] **in_progress** — Establish repair boundaries for findings 2, 3, and 5.
-2. [ ] **in_progress** — [Global literal repair](#global-literal-repair) is complete;
-   conditional IR generation and string return ownership repairs remain pending.
+1. [ ] **in_progress** — Establish repair boundaries for findings 2 and 5.
+2. [ ] **in_progress** — [Global literal repair](#global-literal-repair) and
+   [string-return ownership repair](#string-return-ownership-repair) are complete;
+   conditional IR generation remains pending.
 3. [x] **complete** — [Integer-array fill and wall-map repair](#integer-array-fill-and-wall-map-repair)
    passes compiler checks, sample verification, and independent review; repair signoff is granted.
 4. [ ] **planned** — Diagnose the copied executable's failure on macOS M2 and verify a
@@ -26,8 +27,8 @@
 Five findings concern ordinary MML source patterns, the console A* sample, and portability
 of the animated executable to macOS M2.
 The [animated sample](../../mml/samples/astar3_animated.mml) uses plain global integer
-constants and explicit grid initialization. It retains the conditional-argument and
-caption-return workarounds for findings 2–3.
+constants and explicit grid initialization. It retains the conditional-argument workaround
+for finding 2. Finding 3 restores ordinary caption returns with literal terminal messages.
 Keep these findings together for triage; separate repair tasks only when their boundaries
 are established.
 
@@ -123,7 +124,8 @@ evaluation and cleanup, and execute correctly. Cover tail calls and nested alloc
 
 ### 3. Mixed literal/allocated string returns can free invalid storage
 
-The failing caption version can be reconstructed from the linked animated sample:
+The failing caption version can be reconstructed from the workaround source at `d1f744f`
+using the substitutions below. The linked animated sample includes these return shapes directly.
 
 1. In `draw_scene`, replace the special handling of `found` and `exhausted` events with
    unconditional calls to `draw_label (event_caption event)` and
@@ -147,17 +149,88 @@ Compile with AddressSanitizer (`-s`) and exercise a full-height barrier with wal
 `25 0 10`, using a high fourth argument such as `100001` to reach the final caption quickly.
 Raylib must initialize a window successfully for this graphical reproduction.
 
-The observed crash reported a write fault in AddressSanitizer's allocator deallocation,
-followed by `free` and the generated `draw_scene` function. The failing terminal branches
-return string literals while other branches return allocated concatenations. This identifies
-the source pattern and cleanup failure, but does not establish the exact faulty ownership pass.
+The graphical crash reported a write fault in AddressSanitizer's allocator deallocation,
+followed by `free` and the generated `draw_scene` function. A
+[headless reduction](#headless-confirmation-of-finding-3) confirms that the reconstructed
+caption functions return literal storage which their caller passes to `__free_String`.
 
-The animated sample draws static terminal messages directly and keeps the dynamic caption
+The workaround at `d1f744f` draws static terminal messages directly and keeps the dynamic caption
 functions on allocating return paths. Its caption paths pass sanitizer checks in that form.
 
 Acceptance: both static and allocated return branches remain valid after the callee returns;
-caller cleanup never frees literal storage and releases owned storage exactly once. Reduce
-the failure to a headless regression so raylib and monitor access are not test dependencies.
+caller cleanup never frees literal storage and releases owned storage exactly once. Preserve
+the headless reduction as regression coverage without raylib or monitor dependencies.
+
+#### Headless confirmation of finding 3
+
+Evidence: 2026-10-06, repository compiler at `d1f744f`, macOS arm64, Homebrew LLVM 23.1.1.
+The compiler source is unchanged. The following complete program reproduces the failure:
+
+```mml
+fn caption(allocated: Bool): String =
+  let text = int_to_str 123;
+  if allocated then text ++ "!";
+  else "abc";
+  ;
+;
+
+pub fn main(args: StringArray): Unit =
+  println (caption (ar_str_len args > 0));
+;
+```
+
+Save the embedded source as `caption_return.mml`. Compile it through the repository compiler:
+
+```sh
+sbtn "run -s -O0 caption_return.mml"
+./build/target/captionreturn
+./build/target/captionreturn allocated
+```
+
+Repeat compilation with `-O3`. Both builds pass `llvm-as` verification. With no program
+arguments, the literal branch terminates with SIGABRT and an AddressSanitizer report in
+`__free_String` at both optimization levels. With one argument, the allocating branch prints
+`123!`, exits zero, and reports no sanitizer error at both levels.
+
+The unoptimized IR constructs the literal result from the module's constant `abc` bytes and
+returns it without a clone. The caller prints that result and unconditionally invokes the
+String destructor on it. The runtime destructor calls `free` on the data pointer. This
+establishes the incorrect literal cleanup independently of the graphical stack trace.
+
+Additional return-shape probes at `-O0`, using runtime-selected inputs:
+
+| Function body | Literal path | Allocating paths |
+| --- | --- | --- |
+| `if flag then int_to_str 123; else "abc";` | Pass | Pass |
+| Embedded `caption` above | SIGABRT | Pass |
+| `if kind == 0 then int_to_str 123; elif kind == 1 then int_to_str 456; else "abc";` | SIGABRT | Both pass |
+| `if flag then "abc"; else let text = int_to_str 123; text ++ "!";` | SIGABRT | Pass |
+
+Each probe returns `String`; its caller passes the result to `println`. Passing paths exit
+zero with the expected text and no sanitizer diagnostic. Failing paths report a sanitizer
+error during cleanup. These results show that a simple mixed return works, while local scopes
+and nested branches expose gaps.
+
+The sample connection was checked by extracting `Event`, its constants, `coordinates`,
+`is_neighbor_event`, `reason_text`, and the reconstructed caption functions above. A headless
+entry point constructs `Event kind 0 25 3 10 20 1 999999999` and passes either caption result
+to a borrowing `show(text: String): Unit = println text` helper. At `-O0` with ASan:
+
+- `event_caption`: kinds 1 and 3 pass; terminal kinds 8 and 9 fail during cleanup.
+- `event_detail`: kinds 1, 3, and 8 pass; terminal kind 9 fails during cleanup.
+
+The generated sample IR likewise returns the terminal literals without cloning and destroys
+the results in the caller. Raylib, window initialization, and the search loop are unnecessary
+to reproduce this defect.
+
+The repair boundary is return ownership in
+[OwnershipAnalyzer.scala](../../modules/mmlc-lib/src/main/scala/mml/mmlclib/semantic/OwnershipAnalyzer.scala).
+At `d1f744f`, `promoteStaticBranchesInReturn` only handles an immediate conditional, without recursively
+following nested return branches or local-binding wrappers. Its allocation queries must also
+remain valid after ownership rewrites. A repair must align these decisions with caller cleanup
+while preserving exactly-once evaluation and borrowed-return rejection. The broader consuming
+transfer failures in [conditional ownership hardening](conditional-ownership-witnesses.md)
+remain separate acceptance obligations; this reproduction does not establish their repair.
 
 ### 4. `astar3.mml` reads uninitialized wall-map cells
 
@@ -215,8 +288,51 @@ finding has a focused regression or sample check that fails for the defective be
 - [ ] Diagnose the macOS M2 launch failure and establish a compatible build configuration.
 - [ ] Implement approved repairs, add regressions, and run applicable verification.
 
-Approval: granted for the global literal repair and integer-array fill repair below.
-Implementation approval for findings 2, 3, and 5 remains pending.
+Approval: granted for the global literal repair, integer-array fill repair, and bounded
+string-return ownership repair below. Implementation approval for findings 2 and 5 remains pending.
+
+### String-return ownership repair
+
+- [x] **complete** — Follow owned return values through local scopes and nested conditionals.
+  Promote static result branches through the registered clone contract while preserving owned
+  results, borrowed-return rejection, source evaluation order, and allocation facts across rewrites.
+- [x] **complete** — Add semantic and headless native regressions for both branch orders,
+  nested alternatives, local scopes, owned aliases, static/allocated controls, and effect counts.
+  Verify LLVM and execute every selected branch with ASan at `-O0` and `-O3`.
+- [x] **complete** — Restore the animated sample's ordinary caption calls and literal terminal
+  returns; verify extracted caption functions without raylib or a monitor.
+- [x] **complete** — Compiler handoff gates, memory checks, QA enforcement, and
+  independent review pass; repair signoff is granted.
+- Repair signoff and local commit authorization: granted.
+- Local commit: `Fix nested mixed string returns`.
+
+The repair covers result expressions through scopes and conditionals. Returns of named
+mixed-ownership bindings and their aliases still require witness-aware escape/transfer handling
+under [conditional ownership hardening](conditional-ownership-witnesses.md). That task's
+consuming-transfer acceptance obligations remain open. Findings 2 and 5 are outside this repair.
+
+#### Separate conditional return-lifetime gap
+
+An additional probe allocates an owned local before a conditional and returns that local only
+on one branch:
+
+```mml
+fn pick(flag: Bool): String =
+  let text = int_to_str 123;
+  let alias = text;
+  if flag then alias;
+  else "abc";
+  ;
+;
+pub fn main(): Unit = println (pick false);;
+```
+
+With return promotion repaired, `pick false` leaks the four-byte allocation at both `-O0`
+and `-O3` under ASan+LSan. The existing escape check exempts the local from cleanup when any
+return path references it; it does not release that local on the other path. This is a
+branch-dependent ownership transfer/cleanup obligation for conditional ownership hardening,
+outside the caption repair. The bounded alias regression allocates inside the returning
+branch and checks that its returned owned value is neither cloned nor freed in the callee.
 
 ### Global literal repair
 
@@ -263,7 +379,44 @@ Evidence for findings 1–4: 2026-10-06, macOS arm64, repository base `8143f27`.
 - The uninitialized grid follows directly from the linked sample and runtime source.
 - Finding 5 is a user-reported macOS M2 launch failure dated 2026-10-06; independent
   reproduction, binary identification, and diagnosis remain pending.
-- Minimal headless reductions for the PHI and string-return findings remain pending.
+- Minimal headless reductions for the PHI findings remain pending. Finding 3 has a
+  [confirmed headless reduction](#headless-confirmation-of-finding-3) at `d1f744f`.
+
+String-return repair evidence: 2026-10-06, macOS arm64, Homebrew LLVM 23.1.1,
+target `arm64-apple-darwin25.6.0`.
+
+- The initial 27-check return matrix produced 17 failures and 10 passes before the compiler
+  repair. Failures included missing clone insertion, invalid frees at `-O0` and `-O3`, and
+  LLVM verification failure when an entire nested static conditional was cloned.
+- [StringReturnTests.scala](../../modules/mmlc-lib/src/test/scala/mml/mmlclib/codegen/StringReturnTests.scala)
+  passes all 27 tests with the bounded alias case described above. Eight semantic checks use
+  resolved clone/destructor identities; eighteen native checks verify LLVM and execute three
+  runtime-selected paths each under ASan+LSan at `-O0` and `-O3`. A negative test preserves
+  borrowed-return rejection through nested scopes. Counter checks establish exactly-once
+  predicate, initializer, and selected-value effects.
+- [caption-returns.mml](../../tests/mem/caption-returns.mml) preserves the sample's `Event` and
+  five caption/helper functions and the minimal reproduction. It checks 27 complete strings
+  across every event kind, previous-cost alternative, and rejection reason through borrowing
+  calls and caller cleanup. Both reduced branches execute on every run.
+- `sbtn "run -s -O0 -o build/finding3-caption-o0 tests/mem/caption-returns.mml"` and its `-O3`
+  counterpart compile successfully. Execute each with zero arguments and with `allocated`,
+  setting `ASAN_OPTIONS=detect_leaks=1:halt_on_error=1:abort_on_error=1`. All four runs exit
+  zero, print 27 checked results, and report no sanitizer diagnostic.
+- `sbtn scalafmtAll` and `sbtn scalafixAll` pass. `./tests/smoke/run.sh all` passes all 8 checks.
+- `sbtn test` passes 908 compiler-library tests and 9 CLI tests; 37 existing ignores remain.
+  `sbtn mmlcPublishLocal` succeeds. `make -C benchmark clean` and `make -C benchmark mml`
+  rebuild all 12 benchmark executables; no performance measurement is claimed.
+- The restored animated sample compiles with `mmlc -s`. Its `help` and zero-speed paths exit
+  successfully without opening a window. Caption behavior is verified by the headless fixture;
+  no graphical playback verification is claimed.
+- `./tests/mem/run.sh all` passes all 46 fixtures with ASan+LSan, including `caption-returns`.
+  QA enforcement and focused tracking consistency checks find no rule violations.
+- A fresh independent review finds no actionable issues and reruns all 27 focused tests
+  successfully, including 54 native executions under ASan+LSan. A separate fixture audit
+  confirms that `Event` and all five caption/helper functions match the animated sample.
+- ABI lowering, runtime layouts, and native signatures are unchanged, so Linux ABI gates do not
+  apply. Native execution evidence covers macOS arm64. CLI JVM startup emits the existing
+  Scala-library `sun.misc.Unsafe` deprecation warning; Scala compilation has no warnings.
 
 Global literal repair evidence: 2026-10-06, macOS arm64, base `60651b1`.
 
@@ -386,8 +539,8 @@ initialization correctness; the explicit cell-value oracle exposes the defect.
 
 ## Risks / Notes
 
-- [Conditional ownership hardening](conditional-ownership-witnesses.md) already covers mixed
-  return ownership. Reconcile overlapping repairs during triage without assuming the same cause.
+- Witness-based returns and branch-dependent transfer cleanup remain under
+  [conditional ownership hardening](conditional-ownership-witnesses.md).
 - A raylib window-initialization failure is a separate environmental condition, not evidence
   of the mixed-return bug. Require successful initialization before interpreting a GUI crash.
 - LLVM PHI failures and runtime cleanup failures are distinct observations even when the
@@ -397,12 +550,14 @@ initialization correctness; the explicit cell-value oracle exposes the defect.
 
 - Global literal repair and animated sample cleanup signoff: granted.
 - Integer-array fill and wall-map repair signoff: granted.
+- String-return ownership repair signoff: granted.
 - Remaining bug-repair signoff: pending.
 - Tracked item completion: pending.
 - Global literal repair and animated sample cleanup commit: complete
   (`Fix forward references to global literals`).
 - Integer-array fill and wall-map repair commit: complete (`Add runtime integer-array fill`).
-- Commit authorization: pending for findings 2, 3, and 5.
+- String-return ownership repair commit: complete (`Fix nested mixed string returns`).
+- Commit authorization: pending for findings 2 and 5.
 
 ## Task Working Memory
 
@@ -410,7 +565,11 @@ Global literal repair and animated sample cleanup are complete, signed off, and 
 committed as `Fix forward references to global literals`; verification evidence is recorded above.
 Integer-array fill and wall-map initialization are complete, signed off, and locally
 committed as `Add runtime integer-array fill`. Focused tests, smoke, the full suite, local
-publication, benchmark builds, QA enforcement, and independent review pass. Findings 2, 3,
-and 5 need reduction, diagnosis, and repair boundaries before implementation approval.
-Float and string array fill extensions are deferred. Commit authorization for findings
-2, 3, and 5 remains pending.
+publication, benchmark builds, QA enforcement, and independent review pass.
+
+Finding 3 is complete, signed off, and locally committed as `Fix nested mixed string returns`.
+Direct results through local scopes and nested conditionals, sample caption restoration,
+compiler verification, and independent review pass.
+Named mixed-binding returns, consuming transfers, and the documented conditional return-lifetime
+gap remain with conditional ownership hardening. Findings 2 and 5 still need reduction,
+diagnosis, and implementation approval. Float and string array fill extensions are deferred.
