@@ -51,3 +51,10 @@ This is the Author's active and near-term focus. The backlog lives in [tasks/](t
 - **Current focus:** Planned within Unify lambdas, together with its mixed-ownership
   consuming-transfer bug repair. Retain Boolean witnesses and make cleanup, consumption,
   and return operations consistently respect conditional ownership.
+
+### BUG: Linux ASan assembly failure
+
+- **Tracker:** [Fix Linux ASan assembly failure after internalization](tasks/linux-asan-internalization.md)
+- **Status:** planned
+- **Current focus:** Isolate the LLVM 20.1.8 sanitizer/internalization failure on both Linux
+  architectures and prepare a bounded repair plan.
