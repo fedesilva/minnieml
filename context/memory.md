@@ -15,8 +15,8 @@ This is the Author's active and near-term focus. The backlog lives in [tasks/](t
 - **Tracker:** [Fix correctness bugs exposed by the animated A* sample](tasks/astar-animation-correctness-bugs.md)
 - **Status:** in_progress
 - **Current focus:** Finding 5 needs M2 crash evidence and diagnosis before implementation approval.
-  Finding 6 tracks calls inside conditional field qualifiers failing frontend type resolution;
-  a standalone reduction and diagnosis are pending.
+  Finding 6 is complete and signed off. The remaining nested-conditional field-alias defect is
+  deferred to [finding 7](tasks/astar-animation-correctness-bugs.md#7-conditional-field-aliases-can-outlive-their-temporary-owner).
   Named mixed-binding returns and conditional escape cleanup remain
   with conditional ownership hardening. Float and string array fills are deferred.
 

@@ -1071,7 +1071,13 @@ object OwnershipAnalyzer:
         ConditionalArgument(cloned.expr, Vector.empty, none, scope.tempCounter, scope.bindingIds)
       else prepareConditionalArgument(cloned.expr, scope)
     val predicates = analyzeConditions(prepared, scope)
-    val argResult  = analyzeArgument(prepared.value, consumingParam, predicates.scope)
+    // An owning initializer transfers its result, including through nested local scopes.
+    val argumentConsumer = consumingParam.orElse {
+      lambda.params.headOption
+        .filter(_ => prepared.witness.isEmpty && exprAllocates(prepared.value, scope).isDefined)
+        .map(_.copy(consuming = true))
+    }
+    val argResult = analyzeArgument(prepared.value, argumentConsumer, predicates.scope)
 
     // Forward-scan: check if any newly-moved bindings are still used in the body
     val newlyMoved = argResult.scope.movedAt.keySet -- scope.movedAt.keySet
@@ -1173,7 +1179,20 @@ object OwnershipAnalyzer:
       case None =>
         (argResult.scope, None)
 
-    val dependencies = borrowedDependencies(argResult.expr, argResult.scope)
+    val borrowsArgument = lambda.params.headOption.exists { param =>
+      bodyScope
+        .getInfo(param.name)
+        .exists(info => info.state == OwnershipState.Borrowed || info.witness.isDefined)
+    }
+    val borrowedOrigins =
+      if borrowsArgument then
+        returnedOrigins(argResult.expr, argResult.scope.resolvables).collect {
+          case ref: Ref if ref.typeSpec.exists(isOwnedType(_, scope.resolvables)) => ref
+        }
+      else Nil
+    val dependencies =
+      (borrowedOrigins ++ borrowedDependencies(argResult.expr, argResult.scope))
+        .distinctBy(_.resolvedId)
     val sinkErrors =
       if consumingParam.isDefined then ownershipSinkErrors(cloned.expr, dependencies, scope)
       else Nil
@@ -1186,6 +1205,7 @@ object OwnershipAnalyzer:
       param <- lambda.params.headOption
       id <- param.id
       ref <- singleTerm(app.arg).map(unwrapTerm).collect { case ref: Ref => ref }
+      if ref.typeSpec.exists(isOwnedType(_, scope.resolvables))
       path <- ownershipPath(ref, argResult.scope).filter(_.fields.nonEmpty)
     yield id -> path
     val scopeWithAliases =
@@ -1204,6 +1224,12 @@ object OwnershipAnalyzer:
           !witnessBinding.contains(binding.name) &&
           isOwnedType(tpe, scope.resolvables)
         case _ => false
+
+    val localOwnerIds = bindingsToFree.flatMap(_.id).toSet ++
+      witnessOpt.toList.flatMap(_ => lambda.params.flatMap(_.id))
+    val borrowEscapeErrors = borrowedDependencies(bodyResult.expr, bodyResult.scope)
+      .filter(_.resolvedId.exists(localOwnerIds.contains))
+      .map(SemanticError.BorrowEscapeViaReturn(_, PhaseName))
 
     val (earlyIds, bodyWithEarlyFrees, terminalFrees) = bindingsToFree.foldLeft(
       (bodyResult.scope.bindingIds, bodyResult.expr, List.empty[OwnedBinding])
@@ -1276,13 +1302,14 @@ object OwnershipAnalyzer:
     val wrapped   = predicates.bindings.foldRight(finalExpr)((binding, body) => binding.wrap(body))
     TermResult(
       returnScope.copy(
-        bindingIds     = cleanupIds,
-        tempCounter    = bodyResult.scope.tempCounter,
-        consumedFields = bodyResult.scope.consumedFields
+        bindingIds           = cleanupIds,
+        tempCounter          = bodyResult.scope.tempCounter,
+        consumedFields       = bodyResult.scope.consumedFields,
+        borrowedDependencies = bodyResult.scope.borrowedDependencies
       ),
       wrapped.terms.head,
       errors = cloned.errors ++ predicates.errors ++ argResult.errors ++ preparedBody.errors ++
-        bodyResult.errors ++ sinkErrors ++ lastUseErrors
+        bodyResult.errors ++ sinkErrors ++ lastUseErrors ++ borrowEscapeErrors
     )
 
   private def ownershipSinkErrors(
@@ -1485,7 +1512,10 @@ object OwnershipAnalyzer:
         val fieldPath = ownershipPath(ref, result.scope).filter(_.fields.nonEmpty)
         fieldPath match
           case Some(path) =>
-            if pathOwner(path, result.scope).exists(_.state == OwnershipState.Owned) then
+            if pathOwner(path, result.scope).exists(info =>
+                info.state == OwnershipState.Owned && info.witness.isEmpty
+              )
+            then
               checked.copy(scope =
                 result.scope
                   .copy(consumedFields = result.scope.consumedFields.updated(path, app.source))

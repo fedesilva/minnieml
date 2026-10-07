@@ -1,9 +1,12 @@
 // Conditional operands retain their final blocks through calls, operators, and loops.
 struct Ops { call: Int -> Int };
+struct Value { value: Int };
 
 fn identity(value: Int): Int = value;;
+fn increment(value: Int): Int = value + 1;;
 fn combine(left: Int, right: Int): Int = left + right;;
 fn keep(effect: Unit, value: Int): Int = value;;
+fn invoke(f: Unit -> Bool): Bool = f ();;
 
 fn mark(trace: IntArray, digit: Int, value: Int): Int =
   ar_int_set trace 0 (ar_int_get trace 0 * 10 + digit);
@@ -43,9 +46,25 @@ fn indirect(f: Int -> Int, enabled: Bool, flag: Bool, trace: IntArray): Int =
   ;
 ;
 
-fn qualified(box: Ops, enabled: Bool, flag: Bool, trace: IntArray): Int =
+fn qualified(yes: Ops, no: Ops, enabled: Bool, flag: Bool, trace: IntArray): Int =
   if enabled then
-    (if flag then box; else box;).call (mark trace 1 7);
+    (if mark trace 2 (if flag then 1; else 0;) == 1 then yes; else no;).call (mark trace 1 7);
+  else 3;
+  ;
+;
+
+fn qualified_closure(yes: Ops, no: Ops, enabled: Bool, flag: Bool, trace: IntArray): Int =
+  if enabled then
+    (if invoke { effect trace 2; flag } then yes; else no;).call (mark trace 1 7);
+  else 3;
+  ;
+;
+
+fn qualified_value(enabled: Bool, flag: Bool, trace: IntArray): Int =
+  let yes = Value 10;
+  let no = Value 20;
+  if enabled then
+    (if invoke { effect trace 2; flag } then yes; else no;).value;
   else 3;
   ;
 ;
@@ -62,7 +81,9 @@ fn known_qualified(enabled: Bool, flag: Bool, trace: IntArray): Int =
   fn ~add(value: Int): Int = value + seed;;
   let box = Ops add;
   if enabled then
-    (if flag then box; else box;).call (if flag then mark trace 1 10; else mark trace 2 20;);
+    (if mark trace 2 (if flag then 1; else 0;) == 1 then box; else box;).call
+      (if flag then mark trace 1 10; else mark trace 2 20;)
+    ;
   else 3;
   ;
 ;
@@ -103,23 +124,40 @@ pub fn main(args: StringArray): Int =
   let result = if enabled then base + 7; else 3;;
   let single = if enabled then base; else 3;;
   let seven = if enabled then 7; else 3;;
+  let qualified_result = if enabled then (if flag then 7; else 8;); else 3;;
   let pair_trace = if enabled then pair; else 0;;
   let single_trace = if enabled then selected; else 0;;
-  let callee_trace = if enabled then 1; else 0;;
+  let callee_trace = if enabled then 12; else 0;;
+  let known_callee_trace = if enabled then selected * 10 + 2; else 0;;
+  let predicate_trace = if enabled then 2; else 0;;
   let a = check (direct enabled flag trace) result trace pair_trace;
   let b = check (local enabled flag trace) result trace pair_trace;
   let c = check (known enabled flag trace) result trace single_trace;
   let d = check (indirect identity enabled flag trace) single trace single_trace;
-  let e = check (qualified (Ops identity) enabled flag trace) seven trace callee_trace;
+  let e =
+    check
+      (qualified (Ops identity) (Ops increment) enabled flag trace)
+      qualified_result
+      trace
+      callee_trace
+    ;
   let f = check (unit_arg enabled flag trace) seven trace pair_trace;
   let g = check (operator enabled flag trace) result trace pair_trace;
-  let h = check (known_qualified enabled flag trace) result trace single_trace;
+  let h = check (known_qualified enabled flag trace) result trace known_callee_trace;
+  let i =
+    check
+      (qualified_closure (Ops identity) (Ops increment) enabled flag trace)
+      qualified_result
+      trace
+      callee_trace
+    ;
+  let j = check (qualified_value enabled flag trace) single trace predicate_trace;
   let values = ar_int_new 10000;
   fill values 10000 flag;
   let first = if flag then 1; else 0;;
   let last = if flag then 0; else 1;;
   let loop_ok = ar_int_get values 0 == first and ar_int_get values 9999 == last;
-  if a + b + c + d + e + f + g + h == 0 and loop_ok then 0;
+  if a + b + c + d + e + f + g + h + i + j == 0 and loop_ok then 0;
   else 1;
   ;
 ;

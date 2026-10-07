@@ -54,6 +54,9 @@ object CaptureAnalyzer:
     moduleIds: Set[String]
   ): Term =
     term match
+      case ref: Ref =>
+        analyzeRef(ref, localIds, moduleIds)
+
       case app: App =>
         app.fn match
           // Let-desugaring: fn is a Lambda that extends scope
@@ -103,6 +106,18 @@ object CaptureAnalyzer:
         else t
 
       case _ => term
+
+  private def analyzeRef(
+    ref:       Ref,
+    localIds:  Set[String],
+    moduleIds: Set[String]
+  ): Ref =
+    ref.qualifier match
+      case Some(qualifier) =>
+        val updated = analyzeTerm(qualifier, localIds, moduleIds)
+        if updated ne qualifier then ref.copy(qualifier = Some(updated))
+        else ref
+      case None => ref
 
   /** Analyze a value-position lambda scope. Collects captures and processes nested lambdas.
     */
@@ -208,6 +223,7 @@ object CaptureAnalyzer:
   private def collectNestedLambdasTerm(term: Term): List[Lambda] =
     term match
       case invalid: InvalidExpression => collectNestedLambdas(invalid.originalExpr)
+      case ref:     Ref => ref.qualifier.toList.flatMap(collectNestedLambdasTerm)
       case lambda:  Lambda => List(lambda)
       case app:     App =>
         app.fn match
@@ -231,7 +247,7 @@ object CaptureAnalyzer:
     fn: Ref | App | Lambda
   ): List[Lambda] =
     fn match
-      case _:   Ref => Nil
+      case ref: Ref => collectNestedLambdasTerm(ref)
       case app: App =>
         collectNestedLambdasAppFn(app.fn) ++
           collectNestedLambdas(app.arg)
@@ -243,7 +259,7 @@ object CaptureAnalyzer:
     moduleIds: Set[String]
   ): Ref | App | Lambda =
     fn match
-      case ref: Ref => ref
+      case ref: Ref => analyzeRef(ref, localIds, moduleIds)
       case app: App =>
         val newFn  = analyzeAppFn(app.fn, localIds, moduleIds)
         val newArg = analyzeExpr(app.arg, localIds, moduleIds)

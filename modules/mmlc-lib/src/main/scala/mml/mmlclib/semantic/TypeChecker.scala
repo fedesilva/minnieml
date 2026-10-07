@@ -229,8 +229,10 @@ object TypeChecker:
           case e:      Expr => walkExpr(e)
           case _ => ()
         def walkAppFn(fn: Ref | App | Lambda): Unit = fn match
-          case ref: Ref => ref.resolvedId.foreach(id => if topLevelIds.contains(id) then refs += id)
-          case app: App => walkAppFn(app.fn); walkExpr(app.arg)
+          case ref: Ref => walkTerm(ref)
+          case app: App =>
+            walkAppFn(app.fn)
+            walkExpr(app.arg)
           case lambda: Lambda => walkExpr(lambda.body)
         bnd.value.terms match
           case (lambda: Lambda) :: _ => walkExpr(lambda.body)

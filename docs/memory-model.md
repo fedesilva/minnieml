@@ -208,6 +208,13 @@ free B
 If a temporary is passed to a consuming parameter, ownership transfers and it is not
 freed at the call site.
 
+A temporary record used as a field qualifier stays alive through the field's local use.
+For example, `println (make_user ()).name` destroys the record after `println`, and
+`let name = (make_user ()).name; ...` retains it through the local binding's body.
+The projected field remains borrowed. It cannot escape a scope that destroys its owner,
+including a conditional branch; bind the owner outside that branch when the borrow must
+remain available afterward.
+
 ---
 
 ## Struct constructors
@@ -561,6 +568,7 @@ it cannot return the borrowed field or transfer it into another owning field or 
 function parameter. Pass the whole holder to a consuming parameter to transfer its ownership.
 
 Calling a PAP that transfers a stored payload requires ownership of the enclosing aggregate.
+An aggregate selected from mixed allocating and borrowed branches cannot authorize this call.
 The call marks that field consumed; later calls through the field or its aliases are rejected.
 Other fields remain usable, but the aggregate cannot be passed or returned as a whole after
 one of its fields is consumed. At scope end its destructor releases the consumed field's raw
@@ -605,6 +613,13 @@ terminal call. Payload destructors retain their ordering relative to user effect
 
 These restrictions describe compiler support. Ownership alone does not require them.
 Use-after-move rejection and keeping borrows within their owners' lifetimes remain model rules.
+
+### Conditional field aliases
+
+Nested conditional results can lose a field alias's owner dependency, allowing a borrowed
+String to escape temporary-record cleanup. This violates the lifetime rule above; the
+[reproducer and repair entry](../context/tasks/astar-animation-correctness-bugs.md#7-conditional-field-aliases-can-outlive-their-temporary-owner) record the
+confirmed gap.
 
 ### Clone operations
 
