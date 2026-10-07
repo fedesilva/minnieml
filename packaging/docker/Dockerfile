@@ -37,7 +37,7 @@ ENV PATH=$JAVA_HOME/bin:$SDKMAN_DIR/bin:$SDKMAN_DIR/candidates/java/current/bin:
 
 # Install GraalVM and SBT
 RUN bash -c "source /root/.sdkman/bin/sdkman-init.sh && \
-    sdk install java 21.0.3-graal && \
+    sdk install java 25.4.4+1-graal && \
     sdk install sbt"
 
 # Select the sbt thin client for the image architecture.
