@@ -433,7 +433,7 @@ execution at `-O0` establish destruction before `println` reads the String. The 
 diagnosis, evidence, and repair plan are in
 [conditional field-alias lifetime](#7-conditional-field-aliases-can-outlive-their-temporary-owner).
 Deferral to finding 7 is approved, and finding 6's implemented scope is signed off
-for a local checkpoint. The P1 remains open; this completion does not claim its repair.
+for a local checkpoint. Finding 7 records the completed, signed-off P1 repair separately.
 
 Acceptance: valid calls and operators inside conditional field qualifiers resolve and type
 check; the selected field can be called successfully. Verify branch selection and exactly-once
@@ -596,19 +596,24 @@ finding has a focused regression or sample check that fails for the defective be
 
 ## Plan (Approval Gate)
 
-- [ ] Reproduce the embedded examples and source substitutions, then propose bounded repairs.
-- [ ] Establish whether the PHI occurrences share a cause and whether string-return repair
-  belongs with [conditional ownership hardening](conditional-ownership-witnesses.md).
+- [x] Reduce findings 1–4 and establish bounded repairs; conditional IR verification records
+  the caption PHI occurrence that was not reproduced.
+- [x] Diagnose conditional-argument PHIs and bound the string-return repair. No common cause
+  with the historical caption PHI failure is established; named mixed-binding returns and
+  conditional escape cleanup belong to [conditional ownership hardening](conditional-ownership-witnesses.md).
 - [ ] Diagnose the macOS M2 launch failure and establish a compatible build configuration.
 - [x] Reduce and diagnose finding 6's frontend qualifier-resolution failure; bounded repair approved.
 - [x] Complete finding 6's approved qualifier repairs and verification, with
   [nested-conditional alias lifetime](#7-conditional-field-aliases-can-outlive-their-temporary-owner) deferred to finding 7.
-- [ ] Implement approved repairs, add regressions, and run applicable verification.
+- [x] Complete finding 7's bounded conditional dependency repair and host verification,
+  with Linux sanitizer verification deferred to the [Linux ASan BUG](linux-asan-internalization.md).
+- [ ] Implement any approved finding 5 repair and complete its deployment verification.
 
 Approval: granted for the global literal repair, integer-array fill repair, and bounded
 string-return ownership repair below, conditional IR repair, and finding 6 qualifier resolution,
-capture traversal, and temporary-owner lifetime.
-Implementation approval for findings 5 and 7 remains pending.
+capture traversal, and temporary-owner lifetime, plus finding 7's bounded conditional
+dependency repair.
+Implementation approval for finding 5 remains pending.
 
 ### Conditional IR repair
 
@@ -695,7 +700,7 @@ branch and checks that its returned owned value is neither cloned nor freed in t
   integer bindings. Values, declaration placement, and group prefixes are preserved.
 - Compiler handoff checks and independent review pass. Global literal repair and sample
   cleanup are complete and signed off. Local commit: `Fix forward references to global literals`.
-  Findings 2, 3, and 5 remain open.
+  Finding 5 remains open.
 
 ### Integer-array fill and wall-map repair
 
@@ -708,7 +713,7 @@ branch and checks that its returned owned value is neither cloned nor freed in t
   and exercise the default, empty, clipped, and full-barrier cases.
 - [x] **complete** — Compiler handoff checks, QA enforcement, and independent review pass.
 - Repair signoff: granted. Local commit: `Add runtime integer-array fill`.
-  Findings 2, 3, and 5 remain open.
+  Finding 5 remains open.
 
 ## Verification
 
@@ -749,8 +754,8 @@ Verification commands run sequentially where they use `sbtn`. JVM startup emits 
 container ABI checks are not applicable. M2 deployment remains unverified under finding 5.
 
 [Finding 6](#6-calls-inside-conditional-field-qualifiers-fail-type-resolution) records the
-frontend failure for calls inside conditional field qualifiers. It remains an open task item;
-the conditional IR repair does not cover it.
+completed, signed-off frontend repair for calls inside conditional field qualifiers;
+the conditional IR repair has a separate scope.
 
 
 Evidence for findings 1–4: 2026-10-06, macOS arm64, repository base `8143f27`.
@@ -764,7 +769,9 @@ Evidence for findings 1–4: 2026-10-06, macOS arm64, repository base `8143f27`.
 - The uninitialized grid follows directly from the linked sample and runtime source.
 - Finding 5 is a user-reported macOS M2 launch failure dated 2026-10-06; independent
   reproduction, binary identification, and diagnosis remain pending.
-- Minimal headless reductions for the PHI findings remain pending. Finding 3 has a
+- [Conditional IR verification](#conditional-ir-verification) records headless reductions
+  for the conditional-argument PHI failure; the historical caption PHI failure was not
+  reproduced. Finding 3 has a
   [confirmed headless reduction](#headless-confirmation-of-finding-3) at `d1f744f`.
 
 String-return repair evidence: 2026-10-06, macOS arm64, Homebrew LLVM 23.1.1,
