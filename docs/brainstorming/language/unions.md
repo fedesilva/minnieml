@@ -21,6 +21,8 @@ Integer-backed named constants belong to [enums](enums.md).
 ## Constructors
 
 - A union declares a set of variants, each with a value constructor.
+- Union names and variant names follow the normal type-identifier grammar, starting
+  with an uppercase letter.
 - A nullary constructor returns the variant's singleton value.
 - A payload constructor works like a struct constructor.
 
