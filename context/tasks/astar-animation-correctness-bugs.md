@@ -230,7 +230,7 @@ At `d1f744f`, `promoteStaticBranchesInReturn` only handles an immediate conditio
 following nested return branches or local-binding wrappers. Its allocation queries must also
 remain valid after ownership rewrites. A repair must align these decisions with caller cleanup
 while preserving exactly-once evaluation and borrowed-return rejection. The broader consuming
-transfer failures in [conditional ownership hardening](conditional-ownership-witnesses.md)
+transfer failures in [conditional ownership hardening](mixed-ownership-transfers.md)
 remain separate acceptance obligations; this reproduction does not establish their repair.
 
 ### 4. `astar3.mml` reads uninitialized wall-map cells
@@ -493,7 +493,7 @@ lifetime remain accepted. Branch selection and exactly-once evaluation remain un
   [OwnershipAnalyzer.scala](../../modules/mmlc-lib/src/main/scala/mml/mmlclib/semantic/OwnershipAnalyzer.scala),
   directly affected escape and use-after-move checks, and focused semantic/runtime regressions.
 - Out of scope: new lifetime syntax, implicit cloning, M2 deployment, and the separate
-  [conditional ownership witness work](conditional-ownership-witnesses.md).
+  [conditional ownership witness work](mixed-ownership-transfers.md).
 
 #### Plan (Approval Gate)
 
@@ -600,7 +600,7 @@ finding has a focused regression or sample check that fails for the defective be
   the caption PHI occurrence that was not reproduced.
 - [x] Diagnose conditional-argument PHIs and bound the string-return repair. No common cause
   with the historical caption PHI failure is established; named mixed-binding returns and
-  conditional escape cleanup belong to [conditional ownership hardening](conditional-ownership-witnesses.md).
+  conditional escape cleanup belong to [conditional ownership hardening](mixed-ownership-transfers.md).
 - [ ] Diagnose the macOS M2 launch failure and establish a compatible build configuration.
 - [x] Reduce and diagnose finding 6's frontend qualifier-resolution failure; bounded repair approved.
 - [x] Complete finding 6's approved qualifier repairs and verification, with
@@ -657,31 +657,16 @@ unchanged. Conditional ownership hardening and M2 portability remain separate wo
 
 The repair covers result expressions through scopes and conditionals. Returns of named
 mixed-ownership bindings and their aliases still require witness-aware escape/transfer handling
-under [conditional ownership hardening](conditional-ownership-witnesses.md). That task's
+under [conditional ownership hardening](mixed-ownership-transfers.md). That task's
 consuming-transfer acceptance obligations remain open. Findings 2 and 5 are outside this repair.
 
 #### Separate conditional return-lifetime gap
 
-An additional probe allocates an owned local before a conditional and returns that local only
-on one branch:
-
-```mml
-fn pick(flag: Bool): String =
-  let text = int_to_str 123;
-  let alias = text;
-  if flag then alias;
-  else "abc";
-  ;
-;
-pub fn main(): Unit = println (pick false);;
-```
-
-With return promotion repaired, `pick false` leaks the four-byte allocation at both `-O0`
-and `-O3` under ASan+LSan. The existing escape check exempts the local from cleanup when any
-return path references it; it does not release that local on the other path. This is a
-branch-dependent ownership transfer/cleanup obligation for conditional ownership hardening,
-outside the caption repair. The bounded alias regression allocates inside the returning
-branch and checks that its returned owned value is neither cloned nor freed in the callee.
+The standalone [mixed-ownership task](mixed-ownership-transfers.md) owns this repair.
+Its [conditional return-lifetime evidence](mixed-ownership-transfers-evidence.md#conditional-return-lifetime-evidence-from-a)
+contains the reproducer and sanitizer results. Returning a local on only one branch leaves
+an allocation to clean up on the other branch; this obligation is outside the completed
+caption repair.
 
 ### Global literal repair
 
@@ -936,7 +921,7 @@ initialization correctness; the explicit cell-value oracle exposes the defect.
   by the [Linux ASan assembly failure](linux-asan-internalization.md), with explicit approval
   to defer that verification from finding 7 completion.
 - Witness-based returns and branch-dependent transfer cleanup remain under
-  [conditional ownership hardening](conditional-ownership-witnesses.md).
+  [conditional ownership hardening](mixed-ownership-transfers.md).
 - A raylib window-initialization failure is a separate environmental condition, not evidence
   of the mixed-return bug. Require successful initialization before interpreting a GUI crash.
 - LLVM PHI failures and runtime cleanup failures are distinct observations even when the
@@ -976,8 +961,9 @@ Finding 3 is complete, signed off, and locally committed as `Fix nested mixed st
 Direct results through local scopes and nested conditionals, sample caption restoration,
 compiler verification, and independent review pass.
 Named mixed-binding returns, consuming transfers, and the documented conditional return-lifetime
-gap remain with conditional ownership hardening. Finding 2's conditional IR repair is
-complete, signed off, and locally committed as `Preserve exit blocks through call evaluation`.
+gap belong to the standalone [mixed-ownership task](mixed-ownership-transfers.md).
+Finding 2's conditional IR repair is complete, signed off, and locally committed as
+`Preserve exit blocks through call evaluation`.
 Propagation, all compiler gates, QA enforcement, tracking checks, and independent code review pass.
 Finding 5 needs diagnosis and implementation approval. Finding 7's bounded conditional dependency
 repair is complete and signed off. Conditional dependency merging, all 97 focused semantic,
