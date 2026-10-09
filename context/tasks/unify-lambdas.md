@@ -25,7 +25,7 @@ remain subject to bounded plan approval. Only the active step exposes its curren
 10. [x] **complete** — [BUG: preserve valid LLVM and TCO for nested capturing recursion](#bug-preserve-valid-llvm-and-tco-for-nested-capturing-recursion); signed off.
 11. [x] **complete** — [BUG: continue elaboration after independent errors](#bug-continue-elaboration-after-independent-errors); signed off.
 12. [x] **complete** — [Counter and argument-expression preservation](#preserve-counters-and-argument-expressions-across-ownership-analysis); signed off.
-13. [ ] **planned** — [Mixed-ownership transfer repair and conditional-ownership hardening](#bug-preserve-mixed-ownership-through-consuming-transfers).
+13. [ ] **planned** — Resolve the standalone [mixed-ownership repair dependency](mixed-ownership-transfers.md).
 14. [ ] **in_progress** — [Remaining lambda semantics and lowering](#remaining-lambda-implementation), including [restoration of all ignored regressions](#restore-ignored-regressions).
 15. [ ] **planned** — [Preserve capture transfers through evaluated callees](#bug-preserve-capture-transfers-through-evaluated-callees).
 16. [ ] **planned** — [Preserve the complete application callee type in Simplifier](#fix-preserve-the-complete-application-callee-type-in-simplifier).
@@ -655,60 +655,19 @@ retains its reproduction, scope, and acceptance criteria.
   is not established. Fresh narrow re-review reports no actionable findings. All compiler gates,
   focused QA, tracking consistency, links, and diff checks pass. Expression-slice signoff is complete.
 - **Boundary:** the allocated/static consuming-transfer and return failures belong to
-  [conditional-ownership hardening](conditional-ownership-witnesses.md). This subtask addresses
+  [conditional-ownership hardening](mixed-ownership-transfers.md). This subtask addresses
   counter propagation, expression preservation, and the QA cross-reference.
 
 #### Bug: preserve mixed ownership through consuming transfers
 
-- **Status:** planned.
-- **Implementation task:** [Make conditional ownership explicit in ownership operations](conditional-ownership-witnesses.md).
-  Repair this bug together with the shared handling of witnesses across cleanup, consumption,
-  and returns, as one ownership workstream within Unify lambdas.
-- **Problem:** a scoped local that selects an allocated String or a literal can reach a
-  consuming parameter with incorrect cleanup on both paths. The allocated value is freed
-  before the consuming call, then freed again by the callee. The literal reaches the callee
-  without owned storage and is incorrectly freed there.
-- **Expected behavior:** preserve the selected branch's ownership through the scoped result
-  and consuming boundary. Transfer allocated storage once and suppress the former owner's
-  cleanup after transfer. Literal storage must use the existing consuming-boundary clone
-  contract; borrowed heap storage must remain rejected.
-- **Acceptance:** add semantic and native regressions for both branches of the reproducer
-  below, named and inline consuming calls, and scoped aliases. Verify exactly-once evaluation,
-  valid transfer, cleanup only by the final owner, and borrowed-source rejection. Both native
-  branches must return exit code 0 and pass ASan+LSan without double-free, invalid free, or leak.
-- **Relevant implementation:** the witness-based cleanup in
-  [OwnershipAnalyzer.scala](../../modules/mmlc-lib/src/main/scala/mml/mmlclib/semantic/OwnershipAnalyzer.scala),
-  particularly `analyzeLambdaApplication`, `prepareConsumingArgument`, and `handleConsumingParam`.
-
-Reproducer preserved from the independent verifier's `true.mml`:
-
-```mml
-fn take(~text: String): Int = text.length;;
-fn check(flag: Bool): Int =
-  take (if true then let value = if flag then int_to_str 123; else "abc"; ; value; else "def";);
-;
-pub fn main(): Int = check true - 3;;
-```
-
-For the literal branch, change only `check true` to `check false` in `main`.
-Compile each variant with `mmlc -s -O 0`, then run with
-`ASAN_OPTIONS=detect_leaks=1:halt_on_error=1:abort_on_error=1`.
-
-Evidence collected on 2026-09-11, macOS arm64:
-
-- **Allocated branch (`true`):** exit 134; ASan reports `attempting double-free`.
-  The first free is in `check`; the second is `take -> __free_String -> free`.
-  Emitted IR shows witness-guarded `__free_String` before the result reaches `take`.
-- **Literal branch (`false`):** exit 134; ASan reports a BUS during deallocation through
-  `take -> __free_String -> free`. IR passes the literal-backed String without a clone.
-- A fresh independent verifier reproduced the failures; the root agent subsequently reran
-  both saved binaries and confirmed the same ASan failures. Scratch sources, binaries, and
-  IR remain under `/tmp/scoped-witness-verifier/`; the source and observed results above are
-  the durable evidence and do not depend on retaining that temporary directory.
-- The reviewer excluded this from the four-repair re-review because the witness-cleanup
-  block already exists at commit `234b6e1`. This attribution is based on source comparison;
-  the exact reproducer was not run against a rebuilt older compiler. The bug remains open.
-  The passing 41-fixture harness does not include this reproducer.
+- **Dependency:** [Mixed-ownership transfers, cleanup, and returns](mixed-ownership-transfers.md).
+- **Status:** planned; implementation approval pending in the standalone task.
+- **Required result:** named and scoped mixed values transfer to consuming parameters without
+  invalid frees or duplicate cleanup, with safe aliases and returns. Borrowed alternatives
+  remain rejected and existing clone policy is preserved.
+- The standalone task owns the staged plan, progress, verification, and signoff. Its
+  [evidence](mixed-ownership-transfers-evidence.md) includes the scoped-transfer reproducer,
+  the A* return-leak follow-up, and current field/capture probes.
 
 #### Bug: consume an owned PAP captured by a move lambda
 
@@ -1280,9 +1239,10 @@ are in `context/history/` for Author review. No compiler slice is authorized by 
   and sanitizer results are recorded in the recovery section.
 - **Evidence:** [Nested TCO repair verification](#bug-preserve-valid-llvm-and-tco-for-nested-capturing-recursion)
   and [binding construction verification](#binding-construction-evidence).
-- **Open limits:** the mixed-ownership reproducer remains unresolved; the general branch
-  audit and separate Linux sanitizer validation are deferred. The broader counter/expression
-  follow-up is complete and signed off. Remaining lambda implementation and 37 ignored cases
+- **Open limits:** the standalone [mixed-ownership repair](mixed-ownership-transfers.md)
+  remains unresolved; the general branch audit and separate Linux sanitizer validation are deferred.
+  The broader counter/expression follow-up is complete and signed off.
+  Remaining lambda implementation and 37 ignored cases
   require further bounded work.
   [Consuming an owned PAP captured by a move lambda](#bug-consume-an-owned-pap-captured-by-a-move-lambda)
   has passing semantic, smoke, benchmark-build, native sanitizer, and independent review

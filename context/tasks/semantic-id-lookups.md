@@ -100,7 +100,7 @@ Implementation verification is pending. Acceptance requires:
 - Avoid inventing another identity system. Reuse the stable IDs and allocation/indexing
   contracts already defined by `BindingIds`, `LocalBindings`, and `ResolvablesIndex`.
 - Coordinate with [lambda migration](unify-lambdas.md) and
-  [conditional ownership hardening](conditional-ownership-witnesses.md) where changes overlap.
+  [conditional ownership hardening](mixed-ownership-transfers.md) where changes overlap.
   Their narrower repairs do not substitute for the complete semantic-phase audit.
 
 ## Signoff
