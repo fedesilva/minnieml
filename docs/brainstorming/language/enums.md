@@ -36,6 +36,8 @@ unions nor general polymorphism is required for derived enum equality.
 
 ## Members and typing
 
+- Enum names and member names follow the normal type-identifier grammar, starting
+  with an uppercase letter.
 - Each member is an integer-backed singleton value.
 - A member value is inferred as the enclosing enum type by default.
 - An explicit type ascription can give a value its specific member type.
