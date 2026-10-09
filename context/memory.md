@@ -3,12 +3,15 @@
 Read [task-tracking-rules.md](task-tracking-rules.md) before changing task state.
 This is the Author's active and near-term focus. The backlog lives in [tasks/](tasks/).
 
-## Global Working Memory
-
-- Record QA findings in [QA misses](tasks/qa-misses.md). Select individual items or related
-  groups for cleanup; create dedicated tasks when they need their own plans.
-
 ## Active Tasks
+
+### Portable macOS ARM64 builds
+
+- **Tracker:** [Portable macOS ARM64 builds](tasks/macos-arm64-portability.md)
+- **Status:** planned
+- **Current focus:** Continue on the M5: confirm CPU and deployment-target settings, then
+  verify a portable build on the M3. The unsupported `smax` instruction is identified;
+  `minos 26.0` is a separate deployment concern. Implementation approval is pending.
 
 ### BUG: Mixed-ownership transfers, cleanup, and returns
 
@@ -25,8 +28,8 @@ This is the Author's active and near-term focus. The backlog lives in [tasks/](t
 
 - **Tracker:** [Fix correctness bugs exposed by the animated A* sample](tasks/astar-animation-correctness-bugs.md)
 - **Status:** in_progress
-- **Current focus:** Finding 5 needs M2 crash evidence and diagnosis before implementation approval.
-  Findings 1–4, 6, and 7 are complete and signed off. Finding 7's Linux sanitizer verification
+- **Current focus:** Final task verification and signoff are pending. Findings 1–4, 6, and 7
+  are complete and signed off. Finding 7's Linux sanitizer verification
   is explicitly deferred to the [Linux ASan BUG](tasks/linux-asan-internalization.md).
   Ownership follow-ups belong to the standalone [mixed-ownership task](tasks/mixed-ownership-transfers.md).
   Float and string array fills are deferred.
@@ -62,3 +65,8 @@ This is the Author's active and near-term focus. The backlog lives in [tasks/](t
 - **Status:** planned
 - **Current focus:** Isolate the LLVM 20.1.8 sanitizer/internalization failure on both Linux
   architectures and prepare a bounded repair plan.
+
+## Global Working Memory
+
+- Record QA findings in [QA misses](tasks/qa-misses.md). Select individual items or related
+  groups for cleanup; create dedicated tasks when they need their own plans.

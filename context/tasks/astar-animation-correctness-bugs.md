@@ -12,22 +12,19 @@
 
 ## Execution Checklist
 
-1. [ ] **in_progress** — Findings 1–4, 6, and 7 have signed-off repairs; finding 5 remains open.
+1. [ ] **in_progress** — Findings 1–4, 6, and 7 have signed-off repairs; task signoff remains pending.
 2. [x] **complete** — [Global literal repair](#global-literal-repair),
    [string-return ownership repair](#string-return-ownership-repair), and
    [conditional IR repair](#conditional-ir-repair) are complete and signed off.
 3. [x] **complete** — [Integer-array fill and wall-map repair](#integer-array-fill-and-wall-map-repair)
    passes compiler checks, sample verification, and independent review; repair signoff is granted.
-4. [ ] **planned** — Diagnose the copied executable's failure on macOS M2 and verify a
-   compatible build configuration.
-5. [x] **complete** — [Finding 6: calls inside conditional field qualifiers fail type resolution](#6-calls-inside-conditional-field-qualifiers-fail-type-resolution).
-6. [x] **complete** — [Finding 7: conditional field-alias lifetime](#7-conditional-field-aliases-can-outlive-their-temporary-owner).
-7. [ ] **planned** — Run applicable compiler and sample verification and obtain signoff.
+4. [x] **complete** — [Finding 6: calls inside conditional field qualifiers fail type resolution](#6-calls-inside-conditional-field-qualifiers-fail-type-resolution).
+5. [x] **complete** — [Finding 7: conditional field-alias lifetime](#7-conditional-field-aliases-can-outlive-their-temporary-owner).
+6. [ ] **planned** — Run applicable compiler and sample verification and obtain signoff.
 
 ## Problem
 
-Seven findings concern ordinary MML source patterns, the console A* sample, and portability
-of the animated executable to macOS M2.
+Six findings concern ordinary MML source patterns and the console and animated A* samples.
 The [animated sample](../../mml/samples/astar3_animated.mml) uses plain global integer
 constants and explicit grid initialization. It uses an inline conditional array argument for finding 2 and ordinary caption returns
 with literal terminal messages for finding 3.
@@ -248,26 +245,6 @@ before `build_vertical_wall` to initialize every open cell.
 Acceptance: initialize all cells to open before placing walls. Verify the default obstacle,
 no wall, clipped walls, and a full-height barrier without relying on allocator contents.
 
-### 5. Copied executable fails on macOS M2 with an illegal hardware instruction
-
-Reported setup: the animated executable was built on the development Mac and copied to
-an Apple M2 machine, also running macOS. Raylib was installed on the destination, and the
-library search path was configured as on the development machine. Launching the copied
-executable produced:
-
-```text
-illegal hardware instruction
-```
-
-This failure has not been independently reproduced. The exact executable build flags,
-destination macOS and raylib versions, and faulting instruction remain unconfirmed.
-Collect those details and a crash backtrace, then check the generated code's CPU feature
-requirements and compare the copied executable with a build made on the M2. The message
-alone does not establish the cause or identify which executable or library instruction failed.
-
-Acceptance: identify the cause, document the supported build and deployment configuration,
-and verify that an executable built for that configuration runs on the macOS M2 machine.
-
 ### 6. Calls inside conditional field qualifiers fail type resolution
 
 - **Status:** complete.
@@ -340,9 +317,9 @@ macOS arm64, Homebrew LLVM 23.1.1.
 | QA and tracking consistency | Pass. |
 | Code review | Capture follow-up passes narrow independent re-review. Ownership review is complete through the explicitly approved implementing-agent fallback; primary and per-claim independence are waived. One confirmed P1 remains, explicitly deferred to [conditional field-alias lifetime](#7-conditional-field-aliases-can-outlive-their-temporary-owner). |
 
-No ABI contract changes are included; Linux ABI checks are not applicable. M2 portability
-remains under finding 5. CLI startup retains the existing JVM `sun.misc.Unsafe` deprecation
-notice. Repair signoff and local commit authorization are granted for finding 6 with the
+No ABI contract changes are included; Linux ABI checks are not applicable. CLI startup
+retains the existing JVM `sun.misc.Unsafe` deprecation notice. Repair signoff and local
+commit authorization are granted for finding 6 with the
 documented deferral. Push authorization is pending.
 
 #### Review follow-ups
@@ -492,7 +469,7 @@ lifetime remain accepted. Branch selection and exactly-once evaluation remain un
 - In scope: conditional dependency merging in
   [OwnershipAnalyzer.scala](../../modules/mmlc-lib/src/main/scala/mml/mmlclib/semantic/OwnershipAnalyzer.scala),
   directly affected escape and use-after-move checks, and focused semantic/runtime regressions.
-- Out of scope: new lifetime syntax, implicit cloning, M2 deployment, and the separate
+- Out of scope: new lifetime syntax, implicit cloning, and the separate
   [conditional ownership witness work](mixed-ownership-transfers.md).
 
 #### Plan (Approval Gate)
@@ -565,7 +542,7 @@ again. LLVM assembly verification and ASan/LSan execution pass. Both focused sui
 
 Host verification covers macOS arm64. Repair signoff and scoped local commit authorization
 are granted. Completion is approved with the Linux sanitizer failures deferred below; no
-passing Linux native sanitizer or M2 deployment result is claimed.
+passing Linux native sanitizer result is claimed.
 
 ##### Linux verification blocker
 
@@ -584,14 +561,13 @@ and must not transfer ownership or authorize consumption of borrowed fields.
 ## Outcome
 
 Ordinary global constants, conditional expressions, and mixed string return paths compile
-and execute safely. The console A* grid is deterministic and fully initialized. A supported
-build configuration for the animated executable is verified on macOS M2. Every
+and execute safely. The console A* grid is deterministic and fully initialized. Every
 finding has a focused regression or sample check that fails for the defective behavior.
 
 ## Scope
 
-- In scope: the seven findings, their reductions, directly affected compiler paths, regression
-  coverage, wall-map initialization in `astar3.mml`, and executable portability diagnosis.
+- In scope: the six findings, their reductions, directly affected compiler paths, regression
+  coverage, and wall-map initialization in `astar3.mml`.
 - Out of scope: animation controls, new language features, raylib changes, and unrelated cleanup.
 
 ## Plan (Approval Gate)
@@ -601,19 +577,16 @@ finding has a focused regression or sample check that fails for the defective be
 - [x] Diagnose conditional-argument PHIs and bound the string-return repair. No common cause
   with the historical caption PHI failure is established; named mixed-binding returns and
   conditional escape cleanup belong to [conditional ownership hardening](mixed-ownership-transfers.md).
-- [ ] Diagnose the macOS M2 launch failure and establish a compatible build configuration.
 - [x] Reduce and diagnose finding 6's frontend qualifier-resolution failure; bounded repair approved.
 - [x] Complete finding 6's approved qualifier repairs and verification, with
   [nested-conditional alias lifetime](#7-conditional-field-aliases-can-outlive-their-temporary-owner) deferred to finding 7.
 - [x] Complete finding 7's bounded conditional dependency repair and host verification,
   with Linux sanitizer verification deferred to the [Linux ASan BUG](linux-asan-internalization.md).
-- [ ] Implement any approved finding 5 repair and complete its deployment verification.
 
 Approval: granted for the global literal repair, integer-array fill repair, and bounded
 string-return ownership repair below, conditional IR repair, and finding 6 qualifier resolution,
 capture traversal, and temporary-owner lifetime, plus finding 7's bounded conditional
 dependency repair.
-Implementation approval for finding 5 remains pending.
 
 ### Conditional IR repair
 
@@ -638,7 +611,7 @@ the historical caption PHI failure is not reproduced, and no common root cause i
 
 The contract stays local to emitted expression results: `None` means no new exit block;
 a later nonempty exit replaces an earlier exit. Evaluation order and ownership semantics stay
-unchanged. Conditional ownership hardening and M2 portability remain separate work.
+unchanged. Conditional ownership hardening remains separate work.
 
 ### String-return ownership repair
 
@@ -685,7 +658,6 @@ caption repair.
   integer bindings. Values, declaration placement, and group prefixes are preserved.
 - Compiler handoff checks and independent review pass. Global literal repair and sample
   cleanup are complete and signed off. Local commit: `Fix forward references to global literals`.
-  Finding 5 remains open.
 
 ### Integer-array fill and wall-map repair
 
@@ -698,7 +670,6 @@ caption repair.
   and exercise the default, empty, clipped, and full-barrier cases.
 - [x] **complete** — Compiler handoff checks, QA enforcement, and independent review pass.
 - Repair signoff: granted. Local commit: `Add runtime integer-array fill`.
-  Finding 5 remains open.
 
 ## Verification
 
@@ -736,7 +707,7 @@ caption substitutions recorded in finding 2; both variants pass at `-O0` and `-O
 
 Verification commands run sequentially where they use `sbtn`. JVM startup emits existing
 `sun.misc.Unsafe` deprecation notices during CLI execution. No ABI changes are made; Linux
-container ABI checks are not applicable. M2 deployment remains unverified under finding 5.
+container ABI checks are not applicable.
 
 [Finding 6](#6-calls-inside-conditional-field-qualifiers-fail-type-resolution) records the
 completed, signed-off frontend repair for calls inside conditional field qualifiers;
@@ -752,8 +723,6 @@ Evidence for findings 1–4: 2026-10-06, macOS arm64, repository base `8143f27`.
 - The mixed-return no-path caption crashed in an AddressSanitizer build after successful
   raylib window initialization. The diagnostic stack and reconstruction are embedded above.
 - The uninitialized grid follows directly from the linked sample and runtime source.
-- Finding 5 is a user-reported macOS M2 launch failure dated 2026-10-06; independent
-  reproduction, binary identification, and diagnosis remain pending.
 - [Conditional IR verification](#conditional-ir-verification) records headless reductions
   for the conditional-argument PHI failure; the historical caption PHI failure was not
   reproduced. Finding 3 has a
@@ -933,7 +902,6 @@ initialization correctness; the explicit cell-value oracle exposes the defect.
 - Integer-array fill and wall-map repair signoff: granted.
 - String-return ownership repair signoff: granted.
 - Conditional IR repair signoff: granted.
-- Finding 5 signoff: pending.
 - Finding 6 signoff: granted for the implemented qualifier repairs with the conditional alias
   lifetime defect deferred to finding 7.
 - Finding 7 signoff: granted for the bounded conditional dependency repair, with Linux
@@ -946,7 +914,7 @@ initialization correctness; the explicit cell-value oracle exposes the defect.
 - Conditional IR repair commit: complete (`Preserve exit blocks through call evaluation`).
 - Finding 6 commit: `Resolve field qualifiers and retain temporary owners`.
 - Finding 7 commit: `Preserve conditional field-alias dependencies`.
-- Commit authorization: granted for findings 6 and 7; pending for finding 5.
+- Commit authorization: granted for findings 6 and 7.
   Push authorization: pending.
 
 ## Task Working Memory
@@ -965,9 +933,9 @@ gap belong to the standalone [mixed-ownership task](mixed-ownership-transfers.md
 Finding 2's conditional IR repair is complete, signed off, and locally committed as
 `Preserve exit blocks through call evaluation`.
 Propagation, all compiler gates, QA enforcement, tracking checks, and independent code review pass.
-Finding 5 needs diagnosis and implementation approval. Finding 7's bounded conditional dependency
-repair is complete and signed off. Conditional dependency merging, all 97 focused semantic,
-LLVM, and native checks, smoke, full tests, publication, benchmark builds, and all 48 memory
+Finding 7's bounded conditional dependency repair is complete and signed off. Conditional
+dependency merging, all 97 focused semantic, LLVM, and native checks, smoke, full tests,
+publication, benchmark builds, and all 48 memory
 programs pass. Independent review found no actionable findings and reran all 97 focused checks.
 Both Linux builders pass the 64 qualifier-ownership checks but fail 29 native tests at ASan
 assembly/linking. The [Linux ASan task](linux-asan-internalization.md) holds the standalone
