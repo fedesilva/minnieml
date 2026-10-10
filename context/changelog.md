@@ -4,6 +4,9 @@ Durable product changes belong here. Current task state belongs in task files.
 
 ## 2026-10-10
 
+- Add keyboard playback controls to the animated A* sample: Space pauses or resumes,
+  and Up/Down change the playback rate by 1 FPS per press, with a minimum of 1.
+  Keep input responsive while paused and show playback speed, state, and controls.
 - Use the target CPU baseline by default and retain `--cpu native` for host optimization.
   Default local and unversioned macOS ARM64 targets to macOS 15.0, preserve explicit OS
   versions and target environment components, and reject cross-architecture native CPU
