@@ -26,6 +26,8 @@ pub fn main(args: StringArray): Unit =
        | - only in-bounds wall cells are written; length <= 0 builds no wall
        | - events_per_second must be a positive integer (default: 30)
        | - high speeds may show several decisions in one frame
+       |Controls: Space pauses/resumes; Up adds 1 FPS; Down subtracts 1 FPS (minimum: 1).
+       |Playback FPS counts search decisions per second.
        |Requires raylib in the target linker's library search path.
        |Playback starts automatically and holds the result until you close the window."
       )
@@ -462,11 +464,30 @@ let layout_grid_left = 32;
 let layout_grid_top = 96;
 
 struct Playback { step: Int, elapsed: Float };
+struct PlaybackControls { speed: Int, paused: Bool };
+
+let key_space = 32;
+let key_down = 264;
+let key_up = 265;
+
+fn read_playback_controls(controls: PlaybackControls): PlaybackControls =
+  let toggle_pause = is_key_pressed key_space;
+  let speed_up = is_key_pressed key_up;
+  let speed_down = is_key_pressed key_down;
+  let paused = if toggle_pause then not controls.paused; else controls.paused;;
+  let speed =
+    if speed_up and not speed_down and controls.speed < 2147483647 then
+      controls.speed + 1;
+    elif speed_down and not speed_up and controls.speed > 1 then
+      controls.speed - 1;
+    else controls.speed;
+    ;
+  PlaybackControls speed paused;
+;
 
 fn animate(grid: Grid, start: Int, goal: Int, result: SearchResult, speed: Int): Unit =
   let cells = ar_int_new (grid.width * grid.height);
   init_array cells cell_state_open (grid.width * grid.height) 0;
-  let interval = 1.0 /. (int_to_float speed);
   let title = to_cstr "MML - A* search decisions";
   init_window
     (grid.width * layout_cell_size + layout_grid_left * 2)
@@ -475,8 +496,9 @@ fn animate(grid: Grid, start: Int, goal: Int, result: SearchResult, speed: Int):
   ;
   set_target_fps 60;
 
-  fn draw_loop(playback: Playback): Unit =
+  fn draw_loop(playback: Playback, controls: PlaybackControls): Unit =
     if not (window_should_close ()) then
+      let next_controls = read_playback_controls controls;
       begin_drawing ();
       clear_background canvas_color;
       draw_scene
@@ -486,24 +508,28 @@ fn animate(grid: Grid, start: Int, goal: Int, result: SearchResult, speed: Int):
         goal
         result
         playback.step
-        speed
+        next_controls
       ;
       end_drawing ();
 
       let next =
-        advance_playback
-          grid
-          cells
-          result
-          interval
-          (Playback playback.step (playback.elapsed +. (get_frame_time ())))
+        if next_controls.paused then playback;
+        else
+          let interval = 1.0 /. (int_to_float next_controls.speed);
+          advance_playback
+            grid
+            cells
+            result
+            interval
+            (Playback playback.step (playback.elapsed +. (get_frame_time ())))
+          ;
         ;
-      draw_loop next;
+      draw_loop next next_controls;
     ;
   ;
 
   if is_window_ready () then
-    draw_loop (Playback 0 0.0);
+    draw_loop (Playback 0 0.0) (PlaybackControls speed false);
     close_window ();
   else
     println "Could not open the raylib window.";
@@ -545,7 +571,7 @@ fn apply_event(grid: Grid, cells: IntArray, event: Event): Unit =
 
 fn draw_scene(
   grid: Grid, cells: IntArray, start: Int, goal: Int,
-  result: SearchResult, step: Int, speed: Int
+  result: SearchResult, step: Int, controls: PlaybackControls
 ): Unit =
   draw_label
     "A* / search decisions"
@@ -631,12 +657,20 @@ fn draw_scene(
     ;
   ;
 
+  let status = if controls.paused then "Paused"; else "Playing";;
   draw_label
     ("Decisions: " ++ (int_to_str (min step result.event_count)) ++ " / " ++
-      (int_to_str result.event_count) ++ "     Speed: " ++ (int_to_str speed) ++
-      " events/s     Close window to exit")
+      (int_to_str result.event_count) ++ "     Playback: " ++ (int_to_str controls.speed) ++
+      " FPS     " ++ status)
     layout_grid_left
-    558
+    544
+    16
+    muted_color
+  ;
+  draw_label
+    "Space: pause/resume     Up/Down: +/- 1 FPS     Close window to exit"
+    layout_grid_left
+    572
     16
     muted_color
   ;
@@ -1155,6 +1189,7 @@ fn init_window(width: Int, height: Int, title: CString): Unit =
 fn set_target_fps(fps: Int): Unit = @native[name="SetTargetFPS"];;
 fn window_should_close(): Bool = @native[name="WindowShouldClose"];;
 fn is_window_ready(): Bool = @native[name="IsWindowReady"];;
+fn is_key_pressed(key: Int): Bool = @native[name="IsKeyPressed"];;
 fn begin_drawing(): Unit = @native[name="BeginDrawing"];;
 fn clear_background(color: Color): Unit = @native[name="ClearBackground"];;
 fn draw_text(text: CString, x: Int, y: Int, size: Int, color: Color): Unit =
