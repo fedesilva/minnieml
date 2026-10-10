@@ -130,9 +130,9 @@ object LlvmToolchain:
 
   /** Resolves the target triple to use for compilation.
     *
-    * Explicit versions are preserved. Local and unversioned macOS ARM64 targets use macOS 15.0.
-    * Local triples are cached in workingDir/local-target-triple. Native CPU selection requires the
-    * target architecture to match the local Clang architecture.
+    * Explicit targets are preserved. Local macOS targets leave deployment version selection to
+    * Clang. Local triples are cached in workingDir/local-target-triple. Native CPU selection
+    * requires the target architecture to match the local Clang architecture.
     *
     * @param userProvided
     *   user-provided triple from CLI, if any
@@ -147,7 +147,7 @@ object LlvmToolchain:
     targetCpu:    Option[String] = None
   ): IO[Either[LlvmCompilationError, String]] =
     val resolved = userProvided match
-      case Some(triple) => IO.pure(defaultDeploymentTarget(triple).asRight[LlvmCompilationError])
+      case Some(triple) => IO.pure(triple.asRight[LlvmCompilationError])
       case None => resolveLocalTriple(workingDir)
 
     resolved.flatMap {
@@ -179,14 +179,6 @@ object LlvmToolchain:
         s"--cpu native requires the host architecture ($host); select an explicit CPU for $triple"
       )
     )
-
-  private def defaultDeploymentTarget(triple: String): String =
-    triple.split("-").toList match
-      case arch :: "apple" :: os :: environment
-          if Set("arm64", "aarch64").contains(arch) &&
-            Set("macosx", "macos", "darwin").contains(os) =>
-        (arch :: "apple" :: "macosx15.0" :: environment).mkString("-")
-      case _ => triple
 
   private def resolveLocalTriple(workingDir: String): IO[Either[LlvmCompilationError, String]] =
     IO.defer {
@@ -224,12 +216,12 @@ object LlvmToolchain:
           .asLeft
   }
 
-  /** Applies the local deployment policy independently of the host OS version. */
+  /** Leaves local macOS deployment version selection to Clang. */
   private def normalizeTriple(triple: String): String =
     val parts = triple.split("-").toList
     parts match
       case arch :: vendor :: os :: _ if os.startsWith("darwin") || os.startsWith("macosx") =>
-        defaultDeploymentTarget(s"$arch-$vendor-macosx")
+        s"$arch-$vendor-macosx"
       case _ => triple
 
   /** Query the local target triple without caching. For info/diagnostic commands. */

@@ -4,6 +4,9 @@ Durable product changes belong here. Current task state belongs in task files.
 
 ## 2026-10-10
 
+- Remove the hardcoded macOS 15 deployment default. Let Clang select the local macOS
+  deployment version, including builds with cached local targets, and preserve explicit
+  `--target` values. Keep portable CPU defaults and the `--cpu native` override.
 - Add keyboard playback controls to the animated A* sample: Space pauses or resumes,
   and Up/Down change the playback rate by 1 FPS per press, with a minimum of 1.
   Keep input responsive while paused and show playback speed, state, and controls.

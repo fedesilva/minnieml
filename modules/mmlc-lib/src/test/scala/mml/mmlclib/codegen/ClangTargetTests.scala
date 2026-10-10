@@ -170,38 +170,48 @@ class ClangTargetTests extends BaseEffFunSuite:
     )
   }
 
-  test("explicit macOS ARM64 targets default only missing deployment versions") {
+  test("explicit target triples preserve deployment versions and unversioned targets") {
     withProbe { dir =>
       List(
-        "arm64-apple-macosx" -> "arm64-apple-macosx15.0",
-        "aarch64-apple-macosx" -> "aarch64-apple-macosx15.0",
-        "arm64-apple-macos" -> "arm64-apple-macosx15.0",
-        "arm64-apple-darwin" -> "arm64-apple-macosx15.0",
-        "arm64-apple-macosx-unknown" -> "arm64-apple-macosx15.0-unknown",
-        "arm64-apple-macosx14.0" -> "arm64-apple-macosx14.0",
-        "arm64-apple-macosx14.0-unknown" -> "arm64-apple-macosx14.0-unknown",
-        "arm64-apple-macosx26.0" -> "arm64-apple-macosx26.0",
-        "arm64-apple-darwin24.0" -> "arm64-apple-darwin24.0",
-        "x86_64-unknown-linux-gnu" -> "x86_64-unknown-linux-gnu",
-        "aarch64-unknown-linux-gnu" -> "aarch64-unknown-linux-gnu"
-      ).traverse_ { case (input, expected) =>
-        LlvmToolchain.resolveTargetTriple(input.some, dir.toString).map { result =>
-          assertEquals(result, expected.asRight[LlvmCompilationError])
+        "arm64-apple-macosx",
+        "aarch64-apple-macosx",
+        "arm64-apple-macos",
+        "arm64-apple-darwin",
+        "arm64-apple-macosx-unknown",
+        "arm64-apple-macosx14.0",
+        "arm64-apple-macosx14.0-unknown",
+        "arm64-apple-macosx26.0",
+        "arm64-apple-darwin24.0",
+        "x86_64-apple-macosx15.0",
+        "x86_64-unknown-linux-gnu",
+        "aarch64-unknown-linux-gnu"
+      ).traverse_ { triple =>
+        LlvmToolchain.resolveTargetTriple(triple.some, dir.toString).map { result =>
+          assertEquals(result, triple.asRight[LlvmCompilationError])
         }
       }
     }
   }
 
-  test("cached local triples apply deployment policy without reusing the host OS version") {
+  test("cached local macOS triples leave deployment version selection to Clang") {
     withProbe { dir =>
-      List("arm64-apple-macosx", "arm64-apple-darwin25.6.0", "arm64-apple-macosx26.0")
-        .traverse_ { cached =>
-          for
-            _ <- IO.blocking(Files.writeString(dir.resolve("local-target-triple"), cached))
-            result <- LlvmToolchain.resolveTargetTriple(none, dir.toString)
-            _ = assertEquals(result, "arm64-apple-macosx15.0".asRight[LlvmCompilationError])
-          yield ()
-        }
+      List(
+        "arm64-apple-macosx" -> "arm64-apple-macosx",
+        "arm64-apple-darwin25.6.0" -> "arm64-apple-macosx",
+        "arm64-apple-macosx15.0" -> "arm64-apple-macosx",
+        "arm64-apple-macosx26.0" -> "arm64-apple-macosx",
+        "aarch64-apple-macosx15.0" -> "aarch64-apple-macosx",
+        "x86_64-apple-darwin25.6.0" -> "x86_64-apple-macosx",
+        "x86_64-apple-macosx15.0" -> "x86_64-apple-macosx",
+        "x86_64-unknown-linux-gnu" -> "x86_64-unknown-linux-gnu",
+        "aarch64-unknown-linux-gnu" -> "aarch64-unknown-linux-gnu"
+      ).traverse_ { case (cached, expected) =>
+        for
+          _ <- IO.blocking(Files.writeString(dir.resolve("local-target-triple"), cached))
+          result <- LlvmToolchain.resolveTargetTriple(none, dir.toString)
+          _ = assertEquals(result, expected.asRight[LlvmCompilationError])
+        yield ()
+      }
     }
   }
 
