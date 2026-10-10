@@ -628,14 +628,14 @@ unchanged. Conditional ownership hardening remains separate work.
 - Repair signoff and local commit authorization: granted.
 - Local commit: `Fix nested mixed string returns`.
 
-The repair covers result expressions through scopes and conditionals. Returns of named
-mixed-ownership bindings and their aliases still require witness-aware escape/transfer handling
-under [conditional ownership hardening](mixed-ownership-transfers.md). That task's
-consuming-transfer acceptance obligations remain open. Findings 2 and 5 are outside this repair.
+The caption repair covers result expressions through scopes and conditionals. Returns of named
+mixed-ownership bindings and their aliases are covered by the completed
+[conditional ownership repair](mixed-ownership-transfers.md), including consuming transfers.
+Findings 2 and 5 are outside the caption repair.
 
 #### Separate conditional return-lifetime gap
 
-The standalone [mixed-ownership task](mixed-ownership-transfers.md) owns this repair.
+The standalone [mixed-ownership task](mixed-ownership-transfers.md) completes this repair.
 Its [conditional return-lifetime evidence](mixed-ownership-transfers-evidence.md#conditional-return-lifetime-evidence-from-a)
 contains the reproducer and sanitizer results. Returning a local on only one branch leaves
 an allocation to clean up on the other branch; this obligation is outside the completed
@@ -889,8 +889,8 @@ initialization correctness; the explicit cell-value oracle exposes the defect.
   passes host verification and independent review. Linux sanitizer verification is blocked
   by the [Linux ASan assembly failure](linux-asan-internalization.md), with explicit approval
   to defer that verification from finding 7 completion.
-- Witness-based returns and branch-dependent transfer cleanup remain under
-  [conditional ownership hardening](mixed-ownership-transfers.md).
+- Witness-based returns and branch-dependent transfer cleanup are covered by the completed
+  [conditional ownership repair](mixed-ownership-transfers.md).
 - A raylib window-initialization failure is a separate environmental condition, not evidence
   of the mixed-return bug. Require successful initialization before interpreting a GUI crash.
 - LLVM PHI failures and runtime cleanup failures are distinct observations even when the
@@ -929,7 +929,7 @@ Finding 3 is complete, signed off, and locally committed as `Fix nested mixed st
 Direct results through local scopes and nested conditionals, sample caption restoration,
 compiler verification, and independent review pass.
 Named mixed-binding returns, consuming transfers, and the documented conditional return-lifetime
-gap belong to the standalone [mixed-ownership task](mixed-ownership-transfers.md).
+gap are repaired and signed off in the standalone [mixed-ownership task](mixed-ownership-transfers.md).
 Finding 2's conditional IR repair is complete, signed off, and locally committed as
 `Preserve exit blocks through call evaluation`.
 Propagation, all compiler gates, QA enforcement, tracking checks, and independent code review pass.

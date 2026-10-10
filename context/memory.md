@@ -5,17 +5,6 @@ This is the Author's active and near-term focus. The backlog lives in [tasks/](t
 
 ## Active Tasks
 
-### BUG: Mixed-ownership transfers, cleanup, and returns
-
-- **Tracker:** [Mixed-ownership transfers, cleanup, and returns](tasks/mixed-ownership-transfers.md)
-- **Kind:** BUG
-- **Priority:** HIGH
-- **Status:** planned
-- **Current focus:** Investigation complete. Review the stage 1 design for explicit conditional
-  ownership, local transfers, and cleanup before implementation. Returns form stage 2;
-  capture integration requires a separate scope/design approval. This standalone task owns
-  the plan and signoff for the lambda dependency and A* ownership follow-up.
-
 ### A* animation correctness bugs
 
 - **Tracker:** [Fix correctness bugs exposed by the animated A* sample](tasks/astar-animation-correctness-bugs.md)
@@ -23,7 +12,7 @@ This is the Author's active and near-term focus. The backlog lives in [tasks/](t
 - **Current focus:** Final task verification and signoff are pending. Findings 1–4, 6, and 7
   are complete and signed off. Finding 7's Linux sanitizer verification
   is explicitly deferred to the [Linux ASan BUG](tasks/linux-asan-internalization.md).
-  Ownership follow-ups belong to the standalone [mixed-ownership task](tasks/mixed-ownership-transfers.md).
+  The standalone [mixed-ownership repair](tasks/mixed-ownership-transfers.md) is complete and signed off.
   Float and string array fills are deferred.
 
 ### Lambda migration
@@ -31,7 +20,7 @@ This is the Author's active and near-term focus. The backlog lives in [tasks/](t
 - **Tracker:** [Unify lambdas](tasks/unify-lambdas.md)
 - **Status:** in_progress
 - **Current focus:** The standalone [mixed-ownership repair](tasks/mixed-ownership-transfers.md)
-  is the selected dependency. The [ignored-test restoration plan](tasks/unify-lambdas.md#restore-ignored-regressions)
+  is complete and signed off. The [ignored-test restoration plan](tasks/unify-lambdas.md#restore-ignored-regressions)
   accounts for 37 remaining ignores. Direct local-entry optimization is complete and signed off.
   PAP target optimization is complete and signed off for capturing and non-capturing targets.
   Overall migration signoff remains pending.

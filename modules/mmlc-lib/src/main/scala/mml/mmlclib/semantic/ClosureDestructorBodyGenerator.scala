@@ -35,7 +35,8 @@ object ClosureDestructorBodyGenerator:
                           case _: Capture.BorrowedRef => none
                           case Capture.OwnedClosure(_, targetId) =>
                             FieldCleanup.Closure(fieldId, targetId).some
-                          case _ =>
+                          case _: Capture.CapturedRef | _: Capture.CapturedLiteral |
+                              _: Capture.CapturedConditional =>
                             DestructionTargets
                               .forType(field.typeSpec, index)
                               .map(id => FieldCleanup.Value(fieldId, id))

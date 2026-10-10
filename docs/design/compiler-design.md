@@ -103,6 +103,10 @@ Expressions are built from terms:
   - synthetic statement / let wrappers introduced during parsing and later rewrites
   - Carries `params`, `body`, `captures`, optional `LambdaMeta`, and `isMove` for explicit move
     capture syntax
+- **`YieldOwnership`**: Supplies a value and a Boolean ownership witness at a scoped result.
+- **`BindOwnership`**: Evaluates an initializer that yields both results, binds its value and
+  witness parameters, and evaluates one continuation body. These ownership-analysis nodes keep
+  the original value type; they do not introduce a source tuple or a function-return ABI.
 
 #### Closure captures
 
@@ -110,14 +114,20 @@ Expressions are built from terms:
 enum Capture:
   case CapturedRef(ref: Ref)
   case CapturedLiteral(ref: Ref, cloneFnId: String)
+  case CapturedConditional(ref: Ref, witness: Ref, cloneFnId: String)
   case OwnedClosure(ref: Ref, targetId: String)
+  case BorrowedRef(ref: Ref)
 ```
 
 - `CapturedRef` is the regular capture path.
 - `CapturedLiteral` marks a captured value that must be cloned when the closure environment is
   materialized.
+- `CapturedConditional` uses a resolved creation-scope witness to move the owned alternative or
+  clone the literal alternative. The environment receives an owned payload, without a witness
+  field.
 - `OwnedClosure` records a function capture whose ownership transfers to the environment,
   including the resolved destructor target ID used for cleanup.
+- `BorrowedRef` records a capture that does not transfer ownership to the environment.
 - The parser always emits `captures = Nil`; later semantic phases discover, classify, and type
   captures.
 
@@ -827,6 +837,8 @@ analysis, including use-after-move checks.
 
 **Ownership states**:
 - `Owned` — Caller owns the value, must free at scope end
+- `Mixed(witness, nonOwning)` — A resolved Boolean reference selects whether this binding owns
+  storage; the other alternatives retain their literal, global, borrowed, or resource-free origin
 - `Moved` — Ownership transferred, caller must not use
 - `Borrowed` — Lent to callee, caller retains ownership
 - `Literal` — Compile-time/static value, never freed
@@ -836,7 +848,7 @@ analysis, including use-after-move checks.
 
 1. **Allocation detection**: Identifies allocating results via:
    - `NativeImpl.memEffect = Alloc`
-   - intramodule fixed-point analysis for user functions returning heap values
+   - intramodule fixed-point `ReturnContract` analysis for user functions returning heap values
    - struct constructors, by resolving the callee and checking for a `DataConstructor` body
    - move-capturing closures with non-empty `captures`, because their env allocation is owned
 
@@ -855,22 +867,48 @@ analysis, including use-after-move checks.
 
    Call arguments retain their parameter contracts and allocation types in named records.
    Reference validation at the call boundary also checks earlier borrows against later moves.
-   A mixed conditional argument saves its branch decisions once, guarding nested predicates
-   by their parent decisions; its temporary destructor runs only for an allocating branch.
+   A mixed conditional argument carries the selected value and ownership witness together;
+   predicates run once in their original scopes. Its temporary destructor runs only when that
+   result owns storage.
    Consuming conditional arguments transfer owned sources branch by branch, reject borrowed
    sources, and clone static branches through the registered clone contract. A temporary and
    its destructor operand use the same type.
 
-4. **Mixed ownership conditionals**: Let bindings and call arguments share saved branch
-   decisions and an ownership witness. Each predicate runs once, including nested predicates:
+4. **Mixed ownership conditionals**: A binding owns storage unconditionally only in `Owned`.
+   `Mixed` retains both its resolved witness and the origins of its non-owning alternatives.
+   Rebinding moves the complete cleanup obligation, including type, binding identity, witness,
+   destructor target, and borrow dependencies. It does not clone the selected value.
+
+   Result analysis uses three requirements: `Preserve` inspects the result without taking
+   ownership, `Rebind` transfers its obligation to a local, and `Owned` establishes ownership at
+   a consuming argument or return boundary. The last requirement rejects borrowed alternatives
+   and uses the registered clone helper for permitted static alternatives.
+
+   A rebind destination retains the identities of owners that must remain borrowed. Direct
+   aliases and unconditional scoped results transfer; conditional initializer branches and
+   borrowing-call temporaries retain owners already present on entry. Newly created scoped results
+   transfer into the destination. This identity set stays fixed through nested scopes and
+   branches, so a fresh local cannot be
+   mistaken for an inherited borrow.
+
+   `YieldOwnership` and `BindOwnership` transport the selected result out of nested lexical
+   scopes. In the following compiler notation, both branches share one continuation:
    ```
    let s = if c then alloc() else "lit"
    →
-   let __condition = c;
-   let __owns_s = if __condition then true else false;
-   let s = if __condition then alloc() else "lit";
-   // at scope end: if __owns_s then __free_T s else ()
+   BindOwnership(s, owns_s,
+     if c then YieldOwnership(alloc(), true) else YieldOwnership("lit", false),
+     body)
    ```
+
+   The value parameter keeps its binding identity; `LocalBindings` allocates a fresh identity
+   for the witness. Initializers, branch-local bindings, and predicates stay in their source
+   scopes. Cleanup wrappers save both results before destroying unrelated locals at their
+   original scope exit. A borrow of an owner destroyed there cannot escape with the result.
+
+   When one branch transfers an existing obligation, the other branch destroys what it retains
+   before the merge. Mixed cleanup uses the original ownership witness, so a static or borrowed
+   alternative is never freed. The merged scope marks the transferred binding unavailable.
 
    **Closure cleanup.** Ownership witnesses and transfer decisions determine whether cleanup
    is needed. `DestroyClosure` carries the typed function operand and resolved helper target.
@@ -878,13 +916,27 @@ analysis, including use-after-move checks.
    parameters use universal dispatch. The universal helper guards null environments so resource-free
    function values are safe. A non-null environment alone does not establish ownership: borrowed
    closures have environments too, and receive no owning cleanup.
+   Direct invocation of a mixed call-once value permits a resource-free alternative when no
+   borrow dependency remains. Invocation consumes the binding and uses universal cleanup on
+   both paths; the null environment needs no destruction.
 
-5. **Return escape**: Bindings that escape through `return` are not freed locally; ownership moves
-   to the caller. Static branches in mixed returns use the type's clone helper. Types without a
-   clone contract produce a diagnostic at this boundary. Return promotion follows nested branches
-   and local-scope continuations before cleanup is inserted, cloning static result leaves rather
-   than whole mixed subexpressions. Scoped allocation queries follow the returned value through
-   bindings, so incidental allocations do not turn a static result into an owned result.
+5. **Return escape**: `ReturnContract.Unowned` and `ReturnContract.Owned(type)` describe a
+   callable's result promise separately from local ownership evidence. Result flow follows
+   aliases, conditionals, and scoped results; incidental allocations do not make a static result
+   owned. An owning contract requires each result path to supply ownership. Owned results move;
+   permitted static results use the type's clone helper, including named mixed results whose
+   witness chooses the path. Borrowed results and missing clone contracts produce diagnostics.
+   Cleanup releases retained locals on each path and skips the returned obligation. The caller
+   receives an ordinary owned value; no ownership witness crosses the function boundary.
+   Literal provenance through helper calls requires proof of every terminating result path,
+   with lexical identities for aliases and a path-local recursion guard. An unowned contract
+   alone does not establish that proof; native results, borrowed formals, and unknown callees
+   remain unavailable for promotion. Complete callable targets come from lexical definitions;
+   arguments observed at other call sites cannot close an unknown function parameter.
+   The proof uses the shared callable traversal through aliases and constructor fields, requiring
+   every alternative to resolve rather than accepting only the known subset.
+   Supplied arguments retain their caller's binding and cycle contexts, so separate nested calls
+   to the same helper do not look recursive when the proof follows an argument into its caller.
 
 6. **Constructor auto-clone**: When calling a constructor with consuming parameters, literal and
    global arguments use the type's clone helper when available. Borrowed references and field
@@ -897,6 +949,10 @@ analysis, including use-after-move checks.
 
 7. **Closure capture validation**:
    - Borrowed heap bindings cannot be captured into **move** closures.
+   - An ordinary move closure can capture a mixed owned/literal binding. A
+     `CapturedConditional` entry moves the owned alternative and clones only the literal
+     alternative at closure creation. Its resolved witness must be available there; invocation
+     and environment destruction see a fully owned payload.
    - Borrow closures may borrow owned, borrowed, literal, or global bindings. The restriction is on
      escape and ownership transfer, not on borrowing itself.
    - Already-moved heap bindings cannot be captured.
@@ -906,6 +962,9 @@ analysis, including use-after-move checks.
    - A move lambda that transfers an owned capture consumes its environment on invocation.
      Its entry disarms the environment destructor, and the invocation owns and cleans up all
      non-borrowed captures. An uncalled lambda retains its full environment destructor.
+   - A stored consuming PAP argument must already supply ownership on every path. Mixed
+     owned/static inputs are rejected at that boundary; PAP creation does not implicitly clone
+     them. An owning return or ordinary move capture can establish ownership before PAP storage.
 
 Field projections retain the root binding ID and field IDs. Callable value flow follows struct
 constructor arguments, aliases, and returned aggregates to preserve invocation contracts. A
@@ -917,8 +976,8 @@ temporary qualifier owners inside conditional branches. A mixed owned/borrowed q
 lend a field but cannot authorize a call that consumes its payload; such a call requires an
 unconditionally owned aggregate.
 Borrow dependencies retain local alias identities across nested scope results so cleanup checks
-can still reach the root owner. An unconditionally owning initializer transfers its result through
-the existing consuming-result analysis, including when a nested scope returns an outer binding.
+can still reach the root owner. Owning and mixed initializers transfer their complete result
+obligation, including when a nested scope returns an outer binding.
 Conditional merges retain both branches' borrow dependencies by resolved binding identity,
 including branch-local aliases. This preserves the path to an owner for enclosing cleanup and
 use-after-move checks without exporting the branches' local ownership bindings.
@@ -941,7 +1000,8 @@ use-after-move checks without exporting the branches' local ownership bindings.
 ownership-analyzed captures. `Capture.OwnedClosure` records a transferred function capture and
 its destructor target. Native and struct captures use their registered destructors. Scalars and
 borrowed function captures have no cleanup entry. Field cleanup follows layout order, with
-storage release handled last by the intrinsic.
+storage release handled last by the intrinsic. `CapturedConditional` payloads receive ordinary
+owning cleanup because creation establishes ownership before storing them in the environment.
 
 Each generator is a separate phase file with a `rewriteModule` entry point. Shared construction
 of typed destructor bodies lives in `ClosureDestructorAst`; neither phase calls the other.
@@ -959,6 +1019,8 @@ path.
   recursive local lambdas, retaining their resolved binding identities.
 - Runs after ownership cleanup is inserted. A recursive call with destruction in its
   continuation uses ordinary recursion, preserving the order of effects.
+- Traverses ownership initializers and bodies. Only `BindOwnership.body` can continue a tail
+  position; `YieldOwnership.value` still has a witness to evaluate afterward.
 - Writes `LambdaMeta.isTailRecursive = true` when the body qualifies.
 
 **AST rewrites**:
@@ -1175,6 +1237,18 @@ nonempty exit, including Unit arguments without LLVM operands. Calls preserve ar
 evaluated-callee exits in evaluation order; operators preserve operand exits. Enclosing
 conditionals and loop back edges use these results as PHI predecessors. Deferred function
 bodies keep their block labels separate from the enclosing expression.
+
+`OwnershipResults` emits the scoped `YieldOwnership`/`BindOwnership` protocol within the same
+function. An ownership conditional joins its ordinary value and Boolean witness with separate
+SSA PHIs, both using the actual branch exit blocks. `BindOwnership` adds the two resolved
+bindings to one continuation scope. Cleanup can preserve both operands while evaluating frees;
+neither a runtime pair nor a changed closure layout is needed. Ordinary expression emission
+rejects a bare `YieldOwnership` outside this protocol.
+
+Conditional capture promotion can introduce blocks at a closure's creation site. Emission
+propagates the promotion's exit block to enclosing calls and conditionals; deferred closure
+bodies receive only the already-owning payload. Callable analysis, traversal, and indexing visit
+ownership initializers and continuations, keeping local callable facts and binding IDs visible.
 
 ### Native library inputs
 

@@ -81,11 +81,6 @@ class OwnershipAnalyzerTests extends BaseEffFunSuite:
       case TXRefNamed(name) if name == "__clone_String" => true
     }
 
-  private def containsRefName(name: String)(term: Term): Boolean =
-    existsTerm(term) {
-      case TXRefNamed(n) if n == name => true
-    }
-
   test("caller frees value returned by user function that allocates internally") {
     val code =
       """
@@ -620,9 +615,41 @@ class OwnershipAnalyzerTests extends BaseEffFunSuite:
           b.value.terms.collectFirst { case l: Lambda => l.body }.get
       }.get
 
+      val binding = TermTraversal
+        .collect(mainBody) {
+          case binding: BindOwnership if binding.valueParam.name == "s" => binding
+        }
+        .headOption
+        .getOrElse(fail("expected the mixed source binding"))
+      val witness = binding.witnessParam
+      assert(witness.id.nonEmpty)
+      assert(witness.typeSpec.flatMap(TypeUtils.getTypeName).contains("Bool"))
+      assert(witness.id.flatMap(module.resolvables.lookup).exists(_.id == witness.id))
+      val guardedCleanup = TermTraversal.collect(binding.body) {
+        case condition: Cond
+            if TermTraversal
+              .collect(condition.cond) {
+                case ref: Ref if ref.resolvedId == witness.id => ref
+              }
+              .nonEmpty =>
+          condition
+      }
+      val freeId = module.members.collectFirst {
+        case value: Bnd if TypeUtils.freeFnFor("String", module.resolvables).contains(value.name) =>
+          value.id
+      }.flatten
+      assert(freeId.nonEmpty)
       assert(
-        containsRefName("__owns_s")(mainBody),
-        "expected mixed nested conditional let-binding to generate __owns_s witness"
+        guardedCleanup.exists { condition =>
+          TermTraversal
+            .collect(condition.ifTrue) {
+              case TXCall1(TXRefResolved(id), TXRefResolved(valueId))
+                  if freeId.contains(id) && binding.valueParam.id.contains(valueId) =>
+                valueId
+            }
+            .nonEmpty
+        },
+        "cleanup must destroy the selected value only when its resolved witness is true"
       )
     }
   }

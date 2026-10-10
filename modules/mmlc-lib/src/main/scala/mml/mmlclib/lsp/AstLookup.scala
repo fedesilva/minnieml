@@ -58,6 +58,11 @@ object AstLookup:
         current ++ ref.qualifier.toList.flatMap(findRefsInTermAt(_, line, col))
       case app: App =>
         findRefsInAppFnAt(app.fn, line, col) ++ findRefsInExprAt(app.arg, line, col)
+      case binding: BindOwnership =>
+        findRefsInExprAt(binding.initializer, line, col) ++
+          findRefsInExprAt(binding.body, line, col)
+      case yielded: YieldOwnership =>
+        findRefsInExprAt(yielded.value, line, col) ++ findRefsInExprAt(yielded.owns, line, col)
       case lambda: Lambda =>
         findRefsInExprAt(lambda.body, line, col)
       case cond: Cond =>
@@ -202,6 +207,14 @@ object AstLookup:
 
       case app: App =>
         findInApp(app, line, col)
+
+      case binding: BindOwnership =>
+        findInExpr(binding.initializer, line, col)
+          .orElse(findInExpr(binding.body, line, col))
+          .orElse(findInParams(List(binding.valueParam, binding.witnessParam), line, col))
+
+      case yielded: YieldOwnership =>
+        findInExpr(yielded.value, line, col).orElse(findInExpr(yielded.owns, line, col))
 
       case cond: Cond =>
         findInExpr(cond.cond, line, col)
@@ -379,6 +392,17 @@ object AstLookup:
 
       case app: App =>
         findDefinitionInApp(app, line, col, module)
+
+      case binding: BindOwnership =>
+        val definitions = findDefinitionInExpr(binding.initializer, line, col, module) ++
+          findDefinitionInExpr(binding.body, line, col, module)
+        if definitions.nonEmpty then definitions
+        else
+          findDefinitionInParams(List(binding.valueParam, binding.witnessParam), line, col, module)
+
+      case yielded: YieldOwnership =>
+        findDefinitionInExpr(yielded.value, line, col, module) ++
+          findDefinitionInExpr(yielded.owns, line, col, module)
 
       case cond: Cond =>
         val condDefs = findDefinitionInExpr(cond.cond, line, col, module)
@@ -763,6 +787,22 @@ object AstLookup:
       case app: App =>
         findReferenceTargetInApp(app, line, col, module)
 
+      case binding: BindOwnership =>
+        findReferenceTargetInExpr(binding.initializer, line, col, module)
+          .orElse(findReferenceTargetInExpr(binding.body, line, col, module))
+          .orElse(
+            findReferenceTargetInParams(
+              List(binding.valueParam, binding.witnessParam),
+              line,
+              col,
+              module
+            )
+          )
+
+      case yielded: YieldOwnership =>
+        findReferenceTargetInExpr(yielded.value, line, col, module)
+          .orElse(findReferenceTargetInExpr(yielded.owns, line, col, module))
+
       case cond: Cond =>
         findReferenceTargetInExpr(cond.cond, line, col, module) match
           case some @ Some(_) => some
@@ -1014,6 +1054,19 @@ object AstLookup:
 
       case app: App =>
         collectReferencesInApp(app, target, includeDeclaration, module)
+
+      case binding: BindOwnership =>
+        collectReferencesInParams(
+          List(binding.valueParam, binding.witnessParam),
+          target,
+          includeDeclaration,
+          module
+        ) ++ collectReferencesInExpr(binding.initializer, target, includeDeclaration, module) ++
+          collectReferencesInExpr(binding.body, target, includeDeclaration, module)
+
+      case yielded: YieldOwnership =>
+        collectReferencesInExpr(yielded.value, target, includeDeclaration, module) ++
+          collectReferencesInExpr(yielded.owns, target, includeDeclaration, module)
 
       case cond: Cond =>
         collectReferencesInExpr(cond.cond, target, includeDeclaration, module) ++

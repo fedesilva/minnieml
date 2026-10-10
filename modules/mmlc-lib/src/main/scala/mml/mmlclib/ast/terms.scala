@@ -15,6 +15,8 @@ sealed trait Term extends AstNode, Typeable, FromSource:
     case x: Expr => x.copy(typeAsc = Some(t))
     case x: Cond => x.copy(typeAsc = Some(t))
     case x: App => x.copy(typeAsc = Some(t))
+    case x: YieldOwnership => x.copy(typeAsc = Some(t))
+    case x: BindOwnership => x.copy(typeAsc = Some(t))
     case x: Lambda => x.copy(typeAsc = Some(t))
     case x: TermGroup => x.copy(typeAsc = Some(t))
     case x: Tuple => x.copy(typeAsc = Some(t))
@@ -86,10 +88,31 @@ object App:
   ): App =
     new App(SourceOrigin.Loc(span), fn, arg, None, None)
 
+/** Supplies a value and its cleanup witness within an ownership binding's initializer. */
+case class YieldOwnership(
+  source:   SourceOrigin,
+  value:    Expr,
+  owns:     Expr,
+  typeSpec: Option[Type] = None,
+  typeAsc:  Option[Type] = None
+) extends Term
+
+/** Keeps one continuation while binding a scoped value and its Boolean cleanup witness. */
+case class BindOwnership(
+  source:       SourceOrigin,
+  valueParam:   FnParam,
+  witnessParam: FnParam,
+  initializer:  Expr,
+  body:         Expr,
+  typeSpec:     Option[Type] = None,
+  typeAsc:      Option[Type] = None
+) extends Term
+
 enum Capture:
   case CapturedRef(override val ref: Ref)
   case BorrowedRef(override val ref: Ref)
   case CapturedLiteral(override val ref: Ref, cloneFnId: String)
+  case CapturedConditional(override val ref: Ref, witness: Ref, cloneFnId: String)
 
   case OwnedClosure(override val ref: Ref, targetId: String)
 

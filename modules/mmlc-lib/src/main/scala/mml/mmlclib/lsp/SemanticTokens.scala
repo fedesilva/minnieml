@@ -143,6 +143,13 @@ object SemanticTokens:
       case app: App =>
         collectFromApp(app, module)
 
+      case binding: BindOwnership =>
+        collectFromParams(List(binding.valueParam, binding.witnessParam), module) ++
+          collectFromExpr(binding.initializer, module) ++ collectFromExpr(binding.body, module)
+
+      case yielded: YieldOwnership =>
+        collectFromExpr(yielded.value, module) ++ collectFromExpr(yielded.owns, module)
+
       case lambda: Lambda =>
         collectFromLambda(lambda, module)
 
@@ -210,7 +217,10 @@ object SemanticTokens:
 
   /** Collect tokens from a lambda. */
   private def collectFromLambda(lambda: Lambda, module: Module): List[RawToken] =
-    val paramTokens = lambda.params.flatMap { param =>
+    collectFromParams(lambda.params, module) ++ collectFromExpr(lambda.body, module)
+
+  private def collectFromParams(params: List[FnParam], module: Module): List[RawToken] =
+    params.flatMap { param =>
       if param.source.isFromSource then
         val tokenType =
           if hasCallableType(param.typeSpec.orElse(param.typeAsc), module) then TokenType.Function
@@ -226,7 +236,6 @@ object SemanticTokens:
         nameToken.toList ++ typeTokens
       else Nil
     }
-    paramTokens ++ collectFromExpr(lambda.body, module)
 
   /** Collect tokens from a conditional. */
   private def collectFromCond(cond: Cond, module: Module): List[RawToken] =

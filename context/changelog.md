@@ -4,6 +4,11 @@ Durable product changes belong here. Current task state belongs in task files.
 
 ## 2026-10-10
 
+- Preserve mixed ownership through local and scoped bindings, consuming calls, owning fields,
+  returns, and move captures. Carry saved ownership witnesses across scopes and clean up each
+  retained allocation on its applicable path. Move owned outcomes and clone only permitted
+  static outcomes at owning boundaries, including closure creation. Preserve borrowing rules,
+  partial-application clone restrictions, evaluation order, and existing value and closure ABIs.
 - Remove the hardcoded macOS 15 deployment default. Let Clang select the local macOS
   deployment version, including builds with cached local targets, and preserve explicit
   `--target` values. Keep portable CPU defaults and the `--cpu native` override.

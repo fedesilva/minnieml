@@ -60,7 +60,7 @@ env ASAN_OPTIONS=detect_leaks=1:halt_on_error=1:abort_on_error=1:symbolize=0 bui
 
 Use each probe's name for its source and build directory. Positive probes are intended to
 exit zero without sanitizer errors after repair; `borrowed` must remain rejected. PAP capture
-acceptance follows the task's separate capture policy gate, not the positive-call expectation.
+acceptance follows the task's capture policy, not the positive-call expectation.
 For `branch`, execute with zero through three arbitrary arguments. Other runtime probes use
 zero arguments for the allocated/true outcome and one for the static/false outcome.
 

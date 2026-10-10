@@ -16,7 +16,9 @@ final case class ValueAvailability private (
       expr.terms match
         case List(term) => isAvailable(term)
         case _ => false
-    case group: TermGroup => isAvailable(group.inner)
+    case group:   TermGroup => isAvailable(group.inner)
+    case yielded: YieldOwnership => isAvailable(yielded.value) && isAvailable(yielded.owns)
+    case binding: BindOwnership => isAvailable(binding.body)
 
     case ref: Ref =>
       val sourceAvailable = ref.qualifier match
@@ -71,10 +73,14 @@ object ValueAvailability:
 
     val definitions = module.members.collect { case binding: Bnd => binding }.flatMap { binding =>
       val locals = TermTraversal
-        .collect(binding.value) { case app: App =>
-          app.fn match
-            case scope: Lambda => scope.params.headOption.flatMap(_.id).map(_ -> app.arg).toList
-            case _ => Nil
+        .collect(binding.value) {
+          case app: App =>
+            app.fn match
+              case scope: Lambda => scope.params.headOption.flatMap(_.id).map(_ -> app.arg).toList
+              case _ => Nil
+          case local: BindOwnership =>
+            List(local.valueParam, local.witnessParam)
+              .flatMap(_.id.map(_ -> local.initializer))
         }
         .flatten
       binding.id.map(_ -> binding.value).toList ++ locals

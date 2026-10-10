@@ -132,6 +132,34 @@ def prettyPrintTerm(
         s"${indentStr}  fn:\n$fnStr\n" +
         s"${indentStr}  arg:\n$argStr"
 
+    case yielded: YieldOwnership =>
+      val spanStr = if showSourceSpans then printSourceOrigin(yielded.source) else ""
+      val typeStr =
+        if showTypes then s" typeSpec=${prettyPrintTypeSpec(yielded.typeSpec)}" else ""
+      val valueStr = prettyPrintExpr(yielded.value, indent + 2, showSourceSpans, showTypes)
+      val ownsStr  = prettyPrintExpr(yielded.owns, indent + 2, showSourceSpans, showTypes)
+      s"${indentStr}YieldOwnership $spanStr$typeStr\n" +
+        s"${indentStr}  value:\n$valueStr\n" +
+        s"${indentStr}  owns:\n$ownsStr"
+
+    case binding: BindOwnership =>
+      val spanStr = if showSourceSpans then printSourceOrigin(binding.source) else ""
+      val typeStr =
+        if showTypes then s" typeSpec=${prettyPrintTypeSpec(binding.typeSpec)}" else ""
+      val paramsStr = List(binding.valueParam, binding.witnessParam)
+        .map { param =>
+          s"${indentStr}    ${param.name}: ${prettyPrintTypeSpec(param.typeSpec)}" +
+            s" [${param.id.getOrElse("None")}]"
+        }
+        .mkString("\n")
+      val initializerStr =
+        prettyPrintExpr(binding.initializer, indent + 2, showSourceSpans, showTypes)
+      val bodyStr = prettyPrintExpr(binding.body, indent + 2, showSourceSpans, showTypes)
+      s"${indentStr}BindOwnership $spanStr$typeStr\n" +
+        s"${indentStr}  params:\n$paramsStr\n" +
+        s"${indentStr}  initializer:\n$initializerStr\n" +
+        s"${indentStr}  body:\n$bodyStr"
+
     case Lambda(sp, params, body, captures, typeSpec, typeAsc, meta, isMove) =>
       val spanStr = if showSourceSpans then printSourceOrigin(sp) else ""
       val typeStr =
@@ -154,8 +182,20 @@ def prettyPrintTerm(
               }
               .mkString("\n")
       val bodyStr = prettyPrintExpr(body, indent + 2, showSourceSpans, showTypes)
+      val capturesStr = captures.map { capture =>
+        val ownership = capture match
+          case Capture.CapturedConditional(_, witness, cloneFnId) =>
+            s" witness=${witness.resolvedId.getOrElse(witness.name)} clone=$cloneFnId"
+          case Capture.CapturedLiteral(_, cloneFnId) => s" clone=$cloneFnId"
+          case Capture.OwnedClosure(_, targetId) => s" destructor=$targetId"
+          case _ => ""
+        val identity = capture.ref.resolvedId.getOrElse(capture.ref.name)
+        s"\n${indentStr}    ${capture.productPrefix} $identity$ownership"
+      }.mkString
+      val captureDetails =
+        if captures.isEmpty then "" else s"\n${indentStr}  captures:$capturesStr"
       s"${indentStr}Lambda $spanStr$typeStr$metaStr\n" +
-        s"$paramsStr\n" +
+        s"$paramsStr$captureDetails\n" +
         s"${indentStr}  body:\n$bodyStr"
 
     // Literal values

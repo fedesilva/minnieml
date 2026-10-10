@@ -418,9 +418,15 @@ private def compileStructConstructor(
 
 /** Retains the binding while let/sequence chains are flattened for loopification. Keeping FnParam
   * lets shared binding emission recognize planned callables, aliases, and recursive self references
-  * by semantic identity. A sequence effect has no binding.
+  * by semantic identity. A sequence effect has no binding. A witness parameter receives the second
+  * result of an ownership-producing initializer.
   */
-private[emitter] case class BoundStatement(binding: Option[FnParam], expr: Expr):
+private[emitter] case class BoundStatement(
+  binding: Option[FnParam],
+  expr:    Expr,
+  witness: Option[FnParam] = None
+):
+
   def bindingName: Option[String] = binding.map(_.name)
 
 /** Recursive tree representing the body of a tail-recursive function for loopification.
@@ -551,6 +557,23 @@ private def validateTermAgainstBorrowClosures(
   shadowedNames:  Set[String]
 ): Either[CodeGenError, Unit] =
   term match
+
+    case binding: BindOwnership =>
+      for
+        _ <- validateExprAgainstBorrowClosures(binding.initializer, activeClosures, shadowedNames)
+        _ <- validateExprAgainstBorrowClosures(
+          binding.body,
+          activeClosures,
+          shadowedNames + binding.valueParam.name + binding.witnessParam.name
+        )
+      yield ()
+
+    case result: YieldOwnership =>
+      for
+        _ <- validateExprAgainstBorrowClosures(result.value, activeClosures, shadowedNames)
+        _ <- validateExprAgainstBorrowClosures(result.owns, activeClosures, shadowedNames)
+      yield ()
+
     case app: App =>
       collectAppArgs(app) match
         case Some((ref, args)) =>
@@ -659,6 +682,7 @@ private def unwrapSingleTerm(expr: Expr): Option[Term] =
   expr.terms match
     case List(group: TermGroup) => unwrapSingleTerm(group.inner)
     case List(inner: Expr) => unwrapSingleTerm(inner)
+    case List(result: YieldOwnership) => unwrapSingleTerm(result.value)
     case List(term) => term.some
     case _ => None
 
@@ -677,6 +701,21 @@ private def activeBorrowRef(
   shadowedNames:  Set[String]
 ): Option[Ref] =
   term match
+
+    case binding: BindOwnership =>
+      activeBorrowRef(binding.initializer, activeClosures, shadowedNames)
+        .orElse(
+          activeBorrowRef(
+            binding.body,
+            activeClosures,
+            shadowedNames + binding.valueParam.name + binding.witnessParam.name
+          )
+        )
+
+    case result: YieldOwnership =>
+      activeBorrowRef(result.value, activeClosures, shadowedNames)
+        .orElse(activeBorrowRef(result.owns, activeClosures, shadowedNames))
+
     case ref: Ref if activeClosures.contains(ref.name) && !shadowedNames.contains(ref.name) =>
       ref.some
     case ref: Ref => ref.qualifier.flatMap(activeBorrowRef(_, activeClosures, shadowedNames))
@@ -959,9 +998,20 @@ private def compileBoundStatements(
   functionScope: Map[String, ScopeEntry]
 ): Either[CodeGenError, (CodeGenState, Map[String, ScopeEntry], Option[String])] =
   statements.foldLeft((state, functionScope, Option.empty[String]).asRight[CodeGenError]) {
-    case (Right((currentState, currentScope, prevExitBlock)), BoundStatement(binding, expr)) =>
-      binding match
-        case Some(param) =>
+    case (Right((currentState, currentScope, prevExitBlock)), statement) =>
+      val expr = statement.expr
+
+      (statement.binding, statement.witness) match
+
+        case (Some(param), Some(witness)) =>
+          compileOwnershipResult(expr, currentState, currentScope).map: result =>
+            val scope = ownershipResultScope(param, witness, result, currentScope)
+            (result.state, scope, result.exitBlock.orElse(prevExitBlock))
+
+        case (None, Some(_)) =>
+          CodeGenError("Ownership witness requires a value binding", expr.some).asLeft
+
+        case (Some(param), None) =>
           compileLocalBindingValue(param, expr, currentState, currentScope, compileExpr).map {
             res =>
               (
@@ -970,7 +1020,8 @@ private def compileBoundStatements(
                 res.exitBlock.orElse(prevExitBlock)
               )
           }
-        case None =>
+
+        case (None, None) =>
           compileExpr(expr, currentState, currentScope).map { res =>
             (res.state, currentScope, res.exitBlock.orElse(prevExitBlock))
           }
@@ -1020,6 +1071,15 @@ private def extractBody(
   accStatements: List[BoundStatement]
 ): Option[TailRecBody] =
   expr.terms match
+
+    case List(owned: BindOwnership) =>
+      val statement = BoundStatement(
+        owned.valueParam.some,
+        owned.initializer,
+        owned.witnessParam.some
+      )
+      extractBody(owned.body, lambda, binding, accStatements :+ statement)
+
     case List(app: App) =>
       app.fn match
         case innerLambda: Lambda =>
@@ -1077,12 +1137,12 @@ private def extractSelfCallFromAccumulated(
   binding:       Resolvable
 ): Option[TailRecBody] =
   val idx = accStatements.indexWhere {
-    case BoundStatement(Some(param), _) => isSelfRef(ref, param)
+    case BoundStatement(Some(param), _, None) => isSelfRef(ref, param)
     case _ => false
   }
   if idx < 0 || accStatements.drop(idx + 1).nonEmpty then None
   else
-    val BoundStatement(_, callExpr) = accStatements(idx): @unchecked
+    val callExpr = accStatements(idx).expr
     // The self-call may be wrapped in additional lambda chains (ownership frees).
     // Recursively extract through the callExpr to find the self-call.
     extractBody(callExpr, lambda, binding, Nil).flatMap {
