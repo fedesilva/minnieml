@@ -100,7 +100,7 @@ object CommandLineConfig:
       .text("Output the AST to a file in addition to other compilation")
 
     val targetOpt = opt[String]('T', "target")
-      .text("Target triple (default: host platform; macOS ARM64 defaults to macOS 15.0)")
+      .text("Target triple (default: host platform)")
 
     val targetCpuOpt = opt[String]('C', "cpu")
       .text("CPU override (default: target baseline; native: host CPU, same architecture only)")

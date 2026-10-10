@@ -131,11 +131,11 @@ flags as the runtime. Builds use Clang's baseline CPU for the selected target un
 such as `--cpu apple-m3`. Native selection requires the host and target architectures to
 match; cross-architecture builds must use a baseline or an explicit CPU.
 
-Local macOS ARM64 builds and unversioned macOS ARM64 targets default to macOS 15.0.
-An explicit version, such as `--target arm64-apple-macosx14.0`, is preserved. CPU and OS
-selection are independent: `--cpu native` retains the default macOS deployment version.
-External libraries must also support the destination CPU and OS. Other platforms retain
-their existing target-triple policy. The probe emits LLVM IR without
+Local macOS builds leave the deployment version to Clang's host/toolchain defaults.
+Use an explicit target, such as `--target arm64-apple-macosx15.0`, to select an older
+macOS version. Explicit target triples are preserved. CPU and OS selection are independent:
+`--cpu native` changes CPU optimization without choosing a deployment version. External
+libraries must also support the destination CPU and OS. The probe emits LLVM IR without
 running target code, so it also works for cross-compilation.
 
 Probe responses are cached under `<build-dir>/toolchain/target-<hash>.ll`. The key
