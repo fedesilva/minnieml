@@ -3,7 +3,7 @@
 ## Metadata
 
 - **Owner:** The Author
-- **Status:** in_progress
+- **Status:** complete
 - **Kind:** BUG, PORTABILITY, CRASH
 - **Priority:** HIGH
 - **Created:** 2026-10-09
@@ -17,8 +17,8 @@
    and verify local CLI behavior. The original copied binary’s invocation is unavailable.
 3. [x] **complete** — Implement and verify baseline CPU/macOS 15 defaults, explicit native
    optimization, cross-architecture native diagnostics, and native benchmark builds.
-4. [ ] **planned** — Verify the default-built executable on M3 and obtain signoff.
-   The explicit-target experiment runs on M3, including the animation window.
+4. [x] **complete** — Verify the default-built executable on M3 and obtain signoff.
+   Acceptance is based on the Author-confirmed destination run.
 
 ## Target policy
 
@@ -85,15 +85,15 @@ linking. Compatible builds do not require source workarounds.
 3. Default local and unversioned macOS ARM64 targets to macOS 15.0, including cached local
    triples. Preserve explicit deployment versions. Update CLI help, documentation, and
    regression coverage; run applicable compiler checks and independent review.
-4. Verify the default-built M5 artifact on M3: help, argument handling, and complete window
-   playback for a found path and a full barrier. Record destination dependency identity
-   and obtain signoff. The explicit-target artifact's confirmed M3 animation is separate
-   evidence from this final default-build check.
+4. Verify the default-built M5 artifact on M3 and obtain signoff. Accepted completion
+   evidence is the Author-confirmed destination run. Separate found-path/full-barrier
+   completion and destination dependency inventory are not part of the accepted closure
+   evidence and are not claimed as verified.
 
 Approval: baseline CPU defaults, macOS ARM64 deployment default 15.0, explicit CPU overrides,
 cross-architecture native rejection, relevant tests/docs, and verification are authorized.
-Workstream signoff and local commit are authorized. Task closure awaits the final M3
-verification or an explicit scope reduction. Push is not authorized.
+Workstream signoff, task completion, and local commit are authorized on the confirmed
+default-build M3 execution. Push is not authorized.
 
 ## Verification
 
@@ -279,7 +279,8 @@ All builds succeed. Both `hola` executables run and exit zero on M5. The default
 prints help and exits zero; its argument conversion contains `cmp w0, #1` and
 `csinc w8, w0, wzr, gt`. Its SHA-256 is
 `0fd6d681b010184d71d54c0130caa53cb7e09ec87de0e68f1059871f5d449646`.
-This artifact has not been tested on M3. Linking still warns about the M5 raylib minimum
+The Author confirms the fresh default-build artifact with this hash runs on M3. Linking
+still warns about the M5 raylib minimum
 macOS 26.0; the external dependency caveat from the explicit-target experiment applies.
 
 The installed compiler rejects the following with exit 1 and a diagnostic naming the host
@@ -326,6 +327,21 @@ Verification:
   applicable to this change. Host ABI fixture tests include native sanitizer execution;
   cross-compilation results are not destination execution evidence.
 
+### Default-build M3 acceptance — 2026-10-10
+
+Implementation commit: `a4c86eb`.
+
+```sh
+mmlc -v -I -b build/portability-default-transfer-20261010 mml/samples/astar3_animated.mml
+```
+
+No target or CPU override is supplied. The fresh executable selects `apple-m1`, omits CSSC,
+declares `minos 15.0`, and passes the M5 help check. Its SHA-256 is
+`0fd6d681b010184d71d54c0130caa53cb7e09ec87de0e68f1059871f5d449646`.
+The transferred executable matches that hash. The Author confirms it runs on the M3 and
+accepts task completion. This verifies the compiler's default portable build path.
+Separate playback-case results and destination raylib inventory are not asserted.
+
 ## Risks / Notes
 
 - CPU instruction availability and minimum OS version are independent constraints. Lowering
@@ -334,29 +350,21 @@ Verification:
 - The M3 target-probe cache selects `apple-m3` and does not enable CSSC. Build-directory
   caches are host-local artifacts; inspect or regenerate them on the M5 and when testing
   explicit target settings.
-- The explicit-target M5 artifact runs on M3 with animation, as confirmed by the Author.
-  The default-built artifact, both complete playback cases, and destination dependency
-  identity still need verification. The original M5 flags remain unknown.
+- Both the explicit-target and default-built M5 artifacts run on M3, as confirmed by the
+  Author. Separate complete playback-case results and destination dependency identity are
+  not recorded. The original failing M5 binary's flags remain unknown.
 
 ## Signoff
 
-- Workstream signoff: granted for the implemented compiler and benchmark changes.
-- Tracked item completion: pending final M3 verification or explicit scope reduction.
+- Workstream signoff: granted.
+- Tracked item completion: accepted on default-build M3 execution.
 - Commit authorization: granted.
 - Push authorization: not granted.
 
 ## Task Working Memory
 
-The explicit macOS 15 build on M5 selects M1 CPU features throughout MML and runtime code,
-uses `cmp`/`csinc` for the faulting operation, and declares `minos 15.0`. The Author confirms
-that the transferred artifact runs on M3, including animation. Its hash and build configuration
-are embedded in Verification. Destination raylib identity and full-barrier completion are open.
-
-The compiler changes and native benchmark recipes pass formatting, linting, full tests,
-smoke, artifact inspection, local execution, benchmark compilation, and independent review.
-The final compiler is published locally. Workstream signoff and local commit are authorized.
-
-Task closure requires either the recorded default-artifact M3 checks and destination dependency
-identity, or explicit acceptance of the existing M3 evidence as sufficient. No default-artifact
-M3 execution or complete found-path/full-barrier result is inferred from the finish request.
-Push is not authorized.
+Portable CPU defaults, macOS ARM64 default 15.0, explicit native optimization, and native
+benchmark recipes are implemented in `a4c86eb`. Compiler checks and independent review pass;
+the final compiler is published locally. Both explicit-target and default-built artifacts
+run on M3. The default artifact's hash, reproduction command, and accepted verification
+scope are recorded above. No implementation work remains; push is not authorized.
