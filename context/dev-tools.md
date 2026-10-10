@@ -125,8 +125,16 @@ depends on the installed LLVM version. Without this option, the optimizer defaul
 are unchanged. Forced interleaving is a tuning experiment, not a guarantee of SIMD.
 
 Target CPU and feature attributes come from the selected Clang using the same target
-flags as the runtime. Local builds use Clang's native CPU selection; `--target`
-without `--cpu` uses that target's default CPU. The probe emits LLVM IR without
+flags as the runtime. Builds use Clang's baseline CPU for the selected target unless
+`--cpu` is supplied. Use `--cpu native` for host CPU optimization or an explicit CPU
+such as `--cpu apple-m3`. Native selection requires the host and target architectures to
+match; cross-architecture builds must use a baseline or an explicit CPU.
+
+Local macOS ARM64 builds and unversioned macOS ARM64 targets default to macOS 15.0.
+An explicit version, such as `--target arm64-apple-macosx14.0`, is preserved. CPU and OS
+selection are independent: `--cpu native` retains the default macOS deployment version.
+External libraries must also support the destination CPU and OS. Other platforms retain
+their existing target-triple policy. The probe emits LLVM IR without
 running target code, so it also works for cross-compilation.
 
 Probe responses are cached under `<build-dir>/toolchain/target-<hash>.ll`. The key

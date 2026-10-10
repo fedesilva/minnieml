@@ -100,10 +100,10 @@ object CommandLineConfig:
       .text("Output the AST to a file in addition to other compilation")
 
     val targetOpt = opt[String]('T', "target")
-      .text("Target triple for cross-compilation (e.g., x86_64-pc-linux-gnu)")
+      .text("Target triple (default: host platform; macOS ARM64 defaults to macOS 15.0)")
 
     val targetCpuOpt = opt[String]('C', "cpu")
-      .text("Target CPU for cross-compilation (e.g., cortex-a53, apple-m1)")
+      .text("CPU override (default: target baseline; native: host CPU, same architecture only)")
 
     val noStackCheckOpt = opt[Unit]("no-stack-check")
       .text("Pass -fno-stack-check to clang")

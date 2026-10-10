@@ -135,7 +135,9 @@ class AggregateAbiTests extends BaseEffFunSuite:
     withDirectory { directory =>
       for
         triple <- LlvmToolchain.queryLocalTriple.map(_.getOrElse(fail("Missing native target")))
-        target <- ClangTarget.resolve(directory, Nil).map(_.fold(e => fail(e.message), identity))
+        target <- ClangTarget
+          .resolve(directory, List("-target", triple))
+          .map(_.fold(e => fail(e.message), identity))
         _ <- IO.blocking {
           Files.writeString(directory.resolve("fixture.c"), cSource)
           Files.writeString(directory.resolve("caller.ll"), fixtureIr(triple, target.attributes))
@@ -308,6 +310,8 @@ class AggregateAbiTests extends BaseEffFunSuite:
         _ <- commandNotFailed(
           List(
             target.executable.toString,
+            "-target",
+            triple,
             "-fuse-ld=lld",
             "-fsanitize=address,undefined",
             directory.resolve("driver.c").toString,
