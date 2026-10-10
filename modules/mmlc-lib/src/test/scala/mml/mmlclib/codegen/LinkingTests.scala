@@ -77,6 +77,8 @@ class LinkingTests extends BaseEffFunSuite:
           _ <- commandNotFailed(
             List(
               target.executable.toString,
+              "-target",
+              triple,
               "-fPIC",
               "-c",
               directory.resolve("library.c").toString,
@@ -109,6 +111,8 @@ class LinkingTests extends BaseEffFunSuite:
               commandNotFailed(
                 List(
                   target.executable.toString,
+                  "-target",
+                  triple,
                   if darwin then "-dynamiclib" else "-shared",
                   directory.resolve("library.o").toString,
                   "-o",

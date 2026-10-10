@@ -70,10 +70,9 @@ object LlvmToolchain:
 
   /** Clang flags shared by the target probe and runtime compilation. */
   def clangFlags(config: CompilerConfig, triple: String): List[String] =
-    val cpu = config.targetCpu.orElse(Option.when(config.targetTriple.isEmpty)("native"))
     List("-target", triple, "-std=c17", s"-O${config.optLevel}", "-fPIC") ++
       clangStackProbeFlags(config.noStackCheck) ++ clangAsanFlags(config.asan) ++
-      clangTargetCpuFlags(triple, cpu)
+      clangTargetCpuFlags(triple, config.targetCpu)
 
   private def timedStep[A](
     name:         String,
@@ -131,9 +130,9 @@ object LlvmToolchain:
 
   /** Resolves the target triple to use for compilation.
     *
-    * If userProvided is Some, returns that value directly (free-form, no validation). Otherwise,
-    * checks for a cached triple in workingDir/local-target-triple. If not cached, queries clang for
-    * the local triple and caches it.
+    * Explicit versions are preserved. Local and unversioned macOS ARM64 targets use macOS 15.0.
+    * Local triples are cached in workingDir/local-target-triple. Native CPU selection requires the
+    * target architecture to match the local Clang architecture.
     *
     * @param userProvided
     *   user-provided triple from CLI, if any
@@ -144,18 +143,57 @@ object LlvmToolchain:
     */
   def resolveTargetTriple(
     userProvided: Option[String],
-    workingDir:   String
+    workingDir:   String,
+    targetCpu:    Option[String] = None
   ): IO[Either[LlvmCompilationError, String]] =
-    userProvided match
-      case Some(triple) => IO.pure(triple.asRight)
+    val resolved = userProvided match
+      case Some(triple) => IO.pure(defaultDeploymentTarget(triple).asRight[LlvmCompilationError])
       case None => resolveLocalTriple(workingDir)
+
+    resolved.flatMap {
+      case Right(triple) if targetCpu.contains("native") =>
+        queryLocalTriple.map {
+          case Some(host) => validateNativeCpu(triple, host).as(triple)
+          case None =>
+            LlvmCompilationError
+              .TargetResolutionError("Cannot determine host architecture for --cpu native")
+              .asLeft
+        }
+      case result => IO.pure(result)
+    }
+
+  private[codegen] def validateNativeCpu(
+    triple: String,
+    host:   String
+  ): Either[LlvmCompilationError, Unit] =
+    def architecture(value: String): String =
+      value.takeWhile(_ != '-').toLowerCase match
+        case "arm64" | "aarch64" => "aarch64"
+        case "amd64" | "x86_64" => "x86_64"
+        case arch => arch
+
+    Either.cond(
+      architecture(triple) == architecture(host),
+      (),
+      LlvmCompilationError.TargetResolutionError(
+        s"--cpu native requires the host architecture ($host); select an explicit CPU for $triple"
+      )
+    )
+
+  private def defaultDeploymentTarget(triple: String): String =
+    triple.split("-").toList match
+      case arch :: "apple" :: os :: environment
+          if Set("arm64", "aarch64").contains(arch) &&
+            Set("macosx", "macos", "darwin").contains(os) =>
+        (arch :: "apple" :: "macosx15.0" :: environment).mkString("-")
+      case _ => triple
 
   private def resolveLocalTriple(workingDir: String): IO[Either[LlvmCompilationError, String]] =
     IO.defer {
       val cacheFile = Paths.get(workingDir).resolve(localTargetTripleFile)
       if Files.exists(cacheFile) then
         IO {
-          try Files.readString(cacheFile).trim.asRight
+          try normalizeTriple(Files.readString(cacheFile).trim).asRight
           catch
             case e: Exception =>
               LlvmCompilationError
@@ -186,18 +224,12 @@ object LlvmToolchain:
           .asLeft
   }
 
-  /** Normalizes a target triple by stripping version suffixes.
-    *
-    * Examples:
-    *   - x86_64-apple-darwin24.6.0 -> x86_64-apple-macosx
-    *   - aarch64-apple-darwin24.6.0 -> aarch64-apple-macosx
-    *   - x86_64-pc-linux-gnu -> x86_64-pc-linux-gnu (unchanged)
-    */
+  /** Applies the local deployment policy independently of the host OS version. */
   private def normalizeTriple(triple: String): String =
     val parts = triple.split("-").toList
     parts match
       case arch :: vendor :: os :: _ if os.startsWith("darwin") || os.startsWith("macosx") =>
-        s"$arch-$vendor-macosx"
+        defaultDeploymentTarget(s"$arch-$vendor-macosx")
       case _ => triple
 
   /** Query the local target triple without caching. For info/diagnostic commands. */

@@ -141,14 +141,105 @@ class ClangTargetTests extends BaseEffFunSuite:
     }
   }
 
-  test("native and explicit cross targets select their own Clang CPU flags") {
+  test("CPU selection is portable by default and explicit overrides reach Clang") {
     val local = CompilerConfig.default
-    val cross = local.copy(targetTriple = "x86_64-unknown-linux-gnu".some)
-    assert(LlvmToolchain.clangFlags(local, "aarch64-apple-macosx").contains("-mcpu=native"))
-    assert(!LlvmToolchain.clangFlags(cross, cross.targetTriple.get).exists(_.startsWith("-march=")))
+    val arm   = "arm64-apple-macosx15.0"
+    val x86   = "x86_64-unknown-linux-gnu"
+    List(arm, x86).foreach { triple =>
+      List(local, local.copy(targetTriple = triple.some)).foreach { config =>
+        val flags = LlvmToolchain.clangFlags(config, triple)
+        assert(!flags.exists(flag => flag.startsWith("-mcpu=") || flag.startsWith("-march=")))
+      }
+    }
+    List("native", "apple-m3").foreach { cpu =>
+      assert(
+        LlvmToolchain
+          .clangFlags(local.copy(targetCpu = cpu.some), arm)
+          .contains(s"-mcpu=$cpu")
+      )
+    }
     assert(
       LlvmToolchain
-        .clangFlags(cross.copy(targetCpu = "znver4".some), cross.targetTriple.get)
+        .clangFlags(local.copy(targetCpu = "znver4".some), x86)
         .contains("-march=znver4")
     )
+    assert(
+      LlvmToolchain
+        .clangFlags(local.copy(targetCpu = "native".some), x86)
+        .contains("-march=native")
+    )
+  }
+
+  test("explicit macOS ARM64 targets default only missing deployment versions") {
+    withProbe { dir =>
+      List(
+        "arm64-apple-macosx" -> "arm64-apple-macosx15.0",
+        "aarch64-apple-macosx" -> "aarch64-apple-macosx15.0",
+        "arm64-apple-macos" -> "arm64-apple-macosx15.0",
+        "arm64-apple-darwin" -> "arm64-apple-macosx15.0",
+        "arm64-apple-macosx-unknown" -> "arm64-apple-macosx15.0-unknown",
+        "arm64-apple-macosx14.0" -> "arm64-apple-macosx14.0",
+        "arm64-apple-macosx14.0-unknown" -> "arm64-apple-macosx14.0-unknown",
+        "arm64-apple-macosx26.0" -> "arm64-apple-macosx26.0",
+        "arm64-apple-darwin24.0" -> "arm64-apple-darwin24.0",
+        "x86_64-unknown-linux-gnu" -> "x86_64-unknown-linux-gnu",
+        "aarch64-unknown-linux-gnu" -> "aarch64-unknown-linux-gnu"
+      ).traverse_ { case (input, expected) =>
+        LlvmToolchain.resolveTargetTriple(input.some, dir.toString).map { result =>
+          assertEquals(result, expected.asRight[LlvmCompilationError])
+        }
+      }
+    }
+  }
+
+  test("cached local triples apply deployment policy without reusing the host OS version") {
+    withProbe { dir =>
+      List("arm64-apple-macosx", "arm64-apple-darwin25.6.0", "arm64-apple-macosx26.0")
+        .traverse_ { cached =>
+          for
+            _ <- IO.blocking(Files.writeString(dir.resolve("local-target-triple"), cached))
+            result <- LlvmToolchain.resolveTargetTriple(none, dir.toString)
+            _ = assertEquals(result, "arm64-apple-macosx15.0".asRight[LlvmCompilationError])
+          yield ()
+        }
+    }
+  }
+
+  test("native CPU accepts architecture aliases and rejects cross-architecture targets") {
+    List(
+      "arm64-apple-macosx15.0" -> "aarch64-apple-macosx15.0",
+      "aarch64-unknown-linux-gnu" -> "arm64-apple-macosx15.0",
+      "x86_64-unknown-linux-gnu" -> "amd64-unknown-linux-gnu"
+    ).foreach { case (target, host) =>
+      assertEquals(LlvmToolchain.validateNativeCpu(target, host), ().asRight[LlvmCompilationError])
+    }
+    List(
+      "x86_64-unknown-linux-gnu" -> "arm64-apple-macosx15.0",
+      "arm64-apple-macosx15.0" -> "x86_64-unknown-linux-gnu"
+    ).foreach { case (target, host) =>
+      LlvmToolchain.validateNativeCpu(target, host) match
+        case Left(LlvmCompilationError.TargetResolutionError(message)) =>
+          assert(message.contains("--cpu native"), message)
+          assert(message.contains(target) && message.contains(host), message)
+        case other => fail(s"Expected native CPU diagnostic, got $other")
+    }
+  }
+
+  test("target resolution enforces native CPU compatibility before the target probe") {
+    withProbe { dir =>
+      for
+        host <- LlvmToolchain.queryLocalTriple.map(_.getOrElse(fail("Clang is required")))
+        incompatible =
+          if host.startsWith("x86_64-") then "arm64-apple-macosx15.0"
+          else "x86_64-unknown-linux-gnu"
+        rejected <- LlvmToolchain.resolveTargetTriple(
+          incompatible.some,
+          dir.toString,
+          "native".some
+        )
+        _ = assert(rejected.isLeft, rejected.toString)
+        accepted <- LlvmToolchain.resolveTargetTriple(host.some, dir.toString, "native".some)
+        _ = assertEquals(accepted, host.asRight[LlvmCompilationError])
+      yield ()
+    }
   }

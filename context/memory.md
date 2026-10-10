@@ -8,10 +8,10 @@ This is the Author's active and near-term focus. The backlog lives in [tasks/](t
 ### Portable macOS ARM64 builds
 
 - **Tracker:** [Portable macOS ARM64 builds](tasks/macos-arm64-portability.md)
-- **Status:** planned
-- **Current focus:** Continue on the M5: confirm CPU and deployment-target settings, then
-  verify a portable build on the M3. The unsupported `smax` instruction is identified;
-  `minos 26.0` is a separate deployment concern. Implementation approval is pending.
+- **Status:** in_progress
+- **Current focus:** Compiler and native benchmark changes are verified, reviewed, and
+  published locally. Closure awaits final default-artifact M3 verification or explicit
+  acceptance of the existing explicit-target M3 evidence; local commit is authorized.
 
 ### BUG: Mixed-ownership transfers, cleanup, and returns
 

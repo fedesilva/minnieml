@@ -49,7 +49,11 @@ object CodegenStage:
     if !state.canEmitCode then IO.pure(state)
     else
       LlvmToolchain
-        .resolveTargetTriple(state.config.targetTriple, state.config.outputDir.toString)
+        .resolveTargetTriple(
+          state.config.targetTriple,
+          state.config.outputDir.toString,
+          state.config.targetCpu
+        )
         .map {
           case Left(error) => state.addError(error).withCanEmitCode(false)
           case Right(triple) => state.withResolvedTriple(triple)

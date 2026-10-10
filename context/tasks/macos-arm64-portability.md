@@ -3,50 +3,48 @@
 ## Metadata
 
 - **Owner:** The Author
-- **Status:** planned
+- **Status:** in_progress
 - **Kind:** BUG, PORTABILITY, CRASH
 - **Priority:** HIGH
 - **Created:** 2026-10-09
 - **Target Branch:** dev-2026-03-21-lambdas
 - **External Reference:** None
 
-## How target parameters are selected
-
-Our compiler defaults to optimizing for the build machine's CPU. The decision is in
-`LlvmToolchain.clangFlags` in
-[LlvmToolchain.scala](../../modules/mmlc-lib/src/main/scala/mml/mmlclib/codegen/LlvmToolchain.scala):
-
-| MML compiler options | Target triple | CPU passed to Clang on ARM64 |
-| --- | --- | --- |
-| Neither option | Auto-detected | `-mcpu=native` |
-| `--target ...` | Supplied triple | No override; Clang's target default |
-| `--cpu ...` | Auto-detected | `-mcpu=<supplied CPU>` |
-| Both | Supplied triple | `-mcpu=<supplied CPU>` |
-
-For auto-detection, we ask `clang -print-target-triple` and cache the result. On macOS,
-we strip the OS version, producing something like `arm64-apple-macosx`. An explicit
-`--target` triple is preserved, including any deployment version it contains.
-
-Next, [ClangTarget.scala](../../modules/mmlc-lib/src/main/scala/mml/mmlclib/codegen/ClangTarget.scala)
-asks Clang to compile a tiny C probe using those flags and reads its resolved `target-cpu`
-and `target-features`. We copy those attributes into our generated LLVM IR, compile the C
-runtime with the same target flags, and pass the resolved CPU to LLVM's optimizer (`opt`)
-and assembly generator (`llc`). Probe results are cached for subsequent builds.
-
-MML chooses the CPU policy; Clang supplies the feature list; LLVM selects instructions
-accordingly. We do not manually choose CSSC or emit the ARM64 `smax` instruction directly,
-but requesting `native` on an M5 enables that instruction. Supplying an explicit target
-without a CPU override changes this default even when the architecture remains ARM64.
-
-Separately, an unversioned macOS triple leaves the deployment-version choice to Clang.
-The CPU selection and the executable's minimum macOS version are independent settings.
-
 ## Execution Checklist
 
 1. [x] **complete** — Identify the copied executable and its unsupported CPU instruction on M3.
-2. [ ] **planned** — Inspect the M5 build invocation and establish explicit CPU and macOS targets.
-3. [ ] **planned** — Agree on portable defaults and implement any approved compiler changes.
-4. [ ] **planned** — Build on M5, verify the transferred executable on M3, and obtain signoff.
+2. [x] **complete** — Establish explicit CPU and macOS targets on M5; inspect the build
+   and verify local CLI behavior. The original copied binary’s invocation is unavailable.
+3. [x] **complete** — Implement and verify baseline CPU/macOS 15 defaults, explicit native
+   optimization, cross-architecture native diagnostics, and native benchmark builds.
+4. [ ] **planned** — Verify the default-built executable on M3 and obtain signoff.
+   The explicit-target experiment runs on M3, including the animation window.
+
+## Target policy
+
+Builds use Clang's default CPU for the selected target unless `--cpu` is supplied.
+`--cpu native` requests host CPU optimization and requires matching host/target architectures.
+An explicit CPU, such as `--cpu apple-m3`, overrides the baseline.
+
+| MML compiler options | macOS ARM64 target | CPU selection |
+| --- | --- | --- |
+| Neither option | Auto-detected platform, macOS 15.0 | Clang target baseline |
+| `--cpu native` | Auto-detected platform, macOS 15.0 | Host CPU |
+| `--cpu apple-m3` | Auto-detected platform, macOS 15.0 | Explicit CPU |
+| `--target arm64-apple-macosx` | macOS 15.0 | Clang target baseline |
+| `--target arm64-apple-macosx14.0` | Explicit macOS 14.0 | Clang target baseline |
+| Versioned `--target` and `--cpu` | Explicit version | Explicit CPU selection |
+
+[LlvmToolchain.scala](../../modules/mmlc-lib/src/main/scala/mml/mmlclib/codegen/LlvmToolchain.scala)
+applies the deployment default to fresh and cached local triples and to unversioned ARM64
+macOS targets. Explicit deployment versions are preserved. Other platforms retain their
+existing triple policy, with baseline CPU selection by default.
+
+[ClangTarget.scala](../../modules/mmlc-lib/src/main/scala/mml/mmlclib/codegen/ClangTarget.scala)
+probes Clang with the same flags used for runtime compilation and linking. Its resolved
+CPU/features feed MML IR, LLVM optimization, and assembly generation. Probe and runtime
+cache keys include the selected flags, separating baseline and explicit native builds.
+External dependencies must independently support the destination CPU and OS.
 
 ## Problem
 
@@ -78,23 +76,24 @@ linking. Compatible builds do not require source workarounds.
 - Out of scope: macOS-to-Linux compilation, raylib changes, MML language semantics, and
   unrelated ownership or animation changes.
 
-## Plan (Approval Gate)
+## Approved implementation plan
 
-1. On the M5, capture the exact compiler invocation, compiler revision, LLVM/Clang versions,
-   resolved target attributes, deployment-target environment, and selected SDK. The original
-   copied binary's build flags are not available in the M3 evidence.
-2. Verify a build with explicit `--target arm64-apple-macosx15.0` and no `--cpu` override.
-   Inspect the runtime and MML CPU attributes and the executable's `LC_BUILD_VERSION`.
-   This is a candidate configuration, not a verified M5-to-M3 solution.
-3. Settle the portable CPU baseline and minimum macOS default. Prepare a bounded change
-   only if the existing explicit-target workflow or agreed default behavior needs repair.
-   Preserve explicit CPU selection for host-specific optimization.
-4. Transfer the M5 artifact to the M3. Verify `help`, argument handling, and complete window
-   playback for a found path and a full barrier. Record the exact build and dependency
-   configuration before claiming portability. Run applicable compiler gates if code changes.
+1. Capture M5 toolchain settings and verify the explicit macOS 15 target, including MML and
+   runtime CPU attributes, final load commands, and M3 execution evidence.
+2. Default CPU selection to Clang's target baseline. Preserve explicit CPU overrides and
+   reject `--cpu native` when the requested architecture differs from the host.
+3. Default local and unversioned macOS ARM64 targets to macOS 15.0, including cached local
+   triples. Preserve explicit deployment versions. Update CLI help, documentation, and
+   regression coverage; run applicable compiler checks and independent review.
+4. Verify the default-built M5 artifact on M3: help, argument handling, and complete window
+   playback for a found path and a full barrier. Record destination dependency identity
+   and obtain signoff. The explicit-target artifact's confirmed M3 animation is separate
+   evidence from this final default-build check.
 
-Approval: investigation and task documentation are authorized. Compiler implementation,
-default-policy changes, completion, commit, and push remain pending.
+Approval: baseline CPU defaults, macOS ARM64 deployment default 15.0, explicit CPU overrides,
+cross-architecture native rejection, relevant tests/docs, and verification are authorized.
+Workstream signoff and local commit are authorized. Task closure awaits the final M3
+verification or an explicit scope reduction. Push is not authorized.
 
 ## Verification
 
@@ -153,7 +152,7 @@ int32_t user_argc = (argc > 1) ? (int32_t)(argc - 1) : 0;
 ```
 
 Clang/LLVM chooses the machine instructions; the MML emitter does not emit this ARM64
-instruction directly. [LlvmToolchain.scala](../../modules/mmlc-lib/src/main/scala/mml/mmlclib/codegen/LlvmToolchain.scala)
+instruction directly. At evidence revision `2b6fb10`, [LlvmToolchain.scala](../../modules/mmlc-lib/src/main/scala/mml/mmlclib/codegen/LlvmToolchain.scala)
 selects `native` when both `targetCpu` and `targetTriple` are absent. On ARM64 this becomes
 `-mcpu=native`. Supplying `--target` without `--cpu` omits that CPU override. The shared
 flags feed the target probe, runtime compilation, and final linking;
@@ -198,12 +197,134 @@ the immediate CPU failure; it does not verify every OS API or later execution pa
 The SDK version alone does not determine compatibility: Apple
 [documents support for older deployment targets with newer SDKs](https://developer.apple.com/documentation/security/resolving-common-notarization-issues).
 
-For implicit local targets, `resolveLocalTriple` in `LlvmToolchain.scala` normalizes the
+At evidence revision `2b6fb10`, `resolveLocalTriple` in `LlvmToolchain.scala` normalizes the
 queried Darwin/macOS triple to an unversioned `*-apple-macosx` triple. User-provided triples
 are returned unchanged. Clang's effective deployment version on the M5 therefore needs to
 be checked along with its environment and SDK configuration. Do not treat the `minos 26.0`
 stamp as proof that this program requires macOS 26 APIs, or simply relabel an executable
 without rebuilding and verifying the intended deployment target.
+
+### M5 explicit-target experiment — 2026-10-10
+
+Compiler and sample revision: `8849b9b40ff949a476587433cc846d6957f01ab4`, branch
+`dev-2026-03-21-lambdas`, clean working tree before the experiment. Host macOS 26.6.2
+(25G83); LLVM reports host CPU `apple-m5`. Clang, opt, and llc are Homebrew 23.1.1.
+The resolved Clang executable is `/opt/homebrew/Cellar/llvm/23.1.1/bin/clang-23`.
+`MACOSX_DEPLOYMENT_TARGET` and `DEVELOPER_DIR` are unset;
+`SDKROOT=/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk` resolves to SDK 26.5.
+Clang's configuration adds `-isysroot /Library/Developer/CommandLineTools/SDKs/MacOSX26.sdk`.
+`LIBRARY_PATH` includes `/opt/homebrew/lib` and `/usr/local/lib`.
+
+Reproduction from that revision, with an unused build directory:
+
+```sh
+sbtn 'run -v -I --target arm64-apple-macosx15.0 --build-dir build/portability-m5-macos15-20261010 mml/samples/astar3_animated.mml'
+```
+
+The build exits zero. Default optimization is O3; no CPU override or sanitizer is supplied.
+The following results are embedded evidence; generated build files are reproducible outputs,
+not required repository context:
+
+- Probe, MML IR, and runtime bitcode all select `target-cpu=apple-m1`, without `+cssc`.
+  Probe and runtime also contain `tune-cpu=apple-m5`; their instruction feature baseline
+  remains the recorded M1 feature set.
+- Runtime Clang flags: `-emit-llvm -c -target arm64-apple-macosx15.0 -std=c17 -O3 -fPIC`.
+  LLVM opt and llc receive `--mcpu=apple-m1`; llc also receives
+  `-mtriple=arm64-apple-macosx15.0 -relocation-model=pic`.
+- Final Clang link flags: `-fuse-ld=lld -target arm64-apple-macosx15.0 -std=c17 -O3 -fPIC`,
+  generated assembly, and `-lraylib`.
+- Output name: `astar3animated-arm64-apple-macosx15.0`, in the build directory's `target/`.
+  SHA-256: `5c51fd70e8066f9dac9cc307a15899b0a79bbf4ac5fd72268ddbddb621c30027`.
+  Mach-O UUID: `4C4C4404-5555-3144-A1F0-81E702296198`.
+- `LC_BUILD_VERSION`: `minos 15.0`, SDK `26.5`.
+- Disassembly of `mml_args_to_array`: `cmp w0, #1` at `0x100003f2c`, followed by
+  `csinc w8, w0, wzr, gt` at `0x100003f30`. The identified failing operation uses no `smax`.
+- M5 execution: `help`, `25 3 4 0`, and `25 3 4 -1` each exit zero with empty stderr.
+  Help prints usage; the latter cases print the positive-speed validation message.
+  The Author confirms this exact transferred artifact runs on M3, including the animation
+  window. Separate found-path/full-barrier completion and destination raylib identity are
+  not recorded.
+- Linked libraries: `/opt/homebrew/opt/raylib/lib/libraylib.600.dylib` and
+  `/usr/lib/libSystem.B.dylib`. The M5 raylib is version 6.0.0 and declares `minos 26.0`,
+  SDK 26.4. The linker warns that this dependency exceeds the requested minimum.
+  Destination verification must identify and use a compatible M3 raylib; copying this
+  M5 dylib does not establish macOS 15 compatibility.
+
+The existing M5 native probe selects `apple-m5`, includes `+cssc`, and declares macOS 26.0.
+Local build logs contain sample invocations without explicit target/CPU settings, but no
+invocation is tied to the original crashing binary's hash. Its exact build command remains
+unconfirmed. The explicit-target experiment verifies configuration propagation on M5;
+M3 execution is Author-confirmed above. The original copied binary’s invocation remains unknown.
+
+### Portable-default implementation verification — 2026-10-10
+
+Host/toolchain match the M5 experiment above. Changes are based on revision
+`8849b9b40ff949a476587433cc846d6957f01ab4`.
+
+| Build options | Sample | Probe, MML IR, and runtime CPU | Executable minimum OS |
+| --- | --- | --- | --- |
+| No target or CPU | `astar3_animated.mml` | `apple-m1`, no CSSC | 15.0 |
+| `--cpu native` | `hola.mml` | `apple-m5`, CSSC enabled | 15.0 |
+| `--target arm64-apple-macosx --cpu apple-m3` | `hola.mml` | `apple-a16` (Clang's resolved CPU), no CSSC | 15.0 |
+
+Reproduction commands, each with a fresh build directory:
+
+```sh
+sbtn 'run -v -I -b build/portability-default-20261010 mml/samples/astar3_animated.mml'
+sbtn 'run -v -I --cpu native -b build/portability-native-20261010 mml/samples/hola.mml'
+sbtn 'run -v --target arm64-apple-macosx --cpu apple-m3 -b build/portability-m3-20261010 mml/samples/hola.mml'
+```
+
+All builds succeed. Both `hola` executables run and exit zero on M5. The default A* executable
+prints help and exits zero; its argument conversion contains `cmp w0, #1` and
+`csinc w8, w0, wzr, gt`. Its SHA-256 is
+`0fd6d681b010184d71d54c0130caa53cb7e09ec87de0e68f1059871f5d449646`.
+This artifact has not been tested on M3. Linking still warns about the M5 raylib minimum
+macOS 26.0; the external dependency caveat from the explicit-target experiment applies.
+
+The installed compiler rejects the following with exit 1 and a diagnostic naming the host
+and requested target architectures, before emitting target code:
+
+```sh
+mmlc --target x86_64-unknown-linux-gnu --cpu native mml/samples/hola.mml
+```
+
+Verification:
+
+- `sbtn 'scalafmtAll;scalafixAll;testOnly mml.mmlclib.codegen.ClangTargetTests'`: 9 pass.
+  Coverage includes default/explicit CPU flags, explicit versions, unversioned targets,
+  cached local triples, architecture aliases, and native mismatch rejection.
+- `./tests/smoke/run.sh all`: 8/8 pass.
+- `sbtn test`: library 1,024 pass, CLI 9 pass; 37 existing library tests ignored.
+- Target-mismatch warnings in test fixtures are corrected by selecting the same target for
+  the C dependencies, probe, and driver. After that test-only correction,
+  `testOnly mml.mmlclib.codegen.LinkingTests mml.mmlclib.codegen.AggregateAbiTests`:
+  13 pass without warnings. Formatting and linting pass again.
+- `sbtn mmlcPublishLocal`: succeeds; publishes the compiler to the local installation.
+- `make -C benchmark clean` followed by `make -C benchmark mml`: all 12 benchmark
+  executables compile successfully. This is build verification, not performance measurement.
+- Final `sbtn 'scalafmtAll;scalafixAll;test'`: library 1,024 pass, CLI 9 pass,
+  37 existing ignores; no warnings. Final smoke rerun: 8/8 pass.
+- Independent review identifies an unversioned four-component target bypass. The fix preserves
+  environment components and explicit OS versions; regression coverage includes
+  `arm64-apple-macosx-unknown` and `arm64-apple-macosx14.0-unknown`.
+  Fresh narrow review finds no remaining issues in the fix or benchmark Makefile changes.
+- Final compiler publication succeeds. A build with
+  `SDKROOT=/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk mmlc --target arm64-apple-macosx-unknown -b build/portability-fourpart-final-20261010 mml/samples/hola.mml`
+  produces `minos 15.0`, SDK 26.5, and runs with exit zero. An sbt-server attempt without
+  that SDK environment fails to find `fcntl.h`; four-component targets require an explicit
+  SDK environment on this Homebrew configuration, unlike its configured three-component targets.
+- All 36 benchmark MML recipes pass `--cpu native`, including self-comparison variants.
+  A forced Make dry run verifies all 36 expanded commands. After final publication,
+  `make -C benchmark -B mml` rebuilds all 12 main MML benchmark executables successfully.
+- Author-supplied benchmark results place optimized nested MML at 1.01 ± 0.06 times the
+  speed of optimized C, optimized safe MML within 1.01 ± 0.01 of optimized nested MML,
+  and optimized Rust within 1.02 ± 0.02. These are reported measurements, not independently
+  rerun timing results.
+- QA, tracking consistency, local links, and `git diff --check` pass.
+- No ABI-lowering or ownership changes; Linux ABI gates and the memory harness are not
+  applicable to this change. Host ABI fixture tests include native sanitizer execution;
+  cross-compilation results are not destination execution evidence.
 
 ## Risks / Notes
 
@@ -213,23 +334,29 @@ without rebuilding and verifying the intended deployment target.
 - The M3 target-probe cache selects `apple-m3` and does not enable CSSC. Build-directory
   caches are host-local artifacts; inspect or regenerate them on the M5 and when testing
   explicit target settings.
-- No compatible replacement built on the M5 has been executed on the M3. End-to-end
-  portability, the exact original M5 flags, and any additional incompatibility remain open.
+- The explicit-target M5 artifact runs on M3 with animation, as confirmed by the Author.
+  The default-built artifact, both complete playback cases, and destination dependency
+  identity still need verification. The original M5 flags remain unknown.
 
 ## Signoff
 
-- Workstream signoff: pending.
-- Tracked item completion: pending.
-- Commit authorization: not granted.
+- Workstream signoff: granted for the implemented compiler and benchmark changes.
+- Tracked item completion: pending final M3 verification or explicit scope reduction.
+- Commit authorization: granted.
 - Push authorization: not granted.
 
 ## Task Working Memory
 
-The immediate failure is confirmed: the copied M5 executable executes scalar `smax` in
-`mml_args_to_array`, and the M3 raises `SIGILL`. The macOS 26.0 minimum is a separate
-deployment concern. LLVM selects the instruction from CPU features; MML's implicit native
-CPU choice is a candidate source of those features, pending the original build invocation.
+The explicit macOS 15 build on M5 selects M1 CPU features throughout MML and runtime code,
+uses `cmp`/`csinc` for the faulting operation, and declares `minos 15.0`. The Author confirms
+that the transferred artifact runs on M3, including animation. Its hash and build configuration
+are embedded in Verification. Destination raylib identity and full-barrier completion are open.
 
-Continue on the M5 with the exact invocation, toolchain, target probe, and deployment-target
-settings. Verify the explicit macOS 15 ARM64 target, then decide whether compiler defaults
-need a bounded repair. Implementation approval and M5-to-M3 execution evidence are pending.
+The compiler changes and native benchmark recipes pass formatting, linting, full tests,
+smoke, artifact inspection, local execution, benchmark compilation, and independent review.
+The final compiler is published locally. Workstream signoff and local commit are authorized.
+
+Task closure requires either the recorded default-artifact M3 checks and destination dependency
+identity, or explicit acceptance of the existing M3 evidence as sufficient. No default-artifact
+M3 execution or complete found-path/full-barrier result is inferred from the finish request.
+Push is not authorized.
