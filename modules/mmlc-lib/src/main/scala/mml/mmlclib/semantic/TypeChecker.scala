@@ -1385,6 +1385,8 @@ object TypeChecker:
               case Capture.BorrowedRef(_) => Capture.BorrowedRef(typedRef)
               case Capture.OwnedClosure(_, id) => Capture.OwnedClosure(typedRef, id)
               case Capture.CapturedLiteral(_, id) => Capture.CapturedLiteral(typedRef, id)
+              case Capture.CapturedConditional(_, witness, id) =>
+                Capture.CapturedConditional(typedRef, witness, id)
           case None => cap
     }
     CheckResult(

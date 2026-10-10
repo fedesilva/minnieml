@@ -50,6 +50,21 @@ object TailRecursionDetector:
 
     case app: App => rewriteApp(app)
 
+    case binding: BindOwnership =>
+      binding.copy(
+        initializer = markBoundLambda(
+          rewriteLetBoundLambdas(binding.initializer),
+          binding.valueParam
+        ),
+        body = rewriteLetBoundLambdas(binding.body)
+      )
+
+    case yielded: YieldOwnership =>
+      yielded.copy(
+        value = rewriteLetBoundLambdas(yielded.value),
+        owns  = rewriteLetBoundLambdas(yielded.owns)
+      )
+
     case lambda: Lambda => lambda.copy(body = rewriteLetBoundLambdas(lambda.body))
 
     case cond: Cond =>
@@ -99,6 +114,8 @@ object TailRecursionDetector:
       case List(lambda: Lambda) if hasTailRecursiveCallById(lambda.body, param) =>
         val meta = lambda.meta.getOrElse(LambdaMeta()).copy(isTailRecursive = true)
         arg.copy(terms = List(lambda.copy(meta = meta.some)))
+      case List(yielded: YieldOwnership) =>
+        arg.copy(terms = List(yielded.copy(value = markBoundLambda(yielded.value, param))))
       case _ => arg
 
   private def hasTailRecursiveCallById(
@@ -114,6 +131,9 @@ object TailRecursionDetector:
     binding: Resolvable
   ): Boolean =
     term match
+      case local: BindOwnership =>
+        hasTailRecursiveCallById(local.body, binding)
+
       case cond: Cond =>
         hasTailRecursiveCallById(cond.ifTrue, binding) ||
         hasTailRecursiveCallById(cond.ifFalse, binding)

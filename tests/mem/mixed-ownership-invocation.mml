@@ -1,0 +1,46 @@
+// Owned call-once closures and null-environment functions share invocation and drop paths.
+fn take(~text: String): Int = text.length;;
+fn inc(n: Int): Int = n + 1;;
+fn check(ok: Bool): Int = if ok then 0; else 1; ;;
+
+fn direct(flag: Bool, invoked: Bool): Int =
+  let text = int_to_str 123;
+  let f = if flag then ~{ n: Int -> take text + n; }; else inc;;
+  let expected = if flag then 4; else 2;;
+  if invoked then check (f 1 == expected); else 0;;
+;
+
+fn aliased(flag: Bool, invoked: Bool): Int =
+  let text = int_to_str 123;
+  let f = if flag then ~{ n: Int -> take text + n; }; else inc;;
+  let first = f;
+  let second = first;
+  let expected = if flag then 4; else 2;;
+  if invoked then check (second 1 == expected); else 0;;
+;
+
+fn scoped(flag: Bool, invoked: Bool): Int =
+  let text = int_to_str 123;
+  let f = if flag then ~{ n: Int -> take text + n; }; else inc;;
+  let alias = (let inner = f; inner);
+  let expected = if flag then 4; else 2;;
+  if invoked then check (alias 1 == expected); else 0;;
+;
+
+fn scenario(flag: Bool, invoked: Bool): Int =
+  let a = direct flag invoked;
+  let b = aliased flag invoked;
+  let c = scoped flag invoked;
+  a + b + c;
+;
+
+fn run(remaining: Int, seed: Int, failures: Int): Int =
+  if remaining == 0 then
+    failures;
+  else
+    let result = scenario (seed % 2 == 0) (seed % 4 < 2);
+    run (remaining - 1) (seed + 1) (failures + result);
+  ;
+;
+
+pub fn main(args: StringArray): Int = run 4 (ar_str_len args) 0;;

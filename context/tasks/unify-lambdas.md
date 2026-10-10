@@ -25,7 +25,7 @@ remain subject to bounded plan approval. Only the active step exposes its curren
 10. [x] **complete** — [BUG: preserve valid LLVM and TCO for nested capturing recursion](#bug-preserve-valid-llvm-and-tco-for-nested-capturing-recursion); signed off.
 11. [x] **complete** — [BUG: continue elaboration after independent errors](#bug-continue-elaboration-after-independent-errors); signed off.
 12. [x] **complete** — [Counter and argument-expression preservation](#preserve-counters-and-argument-expressions-across-ownership-analysis); signed off.
-13. [ ] **planned** — Resolve the standalone [mixed-ownership repair dependency](mixed-ownership-transfers.md).
+13. [x] **complete** — Resolve the standalone [mixed-ownership repair dependency](mixed-ownership-transfers.md); signed off.
 14. [ ] **in_progress** — [Remaining lambda semantics and lowering](#remaining-lambda-implementation), including [restoration of all ignored regressions](#restore-ignored-regressions).
 15. [ ] **planned** — [Preserve capture transfers through evaluated callees](#bug-preserve-capture-transfers-through-evaluated-callees).
 16. [ ] **planned** — [Preserve the complete application callee type in Simplifier](#fix-preserve-the-complete-application-callee-type-in-simplifier).
@@ -197,8 +197,8 @@ Rules to preserve:
     at that application stage; remaining consuming arguments move when supplied later.
 15. Constructor calls with consuming parameters auto-clone supported non-owned inputs such as
     string literals and globals; owned values move in without cloning.
-16. Rebinding an owned heap value through local `let` moves ownership into the new binding when the
-    source is an owned heap value without mixed-ownership witness state.
+16. Rebinding an owned or mixed heap value through a direct local alias moves its complete ownership
+    obligation into the new binding, including a mixed value's saved witness and non-owning origins.
 17. Borrow-capturing lambdas may borrow owned, borrowed, literal, or global bindings.
 18. Borrow-capturing lambda values cannot be returned; escaping borrow closures remain rejected
     with `BorrowClosureEscapeViaReturn`.
@@ -661,13 +661,13 @@ retains its reproduction, scope, and acceptance criteria.
 #### Bug: preserve mixed ownership through consuming transfers
 
 - **Dependency:** [Mixed-ownership transfers, cleanup, and returns](mixed-ownership-transfers.md).
-- **Status:** planned; implementation approval pending in the standalone task.
+- **Status:** complete; integrated repair signed off.
 - **Required result:** named and scoped mixed values transfer to consuming parameters without
   invalid frees or duplicate cleanup, with safe aliases and returns. Borrowed alternatives
   remain rejected and existing clone policy is preserved.
-- The standalone task owns the staged plan, progress, verification, and signoff. Its
-  [evidence](mixed-ownership-transfers-evidence.md) includes the scoped-transfer reproducer,
-  the A* return-leak follow-up, and current field/capture probes.
+- The standalone task records the integrated plan, verification, and signoff, including captures.
+  Its [baseline evidence](mixed-ownership-transfers-evidence.md) includes scoped transfers,
+  the A* return-leak follow-up, and field/capture probes.
 
 #### Bug: consume an owned PAP captured by a move lambda
 
@@ -1239,8 +1239,9 @@ are in `context/history/` for Author review. No compiler slice is authorized by 
   and sanitizer results are recorded in the recovery section.
 - **Evidence:** [Nested TCO repair verification](#bug-preserve-valid-llvm-and-tco-for-nested-capturing-recursion)
   and [binding construction verification](#binding-construction-evidence).
-- **Open limits:** the standalone [mixed-ownership repair](mixed-ownership-transfers.md)
-  remains unresolved; the general branch audit and separate Linux sanitizer validation are deferred.
+- **Ownership dependency:** the standalone [mixed-ownership repair](mixed-ownership-transfers.md)
+  is complete and signed off.
+- **Open limits:** the general branch audit and separate Linux sanitizer validation are deferred.
   The broader counter/expression follow-up is complete and signed off.
   Remaining lambda implementation and 37 ignored cases
   require further bounded work.
@@ -1306,8 +1307,8 @@ approvals, and next action belong to the [Execution Checklist](#execution-checkl
   source parameters in the diagnostic, and checked jar hashes and verification logs. No candidate
   findings required claim-verifier delegation. Other gates were inspected, not rerun by the reviewer.
   Stage 1 signoff and local commit authorization are granted. Push is not authorized.
-  The [mixed-ownership transfer repair](#bug-preserve-mixed-ownership-through-consuming-transfers)
-  retains its separate failure evidence and remains open.
+  The separate [mixed-ownership transfer repair](#bug-preserve-mixed-ownership-through-consuming-transfers)
+  has its own baseline evidence, integrated verification, and completed signoff.
 
 ### Completed-slice evidence
 

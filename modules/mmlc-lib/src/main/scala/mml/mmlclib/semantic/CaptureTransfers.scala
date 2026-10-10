@@ -19,17 +19,22 @@ object CaptureTransfers:
 
     def resultCaptures(term: Term): Set[String] = term match
       case _ if !values.recovery.isAvailable(term) => Set.empty
-      case ref:   Ref if ref.qualifier.isEmpty => ref.resolvedId.toSet.intersect(captures)
-      case expr:  Expr => expr.terms.lastOption.fold(Set.empty[String])(resultCaptures)
-      case group: TermGroup => resultCaptures(group.inner)
-      case cond:  Cond => resultCaptures(cond.ifTrue) ++ resultCaptures(cond.ifFalse)
-      case app:   App =>
+      case ref:     Ref if ref.qualifier.isEmpty => ref.resolvedId.toSet.intersect(captures)
+      case expr:    Expr => expr.terms.lastOption.fold(Set.empty[String])(resultCaptures)
+      case group:   TermGroup => resultCaptures(group.inner)
+      case yielded: YieldOwnership => resultCaptures(yielded.value)
+      case binding: BindOwnership => resultCaptures(binding.body)
+      case cond:    Cond => resultCaptures(cond.ifTrue) ++ resultCaptures(cond.ifFalse)
+      case app:     App =>
         app.fn match
           case scope: Lambda => resultCaptures(scope.body)
           case _ => Set.empty
       case _ => Set.empty
 
     def transfers(term: Term): Set[String] = term match
+      case binding: BindOwnership =>
+        resultCaptures(binding.initializer) ++ transfers(binding.initializer) ++
+          transfers(binding.body)
       case app: App if !app.fn.isInstanceOf[Lambda] && !values.recovery.isAvailable(app) =>
         transfers(app.fn) ++ transfers(app.arg)
       case app: App =>

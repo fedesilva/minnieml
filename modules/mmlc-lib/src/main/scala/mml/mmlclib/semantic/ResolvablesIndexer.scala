@@ -55,6 +55,11 @@ object ResolvablesIndexer:
           collectParamsFromExpr(lambda.body)
       case app: App =>
         collectParamsFromAppFn(app.fn) ++ collectParamsFromExpr(app.arg)
+      case binding: BindOwnership =>
+        List(binding.valueParam, binding.witnessParam) ++
+          collectParamsFromExpr(binding.initializer) ++ collectParamsFromExpr(binding.body)
+      case yielded: YieldOwnership =>
+        collectParamsFromExpr(yielded.value) ++ collectParamsFromExpr(yielded.owns)
       case cond: Cond =>
         collectParamsFromExpr(cond.cond) ++
           collectParamsFromExpr(cond.ifTrue) ++

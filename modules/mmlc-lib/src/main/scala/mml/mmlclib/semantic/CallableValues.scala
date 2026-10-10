@@ -1,77 +1,168 @@
 package mml.mmlclib.semantic
 
+import cats.syntax.all.*
 import mml.mmlclib.ast.*
 
 /** Resolved value flow preserves callable ownership through bindings, returns, and arguments. */
 final case class CallableValues private (
-  bindings: Map[String, List[Expr]],
-  index:    ResolvablesIndex,
-  recovery: ValueAvailability
+  bindings:                    Map[String, List[Expr]],
+  private val lexicalBindings: Map[String, List[Expr]],
+  index:                       ResolvablesIndex,
+  recovery:                    ValueAvailability
 ):
 
-  private case class Origin(lambda: Lambda, supplied: List[Expr] = Nil):
+  /** Supplied arguments retain the substitutions and cycle guard from their call site. */
+  private case class LexicalValue(
+    value:       Expr,
+    environment: Map[String, LexicalValue],
+    seen:        Set[String]
+  )
+
+  private case class Origin(
+    lambda:      Lambda,
+    supplied:    List[LexicalValue]        = Nil,
+    environment: Map[String, LexicalValue] = Map.empty
+  ):
     def remainingParams: List[FnParam] = lambda.params.drop(supplied.size)
 
-  private def origins(term: Term): List[Origin] =
-    def resolve(value: Term, fields: List[String], seen: Set[String]): List[Origin] = value match
-      case _ if !recovery.isAvailable(value) => Nil
-      case lambda: Lambda if fields.isEmpty => List(Origin(lambda))
-      case expr:   Expr => expr.terms.lastOption.toList.flatMap(resolve(_, fields, seen))
-      case group:  TermGroup => resolve(group.inner, fields, seen)
-      case cond:   Cond => resolve(cond.ifTrue, fields, seen) ++ resolve(cond.ifFalse, fields, seen)
-      case ref:    Ref if ref.qualifier.isDefined =>
-        ref.resolvedId.toList.flatMap { fieldId =>
-          ref.qualifier.toList.flatMap(resolve(_, fieldId :: fields, seen))
-        }
-      case ref: Ref =>
-        ref.resolvedId.toList.filterNot(seen.contains).flatMap { id =>
-          val sources = bindings.getOrElse(
-            id,
-            index
-              .lookup(id)
-              .collect { case bnd: Bnd =>
-                bnd.value
-              }
-              .toList
-          )
-          sources.flatMap(resolve(_, fields, seen + id))
-        }
-      case app: App =>
-        val (callee, arguments) = CallableValues.application(app)
-        val calleeId = callee match
-          case ref: Ref => ref.resolvedId
-          case _:   Lambda => None
-        resolve(callee, Nil, seen).flatMap { origin =>
-          if arguments.size < origin.remainingParams.size then
-            if fields.isEmpty then List(origin.copy(supplied = origin.supplied ++ arguments))
-            else Nil
-          else
-            val constructorField = for
-              fieldId <- fields.headOption
-              marker <- origin.lambda.body.terms.collectFirst { case dc: DataConstructor => dc }
-              tpe <- marker.typeSpec.flatMap(TypeUtils.canonical(_, index))
-              struct <- tpe match
-                case ref: TypeRef =>
-                  ref.resolvedId.flatMap(index.lookupType).collect { case struct: TypeStruct =>
-                    struct
-                  }
-                case struct: TypeStruct => Some(struct)
-                case _ => None
-              position <- struct.fields.zipWithIndex.collectFirst {
-                case (field, position) if field.id.contains(fieldId) => position
-              }
-              argument <- (origin.supplied ++ arguments).lift(position)
-            yield argument
-            constructorField match
-              case Some(argument) => resolve(argument, fields.drop(1), seen)
-              case None => resolve(origin.lambda.body, fields, seen ++ calleeId)
-        }
-      case _ => Nil
+  /** Known targets remain usable for flow even when another alternative is unresolved. */
+  private case class OriginResult(known: List[Origin], complete: Boolean):
 
-    resolve(term, Nil, Set.empty).distinct
+    def ++(other: OriginResult): OriginResult =
+      OriginResult(known ++ other.known, complete && other.complete)
+
+    def flatMap(f: Origin => OriginResult): OriginResult =
+      known.map(f).foldLeft(OriginResult(Nil, complete))(_ ++ _)
+
+  private val unknownOrigins = OriginResult(Nil, complete = false)
+
+  private def resolveOrigins(
+    term:          Term,
+    bindingValues: Map[String, List[Expr]],
+    exactCalls:    Boolean
+  ): OriginResult =
+
+    def resolve(
+      value:       Term,
+      fields:      List[String],
+      seen:        Set[String],
+      environment: Map[String, LexicalValue]
+    ): OriginResult =
+      value match
+
+        case _ if !recovery.isAvailable(value) => unknownOrigins
+
+        case lambda: Lambda if fields.isEmpty =>
+          OriginResult(List(Origin(lambda, environment = environment)), complete = true)
+
+        case expr: Expr =>
+          expr.terms.lastOption.fold(unknownOrigins)(resolve(_, fields, seen, environment))
+
+        case group:   TermGroup => resolve(group.inner, fields, seen, environment)
+        case yielded: YieldOwnership => resolve(yielded.value, fields, seen, environment)
+        case binding: BindOwnership => resolve(binding.body, fields, seen, environment)
+
+        case cond: Cond =>
+          resolve(cond.ifTrue, fields, seen, environment) ++
+            resolve(cond.ifFalse, fields, seen, environment)
+
+        case ref: Ref if ref.qualifier.isDefined =>
+          (ref.resolvedId, ref.qualifier)
+            .mapN((fieldId, qualifier) => resolve(qualifier, fieldId :: fields, seen, environment))
+            .getOrElse(unknownOrigins)
+
+        case ref: Ref =>
+          ref.resolvedId.filterNot(seen.contains).fold(unknownOrigins) { id =>
+            environment.get(id) match
+
+              case Some(source) =>
+                val callerSeen = if exactCalls then source.seen else seen + id
+                resolve(source.value, fields, callerSeen, source.environment)
+
+              case None =>
+                val sources = bindingValues.getOrElse(
+                  id,
+                  index.lookup(id).collect { case bnd: Bnd => bnd.value }.toList
+                )
+                sources
+                  .map(resolve(_, fields, seen + id, environment))
+                  .reduceOption(_ ++ _)
+                  .getOrElse(unknownOrigins)
+          }
+
+        case app: App =>
+          val (callee, arguments) = CallableValues.application(app)
+          val calleeId = callee match
+            case ref: Ref => ref.resolvedId
+            case _:   Lambda => none
+
+          resolve(callee, Nil, seen, environment).flatMap { origin =>
+            val callerSeen = if exactCalls then seen else Set.empty[String]
+            val supplied =
+              origin.supplied ++ arguments.map(LexicalValue(_, environment, callerSeen))
+            if arguments.size < origin.remainingParams.size then
+              if fields.isEmpty then
+                OriginResult(
+                  List(origin.copy(supplied = supplied)),
+                  complete = true
+                )
+              else unknownOrigins
+            else
+              val constructorField = for
+                fieldId <- fields.headOption
+                marker <- origin.lambda.body.terms.collectFirst { case dc: DataConstructor => dc }
+                tpe <- marker.typeSpec.flatMap(TypeUtils.canonical(_, index))
+                struct <- tpe match
+                  case ref: TypeRef =>
+                    ref.resolvedId.flatMap(index.lookupType).collect { case struct: TypeStruct =>
+                      struct
+                    }
+                  case struct: TypeStruct => struct.some
+                  case _ => none
+                position <- struct.fields.zipWithIndex.collectFirst {
+                  case (field, position) if field.id.contains(fieldId) => position
+                }
+                argument <- supplied.lift(position)
+              yield argument
+
+              constructorField match
+                case Some(argument) =>
+                  val argumentSeen = if exactCalls then argument.seen else seen
+                  resolve(argument.value, fields.drop(1), argumentSeen, argument.environment)
+
+                case None =>
+                  val bodyEnvironment =
+                    if exactCalls then
+                      origin.environment ++ origin.lambda.params.zip(supplied).flatMap {
+                        (parameter, argument) => parameter.id.map(_ -> argument)
+                      }
+                    else Map.empty[String, LexicalValue]
+
+                  resolve(origin.lambda.body, fields, seen ++ calleeId, bodyEnvironment)
+          }
+
+        case _ => unknownOrigins
+
+    resolve(term, Nil, Set.empty, Map.empty)
+
+  private def origins(term: Term): List[Origin] =
+    resolveOrigins(term, bindings, exactCalls = false).known.distinct
 
   def lambdas(term: Term): List[Lambda] =
-    origins(term).collect { case Origin(lambda, Nil) => lambda }
+    origins(term).collect { case Origin(lambda, Nil, _) => lambda }
+
+  /** A proof requires every lexical alternative; observed call arguments cannot close a formal. */
+  def provenLambdas(term: Term): Option[List[Lambda]] =
+    val result = resolveOrigins(term, lexicalBindings, exactCalls = true)
+    Option
+      .when(result.complete)(result.known)
+      .flatMap:
+        _.traverse {
+          case Origin(lambda, Nil, _) => lambda.some
+          case _ => none
+        }
+      .map(_.distinctBy(CallableIdentity(_)))
+      .filter(_.nonEmpty)
 
   def consumesOnCall(term: Term): Boolean =
     lambdas(term).exists(_.meta.exists(_.transferredCaptures.nonEmpty))
@@ -93,9 +184,11 @@ final case class CallableValues private (
           sources.exists(resolve(_, seen + id))
         }
 
-      case expr:  Expr => expr.terms.lastOption.exists(resolve(_, seen))
-      case group: TermGroup => resolve(group.inner, seen)
-      case cond:  Cond => resolve(cond.ifTrue, seen) || resolve(cond.ifFalse, seen)
+      case expr:    Expr => expr.terms.lastOption.exists(resolve(_, seen))
+      case group:   TermGroup => resolve(group.inner, seen)
+      case yielded: YieldOwnership => resolve(yielded.value, seen)
+      case binding: BindOwnership => resolve(binding.body, seen)
+      case cond:    Cond => resolve(cond.ifTrue, seen) || resolve(cond.ifFalse, seen)
 
       case app: App =>
         val (callee, arguments) = CallableValues.application(app)
@@ -131,7 +224,8 @@ final case class CallableValues private (
     }
 
 object CallableValues:
-  val empty: CallableValues = CallableValues(Map.empty, ResolvablesIndex(), ValueAvailability.empty)
+  val empty: CallableValues =
+    CallableValues(Map.empty, Map.empty, ResolvablesIndex(), ValueAvailability.empty)
   def applications(term: Term): List[App] = term match
     case app: App =>
       val (callee, args) = application(app)
@@ -153,6 +247,13 @@ object CallableValues:
       CallableValues.applications(binding.value)
     }
     val initial = members.flatMap(binding => binding.id.map(_ -> binding.value)) ++
+      members.flatMap { member =>
+        TermTraversal
+          .collect(member.value) { case binding: BindOwnership =>
+            binding.valueParam.id.map(_ -> binding.initializer).toList
+          }
+          .flatten
+      } ++
       applications.flatMap { app =>
         app.fn match
           case lambda: Lambda => lambda.params.headOption.flatMap(_.id).map(_ -> app.arg)
@@ -162,7 +263,7 @@ object CallableValues:
 
     @scala.annotation.tailrec
     def propagate(current: Map[String, List[Expr]]): CallableValues =
-      val flow = CallableValues(current, module.resolvables, recovery)
+      val flow = CallableValues(current, values, module.resolvables, recovery)
       val incoming = applications.flatMap { app =>
         val (callee, args) = application(app)
         flow.origins(callee).flatMap { origin =>

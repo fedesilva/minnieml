@@ -61,7 +61,10 @@ object ClosureEnvironmentLayout:
               .when(lambda.meta.exists(_.isPartialApplication))(targets.target(capture.ref))
               .flatten
               .flatMap(targets.definitions.get)
-              .filter(_ => !capture.isInstanceOf[Capture.CapturedLiteral])
+              .filter: _ =>
+                capture match
+                  case _: Capture.CapturedLiteral | _: Capture.CapturedConditional => false
+                  case _ => true
             val storage = target match
               case Some(definition) if definition.lambda.captures.isEmpty =>
                 CaptureStorage.Static(definition.id)

@@ -1,0 +1,221 @@
+// Each run exercises both storage choices and both independent transfer choices.
+struct Box { text: String };
+struct Reader { read: Unit -> String };
+
+fn take(~text: String): Int = text.length;;
+fn borrow(text: String): Int = text.length;;
+fn take_pair(~left: String, ~right: String): Int = left.length + right.length;;
+fn check(ok: Bool): Int = if ok then 0; else 1; ;;
+
+fn named(flag: Bool): Int =
+  let text = if flag then int_to_str 123; else "abc";;
+  let first = text;
+  let second = first;
+  check (take second == 3);
+;
+
+fn inline_consumer(flag: Bool): Int =
+  let text = if flag then int_to_str 123; else "abc";;
+  let result = { ~value: String -> value.length; } text;
+  check (result == 3);
+;
+
+fn scoped_consumer(flag: Bool): Int =
+  let result = take (
+    let text = if flag then int_to_str 123; else "abc";;
+    let alias = text;
+    alias
+  );
+  check (result == 3);
+;
+
+fn scoped_borrow(flag: Bool): Int =
+  let value = (
+    let text = if flag then int_to_str 123; else "abc";;
+    let alias = text;
+    alias
+  );
+  check (value.length + value.length == 6);
+;
+
+fn scoped_borrowing_argument(flag: Bool): Int =
+  let result = borrow (
+    let unrelated = int_to_str 456;
+    let ignored = unrelated.length;
+    let value = if flag then int_to_str 123; else "abc";;
+    value
+  );
+  check (result == 3);
+;
+
+fn conditional_borrowing_argument(flag: Bool): Int =
+  let text = int_to_str 123;
+  let result = borrow (if flag then int_to_str 4567; else text;);
+  let expected = if flag then 4; else 3;;
+  check (result == expected and str_eq text "123");
+;
+
+fn conditional_borrowing_local(flag: Bool): Int =
+  let text = int_to_str 123;
+  let selected = if flag then int_to_str 4567; else text;;
+  let expected = if flag then "4567"; else "123";;
+  check (str_eq selected expected and str_eq text "123");
+;
+
+fn conditional_transfer(allocated: Bool, transferred: Bool): Int =
+  let value = if allocated then int_to_str 123; else "abc";;
+  let result = if transferred then take value; else value.length;;
+  check (result == 3);
+;
+
+fn owning_field(flag: Bool): Int =
+  let value = if flag then int_to_str 123; else "abc";;
+  let alias = value;
+  let box = Box alias;
+  check (box.text.length == 3);
+;
+
+fn shadowed(flag: Bool): Int =
+  let text = int_to_str 4567;
+  let value = (
+    let text = if flag then int_to_str 123; else "abc";;
+    let alias = text;
+    alias
+  );
+  check (text.length + take value == 7);
+;
+
+fn named_return(flag: Bool): String =
+  let value = if flag then int_to_str 123; else "abc";;
+  let first = value;
+  let second = first;
+  second;
+;
+
+fn scoped_return(flag: Bool): String =
+  let value = (
+    let inner = if flag then int_to_str 123; else "abc";;
+    let alias = inner;
+    alias
+  );
+  value;
+;
+
+fn conditional_return(flag: Bool): String =
+  let allocated = int_to_str 123;
+  let alias = allocated;
+  if flag then alias; else "abc";;
+;
+
+fn mixed_conditional_return(allocated: Bool, returned: Bool): String =
+  let value = if allocated then int_to_str 123; else "abc";;
+  if returned then value; else "xyz";;
+;
+
+fn entirely_static(flag: Bool): String =
+  let temporary = int_to_str 123;
+  let ignored = temporary.length;
+  if flag then "abc"; else "def";;
+;
+
+fn static_helper(): String =
+  let temporary = int_to_str 456;
+  let ignored = temporary.length;
+  let value = "abc";
+  value;
+;
+
+fn recursive_static_helper(n: Int): String =
+  if n == 0 then static_helper (); else recursive_static_helper (n - 1);;
+;
+
+fn static_helper_return(flag: Bool): String =
+  let value = if flag then int_to_str 123; else recursive_static_helper 3;;
+  let alias = value;
+  alias;
+;
+
+fn wrap_reader(~read: Unit -> String): Reader = Reader read;;
+fn relay_reader(~reader: Reader): Reader = reader;;
+
+fn static_field_return(flag: Bool): String =
+  let reader = relay_reader (relay_reader (wrap_reader static_helper));
+  if flag then int_to_str 123; else reader.read ();;
+;
+
+fn returns(allocated: Bool, returned: Bool): Int =
+  let expected = if allocated then "123"; else "abc";;
+  let first = named_return allocated;
+  let second = scoped_return allocated;
+  let third = conditional_return allocated;
+  let fourth = mixed_conditional_return allocated returned;
+  let fifth = entirely_static allocated;
+  let sixth = static_helper_return allocated;
+  let seventh = static_field_return allocated;
+  let fourth_expected = if returned then expected; else "xyz";;
+  let fifth_expected = if allocated then "abc"; else "def";;
+  check (
+    str_eq first expected and str_eq second expected and str_eq third expected and
+    str_eq fourth fourth_expected and str_eq fifth fifth_expected and str_eq sixth expected and
+    str_eq seventh expected
+  );
+;
+
+fn mark(trace: IntArray, digit: Int): Unit =
+  ar_int_set trace 0 (ar_int_get trace 0 * 10 + digit);
+;
+
+fn decide(trace: IntArray, digit: Int, result: Bool): Bool =
+  mark trace digit;
+  result;
+;
+
+fn allocate(trace: IntArray, digit: Int): String =
+  mark trace digit;
+  int_to_str 123;
+;
+
+fn effects(outer: Bool, inner: Bool): Int =
+  let trace = ar_int_new 1;
+  ar_int_set trace 0 0;
+  let value = (
+    let selected =
+      if decide trace 1 outer then
+        if decide trace 2 inner then allocate trace 3; else "abc";;
+      else
+        "abc";
+      ;
+    let alias = selected;
+    alias
+  );
+  let result = take_pair value (allocate trace 4);
+  let expected = if outer then if inner then 1234; else 124;; else 14;;
+  check (result == 6 and ar_int_get trace 0 == expected);
+;
+
+fn scenario(allocated: Bool, transferred: Bool): Int =
+  let a = named allocated;
+  let b = inline_consumer allocated;
+  let c = scoped_consumer allocated;
+  let d = scoped_borrow allocated;
+  let e = conditional_transfer allocated transferred;
+  let f = owning_field allocated;
+  let g = shadowed allocated;
+  let h = returns allocated transferred;
+  let i = effects allocated transferred;
+  let j = scoped_borrowing_argument allocated;
+  let k = conditional_borrowing_argument allocated;
+  let l = conditional_borrowing_local allocated;
+  a + b + c + d + e + f + g + h + i + j + k + l;
+;
+
+fn run(remaining: Int, seed: Int, failures: Int): Int =
+  if remaining == 0 then
+    failures;
+  else
+    let result = scenario (seed % 2 == 0) (seed % 4 < 2);
+    run (remaining - 1) (seed + 1) (failures + result);
+  ;
+;
+
+pub fn main(args: StringArray): Int = run 4 (ar_str_len args) 0;;

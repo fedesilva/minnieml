@@ -62,9 +62,16 @@ case class CallableTargetAnalysis(
           else sources.get(id).fold[Value](Value.Unknown)(evaluate(_, scope, seen + id))
         }
       }
-    case expr:  Expr => expr.terms.lastOption.fold[Value](Value.Unknown)(evaluate(_, scope, seen))
-    case group: TermGroup => evaluate(group.inner, scope, seen)
-    case cond:  Cond =>
+    case expr:   Expr => expr.terms.lastOption.fold[Value](Value.Unknown)(evaluate(_, scope, seen))
+    case group:  TermGroup => evaluate(group.inner, scope, seen)
+    case result: YieldOwnership => evaluate(result.value, scope, seen)
+
+    case binding: BindOwnership =>
+      val value = evaluate(binding.initializer, scope, seen)
+      val bound = binding.valueParam.id.fold(scope)(id => scope.updated(id, value))
+      evaluate(binding.body, bound, seen)
+
+    case cond: Cond =>
       merge(evaluate(cond.ifTrue, scope, seen), evaluate(cond.ifFalse, scope, seen))
     case app: App =>
       val (callee, args) = collectArgsAndFunction(app)
@@ -143,6 +150,12 @@ object CallableTargetAnalysis:
         }
 
     def visit(term: Term, analysis: CallableTargetAnalysis): CallableTargetAnalysis = term match
+
+      case binding: BindOwnership =>
+        val withSource = binding.valueParam.id.fold(analysis): id =>
+          analysis.copy(sources = analysis.sources.updated(id, binding.initializer))
+
+        visit(binding.body, visit(binding.initializer, withSource))
 
       case app: App if app.fn.isInstanceOf[Lambda] =>
         app.fn match

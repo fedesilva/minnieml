@@ -654,7 +654,7 @@ class FunctionSignatureTest extends BaseEffFunSuite:
     val source =
       """
         type MyPtr = @native[t=*i8, mem=heap];
-        fn alloc_ptr(): MyPtr = @native;;
+        fn alloc_ptr(): MyPtr = @native[mem=alloc];;
         fn free_ptr(~p: MyPtr): Unit = @native;;
         fn take_ptr(~p: MyPtr): Unit = free_ptr p;;
         fn main(): Unit = take_ptr (alloc_ptr ());;
@@ -712,7 +712,7 @@ class FunctionSignatureTest extends BaseEffFunSuite:
     val source =
       """
         type MyOpaque = @native[t=ptr, mem=heap];
-        fn alloc_ptr(): MyOpaque = @native;;
+        fn alloc_ptr(): MyOpaque = @native[mem=alloc];;
         fn free_ptr(~p: MyOpaque): Unit = @native;;
         fn take_ptr(~p: MyOpaque): Unit = free_ptr p;;
         fn main(): Unit = take_ptr (alloc_ptr ());;

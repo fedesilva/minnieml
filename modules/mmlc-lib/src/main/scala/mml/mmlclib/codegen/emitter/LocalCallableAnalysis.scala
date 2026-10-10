@@ -67,6 +67,7 @@ object LocalCallableAnalysis:
     case ref: Ref if ref.qualifier.isEmpty => ref.some
     case Expr(_, List(inner), _, _) => reference(inner)
     case TermGroup(_, inner, _) => reference(inner)
+    case result: YieldOwnership => reference(result.value)
     case _ => none
 
   /** Analyzes the final typed module after semantic transformations, without changing its AST.
@@ -139,6 +140,13 @@ object LocalCallableAnalysis:
 
     def visit(term: Term, scope: Scope, analysis: LocalCallableAnalysis): LocalCallableAnalysis =
       term match
+
+        case bound: BindOwnership =>
+          binding(bound.valueParam, bound.initializer, bound.body, scope, analysis)
+
+        case result: YieldOwnership =>
+          visit(result.owns, scope, visit(result.value, scope, analysis))
+
         case app: App =>
           val (callee, args) = collectArgsAndFunction(app)
           callee match

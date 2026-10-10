@@ -65,6 +65,7 @@ Every binding tracked by the ownership analyzer is in one of these states:
 | State        | Meaning |
 |--------------|---------|
 | **Owned**    | The binding is responsible for destroying the value. |
+| **Mixed**    | The binding owns storage on some paths; a Boolean witness determines cleanup. |
 | **Moved**    | Ownership has been transferred; further use is invalid. |
 | **Borrowed** | The binding refers to a value owned elsewhere and must not destroy it. |
 | **Literal**  | A compile-time constant; never destroyed. |
@@ -134,7 +135,7 @@ A binding becomes `Owned` when it is bound to the result of an allocating expres
 
 - Calls to allocating functions (`int_to_str`, `readline`, string concatenation, etc.)
 - Struct construction where the struct has heap fields
-- Conditionals where at least one branch allocates
+- Conditionals whose result owns storage on every branch
 
 ```mml
 let s = int_to_str 42;   // Owned
@@ -143,7 +144,8 @@ let x = "hello";         // Literal
 ```
 
 Not all heap-typed expressions produce new ownership. Borrowed inputs remain borrowed
-unless explicitly moved or duplicated through the clone path.
+unless explicitly moved or duplicated through the clone path. A conditional that selects owned
+storage on only some branches produces `Mixed` ownership, as described below.
 
 ---
 
@@ -276,7 +278,27 @@ let s =
 ;
 ```
 
-`s` may or may not own a value. The compiler tracks that and frees it only when needed.
+`s` is `Mixed`: it may or may not own a value. The compiler records a Boolean witness for the
+selected result and frees it only when that witness is true. It also retains whether the other
+alternatives are literal, global, borrowed, or resource-free values.
+
+Binding `s` to another local moves the complete cleanup obligation, including the witness.
+It does not clone the value. The same rule applies when an inner scope produces the result for
+an outer local. Unrelated locals still die at the inner scope's exit, and a borrow cannot escape
+an owner destroyed there. Conditions and result expressions run once, in their original scopes.
+
+A reference selected by a conditional initializer retains its existing owner. For example,
+`let selected = if flag then int_to_str 1; else existing;;` borrows `existing` on that branch;
+only the new allocation belongs to `selected`. A borrowing call uses the same distinction for
+its temporary: existing references remain borrowed, while fresh scoped results transfer into
+the temporary and are destroyed after the call. A direct alias such as `let alias = s`, or an
+unconditional scoped result such as `let alias = (let ignored = (); s)`, moves the complete
+obligation.
+
+When a consuming call or owning struct field receives a mixed owned/static result, the owned
+alternative moves and the static alternative uses the permitted clone operation. A borrowed
+alternative cannot supply ownership, even when another branch allocates. A borrowing call may
+use either alternative; the caller retains and later destroys only storage it owns.
 
 ### Conditional consumption
 
@@ -292,6 +314,11 @@ else
 
 In the non-consuming branch, the compiler inserts a `free` so the value is always
 destroyed exactly once.
+
+If `s` itself is mixed, this branch cleanup uses its original ownership witness. Ownership
+selection and consumption selection are independent: the retained owned value is destroyed,
+while retained static or borrowed storage is left alone. After the merge, the binding is
+unavailable because one path transferred it.
 
 ---
 
@@ -314,7 +341,18 @@ When a function returns owned storage on one path, its static result branches mu
 ownership for the caller. The compiler clones literal/global results through nested branches
 and local scopes; see [Clone operations](#clone-operations) for this implicit duplication boundary.
 Functions whose results are entirely static need no caller cleanup, even if they allocate and
-release local temporaries.
+release local temporaries. Calls proven to return literals retain that provenance through
+helpers, aliases, and recursion. An unowned return contract alone does not prove a static result;
+unknown native results and borrowed parameters do not acquire clone permission.
+
+This applies to a named mixed local or an alias as well as a conditional written directly at the
+return. The owned alternative moves without cloning, and the witness selects cloning only for
+the static alternative. Borrowed alternatives remain invalid. A value allocated before a
+conditional is destroyed on paths that return something else.
+
+The compiler records this promise as a `ReturnContract`, separately from local `Mixed`
+ownership. A function with an owning return contract gives the caller an ordinary owned value
+on every path; its local witness is not part of the returned value's representation.
 
 ---
 
@@ -403,6 +441,10 @@ Move closures allocate their environment on the heap, and the closure value owns
 - Capturing a **borrowed** heap binding is rejected.
 - Heap literals are cloned into the environment when an owned capture is needed; see
   [Clone operations](#clone-operations).
+- For a mixed owned/literal binding, the capture moves the owned alternative and clones only
+  the literal alternative. This happens when the closure is created, using the binding's
+  ownership witness. The environment holds an owned payload and needs no witness field.
+- A mixed binding with a borrowed alternative cannot become an owned capture.
 - A move lambda can borrow its owned captures repeatedly, or transfer them through
   consuming calls, local moves, returns, and nested move captures. Transferring a capture
   makes invocation consume the outer lambda too.
@@ -424,6 +466,16 @@ to consuming parameters or returned to move ownership to the caller.
 Owning captures does not make the closure call-once. Its body can borrow those captures
 repeatedly while the environment retains ownership. Transferring a captured value out gives
 up that ownership, so the same value cannot be transferred again.
+
+A conditional selecting a call-once owned closure or a non-capturing function can be invoked
+directly. The call consumes the selected binding on both paths; cleanup safely ignores the
+non-capturing function's null environment. A borrowed closure alternative cannot supply that
+ownership.
+
+A payload established from mixed ownership at creation follows these same rules. Dropping the
+closure uncalled destroys it; a borrowing invocation retains it; and a return, consuming call,
+or nested move capture transfers it once. Moving into an inner closure makes that inner
+environment responsible for destruction, even if the inner closure is never invoked.
 
 A move lambda that invokes a consuming PAP capture is call-once. A local binding of the
 capture is optional: calling it directly and moving it into a local before calling both
@@ -488,6 +540,9 @@ The same ownership rules apply to PAP payloads as to ordinary values:
 
 - An already-applied non-consuming parameter stores a borrow.
 - An already-applied consuming `~` parameter stores ownership only through an explicit move.
+- A stored consuming argument with mixed owned/static alternatives is rejected. PAP creation
+  does not implicitly clone its static alternative. This is a storage policy, independent of
+  the clone permissions for ordinary consuming calls and move closures.
 - Borrowed heap payloads may be stored only when the PAP cannot outlive the owner.
 - An escaping PAP must not contain borrowed heap payloads.
 - Owned heap payloads are destroyed by the PAP environment if the PAP is dropped before it is
@@ -503,6 +558,9 @@ The same ownership rules apply to PAP payloads as to ordinary values:
 This rule applies equally to ordinary callables and direct-callable lowering. The source callable
 may be direct and non-escaping while the generated PAP value itself escapes; ownership is checked
 on the generated value that actually stores the payloads.
+
+An owning function return or an ordinary move capture can establish ownership before a value
+reaches PAP storage. Storing that already-owned value transfers it without another clone.
 
 See [pap-ownership.mml](../mml/samples/pap-ownership.mml) for a commented example comparing
 a reusable owning closure, a borrowing PAP, and a PAP that transfers its payload on invocation.
@@ -620,8 +678,9 @@ There is no user-accessible clone syntax or clone protocol. Generated clone func
 compiler-facing helpers. The compiler inserts implicit clones at these boundaries:
 
 - Literal and some global values passed to consuming parameters or owning struct fields.
-- Heap literals captured by move closures.
-- Non-allocating literal/global return branches when other branches allocate.
+- Heap literals captured by move closures, including the literal alternative of a mixed capture.
+- Literal/global return alternatives when the function promises an owned result, including named
+  mixed locals and aliases.
 
 These insertions provide owned storage but conceal duplication in the source. They are
 implementation exceptions to the model's source-visible clone operation.

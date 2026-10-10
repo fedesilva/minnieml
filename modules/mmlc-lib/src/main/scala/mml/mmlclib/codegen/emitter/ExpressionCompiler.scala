@@ -61,7 +61,7 @@ def compileTerm(
 
     case ref: Ref => {
       // Check if reference exists in the function's local scope
-      functionScope.get(ref.name) match {
+      ref.resolvedId.flatMap(functionScope.get).orElse(functionScope.get(ref.name)) match {
         case Some(entry) =>
           entry match
             case ScopeEntry.KnownCallable(id, _, _) if !ref.resolvedId.contains(id) =>
@@ -124,6 +124,12 @@ def compileTerm(
 
     case app: App =>
       compileApp(app, state, functionScope)
+
+    case binding: BindOwnership =>
+      compileOwnershipBinding(binding, state, functionScope)
+
+    case result: YieldOwnership =>
+      CodeGenError("Ownership result requires an enclosing ownership binding", result.some).asLeft
 
     case destruction: Destruction =>
       compileDestruction(destruction, state, functionScope)
@@ -319,7 +325,8 @@ private def compileTailRecCapturingLambda(
         register = envResult.fpRegister,
         state    = mergedState,
         false,
-        "Function"
+        "Function",
+        exitBlock = envResult.exitBlock
       )
     }
   }
@@ -412,13 +419,15 @@ private def compileNonCapturingLambda(
 
 /** Carries the closure operand in the enclosing body and the layout needed to compile its entry.
   * fpRegister belongs to siteState; the deferred body uses envStruct and captureTypes to load its
-  * own capture operands instead of reusing registers from the enclosing function.
+  * own capture operands instead of reusing registers from the enclosing function. exitBlock retains
+  * the continuation introduced by capture promotion.
   */
 private case class EnvSetupResult(
   siteState:    CodeGenState,
   fpRegister:   Int,
   envStruct:    TypeStruct,
-  captureTypes: List[(Capture, String)]
+  captureTypes: List[(Capture, String)],
+  exitBlock:    Option[String]
 )
 
 private def resolveClosureEnvStruct(
@@ -493,6 +502,15 @@ private def termReferencesBinding(term: Term, targetId: String): Boolean =
       exprReferencesBinding(inner, targetId)
     case Cond(_, cond, ifTrue, ifFalse, _, _) =>
       List(cond, ifTrue, ifFalse).exists(exprReferencesBinding(_, targetId))
+
+    case binding: BindOwnership =>
+      exprReferencesBinding(binding.initializer, targetId) ||
+      (!List(binding.valueParam, binding.witnessParam).exists(_.id.contains(targetId)) &&
+        exprReferencesBinding(binding.body, targetId))
+
+    case result: YieldOwnership =>
+      exprReferencesBinding(result.value, targetId) || exprReferencesBinding(result.owns, targetId)
+
     case Tuple(_, elements, _, _) =>
       elements.toList.exists(exprReferencesBinding(_, targetId))
     case invalid: InvalidExpression =>
@@ -549,119 +567,199 @@ private def emitCallSiteEnv(
         capture match
           case Capture.CapturedLiteral(_, id) =>
             NativeAbiPlan.classify(typ, List(typ), state).map(plan => (id -> plan).some)
+          case Capture.CapturedConditional(_, _, id) =>
+            NativeAbiPlan.classify(typ, List(typ), state).map(plan => (id -> plan).some)
           case _ => none[(String, NativeAbiPlan)].asRight[CodeGenError]
       }
       .map(_.flatten.toMap)
-  yield
-    val envTypeRef = s"%struct.${envStruct.name}"
-    // Field offset: move envs have __dtor at field 0, borrow envs start captures at field 0
-    val fieldOffset = if lambda.isMove then 1 else 0
+    result <- emitEnvironmentStorage(
+      lambda,
+      fnName,
+      functionScope,
+      envStruct,
+      captureTypes,
+      captureOperands,
+      clonePlans,
+      envLayout.size,
+      captureState
+    )
+  yield result
 
-    // Allocate env: malloc for move, alloca for borrow
-    val (siteStateAfterDtor, envPtrOp) =
-      if lambda.isMove then
-        val stateWithEnv = captureState
-          .withFunctionDeclaration("malloc", "ptr", List("i64"))
-          .withFunctionDeclaration("free", "void", List("ptr"))
-        val envSize   = envLayout.size
-        val mallocReg = stateWithEnv.nextRegister
-        val mallocLine =
-          emitCall(mallocReg.some, "ptr".some, "malloc", List(("i64", envSize.toString)))
-        val afterMalloc = stateWithEnv.withRegister(mallocReg + 1).emit(mallocLine)
+private case class CapturedValue(
+  state:     CodeGenState,
+  operand:   String,
+  exitBlock: Option[String] = None
+)
 
-        val dtorName   = s"__free_${envStruct.name}"
-        val dtorGepReg = afterMalloc.nextRegister
-        val dtorGepLine = emitGetElementPtr(
-          dtorGepReg,
-          envTypeRef,
-          "ptr",
-          s"%$mallocReg",
-          List(("i32", "0"), ("i32", "0"))
-        )
-        val (stateWithDtorTag, dtorTag) =
-          TbaaEmitter
-            .getTbaaStructFieldTag(envStruct, 0, afterMalloc)
-            .getOrElse((afterMalloc, ""))
-        val dtorStoreLine = emitStore(
-          s"@${captureState.mangleName(dtorName)}",
-          "ptr",
-          s"%$dtorGepReg",
-          Option.when(dtorTag.nonEmpty)(dtorTag)
-        )
-        val afterDtor =
-          stateWithDtorTag.withRegister(dtorGepReg + 1).emit(dtorGepLine).emit(dtorStoreLine)
-        (afterDtor, s"%$mallocReg")
+private def emitEnvironmentStorage(
+  lambda:          Lambda,
+  fnName:          String,
+  functionScope:   Map[String, ScopeEntry],
+  envStruct:       TypeStruct,
+  captureTypes:    List[(Capture, String)],
+  captureOperands: Map[String, String],
+  clonePlans:      Map[String, NativeAbiPlan],
+  envSize:         Int,
+  captureState:    CodeGenState
+): Either[CodeGenError, EnvSetupResult] =
+
+  val envTypeRef = s"%struct.${envStruct.name}"
+  // Field offset: move envs have __dtor at field 0, borrow envs start captures at field 0
+  val fieldOffset = if lambda.isMove then 1 else 0
+
+  // Allocate env: malloc for move, alloca for borrow
+  val (siteStateAfterDtor, envPtrOp) =
+    if lambda.isMove then
+      val stateWithEnv = captureState
+        .withFunctionDeclaration("malloc", "ptr", List("i64"))
+        .withFunctionDeclaration("free", "void", List("ptr"))
+      val mallocReg = stateWithEnv.nextRegister
+      val mallocLine =
+        emitCall(mallocReg.some, "ptr".some, "malloc", List(("i64", envSize.toString)))
+      val afterMalloc = stateWithEnv.withRegister(mallocReg + 1).emit(mallocLine)
+
+      val dtorName   = s"__free_${envStruct.name}"
+      val dtorGepReg = afterMalloc.nextRegister
+      val dtorGepLine = emitGetElementPtr(
+        dtorGepReg,
+        envTypeRef,
+        "ptr",
+        s"%$mallocReg",
+        List(("i32", "0"), ("i32", "0"))
+      )
+      val (stateWithDtorTag, dtorTag) =
+        TbaaEmitter
+          .getTbaaStructFieldTag(envStruct, 0, afterMalloc)
+          .getOrElse((afterMalloc, ""))
+      val dtorStoreLine = emitStore(
+        s"@${captureState.mangleName(dtorName)}",
+        "ptr",
+        s"%$dtorGepReg",
+        Option.when(dtorTag.nonEmpty)(dtorTag)
+      )
+      val afterDtor =
+        stateWithDtorTag.withRegister(dtorGepReg + 1).emit(dtorGepLine).emit(dtorStoreLine)
+      (afterDtor, s"%$mallocReg")
+    else
+      // Borrow: stack-allocate env, no dtor
+      if captureState.insideLoopifiedFunction then
+        // Named registers remain valid when storage precedes earlier numeric capture loads.
+        val envPtr = s"%closure.env.${captureState.nextRegister}"
+        val afterAlloca = captureState
+          .withRegister(captureState.nextRegister + 1)
+          .emitEntryPrologue(s"  $envPtr = alloca $envTypeRef")
+        (afterAlloca, envPtr)
       else
-        // Borrow: stack-allocate env, no dtor
-        if captureState.insideLoopifiedFunction then
-          // Named registers remain valid when storage precedes earlier numeric capture loads.
-          val envPtr = s"%closure.env.${captureState.nextRegister}"
-          val afterAlloca = captureState
-            .withRegister(captureState.nextRegister + 1)
-            .emitEntryPrologue(s"  $envPtr = alloca $envTypeRef")
-          (afterAlloca, envPtr)
-        else
-          val allocaReg = captureState.nextRegister
-          val afterAlloca = captureState
-            .withRegister(allocaReg + 1)
-            .emit(s"  %$allocaReg = alloca $envTypeRef")
-          (afterAlloca, s"%$allocaReg")
+        val allocaReg = captureState.nextRegister
+        val afterAlloca = captureState
+          .withRegister(allocaReg + 1)
+          .emit(s"  %$allocaReg = alloca $envTypeRef")
+        (afterAlloca, s"%$allocaReg")
 
-    val siteStateAfterCaptures =
-      captureTypes.zipWithIndex.foldLeft(siteStateAfterDtor) { case (st, ((cap, llvmType), idx)) =>
-        val ref      = cap.ref
-        val rawCapOp = captureOperands(ref.name)
-
-        // CapturedLiteral: emit ABI-lowered clone call before storing into env (move only)
-        val (stateBeforeStore, capOp) = cap match
-          case Capture.CapturedLiteral(_, cloneFnId) =>
-            val cloneFnMmlName = st.resolvables.resolvables
-              .collectFirst {
-                case (id, bnd: Bnd) if id == cloneFnId => bnd.name
-              }
-              .getOrElse(cloneFnId.split("::").last)
-            val cloneFnLlvmName = resolveMemFnLlvmName(cloneFnMmlName, st)
-            val plan            = clonePlans(cloneFnId)
-            val (cloneReg, cloned) = plan.emitCall(
-              cloneFnLlvmName,
-              List(rawCapOp),
-              plan.declare(cloneFnLlvmName, st)
-            )
-            (cloned, s"%$cloneReg")
-          case _ =>
-            (st, rawCapOp)
-
-        val gepReg = stateBeforeStore.nextRegister
-        val gepLine = emitGetElementPtr(
-          gepReg,
-          envTypeRef,
-          "ptr",
-          envPtrOp,
-          List(("i32", "0"), ("i32", (idx + fieldOffset).toString))
-        )
-        val (stateWithFieldTag, fieldTag) =
-          TbaaEmitter
-            .getTbaaStructFieldTag(envStruct, idx + fieldOffset, stateBeforeStore)
-            .getOrElse((stateBeforeStore, ""))
-        val storeLine = emitStore(
-          capOp,
+  val prepared = CapturedValue(siteStateAfterDtor, envPtrOp)
+  captureTypes.zipWithIndex
+    .foldLeftM(prepared):
+      case (previous, ((cap, llvmType), idx)) =>
+        prepareCapturedValue(
+          cap,
           llvmType,
-          s"%$gepReg",
-          Option.when(fieldTag.nonEmpty)(fieldTag)
-        )
-        stateWithFieldTag.withRegister(gepReg + 1).emit(gepLine).emit(storeLine)
-      }
+          captureOperands(cap.ref.name),
+          clonePlans,
+          previous.state,
+          functionScope
+        ).map: value =>
+          val gepReg = value.state.nextRegister
+          val gepLine = emitGetElementPtr(
+            gepReg,
+            envTypeRef,
+            "ptr",
+            envPtrOp,
+            List(("i32", "0"), ("i32", (idx + fieldOffset).toString))
+          )
+          val (stateWithFieldTag, fieldTag) =
+            TbaaEmitter
+              .getTbaaStructFieldTag(envStruct, idx + fieldOffset, value.state)
+              .getOrElse((value.state, ""))
+          val storeLine = emitStore(
+            value.operand,
+            llvmType,
+            s"%$gepReg",
+            Option.when(fieldTag.nonEmpty)(fieldTag)
+          )
+          CapturedValue(
+            stateWithFieldTag.withRegister(gepReg + 1).emit(gepLine).emit(storeLine),
+            envPtrOp,
+            value.exitBlock.orElse(previous.exitBlock)
+          )
+    .map: captures =>
+      val fp0Reg = captures.state.nextRegister
+      val fp1Reg = fp0Reg + 1
+      val insertFn =
+        emitInsertValue(fp0Reg, "{ ptr, ptr }", "undef", "ptr", s"@$fnName", 0)
+      val insertEnv =
+        emitInsertValue(fp1Reg, "{ ptr, ptr }", s"%$fp0Reg", "ptr", envPtrOp, 1)
+      val siteState =
+        captures.state.withRegister(fp1Reg + 1).emit(insertFn).emit(insertEnv)
 
-    val fp0Reg = siteStateAfterCaptures.nextRegister
-    val fp1Reg = fp0Reg + 1
-    val insertFn =
-      emitInsertValue(fp0Reg, "{ ptr, ptr }", "undef", "ptr", s"@$fnName", 0)
-    val insertEnv =
-      emitInsertValue(fp1Reg, "{ ptr, ptr }", s"%$fp0Reg", "ptr", envPtrOp, 1)
-    val siteState =
-      siteStateAfterCaptures.withRegister(fp1Reg + 1).emit(insertFn).emit(insertEnv)
+      EnvSetupResult(siteState, fp1Reg, envStruct, captureTypes, captures.exitBlock)
 
-    EnvSetupResult(siteState, fp1Reg, envStruct, captureTypes)
+/** Promotion happens once at creation; deferred entries receive an already-owning payload. */
+private def prepareCapturedValue(
+  capture:    Capture,
+  llvmType:   String,
+  operand:    String,
+  clonePlans: Map[String, NativeAbiPlan],
+  state:      CodeGenState,
+  scope:      Map[String, ScopeEntry]
+): Either[CodeGenError, CapturedValue] =
+
+  def cloneValue(id: String, current: CodeGenState): Either[CodeGenError, CapturedValue] =
+    for
+      binding <- current.resolvables
+        .lookup(id)
+        .collect { case value: Bnd => value }
+        .toRight(CodeGenError("Missing capture clone target", capture.ref.some))
+      plan <- clonePlans
+        .get(id)
+        .toRight(CodeGenError("Missing capture clone ABI plan", capture.ref.some))
+      symbol             = resolveMemFnLlvmName(binding.name, current)
+      (register, cloned) = plan.emitCall(symbol, List(operand), plan.declare(symbol, current))
+    yield CapturedValue(cloned, s"%$register")
+
+  capture match
+
+    case Capture.CapturedLiteral(_, id) => cloneValue(id, state)
+
+    case Capture.CapturedConditional(_, witness, id) =>
+      if witness.resolvedId.flatMap(scope.get).isEmpty then
+        CodeGenError(
+          "Conditional capture witness is outside its creation scope",
+          witness.some
+        ).asLeft
+      else
+        compileTerm(witness, state, scope).flatMap: condition =>
+          val ownedLabel = s"capture_owned${condition.state.nextRegister}"
+          val cloneLabel = s"capture_clone${condition.state.nextRegister + 1}"
+          val mergeLabel = s"capture_merge${condition.state.nextRegister + 2}"
+          val branch = condition.state
+            .withRegister(condition.state.nextRegister + 3)
+            .emit(s"  br i1 ${condition.operandStr}, label %$ownedLabel, label %$cloneLabel")
+            .emit(s"$ownedLabel:")
+            .emit(s"  br label %$mergeLabel")
+            .emit(s"$cloneLabel:")
+          cloneValue(id, branch).map: cloned =>
+            val result = cloned.state.nextRegister
+            val merged = cloned.state
+              .emit(s"  br label %$mergeLabel")
+              .emit(s"$mergeLabel:")
+              .emit(
+                s"  %$result = phi $llvmType [ $operand, %$ownedLabel ], " +
+                  s"[ ${cloned.operand}, %$cloneLabel ]"
+              )
+              .withRegister(result + 1)
+            CapturedValue(merged, s"%$result", mergeLabel.some)
+
+    case _ => CapturedValue(state, operand).asRight
 
 /** Capturing lambda: allocate env at call site, load captures in deferred function body. */
 private def compileCapturingLambda(
@@ -731,7 +829,8 @@ private def compileCapturingLambda(
       register = envResult.fpRegister,
       state    = mergedState,
       false,
-      "Function"
+      "Function",
+      exitBlock = envResult.exitBlock
     )
   }
 

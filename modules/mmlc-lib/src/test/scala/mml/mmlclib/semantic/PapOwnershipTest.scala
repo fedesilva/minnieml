@@ -5,23 +5,36 @@ import mml.mmlclib.test.BaseEffFunSuite
 
 class PapOwnershipTest extends BaseEffFunSuite:
 
-  private def assertFreshGeneratedLocals(module: Module, expectedConditions: Int): Unit =
+  private def assertFreshGeneratedLocals(module: Module, expectedWitnesses: Int): Unit =
 
     val body = module.members.collectFirst {
       case binding: Bnd if binding.name == "example" => binding.value
     }.get
+    val ownershipBindings = TermTraversal.collect(body) { case binding: BindOwnership => binding }
     val parameters = TermTraversal
-      .collect(body) { case lambda: Lambda => lambda.params }
+      .collect(body) {
+        case lambda:  Lambda => lambda.params
+        case binding: BindOwnership => List(binding.valueParam, binding.witnessParam)
+      }
       .flatten
-    val conditions  = parameters.filter(_.name.startsWith("__condition_"))
+    val witnesses   = ownershipBindings.map(_.witnessParam)
     val temporaries = parameters.filter(_.name.startsWith("__tmp_"))
-    assertEquals(conditions.size, expectedConditions)
+    assertEquals(witnesses.size, expectedWitnesses)
     assert(temporaries.nonEmpty)
-    val generated = conditions ++ temporaries
+    val generated = witnesses ++ temporaries
     assert(generated.forall(_.id.nonEmpty))
     assertEquals(generated.flatMap(_.id).distinct.size, generated.size)
+    ownershipBindings.foreach { binding =>
+      val witness = binding.witnessParam
+      assert(witness.typeSpec.flatMap(TypeUtils.getTypeName).contains("Bool"))
+      assert(witness.id.flatMap(module.resolvables.lookup).exists(_.id == witness.id))
+      val uses = TermTraversal.collect(binding.body) {
+        case ref: Ref if ref.resolvedId == witness.id => ref
+      }
+      assert(uses.nonEmpty, "the saved ownership witness must remain available to cleanup")
+    }
     // Counter continuity is observable in generated names, independently of fresh binding IDs.
-    assertEquals(generated.map(_.name).distinct.size, generated.size)
+    assertEquals(temporaries.map(_.name).distinct.size, temporaries.size)
 
   test("scoped call arguments preserve generated-local counters") {
     semNotFailed("""
@@ -38,7 +51,7 @@ class PapOwnershipTest extends BaseEffFunSuite:
         );
       ;
     """).map { module =>
-      assertFreshGeneratedLocals(module, expectedConditions = 2)
+      assertFreshGeneratedLocals(module, expectedWitnesses = 2)
     }
   }
 
@@ -58,7 +71,7 @@ class PapOwnershipTest extends BaseEffFunSuite:
         ) (lengths (int_to_str 456) (int_to_str 789));
       ;
     """).map { module =>
-      assertFreshGeneratedLocals(module, expectedConditions = 2)
+      assertFreshGeneratedLocals(module, expectedWitnesses = 2)
     }
   }
 
@@ -77,7 +90,7 @@ class PapOwnershipTest extends BaseEffFunSuite:
         total (outer 123) (lengths (int_to_str 123) (int_to_str 456));
       ;
     """).map { module =>
-      assertFreshGeneratedLocals(module, expectedConditions = 1)
+      assertFreshGeneratedLocals(module, expectedWitnesses = 1)
     }
   }
 
