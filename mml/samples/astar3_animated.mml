@@ -349,8 +349,14 @@ fn astar(grid: Grid, start: Int, goal: Int): SearchResult =
 ;
 
 fn rejection_reason(
-  grid: Grid, closed: IntArray, current: Int, dir: Int,
-  nx: Int, ny: Int, tentative_g: Int, previous_g: Int
+  grid: Grid,
+  closed: IntArray,
+  current: Int,
+  dir: Int,
+  nx: Int,
+  ny: Int,
+  tentative_g: Int,
+  previous_g: Int
 ): Int =
   if not (in_bounds grid nx ny) then rejection_outside;
   elif not (is_open grid (ny * grid.width + nx)) then rejection_wall;
