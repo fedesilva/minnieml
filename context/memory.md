@@ -14,9 +14,11 @@ This is the Author's active and near-term focus. The backlog lives in [tasks/](t
 
 - **Tracker:** [Unify lambdas](tasks/unify-lambdas.md)
 - **Status:** in_progress
-- **Current focus:** [Ignored-test restoration](tasks/unify-lambdas.md#restore-ignored-regressions)
-  has 36 remaining cases. Further repairs and assertion replacements need bounded plans.
-  Overall migration signoff remains pending.
+- **Current focus:** Confirmed bugs take priority. Next is a bounded repair plan for
+  [capture transfers through evaluated callees](tasks/unify-lambdas.md#bug-preserve-capture-transfers-through-evaluated-callees),
+  followed by PAP callee traversal and tail recursion across owned-closure cleanup.
+  General ignored-test restoration (36 cases), optimization, and hardening follow the bugs.
+  Repair implementation approval and overall migration signoff remain pending.
 
 ### Error recovery and parser backtracking
 

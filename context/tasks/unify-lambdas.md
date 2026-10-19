@@ -12,6 +12,8 @@
 
 Top-level delivery order; details and checkpoint evidence are linked below. Pending steps
 remain subject to bounded plan approval. Only the active step exposes its current subitem.
+Confirmed bugs take priority over optimization, general regression restoration, type-contract
+cleanup, and defensive hardening. Restore regressions relevant to each bug as part of its repair.
 
 1. [x] **complete** — [Preserve tests, samples, docs, and helpers](#lambda-restart-test-preservation-map) (`6e33ee4`).
 2. [x] **complete** — [Reject borrowed returns through aliases](#signed-off-workstream-borrowed-returns-through-aliases) (`323b8ca`).
@@ -26,12 +28,12 @@ remain subject to bounded plan approval. Only the active step exposes its curren
 11. [x] **complete** — [BUG: continue elaboration after independent errors](#bug-continue-elaboration-after-independent-errors); signed off.
 12. [x] **complete** — [Counter and argument-expression preservation](#preserve-counters-and-argument-expressions-across-ownership-analysis); signed off.
 13. [x] **complete** — Resolve the standalone [mixed-ownership repair dependency](mixed-ownership-transfers.md); signed off.
-14. [ ] **in_progress** — [Remaining lambda semantics and lowering](#remaining-lambda-implementation), including [restoration of all ignored regressions](#restore-ignored-regressions).
-15. [ ] **planned** — [Preserve capture transfers through evaluated callees](#bug-preserve-capture-transfers-through-evaluated-callees).
-16. [ ] **planned** — [Preserve the complete application callee type in Simplifier](#fix-preserve-the-complete-application-callee-type-in-simplifier).
-17. [ ] **planned** — [Elaborate partial applications inside callees](#bug-elaborate-partial-applications-inside-callees).
-18. [ ] **planned** — [Harden closure environment lookup](#harden-closure-environment-lookup).
-19. [ ] **planned** — [BUG: preserve tail recursion across owned-closure cleanup](#bug-preserve-tail-recursion-across-owned-closure-cleanup).
+14. [ ] **planned** — [BUG: preserve capture transfers through evaluated callees](#bug-preserve-capture-transfers-through-evaluated-callees).
+15. [ ] **planned** — [BUG: elaborate partial applications inside callees](#bug-elaborate-partial-applications-inside-callees).
+16. [ ] **planned** — [BUG: preserve tail recursion across owned-closure cleanup](#bug-preserve-tail-recursion-across-owned-closure-cleanup).
+17. [ ] **planned** — [Preserve the complete application callee type in Simplifier](#fix-preserve-the-complete-application-callee-type-in-simplifier).
+18. [ ] **in_progress** — [Remaining lambda semantics and lowering](#remaining-lambda-implementation), including [restoration of all ignored regressions](#restore-ignored-regressions); deferred behind the bug repairs.
+19. [ ] **planned** — [Harden closure environment lookup](#harden-closure-environment-lookup).
 20. [ ] **planned** — [Integrate the PAP tutorial into the language reference](#later-stage-documentation).
 21. [ ] **planned** — General branch audit (deferred) and final task signoff.
 
@@ -907,7 +909,8 @@ retains its reproduction, scope, and acceptance criteria.
 
 ### Remaining lambda implementation
 
-- **Status:** in_progress; ignored-test restoration is the active bounded slice.
+- **Status:** in_progress; general implementation and ignored-test restoration are deferred
+  behind the confirmed bug repairs in the execution checklist.
 - Complete the [semantic goals](#semantic-goals) and reconcile the remaining preserved
   regressions against the agreed model in bounded, reviewed slices.
 - The [scope-analysis follow-up](lambda-scope-classification.md) addresses provenance
@@ -1200,12 +1203,16 @@ are in `context/history/` for Author review. No compiler slice is authorized by 
 ## Task Working Memory
 
 - **Branch:** `dev-2026-03-21-lambdas`.
-- **Planned correctness repairs:** [capture transfers through evaluated callees](#bug-preserve-capture-transfers-through-evaluated-callees)
-  and [the Simplifier callee type](#fix-preserve-the-complete-application-callee-type-in-simplifier),
-  together with [PAP callee traversal](#bug-elaborate-partial-applications-inside-callees)
-  and [closure environment lookup hardening](#harden-closure-environment-lookup), plus
-  [tail recursion across owned-closure cleanup](#bug-preserve-tail-recursion-across-owned-closure-cleanup),
-  belong to remaining lambda implementation. Bounded repair plans await approval.
+- **Priority and next action:** prepare a bounded repair plan for
+  [capture transfers through evaluated callees](#bug-preserve-capture-transfers-through-evaluated-callees),
+  followed by [PAP callee traversal](#bug-elaborate-partial-applications-inside-callees)
+  and [tail recursion across owned-closure cleanup](#bug-preserve-tail-recursion-across-owned-closure-cleanup).
+  These confirmed bugs precede general implementation, optimization, and hardening.
+  Implementation approval remains pending for each bounded repair plan.
+- **Deferred follow-ups:** [the Simplifier callee type](#fix-preserve-the-complete-application-callee-type-in-simplifier),
+  general ignored-test restoration, and
+  [closure environment lookup hardening](#harden-closure-environment-lookup).
+  Relevant regression restoration belongs within each bug repair.
 - **Implementation:** [Binding identity and local construction](#establish-binding-identity-and-local-construction-invariants)
   is complete and signed off. Stage 1 is committed at `dbd65d9`; stage 2 includes the shared
   construction helpers, caller migrations, regressions, and completion records.
