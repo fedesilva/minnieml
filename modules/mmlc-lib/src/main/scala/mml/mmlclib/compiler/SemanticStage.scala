@@ -36,7 +36,7 @@ object SemanticStage:
         indexed(CaptureAnalyzer.rewriteModule)
       )
       |> CompilerState.timePhase("semantic", "type-checker")(indexed(TypeChecker.rewriteModule))
-      |> CompilerState.timePhase("semantic", "partial-application-elaborator")(
+      |> CompilerState.timePhase("semantic", "pap-elaborator")(
         PartialApplicationElaborator.rewriteModule
       )
       |> CompilerState.timePhase("semantic", "closure-mem-gen")(
