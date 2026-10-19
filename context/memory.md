@@ -3,6 +3,11 @@
 Read [task-tracking-rules.md](task-tracking-rules.md) before changing task state.
 This is the Author's active and near-term focus. The backlog lives in [tasks/](tasks/).
 
+## Global Working Memory
+
+- Record QA findings in [QA misses](tasks/qa-misses.md). Select individual items or related
+  groups for cleanup; create dedicated tasks when they need their own plans.
+
 ## Active Tasks
 
 ### Lambda migration
@@ -35,7 +40,9 @@ This is the Author's active and near-term focus. The backlog lives in [tasks/](t
 - **Current focus:** Isolate the LLVM 20.1.8 sanitizer/internalization failure on both Linux
   architectures and prepare a bounded repair plan.
 
-## Global Working Memory
+### Modules, package root, and source inclusion
 
-- Record QA findings in [QA misses](tasks/qa-misses.md). Select individual items or related
-  groups for cleanup; create dedicated tasks when they need their own plans.
+- **Tracker:** [Modules, package root, and source inclusion](tasks/modules.md)
+- **Status:** design
+- **Current focus:** Settle remaining module and inclusion semantics and prepare a bounded
+  plan for Package and nested modules in one source file, followed by source inclusion.
