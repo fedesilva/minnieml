@@ -1,0 +1,13 @@
+id = "minnieml"
+name = "MinnieML"
+version = "0.1.0"
+schema_version = 1
+authors = ["Federico Silva"]
+description = "MinnieML syntax highlighting and structural editing"
+repository = "https://github.com/fedesilva/minnieml"
+languages = ["languages/mml"]
+
+# The installer supplies grammars/mml.wasm; Zed does not fetch or build sources.
+[grammars.mml]
+repository = ""
+rev = ""

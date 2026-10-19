@@ -1,0 +1,26 @@
+{
+  "grammars": [
+    {
+      "name": "mml",
+      "camelcase": "Mml",
+      "scope": "source.mml",
+      "path": ".",
+      "file-types": [
+        "mml"
+      ],
+      "highlights": "../zed/languages/mml/highlights.scm"
+    }
+  ],
+  "metadata": {
+    "version": "0.1.0",
+    "description": "MinnieML editor grammar",
+    "authors": [
+      {
+        "name": "Federico Silva"
+      }
+    ],
+    "links": {
+      "repository": "https://github.com/fedesilva/minnieml"
+    }
+  }
+}

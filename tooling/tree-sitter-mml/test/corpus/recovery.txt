@@ -1,0 +1,17 @@
+==================
+Recover after a missing initializer
+==================
+let broken = ;
+let intact = 42;
+
+---
+
+(source_file
+  (let_declaration
+    (identifier)
+    (expression
+      (MISSING identifier)))
+  (let_declaration
+    (identifier)
+    (expression
+      (integer))))
