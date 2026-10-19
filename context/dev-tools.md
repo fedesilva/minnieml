@@ -9,6 +9,9 @@ The project uses sbt with a thin client (`sbtn`). Always use `sbtn`.
 The root project `mml` aggregates `mmlclib` (compiler library) and `mmlc` (CLI).
 Always run tasks from the root — aggregation handles subprojects automatically.
 
+Run one `sbtn` command at a time. Batch tasks in a single quoted command, for example
+`sbtn "clean; compile; testFull"`.
+
 ## Running the compiler during development
 
 Use `sbtn` to run the in-development compiler directly, without publishing.
@@ -23,7 +26,8 @@ sbtn "run run -s <file>.mml"       # compile and run with ASan
 ## Tests
 
 ```
-sbtn test                          # full test suite (all modules)
+sbtn testFull                      # full test suite (all modules, uncached)
+sbtn test                          # incremental tests
 sbtn "testOnly <fully.qualified.TestClass>"   # single test class
 ```
 

@@ -21,4 +21,9 @@ object ScalacConfig {
       "-new-syntax" // Enforce new syntax
     )
 
+  // FastParse 3.1.1 uses ArrowAssoc in its inline failure tracing.
+  val fastparseWarningSuppression: String =
+    "-Wconf:cat=deprecation&msg=^method (ArrowAssoc in object Predef|-> in class ArrowAssoc)" +
+      " is deprecated since 3[.]10[.]0&src=fastparse/internal/MacroInlineImpls[.]scala$:s"
+
 }

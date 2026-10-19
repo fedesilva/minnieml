@@ -6,7 +6,7 @@ import sbtrelease.ReleaseStateTransformations._
 lazy val commonSettings =
   Seq(
     organization := "minnie-ml",
-    scalaVersion := "3.8.2",
+    scalaVersion := "3.10.0",
     scalacOptions ++= ScalacConfig.opts,
     // because for tests, yolo.
     Test / scalacOptions --= Seq("-Ywarn-unused:imports", "-Xfatal-warnings"),
@@ -31,12 +31,12 @@ lazy val mml: Project =
       Compile / mainClass := Some("mml.mmlc.Main"),
       Compile / gitSha    := readSha,
 
-      mmlc / assembly / test := (Test / test).value,
+      mmlc / assembly / test := (Test / testFull).value,
 
       // Distribution tasks from root project
-      mmlcPublishLocal := (mmlc / mmlcPublishLocal).value,
+      mmlcPublishLocal := Def.uncached((mmlc / mmlcPublishLocal).value),
       
-      mmlcDistroAssembly := {
+      mmlcDistroAssembly := Def.uncached {
         
         val jarPath = {
           val out = (mmlc / assembly / assemblyOutputPath).value
@@ -99,7 +99,7 @@ lazy val mml: Project =
         setNextVersion,
         commitNextVersion
       ),
-      mmlcDistro := {
+      mmlcDistro := Def.uncached {
         val packageDir = mmlcDistroAssembly.value
         val date       = java.time.LocalDate.now().toString
         val sha        = (Compile / gitSha).value
@@ -128,6 +128,7 @@ lazy val mmlclib =
     .settings(
       name := "mmlc-lib",
       commonSettings,
+      scalacOptions += ScalacConfig.fastparseWarningSuppression,
       libraryDependencies ++= Dependencies.mmlclib,
       buildInfoKeys := Seq[BuildInfoKey](
         name,
@@ -166,7 +167,7 @@ lazy val mmlc =
 
       assembly / assemblyJarName := s"mmlc.jar",
 
-      assembly / test := (Test / test).value,
+      assembly / test := (Test / testFull).value,
 
       buildInfoKeys := Seq[BuildInfoKey](
         name,
@@ -190,7 +191,7 @@ lazy val mmlc =
       buildInfoPackage    := "mml.mmlc",
       Compile / mainClass := Some("mml.mmlc.Main"),
 
-      mmlcPublishLocal := {
+      mmlcPublishLocal := Def.uncached {
         val jarPath = {
           val out = (assembly / assemblyOutputPath).value
           (assembly).value
