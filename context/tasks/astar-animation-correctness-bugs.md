@@ -3,16 +3,17 @@
 ## Metadata
 
 - **Owner:** The Author
-- **Status:** in_progress
+- **Status:** complete
 - **Kind:** BUG, CORRECTNESS, CRASH
 - **Priority:** HIGH
 - **Created:** 2026-10-06
+- **Completed:** 2026-10-18
 - **Target Branch:** dev-2026-03-21-lambdas
 - **External Reference:** None
 
 ## Execution Checklist
 
-1. [ ] **in_progress** — Findings 1–4, 6, and 7 have signed-off repairs; task signoff remains pending.
+1. [x] **complete** — Findings 1–4, 6, and 7 have signed-off repairs; final task signoff is granted.
 2. [x] **complete** — [Global literal repair](#global-literal-repair),
    [string-return ownership repair](#string-return-ownership-repair), and
    [conditional IR repair](#conditional-ir-repair) are complete and signed off.
@@ -20,7 +21,8 @@
    passes compiler checks, sample verification, and independent review; repair signoff is granted.
 4. [x] **complete** — [Finding 6: calls inside conditional field qualifiers fail type resolution](#6-calls-inside-conditional-field-qualifiers-fail-type-resolution).
 5. [x] **complete** — [Finding 7: conditional field-alias lifetime](#7-conditional-field-aliases-can-outlive-their-temporary-owner).
-6. [ ] **planned** — Run applicable compiler and sample verification and obtain signoff.
+6. [x] **complete** — [Closeout verification](#closeout-verification--2026-10-18),
+   independent review, and final self-review pass; final task signoff is granted.
 
 ## Problem
 
@@ -673,6 +675,137 @@ caption repair.
 
 ## Verification
 
+### Closeout verification — 2026-10-18
+
+Compiler and sample source: `305cfb1`, unchanged at `52e6207`. Host: macOS 26.6.2 arm64,
+Homebrew LLVM/Clang 23.1.1, GraalVM Community Java 25.0.4.1, Scala 3.10.0, sbt 2.0.10.
+
+| Check | Result |
+| --- | --- |
+| `./tests/smoke/run.sh all` | 8/8 passed. The initial sandbox attempt could not acquire sbt's boot lock; the retry with filesystem access passed. |
+| `sbtn 'scalafmtCheckAll;scalafixAll --check;testFull'` | Formatting and lint checks passed; 1,101 library and 9 CLI tests passed, with 37 existing ignores and no Scala compiler warnings. |
+| `sbtn mmlcPublishLocal` | Passed after successful development-compiler execution and smoke checks. |
+| `make -C benchmark clean`, then `make -C benchmark mml` | All 12 MML programs built. No performance measurement. |
+| `./tests/mem/run.sh all` | 51/51 passed under ASan/LSan at `-O0`. |
+| Sample matrix | 38 native executions and eight independent headless-oracle checks passed at `-O0` and `-O3`. |
+| Focused QA inspection | No actionable rule violations in the six repairs and their relevant mixed-ownership integration. |
+| Independent behavioral review | No actionable findings; six independent ASan compilations and 18 native executions passed. |
+| Final self-review and tracking consistency | Command results, source preservation, verification limits, task/memory state, links, and diff checks pass. |
+
+Fresh independent review covers repair commits `9915600f`, `b009c0b6`, `612ca1a5`,
+`aa18f948`, `c972bccb`, and `ff0be1e7` against current source, including relevant integration
+with `28f8d21`. It includes the affected code, tests, samples, documentation, and compiler/runtime
+boundaries. The reviewer independently compiles `caption-returns.mml`, `call-exit-blocks.mml`,
+and `field-qualifier-owners.mml` at `-O0` and `-O3`, then executes them with zero/one,
+zero/one/two, and zero/one/two/three arguments respectively. All 18 runs pass with ASan/LSan
+enabled and empty native stderr. These six compilations emit only the existing linker-directory
+warning recorded below. Animation controls and unrelated branch work are outside this review.
+
+Fresh full-suite reports include `TypeResolverTests` (25), `RuntimeTests` (5),
+`StringReturnTests` (27), `CallExitBlockTests` (33), `FieldQualifierResolutionTests` (15),
+`FieldQualifierOwnershipTests` (64), `MixedOwnershipTests` (61),
+`MixedInvocationOwnershipTests` (10), and `MixedOwnershipCodegenTests` (6).
+All these cases passed without skips. Native return, call-exit, qualifier-owner, and
+mixed-ownership regressions cover both `-O0` and `-O3`; ignored tests elsewhere are excluded
+from passing coverage. The caption fixture's `Event` and all five caption/helper functions
+match the current animated source byte-for-byte.
+
+The sample matrix contains eight headless animation runs, eight original console runs,
+six original animated CLI runs, and sixteen dirty-array fixed/control runs. Every sample
+execution uses `ASAN_OPTIONS=detect_leaks=1:halt_on_error=1:abort_on_error=1` and a 120-second
+timeout. All ten compilations passed. Nine emitted the existing linker warning
+`directory not found for option -L/usr/local/lib`; native executions produced no stderr,
+sanitizer diagnostics, or timeout.
+
+The following results were observed at both optimization levels. Complete
+headless reports were byte-identical between `-O0` and `-O3`.
+
+| Wall arguments | Found | Wall cells | Optimal cost | Events | Path length | Event checksum | Path checksum |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| Defaults (`25 3 4`) | yes | 4 | 326 | 1767 | 30 | 1713252100 | -1707470363 |
+| No wall (`25 3 0`) | yes | 0 | 326 | 1767 | 30 | -709202489 | -1707470363 |
+| Clipped wall (`25 -2 5`) | yes | 3 | 326 | 1767 | 30 | -709202489 | -1707470363 |
+| Full barrier (`25 0 10`) | no | 10 | unreachable | 4604 | 0 | 2137441252 | 0 |
+
+An independent Dijkstra oracle uses eight neighbors, costs 10/14, and open side cells for
+diagonal movement. It confirms reachability and minimum cost without using A*'s heuristic,
+queue ordering, or historical event counts. Every successful path begins at 0 and ends at 299, has no
+repeated, blocked, or out-of-range cells, takes adjacent steps without cutting blocked corners,
+and has the minimum cost. The barrier returns an empty path and finishes all 250 reachable cells.
+
+Every one of the 300 wall values matches the mathematical wall predicate. Event data has
+exactly `event_count * 8` integers; each consideration has a matching accept/reject decision.
+Seed and terminal events, terminal captions/details, and signed Int32 checksums are checked.
+Successful console output has ten 30-character rows, the exact wall coordinates, and the
+validated headless path with its start intentionally unmarked.
+
+The embedded dirty-array probe under the integer-array fill verification below also passes
+at both optimization levels. Fixed probes report zero wrong cells for all four cases.
+Controls with only `ar_int_fill grid.walls 0;` removed report 296, 300, 297, and 290 wrong
+cells respectively, and report no path. This establishes initialization independently of
+allocator contents.
+
+Both authentic animated binaries pass `help`, `25 3 4 0`, and `25 3 4 -1` without opening
+a window. Help checks cover the usage header, defaults, and closing instruction. Both invalid
+speed cases print exactly `events_per_second must be a positive integer. Use help for usage.`
+
+#### Reproduce the headless sample checks
+
+Copy `mml/samples/astar3_animated.mml` to a scratch file. Replace only `demo`'s call
+`animate grid start goal result speed` with `closeout_report grid result`, preserving its
+terminating semicolon, and append the helpers below. All original search and caption code
+remains unchanged. Compile the derivative and each original sample with
+`mmlc -s -O0 -b <build-dir> -o <binary> <source>` and repeat at `-O3`, using separate build
+directories. Run the derivative and console with the four wall argument sets above, and
+the original animation with the three CLI argument sets above. Apply the stated oracles
+to the emitted walls, path, events, and text; recompute checksums with signed Int32 wrapping.
+
+```mml
+fn closeout_dump(arr: IntArray, count: Int, i: Int): Unit =
+  if i < count then
+    print " ";
+    print (int_to_str (ar_int_get arr i));
+    closeout_dump arr count (i + 1);
+  else
+    println "";
+  ;
+;
+
+fn closeout_checksum(arr: IntArray, count: Int, i: Int, acc: Int): Int =
+  if i < count then
+    closeout_checksum arr count (i + 1) (acc * 31 + (ar_int_get arr i));
+  else acc;
+  ;
+;
+
+fn closeout_report(grid: Grid, result: SearchResult): Unit =
+  println ("found " ++ (if result.found then "1"; else "0";));
+  println ("event_count " ++ (int_to_str result.event_count));
+  println ("path_length " ++ (int_to_str result.path_length));
+  let event_checksum = closeout_checksum result.events (result.event_count * event_width) 0 0;
+  let path_checksum = closeout_checksum result.path result.path_length 0 0;
+  println ("event_checksum " ++ (int_to_str event_checksum));
+  println ("path_checksum " ++ (int_to_str path_checksum));
+
+  print "walls";
+  closeout_dump grid.walls (grid.width * grid.height) 0;
+  print "path";
+  closeout_dump result.path result.path_length 0;
+  print "events";
+  closeout_dump result.events (result.event_count * event_width) 0;
+
+  let terminal = read_event result.events (result.event_count - 1);
+  println ("terminal_caption " ++ (event_caption terminal));
+  println ("terminal_detail " ++ (event_detail terminal));
+;
+```
+
+Verification covers macOS arm64. Current GUI rendering, timing, keyboard controls, and
+graphical playback were not exercised; earlier Author GUI verification remains historical.
+Finding 7's Linux sanitizer verification remains explicitly deferred to the separate
+[Linux ASan bug](linux-asan-internalization.md). No ABI changes are introduced by this
+verification. Final task signoff is granted; the tracked item is complete with these limits.
+
 ### Conditional IR verification
 
 Host: macOS arm64, LLVM/Clang 23.1.1, GraalVM Java 25; baseline `c31058d`.
@@ -906,7 +1039,9 @@ initialization correctness; the explicit cell-value oracle exposes the defect.
   lifetime defect deferred to finding 7.
 - Finding 7 signoff: granted for the bounded conditional dependency repair, with Linux
   sanitizer verification explicitly deferred to the separate BUG task.
-- Tracked item completion: pending.
+- Final task signoff: granted for all six repairs and integrated closeout verification,
+  retaining the recorded Linux sanitizer deferral and verification limits.
+- Tracked item completion: complete.
 - Global literal repair and animated sample cleanup commit: complete
   (`Fix forward references to global literals`).
 - Integer-array fill and wall-map repair commit: complete (`Add runtime integer-array fill`).
@@ -914,40 +1049,22 @@ initialization correctness; the explicit cell-value oracle exposes the defect.
 - Conditional IR repair commit: complete (`Preserve exit blocks through call evaluation`).
 - Finding 6 commit: `Resolve field qualifiers and retain temporary owners`.
 - Finding 7 commit: `Preserve conditional field-alias dependencies`.
-- Commit authorization: granted for findings 6 and 7.
+- Commit authorization: granted for findings 6 and 7 and final task completion records.
   Push authorization: pending.
 
 ## Task Working Memory
 
-Global literal repair and animated sample cleanup are complete, signed off, and locally
-committed as `Fix forward references to global literals`; verification evidence is recorded above.
-Integer-array fill and wall-map initialization are complete, signed off, and locally
-committed as `Add runtime integer-array fill`. Focused tests, smoke, the full suite, local
-publication, benchmark builds, QA enforcement, and independent review pass.
+Findings 1–4, 6, and 7 are complete, signed off, and committed. The standalone
+[mixed-ownership repair](mixed-ownership-transfers.md) is complete and signed off.
 
-Finding 3 is complete, signed off, and locally committed as `Fix nested mixed string returns`.
-Direct results through local scopes and nested conditionals, sample caption restoration,
-compiler verification, and independent review pass.
-Named mixed-binding returns, consuming transfers, and the documented conditional return-lifetime
-gap are repaired and signed off in the standalone [mixed-ownership task](mixed-ownership-transfers.md).
-Finding 2's conditional IR repair is complete, signed off, and locally committed as
-`Preserve exit blocks through call evaluation`.
-Propagation, all compiler gates, QA enforcement, tracking checks, and independent code review pass.
-Finding 7's bounded conditional dependency repair is complete and signed off. Conditional
-dependency merging, all 97 focused semantic, LLVM, and native checks, smoke, full tests,
-publication, benchmark builds, and all 48 memory
-programs pass. Independent review found no actionable findings and reran all 97 focused checks.
-Both Linux builders pass the 64 qualifier-ownership checks but fail 29 native tests at ASan
-assembly/linking. The [Linux ASan task](linux-asan-internalization.md) holds the standalone
-reproducer, pipeline diagnosis, and required Linux reruns. Completion of finding 7 is approved
-using the passing host checks and independent review; Linux sanitizer verification is explicitly
-deferred to that BUG task. The scoped local commit is `Preserve conditional field-alias dependencies`.
-Finding 6 is complete and signed off:
-it repairs reference traversal, callee-qualifier dependencies, capture traversal, and
-temporary-owner lifetime. Smoke,
-formatting, lint, 1010 library and 9 CLI tests, local publication, benchmark builds, and
-all 48 memory programs pass. Capture traversal passes narrow independent re-review.
-Finding 6 ownership review used the approved implementing-agent fallback, with primary
-and per-claim independence waived. Finding 7 has a fresh independent review and its scoped
-Linux verification deferral. No push is authorized.
-Float and string array fill extensions are deferred.
+[Closeout verification](#closeout-verification--2026-10-18) passes formatting/lint, all
+1,110 active tests, eight smoke checks, local publication, 12 benchmark builds, 51 memory
+fixtures, and the 38-execution sample matrix. The 37 existing ignores remain excluded from
+passing coverage. Fresh independent review covers all six repairs and their relevant
+integration; its 18 native reruns pass. QA and final self-review find no actionable issues.
+
+Verification covers macOS arm64 and headless sample behavior. Finding 7's Linux sanitizer
+verification is explicitly deferred to the [Linux ASan task](linux-asan-internalization.md).
+Current GUI playback was not exercised. Float and string array fill extensions remain deferred.
+
+The task is complete and signed off. No push is authorized.

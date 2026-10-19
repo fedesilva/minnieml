@@ -5,16 +5,6 @@ This is the Author's active and near-term focus. The backlog lives in [tasks/](t
 
 ## Active Tasks
 
-### A* animation correctness bugs
-
-- **Tracker:** [Fix correctness bugs exposed by the animated A* sample](tasks/astar-animation-correctness-bugs.md)
-- **Status:** in_progress
-- **Current focus:** Final task verification and signoff are pending. Findings 1–4, 6, and 7
-  are complete and signed off. Finding 7's Linux sanitizer verification
-  is explicitly deferred to the [Linux ASan BUG](tasks/linux-asan-internalization.md).
-  The standalone [mixed-ownership repair](tasks/mixed-ownership-transfers.md) is complete and signed off.
-  Float and string array fills are deferred.
-
 ### Lambda migration
 
 - **Tracker:** [Unify lambdas](tasks/unify-lambdas.md)
