@@ -10,15 +10,21 @@ This is the Author's active and near-term focus. The backlog lives in [tasks/](t
 
 ## Active Tasks
 
-### Lambda migration
+### Unify lambdas
 
 - **Tracker:** [Unify lambdas](tasks/unify-lambdas.md)
 - **Status:** in_progress
-- **Current focus:** Confirmed bugs take priority. Next is a bounded repair plan for
-  [capture transfers through evaluated callees](tasks/unify-lambdas.md#bug-preserve-capture-transfers-through-evaluated-callees),
-  followed by PAP callee traversal and tail recursion across owned-closure cleanup.
-  General ignored-test restoration (36 cases), optimization, and hardening follow the bugs.
-  Repair implementation approval and overall migration signoff remain pending.
+- **Current focus:** Confirmed bugs take priority. Resolve call-stage ownership and fully applied
+  lambda-literal borrowing, then PAP callee traversal and tail recursion across owned-closure
+  cleanup. General ignored-test restoration (36 cases), optimization, and hardening follow.
+
+#### Call-stage ownership
+
+- **Tracker:** [Unify call-stage interpretation and repair ownership](tasks/call-stage-ownership.md)
+- **Status:** design
+- **Current focus:** Settle the shared call-stage contract and bounded implementation plan.
+  The approved restart baseline is `581da71`, with findings and candidate tests retained for
+  revalidation. Revised implementation approval remains pending.
 
 ### Error recovery and parser backtracking
 

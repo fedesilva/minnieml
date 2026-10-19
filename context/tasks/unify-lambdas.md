@@ -28,14 +28,15 @@ cleanup, and defensive hardening. Restore regressions relevant to each bug as pa
 11. [x] **complete** — [BUG: continue elaboration after independent errors](#bug-continue-elaboration-after-independent-errors); signed off.
 12. [x] **complete** — [Counter and argument-expression preservation](#preserve-counters-and-argument-expressions-across-ownership-analysis); signed off.
 13. [x] **complete** — Resolve the standalone [mixed-ownership repair dependency](mixed-ownership-transfers.md); signed off.
-14. [ ] **planned** — [BUG: preserve capture transfers through evaluated callees](#bug-preserve-capture-transfers-through-evaluated-callees).
-15. [ ] **planned** — [BUG: elaborate partial applications inside callees](#bug-elaborate-partial-applications-inside-callees).
-16. [ ] **planned** — [BUG: preserve tail recursion across owned-closure cleanup](#bug-preserve-tail-recursion-across-owned-closure-cleanup).
-17. [ ] **planned** — [Preserve the complete application callee type in Simplifier](#fix-preserve-the-complete-application-callee-type-in-simplifier).
-18. [ ] **in_progress** — [Remaining lambda semantics and lowering](#remaining-lambda-implementation), including [restoration of all ignored regressions](#restore-ignored-regressions); deferred behind the bug repairs.
-19. [ ] **planned** — [Harden closure environment lookup](#harden-closure-environment-lookup).
-20. [ ] **planned** — [Integrate the PAP tutorial into the language reference](#later-stage-documentation).
-21. [ ] **planned** — General branch audit (deferred) and final task signoff.
+14. [ ] **design** — [Unify call-stage interpretation and repair ownership](call-stage-ownership.md); replaces the evaluated-callee repair. Revised implementation plan pending.
+15. [ ] **planned** — [BUG: preserve borrowing in fully applied lambda literals](#bug-preserve-borrowing-in-fully-applied-lambda-literals).
+16. [ ] **planned** — [BUG: elaborate partial applications inside callees](#bug-elaborate-partial-applications-inside-callees).
+17. [ ] **planned** — [BUG: preserve tail recursion across owned-closure cleanup](#bug-preserve-tail-recursion-across-owned-closure-cleanup).
+18. [ ] **planned** — [Preserve the complete application callee type in Simplifier](#fix-preserve-the-complete-application-callee-type-in-simplifier).
+19. [ ] **in_progress** — [Remaining lambda semantics and lowering](#remaining-lambda-implementation), including [restoration of all ignored regressions](#restore-ignored-regressions); deferred behind the bug repairs.
+20. [ ] **planned** — [Harden closure environment lookup](#harden-closure-environment-lookup).
+21. [ ] **planned** — [Integrate the PAP tutorial into the language reference](#later-stage-documentation).
+22. [ ] **planned** — General branch audit (deferred) and final task signoff.
 
 Linux sanitizer validation is deferred to the separate
 [Linux verification task](linux-sanitizer-verification.md).
@@ -919,43 +920,22 @@ retains its reproduction, scope, and acceptance criteria.
   [migration inventory](unify-lambdas-migration.json) provide evidence for selecting further
   slices; neither supplies implementation approval or current completion status.
 
-#### Bug: preserve capture transfers through evaluated callees
+#### Call-stage ownership repair
 
-- **Status:** planned.
-- **Problem:** [CaptureTransfers.scala](../../modules/mmlc-lib/src/main/scala/mml/mmlclib/semantic/CaptureTransfers.scala)
-  flattens chained applications but visits only their arguments when collecting transfer
-  sinks. An evaluated callee can contain a consuming call whose transfer is omitted from
-  the enclosing move lambda's contract. Ownership analysis then treats that capture as
-  borrowed and rejects a valid transfer.
-- **Semantic reproducer:**
+- **Status:** design; revised implementation approval pending.
+- **Replacement tracker:** [Unify call-stage interpretation and repair ownership](call-stage-ownership.md).
+  This task replaces the evaluated-callee capture-transfer repair and owns all seven findings,
+  reproducers, evidence limits, and the proposed shared interpretation.
+- **Restart:** restore the three compiler files and related design edits to `581da71` under
+  the approved rollback scope. Retain candidate tests for revalidation. The attempted repair's
+  final focused run had 97 passes and 8 failures; its passing intermediate gates are not signoff.
 
-  ```mml
-  fn take(~s: String): Int -> Int =
-    println s;
-    { x: Int -> x; };
-  ;
-  pub fn main(): Unit =
-    let s = int_to_str 42;
-    let outer = ~{ { u: Unit -> take s; } () 2; };
-    println (int_to_str (outer ()));
-  ;
-  ```
+#### Bug: preserve borrowing in fully applied lambda literals
 
-  Semantic compilation reports `Cannot pass borrowed value 's' to consuming parameter 's'`.
-  Replacing the outer body with `let f = { u: Unit -> take s; } (); f 2;` passes semantic
-  compilation. The chained form also encounters an independent immediate-application
-  codegen restriction; that restriction does not satisfy the transfer-analysis contract.
-- **Scope:** collect transfers from callee evaluation, including applied lambda bodies and
-  expression qualifiers, while distinguishing evaluation from construction of an uncalled
-  lambda value. Preserve transfer identities and the enclosing call-once contract.
-- **Acceptance:**
-  - [ ] Add phase-level regressions for chained applications and callee qualifiers, with
-    equivalent local-binding controls and an uncalled-lambda negative control.
-  - [ ] Preserve the transferred capture IDs and invocation ownership for each evaluated
-    transfer; eliminate the false borrowed-value diagnostic in the reproducer.
-  - [ ] Verify that a second invocation of the consuming outer lambda is rejected.
-    Keep semantic coverage executable independently of unrelated codegen restrictions.
-- **Implementation approval:** pending a bounded repair plan.
+- **Status:** planned; separate bounded slice after the call-stage ownership repair.
+- **Tracker:** [Fully applied lambda-literal borrowing](call-stage-ownership.md#f7-borrowing-in-fully-applied-lambda-literals).
+  The source parameter's borrowing contract is lost through ordinary local-binding lowering.
+  The reproducer, cause, acceptance criteria, and pending approval are owned by that task.
 
 #### Fix: preserve the complete application callee type in Simplifier
 
@@ -1203,12 +1183,13 @@ are in `context/history/` for Author review. No compiler slice is authorized by 
 ## Task Working Memory
 
 - **Branch:** `dev-2026-03-21-lambdas`.
-- **Priority and next action:** prepare a bounded repair plan for
-  [capture transfers through evaluated callees](#bug-preserve-capture-transfers-through-evaluated-callees),
-  followed by [PAP callee traversal](#bug-elaborate-partial-applications-inside-callees)
-  and [tail recursion across owned-closure cleanup](#bug-preserve-tail-recursion-across-owned-closure-cleanup).
-  These confirmed bugs precede general implementation, optimization, and hardening.
-  Implementation approval remains pending for each bounded repair plan.
+- **Priority and next action:** settle the shared contract and implementation plan in
+  [call-stage ownership](call-stage-ownership.md), the replacement for the evaluated-callee
+  repair. Its four-file rollback to `581da71` is authorized; revised implementation is not.
+  The task also owns [fully applied lambda-literal borrowing](call-stage-ownership.md#f7-borrowing-in-fully-applied-lambda-literals)
+  as the next separately planned slice. [PAP callee traversal](#bug-elaborate-partial-applications-inside-callees)
+  and [tail-recursion cleanup](#bug-preserve-tail-recursion-across-owned-closure-cleanup) follow.
+  Confirmed bugs precede general implementation, optimization, and hardening.
 - **Deferred follow-ups:** [the Simplifier callee type](#fix-preserve-the-complete-application-callee-type-in-simplifier),
   general ignored-test restoration, and
   [closure environment lookup hardening](#harden-closure-environment-lookup).
