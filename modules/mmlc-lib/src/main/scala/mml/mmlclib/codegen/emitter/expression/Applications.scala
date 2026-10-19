@@ -35,7 +35,8 @@ def collectArgsAndFunction(
   *
   * `let x = E; body` desugars to `App(Lambda([x], body), E)`. Emitting the binding and continuation
   * in the current LLVM function preserves lexical scope without constructing or calling a closure
-  * for this desugaring lambda.
+  * for this desugaring lambda. A nullary literal evaluates its Unit argument before its body
+  * without extending the scope.
   */
 def compileLambdaApp(
   lambda:        Lambda,
@@ -54,9 +55,14 @@ def compileLambdaApp(
     // Preserve exit block from argument if body doesn't have one
     // (needed when arg contains a conditional like `let x = if cond then a else b end`)
     yield bodyRes.copy(exitBlock = bodyRes.exitBlock.orElse(argRes.exitBlock))
+  else if lambda.params.isEmpty && allArgs.size == 1 then
+    for
+      argRes <- compileExpr(allArgs.head, state, functionScope)
+      bodyRes <- compileExpr(lambda.body, argRes.state, functionScope)
+    yield bodyRes.copy(exitBlock = bodyRes.exitBlock.orElse(argRes.exitBlock))
   else
     CodeGenError(
-      "Immediate lambda application with multiple params/args not yet supported",
+      "Immediate lambda application requires a nullary or unary lambda and one argument",
       lambda.some
     ).asLeft
 

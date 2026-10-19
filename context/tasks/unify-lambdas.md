@@ -5,7 +5,7 @@
 - **Owner:** The Author
 - **Status:** in_progress
 - **Created:** 2026-09-10
-- **Target Branch:** dev-lambda-unify
+- **Target Branch:** dev-2026-03-21-lambdas
 - **External Reference (optional):** https://github.com/fedesilva/minnieml/issues/255
 
 ## Execution Checklist
@@ -1077,11 +1077,12 @@ retains its reproduction, scope, and acceptance criteria.
 
 #### Restore ignored regressions
 
-- **Status:** in_progress; fourteen cases enabled, 37 pending.
+- **Status:** in_progress; fifteen cases enabled, 36 pending.
 - **Approved bounded slice:** investigate the nine placeholder-based materialization cases;
   restore six supported cases as codegen regressions with unchanged source fixtures, and
   prepare compiler-repair plans for the other three. The separate nullary immediate-application
-  rejection remains outside this slice. Function-value repair is complete and signed off;
+  [repair](unify-lambdas-ignored-tests.md#nullary-immediate-application) is complete and signed off.
+  Function-value repair is complete and signed off;
   direct local-entry optimization is complete and signed off. PAP target optimization is
   complete and signed off under its approved bounded plan.
 - **Inventory:** [Ignored regression audit](unify-lambdas-ignored-tests.md) accounts for all
@@ -1105,9 +1106,9 @@ retains its reproduction, scope, and acceptance criteria.
     verification and independent review pass, and the bounded optimization is signed off.
   - [x] **complete** — Preserve proven PAP entries for capturing and non-capturing callees;
     compiler and native gates, QA, tracking checks, and independent review pass; signed off.
-  - [ ] Restore or replace the remaining five placeholder-based cases, including the
-    pending [materialization repair](unify-lambdas-ignored-tests.md#materialization-repair-plans);
-    investigate the separate nullary immediate-application rejection.
+  - [x] **complete** — [Nullary immediate-application repair](unify-lambdas-ignored-tests.md#nullary-immediate-application);
+    its original regression is enabled, compiler gates and independent review pass; signed off.
+  - [ ] Restore or replace the remaining five placeholder-based cases.
   - [ ] Reconcile 29 failing IR/lowering assertions and two heap-alias cases with the agreed
     semantics. Assign each to a bounded repair or an explicitly approved replacement;
     historical Direct-entry names and representation choices are not implementation mandates.
@@ -1149,7 +1150,7 @@ retains its reproduction, scope, and acceptance criteria.
 - **Acceptance:** no unexplained or stale ignores; no placeholder counted as restored;
   no weakened assertion merely to obtain a pass. Track undiscovered declarations separately
   from the 51 audited cases. Further assertion changes and compiler fixes require their
-  bounded plans; restoring fourteen tests does not complete the remaining lambda implementation.
+  bounded plans; restoring fifteen tests does not complete the remaining lambda implementation.
 
 ### Later-stage documentation
 
@@ -1198,7 +1199,7 @@ are in `context/history/` for Author review. No compiler slice is authorized by 
 
 ## Task Working Memory
 
-- **Branch:** `dev-lambda-unify`.
+- **Branch:** `dev-2026-03-21-lambdas`.
 - **Planned correctness repairs:** [capture transfers through evaluated callees](#bug-preserve-capture-transfers-through-evaluated-callees)
   and [the Simplifier callee type](#fix-preserve-the-complete-application-callee-type-in-simplifier),
   together with [PAP callee traversal](#bug-elaborate-partial-applications-inside-callees)
@@ -1222,8 +1223,11 @@ are in `context/history/` for Author review. No compiler slice is authorized by 
   the selection-qualifier recovery repair and observational call-boundary validation.
   QA, tracking checks, and independent review pass. The slice is signed off with commit and
   push authorization. Overall migration remains open.
-- **Ignored-test restoration:** fourteen of the [51 audited cases](unify-lambdas-ignored-tests.md)
-  are enabled; 37 remain ignored. The four unchanged assertions, borrowed-PAP diagnostic
+- **Completed repair:** [Nullary immediate application](unify-lambdas-ignored-tests.md#nullary-immediate-application);
+  complete and signed off. Type checking, emission, and regression restoration are implemented;
+  compiler gates, QA, tracking review, self-review, and independent review pass.
+- **Ignored-test restoration:** fifteen of the [51 audited cases](unify-lambdas-ignored-tests.md)
+  are enabled; 36 remain ignored. The four unchanged assertions, borrowed-PAP diagnostic
   restoration, and six materialization replacements are complete and signed off.
   [Function-value repair](unify-lambdas-ignored-tests.md#function-value-repair) restores the
   twelfth case under its approved plan. Formatting, lint, 776 library tests, nine CLI tests,
@@ -1243,7 +1247,7 @@ are in `context/history/` for Author review. No compiler slice is authorized by 
   is complete and signed off.
 - **Open limits:** the general branch audit and separate Linux sanitizer validation are deferred.
   The broader counter/expression follow-up is complete and signed off.
-  Remaining lambda implementation and 37 ignored cases
+  Remaining lambda implementation and 36 ignored cases
   require further bounded work.
   [Consuming an owned PAP captured by a move lambda](#bug-consume-an-owned-pap-captured-by-a-move-lambda)
   has passing semantic, smoke, benchmark-build, native sanitizer, and independent review

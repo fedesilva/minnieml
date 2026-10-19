@@ -259,6 +259,60 @@ class LocalCallableCodegenTests extends BaseEffFunSuite:
     }
   }
 
+  test("nullary immediate calls evaluate Unit effects before the body in lexical scope") {
+    val source = """
+      fn effect(): Unit = @native;;
+      fn observe(n: Int): Int = @native;;
+      fn observed(): Int = @native;;
+      pub fn main(): Int =
+        let captured = 40;
+        let result = ({ observe 2 + captured; } (effect ()));
+        result + observed ();
+      ;
+    """
+    compile(source).flatMap { ir =>
+      noClosure(functionBody(ir, "test_main"))
+      verify(ir, 54)
+    }
+  }
+
+  test("nullary immediate calls preserve conditional argument exit blocks") {
+    val source = """
+      fn effect(): Unit = @native;;
+      fn observed(): Int = @native;;
+      fn choose(argument: Bool, body: Bool): Int =
+        if body then ({ 7; } (if argument then effect (); else ();));
+        else 9;
+        ;
+      ;
+      pub fn main(): Int =
+        let result = choose true true + choose false true + choose true false + choose false false;
+        result + observed ();
+      ;
+    """
+    compile(source).flatMap { ir =>
+      val body = functionBody(ir, "test_choose")
+      noClosure(body)
+      assertPhiPredecessors(body)
+      verify(ir, 33)
+    }
+  }
+
+  test("nullary immediate calls preserve Unit body effects") {
+    val source = """
+      fn effect(): Unit = @native;;
+      fn observed(): Int = @native;;
+      pub fn main(): Int =
+        ({ effect (); } (effect ()));
+        observed ();
+      ;
+    """
+    compile(source).flatMap { ir =>
+      noClosure(functionBody(ir, "test_main"))
+      verify(ir, 11)
+    }
+  }
+
   test("consuming parameters retain noalias in plain entries and adapters") {
     val source = """
       type Handle = @native[t=ptr, mem=heap];

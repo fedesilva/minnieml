@@ -742,6 +742,9 @@ types when possible.
 **Application checking**:
 - Works over nested `App` chains produced by the rewriter, validating one argument at a time.
 - Ensures zero-argument functions in call position accept `Unit`.
+- Nullary literal applications use the same function-type argument validation. Their emission
+  evaluates the Unit argument before the body in the enclosing lexical scope, preserving
+  conditional exit blocks without constructing a closure.
 - Emits `TypeError.TypeMismatch`, `InvalidApplication`, `UndersaturatedApplication`, or
   `OversaturatedApplication` depending on the shape of the call.
 

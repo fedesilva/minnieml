@@ -2,6 +2,13 @@
 
 Durable product changes belong here. Current task state belongs in task files.
 
+## 2026-10-18
+
+- Accept immediate calls of zero-parameter lambda literals with Unit arguments. Evaluate the
+  argument before the body in the enclosing scope, preserving side effects and conditional
+  control flow without constructing a closure. Restore the preserved regression and reject
+  non-Unit arguments with the ordinary type-mismatch diagnostic.
+
 ## 2026-10-10
 
 - Preserve mixed ownership through local and scoped bindings, consuming calls, owning fields,

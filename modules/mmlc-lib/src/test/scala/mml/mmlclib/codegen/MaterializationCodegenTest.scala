@@ -122,6 +122,20 @@ class MaterializationCodegenTest extends BaseEffFunSuite:
     }
   }
 
+  test("nullary lambda literal in immediate application is direct") {
+    val code =
+      """
+        fn main(): Int = ({ 42; } ());;
+      """
+
+    compileAndGenerate(code).map { ir =>
+      val body = functionBody(ir, "test_main")
+      assert(body.contains("ret i32 42"), body)
+      assert(!body.contains("call "), body)
+      assertNoClosureValue(body)
+    }
+  }
+
   test("let-bound nullary lambda used as value is not direct") {
     val code =
       """

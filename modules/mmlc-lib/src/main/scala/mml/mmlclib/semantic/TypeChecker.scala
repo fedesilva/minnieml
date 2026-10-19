@@ -894,7 +894,7 @@ object TypeChecker:
       checkedArg.errors ++ paramErrors ++ checkedBody.errors ++ argErrors ++ bodyErrors
     )
 
-  /** Check normal application (non-lambda function) */
+  /** Check an application through the callee's computed function type. */
   private def checkNormalApplication(
     app:          App,
     module:       Module,
@@ -967,8 +967,8 @@ object TypeChecker:
       case ref: Ref =>
         determineRefApplicationType(app, ref, module)
 
-      case innerApp: App if innerApp.typeSpec.isDefined =>
-        innerApp.typeSpec match
+      case callee: (App | Lambda) if callee.typeSpec.isDefined =>
+        callee.typeSpec match
           case Some(fnType: TypeFn) =>
             applyTypeFnToArgument(app, fnType, app.arg.typeSpec, module, None)
           case Some(other) =>

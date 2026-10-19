@@ -9,8 +9,8 @@ Supporting evidence for [Unify lambdas](unify-lambdas.md#restore-ignored-regress
 - **Audit result (2026-09-23):** four pass unchanged; 47 fail. One failing case rejects the
   intended invalid program but expects an obsolete diagnostic name. The other 46 need assertion/API
   reconciliation or compiler investigation.
-- **Repository test status:** fourteen cases are enabled: four unchanged assertions, one typed
-  diagnostic assertion, and nine emitted-IR replacements; 37 remain ignored.
+- **Repository test status:** fifteen cases are enabled: four unchanged assertions, one typed
+  diagnostic assertion, and ten emitted-IR replacements; 36 remain ignored.
 - **Restoration verification (2026-09-23):** formatting and lint pass; full suite passes
   763 library tests and nine CLI tests, with 47 ignored. All four restored cases execute and pass.
   Test assertions and compiler implementation are unchanged
@@ -51,7 +51,7 @@ failures do not execute their preserved commented-out assertions.
    assertion through `semState`; verification and independent review pass. The subtask is signed off.
 3. Six materialization cases are enabled in `MaterializationCodegenTest`, preserving their
    original names and source fixtures. Verification and review are recorded below.
-4. Resolve each of the remaining 37 entries against the agreed model, preserving its semantic
+4. Resolve each of the remaining 36 entries against the agreed model, preserving its semantic
    intent. Record a linked fix or an approved replacement/retirement for obsolete expectations.
    Re-enable each case with its corresponding repair, rather than accumulating working ignores.
 
@@ -60,14 +60,13 @@ failures do not execute their preserved commented-out assertions.
 | Disposition | Cases |
 | --- | ---: |
 | Restore placeholder assertion/helper | 5 |
-| Enabled; emitted-IR replacement | 9 |
+| Enabled; emitted-IR replacement | 10 |
 | Enabled; assertions unchanged | 4 |
 | Reconcile IR/lowering assertions | 29 |
-| Nullary application rejection | 1 |
 | Enabled; typed diagnostic assertion | 1 |
 | Reconcile heap-alias behavior | 2 |
 
-Fourteen rows are enabled; the other 37 remain pending. Lines below identify the audit snapshot,
+Fifteen rows are enabled; the other 36 remain pending. Lines below identify the audit snapshot,
 not subsequent source line shifts.
 
 ### ClosureCodegenTest
@@ -124,7 +123,7 @@ not subsequent source line shifts.
 
 ### MaterializationAnalyzerTests
 
-[Pending source](../../modules/mmlc-lib/src/test/scala/mml/mmlclib/semantic/MaterializationAnalyzerTests.scala);
+[Semantic coverage](../../modules/mmlc-lib/src/test/scala/mml/mmlclib/semantic/MaterializationAnalyzerTests.scala);
 [restored codegen source](../../modules/mmlc-lib/src/test/scala/mml/mmlclib/codegen/MaterializationCodegenTest.scala).
 
 | Test | Line | Result / next action |
@@ -135,7 +134,7 @@ not subsequent source line shifts.
 | let-bound lambda used as value is not direct | 104 | Enabled in MaterializationCodegenTest; emitted-IR assertion |
 | let-bound lambda used through partial application remains direct | 120 | Enabled in MaterializationCodegenTest; [PAP target repair](#pap-target-repair) |
 | lambda literal in immediate application is direct | 138 | Enabled in MaterializationCodegenTest; emitted-IR assertion |
-| nullary lambda literal in immediate application is direct | 163 | Nullary application rejection |
+| nullary lambda literal in immediate application is direct | 163 | Enabled in MaterializationCodegenTest; [nullary application repair](#nullary-immediate-application) |
 | let-bound nullary lambda used as value is not direct | 187 | Enabled in MaterializationCodegenTest; emitted-IR assertion |
 | nullary top-level fn invoked is direct | 203 | Enabled in MaterializationCodegenTest; emitted-IR assertion |
 | nullary top-level fn used as value is not direct | 215 | Enabled in MaterializationCodegenTest; [function-value repair](#function-value-repair) |
@@ -223,6 +222,47 @@ not subsequent source line shifts.
 **Status:** function-value repair and direct local-entry optimization are complete and signed off.
 PAP target optimization is complete and signed off under its approved bounded plan. Preserve
 each source fixture when replacing placeholder assertions. Each bounded change requires signoff.
+
+### Nullary immediate application
+
+- **Status:** complete; implementation, verification, and independent review pass.
+- **Branch:** `dev-2026-03-21-lambdas`.
+- **Baseline reproduction (`87fd9c6`):** `fn main(): Int = ({ 42; } ());;` fails in `TypeChecker` with
+  `cannot apply function of type '(Unit) -> Int' to argument of type 'Unit'`.
+  Seven existing nullary tests pass; none covers this immediate call.
+- **Completed plan:**
+  1. Validate the literal application's function type through the ordinary argument checker,
+     accepting Unit and retaining typed rejection of other argument types.
+  2. Emit the Unit argument before the lambda body in the current lexical scope, preserving
+     effects and exit blocks without constructing a closure.
+  3. Restore the original fixture as emitted-IR coverage and replace its obsolete metadata
+     helper. Cover invalid arguments, surrounding values, effect order, and conditional control flow.
+  4. Run compiler gates, QA, focused tracking review, and independent code review. Update the
+     inventory with actual results; migration completion and subtask signoff remain separate.
+- **Scope:** immediate nullary literal application; no ABI or ownership-policy change.
+- **Implementation:** function-type validation accepts the nullary literal; emission evaluates
+  its argument before the body in the enclosing scope and preserves the final basic block.
+  The original fixture is enabled with an emitted-IR assertion; the absent `LambdaMeta.isDirect`
+  helper is replaced by semantic result-type and argument-mismatch checks.
+- **Focused verification:** formatting, lint, and 43 materialization/local-callable tests pass,
+  including LLVM assembly and native execution of the three new effect/control-flow cases.
+- **Compiler verification (2026-10-18):** `./tests/smoke/run.sh all` passes 8/8;
+  `sbtn 'scalafmtCheckAll;scalafixAll --check;testFull;mmlcPublishLocal'` passes formatting,
+  lint, 1,107 library tests, and nine CLI tests, with 36 ignored. Local publication succeeds.
+- **Host:** macOS 26.6.2 arm64; Homebrew LLVM/Clang 23.1.1. No ABI change; Linux container
+  verification is not required for this slice. Existing Linux sanitizer work remains separate.
+- **Benchmark builds:** `make -C benchmark clean` and `make -C benchmark mml` pass all
+  12 MML builds. This is build verification, not a performance measurement.
+- **Memory verification:** `./tests/mem/run.sh all` passes 51/51 ASan+LSan fixtures at `-O0`.
+- **Review:** QA, focused tracking review, and self-review pass. A fresh independent reviewer
+  reports no actionable findings after tracing argument validation, lexical scope, captures,
+  ownership, callable adapters, and conditional exit blocks. Its independent rerun passes all
+  43 focused tests, including LLVM assembly and native execution; `git diff --check` passes.
+- **Review limits:** the independent reviewer assessed the full-suite, benchmark, and sanitizer
+  evidence without rerunning those gates. No Linux execution or performance measurement applies
+  to the recorded host results.
+- **Signoff:** granted for the nullary immediate-application repair.
+- **Completed:** 2026-10-18. The parent migration remains in progress; 36 original cases remain ignored.
 
 ### Function-value repair
 

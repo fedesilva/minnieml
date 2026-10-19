@@ -9,10 +9,8 @@ This is the Author's active and near-term focus. The backlog lives in [tasks/](t
 
 - **Tracker:** [Unify lambdas](tasks/unify-lambdas.md)
 - **Status:** in_progress
-- **Current focus:** The standalone [mixed-ownership repair](tasks/mixed-ownership-transfers.md)
-  is complete and signed off. The [ignored-test restoration plan](tasks/unify-lambdas.md#restore-ignored-regressions)
-  accounts for 37 remaining ignores. Direct local-entry optimization is complete and signed off.
-  PAP target optimization is complete and signed off for capturing and non-capturing targets.
+- **Current focus:** [Ignored-test restoration](tasks/unify-lambdas.md#restore-ignored-regressions)
+  has 36 remaining cases. Further repairs and assertion replacements need bounded plans.
   Overall migration signoff remains pending.
 
 ### Error recovery and parser backtracking
