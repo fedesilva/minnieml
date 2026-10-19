@@ -62,7 +62,7 @@ Module(
   Ingestion copies entries into `CompilerState.linkEntries`; semantic module copies preserve
   the header. Malformed or misplaced headers produce recoverable `ParsingMemberError` nodes.
 - **Doc comments**: File-level doc comments apply to the first member; the parser does not attach them to the synthetic top-level module node.
-- **Visibility**: Three levels (`Public`, `Protected`, `Private`) are carried in the AST for future access control; not enforced yet. See semantics doc for meaning.
+- **Visibility**: The AST records three levels (`Public`, `Protected`, `Private`), but access restrictions are not yet enforced. See semantics doc for meaning.
 
 ### Members
 
@@ -141,8 +141,8 @@ enum Capture:
 - **`Hole`**: Typed hole `???` (for incomplete code)
 
 #### Marker nodes
-- **`DataConstructor`**: Marker node for struct constructor bodies. This is NOT a callable
-  function—it signals to codegen that the enclosing function should emit struct assembly
+- **`DataConstructor`**: Marker node for struct constructor bodies. It is not a callable
+  function. It tells codegen to emit struct assembly in the enclosing function
   (alloca, store fields, load, return). The constructor's parameters become the field values.
   Only appears as the sole term in a generated `__mk_StructName` function body.
 
@@ -186,7 +186,7 @@ Intersection(types: List[TypeSpec])      // Readable & Writable
 TypeApplication(base: TypeSpec, args: List[TypeSpec])
 
 // Type schemes (polymorphism)
-TypeScheme(vars: List[String], bodyType: TypeSpec)  // ∀'T. 'T → 'T
+TypeScheme(vars: List[String], bodyType: TypeSpec)  // forall 'T. 'T -> 'T
 TypeVariable(name: String)                          // 'T, 'R, etc.
 ```
 
@@ -287,7 +287,7 @@ let result = 1 + 2 * 3;
 
 ### Lambda and local-binding lowering
 
-The parser now emits real `Lambda` terms in expression position.
+The parser emits `Lambda` terms in expression position.
 
 #### Literal lambdas
 
@@ -320,7 +320,7 @@ Conceptually:
 ```
 
 The parser builds this directly as `App(fn = Lambda(...), arg = value)`. Later phases treat that
-shape as a scoped-binding lambda — an immediate application that extends the current scope rather
+shape as a scoped-binding lambda: an immediate application that extends the current scope rather
 than a value-position lambda that needs closure materialization.
 
 #### Local `fn`
@@ -360,17 +360,16 @@ is lowered conceptually to nested immediate applications:
 
 The parser builds this shape directly with a synthetic `__stmt` parameter and nested
 `App(fn = Lambda(...), arg = ...)` nodes. It is CPS-like in the narrow sense that each statement
-runs before the rest of the expression continues. It still targets the same AST the compiler uses
-everywhere else.
+runs before the rest of the expression continues. It uses the same AST as the rest of the compiler.
 
 ### Member parsing
 
 Top-level module members are parsed independently:
-- `fnKw` → `Bnd` with `Lambda` body and `BindingMeta(origin=Function)`
-- `opKw` → `Bnd` with `Lambda` body and `BindingMeta(origin=Operator)`
-- `letKw` → `Bnd` (no meta for simple value bindings)
-- `typeKw` → `TypeDef` or `TypeAlias`
-- `structKw` → `TypeStruct`
+- `fnKw` -> `Bnd` with `Lambda` body and `BindingMeta(origin=Function)`
+- `opKw` -> `Bnd` with `Lambda` body and `BindingMeta(origin=Operator)`
+- `letKw` -> `Bnd` (no meta for simple value bindings)
+- `typeKw` -> `TypeDef` or `TypeAlias`
+- `structKw` -> `TypeStruct`
 
 An optional `inline` keyword before `fn` or `op` sets `BindingMeta.inlineHint = true`.
 Codegen emits the LLVM `inlinehint` function attribute for these declarations.
@@ -397,8 +396,8 @@ all downstream phases (RefResolver, TypeChecker, etc.) process it uniformly.
 
 ## 8. Stages and semantic pipeline
 
-The compiler now runs as a series of **stages**, each composed of timed **phases** that transform a
-shared `CompilerState`. Stages today:
+The compiler runs as a series of **stages**, each composed of timed **phases** that transform a
+shared `CompilerState`. Stages:
 - **IngestStage**: parse source, collect parser counters, and lift parse errors.
 - **SemanticStage**: rewrite the AST and resolvables index through semantic phases.
 - **CodegenStage**: validate, resolve target info, emit IR, and optionally build native artifacts.
@@ -472,7 +471,7 @@ Each phase takes a `CompilerState`, returns an updated `CompilerState`, and reco
 **Behavior**:
 - Scans module for `ParsingMemberError` and `ParsingIdError` nodes
 - Converts them to semantic errors for uniform error reporting
-- **Runs FIRST** to surface syntax errors immediately
+- Runs first to report syntax errors immediately
 
 **Errors reported**:
 - `SemanticError.MemberErrorFound`
@@ -492,7 +491,7 @@ Each phase takes a `CompilerState`, returns an updated `CompilerState`, and reco
   - Functions: grouped by name
   - Bindings without meta: grouped by name
 - Allows **unary and binary operators** with the same name (e.g., unary `-` and binary `-`)
-- **Does NOT allow** functions to have the same name as operators
+- Does not allow functions to have the same name as operators
 - First occurrence is kept valid, duplicates are wrapped in `DuplicateMember` nodes
 - Checks each lambda parameter list for **duplicate parameter names**, including nested and inline
   lambdas. Distinct nested scopes may shadow outer names.
@@ -641,9 +640,9 @@ let f = get_value;
 ```
 
 **Transformations**:
-- `1 + 2 * 3` → `App(App(Ref("+"), 1), App(App(Ref("*"), 2), 3))`
-- `f x y` → `App(App(Ref("f"), x), y)`
-- `-5` → `App(Ref("-"), 5)`
+- `1 + 2 * 3` -> `App(App(Ref("+"), 1), App(App(Ref("*"), 2), 3))`
+- `f x y` -> `App(App(Ref("f"), x), y)`
+- `-5` -> `App(Ref("-"), 5)`
 
 **Errors reported**:
 - `SemanticError.InvalidExpression`
@@ -662,8 +661,8 @@ let f = get_value;
 **Purpose**: Simplify AST structure by removing unnecessary nesting.
 
 **Transformations**:
-- **Unwrap single-term expressions**: `Expr([term])` → `term`
-- **Remove group wrappers**: `TermGroup(inner)` → inner term
+- **Unwrap single-term expressions**: `Expr([term])` -> `term`
+- **Remove group wrappers**: `TermGroup(inner)` -> inner term
 - **Flatten nested expressions**: Recursively simplify all subexpressions
 
 **Examples**:
@@ -691,10 +690,10 @@ let f = get_value;
 **Purpose**: Compute free variables for every lambda scope and populate `Lambda.captures` for
 value-position lambdas whose value may need to be materialized as a closure.
 
-**Key distinction**:
+**Lambda forms**:
 - Not every `Lambda` node is a value-position lambda.
 - Parser-lowered scoped bindings, statement chains, and let-desugaring do produce
-  `App(fn = Lambda(...), arg = ...)` nodes whose `Lambda` is a scoped-binding lambda — an
+  `App(fn = Lambda(...), arg = ...)` nodes whose `Lambda` is a scoped-binding lambda: an
   immediate application that extends the current scope rather than a value-position lambda.
 - User code can also produce `App(fn = Lambda(...), arg = ...)` directly through immediate lambda
   application, for example `{ x -> x + a } 1`.
@@ -839,15 +838,15 @@ shape diagnostic. Valid child applications and independent continuations still r
 analysis, including use-after-move checks.
 
 **Ownership states**:
-- `Owned` — Caller owns the value, must free at scope end
-- `Mixed(witness, nonOwning)` — A resolved Boolean reference selects whether this binding owns
+- `Owned` - Caller owns the value, must free at scope end
+- `Mixed(witness, nonOwning)` - A resolved Boolean reference selects whether this binding owns
   storage; the other alternatives retain their literal, global, borrowed, or resource-free origin
-- `Moved` — Ownership transferred, caller must not use
-- `Borrowed` — Lent to callee, caller retains ownership
-- `Literal` — Compile-time/static value, never freed
-- `Global` — Module-level binding with static lifetime; borrow-only in local scopes
+- `Moved` - Ownership transferred, caller must not use
+- `Borrowed` - Lent to callee, caller retains ownership
+- `Literal` - Compile-time/static value, never freed
+- `Global` - Module-level binding with static lifetime; borrow-only in local scopes
 
-**Key behaviors**:
+**Behavior**:
 
 1. **Allocation detection**: Identifies allocating results via:
    - `NativeImpl.memEffect = Alloc`
@@ -857,7 +856,7 @@ analysis, including use-after-move checks.
 
 2. **Free insertion**: Uses CPS-style AST rewriting at scope end:
    ```
-   let x = alloc(); body  →  let x = alloc(); let __r = body; __free_T x; __r
+   let x = alloc(); body  ->  let x = alloc(); let __r = body; __free_T x; __r
    ```
 
 3. **Expression temporaries**: Calls with allocating arguments analyze each operand once,
@@ -865,7 +864,7 @@ analysis, including use-after-move checks.
    generated wrappers are not analyzed again. Unconsumed allocating temporaries are destroyed
    after the call, while consumed arguments belong to the callee:
    ```
-   f (alloc())  →  let __tmp = alloc(); let __r = f __tmp; __free_T __tmp; __r
+   f (alloc())  ->  let __tmp = alloc(); let __r = f __tmp; __free_T __tmp; __r
    ```
 
    Call arguments retain their parameter contracts and allocation types in named records.
@@ -898,7 +897,7 @@ analysis, including use-after-move checks.
    scopes. In the following compiler notation, both branches share one continuation:
    ```
    let s = if c then alloc() else "lit"
-   →
+   ->
    BindOwnership(s, owns_s,
      if c then YieldOwnership(alloc(), true) else YieldOwnership("lit", false),
      body)
@@ -947,7 +946,7 @@ analysis, including use-after-move checks.
    ```
    let name = make_name();  // owned
    let u = User name 30;    // name moves in, no clone
-   let v = User "Alice" 30; // "Alice" auto-cloned (literal → consuming param)
+   let v = User "Alice" 30; // "Alice" auto-cloned (literal -> consuming param)
    ```
 
 7. **Closure capture validation**:
@@ -1058,7 +1057,7 @@ Expression codegen lowers the validated operations with the normal target ABI.
 
 ## 9. Standard library injection
 
-NOTE: This is a stopgap solution until we get library support.
+Library loading is not implemented yet.
 
 The compiler automatically injects predefined types, operators, and functions into every module before semantic analysis. This injection is implemented in `semantic/package.scala`.
 
@@ -1082,9 +1081,9 @@ Buffer                         // Opaque pointer (i8*)
 Rng                            // Opaque pointer (i8*)
 
 // Type aliases
-Int   → Int32
-Byte  → Int8
-Word  → Int8
+Int   -> Int32
+Byte  -> Int8
+Word  -> Int8
 ```
 
 ### Injected operators
@@ -1092,18 +1091,18 @@ Word  → Int8
 All standard operators are injected as `@native` declarations with LLVM IR templates:
 
 ```scala
-// Arithmetic (Int → Int → Int)
+// Arithmetic (Int -> Int -> Int)
 op *(a: Int, b: Int): Int 80 left = @native[tpl="mul %type %operand1, %operand2"];
 op /(a: Int, b: Int): Int 80 left = @native[tpl="sdiv %type %operand1, %operand2"];
 op %(a: Int, b: Int): Int 80 left = @native[tpl="srem %type %operand1, %operand2"];
 op +(a: Int, b: Int): Int 60 left = @native[tpl="add %type %operand1, %operand2"];
 op -(a: Int, b: Int): Int 60 left = @native[tpl="sub %type %operand1, %operand2"];
 
-// Unary arithmetic (Int → Int)
+// Unary arithmetic (Int -> Int)
 op +(a: Int): Int 95 right = @native[tpl="add %type 0, %operand"];
 op -(a: Int): Int 95 right = @native[tpl="sub %type 0, %operand"];
 
-// Comparison (Int → Int → Bool)
+// Comparison (Int -> Int -> Bool)
 op ==(a: Int, b: Int): Bool 50 left = @native[tpl="icmp eq %type %operand1, %operand2"];
 op !=(a: Int, b: Int): Bool 50 left = @native[tpl="icmp ne %type %operand1, %operand2"];
 op <(a: Int, b: Int): Bool 50 left = @native[tpl="icmp slt %type %operand1, %operand2"];
@@ -1111,27 +1110,27 @@ op >(a: Int, b: Int): Bool 50 left = @native[tpl="icmp sgt %type %operand1, %ope
 op <=(a: Int, b: Int): Bool 50 left = @native[tpl="icmp sle %type %operand1, %operand2"];
 op >=(a: Int, b: Int): Bool 50 left = @native[tpl="icmp sge %type %operand1, %operand2"];
 
-// Logical (Bool → Bool → Bool)
+// Logical (Bool -> Bool -> Bool)
 op and(a: Bool, b: Bool): Bool 40 left = @native[tpl="and %type %operand1, %operand2"];
 op or(a: Bool, b: Bool): Bool 30 left = @native[tpl="or %type %operand1, %operand2"];
 
-// Unary logical (Bool → Bool)
+// Unary logical (Bool -> Bool)
 op not(a: Bool): Bool 95 right = @native[tpl="xor %type 1, %operand"];
 
-// String concatenation (String → String → String)
+// String concatenation (String -> String -> String)
 op ++(a: String, b: String): String 61 right = concat a b;
 
-// Float arithmetic (Float → Float → Float)
+// Float arithmetic (Float -> Float -> Float)
 op +.(a: Float, b: Float): Float 60 left = @native[tpl="fadd %type %operand1, %operand2"];
 op -.(a: Float, b: Float): Float 60 left = @native[tpl="fsub %type %operand1, %operand2"];
 op *.(a: Float, b: Float): Float 80 left = @native[tpl="fmul %type %operand1, %operand2"];
 op /.(a: Float, b: Float): Float 80 left = @native[tpl="fdiv %type %operand1, %operand2"];
 
-// Float comparison (Float → Float → Bool)
+// Float comparison (Float -> Float -> Bool)
 op <.(a: Float, b: Float): Bool 50 left = @native[tpl="fcmp olt %type %operand1, %operand2"];
 op >.(a: Float, b: Float): Bool 50 left = @native[tpl="fcmp ogt %type %operand1, %operand2"];
 
-// Unary float (Float → Float)
+// Unary float (Float -> Float)
 op +.(a: Float): Float 95 right = @native[tpl="fadd %type 0.0, %operand"];
 op -.(a: Float): Float 95 right = @native[tpl="fneg %type %operand"];
 ```
@@ -1195,7 +1194,7 @@ fn ar_int_get(arr: IntArray, i: Int): Int = @native;
 The compiler uses an **error accumulation** model rather than fail-fast:
 - Errors are collected in `CompilerState.errors`
 - Compilation continues even after errors are found
-- This enables better IDE support and reporting multiple errors at once
+- The IDE can use partial results and report multiple errors at once
 
 ### Invalid nodes
 
@@ -1244,9 +1243,9 @@ bodies keep their block labels separate from the enclosing expression.
 `OwnershipResults` emits the scoped `YieldOwnership`/`BindOwnership` protocol within the same
 function. An ownership conditional joins its ordinary value and Boolean witness with separate
 SSA PHIs, both using the actual branch exit blocks. `BindOwnership` adds the two resolved
-bindings to one continuation scope. Cleanup can preserve both operands while evaluating frees;
-neither a runtime pair nor a changed closure layout is needed. Ordinary expression emission
-rejects a bare `YieldOwnership` outside this protocol.
+bindings to one continuation scope. Cleanup can preserve both operands while evaluating frees.
+Both results stay within the function, without a runtime pair or additional closure fields.
+Ordinary expression emission rejects a bare `YieldOwnership` outside this protocol.
 
 Conditional capture promotion can introduce blocks at a closure's creation site. Emission
 propagates the promotion's exit block to enclosing calls and conditionals; deferred closure
@@ -1293,8 +1292,7 @@ rounded register loads and initialize storage; unpacking reconstructs the source
 Calls needing scratch storage share a generated adapter for each native symbol and signature.
 The adapter owns packing and return temporaries until it returns, bounding their lifetime
 across loops and recursion. Its `inlinehint` attribute lets LLVM remove the boundary during
-optimization. Ordinary MML function entry and loopification use their existing lowering.
-Ordinary MML calls retain the MML function ABI.
+optimization. Ordinary MML calls use the MML function ABI.
 
 The deterministic C fixtures in `AggregateAbiTests` exercise mixed, nested, padded, small,
 large, and empty aggregates, argument-register exhaustion, and return values. Separate tests
@@ -1333,7 +1331,7 @@ does not cross that boundary. Conditional and field-selected callees retain valu
 
 A candidate with a direct call gets a plain entry in `LocalCallableEmitter`. Local scope entries
 distinguish runtime operands from callable targets carrying canonical identity, typed signature,
-and entry symbol. Binding emission returns state, scope entry, and exit block without inventing
+and entry symbol. Binding emission returns state, scope entry, and exit block without allocating
 a register for a callable. Aliases retain the target, and callable lookup checks resolved identity.
 
 The entry is registered before body emission to support recursion. Ordinary bodies accept only
@@ -1345,13 +1343,13 @@ the analysis counts. Their registry survives deferred-body emission so a later u
 adapter first requested inside another body. Captures store that closure value: the receiving
 body has environment loads, not access to the enclosing function's scope or SSA registers, and
 calls the stored value through the ordinary closure ABI. Direct calls and adapters share
-a body; value-only local lambdas keep their existing emission path.
+a body; value-only local lambdas use closure-value emission.
 
-This is an optimization, with no source-language or ownership changes. Proven PAP captures also
+The optimization preserves source-language semantics and ownership rules. Proven PAP captures also
 qualify their non-capturing targets for plain entries. General capture elimination and tail
-recursion across owned-closure cleanup are separate work. `LocalCallableCodegenTests` checks entry signatures, aliasing and shadowing, recursion,
-value adapters and captures, effect order, and consuming parameters with LLVM assembly and
-native execution.
+recursion across owned-closure cleanup are not yet implemented.
+`LocalCallableCodegenTests` checks entry signatures, aliasing and shadowing, recursion, value
+adapters and captures, effect order, and consuming parameters with LLVM assembly and native execution.
 
 ### Known targets through partial application
 
@@ -1363,10 +1361,10 @@ only from the application whose result is being analyzed; collecting observed ca
 specialize an emitted function body. Recursive or unresolved result flow falls back to unknown.
 
 Entry symbols are registered before body emission. `KnownCallableEntry` distinguishes plain
-entries, closure entries with a trailing environment operand, and existing top-level call lowering.
+entries, closure entries with a trailing environment operand, and top-level call lowering.
 Known calls name that entry directly; unknown calls retain the closure-pair indirect path. Source
 conditions, qualified callees, supplied arguments, and Unit effects keep their evaluation behavior.
-Ordinary value consumers receive the existing closure pair, using an adapter for a plain entry.
+Ordinary value consumers receive the closure pair, using an adapter for a plain entry.
 
 `ClosureEnvironmentLayout` describes physical PAP payloads independently of semantic captures.
 A known non-capturing callable needs no payload field; a known capturing callable stores only
@@ -1375,11 +1373,10 @@ field stores and loads, environment parameter attributes, destruction, and alias
 the same projected layout. Captured environment pointers enter the residual body's scope together
 with the known entry identity. Removing a field that has payload cleanup is rejected.
 
-Ownership analysis and its typed destruction nodes remain unchanged. For an environment-only
-callable field, destruction invokes the same cleanup target on the loaded pointer without extracting
-it from a closure pair. Transfer-bearing entries retain their existing environment disarming.
-The public function-value ABI remains `{ entry pointer, environment pointer }`; environment
-flattening and new ownership semantics are outside this optimization.
+For an environment-only callable field, destruction invokes the same cleanup target on the loaded
+pointer without extracting it from a closure pair. Transfer-bearing entries disarm their environments.
+The public function-value ABI is `{ entry pointer, environment pointer }`. Captured environments
+are stored as pointers; flattening their fields into the enclosing environment is not yet implemented.
 
 ### Template extraction
 
@@ -1451,7 +1448,7 @@ entry:
 }
 ```
 
-Struct values are semantically value types — they live on the stack and are returned by value.
+Struct values are semantically value types. They live on the stack and are returned by value.
 LLVM's optimizer typically promotes the `alloca`/`load` pair to registers (SROA pass).
 
 ---
@@ -1516,8 +1513,8 @@ flowchart TD
 The MML compiler flows through staged pipelines:
 
 1. **IngestStage**: Parse source, collect parser counters, lift parse errors.
-2. **SemanticStage**: Stdlib injection → DuplicateNameChecker → IdAssigner → TypeResolver → ConstructorGenerator → MemoryFunctionGenerator → RefResolver → ExpressionRewriter → Simplifier → CaptureAnalyzer → TypeChecker → PartialApplicationElaborator → ClosureMemoryFnGenerator → StructDestructorBodyGenerator → OwnershipAnalyzer → ClosureDestructorBodyGenerator → TailRecursionDetector → DestructionValidator.
-3. **CodegenStage**: Pre-codegen validation → resolve target triple → gather LLVM tool info → resolve cached Clang CPU/features → emit LLVM IR → write IR → native compilation.
+2. **SemanticStage**: Stdlib injection -> DuplicateNameChecker -> IdAssigner -> TypeResolver -> ConstructorGenerator -> MemoryFunctionGenerator -> RefResolver -> ExpressionRewriter -> Simplifier -> CaptureAnalyzer -> TypeChecker -> PartialApplicationElaborator -> ClosureMemoryFnGenerator -> StructDestructorBodyGenerator -> OwnershipAnalyzer -> ClosureDestructorBodyGenerator -> TailRecursionDetector -> DestructionValidator.
+3. **CodegenStage**: Pre-codegen validation -> resolve target triple -> gather LLVM tool info -> resolve cached Clang CPU/features -> emit LLVM IR -> write IR -> native compilation.
 
 Each phase takes a `CompilerState` and returns an updated one. Timings are recorded via `CompilerState.timePhase`/`timePhaseIO`. Errors accumulate without halting compilation, so partial results remain available for the LSP.
 
