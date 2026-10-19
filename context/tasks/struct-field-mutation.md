@@ -53,6 +53,9 @@ pub fn main(): Unit =
 The intended replacement exposes a design question: what permits or rejects the use
 of `x` after the string it borrows is replaced? The borrow-invalidation rule is open.
 
+See [Backward liveness for borrow invalidation](../../docs/brainstorming/mem/backward-liveness.md)
+for a candidate analysis shared with array replacement.
+
 ## Plan (Approval Gate)
 
 - [ ] Settle mutation and borrow semantics before proposing compiler changes.

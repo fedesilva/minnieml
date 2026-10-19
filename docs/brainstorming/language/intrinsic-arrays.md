@@ -300,6 +300,9 @@ println x;                  // Rejected under the proposed rule.
 The complete rule must also cover mutation through aliases during an active call.
 Borrow invalidation remains an open design decision.
 
+See [Backward liveness for borrow invalidation](../mem/backward-liveness.md) for a
+candidate analysis using borrow provenance, mutation effects, and future uses.
+
 The [replacement probe](../../../mml/samples/mem/array-element-replacement.mml)
 demonstrates the existing runtime gap: overwriting leaks the original string.
 Freeing it without a borrow rule would expose a use-after-free.
