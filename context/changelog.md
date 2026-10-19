@@ -2,6 +2,14 @@
 
 Durable product changes belong here. Current task state belongs in task files.
 
+## 2026-10-19
+
+- Add MinnieML support for Zed with syntax highlighting, bracket matching, outlines,
+  indentation, and `mmlc lsp` integration for diagnostics, hover, definitions, references,
+  workspace symbols, and semantic highlighting. Provide a shell installer that builds
+  the grammar and language-server adapter from local sources, with configurable compiler
+  paths and documented semantic-highlighting setup.
+
 ## 2026-10-18
 
 - Accept immediate calls of zero-parameter lambda literals with Unit arguments. Evaluate the

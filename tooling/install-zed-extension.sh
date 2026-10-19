@@ -6,8 +6,9 @@ repo_root="$(cd "$script_dir/.." && pwd)"
 bundle_dir="$repo_root/build/zed-minnieml"
 export XDG_CACHE_HOME="$repo_root/build/zed-cache"
 
-if ! command -v tree-sitter > /dev/null || ! command -v node > /dev/null; then
-  printf 'Install Tree-sitter CLI 0.27+ and Node.js, then run this script again.\n' >&2
+if ! command -v tree-sitter > /dev/null || ! command -v node > /dev/null ||
+   ! command -v cargo > /dev/null || ! command -v rustup > /dev/null; then
+  printf 'Install Tree-sitter CLI 0.27+, Node.js, and Rust via rustup, then run this script again.\n' >&2
   exit 1
 fi
 
@@ -29,6 +30,13 @@ mkdir -p "$bundle_dir/grammars"
   tree-sitter generate
   tree-sitter build --wasm --output "$bundle_dir/grammars/mml.wasm"
 )
+
+printf 'Building MinnieML language-server adapter...\n'
+rustup target add wasm32-wasip2
+cargo build --manifest-path "$script_dir/zed/Cargo.toml" --locked --release \
+  --target wasm32-wasip2 --target-dir "$repo_root/build/zed-target"
+cp "$repo_root/build/zed-target/wasm32-wasip2/release/minnieml.wasm" "$bundle_dir/extension.wasm"
+
 cp "$script_dir/zed/extension.toml" "$bundle_dir/extension.toml"
 mkdir -p "$bundle_dir/languages/mml"
 cp "$script_dir"/zed/languages/mml/* "$bundle_dir/languages/mml/"
