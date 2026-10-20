@@ -31,7 +31,7 @@ cleanup, and defensive hardening. Restore regressions relevant to each bug as pa
 14. [x] **complete** — [Unify call-stage interpretation and repair ownership](call-stage-ownership.md); signed off with passing compiler gates and independent reviews.
 15. [x] **complete** — [BUG: preserve borrowing in fully applied lambda literals](#bug-preserve-borrowing-in-fully-applied-lambda-literals); signed off with passing verification.
 16. [x] **complete** — [BUG: elaborate partial applications inside callees](#bug-elaborate-partial-applications-inside-callees); signed off with passing compiler gates and independent review.
-17. [ ] **planned** — [BUG: preserve tail recursion across owned-closure cleanup](#bug-preserve-tail-recursion-across-owned-closure-cleanup).
+17. [ ] **in_progress** — [BUG: preserve tail recursion across owned-closure cleanup](#bug-preserve-tail-recursion-across-owned-closure-cleanup).
 18. [ ] **planned** — [Preserve the complete application callee type in Simplifier](#fix-preserve-the-complete-application-callee-type-in-simplifier).
 19. [ ] **in_progress** — [Remaining lambda semantics and lowering](#remaining-lambda-implementation), including [restoration of all ignored regressions](#restore-ignored-regressions); deferred behind the bug repairs.
 20. [ ] **planned** — [Harden closure environment lookup](#harden-closure-environment-lookup).
@@ -1056,14 +1056,14 @@ retains its reproduction, scope, and acceptance criteria.
 
 #### Bug: preserve tail recursion across owned-closure cleanup
 
-- **Status:** planned.
+- **Status:** in_progress.
 - **Reproducer:** [closure-heap-capture-fail.mml](../../mml/samples/closure-heap-capture-fail.mml)
   creates a move closure owning a freshly allocated `String`, invokes it, then calls
   `loop (n - 1)` in source tail position. The `if true` condition deliberately runs forever
   to expose unbounded stack and live heap growth; it must remain in the reproducer.
-- **Failure:** ownership cleanup follows the recursive call, preventing loopification.
-  Calling `greet ()` borrows its capture; the closure remains owned by the enclosing scope.
-  The emitted IR contains this sequence:
+- **Baseline failure evidence:** ownership cleanup followed the recursive call, preventing loopification.
+  Calling `greet ()` borrowed its capture; the closure remained owned by the enclosing scope.
+  The baseline IR contained this sequence:
 
   ```llvm
   call void @closureheapcapturefail_loop(i64 %19)
@@ -1071,30 +1071,129 @@ retains its reproduction, scope, and acceptance criteria.
   call void @closureheapcapturefail___free_closure(ptr %20)
   ```
 
-  The optimized arm64 executable retains a 48-byte frame and the captured string for each
+  The baseline optimized arm64 executable retained a 48-byte frame and the captured string for each
   iteration, with string destruction after the recursive call. Native runs on macOS arm64
-  terminate with SIGSEGV after approximately 21,600 printed iterations with a 1 MiB stack,
+  terminated with SIGSEGV after approximately 21,600 printed iterations with a 1 MiB stack,
   43,300 with 2 MiB, and 174,000 with 8,176 KiB. Printed counts are approximate because output
   is buffered. This is distinct from the completed nested-capturing-recursion repair above.
 - **Outcome:** preserve source-level tail recursion while releasing iteration-local owned
   closures and captures before the loop back-edge when their lifetimes permit it. The
   reproducer must run with bounded stack usage and bounded live heap allocations.
-- **Repair planning:** trace cleanup insertion through tail-recursion detection and lowering;
-  define when cleanup can precede the recursive transfer. Account for argument evaluation,
-  borrowed aliases and recursive arguments, ownership transfers, and observable destructor
-  effects. Do not move arbitrary destruction across user effects or special-case this sample.
+- **Approved implementation:** generalize early PAP cleanup to owned closures, proving storage-only
+  destruction through resolved runtime IDs, struct fields, and complete callable origins. Evaluate
+  terminal-call arguments once before cleanup and retain borrows, aliases, witnesses, and cleanup
+  ordering on every path. Preserve the existing ownership-then-tail-detection pipeline.
+  Evaluate Unit recursive arguments and retain their exit blocks; build string literals as SSA
+  aggregates to avoid accumulating stack storage. Keep syntax, ownership rules, and ABI unchanged.
+- **Verification:** focused regressions, million-iteration O0/O3 stress with ASan/LSan and a small
+  stack, controlled measurement of the unchanged infinite sample, formatting/lint, full suite,
+  smoke, verified publication, benchmark builds, complete memory harness, QA, and independent review.
+- **Current implementation:** shared owned-closure/PAP cleanup placement and storage-only safety
+  analysis, Unit argument evaluation and bindings, and SSA string literals are implemented.
+  Focused and full tests, formatting/lint, smoke, production stress, local publication,
+  12 benchmark builds, both infinite probes, and all 52 ASan/LSan memory cases pass.
+  The finite stress fixtures also exercise an observable String literal use on every iteration;
+  verification of that coverage extension and completion of independent review remain pending.
 - **Acceptance:**
-  - [ ] Preserve the infinite-loop sample and add a finite stress regression for automated
+  - [x] Preserve the infinite-loop sample and add a finite stress regression for automated
     completion and sanitizer checks.
-  - [ ] Verify generated IR has a loop back-edge and required cleanup before it; successful
+  - [x] Verify generated IR has a loop back-edge and required cleanup before it; successful
     execution at a shallow recursion depth alone does not establish tail-call preservation.
-  - [ ] Verify bounded stack and live heap usage over a sustained run of the reproducer;
+  - [x] Verify bounded stack and live heap usage over a sustained run of the reproducer;
     terminate the infinite probe under harness control.
-  - [ ] Verify exactly-once destruction without implicit capture cloning, use-after-free,
+  - [x] Verify exactly-once destruction without implicit capture cloning, use-after-free,
     or double-free; cover aliases, borrowed recursive arguments, conditional paths, and
     destructor ordering where effects are observable.
   - [ ] Run applicable compiler gates, native sanitizer checks, and independent review.
-- **Implementation approval:** pending a bounded repair plan.
+- **Implementation approval:** granted for the bounded repair above. Scoped signoff and local
+  commit are authorized; independent review remains pending. Push is not authorized.
+
+##### Tail-cleanup verification evidence
+
+Native execution: macOS arm64, Homebrew Clang/LLVM 23.1.1, 2026-10-20. No source syntax,
+ownership contract, closure ABI, String layout, or public API changes. Linux execution is
+not part of this non-ABI repair's evidence.
+
+Commands run sequentially from the repository root:
+
+```sh
+sbtn "testOnly *OwnedClosureTailRecursionTests *TbaaEmissionTest *DestructionCodegenTests"
+sbtn "testOnly *ClosureCodegenTest; scalafmtAll; scalafixAll; testFull"
+./tests/smoke/run.sh all
+sbtn "run run -O0 tests/mem/owned-closure-tail.mml"
+sbtn "run -O0 -b build/tail-cleanup-o0 -o build/tail-cleanup-o0/probe mml/samples/closure-heap-capture-fail.mml"
+sbtn "run -O3 -b build/tail-cleanup-o3 -o build/tail-cleanup-o3/probe mml/samples/closure-heap-capture-fail.mml"
+sbtn mmlcPublishLocal
+python3 tests/tail-cleanup/infinite_probe.py build/tail-cleanup-o0/probe
+python3 tests/tail-cleanup/infinite_probe.py build/tail-cleanup-o3/probe
+make -C benchmark clean
+make -C benchmark mml
+./tests/mem/run.sh all
+```
+
+- Focused suites: 35 tail-cleanup, 12 metadata, and eight destruction cases pass, with one
+  existing metadata ignore. The closure suite passes 16 cases with nine existing ignores.
+  Literal-backed metadata assertions use actual capture and constructor memory operations.
+  Formatting and lint pass without Scala compiler warnings. CLI invocations report the
+  Scala runtime's `sun.misc.Unsafe` deprecation warning.
+- Full suite: 1,278 library tests and nine CLI tests pass; 36 existing ignores remain.
+  A fresh `sbtn "testFull"` rerun confirms these counts.
+- Smoke: 8/8 pass. Production-runtime finite stress exits zero at O0, checking the total
+  length `5,888,896` across one million captured strings. Local publication succeeds;
+  all 12 MML benchmark builds succeed. The complete memory harness passes 52/52 ASan+LSan
+  cases in 68 seconds, including the new million-iteration fixture.
+- The 35 new tail-cleanup cases assemble LLVM, validate PHI predecessors, and execute native
+  fixtures. They cover local/returned/nested closures, struct and function captures, PAPs,
+  aliases and shadowing, mixed and conditional ownership, branch transfers, consuming recursive
+  arguments, transitive borrows, argument effects, Unit bindings, local capturing/plain entries,
+  unknown alternatives, analysis cycles, custom destructor ordering, and `--no-tco`. Pointer
+  results and their aliases retain closure payloads through their consumer; immediately invoked
+  lambda parameters retain transitive borrow dependencies.
+- Sanitized test fixtures mark generated LLVM functions with `sanitize_address`. Two negative
+  controls at O0/O3 require sanitizer failure for an invalid generated memory access. C runtime
+  instrumentation and allocator checks alone do not establish generated-load instrumentation.
+- The four million-iteration counter cases pass at O0/O3 with ASan/LSan and separately under a
+  256 KiB stack limit. Their runtime checks require exactly 1,000,000 allocations and
+  destructions, peak one live String payload, zero clones, 1,000,000 invocations, and stack
+  address span below 16 KiB. These counters instrument test payloads, not all process allocations.
+- The unchanged infinite sample retains `if true`. Its unoptimized loop contains argument
+  evaluation, `__free_closure`, and `br label %loop.header`, with no recursive call or String
+  literal `alloca` in the loop body. Both probe runs end by explicit SIGTERM.
+
+The [probe harness](../../tests/tail-cleanup/infinite_probe.py) drains stdout while sampling
+`vmmap`. Eight measurements follow a two-second warmup, under a 256 KiB stack limit:
+
+| Build | Measurement interval | Resident/dirty stack | Allocated heap | Live heap allocations | Total lines drained |
+|---|---|---|---|---|---|
+| O0 | 2.510–11.998 s | 49,152 bytes throughout | 19,456 bytes throughout | 185–187 | 98,449,799 |
+| O3 | 2.353–11.822 s | 49,152 bytes throughout | 19,456 bytes throughout | 186–188 | 146,892,286 |
+
+Output advances in every measurement interval. Both runs pass the harness's stack and heap
+bounds and terminate as requested. These are measured finite windows of the unchanged
+infinite program; the finite stress counters and sanitizer runs provide separate destruction
+and memory-safety evidence. See the [reproduction guide](../../tests/tail-cleanup/Readme.md).
+
+Review interruptions, 2026-10-20: two separate local compiler review agents stopped with
+the exact diagnostic below.
+
+> This content was flagged for possible cybersecurity risk. If this seems wrong, try rephrasing
+> your request. If you’re doing authorized security work that requires more cyber permissive
+> safeguards, apply for Daybreak access via
+> https://platform.openai.com/settings/organization/status-and-access before retrying.
+
+| Incident | Authorized operation | Missing result |
+|---|---|---|
+| 1 | Primary review of owned-closure cleanup, borrow lifetimes, effect order, and bounded resource use | Complete primary verdict |
+| 2 | Independent verification of one compiler-lifetime claim from that review | Confirmed, rejected, or unresolved verdict |
+
+These interruptions are execution failures, not compiler findings. The independently confirmed
+test finding is preserved: the finite stress loops needed observable String literal evaluation
+to protect the bounded-stack literal-emission behavior. The manual infinite probe already
+covers that behavior. The interrupted claim is unverified. Full review coverage and the finite
+regression extension require verification.
+The [reporting archive](unify-lambdas-review-blocks-2026-10-20/Readme.md) preserves the exact
+dispatch packets, follow-up messages, diagnostic text, provenance, and checksums for both
+interruptions.
 
 #### Restore ignored regressions
 
@@ -1222,7 +1321,9 @@ are in `context/history/` for Author review. No compiler slice is authorized by 
 ## Task Working Memory
 
 - **Branch:** `dev-2026-03-21-lambdas`.
-- **Priority and next action:** plan [tail-recursion cleanup](#bug-preserve-tail-recursion-across-owned-closure-cleanup).
+- **Priority and next action:** complete independent review of
+  [tail-recursion cleanup](#bug-preserve-tail-recursion-across-owned-closure-cleanup), then commit
+  the verified repair. Scoped signoff and local commit are authorized; push is not authorized.
   Confirmed bugs precede general implementation, optimization, and hardening.
 - **Completed PAP callee repair:** the traversal repair and 22 new phase/native regressions are
   complete and signed off. Formatting, lint, the full suite, smoke checks, verified local publication,
