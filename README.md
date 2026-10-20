@@ -52,7 +52,7 @@ A more complex example:
 This examples might not be possible to compile currently, depending on when you read this.
 
 ```rust
-enum Maybe 'T =
+union Maybe 'T =
   | One 'T
   | None
 ;
@@ -107,5 +107,3 @@ let pf = hasPet fede;   // true
 // does not compile
 // let pz = hasPet zur
 ```
-
-
