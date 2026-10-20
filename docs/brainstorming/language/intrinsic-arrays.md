@@ -20,6 +20,10 @@ of operations.
 - Codegen chooses storage using size, scope, and escape information.
 - General polymorphism is not required for this step.
 
+
+Note: we should make strings be Arrays under this scheme, so we generalize string
+codegen. right now the codegen knows about string literals for example.
+
 ---
 
 ## Scope
