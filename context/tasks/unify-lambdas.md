@@ -30,7 +30,7 @@ cleanup, and defensive hardening. Restore regressions relevant to each bug as pa
 13. [x] **complete** — Resolve the standalone [mixed-ownership repair dependency](mixed-ownership-transfers.md); signed off.
 14. [x] **complete** — [Unify call-stage interpretation and repair ownership](call-stage-ownership.md); signed off with passing compiler gates and independent reviews.
 15. [x] **complete** — [BUG: preserve borrowing in fully applied lambda literals](#bug-preserve-borrowing-in-fully-applied-lambda-literals); signed off with passing verification.
-16. [ ] **planned** — [BUG: elaborate partial applications inside callees](#bug-elaborate-partial-applications-inside-callees).
+16. [x] **complete** — [BUG: elaborate partial applications inside callees](#bug-elaborate-partial-applications-inside-callees); signed off with passing compiler gates and independent review.
 17. [ ] **planned** — [BUG: preserve tail recursion across owned-closure cleanup](#bug-preserve-tail-recursion-across-owned-closure-cleanup).
 18. [ ] **planned** — [Preserve the complete application callee type in Simplifier](#fix-preserve-the-complete-application-callee-type-in-simplifier).
 19. [ ] **in_progress** — [Remaining lambda semantics and lowering](#remaining-lambda-implementation), including [restoration of all ignored regressions](#restore-ignored-regressions); deferred behind the bug repairs.
@@ -957,8 +957,9 @@ retains its reproduction, scope, and acceptance criteria.
 
 #### Bug: elaborate partial applications inside callees
 
-- **Status:** planned.
-- **Problem:** [PartialApplicationElaborator.scala](../../modules/mmlc-lib/src/main/scala/mml/mmlclib/semantic/PartialApplicationElaborator.scala)
+- **Status:** complete.
+- **Regression:** at `af8fec6`,
+  [PartialApplicationElaborator.scala](../../modules/mmlc-lib/src/main/scala/mml/mmlclib/semantic/PartialApplicationElaborator.scala)
   flattens an application chain and prepares its arguments without visiting the callee's
   lambda body. A partial application inside that body survives elaboration unchanged.
 - **Reproducer and control:**
@@ -969,7 +970,7 @@ retains its reproduction, scope, and acceptance criteria.
   fn control(): Int -> Int = { a: Int -> add a; } 1;;
   ```
 
-- **Phase evidence:** a focused phase test accepts both functions through type checking.
+- **Baseline phase evidence:** a focused phase test accepts both functions through type checking.
   `ValueAvailability` marks the outer application and inner `add a` available. In `example`,
   the outer callee is an `App`, so it bypasses the immediate-lambda branch. Flattening
   produces the unary lambda and arguments `[1, 2]`; elaboration visits only those arguments
@@ -980,13 +981,51 @@ retains its reproduction, scope, and acceptance criteria.
   binding identities, types, the complete application chain, and evaluation order. Retain
   local recovery behavior. Avoid elaborating every prefix of a saturated call separately.
 - **Acceptance:**
-  - [ ] Add a permanent phase-level regression for the reproducer and control, checking that
+  - [x] Add a permanent phase-level regression for the reproducer and control, checking that
     the inner partial application becomes a typed residual lambda with the correct captures.
-  - [ ] Cover partial applications inside callee qualifiers, nested application chains,
+  - [x] Cover partial applications inside callee qualifiers, nested application chains,
     effectful supplied arguments, and recovery boundaries.
-  - [ ] Preserve single evaluation in source order and avoid introducing unnecessary PAPs
+  - [x] Preserve single evaluation in source order and avoid introducing unnecessary PAPs
     for fully applied calls. Verify stable binding identities across stabilization.
-- **Implementation approval:** pending a bounded repair plan.
+- **Approved repair plan:** share scope-aware lambda-body traversal between immediate applications,
+  standalone values, and flattened application heads. Preserve whole-chain saturation, qualifier
+  ownership bindings, argument-before-callee evaluation, local recovery, and capture stabilization.
+  Add phase regressions for residual types/captures, qualifiers and branches, saturation, stable
+  identities, repeated elaboration, and recovery. Extend native callable regressions for effect
+  order and closure cleanup; run compiler gates, QA, and independent review before handoff.
+  No public API, AST, ABI, syntax, or ownership-policy changes are included. Independent downstream
+  defects require a separate scope decision.
+- **Implementation:** `rewriteLambdaBody` enters the existing parameter scope and rewrites the
+  body while preserving the lambda's other fields. Immediate applications, standalone lambdas,
+  and flattened callee heads share this traversal. Standalone capture-transfer handling,
+  whole-chain saturation, qualifier preparation, and recovery guards retain their contracts.
+- **Verification (2026-10-19, Darwin arm64, LLVM/Clang 23.1.1):** the principal regression fails
+  before the repair with zero generated residual lambdas instead of one. All 13 cases in
+  [PartialApplicationElaboratorTests](../../modules/mmlc-lib/src/test/scala/mml/mmlclib/semantic/PartialApplicationElaboratorTests.scala)
+  pass after the repair. Nine additional native cases in
+  [LocalCallableCodegenTests](../../modules/mmlc-lib/src/test/scala/mml/mmlclib/codegen/LocalCallableCodegenTests.scala)
+  pass LLVM assembly and ASan/LSan execution, covering the direct reproducer and exact effect
+  order and payload cleanup at `-O0` and `-O3`, including both conditional-qualifier branches.
+  `sbtn "scalafmtAll; scalafixAll; testOnly mml.mmlclib.semantic.PartialApplicationElaboratorTests; testFull"`
+  passes: 1,242 library tests, nine CLI tests, 36 existing ignores, no compiler warnings.
+  `./tests/smoke/run.sh all` passes 8/8; `sbtn "scalafmtCheckAll; mmlcPublishLocal"` passes
+  and installs the tested compiler. `make -C benchmark clean` and `make -C benchmark mml`
+  build all 12 targets. `./tests/mem/run.sh all` passes 51/51 ASan/LSan fixtures at `-O0`.
+  Scala compilation is warning-free; forked smoke runs emit the existing JDK
+  `sun.misc.Unsafe` deprecation warning. Execution evidence is Darwin arm64 only; no ABI
+  change or performance measurement is included. QA and focused tracking checks pass.
+- **Independent review:** the primary review and three separate fresh-context checks for
+  code style/QA, test quality, and human readability report no actionable findings. No candidate
+  required a claim verifier. The reviewer independently reruns
+  `sbtn "testOnly mml.mmlclib.semantic.PartialApplicationElaboratorTests mml.mmlclib.codegen.LocalCallableCodegenTests"`:
+  66/66 pass without compiler warnings or errors. New qualifier fixtures establish effect order
+  and nested payload cleanup; existing `CallExitBlockTests` and `tests/mem/field-qualifier-owners.mml`
+  provide heap-backed qualifier-lifetime coverage.
+- **Separate parser defect:** a grouped nested-call fixture is rejected before elaboration;
+  [parenthesized lambda arguments](parser-parenthesized-lambda-arguments.md) records the exact
+  source, diagnostic, and working local-binding control. Parser code is outside this repair.
+- **Signoff:** complete for the PAP callee traversal repair and its regression coverage.
+  Local commit authorized; push is not authorized.
 
 #### Harden closure environment lookup
 
@@ -1173,18 +1212,23 @@ are in `context/history/` for Author review. No compiler slice is authorized by 
   capturing-recursion TCO repair with its smoke and benchmark integration, elaboration
   error recovery, counter preservation through conditional branches and nested lambdas,
   argument-expression preservation, restoration of four unchanged passing regressions,
-  the typed borrowed-PAP escape regression, and six materialization regressions.
+  the typed borrowed-PAP escape regression, six materialization regressions, and PAP callee traversal.
 - Tracked item completion: pending; open work remains in the
   [Execution Checklist](#execution-checklist).
-- Commit and push authorization: expression preservation, the ignored-test inventory and plan,
+- PAP callee traversal commit authorization: granted; push is not authorized.
+- Historical commit and push authorization: expression preservation, the ignored-test inventory and plan,
   four restored regressions, and their completion records; push to `origin/dev-lambda-unify`.
 
 ## Task Working Memory
 
 - **Branch:** `dev-2026-03-21-lambdas`.
-- **Priority and next action:** plan [PAP callee traversal](#bug-elaborate-partial-applications-inside-callees),
-  followed by [tail-recursion cleanup](#bug-preserve-tail-recursion-across-owned-closure-cleanup).
+- **Priority and next action:** plan [tail-recursion cleanup](#bug-preserve-tail-recursion-across-owned-closure-cleanup).
   Confirmed bugs precede general implementation, optimization, and hardening.
+- **Completed PAP callee repair:** the traversal repair and 22 new phase/native regressions are
+  complete and signed off. Formatting, lint, the full suite, smoke checks, verified local publication,
+  12 clean benchmark builds, ASan/LSan 51/51, QA, tracking checks, and independent review pass.
+  The independent focused rerun passes 66/66. Local commit is authorized; push is not authorized.
+  The separate [parser bug](parser-parenthesized-lambda-arguments.md) remains planned.
 - **Completed repair:** [call-stage ownership and fully applied literal borrowing](call-stage-ownership.md)
   are complete and signed off. Formatting/lint, 1,220 library plus nine CLI tests, smoke 8/8,
   verified local publication, 12 clean benchmark builds, ASan/LSan 51/51, QA, tracking review,

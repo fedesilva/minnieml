@@ -69,6 +69,18 @@ object PartialApplicationElaborator:
       case List(term) => rewriteTerm(term, owner, index, values)
       case _ => rewriteExpr(expr, owner, index, values).map(PreparedValue(_))
 
+  private def rewriteLambdaBody(
+    lambda: Lambda,
+    owner:  BindingOwner,
+    index:  ResolvablesIndex,
+    values: CallableValues
+  ): Allocation[Lambda] =
+
+    for
+      nested <- BindingIds.within(lambda.params, owner)
+      body <- rewriteExpr(lambda.body, nested, index, values)
+    yield lambda.copy(body = body)
+
   private def rewriteTerm(
     term:   Term,
     owner:  BindingOwner,
@@ -79,18 +91,18 @@ object PartialApplicationElaborator:
       app.fn match
         case scope: Lambda =>
           for
-            nested <- BindingIds.within(scope.params, owner)
-            body <- rewriteExpr(scope.body, nested, index, values)
+            function <- rewriteLambdaBody(scope, owner, index, values)
             arg <- prepareExpr(app.arg, owner, index, values)
           yield PreparedValue(
-            app.copy(fn = scope.copy(body = body), arg = arg.expression),
+            app.copy(fn = function, arg = arg.expression),
             arg.bindings
           )
         case _ =>
           val (callee, args) = CallableValues.application(app)
           val preparedCallee = callee match
             case ref:    Ref => rewriteRef(ref, owner, index, values)
-            case lambda: Lambda => PreparedValue(lambda).pure[Allocation]
+            case lambda: Lambda =>
+              rewriteLambdaBody(lambda, owner, index, values).map(PreparedValue(_))
           for
             rewrittenArgs <- args.traverse(prepareExpr(_, owner, index, values))
             function <- preparedCallee
@@ -147,15 +159,10 @@ object PartialApplicationElaborator:
             transferredCallees
         )
       }
-      BindingIds
-        .within(lambda.params, owner)
-        .flatMap { nested =>
-          rewriteExpr(lambda.body, nested, index, values)
-        }
-        .map { body =>
+      rewriteLambdaBody(lambda, owner, index, values)
+        .map { rewritten =>
           PreparedValue(
-            lambda.copy(
-              body = body,
+            rewritten.copy(
               meta = meta,
               isMove = lambda.isMove || meta.exists(m =>
                 m.isPartialApplication && (m.transferredCaptures.nonEmpty || m.borrowedCaptures.isEmpty)

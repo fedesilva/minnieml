@@ -14,7 +14,7 @@ This is the Author's active and near-term focus. The backlog lives in [tasks/](t
 
 - **Tracker:** [Unify lambdas](tasks/unify-lambdas.md)
 - **Status:** in_progress
-- **Current focus:** Plan PAP callee traversal, then tail recursion across owned-closure cleanup.
+- **Current focus:** Plan tail-recursion preservation across owned-closure cleanup.
   Confirmed bugs take priority. General ignored-test restoration (36 cases), optimization,
   and hardening follow.
 

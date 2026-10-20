@@ -4,6 +4,9 @@ Durable product changes belong here. Current task state belongs in task files.
 
 ## 2026-10-19
 
+- Elaborate partial applications inside lambda callees when the surrounding call supplies
+  several arguments. Preserve lexical bindings, saturation, evaluation order, and local
+  error recovery through shared scope-aware lambda-body traversal.
 - Share typed call-stage boundaries across callable flow, capture transfers, and ownership
   analysis. Match arguments and final results to their actual invocation, reject incompatible
   consuming contracts and repeated call-once use, and preserve nullary calls and cleanup.
