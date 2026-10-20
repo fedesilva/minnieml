@@ -14,8 +14,16 @@ This is the Author's active and near-term focus. The backlog lives in [tasks/](t
 
 - **Tracker:** [Unify lambdas](tasks/unify-lambdas.md)
 - **Status:** in_progress
-- **Current focus:** Plan the owned-closure cleanup placement simplification after
-  completing the tail-recursion repair.
+- **Current focus:** Plan the returned-callee partial-application repair, followed by the
+  other confirmed bugs; cleanup placement follows those repairs.
+
+### Instrument MML-generated IR for AddressSanitizer
+
+- **Tracker:** [Instrument MML-generated IR for AddressSanitizer](tasks/asan-generated-ir.md)
+- **Status:** planned
+- **Priority:** HIGH
+- **Current focus:** Establish a durable generated-code negative control and plan
+  instrumentation of the LLVM pipeline.
 
 ### Error recovery and parser backtracking
 

@@ -27,9 +27,12 @@ invariants. Parallel identity mechanisms accumulate into a lava flow antipattern
 name-based paths remain embedded beneath newer ID-based logic.
 
 Ordinary branch-local shadowing is protected by `analyzeLambdaApplication` restoring the
-incoming scope and propagating inherited moves by ID. The name/ID split alone is not proof
-of a failing shadowing case. This task removes the inconsistent identity model throughout
-the semantic pipeline, including paths without a demonstrated runtime failure.
+incoming scope and propagating inherited moves by ID. A distinct recursive-local-function
+shadowing failure is recorded in the
+[lambda B3 repair](unify-lambdas.md#b3-recursive-shadowing-after-a-move): after an outer `s`
+is consumed, references inside a recursively defined local function also named `s`
+produce false last-use or use-after-move diagnostics. This task still removes the
+inconsistent identity model throughout the semantic pipeline.
 
 ## Outcome
 
@@ -113,7 +116,8 @@ Implementation verification is pending. Acceptance requires:
 
 - **Starting evidence:** `OwnershipAnalyzer` has name-keyed `bindings` and branch merging,
   ID-keyed `movedBindingIds`, and name fallbacks in `sameBinding` and `bindingMoved`.
-  Scope restoration protects the ordinary branch-shadowing cases checked during investigation.
+  Scope restoration protects ordinary branch-shadowing cases, but recursive local-function
+  shadowing has a confirmed failing case linked above. The lambda task owns its narrow repair.
 - **Identity contract:** ownership binding IDs are definition IDs used by the resolvables
   index, not a separate ownership identifier.
 - **Next action:** inventory every phase and shared dependency, then present bounded
