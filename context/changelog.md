@@ -4,6 +4,8 @@ Durable product changes belong here. Current task state belongs in task files.
 
 ## 2026-10-19
 
+- Document union declarations with type parameters, single-value wrappers, and named
+  fields. Specify variant-set subtyping, narrowing, and exhaustiveness in the union spec.
 - Add MinnieML support for Zed with syntax highlighting, bracket matching, outlines,
   indentation, and `mmlc lsp` integration for diagnostics, hover, definitions, references,
   workspace symbols, and semantic highlighting. Provide a shell installer that builds
