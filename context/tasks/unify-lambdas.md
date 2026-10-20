@@ -32,11 +32,12 @@ cleanup, and defensive hardening. Restore regressions relevant to each bug as pa
 15. [x] **complete** — [BUG: preserve borrowing in fully applied lambda literals](#bug-preserve-borrowing-in-fully-applied-lambda-literals); signed off with passing verification.
 16. [x] **complete** — [BUG: elaborate partial applications inside callees](#bug-elaborate-partial-applications-inside-callees); signed off with passing compiler gates and independent review.
 17. [ ] **in_progress** — [BUG: preserve tail recursion across owned-closure cleanup](#bug-preserve-tail-recursion-across-owned-closure-cleanup).
-18. [ ] **planned** — [Preserve the complete application callee type in Simplifier](#fix-preserve-the-complete-application-callee-type-in-simplifier).
-19. [ ] **in_progress** — [Remaining lambda semantics and lowering](#remaining-lambda-implementation), including [restoration of all ignored regressions](#restore-ignored-regressions); deferred behind the bug repairs.
-20. [ ] **planned** — [Harden closure environment lookup](#harden-closure-environment-lookup).
-21. [ ] **planned** — [Integrate the PAP tutorial into the language reference](#later-stage-documentation).
-22. [ ] **planned** — General branch audit (deferred) and final task signoff.
+18. [ ] **planned** — [Simplify owned-closure cleanup placement](#simplify-owned-closure-cleanup-placement); immediately after tail-recursion cleanup signoff.
+19. [ ] **planned** — [Preserve the complete application callee type in Simplifier](#fix-preserve-the-complete-application-callee-type-in-simplifier).
+20. [ ] **in_progress** — [Remaining lambda semantics and lowering](#remaining-lambda-implementation), including [restoration of all ignored regressions](#restore-ignored-regressions); deferred behind the bug repairs.
+21. [ ] **planned** — [Harden closure environment lookup](#harden-closure-environment-lookup).
+22. [ ] **planned** — [Integrate the PAP tutorial into the language reference](#later-stage-documentation).
+23. [ ] **planned** — General branch audit (deferred) and final task signoff.
 
 Linux sanitizer validation is deferred to the separate
 [Linux verification task](linux-sanitizer-verification.md).
@@ -1194,6 +1195,28 @@ regression extension require verification.
 The [reporting archive](unify-lambdas-review-blocks-2026-10-20/Readme.md) preserves the exact
 dispatch packets, follow-up messages, diagnostic text, provenance, and checksums for both
 interruptions.
+
+#### Simplify owned-closure cleanup placement
+
+- **Status:** planned; follows signoff of [owned-closure tail-recursion cleanup](#bug-preserve-tail-recursion-across-owned-closure-cleanup).
+- **Problem:** `OwnershipAnalyzer.placeCleanup` constructs a trial rewrite to classify each
+  binding, discards that rewrite, then repeats the storage-only check and cleanup-term
+  construction while applying the result. Per-binding late cleanup also nests one
+  `__ownership_result` binding per retained obligation. The names `early` and `remaining`
+  obscure that a binding can be early on one branch and late on another.
+- **Outcome:** make cleanup classification and insertion easier to follow without changing
+  evaluation order, branch-specific release timing, ownership witnesses, or generated behavior.
+- **Scope:** compute each binding's storage-only and cleanup-term evidence once, and avoid
+  constructing a discarded rewrite for eligibility. Distinguish bindings eligible for early
+  release on every path, on only some paths, and on no path. Preserve branch-specific insertion;
+  batch only obligations proven late on every path into one scope-end cleanup wrapper, preserving
+  their cleanup order. Do not batch the mixed-path group as uniformly late.
+- **Acceptance:**
+  - [ ] A focused regression keeps early release on an eligible conditional branch while
+    retaining late cleanup on the other branch.
+  - [ ] Two late obligations use one result wrapper and preserve their destruction order.
+  - [ ] Existing single-evaluation, tail-loop, ownership, and sanitizer regressions pass.
+- **Implementation approval:** pending a bounded repair plan. Signoff and commit are separate.
 
 #### Restore ignored regressions
 
