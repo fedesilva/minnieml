@@ -39,6 +39,13 @@ self-contained, source-derived packet containing:
   technical evidence that is not available in the working tree;
 - the full **Primary Reviewer Protocol** below.
 
+Copy the full Primary Reviewer Protocol into the packet without summarizing or omitting
+requirements. Before reporting completion, the top-level agent checks actual reviewer and
+verifier results against the protocol: the primary review and each dedicated check completed,
+the required reviewers were separate and fresh, and every reported finding was independently
+confirmed. A dispatched agent or a promise to perform a check is not a completed result.
+Report missing work as incomplete and identify any explicitly approved fallback.
+
 Tell the reviewer to read every supplied rule and technical source directly.
 Do not pass the parent conversation, the parent's conclusions, suspected
 findings, intended fixes, or a suggested verdict. Allow inspection of code
@@ -47,11 +54,11 @@ context.
 
 If subagents are unavailable, stop before the review and ask the author whether
 to continue with a parent-agent review. Proceed only with explicit approval,
-execute the Primary Reviewer Protocol directly, and validate every candidate
-with its evidence checks. Report that primary-review and per-claim independence
-were skipped. The approval covers narrow re-reviews for the same review
-workstream while subagents remain unavailable. Never substitute a parent review
-silently.
+execute the Primary Reviewer Protocol directly, including all three dedicated checks,
+and validate every candidate with its evidence checks. Report that primary-review,
+dedicated-check, and per-claim independence were skipped. The approval covers narrow
+re-reviews for the same review workstream while subagents remain unavailable. Never
+substitute a parent review silently.
 
 ### Automated flags and interrupted reviews
 
@@ -111,6 +118,42 @@ the code-review skill.
 6. When a focused tracking-document review already passed, treat its internal
    consistency as established. Report a tracking issue only when code, tests,
    or runtime evidence under review directly contradicts a tracking claim.
+
+## Mandatory dedicated checks
+
+For every review, the primary reviewer launches three separate, fresh-context reviewers
+with `fork_turns: "none"`:
+
+1. **Code style and QA:** enforce the repository's Scala, functional-state, pattern-matching,
+   shared-helper, comment, and spacing rules against the actual diff.
+2. **Test quality:** inspect what fixtures and assertions prove, boundary and negative controls,
+   diagnostic and identity assertions, and whether tests would detect the claimed regression.
+   Distinguish semantic checks, IR validity, execution, sanitizers, and measurements.
+3. **Human readability:** examine names, visible control and data flow, nesting, state plumbing,
+   duplication, and whether abstractions help a maintainer follow the code. Require concrete
+   reading or maintenance costs for findings, not personal taste.
+
+These checks supplement the primary review. A general correctness review, formatter, linter,
+passing test suite, or parent-agent QA pass does not replace any of them. Narrow re-reviews
+also run all three checks, limited to the correction and its directly affected code.
+
+Give each reviewer a self-contained packet with its focus, exact scope, applicable rules,
+technical sources, verification evidence, and read-only instructions. Do not pass conversation
+history, another reviewer's conclusions, suspected findings, or a desired verdict. Require
+direct source inspection. Reviewers must not read or invoke this skill; local skill discovery
+extracts only front-matter names and descriptions. Dedicated reviewers perform their assigned
+check without launching another set of dedicated checks.
+
+Run checks in parallel when capacity permits and in waves otherwise. Limited concurrency
+does not waive a check. If agents cannot be launched, return to the top-level agent for the
+explicit fallback approval required above. For changes without applicable code or tests,
+the assigned reviewer must still inspect the scope and explain why its check is not applicable.
+
+Each reviewer returns candidates or explicitly reports no actionable findings, with coverage
+and evidence limits. The primary reviewer owns synthesis and sends each atomic candidate to
+a separate fresh verifier under **Verify every claim independently**. A dedicated reviewer
+cannot verify its own candidate. Do not report the review complete while any dedicated check
+or required independent verification remains incomplete.
 
 ## Follow the code
 
@@ -342,6 +385,10 @@ evidence checks.
 
 Label proven bugs separately from design, readability, performance, and test
 findings. Do not dilute material issues with taste-only nitpicks.
+
+Report the completion and result of each mandatory dedicated check: code style and QA,
+test quality, and human readability. Identify missing checks and approved fallbacks explicitly;
+do not summarize partial coverage as a clean review.
 
 If no actionable findings remain, say so explicitly. Then state residual risks,
 verification gaps, and which conclusions still depend on target execution or
