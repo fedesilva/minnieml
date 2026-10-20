@@ -17,18 +17,6 @@ class LambdaLiteralBorrowingTests extends BaseEffFunSuite:
       .collectFirst { case binding: Bnd if binding.name == name => binding }
       .getOrElse(fail(s"Expected member $name"))
 
-  private def bindingId(module: Module, owner: String, name: String): String =
-    val ids = TermTraversal
-      .collect(member(module, owner).value) {
-        case lambda:  Lambda => lambda.params.filter(_.name == name).flatMap(_.id)
-        case binding: BindOwnership if binding.valueParam.name == name =>
-          binding.valueParam.id.toList
-      }
-      .flatten
-      .distinct
-    assertEquals(ids.size, 1, s"Expected one resolved binding for $owner.$name")
-    ids.head
-
   private def originalRef(parsed: Module, owner: String, index: Int): Ref =
     assert(index >= 0, "Expected a source-reference location")
     val refs = TermTraversal.collect(member(parsed, owner).value) {
@@ -57,7 +45,7 @@ class LambdaLiteralBorrowingTests extends BaseEffFunSuite:
     val errors = result.errors.collect { case error: SemanticError.UseAfterMove => error }
     assertEquals(errors.size, 1, result.errors.toString)
     assertEquals(result.errors.size, 1, result.errors.toString)
-    assertEquals(errors.head.ref.resolvedId, Some(bindingId(result.module, owner, name)))
+    assertEquals(errors.head.ref.resolvedId, Some(resolvedBindingId(result.module, owner, name)))
     assertEquals(errors.head.ref.source, originalRef(parsed, owner, usedAt).source)
     assertEquals(errors.head.movedAt, movedAt)
 
@@ -105,7 +93,7 @@ class LambdaLiteralBorrowingTests extends BaseEffFunSuite:
             ref.resolvedId
           }
           .flatten
-        assertEquals(destroyedIds, List(bindingId(module, "owned", "text")))
+        assertEquals(destroyedIds, List(resolvedBindingId(module, "owned", "text")))
         assertEquals(stringCleanup(module, "borrowed"), Nil)
       }
     }
@@ -204,8 +192,14 @@ class LambdaLiteralBorrowingTests extends BaseEffFunSuite:
             assertEquals(sinks.size, expectedSinkCount, result.errors.toString)
             assertEquals(result.errors.size, errors.size + sinks.size, result.errors.toString)
             val owner = if form == "named" then "borrow" else "example"
-            assertEquals(errors.head.ref.resolvedId, Some(bindingId(result.module, owner, "value")))
-            assertEquals(errors.head.param.id, Some(bindingId(result.module, "take", "payload")))
+            assertEquals(
+              errors.head.ref.resolvedId,
+              Some(resolvedBindingId(result.module, owner, "value"))
+            )
+            assertEquals(
+              errors.head.param.id,
+              Some(resolvedBindingId(result.module, "take", "payload"))
+            )
             val argumentSource = originalRef(parsed, owner, source.indexOf("take value") + 5)
             assertEquals(errors.head.ref.source, argumentSource.source)
             sinks.foreach { error =>
@@ -219,7 +213,7 @@ class LambdaLiteralBorrowingTests extends BaseEffFunSuite:
                   ref.resolvedId
                 }
                 .flatten
-              assertEquals(ids, List(bindingId(result.module, owner, "value")))
+              assertEquals(ids, List(resolvedBindingId(result.module, owner, "value")))
             }
           }
         }
@@ -242,7 +236,10 @@ class LambdaLiteralBorrowingTests extends BaseEffFunSuite:
         assertEquals(errors.size, 1, result.errors.toString)
         assertEquals(result.errors.size, 1, result.errors.toString)
         val owner = if form == "named" then "borrow" else "example"
-        assertEquals(errors.head.ref.resolvedId, Some(bindingId(result.module, owner, "value")))
+        assertEquals(
+          errors.head.ref.resolvedId,
+          Some(resolvedBindingId(result.module, owner, "value"))
+        )
         val returnedAt = source.indexOf("value;")
         assertEquals(errors.head.ref.source, originalRef(parsed, owner, returnedAt).source)
       }
@@ -270,7 +267,7 @@ class LambdaLiteralBorrowingTests extends BaseEffFunSuite:
         val destroyedIds = cleanup.flatMap { call =>
           TermTraversal.collect(call.arg) { case ref: Ref => ref.resolvedId }.flatten
         }
-        assert(!destroyedIds.contains(bindingId(module, "example", "text")))
+        assert(!destroyedIds.contains(resolvedBindingId(module, "example", "text")))
       }
     }
   }
@@ -284,7 +281,7 @@ class LambdaLiteralBorrowingTests extends BaseEffFunSuite:
         outer () + first;
       ;
     """).map { module =>
-      val textId = bindingId(module, "example", "text")
+      val textId = resolvedBindingId(module, "example", "text")
       val outer  = moveLambda(module, "example")
       assert(!outer.meta.exists(_.transferredCaptures.contains(textId)))
       assert(outer.captures.exists(_.ref.resolvedId.contains(textId)))
@@ -310,7 +307,7 @@ class LambdaLiteralBorrowingTests extends BaseEffFunSuite:
         source.lastIndexOf("outer ()"),
         originalExpression(parsed, "example", source.indexOf("outer ()"))
       )
-      val textId = bindingId(result.module, "example", "text")
+      val textId = resolvedBindingId(result.module, "example", "text")
       val outer  = moveLambda(result.module, "example")
       assertEquals(outer.meta.map(_.transferredCaptures), Some(Set(textId)))
     }
@@ -350,7 +347,7 @@ class LambdaLiteralBorrowingTests extends BaseEffFunSuite:
       val destroyedIds = TermTraversal
         .collect(cleanup.head.arg) { case ref: Ref => ref.resolvedId }
         .flatten
-      assertEquals(destroyedIds, List(bindingId(module, "example", "value")))
+      assertEquals(destroyedIds, List(resolvedBindingId(module, "example", "value")))
     }
   }
 

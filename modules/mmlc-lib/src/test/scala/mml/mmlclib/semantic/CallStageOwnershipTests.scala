@@ -18,18 +18,6 @@ class CallStageOwnershipTests extends BaseEffFunSuite:
       .collectFirst { case binding: Bnd if binding.name == name => binding }
       .getOrElse(fail(s"Expected member $name"))
 
-  private def bindingId(module: Module, owner: String, name: String): String =
-    val ids = TermTraversal
-      .collect(member(module, owner).value) {
-        case lambda:  Lambda => lambda.params.filter(_.name == name).flatMap(_.id)
-        case binding: BindOwnership if binding.valueParam.name == name =>
-          binding.valueParam.id.toList
-      }
-      .flatten
-      .distinct
-    assertEquals(ids.size, 1, s"Expected one resolved binding for $owner.$name")
-    ids.head
-
   private def assertOnlyMove(
     source: String,
     result: SemanticResult,
@@ -40,14 +28,14 @@ class CallStageOwnershipTests extends BaseEffFunSuite:
     val errors = result.errors.collect { case error: SemanticError.UseAfterMove => error }
     assertEquals(errors.size, 1, result.errors.toString)
     assertEquals(result.errors.size, 1, result.errors.toString)
-    assertEquals(errors.head.ref.resolvedId, Some(bindingId(result.module, owner, name)))
+    assertEquals(errors.head.ref.resolvedId, Some(resolvedBindingId(result.module, owner, name)))
     val expected = source.indexOf(use)
     assert(expected >= 0, s"Missing use marker: $use")
     assertEquals(errors.head.ref.spanOpt.map(_.start.index), Some(expected))
     assert(errors.head.movedAt.spanOpt.exists(_.start.index < expected))
 
   private def assertTransferred(module: Module, name: String): Unit =
-    val id = bindingId(module, "example", name)
+    val id = resolvedBindingId(module, "example", name)
     val lambdas = TermTraversal.collect(member(module, "example").value) {
       case lambda: Lambda
           if lambda.isMove && !lambda.meta.exists(_.isPartialApplication) &&
@@ -140,7 +128,10 @@ class CallStageOwnershipTests extends BaseEffFunSuite:
       val errors = result.errors.collect { case error: SemanticError.UseAfterMove => error }
       assertEquals(errors.size, 1, result.errors.toString)
       assertEquals(result.errors.size, 1, result.errors.toString)
-      assertEquals(errors.head.ref.resolvedId, Some(bindingId(result.module, "example", "text")))
+      assertEquals(
+        errors.head.ref.resolvedId,
+        Some(resolvedBindingId(result.module, "example", "text"))
+      )
       assertEquals(errors.head.ref.spanOpt.map(_.start.index), Some(use))
       assert(errors.head.movedAt.spanOpt.exists(_.start.index < use))
     }
@@ -210,7 +201,7 @@ class CallStageOwnershipTests extends BaseEffFunSuite:
         outer () + first;
       ;
     """).map { result =>
-      val id = bindingId(result.module, "example", "text")
+      val id = resolvedBindingId(result.module, "example", "text")
       val outer = TermTraversal.collect(member(result.module, "example").value) {
         case lambda: Lambda if lambda.isMove => lambda
       }
@@ -323,8 +314,11 @@ class CallStageOwnershipTests extends BaseEffFunSuite:
       }
       assertEquals(errors.size, 1, result.errors.toString)
       assertEquals(result.errors.size, 1, result.errors.toString)
-      assertEquals(errors.head.ref.resolvedId, Some(bindingId(result.module, "example", "text")))
-      assertEquals(errors.head.param.id, Some(bindingId(result.module, "take", "payload")))
+      assertEquals(
+        errors.head.ref.resolvedId,
+        Some(resolvedBindingId(result.module, "example", "text"))
+      )
+      assertEquals(errors.head.param.id, Some(resolvedBindingId(result.module, "take", "payload")))
       assertEquals(errors.head.ref.spanOpt.map(_.start.index), Some(source.indexOf("text; }")))
     }
   }
@@ -388,7 +382,10 @@ class CallStageOwnershipTests extends BaseEffFunSuite:
         val errors = result.errors.collect { case error: SemanticError.UseAfterMove => error }
         assertEquals(errors.size, 1, result.errors.toString)
         assertEquals(result.errors.size, 1, result.errors.toString)
-        assertEquals(errors.head.ref.resolvedId, Some(bindingId(result.module, "twice", "f")))
+        assertEquals(
+          errors.head.ref.resolvedId,
+          Some(resolvedBindingId(result.module, "twice", "f"))
+        )
         assertEquals(errors.head.ref.spanOpt.map(_.start.index), Some(use))
         assert(errors.head.movedAt.spanOpt.exists(_.start.index < use))
       }
@@ -420,7 +417,7 @@ class CallStageOwnershipTests extends BaseEffFunSuite:
       assertEquals(argument.spanOpt.map(_.start.index), Some(expected))
       assertEquals(argument.source, originalSources.head)
       val ids = TermTraversal.collect(argument) { case ref: Ref => ref.resolvedId }.flatten
-      assertEquals(ids, List(bindingId(result.module, "example", "p")))
+      assertEquals(ids, List(resolvedBindingId(result.module, "example", "p")))
   }
 
   test("a later-stage argument cannot move an earlier stage's borrowed operand") {
@@ -437,7 +434,10 @@ class CallStageOwnershipTests extends BaseEffFunSuite:
       val errors = result.errors.collect { case error: SemanticError.UseAfterMove => error }
       assertEquals(errors.size, 1, result.errors.toString)
       assertEquals(result.errors.size, 1, result.errors.toString)
-      assertEquals(errors.head.ref.resolvedId, Some(bindingId(result.module, "example", "text")))
+      assertEquals(
+        errors.head.ref.resolvedId,
+        Some(resolvedBindingId(result.module, "example", "text"))
+      )
       val borrowed = source.indexOf("text (consume")
       val moved    = source.lastIndexOf("text")
       assertEquals(errors.head.ref.spanOpt.map(_.start.index), Some(borrowed))
@@ -508,8 +508,14 @@ class CallStageOwnershipTests extends BaseEffFunSuite:
         }
         assertEquals(errors.size, 1, result.errors.toString)
         assertEquals(result.errors.size, 1, result.errors.toString)
-        assertEquals(errors.head.ref.resolvedId, Some(bindingId(result.module, "example", "text")))
-        assertEquals(errors.head.param.id, Some(bindingId(result.module, "choose", "selected")))
+        assertEquals(
+          errors.head.ref.resolvedId,
+          Some(resolvedBindingId(result.module, "example", "text"))
+        )
+        assertEquals(
+          errors.head.param.id,
+          Some(resolvedBindingId(result.module, "choose", "selected"))
+        )
         assertEquals(errors.head.ref.spanOpt.map(_.start.index), Some(source.lastIndexOf("text")))
       }
     }
@@ -547,7 +553,7 @@ class CallStageOwnershipTests extends BaseEffFunSuite:
           if form == "bound" then
             assertEquals(
               targets.head.resolvedId,
-              Some(bindingId(result.module, "example", "run"))
+              Some(resolvedBindingId(result.module, "example", "run"))
             )
         }
       }

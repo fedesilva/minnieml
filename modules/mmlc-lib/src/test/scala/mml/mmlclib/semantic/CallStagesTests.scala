@@ -218,19 +218,39 @@ class CallStagesTests extends BaseEffFunSuite:
   }
 
   test("scoped generated bindings preserve lexical proofs without completing unknown formals") {
-    val target       = binding("scoped-target", lambda(List(parameter("value", integer)), number))
+    val targetLambda = lambda(List(parameter("value", integer)), number)
+    val target       = binding("scoped-target", targetLambda)
     val callableType = target.typeSpec.getOrElse(fail("Expected target signature"))
-    val generated    = parameter("generated", callableType)
-    val values = flow(List(target)).withBindings(List(generated -> expression(reference(target))))
+    val formal       = parameter("observed-formal", callableType)
+    val receiver     = binding("receiver", lambda(List(formal), number))
+    val call = binding(
+      "observed-call",
+      application(reference(receiver), expression(reference(target)), integer)
+    )
+    val observed = flow(List(target, receiver, call))
 
-    assertEquals(
-      values.provenLambdas(reference(generated)),
-      values.provenLambdas(reference(target))
+    assertEquals(observed.lambdas(reference(formal)), List(targetLambda))
+    assertEquals(observed.provenLambdas(reference(formal)), None)
+
+    val generated      = parameter("generated", callableType)
+    val generatedAlias = parameter("generated-formal-alias", callableType)
+    val values = observed.withBindings(
+      List(
+        generated -> expression(reference(target)),
+        generatedAlias -> expression(reference(formal))
+      )
     )
-    assertEquals(
-      values.index.lookup(generated.id.getOrElse(fail("Expected identity"))),
-      generated.some
-    )
+
+    assertEquals(values.provenLambdas(reference(generated)), List(targetLambda).some)
+
+    List(formal, generatedAlias).foreach { unresolved =>
+      assertEquals(values.lambdas(reference(unresolved)), List(targetLambda))
+      assertEquals(values.provenLambdas(reference(unresolved)), None)
+    }
+
+    List(generated, generatedAlias).foreach { local =>
+      assertEquals(values.index.lookup(local.id.getOrElse(fail("Expected identity"))), local.some)
+    }
   }
 
   test("canonical callable aliases retain their multi-parameter invocation boundary") {
