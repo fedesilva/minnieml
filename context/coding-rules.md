@@ -13,6 +13,12 @@
 
 * No approval needed to read code/docs, research, or prepare a plan.
 
+### Discoveries during work
+
+Always report bugs discovered while working on a task, including bugs outside its scope.
+Explain the evidence and impact, distinguishing confirmed bugs from suspected problems.
+Reporting a bug does not authorize an out-of-scope repair.
+
 ### Testing
 - **Framework**: Use `munit.CatsEffectSuite` with `BaseEffFunSuite` helpers
 - **Test methods**: Use `*Failed` or `*notFailed` helper methods defined in `BaseEffFunSuite`

@@ -137,6 +137,10 @@ illustrates the intended spacing. Formatter compliance alone does not establish 
 
 ## Design code
 
+During approved implementation work, identify multiple ways of performing the same operation
+and attempt to simplify and unify them while preserving required behavior. If this would extend
+the approved scope, stop, explain the proposed extension, and seek approval before proceeding.
+
 * Design code that is general and regular.
   - example: 
     - global functions, local functions, inner functions, lambdas
