@@ -23,8 +23,8 @@ This is the Author's active and near-term focus. The backlog lives in [tasks/](t
 - **Tracker:** [Unify call-stage interpretation and repair ownership](tasks/call-stage-ownership.md)
 - **Status:** design
 - **Current focus:** Settle the shared call-stage contract and bounded implementation plan.
-  The approved restart baseline is `581da71`, with findings and candidate tests retained for
-  revalidation. Revised implementation approval remains pending.
+  Compiler and test sources match restart baseline `581da71`; findings and reproducers remain
+  in the linked task. Revised implementation approval remains pending.
 
 ### Error recovery and parser backtracking
 

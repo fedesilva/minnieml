@@ -926,9 +926,9 @@ retains its reproduction, scope, and acceptance criteria.
 - **Replacement tracker:** [Unify call-stage interpretation and repair ownership](call-stage-ownership.md).
   This task replaces the evaluated-callee capture-transfer repair and owns all seven findings,
   reproducers, evidence limits, and the proposed shared interpretation.
-- **Restart:** restore the three compiler files and related design edits to `581da71` under
-  the approved rollback scope. Retain candidate tests for revalidation. The attempted repair's
-  final focused run had 97 passes and 8 failures; its passing intermediate gates are not signoff.
+- **Restart:** compiler sources, test sources, and related design text match `581da71`.
+  The attempted regression additions are removed; findings and reproducers remain in the
+  replacement task. The attempted repair's 97 passes and 8 failures are historical evidence.
 
 #### Bug: preserve borrowing in fully applied lambda literals
 
@@ -1185,7 +1185,7 @@ are in `context/history/` for Author review. No compiler slice is authorized by 
 - **Branch:** `dev-2026-03-21-lambdas`.
 - **Priority and next action:** settle the shared contract and implementation plan in
   [call-stage ownership](call-stage-ownership.md), the replacement for the evaluated-callee
-  repair. Its four-file rollback to `581da71` is authorized; revised implementation is not.
+  repair. Compiler and test sources are restored to `581da71`; revised implementation is not approved.
   The task also owns [fully applied lambda-literal borrowing](call-stage-ownership.md#f7-borrowing-in-fully-applied-lambda-literals)
   as the next separately planned slice. [PAP callee traversal](#bug-elaborate-partial-applications-inside-callees)
   and [tail-recursion cleanup](#bug-preserve-tail-recursion-across-owned-closure-cleanup) follow.

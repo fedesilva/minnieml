@@ -288,23 +288,27 @@ and [tail-recursion cleanup](unify-lambdas.md#bug-preserve-tail-recursion-across
 ### Restart decision
 
 **Approved baseline:** restart the production implementation from committed base `581da71`
-(`581da7165e2124e5c3a3b67fb0ccc3b58e7d3219`, `format`), preserving this task and candidate
-regressions. This is a reproducible starting point, not a claim that the base fixes these bugs.
+(`581da7165e2124e5c3a3b67fb0ccc3b58e7d3219`, `format`), preserving the findings and reproducers
+in this task. This is a reproducible starting point, not a claim that the base fixes these bugs.
 
-Approved reset scope is limited to these workstream changes:
+Completed rollback scope:
 
 - `modules/mmlc-lib/src/main/scala/mml/mmlclib/semantic/CallableValues.scala`
 - `modules/mmlc-lib/src/main/scala/mml/mmlclib/semantic/CaptureTransfers.scala`
 - `modules/mmlc-lib/src/main/scala/mml/mmlclib/semantic/OwnershipAnalyzer.scala`
 - `docs/design/compiler-design.md`
+- `modules/mmlc-lib/src/test/scala/mml/mmlclib/codegen/LocalCallableCodegenTests.scala`
+- `modules/mmlc-lib/src/test/scala/mml/mmlclib/codegen/StringReturnTests.scala`
+- Removed the untracked `modules/mmlc-lib/src/test/scala/mml/mmlclib/semantic/CaptureTransfersTest.scala`.
 
-Retain the task extraction, parent links, and candidate test additions. Revalidate candidate
-expectations against the base; some should fail until the repair is implemented. Preserve
-unrelated changes and committed work. Resetting source does not replace a locally installed
-compiler; development checks must use repository source through `sbtn` until a verified build
-is published. A published attempted repair is not a trustworthy baseline.
+Compiler sources, test sources, and related design text match the committed baseline.
+Findings and reproducers remain embedded in this task. Recreate acceptance tests within the
+approved implementation plan; failing candidate tests are not part of the restart baseline.
+Resetting source does not replace a locally installed compiler; development checks must use
+repository source through `sbtn` until a verified build is published. A published attempted
+repair is not a trustworthy baseline.
 
-Rollback approval: granted for the four files above. Revised implementation approval: pending.
+Rollback: complete. Revised implementation approval: pending.
 
 ### Shared contract and migration
 
@@ -332,6 +336,19 @@ not to combine all analyses into one module.
 
 ## Verification
 
+### Restored baseline, 2026-10-19
+
+Compiler sources, test sources, and related design text match `581da71`; the untracked
+`CaptureTransfersTest.scala` is absent. The findings and reproducers remain in this task.
+
+```sh
+SBT_OPTS=-Dsbt.io.virtual=false sbtn testFull
+```
+
+Result: **1,107 library tests and 9 CLI tests passed, zero failures, 36 existing ignores**.
+The full uncached suite completed successfully. This verifies the rollback, not the proposed
+call-stage repair.
+
 ### Attempted implementation result, 2026-10-19
 
 ```sh
@@ -347,9 +364,9 @@ Result: **105 total, 97 passed, 8 failed, 0 errors**. The failures are:
 - Two known-static-PAP payload-cleanup cases fail, with invocation disabled/enabled.
 - Two environment-only-PAP capturing-callee cleanup cases fail, with invocation disabled/enabled.
 
-The candidate additions comprise 41 semantic cases, two native evaluated-callee cases, and
-four String-result cases (static/allocated at O0/O3). They are uncommitted acceptance candidates,
-not completed verification. The embedded findings remain usable if those files are discarded.
+The attempted additions comprised 41 semantic cases, two native evaluated-callee cases, and
+four String-result cases (static/allocated at O0/O3). They are removed from the restart baseline.
+The embedded findings preserve the required behavior and evidence without those test files.
 
 An intermediate attempted implementation passed 1,144 library tests plus 9 CLI tests, with
 36 existing ignores; smoke 8/8; ASan/LSan memory checks 51/51; local publication and clean MML
@@ -368,8 +385,8 @@ Three analyses currently duplicate call boundaries, and the attempt also changed
 ownership and cleanup. Repairing only the nullary predicate would address the latest visible
 regression without establishing one consistent interpretation for the other findings.
 
-Candidate tests remain uncommitted and require revalidation against the restart baseline.
-The attempted implementation and design text do not establish an accepted solution.
+The attempted source, test, and design changes are removed. The embedded findings define
+regressions to cover during the approved repair; they do not establish an accepted solution.
 No finding is closed by the extraction, rollback, or a passing intermediate checkpoint.
 
 ## Signoff
@@ -382,7 +399,7 @@ No finding is closed by the extraction, rollback, or a passing intermediate chec
 ## Task Working Memory
 
 - Primary scope: F1–F6; F7 remains the next separately planned borrowing repair.
-- Restart baseline: `581da71`, with a four-file rollback authorized. Candidate tests are retained
-  for revalidation; the attempted implementation result is historical evidence, not a baseline run.
+- Restart baseline: `581da71`; compiler sources, test sources, and related design text are restored.
+  Findings and reproducers are preserved here. Attempted implementation results are historical evidence.
 - The shared call-stage abstraction is proposed and not implemented. Next action: settle and
   approve its bounded plan before restarting production work.
