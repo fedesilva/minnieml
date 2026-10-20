@@ -91,7 +91,7 @@ int32_t run_sieve(int32_t limit) {
 }
 
 int main() {
-    int32_t count = run_sieve(1000000);
+    int32_t count = run_sieve(10000000);
     printf("Primes found: %" PRId32 "\n", count);
     return 0;
 }

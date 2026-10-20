@@ -68,6 +68,6 @@ fn run_sieve(limit: i32) -> i32 {
 }
 
 fn main() {
-    let count = run_sieve(1000000);
+    let count = run_sieve(10000000);
     println!("Primes found: {}", count);
 }

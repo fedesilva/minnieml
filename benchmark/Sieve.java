@@ -66,6 +66,6 @@ public class Sieve {
     }
 
     public static void main(String[] args) {
-        System.out.println("Primes found: " + runSieve(1000000));
+        System.out.println("Primes found: " + runSieve(10000000));
     }
 }

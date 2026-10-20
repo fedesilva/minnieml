@@ -80,6 +80,6 @@ func runSieve(limit int32) int32 {
 }
 
 func main() {
-	count := runSieve(1_000_000)
+	count := runSieve(10_000_000)
 	fmt.Printf("Primes found: %d\n", count)
 }
