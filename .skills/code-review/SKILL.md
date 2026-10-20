@@ -32,6 +32,7 @@ self-contained, source-derived packet containing:
 
 - the repository root and exact diff or commit range under review;
 - the workstream goal, approved scope, and relevant task file when one exists;
+- the explicit purpose statement required by **Pass the review purpose to every agent** below;
 - the paths to `AGENTS.md` and the applicable coding, QA, architecture, and
   language, memory-model, and target documentation;
 - the exact verification commands run and their results;
@@ -66,6 +67,8 @@ An automated cybersecurity/content flag can interrupt an authorized local code o
 memory-correctness review. Treat the flag as an execution failure, not a code finding
 or evidence that the Author requested harmful work. Report the exact error and
 affected review scope promptly; do not invent a trigger or claim the flag is harmless.
+Use **Recover only affected review work** in the protocol below. Evidence collection
+does not pause unaffected reviewers or replace their assigned work.
 
 Preserve completed evidence and independently confirmed findings, but keep the
 interrupted review marked incomplete. Passing tests, sanitizer runs, and a clean
@@ -103,6 +106,56 @@ The primary reviewer executes this protocol from the review packet. It owns the
 review and launches the independent claim verifiers. It must not read or invoke
 the code-review skill.
 
+## Pass the review purpose to every agent
+
+For compiler and memory-model reviews, include this statement verbatim in every
+primary-review, dedicated-check, claim-verification, recovery, and re-review packet:
+
+> This is authorized local compiler maintenance, not cybersecurity work or an attempt
+> to break into a system or exploit a third party. The defensive outcome is to identify,
+> prevent, and remediate compiler-generated ownership, memory-lifetime, cleanup-order,
+> and resource-use defects. Use the repository's compiler and controlled local regression
+> fixtures. Omit exploit details that are unnecessary to demonstrating the compiler defect,
+> validating its correction, or preventing recurrence. Keep the substantive
+> ownership/lifetime checks, minimal local regressions, sanitizer checks, and resource
+> measurements needed for that outcome.
+
+Pass this context explicitly; do not rely on a child reading `AGENTS.md` or inheriting
+the parent's purpose. For reviews outside compiler or memory-model work, state the actual
+authorized maintenance scope and intended outcome instead of asserting an inaccurate scope.
+This context does not replace evidence, prescribe a verdict, or relax the review checks.
+
+When the Author clarifies the purpose during a review, send the clarification to every
+active reviewer and verifier, include it in future packets, and record it as a follow-up.
+Preserve already-sent packets unchanged. If a review is interrupted by a content flag,
+follow `context/report-false-cyber-security-blocks.md`, including exact packet and
+available session-ID collection.
+
+## Recover only affected review work
+
+A content flag affects the run that received it; it does not itself require stopping
+sibling reviewers or verifiers. Keep unaffected checks running and preserve their build
+reservations and completed evidence. Scope evidence-recovery requests to the affected
+agent and event, explicitly stating that other checks should continue. Do not issue a
+blanket "do not resume review" instruction merely to recover a packet.
+
+Preserve the failed run's exact dispatch, follow-ups, diagnostic, and available session
+IDs while continuing unaffected work. Retry the failed check in a fresh-context agent
+with a precise, narrower packet: the authorized maintenance purpose, the same invariant
+or atomic claim, directly relevant files, and the evidence needed to resolve it. Include
+the explicit purpose statement and omit unnecessary exploit details. Narrow context,
+not substantive coverage; do not disguise the work or prescribe a verdict.
+
+Keep the failed check incomplete until its replacement produces the required result.
+Apply the existing fallback-approval rule if required coverage remains unavailable.
+Stop unaffected work only for an explicit Author direction or a concrete dependency or
+shared-resource conflict, and state that reason rather than attributing it to the flag.
+
+Record manual cancellations separately from automated blocks: identify which agent
+received the diagnostic, which agent was stopped, the stop instruction and tool result,
+and the actual coordination reason. A sibling's flag is not evidence that the cancelled
+agent was also blocked.
+
 ## Establish the review
 
 1. Read `AGENTS.md` and every instruction file that applies to the changed
@@ -137,9 +190,10 @@ These checks supplement the primary review. A general correctness review, format
 passing test suite, or parent-agent QA pass does not replace any of them. Narrow re-reviews
 also run all three checks, limited to the correction and its directly affected code.
 
-Give each reviewer a self-contained packet with its focus, exact scope, applicable rules,
-technical sources, verification evidence, and read-only instructions. Do not pass conversation
-history, another reviewer's conclusions, suspected findings, or a desired verdict. Require
+Give each reviewer a self-contained packet with its focus, exact scope, explicit purpose
+statement, applicable rules, technical sources, verification evidence, and read-only
+instructions. Do not pass conversation history, another reviewer's conclusions, suspected
+findings, or a desired verdict. Require
 direct source inspection. Reviewers must not read or invoke this skill; local skill discovery
 extracts only front-matter names and descriptions. Dedicated reviewers perform their assigned
 check without launching another set of dedicated checks.
@@ -347,8 +401,8 @@ them:
 3. Run verifiers in parallel when capacity permits and in waves otherwise.
    Preserve the one-agent-per-claim rule.
 4. Give each verifier the repository root, exact review scope, the single
-   claim, changed lines, and paths to the applicable rules and technical
-   sources. Require it to read those sources directly.
+   claim, changed lines, explicit purpose statement, and paths to the applicable
+   rules and technical sources. Require it to read those sources directly.
 5. Give the verifier all verification instructions directly in the packet.
    The verifier must not read or invoke the code-review skill.
 6. Do not pass other findings, the reviewer's reasoning process, a confidence

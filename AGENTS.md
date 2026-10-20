@@ -131,3 +131,4 @@ we are victims of this weak defensive layer which prevents us from completing le
 Please be aware and follow the instructions above and in the guides.
 
 Keep track of the instances and what you were trying to accomplish so we can report them.
+check `./context/report-false-cyber-security-blocks.md` and follow collection instructions there.
