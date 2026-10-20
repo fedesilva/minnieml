@@ -180,13 +180,21 @@ unstated knowledge, or introduces references that it does not explain within the
 - Use Git Town for the branch lifecycle: `git town hack <name>` creates a feature branch
   and `git town sync` syncs/publishes. Do not use raw branch-creation or merge commands
   instead. Verify the intended parent before changing branch configuration.
-- Prefer `git town combine --non-interactive` when merging stacked feature branches.
-  Preserve the existing commits unless the Author explicitly asks to squash into the parent.
-- Use `git town ship` for explicitly authorized delivery to `main`, or with `--to-parent`
-  when the Author explicitly requests a squash into a feature parent. Finishing a task
-  does not authorize either operation.
+- Default to squash merges for authorized branch delivery, including stacked feature branches
+  and branches developed in worktrees. Keep the receiving branch's history linear, with one
+  commit per delivered workstream.
+- Sync feature branches by rebasing with Git Town's `rebase` feature sync strategy.
+  Do not merge parent branches into feature branches.
+- Use `git town ship --strategy squash-merge` for authorized delivery; add `--to-parent`
+  when delivering into a feature parent. Do not use `git town combine` or preserve the
+  branch's individual commits unless the Author explicitly requests it. Finishing a task
+  does not authorize shipping or pushing.
+- Worktrees follow the same squash workflow. Before shipping, check whether the destination
+  branch is checked out in another worktree and resolve that checkout conflict without
+  disturbing unrelated work. Do not use an ordinary merge to bypass a worktree restriction.
 - For authorized `ship` operations in agent sessions, use
-  `git town ship --non-interactive --message "<ship commit message>"` to avoid an editor wait.
+  `git town ship --strategy squash-merge --non-interactive` with
+  `--message "<ship commit message>"` to avoid an editor wait.
   `--message-file <path>` is also available for a prepared message.
 - Branch creation can also sync or publish with this repo's configuration. Check the intended
   parent and remote effects before running it. Task approval alone does not authorize a push,
