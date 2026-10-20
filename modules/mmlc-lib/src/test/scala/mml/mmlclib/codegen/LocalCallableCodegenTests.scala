@@ -702,6 +702,65 @@ class LocalCallableCodegenTests extends BaseEffFunSuite:
     fn outstanding(): Int = @native;;
   """
 
+  test("a PAP returned by an immediately applied lambda executes its residual body") {
+    compile("""
+      fn add(a: Int, b: Int): Int = a + b;;
+      pub fn main(): Int = { a: Int -> add a; } 1 2;;
+    """).flatMap(ir => verify(ir, 3, sanitized = true))
+  }
+
+  for optimization <- List(0, 3) do
+    test(s"PAPs inside callees preserve Unit effects and owned payload cleanup at O$optimization") {
+      val source = s"""
+        $heapPrelude
+        fn effect(): Unit = @native;;
+        fn observe(n: Int): Int = @native;;
+        fn observed(): Int = @native;;
+        fn signal(n: Int): Unit = let ignored = observe n; ();;
+        fn take(u: Unit, ~h: Handle, a: Int, b: Int): Int = release h; a + b;;
+        fn check(): Int =
+          { u: Unit -> take (signal 3) (allocate ()) (observe 4); } (effect ()) (observe 2);
+        ;
+        pub fn main(): Int =
+          let result = check ();
+          if result == 6 and observed () == 1234 and outstanding () == 0 then 0;
+          else 1;;
+        ;
+      """
+      compile(source).flatMap(ir => verify(ir, 0, sanitized = true, optimization = optimization))
+    }
+
+  for
+    optimization <- List(0, 3)
+    conditional <- List(false, true)
+    selected <- (if conditional then List(false, true) else List(true))
+  do
+    test(
+      s"PAP callee qualifier cleanup: O$optimization, conditional=$conditional, selected=$selected"
+    ) {
+      val callee = "{ a: Int -> pack (take (allocate ()) (observe 5)); } (observe 3) (observe 4)"
+      val qualifier =
+        if conditional then s"if $selected then $callee; else Holder add;"
+        else callee
+      val expectedTrace = if selected then 12345 else 12
+      val source = s"""
+        $heapPrelude
+        struct Holder { f: Int -> Int -> Int };
+        fn observe(n: Int): Int = @native;;
+        fn observed(): Int = @native;;
+        fn add(a: Int, b: Int): Int = a + b;;
+        fn take(~h: Handle, a: Int, b: Int): Int = release h; a + b;;
+        fn pack(~f: Int -> Int, n: Int): Holder = let result = f n; Holder add;;
+        fn check(): Int = ($qualifier).f (observe 1) (observe 2);;
+        pub fn main(): Int =
+          let result = check ();
+          if result == 3 and observed () == $expectedTrace and outstanding () == 0 then 0;
+          else 1;;
+        ;
+      """
+      compile(source).flatMap(ir => verify(ir, 0, sanitized = true, optimization = optimization))
+    }
+
   for optimization <- List(0, 3) do
     test(s"literal borrowing preserves owned and borrowed String inputs at O$optimization") {
       val source = """
