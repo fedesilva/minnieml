@@ -4,6 +4,8 @@ Durable product changes belong here. Current task state belongs in task files.
 
 ## 2026-10-20
 
+- Add a bounds-checked MML sieve alongside the unchecked benchmark and include it in
+  the sieve build and timing targets.
 - Preserve tail recursion across owned-closure cleanup when destruction only releases storage.
   Retain captured storage through borrowed aliases, evaluate arguments once in source order,
   and preserve custom destructor effects and conditional ownership.

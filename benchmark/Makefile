@@ -47,7 +47,8 @@ java: $(BINDIR)/Sieve.class $(BINDIR)/Quicksort.class $(BINDIR)/Matmul.class
 
 java-native: $(BINDIR)/sieve-java-native $(BINDIR)/quicksort-java-native $(BINDIR)/matmul-java-native
 
-mml: $(BINDIR)/sieve-mml $(BINDIR)/quicksort-mml $(BINDIR)/quicksort-safe-mml $(BINDIR)/matmul-mml \
+mml: $(BINDIR)/sieve-mml $(BINDIR)/sieve-safe-mml \
+     $(BINDIR)/quicksort-mml $(BINDIR)/quicksort-safe-mml $(BINDIR)/matmul-mml \
      $(BINDIR)/matmul-nested-mml $(BINDIR)/matmul-safe-mml \
      $(BINDIR)/matmul-opt-mml $(BINDIR)/matmul-opt-nested-mml $(BINDIR)/matmul-opt-safe-mml \
      $(BINDIR)/nqueens-mml $(BINDIR)/euclidean-ext-mml \
@@ -112,6 +113,9 @@ $(BINDIR)/sieve-rs: sieve.rs | $(BINDIR)
 	rustc -O -o $@ $<
 
 $(BINDIR)/sieve-mml: sieve.mml | $(BINDIR)
+	mmlc --cpu native -I -b $(BUILDDIR) -O$(MML_OPT) -o $@ $<
+
+$(BINDIR)/sieve-safe-mml: sieve-safe.mml Makefile | $(BINDIR)
 	mmlc --cpu native -I -b $(BUILDDIR) -O$(MML_OPT) -o $@ $<
 
 # Self benchmark binaries (MML with various opt/TCO knobs)
@@ -315,11 +319,13 @@ $(BINDIR)/euclidean-ext-mml: euclidean-ext.mml | $(BINDIR)
 # Each run includes process startup. Java classes and native images are built before
 # timing. JVM entries launch a separate JVM per run, including hyperfine warmups.
 bench-sieve: $(BINDIR)/sieve-c $(BINDIR)/sieve-go $(BINDIR)/sieve-rs $(BINDIR)/sieve-mml \
+	$(BINDIR)/sieve-safe-mml \
 	$(BINDIR)/Sieve.class $(BINDIR)/sieve-java-native sieve.py $(RESULTS_DEP)
 	hyperfine -N --warmup 20 --runs $(or $(BENCH_RUNS),200) \
 		$(call EXPORT_FLAGS,sieve) \
 		'$(BINDIR)/sieve-c' \
 		'$(BINDIR)/sieve-mml' \
+		'$(BINDIR)/sieve-safe-mml' \
 		'$(BINDIR)/sieve-rs' \
 		'$(BINDIR)/sieve-go' \
 		'$(JAVA) -cp $(BINDIR) Sieve' \
@@ -327,9 +333,11 @@ bench-sieve: $(BINDIR)/sieve-c $(BINDIR)/sieve-go $(BINDIR)/sieve-rs $(BINDIR)/s
 		$(call PYTHON_BENCH,sieve)
 
 bench-sieve-time: $(BINDIR)/sieve-c $(BINDIR)/sieve-go $(BINDIR)/sieve-rs $(BINDIR)/sieve-mml \
+	$(BINDIR)/sieve-safe-mml \
 	$(BINDIR)/Sieve.class $(BINDIR)/sieve-java-native sieve.py
 	/usr/bin/time -l $(BINDIR)/sieve-c
 	/usr/bin/time -l $(BINDIR)/sieve-mml
+	/usr/bin/time -l $(BINDIR)/sieve-safe-mml
 	/usr/bin/time -l $(BINDIR)/sieve-rs
 	/usr/bin/time -l $(BINDIR)/sieve-go
 	/usr/bin/time -l $(JAVA) -cp $(BINDIR) Sieve
