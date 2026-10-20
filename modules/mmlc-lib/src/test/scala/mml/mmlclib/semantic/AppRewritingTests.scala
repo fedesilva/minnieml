@@ -384,53 +384,53 @@ class AppRewritingTests extends BaseEffFunSuite:
   }
 
   test("extra direct lambda arguments apply to lambda result") {
-    semNotFailed(
-      """
-        let result = { x: Int -> { y: Int -> x + y; }; } 1 2;
-      """
-    ).map { m =>
-      val memberBnd =
-        lookupNames("result", m).headOption
-          .getOrElse(
-            fail(s"Member `result` not found in module: ${prettyPrintAst(m)}")
-          )
+    val code = """
+      let result = { x: Int -> { y: Int -> x + y; }; } 1 2;
+    """
 
-      memberBnd match
-        case bnd: Bnd =>
-          bnd.value.terms match
-            case List(
-                  App(
-                    _,
-                    App(
-                      _,
-                      outerLambda: Lambda,
-                      Expr(_, List(LiteralInt(_, 1)), _, _),
-                      _,
-                      _
-                    ),
-                    Expr(_, List(LiteralInt(_, 2)), _, _),
-                    _,
-                    _
-                  )
-                ) =>
-              assertEquals(clue(outerLambda.params.map(_.name)), List("x"))
-              outerLambda.body.terms match
-                case List(resultLambda: Lambda) =>
-                  assertEquals(clue(resultLambda.params.map(_.name)), List("y"))
-                case other =>
-                  fail(
-                    s"Expected direct lambda result to be a y lambda, got:\n${other
-                        .map(t => prettyPrintAst(t, 0, false, false))
-                        .mkString("\n")}"
-                  )
-            case other =>
-              fail(
-                s"Expected extra argument to apply to direct lambda result, got:\n${other
-                    .map(t => prettyPrintAst(t, 0, false, false))
-                    .mkString("\n")}"
-              )
-        case other =>
-          fail(s"Expected Bnd, got: ${prettyPrintAst(other)}")
+    semNotFailed(code).map { module =>
+      val binding = lookupNames("result", module)
+        .collectFirst { case binding: Bnd => binding }
+        .getOrElse(fail("Expected result binding"))
+      val parameters = TermTraversal
+        .collect(binding.value) { case lambda: Lambda =>
+          lambda.params
+        }
+        .flatten
+      val values = CallableValues.fromModule(module)
+
+      def sourceParameter(declaration: String): FnParam =
+        val position = code.indexOf(declaration)
+        parameters.filter(_.nameNode.spanOpt.exists(_.start.index == position)) match
+          case List(parameter) => parameter
+          case other => fail(s"Expected one source parameter at $position, found $other")
+
+      def literalValues(value: Term, seen: Set[String]): List[Long] = value match
+        case literal:    LiteralInt => List(literal.value)
+        case expression: Expr =>
+          expression.terms match
+            case List(term) => literalValues(term, seen)
+            case other => fail(s"Expected one value, found $other")
+        case ref: Ref =>
+          val id = ref.resolvedId.getOrElse(fail("Expected resolved argument alias"))
+          assert(!seen.contains(id), "Argument aliases must not form a cycle")
+          values.bindings
+            .getOrElse(id, fail(s"Missing source for argument identity $id"))
+            .flatMap(literalValues(_, seen + id))
+        case other => fail(s"Expected a literal argument or its resolved alias, found $other")
+
+      val first    = sourceParameter("x: Int")
+      val returned = sourceParameter("y: Int")
+      List(first -> 1L, returned -> 2L).foreach { (parameter, expected) =>
+        val id = parameter.id.getOrElse(fail("Expected source parameter identity"))
+        assertEquals(module.resolvables.lookup(id), Some(parameter))
+        val arguments = values.bindings.getOrElse(id, fail(s"Missing arguments for $id"))
+        assertEquals(arguments.flatMap(literalValues(_, Set(id))), List(expected))
+      }
+      assertEquals(
+        binding.value.typeSpec.flatMap(TypeUtils.canonical(_, module.resolvables)),
+        first.typeSpec.flatMap(TypeUtils.canonical(_, module.resolvables))
+      )
     }
   }
 

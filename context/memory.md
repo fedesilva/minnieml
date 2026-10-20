@@ -14,17 +14,9 @@ This is the Author's active and near-term focus. The backlog lives in [tasks/](t
 
 - **Tracker:** [Unify lambdas](tasks/unify-lambdas.md)
 - **Status:** in_progress
-- **Current focus:** Confirmed bugs take priority. Resolve call-stage ownership and fully applied
-  lambda-literal borrowing, then PAP callee traversal and tail recursion across owned-closure
-  cleanup. General ignored-test restoration (36 cases), optimization, and hardening follow.
-
-#### Call-stage ownership
-
-- **Tracker:** [Unify call-stage interpretation and repair ownership](tasks/call-stage-ownership.md)
-- **Status:** design
-- **Current focus:** Settle the shared call-stage contract and bounded implementation plan.
-  Compiler and test sources match restart baseline `581da71`; findings and reproducers remain
-  in the linked task. Revised implementation approval remains pending.
+- **Current focus:** Plan PAP callee traversal, then tail recursion across owned-closure cleanup.
+  Confirmed bugs take priority. General ignored-test restoration (36 cases), optimization,
+  and hardening follow.
 
 ### Error recovery and parser backtracking
 

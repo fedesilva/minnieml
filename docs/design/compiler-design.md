@@ -235,6 +235,9 @@ The scope receives a `TypeFn` from the parameter's computed or declared input ty
 computed result type; the application retains that result type. Before type checking, missing
 input or result information leaves the scope untyped for inference. Ownership temporaries and
 witnesses, PAP payload bindings, and direct-lambda parameter wrappers share this construction.
+Fully applied source-parameter wrappers carry `LambdaMeta.isInvocationParameter`. This preserves
+their borrowing contract through the shared scope representation: an unmarked local binding
+transfers ownership, while a marked nonconsuming source parameter borrows its argument.
 
 `LocalBindings.sequence` allocates a discard parameter for a Unit-valued effect and runs the
 continuation afterward. It preserves the continuation's result type and ascription. Ownership
@@ -836,6 +839,43 @@ to a flat term list. Each malformed expression receives an ownership-phase `Inva
 diagnostic; retained payloads inside an existing `InvalidExpression` are traversed without another
 shape diagnostic. Valid child applications and independent continuations still receive ownership
 analysis, including use-after-move checks.
+
+**Call stages**: `CallStages` partitions a typed application chain at each invocation boundary.
+Each stage retains its callee, supplied application nodes, signature, result, and completion
+state. Typed application arity is distinct from source parameters: a nullary callable consumes
+one Unit expression without binding a parameter. Unavailable operands cannot establish a
+completed invocation. Stage structure depends on the AST, types, and value availability, not
+on ownership decisions.
+
+`CallableValues` uses these boundaries for origin resolution and argument propagation,
+including partially supplied and returned callables. Observed argument flow remains separate
+from complete lexical proofs. `CaptureTransfers` visits evaluated qualifiers and completed
+immediate bodies, retaining returned alias identities without executing uncalled lambda bodies.
+Parameter alternatives must agree before they authorize consuming arguments. A known target
+beside an unresolved alternative cannot supply a parameter contract; it remains available for
+flow propagation. A complete lexical proof can resolve conservative cycles in observed flow.
+Entirely unknown targets retain the default non-consuming argument behavior.
+Return contracts, allocation detection, and static-result proofs describe the final completed
+invocation.
+
+Ownership analysis evaluates a chain's supplied arguments once in source order, then binds
+intermediate callable results in caller scope. Each stage uses its own parameter contracts.
+Materialized arguments retain their completed ownership checks; their generated references
+transfer those established obligations without repeating validation or cloning. Local callable
+aliases extend lexical evidence without rerunning observed-flow propagation. Immediate bodies
+retain caller-scope moves and cleanup. Retained argument temporaries die after the chain;
+temporaries transferred into an immediate parameter relinquish their prepared cleanup.
+Consumed environments and payloads each keep one cleanup owner.
+
+Fully applied source-lambda parameters retain their declared consuming flags. A nonconsuming
+parameter borrows even an allocated argument; caller-owned temporary cleanup retains the
+argument's ownership witness and destructor identity. Borrowing does not transfer captures,
+authorize consuming uses, or permit a parameter to escape through a heap return. Return and
+static-result proofs preserve this parameter boundary. A borrow must remain valid through the
+body and later argument evaluations, including when the body does not read the borrowed value.
+Ordinary local bindings and supplied prefixes of partial applications retain their transfer
+behavior. These rules do not alter evaluation order or introduce closure environments for
+immediate bodies.
 
 **Ownership states**:
 - `Owned` - Caller owns the value, must free at scope end

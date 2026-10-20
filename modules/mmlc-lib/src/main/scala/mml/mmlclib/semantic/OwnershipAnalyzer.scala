@@ -51,13 +51,6 @@ case class OwnershipPath(ownerId: String, fields: List[String]):
     ownerId == other.ownerId &&
       (fields.startsWith(other.fields) || other.fields.startsWith(fields))
 
-/** Callable flow and return analysis share immutable lambda instances from one module snapshot. */
-final class CallableIdentity(val lambda: Lambda):
-  override def hashCode(): Int = System.identityHashCode(lambda)
-  override def equals(other: Any): Boolean = other match
-    case key: CallableIdentity => lambda eq key.lambda
-    case _ => false
-
 /** Tracks ownership for bindings within a scope */
 case class OwnershipScope(
   bindings:               Map[String, BindingInfo]              = Map.empty,
@@ -73,7 +66,8 @@ case class OwnershipScope(
   movedBindingIds:        Map[String, SourceOrigin]             = Map.empty,
   callableValues:         CallableValues                        = CallableValues.empty,
   fieldAliases:           Map[String, OwnershipPath]            = Map.empty,
-  consumedFields:         Map[OwnershipPath, SourceOrigin]      = Map.empty
+  consumedFields:         Map[OwnershipPath, SourceOrigin]      = Map.empty,
+  preparedArguments:      Set[String]                           = Set.empty
 ):
 
   def nextTemp: (String, OwnershipScope) =
@@ -255,8 +249,8 @@ object OwnershipAnalyzer:
       values:         CallableValues,
       returningOwned: Map[CallableIdentity, ReturnContract]
     ): Option[Type] =
-      val contracts = getBaseFn(app.fn).toList
-        .flatMap(values.lambdas)
+      val contracts = values
+        .invokedLambdas(app)
         .map: lambda =>
           returningOwned.getOrElse(CallableIdentity(lambda), ReturnContract.Unowned).ownedType
 
@@ -272,16 +266,17 @@ object OwnershipAnalyzer:
       term match
         case ref: Ref => env.get(resultBindingKey(ref.name, ref.resolvedId)).flatten
         case app: App =>
-          app.fn match
-            case lambda: Lambda =>
-              val argOwned = argReturnsOwned(app.arg, env, resolvables, values, returningOwned)
-              val paramKey =
-                lambda.params.headOption.map(param => resultBindingKey(param.name, param.id))
-              val bodyEnv =
-                paramKey.map(key => env.updated(key, argOwned)).getOrElse(env)
-              exprReturnsOwned(lambda.body, bodyEnv, resolvables, values, returningOwned)
-            case _ =>
-              appReturnsOwned(app, values, returningOwned)
+          values.stages(app).lastOption.filter(_.complete).flatMap { stage =>
+            stage.callee match
+              case lambda: Lambda =>
+                val supplied = lambda.params.zip(stage.arguments).map { (param, argument) =>
+                  resultBindingKey(param.name, param.id) ->
+                    (if lambda.borrowsArgument then none
+                     else argReturnsOwned(argument, env, resolvables, values, returningOwned))
+                }
+                exprReturnsOwned(lambda.body, env ++ supplied, resolvables, values, returningOwned)
+              case _ => appReturnsOwned(app, values, returningOwned)
+          }
         case cond: Cond =>
           merge(
             exprReturnsOwned(cond.ifTrue, env, resolvables, values, returningOwned),
@@ -417,28 +412,11 @@ object OwnershipAnalyzer:
   private def isOwnedType(t: Type, resolvables: ResolvablesIndex): Boolean =
     TypeUtils.requiresDestruction(t, resolvables)
 
-  /** Get the base function Ref from an App chain (e.g., App(App(Ref(f), x), y) -> Ref(f)) */
-  private def getBaseFn(term: Ref | App | Lambda): Option[Ref] = term match
-    case ref: Ref => Some(ref)
-    case App(_, fn, _, _, _) => getBaseFn(fn)
-    case _: Lambda => None
-
-  /** Result ownership follows the callable value, including qualified fields and aliases. */
+  /** Result ownership follows the final invocation, including returned callable values. */
   private def appAllocates(app: App, scope: OwnershipScope): Option[Type] =
-    app.fn match
-      case _: Lambda =>
-        ReturnOwnershipAnalysis
-          .resultOwned(app, ownedResultEnvironment(scope), scope)
-          .filter(isOwnedType(_, scope.resolvables))
-      case _ =>
-        val (callee, _) = CallableValues.application(app)
-        val contracts = scope.callableValues
-          .lambdas(callee)
-          .map(lambda => scope.returningOwned.get(CallableIdentity(lambda)).flatMap(_.ownedType))
-        Option
-          .when(contracts.nonEmpty && contracts.forall(_.isDefined))(contracts.head)
-          .flatten
-          .filter(isOwnedType(_, scope.resolvables))
+    ReturnOwnershipAnalysis
+      .resultOwned(app, ownedResultEnvironment(scope), scope)
+      .filter(isOwnedType(_, scope.resolvables))
 
   private def ownedResultEnvironment(scope: OwnershipScope): Map[String, Option[Type]] =
     scope.bindings.collect {
@@ -643,30 +621,35 @@ object OwnershipAnalyzer:
               .mapN(_ ++ _)
 
           case app: App =>
-            val (callee, arguments) = CallableValues.application(app)
-            callee match
+            scope.callableValues.stages(app).lastOption.filter(_.complete).flatMap { stage =>
+              stage.callee match
 
-              case lambda: Lambda =>
-                val supplied = lambda.params
-                  .zip(arguments)
-                  .flatMap: (param, argument) =>
-                    param.id.map(_ -> fromTerm(argument, locals, active))
-                fromTerm(lambda.body, locals ++ supplied, active)
+                case lambda: Lambda =>
+                  val supplied = lambda.params
+                    .zip(stage.arguments)
+                    .flatMap: (param, argument) =>
+                      param.id.map(
+                        _ ->
+                          (if lambda.borrowsArgument then none
+                           else fromTerm(argument, locals, active))
+                      )
+                  fromTerm(lambda.body, locals ++ supplied, active)
 
-              case _ =>
-                scope.callableValues
-                  .provenLambdas(callee)
-                  .flatMap: targets =>
-                    targets
-                      .traverse { lambda =>
-                        val identity = CallableIdentity(lambda)
-                        if scope.returningOwned.get(identity).flatMap(_.ownedType).nonEmpty then
-                          none
-                        // A recursive edge adds no terminal result; all exits still require proof.
-                        else if active.contains(identity) then Set.empty[NonOwningOrigin].some
-                        else fromTerm(lambda.body, Map.empty, active + identity)
-                      }
-                      .map(_.flatten.toSet)
+                case _ =>
+                  scope.callableValues
+                    .provenInvokedLambdas(app)
+                    .flatMap: targets =>
+                      targets
+                        .traverse { lambda =>
+                          val identity = CallableIdentity(lambda)
+                          if scope.returningOwned.get(identity).flatMap(_.ownedType).nonEmpty then
+                            none
+                          // Recursive edges add no terminal result; every exit still needs proof.
+                          else if active.contains(identity) then Set.empty[NonOwningOrigin].some
+                          else fromTerm(lambda.body, Map.empty, active + identity)
+                        }
+                        .map(_.flatten.toSet)
+            }
 
           case _ => none
 
@@ -969,24 +952,26 @@ object OwnershipAnalyzer:
 
         case lambda: Lambda => List(lambda)
         case app:    App =>
-          val (callee, args) = collectApplicationsAndBase(app, Nil)
-          callee match
+          CallStages(app, index, ValueAvailability.empty).lastOption
+            .filter(_.complete)
+            .toList
+            .flatMap { stage =>
+              stage.callee match
 
-            case lambda: Lambda
-                if lambda.params.length == args.length ||
-                  (lambda.params.isEmpty && args.length == 1) =>
-              val supplied = lambda.params
-                .zip(args)
-                .flatMap:
-                  case (param, argument) =>
-                    param.id.map(_ -> fromExpr(argument.arg, arguments, index))
-              fromExpr(
-                lambda.body,
-                arguments ++ supplied,
-                index.updatedAll(lambda.params)
-              )
+                case lambda: Lambda =>
+                  val supplied = lambda.params
+                    .zip(stage.arguments)
+                    .filterNot(_ => lambda.borrowsArgument)
+                    .flatMap: (param, argument) =>
+                      param.id.map(_ -> fromExpr(argument, arguments, index))
+                  fromExpr(
+                    lambda.body,
+                    arguments ++ supplied,
+                    index.updatedAll(lambda.params)
+                  )
 
-            case _ => Nil
+                case _ => Nil
+            }
 
         case cond: Cond =>
           fromExpr(cond.ifTrue, arguments, index) ++ fromExpr(cond.ifFalse, arguments, index)
@@ -1246,7 +1231,8 @@ object OwnershipAnalyzer:
       .flatMap: param =>
         valueType.map(ResultRequirement.Owned(OwnershipBoundary.Argument(param), _))
       .getOrElse(
-        if heap then ResultRequirement.Rebind(inheritedOwners(scope), borrowReference = false)
+        if heap then
+          ResultRequirement.Rebind(inheritedOwners(scope), borrowReference = lambda.borrowsArgument)
         else ResultRequirement.Preserve
       )
 
@@ -1267,6 +1253,7 @@ object OwnershipAnalyzer:
       else (argument.scope.bindingIds, none[LocalBindings.Local])
 
     val state = witness match
+      case _ if lambda.borrowsArgument => OwnershipState.Borrowed
       case Some(local) => OwnershipState.Mixed(local.ref, facts.nonOwning)
       case None if heap && facts.owns => OwnershipState.Owned
       case None if facts.nonOwning == Set(NonOwningOrigin.Literal) => OwnershipState.Literal
@@ -1296,11 +1283,20 @@ object OwnershipAnalyzer:
     )
     val body      = analyzeResult(lambda.body, bodyScope, requirement)
     val inherited = scope.ownedBindings
-    val toFree = body.scope.ownedBindings.filter(binding =>
+    val bodyCleanup = body.scope.ownedBindings.filter(binding =>
       !inherited.exists(sameBinding(_, binding)) &&
         binding.tpe.exists(isOwnedType(_, scope.resolvables))
     )
-    val localIds = toFree.flatMap(_.id).toSet
+    // The caller retains fresh argument storage while the source parameter only borrows it.
+    val argumentCleanup = parameter
+      .filter(_ => lambda.borrowsArgument && heap && facts.owns)
+      .map(param =>
+        OwnedBinding(param.name, valueType, param.id, witness.map(_.ref), facts.destructorTargetId)
+      )
+      .toList
+    val toFree = bodyCleanup ++ argumentCleanup
+    val localIds = toFree.flatMap(_.id).toSet ++
+      parameter.filter(_ => lambda.borrowsArgument && heap).flatMap(_.id)
     val escapeErrors = body.ownership.dependencies
       .filter(_.resolvedId.exists(localIds.contains))
       .map(SemanticError.BorrowEscapeViaReturn(_, PhaseName))
@@ -1311,6 +1307,10 @@ object OwnershipAnalyzer:
           !lambda.params.exists(_.name == name) && containsRefInExpr(name, lambda.body)
         then List(SemanticError.ConsumingParamNotLastUse(param, ref, PhaseName))
         else Nil
+
+    val borrowedArguments =
+      if lambda.borrowsArgument && heap then facts.dependencies else Nil
+    val argumentLifetimeErrors = borrowedArguments.flatMap(checkRef(_, body.scope).errors)
 
     val relaysOwnership = requirement.relaysOwnership
     val (earlyIds, earlyBody, terminal) = toFree.foldLeft(
@@ -1372,7 +1372,8 @@ object OwnershipAnalyzer:
         borrowedDependencies = body.scope.borrowedDependencies
       ),
       term,
-      argument.errors ++ body.errors ++ escapeErrors ++ lastUseErrors,
+      (argument.errors ++ body.errors ++ escapeErrors ++ lastUseErrors ++
+        argumentLifetimeErrors).distinct,
       body.ownership
     )
 
@@ -1404,6 +1405,28 @@ object OwnershipAnalyzer:
     parameter: Option[FnParam],
     scope:     OwnershipScope
   ): ExprResult =
+    if preparedArgument(value, scope) then
+      val facts   = resultOwnership(value, scope)
+      val checked = analyzeExpr(value, scope)
+      checked.copy(
+        scope =
+          if parameter.exists(_.consuming) then moveResult(value, checked.scope)
+          else checked.scope,
+        ownership = facts
+      )
+    else analyzeUnpreparedArgument(value, parameter, scope)
+
+  private def preparedArgument(value: Expr, scope: OwnershipScope): Boolean =
+    singleTerm(value).map(unwrapTerm).exists {
+      case ref: Ref => ref.resolvedId.exists(scope.preparedArguments.contains)
+      case _ => false
+    }
+
+  private def analyzeUnpreparedArgument(
+    value:     Expr,
+    parameter: Option[FnParam],
+    scope:     OwnershipScope
+  ): ExprResult =
     val requirement = parameter
       .filter(_.consuming)
       .flatMap { param =>
@@ -1424,35 +1447,18 @@ object OwnershipAnalyzer:
   ):
     def consumed: Boolean = parameter.exists(_.consuming)
 
-  /** Collect arguments in source evaluation order, retaining each application's result type. */
-  @tailrec
-  private def collectApplicationsAndBase(
-    term: Ref | App | Lambda,
-    args: List[App]
-  ): (Ref | Lambda, List[App]) = term match
-    case app: App =>
-      collectApplicationsAndBase(app.fn, app :: args)
-    case callee: (Ref | Lambda) => (callee, args)
-
-  /** Analyze a regular function application (not a let-binding) */
-  private def analyzeRegularApp(
-    app:   App,
+  private def describeArguments(
+    stage: CallStages.Stage,
     scope: OwnershipScope
-  ): TermResult[Term] =
-
-    val (baseFn, applications) =
-      collectApplicationsAndBase(app, Nil)
-
-    // Resolve base function's param list to detect consuming params
-    val baseFnParams = scope.callableValues.parameters(baseFn)
-
-    val arguments = applications.zipWithIndex.map { case (argument, position) =>
+  ): List[ArgumentOwnership] =
+    val parameters = scope.callableValues.parameters(stage.callee)
+    stage.applications.zipWithIndex.map { case (argument, position) =>
       val origins =
         if scope.callableValues.recovery.isAvailable(argument.arg) then
           returnedOrigins(argument.arg, scope.resolvables)
         else Nil
       val dependencies = borrowedDependencies(origins, scope)
-      val parameter    = baseFnParams.lift(position)
+      val parameter    = parameters.lift(position)
       val borrowedValues =
         if parameter.exists(_.consuming) then Nil
         else
@@ -1468,7 +1474,148 @@ object OwnershipAnalyzer:
         (dependencies ++ borrowedValues).distinct
       )
     }
-    val result = analyzeCall(baseFn, arguments, app.typeSpec, scope)
+
+  /** Analyze a regular function application (not a let-binding) */
+  private def analyzeRegularApp(
+    app:   App,
+    scope: OwnershipScope
+  ): TermResult[Term] =
+
+    val stages = scope.callableValues.stages(app)
+    if stages.size > 1 then analyzeStagedCall(app, stages, scope)
+    else analyzeSingleStage(app, scope)
+
+  private case class StagedExpression(value: Expr, aliases: List[(FnParam, Expr)])
+
+  /** Supplied operands precede evaluated callees; intermediate results keep their own contracts. */
+  private def analyzeStagedCall(
+    app:    App,
+    stages: List[CallStages.Stage],
+    scope:  OwnershipScope
+  ): TermResult[Term] =
+    val arguments = stages.flatMap(describeArguments(_, scope))
+    val argumentErrors = arguments.flatMap { argument =>
+      val value = argument.application.arg
+      if argument.consumed then ownershipSinkErrors(value, argument.dependencies, scope)
+      else if scope.callableValues.consumesOnCall(value) then
+        List(
+          SemanticError.InvalidExpression(
+            value,
+            "A call-once function requires a consuming parameter",
+            PhaseName
+          )
+        )
+      else Nil
+    }
+    val prepared = analyzeArguments(arguments, scope, forceBindings = true)
+    val argumentScope = prepared.bindings.zip(arguments).foldLeft(prepared.scope) {
+      case (current, (binding, argument)) =>
+        val owns  = argument.consumed || argument.allocation.isDefined
+        val facts = binding.ownership
+        val state =
+          if owns && facts.owns then
+            binding.witness.fold[OwnershipState](OwnershipState.Owned)(witness =>
+              OwnershipState.Mixed(witness.ref, facts.nonOwning)
+            )
+          else if facts.nonOwning == Set(NonOwningOrigin.Literal) then OwnershipState.Literal
+          else if facts.nonOwning == Set(NonOwningOrigin.Global) then OwnershipState.Global
+          else OwnershipState.Borrowed
+        val dependencies = if owns then facts.dependencies else argument.borrows
+        current.copy(
+          bindings = current.bindings.updated(
+            binding.local.param.name,
+            BindingInfo(
+              state,
+              binding.local.param.typeSpec,
+              binding.local.param.id,
+              facts.destructorTargetId
+            )
+          ),
+          borrowedDependencies = current.borrowedDependencies ++
+            binding.local.param.id.map(_ -> dependencies)
+        )
+    }
+
+    def lower(
+      remaining:    List[CallStages.Stage],
+      applications: List[App],
+      callee:       Ref | Lambda,
+      ordinal:      Int
+    ): Allocation[StagedExpression] = remaining match
+      case stage :: rest =>
+        val (supplied, tail) = applications.splitAt(stage.applications.size)
+        val applied = supplied.foldLeft[Ref | App | Lambda](callee) { (fn, argument) =>
+          argument.copy(fn = fn)
+        }
+        val value = Expr(stage.result.source, List(applied), typeSpec = stage.resultType)
+        if rest.isEmpty then StagedExpression(value, Nil).pure[Allocation]
+        else
+          for
+            local <- LocalBindings.local(
+              scope.bindingOwner,
+              s"__callee_${argumentScope.tempCounter + ordinal}",
+              typeSpec = stage.resultType
+            )
+            continuation <- lower(rest, tail, local.ref, ordinal + 1)
+          yield StagedExpression(
+            continuation.value.copy(terms =
+              List(
+                LocalBindings.bind(local.param, value, continuation.value)
+              )
+            ),
+            (local.param -> Expr(
+              stage.result.source,
+              List(stage.result),
+              typeSpec = stage.resultType
+            )) :: continuation.aliases
+          )
+      case Nil =>
+        StagedExpression(Expr(app.source, List(callee), typeSpec = app.typeSpec), Nil)
+          .pure[Allocation]
+
+    val (base, _) = CallableValues.application(app)
+    val (ids, lowered) =
+      lower(stages, prepared.arguments.toList, base, 0).run(argumentScope.bindingIds).value
+    val aliases = prepared.bindings
+      .zip(arguments)
+      .map { (binding, argument) =>
+        binding.local.param -> argument.application.arg
+      }
+      .toList ++ lowered.aliases
+    val stagedScope = argumentScope.copy(
+      bindingIds     = ids,
+      tempCounter    = argumentScope.tempCounter + lowered.aliases.size,
+      callableValues = argumentScope.callableValues.withBindings(aliases),
+      resolvables    = argumentScope.resolvables.updatedAll(aliases.map(_._1)),
+      preparedArguments = argumentScope.preparedArguments ++
+        prepared.bindings.flatMap(_.local.param.id)
+    )
+    val result          = analyzeExpr(lowered.value, stagedScope)
+    val lifetimeErrors  = arguments.flatMap(_.borrows.flatMap(checkRef(_, result.scope).errors))
+    val retainedCleanup = prepared.cleanup.filterNot(bindingMoved(_, result.scope))
+    val (cleanupIds, cleaned) = wrapWithFrees(
+      result.expr,
+      retainedCleanup,
+      app.source,
+      scope.bindingOwner,
+      stagedScope.resolvables
+    ).run(result.scope.bindingIds).value
+    val wrapped    = prepared.bindings.foldRight(cleaned)((binding, body) => binding.wrap(body))
+    val localNames = prepared.bindings.map(_.local.param.name).toSet
+    TermResult(
+      result.scope.copy(
+        bindings          = result.scope.bindings -- localNames,
+        preparedArguments = scope.preparedArguments,
+        bindingIds        = cleanupIds
+      ),
+      wrapped.terms.head,
+      (prepared.errors ++ argumentErrors ++ result.errors ++ lifetimeErrors).distinct
+    )
+
+  private def analyzeSingleStage(app: App, scope: OwnershipScope): TermResult[Term] =
+    val (baseFn, _) = CallableValues.application(app)
+    val arguments   = scope.callableValues.stages(app).flatMap(describeArguments(_, scope))
+    val result      = analyzeCall(baseFn, arguments, app.typeSpec, scope)
 
     val isConstructor = baseFn match
       case ref: Ref =>
@@ -1479,7 +1626,8 @@ object OwnershipAnalyzer:
       case _: Lambda => false
     val argumentErrors = arguments.flatMap { argument =>
       val value = argument.application.arg
-      if argument.consumed || isConstructor then
+      if preparedArgument(value, scope) then Nil
+      else if argument.consumed || isConstructor then
         ownershipSinkErrors(value, argument.dependencies, scope)
       else if scope.callableValues.consumesOnCall(value) then
         List(
@@ -1494,12 +1642,9 @@ object OwnershipAnalyzer:
     val argumentLifetimeErrors = arguments.flatMap { argument =>
       argument.borrows.flatMap(ref => checkRef(ref, result.scope).errors)
     }
-    val fullyApplied = baseFn.typeSpec
-      .flatMap(TypeUtils.canonical(_, scope.resolvables))
-      .collect { case tpe: TypeFn => applications.size >= tpe.paramTypes.size }
-      .contains(true)
+    val fullyApplied = scope.callableValues.stages(app).lastOption.exists(_.complete)
     val resultOwnership = scope.callableValues
-      .lambdas(baseFn)
+      .invokedLambdas(app)
       .map { lambda =>
         scope.returningOwned.get(CallableIdentity(lambda)).flatMap(_.ownedType).isDefined
       }
@@ -1592,9 +1737,10 @@ object OwnershipAnalyzer:
     facts.dependencies.isEmpty
 
   private case class ArgumentBinding(
-    local:   LocalBindings.Local,
-    value:   Expr,
-    witness: Option[LocalBindings.Local] = None
+    local:     LocalBindings.Local,
+    value:     Expr,
+    witness:   Option[LocalBindings.Local] = None,
+    ownership: ResultOwnership             = ResultOwnership()
   ):
 
     def reference: Expr = local.expression
@@ -1613,16 +1759,13 @@ object OwnershipAnalyzer:
     errors:    List[SemanticError]     = Nil
   )
 
-  /** Operands run before the callee is used; all moves are visible at the call boundary. */
-  private def analyzeCall(
-    baseFn:    Ref | Lambda,
-    arguments: List[ArgumentOwnership],
-    typeSpec:  Option[Type],
-    scope:     OwnershipScope
-  ): TermResult[Term] =
-
-    val needsBindings = arguments.exists(_.allocation.isDefined)
-    val analyzed = arguments.foldLeft(AnalyzedArguments(scope)): (call, argument) =>
+  private def analyzeArguments(
+    arguments:     List[ArgumentOwnership],
+    scope:         OwnershipScope,
+    forceBindings: Boolean = false
+  ): AnalyzedArguments =
+    val needsBindings = forceBindings || arguments.exists(_.allocation.isDefined)
+    arguments.foldLeft(AnalyzedArguments(scope)): (call, argument) =>
       val ownsTemporary = !argument.consumed && argument.allocation.isDefined
       val result =
         if ownsTemporary then
@@ -1658,7 +1801,7 @@ object OwnershipAnalyzer:
         val value =
           if ownsTemporary && witness.isEmpty then ordinaryResult(result.expr)
           else result.expr
-        val binding = ArgumentBinding(local, value, witness)
+        val binding = ArgumentBinding(local, value, witness, result.ownership)
         val cleanup = Option.when(ownsTemporary && result.ownership.owns)(
           OwnedBinding(
             local.param.name,
@@ -1676,6 +1819,16 @@ object OwnershipAnalyzer:
           cleanup   = cleanup.toList ++ next.cleanup
         )
       else next.copy(arguments = next.arguments :+ argument.application.copy(arg = result.expr))
+
+  /** Operands run before the callee is used; all moves are visible at the call boundary. */
+  private def analyzeCall(
+    baseFn:    Ref | Lambda,
+    arguments: List[ArgumentOwnership],
+    typeSpec:  Option[Type],
+    scope:     OwnershipScope
+  ): TermResult[Term] =
+
+    val analyzed = analyzeArguments(arguments, scope)
 
     val fnResult = analyzeCallee(baseFn, analyzed.scope)
     val applied = analyzed.arguments.foldLeft[Ref | App | Lambda](fnResult.term):

@@ -119,12 +119,13 @@ enum Capture:
   def ref: Ref
 
 case class LambdaMeta(
-  isPartialApplication: Boolean         = false,
-  isTailRecursive:      Boolean         = false,
-  envStructName:        Option[String]  = None,
-  transferredCaptures:  Set[String]     = Set.empty,
-  borrowedCaptures:     Set[String]     = Set.empty,
-  environmentParam:     Option[FnParam] = None
+  isPartialApplication:  Boolean         = false,
+  isTailRecursive:       Boolean         = false,
+  envStructName:         Option[String]  = None,
+  transferredCaptures:   Set[String]     = Set.empty,
+  borrowedCaptures:      Set[String]     = Set.empty,
+  environmentParam:      Option[FnParam] = None,
+  isInvocationParameter: Boolean         = false
 )
 
 case class Lambda(
@@ -136,7 +137,11 @@ case class Lambda(
   typeAsc:  Option[Type]       = None,
   meta:     Option[LambdaMeta] = None,
   isMove:   Boolean            = false
-) extends Term
+) extends Term:
+
+  /** A fully applied source parameter retains its borrowing contract in an immediate scope. */
+  def borrowsArgument: Boolean =
+    meta.exists(_.isInvocationParameter) && params.headOption.exists(!_.consuming)
 
 object Lambda:
   def apply(

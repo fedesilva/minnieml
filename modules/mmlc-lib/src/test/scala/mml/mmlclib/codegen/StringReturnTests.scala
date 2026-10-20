@@ -163,6 +163,57 @@ class StringReturnTests extends BaseEffFunSuite:
       execute(example.source, optimization)
     }
 
+  private def returnedCallableSource(allocated: Boolean): String =
+    val result   = if allocated then "int_to_str n" else "\"literal\""
+    val expected = if allocated then "1" else "literal"
+    s"""
+      fn take(~text: String, n: Int): String = println text; $result;;
+      fn make(~text: String): Int -> String = take text;;
+      pub fn main(args: StringArray): Int =
+        let chained = make (int_to_str 42) 1;
+        let callable = make (int_to_str 42);
+        let bound = callable 1;
+        if str_eq chained "$expected" and str_eq bound "$expected" then 0;
+        else 1;
+        ;
+      ;
+    """
+
+  for allocated <- List(false, true) do
+    test(s"returned callable supplies the final String ownership contract, allocated=$allocated") {
+      semNotFailed(returnedCallableSource(allocated)).map { module =>
+        val freeName = TypeUtils.freeFnFor("String", module.resolvables).get
+        val main     = member(module, "main").value
+        assertEquals(referencesTo(module, main, freeName).size, if allocated then 2 else 0)
+      }
+    }
+
+  for allocated <- List(false, true); optimization <- List(0, 3) do
+    test(s"sanitized returned callable String at O$optimization, allocated=$allocated") {
+      execute(returnedCallableSource(allocated), optimization)
+    }
+
+  for mixed <- List(false, true); optimization <- List(0, 3) do
+    test(s"immediate stage argument cleanup runs once at O$optimization, mixed=$mixed") {
+      val argument =
+        if mixed then "if flag then int_to_str 42; else \"literal\";"
+        else "int_to_str 42"
+      val source = s"""
+        fn chained(flag: Bool): Int =
+          { text: String -> println text; { n: Int -> n; }; } ($argument) 7;
+        ;
+        fn bound(flag: Bool): Int =
+          let next = { text: String -> println text; { n: Int -> n; }; } ($argument);
+          next 7;
+        ;
+        pub fn main(args: StringArray): Int =
+          let flag = ar_str_len args == 0;
+          if chained flag + bound flag == 14 then 0; else 1;;
+        ;
+      """
+      execute(source, optimization)
+    }
+
   for optimization <- List(0, 3) do
     test(s"mixed returns evaluate selected predicates and values once at O$optimization") {
       val source = """

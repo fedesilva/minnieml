@@ -565,19 +565,25 @@ object ExpressionRewriter:
         val bodyLambda = lambda.copy(
           params   = List(lastParam),
           captures = Nil,
-          typeSpec = None
+          typeSpec = None,
+          meta     = lambda.meta.getOrElse(LambdaMeta()).copy(isInvocationParameter = true).some
         )
         val appliedBodyLambda = App(source, bodyLambda, lastArg)
-        wrapDirectLambdaParamApps(outerParamArgs, appliedBodyLambda, source)
+        wrapDirectLambdaParamApps(outerParamArgs, appliedBodyLambda, source, invocation = true)
 
   private def wrapDirectLambdaParamApps(
-    paramArgs: List[(FnParam, Expr)],
-    inner:     Term,
-    source:    SourceOrigin
+    paramArgs:  List[(FnParam, Expr)],
+    inner:      Term,
+    source:     SourceOrigin,
+    invocation: Boolean = false
   ): Term =
     paramArgs.foldRight(inner) { case ((param, arg), bodyTerm) =>
       val bodyExpr = Expr(source, List(bodyTerm), typeSpec = bodyTerm.typeSpec)
-      LocalBindings.bind(param, arg, bodyExpr, source)
+      val applied  = LocalBindings.bind(param, arg, bodyExpr, source)
+      applied.fn match
+        case scope: Lambda if invocation =>
+          applied.copy(fn = scope.copy(meta = LambdaMeta(isInvocationParameter = true).some))
+        case _ => applied
     }
 
   private def rewriteGroupAtom(

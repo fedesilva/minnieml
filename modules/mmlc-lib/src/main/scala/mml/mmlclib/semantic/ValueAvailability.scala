@@ -8,6 +8,11 @@ final case class ValueAvailability private (
   index:       ResolvablesIndex
 ):
 
+  /** A generated local inherits its initializer's availability and keeps its resolved identity. */
+  def withBinding(parameter: FnParam, value: Expr): ValueAvailability =
+    val failed = parameter.id.filter(_ => !isAvailable(value)).toSet
+    copy(unavailable = unavailable ++ failed, index = index.updated(parameter))
+
   def isAvailable(term: Term): Boolean = term match
 
     case _: InvalidExpression | _: TermError => false

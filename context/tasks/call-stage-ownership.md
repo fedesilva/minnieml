@@ -3,22 +3,23 @@
 ## Metadata
 
 - **Owner:** The Author
-- **Status:** design
+- **Status:** complete
 - **Kind:** BUG, CORRECTNESS
 - **Priority:** HIGH
 - **Created:** 2026-10-19
+- **Completed:** 2026-10-19
 - **Target Branch:** dev-2026-03-21-lambdas
 - **Parent:** [Unify lambdas](unify-lambdas.md)
 
 ## Execution Checklist
 
-1. [ ] **design** — Settle the shared call-stage contract using the [approved restart baseline](#restart-decision).
-   - Next action: approve the bounded implementation plan.
-2. [ ] **planned** — Implement one call-stage interpretation and migrate callable flow,
+1. [x] **complete** — Shared call-stage contract and bounded F1–F6 implementation plan approved.
+2. [x] **complete** — Implement one call-stage interpretation and migrate callable flow,
    capture transfers, and ownership consumers; cover findings F1–F6.
-3. [ ] **planned** — Run compiler gates and independent review; obtain scoped signoff.
-4. [ ] **planned** — Plan and repair [fully applied literal borrowing](#f7-borrowing-in-fully-applied-lambda-literals)
-   as a separate bounded slice, then verify and obtain signoff.
+3. [x] **complete** — Verify the primary repair with compiler gates, QA, tracking review,
+   and independent review.
+4. [x] **complete** — Fully applied literal borrowing is repaired; combined compiler gates,
+   QA, tracking review, and independent review pass. Both repairs are signed off.
 
 ## Problem
 
@@ -26,13 +27,11 @@ A chained application can invoke a function, obtain another function, and invoke
 Each invocation is a call stage. Flattening the chain into one callee and all its arguments
 loses which function owns each parameter and result.
 
-Callable flow, capture-transfer collection, and ownership analysis interpret those stages
-separately. Their decisions disagree about applied parameters, invocation, consuming captures,
-and result ownership. The consequences include false borrowed-value errors, accepted reuse of
-call-once functions, lost cleanup, and an observed invalid free of a static String.
-
-The attempted implementation ended with 97 passing focused tests and 8 failures. The restart
-baseline is `581da71`. A single shared interpretation is proposed; implementation approval is pending.
+Independent interpretations in callable flow, capture-transfer collection, and ownership
+analysis disagree about applied parameters, invocation, consuming captures, and result
+ownership. The failures include false borrowed-value errors, accepted reuse of call-once
+functions, lost cleanup, and an observed invalid free of a static String. The repair shares
+one typed-stage interpretation across these analyses.
 
 ## Outcome
 
@@ -46,12 +45,15 @@ resolved identities, and exactly-once cleanup remain intact.
 - In scope: evaluated callee bodies and qualifiers; returned callables; partial applications;
   nullary calls; callable-argument flow; parameter agreement; final-result ownership;
   capture transfers and caller-scope cleanup. Findings F1–F6 define the primary repair.
-- Separate bounded slice: F7, borrowing through fully applied lambda-literal lowering.
+- Approved continuation: F7, borrowing through fully applied lambda-literal lowering.
 - Outside the primary repair: general chained-call emission, PAP elaboration inside callee
   bodies, tail-recursion cleanup, broad ignored-test restoration, and unrelated optimization.
   [Emitter limits](#emitter-limits) constrain evidence, not the semantic acceptance criteria.
 
 ## Findings and reproducers
+
+F1–F6 below describe the failing baseline and attempted repairs, not the verification result
+of the approved implementation. Current evidence belongs in [Verification](#verification).
 
 The examples and observations below are the durable evidence. Candidate tests and local build
 artifacts are not required to understand the failures. A partial application (PAP) stores
@@ -83,8 +85,8 @@ capture IDs, and make a second call to the consuming outer lambda invalid. Const
 uncalled lambda must not execute its body. Saturated immediate bodies need caller-scope moves
 and local cleanup; treating them as standalone borrowed closures is insufficient.
 
-The attempted repair accepts the original and bound forms semantically. General immediate
-chaining remains subject to the emitter limit below; this example is not native evidence.
+The attempted repair accepted the original and bound forms semantically. That result is not
+native evidence; executable coverage has the limits described below.
 
 ### F2: reuse of a returned call-once callable
 
@@ -145,8 +147,7 @@ not evidence about the committed base.
 
 Final-stage allocation, return-contract analysis, and static-result provenance must agree.
 Cover both a static String and an allocated `int_to_str n` result at O0 and O3, with runtime
-and sanitizer checks. The latest candidate String regressions pass in the focused run, but
-the implementation as a whole still fails verification.
+and sanitizer checks.
 
 ### F4: later-stage callable arguments lose their call-once contract
 
@@ -241,15 +242,15 @@ fn main(): Int =
 
 Expected: `UseAfterMove` only at the second `outer ()`. Observed: owned-result information
 from `example ()` is lost and both calls produce ownership-required errors instead.
-Source inspection strongly supports the common nullary mismatch as the cause of all eight
-failures; a corrected implementation has not been tested.
+Source inspection identified the common nullary mismatch as the likely cause of all eight
+failures in that attempted correction.
 
 Application arity and source parameter count must remain distinct. Synthetic Unit completes
 the invocation but must not bind a nonexistent source parameter.
 
 ### F7: borrowing in fully applied lambda literals
 
-**Existing independent bug; separate repair plan required.**
+**Existing independent bug; bounded repair approved.**
 
 ```mml
 fn example(): Int =
@@ -267,16 +268,26 @@ input despite the source parameter being nonconsuming.
 Preserve the parameter contract through lowering without weakening ordinary local moves or
 consuming parameters. Accept this example and borrowed-input controls; reject reuse after a
 corresponding `~value` call. Cover allocating temporaries, equivalent named calls, evaluation
-order, and cleanup. This finding is recorded here in full, but its implementation follows
-the call-stage repair under a separate bounded approval.
+order, and cleanup. Supplied prefixes of partially applied lambdas retain their existing
+capture behavior; this repair concerns fully applied source parameters.
 
 ### Emitter limits
 
 General chained immediate-lambda applications have a separate emission restriction in
 [Applications.scala](../../modules/mmlc-lib/src/main/scala/mml/mmlclib/codegen/emitter/expression/Applications.scala).
 `compileLambdaApp` supports a single unary/nullary immediate application; arbitrary chains
-are not established as executable by semantic acceptance. Named chains also blocked native
-confirmation of F4 and F5. F3 does have an executed native ASan failure.
+are not established as executable by semantic acceptance. Ownership materializes intermediate
+results for the covered chains without extending that emitter. Named chains blocked native
+confirmation of F4 and F5 in the attempted repair. F3 has an executed native ASan failure in
+that repair and static/allocated O0/O3 regressions in the approved implementation.
+
+PAP construction inside a chained immediate callee body remains excluded. A conditional
+fixture constructing `take (allocate ())` there passed semantics and LLVM assembly but failed
+ASan execution with a program counter of 1. `PartialApplicationElaborator` leaves that body's
+PAP unelaborated. The executable conditional regression constructs its PAPs before the
+immediate lambda, rebinds them to fresh local owners inside it, and selects between those
+locals. Both alternatives require cleanup; this covers F2/F6 without claiming PAP-callee
+traversal support.
 
 Semantic regressions must run independently of emission. Do not turn a semantic pass into
 a runtime claim or expand this repair to general emitter support without a separate plan.
@@ -301,14 +312,14 @@ Completed rollback scope:
 - `modules/mmlc-lib/src/test/scala/mml/mmlclib/codegen/StringReturnTests.scala`
 - Removed the untracked `modules/mmlc-lib/src/test/scala/mml/mmlclib/semantic/CaptureTransfersTest.scala`.
 
-Compiler sources, test sources, and related design text match the committed baseline.
-Findings and reproducers remain embedded in this task. Recreate acceptance tests within the
-approved implementation plan; failing candidate tests are not part of the restart baseline.
+The rollback restored compiler sources, test sources, and related design text to the committed
+baseline. Findings and reproducers remain embedded in this task; the approved repair builds its
+acceptance tests from that evidence.
 Resetting source does not replace a locally installed compiler; development checks must use
 repository source through `sbtn` until a verified build is published. A published attempted
 repair is not a trustworthy baseline.
 
-Rollback: complete. Revised implementation approval: pending.
+Rollback: complete. Shared-stage repair and fully applied literal-borrowing repair: approved.
 
 ### Shared contract and migration
 
@@ -326,15 +337,291 @@ Rollback: complete. Revised implementation approval: pending.
 4. Preserve caller-scope execution for evaluated immediate bodies, the boundary around uncalled
    lambda values, argument-before-callee order, single evaluation, resolved identities, and
    exactly-once environment/payload cleanup. Keep temporary construction in existing helpers.
-5. Validate F1–F6 and controls, then run required gates and independent review before scoped
-   signoff. Plan F7 separately after that checkpoint.
+5. Validate F1–F6 and controls, then run required gates and independent review.
 
-The design must settle dependency direction before implementation: stage structure must not
-depend on ownership decisions, and callable-flow fixed-point propagation must not depend on
-ownership-generated bindings. Centralization is intended to remove conflicting interpretation,
-not to combine all analyses into one module.
+Approved dependency direction: AST/types and availability → typed stages → callable flow →
+capture and ownership consumers. `CallStages` retains typed boundaries without ownership state.
+`CallableValues` owns target alternatives, lexical substitutions, and complete proofs. Ownership
+materializes argument and intermediate-result locals through `LocalBindings`; their lexical
+aliases extend existing evidence without rerunning callable-flow fixed-point propagation.
+Nullary calls consume synthetic Unit without inventing source parameters. Parameter disagreement
+does not authorize a unioned consuming contract.
+
+### Fully applied literal borrowing
+
+1. Mark source-parameter scopes during fully applied lambda lowering. Preserve borrowing for
+   nonconsuming parameters while ordinary local bindings and consuming parameters still move.
+2. Keep allocated arguments caller-owned while the source parameter borrows. Carry conditional
+   ownership witnesses, destructor identities, and borrow dependencies into exactly-once cleanup.
+3. Preserve the parameter boundary in return ownership, static-result, returned-origin, and
+   capture-transfer analysis. Reject escaping borrows and borrowing across a later argument's move.
+4. Verify unary/multiple parameters against named calls, consuming and ordinary-binding controls,
+   allocated/static/mixed arguments, capture metadata, source diagnostics, and native O0/O3 runs.
+   Run the full compiler gates, QA, tracking review, and fresh independent review.
 
 ## Verification
+
+### Fully applied literal borrowing
+
+`ExpressionRewriter` marks fully supplied source-parameter scopes in `LambdaMeta`. Ordinary
+local bindings retain transfer semantics; marked nonconsuming parameters borrow. Ownership
+analysis keeps allocating arguments caller-owned and carries their conditional ownership
+witnesses and destructor identities into cleanup. Borrowed parameters cannot authorize
+consuming calls or escape through heap returns. Return/static proofs and capture-transfer
+analysis preserve the source parameter boundary, including enclosing move-lambda metadata.
+
+Regression coverage:
+
+- `LambdaLiteralBorrowingTests`: 20 semantic cases cover unary and multiple parameters,
+  owned/borrowed inputs, named-call controls, consuming and ordinary-binding transfers,
+  consuming sinks, escaping borrows, allocated/static/mixed arguments, reusable and call-once
+  captures, partial-prefix transfer controls, a scoped argument transferring its owned result,
+  and a later argument invalidating an earlier borrow.
+  Negative cases assert diagnostic locations and resolved identities.
+- `LocalCallableCodegenTests`: eight native cases (four fixtures at O0 and O3) cover owned and
+  borrowed String reuse, conditional String allocation cleanup, native Handle allocation counts
+  and destructor identity, effect trace `123`, and consuming-parameter cleanup. They use LLVM
+  verification, native execution, and ASan/LSan through the existing compiler/toolchain helpers.
+- The chained/bound allocating-argument semantic controls identify cleanup by the allocated
+  String's resolved owner, allowing the caller to retain ownership while the parameter borrows.
+
+Validation, 2026-10-19:
+
+```sh
+SBT_OPTS=-Dsbt.io.virtual=false sbtn 'scalafmtAll; scalafixAll; testFull'
+SBT_OPTS=-Dsbt.io.virtual=false ./tests/smoke/run.sh all
+```
+
+Passed: **1,219 library tests and 9 CLI tests, zero failures/errors, 36 existing ignores**.
+Formatting and lint passed without compiler warnings. Smoke passed **8/8**. The full suite
+includes all 19 semantic and eight O0/O3 native borrowing regressions. The focused development
+run first passed 147/155, then 154/155; corrections addressed diagnostic source/identity oracles,
+a conditional fixture's syntax, and the allocating-argument cleanup owner assertion. The final
+full run passes all focused cases.
+
+The remaining compiler gates ran sequentially:
+
+```sh
+SBT_OPTS=-Dsbt.io.virtual=false sbtn mmlcPublishLocal
+make -C benchmark clean
+make -C benchmark mml
+./tests/mem/run.sh all
+```
+
+Local publication succeeded after smoke verification. All **12 clean MML benchmark builds**
+passed; no performance measurements were taken. Memory checks passed **51/51** under ASan/LSan
+at O0 with `ASAN_OPTIONS=detect_leaks=1:halt_on_error=1:abort_on_error=1` in 68 seconds.
+Host: macOS arm64, Homebrew Clang 23.1.1 (`arm64-apple-darwin25.6.0`). No ABI or layout change;
+the conditional Linux ABI gate does not apply. Native evidence is limited to this host and the
+covered fixtures. QA compliance, focused tracking review, and `git diff --check` pass.
+Independent review confirmed one lifetime-check regression, described below. Correction
+verification and fresh narrow independent re-review pass. The primary-repair results below
+establish the pre-continuation baseline.
+
+#### Independent review: moved result of a scoped argument
+
+```mml
+fn example(): Int =
+  let text = int_to_str 42;
+  { value: String -> value.length; } (let moved = text; moved);
+;
+```
+
+The first borrowing implementation reports `UseAfterMove(text)`, with the legal transfer as
+both the move and alleged later use. A fresh verifier independently reproduced the error.
+The argument transfers ownership into its result and has no remaining borrow of `text`, but
+the lifetime check follows the original aliases back to that moved source. A consuming-parameter
+control, a hoisted `moved` binding, and a fresh allocation inside the argument compile.
+
+Lifetime validation uses the analyzed result's surviving borrow dependencies. Caller-owned
+cleanup covers transferred argument storage; later argument/body moves still invalidate actual
+borrows. Semantic coverage checks one cleanup of the resulting parameter slot; O0/O3 Handle
+execution checks the payload and zero outstanding allocations after the call. The named-call
+path has an independently observed analogous scoped-argument rejection outside this lowering
+correction. The comparison with the pre-continuation literal behavior is source tracing, not
+an executed baseline build.
+
+The correction passes the same sequential verification commands listed above: formatting/lint,
+**1,220 library tests and 9 CLI tests**, zero failures/errors, 36 existing ignores, and no
+compiler warnings; smoke **8/8** on retry; verified local publication; **12** clean benchmark
+builds; and ASan/LSan **51/51** in 67 seconds. The first correction full run passed 1,218 library
+tests and failed two native fixtures because their scoped argument contained an extra semicolon;
+the corrected fixtures pass at O0/O3. The first smoke run reported 7/8 after `astar2` printed
+`Path found!` and sbt reported success, then its thin client timed out joining the server thread
+during shutdown. One full harness retry passed 8/8. QA and focused tracking review pass.
+Fresh narrow independent re-review finds no actionable issues in the correction, dependency
+producers, semantic cleanup assertion, or O0/O3 native allocation-count checks. The full
+borrowing review has no other actionable findings; all reported findings are corrected.
+
+### F1–F6 implementation
+
+`CallStages` preserves typed application boundaries, original operands, and completion evidence.
+`CallableValues` uses those boundaries for fixed-point argument flow, target alternatives,
+residual prefixes, lexical substitutions, and final-invocation queries. `CallableIdentity`
+is shared independently of ownership analysis. Generated locals extend callable and
+availability evidence without rerunning parameter propagation.
+
+`CaptureTransfers` follows evaluated callees, qualifiers, and immediate bodies. Ownership
+checks each stage's parameter/result agreements, moves returned call-once values by identity,
+and derives allocation/static-result contracts from the final invocation. Argument locals
+preserve source diagnostics and single evaluation; intermediate callable locals retain
+ownership, destructor identity, dependencies, and cleanup through existing binding helpers.
+
+Regression coverage:
+
+- `CallStagesTests`: 15 structural/flow cases for nullary and explicit Unit calls, partial
+  prefixes, multiple stages, aliases, constructor fields, lexical recursion guards, unavailable
+  operands, unknown alternatives, and later-stage parameter identities.
+- `CallStageOwnershipTests`: 55 semantic cases for F1–F6. Negative fixtures establish parsing
+  separately and assert diagnostics, source locations, resolved identities, capture metadata,
+  and cleanup without requiring emission.
+- `StringReturnTests`: two semantic cleanup checks and eight native cases at O0/O3 cover
+  static/allocated final results and exactly-once cleanup of allocated/mixed immediate arguments,
+  with chained and bound controls.
+- `LocalCallableCodegenTests`: five native cases cover argument-before-callee effect trace
+  `132`, caller-scope Handle cleanup, and both conditional PAP payload selections in chained
+  and bound forms, plus native Handle destructor identity and allocation counts for an
+  immediate argument. Existing invoked/uninvoked PAP cleanup cases cover F6 allocation contracts.
+- `AppRewritingTests`: the returned-lambda case follows resolved argument identities through
+  materialized bindings, asserting that source parameters receive `1` and `2` respectively.
+
+Host: macOS arm64, Homebrew Clang 23.1.1 (`arm64-apple-darwin25.6.0`). No ABI or target-layout
+change; the conditional Linux ABI gate does not apply. These results cover the shared-stage
+repair before the fully applied literal-borrowing continuation. General emitter/PAP traversal
+remains excluded.
+
+Validation, 2026-10-19:
+
+```sh
+SBT_OPTS=-Dsbt.io.virtual=false sbtn 'scalafmtAll; scalafixAll; testFull'
+```
+
+Passed: **1,192 library tests and 9 CLI tests, zero failures/errors, 36 existing ignores**.
+Formatting and lint passed without compiler warnings. The full suite includes the semantic,
+LLVM-validation, native execution, and sanitizer regressions listed above. Intermediate full
+runs caught a stale AST-shape assertion and two diagnostic-fixture mistakes (additional valid
+diagnostics and an assumed whitespace-free span); the final fixtures retain source identity
+and precise diagnostic assertions.
+
+The following gates passed sequentially after both review corrections and the full suite:
+
+```sh
+SBT_OPTS=-Dsbt.io.virtual=false ./tests/smoke/run.sh all
+SBT_OPTS=-Dsbt.io.virtual=false sbtn mmlcPublishLocal
+make -C benchmark clean
+make -C benchmark mml
+```
+
+Smoke: **8/8 passed**, including five source-build executions and three compile-only checks.
+The first run reported 7/8: `partial-fac1` printed `120` and sbt reported success, then the
+thin client failed with `TimeoutException: Unable to join thread ... after 5 seconds` during
+shutdown. One complete harness retry passed 8/8 before publication.
+Local publication succeeded after smoke verification. All 12 clean MML benchmark builds
+passed; no performance measurements were taken.
+
+```sh
+./tests/mem/run.sh all
+```
+
+Memory: **51/51 passed** with ASan instrumentation at O0 and
+`ASAN_OPTIONS=detect_leaks=1:halt_on_error=1:abort_on_error=1`. The harness used the verified
+local publication and completed after the benchmark builds. QA/style compliance and
+`git diff --check` passed. Focused tracking review found no actionable inconsistencies in this
+task, its parent links, or active memory. Full independent review is complete. Both confirmed
+findings below are corrected; fresh narrow review of the final parameter-contract correction
+reports no actionable findings. The narrow review is source-based; the full-suite results
+establish execution of its regressions and the repeated-wrapper compatibility controls.
+
+Independent review reproduced a double-free at O0 and O3 under ASan:
+
+```mml
+pub fn main(): Int =
+  { text: String -> println text; { n: Int -> n; }; } (int_to_str 42) 0;
+;
+```
+
+The immediate parameter took the prepared argument's ownership and freed the String, but
+the staged call also emitted the prepared cleanup. The equivalent bound call, a named borrowing
+callee, a consuming immediate parameter, and a literal argument passed at O0. The correction
+filters prepared cleanup through the existing resolved-identity move evidence after stage
+analysis. Seven added regressions pass: two semantic cleanup/identity checks, four O0/O3
+allocated/mixed String cases, and a native Handle destructor/count case. F7 parameter-borrowing
+semantics are unchanged. Two full-scope reviewers were interrupted by an automated content
+flag. A fresh reviewer completed the full scope and independently verified this correction:
+the exact reproducer prints `42` and exits zero under ASan/LSan at both O0 and O3.
+
+The completed full review independently confirmed an unresolved-alternative contract gap:
+
+```mml
+fn consume(~text: String): Int = text.length;;
+fn choose(flag: Bool, ~unknown: String -> Int): String -> Int =
+  if flag then consume; else unknown;;
+;
+pub fn check(~unknown: String -> Int): Int =
+  choose false unknown (int_to_str 42);
+;
+```
+
+Known-only parameter lookup classifies the final argument using `consume.text`, discarding
+the unresolved alternative. The generated caller omits String cleanup. The lookup predates
+the shared stages; stage-specific argument classification exposes it on this later invocation.
+The committed analysis retains cleanup for the third argument beyond `choose`'s parameters;
+this baseline comparison is source inspection, not an executed baseline regression.
+
+Durable native reproduction: save the MML source as `unknown.mml` and this driver as `driver.ll`:
+
+```llvm
+target triple = "arm64-apple-macosx"
+%struct.String = type { i32, ptr }
+@format = private constant [13 x i8] c"returned=%d\0A\00"
+declare i32 @unknown_check({ ptr, ptr })
+declare i32 @printf(ptr, ...)
+define internal i32 @borrow(%struct.String %text, ptr %env) {
+entry:
+  %length = extractvalue %struct.String %text, 0
+  ret i32 %length
+}
+define i32 @main() {
+entry:
+  %value = call i32 @unknown_check({ ptr, ptr } { ptr @borrow, ptr null })
+  %printed = call i32 (ptr, ...) @printf(ptr @format, i32 %value)
+  %ok = icmp eq i32 %value, 2
+  %status = select i1 %ok, i32 0, i32 1
+  ret i32 %status
+}
+```
+
+```sh
+mmlc -x lib -O0 -s -a -b current unknown.mml
+clang -fsanitize=address -O0 driver.ll current/target/unknown.o \
+  current/target/mml_runtime-arm64-apple-macosx.o -o unknown-borrow
+ASAN_OPTIONS=detect_leaks=1:halt_on_error=1:abort_on_error=1 ./unknown-borrow
+```
+
+Before correction, the independent verifier observed `returned=2`, followed by one 3-byte
+LeakSanitizer leak from `int64_to_str → int_to_str`, exit 1. A consuming callback control,
+linked to the same library object, adds `declare void @free(ptr)` and extracts field 1 from
+`%text`, calls `free` on that pointer, then returns the length. It prints `returned=2` and
+exits zero under ASan/LSan. Both results use the host/toolchain recorded above.
+
+The correction retains origin completeness in parameter agreement. A known target beside
+an unresolved alternative cannot authorize transfer; the existing incompatible-parameters
+diagnostic rejects the call. Entirely unknown targets retain their default non-consuming
+argument behavior. Eight added regressions cover structural contract queries and chained/bound
+semantic rejection, with entirely unknown cleanup controls.
+
+An intermediate full run passed 1,188 library tests and 9 CLI tests, with four library failures
+and 36 ignores. The strict completeness check rejected repeated aggregate identity wrappers:
+two `MixedOwnershipTests` controls and two `MixedOwnershipCodegenTests` O0/O3 cases. Observed
+flow conservatively stops at repeated formal cycles; complete lexical substitutions prove the
+actual targets. Parameter queries use that complete lexical proof when observed flow is
+incomplete, preserving complete observed contracts. The nested-wrapper structural regression
+also checks the recovered parameter identities. The final full run passes all four controls
+and all eight new cases. Fresh narrow independent review finds no actionable issues in the
+correction, directly affected consumers, tests, or design text. It also traces uncalled partial
+applications to the original callee's agreement diagnostic; the known-plus-unresolved uncalled
+combination has source-trace support rather than a dedicated regression. The full review has
+no other actionable findings.
 
 ### Restored baseline, 2026-10-19
 
@@ -371,7 +658,7 @@ The embedded findings preserve the required behavior and evidence without those 
 An intermediate attempted implementation passed 1,144 library tests plus 9 CLI tests, with
 36 existing ignores; smoke 8/8; ASan/LSan memory checks 51/51; local publication and clean MML
 benchmark builds. The host was macOS arm64 with Clang 23.1.1. Independent review then confirmed
-F3–F5 in that implementation. Those passing gates do not validate the latest candidate or
+F3–F5 in that implementation. Those passing gates do not validate the approved implementation or
 close the findings; benchmark builds are not performance measurements.
 
 Required before handoff: focused acceptance cases, formatting/lint, full uncached tests,
@@ -381,25 +668,31 @@ Linux ABI verification applies if the approved implementation changes ABI or tar
 
 ## Risks / Notes
 
-Three analyses currently duplicate call boundaries, and the attempt also changed result
-ownership and cleanup. Repairing only the nullary predicate would address the latest visible
-regression without establishing one consistent interpretation for the other findings.
-
-The attempted source, test, and design changes are removed. The embedded findings define
-regressions to cover during the approved repair; they do not establish an accepted solution.
-No finding is closed by the extraction, rollback, or a passing intermediate checkpoint.
+Shared stage boundaries do not establish complete target knowledge. Observed callable flow
+and lexical proofs remain separate; an unknown alternative cannot establish a static-result
+proof. Native evidence is limited to the fixtures in Verification and Emitter limits.
+Benchmark builds establish build compatibility, not performance.
 
 ## Signoff
 
-- Workstream signoff: pending.
-- Tracked item completion: pending.
-- Commit authorization: granted for this task, parent links, and memory only; no implementation commit.
+- Workstream signoff: granted for shared-stage ownership and fully applied literal borrowing.
+- Tracked item completion: complete.
+- Commit authorization: granted for the implementation, tests, design, and completion records.
 - Push authorization: not granted.
 
 ## Task Working Memory
 
-- Primary scope: F1–F6; F7 remains the next separately planned borrowing repair.
-- Restart baseline: `581da71`; compiler sources, test sources, and related design text are restored.
-  Findings and reproducers are preserved here. Attempted implementation results are historical evidence.
-- The shared call-stage abstraction is proposed and not implemented. Next action: settle and
-  approve its bounded plan before restarting production work.
+- Scope: shared-stage ownership and fully applied source-lambda borrowing; complete and signed off.
+- Restart baseline: `581da71`. Findings and reproducers are preserved here; attempted-repair
+  results are historical evidence.
+- Fully applied source parameters borrow unless consuming. Allocated inputs retain caller-owned
+  cleanup; ordinary local bindings retain transfers. Lifetime checks use surviving borrow
+  dependencies and accept ownership transferred through scoped arguments.
+- Final verification: 1,220 library plus 9 CLI tests, zero failures/errors, 36 existing ignores;
+  formatting/lint without compiler warnings; smoke 8/8 on retry; verified local publication;
+  12 clean benchmark builds; ASan/LSan 51/51. QA and focused tracking review pass. Shared-stage
+  and borrowing independent reviews are complete; all confirmed findings have corrected code,
+  regression coverage, and clean fresh narrow re-review.
+- No implementation work remains in the approved scope. General emitter/PAP traversal and
+  tail-recursion work remain excluded. The scoped-argument named-call limitation is recorded
+  in Verification. Push remains unauthorized.

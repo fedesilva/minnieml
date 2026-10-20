@@ -4,6 +4,11 @@ Durable product changes belong here. Current task state belongs in task files.
 
 ## 2026-10-19
 
+- Share typed call-stage boundaries across callable flow, capture transfers, and ownership
+  analysis. Match arguments and final results to their actual invocation, reject incompatible
+  consuming contracts and repeated call-once use, and preserve nullary calls and cleanup.
+- Preserve borrowing through fully applied lambda-literal lowering. Keep temporary arguments
+  caller-owned, retain explicit moves, and destroy each retained allocation exactly once.
 - Document union declarations with type parameters, single-value wrappers, and named
   fields. Specify variant-set subtyping, narrowing, and exhaustiveness in the union spec.
 - Add MinnieML support for Zed with syntax highlighting, bracket matching, outlines,

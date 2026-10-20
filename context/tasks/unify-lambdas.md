@@ -28,8 +28,8 @@ cleanup, and defensive hardening. Restore regressions relevant to each bug as pa
 11. [x] **complete** — [BUG: continue elaboration after independent errors](#bug-continue-elaboration-after-independent-errors); signed off.
 12. [x] **complete** — [Counter and argument-expression preservation](#preserve-counters-and-argument-expressions-across-ownership-analysis); signed off.
 13. [x] **complete** — Resolve the standalone [mixed-ownership repair dependency](mixed-ownership-transfers.md); signed off.
-14. [ ] **design** — [Unify call-stage interpretation and repair ownership](call-stage-ownership.md); replaces the evaluated-callee repair. Revised implementation plan pending.
-15. [ ] **planned** — [BUG: preserve borrowing in fully applied lambda literals](#bug-preserve-borrowing-in-fully-applied-lambda-literals).
+14. [x] **complete** — [Unify call-stage interpretation and repair ownership](call-stage-ownership.md); signed off with passing compiler gates and independent reviews.
+15. [x] **complete** — [BUG: preserve borrowing in fully applied lambda literals](#bug-preserve-borrowing-in-fully-applied-lambda-literals); signed off with passing verification.
 16. [ ] **planned** — [BUG: elaborate partial applications inside callees](#bug-elaborate-partial-applications-inside-callees).
 17. [ ] **planned** — [BUG: preserve tail recursion across owned-closure cleanup](#bug-preserve-tail-recursion-across-owned-closure-cleanup).
 18. [ ] **planned** — [Preserve the complete application callee type in Simplifier](#fix-preserve-the-complete-application-callee-type-in-simplifier).
@@ -922,20 +922,19 @@ retains its reproduction, scope, and acceptance criteria.
 
 #### Call-stage ownership repair
 
-- **Status:** design; revised implementation approval pending.
+- **Status:** complete; signed off with passing compiler gates and independent reviews.
 - **Replacement tracker:** [Unify call-stage interpretation and repair ownership](call-stage-ownership.md).
   This task replaces the evaluated-callee capture-transfer repair and owns all seven findings,
-  reproducers, evidence limits, and the proposed shared interpretation.
-- **Restart:** compiler sources, test sources, and related design text match `581da71`.
-  The attempted regression additions are removed; findings and reproducers remain in the
-  replacement task. The attempted repair's 97 passes and 8 failures are historical evidence.
+  reproducers, evidence limits, and shared typed-stage interpretation.
+- **Restart baseline:** `581da71`. Shared-stage ownership and literal borrowing are complete.
+  The attempted repair's 97 passes and 8 failures are historical evidence.
 
 #### Bug: preserve borrowing in fully applied lambda literals
 
-- **Status:** planned; separate bounded slice after the call-stage ownership repair.
+- **Status:** complete; signed off with passing verification.
 - **Tracker:** [Fully applied lambda-literal borrowing](call-stage-ownership.md#f7-borrowing-in-fully-applied-lambda-literals).
-  The source parameter's borrowing contract is lost through ordinary local-binding lowering.
-  The reproducer, cause, acceptance criteria, and pending approval are owned by that task.
+  Fully applied source parameters preserve their borrowing contract through local-binding lowering.
+  The reproducer, cause, acceptance criteria, and verification are owned by that task.
 
 #### Fix: preserve the complete application callee type in Simplifier
 
@@ -1183,13 +1182,13 @@ are in `context/history/` for Author review. No compiler slice is authorized by 
 ## Task Working Memory
 
 - **Branch:** `dev-2026-03-21-lambdas`.
-- **Priority and next action:** settle the shared contract and implementation plan in
-  [call-stage ownership](call-stage-ownership.md), the replacement for the evaluated-callee
-  repair. Compiler and test sources are restored to `581da71`; revised implementation is not approved.
-  The task also owns [fully applied lambda-literal borrowing](call-stage-ownership.md#f7-borrowing-in-fully-applied-lambda-literals)
-  as the next separately planned slice. [PAP callee traversal](#bug-elaborate-partial-applications-inside-callees)
-  and [tail-recursion cleanup](#bug-preserve-tail-recursion-across-owned-closure-cleanup) follow.
+- **Priority and next action:** plan [PAP callee traversal](#bug-elaborate-partial-applications-inside-callees),
+  followed by [tail-recursion cleanup](#bug-preserve-tail-recursion-across-owned-closure-cleanup).
   Confirmed bugs precede general implementation, optimization, and hardening.
+- **Completed repair:** [call-stage ownership and fully applied literal borrowing](call-stage-ownership.md)
+  are complete and signed off. Formatting/lint, 1,220 library plus nine CLI tests, smoke 8/8,
+  verified local publication, 12 clean benchmark builds, ASan/LSan 51/51, QA, tracking review,
+  and independent reviews pass. The parent migration remains open.
 - **Deferred follow-ups:** [the Simplifier callee type](#fix-preserve-the-complete-application-callee-type-in-simplifier),
   general ignored-test restoration, and
   [closure environment lookup hardening](#harden-closure-environment-lookup).

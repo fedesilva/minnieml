@@ -25,14 +25,31 @@ final case class CallableValues private (
   ):
     def remainingParams: List[FnParam] = lambda.params.drop(supplied.size)
 
+    /** A nullary callable's synthetic Unit input has no consuming source parameter. */
+    def parameterOwnership: List[Boolean] =
+      if lambda.params.isEmpty then List(false).drop(supplied.size)
+      else remainingParams.map(_.consuming)
+
   /** Known targets remain usable for flow even when another alternative is unresolved. */
-  private case class OriginResult(known: List[Origin], complete: Boolean):
+  private case class OriginResult(
+    known:      List[Origin],
+    complete:   Boolean,
+    references: List[Ref] = Nil
+  ):
 
     def ++(other: OriginResult): OriginResult =
-      OriginResult(known ++ other.known, complete && other.complete)
+      OriginResult(
+        known ++ other.known,
+        complete && other.complete,
+        references ++ other.references
+      )
 
     def flatMap(f: Origin => OriginResult): OriginResult =
       known.map(f).foldLeft(OriginResult(Nil, complete))(_ ++ _)
+
+    /** An unresolved alternative cannot inherit a contract from the known subset. */
+    def hasConsistentParameterOwnership: Boolean =
+      known.isEmpty || (complete && known.map(_.parameterOwnership).distinct.size <= 1)
 
   private val unknownOrigins = OriginResult(Nil, complete = false)
 
@@ -67,12 +84,13 @@ final case class CallableValues private (
             resolve(cond.ifFalse, fields, seen, environment)
 
         case ref: Ref if ref.qualifier.isDefined =>
-          (ref.resolvedId, ref.qualifier)
+          val result = (ref.resolvedId, ref.qualifier)
             .mapN((fieldId, qualifier) => resolve(qualifier, fieldId :: fields, seen, environment))
             .getOrElse(unknownOrigins)
+          if fields.isEmpty then result.copy(references = ref :: result.references) else result
 
         case ref: Ref =>
-          ref.resolvedId.filterNot(seen.contains).fold(unknownOrigins) { id =>
+          val result = ref.resolvedId.filterNot(seen.contains).fold(unknownOrigins) { id =>
             environment.get(id) match
 
               case Some(source) =>
@@ -89,56 +107,57 @@ final case class CallableValues private (
                   .reduceOption(_ ++ _)
                   .getOrElse(unknownOrigins)
           }
+          if fields.isEmpty then result.copy(references = ref :: result.references) else result
 
         case app: App =>
-          val (callee, arguments) = CallableValues.application(app)
-          val calleeId = callee match
-            case ref: Ref => ref.resolvedId
-            case _:   Lambda => none
+          stages(app).lastOption.fold(unknownOrigins) { stage =>
+            val calleeId = stage.callee match
+              case ref: Ref => ref.resolvedId
+              case _ => none
 
-          resolve(callee, Nil, seen, environment).flatMap { origin =>
-            val callerSeen = if exactCalls then seen else Set.empty[String]
-            val supplied =
-              origin.supplied ++ arguments.map(LexicalValue(_, environment, callerSeen))
-            if arguments.size < origin.remainingParams.size then
-              if fields.isEmpty then
-                OriginResult(
-                  List(origin.copy(supplied = supplied)),
-                  complete = true
-                )
-              else unknownOrigins
-            else
-              val constructorField = for
-                fieldId <- fields.headOption
-                marker <- origin.lambda.body.terms.collectFirst { case dc: DataConstructor => dc }
-                tpe <- marker.typeSpec.flatMap(TypeUtils.canonical(_, index))
-                struct <- tpe match
-                  case ref: TypeRef =>
-                    ref.resolvedId.flatMap(index.lookupType).collect { case struct: TypeStruct =>
-                      struct
-                    }
-                  case struct: TypeStruct => struct.some
-                  case _ => none
-                position <- struct.fields.zipWithIndex.collectFirst {
-                  case (field, position) if field.id.contains(fieldId) => position
-                }
-                argument <- supplied.lift(position)
-              yield argument
-
-              constructorField match
-                case Some(argument) =>
-                  val argumentSeen = if exactCalls then argument.seen else seen
-                  resolve(argument.value, fields.drop(1), argumentSeen, argument.environment)
-
-                case None =>
-                  val bodyEnvironment =
-                    if exactCalls then
-                      origin.environment ++ origin.lambda.params.zip(supplied).flatMap {
-                        (parameter, argument) => parameter.id.map(_ -> argument)
+            resolve(stage.callee, Nil, seen, environment).flatMap { origin =>
+              val callerSeen = if exactCalls then seen else Set.empty[String]
+              val supplied =
+                origin.supplied ++ stage.arguments.map(LexicalValue(_, environment, callerSeen))
+              if !stage.complete then
+                if fields.isEmpty &&
+                  stage.signature.exists(_.paramTypes.size > stage.arguments.size) &&
+                  stage.arguments.forall(recovery.isAvailable)
+                then OriginResult(List(origin.copy(supplied = supplied)), complete = true)
+                else unknownOrigins
+              else
+                val constructorField = for
+                  fieldId <- fields.headOption
+                  marker <- origin.lambda.body.terms.collectFirst { case dc: DataConstructor => dc }
+                  tpe <- marker.typeSpec.flatMap(TypeUtils.canonical(_, index))
+                  struct <- tpe match
+                    case ref: TypeRef =>
+                      ref.resolvedId.flatMap(index.lookupType).collect { case struct: TypeStruct =>
+                        struct
                       }
-                    else Map.empty[String, LexicalValue]
+                    case struct: TypeStruct => struct.some
+                    case _ => none
+                  position <- struct.fields.zipWithIndex.collectFirst {
+                    case (field, position) if field.id.contains(fieldId) => position
+                  }
+                  argument <- supplied.lift(position)
+                yield argument
 
-                  resolve(origin.lambda.body, fields, seen ++ calleeId, bodyEnvironment)
+                constructorField match
+                  case Some(argument) =>
+                    val argumentSeen = if exactCalls then argument.seen else seen
+                    resolve(argument.value, fields.drop(1), argumentSeen, argument.environment)
+
+                  case None =>
+                    val bodyEnvironment =
+                      if exactCalls then
+                        origin.environment ++ origin.lambda.params.zip(supplied).flatMap {
+                          (parameter, argument) => parameter.id.map(_ -> argument)
+                        }
+                      else Map.empty[String, LexicalValue]
+
+                    resolve(origin.lambda.body, fields, seen ++ calleeId, bodyEnvironment)
+            }
           }
 
         case _ => unknownOrigins
@@ -163,6 +182,44 @@ final case class CallableValues private (
         }
       .map(_.distinctBy(CallableIdentity(_)))
       .filter(_.nonEmpty)
+
+  /** Result aliases retain their identities and exact lexical sources through invoked bodies. */
+  def resultReferences(term: Term): List[Ref] =
+    resolveOrigins(term, lexicalBindings, exactCalls = true).references.distinct
+
+  /** Applications retain their typed call boundaries independently of callable origin facts. */
+  def stages(app: App): List[CallStages.Stage] = CallStages(app, index, recovery)
+
+  /** Materialized operands retain their lexical facts without widening formal-argument flow. */
+  def withBindings(locals: List[(FnParam, Expr)]): CallableValues =
+    locals.foldLeft(this) { case (flow, (parameter, value)) =>
+      parameter.id.fold(flow) { id =>
+        val updatedIndex = flow.index.updated(parameter)
+        flow.copy(
+          bindings        = flow.bindings.updated(id, List(value)),
+          lexicalBindings = flow.lexicalBindings.updated(id, List(value)),
+          index           = updatedIndex,
+          recovery        = flow.recovery.withBinding(parameter, value)
+        )
+      }
+    }
+
+  /** The final completed stage determines the result contract, including nullary invocations. */
+  def invokedLambdas(app: App): List[Lambda] =
+    stages(app).lastOption
+      .filter(_.complete)
+      .toList
+      .flatMap(stage => origins(stage.callee).map(_.lambda))
+      .distinctBy(CallableIdentity(_))
+
+  /** Invocation proofs include residual origins but require every lexical alternative. */
+  def provenInvokedLambdas(app: App): Option[List[Lambda]] =
+    stages(app).lastOption.filter(_.complete).flatMap { stage =>
+      val result = resolveOrigins(stage.callee, lexicalBindings, exactCalls = true)
+      Option
+        .when(result.complete)(result.known.map(_.lambda).distinctBy(CallableIdentity(_)))
+        .filter(_.nonEmpty)
+    }
 
   def consumesOnCall(term: Term): Boolean =
     lambdas(term).exists(_.meta.exists(_.transferredCaptures.nonEmpty))
@@ -191,11 +248,11 @@ final case class CallableValues private (
       case cond:    Cond => resolve(cond.ifTrue, seen) || resolve(cond.ifFalse, seen)
 
       case app: App =>
-        val (callee, arguments) = CallableValues.application(app)
-        callee match
-          case lambda: Lambda if arguments.size >= lambda.params.size =>
-            resolve(lambda.body, seen)
-          case _ => false
+        stages(app).lastOption.filter(_.complete).exists { stage =>
+          stage.callee match
+            case lambda: Lambda => resolve(lambda.body, seen)
+            case _ => false
+        }
 
       case _ => false
 
@@ -213,15 +270,23 @@ final case class CallableValues private (
 
     collect(TermTraversal.collect(term) { case ref: Ref => ref }, Set.empty)
 
+  /** Exact substitutions can close conservative cycle edges in observed parameter flow. */
+  private def parameterOrigins(term: Term): OriginResult =
+    val observed = resolveOrigins(term, bindings, exactCalls = false)
+    if observed.complete then observed
+    else
+      val lexical = resolveOrigins(term, lexicalBindings, exactCalls = true)
+      if lexical.complete then lexical else observed
+
   def hasConsistentParameterOwnership(term: Term): Boolean =
-    origins(term).map(_.remainingParams.map(_.consuming)).distinct.size <= 1
+    parameterOrigins(term).hasConsistentParameterOwnership
 
   def parameters(term: Term): List[FnParam] =
     // A source PAP has a residual signature even before its lambda is elaborated.
-    val candidates = origins(term).map(_.remainingParams)
-    candidates.headOption.toList.flatten.zipWithIndex.map { (param, position) =>
-      param.copy(consuming = candidates.exists(_.lift(position).exists(_.consuming)))
-    }
+    val candidates = parameterOrigins(term)
+    if candidates.hasConsistentParameterOwnership then
+      candidates.known.headOption.toList.flatMap(_.remainingParams)
+    else Nil
 
 object CallableValues:
   val empty: CallableValues =
@@ -255,9 +320,12 @@ object CallableValues:
           .flatten
       } ++
       applications.flatMap { app =>
-        app.fn match
-          case lambda: Lambda => lambda.params.headOption.flatMap(_.id).map(_ -> app.arg)
-          case _ => Nil
+        CallStages(app, module.resolvables, recovery).flatMap { stage =>
+          stage.callee match
+            case lambda: Lambda =>
+              lambda.params.zip(stage.arguments).flatMap((param, arg) => param.id.map(_ -> arg))
+            case _ => Nil
+        }
       }
     val values = initial.groupMap(_._1)(_._2)
 
@@ -265,9 +333,12 @@ object CallableValues:
     def propagate(current: Map[String, List[Expr]]): CallableValues =
       val flow = CallableValues(current, values, module.resolvables, recovery)
       val incoming = applications.flatMap { app =>
-        val (callee, args) = application(app)
-        flow.origins(callee).flatMap { origin =>
-          origin.remainingParams.zip(args).flatMap((param, arg) => param.id.map(_ -> arg))
+        flow.stages(app).flatMap { stage =>
+          flow.origins(stage.callee).flatMap { origin =>
+            origin.remainingParams
+              .zip(stage.arguments)
+              .flatMap((param, arg) => param.id.map(_ -> arg))
+          }
         }
       }
       val next = (current.toList.flatMap((id, expressions) => expressions.map(id -> _)) ++ incoming)

@@ -17,48 +17,61 @@ object CaptureTransfers:
       .flatMap(_.resolvedId)
       .toSet
 
-    def resultCaptures(term: Term): Set[String] = term match
-      case _ if !values.recovery.isAvailable(term) => Set.empty
-      case ref:     Ref if ref.qualifier.isEmpty => ref.resolvedId.toSet.intersect(captures)
-      case expr:    Expr => expr.terms.lastOption.fold(Set.empty[String])(resultCaptures)
-      case group:   TermGroup => resultCaptures(group.inner)
-      case yielded: YieldOwnership => resultCaptures(yielded.value)
-      case binding: BindOwnership => resultCaptures(binding.body)
-      case cond:    Cond => resultCaptures(cond.ifTrue) ++ resultCaptures(cond.ifFalse)
-      case app:     App =>
-        app.fn match
-          case scope: Lambda => resultCaptures(scope.body)
-          case _ => Set.empty
-      case _ => Set.empty
+    def resultCaptures(term: Term): Set[String] =
+      values
+        .resultReferences(term)
+        .filter(_.qualifier.isEmpty)
+        .flatMap(_.resolvedId)
+        .toSet
+        .intersect(captures)
 
     def transfers(term: Term): Set[String] = term match
+
       case binding: BindOwnership =>
         resultCaptures(binding.initializer) ++ transfers(binding.initializer) ++
           transfers(binding.body)
-      case app: App if !app.fn.isInstanceOf[Lambda] && !values.recovery.isAvailable(app) =>
-        transfers(app.fn) ++ transfers(app.arg)
+
       case app: App =>
-        app.fn match
-          case scope: Lambda =>
-            // A local binding moves an owned source into its continuation parameter.
-            resultCaptures(app.arg) ++ transfers(app.arg) ++ transfers(scope.body)
-          case _ =>
-            val (callee, arguments) = CallableValues.application(app)
-            val parameters          = values.parameters(callee)
+        values
+          .stages(app)
+          .flatMap { stage =>
+            val arguments = stage.arguments.flatMap(transfers).toSet
+            val callee = stage.callee match
+
+              case scope: Lambda if stage.complete =>
+                // Local bindings move inputs; source parameters retain their declared contract.
+                val inputs =
+                  if scope.borrowsArgument then Set.empty[String]
+                  else stage.arguments.flatMap(resultCaptures).toSet
+                inputs ++ transfers(scope.body)
+
+              case value: (Ref | Lambda) => transfers(value)
+              case _:     App => Set.empty[String]
+
             val consumedCallee =
-              if arguments.size >= parameters.size && values.consumesOnCall(callee) then
-                resultCaptures(callee)
+              if stage.complete && values.consumesOnCall(stage.callee) then
+                resultCaptures(stage.callee)
               else Set.empty[String]
-            val consumedArguments = parameters
-              .zip(arguments)
-              .flatMap { (param, argument) =>
-                if param.consuming then resultCaptures(argument) else Set.empty[String]
-              }
-              .toSet
-            consumedCallee ++ consumedArguments ++ arguments.flatMap(transfers)
+
+            val consumedArguments =
+              if values.recovery.isAvailable(stage.result) then
+                values
+                  .parameters(stage.callee)
+                  .zip(stage.arguments)
+                  .flatMap { (param, argument) =>
+                    if param.consuming then resultCaptures(argument) else Set.empty[String]
+                  }
+                  .toSet
+              else Set.empty[String]
+
+            arguments ++ callee ++ consumedCallee ++ consumedArguments
+          }
+          .toSet
+
       case nested: Lambda =>
         if nested.isMove then nested.captures.flatMap(_.ref.resolvedId).toSet.intersect(captures)
         else Set.empty
+
       case other => TermTraversal.children(other).flatMap(transfers).toSet
 
     if lambda.isMove then transfers(lambda.body) ++ resultCaptures(lambda.body)

@@ -1,10 +1,11 @@
 package mml.mmlclib.codegen
 
 import cats.effect.IO
+import cats.syntax.all.*
 import mml.mmlclib.compiler.CompilerConfig
 import mml.mmlclib.test.BaseEffFunSuite
 
-import java.nio.file.Files
+import java.nio.file.{Files, Path}
 import scala.jdk.CollectionConverters.*
 import scala.util.matching.Regex
 
@@ -24,47 +25,102 @@ class LocalCallableCodegenTests extends BaseEffFunSuite:
     int32_t observe(int32_t n) { trace = trace * 10 + n; return n; }
     void effect(void) { observe(1); }
     int32_t observed(void) { return trace; }
-    void *allocate(void) { ++live; return malloc(1); }
+    void *allocate(void) { ++live; unsigned char *p = malloc(1); *p = 7; return p; }
+    int32_t inspect(const void *p) { return *(const unsigned char *)p; }
     void release(void *p) { --live; free(p); }
     int32_t outstanding(void) { return live; }
   """
 
-  /** Assembles the original IR, then removes unused library definitions so the executable can link
-    * against the small support runtime above. The program's exit status checks its computed result.
-    */
-  private def verify(ir: String, expected: Int, sanitized: Boolean = false): IO[Unit] =
+  private def withDirectory(use: Path => IO[Unit]): IO[Unit] =
     IO.blocking(Files.createTempDirectory("mml-local-callable"))
-      .bracket { dir =>
-        val input   = dir.resolve("program.ll")
-        val support = dir.resolve("support.c")
-        val live    = dir.resolve("live.ll")
-        val binary  = dir.resolve("program")
-        IO.blocking {
-          Files.writeString(input, ir)
-          Files.writeString(support, runtime)
-        } *> commandNotFailed(List("llvm-as", input.toString, "-o", "/dev/null"), dir) *>
-          commandNotFailed(
-            List("opt", "-passes=globaldce", "-S", input.toString, "-o", live.toString),
-            dir
-          ) *>
-          commandNotFailed(
-            List(
-              "clang",
-              "-Wno-override-module",
-              live.toString,
-              support.toString,
-              "-o",
-              binary.toString
-            ) ++ (if sanitized then List("-fsanitize=address", "-fno-omit-frame-pointer") else Nil),
-            dir
-          ) *>
-          programExits(List(binary.toString), dir, expected)
-      } { dir =>
+      .bracket(use) { dir =>
         IO.blocking(Files.walk(dir))
           .bracket { paths =>
             IO.blocking(paths.iterator().asScala.toList.reverse.foreach(Files.deleteIfExists)).void
           }(paths => IO.blocking(paths.close()))
       }
+
+  /** Assembles the original IR, then removes unused library definitions so the executable can link
+    * against the small support runtime above. The program's exit status checks its computed result.
+    */
+  private def verify(
+    ir:           String,
+    expected:     Int,
+    sanitized:    Boolean = false,
+    optimization: Int     = 0
+  ): IO[Unit] =
+    withDirectory { dir =>
+      val input   = dir.resolve("program.ll")
+      val support = dir.resolve("support.c")
+      val live    = dir.resolve("live.ll")
+      val binary  = dir.resolve("program")
+      IO.blocking {
+        Files.writeString(input, ir)
+        Files.writeString(support, runtime)
+      } *> commandNotFailed(List("llvm-as", input.toString, "-o", "/dev/null"), dir) *>
+        commandNotFailed(
+          List(
+            "opt",
+            s"-passes=globaldce,default<O$optimization>",
+            "-S",
+            input.toString,
+            "-o",
+            live.toString
+          ),
+          dir
+        ) *>
+        commandNotFailed(
+          List(
+            "clang",
+            s"-O$optimization",
+            "-Wno-override-module",
+            live.toString,
+            support.toString,
+            "-o",
+            binary.toString
+          ) ++ (if sanitized then List("-fsanitize=address", "-fno-omit-frame-pointer") else Nil),
+          dir
+        ) *>
+        programExits(
+          (if sanitized then
+             List("env", "ASAN_OPTIONS=detect_leaks=1:halt_on_error=1:abort_on_error=1")
+           else Nil) :+ binary.toString,
+          dir,
+          expected
+        )
+    }
+
+  private def executeWithRuntime(source: String, optimization: Int): IO[Unit] =
+    withDirectory { directory =>
+      val binary = directory.resolve("program")
+      val config = CompilerConfig
+        .exe(directory.toString)
+        .copy(
+          outputName = binary.toString.some,
+          optLevel   = optimization,
+          asan       = true
+        )
+      for
+        ir <- compileAndGenerate(source, config = config)
+        triple <- LlvmToolchain.queryLocalTriple.map(_.getOrElse(fail("Missing target")))
+        target <- ClangTarget
+          .resolve(directory, LlvmToolchain.clangFlags(config, triple))
+          .map(_.fold(error => fail(error.message), identity))
+        path <- IO.blocking(Files.writeString(directory.resolve("program.ll"), ir))
+        _ <- commandNotFailed(List("llvm-as", path.toString, "-o", "/dev/null"), directory)
+        result <- LlvmToolchain.compile(path, config, triple.some, target)
+        _ = assertEquals(result._1, Right(0))
+        _ <- programExits(
+          List(
+            "env",
+            "ASAN_OPTIONS=detect_leaks=1:halt_on_error=1:abort_on_error=1",
+            binary.toString
+          ),
+          directory,
+          expectedCode = 0
+        )
+      yield ()
+    }
 
   /** Finds the target from a fixture's call operands so assertions do not depend on generated names
     * or on the order in which unrelated entries receive symbols.
@@ -645,6 +701,206 @@ class LocalCallableCodegenTests extends BaseEffFunSuite:
     fn release(~p: Handle): Unit = @native;;
     fn outstanding(): Int = @native;;
   """
+
+  for optimization <- List(0, 3) do
+    test(s"literal borrowing preserves owned and borrowed String inputs at O$optimization") {
+      val source = """
+        fn named(value: String, n: Int): Int = value.length + n;;
+        fn borrowed(text: String): Int =
+          let unary = { value: String -> value.length; } text;
+          let multiple = { value: String, n: Int -> value.length + n; } text 1;
+          let control = named text 1;
+          if unary == 2 and multiple == control and text.length == 2 then 0;
+          else 1;
+          ;
+        ;
+        pub fn main(): Int =
+          let text = int_to_str 42;
+          let result = borrowed text;
+          let immediate = { value: String, n: Int -> value.length + n; } text 1;
+          if result == 0 and immediate == named text 1 and text.length == 2 then 0;
+          else 1;
+          ;
+        ;
+      """
+      executeWithRuntime(source, optimization)
+    }
+
+  for optimization <- List(0, 3) do
+    test(s"literal borrowing cleans conditional String allocations at O$optimization") {
+      val source = """
+        fn check(kind: Int, borrowed: String): Int =
+          let length =
+            { text: String -> text.length; }
+            (if kind == 0 then int_to_str 123;
+             elif kind == 1 then "ab";
+             else borrowed;
+             )
+          ;
+          let expected = if kind == 0 then 3; elif kind == 1 then 2; else 4;;
+          if length == expected and borrowed.length == 4 then 0; else 1;;
+        ;
+        pub fn main(): Int =
+          let original = int_to_str 1234;
+          let result = check 0 original + check 1 original + check 2 original;
+          if result == 0 and original.length == 4 then 0; else 1;;
+        ;
+      """
+      executeWithRuntime(source, optimization)
+    }
+
+  for optimization <- List(0, 3) do
+    test(s"literal borrowing retains Handle owners and cleans temporaries at O$optimization") {
+      val source = s"""
+        $heapPrelude
+        fn inspect(h: Handle): Int = @native;;
+        fn borrow(h: Handle): Int = inspect h;;
+        fn named(h: Handle): Int = borrow h;;
+        fn check(): Int =
+          let original = allocate ();
+          let control = named original;
+          let unary = { h: Handle -> borrow h; } original;
+          let multiple = { h: Handle, n: Int -> borrow h + n; } original 1;
+          let temporary = { h: Handle ->
+            if outstanding () == 2 then borrow h; else 0;;
+          } (allocate ());
+          let after = borrow original;
+          if control == 7 and unary == 7 and multiple == 8 and temporary == 7 and
+             after == 7 and outstanding () == 1 then 0;
+          else 1;
+          ;
+        ;
+        fn moved_argument(): Int =
+          let original = allocate ();
+          let result = { h: Handle ->
+            if outstanding () == 1 then borrow h; else 0;;
+          } (let moved = original; moved);
+          if result == 7 and outstanding () == 0 then 0; else 1;;
+        ;
+        pub fn main(): Int =
+          let result = check ();
+          let moved = moved_argument ();
+          if result == 0 and moved == 0 and outstanding () == 0 then 0; else 1;;
+        ;
+      """
+      compile(source).flatMap(ir => verify(ir, 0, sanitized = true, optimization = optimization))
+    }
+
+  for optimization <- List(0, 3) do
+    test(s"literal borrowing preserves effect order and consuming parameters at O$optimization") {
+      val source = s"""
+        $heapPrelude
+        fn inspect(h: Handle): Int = @native;;
+        fn observe(n: Int): Int = @native;;
+        fn observed(): Int = @native;;
+        fn marked(n: Int): Handle =
+          let ignored = observe n;
+          allocate ();
+        ;
+        pub fn main(): Int =
+          let result = { first: Handle, second: Handle ->
+            let ignored = observe 3;
+            if outstanding () == 2 then inspect first + inspect second; else 0;;
+          } (marked 1) (marked 2);
+          let consumed = { ~h: Handle -> let value = inspect h; release h; value; } (allocate ());
+          if result == 14 and consumed == 7 and observed () == 123 and
+             outstanding () == 0 then 0;
+          else 1;
+          ;
+        ;
+      """
+      compile(source).flatMap(ir => verify(ir, 0, sanitized = true, optimization = optimization))
+    }
+
+  test("immediate stages release allocating arguments through their custom destructor once") {
+    val source = s"""
+      $heapPrelude
+      fn observe(n: Int): Int = @native;;
+      fn observed(): Int = @native;;
+      fn chained(): Int =
+        { h: Handle ->
+          let ignored = observe (outstanding ());
+          { n: Int -> n; };
+        } (allocate ()) 7;
+      ;
+      fn bound(): Int =
+        let next = { h: Handle ->
+          let ignored = observe (outstanding ());
+          { n: Int -> n; };
+        } (allocate ());
+        next 7;
+      ;
+      pub fn main(): Int =
+        let result = chained () + bound ();
+        if result == 14 and observed () == 11 and outstanding () == 0 then 0;
+        else 1;
+        ;
+      ;
+    """
+    compile(source).flatMap(ir => verify(ir, 0, sanitized = true))
+  }
+
+  for bound <- List(false, true) do
+    test(s"evaluated callee preserves argument effects and caller-scope cleanup, bound=$bound") {
+      val callee = """{ u: Unit ->
+        let temporary = allocate ();
+        let ignored = observe 2;
+        p;
+      }"""
+      val invocation =
+        if bound then s"""
+          let unit = effect ();
+          let number = observe 3;
+          let callable = $callee unit;
+          callable number;
+        """
+        else s"$callee (effect ()) (observe 3);"
+      val source = s"""
+        $heapPrelude
+        fn observe(n: Int): Int = @native;;
+        fn effect(): Unit = @native;;
+        fn observed(): Int = @native;;
+        fn take(~h: Handle, n: Int): Int = release h; n;;
+        fn check(): Int =
+          let p = take (allocate ());
+          let outer = ~{ $invocation };
+          outer ();
+        ;
+        pub fn main(): Int =
+          let result = check ();
+          if result == 3 and observed () == 132 and outstanding () == 0 then 0;
+          else 1;
+          ;
+        ;
+      """
+      compile(source).flatMap(ir => verify(ir, 0, sanitized = true))
+    }
+
+  for bound <- List(false, true) do
+    test(s"returned conditional PAP cleans selected and unselected owned payloads, bound=$bound") {
+      val callee = """{ u: Unit ->
+        let first = p;
+        let second = q;
+        if flag then first; else second;;
+      }"""
+      val invocation =
+        if bound then s"let callable = $callee (); callable 7;"
+        else s"$callee () 7;"
+      val source = s"""
+        $heapPrelude
+        fn take(~h: Handle, n: Int): Int = release h; n;;
+        fn check(flag: Bool): Int =
+          let p = take (allocate ());
+          let q = take (allocate ());
+          $invocation
+        ;
+        pub fn main(): Int =
+          let result = check true + check false;
+          if result == 14 and outstanding () == 0 then 0; else 1;;
+        ;
+      """
+      compile(source).flatMap(ir => verify(ir, 0, sanitized = true))
+    }
 
   for invoked <- List(false, true) do
     test(
