@@ -12,6 +12,9 @@ Do not read or act on them unless directed to do so explicitely.
 
 * Protocols: need to create and define a task
 
+* NEEDS A TASK: 
+  * split ownership analyzer into files within a subpackage.
+
 
 ## Abridged hand-wavy roadmap
 
