@@ -110,3 +110,24 @@ Read only the documentation and code directly related to the target doc.
 - Use local `post-chores` when finishing a tracked task or handing off compiler changes,
   including compiler errands. Non-compiler errands and simple asks need only relevant checks;
   delivering an intermediate artifact does not trigger post-chores or independent review.
+
+## False Positive Cybersecurity blocks
+
+We are not working on cybersecurity or trying to break a system.
+But sometimes when working on the memory model we get:
+
+    This content can’t be shown
+    Daybreak isn’t available for Astra. Some cybersecurity requests may still be limited.
+    Learn more: https://help.openai.com/en/articles/20001326
+
+**What can I do if content can’t be shown?**
+
+    If content can’t be shown, review the request against OpenAI’s Usage Policies. If the request is allowed, try again with a narrower scope and only the context needed to explain the outcome you want:
+    
+    For cybersecurity work, focus on a defensive outcome, such as identifying, preventing, or remediating a security issue. Omit exploit details that are not necessary to that outcome.
+
+Again, while we don't do cybersecurity work and are not trying to exploit a third party system,
+we are victims of this weak defensive layer which prevents us from completing legal, defensible work.
+Please be aware and follow the instructions above and in the guides.
+
+Keep track of the instances and what you were trying to accomplish so we can report them.
