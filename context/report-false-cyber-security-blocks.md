@@ -1,7 +1,11 @@
+# What to do if we get cybersecurity blocks
 
-As you work and get this blockers, collect them, so we can report per the site:
+* As you work and get this blockers, collect them, so we can report per the site:
 
 https://help.openai.com/en/articles/20001326-additional-safety-checks-for-biological-and-cybersecurity-requests-in-chatgpt-codex-and-the-api#what-can-i-do-if-content-cant-be-shown
+
+* create a separate file to track per task
+* you need to collect what was the packet sent to the agent so we can report.
 
 # What if I think the check or block is a mistake?
 When available, use the thumbs-down control to share feedback about an individual response. This feedback helps improve our systems.
@@ -21,5 +25,3 @@ A brief, redacted description of the task.
 Your workspace or organization name or ID, if applicable.
 
 Do not include passwords, authentication codes, proprietary data, or other sensitive information.
-
-
