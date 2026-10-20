@@ -176,6 +176,27 @@ Effect:
 s is freed after println returns
 ```
 
+An owned closure or partial application may be destroyed before a terminal call when
+the compiler proves that destruction only releases storage and the call cannot borrow
+that closure. Every argument runs first, once in source order, so an argument may borrow
+the closure to compute a scalar result before cleanup. Transferred values keep their
+new owner; conditional cleanup keeps its ownership witness.
+
+Pointer results and aggregates containing pointers can still depend on the closure's
+storage even when their own type needs no destructor. Their consumer keeps the owner
+alive. This also applies to aliases created before their backing storage moves into a
+closure. Local aliases and parameters of immediately invoked lambdas preserve these
+dependencies; only proven primitive values without storage references are independent.
+Releasing an environment does not release its borrowed captures or the callable that created
+it. Sharing those borrowed values does not by itself prevent early environment cleanup.
+
+The proof accepts trusted runtime deallocators and composes through owned captures and
+generated struct fields. It requires complete callable origins, including every returned
+or conditional alternative. Unknown targets, custom native destructors, and analysis
+cycles retain ordinary scope-end cleanup. A recursive call with cleanup still required
+afterward remains an ordinary call; eligible calls become loops through the usual tail-call
+optimization.
+
 ---
 
 ## Escaping values
@@ -662,8 +683,10 @@ deallocator before forwarding the payload. The consuming caller dispatches destr
 the call. A dropped, uncalled PAP retains its payload destructor. This keeps the same closure
 representation for borrowing and consuming higher-order calls.
 
-PAP environments with only scalar payloads can be released after their last use, before a
-terminal call. Payload destructors retain their ordering relative to user effects.
+PAPs and move closures share the [scope-end cleanup](#scope-end-cleanup) placement rules.
+Storage-only cleanup can run after terminal-call arguments and before the call when no
+argument or callee retains the owner. Borrowed closures and aliases keep the owner alive.
+Custom or unknown payload destructors retain their execution order.
 
 ---
 

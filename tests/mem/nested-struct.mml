@@ -1,6 +1,6 @@
 // Nested Struct Memory Test
 // Verifies recursive destructors for nested structs with heap fields.
-// Run with: mmlc run -s mml/samples/mem/nested-struct.mml
+// Run with: mmlc run -s tests/mem/nested-struct.mml
 // Leaks:    leaks --atExit -- build/target/nestedstruct
 
 struct Inner { name: String };

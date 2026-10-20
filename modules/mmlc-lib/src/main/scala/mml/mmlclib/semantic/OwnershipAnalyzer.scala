@@ -1,5 +1,6 @@
 package mml.mmlclib.semantic
 
+import cats.data.State
 import cats.syntax.all.*
 import mml.mmlclib.ast.*
 import mml.mmlclib.compiler.CompilerState
@@ -510,6 +511,36 @@ object OwnershipAnalyzer:
       typeSpec = boolType
     )
 
+  private def cleanupTerm(
+    binding:     OwnedBinding,
+    span:        SourceOrigin,
+    resolvables: ResolvablesIndex
+  ): Option[Term] =
+    binding.tpe
+      .flatMap { tpe =>
+        mkFreeCall(
+          binding.name,
+          tpe,
+          span,
+          binding.id,
+          resolvables,
+          binding.destructorTargetId
+        )
+      }
+      .map { free =>
+        binding.witness.fold(free) { witness =>
+          val unitType = unitTypeRef(span).some
+          Cond(
+            span,
+            Expr(span, List(witness), typeSpec                     = witness.typeSpec),
+            Expr(span, List(free), typeSpec                        = unitType),
+            Expr(span, List(LiteralUnit(span, unitType)), typeSpec = unitType),
+            unitType,
+            unitType
+          )
+        }
+      }
+
   /** Cleanup follows the complete obligation, including a resolved conditional witness. */
   private def wrapWithFrees(
     expr:            Expr,
@@ -523,27 +554,7 @@ object OwnershipAnalyzer:
     def withCleanup(result: Expr): Allocation[Expr] =
       toFree.foldRight(result.pure[Allocation]): (binding, rest) =>
         rest.flatMap: body =>
-          val free = binding.tpe
-            .flatMap: tpe =>
-              mkFreeCall(
-                binding.name,
-                tpe,
-                span,
-                binding.id,
-                resolvables,
-                binding.destructorTargetId
-              )
-            .map: free =>
-              binding.witness.fold(free): witness =>
-                val unitType = unitTypeRef(span).some
-                Cond(
-                  span,
-                  Expr(span, List(witness), typeSpec                     = witness.typeSpec),
-                  Expr(span, List(free), typeSpec                        = unitType),
-                  Expr(span, List(LiteralUnit(span, unitType)), typeSpec = unitType),
-                  unitType,
-                  unitType
-                )
+          val free = cleanupTerm(binding, span, resolvables)
 
           free.fold(body.pure[Allocation]): term =>
             LocalBindings.sequence(term, body, owner, unitTypeRef(span), span)
@@ -1149,61 +1160,231 @@ object OwnershipAnalyzer:
       }
       .distinctBy(_.resolvedId)
 
-  /** A PAP owning only scalar values has no payload destruction effects. Release its environment
-    * before a terminal call when neither that call nor a borrowed alias can use it. This leaves
-    * recursive calls in tail position without moving payload destructors across user effects.
+  /** Storage-only destruction may precede a terminal call after its arguments have run. Every other
+    * path keeps scope-end cleanup, including calls retaining the owner through a borrow.
     */
-  private def releaseFinishedPap(
-    expr:    Expr,
-    binding: OwnedBinding,
-    scope:   OwnershipScope
-  ): Allocation[Option[Expr]] =
-    val origins = binding.id.toList.flatMap { id =>
-      scope.callableValues.lambdas(Ref(SourceOrigin.Synth, binding.name, resolvedId = id.some))
-    }
-    val trivial = origins.nonEmpty && origins.forall(_.meta.exists { meta =>
-      meta.isPartialApplication && meta.transferredCaptures.isEmpty && meta.borrowedCaptures.isEmpty
-    })
-    val dependentIds = scope.borrowedDependencies.collect {
-      case (id, refs) if refs.exists(_.resolvedId == binding.id) => id
-    }.toSet ++ binding.id
+  private def placeCleanup(
+    expr:            Expr,
+    bindings:        List[OwnedBinding],
+    scope:           OwnershipScope,
+    ownershipResult: Boolean = false
+  ): Allocation[Expr] =
 
-    def insert(value: Expr, free: Term): Allocation[Option[Expr]] = value.terms match
+    def late(value: Expr, binding: OwnedBinding): Allocation[Expr] =
+      wrapWithFrees(
+        value,
+        List(binding),
+        value.source,
+        scope.bindingOwner,
+        scope.resolvables,
+        ownershipResult
+      )
+
+    def storageIndependent(value: Term, current: OwnershipScope): Boolean =
+      val native = value.typeSpec
+        .flatMap(TypeUtils.canonical(_, current.resolvables))
+        .flatMap {
+          case ref: TypeRef =>
+            ref.resolvedId
+              .flatMap(current.resolvables.lookupType)
+              .collect { case definition: TypeDef =>
+                definition
+              }
+              .flatMap(_.typeSpec)
+          case _ => none[Type]
+        }
+      native.exists {
+        case primitive: NativePrimitive =>
+          !TypeUtils.isPointerNativeType(primitive) &&
+          primitive.memEffect.isEmpty && primitive.freeFn.isEmpty
+        case _ => false
+      }
+
+    def extend(current: OwnershipScope, param: FnParam, value: Expr): OwnershipScope =
+      val retained =
+        if storageIndependent(value, current) then Nil
+        else TermTraversal.collect(value) { case ref: Ref => ref }
+      val dependencies = param.id.map { id =>
+        id -> (current.borrowedDependencies.getOrElse(id, Nil) ++
+          borrowedDependencies(value, current) ++ retained).distinctBy(_.resolvedId)
+      }
+      current.copy(
+        callableValues       = current.callableValues.withBindings(List(param -> value)),
+        borrowedDependencies = current.borrowedDependencies ++ dependencies,
+        resolvables          = current.resolvables.updated(param)
+      )
+
+    def retains(term: Term, binding: OwnedBinding, current: OwnershipScope): Boolean =
+
+      def references(value: Term): Set[String] =
+        if storageIndependent(value, current) then Set.empty
+        else
+          value match
+            case lambda: Lambda => lambda.captures.flatMap(c => references(c.ref)).toSet
+            case ref:    Ref => ref.resolvedId.toSet ++ ref.qualifier.toList.flatMap(references)
+            case other => TermTraversal.children(other).flatMap(references).toSet
+
+      @tailrec
+      def dependencies(pending: List[String], seen: Set[String]): Set[String] = pending match
+        case Nil => seen
+        case id :: rest if seen.contains(id) => dependencies(rest, seen)
+        case id :: rest =>
+          val borrowed = current.borrowedDependencies.getOrElse(id, Nil).flatMap(_.resolvedId)
+          val owner    = current.fieldAliases.get(id).map(_.ownerId).toList
+          val sources = current.callableValues.bindings
+            .getOrElse(id, Nil)
+            .flatMap(references)
+          dependencies(borrowed ++ owner ++ sources ++ rest, seen + id)
+
+      def ownedStorage(value: Ref, seen: Set[String]): Set[String] =
+        if value.resolvedId.exists(seen.contains) ||
+          !value.typeSpec.exists(isOwnedType(_, current.resolvables))
+        then Set.empty
+        else
+          val aliases = current.callableValues.resultReferences(value).flatMap(references).toSet
+          value.typeSpec.flatMap(TypeUtils.canonical(_, current.resolvables)) match
+            case Some(_: TypeFn) =>
+              current.callableValues.provenLambdas(value) match
+                case Some(origins) if origins.forall(_.captures.isEmpty) => Set.empty
+                case origins =>
+                  val captures = origins.toList.flatten
+                    .flatMap(StorageOnlyDestruction.ownedCaptures)
+                  aliases ++ captures.flatMap(ownedStorage(_, seen ++ aliases))
+
+            case _ => dependencies(aliases.toList, Set.empty)
+
+      val owner = Ref(
+        syntheticSource,
+        binding.name,
+        typeSpec   = binding.tpe,
+        resolvedId = binding.id
+      )
+      val retained = dependencies(references(term).toList, Set.empty)
+      val released = ownedStorage(owner, Set.empty)
+      // Lexical values identify storage; module functions and shared field declarations do not.
+      retained.intersect(released).exists { id =>
+        binding.id.contains(id) || current.resolvables.lookup(id).exists {
+          case _: FnParam => true
+          case _ => false
+        }
+      }
+
+    case class CleanupPlacement(expr: Expr, earlyOnEveryPath: Boolean)
+
+    def insert(
+      value:   Expr,
+      binding: OwnedBinding,
+      free:    Term,
+      current: OwnershipScope
+    ): Allocation[CleanupPlacement] = value.terms match
+
       case List(app: App) =>
         app.fn match
+
           case local: Lambda =>
-            insert(local.body, free).map(_.map { body =>
-              value.copy(terms = List(app.copy(fn = local.copy(body = body))))
-            })
-          case _
-              if scope.callableValues.referencedCaptureIds(app).intersect(dependentIds).isEmpty =>
-            LocalBindings
-              .sequence(free, value, scope.bindingOwner, unitTypeRef(value.source), value.source)
-              .map(_.some)
-          case _ => none[Expr].pure[Allocation]
+            val nested = local.params.headOption.fold(current)(extend(current, _, app.arg))
+            insert(local.body, binding, free, nested).map { placed =>
+              CleanupPlacement(
+                value.copy(terms = List(app.copy(fn = local.copy(body = placed.expr)))),
+                placed.earlyOnEveryPath
+              )
+            }
+
+          case _ =>
+            val (callee, arguments) = CallableValues.application(app)
+            val retained = retains(callee, binding, current) || arguments.exists { argument =>
+              !storageIndependent(argument, current) &&
+              retains(argument, binding, current)
+            }
+            if retained then late(value, binding).map(CleanupPlacement(_, false))
+            else
+              for
+                locals <- arguments.traverse { argument =>
+                  for
+                    next <- State.inspect[BindingIdSupply, Long](_.next)
+                    local <- LocalBindings.local(
+                      current.bindingOwner,
+                      s"__cleanup_arg_$next",
+                      typeSpec = argument.typeSpec,
+                      purpose  = "cleanup-argument"
+                    )
+                  yield local
+                }
+                // Preserve the typed application spine while substituting evaluated operands.
+                replaced = replaceCallArguments(app, locals.map(_.expression))
+                cleaned <- LocalBindings.sequence(
+                  free,
+                  value.copy(terms = List(replaced)),
+                  current.bindingOwner,
+                  unitTypeRef(value.source),
+                  value.source
+                )
+              yield CleanupPlacement(
+                arguments.zip(locals).foldRight(cleaned) { case ((argument, local), body) =>
+                  body.copy(terms = List(LocalBindings.bind(local.param, argument, body)))
+                },
+                true
+              )
+
+      case List(bound: BindOwnership) =>
+        val nested = extend(current, bound.valueParam, bound.initializer)
+        insert(bound.body, binding, free, nested).map { placed =>
+          CleanupPlacement(
+            value.copy(terms = List(bound.copy(body = placed.expr))),
+            placed.earlyOnEveryPath
+          )
+        }
+
       case List(cond: Cond) =>
         for
-          ifTrue <- insert(cond.ifTrue, free)
-          ifFalse <- insert(cond.ifFalse, free)
-        yield for
-          yes <- ifTrue
-          no <- ifFalse
-        yield value.copy(terms = List(cond.copy(ifTrue = yes, ifFalse = no)))
-      case _ => none[Expr].pure[Allocation]
-
-    val free = Option.when(trivial)(binding).flatMap { binding =>
-      binding.tpe.flatMap { tpe =>
-        mkFreeCall(
-          binding.name,
-          tpe,
-          expr.source,
-          binding.id,
-          scope.resolvables,
-          binding.destructorTargetId
+          yes <- insert(cond.ifTrue, binding, free, current)
+          no <- insert(cond.ifFalse, binding, free, current)
+        yield CleanupPlacement(
+          value.copy(terms = List(cond.copy(ifTrue = yes.expr, ifFalse = no.expr))),
+          yes.earlyOnEveryPath && no.earlyOnEveryPath
         )
-      }
+
+      case _ => late(value, binding).map(CleanupPlacement(_, false))
+
+    val (early, remaining) = bindings.partition { binding =>
+      !ownershipResult &&
+      StorageOnlyDestruction.closure(
+        Ref(syntheticSource, binding.name, typeSpec = binding.tpe, resolvedId = binding.id),
+        scope.callableValues
+      ) && cleanupTerm(binding, expr.source, scope.resolvables)
+        .exists(free =>
+          insert(expr, binding, free, scope).runA(scope.bindingIds).value.earlyOnEveryPath
+        )
     }
-    free.fold(none[Expr].pure[Allocation])(insert(expr, _))
+
+    (early ++ remaining).foldLeftM(expr) { (value, binding) =>
+      val ref = Ref(
+        syntheticSource,
+        binding.name,
+        typeSpec   = binding.tpe,
+        resolvedId = binding.id
+      )
+      val free = Option
+        .when(
+          !ownershipResult && StorageOnlyDestruction.closure(
+            ref,
+            scope.callableValues
+          )
+        )(cleanupTerm(binding, value.source, scope.resolvables))
+        .flatten
+      free.fold(late(value, binding))(term => insert(value, binding, term, scope).map(_.expr))
+    }
+
+  private def replaceCallArguments(app: App, arguments: List[Expr]): App =
+    def replace(current: App, remaining: List[Expr]): (App, List[Expr]) =
+      val (fn, rest) = current.fn match
+        case inner: App => replace(inner, remaining)
+        case other => (other, remaining)
+      rest match
+        case arg :: tail => (current.copy(fn = fn, arg = arg), tail)
+        case Nil => (current.copy(fn = fn), Nil)
+
+    replace(app, arguments)._1
 
   private def sameBinding(left: OwnedBinding, right: OwnedBinding): Boolean =
     (left.id, right.id) match
@@ -1313,23 +1494,12 @@ object OwnershipAnalyzer:
     val argumentLifetimeErrors = borrowedArguments.flatMap(checkRef(_, body.scope).errors)
 
     val relaysOwnership = requirement.relaysOwnership
-    val (earlyIds, earlyBody, terminal) = toFree.foldLeft(
-      (body.scope.bindingIds, body.expr, List.empty[OwnedBinding])
-    ):
-      case ((ids, expr, pending), binding) =>
-        if relaysOwnership then (ids, expr, pending :+ binding)
-        else
-          val (nextIds, released) = releaseFinishedPap(expr, binding, bodyScope).run(ids).value
-          released.fold((nextIds, expr, pending :+ binding))(next => (nextIds, next, pending))
-
-    val (cleanupIds, cleaned) = wrapWithFrees(
-      earlyBody,
-      terminal,
-      lambda.body.source,
-      bodyScope.bindingOwner,
-      scope.resolvables,
+    val (cleanupIds, cleaned) = placeCleanup(
+      body.expr,
+      toFree,
+      bodyScope.copy(borrowedDependencies = body.scope.borrowedDependencies),
       relaysOwnership
-    ).run(earlyIds).value
+    ).run(body.scope.bindingIds).value
 
     val initializer =
       if initializerRequirement.relaysOwnership && !needsWitness then ordinaryResult(argument.expr)
@@ -1897,20 +2067,16 @@ object OwnershipAnalyzer:
       else current
 
     val relaysOwnership = requirement.relaysOwnership
-    val (yesIds, cleanedYes) = wrapWithFrees(
+    val (yesIds, cleanedYes) = placeCleanup(
       yes.expr,
       freeYes,
-      cond.ifTrue.source,
-      scope.bindingOwner,
-      scope.resolvables,
+      yes.scope,
       relaysOwnership
     ).run(no.scope.bindingIds).value
-    val (noIds, cleanedNo) = wrapWithFrees(
+    val (noIds, cleanedNo) = placeCleanup(
       no.expr,
       freeNo,
-      cond.ifFalse.source,
-      scope.bindingOwner,
-      scope.resolvables,
+      no.scope,
       relaysOwnership
     ).run(yesIds).value
 
@@ -1996,12 +2162,10 @@ object OwnershipAnalyzer:
         then OwnedBinding(p.name, pType, p.id, None, None).some
         else none
     }
-    val (cleanupIds, finalBody) = wrapWithFrees(
+    val (cleanupIds, finalBody) = placeCleanup(
       bodyResult.expr,
       consumingToFree,
-      lambda.body.source,
-      captureScope.bindingOwner,
-      scope.resolvables
+      captureScope.copy(borrowedDependencies = bodyResult.scope.borrowedDependencies)
     ).run(bodyResult.scope.bindingIds).value
 
     // Validate the typed source flow before cleanup and return-promotion rewrites.

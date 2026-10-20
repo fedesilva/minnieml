@@ -483,8 +483,11 @@ class ClosureCodegenTest extends BaseEffFunSuite:
     val source = """
       fn main(): String =
         let f = { x: Int ->
-          println "lambda";
-          "lambda";
+          let text = "lambda";
+          let size = { text.length; };
+          let length = size ();
+          println text;
+          text;
         };
         f 1;
       ;
@@ -506,10 +509,14 @@ class ClosureCodegenTest extends BaseEffFunSuite:
         lambdaBody.contains("call void @println"),
         s"Expected deferred lambda body to keep its println call. Body:\n$lambdaBody"
       )
-      assert(
-        lambdaBody.contains("!tbaa !10") && lambdaBody.contains("!tbaa !11"),
-        s"Expected deferred lambda body to keep TBAA-tagged String field stores. Body:\n$lambdaBody"
-      )
+      val tags = """store %struct.String [^\n]*!tbaa !(\d+)""".r
+        .findAllMatchIn(lambdaBody)
+        .map(_.group(1))
+        .toList
+      assert(tags.nonEmpty, s"Missing tagged String capture store:\n$lambdaBody")
+      tags.foreach { id =>
+        assert(llvmIr.contains(s"!$id = "), s"Missing capture metadata !$id:\n$llvmIr")
+      }
     }
   }
 

@@ -81,6 +81,31 @@ class OwnershipAnalyzerTests extends BaseEffFunSuite:
       case TXRefNamed(name) if name == "__clone_String" => true
     }
 
+  test("early cleanup gives each hoisted call operand a distinct name") {
+    val code = """
+      fn add(a: Int, b: Int): Int = a + b;;
+      fn run(): Int =
+        let first = int_to_str 1;
+        let f = ~{ first.length; };
+        let second = int_to_str 2;
+        let g = ~{ second.length; };
+        add (f ()) (g ());
+      ;
+    """
+
+    semNotFailed(code).map { module =>
+      val operands = TermTraversal
+        .collect(topLevelLambdaBody(module, "run")) { case lambda: Lambda =>
+          lambda.params.filter(_.name.startsWith("__cleanup_arg_"))
+        }
+        .flatten
+
+      assert(operands.size >= 4, s"Expected both calls to hoist two operands, found: $operands")
+      assertEquals(operands.map(_.name).distinct.size, operands.size)
+      assertEquals(operands.flatMap(_.id).distinct.size, operands.size)
+    }
+  }
+
   test("caller frees value returned by user function that allocates internally") {
     val code =
       """

@@ -3,7 +3,6 @@ package mml.mmlclib.codegen.emitter.expression
 import cats.syntax.all.*
 import mml.mmlclib.ast.*
 import mml.mmlclib.codegen.emitter.alias.AliasScopeEmitter
-import mml.mmlclib.codegen.emitter.tbaa.TbaaEmitter
 import mml.mmlclib.codegen.emitter.{
   CodeGenError,
   CodeGenState,
@@ -11,7 +10,6 @@ import mml.mmlclib.codegen.emitter.{
   emitCall,
   emitGetElementPtr,
   emitLoad,
-  emitStore,
   getLlvmType,
   getNominalTypeName
 }
@@ -102,95 +100,28 @@ def compileLiteralString(
   lit:   LiteralString,
   state: CodeGenState
 ): Either[CodeGenError, CompileResult] =
-  val typeSpec = lit.typeSpec match
-    case Some(ts) => Right(ts)
-    case None => Left(CodeGenError("LiteralString missing type specification", Some(lit)))
-
-  typeSpec.flatMap { ts =>
-    // Add the string to the constants (to be emitted at the module level later)
-    val (newState, constName) = state.addStringConstant(lit.value)
-    val strLen                = lit.value.length
-
-    for
-      // Get field-specific TBAA tags for struct field accesses
-      (stateWithLenTag, lenTag) <- TbaaEmitter.getTbaaStructFieldTag(ts, 0, newState)
-      (stateWithDataTag, dataTag) <- TbaaEmitter.getTbaaStructFieldTag(ts, 1, stateWithLenTag)
-    yield
-      // Emit GEP instruction to get a pointer to the string data
-      val ptrReg = stateWithDataTag.nextRegister
-      val gepLine = emitGetElementPtr(
+  lit.typeSpec.toRight(CodeGenError("LiteralString missing type specification", lit.some)).map {
+    _ =>
+      val (withConstant, constName) = state.addStringConstant(lit.value)
+      val strLen                    = lit.value.length
+      val ptrReg                    = withConstant.nextRegister
+      val lengthReg                 = ptrReg + 1
+      val resultReg                 = lengthReg + 1
+      val gep = emitGetElementPtr(
         ptrReg,
         s"[$strLen x i8]",
         s"[$strLen x i8]*",
         s"@$constName",
         List(("i64", "0"), ("i64", "0"))
       )
-      val stateWithPtr = stateWithDataTag.withRegister(ptrReg + 1).emit(gepLine)
-
-      // Allocate and initialize a String struct
-      val allocReg       = stateWithPtr.nextRegister
-      val allocLine      = s"  %$allocReg = alloca %struct.String"
-      val stateWithAlloc = stateWithPtr.withRegister(allocReg + 1).emit(allocLine)
-
-      // Store the length field (field 0, offset 0, type int)
-      val lenPtrReg = stateWithAlloc.nextRegister
-      val lenPtrLine = emitGetElementPtr(
-        lenPtrReg,
-        "%struct.String",
-        "%struct.String*",
-        s"%$allocReg",
-        List(("i32", "0"), ("i32", "0"))
-      )
-      val stateWithLenPtr = stateWithAlloc.withRegister(lenPtrReg + 1).emit(lenPtrLine)
-      val (stateWithLenAlias, lenAliasTag, lenNoaliasTag) =
-        AliasScopeEmitter.getAliasScopeTagsByName("Int32", stateWithLenPtr)
-      val lenStoreLine =
-        emitStore(
-          s"$strLen",
-          "i32",
-          s"%$lenPtrReg",
-          Some(lenTag),
-          lenAliasTag,
-          lenNoaliasTag
+      val result = withConstant
+        .withRegister(resultReg + 1)
+        .emitAll(
+          List(
+            gep,
+            s"  %$lengthReg = insertvalue %struct.String undef, i32 $strLen, 0",
+            s"  %$resultReg = insertvalue %struct.String %$lengthReg, ptr %$ptrReg, 1"
+          )
         )
-      val stateWithLenStore = stateWithLenAlias.emit(lenStoreLine)
-
-      // Store the data field (field 1, offset 8, type pointer)
-      val dataPtrReg = stateWithLenStore.nextRegister
-      val dataPtrLine = emitGetElementPtr(
-        dataPtrReg,
-        "%struct.String",
-        "%struct.String*",
-        s"%$allocReg",
-        List(("i32", "0"), ("i32", "1"))
-      )
-      val stateWithDataPtr = stateWithLenStore.withRegister(dataPtrReg + 1).emit(dataPtrLine)
-      val (stateWithDataAlias, dataAliasTag, dataNoaliasTag) =
-        AliasScopeEmitter.getAliasScopeTagsByName("CharPtr", stateWithDataPtr)
-      val dataStoreLine =
-        emitStore(
-          s"%$ptrReg",
-          "i8*",
-          s"%$dataPtrReg",
-          Some(dataTag),
-          dataAliasTag,
-          dataNoaliasTag
-        )
-      val stateWithDataStore = stateWithDataAlias.emit(dataStoreLine)
-
-      // Load the String struct (no TBAA tag for aggregate load)
-      val (stateWithStructAlias, structAliasTag, structNoaliasTag) =
-        AliasScopeEmitter.getAliasScopeTags(ts, stateWithDataStore)
-      val resultReg = stateWithStructAlias.nextRegister
-      val loadLine =
-        emitLoad(
-          resultReg,
-          "%struct.String",
-          s"%$allocReg",
-          aliasScope = structAliasTag,
-          noalias    = structNoaliasTag
-        )
-      val finalState = stateWithStructAlias.withRegister(resultReg + 1).emit(loadLine)
-
-      CompileResult(resultReg, finalState, false, "String")
+      CompileResult(resultReg, result, false, "String")
   }

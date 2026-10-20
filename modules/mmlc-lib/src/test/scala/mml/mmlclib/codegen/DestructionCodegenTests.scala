@@ -123,7 +123,7 @@ class DestructionCodegenTests extends BaseEffFunSuite:
     }
   }
 
-  test("destruction after recursion preserves ordinary call and cleanup ordering") {
+  test("storage-only closure destruction precedes the recursive back edge") {
     compileAndGenerate("""
       fn run(n: Int): Unit =
         if n > 0 then
@@ -134,11 +134,12 @@ class DestructionCodegenTests extends BaseEffFunSuite:
         ;
       ;
     """).map { ir =>
-      val body    = functionBody(ir, "test_run")
-      val call    = body.indexOf("call void @test_run")
-      val cleanup = body.indexOf("call void @test___free___closure_env_")
-      assert(call >= 0 && cleanup > call, body)
-      assert(!body.contains("loop.header"), body)
+      val body     = functionBody(ir, "test_run")
+      val cleanup  = body.indexOf("call void @test___free___closure_env_")
+      val backEdge = body.indexOf("br label %loop.header", cleanup)
+      assert(cleanup >= 0 && backEdge > cleanup, body)
+      assert(!body.contains("call void @test_run"), body)
+      assertPhiPredecessors(body)
     }
   }
 

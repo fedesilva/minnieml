@@ -843,7 +843,13 @@ private[emitter] def compileTailRecursiveLambda(
         }.toMap
         (stateAfterPhi, selfScope)
     (stateWithSelf, selfScope) = selfBinding
-    bodyScope                  = paramScope ++ captureScope ++ selfScope
+    unitScope = lambda.params
+      .zip(paramTypes)
+      .collect { case (param, "void") =>
+        param.name -> ScopeEntry(0, "Unit", isLiteral = true, literalValue = "undef".some)
+      }
+      .toMap
+    bodyScope = paramScope ++ unitScope ++ captureScope ++ selfScope
     bodyResult <- compileTailRecBody(
       body,
       stateWithSelf,
@@ -898,9 +904,8 @@ private def compileTailRecBody(
       for
         preResult <- compileBoundStatements(preStmts, state, scope)
         (stateAfterPre, scopeAfterPre, preExitBlock) = preResult
-        filteredArgs                                 = nonVoidIndices.map(args(_))
         argsResult <- compileTailRecArgs(
-          filteredArgs,
+          args,
           stateAfterPre,
           scopeAfterPre,
           preExitBlock
@@ -909,7 +914,7 @@ private def compileTailRecBody(
       yield
         val backBlock   = lastExitBlock.orElse(preExitBlock).getOrElse(currentBlock)
         val stateWithBr = stateAfterArgs.emit(s"  br label %$loopHeader")
-        (stateWithBr, List(BackEdge(backBlock, argValues)))
+        (stateWithBr, List(BackEdge(backBlock, nonVoidIndices.map(argValues(_)))))
 
     case TailRecBranch(preStmts, condition, ifTrue, ifFalse) =>
       for

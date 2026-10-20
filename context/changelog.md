@@ -2,6 +2,14 @@
 
 Durable product changes belong here. Current task state belongs in task files.
 
+## 2026-10-20
+
+- Preserve tail recursion across owned-closure cleanup when destruction only releases storage.
+  Retain captured storage through borrowed aliases, evaluate arguments once in source order,
+  and preserve custom destructor effects and conditional ownership.
+- Evaluate Unit arguments on recursive loop edges and construct String literals without
+  per-iteration stack allocations. Add native lifetime and bounded-resource regressions.
+
 ## 2026-10-19
 
 - Keep staged-call operands paired with their parameter and ownership information through

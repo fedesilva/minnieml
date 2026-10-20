@@ -899,6 +899,29 @@ immediate bodies.
    let x = alloc(); body  ->  let x = alloc(); let __r = body; __free_T x; __r
    ```
 
+   Owned closures and PAPs share an early-cleanup placement helper. `StorageOnlyDestruction`
+   proves that their destructors only release storage, using resolved stdlib deallocator IDs,
+   generated struct fields, and complete lexical callable origins for owned captures. Unknown
+   native destructors, unresolved alternatives, and cycles fail the proof. Closure destructor
+   bodies are completed later and are not evidence for this analysis.
+
+   Placement follows lexical bindings and conditional paths. Before a terminal call, generated
+   local bindings evaluate every argument once in source order. The callee and retained argument
+   values must not share backing storage with the owner through captures, initializer aliases,
+   field aliases, or transitive borrow dependencies. This includes aliases created before a
+   payload moves into a closure. Scalar results may be computed by borrowing the owner during
+   argument evaluation. Cleanup then precedes the call, preserving its typed application spine. Paths
+   that cannot release early retain scope-end cleanup; ownership witnesses and move decisions
+   remain attached to their original obligations. Branch reconciliation uses the same placement.
+   Lifetime independence requires a resolved primitive value without pointers or ownership
+   annotations. Pointer and aggregate results retain initializer dependencies even when they
+   need no destructor. Traversal preserves existing borrow edges, including parameters of
+   immediately invoked lambdas, while adding dependencies for lexical aliases. Storage overlap
+   uses resolved lexical identities; shared function or field declarations do not identify an
+   allocation. The released-storage set follows callable result aliases and owned captures.
+   A factory callee or a borrowed capture does not become owned by the returned environment.
+   Proven non-capturing functions have no environment storage to release.
+
 3. **Expression temporaries**: Calls with allocating arguments analyze each operand once,
    threading ownership moves in source order. Synthetic bindings preserve that evaluation order;
    generated wrappers are not analyzed again. Unconsumed allocating temporaries are destroyed
@@ -1059,7 +1082,8 @@ path.
 - Detects self-recursion for top-level function bodies represented as `Lambda`s.
 - Traverses nested lambda bodies, application arguments, and conditional branches to find
   recursive local lambdas, retaining their resolved binding identities.
-- Runs after ownership cleanup is inserted. A recursive call with destruction in its
+- Runs after ownership cleanup is placed. Proven storage-only closure cleanup can precede a
+  terminal call and expose tail recursion. A recursive call with destruction still in its
   continuation uses ordinary recursion, preserving the order of effects.
 - Traverses ownership initializers and bodies. Only `BindOwnership.body` can continue a tail
   position; `YieldOwnership.value` still has a witness to evaluate afterward.
@@ -1076,6 +1100,11 @@ LLVM registers; capture stores stay at the closure's creation point on each iter
 Calls may borrow an iteration-local closure synchronously;
 ownership analysis rejects callee escape, while loopification rejects carrying the closure
 itself across a back edge.
+
+Recursive-call arguments all execute, including Unit expressions. Unit parameters retain
+source-level scope bindings but have no LLVM operands or PHIs. Back-edge predecessors use
+the final evaluation block, including blocks introduced by trailing Unit arguments. The
+emitter does not relocate destruction and `--no-tco` disables loopification.
 
 ---
 
@@ -1280,6 +1309,12 @@ evaluated-callee exits in evaluation order; operators preserve operand exits. En
 conditionals and loop back edges use these results as PHI predecessors. Deferred function
 bodies keep their block labels separate from the enclosing expression.
 
+String literals construct their `{ length, data }` value with SSA `insertvalue` instructions,
+pointing at global constant bytes. Literal evaluation requires no temporary stack allocation,
+including inside unoptimized loops. The String layout and native ABI are unchanged. Alias
+metadata describes actual memory operations, such as capture stores and loads, rather than
+literal aggregate construction.
+
 `OwnershipResults` emits the scoped `YieldOwnership`/`BindOwnership` protocol within the same
 function. An ownership conditional joins its ordinary value and Boolean witness with separate
 SSA PHIs, both using the actual branch exit blocks. `BindOwnership` adds the two resolved
@@ -1386,8 +1421,9 @@ calls the stored value through the ordinary closure ABI. Direct calls and adapte
 a body; value-only local lambdas use closure-value emission.
 
 The optimization preserves source-language semantics and ownership rules. Proven PAP captures also
-qualify their non-capturing targets for plain entries. General capture elimination and tail
-recursion across owned-closure cleanup are not yet implemented.
+qualify their non-capturing targets for plain entries. General capture elimination is not yet
+implemented. Ownership analysis handles tail recursion across eligible owned-closure cleanup
+before local-entry selection.
 `LocalCallableCodegenTests` checks entry signatures, aliasing and shadowing, recursion, value
 adapters and captures, effect order, and consuming parameters with LLVM assembly and native execution.
 

@@ -11,7 +11,9 @@ class TbaaEmissionTest extends BaseEffFunSuite:
   test("generates distinct TBAA field tags for struct fields") {
     val source = """
       fn main(): Unit =
-        println "hello";
+        let text = "hello";
+        let show = { println text; };
+        show ();
       ;
     """
 
@@ -36,7 +38,9 @@ class TbaaEmissionTest extends BaseEffFunSuite:
   test("TBAA has proper hierarchy: root, MML types, struct, access tags") {
     val source = """
       fn main(): Unit =
-        println "test";
+        let text = "test";
+        let show = { println text; };
+        show ();
       ;
     """
 
@@ -57,38 +61,41 @@ class TbaaEmissionTest extends BaseEffFunSuite:
 
   test("stores to different struct fields use different TBAA tags") {
     val source = """
-      fn main(): Unit =
-        println "hello";
+      struct Pair { length: Int32, data: CharPtr };
+      fn main(): Int32 =
+        let text = "hello";
+        let pair = Pair text.length text.data;
+        pair.length;
       ;
     """
 
     compileAndGenerate(source).map { llvmIr =>
-      // Find store instructions with tbaa tags
-      val storeLines = llvmIr.split("\n").filter(l => l.contains("store") && l.contains("!tbaa"))
+      val pairNode = """!(\d+) = !\{!"Pair", !\d+, i64 0, !\d+, i64 8\}""".r
+        .findFirstMatchIn(llvmIr)
+        .map(_.group(1))
+        .getOrElse(fail(s"Missing Pair TBAA node. IR:\n$llvmIr"))
+      val pairTags = raw"""!(\d+) = !\{!$pairNode, !\d+, i64 (0|8)\}""".r
+        .findAllMatchIn(llvmIr)
+        .map(m => m.group(2) -> m.group(1))
+        .toMap
+      val storeTags = llvmIr
+        .split("\n")
+        .filter(line => line.contains("store") && line.contains("!tbaa"))
+        .flatMap("""!tbaa !(\d+)""".r.findFirstMatchIn(_).map(_.group(1)))
+        .toSet
 
-      // Should have at least 2 stores (length and data fields)
-      assert(
-        storeLines.length >= 2,
-        s"Expected at least 2 stores with TBAA, found: ${storeLines.length}"
-      )
-
-      // Extract tbaa tag references
-      val tbaaRefs = storeLines.flatMap { line =>
-        """!tbaa (!(\d+))""".r.findFirstMatchIn(line).map(_.group(1))
-      }
-
-      // The tags should be different for different fields
-      assert(
-        tbaaRefs.distinct.length >= 2,
-        s"Expected different TBAA tags for different fields, found: ${tbaaRefs.mkString(", ")}"
-      )
+      assertEquals(pairTags.keySet, Set("0", "8"))
+      assert(pairTags.values.toSet.subsetOf(storeTags), s"Missing Pair field stores. IR:\n$llvmIr")
+      assertEquals(pairTags.values.toSet.size, 2)
     }
   }
 
   test("TBAA field offsets honor alignment (String has ptr at offset 8, not 4)") {
     val source = """
       fn main(): Unit =
-        println "test";
+        let text = "test";
+        let show = { println text; };
+        show ();
       ;
     """
 
@@ -108,15 +115,19 @@ class TbaaEmissionTest extends BaseEffFunSuite:
         s"String TBAA should have fields at offsets 0 and 8, found: $offsets in: ${stringNode.get}"
       )
     }
+  }
 
-    test("loads and stores include alias scope metadata") {
-      val source = """
+  test("loads and stores include alias scope metadata") {
+    val source = """
       fn main(): Unit =
-        println "alias";
+        let text = "alias";
+        let show = { println text; };
+        show ();
       ;
     """
 
-      compileAndGenerate(source).map { llvmIr =>
+    compileAndGenerate(source, config = CompilerConfig.library("build", emitScopedAlias = true))
+      .map { llvmIr =>
         assert(llvmIr.contains("!alias.scope"), "Alias scope metadata missing")
         assert(llvmIr.contains("!noalias"), "Noalias metadata missing")
         assert(
@@ -138,7 +149,6 @@ class TbaaEmissionTest extends BaseEffFunSuite:
           s"Expected at least one load with alias.scope metadata, found: ${loadLines.mkString("\n")}"
         )
       }
-    }
   }
 
   private val span = SrcSpan(SrcPoint(0, 0, 0), SrcPoint(0, 0, 0))

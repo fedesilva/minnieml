@@ -14,9 +14,8 @@ This is the Author's active and near-term focus. The backlog lives in [tasks/](t
 
 - **Tracker:** [Unify lambdas](tasks/unify-lambdas.md)
 - **Status:** in_progress
-- **Current focus:** Implement and verify tail-recursion preservation across owned-closure cleanup.
-  Confirmed bugs take priority. General ignored-test restoration (36 cases), optimization,
-  and hardening follow.
+- **Current focus:** Plan the owned-closure cleanup placement simplification after
+  completing the tail-recursion repair.
 
 ### Error recovery and parser backtracking
 
