@@ -24,7 +24,7 @@ Do not read or act on them unless directed to do so explicitely.
   but are not really HM polymoprhic - I have monomorphic arrays and functions and I want that to go away.
   * Get: let x1 = xs[1];
   * Set: xs[2] = 1;
-* Enums
+* Enums (but not yet unions)
 * modules (nested module, single compilation unit)
 * multiple compilation units (as of today I can only compile a single file), 
   * abridged version, include mode. not parallel or concurrent.
