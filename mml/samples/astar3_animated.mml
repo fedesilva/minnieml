@@ -163,7 +163,7 @@ fn astar(grid: Grid, start: Int, goal: Int): SearchResult =
           ny
           tentative_g
           previous_g
-        ;
+      ;
 
       let next_heap =
         if reason == rejection_none then
