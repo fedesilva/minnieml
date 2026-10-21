@@ -14,8 +14,8 @@ This is the Author's active and near-term focus. The backlog lives in [tasks/](t
 
 - **Tracker:** [Unify lambdas](tasks/unify-lambdas.md)
 - **Status:** in_progress
-- **Current focus:** Plan the returned-callee partial-application repair, followed by the
-  other confirmed bugs; cleanup placement follows those repairs.
+- **Current focus:** remaining returned-callee partial-application review findings.
+  The borrowed-return diagnostic repair is complete.
 
 ### Instrument MML-generated IR for AddressSanitizer
 

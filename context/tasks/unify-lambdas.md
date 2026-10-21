@@ -32,7 +32,7 @@ cleanup, and defensive hardening. Restore regressions relevant to each bug as pa
 15. [x] **complete** — [BUG: preserve borrowing in fully applied lambda literals](#bug-preserve-borrowing-in-fully-applied-lambda-literals); signed off with passing verification.
 16. [x] **complete** — [BUG: elaborate partial applications inside callees](#bug-elaborate-partial-applications-inside-callees); signed off with passing compiler gates and independent review.
 17. [x] **complete** — [BUG: preserve tail recursion across owned-closure cleanup](#bug-preserve-tail-recursion-across-owned-closure-cleanup); verified and signed off.
-18. [ ] **planned** — [B1: elaborate partial applications of returned callees](#b1-partial-application-of-a-returned-callee).
+18. [ ] **needs_work** — [B1: elaborate partial applications of returned callees](#b1-partial-application-of-a-returned-callee); remaining review findings require resolution.
 19. [ ] **planned** — [B2: accept recursive higher-order callable flow](#b2-recursive-higher-order-callable-flow).
 20. [ ] **planned** — [B3: preserve binding identity across recursive shadowing](#b3-recursive-shadowing-after-a-move).
 21. [ ] **planned** — [B4: report the correct source use in ownership diagnostics](#b4-ownership-diagnostic-locations).
@@ -956,7 +956,7 @@ not run the smoke harness, benchmarks, Linux/x86-64 checks, or formatting and li
 
 #### B1: partial application of a returned callee
 
-- **Severity:** high; **status:** planned.
+- **Severity:** high; **status:** needs_work.
 - **Reproducer:** with `fn pick(): Int -> Int -> Int = add;;`,
   `let q = (pick ()) 10; q 2` compiles as an under-applied indirect call and crashes.
   A returned owned two-parameter move closure also fails in `(mk 45) 1`.
@@ -970,6 +970,78 @@ not run the smoke harness, benchmarks, Linux/x86-64 checks, or formatting and li
 - **Outcome:** elaborate each call stage against that stage's callable type and reject
   invalid indirect-call arity before emission. Cover the returned function and owned
   closure cases with LLVM validity and native execution at `-O0` and `-O3`.
+- **Approved repair:** rewrite only application chains whose returned-callee stage is partial.
+  Bind the completed stage's result to a resolved local; preserve argument-effect order;
+  move that local into the residual PAP environment, transferring it on invocation only when
+  the returned callee is itself call-once; and reject an indirect call whose argument count
+  differs from its typed arity before emission.
+- **Implementation evidence:** semantic tests check ordinary, owned, call-once, and already-bound
+  returned callees, residual arity, capture transfer, and elaborator stability. Codegen tests
+  check one-time argument evaluation and order, plus a call-site rejection for under-applied
+  indirect emission. Native tests assemble and execute ordinary, owned, and call-once
+  returned-callee PAPs at `-O0` and `-O3`, call the reusable values twice through direct and
+  borrowed-parameter paths, and drop owned staged PAPs uncalled.
+- **Ownership rule:** [pap-ownership.mml](../../mml/samples/pap-ownership.mml) and the
+  [memory model](../../docs/memory-model.md) permit repeated calls on a function that owns
+  a capture and borrows it during invocation. An independent review reproduced an erroneous
+  call-once classification for `(pick ()) 10` and `(make 45) 1`; the revised capture metadata
+  preserves ownership without marking a reusable callee as transferred on invocation.
+- **Verification:** `sbtn "scalafmtAll; scalafixAll; testFull"` passed: 1,298 tests,
+  36 existing ignores. The smoke harness passed 8/8, all 13 MML benchmark builds passed,
+  and the ASan+LSan memory harness passed 52/52 after the reusable-capture correction.
+  Ordinary `-s` does not instrument MML-generated IR; the separate
+  [ASan task](asan-generated-ir.md) owns that coverage gap.
+- **Review:** independent review found the call-once defect in the staged PAP capture contract.
+  Narrow independent reviews of the corrected ownership rule, its explanatory comment, and
+  the native call-once fixture completed with no remaining finding in those changes. Focused
+  tracking and QA checks pass.
+- **Remaining review work:** complete the capture/stage explanation, simplify duplicated
+  argument preparation and indirect-call diagnostics, strengthen capture-identity and arity
+  assertions, and document and execute the effectful staged-call order regression. The
+  optional additional arity-guard cases require an explicit disposition. Local commit of the
+  implementation is authorized; these review items remain open. Push is not authorized.
+
+##### Review B2: borrowed-return diagnostic cascade
+
+- **Status:** complete.
+- **Reproducer:** `fn pick2(c: Int -> Int -> Int): Int -> Int -> Int = c;;` returns a
+  borrowed parameter. With a capturing `c`, `let q = (pick2 c) 10; q 2` reports both the
+  borrowed return and a capture error naming a generated temporary at `[synthetic]`.
+  `let f = pick2 c; let q = f 10; q 2` reports only the borrowed return.
+- **Repair:** keep the primary return diagnostic. Suppress a dependent capture error only
+  when lexical initializer flow proves every possible supplying callable has a reported
+  invalid return. Observed arguments cannot suppress errors in independently checked
+  function parameters. Borrowing parameters of immediate invocations also stop the proof;
+  immediately applied scopes preserve result flow. Retain the completed source call's
+  location on the generated callee reference.
+- **Regression scope:** staged, explicitly bound, and scoped forms; forward-declared invalid
+  callees; independent borrowed captures in named and immediately called functions; and a borrowed
+  returned callable without a primary return error. Mixed rejected and unknown alternatives
+  retain their capture and consuming-contract diagnostics. Eleven cases assert diagnostic class,
+  source location, and source-parameter identity where applicable. Consuming immediate-parameter
+  controls establish that the retained capture error follows the parameter's borrowing contract.
+- **Verification:** `sbtn "scalafmtAll; scalafixAll; testFull"` passed formatting, lint,
+  1,309 library tests, and nine CLI tests, with 36 existing ignores. The smoke harness passed
+  8/8 before `sbtn mmlcPublishLocal`; all 13 clean MML benchmark builds and 52/52 ASan+LSan
+  memory cases passed on macOS arm64 with LLVM 23.1.1. Before the repair, both staged variants
+  failed with the extra capture error while both bound variants passed.
+  The ordinary sanitizer pipeline has the generated-IR coverage limit documented above.
+- **Review corrections:** independent review confirmed a remaining cascade through a scoped
+  `let` and suppression of an independent capture error on an immediate borrowing parameter.
+  Five added cases reproduced three failures with two passing controls and pass with the
+  corrections. QA and focused tracking checks pass.
+- **Review:** independent review and fresh narrow re-review are complete, including separate
+  QA/style, test-quality, and readability checks. Both confirmed findings are corrected;
+  no actionable findings remain in this diagnostic repair. The narrow reviewer independently
+  reran all five correction cases successfully.
+- **Sample:** [borrowed-return diagnostics](../../mml/samples/pap-borrowed-return-diagnostics.mml)
+  exits with status 1 and reports the invalid return and independent capture, without generated
+  temporary capture errors.
+- **Signoff:** complete for the diagnostic repair; local commit authorized. Push is not authorized.
+- **Verification boundary:** the passing memory-harness run precedes the added use of
+  `consumed_closure_text` in `tests/mem/pap-nested-consuming.mml`. The committed fixture
+  reports use-after-move at line 48 when compiled with `mmlc`; the full committed tree does
+  not have a passing memory-harness result.
 
 #### B2: recursive higher-order callable flow
 
@@ -1617,9 +1689,10 @@ are in `context/history/` for Author review. No compiler slice is authorized by 
 ## Task Working Memory
 
 - **Branch:** `dev-2026-03-21-lambdas`.
-- **Priority and next action:** prepare a bounded plan for
-  [B1 returned-callee partial applications](#b1-partial-application-of-a-returned-callee),
-  followed by B2, B3, and B4. Cleanup placement follows the confirmed bug repairs.
+- **Priority and next action:** continue the remaining review findings for returned-callee
+  partial applications. The [borrowed-return diagnostic repair](#review-b2-borrowed-return-diagnostic-cascade)
+  is complete and signed off.
+  B2, B3, and B4 follow; cleanup placement follows the confirmed bug repairs.
 - **Branch audit:** the review findings and evidence limits are in
   [Branch review findings](#branch-review-findings). Compiler-generated ASan coverage
   is a separate [high-priority task](asan-generated-ir.md). The findings remain open;

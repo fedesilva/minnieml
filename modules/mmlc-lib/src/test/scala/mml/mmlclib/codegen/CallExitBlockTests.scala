@@ -186,6 +186,30 @@ class CallExitBlockTests extends BaseEffFunSuite:
     }
 
   for optimization <- List(0, 3) do
+    test(s"returned callee partial applications execute at O$optimization") {
+      execute(
+        """
+          fn add(a: Int, b: Int): Int = a + b;;
+          fn pick(): Int -> Int -> Int = add;;
+          fn make(seed: Int): Int -> Int -> Int = ~{ a: Int, b: Int -> seed + a + b; };;
+          fn take(~text: String, a: Int, b: Int): Int = text.length + a + b;;
+          fn make_once(~text: String): Int -> Int -> Int =
+            ~{ a: Int, b: Int -> take text a b; };;
+          fn apply(f: Int -> Int, n: Int): Int = f n;;
+
+          pub fn main(): Int =
+            let plain = (pick ()) 10;
+            let owned = (make 45) 1;
+            let dropped = (make 7) 1;
+            let once = (make_once (int_to_str 123)) 1;
+            let dropped_once = (make_once (int_to_str 789)) 1;
+            apply plain 2 + plain 3 + apply owned 2 + owned 3 + once 2 - 128;
+          ;
+        """,
+        optimization
+      )
+    }
+
     test(s"call exits preserve loop results and effect order at O$optimization") {
       IO.blocking(Files.readString(Path.of("tests/mem/call-exit-blocks.mml")))
         .flatMap(execute(_, optimization, List(0, 1, 2)))

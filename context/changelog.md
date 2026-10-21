@@ -2,6 +2,12 @@
 
 Durable product changes belong here. Current task state belongs in task files.
 
+## 2026-10-21
+
+- Suppress borrowed-capture diagnostics caused by an already-rejected borrowed return,
+  retaining independent errors and source locations for staged callable results. Add a
+  runnable diagnostic sample covering direct and scoped partial applications.
+
 ## 2026-10-20
 
 - Add a bounds-checked MML sieve alongside the unchecked benchmark and include it in

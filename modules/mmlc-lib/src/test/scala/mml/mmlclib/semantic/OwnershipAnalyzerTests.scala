@@ -549,6 +549,152 @@ class OwnershipAnalyzerTests extends BaseEffFunSuite:
     }
   }
 
+  for
+    (spelling, binding) <- List(
+      "staged" -> "let q = (pick2 c) 10;",
+      "bound" -> "let f = pick2 c; let q = f 10;",
+      "scoped" -> "let q = (let f = pick2 c; f) 10;"
+    )
+    independentCapture <- List(false, true)
+  do
+    test(s"$spelling borrowed return reports its cause (independent=$independentCapture)") {
+      val capture =
+        if independentCapture then
+          "fn capture(f: Int -> Int -> Int): Int = let g = ~{ f 1 2; }; g ();;"
+        else ""
+      val result = if independentCapture then "q 2 + capture (pick2 c)" else "q 2"
+      val code = s"""
+        fn main(): Int =
+          let seed = int_to_str 12345;
+          let c = { a: Int, b: Int -> a + b + seed.length; };
+          $binding
+          $result;
+        ;
+        fn pick2(c: Int -> Int -> Int): Int -> Int -> Int = c;;
+        $capture
+      """
+
+      semState(code).map { checked =>
+        def parameterId(name: String): Option[String] =
+          checked.module.members.collectFirst {
+            case binding: Bnd if binding.name == name =>
+              binding.value match
+                case TXExprLambda(lambda) => lambda.params.headOption.flatMap(_.id)
+                case _ => None
+          }.flatten
+
+        val returned = checked.errors.collect { case error: SemanticError.BorrowEscapeViaReturn =>
+          error.ref
+        }
+        val returnedParameter = parameterId("pick2")
+        assert(returnedParameter.nonEmpty)
+        assertEquals(returned.size, 1, checked.errors.toString)
+        assertEquals(returned.head.resolvedId, returnedParameter)
+        assertEquals(returned.head.spanOpt.map(_.start.index), Some(code.indexOf("c;;")))
+
+        val captures = checked.errors.collect {
+          case error: SemanticError.CapturedBorrowedHeapBinding => error.ref
+        }
+        assertEquals(captures.size, if independentCapture then 1 else 0, checked.errors.toString)
+        if independentCapture then
+          val capturedParameter = parameterId("capture")
+          assert(capturedParameter.nonEmpty)
+          assertEquals(captures.head.resolvedId, capturedParameter)
+          assertEquals(captures.head.spanOpt.map(_.start.index), Some(code.indexOf("f 1 2")))
+        assertEquals(checked.errors.size, returned.size + captures.size, checked.errors.toString)
+      }
+    }
+
+  for (consumingReturn, consumingParameter) <- List(false -> false, true -> false, true -> true)
+  do
+    test(
+      s"immediate capture preserves borrowing (return=$consumingReturn, param=$consumingParameter)"
+    ) {
+      val returnMode    = if consumingReturn then "~" else ""
+      val parameterMode = if consumingParameter then "~" else ""
+      val code = s"""
+        type Binary = Int -> Int -> Int;
+        fn pick2(${returnMode}c: Binary): Binary = c;;
+        fn main(): Int =
+          let seed = int_to_str 12345;
+          let c = ~{ a: Int, b: Int -> a + b + seed.length; };
+          let z = { ${parameterMode}f: Binary -> let g = ~{ f 1 2; }; g (); } (pick2 c);
+          z;
+        ;
+      """
+
+      semState(code).map { checked =>
+        val returned = checked.errors.collect { case error: SemanticError.BorrowEscapeViaReturn =>
+          error.ref
+        }
+        val captured = checked.errors.collect {
+          case error: SemanticError.CapturedBorrowedHeapBinding => error.ref
+        }
+        assertEquals(returned.size, if consumingReturn then 0 else 1, checked.errors.toString)
+        assertEquals(captured.size, if consumingParameter then 0 else 1, checked.errors.toString)
+        assertEquals(checked.errors.size, returned.size + captured.size, checked.errors.toString)
+        if !consumingParameter then
+          val parameter =
+            captured.head.resolvedId.flatMap(checked.module.resolvables.lookup).collect {
+              case param: FnParam => param
+            }
+          assert(parameter.nonEmpty)
+          assertEquals(
+            parameter.flatMap(_.spanOpt).map(_.start.index),
+            Some(code.indexOf("f: Binary"))
+          )
+          assertEquals(captured.head.spanOpt.map(_.start.index), Some(code.indexOf("f 1 2")))
+      }
+    }
+
+  test("a borrowed returned callable without a rejected return retains its capture diagnostic") {
+    val code = """
+      fn external(): Int -> Int -> Int = @native;;
+      fn main(): Int = let q = (external ()) 10; q 2;;
+    """
+
+    semState(code).map { checked =>
+      val captures = checked.errors.collect {
+        case error: SemanticError.CapturedBorrowedHeapBinding => error.ref
+      }
+      assertEquals(captures.size, 1, checked.errors.toString)
+      assertEquals(checked.errors.size, 1, checked.errors.toString)
+      assert(captures.head.resolvedId.nonEmpty)
+      assertEquals(captures.head.spanOpt.map(_.start.index), Some(code.indexOf("external ()")))
+    }
+  }
+
+  test("a rejected return alternative does not hide diagnostics for an unknown result") {
+    val code = """
+      fn pick2(c: Int -> Int -> Int): Int -> Int -> Int = c;;
+      fn external(c: Int -> Int -> Int): Int -> Int -> Int = @native;;
+      fn run(flag: Bool): Int =
+        let seed = int_to_str 12345;
+        let c = { a: Int, b: Int -> a + b + seed.length; };
+        let selected = if flag then pick2; else external;;
+        let q = (selected c) 10;
+        q 2;
+      ;
+    """
+
+    semState(code).map { checked =>
+      val returned = checked.errors.collect { case error: SemanticError.BorrowEscapeViaReturn =>
+        error
+      }
+      val captured = checked.errors.collect {
+        case error: SemanticError.CapturedBorrowedHeapBinding => error.ref
+      }
+      val contracts = checked.errors.collect { case error: SemanticError.InvalidExpression =>
+        error.msg
+      }
+      assertEquals(returned.size, 1, checked.errors.toString)
+      assertEquals(captured.size, 1, checked.errors.toString)
+      assertEquals(contracts, List("Callable alternatives must agree on consuming parameters"))
+      assertEquals(checked.errors.size, 3, checked.errors.toString)
+      assertEquals(captured.head.spanOpt.map(_.start.index), Some(code.indexOf("selected c")))
+    }
+  }
+
   test("allocating call returned from heap-returning function is accepted") {
     val code =
       """

@@ -187,6 +187,10 @@ final case class CallableValues private (
   def resultReferences(term: Term): List[Ref] =
     resolveOrigins(term, lexicalBindings, exactCalls = true).references.distinct
 
+  /** Lexical sources include declaration values and arguments to immediately applied lambdas. */
+  def lexicalSources(ref: Ref): List[Expr] =
+    ref.resolvedId.toList.flatMap(id => lexicalBindings.getOrElse(id, Nil))
+
   /** Applications retain their typed call boundaries independently of callable origin facts. */
   def stages(app: App): List[CallStages.Stage] = CallStages(app, index, recovery)
 

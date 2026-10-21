@@ -45,6 +45,7 @@ fn loop(n: Int, total: Int): Int =
     // A consuming parameter owns the inline closure and its cleanup.
     let consumed_closure_text = int_to_str 456;
     let h = apply_owned ~{ x: Int -> consumed_closure_text.length + x; } (int_to_str 2);
+    // let error_moved = consumed_closure_text;
     // A borrow-capturing closure leaves the String with the enclosing scope.
     let retained_text = int_to_str 789;
     let i = apply { x: Int -> retained_text.length + x; } (int_to_str 2);

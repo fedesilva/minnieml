@@ -1,0 +1,27 @@
+// Intentional compilation failure: borrowed-return diagnostics for partial applications.
+// Run from the repository root:
+//   mmlc mml/samples/pap-borrowed-return-diagnostics.mml
+// Expected: two ownership errors, at the source uses of callee and borrowed below.
+// The direct and scoped partial applications add no generated-temporary capture errors.
+
+// Error 1: a borrowing parameter cannot transfer ownership back to its caller.
+fn pick_borrowed(callee: Int -> Int -> Int): Int -> Int -> Int = callee;;
+
+fn capture_borrowed(borrowed: Int -> Int -> Int): Int =
+  // Error 2: this move closure cannot own a parameter that the function only borrows.
+  let owned = ~{ borrowed 1 2; };
+  owned ();
+;
+
+pub fn main(): Int =
+  let seed = int_to_str 12345;
+  let c = ~{ a: Int, b: Int -> a + b + seed.length; };
+
+  // Both forms depend on the invalid return in pick_borrowed.
+  let direct = (pick_borrowed c) 10;
+  let scoped = (let returned = pick_borrowed c; returned) 10;
+
+  // The capture error remains independent of the invalid return supplying its argument.
+  let independent = capture_borrowed (pick_borrowed c);
+  direct 2 + scoped 2 + independent;
+;

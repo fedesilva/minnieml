@@ -88,48 +88,15 @@ object PartialApplicationElaborator:
     values: CallableValues
   ): Allocation[PreparedValue[Term]] = term match
     case app: App =>
-      app.fn match
-        case scope: Lambda =>
-          for
-            function <- rewriteLambdaBody(scope, owner, index, values)
-            arg <- prepareExpr(app.arg, owner, index, values)
-          yield PreparedValue(
-            app.copy(fn = function, arg = arg.expression),
-            arg.bindings
-          )
-        case _ =>
-          val (callee, args) = CallableValues.application(app)
-          val preparedCallee = callee match
-            case ref:    Ref => rewriteRef(ref, owner, index, values)
-            case lambda: Lambda =>
-              rewriteLambdaBody(lambda, owner, index, values).map(PreparedValue(_))
-          for
-            rewrittenArgs <- args.traverse(prepareExpr(_, owner, index, values))
-            function <- preparedCallee
-            result <- callee.typeSpec.flatMap(TypeUtils.canonical(_, index)).collect {
-              case signature: TypeFn => signature
-            } match
-              // Fresh qualifier bindings need indexed callable origins before PAP capture analysis.
-              case Some(signature)
-                  if values.recovery.isAvailable(app) && function.bindings.isEmpty &&
-                    rewrittenArgs.size < signature.paramTypes.length =>
-                elaborate(app, function.value, rewrittenArgs, signature, owner, index, values)
-              case _ =>
-                val prepared =
-                  if function.bindings.nonEmpty || rewrittenArgs.exists(_.bindings.nonEmpty) then
-                    rewrittenArgs.traverse { arg =>
-                      arg.value.typeSpec.fold(arg.pure[Allocation])(
-                        prepareArgument(arg, _, owner, index)
-                      )
-                    }
-                  else rewrittenArgs.pure[Allocation]
-                prepared.map { args =>
-                  PreparedValue(
-                    rebuild(app, function.value, args.map(_.expression)),
-                    args.flatMap(_.bindings) ++ function.bindings
-                  )
-                }
-          yield result
+      values.stages(app) match
+        case first :: rest
+            if first.complete && rest.lastOption.exists(stage =>
+              stage.signature.isDefined && !stage.complete
+            ) && values.recovery.isAvailable(app) =>
+          first.resultType.fold(rewriteApplication(app, owner, index, values)) { resultType =>
+            rewriteStagedApplication(app, first, rest, resultType, owner, index, values)
+          }
+        case _ => rewriteApplication(app, owner, index, values)
     case lambda: Lambda =>
       val ownedCaptureIds = lambda.captures
         .map(_.ref)
@@ -190,6 +157,107 @@ object PartialApplicationElaborator:
         .map(elements => PreparedValue(tuple.copy(elements = elements)))
     case ref: Ref => rewriteRef(ref, owner, index, values).map[PreparedValue[Term]](identity)
     case other => PreparedValue(other).pure[Allocation]
+
+  private def rewriteStagedApplication(
+    app:        App,
+    first:      CallStages.Stage,
+    rest:       List[CallStages.Stage],
+    resultType: Type,
+    owner:      BindingOwner,
+    index:      ResolvablesIndex,
+    values:     CallableValues
+  ): Allocation[PreparedValue[Term]] =
+    val laterApplications = rest.flatMap(_.applications)
+    for
+      initial <- rewriteApplication(first.result, owner, index, values, forceArguments = true)
+      local <- fresh(owner, resultType)
+      // Callable flow retains the original call's origin across argument materialization.
+      callableOrigin = Expr(first.result.source, List(first.result), typeSpec = resultType.some)
+      localValues    = values.withBindings(List(local.param -> callableOrigin))
+      continuation = laterApplications.foldLeft[Ref | App | Lambda](
+        local.ref.copy(source = first.result.source)
+      ) { case (callee, application) =>
+        application.copy(fn = callee)
+      }
+      rewritten <- rewriteTerm(continuation, owner, localValues.index, localValues)
+    yield
+      val value = rewritten.value match
+        case lambda: Lambda if lambda.meta.exists(_.isPartialApplication) =>
+          // The PAP owns the callee but transfers it on invocation only if the callee is call-once.
+          val transferredCallee =
+            if localValues.consumesOnCall(local.ref) then local.param.id.toSet
+            else Set.empty[String]
+          lambda.copy(
+            isMove = true,
+            meta = lambda.meta.map(meta =>
+              meta.copy(
+                transferredCaptures = meta.transferredCaptures ++ transferredCallee,
+                borrowedCaptures    = meta.borrowedCaptures -- local.param.id
+              )
+            )
+          )
+        case other => other
+      val body = rewritten.copy(value = value).expression
+      PreparedValue(
+        LocalBindings.bind(local.param, initial.expression, body, app.source),
+        initial.bindings ++ rewritten.bindings
+      )
+
+  private def rewriteApplication(
+    app:            App,
+    owner:          BindingOwner,
+    index:          ResolvablesIndex,
+    values:         CallableValues,
+    forceArguments: Boolean = false
+  ): Allocation[PreparedValue[Term]] =
+    app.fn match
+      case scope: Lambda =>
+        for
+          function <- rewriteLambdaBody(scope, owner, index, values)
+          arg <- prepareExpr(app.arg, owner, index, values)
+          prepared <-
+            if forceArguments then
+              arg.value.typeSpec.fold(arg.pure[Allocation])(prepareArgument(arg, _, owner, index))
+            else arg.pure[Allocation]
+        yield PreparedValue(
+          app.copy(fn = function, arg = prepared.expression),
+          prepared.bindings
+        )
+      case _ =>
+        val (callee, args) = CallableValues.application(app)
+        val preparedCallee = callee match
+          case ref:    Ref => rewriteRef(ref, owner, index, values)
+          case lambda: Lambda =>
+            rewriteLambdaBody(lambda, owner, index, values).map(PreparedValue(_))
+        for
+          rewrittenArgs <- args.traverse(prepareExpr(_, owner, index, values))
+          function <- preparedCallee
+          result <- callee.typeSpec.flatMap(TypeUtils.canonical(_, index)).collect {
+            case signature: TypeFn => signature
+          } match
+            // Fresh qualifier bindings need indexed callable origins before PAP capture analysis.
+            case Some(signature)
+                if values.recovery.isAvailable(app) && function.bindings.isEmpty &&
+                  rewrittenArgs.size < signature.paramTypes.length =>
+              elaborate(app, function.value, rewrittenArgs, signature, owner, index, values)
+            case _ =>
+              val prepared =
+                if forceArguments || function.bindings.nonEmpty ||
+                  rewrittenArgs.exists(_.bindings.nonEmpty)
+                then
+                  rewrittenArgs.traverse { arg =>
+                    arg.value.typeSpec.fold(arg.pure[Allocation])(
+                      prepareArgument(arg, _, owner, index)
+                    )
+                  }
+                else rewrittenArgs.pure[Allocation]
+              prepared.map { args =>
+                PreparedValue(
+                  rebuild(app, function.value, args.map(_.expression)),
+                  args.flatMap(_.bindings) ++ function.bindings
+                )
+              }
+        yield result
 
   /** A field borrow keeps its qualifier binding around the enclosing consumer. */
   private def rewriteRef(

@@ -840,6 +840,15 @@ diagnostic; retained payloads inside an existing `InvalidExpression` are travers
 shape diagnostic. Valid child applications and independent continuations still receive ownership
 analysis, including use-after-move checks.
 
+After collecting ownership diagnostics, the analyzer suppresses a borrowed-capture error when
+lexical initializer flow proves that every possible supplying call has a reported invalid
+return. The primary return error remains. Observed arguments of independently checked function
+parameters do not establish this proof. Borrowing parameters of immediate invocations also
+stop the proof, since their borrow contract holds independently of the supplied value.
+Lexical result flow through immediately applied scopes preserves the proof; unknown
+alternatives retain their diagnostics.
+Generated references to staged callable results retain the completed source call's location.
+
 **Call stages**: `CallStages` partitions a typed application chain at each invocation boundary.
 Each stage retains its callee, supplied application nodes, signature, result, and completion
 state. Typed application arity is distinct from source parameters: a nullary callable consumes

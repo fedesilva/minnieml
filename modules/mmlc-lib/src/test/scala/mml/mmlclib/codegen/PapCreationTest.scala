@@ -1,8 +1,46 @@
 package mml.mmlclib.codegen
 
+import cats.data.NonEmptyList
+import cats.syntax.all.*
+import mml.mmlclib.ast.*
+import mml.mmlclib.codegen.emitter.expression.compileIndirectCall
+import mml.mmlclib.codegen.emitter.{CodeGenState, compileExpr}
 import mml.mmlclib.test.BaseEffFunSuite
 
 class PapCreationTest extends BaseEffFunSuite:
+
+  test("indirect emission rejects an under-applied callable at its call site") {
+    val source    = SourceOrigin.Synth
+    val integer   = TypeRef(source, "Int")
+    val signature = TypeFn(source, NonEmptyList.of(integer, integer), integer)
+    val callee    = Ref(source, "callee", typeSpec = signature.some)
+    val argument =
+      Expr(source, List(LiteralInt(source, 1, integer.some)), typeSpec = integer.some)
+    val call = App(source, callee, argument, typeSpec = signature.some)
+
+    val result =
+      compileIndirectCall(callee, List(argument), call, CodeGenState(), Map.empty, compileExpr)
+    assertEquals(result.left.toOption.flatMap(_.node), call.some)
+    assert(result.left.toOption.exists(_.message.contains("argument count")))
+  }
+
+  test("returned callee partial application evaluates each operand once in source order") {
+    compileAndGenerate("""
+      fn first(): Int = println "first"; 1;;
+      fn second(): Int = println "second"; 2;;
+      fn make(seed: Int): Int -> Int -> Int = ~{ a: Int, b: Int -> seed + a + b; };;
+      pub fn main(): Int = let q = (make (first ())) (second ()); q 3;;
+    """).map { ir =>
+      val body   = functionBody(ir, "test_main")
+      val first  = body.indexOf("call i32 @test_first(")
+      val second = body.indexOf("call i32 @test_second(")
+      val make   = body.indexOf("call { ptr, ptr } @test_make(")
+      assert(first >= 0 && second > first && make > second, body)
+      assertEquals(body.linesIterator.count(_.contains("call i32 @test_first(")), 1, body)
+      assertEquals(body.linesIterator.count(_.contains("call i32 @test_second(")), 1, body)
+      assertEquals(body.linesIterator.count(_.contains("call { ptr, ptr } @test_make(")), 1, body)
+    }
+  }
 
   test("consuming PAP creation transfers an owned argument without a clone") {
     compileAndGenerate("""

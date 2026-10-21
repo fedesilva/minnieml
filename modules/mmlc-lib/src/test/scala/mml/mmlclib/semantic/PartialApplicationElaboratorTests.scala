@@ -145,6 +145,40 @@ class PartialApplicationElaboratorTests extends BaseEffFunSuite:
     }
   }
 
+  test("returned callables elaborate their own partial application stage") {
+    typeCheck(s"""
+      $addition
+      fn pick(): Int -> Int -> Int = add;;
+      fn make(seed: Int): Int -> Int -> Int = ~{ a: Int, b: Int -> seed + a + b; };;
+      fn take(~text: String, a: Int, b: Int): Int = text.length + a + b;;
+      fn make_once(~text: String): Int -> Int -> Int =
+        ~{ a: Int, b: Int -> take text a b; };;
+      fn returned(): Int = let q = (pick ()) 10; q 2;;
+      fn owned(): Int = let q = (make 45) 1; q 2;;
+      fn bound(): Int = let f = pick (); let q = f 10; q 2;;
+      fn once(): Int = let q = (make_once (int_to_str 123)) 1; q 2;;
+    """).map { typed =>
+      assert(!typed.hasErrors, typed.errors)
+      val elaborated = PartialApplicationElaborator.rewriteModule(typed)
+      assert(!elaborated.hasErrors, elaborated.errors)
+      assertStable(typed, elaborated)
+      List("returned", "owned", "bound").foreach { name =>
+        val generated = partials(member(elaborated, name).value)
+        assertEquals(generated.size, 1, name)
+        assertEquals(generated.head.params.size, 1, name)
+        assert(generated.head.isMove, s"$name: ${generated.head.meta}")
+        assertEquals(
+          generated.head.meta.map(_.transferredCaptures),
+          Some(Set.empty[String]),
+          name
+        )
+      }
+      val once = partials(member(elaborated, "once").value)
+      assertEquals(once.size, 1)
+      assert(once.head.meta.exists(_.transferredCaptures.nonEmpty))
+    }
+  }
+
   private val holder = """
     struct Holder { f: Int -> Int -> Int };
     fn pack(~f: Int -> Int, n: Int): Holder = let result = f n; Holder add;;

@@ -998,6 +998,67 @@ object OwnershipAnalyzer:
         case TypeFn(_, _, ret) => Some(ret)
         case other => Some(other)
 
+  /** A rejected return explains dependent capture failures without hiding independent borrows. */
+  private def withoutBorrowedReturnCascades(
+    errors: List[SemanticError],
+    values: CallableValues,
+    module: Module
+  ): List[SemanticError] =
+    val rejectedRefs = errors.collect { case SemanticError.BorrowEscapeViaReturn(ref, _) =>
+      ref
+    }.toSet
+    val rejectedClosures = errors.collect {
+      case SemanticError.BorrowClosureEscapeViaReturn(lambda, _) => CallableIdentity(lambda)
+    }.toSet
+
+    if rejectedRefs.isEmpty && rejectedClosures.isEmpty then errors
+    else
+      val borrowedParameters = module.members.flatMap {
+        case binding: Bnd =>
+          TermTraversal
+            .collect(binding.value) {
+              case lambda: Lambda if lambda.borrowsArgument =>
+                lambda.params.flatMap(_.id)
+            }
+            .flatten
+        case _ => Nil
+      }.toSet
+
+      def rejectedReturn(lambda: Lambda): Boolean =
+        returnedOrigins(lambda.body, values.index).exists {
+          case ref:     Ref => rejectedRefs.contains(ref)
+          case closure: Lambda => rejectedClosures.contains(CallableIdentity(closure))
+        }
+
+      def rejectedResult(term: Term, seen: Set[String]): Boolean = term match
+
+        case ref: Ref if ref.qualifier.isEmpty =>
+          ref.resolvedId
+            .filterNot(id => seen.contains(id) || borrowedParameters.contains(id))
+            .exists { id =>
+              val sources = values.lexicalSources(ref)
+              sources.nonEmpty && sources.forall(rejectedResult(_, seen + id))
+            }
+
+        case app: App =>
+          values.stages(app).lastOption.filter(_.complete).exists { stage =>
+            stage.callee match
+              case lambda: Lambda =>
+                rejectedReturn(lambda) || rejectedResult(lambda.body, seen)
+              case _ => values.provenInvokedLambdas(app).exists(_.forall(rejectedReturn))
+          }
+
+        case expr:  Expr => singleTerm(expr).exists(rejectedResult(_, seen))
+        case group: TermGroup => rejectedResult(group.inner, seen)
+        case cond:  Cond =>
+          rejectedResult(cond.ifTrue, seen) && rejectedResult(cond.ifFalse, seen)
+        case _ => false
+
+      errors.filterNot {
+        case SemanticError.CapturedBorrowedHeapBinding(ref, _) => rejectedResult(ref, Set.empty)
+        case _ => false
+      }
+
   /** Check if a binding name is referenced anywhere in an expression */
   private def containsRefInExpr(name: String, expr: Expr): Boolean =
     expr.terms.exists(containsRef(name, _))
@@ -2524,4 +2585,5 @@ object OwnershipAnalyzer:
           (newMember :: membersAcc, errors.reverse_:::(errorsAcc), nextIds)
 
     val newModule = module.copy(members = newMembersRev.reverse)
-    state.copy(bindingIds = finalIds).withModule(newModule).addErrors(allErrorsRev.reverse)
+    val errors    = withoutBorrowedReturnCascades(allErrorsRev.reverse, callableValues, module)
+    state.copy(bindingIds = finalIds).withModule(newModule).addErrors(errors)
