@@ -16,6 +16,8 @@ object CallStages:
     def arguments:  List[Expr]   = applications.map(_.arg)
     def resultType: Option[Type] = result.typeSpec
 
+    def isPartial: Boolean = signature.exists(applications.size < _.paramTypes.size)
+
   /** Nullary callables consume their typed Unit input without inventing a source parameter. */
   def apply(
     app:      App,

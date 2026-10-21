@@ -4,6 +4,9 @@ Durable product changes belong here. Current task state belongs in task files.
 
 ## 2026-10-21
 
+- Report indirect-call arity errors with the callee name and expected/actual counts.
+  Document and verify returned-callee partial-application effect order and reusable-callee
+  ownership.
 - Suppress borrowed-capture diagnostics caused by an already-rejected borrowed return,
   retaining independent errors and source locations for staged callable results. Add a
   runnable diagnostic sample covering direct and scoped partial applications.

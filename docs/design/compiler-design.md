@@ -458,6 +458,10 @@ Each phase takes a `CompilerState`, returns an updated `CompilerState`, and reco
     `CaptureTransfers` identifies ownership sinks in source move-lambda bodies, including
     consuming calls, local moves, returns, and nested move captures. Capture stabilization
     propagates their call-once contract through enclosing lambdas and callable value flow.
+    A chain ending in a partial stage binds each completed stage's returned callee to a local.
+    The residual PAP owns that temporary callee and transfers it during invocation only when
+    the callee is call-once. Supplied operands run once in source order before completed
+    callee stages, preserving the same effect order as fully applied chains.
 12. **ClosureMemoryFnGenerator**
 13. **StructDestructorBodyGenerator**
 14. **OwnershipAnalyzer**

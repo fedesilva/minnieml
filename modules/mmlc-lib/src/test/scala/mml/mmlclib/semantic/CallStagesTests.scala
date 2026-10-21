@@ -79,9 +79,11 @@ class CallStagesTests extends BaseEffFunSuite:
     val values   = flow(List(target))
 
     assertEquals(values.stages(partial).map(_.complete), List(false))
+    assertEquals(values.stages(partial).map(_.isPartial), List(true))
     assertEquals(values.parameters(partial).flatMap(_.id), right.id.toList)
     assertEquals(values.invokedLambdas(partial), Nil)
     assertEquals(values.stages(complete).map(_.applications), List(List(partial, complete)))
+    assertEquals(values.stages(complete).map(_.isPartial), List(false))
     assertEquals(values.invokedLambdas(complete).map(_.params), List(List(left, right)))
   }
 
@@ -189,6 +191,7 @@ class CallStagesTests extends BaseEffFunSuite:
     assertEquals(values.stages(call).map(_.applications), List(List(call)))
     assertEquals(values.stages(call).map(_.arguments), List(List(invalid)))
     assertEquals(values.stages(call).map(_.complete), List(false))
+    assertEquals(values.stages(call).map(_.isPartial), List(false))
     assertEquals(values.invokedLambdas(call), Nil)
     assertEquals(values.provenInvokedLambdas(call), None)
 

@@ -9,20 +9,43 @@ import mml.mmlclib.test.BaseEffFunSuite
 
 class PapCreationTest extends BaseEffFunSuite:
 
-  test("indirect emission rejects an under-applied callable at its call site") {
-    val source    = SourceOrigin.Synth
-    val integer   = TypeRef(source, "Int")
-    val signature = TypeFn(source, NonEmptyList.of(integer, integer), integer)
-    val callee    = Ref(source, "callee", typeSpec = signature.some)
-    val argument =
-      Expr(source, List(LiteralInt(source, 1, integer.some)), typeSpec = integer.some)
-    val call = App(source, callee, argument, typeSpec = signature.some)
+  private def assertCallsOnceInOrder(ir: String, body: String, calls: String*): Unit =
 
-    val result =
-      compileIndirectCall(callee, List(argument), call, CodeGenState(), Map.empty, compileExpr)
-    assertEquals(result.left.toOption.flatMap(_.node), call.some)
-    assert(result.left.toOption.exists(_.message.contains("argument count")))
-  }
+    val positions = calls.map { call =>
+      assertEquals(body.linesIterator.count(_.contains(call)), 1, body)
+      assertEquals(ir.linesIterator.count(_.contains(call)), 1, ir)
+      body.indexOf(call)
+    }
+
+    assertEquals(positions, positions.sorted, body)
+
+  for count <- List(1, 3) do
+    test(s"indirect emission rejects $count arguments for a binary callable at its call site") {
+      val source    = SourceOrigin.Synth
+      val integer   = TypeRef(source, "Int")
+      val signature = TypeFn(source, NonEmptyList.of(integer, integer), integer)
+      val callee    = Ref(source, "callee", typeSpec = signature.some)
+      val argument =
+        Expr(source, List(LiteralInt(source, 1, integer.some)), typeSpec = integer.some)
+      val arguments = List.fill(count)(argument)
+      val prefix = arguments.dropRight(1).zipWithIndex.foldLeft[Ref | App](callee) {
+        case (fn, (arg, position)) =>
+          val remaining = NonEmptyList.fromList(signature.paramTypes.toList.drop(position + 1))
+          val result    = remaining.fold[Type](integer)(TypeFn(source, _, integer))
+          App(source, fn, arg, typeSpec = result.some)
+      }
+      val resultType: Type =
+        if count == 1 then TypeFn(source, NonEmptyList.one(integer), integer) else integer
+      val call = App(source, prefix, argument, typeSpec = resultType.some)
+
+      val result =
+        compileIndirectCall(callee, arguments, call, CodeGenState(), Map.empty, compileExpr)
+      assertEquals(result.left.toOption.flatMap(_.node), call.some)
+      assertEquals(
+        result.left.toOption.map(_.message),
+        s"Indirect call 'callee' argument count: expected 2, received $count".some
+      )
+    }
 
   test("returned callee partial application evaluates each operand once in source order") {
     compileAndGenerate("""
@@ -31,14 +54,14 @@ class PapCreationTest extends BaseEffFunSuite:
       fn make(seed: Int): Int -> Int -> Int = ~{ a: Int, b: Int -> seed + a + b; };;
       pub fn main(): Int = let q = (make (first ())) (second ()); q 3;;
     """).map { ir =>
-      val body   = functionBody(ir, "test_main")
-      val first  = body.indexOf("call i32 @test_first(")
-      val second = body.indexOf("call i32 @test_second(")
-      val make   = body.indexOf("call { ptr, ptr } @test_make(")
-      assert(first >= 0 && second > first && make > second, body)
-      assertEquals(body.linesIterator.count(_.contains("call i32 @test_first(")), 1, body)
-      assertEquals(body.linesIterator.count(_.contains("call i32 @test_second(")), 1, body)
-      assertEquals(body.linesIterator.count(_.contains("call { ptr, ptr } @test_make(")), 1, body)
+      val body = functionBody(ir, "test_main")
+      assertCallsOnceInOrder(
+        ir,
+        body,
+        "call i32 @test_first(",
+        "call i32 @test_second(",
+        "call { ptr, ptr } @test_make("
+      )
     }
   }
 
@@ -93,15 +116,9 @@ class PapCreationTest extends BaseEffFunSuite:
       """
 
     compileAndGenerate(source).map { ir =>
-      val body        = expandNativeAdapters(ir, functionBody(ir, "test_main"))
-      val firstCalls  = body.linesIterator.filter(_.contains("call i32 @test_first(")).toList
-      val secondCalls = body.linesIterator.filter(_.contains("call i32 @test_second(")).toList
-      assertEquals(firstCalls.size, 1, body)
-      assertEquals(secondCalls.size, 1, body)
-      assert(body.indexOf(firstCalls.head) < body.indexOf(secondCalls.head), body)
-      assert(body.indexOf(secondCalls.head) < body.indexOf("call void @println("), body)
-      assertEquals(ir.linesIterator.count(_.contains("call i32 @test_first(")), 1, ir)
-      assertEquals(ir.linesIterator.count(_.contains("call i32 @test_second(")), 1, ir)
+      val body = expandNativeAdapters(ir, functionBody(ir, "test_main"))
+      assertCallsOnceInOrder(ir, body, "call i32 @test_first(", "call i32 @test_second(")
+      assert(body.indexOf("call i32 @test_second(") < body.indexOf("call void @println("), body)
     }
   }
 
@@ -138,9 +155,7 @@ class PapCreationTest extends BaseEffFunSuite:
       """
 
     compileAndGenerate(source).map { ir =>
-      val body   = functionBody(ir, "test_main")
-      val first  = body.indexOf("call i32 @test_first(")
-      val second = body.indexOf("call i32 @test_second(")
-      assert(first >= 0 && second > first, body)
+      val body = functionBody(ir, "test_main")
+      assertCallsOnceInOrder(ir, body, "call i32 @test_first(", "call i32 @test_second(")
     }
   }

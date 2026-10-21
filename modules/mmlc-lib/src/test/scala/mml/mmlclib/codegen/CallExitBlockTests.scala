@@ -132,7 +132,8 @@ class CallExitBlockTests extends BaseEffFunSuite:
   private def execute(
     source:         String,
     optimization:   Int,
-    argumentCounts: List[Int] = List(0)
+    argumentCounts: List[Int]            = List(0),
+    expectedOutput: Option[List[String]] = None
   ): IO[Unit] =
     withDirectory { directory =>
       val binary = directory.resolve("program")
@@ -165,7 +166,8 @@ class CallExitBlockTests extends BaseEffFunSuite:
               binary.toString
             ) ++ List.fill(count)("argument"),
             directory,
-            expectedCode = 0
+            expectedCode   = 0,
+            expectedOutput = expectedOutput
           )
         }
       yield ()
@@ -186,6 +188,28 @@ class CallExitBlockTests extends BaseEffFunSuite:
     }
 
   for optimization <- List(0, 3) do
+    test(s"staged PAP creation evaluates operands before its returned callee at O$optimization") {
+      execute(
+        """
+          fn first(): Int = println "first"; 1;;
+          fn second(): Int = println "second"; 2;;
+          fn make(seed: Int): Int -> Int -> Int =
+            println "make";
+            ~{ a: Int, b: Int -> seed + a + b; };
+          ;
+          pub fn main(): Int =
+            let q = (make (first ())) (second ());
+            println "created";
+            let result = q 3;
+            println (int_to_str result);
+            result - 6;
+          ;
+        """,
+        optimization,
+        expectedOutput = List("first", "second", "make", "created", "6").some
+      )
+    }
+
     test(s"returned callee partial applications execute at O$optimization") {
       execute(
         """

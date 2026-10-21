@@ -22,21 +22,32 @@ trait BaseEffFunSuite extends CatsEffectSuite with LlvmAssertions:
       .executeCommand(command, "Fixture command failed", workingDir, verbose = false)
       .map(_.fold(error => fail(error.message), code => assertEquals(code, 0)))
 
-  /** Assert a fixture program's exit code, showing captured output only on failure. */
+  /** Assert a fixture program's exit code and optional stdout, capturing diagnostics on failure. */
   protected def programExits(
-    command:      List[String],
-    workingDir:   Path,
-    expectedCode: Int
+    command:        List[String],
+    workingDir:     Path,
+    expectedCode:   Int,
+    expectedOutput: Option[List[String]] = None
   ): IO[Unit] =
     IO.blocking {
       // The child's stdout and stderr callbacks can run concurrently.
-      val output = new StringBuffer
-      val logger = ProcessLogger(line =>
-        output.append(s"$line\n")
-        ()
+      val stdout = new StringBuffer
+      val stderr = new StringBuffer
+      val logger = ProcessLogger(
+        line =>
+          stdout.append(s"$line\n")
+          ()
+        ,
+        line =>
+          stderr.append(s"$line\n")
+          ()
       )
-      val code = Process(command, workingDir.toFile).!(logger)
-      assertEquals(code, expectedCode, s"${command.mkString(" ")}\n$output")
+      val code       = Process(command, workingDir.toFile).!(logger)
+      val diagnostic = s"${command.mkString(" ")}\n$stdout$stderr"
+      assertEquals(code, expectedCode, diagnostic)
+      expectedOutput.foreach(expected =>
+        assertEquals(stdout.toString.linesIterator.toList, expected, diagnostic)
+      )
     }
 
   final case class SemanticResult(module: Module, errors: List[SemanticError])

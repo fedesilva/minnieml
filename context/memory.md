@@ -14,8 +14,15 @@ This is the Author's active and near-term focus. The backlog lives in [tasks/](t
 
 - **Tracker:** [Unify lambdas](tasks/unify-lambdas.md)
 - **Status:** in_progress
-- **Current focus:** remaining returned-callee partial-application review findings.
-  The borrowed-return diagnostic repair is complete.
+- **Current focus:** Plan B2: accept recursive higher-order callable flow. B3 and B4 follow
+  before cleanup placement.
+
+### Apply returned callables with parenthesized function types
+
+- **Tracker:** [Apply returned callables with parenthesized function types](tasks/typecheck-grouped-callable-results.md)
+- **Status:** planned
+- **Current focus:** After Unify lambdas, reproduce the inline failure and local-binding
+  control, then plan consistent callable-type resolution.
 
 ### Instrument MML-generated IR for AddressSanitizer
 

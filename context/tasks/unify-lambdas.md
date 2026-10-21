@@ -32,7 +32,7 @@ cleanup, and defensive hardening. Restore regressions relevant to each bug as pa
 15. [x] **complete** — [BUG: preserve borrowing in fully applied lambda literals](#bug-preserve-borrowing-in-fully-applied-lambda-literals); signed off with passing verification.
 16. [x] **complete** — [BUG: elaborate partial applications inside callees](#bug-elaborate-partial-applications-inside-callees); signed off with passing compiler gates and independent review.
 17. [x] **complete** — [BUG: preserve tail recursion across owned-closure cleanup](#bug-preserve-tail-recursion-across-owned-closure-cleanup); verified and signed off.
-18. [ ] **needs_work** — [B1: elaborate partial applications of returned callees](#b1-partial-application-of-a-returned-callee); remaining review findings require resolution.
+18. [x] **complete** — [B1: elaborate partial applications of returned callees](#b1-partial-application-of-a-returned-callee); review follow-up verified and signed off.
 19. [ ] **planned** — [B2: accept recursive higher-order callable flow](#b2-recursive-higher-order-callable-flow).
 20. [ ] **planned** — [B3: preserve binding identity across recursive shadowing](#b3-recursive-shadowing-after-a-move).
 21. [ ] **planned** — [B4: report the correct source use in ownership diagnostics](#b4-ownership-diagnostic-locations).
@@ -956,7 +956,7 @@ not run the smoke harness, benchmarks, Linux/x86-64 checks, or formatting and li
 
 #### B1: partial application of a returned callee
 
-- **Severity:** high; **status:** needs_work.
+- **Severity:** high; **status:** complete.
 - **Reproducer:** with `fn pick(): Int -> Int -> Int = add;;`,
   `let q = (pick ()) 10; q 2` compiles as an under-applied indirect call and crashes.
   A returned owned two-parameter move closure also fails in `(mk 45) 1`.
@@ -995,11 +995,49 @@ not run the smoke harness, benchmarks, Linux/x86-64 checks, or formatting and li
   Narrow independent reviews of the corrected ownership rule, its explanatory comment, and
   the native call-once fixture completed with no remaining finding in those changes. Focused
   tracking and QA checks pass.
-- **Remaining review work:** complete the capture/stage explanation, simplify duplicated
-  argument preparation and indirect-call diagnostics, strengthen capture-identity and arity
-  assertions, and document and execute the effectful staged-call order regression. The
-  optional additional arity-guard cases require an explicit disposition. Local commit of the
-  implementation is authorized; these review items remain open. Push is not authorized.
+- **Signoff:** complete for the returned-callee repair and review follow-up below. Local commit
+  is authorized; the parent task remains open. Push is not authorized.
+
+##### Returned-callee review follow-up
+
+- **Status:** complete for C1–C6 and D1–D7 below, including documentation, regressions,
+  required verification, review, and tracking reconciliation. The optional D6 cases have an
+  explicit deferral; finding E remains a separate planned repair.
+- **Evaluation order:** supplied operands run once left to right before completed callee
+  stages. `(make (first ())) (second ())` evaluates `first`, `second`, then `make`.
+- **Verification:** the four focused suites passed 74 tests. Formatting, lint, and
+  `sbtn "scalafmtAll; scalafixAll; testFull"` passed 1,312 library tests and nine CLI tests,
+  with 36 existing ignores and no failures or warnings. `./tests/smoke/run.sh all` passed
+  8/8 before `sbtn "scalafmtAll; mmlcPublishLocal"` installed the compiler.
+  `make -C benchmark clean` and `make -C benchmark mml` built all 13 MML benchmarks.
+  `./tests/mem/run.sh all` passed 52/52 ASan+LSan cases on macOS arm64 with LLVM 23.1.1.
+  These checks establish
+  native behavior and allocator/leak diagnostics; generated MML IR remains uninstrumented.
+  No ABI changes or performance measurements are included. Scoped signoff is complete.
+- **Review:** a fresh primary reviewer and separate fresh QA/style, test-quality, and
+  readability reviewers completed the follow-up review with no actionable findings. The
+  primary reviewer independently reran all four focused suites: 74 passed, zero failures.
+  No candidate findings required independent claim verification.
+- **QA and tracking:** focused checks pass, including local links and `git diff --check`.
+
+| Finding | Disposition |
+| --- | --- |
+| B1: unconditional call-once classification | Repaired in `8984f79`; reusable and call-once native controls remain enabled. |
+| B2: borrowed-return diagnostic cascade | Complete in `8984f79`; evidence is recorded below. |
+| C1: capture classification explanation | Comments and compiler design explain temporary callee ownership and invocation transfer. |
+| C2: successive stages | The staged rewrite documents recursive completion of returned-callee stages. |
+| C3: stage selection | Named partial-stage detection uses typed arity; one fallback handles ordinary applications. |
+| C4: argument preparation | Both sites use the shared typed-argument preparation helper. |
+| C5: indirect-call guard | Emission uses a flat error-propagating sequence; diagnostics include the callee name and expected/actual arity. |
+| C6: operand naming | LLVM call operands have a distinct name from AST arguments. |
+| D1: capture assertions | Semantic tests assert local identity/type, exact capture and transfer sets, and residual argument forwarding. |
+| D2: repeated calls and uncalled drops | Covered in `8984f79`; native controls remain enabled. |
+| D3: arity fixture typing | The under-application fixture has its residual function type. |
+| D4: effect order | The memory model documents the approved order; O0/O3 tests assert native output with an effectful callee. |
+| D5: executable staged regression | The effectful PAP assembles and executes at O0/O3, with exact output and invoked result checks. |
+| D6: optional guard cases | Over-application is covered. Missing-type and alias-specific guard unit cases are deferred: dispatch requires canonical callable resolution; aliases share that resolver and existing harness coverage. |
+| D7: repeated order assertions | The suite shares exact call-count and order assertions. |
+| E: grouped callable result | Separate [type-checker task](typecheck-grouped-callable-results.md); repair approval pending. |
 
 ##### Review B2: borrowed-return diagnostic cascade
 
@@ -1038,10 +1076,9 @@ not run the smoke harness, benchmarks, Linux/x86-64 checks, or formatting and li
   exits with status 1 and reports the invalid return and independent capture, without generated
   temporary capture errors.
 - **Signoff:** complete for the diagnostic repair; local commit authorized. Push is not authorized.
-- **Verification boundary:** the passing memory-harness run precedes the added use of
-  `consumed_closure_text` in `tests/mem/pap-nested-consuming.mml`. The committed fixture
-  reports use-after-move at line 48 when compiled with `mmlc`; the full committed tree does
-  not have a passing memory-harness result.
+- **Whole-tree verification:** the returned-callee follow-up above passes all 52 memory cases,
+  including `tests/mem/pap-nested-consuming.mml`. Its illustrative post-move use is commented
+  out; it is not an active positive-fixture expression.
 
 #### B2: recursive higher-order callable flow
 
@@ -1689,14 +1726,12 @@ are in `context/history/` for Author review. No compiler slice is authorized by 
 ## Task Working Memory
 
 - **Branch:** `dev-2026-03-21-lambdas`.
-- **Priority and next action:** continue the remaining review findings for returned-callee
-  partial applications. The [borrowed-return diagnostic repair](#review-b2-borrowed-return-diagnostic-cascade)
-  is complete and signed off.
-  B2, B3, and B4 follow; cleanup placement follows the confirmed bug repairs.
+- **Priority and next action:** plan [B2: recursive higher-order callable flow](#b2-recursive-higher-order-callable-flow).
+  B3 and B4 follow; cleanup placement follows the confirmed bug repairs.
 - **Branch audit:** the review findings and evidence limits are in
   [Branch review findings](#branch-review-findings). Compiler-generated ASan coverage
-  is a separate [high-priority task](asan-generated-ir.md). The findings remain open;
-  their implementation and verification are pending.
+  is a separate [high-priority task](asan-generated-ir.md). Remaining repairs and their
+  verification are listed in the [Execution Checklist](#execution-checklist).
 - **Tail-recursion cleanup:** [owned-closure cleanup](#bug-preserve-tail-recursion-across-owned-closure-cleanup)
   preserves eligible loops while retaining borrowed backing storage and effect order.
   Formatting/lint, 1,293 library plus nine CLI tests, 8/8 smokes, verified local publication,

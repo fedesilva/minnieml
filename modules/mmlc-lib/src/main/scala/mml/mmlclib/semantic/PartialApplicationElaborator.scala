@@ -88,15 +88,14 @@ object PartialApplicationElaborator:
     values: CallableValues
   ): Allocation[PreparedValue[Term]] = term match
     case app: App =>
-      values.stages(app) match
-        case first :: rest
-            if first.complete && rest.lastOption.exists(stage =>
-              stage.signature.isDefined && !stage.complete
-            ) && values.recovery.isAvailable(app) =>
-          first.resultType.fold(rewriteApplication(app, owner, index, values)) { resultType =>
-            rewriteStagedApplication(app, first, rest, resultType, owner, index, values)
-          }
-        case _ => rewriteApplication(app, owner, index, values)
+      val stages = values.stages(app)
+      val staged = for
+        first <- stages.headOption.filter(_.complete)
+        resultType <- first.resultType
+        if stages.lastOption.exists(_.isPartial) && values.recovery.isAvailable(app)
+      yield rewriteStagedApplication(app, first, stages.drop(1), resultType, owner, index, values)
+
+      staged.getOrElse(rewriteApplication(app, owner, index, values))
     case lambda: Lambda =>
       val ownedCaptureIds = lambda.captures
         .map(_.ref)
@@ -158,6 +157,7 @@ object PartialApplicationElaborator:
     case ref: Ref => rewriteRef(ref, owner, index, values).map[PreparedValue[Term]](identity)
     case other => PreparedValue(other).pure[Allocation]
 
+  /** Binds one completed stage's returned callee, recursively elaborating the remaining stages. */
   private def rewriteStagedApplication(
     app:        App,
     first:      CallStages.Stage,
@@ -183,7 +183,8 @@ object PartialApplicationElaborator:
     yield
       val value = rewritten.value match
         case lambda: Lambda if lambda.meta.exists(_.isPartialApplication) =>
-          // The PAP owns the callee but transfers it on invocation only if the callee is call-once.
+          // The temporary callee must outlive this binding in the PAP's environment. Ownership
+          // alone permits reuse; invocation transfers the callee only when it is call-once.
           val transferredCallee =
             if localValues.consumesOnCall(local.ref) then local.param.id.toSet
             else Set.empty[String]
@@ -216,8 +217,7 @@ object PartialApplicationElaborator:
           function <- rewriteLambdaBody(scope, owner, index, values)
           arg <- prepareExpr(app.arg, owner, index, values)
           prepared <-
-            if forceArguments then
-              arg.value.typeSpec.fold(arg.pure[Allocation])(prepareArgument(arg, _, owner, index))
+            if forceArguments then prepareTypedArgument(arg, owner, index)
             else arg.pure[Allocation]
         yield PreparedValue(
           app.copy(fn = function, arg = prepared.expression),
@@ -244,12 +244,7 @@ object PartialApplicationElaborator:
               val prepared =
                 if forceArguments || function.bindings.nonEmpty ||
                   rewrittenArgs.exists(_.bindings.nonEmpty)
-                then
-                  rewrittenArgs.traverse { arg =>
-                    arg.value.typeSpec.fold(arg.pure[Allocation])(
-                      prepareArgument(arg, _, owner, index)
-                    )
-                  }
+                then rewrittenArgs.traverse(prepareTypedArgument(_, owner, index))
                 else rewrittenArgs.pure[Allocation]
               prepared.map { args =>
                 PreparedValue(
@@ -258,6 +253,13 @@ object PartialApplicationElaborator:
                 )
               }
         yield result
+
+  private def prepareTypedArgument(
+    arg:   PreparedValue[Term],
+    owner: BindingOwner,
+    index: ResolvablesIndex
+  ): Allocation[PreparedValue[Term]] =
+    arg.value.typeSpec.fold(arg.pure[Allocation])(prepareArgument(arg, _, owner, index))
 
   /** A field borrow keeps its qualifier binding around the enclosing consumer. */
   private def rewriteRef(
@@ -378,6 +380,7 @@ object PartialApplicationElaborator:
       val borrowed    = payloads.collect { case (ref: Ref, false) => ref.resolvedId }.flatten.toSet
       val borrowsHeap = borrowed.nonEmpty
       val calleeLambdas = values.lambdas(callee)
+      // rewriteStagedApplication owns its temporary callee instead of extending a local borrow.
       val borrowsCallee = callee match
         case ref: Ref =>
           borrowsField ||

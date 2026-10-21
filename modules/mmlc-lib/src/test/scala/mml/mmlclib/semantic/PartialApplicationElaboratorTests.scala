@@ -162,20 +162,69 @@ class PartialApplicationElaboratorTests extends BaseEffFunSuite:
       val elaborated = PartialApplicationElaborator.rewriteModule(typed)
       assert(!elaborated.hasErrors, elaborated.errors)
       assertStable(typed, elaborated)
-      List("returned", "owned", "bound").foreach { name =>
-        val generated = partials(member(elaborated, name).value)
+      List(
+        ("returned", "pick", 10, false),
+        ("owned", "make", 1, false),
+        ("bound", "pick", 10, false),
+        ("once", "make_once", 1, true)
+      ).foreach { (name, factory, supplied, callOnce) =>
+        val body      = member(elaborated, name).value
+        val factoryId = member(elaborated, factory).id
+        val calleeBindings = TermTraversal
+          .collect(body) {
+            case app: App if app.arg.terms.exists {
+                  case call: App =>
+                    val (callee, _) = CallableValues.application(call)
+                    callee match
+                      case ref: Ref => ref.resolvedId == factoryId
+                      case _ => false
+                  case _ => false
+                } =>
+              app.fn
+          }
+          .collect { case scope: Lambda => scope.params }
+          .flatten
+        assertEquals(calleeBindings.size, 1, name)
+        val local = calleeBindings.head
+        assert(local.id.nonEmpty, name)
+        val expectedType = member(elaborated, factory).typeSpec.collect { case signature: TypeFn =>
+          signature.returnType
+        }
+        assert(expectedType.nonEmpty, name)
+        assertEquals(local.typeSpec, expectedType, name)
+
+        val generated = partials(body)
         assertEquals(generated.size, 1, name)
-        assertEquals(generated.head.params.size, 1, name)
-        assert(generated.head.isMove, s"$name: ${generated.head.meta}")
+        val residual = generated.head
+        assertEquals(residual.params.size, 1, name)
+        assert(residual.isMove, s"$name: ${residual.meta}")
+        assertEquals(residual.captures.flatMap(_.ref.resolvedId).toSet, local.id.toSet, name)
         assertEquals(
-          generated.head.meta.map(_.transferredCaptures),
-          Some(Set.empty[String]),
+          residual.meta.map(_.transferredCaptures),
+          Some(if callOnce then local.id.toSet else Set.empty[String]),
           name
         )
+        assertEquals(residual.meta.map(_.borrowedCaptures), Some(Set.empty[String]), name)
+        residual.body.terms match
+          case List(call: App) =>
+            val (callee, arguments) = CallableValues.application(call)
+            callee match
+              case ref: Ref => assertEquals(ref.resolvedId, local.id, name)
+              case other => fail(s"Expected captured callee, found $other")
+            assertEquals(arguments.size, 2, name)
+            arguments.head.terms match
+              case List(value: LiteralInt) => assertEquals(value.value, supplied.toLong, name)
+              case other => fail(s"Expected supplied argument, found $other")
+            arguments(1).terms match
+              case List(ref: Ref) => assertEquals(ref.resolvedId, residual.params.head.id, name)
+              case other => fail(s"Expected residual parameter, found $other")
+            residual.typeSpec match
+              case Some(signature: TypeFn) =>
+                assertEquals(signature.paramTypes.toList, residual.params.flatMap(_.typeSpec), name)
+                assertEquals(Some(signature.returnType), call.typeSpec, name)
+              case other => fail(s"Expected residual callable type, found $other")
+          case other => fail(s"Expected forwarding application, found $other")
       }
-      val once = partials(member(elaborated, "once").value)
-      assertEquals(once.size, 1)
-      assert(once.head.meta.exists(_.transferredCaptures.nonEmpty))
     }
   }
 

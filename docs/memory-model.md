@@ -555,6 +555,11 @@ Supplied expressions run once, in source order, when the PAP is created. Calling
 reuses those stored values. This includes `Unit` expressions: their effects occur at creation
 even though `Unit` occupies no payload field.
 
+In a chain that partially applies a returned callable, all supplied operands run left to right
+before the completed callee stages. For `(make (first ())) (second ())`, creation runs `first`,
+then `second`, then `make`. The residual PAP owns the returned callee; it remains reusable
+unless invocation transfers an owned payload or the returned callee is itself call-once.
+
 ### Ownership rules
 
 The same ownership rules apply to PAP payloads as to ordinary values:
