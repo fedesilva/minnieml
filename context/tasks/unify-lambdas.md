@@ -33,7 +33,7 @@ cleanup, and defensive hardening. Restore regressions relevant to each bug as pa
 16. [x] **complete** — [BUG: elaborate partial applications inside callees](#bug-elaborate-partial-applications-inside-callees); signed off with passing compiler gates and independent review.
 17. [x] **complete** — [BUG: preserve tail recursion across owned-closure cleanup](#bug-preserve-tail-recursion-across-owned-closure-cleanup); verified and signed off.
 18. [x] **complete** — [B1: elaborate partial applications of returned callees](#b1-partial-application-of-a-returned-callee); review follow-up verified and signed off.
-19. [ ] **planned** — [B2: accept recursive higher-order callable flow](#b2-recursive-higher-order-callable-flow).
+19. [x] **complete** — [B2: accept recursive higher-order callable flow](#b2-recursive-higher-order-callable-flow); verified and signed off.
 20. [ ] **planned** — [B3: preserve binding identity across recursive shadowing](#b3-recursive-shadowing-after-a-move).
 21. [ ] **planned** — [B4: report the correct source use in ownership diagnostics](#b4-ownership-diagnostic-locations).
 22. [ ] **planned** — [T1: instrument MML-generated IR for AddressSanitizer](#t1-mml-generated-ir-lacks-addresssanitizer-instrumentation); tracked in a [separate task](asan-generated-ir.md).
@@ -1082,15 +1082,74 @@ not run the smoke harness, benchmarks, Linux/x86-64 checks, or formatting and li
 
 #### B2: recursive higher-order callable flow
 
-- **Severity:** medium; **status:** planned.
-- **Reproducer:** `apply_n(f: Int -> Int, n: Int, acc: Int)` returns `acc` when `n == 0`
+- **Severity:** medium; **status:** complete.
+- **Baseline reproducer:** `apply_n(f: Int -> Int, n: Int, acc: Int)` returns `acc` when `n == 0`
   and otherwise calls `apply_n f (n - 1) (f acc)`. Once a caller supplies a function,
   ownership analysis falsely reports `Callable alternatives must agree on consuming parameters`.
-- **Cause:** the cycle guard in [CallableValues.scala](../../modules/mmlc-lib/src/main/scala/mml/mmlclib/semantic/CallableValues.scala)
+- **Baseline cause:** the cycle guard in [CallableValues.scala](../../modules/mmlc-lib/src/main/scala/mml/mmlclib/semantic/CallableValues.scala)
   contributes an unknown alternative on a recursive back edge. The lexical fallback
   does not close this higher-order cycle, so the ownership agreement check fails.
 - **Outcome:** model the back edge without inventing an unknown callable alternative;
   cover valid recursive higher-order calls and genuinely inconsistent consuming contracts.
+- **Signoff:** complete for the bounded repair below. Local commit authorized; push is not authorized.
+- **Plan:**
+  1. Preserve the reproducer and cover direct, aliased, and mutually recursive forwarding.
+  2. Resolve forwarding cycles from their incoming callable sources while preserving genuine
+     unknowns and cycles with no established source.
+  3. Limit cycle closure to parameter-ownership resolution; observed callers must not establish
+     lexical invocation proofs.
+  4. Cover matching and conflicting consuming contracts, unknown alternatives, and heap arguments;
+     verify the original result and ownership behavior with native execution.
+  5. Run compiler gates and independent review, then present the repair for signoff.
+- **Baseline evidence (2026-10-21, `24f50cc`):** `sbtn "run run <source>"` rejects the
+  following program at `f acc` with `Callable alternatives must agree on consuming parameters`
+  in `ownership-analyzer`. Replacing the recursive helper with
+  `fn apply_three(f: Int -> Int, acc: Int): Int = f (f (f acc));;` and calling
+  `apply_three increment 0` compiles and prints `3`.
+
+  ```mml
+  fn increment(x: Int): Int = x + 1;;
+  fn apply_n(f: Int -> Int, n: Int, acc: Int): Int =
+    if n == 0 then acc;
+    else apply_n f (n - 1) (f acc);
+    ;
+  ;
+  pub fn main(): Unit = println (int_to_str (apply_n increment 3 0));;
+  ```
+
+- **Implementation:** `CallableValues` distinguishes unknown origins from pending forwarding
+  edges. Parameter-contract resolution closes forwarding cycles with concrete incoming sources,
+  preserves unknown alternatives and unseeded cycles, and resets forwarding context across calls
+  and field projections. Lexical invocation proofs retain their existing conservative behavior.
+- **Regression coverage:** [RecursiveCallableOwnershipTests](../../modules/mmlc-lib/src/test/scala/mml/mmlclib/semantic/RecursiveCallableOwnershipTests.scala)
+  covers direct, aliased, and mutual recursion; cycles without incoming targets; matching and
+  conflicting parameter contracts; unknown inputs; and recursive returned callables. Negative
+  callback cases assert diagnostic count, class, message, source location, and binding identity.
+  Six additions to [LocalCallableCodegenTests](../../modules/mmlc-lib/src/test/scala/mml/mmlclib/codegen/LocalCallableCodegenTests.scala)
+  assemble LLVM IR and execute at `-O0` and `-O3`, asserting result `3` and zero outstanding native
+  fixture allocations after borrowing and consuming callbacks.
+- **Verification (2026-10-21, macOS arm64, LLVM/Clang 23.1.1):**
+  - Baseline semantic regressions: five acceptance cases fail with the recorded contract error;
+    both rejection controls pass.
+  - `sbtn "scalafmtAll; scalafixAll; testFull"`: passes, 1,328 library tests and nine CLI tests;
+    36 existing ignores. The exact CLI reproducer prints `3` with the repaired compiler.
+  - `./tests/smoke/run.sh all`: 8/8 pass. `sbtn mmlcPublishLocal`: passes after smoke and
+    direct CLI execution. `make -C benchmark clean` and `make -C benchmark mml`: 13 MML builds
+    pass; these are build checks, not performance measurements.
+  - `./tests/mem/run.sh all`: 52/52 ASan+LSan cases pass. The separately tracked T1 gap
+    remains: ordinary `-s` results do not establish generated-code ASan instrumentation.
+    B2's native allocation-count tests provide independent cleanup evidence for their fixtures.
+  - Primary independent review, dedicated QA, test quality, and readability checks completed.
+    One independently confirmed readability finding identified implicit forwarding resets at
+    traversal boundaries. `resolve` requires its forwarding argument and every call supplies
+    either retained context or an explicit empty set. No functional defect was found.
+  - After the explicit-reset correction, formatting/lint, 80 focused semantic tests, eight
+    recursive native tests, exact CLI execution, and refreshed local publication pass. The
+    wider full-suite, smoke, benchmark, and memory results above precede this behavior-preserving
+    correction. Fresh narrow independent re-review and all three separate dedicated checks pass
+    with no remaining findings; its independent rerun passes the same 80 semantic and eight
+    recursive native tests.
+  - QA and focused tracking checks pass. No Linux execution is claimed; this repair changes no ABI.
 
 #### B3: recursive shadowing after a move
 
@@ -1720,14 +1779,18 @@ are in `context/history/` for Author review. No compiler slice is authorized by 
   [Execution Checklist](#execution-checklist).
 - PAP callee traversal commit authorization: granted; push is not authorized.
 - Tail-recursion cleanup signoff: complete. Local commit is authorized; push is not authorized.
+- B2 recursive higher-order callable flow signoff: complete. Local commit is authorized;
+  push is not authorized.
 - Historical commit and push authorization: expression preservation, the ignored-test inventory and plan,
   four restored regressions, and their completion records; push to `origin/dev-lambda-unify`.
 
 ## Task Working Memory
 
 - **Branch:** `dev-2026-03-21-lambdas`.
-- **Priority and next action:** plan [B2: recursive higher-order callable flow](#b2-recursive-higher-order-callable-flow).
-  B3 and B4 follow; cleanup placement follows the confirmed bug repairs.
+- **Priority and next action:** plan [B3: recursive shadowing after a move](#b3-recursive-shadowing-after-a-move).
+  B4 follows; cleanup placement follows the confirmed bug repairs.
+- **Completed repair:** [B2 recursive higher-order callable flow](#b2-recursive-higher-order-callable-flow)
+  is verified and signed off, with passing compiler gates and independent reviews.
 - **Branch audit:** the review findings and evidence limits are in
   [Branch review findings](#branch-review-findings). Compiler-generated ASan coverage
   is a separate [high-priority task](asan-generated-ir.md). Remaining repairs and their

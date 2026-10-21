@@ -144,6 +144,42 @@ class LocalCallableCodegenTests extends BaseEffFunSuite:
   private def compile(source: String, noTco: Boolean = false): IO[String] =
     compileAndGenerate(source, config = CompilerConfig.exe("build", noTco = noTco))
 
+  List(0, 3).foreach { optimization =>
+    test(s"recursive higher-order application produces its result at O$optimization") {
+      compile("""
+        fn increment(x: Int): Int = x + 1;;
+        fn apply_n(f: Int -> Int, n: Int, acc: Int): Int =
+          if n == 0 then acc;
+          else apply_n f (n - 1) (f acc);
+          ;
+        ;
+        pub fn main(): Int = apply_n increment 3 0;;
+      """).flatMap(verify(_, expected = 3, optimization = optimization))
+    }
+
+    List("" -> "borrowing", "~" -> "consuming").foreach { (marker, contract) =>
+      test(s"recursive $contract callback releases each heap argument at O$optimization") {
+        compile(s"""
+          type Handle = @native[t=ptr, mem=heap, free=release];
+          fn allocate(): Handle = @native[mem=alloc];;
+          fn release(~p: Handle): Unit = @native;;
+          fn inspect(p: Handle): Int = @native;;
+          fn outstanding(): Int = @native;;
+          fn read(${marker}p: Handle): Int = inspect p;;
+          fn run(f: Handle -> Int, n: Int): Int =
+            if n == 0 then 0;
+            else f (allocate ()) + run f (n - 1);
+            ;
+          ;
+          pub fn main(): Int =
+            let result = run read 3;
+            if result == 21 then outstanding (); else 100; ;
+          ;
+        """).flatMap(verify(_, expected = 0, optimization = optimization))
+      }
+    }
+  }
+
   test("alias chains and parenthesized aliases share one plain entry") {
     val source = """
       pub fn main(): Int =

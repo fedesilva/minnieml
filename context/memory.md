@@ -14,8 +14,8 @@ This is the Author's active and near-term focus. The backlog lives in [tasks/](t
 
 - **Tracker:** [Unify lambdas](tasks/unify-lambdas.md)
 - **Status:** in_progress
-- **Current focus:** Plan B2: accept recursive higher-order callable flow. B3 and B4 follow
-  before cleanup placement.
+- **Current focus:** Plan B3: preserve binding identity across recursive shadowing after a move.
+  B4 follows before cleanup placement.
 
 ### Apply returned callables with parenthesized function types
 

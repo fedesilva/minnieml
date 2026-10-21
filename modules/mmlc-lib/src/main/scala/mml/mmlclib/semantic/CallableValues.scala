@@ -30,92 +30,123 @@ final case class CallableValues private (
       if lambda.params.isEmpty then List(false).drop(supplied.size)
       else remainingParams.map(_.consuming)
 
-  /** Known targets remain usable for flow even when another alternative is unresolved. */
+  /** Known targets remain usable beside unknown alternatives. Back edges name enclosing forwarding
+    * bindings whose incoming sources are still being resolved.
+    */
   private case class OriginResult(
     known:      List[Origin],
-    complete:   Boolean,
-    references: List[Ref] = Nil
+    unknown:    Boolean,
+    references: List[Ref]   = Nil,
+    backEdges:  Set[String] = Set.empty
   ):
+
+    def complete: Boolean = !unknown && backEdges.isEmpty
 
     def ++(other: OriginResult): OriginResult =
       OriginResult(
         known ++ other.known,
-        complete && other.complete,
-        references ++ other.references
+        unknown || other.unknown,
+        references ++ other.references,
+        backEdges ++ other.backEdges
       )
 
     def flatMap(f: Origin => OriginResult): OriginResult =
-      known.map(f).foldLeft(OriginResult(Nil, complete))(_ ++ _)
+      known.map(f).foldLeft(OriginResult(Nil, unknown, backEdges = backEdges))(_ ++ _)
+
+    /** A forwarding cycle needs a concrete source or a dependency on an enclosing cycle. */
+    def closeForwarding(id: String): OriginResult =
+      if !backEdges.contains(id) then this
+      else
+        val remaining = backEdges - id
+        copy(unknown = unknown || (known.isEmpty && remaining.isEmpty), backEdges = remaining)
 
     /** An unresolved alternative cannot inherit a contract from the known subset. */
     def hasConsistentParameterOwnership: Boolean =
       known.isEmpty || (complete && known.map(_.parameterOwnership).distinct.size <= 1)
 
-  private val unknownOrigins = OriginResult(Nil, complete = false)
+  private val unknownOrigins = OriginResult(Nil, unknown = true)
 
   private def resolveOrigins(
-    term:          Term,
-    bindingValues: Map[String, List[Expr]],
-    exactCalls:    Boolean
+    term:                  Term,
+    bindingValues:         Map[String, List[Expr]],
+    exactCalls:            Boolean,
+    closeForwardingCycles: Boolean = false
   ): OriginResult =
 
     def resolve(
       value:       Term,
       fields:      List[String],
       seen:        Set[String],
-      environment: Map[String, LexicalValue]
+      environment: Map[String, LexicalValue],
+      forwarding:  Set[String]
     ): OriginResult =
       value match
 
         case _ if !recovery.isAvailable(value) => unknownOrigins
 
         case lambda: Lambda if fields.isEmpty =>
-          OriginResult(List(Origin(lambda, environment = environment)), complete = true)
+          OriginResult(List(Origin(lambda, environment = environment)), unknown = false)
 
         case expr: Expr =>
-          expr.terms.lastOption.fold(unknownOrigins)(resolve(_, fields, seen, environment))
+          expr.terms.lastOption.fold(unknownOrigins)(
+            resolve(_, fields, seen, environment, forwarding)
+          )
 
-        case group:   TermGroup => resolve(group.inner, fields, seen, environment)
-        case yielded: YieldOwnership => resolve(yielded.value, fields, seen, environment)
-        case binding: BindOwnership => resolve(binding.body, fields, seen, environment)
+        case group:   TermGroup => resolve(group.inner, fields, seen, environment, forwarding)
+        case yielded: YieldOwnership =>
+          resolve(yielded.value, fields, seen, environment, forwarding)
+        case binding: BindOwnership => resolve(binding.body, fields, seen, environment, forwarding)
 
         case cond: Cond =>
-          resolve(cond.ifTrue, fields, seen, environment) ++
-            resolve(cond.ifFalse, fields, seen, environment)
+          resolve(cond.ifTrue, fields, seen, environment, forwarding) ++
+            resolve(cond.ifFalse, fields, seen, environment, forwarding)
 
         case ref: Ref if ref.qualifier.isDefined =>
           val result = (ref.resolvedId, ref.qualifier)
-            .mapN((fieldId, qualifier) => resolve(qualifier, fieldId :: fields, seen, environment))
+            .mapN((fieldId, qualifier) =>
+              resolve(qualifier, fieldId :: fields, seen, environment, Set.empty)
+            )
             .getOrElse(unknownOrigins)
           if fields.isEmpty then result.copy(references = ref :: result.references) else result
 
         case ref: Ref =>
-          val result = ref.resolvedId.filterNot(seen.contains).fold(unknownOrigins) { id =>
-            environment.get(id) match
+          val result = ref.resolvedId.fold(unknownOrigins) { id =>
+            if seen.contains(id) then
+              if closeForwardingCycles && fields.isEmpty && forwarding.contains(id) then
+                OriginResult(Nil, unknown = false, backEdges = Set(id))
+              else unknownOrigins
+            else
+              val nextForwarding =
+                if closeForwardingCycles && fields.isEmpty then forwarding + id
+                else Set.empty[String]
+              val origins = environment.get(id) match
 
-              case Some(source) =>
-                val callerSeen = if exactCalls then source.seen else seen + id
-                resolve(source.value, fields, callerSeen, source.environment)
+                case Some(source) =>
+                  val callerSeen = if exactCalls then source.seen else seen + id
+                  resolve(source.value, fields, callerSeen, source.environment, Set.empty)
 
-              case None =>
-                val sources = bindingValues.getOrElse(
-                  id,
-                  index.lookup(id).collect { case bnd: Bnd => bnd.value }.toList
-                )
-                sources
-                  .map(resolve(_, fields, seen + id, environment))
-                  .reduceOption(_ ++ _)
-                  .getOrElse(unknownOrigins)
+                case None =>
+                  val sources = bindingValues.getOrElse(
+                    id,
+                    index.lookup(id).collect { case bnd: Bnd => bnd.value }.toList
+                  )
+                  sources
+                    .map(resolve(_, fields, seen + id, environment, nextForwarding))
+                    .reduceOption(_ ++ _)
+                    .getOrElse(unknownOrigins)
+
+              origins.closeForwarding(id)
           }
           if fields.isEmpty then result.copy(references = ref :: result.references) else result
 
         case app: App =>
+          // Calls and field projections start a new forwarding path: their results may differ.
           stages(app).lastOption.fold(unknownOrigins) { stage =>
             val calleeId = stage.callee match
               case ref: Ref => ref.resolvedId
               case _ => none
 
-            resolve(stage.callee, Nil, seen, environment).flatMap { origin =>
+            resolve(stage.callee, Nil, seen, environment, Set.empty).flatMap { origin =>
               val callerSeen = if exactCalls then seen else Set.empty[String]
               val supplied =
                 origin.supplied ++ stage.arguments.map(LexicalValue(_, environment, callerSeen))
@@ -123,7 +154,7 @@ final case class CallableValues private (
                 if fields.isEmpty &&
                   stage.signature.exists(_.paramTypes.size > stage.arguments.size) &&
                   stage.arguments.forall(recovery.isAvailable)
-                then OriginResult(List(origin.copy(supplied = supplied)), complete = true)
+                then OriginResult(List(origin.copy(supplied = supplied)), unknown = false)
                 else unknownOrigins
               else
                 val constructorField = for
@@ -146,7 +177,13 @@ final case class CallableValues private (
                 constructorField match
                   case Some(argument) =>
                     val argumentSeen = if exactCalls then argument.seen else seen
-                    resolve(argument.value, fields.drop(1), argumentSeen, argument.environment)
+                    resolve(
+                      argument.value,
+                      fields.drop(1),
+                      argumentSeen,
+                      argument.environment,
+                      Set.empty
+                    )
 
                   case None =>
                     val bodyEnvironment =
@@ -156,13 +193,19 @@ final case class CallableValues private (
                         }
                       else Map.empty[String, LexicalValue]
 
-                    resolve(origin.lambda.body, fields, seen ++ calleeId, bodyEnvironment)
+                    resolve(
+                      origin.lambda.body,
+                      fields,
+                      seen ++ calleeId,
+                      bodyEnvironment,
+                      Set.empty
+                    )
             }
           }
 
         case _ => unknownOrigins
 
-    resolve(term, Nil, Set.empty, Map.empty)
+    resolve(term, Nil, Set.empty, Map.empty, Set.empty)
 
   private def origins(term: Term): List[Origin] =
     resolveOrigins(term, bindings, exactCalls = false).known.distinct
@@ -274,9 +317,9 @@ final case class CallableValues private (
 
     collect(TermTraversal.collect(term) { case ref: Ref => ref }, Set.empty)
 
-  /** Exact substitutions can close conservative cycle edges in observed parameter flow. */
+  /** Parameter contracts close forwarding cycles; lexical substitution can resolve other gaps. */
   private def parameterOrigins(term: Term): OriginResult =
-    val observed = resolveOrigins(term, bindings, exactCalls = false)
+    val observed = resolveOrigins(term, bindings, exactCalls = false, closeForwardingCycles = true)
     if observed.complete then observed
     else
       val lexical = resolveOrigins(term, lexicalBindings, exactCalls = true)

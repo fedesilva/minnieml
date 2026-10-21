@@ -4,6 +4,8 @@ Durable product changes belong here. Current task state belongs in task files.
 
 ## 2026-10-21
 
+- Accept recursive higher-order callable forwarding through direct calls, aliases, and mutual
+  recursion. Preserve unknown callable sources and reject conflicting consuming contracts.
 - Report indirect-call arity errors with the callee name and expected/actual counts.
   Document and verify returned-callee partial-application effect order and reusable-callee
   ownership.

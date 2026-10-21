@@ -867,6 +867,11 @@ immediate bodies, retaining returned alias identities without executing uncalled
 Parameter alternatives must agree before they authorize consuming arguments. A known target
 beside an unresolved alternative cannot supply a parameter contract; it remains available for
 flow propagation. A complete lexical proof can resolve conservative cycles in observed flow.
+For parameter contracts, a recursive forwarding edge refers back to the same binding's
+incoming sources. The cycle closes when those sources establish callable origins; unknown
+incoming alternatives and cycles without a concrete source remain unresolved. Calls and field
+projections interrupt forwarding because their results may differ from their operands.
+This cycle handling does not turn observed callers into lexical invocation proofs.
 Entirely unknown targets retain the default non-consuming argument behavior.
 Return contracts, allocation detection, and static-result proofs describe the final completed
 invocation.
