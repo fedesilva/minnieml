@@ -1616,6 +1616,9 @@ Each phase takes a `CompilerState` and returns an updated one. Timings are recor
 
 ## Reference
 
-- **Codebase structure**: See `memory-bank/systemPatterns.md`
-- **Operator overloading**: See `memory-bank/specs/operator-arity-mangling.md`
-- **Codegen update**: See `memory-bank/specs/codegen-update.md`
+- **Codebase structure**: See [Source tree overview](#appendix-a-source-tree-overview).
+- **Operator handling**: See [DuplicateNameChecker](#semantic-phase-1-duplicatenamechecker)
+  for arity-based name checks and [ExpressionRewriter](#semantic-phase-7-expressionrewriter)
+  for precedence and application rewriting.
+- **Code generation**: See [Native templates](#11-code-generation-native-templates) and
+  [Struct constructors](#12-code-generation-struct-constructors).
