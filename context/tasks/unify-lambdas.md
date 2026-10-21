@@ -34,7 +34,7 @@ cleanup, and defensive hardening. Restore regressions relevant to each bug as pa
 17. [x] **complete** — [BUG: preserve tail recursion across owned-closure cleanup](#bug-preserve-tail-recursion-across-owned-closure-cleanup); verified and signed off.
 18. [x] **complete** — [B1: elaborate partial applications of returned callees](#b1-partial-application-of-a-returned-callee); review follow-up verified and signed off.
 19. [x] **complete** — [B2: accept recursive higher-order callable flow](#b2-recursive-higher-order-callable-flow); verified and signed off.
-20. [ ] **planned** — [B3: preserve binding identity across recursive shadowing](#b3-recursive-shadowing-after-a-move).
+20. [x] **complete** — [B3: preserve binding identity across recursive shadowing](#b3-recursive-shadowing-after-a-move); verified and signed off.
 21. [ ] **planned** — [B4: report the correct source use in ownership diagnostics](#b4-ownership-diagnostic-locations).
 22. [ ] **planned** — [T1: instrument MML-generated IR for AddressSanitizer](#t1-mml-generated-ir-lacks-addresssanitizer-instrumentation); tracked in a [separate task](asan-generated-ir.md).
 23. [ ] **planned** — [T2: assert memory fixture results](#t2-assert-memory-fixture-results).
@@ -1153,17 +1153,53 @@ not run the smoke harness, benchmarks, Linux/x86-64 checks, or formatting and li
 
 #### B3: recursive shadowing after a move
 
-- **Severity:** medium; **status:** planned.
-- **Reproducer:** move an outer `s` through `consume s`, then declare a recursive local
-  function also named `s` whose body calls itself. The compiler falsely reports
-  `must be last use` or `use after move` against the outer binding.
-- **Cause:** [OwnershipAnalyzer.scala](../../modules/mmlc-lib/src/main/scala/mml/mmlclib/semantic/OwnershipAnalyzer.scala)
+- **Severity:** medium; **status:** complete.
+- **Implementation approval:** granted for the bounded move and last-use repair below.
+- **Plan:** reproduce the recursive-shadowing failure; use binding IDs in the affected
+  move and last-use checks; cover distinct shadowed bindings and genuine same-binding
+  violations; run compiler gates and independent review.
+- **Signoff:** complete for the bounded B3 repair. Local commit authorized; push is not authorized.
+- **Reproducer:** consume the parameter of `example(~s: String)` through `consume s`,
+  then declare a recursive local function also named `s` whose body calls itself. The
+  baseline falsely reports `must be last use` or `use after move` against the outer binding.
+- **Baseline cause:** [OwnershipAnalyzer.scala](../../modules/mmlc-lib/src/main/scala/mml/mmlclib/semantic/OwnershipAnalyzer.scala)
   uses name-based reference scanning in the last-use check and a name fallback in
   `checkRef`; these do not preserve the distinct definition IDs. This is a concrete
   failing case for the broader [semantic-ID task](semantic-id-lookups.md).
-- **Outcome:** use binding identity for the narrow move and last-use checks, with a
-  failing shadowing regression and a valid same-binding control. The broader task
-  still owns full semantic-pipeline identity migration.
+- **Outcome:** move and last-use checks distinguish shadowed definitions while rejecting
+  later uses of the original moved binding. The broader task still owns full
+  semantic-pipeline identity migration.
+- **Implementation:** consuming-call evidence is keyed by definition ID. The last-use
+  scan compares resolved IDs through the shared structural traversal; move diagnostics
+  use ID-keyed move records for references, field owners, and qualifier roots.
+- **Regression coverage:** [OwnershipShadowingTests](../../modules/mmlc-lib/src/test/scala/mml/mmlclib/semantic/OwnershipShadowingTests.scala)
+  covers consuming statements, consuming initializers, and local transfers before recursive
+  shadowing. It asserts distinct outer and recursive identities. Direct and captured uses
+  of the original moved binding retain exact diagnostic counts, classes, identities, and
+  source locations. Two additions to
+  [LocalCallableCodegenTests](../../modules/mmlc-lib/src/test/scala/mml/mmlclib/codegen/LocalCallableCodegenTests.scala)
+  assemble LLVM IR and execute at `-O0` and `-O3`, checking the recursive result and zero
+  outstanding fixture allocations.
+- **Verification (2026-10-21):**
+  - Baseline at `2ad1412`: all three legal recursive-shadowing acceptance cases fail with
+    ownership diagnostics; both same-binding rejection controls pass. Consuming forms
+    produce false last-use and use-after-move errors; local transfer produces the latter.
+  - Focused ownership, literal-borrowing, and native callable suites: 172/172 pass.
+  - `sbtn "scalafmtAll; scalafixAll; testFull"`: passes, 1,335 library tests and nine CLI
+    tests; 36 existing ignores. No compiler warnings.
+  - `./tests/smoke/run.sh all`: 8/8 pass, including direct compiler execution.
+    `sbtn mmlcPublishLocal` passes after smoke verification. `make -C benchmark clean`
+    and `make -C benchmark mml` pass for all 13 MML builds; no performance measurements.
+  - `./tests/mem/run.sh all`: 52/52 ASan+LSan cases pass on macOS arm64 with LLVM/Clang
+    23.1.1. The separately tracked T1 generated-code instrumentation gap remains;
+    B3's native allocation-count assertions provide independent cleanup evidence.
+  - QA and focused tracking checks pass. Independent correctness, test-quality, and
+    readability checks completed. One independently confirmed QA finding requested
+    paragraph spacing between test proof stages; three blank lines address it.
+    Formatting and whitespace checks pass after that nonbehavioral correction;
+    fresh narrow primary review and all three separate dedicated checks pass with no
+    remaining findings. Behavioral tests were not rerun for whitespace-only changes.
+    No ABI changes or Linux execution are claimed.
 
 #### B4: ownership diagnostic locations
 
@@ -1781,14 +1817,18 @@ are in `context/history/` for Author review. No compiler slice is authorized by 
 - Tail-recursion cleanup signoff: complete. Local commit is authorized; push is not authorized.
 - B2 recursive higher-order callable flow signoff: complete. Local commit is authorized;
   push is not authorized.
+- B3 recursive shadowing after a move signoff: complete. Local commit is authorized;
+  push is not authorized.
 - Historical commit and push authorization: expression preservation, the ignored-test inventory and plan,
   four restored regressions, and their completion records; push to `origin/dev-lambda-unify`.
 
 ## Task Working Memory
 
 - **Branch:** `dev-2026-03-21-lambdas`.
-- **Priority and next action:** plan [B3: recursive shadowing after a move](#b3-recursive-shadowing-after-a-move).
-  B4 follows; cleanup placement follows the confirmed bug repairs.
+- **Priority and next action:** plan [B4: ownership diagnostic locations](#b4-ownership-diagnostic-locations).
+  Cleanup placement follows the confirmed bug repairs.
+- **Completed repair:** [B3 recursive shadowing after a move](#b3-recursive-shadowing-after-a-move)
+  is verified and signed off, with passing compiler gates and independent reviews.
 - **Completed repair:** [B2 recursive higher-order callable flow](#b2-recursive-higher-order-callable-flow)
   is verified and signed off, with passing compiler gates and independent reviews.
 - **Branch audit:** the review findings and evidence limits are in

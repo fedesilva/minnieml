@@ -823,7 +823,9 @@ object OwnershipAnalyzer:
           singleTerm(value).map(unwrapTerm) match
 
             case Some(ref: Ref) if moved.movedBindingIds != scope.movedBindingIds =>
-              moved.copy(consumedVia = moved.consumedVia + (ref.name -> (ref, parameter)))
+              moved.copy(consumedVia =
+                moved.consumedVia ++ ref.resolvedId.map(_ -> (ref, parameter))
+              )
 
             case _ => moved
 
@@ -1059,32 +1061,11 @@ object OwnershipAnalyzer:
         case _ => false
       }
 
-  /** Check if a binding name is referenced anywhere in an expression */
-  private def containsRefInExpr(name: String, expr: Expr): Boolean =
-    expr.terms.exists(containsRef(name, _))
-
-  /** Check if a binding name is referenced anywhere in a term */
-  private def containsRef(name: String, term: Term): Boolean =
+  /** References retain their definition identity across nested scopes and shadowing. */
+  private def containsRef(bindingId: String, term: Term): Boolean =
     term match
-      case yielded: YieldOwnership =>
-        containsRefInExpr(name, yielded.value) || containsRefInExpr(name, yielded.owns)
-      case binding: BindOwnership =>
-        containsRefInExpr(name, binding.initializer) ||
-        (!List(binding.valueParam.name, binding.witnessParam.name).contains(name) &&
-          containsRefInExpr(name, binding.body))
-      case ref: Ref => ref.qualifier.fold(ref.name == name)(containsRef(name, _))
-      case App(_, fn, arg, _, _) => containsRef(name, fn) || containsRefInExpr(name, arg)
-      case Cond(_, cond, ifTrue, ifFalse, _, _) =>
-        containsRefInExpr(name, cond) || containsRefInExpr(name, ifTrue) ||
-        containsRefInExpr(name, ifFalse)
-      case TermGroup(_, inner, _) => containsRefInExpr(name, inner)
-      case Tuple(_, elements, _, _) => elements.exists(containsRefInExpr(name, _))
-      case Lambda(_, params, body, _, _, _, _, _) =>
-        // Skip if a param shadows the name
-        if params.exists(_.name == name) then false
-        else containsRefInExpr(name, body)
-      case expr: Expr => containsRefInExpr(name, expr)
-      case _ => false
+      case ref: Ref if ref.resolvedId.contains(bindingId) => true
+      case _ => TermTraversal.children(term).exists(containsRef(bindingId, _))
 
   /** Only normalized expressions have a result term; retained syntax has no result contract. */
   private def singleTerm(expr: Expr): Option[Term] = expr.terms match
@@ -1145,31 +1126,16 @@ object OwnershipAnalyzer:
             }
           )
       }
-      .orElse(
-        scope
-          .getMovedAt(ref.name)
-          .filter(_ =>
-            ref.qualifier.isEmpty &&
-              scope.getState(ref.name).contains(OwnershipState.Moved)
-          )
-      )
+
     @tailrec
     def qualifiers(current: Ref, acc: List[Ref]): List[Ref] = current.qualifier match
       case Some(parent: Ref) => qualifiers(parent, current :: acc)
       case _ => current :: acc
+
     val references = qualifiers(ref, Nil)
-    val qualifierMoves = references.filter(_.qualifier.isEmpty).flatMap { root =>
-      scope
-        .getMovedAt(root.name)
-        .filter(_ =>
-          scope
-            .getInfo(root.name)
-            .exists(info =>
-              info.state == OwnershipState.Moved &&
-                (info.bindingId.isEmpty || info.bindingId == root.resolvedId)
-            )
-        )
-    }
+    val qualifierMoves = references
+      .filter(_.qualifier.isEmpty)
+      .flatMap(_.resolvedId.flatMap(scope.movedBindingIds.get))
     val dependencyErrors = references
       .flatMap(_.resolvedId)
       .flatMap(scope.borrowedDependencies.getOrElse(_, Nil))
@@ -1543,10 +1509,10 @@ object OwnershipAnalyzer:
       .filter(_.resolvedId.exists(localIds.contains))
       .map(SemanticError.BorrowEscapeViaReturn(_, PhaseName))
     val lastUseErrors = argument.scope.consumedVia.toList.flatMap:
-      case (name, (ref, param)) =>
-        if !scope.movedBindingIds.keySet.contains(ref.resolvedId.getOrElse("")) &&
-          argument.scope.movedBindingIds.contains(ref.resolvedId.getOrElse("")) &&
-          !lambda.params.exists(_.name == name) && containsRefInExpr(name, lambda.body)
+      case (bindingId, (ref, param)) =>
+        if !scope.movedBindingIds.contains(bindingId) &&
+          argument.scope.movedBindingIds.contains(bindingId) &&
+          containsRef(bindingId, lambda.body)
         then List(SemanticError.ConsumingParamNotLastUse(param, ref, PhaseName))
         else Nil
 

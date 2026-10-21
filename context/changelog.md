@@ -4,6 +4,9 @@ Durable product changes belong here. Current task state belongs in task files.
 
 ## 2026-10-21
 
+- Preserve binding identity when a recursive local function shadows a moved outer value.
+  Accept legal shadowing while retaining last-use and use-after-move diagnostics for the
+  original binding.
 - Accept recursive higher-order callable forwarding through direct calls, aliases, and mutual
   recursion. Preserve unknown callable sources and reject conflicting consuming contracts.
 - Report indirect-call arity errors with the callee name and expected/actual counts.

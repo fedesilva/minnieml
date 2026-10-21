@@ -145,6 +145,26 @@ class LocalCallableCodegenTests extends BaseEffFunSuite:
     compileAndGenerate(source, config = CompilerConfig.exe("build", noTco = noTco))
 
   List(0, 3).foreach { optimization =>
+    test(s"recursive shadowing after a move preserves the result and cleanup at O$optimization") {
+      compile("""
+        type Handle = @native[t=ptr, mem=heap, free=release];
+        fn allocate(): Handle = @native[mem=alloc];;
+        fn release(~p: Handle): Unit = @native;;
+        fn outstanding(): Int = @native;;
+        fn run(~s: Handle): Int =
+          release s;
+          fn s(n: Int): Int =
+            if n == 0 then 7; else s (n - 1); ;
+          ;
+          s 3;
+        ;
+        pub fn main(): Int =
+          let result = run (allocate ());
+          if result == 7 then outstanding (); else 100; ;
+        ;
+      """).flatMap(verify(_, expected = 0, optimization = optimization))
+    }
+
     test(s"recursive higher-order application produces its result at O$optimization") {
       compile("""
         fn increment(x: Int): Int = x + 1;;

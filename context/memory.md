@@ -14,8 +14,8 @@ This is the Author's active and near-term focus. The backlog lives in [tasks/](t
 
 - **Tracker:** [Unify lambdas](tasks/unify-lambdas.md)
 - **Status:** in_progress
-- **Current focus:** Plan B3: preserve binding identity across recursive shadowing after a move.
-  B4 follows before cleanup placement.
+- **Current focus:** Plan B4: report the correct source use in ownership diagnostics.
+  Cleanup placement follows the confirmed bug repairs.
 
 ### Apply returned callables with parenthesized function types
 
