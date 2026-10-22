@@ -18,6 +18,13 @@ This is the Author's active and near-term focus. The backlog lives in [tasks/](t
   final verification for merge readiness. Diagnostic polish and maintenance are independent
   LOW-priority backlog tasks.
 
+### Replace `@native` with `@ffi` and `@llvm`
+
+- **Tracker:** [Replace `@native` with `@ffi` and `@llvm`](tasks/ffi-and-llvm-annotations.md)
+- **Status:** planned
+- **Current focus:** After Unify lambdas, plan the annotation split: `@ffi` for foreign
+  declarations and `@llvm` for inline LLVM templates, preserving existing behavior.
+
 ### Apply returned callables with parenthesized function types
 
 - **Tracker:** [Apply returned callables with parenthesized function types](tasks/typecheck-grouped-callable-results.md)
