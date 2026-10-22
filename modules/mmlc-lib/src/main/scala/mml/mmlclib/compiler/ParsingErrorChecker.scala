@@ -3,17 +3,29 @@ package mml.mmlclib.compiler
 import mml.mmlclib.ast.*
 import mml.mmlclib.semantic.SemanticError
 
-/** Checks for ParsingError instances in a module. */
+/** Lifts recovered parser errors from members and nested expressions. */
 object ParsingErrorChecker:
 
   private val phaseName = "mml.mmlclib.compiler.ParsingErrorChecker"
 
-  /** Check for MemberError instances in a module, accumulating errors in the state. */
+  /** Accumulate parser diagnostics without changing the recovered tree. */
   def checkModule(state: CompilerState): CompilerState =
-    val errors = state.module.members.collect {
+    state.addErrors(state.module.members.flatMap(errorsInMember))
+
+  private def errorsInMember(member: Member): List[SemanticError] =
+    member match
+
       case error: ParsingMemberError =>
-        SemanticError.MemberErrorFound(error, phaseName)
+        List(SemanticError.MemberErrorFound(error, phaseName))
       case error: ParsingIdError =>
-        SemanticError.ParsingIdErrorFound(error, phaseName)
-    }
-    state.addErrors(errors)
+        List(SemanticError.ParsingIdErrorFound(error, phaseName))
+
+      case binding: Bnd =>
+        TermTraversal.collect(binding.value) { case error: TermError =>
+          SemanticError.TermErrorFound(error, phaseName)
+        }
+
+      case module: Module =>
+        module.members.flatMap(errorsInMember)
+
+      case _ => Nil

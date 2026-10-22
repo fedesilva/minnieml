@@ -104,11 +104,15 @@ object TXScopedBinding:
     * App(bindingLambda, value)
     * ```
     *
+    * The binding wrapper shares its source origin with the application. An immediately applied
+    * lambda literal has its own source origin and does not match.
+    *
     * This returns `(bindingLambda, value)`.
     */
   def unapply(term: Term): Option[(Lambda, Term)] =
     term match
-      case App(_, bindingLambda: Lambda, TXExpr1(boundValue), _, _) =>
+      case App(source, bindingLambda: Lambda, TXExpr1(boundValue), _, _)
+          if source == bindingLambda.source =>
         Some((bindingLambda, boundValue))
       case _ =>
         None

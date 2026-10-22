@@ -1,5 +1,7 @@
 package mml.mmlclib.ast
 
+import cats.syntax.option.*
+
 /** Utilities for querying type properties from AST nodes. */
 object TypeUtils:
 
@@ -63,6 +65,22 @@ object TypeUtils:
           case ta: TypeAlias => ta.name == typeName
           case ts: TypeStruct => ts.name == typeName
 
+  private def underlyingTypeByName(
+    typeName: String,
+    index:    ResolvablesIndex
+  ): Option[ResolvableType] =
+    findTypeByName(typeName, index).flatMap {
+
+      case alias: TypeAlias =>
+        canonical(alias.typeRef, index).flatMap {
+          case ref:    TypeRef => ref.resolvedId.flatMap(index.lookupType)
+          case struct: TypeStruct => struct.some
+          case _ => none
+        }
+
+      case declaration => declaration.some
+    }
+
   def resolveNativeType(
     typeSpec:    Type,
     resolvables: ResolvablesIndex
@@ -96,6 +114,11 @@ object TypeUtils:
   ): Boolean =
     resolveNativeType(typeSpec, resolvables).exists(isPointerNativeType)
 
+  private def heapNativeType(definition: TypeDef): Option[NativeType] =
+    definition.typeSpec.collect {
+      case native: NativeType if native.memEffect.contains(MemEffect.Alloc) => native
+    }
+
   /** Check if a type is heap-allocated by looking at its NativeType.memEffect */
   def isHeapType(typeName: String, resolvables: ResolvablesIndex): Boolean =
     isHeapType(typeName, resolvables, Set.empty)
@@ -108,8 +131,7 @@ object TypeUtils:
     if seen.contains(typeName) then false
     else
       findTypeByName(typeName, resolvables) match
-        case Some(TypeDef(_, _, _, Some(nt: NativeType), _, _, _)) =>
-          nt.memEffect.contains(MemEffect.Alloc)
+        case Some(definition: TypeDef) => heapNativeType(definition).isDefined
         case Some(s: TypeStruct) =>
           s.fields.exists(field =>
             requiresDestruction(field.typeSpec, resolvables, seen + typeName)
@@ -131,16 +153,15 @@ object TypeUtils:
     * this excludes native TypeDef types (String, IntArray, etc.).
     */
   def isStructWithHeapFields(typeName: String, resolvables: ResolvablesIndex): Boolean =
-    findTypeByName(typeName, resolvables) match
+    underlyingTypeByName(typeName, resolvables) match
       case Some(s: TypeStruct) => hasHeapFields(s, resolvables)
       case _ => false
 
   /** Get free function name for a type, or None if not heap type */
   def freeFnFor(typeName: String, resolvables: ResolvablesIndex): Option[String] =
     findTypeByName(typeName, resolvables) match
-      case Some(TypeDef(_, _, _, Some(nt: NativeType), _, _, _))
-          if nt.memEffect.contains(MemEffect.Alloc) =>
-        Some(nt.freeFn.getOrElse(s"__free_$typeName"))
+      case Some(definition: TypeDef) =>
+        heapNativeType(definition).map(_.freeFn.getOrElse(s"__free_$typeName"))
       case Some(s: TypeStruct) if hasHeapFields(s, resolvables) =>
         Some(s"__free_$typeName")
       case Some(alias: TypeAlias) =>
@@ -168,14 +189,16 @@ object TypeUtils:
 
   /** Get clone function name for a type, or None if its ownership cannot be duplicated. */
   def cloneFnFor(typeName: String, resolvables: ResolvablesIndex): Option[String] =
-    if isHeapType(typeName, resolvables) &&
-      !findTypeByName(typeName, resolvables).exists {
-        case struct: TypeStruct => containsFunction(struct, resolvables)
-        case alias:  TypeAlias => containsFunction(alias.typeRef, resolvables)
-        case _ => false
-      }
-    then Some(s"__clone_$typeName")
-    else None
+    underlyingTypeByName(typeName, resolvables).flatMap {
+      case definition: TypeDef =>
+        heapNativeType(definition).map(_ => s"__clone_${definition.name}")
+
+      case struct: TypeStruct
+          if hasHeapFields(struct, resolvables) && !containsFunction(struct, resolvables) =>
+        s"__clone_${struct.name}".some
+
+      case _ => none
+    }
 
   /** Check if a named type resolves to an LLVM pointer-like native type. */
   def isPointerType(typeName: String, resolvables: ResolvablesIndex): Boolean =

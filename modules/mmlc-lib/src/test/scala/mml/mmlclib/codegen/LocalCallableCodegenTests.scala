@@ -267,6 +267,30 @@ class LocalCallableCodegenTests extends BaseEffFunSuite:
     }
   }
 
+  test("loopified nested local shadowing preserves the accumulator") {
+    val source = """
+      fn loop(n: Int, acc: Int): Int =
+        if n == 0 then acc;
+        else
+          let f = { x: Int -> x + n; };
+          let next = { dummy: Int -> let f = acc + 1; f; } 0;
+          loop (n - 1) next;
+        ;
+      ;
+      pub fn main(): Int = loop 3 0;;
+    """
+    compile(source).flatMap { ir =>
+      val body = functionBody(ir, "test_loop")
+      assert(body.contains("loop.header:"), body)
+      assertEquals(phiCount(body), 2, body)
+      assertPhiPredecessors(body)
+      val loopBody = body.substring(body.indexOf("loop.header:"))
+      assert(loopBody.contains("br label %loop.header"), body)
+      assert(!body.contains("call i32 @test_loop("), body)
+      verify(ir, 3, sanitized = true)
+    }
+  }
+
   test("ordinary recursive local calls use the registered plain entry") {
     val source = """
       pub fn main(): Int =

@@ -39,7 +39,7 @@ regressions relevant to each correctness repair without adding those follow-ups 
 20. [x] **complete** — [B3: preserve binding identity across recursive shadowing](#b3-recursive-shadowing-after-a-move); verified and signed off.
 21. [x] **complete** — [T1: instrument MML-generated IR for AddressSanitizer](#t1-mml-generated-ir-lacks-addresssanitizer-instrumentation); tracked in a [separate task](asan-generated-ir.md).
 22. [x] **complete** — [Preserve the complete application callee type in Simplifier](#fix-preserve-the-complete-application-callee-type-in-simplifier); verified and signed off.
-23. [ ] **in_progress** — [Remaining lambda semantics and lowering](#remaining-lambda-implementation), including [restoration of all ignored regressions](#restore-ignored-regressions); deferred behind the bug repairs.
+23. [ ] **in_progress** — [Remaining lambda semantics and lowering](#remaining-lambda-implementation); [restoration of all ignored regressions](#restore-ignored-regressions) is complete and signed off.
 24. [ ] **planned** — [Harden closure environment lookup](#harden-closure-environment-lookup).
 25. [ ] **planned** — Final task verification and signoff; branch audit findings are recorded below.
 
@@ -1188,8 +1188,8 @@ not run the smoke harness, benchmarks, Linux/x86-64 checks, or formatting and li
 
 ### Remaining lambda implementation
 
-- **Status:** in_progress; general implementation and ignored-test restoration are deferred
-  behind the confirmed bug repairs in the execution checklist.
+- **Status:** in_progress; full ignored-regression cleanup and its approved alias/parser repairs are active.
+  Further implementation requires a specific correctness gap and bounded plan.
 - Complete the [semantic goals](#semantic-goals) and reconcile the remaining preserved
   regressions against the agreed model in bounded, reviewed slices.
 - The [scope-analysis follow-up](lambda-scope-classification.md) addresses provenance
@@ -1554,10 +1554,20 @@ readability checks completed. Three placement simplifications are deferred to th
 
 #### Restore ignored regressions
 
-- **Status:** in_progress; fifteen cases enabled, 36 pending.
-- **Approved bounded slice:** investigate the nine placeholder-based materialization cases;
-  restore six supported cases as codegen regressions with unchanged source fixtures, and
-  prepare compiler-repair plans for the other three. The separate nullary immediate-application
+- **Status:** complete; 43 original cases enabled, five duplicates consolidated, and three
+  optimization contracts retired with their source scenarios retained. No ignored tests remain.
+  Verification, independent review, and scoped signoff are complete.
+- **Approved cleanup:** resolve every remaining ignore across the lambda inventory, strengthen
+  loose assertions, consolidate duplicates, and retire obsolete contracts with stated reasons
+  and named active source coverage. Preserve distinct
+  source scenarios. Acceptance requires zero ignored tests; any exception needs a strong
+  documented reason and explicit scope decision.
+- **Approved compiler repairs:** canonical alias resolution for clone names and heap-struct
+  classification, retaining nominal and non-cloneable-function rules; nested parser-error
+  collection and typed CLI/editor diagnostics, retaining source/message/failed-code details.
+  [Implementation and evidence](unify-lambdas-ignored-tests.md#full-inventory-cleanup).
+- **Completed restoration slices:** six placeholder-based materialization cases have codegen
+  replacements. The separate nullary immediate-application
   [repair](unify-lambdas-ignored-tests.md#nullary-immediate-application) is complete and signed off.
   Function-value repair is complete and signed off;
   direct local-entry optimization is complete and signed off. PAP target optimization is
@@ -1585,15 +1595,12 @@ readability checks completed. Three placement simplifications are deferred to th
     compiler and native gates, QA, tracking checks, and independent review pass; signed off.
   - [x] **complete** — [Nullary immediate-application repair](unify-lambdas-ignored-tests.md#nullary-immediate-application);
     its original regression is enabled, compiler gates and independent review pass; signed off.
-  - [ ] Restore or replace the remaining five placeholder-based cases.
-  - [ ] Reconcile 29 failing IR/lowering assertions and two heap-alias cases with the agreed
-    semantics. Assign each to a bounded repair or an explicitly approved replacement;
-    historical Direct-entry names and representation choices are not implementation mandates.
-  - [ ] Re-enable each case alongside its repair, preserve its semantic intent, run the affected
-    suites and required gates, and update the inventory with execution and review evidence.
-  - [ ] Before migration signoff, account for every original case as enabled and passing or
-    explicitly approved for replacement/retirement with linked coverage and rationale.
-    Any remaining deferral requires an explicit scope decision and tracked follow-up.
+  - [x] **complete** — [Full-inventory cleanup](unify-lambdas-ignored-tests.md#full-inventory-cleanup):
+    meaningful semantic/IR coverage, explicit duplicate/optimization dispositions, and the approved
+    heap-alias and nested-parser repairs verified; final assertion cleanup passes verification and review.
+  - [x] **complete** — Verify final assertion cleanup with formatting, lint, the full suite,
+    QA, focused tracking checks, and narrow review; zero ignores and all 51 dispositions retained.
+  - [x] **complete** — Obtain scoped signoff; parent lambda implementation and lookup robustness stay open.
 - **Restoration verification (2026-09-23):** formatting and lint pass; full suite passes
   763 library tests and nine CLI tests, with 47 ignored. All four restored cases execute and pass.
   Test assertions and compiler implementation are unchanged
@@ -1627,7 +1634,7 @@ readability checks completed. Three placement simplifications are deferred to th
 - **Acceptance:** no unexplained or stale ignores; no placeholder counted as restored;
   no weakened assertion merely to obtain a pass. Track undiscovered declarations separately
   from the 51 audited cases. Further assertion changes and compiler fixes require their
-  bounded plans; restoring fifteen tests does not complete the remaining lambda implementation.
+  bounded plans; this regression cleanup does not complete the remaining lambda implementation.
 
 ## Verification
 
@@ -1672,6 +1679,9 @@ are in `context/history/` for Author review. No compiler slice is authorized by 
   push is not authorized.
 - Shared `Callee` alias and Simplifier type-preservation signoff: complete. Local commit is
   authorized; push is not authorized.
+- Full ignored-regression cleanup signoff: complete, including the alias and nested-parser
+  repairs and assertion corrections. Local commit is authorized for the cleanup and associated
+  records, including the memory changes; push is not authorized.
 - Historical commit and push authorization: expression preservation, the ignored-test inventory and plan,
   four restored regressions, and their completion records; push to `origin/dev-lambda-unify`.
 
@@ -1681,10 +1691,23 @@ are in `context/history/` for Author review. No compiler slice is authorized by 
 - **Completed repair:** [Simplifier callee types](#fix-preserve-the-complete-application-callee-type-in-simplifier).
   The shared alias, exhaustive simplification, and annotation correction are verified and signed
   off, with passing compiler gates and independent review. The parent task remains open.
+- **Completed cleanup:** [Full ignored-regression cleanup](unify-lambdas-ignored-tests.md#full-inventory-cleanup).
+  The inventory accounts for 43 enabled cases, five duplicates consolidated, and three retired
+  optimization contracts with their source scenarios retained. No ignores remain. Alias and
+  nested-parser repairs, the restored metadata fixture, inline lexical-reference checks,
+  non-heap alias controls, and shared assertion corrections are implemented. Formatting, lint,
+  1,403 library tests, nine CLI tests, 8/8 smokes, verified local publication, 13 clean benchmark
+  builds, and 52/52 ASan+LSan fixtures pass for the verified implementation. Final test-only
+  assertion cleanup passes formatting, lint, the full suite, and focused incorrect-IR controls.
+  Production code and source fixtures are unchanged by the final assertion cleanup. Independent
+  review and fresh narrow re-review pass, including separate QA/style, test-quality, and
+  readability checks. Scoped signoff is complete; local commit is authorized, including the
+  memory changes. The parent task remains open.
 - **Priority and next action:** resolve remaining correctness work and the existing
   [closure-environment lookup robustness task](#harden-closure-environment-lookup), then perform
-  final verification for merge readiness. Reconcile unresolved correctness cases in the
-  ignored-regression inventory.
+  final verification for merge readiness. The ignored-regression inventory has no open cases.
+- **Post-lambda review:** [Unify type-property alias resolution](type-property-alias-resolution.md)
+  reviews consistent identity across heap/clone/free queries; implementation approval is pending.
 - **Deferred scope:** diagnostic, test-quality, documentation, optimization, and maintainability
   follow-ups are standalone LOW-priority backlog tasks, outside lambda completion. The implemented
   B4 evidence is owned by [ownership diagnostic locations](ownership-diagnostic-locations.md);
@@ -1713,9 +1736,8 @@ are in `context/history/` for Author review. No compiler slice is authorized by 
   are complete and signed off. Formatting/lint, 1,220 library plus nine CLI tests, smoke 8/8,
   verified local publication, 12 clean benchmark builds, ASan/LSan 51/51, QA, tracking review,
   and independent reviews pass. The parent migration remains open.
-- **Deferred follow-ups:** general ignored-test restoration and
-  [closure environment lookup hardening](#harden-closure-environment-lookup).
-  Relevant regression restoration belongs within each bug repair.
+- **Next bounded follow-up:** [closure environment lookup hardening](#harden-closure-environment-lookup).
+  General ignored-test restoration is part of the active cleanup.
 - **Implementation:** [Binding identity and local construction](#establish-binding-identity-and-local-construction-invariants)
   is complete and signed off. Stage 1 is committed at `dbd65d9`; stage 2 includes the shared
   construction helpers, caller migrations, regressions, and completion records.
@@ -1736,8 +1758,8 @@ are in `context/history/` for Author review. No compiler slice is authorized by 
 - **Completed repair:** [Nullary immediate application](unify-lambdas-ignored-tests.md#nullary-immediate-application);
   complete and signed off. Type checking, emission, and regression restoration are implemented;
   compiler gates, QA, tracking review, self-review, and independent review pass.
-- **Ignored-test restoration:** fifteen of the [51 audited cases](unify-lambdas-ignored-tests.md)
-  are enabled; 36 remain ignored. The four unchanged assertions, borrowed-PAP diagnostic
+- **Ignored-test restoration:** the [51-case inventory](unify-lambdas-ignored-tests.md)
+  records the active cleanup and every replacement or consolidation. The four unchanged assertions, borrowed-PAP diagnostic
   restoration, and six materialization replacements are complete and signed off.
   [Function-value repair](unify-lambdas-ignored-tests.md#function-value-repair) restores the
   twelfth case under its approved plan. Formatting, lint, 776 library tests, nine CLI tests,
@@ -1757,8 +1779,8 @@ are in `context/history/` for Author review. No compiler slice is authorized by 
   is complete and signed off.
 - **Open limits:** the general branch audit and separate Linux sanitizer validation are deferred.
   The broader counter/expression follow-up is complete and signed off.
-  Remaining lambda implementation and 36 ignored cases
-  require further bounded work.
+  Regression-cleanup signoff is pending. Remaining lambda implementation and closure-environment
+  lookup robustness require further bounded work.
   [Consuming an owned PAP captured by a move lambda](#bug-consume-an-owned-pap-captured-by-a-move-lambda)
   has passing semantic, smoke, benchmark-build, native sanitizer, and independent review
   gates and is complete and signed off.

@@ -4,6 +4,11 @@ Durable product changes belong here. Current task state belongs in task files.
 
 ## 2026-10-22
 
+- Resolve aliases to their underlying nominal declarations when selecting clone functions and
+  classifying heap-owning structs, preserving restrictions on function-containing fields.
+- Report recovered parser errors nested inside expressions through CLI and editor diagnostics,
+  preserving their original source locations, messages, and failed code without changing the
+  recovered syntax tree.
 - Preserve computed and declared expression types during simplification. Share the `Callee`
   type across the compiler and simplify application heads without unchecked casts, retaining
   binding identities and recursive argument and qualifier simplification.

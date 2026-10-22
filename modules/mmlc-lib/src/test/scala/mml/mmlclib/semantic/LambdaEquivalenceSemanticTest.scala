@@ -1,5 +1,6 @@
 package mml.mmlclib.semantic
 
+import cats.syntax.option.*
 import cats.syntax.traverse.*
 import mml.mmlclib.ast.*
 import mml.mmlclib.test.BaseEffFunSuite
@@ -19,16 +20,8 @@ class LambdaEquivalenceSemanticTest extends BaseEffFunSuite:
       }
       .getOrElse(fail(s"No binding named '$name'"))
 
-  private def member(module: Module, name: String): Member =
-    module.members
-      .find {
-        case bnd: Bnd => bnd.name == name
-        case _ => false
-      }
-      .getOrElse(fail(s"No member named '$name'"))
-
   private def userLambdasIn(module: Module, fnName: String): List[Lambda] =
-    collectUserLambdas(member(module, fnName))
+    collectUserLambdas(topBinding(module, fnName))
 
   private def onlyUserLambdaIn(module: Module, fnName: String): Lambda =
     userLambdasIn(module, fnName) match
@@ -41,21 +34,28 @@ class LambdaEquivalenceSemanticTest extends BaseEffFunSuite:
       .flatMap(_.id)
       .getOrElse(fail(s"Expected param id for '$fnName.$paramName'"))
 
-  private def typeShape(tpe: Type): String =
-    tpe match
-      case TypeRef(_, name, _, _) => name
-      case TypeUnit(_) => "Unit"
-      case TypeFn(_, params, ret) =>
-        val paramShapes = params.toList.map(typeShape).mkString("(", ", ", ")")
-        s"$paramShapes -> ${typeShape(ret)}"
-      case NativePrimitive(_, llvmType, _, _) => llvmType
-      case other => other.getClass.getSimpleName
+  private def resolvedTypeId(module: Module, tpe: Type): String =
+    TypeUtils.canonical(tpe, module.resolvables) match
+      case Some(ref: TypeRef) =>
+        ref.resolvedId
+          .filter(module.resolvables.lookupType(_).isDefined)
+          .getOrElse(fail(s"Expected a resolved type declaration for $ref"))
+      case other => fail(s"Expected a nominal scalar type, got $other")
 
-  private def bindingTypeShape(bnd: Bnd): String =
-    bnd.typeSpec.map(typeShape).getOrElse(fail(s"Expected typeSpec for '${bnd.name}'"))
+  private def scalarFunctionType(
+    module: Module,
+    value:  Typeable
+  ): (List[String], String) =
+    value.typeSpec.flatMap(TypeUtils.canonical(_, module.resolvables)) match
+      case Some(fn: TypeFn) =>
+        (
+          fn.paramTypes.toList.map(resolvedTypeId(module, _)),
+          resolvedTypeId(module, fn.returnType)
+        )
+      case other => fail(s"Expected a function type, got $other")
 
   private def assertSameFunctionType(module: Module, names: List[String]): Unit =
-    val types    = names.map(name => name -> bindingTypeShape(topBinding(module, name)))
+    val types    = names.map(name => name -> scalarFunctionType(module, topBinding(module, name)))
     val distinct = types.map(_._2).distinct
     assertEquals(
       distinct.length,
@@ -63,23 +63,7 @@ class LambdaEquivalenceSemanticTest extends BaseEffFunSuite:
       s"Expected equivalent function types, got: ${types.mkString(", ")}"
     )
 
-  private def assertDirect(lambda: Lambda, clue: String): Unit =
-    // Pending compiler API; the source assertion is preserved below.
-    /*
-    assertEquals(lambda.materialization, Materialization.Direct, clue)
-     */
-    fail("Materialization is absent from the parent AST.")
-
-  private def assertNullEnv(lambda: Lambda, clue: String): Unit =
-    // Pending compiler API; the source assertion is preserved below.
-    /*
-    assertEquals(lambda.materialization, Materialization.NullEnv, clue)
-    assertEquals(lambda.closureEnvAllocation, ClosureEnvAllocation.NoEnv, clue)
-     */
-    fail("Materialization and ClosureEnvAllocation are absent from the parent AST.")
-
-  // Pending migration: Parent AST has no Materialization or ClosureEnvAllocation API.
-  test("direct scalar calls have equivalent semantic shape".ignore) {
+  test("direct scalar calls have equivalent semantic shape") {
     val code =
       """
         fn top_inc(x: Int): Int = x + 1;;
@@ -108,17 +92,28 @@ class LambdaEquivalenceSemanticTest extends BaseEffFunSuite:
 
     semNotFailed(code).map { module =>
       val forms = List("direct_top", "direct_local", "direct_let_lambda", "direct_inline_lambda")
-      assertSameFunctionType(module, forms)
-      assertDirect(topLambda(module, "top_inc"), "top_inc should stay direct")
-      forms
-        .flatMap(userLambdasIn(module, _))
-        .foreach(lambda => assertDirect(lambda, "direct local/lambda forms should stay direct"))
+      assertSameFunctionType(module, "top_inc" :: forms)
+      ("top_inc" :: forms).foreach { fnName =>
+        assertEquals(topLambda(module, fnName).captures, Nil, fnName)
+      }
+
+      List("direct_local", "direct_let_lambda", "direct_inline_lambda").foreach { fnName =>
+        val lambda = onlyUserLambdaIn(module, fnName)
+        assertEquals(
+          scalarFunctionType(module, lambda),
+          scalarFunctionType(module, topBinding(module, "top_inc")),
+          fnName
+        )
+        assertEquals(lambda.captures, Nil, fnName)
+        assert(!lambda.isMove, fnName)
+        if fnName == "direct_inline_lambda" then
+          assert(lambda.meta.exists(_.isInvocationParameter), fnName)
+      }
     }
   }
 
-  // Pending migration: Parent AST has no Materialization or ClosureEnvAllocation API.
   test(
-    "borrow-capture direct calls are equivalent to explicit top-level parameter passing".ignore
+    "borrow-capture direct calls are equivalent to explicit top-level parameter passing"
   ) {
     val code =
       """
@@ -148,19 +143,36 @@ class LambdaEquivalenceSemanticTest extends BaseEffFunSuite:
 
     semNotFailed(code).map { module =>
       val forms = List("explicit_param", "local_capture", "let_capture", "inline_capture")
-      assertSameFunctionType(module, forms)
+      assertSameFunctionType(module, "top_add" :: forms)
+      ("top_add" :: forms).foreach { fnName =>
+        assertEquals(topLambda(module, fnName).captures, Nil, fnName)
+      }
 
+      val localLambdaType = scalarFunctionType(module, onlyUserLambdaIn(module, "local_capture"))
       List("local_capture", "let_capture").foreach { fnName =>
         val seedId = fnParamId(module, fnName, "seed")
         val lambda = onlyUserLambdaIn(module, fnName)
-        assertDirect(lambda, s"$fnName should remain a direct call")
+        assertEquals(scalarFunctionType(module, lambda), localLambdaType, fnName)
+        assert(!lambda.isMove, fnName)
+        assertEquals(lambda.captures.size, 1, fnName)
         assertEquals(captureResolvedIds(lambda), Set(seedId))
       }
+
+      val inlineLambda = onlyUserLambdaIn(module, "inline_capture")
+      assertEquals(scalarFunctionType(module, inlineLambda), localLambdaType, "inline_capture")
+      assert(!inlineLambda.isMove, "inline_capture")
+      assert(inlineLambda.meta.exists(_.isInvocationParameter), "inline_capture")
+      assertEquals(inlineLambda.captures, Nil, "inline_capture")
+
+      val inlineSeedId = fnParamId(module, "inline_capture", "seed")
+      val inlineSeedRefs = TermTraversal.collect(inlineLambda.body) {
+        case ref: Ref if ref.name == "seed" => ref.resolvedId
+      }
+      assertEquals(inlineSeedRefs, List(inlineSeedId.some))
     }
   }
 
-  // Pending migration: Parent AST has no Materialization or ClosureEnvAllocation API.
-  test("first-class non-capturing values use equivalent null-env materialization".ignore) {
+  test("first-class non-capturing values have equivalent types and captures") {
     val code =
       """
         fn apply(f: Int -> Int, x: Int): Int = f x;;
@@ -178,11 +190,15 @@ class LambdaEquivalenceSemanticTest extends BaseEffFunSuite:
 
     semNotFailed(code).map { module =>
       assertSameFunctionType(module, List("first_class_top", "first_class_lambda"))
-      assert(topLambda(module, "top_inc").captures.isEmpty, "top_inc should not capture")
-      assertNullEnv(
-        onlyUserLambdaIn(module, "first_class_lambda"),
-        "non-capturing lambda value should materialize as NullEnv"
+      val topInc    = topLambda(module, "top_inc")
+      val lambdaInc = onlyUserLambdaIn(module, "first_class_lambda")
+      assertEquals(
+        scalarFunctionType(module, topBinding(module, "top_inc")),
+        scalarFunctionType(module, lambdaInc)
       )
+      assertEquals(topInc.captures, Nil)
+      assertEquals(lambdaInc.captures, Nil)
+      assert(!lambdaInc.isMove)
     }
   }
 

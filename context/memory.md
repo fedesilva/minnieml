@@ -18,12 +18,20 @@ This is the Author's active and near-term focus. The backlog lives in [tasks/](t
   final verification for merge readiness. Diagnostic polish and maintenance are independent
   LOW-priority backlog tasks.
 
-### Replace `@native` with `@ffi` and `@llvm`
+### Unify type-property alias resolution
 
-- **Tracker:** [Replace `@native` with `@ffi` and `@llvm`](tasks/ffi-and-llvm-annotations.md)
+- **Tracker:** [Unify type-property alias resolution](tasks/type-property-alias-resolution.md)
+- **Status:** design
+- **Current focus:** Review after Unify lambdas; reconcile alias resolution across heap
+  classification and memory-function queries, then approve a bounded implementation plan.
+
+
+### Apply returned callables with parenthesized function types
+
+- **Tracker:** [Apply returned callables with parenthesized function types](tasks/typecheck-grouped-callable-results.md)
 - **Status:** planned
-- **Current focus:** After Unify lambdas, plan the annotation split: `@ffi` for foreign
-  declarations and `@llvm` for inline LLVM templates, preserving existing behavior.
+- **Current focus:** After Unify lambdas, reproduce the inline failure and local-binding
+  control, then plan consistent callable-type resolution.
 
 ### Global-origin ownership
 
@@ -32,12 +40,13 @@ This is the Author's active and near-term focus. The backlog lives in [tasks/](t
 - **Current focus:** Plan a `Global`/`Static` ownership mode that removes implicit cloning
   of globals, preserves their provenance through value flow, and prevents their destruction.
 
-### Apply returned callables with parenthesized function types
+### Replace `@native` with `@ffi` and `@llvm`
 
-- **Tracker:** [Apply returned callables with parenthesized function types](tasks/typecheck-grouped-callable-results.md)
+- **Tracker:** [Replace `@native` with `@ffi` and `@llvm`](tasks/ffi-and-llvm-annotations.md)
 - **Status:** planned
-- **Current focus:** After Unify lambdas, reproduce the inline failure and local-binding
-  control, then plan consistent callable-type resolution.
+- **Current focus:** After Unify lambdas, plan the annotation split: `@ffi` for foreign
+  declarations and `@llvm` for inline LLVM templates, preserving existing behavior.
+
 
 ### Error recovery and parser backtracking
 

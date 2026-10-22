@@ -56,6 +56,20 @@ correctness fixes identified during its completion are resolved. This is the nex
 intended workstream after that stabilization; it does not require clearing the
 entire bug backlog.
 
+### Existing diagnostic groundwork
+
+The [nested-parser diagnostic repair](unify-lambdas-ignored-tests.md#nested-parser-diagnostics)
+in Unify lambdas is implemented and verified. `ParsingErrorChecker` collects recovered
+`TermError` nodes inside binding expressions without changing the recovered tree.
+`SemanticError.TermErrorFound` retains their source, message, and failed code through CLI
+and editor reporting. Tests cover nested errors, accumulation, recovery, CLI rendering,
+and editor ranges.
+
+Reuse this diagnostic path and its regressions when reconciling the recovery design.
+Preserving valid structure across failing semantic phases, connecting dependent diagnostics
+to their causes, parser commitment, synchronization, termination, and performance remain
+within this task's planned scope. The diagnostic repair does not complete a checklist step.
+
 ## Plan (Approval Gate)
 
 - [ ] Recheck the design against the settled AST and phase contracts; finalize stage boundaries.

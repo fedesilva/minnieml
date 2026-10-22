@@ -76,6 +76,12 @@ object SourceCodeExtractor:
           .map(s => s"\n$s")
           .getOrElse("")
 
+      case SemanticError.TermErrorFound(error, _) =>
+        spanOf(error)
+          .flatMap(extractSnippet(sourceInfo, _))
+          .map(s => s"\n$s")
+          .getOrElse("")
+
       case SemanticError.DanglingTerms(terms, _, _) =>
         // Extract snippets for each dangling term
         val snippets = terms.collect { case term: FromSource =>

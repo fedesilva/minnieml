@@ -9,8 +9,9 @@ Supporting evidence for [Unify lambdas](unify-lambdas.md#restore-ignored-regress
 - **Audit result (2026-09-23):** four pass unchanged; 47 fail. One failing case rejects the
   intended invalid program but expects an obsolete diagnostic name. The other 46 need assertion/API
   reconciliation or compiler investigation.
-- **Repository test status:** fifteen cases are enabled: four unchanged assertions, one typed
-  diagnostic assertion, and ten emitted-IR replacements; 36 remain ignored.
+- **Repository test status:** 43 original cases are enabled, five duplicate cases are consolidated, and three
+  optimization contracts are retired in favor of the implemented capture model. No ignored tests
+  remain. Full-inventory cleanup is complete and signed off, with passing verification and review.
 - **Restoration verification (2026-09-23):** formatting and lint pass; full suite passes
   763 library tests and nine CLI tests, with 47 ignored. All four restored cases execute and pass.
   Test assertions and compiler implementation are unchanged
@@ -51,23 +52,29 @@ failures do not execute their preserved commented-out assertions.
    assertion through `semState`; verification and independent review pass. The subtask is signed off.
 3. Six materialization cases are enabled in `MaterializationCodegenTest`, preserving their
    original names and source fixtures. Verification and review are recorded below.
-4. Resolve each of the remaining 36 entries against the agreed model, preserving its semantic
-   intent. Record a linked fix or an approved replacement/retirement for obsolete expectations.
-   Re-enable each case with its corresponding repair, rather than accumulating working ignores.
+4. Complete the [full-inventory cleanup](#full-inventory-cleanup), including the approved alias
+   and nested-parser diagnostic repairs. Every original case must have passing active coverage
+   or an explicit duplicate/obsolete retirement. No ignored tests remain at acceptance.
 
 ## Inventory
 
 | Disposition | Cases |
 | --- | ---: |
-| Restore placeholder assertion/helper | 5 |
-| Enabled; emitted-IR replacement | 10 |
+| Enabled; emitted-IR materialization replacement | 10 |
 | Enabled; assertions unchanged | 4 |
-| Reconcile IR/lowering assertions | 29 |
+| Enabled; ownership/shadowing replacement | 9 |
 | Enabled; typed diagnostic assertion | 1 |
-| Reconcile heap-alias behavior | 2 |
+| Enabled; current callable/environment IR assertions | 12 |
+| Enabled; resolved semantic type/capture assertions | 3 |
+| Enabled; heap-alias repair | 3 |
+| Consolidated duplicate case; active coverage retained | 5 |
+| Retired optimization contract; source retained under current capture model | 3 |
+| Enabled; nested-parser diagnostic repair | 1 |
 
-Fifteen rows are enabled; the other 36 remain pending. Lines below identify the audit snapshot,
-not subsequent source line shifts.
+All 51 original cases are accounted for. Lines below identify the audit snapshot, not
+subsequent source line shifts. A retained test keeps its original name unless the row names
+its current test. Enabled status describes registration; final verification and signoff are
+recorded separately.
 
 ### ClosureCodegenTest
 
@@ -75,15 +82,15 @@ not subsequent source line shifts.
 
 | Test | Line | Result / next action |
 | --- | ---: | --- |
-| deferred lambda body preserves emitted metadata | 31 | Reconcile IR/lowering assertions |
-| recursive Direct lambda calls its plain direct entry | 65 | Reconcile IR/lowering assertions |
-| non-recursive named Direct lambda does not rebuild unused self closure | 103 | Reconcile IR/lowering assertions |
-| Direct move lambda capturing a heap literal frees its clone once | 237 | Reconcile IR/lowering assertions |
-| Direct move lambda capturing an owned String frees it once without cloning | 256 | Reconcile IR/lowering assertions |
-| Direct move lambda capturing an owned struct frees it through its destructor | 277 | Reconcile IR/lowering assertions |
-| loopified Direct move lambda frees its heap capture once before the back-edge | 299 | Reconcile IR/lowering assertions |
-| loopified Direct lambdas do not allocate borrow envs | 324 | Reconcile IR/lowering assertions |
-| loopified borrow closures stop being tracked after nested shadowing | 387 | Reconcile IR/lowering assertions |
+| deferred lambda body preserves emitted metadata | 31 | [Enabled; current IR assertions](#full-inventory-cleanup); current test: `deferred non-capturing lambda body preserves emitted metadata` |
+| recursive Direct lambda calls its plain direct entry | 65 | [Retired optimization contract; source retained](#consolidated-coverage) |
+| non-recursive named Direct lambda does not rebuild unused self closure | 103 | [Consolidated duplicate case; active coverage](#consolidated-coverage) |
+| Direct move lambda capturing a heap literal frees its clone once | 237 | [Enabled; ownership/shadowing replacement](#ownership-and-shadowing-restoration); current test: `move lambda capturing a heap literal frees its clone once` |
+| Direct move lambda capturing an owned String frees it once without cloning | 256 | [Enabled; ownership/shadowing replacement](#ownership-and-shadowing-restoration); current test: `move lambda capturing an owned String frees it once without cloning` |
+| Direct move lambda capturing an owned struct frees it through its destructor | 277 | [Enabled; ownership/shadowing replacement](#ownership-and-shadowing-restoration); current test: `move lambda capturing an owned struct frees it through its destructor` |
+| loopified Direct move lambda frees its heap capture once before the back-edge | 299 | [Enabled; ownership/shadowing replacement](#ownership-and-shadowing-restoration); current test: `loopified move lambda frees its heap capture once before the back-edge` |
+| loopified Direct lambdas do not allocate borrow envs | 324 | [Retired optimization contract; source retained](#consolidated-coverage) |
+| loopified borrow closures stop being tracked after nested shadowing | 387 | [Enabled; ownership/shadowing replacement](#ownership-and-shadowing-restoration); current test: `nested local scalar shadowing preserves ordinary recursive calls` |
 | loopified borrow closure validation respects lambda parameter shadowing | 415 | Enabled; assertions unchanged |
 
 ### FunctionSignatureTest
@@ -92,14 +99,14 @@ not subsequent source line shifts.
 
 | Test | Line | Result / next action |
 | --- | ---: | --- |
-| higher-order named function arguments lower as function values, not symbol loads | 296 | Reconcile IR/lowering assertions |
-| repeated higher-order named function arguments reuse one closure entry | 325 | Reconcile IR/lowering assertions |
-| mixed direct and higher-order top-level function uses keep both call shapes | 350 | Reconcile IR/lowering assertions |
-| local Direct lambda calls use plain direct entry call | 407 | Reconcile IR/lowering assertions |
-| shadowed local callable args do not eta-expand from top-level names | 435 | Reconcile IR/lowering assertions |
-| nested Direct lambda threads outer Direct callable's captures | 800 | Reconcile IR/lowering assertions |
-| loopified Direct closure captures Direct sibling operands as trailing params | 842 | Reconcile IR/lowering assertions |
-| Direct move lambda capturing a heap literal clones at the binder site | 894 | Reconcile IR/lowering assertions |
+| higher-order named function arguments lower as function values, not symbol loads | 296 | [Consolidated duplicate case; active coverage](#consolidated-coverage) |
+| repeated higher-order named function arguments reuse one closure entry | 325 | [Enabled; current IR assertions](#full-inventory-cleanup); current test: `repeated higher-order named function arguments preserve both calls` |
+| mixed direct and higher-order top-level function uses keep both call shapes | 350 | [Enabled; current IR assertions](#full-inventory-cleanup) |
+| local Direct lambda calls use plain direct entry call | 407 | [Consolidated duplicate case; active coverage](#consolidated-coverage) |
+| shadowed local callable args do not eta-expand from top-level names | 435 | [Consolidated duplicate case; active coverage](#consolidated-coverage) |
+| nested Direct lambda threads outer Direct callable's captures | 800 | [Enabled; current IR assertions](#full-inventory-cleanup); current test: `nested capturing lambda forwards the captured callable environment` |
+| loopified Direct closure captures Direct sibling operands as trailing params | 842 | [Enabled; current IR assertions](#full-inventory-cleanup); current test: `loopified closure calls its captured sibling with the saved environment` |
+| Direct move lambda capturing a heap literal clones at the binder site | 894 | [Enabled; current IR assertions](#full-inventory-cleanup); current test: `move lambda clones a heap literal into the invoked environment` |
 
 ### LambdaEquivalenceCodegenTest
 
@@ -107,8 +114,8 @@ not subsequent source line shifts.
 
 | Test | Line | Result / next action |
 | --- | ---: | --- |
-| direct-only equivalent forms avoid closure materialization | 11 | Reconcile IR/lowering assertions |
-| first-class non-capturing values use null-env closure values | 55 | Reconcile IR/lowering assertions |
+| direct-only equivalent forms avoid closure materialization | 11 | [Enabled; current IR assertions](#full-inventory-cleanup) |
+| first-class non-capturing values use null-env closure values | 55 | [Enabled; current IR assertions](#full-inventory-cleanup) |
 
 ### LambdaEquivalenceSemanticTest
 
@@ -116,9 +123,9 @@ not subsequent source line shifts.
 
 | Test | Line | Result / next action |
 | --- | ---: | --- |
-| direct scalar calls have equivalent semantic shape | 82 | Restore placeholder assertion/helper |
-| borrow-capture direct calls are equivalent to explicit top-level parameter passing | 121 | Restore placeholder assertion/helper |
-| first-class non-capturing values use equivalent null-env materialization | 163 | Restore placeholder assertion/helper |
+| direct scalar calls have equivalent semantic shape | 82 | [Enabled; semantic type/capture assertions](#full-inventory-cleanup) |
+| borrow-capture direct calls are equivalent to explicit top-level parameter passing | 121 | [Enabled; semantic type/capture assertions](#full-inventory-cleanup) |
+| first-class non-capturing values use equivalent null-env materialization | 163 | [Enabled; semantic type/capture assertions](#full-inventory-cleanup); current test: `first-class non-capturing values have equivalent types and captures` |
 | consuming-use invalid programs report equivalent use-after-move class | 255 | Enabled; assertions unchanged |
 
 ### MaterializationAnalyzerTests
@@ -154,7 +161,7 @@ not subsequent source line shifts.
 
 | Test | Line | Result / next action |
 | --- | ---: | --- |
-| MemberErrorChecker should catch term errors nested inside expressions | 45 | Restore placeholder assertion/helper |
+| MemberErrorChecker should catch term errors nested inside expressions | 45 | [Enabled; nested-parser diagnostic repair](#nested-parser-diagnostics) |
 
 ### TailRecursionLoopificationTest
 
@@ -162,16 +169,16 @@ not subsequent source line shifts.
 
 | Test | Line | Result / next action |
 | --- | ---: | --- |
-| named loopified function used as a value keeps a closure-entry wrapper | 62 | Reconcile IR/lowering assertions |
-| local non-capturing loopified Direct function emits no closure-entry wrapper | 106 | Reconcile IR/lowering assertions |
-| partial application of local loopified Direct function emits a PAP entry | 149 | Reconcile IR/lowering assertions |
-| escaped partial application of local loopified Direct function uses heap env | 201 | Reconcile IR/lowering assertions |
-| capturing partial application of local loopified Direct function tags PAP env fields | 317 | Reconcile IR/lowering assertions |
+| named loopified function used as a value keeps a closure-entry wrapper | 62 | [Consolidated duplicate case; active coverage](#consolidated-coverage) |
+| local non-capturing loopified Direct function emits no closure-entry wrapper | 106 | [Retired optimization contract; source retained](#consolidated-coverage) |
+| partial application of local loopified Direct function emits a PAP entry | 149 | [Enabled; current IR assertions](#full-inventory-cleanup); current test: `partial application forwards a literal argument to a plain loopified entry` |
+| escaped partial application of local loopified Direct function uses heap env | 201 | [Enabled; ownership/shadowing replacement](#ownership-and-shadowing-restoration); current test: `escaped PAP of a local loopified function owns a heap environment` |
+| capturing partial application of local loopified Direct function tags PAP env fields | 317 | [Enabled; current IR assertions](#full-inventory-cleanup); current test: `capturing partial application tags its projected environment pointer` |
 | escaped Direct PAP with borrowed heap capture is rejected by ownership | 387 | Enabled; typed diagnostic assertion |
-| Direct PAP with borrowed heap applied arg stores without cloning | 419 | Reconcile IR/lowering assertions |
-| Direct PAP with aliased borrowed heap applied arg stores without cloning | 457 | Reconcile IR/lowering assertions |
-| Direct PAP with consuming heap applied arg owns env field | 497 | Reconcile IR/lowering assertions |
-| local capturing loopified Direct function uses trailing captures | 556 | Reconcile IR/lowering assertions |
+| Direct PAP with borrowed heap applied arg stores without cloning | 419 | [Enabled; ownership/shadowing replacement](#ownership-and-shadowing-restoration); current test: `PAP borrows a heap applied argument in a stack environment without cloning` |
+| Direct PAP with aliased borrowed heap applied arg stores without cloning | 457 | [Enabled; ownership/shadowing replacement](#ownership-and-shadowing-restoration); current test: `PAP borrows an aliased heap applied argument in a stack environment without cloning` |
+| Direct PAP with consuming heap applied arg owns env field | 497 | [Enabled; ownership/shadowing replacement](#ownership-and-shadowing-restoration); current test: `PAP transfers its owned heap argument and then releases only its environment` |
+| local capturing loopified Direct function uses trailing captures | 556 | [Enabled; current IR assertions](#full-inventory-cleanup); current test: `local capturing loopified function loads its step from a stack environment` |
 
 ### TbaaEmissionTest
 
@@ -179,7 +186,7 @@ not subsequent source line shifts.
 
 | Test | Line | Result / next action |
 | --- | ---: | --- |
-| zero-field closure env TBAA is not emitted | 265 | Reconcile IR/lowering assertions |
+| zero-field closure env TBAA is not emitted | 265 | [Enabled; current IR assertions](#full-inventory-cleanup) |
 
 ### TypeUtilsTests
 
@@ -187,9 +194,209 @@ not subsequent source line shifts.
 
 | Test | Line | Result / next action |
 | --- | ---: | --- |
-| heap native aliases resolve to the underlying memory functions | 120 | Restore placeholder assertion/helper |
-| heap native aliases without explicit free use the underlying type name | 149 | Reconcile heap-alias behavior |
-| heap struct aliases resolve to the underlying struct memory functions | 162 | Reconcile heap-alias behavior |
+| heap native aliases resolve to the underlying memory functions | 120 | [Enabled; heap-alias repair](#heap-alias-repair) |
+| heap native aliases without explicit free use the underlying type name | 149 | [Enabled; heap-alias repair](#heap-alias-repair) |
+| heap struct aliases resolve to the underlying struct memory functions | 162 | [Enabled; heap-alias repair](#heap-alias-repair) |
+
+## Ownership and shadowing restoration
+
+- **Status:** complete; verified and signed off within the full-inventory cleanup.
+- **Scope:** nine preserved capture-cleanup, escaped-PAP, applied-argument ownership, and
+  nested-shadowing fixtures. Compiler implementation is unchanged.
+- **Baseline:** at `ecd07a2`, all nine original fixtures generate IR. Their unchanged
+  assertions produce one pass and eight failures. Native ABI spelling, caller-only frees,
+  and obsolete environment names/layouts account for the eight failing oracles.
+- **Capture cleanup:** replacements follow the stored value and environment through closure
+  invocation and destruction. Literal capture checks one clone; owned captures check no
+  additional clone. Payload cleanup precedes raw environment release. The struct case checks
+  both String fields. The loop case requires cleanup in the actual back-edge block.
+- **PAP cleanup:** borrowed and alias-typed arguments retain one outer cleanup after invocation;
+  consuming arguments transfer to the callee after disarming the same environment. An uncalled
+  consuming PAP retains its payload destructor. The escaped scalar PAP retains heap-backed
+  storage, argument forwarding, caller cleanup, and alias-metadata checks.
+- **Shadowing replacement:** the original nested-shadowing fixture uses ordinary mutual calls
+  between `loop` and `step`; it cannot test loopified borrow validation. Its identical enabled
+  parent fixture is consolidated into one test of scalar argument flow through those calls.
+  A separate [native control](../../modules/mmlc-lib/src/test/scala/mml/mmlclib/codegen/LocalCallableCodegenTests.scala)
+  places the recursive call directly in `loop`, asserts PHIs and a back edge, and checks the
+  accumulator result with AddressSanitizer. A fresh independent verifier confirmed the
+  original coverage defect; no compiler defect was established by this audit.
+- **Verification (2026-10-22):** `sbtn 'scalafmtAll; scalafixAll; testFull'` passes without
+  warnings: 1,378 library tests and nine CLI tests, with 27 existing ignored library tests.
+  This includes the new native shadowing control with ASan and the existing native ownership
+  controls. Host: arm64 macOS, Clang/LLVM 23.1.1. All nine original source fixtures remain
+  byte-identical and occur exactly once. A final focused rerun passes all 15 active TailRecursion
+  tests, with five ignores at that checkpoint, including two additional assertions rejecting
+  raw frees in borrowed PAP paths. Independent review found and verified a missing environment
+  base-pointer check and two readability issues; those corrections are included in the full
+  cleanup. This checkpoint predates the alias/parser compiler repairs; their required gates
+  belong to the full-inventory verification below. No cross-target or performance claim is made.
+- **Signoff:** complete within the full-inventory cleanup. Local commit is authorized;
+  push is not authorized. The parent task remains open.
+
+## Full-inventory cleanup
+
+- **Status:** complete; verification, independent review, and scoped signoff are complete.
+- **Scope:** all 36 cases ignored at `ecd07a2`, covering lambda forms, captures, partial
+  applications, alias ownership, metadata, semantic equivalence, and nested parser errors.
+  Obsolete or duplicate tests may be retired with named active coverage; zero ignores is the
+  acceptance criterion. Alias and nested-parser repairs have separate bounded approval.
+- **Baseline:** after the nine ownership/shadowing restorations, the other 27 preserved
+  bodies ran with their original assertions: three passed, 24 failed. Most failures depend
+  on abandoned materialization APIs or older generated entries and layouts. The alias and
+  nested-parser failures expose the compiler defects described below.
+- **Replacement contracts:** callable tests follow the entries actually passed or invoked,
+  environments actually stored and loaded, loop PHIs, argument/result flow, and cleanup order.
+  Repeated higher-order arguments preserve both calls; per-use eta expansion need not share
+  one entry. Adapter reuse remains covered by `FunctionValueCodegenTests`. Semantic equivalence
+  compares resolved type IDs and exact closure capture IDs. Immediately applied lambdas have
+  no stored captures; their lexical references must resolve to the enclosing bindings. Physical
+  storage belongs to codegen tests.
+- **Focused verification (2026-10-22):** formatting and lint pass; all 191 tests in the
+  affected codegen, semantic, CLI-printer, editor-diagnostic, and native local-callable suites
+  pass with zero ignores. The source scan finds no `.ignore`, `.only`, or abandoned API
+  placeholders. Initial replacement runs exposed test-helper issues (regex match lifetime,
+  top-level binding types, colored output, and accumulated recovery diagnostics); the final
+  focused run passes after correcting those assertions without weakening their intended checks.
+- **Host:** macOS 26.6.2 arm64, Homebrew LLVM/Clang 23.1.1. The new loop-shadowing control
+  passes native execution with AddressSanitizer. Other restored tests establish semantic or
+  emitted-IR behavior; they do not individually establish sanitizer coverage.
+- **Compiler gates before review corrections:** `./tests/smoke/run.sh all` passes 8/8.
+  `sbtn 'testFull; mmlcPublishLocal'`
+  passes 1,401 library tests and nine CLI tests, with zero ignores and no warnings, then installs
+  the verified local compiler. `make -C benchmark clean` and `make -C benchmark mml` pass all
+  13 MML builds; these are build checks, not performance measurements.
+  `./tests/mem/run.sh all` passes 52/52 ASan+LSan fixtures at `-O0`. QA enforcement,
+  focused tracking consistency, local links, and whitespace checks pass. No ABI contract
+  changes; Linux container verification is not required for these repairs.
+- **Initial independent review:** the complete code/design scope and all three dedicated checks
+  are complete. QA/style and readability have no actionable findings. A separately verified
+  test-quality finding showed the owned-String cleanup test accepted freeing an empty String
+  instead of the loaded capture. The shared cleanup helper now connects the captured field,
+  destructor environment argument, payload cleanup operand/target, and final environment free.
+  `sbtn 'scalafmtAll; scalafixAll; testFull'` passes after that correction: 1,401 library tests
+  and nine CLI tests, with zero ignores and no warnings. Fresh narrow re-review passes all
+  three dedicated checks with no actionable findings. Fresh Scala 3.10.0 compilation of the
+  actual owned-String test confirms: unchanged cleanup passes; substituting `zeroinitializer`
+  for the loaded payload or removing its cleanup call fails the intended assertion. All three
+  IR controls assemble. These controls establish assertion effectiveness, not additional
+  runtime coverage. Production code is unchanged by the assertion correction.
+- **Review corrections (2026-10-22):** the original noncapturing metadata source is restored
+  byte-for-byte beside the nested-capture fixture. Semantic tests distinguish lowered `let`
+  wrappers from immediate lambda applications. Inline lambdas assert their invocation status,
+  empty stored captures, matching type, and exact enclosing `seed` reference; local/let closures
+  assert exact capture IDs. Non-heap struct and two-level alias controls reject cloning and heap
+  classification. The parser regression retains independent message/source/count/tree assertions
+  without duplicating the checker's traversal.
+- **Shared checks:** closure construction and invocation, payload/environment cleanup, invocation
+  order/counts, environment metadata, and basic-block inspection use shared helpers. Owned cleanup
+  returns the already-checked capture with its destructor; named fields keep operand roles explicit.
+  The native heap-declaration predicate is shared without changing alias resolution or ownership.
+  [Alias-resolution consistency](type-property-alias-resolution.md) is a separate review-first
+  follow-up after Unify lambdas.
+- **Correction verification:** `sbtn 'scalafmtAll; scalafixAll; testFull'` passes 1,403 library
+  tests and nine CLI tests, zero ignores, with no warnings. An initial run's single failure was
+  a test-side named-regex capture lifetime error in the restored metadata case; copying the
+  matched values before advancing the iterator corrects it. Smoke checks pass 8/8;
+  `sbtn mmlcPublishLocal` installs the verified compiler and the installed jar matches the build.
+  Clean benchmark builds pass 13/13; ASan+LSan memory fixtures pass 52/52 at `-O0`. These are
+  host checks on macOS arm64 with LLVM/Clang 23.1.1; benchmark builds do not measure performance.
+  QA, local links, whitespace, and inventory checks pass.
+- **Correction review:** fresh primary and separate QA/style, test-quality, and readability
+  checks are complete. One independently verified test-coverage finding showed that the loop
+  fixture's block-local invocation count could miss an extra call in an unreachable block.
+  The fixture retains its block-local lifetime checks and also requires exactly one invocation
+  across the full loop function. No production defect was demonstrated. Formatting, lint,
+  1,403 library tests, and nine CLI tests pass after this assertion correction, with zero
+  ignores and no warnings. Fresh narrow re-review, including separate QA/style, test-quality,
+  and readability checks, reports no actionable findings. The assertion proves static direct-call
+  cardinality; it does not measure runtime invocation frequency.
+- **Final assertion cleanup:** share the remaining closure operand, destructor-slot, metadata,
+  and immediate-return checks; keep distinct ownership fixtures and capture contracts explicit.
+  Connect the shadowing regression's captured `n` and `acc` to their arithmetic operands, and
+  separate assertion stages with deliberate spacing. This scope changes tests only and does
+  not introduce a general testing framework.
+- **Final assertion verification:** formatting, lint, 1,403 library tests, and nine CLI tests pass
+  with zero ignores and no compiler warnings. The first run exposed a test signature pattern
+  that omitted LLVM parameter attributes; the corrected pattern retains the actual environment
+  operand. Isolated Scala controls using the actual shadowing assertions accept the emitted IR
+  and reject swapped arithmetic inputs; both LLVM modules assemble. Shared lifetime checks
+  reject a different closure environment and an extra invocation; destructor-slot and immediate
+  return checks reject different operands sharing the expected name's prefix. These controls
+  establish assertion sensitivity, not native execution or sanitizer coverage. The standalone
+  runner emits the existing JDK `sun.misc.Unsafe` runtime deprecation warning. Production code
+  and source fixtures are unchanged; the recorded smoke, publication, benchmark-build, and
+  memory gates remain applicable.
+- **Final assertion review:** the primary review and three separate QA/style, test-quality,
+  and readability checks are complete. One independently confirmed test-quality finding showed
+  that a capture load through `%v2Other` could match the slot `%v2`, accepting incorrect
+  arithmetic input despite valid LLVM. Capture store and load checks require a complete operand
+  followed by metadata, a newline, or the end of the inspected body. Formatting, lint,
+  1,403 library tests, and nine CLI tests pass after this correction, with zero ignores and no
+  compiler warnings. The actual shadowing assertions accept original and consistently renamed
+  baselines, and reject swapped arithmetic inputs, wrong loads with and without a shared name
+  prefix, and a wrong store with a shared prefix. All corresponding LLVM modules assemble.
+  Fresh narrow review of the two operand boundaries, including separate QA/style, test-quality,
+  and readability checks, reports no actionable findings. Metadata-delimited operands are covered
+  by the controls; newline and end-of-body boundaries were checked by source inspection.
+- **Signoff:** complete for the full-inventory cleanup, including the alias and nested-parser
+  repairs and assertion corrections. The parent task remains open.
+- **Commit authorization:** granted for the cleanup and its associated records, including
+  the memory changes. Push is not authorized.
+
+### Consolidated coverage
+
+Five duplicate declarations share their source scenarios and behavioral contracts with active
+tests. Three other declarations share source scenarios but require capture-elimination
+optimizations outside the implemented model. Their original optimization expectations are
+retired; the surviving tests check the implemented capture representation. These three are not
+counted as equivalent coverage of the discarded optimization contracts. General capture
+elimination remains outside this cleanup, as described in the
+[compiler design](../../docs/design/compiler-design.md#direct-local-entry-optimization).
+The distinct noncapturing metadata fixture is enabled alongside the nested-capture fixture.
+
+**Scope decision:** the three obsolete capture-elimination contracts are approved for retirement;
+their source scenarios retain coverage of the implemented model. Capture elimination is outside
+lambda-completion acceptance, and no separate optimization task is selected for this cleanup.
+
+| Suite | Original ignored case | Disposition and active coverage |
+| --- | --- | --- |
+| ClosureCodegenTest | recursive Direct lambda calls its plain direct entry | Retired optimization contract: removing the captured callable's closure requires capture elimination. `recursive capturing lambda rebuilds self closure from env` retains the source and checks the actual recursive environment. |
+| ClosureCodegenTest | non-recursive named Direct lambda does not rebuild unused self closure | Duplicate: `non-recursive named capturing lambda does not rebuild unused self closure` checks the identical source, loaded scalar use, and absence of self construction. |
+| ClosureCodegenTest | loopified Direct lambdas do not allocate borrow envs | Retired optimization contract: removing the captured scalar's environment requires passing it directly or equivalent capture elimination. `loopified borrow closures hoist env alloca to function entry` retains the source and checks one hoisted allocation and the captured loop value. |
+| FunctionSignatureTest | higher-order named function arguments lower as function values, not symbol loads | Duplicate: same-name active test; identical source, passed entry forwarding, and indirect result flow. |
+| FunctionSignatureTest | local Direct lambda calls use plain direct entry call | Duplicate: `local direct-only call uses a plain entry`; identical source, signature/body/result, and no closure pair. |
+| FunctionSignatureTest | shadowed local callable args do not eta-expand from top-level names | Duplicate: same-name active test; identical source and local callable identity through forwarding. |
+| TailRecursionLoopificationTest | named loopified function used as a value keeps a closure-entry wrapper | Duplicate: same-name active test; identical source, passed wrapper, indirect call, and plain loop. |
+| TailRecursionLoopificationTest | local non-capturing loopified Direct function emits no closure-entry wrapper | Retired optimization contract: eliminating the captured callable value or its adapter requires capture elimination. `local non-capturing loopified function materializes a closure-entry wrapper` retains the source and checks the stored adapter. |
+
+### Heap-alias repair
+
+- **Approved scope:** resolve aliases through existing canonical type resolution in
+  `cloneFnFor` and `isStructWithHeapFields`, preserving nominal type identity and the rule
+  that function-containing structs cannot be cloned. Restore all three alias regressions.
+- **Baseline:** the native alias requested `__clone_AliasBuf` rather than `__clone_BaseBuf`;
+  aliases of a heap-owning struct were not recognized as such by `isStructWithHeapFields`.
+- **Implementation:** both queries inspect the underlying nominal declaration. Clone names
+  use that declaration's name. Controls retain distinct native declarations, reject scalar
+  cloning, and reject direct/nested function-containing struct clones through aliases.
+- **Focused evidence:** all restored alias cases and the new preservation control pass.
+  The 191-test focused run, full compiler gates, and independent review pass.
+
+### Nested parser diagnostics
+
+- **Approved scope:** collect nested `TermError` nodes into a typed semantic diagnostic;
+  preserve the original source, message, and failed code through CLI and editor reporting.
+  Restore the original regression and add focused recovery/diagnostic controls.
+- **Baseline:** the preserved source contains `let 123invalid = 5;`. Parsing retains
+  `TermError` with message `Invalid identifier '123invalid'` and failed code `123invalid`;
+  both `ParsingErrorChecker` and the full semantic pipeline report only the trailing
+  semicolon's `MemberErrorFound`. The intended identifier diagnostic is lost.
+- **Implementation:** `ParsingErrorChecker` traverses binding expressions through the shared
+  term traversal and recurses through module members. `SemanticError.TermErrorFound` retains
+  the original error payload; CLI location/message/snippet consumers and editor diagnostics
+  handle it. The original regression, branch-error accumulation, local-function recovery,
+  CLI rendering, and editor range/message controls pass in the 191-test focused run.
 
 ## Materialization restoration evidence
 

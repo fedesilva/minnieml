@@ -481,13 +481,15 @@ Each phase takes a `CompilerState`, returns an updated `CompilerState`, and reco
 **Purpose**: Report any parse errors that were recovered from during parsing.
 
 **Behavior**:
-- Scans module for `ParsingMemberError` and `ParsingIdError` nodes
-- Converts them to semantic errors for uniform error reporting
+- Scans module members for `ParsingMemberError` and `ParsingIdError` nodes, including nested modules
+- Traverses binding expressions for recovered `TermError` nodes, including lambda bodies and branches
+- Converts them to semantic errors while preserving the original source, message, and failed code
 - Runs first to report syntax errors immediately
 
 **Errors reported**:
 - `SemanticError.MemberErrorFound`
 - `SemanticError.ParsingIdErrorFound`
+- `SemanticError.TermErrorFound`
 
 **AST rewrites**: None, only reports errors
 

@@ -41,12 +41,14 @@ trait LlvmAssertions extends Assertions:
       }
       .mkString("\n")
 
-  private case class Block(label: String, instructions: List[String]):
+  protected final case class Block(label: String, instructions: List[String]):
     def phis: List[String] = instructions.filter(_.matches("%\\S+\\s*=\\s*phi\\b.*"))
+
+    def body: String = instructions.map(instruction => s"  $instruction").mkString("\n")
 
   private val label = "[A-Za-z0-9$._-]+"
 
-  private def basicBlocks(body: String)(using Location): List[Block] =
+  protected def basicBlocks(body: String)(using Location): List[Block] =
     val blockLabel = s"($label):".r
     val lines      = body.linesIterator.map(_.takeWhile(_ != ';').trim).filter(_.nonEmpty)
     val reversed = lines.foldLeft(List.empty[Block]) { (blocks, line) =>

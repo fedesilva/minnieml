@@ -29,6 +29,8 @@ item needs its own plan. A cleanup campaign can work through several approved gr
 ### QA-001: Preserve resolved type identity in type utilities
 
 - **Status:** planned
+- **Follow-up:** [Unify type-property alias resolution](type-property-alias-resolution.md)
+  reviews the four heap/clone/free query paths after Unify lambdas; implementation is pending.
 - **Source:** [TypeUtils.scala](../../modules/mmlc-lib/src/main/scala/mml/mmlclib/ast/TypeUtils.scala),
   `findTypeByName`, `requiresDestruction`, `isHeapType`, and related name-based queries.
 - **Problem:** `findTypeByName` receives a bare name, tries

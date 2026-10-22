@@ -46,6 +46,7 @@ object Diagnostics:
       case SemanticError.DanglingTerms(terms, _, _) => terms.headOption.toList.flatMap(_.spanOpt)
       case SemanticError.MemberErrorFound(err, _) => err.spanOpt.toList
       case SemanticError.ParsingIdErrorFound(err, _) => err.spanOpt.toList
+      case SemanticError.TermErrorFound(err, _) => err.spanOpt.toList
       case SemanticError.InvalidExpressionFound(inv, _) => inv.spanOpt.toList
       case SemanticError.TypeCheckingError(typeErr) => extractTypeErrorSpans(typeErr)
       case SemanticError.InvalidEntryPoint(_, source) => source.spanOpt.toList
@@ -119,6 +120,8 @@ object Diagnostics:
       case SemanticError.MemberErrorFound(err, _) =>
         s"Member error: ${err.message}"
       case SemanticError.ParsingIdErrorFound(err, _) =>
+        s"Parsing error: ${err.message}"
+      case SemanticError.TermErrorFound(err, _) =>
         s"Parsing error: ${err.message}"
       case SemanticError.InvalidExpressionFound(_, _) =>
         "Invalid expression"

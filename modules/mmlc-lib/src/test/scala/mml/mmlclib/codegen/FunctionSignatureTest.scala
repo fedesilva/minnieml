@@ -2,8 +2,35 @@ package mml.mmlclib.codegen
 
 import mml.mmlclib.compiler.CompilerConfig
 import mml.mmlclib.test.BaseEffFunSuite
+import mml.mmlclib.test.llvm.ClosureAssertions
 
-class FunctionSignatureTest extends BaseEffFunSuite:
+import scala.util.matching.Regex
+
+class FunctionSignatureTest extends BaseEffFunSuite with ClosureAssertions:
+
+  private case class UnaryClosure(argument: String, environment: String, body: String)
+  private case class ForwardedCall(result: String, entry: String)
+
+  private def unaryClosure(ir: String, entry: String): UnaryClosure =
+    val signature = uniqueMatch(
+      ir,
+      s"define internal i32 @${Regex.quote(entry)}\\(i32 (?<argument>%[^,]+), " +
+        "ptr[^\\n]* (?<environment>%[^)]+)\\) #[0-9]+ \\{"
+    )
+    UnaryClosure(
+      signature.group("argument"),
+      signature.group("environment"),
+      functionBody(ir, entry)
+    )
+
+  private def assertUnaryForwarder(ir: String, entry: String, target: String): Unit =
+    val closure = unaryClosure(ir, entry)
+    uniqueMatch(
+      closure.body,
+      s"(?<result>%[^ ]+) = call i32 @${Regex.quote(target)}" +
+        s"\\(i32 ${Regex.quote(closure.argument)}\\)\\n  ret i32 \\k<result>"
+    )
+    assert(!closure.body.contains(closure.environment), closure.body)
 
   test("synthesized main passes argv as StringArray for unit-returning main(args)") {
     val source =
@@ -292,39 +319,7 @@ class FunctionSignatureTest extends BaseEffFunSuite:
     }
   }
 
-  // Preserved assertions pin closure-entry names. Reconcile them with the shared-adapter behavior
-  // covered by FunctionValueCodegenTests; see context/tasks/unify-lambdas-ignored-tests.md.
-  test("higher-order named function arguments lower as function values, not symbol loads".ignore) {
-    val source =
-      """
-        fn apply(f: Int -> Int): Int = f 1;;
-        fn inc(x: Int): Int = x + 1;;
-        fn main(): Int = apply inc;;
-      """
-
-    compileAndGenerate(source).map { llvmIr =>
-      val mainBody = functionBodyMatching(llvmIr, "test_main\\(\\) #0")
-
-      assert(
-        !llvmIr.contains("load { ptr, ptr }, ptr @test_inc"),
-        s"Named top-level function should not be loaded as a fat-pointer global. IR:\n$llvmIr"
-      )
-      assert(
-        llvmIr.contains("define internal i32 @test_inc__closure_entry(i32 %0, ptr %1) #0"),
-        s"Expected a named closure-entry wrapper for the higher-order arg. IR:\n$llvmIr"
-      )
-      assert(
-        mainBody.contains(
-          "call i32 @test_apply({ ptr, ptr } { ptr @test_inc__closure_entry, ptr null })"
-        ),
-        s"main should pass a first-class function value into apply. Body:\n$mainBody"
-      )
-    }
-  }
-
-  // Preserved assertions pin closure-entry names. Reconcile them with the shared-adapter behavior
-  // covered by FunctionValueCodegenTests; see context/tasks/unify-lambdas-ignored-tests.md.
-  test("repeated higher-order named function arguments reuse one closure entry".ignore) {
+  test("repeated higher-order named function arguments preserve both calls") {
     val source =
       """
         fn apply(f: Int -> Int): Int = f 1;;
@@ -333,24 +328,28 @@ class FunctionSignatureTest extends BaseEffFunSuite:
       """
 
     compileAndGenerate(source).map { llvmIr =>
-      val mainBody = functionBodyMatching(llvmIr, "test_main\\(\\) #0")
-      val wrapperDefinitions =
-        """define internal i32 @test_inc__closure_entry\(i32 %0, ptr %1\) #0""".r
-          .findAllMatchIn(llvmIr)
-          .length
-      val materializations =
-        """\{ ptr @test_inc__closure_entry, ptr null \}""".r
+      val mainBody = functionBody(llvmIr, "test_main")
+      val calls =
+        ("(?<result>%[^ ]+) = call i32 @test_apply\\(\\{ ptr, ptr \\} " +
+          s"$nullEnvironmentClosure\\)").r
           .findAllMatchIn(mainBody)
-          .length
+          .map(call => ForwardedCall(call.group("result"), call.group("entry")))
+          .toList
 
-      assertEquals(wrapperDefinitions, 1)
-      assertEquals(materializations, 2)
+      assertEquals(calls.size, 2, mainBody)
+      calls.foreach(call => assertUnaryForwarder(llvmIr, call.entry, "test_inc"))
+      val first  = calls.head
+      val second = calls.last
+      uniqueMatch(
+        mainBody,
+        s"(?<sum>%[^ ]+) = add i32 ${Regex.quote(first.result)}, " +
+          s"${Regex.quote(second.result)}\\n  ret i32 \\k<sum>"
+      )
+      assert(!mainBody.contains("load { ptr, ptr }"), mainBody)
     }
   }
 
-  // Preserved assertions pin closure-entry names. Reconcile them with the shared-adapter behavior
-  // covered by FunctionValueCodegenTests; see context/tasks/unify-lambdas-ignored-tests.md.
-  test("mixed direct and higher-order top-level function uses keep both call shapes".ignore) {
+  test("mixed direct and higher-order top-level function uses keep both call shapes") {
     val source =
       """
         fn apply(f: Int -> Int, n: Int): Int = f n;;
@@ -359,22 +358,24 @@ class FunctionSignatureTest extends BaseEffFunSuite:
       """
 
     compileAndGenerate(source).map { llvmIr =>
-      val mainBody = functionBodyMatching(llvmIr, "test_main\\(\\) #0")
+      val mainBody = functionBody(llvmIr, "test_main")
+      val direct = uniqueMatch(
+        mainBody,
+        "(?<result>%[^ ]+) = call i32 @test_inc\\(i32 1\\)"
+      )
+      val higherOrder = uniqueMatch(
+        mainBody,
+        "(?<result>%[^ ]+) = call i32 @test_apply\\(\\{ ptr, ptr \\} " +
+          s"$nullEnvironmentClosure, i32 2\\)"
+      )
 
-      assert(
-        mainBody.contains("call i32 @test_inc(i32 1)"),
-        s"Direct top-level call should use the emitted function symbol. Body:\n$mainBody"
+      assertUnaryForwarder(llvmIr, higherOrder.group("entry"), "test_inc")
+      uniqueMatch(
+        mainBody,
+        s"(?<sum>%[^ ]+) = add i32 ${Regex.quote(direct.group("result"))}, " +
+          s"${Regex.quote(higherOrder.group("result"))}\\n  ret i32 \\k<sum>"
       )
-      assert(
-        mainBody.contains(
-          "call i32 @test_apply({ ptr, ptr } { ptr @test_inc__closure_entry, ptr null }, i32 2)"
-        ),
-        s"Higher-order top-level use should pass a first-class function value. Body:\n$mainBody"
-      )
-      assert(
-        !llvmIr.contains("load { ptr, ptr }, ptr @test_inc"),
-        s"Named top-level function should not be loaded as a fat-pointer global. IR:\n$llvmIr"
-      )
+      assert(!mainBody.contains("load { ptr, ptr }"), mainBody)
     }
   }
 
@@ -402,70 +403,6 @@ class FunctionSignatureTest extends BaseEffFunSuite:
           mainBody.contains("extractvalue { ptr, ptr } %") &&
           """call i32 %\d+\(i32 41, ptr %\d+\)""".r.findFirstIn(mainBody).nonEmpty,
         s"Global function-valued binding should load and call through the fat pointer. Body:\n$mainBody"
-      )
-    }
-  }
-
-  // Preserved generated-name assertions await reconciliation with the active plain-entry tests in
-  // LocalCallableCodegenTests; see context/tasks/unify-lambdas-ignored-tests.md.
-  test("local Direct lambda calls use plain direct entry call".ignore) {
-    val source =
-      """
-        fn main(): Int =
-          let f = { x: Int -> x + 1; };
-          f 41;
-        ;
-      """
-
-    compileAndGenerate(source).map { llvmIr =>
-      val mainBody = functionBodyMatching(llvmIr, "test_main\\(\\) #0")
-
-      assert(
-        """call i32 @test_f_\d+\(i32 41\)""".r.findFirstIn(mainBody).nonEmpty,
-        s"Expected local Direct lambda call to use a plain direct entry call. Body:\n$mainBody"
-      )
-      assert(
-        !mainBody.contains("extractvalue { ptr, ptr }"),
-        s"Local Direct lambda call should not extract from a fat pointer. Body:\n$mainBody"
-      )
-      assert(
-        """call i32 %\d+\(i32 41, ptr %\d+\)""".r.findFirstIn(mainBody).isEmpty,
-        s"Local Direct lambda call should not use an indirect function pointer. Body:\n$mainBody"
-      )
-    }
-  }
-
-  // Preserved assertions pin closure-entry names. Reconcile them with the shared-adapter behavior
-  // covered by FunctionValueCodegenTests; see context/tasks/unify-lambdas-ignored-tests.md.
-  test("shadowed local callable args do not eta-expand from top-level names".ignore) {
-    val source =
-      """
-        fn apply2(f: Int -> Int -> Int): Int = f 1 2;;
-        fn inc(x: Int): Int = x + 1;;
-        fn add(a: Int, b: Int): Int = a + b;;
-        fn forward(inc: Int -> Int -> Int): Int = apply2 inc;;
-        fn main(): Int = forward add;;
-      """
-
-    compileAndGenerate(source).map { llvmIr =>
-      val forwardBody = functionBodyMatching(llvmIr, """test_forward\([^\n]*\) #0""")
-      val mainBody    = functionBodyMatching(llvmIr, "test_main\\(\\) #0")
-      val wrapperBody = functionBodyMatching(llvmIr, """test_add__closure_entry\([^\n]*\) #0""")
-
-      assert(
-        forwardBody.contains("call i32 @test_apply2({ ptr, ptr } %0)") &&
-          !forwardBody.contains("@test_inc"),
-        s"forward should pass its local callable param through unchanged. Body:\n$forwardBody"
-      )
-      assert(
-        mainBody.contains(
-          "call i32 @test_forward({ ptr, ptr } { ptr @test_add__closure_entry, ptr null })"
-        ),
-        s"main should still eta-expand the bare top-level add ref. Body:\n$mainBody"
-      )
-      assert(
-        wrapperBody.contains("call i32 @test_add(i32 %0, i32 %1)"),
-        s"The top-level add wrapper should forward both arguments into test_add. Body:\n$wrapperBody"
       )
     }
   }
@@ -802,14 +739,7 @@ class FunctionSignatureTest extends BaseEffFunSuite:
     }
   }
 
-  // These assertions require passing captures as trailing parameters. The local-entry optimization
-  // only selects non-capturing lambdas; capture elimination remains separate work.
-  test("nested Direct lambda threads outer Direct callable's captures".ignore) {
-    // When an inner Direct lambda `g` calls an outer Direct binding `f` whose
-    // `captureOperands` reference enclosing-scope SSA registers, those operands must be
-    // threaded as `g`'s own trailing params and the inner DirectCallable rebound to point
-    // at the new inner-slot registers — otherwise `g`'s separately emitted body would
-    // reuse its own param registers as if they were the outer's.
+  test("nested capturing lambda forwards the captured callable environment") {
     val source =
       """
         pub fn outer(a: Int): Int =
@@ -820,34 +750,47 @@ class FunctionSignatureTest extends BaseEffFunSuite:
       """
 
     compileAndGenerate(source).map { llvmIr =>
-      val fSig = """define internal i32 @test_f_\d+\(i32 %0, i32 %1\) #0""".r
-      val gSig = """define internal i32 @test_g_\d+\(i32 %0, i32 %1\) #0""".r
-      assert(
-        fSig.findFirstIn(llvmIr).nonEmpty,
-        s"f should take (x, a) as two i32 params. IR:\n$llvmIr"
+      val outerBody = functionBody(llvmIr, "test_outer")
+      val outerCall = closureInvocation(outerBody, returnType = "i32", argumentPattern = "i32 1")
+      val nested    = unaryClosure(llvmIr, outerCall.group("entry"))
+      val callableCapture = assertCaptureField(outerBody, nested.body, "{ ptr, ptr }")
+      assertEquals(callableCapture.consumerEnvironment, nested.environment)
+
+      val capturedCall = closureInvocation(
+        nested.body,
+        returnType      = "i32",
+        argumentPattern = s"i32 ${Regex.quote(nested.argument)}",
+        pairPattern     = Regex.quote(callableCapture.loadedValue)
       )
-      assert(
-        gSig.findFirstIn(llvmIr).nonEmpty,
-        s"g should take (y, a_threaded) as two i32 params. IR:\n$llvmIr"
+      assertReturnedNext(nested.body, capturedCall, "i32")
+
+      val captured      = unaryClosure(llvmIr, capturedCall.group("entry"))
+      val scalarCapture = assertCaptureField(outerBody, captured.body, "i32")
+      val capturedValue = closureValue(
+        outerBody,
+        capturedCall.group("entry"),
+        scalarCapture.ownerEnvironment
+      )
+      assertEquals(scalarCapture.storedValue, "%0")
+      assertEquals(scalarCapture.consumerEnvironment, captured.environment)
+      assertEquals(capturedValue, callableCapture.storedValue)
+      uniqueMatch(
+        captured.body,
+        s"(?<sum>%[^ ]+) = add i32 ${Regex.quote(captured.argument)}, " +
+          s"${Regex.quote(scalarCapture.loadedValue)}\\n  ret i32 \\k<sum>"
       )
 
-      val gBody = functionBodyMatching(llvmIr, """test_g_\d+\(i32 %0, i32 %1\) #0""")
-      assert(
-        """call i32 @test_f_\d+\(i32 %0, i32 %1\)""".r.findFirstIn(gBody).nonEmpty,
-        s"g's call to f must use g's own params (y=%0, a_threaded=%1). Body:\n$gBody"
+      val nestedValue = closureValue(
+        outerBody,
+        outerCall.group("entry"),
+        callableCapture.ownerEnvironment
       )
-
-      val outerBody = functionBodyMatching(llvmIr, """test_outer\(i32 %0\) #0""")
-      assert(
-        """call i32 @test_g_\d+\(i32 1, i32 %0\)""".r.findFirstIn(outerBody).nonEmpty,
-        s"outer must call g with (1, a=%0). Body:\n$outerBody"
-      )
+      assertEquals(nestedValue, outerCall.group("pair"))
+      assertCalls(outerBody, "malloc", 0)
     }
   }
 
-  // These assertions require passing captures as trailing parameters. The local-entry optimization
-  // only selects non-capturing lambdas; capture elimination remains separate work.
-  test("loopified Direct closure captures Direct sibling operands as trailing params".ignore) {
+  test("loopified closure calls its captured sibling with the saved environment") {
     val source =
       """
         pub fn main(): Unit =
@@ -871,39 +814,62 @@ class FunctionSignatureTest extends BaseEffFunSuite:
       """
 
     compileAndGenerate(source).map { llvmIr =>
-      val loopSig = """define internal i32 @test_loop_\d+\(i32 %0, i32 %1\) #0""".r
-      assert(
-        loopSig.findFirstIn(llvmIr).nonEmpty,
-        s"loop should take its Direct sibling operand as a trailing capture param. IR:\n$llvmIr"
+      val mainBody  = functionBody(llvmIr, "test_main")
+      val loopCall  = closureInvocation(mainBody, returnType = "i32", argumentPattern = "i32 2")
+      val loopEntry = loopCall.group("entry")
+      val loop      = unaryClosure(llvmIr, loopEntry)
+      val siblingCapture = assertCaptureField(mainBody, loop.body, "{ ptr, ptr }")
+      val loopValue      = closureValue(mainBody, loopEntry, siblingCapture.ownerEnvironment)
+      assertEquals(siblingCapture.consumerEnvironment, loop.environment)
+      assertEquals(loopValue, loopCall.group("pair"))
+
+      val iteration = uniqueMatch(
+        loop.body,
+        "(?<current>%[^ ]+) = phi i32 \\[ " + Regex.quote(loop.argument) +
+          ", %entry \\], \\[ (?<next>%[^,]+), %[^ ]+ \\]"
       )
-      assert(
-        !llvmIr.contains("__closure_env") && !llvmIr.contains("store { ptr, ptr } %0"),
-        s"Direct loop should not materialize a closure env or store a Function value. IR:\n$llvmIr"
+      val siblingCall = closureInvocation(
+        loop.body,
+        returnType      = "i32",
+        argumentPattern = s"i32 ${Regex.quote(iteration.group("current"))}",
+        pairPattern     = Regex.quote(siblingCapture.loadedValue)
+      )
+      val sibling = unaryClosure(llvmIr, siblingCall.group("entry"))
+      val scalarField = uniqueMatch(
+        sibling.body,
+        "(?<field>%[^ ]+) = getelementptr (?<layout>%struct\\.[^,]+), " +
+          s"ptr ${Regex.quote(sibling.environment)}, i32 0, i32 (?<index>[0-9]+)\\n" +
+          "  (?<value>%[^ ]+) = load i32, ptr \\k<field>"
+      )
+      val siblingPair = closurePair(mainBody, siblingCall.group("entry"))
+      assertEquals(siblingPair.value, siblingCapture.storedValue)
+      val siblingEnvironment = siblingPair.environment
+      uniqueMatch(
+        mainBody,
+        s"(?<field>%[^ ]+) = getelementptr ${Regex.quote(scalarField.group("layout"))}, " +
+          s"ptr ${Regex.quote(siblingEnvironment)}, i32 0, i32 ${scalarField.group("index")}\\n" +
+          "  store i32 10, ptr \\k<field>"
+      )
+      uniqueMatch(
+        sibling.body,
+        s"(?<sum>%[^ ]+) = add i32 ${Regex.quote(sibling.argument)}, " +
+          s"${Regex.quote(scalarField.group("value"))}\\n  ret i32 \\k<sum>"
       )
 
-      val loopBody          = functionBodyMatching(llvmIr, """test_loop_\d+\(i32 %0, i32 %1\) #0""")
-      val directSiblingCall = """call i32 @test_sibling_\d+\(i32 %\d+, i32 %\d+\)""".r
+      assertEquals(phiCount(loop.body), 1)
+      assertPhiPredecessors(loop.body)
+      assertCalls(loop.body, loopEntry, 0)
       assert(
-        loopBody.contains("loop.header:") && loopBody.contains("phi i32"),
-        s"loop should remain loopified. Body:\n$loopBody"
+        loop.body.contains(
+          s"${iteration.group("next")} = sub i32 ${iteration.group("current")}, 1"
+        ),
+        loop.body
       )
-      assert(
-        directSiblingCall.findFirstIn(loopBody).nonEmpty,
-        s"loop should call sibling's Direct entry with the trailing captured operand. Body:\n$loopBody"
-      )
-      assert(
-        !loopBody.contains("extractvalue { ptr, ptr }"),
-        s"loop should not call sibling through a captured fat pointer. Body:\n$loopBody"
-      )
+      assertCalls(mainBody, "malloc", 0)
     }
   }
 
-  // These assertions require passing captures as trailing parameters. The local-entry optimization
-  // only selects non-capturing lambdas; capture elimination remains separate work.
-  test("Direct move lambda capturing a heap literal clones at the binder site".ignore) {
-    // A Direct move-capturing lambda whose capture is a heap literal (string, etc.) must
-    // (a) emit a clone call at the binder site and (b) thread the cloned value as the
-    // lambda's trailing param so the inner body uses its own SSA register, not an outer one.
+  test("move lambda clones a heap literal into the invoked environment") {
     val source =
       """
         pub fn main(): Unit =
@@ -914,31 +880,30 @@ class FunctionSignatureTest extends BaseEffFunSuite:
       """
 
     compileAndGenerate(source).map { llvmIr =>
-      val mainBody  = functionBodyMatching(llvmIr, """test_main\(\) #0""")
-      val cloneCall = """%\d+ = call %struct\.String @__clone_String\(""".r
-      assert(
-        cloneCall.findFirstIn(mainBody).nonEmpty,
-        s"main must emit __clone_String for the captured literal. Body:\n$mainBody"
-      )
-      val greetCall = """call void @test_greet_\d+\(%struct\.String %\d+\)""".r
-      assert(
-        greetCall.findFirstIn(mainBody).nonEmpty,
-        s"main must call greet passing the cloned String as a trailing arg. Body:\n$mainBody"
+      val mainBody  = functionBody(llvmIr, "test_main")
+      val entry     = closureEntry(mainBody)
+      val greetBody = functionBody(llvmIr, entry)
+      val capture   = assertCaptureField(mainBody, greetBody, "%struct.String")
+      val cloneCall = uniqueMatch(
+        mainBody,
+        "(?<result>%[^ ]+) = call %struct\\.String @(?<entry>[^ (]+)" +
+          "\\(%struct\\.String (?<literal>%[^)]+)\\)"
       )
 
-      val greetSig =
-        """define internal void @test_greet_\d+\(%struct\.String %0\) #0""".r
-      assert(
-        greetSig.findFirstIn(llvmIr).nonEmpty,
-        s"greet's signature must take the cloned String as a trailing param. IR:\n$llvmIr"
+      assertEquals(capture.storedValue, cloneCall.group("result"))
+      assertCalls(expandNativeAdapters(llvmIr, cloneCall.matched), "__clone_String", 1)
+      assertCalls(expandNativeAdapters(llvmIr, mainBody), "__clone_String", 1)
+      val printCall = uniqueMatch(
+        greetBody,
+        "call void @(?<entry>[^ (]+)" +
+          s"\\(%struct\\.String ${Regex.quote(capture.loadedValue)}\\)"
       )
+      assertCalls(expandNativeAdapters(llvmIr, printCall.matched), "println", 1)
+      assertCalls(expandNativeAdapters(llvmIr, greetBody), "__clone_String", 0)
+      assertCalls(expandNativeAdapters(llvmIr, greetBody), "__free_String", 0)
 
-      val greetBody = functionBodyMatching(llvmIr, """test_greet_\d+\(%struct\.String %0\) #0""")
-      assert(
-        greetBody.contains("extractvalue %struct.String %0"),
-        s"greet's body must consume its own trailing-param register, not an outer one. " +
-          s"Body:\n$greetBody"
-      )
+      val owned = assertOwnedEnvironment(llvmIr, mainBody, "%struct.String", "__free_String")
+      assertCaptureLifetime(mainBody, capture, entry, owned.destructor)
     }
   }
 
@@ -962,7 +927,7 @@ class FunctionSignatureTest extends BaseEffFunSuite:
   }
 
   test(
-    "higher-order named function arguments lower as function values, not symbol loads [parent c7e9078]"
+    "higher-order named function arguments lower as function values, not symbol loads"
   ) {
     val source =
       """
@@ -972,24 +937,17 @@ class FunctionSignatureTest extends BaseEffFunSuite:
       """
 
     compileAndGenerate(source).map { llvmIr =>
-      val mainBody = functionBodyMatching(llvmIr, "test_main\\(\\) #0")
+      val mainBody = functionBody(llvmIr, "test_main")
+      val entry = uniqueMatch(
+        mainBody,
+        s"call i32 @test_apply\\(\\{ ptr, ptr \\} $nullEnvironmentClosure\\)"
+      ).group("entry")
 
-      assert(
-        !llvmIr.contains("load { ptr, ptr }, ptr @test_inc"),
-        s"Named top-level function should not be loaded as a fat-pointer global. IR:\n$llvmIr"
-      )
-      assert(
-        """define internal i32 @test__anon_\d+\(i32 %0, ptr %1\) #0""".r
-          .findFirstIn(llvmIr)
-          .nonEmpty,
-        s"Expected an eta-expanded wrapper function for the higher-order arg. IR:\n$llvmIr"
-      )
-      assert(
-        """call i32 @test_apply\(\{ ptr, ptr \} \{ ptr @test__anon_\d+, ptr null \}\)""".r
-          .findFirstIn(mainBody)
-          .nonEmpty,
-        s"main should pass a first-class function value into apply. Body:\n$mainBody"
-      )
+      assertUnaryForwarder(llvmIr, entry, "test_inc")
+      assert(!mainBody.contains("load { ptr, ptr }"), mainBody)
+      val applyBody  = functionBody(llvmIr, "test_apply")
+      val invocation = indirectClosureInvocation(applyBody, "%0", "i32", "i32 1")
+      assertReturnedNext(applyBody, invocation, "i32")
     }
   }
 
@@ -1003,20 +961,21 @@ class FunctionSignatureTest extends BaseEffFunSuite:
       """
 
     compileAndGenerate(source).map { llvmIr =>
-      val mainBody = functionBodyMatching(llvmIr, "test_main\\(\\) #0")
+      val mainBody = functionBody(llvmIr, "test_main")
+      val target = uniqueMatch(
+        mainBody,
+        "(?<result>%[^ ]+) = call i32 @(?<entry>[^ (]+)\\(i32 41\\)\\n" +
+          "  ret i32 \\k<result>"
+      ).group("entry")
+      val entryBody = functionBodyMatching(llvmIr, s"${Regex.quote(target)}\\(i32 %0\\).*")
 
-      val target = """call i32 @([^ (]+)\(i32 41\)""".r
-        .findFirstMatchIn(mainBody)
-        .getOrElse(fail(mainBody))
-        .group(1)
-      assert(functionBody(llvmIr, target).contains("add i32 %0, 1"), llvmIr)
+      uniqueMatch(entryBody, "(?<result>%[^ ]+) = add i32 %0, 1\\n  ret i32 \\k<result>")
       assert(!mainBody.contains("{ ptr, ptr }"), mainBody)
       assert(!mainBody.contains("ptr null"), mainBody)
-
     }
   }
 
-  test("shadowed local callable args do not eta-expand from top-level names [parent c7e9078]") {
+  test("shadowed local callable args do not eta-expand from top-level names") {
     val source =
       """
         fn apply2(f: Int -> Int -> Int): Int = f 1 2;;
@@ -1027,24 +986,28 @@ class FunctionSignatureTest extends BaseEffFunSuite:
       """
 
     compileAndGenerate(source).map { llvmIr =>
-      val forwardBody = functionBodyMatching(llvmIr, """test_forward\([^\n]*\) #0""")
-      val mainBody    = functionBodyMatching(llvmIr, "test_main\\(\\) #0")
-      val anonBody    = functionBodyMatching(llvmIr, """test__anon_\d+\([^\n]*\) #0""")
+      val forwardBody = functionBody(llvmIr, "test_forward")
+      val mainBody    = functionBody(llvmIr, "test_main")
+      val entry = uniqueMatch(
+        mainBody,
+        s"call i32 @test_forward\\(\\{ ptr, ptr \\} $nullEnvironmentClosure\\)"
+      ).group("entry")
+      val entryBody = functionBodyMatching(
+        llvmIr,
+        s"${Regex.quote(entry)}\\(i32 %0, i32 %1, ptr %2\\).*"
+      )
 
-      assert(
-        forwardBody.contains("call i32 @test_apply2({ ptr, ptr } %0)") &&
-          !forwardBody.contains("@test_inc"),
-        s"forward should pass its local callable param through unchanged. Body:\n$forwardBody"
+      uniqueMatch(
+        forwardBody,
+        "(?<result>%[^ ]+) = call i32 @test_apply2\\(\\{ ptr, ptr \\} %0\\)\\n" +
+          "  ret i32 \\k<result>"
       )
-      assert(
-        """call i32 @test_forward\(\{ ptr, ptr \} \{ ptr @test__anon_\d+, ptr null \}\)""".r
-          .findFirstIn(mainBody)
-          .nonEmpty,
-        s"main should still eta-expand the bare top-level add ref. Body:\n$mainBody"
+      assert(!forwardBody.contains("@test_inc"), forwardBody)
+      uniqueMatch(
+        entryBody,
+        "(?<result>%[^ ]+) = call i32 @test_add\\(i32 %0, i32 %1\\)\\n" +
+          "  ret i32 \\k<result>"
       )
-      assert(
-        anonBody.contains("call i32 @test_add(i32 %0, i32 %1)"),
-        s"The top-level add wrapper should forward both arguments into test_add. Body:\n$anonBody"
-      )
+      assert(!entryBody.contains("%2"), entryBody)
     }
   }

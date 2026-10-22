@@ -1,14 +1,16 @@
 package mml.mmlclib.codegen
 
 import mml.mmlclib.test.BaseEffFunSuite
+import mml.mmlclib.test.llvm.ClosureAssertions
 
-class LambdaEquivalenceCodegenTest extends BaseEffFunSuite:
+import scala.util.matching.Regex
+
+class LambdaEquivalenceCodegenTest extends BaseEffFunSuite with ClosureAssertions:
 
   private def countMatches(pattern: String, text: String): Int =
     pattern.r.findAllMatchIn(text).length
 
-  // Pending migration: Parent emits closure entries; these assertions require Direct entries and captures.
-  test("direct-only equivalent forms avoid closure materialization".ignore) {
+  test("direct-only equivalent forms avoid closure materialization") {
     val source =
       """
         fn top_inc(x: Int): Int = x + 1;;
@@ -26,33 +28,33 @@ class LambdaEquivalenceCodegenTest extends BaseEffFunSuite:
       """
 
     compileAndGenerate(source).map { llvmIr =>
-      val mainBody = functionBodyMatching(llvmIr, "test_main\\(\\) #0")
+      val mainBody = functionBody(llvmIr, "test_main")
+      val directCalls = "call i32 @([^ (]+)\\(i32 10\\)".r
+        .findAllMatchIn(mainBody)
+        .map(_.group(1))
+        .toList
 
-      assert(
-        mainBody.contains("call i32 @test_top_inc(i32 10)"),
-        s"Expected direct top-level call. Body:\n$mainBody"
-      )
-      assert(
-        """call i32 @test_local_inc_\d+\(i32 10\)""".r.findFirstIn(mainBody).nonEmpty,
-        s"Expected direct local function call. Body:\n$mainBody"
-      )
-      assert(
-        """call i32 @test_let_inc_\d+\(i32 10\)""".r.findFirstIn(mainBody).nonEmpty,
-        s"Expected direct let-bound lambda call. Body:\n$mainBody"
-      )
+      assertEquals(directCalls.size, 3, mainBody)
+      assertEquals(directCalls.distinct.size, 3, mainBody)
+      assert(directCalls.contains("test_top_inc"), mainBody)
+      directCalls.foreach { target =>
+        val body   = functionBodyMatching(llvmIr, s"${Regex.quote(target)}\\(i32 %0\\) #0")
+        val result = uniqueMatch(body, "(%[^ ]+) = add i32 %0, 1").group(1)
+        assert(body.contains(s"ret i32 $result"), body)
+      }
+      uniqueMatch(mainBody, "%[^ ]+ = add i32 10, 1")
       assert(
         !llvmIr.contains("__closure_env") &&
           !mainBody.contains("insertvalue { ptr, ptr }") &&
           !mainBody.contains("extractvalue { ptr, ptr }") &&
-          !mainBody.contains("call ptr @malloc") &&
-          """call i32 %\d+\(""".r.findFirstIn(mainBody).isEmpty,
-        s"Direct-only forms should not materialize closure values. Body:\n$mainBody"
+          """call i32 %[^ (]+\(""".r.findFirstIn(mainBody).isEmpty,
+        mainBody
       )
+      assertCalls(mainBody, "malloc", 0)
     }
   }
 
-  // Pending migration: Parent uses anonymous eta wrappers instead of named closure entries.
-  test("first-class non-capturing values use null-env closure values".ignore) {
+  test("first-class non-capturing values use null-env closure values") {
     val source =
       """
         fn apply(f: Int -> Int, x: Int): Int = f x;;
@@ -65,24 +67,32 @@ class LambdaEquivalenceCodegenTest extends BaseEffFunSuite:
       """
 
     compileAndGenerate(source).map { llvmIr =>
-      val mainBody = functionBodyMatching(llvmIr, "test_main\\(\\) #0")
+      val mainBody = functionBody(llvmIr, "test_main")
+      val values =
+        s"call i32 @test_apply\\(\\{ ptr, ptr \\} $nullEnvironmentClosure, i32 10\\)".r
+          .findAllMatchIn(mainBody)
+          .map(_.group("entry"))
+          .toList
 
-      assert(
-        llvmIr.contains("define internal i32 @test_top_inc__closure_entry"),
-        s"Expected named closure-entry wrapper for top_inc. IR:\n$llvmIr"
+      assertEquals(values.size, 2, mainBody)
+      assertEquals(values.distinct.size, 2, mainBody)
+      val wrapperBody = functionBodyMatching(
+        llvmIr,
+        s"${Regex.quote(values.head)}\\(i32 %0, ptr %1\\) #0"
       )
-      assert(
-        mainBody.contains("{ ptr @test_top_inc__closure_entry, ptr null }"),
-        s"Expected top_inc to pass as a null-env closure. Body:\n$mainBody"
+      val lambdaBody = functionBodyMatching(
+        llvmIr,
+        s"${Regex.quote(values(1))}\\(i32 %0, ptr %1\\) #0"
       )
-      assert(
-        """\{ ptr @test_inc_\d+, ptr null \}""".r.findFirstIn(mainBody).nonEmpty,
-        s"Expected let-bound non-capturing lambda env slot to be null. Body:\n$mainBody"
-      )
-      assert(
-        !llvmIr.contains("__closure_env") && !mainBody.contains("call ptr @malloc"),
-        s"Non-capturing function values should not allocate envs. Body:\n$mainBody"
-      )
+      assert(wrapperBody.contains("call i32 @test_top_inc(i32 %0)"), wrapperBody)
+      assertCalls(wrapperBody, "test_top_inc", 1)
+      val result = uniqueMatch(lambdaBody, "(%[^ ]+) = add i32 %0, 1").group(1)
+      assert(lambdaBody.contains(s"ret i32 $result"), lambdaBody)
+      val applyBody = functionBody(llvmIr, "test_apply")
+      indirectClosureInvocation(applyBody, "%0", "i32", "i32 %1")
+      assertCalls(mainBody, "test_apply", 2)
+      assertCalls(mainBody, "malloc", 0)
+      assert(!llvmIr.contains("__closure_env"), llvmIr)
     }
   }
 

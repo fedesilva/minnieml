@@ -5,8 +5,11 @@ import mml.mmlclib.ast.*
 import mml.mmlclib.codegen.emitter.tbaa.StructLayout
 import mml.mmlclib.compiler.CompilerConfig
 import mml.mmlclib.test.BaseEffFunSuite
+import mml.mmlclib.test.llvm.ClosureAssertions
 
-class TbaaEmissionTest extends BaseEffFunSuite:
+import scala.util.matching.Regex
+
+class TbaaEmissionTest extends BaseEffFunSuite with ClosureAssertions:
 
   test("generates distinct TBAA field tags for struct fields") {
     val source = """
@@ -271,8 +274,7 @@ class TbaaEmissionTest extends BaseEffFunSuite:
     }
   }
 
-  // Pending migration: Parent emits closure environment metadata for this Direct-only program.
-  test("zero-field closure env TBAA is not emitted".ignore) {
+  test("zero-field closure env TBAA is not emitted") {
     val source = """
       pub fn main() =
         let factorial_tco: Int -> Int -> Int =
@@ -289,14 +291,40 @@ class TbaaEmissionTest extends BaseEffFunSuite:
     """
 
     compileAndGenerate(source, config = CompilerConfig.default.copy(noTco = false)).map { llvmIr =>
-      val closureEnvTbaaLines =
-        llvmIr.split("\n").filter(_.matches("""!\d+ = !\{!"__closure_env_\d+".*"""))
-
-      assert(closureEnvTbaaLines.isEmpty, s"Unexpected closure env TBAA nodes:\n$llvmIr")
-      assert(
-        closureEnvTbaaLines.forall(line => !line.contains(", }")),
-        s"Closure env TBAA nodes must not contain dangling separators. Nodes:\n${closureEnvTbaaLines.mkString("\n")}"
+      val mainBody = functionBody(llvmIr, "test_main")
+      val facBody  = functionBody(llvmIr, closureEntry(mainBody))
+      val capture = uniqueMatch(
+        mainBody,
+        "(?<field>%[^ ]+) = getelementptr (?<layout>%struct\\.[^,]+), " +
+          "ptr %[^,]+, i32 0, i32 0\\n  " +
+          s"store \\{ ptr, ptr \\} $nullEnvironmentClosure, ptr \\k<field>, !tbaa (?<tag>!\\d+)"
       )
+      val layout      = capture.group("layout")
+      val tag         = capture.group("tag")
+      val wrapperBody = functionBody(llvmIr, capture.group("entry"))
+      val loopName = uniqueMatch(
+        wrapperBody,
+        "call i32 @([^ (]+)\\(i32 %0, i32 %1\\)"
+      ).group(1)
+      val loopBody = functionBody(llvmIr, loopName)
+      val envNodes = """!\d+ = !\{!"__closure_env_[^\n]+""".r.findAllIn(llvmIr).toList
+      val functionScalar = uniqueMatch(
+        llvmIr,
+        "(!\\d+) = !\\{!\"Function\", !\\d+, i64 0\\}"
+      ).group(1)
+      val envNode = assertEnvironmentMetadata(llvmIr, layout, List(tag -> 0))
+
+      assertEquals(envNode.scalarNodes, List(functionScalar))
+      assertEquals(envNodes, List(envNode.matched))
+      assert(llvmIr.contains(s"$layout = type { { ptr, ptr } }"), llvmIr)
+      uniqueMatch(
+        facBody,
+        s"(%[^ ]+) = getelementptr ${Regex.quote(layout)}, ptr %1, i32 0, i32 0\\n  " +
+          s"%[^ ]+ = load \\{ ptr, ptr \\}, ptr \\1, !tbaa $tag"
+      )
+      assert(loopBody.contains("loop.header:"), loopBody)
+      assert(!loopBody.contains("getelementptr") && !loopBody.contains("load "), loopBody)
+      assertPhiPredecessors(loopBody)
     }
   }
 

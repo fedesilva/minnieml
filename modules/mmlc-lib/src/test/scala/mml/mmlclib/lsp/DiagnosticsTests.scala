@@ -1,11 +1,32 @@
 package mml.mmlclib.lsp
 
+import cats.syntax.option.*
 import mml.mmlclib.ast.*
 import mml.mmlclib.compiler.{Compilation, CompilerConfig}
+import mml.mmlclib.parser.SourceInfo
 import mml.mmlclib.semantic.SemanticError
 import mml.mmlclib.test.BaseEffFunSuite
 
 class DiagnosticsTests extends BaseEffFunSuite:
+
+  test("LSP compilation reports nested invalid identifiers with the parser source span"):
+    val code = "let x = let 123invalid = 5; 6;"
+
+    Compilation
+      .compileSource(code, "NestedParseError", "nested-parse-error.mml", CompilerConfig.default)
+      .map { state =>
+        val error = state.semanticErrors.toList match
+          case List(SemanticError.TermErrorFound(error, _)) => error
+          case other => fail(s"Expected only the nested parse error, got $other")
+        val span = error.spanOpt.getOrElse(fail("Expected nested parse error source span"))
+        assertEquals(span.start, SourceInfo(code).pointAt(code.indexOf("let 123invalid")))
+        assertEquals(error.failedCode, "123invalid".some)
+        val diagnostics = Diagnostics.fromCompilerState(state)
+        assertEquals(diagnostics.size, 1)
+        assertEquals(diagnostics.head.range, Range.fromSrcSpan(span))
+        assertEquals(diagnostics.head.severity, DiagnosticSeverity.Error)
+        assertEquals(diagnostics.head.message, "Parsing error: Invalid identifier '123invalid'")
+      }
 
   test("LSP compilation retains independent type and call-once diagnostics"):
     val code = """

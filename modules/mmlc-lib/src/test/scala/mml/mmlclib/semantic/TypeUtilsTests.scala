@@ -1,5 +1,6 @@
 package mml.mmlclib.semantic
 
+import cats.syntax.option.*
 import mml.mmlclib.ast.*
 import mml.mmlclib.test.BaseEffFunSuite
 
@@ -116,10 +117,7 @@ class TypeUtilsTests extends BaseEffFunSuite:
       assertEquals(result, Some("destroy_str"))
     }
 
-  // Pending migration: Parent TypeUtils has no sameResolvedTypeName API.
-  test("heap native aliases resolve to the underlying memory functions".ignore) {
-    // Source body requires the pending compiler API.
-    /*:
+  test("heap native aliases resolve to the underlying memory functions") {
     val code = """
       type HeapName = String;
       type OtherHeapName = HeapName;
@@ -133,20 +131,33 @@ class TypeUtilsTests extends BaseEffFunSuite:
         TypeUtils.freeFnFor("OtherHeapName", module.resolvables),
         Some("__free_String")
       )
-      assert(TypeUtils.sameResolvedTypeName("HeapName", "String", module.resolvables))
-      assert(TypeUtils.sameResolvedTypeName("OtherHeapName", "String", module.resolvables))
+      val stringId = module.resolvables.resolvableTypes.values
+        .find(_.name == "String")
+        .flatMap(_.id)
+      assert(stringId.nonEmpty)
+      val aliases = module.members.collect {
+        case alias: TypeAlias if Set("HeapName", "OtherHeapName").contains(alias.name) => alias
+      }
+      assertEquals(aliases.size, 2)
+      aliases.foreach { alias =>
+        val reference = TypeRef(alias.source, alias.name, alias.id)
+        val canonicalId = TypeUtils
+          .canonical(reference, module.resolvables)
+          .collect { case ref: TypeRef =>
+            ref.resolvedId
+          }
+          .flatten
+        assertEquals(canonicalId, stringId)
+      }
       assertEquals(TypeUtils.cloneFnFor("HeapName", module.resolvables), Some("__clone_String"))
       assertEquals(
         TypeUtils.cloneFnFor("OtherHeapName", module.resolvables),
         Some("__clone_String")
       )
     }
-     */
-    fail("Parent TypeUtils has no sameResolvedTypeName API.")
   }
 
-  // Pending migration: Parent does not resolve heap ownership through the native alias.
-  test("heap native aliases without explicit free use the underlying type name".ignore):
+  test("heap native aliases without explicit free use the underlying type name"):
     val code = """
       type BaseBuf = @native[t=*i8, mem=heap];
       type AliasBuf = BaseBuf;
@@ -158,8 +169,7 @@ class TypeUtilsTests extends BaseEffFunSuite:
       assertEquals(TypeUtils.cloneFnFor("AliasBuf", module.resolvables), Some("__clone_BaseBuf"))
     }
 
-  // Pending migration: Parent does not resolve heap ownership through the struct aliases.
-  test("heap struct aliases resolve to the underlying struct memory functions".ignore):
+  test("heap struct aliases resolve to the underlying struct memory functions"):
     val code = """
       struct Person { name: String };
       type PersonAlias = Person;
@@ -185,3 +195,43 @@ class TypeUtilsTests extends BaseEffFunSuite:
         Some("__clone_Person")
       )
     }
+
+  test("aliases preserve nominal heap types and non-cloneable function fields") {
+    val source = """
+      type First = @native[t=ptr, mem=heap];
+      type Second = @native[t=ptr, mem=heap];
+      type FirstAlias = First;
+      type SecondAlias = Second;
+      type Count = Int;
+      struct Callback { invoke: Int -> Int };
+      struct Wrapper { callback: Callback };
+      type CallbackAlias = Callback;
+      type WrapperAlias = Wrapper;
+    """
+
+    semNotFailed(source).map { module =>
+      val index = module.resolvables
+      assertEquals(TypeUtils.cloneFnFor("FirstAlias", index), "__clone_First".some)
+      assertEquals(TypeUtils.cloneFnFor("SecondAlias", index), "__clone_Second".some)
+      assertEquals(TypeUtils.cloneFnFor("Count", index), none[String])
+      List("CallbackAlias", "WrapperAlias").foreach { name =>
+        assert(TypeUtils.isStructWithHeapFields(name, index))
+        assertEquals(TypeUtils.cloneFnFor(name, index), none[String])
+      }
+    }
+  }
+
+  test("structs without heap fields and their aliases have no clone function") {
+    val source = """
+      struct P { x: Int };
+      type PA = P;
+      type PAA = PA;
+    """
+
+    semNotFailed(source).map { module =>
+      List("P", "PA", "PAA").foreach { name =>
+        assertEquals(TypeUtils.cloneFnFor(name, module.resolvables), none[String], name)
+        assert(!TypeUtils.isStructWithHeapFields(name, module.resolvables), name)
+      }
+    }
+  }

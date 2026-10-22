@@ -3,8 +3,97 @@ package mml.mmlclib.codegen
 import mml.mmlclib.compiler.CompilerConfig
 import mml.mmlclib.semantic.SemanticError
 import mml.mmlclib.test.BaseEffFunSuite
+import mml.mmlclib.test.llvm.ClosureAssertions
+import munit.Location
 
-class TailRecursionLoopificationTest extends BaseEffFunSuite:
+import scala.util.matching.Regex
+
+class TailRecursionLoopificationTest extends BaseEffFunSuite with ClosureAssertions:
+
+  private def papInvocation(
+    body:       String,
+    entry:      String,
+    value:      String,
+    argument:   Int,
+    returnType: String = "i32"
+  )(using Location): Regex.Match =
+    assertCalls(body, entry, 1)
+    closureInvocation(
+      body,
+      returnType      = returnType,
+      argumentPattern = s"i32 $argument",
+      pairPattern     = Regex.quote(value),
+      entryPattern    = Regex.quote(entry)
+    )
+
+  private def assertPapDroppedAfterCall(
+    ir:         String,
+    body:       String,
+    entry:      String,
+    value:      String,
+    argument:   Int,
+    returnType: String = "i32"
+  )(using Location): Unit =
+    val invocation = papInvocation(body, entry, value, argument, returnType)
+    val drop = closureInvocation(
+      body,
+      returnType      = "void",
+      argumentPattern = "",
+      pairPattern     = Regex.quote(value)
+    )
+    assert(drop.start > invocation.end, body)
+    assertCalls(body, drop.group("entry"), 1)
+
+    val dispatch = functionBody(ir, drop.group("entry"))
+    val destructor = uniqueMatch(
+      dispatch,
+      "(%[^ ]+) = load ptr, ptr (%[^ \\n]+)\\n  call void \\1\\(ptr \\2\\)"
+    )
+    assert(dispatch.contains(s"icmp eq ptr ${destructor.group(2)}, null"), dispatch)
+
+  private def assertBorrowedPap(ir: String)(using Location): Unit =
+    val mainBody = functionBody(ir, "test_main")
+    val papName  = closureEntry(mainBody)
+    val papBody  = functionBody(ir, papName)
+    val capture  = assertCaptureField(mainBody, papBody, "%struct.String")
+    val value    = closureValue(mainBody, papName, capture.ownerEnvironment)
+    val invoke   = papInvocation(mainBody, papName, value, 0, returnType = "void")
+    val created = uniqueMatch(
+      mainBody,
+      s"${Regex.quote(capture.storedValue)} = call %struct.String @([^ (]+)\\(i32 7\\)"
+    )
+    val forwarded = uniqueMatch(
+      papBody,
+      s"call void @([^ (]+)\\(%struct.String ${Regex.quote(capture.loadedValue)}, i32 %0\\)"
+    )
+    val targetBody = expandNativeAdapters(ir, functionBody(ir, forwarded.group(1)))
+    val freed = uniqueMatch(
+      mainBody,
+      s"call void @([^ (]+)\\(%struct.String ${Regex.quote(capture.storedValue)}\\)"
+    )
+
+    assertEquals(capture.fieldIndex, "0")
+    assert(ir.contains(s"${capture.layout} = type { %struct.String }"), ir)
+    assert(mainBody.contains(s"${capture.ownerEnvironment} = alloca ${capture.layout}"), mainBody)
+
+    assertCalls(expandNativeAdapters(ir, functionBody(ir, created.group(1))), "int_to_str", 1)
+    assertCalls(expandNativeAdapters(ir, mainBody), "__free_String", 1)
+    assertCalls(expandNativeAdapters(ir, functionBody(ir, freed.group(1))), "__free_String", 1)
+    assert(freed.start > invoke.end, mainBody)
+
+    assertCalls(targetBody, "println", 1)
+    assertCalls(targetBody, "__free_String", 0)
+    assertCalls(papBody, forwarded.group(1), 1)
+    assertCalls(expandNativeAdapters(ir, papBody), "__free_String", 0)
+
+    assertCalls(ir, "__clone_String", 0)
+    assertCalls(mainBody, "malloc", 0)
+    assertCalls(mainBody, "mml_free_raw", 0)
+    assertCalls(papBody, "mml_free_raw", 0)
+
+    assertCalls(mainBody, "test___free_closure", 0)
+    assertCalls(papBody, "test___free_closure", 0)
+    assert(!mainBody.contains("store ptr @") && !papBody.contains("store ptr @"), ir)
 
   test("emits tail-recursive function as a loop") {
     val source =
@@ -59,98 +148,7 @@ class TailRecursionLoopificationTest extends BaseEffFunSuite:
     }
   }
 
-  // Preserved assertions pin closure-entry names. Reconcile them with the shared-adapter behavior
-  // covered by FunctionValueCodegenTests; see context/tasks/unify-lambdas-ignored-tests.md.
-  test("named loopified function used as a value keeps a closure-entry wrapper".ignore) {
-    val source =
-      """
-      fn apply(f: Int -> Int): Int = f 41;;
-
-      fn down(x: Int): Int =
-        if x == 0 then
-          0;
-        else
-          down (x - 1);
-        ;
-      ;
-
-      fn main(): Int = (apply down) + (down 3);;
-      """
-
-    compileAndGenerate(source, config = CompilerConfig.default.copy(noTco = false)).map { llvmIr =>
-      val applyBody   = functionBodyMatching(llvmIr, "test_apply\\(\\{ ptr, ptr \\} %0\\) #0")
-      val mainBody    = functionBodyMatching(llvmIr, "test_main\\(\\) #0")
-      val wrapperName = "test_down__closure_entry"
-      val wrapperBody = functionBodyMatching(llvmIr, s"$wrapperName\\(i32 %0, ptr %1\\) #0")
-
-      assert(
-        llvmIr.contains("define internal i32 @test_down(i32 %0) #0"),
-        s"Direct loopified function should use plain ABI. IR:\n$llvmIr"
-      )
-      assert(
-        wrapperBody.contains("call i32 @test_down(i32 %0)"),
-        s"Wrapper should forward to the plain direct symbol. Body:\n$wrapperBody"
-      )
-      assert(
-        """call i32 %\d+\(i32 41, ptr %\d+\)""".r.findFirstIn(applyBody).nonEmpty,
-        s"Higher-order call should still pass the extracted env. Body:\n$applyBody"
-      )
-      assert(
-        mainBody.contains(s"call i32 @test_apply({ ptr, ptr } { ptr @$wrapperName, ptr null })") &&
-          mainBody.contains("call i32 @test_down(i32 3)") &&
-          !mainBody.contains("call i32 @test_down(i32 3, ptr null)"),
-        s"main should use both the wrapper value and the direct plain call. Body:\n$mainBody"
-      )
-    }
-  }
-
-  // fac captures factorial_tco, which requires a function value and therefore an adapter.
-  // Removing that adapter requires capture elimination beyond the local-entry optimization.
-  test("local non-capturing loopified Direct function emits no closure-entry wrapper".ignore) {
-    val source =
-      """
-      pub fn main() =
-        let factorial_tco: Int -> Int -> Int =
-          { n: Int, acc: Int ->
-            if n <= 1 then acc;
-            else factorial_tco (n - 1) (acc * n);
-          }
-        ;
-
-        let fac = { n: Int -> factorial_tco n 1 };
-
-        fac 3;
-      ;
-      """
-
-    compileAndGenerate(source, config = CompilerConfig.default.copy(noTco = false)).map { llvmIr =>
-      val directMatch =
-        """define internal i32 @(test_factorial_tco_\d+)\(i32 %0, i32 %1\) #0 \{""".r
-          .findFirstMatchIn(llvmIr)
-          .getOrElse(fail(s"Missing plain direct factorial_tco entry. IR:\n$llvmIr"))
-      val directName  = directMatch.group(1)
-      val wrapperName = s"${directName}__closure_entry"
-      val directBody =
-        functionBodyMatching(llvmIr, s"$directName\\(i32 %0, i32 %1\\) #0")
-
-      assert(
-        directBody.contains("loop.header:") && directBody.contains("phi i32"),
-        s"Direct factorial_tco entry should be loopified. Body:\n$directBody"
-      )
-      assert(
-        !llvmIr.contains(s"define internal i32 @$directName(i32 %0, i32 %1, ptr %2) #0"),
-        s"Direct factorial_tco entry must not accept a closure env. IR:\n$llvmIr"
-      )
-      assert(
-        !llvmIr.contains(wrapperName) && !llvmIr.contains(s"{ ptr @$wrapperName, ptr null }"),
-        s"Direct-only local tail-recursive function should not materialize a wrapper. IR:\n$llvmIr"
-      )
-    }
-  }
-
-  // Requires PAPs to target plain local entries. PAP direct-target optimization is separate from
-  // fully applied local calls; its entry-shape assertions still need reconciliation.
-  test("partial application of local loopified Direct function emits a PAP entry".ignore) {
+  test("partial application forwards a literal argument to a plain loopified entry") {
     val source =
       """
       pub fn main(): Int =
@@ -169,41 +167,46 @@ class TailRecursionLoopificationTest extends BaseEffFunSuite:
       """
 
     compileAndGenerate(source, config = CompilerConfig.default.copy(noTco = false)).map { llvmIr =>
-      val directMatch =
-        """define internal i32 @(test_factorial_tco_\d+)\(i32 %0, i32 %1\) #0 \{""".r
-          .findFirstMatchIn(llvmIr)
-          .getOrElse(fail(s"Missing plain Direct factorial_tco entry. IR:\n$llvmIr"))
-      val directName = directMatch.group(1)
-      val papMatch =
-        """define internal i32 @(test_factorial_tco_pap_\d+)\(i32 %0, ptr %1\) #0 \{""".r
-          .findFirstMatchIn(llvmIr)
-          .getOrElse(fail(s"Missing partial-application entry. IR:\n$llvmIr"))
-      val papName  = papMatch.group(1)
-      val papBody  = functionBodyMatching(llvmIr, s"$papName\\(i32 %0, ptr %1\\) #0")
-      val mainBody = functionBodyMatching(llvmIr, "test_main\\(\\) #0")
+      val mainBody = functionBody(llvmIr, "test_main")
+      val papName  = closureEntry(mainBody)
+      val papBody  = functionBody(llvmIr, papName)
+      val target   = uniqueMatch(papBody, "call i32 @([^ (]+)\\(i32 5, i32 %0\\)").group(1)
+      val loopBody = functionBodyMatching(llvmIr, s"${Regex.quote(target)}\\(i32 %0, i32 %1\\) #0")
+      val destructor     = storedDestructor(mainBody)
+      val destructorBody = functionBody(llvmIr, destructor)
+      val slot           = destructorSlot(mainBody, destructor)
+      val layout         = slot.layout
+      val environment    = slot.environment
+      val value          = closureValue(mainBody, papName, environment)
+      val invocation     = papInvocation(mainBody, papName, value, 1)
+      val drop = closureInvocation(
+        mainBody,
+        returnType      = "void",
+        argumentPattern = "",
+        pairPattern     = Regex.quote(value),
+        entryPattern    = Regex.quote(destructor)
+      )
 
-      assert(
-        papBody.contains(s"call i32 @$directName(i32 %") && papBody.contains(", i32 %0)"),
-        s"PAP entry should load fixed n and forward acc into Direct entry. Body:\n$papBody"
-      )
-      assert(
-        !llvmIr.contains(s"${directName}__closure_entry"),
-        s"Partial application should not materialize the full-arity closure wrapper. IR:\n$llvmIr"
-      )
-      assert(
-        !mainBody.contains(s"call { ptr, ptr } @${directName}__closure_entry"),
-        s"main must not reinterpret the scalar closure-entry ABI as a closure pair. Body:\n$mainBody"
-      )
-      assert(
-        mainBody.contains(s"ptr @$papName"),
-        s"main should build a closure pair with the PAP entry. Body:\n$mainBody"
-      )
+      assert(llvmIr.contains(s"$layout = type { ptr }"), llvmIr)
+      assert(mainBody.contains(s"$environment = call ptr @malloc(i64 8)"), mainBody)
+      assertCalls(mainBody, "malloc", 1)
+      assertCalls(mainBody, destructor, 1)
+      assert(drop.start > invocation.end, mainBody)
+
+      assertEquals("\\bcall\\b".r.findAllIn(destructorBody).size, 1, destructorBody)
+      assert(destructorBody.contains("call void @mml_free_raw(ptr %0)"), destructorBody)
+
+      assertCalls(papBody, target, 1)
+      assert(!papBody.contains("load ") && !papBody.contains("extractvalue"), papBody)
+
+      assert(loopBody.contains("loop.header:"), loopBody)
+      assertEquals(phiCount(loopBody), 2)
+      assertPhiPredecessors(loopBody)
+      assertCalls(loopBody, target, 0)
     }
   }
 
-  // Preserves direct-PAP entry and heap-environment assertions that still need reconciliation.
-  // See context/tasks/unify-lambdas-ignored-tests.md for the pending assertion review.
-  test("escaped partial application of local loopified Direct function uses heap env".ignore) {
+  test("escaped PAP of a local loopified function owns a heap environment") {
     val source =
       """
       pub fn main(): Int =
@@ -226,102 +229,83 @@ class TailRecursionLoopificationTest extends BaseEffFunSuite:
       """
 
     compileAndGenerate(source, config = CompilerConfig.default.copy(noTco = false)).map { llvmIr =>
-      val directMatch =
-        """define internal i32 @(test_factorial_tco_\d+)\(i32 %0, i32 %1\) #0 \{""".r
-          .findFirstMatchIn(llvmIr)
-          .getOrElse(fail(s"Missing plain Direct factorial_tco entry. IR:\n$llvmIr"))
-      val makeFacMatch =
-        """define internal \{ ptr, ptr \} @(test_make_fac_\d+)\(i32 %0\) #0 \{""".r
-          .findFirstMatchIn(llvmIr)
-          .getOrElse(fail(s"Missing Direct make_fac entry returning a closure pair. IR:\n$llvmIr"))
-      val papMatch =
-        """define internal i32 @(test_factorial_tco_pap_\d+)\(i32 %0, ptr %1\) #0 \{""".r
-          .findFirstMatchIn(llvmIr)
-          .getOrElse(fail(s"Missing returned partial-application entry. IR:\n$llvmIr"))
-      val directName  = directMatch.group(1)
-      val makeFacName = makeFacMatch.group(1)
-      val papName     = papMatch.group(1)
-      val makeFacBody = functionBodyMatching(llvmIr, s"$makeFacName\\(i32 %0\\) #0")
-      val papBody     = functionBodyMatching(llvmIr, s"$papName\\(i32 %0, ptr %1\\) #0")
-      val mainBody    = functionBodyMatching(llvmIr, "test_main\\(\\) #0")
-      val dtorName =
-        """store ptr @(test___free_factorial_tco_pap_env_\d+), ptr %\d+""".r
-          .findFirstMatchIn(makeFacBody)
-          .map(_.group(1))
-          .getOrElse(fail(s"Missing PAP env destructor store. Body:\n$makeFacBody"))
-      val envName =
-        """%struct\.(test_factorial_tco_pap_env_\d+) = type \{ ptr, i32 \}""".r
-          .findFirstMatchIn(llvmIr)
-          .map(_.group(1))
-          .getOrElse(fail(s"Missing returned PAP env type. IR:\n$llvmIr"))
-      val dtorBody = functionBodyMatching(llvmIr, s"$dtorName\\(ptr %0\\) #0")
+      val mainBody    = functionBody(llvmIr, "test_main")
+      val makeFacName = closureEntry(mainBody)
+      val makeFacBody = functionBody(llvmIr, makeFacName)
+      val papName     = closureEntry(makeFacBody)
+      val papBody     = functionBody(llvmIr, papName)
+      val capture     = assertCaptureField(makeFacBody, papBody, "i32")
+      val dtorName    = storedDestructor(makeFacBody)
+      val dtorBody    = functionBody(llvmIr, dtorName)
+      val returned    = closureValue(makeFacBody, papName, capture.ownerEnvironment)
+      val directCall = uniqueMatch(
+        papBody,
+        s"call i32 @([^ (]+)\\(i32 ${Regex.quote(capture.loadedValue)}, i32 %0\\)"
+      )
+      val directBody = functionBody(llvmIr, directCall.group(1))
+      val factoryCapture = uniqueMatch(
+        mainBody,
+        "(?<field>%[^ ]+) = getelementptr (?<layout>%struct\\.[^,]+), " +
+          "ptr (?<environment>%[^,]+), i32 0, i32 0\\n  " +
+          s"store \\{ ptr, ptr \\} $nullEnvironmentClosure, ptr \\k<field>"
+      )
+      val factoryLayout      = factoryCapture.group("layout")
+      val factoryEnvironment = factoryCapture.group("environment")
+      val capturedAdapter    = factoryCapture.group("entry")
+      val factoryValue       = closureValue(mainBody, makeFacName, factoryEnvironment)
+      val factoryCall = closureInvocation(
+        mainBody,
+        returnType      = "{ ptr, ptr }",
+        argumentPattern = "i32 5",
+        pairPattern     = Regex.quote(factoryValue),
+        entryPattern    = Regex.quote(makeFacName)
+      )
+      val factoryLoad = uniqueMatch(
+        makeFacBody,
+        s"(%[^ ]+) = getelementptr ${Regex.quote(factoryLayout)}, " +
+          "ptr %1, i32 0, i32 0\\n  (%[^ ]+) = load \\{ ptr, ptr \\}, ptr \\1"
+      )
 
-      assert(
-        llvmIr.contains(s"%struct.$envName = type { ptr, i32 }"),
-        s"Returned PAP env should use slot 0 for the destructor and slot 1 for n. IR:\n$llvmIr"
+      assert(mainBody.contains(s"${factoryEnvironment} = alloca ${factoryLayout}"))
+      assert(llvmIr.contains(s"${factoryLayout} = type { { ptr, ptr } }"), llvmIr)
+      assertCalls(makeFacBody, "malloc", 1)
+      assert(factoryLoad.start < callsTo(makeFacBody, "malloc").head.start, makeFacBody)
+      assert(!mainBody.contains("store ptr @"), mainBody)
+      assertCalls(mainBody, "malloc", 0)
+      assertCalls(mainBody, makeFacName, 1)
+      assertCalls(functionBody(llvmIr, capturedAdapter), directCall.group(1), 1)
+      assertCalls(papBody, directCall.group(1), 1)
+      assert(directBody.contains("loop.header:") && directBody.contains("phi i32"), directBody)
+      assertPhiPredecessors(directBody)
+
+      assertEquals(capture.fieldIndex, "1")
+      assertEquals(capture.storedValue, "%0")
+      assert(llvmIr.contains(s"${capture.layout} = type { ptr, i32 }"), llvmIr)
+      assert(makeFacBody.contains(s"${capture.ownerEnvironment} = call ptr @malloc(i64 16)"))
+      assert(!makeFacBody.contains("alloca"), makeFacBody)
+      assert(makeFacBody.contains(s"ret { ptr, ptr } $returned"), makeFacBody)
+      assertCalls(dtorBody, "mml_free_raw", 1)
+      assert(dtorBody.contains("call void @mml_free_raw(ptr %0)"), dtorBody)
+      assertEquals("\\bcall\\b".r.findAllIn(dtorBody).size, 1, dtorBody)
+      assertPapDroppedAfterCall(llvmIr, mainBody, papName, factoryCall.group("result"), 1)
+
+      val destructorStore = destructorSlot(makeFacBody, dtorName)
+      val destructorTag = destructorStore.tbaaTag.getOrElse(
+        fail(s"Expected destructor-slot TBAA tag:\n$makeFacBody")
       )
-      assert(
-        papBody.contains("i32 0, i32 1") &&
-          !papBody.contains("i32 0, i32 0") &&
-          papBody.contains(s"call i32 @$directName(i32 %") &&
-          papBody.contains(", i32 %0)"),
-        s"PAP entry should load fixed n from field 1 and forward acc into Direct entry. Body:\n$papBody"
-      )
-      assert(
-        dtorBody.contains("call void @mml_free_raw(ptr %0)"),
-        s"PAP env destructor should free the raw env pointer. Body:\n$dtorBody"
-      )
-      assert(
-        makeFacBody.contains("call ptr @malloc(i64 16)") &&
-          !makeFacBody.contains("alloca %struct.test_factorial_tco_pap_env_"),
-        s"Returned PAP env must not point at make_fac stack storage. Body:\n$makeFacBody"
-      )
-      assert(
-        makeFacBody.contains(s"store ptr @$dtorName") &&
-          makeFacBody.contains("i32 0, i32 0") &&
-          makeFacBody.contains("i32 0, i32 1") &&
-          makeFacBody.contains("store i32 %0"),
-        s"Returned PAP env should store a destructor in field 0. Body:\n$makeFacBody"
-      )
-      assert(
-        makeFacBody.contains(s"ptr @$papName"),
-        s"make_fac should return a real closure pair backed by the generated PAP entry. Body:\n$makeFacBody"
-      )
-      assert(
-        (s"""(?s).*call \\{ ptr, ptr \\} @$makeFacName\\(i32 5\\).*""" +
-          """%\d+ = call i32 %\d+\(i32 1, ptr %\d+\).*""" +
-          """%\d+ = extractvalue \{ ptr, ptr \} %\d+, 1.*""" +
-          """call void @test___free_closure\(ptr %\d+\).*""").r
-          .matches(mainBody),
-        s"Caller should call the returned PAP and then drop its env. Body:\n$mainBody"
-      )
-      assert(
-        s"""store ptr @$dtorName, ptr %\\d+, !tbaa !\\d+""".r
-          .findFirstIn(makeFacBody)
-          .nonEmpty,
-        s"Returned PAP env destructor store should carry TBAA metadata. Body:\n$makeFacBody"
-      )
-      assert(
-        """store i32 %0, ptr %\d+, !tbaa !\d+""".r.findFirstIn(makeFacBody).nonEmpty,
-        s"Returned PAP env payload store should carry TBAA metadata. Body:\n$makeFacBody"
-      )
-      assert(
-        """load i32, ptr %\d+, !tbaa !\d+""".r.findFirstIn(papBody).nonEmpty,
-        s"PAP entry payload load should carry TBAA metadata. Body:\n$papBody"
-      )
-      val envTbaaLines = llvmIr.split("\n").filter(_.contains(s"""!"$envName""""))
-      assert(
-        envTbaaLines.exists(line => line.contains("i64 0") && line.contains("i64 8")),
-        s"Returned PAP env TBAA node should describe destructor and payload offsets. Nodes:\n${envTbaaLines.mkString("\n")}"
+      val payloadTag = captureTbaaTag(makeFacBody, papBody, capture, "i32")
+
+      assertEquals(destructorStore.layout, capture.layout)
+      assertEquals(destructorStore.environment, capture.ownerEnvironment)
+      assertEnvironmentMetadata(
+        llvmIr,
+        capture.layout,
+        List(destructorTag -> 0, payloadTag -> 8)
       )
     }
   }
 
-  // These assertions require passing captures as trailing parameters. The local-entry optimization
-  // only selects non-capturing lambdas; capture elimination remains separate work.
-  test(
-    "capturing partial application of local loopified Direct function tags PAP env fields".ignore
-  ) {
+  test("capturing partial application tags its projected environment pointer") {
     val source =
       """
       pub fn main(): Int =
@@ -341,51 +325,54 @@ class TailRecursionLoopificationTest extends BaseEffFunSuite:
       """
 
     compileAndGenerate(source, config = CompilerConfig.default.copy(noTco = false)).map { llvmIr =>
-      val directMatch =
-        """define internal i32 @(test_loop_\d+)\(i32 %0, i32 %1, i32 %2\) #0 \{""".r
-          .findFirstMatchIn(llvmIr)
-          .getOrElse(fail(s"Missing capturing Direct loop entry. IR:\n$llvmIr"))
-      val papMatch =
-        """define internal i32 @(test_loop_pap_\d+)\(i32 %0, ptr %1\) #0 \{""".r
-          .findFirstMatchIn(llvmIr)
-          .getOrElse(fail(s"Missing capturing Direct PAP entry. IR:\n$llvmIr"))
-      val envName =
-        """%struct\.(test_loop_pap_env_\d+) = type \{ ptr, i32, i32 \}""".r
-          .findFirstMatchIn(llvmIr)
-          .map(_.group(1))
-          .getOrElse(fail(s"Missing capturing Direct PAP env type. IR:\n$llvmIr"))
-      val papName      = papMatch.group(1)
-      val directName   = directMatch.group(1)
-      val mainBody     = functionBodyMatching(llvmIr, "test_main\\(\\) #0")
-      val papBody      = functionBodyMatching(llvmIr, s"$papName\\(i32 %0, ptr %1\\) #0")
-      val envTbaaLines = llvmIr.split("\n").filter(_.contains(s"""!"$envName""""))
+      val mainBody = functionBody(llvmIr, "test_main")
+      val papCall  = uniqueMatch(mainBody, "call i32 @([^ (]+)\\(i32 0, ptr %[^)]+\\)")
+      val papName  = papCall.group(1)
+      val papBody  = functionBody(llvmIr, papName)
+      val capture  = assertCaptureField(mainBody, papBody, "ptr")
+      val targetCall = uniqueMatch(
+        papBody,
+        s"call i32 @([^ (]+)\\(i32 3, i32 %0, ptr ${Regex.quote(capture.loadedValue)}\\)"
+      )
+      val loopName  = targetCall.group(1)
+      val loopBody  = functionBody(llvmIr, loopName)
+      val step      = assertCaptureField(mainBody, loopBody, "i32")
+      val loopValue = closureValue(mainBody, loopName, step.ownerEnvironment)
+      val papValue  = closureValue(mainBody, papName, capture.ownerEnvironment)
 
+      assertEquals(step.storedValue, "2")
+      assertEquals(step.fieldIndex, "0")
+      assertEquals(capture.fieldIndex, "0")
+      assert(llvmIr.contains(s"${step.layout} = type { i32 }"), llvmIr)
+      assert(llvmIr.contains(s"${capture.layout} = type { ptr }"), llvmIr)
+      assert(mainBody.contains(s"${step.ownerEnvironment} = alloca ${step.layout}"), mainBody)
+      assert(mainBody.contains(s"${capture.ownerEnvironment} = alloca ${capture.layout}"), mainBody)
       assert(
-        papBody.contains(s"call i32 @$directName") && papBody.contains(", i32 %0, i32 %"),
-        s"Capturing PAP entry should forward applied n, remaining acc, and captured step. Body:\n$papBody"
+        mainBody.contains(s"${capture.storedValue} = extractvalue { ptr, ptr } $loopValue, 1"),
+        mainBody
       )
-      assert(
-        """store ptr @test___free_loop_pap_env_\d+, ptr %\d+, !tbaa !\d+""".r
-          .findFirstIn(mainBody)
-          .nonEmpty,
-        s"Capturing PAP env destructor store should carry TBAA metadata. Body:\n$mainBody"
-      )
-      assert(
-        """store i32 (?:%\d+|[-]?\d+), ptr %\d+, !tbaa !\d+""".r
-          .findAllIn(mainBody)
-          .length >= 2,
-        s"Capturing PAP env payload stores should carry TBAA metadata. Body:\n$mainBody"
-      )
-      assert(
-        """load i32, ptr %\d+, !tbaa !\d+""".r.findAllIn(papBody).length >= 2,
-        s"Capturing PAP entry payload loads should carry TBAA metadata. Body:\n$papBody"
-      )
-      assert(
-        envTbaaLines.exists(line =>
-          line.contains("i64 0") && line.contains("i64 8") && line.contains("i64 12")
-        ),
-        s"Capturing PAP env TBAA node should describe destructor, applied arg, and capture offsets. Nodes:\n${envTbaaLines.mkString("\n")}"
-      )
+      papInvocation(mainBody, papName, papValue, 0)
+      assertCalls(papBody, loopName, 1)
+      assertCalls(loopBody, loopName, 0)
+      assertCalls(mainBody, "malloc", 0)
+      assertCalls(mainBody, "test___free_closure", 0)
+      assert(!mainBody.contains("store ptr @"), mainBody)
+
+      val accumulator = uniqueMatch(loopBody, "(%[^ ]+) = phi i32 \\[ %1, %entry \\]").group(1)
+      assert(loopBody.contains(s"add i32 $accumulator, ${step.loadedValue}"), loopBody)
+      assertEquals(phiCount(loopBody), 2)
+      assertPhiPredecessors(loopBody)
+
+      List((capture, papBody, "ptr", "RawPtr"), (step, loopBody, "i32", "Int")).foreach {
+        case (field, consumer, llvmType, scalarName) =>
+          val tag = captureTbaaTag(mainBody, consumer, field, llvmType)
+          val scalar = uniqueMatch(
+            llvmIr,
+            s"(!\\d+) = !\\{!\"$scalarName\", !\\d+, i64 0\\}"
+          ).group(1)
+          val node = assertEnvironmentMetadata(llvmIr, field.layout, List(tag -> 0))
+          assertEquals(node.scalarNodes, List(scalar))
+      }
     }
   }
 
@@ -417,9 +404,7 @@ class TailRecursionLoopificationTest extends BaseEffFunSuite:
     }
   }
 
-  // Preserves ownership checks tied to a particular direct-PAP environment and destructor layout.
-  // Reconcile with current PAP cleanup before enabling; see unify-lambdas-ignored-tests.md.
-  test("Direct PAP with borrowed heap applied arg stores without cloning".ignore) {
+  test("PAP borrows a heap applied argument in a stack environment without cloning") {
     val source =
       """
       pub fn main(): Unit =
@@ -436,29 +421,11 @@ class TailRecursionLoopificationTest extends BaseEffFunSuite:
       ;
       """
 
-    compileAndGenerate(source, config = CompilerConfig.default.copy(noTco = false)).map { llvmIr =>
-      val mainBody = functionBodyMatching(llvmIr, "test_main\\(\\) #0")
-      val dtorName =
-        """store ptr @(test___free_say_pap_env_\d+), ptr %\d+""".r
-          .findFirstMatchIn(mainBody)
-          .map(_.group(1))
-          .getOrElse(fail(s"Missing Direct PAP env destructor store. Body:\n$mainBody"))
-      val dtorBody = functionBodyMatching(llvmIr, s"$dtorName\\(ptr %0\\) #0")
-
-      assert(
-        """call %struct\.String @__clone_String""".r.findFirstIn(mainBody).isEmpty,
-        s"Borrowed heap applied arg should be stored without cloning. Body:\n$mainBody"
-      )
-      assert(
-        !dtorBody.contains("__free_String") && dtorBody.contains("@mml_free_raw"),
-        s"PAP env destructor should free only the raw env for borrowed payloads. Body:\n$dtorBody"
-      )
-    }
+    compileAndGenerate(source, config = CompilerConfig.default.copy(noTco = false))
+      .map(assertBorrowedPap)
   }
 
-  // Preserves ownership checks tied to a particular direct-PAP environment and destructor layout.
-  // Reconcile with current PAP cleanup before enabling; see unify-lambdas-ignored-tests.md.
-  test("Direct PAP with aliased borrowed heap applied arg stores without cloning".ignore) {
+  test("PAP borrows an aliased heap applied argument in a stack environment without cloning") {
     val source =
       """
       type Name = String;
@@ -477,29 +444,11 @@ class TailRecursionLoopificationTest extends BaseEffFunSuite:
       ;
       """
 
-    compileAndGenerate(source, config = CompilerConfig.default.copy(noTco = false)).map { llvmIr =>
-      val mainBody = functionBodyMatching(llvmIr, "test_main\\(\\) #0")
-      val dtorName =
-        """store ptr @(test___free_say_pap_env_\d+), ptr %\d+""".r
-          .findFirstMatchIn(mainBody)
-          .map(_.group(1))
-          .getOrElse(fail(s"Missing Direct PAP env destructor store. Body:\n$mainBody"))
-      val dtorBody = functionBodyMatching(llvmIr, s"$dtorName\\(ptr %0\\) #0")
-
-      assert(
-        """call %struct\.String @__clone_String""".r.findFirstIn(mainBody).isEmpty,
-        s"Aliased borrowed heap arg should be stored without cloning. Body:\n$mainBody"
-      )
-      assert(
-        !dtorBody.contains("__free_String") && dtorBody.contains("@mml_free_raw"),
-        s"PAP env destructor should free only the raw env for borrowed payloads. Body:\n$dtorBody"
-      )
-    }
+    compileAndGenerate(source, config = CompilerConfig.default.copy(noTco = false))
+      .map(assertBorrowedPap)
   }
 
-  // Preserves ownership checks tied to a particular direct-PAP environment and destructor layout.
-  // Reconcile with current PAP cleanup before enabling; see unify-lambdas-ignored-tests.md.
-  test("Direct PAP with consuming heap applied arg owns env field".ignore) {
+  test("PAP transfers its owned heap argument and then releases only its environment") {
     val source =
       """
       pub fn main(): Unit =
@@ -517,49 +466,75 @@ class TailRecursionLoopificationTest extends BaseEffFunSuite:
       """
 
     compileAndGenerate(source, config = CompilerConfig.default.copy(noTco = false)).map { llvmIr =>
-      val mainBody = functionBodyMatching(llvmIr, "test_main\\(\\) #0")
-      val dtorName =
-        """store ptr @(test___free_say_pap_env_\d+), ptr %\d+""".r
-          .findFirstMatchIn(mainBody)
-          .map(_.group(1))
-          .getOrElse(fail(s"Missing Direct PAP env destructor store. Body:\n$mainBody"))
-      val papName =
-        """insertvalue \{ ptr, ptr \} undef, ptr @(test_say_pap_\d+), 0""".r
-          .findFirstMatchIn(mainBody)
-          .map(_.group(1))
-          .getOrElse(fail(s"Missing Direct PAP entry. Body:\n$mainBody"))
-      val rawDtorName =
-        """store ptr @(test___free_say_pap_env_raw_\d+), ptr %\d+""".r
-          .findFirstMatchIn(functionBodyMatching(llvmIr, s"$papName\\(i32 %0, ptr %1\\) #0"))
-          .map(_.group(1))
-          .getOrElse(fail(s"Missing raw-only destructor rewrite for $papName"))
-      val dtorBody    = functionBodyMatching(llvmIr, s"$dtorName\\(ptr %0\\) #0")
-      val rawDtorBody = functionBodyMatching(llvmIr, s"$rawDtorName\\(ptr %0\\) #0")
-      val freeIdx     = dtorBody.indexOf("call void @__free_String")
-      val rawIdx      = dtorBody.indexOf("call void @mml_free_raw")
+      val mainBody = functionBody(llvmIr, "test_main")
+      val papName  = closureEntry(mainBody)
+      val papBody  = functionBody(llvmIr, papName)
+      val capture  = assertCaptureField(mainBody, papBody, "%struct.String")
+      val owned    = assertOwnedEnvironment(llvmIr, mainBody, "%struct.String", "__free_String")
+      val dtorName = owned.destructor
+      val dtorBody = functionBody(llvmIr, dtorName)
+      val value    = closureValue(mainBody, papName, capture.ownerEnvironment)
+      val created = uniqueMatch(
+        mainBody,
+        s"${Regex.quote(capture.storedValue)} = call %struct.String @([^ (]+)\\(i32 7\\)"
+      )
+      val disarmed = uniqueMatch(
+        papBody,
+        s"store ptr @mml_free_raw, ptr ${Regex.quote(capture.consumerEnvironment)}"
+      )
+      val forwarded = uniqueMatch(
+        papBody,
+        s"call void @([^ (]+)\\(%struct.String ${Regex.quote(capture.loadedValue)}, i32 %0\\)"
+      )
+      val targetBody = functionBody(llvmIr, forwarded.group(1))
+      val payloadFree = uniqueMatch(
+        dtorBody,
+        s"call void @([^ (]+)\\(%struct.String ${Regex.quote(owned.capture.loadedValue)}\\)"
+      )
+      val targetFree = uniqueMatch(
+        targetBody,
+        s"call void @${Regex.quote(payloadFree.group(1))}\\(%struct.String %0\\)"
+      )
+      val targetPrint = uniqueMatch(
+        targetBody,
+        s"call void @(?!${Regex.quote(payloadFree.group(1))}\\()([^ (]+)\\(%struct.String %0\\)"
+      )
+      val slot = destructorSlot(mainBody, dtorName)
+
+      assertEquals(capture.fieldIndex, "1")
+      assertEquals(slot.layout, capture.layout)
+      assertEquals(slot.environment, capture.ownerEnvironment)
+      assert(llvmIr.contains(s"${capture.layout} = type { ptr, %struct.String }"), llvmIr)
+      assert(mainBody.contains(s"${capture.ownerEnvironment} = call ptr @malloc(i64 24)"))
+      assertCalls(mainBody, "malloc", 1)
+
+      val creationBody = expandNativeAdapters(llvmIr, functionBody(llvmIr, created.group(1)))
+      assertCalls(creationBody, "int_to_str", 1)
+      val payloadStore = mainBody.indexOf(s"store %struct.String ${capture.storedValue}")
+      assert(slot.start < payloadStore, mainBody)
+
+      assertCalls(llvmIr, "__clone_String", 0)
+      assertCalls(expandNativeAdapters(llvmIr, mainBody), "__free_String", 0)
+      assertCalls(expandNativeAdapters(llvmIr, papBody), "__free_String", 0)
+      assertCalls(papBody, "mml_free_raw", 0)
+
+      assertEquals(storedDestructor(papBody), "mml_free_raw")
+      assert(disarmed.end < forwarded.start, papBody)
+      assertCalls(papBody, forwarded.group(1), 1)
+
+      assertCalls(expandNativeAdapters(llvmIr, targetBody), "__free_String", 1)
+      assertCalls(expandNativeAdapters(llvmIr, targetBody), "println", 1)
+      assertCalls(functionBody(llvmIr, targetPrint.group(1)), "println", 1)
+      assert(targetFree.start > targetPrint.end, targetBody)
 
       assert(
-        """call %struct\.String @__clone_String""".r.findFirstIn(mainBody).isEmpty,
-        s"Consuming heap applied arg should move into the PAP without cloning. Body:\n$mainBody"
+        dtorBody.contains(s"call void @mml_free_raw(ptr ${owned.capture.consumerEnvironment})")
       )
-      assert(
-        !mainBody.contains("@__free_String"),
-        s"Source binding should not be freed after moving into the PAP. Body:\n$mainBody"
-      )
-      assert(
-        freeIdx >= 0 && rawIdx > freeIdx,
-        s"PAP env destructor should free owned heap field before raw env free. Body:\n$dtorBody"
-      )
-      assert(
-        !rawDtorBody.contains("@__free_String") && rawDtorBody.contains("@mml_free_raw"),
-        s"Raw-only PAP destructor should free only the env after full application. Body:\n$rawDtorBody"
-      )
+      assertPapDroppedAfterCall(llvmIr, mainBody, papName, value, 0, returnType = "void")
     }
   }
 
-  // These assertions require passing captures as trailing parameters. The local-entry optimization
-  // only selects non-capturing lambdas; capture elimination remains separate work.
-  test("local capturing loopified Direct function uses trailing captures".ignore) {
+  test("local capturing loopified function loads its step from a stack environment") {
     val source =
       """
       pub fn main(): Int =
@@ -577,30 +552,36 @@ class TailRecursionLoopificationTest extends BaseEffFunSuite:
       """
 
     compileAndGenerate(source, config = CompilerConfig.default.copy(noTco = false)).map { llvmIr =>
-      val directMatch =
-        """define internal i32 @(test_loop_\d+)\(i32 %0, i32 %1, i32 %2\) #0 \{""".r
-          .findFirstMatchIn(llvmIr)
-          .getOrElse(fail(s"Missing loopified direct loop entry with capture param. IR:\n$llvmIr"))
-      val directName = directMatch.group(1)
-      val directBody =
-        functionBodyMatching(llvmIr, s"$directName\\(i32 %0, i32 %1, i32 %2\\) #0")
+      val mainBody = functionBody(llvmIr, "test_main")
+      val loopName = closureEntry(mainBody)
+      val loopBody = functionBody(llvmIr, loopName)
+      val capture  = assertCaptureField(mainBody, loopBody, "i32")
+      val value    = closureValue(mainBody, loopName, capture.ownerEnvironment)
+      val load = uniqueMatch(
+        loopBody,
+        s"${Regex.quote(capture.loadedValue)} = load i32, ptr %[^,]+"
+      )
+      val accumulator = uniqueMatch(loopBody, "(%[^ ]+) = phi i32 \\[ %1, %entry \\]").group(1)
 
-      assert(
-        directBody.contains("loop.header:") && directBody.contains("phi i32"),
-        s"Capturing Direct loop entry should be loopified. Body:\n$directBody"
+      assertEquals(capture.storedValue, "2")
+      assertEquals(capture.fieldIndex, "0")
+      assert(llvmIr.contains(s"${capture.layout} = type { i32 }"), llvmIr)
+      assert(mainBody.contains(s"${capture.ownerEnvironment} = alloca ${capture.layout}"), mainBody)
+      closureInvocation(
+        mainBody,
+        returnType      = "i32",
+        argumentPattern = "i32 3, i32 0",
+        pairPattern     = Regex.quote(value),
+        entryPattern    = Regex.quote(loopName)
       )
-      assert(
-        !llvmIr.contains(s"define internal i32 @$directName(i32 %0, i32 %1, ptr %2) #0"),
-        s"Capturing Direct loop entry must not accept a closure env. IR:\n$llvmIr"
-      )
-      assert(
-        !directBody.contains(s"call i32 @$directName"),
-        s"Loopified body should jump through the loop header, not recurse. Body:\n$directBody"
-      )
-      assert(
-        !llvmIr.contains("__closure_env") && !llvmIr.contains("malloc"),
-        s"Capturing Direct loop entry should use trailing captures, not env allocation. IR:\n$llvmIr"
-      )
+      assert(loopBody.indexOf("loop.header:") > load.end, loopBody)
+      assert(loopBody.contains(s"add i32 $accumulator, ${capture.loadedValue}"), loopBody)
+      assertEquals(phiCount(loopBody), 2)
+      assertPhiPredecessors(loopBody)
+      assertCalls(loopBody, loopName, 0)
+      assertCalls(mainBody, "malloc", 0)
+      assertCalls(mainBody, "test___free_closure", 0)
+      assert(!mainBody.contains("store ptr @") && !loopBody.contains("alloca"), llvmIr)
     }
   }
 
@@ -740,7 +721,7 @@ class TailRecursionLoopificationTest extends BaseEffFunSuite:
     }
   }
 
-  test("named loopified function used as a value keeps a closure-entry wrapper [parent c7e9078]") {
+  test("named loopified function used as a value keeps a closure-entry wrapper") {
     val source =
       """
       fn apply(f: Int -> Int): Int = f 41;;
@@ -757,33 +738,27 @@ class TailRecursionLoopificationTest extends BaseEffFunSuite:
       """
 
     compileAndGenerate(source, config = CompilerConfig.default.copy(noTco = false)).map { llvmIr =>
-      val applyBody = functionBodyMatching(llvmIr, "test_apply\\(\\{ ptr, ptr \\} %0\\) #0")
-      val mainBody  = functionBodyMatching(llvmIr, "test_main\\(\\) #0")
-      val wrapperMatch =
-        """(?s)define internal i32 @(test__anon_\d+)\(i32 %0, ptr %1\) #0 \{\n(.*?)\n\}""".r
-          .findFirstMatchIn(llvmIr)
-          .getOrElse(fail(s"Missing closure-entry wrapper. IR:\n$llvmIr"))
-      val wrapperName = wrapperMatch.group(1)
-      val wrapperBody = wrapperMatch.group(2)
+      val applyBody = functionBody(llvmIr, "test_apply")
+      val mainBody  = functionBody(llvmIr, "test_main")
+      val wrapperName = uniqueMatch(
+        mainBody,
+        s"call i32 @test_apply\\(\\{ ptr, ptr \\} $nullEnvironmentClosure\\)"
+      ).group("entry")
+      val wrapperBody = functionBodyMatching(
+        llvmIr,
+        s"${Regex.quote(wrapperName)}\\(i32 %0, ptr %1\\) #0"
+      )
+      val loopBody = functionBodyMatching(llvmIr, "test_down\\(i32 %0\\) #0")
 
-      assert(
-        llvmIr.contains("define internal i32 @test_down(i32 %0) #0"),
-        s"Direct loopified function should use plain ABI. IR:\n$llvmIr"
-      )
-      assert(
-        wrapperBody.contains("call i32 @test_down(i32 %0)"),
-        s"Wrapper should forward to the plain direct symbol. Body:\n$wrapperBody"
-      )
-      assert(
-        """call i32 %\d+\(i32 41, ptr %\d+\)""".r.findFirstIn(applyBody).nonEmpty,
-        s"Higher-order call should still pass the extracted env. Body:\n$applyBody"
-      )
-      assert(
-        mainBody.contains(s"call i32 @test_apply({ ptr, ptr } { ptr @$wrapperName, ptr null })") &&
-          mainBody.contains("call i32 @test_down(i32 3)") &&
-          !mainBody.contains("call i32 @test_down(i32 3, ptr null)"),
-        s"main should use both the wrapper value and the direct plain call. Body:\n$mainBody"
-      )
+      assert(wrapperBody.contains("call i32 @test_down(i32 %0)"), wrapperBody)
+      assertCalls(wrapperBody, "test_down", 1)
+      indirectClosureInvocation(applyBody, "%0", "i32", "i32 41")
+      assert(mainBody.contains("call i32 @test_down(i32 3)"), mainBody)
+      assertCalls(mainBody, "test_down", 1)
+      assert(loopBody.contains("loop.header:"), loopBody)
+      assertEquals(phiCount(loopBody), 1)
+      assertPhiPredecessors(loopBody)
+      assertCalls(loopBody, "test_down", 0)
     }
   }
 
@@ -806,32 +781,31 @@ class TailRecursionLoopificationTest extends BaseEffFunSuite:
 
     compileAndGenerate(source, config = CompilerConfig.default.copy(noTco = false)).map { llvmIr =>
       val mainBody = functionBody(llvmIr, "test_main")
-      val wrapperName = """store \{ ptr, ptr \} \{ ptr @([^, ]+), ptr null \}""".r
-        .findFirstMatchIn(mainBody)
-        .getOrElse(fail(mainBody))
-        .group(1)
-      val wrapperBody = functionBody(llvmIr, wrapperName)
-      val directName = """call i32 @([^ (]+)\(i32 %\d+, i32 %\d+\)""".r
-        .findFirstMatchIn(wrapperBody)
-        .getOrElse(fail(wrapperBody))
-        .group(1)
-      val directBody = functionBody(llvmIr, directName)
+      val wrapperName = uniqueMatch(
+        mainBody,
+        s"store \\{ ptr, ptr \\} $nullEnvironmentClosure"
+      ).group("entry")
+      val wrapperBody = functionBodyMatching(
+        llvmIr,
+        s"${Regex.quote(wrapperName)}\\(i32 %0, i32 %1, ptr %2\\) #0"
+      )
+      val directName = uniqueMatch(
+        wrapperBody,
+        "call i32 @([^ (]+)\\(i32 %0, i32 %1\\)"
+      ).group(1)
+      val directBody = functionBodyMatching(
+        llvmIr,
+        s"${Regex.quote(directName)}\\(i32 %0, i32 %1\\) #0"
+      )
+      val facBody = functionBody(llvmIr, closureEntry(mainBody))
 
-      assert(
-        directBody.contains("loop.header:") && directBody.contains("phi i32"),
-        s"Direct factorial_tco entry should be loopified. Body:\n$directBody"
-      )
-      assert(
-        !llvmIr.contains(s"define internal i32 @$directName(i32 %0, i32 %1, ptr %2) #0"),
-        s"Direct factorial_tco entry must not accept a closure env. IR:\n$llvmIr"
-      )
-      assert(
-        wrapperBody.contains(s"call i32 @$directName(i32 %0, i32 %1)"),
-        s"Closure-entry wrapper should forward to plain direct symbol. Body:\n$wrapperBody"
-      )
-      assert(
-        llvmIr.contains(s"{ ptr @$wrapperName, ptr null }"),
-        s"First-class materialization should use the closure-entry wrapper. IR:\n$llvmIr"
-      )
+      assertCalls(wrapperBody, directName, 1)
+      assertCalls(facBody, directName, 1)
+      assert(facBody.contains(s"call i32 @$directName(i32 %0, i32 1)"), facBody)
+      assert(directBody.contains("loop.header:"), directBody)
+      assertEquals(phiCount(directBody), 2)
+      assertPhiPredecessors(directBody)
+      assertCalls(directBody, directName, 0)
+      assert(!directBody.contains("load ") && !directBody.contains("alloca"), directBody)
     }
   }
