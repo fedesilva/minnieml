@@ -1374,6 +1374,33 @@ Runtime object and bitcode cache keys include the embedded runtime source conten
 as target and compiler flags. A cache miss refreshes the extracted C source before compiling.
 Changes to runtime layouts require rebuilding generated program objects and libraries.
 
+### AddressSanitizer instrumentation
+
+With `-s`, the emitter adds `sanitize_address` to both shared function attribute groups.
+This includes ordinary functions, closure and PAP entries, destructors, native adapters,
+global initializers, and the executable entry point. The attribute enables instrumentation;
+the LLVM ASan pass inserts the memory-access checks.
+
+Sanitized executable builds defer LLVM passes while compiling runtime bitcode with Clang's
+`-Xclang -disable-llvm-passes`. The linked module therefore contains sanitizer-eligible
+functions without the `nosanitize_address` flag that marks completed instrumentation.
+`opt` runs optimization, internalization and dead-global elimination, then
+`asan` once on the combined module with `--asan-use-after-scope`, retaining Clang's
+stack-scope checks. The command-line option supports both LLVM 20 and LLVM 23.
+Instrumenting after internalization preserves the linkage required
+by ASan's generated globals. Runtime bitcode cache identity includes the deferred-pass flags.
+
+Sanitized library builds run ASan after optimizing the generated module, without executable
+internalization. Their separate runtime object is instrumented by Clang. Consumers must
+link both objects with `-fsanitize=address` to supply the sanitizer runtime. Ordinary builds
+omit the function attribute, deferred-pass flags, and ASan pass.
+
+`AsanInstrumentationTests` verifies emitted attributes and executes valid and deliberately
+faulty generated closure destructors through executable and library compilation at O0/O3.
+Negative controls require the ASan use-after-free diagnostic, not just a nonzero exit.
+Leak detection observes allocation reachability; generated-code access checks establish
+separate coverage for invalid reads and writes.
+
 ### Native aggregate ABI
 
 `TargetLayout` uses Clang's LLVM data layout to calculate recursive field offsets, padding,

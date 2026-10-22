@@ -1,6 +1,7 @@
 package mml.mmlclib.codegen
 
 import cats.effect.IO
+import cats.syntax.all.*
 import mml.mmlclib.compiler.CompilerConfig
 import mml.mmlclib.test.BaseEffFunSuite
 
@@ -40,8 +41,8 @@ class OwnedClosureTailRecursionTests extends BaseEffFunSuite:
       return (String){s.length, data};
     }
     void tick(void) {
-      char stack;
-      uintptr_t address = (uintptr_t)&stack;
+      // Local variables can live on ASan's fake stack; measure the actual call frame.
+      uintptr_t address = (uintptr_t)__builtin_frame_address(0);
       if (address < stack_low) stack_low = address;
       if (address > stack_high) stack_high = address;
       ++ticks;
@@ -68,11 +69,12 @@ class OwnedClosureTailRecursionTests extends BaseEffFunSuite:
   """
 
   private def verify(
-    ir:           String,
-    expected:     Int     = 0,
-    optimization: Int     = 0,
-    sanitized:    Boolean = true,
-    smallStack:   Boolean = false
+    ir:            String,
+    expected:      Int            = 0,
+    optimization:  Int            = 0,
+    sanitized:     Boolean        = true,
+    smallStack:    Boolean        = false,
+    expectedError: Option[String] = None
   ): IO[Unit] =
     IO.blocking(Files.createTempDirectory("mml-tail-cleanup"))
       .bracket { dir =>
@@ -80,17 +82,8 @@ class OwnedClosureTailRecursionTests extends BaseEffFunSuite:
         val support   = dir.resolve("runtime.c")
         val optimized = dir.resolve("optimized.ll")
         val binary    = dir.resolve("program")
-        val fixture =
-          if sanitized then
-            ir.linesIterator
-              .map { line =>
-                if line.startsWith("define ") then line.stripSuffix("{") + "sanitize_address {"
-                else line
-              }
-              .mkString("\n")
-          else ir
         IO.blocking {
-          Files.writeString(input, fixture)
+          Files.writeString(input, ir)
           Files.writeString(support, runtime)
         } *> commandNotFailed(List("llvm-as", input.toString, "-o", "/dev/null"), dir) *>
           commandNotFailed(
@@ -126,7 +119,8 @@ class OwnedClosureTailRecursionTests extends BaseEffFunSuite:
               )
             ,
             dir,
-            expected
+            expected,
+            expectedError = expectedError
           )
       } { dir =>
         IO.blocking(Files.walk(dir))
@@ -135,15 +129,16 @@ class OwnedClosureTailRecursionTests extends BaseEffFunSuite:
           }(paths => IO.blocking(paths.close()))
       }
 
+  /** Emit sanitizer-eligible IR; verify selects whether native execution uses ASan. */
   private def compile(source: String, noTco: Boolean = false): IO[String] =
-    compileAndGenerate(source, config = CompilerConfig.exe("build", noTco = noTco))
+    compileAndGenerate(source, config = CompilerConfig.exe("build", noTco = noTco, asan = true))
 
   for optimization <- List(0, 3) do
     test(s"ASan checks generated LLVM memory accesses at O$optimization") {
       verify(
         """declare ptr @malloc(i64)
           |declare void @free(ptr)
-          |define i32 @main() {
+          |define i32 @main() sanitize_address {
           |entry:
           |  %data = call ptr @malloc(i64 4)
           |  call void @free(ptr %data)
@@ -151,8 +146,9 @@ class OwnedClosureTailRecursionTests extends BaseEffFunSuite:
           |  ret i32 0
           |}
           |""".stripMargin,
-        expected     = 1,
-        optimization = optimization
+        expected      = 1,
+        optimization  = optimization,
+        expectedError = "ERROR: AddressSanitizer: heap-use-after-free".some
       )
     }
 

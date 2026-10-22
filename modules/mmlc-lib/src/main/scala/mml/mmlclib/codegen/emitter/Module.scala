@@ -26,7 +26,8 @@ def emitModule(
   targetTriple:     String,
   targetAbi:        TargetAbi,
   targetAttributes: TargetAttributes,
-  emitAliasScopes:  Boolean
+  emitAliasScopes:  Boolean,
+  sanitizeAddress:  Boolean
 ): Either[CodeGenError, EmitResult] = {
   if targetAbi == TargetAbi.Default && targetTriple.nonEmpty then
     return CodeGenError(s"Unsupported target C ABI: $targetTriple").asLeft
@@ -41,6 +42,7 @@ def emitModule(
       targetAbi,
       targetAttributes,
       emitAliasScopes,
+      sanitizeAddress,
       targets,
       locals,
       environments
@@ -55,6 +57,7 @@ private def emitPlannedModule(
   targetAbi:        TargetAbi,
   targetAttributes: TargetAttributes,
   emitAliasScopes:  Boolean,
+  sanitizeAddress:  Boolean,
   targets:          CallableTargetAnalysis,
   locals:           LocalCallableAnalysis,
   environments:     Map[String, ClosureEnvironmentLayout]
@@ -154,7 +157,10 @@ private def emitPlannedModule(
 
   // Construct the final output with all components in the proper order
   stateWithMain.map { finalState =>
-    val attributes = targetAttributes.llvm
+    val attributes =
+      (List(targetAttributes.llvm) ++ Option.when(sanitizeAddress)("sanitize_address"))
+        .filter(_.nonEmpty)
+        .mkString(" ")
     // Assemble the full output in the correct order
     val output = new StringBuilder()
 

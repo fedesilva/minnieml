@@ -2,6 +2,12 @@
 
 Durable product changes belong here. Current task state belongs in task files.
 
+## 2026-10-22
+
+- Instrument MML-generated memory accesses under `-s`, including closure destructors and
+  library output. Apply ASan after optimization and executable internalization, preserving
+  C-runtime stack-scope checks and isolating deferred runtime bitcode in the cache.
+
 ## 2026-10-21
 
 - Preserve source locations through generated local bindings for partial applications and

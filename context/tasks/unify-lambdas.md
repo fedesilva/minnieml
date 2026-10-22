@@ -37,7 +37,7 @@ regressions relevant to each correctness repair without adding those follow-ups 
 18. [x] **complete** — [B1: elaborate partial applications of returned callees](#b1-partial-application-of-a-returned-callee); review follow-up verified and signed off.
 19. [x] **complete** — [B2: accept recursive higher-order callable flow](#b2-recursive-higher-order-callable-flow); verified and signed off.
 20. [x] **complete** — [B3: preserve binding identity across recursive shadowing](#b3-recursive-shadowing-after-a-move); verified and signed off.
-21. [ ] **planned** — [T1: instrument MML-generated IR for AddressSanitizer](#t1-mml-generated-ir-lacks-addresssanitizer-instrumentation); tracked in a [separate task](asan-generated-ir.md).
+21. [x] **complete** — [T1: instrument MML-generated IR for AddressSanitizer](#t1-mml-generated-ir-lacks-addresssanitizer-instrumentation); tracked in a [separate task](asan-generated-ir.md).
 22. [ ] **planned** — [Preserve the complete application callee type in Simplifier](#fix-preserve-the-complete-application-callee-type-in-simplifier).
 23. [ ] **in_progress** — [Remaining lambda semantics and lowering](#remaining-lambda-implementation), including [restoration of all ignored regressions](#restore-ignored-regressions); deferred behind the bug repairs.
 24. [ ] **planned** — [Harden closure environment lookup](#harden-closure-environment-lookup).
@@ -921,21 +921,23 @@ Completed repairs retain their own signoff and verification records. The reporte
 roughly 30 adversarial programs passed at `-O0` and `-O3` after AddressSanitizer was applied
 to generated IR. Six fixtures whose `main` takes arguments ran with a hand-written main stub;
 those runs did not exercise the usual entry point. The check found no use-after-free,
-leak, or double free in the reviewed closure cleanup paths. The normal `-s` pipeline
-does not apply ASan to generated IR; T1 below owns that evidence gap. The review did
+leak, or double free in the reviewed closure cleanup paths. The baseline `-s` pipeline
+did not apply ASan to generated IR; T1 below owns that evidence gap. The review did
 not run the smoke harness, benchmarks, Linux/x86-64 checks, or formatting and lint checks.
 
 #### T1: MML-generated IR lacks AddressSanitizer instrumentation
 
-- **Severity:** high; **status:** planned in the separate
+- **Severity:** high; **status:** complete in the separate
   [generated-IR sanitizer task](asan-generated-ir.md).
-- **Evidence:** `-s` adds Clang sanitizer flags for the C runtime and link, but generated
-  functions have no ASan instrumentation. An injected use-after-free in a generated
+- **Baseline evidence:** `-s` added Clang sanitizer flags for the C runtime and link, but
+  generated functions had no ASan instrumentation. An injected use-after-free in a generated
   destructor escaped the normal pipeline and was detected when ASan was applied to the
-  generated IR. The normal memory harness therefore does not establish use-after-free
-  or out-of-bounds coverage in closure entries, PAP entries, or generated destructors.
-- **Dependency:** complete the separate task's instrumentation and negative control
-  before treating ordinary `-s` results as generated-code ASan evidence.
+  generated IR. That memory-harness evidence does not establish use-after-free or
+  out-of-bounds coverage in closure entries, PAP entries, or generated destructors.
+- **Implementation:** shared function attributes and a post-optimization ASan pass instrument
+  generated memory accesses. Diagnostic-specific controls, the 52-case memory harness,
+  host/Linux compiler suites, and independent review pass. The implementation is signed off in the
+  [separate task](asan-generated-ir.md#verification).
 
 #### B1: partial application of a returned callee
 
@@ -1604,12 +1606,14 @@ readability checks completed. Three placement simplifications are deferred to th
 
 ## Verification
 
-The latest branch checks for the implemented source-location repair pass formatting/lint,
+The source-location repair checks pass formatting/lint,
 1,347 library tests and nine CLI tests with 36 existing ignores, smoke 8/8, local publication,
 13 benchmark builds, and memory fixtures 52/52 on macOS arm64 with LLVM/Clang 23.1.1.
 [Ownership diagnostic evidence](ownership-diagnostic-locations.md#verification) records the
-scope and review limits. Benchmark builds are not performance measurements; the normal memory
-harness does not establish ASan coverage inside generated IR. T1 remains open.
+scope and review limits. Those memory-harness runs do not establish ASan coverage inside
+generated IR. The [generated-IR sanitizer task](asan-generated-ir.md#verification) records
+instrumentation and its verification. T1 is complete and signed off.
+Benchmark builds are not performance measurements.
 
 Final verification for the remaining correctness and robustness work is pending. Completed
 slices retain their historical results in [completed-slice evidence](#completed-slice-evidence)
@@ -1649,8 +1653,8 @@ are in `context/history/` for Author review. No compiler slice is authorized by 
 - **Branch:** `dev-2026-03-21-lambdas`.
 - **Priority and next action:** resolve remaining correctness work and the existing
   [closure-environment lookup robustness task](#harden-closure-environment-lookup), then perform
-  final verification for merge readiness. Start with the generated-IR sanitizer evidence gap
-  and reconcile unresolved correctness cases in the ignored-regression inventory.
+  final verification for merge readiness. Reconcile unresolved correctness cases in the
+  ignored-regression inventory.
 - **Deferred scope:** diagnostic, test-quality, documentation, optimization, and maintainability
   follow-ups are standalone LOW-priority backlog tasks, outside lambda completion. The implemented
   B4 evidence is owned by [ownership diagnostic locations](ownership-diagnostic-locations.md);
@@ -1662,7 +1666,7 @@ are in `context/history/` for Author review. No compiler slice is authorized by 
   is verified and signed off, with passing compiler gates and independent reviews.
 - **Branch audit:** the review findings and evidence limits are in
   [Branch review findings](#branch-review-findings). Compiler-generated ASan coverage
-  is a separate [high-priority task](asan-generated-ir.md). Remaining repairs and their
+  is implemented and signed off in the [sanitizer task](asan-generated-ir.md). Remaining repairs and their
   verification are listed in the [Execution Checklist](#execution-checklist).
 - **Tail-recursion cleanup:** [owned-closure cleanup](#bug-preserve-tail-recursion-across-owned-closure-cleanup)
   preserves eligible loops while retaining borrowed backing storage and effect order.

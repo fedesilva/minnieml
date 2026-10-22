@@ -25,14 +25,6 @@ This is the Author's active and near-term focus. The backlog lives in [tasks/](t
 - **Current focus:** After Unify lambdas, reproduce the inline failure and local-binding
   control, then plan consistent callable-type resolution.
 
-### Instrument MML-generated IR for AddressSanitizer
-
-- **Tracker:** [Instrument MML-generated IR for AddressSanitizer](tasks/asan-generated-ir.md)
-- **Status:** planned
-- **Priority:** HIGH
-- **Current focus:** Establish a durable generated-code negative control and plan
-  instrumentation of the LLVM pipeline.
-
 ### Error recovery and parser backtracking
 
 - **Tracker:** [Error recovery and parser backtracking](tasks/error-recovery-and-parser-backtracking.md)

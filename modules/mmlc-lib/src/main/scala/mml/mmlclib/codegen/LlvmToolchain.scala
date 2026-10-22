@@ -473,9 +473,13 @@ object LlvmToolchain:
     val internalizeFlags =
       if config.mode == CompilationMode.Exe then List("--internalize-public-api-list=main")
       else Nil
+    // Instrument after internalization so sanitizer globals retain their required linkage.
+    val sanitizer      = if config.asan then ",asan" else ""
+    val sanitizerFlags = if config.asan then List("--asan-use-after-scope") else Nil
     val command =
-      List("opt", s"--passes=default<O${config.optLevel}>$internalize") ++
-        cpuFlags ++ internalizeFlags ++ config.llvmOptArgs ++ List(inputFile, "-o", outputFile)
+      List("opt", s"--passes=default<O${config.optLevel}>$internalize$sanitizer") ++
+        cpuFlags ++ internalizeFlags ++ sanitizerFlags ++ config.llvmOptArgs ++
+        List(inputFile, "-o", outputFile)
     logPhase(s"Optimizing Bitcode", config.printPhases)
     logDebug(s"Input file: $inputFile", config.verbose)
     logDebug(s"Output file: $outputFile", config.verbose)
@@ -684,8 +688,17 @@ object LlvmToolchain:
     case Left(error) => IO.pure(error.asLeft)
     case Right(source) =>
       IO.defer {
+        // ASan runs once on the linked module; pre-instrumented bitcode would suppress that pass.
+        val deferredPassFlags =
+          if config.asan then List("-Xclang", "-disable-llvm-passes") else Nil
         val runtimeFilename =
-          runtimeCacheFilename(targetTriple, config.optLevel, List(target.cacheKey), "bc", source)
+          runtimeCacheFilename(
+            targetTriple,
+            config.optLevel,
+            target.cacheKey :: deferredPassFlags,
+            "bc",
+            source
+          )
         val bcPath = outputDir.resolve(runtimeFilename).toAbsolutePath
 
         logPhase("Compiling runtime bitcode", config.printPhases)
@@ -711,7 +724,7 @@ object LlvmToolchain:
                   target.executable.toString,
                   "-emit-llvm",
                   "-c"
-                ) ++ target.flags ++ List("-o", bcPath.toString, sourcePath))
+                ) ++ target.flags ++ deferredPassFlags ++ List("-o", bcPath.toString, sourcePath))
                 executeCommand(
                   cmd,
                   "Failed to compile MML runtime bitcode",
@@ -784,6 +797,8 @@ object LlvmToolchain:
           if config.targetTriple.isDefined then s"$baseName-$targetTriple" else baseName
         targetDirPath.resolve(finalName).toString
     val inputFile = outputDir.resolve(s"$programName.s").toAbsolutePath.toString
+    // Frame-pointer selection applies when compiling IR or C, not when linking assembly.
+    val linkFlags = target.flags.filterNot(_ == "-fno-omit-frame-pointer")
 
     val outputPath = Paths.get(finalExecutablePath)
     val parentDir  = outputPath.getParent
@@ -795,7 +810,7 @@ object LlvmToolchain:
 
     timedStep("llvm-compile-binary", recordTiming)(
       executeCommand(
-        List(target.executable.toString, "-fuse-ld=lld") ++ target.flags ++
+        List(target.executable.toString, "-fuse-ld=lld") ++ linkFlags ++
           List(inputFile) ++ linkEntries.map(entry => s"-l${entry.name}") ++
           List("-o", finalExecutablePath),
         "Failed to compile and link",

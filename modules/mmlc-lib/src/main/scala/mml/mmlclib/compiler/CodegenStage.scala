@@ -82,7 +82,8 @@ object CodegenStage:
               triple,
               targetAbi,
               target.attributes,
-              state.config.emitScopedAlias
+              state.config.emitScopedAlias,
+              state.config.asan
             ) match
               case Right(result) =>
                 // Lift codegen warnings to compiler state

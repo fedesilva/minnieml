@@ -28,6 +28,15 @@ object LlvmIrEmitter:
     targetTriple:     String,
     targetAbi:        TargetAbi,
     targetAttributes: TargetAttributes,
-    emitAliasScopes:  Boolean
+    emitAliasScopes:  Boolean,
+    sanitizeAddress:  Boolean = false
   ): Either[CodeGenError, EmitResult] =
-    emitModule(module, entryPoint, targetTriple, targetAbi, targetAttributes, emitAliasScopes)
+    emitModule(
+      module,
+      entryPoint,
+      targetTriple,
+      targetAbi,
+      targetAttributes,
+      emitAliasScopes,
+      sanitizeAddress
+    )

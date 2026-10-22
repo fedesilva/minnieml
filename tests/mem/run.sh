@@ -63,7 +63,7 @@ run_mem() {
     compile_start=$(date +%s)
     progress "[mem] ($current/$total) compiling $name ..."
 
-    # Compile once with ASan instrumentation; leak detection runs via ASAN_OPTIONS.
+    # Instrument generated code and the C runtime; ASAN_OPTIONS also enables leak detection.
     if mmlc -s -O0 -b "$BUILD_DIR" -o "$binary" "$src" > /dev/null 2>&1; then
       compile_end=$(date +%s)
       compile_elapsed=$((compile_end - compile_start))

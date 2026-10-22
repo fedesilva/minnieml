@@ -162,6 +162,12 @@ Run when changes touch memory management or ownership:
 
 All tests must pass both ASan and leaks checks.
 
+`-s` instruments generated LLVM code and the C runtime. The compiler runs the ASan pass
+after optimization and executable internalization. Leak detection is enabled by the harness's
+`ASAN_OPTIONS`. The `AsanInstrumentationTests` suite checks this pipeline with deliberate
+generated-code access errors and valid controls at O0/O3, including library output. A passing
+memory fixture means no sanitizer error was detected on its executed paths.
+
 ## Benchmarks
 
 Run after publishing:

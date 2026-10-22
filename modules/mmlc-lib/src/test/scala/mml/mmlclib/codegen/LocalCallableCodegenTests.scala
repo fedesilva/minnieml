@@ -44,10 +44,11 @@ class LocalCallableCodegenTests extends BaseEffFunSuite:
     * against the small support runtime above. The program's exit status checks its computed result.
     */
   private def verify(
-    ir:           String,
-    expected:     Int,
-    sanitized:    Boolean = false,
-    optimization: Int     = 0
+    ir:            String,
+    expected:      Int,
+    sanitized:     Boolean        = false,
+    optimization:  Int            = 0,
+    expectedError: Option[String] = None
   ): IO[Unit] =
     withDirectory { dir =>
       val input   = dir.resolve("program.ll")
@@ -83,10 +84,11 @@ class LocalCallableCodegenTests extends BaseEffFunSuite:
         ) *>
         programExits(
           (if sanitized then
-             List("env", "ASAN_OPTIONS=detect_leaks=1:halt_on_error=1:abort_on_error=1")
+             List("env", "ASAN_OPTIONS=detect_leaks=1:halt_on_error=1:abort_on_error=0")
            else Nil) :+ binary.toString,
           dir,
-          expected
+          expected,
+          expectedError = expectedError
         )
     }
 
@@ -141,8 +143,29 @@ class LocalCallableCodegenTests extends BaseEffFunSuite:
     assert(!body.contains("alloca "), body)
     assert(!body.contains("@malloc"), body)
 
+  /** Emit sanitizer-eligible IR; verify selects whether native execution uses ASan. */
   private def compile(source: String, noTco: Boolean = false): IO[String] =
-    compileAndGenerate(source, config = CompilerConfig.exe("build", noTco = noTco))
+    compileAndGenerate(source, config = CompilerConfig.exe("build", noTco = noTco, asan = true))
+
+  for optimization <- List(0, 3) do
+    test(s"native verification detects generated memory-access errors at O$optimization") {
+      verify(
+        """declare ptr @malloc(i64)
+          |declare void @free(ptr)
+          |define i32 @main() sanitize_address {
+          |entry:
+          |  %data = call ptr @malloc(i64 4)
+          |  call void @free(ptr %data)
+          |  %value = load volatile i32, ptr %data
+          |  ret i32 0
+          |}
+          |""".stripMargin,
+        expected      = 1,
+        sanitized     = true,
+        optimization  = optimization,
+        expectedError = "ERROR: AddressSanitizer: heap-use-after-free".some
+      )
+    }
 
   List(0, 3).foreach { optimization =>
     test(s"recursive shadowing after a move preserves the result and cleanup at O$optimization") {

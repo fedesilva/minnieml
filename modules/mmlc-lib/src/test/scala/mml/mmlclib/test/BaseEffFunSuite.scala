@@ -22,12 +22,13 @@ trait BaseEffFunSuite extends CatsEffectSuite with LlvmAssertions:
       .executeCommand(command, "Fixture command failed", workingDir, verbose = false)
       .map(_.fold(error => fail(error.message), code => assertEquals(code, 0)))
 
-  /** Assert a fixture program's exit code and optional stdout, capturing diagnostics on failure. */
+  /** Assert a fixture's exit code, optional stdout, and diagnostic text on stderr. */
   protected def programExits(
     command:        List[String],
     workingDir:     Path,
     expectedCode:   Int,
-    expectedOutput: Option[List[String]] = None
+    expectedOutput: Option[List[String]] = None,
+    expectedError:  Option[String]       = None
   ): IO[Unit] =
     IO.blocking {
       // The child's stdout and stderr callbacks can run concurrently.
@@ -48,6 +49,7 @@ trait BaseEffFunSuite extends CatsEffectSuite with LlvmAssertions:
       expectedOutput.foreach(expected =>
         assertEquals(stdout.toString.linesIterator.toList, expected, diagnostic)
       )
+      expectedError.foreach(expected => assert(stderr.toString.contains(expected), diagnostic))
     }
 
   final case class SemanticResult(module: Module, errors: List[SemanticError])
