@@ -14,6 +14,8 @@ Do not read or act on them unless directed to do so explicitely.
 
 * NEEDS A TASK: 
   * split ownership analyzer into files within a subpackage.
+  * organize the samples in subfolders
+    * remove crap, work interactively.
 
 
 ## Abridged hand-wavy roadmap
