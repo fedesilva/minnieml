@@ -638,7 +638,7 @@ private def validateTermAgainstBorrowClosures(
       Right(())
 
 private def validateCalleeAgainstBorrowClosures(
-  callee:         Ref | App | Lambda,
+  callee:         Callee,
   activeClosures: Set[String],
   shadowedNames:  Set[String]
 ): Either[CodeGenError, Unit] =

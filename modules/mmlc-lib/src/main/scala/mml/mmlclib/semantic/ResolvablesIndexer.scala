@@ -76,7 +76,7 @@ object ResolvablesIndexer:
         ref.qualifier.toList.flatMap(collectParamsFromTerm)
       case _ => Nil
 
-  private def collectParamsFromAppFn(fn: Ref | App | Lambda): List[FnParam] =
+  private def collectParamsFromAppFn(fn: Callee): List[FnParam] =
     fn match
       case lambda: Lambda =>
         lambda.params ++ lambda.meta.flatMap(_.environmentParam).toList ++

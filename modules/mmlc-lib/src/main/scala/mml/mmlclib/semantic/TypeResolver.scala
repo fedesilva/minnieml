@@ -309,10 +309,10 @@ object TypeResolver:
 
   /** Rewrite App.fn to handle type ascriptions with invalid types */
   private def rewriteAppFnWithInvalidTypes(
-    fn:     Ref | App | Lambda,
+    fn:     Callee,
     member: Member,
     module: Module
-  ): Ref | App | Lambda =
+  ): Callee =
     fn match
       case ref: Ref =>
         val updatedQualifier =
@@ -606,12 +606,12 @@ object TypeResolver:
         // Other terms don't have type ascriptions that need resolution
         term.asRight[List[SemanticError]]
 
-  /** Resolve type references in App.fn (which can be Ref | App | Lambda) */
+  /** Resolve type references in application callees */
   private def resolveAppFn(
-    fn:      Ref | App | Lambda,
+    fn:      Callee,
     member:  Member,
     typeMap: Map[String, ResolvableType]
-  ): Either[List[SemanticError], Ref | App | Lambda] =
+  ): Either[List[SemanticError], Callee] =
     fn match
       case ref: Ref =>
         ref.typeAsc

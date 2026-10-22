@@ -207,7 +207,7 @@ class OwnershipExpressionTests extends BaseEffFunSuite:
     def lambda(value: Lambda): Lambda = value.copy(body = expression(value.body))
 
     def application(app: App): App =
-      val fn: Ref | App | Lambda = app.fn match
+      val fn: Callee = app.fn match
         case l: Lambda => lambda(l)
         case a: App => application(a)
         case r: Ref => r

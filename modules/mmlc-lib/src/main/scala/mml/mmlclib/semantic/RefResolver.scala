@@ -116,11 +116,11 @@ object RefResolver:
 
   /** Rewrite App.fn to use InvalidExpression for undefined references */
   private def rewriteAppFnWithInvalidExpressions(
-    fn:          Ref | App | Lambda,
+    fn:          Callee,
     member:      Member,
     module:      Module,
     extraParams: List[FnParam]
-  ): Ref | App | Lambda =
+  ): Callee =
     fn match
       case ref: Ref =>
         ref.qualifier match
@@ -272,13 +272,13 @@ object RefResolver:
       expr.copy(terms = updatedTerms)
     }
 
-  /** Resolve references in App.fn (which can be Ref | App | Lambda) */
+  /** Resolve references in application callees */
   private def resolveAppFn(
-    fn:          Ref | App | Lambda,
+    fn:          Callee,
     member:      Member,
     module:      Module,
     extraParams: List[FnParam]
-  ): Either[List[SemanticError], Ref | App | Lambda] =
+  ): Either[List[SemanticError], Callee] =
     fn match
       case ref: Ref =>
         ref.qualifier match

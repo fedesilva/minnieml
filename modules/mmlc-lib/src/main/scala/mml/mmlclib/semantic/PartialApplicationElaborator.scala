@@ -174,7 +174,7 @@ object PartialApplicationElaborator:
       // Callable flow retains the original call's origin across argument materialization.
       callableOrigin = Expr(first.result.source, List(first.result), typeSpec = resultType.some)
       localValues    = values.withBindings(List(local.param -> callableOrigin))
-      continuation = laterApplications.foldLeft[Ref | App | Lambda](
+      continuation = laterApplications.foldLeft[Callee](
         local.ref
       ) { case (callee, application) =>
         application.copy(fn = callee)
@@ -291,7 +291,7 @@ object PartialApplicationElaborator:
     def nodes(current: App, outer: List[App]): List[App] = current.fn match
       case inner: App => nodes(inner, current :: outer)
       case _ => current :: outer
-    nodes(app, Nil).zip(args).foldLeft[Ref | App | Lambda](callee) { case (fn, (original, arg)) =>
+    nodes(app, Nil).zip(args).foldLeft[Callee](callee) { case (fn, (original, arg)) =>
       original.copy(fn = fn, arg = arg)
     } match
       case result: App => result
@@ -363,9 +363,8 @@ object PartialApplicationElaborator:
       val allArgs = supplied.map(_.expression) ++ remaining.map { local =>
         Expr(app.source, List(local.ref), typeSpec = local.param.typeSpec)
       }
-      val fullApp = allArgs.zipWithIndex.foldLeft[Ref | App | Lambda](callee) {
-        case (fn, (arg, position)) =>
-          App(app.source, fn, arg, typeSpec = appliedType(signature, position + 1).some)
+      val fullApp = allArgs.zipWithIndex.foldLeft[Callee](callee) { case (fn, (arg, position)) =>
+        App(app.source, fn, arg, typeSpec = appliedType(signature, position + 1).some)
       }
       val payloads = supplied.zip(signature.paramTypes.toList).zipWithIndex.collect {
         case ((prepared, tpe), position) if TypeUtils.requiresDestruction(tpe, index) =>

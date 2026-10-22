@@ -207,7 +207,7 @@ object CaptureAnalyzer:
         t.elements.toList.flatMap(collectRefsFromExpr)
       case _ => Nil
 
-  private def collectRefsFromAppFn(fn: Ref | App | Lambda): List[Ref] =
+  private def collectRefsFromAppFn(fn: Callee): List[Ref] =
     fn match
       case ref: Ref =>
         val qualifierRefs = ref.qualifier.toList.flatMap(collectRefsFromTerm)
@@ -244,7 +244,7 @@ object CaptureAnalyzer:
       case _ => Nil
 
   private def collectNestedLambdasAppFn(
-    fn: Ref | App | Lambda
+    fn: Callee
   ): List[Lambda] =
     fn match
       case ref: Ref => collectNestedLambdasTerm(ref)
@@ -254,10 +254,10 @@ object CaptureAnalyzer:
       case lambda: Lambda => List(lambda)
 
   private def analyzeAppFn(
-    fn:        Ref | App | Lambda,
+    fn:        Callee,
     localIds:  Set[String],
     moduleIds: Set[String]
-  ): Ref | App | Lambda =
+  ): Callee =
     fn match
       case ref: Ref => analyzeRef(ref, localIds, moduleIds)
       case app: App =>

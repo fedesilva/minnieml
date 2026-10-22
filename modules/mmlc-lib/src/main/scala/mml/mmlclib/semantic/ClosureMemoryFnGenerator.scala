@@ -206,7 +206,7 @@ object ClosureMemoryFnGenerator:
     def rewriteExpr(expr: Expr): Allocation[Expr] =
       expr.terms.traverse(rewriteTerm).map(terms => expr.copy(terms = terms))
 
-    def rewriteCallable(term: Ref | App | Lambda): Allocation[Ref | App | Lambda] = term match
+    def rewriteCallable(term: Callee): Allocation[Callee] = term match
       case ref: Ref =>
         ref.qualifier.traverse(rewriteTerm).map(q => ref.copy(qualifier = q))
       case lambda: Lambda =>
@@ -229,7 +229,7 @@ object ClosureMemoryFnGenerator:
     def rewriteTerm(term: Term): Allocation[Term] = term match
       case invalid: InvalidExpression =>
         rewriteExpr(invalid.originalExpr).map(original => invalid.copy(originalExpr = original))
-      case callable: (Ref | App | Lambda) => rewriteCallable(callable).widen
+      case callable: Callee => rewriteCallable(callable).widen
       case cond:     Cond =>
         for
           predicate <- rewriteExpr(cond.cond)

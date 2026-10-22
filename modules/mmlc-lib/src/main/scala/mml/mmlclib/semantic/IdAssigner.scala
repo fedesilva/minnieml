@@ -101,9 +101,9 @@ object IdAssigner:
     case other => other.pure[Allocation]
 
   private def assignIdsToAppFn(
-    fn:    Ref | App | Lambda,
+    fn:    Callee,
     owner: BindingOwner
-  ): Allocation[Ref | App | Lambda] = fn match
+  ): Allocation[Callee] = fn match
     case lambda: Lambda => assignLambda(lambda, owner).widen
     case app:    App =>
       for

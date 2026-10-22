@@ -30,7 +30,7 @@ class SyntheticLocalResolutionTests extends BaseEffFunSuite:
       case ref: Ref => ref.qualifier.toList.flatMap(collectParams)
       case _ => Nil
 
-  private def collectParamsFromAppFn(fn: Ref | App | Lambda): List[FnParam] =
+  private def collectParamsFromAppFn(fn: Callee): List[FnParam] =
     fn match
       case _:      Ref => Nil
       case app:    App => collectParamsFromAppFn(app.fn) ++ collectParams(app.arg)
@@ -50,7 +50,7 @@ class SyntheticLocalResolutionTests extends BaseEffFunSuite:
       case ref: Ref => ref :: ref.qualifier.toList.flatMap(collectRefs)
       case _ => Nil
 
-  private def collectRefsFromAppFn(fn: Ref | App | Lambda): List[Ref] =
+  private def collectRefsFromAppFn(fn: Callee): List[Ref] =
     fn match
       case ref:    Ref => collectRefs(ref)
       case app:    App => collectRefs(app)

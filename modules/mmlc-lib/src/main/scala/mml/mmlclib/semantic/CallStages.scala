@@ -7,7 +7,7 @@ import mml.mmlclib.ast.*
 object CallStages:
 
   final case class Stage(
-    callee:       Ref | App | Lambda,
+    callee:       Callee,
     applications: List[App],
     signature:    Option[TypeFn],
     result:       App,
@@ -31,7 +31,7 @@ object CallStages:
         case inner:  App => applications(inner, current :: collected)
         case callee: (Ref | Lambda) => (callee, current :: collected)
 
-    def signature(callee: Ref | App | Lambda): Option[TypeFn] =
+    def signature(callee: Callee): Option[TypeFn] =
       val declaredType = callee match
         case ref: Ref =>
           ref.resolvedId
@@ -49,7 +49,7 @@ object CallStages:
 
     @scala.annotation.tailrec
     def partition(
-      callee:    Ref | App | Lambda,
+      callee:    Callee,
       remaining: List[App],
       stages:    List[Stage]
     ): List[Stage] =

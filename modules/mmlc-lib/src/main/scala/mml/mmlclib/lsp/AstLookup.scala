@@ -82,7 +82,7 @@ object AstLookup:
         findRefsInExprAt(inv.originalExpr, line, col)
       case _ => Nil
 
-  private def findRefsInAppFnAt(fn: Ref | App | Lambda, line: Int, col: Int): List[Ref] =
+  private def findRefsInAppFnAt(fn: Callee, line: Int, col: Int): List[Ref] =
     fn match
       case ref: Ref =>
         findRefsInTermAt(ref, line, col)
@@ -482,7 +482,7 @@ object AstLookup:
     col:    Int,
     module: Module
   ): List[SrcSpan] =
-    def findFnRefAtCursor(fn: Ref | App | Lambda): Option[Ref] =
+    def findFnRefAtCursor(fn: Callee): Option[Ref] =
       fn match
         case ref:      Ref if isValidSpan(ref) && containsPosition(ref, line, col) => Some(ref)
         case innerApp: App => findFnRefAtCursor(innerApp.fn)

@@ -1831,7 +1831,7 @@ object OwnershipAnalyzer:
     ): Allocation[StagedExpression] = remaining match
 
       case AnalyzedCallStage(stage, prepared) :: rest =>
-        val applied = prepared.arguments.foldLeft[Ref | App | Lambda](callee) { (fn, argument) =>
+        val applied = prepared.arguments.foldLeft[Callee](callee) { (fn, argument) =>
           argument.copy(fn = fn)
         }
         val value = Expr(stage.result.source, List(applied), typeSpec = stage.resultType)
@@ -2124,8 +2124,8 @@ object OwnershipAnalyzer:
     val analyzed = analyzeArguments(arguments, scope)
 
     val fnResult = analyzeCallee(baseFn, analyzed.scope)
-    val applied = analyzed.arguments.foldLeft[Ref | App | Lambda](fnResult.term):
-      (callee, argument) => argument.copy(fn = callee)
+    val applied = analyzed.arguments.foldLeft[Callee](fnResult.term): (callee, argument) =>
+      argument.copy(fn = callee)
 
     val callExpr = Expr(syntheticSource, List(applied), typeSpec = typeSpec)
     val (cleanupIds, withCleanup) = wrapWithFrees(

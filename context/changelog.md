@@ -4,6 +4,9 @@ Durable product changes belong here. Current task state belongs in task files.
 
 ## 2026-10-22
 
+- Preserve computed and declared expression types during simplification. Share the `Callee`
+  type across the compiler and simplify application heads without unchecked casts, retaining
+  binding identities and recursive argument and qualifier simplification.
 - Instrument MML-generated memory accesses under `-s`, including closure destructors and
   library output. Apply ASan after optimization and executable internalization, preserving
   C-runtime stack-scope checks and isolating deferred runtime bitcode in the cache.

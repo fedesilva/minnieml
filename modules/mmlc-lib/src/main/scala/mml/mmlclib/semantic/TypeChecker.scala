@@ -136,7 +136,7 @@ object TypeChecker:
     val tracked = params.map(param => param.name -> param).toMap
 
     def walkAppFn(
-      fn:    Ref | App | Lambda,
+      fn:    Callee,
       state: LambdaInferenceState
     ): LambdaInferenceState =
       fn match
@@ -228,7 +228,7 @@ object TypeChecker:
           case lambda: Lambda => walkExpr(lambda.body)
           case e:      Expr => walkExpr(e)
           case _ => ()
-        def walkAppFn(fn: Ref | App | Lambda): Unit = fn match
+        def walkAppFn(fn: Callee): Unit = fn match
           case ref: Ref => walkTerm(ref)
           case app: App =>
             walkAppFn(app.fn)
@@ -913,7 +913,7 @@ object TypeChecker:
     // Phase 2: Validate function shape, determine application type, and build result
     val checkedFn  = checkedFnEither.value
     val checkedArg = checkedArgEither.value
-    val normalizedFn: Ref | App | Lambda = checkedFn match
+    val normalizedFn: Callee = checkedFn match
       case ref:      Ref => ref
       case innerApp: App => innerApp
       case lambda:   Lambda => lambda

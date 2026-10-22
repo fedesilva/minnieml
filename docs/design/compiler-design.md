@@ -94,8 +94,8 @@ Expressions are built from terms:
 - **`TermGroup`**: Parenthesized expression `(expr)`
 - **`Cond`**: Conditional expression `if cond then expr1 else expr2`
 - **`App`**: Function application (curried: `f x y` becomes `((f x) y)`)
-  - Note: `fn` field is constrained to `Ref | App | Lambda`; parser-lowered scoped bindings and
-    direct lambda application rely on the `Lambda` case.
+  - The `fn` field uses `Callee`, an alias for `Ref | App | Lambda`; parser-lowered scoped
+    bindings and direct lambda application rely on the `Lambda` case.
 - **`Lambda`**: First-class callable value used for:
   - top-level `fn` / `op` bodies wrapped in `Bnd`
   - literal lambdas (`{ x -> body }`, `~{ x -> body }`)
@@ -687,9 +687,13 @@ let f = get_value;
 ```
 
 **Behavior**:
-- Recursively simplifies all terms
+- Recursively simplifies expressions, groups, applications, reference qualifiers, conditionals,
+  and tuples; lambda bodies pass through this phase unchanged
 - Preserves `Expr` wrapper for member bodies and conditional branches
-- Transfers type ascriptions when unwrapping
+- Preserves computed types and declared ascriptions when rebuilding expressions
+- Simplifies application callees through the exhaustive `Callee` type, preserving lambda heads
+  and recursively simplifying application arguments and reference qualifiers
+- Transfers a group's type ascription when its simplified contents remain an `Expr`
 
 **AST rewrites**:
 - Removes unnecessary `Expr` and `TermGroup` nesting

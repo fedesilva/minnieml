@@ -98,7 +98,7 @@ object TailRecursionDetector:
     case other => other
 
   private def rewriteApp(app: App): App =
-    val updatedFn: Ref | App | Lambda = app.fn match
+    val updatedFn: Callee = app.fn match
       case lambda: Lambda => lambda.copy(body = rewriteLetBoundLambdas(lambda.body))
       case nested: App => rewriteApp(nested)
       case ref:    Ref => ref.copy(qualifier = ref.qualifier.map(rewriteTerm))

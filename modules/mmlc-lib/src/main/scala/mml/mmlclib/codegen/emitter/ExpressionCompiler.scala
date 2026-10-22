@@ -518,7 +518,7 @@ private def termReferencesBinding(term: Term, targetId: String): Boolean =
     case _ =>
       false
 
-private def appFnReferencesBinding(fn: Ref | App | Lambda, targetId: String): Boolean =
+private def appFnReferencesBinding(fn: Callee, targetId: String): Boolean =
   fn match
     case ref:    Ref => termReferencesBinding(ref, targetId)
     case app:    App => termReferencesBinding(app, targetId)

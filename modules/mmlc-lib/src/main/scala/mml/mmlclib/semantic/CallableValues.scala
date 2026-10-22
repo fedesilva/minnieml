@@ -346,7 +346,7 @@ object CallableValues:
 
   def application(app: App): (Ref | Lambda, List[Expr]) =
     @scala.annotation.tailrec
-    def loop(fn: Ref | App | Lambda, args: List[Expr]): (Ref | Lambda, List[Expr]) =
+    def loop(fn: Callee, args: List[Expr]): (Ref | Lambda, List[Expr]) =
       fn match
         case inner:  App => loop(inner.fn, inner.arg :: args)
         case callee: (Ref | Lambda) => (callee, args)

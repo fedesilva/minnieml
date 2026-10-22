@@ -63,9 +63,12 @@ case class Cond(
   typeAsc:  Option[Type] = None
 ) extends Term
 
+/** Terms permitted in an application's callee position. */
+type Callee = Ref | App | Lambda
+
 case class App(
   source:   SourceOrigin,
-  fn:       Ref | App | Lambda,
+  fn:       Callee,
   arg:      Expr,
   typeAsc:  Option[Type] = None,
   typeSpec: Option[Type] = None
@@ -74,7 +77,7 @@ case class App(
 object App:
   def apply(
     span:     SrcSpan,
-    fn:       Ref | App | Lambda,
+    fn:       Callee,
     arg:      Expr,
     typeAsc:  Option[Type],
     typeSpec: Option[Type]
@@ -83,7 +86,7 @@ object App:
 
   def apply(
     span: SrcSpan,
-    fn:   Ref | App | Lambda,
+    fn:   Callee,
     arg:  Expr
   ): App =
     new App(SourceOrigin.Loc(span), fn, arg, None, None)

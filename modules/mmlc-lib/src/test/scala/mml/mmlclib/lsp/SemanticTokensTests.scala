@@ -442,7 +442,7 @@ class SemanticTokensTests extends BaseEffFunSuite:
       case _ =>
         Nil
 
-  private def collectParamsFromAppFn(fn: Ref | App | Lambda): List[FnParam] =
+  private def collectParamsFromAppFn(fn: Callee): List[FnParam] =
     fn match
       case _: Ref =>
         Nil
@@ -482,7 +482,7 @@ class SemanticTokensTests extends BaseEffFunSuite:
         collectRefsFromExpr(inv.originalExpr)
       case _ => Nil
 
-  private def collectRefsFromAppFn(fn: Ref | App | Lambda): List[Ref] =
+  private def collectRefsFromAppFn(fn: Callee): List[Ref] =
     fn match
       case ref: Ref =>
         ref :: ref.qualifier.toList.flatMap(collectRefsFromTerm)

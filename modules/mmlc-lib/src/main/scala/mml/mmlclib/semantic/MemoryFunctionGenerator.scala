@@ -273,7 +273,7 @@ object MemoryFunctionGenerator:
         // Build constructor call: __mk_StructName arg1 arg2 ...
         // Track the result type through each curried application
         val (constructorCall, _) =
-          argExprs.foldLeft((constructorRef: Ref | App | Lambda, constructorType)) {
+          argExprs.foldLeft((constructorRef: Callee, constructorType)) {
             case ((fn, currType), arg) =>
               val resultType = currType match
                 case TypeFn(_, _, ret) => ret

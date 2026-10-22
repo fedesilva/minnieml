@@ -40,7 +40,7 @@ class CallStagesTests extends BaseEffFunSuite:
       id       = id.some
     )
 
-  private def application(callee: Ref | App | Lambda, argument: Expr, result: Type): App =
+  private def application(callee: Callee, argument: Expr, result: Type): App =
     App(source, callee, argument, typeSpec = result.some)
 
   private def flow(bindings: List[Bnd], types: List[ResolvableType] = Nil): CallableValues =

@@ -709,11 +709,11 @@ object ExpressionRewriter:
         other.accepted
 
   private def rewriteAppFn(
-    fn:                  Ref | App | Lambda,
+    fn:                  Callee,
     owner:               BindingOwner,
     transformedBindings: Map[String, Bnd],
     resolvables:         ResolvablesIndex
-  ): Rewrite[Ref | App | Lambda] =
+  ): Rewrite[Callee] =
     fn match
       case ref: Ref =>
         rewriteTerm(ref, owner, transformedBindings, resolvables).map(_.asInstanceOf[Ref])

@@ -38,7 +38,7 @@ regressions relevant to each correctness repair without adding those follow-ups 
 19. [x] **complete** — [B2: accept recursive higher-order callable flow](#b2-recursive-higher-order-callable-flow); verified and signed off.
 20. [x] **complete** — [B3: preserve binding identity across recursive shadowing](#b3-recursive-shadowing-after-a-move); verified and signed off.
 21. [x] **complete** — [T1: instrument MML-generated IR for AddressSanitizer](#t1-mml-generated-ir-lacks-addresssanitizer-instrumentation); tracked in a [separate task](asan-generated-ir.md).
-22. [ ] **planned** — [Preserve the complete application callee type in Simplifier](#fix-preserve-the-complete-application-callee-type-in-simplifier).
+22. [x] **complete** — [Preserve the complete application callee type in Simplifier](#fix-preserve-the-complete-application-callee-type-in-simplifier); verified and signed off.
 23. [ ] **in_progress** — [Remaining lambda semantics and lowering](#remaining-lambda-implementation), including [restoration of all ignored regressions](#restore-ignored-regressions); deferred behind the bug repairs.
 24. [ ] **planned** — [Harden closure environment lookup](#harden-closure-environment-lookup).
 25. [ ] **planned** — Final task verification and signoff; branch audit findings are recorded below.
@@ -1216,22 +1216,47 @@ not run the smoke harness, benchmarks, Linux/x86-64 checks, or formatting and li
 
 #### Fix: preserve the complete application callee type in Simplifier
 
-- **Status:** planned.
+- **Status:** complete.
 - **Problem:** [Simplifier.scala](../../modules/mmlc-lib/src/main/scala/mml/mmlclib/semantic/Simplifier.scala)
-  reconstructs applications with `simplifiedFn.asInstanceOf[Ref | App]`, although
-  [App.fn](../../modules/mmlc-lib/src/main/scala/mml/mmlclib/ast/terms.scala) accepts
-  `Ref | App | Lambda`. The cast states an incorrect invariant and bypasses static checking
-  of the unified callee representation. JVM erasure accepting `Lambda` does not make the
-  source-level contract correct.
-- **Scope:** make application-callee simplification preserve the complete allowed type,
-  preferably through a typed helper rather than an unchecked narrowing cast. Keep recursive
-  simplification of applications and qualified references intact.
+  at `a3acfa8` reconstructs applications with `simplifiedFn.asInstanceOf[Ref | App | Lambda]`.
+  This includes every allowed [App.fn](../../modules/mmlc-lib/src/main/scala/mml/mmlclib/ast/terms.scala)
+  alternative, but bypasses static checking of the simplification result. Its positional
+  expression constructor also swaps computed `typeSpec` and declared `typeAsc` annotations.
+- **Scope:** preserve the complete callee type through an exhaustive typed helper and preserve
+  expression annotations with a copy-based update. Keep recursive simplification of applications
+  and qualified references intact, without changing lambda-body traversal. Define `Callee` beside
+  `App` and migrate the exact `Ref | App | Lambda` union throughout compiler and test code.
+  Keep narrower unions unchanged.
 - **Acceptance:**
-  - [ ] Remove the incorrect narrowing assertion and make all three callee alternatives
-    explicit in the simplifier's type contract.
-  - [ ] Cover direct lambda heads, nested applications, and qualified references, asserting
+  - [x] Remove the unchecked cast and make all three callee alternatives explicit in the
+    simplifier's type contract.
+  - [x] Cover direct lambda heads, nested applications, and qualified references, asserting
     preservation of binding identity, types, and argument simplification.
-- **Implementation approval:** pending a bounded repair plan.
+  - [x] Preserve computed-only, declared-only, distinct computed/declared, and absent expression
+    annotations through simplification.
+- **Implementation approval:** granted for typed callee simplification, focused regressions,
+  annotation preservation, the shared `Callee` alias and its migration, and task-record reconciliation.
+- **Implementation:** `Callee` defines the permitted application heads once in `ast/terms.scala`.
+  Compiler and test consumers use that alias. `simplifyCallee` exhaustively preserves it without
+  casts; `simplifyExpr` copies the expression while replacing only its terms.
+- **Verification:** seven focused
+  [Simplifier tests](../../modules/mmlc-lib/src/test/scala/mml/mmlclib/semantic/SimplifierTests.scala)
+  pass after `sbtn 'scalafmtAll; scalafixAll; testOnly mml.mmlclib.semantic.SimplifierTests'`,
+  without warnings. Before the expression-copy correction, six fail with swapped annotations
+  and the untyped control passes. `./tests/smoke/run.sh all` passes 8/8. `sbtn testFull` passes
+  1,369 library tests and nine CLI tests, with 36 existing ignored library cases.
+  `sbtn 'scalafmtAll; scalafixAll; mmlcPublishLocal'` passes without warnings and installs the
+  verified compiler. `make -C benchmark clean` and `make -C benchmark mml` pass all 13 builds.
+  `./tests/mem/run.sh all` passes 52/52 with ASan+LSan. Host verification uses arm64 macOS
+  and Clang/LLVM 23.1.1; benchmark checks establish buildability, not performance. No ABI
+  implementation changes require the Linux container gate. QA and focused tracking checks pass;
+  independent primary review and separate style/QA, test-quality, and readability checks report
+  no actionable findings. No candidates require claim verification. Unchanged lambda-body
+  traversal is established by source inspection; the direct-lambda fixture uses a simplified body.
+  `git diff --check` passes. Verification date: 2026-10-22.
+- **Signoff:** complete for the shared `Callee` alias, its migration, typed callee simplification,
+  expression annotation preservation, regressions, and affected documentation.
+- **Commit authorization:** granted for this slice; push is not authorized.
 
 #### Bug: elaborate partial applications inside callees
 
@@ -1645,12 +1670,17 @@ are in `context/history/` for Author review. No compiler slice is authorized by 
   push is not authorized.
 - B3 recursive shadowing after a move signoff: complete. Local commit is authorized;
   push is not authorized.
+- Shared `Callee` alias and Simplifier type-preservation signoff: complete. Local commit is
+  authorized; push is not authorized.
 - Historical commit and push authorization: expression preservation, the ignored-test inventory and plan,
   four restored regressions, and their completion records; push to `origin/dev-lambda-unify`.
 
 ## Task Working Memory
 
 - **Branch:** `dev-2026-03-21-lambdas`.
+- **Completed repair:** [Simplifier callee types](#fix-preserve-the-complete-application-callee-type-in-simplifier).
+  The shared alias, exhaustive simplification, and annotation correction are verified and signed
+  off, with passing compiler gates and independent review. The parent task remains open.
 - **Priority and next action:** resolve remaining correctness work and the existing
   [closure-environment lookup robustness task](#harden-closure-environment-lookup), then perform
   final verification for merge readiness. Reconcile unresolved correctness cases in the
@@ -1683,8 +1713,7 @@ are in `context/history/` for Author review. No compiler slice is authorized by 
   are complete and signed off. Formatting/lint, 1,220 library plus nine CLI tests, smoke 8/8,
   verified local publication, 12 clean benchmark builds, ASan/LSan 51/51, QA, tracking review,
   and independent reviews pass. The parent migration remains open.
-- **Deferred follow-ups:** [the Simplifier callee type](#fix-preserve-the-complete-application-callee-type-in-simplifier),
-  general ignored-test restoration, and
+- **Deferred follow-ups:** general ignored-test restoration and
   [closure environment lookup hardening](#harden-closure-environment-lookup).
   Relevant regression restoration belongs within each bug repair.
 - **Implementation:** [Binding identity and local construction](#establish-binding-identity-and-local-construction-invariants)
