@@ -49,7 +49,7 @@ object Diagnostics:
       case SemanticError.InvalidExpressionFound(inv, _) => inv.spanOpt.toList
       case SemanticError.TypeCheckingError(typeErr) => extractTypeErrorSpans(typeErr)
       case SemanticError.InvalidEntryPoint(_, source) => source.spanOpt.toList
-      case SemanticError.UseAfterMove(ref, _, _) => ref.spanOpt.toList
+      case error: SemanticError.UseAfterMove => error.source.spanOpt.toList
       case SemanticError.ConsumingParamNotLastUse(_, ref, _) => ref.spanOpt.toList
       case SemanticError.BorrowedValuePassedToConsumingParam(_, ref, _) => ref.spanOpt.toList
       case SemanticError.PartialApplicationWithConsuming(fn, _, _) => fn.spanOpt.toList

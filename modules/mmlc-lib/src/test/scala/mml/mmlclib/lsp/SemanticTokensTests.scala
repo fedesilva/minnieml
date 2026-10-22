@@ -7,6 +7,41 @@ import scala.collection.mutable.ListBuffer
 
 class SemanticTokensTests extends BaseEffFunSuite:
 
+  test("generated argument references preserve diagnostics without becoming editor symbols") {
+    val code = """
+      fn text(): String = int_to_str 123;;
+      fn take(~value: String, n: Int): Int = value.length + n;;
+      fn example(): Int =
+        let partial = take (text ());
+        partial 1;
+      ;
+    """
+    semNotFailed(code).map { module =>
+      val definition = module.members
+        .collectFirst {
+          case binding: Bnd if binding.name == "text" => binding
+        }
+        .getOrElse(fail("Expected text definition"))
+      val refs = collectRefs(module.members).filter(_.resolvedId == definition.id)
+      assertEquals(refs.size, 1)
+      val ref  = refs.head
+      val span = spanOrFail(ref, "text call")
+      val tokens = decodeTokens(SemanticTokens.compute(module)).filter { token =>
+        token.line == span.start.line && token.col == span.start.col
+      }
+      assertEquals(tokens.map(_.length), List("text".length))
+      assertEquals(tokens.map(_.tokenType), List(TokenType.Function))
+      assertEquals(
+        AstLookup.findAt(module, span.start.line, span.start.col).flatMap(_.name),
+        Some("text")
+      )
+      assertEquals(
+        AstLookup.findDefinitionAt(module, span.start.line, span.start.col),
+        definition.nameNode.spanOpt.toList
+      )
+    }
+  }
+
   test("semantic tokens color println calls consistently") {
     val code =
       """

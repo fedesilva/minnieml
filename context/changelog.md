@@ -4,6 +4,10 @@ Durable product changes belong here. Current task state belongs in task files.
 
 ## 2026-10-21
 
+- Preserve source locations through generated local bindings for partial applications and
+  ownership temporaries. Report field-alias move errors at the current use and retain
+  source spans for inline call-once arguments in CLI and editor diagnostics.
+
 - Preserve binding identity when a recursive local function shadows a moved outer value.
   Accept legal shadowing while retaining last-use and use-after-move diagnostics for the
   original binding.

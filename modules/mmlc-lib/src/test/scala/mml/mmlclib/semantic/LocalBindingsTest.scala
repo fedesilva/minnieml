@@ -157,6 +157,32 @@ class LocalBindingsTest extends BaseEffFunSuite:
     assertEquals(local.ref.typeSpec, input.some)
   }
 
+  test(
+    "replacement references retain source origins without assigning locations to generated names"
+  ) {
+    val source = SourceOrigin.Loc(SrcSpan(SrcPoint(1, 1, 0), SrcPoint(1, 8, 7)))
+    val tpe    = TypeRef(source, "Int", "stdlib::typealias::Int".some)
+    val (_, local) = LocalBindings
+      .local(
+        BindingOwner.binding("Test", "main"),
+        "temporary",
+        typeSpec = tpe.some,
+        source   = source
+      )
+      .run(BindingIdSupply())
+      .value
+
+    assertEquals(local.param.source, SourceOrigin.Synth)
+    assertEquals(local.param.nameNode.source, SourceOrigin.Synth)
+    assertEquals(local.ref.spanOpt, source.spanOpt)
+    assert(!local.ref.source.isFromSource)
+    assertEquals(local.expression.spanOpt, source.spanOpt)
+    assertEquals(local.expression.terms, List(local.ref))
+    assertEquals(local.ref.resolvedId, local.param.id)
+    assertEquals(local.ref.candidateIds, local.param.id.toList)
+    assertEquals(local.expression.typeSpec, tpe.some)
+  }
+
   test("cleanup sequencing preserves continuation annotations and effect placement") {
     val source   = SourceOrigin.Loc(SrcSpan(SrcPoint(1, 1, 0), SrcPoint(1, 2, 1)))
     val output   = TypeRef(source, "Int", "stdlib::typealias::Int".some)

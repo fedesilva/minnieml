@@ -14,8 +14,9 @@ This is the Author's active and near-term focus. The backlog lives in [tasks/](t
 
 - **Tracker:** [Unify lambdas](tasks/unify-lambdas.md)
 - **Status:** in_progress
-- **Current focus:** Plan B4: report the correct source use in ownership diagnostics.
-  Cleanup placement follows the confirmed bug repairs.
+- **Current focus:** Remaining correctness work and closure-environment lookup robustness, then
+  final verification for merge readiness. Diagnostic polish and maintenance are independent
+  LOW-priority backlog tasks.
 
 ### Apply returned callables with parenthesized function types
 

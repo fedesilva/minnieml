@@ -124,10 +124,12 @@ object SemanticErrorPrinter:
         val location = locationOf(ref)
         s"${Console.RED}'${ref.name}' is not visible at $location (declared in '${decl.name}') [phase: $phase]${Console.RESET}"
 
-      case SemanticError.UseAfterMove(ref, movedAt, phase) =>
-        val location      = locationOf(ref)
-        val movedLocation = movedAt.spanOpt.map(LocationPrinter.printSpan).getOrElse("[synthetic]")
-        s"${Console.RED}Use of '${ref.name}' after move at $location [phase: $phase]${Console.RESET}\nMoved at: $movedLocation"
+      case error: SemanticError.UseAfterMove =>
+        val location = error.source.spanOpt.map(LocationPrinter.printSpan).getOrElse("[synthetic]")
+        val movedLocation =
+          error.movedAt.spanOpt.map(LocationPrinter.printSpan).getOrElse("[synthetic]")
+        val use = s"Use of '${error.ref.name}' after move at $location [phase: ${error.phase}]"
+        s"${Console.RED}$use${Console.RESET}\nMoved at: $movedLocation"
 
       case SemanticError.ConsumingParamNotLastUse(param, ref, phase) =>
         val location = locationOf(ref)

@@ -12,8 +12,10 @@
 
 Top-level delivery order; details and checkpoint evidence are linked below. Pending steps
 remain subject to bounded plan approval. Only the active step exposes its current subitem.
-Confirmed bugs take priority over optimization, general regression restoration, type-contract
-cleanup, and defensive hardening. Restore regressions relevant to each bug as part of its repair.
+Completion scope is correctness, its supporting regression evidence, and the existing
+closure-environment lookup robustness task. Diagnostic polish, test-quality expansion, documentation,
+optimization, and maintainability follow-ups are independent LOW-priority tasks. Restore
+regressions relevant to each correctness repair without adding those follow-ups to merge requirements.
 
 1. [x] **complete** — [Preserve tests, samples, docs, and helpers](#lambda-restart-test-preservation-map) (`6e33ee4`).
 2. [x] **complete** — [Reject borrowed returns through aliases](#signed-off-workstream-borrowed-returns-through-aliases) (`323b8ca`).
@@ -35,31 +37,11 @@ cleanup, and defensive hardening. Restore regressions relevant to each bug as pa
 18. [x] **complete** — [B1: elaborate partial applications of returned callees](#b1-partial-application-of-a-returned-callee); review follow-up verified and signed off.
 19. [x] **complete** — [B2: accept recursive higher-order callable flow](#b2-recursive-higher-order-callable-flow); verified and signed off.
 20. [x] **complete** — [B3: preserve binding identity across recursive shadowing](#b3-recursive-shadowing-after-a-move); verified and signed off.
-21. [ ] **planned** — [B4: report the correct source use in ownership diagnostics](#b4-ownership-diagnostic-locations).
-22. [ ] **planned** — [T1: instrument MML-generated IR for AddressSanitizer](#t1-mml-generated-ir-lacks-addresssanitizer-instrumentation); tracked in a [separate task](asan-generated-ir.md).
-23. [ ] **planned** — [T2: assert memory fixture results](#t2-assert-memory-fixture-results).
-24. [ ] **planned** — [T3: assert use-after-move identities and locations](#t3-assert-use-after-move-identities-and-locations).
-25. [ ] **planned** — [T4: replace bare semantic-failure assertions](#t4-replace-bare-semantic-failure-assertions).
-26. [ ] **planned** — [T5: correct Direct fixture headers](#t5-correct-direct-fixture-headers).
-27. [ ] **planned** — [Simplify owned-closure cleanup placement](#simplify-owned-closure-cleanup-placement).
-28. [ ] **planned** — [Preserve the complete application callee type in Simplifier](#fix-preserve-the-complete-application-callee-type-in-simplifier).
-29. [ ] **in_progress** — [Remaining lambda semantics and lowering](#remaining-lambda-implementation), including [restoration of all ignored regressions](#restore-ignored-regressions); deferred behind the bug repairs.
-30. [ ] **planned** — [Harden closure environment lookup](#harden-closure-environment-lookup).
-31. [ ] **planned** — [D1: centralize closure environment header layout](#d1-centralize-closure-environment-header-layout).
-32. [ ] **planned** — [D2: centralize closure destructor identity](#d2-centralize-closure-destructor-identity).
-33. [ ] **planned** — [D3: generalize storage-only destruction](#d3-generalize-storage-only-destruction).
-34. [ ] **planned** — [D4: share the owned-environment predicate](#d4-share-the-owned-environment-predicate).
-35. [ ] **planned** — [D5: simplify capture analysis](#d5-simplify-capture-analysis).
-36. [ ] **planned** — [D6: remove name-keyed ownership scope paths](#d6-remove-name-keyed-ownership-scope-paths).
-37. [ ] **planned** — [D7: unify borrowed-capture representation](#d7-unify-borrowed-capture-representation).
-38. [ ] **planned** — [D8: unify scope joins](#d8-unify-scope-joins).
-39. [ ] **planned** — [D9: consolidate application-spine walkers](#d9-consolidate-application-spine-walkers).
-40. [ ] **planned** — [D10: reuse canonical type resolution](#d10-reuse-canonical-type-resolution).
-41. [ ] **planned** — [D11: correct stale comment and test base](#d11-correct-stale-comment-and-test-base).
-42. [ ] **planned** — [D12: name positional state](#d12-name-positional-state).
-43. [ ] **planned** — [D13: apply spacing and line-length rules](#d13-apply-spacing-and-line-length-rules).
-44. [ ] **planned** — [Integrate the PAP tutorial into the language reference](#later-stage-documentation).
-45. [ ] **planned** — Final task verification and signoff; branch audit findings are recorded below.
+21. [ ] **planned** — [T1: instrument MML-generated IR for AddressSanitizer](#t1-mml-generated-ir-lacks-addresssanitizer-instrumentation); tracked in a [separate task](asan-generated-ir.md).
+22. [ ] **planned** — [Preserve the complete application callee type in Simplifier](#fix-preserve-the-complete-application-callee-type-in-simplifier).
+23. [ ] **in_progress** — [Remaining lambda semantics and lowering](#remaining-lambda-implementation), including [restoration of all ignored regressions](#restore-ignored-regressions); deferred behind the bug repairs.
+24. [ ] **planned** — [Harden closure environment lookup](#harden-closure-environment-lookup).
+25. [ ] **planned** — Final task verification and signoff; branch audit findings are recorded below.
 
 Linux sanitizer validation is deferred to the separate
 [Linux verification task](linux-sanitizer-verification.md).
@@ -76,8 +58,9 @@ Complete the fresh lambda implementation on the migration branch using the appro
 
 ## Scope
 
-- In scope: The problem and outcome above; detailed scope is settled in the approved plan.
-- Out of scope: Unrelated work and changes not covered by an approved plan.
+- In scope: remaining lambda correctness, supporting regressions, and closure-environment lookup robustness.
+- Out of scope: independent diagnostic polish, test-quality expansion, documentation, optimization,
+  and maintainability tasks; these do not block lambda completion or merge readiness.
 
 ### Semantic goals
 
@@ -933,8 +916,8 @@ retains its reproduction, scope, and acceptance criteria.
 
 ### Branch review findings
 
-The branch review reported four independently checked bugs and the test and design findings
-below. These are review findings, not completed repairs. The reported 52 memory fixtures and
+The branch review identified the correctness repairs and sanitizer evidence gap below.
+Completed repairs retain their own signoff and verification records. The reported 52 memory fixtures and
 roughly 30 adversarial programs passed at `-O0` and `-O3` after AddressSanitizer was applied
 to generated IR. Six fixtures whose `main` takes arguments ran with a hand-written main stub;
 those runs did not exercise the usual entry point. The check found no use-after-free,
@@ -1200,136 +1183,6 @@ not run the smoke harness, benchmarks, Linux/x86-64 checks, or formatting and li
     fresh narrow primary review and all three separate dedicated checks pass with no
     remaining findings. Behavioral tests were not rerun for whitespace-only changes.
     No ABI changes or Linux execution are claimed.
-
-#### B4: ownership diagnostic locations
-
-- **Severity:** low; **status:** planned.
-- **Cases:** after `let q = h.f; let a = drop h; q 2`, a second `Use of 'h' after move`
-  points at the earlier, valid `h` reference. In `borrow (take (int_to_str 123))`,
-  a diagnostic points at `[synthetic]` rather than the source call.
-- **Cause:** [OwnershipAnalyzer.scala](../../modules/mmlc-lib/src/main/scala/mml/mmlclib/semantic/OwnershipAnalyzer.scala)
-  reuses a stored dependency `Ref` for the first error;
-  [LocalBindings.scala](../../modules/mmlc-lib/src/main/scala/mml/mmlclib/semantic/LocalBindings.scala)
-  gives the hoisted PAP binding a synthetic origin for the second.
-- **Outcome:** preserve the offending source use and source origin through dependency
-  and temporary lowering. Assert diagnostic class, definition identity, use site, and
-  move site where applicable.
-
-#### Review test quality follow-ups
-
-These improve existing lambda evidence; they do not establish additional compiler bugs.
-
-##### T2: assert memory fixture results
-
-**Severity:** medium. [tests/mem/run.sh](../../tests/mem/run.sh) checks exit status and
-discards output. Seventeen newer lambda fixtures have `Unit` entry points and only print,
-so incorrect values can pass. Give those fixtures observable assertions or expected-output
-checks while preserving their memory checks. Existing `pap-*`, `mixed-ownership-*`, and
-`owned-closure-tail*` fixtures already check results through exit codes.
-
-##### T3: assert use-after-move identities and locations
-
-**Severity:** medium. `UseAfterMove` assertions in `PapStructOwnershipTest`,
-`PapOwnershipTest`, `MoveCaptureConsumptionTest`, and `DeferredPapOwnershipTest` check
-only the error class. Assert binding identity, use site, and `movedAt`, following the
-stronger `LambdaLiteralBorrowingTests.assertOnlyMove` pattern. This should catch B4's
-first case.
-
-##### T4: replace bare semantic-failure assertions
-
-**Severity:** low to medium. Bare `semFailed` assertions in `PapOwnershipTest` and
-`PapStructOwnershipTest` accept unrelated errors. Assert the intended diagnostic and
-source location, including B4's synthetic-location case.
-
-##### T5: correct Direct fixture headers
-
-**Severity:** low. Headers in
-`tests/mem/direct-move-{closure,literal-capture,owned-string-capture,owned-struct-capture}.mml`
-claim Direct lowering without an environment, but the IR allocates and frees
-`__closure_env_N`. Correct the descriptions to the actual contract. The corresponding
-codegen pinning tests remain ignored and inventoried; this text correction does not
-authorize restoring their representation assertions.
-
-#### Review design and readability follow-ups
-
-These are maintainability risks or QA misses, not demonstrated current runtime failures.
-Preserve behavior while addressing them in bounded groups. D5, D11, and D12 overlap the
-existing [readability task](qa-readability.md).
-
-##### D1: centralize closure environment header layout
-
-**Severity:** medium. The `isMove` bit and `.drop(1)` interpretation are repeated across
-`ClosureEnvironmentLayout`, `ExpressionCompiler`, `FunctionEmitter`,
-`ClosureDestructorBodyGenerator`, and `DestructionValidator`; the layout comment
-overstates sharing.
-
-##### D2: centralize closure destructor identity
-
-**Severity:** medium. `__free_closure` and `__free_${env}` are re-derived in multiple
-phases; `DestructionTargets.named` falls back to any matching name. A rename could
-silently omit cleanup in `OwnershipAnalyzer`. Use a typed or centralized contract.
-
-##### D3: generalize storage-only destruction
-
-**Severity:** medium. `StorageOnlyDestruction` hardcodes seven stdlib deallocator IDs.
-Use a contract that also covers new or user-native heap types. Add a non-String capture
-case; missing an ID can lose tail-call preservation.
-
-##### D4: share the owned-environment predicate
-
-Centralize the owned heap-environment rule repeated and negated across
-`OwnershipAnalyzer` and `CaptureTransfers`.
-
-##### D5: simplify capture analysis
-
-Split `OwnershipAnalyzer.analyzeLambda` capture processing into named stages and remove
-its duplicated clone-target block. The fold threads an opaque `(scope, errors, captures)`
-triple through deeply nested branches.
-
-##### D6: remove name-keyed ownership scope paths
-
-`OwnershipScope` and its move/use checks mix names and IDs. B3 owns the demonstrated
-recursive-shadowing repair; the broader [semantic-ID task](semantic-id-lookups.md)
-owns pipeline-wide identity migration. Remove the remaining name-keyed ownership paths
-as part of the agreed boundary between those repairs.
-
-##### D7: unify borrowed-capture representation
-
-Define one source of truth for borrowed captures. `LambdaMeta.borrowedCaptures` and
-`Capture.BorrowedRef` both encode them, with consistency dependent on phase order.
-
-##### D8: unify scope joins
-
-Unify duplicated scope-join plumbing and replace hand-picked copied scope fields with
-an explicit contract.
-
-##### D9: consolidate application-spine walkers
-
-`CallableValues.application` and `Applications.collectArgsAndFunction` duplicate
-traversal; the two rebuilders disagree for short lists, although no current caller
-reaches that difference. Consolidate the walkers and define one rebuilding contract.
-
-##### D10: reuse canonical type resolution
-
-Reuse `TypeUtils.canonical` in `DestructionValidator`; the local copy already differs
-for unresolved references.
-
-##### D11: correct stale comment and test base
-
-Correct the closure-name comment in `ClosureMemoryFnGenerator`, and bring the lone
-plain `munit.FunSuite` in `FunctionEmitterBorrowClosureValidatorTest` into the
-repository's test convention.
-
-##### D12: name positional state
-
-Use named records for positional environment and application state in
-`FunctionEmitter`, `ExpressionCompiler`, and `PartialApplicationElaborator`.
-
-##### D13: apply spacing and line-length rules
-
-Apply the repository's vertical-spacing rule to the reviewed destructor, validator,
-emitter, and PAP elaborator blocks; wrap the identified lines over 100 characters in
-`PartialApplicationElaborator`, `FunctionEmitter`, and `OwnershipAnalyzer`.
 
 ### Remaining lambda implementation
 
@@ -1669,30 +1522,8 @@ test reviewer also reproduces the before/after buffering failure with real pipes
 Host-only execution and the linker-directory warning remain explicit evidence limits.
 The subsequent independent pass reports 1,293 library and nine CLI tests passing, with 36
 existing ignores, and 52/52 ASan+LSan memory cases. Its primary, style/QA, test-quality, and
-readability checks completed. Three placement simplifications are deferred to the next item;
-the review found no proven correctness defect.
-
-#### Simplify owned-closure cleanup placement
-
-- **Status:** planned; follows signoff of [owned-closure tail-recursion cleanup](#bug-preserve-tail-recursion-across-owned-closure-cleanup).
-- **Problem:** `OwnershipAnalyzer.placeCleanup` constructs a trial rewrite to classify each
-  binding, discards that rewrite, then repeats the storage-only check and cleanup-term
-  construction while applying the result. Per-binding late cleanup also nests one
-  `__ownership_result` binding per retained obligation. The names `early` and `remaining`
-  obscure that a binding can be early on one branch and late on another.
-- **Outcome:** make cleanup classification and insertion easier to follow without changing
-  evaluation order, branch-specific release timing, ownership witnesses, or generated behavior.
-- **Scope:** compute each binding's storage-only and cleanup-term evidence once, and avoid
-  constructing a discarded rewrite for eligibility. Distinguish bindings eligible for early
-  release on every path, on only some paths, and on no path. Preserve branch-specific insertion;
-  batch only obligations proven late on every path into one scope-end cleanup wrapper, preserving
-  their cleanup order. Do not batch the mixed-path group as uniformly late.
-- **Acceptance:**
-  - [ ] A focused regression keeps early release on an eligible conditional branch while
-    retaining late cleanup on the other branch.
-  - [ ] Two late obligations use one result wrapper and preserve their destruction order.
-  - [ ] Existing single-evaluation, tail-loop, ownership, and sanitizer regressions pass.
-- **Implementation approval:** pending a bounded repair plan. Signoff and commit are separate.
+readability checks completed. Three placement simplifications are deferred to the standalone
+[cleanup placement task](ownership-cleanup-placement.md); the review found no proven correctness defect.
 
 #### Restore ignored regressions
 
@@ -1771,27 +1602,18 @@ the review found no proven correctness defect.
   from the 51 audited cases. Further assertion changes and compiler fixes require their
   bounded plans; restoring fifteen tests does not complete the remaining lambda implementation.
 
-### Later-stage documentation
-
-- **Status:** planned.
-- [ ] Adapt the [PAP ownership tutorial](../../mml/samples/pap-ownership.mml) into the
-  [language reference](../../docs/language-reference.md) at a later stage of the lambda work.
-  Preserve its concrete, step-by-step explanation of owning, borrowing, and consuming PAPs,
-  following values through creation, calls, and cleanup.
-
 ## Verification
 
-The [elaboration recovery repair](#bug-continue-elaboration-after-independent-errors) has
-passing formatting/lint, **734 compiler tests and 9 additional tests / 51 existing ignores**,
-**8/8 smokes**, local compiler publication, **11 MML benchmark builds**, and **43/43 macOS
-ASan+LSan cases**. QA and independent code review are complete; the repair is signed off.
-These results do not resolve the separate mixed-ownership reproducer or establish Linux
-sanitizer coverage. General branch audit, final task signoff, and Linux sanitizer validation
-remain pending or separately deferred.
+The latest branch checks for the implemented source-location repair pass formatting/lint,
+1,347 library tests and nine CLI tests with 36 existing ignores, smoke 8/8, local publication,
+13 benchmark builds, and memory fixtures 52/52 on macOS arm64 with LLVM/Clang 23.1.1.
+[Ownership diagnostic evidence](ownership-diagnostic-locations.md#verification) records the
+scope and review limits. Benchmark builds are not performance measurements; the normal memory
+harness does not establish ASan coverage inside generated IR. T1 remains open.
 
-Completed slices retain their own results and review limits in
-[completed-slice evidence](#completed-slice-evidence) and the
-[migration evidence](#migration-evidence). Historical test counts describe those checkpoints.
+Final verification for the remaining correctness and robustness work is pending. Completed
+slices retain their historical results in [completed-slice evidence](#completed-slice-evidence)
+and [migration evidence](#migration-evidence). Linux sanitizer validation remains separately deferred.
 
 ## Risks / Notes
 
@@ -1825,8 +1647,15 @@ are in `context/history/` for Author review. No compiler slice is authorized by 
 ## Task Working Memory
 
 - **Branch:** `dev-2026-03-21-lambdas`.
-- **Priority and next action:** plan [B4: ownership diagnostic locations](#b4-ownership-diagnostic-locations).
-  Cleanup placement follows the confirmed bug repairs.
+- **Priority and next action:** resolve remaining correctness work and the existing
+  [closure-environment lookup robustness task](#harden-closure-environment-lookup), then perform
+  final verification for merge readiness. Start with the generated-IR sanitizer evidence gap
+  and reconcile unresolved correctness cases in the ignored-regression inventory.
+- **Deferred scope:** diagnostic, test-quality, documentation, optimization, and maintainability
+  follow-ups are standalone LOW-priority backlog tasks, outside lambda completion. The implemented
+  B4 evidence is owned by [ownership diagnostic locations](ownership-diagnostic-locations.md);
+  the scoped implementation is verified and signed off. Remaining diagnostic findings stay
+  in the independent backlog.
 - **Completed repair:** [B3 recursive shadowing after a move](#b3-recursive-shadowing-after-a-move)
   is verified and signed off, with passing compiler gates and independent reviews.
 - **Completed repair:** [B2 recursive higher-order callable flow](#b2-recursive-higher-order-callable-flow)

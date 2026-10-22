@@ -109,8 +109,8 @@ object SourceCodeExtractor:
           .map(s => s"\n$s")
           .getOrElse("")
 
-      case SemanticError.UseAfterMove(ref, _, _) =>
-        spanOf(ref)
+      case error: SemanticError.UseAfterMove =>
+        error.source.spanOpt
           .flatMap(extractSnippet(sourceInfo, _))
           .map(s => s"\n$s")
           .getOrElse("")

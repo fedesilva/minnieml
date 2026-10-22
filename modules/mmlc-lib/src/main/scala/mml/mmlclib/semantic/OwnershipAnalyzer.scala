@@ -562,7 +562,12 @@ object OwnershipAnalyzer:
     if toFree.isEmpty then expr.pure[Allocation]
     else
       for
-        result <- LocalBindings.local(owner, "__ownership_result", typeSpec = expr.typeSpec)
+        result <- LocalBindings.local(
+          owner,
+          "__ownership_result",
+          typeSpec = expr.typeSpec,
+          source   = expr.source
+        )
         body <-
           if ownershipResult then
             for
@@ -1109,23 +1114,36 @@ object OwnershipAnalyzer:
 
   private def analyzeRef(ref: Ref, scope: OwnershipScope): TermResult[Ref] =
     val qualifier = analyzeQualifier(ref, scope)
-    val checked   = checkRef(qualifier.term, qualifier.scope)
+    val checked   = checkRef(qualifier.term, qualifier.scope, ref.source)
     checked.copy(errors = qualifier.errors ++ checked.errors)
 
-  /** Check binding moves and borrowed lifetimes without evaluating qualifier expressions. */
-  private def checkRef(ref: Ref, scope: OwnershipScope): TermResult[Ref] =
-    val path = ownershipPath(ref, scope)
-    val movedAt = path
-      .flatMap { path =>
-        scope.movedBindingIds
-          .get(path.ownerId)
-          .orElse(
-            scope.consumedFields.collectFirst {
-              case (consumed, source) if consumed.overlaps(path) =>
-                source
-            }
-          )
-      }
+  private case class MovedOwner(
+    id:         String,
+    movedAt:    SourceOrigin,
+    dependency: Option[Ref] = None
+  ):
+
+    def at(ref: Ref, source: SourceOrigin): SemanticError.UseAfterMove =
+      SemanticError.UseAfterMove(
+        ref,
+        movedAt,
+        PhaseName,
+        ownerId    = id.some,
+        source     = source,
+        dependency = dependency
+      )
+
+  /** Resolve moved storage independently of the expression that uses it. */
+  private def movedOwners(ref: Ref, scope: OwnershipScope): List[MovedOwner] =
+
+    val pathMoves = ownershipPath(ref, scope).toList.flatMap { path =>
+      scope.movedBindingIds
+        .get(path.ownerId)
+        .orElse(scope.consumedFields.collectFirst {
+          case (consumed, source) if consumed.overlaps(path) => source
+        })
+        .map(MovedOwner(path.ownerId, _))
+    }
 
     @tailrec
     def qualifiers(current: Ref, acc: List[Ref]): List[Ref] = current.qualifier match
@@ -1133,24 +1151,83 @@ object OwnershipAnalyzer:
       case _ => current :: acc
 
     val references = qualifiers(ref, Nil)
-    val qualifierMoves = references
-      .filter(_.qualifier.isEmpty)
-      .flatMap(_.resolvedId.flatMap(scope.movedBindingIds.get))
-    val dependencyErrors = references
+    val dependencies = references.flatMap { reference =>
+      reference.resolvedId.toList.flatMap(scope.borrowedDependencies.getOrElse(_, Nil))
+    }
+    val movedBindings = (references.filter(_.qualifier.isEmpty) ++ dependencies)
       .flatMap(_.resolvedId)
-      .flatMap(scope.borrowedDependencies.getOrElse(_, Nil))
-      .flatMap { dependency =>
-        dependency.resolvedId.flatMap(scope.movedBindingIds.get).map { source =>
-          SemanticError.UseAfterMove(dependency, source, PhaseName)
+      .flatMap(id => scope.movedBindingIds.get(id).map(MovedOwner(id, _)))
+
+    (pathMoves ++ movedBindings).distinct.map { owner =>
+      owner.copy(dependency = dependencies.find(_.resolvedId.contains(owner.id)))
+    }
+
+  /** Every diagnostic retains both the current use and the identity of the moved owner. */
+  private def checkRef(
+    ref:    Ref,
+    scope:  OwnershipScope,
+    source: SourceOrigin
+  ): TermResult[Ref] =
+    val errors = movedOwners(ref, scope).map(_.at(ref, source))
+    TermResult(scope, ref, errors)
+
+  private def borrowedUseErrors(
+    references: List[Ref],
+    use:        Expr,
+    scope:      OwnershipScope
+  ): List[SemanticError] =
+    val useRef = singleTerm(use).map(unwrapTerm).collect { case ref: Ref => ref }
+    references.flatMap { ref =>
+      movedOwners(ref, scope).map(_.at(useRef.getOrElse(ref), use.source))
+    }
+
+  private case class MoveSite(ownerId: String, source: SrcSpan, movedAt: SourceOrigin)
+
+  /** Invalid dependencies retain their primary error; independent uses keep separate diagnostics.
+    */
+  private def normalizeMoveErrors(errors: List[SemanticError]): List[SemanticError] =
+
+    def site(error: SemanticError.UseAfterMove): Option[MoveSite] =
+      for
+        id <- error.ownerId
+        span <- error.source.spanOpt
+      yield MoveSite(id, span, error.movedAt)
+
+    val reported = errors
+      .collect { case error: SemanticError.UseAfterMove => error }
+      .flatMap(site)
+      .toSet
+    val independent = errors.filterNot {
+      case error: SemanticError.UseAfterMove =>
+        error.dependency.exists { dependency =>
+          val origin = for
+            id <- dependency.resolvedId
+            span <- dependency.spanOpt
+            if !error.source.spanOpt.contains(span)
+          yield MoveSite(id, span, error.movedAt)
+
+          origin.exists(reported.contains)
         }
+      case _ => false
+    }
+
+    // Lowered uses and source uses share a diagnostic site; retain the written reference identity.
+    val writtenUses = independent
+      .collect {
+        case error: SemanticError.UseAfterMove if error.ref.source.isFromSource => error
       }
-    TermResult(
-      scope,
-      ref,
-      errors =
-        ((movedAt.toList ++ qualifierMoves).map(SemanticError.UseAfterMove(ref, _, PhaseName)) ++
-          dependencyErrors).distinct
-    )
+      .flatMap(error => site(error).map(_ -> error))
+      .toMap
+    val located = independent.map {
+      case error: SemanticError.UseAfterMove =>
+        site(error).flatMap(writtenUses.get).getOrElse(error)
+      case error => error
+    }
+
+    located.distinctBy {
+      case error: SemanticError.UseAfterMove => site(error).toRight(error: SemanticError)
+      case error => error.asLeft[MoveSite]
+    }
 
   private def borrowedDependencies(expr: Expr, scope: OwnershipScope): List[Ref] =
     if scope.callableValues.recovery.isAvailable(expr) then
@@ -1333,7 +1410,8 @@ object OwnershipAnalyzer:
                       current.bindingOwner,
                       s"__cleanup_arg_$next",
                       typeSpec = argument.typeSpec,
-                      purpose  = "cleanup-argument"
+                      purpose  = "cleanup-argument",
+                      source   = argument.source
                     )
                   yield local
                 }
@@ -1518,7 +1596,7 @@ object OwnershipAnalyzer:
 
     val borrowedArguments =
       if lambda.borrowsArgument && heap then facts.dependencies else Nil
-    val argumentLifetimeErrors = borrowedArguments.flatMap(checkRef(_, body.scope).errors)
+    val argumentLifetimeErrors = borrowedUseErrors(borrowedArguments, app.arg, body.scope)
 
     val relaysOwnership = requirement.relaysOwnership
     val (cleanupIds, cleaned) = placeCleanup(
@@ -1763,7 +1841,8 @@ object OwnershipAnalyzer:
             local <- LocalBindings.local(
               scope.bindingOwner,
               s"__callee_${argumentScope.tempCounter + ordinal}",
-              typeSpec = stage.resultType
+              typeSpec = stage.resultType,
+              source   = stage.result.source
             )
             continuation <- lower(rest, local.ref, ordinal + 1)
           yield StagedExpression(
@@ -1797,8 +1876,10 @@ object OwnershipAnalyzer:
       preparedArguments = argumentScope.preparedArguments ++
         bindings.flatMap(_.local.param.id)
     )
-    val result         = analyzeExpr(lowered.value, stagedScope)
-    val lifetimeErrors = arguments.flatMap(_.borrows.flatMap(checkRef(_, result.scope).errors))
+    val result = analyzeExpr(lowered.value, stagedScope)
+    val lifetimeErrors = arguments.flatMap(argument =>
+      borrowedUseErrors(argument.borrows, argument.application.arg, result.scope)
+    )
     val retainedCleanup = preparedStages.reverse.toList
       .flatMap(_.arguments.cleanup)
       .filterNot(bindingMoved(_, result.scope))
@@ -1850,7 +1931,7 @@ object OwnershipAnalyzer:
       else Nil
     }
     val argumentLifetimeErrors = arguments.flatMap { argument =>
-      argument.borrows.flatMap(ref => checkRef(ref, result.scope).errors)
+      borrowedUseErrors(argument.borrows, argument.application.arg, result.scope)
     }
     val fullyApplied = scope.callableValues.stages(app).lastOption.exists(_.complete)
     val resultOwnership = scope.callableValues
@@ -1994,7 +2075,8 @@ object OwnershipAnalyzer:
           local <- LocalBindings.local(
             scope.bindingOwner,
             name,
-            typeSpec = argument.application.arg.typeSpec.orElse(argument.allocation)
+            typeSpec = argument.application.arg.typeSpec.orElse(argument.allocation),
+            source   = argument.application.arg.source
           )
           witness <-
             if ownsTemporary && result.ownership.mixed then
@@ -2245,7 +2327,7 @@ object OwnershipAnalyzer:
             (s, errs, caps :+ cap)
           else if isBorrowed || isStaticFunction then
             val errors = ref.resolvedId.flatMap(s.movedBindingIds.get).toList.map { movedAt =>
-              SemanticError.UseAfterMove(ref, movedAt, PhaseName)
+              SemanticError.UseAfterMove(ref, movedAt, PhaseName, ref.resolvedId, ref.source)
             }
             (s, errs ++ errors, caps :+ Capture.BorrowedRef(ref))
           else if lambda.isMove then
@@ -2363,7 +2445,17 @@ object OwnershipAnalyzer:
             s.getState(ref.name) match
               case Some(OwnershipState.Moved) =>
                 val movedAt = s.getMovedAt(ref.name).getOrElse(SourceOrigin.Synth)
-                (s, errs :+ SemanticError.UseAfterMove(ref, movedAt, PhaseName), caps :+ cap)
+                (
+                  s,
+                  errs :+ SemanticError.UseAfterMove(
+                    ref,
+                    movedAt,
+                    PhaseName,
+                    ref.resolvedId,
+                    ref.source
+                  ),
+                  caps :+ cap
+                )
               case _ =>
                 // Owned, Borrowed, Literal, Global — all fine to borrow
                 (s, errs, caps :+ cap)
@@ -2552,4 +2644,4 @@ object OwnershipAnalyzer:
 
     val newModule = module.copy(members = newMembersRev.reverse)
     val errors    = withoutBorrowedReturnCascades(allErrorsRev.reverse, callableValues, module)
-    state.copy(bindingIds = finalIds).withModule(newModule).addErrors(errors)
+    state.copy(bindingIds = finalIds).withModule(newModule).addErrors(normalizeMoveErrors(errors))

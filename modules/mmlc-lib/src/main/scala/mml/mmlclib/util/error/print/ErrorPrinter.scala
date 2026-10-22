@@ -64,7 +64,7 @@ object ErrorPrinter:
         .getOrElse((Int.MaxValue, Int.MaxValue))
     case SemanticError.InvalidExpressionFound(invalidExpr, _) => startPosOf(invalidExpr)
     case SemanticError.InvalidEntryPoint(_, source) => startPosOf(source)
-    case SemanticError.UseAfterMove(ref, _, _) => startPosOf(ref)
+    case error: SemanticError.UseAfterMove => startPosOf(error.source)
     case SemanticError.ConsumingParamNotLastUse(_, ref, _) => startPosOf(ref)
     case SemanticError.BorrowedValuePassedToConsumingParam(_, ref, _) => startPosOf(ref)
     case SemanticError.PartialApplicationWithConsuming(fn, _, _) => startPosOf(fn)
@@ -204,8 +204,10 @@ object ErrorPrinter:
       case SemanticError.VisibilityViolation(ref, decl, phase) =>
         s"${Console.RED}'${ref.name}' is not visible (declared in '${decl.name}')${Console.RESET}\n${Console.YELLOW}Phase: $phase${Console.RESET}"
 
-      case SemanticError.UseAfterMove(ref, movedAt, phase) =>
-        s"${Console.RED}Use of '${ref.name}' after move at ${locationOf(ref)}${Console.RESET}\n${Console.YELLOW}Moved at: ${locationOf(movedAt)}, Phase: $phase${Console.RESET}"
+      case error: SemanticError.UseAfterMove =>
+        val use  = s"Use of '${error.ref.name}' after move at ${locationOf(error.source)}"
+        val move = s"Moved at: ${locationOf(error.movedAt)}, Phase: ${error.phase}"
+        s"${Console.RED}$use${Console.RESET}\n${Console.YELLOW}$move${Console.RESET}"
 
       case SemanticError.ConsumingParamNotLastUse(param, ref, phase) =>
         s"${Console.RED}Consuming parameter '${param.name}' must be the last use of '${ref.name}' at ${locationOf(ref)}${Console.RESET}\n${Console.YELLOW}Phase: $phase${Console.RESET}"

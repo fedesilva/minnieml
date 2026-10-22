@@ -120,14 +120,18 @@ object AstLookup:
   private def containsOrInvalid(span: SrcSpan, line: Int, col: Int): Boolean =
     !isValidSpan(span) || containsPosition(span, line, col)
 
+  private def isGeneratedReference(node: FromSource): Boolean = node match
+    case ref: Ref => !ref.source.isFromSource
+    case _ => false
+
   private def containsPosition(node: FromSource, line: Int, col: Int): Boolean =
-    node.spanOpt.exists(containsPosition(_, line, col))
+    !isGeneratedReference(node) && node.spanOpt.exists(containsPosition(_, line, col))
 
   private def isValidSpan(node: FromSource): Boolean =
     node.spanOpt.exists(isValidSpan)
 
   private def containsOrInvalid(node: FromSource, line: Int, col: Int): Boolean =
-    node.spanOpt.forall(containsOrInvalid(_, line, col))
+    !isGeneratedReference(node) && node.spanOpt.forall(containsOrInvalid(_, line, col))
 
   private sealed trait ReferenceTarget
   private case class ValueTarget(id: String)                            extends ReferenceTarget
@@ -1049,7 +1053,9 @@ object AstLookup:
           )
         val typeRefs = ref.typeAsc.toList.flatMap(collectReferencesInType(_, target, module))
         val refSpan =
-          if matchesReferenceTarget(ref, target, module) then ref.spanOpt.toList else Nil
+          if ref.source.isFromSource && matchesReferenceTarget(ref, target, module) then
+            ref.spanOpt.toList
+          else Nil
         qualifierRefs ++ typeRefs ++ refSpan
 
       case app: App =>

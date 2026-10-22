@@ -49,18 +49,23 @@ trait FromSource extends AstNode {
   final def spanOpt: Option[SrcSpan] = source.spanOpt
 }
 
-/** Distinguishes AST nodes parsed from source vs synthesized by the compiler. */
+/** Written nodes and generated nodes can share a diagnostic span without sharing token identity. */
 enum SourceOrigin derives CanEqual:
   case Loc(span: SrcSpan)
+  case Derived(span: SrcSpan)
   case Synth
 
   def spanOpt: Option[SrcSpan] = this match
     case Loc(s) => Some(s)
+    case Derived(s) => Some(s)
     case Synth => None
 
   def isFromSource: Boolean = this match
     case Loc(_) => true
-    case Synth => false
+    case Synth | Derived(_) => false
+
+  /** Preserve the diagnostic origin of a replacement without presenting it as written syntax. */
+  def derived: SourceOrigin = spanOpt.fold[SourceOrigin](Synth)(Derived(_))
 
 object SourceOrigin:
   given Conversion[SrcSpan, SourceOrigin] with

@@ -228,6 +228,11 @@ The path records allocation provenance. Updating or relocating an existing defin
 its ID; constructing a distinct binding allocates a fresh ID and matching references. `LocalBindings`
 provides generated parameter/reference construction, and reports a construction error when asked
 to reference an unassigned parameter. References retain `resolvedId` across definition updates.
+Generated locals that replace an expression receive its source origin through `LocalBindings.local`.
+Their references and expression wrappers carry `SourceOrigin.Derived`: diagnostics retain the
+original span, while editor lookup
+and semantic tokens do not mistake the generated reference for written syntax. Generated
+parameter declarations and names remain synthetic.
 
 `LocalBindings.bind` constructs an immediate application from an existing parameter, its value,
 and a continuation body. It preserves the parameter's identity, annotations, and consuming flag.
@@ -851,7 +856,13 @@ parameters do not establish this proof. Borrowing parameters of immediate invoca
 stop the proof, since their borrow contract holds independently of the supplied value.
 Lexical result flow through immediately applied scopes preserves the proof; unknown
 alternatives retain their diagnostics.
-Generated references to staged callable results retain the completed source call's location.
+Generated references to staged callable results, PAP arguments, and ownership temporaries
+retain their replaced expression's location through the shared local-binding constructor.
+Use-after-move diagnostics distinguish the current use, moved-owner identity, and move site.
+Field aliases and borrowed dependencies share move-evidence resolution. Repeated evidence for
+one owner at one use produces one diagnostic; distinct uses and owners remain distinct.
+A dependency with its own reported invalid use retains that primary diagnostic without another
+error at a downstream use. CLI and LSP diagnostics use the explicit current-use origin.
 
 **Call stages**: `CallStages` partitions a typed application chain at each invocation boundary.
 Each stage retains its callee, supplied application nodes, signature, result, and completion

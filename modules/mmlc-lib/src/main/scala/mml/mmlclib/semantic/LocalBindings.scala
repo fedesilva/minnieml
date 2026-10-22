@@ -16,9 +16,10 @@ object LocalBindings:
       rest.flatMap(sequence(call, _, owner, unitType))
     }
 
-  final class Local private[LocalBindings] (val param: FnParam):
+  /** A generated definition stays synthetic; its uses retain the expression they replace. */
+  final class Local private[LocalBindings] (val param: FnParam, source: SourceOrigin):
 
-    def ref: Ref = parameterRef(param)
+    def ref: Ref = parameterRef(param, source.derived)
 
     def expression: Expr =
       val reference = ref
@@ -86,10 +87,10 @@ object LocalBindings:
       )
       .map(_ => parameterRef(param))
 
-  private def parameterRef(param: FnParam): Ref =
+  private def parameterRef(param: FnParam, source: SourceOrigin = SourceOrigin.Synth): Ref =
     val resolvedId = param.id
     Ref(
-      SourceOrigin.Synth,
+      source,
       param.name,
       typeAsc      = param.typeAsc,
       typeSpec     = param.typeSpec.orElse(param.typeAsc),
@@ -99,7 +100,7 @@ object LocalBindings:
 
   /** Freshen a parameter template and construct references to the new definition. */
   def fresh(template: FnParam, owner: BindingOwner, purpose: String): Allocation[Local] =
-    BindingIds.fresh(template, owner, purpose).map(new Local(_))
+    BindingIds.fresh(template, owner, purpose).map(new Local(_, SourceOrigin.Synth))
 
   def local(
     owner:     BindingOwner,
@@ -107,7 +108,8 @@ object LocalBindings:
     typeSpec:  Option[Type] = None,
     typeAsc:   Option[Type] = None,
     consuming: Boolean      = false,
-    purpose:   String       = "local"
+    purpose:   String       = "local",
+    source:    SourceOrigin = SourceOrigin.Synth
   ): Allocation[Local] =
     LocalBindings
       .param(
@@ -118,4 +120,4 @@ object LocalBindings:
         consuming = consuming,
         purpose   = purpose
       )
-      .map(new Local(_))
+      .map(new Local(_, source))

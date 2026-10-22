@@ -170,12 +170,12 @@ object PartialApplicationElaborator:
     val laterApplications = rest.flatMap(_.applications)
     for
       initial <- rewriteApplication(first.result, owner, index, values, forceArguments = true)
-      local <- fresh(owner, resultType)
+      local <- fresh(owner, resultType, source = first.result.source)
       // Callable flow retains the original call's origin across argument materialization.
       callableOrigin = Expr(first.result.source, List(first.result), typeSpec = resultType.some)
       localValues    = values.withBindings(List(local.param -> callableOrigin))
       continuation = laterApplications.foldLeft[Ref | App | Lambda](
-        local.ref.copy(source = first.result.source)
+        local.ref
       ) { case (callee, application) =>
         application.copy(fn = callee)
       }
@@ -300,7 +300,8 @@ object PartialApplicationElaborator:
   private def fresh(
     owner:     BindingOwner,
     tpe:       Type,
-    consuming: Boolean = false
+    consuming: Boolean      = false,
+    source:    SourceOrigin = SourceOrigin.Synth
   ): Allocation[LocalBindings.Local] =
     State.get[BindingIdSupply].flatMap { supply =>
       LocalBindings.local(
@@ -308,7 +309,8 @@ object PartialApplicationElaborator:
         s"$$pap_${supply.next}",
         typeSpec  = tpe.some,
         consuming = consuming,
-        purpose   = "pap"
+        purpose   = "pap",
+        source    = source
       )
     }
 
@@ -323,7 +325,7 @@ object PartialApplicationElaborator:
       case ref: Ref if ref.qualifier.isEmpty => arg.pure[Allocation]
       case _:   LiteralValue if !forceBinding => arg.pure[Allocation]
       case _ =>
-        fresh(owner, tpe).map { local =>
+        fresh(owner, tpe, source = arg.value.source).map { local =>
           val value: Term =
             if TypeUtils.resolveNativeType(tpe, index).exists {
                 case NativePrimitive(_, "void", _, _) => true

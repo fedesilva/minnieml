@@ -132,7 +132,15 @@ enum SemanticError extends CompilationError:
   case InvalidEntryPoint(msg: String, source: SourceOrigin)
   case VisibilityViolation(ref: Ref, decl: Resolvable, phase: String)
   // Ownership errors
-  case UseAfterMove(ref: Ref, movedAt: SourceOrigin, phase: String)
+  /** The use site and moved storage identity are independent of retained dependency evidence. */
+  case UseAfterMove(
+    ref:        Ref,
+    movedAt:    SourceOrigin,
+    phase:      String,
+    ownerId:    Option[String],
+    source:     SourceOrigin,
+    dependency: Option[Ref] = None
+  )
   case ConsumingParamNotLastUse(param: FnParam, ref: Ref, phase: String)
   case BorrowedValuePassedToConsumingParam(param: FnParam, ref: Ref, phase: String)
   case PartialApplicationWithConsuming(fn: Term, param: FnParam, phase: String)
@@ -165,12 +173,12 @@ enum SemanticError extends CompilationError:
       msg
     case VisibilityViolation(ref, decl, _) =>
       s"'${ref.name}' is not visible here (declared in '${decl.name}')"
-    case UseAfterMove(ref, movedAt, _) =>
-      movedAt.spanOpt match
+    case error: UseAfterMove =>
+      error.movedAt.spanOpt match
         case Some(span) =>
-          s"Use of '${ref.name}' after move at ${span.start.line}:${span.start.col}"
+          s"Use of '${error.ref.name}' after move at ${span.start.line}:${span.start.col}"
         case None =>
-          s"Use of '${ref.name}' after move"
+          s"Use of '${error.ref.name}' after move"
     case ConsumingParamNotLastUse(param, ref, _) =>
       s"Consuming parameter '${param.name}' must be the last use of '${ref.name}'"
     case BorrowedValuePassedToConsumingParam(param, ref, _) =>

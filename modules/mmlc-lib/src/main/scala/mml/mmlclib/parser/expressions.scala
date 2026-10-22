@@ -19,7 +19,7 @@ private val statementParamName = "__stmt"
 private def locSpan(node: FromSource): SrcSpan =
   node.source match
     case SourceOrigin.Loc(s) => s
-    case SourceOrigin.Synth =>
+    case SourceOrigin.Synth | SourceOrigin.Derived(_) =>
       throw IllegalStateException("Parser expected source-located node")
 
 /** Lowers semicolon-separated expression statements into nested scoped lambdas.
