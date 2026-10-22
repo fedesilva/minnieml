@@ -1,6 +1,6 @@
 ---
 name: tracking-doc-review
-description: Quickly review and iteratively repair MML tracking documents directly in the current agent for internal consistency, factual support, and compliance with task-tracking rules. Use for context/memory.md, context/tasks/*.md, task-lifecycle bookkeeping, and tracking-related context/changelog.md changes. Keep the review tracking-focused; never spawn reviewers, invoke the code-review skill, or perform a deep code review.
+description: Quickly review and iteratively repair MML tracking documents directly in the current agent for internal consistency, factual support, and compliance with task-tracking rules. Use for context/tracker.md, context/tasks/*.md, task-lifecycle bookkeeping, and tracking-related context/changelog.md changes. Keep the review tracking-focused; never spawn reviewers, invoke the code-review skill, or perform a deep code review.
 ---
 
 # Tracking Document Review
@@ -12,7 +12,7 @@ review.
 ## Scope and Authority
 
 1. Read `AGENTS.md`, `context/task-tracking-rules.md`, and
-   `context/memory.md`.
+   `context/tracker.md`.
 2. Use the scope named by the author. Otherwise inspect only changed tracking
    files and task files directly referenced by those changes.
 3. Keep `review`, `audit`, `inspect`, and `look at` requests read-only. Fix only

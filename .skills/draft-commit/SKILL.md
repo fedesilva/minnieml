@@ -13,7 +13,7 @@ particular tracking filename or workflow from another repository.
 1. Read `AGENTS.md` and follow its skill lookup, write, tracking, and commit
    rules.
 2. If `context/task-tracking-rules.md` exists, treat it as the tracking source
-   of truth. Read `context/memory.md` and the linked active task when the work
+   of truth. Read `context/tracker.md` and the linked active task when the work
    is tracked.
 3. If those files do not exist, use the repository guidance that does exist.
    Report a genuinely missing requirement, but do not stall because another
@@ -54,8 +54,9 @@ Present:
 Drafting is read-only unless the author separately authorized staging or tracking
 updates. Never create the commit merely because a draft was requested.
 
-A `finish task`, `complete task`, `finish subtask`, `complete subtask`, or
-`finish errand` command authorizes the scoped commit.
+A `close task`, `close subtask`, or `close errand` command authorizes the scoped commit
+after resolving the workstream under `context/task-tracking-rules.md`. Ask and wait on a
+task/errand mismatch, both kinds in flight, or an unclear target before applying that authorization.
 When a commit was already authorized for this scope, execute that authorization
 without requesting it again. Otherwise wait for explicit approval of the draft. A direct response such as `yes`, `y`,
 `commit it`, or an approved replacement message is sufficient.

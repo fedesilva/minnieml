@@ -66,7 +66,7 @@ The compiler needs to be installed before it's used if changes were made.
 - **Publish fat jar**: `sbtn mmlcPublishLocal`
 - **After publishing**: `mmlc run <file>` or `mmlc <file>` from anywhere.
 
-### Before finish - Post Task Chores
+### Before closing - Post Task Chores
 
 **Critical**:
   - Go through all these steps
@@ -126,7 +126,7 @@ The compiler needs to be installed before it's used if changes were made.
 
 ## Workstream handoff
 
-Use `.skills/post-chores/SKILL.md` when finishing a tracked task or handing off compiler
+Use `.skills/post-chores/SKILL.md` when closing a tracked task or handing off compiler
 changes, including compiler errands. Non-compiler errands, simple asks, and intermediate
 artifacts do not trigger post-chores; perform only checks relevant to the change.
 The compiler gates above remain mandatory for compiler changes. Context-only and
@@ -147,7 +147,7 @@ them without reconstructing the explanation from the linked files.
 - Do not include documentation, task files, working memory, changelogs, signoff records,
   instructions, or commit bookkeeping in the code tour.
 - Do not repeat a code tour already delivered for the same changes. A subsequent
-  finish or commit request needs only a concise report of completion, the commit hash,
+  close or commit request needs only a concise report of completion, the commit hash,
   verification status, working-tree status, push status, and any remaining work.
 - If code changes follow the tour, explain only those new code changes.
 - Non-code changes need a brief description of the result, not a file-by-file tour or
@@ -179,10 +179,10 @@ unstated knowledge, or introduces references that it does not explain within the
 ## Git usage
 
 - **Read Only** Freely use git to read history or fetching previous versions. No approval needed.
-- **Commits** are authorized by an explicit commit request or by `finish task`,
-  `complete task`, `finish subtask`, `complete subtask`, or `finish errand`. Follow
+- **Commits** are authorized by an explicit commit request or by `close task`,
+  `close subtask`, or `close errand`. Follow
   `context/task-tracking-rules.md`.
-  Push only when requested; finishing does not authorize remote publication.
+  Push only when requested; closing does not authorize remote publication.
 - Use Git Town for the branch lifecycle: `git town hack <name>` creates a feature branch
   and `git town sync` syncs/publishes. Do not use raw branch-creation or merge commands
   instead. Verify the intended parent before changing branch configuration.
@@ -193,7 +193,7 @@ unstated knowledge, or introduces references that it does not explain within the
   Do not merge parent branches into feature branches.
 - Use `git town ship --strategy squash-merge` for authorized delivery; add `--to-parent`
   when delivering into a feature parent. Do not use `git town combine` or preserve the
-  branch's individual commits unless the Author explicitly requests it. Finishing a task
+  branch's individual commits unless the Author explicitly requests it. Closing a task
   does not authorize shipping or pushing.
 - Worktrees follow the same squash workflow. Before shipping, check whether the destination
   branch is checked out in another worktree and resolve that checkout conflict without

@@ -29,7 +29,7 @@ text remains, and the archived tracker retains the exact source including whites
 
 | Former material | Maintained location |
 | --- | --- |
-| Selected current work | [memory.md](../memory.md) |
+| Selected current work | [tracker.md](../tracker.md) |
 | Pending tracker entries | Individual template-based files below |
 | Change Log | [changelog.md](../changelog.md), original entries verbatim |
 | Entire old tracker | [historical snapshot](tracking-before-workflow-port.md), verbatim after archival preface |

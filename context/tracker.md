@@ -1,4 +1,4 @@
-# Working Memory
+# Tracker
 
 Read [task-tracking-rules.md](task-tracking-rules.md) before changing task state.
 This is the Author's active and near-term focus. The backlog lives in [tasks/](tasks/).
@@ -14,9 +14,8 @@ This is the Author's active and near-term focus. The backlog lives in [tasks/](t
 
 - **Tracker:** [Unify lambdas](tasks/unify-lambdas.md)
 - **Status:** in_progress
-- **Current focus:** Remaining correctness work and closure-environment lookup robustness, then
-  final verification for merge readiness. Diagnostic polish and maintenance are independent
-  LOW-priority backlog tasks.
+- **Current focus:** Closure-environment lookup robustness, then final verification for merge
+  readiness. Diagnostic polish and maintenance are independent LOW-priority backlog tasks.
 
 ### Unify type-property alias resolution
 

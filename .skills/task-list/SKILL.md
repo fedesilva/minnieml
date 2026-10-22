@@ -1,6 +1,6 @@
 ---
 name: task-list
-description: Read and display available tasks from the local repo task setup. Use when the author wants to see open tasks from context/memory.md and context/tasks/.
+description: Read and display available tasks from the local repo task setup. Use when the author wants to see open tasks from context/tracker.md and context/tasks/.
 ---
 
 # Task List
@@ -8,10 +8,10 @@ description: Read and display available tasks from the local repo task setup. Us
 Read `context/task-tracking-rules.md` first so task status comes from the
 source of truth.
 
-For current work, read `context/memory.md` and its task links. For open tasks or the
+For current work, read `context/tracker.md` and its task links. For open tasks or the
 backlog, enumerate `context/tasks/*.md`, excluding the template, and inspect titles and
 status before loading details. Include completed-but-unarchived tasks only when requested.
-Do not treat memory membership as the full backlog. Do not modify tracking state while
+Do not treat tracker membership as the full backlog. Do not modify tracking state while
 listing.
 
 ## App session name

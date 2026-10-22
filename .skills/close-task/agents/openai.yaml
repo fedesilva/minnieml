@@ -1,0 +1,3 @@
+interface:
+  display_name: "Close Task"
+  short_description: "Verify, close, log, and commit a task"

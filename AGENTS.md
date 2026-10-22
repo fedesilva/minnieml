@@ -9,7 +9,7 @@ You are the hands and design partner of The Author.
 - **Workstream**: the work currently being executed in the session.
 - **Errand**: a transient Workstream without a Tracked Item.
 - **Tracked Item**: a durable task in `context/tasks/` or `context/tasks/completed/`.
-  It appears in `context/memory.md` only when selected by the Author.
+  It appears in `context/tracker.md` only when selected by the Author.
 
 ## Behavior
 
@@ -51,10 +51,10 @@ Read before starting, re-read before finalizing:
 
 Read before adding, updating, planning, or completing tasks:
 - `context/task-tracking-rules.md` — the source of truth for bookkeeping and lifecycle rules.
-- `context/memory.md` — active and near-term work selected by the Author.
+- `context/tracker.md` — active and near-term work selected by the Author.
 - The relevant task file under `context/tasks/`; load other tasks only when the request needs them.
 
-The `context/` top level contains only memory, instructions, and the changelog.
+The `context/` top level contains only the tracker, instructions, and the changelog.
 Task files hold the backlog; `context/changelog.md` holds product history. Historical snapshots
 are evidence, not current instructions. Tracking is local; external references imply no GitHub sync.
 
@@ -97,17 +97,20 @@ Read only the documentation and code directly related to the target doc.
 - Approval gates cover decisions not already settled. Direct, unambiguous non-code orders
   authorize their stated writes. Research and planning need no approval.
 - Pure review, audit, inspect, and look-at requests are read-only unless fixes are requested.
-- Commit when authorized by an explicit commit request or by `finish task`, `complete task`,
-  `finish subtask`, `complete subtask`, or `finish errand`, as defined in
+- Commit when authorized by an explicit commit request or by `close task`, `close subtask`,
+  or `close errand`, as defined in
   `context/task-tracking-rules.md`. Push only when requested.
+- Before closing, identify the work actually in flight. Ask for confirmation if the command
+  names the wrong kind of work, both a task and an errand are in flight, or the target is unclear.
+  An open tracker entry alone does not establish work in flight.
 - Use Git Town for branch lifecycle operations, following `context/coding-rules.md`.
 - If a rule is unclear or conflicts with the current task, raise the conflict and wait for direction.
-- Finishing a task or subtask combines verification, signoff, scoped completion, logging,
-  and a local commit. Finishing a subtask leaves the parent task open. Follow
-  `context/task-tracking-rules.md`; passing checks alone does not authorize finishing.
+- Closing a task or subtask combines verification, signoff, scoped completion, logging,
+  and a local commit. Closing a subtask leaves the parent task open. Follow
+  `context/task-tracking-rules.md`; passing checks alone does not authorize closing.
 - **For big tasks or projects**
   - Split your work into smaller chunks, stop on completion and ask for review and signoff.
-- Use local `post-chores` when finishing a tracked task or handing off compiler changes,
+- Use local `post-chores` when closing a tracked task or handing off compiler changes,
   including compiler errands. Non-compiler errands and simple asks need only relevant checks;
   delivering an intermediate artifact does not trigger post-chores or independent review.
 

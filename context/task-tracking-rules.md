@@ -6,7 +6,7 @@ override them. Raise an unresolved conflict before proceeding with dependent wor
 
 ## Terminology and files
 
-Keep the `context/` top level limited to `memory.md`, instruction files, and `changelog.md`.
+Keep the `context/` top level limited to `tracker.md`, instruction files, and `changelog.md`.
 Task definitions, working notes, designs, and supporting evidence belong under `context/tasks/`;
 historical records for later review belong under `context/history/`.
 
@@ -14,8 +14,8 @@ historical records for later review belong under `context/history/`.
 - **Errand**: a transient Workstream without a Tracked Item. It may use a short-lived
   Global Working Memory note, but has no task file or tracked status.
 - **Tracked Item**: a durable task definition in `context/tasks/` or
-  `context/tasks/completed/`. Only Author-selected tasks have entries in `context/memory.md`.
-- `context/memory.md` contains active and near-term work selected by the Author, not the backlog.
+  `context/tasks/completed/`. Only Author-selected tasks have entries in `context/tracker.md`.
+- `context/tracker.md` contains active and near-term work selected by the Author, not the backlog.
 - `context/tasks/_template_task.md` is the template for new task files.
 - `context/tasks/` holds pending and unarchived task definitions and per-task working memory.
 - `context/tasks/completed/` holds archived completed task files.
@@ -25,7 +25,7 @@ historical records for later review belong under `context/history/`.
 
 ## Focused context loading
 
-Read these rules before task work. Start with `context/memory.md`, tasks named by the Author,
+Read these rules before task work. Start with `context/tracker.md`, tasks named by the Author,
 and their directly relevant records. Read out-of-focus tasks only when the request needs
 that information, such as listing the backlog or investigating an explicit dependency.
 Read coding rules before code work. Avoid loading the backlog to steer an unrelated session.
@@ -72,12 +72,12 @@ tasks into this format when updating their plans or progress.
 - Surface only the active subitem beneath its top-level step, with at most its immediate next
   action. Do not expand completed or future subitems into the overview.
 - Update the overview at each meaningful checkpoint and before handoff. Reconcile it with
-  internal checklists, status fields, signoff, commit evidence, and any active-memory entry.
+  internal checklists, status fields, signoff, commit evidence, and any tracker entry.
   Replace stale current-state prose; keep historical evidence clearly separate.
 - Preserve the agreed scope and order. Listing pending work does not approve implementation;
   verification, signoff, commit, and push remain distinct states under the lifecycle rules.
 
-## Working memory
+## Tracker and working memory
 
 Always retain **Global Working Memory** and **Active Tasks**, even when empty.
 
@@ -89,12 +89,12 @@ candidate becomes a task, move its durable detail into that task file.
 Active Tasks is the Author's selected working set. Add a task only when the Author asks to
 put it in current or near-term focus. Listing a task does not authorize implementation.
 Keep entries limited to the name, task-file link, status, and current focus. Synchronize
-existing entries with task files; absence from memory is intentional. Remove completed
+existing entries with task files; absence from the tracker is intentional. Remove completed
 workstream notes instead of accumulating history there.
 
 Update the relevant task's **Task Working Memory** at meaningful checkpoints before,
 during, and after approved work: current implementation, evidence, decisions, blockers, and the next
-action. Keep detail there or in linked evidence records, not duplicated in active memory.
+action. Keep detail there or in linked evidence records, not duplicated in the tracker.
 Do not rewrite historical evidence or treat another branch's completed checklist as current.
 
 ## Authority and planning
@@ -132,61 +132,74 @@ It does not expand the approved scope.
 Record deferral and missing approvals in task working memory; do not turn them into a
 claim that implementation ran. Migrating an old task does not approve its implementation.
 
-`finish task` and `complete task` mean the same operation: verify, log, mark complete,
-and commit. The command supplies workstream signoff and local commit authorization for
-that task; do not ask for them again. `finish subtask` and `complete subtask` supply
-signoff and local commit authorization for the named subtask: verify it, log its product
-change, mark it complete, and commit only its changes and bookkeeping. Keep the parent
-task open and preserve unfinished siblings. Do not request commit approval again.
-`finish errand` authorizes verification, logging, and a local commit without tracked-task
+### Resolve the workstream before closing
+
+Lifecycle closure requires `close task`, `close subtask`, or `close errand`. Before acting,
+identify the unfinished work actually in flight from the current interaction and its relevant tracker
+and task working-memory records. A task listed in the tracker is not automatically in flight.
+
+Ask the Author to confirm the intended workstream and wait if the command names the wrong
+kind of work, both a task and an errand are in flight, or the target is unclear. Do not infer
+that a task command means an errand, or the reverse. Resolve this before changing completion
+state, recording signoff, or committing. Confirmation selects the scope; do not repeat a
+settled approval once that scope is clear.
+
+### Close the confirmed workstream
+
+`close task` means verify, log, mark complete, and commit. The command supplies workstream
+signoff and local commit authorization for that task; do not ask for them again.
+`close subtask` supplies signoff and local commit authorization for the named subtask:
+verify it, log its product change, mark it complete, and commit only its changes and bookkeeping.
+Keep the parent task open and preserve unfinished siblings. Do not request commit approval again.
+`close errand` authorizes verification, logging, and a local commit without tracked-task
 completion. Explicit limits such as "do not commit" override these defaults. Push only when the Author requests it.
 All logging instructions in this lifecycle are conditional on the [Changelog](#changelog)
-rules below. Finishing or committing work does not by itself require a changelog entry.
+rules below. Closing or committing work does not by itself require a changelog entry.
 
 1. Run applicable verification from `context/coding-rules.md`. Use local `post-chores` for
    tracked-task completion and compiler work; non-compiler errands need only relevant checks.
-   Record failures, ignores, and explicit waivers accurately. A finish command does not
+   Record failures, ignores, and explicit waivers accurately. A close command does not
    waive required checks or authorize unrelated implementation.
 2. Before completing a task, verify that no open subtasks or unchecked plan items remain.
    For a subtask, verify only its scoped checklist and leave unfinished sibling items and
-   the parent open. Record the signoff supplied by the finish command. Report unfinished
+   the parent open. Record the signoff supplied by the close command. Report unfinished
    scoped work or failing checks instead of claiming completion; scope reductions require
    Author direction.
-3. Reconcile the task, active memory, and changelog using the operations below.
+3. Reconcile the task, tracker, and changelog using the operations below.
 4. Use local `draft-commit` to inspect the exact scope and prepare a plain commit message,
-   then commit the finished work and its bookkeeping under the existing authorization.
+   then commit the completed work and its bookkeeping under the existing authorization.
    Preserve unrelated changes. If the commit fails, report the failure and leave a clear
-   task or errand note that the commit remains pending; do not report the finish as done.
+   task or errand note that the commit remains pending; do not report closure as complete.
 
 Subtasks can be checked off within approved work when supported by evidence. Passing checks
 alone and automatic checklist updates do not authorize whole-task completion or a commit.
-An explicit `finish subtask` or `complete subtask` command authorizes the scoped commit.
+An explicit `close subtask` command authorizes the scoped commit.
 Task creation and archive operations do not authorize commits. Never delete task history
 except under explicit archive-cleanup authorization.
 
 ## Lifecycle operations
 
-- **`task add`**: create a task from the template. Add it to memory only if selected by the
+- **`task add`**: create a task from the template. Add it to the tracker only if selected by the
   Author. Do not log administrative creation to the changelog or automatically commit.
-- **`finish subtask` / `complete subtask`**: verify the named checklist item's evidence,
-  record its signoff, mark that item complete, update any existing memory reference, log
+- **`close subtask`**: verify the named checklist item's evidence,
+  record its signoff, mark that item complete, update any existing tracker reference, log
   the completed product change, and commit the scoped changes and bookkeeping. Leave
   the parent task and unfinished siblings open. This command supplies local commit
   authorization; do not ask for another approval. Push only when requested.
-- **`finish task` / `complete task`**: verify the task, record signoff, mark it `complete`,
-  remove its active-memory entry, log the completed work, and commit the scoped changes.
+- **`close task`**: verify the task, record signoff, mark it `complete`,
+  remove its tracker entry, log the completed work, and commit the scoped changes.
   Keep its file in `context/tasks/` until archival is requested.
 - **`archive task` / `archive tasks`**: move only complete tasks with durably recorded
-  outcomes to `context/tasks/completed/`. Remove active-memory references and repair
+  outcomes to `context/tasks/completed/`. Remove tracker references and repair
   links to the moved files and links inside them. Preserve historical task contents.
 - **`archive cleanup`**: apply only to already completed archived task history. Present
   the exact deletion set and get confirmation before deleting. Repair affected links.
 - **`errand`**: begin or continue untracked work, observing ordinary plan approval.
-- **`finish errand`**: verify untracked work, log it, remove any completed Global Working
+- **`close errand`**: verify untracked work, log it, remove any completed Global Working
   Memory reminder, and commit the scoped changes. Do not create or close a tracked task.
 
-Avoid duplicate changelog entries when a subtask's changes are already recorded. Finishing
-never pushes by default. An explicit request such as `finish task and push` authorizes that
+Avoid duplicate changelog entries when a subtask's changes are already recorded. Closing
+never pushes by default. An explicit request such as `close task and push` authorizes that
 additional step, using the repository's Git Town guidance and the intended remote branch.
 
 ## Changelog
@@ -204,7 +217,7 @@ and changes to product documentation. It does not record administrative work.
 - Verification transcripts, signoff, commits, or synchronization operations.
 
 For an administrative-only task or errand, leave the changelog unchanged, including when
-the Author says `finish task` or `finish errand`. For mixed work, log only the completed
+the Author says `close task` or `close errand`. For mixed work, log only the completed
 product change. Do not log corrections to these administrative rules themselves.
 
 Keep verification details in task files or linked evidence. Historical imported entries are

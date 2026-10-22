@@ -16,7 +16,7 @@ Add verbiage and design for multiagent execution.
     * keeps a tight focus on the task and the spec
     * keeps the repo rules (coding rules, dev tools, qa) fresh in memory
       * and advises fresh sub agents about them.
-    * keeps current state in task working memory and selected focus in memory.md so we can reset or compact often
+    * keeps current state in task working memory and selected focus in tracker.md so we can reset or compact often
     * schedules and delegates agents to
       * research, each answering a specific question
       * execution

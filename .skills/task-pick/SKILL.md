@@ -1,6 +1,6 @@
 ---
 name: task-pick
-description: Select the next development task from local repository context. Use when the author asks what to work on next based on context/memory.md, task files in context/tasks/, the current branch, and recent local changes.
+description: Select the next development task from local repository context. Use when the author asks what to work on next based on context/tracker.md, task files in context/tasks/, the current branch, and recent local changes.
 ---
 
 # Task Pick
@@ -8,9 +8,9 @@ description: Select the next development task from local repository context. Use
 Read `context/task-tracking-rules.md` first so task status comes from the
 source of truth.
 
-Then combine `context/memory.md`, the relevant files in `context/tasks/`, and
+Then combine `context/tracker.md`, the relevant files in `context/tasks/`, and
 repository state to pick one actionable next task. The order of entries under
-**Active Tasks** in `context/memory.md` expresses priority: higher entries have
+**Active Tasks** in `context/tracker.md` expresses priority: higher entries have
 higher priority. Select the highest-priority actionable work unless the Author
 explicitly directs otherwise. Branch alignment alone does not override this order.
 
@@ -33,7 +33,7 @@ completed repairs do not complete a parent task whose verification or signoff is
 that closeout work is a valid next selection.
 
 Report stale entries or conflicting evidence with links, and state uncertainty where the
-available evidence cannot settle the status. Do not mark tasks complete, remove memory
+available evidence cannot settle the status. Do not mark tasks complete, remove tracker
 entries, or infer approval during this pass. When selecting a lower entry, explain why
 each higher-priority entry is being skipped, including its actual remaining work or blocker.
 
@@ -43,7 +43,7 @@ Always report the full selection path as an indented Markdown list, with each le
 on its own line. Use this structure, making each title a clickable link:
 
 ```markdown
-- **Memory:** entry title from context/memory.md
+- **Tracker:** entry title from context/tracker.md
   - **Task:** task title from context/tasks/<task-file>.md
     - **Section / checklist item:** specific entry title
 ```
@@ -52,11 +52,11 @@ Do not compress the path into a single line or an arrow-separated chain. Use sho
 descriptive link labels rather than displaying full file paths.
 
 Use the actual entry titles and include intervening section headings when needed to locate
-the selected item in a long task file. Make the memory entry, task file, and selected entry
+the selected item in a long task file. Make the tracker entry, task file, and selected entry
 clickable using verified file locations. Follow the path with a brief explanation of the
 chosen work and why it is next, so the Author can verify the selection and regain context.
 An entry name alone is insufficient. If broader backlog selection is requested and the task
-has no memory entry, state that explicitly instead of inventing a memory path.
+has no tracker entry, state that explicitly instead of inventing a tracker path.
 
 ## App session name
 

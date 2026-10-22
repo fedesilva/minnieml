@@ -4,7 +4,7 @@ Captured from MML revision `91e9fe797a7180cba7154f44c3ea93caac430b19` on 2026-09
 Everything below the separator is the verbatim former tracker, including its old rules,
 relative paths, scheduling decisions, and branch-specific claims. It is historical evidence,
 not an active workflow or backlog. Resolve its paths from the original `context/` directory.
-Use [working memory](../memory.md), [task files](../tasks/), and
+Use [working memory](../tracker.md), [task files](../tasks/), and
 [the changelog](../changelog.md) for maintained records.
 
 ---

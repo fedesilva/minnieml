@@ -13,11 +13,11 @@ Use the narrower skills for execution:
 - `task-add`
 - `task-list`
 - `task-pick`
-- `complete-subtask` (handles `finish subtask` and `complete subtask`)
-- `finish-task` (also handles `complete task`)
+- `close-subtask`
+- `close-task`
 - `archive-task`
 - `archive-cleanup`
-- `finish-errand`
+- `close-errand`
 
 This skill exists only to route discovery. Do not use it to execute a tracking
 change.

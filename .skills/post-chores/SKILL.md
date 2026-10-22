@@ -1,17 +1,17 @@
 ---
 name: post-chores
-description: Run finish checks and review when finishing a tracked task or handing off compiler changes, including compiler errands. Excludes non-compiler errands and simple asks.
+description: Run final checks and review when closing a tracked task or handing off compiler changes, including compiler errands. Excludes non-compiler errands and simple asks.
 ---
 
 # Post Chores
 
-Apply only when finishing a tracked task or handing off compiler changes. A sample,
+Apply only when closing a tracked task or handing off compiler changes. A sample,
 wording edit, or other intermediate artifact does not itself trigger this workflow.
 For non-compiler errands and simple asks, perform only checks relevant to the change.
 
 Read `AGENTS.md`, `context/coding-rules.md`, `context/qa-rules-and-coding-style.md`,
 and `context/dev-tools.md` directly. When tracking is involved, also read tracking rules,
-working memory, and the relevant task. Derive finish requirements from those sources.
+the tracker, and the relevant task. Derive completion requirements from those sources.
 
 ## Ordinary checks
 
@@ -52,4 +52,4 @@ silently waive a failing required gate.
 Recheck status and the final diff. State changes, evidence, open findings, and verification
 limits. Distinguish semantic checks, LLVM validation, execution, sanitizers, and performance
 measurements. Keep task working memory current. Commit only when authorized, including
-by a finish command under the tracking rules.
+by a close command under the tracking rules.
