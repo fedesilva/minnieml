@@ -197,5 +197,5 @@ and baseline claims when starting this task.
 
 ## Task Working Memory
 
-Created from the retained spec during context cleanup. Not selected for active memory.
-Next: discuss scope when the Author selects this task.
+Next: revalidate the retained `Global` ownership design against the settled compiler,
+choose the `Global`/`Static` mode name, and prepare a bounded implementation plan.

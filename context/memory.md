@@ -25,6 +25,13 @@ This is the Author's active and near-term focus. The backlog lives in [tasks/](t
 - **Current focus:** After Unify lambdas, plan the annotation split: `@ffi` for foreign
   declarations and `@llvm` for inline LLVM templates, preserving existing behavior.
 
+### Global-origin ownership
+
+- **Tracker:** [Global-origin ownership](tasks/global-origin-ownership.md)
+- **Status:** planned
+- **Current focus:** Plan a `Global`/`Static` ownership mode that removes implicit cloning
+  of globals, preserves their provenance through value flow, and prevents their destruction.
+
 ### Apply returned callables with parenthesized function types
 
 - **Tracker:** [Apply returned callables with parenthesized function types](tasks/typecheck-grouped-callable-results.md)
