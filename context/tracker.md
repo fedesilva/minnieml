@@ -18,13 +18,6 @@ This is the Author's active and near-term focus. The backlog lives in [tasks/](t
 - **Current focus:** Reconcile the LLVM 20.1.8 reproducer with passing Linux sanitizer suites,
   determine any remaining repair, and plan Linux smoke, benchmark, and memory verification.
 
-### Unify type-property alias resolution
-
-- **Tracker:** [Unify type-property alias resolution](tasks/type-property-alias-resolution.md)
-- **Status:** design
-- **Current focus:** Review after Unify lambdas; reconcile alias resolution across heap
-  classification and memory-function queries, then approve a bounded implementation plan.
-
 
 ### Apply returned callables with parenthesized function types
 
@@ -33,12 +26,23 @@ This is the Author's active and near-term focus. The backlog lives in [tasks/](t
 - **Current focus:** After Unify lambdas, reproduce the inline failure and local-binding
   control, then plan consistent callable-type resolution.
 
+### Unify type-property alias resolution
+
+- **Tracker:** [Unify type-property alias resolution](tasks/type-property-alias-resolution.md)
+- **Status:** design
+- **Current focus:** Review after Unify lambdas; reconcile alias resolution across heap
+  classification and memory-function queries, then approve a bounded implementation plan.
+
 ### Global-origin ownership
 
 - **Tracker:** [Global-origin ownership](tasks/global-origin-ownership.md)
 - **Status:** planned
 - **Current focus:** Plan a `Global`/`Static` ownership mode that removes implicit cloning
   of globals, preserves their provenance through value flow, and prevents their destruction.
+
+
+### Checkpoint: Merge into main
+
 
 ### Replace `@native` with `@ffi` and `@llvm`
 
