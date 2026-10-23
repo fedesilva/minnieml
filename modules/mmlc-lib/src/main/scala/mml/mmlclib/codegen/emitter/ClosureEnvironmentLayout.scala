@@ -32,69 +32,65 @@ object ClosureEnvironmentLayout:
     module:  Module,
     targets: CallableTargetAnalysis
   ): Either[CodeGenError, Map[String, ClosureEnvironmentLayout]] =
-    val layouts = module.members.collect { case struct: TypeStruct => struct.name -> struct }.toMap
+    // Semantic errors prevent codegen, so every capturing lambda requires a layout.
     val lambdas = module.members
       .collect { case binding: Bnd => binding }
       .flatMap(binding => TermTraversal.collect(binding.value) { case lambda: Lambda => lambda })
-      .filter(_.captures.nonEmpty)
-    lambdas
-      .traverse { lambda =>
-        for
-          name <- lambda.meta
-            .flatMap(_.envStructName)
-            .toRight(CodeGenError("Capturing lambda missing environment identity", lambda.some))
-          layout <- layouts
-            .get(name)
-            .toRight(CodeGenError("Missing closure environment", lambda.some))
-          id <- layout.id.toRight(
-            CodeGenError("Closure environment missing layout identity", lambda.some)
-          )
-          offset = if lambda.isMove then 1 else 0
-          fields = layout.fields.toList.drop(offset)
-          _ <- Either.cond(
-            fields.size == lambda.captures.size,
-            (),
-            CodeGenError("Capture layout mismatch", lambda.some)
-          )
-          captures = lambda.captures.zip(fields).map { (capture, field) =>
-            val target = Option
-              .when(lambda.meta.exists(_.isPartialApplication))(targets.target(capture.ref))
-              .flatten
-              .flatMap(targets.definitions.get)
-              .filter: _ =>
-                capture match
-                  case _: Capture.CapturedLiteral | _: Capture.CapturedConditional => false
-                  case _ => true
-            val storage = target match
-              case Some(definition) if definition.lambda.captures.isEmpty =>
-                CaptureStorage.Static(definition.id)
-              case Some(definition) =>
-                val pointer = TypeRef(SourceOrigin.Synth, "RawPtr", "stdlib::typedef::RawPtr".some)
-                CaptureStorage.Environment(field.copy(typeSpec = pointer), definition.id)
-              case None => CaptureStorage.Value(field)
-            PlannedCapture(capture, field, storage)
-          }
-          omitted = captures
-            .collect { case PlannedCapture(_, field, _: CaptureStorage.Static) => field.id }
+      .filter(lambda => lambda.captures.nonEmpty || lambda.meta.exists(_.envLayoutId.isDefined))
+    val environments = ClosureEnvironments.analyze(lambdas, module.resolvables)
+    environments.errors.headOption match
+      case Some(error) => CodeGenError(error.message, error.lambda.some).asLeft
+      case None => plan(module, targets, environments.byId)
+
+  private def plan(
+    module:       Module,
+    targets:      CallableTargetAnalysis,
+    environments: Map[String, ClosureEnvironment]
+  ): Either[CodeGenError, Map[String, ClosureEnvironmentLayout]] =
+    environments.toList
+      .sortBy(_._1)
+      .traverse { (id, environment) =>
+        val lambda = environment.lambda
+        val layout = environment.layout
+        val captures = environment.captureFields.map { (field, capture) =>
+          val target = Option
+            .when(lambda.meta.exists(_.isPartialApplication))(targets.target(capture.ref))
             .flatten
-            .toSet
-          cleanup = module.members
-            .collect { case binding: Bnd => binding }
-            .flatMap(binding =>
-              TermTraversal.collect(binding.value) {
-                case destruction: DestroyClosureEnvironment if destruction.layoutId == id =>
-                  destruction
-              }
-            )
-            .flatMap(_.fields)
-          _ <- Either.cond(
-            !cleanup.exists(field => omitted.contains(field.fieldId)),
-            (),
-            CodeGenError("Cannot omit a capture with payload destruction", lambda.some)
+            .flatMap(targets.definitions.get)
+            .filter: _ =>
+              capture match
+                case _: Capture.CapturedLiteral | _: Capture.CapturedConditional => false
+                case _ => true
+          val storage = target match
+            case Some(definition) if definition.lambda.captures.isEmpty =>
+              CaptureStorage.Static(definition.id)
+            case Some(definition) =>
+              val pointer = TypeRef(SourceOrigin.Synth, "RawPtr", "stdlib::typedef::RawPtr".some)
+              CaptureStorage.Environment(field.copy(typeSpec = pointer), definition.id)
+            case None => CaptureStorage.Value(field)
+          PlannedCapture(capture, field, storage)
+        }
+        val omitted = captures
+          .collect { case PlannedCapture(_, field, _: CaptureStorage.Static) => field.id }
+          .flatten
+          .toSet
+        val cleanup = module.members
+          .collect { case binding: Bnd => binding }
+          .flatMap(binding =>
+            TermTraversal.collect(binding.value) {
+              case destruction: DestroyClosureEnvironment if destruction.layoutId == id =>
+                destruction
+            }
           )
-          physical = layout.copy(fields =
-            (layout.fields.take(offset) ++ captures.flatMap(_.storage.field)).toVector
-          )
-        yield id -> ClosureEnvironmentLayout(physical, captures)
+          .flatMap(_.fields)
+        val physical = layout.copy(fields =
+          (layout.fields.take(environment.headerSize) ++
+            captures.flatMap(_.storage.field)).toVector
+        )
+        Either.cond(
+          !cleanup.exists(field => omitted.contains(field.fieldId)),
+          id -> ClosureEnvironmentLayout(physical, captures),
+          CodeGenError("Cannot omit a capture with payload destruction", lambda.some)
+        )
       }
       .map(_.toMap)

@@ -4,6 +4,9 @@ Durable product changes belong here. Current task state belongs in task files.
 
 ## 2026-10-22
 
+- Carry closure environment declaration IDs in lambda metadata through ownership rewriting,
+  cleanup generation, and code generation. Reject conflicting or incomplete environment
+  metadata and resolve destructors through their typed layout references.
 - Resolve aliases to their underlying nominal declarations when selecting clone functions and
   classifying heap-owning structs, preserving restrictions on function-containing fields.
 - Report recovered parser errors nested inside expressions through CLI and editor diagnostics,

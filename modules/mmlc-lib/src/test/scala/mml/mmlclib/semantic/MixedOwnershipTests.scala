@@ -372,11 +372,10 @@ class MixedOwnershipTests extends BaseEffFunSuite:
         binding.witnessParam.id
       )
       assertEquals(closure.captures.map(_.ref.resolvedId), List(binding.valueParam.id))
-      val environment = module.members
-        .collectFirst {
-          case layout: TypeStruct if closure.meta.flatMap(_.envStructName).contains(layout.name) =>
-            layout
-        }
+      val environment = closure.meta
+        .flatMap(_.envLayoutId)
+        .flatMap(module.resolvables.lookupType)
+        .collect { case layout: TypeStruct => layout }
         .getOrElse(fail("expected the closure's registered environment layout"))
       assertEquals(environment.fields.size, 2, "one destructor pointer and one source payload")
       assertEquals(

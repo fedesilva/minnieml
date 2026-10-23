@@ -13,6 +13,10 @@ final case class ValueAvailability private (
     val failed = parameter.id.filter(_ => !isAvailable(value)).toSet
     copy(unavailable = unavailable ++ failed, index = index.updated(parameter))
 
+  /** Usable capturing lambdas require an environment even before metadata is attached. */
+  def needsClosureEnvironment(lambda: Lambda): Boolean =
+    lambda.captures.nonEmpty && isAvailable(lambda)
+
   def isAvailable(term: Term): Boolean = term match
 
     case _: InvalidExpression | _: TermError => false

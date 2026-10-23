@@ -3,6 +3,7 @@ package mml.mmlclib.semantic
 import cats.syntax.all.*
 import mml.mmlclib.ast.*
 import mml.mmlclib.test.BaseEffFunSuite
+import mml.mmlclib.test.ast.collectModuleTerms
 
 class DestructionTests extends BaseEffFunSuite:
   private val source = """
@@ -18,9 +19,6 @@ class DestructionTests extends BaseEffFunSuite:
     ;
   """
 
-  private def nodes[A](module: Module)(query: PartialFunction[Term, A]): List[A] =
-    module.members.collect { case b: Bnd => b }.flatMap(b => TermTraversal.collect(b.value)(query))
-
   private def body(module: Module, name: String): Expr =
     module.members
       .collectFirst { case b: Bnd if b.name == name => b.value }
@@ -31,9 +29,9 @@ class DestructionTests extends BaseEffFunSuite:
 
   test("helper bodies carry resolved layouts, ordered fields and real pointer signatures") {
     semNotFailed(source).map { module =>
-      val environments = nodes(module) { case d: DestroyClosureEnvironment => d }
+      val environments = collectModuleTerms(module) { case d: DestroyClosureEnvironment => d }
       assertEquals(environments.size, 2)
-      assertEquals(nodes(module) { case d: DispatchClosureDestructor => d }.size, 1)
+      assertEquals(collectModuleTerms(module) { case d: DispatchClosureDestructor => d }.size, 1)
       environments.foreach { d =>
         assertEquals(DestructionValidator.validate(d, module.resolvables), Nil)
         val layout = module.resolvables
@@ -67,18 +65,19 @@ class DestructionTests extends BaseEffFunSuite:
           .collect(target.value) { case d: DestroyClosureEnvironment => d }
           .exists(_.layoutId == outer.layoutId)
       )
-      assert(!nodes(module) { case a: App if a.fn.isInstanceOf[Ref] => a }.exists { app =>
-        val ref = app.fn match
-          case r: Ref => r.some
-          case _ => none
-        ref
-          .flatMap(_.typeSpec)
-          .collect { case f: TypeFn => f.paramTypes.head }
-          .exists {
-            case t: TypeRef if t.resolvedId.contains("stdlib::typedef::RawPtr") =>
-              app.arg.typeSpec.exists(_.isInstanceOf[TypeFn])
-            case _ => false
-          }
+      assert(!collectModuleTerms(module) { case a: App if a.fn.isInstanceOf[Ref] => a }.exists {
+        app =>
+          val ref = app.fn match
+            case r: Ref => r.some
+            case _ => none
+          ref
+            .flatMap(_.typeSpec)
+            .collect { case f: TypeFn => f.paramTypes.head }
+            .exists {
+              case t: TypeRef if t.resolvedId.contains("stdlib::typedef::RawPtr") =>
+                app.arg.typeSpec.exists(_.isInstanceOf[TypeFn])
+              case _ => false
+            }
       })
     }
   }
@@ -118,7 +117,7 @@ class DestructionTests extends BaseEffFunSuite:
         borrowed ();
       ;
     """).map { module =>
-      assertEquals(nodes(module) { case d: DestroyClosureEnvironment => d }, Nil)
+      assertEquals(collectModuleTerms(module) { case d: DestroyClosureEnvironment => d }, Nil)
       assertEquals(destroys(body(module, "main")), Nil)
     }
   }
@@ -175,7 +174,7 @@ class DestructionTests extends BaseEffFunSuite:
       val destructor = module.members
         .collectFirst { case b: Bnd if b.name == "close_handle" => b }
         .getOrElse(fail("Missing destructor declaration"))
-      val env = nodes(module) { case d: DestroyClosureEnvironment => d }.head
+      val env = collectModuleTerms(module) { case d: DestroyClosureEnvironment => d }.head
       val layout = module.resolvables
         .lookupType(env.layoutId)
         .collect { case s: TypeStruct => s }
@@ -214,7 +213,7 @@ class DestructionTests extends BaseEffFunSuite:
       val destructor = module.members
         .collectFirst { case b: Bnd if b.name == "close_handle" => b }
         .getOrElse(fail("Missing destructor declaration"))
-      val env = nodes(module) { case d: DestroyClosureEnvironment => d }.head
+      val env = collectModuleTerms(module) { case d: DestroyClosureEnvironment => d }.head
       assertEquals(env.fields.map(c => c.targetId.some), List.fill(2)(destructor.id))
       assertEquals(DestructionValidator.validate(env, module.resolvables), Nil)
     }
@@ -237,8 +236,10 @@ class DestructionTests extends BaseEffFunSuite:
   test("malformed destruction nodes accumulate independent contract errors") {
     semNotFailed(source).map { module =>
       val index = module.resolvables
-      val env   = nodes(module) { case d: DestroyClosureEnvironment if d.fields.nonEmpty => d }.head
-      val closure = nodes(module) { case d: DestroyClosure => d }.head
+      val env = collectModuleTerms(module) {
+        case d: DestroyClosureEnvironment if d.fields.nonEmpty => d
+      }.head
+      val closure = collectModuleTerms(module) { case d: DestroyClosure => d }.head
       val wrongOperand = Expr(
         SourceOrigin.Synth,
         List(LiteralUnit(SourceOrigin.Synth, closure.typeSpec)),

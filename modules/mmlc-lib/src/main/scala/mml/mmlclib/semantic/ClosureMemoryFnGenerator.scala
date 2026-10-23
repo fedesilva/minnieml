@@ -26,10 +26,7 @@ object ClosureMemoryFnGenerator:
   private def typeId(moduleName: String, name: String): Option[String] =
     BindingIds.declaration(moduleName, name, "typedef").some
 
-  /** Collect all capturing lambdas from a module, paired with a stable name for each.
-    *
-    * The name is derived from the enclosing binding name + a counter for disambiguation.
-    */
+  /** Collect capturing lambdas with module-wide unique environment names. */
   private type Collected = (List[(Lambda, String)], Int)
 
   private def collectCapturingLambdas(
@@ -46,7 +43,7 @@ object ClosureMemoryFnGenerator:
 
     def walkTerm(term: Term, counter: Int): Collected =
       term match
-        case lambda: Lambda if lambda.captures.nonEmpty && recovery.isAvailable(lambda) =>
+        case lambda: Lambda if recovery.needsClosureEnvironment(lambda) =>
           val name          = s"__closure_env_$counter"
           val (inner, next) = walkExpr(lambda.body, counter + 1)
           ((lambda, name) :: inner, next)
@@ -200,7 +197,7 @@ object ClosureMemoryFnGenerator:
   /** Tag exact lambda instances and allocate invocation parameters in traversal order. */
   private def tagLambdas(
     members:    List[Member],
-    lambdaMap:  IdentityHashMap[Lambda, String],
+    lambdaMap:  IdentityHashMap[Lambda, TypeStruct],
     moduleName: String
   ): Allocation[List[Member]] =
     def rewriteExpr(expr: Expr): Allocation[Expr] =
@@ -212,11 +209,11 @@ object ClosureMemoryFnGenerator:
       case lambda: Lambda =>
         rewriteExpr(lambda.body).flatMap { body =>
           Option(lambdaMap.get(lambda)) match
-            case Some(envName) =>
-              val meta = lambda.meta.getOrElse(LambdaMeta()).copy(envStructName = envName.some)
+            case Some(layout) =>
+              val meta = lambda.meta.getOrElse(LambdaMeta()).copy(envLayoutId = layout.id)
               prepareClosureInvocation(
                 lambda.copy(body = body, meta = meta.some),
-                BindingOwner.binding(moduleName, envName)
+                BindingOwner.binding(moduleName, layout.name)
               ).widen
             case None => lambda.copy(body = body).pure[Allocation].widen
         }
@@ -253,15 +250,16 @@ object ClosureMemoryFnGenerator:
     val moduleName = module.name
 
     val capturingLambdas = collectCapturingLambdas(module)
-    // Lambda nodes have no stable IDs; this boundary tags their exact AST instances.
-    val lambdaMap = capturingLambdas.foldLeft(new IdentityHashMap[Lambda, String]()) {
-      case (acc, (lambda, envName)) =>
-        acc.put(lambda, envName)
-        acc
-    }
     val envStructs = capturingLambdas.map((lambda, name) =>
       mkEnvStruct(lambda, name, moduleName, module.resolvables)
     )
+    // Lambda nodes have no stable IDs; this boundary tags their exact AST instances.
+    val lambdaMap =
+      capturingLambdas.zip(envStructs).foldLeft(new IdentityHashMap[Lambda, TypeStruct]()) {
+        case (acc, ((lambda, _), layout)) =>
+          acc.put(lambda, layout)
+          acc
+      }
     val targets = capturingLambdas.zip(envStructs).collect {
       case ((lambda, _), struct) if lambda.isMove => (s"__free_${struct.name}", struct.id)
     } :+ ("__free_closure", none[String])

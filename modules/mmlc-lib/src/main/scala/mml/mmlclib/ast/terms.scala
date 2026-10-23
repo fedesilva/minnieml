@@ -124,7 +124,7 @@ enum Capture:
 case class LambdaMeta(
   isPartialApplication:  Boolean         = false,
   isTailRecursive:       Boolean         = false,
-  envStructName:         Option[String]  = None,
+  envLayoutId:           Option[String]  = None,
   transferredCaptures:   Set[String]     = Set.empty,
   borrowedCaptures:      Set[String]     = Set.empty,
   environmentParam:      Option[FnParam] = None,

@@ -2,6 +2,12 @@ package mml.mmlclib.test.ast
 
 import mml.mmlclib.ast.*
 
+/** Collects matching terms from every binding in the module. */
+def collectModuleTerms[A](module: Module)(query: PartialFunction[Term, A]): List[A] =
+  module.members
+    .collect { case binding: Bnd => binding }
+    .flatMap(binding => TermTraversal.collect(binding.value)(query))
+
 /** Returns true when any term in this tree matches the predicate.
   *
   * Example:
@@ -10,18 +16,8 @@ import mml.mmlclib.ast.*
   * ```
   */
 def existsTerm(term: Term)(predicate: PartialFunction[Term, Boolean]): Boolean =
-  predicate.applyOrElse(term, (_: Term) => false) || (term match
-    case App(_, fn, arg, _, _) => existsTerm(fn)(predicate) || existsExpr(arg)(predicate)
-    case Expr(_, terms, _, _) => terms.exists(existsTerm(_)(predicate))
-    case lambda: Lambda => existsExpr(lambda.body)(predicate)
-    case TermGroup(_, inner, _) => existsExpr(inner)(predicate)
-    case Cond(_, cond, ifTrue, ifFalse, _, _) =>
-      existsExpr(cond)(predicate) ||
-      existsExpr(ifTrue)(predicate) ||
-      existsExpr(ifFalse)(predicate)
-    case Tuple(_, elements, _, _) => elements.exists(existsExpr(_)(predicate))
-    case d: Destruction => existsExpr(d.operand)(predicate)
-    case _ => false)
+  predicate.applyOrElse(term, (_: Term) => false) ||
+    TermTraversal.children(term).exists(existsTerm(_)(predicate))
 
 /** Returns true when any term inside this expression matches the predicate. */
 def existsExpr(expr: Expr)(predicate: PartialFunction[Term, Boolean]): Boolean =

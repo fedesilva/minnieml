@@ -3,10 +3,44 @@ package mml.mmlclib.codegen
 import cats.data.NonEmptyList
 import cats.syntax.all.*
 import mml.mmlclib.ast.*
-import mml.mmlclib.semantic.DestructionValidator
+import mml.mmlclib.semantic.{DestructionValidator, ResolvablesIndexer}
 import mml.mmlclib.test.BaseEffFunSuite
+import mml.mmlclib.test.ast.existsExpr
 
 class DestructionCodegenTests extends BaseEffFunSuite:
+
+  test("closure allocation stores the destructor identified by its layout after a helper rename") {
+    semNotFailed("""
+      fn make(~text: String): Unit -> Unit = ~{ println text; };;
+      fn main(): Unit =
+        let f = make (int_to_str 123);
+        f ();
+      ;
+    """).map { module =>
+      val helper = module.members
+        .collectFirst {
+          case binding: Bnd if existsExpr(binding.value) { case _: DestroyClosureEnvironment =>
+                true
+              } =>
+            binding
+        }
+        .getOrElse(fail("Expected an environment destructor"))
+      val renamed = ResolvablesIndexer.refresh(module.copy(members = module.members.map {
+        case binding: Bnd if binding.id == helper.id =>
+          binding.copy(nameNode = Name.synth("dispose_payload"))
+        case member => member
+      }))
+      List(TargetAbi.AArch64, TargetAbi.X86_64).foreach { abi =>
+        val ir = LlvmIrEmitter
+          .module(renamed, none, "", abi, TargetAttributes(none, none), false)
+          .fold(error => fail(error.toString), _.ir)
+        val make = functionBody(ir, "test_make")
+        assert(make.contains("store ptr @test_dispose_payload,"), make)
+        assert(!make.contains(s"store ptr @test_${helper.name},"), make)
+      }
+    }
+  }
+
   private def expression(term: Term): Expr =
     Expr(term.source, List(term), typeSpec = term.typeSpec)
 

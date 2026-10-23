@@ -40,7 +40,7 @@ regressions relevant to each correctness repair without adding those follow-ups 
 21. [x] **complete** — [T1: instrument MML-generated IR for AddressSanitizer](#t1-mml-generated-ir-lacks-addresssanitizer-instrumentation); tracked in a [separate task](asan-generated-ir.md).
 22. [x] **complete** — [Preserve the complete application callee type in Simplifier](#fix-preserve-the-complete-application-callee-type-in-simplifier); verified and signed off.
 23. [x] **complete** — [Lambda semantics and lowering](#remaining-lambda-implementation), including [restoration of all ignored regressions](#restore-ignored-regressions); verified and signed off.
-24. [ ] **planned** — [Harden closure environment lookup](#harden-closure-environment-lookup).
+24. [x] **complete** — [Harden closure environment lookup](#harden-closure-environment-lookup); verified and signed off.
 25. [ ] **planned** — Final task verification and signoff; branch audit findings are recorded below.
 
 Linux sanitizer validation is deferred to the separate
@@ -1332,30 +1332,71 @@ not run the smoke harness, benchmarks, Linux/x86-64 checks, or formatting and li
 
 #### Harden closure environment lookup
 
-- **Status:** planned.
-- **Problem:** [ClosureDestructorBodyGenerator.scala](../../modules/mmlc-lib/src/main/scala/mml/mmlclib/semantic/ClosureDestructorBodyGenerator.scala)
-  joins a destructor's layout ID to lambda capture metadata through the layout's name.
-  Its `envStructName -> Lambda` map uses unchecked `.toMap`, which silently chooses one
-  entry when names repeat. [ClosureMemoryFnGenerator.scala](../../modules/mmlc-lib/src/main/scala/mml/mmlclib/semantic/ClosureMemoryFnGenerator.scala)
-  generates unique names with a module-wide counter, but the consumer does not enforce
-  the association after intervening transformations. The destruction validator checks
-  layouts and cleanup entries, not uniqueness of lambda environment metadata.
+- **Status:** complete.
+- **Problem:** closure layouts and capture ownership must remain paired across compiler
+  transformations. Generated names do not establish declaration identity. Destruction validation
+  checks layouts and cleanup entries, but cannot establish which lambda supplied the capture
+  ownership used to construct those entries.
 - **Classification:** validation hardening of a lambda-phase invariant. A current source-level
-  collision is not established; the missing check permits inconsistent metadata to be
-  silently accepted at the lookup boundary.
+  collision is not established; inconsistent metadata must be rejected at the lookup boundary.
 - **Scope:** enforce an unambiguous association between each generated environment layout
-  and its lambda capture metadata before constructing destructor cleanup. Assess carrying
-  the stable layout identity directly instead of reconstructing the association by name.
+  and its lambda capture metadata before constructing destructor cleanup. Carry the existing
+  layout declaration ID in lambda metadata and resolve it through the symbol index.
   Accumulate a compiler diagnostic for conflicting associations rather than overwriting
   an entry or raising an exception.
+- **Approved plan:**
+  1. Replace environment-name metadata with the existing layout ID. Preserve that identity
+     across ownership rewriting; migrate semantic and codegen consumers without a name fallback.
+  2. Validate layout/capture associations before constructing cleanup, including conflicts,
+     missing layouts, and mismatched capture counts. Accumulate independent errors.
+  3. Cover malformed metadata and nested environments with distinct capture ownership using
+     phase-level fixtures and identity-based assertions; document the phase contract.
+  4. Run compiler gates, QA, focused tracking review, and independent code review.
+- **Approved review corrections:** exercise orphaned move layouts, borrowed fields in move
+  environments, every conflicting capture-contract property, equivalent move occurrences, and
+  negative destructor-lookup controls. Share test traversal without losing ownership or qualifier
+  nodes; centralize header size, environment eligibility, and missing-identity diagnostics.
+  Clarify helper naming, borrowed-environment errors, storage allocation, and vertical spacing.
+- **Implementation:** `LambdaMeta.envLayoutId` retains the generated layout's declaration ID.
+  `ClosureEnvironments` supplies checked associations to semantic cleanup and physical layout
+  planning. Equivalent occurrences share a contract; conflicting captures, missing layouts,
+  and capture-count mismatches produce diagnostics. Ownership analysis and environment emission
+  resolve destructor bindings by the layout ID in their typed bodies, including nested operations.
 - **Acceptance:**
-  - [ ] Add phase-level fixtures with conflicting environment metadata and require a
+  - [x] Add phase-level fixtures with conflicting environment metadata and require a
     deterministic diagnostic before destructor generation can select the wrong captures.
-  - [ ] Cover nested move lambdas and distinct layouts with different capture ownership;
+  - [x] Cover nested move lambdas and distinct layouts with different capture ownership;
     each destructor must retain the matching field identities and cleanup behavior.
-  - [ ] Document and enforce the producer/consumer identity contract across ownership
+  - [x] Document and enforce the producer/consumer identity contract across ownership
     rewriting. Preserve ordinary generated environments without extra runtime work.
-- **Implementation approval:** pending a bounded repair plan.
+- **Review coverage:** ten phase tests exercise orphaned move layouts, borrowed fields in move
+  environments, compatible move occurrences, missing layouts and identities, and conflicting
+  capture contracts. The conflict table starts with source-generated captures and varies one
+  flag, count, target, clone, or witness identity per row, with compatible controls. Unknown
+  identities and helpers with matching names but mismatched typed references fail lookup.
+  Shared test traversal preserves ownership and qualifier nodes. Environment header size,
+  semantic eligibility, and missing-identity diagnostics each have one definition; destructor
+  diagnostics distinguish missing owners from borrowed environments. Allocation and capture
+  offset use the same destructor-presence decision.
+- **Verification (2026-10-22):** `sbtn 'scalafmtAll; scalafixAll; testFull'` passes
+  1,414 library tests and nine CLI tests, with zero ignores or compiler warnings.
+  `./tests/smoke/run.sh all` passes 8/8. `sbtn mmlcPublishLocal` succeeds after the smoke
+  checks; `make -C benchmark clean` followed by `make -C benchmark mml` builds all 13 targets.
+  `./tests/mem/run.sh all` passes 52/52 ASan+LSan fixtures in 74 seconds on macOS arm64 with
+  LLVM/Clang 23.1.1. QA, focused tracking consistency, and whitespace checks pass.
+  Benchmark results establish build success, not performance. No ABI changes
+  or Linux execution are included. Renamed-helper target coverage inspects AArch64 and x86-64
+  IR without executing the altered modules. Malformed-metadata coverage uses phase-boundary
+  fixtures; no source-level collision or mutation-testing result is claimed.
+- **Independent review:** the implementation review and fresh narrow review of the corrections
+  report no actionable findings. Separate fresh QA/style, test-quality, and human-readability
+  checks pass; all twelve reported coverage and design gaps are addressed. The correction
+  reviewer independently reran `ClosureEnvironmentTests`, `DestructionTests`,
+  `DestructionCodegenTests`, and `OwnershipAnalyzerTests`: 118 tests pass with zero failures
+  or errors. No check was skipped or replaced by a fallback.
+- **Implementation approval:** granted for the layout-ID plan above.
+- **Signoff:** complete for item 24, including the review corrections. Final task verification
+  remains item 25. Local commit authorized; push is not authorized.
 
 #### Bug: preserve tail recursion across owned-closure cleanup
 
@@ -1682,13 +1723,21 @@ are in `context/history/` for Author review. No compiler slice is authorized by 
 - Full ignored-regression cleanup signoff: complete, including the alias and nested-parser
   repairs and assertion corrections. Local commit is authorized for the cleanup and associated
   records, including the memory changes; push is not authorized.
-- Item 23, lambda semantics and lowering: complete and signed off. Items 24 and 25 remain open.
+- Item 23, lambda semantics and lowering: complete and signed off.
+- Item 24, closure-environment lookup hardening: complete and signed off, including review
+  corrections. Local commit authorized; push is not authorized. Item 25 remains open.
 - Historical commit and push authorization: expression preservation, the ignored-test inventory and plan,
   four restored regressions, and their completion records; push to `origin/dev-lambda-unify`.
 
 ## Task Working Memory
 
 - **Branch:** `dev-2026-03-21-lambdas`.
+- **Completed repair:** [closure-environment layout identities](#harden-closure-environment-lookup).
+  The metadata migration and review corrections are implemented. Formatting, lint, 1,414 library
+  tests, nine CLI tests, 8/8 smokes, verified publication, 13 clean benchmark builds, and 52/52
+  ASan+LSan fixtures pass. QA, focused tracking checks, and fresh narrow review pass, including
+  separate QA/style, test-quality, and readability checks and an independent 118-test rerun.
+  Scoped signoff is complete. Local commit authorized; push is not authorized. Item 25 remains open.
 - **Completed repair:** [Simplifier callee types](#fix-preserve-the-complete-application-callee-type-in-simplifier).
   The shared alias, exhaustive simplification, and annotation correction are verified and signed
   off, with passing compiler gates and independent review. The parent task remains open.
@@ -1704,9 +1753,8 @@ are in `context/history/` for Author review. No compiler slice is authorized by 
   review and fresh narrow re-review pass, including separate QA/style, test-quality, and
   readability checks. Scoped signoff is complete; local commit is authorized, including the
   memory changes. The parent task remains open.
-- **Priority and next action:** prepare the bounded plan for
-  [closure-environment lookup hardening](#harden-closure-environment-lookup). Final verification
-  for merge readiness follows item 24. The ignored-regression inventory has no open cases.
+- **Priority and next action:** plan final task verification for merge readiness (item 25).
+  The ignored-regression inventory has no open cases.
 - **Post-lambda review:** [Unify type-property alias resolution](type-property-alias-resolution.md)
   reviews consistent identity across heap/clone/free queries; implementation approval is pending.
 - **Deferred scope:** diagnostic, test-quality, documentation, optimization, and maintainability
@@ -1781,7 +1829,7 @@ are in `context/history/` for Author review. No compiler slice is authorized by 
   is complete and signed off.
 - **Open limits:** the general branch audit and separate Linux sanitizer validation are deferred.
   The broader counter/expression follow-up is complete and signed off.
-  Closure-environment lookup hardening and final task verification remain pending.
+  Final task verification is pending.
   [Consuming an owned PAP captured by a move lambda](#bug-consume-an-owned-pap-captured-by-a-move-lambda)
   has passing semantic, smoke, benchmark-build, native sanitizer, and independent review
   gates and is complete and signed off.

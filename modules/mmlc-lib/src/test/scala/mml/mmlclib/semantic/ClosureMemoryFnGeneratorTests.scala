@@ -59,15 +59,15 @@ class ClosureMemoryFnGeneratorTests extends BaseEffFunSuite:
       .flatten
       .getOrElse(fail("Expected lambda nested under selection qualifier"))
 
-    val envStructName = rewrittenLambda.meta
-      .flatMap(_.envStructName)
-      .getOrElse(fail("Expected envStructName on qualifier lambda"))
+    val layoutId = rewrittenLambda.meta
+      .flatMap(_.envLayoutId)
+      .getOrElse(fail("Expected environment layout identity on qualifier lambda"))
 
     assert(
-      rewritten.members.exists {
-        case ts: TypeStruct => ts.name == envStructName
+      rewritten.resolvables.lookupType(layoutId).exists {
+        case ts: TypeStruct => ts.id.contains(layoutId)
         case _ => false
       },
-      s"Expected generated env struct '$envStructName'"
+      s"Expected registered environment layout '$layoutId'"
     )
   }

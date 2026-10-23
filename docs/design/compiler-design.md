@@ -799,8 +799,8 @@ Generation section below.
 
 **Behavior**:
 - Runs after capture and type information are available.
-- For every capturing lambda, synthesizes a private env struct named `__closure_env_N`.
-- Tags the corresponding `Lambda` with `LambdaMeta.envStructName`.
+- For every usable capturing lambda, synthesizes a private env struct named `__closure_env_N`.
+- Tags the corresponding `Lambda` with the layout's declaration ID in `LambdaMeta.envLayoutId`.
 - Registers a specific `__free___closure_env_N` helper for each move environment.
 - Registers `__free_closure` once per module, including modules with only consuming function
   parameters and no locally declared move closure.
@@ -824,7 +824,7 @@ Generation section below.
 **AST rewrites**:
 - Appends generated env `TypeStruct` members
 - Appends generated closure free helpers
-- Rewrites lambdas with `LambdaMeta.envStructName`
+- Rewrites lambdas with `LambdaMeta.envLayoutId`; ownership rewriting preserves this identity.
 - Extends the resolvables index with the synthetic types and functions
 
 ---
@@ -1102,6 +1102,16 @@ its destructor target. Native and struct captures use their registered destructo
 borrowed function captures have no cleanup entry. Field cleanup follows layout order, with
 storage release handled last by the intrinsic. `CapturedConditional` payloads receive ordinary
 owning cleanup because creation establishes ownership before storing them in the environment.
+
+Lambda metadata and destruction nodes refer to the same layout declaration ID. Semantic cleanup
+and physical layout planning share `ClosureEnvironments`, which resolves these IDs through the
+symbol index and checks capture counts and conflicting metadata. Repeated occurrences of a layout
+must agree on captures, move ownership, and partial-application status. Invalid associations
+accumulate diagnostics before cleanup is constructed. Move environments share one header-size
+rule for capture pairing, shape validation, and physical layout. Destructor completion reports
+missing owners separately from references to borrowed environments. Generated names label emitted
+symbols; they do not identify a lambda's environment. Ownership and codegen resolve an environment's
+destructor through the layout ID recorded in its typed destruction body.
 
 Each generator is a separate phase file with a `rewriteModule` entry point. Shared construction
 of typed destructor bodies lives in `ClosureDestructorAst`; neither phase calls the other.

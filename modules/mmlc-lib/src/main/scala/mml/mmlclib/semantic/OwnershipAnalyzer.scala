@@ -719,8 +719,8 @@ object OwnershipAnalyzer:
           ResultOwnership(
             owns = true,
             destructorTargetId = lambda.meta
-              .flatMap(_.envStructName)
-              .flatMap(name => DestructionTargets.named(s"__free_$name", scope.resolvables))
+              .flatMap(_.envLayoutId)
+              .flatMap(DestructionTargets.forEnvironment(_, scope.resolvables))
           )
 
         case Some(_: Lambda) =>

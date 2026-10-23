@@ -430,21 +430,6 @@ private case class EnvSetupResult(
   exitBlock:    Option[String]
 )
 
-private def resolveClosureEnvStruct(
-  lambda: Lambda,
-  state:  CodeGenState
-): Either[CodeGenError, TypeStruct] =
-  lambda.meta.flatMap(_.envStructName) match
-    case Some(envStructName) =>
-      state.resolvables.resolvableTypes.values.collectFirst {
-        case ts: TypeStruct if ts.name == envStructName => ts
-      } match
-        case Some(envStruct) => envStruct.asRight
-        case None =>
-          CodeGenError(s"Missing closure env struct '$envStructName'", lambda.some).asLeft
-    case None =>
-      CodeGenError("Capturing lambda missing envStructName", lambda.some).asLeft
-
 /** Makes the recursive self value from the current entry and its incoming environment. Reusing that
   * environment keeps captured state available without allocating or copying it on recursion.
   */
@@ -536,7 +521,9 @@ private def emitCallSiteEnv(
   functionScope: Map[String, ScopeEntry]
 ): Either[CodeGenError, EnvSetupResult] =
   for
-    envStruct <- resolveClosureEnvStruct(lambda, state)
+    envStruct <- ClosureEnvironments
+      .layout(lambda, state.resolvables)
+      .leftMap(error => CodeGenError(error.message, error.lambda.some))
     plan <- envStruct.id
       .flatMap(state.closureEnvironments.get)
       .toRight(CodeGenError("Missing physical closure environment plan", lambda.some))
@@ -572,11 +559,18 @@ private def emitCallSiteEnv(
           case _ => none[(String, NativeAbiPlan)].asRight[CodeGenError]
       }
       .map(_.flatten.toMap)
+    destructor <- Option.when(lambda.isMove)(envStruct).traverse { layout =>
+      layout.id
+        .flatMap(DestructionTargets.forEnvironment(_, state.resolvables))
+        .flatMap(state.resolvables.lookup)
+        .collect { case binding: Bnd => binding }
+        .toRight(CodeGenError("Missing closure environment destructor", lambda.some))
+    }
     result <- emitEnvironmentStorage(
-      lambda,
       fnName,
       functionScope,
       envStruct,
+      destructor,
       captureTypes,
       captureOperands,
       clonePlans,
@@ -592,10 +586,10 @@ private case class CapturedValue(
 )
 
 private def emitEnvironmentStorage(
-  lambda:          Lambda,
   fnName:          String,
   functionScope:   Map[String, ScopeEntry],
   envStruct:       TypeStruct,
+  destructor:      Option[Bnd],
   captureTypes:    List[(Capture, String)],
   captureOperands: Map[String, String],
   clonePlans:      Map[String, NativeAbiPlan],
@@ -605,11 +599,11 @@ private def emitEnvironmentStorage(
 
   val envTypeRef = s"%struct.${envStruct.name}"
   // Field offset: move envs have __dtor at field 0, borrow envs start captures at field 0
-  val fieldOffset = if lambda.isMove then 1 else 0
+  val fieldOffset = destructor.fold(0)(_ => 1)
 
   // Allocate env: malloc for move, alloca for borrow
-  val (siteStateAfterDtor, envPtrOp) =
-    if lambda.isMove then
+  val (siteStateAfterDtor, envPtrOp) = destructor match
+    case Some(binding) =>
       val stateWithEnv = captureState
         .withFunctionDeclaration("malloc", "ptr", List("i64"))
         .withFunctionDeclaration("free", "void", List("ptr"))
@@ -618,7 +612,6 @@ private def emitEnvironmentStorage(
         emitCall(mallocReg.some, "ptr".some, "malloc", List(("i64", envSize.toString)))
       val afterMalloc = stateWithEnv.withRegister(mallocReg + 1).emit(mallocLine)
 
-      val dtorName   = s"__free_${envStruct.name}"
       val dtorGepReg = afterMalloc.nextRegister
       val dtorGepLine = emitGetElementPtr(
         dtorGepReg,
@@ -632,7 +625,7 @@ private def emitEnvironmentStorage(
           .getTbaaStructFieldTag(envStruct, 0, afterMalloc)
           .getOrElse((afterMalloc, ""))
       val dtorStoreLine = emitStore(
-        s"@${captureState.mangleName(dtorName)}",
+        s"@${captureState.mangleName(binding.name)}",
         "ptr",
         s"%$dtorGepReg",
         Option.when(dtorTag.nonEmpty)(dtorTag)
@@ -640,7 +633,7 @@ private def emitEnvironmentStorage(
       val afterDtor =
         stateWithDtorTag.withRegister(dtorGepReg + 1).emit(dtorGepLine).emit(dtorStoreLine)
       (afterDtor, s"%$mallocReg")
-    else
+    case None =>
       // Borrow: stack-allocate env, no dtor
       if captureState.insideLoopifiedFunction then
         // Named registers remain valid when storage precedes earlier numeric capture loads.
