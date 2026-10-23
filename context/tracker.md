@@ -11,12 +11,12 @@ This is the Author's active and near-term focus. The backlog lives in [tasks/](t
 
 ## Active Tasks
 
-### Apply returned callables with parenthesized function types
+### Unify and simplify callable-type handling
 
-- **Tracker:** [Apply returned callables with parenthesized function types](tasks/typecheck-grouped-callable-results.md)
+- **Tracker:** [Unify and simplify callable-type handling](tasks/typecheck-grouped-callable-results.md)
 - **Status:** planned
-- **Current focus:** After Unify lambdas, reproduce the inline failure and local-binding
-  control, then plan consistent callable-type resolution.
+- **Current focus:** Map divergent callable-type handling and plan a bounded unification
+  that removes duplicated policy, with the grouped-return bug as a regression case.
 
 ### Unify type-property alias resolution
 
