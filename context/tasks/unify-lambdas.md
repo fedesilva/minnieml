@@ -3,7 +3,7 @@
 ## Metadata
 
 - **Owner:** The Author
-- **Status:** in_progress
+- **Status:** complete
 - **Created:** 2026-09-10
 - **Target Branch:** dev-2026-03-21-lambdas
 - **External Reference (optional):** https://github.com/fedesilva/minnieml/issues/255
@@ -41,7 +41,7 @@ regressions relevant to each correctness repair without adding those follow-ups 
 22. [x] **complete** — [Preserve the complete application callee type in Simplifier](#fix-preserve-the-complete-application-callee-type-in-simplifier); verified and signed off.
 23. [x] **complete** — [Lambda semantics and lowering](#remaining-lambda-implementation), including [restoration of all ignored regressions](#restore-ignored-regressions); verified and signed off.
 24. [x] **complete** — [Harden closure environment lookup](#harden-closure-environment-lookup); verified and signed off.
-25. [ ] **planned** — Final task verification and signoff; branch audit findings are recorded below.
+25. [x] **complete** — [Final task verification and signoff](#final-task-verification); host gates and tracking review pass; signed off.
 
 Linux sanitizer validation is deferred to the separate
 [Linux verification task](linux-sanitizer-verification.md).
@@ -463,10 +463,17 @@ Pin these cases:
 
 ## Plan (Approval Gate)
 
-Items 1–24 in the [Execution Checklist](#execution-checklist) are complete and signed off.
-Item 25, final task verification and signoff, is the only remaining top-level step.
-Next action: prepare a bounded final-verification plan for merge readiness; approval is pending.
-The general branch audit is deferred.
+Items 1–25 in the [Execution Checklist](#execution-checklist) are complete and signed off.
+The completed bounded final-verification plan:
+
+1. Reconcile items 1–24, regression dispositions, and existing Linux ABI execution evidence.
+2. Run formatting, lint, the full suite, and smoke checks sequentially.
+3. Publish locally, build benchmarks, and run all host ASan+LSan memory fixtures.
+4. Record results, review tracking consistency, and present merge readiness for signoff.
+
+The general branch audit and Linux sanitizer validation remain deferred. New defects requiring
+code changes need a separate repair plan. Task signoff and local commit are authorized.
+Push and merge are not authorized.
 
 ## Implementation Checklist
 
@@ -981,7 +988,7 @@ not run the smoke harness, benchmarks, Linux/x86-64 checks, or formatting and li
   the native call-once fixture completed with no remaining finding in those changes. Focused
   tracking and QA checks pass.
 - **Signoff:** complete for the returned-callee repair and review follow-up below. Local commit
-  is authorized; the parent task remains open. Push is not authorized.
+  is authorized. Parent-task signoff is recorded below. Push is not authorized.
 
 ##### Returned-callee review follow-up
 
@@ -1190,7 +1197,7 @@ not run the smoke harness, benchmarks, Linux/x86-64 checks, or formatting and li
 
 - **Status:** complete for item 23; implementation and regression restoration are verified
   and signed off, including the alias and nested-parser repairs. No ignored tests remain.
-- **Remaining step:** final task verification and signoff (item 25).
+- **Completion:** item 25 is verified and signed off; no task steps remain.
   [Closure-environment lookup hardening](#harden-closure-environment-lookup) is complete as item 24.
 - The [scope-analysis follow-up](lambda-scope-classification.md) addresses provenance
   heuristics separately from binding construction. The
@@ -1395,8 +1402,9 @@ not run the smoke harness, benchmarks, Linux/x86-64 checks, or formatting and li
   `DestructionCodegenTests`, and `OwnershipAnalyzerTests`: 118 tests pass with zero failures
   or errors. No check was skipped or replaced by a fallback.
 - **Implementation approval:** granted for the layout-ID plan above.
-- **Signoff:** complete for item 24, including the review corrections. Final task verification
-  remains item 25. Local commit authorized; push is not authorized.
+- **Signoff:** complete for item 24, including the review corrections. Item 25 has passing
+  bounded verification and parent-task signoff. Local commit authorized for item 24;
+  push is not authorized.
 
 #### Bug: preserve tail recursion across owned-closure cleanup
 
@@ -1675,9 +1683,58 @@ readability checks completed. Three placement simplifications are deferred to th
 - **Acceptance:** no unexplained or stale ignores; no placeholder counted as restored;
   no weakened assertion merely to obtain a pass. Track undiscovered declarations separately
   from the 51 audited cases. Further assertion changes and compiler fixes require their
-  bounded plans. Parent-task final verification and signoff remain item 25.
+  bounded plans. Item 25 has passing bounded verification and parent-task signoff.
 
 ## Verification
+
+### Final task verification
+
+- **Status:** complete; bounded verification and focused tracking review pass; signed off.
+- **Date / host:** 2026-10-23; macOS 26.6.2 arm64, Homebrew LLVM/Clang 23.1.1.
+- **Baseline:** `9dbd7af` on `dev-2026-03-21-lambdas`; clean working tree before verification.
+- **Scope:** fresh host gates and completion-evidence reconciliation. Existing Linux ABI
+  execution evidence remains scoped to its recorded compiler slices; no fresh Linux run is claimed.
+- **Signoff:** complete, 2026-10-23, under the recorded verification limits.
+
+| Command | Result |
+| --- | --- |
+| `sbtn 'scalafmtAll;scalafixAll;testFull'` | Pass: 1,414 library tests and nine CLI tests; zero ignores, failures, errors, or compiler warnings |
+| `./tests/smoke/run.sh all` | Pass: 8/8 |
+| `sbtn mmlcPublishLocal` | Pass: local compiler installed after smoke checks |
+| `make -C benchmark clean` then `make -C benchmark mml` | Pass: all 13 MML targets build; no performance measurement |
+| `./tests/mem/run.sh all` | Pass: 52/52 ASan+LSan fixtures, 67 seconds |
+| Focused tracking review, local links, heading anchors, `git diff --check` | Pass for the changed records; deferred Linux discrepancy documented below |
+
+The first build attempt could not access the sbt boot lock under the workspace sandbox.
+The authorized rerun with cache access completed successfully; no test failure occurred in
+that startup attempt. All verification commands are terminal.
+
+Completion evidence agrees for items 1–24, including the signed-off
+[mixed-ownership repair](mixed-ownership-transfers.md#signoff),
+[call-stage and literal-borrowing repair](call-stage-ownership.md#signoff),
+[generated-IR instrumentation](asan-generated-ir.md#signoff), and
+[closure-layout hardening](#harden-closure-environment-lookup).
+The [regression inventory](unify-lambdas-ignored-tests.md#inventory) accounts for all 51 cases:
+43 enabled, five consolidated duplicates, and three retired optimization contracts with retained
+source coverage. No `.ignore` or `.only` markers occur in either module's test sources.
+Compiler sources, tests, and benchmarks at the baseline match `e971c23`; the bounded verification
+introduces no compiler changes and does not repeat the deferred general branch audit.
+
+Linux execution evidence is recorded for both
+[direct local entries](unify-lambdas-ignored-tests.md#direct-local-entry-optimization) and
+[PAP targets](unify-lambdas-ignored-tests.md#pap-target-repair): native ARM64 and emulated
+x86-64 fixtures, including C aggregate interoperability, pass with LLVM/Clang 20.1.8.
+The later [sanitizer verification](asan-generated-ir.md#verification) records full-suite
+execution on both architectures. These are historical slice results, not a fresh run of this baseline.
+
+**Tracking discrepancy:** the deferred
+[Linux sanitizer task](linux-sanitizer-verification.md) and
+[assembly-failure task](linux-asan-internalization.md) retain blocker descriptions that need
+reconciliation with the later passing sanitizer suites. Their standalone reproducer and full
+Linux memory-harness acceptance are not established by those suite results. Their scope,
+deferral, and completion state remain unchanged.
+
+### Latest implementation checkpoint
 
 The latest compiler checkpoint is [closure-environment lookup hardening](#harden-closure-environment-lookup),
 committed in `e971c23` on 2026-10-22. Formatting, lint, 1,414 library tests and nine CLI tests
@@ -1693,8 +1750,8 @@ checkpoint-specific counts and limits in the detailed sections,
 [ownership diagnostic evidence](ownership-diagnostic-locations.md#verification),
 [completed-slice evidence](#completed-slice-evidence), and [migration evidence](#migration-evidence).
 
-Final task verification and signoff (item 25) remain pending. Recorded slice checks do not
-establish parent-task completion. Linux sanitizer validation remains separately deferred.
+Bounded final verification (item 25) passes and parent-task signoff is complete.
+The general branch audit and fresh Linux sanitizer validation remain separately deferred.
 
 ## Risks / Notes
 
@@ -1714,8 +1771,7 @@ are in `context/history/` for Author review. No compiler slice is authorized by 
   error recovery, counter preservation through conditional branches and nested lambdas,
   argument-expression preservation, restoration of four unchanged passing regressions,
   the typed borrowed-PAP escape regression, six materialization regressions, and PAP callee traversal.
-- Tracked item completion: pending; open work remains in the
-  [Execution Checklist](#execution-checklist).
+- Tracked item completion: complete; all 25 execution steps are verified and signed off.
 - PAP callee traversal commit authorization: granted; push is not authorized.
 - Tail-recursion cleanup signoff: complete. Local commit is authorized; push is not authorized.
 - B2 recursive higher-order callable flow signoff: complete. Local commit is authorized;
@@ -1729,7 +1785,9 @@ are in `context/history/` for Author review. No compiler slice is authorized by 
   records, including the memory changes; push is not authorized.
 - Item 23, lambda semantics and lowering: complete and signed off.
 - Item 24, closure-environment lookup hardening: complete and signed off, including review
-  corrections; committed in `e971c23`. Push is not authorized. Item 25 remains open.
+  corrections; committed in `e971c23`. Push is not authorized.
+- Item 25 and parent task: signed off on 2026-10-23 with the recorded deferrals.
+  Local closure commit authorized; push and merge are not authorized.
 - Historical commit and push authorization: expression preservation, the ignored-test inventory and plan,
   four restored regressions, and their completion records; push to `origin/dev-lambda-unify`.
 
@@ -1739,18 +1797,22 @@ are in `context/history/` for Author review. No compiler slice is authorized by 
 - **Implementation:** items 1–24 are complete and signed off. The
   [Execution Checklist](#execution-checklist) links each completed slice and its evidence.
   Closure-environment layout identities and review corrections are committed in `e971c23`.
-- **Next action:** prepare a bounded final-verification plan for merge readiness (item 25).
-  Plan approval, final verification, and parent-task signoff remain pending.
-- **Verification baseline:** the [latest compiler checkpoint](#verification) records passing
-  host gates and independent review for closure-environment lookup hardening. Its results
-  establish that slice's verification, not completion of item 25.
+- **Completion:** all 25 steps are signed off. No task work remains; independent follow-ups
+  retain their own scope and approval gates.
+- **Final verification:** [fresh host gates](#final-task-verification) pass at `9dbd7af`:
+  1,414 library tests, nine CLI tests, 8/8 smokes, local publication, 13 benchmark builds,
+  and 52/52 ASan+LSan fixtures. Zero ignores or compiler warnings. Tracking consistency,
+  links, and whitespace checks pass for the changed records; deferred Linux records retain
+  the documented discrepancy. No compiler changes or fresh general branch audit are included.
 - **Regression inventory:** [all 51 audited cases](unify-lambdas-ignored-tests.md) have final
   dispositions: 43 enabled, five duplicates consolidated, and three retired optimization
   contracts with their source scenarios retained. No ignored tests or open inventory cases remain.
 - **Deferred verification:** the general branch audit and
   [Linux sanitizer validation](linux-sanitizer-verification.md) remain deferred.
-  [Linux ASan assembly failure](linux-asan-internalization.md) owns the isolated
-  sanitizer/internalization repair; host checks do not establish Linux sanitizer execution.
+  [Linux ASan assembly failure](linux-asan-internalization.md) retains the isolated
+  sanitizer/internalization scope. Its blocker description needs reconciliation with the later
+  passing Linux suites; see [final verification](#final-task-verification).
+  Fresh host checks do not establish fresh Linux sanitizer execution.
 - **Independent follow-ups:** diagnostic polish, test-quality expansion, documentation,
   optimization, and maintainability tasks are outside lambda completion. The
   [cleanup placement findings](ownership-cleanup-placement.md) are deferred quality work.

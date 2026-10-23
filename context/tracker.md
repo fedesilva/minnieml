@@ -11,14 +11,6 @@ This is the Author's active and near-term focus. The backlog lives in [tasks/](t
 
 ## Active Tasks
 
-### Unify lambdas
-
-- **Tracker:** [Unify lambdas](tasks/unify-lambdas.md)
-- **Status:** in_progress
-- **Current focus:** Plan final verification and signoff for merge readiness (item 25);
-  implementation items 1–24 are complete. Diagnostic polish and maintenance are independent
-  LOW-priority backlog tasks.
-
 ### Unify type-property alias resolution
 
 - **Tracker:** [Unify type-property alias resolution](tasks/type-property-alias-resolution.md)
@@ -70,6 +62,13 @@ This is the Author's active and near-term focus. The backlog lives in [tasks/](t
 - **Status:** planned
 - **Current focus:** Isolate the LLVM 20.1.8 sanitizer/internalization failure on both Linux
   architectures and prepare a bounded repair plan.
+
+### Revisit Linux sanitizer verification
+
+- **Tracker:** [Revisit Linux sanitizer verification](tasks/linux-sanitizer-verification.md)
+- **Status:** planned
+- **Current focus:** Reconcile recorded Linux sanitizer evidence, then plan smoke,
+  benchmark, and full memory-harness verification.
 
 ### Modules, package root, and source inclusion
 

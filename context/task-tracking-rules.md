@@ -12,7 +12,7 @@ historical records for later review belong under `context/history/`.
 
 - **Workstream**: the work being executed in the current session.
 - **Errand**: a transient Workstream without a Tracked Item. It may use a short-lived
-  Global Working Memory note, but has no task file or tracked status.
+  Global note, but has no task file or tracked status.
 - **Tracked Item**: a durable task definition in `context/tasks/` or
   `context/tasks/completed/`. Only Author-selected tasks have entries in `context/tracker.md`.
 - `context/tracker.md` contains active and near-term work selected by the Author, not the backlog.
@@ -79,9 +79,9 @@ tasks into this format when updating their plans or progress.
 
 ## Tracker and working memory
 
-Always retain **Global Working Memory** and **Active Tasks**, even when empty.
+Always retain **Global** and **Active Tasks**, even when empty.
 
-Global Working Memory holds concise cross-workstream observations, reminders, and future
+Global holds concise cross-workstream observations, reminders, and future
 candidates whose task creation is intentionally deferred. These notes are not tasks and
 carry neither status nor permission to start work. Remove stale or completed notes. When a
 candidate becomes a task, move its durable detail into that task file.
@@ -195,8 +195,8 @@ except under explicit archive-cleanup authorization.
 - **`archive cleanup`**: apply only to already completed archived task history. Present
   the exact deletion set and get confirmation before deleting. Repair affected links.
 - **`errand`**: begin or continue untracked work, observing ordinary plan approval.
-- **`close errand`**: verify untracked work, log it, remove any completed Global Working
-  Memory reminder, and commit the scoped changes. Do not create or close a tracked task.
+- **`close errand`**: verify untracked work, log it, remove any completed Global
+  reminder, and commit the scoped changes. Do not create or close a tracked task.
 
 Avoid duplicate changelog entries when a subtask's changes are already recorded. Closing
 never pushes by default. An explicit request such as `close task and push` authorizes that
