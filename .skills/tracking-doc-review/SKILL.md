@@ -13,8 +13,10 @@ review.
 
 1. Read `AGENTS.md`, `context/task-tracking-rules.md`, and
    `context/tracker.md`.
-2. Use the scope named by the author. Otherwise inspect only changed tracking
-   files and task files directly referenced by those changes.
+2. Use the scope named by the author. For task handoff or lifecycle work, include
+   the affected task, its parent task, and its existing tracker entry even when
+   those files have no diff. Otherwise inspect only changed tracking files and
+   task files directly referenced by those changes.
 3. Keep `review`, `audit`, `inspect`, and `look at` requests read-only. Fix only
    when the author also asks to fix, apply, address, or reconcile.
 4. Ask the author before changing task meaning, selected focus, completion
@@ -65,6 +67,29 @@ Check only what applies:
   tracking edits.
 
 Do not scan unrelated tasks or the repository backlog.
+
+### Whole-record current-state check
+
+Read all current-state sections of each affected task, not just the diff: metadata,
+execution and detailed checklists, remaining-work summaries, verification, signoff,
+and Task Working Memory. Cross-check the existing tracker focus and any directly
+affected parent or dependency summary. Search the affected records for the changed
+step's name or identifier and claims such as `next`, `remaining`, `pending`, `blocked`,
+and `deferred`; inspect their context rather than treating word matches as findings.
+
+Reconcile every current reference to the changed step against its evidence and authorized
+state. A completed step must not remain a next action or blocker elsewhere in the record.
+Distinguish pending implementation, verification, and signoff; name the actual next action
+for each open scope without completing its parent or changing the Author's priorities.
+Replace or remove superseded current notes instead of appending a contradictory update.
+Clearly marked historical checkpoints retain their original state and are not stale
+current instructions; do not rewrite them to match later results.
+
+Perform this check on the final records after all authorized lifecycle edits. A review
+passes only when their current-state claims agree and the next action is unambiguous.
+If evidence or authority is missing, report the unresolved point and do not claim the
+tracking check passed. Mechanical reconciliation supported by the approved work and
+recorded evidence belongs in that work; do not defer it to the next task-pick.
 
 ## Cross-check Claims Lightly
 

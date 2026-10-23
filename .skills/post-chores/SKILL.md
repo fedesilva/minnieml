@@ -30,10 +30,21 @@ the tracker, and the relevant task. Derive completion requirements from those so
 
 ## Focused tracking review
 
-For tracking changes, invoke local `tracking-doc-review` directly in the current agent.
-Give it the exact tracking scope, task-local Author instructions, and factual evidence.
-Iterate authorized tracking-only fixes and focused rechecks. Keep this review separate
-from code review. Pass its result as evidence when an independent review is also needed.
+For tracked work, invoke local `tracking-doc-review` directly in the current agent even
+if no tracking file appears in the diff. Also invoke it for tracking changes in errands.
+Give it the affected task, its parent when closing a subtask, existing tracker entry,
+task-local Author instructions, and factual evidence. Require its whole-record current-state
+check; reviewing only changed lines or the execution checklist is insufficient.
+
+Iterate authorized tracking-only fixes and focused rechecks. Repeat the current-state check
+after the final review corrections and authorized status, signoff, or completion edits,
+before handoff or commit. An earlier passing review does not cover later bookkeeping.
+Do not report tracking clean while a completed step is still presented as next, remaining,
+or blocked work anywhere in the affected current records. Report unresolved ambiguity
+explicitly rather than passing it to the next task-pick as routine cleanup.
+
+Keep this review separate from code review. Pass its result as evidence when an independent
+review is also needed.
 
 ## Independent adversarial review
 
