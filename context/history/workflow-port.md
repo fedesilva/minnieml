@@ -42,7 +42,7 @@ text remains, and the archived tracker retains the exact source including whites
 | Former pending heading | Task |
 | --- | --- |
 | Port the local collaboration workflow from y0y | [local-workflow-port](../tasks/local-workflow-port.md) |
-| Revisit Linux sanitizer verification | [linux-sanitizer-verification](../tasks/linux-sanitizer-verification.md) |
+| Revisit Linux sanitizer verification | [Linux ASan repair and verification](../tasks/linux-asan-internalization.md) |
 | Bug: can't use ??? in an annotated fn. | [typed-hole-annotated-function](../tasks/typed-hole-annotated-function.md) |
 | Document and encode the ownership rules | [ownership-rules](../tasks/ownership-rules.md) |
 | QA: unify alias resolution | [unify-alias-resolution](../tasks/unify-alias-resolution.md) |

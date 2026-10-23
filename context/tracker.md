@@ -15,16 +15,8 @@ This is the Author's active and near-term focus. The backlog lives in [tasks/](t
 
 - **Tracker:** [Fix Linux ASan assembly failure after internalization](tasks/linux-asan-internalization.md)
 - **Status:** planned
-- **Current focus:** Isolate the LLVM 20.1.8 sanitizer/internalization failure on both Linux
-  architectures and prepare a bounded repair plan.
-
-### Revisit Linux sanitizer verification
-
-- **Tracker:** [Revisit Linux sanitizer verification](tasks/linux-sanitizer-verification.md)
-- **Status:** planned
-- **Current focus:** Reconcile recorded Linux sanitizer evidence, then plan smoke,
-  benchmark, and full memory-harness verification.
-
+- **Current focus:** Reconcile the LLVM 20.1.8 reproducer with passing Linux sanitizer suites,
+  determine any remaining repair, and plan Linux smoke, benchmark, and memory verification.
 
 ### Unify type-property alias resolution
 

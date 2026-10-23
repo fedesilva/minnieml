@@ -44,7 +44,7 @@ regressions relevant to each correctness repair without adding those follow-ups 
 25. [x] **complete** — [Final task verification and signoff](#final-task-verification); host gates and tracking review pass; signed off.
 
 Linux sanitizer validation is deferred to the separate
-[Linux verification task](linux-sanitizer-verification.md).
+[Linux verification task](linux-asan-internalization.md).
 
 ## Problem
 
@@ -1727,12 +1727,9 @@ x86-64 fixtures, including C aggregate interoperability, pass with LLVM/Clang 20
 The later [sanitizer verification](asan-generated-ir.md#verification) records full-suite
 execution on both architectures. These are historical slice results, not a fresh run of this baseline.
 
-**Tracking discrepancy:** the deferred
-[Linux sanitizer task](linux-sanitizer-verification.md) and
-[assembly-failure task](linux-asan-internalization.md) retain blocker descriptions that need
-reconciliation with the later passing sanitizer suites. Their standalone reproducer and full
-Linux memory-harness acceptance are not established by those suite results. Their scope,
-deferral, and completion state remain unchanged.
+**Linux follow-up:** the [Linux ASan task](linux-asan-internalization.md) covers reconciliation
+of the historical assembly failure with the later passing sanitizer suites. Standalone
+reproducer and full Linux memory-harness acceptance are not established by those suite results.
 
 ### Latest implementation checkpoint
 
@@ -1803,15 +1800,14 @@ are in `context/history/` for Author review. No compiler slice is authorized by 
   1,414 library tests, nine CLI tests, 8/8 smokes, local publication, 13 benchmark builds,
   and 52/52 ASan+LSan fixtures. Zero ignores or compiler warnings. Tracking consistency,
   links, and whitespace checks pass for the changed records; deferred Linux records retain
-  the documented discrepancy. No compiler changes or fresh general branch audit are included.
+  pending verification. No compiler changes or fresh general branch audit are included.
 - **Regression inventory:** [all 51 audited cases](unify-lambdas-ignored-tests.md) have final
   dispositions: 43 enabled, five duplicates consolidated, and three retired optimization
   contracts with their source scenarios retained. No ignored tests or open inventory cases remain.
 - **Deferred verification:** the general branch audit and
-  [Linux sanitizer validation](linux-sanitizer-verification.md) remain deferred.
-  [Linux ASan assembly failure](linux-asan-internalization.md) retains the isolated
-  sanitizer/internalization scope. Its blocker description needs reconciliation with the later
-  passing Linux suites; see [final verification](#final-task-verification).
+  [Linux sanitizer validation](linux-asan-internalization.md) remain outside lambda completion.
+  The Linux task covers sanitizer/internalization evidence reconciliation and full Linux
+  verification; see [final verification](#final-task-verification).
   Fresh host checks do not establish fresh Linux sanitizer execution.
 - **Independent follow-ups:** diagnostic polish, test-quality expansion, documentation,
   optimization, and maintainability tasks are outside lambda completion. The
@@ -2637,7 +2633,7 @@ No sanitizer workaround or Docker/source-script changes were made.
 
 All commands are terminal and the interactive shell is closed. Docker Desktop and the Compose
 service remain running. Linux build outputs are isolated inside the container. The Author deferred Linux sanitizer work to the separate local item
-[Revisit Linux sanitizer verification](../tasks/linux-sanitizer-verification.md).
+[Revisit Linux sanitizer verification](../tasks/linux-asan-internalization.md).
 The Author requires local-only tracking, with no GitHub synchronization for this item.
 An issue-creation command already in flight created GitHub issue #271 before the interruption;
 it has not been added to the project or modified further. The Author was informed. No further
