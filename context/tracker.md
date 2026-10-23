@@ -11,12 +11,12 @@ This is the Author's active and near-term focus. The backlog lives in [tasks/](t
 
 ## Active Tasks
 
-### Unify and simplify callable-type handling
+### Unify Unit parameter lowering
 
-- **Tracker:** [Unify and simplify callable-type handling](tasks/typecheck-grouped-callable-results.md)
+- **Tracker:** [Unify Unit parameter lowering](tasks/unit-parameter-lowering.md)
 - **Status:** planned
-- **Current focus:** Map divergent callable-type handling and plan a bounded unification
-  that removes duplicated policy, with the grouped-return bug as a regression case.
+- **Current focus:** Next task: unify Unit parameter scope handling and preserve argument effects
+  across function-emission paths; implementation plan pending.
 
 ### Unify type-property alias resolution
 

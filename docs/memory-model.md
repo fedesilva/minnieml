@@ -557,8 +557,10 @@ even though `Unit` occupies no payload field.
 
 In a chain that partially applies a returned callable, all supplied operands run left to right
 before the completed callee stages. For `(make (first ())) (second ())`, creation runs `first`,
-then `second`, then `make`. The residual PAP owns the returned callee; it remains reusable
-unless invocation transfers an owned payload or the returned callee is itself call-once.
+then `second`, then `make`. The residual PAP retains the returned callee: owned storage
+transfers into the PAP, while a non-owning result retains its borrow and escape restrictions.
+The PAP remains reusable unless invocation transfers an owned payload or the returned callee
+is itself call-once.
 
 ### Ownership rules
 

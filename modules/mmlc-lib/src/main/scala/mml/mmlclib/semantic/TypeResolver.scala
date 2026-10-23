@@ -587,20 +587,15 @@ object TypeResolver:
           .map(updatedTypeAsc => native.copy(typeAsc = updatedTypeAsc))
 
       case lit: LiteralValue =>
-        // Resolve typeSpec for literals
-        lit.typeSpec match {
-          case Some(ts) =>
-            resolveTypeSpecWithMap(ts, member, typeMap).map { resolvedTypeSpec =>
-              lit match {
-                case l: LiteralInt => l.copy(typeSpec = Some(resolvedTypeSpec))
-                case l: LiteralString => l.copy(typeSpec = Some(resolvedTypeSpec))
-                case l: LiteralBool => l.copy(typeSpec = Some(resolvedTypeSpec))
-                case l: LiteralUnit => l.copy(typeSpec = Some(resolvedTypeSpec))
-                case l: LiteralFloat => l.copy(typeSpec = Some(resolvedTypeSpec))
-              }
-            }
-          case None => Right(lit)
-        }
+        for
+          spec <- lit.typeSpec.traverse(resolveTypeSpecWithMap(_, member, typeMap))
+          ascription <- lit.typeAsc.traverse(resolveTypeSpecWithMap(_, member, typeMap))
+        yield lit match
+          case value: LiteralInt => value.copy(typeSpec = spec, typeAsc = ascription)
+          case value: LiteralString => value.copy(typeSpec = spec, typeAsc = ascription)
+          case value: LiteralBool => value.copy(typeSpec = spec, typeAsc = ascription)
+          case value: LiteralUnit => value.copy(typeSpec = spec, typeAsc = ascription)
+          case value: LiteralFloat => value.copy(typeSpec = spec, typeAsc = ascription)
 
       case _ =>
         // Other terms don't have type ascriptions that need resolution

@@ -647,24 +647,19 @@ class OwnershipAnalyzerTests extends BaseEffFunSuite:
       }
     }
 
-  test("a borrowed returned callable without a rejected return retains its capture diagnostic") {
-    val code = """
-      fn external(): Int -> Int -> Int = @native;;
-      fn main(): Int = let q = (external ()) 10; q 2;;
-    """
-
-    semState(code).map { checked =>
-      val captures = checked.errors.collect {
-        case error: SemanticError.CapturedBorrowedHeapBinding => error.ref
-      }
-      assertEquals(captures.size, 1, checked.errors.toString)
-      assertEquals(checked.errors.size, 1, checked.errors.toString)
-      assert(captures.head.resolvedId.nonEmpty)
-      assertEquals(captures.head.spanOpt.map(_.start.index), Some(code.indexOf("external ()")))
+  for body <- List(
+      "let q = (external ()) 10; q 2;",
+      "let callee = external (); let q = callee 10; q 2;"
+    )
+  do
+    test(s"an unknown native callable supports local borrowing: $body") {
+      semNotFailed(s"""
+        fn external(): Int -> Int -> Int = @native;;
+        fn main(): Int = $body;
+      """)
     }
-  }
 
-  test("a rejected return alternative does not hide diagnostics for an unknown result") {
+  test("a rejected return alternative retains return and contract diagnostics") {
     val code = """
       fn pick2(c: Int -> Int -> Int): Int -> Int -> Int = c;;
       fn external(c: Int -> Int -> Int): Int -> Int -> Int = @native;;
@@ -688,10 +683,9 @@ class OwnershipAnalyzerTests extends BaseEffFunSuite:
         error.msg
       }
       assertEquals(returned.size, 1, checked.errors.toString)
-      assertEquals(captured.size, 1, checked.errors.toString)
+      assertEquals(captured.size, 0, checked.errors.toString)
       assertEquals(contracts, List("Callable alternatives must agree on consuming parameters"))
-      assertEquals(checked.errors.size, 3, checked.errors.toString)
-      assertEquals(captured.head.spanOpt.map(_.start.index), Some(code.indexOf("selected c")))
+      assertEquals(checked.errors.size, 2, checked.errors.toString)
     }
   }
 

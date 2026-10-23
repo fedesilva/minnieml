@@ -183,8 +183,8 @@ object PartialApplicationElaborator:
     yield
       val value = rewritten.value match
         case lambda: Lambda if lambda.meta.exists(_.isPartialApplication) =>
-          // The temporary callee must outlive this binding in the PAP's environment. Ownership
-          // alone permits reuse; invocation transfers the callee only when it is call-once.
+          // The temporary callee must survive in the PAP. Ownership analysis decides whether
+          // retaining its binding transfers an environment or preserves a borrow.
           val transferredCallee =
             if localValues.consumesOnCall(local.ref) then local.param.id.toSet
             else Set.empty[String]
@@ -193,7 +193,8 @@ object PartialApplicationElaborator:
             meta = lambda.meta.map(meta =>
               meta.copy(
                 transferredCaptures = meta.transferredCaptures ++ transferredCallee,
-                borrowedCaptures    = meta.borrowedCaptures -- local.param.id
+                borrowedCaptures    = meta.borrowedCaptures -- local.param.id,
+                retainedCaptures    = meta.retainedCaptures ++ local.param.id
               )
             )
           )
@@ -381,7 +382,6 @@ object PartialApplicationElaborator:
       val borrowed    = payloads.collect { case (ref: Ref, false) => ref.resolvedId }.flatten.toSet
       val borrowsHeap = borrowed.nonEmpty
       val calleeLambdas = values.lambdas(callee)
-      // rewriteStagedApplication owns its temporary callee instead of extending a local borrow.
       val borrowsCallee = callee match
         case ref: Ref =>
           borrowsField ||

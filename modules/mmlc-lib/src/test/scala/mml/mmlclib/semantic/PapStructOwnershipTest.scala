@@ -312,28 +312,68 @@ class PapStructOwnershipTest extends BaseEffFunSuite:
   }
 
   List(
-    "conditional fields" -> "Outer (if flag then outer.inner; else outer.inner;) (int_to_str 0);",
-    "conditional field alias" -> "let selected = if flag then outer.inner; else outer.inner;; Outer selected (int_to_str 0);",
-    "mixed borrowed and owned branches" -> "Outer (if flag then outer.inner; else make 2;) (int_to_str 0);",
-    "consuming argument" -> "let ignored = drop (if flag then outer.inner; else outer.inner;); outer;"
-  ).foreach { (name, body) =>
+    (
+      "conditional fields",
+      "Outer (if flag then outer.inner; else outer.inner;) (int_to_str 0);",
+      2
+    ),
+    (
+      "conditional field alias",
+      "let selected = if flag then outer.inner; else outer.inner;; " +
+        "Outer selected (int_to_str 0);",
+      1
+    ),
+    (
+      "mixed borrowed and owned branches",
+      "Outer (if flag then outer.inner; else make 2;) (int_to_str 0);",
+      1
+    ),
+    (
+      "consuming argument",
+      "let ignored = drop (if flag then outer.inner; else outer.inner;); outer;",
+      2
+    )
+  ).foreach { (name, body, expectedErrors) =>
     test(s"a borrowed aggregate cannot reach an ownership sink through $name") {
-      semState(prelude + s"""
+      val source = prelude + s"""
         fn bad(flag: Bool): Outer =
           let outer = Outer (make 1) (int_to_str 0);
           $body
         ;
-      """).map { state =>
-        assert(
-          state.errors.exists {
-            case error: SemanticError.InvalidExpression =>
-              error.toString.contains(
-                "An ownership sink cannot receive a value with borrowed ownership"
-              )
-            case _ => false
-          },
-          state.errors
-        )
+      """
+      semState(source).map { state =>
+        val errors = state.errors.collect {
+          case error: SemanticError.BorrowedValuePassedToConsumingParam => error
+        }
+        assertEquals(errors.size, expectedErrors, state.errors.toString)
+        assertEquals(state.errors.size, expectedErrors, state.errors.toString)
+        val (callee, parameter) =
+          if name == "consuming argument" then ("drop", "h") else ("__mk_Outer", "inner")
+        val parameterId = resolvedBindingId(state.module, callee, parameter)
+        val alias       = name == "conditional field alias"
+        val referenceId =
+          if alias then resolvedBindingId(state.module, "bad", "selected")
+          else "Test::typestruct::Outer::inner"
+        val ownerId =
+          if alias then None else Some(resolvedBindingId(state.module, "bad", "outer"))
+        if !alias then
+          val expectedSpans = source.indices
+            .filter(source.startsWith("outer.inner", _))
+            .map(start => (start, start + "outer.inner".length))
+            .toList
+          val diagnosticSpans = errors.flatMap(_.ref.spanOpt).map { span =>
+            (span.start.index, span.end.index)
+          }
+          assertEquals(diagnosticSpans.toList.sorted, expectedSpans)
+
+        errors.foreach { error =>
+          assertEquals(error.param.id, Some(parameterId))
+          assertEquals(error.ref.resolvedId, Some(referenceId))
+          assertEquals(
+            error.ref.qualifier.collect { case ref: Ref => ref.resolvedId }.flatten,
+            ownerId
+          )
+        }
       }
     }
   }

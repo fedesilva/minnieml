@@ -2,6 +2,15 @@
 
 Durable product changes belong here. Current task state belongs in task files.
 
+## 2026-10-23
+
+- Share callable-type lookup and application validation across references, lambdas, and returned
+  functions. Handle grouped, aliased, and scheme-wrapped types consistently, resolve literal
+  ascriptions before checking, and preserve contextual inference and diagnostic labels.
+- Retain returned callees according to lexical ownership. Accept equivalent inline and bound
+  partial applications at consuming calls and constructors, preserve borrowed lifetimes and
+  cleanup ownership, and report invalid consuming transfers once per source use.
+
 ## 2026-10-22
 
 - Carry closure environment declaration IDs in lambda metadata through ownership rewriting,

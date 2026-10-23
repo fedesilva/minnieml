@@ -184,13 +184,8 @@ class LambdaLiteralBorrowingTests extends BaseEffFunSuite:
             val errors = result.errors.collect {
               case error: SemanticError.BorrowedValuePassedToConsumingParam => error
             }
-            val sinks = result.errors.collect { case error: SemanticError.InvalidExpression =>
-              error
-            }
-            val expectedSinkCount = if form == "literal" && argument == "text" then 1 else 0
             assertEquals(errors.size, 1, result.errors.toString)
-            assertEquals(sinks.size, expectedSinkCount, result.errors.toString)
-            assertEquals(result.errors.size, errors.size + sinks.size, result.errors.toString)
+            assertEquals(result.errors.size, 1, result.errors.toString)
             val owner = if form == "named" then "borrow" else "example"
             assertEquals(
               errors.head.ref.resolvedId,
@@ -202,19 +197,6 @@ class LambdaLiteralBorrowingTests extends BaseEffFunSuite:
             )
             val argumentSource = originalRef(parsed, owner, source.indexOf("take value") + 5)
             assertEquals(errors.head.ref.source, argumentSource.source)
-            sinks.foreach { error =>
-              assertEquals(
-                error.msg,
-                "An ownership sink cannot receive a value with borrowed ownership"
-              )
-              assertEquals(error.expr.source, argumentSource.source)
-              val ids = TermTraversal
-                .collect(error.expr) { case ref: Ref =>
-                  ref.resolvedId
-                }
-                .flatten
-              assertEquals(ids, List(resolvedBindingId(result.module, owner, "value")))
-            }
           }
         }
       }

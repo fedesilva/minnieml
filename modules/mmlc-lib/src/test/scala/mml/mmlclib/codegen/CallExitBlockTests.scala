@@ -188,6 +188,76 @@ class CallExitBlockTests extends BaseEffFunSuite:
     }
 
   for optimization <- List(0, 3) do
+    test(s"transferring a PAP payload preserves its retained borrowed callee at O$optimization") {
+      execute(
+        """
+          struct Holder { call: String -> Int -> Int };
+          pub fn main(): Int =
+            let seed = int_to_str 7;
+            let holder = Holder ~{ ~payload: String, n: Int ->
+              seed.length + payload.length + n;
+            };
+            let text = int_to_str 123;
+            let partial = ({ holder.call; } ()) text;
+            partial 2 + holder.call (int_to_str 4) 3 - 11;
+          ;
+        """,
+        optimization
+      )
+    }
+
+    test(s"inline scalar returned-callee PAPs reach ownership sinks at O$optimization") {
+      execute(
+        """
+          struct Holder { call: Int -> Int };
+          fn make(seed: Int): Int -> Int -> Int =
+            ~{ a: Int, b: Int -> seed + a + b; };
+          ;
+          fn consume(~call: Int -> Int): Int = call 2;;
+          pub fn main(): Int =
+            let inline_consumed = consume ((make 9) 1);
+            let consumed = (make 19) 1;
+            let bound_consumed = consume consumed;
+            let inline_holder = Holder ((make 29) 1);
+            let stored = (make 39) 1;
+            let bound_holder = Holder stored;
+            inline_consumed + bound_consumed + inline_holder.call 2 + bound_holder.call 2 - 108;
+          ;
+        """,
+        optimization
+      )
+    }
+
+    test(s"returned-callee PAPs transfer fresh environments to ownership sinks at O$optimization") {
+      execute(
+        """
+          struct Holder { call: Int -> Int };
+          fn make(~seed: String): Int -> Int -> Int =
+            ~{ a: Int, b: Int -> str_to_int seed + a + b; };
+          ;
+          fn consume(~call: Int -> Int): Int = call 2;;
+          fn drop(~call: Int -> Int): Int = 0;;
+          pub fn main(): Int =
+            let inline_consumed = consume ((make (int_to_str 9)) 1);
+            let consumed = (make (int_to_str 19)) 1;
+            let bound_consumed = consume consumed;
+            let inline_holder = Holder ((make (int_to_str 29)) 1);
+            let stored = (make (int_to_str 39)) 1;
+            let bound_holder = Holder stored;
+            let inline_dropped = drop ((make (int_to_str 49)) 1);
+            let dropped = (make (int_to_str 59)) 1;
+            let bound_dropped = drop dropped;
+            let unused_inline_holder = Holder ((make (int_to_str 69)) 1);
+            let unused_stored = (make (int_to_str 79)) 1;
+            let unused_bound_holder = Holder unused_stored;
+            inline_consumed + bound_consumed + inline_holder.call 2 + bound_holder.call 2 +
+              inline_dropped + bound_dropped - 108;
+          ;
+        """,
+        optimization
+      )
+    }
+
     test(s"staged PAP creation evaluates operands before its returned callee at O$optimization") {
       execute(
         """
@@ -209,6 +279,38 @@ class CallExitBlockTests extends BaseEffFunSuite:
         expectedOutput = List("first", "second", "make", "created", "6").some
       )
     }
+
+    for (factory, expected) <- List("pick" -> 48, "pick_owned" -> 63) do
+      test(s"grouped and aliased returned $factory callees agree with bindings at O$optimization") {
+        execute(
+          s"""
+          type Callback = Int -> Int -> Int;
+          fn add(a: Int, b: Int): Int = a + b;;
+          fn pick(): Callback = add;;
+          fn make(seed: Int): Callback = ~{ a: Int, b: Int -> seed + a + b; };;
+          fn partial(seed: Int): Int -> Int = (make seed) 1;;
+          fn pick_owned(): Callback = make 5;;
+          fn inline_apply(f: Unit -> (Int -> Int -> Int)): Int =
+            let q = (f ()) 10;
+            q 2;
+          ;
+          fn bound_apply(f: Unit -> (Int -> Int -> Int)): Int =
+            let g = f ();
+            let q = g 10;
+            q 2;
+          ;
+          fn alias_apply(f: Unit -> (Callback)): Int =
+            let q = (f ()) 10;
+            q 2;
+          ;
+          pub fn main(): Int =
+            inline_apply $factory + bound_apply $factory + alias_apply $factory +
+              (partial 9) 2 - $expected;
+          ;
+        """,
+          optimization
+        )
+      }
 
     test(s"returned callee partial applications execute at O$optimization") {
       execute(

@@ -590,6 +590,42 @@ object TypeChecker:
     bindingName:  String
   ): CheckResult[Term] =
     term match
+      case callee: Callee =>
+        checkCalleeWithContext(callee, module, paramContext, expectedType, bindingName)
+
+      case cond: Cond =>
+        checkConditionalWithContext(cond, module, paramContext, expectedType, bindingName)
+
+      case group: TermGroup =>
+        checkExprWithContext(group.inner, module, paramContext, expectedType, bindingName)
+          .map(checkedInner => group.copy(inner = checkedInner))
+
+      case lit: LiteralValue => CheckResult.ok(lit)
+
+      case hole: Hole =>
+        expectedType match
+          case Some(t) => CheckResult.ok(hole.copy(typeSpec = Some(t)))
+          case None =>
+            val displayBindingName = normalizeBindingName(bindingName)
+            val errors = hole.spanOpt match
+              case Some(span) =>
+                Vector(TypeError.UntypedHoleInBinding(displayBindingName, span, phaseName))
+              case None =>
+                Vector(TypeError.UnresolvableType(hole, None, phaseName))
+            CheckResult(hole, errors)
+
+      case other =>
+        // Other term types do not require type checking at this stage
+        CheckResult.ok(other)
+
+  private def checkCalleeWithContext(
+    callee:       Callee,
+    module:       Module,
+    paramContext: Map[String, FnParam],
+    expectedType: Option[Type],
+    bindingName:  String
+  ): CheckResult[Callee] =
+    callee match
       case ref: Ref if ref.qualifier.isDefined =>
         checkSelectionRef(ref, module, paramContext, bindingName)
       case ref: Ref =>
@@ -615,65 +651,9 @@ object TypeChecker:
       case app: App =>
         checkApplicationWithContext(app, module, paramContext, bindingName)
 
-      case cond: Cond =>
-        checkConditionalWithContext(cond, module, paramContext, expectedType, bindingName)
-
-      case group: TermGroup =>
-        checkExprWithContext(group.inner, module, paramContext, expectedType, bindingName)
-          .map(checkedInner => group.copy(inner = checkedInner))
-
       case lambda: Lambda =>
         // Handle Lambda terms (e.g., from eta-expansion of partial applications)
         checkLambdaWithContext(lambda, module, paramContext, bindingName, expectedType)
-
-      case other =>
-        // For other terms, use the regular checkTerm
-        checkTerm(other, module, expectedType, bindingName)
-
-  /** Type check individual terms */
-  private def checkTerm(
-    term:         Term,
-    module:       Module,
-    expectedType: Option[Type],
-    bindingName:  String
-  ): CheckResult[Term] =
-    term match
-      case lit: LiteralValue =>
-        // Literals have their types defined directly, so they are already "checked"
-        CheckResult.ok(lit)
-
-      case ref: Ref if ref.qualifier.isDefined =>
-        checkSelectionRef(ref, module, Map.empty, bindingName)
-
-      case ref: Ref =>
-        checkRef(ref, module)
-
-      case app: App =>
-        checkApplication(app, module, bindingName)
-
-      case cond: Cond =>
-        checkConditional(cond, module, expectedType, bindingName)
-
-      case group: TermGroup =>
-        checkExpr(group.inner, module, expectedType, bindingName).map(checkedInner =>
-          group.copy(inner = checkedInner)
-        )
-
-      case hole: Hole =>
-        expectedType match
-          case Some(t) => CheckResult.ok(hole.copy(typeSpec = Some(t)))
-          case None =>
-            val displayBindingName = normalizeBindingName(bindingName)
-            val errors = hole.spanOpt match
-              case Some(span) =>
-                Vector(TypeError.UntypedHoleInBinding(displayBindingName, span, phaseName))
-              case None =>
-                Vector(TypeError.UnresolvableType(hole, None, phaseName))
-            CheckResult(hole, errors)
-
-      case other =>
-        // Other term types do not require type checking at this stage
-        CheckResult.ok(other)
 
   private def checkSelectionRef(
     ref:          Ref,
@@ -901,45 +881,17 @@ object TypeChecker:
     paramContext: Map[String, FnParam],
     bindingName:  String
   ): CheckResult[App] =
-    // Phase 1: Recursively check and type all sub-nodes
-    val checkedFnEither = app.fn match
-      case innerApp: App => checkApplicationWithContext(innerApp, module, paramContext, bindingName)
-      case other => checkTermWithContext(other, module, paramContext, None, bindingName)
+    val checkedFnEither =
+      checkCalleeWithContext(app.fn, module, paramContext, None, bindingName)
 
     val expectedArgType = expectedArgumentType(checkedFnEither.value, module)
     val checkedArgEither =
       checkExprWithContext(app.arg, module, paramContext, expectedArgType, bindingName)
 
-    // Phase 2: Validate function shape, determine application type, and build result
     val checkedFn  = checkedFnEither.value
     val checkedArg = checkedArgEither.value
-    val normalizedFn: Callee = checkedFn match
-      case ref:      Ref => ref
-      case innerApp: App => innerApp
-      case lambda:   Lambda => lambda
-      case _ => app.fn
-
-    val fnErrors =
-      checkedFn match
-        case _: Ref | _: App | _: Lambda => Vector.empty
-        case _ =>
-          Vector(
-            TypeError.InvalidApplication(
-              app,
-              TypeRef(app.source, "invalid-fn"),
-              TypeRef(app.source, "unknown-arg"),
-              phaseName
-            )
-          )
-
     val appTypeResult =
-      if fnErrors.isEmpty then
-        determineApplicationType(
-          app.copy(fn = normalizedFn, arg = checkedArg),
-          normalizedFn,
-          module
-        )
-      else CheckResult.ok(None)
+      determineApplicationType(app.copy(fn = checkedFn, arg = checkedArg), module)
 
     val typeErrors =
       filterDuplicateUnresolvable(
@@ -950,179 +902,74 @@ object TypeChecker:
 
     CheckResult(
       app.copy(
-        fn  = normalizedFn,
+        fn  = checkedFn,
         arg = if appTypeResult.errors.nonEmpty then invalidArgument(checkedArg) else checkedArg,
         typeSpec = appTypeResult.value
       ),
-      checkedFnEither.errors ++ checkedArgEither.errors ++ fnErrors ++ typeErrors
+      checkedFnEither.errors ++ checkedArgEither.errors ++ typeErrors
     )
 
-  /** Determine the type of an application based on its function and argument with validation */
-  private def determineApplicationType(
-    app:       App,
-    checkedFn: Term,
-    module:    Module
-  ): CheckResult[Option[Type]] =
-    checkedFn match
-      case ref: Ref =>
-        determineRefApplicationType(app, ref, module)
+  /** Validate an application using the same callable type that supplies argument inference. */
+  private def determineApplicationType(app: App, module: Module): CheckResult[Option[Type]] =
 
-      case callee: (App | Lambda) if callee.typeSpec.isDefined =>
-        callee.typeSpec match
-          case Some(fnType: TypeFn) =>
-            applyTypeFnToArgument(app, fnType, app.arg.typeSpec, module, None)
-          case Some(other) =>
-            app.arg.typeSpec match
-              case Some(argType) =>
-                CheckResult(
-                  None,
-                  Vector(TypeError.InvalidApplication(app, other, argType, phaseName))
-                )
-              case None =>
-                CheckResult(
-                  None,
-                  Vector(
-                    TypeError.UnresolvableType(
-                      app.arg,
-                      Some(UnresolvableTypeContext.Argument),
-                      phaseName
-                    )
-                  )
-                )
-          case None =>
-            CheckResult(
-              None,
-              Vector(
-                TypeError.UnresolvableType(
-                  app,
-                  Some(UnresolvableTypeContext.Function),
-                  phaseName
-                )
-              )
-            )
+    val callee = app.fn
 
-      case _ =>
-        val fnType  = checkedFn.typeSpec
-        val argType = app.arg.typeSpec
-        (fnType, argType) match
-          case (Some(actualFnType), Some(actualArgType)) =>
-            CheckResult(
-              None,
-              Vector(TypeError.InvalidApplication(app, actualFnType, actualArgType, phaseName))
-            )
-          case (Some(_), None) =>
-            CheckResult(
-              None,
-              Vector(
-                TypeError.UnresolvableType(
-                  app.arg,
-                  Some(UnresolvableTypeContext.Argument),
-                  phaseName
-                )
-              )
-            )
-          case (None, _) =>
-            CheckResult(
-              None,
-              Vector(
-                TypeError.UnresolvableType(
-                  app,
-                  Some(UnresolvableTypeContext.Function),
-                  phaseName
-                )
-              )
-            )
+    def validateCallee(
+      label:                          Option[String],
+      unresolvedCalleeError:          TypeError,
+      missingArgumentTakesPrecedence: Boolean
+    ): CheckResult[Option[Type]] =
 
-  private def determineRefApplicationType(
-    app:    App,
-    ref:    Ref,
-    module: Module
-  ): CheckResult[Option[Type]] =
-    if ref.qualifier.isDefined then
-      extractTypeFnFromRef(ref, module) match
+      extractTypeFnFromCallee(callee, module) match
         case Some(fnType) =>
-          applyTypeFnToArgument(app, fnType, app.arg.typeSpec, module, Some(ref.name))
+          applyTypeFnToArgument(app, fnType, app.arg.typeSpec, module, label)
+
         case None =>
-          val refType = ref.typeSpec
-          app.arg.typeSpec match
-            case Some(argType) =>
-              refType match
-                case Some(actualRefType) =>
-                  CheckResult(
-                    None,
-                    Vector(TypeError.InvalidApplication(app, actualRefType, argType, phaseName))
-                  )
-                case None =>
-                  CheckResult(
-                    None,
-                    Vector(
-                      TypeError.UnresolvableType(
-                        ref,
-                        Some(UnresolvableTypeContext.NamedValue(ref.name)),
-                        phaseName
-                      )
-                    )
-                  )
-            case None =>
-              CheckResult(
-                None,
-                Vector(
-                  TypeError.UnresolvableType(
-                    app.arg,
-                    Some(UnresolvableTypeContext.Argument),
-                    phaseName
-                  )
-                )
-              )
-    else
-      ref.resolvedId match
-        case None =>
-          CheckResult(
-            None,
-            Vector(
+          val error = (callee.typeSpec, app.arg.typeSpec) match
+            case (Some(fnType), Some(argType)) =>
+              TypeError.InvalidApplication(app, fnType, argType, phaseName)
+
+            case (_, None) if missingArgumentTakesPrecedence =>
               TypeError.UnresolvableType(
-                ref,
-                Some(UnresolvableTypeContext.NamedValue(ref.name)),
+                app.arg,
+                UnresolvableTypeContext.Argument.some,
                 phaseName
               )
-            )
+
+            case _ => unresolvedCalleeError
+
+          CheckResult(None, Vector(error))
+
+    callee match
+      case ref: Ref =>
+        val unresolvedCalleeError = TypeError.UnresolvableType(
+          ref,
+          UnresolvableTypeContext.NamedValue(ref.name).some,
+          phaseName
+        )
+
+        if ref.qualifier.isEmpty && ref.resolvedId.isEmpty then
+          CheckResult(None, Vector(unresolvedCalleeError))
+        else
+          validateCallee(
+            ref.name.some,
+            unresolvedCalleeError,
+            missingArgumentTakesPrecedence = true
           )
-        case Some(_) =>
-          extractTypeFnFromRef(ref, module) match
-            case Some(fnType) =>
-              applyTypeFnToArgument(app, fnType, app.arg.typeSpec, module, Some(ref.name))
-            case None =>
-              val refType = ref.typeSpec
-              app.arg.typeSpec match
-                case Some(argType) =>
-                  refType match
-                    case Some(actualRefType) =>
-                      CheckResult(
-                        None,
-                        Vector(TypeError.InvalidApplication(app, actualRefType, argType, phaseName))
-                      )
-                    case None =>
-                      CheckResult(
-                        None,
-                        Vector(
-                          TypeError.UnresolvableType(
-                            ref,
-                            Some(UnresolvableTypeContext.NamedValue(ref.name)),
-                            phaseName
-                          )
-                        )
-                      )
-                case None =>
-                  CheckResult(
-                    None,
-                    Vector(
-                      TypeError.UnresolvableType(
-                        app.arg,
-                        Some(UnresolvableTypeContext.Argument),
-                        phaseName
-                      )
-                    )
-                  )
+
+      case _ =>
+        val unresolvedCalleeError =
+          TypeError.UnresolvableType(app, UnresolvableTypeContext.Function.some, phaseName)
+        validateCallee(
+          none,
+          unresolvedCalleeError,
+          missingArgumentTakesPrecedence = callee.typeSpec.isDefined
+        )
+
+  private def extractTypeFnFromCallee(callee: Callee, module: Module): Option[TypeFn] =
+    callee match
+      case ref: Ref => extractTypeFnFromRef(ref, module)
+      case _ => callee.typeSpec.flatMap(extractTypeFn(_, module))
 
   private def extractTypeFnFromRef(ref: Ref, module: Module): Option[TypeFn] =
     val directType = ref.typeSpec.flatMap(extractTypeFn(_, module))
@@ -1134,25 +981,11 @@ object TypeChecker:
       }
     }
 
-  private def expectedArgumentType(checkedFn: Term, module: Module): Option[Type] =
-    checkedFn match
-      case ref: Ref =>
-        extractTypeFnFromRef(ref, module).map(_.paramTypes.head)
-      case app: App =>
-        app.typeSpec.flatMap(extractTypeFn(_, module)).map(_.paramTypes.head)
-      case lambda: Lambda =>
-        lambda.typeSpec.flatMap(extractTypeFn(_, module)).map(_.paramTypes.head)
-      case _ =>
-        None
+  private def expectedArgumentType(callee: Callee, module: Module): Option[Type] =
+    extractTypeFnFromCallee(callee, module).map(_.paramTypes.head)
 
   private def extractTypeFn(typeSpec: Type, module: Module): Option[TypeFn] =
-    unwrapTypeGroup(typeSpec) match
-      case tf: TypeFn => Some(tf)
-      case TypeScheme(_, _, bodyType) => extractTypeFn(bodyType, module)
-      case tr: TypeRef =>
-        val resolved = resolveAliasChain(tr, module)
-        if resolved == tr then None else extractTypeFn(resolved, module)
-      case _ => None
+    TypeUtils.canonical(typeSpec, module.resolvables).collect { case fn: TypeFn => fn }
 
   private def findTypeFnForDecl(decl: Decl, module: Module): Option[TypeFn] =
     val updatedDecl = module.members.collectFirst {
@@ -1204,14 +1037,6 @@ object TypeChecker:
           )
         )
 
-  /** Check function applications by collecting all arguments in a chain */
-  private def checkApplication(
-    app:         App,
-    module:      Module,
-    bindingName: String
-  ): CheckResult[App] =
-    checkApplicationWithContext(app, module, Map.empty, bindingName)
-
   private def buildFunctionTypeSpec(
     source:     SourceOrigin,
     params:     List[FnParam],
@@ -1246,9 +1071,10 @@ object TypeChecker:
 
   /** Check type compatibility (handles aliases, etc.) */
   private def areTypesCompatible(t1: Type, t2: Type, module: Module): Boolean =
-    val resolved1 = unwrapTypeGroup(resolveAliasChain(t1, module))
-    val resolved2 = unwrapTypeGroup(resolveAliasChain(t2, module))
-    (resolved1, resolved2) match
+    val resolved = for
+      left <- TypeUtils.canonical(t1, module.resolvables)
+      right <- TypeUtils.canonical(t2, module.resolvables)
+    yield (left, right) match
       case (NativePrimitive(_, n1, _, _), NativePrimitive(_, n2, _, _)) => n1 == n2
       case (TypeRef(_, name1, _, _), TypeRef(_, name2, _, _)) => name1 == name2
       case (ts1: TypeStruct, ts2: TypeStruct) =>
@@ -1268,9 +1094,10 @@ object TypeChecker:
       case (TypeUnit(_), TypeRef(_, "Unit", _, _)) => true
       case (TypeRef(_, "Unit", _, _), TypeUnit(_)) => true
       case _ => false
+    resolved.getOrElse(false)
 
   private def resolveStructType(typeSpec: Type, module: Module): Option[TypeStruct] =
-    unwrapTypeGroup(resolveAliasChain(typeSpec, module)) match
+    TypeUtils.canonical(typeSpec, module.resolvables).flatMap {
       case ts: TypeStruct => Some(ts)
       case tr: TypeRef =>
         val resolved = tr.resolvedId
@@ -1287,6 +1114,7 @@ object TypeChecker:
             }
           case _ => None
       case _ => None
+    }
 
   private def canonicalCallableParamTypes(
     source:     SourceOrigin,
@@ -1295,35 +1123,6 @@ object TypeChecker:
     NonEmptyList
       .fromList(paramTypes)
       .getOrElse(NonEmptyList.one(TypeRef(source, "Unit", Some("stdlib::typedef::Unit"), Nil)))
-
-  private def unwrapTypeGroup(typeSpec: Type): Type =
-    typeSpec match
-      case TypeGroup(_, types) if types.size == 1 => unwrapTypeGroup(types.head)
-      case other => other
-
-  /** Follow alias chain to concrete type and update typeSpec along the way */
-  private def resolveAliasChain(typeSpec: Type, module: Module): Type = typeSpec match
-    case tr: TypeRef =>
-      // Look up the resolved type by ID, or fall back to name lookup in module
-      val resolved = tr.resolvedId
-        .flatMap(module.resolvables.lookupType)
-        .orElse(module.members.collectFirst {
-          case ta: TypeAlias if ta.name == tr.name => ta
-          case td: TypeDef if td.name == tr.name => td
-          case ts: TypeStruct if ts.name == tr.name => ts
-        })
-      resolved match
-        case Some(ta: TypeAlias) =>
-          ta.typeSpec match
-            case Some(resolvedSpec) => resolvedSpec
-            case None => resolveAliasChain(ta.typeRef, module)
-        case Some(td: TypeDef) =>
-          // Return TypeRef to the TypeDef, not its native typeSpec
-          TypeRef(tr.source, td.name, td.id)
-        case Some(ts: TypeStruct) =>
-          TypeRef(tr.source, ts.name, ts.id)
-        case _ => tr
-    case other => other
 
   /** Check Lambda terms (e.g., from eta-expansion of partial applications) */
   private def checkLambdaWithContext(
@@ -1474,15 +1273,6 @@ object TypeChecker:
       ),
       checkedCond.errors ++ checkedTrue.errors ++ checkedFalse.errors ++ condErrors ++ branchErrors
     )
-
-  /** Check conditional expressions (both branches must match) */
-  private def checkConditional(
-    cond:         Cond,
-    module:       Module,
-    expectedType: Option[Type],
-    bindingName:  String
-  ): CheckResult[Cond] =
-    checkConditionalWithContext(cond, module, Map.empty, expectedType, bindingName)
 
   private def normalizeCheckedTerm(term: Term): Term =
     term match

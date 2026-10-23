@@ -121,12 +121,21 @@ enum Capture:
 
   def ref: Ref
 
+/** Capture identities describe the partial application's storage and invocation obligations.
+  *
+  * @param borrowedCaptures
+  *   IDs of captures whose storage remains owned elsewhere.
+  * @param retainedCaptures
+  *   IDs of temporary callee bindings retained by a partial application. Ownership analysis
+  *   classifies them in their lexical scope, updates borrowedCaptures, and clears this pending set.
+  */
 case class LambdaMeta(
   isPartialApplication:  Boolean         = false,
   isTailRecursive:       Boolean         = false,
   envLayoutId:           Option[String]  = None,
   transferredCaptures:   Set[String]     = Set.empty,
   borrowedCaptures:      Set[String]     = Set.empty,
+  retainedCaptures:      Set[String]     = Set.empty,
   environmentParam:      Option[FnParam] = None,
   isInvocationParameter: Boolean         = false
 )

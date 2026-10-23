@@ -77,8 +77,15 @@ object CaptureTransfers:
     if lambda.isMove then transfers(lambda.body) ++ resultCaptures(lambda.body)
     else Set.empty
 
-  /** A call-once entry takes responsibility for all owned fields when it disarms its destructor. */
+  /** Contract discovery cannot assume ownership of captures awaiting lexical classification. */
   def ownedByInvocation(lambda: Lambda): Set[String] =
-    lambda.meta.filter(_.transferredCaptures.nonEmpty).fold(Set.empty[String]) { meta =>
-      lambda.captures.flatMap(_.ref.resolvedId).toSet -- meta.borrowedCaptures
+    val borrowed = lambda.meta.fold(Set.empty[String]) { meta =>
+      meta.borrowedCaptures ++ (meta.retainedCaptures -- meta.transferredCaptures)
+    }
+    ownedByInvocation(lambda, borrowed)
+
+  /** A call-once entry takes responsibility for all owned fields when it disarms its destructor. */
+  def ownedByInvocation(lambda: Lambda, borrowedCaptures: Set[String]): Set[String] =
+    lambda.meta.filter(_.transferredCaptures.nonEmpty).fold(Set.empty[String]) { _ =>
+      lambda.captures.flatMap(_.ref.resolvedId).toSet -- borrowedCaptures
     }

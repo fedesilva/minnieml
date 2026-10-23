@@ -464,9 +464,14 @@ Each phase takes a `CompilerState`, returns an updated `CompilerState`, and reco
     consuming calls, local moves, returns, and nested move captures. Capture stabilization
     propagates their call-once contract through enclosing lambdas and callable value flow.
     A chain ending in a partial stage binds each completed stage's returned callee to a local.
-    The residual PAP owns that temporary callee and transfers it during invocation only when
-    the callee is call-once. Supplied operands run once in source order before completed
-    callee stages, preserving the same effect order as fully applied chains.
+    The residual PAP retains that temporary through `LambdaMeta.retainedCaptures`.
+    Ownership analysis classifies the capture from the binding's initializer: owned storage
+    transfers into the PAP, while a non-owning result retains its borrow and escape checks.
+    Analysis writes the resolved borrowed-capture IDs and clears the pending retention set.
+    Call-boundary checks use the argument ownership established inside its lexical scope.
+    Invocation transfers an owned callee only when it is call-once. Supplied operands run once
+    in source order before completed callee stages, preserving the same effect order as fully
+    applied chains.
 12. **ClosureMemoryFnGenerator**
 13. **StructDestructorBodyGenerator**
 14. **OwnershipAnalyzer**
@@ -758,6 +763,12 @@ types when possible.
 
 **Application checking**:
 - Works over nested `App` chains produced by the rewriter, validating one argument at a time.
+- Callee checking preserves the `Callee` type. Inference and validation share callable lookup;
+  references retain their resolved-declaration fallback and diagnostic names.
+- Callable lookup, compatibility, and struct selection use `TypeUtils.canonical` to follow
+  aliases, single-type groups, and schemes while preserving nominal types and detecting alias
+  cycles. Source type grouping remains in the AST.
+- Immediately applied lambdas check arguments first so local bindings can infer their types.
 - Ensures zero-argument functions in call position accept `Unit`.
 - Nullary literal applications use the same function-type argument validation. Their emission
   evaluates the Unit argument before the body in the enclosing lexical scope, preserving
