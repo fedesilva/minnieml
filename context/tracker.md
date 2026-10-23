@@ -3,10 +3,11 @@
 Read [task-tracking-rules.md](task-tracking-rules.md) before changing task state.
 This is the Author's active and near-term focus. The backlog lives in [tasks/](tasks/).
 
-## Global Working Memory
+## Global
 
 - Record QA findings in [QA misses](tasks/qa-misses.md). Select individual items or related
   groups for cleanup; create dedicated tasks when they need their own plans.
+- if you have QA findings, surface them clearly to The Author.
 
 ## Active Tasks
 
