@@ -5,18 +5,26 @@ This is the Author's active and near-term focus. The backlog lives in [tasks/](t
 
 ## Global
 
-- Record QA findings in [QA misses](tasks/qa-misses.md). Select individual items or related
+* QA
+  - Record QA findings in [QA misses](tasks/qa-misses.md). Select individual items or related
   groups for cleanup; create dedicated tasks when they need their own plans.
-- if you have QA findings, surface them clearly to The Author.
+  - if you have QA findings, surface them clearly to The Author.
+
+### Maxim
+
+As a general rule, we want to FIX things not PATCH bugs, 
+  we are building a compiler from scratch, we have no clients or users 
+  and we want to deliver a clean, easy to understand high quality code base so 
+  narrow fixes that do not address the underlaying problem are to be shunned.
 
 ## Active Tasks
 
 ### Unify Unit parameter lowering
 
 - **Tracker:** [Unify Unit parameter lowering](tasks/unit-parameter-lowering.md)
-- **Status:** planned
-- **Current focus:** Next task: unify Unit parameter scope handling and preserve argument effects
-  across function-emission paths; implementation plan pending.
+- **Status:** in_progress
+- **Current focus:** Implement the approved shared parameter lowering, preserve lexical Unit
+  bindings and argument effects, then complete regression and compiler verification.
 
 ### Unify type-property alias resolution
 
