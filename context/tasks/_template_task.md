@@ -19,6 +19,10 @@ Keep this overview synchronized with detailed plans, working memory, and signoff
 
 1. [ ] **planned** — [top-level step; link to details where useful]
 
+## Tags
+
+- [tag]
+
 ## Problem
 
 [Describe what is wrong or missing.]
