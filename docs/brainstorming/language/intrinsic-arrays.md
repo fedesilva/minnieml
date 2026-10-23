@@ -109,6 +109,14 @@ struct Grid { width: Int, height: Int, cells: Array Int };
 fn row_sum(xs: Array Int): Int = ... ;
 ```
 
+### Ownership and duplication
+
+This proposal follows the [memory-evolution decisions](../mem/mem-evolution.md#decisions):
+only scalars may be implicitly duplicated. Aggregates, including scalar-only structs
+and arrays, retain ownership even when their drop operation is a no-op. Reads borrow
+non-scalar elements; duplicating them requires an explicit `Clone` operation.
+These are proposed array semantics, not a description of current compiler support.
+
 ### Mutability
 
 Arrays are mutable. `set` writes a slot in place. The length is fixed when the array
@@ -166,7 +174,7 @@ document).
 
 ### Construction
 
-For freely copyable elements, `array_new n init` fills `n` slots with copies of `init`:
+For scalar elements, `array_new n init` fills `n` slots with copies of `init`:
 
 ```mml
 let xs = array_new 100 0;     // Array Int, 100 zeros
@@ -174,23 +182,25 @@ let ys = array_new 100 0.0;   // Array Float
 ```
 
 - Every slot must contain a valid initialized value.
-- Freely copyable values can be repeated across slots.
-- Resource elements require a separate owned value per slot.
-- Resource initialization remains open: explicit cloning or per-element construction.
+- Scalars can be repeated across slots.
+- Non-scalar elements require a separate owned value per slot, including scalar-only
+  aggregates.
+- Non-scalar initialization remains open: explicit cloning or per-element construction.
 - Repetition must not silently duplicate ownership or require every element type to clone.
 
-Array literals evaluate elements once, in source order, and transfer resource elements
+Array literals evaluate elements once, in source order, and transfer non-scalar elements
 into their slots. The existing ownership rules for aggregate construction apply.
 
 ### Element access
 
 - `array_get arr i` reads the element at index `i`.
-- Freely copyable elements are copied; resource elements are borrowed.
-- Reading does not clone a resource or move it out of its slot.
+- Scalar elements are copied; non-scalar elements are borrowed, including scalar-only
+  aggregates.
+- Reading does not clone a non-scalar element or move it out of its slot.
 - `array_set arr i v` takes ownership of `v` and replaces the slot's value.
 - Replacement destroys the previous occupant when its type requires destruction.
 - Evaluate the replacement value before destroying the previous occupant.
-- A borrowed resource element cannot supply ownership to `set` without duplication
+- A borrowed non-scalar element cannot supply ownership to `set` without duplication
   through an explicit clone operation supported by its type.
 
 Both check that `i` is within bounds. An out-of-bounds index stops the program with an
@@ -263,8 +273,8 @@ let n = xs.length;
 - `getelementptr` addresses elements in either representation.
 - Checked access emits a bounds check; unchecked access omits it.
 - Reads and writes emit loads and stores, plus required element cleanup on replacement.
-- Literals allocate storage and initialize each slot. Freely copyable constants may
-  use a block copy.
+- Literals allocate storage and initialize each slot. Scalar constants may use a block
+  copy. A block copy must not introduce implicit duplication of non-scalar elements.
 - Operation lowering is specialized to each concrete element type.
 
 ### Memory and ownership
@@ -275,8 +285,9 @@ let n = xs.length;
 - Array destruction runs required element cleanup, then releases heap backing storage.
 - Stack-backed arrays run required element cleanup; their storage expires automatically.
 - Cloning produces independently owned storage and elements.
-- Freely copyable elements use value copies; resource elements require a clone contract.
-- Non-cloneable elements are allowed. Their arrays have no clone operation.
+- Cloning copies scalar elements and explicitly invokes the clone contract for each
+  non-scalar element, including scalar-only aggregates.
+- Non-scalar elements without `Clone` are allowed. Their arrays have no clone operation.
 
 ### Mutation effects and borrows
 
@@ -289,7 +300,7 @@ let n = xs.length;
 
 Proposed first rule — not settled:
 
-1. Track the owning array of each resource-element borrow.
+1. Track the owning array of each non-scalar element borrow.
 2. Any write to that array invalidates all existing element borrows from it.
 3. Reject later uses of invalidated borrows; a fresh read is allowed.
 4. Copied scalar values remain valid.
@@ -343,7 +354,7 @@ Intermediate breakage between these steps is fine.
 1. Final names for the operations (`array_new`, `array_get`, and the rest).
 2. Whether to also allow a one-argument `array_new n` for element types that have a
    natural zero, as a shorthand.
-3. Resource initialization: explicit cloning or per-element construction; syntax and
+3. Non-scalar initialization: explicit cloning or per-element construction; syntax and
    ownership of the initializer.
 4. Borrow invalidation policy, mutation-effect contracts, and propagation through calls.
 5. Whether constant array literals get the single-copy optimization in the first

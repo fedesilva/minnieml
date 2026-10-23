@@ -6,7 +6,8 @@ Status: Draft
 
 ## Goal
 
-Check whether a resource borrow is used after an operation invalidates its storage.
+Check whether a non-scalar element or field borrow is used after an operation
+invalidates its storage.
 [Intrinsic arrays](../language/intrinsic-arrays.md#mutation-effects-and-borrows) are the
 first application. Struct field replacement has the same requirement.
 
@@ -29,7 +30,8 @@ Track individual borrows by resolved binding identity. Several borrows may depen
 the same owner, but a fresh read must remain distinct from an older borrow. Propagate
 dependencies through aliases and captures.
 
-Copied scalar values have no element-borrow dependency.
+Copied scalar values have no element-borrow dependency. Scalar-only aggregates are
+non-scalar values: reading an aggregate element borrows it rather than copying it.
 
 ---
 
@@ -56,7 +58,7 @@ available; provenance and effect precision determine which programs are accepted
 
 ## Array replacement
 
-The array draft proposes an initial rule: any write invalidates all existing resource
+The array draft proposes an initial rule: any write invalidates all existing non-scalar
 element borrows from that array. Index-specific tracking can refine this later.
 The effect covers element borrows in `xs[]`; the array value itself remains usable.
 
@@ -83,7 +85,7 @@ At the write, `x` has no future use. Its binding remains in scope, but the borro
 dead. A fresh read after the write is also allowed: its definition discharges that
 borrow's requirement before the backward walk reaches the write.
 
-Under this rule, writing `xs[1]` also conflicts with a live resource borrow from
+Under this rule, writing `xs[1]` also conflicts with a live non-scalar element borrow from
 `xs[0]`. Liveness narrows the duration of the restriction without proving indices
 distinct. Checked and unchecked accesses follow the same rule.
 

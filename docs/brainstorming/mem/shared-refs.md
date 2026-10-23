@@ -35,19 +35,20 @@ just a borrow. It is a different ownership regime with an explicit runtime cost.
 
 The intended split is:
 
-- `T` (where `T: Unique`) means unique ownership
+- An owned non-scalar `T` has one owner; `Unique` supplies its drop contract
 - `&T` means shared ownership through a reference-counted cell
 
-Non-`Unique` types (numbers, booleans, unit, aggregates of those) are freely
-copyable and do not require shared ownership. They can still be shared, for
-example to avoid repeated copies of a large aggregate.
+Only scalars may be implicitly duplicated, as specified by the
+[memory-evolution decisions](mem-evolution.md#decisions). Scalar-only aggregates
+still have ownership; a no-op drop does not grant implicit copying. Sharing an
+aggregate moves it into the cell. Sharing a scalar copies it into the cell.
 
 ---
 
 ## Core idea
 
-Creating a shared ref moves a `Unique` value into the cell or copies a freely
-copyable value into it. The following example assumes `Struct1` is `Unique`.
+Creating a shared ref moves an owned non-scalar value into the cell or copies a
+scalar into it. The following example assumes `Struct1` is `Unique`.
 
 Example:
 
@@ -115,9 +116,11 @@ that each member can be duplicated under its own contract.
 
 ### Creation
 
-`&a` produces `&T`. For a `Unique` value, it transfers ownership and `a` becomes
-moved. For a freely copyable value, it copies the value into the cell and `a`
-remains usable. Neither case requires `Clone`.
+For a plain value `a: T`, `&a` produces `&T`. An owned non-scalar value moves
+into the cell and `a` becomes unavailable. A scalar is copied into the cell and
+`a` remains usable. Neither case requires `Clone`. A borrowed non-scalar cannot
+supply ownership; making an independent payload requires an explicit clone when
+its type supports `Clone`.
 
 ```mml
 let n = 1;
@@ -130,12 +133,14 @@ Creation must be explicit. There should be no silent promotion from `T` to `&T`.
 ### Aliasing an existing shared ref
 
 `&b` where `b: &T` does not move `b`. It bumps the reference count and returns
-another `&T` handle. Both bindings are live afterwards.
+another `&T` handle. Both bindings are live afterwards. Shared handles are not
+implicitly duplicated: transferring an owned handle moves it; another owned handle
+requires explicit `&`.
 
 So `&` is overloaded by the row of its operand:
 
-- on a `T: Unique`, `&` moves the value into a fresh RC cell (rc = 1)
-- on a freely copyable `T`, `&` copies the value into a fresh RC cell (rc = 1)
+- on an owned non-scalar `T`, `&` moves the value into a fresh RC cell (rc = 1)
+- on a scalar `T`, `&` copies the value into a fresh RC cell (rc = 1)
 - on an `&T`, `&` aliases the existing cell (rc++)
 
 ### Drop
@@ -145,7 +150,8 @@ Dropping an `&T` decrements the reference count.
 When the count reaches zero:
 
 1. if the inner `T` needs cleanup, it is dropped via its `Unique` implementation
-   (see `mem-evolution.md`, Layer 1); freely copyable contents need no cleanup
+   (see `mem-evolution.md`, Layer 1); scalar contents need no cleanup, and a
+   scalar-only aggregate may have a no-op drop
 2. the RC cell storage is freed
 
 Every owned `&T` handle needs release, even when the inner value needs no cleanup.
@@ -183,7 +189,7 @@ a separate owned value under the language's duplication rules.
 The two operators are not symmetric in implementation, only in feel.
 
 `&` is a **compiler primitive**. The type checker has to understand that `&`
-consumes a `Unique` value, copies a freely copyable value, or aliases an `&T`,
+consumes an owned non-scalar value, copies a scalar, or explicitly retains an `&T`,
 and it has to track `&T`
 through the `Shared` row. Codegen has to emit the retain on `&` and the release
 at scope end. None of that can be expressed as a user-level protocol method,
@@ -343,8 +349,9 @@ The transition from a `Unique` value to `&T` must be simple and predictable.
 
 The most important invariant is:
 
-- after `let b = &a`, a `Unique` value `a` is moved and cannot be used again;
-  a freely copyable `a` remains usable
+- after `let b = &a`, an owned non-scalar payload `a` is moved and cannot be
+  used again; a scalar `a` remains usable. If `a` is already an `&T`, the
+  explicit retain creates another handle and both remain usable
 
 ### Cost visibility
 
@@ -379,7 +386,7 @@ This is the main semantic question left open by the model.
 
 Resolved for the value-level operators:
 
-- `&expr` moves a `Unique` value or copies a freely copyable value into a new
+- `&expr` moves an owned non-scalar value or copies a scalar into a new
   `&T`, or aliases an existing `&T`
 - `^expr` produces a fresh `T` from a `T` or an `&T` (requires `T: Clone`)
 - the type form is `&T` in annotations and fields
@@ -437,7 +444,7 @@ Resolved:
 
 The intended memory ladder is:
 
-1. unique ownership by default (any `T: Unique`)
+1. ownership by default; only scalars may be implicitly duplicated
 2. explicit `^` for duplication (`Clone` protocol)
 3. explicit `&` for shared ownership (this document)
 
