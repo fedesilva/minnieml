@@ -48,7 +48,7 @@ Linux sanitizer validation is deferred to the separate
 
 ## Problem
 
-Lambda semantics, ownership, and lowering need a common model on `dev-lambda-unify`.
+Lambda semantics, ownership, and lowering need a common model on `dev-2026-03-21-lambdas`.
 The [Execution Checklist](#execution-checklist) is the current progress overview;
 [Task Working Memory](#task-working-memory) holds the active handoff.
 
@@ -315,8 +315,8 @@ free-variable analysis, not from a special top-level function model.
 ### Partial-application ownership contract
 
 Retained accepted PAP contract and regression obligations. This section specifies
-required behavior; current implementation progress remains in Task Working Memory and
-the migration handoff.
+required behavior; current implementation progress is in the [Execution Checklist](#execution-checklist)
+and [Task Working Memory](#task-working-memory). The migration handoff is historical evidence.
 
 #### Problem
 
@@ -395,9 +395,9 @@ alive.
 
 #### Consuming Parameters
 
-The PAP creation slice preserves rejection when any remaining parameter is consuming.
-The Author selected removing that restriction as a
-[follow-up bug-fix step](#bug-supply-a-consuming-argument-after-pap-creation).
+Remaining consuming parameters are supported by the completed
+[deferred consuming-argument repair](#bug-supply-a-consuming-argument-after-pap-creation).
+The creation-slice checkpoint rejected the following form; that limitation is historical:
 
 ```mml
 fn consume(a: Int, ~s: String): Unit = ...;;
@@ -440,8 +440,8 @@ Required work:
 - Classify each PAP env heap payload as borrowed or owned.
 - Reject escaping PAPs that contain borrowed heap payloads.
 - Keep non-escaping borrowed heap PAPs valid when the lifetime proof is available.
-- Preserve the existing rejection for partial application with remaining consuming
-  parameters within the creation slice; the follow-up bug-fix step covers lifting it.
+- Preserve remaining consuming-parameter contracts through PAP creation; ownership transfers
+  when those arguments are supplied, as specified by the completed deferred-argument repair.
 - Move already-applied consuming heap arguments into the PAP and make the PAP env
   destructor free those owned payload fields exactly once.
 
@@ -455,18 +455,17 @@ Pin these cases:
 - non-escaping PAP over borrowed heap argument is accepted when proven local;
 - escaping PAP over borrowed heap argument is rejected;
 - escaping Direct PAP over borrowed heap trailing payload is rejected;
-- partial application with remaining consuming parameter remains rejected in the creation-slice
-  checkpoint; replace this expectation with ownership coverage in the selected follow-up;
+- partial application with a remaining consuming parameter succeeds; supplying that argument
+  later enforces its ownership contract;
 - moved already-applied heap arguments mark the source binding moved and the PAP env
   destructor frees the moved payload exactly once;
 - no generated IR for PAP creation contains implicit heap clone calls.
 
 ## Plan (Approval Gate)
 
-Preservation, borrowed returns, typed closure destruction, PAP creation, deferred consuming
-arguments, owned PAP struct fields, and nested consuming-PAP repairs are complete.
-Both stages of binding identity and local construction are complete and signed off.
-Remaining work requires bounded approval before implementation.
+Items 1–24 in the [Execution Checklist](#execution-checklist) are complete and signed off.
+Item 25, final task verification and signoff, is the only remaining top-level step.
+Next action: prepare a bounded final-verification plan for merge readiness; approval is pending.
 The general branch audit is deferred.
 
 ## Implementation Checklist
@@ -502,8 +501,9 @@ this branch.
   affected consumers in PAP elaboration, expression rewriting, closure invocation, ownership
   temporaries/cleanup, and generated memory helpers. `BindingOwner` carries scope provenance;
   `BindingIdSupply` retains allocation history through the compilation.
-- **Boundary:** preserve ordinary AST nodes and the existing scope interpretation. Mixed-ownership
-  transfer failures involving allocated and literal branches require the separate ownership repair.
+- **Boundary:** preserve ordinary AST nodes and the existing scope interpretation. Transfers
+  involving allocated and literal branches belong to the completed
+  [mixed-ownership repair](mixed-ownership-transfers.md).
 - **Acceptance:** verify shadowing, repeated generated names, reference resolution after
   rewriting/index refresh, preserved identities, and consuming-contract propagation through
   the affected paths. Run applicable compiler gates and independent review. Keep the known
@@ -1190,8 +1190,8 @@ not run the smoke harness, benchmarks, Linux/x86-64 checks, or formatting and li
 
 - **Status:** complete for item 23; implementation and regression restoration are verified
   and signed off, including the alias and nested-parser repairs. No ignored tests remain.
-- **Remaining steps:** [closure-environment lookup hardening](#harden-closure-environment-lookup)
-  belongs to item 24; final task verification and signoff belong to item 25.
+- **Remaining step:** final task verification and signoff (item 25).
+  [Closure-environment lookup hardening](#harden-closure-environment-lookup) is complete as item 24.
 - The [scope-analysis follow-up](lambda-scope-classification.md) addresses provenance
   heuristics separately from binding construction. The
   [salvage sequence](../history/unify-lambdas-salvage.md#suggested-restart-sequence) and
@@ -1446,7 +1446,7 @@ not run the smoke harness, benchmarks, Linux/x86-64 checks, or formatting and li
   retained late cleanup regardless of binding order. The `Pair` TBAA test checks stores to an
   instantiated `Pair`. Full independent review and narrow re-review of the placement correction
   are complete. A further independent review found no correctness defect; its three placement
-  quality findings are scoped in the next checklist item.
+  quality findings belong to the separate [cleanup placement task](ownership-cleanup-placement.md).
 - **Acceptance:**
   - [x] Preserve the infinite-loop sample and add a finite stress regression for automated
     completion and sanitizer checks.
@@ -1641,7 +1641,7 @@ readability checks completed. Three placement simplifications are deferred to th
     heap-alias and nested-parser repairs verified; final assertion cleanup passes verification and review.
   - [x] **complete** — Verify final assertion cleanup with formatting, lint, the full suite,
     QA, focused tracking checks, and narrow review; zero ignores and all 51 dispositions retained.
-  - [x] **complete** — Obtain scoped signoff; parent lambda implementation and lookup robustness stay open.
+  - [x] **complete** — Obtain scoped signoff for regression restoration.
 - **Restoration verification (2026-09-23):** formatting and lint pass; full suite passes
   763 library tests and nine CLI tests, with 47 ignored. All four restored cases execute and pass.
   Test assertions and compiler implementation are unchanged
@@ -1675,22 +1675,26 @@ readability checks completed. Three placement simplifications are deferred to th
 - **Acceptance:** no unexplained or stale ignores; no placeholder counted as restored;
   no weakened assertion merely to obtain a pass. Track undiscovered declarations separately
   from the 51 audited cases. Further assertion changes and compiler fixes require their
-  bounded plans; this regression cleanup does not complete the remaining lambda implementation.
+  bounded plans. Parent-task final verification and signoff remain item 25.
 
 ## Verification
 
-The source-location repair checks pass formatting/lint,
-1,347 library tests and nine CLI tests with 36 existing ignores, smoke 8/8, local publication,
-13 benchmark builds, and memory fixtures 52/52 on macOS arm64 with LLVM/Clang 23.1.1.
-[Ownership diagnostic evidence](ownership-diagnostic-locations.md#verification) records the
-scope and review limits. Those memory-harness runs do not establish ASan coverage inside
-generated IR. The [generated-IR sanitizer task](asan-generated-ir.md#verification) records
-instrumentation and its verification. T1 is complete and signed off.
-Benchmark builds are not performance measurements.
+The latest compiler checkpoint is [closure-environment lookup hardening](#harden-closure-environment-lookup),
+committed in `e971c23` on 2026-10-22. Formatting, lint, 1,414 library tests and nine CLI tests
+pass with zero ignores or compiler warnings. Smoke checks pass 8/8, local publication succeeds,
+all 13 benchmark targets build, and ASan+LSan memory fixtures pass 52/52 on macOS arm64 with
+LLVM/Clang 23.1.1. QA and independent review, including the separate style, test-quality, and
+readability checks, pass; the correction reviewer independently reran 118 focused tests.
+Benchmark builds establish build success, not performance. This checkpoint includes no Linux execution.
 
-Final task verification follows closure-environment lookup hardening and remains pending. Completed
-slices retain their historical results in [completed-slice evidence](#completed-slice-evidence)
-and [migration evidence](#migration-evidence). Linux sanitizer validation remains separately deferred.
+The [generated-IR sanitizer task](asan-generated-ir.md#verification) owns instrumentation
+and its verification; T1 is complete and signed off. Earlier slice results retain their
+checkpoint-specific counts and limits in the detailed sections,
+[ownership diagnostic evidence](ownership-diagnostic-locations.md#verification),
+[completed-slice evidence](#completed-slice-evidence), and [migration evidence](#migration-evidence).
+
+Final task verification and signoff (item 25) remain pending. Recorded slice checks do not
+establish parent-task completion. Linux sanitizer validation remains separately deferred.
 
 ## Risks / Notes
 
@@ -1725,114 +1729,35 @@ are in `context/history/` for Author review. No compiler slice is authorized by 
   records, including the memory changes; push is not authorized.
 - Item 23, lambda semantics and lowering: complete and signed off.
 - Item 24, closure-environment lookup hardening: complete and signed off, including review
-  corrections. Local commit authorized; push is not authorized. Item 25 remains open.
+  corrections; committed in `e971c23`. Push is not authorized. Item 25 remains open.
 - Historical commit and push authorization: expression preservation, the ignored-test inventory and plan,
   four restored regressions, and their completion records; push to `origin/dev-lambda-unify`.
 
 ## Task Working Memory
 
 - **Branch:** `dev-2026-03-21-lambdas`.
-- **Completed repair:** [closure-environment layout identities](#harden-closure-environment-lookup).
-  The metadata migration and review corrections are implemented. Formatting, lint, 1,414 library
-  tests, nine CLI tests, 8/8 smokes, verified publication, 13 clean benchmark builds, and 52/52
-  ASan+LSan fixtures pass. QA, focused tracking checks, and fresh narrow review pass, including
-  separate QA/style, test-quality, and readability checks and an independent 118-test rerun.
-  Scoped signoff is complete. Local commit authorized; push is not authorized. Item 25 remains open.
-- **Completed repair:** [Simplifier callee types](#fix-preserve-the-complete-application-callee-type-in-simplifier).
-  The shared alias, exhaustive simplification, and annotation correction are verified and signed
-  off, with passing compiler gates and independent review. The parent task remains open.
-- **Completed cleanup:** [Full ignored-regression cleanup](unify-lambdas-ignored-tests.md#full-inventory-cleanup).
-  The inventory accounts for 43 enabled cases, five duplicates consolidated, and three retired
-  optimization contracts with their source scenarios retained. No ignores remain. Alias and
-  nested-parser repairs, the restored metadata fixture, inline lexical-reference checks,
-  non-heap alias controls, and shared assertion corrections are implemented. Formatting, lint,
-  1,403 library tests, nine CLI tests, 8/8 smokes, verified local publication, 13 clean benchmark
-  builds, and 52/52 ASan+LSan fixtures pass for the verified implementation. Final test-only
-  assertion cleanup passes formatting, lint, the full suite, and focused incorrect-IR controls.
-  Production code and source fixtures are unchanged by the final assertion cleanup. Independent
-  review and fresh narrow re-review pass, including separate QA/style, test-quality, and
-  readability checks. Scoped signoff is complete; local commit is authorized, including the
-  memory changes. The parent task remains open.
-- **Priority and next action:** plan final task verification for merge readiness (item 25).
-  The ignored-regression inventory has no open cases.
-- **Post-lambda review:** [Unify type-property alias resolution](type-property-alias-resolution.md)
+- **Implementation:** items 1–24 are complete and signed off. The
+  [Execution Checklist](#execution-checklist) links each completed slice and its evidence.
+  Closure-environment layout identities and review corrections are committed in `e971c23`.
+- **Next action:** prepare a bounded final-verification plan for merge readiness (item 25).
+  Plan approval, final verification, and parent-task signoff remain pending.
+- **Verification baseline:** the [latest compiler checkpoint](#verification) records passing
+  host gates and independent review for closure-environment lookup hardening. Its results
+  establish that slice's verification, not completion of item 25.
+- **Regression inventory:** [all 51 audited cases](unify-lambdas-ignored-tests.md) have final
+  dispositions: 43 enabled, five duplicates consolidated, and three retired optimization
+  contracts with their source scenarios retained. No ignored tests or open inventory cases remain.
+- **Deferred verification:** the general branch audit and
+  [Linux sanitizer validation](linux-sanitizer-verification.md) remain deferred.
+  [Linux ASan assembly failure](linux-asan-internalization.md) owns the isolated
+  sanitizer/internalization repair; host checks do not establish Linux sanitizer execution.
+- **Independent follow-ups:** diagnostic polish, test-quality expansion, documentation,
+  optimization, and maintainability tasks are outside lambda completion. The
+  [cleanup placement findings](ownership-cleanup-placement.md) are deferred quality work.
+  The [parenthesized-lambda parser bug](parser-parenthesized-lambda-arguments.md) and
+  [grouped callable-result repair](typecheck-grouped-callable-results.md) retain their own scope.
+- **Post-lambda review:** [type-property alias resolution](type-property-alias-resolution.md)
   reviews consistent identity across heap/clone/free queries; implementation approval is pending.
-- **Deferred scope:** diagnostic, test-quality, documentation, optimization, and maintainability
-  follow-ups are standalone LOW-priority backlog tasks, outside lambda completion. The implemented
-  B4 evidence is owned by [ownership diagnostic locations](ownership-diagnostic-locations.md);
-  the scoped implementation is verified and signed off. Remaining diagnostic findings stay
-  in the independent backlog.
-- **Completed repair:** [B3 recursive shadowing after a move](#b3-recursive-shadowing-after-a-move)
-  is verified and signed off, with passing compiler gates and independent reviews.
-- **Completed repair:** [B2 recursive higher-order callable flow](#b2-recursive-higher-order-callable-flow)
-  is verified and signed off, with passing compiler gates and independent reviews.
-- **Branch audit:** the review findings and evidence limits are in
-  [Branch review findings](#branch-review-findings). Compiler-generated ASan coverage
-  is implemented and signed off in the [sanitizer task](asan-generated-ir.md). Remaining repairs and their
-  verification are listed in the [Execution Checklist](#execution-checklist).
-- **Tail-recursion cleanup:** [owned-closure cleanup](#bug-preserve-tail-recursion-across-owned-closure-cleanup)
-  preserves eligible loops while retaining borrowed backing storage and effect order.
-  Formatting/lint, 1,293 library plus nine CLI tests, 8/8 smokes, verified local publication,
-  12 benchmark builds, 52/52 ASan+LSan cases, O0/O3 infinite probes, QA, tracking checks, full
-  independent review, and narrow re-review pass. The fixture lives under `tests/`.
-  Scoped signoff is complete; local commit is authorized and push is not. The parent stays open.
-- **Completed PAP callee repair:** the traversal repair and 22 new phase/native regressions are
-  complete and signed off. Formatting, lint, the full suite, smoke checks, verified local publication,
-  12 clean benchmark builds, ASan/LSan 51/51, QA, tracking checks, and independent review pass.
-  The independent focused rerun passes 66/66. Local commit is authorized; push is not authorized.
-  The separate [parser bug](parser-parenthesized-lambda-arguments.md) remains planned.
-- **Completed repair:** [call-stage ownership and fully applied literal borrowing](call-stage-ownership.md)
-  are complete and signed off. Formatting/lint, 1,220 library plus nine CLI tests, smoke 8/8,
-  verified local publication, 12 clean benchmark builds, ASan/LSan 51/51, QA, tracking review,
-  and independent reviews pass. The parent migration remains open.
-- **Next bounded follow-up:** [closure environment lookup hardening](#harden-closure-environment-lookup).
-  General ignored-test restoration is complete and signed off.
-- **Implementation:** [Binding identity and local construction](#establish-binding-identity-and-local-construction-invariants)
-  is complete and signed off. Stage 1 is committed at `dbd65d9`; stage 2 includes the shared
-  construction helpers, caller migrations, regressions, and completion records.
-- **Completed repair:** [Nested capturing-recursion TCO repair](#bug-preserve-valid-llvm-and-tco-for-nested-capturing-recursion)
-  is complete and signed off with passing LLVM, runtime, sanitizer, benchmark-build, compiler,
-  QA, and independent review gates.
-- **Completed repair:** [Elaboration error recovery](#bug-continue-elaboration-after-independent-errors)
-  is complete and signed off with passing verification and independent review.
-- **Completed repair:** [counter preservation](#preserve-counters-and-argument-expressions-across-ownership-analysis)
-  is complete and signed off. Counter threading, focused regressions, required compiler gates,
-  QA, tracking checks, and independent review pass.
-- **Completed repair:** argument-expression preservation implements the approved single-term
-  contract. Shape/recovery regressions, full compiler tests, formatting, lint, native argument
-  order, smoke checks, local installation, benchmark builds, and sanitizer checks pass, including
-  the selection-qualifier recovery repair and observational call-boundary validation.
-  QA, tracking checks, and independent review pass. The slice is signed off with commit and
-  push authorization. Overall migration remains open.
-- **Completed repair:** [Nullary immediate application](unify-lambdas-ignored-tests.md#nullary-immediate-application);
-  complete and signed off. Type checking, emission, and regression restoration are implemented;
-  compiler gates, QA, tracking review, self-review, and independent review pass.
-- **Ignored-test restoration:** the [51-case inventory](unify-lambdas-ignored-tests.md)
-  records the completed cleanup and every replacement or consolidation.
-  The four unchanged assertions, borrowed-PAP diagnostic
-  restoration, and six materialization replacements are complete and signed off.
-  [Function-value repair](unify-lambdas-ignored-tests.md#function-value-repair) restores the
-  twelfth case under its approved plan. Formatting, lint, 776 library tests, nine CLI tests,
-  LLVM assembly, host execution, smoke checks, benchmark builds, and all 44 memory checks pass.
-  QA, focused tracking checks, and independent review pass. The slice is complete and signed
-  off, with local commit authorization.
-  [Direct local-entry optimization](unify-lambdas-ignored-tests.md#direct-local-entry-optimization)
-  is complete and signed off with passing host and Linux verification, QA, tracking checks, and
-  fresh independent review. [PAP target optimization](unify-lambdas-ignored-tests.md#pap-target-repair)
-  is complete and signed off with passing compiler gates, QA, tracking checks, and independent review.
-- **Recovery evidence:** CLI controls preserve the statement type mismatch and bound-call
-  use-after-move diagnostic without false ownership errors. Regression, smoke, benchmark-build,
-  and sanitizer results are recorded in the recovery section.
-- **Evidence:** [Nested TCO repair verification](#bug-preserve-valid-llvm-and-tco-for-nested-capturing-recursion)
-  and [binding construction verification](#binding-construction-evidence).
-- **Ownership dependency:** the standalone [mixed-ownership repair](mixed-ownership-transfers.md)
-  is complete and signed off.
-- **Open limits:** the general branch audit and separate Linux sanitizer validation are deferred.
-  The broader counter/expression follow-up is complete and signed off.
-  Final task verification is pending.
-  [Consuming an owned PAP captured by a move lambda](#bug-consume-an-owned-pap-captured-by-a-move-lambda)
-  has passing semantic, smoke, benchmark-build, native sanitizer, and independent review
-  gates and is complete and signed off.
 
 ## Checkpoint Evidence
 

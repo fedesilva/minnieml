@@ -14,8 +14,9 @@ This is the Author's active and near-term focus. The backlog lives in [tasks/](t
 
 - **Tracker:** [Unify lambdas](tasks/unify-lambdas.md)
 - **Status:** in_progress
-- **Current focus:** Final verification for merge readiness. Diagnostic polish and maintenance
-  are independent LOW-priority backlog tasks.
+- **Current focus:** Plan final verification and signoff for merge readiness (item 25);
+  implementation items 1–24 are complete. Diagnostic polish and maintenance are independent
+  LOW-priority backlog tasks.
 
 ### Unify type-property alias resolution
 
