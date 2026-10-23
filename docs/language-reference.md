@@ -206,8 +206,8 @@ let loop: ForeverFn = {
 }: Unit;
 ```
 
-The `inline` hint can be applied to let-bound lambdas the same way as to
-named functions.
+The `inline` hint is supported on top-level function and operator declarations,
+not on let-bound lambdas.
 
 **Closures**: Lambdas can reference bindings from enclosing scopes. Those
 bindings are captured when the lambda is created:
@@ -256,15 +256,17 @@ environment.
 
 ### Operator declarations
 
-Operator names can be symbolic (from `=!#$%^&*+<>?/\|~-`, e.g. `+`, `==`, `|>`)
+Operator names can be symbolic (from `=!#$%^&*+<>?/\|.-`, e.g. `+`, `==`, `|>`)
 or alphanumeric (same rules as binding names, e.g. `and`, `or`, `mod`).
 
 ```text
 op name(params): ReturnType precedence associativity = body;
 ```
 
-Operators require a precedence (integer, higher binds tighter) and associativity
-(`left` or `right`). They can be unary (one parameter) or binary (two parameters).
+Operators can specify a precedence (integer, higher binds tighter) and associativity
+(`left` or `right`). Both are optional: precedence defaults to 50, and associativity
+defaults to `right` for unary operators and `left` for binary operators.
+Operators can be unary (one parameter) or binary (two parameters).
 
 ```mml
 op ++(a: String, b: String): String 61 right = concat a b;;  // string concatenation
@@ -501,7 +503,8 @@ if condition then
 ```
 
 The compiler inserts an implicit `else ()` for single-branch conditionals, so both
-branches return `Unit`. Only use `else` when the `if` needs to return a value.
+branches return `Unit`. Omit `else` when the false branch should do nothing;
+use an explicit `else` for an alternative result or side effect.
 
 **Rules**:
 - The condition must have type `Bool`
@@ -526,8 +529,9 @@ fn fizzbuzz(n: Int): Unit =
 ### Recursion and tail calls
 
 MML has no loop constructs (`while`, `for`, etc.). All iteration is done with
-recursion. The compiler detects and optimizes tail calls automatically — no annotation
-is needed.
+recursion. The compiler automatically optimizes eligible self-tail-recursion — no
+annotation is needed. This is not a general tail-call guarantee: calls to other functions
+are outside this optimization, and required cleanup after a recursive call can prevent it.
 
 A call is in tail position when it is the last expression evaluated before a function
 returns:
@@ -625,7 +629,7 @@ type CharPtr = @native[t=*i8];
 **Struct mirror**:
 ```mml
 type String = @native {
-  length: SizeT,
+  length: Int32,
   data:   CharPtr
 };
 ```
@@ -737,7 +741,8 @@ the underlying representation when comparing types.
 
 ### Compound types
 
-**Tuples**: `(T1, T2, ..., Tn)` (tuple codegen is not implemented yet).
+**Tuples**: Tuple expressions can be parsed, but tuple-type syntax such as
+`(T1, T2, ..., Tn)` and tuple code generation are not implemented yet.
 
 **Function types**: `T1 -> T2 -> R`
 ```mml
@@ -903,6 +908,16 @@ op +(a: Int, b: Int): Int 60 left = @native[tpl="add %type %operand1, %operand2"
 The codegen generates forward declarations and the linker resolves them. Unresolved
 natives produce linker errors.
 
+Use `name` to bind an MML declaration to a different external symbol:
+
+```mml
+fn external_count(): Int = @native[name="_external_count"];;
+```
+
+Here MML code calls `external_count ()`, while the linker resolves `_external_count`.
+The `name` attribute can be combined with memory effects, such as
+`@native[name="external_readline", mem=alloc]`.
+
 ### Native templates
 
 Functions can use `@native[tpl="..."]` to emit inline LLVM IR:
@@ -1061,7 +1076,9 @@ destruction rules.
 
 ### Return value ownership
 
-Functions returning heap types transfer ownership to the caller:
+Returning an owned value transfers ownership to the caller. A heap return type alone
+does not imply ownership: static results remain unowned and need no caller cleanup.
+For example, concatenation allocates an owned result:
 
 ```mml
 fn make_greeting(name: String): String =
@@ -1102,7 +1119,8 @@ fn main(): Unit =
 
 - Using a binding after its ownership was transferred is an error (use after move).
 - A consuming parameter requires the argument to be its last use.
-- Partially applying a function with consuming parameters is not allowed.
+- Calling a partial application after it has transferred a stored payload is an error
+  (use after move).
 - Conditional branches must produce compatible ownership states.
 
 ---
@@ -1111,7 +1129,7 @@ fn main(): Unit =
 
 The standard library provides a set of types, operators, and functions available
 in every module without explicit imports. For implementation details, see
-[Standard library injection](compiler-design.md#9-standard-library-injection) in
+[Standard library injection](design/compiler-design.md#9-standard-library-injection) in
 the compiler design document.
 
 ### Types
@@ -1301,9 +1319,9 @@ are flushed explicitly or when the buffer is freed.
 
 #### Array operations
 
-Each array type (`IntArray`, `StringArray`, `FloatArray`) has the same set of
-operations. The table below uses `IntArray` / `Int` as the example; substitute
-the appropriate types for the other families.
+The array types (`IntArray`, `StringArray`, `FloatArray`) provide creation, element
+access, and length operations. The table below uses `IntArray` / `Int` as the example;
+family-specific operations and ownership rules follow it.
 
 | Function                    | Type                            | Description        |
 |-----------------------------|---------------------------------|--------------------|
@@ -1321,6 +1339,10 @@ and accepts empty arrays. This operation is specific to `IntArray`.
 The `StringArray` family uses `ar_str_*` and the `FloatArray` family uses
 `ar_float_*`. The `StringArray` family does not have `unsafe_ar_str_set` or
 `unsafe_ar_str_get` variants.
+
+`ar_str_set(arr: StringArray, i: Int, ~value: String): Unit` borrows the array and
+consumes the string value. After storing an owned string, the caller must not reuse it;
+the array owns that value.
 
 ---
 

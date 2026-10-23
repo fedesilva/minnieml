@@ -4,6 +4,10 @@ Durable product changes belong here. Current task state belongs in task files.
 
 ## 2026-10-23
 
+- Correct the language reference's partial-application and return ownership rules, string-array
+  transfers, operator syntax and defaults, tuple limitations, inline hints, tail recursion,
+  conditional guidance, and String layout. Document native symbol names and repair the
+  compiler-design link.
 - Share callable-type lookup and application validation across references, lambdas, and returned
   functions. Handle grouped, aliased, and scheme-wrapped types consistently, resolve literal
   ascriptions before checking, and preserve contextual inference and diagnostic labels.
