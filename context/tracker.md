@@ -11,6 +11,21 @@ This is the Author's active and near-term focus. The backlog lives in [tasks/](t
 
 ## Active Tasks
 
+### BUG: Linux ASan assembly failure
+
+- **Tracker:** [Fix Linux ASan assembly failure after internalization](tasks/linux-asan-internalization.md)
+- **Status:** planned
+- **Current focus:** Isolate the LLVM 20.1.8 sanitizer/internalization failure on both Linux
+  architectures and prepare a bounded repair plan.
+
+### Revisit Linux sanitizer verification
+
+- **Tracker:** [Revisit Linux sanitizer verification](tasks/linux-sanitizer-verification.md)
+- **Status:** planned
+- **Current focus:** Reconcile recorded Linux sanitizer evidence, then plan smoke,
+  benchmark, and full memory-harness verification.
+
+
 ### Unify type-property alias resolution
 
 - **Tracker:** [Unify type-property alias resolution](tasks/type-property-alias-resolution.md)
@@ -55,20 +70,6 @@ This is the Author's active and near-term focus. The backlog lives in [tasks/](t
 - **Status:** planned
 - **Priority:** HIGH
 - **Current focus:** Define module identity and naming rules that prevent symbol and output collisions.
-
-### BUG: Linux ASan assembly failure
-
-- **Tracker:** [Fix Linux ASan assembly failure after internalization](tasks/linux-asan-internalization.md)
-- **Status:** planned
-- **Current focus:** Isolate the LLVM 20.1.8 sanitizer/internalization failure on both Linux
-  architectures and prepare a bounded repair plan.
-
-### Revisit Linux sanitizer verification
-
-- **Tracker:** [Revisit Linux sanitizer verification](tasks/linux-sanitizer-verification.md)
-- **Status:** planned
-- **Current focus:** Reconcile recorded Linux sanitizer evidence, then plan smoke,
-  benchmark, and full memory-harness verification.
 
 ### Modules, package root, and source inclusion
 
