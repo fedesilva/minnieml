@@ -17,6 +17,8 @@ Do not read or act on them unless directed to do so explicitely.
   * organize the samples in subfolders
     * remove crap, work interactively.
 
+* feedback for the ir for a couple programs
+  * https://claude.ai/share/b42440d0-9f9c-41a0-a9cd-065e12d0d0f4
 
 ## Abridged hand-wavy roadmap
 
