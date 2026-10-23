@@ -1799,16 +1799,16 @@ are in `context/history/` for Author review. No compiler slice is authorized by 
 - **Final verification:** [fresh host gates](#final-task-verification) pass at `9dbd7af`:
   1,414 library tests, nine CLI tests, 8/8 smokes, local publication, 13 benchmark builds,
   and 52/52 ASan+LSan fixtures. Zero ignores or compiler warnings. Tracking consistency,
-  links, and whitespace checks pass for the changed records; deferred Linux records retain
-  pending verification. No compiler changes or fresh general branch audit are included.
+  links, and whitespace checks pass for the changed records. Separate
+  [Linux verification](linux-asan-internalization.md#broader-verification-2026-10-23) passes.
+  No compiler changes or fresh general branch audit are included.
 - **Regression inventory:** [all 51 audited cases](unify-lambdas-ignored-tests.md) have final
   dispositions: 43 enabled, five duplicates consolidated, and three retired optimization
   contracts with their source scenarios retained. No ignored tests or open inventory cases remain.
-- **Deferred verification:** the general branch audit and
-  [Linux sanitizer validation](linux-asan-internalization.md) remain outside lambda completion.
-  The Linux task covers sanitizer/internalization evidence reconciliation and full Linux
-  verification; see [final verification](#final-task-verification).
-  Fresh host checks do not establish fresh Linux sanitizer execution.
+- **Separate verification:** the general branch audit remains deferred.
+  [Linux sanitizer validation](linux-asan-internalization.md#broader-verification-2026-10-23)
+  is complete on native ARM64 and emulated amd64, including full suites, smokes, benchmark
+  builds, and 52/52 memory cases on each architecture.
 - **Independent follow-ups:** diagnostic polish, test-quality expansion, documentation,
   optimization, and maintainability tasks are outside lambda completion. The
   [cleanup placement findings](ownership-cleanup-placement.md) are deferred quality work.

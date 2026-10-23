@@ -1019,9 +1019,9 @@ initialization correctness; the explicit cell-value oracle exposes the defect.
 ## Risks / Notes
 
 - The [conditional field-alias lifetime repair](#7-conditional-field-aliases-can-outlive-their-temporary-owner)
-  passes host verification and independent review. Linux sanitizer verification is blocked
-  by the [Linux ASan assembly failure](linux-asan-internalization.md), with explicit approval
-  to defer that verification from finding 7 completion.
+  passes host verification and independent review. Its separate
+  [Linux verification](linux-asan-internalization.md#broader-verification-2026-10-23) passes
+  full suites and 52/52 memory cases on both Linux architectures.
 - Witness-based returns and branch-dependent transfer cleanup are covered by the completed
   [conditional ownership repair](mixed-ownership-transfers.md).
 - A raylib window-initialization failure is a separate environmental condition, not evidence
@@ -1063,8 +1063,9 @@ fixtures, and the 38-execution sample matrix. The 37 existing ignores remain exc
 passing coverage. Fresh independent review covers all six repairs and their relevant
 integration; its 18 native reruns pass. QA and final self-review find no actionable issues.
 
-Verification covers macOS arm64 and headless sample behavior. Finding 7's Linux sanitizer
-verification is explicitly deferred to the [Linux ASan task](linux-asan-internalization.md).
+The closeout verification covers macOS arm64 and headless sample behavior. Finding 7's
+separate [Linux sanitizer verification](linux-asan-internalization.md#broader-verification-2026-10-23)
+is complete on native ARM64 and emulated amd64.
 Current GUI playback was not exercised. Float and string array fill extensions remain deferred.
 
 The task is complete and signed off. No push is authorized.

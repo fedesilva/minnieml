@@ -11,14 +11,6 @@ This is the Author's active and near-term focus. The backlog lives in [tasks/](t
 
 ## Active Tasks
 
-### BUG: Linux ASan assembly failure
-
-- **Tracker:** [Fix Linux ASan assembly failure after internalization](tasks/linux-asan-internalization.md)
-- **Status:** planned
-- **Current focus:** Reconcile the LLVM 20.1.8 reproducer with passing Linux sanitizer suites,
-  determine any remaining repair, and plan Linux smoke, benchmark, and memory verification.
-
-
 ### Apply returned callables with parenthesized function types
 
 - **Tracker:** [Apply returned callables with parenthesized function types](tasks/typecheck-grouped-callable-results.md)
