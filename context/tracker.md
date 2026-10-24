@@ -41,6 +41,13 @@ As a general rule, we want to FIX things not PATCH bugs,
   of globals, preserves their provenance through value flow, and prevents their destruction.
 
 
+### GitHub Actions compiler verification and benchmarks
+
+- **Tracker:** [GitHub Actions compiler verification and benchmarks](tasks/github-actions-verification.md)
+- **Status:** planned
+- **Current focus:** Plan cloud compilation, all test suites and smoke tests, and benchmark
+  compilation and execution before the merge checkpoint; implementation approval pending.
+
 ### Checkpoint: Merge into main
 
 
