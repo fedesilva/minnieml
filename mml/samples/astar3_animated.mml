@@ -47,7 +47,8 @@ pub fn main(args: StringArray): Unit =
 ;
 
 fn parse_arg(args: StringArray, argc: Int, idx: Int, fallback: Int): Int =
-  if argc > idx then str_to_int (ar_str_get args idx);
+  if argc > idx
+  then str_to_int (ar_str_get args idx);
   else fallback;
   ;
 ;
