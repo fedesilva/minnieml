@@ -27,8 +27,6 @@ Narrow fixes that do not address the underlaying problem are to be shunned.
 - **Current focus:** Review after Unify lambdas; reconcile alias resolution across heap
   classification and memory-function queries, then approve a bounded implementation plan.
 
-### Checkpoint: Merge into main --------
-
 ### Global-origin ownership
 
 - **Tracker:** [Global-origin ownership](tasks/global-origin-ownership.md)
