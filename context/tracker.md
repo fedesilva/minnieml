@@ -16,7 +16,7 @@ As a general rule, we want to FIX things not PATCH bugs;
   we are building a compiler from scratch, we have no clients or users 
   and we want to deliver a clean, easy to understand high quality code base.
 
-Narrow fixes that do not address the underlaying problem are to be shunned.
+Narrow fixes that do not address the underlying problem are to be shunned.
 
 ## Active Tasks
 
