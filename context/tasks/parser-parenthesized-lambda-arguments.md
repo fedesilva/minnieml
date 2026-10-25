@@ -38,6 +38,27 @@ fn example(): Int =
 ;
 ```
 
+A parenthesized lambda that follows an expression statement is also rejected:
+
+```mml
+pub fn main(): Unit =
+  1; ({ n -> n });
+;
+```
+
+These forms parse: `({ n -> n });` as the first statement, `let a = 1; ({ n -> n });`,
+and `1; { n -> n };` without parentheses. The connection to the grouped-call failure
+above is untraced; both reject a parenthesized lambda expression.
+
+[errors-are-not-granular.mml](../../mml/samples/errors-are-not-granular.mml) is a valid
+program that this failure rejects: removing its line 14,
+`println (int_to_str (apply ~{ n: Int -> y.length + n; } 1));`, lets it compile.
+Its header comment describes it as an invalid program. It also reproduces the
+member-level recovery cascade targeted by
+[Error recovery and parser backtracking](error-recovery-and-parser-backtracking.md):
+the failed `main` member is followed by one "Failed to parse member" diagnostic per
+remaining statement, and none of them is at the failing token.
+
 ## Outcome
 
 The grouped form parses as an argument containing a lambda-headed application chain.
@@ -55,8 +76,10 @@ the local-binding control. Parentheses alone do not require a field-selection su
 - [ ] Reduce the source and trace grouping/selection alternatives and commitment boundaries in
   [expression parsing](../../modules/mmlc-lib/src/main/scala/mml/mmlclib/parser/expressions.scala).
 - [ ] Propose the smallest repair supported by that trace and obtain implementation approval.
-- [ ] Add parser regressions for the failing form, the working control, nested grouped arguments,
-  actual field selections, and missing or malformed delimiters.
+- [ ] Add parser regressions for the failing forms, the working controls, nested grouped arguments,
+  actual field selections, and missing or malformed delimiters. Include
+  `errors-are-not-granular.mml` as a valid program that compiles, and correct its
+  header comment.
 - [ ] Verify the parsed argument/application structure and source spans, then type checking and
   execution of the reproducer and control. Complete applicable compiler gates and review.
 
@@ -79,6 +102,16 @@ Observed on 2026-10-19 with parser sources at `af8fec6`, unchanged during the ob
   regression, including nested residual lambdas and stable lexical identities.
 - Runtime equivalence and the parser repair are unverified. The expected result `6` follows
   from the source arithmetic, not an execution result.
+
+Observed on 2026-10-25 with the published `mmlc`, parser sources unchanged since `931c6ff`:
+
+- `1; ({ n -> n });`, `1; ({ n: Int -> n });`, and `1; 2; ({ n: Int -> n });` as
+  `main` bodies each fail with `Failed to parse member` at the `pub fn main` line.
+  The three forms listed under [Problem](#problem) as parsing do parse.
+- `errors-are-not-granular.mml` reports six member parse errors: at `pub fn main` (9:1),
+  at each later statement (lines 11, 12, 14, and 15), and at the closing `;` (16:1).
+  With line 14 removed, it compiles. A `main` body of lines 13–14 alone, or of lines
+  10, 13, and 14, compiles; adding line 11 or line 12 before line 13 reproduces the failure.
 
 ## Risks / Notes
 
