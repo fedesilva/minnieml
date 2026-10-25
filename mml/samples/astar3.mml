@@ -41,7 +41,7 @@ pub fn main(args: StringArray) =
     ;
 
   if show_help then
-    println ( 
+    println (
       str_strip_margin
       "| - x is horizontal, valid grid range 0..29
        | - y is vertical from the top, valid range 0..9

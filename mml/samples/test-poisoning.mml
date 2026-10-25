@@ -1,14 +1,14 @@
 
 
 let a = 1;
-// first error: primary
+// Primary error: a String value does not match the Int annotation.
 let b: Int = "2";
 
-// second error: cause by b being bad
+// c depends on b; consequent diagnostics are hidden from CLI/LSP output.
 let c = a + b;
 
-pub fn main() = 
-// third error: caused by c being bad
+pub fn main() =
+// This use of c carries the same failure without another visible diagnostic.
 
   println (int_to_str c);
 ;

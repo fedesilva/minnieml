@@ -56,6 +56,12 @@ object SourceCodeExtractor:
           .map(s => s"\n$s")
           .getOrElse("")
 
+      case SemanticError.AmbiguousTypeRef(typeRef, _, _, _) =>
+        spanOf(typeRef)
+          .flatMap(span => extractSnippet(sourceInfo, span, nameHighlightSpan = Some(span)))
+          .map(s => s"\n$s")
+          .getOrElse("")
+
       case SemanticError.InvalidExpression(expr, _, _) =>
         spanOf(expr)
           .flatMap(extractSnippet(sourceInfo, _))
@@ -76,7 +82,13 @@ object SourceCodeExtractor:
           .map(s => s"\n$s")
           .getOrElse("")
 
-      case SemanticError.TermErrorFound(error, _) =>
+      case SemanticError.ParseTermErrorFound(error, _) =>
+        spanOf(error)
+          .flatMap(extractSnippet(sourceInfo, _))
+          .map(s => s"\n$s")
+          .getOrElse("")
+
+      case SemanticError.ParseTypeErrorFound(error, _) =>
         spanOf(error)
           .flatMap(extractSnippet(sourceInfo, _))
           .map(s => s"\n$s")

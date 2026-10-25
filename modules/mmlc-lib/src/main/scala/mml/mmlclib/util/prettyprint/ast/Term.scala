@@ -253,9 +253,9 @@ def prettyPrintTerm(
 
       s"$indentStr$annotation$attrsStr $spanStr$typeStr"
 
-    case TermError(sp, message, failedCode) =>
+    case ParseTermError(sp, message, failedCode, _) =>
       val spanStr = if showSourceSpans then printSourceOrigin(sp) else ""
-      s"${indentStr}TermError $spanStr\n" +
+      s"${indentStr}ParseTermError $spanStr\n" +
         s"""${indentStr}  "$message"""" +
         failedCode.map(code => s"\n${indentStr}  $code").getOrElse("")
 

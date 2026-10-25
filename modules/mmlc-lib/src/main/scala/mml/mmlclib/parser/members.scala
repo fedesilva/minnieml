@@ -1,5 +1,6 @@
 package mml.mmlclib.parser
 
+import cats.syntax.all.*
 import fastparse.*
 import mml.mmlclib.ast.*
 
@@ -38,40 +39,53 @@ private[parser] def membersP(info: SourceInfo)(using P[Any]): P[Member] =
   */
 private[parser] def letBindingP(info: SourceInfo)(using P[Any]): P[Member] =
   P(
-    docCommentP(info)
-      ~ visibilityP.?
-      ~ letKw
-      ~ spP(info)
-      ~ bindingIdOrError
-      ~ spNoWsP(info)
-      ~ typeAscP(info)
-      ~ defAsKw
-      ~ exprMemberP(info)
-      ~ semiKw
-      ~ spNoWsP(info)
-      ~ spP(info)
+    pointP(info) ~ docCommentP(info) ~ visibilityP.? ~ letKw ~/ parsedBindingNameP(info) ~
+      typeAscP(info, TypeContext.BindingHeader) ~ requiredBindingTokenP(info, "=") ~
+      bindingFrameP(info, termMemberP(info), required = true) ~ bindingMemberEndP(info) ~
+      pointP(info)
+  ).map { case (start, doc, vis, parsedName, typeAsc, equalsError, body, (endError, tokenEnd), _) =>
+    parsedName.value match
+      case None => failedBindingMember(info, start, tokenEnd, parsedName)
+      case Some(name) =>
+        val expr = appendBindingErrors(body, equalsError.toList ++ endError.toList)
+        Bnd(
+          visibility = vis.getOrElse(Visibility.Protected),
+          source     = SourceOrigin.Loc(span(parsedName.location.start, tokenEnd)),
+          nameNode   = Name(parsedName.location, name),
+          value      = expr,
+          typeSpec   = expr.typeSpec,
+          typeAsc    = typeAsc,
+          docComment = doc
+        )
+  }
+
+/** Failed declarations end at their terminator, before inter-member whitespace and comments. */
+private def bindingMemberEndP(info: SourceInfo)(using
+  P[Any]
+): P[(Option[ParseTermError], SrcPoint)] =
+  P(requiredBindingTokenP(info, ";") ~~ pointP(info))
+
+/** Nameless declarations retain their entire source fragment without inventing a binding. */
+private def failedBindingMember(
+  info:         SourceInfo,
+  start:        SrcPoint,
+  end:          SrcPoint,
+  name:         ParsedBindingName,
+  functionName: Boolean = false
+): Member =
+  val invalidId = name.error.flatMap(_.failedCode).getOrElse("")
+  val nameRule = "must start with a lowercase letter (a-z) " +
+    "followed by letters, digits, or underscores"
+  val message =
+    if invalidId.isEmpty then "Expected binding name"
+    else if functionName then s"Invalid function name '$invalidId'. Function names $nameRule"
+    else s"Invalid identifier '$invalidId'. Identifiers $nameRule"
+  ParsingIdError(
+    span(start, end),
+    message,
+    info.slice(start.index, end.index).some,
+    invalidId
   )
-    .map { case (doc, vis, nameStart, idOrError, nameEnd, typeAsc, expr, endPoint, _) =>
-      idOrError match
-        case Left(invalidId) =>
-          ParsingIdError(
-            span = span(nameStart, endPoint),
-            message =
-              s"Invalid identifier '$invalidId'. Identifiers must start with a lowercase letter (a-z) followed by letters, digits, or underscores",
-            failedCode = Some(invalidId),
-            invalidId  = invalidId
-          )
-        case Right(nameStr) =>
-          Bnd(
-            visibility = vis.getOrElse(Visibility.Protected),
-            SourceOrigin.Loc(span(nameStart, endPoint)),
-            Name(span(nameStart, nameEnd), nameStr),
-            expr,
-            expr.typeSpec,
-            typeAsc,
-            doc
-          )
-    }
 
 /** Parses one function parameter.
   *
@@ -81,14 +95,17 @@ private[parser] def letBindingP(info: SourceInfo)(using P[Any]): P[Member] =
   * ~buffer: RawPtr
   * }}}
   */
-private[parser] def fnParamP(info: SourceInfo)(using P[Any]): P[FnParam] =
+private[parser] def fnParamP(info: SourceInfo, context: TypeContext = TypeContext.Parameter)(using
+  P[Any]
+): P[FnParam] =
   P(
-    spP(info) ~ docCommentP(info) ~ "~".!.? ~ spP(info) ~ bindingIdP ~ spNoWsP(info) ~
-      typeAscP(info) ~ spNoWsP(info) ~ spP(info)
-  ).map { case (start, doc, tilde, nameStart, nameStr, nameEnd, t, end, _) =>
+    pointP(info) ~ docCommentP(info) ~ "~".!.? ~ tokenP(info)(bindingIdP) ~
+      typeAscP(info, context) ~ pointP(info)
+  ).map { case (start, doc, tilde, name, t, _) =>
+    val end = t.fold(name.location.end)(sourceEnd(_, name.location.end))
     FnParam(
       source     = SourceOrigin.Loc(span(start, end)),
-      nameNode   = Name(span(nameStart, nameEnd), nameStr),
+      nameNode   = Name(name.location, name.value),
       typeAsc    = t,
       docComment = doc,
       consuming  = tilde.isDefined
@@ -96,8 +113,10 @@ private[parser] def fnParamP(info: SourceInfo)(using P[Any]): P[FnParam] =
   }
 
 /** Parses the comma-separated parameter list inside `(...)`. */
-private[parser] def fnParamListP(info: SourceInfo)(using P[Any]): P[List[FnParam]] =
-  P(fnParamP(info).rep(sep = ",")).map(_.toList)
+private[parser] def fnParamListP(info: SourceInfo, context: TypeContext = TypeContext.Parameter)(
+  using P[Any]
+): P[List[FnParam]] =
+  P(fnParamP(info, context).rep(sep = ",")).map(_.toList)
 
 /** Parses a top-level function declaration and lowers it to a [[Bnd]] whose value is a [[Lambda]].
   *
@@ -110,82 +129,76 @@ private[parser] def fnParamListP(info: SourceInfo)(using P[Any]): P[List[FnParam
   */
 private[parser] def fnDefP(info: SourceInfo)(using P[Any]): P[Member] =
   P(
-    docCommentP(info)
-      ~ visibilityP.?
-      ~ inlineKw.!.?
-      ~ fnKw
-      ~ spP(info)
-      ~ bindingIdOrError
-      ~ spNoWsP(info)
-      ~ spP(info)
-      ~ "("
-      ~ fnParamListP(info)
-      ~ ")"
-      ~ typeAscP(info)
-      ~ defAsKw
-      ~ terminatedExprP(info)
-      ~ semiKw
-      ~ spNoWsP(info)
-      ~ spP(info)
+    pointP(info) ~ docCommentP(info) ~ visibilityP.? ~ inlineKw.!.? ~ fnKw ~/
+      parsedBindingNameP(info) ~ pointP(info) ~ parsedParametersP(info) ~
+      typeAscP(info, TypeContext.BindingHeader) ~ requiredBindingTokenP(info, "=") ~
+      terminatedBindingExprP(info) ~ bindingMemberEndP(info) ~
+      pointP(info)
   ).map {
     case (
+          start,
           doc,
           vis,
           inl,
-          nameStart,
-          idOrError,
-          nameEnd,
+          parsedName,
           lambdaStart,
-          params,
+          parameters,
           typeAsc,
+          equalsError,
           (bodyExpr, bodyEnd),
-          endPoint,
+          (endError, tokenEnd),
           _
         ) =>
-      idOrError match
-        case Left(invalidId) =>
-          ParsingIdError(
-            span = span(nameStart, endPoint),
-            message =
-              s"Invalid function name '$invalidId'. Function names must start with a lowercase letter (a-z) followed by letters, digits, or underscores",
-            failedCode = Some(invalidId),
-            invalidId  = invalidId
-          )
-        case Right(fnName) =>
-          val bndSpan    = span(nameStart, nameEnd)
-          val nameN      = Name(span(nameStart, nameEnd), fnName)
+      parsedName.value match
+        case None => failedBindingMember(info, start, tokenEnd, parsedName, functionName = true)
+        case Some(fnName) =>
           val lambdaSpan = span(lambdaStart, bodyEnd)
-          val arity = params.size match
+          val body = appendBindingErrors(
+            bodyExpr,
+            parameters.error.toList ++ equalsError.toList ++ endError.toList
+          )
+          val arity = parameters.values.size match
             case 0 => CallableArity.Nullary
             case 1 => CallableArity.Unary
             case 2 => CallableArity.Binary
             case n => CallableArity.Nary(n)
-          val meta = BindingMeta(
-            origin        = BindingOrigin.Function,
-            arity         = arity,
-            precedence    = Precedence.Function,
-            associativity = None,
-            originalName  = fnName,
-            mangledName   = fnName,
-            inlineHint    = inl.isDefined
+          val meta = Option.when(parameters.complete)(
+            BindingMeta(
+              origin        = BindingOrigin.Function,
+              arity         = arity,
+              precedence    = Precedence.Function,
+              associativity = None,
+              originalName  = fnName,
+              mangledName   = fnName,
+              inlineHint    = inl.isDefined
+            )
           )
-          val lambda = Lambda(
-            span     = lambdaSpan,
-            params   = params,
-            body     = bodyExpr,
-            captures = Nil,
-            typeSpec = bodyExpr.typeSpec,
-            typeAsc  = typeAsc
-          )
+          val value =
+            if parameters.complete || parameters.values.nonEmpty then
+              val lambda = Lambda(
+                span     = lambdaSpan,
+                params   = parameters.values,
+                body     = body,
+                captures = Nil,
+                typeSpec = if parameters.complete then body.typeSpec else none,
+                typeAsc  = typeAsc
+              )
+              Expr(lambdaSpan, List(lambda))
+            else
+              body.copy(typeAsc =
+                typeAsc.filter(
+                  TypeUtils.containsInvalidType(_, ResolvablesIndex())
+                )
+              )
           Bnd(
             visibility = vis.getOrElse(Visibility.Protected),
-            source     = SourceOrigin.Loc(bndSpan),
-            nameNode   = nameN,
-            value      = Expr(lambdaSpan, List(lambda)),
-            typeSpec   = bodyExpr.typeSpec,
-            typeAsc    = typeAsc,
+            source     = SourceOrigin.Loc(parsedName.location),
+            nameNode   = Name(parsedName.location, fnName),
+            value      = value,
+            typeSpec   = if parameters.complete then body.typeSpec else none,
+            typeAsc    = if parameters.complete then typeAsc else none,
             docComment = doc,
-            meta       = Some(meta)
+            meta       = meta
           )
   }
 
@@ -219,32 +232,26 @@ private[parser] def binOpDefP(info: SourceInfo)(using P[Any]): P[Member] =
       ~ visibilityP.?
       ~ inlineKw.!.?
       ~ opKw
-      ~ spP(info)
-      ~ operatorIdOrError
-      ~ spNoWsP(info)
-      ~ spP(info)
+      ~ tokenP(info)(operatorIdOrError)
+      ~ pointP(info)
       ~ "("
       ~ fnParamP(info)
       ~ ","
       ~ fnParamP(info)
       ~ ")"
-      ~ typeAscP(info)
+      ~ typeAscP(info, TypeContext.Operator)
       ~ precedenceP.?
       ~ assocP.?
       ~ defAsKw
       ~ terminatedExprP(info)
-      ~ spP(info)
-      ~ semiKw
-      ~ spNoWsP(info)
-      ~ spP(info)
+      ~ tokenP(info)(semiKw)
+      ~ pointP(info)
   ).map {
     case (
           doc,
           vis,
           inl,
-          nameStart,
-          idOrError,
-          nameEnd,
+          name,
           lambdaStart,
           param1,
           param2,
@@ -252,26 +259,25 @@ private[parser] def binOpDefP(info: SourceInfo)(using P[Any]): P[Member] =
           precedence,
           assoc,
           (bodyExpr, bodyEnd),
-          _,
-          endPoint,
+          terminator,
           _
         ) =>
-      idOrError match {
+      name.value match {
         case Left(invalidId) =>
           ParsingIdError(
-            span = span(nameStart, endPoint),
+            span = span(name.location.start, terminator.location.end),
             message =
               s"Invalid operator name '$invalidId'. Operator names must be symbolic or follow binding identifier rules.",
             failedCode = Some(invalidId),
             invalidId  = invalidId
           )
         case Right(opName) =>
-          val bndSpan     = span(nameStart, nameEnd)
+          val bndSpan     = name.location
           val lambdaSpan  = span(lambdaStart, bodyEnd)
           val opPrec      = precedence.getOrElse(50)
           val opAssoc     = assoc.getOrElse(Associativity.Left)
           val mangledName = OpMangling.mangleOp(opName, 2)
-          val nameN       = Name(span(nameStart, nameEnd), mangledName)
+          val nameN       = Name(name.location, mangledName)
           val meta = BindingMeta(
             origin        = BindingOrigin.Operator,
             arity         = CallableArity.Binary,
@@ -317,42 +323,37 @@ private[parser] def unaryOpP(info: SourceInfo)(using P[Any]): P[Member] =
       ~ visibilityP.?
       ~ inlineKw.!.?
       ~ opKw
-      ~ spP(info)
-      ~ operatorIdOrError
-      ~ spNoWsP(info)
-      ~ spP(info)
+      ~ tokenP(info)(operatorIdOrError)
+      ~ pointP(info)
       ~ "("
       ~ fnParamP(info)
       ~ ")"
-      ~ typeAscP(info)
+      ~ typeAscP(info, TypeContext.Operator)
       ~ precedenceP.?
       ~ assocP.?
       ~ defAsKw
       ~ terminatedExprP(info)
-      ~ semiKw
-      ~ spNoWsP(info)
-      ~ spP(info)
+      ~ tokenP(info)(semiKw)
+      ~ pointP(info)
   ).map {
     case (
           doc,
           vis,
           inl,
-          nameStart,
-          idOrError,
-          nameEnd,
+          name,
           lambdaStart,
           param,
           typeAsc,
           precedence,
           assoc,
           (bodyExpr, bodyEnd),
-          endPoint,
+          terminator,
           _
         ) =>
-      idOrError match {
+      name.value match {
         case Left(invalidId) =>
           ParsingIdError(
-            span = span(nameStart, endPoint),
+            span = span(name.location.start, terminator.location.end),
             message =
               s"Invalid operator name '$invalidId'. Operator names must be symbolic or follow binding identifier rules.",
             failedCode = Some(invalidId),
@@ -360,12 +361,12 @@ private[parser] def unaryOpP(info: SourceInfo)(using P[Any]): P[Member] =
           )
 
         case Right(opName) =>
-          val bndSpan     = span(nameStart, nameEnd)
+          val bndSpan     = name.location
           val lambdaSpan  = span(lambdaStart, bodyEnd)
           val opPrec      = precedence.getOrElse(50)
           val opAssoc     = assoc.getOrElse(Associativity.Right)
           val mangledName = OpMangling.mangleOp(opName, 1)
-          val nameN       = Name(span(nameStart, nameEnd), mangledName)
+          val nameN       = Name(name.location, mangledName)
           val meta = BindingMeta(
             origin        = BindingOrigin.Operator,
             arity         = CallableArity.Unary,
@@ -402,9 +403,9 @@ private[parser] def unaryOpP(info: SourceInfo)(using P[Any]): P[Member] =
   */
 private[parser] def failedMemberP(info: SourceInfo)(using P[Any]): P[Member] =
   P(
-    spP(info) ~
+    pointP(info) ~
       CharsWhile(_ != '\n', min = 1).! ~
-      ("\n" ~ spP(info)).?
+      ("\n" ~ pointP(info)).?
   ).map { case (start, raw, maybeEndPoint) =>
     val endPoint = maybeEndPoint.getOrElse {
       val endIndex = start.index + raw.length

@@ -4,8 +4,45 @@ import cats.data.NonEmptyList
 import cats.syntax.all.*
 import fastparse.*
 import mml.mmlclib.ast.*
+import mml.mmlclib.parser.Recovery.Context
 
 import MmlWhitespace.*
+
+/** Identifies syntax owned by the caller of a type expression. */
+private[parser] enum TypeContext:
+  case Expression, Declaration, BindingHeader, Parameter, LambdaParameter, Field, Alias, Operator
+  case Group(outer: TypeContext)
+
+  def recovery: Recovery.Context =
+    this match
+      case Group(outer) => outer.recovery
+      case Expression => TypeContext.expressionRecovery
+      case Declaration | BindingHeader | LambdaParameter | Alias => TypeContext.commonRecovery
+      case Parameter => TypeContext.parameterRecovery
+      case Field => TypeContext.fieldRecovery
+      case Operator => TypeContext.operatorRecovery
+
+  def balancedRecovery: Recovery.Context =
+    val ordinaryStops = recovery.hardStops.filterNot(TypeContext.declarations.contains)
+    val closers       = List(")", "]", "}").map(Recovery.Anchor.Token(_))
+    Recovery.Context(recovery.anchors ++ ordinaryStops ++ closers, TypeContext.declarations)
+
+private[parser] object TypeContext:
+
+  import Recovery.Anchor.*
+
+  private val declarations =
+    List("let", "fn", "op", "type", "struct", "pub", "prot", "priv", "inline").map(Keyword(_))
+  val expressionGroupRecovery: Context = Recovery.Context(Nil, declarations)
+  private val hardStops      = List(Token("="), Token(","), Token(";")) ++ declarations
+  private val anchors        = List(Token("->"), Token("/*"))
+  private val commonRecovery = Recovery.Context(anchors, hardStops)
+  private val expressionRecovery =
+    Recovery.Context(anchors ++ List("then", "elif", "else").map(Keyword(_)), hardStops)
+  private val parameterRecovery = Recovery.Context(Token(")") :: anchors, hardStops)
+  private val fieldRecovery     = Recovery.Context(Token("}") :: anchors, hardStops)
+  private val operatorRecovery =
+    Recovery.Context(anchors, hardStops ++ List(NumberStart, Keyword("left"), Keyword("right")))
 
 /** Parses an optional type ascription that follows `:`.
   *
@@ -15,8 +52,10 @@ import MmlWhitespace.*
   * fn inc(x: Int): Int = x + 1; ;
   * }}}
   */
-private[parser] def typeAscP(info: SourceInfo)(using P[Any]): P[Option[Type]] =
-  P(":" ~ typeSpecP(info)).?
+private[parser] def typeAscP(info: SourceInfo, context: TypeContext = TypeContext.Expression)(using
+  P[Any]
+): P[Option[Type]] =
+  P(NoCut(":" ~/ typeSpecP(info, context))).?
 
 /** Parses a full type expression.
   *
@@ -26,22 +65,95 @@ private[parser] def typeAscP(info: SourceInfo)(using P[Any]): P[Option[Type]] =
   * }}}
   * reads as a callable taking `Int` and `String` and returning `Boolean`.
   */
-private[parser] def typeSpecP(info: SourceInfo)(using P[Any]): P[Type] =
-  P(spP(info) ~ typeAtomP(info) ~ (arrowKw ~ typeAtomP(info)).rep ~ spNoWsP(info) ~ spP(info))
-    .map { case (start, head, tail, end, _) =>
+private[parser] def typeSpecP(info: SourceInfo, context: TypeContext)(using P[Any]): P[Type] =
+
+  def nextTypeP: P[Type] =
+    context match
+      case TypeContext.LambdaParameter =>
+        P(arrowKw ~ &(validTypeAtomP) ~ typeAtomP(info, context))
+      case _ => P(arrowKw ~ typeAtomP(info, context))
+
+  P(pointP(info) ~ typeAtomP(info, context) ~ nextTypeP.rep ~ pointP(info))
+    .map { case (start, head, tail, _) =>
       val types = head :: tail.toList
       if types.size == 1 then head
       else
         types.init match
           case paramHead :: paramTail =>
-            TypeFn(span(start, end), NonEmptyList(paramHead, paramTail), types.last)
+            val result = types.last
+            val end    = sourceEnd(result, start)
+            TypeFn(span(start, end), NonEmptyList(paramHead, paramTail), result)
           case Nil =>
             head
     }
 
-/** Parses one atomic type fragment: either a grouped type or a nominal type reference. */
-private[parser] def typeAtomP(info: SourceInfo)(using P[Any]): P[Type] =
-  P(typeGroupP(info) | typeRefP(info))
+/** Recognizes a complete type atom when distinguishing a lambda separator from a type arrow. */
+private def validTypeAtomP(using P[Any]): P[Unit] =
+  P(("(" ~ validTypeAtomP ~ (arrowKw ~ validTypeAtomP).rep ~ ")") | typeIdP.map(_ => ()))
+
+/** Parses a type atom, preserving a failed fragment up to the next type or caller boundary. */
+private[parser] def typeAtomP(info: SourceInfo, context: TypeContext)(using P[Any]): P[Type] =
+
+  def boundaryP: P[Unit] =
+    context match
+      case TypeContext.Expression | TypeContext.BindingHeader => Pass
+      case _ =>
+        P(Index)
+          .filter(index => Recovery.scan(info.text, index, context.recovery).end == index)
+          .map(_ => ())
+
+  P(NoCut((typeGroupP(info, context) | typeRefP(info)) ~ boundaryP) | failedTypeP(info, context))
+
+/** Prefers a balanced failed fragment ending at its caller, then recovers past unmatched openers.
+  */
+private def failedTypeP(info: SourceInfo, context: TypeContext)(using P[Any]): P[Type] =
+
+  def balancedP: P[Recovery.Result] =
+    P(
+      recoveryP(info, context.balancedRecovery).filter { result =>
+        result.boundary match
+          case Recovery.Boundary.AtAnchor(_) => true
+          case _ => false
+      } ~ &(typeRecoveryEndP(context))
+    )
+
+  P(pointP(info) ~~ (balancedP | recoveryP(info, context.recovery))).map {
+    case (start, recovered) =>
+      typeError(info, start, info.pointAt(recovered.end))
+  }
+
+/** Retains exact failed source text; a missing type has a zero-width span and no failed text. */
+private def typeError(info: SourceInfo, start: SrcPoint, end: SrcPoint): ParseTypeError =
+
+  val failedCode = info.slice(start.index, end.index)
+  ParseTypeError(
+    span(start, end),
+    if failedCode.isEmpty then "Expected type" else "Invalid type syntax",
+    Option.when(failedCode.nonEmpty)(failedCode)
+  )
+
+/** Recognizes only boundaries that can terminate a balanced malformed type in this context. */
+private def typeRecoveryEndP(context: TypeContext)(using P[Any]): P[Unit] =
+
+  def callerEndP: P[Unit] =
+    context match
+      case TypeContext.Expression => P("=" | "," | ";" | ")" | "]" | "}" | thenKw | elifKw | elseKw)
+      case TypeContext.Declaration | TypeContext.BindingHeader => P("=")
+      case TypeContext.Parameter => P("," | ")")
+      case TypeContext.LambdaParameter => P(",")
+      case TypeContext.Field => P("," | "}")
+      case TypeContext.Alias => P(";")
+      case TypeContext.Operator => P("=" | CharIn("0-9") | "left" | "right")
+      case TypeContext.Group(_) => P(")")
+
+  P(arrowKw | callerEndP)
+
+/** A closed type group in an expression leaves subsequent application terms outside its error. */
+private def failedExpressionTypeGroupP(info: SourceInfo)(using P[Any]): P[Type] =
+  P(
+    pointP(info) ~ "(" ~ recoveryP(info, TypeContext.expressionGroupRecovery) ~
+      tokenP(info)(P(")")) ~ pointP(info)
+  ).map { case (start, _, close, _) => typeError(info, start, close.location.end) }
 
 /** Parses a parenthesized type used for grouping inside larger type expressions.
   *
@@ -50,11 +162,20 @@ private[parser] def typeAtomP(info: SourceInfo)(using P[Any]): P[Type] =
   * (Int -> String) -> Boolean
   * }}}
   */
-private[parser] def typeGroupP(info: SourceInfo)(using P[Any]): P[Type] =
-  P(spP(info) ~ "(" ~ typeSpecP(info) ~ ")" ~ spNoWsP(info) ~ spP(info))
-    .map { case (start, innerType, end, _) =>
-      TypeGroup(span(start, end), List(innerType))
-    }
+private[parser] def typeGroupP(info: SourceInfo, context: TypeContext)(using P[Any]): P[Type] =
+
+  def fallbackP: P[Type] =
+    context match
+      case TypeContext.Expression => failedExpressionTypeGroupP(info)
+      case _ => Fail
+
+  P(
+    pointP(info) ~ "(" ~ typeSpecP(info, TypeContext.Group(context)) ~
+      tokenP(info)(P(")")) ~ pointP(info)
+  )
+    .map { case (start, innerType, close, _) =>
+      TypeGroup(span(start, close.location.end), List(innerType))
+    } | fallbackP
 
 /** Parses a nominal type reference.
   *
@@ -66,9 +187,9 @@ private[parser] def typeGroupP(info: SourceInfo)(using P[Any]): P[Type] =
   * }}}
   */
 private[parser] def typeRefP(info: SourceInfo)(using P[Any]): P[Type] =
-  P(spP(info) ~ typeIdP ~ spNoWsP(info) ~ spP(info))
-    .map { case (start, id, end, _) =>
-      TypeRef(span(start, end), id)
+  P(tokenP(info)(typeIdP) ~ pointP(info))
+    .map { case (id, _) =>
+      TypeRef(id.location, id.value)
     }
 
 /** Parses a native type definition.
@@ -80,15 +201,14 @@ private[parser] def typeRefP(info: SourceInfo)(using P[Any]): P[Type] =
   */
 private[parser] def nativeTypeDefP(info: SourceInfo)(using P[Any]): P[TypeDef] =
   P(
-    spP(info)
-      ~ visibilityP.? ~ typeKw ~ spP(info) ~ typeIdP ~ spNoWsP(info) ~ defAsKw ~
-      nativeTypeP(info) ~ semiKw
-      ~ spNoWsP(info) ~ spP(info)
-  ).map { case (start, vis, nameStart, id, nameEnd, typeSpec, end, _) =>
+    pointP(info)
+      ~ visibilityP.? ~ typeKw ~ tokenP(info)(typeIdP) ~ defAsKw ~
+      nativeTypeP(info) ~ tokenP(info)(semiKw) ~ pointP(info)
+  ).map { case (start, vis, id, typeSpec, terminator, _) =>
     TypeDef(
       visibility = vis.getOrElse(Visibility.Protected),
-      span(start, end),
-      Name(span(nameStart, nameEnd), id),
+      span(start, terminator.location.end),
+      Name(id.location, id.value),
       typeSpec.some
     )
   }
@@ -105,12 +225,12 @@ private[parser] def nativeTypeDefP(info: SourceInfo)(using P[Any]): P[TypeDef] =
   */
 private[parser] def structDefP(info: SourceInfo)(using P[Any]): P[Member] =
   P(
-    spP(info)
+    pointP(info)
       ~ docCommentP(info)
-      ~ visibilityP.? ~ structKw ~ spP(info) ~ typeIdP ~ spNoWsP(info) ~
-      "{" ~ recordFieldsP(info) ~ "}" ~ semiKw
-      ~ spNoWsP(info) ~ spP(info)
-  ).map { case (start, doc, viz, nameStart, id, nameEnd, fields, end, _) =>
+      ~ visibilityP.? ~ structKw ~ tokenP(info)(typeIdP) ~
+      "{" ~ recordFieldsP(info) ~ "}" ~ tokenP(info)(semiKw) ~ pointP(info)
+  ).map { case (start, doc, viz, id, fields, terminator, _) =>
+    val end        = terminator.location.end
     val structSpan = span(start, end)
     if fields.isEmpty then
       val snippet = info.slice(start.index, end.index).trim
@@ -124,7 +244,7 @@ private[parser] def structDefP(info: SourceInfo)(using P[Any]): P[Member] =
         structSpan,
         doc,
         viz.getOrElse(Visibility.Protected),
-        Name(span(nameStart, nameEnd), id),
+        Name(id.location, id.value),
         fields
       )
   }
@@ -143,11 +263,10 @@ private[parser] def recordFieldsP(info: SourceInfo)(using P[Any]): P[Vector[Fiel
   */
 private[parser] def fieldP(info: SourceInfo)(using P[Any]): P[Field] =
   P(
-    spP(info) ~
-      bindingIdP ~ spNoWsP(info) ~ ":" ~ typeSpecP(info) ~
-      spNoWsP(info) ~ spP(info)
-  ).map { case (start, id, nameEnd, tpe, end, _) =>
-    Field(span(start, end), Name(span(start, nameEnd), id), tpe)
+    tokenP(info)(bindingIdP) ~ ":" ~ typeSpecP(info, TypeContext.Field) ~ pointP(info)
+  ).map { case (id, tpe, _) =>
+    val end = sourceEnd(tpe, id.location.end)
+    Field(span(id.location.start, end), Name(id.location, id.value), tpe)
   }
 
 /** Parses a nominal type alias.
@@ -159,16 +278,14 @@ private[parser] def fieldP(info: SourceInfo)(using P[Any]): P[Field] =
   */
 private[parser] def typeAliasP(info: SourceInfo)(using P[Any]): P[TypeAlias] =
   P(
-    spP(info)
-      ~ visibilityP.? ~ typeKw ~ spP(info) ~ typeIdP ~ spNoWsP(info) ~ defAsKw ~ typeSpecP(
-        info
-      ) ~ semiKw
-      ~ spNoWsP(info) ~ spP(info)
-  ).map { case (start, vis, nameStart, id, nameEnd, typeSpec, end, _) =>
+    pointP(info)
+      ~ visibilityP.? ~ typeKw ~ tokenP(info)(typeIdP) ~ defAsKw ~ !reprKw ~
+      typeSpecP(info, TypeContext.Alias) ~ tokenP(info)(semiKw) ~ pointP(info)
+  ).map { case (start, vis, id, typeSpec, terminator, _) =>
     TypeAlias(
       visibility = vis.getOrElse(Visibility.Protected),
-      span(start, end),
-      Name(span(nameStart, nameEnd), id),
+      span(start, terminator.location.end),
+      Name(id.location, id.value),
       typeSpec
     )
   }
@@ -184,9 +301,9 @@ private[parser] def typeAliasP(info: SourceInfo)(using P[Any]): P[TypeAlias] =
   */
 private[parser] def nativeTypeP(info: SourceInfo)(using P[Any]): P[NativeType] =
   P(
-    spP(info) ~ reprKw ~ (nativeBracketTypeP(info) | nativeStructP(info)) ~ spNoWsP(info) ~
-      spP(info)
-  ).map { case (start, body, end, _) =>
+    pointP(info) ~ reprKw ~ (nativeBracketTypeP(info) | nativeStructP(info)) ~ pointP(info)
+  ).map { case (start, body, _) =>
+    val end    = sourceEnd(body, start)
     val source = SourceOrigin.Loc(span(start, end))
     body match
       case p: NativePrimitive => p.copy(source = source)
@@ -208,17 +325,21 @@ private[parser] def nativeBracketTypeP(info: SourceInfo)(using P[Any]): P[Native
   def freeAttrP: P[Attr] =
     P("free=" ~ nativeIdentP).map(Attr.FreeAttr(_))
 
-  P("[" ~ (tAttrP | memAttrP | freeAttrP).rep(sep = ",", min = 1) ~ "]")
-    .flatMap { attrs =>
+  P(
+    pointP(info) ~ "[" ~ (tAttrP | memAttrP | freeAttrP).rep(sep = ",", min = 1) ~
+      tokenP(info)(P("]"))
+  )
+    .flatMap { case (start, attrs, close) =>
       attrs.collectFirst { case Attr.TAttr(t) => t } match
         case None => Fail
         case Some(base) =>
           val memOpt  = attrs.collectFirst { case Attr.MemAttr(eff) => eff }
           val freeOpt = attrs.collectFirst { case Attr.FreeAttr(n) => n }
+          val source  = SourceOrigin.Loc(span(start, close.location.end))
           val result = base match
-            case p: NativePrimitive => p.copy(memEffect = memOpt, freeFn = freeOpt)
-            case p: NativePointer => p.copy(memEffect = memOpt, freeFn = freeOpt)
-            case s: NativeStruct => s.copy(memEffect = memOpt, freeFn = freeOpt)
+            case p: NativePrimitive => p.copy(source = source, memEffect = memOpt, freeFn = freeOpt)
+            case p: NativePointer => p.copy(source = source, memEffect = memOpt, freeFn = freeOpt)
+            case s: NativeStruct => s.copy(source = source, memEffect = memOpt, freeFn = freeOpt)
           Pass(result)
     }
 
@@ -232,9 +353,9 @@ private[parser] def nativeBracketTypeP(info: SourceInfo)(using P[Any]): P[Native
   * }}}
   */
 private[parser] def nativePrimitiveTypeP(info: SourceInfo)(using P[Any]): P[NativePrimitive] =
-  P(spP(info) ~ llvmNativePrimitiveTypeP ~ spNoWsP(info) ~ spP(info))
-    .map { case (start, llvmType, end, _) =>
-      NativePrimitive(span(start, end), llvmType)
+  P(llvmNativePrimitiveTypeP(info) ~ pointP(info))
+    .map { case (llvmType, _) =>
+      NativePrimitive(llvmType.location, llvmType.value)
     }
 
 /** Parses a pointer-style native type.
@@ -245,9 +366,9 @@ private[parser] def nativePrimitiveTypeP(info: SourceInfo)(using P[Any]): P[Nati
   * }}}
   */
 private[parser] def nativePointerTypeP(info: SourceInfo)(using P[Any]): P[NativePointer] =
-  P(spP(info) ~ "*" ~ llvmPointeeTypeP ~ spNoWsP(info) ~ spP(info))
-    .map { case (start, llvmType, end, _) =>
-      NativePointer(span(start, end), llvmType)
+  P(pointP(info) ~ "*" ~ llvmPointeeTypeP(info) ~ pointP(info))
+    .map { case (start, llvmType, _) =>
+      NativePointer(span(start, llvmType.location.end), llvmType.value)
     }
 
 /** Parses a native struct literal.
@@ -269,12 +390,14 @@ private[parser] def nativeStructP(info: SourceInfo)(using P[Any]): P[NativeStruc
   def attrsP: P[Seq[StructAttr]] =
     P("[" ~ (memAttrP | freeAttrP).rep(sep = ",", min = 1) ~ "]")
 
-  P(spP(info) ~ attrsP.? ~ "{" ~ nativeFieldListP(info) ~ "}" ~ spNoWsP(info) ~ spP(info))
-    .map { case (start, attrsOpt, fields, end, _) =>
+  P(
+    pointP(info) ~ attrsP.? ~ "{" ~ nativeFieldListP(info) ~ tokenP(info)(P("}")) ~ pointP(info)
+  )
+    .map { case (start, attrsOpt, fields, close, _) =>
       val attrs   = attrsOpt.getOrElse(Seq.empty)
       val memOpt  = attrs.collectFirst { case StructAttr.MemAttr(eff) => eff }
       val freeOpt = attrs.collectFirst { case StructAttr.FreeAttr(n) => n }
-      NativeStruct(span(start, end), fields, memOpt, freeOpt)
+      NativeStruct(span(start, close.location.end), fields, memOpt, freeOpt)
     }
 
 /** Parses the comma-separated field list inside a native struct literal. */
@@ -284,15 +407,17 @@ private[parser] def nativeFieldListP(info: SourceInfo)(using P[Any]): P[List[(St
 
 /** Parses one native struct field such as `len: Int`. */
 private[parser] def nativeFieldP(info: SourceInfo)(using P[Any]): P[(String, Type)] =
-  P(bindingIdP ~ ":" ~ typeSpecP(info))
+  P(bindingIdP ~ ":" ~ typeSpecP(info, TypeContext.Field))
 
 /** Parses an identifier used only inside native attributes such as `free=release_buf`. */
 private[parser] def nativeIdentP(using P[Any]): P[String] =
   P(CharsWhileIn("a-zA-Z_", 1) ~ CharsWhileIn("a-zA-Z0-9_", 0)).!
 
 /** Parses any supported LLVM primitive token accepted by `@metal:repr[t=...]`. */
-private[parser] def llvmNativePrimitiveTypeP(using P[Any]): P[String] =
-  P(llvmPointeeTypeP | "ptr".!)
+private[parser] def llvmNativePrimitiveTypeP(info: SourceInfo)(using
+  P[Any]
+): P[ParsedToken[String]] =
+  P(llvmPointeeTypeP(info) | tokenP(info)(P("ptr".!)))
 
 /** Parses the pointee side of native primitive and pointer types.
   *
@@ -303,19 +428,15 @@ private[parser] def llvmNativePrimitiveTypeP(using P[Any]): P[String] =
   * float
   * }}}
   */
-private[parser] def llvmPointeeTypeP(using P[Any]): P[String] =
+private[parser] def llvmPointeeTypeP(info: SourceInfo)(using P[Any]): P[ParsedToken[String]] =
   P(
-    ("i" ~ CharIn("0-9").rep(1)).!.flatMap { t =>
-      val bits = t.drop(1).toIntOption.getOrElse(0)
+    tokenP(info)(P(("i" ~ CharIn("0-9").rep(1)).!)).flatMap { token =>
+      val bits = token.value.drop(1).toIntOption.getOrElse(0)
       if bits == 1 || bits == 8 || bits == 16 || bits == 32 || bits == 64 || bits == 128 then
-        Pass(t)
+        Pass(token)
       else Fail
     } |
-      "half".! |
-      "bfloat".! |
-      "float".! |
-      "double".! |
-      "fp128".!
+      tokenP(info)(P("half".! | "bfloat".! | "float".! | "double".! | "fp128".!))
   )
 
 /** Parses the optional declaration visibility modifier.

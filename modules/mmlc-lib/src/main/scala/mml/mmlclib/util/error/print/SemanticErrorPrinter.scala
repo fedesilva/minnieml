@@ -60,7 +60,7 @@ object SemanticErrorPrinter:
                 if ref.candidateIds.isEmpty then "No candidates found"
                 else s"Candidates: [${ref.candidateIds.mkString(", ")}]"
               s"'${ref.name}': $resolved, $candidates"
-            case term => s"Term: ${term.getClass.getSimpleName}"
+            case term => s"Term: ${diagnosticTermName(term)}"
           }
           .mkString("\n")
         s"${Console.YELLOW}Term info:${Console.RESET}\n$termInfos"
@@ -82,6 +82,11 @@ object SemanticErrorPrinter:
           case d: Decl => d.name
           case _ => "unknown"
         s"${Console.RED}Undefined type reference '${typeRef.name}' at $location in $memberName [phase: $phase]${Console.RESET}"
+
+      case SemanticError.AmbiguousTypeRef(typeRef, candidates, _, phase) =>
+        val locations = candidates.collect { case candidate: FromSource => locationOf(candidate) }
+        s"${Console.RED}Ambiguous type reference '${typeRef.name}' at ${locationOf(typeRef)}: " +
+          s"candidates at ${locations.mkString(", ")} [phase: $phase]${Console.RESET}"
 
       case SemanticError.DuplicateName(name, duplicates, phase) =>
         // Sort duplicates by their starting index using sortBy
@@ -108,10 +113,16 @@ object SemanticErrorPrinter:
         val snippet  = error.failedCode.getOrElse("<no code available>")
         s"${Console.RED}Invalid identifier at $location: ${error.message} [phase: $phase]\n$snippet${Console.RESET}"
 
-      case SemanticError.TermErrorFound(error, phase) =>
+      case SemanticError.ParseTermErrorFound(error, phase) =>
         val location = locationOf(error)
         val snippet  = error.failedCode.getOrElse("<no code available>")
         s"${Console.RED}Parser error at $location: ${error.message} " +
+          s"[phase: $phase]\n$snippet${Console.RESET}"
+
+      case SemanticError.ParseTypeErrorFound(error, phase) =>
+        val location = locationOf(error)
+        val snippet  = error.failedCode.getOrElse("<no code available>")
+        s"${Console.RED}Type parser error at $location: ${error.message} " +
           s"[phase: $phase]\n$snippet${Console.RESET}"
 
       case SemanticError.DanglingTerms(terms, message, phase) =>

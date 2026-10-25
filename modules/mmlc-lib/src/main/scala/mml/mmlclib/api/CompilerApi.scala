@@ -47,17 +47,18 @@ object CompilerApi:
     yield result
 
   private def runFrontend(
-    path:   Path,
-    config: CompilerConfig
+    path:        Path,
+    config:      CompilerConfig,
+    reportError: String => IO[Unit] = IO.println(_)
   ): IO[Either[ExitCode, CompilerState]] =
     for
       result <- compilePath(path, config)
       outcome <- result match
         case Left(error) =>
-          IO.println(compilationFailed(error)).as(Left(ExitCode.Error))
+          reportError(compilationFailed(error)).as(Left(ExitCode.Error))
         case Right(state) =>
           if state.hasErrors then
-            IO.println(compilationFailed(prettyPrintStateErrors(state)))
+            reportError(compilationFailed(prettyPrintStateErrors(state)))
               *> maybePrintMetrics(state).as(Left(ExitCode.Error))
           else IO.pure(Right(state))
     yield outcome
@@ -215,13 +216,19 @@ object CompilerApi:
 
   /** Generate plain text error message from state errors (no ANSI codes). */
   private def plainErrorMessage(state: CompilerState): String =
-    val errors = state.errors.map(_.message)
+    val errors = state.visibleErrors.map(_.message)
     if errors.isEmpty then "Unknown compilation error"
     else if errors.size == 1 then errors.head
     else errors.mkString("\n")
 
-  def processAstOnly(path: Path, config: CompilerConfig): IO[ExitCode] =
-    runFrontend(path, config).flatMap {
+  /** Report frontend failures through reportError; successful output follows the compiler config.
+    */
+  def processAstOnly(
+    path:        Path,
+    config:      CompilerConfig,
+    reportError: String => IO[Unit] = IO.println(_)
+  ): IO[ExitCode] =
+    runFrontend(path, config, reportError).flatMap {
       case Left(exit) => IO.pure(exit)
       case Right(state) =>
         FileOperations
@@ -278,13 +285,13 @@ object CompilerApi:
     catch case _: IllegalArgumentException => path.normalize().toString
 
   private def compilerErrorsFromState(state: CompilerState): List[CompilationError] =
-    val parserErrors   = state.errors.collect { case err: ParserError => err }
-    val semanticErrors = state.errors.collect { case err: SemanticError => err }
+    val parserErrors   = state.visibleErrors.collect { case err: ParserError => err }
+    val semanticErrors = state.visibleErrors.collect { case err: SemanticError => err }
     val knownErrors = List(
       Option.when(parserErrors.nonEmpty)(CompilerError.ParserErrors(parserErrors.toList)),
       Option.when(semanticErrors.nonEmpty)(CompilerError.SemanticErrors(semanticErrors.toList))
     ).flatten
-    val remaining = state.errors.filterNot {
+    val remaining = state.visibleErrors.filterNot {
       case _: ParserError => true
       case _: SemanticError => true
       case _ => false

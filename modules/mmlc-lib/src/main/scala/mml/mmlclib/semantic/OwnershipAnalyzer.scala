@@ -4,6 +4,7 @@ import cats.data.State
 import cats.syntax.all.*
 import mml.mmlclib.ast.*
 import mml.mmlclib.compiler.CompilerState
+import mml.mmlclib.errors.{DiagnosticId, DiagnosticRecord, DiagnosticRelation, DiagnosticStore}
 
 import scala.annotation.tailrec
 
@@ -161,20 +162,38 @@ case class ResultOwnership(
     Option.when(destructorTargetId == other.destructorTargetId)(destructorTargetId).flatten
   )
 
+/** A producer can retain a proven prerequisite alongside its ownership diagnostic. */
+case class OwnershipConsequence(error: SemanticError, roots: Vector[DiagnosticId])
+
+type OwnershipDiagnostic = SemanticError | OwnershipConsequence
+
+object OwnershipDiagnostic:
+
+  def error(diagnostic: OwnershipDiagnostic): SemanticError = diagnostic match
+    case consequence: OwnershipConsequence => consequence.error
+    case error:       SemanticError => error
+
+  def roots(diagnostic: OwnershipDiagnostic): Vector[DiagnosticId] = diagnostic match
+    case consequence: OwnershipConsequence => consequence.roots
+    case _:           SemanticError => Vector.empty
+
+  def caused(error: SemanticError, roots: Vector[DiagnosticId]): OwnershipDiagnostic =
+    if roots.isEmpty then error else OwnershipConsequence(error, roots)
+
 /** Result of analyzing an expression */
 case class ExprResult(
   scope:     OwnershipScope,
   expr:      Expr,
-  errors:    List[SemanticError] = Nil,
-  ownership: ResultOwnership     = ResultOwnership()
+  errors:    List[OwnershipDiagnostic] = Nil,
+  ownership: ResultOwnership           = ResultOwnership()
 )
 
 /** Result of analyzing a term */
 case class TermResult[+T <: Term](
   scope:     OwnershipScope,
   term:      T,
-  errors:    List[SemanticError] = Nil,
-  ownership: ResultOwnership     = ResultOwnership()
+  errors:    List[OwnershipDiagnostic] = Nil,
+  ownership: ResultOwnership           = ResultOwnership()
 )
 
 /** Ownership analyzer phase. Tracks ownership of heap-allocated values and inserts __free_* calls.
@@ -1005,66 +1024,90 @@ object OwnershipAnalyzer:
         case TypeFn(_, _, ret) => Some(ret)
         case other => Some(other)
 
-  /** A rejected return explains dependent capture failures without hiding independent borrows. */
-  private def withoutBorrowedReturnCascades(
-    errors: List[SemanticError],
-    values: CallableValues,
-    module: Module
-  ): List[SemanticError] =
-    val rejectedRefs = errors.collect { case SemanticError.BorrowEscapeViaReturn(ref, _) =>
-      ref
-    }.toSet
-    val rejectedClosures = errors.collect {
-      case SemanticError.BorrowClosureEscapeViaReturn(lambda, _) => CallableIdentity(lambda)
-    }.toSet
-
-    if rejectedRefs.isEmpty && rejectedClosures.isEmpty then errors
+  /** Every supplying callable must have a reported return failure before a capture is dependent. */
+  private def borrowedReturnCauses(
+    records: Vector[DiagnosticRecord],
+    values:  CallableValues,
+    module:  Module
+  ): Map[DiagnosticId, Vector[DiagnosticId]] =
+    val rejectedRefs = records
+      .collect {
+        case record @ DiagnosticRecord(_, SemanticError.BorrowEscapeViaReturn(ref, _), _) =>
+          ref -> record.id
+      }
+      .groupMap(_._1)(_._2)
+    val rejectedClosures = records
+      .collect {
+        case record @ DiagnosticRecord(
+              _,
+              SemanticError.BorrowClosureEscapeViaReturn(lambda, _),
+              _
+            ) =>
+          CallableIdentity(lambda) -> record.id
+      }
+      .groupMap(_._1)(_._2)
+    if rejectedRefs.isEmpty && rejectedClosures.isEmpty then Map.empty
     else
       val borrowedParameters = module.members.flatMap {
         case binding: Bnd =>
           TermTraversal
             .collect(binding.value) {
-              case lambda: Lambda if lambda.borrowsArgument =>
-                lambda.params.flatMap(_.id)
+              case lambda: Lambda if lambda.borrowsArgument => lambda.params.flatMap(_.id)
             }
             .flatten
         case _ => Nil
       }.toSet
 
-      def rejectedReturn(lambda: Lambda): Boolean =
-        returnedOrigins(lambda.body, values.index).exists {
-          case ref:     Ref => rejectedRefs.contains(ref)
-          case closure: Lambda => rejectedClosures.contains(CallableIdentity(closure))
-        }
+      def allRoots(alternatives: List[Option[Vector[DiagnosticId]]]): Option[Vector[DiagnosticId]] =
+        Option
+          .when(alternatives.nonEmpty)(alternatives)
+          .flatMap(_.sequence)
+          .map(_.flatten.toVector.distinct)
+          .filter(_.nonEmpty)
 
-      def rejectedResult(term: Term, seen: Set[String]): Boolean = term match
+      def rejectedReturn(lambda: Lambda): Option[Vector[DiagnosticId]] =
+        val roots = returnedOrigins(lambda.body, values.index)
+          .flatMap {
+            case ref:     Ref => rejectedRefs.getOrElse(ref, Vector.empty)
+            case closure: Lambda =>
+              rejectedClosures.getOrElse(CallableIdentity(closure), Vector.empty)
+          }
+          .toVector
+          .distinct
+        Option.when(roots.nonEmpty)(roots)
+
+      def rejectedResult(term: Term, seen: Set[String]): Option[Vector[DiagnosticId]] = term match
 
         case ref: Ref if ref.qualifier.isEmpty =>
           ref.resolvedId
             .filterNot(id => seen.contains(id) || borrowedParameters.contains(id))
-            .exists { id =>
-              val sources = values.lexicalSources(ref)
-              sources.nonEmpty && sources.forall(rejectedResult(_, seen + id))
+            .flatMap { id =>
+              allRoots(values.lexicalSources(ref).map(rejectedResult(_, seen + id)))
             }
 
         case app: App =>
-          values.stages(app).lastOption.filter(_.complete).exists { stage =>
+          values.stages(app).lastOption.filter(_.complete).flatMap { stage =>
             stage.callee match
               case lambda: Lambda =>
-                rejectedReturn(lambda) || rejectedResult(lambda.body, seen)
-              case _ => values.provenInvokedLambdas(app).exists(_.forall(rejectedReturn))
+                rejectedReturn(lambda).orElse(rejectedResult(lambda.body, seen))
+              case _ =>
+                values
+                  .provenInvokedLambdas(app)
+                  .flatMap(lambdas => allRoots(lambdas.map(rejectedReturn)))
           }
 
-        case expr:  Expr => singleTerm(expr).exists(rejectedResult(_, seen))
+        case expr:  Expr => singleTerm(expr).flatMap(rejectedResult(_, seen))
         case group: TermGroup => rejectedResult(group.inner, seen)
         case cond:  Cond =>
-          rejectedResult(cond.ifTrue, seen) && rejectedResult(cond.ifFalse, seen)
-        case _ => false
+          allRoots(List(rejectedResult(cond.ifTrue, seen), rejectedResult(cond.ifFalse, seen)))
+        case _ => none
 
-      errors.filterNot {
-        case SemanticError.CapturedBorrowedHeapBinding(ref, _) => rejectedResult(ref, Set.empty)
-        case _ => false
-      }
+      records.flatMap { record =>
+        record.error match
+          case SemanticError.CapturedBorrowedHeapBinding(ref, _) =>
+            rejectedResult(ref, Set.empty).map(record.id -> _)
+          case _ => None
+      }.toMap
 
   /** References retain their definition identity across nested scopes and shadowing. */
   private def containsRef(bindingId: String, term: Term): Boolean =
@@ -1078,10 +1121,6 @@ object OwnershipAnalyzer:
     case _ => none
 
   private val ExpressionShapeMessage = "Ownership analysis requires a single-term expression"
-
-  private def isExpressionShapeError(error: SemanticError): Boolean = error match
-    case SemanticError.InvalidExpression(_, ExpressionShapeMessage, PhaseName) => true
-    case _ => false
 
   @tailrec
   private def unwrapTerm(term: Term): Term = term match
@@ -1175,7 +1214,7 @@ object OwnershipAnalyzer:
     references: List[Ref],
     use:        Expr,
     scope:      OwnershipScope
-  ): List[SemanticError] =
+  ): List[OwnershipDiagnostic] =
     val useRef = singleTerm(use).map(unwrapTerm).collect { case ref: Ref => ref }
     references.flatMap { ref =>
       movedOwners(ref, scope).map(_.at(useRef.getOrElse(ref), use.source))
@@ -1183,51 +1222,96 @@ object OwnershipAnalyzer:
 
   private case class MoveSite(ownerId: String, source: SrcSpan, movedAt: SourceOrigin)
 
-  /** Invalid dependencies retain their primary error; independent uses keep separate diagnostics.
-    */
-  private def normalizeMoveErrors(errors: List[SemanticError]): List[SemanticError] =
+  private def moveSite(error: SemanticError.UseAfterMove): Option[MoveSite] =
+    for
+      id <- error.ownerId
+      span <- error.source.spanOpt
+    yield MoveSite(id, span, error.movedAt)
 
-    def site(error: SemanticError.UseAfterMove): Option[MoveSite] =
-      for
-        id <- error.ownerId
-        span <- error.source.spanOpt
-      yield MoveSite(id, span, error.movedAt)
-
-    val reported = errors
-      .collect { case error: SemanticError.UseAfterMove => error }
-      .flatMap(site)
-      .toSet
-    val independent = errors.filterNot {
-      case error: SemanticError.UseAfterMove =>
-        error.dependency.exists { dependency =>
-          val origin = for
-            id <- dependency.resolvedId
-            span <- dependency.spanOpt
-            if !error.source.spanOpt.contains(span)
-          yield MoveSite(id, span, error.movedAt)
-
-          origin.exists(reported.contains)
-        }
-      case _ => false
-    }
-
-    // Lowered uses and source uses share a diagnostic site; retain the written reference identity.
-    val writtenUses = independent
+  /** Repeated observations of one owner at one use retain the written reference identity. */
+  private def canonicalMoveErrors(errors: List[OwnershipDiagnostic]): List[OwnershipDiagnostic] =
+    val writtenUses = errors
+      .map(OwnershipDiagnostic.error)
       .collect {
         case error: SemanticError.UseAfterMove if error.ref.source.isFromSource => error
       }
-      .flatMap(error => site(error).map(_ -> error))
+      .flatMap(error => moveSite(error).map(_ -> error))
       .toMap
-    val located = independent.map {
-      case error: SemanticError.UseAfterMove =>
-        site(error).flatMap(writtenUses.get).getOrElse(error)
-      case error => error
-    }
 
-    located.distinctBy {
-      case error: SemanticError.UseAfterMove => site(error).toRight(error: SemanticError)
-      case error => error.asLeft[MoveSite]
+    val (_, retained) = errors.foldLeft((Set.empty[MoveSite], List.empty[OwnershipDiagnostic])) {
+      case ((seen, retained), diagnostic) =>
+        OwnershipDiagnostic.error(diagnostic) match
+          case error: SemanticError.UseAfterMove =>
+            moveSite(error) match
+              case Some(site) if seen.contains(site) => (seen, retained)
+              case Some(site) =>
+                (seen + site, writtenUses.getOrElse(site, error) :: retained)
+              case None => (seen, diagnostic :: retained)
+          case _ => (seen, diagnostic :: retained)
     }
+    retained.reverse
+
+  /** Borrowed dependencies retain the reported invalid use's owner and move identity. */
+  private def moveDependencyCauses(
+    records: Vector[DiagnosticRecord]
+  ): Map[DiagnosticId, Vector[DiagnosticId]] =
+    val reported = records.flatMap { record =>
+      record.error match
+        case error: SemanticError.UseAfterMove => moveSite(error).map(_ -> record.id)
+        case _ => None
+    }.toMap
+
+    records.flatMap { record =>
+      record.error match
+        case error: SemanticError.UseAfterMove =>
+          error.dependency.flatMap { dependency =>
+            for
+              id <- dependency.resolvedId
+              if error.ownerId.contains(id)
+              span <- dependency.spanOpt
+              if !error.source.spanOpt.contains(span)
+              origin <- reported.get(MoveSite(id, span, error.movedAt))
+            yield record.id -> Vector(origin)
+          }
+        case _ => None
+    }.toMap
+
+  private def recordErrors(
+    errors:      List[OwnershipDiagnostic],
+    diagnostics: DiagnosticStore,
+    values:      CallableValues,
+    module:      Module
+  ): DiagnosticStore =
+    val emitted = canonicalMoveErrors(errors)
+      .traverse { diagnostic =>
+        DiagnosticStore.report(
+          OwnershipDiagnostic.error(diagnostic),
+          OwnershipDiagnostic.roots(diagnostic)
+        )
+      }
+      .runS(diagnostics)
+      .value
+    val records = emitted.records.drop(diagnostics.records.size)
+    val dependencies =
+      borrowedReturnCauses(records, values, module) ++ moveDependencyCauses(records)
+
+    def roots(id: DiagnosticId, seen: Set[DiagnosticId]): Option[Vector[DiagnosticId]] =
+      if seen.contains(id) then none
+      else
+        dependencies.get(id) match
+          case Some(causes) =>
+            causes
+              .traverse(roots(_, seen + id))
+              .map(_.flatten.distinct.sortBy(_.value))
+              .filter(_.nonEmpty)
+          case None => emitted.roots(Vector(id))
+
+    val relations = dependencies.keysIterator.flatMap { id =>
+      roots(id, Set.empty).map(id -> DiagnosticRelation.Consequence(_))
+    }.toMap
+    emitted.copy(records = emitted.records.map { record =>
+      relations.get(record.id).fold(record)(relation => record.copy(relation = relation))
+    })
 
   /** Retaining a temporary transfers its cleanup obligation, if it has one. */
   private def borrowedCaptureIds(lambda: Lambda, scope: OwnershipScope): Set[String] =
@@ -1670,7 +1754,7 @@ object OwnershipAnalyzer:
     value:        Expr,
     dependencies: List[Ref],
     scope:        OwnershipScope
-  ): List[SemanticError] =
+  ): List[OwnershipDiagnostic] =
     val isFunctionValue = value.typeSpec
       .flatMap(TypeUtils.canonical(_, scope.resolvables))
       .exists(_.isInstanceOf[TypeFn])
@@ -1753,7 +1837,7 @@ object OwnershipAnalyzer:
     ownership:     ArgumentOwnership,
     scope:         OwnershipScope,
     isConstructor: Boolean = false
-  ): List[SemanticError] =
+  ): List[OwnershipDiagnostic] =
     val argument = ownership.argument
     val value    = argument.application.arg
     if preparedArgument(value, scope) || argument.consumed then Nil
@@ -2035,7 +2119,7 @@ object OwnershipAnalyzer:
     ownership: Vector[ArgumentOwnership] = Vector.empty,
     bindings:  Vector[ArgumentBinding]   = Vector.empty,
     cleanup:   List[OwnedBinding]        = Nil,
-    errors:    List[SemanticError]       = Nil
+    errors:    List[OwnershipDiagnostic] = Nil
   )
 
   private def analyzeArguments(
@@ -2217,11 +2301,14 @@ object OwnershipAnalyzer:
 
   /** Analyze a standalone lambda definition */
   private def analyzeLambda(
-    lambda: Lambda,
-    scope:  OwnershipScope
+    lambda:          Lambda,
+    scope:           OwnershipScope,
+    resultAvailable: Boolean = true
   ): TermResult[Lambda] =
 
     val borrowedCaptures = borrowedCaptureIds(lambda, scope)
+    val captureAvailable = resultAvailable && lambda.captures.nonEmpty &&
+      scope.callableValues.recovery.isAvailable(lambda)
 
     // Consuming params are Owned so they get freed at body end,
     // unless skipConsumingOwnership is set (for destructor/constructor functions)
@@ -2324,7 +2411,7 @@ object OwnershipAnalyzer:
 
     // Capture ownership: move lambdas move heap captures; borrow lambdas leave them in place.
     val (returnScope, captureErrors, updatedCaptures) =
-      lambda.captures.foldLeft((scope, List.empty[SemanticError], List.empty[Capture])):
+      lambda.captures.foldLeft((scope, List.empty[OwnershipDiagnostic], List.empty[Capture])):
         (acc, cap) =>
           val (s, errs, caps) = acc
           val ref             = cap.ref
@@ -2335,8 +2422,9 @@ object OwnershipAnalyzer:
             ref.resolvedId.exists(borrowedCaptures.contains)
           val sourceLambdas    = scope.callableValues.lambdas(ref)
           val isStaticFunction = sourceLambdas.nonEmpty && sourceLambdas.forall(_.captures.isEmpty)
-          if !isOwnedCapture || !scope.callableValues.recovery.isAvailable(ref) then
-            (s, errs, caps :+ cap)
+          if !captureAvailable || !isOwnedCapture ||
+            !scope.callableValues.recovery.isAvailable(ref)
+          then (s, errs, caps :+ cap)
           else if isBorrowed || isStaticFunction then
             val errors = ref.resolvedId.flatMap(s.movedBindingIds.get).toList.map { movedAt =>
               SemanticError.UseAfterMove(ref, movedAt, PhaseName, ref.resolvedId, ref.source)
@@ -2495,7 +2583,7 @@ object OwnershipAnalyzer:
   ): TermResult[Term] =
 
     val (finalScope, errors, newElements) =
-      tuple.elements.toList.foldLeft((scope, List.empty[SemanticError], Vector.empty[Expr])) {
+      tuple.elements.toList.foldLeft((scope, List.empty[OwnershipDiagnostic], Vector.empty[Expr])) {
         case ((curScope, errs, acc), elem) =>
           val result = analyzeExpr(elem, curScope)
           (result.scope, errs ++ result.errors, acc :+ result.expr)
@@ -2509,6 +2597,43 @@ object OwnershipAnalyzer:
       case lambda: Lambda =>
         analyzeLambda(lambda, scope)
 
+  /** A failed operation retains its independently evaluated operands, but supplies no result. */
+  private def analyzeUnavailableApp(app: App, scope: OwnershipScope): TermResult[Term] =
+    val callee   = analyzeTerm(app.fn, scope)
+    val argument = analyzeExpr(app.arg, callee.scope)
+    TermResult(
+      argument.scope,
+      app.copy(arg = argument.expr),
+      callee.errors ++ argument.errors
+    )
+
+  private def analyzeFailedResult(
+    expr:       Expr,
+    scope:      OwnershipScope,
+    shapeRoots: Vector[DiagnosticId] = Vector.empty
+  ): ExprResult =
+    singleTerm(expr) match
+      case Some(app: App) =>
+        val result = app.fn match
+          // Scope applications still evaluate their initializer and independent continuation.
+          case lambda: Lambda => analyzeLambdaApplication(app, lambda, scope)
+          case _ => analyzeUnavailableApp(app, scope)
+        ExprResult(result.scope, expr.copy(terms = List(result.term)), result.errors)
+      case Some(lambda: Lambda) =>
+        val result = analyzeLambda(lambda, scope, resultAvailable = false)
+        ExprResult(result.scope, expr.copy(terms = List(result.term)), result.errors)
+      case Some(inner: Expr) =>
+        val result = analyzeFailedResult(inner, scope)
+        ExprResult(result.scope, expr.copy(terms = List(result.expr)), result.errors)
+      case Some(group: TermGroup) =>
+        val result = analyzeFailedResult(group.inner, scope)
+        ExprResult(
+          result.scope,
+          expr.copy(terms = List(group.copy(inner = result.expr))),
+          result.errors
+        )
+      case _ => analyzeExpr(expr, scope, shapeRoots)
+
   /** Analyze a term and track ownership changes */
   private def analyzeTerm(
     term:  Term,
@@ -2516,12 +2641,8 @@ object OwnershipAnalyzer:
   ): TermResult[Term] =
     term match
       case invalid: InvalidExpression =>
-        val result = analyzeExpr(invalid.originalExpr, scope)
-        TermResult(
-          result.scope,
-          invalid.copy(originalExpr = result.expr),
-          result.errors.filterNot(isExpressionShapeError)
-        )
+        val result = analyzeFailedResult(invalid.originalExpr, scope, invalid.causes)
+        TermResult(result.scope, invalid.copy(originalExpr = result.expr), result.errors)
 
       case ref: Ref =>
         analyzeRef(ref, scope)
@@ -2530,13 +2651,7 @@ object OwnershipAnalyzer:
         app.fn match
           case lambda: Lambda => analyzeLambdaApplication(app, lambda, scope)
           case _ if !scope.callableValues.recovery.isAvailable(app) =>
-            val callee   = analyzeTerm(app.fn, scope)
-            val argument = analyzeExpr(app.arg, callee.scope)
-            TermResult(
-              argument.scope,
-              app.copy(arg = argument.expr),
-              callee.errors ++ argument.errors
-            )
+            analyzeUnavailableApp(app, scope)
           case _ => analyzeRegularApp(app, scope)
 
       case cond: Cond =>
@@ -2564,16 +2679,20 @@ object OwnershipAnalyzer:
 
   /** Analyze an expression */
   private def analyzeExpr(
-    expr:  Expr,
-    scope: OwnershipScope
+    expr:       Expr,
+    scope:      OwnershipScope,
+    shapeRoots: Vector[DiagnosticId] = Vector.empty
   ): ExprResult =
     val shapeErrors = Option
       .when(singleTerm(expr).isEmpty)(
-        SemanticError.InvalidExpression(expr, ExpressionShapeMessage, PhaseName)
+        OwnershipDiagnostic.caused(
+          SemanticError.InvalidExpression(expr, ExpressionShapeMessage, PhaseName),
+          shapeRoots
+        )
       )
       .toList
     val (finalScope, revTerms, errors) =
-      expr.terms.foldLeft((scope, List.empty[Term], List.empty[SemanticError])):
+      expr.terms.foldLeft((scope, List.empty[Term], List.empty[OwnershipDiagnostic])):
         case ((s, ts, errs), term) =>
           val result = analyzeTerm(term, s)
           (result.scope, result.term :: ts, errs ++ result.errors)
@@ -2593,7 +2712,7 @@ object OwnershipAnalyzer:
     globals:        Map[String, BindingInfo],
     callableValues: CallableValues,
     bindingIds:     BindingIdSupply
-  ): (Member, List[SemanticError], BindingIdSupply) =
+  ): (Member, List[OwnershipDiagnostic], BindingIdSupply) =
     member match
       case bnd @ Bnd(_, _, _, value, _, _, _, meta, _) =>
         val hasNativeBody = value.terms.exists:
@@ -2648,7 +2767,7 @@ object OwnershipAnalyzer:
 
     val (newMembersRev, allErrorsRev, finalIds) =
       module.members.foldLeft(
-        (List.empty[Member], List.empty[SemanticError], state.bindingIds.include(module))
+        (List.empty[Member], List.empty[OwnershipDiagnostic], state.bindingIds.include(module))
       ):
         case ((membersAcc, errorsAcc, ids), member) =>
           val (newMember, errors, nextIds) =
@@ -2663,6 +2782,6 @@ object OwnershipAnalyzer:
             )
           (newMember :: membersAcc, errors.reverse_:::(errorsAcc), nextIds)
 
-    val newModule = module.copy(members = newMembersRev.reverse)
-    val errors    = withoutBorrowedReturnCascades(allErrorsRev.reverse, callableValues, module)
-    state.copy(bindingIds = finalIds).withModule(newModule).addErrors(normalizeMoveErrors(errors))
+    val newModule   = module.copy(members = newMembersRev.reverse)
+    val diagnostics = recordErrors(allErrorsRev.reverse, state.diagnostics, callableValues, module)
+    state.copy(bindingIds = finalIds, diagnostics = diagnostics).withModule(newModule)

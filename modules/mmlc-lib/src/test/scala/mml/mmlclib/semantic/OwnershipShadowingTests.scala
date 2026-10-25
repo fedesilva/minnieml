@@ -1,5 +1,6 @@
 package mml.mmlclib.semantic
 
+import mml.mmlclib.api.FrontEndApi
 import mml.mmlclib.ast.*
 import mml.mmlclib.test.BaseEffFunSuite
 
@@ -70,18 +71,26 @@ class OwnershipShadowingTests extends BaseEffFunSuite:
         """
         for
           parsed <- parseNotFailed(source)
-          result <- semState(source)
+          result <- FrontEndApi.compile(source, "OwnershipShadowingTests").value.map {
+            case Right(state) => state
+            case Left(error) => fail(s"Frontend failed before ownership: $error")
+          }
         yield
+          val visible   = result.visibleErrors.collect { case error: SemanticError => error }
           val moved     = refAt(parsed, source.indexOf("consume s;") + "consume ".length)
           val used      = refAt(parsed, source.indexOf("length s") + "length ".length)
           val bindingId = resolvedBindingId(result.module, "example", "s")
-          val lastUses = result.errors.collect {
-            case error: SemanticError.ConsumingParamNotLastUse => error
+          val lastUses = visible.collect { case error: SemanticError.ConsumingParamNotLastUse =>
+            error
           }
-          val moves = result.errors.collect { case error: SemanticError.UseAfterMove => error }
+          val moves = visible.collect { case error: SemanticError.UseAfterMove => error }
           assertEquals(lastUses.size, 1, result.errors.toString)
           assertEquals(moves.size, 1, result.errors.toString)
-          assertEquals(result.errors.size, 2, result.errors.toString)
+          assertEquals(visible.size, 2, result.errors.toString)
+          val rawMoves = result.semanticErrors.collect { case error: SemanticError.UseAfterMove =>
+            error
+          }
+          assertEquals(rawMoves.size, if form == "captured" then 2 else 1)
 
           assertEquals(lastUses.head.ref.resolvedId, Some(bindingId))
           assertEquals(lastUses.head.ref.source, moved.source)

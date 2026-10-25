@@ -331,13 +331,18 @@ class PartialApplicationElaboratorTests extends BaseEffFunSuite:
         val elaborated = PartialApplicationElaborator.rewriteModule(typed)
         assertEquals(elaborated.errors, typed.errors)
         assertEquals(partials(member(elaborated, "example").value).size, expected)
+        def retainedFailures(state: CompilerState) =
+          TermTraversal.collect(member(state, "example").value) { case invalid: InvalidExpression =>
+            (invalid.source, invalid.typeSpec, invalid.causes)
+          }
+        assertEquals(retainedFailures(elaborated), retainedFailures(typed))
         assertStable(typed, elaborated)
       }
     }
   }
 
   test("an invalid callee body retains independent ownership diagnostics") {
-    semState("""
+    semVisibleState("""
       fn take(~text: String, n: Int): Int = text.length + n;;
       fn example(): Int =
         let owned = take (int_to_str 123);
@@ -362,5 +367,49 @@ class PartialApplicationElaboratorTests extends BaseEffFunSuite:
         result.errors
       )
       assertEquals(result.errors.size, 2, result.errors)
+    }
+  }
+
+  List(false, true).foreach { malformed =>
+    test(s"failed PAP result boundaries preserve independent children: malformed=$malformed") {
+      typeCheck(s"$addition let example = add 1;").map { typed =>
+        assert(!typed.hasErrors, typed.errors)
+        val original = member(typed, "example")
+        val payload =
+          if malformed then
+            original.value.copy(terms = original.value.terms ++ original.value.terms)
+          else original.value
+        val prior =
+          SemanticError.InvalidExpression(payload, "Retained frontend failure", "frontend")
+        val (diagnostics, roots) = typed.diagnostics.emit(prior)
+        val invalid = InvalidExpression(
+          payload.source,
+          payload,
+          typeSpec = payload.typeSpec,
+          causes   = roots
+        )
+        val replaced = original.copy(value = original.value.copy(terms = List(invalid)))
+        val input = ResolvablesIndexer.rewriteModule(
+          typed
+            .copy(diagnostics = diagnostics)
+            .withModule(
+              typed.module.copy(members = typed.module.members.map {
+                case binding: Bnd if binding.id == original.id => replaced
+                case other => other
+              })
+            )
+        )
+        val elaborated = PartialApplicationElaborator.rewriteModule(input)
+        val result     = member(elaborated, "example").value
+        assertEquals(partials(result).size, if malformed then 2 else 0)
+        assertEquals(elaborated.errors, Vector(prior))
+        val failures = TermTraversal.collect(result) { case failure: InvalidExpression => failure }
+        assertEquals(failures.size, 1)
+        assertEquals(failures.head.causes, roots)
+        assertEquals(failures.head.source, payload.source)
+        assertEquals(failures.head.originalExpr.terms.size, payload.terms.size)
+        assert(!ValueAvailability.fromModule(elaborated.module).isAvailable(result))
+        assertStable(input, elaborated)
+      }
     }
   }

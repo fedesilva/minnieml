@@ -1,6 +1,7 @@
 package mml.mmlclib.ast
 
 import cats.data.NonEmptyList
+import mml.mmlclib.errors.DiagnosticId
 
 enum MemEffect derives CanEqual:
   case Alloc // returns newly allocated memory, caller owns
@@ -9,7 +10,7 @@ enum MemEffect derives CanEqual:
 sealed trait Term extends AstNode, Typeable, FromSource:
   /** Since Term has no shared copy method, dispatches to each concrete subtype's copy so the
     * generic parser can attach an ascription without knowing which kind of term it parsed.
-    * TermError, DataConstructor, and Destruction are returned unchanged.
+    * ParseTermError, DataConstructor, and Destruction are returned unchanged.
     */
   def withTypeAsc(t: Type): Term = this match
     case x: Expr => x.copy(typeAsc = Some(t))
@@ -30,22 +31,26 @@ sealed trait Term extends AstNode, Typeable, FromSource:
     case x: LiteralFloat => x.copy(typeAsc = Some(t))
     case x: NativeImpl => x.copy(typeAsc = Some(t))
     case x: InvalidExpression => x.copy(typeAsc = Some(t))
-    case _: TermError => this
+    case _: ParseTermError => this
     case _: DataConstructor => this
     case _: Destruction => this
 
-case class TermError(
+/** Recovered syntax failure. Ingest attaches its primary occurrence ID in `causes`; an empty vector
+  * means the failure has not been attributed to a diagnostic.
+  */
+case class ParseTermError(
   source:     SourceOrigin,
   message:    String,
-  failedCode: Option[String]
+  failedCode: Option[String],
+  causes:     Vector[DiagnosticId] = Vector.empty
 ) extends Term,
       Error:
   final val typeSpec: Option[Type] = None
   final val typeAsc:  Option[Type] = None
 
-object TermError:
-  def apply(span: SrcSpan, message: String, failedCode: Option[String]): TermError =
-    new TermError(SourceOrigin.Loc(span), message, failedCode)
+object ParseTermError:
+  def apply(span: SrcSpan, message: String, failedCode: Option[String]): ParseTermError =
+    new ParseTermError(SourceOrigin.Loc(span), message, failedCode)
 
 case class Expr(
   source:   SourceOrigin,
@@ -387,13 +392,16 @@ case class NativeImpl(
   def annotationName: String = if nativeTpl.isDefined then "@metal:tpl" else "@metal:ffi"
 
 /** Represents an expression that could not be resolved or is otherwise invalid. Preserves the
-  * original expression for debugging and error reporting.
+  * original expression for debugging and error reporting. `causes` contains the complete primary
+  * roots of this failed result; empty means unattributed. Partial editor types do not change that
+  * evidence or establish value availability.
   */
 case class InvalidExpression(
   source:       SourceOrigin,
   originalExpr: Expr,
-  typeSpec:     Option[Type] = None,
-  typeAsc:      Option[Type] = None
+  typeSpec:     Option[Type]         = None,
+  typeAsc:      Option[Type]         = None,
+  causes:       Vector[DiagnosticId] = Vector.empty
 ) extends Term,
       InvalidNode,
       FromSource

@@ -3,21 +3,26 @@ package mml.mmlclib.parser
 import fastparse.*
 import mml.mmlclib.ast.*
 
-/** Captures the current source position after normal parser whitespace has been consumed. */
-private[parser] def spP[$: P](info: SourceInfo): P[SrcPoint] =
+/** Captures the raw cursor. Surrounding combinators determine whether leading trivia is skipped. */
+private[parser] def pointP[$: P](info: SourceInfo): P[SrcPoint] =
   P(Index).map(index => info.pointAt(index))
 
-/** Captures the current source position without consuming parser whitespace.
+private[parser] final case class ParsedToken[A](value: A, location: SrcSpan)
+
+/** Captures a token before trailing trivia. The caller handles leading whitespace.
   *
-  * This is used when delimiters must be measured exactly, for example around `;`, `)`, or `}`.
+  * The token must end at its owned syntax; a child that consumes trailing trivia cannot be measured
+  * by this wrapper. Capture before whitespace-consuming validation as well.
   */
-private[parser] def spNoWsP[$: P](info: SourceInfo): P[SrcPoint] =
-  given fastparse.Whitespace with
-    def apply(ctx: ParsingRun[?]): ParsingRun[Unit] =
-      ctx.freshSuccessUnit(ctx.index)
-  val _ = summon[fastparse.Whitespace]
-  P(Index).map(index => info.pointAt(index))
+private[parser] def tokenP[A](info: SourceInfo)(token: => P[A])(using P[Any]): P[ParsedToken[A]] =
+  P(Index ~~ token ~~ Index).map { case (start, value, end) =>
+    ParsedToken(value, span(info.pointAt(start), info.pointAt(end)))
+  }
 
 /** Builds a source span from the captured start and end points of a parsed fragment. */
 private[parser] def span(start: SrcPoint, end: SrcPoint): SrcSpan =
   SrcSpan(start, end)
+
+/** Uses a child's owned endpoint, or the caller's boundary when the child has no source. */
+private[parser] def sourceEnd(node: FromSource, fallback: SrcPoint): SrcPoint =
+  node.spanOpt.fold(fallback)(_.end)

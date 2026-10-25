@@ -1,6 +1,7 @@
 package mml.mmlclib.ast
 
 import cats.data.NonEmptyList
+import mml.mmlclib.errors.DiagnosticId
 
 // **Type Specifications**
 sealed trait Type extends AstNode, FromSource
@@ -172,12 +173,35 @@ case class TypeAlias(
       ResolvableType,
       FromSource
 
-/** Represents a type specification that could not be resolved. Preserves the original type for
-  * debugging and error reporting.
-  */
-case class InvalidType(
-  source:       SourceOrigin,
-  originalType: Type
+/** Recovered malformed type syntax. Ingest attaches the primary diagnostic for this occurrence. */
+case class ParseTypeError(
+  source:     SourceOrigin,
+  message:    String,
+  failedCode: Option[String],
+  causes:     Vector[DiagnosticId] = Vector.empty
 ) extends Type,
-      InvalidNode,
-      FromSource
+      Error
+
+object ParseTypeError:
+  def apply(span: SrcSpan, message: String, failedCode: Option[String]): ParseTypeError =
+    new ParseTypeError(SourceOrigin.Loc(span), message, failedCode)
+
+/** A failed type lookup retains its written reference and the diagnostics that explain it. */
+sealed trait TypeResolutionError extends Type, InvalidNode:
+  def originalType: TypeRef
+  def causes:       Vector[DiagnosticId]
+
+/** No type declaration matches the written reference. */
+case class UndefinedTypeError(
+  source:       SourceOrigin,
+  originalType: TypeRef,
+  causes:       Vector[DiagnosticId] = Vector.empty
+) extends TypeResolutionError
+
+/** More than one declaration matches the written reference. */
+case class AmbiguousTypeError(
+  source:       SourceOrigin,
+  originalType: TypeRef,
+  candidates:   List[ResolvableType],
+  causes:       Vector[DiagnosticId] = Vector.empty
+) extends TypeResolutionError

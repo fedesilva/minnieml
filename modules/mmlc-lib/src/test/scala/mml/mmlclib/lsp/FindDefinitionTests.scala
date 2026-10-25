@@ -242,3 +242,86 @@ class FindDefinitionTests extends BaseEffFunSuite:
         collectRefsFromAppFn(app.fn) ++ collectRefsFromExpr(app.arg)
       case lambda: Lambda =>
         collectRefsFromExpr(lambda.body)
+
+  test("definition fallbacks stay on written names and preserve valid type and value targets") {
+    val code =
+      """
+      type Value = Int;
+      struct Box { field: Value };
+      fn example(param: Value): Value = param;;
+      let stored = 1;
+      """
+
+    semNotFailed(code).map { module =>
+      val alias = module.members
+        .collectFirst {
+          case value: TypeAlias if value.source.isFromSource =>
+            value
+        }
+        .getOrElse(fail("Expected source type alias"))
+      val struct = module.members
+        .collectFirst { case value: TypeStruct => value }
+        .getOrElse(fail("Expected source struct"))
+      val bindings = module.members.collect {
+        case value: Bnd if value.source.isFromSource => value
+      }
+      val params = bindings.flatMap(collectParamsFromMember)
+      assertEquals(params.size, 1)
+      val parameter = params.head
+      val field     = struct.fields.head
+      val declarations: List[Resolvable & FromSource] =
+        List(alias, struct, parameter, field) ++ bindings
+
+      declarations.foreach { declaration =>
+        val name = spanOrFail(declaration.nameNode, "written declaration name")
+        assertEquals(
+          AstLookup.findDefinitionAt(module, name.start.line, name.start.col),
+          List(spanOrFail(declaration, "declaration"))
+        )
+      }
+
+      val typeReferences = parameter.typeAsc.toList :+ field.typeSpec
+      typeReferences.foreach { reference =>
+        val span = spanOrFail(reference, "written type reference")
+        assertEquals(
+          AstLookup.findDefinitionAt(module, span.start.line, span.start.col),
+          List(spanOrFail(alias, "resolved type declaration"))
+        )
+      }
+      val valueReferences = bindings
+        .flatMap(collectRefsFromMember)
+        .filter(_.resolvedId == parameter.id)
+      assertEquals(valueReferences.size, 1)
+      val value = spanOrFail(valueReferences.head, "parameter use")
+      assertEquals(
+        AstLookup.findDefinitionAt(module, value.start.line, value.start.col),
+        List(spanOrFail(parameter, "resolved parameter"))
+      )
+    }
+  }
+
+  test("malformed alias targets and struct fields do not resolve to enclosing declarations") {
+    val code = "type Value = Int; struct Box { field: Int };"
+    parseNotFailed(code).map { module =>
+      val alias = module.members
+        .collectFirst { case value: TypeAlias => value }
+        .getOrElse(fail("Expected alias"))
+      val struct = module.members
+        .collectFirst { case value: TypeStruct => value }
+        .getOrElse(fail("Expected struct"))
+      val field       = struct.fields.head
+      val failedAlias = ParseTypeError(alias.typeRef.source, "Malformed alias type", None)
+      val failedField = ParseTypeError(field.typeSpec.source, "Malformed field type", None)
+      val recovered = module.copy(members =
+        List(
+          alias.copy(typeRef = failedAlias),
+          struct.copy(fields = Vector(field.copy(typeSpec = failedField)))
+        )
+      )
+
+      List(failedAlias, failedField).foreach { error =>
+        val span = spanOrFail(error, "malformed type")
+        assertEquals(AstLookup.findDefinitionAt(recovered, span.start.line, span.start.col), Nil)
+      }
+    }
+  }

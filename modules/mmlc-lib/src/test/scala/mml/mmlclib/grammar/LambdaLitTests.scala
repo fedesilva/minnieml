@@ -1,6 +1,9 @@
 package mml.mmlclib.grammar
 
 import mml.mmlclib.ast.*
+import mml.mmlclib.compiler.{CompilerConfig, CompilerState, ParsingErrorChecker}
+import mml.mmlclib.parser.SourceInfo
+import mml.mmlclib.semantic.SemanticError
 import mml.mmlclib.test.BaseEffFunSuite
 import mml.mmlclib.test.ast.*
 import mml.mmlclib.util.prettyprint.ast.prettyPrintAst
@@ -232,11 +235,24 @@ class LambdaLitTests extends BaseEffFunSuite:
   }
 
   test("reject incomplete - empty body after arrow") {
-    parseFailed(
-      """
-        let f = { x -> };
-      """
-    )
+    val source = "let f = { x -> };"
+    parseNotFailed(source).map { module =>
+      val lambdas = collectModuleTerms(module) { case lambda: Lambda => lambda }
+      assertEquals(lambdas.size, 1)
+      assertEquals(lambdas.head.params.map(_.name), List("x"))
+      val state = ParsingErrorChecker.checkModule(
+        CompilerState.empty(module, SourceInfo(source), CompilerConfig.default)
+      )
+      val errors = state.errors.collect { case SemanticError.ParseTermErrorFound(error, _) =>
+        error
+      }
+      assertEquals(state.diagnostics.records.size, 1)
+      assertEquals(errors.size, 1)
+      assertEquals(errors.head.message, "Expected expression")
+      assertEquals(errors.head.failedCode, None)
+      val point = SourceInfo(source).pointAt(source.indexOf('}'))
+      assertEquals(errors.head.spanOpt, Some(SrcSpan(point, point)))
+    }
   }
 
   test("lambda body terminator is optional before closing brace") {
@@ -248,9 +264,30 @@ class LambdaLitTests extends BaseEffFunSuite:
   }
 
   test("reject incomplete - arrow with no params") {
-    parseFailed(
-      """
-        let f = { -> x };
-      """
-    )
+    val source = "let f = { -> x };"
+    parseNotFailed(source).map { module =>
+      val lambdas = collectModuleTerms(module) { case lambda: Lambda => lambda }
+      assertEquals(lambdas.size, 1)
+      assertEquals(lambdas.head.params, Nil)
+      val state = ParsingErrorChecker.checkModule(
+        CompilerState.empty(module, SourceInfo(source), CompilerConfig.default)
+      )
+      val errors = state.errors.collect { case SemanticError.ParseTermErrorFound(error, _) =>
+        error
+      }
+      assertEquals(state.diagnostics.records.size, 1)
+      assertEquals(errors.size, 1)
+      assertEquals(errors.head.message, "Invalid expression syntax")
+      assertEquals(errors.head.failedCode, Some("-> x "))
+      val info = SourceInfo(source)
+      assertEquals(
+        errors.head.spanOpt,
+        Some(
+          SrcSpan(
+            info.pointAt(source.indexOf("->")),
+            info.pointAt(source.indexOf('}'))
+          )
+        )
+      )
+    }
   }

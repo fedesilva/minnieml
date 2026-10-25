@@ -1,6 +1,5 @@
-// This file failes parsing but the compiler can't point to the exact location of the error.\
-// Keep it around until we reach a state where the compiler can point to it.
-// After that use it as a showcase for the compiler's error handling prowess.
+// Valid regression control for grouped calls containing a move-capturing lambda.
+// Exercises repeated borrowing, temporary arguments, and a final consuming call.
 
 fn lengths(a: String, b: String): Int = a.length + b.length;;
 fn take(~s: String): Int = s.length;;

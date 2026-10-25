@@ -26,7 +26,7 @@ class SyntheticLocalResolutionTests extends BaseEffFunSuite:
         collectParams(cond) ++ collectParams(ifTrue) ++ collectParams(ifFalse)
       case TermGroup(_, inner, _) => collectParams(inner)
       case Tuple(_, elements, _, _) => elements.toList.flatMap(collectParams)
-      case InvalidExpression(_, originalExpr, _, _) => collectParams(originalExpr)
+      case InvalidExpression(_, originalExpr, _, _, _) => collectParams(originalExpr)
       case ref: Ref => ref.qualifier.toList.flatMap(collectParams)
       case _ => Nil
 
@@ -46,7 +46,7 @@ class SyntheticLocalResolutionTests extends BaseEffFunSuite:
         collectRefs(cond) ++ collectRefs(ifTrue) ++ collectRefs(ifFalse)
       case TermGroup(_, inner, _) => collectRefs(inner)
       case Tuple(_, elements, _, _) => elements.toList.flatMap(collectRefs)
-      case InvalidExpression(_, originalExpr, _, _) => collectRefs(originalExpr)
+      case InvalidExpression(_, originalExpr, _, _, _) => collectRefs(originalExpr)
       case ref: Ref => ref :: ref.qualifier.toList.flatMap(collectRefs)
       case _ => Nil
 

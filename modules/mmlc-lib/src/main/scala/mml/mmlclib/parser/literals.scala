@@ -18,19 +18,17 @@ import MmlWhitespace.*
 private[parser] def numericLitP(info: SourceInfo)(using P[Any]): P[LiteralValue] =
   import fastparse.NoWhitespace.*
   P(
-    (spP(info) ~ (CharIn("0-9").rep(1) ~ "." ~ CharIn("0-9").rep(1)).! ~ spNoWsP(info) ~ spP(info))
-      .map { case (start, s, end, _) =>
-        LiteralFloat(span(start, end), s.toFloat)
+    tokenP(info)((CharIn("0-9").rep(1) ~ "." ~ CharIn("0-9").rep(1)).!)
+      .map { token =>
+        LiteralFloat(token.location, token.value.toFloat)
       } |
-      (spP(info) ~ ("." ~ CharIn("0-9").rep(1)).! ~ spNoWsP(info) ~ spP(info)).map {
-        case (start, s, end, _) =>
-          LiteralFloat(span(start, end), s.toFloat)
+      tokenP(info)(("." ~ CharIn("0-9").rep(1)).!).map { token =>
+        LiteralFloat(token.location, token.value.toFloat)
       } |
-      P(spP(info) ~ CharIn("0-9").rep(1).! ~ spNoWsP(info) ~ spP(info)).flatMap {
-        case (start, s, end, _) =>
-          s.toLongOption.filter(_ <= 2147483648L) match
-            case Some(value) => Pass(LiteralInt(span(start, end), value))
-            case None => Fail
+      tokenP(info)(CharIn("0-9").rep(1).!).flatMap { token =>
+        token.value.toLongOption.filter(_ <= 2147483648L) match
+          case Some(value) => Pass(LiteralInt(token.location, value))
+          case None => Fail
       }
   )
 
@@ -43,8 +41,8 @@ private[parser] def numericLitP(info: SourceInfo)(using P[Any]): P[LiteralValue]
   */
 private[parser] def litStringP(info: SourceInfo)(using P[Any]): P[LiteralString] =
   import fastparse.NoWhitespace.*
-  P(spP(info) ~ "\"" ~ CharsWhile(_ != '"', 0).! ~ "\"" ~ spNoWsP(info) ~ spP(info))
-    .map { case (start, s, end, _) => LiteralString(span(start, end), s) }
+  tokenP(info)(P("\"" ~ CharsWhile(_ != '"', 0).! ~ "\""))
+    .map(token => LiteralString(token.location, token.value))
 
 /** Parses boolean literals.
   *
@@ -55,15 +53,15 @@ private[parser] def litStringP(info: SourceInfo)(using P[Any]): P[LiteralString]
   * }}}
   */
 private[parser] def litBoolP(info: SourceInfo)(using P[Any]): P[LiteralBool] =
-  P(spP(info) ~ ("true" | "false").! ~ spNoWsP(info) ~ spP(info))
-    .map { (start, b, end, _) =>
-      LiteralBool(span(start, end), b.toBoolean)
+  P(tokenP(info)(("true" | "false").!) ~ pointP(info))
+    .map { (token, _) =>
+      LiteralBool(token.location, token.value.toBoolean)
     }
 
 /** Parses the unit literal `()`. */
 private[parser] def litUnitP(info: SourceInfo)(using P[Any]): P[LiteralUnit] =
-  P(spP(info) ~ "()" ~ spNoWsP(info) ~ spP(info)).map { case (start, end, _) =>
-    LiteralUnit(span(start, end))
+  P(tokenP(info)(P("()")) ~ pointP(info)).map { case (token, _) =>
+    LiteralUnit(token.location)
   }
 
 /** Parses a block doc comment that attaches to the following declaration or parameter.
@@ -83,9 +81,9 @@ private[parser] def docCommentP[$: P](info: SourceInfo): P[Option[DocComment]] =
   def commentBody: P[String] =
     P((comment | (!("*/") ~ AnyChar).!).rep).map(_.mkString.stripMargin('*'))
 
-  P(spP(info) ~ comment.! ~ spNoWsP(info) ~ spP(info)).?.map {
-    case Some(start, s, end, _) =>
-      val clean = s.replaceAll("/\\*", "").replaceAll("\\*/", "").stripMargin('*').trim
-      DocComment(span(start, end), clean).some
+  tokenP(info)(comment.!).?.map {
+    case Some(token) =>
+      val clean = token.value.replaceAll("/\\*", "").replaceAll("\\*/", "").stripMargin('*').trim
+      DocComment(token.location, clean).some
     case None => none
   }

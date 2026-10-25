@@ -1,9 +1,18 @@
 package mml.mmlclib.semantic
 
+import cats.effect.IO
+import mml.mmlclib.api.FrontEndApi
 import mml.mmlclib.ast.*
+import mml.mmlclib.compiler.CompilerState
 import mml.mmlclib.test.BaseEffFunSuite
 
 class ElaborationRecoveryTests extends BaseEffFunSuite:
+
+  private def recoveredState(source: String): IO[CompilerState] =
+    FrontEndApi.compile(source, "ElaborationRecovery").value.map {
+      case Right(state) => state
+      case Left(error) => fail(error.message)
+    }
 
   private val makers = """
     fn take(~text: String, extra: Int): Int = text.length + extra;;
@@ -78,7 +87,7 @@ class ElaborationRecoveryTests extends BaseEffFunSuite:
     }
 
   test("an invalid PAP cannot supply capture or return ownership"):
-    semState(s"""
+    recoveredState(s"""
       $makers
       fn broken(): Unit -> (Int -> Int) =
         let incomplete = take true;
@@ -86,21 +95,22 @@ class ElaborationRecoveryTests extends BaseEffFunSuite:
       ;
       fn independent(text: String): String = text;;
     """).map { result =>
-      assertEquals(result.errors.count(isMismatch), 1, result.errors)
-      val borrowedReturns = result.errors.collect { case e: SemanticError.BorrowEscapeViaReturn =>
-        e
+      assertEquals(result.semanticErrors.count(isMismatch), 1, result.semanticErrors)
+      val borrowedReturns = result.semanticErrors.collect {
+        case e: SemanticError.BorrowEscapeViaReturn =>
+          e
       }
-      assertEquals(borrowedReturns.size, 1, result.errors)
+      assertEquals(borrowedReturns.size, 1, result.semanticErrors)
       assert(
-        !result.errors.exists(_.isInstanceOf[SemanticError.CapturedBorrowedHeapBinding]),
-        result.errors
+        !result.semanticErrors.exists(_.isInstanceOf[SemanticError.CapturedBorrowedHeapBinding]),
+        result.semanticErrors
       )
-      assertEquals(result.errors.size, 2, result.errors)
+      assertEquals(result.visibleErrors.size, 2, result.visibleErrors)
     }
 
   List("missing", "true").foreach { argument =>
     test(s"unavailable PAP values propagate through aliases: $argument"):
-      semState(s"""
+      recoveredState(s"""
         $makers
         fn broken(): Unit -> (Int -> Int) =
           let incomplete = take $argument;
@@ -114,30 +124,30 @@ class ElaborationRecoveryTests extends BaseEffFunSuite:
         ;
       """).map { result =>
         assert(
-          result.errors.exists {
+          result.semanticErrors.exists {
             case _: SemanticError.UndefinedRef => true
             case error => isMismatch(error)
           },
-          result.errors
+          result.semanticErrors
         )
         assertEquals(
-          result.errors.count(_.isInstanceOf[SemanticError.UseAfterMove]),
+          result.semanticErrors.count(_.isInstanceOf[SemanticError.UseAfterMove]),
           1,
-          result.errors
+          result.semanticErrors
         )
         assert(
-          !result.errors.exists(_.isInstanceOf[SemanticError.CapturedBorrowedHeapBinding]),
-          result.errors
+          !result.semanticErrors.exists(_.isInstanceOf[SemanticError.CapturedBorrowedHeapBinding]),
+          result.semanticErrors
         )
         assert(
-          !result.errors.exists(_.isInstanceOf[SemanticError.BorrowEscapeViaReturn]),
-          result.errors
+          !result.semanticErrors.exists(_.isInstanceOf[SemanticError.BorrowEscapeViaReturn]),
+          result.semanticErrors
         )
       }
   }
 
   test("an invalid outer application retains independent argument diagnostics"):
-    semState(s"""
+    semVisibleState(s"""
       $makers
       fn example(): Unit =
         let pap = make (int_to_str 123);
@@ -156,7 +166,7 @@ class ElaborationRecoveryTests extends BaseEffFunSuite:
     }
 
   test("valid ownership checks continue after an unavailable value in a statement chain"):
-    semState(s"""
+    semVisibleState(s"""
       $makers
       fn example(): Unit =
         let broken = take true;

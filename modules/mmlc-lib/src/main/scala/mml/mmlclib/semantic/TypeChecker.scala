@@ -1,34 +1,125 @@
 package mml.mmlclib.semantic
 
-import cats.data.NonEmptyList
+import cats.data.{NonEmptyList, State}
 import cats.implicits.*
 import mml.mmlclib.ast.*
 import mml.mmlclib.compiler.CompilerState
+import mml.mmlclib.errors.{DiagnosticId, DiagnosticStore}
 
 import scala.annotation.tailrec
-import scala.collection.mutable
 
 object TypeChecker:
+
   private val phaseName          = "mml.mmlclib.semantic.TypeChecker"
   private val statementParamName = "__stmt"
+  private type Check[A] = State[DiagnosticStore, A]
 
-  private case class CheckResult[+A](value: A, errors: Vector[TypeError]):
-    def map[B](f: A => B): CheckResult[B] =
-      CheckResult(f(value), errors)
+  /** Callee failures are wrapped only where the enclosing syntax accepts an arbitrary term. */
+  private case class Checked[+A](value: A, roots: Vector[DiagnosticId] = Vector.empty)
 
-    def flatMap[B](f: A => CheckResult[B]): CheckResult[B] =
-      val next = f(value)
-      CheckResult(next.value, errors ++ next.errors)
+  private case class CheckContext(
+    module:           Module,
+    params:           Map[String, FnParam],
+    causes:           DiagnosticCauses,
+    availability:     ValueAvailability,
+    bindingName:      String,
+    recursiveBinding: Option[Bnd]          = None,
+    enclosingFailure: Vector[DiagnosticId] = Vector.empty
+  ):
 
-    def addErrors(more: Vector[TypeError]): CheckResult[A] =
-      if more.isEmpty then this else CheckResult(value, errors ++ more)
+    def knownRootsOf(term: Term): Vector[DiagnosticId] = causes.knownRootsOf(term)
 
-  private object CheckResult:
-    def ok[A](value: A): CheckResult[A] = CheckResult(value, Vector.empty)
+    def provenRootsOf(term: Term): Vector[DiagnosticId] = causes.provenRootsOf(term)
 
-  /** Preserve the operand for diagnostics without giving a failed application a usable value. */
-  private def invalidArgument(expr: Expr): Expr =
-    expr.copy(terms = List(InvalidExpression(expr.source, expr, typeSpec = expr.typeSpec)))
+    def independent: CheckContext = copy(enclosingFailure = Vector.empty)
+
+    def withBinding(param: FnParam, value: Expr): CheckContext =
+      copy(
+        params       = params + (param.name -> param),
+        causes       = causes.withBinding(param, value),
+        availability = availability.withBinding(param, value)
+      )
+
+  private case class ModuleCheckingState(
+    module:       Module,
+    checkedIds:   Set[String],
+    causes:       DiagnosticCauses,
+    availability: ValueAvailability
+  ):
+
+    def withChecked(binding: Bnd): ModuleCheckingState =
+      val updated = module.copy(
+        members = module.members.map {
+          case original: Bnd if original.id == binding.id => binding
+          case other => other
+        },
+        resolvables = module.resolvables.updated(binding)
+      )
+      val ids = checkedIds ++ binding.id
+      val checkedModule = updated.copy(members = updated.members.filter {
+        case member: Bnd => member.id.exists(ids)
+        case _ => false
+      })
+      copy(
+        module       = updated,
+        checkedIds   = ids,
+        causes       = causes.updatedModule(updated, binding),
+        availability = availability.updatedModule(checkedModule, binding)
+      )
+
+  private def report(
+    error: TypeError,
+    roots: Vector[DiagnosticId] = Vector.empty
+  ): Check[Vector[DiagnosticId]] =
+    DiagnosticStore.report(SemanticError.TypeCheckingError(error), roots)
+
+  private def reportAll(errors: List[TypeError]): Check[Vector[DiagnosticId]] =
+    errors.traverse(report(_)).map(_.flatten.toVector.distinct)
+
+  /** The diagnostic payload stays intact while the failed result cannot supply a value. */
+  private def invalidResult(term: Term, roots: Vector[DiagnosticId]): Term =
+    if roots.isEmpty then term
+    else
+      term match
+        case invalid: InvalidExpression =>
+          invalid.copy(causes = (invalid.causes ++ roots).distinct)
+        case other =>
+          InvalidExpression(
+            source       = other.source,
+            originalExpr = Expr(other.source, List(other), typeSpec = other.typeSpec),
+            typeSpec     = other.typeSpec,
+            typeAsc      = other.typeAsc,
+            causes       = roots.distinct
+          )
+
+  private def invalidExpr(expr: Expr, roots: Vector[DiagnosticId]): Expr =
+    if roots.isEmpty then expr
+    else
+      expr.terms match
+        case List(invalid: InvalidExpression) =>
+          expr.copy(terms = List(invalidResult(invalid, roots)))
+        case _ =>
+          expr.copy(terms =
+            List(
+              InvalidExpression(
+                expr.source,
+                expr,
+                typeSpec = expr.typeSpec,
+                typeAsc  = expr.typeAsc,
+                causes   = roots.distinct
+              )
+            )
+          )
+
+  private def failedType(tpe: Type, context: CheckContext): Boolean =
+    context.causes.knownRootsOfType(tpe).nonEmpty ||
+      context.availability.containsInvalidType(tpe)
+
+  private def resultRoots(
+    checked: Checked[Term],
+    context: CheckContext
+  ): Vector[DiagnosticId] =
+    if checked.roots.nonEmpty then checked.roots else context.provenRootsOf(checked.value)
 
   private case class LambdaInferenceState(
     inferred:   Map[String, Type],
@@ -38,9 +129,8 @@ object TypeChecker:
   )
 
   private case class LambdaInferenceResult(
-    inferred:     Map[String, Type],
-    failedParams: Set[String],
-    errors:       Vector[TypeError]
+    inferred: Map[String, Type],
+    errors:   Vector[TypeError]
   )
 
   private def bindingDisplayName(bnd: Bnd): String =
@@ -166,6 +256,8 @@ object TypeChecker:
           state
         case nested: Expr =>
           walkExpr(nested, state)
+        case invalid: InvalidExpression =>
+          walkExpr(invalid.originalExpr, state)
         case _ =>
           state
 
@@ -201,501 +293,432 @@ object TypeChecker:
     val finalState   = walkExpr(body, initialState)
     val uninferred   = tracked.keySet -- finalState.inferred.keySet -- finalState.conflicted
     val missingErrors =
-      uninferred.toVector.map(name => TypeError.UninferrableLambdaParam(tracked(name), phaseName))
+      params
+        .filter(param => uninferred.contains(param.name))
+        .toVector
+        .map(param => TypeError.UninferrableLambdaParam(param, phaseName))
 
     LambdaInferenceResult(
       finalState.inferred,
-      finalState.conflicted ++ uninferred,
       finalState.errors ++ missingErrors
     )
 
-  /** Collect IDs of top-level members that this member's body references. */
+  /** Include references retained inside failed payloads in dependency ordering. */
   private def collectMemberDeps(member: Member, topLevelIds: Set[String]): Set[String] =
     member match
-      case bnd: Bnd =>
-        val refs = mutable.Set.empty[String]
-        def walkExpr(expr: Expr): Unit = expr.terms.foreach(walkTerm)
-        def walkTerm(term: Term): Unit = term match
-          case ref: Ref =>
-            ref.resolvedId.foreach(id => if topLevelIds.contains(id) then refs += id)
-            ref.qualifier.foreach(walkTerm)
-          case app: App =>
-            walkAppFn(app.fn); walkExpr(app.arg)
-          case cond: Cond =>
-            walkExpr(cond.cond); walkExpr(cond.ifTrue); walkExpr(cond.ifFalse)
-          case group:  TermGroup => walkExpr(group.inner)
-          case tuple:  Tuple => tuple.elements.toList.foreach(walkExpr)
-          case lambda: Lambda => walkExpr(lambda.body)
-          case e:      Expr => walkExpr(e)
-          case _ => ()
-        def walkAppFn(fn: Callee): Unit = fn match
-          case ref: Ref => walkTerm(ref)
-          case app: App =>
-            walkAppFn(app.fn)
-            walkExpr(app.arg)
-          case lambda: Lambda => walkExpr(lambda.body)
-        bnd.value.terms match
-          case (lambda: Lambda) :: _ => walkExpr(lambda.body)
-          case _ => walkExpr(bnd.value)
-        bnd.id.foreach(refs -= _) // exclude self-references
-        refs.toSet
+      case binding: Bnd =>
+        val referenced = TermTraversal
+          .collect(binding.value) { case ref: Ref =>
+            ref.resolvedId.toList
+          }
+          .flatten
+          .toSet
+        (referenced intersect topLevelIds) -- binding.id
       case _ => Set.empty
 
-  /** Topologically sort members so callees are checked before callers. Members in cycles are
-    * appended in source order (they will produce errors requiring type annotations).
-    */
+  /** Check callees before callers; unresolved cycles retain their source order. */
   private def topologicalOrder(
     members:      List[Member],
     deps:         Map[String, Set[String]],
-    needsReorder: Set[String],
-    untyped:      Set[String]
+    needsReorder: Set[String]
   ): List[Member] =
-    // Only edges to untyped members matter — typed members' types are already known
-    val filteredDeps = deps.view.mapValues(_.intersect(untyped)).toMap
-    val sourceOrderedIds = members.collect {
-      case bnd: Bnd if bnd.id.exists(needsReorder) => bnd.id.get
+    val ids = members.collect {
+      case binding: Bnd if binding.id.exists(needsReorder) => binding.id.get
     }
-    val adjOut = mutable.Map.empty[String, mutable.ListBuffer[String]]
-    val inDeg  = mutable.Map.from(sourceOrderedIds.map(_ -> 0))
-    sourceOrderedIds.foreach { memberId =>
-      filteredDeps.getOrElse(memberId, Set.empty).foreach { depId =>
-        adjOut.getOrElseUpdate(depId, mutable.ListBuffer.empty) += memberId
-        inDeg(memberId) = inDeg.getOrElse(memberId, 0) + 1
+    val allDependencies =
+      ids.map(id => id -> deps.getOrElse(id, Set.empty).intersect(needsReorder)).toMap
+    val annotated = members
+      .collect {
+        case binding: Bnd if binding.typeSpec.isDefined => binding.id
+      }
+      .flatten
+      .toSet
+
+    def reaches(from: String, target: String): Boolean =
+      @tailrec
+      def visit(pending: List[String], visited: Set[String]): Boolean = pending match
+        case Nil => false
+        case id :: _ if id == target => true
+        case id :: rest if visited.contains(id) => visit(rest, visited)
+        case id :: rest =>
+          visit(allDependencies.getOrElse(id, Set.empty).toList ++ rest, visited + id)
+      visit(List(from), Set.empty)
+
+    // A declared callable signature breaks an inference cycle, but not an acyclic dependency.
+    val dependencies = allDependencies.map { (id, targets) =>
+      id -> targets.filterNot(target => annotated.contains(target) && reaches(target, id))
+    }
+    val dependants = ids.foldLeft(Map.empty[String, List[String]]) { (current, id) =>
+      dependencies(id).foldLeft(current) { (index, dependency) =>
+        index.updated(dependency, index.getOrElse(dependency, Nil) :+ id)
       }
     }
-    val queue  = mutable.Queue.from(sourceOrderedIds.filter(inDeg.getOrElse(_, 0) == 0))
-    val sorted = mutable.ListBuffer.empty[String]
-    while queue.nonEmpty do
-      val id = queue.dequeue()
-      sorted += id
-      adjOut.getOrElse(id, mutable.ListBuffer.empty).foreach { dep =>
-        inDeg(dep) = inDeg(dep) - 1
-        if inDeg(dep) == 0 then queue.enqueue(dep)
-      }
-    // Cycle members: not in sorted, append in source order
-    val sortedSet    = sorted.toSet
-    val cycleMembers = sourceOrderedIds.filterNot(sortedSet)
-    val topoOrder    = sorted.toList ++ cycleMembers
-    // Collect source positions of reorderable members, place topo-sorted members into those slots
-    val reorderSlots = members.zipWithIndex.collect {
-      case (bnd: Bnd, idx) if bnd.id.exists(needsReorder) => idx
-    }
-    val memberById = members.collect {
-      case bnd: Bnd if bnd.id.isDefined => bnd.id.get -> bnd
-    }.toMap
-    val result = members.toArray
-    topoOrder.zip(reorderSlots).foreach { case (id, slot) =>
-      memberById.get(id).foreach(result(slot) = _)
-    }
-    result.toList
+    val initialCounts = dependencies.view.mapValues(_.size).toMap
 
-  /** Main entry point - process module and accumulate errors */
-  def rewriteModule(state: CompilerState): CompilerState =
-    // First pass: lower type ascriptions to specs for all functions and operators
-    val (signatureErrors, membersWithSignatures, resolvablesAfterSignatures) =
-      lowerAscriptionsToSpecs(state.module)
+    @tailrec
+    def order(
+      ready:  List[String],
+      counts: Map[String, Int],
+      sorted: Vector[String]
+    ): Vector[String] = ready match
+      case Nil => sorted
+      case id :: rest =>
+        val (remaining, newlyReady) = dependants
+          .getOrElse(id, Nil)
+          .foldLeft(
+            (counts, List.empty[String])
+          ) { case ((current, next), dependant) =>
+            val count = current(dependant) - 1
+            (current.updated(dependant, count), if count == 0 then next :+ dependant else next)
+          }
+        order(rest ++ newlyReady, remaining, sorted :+ id)
 
-    // Create the module with lowered type specs and updated resolvables
-    val moduleWithSignatures = state.module.copy(
-      members     = membersWithSignatures,
-      resolvables = resolvablesAfterSignatures
-    )
-
-    // Topological sort: check callees before callers so forward references resolve
-    val topLevelIds = membersWithSignatures.collect {
-      case bnd: Bnd if bnd.id.isDefined => bnd.id.get
-    }.toSet
-    val deps = membersWithSignatures.collect {
-      case bnd: Bnd if bnd.id.isDefined =>
-        bnd.id.get -> collectMemberDeps(bnd, topLevelIds)
-    }.toMap
-    // All Bnds participate in reordering — a member WITH a typeSpec can still
-    // depend on one WITHOUT, so limiting to typeSpec-less members is insufficient.
-    val needsReorder = topLevelIds
-    // Only edges to untyped members create real ordering constraints
-    val untyped = membersWithSignatures.collect {
-      case bnd: Bnd if bnd.id.isDefined && bnd.typeSpec.isEmpty => bnd.id.get
-    }.toSet
-    val sortedMembers = topologicalOrder(membersWithSignatures, deps, needsReorder, untyped)
-
-    // Second pass: check all members in topological order
-    val initialState =
-      (Vector.empty[TypeError], Map.empty[String, Member], moduleWithSignatures.resolvables)
-    val (checkErrors, checkedById, finalResolvables) =
-      sortedMembers.foldLeft(initialState) { case ((accErrors, accChecked, resolvables), member) =>
-        // Build module with checked versions of already-processed members
-        val currentMembers = membersWithSignatures.map {
-          case bnd: Bnd if bnd.id.isDefined => accChecked.getOrElse(bnd.id.get, bnd)
-          case other => other
-        }
-        val currentModule =
-          moduleWithSignatures.copy(members = currentMembers, resolvables = resolvables)
-        val result = checkMember(member, currentModule)
-        val newResolvables = result.value match
-          case bnd: Bnd => resolvables.updated(bnd)
-          case _ => resolvables
-        val newChecked = result.value match
-          case bnd: Bnd if bnd.id.isDefined => accChecked + (bnd.id.get -> result.value)
-          case _ => accChecked
-        (accErrors ++ result.errors, newChecked, newResolvables)
-      }
-
-    // Restore source order
-    val checkedMembers = membersWithSignatures.map {
-      case bnd: Bnd if bnd.id.isDefined => checkedById.getOrElse(bnd.id.get, bnd)
-      case other => other
-    }
-
-    val allErrors = (signatureErrors ++ checkErrors).map(SemanticError.TypeCheckingError.apply)
-    state
-      .addErrors(allErrors.toList)
-      .withModule(
-        moduleWithSignatures.copy(members = checkedMembers, resolvables = finalResolvables)
-      )
-
-  /** First pass: lower mandatory type ascriptions to type specs */
-  private def lowerAscriptionsToSpecs(
-    module: Module
-  ): (Vector[TypeError], List[Member], ResolvablesIndex) =
-    val (errors, members, resolvables) =
-      module.members.foldLeft(
-        (Vector.empty[TypeError], Vector.empty[Member], module.resolvables)
-      ) { case ((accErrors, accMembers, resolvables), member) =>
+    val sorted = order(ids.filter(initialCounts(_) == 0), initialCounts, Vector.empty)
+    val allIds = sorted.toList ++ ids.filterNot(sorted.toSet)
+    val byId   = members.collect { case binding: Bnd => binding.id.map(_ -> binding) }.flatten.toMap
+    members
+      .foldLeft((allIds, List.empty[Member])) { case ((remaining, result), member) =>
         member match
-          // Handle Bnd with Lambda (functions and operators with meta)
-          case bnd: Bnd if bnd.meta.isDefined =>
-            bnd.value.terms match
-              case (lambda: Lambda) :: rest =>
-                validateMandatoryAscriptions(bnd) match
-                  case Nil =>
-                    // Lower param type ascriptions to specs
-                    val updatedParams = lambda.params.map(p => p.copy(typeSpec = p.typeAsc))
-                    val returnType    = lambda.typeAsc.orElse(bnd.typeAsc)
-                    val loweredTypeSpec =
-                      returnType.flatMap(buildFunctionTypeSpec(bnd.source, updatedParams, _))
-                    val updatedLambda = lambda.copy(params = updatedParams)
-                    val updatedValue  = bnd.value.copy(terms = updatedLambda :: rest)
-                    val updatedBnd    = bnd.copy(value = updatedValue, typeSpec = loweredTypeSpec)
-                    (accErrors, accMembers :+ updatedBnd, resolvables.updated(updatedBnd))
-                  case errs => (accErrors ++ errs, accMembers :+ bnd, resolvables)
-              case _ =>
-                // Bnd with meta but no Lambda - shouldn't happen, pass through
-                (accErrors, accMembers :+ bnd, resolvables)
-
-          case other =>
-            // Other members don't need ascription lowering
-            (accErrors, accMembers :+ other, resolvables)
+          case binding: Bnd if binding.id.exists(needsReorder) =>
+            remaining match
+              case id :: rest => (rest, result :+ byId(id))
+              case Nil => (Nil, result :+ member)
+          case _ => (remaining, result :+ member)
       }
-    (errors, members.toList, resolvables)
+      ._2
 
-  /** Check if an expression contains a NativeImpl */
+  /** Check definitions in dependency order while retaining diagnostics in emission order. */
+  def rewriteModule(state: CompilerState): CompilerState =
+    val checking = for
+      signatures <- state.module.members.traverse(lowerSignature)
+      members           = signatures.map(_._1)
+      parameterFailures = signatures.flatMap(_._2).toMap
+      module = state.module.copy(
+        members = members,
+        resolvables = members.foldLeft(state.module.resolvables) {
+          case (index, binding: Bnd) => index.updated(binding)
+          case (index, _) => index
+        }
+      )
+      topLevelIds = members.collect { case binding: Bnd => binding.id }.flatten.toSet
+      dependencies = members.collect {
+        case binding: Bnd if binding.id.isDefined =>
+          binding.id.get -> collectMemberDeps(binding, topLevelIds)
+      }.toMap
+      ordered = topologicalOrder(members, dependencies, topLevelIds)
+      initial = ModuleCheckingState(
+        module,
+        Set.empty,
+        DiagnosticCauses.fromModule(module),
+        ValueAvailability.fromModule(module.copy(members = Nil))
+      )
+      checked <- ordered.foldM(initial) { (current, member) =>
+        member match
+          case binding: Bnd =>
+            val context = CheckContext(
+              current.module,
+              Map.empty,
+              current.causes,
+              current.availability,
+              bindingDisplayName(binding)
+            )
+            checkBinding(binding, context, parameterFailures).map(current.withChecked)
+          case _ => current.pure[Check]
+      }
+    yield checked.module
+
+    val (diagnostics, module) = checking.run(state.diagnostics).value
+    state.copy(diagnostics = diagnostics).withModule(module)
+
+  private def lowerSignature(
+    member: Member
+  ): Check[(Member, List[(String, Vector[DiagnosticId])])] = member match
+    case binding: Bnd if binding.meta.isDefined =>
+      val errors = validateMandatoryAscriptions(binding)
+      for failures <- errors.traverse { error =>
+          report(error).map { roots =>
+            val parameter = error match
+              case TypeError.MissingParameterType(param, _, _) => param.id
+              case TypeError.MissingOperatorParameterType(param, _, _) => param.id
+              case _ => None
+            parameter.map(_ -> roots)
+          }
+        }
+      yield
+        val lowered = binding.value.terms match
+          case (lambda: Lambda) :: rest =>
+            val params     = lambda.params.map(param => param.copy(typeSpec = param.typeAsc))
+            val returnType = lambda.typeAsc.orElse(binding.typeAsc)
+            val signature  = returnType.flatMap(buildFunctionTypeSpec(binding.source, params, _))
+            binding.copy(
+              value = binding.value
+                .copy(terms = lambda.copy(params = params, typeSpec = signature) :: rest),
+              typeSpec = signature
+            )
+          case _ => binding
+        (lowered, failures.flatten)
+    case other => (other, Nil).pure[Check]
+
+  private def withParameterFailure(
+    context:   CheckContext,
+    parameter: FnParam,
+    roots:     Vector[DiagnosticId]
+  ): CheckContext =
+    val payload = Expr(parameter.source, Nil, typeSpec = parameter.typeSpec)
+    context.withBinding(parameter, invalidExpr(payload, roots))
+
   private def hasNativeImpl(expr: Expr): Boolean =
     expr.terms.exists {
-      case _:          NativeImpl => true
-      case nestedExpr: Expr => hasNativeImpl(nestedExpr)
+      case _:      NativeImpl => true
+      case nested: Expr => hasNativeImpl(nested)
       case _ => false
     }
 
-  /** Validate and compute types for a member */
-  private def checkMember(member: Member, module: Module): CheckResult[Member] =
-    member match
-      case bnd: Bnd =>
-        // Handle Bnd with Lambda (functions/operators)
-        bnd.value.terms match
-          case (lambda: Lambda) :: rest if bnd.meta.isDefined =>
-            // Build param context from lambda params
-            val paramContext = lambda.params.map(p => p.name -> p).toMap
-            val returnType   = lambda.typeAsc.orElse(bnd.typeAsc)
-            val bindingName  = bindingDisplayName(bnd)
-            val checkedBody =
-              checkExprWithContext(lambda.body, module, paramContext, returnType, bindingName)
-            val transformedErrors =
-              if returnType.isDefined then checkedBody.errors
-              else
-                checkedBody.errors.map {
-                  case TypeError.UnresolvableType(
-                        _,
-                        Some(UnresolvableTypeContext.NamedValue(name)),
-                        _
-                      ) if name == bnd.name =>
-                    TypeError.RecursiveFunctionMissingReturnType(bnd, phaseName)
-                  case other => other
-                }
-
-            val (finalReturnType, returnErrors) = returnType match
-              case Some(explicitReturn) =>
-                if hasNativeImpl(lambda.body) then (Some(explicitReturn), Vector.empty)
-                else
-                  checkedBody.value.typeSpec match
-                    case Some(actualType)
-                        if areTypesCompatible(explicitReturn, actualType, module) =>
-                      (Some(explicitReturn), Vector.empty)
-                    case Some(actualType) =>
-                      val displayName = bnd.meta.map(_.originalName).getOrElse(bnd.name)
-                      (
-                        Some(explicitReturn),
-                        Vector(
-                          TypeError.TypeMismatch(
-                            bnd,
-                            explicitReturn,
-                            actualType,
-                            phaseName,
-                            Some(displayName)
-                          )
-                        )
-                      )
-                    case None =>
-                      val errors =
-                        if checkedBody.errors.isEmpty then
-                          Vector(TypeError.UnresolvableType(bnd, None, phaseName))
-                        else Vector.empty
-                      (Some(explicitReturn), errors)
-              case None =>
-                checkedBody.value.typeSpec match
-                  case Some(inferredType) => (Some(inferredType), Vector.empty)
-                  case None =>
-                    val errors =
-                      if checkedBody.errors.isEmpty then
-                        Vector(TypeError.UnresolvableType(bnd, None, phaseName))
-                      else Vector.empty
-                    (None, errors)
-
-            val updatedLambda = lambda.copy(body = checkedBody.value)
-            val updatedValue  = bnd.value.copy(terms = updatedLambda :: rest)
-            val updatedBnd = bnd.copy(
-              value = updatedValue,
-              typeSpec = finalReturnType.flatMap(
-                buildFunctionTypeSpec(bnd.source, lambda.params, _)
-              )
-            )
-            CheckResult(updatedBnd, transformedErrors ++ returnErrors)
-
-          case _ =>
-            // Regular Bnd (no meta/lambda) - simple value binding
-            val checkedValue = checkExpr(bnd.value, module, bnd.typeAsc, bindingDisplayName(bnd))
-            val ascriptionErrors = validateTypeAscription(
-              bnd.copy(typeSpec = checkedValue.value.typeSpec),
-              module
-            ).toVector
-            CheckResult(
-              bnd.copy(value = checkedValue.value, typeSpec = checkedValue.value.typeSpec),
-              checkedValue.errors ++ ascriptionErrors
-            )
-
-      case _: TypeDef | _: TypeAlias =>
-        // Type definitions and aliases are handled by TypeResolver, no checks needed here
-        CheckResult.ok(member)
-
-      case other =>
-        // Other member types do not require type checking at this stage
-        CheckResult.ok(other)
-
-  /** Validate mandatory ascriptions for functions/operators
-    *
-    * Eventually, this will not be required; we will just generate type params, for the next type
-    * checker phase.
-    */
-  private def validateMandatoryAscriptions(member: Member): List[TypeError] = member match
-    // Handle Bnd with Lambda (functions and operators)
-    case bnd: Bnd =>
-      (bnd.meta, bnd.value.terms) match
-        case (Some(meta), (lambda: Lambda) :: _) =>
-          val returnTypeAsc = lambda.typeAsc.orElse(bnd.typeAsc)
-          val isNative      = hasNativeImpl(lambda.body)
-
-          meta.origin match
-            case BindingOrigin.Function | BindingOrigin.Constructor | BindingOrigin.Destructor =>
-              val paramErrors = lambda.params.collect {
-                case param if param.typeAsc.isEmpty =>
-                  TypeError.MissingParameterType(param, bnd, phaseName)
-              }
-              val returnError =
-                if isNative && returnTypeAsc.isEmpty then
-                  List(TypeError.MissingReturnType(bnd, phaseName))
-                else Nil
-              paramErrors ++ returnError
-
-            case BindingOrigin.Operator =>
-              val paramErrors = lambda.params.collect {
-                case param if param.typeAsc.isEmpty =>
-                  TypeError.MissingOperatorParameterType(param, bnd, phaseName)
-              }
-              val returnError =
-                if isNative && returnTypeAsc.isEmpty then
-                  List(TypeError.MissingOperatorReturnType(bnd, phaseName))
-                else Nil
-              paramErrors ++ returnError
-        case _ => Nil
-
-    case _ =>
-      Nil
-
-  /** Type check expressions using forward propagation with parameter context */
-  private def checkExprWithContext(
-    expr:         Expr,
-    module:       Module,
-    paramContext: Map[String, FnParam],
-    expectedType: Option[Type],
-    bindingName:  String
-  ): CheckResult[Expr] =
-    expr.terms match
-      case List(singleTerm) =>
-        val checkedTerm =
-          checkTermWithContext(singleTerm, module, paramContext, expectedType, bindingName)
-        val finalTerm     = normalizeCheckedTerm(checkedTerm.value)
-        val termAscErrors = validateTypeAscription(finalTerm, module).toVector
-        CheckResult(
-          expr.copy(terms = List(finalTerm), typeSpec = finalTerm.typeSpec),
-          checkedTerm.errors ++ termAscErrors
+  private def checkBinding(
+    binding:           Bnd,
+    context:           CheckContext,
+    parameterFailures: Map[String, Vector[DiagnosticId]]
+  ): Check[Bnd] =
+    binding.value.terms match
+      case (lambda: Lambda) :: rest if binding.meta.isDefined =>
+        val declaredReturn = lambda.typeAsc.orElse(binding.typeAsc)
+        val parameterContext = context.copy(
+          params           = lambda.params.map(param => param.name -> param).toMap,
+          recursiveBinding = Option.when(declaredReturn.isEmpty)(binding)
         )
-      case terms =>
-        // Check all terms in the expression
-        val lastIndex = terms.size - 1
-        val (errors, checkedTerms) =
-          terms.foldLeft((Vector.empty[TypeError], Vector.empty[Term])) {
-            case ((accErrors, accTerms), term) =>
-              val termIndex = accTerms.size
-              val termExpectedType =
-                if termIndex == lastIndex then expectedType else None
-              val checkedTerm = term match
-                case e: Expr =>
-                  checkExprWithContext(e, module, paramContext, termExpectedType, bindingName)
-                case t =>
-                  checkTermWithContext(t, module, paramContext, termExpectedType, bindingName)
-              val finalTerm     = normalizeCheckedTerm(checkedTerm.value)
-              val termAscErrors = validateTypeAscription(finalTerm, module).toVector
-              (accErrors ++ checkedTerm.errors ++ termAscErrors, accTerms :+ finalTerm)
-          }
-        // The type of the expression is the type of the last term
-        val exprType = checkedTerms.lastOption.flatMap { case t: Typeable =>
-          t.typeSpec
+        val bodyContext = lambda.params.foldLeft(parameterContext) { (current, param) =>
+          param.id.flatMap(parameterFailures.get) match
+            case Some(roots) => withParameterFailure(current, param, roots)
+            case None => current
         }
-        CheckResult(expr.copy(terms = checkedTerms.toList, typeSpec = exprType), errors)
+        for
+          body <- checkExpr(lambda.body, bodyContext, declaredReturn)
+          checkedBody <-
+            if hasNativeImpl(lambda.body) then body.pure[Check]
+            else
+              validateExpectedResult(
+                body,
+                declaredReturn,
+                binding,
+                bodyContext,
+                context.bindingName.some
+              )
+        yield
+          val returnType = declaredReturn.orElse(checkedBody.typeSpec)
+          val signature = returnType.flatMap(
+            buildFunctionTypeSpec(binding.source, lambda.params, _)
+          )
+          val updatedLambda = lambda.copy(body = checkedBody, typeSpec = signature)
+          binding.copy(
+            value    = binding.value.copy(terms = updatedLambda :: rest),
+            typeSpec = signature
+          )
+      case _ =>
+        for
+          value <- checkExpr(binding.value, context, binding.typeAsc)
+          checked <- validateExpectedResult(value, binding.typeAsc, binding, context)
+        yield binding.copy(value = checked, typeSpec = checked.typeSpec)
 
-  /** Type check expressions using forward propagation */
+  /** Ascriptions consume a usable result; retained partial types cannot prove a mismatch. */
+  private def validateExpectedResult(
+    value:    Expr,
+    expected: Option[Type],
+    owner:    Typeable,
+    context:  CheckContext,
+    label:    Option[String] = None
+  ): Check[Expr] =
+    if !context.availability.isAvailable(value) && !hasNativeImpl(value) then
+      report(TypeError.UnresolvableType(owner, None, phaseName), context.provenRootsOf(value))
+        .map(invalidExpr(value, _))
+    else
+      (expected, value.typeSpec) match
+        case (Some(wanted), Some(actual))
+            if !failedType(wanted, context) &&
+              !areTypesCompatible(wanted, actual, context.module) =>
+          report(
+            TypeError.TypeMismatch(owner, wanted, actual, phaseName, label)
+          ).map(invalidExpr(value, _))
+        case (Some(wanted), _) if failedType(wanted, context) =>
+          report(
+            TypeError.UnresolvableType(owner, None, phaseName),
+            context.causes.provenRootsOfType(wanted)
+          ).map(invalidExpr(value, _))
+        case _ => value.pure[Check]
+
+  /** Retain typed operands and the local wrappers that identify failed results. */
   private def checkExpr(
     expr:         Expr,
-    module:       Module,
-    expectedType: Option[Type],
-    bindingName:  String
-  ): CheckResult[Expr] =
-    checkExprWithContext(expr, module, Map.empty, expectedType, bindingName)
+    context:      CheckContext,
+    expectedType: Option[Type]
+  ): Check[Expr] =
+    expr.terms.zipWithIndex
+      .traverse { (term, index) =>
+        val expected = if index == expr.terms.size - 1 then expectedType else None
+        for
+          checked <- checkTerm(term, context, expected)
+          validated <- validateTermAscription(checked, context)
+        yield validated
+      }
+      .map { terms =>
+        expr.copy(terms = terms, typeSpec = terms.lastOption.flatMap(_.typeSpec))
+      }
 
-  /** Type check individual terms with parameter context */
-  private def checkTermWithContext(
+  private def validateTermAscription(term: Term, context: CheckContext): Check[Term] =
+    term.typeAsc match
+      case None => term.pure[Check]
+      case Some(ascribed) if failedType(ascribed, context) =>
+        report(
+          TypeError.UnresolvableType(term, None, phaseName),
+          context.causes.provenRootsOfType(ascribed)
+        ).map(invalidResult(term, _))
+      case Some(_) if !context.availability.isAvailable(term) => term.pure[Check]
+      case Some(_) =>
+        reportAll(validateTypeAscription(term, context.module)).map(invalidResult(term, _))
+
+  private def checkTerm(
     term:         Term,
-    module:       Module,
-    paramContext: Map[String, FnParam],
-    expectedType: Option[Type],
-    bindingName:  String
-  ): CheckResult[Term] =
-    term match
-      case callee: Callee =>
-        checkCalleeWithContext(callee, module, paramContext, expectedType, bindingName)
+    context:      CheckContext,
+    expectedType: Option[Type]
+  ): Check[Term] = term match
 
-      case cond: Cond =>
-        checkConditionalWithContext(cond, module, paramContext, expectedType, bindingName)
+    case callee: Callee =>
+      checkCallee(callee, context, expectedType)
+        .map(checked => invalidResult(checked.value, checked.roots))
 
-      case group: TermGroup =>
-        checkExprWithContext(group.inner, module, paramContext, expectedType, bindingName)
-          .map(checkedInner => group.copy(inner = checkedInner))
+    case cond: Cond => checkConditional(cond, context, expectedType)
 
-      case lit: LiteralValue => CheckResult.ok(lit)
+    case group: TermGroup =>
+      checkExpr(group.inner, context, expectedType).map(inner => group.copy(inner = inner))
 
-      case hole: Hole =>
-        expectedType match
-          case Some(t) => CheckResult.ok(hole.copy(typeSpec = Some(t)))
-          case None =>
-            val displayBindingName = normalizeBindingName(bindingName)
-            val errors = hole.spanOpt match
-              case Some(span) =>
-                Vector(TypeError.UntypedHoleInBinding(displayBindingName, span, phaseName))
-              case None =>
-                Vector(TypeError.UnresolvableType(hole, None, phaseName))
-            CheckResult(hole, errors)
+    case nested: Expr => checkExpr(nested, context, expectedType).widen
 
-      case other =>
-        // Other term types do not require type checking at this stage
-        CheckResult.ok(other)
-
-  private def checkCalleeWithContext(
-    callee:       Callee,
-    module:       Module,
-    paramContext: Map[String, FnParam],
-    expectedType: Option[Type],
-    bindingName:  String
-  ): CheckResult[Callee] =
-    callee match
-      case ref: Ref if ref.qualifier.isDefined =>
-        checkSelectionRef(ref, module, paramContext, bindingName)
-      case ref: Ref =>
-        // First check parameter context, then fall back to normal resolution
-        paramContext.get(ref.name) match
-          case Some(param) =>
-            param.typeSpec match
-              case Some(t) => CheckResult.ok(ref.copy(typeSpec = Some(t)))
-              case None =>
-                CheckResult(
-                  ref,
-                  Vector(
-                    TypeError.UnresolvableType(
-                      ref,
-                      Some(UnresolvableTypeContext.NamedValue(ref.name)),
-                      phaseName
-                    )
-                  )
-                )
-          case None =>
-            checkRef(ref, module)
-
-      case app: App =>
-        checkApplicationWithContext(app, module, paramContext, bindingName)
-
-      case lambda: Lambda =>
-        // Handle Lambda terms (e.g., from eta-expansion of partial applications)
-        checkLambdaWithContext(lambda, module, paramContext, bindingName, expectedType)
-
-  private def checkSelectionRef(
-    ref:          Ref,
-    module:       Module,
-    paramContext: Map[String, FnParam],
-    bindingName:  String
-  ): CheckResult[Ref] =
-    ref.qualifier match
-      case None =>
-        checkRef(ref, module)
-      case Some(qualifier) =>
-        val checkedQualifier =
-          checkTermWithContext(qualifier, module, paramContext, None, bindingName)
-        val baseType = checkedQualifier.value.typeSpec
-        val baseErrors =
-          if baseType.isEmpty && checkedQualifier.errors.isEmpty then
-            Vector(TypeError.UnresolvableType(checkedQualifier.value, None, phaseName))
-          else Vector.empty
-
-        val (selectedField, selectionErrors) = baseType match
-          case Some(resolvedBase) =>
-            resolveStructType(resolvedBase, module) match
-              case Some(struct) =>
-                struct.fields.find(_.name == ref.name) match
-                  case Some(field) => (Some(field), Vector.empty)
-                  case None =>
-                    (None, Vector(TypeError.UnknownField(ref, struct, phaseName)))
-              case None =>
-                (None, Vector(TypeError.InvalidSelection(ref, resolvedBase, phaseName)))
-          case None =>
-            (None, Vector.empty)
-
-        CheckResult(
-          ref.copy(
-            qualifier  = Some(checkedQualifier.value),
-            typeSpec   = selectedField.map(_.typeSpec),
-            resolvedId = selectedField.flatMap(_.id)
-          ),
-          checkedQualifier.errors ++ baseErrors ++ selectionErrors
+    case tuple: Tuple =>
+      tuple.elements.traverse(checkExpr(_, context.independent, None)).map { elements =>
+        val updated = tuple.copy(
+          elements = elements,
+          typeSpec = elements.toList.traverse(_.typeSpec).map(TypeTuple(tuple.source, _))
         )
+        invalidResult(updated, context.provenRootsOf(updated))
+      }
 
-  /** Resolve a Ref's type from module resolvables (best-effort, no errors). */
+    case invalid: InvalidExpression =>
+      for
+        payload <- checkExpr(
+          invalid.originalExpr,
+          context.copy(enclosingFailure = invalid.causes),
+          expectedType
+        )
+        roots <-
+          if invalid.causes.nonEmpty then invalid.causes.pure[Check]
+          else report(TypeError.UnresolvableType(invalid, None, phaseName))
+      yield invalid.copy(
+        originalExpr = payload,
+        typeSpec     = invalid.typeSpec.orElse(payload.typeSpec),
+        causes       = (roots ++ context.knownRootsOf(payload)).distinct
+      )
+
+    case hole: Hole =>
+      expectedType match
+        case Some(tpe) => hole.copy(typeSpec = tpe.some).pure[Check]
+        case None =>
+          val error = hole.spanOpt match
+            case Some(span) =>
+              TypeError.UntypedHoleInBinding(
+                normalizeBindingName(context.bindingName),
+                span,
+                phaseName
+              )
+            case None => TypeError.UnresolvableType(hole, None, phaseName)
+          report(error).map(invalidResult(hole, _))
+
+    case other => other.pure[Check]
+
+  private def checkCallee(
+    callee:       Callee,
+    context:      CheckContext,
+    expectedType: Option[Type]
+  ): Check[Checked[Callee]] = callee match
+    case ref: Ref if ref.qualifier.isDefined => checkSelection(ref, context).widen
+    case ref: Ref => checkRef(ref, context).widen
+    case app: App =>
+      app.fn match
+        case lambda: Lambda if lambda.params.nonEmpty =>
+          checkImmediateApplication(app, lambda, context).widen
+        case _ => checkNormalApplication(app, context).widen
+    case lambda: Lambda => checkLambda(lambda, context, expectedType).widen
+
+  private def checkRef(ref: Ref, context: CheckContext): Check[Checked[Ref]] =
+    val inferred = context.params
+      .get(ref.name)
+      .filter(_.id == ref.resolvedId)
+      .flatMap(_.typeSpec)
+      .orElse(resolveRefType(ref, context.module))
+      .orElse(ref.typeSpec)
+    val updated = ref.copy(typeSpec = inferred)
+    val roots   = context.provenRootsOf(updated)
+    inferred match
+      case Some(tpe) if !failedType(tpe, context) => Checked(updated, roots).pure[Check]
+      case _ =>
+        val original = context.recursiveBinding.filter(binding => ref.resolvedId == binding.id)
+        val error = original match
+          case Some(binding) => TypeError.RecursiveFunctionMissingReturnType(binding, phaseName)
+          case None =>
+            TypeError.UnresolvableType(
+              updated,
+              UnresolvableTypeContext.NamedValue(ref.name).some,
+              phaseName
+            )
+        val prerequisiteRoots =
+          if ref.resolvedId.isEmpty then (roots ++ context.enclosingFailure).distinct
+          else roots
+        report(error, prerequisiteRoots).map(Checked(updated, _))
+
+  private def checkSelection(ref: Ref, context: CheckContext): Check[Checked[Ref]] =
+
+    ref.qualifier match
+
+      case None => checkRef(ref, context)
+
+      case Some(qualifier) =>
+        for
+          checked <- checkTerm(qualifier, context.independent, None)
+          selected <-
+            if !context.availability.isAvailable(checked) then
+              report(
+                TypeError.UnresolvableType(checked, None, phaseName),
+                context.provenRootsOf(checked)
+              ).map(roots => Checked(ref.copy(qualifier = checked.some), roots))
+            else
+              checked.typeSpec match
+
+                case Some(baseType) =>
+                  resolveStructType(baseType, context.module) match
+
+                    case Some(struct) =>
+                      struct.fields.find(_.name == ref.name) match
+
+                        case Some(field) =>
+                          Checked(
+                            ref.copy(
+                              qualifier  = checked.some,
+                              typeSpec   = field.typeSpec.some,
+                              resolvedId = field.id
+                            )
+                          ).pure[Check]
+
+                        case None =>
+                          report(TypeError.UnknownField(ref, struct, phaseName))
+                            .map(roots => Checked(ref.copy(qualifier = checked.some), roots))
+
+                    case None =>
+                      report(TypeError.InvalidSelection(ref, baseType, phaseName))
+                        .map(roots => Checked(ref.copy(qualifier = checked.some), roots))
+
+                case None =>
+                  report(TypeError.UnresolvableType(checked, None, phaseName))
+                    .map(roots => Checked(ref.copy(qualifier = checked.some), roots))
+        yield selected
+
   private def resolveRefType(ref: Ref, module: Module): Option[Type] =
     ref.resolvedId.flatMap(module.resolvables.lookup).flatMap {
       case param: FnParam => param.typeSpec.orElse(param.typeAsc)
@@ -703,269 +726,315 @@ object TypeChecker:
       case _ => None
     }
 
-  /** Check ref using module lookups */
-  private def checkRef(ref: Ref, module: Module): CheckResult[Ref] =
-    // Look up the declaration in the current module to get the computed typeSpec
-    ref.resolvedId.flatMap(module.resolvables.lookup) match
-      case Some(param: FnParam) =>
-        // For parameters, use their type spec (lowered from ascription)
-        param.typeSpec match
-          case Some(t) =>
-            CheckResult.ok(ref.copy(typeSpec = Some(t)))
-          case None =>
-            CheckResult(
-              ref,
-              Vector(
-                TypeError.UnresolvableType(
-                  ref,
-                  Some(UnresolvableTypeContext.NamedValue(ref.name)),
-                  phaseName
-                )
-              )
-            )
-      case Some(decl: Decl) =>
-        // Look up the declaration in the current module (which has lowered typeSpecs)
-        val updatedDecl = module.members.find {
-          case candidate: Bnd if decl.isInstanceOf[Bnd] =>
-            candidate.name == decl.name
-          case _ => false
-        }
+  /** A local initializer supplies its binding, while the continuation supplies the result. */
+  private def checkImmediateApplication(
+    app:     App,
+    lambda:  Lambda,
+    context: CheckContext
+  ): Check[Checked[App]] =
+    val parameter = lambda.params.head
+    val initializerContext = context.independent.copy(
+      bindingName = normalizeBindingName(parameter.name)
+    )
+    val seededContext = app.arg.terms match
+      case List(value: Lambda) if value.typeAsc.isDefined =>
+        val recursiveType = value.typeAsc.flatMap(
+          buildFunctionTypeSpec(value.source, value.params, _)
+        )
+        initializerContext.copy(params =
+          initializerContext.params +
+            (parameter.name -> parameter.copy(typeSpec = recursiveType))
+        )
+      case List(_: Lambda) if parameter.typeAsc.isDefined =>
+        initializerContext.copy(params =
+          initializerContext.params +
+            (parameter.name -> parameter.copy(typeSpec = parameter.typeAsc))
+        )
+      case _ => initializerContext
 
-        updatedDecl match
-          case Some(d: Decl) if d.typeSpec.isDefined =>
-            CheckResult.ok(ref.copy(typeSpec = d.typeSpec))
-          case _ =>
-            // Fallback to the resolved declaration's typeSpec if available
-            decl.typeSpec match
-              case Some(t) => CheckResult.ok(ref.copy(typeSpec = Some(t)))
-              case None =>
-                CheckResult(
-                  ref,
-                  Vector(
+    for
+      initialArg <- checkExpr(app.arg, seededContext, parameter.typeAsc)
+      arg <- validateExpectedResult(
+        initialArg,
+        parameter.typeAsc,
+        app.arg,
+        seededContext,
+        seededContext.bindingName.some
+      )
+      typedParameter = parameter.copy(typeSpec = parameter.typeAsc.orElse(arg.typeSpec))
+      bodyContext    = context.independent.withBinding(typedParameter, arg)
+      initialBody <- checkExpr(lambda.body, bodyContext, None)
+      body <- validateExpectedResult(initialBody, None, lambda.body, bodyContext)
+    yield
+      val lambdaType = for
+        paramType <- typedParameter.typeSpec
+        resultType <- body.typeSpec
+      yield TypeFn(lambda.source, NonEmptyList.one(paramType), resultType)
+      val typedLambda = lambda.copy(
+        params   = List(typedParameter),
+        body     = body,
+        typeSpec = lambdaType
+      )
+      Checked(
+        app.copy(fn = typedLambda, arg = arg, typeSpec = body.typeSpec),
+        bodyContext.knownRootsOf(body)
+      )
+
+  private def checkNormalApplication(app: App, context: CheckContext): Check[Checked[App]] =
+    for
+      fn <- checkCallee(app.fn, context, None)
+      expected = expectedArgumentType(fn.value, context.module)
+      arg <- checkExpr(app.arg, context.independent, expected)
+      checked <- validateApplication(app.copy(fn = fn.value, arg = arg), fn, context)
+    yield checked
+
+  private def validateApplication(
+    app:     App,
+    fn:      Checked[Callee],
+    context: CheckContext
+  ): Check[Checked[App]] =
+
+    val fnRoots      = resultRoots(fn, context)
+    val fnAvailable  = fnRoots.isEmpty && context.availability.isAvailable(fn.value)
+    val argAvailable = context.availability.isAvailable(app.arg)
+    val fnType       = extractTypeFnFromCallee(fn.value, context.module)
+    val partialType = fnType.map { tpe =>
+      buildRemainingFunctionTypeFromTypes(tpe.paramTypes.tail, tpe.returnType, app.source)
+    }
+    val typedApp = app.copy(typeSpec = partialType)
+
+    def usableType(tpe: Type): Boolean =
+
+      val evidence = context.causes.evidenceOfType(tpe)
+      evidence.isComplete && evidence.knownRoots.isEmpty
+
+    for
+      missingFn <-
+        if fnAvailable then Vector.empty[DiagnosticId].pure[Check]
+        else
+          val error = fn.value match
+            case ref: Ref =>
+              TypeError.UnresolvableType(
+                ref,
+                UnresolvableTypeContext.NamedValue(ref.name).some,
+                phaseName
+              )
+            case _ =>
+              TypeError.UnresolvableType(
+                typedApp,
+                UnresolvableTypeContext.Function.some,
+                phaseName
+              )
+          report(error, fnRoots)
+      missingArg <-
+        if argAvailable then Vector.empty[DiagnosticId].pure[Check]
+        else
+          report(
+            TypeError.UnresolvableType(app.arg, UnresolvableTypeContext.Argument.some, phaseName),
+            context.provenRootsOf(app.arg)
+          )
+      constraintErrors <-
+        if !argAvailable then Vector.empty[DiagnosticId].pure[Check]
+        else
+          (fnType, app.arg.typeSpec) match
+            // A declared parameter constrains an argument even when the function body failed.
+            case (Some(callable), Some(actual))
+                if usableType(callable.paramTypes.head) && usableType(actual) =>
+              val wanted = callable.paramTypes.head
+              if areTypesCompatible(wanted, actual, context.module) then
+                Vector.empty[DiagnosticId].pure[Check]
+              else
+                val label = fn.value match
+                  case ref: Ref => ref.name.some
+                  case _ => None
+                report(TypeError.TypeMismatch(app.arg, wanted, actual, phaseName, label))
+
+            case (Some(callable), _) if fnAvailable && !usableType(callable.paramTypes.head) =>
+              report(
+                TypeError.UnresolvableType(app, UnresolvableTypeContext.Function.some, phaseName),
+                context.causes.provenRootsOfType(callable.paramTypes.head)
+              )
+
+            case (None, Some(actual)) if fnAvailable =>
+              fn.value.typeSpec match
+                case Some(calleeType) =>
+                  report(TypeError.InvalidApplication(app, calleeType, actual, phaseName))
+                case None =>
+                  report(
                     TypeError.UnresolvableType(
-                      ref,
-                      Some(UnresolvableTypeContext.NamedValue(ref.name)),
+                      app,
+                      UnresolvableTypeContext.Function.some,
                       phaseName
                     )
                   )
+
+            case _ if fnAvailable =>
+              report(
+                TypeError.UnresolvableType(
+                  app.arg,
+                  UnresolvableTypeContext.Argument.some,
+                  phaseName
                 )
-      case _ =>
-        CheckResult(
-          ref,
-          Vector(
-            TypeError.UnresolvableType(
-              ref,
-              Some(UnresolvableTypeContext.NamedValue(ref.name)),
-              phaseName
-            )
-          )
-        )
-
-  /** Check function applications with parameter context */
-  private def checkApplicationWithContext(
-    app:          App,
-    module:       Module,
-    paramContext: Map[String, FnParam],
-    bindingName:  String
-  ): CheckResult[App] =
-    // Special case: immediately-applied lambda (from let-expression desugaring)
-    // Must check arg first to infer lambda param type
-    app.fn match
-      case lambda: Lambda if lambda.params.nonEmpty =>
-        checkImmediatelyAppliedLambda(app, lambda, module, paramContext, bindingName)
-      case _ =>
-        checkNormalApplication(app, module, paramContext, bindingName)
-
-  /** Check immediately-applied lambda: App(Lambda([param], body), arg)
-    *
-    * For let-expressions like `let a = 1; a + 1`, the parser desugars to
-    * `App(Lambda([a], a + 1), 1)`. The param has no type annotation, so we must check the arg first
-    * to infer the param type, then check the body.
-    */
-  private def checkImmediatelyAppliedLambda(
-    app:          App,
-    lambda:       Lambda,
-    module:       Module,
-    paramContext: Map[String, FnParam],
-    bindingName:  String
-  ): CheckResult[App] =
-    // Step 1: Check arg first to get its type
-    val param          = lambda.params.head
-    val argBindingName = normalizeBindingName(param.name)
-    // For recursive let bindings: if the arg is a lambda with a return type
-    // ascription, pre-seed the binding's type so the lambda body can
-    // reference the binding (same as fn return type annotations).
-    // Also handle when the let binding itself has a type ascription
-    // (e.g., `let loop: ForeverFn = { ... loop() ... }`).
-    val argContextWithSelf = app.arg.terms match
-      case List(argLambda: Lambda) if argLambda.typeAsc.isDefined =>
-        val preType = buildFunctionTypeSpec(
-          argLambda.source,
-          argLambda.params,
-          argLambda.typeAsc.get
-        )
-        preType match
-          case Some(fnType) =>
-            val preParam = param.copy(typeSpec = Some(fnType))
-            paramContext + (param.name -> preParam)
-          case None => paramContext
-      case List(_: Lambda) if param.typeAsc.isDefined =>
-        val preParam = param.copy(typeSpec = param.typeAsc)
-        paramContext + (param.name -> preParam)
-      case _ => paramContext
-    val checkedArg =
-      checkExprWithContext(app.arg, module, argContextWithSelf, param.typeAsc, argBindingName)
-    val argType = checkedArg.value.typeSpec
-
-    // Step 2: Assign inferred type to param (use typeAsc if present, else inferred)
-    val paramErrors =
-      (param.typeAsc, argType) match
-        case (Some(expectedType), Some(actualType))
-            if !areTypesCompatible(expectedType, actualType, module) =>
-          val expectedBy =
-            if param.name == statementParamName then Some("statement") else Some(param.name)
-          Vector(TypeError.TypeMismatch(app.arg, expectedType, actualType, phaseName, expectedBy))
-        case _ => Vector.empty
-
-    val typedParamType = param.typeAsc.orElse(argType)
-    val typedParam     = param.copy(typeSpec = typedParamType)
-
-    // Step 3: Build param context with typed param
-    val lambdaParamContext = paramContext + (typedParam.name -> typedParam)
-
-    // Step 4: Check lambda body with typed param
-    val checkedBody =
-      checkExprWithContext(lambda.body, module, lambdaParamContext, None, bindingName)
-    val bodyType = checkedBody.value.typeSpec
-    val bodyErrors =
-      if bodyType.isEmpty && checkedBody.errors.isEmpty then
-        Vector(TypeError.UnresolvableType(lambda.body, None, phaseName))
-      else Vector.empty
-
-    // Step 5: Build result
-    val lambdaTypeSpec = for
-      paramType <- typedParam.typeSpec
-      returnType <- bodyType
-    yield TypeFn(lambda.source, NonEmptyList.one(paramType), returnType)
-
-    val checkedLambda = lambda.copy(
-      params   = List(typedParam),
-      body     = checkedBody.value,
-      typeSpec = lambdaTypeSpec
-    )
-
-    val argErrors =
-      if argType.isEmpty && checkedArg.errors.isEmpty then
-        Vector(
-          TypeError.UnresolvableType(
-            app.arg,
-            Some(UnresolvableTypeContext.Argument),
-            phaseName
-          )
-        )
-      else Vector.empty
-
-    CheckResult(
-      app.copy(
-        fn  = checkedLambda,
-        arg = if paramErrors.nonEmpty then invalidArgument(checkedArg.value) else checkedArg.value,
-        typeSpec = bodyType
-      ),
-      checkedArg.errors ++ paramErrors ++ checkedBody.errors ++ argErrors ++ bodyErrors
-    )
-
-  /** Check an application through the callee's computed function type. */
-  private def checkNormalApplication(
-    app:          App,
-    module:       Module,
-    paramContext: Map[String, FnParam],
-    bindingName:  String
-  ): CheckResult[App] =
-    val checkedFnEither =
-      checkCalleeWithContext(app.fn, module, paramContext, None, bindingName)
-
-    val expectedArgType = expectedArgumentType(checkedFnEither.value, module)
-    val checkedArgEither =
-      checkExprWithContext(app.arg, module, paramContext, expectedArgType, bindingName)
-
-    val checkedFn  = checkedFnEither.value
-    val checkedArg = checkedArgEither.value
-    val appTypeResult =
-      determineApplicationType(app.copy(fn = checkedFn, arg = checkedArg), module)
-
-    val typeErrors =
-      filterDuplicateUnresolvable(
-        appTypeResult.errors,
-        checkedFnEither.errors,
-        checkedArgEither.errors
-      )
-
-    CheckResult(
-      app.copy(
-        fn  = checkedFn,
-        arg = if appTypeResult.errors.nonEmpty then invalidArgument(checkedArg) else checkedArg,
-        typeSpec = appTypeResult.value
-      ),
-      checkedFnEither.errors ++ checkedArgEither.errors ++ typeErrors
-    )
-
-  /** Validate an application using the same callable type that supplies argument inference. */
-  private def determineApplicationType(app: App, module: Module): CheckResult[Option[Type]] =
-
-    val callee = app.fn
-
-    def validateCallee(
-      label:                          Option[String],
-      unresolvedCalleeError:          TypeError,
-      missingArgumentTakesPrecedence: Boolean
-    ): CheckResult[Option[Type]] =
-
-      extractTypeFnFromCallee(callee, module) match
-        case Some(fnType) =>
-          applyTypeFnToArgument(app, fnType, app.arg.typeSpec, module, label)
-
-        case None =>
-          val error = (callee.typeSpec, app.arg.typeSpec) match
-            case (Some(fnType), Some(argType)) =>
-              TypeError.InvalidApplication(app, fnType, argType, phaseName)
-
-            case (_, None) if missingArgumentTakesPrecedence =>
-              TypeError.UnresolvableType(
-                app.arg,
-                UnresolvableTypeContext.Argument.some,
-                phaseName
               )
 
-            case _ => unresolvedCalleeError
+            case _ => Vector.empty[DiagnosticId].pure[Check]
+    yield Checked(typedApp, (missingFn ++ missingArg ++ constraintErrors).distinct)
 
-          CheckResult(None, Vector(error))
+  private def checkLambda(
+    lambda:       Lambda,
+    context:      CheckContext,
+    expectedType: Option[Type]
+  ): Check[Checked[Lambda]] =
+    val expectedFn = expectedType.flatMap(extractTypeFn(_, context.module))
+    val topDownParams = lambda.params.zipWithIndex.map { (parameter, index) =>
+      if parameter.typeSpec.isDefined then parameter
+      else if parameter.typeAsc.isDefined then parameter.copy(typeSpec = parameter.typeAsc)
+      else parameter.copy(typeSpec = expectedFn.flatMap(_.paramTypes.toList.lift(index)))
+    }
+    val untyped = topDownParams.filter(_.typeSpec.isEmpty)
+    val inferred =
+      if untyped.isEmpty then LambdaInferenceResult(Map.empty, Vector.empty)
+      else inferParamTypesFromBody(untyped, lambda.body, context.module)
+    val parameters = topDownParams.map { parameter =>
+      parameter.copy(typeSpec = parameter.typeSpec.orElse(inferred.inferred.get(parameter.name)))
+    }
+    val parameterContext = context.independent.copy(
+      params = context.params ++ parameters.map(parameter => parameter.name -> parameter)
+    )
 
-    callee match
-      case ref: Ref =>
-        val unresolvedCalleeError = TypeError.UnresolvableType(
-          ref,
-          UnresolvableTypeContext.NamedValue(ref.name).some,
-          phaseName
-        )
-
-        if ref.qualifier.isEmpty && ref.resolvedId.isEmpty then
-          CheckResult(None, Vector(unresolvedCalleeError))
-        else
-          validateCallee(
-            ref.name.some,
-            unresolvedCalleeError,
-            missingArgumentTakesPrecedence = true
+    for
+      failures <- inferred.errors.toList.traverse { error =>
+        report(error).map { roots =>
+          val parameter = error match
+            case TypeError.ConflictingLambdaParamInference(param, _, _, _) => param.some
+            case TypeError.UninferrableLambdaParam(param, _) => param.some
+            case _ => None
+          parameter.map(_ -> roots)
+        }
+      }
+      bodyContext = failures.flatten.foldLeft(parameterContext) {
+        case (current, (parameter, roots)) => withParameterFailure(current, parameter, roots)
+      }
+      initialBody <- checkExpr(lambda.body, bodyContext, lambda.typeAsc)
+      body <- validateExpectedResult(initialBody, lambda.typeAsc, lambda, bodyContext)
+    yield
+      val lambdaType = body.typeSpec.flatMap(buildFunctionTypeSpec(lambda.source, parameters, _))
+      val captures = lambda.captures.map { capture =>
+        val ref = capture.ref
+        val captureType = ref.typeSpec
+          .orElse(
+            bodyContext.params
+              .get(ref.name)
+              .filter(_.id == ref.resolvedId)
+              .flatMap(p => p.typeSpec.orElse(p.typeAsc))
           )
+          .orElse(resolveRefType(ref, context.module))
+        val typedRef = ref.copy(typeSpec = captureType)
+        capture match
+          case Capture.CapturedRef(_) => Capture.CapturedRef(typedRef)
+          case Capture.BorrowedRef(_) => Capture.BorrowedRef(typedRef)
+          case Capture.OwnedClosure(_, id) => Capture.OwnedClosure(typedRef, id)
+          case Capture.CapturedLiteral(_, id) => Capture.CapturedLiteral(typedRef, id)
+          case Capture.CapturedConditional(_, witness, id) =>
+            Capture.CapturedConditional(typedRef, witness, id)
+      }
+      val updated = lambda.copy(
+        params   = parameters,
+        body     = body,
+        captures = captures,
+        typeSpec = lambdaType
+      )
+      Checked(
+        updated,
+        (failures.flatten.flatMap(_._2) ++ bodyContext.knownRootsOf(body)).toVector.distinct
+      )
 
-      case _ =>
-        val unresolvedCalleeError =
-          TypeError.UnresolvableType(app, UnresolvableTypeContext.Function.some, phaseName)
-        validateCallee(
-          none,
-          unresolvedCalleeError,
-          missingArgumentTakesPrecedence = callee.typeSpec.isDefined
-        )
+  /** Contextual branch inference is provisional until both branches choose their final types. */
+  private def checkBranches(
+    cond:         Cond,
+    context:      CheckContext,
+    expectedType: Option[Type]
+  ): Check[(Expr, Expr)] =
+    for
+      checkpoint <- State.get[DiagnosticStore]
+      yes <- checkExpr(cond.ifTrue, context, expectedType)
+      no <- checkExpr(cond.ifFalse, context, expectedType)
+      checked <-
+        if expectedType.isDefined then (yes, no).pure[Check]
+        else
+          (yes.typeSpec, no.typeSpec) match
+            case (Some(tpe), None) if context.availability.isAvailable(yes) =>
+              State.set(checkpoint) *> (
+                checkExpr(cond.ifTrue, context, None),
+                checkExpr(cond.ifFalse, context, tpe.some)
+              ).tupled
+            case (None, Some(tpe)) if context.availability.isAvailable(no) =>
+              State.set(checkpoint) *> (
+                checkExpr(cond.ifTrue, context, tpe.some),
+                checkExpr(cond.ifFalse, context, None)
+              ).tupled
+            case _ => (yes, no).pure[Check]
+    yield checked
 
+  private def checkConditional(
+    cond:         Cond,
+    context:      CheckContext,
+    expectedType: Option[Type]
+  ): Check[Term] =
+    val childContext = context.independent
+    for
+      predicate <- checkExpr(cond.cond, childContext, None)
+      branches <- checkBranches(cond, childContext, expectedType)
+      (yes, no) = branches
+      predicateRoots <-
+        if !context.availability.isAvailable(predicate) then
+          report(
+            TypeError.UnresolvableType(predicate, None, phaseName),
+            context.provenRootsOf(predicate)
+          )
+        else
+          predicate.typeSpec match
+            case Some(tpe)
+                if areTypesCompatible(tpe, TypeRef(cond.source, "Bool"), context.module) =>
+              Vector.empty[DiagnosticId].pure[Check]
+            case Some(tpe) =>
+              report(
+                TypeError.TypeMismatch(
+                  predicate,
+                  TypeRef(cond.source, "Bool"),
+                  tpe,
+                  phaseName,
+                  None
+                )
+              )
+            case None => report(TypeError.UnresolvableType(predicate, None, phaseName))
+      branchRoots <-
+        if !context.availability.isAvailable(yes) || !context.availability.isAvailable(no) then
+          val unavailable = List(yes, no).filterNot(context.availability.isAvailable)
+          val causes      = unavailable.map(context.provenRootsOf)
+          val provenRoots =
+            if causes.forall(_.nonEmpty) then causes.flatten.toVector.distinct
+            else Vector.empty
+          report(TypeError.ConditionalBranchTypeUnknown(cond, phaseName), provenRoots)
+        else
+          (yes.typeSpec, no.typeSpec) match
+            case (Some(yesType), Some(noType))
+                if !areTypesCompatible(yesType, noType, context.module) =>
+              report(TypeError.ConditionalBranchTypeMismatch(cond, yesType, noType, phaseName))
+            case (Some(_), Some(_)) => Vector.empty[DiagnosticId].pure[Check]
+            case _ => report(TypeError.ConditionalBranchTypeUnknown(cond, phaseName))
+    yield
+      val resultType = (yes.typeSpec, no.typeSpec) match
+        case (Some(yesType), Some(noType)) if areTypesCompatible(yesType, noType, context.module) =>
+          yesType.some
+        case _ => expectedType.orElse(yes.typeSpec).orElse(no.typeSpec)
+      val updated = cond.copy(
+        cond     = predicate,
+        ifTrue   = yes,
+        ifFalse  = no,
+        typeSpec = resultType
+      )
+      invalidResult(updated, (predicateRoots ++ branchRoots).distinct)
   private def extractTypeFnFromCallee(callee: Callee, module: Module): Option[TypeFn] =
     callee match
       case ref: Ref => extractTypeFnFromRef(ref, module)
@@ -988,54 +1057,7 @@ object TypeChecker:
     TypeUtils.canonical(typeSpec, module.resolvables).collect { case fn: TypeFn => fn }
 
   private def findTypeFnForDecl(decl: Decl, module: Module): Option[TypeFn] =
-    val updatedDecl = module.members.collectFirst {
-      case candidate: Bnd if decl.isInstanceOf[Bnd] && candidate.name == decl.name => candidate
-    }
-
-    updatedDecl
-      .collect { case d: Decl => d }
-      .orElse(Some(decl))
-      .flatMap(_.typeSpec.flatMap(extractTypeFn(_, module)))
-
-  private def applyTypeFnToArgument(
-    app:     App,
-    fnType:  TypeFn,
-    argType: Option[Type],
-    module:  Module,
-    fnLabel: Option[String]
-  ): CheckResult[Option[Type]] =
-    argType match
-      case Some(actualArgType) =>
-        fnType.paramTypes match
-          case NonEmptyList(headParam, tailParams) =>
-            val returnType =
-              buildRemainingFunctionTypeFromTypes(tailParams, fnType.returnType, app.source)
-            if areTypesCompatible(headParam, actualArgType, module) then
-              CheckResult.ok(Some(returnType))
-            else
-              CheckResult(
-                Some(returnType),
-                Vector(
-                  TypeError.TypeMismatch(
-                    app.arg,
-                    headParam,
-                    actualArgType,
-                    phaseName,
-                    fnLabel
-                  )
-                )
-              )
-      case None =>
-        CheckResult(
-          None,
-          Vector(
-            TypeError.UnresolvableType(
-              app.arg,
-              Some(UnresolvableTypeContext.Argument),
-              phaseName
-            )
-          )
-        )
+    decl.typeSpec.flatMap(extractTypeFn(_, module))
 
   private def buildFunctionTypeSpec(
     source:     SourceOrigin,
@@ -1124,175 +1146,42 @@ object TypeChecker:
       .fromList(paramTypes)
       .getOrElse(NonEmptyList.one(TypeRef(source, "Unit", Some("stdlib::typedef::Unit"), Nil)))
 
-  /** Check Lambda terms (e.g., from eta-expansion of partial applications) */
-  private def checkLambdaWithContext(
-    lambda:       Lambda,
-    module:       Module,
-    paramContext: Map[String, FnParam],
-    bindingName:  String,
-    expectedType: Option[Type]
-  ): CheckResult[Lambda] =
-    // Infer param types from expected function type when not annotated
-    val expectedFn = expectedType.flatMap(extractTypeFn(_, module))
-    val topDownParams = lambda.params.zipWithIndex.map { (p, i) =>
-      if p.typeSpec.isDefined then p
-      else if p.typeAsc.isDefined then p.copy(typeSpec = p.typeAsc)
-      else p.copy(typeSpec = expectedFn.flatMap(_.paramTypes.toList.lift(i)))
-    }
-    val stillUntyped = topDownParams.filter(_.typeSpec.isEmpty)
-    val inferenceResult =
-      if stillUntyped.isEmpty then LambdaInferenceResult(Map.empty, Set.empty, Vector.empty)
-      else inferParamTypesFromBody(stillUntyped, lambda.body, module)
-    val paramsWithSpecs = topDownParams.map { param =>
-      param.typeSpec match
-        case Some(_) => param
-        case None => param.copy(typeSpec = inferenceResult.inferred.get(param.name))
-    }
-    // Build param context from lambda params (merged with outer context)
-    val lambdaParamContext = paramContext ++ paramsWithSpecs.map(p => p.name -> p).toMap
-    // Use lambda's return type ascription (}: Type) as expected type for body
-    val checkedBodyRaw =
-      checkExprWithContext(lambda.body, module, lambdaParamContext, lambda.typeAsc, bindingName)
-    val checkedBody =
-      checkedBodyRaw.copy(
-        errors = checkedBodyRaw.errors.filterNot {
-          case TypeError.UnresolvableType(_, Some(UnresolvableTypeContext.NamedValue(name)), _) =>
-            inferenceResult.failedParams.contains(name)
-          case _ => false
-        }
-      )
-    val bodyType = checkedBody.value.typeSpec
-    val bodyErrors =
-      if bodyType.isEmpty && checkedBody.errors.isEmpty && inferenceResult.errors.isEmpty then
-        Vector(TypeError.UnresolvableType(lambda, None, phaseName))
-      else Vector.empty
-    val lambdaTypeSpec = bodyType.flatMap(buildFunctionTypeSpec(lambda.source, paramsWithSpecs, _))
-    // Update capture Refs with types resolved from param context or module
-    val typedCaptures = lambda.captures.map { cap =>
-      val ref = cap.ref
-      if ref.typeSpec.isDefined then cap
-      else
-        val captureType = lambdaParamContext
-          .get(ref.name)
-          .flatMap(p => p.typeSpec.orElse(p.typeAsc))
-          .orElse(resolveRefType(ref, module))
-        captureType match
-          case Some(t) =>
-            val typedRef = ref.copy(typeSpec = Some(t))
-            cap match
-              case Capture.CapturedRef(_) => Capture.CapturedRef(typedRef)
-              case Capture.BorrowedRef(_) => Capture.BorrowedRef(typedRef)
-              case Capture.OwnedClosure(_, id) => Capture.OwnedClosure(typedRef, id)
-              case Capture.CapturedLiteral(_, id) => Capture.CapturedLiteral(typedRef, id)
-              case Capture.CapturedConditional(_, witness, id) =>
-                Capture.CapturedConditional(typedRef, witness, id)
-          case None => cap
-    }
-    CheckResult(
-      lambda.copy(
-        params   = paramsWithSpecs,
-        body     = checkedBody.value,
-        captures = typedCaptures,
-        typeSpec = lambdaTypeSpec
-      ),
-      inferenceResult.errors ++ checkedBody.errors ++ bodyErrors
-    )
+  /** Validate mandatory ascriptions for functions/operators
+    *
+    * Eventually, this will not be required; we will just generate type params, for the next type
+    * checker phase.
+    */
+  private def validateMandatoryAscriptions(member: Member): List[TypeError] = member match
+    // Handle Bnd with Lambda (functions and operators)
+    case bnd: Bnd =>
+      (bnd.meta, bnd.value.terms) match
+        case (Some(meta), (lambda: Lambda) :: _) =>
+          val returnTypeAsc = lambda.typeAsc.orElse(bnd.typeAsc)
+          val isNative      = hasNativeImpl(lambda.body)
 
-  /** Check conditional with parameter context */
-  private def checkConditionalWithContext(
-    cond:         Cond,
-    module:       Module,
-    paramContext: Map[String, FnParam],
-    expectedType: Option[Type],
-    bindingName:  String
-  ): CheckResult[Cond] =
-    val checkedCond = checkExprWithContext(cond.cond, module, paramContext, None, bindingName)
-    val initialTrue =
-      checkExprWithContext(cond.ifTrue, module, paramContext, expectedType, bindingName)
-    val initialFalse =
-      checkExprWithContext(cond.ifFalse, module, paramContext, expectedType, bindingName)
+          meta.origin match
+            case BindingOrigin.Function | BindingOrigin.Constructor | BindingOrigin.Destructor =>
+              val paramErrors = lambda.params.collect {
+                case param if param.typeAsc.isEmpty =>
+                  TypeError.MissingParameterType(param, bnd, phaseName)
+              }
+              val returnError =
+                if isNative && returnTypeAsc.isEmpty then
+                  List(TypeError.MissingReturnType(bnd, phaseName))
+                else Nil
+              paramErrors ++ returnError
 
-    val (checkedTrue, checkedFalse) =
-      if expectedType.isDefined then (initialTrue, initialFalse)
-      else
-        (initialTrue.value.typeSpec, initialFalse.value.typeSpec) match
-          case (Some(trueType), None) =>
-            val recheckedFalse =
-              checkExprWithContext(cond.ifFalse, module, paramContext, Some(trueType), bindingName)
-            (initialTrue, recheckedFalse)
-          case (None, Some(falseType)) =>
-            val recheckedTrue =
-              checkExprWithContext(cond.ifTrue, module, paramContext, Some(falseType), bindingName)
-            (recheckedTrue, initialFalse)
-          case _ =>
-            (initialTrue, initialFalse)
+            case BindingOrigin.Operator =>
+              val paramErrors = lambda.params.collect {
+                case param if param.typeAsc.isEmpty =>
+                  TypeError.MissingOperatorParameterType(param, bnd, phaseName)
+              }
+              val returnError =
+                if isNative && returnTypeAsc.isEmpty then
+                  List(TypeError.MissingOperatorReturnType(bnd, phaseName))
+                else Nil
+              paramErrors ++ returnError
+        case _ => Nil
 
-    val condErrors =
-      checkedCond.value.typeSpec match
-        case Some(TypeRef(_, "Bool", _, _)) => Vector.empty
-        case Some(other) if checkedCond.errors.isEmpty =>
-          Vector(
-            TypeError.TypeMismatch(
-              checkedCond.value,
-              TypeRef(cond.source, "Bool"),
-              other,
-              phaseName,
-              None
-            )
-          )
-        case None if checkedCond.errors.isEmpty =>
-          Vector(
-            TypeError.UnresolvableType(checkedCond.value, None, phaseName)
-          )
-        case _ => Vector.empty
-
-    val trueType  = checkedTrue.value.typeSpec
-    val falseType = checkedFalse.value.typeSpec
-
-    val branchErrors =
-      (trueType, falseType) match
-        case (Some(t), Some(f)) if !areTypesCompatible(t, f, module) =>
-          Vector(TypeError.ConditionalBranchTypeMismatch(cond, t, f, phaseName))
-        case (None, _) if checkedTrue.errors.isEmpty =>
-          Vector(TypeError.ConditionalBranchTypeUnknown(cond, phaseName))
-        case (_, None) if checkedFalse.errors.isEmpty =>
-          Vector(TypeError.ConditionalBranchTypeUnknown(cond, phaseName))
-        case _ => Vector.empty
-
-    val condTypeSpec =
-      (trueType, falseType) match
-        case (Some(t), Some(f)) if areTypesCompatible(t, f, module) => Some(t)
-        case _ => expectedType.orElse(trueType).orElse(falseType)
-
-    CheckResult(
-      cond.copy(
-        cond     = checkedCond.value,
-        ifTrue   = checkedTrue.value,
-        ifFalse  = checkedFalse.value,
-        typeSpec = condTypeSpec
-      ),
-      checkedCond.errors ++ checkedTrue.errors ++ checkedFalse.errors ++ condErrors ++ branchErrors
-    )
-
-  private def normalizeCheckedTerm(term: Term): Term =
-    term match
-      case app: App if app.typeSpec.isEmpty && app.typeAsc.isDefined =>
-        // This is the error condition. If we are here, it means checkApplicationWithContext
-        // is returning a malformed App node. We correct it immediately.
-        app.copy(typeSpec = app.typeAsc, typeAsc = None)
-      case other => other
-
-  private def filterDuplicateUnresolvable(
-    errors:           Vector[TypeError],
-    checkedFnErrors:  Vector[TypeError],
-    checkedArgErrors: Vector[TypeError]
-  ): Vector[TypeError] =
-    errors.filterNot {
-      case TypeError.UnresolvableType(_, Some(UnresolvableTypeContext.Argument), _) =>
-        checkedArgErrors.nonEmpty
-      case TypeError.UnresolvableType(_, Some(UnresolvableTypeContext.Function), _) =>
-        checkedFnErrors.nonEmpty
-      case TypeError.UnresolvableType(_, Some(UnresolvableTypeContext.NamedValue(_)), _) =>
-        checkedFnErrors.nonEmpty
-      case _ => false
-    }
+    case _ =>
+      Nil

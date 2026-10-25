@@ -1,305 +1,173 @@
 package mml.mmlclib.semantic
 
+import cats.data.State
 import cats.syntax.all.*
 import mml.mmlclib.ast.*
 import mml.mmlclib.compiler.CompilerState
+import mml.mmlclib.errors.{DiagnosticId, DiagnosticStore}
 
 object RefResolver:
 
   private val phaseName = "mml.mmlclib.semantic.RefResolver"
 
-  /** Resolve all references in a module, accumulating errors in the state. */
+  private type Resolution[A] = State[DiagnosticStore, A]
+
+  /** A failed callee stays intact inside the smallest application that can carry its error. */
+  private case class ResolvedCallee(value: Callee, causes: Vector[DiagnosticId] = Vector.empty):
+
+    def asTerm: Term =
+      if causes.isEmpty then value
+      else
+        InvalidExpression(
+          source       = value.source,
+          originalExpr = Expr(value.source, List(value)),
+          typeSpec     = value.typeSpec,
+          typeAsc      = value.typeAsc,
+          causes       = causes
+        )
+
+  /** Resolve all references and retain each failed occurrence alongside its diagnostic roots. */
   def rewriteModule(state: CompilerState): CompilerState =
-    val (errors, members) =
-      state.module.members.foldLeft((List.empty[SemanticError], List.empty[Member])) {
-        case ((accErrors, accMembers), member) =>
-          resolveMember(member, state.module) match
-            case Left(errs) =>
-              // Important: Use the rewritten member with InvalidExpression nodes, not the original
-              val rewrittenMember = rewriteMemberWithInvalidExpressions(member, state.module)
-              (accErrors ++ errs, accMembers :+ rewrittenMember)
-            case Right(updated) => (accErrors, accMembers :+ updated)
-      }
-    state.addErrors(errors).withModule(state.module.copy(members = members))
+    val (diagnostics, members) = state.module.members
+      .traverse(resolveMember(_, state.module))
+      .run(state.diagnostics)
+      .value
 
-  /** Rewrite a member to use InvalidExpression nodes for undefined references */
-  private def rewriteMemberWithInvalidExpressions(member: Member, module: Module): Member =
-    member match
-      case bnd: Bnd =>
-        // Handle Bnd with Lambda - rewrite lambda body
-        val rewrittenValue = bnd.value.terms match
-          case (lambda: Lambda) :: rest =>
-            val rewrittenBody   = rewriteExprWithInvalidExpressions(lambda.body, bnd, module)
-            val rewrittenLambda = lambda.copy(body = rewrittenBody)
-            val rewrittenRest   = rest.map(rewriteTermWithInvalidExpressions(_, bnd, module))
-            bnd.value.copy(terms = rewrittenLambda :: rewrittenRest)
-          case _ =>
-            rewriteExprWithInvalidExpressions(bnd.value, bnd, module)
-        bnd.copy(value = rewrittenValue)
-      case _ => member
+    state.copy(diagnostics = diagnostics).withModule(state.module.copy(members = members))
 
-  /** Rewrite a single term to use InvalidExpression for undefined references */
-  private def rewriteTermWithInvalidExpressions(
-    term:        Term,
-    member:      Member,
-    module:      Module,
-    extraParams: List[FnParam] = Nil
-  ): Term =
-    term match
+  private def resolveMember(member: Member, module: Module): Resolution[Member] = member match
+    case binding: Bnd =>
+      resolveExpr(binding.value, binding, module)
+        .map(value => binding.copy(value = value))
+    case other => other.pure[Resolution]
 
-      case ref: Ref =>
-        ref.qualifier match
-          case Some(qualifier) =>
-            val updatedQualifier =
-              rewriteTermWithInvalidExpressions(qualifier, member, module, extraParams)
-            ref.copy(qualifier = Some(updatedQualifier))
-          case None =>
-            val candidates = lookupRefs(ref, member, module, extraParams)
-            if candidates.isEmpty then
-              InvalidExpression(
-                source       = ref.source,
-                originalExpr = Expr(ref.source, List(ref)),
-                typeSpec     = ref.typeSpec,
-                typeAsc      = ref.typeAsc
-              )
-            else
-              val ids = candidates.flatMap(_.id)
-              if candidates.length == 1 then
-                ref.copy(candidateIds    = ids, resolvedId = ids.headOption)
-              else ref.copy(candidateIds = ids)
-
-      case group: TermGroup =>
-        group.copy(inner =
-          rewriteExprWithInvalidExpressions(group.inner, member, module, extraParams)
-        )
-
-      case e: Expr =>
-        rewriteExprWithInvalidExpressions(e, member, module, extraParams)
-
-      case t: Tuple =>
-        t.copy(elements =
-          t.elements.map(e => rewriteExprWithInvalidExpressions(e, member, module, extraParams))
-        )
-
-      case cond: Cond =>
-        cond.copy(
-          cond    = rewriteExprWithInvalidExpressions(cond.cond, member, module, extraParams),
-          ifTrue  = rewriteExprWithInvalidExpressions(cond.ifTrue, member, module, extraParams),
-          ifFalse = rewriteExprWithInvalidExpressions(cond.ifFalse, member, module, extraParams)
-        )
-
-      case app: App =>
-        val argParams = app.fn match
-          case lambda: Lambda => lambda.params ++ extraParams
-          case _ => extraParams
-        val newFn  = rewriteAppFnWithInvalidExpressions(app.fn, member, module, extraParams)
-        val newArg = rewriteExprWithInvalidExpressions(app.arg, member, module, argParams)
-        app.copy(fn = newFn, arg = newArg)
-
-      case lambda: Lambda =>
-        val newParams = lambda.params ++ extraParams
-        val newBody   = rewriteExprWithInvalidExpressions(lambda.body, member, module, newParams)
-        lambda.copy(body = newBody)
-
-      case term => term
-
-  /** Rewrite expression to use InvalidExpression for undefined references */
-  private def rewriteExprWithInvalidExpressions(
+  private def resolveExpr(
     expr:        Expr,
     member:      Member,
     module:      Module,
     extraParams: List[FnParam] = Nil
-  ): Expr =
-    expr.copy(terms =
-      expr.terms.map(rewriteTermWithInvalidExpressions(_, member, module, extraParams))
-    )
+  ): Resolution[Expr] =
+    expr.terms
+      .traverse(resolveTerm(_, member, module, extraParams))
+      .map(terms => expr.copy(terms = terms))
 
-  /** Rewrite App.fn to use InvalidExpression for undefined references */
-  private def rewriteAppFnWithInvalidExpressions(
-    fn:          Callee,
-    member:      Member,
-    module:      Module,
-    extraParams: List[FnParam]
-  ): Callee =
-    fn match
-      case ref: Ref =>
-        ref.qualifier match
-          case Some(qualifier) =>
-            val updatedQualifier =
-              rewriteTermWithInvalidExpressions(qualifier, member, module, extraParams)
-            ref.copy(qualifier = Some(updatedQualifier))
-          case None =>
-            val candidates = lookupRefs(ref, member, module, extraParams)
-            val ids        = candidates.flatMap(_.id)
-            if candidates.length == 1 then ref.copy(candidateIds = ids, resolvedId = ids.headOption)
-            else ref.copy(candidateIds                           = ids)
-      case app: App =>
-        val argParams = app.fn match
-          case lambda: Lambda => lambda.params ++ extraParams
-          case _ => extraParams
-        val newFn  = rewriteAppFnWithInvalidExpressions(app.fn, member, module, extraParams)
-        val newArg = rewriteExprWithInvalidExpressions(app.arg, member, module, argParams)
-        app.copy(fn = newFn, arg = newArg)
-      case lambda: Lambda =>
-        val newParams = lambda.params ++ extraParams
-        val newBody   = rewriteExprWithInvalidExpressions(lambda.body, member, module, newParams)
-        lambda.copy(body = newBody)
-
-  /** Resolve references in a module member. */
-  private def resolveMember(member: Member, module: Module): Either[List[SemanticError], Member] =
-    member match
-      case bnd: Bnd =>
-        // Handle Bnd with Lambda - resolve lambda body
-        bnd.value.terms match
-          case (lambda: Lambda) :: rest =>
-            for
-              resolvedBody <- resolveExpr(lambda.body, bnd, module)
-              resolvedRest <- rest.traverse(resolveTerm(_, bnd, module))
-              updatedLambda = lambda.copy(body = resolvedBody)
-            yield bnd.copy(value = bnd.value.copy(terms = updatedLambda :: resolvedRest))
-          case _ =>
-            resolveExpr(bnd.value, bnd, module).map(updatedExpr => bnd.copy(value = updatedExpr))
-
-      case _ =>
-        member.asRight[List[SemanticError]]
-
-  /** Resolve references in a single term */
   private def resolveTerm(
     term:        Term,
     member:      Member,
     module:      Module,
-    extraParams: List[FnParam] = Nil
-  ): Either[List[SemanticError], Term] =
-    term match
+    extraParams: List[FnParam]
+  ): Resolution[Term] = term match
 
-      case ref: Ref =>
-        ref.qualifier match
-          case Some(qualifier) =>
-            resolveTerm(qualifier, member, module, extraParams)
-              .map(updatedQualifier => ref.copy(qualifier = Some(updatedQualifier)))
-          case None =>
-            val candidates = lookupRefs(ref, member, module, extraParams)
-            if candidates.isEmpty then
-              List(SemanticError.UndefinedRef(ref, member, phaseName)).asLeft
-            else
-              val ids = candidates.flatMap(_.id)
-              if candidates.length == 1 then
-                ref.copy(candidateIds = ids, resolvedId = ids.headOption).asRight
-              else ref.copy(candidateIds = ids).asRight
+    case ref: Ref =>
+      resolveRef(ref, member, module, extraParams).map(_.asTerm)
 
-      case group: TermGroup =>
-        resolveExpr(group.inner, member, module, extraParams)
-          .map(updatedExpr => group.copy(inner = updatedExpr))
+    case app: App =>
+      resolveApp(app, member, module, extraParams).map(_.asTerm)
 
-      case e: Expr =>
-        resolveExpr(e, member, module, extraParams)
-          .map(updatedExpr => e.copy(terms = updatedExpr.terms))
+    case lambda: Lambda =>
+      resolveLambda(lambda, member, module, extraParams).widen
 
-      case t: Tuple =>
-        t.elements
-          .traverse(e => resolveExpr(e, member, module, extraParams))
-          .map(newElems => t.copy(elements = newElems))
+    case group: TermGroup =>
+      resolveExpr(group.inner, member, module, extraParams)
+        .map(inner => group.copy(inner = inner))
 
-      case cond: Cond =>
-        for
-          newCond <- resolveExpr(cond.cond, member, module, extraParams)
-          newIfTrue <- resolveExpr(cond.ifTrue, member, module, extraParams)
-          newIfFalse <- resolveExpr(cond.ifFalse, member, module, extraParams)
-        yield cond.copy(cond = newCond, ifTrue = newIfTrue, ifFalse = newIfFalse)
+    case expr: Expr =>
+      resolveExpr(expr, member, module, extraParams).widen
 
-      case app: App =>
-        // When fn is a Lambda (let-desugaring), the binding name is in scope
-        // for the arg — enables recursive let bindings like
-        // `let loop = { ... loop () ... };`
-        val argParams = app.fn match
-          case lambda: Lambda => lambda.params ++ extraParams
-          case _ => extraParams
-        for
-          newFn <- resolveAppFn(app.fn, member, module, extraParams)
-          newArg <- resolveExpr(app.arg, member, module, argParams)
-        yield app.copy(fn = newFn, arg = newArg)
+    case tuple: Tuple =>
+      tuple.elements
+        .traverse(resolveExpr(_, member, module, extraParams))
+        .map(elements => tuple.copy(elements = elements))
 
-      case lambda: Lambda =>
-        // Add lambda params to scope when resolving body
-        val newParams = lambda.params ++ extraParams
-        resolveExpr(lambda.body, member, module, newParams)
-          .map(newBody => lambda.copy(body = newBody))
+    case cond: Cond =>
+      for
+        predicate <- resolveExpr(cond.cond, member, module, extraParams)
+        yes <- resolveExpr(cond.ifTrue, member, module, extraParams)
+        no <- resolveExpr(cond.ifFalse, member, module, extraParams)
+      yield cond.copy(cond = predicate, ifTrue = yes, ifFalse = no)
 
-      case term =>
-        term.asRight[List[SemanticError]]
+    case other => other.pure[Resolution]
 
-  /** Returns all members (bindings, functions, operators) whose name matches the reference.
-    */
+  private def resolveRef(
+    ref:         Ref,
+    member:      Member,
+    module:      Module,
+    extraParams: List[FnParam]
+  ): Resolution[ResolvedCallee] = ref.qualifier match
+
+    case Some(qualifier) =>
+      resolveTerm(qualifier, member, module, extraParams)
+        .map(updated => ResolvedCallee(ref.copy(qualifier = updated.some)))
+
+    case None =>
+      val candidates = lookupRefs(ref, member, module, extraParams)
+      if candidates.isEmpty then
+        DiagnosticStore
+          .report(SemanticError.UndefinedRef(ref, member, phaseName))
+          .map(causes => ResolvedCallee(ref, causes))
+      else
+        val ids = candidates.flatMap(_.id)
+        val updated =
+          if candidates.length == 1 then ref.copy(candidateIds = ids, resolvedId = ids.headOption)
+          else ref.copy(candidateIds                           = ids)
+        ResolvedCallee(updated).pure[Resolution]
+
+  private def resolveLambda(
+    lambda:      Lambda,
+    member:      Member,
+    module:      Module,
+    extraParams: List[FnParam]
+  ): Resolution[Lambda] =
+    resolveExpr(lambda.body, member, module, lambda.params ++ extraParams)
+      .map(body => lambda.copy(body = body))
+
+  private def resolveApp(
+    app:         App,
+    member:      Member,
+    module:      Module,
+    extraParams: List[FnParam]
+  ): Resolution[ResolvedCallee] =
+    // A parser-lowered local binding is in scope in its initializer, enabling recursion.
+    val argParams = app.fn match
+      case lambda: Lambda => lambda.params ++ extraParams
+      case _ => extraParams
+
+    for
+      fn <- resolveCallee(app.fn, member, module, extraParams)
+      arg <- resolveExpr(app.arg, member, module, argParams)
+    yield ResolvedCallee(app.copy(fn = fn.value, arg = arg), fn.causes)
+
+  private def resolveCallee(
+    callee:      Callee,
+    member:      Member,
+    module:      Module,
+    extraParams: List[FnParam]
+  ): Resolution[ResolvedCallee] = callee match
+    case ref:    Ref => resolveRef(ref, member, module, extraParams)
+    case app:    App => resolveApp(app, member, module, extraParams)
+    case lambda: Lambda =>
+      resolveLambda(lambda, member, module, extraParams).map(ResolvedCallee(_))
+
+  /** Returns matching parameters or module declarations, preserving overload candidates. */
   private def lookupRefs(
     ref:         Ref,
     member:      Member,
     module:      Module,
     extraParams: List[FnParam]
   ): List[Resolvable] =
-    if ref.qualifier.isDefined then return Nil
-
-    def collectMembers =
-      module.members.collect {
-        // Match Bnd by name or originalName from meta (for operators)
-        case bnd: Bnd
-            if bnd.name == ref.name ||
-              bnd.meta.exists(_.originalName == ref.name) =>
-          bnd
-      }
-
-    // Enclosing parameters are ordered innermost first; a nearer binding shadows outer names.
-    val fromExtra = extraParams.find(_.name == ref.name).toList
-    if fromExtra.nonEmpty then return fromExtra
-
-    // Extract params from Bnd with Lambda
-    val params = member match
-      case bnd: Bnd =>
-        bnd.value.terms.headOption match
+    val enclosing = extraParams.find(_.name == ref.name).toList
+    val parameters = member match
+      case binding: Bnd =>
+        binding.value.terms.headOption match
           case Some(lambda: Lambda) => lambda.params.filter(_.name == ref.name)
           case _ => Nil
       case _ => Nil
 
-    if params.nonEmpty then params else collectMembers
-
-  /** Resolve references in an expression. */
-  private def resolveExpr(
-    expr:        Expr,
-    member:      Member,
-    module:      Module,
-    extraParams: List[FnParam] = Nil
-  ): Either[List[SemanticError], Expr] =
-    expr.terms.traverse(resolveTerm(_, member, module, extraParams)).map { updatedTerms =>
-      expr.copy(terms = updatedTerms)
-    }
-
-  /** Resolve references in application callees */
-  private def resolveAppFn(
-    fn:          Callee,
-    member:      Member,
-    module:      Module,
-    extraParams: List[FnParam]
-  ): Either[List[SemanticError], Callee] =
-    fn match
-      case ref: Ref =>
-        ref.qualifier match
-          case Some(qualifier) =>
-            resolveTerm(qualifier, member, module, extraParams)
-              .map(updatedQualifier => ref.copy(qualifier = Some(updatedQualifier)))
-          case None =>
-            val candidates = lookupRefs(ref, member, module, extraParams)
-            if candidates.isEmpty then
-              List(SemanticError.UndefinedRef(ref, member, phaseName)).asLeft
-            else
-              val ids = candidates.flatMap(_.id)
-              if candidates.length == 1 then
-                ref.copy(candidateIds = ids, resolvedId = ids.headOption).asRight
-              else ref.copy(candidateIds = ids).asRight
-      case app: App =>
-        for
-          newFn <- resolveAppFn(app.fn, member, module, extraParams)
-          newArg <- resolveExpr(app.arg, member, module, extraParams)
-        yield app.copy(fn = newFn, arg = newArg)
-      case lambda: Lambda =>
-        val newParams = lambda.params ++ extraParams
-        resolveExpr(lambda.body, member, module, newParams)
-          .map(newBody => lambda.copy(body = newBody))
+    if enclosing.nonEmpty then enclosing
+    else if parameters.nonEmpty then parameters
+    else
+      module.members.collect {
+        case binding: Bnd
+            if binding.name == ref.name || binding.meta.exists(_.originalName == ref.name) =>
+          binding
+      }

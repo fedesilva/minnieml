@@ -47,6 +47,7 @@ object ErrorPrinter:
   private def getErrorSourcePosition(error: SemanticError): (Int, Int) = error match
     case SemanticError.UndefinedRef(ref, _, _) => startPosOf(ref)
     case SemanticError.UndefinedTypeRef(typeRef, _, _) => startPosOf(typeRef)
+    case SemanticError.AmbiguousTypeRef(typeRef, _, _, _) => startPosOf(typeRef)
     case SemanticError.DuplicateName(_, duplicates, _) =>
       duplicates
         .collect { case d: FromSource => d }
@@ -57,7 +58,8 @@ object ErrorPrinter:
     case SemanticError.InvalidExpression(expr, _, _) => startPosOf(expr)
     case SemanticError.MemberErrorFound(error, _) => startPosOf(error)
     case SemanticError.ParsingIdErrorFound(error, _) => startPosOf(error)
-    case SemanticError.TermErrorFound(error, _) => startPosOf(error)
+    case SemanticError.ParseTermErrorFound(error, _) => startPosOf(error)
+    case SemanticError.ParseTypeErrorFound(error, _) => startPosOf(error)
     case SemanticError.DanglingTerms(terms, _, _) =>
       terms
         .collect { case fs: FromSource => startPosOf(fs) }
@@ -157,7 +159,7 @@ object ErrorPrinter:
                 if ref.candidateIds.isEmpty then "No candidates found"
                 else s"Candidates: [${ref.candidateIds.mkString(", ")}]"
               s"${Console.YELLOW}'${ref.name}': $resolved, $candidates${Console.RESET}"
-            case term => s"Term: ${term.getClass.getSimpleName}"
+            case term => s"Term: ${diagnosticTermName(term)}"
           }
           .mkString("\n")
         s"${Console.YELLOW}Term info:${Console.RESET}\n$termInfos"
@@ -180,6 +182,12 @@ object ErrorPrinter:
       case SemanticError.UndefinedTypeRef(typeRef, member, phase) =>
         s"${Console.RED}Undefined type reference '${typeRef.name}' at ${locationOf(typeRef)}${Console.RESET}\n${Console.YELLOW}Phase: $phase${Console.RESET}"
 
+      case SemanticError.AmbiguousTypeRef(typeRef, candidates, _, phase) =>
+        val locations = candidates.collect { case candidate: FromSource => locationOf(candidate) }
+        s"${Console.RED}Ambiguous type reference '${typeRef.name}' at ${locationOf(typeRef)}: " +
+          s"candidates at ${locations.mkString(", ")}${Console.RESET}\n" +
+          s"${Console.YELLOW}Phase: $phase${Console.RESET}"
+
       case SemanticError.InvalidExpression(expr, message, phase) =>
         s"${Console.RED}Invalid expression at ${locationOf(expr)}: $message${Console.RESET}\n${Console.YELLOW}Phase: $phase${Console.RESET}"
 
@@ -191,9 +199,14 @@ object ErrorPrinter:
         val location = locationOf(error)
         s"${Console.RED}Invalid identifier at $location: ${error.message}${Console.RESET}\n${Console.YELLOW}Phase: $phase${Console.RESET}"
 
-      case SemanticError.TermErrorFound(error, phase) =>
+      case SemanticError.ParseTermErrorFound(error, phase) =>
         val location = locationOf(error)
         s"${Console.RED}Parser error at $location: ${error.message}${Console.RESET}\n" +
+          s"${Console.YELLOW}Phase: $phase${Console.RESET}"
+
+      case SemanticError.ParseTypeErrorFound(error, phase) =>
+        val location = locationOf(error)
+        s"${Console.RED}Type parser error at $location: ${error.message}${Console.RESET}\n" +
           s"${Console.YELLOW}Phase: $phase${Console.RESET}"
 
       case SemanticError.DanglingTerms(terms, message, phase) =>

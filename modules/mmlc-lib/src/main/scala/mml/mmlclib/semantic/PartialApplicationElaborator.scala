@@ -137,7 +137,7 @@ object PartialApplicationElaborator:
           )
         }
     case invalid: InvalidExpression =>
-      rewriteExpr(invalid.originalExpr, owner, index, values)
+      rewriteFailedExpr(invalid.originalExpr, owner, index, values)
         .map(original => PreparedValue(invalid.copy(originalExpr = original)))
     case expr:  Expr => prepareExpr(expr, owner, index, values)
     case group: TermGroup =>
@@ -156,6 +156,33 @@ object PartialApplicationElaborator:
         .map(elements => PreparedValue(tuple.copy(elements = elements)))
     case ref: Ref => rewriteRef(ref, owner, index, values).map[PreparedValue[Term]](identity)
     case other => PreparedValue(other).pure[Allocation]
+
+  /** Preserved operands are elaborated independently; the failed result supplies no PAP value. */
+  private def rewriteFailedExpr(
+    expr:   Expr,
+    owner:  BindingOwner,
+    index:  ResolvablesIndex,
+    values: CallableValues
+  ): Allocation[Expr] = expr.terms match
+    case List(term) =>
+      rewriteFailedResult(term, owner, index, values)
+        .map(result => expr.copy(terms = List(result.materialize)))
+    case _ => rewriteExpr(expr, owner, index, values)
+
+  private def rewriteFailedResult(
+    term:   Term,
+    owner:  BindingOwner,
+    index:  ResolvablesIndex,
+    values: CallableValues
+  ): Allocation[PreparedValue[Term]] = term match
+    case app:    App => rewriteApplication(app, owner, index, values, allowPartialResult = false)
+    case lambda: Lambda =>
+      rewriteLambdaBody(lambda, owner, index, values).map(PreparedValue(_))
+    case expr:  Expr => rewriteFailedExpr(expr, owner, index, values).map(PreparedValue(_))
+    case group: TermGroup =>
+      rewriteFailedExpr(group.inner, owner, index, values)
+        .map(inner => PreparedValue(group.copy(inner = inner)))
+    case other => rewriteTerm(other, owner, index, values)
 
   /** Binds one completed stage's returned callee, recursively elaborating the remaining stages. */
   private def rewriteStagedApplication(
@@ -206,11 +233,12 @@ object PartialApplicationElaborator:
       )
 
   private def rewriteApplication(
-    app:            App,
-    owner:          BindingOwner,
-    index:          ResolvablesIndex,
-    values:         CallableValues,
-    forceArguments: Boolean = false
+    app:                App,
+    owner:              BindingOwner,
+    index:              ResolvablesIndex,
+    values:             CallableValues,
+    forceArguments:     Boolean = false,
+    allowPartialResult: Boolean = true
   ): Allocation[PreparedValue[Term]] =
     app.fn match
       case scope: Lambda =>
@@ -238,7 +266,9 @@ object PartialApplicationElaborator:
           } match
             // Fresh qualifier bindings need indexed callable origins before PAP capture analysis.
             case Some(signature)
-                if values.recovery.isAvailable(app) && function.bindings.isEmpty &&
+                if allowPartialResult && values.recovery.isAvailable(
+                  app
+                ) && function.bindings.isEmpty &&
                   rewrittenArgs.size < signature.paramTypes.length =>
               elaborate(app, function.value, rewrittenArgs, signature, owner, index, values)
             case _ =>

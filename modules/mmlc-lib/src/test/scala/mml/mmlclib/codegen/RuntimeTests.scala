@@ -27,6 +27,103 @@ class RuntimeTests extends BaseEffFunSuite:
         .map(_.fold(error => fail(error.message), identity))
     yield (triple, target)
 
+  private def runSanitizedProgram(
+    source:         String,
+    name:           String,
+    expectedOutput: List[String]
+  ): IO[Unit] =
+    withDirectory { directory =>
+      val binary = directory.resolve("program")
+      val config = CompilerConfig.default.copy(
+        mode       = CompilationMode.Exe,
+        outputDir  = directory,
+        outputName = binary.toString.some,
+        asan       = true
+      )
+      for
+        ir <- compileAndGenerate(source, name, config)
+        pair <- targetAt(directory, config)
+        (triple, target) = pair
+        path <- IO.blocking(Files.writeString(directory.resolve(s"$name.ll"), ir))
+        _ <- commandNotFailed(List("llvm-as", path.toString, "-o", "/dev/null"), directory)
+        result <- LlvmToolchain.compile(path, config, triple.some, target)
+        _ = assertEquals(result._1, Right(0))
+        _ <- programExits(
+          List("env", "ASAN_OPTIONS=detect_leaks=1:halt_on_error=1", binary.toString),
+          directory,
+          expectedCode   = 0,
+          expectedOutput = expectedOutput.some
+        )
+      yield ()
+    }
+
+  test("grouped and locally bound lambda arguments execute with the same result") {
+    val source = """
+      fn add(a: Int, b: Int): Int = a + b;;
+      fn grouped(): Int = { a: Int -> add ({ b: Int -> add b; } a 2); } 1 3;;
+      fn local(): Int =
+        { a: Int ->
+          let inner = { b: Int -> add b; } a 2;
+          add inner;
+        } 1 3;
+      ;
+      pub fn main(): Int =
+        println (int_to_str (grouped ()));
+        println (int_to_str (local ()));
+        0;
+      ;
+    """
+    runSanitizedProgram(source, "GroupedLambdas", List("6", "6"))
+  }
+
+  test("grouped lambda applications evaluate arguments once in source order") {
+    val source = """
+      fn mark(value: Int): Int =
+        println (int_to_str value);
+        value;
+      ;
+      pub fn main(): Int =
+        let full = (({ x: Int, y: Int ->
+          println "full body";
+          x + y;
+        })) (mark 1) (mark 2);
+        println (int_to_str full);
+        let partial = ({ x: Int, y: Int ->
+          println "partial body";
+          x + y;
+        }) (mark 10);
+        println "partial created";
+        println (int_to_str (partial (mark 20)));
+        let returned = ({ x: Int ->
+          println "outer body";
+          { y: Int -> println "inner body"; x + y; };
+        }) (mark 100) (mark 200);
+        println (int_to_str returned);
+        0;
+      ;
+    """
+    runSanitizedProgram(
+      source,
+      "GroupedLambdaOrder",
+      List(
+        "1",
+        "2",
+        "full body",
+        "3",
+        "10",
+        "partial created",
+        "20",
+        "partial body",
+        "30",
+        "100",
+        "200",
+        "outer body",
+        "inner body",
+        "300"
+      )
+    )
+  }
+
   List(true, false).foreach { forward =>
     val order = if forward then "before" else "after"
     test(s"global literals referenced $order their declarations execute correctly"):

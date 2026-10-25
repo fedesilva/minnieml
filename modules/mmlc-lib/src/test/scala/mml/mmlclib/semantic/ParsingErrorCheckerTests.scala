@@ -3,10 +3,98 @@ package mml.mmlclib.semantic
 import cats.syntax.option.*
 import mml.mmlclib.ast.*
 import mml.mmlclib.compiler.{CompilerConfig, CompilerState, ParsingErrorChecker}
+import mml.mmlclib.errors.DiagnosticRelation
 import mml.mmlclib.parser.SourceInfo
 import mml.mmlclib.test.BaseEffFunSuite
 
 class ParsingErrorCheckerTests extends BaseEffFunSuite:
+
+  private def tokenSpan(code: String, token: String): SrcSpan =
+    val start = code.indexOf(token)
+    assert(start >= 0, s"Missing fixture token: $token")
+    val info = SourceInfo(code)
+    SrcSpan(info.pointAt(start), info.pointAt(start + token.length))
+
+  private def recoveredTree(value: Any): Any = value match
+    case error:   ParseTermError => error.copy(causes = Vector.empty)
+    case product: Product =>
+      (product.productPrefix, product.productIterator.map(recoveredTree).toList)
+    case other => other
+
+  private def assertTermRoots(state: CompilerState): Unit =
+    val recovered = state.module.members.collect { case binding: Bnd =>
+      TermTraversal.collect(binding.value) { case error: ParseTermError => error }
+    }.flatten
+    val records = state.diagnostics.records.collect {
+      case record if record.error.isInstanceOf[SemanticError.ParseTermErrorFound] => record
+    }
+    assertEquals(recovered.size, records.size)
+    recovered.zip(records).foreach { (error, record) =>
+      assertEquals(error.causes, Vector(record.id))
+      assertEquals(record.relation, DiagnosticRelation.Primary)
+      record.error match
+        case SemanticError.ParseTermErrorFound(original, _) =>
+          assertEquals(error.copy(causes = Vector.empty), original)
+        case other => fail(s"Expected parser diagnostic, got $other")
+    }
+
+  private def recoveredFormTest(
+    form:        String,
+    expression:  String,
+    failedNames: List[String]
+  )(select: PartialFunction[Term, Term]): Unit =
+    test(s"parser recovery stamps nested errors inside $form") {
+      val code = s"fn example(): Int = $expression;;"
+      justParse(code).map { module =>
+        val containers = module.members
+          .collect { case binding: Bnd =>
+            TermTraversal.collect(binding.value)(select)
+          }
+          .flatten
+          .filter(_.spanOpt.exists(_.start.index == code.indexOf(expression)))
+        assertEquals(containers.size, 1, module)
+        assertEquals(
+          TermTraversal.collect(containers.head) { case error: ParseTermError => error }.size,
+          failedNames.size
+        )
+
+        val state  = CompilerState.empty(module, SourceInfo(code), CompilerConfig.default)
+        val result = ParsingErrorChecker.checkModule(state)
+        val errors = result.errors.collect { case SemanticError.ParseTermErrorFound(error, _) =>
+          error
+        }
+        assertEquals(result.errors.size, failedNames.size, result.errors)
+        assertEquals(errors.map(_.failedCode).toList, failedNames.map(_.some))
+        errors.zip(failedNames).foreach { (error, name) =>
+          assertEquals(error.message, s"Invalid identifier '$name'")
+          assertEquals(error.spanOpt, tokenSpan(code, name).some)
+        }
+        assertEquals(recoveredTree(result.module), recoveredTree(module))
+        assertTermRoots(result)
+      }
+    }
+
+  recoveredFormTest("a group", "(let 123invalid = 1; 2)", List("123invalid")) {
+    case group: TermGroup => group
+  }
+
+  recoveredFormTest(
+    "a tuple",
+    "((let 123invalid = 1; 2), (let 456invalid = 3; 4))",
+    List("123invalid", "456invalid")
+  ) { case tuple: Tuple => tuple }
+
+  recoveredFormTest(
+    "a scoped application callee and argument",
+    "let value = (let 123invalid = 1; 2); let 456invalid = 3; 4",
+    List("456invalid", "123invalid")
+  ) { case app: App => app }
+
+  recoveredFormTest(
+    "a qualified reference",
+    "(let 123invalid = 1; 2).length",
+    List("123invalid")
+  ) { case ref: Ref if ref.qualifier.nonEmpty => ref }
 
   test("Full semantic pipeline passes correct modules") {
     semNotFailed(
@@ -56,26 +144,33 @@ class ParsingErrorCheckerTests extends BaseEffFunSuite:
       val state  = CompilerState.empty(module, SourceInfo(code), CompilerConfig.default)
       val result = ParsingErrorChecker.checkModule(state)
 
-      val errors = result.errors.collect { case SemanticError.TermErrorFound(error, _) => error }
+      val errors = result.errors.collect { case SemanticError.ParseTermErrorFound(error, _) =>
+        error
+      }
       assertEquals(errors.size, 1)
       val error = errors.head
       assertEquals(error.message, "Invalid identifier '123invalid'")
       assertEquals(error.failedCode, "123invalid".some)
 
       val span = error.spanOpt.getOrElse(fail("Expected nested error source span"))
-      assertEquals(span.start, state.sourceInfo.pointAt(code.indexOf("let 123invalid")))
+      assertEquals(span, tokenSpan(code, "123invalid"))
       val recoveredSource = state.sourceInfo.slice(span.start.index, span.end.index)
-      assertEquals(
-        recoveredSource.linesIterator.map(_.trim).mkString("\n"),
-        "let 123invalid = 5;\n6"
-      )
+      assertEquals(recoveredSource, "123invalid")
+      val literals = result.module.members
+        .collect { case binding: Bnd =>
+          TermTraversal.collect(binding.value) { case literal: LiteralInt => literal.value }
+        }
+        .flatten
+        .sorted
+      assertEquals(literals, List(5L, 6L))
 
       val memberErrors = result.errors.collect { case SemanticError.MemberErrorFound(error, _) =>
         error
       }
       assertEquals(memberErrors.map(_.failedCode).toList, List(";".some))
       assertEquals(result.errors.size, 2)
-      assertEquals(result.module, module)
+      assertEquals(recoveredTree(result.module), recoveredTree(module))
+      assertTermRoots(result)
     }
   }
 
@@ -103,7 +198,7 @@ class ParsingErrorCheckerTests extends BaseEffFunSuite:
       val result = ParsingErrorChecker.checkModule(state)
       assertEquals(result.errors.head, existing)
 
-      val nestedErrors = result.errors.collect { case SemanticError.TermErrorFound(error, _) =>
+      val nestedErrors = result.errors.collect { case SemanticError.ParseTermErrorFound(error, _) =>
         error
       }
       assertEquals(
@@ -117,7 +212,8 @@ class ParsingErrorCheckerTests extends BaseEffFunSuite:
       assertEquals(idErrors.map(_.invalidId).toList, List("789invalid"))
 
       assertEquals(result.errors.size, 4)
-      assertEquals(result.module, module)
+      assertEquals(recoveredTree(result.module), recoveredTree(module))
+      assertTermRoots(result)
       assert(module.members.exists {
         case binding: Bnd => binding.name == "after"
         case _ => false
@@ -135,7 +231,7 @@ class ParsingErrorCheckerTests extends BaseEffFunSuite:
       """
 
     semState(code).map { result =>
-      val nestedErrors = result.errors.collect { case SemanticError.TermErrorFound(error, _) =>
+      val nestedErrors = result.errors.collect { case SemanticError.ParseTermErrorFound(error, _) =>
         error
       }
       nestedErrors match
@@ -144,60 +240,79 @@ class ParsingErrorCheckerTests extends BaseEffFunSuite:
           assertEquals(error.failedCode, "123invalid".some)
 
           val span = error.spanOpt.getOrElse(fail("Expected local function source span"))
-          assertEquals(span.start, SourceInfo(code).pointAt(code.indexOf("fn 123invalid")))
+          assertEquals(span, tokenSpan(code, "123invalid"))
         case other => fail(s"Expected one nested invalid function name, got $other")
     }
   }
 
-  test("MemberErrorChecker should catch member errors as shown in the example") {
-    semState(
-      """
-        fn valid(a: Int, b: Int): Int = a + b;;
-        let a  ; # Missing expression after = 
-        """,
-      name = "Test"
-    ).map { result =>
-
-      // println(prettyPrintAst(result.module))
-
-      // if result.errors.nonEmpty then
-      //   println(result.errors)
-
-      assert(
-        result.errors.nonEmpty,
-        s"Expected semantic errors but found none. ${result.module}"
-      )
-      assert(clue(result.errors.size) == clue(1))
-
-      result.errors.head match {
-        case SemanticError.MemberErrorFound(error, phase) =>
-          assert(error.message == "Failed to parse member")
-          assert(error.failedCode.exists(_.contains("let a")))
-        case e => fail(s"Expected MemberErrorFound error, got $e")
+  test("missing member components retain the named binding and both parser diagnostics") {
+    val code = """
+      fn valid(a: Int, b: Int): Int = a + b;;
+      let a  ; // Missing equals and initializer
+    """
+    semVisibleState(code).map { result =>
+      val errors = result.errors.collect { case SemanticError.ParseTermErrorFound(error, _) =>
+        error
       }
+      assertEquals(errors.map(_.message), List("Expected expression", "Expected '='"))
+      assertEquals(result.errors.size, 2, result.errors)
+      val point = SourceInfo(code).pointAt(code.indexOf(';', code.indexOf("let a")))
+      assertEquals(errors.map(_.spanOpt), List.fill(2)(SrcSpan(point, point).some))
+      val retained = result.module.members
+        .collectFirst {
+          case binding: Bnd if binding.name == "a" => binding
+        }
+        .getOrElse(fail("Expected retained source binding"))
+      assert(retained.id.nonEmpty)
+      assert(!ValueAvailability.fromModule(result.module).isAvailable(retained.value))
     }
   }
 
-  test("MemberErrorChecker should catch multiple member errors") {
-    semState(
-      """
-        fn valid(a: Int, b: Int): Int = a + b;;
-        let a  ; # Missing expression after = 
-        bnd noLet = 5; # Invalid syntax - 'bnd' instead of 'let'
-        """,
-      name = "Test"
-    ).map { result =>
-      // import mml.mmlclib.util.prettyprint.ast.*
-      // println(prettyPrintAst(result.module))
-
-      assert(
-        result.errors.nonEmpty,
-        s"Expected semantic errors but found none. ${result.module}"
-      )
-      assert(clue(result.errors.size) == clue(2))
-      assert(result.errors.forall {
-        case SemanticError.MemberErrorFound(_, _) => true
+  test("nested member-component failures coexist with an independent unrecognized member") {
+    val code = """
+      fn valid(a: Int, b: Int): Int = a + b;;
+      let a  ; // Missing equals and initializer
+      bnd noLet = 5;
+    """
+    semVisibleState(code).map { result =>
+      val componentErrors = result.errors.collect {
+        case SemanticError.ParseTermErrorFound(error, _) => error
+      }
+      val memberErrors = result.errors.collect { case SemanticError.MemberErrorFound(error, _) =>
+        error
+      }
+      assertEquals(componentErrors.map(_.message), List("Expected expression", "Expected '='"))
+      assertEquals(memberErrors.map(_.message), List("Failed to parse member"))
+      assertEquals(memberErrors.map(_.failedCode), List("bnd noLet = 5;".some))
+      assertEquals(result.errors.size, 3, result.errors)
+      assert(result.module.members.exists {
+        case binding: Bnd => binding.name == "a" && binding.id.nonEmpty
         case _ => false
       })
+    }
+  }
+
+  test("equal fresh recovered occurrences receive distinct identities") {
+    parseNotFailed("let value = 1;").map { module =>
+      val binding = module.members
+        .collectFirst { case binding: Bnd => binding }
+        .getOrElse(fail("Expected value binding"))
+      val error = ParseTermError(binding.value.source, "Malformed term", "1".some)
+      val recovered = module.copy(members =
+        List(
+          binding.copy(value = binding.value.copy(terms = List(error, error)))
+        )
+      )
+      val state = CompilerState.empty(
+        recovered,
+        SourceInfo("let value = 1;"),
+        CompilerConfig.default
+      )
+      val result = ParsingErrorChecker.checkModule(state)
+
+      assertEquals(result.errors.size, 2)
+      assertEquals(result.diagnostics.records.map(_.id).distinct.size, 2)
+      assertEquals(recoveredTree(result.module), recoveredTree(recovered))
+      assertTermRoots(result)
     }
   }

@@ -185,7 +185,7 @@ object SemanticTokens:
 
       case invalid: InvalidExpression => collectFromExpr(invalid.originalExpr, module)
 
-      case _: Placeholder | _: Hole | _: DataConstructor | _: NativeImpl | _: TermError =>
+      case _: Placeholder | _: Hole | _: DataConstructor | _: NativeImpl | _: ParseTermError =>
         Nil
 
   /** Collect tokens from a reference. */
@@ -300,7 +300,8 @@ object SemanticTokens:
       case tor: TypeOpenRecord =>
         tor.fields.flatMap((_, t) => collectFromType(t))
       case _: NativePrimitive | _: NativePointer | _: NativeStruct | _: TypeUnit | _: TypeGroup |
-          _: Union | _: Intersection | _: TypeRefinement | _: TypeStruct | _: InvalidType =>
+          _: Union | _: Intersection | _: TypeRefinement | _: TypeStruct | _: TypeResolutionError |
+          _: ParseTypeError =>
         Nil
 
   private def refTokenType(ref: Ref, resolved: Resolvable, module: Module): TokenType =

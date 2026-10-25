@@ -10,11 +10,34 @@ import mml.mmlclib.test.llvm.LlvmAssertions
 import mml.mmlclib.util.prettyprint.ast.prettyPrintAst
 import munit.CatsEffectSuite
 
-import java.nio.file.Path
+import java.nio.file.{Files, Path}
+import java.util.Comparator
 import scala.sys.process.{Process, ProcessLogger}
 
 /** Base trait for effectful tests; adds common MML specific assertions. */
 trait BaseEffFunSuite extends CatsEffectSuite with LlvmAssertions:
+
+  /** Runs a test with a temporary source file and an initially absent output directory. */
+  protected def withSourceFixture[A](
+    source:   String,
+    fileName: String
+  )(use: (Path, CompilerConfig) => IO[A]): IO[A] =
+
+    IO.blocking(Files.createTempDirectory("mml-source-fixture"))
+      .bracket { directory =>
+        val path   = directory.resolve(fileName)
+        val config = CompilerConfig.default.copy(outputDir = directory.resolve("output"))
+        IO.blocking(Files.writeString(path, source)).flatMap(_ => use(path, config))
+      } { directory =>
+        IO.blocking {
+          val paths = Files.walk(directory)
+          try
+            paths
+              .sorted(Comparator.reverseOrder[Path]())
+              .forEach(path => Files.deleteIfExists(path))
+          finally paths.close()
+        }
+      }
 
   /** Assert success through the compiler's shared toolchain command execution. */
   protected def commandNotFailed(command: List[String], workingDir: Path): IO[Unit] =
@@ -197,6 +220,22 @@ trait BaseEffFunSuite extends CatsEffectSuite with LlvmAssertions:
         fail(
           msg.getOrElse("Semantic pipeline failed before producing a state.") + s"\n$error"
         )
+    }
+
+  /** Semantic results with the same diagnostic selection used by CLI and editor presentation. */
+  def semVisibleState(
+    source: String,
+    name:   String         = "Test",
+    msg:    Option[String] = None
+  ): IO[SemanticResult] =
+    FrontEndApi.compile(source, name).value.map {
+      case Right(state) =>
+        SemanticResult(
+          state.module,
+          state.visibleErrors.collect { case e: SemanticError => e }.toList
+        )
+      case Left(error) =>
+        fail(msg.getOrElse("Semantic pipeline failed before producing a state.") + s"\n$error")
     }
 
   /** Parse source code without asserting on MemberErrors. Useful for testing phases that

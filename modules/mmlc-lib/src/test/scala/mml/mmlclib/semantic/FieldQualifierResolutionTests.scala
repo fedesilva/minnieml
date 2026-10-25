@@ -203,6 +203,7 @@ class FieldQualifierResolutionTests extends BaseEffFunSuite:
       assertEquals(invalid.size, 1)
       assertEquals(invalid.head.originalExpr.terms, List(errors.head.ref))
       assertEquals(invalid.head.source, errors.head.ref.source)
+      assertEquals(invalid.head.causes, state.diagnostics.records.map(_.id))
       assertScopedReferences(state.module)
     }
   }

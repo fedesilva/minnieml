@@ -3,7 +3,7 @@ package mml.mmlclib.compiler
 import cats.effect.IO
 import mml.mmlclib.ast.{LinkEntry, Module}
 import mml.mmlclib.codegen.ClangTarget
-import mml.mmlclib.errors.{CompilationError, CompilerWarning}
+import mml.mmlclib.errors.{CompilationError, CompilerWarning, DiagnosticStore}
 import mml.mmlclib.parser.{ParserError, SourceInfo}
 import mml.mmlclib.semantic.{BindingIdSupply, SemanticError}
 
@@ -15,7 +15,7 @@ case class CompilerState(
   module:         Module,
   sourceInfo:     SourceInfo,
   config:         CompilerConfig,
-  errors:         Vector[CompilationError],
+  diagnostics:    DiagnosticStore,
   warnings:       Vector[CompilerWarning],
   timings:        Vector[Timing],
   counters:       Vector[Counter]     = Vector.empty,
@@ -28,11 +28,15 @@ case class CompilerState(
   bindingIds:     BindingIdSupply     = BindingIdSupply(),
   linkEntries:    List[LinkEntry]     = Nil
 ):
+  def errors: Vector[CompilationError] = diagnostics.errors
+
+  def visibleErrors: Vector[CompilationError] = diagnostics.visibleErrors
+
   def addErrors(newErrors: List[CompilationError]): CompilerState =
-    copy(errors = errors ++ newErrors)
+    copy(diagnostics = DiagnosticStore.reportAll(newErrors).runS(diagnostics).value)
 
   def addError(error: CompilationError): CompilerState =
-    copy(errors = errors :+ error)
+    copy(diagnostics = diagnostics.emit(error)._1)
 
   def addWarnings(newWarnings: List[CompilerWarning]): CompilerState =
     copy(warnings = warnings ++ newWarnings)
@@ -85,13 +89,13 @@ case class CompilerState(
 object CompilerState:
   def empty(module: Module, sourceInfo: SourceInfo, config: CompilerConfig): CompilerState =
     CompilerState(
-      module     = module,
-      sourceInfo = sourceInfo,
-      config     = config,
-      errors     = Vector.empty,
-      warnings   = Vector.empty,
-      timings    = Vector.empty,
-      counters   = Vector.empty
+      module      = module,
+      sourceInfo  = sourceInfo,
+      config      = config,
+      diagnostics = DiagnosticStore(),
+      warnings    = Vector.empty,
+      timings     = Vector.empty,
+      counters    = Vector.empty
     )
 
   def timed[A](

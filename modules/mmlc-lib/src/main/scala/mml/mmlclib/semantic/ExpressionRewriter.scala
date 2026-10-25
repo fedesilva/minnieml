@@ -1,9 +1,10 @@
 package mml.mmlclib.semantic
 
-import cats.data.{EitherT, NonEmptyList as NEL}
+import cats.data.{EitherT, NonEmptyList as NEL, State}
 import cats.syntax.all.*
 import mml.mmlclib.ast.*
 import mml.mmlclib.compiler.CompilerState
+import mml.mmlclib.errors.{DiagnosticId, DiagnosticStore}
 
 import BindingIds.Allocation
 
@@ -13,7 +14,50 @@ import BindingIds.Allocation
   */
 object ExpressionRewriter:
 
-  private type Rewrite[A] = EitherT[Allocation, NEL[SemanticError], A]
+  private case class RewriteState(bindingIds: BindingIdSupply, diagnostics: DiagnosticStore)
+
+  private type Accumulating[A] = State[RewriteState, A]
+  private type Rewrite[A]      = EitherT[Accumulating, NEL[SemanticError], A]
+
+  private def allocate[A](operation: Allocation[A]): Accumulating[A] = State { current =>
+    val (bindingIds, result) = operation.run(current.bindingIds).value
+    (current.copy(bindingIds = bindingIds), result)
+  }
+
+  private def report(
+    error:  SemanticError,
+    causes: Vector[DiagnosticId] = Vector.empty
+  ): Accumulating[Vector[DiagnosticId]] = State { current =>
+    val (diagnostics, roots) = current.diagnostics.emit(error, causes)
+    (current.copy(diagnostics = diagnostics), roots)
+  }
+
+  private def failedExpr(expr: Expr, causes: Vector[DiagnosticId]): Expr =
+    expr.copy(terms =
+      List(
+        InvalidExpression(
+          expr.source,
+          expr,
+          typeSpec = expr.typeSpec,
+          typeAsc  = expr.typeAsc,
+          causes   = causes
+        )
+      )
+    )
+
+  @scala.annotation.tailrec
+  private def directFailure(term: Term): Option[Vector[DiagnosticId]] = term match
+    case invalid: InvalidExpression => invalid.causes.some
+    case error:   ParseTermError => error.causes.some
+    case group:   TermGroup =>
+      group.inner.terms match
+        case term :: Nil => directFailure(term)
+        case _ => none
+    case expr: Expr =>
+      expr.terms match
+        case term :: Nil => directFailure(term)
+        case _ => none
+    case _ => none
 
   extension [A](value: A) private def accepted: Rewrite[A] = EitherT.rightT(value)
 
@@ -21,10 +65,9 @@ object ExpressionRewriter:
 
   private case class RewrittenMembers(
     resolvables:         ResolvablesIndex,
-    bindingIds:          BindingIdSupply,
-    errors:              List[SemanticError] = Nil,
-    members:             List[Member]        = Nil,
-    transformedBindings: Map[String, Bnd]    = Map.empty
+    state:               RewriteState,
+    members:             List[Member]     = Nil,
+    transformedBindings: Map[String, Bnd] = Map.empty
   )
 
   private val phaseName = "mml.mmlclib.semantic.ExpressionRewriter"
@@ -111,7 +154,7 @@ object ExpressionRewriter:
       val template = param.copy(source = SourceOrigin.Synth, nameNode = Name.synth(s"$$p$ordinal"))
       LocalBindings.fresh(template, owner, "eta")
     }
-    EitherT.liftF(allocation).map { syntheticLocals =>
+    EitherT.liftF(allocate(allocation)).map { syntheticLocals =>
       val syntheticParams = syntheticLocals.map(_.param)
       val syntheticRefs   = syntheticLocals.map(_.ref)
       // Build App chain with synthetic args
@@ -125,37 +168,34 @@ object ExpressionRewriter:
 
   /** Rewrite a module, accumulating errors in the state. */
   def rewriteModule(state: CompilerState): CompilerState =
-    val initial = RewrittenMembers(state.module.resolvables, state.bindingIds.include(state.module))
+    val initial = RewrittenMembers(
+      state.module.resolvables,
+      RewriteState(state.bindingIds.include(state.module), state.diagnostics)
+    )
     val result = state.module.members.foldLeft(initial) { (current, member) =>
       member match
-        case bnd: Bnd =>
-          val owner = BindingOwner.binding(state.module.name, bnd.name)
-          val (nextIds, rewritten) =
-            rewriteExpr(bnd.value, owner, current.transformedBindings, current.resolvables).value
-              .run(current.bindingIds)
+        case binding: Bnd =>
+          val owner = BindingOwner.binding(state.module.name, binding.name)
+          val (nextState, value) =
+            rewriteExpr(binding.value, owner, current.transformedBindings, current.resolvables)
+              .run(current.state)
               .value
-          rewritten match
-            case Right(updatedExpr) =>
-              val updatedBnd = bnd.copy(value = updatedExpr)
-              current.copy(
-                members             = current.members :+ updatedBnd,
-                transformedBindings = current.transformedBindings + (bnd.name -> updatedBnd),
-                resolvables         = current.resolvables.updated(updatedBnd),
-                bindingIds          = nextIds
-              )
-            case Left(errs) =>
-              current.copy(
-                errors     = current.errors ++ errs.toList,
-                members    = current.members :+ bnd,
-                bindingIds = nextIds
-              )
-        case other =>
-          current.copy(members = current.members :+ other)
+          val updated = binding.copy(value = value)
+          current.copy(
+            members             = current.members :+ updated,
+            transformedBindings = current.transformedBindings.updated(binding.name, updated),
+            resolvables         = current.resolvables.updated(updated),
+            state               = nextState
+          )
+        case other => current.copy(members = current.members :+ other)
     }
+    val module = ResolvablesIndexer.refresh(state.module.copy(members = result.members))
     state
-      .copy(bindingIds = result.bindingIds)
-      .addErrors(result.errors)
-      .withModule(state.module.copy(members = result.members, resolvables = result.resolvables))
+      .copy(
+        bindingIds  = result.state.bindingIds,
+        diagnostics = result.state.diagnostics
+      )
+      .withModule(module)
 
   /** Rewrite an expression using precedence climbing for both operators and function application
     */
@@ -164,31 +204,47 @@ object ExpressionRewriter:
     owner:               BindingOwner,
     transformedBindings: Map[String, Bnd],
     resolvables:         ResolvablesIndex
-  ): Rewrite[Expr] =
-    rewritePrecedenceExpr(
-      expr.terms,
-      MinPrecedence,
-      expr.source,
-      owner,
-      transformedBindings,
-      resolvables
-    )
-      .flatMap { case (result, remaining) =>
-        if remaining.isEmpty then
-          // All terms processed successfully
-          result.accepted
-        else
-          // Remaining terms after expression - this means they're dangling
-          NEL
-            .one(
-              SemanticError.DanglingTerms(
-                remaining,
-                "Unexpected terms outside expression context",
-                phaseName
+  ): Accumulating[Expr] =
+    expr.terms.traverse(rewriteTerm(_, owner, transformedBindings, resolvables)).flatMap { terms =>
+      val rewritten = expr.copy(terms = terms)
+      val failures  = terms.flatMap(directFailure)
+      if failures.nonEmpty then
+        val roots =
+          if failures.forall(_.nonEmpty) then failures.flatten.distinct.toVector
+          else Vector.empty
+        val retained = terms match
+          case (_: InvalidExpression) :: Nil => rewritten
+          case _ => failedExpr(rewritten, roots)
+        retained.pure[Accumulating]
+      else
+        val parsed = rewritePrecedenceExpr(
+          terms,
+          MinPrecedence,
+          expr.source,
+          owner,
+          transformedBindings,
+          resolvables
+        ).flatMap { case (result, remaining) =>
+          if remaining.isEmpty then result.accepted
+          else
+            NEL
+              .one(
+                SemanticError.DanglingTerms(
+                  remaining,
+                  "Unexpected terms outside expression context",
+                  phaseName
+                )
               )
-            )
-            .rejected
-      }
+              .rejected
+        }
+        parsed.value.flatMap {
+          case Right(result) => result.pure[Accumulating]
+          case Left(errors) =>
+            errors.toList.traverse(report(_)).map { roots =>
+              failedExpr(rewritten, roots.flatten.distinct.toVector)
+            }
+        }
+    }
 
   /** Rewrite an expression using precedence climbing
     */
@@ -201,12 +257,8 @@ object ExpressionRewriter:
     resolvables:         ResolvablesIndex
   ): Rewrite[(Expr, List[Term])] =
     for
-      // First, rewrite any inner expressions in each term
-      rewrittenTerms <- terms.traverse(rewriteTerm(_, owner, transformedBindings, resolvables))
-
-      // Rewrite the first atom in the expression
       (lhs, restAfterAtom) <-
-        rewriteAtom(rewrittenTerms, source, owner, transformedBindings, resolvables)
+        rewriteAtom(terms, source, owner, transformedBindings, resolvables)
 
       // Rewrite any operations with sufficient precedence
       result <- rewriteOps(
@@ -242,8 +294,8 @@ object ExpressionRewriter:
           .rejected
 
       case (g: TermGroup) :: rest =>
-        rewriteGroupAtom(g, owner, transformedBindings, resolvables).flatMap { term =>
-          buildAppChain(term, rest, g.source, owner, transformedBindings, resolvables)
+        rewriteGroupAtom(g).flatMap { term =>
+          buildHeadAppChain(term, rest, g.source, owner, transformedBindings, resolvables)
         }
 
       case (head :: rest) =>
@@ -273,14 +325,9 @@ object ExpressionRewriter:
           case None =>
             // Not a prefix operator - check for ref, atom, or error
             head match
-              case ref: Ref =>
-                // Any reference - handle as potential function application
-                buildAppChain(ref, rest, source, owner, transformedBindings, resolvables)
-              case lambda: Lambda =>
-                // Direct lambda-head calls lower to nested unary immediate-lambda apps so the
-                // regular application/type-checking path owns the remaining semantics.
-                buildDirectLambdaAppChain(
-                  lambda,
+              case callable @ (_: Ref | _: Lambda) =>
+                buildHeadAppChain(
+                  callable,
                   rest,
                   source,
                   owner,
@@ -392,6 +439,21 @@ object ExpressionRewriter:
         // No more operations with sufficient precedence
         (lhs, terms).accepted
 
+  /** Normalize a source callee once before appending its applications. */
+  private def buildHeadAppChain(
+    fn:                  Term,
+    terms:               List[Term],
+    source:              SourceOrigin,
+    owner:               BindingOwner,
+    transformedBindings: Map[String, Bnd],
+    resolvables:         ResolvablesIndex
+  ): Rewrite[(Expr, List[Term])] =
+    fn match
+      case lambda: Lambda =>
+        buildDirectLambdaAppChain(lambda, terms, source, owner, transformedBindings, resolvables)
+      case _ =>
+        buildAppChain(fn, terms, source, owner, transformedBindings, resolvables)
+
   /** Build a chain of function applications recursively.
     *
     * This function handles the left-associativity of application: `f x y` -> `((f x) y)`. Each term
@@ -416,7 +478,7 @@ object ExpressionRewriter:
         wrapIfUndersaturated(fn, source, owner, transformedBindings, resolvables).map((_, terms))
       case (g: TermGroup) :: restTerms =>
         // Groups are processed as sub-expressions (may contain nested applications)
-        rewriteGroupAtom(g, owner, transformedBindings, resolvables).flatMap { term =>
+        rewriteGroupAtom(g).flatMap { term =>
           val argExpr = Expr(g.source, List(term))
           buildSingleApp(fn, argExpr, source).flatMap { app =>
             buildAppChain(app, restTerms, source, owner, transformedBindings, resolvables)
@@ -519,7 +581,7 @@ object ExpressionRewriter:
   ): Rewrite[(Expr, List[Term])] =
     terms match
       case (group: TermGroup) :: restTerms =>
-        rewriteGroupAtom(group, owner, transformedBindings, resolvables)
+        rewriteGroupAtom(group)
           .map(term => (Expr(group.source, List(term)), restTerms))
       case (ref: Ref) :: restTerms =>
         wrapIfUndersaturated(ref, ref.source, owner, transformedBindings, resolvables)
@@ -586,45 +648,19 @@ object ExpressionRewriter:
         case _ => applied
     }
 
-  private def rewriteGroupAtom(
-    group:               TermGroup,
-    owner:               BindingOwner,
-    transformedBindings: Map[String, Bnd],
-    resolvables:         ResolvablesIndex
-  ): Rewrite[Term] =
-    rewritePrecedenceExpr(
-      group.inner.terms,
-      MinPrecedence,
-      group.source,
-      owner,
-      transformedBindings,
-      resolvables
-    )
-      .flatMap {
-        case (_, remainingInGroup) if remainingInGroup.nonEmpty =>
-          NEL
-            .one(
-              SemanticError.DanglingTerms(
-                remainingInGroup,
-                "Unexpected terms inside group",
-                phaseName
-              )
+  private def rewriteGroupAtom(group: TermGroup): Rewrite[Term] =
+    group.inner.terms match
+      case term :: Nil => term.accepted
+      case _ =>
+        NEL
+          .one(
+            SemanticError.InvalidExpression(
+              group.inner,
+              "Group must resolve to a single expression",
+              phaseName
             )
-            .rejected
-        case (innerExpr, _) if innerExpr.terms.length != 1 =>
-          NEL
-            .one(
-              SemanticError
-                .InvalidExpression(
-                  innerExpr,
-                  "Group must resolve to a single expression",
-                  phaseName
-                )
-            )
-            .rejected
-        case (innerExpr, _) =>
-          innerExpr.terms.head.accepted
-      }
+          )
+          .rejected
 
   /** Build a single application node
     */
@@ -666,61 +702,84 @@ object ExpressionRewriter:
     owner:               BindingOwner,
     transformedBindings: Map[String, Bnd],
     resolvables:         ResolvablesIndex
-  ): Rewrite[Term] =
+  ): Accumulating[Term] =
     term match
-      case app: App =>
+      case app: App => rewriteApp(app, owner, transformedBindings, resolvables).widen
+
+      case ref: Ref => rewriteRef(ref, owner, transformedBindings, resolvables).widen
+
+      case invalid: InvalidExpression =>
         for
-          newFn <- rewriteAppFn(app.fn, owner, transformedBindings, resolvables)
-          newArg <- rewriteExpr(app.arg, owner, transformedBindings, resolvables)
-        yield app.copy(fn = newFn, arg = newArg)
-      case ref: Ref =>
-        ref.qualifier match
-          case Some(qualifier) =>
-            rewriteTerm(qualifier, owner, transformedBindings, resolvables)
-              .map(updatedQualifier => ref.copy(qualifier = Some(updatedQualifier)))
-          case None =>
-            ref.accepted
-      case inv: InvalidExpression =>
-        // Report that we found an invalid expression from an earlier phase
-        NEL.one(SemanticError.InvalidExpressionFound(inv, phaseName)).rejected
-      case e: Expr =>
-        rewriteExpr(e, owner, transformedBindings, resolvables).widen
-      case lambda: Lambda =>
-        // Process lambda body to rewrite operators and function applications
-        EitherT.liftF(BindingIds.within(lambda.params, owner)).flatMap { nested =>
-          rewriteExpr(lambda.body, nested, transformedBindings, resolvables)
-            .map(newBody => lambda.copy(body = newBody))
-        }
-      case c: Cond =>
+          terms <- invalid.originalExpr.terms.traverse(
+            rewriteTerm(_, owner, transformedBindings, resolvables)
+          )
+          roots <- report(SemanticError.InvalidExpressionFound(invalid, phaseName), invalid.causes)
+        yield invalid.copy(originalExpr = invalid.originalExpr.copy(terms = terms), causes = roots)
+
+      case expr: Expr => rewriteExpr(expr, owner, transformedBindings, resolvables).widen
+
+      case lambda: Lambda => rewriteLambda(lambda, owner, transformedBindings, resolvables).widen
+
+      case cond: Cond =>
         for
-          newCond <- rewriteExpr(c.cond, owner, transformedBindings, resolvables)
-          newIfTrue <- rewriteExpr(c.ifTrue, owner, transformedBindings, resolvables)
-          newIfFalse <- rewriteExpr(c.ifFalse, owner, transformedBindings, resolvables)
-        yield c.copy(cond = newCond, ifTrue = newIfTrue, ifFalse = newIfFalse)
-      case t: Tuple =>
-        t.elements
+          predicate <- rewriteExpr(cond.cond, owner, transformedBindings, resolvables)
+          ifTrue <- rewriteExpr(cond.ifTrue, owner, transformedBindings, resolvables)
+          ifFalse <- rewriteExpr(cond.ifFalse, owner, transformedBindings, resolvables)
+        yield cond.copy(cond = predicate, ifTrue = ifTrue, ifFalse = ifFalse)
+
+      case tuple: Tuple =>
+        tuple.elements
           .traverse(rewriteExpr(_, owner, transformedBindings, resolvables))
-          .map(newElems => t.copy(elements = newElems))
-      case tg: TermGroup =>
-        rewriteExpr(tg.inner, owner, transformedBindings, resolvables).map(newInner =>
-          tg.copy(inner = newInner)
-        )
-      case other =>
-        other.accepted
+          .map(elements => tuple.copy(elements = elements))
+
+      case group: TermGroup =>
+        rewriteExpr(group.inner, owner, transformedBindings, resolvables)
+          .map(inner => group.copy(inner = inner))
+
+      case other => other.pure[Accumulating]
+
+  private def rewriteRef(
+    ref:                 Ref,
+    owner:               BindingOwner,
+    transformedBindings: Map[String, Bnd],
+    resolvables:         ResolvablesIndex
+  ): Accumulating[Ref] =
+    ref.qualifier
+      .traverse(rewriteTerm(_, owner, transformedBindings, resolvables))
+      .map(qualifier => ref.copy(qualifier = qualifier))
+
+  private def rewriteApp(
+    app:                 App,
+    owner:               BindingOwner,
+    transformedBindings: Map[String, Bnd],
+    resolvables:         ResolvablesIndex
+  ): Accumulating[App] =
+    for
+      fn <- rewriteAppFn(app.fn, owner, transformedBindings, resolvables)
+      arg <- rewriteExpr(app.arg, owner, transformedBindings, resolvables)
+    yield app.copy(fn = fn, arg = arg)
+
+  private def rewriteLambda(
+    lambda:              Lambda,
+    owner:               BindingOwner,
+    transformedBindings: Map[String, Bnd],
+    resolvables:         ResolvablesIndex
+  ): Accumulating[Lambda] =
+    for
+      nested <- allocate(BindingIds.within(lambda.params, owner))
+      body <- rewriteExpr(lambda.body, nested, transformedBindings, resolvables)
+    yield lambda.copy(body = body)
 
   private def rewriteAppFn(
     fn:                  Callee,
     owner:               BindingOwner,
     transformedBindings: Map[String, Bnd],
     resolvables:         ResolvablesIndex
-  ): Rewrite[Callee] =
+  ): Accumulating[Callee] =
     fn match
-      case ref: Ref =>
-        rewriteTerm(ref, owner, transformedBindings, resolvables).map(_.asInstanceOf[Ref])
-      case app: App =>
-        rewriteTerm(app, owner, transformedBindings, resolvables).map(_.asInstanceOf[App])
-      case lambda: Lambda =>
-        rewriteTerm(lambda, owner, transformedBindings, resolvables).map(_.asInstanceOf[Lambda])
+      case ref:    Ref => rewriteRef(ref, owner, transformedBindings, resolvables).widen
+      case app:    App => rewriteApp(app, owner, transformedBindings, resolvables).widen
+      case lambda: Lambda => rewriteLambda(lambda, owner, transformedBindings, resolvables).widen
 
   /** Check if a term is an operator
     */

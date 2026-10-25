@@ -122,12 +122,19 @@ enum TypeError extends CompilationError:
 enum SemanticError extends CompilationError:
   case UndefinedRef(ref: Ref, member: Member, phase: String)
   case UndefinedTypeRef(typeRef: TypeRef, member: Member, phase: String)
+  case AmbiguousTypeRef(
+    typeRef:    TypeRef,
+    candidates: List[ResolvableType],
+    member:     Member,
+    phase:      String
+  )
   case DuplicateName(name: String, duplicates: List[Resolvable], phase: String)
   case InvalidExpression(expr: Expr, msg: String, phase: String)
   case DanglingTerms(terms: List[Term], msg: String, phase: String)
   case MemberErrorFound(error: ParsingMemberError, phase: String)
   case ParsingIdErrorFound(error: ParsingIdError, phase: String)
-  case TermErrorFound(error: TermError, phase: String)
+  case ParseTermErrorFound(error: ParseTermError, phase: String)
+  case ParseTypeErrorFound(error: ParseTypeError, phase: String)
   case InvalidExpressionFound(invalidExpr: mml.mmlclib.ast.InvalidExpression, phase: String)
   case TypeCheckingError(error: TypeError)
   case InvalidEntryPoint(msg: String, source: SourceOrigin)
@@ -156,6 +163,8 @@ enum SemanticError extends CompilationError:
       s"Undefined reference: '${ref.name}'"
     case UndefinedTypeRef(typeRef, _, _) =>
       s"Undefined type: '${typeRef.name}'"
+    case AmbiguousTypeRef(typeRef, _, _, _) =>
+      s"Ambiguous type: '${typeRef.name}'"
     case DuplicateName(name, _, _) =>
       s"Duplicate definition: '$name'"
     case InvalidExpression(_, msg, _) =>
@@ -166,8 +175,10 @@ enum SemanticError extends CompilationError:
       s"Parse error in member: ${error.message}"
     case ParsingIdErrorFound(error, _) =>
       s"Parse error in identifier: ${error.message}"
-    case TermErrorFound(error, _) =>
+    case ParseTermErrorFound(error, _) =>
       s"Parse error in expression: ${error.message}"
+    case ParseTypeErrorFound(error, _) =>
+      s"Parse error in type: ${error.message}"
     case InvalidExpressionFound(_, _) =>
       "Invalid expression"
     case TypeCheckingError(error) =>

@@ -2,6 +2,7 @@ package mml.mmlclib.semantic
 
 import mml.mmlclib.ast.*
 import mml.mmlclib.compiler.{CompilerConfig, CompilerState}
+import mml.mmlclib.lsp.{DiagnosticSeverity, Diagnostics, Range}
 import mml.mmlclib.parser.SourceInfo
 import mml.mmlclib.test.BaseEffFunSuite
 
@@ -15,6 +16,65 @@ class TypeResolverTests extends BaseEffFunSuite:
         id
 
       case other => fail(s"Expected a nominal type, got $other")
+
+  private def conditionals(binding: Bnd): List[Cond] =
+    TermTraversal.collect(binding.value) { case conditional: Cond => conditional }
+
+  test("conditional Unit caches resolve before type checking for absent else and nested elif"):
+    val code = """
+      let single = if true then ();;
+      let chained = if false then (); elif true then ();;
+    """
+
+    parseNotFailed(code).map { parsed =>
+      val resolved = TypeResolver.rewriteModule(phaseInput(code, parsed))
+      val unit = resolved.module.members
+        .collectFirst {
+          case definition: TypeDef if definition.name == "Unit" => definition
+        }
+        .getOrElse(fail("Expected the injected Unit declaration"))
+      val conditions = resolved.module.members
+        .collect { case binding: Bnd => binding }
+        .flatMap(conditionals)
+      val causes = DiagnosticCauses.fromModule(resolved.module)
+
+      assertEquals(resolved.errors, Vector.empty)
+      assertEquals(conditions.size, 3)
+      conditions.foreach { conditional =>
+        assertEquals(resolvedTypeId(conditional.typeSpec, resolved.module), unit.id.get)
+        conditional.typeAsc.foreach { ascription =>
+          assertEquals(resolvedTypeId(Some(ascription), resolved.module), unit.id.get)
+        }
+        assertEquals(causes.evidenceOf(conditional), CauseEvidence.empty)
+      }
+    }
+
+  test("a conditional cache shares the written ascription failure without duplicate diagnostics"):
+    val code = "let value = if true then ();;"
+
+    parseNotFailed(code).map { parsed =>
+      val initial     = phaseInput(code, parsed)
+      val original    = onlyBinding(initial.module)
+      val conditional = conditionals(original).head
+      val reference   = TypeRef(conditional.source, "Missing")
+      val cached      = conditional.copy(typeAsc = Some(reference), typeSpec = Some(reference))
+      val binding     = original.copy(value = original.value.copy(terms = List(cached)))
+      val members = initial.module.members.map {
+        case current: Bnd if current.id == binding.id => binding
+        case member => member
+      }
+      val resolved = TypeResolver.rewriteModule(
+        initial.withModule(initial.module.copy(members = members))
+      )
+      val result     = conditionals(onlyBinding(resolved.module)).head
+      val ascription = unresolvedType(result.typeAsc)
+      val cachedType = unresolvedType(result.typeSpec)
+
+      assertEquals(resolved.errors.map(_.message), Vector("Undefined type: 'Missing'"))
+      assertEquals(ascription.causes, resolved.diagnostics.records.map(_.id))
+      assertEquals(cachedType.causes, ascription.causes)
+      assertEquals(cachedType.originalType, ascription.originalType)
+    }
 
   test("TypeResolver resolves cached global literal types at the phase boundary"):
     val code = """
@@ -265,4 +325,222 @@ class TypeResolverTests extends BaseEffFunSuite:
           )
         case other =>
           fail(s"Expected TypeRef to resolve to TypeStruct, got: ${clue(other)}")
+    }
+
+  private def phaseInput(code: String, parsed: Module): CompilerState =
+    IdAssigner.rewriteModule(
+      CompilerState.empty(injectBasicTypes(parsed), SourceInfo(code), CompilerConfig.default)
+    )
+
+  private def onlyBinding(module: Module): Bnd =
+    val bindings = module.members.collect { case binding: Bnd => binding }
+    assertEquals(bindings.size, 1)
+    bindings.head
+
+  private def onlyLambda(binding: Bnd): Lambda = binding.value.terms match
+    case (lambda: Lambda) :: Nil => lambda
+    case other => fail(s"Expected one lambda, got $other")
+
+  private def unresolvedType(tpe: Option[Type]): UndefinedTypeError = tpe match
+    case Some(error: UndefinedTypeError) => error
+    case other => fail(s"Expected an undefined type, got $other")
+
+  test("type resolution accumulates parameter, body, and result failures with original sources"):
+    val code = "fn broken(a: MissingA, b: Int): MissingResult = 1: MissingBody;;"
+    parseNotFailed(code).map { parsed =>
+      val initial         = phaseInput(code, parsed)
+      val originalBinding = onlyBinding(initial.module)
+      val original        = onlyLambda(originalBinding)
+      val originalLiteral = original.body.terms.head
+      val resolved        = TypeResolver.rewriteModule(initial)
+      val binding         = onlyBinding(resolved.module)
+      val lambda          = onlyLambda(binding)
+      val failures = Vector(
+        unresolvedType(lambda.params.head.typeAsc),
+        unresolvedType(lambda.body.terms.head.typeAsc),
+        unresolvedType(lambda.typeAsc)
+      )
+      val originalTypes = Vector(
+        original.params.head.typeAsc,
+        originalLiteral.typeAsc,
+        original.typeAsc
+      ).map(_.get)
+
+      assertEquals(failures.map(_.originalType), originalTypes)
+      assertEquals(failures.map(_.source), originalTypes.map(_.source))
+      assertEquals(
+        resolved.errors.map(_.message),
+        Vector(
+          "Undefined type: 'MissingA'",
+          "Undefined type: 'MissingBody'",
+          "Undefined type: 'MissingResult'"
+        )
+      )
+      assertEquals(failures.flatMap(_.causes), resolved.diagnostics.records.map(_.id))
+      assertEquals(failures.map(_.causes.size), Vector(1, 1, 1))
+      assertEquals(unresolvedType(lambda.body.typeAsc).causes, failures(1).causes)
+      assertEquals(unresolvedType(binding.typeAsc).causes, failures(2).causes)
+      assertEquals(resolved.module.resolvables.lookup(binding.id.get), Some(binding))
+      lambda.params.foreach { param =>
+        assertEquals(resolved.module.resolvables.lookup(param.id.get), Some(param))
+      }
+      assertEquals(lambda.params(1).source, original.params(1).source)
+      assertEquals(lambda.params(1).typeAsc.map(_.source), original.params(1).typeAsc.map(_.source))
+      resolvedTypeId(lambda.params(1).typeAsc, resolved.module)
+      resolvedTypeId(lambda.body.terms.head.typeSpec, resolved.module)
+      assertEquals(
+        Diagnostics.fromCompilerState(resolved).map(_.range),
+        failures.flatMap(_.spanOpt).map(Range.fromSrcSpan).toList
+      )
+      assert(Diagnostics.fromCompilerState(resolved).forall(_.severity == DiagnosticSeverity.Error))
+    }
+
+  test("type resolution preserves valid fields beside separate occurrences of an undefined type"):
+    val code = "struct Record { first: Missing, valid: Int, last: Missing };"
+    parseNotFailed(code).map { parsed =>
+      val initial  = phaseInput(code, parsed)
+      val original = initial.module.members.collectFirst { case struct: TypeStruct => struct }.get
+      val resolved = TypeResolver.rewriteModule(initial)
+      val struct   = resolved.module.members.collectFirst { case value: TypeStruct => value }.get
+      val first    = unresolvedType(Some(struct.fields.head.typeSpec))
+      val last     = unresolvedType(Some(struct.fields.last.typeSpec))
+      val failures = Vector(first, last)
+
+      assertEquals(resolved.errors.map(_.message), Vector.fill(2)("Undefined type: 'Missing'"))
+      assertEquals(failures.flatMap(_.causes), resolved.diagnostics.records.map(_.id))
+      assertEquals(failures.flatMap(_.causes).distinct.size, 2)
+      assertEquals(first.originalType, original.fields.head.typeSpec)
+      assertEquals(last.originalType, original.fields.last.typeSpec)
+      assertEquals(struct.fields(1).source, original.fields(1).source)
+      assertEquals(struct.fields(1).id, original.fields(1).id)
+      assertEquals(struct.fields(1).typeSpec.source, original.fields(1).typeSpec.source)
+      resolvedTypeId(Some(struct.fields(1).typeSpec), resolved.module)
+      assertEquals(resolved.module.resolvables.lookupType(struct.id.get), Some(struct))
+      struct.fields.foreach { field =>
+        assertEquals(resolved.module.resolvables.lookup(field.id.get), Some(field))
+      }
+    }
+
+  test("ambiguous type lookup retains all actual candidates and its written reference"):
+    val code = """
+      type Choice = @metal:repr[t=i32];
+      type Choice = @metal:repr[t=i64];
+      let value: Choice = ???;
+    """
+    parseNotFailed(code).map { parsed =>
+      val assigned = phaseInput(code, parsed)
+      val members = assigned.module.members.zipWithIndex.map {
+        case (definition: TypeDef, index) if definition.source.isFromSource =>
+          definition.copy(id = Some(s"candidate-$index"))
+        case (member, _) => member
+      }
+      val initial =
+        assigned.withModule(ResolvablesIndexer.refresh(assigned.module.copy(members = members)))
+      val original = onlyBinding(initial.module)
+      val candidates = members.collect {
+        case definition: TypeDef if definition.source.isFromSource => definition
+      }
+      val resolved = TypeResolver.rewriteModule(initial)
+      val binding  = onlyBinding(resolved.module)
+      val error = binding.typeAsc match
+        case Some(error: AmbiguousTypeError) => error
+        case other => fail(s"Expected ambiguity, got $other")
+
+      assertEquals(candidates.size, 2)
+      assertEquals(error.originalType, original.typeAsc.get)
+      assertEquals(error.source, original.typeAsc.get.source)
+      assertEquals(error.candidates, candidates)
+      assertEquals(resolved.errors.map(_.message), Vector("Ambiguous type: 'Choice'"))
+      assertEquals(error.causes, resolved.diagnostics.records.map(_.id))
+      resolved.errors.head match
+        case diagnostic: SemanticError.AmbiguousTypeRef =>
+          assertEquals(diagnostic.typeRef, error.originalType)
+          assertEquals(diagnostic.candidates, error.candidates)
+        case other => fail(s"Expected ambiguity diagnostic, got $other")
+      assertEquals(
+        Diagnostics.fromCompilerState(resolved).map(_.message),
+        List("Ambiguous type: Choice")
+      )
+      assertEquals(
+        Diagnostics.fromCompilerState(resolved).map(_.range),
+        error.spanOpt.map(Range.fromSrcSpan).toList
+      )
+    }
+
+  test("failed aliases preserve their root while a forward valid chain resolves completely"):
+    val code = """
+      type Failed = Missing;
+      type First = Second;
+      type Second = Third;
+      type Third = Int;
+      let value: First = 1;
+    """
+    parseNotFailed(code).map { parsed =>
+      val initial  = phaseInput(code, parsed)
+      val resolved = TypeResolver.rewriteModule(initial)
+      val aliases = resolved.module.members.collect {
+        case alias: TypeAlias if alias.source.isFromSource => alias
+      }
+      val failed    = aliases.head
+      val error     = unresolvedType(Some(failed.typeRef))
+      val targetIds = aliases.tail.map(alias => resolvedTypeId(alias.typeSpec, resolved.module))
+
+      assertEquals(resolved.errors.map(_.message), Vector("Undefined type: 'Missing'"))
+      assertEquals(error.causes, resolved.diagnostics.records.map(_.id))
+      assertEquals(failed.typeSpec, None)
+      assertEquals(targetIds.distinct.size, 1)
+      aliases.foreach { alias =>
+        assertEquals(resolved.module.resolvables.lookupType(alias.id.get), Some(alias))
+      }
+      val binding = onlyBinding(resolved.module)
+      assertEquals(resolvedTypeId(binding.typeAsc, resolved.module), aliases(1).id.get)
+    }
+
+  test("distinct type reference occurrences retain separate roots even with identical contents"):
+    val code = "let value: Missing = ???;"
+    parseNotFailed(code).map { parsed =>
+      val initial  = phaseInput(code, parsed)
+      val original = onlyBinding(initial.module)
+      val ref = original.typeAsc match
+        case Some(ref: TypeRef) => ref
+        case other => fail(s"Expected written reference, got $other")
+      val secondOccurrence = ref.copy()
+      val hole             = Hole(original.value.source, typeAsc = Some(secondOccurrence))
+      val duplicated       = original.copy(value = original.value.copy(terms = List(hole)))
+      val members = initial.module.members.map {
+        case binding: Bnd if binding.id == original.id => duplicated
+        case member => member
+      }
+      val result =
+        TypeResolver.rewriteModule(initial.withModule(initial.module.copy(members = members)))
+      val binding = onlyBinding(result.module)
+      val first   = unresolvedType(binding.typeAsc)
+      val second  = unresolvedType(binding.value.terms.head.typeAsc)
+
+      assertEquals(first.originalType, second.originalType)
+      assertEquals(result.errors.map(_.message), Vector.fill(2)("Undefined type: 'Missing'"))
+      assertEquals((first.causes ++ second.causes).distinct.size, 2)
+    }
+
+  test("local function signature caches reuse the written parameter failure"):
+    val code = "fn outer(): Int = fn inner(arg: Missing): Int = 1;; 2;;"
+    parseNotFailed(code).map { parsed =>
+      val result = TypeResolver.rewriteModule(phaseInput(code, parsed))
+      val types = TermTraversal
+        .collect(onlyBinding(result.module).value) { case lambda: Lambda =>
+          lambda.params.flatMap(_.typeAsc)
+        }
+        .flatten
+      val written    = types.collect { case error: UndefinedTypeError => error }
+      val signatures = types.collect { case function: TypeFn => function }
+      val cached = signatures.flatMap(_.paramTypes.toList).collect {
+        case error: UndefinedTypeError => error
+      }
+
+      assertEquals(result.errors.map(_.message), Vector("Undefined type: 'Missing'"))
+      assertEquals(written.size, 1)
+      assertEquals(cached.size, 1)
+      assertEquals(written.head.causes, result.diagnostics.records.map(_.id))
+      assertEquals(cached.head.causes, written.head.causes)
+      assertEquals(cached.head.originalType, written.head.originalType)
     }

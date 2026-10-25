@@ -1,6 +1,8 @@
 package mml.mmlclib.semantic
 
 import mml.mmlclib.ast.*
+import mml.mmlclib.compiler.{CompilerConfig, CompilerState}
+import mml.mmlclib.parser.SourceInfo
 import mml.mmlclib.test.BaseEffFunSuite
 
 class TypeResolverNativeStructTests extends BaseEffFunSuite:
@@ -144,4 +146,53 @@ class TypeResolverNativeStructTests extends BaseEffFunSuite:
           assertEquals(fields.size, 0)
         case other =>
           fail(s"Expected NativeStruct, got: $other")
+    }
+
+  test("native type fields accumulate independent errors without losing valid fields"):
+    val code = """
+      type Record = @metal:repr {
+        first: MissingFirst,
+        valid: Int64,
+        last: MissingLast
+      };
+    """
+    parseNotFailed(code).map { parsed =>
+      val initial = IdAssigner.rewriteModule(
+        CompilerState.empty(injectBasicTypes(parsed), SourceInfo(code), CompilerConfig.default)
+      )
+      val original = initial.module.members.collectFirst {
+        case definition: TypeDef if definition.source.isFromSource => definition
+      }.get
+      val originalFields = original.typeSpec match
+        case Some(native: NativeStruct) => native.fields.map(_._2)
+        case other => fail(s"Expected native struct, got $other")
+      val resolved = TypeResolver.rewriteModule(initial)
+      val definition = resolved.module.resolvables.lookupType(original.id.get) match
+        case Some(definition: TypeDef) => definition
+        case other => fail(s"Expected indexed type definition, got $other")
+      val fields = definition.typeSpec match
+        case Some(native: NativeStruct) => native.fields.map(_._2)
+        case other => fail(s"Expected retained native struct, got $other")
+      val errors = fields.collect { case error: UndefinedTypeError => error }
+
+      assertEquals(
+        resolved.errors.map(_.message),
+        Vector(
+          "Undefined type: 'MissingFirst'",
+          "Undefined type: 'MissingLast'"
+        )
+      )
+      assertEquals(errors.map(_.originalType), List(originalFields.head, originalFields.last))
+      assertEquals(
+        errors.map(_.source),
+        List(originalFields.head.source, originalFields.last.source)
+      )
+      assertEquals(errors.flatMap(_.causes).toVector, resolved.diagnostics.records.map(_.id))
+      fields(1) match
+        case valid: TypeRef =>
+          assertEquals(valid.source, originalFields(1).source)
+          val target = valid.resolvedId.flatMap(resolved.module.resolvables.lookupType)
+          assert(target.nonEmpty)
+          assertEquals(target.flatMap(_.id), valid.resolvedId)
+        case other => fail(s"Expected resolved valid field, got $other")
     }

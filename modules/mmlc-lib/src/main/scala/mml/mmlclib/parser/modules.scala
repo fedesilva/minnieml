@@ -25,13 +25,12 @@ private[parser] def topLevelModuleP(
   sourcePath: Option[String]
 )(using P[Any]): P[Module] =
   P(
-    spP(info) ~
+    pointP(info) ~
       linkHeaderP(info).? ~
       membersP(info).rep ~
-      spNoWsP(info) ~
-      spP(info) ~
+      pointP(info) ~
       End
-  ).map { case (start, header, members, end, _) =>
+  ).map { case (start, header, members, end) =>
     val membersList = header.toList.flatMap(_.left.toOption) ++ members.toList
     val filteredMembers = membersList.lastOption match
       case Some(ParsingMemberError(_, _, None)) => membersList.dropRight(1)

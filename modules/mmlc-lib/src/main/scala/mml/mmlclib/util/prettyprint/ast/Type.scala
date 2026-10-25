@@ -85,9 +85,17 @@ def prettyPrintTypeSpec(
           .map(t => prettyPrintTypeSpec(Some(t), showSourceSpans, showTypes, indent))
           .mkString(", ")
 
-    case Some(inv: InvalidType) =>
+    case Some(error: ParseTypeError) =>
+      val spanStr    = if showSourceSpans then s" ${printSourceOrigin(error.source)}" else ""
+      val failedCode = error.failedCode.fold("")(code => s"\n  code: $code")
+      s"ParseTypeError$spanStr\n  message: ${error.message}$failedCode"
+
+    case Some(inv: TypeResolutionError) =>
       val spanStr = if showSourceSpans then s" ${printSourceOrigin(inv.source)}" else ""
-      s"InvalidType$spanStr\n" +
+      val label = inv match
+        case _: UndefinedTypeError => "UndefinedTypeError"
+        case _: AmbiguousTypeError => "AmbiguousTypeError"
+      s"$label$spanStr\n" +
         s"  original: ${prettyPrintTypeSpec(Some(inv.originalType), showSourceSpans, showTypes, indent)}"
 
     case Some(NativePrimitive(sp, llvmType, _, _)) =>

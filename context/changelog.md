@@ -4,9 +4,50 @@ Durable product changes belong here. Current task state belongs in task files.
 
 ## 2026-10-25
 
+- End parser source spans at owned tokens, children, and closing delimiters. Exclude trailing
+  comments from diagnostic highlights and editor ranges while preserving written annotations
+  in expression spans and exact malformed text in recovery.
+
+- Document diagnostic causes, local parser recovery, and semantic analysis reuse in
+  [Keeping useful compiler results after an error](../docs/articles/2026-10/2026-10-25-error-recovery-and-diagnostic-causes.md).
+  Explain the current behavior with Scala/MML walkthroughs, ASCII trees, and measured
+  performance results with their limits.
+
+- Reuse immutable type, diagnostic-cause, and value-availability summaries during semantic
+  analysis, avoiding repeated scans of healthy bindings while retaining failure propagation.
+  Resolve synthetic conditional result types before cause analysis and skip unused ownership
+  attribution scans.
+
+- Normalize grouped and bare lambda calls through the same application path, preserving
+  multi-parameter and partial calls, parameter identity, and argument evaluation order.
+
+- Share conditional parsing across full and no-`else` forms. Recover missing conditions,
+  branches, and separators locally while retaining nested clauses and following syntax.
+
+- Recover malformed local and member bindings without discarding useful body fragments,
+  real parameter scopes, or independent continuations. Retain incomplete function headers
+  as failed values, preserving their source diagnostics through aliases and later analysis.
+
+- Recover missing and malformed type annotations at their surrounding syntax boundaries,
+  preserving following parameters, fields, expressions, and declarations. Retain original
+  parse diagnostics through semantic analysis without reporting dependent alias failures.
+
+- Preserve malformed type syntax as `ParseTypeError` through ingest, diagnostics, and editor
+  queries. Restrict declaration-definition fallbacks to their written names. Contain speculative
+  parser cuts so grouped lambda applications and tuples remain valid alternatives.
+
+- Retain original diagnostic causes through type/reference resolution, local normalization,
+  and failed results. Report independent errors while hiding proven consequences in CLI/LSP
+  output, preserving raw errors for the compilation gate and partial types for editor queries.
+  Distinguish undefined and ambiguous type references.
+
 - Add LLVM IR navigation for Zed with syntax highlighting, outlines, definitions, hover,
   and references. Share document-local symbol indexing with VS Code, correct parameter
   positions and comment/string reference scanning, and provide a local installer.
+
+- Rename term parse-error nodes and diagnostics to `ParseTermError` and
+  `ParseTermErrorFound`. Update developer AST output while preserving parser behavior,
+  CLI/LSP diagnostics, and source spans.
 
 - Remove freezes from native aggregate argument packing so linked literal string operations
   can fold into direct stores. Add a macOS FizzBuzz resource-timing target for all eight variants.

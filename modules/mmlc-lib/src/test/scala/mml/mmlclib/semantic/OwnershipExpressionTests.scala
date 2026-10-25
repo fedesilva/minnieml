@@ -1,8 +1,10 @@
 package mml.mmlclib.semantic
 
 import cats.effect.IO
+import mml.mmlclib.api.FrontEndApi
 import mml.mmlclib.ast.*
 import mml.mmlclib.compiler.{CompilerConfig, CompilerState}
+import mml.mmlclib.errors.DiagnosticRelation
 import mml.mmlclib.parser.SourceInfo
 import mml.mmlclib.test.BaseEffFunSuite
 
@@ -150,12 +152,19 @@ class OwnershipExpressionTests extends BaseEffFunSuite:
     """).map { state =>
       val original  = body(state.module)
       val malformed = original.copy(terms = original.terms ++ original.terms)
-      val invalid   = original.copy(terms = List(InvalidExpression(original.source, malformed)))
-      val input     = withBody(state, invalid)
-      val prior  = SemanticError.InvalidExpression(malformed, "Retained frontend error", "frontend")
-      val result = OwnershipAnalyzer.rewriteModule(input.addError(prior))
+      val prior = SemanticError.InvalidExpression(malformed, "Retained frontend error", "frontend")
+      val (diagnostics, roots) = state.diagnostics.emit(prior)
+      val invalid = original.copy(terms =
+        List(
+          InvalidExpression(original.source, malformed, causes = roots)
+        )
+      )
+      val input  = withBody(state.copy(diagnostics = diagnostics), invalid)
+      val result = OwnershipAnalyzer.rewriteModule(input)
       assert(result.errors.contains(prior))
-      assertEquals(shapeErrors(result), Nil)
+      assertEquals(shapeErrors(result).map(_.expr), List(malformed))
+      assertEquals(result.visibleErrors, Vector(prior))
+      assertEquals(result.diagnostics.records.last.relation, DiagnosticRelation.Consequence(roots))
       val payloads = TermTraversal.collect(body(result.module)) { case i: InvalidExpression =>
         i.originalExpr
       }
@@ -285,18 +294,32 @@ class OwnershipExpressionTests extends BaseEffFunSuite:
     "(let unused = (\"x\" \"y\"); \"z\").length"
   ).foreach { expression =>
     test(s"field selection preserves malformed qualifier syntax: $expression") {
-      semState(s"fn example(): Int = $expression;;").map { result =>
-        assertEquals(result.errors.count(_.isInstanceOf[SemanticError.DanglingTerms]), 1)
-        val errors = result.errors.collect {
-          case e: SemanticError.InvalidExpression if e.phase == phase => e
+      FrontEndApi
+        .compile(s"fn example(): Int = $expression;;", "OwnershipExpressionTests")
+        .value
+        .map {
+          case Left(error) => fail(s"Frontend failed before ownership: $error")
+          case Right(result) =>
+            val dangling = result.diagnostics.records.filter {
+              _.error.isInstanceOf[SemanticError.DanglingTerms]
+            }
+            assertEquals(dangling.size, 1)
+            val errors = shapeErrors(result)
+            assertEquals(errors.size, 1)
+            val retained = TermTraversal.collect(body(result.module)) {
+              case e: Expr if e.terms.size == 2 => e
+            }
+            assertEquals(retained, errors.map(_.expr))
+            assertEquals(result.visibleErrors, dangling.map(_.error))
+            val shape = result.diagnostics.records
+              .find { record =>
+                record.error match
+                  case error: SemanticError.InvalidExpression => error.expr == errors.head.expr
+                  case _ => false
+              }
+              .getOrElse(fail("Expected retained shape diagnostic"))
+            assertEquals(shape.relation, DiagnosticRelation.Consequence(dangling.map(_.id)))
         }
-        assertEquals(errors.size, 1)
-        val retained = TermTraversal.collect(body(result.module)) {
-          case e: Expr if e.terms.size == 2 => e
-        }
-        assertEquals(retained, errors.map(_.expr))
-        assertEquals(result.errors.size, 2)
-      }
     }
   }
 
@@ -340,7 +363,8 @@ class OwnershipExpressionTests extends BaseEffFunSuite:
             case _ => app
         }
         val result = OwnershipAnalyzer.rewriteModule(withBody(state, rewritten))
-        assertEquals(shapeErrors(result).size, if wrapped then 0 else 1)
+        assertEquals(shapeErrors(result).size, 1)
+        assert(result.visibleErrors.contains(shapeErrors(result).head))
         val moved = result.semanticErrors.toList.collect { case e: SemanticError.UseAfterMove =>
           e.ref
         }

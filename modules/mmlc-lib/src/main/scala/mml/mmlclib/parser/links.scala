@@ -36,15 +36,17 @@ private def closedLinkStringP(info: SourceInfo)(using P[Any]): P[LiteralString] 
   }
 
 private def linkEntryP(info: SourceInfo)(using P[Any]): P[LinkEntry] =
-  P(spP(info) ~ closedLinkStringP(info) ~ spNoWsP(info))
-    .map { case (start, name, end) => LinkEntry(span(start, end), name.value) }
+  P(pointP(info) ~ closedLinkStringP(info) ~ pointP(info))
+    .map { case (start, name, _) =>
+      LinkEntry(span(start, sourceEnd(name, start)), name.value)
+    }
 
 private def linkSyntaxP(info: SourceInfo)(using P[Any]): P[LinkDirective] =
   P(
-    spP(info) ~ "@link" ~ "[" ~ linkEntryP(info).rep(1, sep = ",") ~ "]" ~ ";" ~
-      spNoWsP(info)
-  ).map { case (start, entries, end) =>
-    LinkDirective(span(start, end), entries.toList)
+    pointP(info) ~ "@link" ~ "[" ~ linkEntryP(info).rep(1, sep = ",") ~ "]" ~
+      tokenP(info)(P(";")) ~ pointP(info)
+  ).map { case (start, entries, terminator, _) =>
+    LinkDirective(span(start, terminator.location.end), entries.toList)
   }
 
 /** Recover at the terminator or the next declaration so malformed headers retain members. */
@@ -62,7 +64,7 @@ private def failedLinkP(info: SourceInfo)(using P[Any]): P[ParsingMemberError] =
         !boundary ~ AnyChar
     )
 
-  P(spP(info) ~ "@link" ~ recoveryToken.rep ~ ";".? ~ spNoWsP(info))
+  P(pointP(info) ~ "@link" ~ recoveryToken.rep ~ ";".? ~ pointP(info))
     .map { case (start, end) =>
       ParsingMemberError(
         span(start, end),

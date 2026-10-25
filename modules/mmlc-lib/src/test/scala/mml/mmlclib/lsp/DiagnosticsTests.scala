@@ -15,11 +15,13 @@ class DiagnosticsTests extends BaseEffFunSuite:
     Compilation
       .compileSource(code, "NestedParseError", "nested-parse-error.mml", CompilerConfig.default)
       .map { state =>
-        val error = state.semanticErrors.toList match
-          case List(SemanticError.TermErrorFound(error, _)) => error
+        val error = state.visibleErrors.toList match
+          case List(SemanticError.ParseTermErrorFound(error, _)) => error
           case other => fail(s"Expected only the nested parse error, got $other")
-        val span = error.spanOpt.getOrElse(fail("Expected nested parse error source span"))
-        assertEquals(span.start, SourceInfo(code).pointAt(code.indexOf("let 123invalid")))
+        val span  = error.spanOpt.getOrElse(fail("Expected nested parse error source span"))
+        val start = code.indexOf("123invalid")
+        val info  = SourceInfo(code)
+        assertEquals(span, SrcSpan(info.pointAt(start), info.pointAt(start + "123invalid".length)))
         assertEquals(error.failedCode, "123invalid".some)
         val diagnostics = Diagnostics.fromCompilerState(state)
         assertEquals(diagnostics.size, 1)

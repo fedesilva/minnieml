@@ -1,0 +1,108 @@
+let full_compact = if true then 11;else 22;;
+
+let full_whitespace =
+  if true
+  then
+    11;
+  else
+    22;
+  ;
+
+let no_else =
+  if true then
+    ();
+  ;
+
+let full_elif =
+  if true then
+    11;
+  elif false then
+    22;
+  elif true then
+    33;
+  else
+    44;
+  ;
+
+let no_else_elif =
+  if true then
+    ();
+  elif false then
+    ();
+  elif true then
+    ();
+  ;
+
+let nested =
+  if true then
+    if false then
+      11;
+    elif true then
+      22;
+    else
+      33;
+    ;
+  else
+    44;
+  ;
+
+let expression_full = { if true then 11;else 22; };
+
+let expression_no_else = {
+  if true then
+    ();
+  ;
+};
+
+let expression_full_elif = {
+  if true then
+    11;
+  elif false then
+    22;
+  elif true then
+    33;
+  else
+    44;
+  ;
+};
+
+let expression_no_else_elif = {
+  if true then
+    ();
+  elif false then
+    ();
+  elif true then
+    ();
+  ;
+};
+
+let sequenced_condition = {
+  if (); true then
+    11;
+  else
+    22;
+  ;
+};
+
+let sequenced_branches =
+  if true then
+    ();
+    11;
+  else
+    ();
+    22;
+  ;
+
+let grouped = (if true then 11;elif false then 22;else 33;);
+
+let grouped_lambda = ({ x: Int -> if true then x;else 22; });
+
+let tuple_lambda = ({ x: Int -> if true then x;else 22; }, 33);
+
+let keyword_contents =
+  if true // then elif else ;
+  then
+    "if then elif else ; () {}";
+  else
+    "else";
+  ;

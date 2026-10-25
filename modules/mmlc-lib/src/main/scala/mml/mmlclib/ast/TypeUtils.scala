@@ -28,6 +28,82 @@ object TypeUtils:
 
     loop(tpe, Set.empty)
 
+  /** Find explicit failed types through their structure and resolved declarations. A recursive
+    * reference alone is not a failed type; callers still decide whether its type is usable.
+    */
+  def containsInvalidType(tpe: Type, index: ResolvablesIndex): Boolean =
+
+    def check(current: Type, seen: Set[String]): Boolean =
+      containsInvalidTypeWithin(
+        current,
+        ref =>
+          ref.resolvedId.filterNot(seen.contains).exists { id =>
+            index.lookupType(id).exists { declaration =>
+              declarationTypes(declaration).exists(check(_, seen + id))
+            }
+          }
+      )
+
+    check(tpe, Set.empty)
+
+  /** Named declarations with an explicit failed type, including through recursive references. */
+  def invalidTypeIds(index: ResolvablesIndex): Set[String] =
+    index.resolvableTypes.iterator.collect {
+      case (id, declaration)
+          if declarationTypes(declaration).exists(containsInvalidType(_, index)) =>
+        id
+    }.toSet
+
+  /** Inspect inline type structure with failure identities from the same declaration index. */
+  def containsInvalidType(tpe: Type, invalidTypeIds: Set[String]): Boolean =
+    containsInvalidTypeWithin(tpe, _.resolvedId.exists(invalidTypeIds.contains))
+
+  private def declarationTypes(declaration: ResolvableType): List[Type] = declaration match
+    case alias:      TypeAlias => List(alias.typeRef)
+    case definition: TypeDef => definition.typeAsc.toList ++ definition.typeSpec.toList
+    case struct:     TypeStruct => struct.fields.map(_.typeSpec).toList
+
+  private def containsInvalidTypeWithin(tpe: Type, reference: TypeRef => Boolean): Boolean =
+
+    def annotations(value: Typeable): Boolean =
+      (value.typeAsc.toList ++ value.typeSpec.toList).exists(check)
+
+    def check(current: Type): Boolean = current match
+
+      case _: ParseTypeError | _: TypeResolutionError => true
+
+      case ref: TypeRef => reference(ref)
+
+      case function: TypeFn =>
+        function.paramTypes.exists(check) || check(function.returnType)
+
+      case application: TypeApplication =>
+        check(application.base) || application.args.exists(check)
+
+      case tuple:        TypeTuple => tuple.elements.exists(check)
+      case group:        TypeGroup => group.types.exists(check)
+      case union:        Union => union.types.exists(check)
+      case intersection: Intersection => intersection.types.exists(check)
+      case scheme:       TypeScheme => check(scheme.bodyType)
+      case record:       TypeOpenRecord => record.fields.exists(field => check(field._2))
+      case native:       NativeStruct => native.fields.exists(field => check(field._2))
+      case struct:       TypeStruct => struct.fields.exists(field => check(field.typeSpec))
+
+      case refinement: TypeRefinement =>
+        TermTraversal
+          .collect(refinement.expr) {
+            case lambda: Lambda =>
+              annotations(lambda) || lambda.params.exists(annotations)
+            case binding: BindOwnership =>
+              List(binding, binding.valueParam, binding.witnessParam).exists(annotations)
+            case term => annotations(term)
+          }
+          .exists(identity)
+
+      case _: NativePrimitive | _: NativePointer | _: TypeUnit | _: TypeVariable => false
+
+    check(tpe)
+
   def requiresDestruction(tpe: Type, index: ResolvablesIndex): Boolean =
     requiresDestruction(tpe, index, Set.empty)
 

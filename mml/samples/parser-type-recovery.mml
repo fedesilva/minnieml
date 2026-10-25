@@ -1,0 +1,15 @@
+// Intentional type syntax and reference errors for diagnostic inspection.
+// Inspect with: mmlc ast mml/samples/parser-type-recovery.mml
+
+// Type names start with an uppercase letter. Expect a type parser error on `wrong`.
+let broken: wrong = 1;
+
+// This alias depends on the malformed annotation; its failure has the same cause.
+let alias = broken;
+
+// This undefined reference is independent and should remain visible.
+let independent = missing;
+
+// Recovery preserves these valid bindings and resolves `good` in the later use.
+let good = 7;
+let later = good;

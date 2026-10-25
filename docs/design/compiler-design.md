@@ -11,7 +11,7 @@ wrappers, and annotate types in place.
 ## Table of contents
 6. [AST structure](#6-ast-structure)
 7. [Parser architecture](#7-parser-architecture)
-8. [Semantic phase pipeline](#8-semantic-phase-pipeline)
+8. [Stages and semantic pipeline](#8-stages-and-semantic-pipeline)
 9. [Standard library injection](#9-standard-library-injection)
 10. [Error handling strategy](#10-error-handling-strategy)
 11. [Code generation: native templates](#11-code-generation-native-templates)
@@ -198,11 +198,13 @@ TypeVariable(name: String)                          // 'T, 'R, etc.
 For error recovery and LSP support:
 
 - **`InvalidExpression`**: Wraps unresolvable expressions
-- **`InvalidType`**: Wraps unresolvable type references
+- **`UndefinedTypeError` / `AmbiguousTypeError`**: Retain failed type references, diagnostic
+  roots, and matching candidates for ambiguity
 - **`DuplicateMember`**: Marks duplicate declarations
 - **`InvalidMember`**: Members with structural errors
 - **`ParsingMemberError`**: Parse errors at member level
-- **`TermError`**: Expression-level parse errors
+- **`ParseTermError`**: Expression-level parse errors
+- **`ParseTypeError`**: Malformed type syntax, retaining source, failed text, and diagnostic roots
 
 ### Soft references and ResolvablesIndex
 
@@ -280,6 +282,55 @@ The parser uses **FastParse** combinators.
 - State 0: Normal whitespace consumption
 - State 1: Inside line comment (consume until newline)
 
+### Source boundaries
+
+Source spans use `[start, end)` offsets: the start belongs to the node and the end is the
+first position after its owned syntax. Trailing spaces and line comments do not extend
+tokens or successful expressions. Whitespace between owned tokens belongs to the enclosing
+span. The module covers the whole input, including leading and trailing trivia.
+
+`tokenP(info)(token)` captures `Index ~~ token ~~ Index` and returns a parser-private
+`ParsedToken` containing the value and its exact span. The caller handles leading whitespace;
+the token itself must finish at its last character. This wrapper cannot correct a child
+parser that already consumed trailing trivia. Native type tokens and closing brackets capture
+their endpoints before whitespace-consuming validation.
+
+Composite nodes use their final child's endpoint or an owned delimiter. Groups, tuples, and
+lambdas include their closer. Member `let` spans include their semicolon; function and operator
+binding spans cover their names, with separate body spans. Functions have distinct body and
+declaration semicolons. A conditional includes its last clause's terminator, and its implicit
+false branch is zero-width at that endpoint. Attached doc comments retain their own spans and
+the existing declaration/parameter coverage rules.
+
+References cover their written names or selection chains. Expression envelopes also cover
+consumed annotations. `ParsedTerm` carries the term and syntax endpoint between ascription
+parsing and expression-frame construction, including when an error node discards an annotation:
+
+```text
+item: Int // trailing comment
+^^^^                         Ref
+^^^^^^^^^                    Expr
+
+( ): Int;
+^^^                          ParseTermError for the empty tuple
+^^^^^^^^                     Expr includes the consumed annotation
+```
+
+Only written annotations contribute to this endpoint; computed type metadata does not.
+Editor reference-target traversal checks a written annotation by its own span, independently
+of the reference's name span.
+`pointP` reads the raw cursor. Its caller decides whether whitespace is skipped before that
+capture, so it is suitable for missing-syntax positions and recovery boundaries, not for
+reconstructing a successful child's endpoint.
+
+Expression recovery separates the successful prefix end, scanner start, and scanner end.
+It captures scanner start together with the scanner call after normal inter-parser whitespace.
+A recovery error requires scanner progress beyond that start. For
+`item: Int // comment\n @ bad  ;`, the successful expression ends after `Int`, the error starts
+at `@`, and its failed text is exactly `@ bad  `. Scanner-owned malformed text keeps its
+whitespace. Missing components can be zero-width; a closed malformed group owns its closing
+delimiter. These rules preserve recovery progress while keeping successful spans precise.
+
 ### Expression parsing strategy
 
 Expressions are parsed as **sequences of terms** that are later restructured by the `ExpressionRewriter` phase using precedence climbing.
@@ -292,6 +343,86 @@ let result = 1 + 2 * 3;
 - **After ExpressionRewriter**: Properly nested `App` nodes respecting precedence
 
 **Rationale**: This approach simplifies parsing and defers precedence handling to semantic analysis, enabling better error recovery and making operator precedence extensible.
+
+### Commitment and recovery boundaries
+
+The parameterized lambda arrow commits to its body. Speculative field-selection and group
+alternatives contain nested cuts with `NoCut`: a lambda inside parentheses does not require
+that the parentheses be followed by a field-selection dot, and a comma can select the tuple
+alternative. The sequence lookahead also contains cuts because it only probes for another
+expression. These boundaries preserve the existing language and operator precedence.
+
+`Recovery.scan` supplies context-aware synchronization for malformed fragments. Ordinary
+anchors apply at delimiter depth zero; hard stops identify tokens excluded from the recovered
+construct at every depth. Closed strings and comments mask anchors within their contents. Explicit
+lexical-opener anchors can preserve a following declaration's doc comment. The scanner leaves
+the anchor or enclosing delimiter unconsumed. Its FastParse adapter uses `NoWhitespace` to
+consume exactly the recovered region; a caller that permits a zero-width result must consume
+an introducer or boundary before repeating.
+
+Type parsing receives a `TypeContext` describing the surrounding declaration, parameter,
+field, alias, operator, group, or expression. A written colon commits locally to a type result;
+`NoCut` contains that commitment so speculative lambda and operator alternatives remain
+reachable. Missing or malformed fragments produce `ParseTypeError`, retaining an explicit
+annotation and its exact source slice. Function types retain valid sibling atoms, and closed
+groups retain their nested errors. Balanced malformed fragments become one failed type when
+they end at an actual type or caller boundary. If balancing cannot establish that boundary,
+hard stops preserve following parameters, fields, and declaration bodies. In expression
+ascriptions, a closed malformed type group also preserves subsequent application terms.
+Recovery does not introduce tuple-type syntax or invent type components.
+
+Expression ascriptions permit valid following application terms. For ungrouped lambda
+parameter types, a type arrow requires a complete valid following atom; otherwise the arrow
+remains the lambda body separator. Operator result recovery preserves precedence and
+associativity, including adjacent forms such as `60left`. Recovery leaves caller punctuation
+and declaration/doc-comment boundaries unconsumed. Missing declaration punctuation remains
+the responsibility of the enclosing declaration parser.
+
+Local and member `let`/`fn` parsers commit after their boundary-checked keyword and recover
+names, parameter lists, required punctuation, and body frames locally. A binding-header type
+context permits a completed annotation before a missing `=`; the missing token becomes a
+zero-width `ParseTermError`, leaving the body available for analysis. Failed parameter tails
+preserve actual prefix parameters and stop at body punctuation even after an unmatched opener.
+
+Expression frames preserve successfully parsed prefixes as nested `Expr` values followed by
+`ParseTermError` nodes. After a nonempty malformed fragment, parsing can resume at a boundary-checked
+`if`, whose recursive parser owns its clauses. ID assignment and reference resolution visit
+retained children before semantic normalization creates unavailable-result wrappers. Recovery leaves enclosing
+delimiters, conditional boundary keywords, and declaration-only introducers to their owners.
+Repeated optional frames must advance; required empty frames are permitted only after their
+owner consumed an introducer. Functions own separate body and declaration semicolons. Local
+`let` and `fn` remain valid body terms, so a missing terminator before either is not treated as
+an unambiguous declaration boundary.
+
+Binding frames opt into recovery after a quote with no later closing quote: ordinary nesting
+and anchors then apply to the remaining malformed text. This preserves a following declaration
+after an unterminated native template. Closed strings, including multiline strings, remain
+masked. A later quote can therefore conservatively extend a malformed fragment across lines;
+recovery does not infer an intended line-based string boundary.
+
+A complete function header retains its lambda and parameter scope when its body is malformed.
+An incomplete header retains only a real nonempty parameter prefix, with its header error in
+the body and no complete binding metadata or synthesized callable ascription. With no actual
+parameter prefix, recovery preserves a failed named value without inventing a nullary lambda.
+Malformed local names use the same synthetic statement application as ordinary sequencing,
+retaining initializer/body and continuation without introducing a source-resolvable name.
+Nameless local lets retain their written annotation on the statement argument, separately from
+any annotation on its initializer. Ingest can therefore report both malformed annotations.
+Nameless member errors retain the exact declaration text and subsequent members; their error
+carrier does not contain analyzable initializer children.
+
+Expression and member conditionals share clause parsing and lowering. Expression conditions
+permit semicolon sequencing; member conditions exclude it. Both use ordinary expression bodies.
+After `if`, `elif`, or `else`, local recovery retains missing or malformed components, including
+zero-width errors at immediate boundaries and EOF. A missing `then` leaves all parsed terms in
+the condition and inserts one true-branch boundary error, without guessing a condition/body split.
+
+An explicit `else` contributes its written body. Without it, the final false branch is a zero-width
+Unit expression at the conditional's end. The outer conditional carries Unit ascription and computed
+type; nested `elif` conditionals carry only the computed type. Recovery preserves this lowering,
+enclosing delimiters, and nested clause ownership. Conditional keywords are ordinary scanner
+anchors, not hard stops through unmatched openers; an opaque unmatched delimiter can therefore
+hide later clauses until EOF or a mismatched closer.
 
 ### Lambda and local-binding lowering
 
@@ -343,6 +474,10 @@ helper 41
 The bound value is a `Lambda`. When parameter and return annotations are available, the parser also
 synthesizes a `TypeFn` ascription for the local binding. That keeps local `fn` and let-bound
 lambdas on the same path in later phases.
+
+A malformed written result annotation also stays on the local lambda, independently of that
+callable-type synthesis. Missing parameter annotations cannot erase its source diagnostic;
+mirrored occurrences of the same malformed annotation receive one ingest root.
 
 #### Statement sequencing
 
@@ -417,7 +552,7 @@ case class CompilerState(
   module:         Module,
   sourceInfo:     SourceInfo,
   config:         CompilerConfig,
-  errors:         Vector[CompilationError],
+  diagnostics:    DiagnosticStore,
   warnings:       Vector[CompilerWarning],
   timings:        Vector[Timing],
   counters:       Vector[Counter],
@@ -426,7 +561,9 @@ case class CompilerState(
   llvmIr:         Option[String] = None,
   nativeResult:   Option[Int] = None,
   resolvedTriple: Option[String] = None,
-  bindingIds:     BindingIdSupply = BindingIdSupply()
+  clangTarget:    Option[ClangTarget] = None,
+  bindingIds:     BindingIdSupply = BindingIdSupply(),
+  linkEntries:    List[LinkEntry] = Nil
 )
 ```
 
@@ -487,16 +624,23 @@ Each phase takes a `CompilerState`, returns an updated `CompilerState`, and reco
 
 **Behavior**:
 - Scans module members for `ParsingMemberError` and `ParsingIdError` nodes, including nested modules
-- Traverses binding expressions for recovered `TermError` nodes, including lambda bodies and branches
+- Traverses binding expressions for recovered `ParseTermError` nodes, including lambda bodies and branches
+- Traverses annotations, parameter types, aliases, fields, and nested type forms for `ParseTypeError`
 - Converts them to semantic errors while preserving the original source, message, and failed code
 - Runs first to report syntax errors immediately
 
 **Errors reported**:
 - `SemanticError.MemberErrorFound`
 - `SemanticError.ParsingIdErrorFound`
-- `SemanticError.TermErrorFound`
+- `SemanticError.ParseTermErrorFound`
+- `SemanticError.ParseTypeErrorFound`
 
-**AST rewrites**: None, only reports errors
+**AST rewrites**: Attach primary diagnostic IDs to recovered `ParseTermError` and
+`ParseTypeError` nodes. This is a metadata-only rewrite: recovered syntax, source spans,
+messages, and failed text remain intact. IDs are allocated after parsing, outside speculative
+parser execution. A traversal-local identity memo gives mirrored annotation occurrences one
+type-error root; separate equal occurrences remain separate diagnostics. Unchanged `TypeRef`
+leaves retain their parser identity for accumulating type resolution.
 
 ---
 
@@ -542,29 +686,27 @@ parameterless lambdas each introduce an ordinal scope path for nested allocation
 
 **Purpose**: Resolve all `TypeRef` nodes to their type definitions.
 
-**Three-phase resolution**:
-
-1. **Build type map**: Collect all `TypeDef` and `TypeAlias` into a map
-2. **Resolve type map**: Resolve `TypeRef` nodes within the definitions themselves (handles nested types like `NativeStruct` fields)
-3. **Resolve members**: Resolve all `TypeRef` nodes in member declarations and expressions
-
 **Behavior**:
-- Resolves `TypeRef` nodes in:
-  - Type ascriptions (`typeAsc`)
-  - Function parameter types
-  - Return type declarations
-  - Type alias definitions
-  - Struct field types
-- Computes `typeSpec` for `TypeAlias` by following the chain
-- Handles recursive type resolution in compound types (`TypeFn`, `TypeStruct`, etc.)
+- Builds a name-to-candidates map from type declarations, then visits every member and type
+  position with an accumulating traversal. Independent failures retain separate diagnostics;
+  valid sibling types retain their resolved IDs.
+- Reuses the resolved result when parser annotation caches share the exact original reference
+  instance. Separate reference occurrences remain separate even when structurally equal.
+- Resolves compound types, type aliases, ascriptions, parameters, returns, and struct fields.
+- Resolves cached conditional result types, including the synthetic `Unit` in no-`else` clauses,
+  so cause analysis can distinguish resolved types from incomplete evidence before type checking.
+- Completes alias metadata by following resolved declaration IDs with cycle detection, then
+  refreshes the module index.
 
 **Errors reported**:
-- `SemanticError.UndefinedTypeRef`
+- `SemanticError.UndefinedTypeRef` when no candidate matches
+- `SemanticError.AmbiguousTypeRef` when several candidates match
 
 **AST rewrites**:
-- Updates `TypeRef.resolvedId` to point at the resolved `TypeDef` or `TypeAlias`
-- Computes `TypeAlias.typeSpec` by following resolution chain
-- Wraps unresolvable type refs in `InvalidType` nodes
+- Populates `TypeRef.resolvedId` for one matching declaration.
+- Uses `UndefinedTypeError` or `AmbiguousTypeError` for failed resolution, preserving the
+  original reference, primary diagnostic ID, and ambiguous candidates where applicable.
+- Computes `TypeAlias.typeSpec` from resolved alias chains.
 
 ---
 
@@ -622,7 +764,10 @@ constructors so ownership transfer is visible in the callable signature.
   2. module-level members
 - Populates `Ref.candidateIds` with all matching stable IDs.
 - If exactly one match is found, writes that ID to `Ref.resolvedId`.
-- If no matches are found, wraps the expression in `InvalidExpression`.
+- Accumulates all failed references alongside their rewritten nodes in one traversal.
+- If no matches are found, preserves the reference in an `InvalidExpression` with the
+  primary diagnostic ID. A failed callee stays inside the smallest enclosing application
+  that can carry the invalid result; `Callee` remains `Ref | App | Lambda`.
 
 **Errors reported**:
 - `SemanticError.UndefinedRef`
@@ -650,6 +795,12 @@ Function application is treated as a high-precedence operation through juxtaposi
 **Example**: `f x y` is parsed as terms `[Ref("f"), Ref("x"), Ref("y")]` and rewritten to
 `App(App(Ref("f"), x), y)`.
 
+After group unwrapping, bare and parenthesized `Lambda` heads share direct-call lowering.
+Supplied arguments bind left-to-right through unary immediate-lambda applications; missing
+arguments leave a residual lambda. Remaining arguments continue through ordinary application
+construction without lowering the head again. A zero-parameter lambda therefore reaches its
+explicit `()` application without re-entering direct-call lowering.
+
 **Nullary function handling**:
 Nullary functions are called explicitly with `()`; value position keeps a reference:
 ```mml
@@ -672,6 +823,10 @@ let f = get_value;
 - Transforms flat `Expr(terms)` into nested `App` structures
 - Resolves operator references to their definitions
 - Leaves nullary references untouched; explicit `()` remains an application
+- Normalizes nested operands before local precedence rewriting. A failure retains those
+  completed rewrites and valid siblings/continuations inside the preserved payload.
+- Retains failed flat regions without inventing application or precedence structure.
+  `InvalidExpressionFound` is consequential only when its own source roots are known.
 
 ---
 
@@ -778,8 +933,14 @@ types when possible.
   `OversaturatedApplication` depending on the shape of the call.
 
 **Additional rules**:
-- After checking, a function or operator's `typeSpec` stores its return type; parameter
-  `typeSpec` entries hold the concrete argument types.
+- A function or operator publishes its callable signature on both the declaration and
+  lambda; parameter `typeSpec` entries hold the concrete argument types.
+- Acyclic dependencies are checked before their callers, including annotated callees.
+  Recursive groups retain declared signatures for checking.
+- Failed results receive targeted invalid wrappers with partial types for editor queries.
+  Consequences reference proven source roots; an independent mismatch remains primary.
+- Conditional inference may recheck both branches with an inferred expected type. It discards
+  provisional branch trees and their diagnostic allocations together before rebuilding.
 - Lambda literals participate in both top-down and bottom-up inference:
   - expected callable types seed missing parameter types
   - unresolved lambda params are inferred from body usage when possible
@@ -866,11 +1027,12 @@ result and cannot establish ownership through allocation, cloning, consumption, 
 Ownership analysis preserves their terms, order, source information, and type annotations while
 visiting children for independent diagnostics. This traversal does not assign sequencing semantics
 to a flat term list. Each malformed expression receives an ownership-phase `InvalidExpression`
-diagnostic; retained payloads inside an existing `InvalidExpression` are traversed without another
-shape diagnostic. Valid child applications and independent continuations still receive ownership
+diagnostic. The immediate malformed payload of an `InvalidExpression` retains a shape diagnostic
+as a consequence only when the wrapper supplies valid source roots. Unknown causes and nested
+independent shape errors remain primary. Valid child applications and independent continuations still receive ownership
 analysis, including use-after-move checks.
 
-After collecting ownership diagnostics, the analyzer suppresses a borrowed-capture error when
+After collecting ownership diagnostics, the analyzer links a borrowed-capture consequence when
 lexical initializer flow proves that every possible supplying call has a reported invalid
 return. The primary return error remains. Observed arguments of independently checked function
 parameters do not establish this proof. Borrowing parameters of immediate invocations also
@@ -882,8 +1044,9 @@ retain their replaced expression's location through the shared local-binding con
 Use-after-move diagnostics distinguish the current use, moved-owner identity, and move site.
 Field aliases and borrowed dependencies share move-evidence resolution. Repeated evidence for
 one owner at one use produces one diagnostic; distinct uses and owners remain distinct.
-A dependency with its own reported invalid use retains that primary diagnostic without another
-error at a downstream use. CLI and LSP diagnostics use the explicit current-use origin.
+A dependency with its own reported invalid use links downstream reports to that primary ID.
+Raw reports remain in the diagnostic store; presentation hides proven consequences. CLI and
+LSP diagnostics use the explicit current-use origin.
 
 **Call stages**: `CallStages` partitions a typed application chain at each invocation boundary.
 Each stage retains its callee, supplied application nodes, signature, result, and completion
@@ -1320,26 +1483,45 @@ fn ar_int_get(arr: IntArray, i: Int): Int = @metal:ffi;
 
 ### Error accumulation model
 
-The compiler uses an **error accumulation** model rather than fail-fast:
-- Errors are collected in `CompilerState.errors`
-- Compilation continues even after errors are found
-- The IDE can use partial results and report multiple errors at once
+The compiler retains an ordered `DiagnosticStore` in `CompilerState.diagnostics`. Each record
+has a compilation-local ID, the original error payload, and either `Primary` or
+`Consequence(roots)` classification. Consequence roots refer directly to retained primary
+records. Unknown or invalid references cannot make a diagnostic disappear.
+
+`CompilerState.errors` projects all raw payloads and remains authoritative for error state
+and codegen gating. `visibleErrors` selects diagnostics before CLI, quiet API, and LSP
+conversion. Bare-error formatting APIs do not have the context needed for suppression.
+Compilation continues after errors so editor queries can use partial results.
 
 ### Invalid nodes
 
 The compiler wraps invalid constructs in special nodes to continue analysis:
 
 - **`InvalidExpression`**: Unresolvable expressions (e.g., undefined references)
-- **`InvalidType`**: Unresolvable type references
+- **`UndefinedTypeError`**: A type reference without a matching declaration
+- **`AmbiguousTypeError`**: A type reference with multiple candidates
+- **`ParseTypeError`**: Malformed type syntax, distinct from an absent annotation
 - **`DuplicateMember`**: Duplicate declarations (first stays valid)
 - **`InvalidMember`**: Members with errors (e.g., duplicate parameters)
 
 Partial compilation continues, LSP features work despite errors, and error messages include more context.
 
-Application type mismatches wrap the failed argument in `InvalidExpression`, retaining its
-typed source expression for diagnostics and editor queries. PAP elaboration continues across
+Failed applications, conditionals, and other result-level checks use `InvalidExpression`
+with the original operands and available partial types. These types support editor queries
+but do not establish an available value. `DiagnosticCauses` follows result dependencies
+through resolved binding IDs, aliases, and local scopes. It retains known roots separately
+from incomplete evidence; only complete evidence can justify a consequential diagnostic.
+A discarded failed initializer does not taint an independent continuation. PAP elaboration continues across
 independent members and through statement continuations even when the module has errors.
 `ValueAvailability` propagates unavailable results through binding identities and aliases.
+Type checking and availability share `TypeUtils.containsInvalidType` to find explicit failed
+types within composite and resolved nominal types. Cycle guards terminate recursive declarations;
+absence of an explicit failed node does not itself establish usable type information.
+Named type failures and cause evidence are summarized immutably against the type-declaration
+index; named type availability reuses complete alias/structural checks. Member checking reuses
+complete, failure-free binding summaries; failures or incomplete evidence trigger dependency
+rediscovery. Availability includes only checked members,
+so unchecked bodies cannot make a valid recursive signature unavailable.
 Callable flow, capture contracts, and closure layouts require available prerequisites;
 ownership analysis still visits the preserved operands to report independent errors. An
 unavailable PAP result cannot establish capture or return ownership. A discarded result's
@@ -1707,6 +1889,8 @@ Each phase takes a `CompilerState` and returns an updated one. Timings are recor
 
 ## Reference
 
+- **Recovery and diagnostic causes**: See [Keeping useful compiler results after an error](../articles/2026-10/2026-10-25-error-recovery-and-diagnostic-causes.md)
+  for the problem, implementation strategy, detailed mechanisms, and performance evidence.
 - **Codebase structure**: See [Source tree overview](#appendix-a-source-tree-overview).
 - **Operator handling**: See [DuplicateNameChecker](#semantic-phase-1-duplicatenamechecker)
   for arity-based name checks and [ExpressionRewriter](#semantic-phase-7-expressionrewriter)

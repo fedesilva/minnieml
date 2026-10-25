@@ -274,7 +274,7 @@ object AstLookup:
       case inv: InvalidExpression =>
         findInExpr(inv.originalExpr, line, col)
 
-      case _: TermError =>
+      case _: ParseTermError =>
         None
 
   private def findInApp(app: App, line: Int, col: Int): Option[LookupResult] =
@@ -325,20 +325,20 @@ object AstLookup:
         if typeDefs.nonEmpty then typeDefs
         else if containsPosition(bnd.value, line, col) then
           val exprDefs = findDefinitionInExpr(bnd.value, line, col, module)
-          if exprDefs.nonEmpty then exprDefs else spanForResolvable(bnd, module).toList
-        else spanForResolvable(bnd, module).toList
+          if exprDefs.nonEmpty then exprDefs else definitionAtName(bnd, line, col, module)
+        else definitionAtName(bnd, line, col, module)
 
       case td: TypeDef =>
         val typeDefs = td.typeSpec.toList.flatMap(findDefinitionInType(_, line, col, module))
-        if typeDefs.nonEmpty then typeDefs else spanForResolvable(td, module).toList
+        if typeDefs.nonEmpty then typeDefs else definitionAtName(td, line, col, module)
 
       case ta: TypeAlias =>
         val typeDefs = findDefinitionInType(ta.typeRef, line, col, module)
-        if typeDefs.nonEmpty then typeDefs else spanForResolvable(ta, module).toList
+        if typeDefs.nonEmpty then typeDefs else definitionAtName(ta, line, col, module)
 
       case ts: TypeStruct =>
         val fieldDefs = findDefinitionInFields(ts.fields.toList, line, col, module)
-        if fieldDefs.nonEmpty then fieldDefs else spanForResolvable(ts, module).toList
+        if fieldDefs.nonEmpty then fieldDefs else definitionAtName(ts, line, col, module)
 
       case dm: DuplicateMember =>
         findDefinitionInMember(dm.originalMember, line, col, module)
@@ -358,7 +358,7 @@ object AstLookup:
       .collectFirst {
         case field if containsPosition(field, line, col) =>
           val typeDefs = findDefinitionInType(field.typeSpec, line, col, module)
-          if typeDefs.nonEmpty then typeDefs else field.spanOpt.toList
+          if typeDefs.nonEmpty then typeDefs else definitionAtName(field, line, col, module)
       }
       .getOrElse(Nil)
 
@@ -444,7 +444,7 @@ object AstLookup:
       case inv: InvalidExpression =>
         findDefinitionInExpr(inv.originalExpr, line, col, module)
 
-      case _: TermError =>
+      case _: ParseTermError =>
         Nil
 
       case _ =>
@@ -524,7 +524,7 @@ object AstLookup:
       .collectFirst {
         case p if containsPosition(p, line, col) && p.source.isFromSource =>
           val typeDefs = p.typeAsc.toList.flatMap(findDefinitionInType(_, line, col, module))
-          if typeDefs.nonEmpty then typeDefs else spanForResolvable(p, module).toList
+          if typeDefs.nonEmpty then typeDefs else definitionAtName(p, line, col, module)
       }
       .getOrElse(Nil)
 
@@ -614,8 +614,8 @@ object AstLookup:
           if containsPosition(expr, line, col) then findDefinitionInExpr(expr, line, col, module)
           else Nil
 
-        case InvalidType(_, orig) =>
-          findDefinitionInType(orig, line, col, module)
+        case error: TypeResolutionError =>
+          findDefinitionInType(error.originalType, line, col, module)
 
         case _ =>
           Nil
@@ -629,6 +629,17 @@ object AstLookup:
           case td: TypeDef if td.name == ref.name => td.spanOpt
           case ts: TypeStruct if ts.name == ref.name => ts.spanOpt
         }.flatten
+
+  /** A failed inner lookup does not turn annotation text into a declaration reference. */
+  private def definitionAtName(
+    declaration: Resolvable,
+    line:        Int,
+    col:         Int,
+    module:      Module
+  ): List[SrcSpan] =
+    if containsPosition(declaration.nameNode, line, col) then
+      spanForResolvable(declaration, module).toList
+    else Nil
 
   private def spanForResolvable(resolvable: Resolvable, module: Module): Option[SrcSpan] =
     resolvable match
@@ -752,8 +763,17 @@ object AstLookup:
     if isValidSpan(expr) && !containsPosition(expr, line, col) then None
     else
       expr.terms.collectFirst {
-        case t if termContains(t, line, col) => findReferenceTargetInTerm(t, line, col, module)
+        case t if referenceTargetContains(t, line, col) =>
+          findReferenceTargetInTerm(t, line, col, module)
       }.flatten
+
+  /** A written annotation can extend beyond its reference's name span. */
+  private def referenceTargetContains(term: Term, line: Int, col: Int): Boolean =
+    term match
+      case ref: Ref =>
+        containsOrInvalid(ref, line, col) ||
+        (ref.source.isFromSource && ref.typeAsc.exists(containsPosition(_, line, col)))
+      case _ => termContains(term, line, col)
 
   private def findReferenceTargetInTerm(
     term:   Term,
@@ -838,7 +858,7 @@ object AstLookup:
       case inv: InvalidExpression =>
         findReferenceTargetInExpr(inv.originalExpr, line, col, module)
 
-      case _: TermError =>
+      case _: ParseTermError =>
         None
 
       case _ =>
@@ -854,7 +874,7 @@ object AstLookup:
       findReferenceTargetInExpr(app.arg, line, col, module)
     else
       app.fn match
-        case ref: Ref if containsOrInvalid(ref, line, col) =>
+        case ref: Ref if referenceTargetContains(ref, line, col) =>
           findReferenceTargetInTerm(ref, line, col, module)
         case innerApp: App if containsOrInvalid(innerApp, line, col) =>
           findReferenceTargetInApp(innerApp, line, col, module)
@@ -947,8 +967,8 @@ object AstLookup:
         case TypeRefinement(_, _, expr) =>
           findReferenceTargetInExpr(expr, line, col, module)
 
-        case InvalidType(_, orig) =>
-          findReferenceTargetInType(orig, line, col, module)
+        case error: TypeResolutionError =>
+          findReferenceTargetInType(error.originalType, line, col, module)
 
         case _ =>
           None
@@ -1178,8 +1198,8 @@ object AstLookup:
       case TypeRefinement(_, _, expr) =>
         collectReferencesInExpr(expr, target, includeDeclaration = false, module)
 
-      case InvalidType(_, orig) =>
-        collectReferencesInType(orig, target, module)
+      case error: TypeResolutionError =>
+        collectReferencesInType(error.originalType, target, module)
 
       case _ =>
         Nil
@@ -1335,5 +1355,7 @@ object AstLookup:
       case TypeRefinement(_, id, _) =>
         id.map(i => s"$i refined").getOrElse("refined")
 
-      case InvalidType(_, orig) =>
-        s"invalid(${formatTypeInner(orig)})"
+      case error: TypeResolutionError =>
+        s"invalid(${formatTypeInner(error.originalType)})"
+
+      case _: ParseTypeError => "malformed type"

@@ -7,6 +7,44 @@ import scala.collection.mutable.ListBuffer
 
 class SemanticTokensTests extends BaseEffFunSuite:
 
+  test("tokens and editor lookup exclude trailing comments and reference annotations") {
+    val code = List(
+      "fn echo(value: Int): Int =",
+      "  value: Int // annotation comment",
+      ";;",
+      "fn label(): String =",
+      """  "ok" // literal comment""",
+      ";;"
+    ).mkString("\n")
+
+    semNotFailed(code).map { module =>
+      val tokens = decodeTokens(SemanticTokens.compute(module))
+      assertEquals(tokens.filter(_.line == 2), List(DecodedToken(2, 3, 5, TokenType.Parameter)))
+      assertEquals(tokens.filter(_.line == 5), List(DecodedToken(5, 3, 4, TokenType.String)))
+
+      val reference = AstLookup.findAt(module, 2, 3).getOrElse(fail("Expected parameter reference"))
+      assertEquals(reference.span, Some(SrcSpan(SrcPoint(2, 3, 29), SrcPoint(2, 8, 34))))
+      assertEquals(AstLookup.formatType(reference.typeSpec), "Int")
+      assertEquals(
+        AstLookup.findDefinitionAt(module, 2, 3),
+        List(SrcSpan(SrcPoint(1, 9, 8), SrcPoint(1, 19, 18)))
+      )
+      val literal = AstLookup.findAt(module, 5, 3).getOrElse(fail("Expected string literal"))
+      assertEquals(literal.span, Some(SrcSpan(SrcPoint(5, 3, 88), SrcPoint(5, 7, 92))))
+      assertEquals(AstLookup.formatType(literal.typeSpec), "String")
+
+      val punctuationAndTrivia = List((2, 8), (2, 13), (2, 14), (5, 7), (5, 8))
+      punctuationAndTrivia.foreach { (line, col) =>
+        assertEquals(AstLookup.findAt(module, line, col), None, s"Lookup at $line:$col")
+        assertEquals(
+          AstLookup.findDefinitionAt(module, line, col),
+          Nil,
+          s"Definition at $line:$col"
+        )
+      }
+    }
+  }
+
   test("generated argument references preserve diagnostics without becoming editor symbols") {
     val code = """
       fn text(): String = int_to_str 123;;
