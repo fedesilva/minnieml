@@ -35,12 +35,12 @@ An explicit CPU, such as `--cpu apple-m3`, overrides the baseline.
 | `--target arm64-apple-macosx14.0` | Explicit macOS 14.0 | Clang target baseline |
 | Versioned `--target` and `--cpu` | Explicit version | Explicit CPU selection |
 
-[LlvmToolchain.scala](../../modules/mmlc-lib/src/main/scala/mml/mmlclib/codegen/LlvmToolchain.scala)
+[LlvmToolchain.scala](../../../modules/mmlc-lib/src/main/scala/mml/mmlclib/codegen/LlvmToolchain.scala)
 applies the deployment default to fresh and cached local triples and to unversioned ARM64
 macOS targets. Explicit deployment versions are preserved. Other platforms retain their
 existing triple policy, with baseline CPU selection by default.
 
-[ClangTarget.scala](../../modules/mmlc-lib/src/main/scala/mml/mmlclib/codegen/ClangTarget.scala)
+[ClangTarget.scala](../../../modules/mmlc-lib/src/main/scala/mml/mmlclib/codegen/ClangTarget.scala)
 probes Clang with the same flags used for runtime compilation and linking. Its resolved
 CPU/features feed MML IR, LLVM optimization, and assembly generation. Probe and runtime
 cache keys include the selected flags, separating baseline and explicit native builds.
@@ -144,7 +144,7 @@ the executable's disassembly, not a successful live debugger session.
 
 ### LLVM instruction selection and MML configuration
 
-[mml_runtime.c](../../modules/mmlc-lib/src/main/resources/mml_runtime.c) implements
+[mml_runtime.c](../../../modules/mmlc-lib/src/main/resources/mml_runtime.c) implements
 `mml_args_to_array` with ordinary C:
 
 ```c
@@ -152,11 +152,11 @@ int32_t user_argc = (argc > 1) ? (int32_t)(argc - 1) : 0;
 ```
 
 Clang/LLVM chooses the machine instructions; the MML emitter does not emit this ARM64
-instruction directly. At evidence revision `2b6fb10`, [LlvmToolchain.scala](../../modules/mmlc-lib/src/main/scala/mml/mmlclib/codegen/LlvmToolchain.scala)
+instruction directly. At evidence revision `2b6fb10`, [LlvmToolchain.scala](../../../modules/mmlc-lib/src/main/scala/mml/mmlclib/codegen/LlvmToolchain.scala)
 selects `native` when both `targetCpu` and `targetTriple` are absent. On ARM64 this becomes
 `-mcpu=native`. Supplying `--target` without `--cpu` omits that CPU override. The shared
 flags feed the target probe, runtime compilation, and final linking;
-[ClangTarget.scala](../../modules/mmlc-lib/src/main/scala/mml/mmlclib/codegen/ClangTarget.scala)
+[ClangTarget.scala](../../../modules/mmlc-lib/src/main/scala/mml/mmlclib/codegen/ClangTarget.scala)
 also supplies CPU/features for emitted MML functions.
 
 The automatic native selection can enable the failing instruction on M5, but the original

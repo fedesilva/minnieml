@@ -478,7 +478,7 @@ Durable product changes belong here. Current task state belongs in task files.
 The entries below preserve the former tracker's change log verbatim. They include claims
 from earlier branches, including the abandoned lambda implementation; they do not establish
 completion on `dev-lambda-unify`. For that branch's evidence, use the
-[lambda task](tasks/unify-lambdas.md) and [migration handoff](tasks/unify-lambdas.md#migration-handoff).
+[lambda task](tasks/completed/unify-lambdas.md) and [migration handoff](tasks/completed/unify-lambdas.md#migration-handoff).
 Historical paths and issue references describe their original context.
 
 - 2026-06-18: #255 unify-lambdas — accept nullary lambda heads in immediate application

@@ -39,7 +39,7 @@ or unresolved types do not silently select a declaration with the same short nam
 - Establish the smallest consistent repair and its relationship to the broader QA-001 work.
 - Preserve explicit free functions, nominal type distinctions, recursive-struct termination,
   and the prohibition on cloning function-containing structs.
-- Review after [Unify lambdas](unify-lambdas.md). This is a follow-up, not a lambda-completion gate.
+- Review after [Unify lambdas](completed/unify-lambdas.md). This is a follow-up, not a lambda-completion gate.
 
 ## Plan (Approval Gate)
 

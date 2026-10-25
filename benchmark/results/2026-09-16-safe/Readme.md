@@ -20,7 +20,7 @@ make -C benchmark bench-matmul MML_OPT=3 LOG_BENCH_RESULTS=1 RESULTSDIR=results/
 
 The measured working tree includes the nested-recursion compiler repair and unchecked
 nested benchmark entries. Reproducing all entries requires a compiler built with the
-[nested-recursion repair](../../../context/tasks/unify-lambdas.md#bug-preserve-valid-llvm-and-tco-for-nested-capturing-recursion).
+[nested-recursion repair](../../../context/tasks/completed/unify-lambdas.md#bug-preserve-valid-llvm-and-tco-for-nested-capturing-recursion).
 
 Timings include process startup, allocation, initialization, multiplication,
 checksum, output, and cleanup. They are whole-program measurements, not isolated

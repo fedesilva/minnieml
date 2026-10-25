@@ -161,7 +161,7 @@ execution. LLVM assembly checks IR validity; sanitizer results apply to executed
 
 ## Future MML packages
 
-The [`.mlp` package design](../../docs/brainstorming/compiler/reactive-data-oriented-compiler/multi-module-1.md#external-packages-mlp)
+The [`.mlp` package design](../../../docs/brainstorming/compiler/reactive-data-oriented-compiler/multi-module-1.md#external-packages-mlp)
 contains serialized, typed ASTs, including function bodies. Consumers can load template
 bodies and expand direct calls across package boundaries. A package boundary alone does
 not require a native exported definition; native library exports are the concern here.

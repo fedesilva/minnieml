@@ -26,7 +26,7 @@ Passing the node directly makes that relationship explicit. Where helpers also r
 the node, manual field forwarding adds the risk of losing metadata.
 
 The migration starts with
-[OwnershipAnalyzer.scala](../../modules/mmlc-lib/src/main/scala/mml/mmlclib/semantic/OwnershipAnalyzer.scala)
+[OwnershipAnalyzer.scala](../../../modules/mmlc-lib/src/main/scala/mml/mmlclib/semantic/OwnershipAnalyzer.scala)
 and covers full-node analysis, partial-field queries, and application reconstruction.
 Passing every field is an extreme example, not a requirement for identifying the pattern.
 

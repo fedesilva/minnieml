@@ -271,4 +271,4 @@ The observed medians do not establish fully steady-state performance, statistica
 a causal speedup from the source-boundary correction, or a general performance guarantee.
 They do not measure malformed-input latency, type checking, whole-compiler time, peak memory,
 native program execution, or cross-platform behavior. Build, semantic, and sanitizer checks
-are separate evidence in the [source-boundary task](../../context/tasks/parser-source-boundaries.md).
+are separate evidence in the [source-boundary task](../../context/tasks/completed/parser-source-boundaries.md).

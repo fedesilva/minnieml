@@ -55,7 +55,7 @@ program that this failure rejects: removing its line 14,
 `println (int_to_str (apply ~{ n: Int -> y.length + n; } 1));`, lets it compile.
 Its header comment describes it as an invalid program. It also reproduces the
 member-level recovery cascade targeted by
-[Error recovery and parser backtracking](error-recovery-and-parser-backtracking.md):
+[Error recovery and parser backtracking](completed/error-recovery-and-parser-backtracking.md):
 the failed `main` member is followed by one "Failed to parse member" diagnostic per
 remaining statement, and none of them is at the failing token.
 
@@ -116,9 +116,9 @@ Observed on 2026-10-25 with the published `mmlc`, parser sources unchanged since
 ## Risks / Notes
 
 - Coordinate any commitment/recovery changes with
-  [Error recovery and parser backtracking](error-recovery-and-parser-backtracking.md).
+  [Error recovery and parser backtracking](completed/error-recovery-and-parser-backtracking.md).
 - The valid-call parsing failure is separate from
-  [PAP callee traversal](unify-lambdas.md#bug-elaborate-partial-applications-inside-callees).
+  [PAP callee traversal](completed/unify-lambdas.md#bug-elaborate-partial-applications-inside-callees).
 
 ## Signoff
 

@@ -145,9 +145,9 @@ mismatch. `DrawText`, whose Color follows a pointer and three integer arguments,
 the failure. The repair belongs in ABI classification and lowering, not library discovery
 or a raylib-specific emitter rule.
 
-[TargetLayout](../../modules/mmlc-lib/src/main/scala/mml/mmlclib/codegen/emitter/TargetLayout.scala)
+[TargetLayout](../../../modules/mmlc-lib/src/main/scala/mml/mmlclib/codegen/emitter/TargetLayout.scala)
 calculates recursive target storage layouts.
-[NativeAbiPlan](../../modules/mmlc-lib/src/main/scala/mml/mmlclib/codegen/emitter/abis/NativeAbi.scala)
+[NativeAbiPlan](../../../modules/mmlc-lib/src/main/scala/mml/mmlclib/codegen/emitter/abis/NativeAbi.scala)
 classifies full signatures and supplies shared declaration and call lowering.
 
 ### Repair scope and acceptance
@@ -174,17 +174,17 @@ destructor. No ownership-analyzer repair is required for this declaration patter
 
 ## Code Boundaries
 
-- [Module parser](../../modules/mmlc-lib/src/main/scala/mml/mmlclib/parser/modules.scala)
-  owns the header; [member parsing](../../modules/mmlc-lib/src/main/scala/mml/mmlclib/parser/members.scala)
+- [Module parser](../../../modules/mmlc-lib/src/main/scala/mml/mmlclib/parser/modules.scala)
+  owns the header; [member parsing](../../../modules/mmlc-lib/src/main/scala/mml/mmlclib/parser/members.scala)
   recovers misplaced directives.
-- [Module](../../modules/mmlc-lib/src/main/scala/mml/mmlclib/ast/module.scala),
-  [CompilerState](../../modules/mmlc-lib/src/main/scala/mml/mmlclib/compiler/CompilerState.scala),
-  and [IngestStage](../../modules/mmlc-lib/src/main/scala/mml/mmlclib/compiler/IngestStage.scala)
+- [Module](../../../modules/mmlc-lib/src/main/scala/mml/mmlclib/ast/module.scala),
+  [CompilerState](../../../modules/mmlc-lib/src/main/scala/mml/mmlclib/compiler/CompilerState.scala),
+  and [IngestStage](../../../modules/mmlc-lib/src/main/scala/mml/mmlclib/compiler/IngestStage.scala)
   preserve and collect the source-derived inputs before standard-library injection.
-- [Native emission](../../modules/mmlc-lib/src/main/scala/mml/mmlclib/codegen/emitter/Module.scala)
+- [Native emission](../../../modules/mmlc-lib/src/main/scala/mml/mmlclib/codegen/emitter/Module.scala)
   supplies external declarations with the target ABI.
-- [CodegenStage](../../modules/mmlc-lib/src/main/scala/mml/mmlclib/compiler/CodegenStage.scala)
-  passes inputs to [LlvmToolchain](../../modules/mmlc-lib/src/main/scala/mml/mmlclib/codegen/LlvmToolchain.scala).
+- [CodegenStage](../../../modules/mmlc-lib/src/main/scala/mml/mmlclib/compiler/CodegenStage.scala)
+  passes inputs to [LlvmToolchain](../../../modules/mmlc-lib/src/main/scala/mml/mmlclib/codegen/LlvmToolchain.scala).
   Clang links executables through its existing `-fuse-ld=lld` invocation. Pass argument sequences,
   not a constructed shell command string.
 
@@ -204,7 +204,7 @@ Required coverage:
   message, and retains separate module and runtime objects. AST and IR do not warn or link.
 - Keep fixture sources and instructions versioned; generate binary fixtures during tests.
 - Run formatting, linting, full tests, smoke checks, sample execution, and applicable gates from
-  [coding-rules.md](../coding-rules.md). Record unavailable target checks accurately.
+  [coding-rules.md](../../coding-rules.md). Record unavailable target checks accurately.
 
 Link-directive verification before the aggregate ABI stage, on macOS arm64 with Clang/LLVM 23.1.1:
 
@@ -215,7 +215,7 @@ Link-directive verification before the aggregate ABI stage, on macOS arm64 with 
   let answer = 42;` compiled successfully and emitted exactly three warnings with the required
   text at the entry locations. No directive libraries were installed for this check.
 - Native fixtures in
-  [LinkingTests](../../modules/mmlc-lib/src/test/scala/mml/mmlclib/codegen/LinkingTests.scala)
+  [LinkingTests](../../../modules/mmlc-lib/src/test/scala/mml/mmlclib/codegen/LinkingTests.scala)
   execute archive and shared-library calls, verify argument ordering and timing behavior,
   reject missing libraries/symbols, and emit objects without resolving discarded inputs.
   Fixture C and IR sources are embedded in that versioned test suite.
@@ -241,7 +241,7 @@ Aggregate ABI verification on macOS arm64 (Clang/LLVM 23.1.1) and the Linux buil
   13/13 passed through Linux ARM64 execution in the Docker VM.
 - `docker compose exec -T mml-linux-amd64 sbtn 'testOnly mml.mmlclib.codegen.AggregateAbiTests mml.mmlclib.codegen.LinkingTests'`:
   13/13 passed through emulated Linux x86-64 execution on the ARM host.
-- [AggregateAbiTests](../../modules/mmlc-lib/src/test/scala/mml/mmlclib/codegen/AggregateAbiTests.scala)
+- [AggregateAbiTests](../../../modules/mmlc-lib/src/test/scala/mml/mmlclib/codegen/AggregateAbiTests.scala)
   generates 324 deterministic aggregate shapes. C fixtures assert actual fields through
   argument and return round trips, six scalar-prefix patterns, trailing arguments, nesting,
   padding, empty values, and homogeneous floating aggregates. Native executions run at O0
@@ -255,7 +255,7 @@ Aggregate ABI verification on macOS arm64 (Clang/LLVM 23.1.1) and the Linux buil
   The toolchain emits PIC assembly and excludes optimization/sanitizer flags from assembly
   input compilation; native fixture linking uses the existing LLD pipeline.
 - The memory regression in
-  [closure-heap-capture.mml](../../tests/mem/closure-heap-capture.mml) exposed packing storage
+  [closure-heap-capture.mml](../../../tests/mem/closure-heap-capture.mml) exposed packing storage
   remaining live across recursion. A stack-save/restore implementation also failed host
   sanitizer checks. Native adapters own the final implementation's temporary storage;
   `sbtn 'run run -s -O0 -b build/abi-stack-check tests/mem/closure-heap-capture.mml'` passes
@@ -274,11 +274,11 @@ Aggregate ABI verification on macOS arm64 (Clang/LLVM 23.1.1) and the Linux buil
   8/8, and `sbtn mmlcPublishLocal` installs the final tested compiler successfully.
 - C fixture commands reuse `BaseEffFunSuite.commandNotFailed` and
   `LlvmToolchain.executeCommand`; the tests have no separate Clang process runner.
-- [Linux builder instructions](../../packaging/docker/Readme.md) describe the explicitly
+- [Linux builder instructions](../../../packaging/docker/Readme.md) describe the explicitly
   named arm64 and amd64 services, platforms, and isolated build outputs.
 
 The Author measured matmul after removing forced vector-interleave hints from
-[benchmark/Makefile](../../benchmark/Makefile). Optimized nested MML tied with optimized
+[benchmark/Makefile](../../../benchmark/Makefile). Optimized nested MML tied with optimized
 flat MML (1.00 ± 0.03) and optimized Rust (1.01 ± 0.03), and ran 1.53 ± 0.47 times faster
 than optimized C. These are Author-reported measurements, separate from the compiler's
 benchmark-build checks. The Makefile edit is included unchanged; a forced dry run confirms
@@ -291,7 +291,7 @@ runtime Int parameters/results use signed 32-bit values. SizeT, allocation byte 
 explicit Int64, and internal RNG state retain their 64-bit widths. Minimum signed literals,
 checked parsing and length narrowing, Int64 formatting, variable float conversions, entry
 statuses, and runtime source cache identity have regression coverage in
-[Int32Tests](../../modules/mmlc-lib/src/test/scala/mml/mmlclib/codegen/Int32Tests.scala).
+[Int32Tests](../../../modules/mmlc-lib/src/test/scala/mml/mmlclib/codegen/Int32Tests.scala).
 Raylib uses a four-field Color and direct Int coordinates. Samples and benchmarks use
 ordinary Int arithmetic with bounded inputs; zlib retains its actual C return width.
 
@@ -326,7 +326,7 @@ Verification on macOS arm64 with Clang/LLVM 23.1.1:
   the target-execution evidence. Intel macOS has cross-compilation coverage only.
 - Both logged benchmark datasets contain nine groups, 64 configurations, and 8,960 timed
   executions, all with zero exit status. CSV means agree with JSON and raw timing samples.
-  The [benchmark report](../../benchmark/results/report-2026-10-04-aarch.md) records the
+  The [benchmark report](../../../benchmark/results/report-2026-10-04-aarch.md) records the
   ABI-only and Int32 comparisons, checked-access costs, and historical architecture results.
 
 ### Int32 benchmark inputs and verification

@@ -30,7 +30,7 @@
 
 Parser source spans can include trailing whitespace and line comments. A type mismatch on
 `let b: Int = "2";` can therefore highlight the comment preceding the next declaration.
-In the reported layout of [test-poisoning.mml](../../mml/samples/test-poisoning.mml), the
+In the reported layout of [test-poisoning.mml](../../../mml/samples/test-poisoning.mml), the
 mismatch covers `[5:5]-[8:1]`; its intended range is `[5:5]-[5:18]`, immediately after
 the binding's semicolon.
 
@@ -159,7 +159,7 @@ owned-token capture.
 - Three fresh-JVM parser measurement forks pass with zero recovered errors on all four inputs,
   equal instrumented/uninstrumented trees, and valid checksums/final trees in every batch.
   The shared fork setting is restored to false. The
-  [measurement report](../../benchmark/parser/source-boundaries.md) retains all 84 samples,
+  [measurement report](../../../benchmark/parser/source-boundaries.md) retains all 84 samples,
   corrected tree hashes, source fingerprints, counters, environment, and comparison limits.
 - A concurrent, subsequently aborted rebase interrupted an earlier measurement attempt before
   it produced samples. That attempt is excluded. After restoration,
@@ -258,7 +258,7 @@ performance, or cross-target claim follows from that one fixture.
   locally before benchmark builds and the memory harness. Follow the repository's compiler
   handoff rules; never run concurrent `sbtn` sessions.
 - Repeat the established four-input parser measurement protocol from
-  [the parser comparison](../../benchmark/parser/comparison-final.md). Preserve historical
+  [the parser comparison](../../../benchmark/parser/comparison-final.md). Preserve historical
   reports and record corrected-span hashes and fresh measurements separately. Benchmark
   builds establish compatibility, not performance.
 - Complete repository QA enforcement and independent code review. Address confirmed findings

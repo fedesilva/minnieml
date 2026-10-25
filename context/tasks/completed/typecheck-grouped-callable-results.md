@@ -140,7 +140,7 @@ Host: arm64 macOS, Homebrew Clang 23.1.1, target `arm64-apple-darwin25.6.0`.
 ## Risks / Notes
 
 This is finding E from the returned-callee PAP review. It is separate from the historical
-grouped-return LLVM mapping defect and the [parser grouping task](parser-parenthesized-lambda-arguments.md).
+grouped-return LLVM mapping defect and the [parser grouping task](../parser-parenthesized-lambda-arguments.md).
 
 ## Signoff
 

@@ -1,7 +1,7 @@
 # Unify Lambdas — Implementation Plan
 
 Implementation history from the abandoned lambda branch. Checked slices and commit claims
-do not carry forward to [the migration task](../tasks/unify-lambdas.md).
+do not carry forward to [the migration task](../tasks/completed/unify-lambdas.md).
 
 Archived from `context/specs/unify-lambdas-plan.md` on 2026-09-10 for Author review.
 The source text below is historical evidence, including its old paths, dates, and

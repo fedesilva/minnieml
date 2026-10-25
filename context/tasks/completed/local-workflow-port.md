@@ -65,7 +65,7 @@ content, byte-identical JSON evidence, and the memory/instructions/changelog-onl
 Focused tracking review found no remaining inconsistencies in the content mapping and task state. Static lifecycle walkthroughs
 confirmed the initial separate-commit policy and selected-memory behavior; the final finish-command
 policy supersedes that initial commit boundary. Independent phase-one workflow review
-found no actionable findings; no candidates required per-claim verifiers. Details: [migration validation](../history/workflow-port.md#phase-one-validation).
+found no actionable findings; no candidates required per-claim verifiers. Details: [migration validation](../../history/workflow-port.md#phase-one-validation).
 
 ## Risks / Notes
 
@@ -83,7 +83,7 @@ it does not establish implementation progress, approval, or completion.
 
 Both migration phases are implemented and signed off. Source revision, content mappings,
 preservation checks, and independent phase reviews are recorded in
-[workflow-port.md](../history/workflow-port.md). The workflow task is complete; the migrated
+[workflow-port.md](../../history/workflow-port.md). The workflow task is complete; the migrated
 compiler and QA tasks retain their own pending state.
 
 Local skills use name/description discovery and read instructions only when needed.

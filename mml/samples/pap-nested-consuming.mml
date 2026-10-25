@@ -4,7 +4,7 @@
 //
 // Both forms should print their heading followed by 3. The nested call stays
 // active as a regression check for ownership through allocating expressions.
-// See context/tasks/unify-lambdas.md (nested consuming-PAP calls).
+// See context/tasks/completed/unify-lambdas.md (nested consuming-PAP calls).
 
 
 // The ~ parameter makes take_length receive ownership of text.

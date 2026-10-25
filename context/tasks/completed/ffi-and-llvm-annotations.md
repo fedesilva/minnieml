@@ -66,7 +66,7 @@ Required checks:
 - Inline templates belong to `@metal:tpl`; `@metal:ffi[tpl=...]` is rejected.
 - The parser rejects `@native`, `@ffi`, and `@llvm` annotations.
 - Native-call, template, ownership, and aggregate ABI regression tests pass.
-- Compiler finish checks follow [coding-rules.md](../coding-rules.md).
+- Compiler finish checks follow [coding-rules.md](../../coding-rules.md).
 
 ### Results
 

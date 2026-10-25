@@ -76,9 +76,9 @@ reproductions were run for this task; implementation and behavioral verification
 ## Risks / Notes
 
 Follow-up to the lambda workstream's
-[binding identity and local-construction step](unify-lambdas.md#establish-binding-identity-and-local-construction-invariants).
+[binding identity and local-construction step](completed/unify-lambdas.md#establish-binding-identity-and-local-construction-invariants).
 That step establishes construction guarantees; it does not resolve these classification choices.
-The [lambda semantic goals](unify-lambdas.md#semantic-goals) require a regular lambda model.
+The [lambda semantic goals](completed/unify-lambdas.md#semantic-goals) require a regular lambda model.
 Explicit metadata is a design option requiring justification, not a predetermined solution.
 
 ## Signoff

@@ -54,9 +54,9 @@ standalone LOW-priority tasks. Their implementation requires separate bounded pl
 - **Baseline cases:** after `let q = h.f; let a = drop h; q 2`, a second `Use of 'h' after move`
   points at the earlier, valid `h` reference. In `borrow (take (int_to_str 123))`,
   a diagnostic points at `[synthetic]` rather than the source call.
-- **Baseline cause:** [OwnershipAnalyzer.scala](../../modules/mmlc-lib/src/main/scala/mml/mmlclib/semantic/OwnershipAnalyzer.scala)
+- **Baseline cause:** [OwnershipAnalyzer.scala](../../../modules/mmlc-lib/src/main/scala/mml/mmlclib/semantic/OwnershipAnalyzer.scala)
   reuses a stored dependency `Ref` for the first error;
-  [LocalBindings.scala](../../modules/mmlc-lib/src/main/scala/mml/mmlclib/semantic/LocalBindings.scala)
+  [LocalBindings.scala](../../../modules/mmlc-lib/src/main/scala/mml/mmlclib/semantic/LocalBindings.scala)
   gives the hoisted PAP binding a synthetic origin for the second.
 - **Outcome:** preserve the offending source use and source origin through dependency
   and temporary lowering. Assert diagnostic class, definition identity, use site, and
@@ -108,7 +108,7 @@ standalone LOW-priority tasks. Their implementation requires separate bounded pl
 
 The implemented source-location repair is verified and signed off on the recorded branch.
 No additional diagnostic work blocks Unify lambdas completion.
-Follow-ups: [provenance](ownership-diagnostic-provenance.md),
-[wording](ownership-diagnostic-wording.md), [editor tests](lsp-generated-reference-regressions.md),
-[contracts](compiler-diagnostic-contract-documentation.md), and
-[normalization readability](ownership-diagnostic-maintainability.md).
+Follow-ups: [provenance](../ownership-diagnostic-provenance.md),
+[wording](../ownership-diagnostic-wording.md), [editor tests](../lsp-generated-reference-regressions.md),
+[contracts](../compiler-diagnostic-contract-documentation.md), and
+[normalization readability](../ownership-diagnostic-maintainability.md).

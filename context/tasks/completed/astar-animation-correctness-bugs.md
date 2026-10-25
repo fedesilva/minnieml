@@ -27,7 +27,7 @@
 ## Problem
 
 Six findings concern ordinary MML source patterns and the console and animated A* samples.
-The [animated sample](../../mml/samples/astar3_animated.mml) uses plain global integer
+The [animated sample](../../../mml/samples/astar3_animated.mml) uses plain global integer
 constants and explicit grid initialization. It uses an inline conditional array argument for finding 2 and ordinary caption returns
 with literal terminal messages for finding 3.
 Keep these findings together for triage; separate repair tasks only when their boundaries
@@ -224,7 +224,7 @@ the results in the caller. Raylib, window initialization, and the search loop ar
 to reproduce this defect.
 
 The repair boundary is return ownership in
-[OwnershipAnalyzer.scala](../../modules/mmlc-lib/src/main/scala/mml/mmlclib/semantic/OwnershipAnalyzer.scala).
+[OwnershipAnalyzer.scala](../../../modules/mmlc-lib/src/main/scala/mml/mmlclib/semantic/OwnershipAnalyzer.scala).
 At `d1f744f`, `promoteStaticBranchesInReturn` only handles an immediate conditional, without recursively
 following nested return branches or local-binding wrappers. Its allocation queries must also
 remain valid after ownership rewrites. A repair must align these decisions with caller cleanup
@@ -234,12 +234,12 @@ remain separate acceptance obligations; this reproduction does not establish the
 
 ### 4. `astar3.mml` reads uninitialized wall-map cells
 
-In [astar3.mml](../../mml/samples/astar3.mml), `demo` constructs `Grid` with
+In [astar3.mml](../../../mml/samples/astar3.mml), `demo` constructs `Grid` with
 `ar_int_new size`. Allocation leaves the cells uninitialized; writing only the obstacle
 cells is insufficient because search and printing read the other cells.
 
 The `ar_int_new` implementation in
-[mml_runtime.c](../../modules/mmlc-lib/src/main/resources/mml_runtime.c) allocates with
+[mml_runtime.c](../../../modules/mmlc-lib/src/main/resources/mml_runtime.c) allocates with
 `malloc` and returns that storage without clearing it. Apparent success with fresh
 zero-filled memory does not establish correctness. `demo` calls `ar_int_fill grid.walls 0`
 before `build_vertical_wall` to initialize every open cell.
@@ -259,7 +259,7 @@ no wall, clipped walls, and a full-height barrier without relying on allocator c
 
 At `fd8a15c`, a conditional expression used to select a record fails when its predicate
 contains function and operator calls. The `qualified` function in
-[call-exit-blocks.mml](../../tests/mem/call-exit-blocks.mml) reproduces the failure with:
+[call-exit-blocks.mml](../../../tests/mem/call-exit-blocks.mml) reproduces the failure with:
 
 ```mml
 (if mark trace 2 1 == 1 then box; else box;).call
@@ -293,13 +293,13 @@ expression traversal through them. Dependency collection uses the same reference
 value and callee positions. Lexical scope, field-name lookup, and evaluation order stay intact.
 
 Regression coverage is in
-[FieldQualifierResolutionTests.scala](../../modules/mmlc-lib/src/test/scala/mml/mmlclib/semantic/FieldQualifierResolutionTests.scala)
-and [CallExitBlockTests.scala](../../modules/mmlc-lib/src/test/scala/mml/mmlclib/codegen/CallExitBlockTests.scala).
+[FieldQualifierResolutionTests.scala](../../../modules/mmlc-lib/src/test/scala/mml/mmlclib/semantic/FieldQualifierResolutionTests.scala)
+and [CallExitBlockTests.scala](../../../modules/mmlc-lib/src/test/scala/mml/mmlclib/codegen/CallExitBlockTests.scala).
 The semantic suite checks successful field resolution, local shadowing identities, inferred
 forward dependencies, undefined-reference recovery, and invalid types and fields. Phase-level
 checks require declaration IDs before type checking can recover local names.
 
-The [runtime fixture](../../tests/mem/call-exit-blocks.mml) selects distinct callable branches
+The [runtime fixture](../../../tests/mem/call-exit-blocks.mml) selects distinct callable branches
 with results `7` and `8`. Its argument records digit `1` and its predicate records digit `2`;
 trace `12` requires exactly one evaluation of each in the compiler's argument-before-callee
 order. The capturing case returns `17` or `27` with traces `12` or `22`; a disabled enclosing
@@ -378,8 +378,8 @@ confirmation; their unresolved name references prevented code generation at `fd8
    require rejection. Nested conditional aliases have the remaining dependency gap linked below.
 
    Regressions are in
-   [FieldQualifierOwnershipTests.scala](../../modules/mmlc-lib/src/test/scala/mml/mmlclib/semantic/FieldQualifierOwnershipTests.scala)
-   and [field-qualifier-owners.mml](../../tests/mem/field-qualifier-owners.mml).
+   [FieldQualifierOwnershipTests.scala](../../../modules/mmlc-lib/src/test/scala/mml/mmlclib/semantic/FieldQualifierOwnershipTests.scala)
+   and [field-qualifier-owners.mml](../../../tests/mem/field-qualifier-owners.mml).
    The qualifier-ownership semantic cases check cleanup targets by resolved identity and reject invalid ownership
    escapes and later moves. Native ASan/LSan execution at `-O0` and `-O3` verifies both
    conditional branches, a disabled enclosing branch, and effect traces. Full compiler gates
@@ -401,7 +401,7 @@ The focused regressions reproduced four failures before these repairs and pass a
 Both primary review attempts and the claim verifiers were interrupted by the automated error
 `This content was flagged for possible cybersecurity risk.` Their reported findings remain
 preserved evidence. The explicitly approved
-[code-review fallback](../../.skills/code-review/SKILL.md#automated-flags-and-interrupted-reviews)
+[code-review fallback](../../../.skills/code-review/SKILL.md#automated-flags-and-interrupted-reviews)
 completes the outstanding ownership review and fix checks in the implementing agent.
 Primary-review and per-claim independence are waived; no clean independent ownership review
 is claimed.
@@ -469,7 +469,7 @@ lifetime remain accepted. Branch selection and exactly-once evaluation remain un
 #### Scope
 
 - In scope: conditional dependency merging in
-  [OwnershipAnalyzer.scala](../../modules/mmlc-lib/src/main/scala/mml/mmlclib/semantic/OwnershipAnalyzer.scala),
+  [OwnershipAnalyzer.scala](../../../modules/mmlc-lib/src/main/scala/mml/mmlclib/semantic/OwnershipAnalyzer.scala),
   directly affected escape and use-after-move checks, and focused semantic/runtime regressions.
 - Out of scope: new lifetime syntax, implicit cloning, and the separate
   [conditional ownership witness work](mixed-ownership-transfers.md).
@@ -638,7 +638,7 @@ Findings 2 and 5 are outside the caption repair.
 #### Separate conditional return-lifetime gap
 
 The standalone [mixed-ownership task](mixed-ownership-transfers.md) completes this repair.
-Its [conditional return-lifetime evidence](mixed-ownership-transfers-evidence.md#conditional-return-lifetime-evidence-from-a)
+Its [conditional return-lifetime evidence](../mixed-ownership-transfers-evidence.md#conditional-return-lifetime-evidence-from-a)
 contains the reproducer and sanitizer results. Returning a local on only one branch leaves
 an allocation to clean up on the other branch; this obligation is outside the completed
 caption repair.
@@ -650,11 +650,11 @@ caption repair.
 - `TypeResolver` resolves existing binding and expression `typeSpec` values with
   `resolveTypeSpecWithMap`, preserving absent types, nominal aliases, diagnostics, and indexes.
 - The resolver boundary and resolved reference identities are covered in
-  [TypeResolverTests.scala](../../modules/mmlc-lib/src/test/scala/mml/mmlclib/semantic/TypeResolverTests.scala).
+  [TypeResolverTests.scala](../../../modules/mmlc-lib/src/test/scala/mml/mmlclib/semantic/TypeResolverTests.scala).
   Cases include both declaration orders, `Int` and `Int32` binding annotations, a term annotation,
   Boolean/string/float literals, arithmetic initialization, and incompatible annotations.
 - Both declaration orders pass LLVM assembly and sanitizer execution in
-  [RuntimeTests.scala](../../modules/mmlc-lib/src/test/scala/mml/mmlclib/codegen/RuntimeTests.scala).
+  [RuntimeTests.scala](../../../modules/mmlc-lib/src/test/scala/mml/mmlclib/codegen/RuntimeTests.scala).
 - The animated sample replaces `infinity` and `event_width` functions and the `EventKinds`,
   `RejectionReasons`, `CellStates`, and `Layout` constant records with 24 plain global
   integer bindings. Values, declaration placement, and group prefixes are preserved.
@@ -810,18 +810,18 @@ verification. Final task signoff is granted; the tracked item is complete with t
 
 Host: macOS arm64, LLVM/Clang 23.1.1, GraalVM Java 25; baseline `c31058d`.
 
-[CallExitBlockTests.scala](../../modules/mmlc-lib/src/test/scala/mml/mmlclib/codegen/CallExitBlockTests.scala)
+[CallExitBlockTests.scala](../../../modules/mmlc-lib/src/test/scala/mml/mmlclib/codegen/CallExitBlockTests.scala)
 contains 26 regressions: 18 call/operator/qualified-callee cases, two loopification controls,
 two native loop/effect-order runs, and four literal/allocating-caption runs.
 Before the emitter repair, the ordinary-call and loop tests fail the PHI predecessor assertion;
 the disabled-TCO control passes. The repaired suite passes structural predecessor checks and
 `llvm-as` verification. Tests compare actual control-flow edges rather than generated label numbers.
 
-[call-exit-blocks.mml](../../tests/mem/call-exit-blocks.mml) checks selected branch values,
+[call-exit-blocks.mml](../../../tests/mem/call-exit-blocks.mml) checks selected branch values,
 argument effect order, one evaluation per selected argument, qualified calls with known and
 unknown targets, capturing-environment cleanup, and a 10,000-iteration loop. Native tests run
 with zero, one, and two arguments to select both inner branches and the skipped outer branch.
-The unchanged [caption fixture](../../tests/mem/caption-returns.mml) supplies expected text for
+The unchanged [caption fixture](../../../tests/mem/caption-returns.mml) supplies expected text for
 all event kinds and rejection reasons. Its allocating variant makes exactly the three terminal
 caption substitutions recorded in finding 2; both variants pass at `-O0` and `-O3` with
 `ASAN_OPTIONS=detect_leaks=1:halt_on_error=1:abort_on_error=1`.
@@ -867,13 +867,13 @@ target `arm64-apple-darwin25.6.0`.
 - The initial 27-check return matrix produced 17 failures and 10 passes before the compiler
   repair. Failures included missing clone insertion, invalid frees at `-O0` and `-O3`, and
   LLVM verification failure when an entire nested static conditional was cloned.
-- [StringReturnTests.scala](../../modules/mmlc-lib/src/test/scala/mml/mmlclib/codegen/StringReturnTests.scala)
+- [StringReturnTests.scala](../../../modules/mmlc-lib/src/test/scala/mml/mmlclib/codegen/StringReturnTests.scala)
   passes all 27 tests with the bounded alias case described above. Eight semantic checks use
   resolved clone/destructor identities; eighteen native checks verify LLVM and execute three
   runtime-selected paths each under ASan+LSan at `-O0` and `-O3`. A negative test preserves
   borrowed-return rejection through nested scopes. Counter checks establish exactly-once
   predicate, initializer, and selected-value effects.
-- [caption-returns.mml](../../tests/mem/caption-returns.mml) preserves the sample's `Event` and
+- [caption-returns.mml](../../../tests/mem/caption-returns.mml) preserves the sample's `Event` and
   five caption/helper functions and the minimal reproduction. It checks 27 complete strings
   across every event kind, previous-cost alternative, and rejection reason through borrowing
   calls and caller cleanup. Both reduced branches execute on every run.

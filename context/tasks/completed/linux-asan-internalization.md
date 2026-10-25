@@ -29,7 +29,7 @@ standalone C program processed by `default<O0>,internalize,globaldce`; omitting 
 passes allows the program to link and run under ASan/LSan.
 
 The failing executable pipeline recorded on 2026-10-07 in
-[LlvmToolchain.scala](../../modules/mmlc-lib/src/main/scala/mml/mmlclib/codegen/LlvmToolchain.scala)
+[LlvmToolchain.scala](../../../modules/mmlc-lib/src/main/scala/mml/mmlclib/codegen/LlvmToolchain.scala)
 links sanitized runtime bitcode before optimization, appends `internalize,globaldce` while
 preserving `main` as public, emits assembly with `llc`, and assembles/links with Clang.
 The [current-baseline investigation](#current-baseline-reconciliation-2026-10-23) isolates
@@ -193,7 +193,7 @@ it does not establish behavior on other LLVM versions.
 
 The current compiler defers runtime instrumentation in `compileRuntimeBitcode` and runs
 `asan` after `internalize,globaldce` in `runOptimization` in
-[LlvmToolchain.scala](../../modules/mmlc-lib/src/main/scala/mml/mmlclib/codegen/LlvmToolchain.scala).
+[LlvmToolchain.scala](../../../modules/mmlc-lib/src/main/scala/mml/mmlclib/codegen/LlvmToolchain.scala).
 The equivalent standalone pipeline is reproducible with:
 
 ```sh
@@ -297,7 +297,7 @@ runtime repair introduce no product-source changes, so no changelog entry is req
   tested pipeline, not evidence that sanitizers are generally unavailable on Linux.
 - The failed native tests stop before executable execution; passing semantic or LLVM
   verification checks does not establish runtime memory safety.
-- Use the [Linux builder workflow](../../packaging/docker/Readme.md). Run builds sequentially
+- Use the [Linux builder workflow](../../../packaging/docker/Readme.md). Run builds sequentially
   and distinguish emulated amd64 execution from native ARM64 execution.
 
 ## Signoff

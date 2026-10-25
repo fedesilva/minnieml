@@ -40,7 +40,7 @@ complete; the implementation is delivered to `main` in squash commit `9d4f4740`.
     diagnostic causes and unavailable-value behavior. Paired measurements, compiler gates,
     and independent correction review pass.
 12. [x] **complete** — Explain the complete implementation in
-    [Keeping useful compiler results after an error](../../docs/articles/2026-10/2026-10-25-error-recovery-and-diagnostic-causes.md),
+    [Keeping useful compiler results after an error](../../../docs/articles/2026-10/2026-10-25-error-recovery-and-diagnostic-causes.md),
     with Scala/MML walkthroughs, ASCII diagrams, and qualified performance evidence.
 
 ## Problem
@@ -59,7 +59,7 @@ unnecessary reparsing while recovery remains local and always makes progress.
 
 ## Scope
 
-Design source: [Reduce backtracking: commit and recover](../../docs/brainstorming/parser/reduce-backtracking.md).
+Design source: [Reduce backtracking: commit and recover](../../../docs/brainstorming/parser/reduce-backtracking.md).
 
 - Error-aware semantic phases, including `ExpressionRewriter`, type checking, and
   ownership analysis.
@@ -82,14 +82,14 @@ syntax to make invalid assignment examples compile.
 Its recovery groundwork is available on `main`. Independent follow-ups do not require
 clearing the entire bug backlog before this task.
 
-The [parenthesized-lambda parser bug](parser-parenthesized-lambda-arguments.md) overlaps the
+The [parenthesized-lambda parser bug](../parser-parenthesized-lambda-arguments.md) overlaps the
 grouping/selection commitment boundaries. The approved parser plan includes its reproducer as
 a commitment-containment control. The prerequisite cut containment fixes that shared failure;
 its tracked item remains open, with acceptance evidence collected here.
 
 ### Parser recovery acceptance scenario for steps 7–8
 
-The [parenthesized-lambda task](parser-parenthesized-lambda-arguments.md#verification)
+The [parenthesized-lambda task](../parser-parenthesized-lambda-arguments.md#verification)
 records that the valid `mml/samples/errors-are-not-granular.mml` produces six member
 parse errors, beginning at `pub fn main` and continuing over later statements and the
 closing delimiter. The actual failing token is not identified.
@@ -120,11 +120,11 @@ Their verification is recorded below; the nested-diagnostic repair alone does no
 Source inspection at `87e899c` on 2026-10-25 establishes the following baseline;
 no compiler execution or performance measurement is included in this reconciliation.
 
-- [ExpressionRewriter](../../modules/mmlc-lib/src/main/scala/mml/mmlclib/semantic/ExpressionRewriter.scala)
+- [ExpressionRewriter](../../../modules/mmlc-lib/src/main/scala/mml/mmlclib/semantic/ExpressionRewriter.scala)
   still rejects `InvalidExpression` and retains the original entire binding when rewriting
   returns errors. Recursive `EitherT` composition can discard successful sibling rewrites.
   Local preservation remains necessary; the historical diagnostic list below needs a fresh run.
-- [ValueAvailability](../../modules/mmlc-lib/src/main/scala/mml/mmlclib/semantic/ValueAvailability.scala)
+- [ValueAvailability](../../../modules/mmlc-lib/src/main/scala/mml/mmlclib/semantic/ValueAvailability.scala)
   already propagates unavailable results through resolved binding identities and aliases.
   It rejects `TermError`, `InvalidExpression`, and non-single-term expressions. This is a
   post-typing availability contract, not a general diagnostic-cause representation or an
@@ -133,9 +133,9 @@ no compiler execution or performance measurement is included in this reconciliat
   PAP elaboration continues through independent members and statement continuations.
   Ownership analysis preserves malformed expression payloads and checks their children for
   independent errors without treating a flat term list as a sequence. Reuse the assertions in
-  [ElaborationRecoveryTests](../../modules/mmlc-lib/src/test/scala/mml/mmlclib/semantic/ElaborationRecoveryTests.scala)
-  and [OwnershipExpressionTests](../../modules/mmlc-lib/src/test/scala/mml/mmlclib/semantic/OwnershipExpressionTests.scala).
-- [SemanticStage](../../modules/mmlc-lib/src/main/scala/mml/mmlclib/compiler/SemanticStage.scala)
+  [ElaborationRecoveryTests](../../../modules/mmlc-lib/src/test/scala/mml/mmlclib/semantic/ElaborationRecoveryTests.scala)
+  and [OwnershipExpressionTests](../../../modules/mmlc-lib/src/test/scala/mml/mmlclib/semantic/OwnershipExpressionTests.scala).
+- [SemanticStage](../../../modules/mmlc-lib/src/main/scala/mml/mmlclib/compiler/SemanticStage.scala)
   refreshes indexes across rewrites. Recovery must preserve binding IDs, source origins,
   `Callee = Ref | App | Lambda`, and the existing local-binding/statement application shape.
   Do not manufacture a callable or widen `Callee` merely to carry an error.
@@ -146,7 +146,7 @@ no compiler execution or performance measurement is included in this reconciliat
   conditionals each have separate full/no-`else` alternatives. Ascriptions parse an optional
   `:` followed by `typeSpecP`, including function and grouped types. Recovery must cover these
   actual paths; a nominal `typeRefP` fallback is insufficient.
-- [CodegenStage](../../modules/mmlc-lib/src/main/scala/mml/mmlclib/compiler/CodegenStage.scala)
+- [CodegenStage](../../../modules/mmlc-lib/src/main/scala/mml/mmlclib/compiler/CodegenStage.scala)
   already disables emission when errors exist. Suppression must affect diagnostic presentation,
   not remove the error state used by this gate.
 
@@ -277,17 +277,17 @@ records actual completed checks and open failures.
 
 Historical source inspection at `931c6ff`; no runtime or performance claims:
 
-- [CompilerState](../../modules/mmlc-lib/src/main/scala/mml/mmlclib/compiler/CompilerState.scala)
+- [CompilerState](../../../modules/mmlc-lib/src/main/scala/mml/mmlclib/compiler/CompilerState.scala)
   stores raw errors without IDs or causes. Prefer one authoritative record collection over
   a parallel metadata table whose entries can drift after error-list updates.
-- [RefResolver](../../modules/mmlc-lib/src/main/scala/mml/mmlclib/semantic/RefResolver.scala)
+- [RefResolver](../../../modules/mmlc-lib/src/main/scala/mml/mmlclib/semantic/RefResolver.scala)
   uses fail-fast `Either.traverse` within a binding, then separately rewrites all ordinary
   unresolved term references as invalid expressions. Independent failures can therefore
   produce invalid nodes without corresponding primary diagnostics. Use one accumulating
   resolution result containing both rewritten syntax and diagnostics; matching the two
   passes afterward by span is unsound. Unresolved callees remain `Ref`, so recovery must
   preserve the failed region without manufacturing an application of an unknown callee.
-- [TypeResolver](../../modules/mmlc-lib/src/main/scala/mml/mmlclib/semantic/TypeResolver.scala)
+- [TypeResolver](../../../modules/mmlc-lib/src/main/scala/mml/mmlclib/semantic/TypeResolver.scala)
   has the same fail-fast pattern. Its fallback receives a module with no members, and its
   lookup reads only members: every type reference visited by that fallback becomes
   `InvalidType`, including valid sibling annotations and cached literal types. Some type
@@ -295,7 +295,7 @@ Historical source inspection at `931c6ff`; no runtime or performance claims:
   These two resolver defects are confirmed by static control flow; focused runtime
   regressions remain required. Existing tests do not assert complete primary-error
   accumulation or valid sibling-type retention.
-- [TypeChecker](../../modules/mmlc-lib/src/main/scala/mml/mmlclib/semantic/TypeChecker.scala)
+- [TypeChecker](../../../modules/mmlc-lib/src/main/scala/mml/mmlclib/semantic/TypeChecker.scala)
   can report a branch-type mismatch independently of an erroneous predicate, then retain
   an ordinary `Cond`. An upstream root does not prove that mismatch is consequential.
   Failed applications retain their argument in `InvalidExpression`; several application
@@ -305,18 +305,18 @@ Historical source inspection at `931c6ff`; no runtime or performance claims:
   children already report errors. Classify each guard as prerequisite handling,
   canonicalization, or a proven consequence to retain for presentation-time filtering.
   Do not infer that every omitted diagnostic must be manufactured.
-- [ParsingErrorChecker](../../modules/mmlc-lib/src/main/scala/mml/mmlclib/compiler/ParsingErrorChecker.scala)
+- [ParsingErrorChecker](../../../modules/mmlc-lib/src/main/scala/mml/mmlclib/compiler/ParsingErrorChecker.scala)
   and its design contract promise no AST rewrites. Stamping cause IDs during ingest needs
   an explicit metadata-only rewrite contract, preserving recovered structure and locations.
-- [OwnershipAnalyzer](../../modules/mmlc-lib/src/main/scala/mml/mmlclib/semantic/OwnershipAnalyzer.scala)
+- [OwnershipAnalyzer](../../../modules/mmlc-lib/src/main/scala/mml/mmlclib/semantic/OwnershipAnalyzer.scala)
   filters borrowed-return consequences and repeated moves before adding errors to state.
   `normalizeMoveErrors` also canonicalizes written/derived duplicates. Invalid payload
   traversal removes shape diagnostics without explicit source-error identity. Classify and
   migrate these operations separately; preserve distinct owners and distinct use sites.
-- [ValueAvailability](../../modules/mmlc-lib/src/main/scala/mml/mmlclib/semantic/ValueAvailability.scala)
+- [ValueAvailability](../../../modules/mmlc-lib/src/main/scala/mml/mmlclib/semantic/ValueAvailability.scala)
   and PAP/callable guards check prerequisites. They are not a general cause carrier, and
   unavailable input must not generate hypothetical ownership errors just to suppress them.
-- [ClosureDestructorBodyGenerator](../../modules/mmlc-lib/src/main/scala/mml/mmlclib/semantic/ClosureDestructorBodyGenerator.scala)
+- [ClosureDestructorBodyGenerator](../../../modules/mmlc-lib/src/main/scala/mml/mmlclib/semantic/ClosureDestructorBodyGenerator.scala)
   avoids a missing-metadata consequence for an already-invalid environment layout. Preserve
   that prerequisite behavior while retaining the original environment diagnostic.
 
@@ -464,7 +464,7 @@ independent operand analysis, recursive/forward references, and presentation-onl
 
 ### Documentation handoff: verified
 
-[Keeping useful compiler results after an error](../../docs/articles/2026-10/2026-10-25-error-recovery-and-diagnostic-causes.md)
+[Keeping useful compiler results after an error](../../../docs/articles/2026-10/2026-10-25-error-recovery-and-diagnostic-causes.md)
 explains the implemented cause model, parser recovery, and analysis reuse through Scala/MML
 walkthroughs and progressive ASCII trees. The compiler-design reference links to the article.
 The article distinguishes source-derived explanations, test assertions, native execution,
@@ -699,7 +699,7 @@ Verified on arm64 macOS with GraalVM Java 25.0.4.1 and Homebrew Clang 23.1.1.
 
 ### Parser foundation: verified
 
-- The [uninstrumented baseline](../../benchmark/parser/baseline-a2c9832.md) records three fresh
+- The [uninstrumented baseline](../../../benchmark/parser/baseline-a2c9832.md) records three fresh
   JVMs, four tracked valid sources, 500 warmup parses and seven batches of 100 parses per input.
   All raw/instrumented trees agree and all valid sources contain zero recovered errors. The
   separate grouped-lambda control has six recovered errors. All 84 samples, input/tree hashes,
@@ -779,12 +779,12 @@ Verified on arm64 macOS with GraalVM Java 25.0.4.1 and Homebrew Clang 23.1.1.
   and nine CLI tests, zero failures/errors/Scala compiler warnings, exit 0 in 100 seconds.
 - A fresh-JVM `ParserBaseline` control with `1 1 1` over nqueens, mat-mul, astar2, and raytracer
   produces zero recovered errors and the exact source/raw-AST hashes in the
-  [baseline](../../benchmark/parser/baseline-a2c9832.md#inputs-and-identity). Instrumented and
+  [baseline](../../../benchmark/parser/baseline-a2c9832.md#inputs-and-identity). Instrumented and
   raw trees agree. This is an AST compatibility control, not a performance measurement.
   The first invocation failed because `sbtn` joins separate command arguments; the documented
   recipes now place task separators inside one argument. The corrected invocation passed and
   restored `mmlclib / Test / fork := false`. Measured baseline data is unchanged.
-- The inspectable [type-recovery sample](../../mml/samples/parser-type-recovery.mml) retains
+- The inspectable [type-recovery sample](../../../mml/samples/parser-type-recovery.mml) retains
   a malformed annotation, its dependent alias, an independent undefined reference, and later
   valid bindings. `sbtn "run ast mml/samples/parser-type-recovery.mml"` exits 1 as expected,
   reporting exactly `Type parser error at [5:13]-[5:19]: Invalid type syntax` and
@@ -857,7 +857,7 @@ Verified on arm64 macOS with GraalVM Java 25.0.4.1 and Homebrew Clang 23.1.1.
   failed aliases/PAPs/captures, independent normalization/ownership diagnostics, exact CLI/LSP source
   roots, and the raw-error codegen gate.
 - The four-source fresh-JVM `ParserBaseline` control (`1 1 1`) matches every recorded source and
-  raw-tree hash in the [baseline](../../benchmark/parser/baseline-a2c9832.md), with zero recovered
+  raw-tree hash in the [baseline](../../../benchmark/parser/baseline-a2c9832.md), with zero recovered
   errors and equal instrumented/raw trees. `Test / fork=false` is restored. This control establishes
   AST compatibility, not performance. Host: arm64 macOS 26.6.2, GraalVM Java 25.0.4.1.
 - `./tests/smoke/run.sh all` passes 8/8. `sbtn "run run mml/samples/errors-are-not-granular.mml;
@@ -905,7 +905,7 @@ Verified on arm64 macOS with GraalVM Java 25.0.4.1 and Homebrew Clang 23.1.1.
   member condition grammars remain explicit, while branch parsing and lowering are shared.
   Missing `then` retains all condition terms and one true-branch boundary error. Each recovered
   frame part advances; a following `if` resumes structural parsing and owns its nested clauses.
-- The sixteen-declaration [conditional control](../../benchmark/parser/Readme.md#conditional-compatibility-control)
+- The sixteen-declaration [conditional control](../../../benchmark/parser/Readme.md#conditional-compatibility-control)
   was captured at `da7e9d19` before production edits. All four original corpus source/raw-tree hashes
   and the conditional-control hashes match after refactoring, with zero recovered errors and equal
   instrumented/raw trees. The `ParserBaseline 1 1 1` check is compatibility evidence, not performance;
@@ -948,7 +948,7 @@ Verified on arm64 macOS with GraalVM Java 25.0.4.1 and Homebrew Clang 23.1.1.
 
 ### Step 10: measurements and integrated review verified
 
-- The [final parser comparison](../../benchmark/parser/comparison-final.md) records compiler
+- The [final parser comparison](../../../benchmark/parser/comparison-final.md) records compiler
   commit `81c2d3024634cc89edc210d59c67ecdbaf7924c4`, the unchanged measurement utility, exact
   commands, environment, identities, all 84 measured samples, and counter summaries. Three fresh
   JVMs each run five warmup batches and seven measured batches of 100 parses on the original
@@ -1080,7 +1080,7 @@ Removing `println missing;` compiles and prints `Fede`.
 `ExpressionRewriter.rewriteModule` retains the original binding when rewriting
 returns errors, leaving valid expressions unnormalized. Ownership analysis then
 reports the non-single-term shape. The
-[struct mutation example](../../mml/samples/mem/struct-field-mutation.mml) produces
+[struct mutation example](../../../mml/samples/mem/struct-field-mutation.mml) produces
 the same cascade with undefined `=` as the primary failure.
 
 Required checks include both semantic and parse failures, multiple independent

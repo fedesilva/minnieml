@@ -11,7 +11,7 @@
   The source also has unrelated code/docs changes and a deleted flash script; none are imported.
 - The Author approved the workflow plan, separately authorized pending-task cleanup and
   removal of GitHub helpers, and reserved existing specs unchanged for phase two.
-- Current scope and approvals: [workflow migration task](../tasks/local-workflow-port.md).
+- Current scope and approvals: [workflow migration task](../tasks/completed/local-workflow-port.md).
 
 ## Final lifecycle decision
 
@@ -41,8 +41,8 @@ text remains, and the archived tracker retains the exact source including whites
 
 | Former pending heading | Task |
 | --- | --- |
-| Port the local collaboration workflow from y0y | [local-workflow-port](../tasks/local-workflow-port.md) |
-| Revisit Linux sanitizer verification | [Linux ASan repair and verification](../tasks/linux-asan-internalization.md) |
+| Port the local collaboration workflow from y0y | [local-workflow-port](../tasks/completed/local-workflow-port.md) |
+| Revisit Linux sanitizer verification | [Linux ASan repair and verification](../tasks/completed/linux-asan-internalization.md) |
 | Bug: can't use ??? in an annotated fn. | [typed-hole-annotated-function](../tasks/typed-hole-annotated-function.md) |
 | Document and encode the ownership rules | [ownership-rules](../tasks/ownership-rules.md) |
 | QA: unify alias resolution | [unify-alias-resolution](../tasks/unify-alias-resolution.md) |
@@ -52,7 +52,7 @@ text remains, and the archived tracker retains the exact source including whites
 | Context Tools | [multiagent-context-tools](../tasks/multiagent-context-tools.md) |
 | Unify ownership model | [unify-ownership-model](../tasks/unify-ownership-model.md) |
 | Replace magic `__stmt` detection for sequence lambdas | [sequence-lambda-metadata](../tasks/sequence-lambda-metadata.md) |
-| #255 Unify lambdas | [unify-lambdas](../tasks/unify-lambdas.md) |
+| #255 Unify lambdas | [unify-lambdas](../tasks/completed/unify-lambdas.md) |
 | Lambda lifting bug | [lambda-lifting-bug](../tasks/lambda-lifting-bug.md) |
 | define new tasks | [check-command-native-validation](../tasks/check-command-native-validation.md) |
 | define new tasks | [runtime-cache-location](../tasks/runtime-cache-location.md) |
@@ -154,8 +154,8 @@ requirement to leave specs unchanged. No task implementation or completion is im
 | `global-origin-ownership.md` | [Global ownership task](../tasks/global-origin-ownership.md#global-ownership-design) |
 | `owned-string-literals.md` | [Owned strings proposal](../tasks/owned-strings.md#owned-string-literal-proposal) |
 | `bug-lambda-lifter.md` | [Capture report](../tasks/lambda-lifting-bug.md#duplicate-capture-report) |
-| `pap-ownership-model.md` | [Lambda task PAP contract](../tasks/unify-lambdas.md#partial-application-ownership-contract) |
-| `unify-lambdas.md` | [Semantic goals](../tasks/unify-lambdas.md#semantic-goals); [full source design for review](unify-lambdas-design.md) |
+| `pap-ownership-model.md` | [Lambda task PAP contract](../tasks/completed/unify-lambdas.md#partial-application-ownership-contract) |
+| `unify-lambdas.md` | [Semantic goals](../tasks/completed/unify-lambdas.md#semantic-goals); [full source design for review](unify-lambdas-design.md) |
 | `unify-lambdas-plan.md` | [Historical implementation plan](unify-lambdas-plan.md) |
 | `lambda-unify-rescue.md` | [Source-branch architectural review](lambda-unify-rescue.md) |
 | `lambdas-work-review.md` | [Earlier closure review](lambdas-work-review.md) |
@@ -176,7 +176,7 @@ reference targets, and the root layout. Compiler builds are inapplicable to this
 ### Root-level context consolidation
 
 The Author extended the cleanup to root-level context documents. Current lambda evidence
-and its standing handoff requirement are in [the lambda task](../tasks/unify-lambdas.md#migration-handoff),
+and its standing handoff requirement are in [the lambda task](../tasks/completed/unify-lambdas.md#migration-handoff),
 with its [JSON inventory](../tasks/unify-lambdas-migration.json). The historical
 [restart inventory](unify-lambdas-salvage.md) remains available for review.
 

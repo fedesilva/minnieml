@@ -1,7 +1,7 @@
 # Lambda restart provenance
 
 Historical restart inventory and recovery instructions, retained for Author review. Current
-progress and the standing handoff requirement live in [the lambda task](../tasks/unify-lambdas.md).
+progress and the standing handoff requirement live in [the lambda task](../tasks/completed/unify-lambdas.md).
 Original relative paths, branch state, and approvals below belong to their dated checkpoint.
 They do not authorize new work. The readability assessment is now
 [its own task](../tasks/qa-readability.md).

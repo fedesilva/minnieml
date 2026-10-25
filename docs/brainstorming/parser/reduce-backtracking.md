@@ -6,7 +6,7 @@ Status: diagnostic causes are implemented and verified. Parser recovery implemen
 authorized; its bounded plan and execution evidence are maintained in the recovery task.
 Verification status is recorded in the recovery task; this design is not execution evidence.
 Implementation stages and approvals belong to the
-[recovery task](../../../context/tasks/error-recovery-and-parser-backtracking.md).
+[recovery task](../../../context/tasks/completed/error-recovery-and-parser-backtracking.md).
 
 Problem:
 Earlier profiling attributed roughly 30% of compilation time to parsing and

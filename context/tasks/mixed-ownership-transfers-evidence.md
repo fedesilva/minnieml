@@ -1,6 +1,6 @@
 # Mixed-ownership investigation evidence
 
-Supporting evidence for [Mixed-ownership transfers, cleanup, and returns](mixed-ownership-transfers.md).
+Supporting evidence for [Mixed-ownership transfers, cleanup, and returns](completed/mixed-ownership-transfers.md).
 Task scope, implementation approval, and current progress belong to that task.
 
 ## Current baseline

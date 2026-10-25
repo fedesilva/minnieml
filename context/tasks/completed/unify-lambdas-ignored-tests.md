@@ -78,7 +78,7 @@ recorded separately.
 
 ### ClosureCodegenTest
 
-[Source](../../modules/mmlc-lib/src/test/scala/mml/mmlclib/codegen/ClosureCodegenTest.scala)
+[Source](../../../modules/mmlc-lib/src/test/scala/mml/mmlclib/codegen/ClosureCodegenTest.scala)
 
 | Test | Line | Result / next action |
 | --- | ---: | --- |
@@ -95,7 +95,7 @@ recorded separately.
 
 ### FunctionSignatureTest
 
-[Source](../../modules/mmlc-lib/src/test/scala/mml/mmlclib/codegen/FunctionSignatureTest.scala)
+[Source](../../../modules/mmlc-lib/src/test/scala/mml/mmlclib/codegen/FunctionSignatureTest.scala)
 
 | Test | Line | Result / next action |
 | --- | ---: | --- |
@@ -110,7 +110,7 @@ recorded separately.
 
 ### LambdaEquivalenceCodegenTest
 
-[Source](../../modules/mmlc-lib/src/test/scala/mml/mmlclib/codegen/LambdaEquivalenceCodegenTest.scala)
+[Source](../../../modules/mmlc-lib/src/test/scala/mml/mmlclib/codegen/LambdaEquivalenceCodegenTest.scala)
 
 | Test | Line | Result / next action |
 | --- | ---: | --- |
@@ -119,7 +119,7 @@ recorded separately.
 
 ### LambdaEquivalenceSemanticTest
 
-[Source](../../modules/mmlc-lib/src/test/scala/mml/mmlclib/semantic/LambdaEquivalenceSemanticTest.scala)
+[Source](../../../modules/mmlc-lib/src/test/scala/mml/mmlclib/semantic/LambdaEquivalenceSemanticTest.scala)
 
 | Test | Line | Result / next action |
 | --- | ---: | --- |
@@ -130,8 +130,8 @@ recorded separately.
 
 ### MaterializationAnalyzerTests
 
-[Semantic coverage](../../modules/mmlc-lib/src/test/scala/mml/mmlclib/semantic/MaterializationAnalyzerTests.scala);
-[restored codegen source](../../modules/mmlc-lib/src/test/scala/mml/mmlclib/codegen/MaterializationCodegenTest.scala).
+[Semantic coverage](../../../modules/mmlc-lib/src/test/scala/mml/mmlclib/semantic/MaterializationAnalyzerTests.scala);
+[restored codegen source](../../../modules/mmlc-lib/src/test/scala/mml/mmlclib/codegen/MaterializationCodegenTest.scala).
 
 | Test | Line | Result / next action |
 | --- | ---: | --- |
@@ -148,7 +148,7 @@ recorded separately.
 
 ### OwnershipAnalyzerTests
 
-[Source](../../modules/mmlc-lib/src/test/scala/mml/mmlclib/semantic/OwnershipAnalyzerTests.scala)
+[Source](../../../modules/mmlc-lib/src/test/scala/mml/mmlclib/semantic/OwnershipAnalyzerTests.scala)
 
 | Test | Line | Result / next action |
 | --- | ---: | --- |
@@ -157,7 +157,7 @@ recorded separately.
 
 ### ParsingErrorCheckerTests
 
-[Source](../../modules/mmlc-lib/src/test/scala/mml/mmlclib/semantic/ParsingErrorCheckerTests.scala)
+[Source](../../../modules/mmlc-lib/src/test/scala/mml/mmlclib/semantic/ParsingErrorCheckerTests.scala)
 
 | Test | Line | Result / next action |
 | --- | ---: | --- |
@@ -165,7 +165,7 @@ recorded separately.
 
 ### TailRecursionLoopificationTest
 
-[Source](../../modules/mmlc-lib/src/test/scala/mml/mmlclib/codegen/TailRecursionLoopificationTest.scala)
+[Source](../../../modules/mmlc-lib/src/test/scala/mml/mmlclib/codegen/TailRecursionLoopificationTest.scala)
 
 | Test | Line | Result / next action |
 | --- | ---: | --- |
@@ -182,7 +182,7 @@ recorded separately.
 
 ### TbaaEmissionTest
 
-[Source](../../modules/mmlc-lib/src/test/scala/mml/mmlclib/codegen/TbaaEmissionTest.scala)
+[Source](../../../modules/mmlc-lib/src/test/scala/mml/mmlclib/codegen/TbaaEmissionTest.scala)
 
 | Test | Line | Result / next action |
 | --- | ---: | --- |
@@ -190,7 +190,7 @@ recorded separately.
 
 ### TypeUtilsTests
 
-[Source](../../modules/mmlc-lib/src/test/scala/mml/mmlclib/semantic/TypeUtilsTests.scala)
+[Source](../../../modules/mmlc-lib/src/test/scala/mml/mmlclib/semantic/TypeUtilsTests.scala)
 
 | Test | Line | Result / next action |
 | --- | ---: | --- |
@@ -217,7 +217,7 @@ recorded separately.
 - **Shadowing replacement:** the original nested-shadowing fixture uses ordinary mutual calls
   between `loop` and `step`; it cannot test loopified borrow validation. Its identical enabled
   parent fixture is consolidated into one test of scalar argument flow through those calls.
-  A separate [native control](../../modules/mmlc-lib/src/test/scala/mml/mmlclib/codegen/LocalCallableCodegenTests.scala)
+  A separate [native control](../../../modules/mmlc-lib/src/test/scala/mml/mmlclib/codegen/LocalCallableCodegenTests.scala)
   places the recursive call directly in `loop`, asserts PHIs and a back edge, and checks the
   accumulator result with AddressSanitizer. A fresh independent verifier confirmed the
   original coverage defect; no compiler defect was established by this audit.
@@ -292,7 +292,7 @@ recorded separately.
   order/counts, environment metadata, and basic-block inspection use shared helpers. Owned cleanup
   returns the already-checked capture with its destructor; named fields keep operand roles explicit.
   The native heap-declaration predicate is shared without changing alias resolution or ownership.
-  [Alias-resolution consistency](type-property-alias-resolution.md) is a separate review-first
+  [Alias-resolution consistency](../type-property-alias-resolution.md) is a separate review-first
   follow-up after Unify lambdas.
 - **Correction verification:** `sbtn 'scalafmtAll; scalafixAll; testFull'` passes 1,403 library
   tests and nine CLI tests, zero ignores, with no warnings. An initial run's single failure was
@@ -352,7 +352,7 @@ optimizations outside the implemented model. Their original optimization expecta
 retired; the surviving tests check the implemented capture representation. These three are not
 counted as equivalent coverage of the discarded optimization contracts. General capture
 elimination remains outside this cleanup, as described in the
-[compiler design](../../docs/design/compiler-design.md#direct-local-entry-optimization).
+[compiler design](../../../docs/design/compiler-design.md#direct-local-entry-optimization).
 The distinct noncapturing metadata fixture is enabled alongside the nested-capture fixture.
 
 **Scope decision:** the three obsolete capture-elimination contracts are approved for retirement;
@@ -416,9 +416,9 @@ lambda-completion acceptance, and no separate optimization task is selected for 
   code review reports no actionable findings. The slice is complete and signed off.
 - **Probe results:** all nine unchanged fixtures emit IR through `compileAndGenerate`.
   The six supported cases are executable in
-  [MaterializationCodegenTest](../../modules/mmlc-lib/src/test/scala/mml/mmlclib/codegen/MaterializationCodegenTest.scala).
+  [MaterializationCodegenTest](../../../modules/mmlc-lib/src/test/scala/mml/mmlclib/codegen/MaterializationCodegenTest.scala).
   The other three source fixtures remain in
-  [MaterializationAnalyzerTests](../../modules/mmlc-lib/src/test/scala/mml/mmlclib/semantic/MaterializationAnalyzerTests.scala);
+  [MaterializationAnalyzerTests](../../../modules/mmlc-lib/src/test/scala/mml/mmlclib/semantic/MaterializationAnalyzerTests.scala);
   their observed IR excerpts are included in the repair plans below. IR generation alone
   does not establish LLVM validity or runtime correctness.
 - **Limits:** compiler implementation is unchanged. Smoke, publishing, benchmarks, and memory
@@ -510,7 +510,7 @@ each source fixture when replacing placeholder assertions. Each bounded change r
 - **Date:** 2026-09-28.
 - `sbtn 'scalafmtAll;scalafixAll;test'`: 776 library tests and nine CLI tests pass;
   39 remain ignored; no compiler warnings.
-- [FunctionValueCodegenTests](../../modules/mmlc-lib/src/test/scala/mml/mmlclib/codegen/FunctionValueCodegenTests.scala)
+- [FunctionValueCodegenTests](../../../modules/mmlc-lib/src/test/scala/mml/mmlclib/codegen/FunctionValueCodegenTests.scala)
   verifies adapter reuse across globals and deferred bodies, stored/global and local aliases,
   returned values, higher-order calls, shadowing, native symbol overrides, Unit and value
   templates, consuming pointer contracts, and x86-64/AArch64 native structure-return IR.
@@ -520,7 +520,7 @@ each source fixture when replacing placeholder assertions. Each bounded change r
   The fixture links a small C support file after dead-function elimination; this is host native
   execution, not cross-target execution or sanitizer evidence.
 - The original nullary source fixture is enabled in
-  [MaterializationCodegenTest](../../modules/mmlc-lib/src/test/scala/mml/mmlclib/codegen/MaterializationCodegenTest.scala)
+  [MaterializationCodegenTest](../../../modules/mmlc-lib/src/test/scala/mml/mmlclib/codegen/MaterializationCodegenTest.scala)
   with assertions for literal construction, a callable adapter, no code-as-data load, and no
   invocation or allocation during initialization.
 - `./tests/smoke/run.sh all`: 8/8 pass. `sbtn mmlcPublishLocal` succeeds.

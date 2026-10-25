@@ -13,7 +13,7 @@
 ## Execution Checklist
 
 1. [x] **complete** — Investigate current failures, ownership operations, policy constraints,
-   and reusable tests; see [baseline evidence](mixed-ownership-transfers-evidence.md).
+   and reusable tests; see [baseline evidence](../mixed-ownership-transfers-evidence.md).
 2. [x] **complete** — [Implement the complete ownership repair](#plan-approval-gate): local transfers,
    cleanup, calls, fields, returns, and captures.
 3. [x] **complete** — [Integrated verification](#verification), ownership documentation,
@@ -161,7 +161,7 @@ controls retain their established policy, with no blanket rejection of mixed mov
 
 ### Investigation evidence
 
-[Baseline evidence and embedded reproducers](mixed-ownership-transfers-evidence.md) record
+[Baseline evidence and embedded reproducers](../mixed-ownership-transfers-evidence.md) record
 2026-10-08 execution at commit `4194c17`, macOS ARM64, Homebrew LLVM/Clang 23.1.1, `-O0`,
 with ASan/LSan. They also preserve the scoped-transfer and A* return-leak evidence.
 These are failing baselines and controls, not implementation verification.
@@ -181,9 +181,9 @@ GraalVM Community Java 25.0.4.1.
 - `MixedOwnershipCodegenTests`: all three repository fixtures assembled with `llvm-as` and ran
   with ASan/LSan at `-O0` and `-O3`, using four runtime argument-count seeds and all four
   ownership/operation choices within each run. The fixtures are
-  [transfers](../../tests/mem/mixed-ownership-transfers.mml),
-  [captures](../../tests/mem/mixed-ownership-captures.mml), and
-  [invocation](../../tests/mem/mixed-ownership-invocation.mml).
+  [transfers](../../../tests/mem/mixed-ownership-transfers.mml),
+  [captures](../../../tests/mem/mixed-ownership-captures.mml), and
+  [invocation](../../../tests/mem/mixed-ownership-invocation.mml).
 - Optimized IR generated with `mmlc -I` for the transfer and capture fixtures: the `named` consumer
   and `repeated` capture branch directly on the source choice after optimization; only the
   literal branch calls `__clone_String`. The owned branch retains the allocated payload.
@@ -197,8 +197,8 @@ conditional local selection, and unconditional scoped transfers. Literal-returni
 cover aliases, constructor fields, and repeated nested wrappers while rejecting unknown callable
 alternatives and borrowed formals. Direct invocation of mixed call-once/resource-free functions
 is covered alongside destruction without invocation and borrowed-source rejection. These cases
-are in [MixedOwnershipTests](../../modules/mmlc-lib/src/test/scala/mml/mmlclib/semantic/MixedOwnershipTests.scala),
-[MixedInvocationOwnershipTests](../../modules/mmlc-lib/src/test/scala/mml/mmlclib/semantic/MixedInvocationOwnershipTests.scala),
+are in [MixedOwnershipTests](../../../modules/mmlc-lib/src/test/scala/mml/mmlclib/semantic/MixedOwnershipTests.scala),
+[MixedInvocationOwnershipTests](../../../modules/mmlc-lib/src/test/scala/mml/mmlclib/semantic/MixedInvocationOwnershipTests.scala),
 and the native fixtures above.
 
 No MML value, callable, or closure-environment ABI changed. Linux container execution was not
@@ -231,17 +231,17 @@ Check destruction and promotion placement in the transformed tree and LLVM, in a
 runtime results. Generated witness or helper names alone are not a semantic oracle.
 
 Reuse coverage and helpers from
-[PapOwnershipTest](../../modules/mmlc-lib/src/test/scala/mml/mmlclib/semantic/PapOwnershipTest.scala),
-[OwnershipAnalyzerTests](../../modules/mmlc-lib/src/test/scala/mml/mmlclib/semantic/OwnershipAnalyzerTests.scala),
-[StringReturnTests](../../modules/mmlc-lib/src/test/scala/mml/mmlclib/codegen/StringReturnTests.scala), and
-[CallExitBlockTests](../../modules/mmlc-lib/src/test/scala/mml/mmlclib/codegen/CallExitBlockTests.scala).
+[PapOwnershipTest](../../../modules/mmlc-lib/src/test/scala/mml/mmlclib/semantic/PapOwnershipTest.scala),
+[OwnershipAnalyzerTests](../../../modules/mmlc-lib/src/test/scala/mml/mmlclib/semantic/OwnershipAnalyzerTests.scala),
+[StringReturnTests](../../../modules/mmlc-lib/src/test/scala/mml/mmlclib/codegen/StringReturnTests.scala), and
+[CallExitBlockTests](../../../modules/mmlc-lib/src/test/scala/mml/mmlclib/codegen/CallExitBlockTests.scala).
 Capture and field composition cases can extend
-[MoveCaptureConsumptionTest](../../modules/mmlc-lib/src/test/scala/mml/mmlclib/semantic/MoveCaptureConsumptionTest.scala)
-and [PapStructOwnershipTest](../../modules/mmlc-lib/src/test/scala/mml/mmlclib/semantic/PapStructOwnershipTest.scala).
+[MoveCaptureConsumptionTest](../../../modules/mmlc-lib/src/test/scala/mml/mmlclib/semantic/MoveCaptureConsumptionTest.scala)
+and [PapStructOwnershipTest](../../../modules/mmlc-lib/src/test/scala/mml/mmlclib/semantic/PapStructOwnershipTest.scala).
 The native tests already use compiler/toolchain APIs and runtime argument selection.
 The memory harness has source-order fixtures in
-[pap-argument-ownership.mml](../../tests/mem/pap-argument-ownership.mml) and
-[argument-expression-order.mml](../../tests/mem/argument-expression-order.mml).
+[pap-argument-ownership.mml](../../../tests/mem/pap-argument-ownership.mml) and
+[argument-expression-order.mml](../../../tests/mem/argument-expression-order.mml).
 
 Run positive native cases under ASan/LSan at `-O0` and `-O3`; require correct results, no invalid
 access/free, and no leaks. Inspect representative optimized IR for witness simplification,
@@ -251,7 +251,7 @@ Exercise both ownership outcomes and all independent branch choices explicitly. 
 runs fixtures without arguments at `-O0`; fixtures must exercise their own combinations or use the
 existing native test runners for runtime argument selection and optimized coverage.
 
-Each compiler handoff follows [coding rules](../coding-rules.md) and local post-chores: focused
+Each compiler handoff follows [coding rules](../../coding-rules.md) and local post-chores: focused
 checks, formatting/lint and full tests, smoke verification before publishing, benchmark builds,
 all applicable memory checks, QA enforcement, tracking consistency, and independent code review.
 Run `sbtn` commands sequentially. ABI changes would additionally require both Linux architectures;
@@ -262,9 +262,9 @@ verification limitation, not a passing result or an automatic waiver for this ta
 
 - The Boolean witness answers whether storage needs destruction. It does not distinguish
   static storage from a borrow or prove that ownership is still available after a move.
-- Existing clone exceptions are documented in [the memory model](../../docs/memory-model.md#clone-operations).
-  [Ownership rules](ownership-rules.md), [global-origin ownership](global-origin-ownership.md),
-  and [unified ownership policy](unify-ownership-model.md) are broader proposals; this task
+- Existing clone exceptions are documented in [the memory model](../../../docs/memory-model.md#clone-operations).
+  [Ownership rules](../ownership-rules.md), [global-origin ownership](../global-origin-ownership.md),
+  and [unified ownership policy](../unify-ownership-model.md) are broader proposals; this task
   does not approve those policy changes.
 - The explicit `Mixed` representation and integrated capture scope are approved. Implementation
   approval and final task completion remain distinct; no partial ownership repair is a delivery.

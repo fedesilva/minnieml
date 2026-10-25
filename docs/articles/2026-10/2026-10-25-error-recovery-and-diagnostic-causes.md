@@ -1040,7 +1040,7 @@ starts a fresh JVM per compile. Their numbers describe different workloads. N-Qu
 continued warming during the parser baseline; those results establish neither fully
 steady-state performance nor statistical significance. Neither experiment establishes
 general throughput, malformed-input latency, or cross-platform performance.
-The [task's verification record](../../../context/tasks/error-recovery-and-parser-backtracking.md#semantic-performance-correction-verified)
+The [task's verification record](../../../context/tasks/completed/error-recovery-and-parser-backtracking.md#semantic-performance-correction-verified)
 retains the input hash, measurement method, paired samples, and limitations.
 
 ## Verification and recovery limits
@@ -1053,7 +1053,7 @@ messages and selected spans; and progress at malformed input and EOF.
 With the source-boundary correction included, formatting and lint pass, along with 1,946
 library tests and nine CLI tests. The smoke collection passes eight fixtures, 37 MML
 benchmark builds succeed, and 52 memory fixtures pass AddressSanitizer and LeakSanitizer.
-The [source-boundary verification record](../../../context/tasks/parser-source-boundaries.md#verification)
+The [source-boundary verification record](../../../context/tasks/completed/parser-source-boundaries.md#verification)
 records the commands, results, and review status.
 
 Benchmark builds check build compatibility. Native execution tests check results and

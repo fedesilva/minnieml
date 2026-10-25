@@ -29,7 +29,7 @@ name-based paths remain embedded beneath newer ID-based logic.
 Ordinary branch-local shadowing is protected by `analyzeLambdaApplication` restoring the
 incoming scope and propagating inherited moves by ID. A distinct recursive-local-function
 shadowing failure is recorded in the
-[lambda B3 repair](unify-lambdas.md#b3-recursive-shadowing-after-a-move): after an outer `s`
+[lambda B3 repair](completed/unify-lambdas.md#b3-recursive-shadowing-after-a-move): after an outer `s`
 is consumed, references inside a recursively defined local function also named `s`
 produce false last-use or use-after-move diagnostics. This task still removes the
 inconsistent identity model throughout the semantic pipeline.
@@ -102,8 +102,8 @@ Implementation verification is pending. Acceptance requires:
   map access alone does not meet the scope.
 - Avoid inventing another identity system. Reuse the stable IDs and allocation/indexing
   contracts already defined by `BindingIds`, `LocalBindings`, and `ResolvablesIndex`.
-- Coordinate with [lambda migration](unify-lambdas.md) and
-  [conditional ownership hardening](mixed-ownership-transfers.md) where changes overlap.
+- Coordinate with [lambda migration](completed/unify-lambdas.md) and
+  [conditional ownership hardening](completed/mixed-ownership-transfers.md) where changes overlap.
   Their narrower repairs do not substitute for the complete semantic-phase audit.
 
 ## Signoff

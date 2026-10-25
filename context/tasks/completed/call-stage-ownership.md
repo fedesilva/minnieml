@@ -274,7 +274,7 @@ capture behavior; this repair concerns fully applied source parameters.
 ### Emitter limits
 
 General chained immediate-lambda applications have a separate emission restriction in
-[Applications.scala](../../modules/mmlc-lib/src/main/scala/mml/mmlclib/codegen/emitter/expression/Applications.scala).
+[Applications.scala](../../../modules/mmlc-lib/src/main/scala/mml/mmlclib/codegen/emitter/expression/Applications.scala).
 `compileLambdaApp` supports a single unary/nullary immediate application; arbitrary chains
 are not established as executable by semantic acceptance. Ownership materializes intermediate
 results for the covered chains without extending that emitter. Named chains blocked native

@@ -65,8 +65,8 @@ Complete the fresh lambda implementation on the migration branch using the appro
 ### Semantic goals
 
 Retained goals and ownership constraints for the fresh implementation. Read
-[the memory model](../../docs/memory-model.md) as the primary ownership reference.
-The [source design](../history/unify-lambdas-design.md) preserves the remaining proposals
+[the memory model](../../../docs/memory-model.md) as the primary ownership reference.
+The [source design](../../history/unify-lambdas-design.md) preserves the remaining proposals
 and decisions for review; it is not a completed implementation checklist.
 
 #### Context
@@ -493,9 +493,9 @@ this branch.
   cover missing clone-helper parameter IDs, unresolved shadowed locals, and ownership wrappers
   carrying result types where function types are required.
 - **Implementation landmarks:**
-  [BindingIds.scala](../../modules/mmlc-lib/src/main/scala/mml/mmlclib/semantic/BindingIds.scala),
-  [IdAssigner.scala](../../modules/mmlc-lib/src/main/scala/mml/mmlclib/semantic/IdAssigner.scala),
-  and [LocalBindings.scala](../../modules/mmlc-lib/src/main/scala/mml/mmlclib/semantic/LocalBindings.scala).
+  [BindingIds.scala](../../../modules/mmlc-lib/src/main/scala/mml/mmlclib/semantic/BindingIds.scala),
+  [IdAssigner.scala](../../../modules/mmlc-lib/src/main/scala/mml/mmlclib/semantic/IdAssigner.scala),
+  and [LocalBindings.scala](../../../modules/mmlc-lib/src/main/scala/mml/mmlclib/semantic/LocalBindings.scala).
 - **Outcome:** one nested binding identity-generation policy and one coherent API for
   local construction, shared by initial ID assignment and subsequent rewrites as appropriate.
   Ordinary `FnParam`, `Ref`, `Lambda`, and `App` nodes remain the representation.
@@ -525,7 +525,7 @@ this branch.
   consistency (`dbd65d9`); signed off.
 - [x] **complete** — Stage 2: shared binding/cleanup construction, type propagation,
   and remaining callers; verified and signed off.
-- **Follow-up:** [Remove provenance heuristics from lambda scope analysis](lambda-scope-classification.md).
+- **Follow-up:** [Remove provenance heuristics from lambda scope analysis](../lambda-scope-classification.md).
   That task addresses AST interpretation and reconciles the existing sequence-lambda item;
   it is separate from this construction step.
 
@@ -554,7 +554,7 @@ retains its reproduction, scope, and acceptance criteria.
   exactly once. Cover mixed stored/remaining consuming arguments and staged application.
   Replace the relevant rejection tests in `PapOwnershipTest` and other affected suites;
   add native sanitizer coverage and synchronize the language reference and memory model.
-- **Reference:** [deferred consuming arguments](../../docs/memory-model.md#remaining-consuming-parameters).
+- **Reference:** [deferred consuming arguments](../../../docs/memory-model.md#remaining-consuming-parameters).
 
 #### Bug: store an owned PAP in a struct field
 
@@ -577,7 +577,7 @@ retains its reproduction, scope, and acceptance criteria.
   unused holders, moves, aliases, and calls. Do not synthesize implicit clones of function
   environments. Restore the relevant ignored ownership/destruction regressions, add native
   sanitizer coverage, and update the documented limitation when support is verified.
-- **Reference:** [field ownership contract](../../docs/memory-model.md#paps-in-struct-fields).
+- **Reference:** [field ownership contract](../../../docs/memory-model.md#paps-in-struct-fields).
 
 #### Bug: nested consuming-PAP calls
 
@@ -602,7 +602,7 @@ retains its reproduction, scope, and acceptance criteria.
   preserve malformed syntax and independent diagnostics, align ownership classification and
   value availability, add regressions, document the contract, and run compiler handoff gates.
   Expression-slice signoff, scoped commit, and push to `origin/dev-lambda-unify` are authorized.
-- **Source:** [OwnershipAnalyzer.scala](../../modules/mmlc-lib/src/main/scala/mml/mmlclib/semantic/OwnershipAnalyzer.scala),
+- **Source:** [OwnershipAnalyzer.scala](../../../modules/mmlc-lib/src/main/scala/mml/mmlclib/semantic/OwnershipAnalyzer.scala),
   `analyzeCond`, `analyzeLambda`, `analyzeArgument`, and `prepareConsumingArgument`.
 - **Counter scope:** generated condition/temporary names must remain distinct through branches,
   lambda bodies, and subsequent arguments. The shared binding-ID supply and temporary-name
@@ -682,7 +682,7 @@ retains its reproduction, scope, and acceptance criteria.
   invalid frees or duplicate cleanup, with safe aliases and returns. Borrowed alternatives
   remain rejected and existing clone policy is preserved.
 - The standalone task records the integrated plan, verification, and signoff, including captures.
-  Its [baseline evidence](mixed-ownership-transfers-evidence.md) includes scoped transfers,
+  Its [baseline evidence](../mixed-ownership-transfers-evidence.md) includes scoped transfers,
   the A* return-leak follow-up, and field/capture probes.
 
 #### Bug: consume an owned PAP captured by a move lambda
@@ -694,7 +694,7 @@ retains its reproduction, scope, and acceptance criteria.
 - **Regression:** rejecting invocation of an owned PAP capture with
   `Calling this function consumes its environment and requires ownership`. Treating every
   capture as borrowed inside a move-lambda body also prevents moving the capture into a local.
-- **Sample:** [returned-lambda-pap.mml](../../mml/samples/returned-lambda-pap.mml), with the
+- **Sample:** [returned-lambda-pap.mml](../../../mml/samples/returned-lambda-pap.mml), with the
   second-call rejection probe commented out, prints four
   `4`s: an ordinary function returns an owning PAP; move lambdas call a captured PAP directly
   and through a local move; a returned move lambda returns its PAP capture to the caller.
@@ -718,7 +718,7 @@ retains its reproduction, scope, and acceptance criteria.
   outer lambda, including through higher-order calls. Destroy the String and both environments
   exactly once on invocation or when dropped uncalled, including conditional consumption;
   do not clone function environments. Add semantic and native sanitizer regressions.
-  The [borrowing counterexample](../../mml/samples/returned-lambda-pap-borrow-fail.mml)
+  The [borrowing counterexample](../../../mml/samples/returned-lambda-pap-borrow-fail.mml)
   must retain its `Cannot return borrow-capturing closure` rejection.
 - **Verification (2026-09-14, macOS arm64):** formatting and lint pass; full suite
   **690 passed / 51 existing ignores** (681 library, 9 CLI). All seven required compiler
@@ -737,14 +737,14 @@ retains its reproduction, scope, and acceptance criteria.
   QA compliance and focused tracking checks pass.
   Linux sanitizer validation remains separate.
 - **Coverage extension (2026-09-14, macOS arm64):**
-  [MoveCaptureConsumptionTest](../../modules/mmlc-lib/src/test/scala/mml/mmlclib/semantic/MoveCaptureConsumptionTest.scala)
+  [MoveCaptureConsumptionTest](../../../modules/mmlc-lib/src/test/scala/mml/mmlclib/semantic/MoveCaptureConsumptionTest.scala)
   has **64 passing cases**. Six PAP-return forms cover consuming invocation, repeated-call
   rejection, alias/higher-order reuse rejection, and the consuming-parameter requirement:
   ordinary direct return, ordinary local return, local allocation, captured-PAP return,
   captured-PAP return through a local, and PAP construction inside the returned lambda.
   Borrowed inputs and a borrowing outer lambda have explicit rejection cases; each capture
   consumption path also checks the outer lambda's call-once contract.
-  [The memory fixture](../../tests/mem/move-capture-consuming-pap.mml) exercises local PAP
+  [The memory fixture](../../../tests/mem/move-capture-consuming-pap.mml) exercises local PAP
   returns, allocation, invocation-time PAP construction, aliases, higher-order calls,
   reusable borrowing, and scalar-PAP transfers. It drops outer lambdas uncalled and returned
   PAPs unused, repeating the checks 1,000 times. Formatting, lint, and the full suite pass:
@@ -767,7 +767,7 @@ retains its reproduction, scope, and acceptance criteria.
   benchmarks in i-j-k and i-k-j order in the MML build and matrix timing targets. The benchmark
   default is `-O3` on all platforms; `BENCH_RUNS` overrides measured runs without changing
   each target's default count.
-- **Reproducer:** [mat-mul-nested.mml](../../benchmark/mat-mul-nested.mml) nests
+- **Reproducer:** [mat-mul-nested.mml](../../../benchmark/mat-mul-nested.mml) nests
   `mat_mul_i(i)`, `mat_mul_j(j)`, and `mat_mul_k(k, acc)` inside `mat_mul`.
   The helpers capture matrices, dimensions, and enclosing loop indices.
   Build with TCO enabled:
@@ -855,7 +855,7 @@ retains its reproduction, scope, and acceptance criteria.
   Logs: `/tmp/mml-nested-tco-finish-checks.log`, `/tmp/mml-nested-tco-finish-smoke.log`,
   `/tmp/mml-nested-tco-finish-publish.log`, `/tmp/mml-nested-tco-finish-benchmarks.log`, and
   `/tmp/mml-nested-tco-finish-memory.log`. Comparative timing evidence is in the
-  [checked matrix report](../../benchmark/results/2026-09-16-safe/Readme.md).
+  [checked matrix report](../../../benchmark/results/2026-09-16-safe/Readme.md).
 - **Finish review:** fresh independent review reports no actionable findings. It compiles
   and runs the nested-capture stress test under `-s -O0` with ASan/LSan, assembles and verifies
   its raw LLVM, and checks nested back edges, entry storage, capture writes, smoke copies,
@@ -874,7 +874,7 @@ retains its reproduction, scope, and acceptance criteria.
   diagnostics and run compiler checks and reviews.
 - **Priority:** urgent; follows the nested capturing-recursion TCO repair. Module-wide
   abandonment of elaboration violates the compiler's error-accumulating architecture.
-- **Baseline reproducer:** in [returned-lambda-pap.mml](../../mml/samples/returned-lambda-pap.mml),
+- **Baseline reproducer:** in [returned-lambda-pap.mml](../../../mml/samples/returned-lambda-pap.mml),
   uncommenting the second `plain_pap 1;` statement produced five errors: the legitimate
   `statement` expected `Unit`, got `Int` mismatch, three false borrowed-capture errors
   for `consuming`, and one false borrowed-return error. The expected call-once reuse
@@ -953,10 +953,10 @@ not run the smoke harness, benchmarks, Linux/x86-64 checks, or formatting and li
   `let q = (pick ()) 10; q 2` compiles as an under-applied indirect call and crashes.
   A returned owned two-parameter move closure also fails in `(mk 45) 1`.
   Binding `let f = pick (); f 10` works.
-- **Cause:** [PartialApplicationElaborator.scala](../../modules/mmlc-lib/src/main/scala/mml/mmlclib/semantic/PartialApplicationElaborator.scala)
+- **Cause:** [PartialApplicationElaborator.scala](../../../modules/mmlc-lib/src/main/scala/mml/mmlclib/semantic/PartialApplicationElaborator.scala)
   flattens the application to the base `pick` and arguments `[(), 10]`, then tests only
   `pick`'s arity. Ownership lowering leaves an under-applied call to the returned
-  callee. [Applications.scala](../../modules/mmlc-lib/src/main/scala/mml/mmlclib/codegen/emitter/expression/Applications.scala)
+  callee. [Applications.scala](../../../modules/mmlc-lib/src/main/scala/mml/mmlclib/codegen/emitter/expression/Applications.scala)
   emits that indirect call without an arity check; the returned integer is treated as
   a closure pair.
 - **Outcome:** elaborate each call stage against that stage's callable type and reject
@@ -973,8 +973,8 @@ not run the smoke harness, benchmarks, Linux/x86-64 checks, or formatting and li
   indirect emission. Native tests assemble and execute ordinary, owned, and call-once
   returned-callee PAPs at `-O0` and `-O3`, call the reusable values twice through direct and
   borrowed-parameter paths, and drop owned staged PAPs uncalled.
-- **Ownership rule:** [pap-ownership.mml](../../mml/samples/pap-ownership.mml) and the
-  [memory model](../../docs/memory-model.md) permit repeated calls on a function that owns
+- **Ownership rule:** [pap-ownership.mml](../../../mml/samples/pap-ownership.mml) and the
+  [memory model](../../../docs/memory-model.md) permit repeated calls on a function that owns
   a capture and borrows it during invocation. An independent review reproduced an erroneous
   call-once classification for `(pick ()) 10` and `(make 45) 1`; the revised capture metadata
   preserves ownership without marking a reusable callee as transferred on invocation.
@@ -1064,7 +1064,7 @@ not run the smoke harness, benchmarks, Linux/x86-64 checks, or formatting and li
   QA/style, test-quality, and readability checks. Both confirmed findings are corrected;
   no actionable findings remain in this diagnostic repair. The narrow reviewer independently
   reran all five correction cases successfully.
-- **Sample:** [borrowed-return diagnostics](../../mml/samples/pap-borrowed-return-diagnostics.mml)
+- **Sample:** [borrowed-return diagnostics](../../../mml/samples/pap-borrowed-return-diagnostics.mml)
   exits with status 1 and reports the invalid return and independent capture, without generated
   temporary capture errors.
 - **Signoff:** complete for the diagnostic repair; local commit authorized. Push is not authorized.
@@ -1078,7 +1078,7 @@ not run the smoke harness, benchmarks, Linux/x86-64 checks, or formatting and li
 - **Baseline reproducer:** `apply_n(f: Int -> Int, n: Int, acc: Int)` returns `acc` when `n == 0`
   and otherwise calls `apply_n f (n - 1) (f acc)`. Once a caller supplies a function,
   ownership analysis falsely reports `Callable alternatives must agree on consuming parameters`.
-- **Baseline cause:** the cycle guard in [CallableValues.scala](../../modules/mmlc-lib/src/main/scala/mml/mmlclib/semantic/CallableValues.scala)
+- **Baseline cause:** the cycle guard in [CallableValues.scala](../../../modules/mmlc-lib/src/main/scala/mml/mmlclib/semantic/CallableValues.scala)
   contributes an unknown alternative on a recursive back edge. The lexical fallback
   does not close this higher-order cycle, so the ownership agreement check fails.
 - **Outcome:** model the back edge without inventing an unknown callable alternative;
@@ -1113,11 +1113,11 @@ not run the smoke harness, benchmarks, Linux/x86-64 checks, or formatting and li
   edges. Parameter-contract resolution closes forwarding cycles with concrete incoming sources,
   preserves unknown alternatives and unseeded cycles, and resets forwarding context across calls
   and field projections. Lexical invocation proofs retain their existing conservative behavior.
-- **Regression coverage:** [RecursiveCallableOwnershipTests](../../modules/mmlc-lib/src/test/scala/mml/mmlclib/semantic/RecursiveCallableOwnershipTests.scala)
+- **Regression coverage:** [RecursiveCallableOwnershipTests](../../../modules/mmlc-lib/src/test/scala/mml/mmlclib/semantic/RecursiveCallableOwnershipTests.scala)
   covers direct, aliased, and mutual recursion; cycles without incoming targets; matching and
   conflicting parameter contracts; unknown inputs; and recursive returned callables. Negative
   callback cases assert diagnostic count, class, message, source location, and binding identity.
-  Six additions to [LocalCallableCodegenTests](../../modules/mmlc-lib/src/test/scala/mml/mmlclib/codegen/LocalCallableCodegenTests.scala)
+  Six additions to [LocalCallableCodegenTests](../../../modules/mmlc-lib/src/test/scala/mml/mmlclib/codegen/LocalCallableCodegenTests.scala)
   assemble LLVM IR and execute at `-O0` and `-O3`, asserting result `3` and zero outstanding native
   fixture allocations after borrowing and consuming callbacks.
 - **Verification (2026-10-21, macOS arm64, LLVM/Clang 23.1.1):**
@@ -1154,22 +1154,22 @@ not run the smoke harness, benchmarks, Linux/x86-64 checks, or formatting and li
 - **Reproducer:** consume the parameter of `example(~s: String)` through `consume s`,
   then declare a recursive local function also named `s` whose body calls itself. The
   baseline falsely reports `must be last use` or `use after move` against the outer binding.
-- **Baseline cause:** [OwnershipAnalyzer.scala](../../modules/mmlc-lib/src/main/scala/mml/mmlclib/semantic/OwnershipAnalyzer.scala)
+- **Baseline cause:** [OwnershipAnalyzer.scala](../../../modules/mmlc-lib/src/main/scala/mml/mmlclib/semantic/OwnershipAnalyzer.scala)
   uses name-based reference scanning in the last-use check and a name fallback in
   `checkRef`; these do not preserve the distinct definition IDs. This is a concrete
-  failing case for the broader [semantic-ID task](semantic-id-lookups.md).
+  failing case for the broader [semantic-ID task](../semantic-id-lookups.md).
 - **Outcome:** move and last-use checks distinguish shadowed definitions while rejecting
   later uses of the original moved binding. The broader task still owns full
   semantic-pipeline identity migration.
 - **Implementation:** consuming-call evidence is keyed by definition ID. The last-use
   scan compares resolved IDs through the shared structural traversal; move diagnostics
   use ID-keyed move records for references, field owners, and qualifier roots.
-- **Regression coverage:** [OwnershipShadowingTests](../../modules/mmlc-lib/src/test/scala/mml/mmlclib/semantic/OwnershipShadowingTests.scala)
+- **Regression coverage:** [OwnershipShadowingTests](../../../modules/mmlc-lib/src/test/scala/mml/mmlclib/semantic/OwnershipShadowingTests.scala)
   covers consuming statements, consuming initializers, and local transfers before recursive
   shadowing. It asserts distinct outer and recursive identities. Direct and captured uses
   of the original moved binding retain exact diagnostic counts, classes, identities, and
   source locations. Two additions to
-  [LocalCallableCodegenTests](../../modules/mmlc-lib/src/test/scala/mml/mmlclib/codegen/LocalCallableCodegenTests.scala)
+  [LocalCallableCodegenTests](../../../modules/mmlc-lib/src/test/scala/mml/mmlclib/codegen/LocalCallableCodegenTests.scala)
   assemble LLVM IR and execute at `-O0` and `-O3`, checking the recursive result and zero
   outstanding fixture allocations.
 - **Verification (2026-10-21):**
@@ -1199,10 +1199,10 @@ not run the smoke harness, benchmarks, Linux/x86-64 checks, or formatting and li
   and signed off, including the alias and nested-parser repairs. No ignored tests remain.
 - **Completion:** item 25 is verified and signed off; no task steps remain.
   [Closure-environment lookup hardening](#harden-closure-environment-lookup) is complete as item 24.
-- The [scope-analysis follow-up](lambda-scope-classification.md) addresses provenance
+- The [scope-analysis follow-up](../lambda-scope-classification.md) addresses provenance
   heuristics separately from binding construction. The
-  [salvage sequence](../history/unify-lambdas-salvage.md#suggested-restart-sequence) and
-  [migration inventory](unify-lambdas-migration.json) provide evidence for selecting further
+  [salvage sequence](../../history/unify-lambdas-salvage.md#suggested-restart-sequence) and
+  [migration inventory](../unify-lambdas-migration.json) provide evidence for selecting further
   slices; neither supplies implementation approval or current completion status.
 
 #### Call-stage ownership repair
@@ -1224,9 +1224,9 @@ not run the smoke harness, benchmarks, Linux/x86-64 checks, or formatting and li
 #### Fix: preserve the complete application callee type in Simplifier
 
 - **Status:** complete.
-- **Problem:** [Simplifier.scala](../../modules/mmlc-lib/src/main/scala/mml/mmlclib/semantic/Simplifier.scala)
+- **Problem:** [Simplifier.scala](../../../modules/mmlc-lib/src/main/scala/mml/mmlclib/semantic/Simplifier.scala)
   at `a3acfa8` reconstructs applications with `simplifiedFn.asInstanceOf[Ref | App | Lambda]`.
-  This includes every allowed [App.fn](../../modules/mmlc-lib/src/main/scala/mml/mmlclib/ast/terms.scala)
+  This includes every allowed [App.fn](../../../modules/mmlc-lib/src/main/scala/mml/mmlclib/ast/terms.scala)
   alternative, but bypasses static checking of the simplification result. Its positional
   expression constructor also swaps computed `typeSpec` and declared `typeAsc` annotations.
 - **Scope:** preserve the complete callee type through an exhaustive typed helper and preserve
@@ -1247,7 +1247,7 @@ not run the smoke harness, benchmarks, Linux/x86-64 checks, or formatting and li
   Compiler and test consumers use that alias. `simplifyCallee` exhaustively preserves it without
   casts; `simplifyExpr` copies the expression while replacing only its terms.
 - **Verification:** seven focused
-  [Simplifier tests](../../modules/mmlc-lib/src/test/scala/mml/mmlclib/semantic/SimplifierTests.scala)
+  [Simplifier tests](../../../modules/mmlc-lib/src/test/scala/mml/mmlclib/semantic/SimplifierTests.scala)
   pass after `sbtn 'scalafmtAll; scalafixAll; testOnly mml.mmlclib.semantic.SimplifierTests'`,
   without warnings. Before the expression-copy correction, six fail with swapped annotations
   and the untyped control passes. `./tests/smoke/run.sh all` passes 8/8. `sbtn testFull` passes
@@ -1269,7 +1269,7 @@ not run the smoke harness, benchmarks, Linux/x86-64 checks, or formatting and li
 
 - **Status:** complete.
 - **Regression:** at `af8fec6`,
-  [PartialApplicationElaborator.scala](../../modules/mmlc-lib/src/main/scala/mml/mmlclib/semantic/PartialApplicationElaborator.scala)
+  [PartialApplicationElaborator.scala](../../../modules/mmlc-lib/src/main/scala/mml/mmlclib/semantic/PartialApplicationElaborator.scala)
   flattens an application chain and prepares its arguments without visiting the callee's
   lambda body. A partial application inside that body survives elaboration unchanged.
 - **Reproducer and control:**
@@ -1311,9 +1311,9 @@ not run the smoke harness, benchmarks, Linux/x86-64 checks, or formatting and li
   whole-chain saturation, qualifier preparation, and recovery guards retain their contracts.
 - **Verification (2026-10-19, Darwin arm64, LLVM/Clang 23.1.1):** the principal regression fails
   before the repair with zero generated residual lambdas instead of one. All 13 cases in
-  [PartialApplicationElaboratorTests](../../modules/mmlc-lib/src/test/scala/mml/mmlclib/semantic/PartialApplicationElaboratorTests.scala)
+  [PartialApplicationElaboratorTests](../../../modules/mmlc-lib/src/test/scala/mml/mmlclib/semantic/PartialApplicationElaboratorTests.scala)
   pass after the repair. Nine additional native cases in
-  [LocalCallableCodegenTests](../../modules/mmlc-lib/src/test/scala/mml/mmlclib/codegen/LocalCallableCodegenTests.scala)
+  [LocalCallableCodegenTests](../../../modules/mmlc-lib/src/test/scala/mml/mmlclib/codegen/LocalCallableCodegenTests.scala)
   pass LLVM assembly and ASan/LSan execution, covering the direct reproducer and exact effect
   order and payload cleanup at `-O0` and `-O3`, including both conditional-qualifier branches.
   `sbtn "scalafmtAll; scalafixAll; testOnly mml.mmlclib.semantic.PartialApplicationElaboratorTests; testFull"`
@@ -1332,7 +1332,7 @@ not run the smoke harness, benchmarks, Linux/x86-64 checks, or formatting and li
   and nested payload cleanup; existing `CallExitBlockTests` and `tests/mem/field-qualifier-owners.mml`
   provide heap-backed qualifier-lifetime coverage.
 - **Separate parser defect:** a grouped nested-call fixture is rejected before elaboration;
-  [parenthesized lambda arguments](parser-parenthesized-lambda-arguments.md) records the exact
+  [parenthesized lambda arguments](../parser-parenthesized-lambda-arguments.md) records the exact
   source, diagnostic, and working local-binding control. Parser code is outside this repair.
 - **Signoff:** complete for the PAP callee traversal repair and its regression coverage.
   Local commit authorized; push is not authorized.
@@ -1409,7 +1409,7 @@ not run the smoke harness, benchmarks, Linux/x86-64 checks, or formatting and li
 #### Bug: preserve tail recursion across owned-closure cleanup
 
 - **Status:** complete.
-- **Reproducer:** [closure-heap-capture-fail.mml](../../tests/tail-cleanup/closure-heap-capture-fail.mml)
+- **Reproducer:** [closure-heap-capture-fail.mml](../../../tests/tail-cleanup/closure-heap-capture-fail.mml)
   creates a move closure owning a freshly allocated `String`, invokes it, then calls
   `loop (n - 1)` in source tail position. The `if true` condition deliberately runs forever
   to expose unbounded stack and live heap growth; it must remain in the reproducer.
@@ -1454,7 +1454,7 @@ not run the smoke harness, benchmarks, Linux/x86-64 checks, or formatting and li
   retained late cleanup regardless of binding order. The `Pair` TBAA test checks stores to an
   instantiated `Pair`. Full independent review and narrow re-review of the placement correction
   are complete. A further independent review found no correctness defect; its three placement
-  quality findings belong to the separate [cleanup placement task](ownership-cleanup-placement.md).
+  quality findings belong to the separate [cleanup placement task](../ownership-cleanup-placement.md).
 - **Acceptance:**
   - [x] Preserve the infinite-loop sample and add a finite stress regression for automated
     completion and sanitizer checks.
@@ -1539,7 +1539,7 @@ make -C benchmark mml
   evaluation, `__free_closure`, and `br label %loop.header`, with no recursive call or String
   literal `alloca` in the loop body. Both probe runs end by explicit SIGTERM.
 
-The [probe harness](../../tests/tail-cleanup/infinite_probe.py) drains stdout while sampling
+The [probe harness](../../../tests/tail-cleanup/infinite_probe.py) drains stdout while sampling
 `vmmap`. Eight measurements follow a two-second warmup, under a 256 KiB stack limit:
 
 | Build | Measurement interval | Resident/dirty stack | Allocated heap | Live heap allocations | Total lines drained |
@@ -1550,7 +1550,7 @@ The [probe harness](../../tests/tail-cleanup/infinite_probe.py) drains stdout wh
 Output advances in every measurement interval. Both runs pass the harness's stack and heap
 bounds and terminate as requested. These are measured finite windows of the unchanged
 infinite program; the finite stress counters and sanitizer runs provide separate destruction
-and memory-safety evidence. See the [reproduction guide](../../tests/tail-cleanup/Readme.md).
+and memory-safety evidence. See the [reproduction guide](../../../tests/tail-cleanup/Readme.md).
 These measurements use the corrected stderr check and the fixture under `tests/tail-cleanup/`.
 The freshly published compiler builds that fixture at O0/O3 into separate
 `build/tail-cleanup-relocated-o0/` and `build/tail-cleanup-relocated-o3/` directories.
@@ -1583,7 +1583,7 @@ existing ignores. It found two introduced verification-tool issues:
 
 - The infinite probe checked stderr before terminating the child, missing short buffered
   diagnostics until EOF. The check follows termination and reader completion. The
-  [native negative control](../../tests/tail-cleanup/stderr_probe.c) writes one short
+  [native negative control](../../../tests/tail-cleanup/stderr_probe.c) writes one short
   diagnostic and continuous stdout; the corrected probe rejects it without reporting
   success. Both O0/O3 infinite-loop probes still pass.
 - Fixture display labels selected the argument type. Each fixture carries its invocation
@@ -1599,7 +1599,7 @@ Host-only execution and the linker-directory warning remain explicit evidence li
 The subsequent independent pass reports 1,293 library and nine CLI tests passing, with 36
 existing ignores, and 52/52 ASan+LSan memory cases. Its primary, style/QA, test-quality, and
 readability checks completed. Three placement simplifications are deferred to the standalone
-[cleanup placement task](ownership-cleanup-placement.md); the review found no proven correctness defect.
+[cleanup placement task](../ownership-cleanup-placement.md); the review found no proven correctness defect.
 
 #### Restore ignored regressions
 
@@ -1755,7 +1755,7 @@ The general branch audit and fresh Linux sanitizer validation remain separately 
 Migrated from the former tracker on 2026-09-10. Migration preserves pending scope;
 it does not establish implementation progress, approval, or completion.
 
-Preserve the [salvage record](../history/unify-lambdas-salvage.md), [migration JSON](unify-lambdas-migration.json), test evidence,
+Preserve the [salvage record](../../history/unify-lambdas-salvage.md), [migration JSON](../unify-lambdas-migration.json), test evidence,
 and source-branch history. Current design material is retained in this task; superseded plans and reviews
 are in `context/history/` for Author review. No compiler slice is authorized by that port.
 
@@ -1811,10 +1811,10 @@ are in `context/history/` for Author review. No compiler slice is authorized by 
   builds, and 52/52 memory cases on each architecture.
 - **Independent follow-ups:** diagnostic polish, test-quality expansion, documentation,
   optimization, and maintainability tasks are outside lambda completion. The
-  [cleanup placement findings](ownership-cleanup-placement.md) are deferred quality work.
-  The [parenthesized-lambda parser bug](parser-parenthesized-lambda-arguments.md) and
+  [cleanup placement findings](../ownership-cleanup-placement.md) are deferred quality work.
+  The [parenthesized-lambda parser bug](../parser-parenthesized-lambda-arguments.md) and
   [grouped callable-result repair](typecheck-grouped-callable-results.md) retain their own scope.
-- **Post-lambda review:** [type-property alias resolution](type-property-alias-resolution.md)
+- **Post-lambda review:** [type-property alias resolution](../type-property-alias-resolution.md)
   reviews consistent identity across heap/clone/free queries; implementation approval is pending.
 
 ## Checkpoint Evidence
@@ -1942,7 +1942,7 @@ named checkpoint only; they do not carry forward as live task state.
 
 - **Construction planning (2026-09-11):** The Author requested the
   [intermediate construction item](#establish-binding-identity-and-local-construction-invariants)
-  within this workstream and a linked [scope-analysis follow-up](lambda-scope-classification.md).
+  within this workstream and a linked [scope-analysis follow-up](../lambda-scope-classification.md).
   Both are planned. The Author signed off this tracking errand with `finish errand`.
   Tracking review, link/anchor checks, and the scoped diff check pass. The finish request
   authorizes a local commit of this bookkeeping only; compiler implementation and repair
@@ -2286,7 +2286,7 @@ named checkpoint only; they do not carry forward as live task state.
   from transferring it out. Sample execution exposed a separate nested-call rejection:
   `println (int_to_str (consuming 0))` fails ownership analysis, while binding the `Int`
   result separately works. This remains a documented follow-up after slice signoff; the sample and
-  [memory model](../../docs/memory-model.md#nested-consuming-pap-calls) record the workaround.
+  [memory model](../../../docs/memory-model.md#nested-consuming-pap-calls) record the workaround.
 
 - Test, sample, documentation, and helper preservation: `6e33ee4`, complete.
 - Borrowed returns through local aliases: `323b8ca`, implemented and signed off.
@@ -2304,7 +2304,7 @@ named checkpoint only; they do not carry forward as live task state.
   trailing whitespace from the sample. Builds were not repeated for bookkeeping edits.
 
 Read the [handoff](#migration-handoff) and
-[salvage sequence](../history/unify-lambdas-salvage.md#suggested-restart-sequence) to resume.
+[salvage sequence](../../history/unify-lambdas-salvage.md#suggested-restart-sequence) to resume.
 Keep that handoff current at every migration checkpoint as its standing requirement directs.
 
 </details>
@@ -2386,15 +2386,15 @@ confirmation rules apply again before compiler changes.** The Author subsequentl
 borrowed-return workstream recorded below. That approval persists across session resets; do not
 ask for it again within this scope. Tracked-item statuses remain the preserved source history.
 
-Read `AGENTS.md`, this document, and [unify-lambdas-salvage.md](../history/unify-lambdas-salvage.md). Before
-proposing compiler work, read `docs/memory-model.md`, [the PAP contract](../tasks/unify-lambdas.md#partial-application-ownership-contract), and
+Read `AGENTS.md`, this document, and [unify-lambdas-salvage.md](../../history/unify-lambdas-salvage.md). Before
+proposing compiler work, read `docs/memory-model.md`, [the PAP contract](unify-lambdas.md#partial-application-ownership-contract), and
 the relevant compiler design/rules. Keep the source branch and immutable provenance recoverable.
 The transfer checkpoint did not publish a compiler. The borrowed-return workstream has since
 published its compiler locally; see its verification record below.
 
 To resume, the Author can use:
 
-> Read AGENTS.md, context/tasks/unify-lambdas.md, and context/history/unify-lambdas-salvage.md. Verify the
+> Read AGENTS.md, context/tasks/completed/unify-lambdas.md, and context/history/unify-lambdas-salvage.md. Verify the
 > migration branch and current changes. The Author has signed off the borrowed-return workstream;
 > read its results and remaining native failures below. Preserve existing approvals
 > and the ownership contract. Discuss and approve the next bounded compiler slice before editing.
@@ -2519,7 +2519,7 @@ No GitHub changes.
 
 ##### Implementation and previous verification
 
-The Author approved implementation of [typed closure destruction](../history/typed-closure-destruction.md)
+The Author approved implementation of [typed closure destruction](../../history/typed-closure-destruction.md)
 and its full verification in the fresh-context request. This approval supersedes the older
 next-slice planning note below. No tracked-item completion, commit, or push is authorized.
 
@@ -2633,7 +2633,7 @@ No sanitizer workaround or Docker/source-script changes were made.
 
 All commands are terminal and the interactive shell is closed. Docker Desktop and the Compose
 service remain running. Linux build outputs are isolated inside the container. The Author deferred Linux sanitizer work to the separate local item
-[Revisit Linux sanitizer verification](../tasks/linux-asan-internalization.md).
+[Revisit Linux sanitizer verification](linux-asan-internalization.md).
 The Author requires local-only tracking, with no GitHub synchronization for this item.
 An issue-creation command already in flight created GitHub issue #271 before the interruption;
 it has not been added to the project or modified further. The Author was informed. No further
@@ -2782,7 +2782,7 @@ Further compiler workstreams and tracked-item status changes require separate ap
 - Parent: `c7e90780897d202d857292b029baedc5b5f9b7e3`.
 - Test/program source: `c16231a8753d214617a88a089341033fefe803d7`.
 - Documentation source: `8e83506`, retained on `abandoned-dev-lambda-unify`.
-- Complete inventory: [lambda-test-migration.json](unify-lambdas-migration.json).
+- Complete inventory: [lambda-test-migration.json](../unify-lambdas-migration.json).
 
 The complete `context/` and `docs/` trees and root instruction changes were transferred at the
 first checkpoint, including additions, edits, renames, and deletions. Migration handoff updates

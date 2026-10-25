@@ -2,7 +2,7 @@
 
 Approved plan for the signed-off typed closure destruction workstream (`2efeb8c`).
 Current design is in [compiler-design.md](../../docs/design/compiler-design.md); verification
-and approvals are in [the migration handoff](../tasks/unify-lambdas.md#migration-handoff).
+and approvals are in [the migration handoff](../tasks/completed/unify-lambdas.md#migration-handoff).
 
 Archived from `context/specs/typed-closure-destruction.md` on 2026-09-10 for Author review.
 The source text below is historical evidence, including its old paths, dates, and

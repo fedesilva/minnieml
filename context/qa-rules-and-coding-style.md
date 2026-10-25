@@ -109,9 +109,9 @@ sees on the page.
   for*: pending slices, planned follow-ups, or known gaps that will close later.
   Pin them to plan/tracking docs so the reader has somewhere to go. Examples:
   - OK: "Pinned regression: leaks env malloc until the `isDirect` lowering rule
-    in S6 stops materializing an env. See `context/tasks/unify-lambdas.md`."
+    in S6 stops materializing an env. See `context/tasks/completed/unify-lambdas.md`."
   - OK: "Ignored until the IR test fixture is updated at S6 — see
-    `context/tasks/unify-lambdas.md`."
+    `context/tasks/completed/unify-lambdas.md`."
   - The rule against *backward*-looking hedging still stands: "no longer", "was",
     "previously" still rot fast and add no value.
 

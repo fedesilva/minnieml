@@ -1,7 +1,7 @@
 # Unify lambdas
 
 Source lambda design and decisions. Current semantic goals are retained in
-[the migration task](../tasks/unify-lambdas.md); implementation prescriptions and allocation
+[the migration task](../tasks/completed/unify-lambdas.md); implementation prescriptions and allocation
 choices remain available here for later review.
 
 Archived from `context/specs/unify-lambdas.md` on 2026-09-10 for Author review.

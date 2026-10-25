@@ -39,10 +39,10 @@ precisely what sanitizer coverage they establish.
 
 - In scope: sanitizer attributes, LLVM pass placement, runtime bitcode interaction,
   target/toolchain support, generated-code negative controls, and coverage wording in
-  [tests/mem/run.sh](../../tests/mem/run.sh) and affected tests/docs.
+  [tests/mem/run.sh](../../../tests/mem/run.sh) and affected tests/docs.
 - Out of scope: unrelated closure ownership changes, the separate
   [Linux ASan assembly failure](linux-asan-internalization.md), and
-  [runtime cache separation](sanitizer-runtime-cache.md).
+  [runtime cache separation](../sanitizer-runtime-cache.md).
 
 ## Plan (Approval Gate)
 
@@ -62,7 +62,7 @@ Approval: implementation, regression tests, affected documentation, and task boo
 
 ## Verification
 
-The checked-in [AsanInstrumentationTests](../../modules/mmlc-lib/src/test/scala/mml/mmlclib/codegen/AsanInstrumentationTests.scala)
+The checked-in [AsanInstrumentationTests](../../../modules/mmlc-lib/src/test/scala/mml/mmlclib/codegen/AsanInstrumentationTests.scala)
 compiles a move closure through the frontend and emitter, injects the read after its generated
 environment release, and invokes `LlvmToolchain.compile`. Executable and library cases run
 at O0/O3. Library cases link the emitted module/runtime objects with a C driver. Valid controls
