@@ -1,0 +1,17 @@
+name: Compiler verification
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  bootstrap:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Explain workflow bootstrap
+        run: |
+          echo 'This is the workflow registration stub; no compiler checks ran.' >> "$GITHUB_STEP_SUMMARY"
+          echo 'Select a development branch containing the full workflow to run verification.' >> "$GITHUB_STEP_SUMMARY"
