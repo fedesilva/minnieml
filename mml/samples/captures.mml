@@ -1,13 +1,12 @@
+// Closure test: lambda captures a local binding
+fn apply(f: Int -> Int, x: Int): Int = f x;;
 
-
-// for this to work we need:
-// * literal lamdas
-// * captures
-fn makeLambda() = 
-  let a = 1;
-  { -> int_to_str (2 * a) }
+fn makeAdder(a: Int): Int -> Int =
+  ~{ x -> x + a };
 ;
 
-pub fn main() = 
-  println (makeLambda ())
+pub fn main() =
+  let add5 = makeAdder 5;
+  let result = apply add5 37;
+  println (int_to_str result);
 ;

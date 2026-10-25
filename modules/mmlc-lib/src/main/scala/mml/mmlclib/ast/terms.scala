@@ -6,7 +6,33 @@ enum MemEffect derives CanEqual:
   case Alloc // returns newly allocated memory, caller owns
   case Static // returns pointer to static/existing memory
 
-sealed trait Term extends AstNode, Typeable, FromSource
+sealed trait Term extends AstNode, Typeable, FromSource:
+  /** Since Term has no shared copy method, dispatches to each concrete subtype's copy so the
+    * generic parser can attach an ascription without knowing which kind of term it parsed.
+    * TermError, DataConstructor, and Destruction are returned unchanged.
+    */
+  def withTypeAsc(t: Type): Term = this match
+    case x: Expr => x.copy(typeAsc = Some(t))
+    case x: Cond => x.copy(typeAsc = Some(t))
+    case x: App => x.copy(typeAsc = Some(t))
+    case x: YieldOwnership => x.copy(typeAsc = Some(t))
+    case x: BindOwnership => x.copy(typeAsc = Some(t))
+    case x: Lambda => x.copy(typeAsc = Some(t))
+    case x: TermGroup => x.copy(typeAsc = Some(t))
+    case x: Tuple => x.copy(typeAsc = Some(t))
+    case x: Ref => x.copy(typeAsc = Some(t))
+    case x: Placeholder => x.copy(typeAsc = Some(t))
+    case x: Hole => x.copy(typeAsc = Some(t))
+    case x: LiteralInt => x.copy(typeAsc = Some(t))
+    case x: LiteralString => x.copy(typeAsc = Some(t))
+    case x: LiteralBool => x.copy(typeAsc = Some(t))
+    case x: LiteralUnit => x.copy(typeAsc = Some(t))
+    case x: LiteralFloat => x.copy(typeAsc = Some(t))
+    case x: NativeImpl => x.copy(typeAsc = Some(t))
+    case x: InvalidExpression => x.copy(typeAsc = Some(t))
+    case _: TermError => this
+    case _: DataConstructor => this
+    case _: Destruction => this
 
 case class TermError(
   source:     SourceOrigin,
@@ -37,9 +63,12 @@ case class Cond(
   typeAsc:  Option[Type] = None
 ) extends Term
 
+/** Terms permitted in an application's callee position. */
+type Callee = Ref | App | Lambda
+
 case class App(
   source:   SourceOrigin,
-  fn:       Ref | App | Lambda,
+  fn:       Callee,
   arg:      Expr,
   typeAsc:  Option[Type] = None,
   typeSpec: Option[Type] = None
@@ -48,7 +77,7 @@ case class App(
 object App:
   def apply(
     span:     SrcSpan,
-    fn:       Ref | App | Lambda,
+    fn:       Callee,
     arg:      Expr,
     typeAsc:  Option[Type],
     typeSpec: Option[Type]
@@ -57,54 +86,105 @@ object App:
 
   def apply(
     span: SrcSpan,
-    fn:   Ref | App | Lambda,
+    fn:   Callee,
     arg:  Expr
   ): App =
     new App(SourceOrigin.Loc(span), fn, arg, None, None)
 
+/** Supplies a value and its cleanup witness within an ownership binding's initializer. */
+case class YieldOwnership(
+  source:   SourceOrigin,
+  value:    Expr,
+  owns:     Expr,
+  typeSpec: Option[Type] = None,
+  typeAsc:  Option[Type] = None
+) extends Term
+
+/** Keeps one continuation while binding a scoped value and its Boolean cleanup witness. */
+case class BindOwnership(
+  source:       SourceOrigin,
+  valueParam:   FnParam,
+  witnessParam: FnParam,
+  initializer:  Expr,
+  body:         Expr,
+  typeSpec:     Option[Type] = None,
+  typeAsc:      Option[Type] = None
+) extends Term
+
+enum Capture:
+  case CapturedRef(override val ref: Ref)
+  case BorrowedRef(override val ref: Ref)
+  case CapturedLiteral(override val ref: Ref, cloneFnId: String)
+  case CapturedConditional(override val ref: Ref, witness: Ref, cloneFnId: String)
+
+  case OwnedClosure(override val ref: Ref, targetId: String)
+
+  def ref: Ref
+
+/** Capture identities describe the partial application's storage and invocation obligations.
+  *
+  * @param borrowedCaptures
+  *   IDs of captures whose storage remains owned elsewhere.
+  * @param retainedCaptures
+  *   IDs of temporary callee bindings retained by a partial application. Ownership analysis
+  *   classifies them in their lexical scope, updates borrowedCaptures, and clears this pending set.
+  */
 case class LambdaMeta(
-  isTailRecursive: Boolean = false
+  isPartialApplication:  Boolean         = false,
+  isTailRecursive:       Boolean         = false,
+  envLayoutId:           Option[String]  = None,
+  transferredCaptures:   Set[String]     = Set.empty,
+  borrowedCaptures:      Set[String]     = Set.empty,
+  retainedCaptures:      Set[String]     = Set.empty,
+  environmentParam:      Option[FnParam] = None,
+  isInvocationParameter: Boolean         = false
 )
 
 case class Lambda(
   source:   SourceOrigin,
   params:   List[FnParam],
   body:     Expr,
-  captures: List[Ref],
+  captures: List[Capture],
   typeSpec: Option[Type]       = None,
   typeAsc:  Option[Type]       = None,
-  meta:     Option[LambdaMeta] = None
-) extends Term
+  meta:     Option[LambdaMeta] = None,
+  isMove:   Boolean            = false
+) extends Term:
+
+  /** A fully applied source parameter retains its borrowing contract in an immediate scope. */
+  def borrowsArgument: Boolean =
+    meta.exists(_.isInvocationParameter) && params.headOption.exists(!_.consuming)
 
 object Lambda:
   def apply(
     span:     SrcSpan,
     params:   List[FnParam],
     body:     Expr,
-    captures: List[Ref],
+    captures: List[Capture],
     typeSpec: Option[Type],
     typeAsc:  Option[Type],
-    meta:     Option[LambdaMeta]
+    meta:     Option[LambdaMeta],
+    isMove:   Boolean
   ): Lambda =
-    new Lambda(SourceOrigin.Loc(span), params, body, captures, typeSpec, typeAsc, meta)
+    new Lambda(SourceOrigin.Loc(span), params, body, captures, typeSpec, typeAsc, meta, isMove)
 
   def apply(
     span:     SrcSpan,
     params:   List[FnParam],
     body:     Expr,
-    captures: List[Ref],
+    captures: List[Capture],
     typeSpec: Option[Type],
     typeAsc:  Option[Type]
   ): Lambda =
-    new Lambda(SourceOrigin.Loc(span), params, body, captures, typeSpec, typeAsc, None)
+    new Lambda(SourceOrigin.Loc(span), params, body, captures, typeSpec, typeAsc)
 
   def apply(
     span:     SrcSpan,
     params:   List[FnParam],
     body:     Expr,
-    captures: List[Ref]
+    captures: List[Capture]
   ): Lambda =
-    new Lambda(SourceOrigin.Loc(span), params, body, captures, None, None, None)
+    new Lambda(SourceOrigin.Loc(span), params, body, captures)
 
 case class TermGroup(
   source:  SourceOrigin,
@@ -151,15 +231,16 @@ case class Hole(
 
 sealed trait LiteralValue extends Term, FromSource
 
+/** Retains the magnitude of Int32.MinValue until prefix-operator rewriting applies its sign. */
 case class LiteralInt(
   source:   SourceOrigin,
-  value:    Int,
+  value:    Long,
   typeSpec: Option[Type],
   typeAsc:  Option[Type] = None
 ) extends LiteralValue
 
 object LiteralInt:
-  def apply(span: SrcSpan, value: Int): LiteralInt =
+  def apply(span: SrcSpan, value: Long): LiteralInt =
     new LiteralInt(
       SourceOrigin.Loc(span),
       value,
@@ -167,7 +248,7 @@ object LiteralInt:
       None
     )
 
-  def unapply(lit: LiteralInt): Option[(SourceOrigin, Int)] =
+  def unapply(lit: LiteralInt): Option[(SourceOrigin, Long)] =
     Some((lit.source, lit.value))
 
 case class LiteralString(
@@ -250,14 +331,47 @@ case class DataConstructor(
 ) extends Term:
   val typeAsc: Option[Type] = None
 
-/** Marks the body of a destructor function for a data type. The codegen will use the type to
-  * determine how to free the memory. Generated alongside DataConstructor for structs.
-  */
-case class DataDestructor(
-  source:   SourceOrigin,
-  typeSpec: Option[Type] = None
-) extends Term:
+/** Compiler-internal destruction operations have explicit operands and return Unit. */
+sealed trait Destruction extends Term:
+  def operand: Expr
   val typeAsc: Option[Type] = None
+
+case class DestroyClosure(
+  source:   SourceOrigin,
+  operand:  Expr,
+  targetId: String,
+  typeSpec: Option[Type]
+) extends Destruction
+
+enum FieldCleanup:
+  case Value(override val fieldId: String, override val targetId: String)
+  case Closure(override val fieldId: String, override val targetId: String)
+
+  def fieldId:  String
+  def targetId: String
+
+case class DestroyClosureEnvironment(
+  source:         SourceOrigin,
+  operand:        Expr,
+  layoutId:       String,
+  fields:         List[FieldCleanup],
+  typeSpec:       Option[Type],
+  borrowedFields: Set[String] = Set.empty
+) extends Destruction
+
+/** Payload ownership leaves the environment; its destructor releases only the raw allocation. */
+case class DisarmClosureEnvironment(
+  source:   SourceOrigin,
+  operand:  Expr,
+  targetId: String,
+  typeSpec: Option[Type]
+) extends Destruction
+
+case class DispatchClosureDestructor(
+  source:   SourceOrigin,
+  operand:  Expr,
+  typeSpec: Option[Type]
+) extends Destruction
 
 case class NativeImpl(
   source:       SourceOrigin,
@@ -267,7 +381,10 @@ case class NativeImpl(
   memEffect:    Option[MemEffect] = None,
   nativeSymbol: Option[String]    = None
 ) extends Native,
-      Term
+      Term:
+
+  /** Source annotation identifying this implementation in compiler displays. */
+  def annotationName: String = if nativeTpl.isDefined then "@metal:tpl" else "@metal:ffi"
 
 /** Represents an expression that could not be resolved or is otherwise invalid. Preserves the
   * original expression for debugging and error reporting.

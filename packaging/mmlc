@@ -4,7 +4,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" &> /dev/null && pwd)"
 JAR_PATH="$SCRIPT_DIR/mmlc.jar"
 
 if [ -f "$JAR_PATH" ]; then
-  exec java -jar "$JAR_PATH" "$@"
+  exec java --sun-misc-unsafe-memory-access=allow  -jar "$JAR_PATH" "$@"
   exit $?
 fi
 

@@ -14,7 +14,7 @@ class StructCodegenTest extends BaseEffFunSuite:
       """
 
     compileAndGenerate(source).map { llvmIr =>
-      assert(llvmIr.contains("%struct.Person = type { %struct.String, i64 }"))
+      assert(llvmIr.contains("%struct.Person = type { %struct.String, i32 }"))
     }
   }
 
@@ -27,7 +27,7 @@ class StructCodegenTest extends BaseEffFunSuite:
       };
 
       fn makePerson(age: Int): Person =
-        Person (int_to_str age) age
+        Person (int_to_str age) age;
       ;
       """
 
@@ -46,7 +46,7 @@ class StructCodegenTest extends BaseEffFunSuite:
       };
 
       fn getAge(p: Person): Int =
-        p.age
+        p.age;
       ;
       """
 
@@ -58,10 +58,10 @@ class StructCodegenTest extends BaseEffFunSuite:
   test("native struct constructor allocates and stores fields") {
     val source =
       """
-      type Vec2 = @native { x: Float, y: Float };
+      type Vec2 = @metal:repr { x: Float, y: Float };
 
       fn makeVec(a: Float, b: Float): Vec2 =
-        Vec2 a b
+        Vec2 a b;
       ;
       """
 
@@ -75,10 +75,10 @@ class StructCodegenTest extends BaseEffFunSuite:
   test("native struct field access emits extractvalue") {
     val source =
       """
-      type Vec2 = @native { x: Float, y: Float };
+      type Vec2 = @metal:repr { x: Float, y: Float };
 
       fn getX(v: Vec2): Float =
-        v.x
+        v.x;
       ;
       """
 
@@ -96,7 +96,7 @@ class StructCodegenTest extends BaseEffFunSuite:
       };
 
       fn makePerson(age: Int): Person =
-        Person (int_to_str age) age
+        Person (int_to_str age) age;
       ;
       """
 

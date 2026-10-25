@@ -46,14 +46,19 @@ object Diagnostics:
       case SemanticError.DanglingTerms(terms, _, _) => terms.headOption.toList.flatMap(_.spanOpt)
       case SemanticError.MemberErrorFound(err, _) => err.spanOpt.toList
       case SemanticError.ParsingIdErrorFound(err, _) => err.spanOpt.toList
+      case SemanticError.TermErrorFound(err, _) => err.spanOpt.toList
       case SemanticError.InvalidExpressionFound(inv, _) => inv.spanOpt.toList
       case SemanticError.TypeCheckingError(typeErr) => extractTypeErrorSpans(typeErr)
       case SemanticError.InvalidEntryPoint(_, source) => source.spanOpt.toList
-      case SemanticError.UseAfterMove(ref, _, _) => ref.spanOpt.toList
+      case error: SemanticError.UseAfterMove => error.source.spanOpt.toList
       case SemanticError.ConsumingParamNotLastUse(_, ref, _) => ref.spanOpt.toList
+      case SemanticError.BorrowedValuePassedToConsumingParam(_, ref, _) => ref.spanOpt.toList
       case SemanticError.PartialApplicationWithConsuming(fn, _, _) => fn.spanOpt.toList
       case SemanticError.ConditionalOwnershipMismatch(cond, _) => cond.spanOpt.toList
       case SemanticError.BorrowEscapeViaReturn(ref, _) => ref.spanOpt.toList
+      case SemanticError.CapturedBorrowedHeapBinding(ref, _) => ref.spanOpt.toList
+      case SemanticError.BorrowClosureEscapeViaReturn(lambda, _) =>
+        lambda.spanOpt.toList
 
       case te: TypeError => extractTypeErrorSpans(te)
 
@@ -76,6 +81,8 @@ object Diagnostics:
       case TypeError.ConditionalBranchTypeUnknown(cond, _) => cond.spanOpt.toList
       case TypeError.UnresolvableType(node, _, _) => nodeSpan(node).toList
       case TypeError.IncompatibleTypes(node, _, _, _, _) => astNodeSpan(node).toList
+      case TypeError.ConflictingLambdaParamInference(param, _, _, _) => param.spanOpt.toList
+      case TypeError.UninferrableLambdaParam(param, _) => param.spanOpt.toList
       case TypeError.UntypedHoleInBinding(_, source, _) => source.spanOpt.toList
 
   private def declSpan(decl: Decl): Option[SrcSpan] =
@@ -114,6 +121,8 @@ object Diagnostics:
         s"Member error: ${err.message}"
       case SemanticError.ParsingIdErrorFound(err, _) =>
         s"Parsing error: ${err.message}"
+      case SemanticError.TermErrorFound(err, _) =>
+        s"Parsing error: ${err.message}"
       case SemanticError.InvalidExpressionFound(_, _) =>
         "Invalid expression"
       case SemanticError.TypeCheckingError(typeErr) =>
@@ -122,9 +131,12 @@ object Diagnostics:
         s"Invalid entry point: $msg"
       case e: SemanticError.UseAfterMove => e.message
       case e: SemanticError.ConsumingParamNotLastUse => e.message
+      case e: SemanticError.BorrowedValuePassedToConsumingParam => e.message
       case e: SemanticError.PartialApplicationWithConsuming => e.message
       case e: SemanticError.ConditionalOwnershipMismatch => e.message
       case e: SemanticError.BorrowEscapeViaReturn => e.message
+      case e: SemanticError.CapturedBorrowedHeapBinding => e.message
+      case e: SemanticError.BorrowClosureEscapeViaReturn => e.message
 
       case te: TypeError => formatTypeError(te)
 
@@ -168,5 +180,11 @@ object Diagnostics:
       case TypeError.IncompatibleTypes(_, t1, t2, ctx, _) =>
         s"Incompatible types in $ctx: ${AstLookup.formatType(Some(t1))} " +
           s"vs ${AstLookup.formatType(Some(t2))}"
+      case TypeError.ConflictingLambdaParamInference(param, firstType, nextType, _) =>
+        s"Conflicting types inferred for lambda parameter '${param.name}': " +
+          s"${AstLookup.formatType(Some(firstType))} vs " +
+          s"${AstLookup.formatType(Some(nextType))}"
+      case TypeError.UninferrableLambdaParam(param, _) =>
+        s"Cannot infer type for lambda parameter '${param.name}'"
       case TypeError.UntypedHoleInBinding(name, _, _) =>
         s"Typed hole in binding '$name' requires type annotation"

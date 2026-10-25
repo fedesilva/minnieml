@@ -1,5 +1,6 @@
 package mml.mmlclib.semantic
 
+import cats.syntax.all.*
 import mml.mmlclib.ast.*
 import mml.mmlclib.compiler.CompilerState
 
@@ -25,40 +26,133 @@ object TailRecursionDetector:
     member match
       case bnd: Bnd =>
         bnd.value.terms match
-          case (lambda: Lambda) :: rest if hasTailRecursiveCall(lambda.body, bnd) =>
-            val meta       = lambda.meta.getOrElse(LambdaMeta())
-            val updated    = lambda.copy(meta = Some(meta.copy(isTailRecursive = true)))
-            val updatedBnd = bnd.copy(value = bnd.value.copy(terms = updated :: rest))
-            updatedBnd
+          case (lambda: Lambda) :: rest =>
+            val isTailRec     = hasTailRecursiveCallById(lambda.body, bnd)
+            val rewrittenBody = rewriteLetBoundLambdas(lambda.body)
+            val updatedMeta =
+              if isTailRec then
+                Some(lambda.meta.getOrElse(LambdaMeta()).copy(isTailRecursive = true))
+              else lambda.meta
+            if isTailRec || (rewrittenBody ne lambda.body) then
+              val updated = lambda.copy(meta = updatedMeta, body = rewrittenBody)
+              bnd.copy(value = bnd.value.copy(terms = updated :: rest))
+            else bnd
           case _ => bnd
       case other => other
 
-  /** Check if expr contains a tail-recursive call to bnd in terminal position. */
-  private def hasTailRecursiveCall(expr: Expr, bnd: Bnd): Boolean =
+  /** Visit every expression scope, preserving the binding used to recognize local self-calls. */
+  private def rewriteLetBoundLambdas(expr: Expr): Expr =
+    expr.copy(terms = expr.terms.map(rewriteTerm))
+
+  private def rewriteTerm(term: Term): Term = term match
+
+    case expr: Expr => rewriteLetBoundLambdas(expr)
+
+    case app: App => rewriteApp(app)
+
+    case binding: BindOwnership =>
+      binding.copy(
+        initializer = markBoundLambda(
+          rewriteLetBoundLambdas(binding.initializer),
+          binding.valueParam
+        ),
+        body = rewriteLetBoundLambdas(binding.body)
+      )
+
+    case yielded: YieldOwnership =>
+      yielded.copy(
+        value = rewriteLetBoundLambdas(yielded.value),
+        owns  = rewriteLetBoundLambdas(yielded.owns)
+      )
+
+    case lambda: Lambda => lambda.copy(body = rewriteLetBoundLambdas(lambda.body))
+
+    case cond: Cond =>
+      cond.copy(
+        cond    = rewriteLetBoundLambdas(cond.cond),
+        ifTrue  = rewriteLetBoundLambdas(cond.ifTrue),
+        ifFalse = rewriteLetBoundLambdas(cond.ifFalse)
+      )
+
+    case group: TermGroup => group.copy(inner = rewriteLetBoundLambdas(group.inner))
+
+    case tuple: Tuple => tuple.copy(elements = tuple.elements.map(rewriteLetBoundLambdas))
+
+    case ref: Ref => ref.copy(qualifier = ref.qualifier.map(rewriteTerm))
+
+    case destroy: DestroyClosure =>
+      destroy.copy(operand = rewriteLetBoundLambdas(destroy.operand))
+
+    case destroy: DestroyClosureEnvironment =>
+      destroy.copy(operand = rewriteLetBoundLambdas(destroy.operand))
+
+    case disarm: DisarmClosureEnvironment =>
+      disarm.copy(operand = rewriteLetBoundLambdas(disarm.operand))
+
+    case dispatch: DispatchClosureDestructor =>
+      dispatch.copy(operand = rewriteLetBoundLambdas(dispatch.operand))
+
+    case invalid: InvalidExpression =>
+      invalid.copy(originalExpr = rewriteLetBoundLambdas(invalid.originalExpr))
+
+    case other => other
+
+  private def rewriteApp(app: App): App =
+    val updatedFn: Callee = app.fn match
+      case lambda: Lambda => lambda.copy(body = rewriteLetBoundLambdas(lambda.body))
+      case nested: App => rewriteApp(nested)
+      case ref:    Ref => ref.copy(qualifier = ref.qualifier.map(rewriteTerm))
+    val updatedArg = rewriteLetBoundLambdas(app.arg)
+    val boundArg = app.fn match
+      case lambda: Lambda if lambda.params.size == 1 =>
+        markBoundLambda(updatedArg, lambda.params.head)
+      case _ => updatedArg
+    app.copy(fn = updatedFn, arg = boundArg)
+
+  private def markBoundLambda(arg: Expr, param: FnParam): Expr =
+    arg.terms match
+      case List(lambda: Lambda) if hasTailRecursiveCallById(lambda.body, param) =>
+        val meta = lambda.meta.getOrElse(LambdaMeta()).copy(isTailRecursive = true)
+        arg.copy(terms = List(lambda.copy(meta = meta.some)))
+      case List(yielded: YieldOwnership) =>
+        arg.copy(terms = List(yielded.copy(value = markBoundLambda(yielded.value, param))))
+      case _ => arg
+
+  private def hasTailRecursiveCallById(
+    expr:    Expr,
+    binding: Resolvable
+  ): Boolean =
     expr.terms match
-      case List(term) => hasTailRecursiveCallInTerm(term, bnd)
+      case List(term) => hasTailRecursiveCallInTerm(term, binding)
       case _ => false
 
-  /** Check if a term contains a tail-recursive call in terminal position. */
-  private def hasTailRecursiveCallInTerm(term: Term, bnd: Bnd): Boolean =
+  private def hasTailRecursiveCallInTerm(
+    term:    Term,
+    binding: Resolvable
+  ): Boolean =
     term match
+      case local: BindOwnership =>
+        hasTailRecursiveCallById(local.body, binding)
+
       case cond: Cond =>
-        hasTailRecursiveCall(cond.ifTrue, bnd) || hasTailRecursiveCall(cond.ifFalse, bnd)
+        hasTailRecursiveCallById(cond.ifTrue, binding) ||
+        hasTailRecursiveCallById(cond.ifFalse, binding)
 
       case app: App =>
         app.fn match
           case lambda: Lambda =>
-            // Both sequence lambdas (__stmt) and let-binding lambdas traverse into body
-            hasTailRecursiveCall(lambda.body, bnd)
+            hasTailRecursiveCallById(lambda.body, binding)
           case _ =>
-            isSelfCall(app, bnd)
+            isSelfCall(app, binding)
 
       case _ => false
 
-  /** Check if app is a direct call to self (bnd) */
-  private def isSelfCall(app: App, bnd: Bnd): Boolean =
+  private def isSelfCall(
+    app:     App,
+    binding: Resolvable
+  ): Boolean =
     collectCallee(app) match
-      case Some(ref) => isSelfRef(ref, bnd)
+      case Some(ref) => isSelfRef(ref, binding)
       case None => false
 
   /** Extract the callee Ref from a curried application chain */
@@ -68,9 +162,9 @@ object TailRecursionDetector:
       case next: App => collectCallee(next)
       case _ => None
 
-  private def isSelfRef(ref: Ref, bnd: Bnd): Boolean =
-    if ref.qualifier.isDefined then return false
-    // Compare by ID if available, otherwise fall back to name
-    ref.resolvedId match
-      case Some(id) => bnd.id.contains(id)
-      case None => ref.name == bnd.name
+  private def isSelfRef(ref: Ref, binding: Resolvable): Boolean =
+    if ref.qualifier.isDefined then false
+    else
+      ref.resolvedId match
+        case Some(id) => binding.id.contains(id)
+        case None => ref.name == binding.name

@@ -2,16 +2,75 @@ package mml.mmlclib.test
 
 import cats.effect.IO
 import mml.mmlclib.api.{FrontEndApi, ParserApi}
-import mml.mmlclib.ast.{Error, Member, Module}
+import mml.mmlclib.ast.{BindOwnership, Bnd, Error, Lambda, Member, Module, TermTraversal}
+import mml.mmlclib.codegen.LlvmToolchain
 import mml.mmlclib.compiler.{CodegenStage, CompilerConfig}
 import mml.mmlclib.semantic.*
+import mml.mmlclib.test.llvm.LlvmAssertions
 import mml.mmlclib.util.prettyprint.ast.prettyPrintAst
 import munit.CatsEffectSuite
 
+import java.nio.file.Path
+import scala.sys.process.{Process, ProcessLogger}
+
 /** Base trait for effectful tests; adds common MML specific assertions. */
-trait BaseEffFunSuite extends CatsEffectSuite:
+trait BaseEffFunSuite extends CatsEffectSuite with LlvmAssertions:
+
+  /** Assert success through the compiler's shared toolchain command execution. */
+  protected def commandNotFailed(command: List[String], workingDir: Path): IO[Unit] =
+    LlvmToolchain
+      .executeCommand(command, "Fixture command failed", workingDir, verbose = false)
+      .map(_.fold(error => fail(error.message), code => assertEquals(code, 0)))
+
+  /** Assert a fixture's exit code, optional stdout, and diagnostic text on stderr. */
+  protected def programExits(
+    command:        List[String],
+    workingDir:     Path,
+    expectedCode:   Int,
+    expectedOutput: Option[List[String]] = None,
+    expectedError:  Option[String]       = None
+  ): IO[Unit] =
+    IO.blocking {
+      // The child's stdout and stderr callbacks can run concurrently.
+      val stdout = new StringBuffer
+      val stderr = new StringBuffer
+      val logger = ProcessLogger(
+        line =>
+          stdout.append(s"$line\n")
+          ()
+        ,
+        line =>
+          stderr.append(s"$line\n")
+          ()
+      )
+      val code       = Process(command, workingDir.toFile).!(logger)
+      val diagnostic = s"${command.mkString(" ")}\n$stdout$stderr"
+      assertEquals(code, expectedCode, diagnostic)
+      expectedOutput.foreach(expected =>
+        assertEquals(stdout.toString.linesIterator.toList, expected, diagnostic)
+      )
+      expectedError.foreach(expected => assert(stderr.toString.contains(expected), diagnostic))
+    }
 
   final case class SemanticResult(module: Module, errors: List[SemanticError])
+
+  /** Returns the unique resolved binding named within a module member. */
+  protected def resolvedBindingId(module: Module, owner: String, name: String): String =
+
+    val member = module.members
+      .collectFirst { case binding: Bnd if binding.name == owner => binding }
+      .getOrElse(fail(s"Expected member $owner"))
+    val ids = TermTraversal
+      .collect(member.value) {
+        case lambda:  Lambda => lambda.params.filter(_.name == name).flatMap(_.id)
+        case binding: BindOwnership if binding.valueParam.name == name =>
+          binding.valueParam.id.toList
+      }
+      .flatten
+      .distinct
+
+    assertEquals(ids.size, 1, s"Expected one resolved binding for $owner.$name")
+    ids.head
 
   private def containsErrorNode(module: Module): Boolean = {
     def checkMembers(members: List[Member]): Boolean =

@@ -278,8 +278,12 @@ object TypeResolver:
           typeAsc = app.typeAsc.map(rewriteTypeSpecWithInvalidTypes(_, module))
         )
       case lambda: Lambda =>
+        val newParams = lambda.params.map(p =>
+          p.copy(typeAsc = p.typeAsc.map(rewriteTypeSpecWithInvalidTypes(_, module)))
+        )
         val newBody = rewriteExprWithInvalidTypes(lambda.body, member, module)
         lambda.copy(
+          params  = newParams,
           body    = newBody,
           typeAsc = lambda.typeAsc.map(rewriteTypeSpecWithInvalidTypes(_, module))
         )
@@ -305,10 +309,10 @@ object TypeResolver:
 
   /** Rewrite App.fn to handle type ascriptions with invalid types */
   private def rewriteAppFnWithInvalidTypes(
-    fn:     Ref | App | Lambda,
+    fn:     Callee,
     member: Member,
     module: Module
-  ): Ref | App | Lambda =
+  ): Callee =
     fn match
       case ref: Ref =>
         val updatedQualifier =
@@ -326,8 +330,12 @@ object TypeResolver:
           typeAsc = app.typeAsc.map(rewriteTypeSpecWithInvalidTypes(_, module))
         )
       case lambda: Lambda =>
+        val newParams = lambda.params.map(p =>
+          p.copy(typeAsc = p.typeAsc.map(rewriteTypeSpecWithInvalidTypes(_, module)))
+        )
         val newBody = rewriteExprWithInvalidTypes(lambda.body, member, module)
         lambda.copy(
+          params  = newParams,
           body    = newBody,
           typeAsc = lambda.typeAsc.map(rewriteTypeSpecWithInvalidTypes(_, module))
         )
@@ -361,7 +369,12 @@ object TypeResolver:
         for
           updatedValue <- resolvedValue
           updatedTypeAsc <- bnd.typeAsc.traverse(resolveTypeSpecWithMap(_, member, typeMap))
-        yield bnd.copy(value = updatedValue, typeAsc = updatedTypeAsc)
+          updatedTypeSpec <- bnd.typeSpec.traverse(resolveTypeSpecWithMap(_, member, typeMap))
+        yield bnd.copy(
+          value    = updatedValue,
+          typeAsc  = updatedTypeAsc,
+          typeSpec = updatedTypeSpec
+        )
 
       case alias: TypeAlias =>
         resolveTypeSpecWithMap(alias.typeRef, member, typeMap).map { updatedTypeRef =>
@@ -496,7 +509,12 @@ object TypeResolver:
     for
       updatedTerms <- expr.terms.traverse(resolveTerm(_, member, typeMap))
       updatedTypeAsc <- expr.typeAsc.traverse(resolveTypeSpecWithMap(_, member, typeMap))
-    yield expr.copy(terms = updatedTerms, typeAsc = updatedTypeAsc)
+      updatedTypeSpec <- expr.typeSpec.traverse(resolveTypeSpecWithMap(_, member, typeMap))
+    yield expr.copy(
+      terms    = updatedTerms,
+      typeAsc  = updatedTypeAsc,
+      typeSpec = updatedTypeSpec
+    )
 
   /** Resolve type references in a term using the type map. */
   private def resolveTerm(
@@ -548,9 +566,10 @@ object TypeResolver:
 
       case lambda: Lambda =>
         for
+          updatedParams <- lambda.params.traverse(resolveParamWithMap(_, member, typeMap))
           updatedBody <- resolveExpr(lambda.body, member, typeMap)
           updatedTypeAsc <- lambda.typeAsc.traverse(resolveTypeSpecWithMap(_, member, typeMap))
-        yield lambda.copy(body = updatedBody, typeAsc = updatedTypeAsc)
+        yield lambda.copy(params = updatedParams, body = updatedBody, typeAsc = updatedTypeAsc)
 
       case placeholder: Placeholder =>
         placeholder.typeAsc
@@ -568,31 +587,26 @@ object TypeResolver:
           .map(updatedTypeAsc => native.copy(typeAsc = updatedTypeAsc))
 
       case lit: LiteralValue =>
-        // Resolve typeSpec for literals
-        lit.typeSpec match {
-          case Some(ts) =>
-            resolveTypeSpecWithMap(ts, member, typeMap).map { resolvedTypeSpec =>
-              lit match {
-                case l: LiteralInt => l.copy(typeSpec = Some(resolvedTypeSpec))
-                case l: LiteralString => l.copy(typeSpec = Some(resolvedTypeSpec))
-                case l: LiteralBool => l.copy(typeSpec = Some(resolvedTypeSpec))
-                case l: LiteralUnit => l.copy(typeSpec = Some(resolvedTypeSpec))
-                case l: LiteralFloat => l.copy(typeSpec = Some(resolvedTypeSpec))
-              }
-            }
-          case None => Right(lit)
-        }
+        for
+          spec <- lit.typeSpec.traverse(resolveTypeSpecWithMap(_, member, typeMap))
+          ascription <- lit.typeAsc.traverse(resolveTypeSpecWithMap(_, member, typeMap))
+        yield lit match
+          case value: LiteralInt => value.copy(typeSpec = spec, typeAsc = ascription)
+          case value: LiteralString => value.copy(typeSpec = spec, typeAsc = ascription)
+          case value: LiteralBool => value.copy(typeSpec = spec, typeAsc = ascription)
+          case value: LiteralUnit => value.copy(typeSpec = spec, typeAsc = ascription)
+          case value: LiteralFloat => value.copy(typeSpec = spec, typeAsc = ascription)
 
       case _ =>
         // Other terms don't have type ascriptions that need resolution
         term.asRight[List[SemanticError]]
 
-  /** Resolve type references in App.fn (which can be Ref | App | Lambda) */
+  /** Resolve type references in application callees */
   private def resolveAppFn(
-    fn:      Ref | App | Lambda,
+    fn:      Callee,
     member:  Member,
     typeMap: Map[String, ResolvableType]
-  ): Either[List[SemanticError], Ref | App | Lambda] =
+  ): Either[List[SemanticError], Callee] =
     fn match
       case ref: Ref =>
         ref.typeAsc
@@ -606,6 +620,7 @@ object TypeResolver:
         yield app.copy(fn = updatedFn, arg = updatedArg, typeAsc = updatedTypeAsc)
       case lambda: Lambda =>
         for
+          updatedParams <- lambda.params.traverse(resolveParamWithMap(_, member, typeMap))
           updatedBody <- resolveExpr(lambda.body, member, typeMap)
           updatedTypeAsc <- lambda.typeAsc.traverse(resolveTypeSpecWithMap(_, member, typeMap))
-        yield lambda.copy(body = updatedBody, typeAsc = updatedTypeAsc)
+        yield lambda.copy(params = updatedParams, body = updatedBody, typeAsc = updatedTypeAsc)

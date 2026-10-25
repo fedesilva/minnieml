@@ -1,0 +1,50 @@
+// Run: mmlc run mml/samples/raylib-hello.mml
+// Requires raylib in the target linker's library search path.
+@link["raylib"];
+
+pub fn main() =
+
+  let title = to_cstr "Raylib - Hello World";
+  let text = to_cstr "Hello Raylib!";
+
+  init_window 800 600 title;
+  set_target_fps 60;
+
+  fn draw_loop(): Unit =
+    if window_should_close () then
+      ();
+    else
+      begin_drawing ();
+      clear_background white;
+      draw_text text 350 280 20 black;
+      end_drawing ();
+      draw_loop ();
+    ;
+  ;
+
+  draw_loop ();
+  close_window ();
+  
+;
+
+fn byte(n: Int): Int8 = @metal:tpl["trunc i32 %operand to i8"];;
+
+type Color = @metal:repr { r: Int8, g: Int8, b: Int8, a: Int8 };
+
+let white = Color (byte 245) (byte 245) (byte 245) (byte 255);
+let black  = Color (byte 0) (byte 0) (byte 0) (byte 255);
+
+fn init_window(width: Int, height: Int, title: CString): Unit =
+  @metal:ffi[name="InitWindow"];
+;
+fn set_target_fps(fps: Int): Unit = @metal:ffi[name="SetTargetFPS"];;
+fn window_should_close(): Bool = @metal:ffi[name="WindowShouldClose"];;
+fn begin_drawing(): Unit = @metal:ffi[name="BeginDrawing"];;
+fn clear_background(color: Color): Unit = @metal:ffi[name="ClearBackground"];;
+fn draw_text(text: CString, x: Int, y: Int, size: Int, color: Color): Unit =
+  @metal:ffi[name="DrawText"];
+;
+fn end_drawing(): Unit = @metal:ffi[name="EndDrawing"];;
+fn close_window(): Unit = @metal:ffi[name="CloseWindow"];;
+
+

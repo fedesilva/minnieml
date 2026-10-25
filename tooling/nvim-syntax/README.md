@@ -17,7 +17,7 @@ Syntax highlighting and LSP support for MinnieML (`.mml`) files in Neovim.
   - Operators: symbolic (`+`, `-`, `==`, etc.) and alphanumeric (`and`, `or`, `not`)
   - Literals: strings, integers, floats, booleans
   - Types: uppercase identifiers (`Int`, `String`, `Bool`, etc.)
-  - Native annotations: `@native`
+  - Metal annotations: `@metal:repr`, `@metal:ffi`, `@metal:tpl`
   - Special constants: `()`, `???`, `_`
 
 - **LSP commands** for compiling, cleaning, AST/IR generation, and server restart
@@ -178,7 +178,7 @@ The following MML-specific highlight groups are defined:
 - `mmlNumber` - numeric literals
 - `mmlFloat` - float literals
 - `mmlType` - type identifiers
-- `mmlNative` - @native annotations
+- `mmlNative` - @metal:repr, @metal:ffi, and @metal:tpl annotations
 - `mmlIdentifier` - variable/function names
 - `mmlFunction` - function definitions
 

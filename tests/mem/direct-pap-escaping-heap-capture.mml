@@ -1,0 +1,17 @@
+// Escaping Direct partial application owns a moved heap applied arg in its env.
+
+fn make(~msg: String): Int -> Unit =
+  let say: String -> Int -> Unit =
+    { ~owned: String, y: Int ->
+      println owned;
+      println (int_to_str y);
+    }
+  ;
+
+  say msg;
+;
+
+pub fn main(): Unit =
+  let g: Int -> Unit = make (int_to_str 42);
+  g 2;
+;

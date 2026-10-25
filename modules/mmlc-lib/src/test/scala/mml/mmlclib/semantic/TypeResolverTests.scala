@@ -1,9 +1,98 @@
 package mml.mmlclib.semantic
 
 import mml.mmlclib.ast.*
+import mml.mmlclib.compiler.{CompilerConfig, CompilerState}
+import mml.mmlclib.parser.SourceInfo
 import mml.mmlclib.test.BaseEffFunSuite
 
 class TypeResolverTests extends BaseEffFunSuite:
+
+  private def resolvedTypeId(tpe: Option[Type], module: Module): String =
+    tpe match
+      case Some(ref: TypeRef) =>
+        val id = ref.resolvedId.getOrElse(fail(s"Unresolved type: $ref"))
+        assert(module.resolvables.lookupType(id).nonEmpty, s"Missing type identity: $id")
+        id
+
+      case other => fail(s"Expected a nominal type, got $other")
+
+  test("TypeResolver resolves cached global literal types at the phase boundary"):
+    val code = """
+      type Number = Int;
+      let integer: Number = 30;
+      let boolean = true;
+      let string = "hello";
+      let float = 1.5;
+      let computed = 0 + 30;
+    """
+
+    parseNotFailed(code).map { parsed =>
+      val initial = CompilerState.empty(
+        injectBasicTypes(parsed),
+        SourceInfo(code),
+        CompilerConfig.default
+      )
+      val resolved = TypeResolver.rewriteModule(IdAssigner.rewriteModule(initial))
+      assertEquals(resolved.errors, Vector.empty)
+
+      val bindings = resolved.module.members.collect { case b: Bnd => b }
+      bindings.filterNot(_.name == "computed").foreach { binding =>
+        val bindingType = resolvedTypeId(binding.typeSpec, resolved.module)
+        assertEquals(resolvedTypeId(binding.value.typeSpec, resolved.module), bindingType)
+        val literals = TermTraversal.collect(binding.value) { case lit: LiteralValue => lit }
+        assertEquals(literals.size, 1)
+        assertEquals(resolvedTypeId(literals.head.typeSpec, resolved.module), bindingType)
+        assertEquals(resolved.module.resolvables.lookup(binding.id.get), Some(binding))
+      }
+
+      val integer = bindings.find(_.name == "integer").get
+      val alias = resolved.module.members.collectFirst {
+        case a: TypeAlias if a.name == "Number" => a
+      }.get
+      assertEquals(resolvedTypeId(integer.typeAsc, resolved.module), alias.id.get)
+
+      val computed = bindings.find(_.name == "computed").get
+      assertEquals(computed.typeSpec, None)
+      assertEquals(computed.value.typeSpec, None)
+    }
+
+  private val literalCases = List(
+    ("inferred integer", "let value = 30;", "int_to_str value"),
+    ("Int annotation", "let value: Int = 30;", "int_to_str value"),
+    ("Int32 annotation", "let value: Int32 = 30;", "int_to_str value"),
+    ("term annotation", "let value = 30: Int32;", "int_to_str value"),
+    ("arithmetic initializer", "let value = 0 + 30;", "int_to_str value"),
+    ("boolean", "let value = true;", "if value then \"yes\"; else \"no\";"),
+    ("string", "let value = \"hello\";", "value"),
+    ("float", "let value = 1.5;", "int_to_str (float_to_int value)")
+  )
+
+  literalCases.foreach { (label, declaration, use) =>
+    List(true, false).foreach { forward =>
+      val order = if forward then "before" else "after"
+      test(s"global $label references $order its declaration have resolved types"):
+        val reader = s"fn read(): String = $use;;"
+        val code =
+          if forward then s"$reader\n$declaration"
+          else s"$declaration\n$reader"
+
+        semNotFailed(code).map { module =>
+          val binding = module.members.collectFirst { case b: Bnd if b.name == "value" => b }.get
+          val readerBinding = module.members.collectFirst {
+            case b: Bnd if b.name == "read" => b
+          }.get
+          val refs = TermTraversal.collect(readerBinding.value) {
+            case ref: Ref if ref.resolvedId == binding.id => ref
+          }
+          assert(refs.nonEmpty)
+          val bindingType = resolvedTypeId(binding.typeSpec, module)
+          refs.foreach(ref => assertEquals(resolvedTypeId(ref.typeSpec, module), bindingType))
+        }
+    }
+  }
+
+  test("global literal annotations still reject incompatible types"):
+    semFailed("fn read(): Int = value;; let value: Bool = 30;")
 
   test("TypeResolver should resolve simple type references in bindings"):
     val code = """
@@ -28,7 +117,7 @@ class TypeResolverTests extends BaseEffFunSuite:
 
   test("TypeResolver should resolve type references in function parameters"):
     val code = """
-      fn greet(name: String): String = name ++ "!";
+      fn greet(name: String): String = name ++ "!";;
     """
 
     semNotFailed(code).map { module =>
@@ -55,7 +144,7 @@ class TypeResolverTests extends BaseEffFunSuite:
 
   test("TypeResolver should resolve type references in function return types"):
     val code = """
-      fn isTrue(): Bool = true;
+      fn isTrue(): Bool = true;;
     """
 
     semNotFailed(code).map { module =>
@@ -84,7 +173,7 @@ class TypeResolverTests extends BaseEffFunSuite:
   test("TypeResolver should resolve type aliases"):
     val code = """      
       type TestNumber = Int64;
-      let x: TestNumber = 42;
+      let x: TestNumber = int_to_int64 42;
     """
 
     semNotFailed(code).map { module =>
@@ -137,21 +226,21 @@ class TypeResolverTests extends BaseEffFunSuite:
         case t: TypeAlias if t.name == "X" => t
       }.get
 
-      // Check that the typeSpec resolves to Int64 (the MML type), not @native[t=i64]
+      // Check that the typeSpec resolves to Int32 (the MML type), not @metal:repr[t=i32]
       typeAlias.typeSpec match
-        case Some(TypeRef(_, "Int64", resolvedId, _)) =>
-          assert(resolvedId.isDefined, "Expected Int64 to be resolved")
+        case Some(TypeRef(_, "Int32", resolvedId, _)) =>
+          assert(resolvedId.isDefined, "Expected Int32 to be resolved")
           val td =
             resolvedId.flatMap(module.resolvables.lookupType).collect { case t: TypeDef => t }
           assert(td.isDefined, "Expected to resolve to TypeDef")
-          assertEquals(td.get.name, "Int64")
-          // Verify that Int64 itself has the native type, but that's not propagated to X
-          assert(td.get.typeSpec.isDefined, "Int64 should have a native typeSpec")
+          assertEquals(td.get.name, "Int32")
+          // Verify that Int32 itself has the native type, but that's not propagated to X
+          assert(td.get.typeSpec.isDefined, "Int32 should have a native typeSpec")
           td.get.typeSpec match
-            case Some(NativePrimitive(_, "i64", _, _)) => // correct
-            case other => fail(s"Expected Int64 to have @native[t=i64], got $other")
+            case Some(NativePrimitive(_, "i32", _, _)) => // correct
+            case other => fail(s"Expected Int32 to have @metal:repr[t=i32], got $other")
         case other =>
-          fail(s"Expected X to resolve to TypeRef(Int64), got $other")
+          fail(s"Expected X to resolve to TypeRef(Int32), got $other")
     }
 
   test("TypeResolver should resolve type references to struct declarations"):

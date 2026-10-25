@@ -2,22 +2,21 @@ package mml.mmlclib.codegen.emitter
 
 import cats.syntax.all.*
 import mml.mmlclib.ast.*
+import mml.mmlclib.codegen.emitter.abis.NativeAbiPlan
 import mml.mmlclib.codegen.emitter.alias.AliasScopeEmitter
 import mml.mmlclib.codegen.emitter.expression.*
-import mml.mmlclib.codegen.emitter.tbaa.TbaaEmitter.getTbaaTag
+import mml.mmlclib.codegen.emitter.tbaa.TbaaEmitter
 
-/** Handles code generation for expressions, terms, and operators. */
-
-/** Compiles a term (the smallest unit in an expression).
-  *
-  * Terms include literals, references, grouped expressions, or nested expressions.
+/** Emits a term in value position. A reference to a known local callable materializes its closure
+  * adapter here because the consumer needs an operand. Fully applied calls can bypass that step
+  * through compileApp.
   *
   * @param term
   *   the term to compile
   * @param state
   *   the current code generation state
   * @param functionScope
-  *   optional map of local function parameters to their registers
+  *   local bindings available in this body, as runtime operands or known callable targets
   * @return
   *   Either a CodeGenError or a CompileResult for the term.
   */
@@ -28,21 +27,25 @@ def compileTerm(
 ): Either[CodeGenError, CompileResult] = {
   term match {
     case lit: LiteralInt =>
-      CompileResult(lit.value, state, true, "Int").asRight
+      val typeName = lit.typeSpec.flatMap(getNominalTypeName(_).toOption).getOrElse("Int")
+      CompileResult(0, state, true, typeName, literalValue = lit.value.toString.some).asRight
 
     case lit: LiteralFloat =>
       // LLVM rejects decimal float literals that aren't exactly representable in IEEE 754.
       // Emit as double-precision hex (LLVM truncates to float).
-      val hexStr = f"0x${java.lang.Double.doubleToRawLongBits(lit.value.toDouble)}%016X"
-      CompileResult(0, state, true, "Float", literalValue = Some(hexStr)).asRight
+      val typeName = lit.typeSpec.flatMap(getNominalTypeName(_).toOption).getOrElse("Float")
+      val hexStr   = f"0x${java.lang.Double.doubleToRawLongBits(lit.value.toDouble)}%016X"
+      CompileResult(0, state, true, typeName, literalValue = hexStr.some).asRight
 
-    case _: LiteralUnit =>
+    case lit: LiteralUnit =>
       // Unit is a zero-sized type, just return a dummy result
-      CompileResult(0, state, true, "Unit").asRight
+      val typeName = lit.typeSpec.flatMap(getNominalTypeName(_).toOption).getOrElse("Unit")
+      CompileResult(0, state, true, typeName).asRight
 
     case lit: LiteralBool =>
+      val typeName     = lit.typeSpec.flatMap(getNominalTypeName(_).toOption).getOrElse("Bool")
       val literalValue = if lit.value then 1 else 0
-      CompileResult(literalValue, state, true, "Bool").asRight
+      CompileResult(literalValue, state, true, typeName).asRight
 
     case hole: Hole =>
       compileHole(hole, state)
@@ -53,30 +56,39 @@ def compileTerm(
     case ref: Ref if ref.qualifier.isDefined =>
       compileSelectionRef(ref, state, functionScope)
 
+    case ref: Ref if isDirectCallableRef(ref, state) =>
+      compileCallableValue(ref, state)
+
     case ref: Ref => {
       // Check if reference exists in the function's local scope
-      functionScope.get(ref.name) match {
+      ref.resolvedId.flatMap(functionScope.get).orElse(functionScope.get(ref.name)) match {
         case Some(entry) =>
-          // Reference to a function parameter or local binding
-          CompileResult(
-            entry.register,
-            state,
-            entry.isLiteral,
-            entry.typeName,
-            literalValue = entry.literalValue
-          ).asRight
+          entry match
+            case ScopeEntry.KnownCallable(id, _, _) if !ref.resolvedId.contains(id) =>
+              CodeGenError("Known callable reference identity mismatch", ref.some).asLeft
+            case ScopeEntry.Callable(id, _) if !ref.resolvedId.contains(id) =>
+              CodeGenError("Local callable reference identity mismatch", ref.some).asLeft
+            case _ => ScopeEntry.materialize(entry, state)
+        case None if !ref.resolvedId.flatMap(state.resolvables.lookup).exists {
+              case _: Bnd => true
+              case _ => false
+            } =>
+          CodeGenError(
+            s"Missing local binding or unresolved reference '${ref.name}'",
+            ref.some
+          ).asLeft
         case None =>
-          // Global reference - get actual type from typeSpec
+          // Only resolved module bindings can load global storage.
           ref.typeSpec match {
             case Some(typeSpec) =>
               getLlvmType(typeSpec, state) match {
                 case Right(llvmType) =>
                   val reg                      = state.nextRegister
                   val globalName               = getResolvedName(ref, state)
-                  val (stateWithTbaa, tbaaTag) = getTbaaTag(typeSpec, state)
+                  val (stateWithTbaa, tbaaTag) = TbaaEmitter.getTbaaTag(typeSpec, state)
                   val (stateWithAlias, aliasTag, noaliasTag) =
                     AliasScopeEmitter.getAliasScopeTags(typeSpec, stateWithTbaa)
-                  val line = emitLoad(
+                  val loadLine = emitLoad(
                     reg,
                     llvmType,
                     s"@$globalName",
@@ -85,32 +97,29 @@ def compileTerm(
                     noaliasTag
                   )
 
-                  getMmlTypeName(typeSpec) match {
-                    case Some(typeName) =>
+                  getNominalTypeName(typeSpec) match {
+                    case Right(typeName) =>
                       CompileResult(
                         reg,
-                        stateWithAlias.withRegister(reg + 1).emit(line),
+                        stateWithAlias.withRegister(reg + 1).emit(loadLine),
                         false,
                         typeName
                       ).asRight
-                    case None =>
-                      Left(
-                        CodeGenError(
-                          s"Could not determine MML type name for global reference '${ref.name}'",
-                          Some(ref)
-                        )
-                      )
+
+                    case Left(_) =>
+                      CodeGenError(
+                        s"Could not determine MML type name for global reference '${ref.name}'",
+                        ref.some
+                      ).asLeft
                   }
                 case Left(err) =>
-                  Left(err)
+                  err.asLeft
               }
             case None =>
-              Left(
-                CodeGenError(
-                  s"Missing type information for global reference '${ref.name}' - TypeChecker should have provided this",
-                  Some(ref)
-                )
-              )
+              CodeGenError(
+                s"Missing type information for global reference '${ref.name}' - TypeChecker should have provided this",
+                ref.some
+              ).asLeft
           }
       }
     }
@@ -124,24 +133,703 @@ def compileTerm(
     case app: App =>
       compileApp(app, state, functionScope)
 
-    case Cond(_, condExpr, ifTrue, ifFalse, _, _) =>
-      compileCond(condExpr, ifTrue, ifFalse, state, functionScope, compileExpr)
+    case binding: BindOwnership =>
+      compileOwnershipBinding(binding, state, functionScope)
+
+    case result: YieldOwnership =>
+      CodeGenError("Ownership result requires an enclosing ownership binding", result.some).asLeft
+
+    case destruction: Destruction =>
+      compileDestruction(destruction, state, functionScope)
+
+    case cond: Cond =>
+      compileCond(cond, state, functionScope, compileExpr)
 
     case impl @ NativeImpl(_, _, _, _, _, _) => {
       // Native implementation should be handled at function declaration level (compileBndLambda).
       // If reached here, it implies it's being used as an expression, which is invalid.
-      Left(
-        CodeGenError(
-          "NativeImpl encountered in expression context - this is a malformed AST or compiler bug",
-          Some(impl)
-        )
-      )
+      CodeGenError(
+        "NativeImpl encountered in expression context - this is a malformed AST or compiler bug",
+        impl.some
+      ).asLeft
     }
 
+    case lambda: Lambda =>
+      compileLambdaLiteral(lambda, state, functionScope)
+
     case other =>
-      CodeGenError(s"Unsupported term: ${other.getClass.getSimpleName}", Some(other)).asLeft
+      CodeGenError(s"Unsupported term: ${other.getClass.getSimpleName}", other.some).asLeft
   }
 }
+
+/** Emits a lambda needed as a value and returns its closure pair, `{ entry pointer, environment }`.
+  * Non-capturing lambdas use a null environment. The body is emitted separately with the closure
+  * calling convention. A let binding can supply preAllocatedName and bindingParam so recursive
+  * references find this same entry while its body is being compiled.
+  */
+private[emitter] def compileLambdaLiteral(
+  lambda:           Lambda,
+  state:            CodeGenState,
+  functionScope:    Map[String, ScopeEntry],
+  preAllocatedName: Option[(CodeGenState, String)] = None,
+  bindingParam:     Option[FnParam]                = None
+): Either[CodeGenError, CompileResult] =
+  val typeFn = lambda.typeSpec match
+    case Some(tf: TypeFn) => tf.asRight
+    case other =>
+      CodeGenError(s"Lambda missing TypeFn typeSpec, got: $other", lambda.some).asLeft
+
+  typeFn.flatMap { tf =>
+    val allocated = preAllocatedName.getOrElse(state.allocAnonFnName)
+    val fnName = state.callableTargetAnalysis.lambdas
+      .get(lambda)
+      .flatMap(state.knownCallableEntries.get)
+      .fold(allocated._2)(_.bodySymbol)
+    val stateWithId = allocated._1
+    for
+      returnType <- getLlvmType(tf.returnType, stateWithId)
+      paramTypes <- tf.paramTypes.traverse(getLlvmType(_, stateWithId))
+
+      // Check for tail recursion in let-bound lambdas
+      tailRecBody = for
+        param <- bindingParam
+        if lambda.meta.exists(_.isTailRecursive)
+        body <- findTailRecBody(lambda, param)
+      yield (param, body)
+
+      result <- tailRecBody match
+        case Some((param, body)) =>
+          compileTailRecLambdaLiteral(
+            lambda,
+            stateWithId,
+            fnName,
+            returnType,
+            paramTypes.toList,
+            body,
+            functionScope,
+            param
+          )
+        case None =>
+          compileRegularLambdaLiteral(
+            lambda,
+            stateWithId,
+            fnName,
+            returnType,
+            paramTypes.toList,
+            functionScope,
+            bindingParam
+          )
+    yield result
+  }
+
+/** Compiles a tail-recursive let-bound lambda as a deferred LLVM function. */
+private def compileTailRecLambdaLiteral(
+  lambda:        Lambda,
+  state:         CodeGenState,
+  fnName:        String,
+  returnType:    String,
+  paramTypes:    List[String],
+  body:          TailRecBody,
+  functionScope: Map[String, ScopeEntry],
+  bindingParam:  FnParam
+): Either[CodeGenError, CompileResult] =
+  if lambda.captures.nonEmpty then
+    compileTailRecCapturingLambda(
+      lambda,
+      state,
+      fnName,
+      returnType,
+      paramTypes,
+      body,
+      functionScope,
+      bindingParam
+    )
+  else compileTailRecNonCapturing(lambda, state, fnName, returnType, paramTypes, body, bindingParam)
+
+private def compileTailRecNonCapturing(
+  lambda:       Lambda,
+  state:        CodeGenState,
+  fnName:       String,
+  returnType:   String,
+  paramTypes:   List[String],
+  body:         TailRecBody,
+  bindingParam: FnParam
+): Either[CodeGenError, CompileResult] =
+  val subState = state.copy(
+    output              = List.empty,
+    entryPrologueOutput = List.empty
+  )
+  compileTailRecursiveLambda(
+    lambda,
+    subState,
+    returnType,
+    paramTypes,
+    fnName,
+    body,
+    linkage      = "internal ",
+    entryAbi     = TailRecEntryAbi.PlainDirect,
+    bindingParam = bindingParam.some
+  ).flatMap { finalSubState =>
+    val wrapperName = s"${fnName}__closure_entry"
+    val fnBody      = finalSubState.output.reverse.mkString("\n")
+    val mergedState = mergeDeferredBodyState(state, finalSubState).addDeferredDefinition(fnBody)
+    compileClosureEntry(lambda, mergedState, wrapperName, returnType, paramTypes) {
+      (bodyState, args) =>
+        val operands   = args.map(arg => (arg.llvmType, arg.op))
+        val reg        = bodyState.nextRegister
+        val resultReg  = Option.when(returnType != "void")(reg)
+        val resultType = Option.when(returnType != "void")(returnType)
+        val line       = emitCall(resultReg, resultType, fnName, operands)
+        CompileResult(
+          reg,
+          bodyState.withRegister(reg + (if resultReg.isDefined then 1 else 0)).emit(line),
+          false,
+          "Function"
+        ).asRight
+    }.map { emitted =>
+      CompileResult(
+        0,
+        emitted,
+        true,
+        "Function",
+        literalValue = s"{ ptr @$wrapperName, ptr null }".some
+      )
+    }
+  }
+
+private def compileTailRecCapturingLambda(
+  lambda:        Lambda,
+  state:         CodeGenState,
+  fnName:        String,
+  returnType:    String,
+  paramTypes:    List[String],
+  body:          TailRecBody,
+  functionScope: Map[String, ScopeEntry],
+  bindingParam:  FnParam
+): Either[CodeGenError, CompileResult] =
+  emitCallSiteEnv(lambda, state, fnName, functionScope).flatMap { envResult =>
+    val siteState = envResult.siteState
+    val subState = siteState.copy(
+      output              = List.empty,
+      entryPrologueOutput = List.empty
+    )
+    val capInfo = (envResult.envStruct, envResult.captureTypes)
+    compileTailRecursiveLambda(
+      lambda,
+      subState,
+      returnType,
+      paramTypes,
+      fnName,
+      body,
+      linkage      = "internal ",
+      entryAbi     = TailRecEntryAbi.ClosureEntry,
+      captureInfo  = capInfo.some,
+      bindingParam = bindingParam.some
+    ).map { finalSubState =>
+      val fnBody = finalSubState.output.reverse.mkString("\n")
+      val mergedState =
+        mergeDeferredBodyState(siteState, finalSubState).addDeferredDefinition(fnBody)
+      CompileResult(
+        register = envResult.fpRegister,
+        state    = mergedState,
+        false,
+        "Function",
+        exitBlock = envResult.exitBlock
+      )
+    }
+  }
+
+/** Compiles a regular (non-tail-recursive) lambda literal as a deferred LLVM function. */
+private def compileRegularLambdaLiteral(
+  lambda:        Lambda,
+  state:         CodeGenState,
+  fnName:        String,
+  returnType:    String,
+  paramTypes:    List[String],
+  functionScope: Map[String, ScopeEntry],
+  bindingParam:  Option[FnParam]
+): Either[CodeGenError, CompileResult] =
+  ParameterLowering.from(lambda, paramTypes).flatMap { lowering =>
+    if lambda.captures.isEmpty then
+      compileNonCapturingLambda(
+        lambda,
+        state,
+        fnName,
+        returnType,
+        lowering,
+        functionScope.filter { case (name, _) => bindingParam.exists(_.name == name) }
+      )
+    else
+      compileCapturingLambda(
+        lambda,
+        state,
+        fnName,
+        returnType,
+        lowering,
+        functionScope,
+        bindingParam
+      )
+  }
+
+/** Emits a non-capturing lambda directly with the closure ABI, so value-only lambdas need no
+  * adapter. The emitted function ignores its environment parameter; this helper returns the
+  * constant closure operand `{ ptr @fn, ptr null }` for use in the enclosing body.
+  */
+private def compileNonCapturingLambda(
+  lambda:        Lambda,
+  state:         CodeGenState,
+  fnName:        String,
+  returnType:    String,
+  lowering:      ParameterLowering,
+  functionScope: Map[String, ScopeEntry]
+): Either[CodeGenError, CompileResult] =
+  val envParamIdx    = lowering.runtimeCount
+  val userParamDecls = lowering.declarations(state.resolvables)
+  val allParamDecls =
+    if userParamDecls.isEmpty then s"ptr %$envParamIdx"
+    else s"$userParamDecls, ptr %$envParamIdx"
+  val subState = state.copy(
+    output                  = List.empty,
+    entryPrologueOutput     = List.empty,
+    nextRegister            = 0,
+    insideLoopifiedFunction = false
+  )
+  val bodyState = subState.withRegister(envParamIdx + 1)
+
+  for
+    paramScope <- lowering.argumentScope
+    bodyRes <- compileExpr(lambda.body, bodyState, functionScope ++ paramScope)
+    retLine =
+      if returnType == "void" then "  ret void"
+      else s"  ret $returnType ${bodyRes.operandStr}"
+    finalSubState = bodyRes.state.emit(retLine).emit("}")
+    header        = s"define internal $returnType @$fnName($allParamDecls) #0 {"
+    fnBody        = renderFunctionLines(header, finalSubState).mkString("\n")
+    mergedState   = mergeDeferredBodyState(state, finalSubState).addDeferredDefinition(fnBody)
+  yield CompileResult(
+    register     = 0,
+    state        = mergedState,
+    isLiteral    = true,
+    typeName     = "Function",
+    literalValue = s"{ ptr @$fnName, ptr null }".some
+  )
+
+/** Carries the closure operand in the enclosing body and the layout needed to compile its entry.
+  * fpRegister belongs to siteState; the deferred body uses envStruct and captureTypes to load its
+  * own capture operands instead of reusing registers from the enclosing function. exitBlock retains
+  * the continuation introduced by capture promotion.
+  */
+private case class EnvSetupResult(
+  siteState:    CodeGenState,
+  fpRegister:   Int,
+  envStruct:    TypeStruct,
+  captureTypes: List[(Capture, String)],
+  exitBlock:    Option[String]
+)
+
+/** Makes the recursive self value from the current entry and its incoming environment. Reusing that
+  * environment keeps captured state available without allocating or copying it on recursion.
+  */
+private[emitter] def emitRecursiveSelfClosure(
+  fnName:       String,
+  envParamIdx:  Int,
+  state:        CodeGenState,
+  bindingParam: Option[FnParam]
+): (CodeGenState, Map[String, ScopeEntry]) =
+  bindingParam match
+    case None => (state, Map.empty)
+    case Some(param) =>
+      val selfFnReg = state.nextRegister
+      val selfFpReg = selfFnReg + 1
+      val insertFn =
+        emitInsertValue(selfFnReg, "{ ptr, ptr }", "undef", "ptr", s"@$fnName", 0)
+      val insertEnv =
+        emitInsertValue(selfFpReg, "{ ptr, ptr }", s"%$selfFnReg", "ptr", s"%$envParamIdx", 1)
+      val nextState =
+        state.withRegister(selfFpReg + 1).emit(insertFn).emit(insertEnv)
+      val selfScope = Map(param.name -> ScopeEntry(selfFpReg, "Function"))
+      (nextState, selfScope)
+
+private def lambdaReferencesBinding(
+  lambda:       Lambda,
+  bindingParam: Option[FnParam]
+): Either[CodeGenError, Boolean] =
+  bindingParam match
+    case None => false.asRight
+    case Some(param) =>
+      param.id match
+        case None =>
+          CodeGenError(
+            s"Missing semantic ID for closure binding '${param.name}'",
+            lambda.some
+          ).asLeft
+        case Some(targetId) => exprReferencesBinding(lambda.body, targetId).asRight
+
+private def exprReferencesBinding(expr: Expr, targetId: String): Boolean =
+  expr.terms.exists(termReferencesBinding(_, targetId))
+
+private def termReferencesBinding(term: Term, targetId: String): Boolean =
+  term match
+    case ref: Ref =>
+      ref.resolvedId.contains(targetId) || ref.qualifier.exists(termReferencesBinding(_, targetId))
+    case expr: Expr =>
+      exprReferencesBinding(expr, targetId)
+    case app: App =>
+      appFnReferencesBinding(app.fn, targetId) || exprReferencesBinding(app.arg, targetId)
+    case lambda: Lambda if lambda.params.exists(_.id.contains(targetId)) =>
+      false
+    case lambda: Lambda =>
+      exprReferencesBinding(lambda.body, targetId)
+    case TermGroup(_, inner, _) =>
+      exprReferencesBinding(inner, targetId)
+    case Cond(_, cond, ifTrue, ifFalse, _, _) =>
+      List(cond, ifTrue, ifFalse).exists(exprReferencesBinding(_, targetId))
+
+    case binding: BindOwnership =>
+      exprReferencesBinding(binding.initializer, targetId) ||
+      (!List(binding.valueParam, binding.witnessParam).exists(_.id.contains(targetId)) &&
+        exprReferencesBinding(binding.body, targetId))
+
+    case result: YieldOwnership =>
+      exprReferencesBinding(result.value, targetId) || exprReferencesBinding(result.owns, targetId)
+
+    case Tuple(_, elements, _, _) =>
+      elements.toList.exists(exprReferencesBinding(_, targetId))
+    case invalid: InvalidExpression =>
+      exprReferencesBinding(invalid.originalExpr, targetId)
+    case _ =>
+      false
+
+private def appFnReferencesBinding(fn: Callee, targetId: String): Boolean =
+  fn match
+    case ref:    Ref => termReferencesBinding(ref, targetId)
+    case app:    App => termReferencesBinding(app, targetId)
+    case lambda: Lambda => termReferencesBinding(lambda, targetId)
+
+/** Builds a closure using its physical environment plan. Ordinary captures store runtime values; a
+  * PAP stores only the environment of a known callable, or omits its null-environment payload. The
+  * receiving body combines loaded environments with known entries. Move lambdas allocate a heap
+  * environment with a destructor; borrow lambdas use stack storage without a destructor field.
+  */
+private def emitCallSiteEnv(
+  lambda:        Lambda,
+  state:         CodeGenState,
+  fnName:        String,
+  functionScope: Map[String, ScopeEntry]
+): Either[CodeGenError, EnvSetupResult] =
+  for
+    envStruct <- ClosureEnvironments
+      .layout(lambda, state.resolvables)
+      .leftMap(error => CodeGenError(error.message, error.lambda.some))
+    plan <- envStruct.id
+      .flatMap(state.closureEnvironments.get)
+      .toRight(CodeGenError("Missing physical closure environment plan", lambda.some))
+    captureTypes <- plan.runtimeCaptures.traverse { capture =>
+      capture.storage.field
+        .toRight(CodeGenError("Missing runtime capture field", lambda.some))
+        .flatMap(field => getLlvmType(field.typeSpec, state).map(tpe => (capture.capture, tpe)))
+    }
+    captureValues <- plan.runtimeCaptures.foldLeft(
+      (state, Map.empty[String, String]).asRight[CodeGenError]
+    ) { (result, planned) =>
+      result.flatMap { case (current, values) =>
+        val capture = planned.capture
+        val operand = planned.storage match
+          case CaptureStorage.Environment(_, targetId) =>
+            compileKnownEnvironment(capture.ref, targetId, current, functionScope)
+          case _ =>
+            compileTerm(capture.ref, current, functionScope)
+        operand.map { value =>
+          (value.state, values.updated(capture.ref.name, value.operandStr))
+        }
+      }
+    }
+    (captureState, captureOperands) = captureValues
+    envLayout <- state.layout.of(s"%struct.${envStruct.name}", state)
+    clonePlans <- captureTypes
+      .traverse { case (capture, typ) =>
+        capture match
+          case Capture.CapturedLiteral(_, id) =>
+            NativeAbiPlan.classify(typ, List(typ), state).map(plan => (id -> plan).some)
+          case Capture.CapturedConditional(_, _, id) =>
+            NativeAbiPlan.classify(typ, List(typ), state).map(plan => (id -> plan).some)
+          case _ => none[(String, NativeAbiPlan)].asRight[CodeGenError]
+      }
+      .map(_.flatten.toMap)
+    destructor <- Option.when(lambda.isMove)(envStruct).traverse { layout =>
+      layout.id
+        .flatMap(DestructionTargets.forEnvironment(_, state.resolvables))
+        .flatMap(state.resolvables.lookup)
+        .collect { case binding: Bnd => binding }
+        .toRight(CodeGenError("Missing closure environment destructor", lambda.some))
+    }
+    result <- emitEnvironmentStorage(
+      fnName,
+      functionScope,
+      envStruct,
+      destructor,
+      captureTypes,
+      captureOperands,
+      clonePlans,
+      envLayout.size,
+      captureState
+    )
+  yield result
+
+private case class CapturedValue(
+  state:     CodeGenState,
+  operand:   String,
+  exitBlock: Option[String] = None
+)
+
+private def emitEnvironmentStorage(
+  fnName:          String,
+  functionScope:   Map[String, ScopeEntry],
+  envStruct:       TypeStruct,
+  destructor:      Option[Bnd],
+  captureTypes:    List[(Capture, String)],
+  captureOperands: Map[String, String],
+  clonePlans:      Map[String, NativeAbiPlan],
+  envSize:         Int,
+  captureState:    CodeGenState
+): Either[CodeGenError, EnvSetupResult] =
+
+  val envTypeRef = s"%struct.${envStruct.name}"
+  // Field offset: move envs have __dtor at field 0, borrow envs start captures at field 0
+  val fieldOffset = destructor.fold(0)(_ => 1)
+
+  // Allocate env: malloc for move, alloca for borrow
+  val (siteStateAfterDtor, envPtrOp) = destructor match
+    case Some(binding) =>
+      val stateWithEnv = captureState
+        .withFunctionDeclaration("malloc", "ptr", List("i64"))
+        .withFunctionDeclaration("free", "void", List("ptr"))
+      val mallocReg = stateWithEnv.nextRegister
+      val mallocLine =
+        emitCall(mallocReg.some, "ptr".some, "malloc", List(("i64", envSize.toString)))
+      val afterMalloc = stateWithEnv.withRegister(mallocReg + 1).emit(mallocLine)
+
+      val dtorGepReg = afterMalloc.nextRegister
+      val dtorGepLine = emitGetElementPtr(
+        dtorGepReg,
+        envTypeRef,
+        "ptr",
+        s"%$mallocReg",
+        List(("i32", "0"), ("i32", "0"))
+      )
+      val (stateWithDtorTag, dtorTag) =
+        TbaaEmitter
+          .getTbaaStructFieldTag(envStruct, 0, afterMalloc)
+          .getOrElse((afterMalloc, ""))
+      val dtorStoreLine = emitStore(
+        s"@${captureState.mangleName(binding.name)}",
+        "ptr",
+        s"%$dtorGepReg",
+        Option.when(dtorTag.nonEmpty)(dtorTag)
+      )
+      val afterDtor =
+        stateWithDtorTag.withRegister(dtorGepReg + 1).emit(dtorGepLine).emit(dtorStoreLine)
+      (afterDtor, s"%$mallocReg")
+    case None =>
+      // Borrow: stack-allocate env, no dtor
+      if captureState.insideLoopifiedFunction then
+        // Named registers remain valid when storage precedes earlier numeric capture loads.
+        val envPtr = s"%closure.env.${captureState.nextRegister}"
+        val afterAlloca = captureState
+          .withRegister(captureState.nextRegister + 1)
+          .emitEntryPrologue(s"  $envPtr = alloca $envTypeRef")
+        (afterAlloca, envPtr)
+      else
+        val allocaReg = captureState.nextRegister
+        val afterAlloca = captureState
+          .withRegister(allocaReg + 1)
+          .emit(s"  %$allocaReg = alloca $envTypeRef")
+        (afterAlloca, s"%$allocaReg")
+
+  val prepared = CapturedValue(siteStateAfterDtor, envPtrOp)
+  captureTypes.zipWithIndex
+    .foldLeftM(prepared):
+      case (previous, ((cap, llvmType), idx)) =>
+        prepareCapturedValue(
+          cap,
+          llvmType,
+          captureOperands(cap.ref.name),
+          clonePlans,
+          previous.state,
+          functionScope
+        ).map: value =>
+          val gepReg = value.state.nextRegister
+          val gepLine = emitGetElementPtr(
+            gepReg,
+            envTypeRef,
+            "ptr",
+            envPtrOp,
+            List(("i32", "0"), ("i32", (idx + fieldOffset).toString))
+          )
+          val (stateWithFieldTag, fieldTag) =
+            TbaaEmitter
+              .getTbaaStructFieldTag(envStruct, idx + fieldOffset, value.state)
+              .getOrElse((value.state, ""))
+          val storeLine = emitStore(
+            value.operand,
+            llvmType,
+            s"%$gepReg",
+            Option.when(fieldTag.nonEmpty)(fieldTag)
+          )
+          CapturedValue(
+            stateWithFieldTag.withRegister(gepReg + 1).emit(gepLine).emit(storeLine),
+            envPtrOp,
+            value.exitBlock.orElse(previous.exitBlock)
+          )
+    .map: captures =>
+      val fp0Reg = captures.state.nextRegister
+      val fp1Reg = fp0Reg + 1
+      val insertFn =
+        emitInsertValue(fp0Reg, "{ ptr, ptr }", "undef", "ptr", s"@$fnName", 0)
+      val insertEnv =
+        emitInsertValue(fp1Reg, "{ ptr, ptr }", s"%$fp0Reg", "ptr", envPtrOp, 1)
+      val siteState =
+        captures.state.withRegister(fp1Reg + 1).emit(insertFn).emit(insertEnv)
+
+      EnvSetupResult(siteState, fp1Reg, envStruct, captureTypes, captures.exitBlock)
+
+/** Promotion happens once at creation; deferred entries receive an already-owning payload. */
+private def prepareCapturedValue(
+  capture:    Capture,
+  llvmType:   String,
+  operand:    String,
+  clonePlans: Map[String, NativeAbiPlan],
+  state:      CodeGenState,
+  scope:      Map[String, ScopeEntry]
+): Either[CodeGenError, CapturedValue] =
+
+  def cloneValue(id: String, current: CodeGenState): Either[CodeGenError, CapturedValue] =
+    for
+      binding <- current.resolvables
+        .lookup(id)
+        .collect { case value: Bnd => value }
+        .toRight(CodeGenError("Missing capture clone target", capture.ref.some))
+      plan <- clonePlans
+        .get(id)
+        .toRight(CodeGenError("Missing capture clone ABI plan", capture.ref.some))
+      symbol             = resolveMemFnLlvmName(binding.name, current)
+      (register, cloned) = plan.emitCall(symbol, List(operand), plan.declare(symbol, current))
+    yield CapturedValue(cloned, s"%$register")
+
+  capture match
+
+    case Capture.CapturedLiteral(_, id) => cloneValue(id, state)
+
+    case Capture.CapturedConditional(_, witness, id) =>
+      if witness.resolvedId.flatMap(scope.get).isEmpty then
+        CodeGenError(
+          "Conditional capture witness is outside its creation scope",
+          witness.some
+        ).asLeft
+      else
+        compileTerm(witness, state, scope).flatMap: condition =>
+          val ownedLabel = s"capture_owned${condition.state.nextRegister}"
+          val cloneLabel = s"capture_clone${condition.state.nextRegister + 1}"
+          val mergeLabel = s"capture_merge${condition.state.nextRegister + 2}"
+          val branch = condition.state
+            .withRegister(condition.state.nextRegister + 3)
+            .emit(s"  br i1 ${condition.operandStr}, label %$ownedLabel, label %$cloneLabel")
+            .emit(s"$ownedLabel:")
+            .emit(s"  br label %$mergeLabel")
+            .emit(s"$cloneLabel:")
+          cloneValue(id, branch).map: cloned =>
+            val result = cloned.state.nextRegister
+            val merged = cloned.state
+              .emit(s"  br label %$mergeLabel")
+              .emit(s"$mergeLabel:")
+              .emit(
+                s"  %$result = phi $llvmType [ $operand, %$ownedLabel ], " +
+                  s"[ ${cloned.operand}, %$cloneLabel ]"
+              )
+              .withRegister(result + 1)
+            CapturedValue(merged, s"%$result", mergeLabel.some)
+
+    case _ => CapturedValue(state, operand).asRight
+
+/** Capturing lambda: allocate env at call site, load captures in deferred function body. */
+private def compileCapturingLambda(
+  lambda:        Lambda,
+  state:         CodeGenState,
+  fnName:        String,
+  returnType:    String,
+  lowering:      ParameterLowering,
+  functionScope: Map[String, ScopeEntry],
+  bindingParam:  Option[FnParam]
+): Either[CodeGenError, CompileResult] =
+  emitCallSiteEnv(lambda, state, fnName, functionScope).flatMap { envResult =>
+    val envParamIdx    = lowering.runtimeCount
+    val siteState      = envResult.siteState
+    val userParamDecls = lowering.declarations(siteState.resolvables)
+    val envParamDecl   = formatClosureEnvParam(envResult.envStruct, envParamIdx, siteState)
+    val allParamDecls =
+      if userParamDecls.isEmpty then envParamDecl
+      else s"$userParamDecls, $envParamDecl"
+
+    val subState = siteState.copy(
+      output                  = List.empty,
+      entryPrologueOutput     = List.empty,
+      nextRegister            = 0,
+      insideLoopifiedFunction = false
+    )
+    val initialBodyState = subState.withRegister(envParamIdx + 1)
+
+    val captureFieldOffset = if lambda.isMove then 1 else 0
+    val (bodyState, captureScope) =
+      emitCaptureLoads(
+        envResult.envStruct,
+        envParamIdx,
+        envResult.captureTypes,
+        initialBodyState,
+        captureFieldOffset
+      )
+    for
+      paramScope <- lowering.argumentScope
+      referencesSelf <- lambdaReferencesBinding(lambda, bindingParam)
+      (bodyStateWithSelf, selfScope) =
+        if referencesSelf then
+          emitRecursiveSelfClosure(fnName, envParamIdx, bodyState, bindingParam)
+        else (bodyState, Map.empty)
+      environmentScope = lambda.meta
+        .flatMap(_.environmentParam)
+        .map { param =>
+          param.name -> ScopeEntry(envParamIdx, "RawPtr")
+        }
+        .toMap
+      allScope = paramScope ++ captureScope ++ selfScope ++ environmentScope
+      bodyRes <- compileExpr(lambda.body, bodyStateWithSelf, allScope)
+      retLine =
+        if returnType == "void" then "  ret void"
+        else s"  ret $returnType ${bodyRes.operandStr}"
+      finalSubState = bodyRes.state.emit(retLine).emit("}")
+      header        = s"define internal $returnType @$fnName($allParamDecls) #0 {"
+      fnBody        = renderFunctionLines(header, finalSubState).mkString("\n")
+      mergedState = mergeDeferredBodyState(siteState, finalSubState)
+        .addDeferredDefinition(fnBody)
+    yield CompileResult(
+      register = envResult.fpRegister,
+      state    = mergedState,
+      false,
+      "Function",
+      exitBlock = envResult.exitBlock
+    )
+  }
+
+/** Resumes the enclosing body's output and register sequence while retaining module additions made
+  * by a deferred body. In particular, dropping its adapter registry would make later value uses
+  * emit duplicate adapters instead of reusing the existing entry.
+  */
+private def mergeDeferredBodyState(parent: CodeGenState, sub: CodeGenState): CodeGenState =
+  sub.copy(
+    output                  = parent.output,
+    entryPrologueOutput     = parent.entryPrologueOutput,
+    nextRegister            = parent.nextRegister,
+    insideLoopifiedFunction = parent.insideLoopifiedFunction
+  )
 
 private def compileSelectionRef(
   ref:           Ref,
@@ -150,7 +838,7 @@ private def compileSelectionRef(
 ): Either[CodeGenError, CompileResult] =
   ref.qualifier match
     case None =>
-      Left(CodeGenError(s"Selection ref missing qualifier for '${ref.name}'", Some(ref)))
+      CodeGenError(s"Selection ref missing qualifier for '${ref.name}'", ref.some).asLeft
     case Some(qualifier) =>
       compileTerm(qualifier, state, functionScope).flatMap { qualifierRes =>
         val baseTypeSpec = qualifier.typeSpec
@@ -160,12 +848,10 @@ private def compileSelectionRef(
               case Some(structDef) =>
                 val fieldIndex = structDef.fields.indexWhere(_.name == ref.name)
                 if fieldIndex < 0 then
-                  Left(
-                    CodeGenError(
-                      s"Unknown struct field '${ref.name}' for selection",
-                      Some(ref)
-                    )
-                  )
+                  CodeGenError(
+                    s"Unknown struct field '${ref.name}' for selection",
+                    ref.some
+                  ).asLeft
                 else
                   val structTypeE = getLlvmType(baseType, qualifierRes.state)
                   val fieldType   = structDef.fields(fieldIndex).typeSpec
@@ -174,39 +860,31 @@ private def compileSelectionRef(
                     val fieldReg  = qualifierRes.state.nextRegister
                     val line =
                       emitExtractValue(fieldReg, structLlvmType, baseValue, fieldIndex)
-                    getMmlTypeName(fieldType) match
-                      case Some(typeName) =>
-                        Right(
-                          CompileResult(
-                            fieldReg,
-                            qualifierRes.state.withRegister(fieldReg + 1).emit(line),
-                            false,
-                            typeName,
-                            qualifierRes.exitBlock
-                          )
-                        )
-                      case None =>
-                        Left(
-                          CodeGenError(
-                            s"Could not determine type name for selected field '${ref.name}'",
-                            Some(ref)
-                          )
-                        )
+                    getNominalTypeName(fieldType) match
+                      case Right(typeName) =>
+                        CompileResult(
+                          fieldReg,
+                          qualifierRes.state.withRegister(fieldReg + 1).emit(line),
+                          false,
+                          typeName,
+                          qualifierRes.exitBlock
+                        ).asRight
+                      case Left(_) =>
+                        CodeGenError(
+                          s"Could not determine type name for selected field '${ref.name}'",
+                          ref.some
+                        ).asLeft
                   }
               case None =>
-                Left(
-                  CodeGenError(
-                    s"Selection base is not a struct for field '${ref.name}'",
-                    Some(ref)
-                  )
-                )
+                CodeGenError(
+                  s"Selection base is not a struct for field '${ref.name}'",
+                  ref.some
+                ).asLeft
           case None =>
-            Left(
-              CodeGenError(
-                s"Missing type information for selection base '${ref.name}'",
-                Some(ref)
-              )
-            )
+            CodeGenError(
+              s"Missing type information for selection base '${ref.name}'",
+              ref.some
+            ).asLeft
       }
 
 /** Compiles an expression.
@@ -222,7 +900,7 @@ private def compileSelectionRef(
   * @param state
   *   the current code generation state
   * @param functionScope
-  *   optional map of local function parameters to their registers
+  *   local bindings available in this body, as runtime operands or known callable targets
   * @return
   *   Either a CodeGenError or a CompileResult for the expression.
   */
@@ -245,7 +923,7 @@ def compileExpr(
         } =>
       compileUnaryOp(op, arg, state, functionScope)
     case _ =>
-      CodeGenError(s"Invalid expression structure", Some(expr)).asLeft
+      CodeGenError(s"Invalid expression structure", expr.some).asLeft
   }
 }
 
@@ -260,7 +938,7 @@ def compileExpr(
   * @param state
   *   the current code generation state
   * @param functionScope
-  *   optional map of local function parameters to their registers
+  *   local bindings available in this body, as runtime operands or known callable targets
   * @return
   *   Either a CodeGenError or a CompileResult with the updated state.
   */
@@ -286,7 +964,7 @@ def compileBinaryOp(
   * @param state
   *   the current code generation state
   * @param functionScope
-  *   optional map of local function parameters to their registers
+  *   local bindings available in this body, as runtime operands or known callable targets
   * @return
   *   Either a CodeGenError or a CompileResult with the updated state.
   */
@@ -301,17 +979,17 @@ def compileUnaryOp(
     result <- applyUnaryOp(opRef, arg, argCompileResult)
   yield result
 
-/** Compiles a function application.
-  *
-  * Handles function calls in MML, including nested applications for curried functions. For example,
-  * `mult 2 2` is represented as App(App(Ref(mult), Expr(2)), Expr(2)).
+/** Chooses call emission after collecting the full source argument list from nested applications. A
+  * known local target with matching source arity calls its plain entry without an environment.
+  * Arity includes Unit arguments even though they produce no LLVM operands. Other function values
+  * use their closure entry and environment; resolved module callables retain their direct path.
   *
   * @param app
   *   the function application to compile
   * @param state
   *   the current code generation state
   * @param functionScope
-  *   optional map of local function parameters to their registers
+  *   local bindings available in this body, as runtime operands or known callable targets
   * @return
   *   Either a CodeGenError or a CompileResult for the function application.
   */
@@ -326,11 +1004,39 @@ def compileApp(
     case lambda: Lambda =>
       compileLambdaApp(lambda, allArgs, state, functionScope, compileExpr)
 
+    case ref: Ref
+        if ScopeEntry
+          .callable(ref, functionScope)
+          .exists(_.signature.paramTypes.size == allArgs.size) =>
+      ScopeEntry
+        .callable(ref, functionScope)
+        .toRight(CodeGenError("Missing local callable target", ref.some))
+        .flatMap(compileLocalCallableCall(_, allArgs, state, functionScope))
+
+    case ref: Ref
+        if state.callableTargetAnalysis
+          .target(ref)
+          .flatMap(state.knownCallableEntries.get)
+          .exists(_.definition.signature.paramTypes.size == allArgs.size) =>
+      state.callableTargetAnalysis
+        .target(ref)
+        .toRight(CodeGenError("Missing proven callable target", ref.some))
+        .flatMap(compileKnownCallableCall(_, ref, allArgs, state, functionScope))
+
     case ref: Ref =>
-      getNativeOpTemplate(ref.resolvedId.flatMap(state.resolvables.lookup)) match
-        case Some(tpl) =>
-          compileNativeOp(ref, tpl, allArgs, app, state, functionScope, compileExpr)
-        case None if isNullaryWithUnitArgs(ref, allArgs, state.resolvables) =>
-          compileNullaryCall(ref, app, state)
-        case None =>
-          compileRegularCall(ref, allArgs, app, state, functionScope, compileExpr)
+      val hasFunctionType =
+        ref.typeSpec.exists(t => resolveToTypeFn(t, state.resolvables).isDefined)
+      // Direct call only applies to refs that resolve to emitted callable symbols.
+      // First-class function values, including globals stored as { fn_ptr, env_ptr }, must use
+      // the shared indirect-call path.
+      val isIndirect = hasFunctionType &&
+        (functionScope.contains(ref.name) || !isDirectCallableRef(ref, state))
+      if isIndirect then compileIndirectCall(ref, allArgs, app, state, functionScope, compileExpr)
+      else
+        getNativeOpTemplate(ref.resolvedId.flatMap(state.resolvables.lookup)) match
+          case Some(tpl) =>
+            compileNativeOp(ref, tpl, allArgs, app, state, functionScope, compileExpr)
+          case None if isNullaryWithUnitArgs(ref, allArgs, state.resolvables) =>
+            compileNullaryCall(ref, app, state)
+          case None =>
+            compileRegularCall(ref, allArgs, app, state, functionScope, compileExpr)

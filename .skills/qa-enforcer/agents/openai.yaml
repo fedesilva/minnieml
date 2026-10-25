@@ -1,0 +1,4 @@
+interface:
+  display_name: "QA enforcer"
+  short_description: "Audit uncommitted changes against repo QA and coding rules"
+  default_prompt: "Use $qa-enforcer to review the current uncommitted changes for rule compliance."

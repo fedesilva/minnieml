@@ -12,12 +12,12 @@ def visibilityToString(visibility: Visibility): String =
 def typeSpecToSimpleName(typeSpec: Type): String =
   typeSpec match
     case TypeRef(_, name, _, _) => name
-    case NativePrimitive(_, llvmType, _, _) => s"@native[t=$llvmType]"
-    case NativePointer(_, llvmType, _, _) => s"@native[t=*$llvmType]"
-    case NativeStruct(_, fields, _, _) => s"@native {${fields.size} fields}"
-    case TypeUnit(_) => "()"
+    case NativePrimitive(_, llvmType, _, _) => s"@metal:repr[t=$llvmType]"
+    case NativePointer(_, llvmType, _, _) => s"@metal:repr[t=*$llvmType]"
+    case NativeStruct(_, fields, _, _) => s"@metal:repr {${fields.size} fields}"
+    case TypeUnit(_) => "Unit"
     case TypeFn(_, params, ret) =>
-      s"(${params.map(typeSpecToSimpleName).mkString(" -> ")}) -> ${typeSpecToSimpleName(ret)}"
+      s"(${params.toList.map(typeSpecToSimpleName).mkString(" -> ")}) -> ${typeSpecToSimpleName(ret)}"
     case TypeTuple(_, elems) => s"(${elems.map(typeSpecToSimpleName).mkString(", ")})"
     case _ => typeSpec.getClass.getSimpleName
 
@@ -100,7 +100,7 @@ def prettyPrintMember(
         else ""
       val visStr = visibilityToString(td.visibility)
       val nativeStr = td.typeSpec match
-        case Some(_: NativeType) => " @native"
+        case Some(_: NativeType) => " @metal:repr"
         case _ => ""
 
       s"${indentStr}$visStr TypeDef ${td.name}$nativeStr$spanStr$typeStr"

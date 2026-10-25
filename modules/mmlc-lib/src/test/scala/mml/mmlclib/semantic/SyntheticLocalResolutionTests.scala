@@ -19,7 +19,7 @@ class SyntheticLocalResolutionTests extends BaseEffFunSuite:
   private def collectParams(term: Term): List[FnParam] =
     term match
       case Expr(_, terms, _, _) => terms.flatMap(collectParams)
-      case Lambda(_, params, body, _, _, _, _) => params ++ collectParams(body)
+      case Lambda(_, params, body, _, _, _, _, _) => params ++ collectParams(body)
       case App(_, fn, arg, _, _) =>
         collectParamsFromAppFn(fn) ++ collectParams(arg)
       case Cond(_, cond, ifTrue, ifFalse, _, _) =>
@@ -30,7 +30,7 @@ class SyntheticLocalResolutionTests extends BaseEffFunSuite:
       case ref: Ref => ref.qualifier.toList.flatMap(collectParams)
       case _ => Nil
 
-  private def collectParamsFromAppFn(fn: Ref | App | Lambda): List[FnParam] =
+  private def collectParamsFromAppFn(fn: Callee): List[FnParam] =
     fn match
       case _:      Ref => Nil
       case app:    App => collectParamsFromAppFn(app.fn) ++ collectParams(app.arg)
@@ -39,7 +39,7 @@ class SyntheticLocalResolutionTests extends BaseEffFunSuite:
   private def collectRefs(term: Term): List[Ref] =
     term match
       case expr:   Expr => expr.terms.flatMap(collectRefs)
-      case lambda: Lambda => lambda.captures ++ collectRefs(lambda.body)
+      case lambda: Lambda => lambda.captures.map(_.ref) ++ collectRefs(lambda.body)
       case App(_, fn, arg, _, _) =>
         collectRefsFromAppFn(fn) ++ collectRefs(arg)
       case Cond(_, cond, ifTrue, ifFalse, _, _) =>
@@ -50,7 +50,7 @@ class SyntheticLocalResolutionTests extends BaseEffFunSuite:
       case ref: Ref => ref :: ref.qualifier.toList.flatMap(collectRefs)
       case _ => Nil
 
-  private def collectRefsFromAppFn(fn: Ref | App | Lambda): List[Ref] =
+  private def collectRefsFromAppFn(fn: Callee): List[Ref] =
     fn match
       case ref:    Ref => collectRefs(ref)
       case app:    App => collectRefs(app)
@@ -72,7 +72,7 @@ class SyntheticLocalResolutionTests extends BaseEffFunSuite:
   test("partial application synthetic params are resolved and indexed") {
     val code =
       """
-        fn mult(a: Int, b: Int): Int = a * b;
+        fn mult(a: Int, b: Int): Int = a * b;;
         let partial = mult 1;
       """
 
@@ -90,10 +90,10 @@ class SyntheticLocalResolutionTests extends BaseEffFunSuite:
   test("ownership temp wrappers resolve synthetic locals and index discard params") {
     val code =
       """
-        fn print_it(s: String): Unit = println s;
+        fn print_it(s: String): Unit = println s;;
 
         fn main(): Unit =
-          print_it (int_to_str 1)
+          print_it (int_to_str 1);
         ;
       """
 
@@ -115,7 +115,7 @@ class SyntheticLocalResolutionTests extends BaseEffFunSuite:
       """
         fn main(): Unit =
           let s = int_to_str 1;
-          println "done"
+          println "done";
         ;
       """
 

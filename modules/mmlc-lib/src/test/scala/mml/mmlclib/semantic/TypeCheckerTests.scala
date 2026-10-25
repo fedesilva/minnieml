@@ -1,14 +1,22 @@
 package mml.mmlclib.semantic
 
+import cats.data.NonEmptyList
 import mml.mmlclib.ast.*
 import mml.mmlclib.test.BaseEffFunSuite
+import mml.mmlclib.test.ast.*
 
 class TypeCheckerTests extends BaseEffFunSuite:
+
+  private def isUnitParamType(params: NonEmptyList[Type]): Boolean =
+    params.toList match
+      case List(TypeRef(_, "Unit", _, _)) => true
+      case List(TypeUnit(_)) => true
+      case _ => false
 
   test("should correctly type a multi-argument function application") {
     val code =
       """
-        fn mult(a: Int, b: Int): Int = ???;
+        fn mult(a: Int, b: Int): Int = ???;;
         let x = mult 2 2;
       """
     semNotFailed(code).map { module =>
@@ -22,7 +30,7 @@ class TypeCheckerTests extends BaseEffFunSuite:
   test("should fail when a later argument has the wrong type") {
     val code =
       """
-        fn mult(a: Int, b: Int): Int = ???;
+        fn mult(a: Int, b: Int): Int = ???;;
         let bad = mult 1 "oops";
       """
     semFailed(code)
@@ -31,8 +39,8 @@ class TypeCheckerTests extends BaseEffFunSuite:
   test("should type nested application with grouped arguments") {
     val code =
       """
-        fn double(a: Int): Int = a * 2;
-        fn sum(f: Int, x: Int): Int = f + x;
+        fn double(a: Int): Int = a * 2;;
+        fn sum(f: Int, x: Int): Int = f + x;;
         let a = sum (double 1) 2;
       """
     semNotFailed(code).map { module =>
@@ -46,22 +54,58 @@ class TypeCheckerTests extends BaseEffFunSuite:
   test("should type partial application with the remaining function type") {
     val code =
       """
-        fn mult(a: Int, b: Int): Int = ???;
+        fn mult(a: Int, b: Int): Int = ???;;
         let partial = mult 1;
       """
     semNotFailed(code).map { module =>
       val bnd = module.members.collectFirst { case b: Bnd if b.name == "partial" => b }.get
       bnd.typeSpec match
-        case Some(TypeFn(_, List(TypeRef(_, "Int", _, _)), TypeRef(_, "Int", _, _))) => // pass
+        case Some(TypeFn(_, NonEmptyList(TypeRef(_, "Int", _, _), Nil), TypeRef(_, "Int", _, _))) =>
         case other =>
           fail(s"Expected TypeFn(Int -> Int), got $other")
     }
   }
 
+  test("nullary function reference has semantic type Unit -> Int") {
+    val code =
+      """
+        fn func(): Int = ???;;
+        let f = func;
+      """
+    semNotFailed(code).map { module =>
+      val bnd = module.members.collectFirst { case b: Bnd if b.name == "f" => b }.get
+      bnd.typeSpec match
+        case Some(TypeFn(_, params, TypeRef(_, "Int", _, _))) if isUnitParamType(params) => ()
+        case other => fail(s"Expected Unit -> Int, got $other")
+    }
+  }
+
+  test("nullary lambda has semantic type Unit -> Int") {
+    val code =
+      """
+        let thunk = { 42; };
+      """
+    semNotFailed(code).map { module =>
+      val bnd = module.members.collectFirst { case b: Bnd if b.name == "thunk" => b }.get
+      bnd.typeSpec match
+        case Some(TypeFn(_, params, TypeRef(_, "Int", _, _))) if isUnitParamType(params) => ()
+        case other => fail(s"Expected Unit -> Int, got $other")
+    }
+  }
+
+  test("explicit Unit -> Int ascription accepts a nullary function reference") {
+    val code =
+      """
+        fn func(): Int = ???;;
+        let f: Unit -> Int = func;
+      """
+    semNotFailed(code)
+  }
+
   test("should fail when a nullary function is used where a value is expected") {
     val code =
       """
-        fn func(): Int = ???;
+        fn func(): Int = ???;;
         let a: Int = func;
       """
     semFailed(code)
@@ -70,7 +114,7 @@ class TypeCheckerTests extends BaseEffFunSuite:
   test("should infer the return type of a function") {
     val code =
       """
-        fn identity(x: Int) = x;
+        fn identity(x: Int) = x;;
         let y = identity 1;
       """
     semNotFailed(code).map { module =>
@@ -91,10 +135,22 @@ class TypeCheckerTests extends BaseEffFunSuite:
     }
   }
 
+  test("buffer_write_byte is available from injected stdlib") {
+    val code =
+      """
+        pub fn main(): Unit =
+          let buf = mkBufferWithSize 16;
+          buffer_write_byte buf 255;
+          flush buf;
+        ;
+      """
+    semNotFailed(code)
+  }
+
   test("should fail on missing function parameter type") {
     val code =
       """
-        fn add(a, b): Int = a + b;
+        fn add(a, b): Int = a + b;;
       """
     semState(code).map { result =>
       val typeErrors = result.errors.collect { case SemanticError.TypeCheckingError(err) => err }
@@ -131,13 +187,13 @@ class TypeCheckerTests extends BaseEffFunSuite:
     // FIXME see BaseFunSuite for instructions on how to improve
     //       test tooling.
     semFailed("""
-      fn main() = println (5 + 3);
+      fn main() = println (5 + 3);;
     """)
 
   }
 
   test("should correctly type a conditional expression") {
-    val code = "let x = if true then 1 else 2 end;"
+    val code = "let x = if true then 1; else 2; ;"
     semNotFailed(code).map { module =>
       val bnd = module.members.collectFirst { case b: Bnd if b.name == "x" => b }.get
       bnd.typeSpec match
@@ -147,7 +203,7 @@ class TypeCheckerTests extends BaseEffFunSuite:
   }
 
   test("should type holes using conditional branch type") {
-    val code = "let x = if true then 1 else ??? end;"
+    val code = "let x = if true then 1; else ???; ;"
     semNotFailed(code).map { module =>
       val bnd = module.members.collectFirst { case b: Bnd if b.name == "x" => b }.get
       bnd.typeSpec match
@@ -180,6 +236,106 @@ class TypeCheckerTests extends BaseEffFunSuite:
     }
   }
 
+  test("lambda literal infers param type from operator usage") {
+    val code = "let f = { x -> x + 1; };"
+    semNotFailed(code).map { module =>
+      val lambda = onlyUserLambda(module).getOrElse(fail("Expected one lambda literal"))
+      lambda.params.head.typeSpec match
+        case Some(TypeRef(_, "Int", _, _)) => ()
+        case other => fail(s"Expected x: Int, got $other")
+    }
+  }
+
+  test("lambda literal infers param type from named function usage") {
+    val code =
+      """
+        fn inc(x: Int): Int = x + 1;;
+        let f = { y -> inc y; };
+      """
+    semNotFailed(code).map { module =>
+      val lambda = onlyUserLambda(module).getOrElse(fail("Expected one lambda literal"))
+      lambda.params.head.typeSpec match
+        case Some(TypeRef(_, "Int", _, _)) => ()
+        case other => fail(s"Expected y: Int, got $other")
+    }
+  }
+
+  test("lambda literal infers param type through let alias") {
+    val code = "let f = { x -> let y = x; y + 1; };"
+    semNotFailed(code).map { module =>
+      val lambda = onlyUserLambda(module).getOrElse(fail("Expected one lambda literal"))
+      lambda.params.head.typeSpec match
+        case Some(TypeRef(_, "Int", _, _)) => ()
+        case other => fail(s"Expected x: Int, got $other")
+    }
+  }
+
+  test("lambda literal infers param type from capture-assisted operator usage") {
+    val code =
+      """
+        fn foo(a: Int): Int =
+          let f = { x -> x + a; };
+          f 1;
+        ;
+      """
+    semNotFailed(code).map { module =>
+      val lambda = onlyUserLambda(module).getOrElse(fail("Expected one lambda literal"))
+      lambda.params.head.typeSpec match
+        case Some(TypeRef(_, "Int", _, _)) => ()
+        case other => fail(s"Expected x: Int, got $other")
+    }
+  }
+
+  test("lambda literal reports uninferrable param when no anchor exists") {
+    val code = "let f = { x -> x; };"
+    semState(code).map { result =>
+      val typeErrors = result.errors.collect { case SemanticError.TypeCheckingError(err) => err }
+      assert(
+        typeErrors.exists {
+          case TypeError.UninferrableLambdaParam(param, _) => param.name == "x"
+          case _ => false
+        },
+        s"Expected UninferrableLambdaParam for x, got: $typeErrors"
+      )
+    }
+  }
+
+  test("lambda literal reports conflicting inferred param types") {
+    val code =
+      """
+        fn inc(x: Int): Int = x + 1;;
+        fn echoFloat(x: Float): Float = x;;
+        let f = { x ->
+          let y = inc x;
+          echoFloat x;
+        };
+      """
+    semState(code).map { result =>
+      val typeErrors = result.errors.collect { case SemanticError.TypeCheckingError(err) => err }
+      assert(
+        typeErrors.exists {
+          case TypeError.ConflictingLambdaParamInference(param, _, _, _) => param.name == "x"
+          case _ => false
+        },
+        s"Expected ConflictingLambdaParamInference for x, got: $typeErrors"
+      )
+    }
+  }
+
+  test("lambda literal keeps top-down expected type over bottom-up anchors") {
+    val code =
+      """
+        fn applyFloat(f: Float -> Float, x: Float): Float = f x;;
+        let r = applyFloat { x -> x + 1; } 1.0;
+      """
+    semState(code).map { result =>
+      val lambda = onlyUserLambda(result.module).getOrElse(fail("Expected one lambda literal"))
+      lambda.params.head.typeSpec match
+        case Some(TypeRef(_, "Float", _, _)) => ()
+        case other => fail(s"Expected x: Float from call-site context, got $other")
+    }
+  }
+
   // test("should fail on mismatched types in conditional branches") {
   //   val code = "let x = if true then 1 else \"hello\""
   //   semFailed(code).map { errors =>
@@ -194,13 +350,13 @@ class TypeCheckerTests extends BaseEffFunSuite:
       """
         fn main(): Int =
           let a = 1;
-          a
+          a;
         ;
       """
     semNotFailed(code).map { module =>
       val fn = module.members.collectFirst { case b: Bnd if b.name == "main" => b }.get
       fn.typeSpec match
-        case Some(TypeFn(_, Nil, TypeRef(_, "Int", _, _))) => // pass
+        case Some(TypeFn(_, params, TypeRef(_, "Int", _, _))) if isUnitParamType(params) => ()
         case other => fail(s"Expected fn returning Int, got $other")
     }
   }
@@ -211,13 +367,13 @@ class TypeCheckerTests extends BaseEffFunSuite:
         fn main(): Int =
           let a = 1;
           let b = 2;
-          b
+          b;
         ;
       """
     semNotFailed(code).map { module =>
       val fn = module.members.collectFirst { case b: Bnd if b.name == "main" => b }.get
       fn.typeSpec match
-        case Some(TypeFn(_, Nil, TypeRef(_, "Int", _, _))) => // pass
+        case Some(TypeFn(_, params, TypeRef(_, "Int", _, _))) if isUnitParamType(params) => ()
         case other => fail(s"Expected fn returning Int, got $other")
     }
   }
@@ -227,13 +383,13 @@ class TypeCheckerTests extends BaseEffFunSuite:
       """
         fn main(): Int =
           let a: Int = 1;
-          a
+          a;
         ;
       """
     semNotFailed(code).map { module =>
       val fn = module.members.collectFirst { case b: Bnd if b.name == "main" => b }.get
       fn.typeSpec match
-        case Some(TypeFn(_, Nil, TypeRef(_, "Int", _, _))) => // pass
+        case Some(TypeFn(_, params, TypeRef(_, "Int", _, _))) if isUnitParamType(params) => ()
         case other => fail(s"Expected fn returning Int, got $other")
     }
   }
@@ -244,16 +400,17 @@ class TypeCheckerTests extends BaseEffFunSuite:
         fn main(): Int =
           if true then
             let x = 1;
-            x
+            x;
           else
             let y = 2;
-            y
-          end;
+            y;
+          ;
+        ;
       """
     semNotFailed(code).map { module =>
       val fn = module.members.collectFirst { case b: Bnd if b.name == "main" => b }.get
       fn.typeSpec match
-        case Some(TypeFn(_, Nil, TypeRef(_, "Int", _, _))) => // pass
+        case Some(TypeFn(_, params, TypeRef(_, "Int", _, _))) if isUnitParamType(params) => ()
         case other => fail(s"Expected fn returning Int, got $other")
     }
   }
@@ -263,14 +420,34 @@ class TypeCheckerTests extends BaseEffFunSuite:
       """
         fn foo(x: Int): Int =
           let y = x;
-          y
+          y;
         ;
       """
     semNotFailed(code).map { module =>
       val fn = module.members.collectFirst { case b: Bnd if b.name == "foo" => b }.get
       fn.typeSpec match
-        case Some(TypeFn(_, List(TypeRef(_, "Int", _, _)), TypeRef(_, "Int", _, _))) => // pass
+        case Some(TypeFn(_, NonEmptyList(TypeRef(_, "Int", _, _), Nil), TypeRef(_, "Int", _, _))) =>
         case other => fail(s"Expected Int -> Int, got $other")
+    }
+  }
+
+  test("inner fn with typed params and return type supports recursive self-call") {
+    val code =
+      """
+        fn main(): Unit =
+          fn loop(i: Int): Unit =
+            if i < 3 then
+              loop (i + 1);
+            ;
+          ;
+          loop 0;
+        ;
+      """
+    semNotFailed(code).map { module =>
+      val fn = module.members.collectFirst { case b: Bnd if b.name == "main" => b }.get
+      fn.typeSpec match
+        case Some(TypeFn(_, params, TypeRef(_, "Unit", _, _))) if isUnitParamType(params) => ()
+        case other => fail(s"Expected main to typecheck as Unit, got $other")
     }
   }
 
@@ -292,7 +469,7 @@ class TypeCheckerTests extends BaseEffFunSuite:
       """
         fn main(): Unit =
           1;
-          println "ok"
+          println "ok";
         ;
       """
     semState(code).map { result =>
@@ -313,7 +490,7 @@ class TypeCheckerTests extends BaseEffFunSuite:
       """
         fn main(): Unit =
           println "ok";
-          println "done"
+          println "done";
         ;
       """
     semNotFailed(code).map { _ => () }
@@ -322,7 +499,7 @@ class TypeCheckerTests extends BaseEffFunSuite:
   test("recursive function without return type emits RecursiveFunctionMissingReturnType") {
     val code =
       """
-        fn loop() = loop();
+        fn loop() = loop();;
       """
     semState(code).map { result =>
       val typeErrors = result.errors.collect { case SemanticError.TypeCheckingError(err) => err }
@@ -336,10 +513,10 @@ class TypeCheckerTests extends BaseEffFunSuite:
     }
   }
 
-  test("@native function without return type emits MissingReturnType") {
+  test("@metal:ffi function without return type emits MissingReturnType") {
     val code =
       """
-        fn nativeNoReturn() = @native;
+        fn nativeNoReturn() = @metal:ffi;;
       """
     semState(code).map { result =>
       val typeErrors = result.errors.collect { case SemanticError.TypeCheckingError(err) => err }
@@ -353,10 +530,10 @@ class TypeCheckerTests extends BaseEffFunSuite:
     }
   }
 
-  test("@native operator without return type emits MissingOperatorReturnType") {
+  test("@metal:tpl operator without return type emits MissingOperatorReturnType") {
     val code =
       """
-        op ***(a: Int, b: Int) 70 left = @native[tpl="mul %type %operand1, %operand2"];
+        op ***(a: Int, b: Int) 70 left = @metal:tpl["mul %type %operand1, %operand2"];;
       """
     semState(code).map { result =>
       val typeErrors = result.errors.collect { case SemanticError.TypeCheckingError(err) => err }
@@ -371,18 +548,18 @@ class TypeCheckerTests extends BaseEffFunSuite:
     }
   }
 
-  test("@native function with return type passes") {
+  test("@metal:ffi function with return type passes") {
     val code =
       """
-        fn nativeWithReturn(): Int = @native;
+        fn nativeWithReturn(): Int = @metal:ffi;;
       """
     semNotFailed(code).map { _ => () }
   }
 
-  test("@native operator with return type passes") {
+  test("@metal:tpl operator with return type passes") {
     val code =
       """
-        op ***(a: Int, b: Int): Int 70 left = @native[tpl="mul %type %operand1, %operand2"];
+        op ***(a: Int, b: Int): Int 70 left = @metal:tpl["mul %type %operand1, %operand2"];;
       """
     semNotFailed(code).map { _ => () }
   }
@@ -446,5 +623,149 @@ class TypeCheckerTests extends BaseEffFunSuite:
         },
         s"Expected UnknownField for p.age, got: $typeErrors"
       )
+    }
+  }
+
+  test("term-level type ascription mismatch is rejected") {
+    val code =
+      """
+        let c = 1: String;
+      """
+    semState(code).map { result =>
+      val typeErrors = result.errors.collect { case SemanticError.TypeCheckingError(err) => err }
+      assert(
+        typeErrors.exists {
+          case TypeError
+                .TypeMismatch(_, TypeRef(_, "String", _, _), TypeRef(_, "Int", _, _), _, _) =>
+            true
+          case _ => false
+        },
+        s"Expected TypeMismatch (String vs Int), got: $typeErrors"
+      )
+    }
+  }
+
+  test("term-level type ascription matching type is accepted") {
+    val code =
+      """
+        let a = 1: Int;
+        let b = "hello": String;
+      """
+    semNotFailed(code).map { _ => () }
+  }
+
+  test("lambda return type ascription does not false-positive") {
+    val code =
+      """
+        let f = { x: Int -> x; }: Int;
+      """
+    semNotFailed(code).map { _ => () }
+  }
+
+  // -- Forward reference tests --
+
+  test("forward reference to function with inferred return type") {
+    val code =
+      """
+        fn caller(x: Int): Int = callee x;;
+        fn callee(x: Int) = x + 1;;
+        let y = caller 1;
+      """
+    semNotFailed(code).map { module =>
+      val bnd = module.members.collectFirst { case b: Bnd if b.name == "y" => b }.get
+      bnd.typeSpec match
+        case Some(TypeRef(_, "Int", _, _)) => // pass
+        case other => fail(s"Expected Some(TypeRef(\"Int\")), got $other")
+    }
+  }
+
+  test("chain of forward references") {
+    val code =
+      """
+        fn a(x: Int) = b x;;
+        fn b(x: Int) = c x;;
+        fn c(x: Int) = x + 1;;
+      """
+    semNotFailed(code).map { module =>
+      val bnd = module.members.collectFirst { case b: Bnd if b.name == "a" => b }.get
+      bnd.typeSpec match
+        case Some(TypeFn(_, _, TypeRef(_, "Int", _, _))) => // pass
+        case other => fail(s"Expected TypeFn returning Int, got $other")
+    }
+  }
+
+  test("mutual recursion without annotations errors") {
+    val code =
+      """
+        fn ping(x: Int) = pong x;;
+        fn pong(x: Int) = ping x;;
+      """
+    semFailed(code)
+  }
+
+  test("mutual recursion with one annotation works") {
+    val code =
+      """
+        fn ping(x: Int): Int = pong x;;
+        fn pong(x: Int) = ping x;;
+      """
+    semNotFailed(code).map { module =>
+      val pong = module.members.collectFirst { case b: Bnd if b.name == "pong" => b }.get
+      pong.typeSpec match
+        case Some(TypeFn(_, _, TypeRef(_, "Int", _, _))) => // pass
+        case other => fail(s"Expected TypeFn returning Int, got $other")
+    }
+  }
+
+  test("backward reference still works") {
+    val code =
+      """
+        fn callee(x: Int) = x + 1;;
+        fn caller(x: Int): Int = callee x;;
+      """
+    semNotFailed(code).map { module =>
+      val bnd = module.members.collectFirst { case b: Bnd if b.name == "caller" => b }.get
+      bnd.typeSpec match
+        case Some(TypeFn(_, _, TypeRef(_, "Int", _, _))) => // pass
+        case other => fail(s"Expected TypeFn returning Int, got $other")
+    }
+  }
+
+  test("forward reference preserves source order in output") {
+    val code =
+      """
+        fn first(x: Int): Int = second x;;
+        fn second(x: Int) = x + 1;;
+      """
+    semNotFailed(code).map { module =>
+      val userNames = module.members.collect {
+        case b: Bnd if b.name == "first" || b.name == "second" => b.name
+      }
+      assertEquals(userNames, List("first", "second"))
+    }
+  }
+
+  test("forward reference reorder keeps unrelated bindings in source order") {
+    val code =
+      """
+        fn alpha(x: Int) = x + 1;;
+        fn caller(x: Int): Int = callee x;;
+        fn beta(x: Int) = x * 2;;
+        fn callee(x: Int) = x - 1;;
+        fn gamma(x: Int) = x / 2;;
+      """
+
+    semNotFailed(code).map { module =>
+      val userNames = module.members.collect {
+        case b: Bnd if Set("alpha", "caller", "beta", "callee", "gamma").contains(b.name) =>
+          b.name
+      }
+      assertEquals(userNames, List("alpha", "caller", "beta", "callee", "gamma"))
+    }
+  }
+
+  List("2147483648", "-2147483649", "99999999999999999999999999999999").foreach { literal =>
+    test(s"out-of-range literal $literal reports a diagnostic") {
+      semFailed(s"let invalid = $literal; let after = 42;")
     }
   }

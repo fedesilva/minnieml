@@ -1,0 +1,30 @@
+// Owning environments release scalar, native, struct, and closure captures.
+struct Pair { a: String, b: String };
+
+fn make(~s: String): Unit -> Unit =
+  ~{ println s; };
+;
+
+fn wrap(~f: Unit -> Unit): Unit -> Unit =
+  ~{ f (); };
+;
+
+fn consume(~f: Unit -> Unit): Unit =
+  f ();
+;
+
+fn run(n: Int): Unit =
+  if n > 0 then
+    let pair = Pair (int_to_str n) (int_to_str (n + 1));
+    let inner = wrap (make (int_to_str n));
+    let outer = ~{ println pair.a; inner (); println (int_to_str n); };
+    let alias = outer;
+    alias ();
+    run (n - 1);
+  ;
+;
+
+pub fn main(): Unit =
+  consume { (); };
+  run 100;
+;

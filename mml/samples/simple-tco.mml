@@ -1,13 +1,12 @@
 
 fn loop(i:Int, to: Int): Unit =
   println ("Iteration: " ++ (int_to_str i));
-  if i <= to 
-  then loop ( i+1 ) to
-  else 
-    println "done"
-  end
+  if i <= to then
+    loop (i + 1) to;
+  else
+    println "done";
+  ;
 ;
-
 pub fn main() =
-  loop 1 100
+  loop 1 100;
 ;

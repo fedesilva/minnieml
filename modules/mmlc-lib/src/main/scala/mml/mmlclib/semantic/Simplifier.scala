@@ -15,9 +15,9 @@ object Simplifier:
         case other =>
           (accMembers :+ other, resolvables)
     }
-    module
-      .copy(members = updatedMembers, resolvables = updatedResolvables)
-      .asRight[List[SemanticError]]
+    val rewritten = module.copy(members = updatedMembers, resolvables = updatedResolvables)
+    val errors    = integerRangeErrors(rewritten)
+    if errors.isEmpty then rewritten.asRight else errors.asLeft
 
   def rewriteModule(state: CompilerState): CompilerState =
     val (updatedMembers, updatedResolvables) = state.module.members.foldLeft(
@@ -29,7 +29,20 @@ object Simplifier:
         case other =>
           (accMembers :+ other, resolvables)
     }
-    state.withModule(state.module.copy(members = updatedMembers, resolvables = updatedResolvables))
+    val rewritten = state.module.copy(members = updatedMembers, resolvables = updatedResolvables)
+    state.withModule(rewritten).addErrors(integerRangeErrors(rewritten))
+
+  private def integerRangeErrors(module: Module): List[SemanticError] =
+    module.members.collect { case b: Bnd => b }.flatMap { b =>
+      TermTraversal.collect(b.value) {
+        case lit: LiteralInt if lit.value < Int.MinValue || lit.value > Int.MaxValue =>
+          SemanticError.InvalidExpression(
+            Expr(lit.source, List(lit)),
+            "Integer literal is outside the Int32 range",
+            "Simplifier"
+          )
+      }
+    }
 
   def simplifyMember(member: Member): Member =
     member match
@@ -52,13 +65,26 @@ object Simplifier:
   def simplifyExpr(expr: Expr): Expr =
     // Simplify all subterms recursively using simplifyTerm
     val simplifiedTerms = expr.terms.map(simplifyTerm)
-    // Always rebuild the Expr with the simplified terms
-    Expr(expr.source, simplifiedTerms, expr.typeSpec, expr.typeAsc)
+    expr.copy(terms = simplifiedTerms)
+
+  private def simplifyCallee(callee: Callee): Callee =
+
+    callee match
+
+      case app: App =>
+        val simplifiedArg = simplifyExpr(app.arg)
+        val simplifiedFn  = simplifyCallee(app.fn)
+        app.copy(fn = simplifiedFn, arg = simplifiedArg)
+
+      case ref: Ref =>
+        ref.copy(qualifier = ref.qualifier.map(simplifyTerm))
+
+      case lambda: Lambda => lambda
 
   /** Recursively simplify a term.
     *   - For an Expr: simplify its contents, then unwrap if only one term remains.
     *   - For a GroupTerm: simplify its inner expression and remove the group wrapper.
-    *   - For AppN: simplify arguments
+    *   - For App: simplify its callee and argument, preserving lambda heads.
     *   - For Cond: simplify branches using simplifyTopLevelExpr.
     *   - Other terms are returned unchanged.
     */
@@ -89,18 +115,7 @@ object Simplifier:
           }
         else finalTerm
 
-      case app: App =>
-        // Simplify the function and argument (simplifyExpr calls simplifyTerm)
-        val simplifiedArg = simplifyExpr(app.arg) // Use simplifyExpr for args
-        val simplifiedFn  = simplifyTerm(app.fn) // Use simplifyTerm for fn part
-        app.copy(fn = simplifiedFn.asInstanceOf[Ref | App], arg = simplifiedArg)
-
-      case ref: Ref =>
-        ref.qualifier match
-          case Some(qualifier) =>
-            ref.copy(qualifier = Some(simplifyTerm(qualifier)))
-          case None =>
-            ref
+      case callee: Callee => simplifyCallee(callee)
 
       // --- Modify Cond Case ---
       case c: Cond =>

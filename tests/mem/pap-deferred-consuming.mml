@@ -1,0 +1,52 @@
+// Deferred arguments move on invocation; retained captures support repeated calls.
+fn measure(extra: Int, ~text: String): Int = extra + text.length;;
+fn make(extra: Int): String -> Int = measure extra;;
+fn invoke(f: String -> Int, ~text: String): Int = f text;;
+fn staged(a: Int, b: Int, ~text: String): Int = a + b + text.length;;
+fn both(~left: String, ~right: String): Int = left.length + right.length;;
+fn keep(extra: Int, ~text: String): String = text;;
+fn sum(n: Int, ~left: String, ~right: String): Int = n + left.length + right.length;;
+fn call(n: Int, ~f: Int -> Int): Int = f n;;
+
+fn use(f: Int -> String -> Int, n: Int): Int =
+  let p = f n;
+  p (int_to_str 123);
+;
+
+fn loop(n: Int, total: Int): Int =
+  if n == 0 then
+    total;
+  else
+    let dropped = measure 10;
+    let mixed_dropped = both (int_to_str 123);
+    let p = measure 10;
+    let text = int_to_str 123;
+    let a = p text;
+    let b = p (int_to_str 456);
+    let returned = make 10;
+    let alias = returned;
+    let c = invoke alias (int_to_str 789);
+    let d = invoke alias (int_to_str 123);
+    let first = staged 4;
+    let second = first 6;
+    let e = second (int_to_str 456);
+    let inline_pap = { extra: Int, ~s: String -> extra + s.length; } 10;
+    let f = inline_pap (int_to_str 789);
+    let mixed = both (int_to_str 123);
+    let g = mixed (int_to_str 456);
+    let retain = keep 0;
+    let result = retain (int_to_str 123);
+    let builder = use measure;
+    let h = builder 10;
+    let sum_first = sum 1;
+    let sum_second = sum_first (int_to_str 123);
+    let i = sum_second (int_to_str 456);
+    let apply10 = call 10;
+    let seed = int_to_str 123;
+    let closure = ~{ x: Int -> x + seed.length; };
+    let j = apply10 closure;
+    loop (n - 1) (total + a + b + c + d + e + f + g + result.length + h + i + j);
+  ;
+;
+
+pub fn main(): Int = if loop 1000 0 == 120000 then 0; else 1; ;;

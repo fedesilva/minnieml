@@ -108,6 +108,12 @@ object SemanticErrorPrinter:
         val snippet  = error.failedCode.getOrElse("<no code available>")
         s"${Console.RED}Invalid identifier at $location: ${error.message} [phase: $phase]\n$snippet${Console.RESET}"
 
+      case SemanticError.TermErrorFound(error, phase) =>
+        val location = locationOf(error)
+        val snippet  = error.failedCode.getOrElse("<no code available>")
+        s"${Console.RED}Parser error at $location: ${error.message} " +
+          s"[phase: $phase]\n$snippet${Console.RESET}"
+
       case SemanticError.DanglingTerms(terms, message, phase) =>
         val locations = terms.map(t => locationOf(t)).mkString(", ")
         s"${Console.RED}$message at $locations [phase: $phase]${Console.RESET}"
@@ -124,14 +130,20 @@ object SemanticErrorPrinter:
         val location = locationOf(ref)
         s"${Console.RED}'${ref.name}' is not visible at $location (declared in '${decl.name}') [phase: $phase]${Console.RESET}"
 
-      case SemanticError.UseAfterMove(ref, movedAt, phase) =>
-        val location      = locationOf(ref)
-        val movedLocation = movedAt.spanOpt.map(LocationPrinter.printSpan).getOrElse("[synthetic]")
-        s"${Console.RED}Use of '${ref.name}' after move at $location [phase: $phase]${Console.RESET}\nMoved at: $movedLocation"
+      case error: SemanticError.UseAfterMove =>
+        val location = error.source.spanOpt.map(LocationPrinter.printSpan).getOrElse("[synthetic]")
+        val movedLocation =
+          error.movedAt.spanOpt.map(LocationPrinter.printSpan).getOrElse("[synthetic]")
+        val use = s"Use of '${error.ref.name}' after move at $location [phase: ${error.phase}]"
+        s"${Console.RED}$use${Console.RESET}\nMoved at: $movedLocation"
 
       case SemanticError.ConsumingParamNotLastUse(param, ref, phase) =>
         val location = locationOf(ref)
         s"${Console.RED}Consuming parameter '${param.name}' must be the last use of '${ref.name}' at $location [phase: $phase]${Console.RESET}"
+
+      case SemanticError.BorrowedValuePassedToConsumingParam(param, ref, phase) =>
+        val location = locationOf(ref)
+        s"${Console.RED}Cannot pass borrowed value '${ref.name}' to consuming parameter '${param.name}' at $location [phase: $phase]${Console.RESET}"
 
       case SemanticError.PartialApplicationWithConsuming(fn, param, phase) =>
         val location = locationOf(fn)
@@ -144,6 +156,19 @@ object SemanticErrorPrinter:
       case SemanticError.BorrowEscapeViaReturn(ref, phase) =>
         val location = locationOf(ref)
         s"${Console.RED}Cannot return borrowed value '${ref.name}' at $location [phase: $phase]${Console.RESET}"
+
+      case SemanticError.CapturedBorrowedHeapBinding(ref, phase) =>
+        val location = locationOf(ref)
+        s"${Console.RED}Cannot capture borrowed heap binding '${ref.name}' at $location [phase: $phase]${Console.RESET}"
+
+      case SemanticError.CapturedMovedHeapBinding(ref, movedAt, phase) =>
+        val location      = locationOf(ref)
+        val movedLocation = movedAt.spanOpt.map(LocationPrinter.printSpan).getOrElse("<unknown>")
+        s"${Console.RED}Cannot capture moved heap binding '${ref.name}' at $location [phase: $phase]${Console.RESET}\nMoved at: $movedLocation"
+
+      case SemanticError.BorrowClosureEscapeViaReturn(lambda, phase) =>
+        val location = locationOf(lambda)
+        s"${Console.RED}Cannot return borrow-capturing closure at $location [phase: $phase]${Console.RESET}"
 
       case SemanticError.TypeCheckingError(error) =>
         prettyPrintTypeError(error)
@@ -173,9 +198,9 @@ object SemanticErrorPrinter:
       case mml.mmlclib.ast.TypeRef(_, name, _, _) => name
       case ts: mml.mmlclib.ast.TypeStruct => ts.name
       case mml.mmlclib.ast.TypeFn(_, params, returnType) =>
-        val paramStr = params.map(formatTypeSpec).mkString(", ")
+        val paramStr = params.toList.map(formatTypeSpec).mkString(", ")
         s"($paramStr) -> ${formatTypeSpec(returnType)}"
-      case mml.mmlclib.ast.TypeUnit(_) => "()"
+      case mml.mmlclib.ast.TypeUnit(_) => "Unit"
       case other => other.getClass.getSimpleName
 
     error match
@@ -256,6 +281,19 @@ object SemanticErrorPrinter:
         val type1Str = formatTypeSpec(type1)
         val type2Str = formatTypeSpec(type2)
         s"${Console.RED}Incompatible types at $location in $context: '$type1Str' and '$type2Str'${Console.RESET}\n${Console.YELLOW}Phase: $phase${Console.RESET}"
+
+      case TypeError.ConflictingLambdaParamInference(param, firstType, nextType, phase) =>
+        val location     = locationOf(param)
+        val firstTypeStr = formatTypeSpec(firstType)
+        val nextTypeStr  = formatTypeSpec(nextType)
+        s"${Console.RED}Conflicting types inferred for lambda parameter '${param.name}' " +
+          s"at $location: '$firstTypeStr' vs '$nextTypeStr'${Console.RESET}\n" +
+          s"${Console.YELLOW}Phase: $phase${Console.RESET}"
+
+      case TypeError.UninferrableLambdaParam(param, phase) =>
+        val location = locationOf(param)
+        s"${Console.RED}Cannot infer type for lambda parameter '${param.name}' " +
+          s"at $location${Console.RESET}\n${Console.YELLOW}Phase: $phase${Console.RESET}"
 
       case TypeError.UntypedHoleInBinding(bindingName, source, phase) =>
         val location = source.spanOpt.map(LocationPrinter.printSpan).getOrElse("[synthetic]")

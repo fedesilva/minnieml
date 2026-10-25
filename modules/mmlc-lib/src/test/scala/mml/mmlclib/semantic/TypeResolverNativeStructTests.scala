@@ -9,9 +9,9 @@ class TypeResolverNativeStructTests extends BaseEffFunSuite:
 
   test("TypeResolver should resolve type references in NativeStruct fields"):
     val code = """
-      type MySize = @native[t=i64];
-      type MyCharPtr = @native[t=*i8];
-      type MyString = @native {
+      type MySize = @metal:repr[t=i64];
+      type MyCharPtr = @metal:repr[t=*i8];
+      type MyString = @metal:repr {
         length: MySize,
         data: MyCharPtr
       };
@@ -53,11 +53,11 @@ class TypeResolverNativeStructTests extends BaseEffFunSuite:
 
   test("TypeResolver should handle nested type references in complex structs"):
     val code = """
-      type MyInt32 = @native[t=i32];
-      type MyInt64 = @native[t=i64];
-      type MyStrPtr = @native[t=*i8];
+      type MyInt32 = @metal:repr[t=i32];
+      type MyInt64 = @metal:repr[t=i64];
+      type MyStrPtr = @metal:repr[t=*i8];
 
-      type ComplexStruct = @native {
+      type ComplexStruct = @metal:repr {
         field1: MyInt32,
         field2: MyInt64,
         name: MyStrPtr
@@ -90,7 +90,7 @@ class TypeResolverNativeStructTests extends BaseEffFunSuite:
 
   test("TypeResolver should report errors for undefined types in NativeStruct fields"):
     val code = """
-      type MyStruct = @native {
+      type MyStruct = @metal:repr {
         valid: Int64,
         invalid: UndefinedType
       };
@@ -102,10 +102,10 @@ class TypeResolverNativeStructTests extends BaseEffFunSuite:
 
   test("TypeResolver should handle type aliases in NativeStruct fields"):
     val code = """
-      type BaseInt = @native[t=i32];
+      type BaseInt = @metal:repr[t=i32];
       type MyInt = BaseInt;
 
-      type MyStruct = @native {
+      type MyStruct = @metal:repr {
         value: MyInt
       };
     """
@@ -131,7 +131,7 @@ class TypeResolverNativeStructTests extends BaseEffFunSuite:
 
   test("TypeResolver should handle empty NativeStruct"):
     val code = """
-      type EmptyStruct = @native {};
+      type EmptyStruct = @metal:repr {};
     """
 
     semNotFailed(code).map { module =>

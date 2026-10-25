@@ -11,6 +11,21 @@ object ResolvablesIndexer:
     val updatedResolvables = rebuildIndex(module)
     state.withModule(module.copy(resolvables = updatedResolvables))
 
+  def refresh(module: Module): Module = module.copy(resolvables = rebuildIndex(module))
+
+  /** Definition occurrences are collected independently of the map, including duplicate IDs. */
+  def definitions(module: Module): List[Resolvable] =
+    def memberDefinitions(member: Member): List[Resolvable] = member match
+      case binding:    Bnd => binding :: collectParamsFromExpr(binding.value)
+      case struct:     TypeStruct => struct :: struct.fields.toList
+      case definition: TypeDef => List(definition)
+      case alias:      TypeAlias => List(alias)
+      case duplicate:  DuplicateMember => memberDefinitions(duplicate.originalMember)
+      case invalid:    InvalidMember => memberDefinitions(invalid.originalMember)
+      case _ => Nil
+
+    module.members.flatMap(memberDefinitions)
+
   private def rebuildIndex(module: Module): ResolvablesIndex =
     module.members.foldLeft(ResolvablesIndex()) { (idx, member) =>
       updateIndexForMember(idx, member)
@@ -23,7 +38,7 @@ object ResolvablesIndexer:
         idx.updated(bnd).updatedAll(params)
       case td: TypeDef => idx.updatedType(td)
       case ta: TypeAlias => idx.updatedType(ta)
-      case ts: TypeStruct => idx.updatedType(ts)
+      case ts: TypeStruct => idx.updatedType(ts).updatedAll(ts.fields)
       case dm: DuplicateMember => updateIndexForMember(idx, dm.originalMember)
       case im: InvalidMember => updateIndexForMember(idx, im.originalMember)
       case _ => idx
@@ -33,10 +48,18 @@ object ResolvablesIndexer:
 
   private def collectParamsFromTerm(term: Term): List[FnParam] =
     term match
+      case d: Destruction =>
+        collectParamsFromExpr(d.operand)
       case lambda: Lambda =>
-        lambda.params ++ collectParamsFromExpr(lambda.body)
+        lambda.params ++ lambda.meta.flatMap(_.environmentParam).toList ++
+          collectParamsFromExpr(lambda.body)
       case app: App =>
         collectParamsFromAppFn(app.fn) ++ collectParamsFromExpr(app.arg)
+      case binding: BindOwnership =>
+        List(binding.valueParam, binding.witnessParam) ++
+          collectParamsFromExpr(binding.initializer) ++ collectParamsFromExpr(binding.body)
+      case yielded: YieldOwnership =>
+        collectParamsFromExpr(yielded.value) ++ collectParamsFromExpr(yielded.owns)
       case cond: Cond =>
         collectParamsFromExpr(cond.cond) ++
           collectParamsFromExpr(cond.ifTrue) ++
@@ -53,10 +76,11 @@ object ResolvablesIndexer:
         ref.qualifier.toList.flatMap(collectParamsFromTerm)
       case _ => Nil
 
-  private def collectParamsFromAppFn(fn: Ref | App | Lambda): List[FnParam] =
+  private def collectParamsFromAppFn(fn: Callee): List[FnParam] =
     fn match
       case lambda: Lambda =>
-        lambda.params ++ collectParamsFromExpr(lambda.body)
+        lambda.params ++ lambda.meta.flatMap(_.environmentParam).toList ++
+          collectParamsFromExpr(lambda.body)
       case app: App =>
         collectParamsFromAppFn(app.fn) ++ collectParamsFromExpr(app.arg)
       case ref: Ref =>

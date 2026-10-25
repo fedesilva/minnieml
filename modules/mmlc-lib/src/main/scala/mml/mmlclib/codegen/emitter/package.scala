@@ -1,8 +1,9 @@
 package mml.mmlclib.codegen.emitter
 
+import cats.syntax.all.*
 import mml.mmlclib.ast.*
 import mml.mmlclib.codegen.TargetAbi
-import mml.mmlclib.codegen.emitter.abis.AbiStrategy
+import mml.mmlclib.codegen.emitter.abis.NativeCallKey
 import mml.mmlclib.errors.{CompilationError, CompilerWarning}
 
 /** Helper for generating syntactically correct LLVM IR type definitions */
@@ -51,7 +52,7 @@ def emitLoad(
     noalias.map(tag => s"!noalias $tag")
   ).flatten
   val metadataSuffix = if metadataParts.isEmpty then "" else metadataParts.mkString(", ", ", ", "")
-  s"  %$result = load $typ, $typ* $ptr$metadataSuffix"
+  s"  %$result = load $typ, ptr $ptr$metadataSuffix"
 
 /** Helper for generating syntactically correct LLVM IR store instruction */
 def emitStore(
@@ -68,7 +69,7 @@ def emitStore(
     noalias.map(tag => s"!noalias $tag")
   ).flatten
   val metadataSuffix = if metadataParts.isEmpty then "" else metadataParts.mkString(", ", ", ", "")
-  s"  store $typ $value, $typ* $ptr$metadataSuffix"
+  s"  store $typ $value, ptr $ptr$metadataSuffix"
 
 /** Helper for generating syntactically correct LLVM IR getelementptr instruction */
 def emitGetElementPtr(
@@ -99,6 +100,18 @@ def emitCall(
   ).flatten
   val metadataSuffix = if metadataParts.isEmpty then "" else metadataParts.mkString(", ", ", ", "")
   s"  ${resultPart}call $returnPart@$fnName($argString)$metadataSuffix"
+
+/** Helper for generating LLVM IR indirect call (function pointer). */
+def emitIndirectCall(
+  result:     Option[Int],
+  returnType: Option[String],
+  fnPtr:      String,
+  args:       List[(String, String)]
+): String =
+  val resultPart = result.map(r => s"%$r = ").getOrElse("")
+  val returnPart = returnType.map(t => s"$t ").getOrElse("void ")
+  val argString  = args.map { case (typ, value) => s"$typ $value" }.mkString(", ")
+  s"  ${resultPart}call $returnPart$fnPtr($argString)"
 
 /** Helper for generating LLVM IR extractvalue instruction */
 def emitExtractValue(result: Int, structType: String, value: String, index: Int): String =
@@ -161,16 +174,19 @@ def getStructFieldTypesFromTypeSpec(
   * stored type definition to extract field types. Returns None if not a struct or parsing fails.
   */
 def getStructFieldTypes(llvmType: String, state: CodeGenState): Option[List[String]] =
-  if !llvmType.startsWith("%") then None
-  else
-    val typeName = llvmType.drop(1)
-    state.nativeTypes.get(typeName).flatMap { typeDef =>
-      // Parse "%TypeName = type { field1, field2 }" to extract fields
-      val pattern = """type \{ (.+) \}""".r
-      pattern.findFirstMatchIn(typeDef).map { m =>
-        m.group(1).split(",").map(_.trim).toList
-      }
-    }
+  val definition = state.nativeTypes
+    .get(llvmType.stripPrefix("%"))
+    .flatMap(_.split(" = type ", 2).lift(1))
+  TargetLayout.fields(definition.getOrElse(llvmType)).orElse {
+    state.resolvables.resolvables.values.collectFirst {
+      case ts: TypeStruct if llvmType == s"%struct.${ts.name}" =>
+        getStructFieldTypesFromTypeSpec(ts, state)
+      case td: TypeDef if llvmType == s"%struct.${td.name}" =>
+        td.typeSpec.collect { case ns: NativeStruct =>
+          ns.fields.traverse(f => getLlvmType(f._2, state)).toOption
+        }.flatten
+    }.flatten
+  }
 
 def resolveTypeStruct(typeSpec: Type, resolvables: ResolvablesIndex): Option[TypeStruct] =
   typeSpec match
@@ -195,6 +211,21 @@ def resolveTypeStruct(typeSpec: Type, resolvables: ResolvablesIndex): Option[Typ
         case _ => None
     case _ => None
 
+/** Resolve a type to TypeFn, following type aliases */
+def resolveToTypeFn(typeSpec: Type, resolvables: ResolvablesIndex): Option[TypeFn] =
+  typeSpec match
+    case tf: TypeFn => Some(tf)
+    case TypeGroup(_, types) if types.size == 1 =>
+      resolveToTypeFn(types.head, resolvables)
+    case TypeRef(_, _, resolvedId, _) =>
+      resolvedId.flatMap(resolvables.lookupType) match
+        case Some(ta: TypeAlias) =>
+          ta.typeSpec
+            .flatMap(resolveToTypeFn(_, resolvables))
+            .orElse(resolveToTypeFn(ta.typeRef, resolvables))
+        case _ => None
+    case _ => None
+
 /** Helper for generating syntactically correct LLVM IR global variable declaration */
 def emitGlobalVariable(name: String, typ: String, value: String): String =
   s"@$name = global $typ $value"
@@ -207,25 +238,7 @@ def emitFunctionDeclaration(name: String, returnType: String, params: List[Strin
 /** Represents an error that occurred during code generation. */
 case class CodeGenError(message: String, node: Option[AstNode] = None) extends CompilationError
 
-/** Get size of LLVM type in bytes */
-def sizeOfLlvmType(llvmType: String): Int = llvmType match
-  case "i1" | "i8" => 1
-  case "i16" => 2
-  case "i32" | "float" => 4
-  case "i64" | "double" | "ptr" => 8
-  case t if t.endsWith("*") => 8
-  case _ => 8
-
-/** Get alignment of LLVM type in bytes (for struct field offset calculation) */
-def alignOfLlvmType(llvmType: String): Int = llvmType match
-  case "i1" | "i8" => 1
-  case "i16" => 2
-  case "i32" | "float" => 4
-  case "i64" | "double" | "ptr" => 8
-  case t if t.endsWith("*") => 8
-  case _ => 8
-
-/** Align offset to the given alignment boundary */
+/** Align offset to the given alignment boundary. */
 def alignTo(offset: Int, alignment: Int): Int =
   val mask = alignment - 1
   (offset + mask) & ~mask
@@ -235,7 +248,9 @@ enum TbaaNode derives CanEqual:
   case Scalar(name: String, parentId: Int)
   case Struct(name: String, fields: List[(Int, Int)]) // (typeId, offset) pairs
 
-/** Represents the state during code generation.
+/** Carries both the current LLVM body's output and the module registries used by nested emission.
+  * Deferred bodies isolate output and register numbering, then merge their registries back so later
+  * uses can reuse entries and adapters already emitted inside those bodies.
   *
   * @param targetAbi
   *   the target ABI for native lowering
@@ -255,13 +270,33 @@ enum TbaaNode derives CanEqual:
   *   map of native type names to their LLVM IR definitions
   * @param functionDeclarations
   *   map of function names to their declarations
+  *
+  * @param callableTargetAnalysis
+  *   complete binding and result-flow evidence for direct calls
+  * @param knownCallableEntries
+  *   module entry symbols and conventions, independent of runtime closure environments
+  * @param closureEnvironments
+  *   physical capture layouts shared by allocation, access, metadata, and destruction
+  * @param localCallableAnalysis
+  *   immutable use analysis computed before emission chooses local entry conventions
+  * @param localCallableTargets
+  *   original binding IDs mapped to allocated plain entries, registered before compiling their
+  *   bodies
+  * @param callableEntries
+  *   closure entry symbols keyed by original binding ID, shared across aliases and deferred bodies
+  * @param nativeCallAdapters
+  *   adapters for native ABI signatures, independently cached by native call key
+  *
+  * TODO: QA: This struct is getting large. Consider splitting into smaller components (e.g.,
+  * TBAAState, AliasScopeState, etc.)
   */
 case class CodeGenState(
   moduleName:           String              = "",
+  layout:               TargetLayout        = TargetLayout.default,
   targetAbi:            TargetAbi           = TargetAbi.Default,
-  abi:                  AbiStrategy         = AbiStrategy.forTarget(TargetAbi.Default),
   nextRegister:         Int                 = 0,
   output:               List[String]        = List.empty,
+  entryPrologueOutput:  List[String]        = List.empty,
   initializers:         List[String]        = List.empty,
   stringConstants:      Map[String, String] = Map.empty,
   nextStringId:         Int                 = 0,
@@ -284,7 +319,18 @@ case class CodeGenState(
   aliasScopeIds:      Map[String, Int] = Map.empty,
   emitAliasScopes:    Boolean          = false,
   // Resolvables index for soft reference lookups
-  resolvables: ResolvablesIndex = ResolvablesIndex()
+  resolvables: ResolvablesIndex = ResolvablesIndex(),
+  // Deferred function definitions (expression-position lambdas compiled as separate functions)
+  deferredDefinitions:     List[String]                          = List.empty,
+  callableTargetAnalysis:  CallableTargetAnalysis                = CallableTargetAnalysis(),
+  knownCallableEntries:    Map[String, KnownCallableEntry]       = Map.empty,
+  closureEnvironments:     Map[String, ClosureEnvironmentLayout] = Map.empty,
+  localCallableAnalysis:   LocalCallableAnalysis                 = LocalCallableAnalysis(),
+  localCallableTargets:    Map[String, LocalCallableTarget]      = Map.empty,
+  callableEntries:         Map[String, String]                   = Map.empty,
+  nativeCallAdapters:      Map[NativeCallKey, String]            = Map.empty,
+  nextAnonFnId:            Int                                   = 0,
+  insideLoopifiedFunction: Boolean                               = false
 ):
   /** Returns a new state with an updated register counter. */
   def withRegister(reg: Int): CodeGenState =
@@ -294,6 +340,15 @@ case class CodeGenState(
   def mangleName(name: String): String =
     s"${moduleName.toLowerCase}_$name"
 
+  /** Allocates a unique anonymous function name and returns (updatedState, mangledName). */
+  def allocAnonFnName: (CodeGenState, String) =
+    val name = s"_anon_$nextAnonFnId"
+    (copy(nextAnonFnId = nextAnonFnId + 1), mangleName(name))
+
+  /** Appends a deferred function definition (emitted after main output). */
+  def addDeferredDefinition(defn: String): CodeGenState =
+    copy(deferredDefinitions = defn :: deferredDefinitions)
+
   /** Emits a single line of LLVM IR code, returning the updated state. */
   def emit(line: String): CodeGenState =
     copy(output = line :: output)
@@ -301,6 +356,14 @@ case class CodeGenState(
   /** Emits multiple lines of LLVM IR code at once. */
   def emitAll(lines: List[String]): CodeGenState =
     copy(output = lines.reverse ::: output)
+
+  /** Emits a single line into the current function entry-block prologue. */
+  def emitEntryPrologue(line: String): CodeGenState =
+    copy(entryPrologueOutput = line :: entryPrologueOutput)
+
+  /** Emits multiple lines into the current function entry-block prologue. */
+  def emitAllEntryPrologue(lines: List[String]): CodeGenState =
+    copy(entryPrologueOutput = lines.reverse ::: entryPrologueOutput)
 
   /** Adds an initializer function to the list. */
   def addInitializer(fnName: String): CodeGenState =
@@ -312,6 +375,9 @@ case class CodeGenState(
   /** Adds a warning to the codegen state (will be lifted to CompilerState when done). */
   def addWarning(warning: CompilerWarning): CodeGenState =
     copy(warnings = warning :: warnings)
+
+  def withLoopifiedFunction(value: Boolean): CodeGenState =
+    copy(insideLoopifiedFunction = value)
 
   /** Returns the complete LLVM IR as a single string. */
   def result: String =
@@ -408,8 +474,9 @@ case class CodeGenState(
         }
         val structId = stateWithScalars.nextTbaaId
         // Struct node: !{!"name", !scalar1, i64 offset1, !scalar2, i64 offset2, ...}
-        val fieldParts = scalarIds.map { case (sid, off) => s"!$sid, i64 $off" }.mkString(", ")
-        val metadata   = s"""!$structId = !{!"$name", $fieldParts}"""
+        val fieldParts = scalarIds.map { case (sid, off) => s"!$sid, i64 $off" }
+        val parts      = s"!\"$name\"" :: fieldParts
+        val metadata   = s"!$structId = !{${parts.mkString(", ")}}"
         (
           stateWithScalars.copy(
             tbaaOutput    = metadata :: stateWithScalars.tbaaOutput,
@@ -559,21 +626,74 @@ case class CodeGenState(
       val declaration = emitFunctionDeclaration(name, returnType, paramTypes)
       copy(functionDeclarations = functionDeclarations + (name -> declaration))
 
-/** An entry in the function scope, tracking a binding's register and type info.
-  *
-  * When `isLiteral` is true, the value has not been materialized into a register — it will be
-  * emitted inline by consumers (e.g. as an immediate operand).
+/** Keeps known local call targets in scope without forcing closure construction at each binding. A
+  * direct call can use a Callable target immediately; a value consumer must materialize it. Runtime
+  * also holds function values whose target is unknown, such as function parameters.
   */
-case class ScopeEntry(
-  register:     Int,
-  typeName:     String,
-  isLiteral:    Boolean        = false,
-  literalValue: Option[String] = None
-):
-  def operandStr: String =
-    literalValue.getOrElse(
-      if isLiteral then register.toString else s"%$register"
-    )
+enum ScopeEntry:
+  /** A value already available as a register or literal operand. */
+  case Runtime(
+    register:     Int,
+    typeName:     String,
+    isLiteral:    Boolean        = false,
+    literalValue: Option[String] = None
+  )
+
+  /** A callable known without constructing a runtime closure value. `bindingId` identifies this
+    * scope binding, which may be an alias; `target.bindingId` identifies the original lambda
+    * binding shared by every alias.
+    */
+  case Callable(bindingId: String, target: LocalCallableTarget)
+
+  /** A known entry paired with the environment of this particular runtime closure. */
+  case KnownCallable(bindingId: String, targetId: String, environment: String)
+
+object ScopeEntry:
+
+  /** Creates a runtime binding from an emitted register or literal operand. */
+  def apply(
+    register:     Int,
+    typeName:     String,
+    isLiteral:    Boolean        = false,
+    literalValue: Option[String] = None
+  ): ScopeEntry = Runtime(register, typeName, isLiteral, literalValue)
+
+  /** Retains the runtime value produced by expression emission as a scope binding. */
+  def fromResult(result: CompileResult): ScopeEntry =
+    Runtime(result.register, result.typeName, result.isLiteral, result.literalValue)
+
+  /** Finds a known callable only when the reference resolves to this exact scope binding. Matching
+    * the name alone would allow a shadowed reference to select an outer callable.
+    */
+  def callable(ref: Ref, scope: Map[String, ScopeEntry]): Option[LocalCallableTarget] =
+    scope.get(ref.name).collect {
+      case Callable(id, target) if ref.qualifier.isEmpty && ref.resolvedId.contains(id) => target
+    }
+
+  /** Supplies an operand when a consumer needs a value, such as a return or capture store. A known
+    * callable becomes a constant closure pair with a shared adapter and null environment. The
+    * caller must retain the returned state because materialization may emit that adapter.
+    */
+  def materialize(entry: ScopeEntry, state: CodeGenState): Either[CodeGenError, CompileResult] =
+    entry match
+      case Runtime(register, typeName, isLiteral, literalValue) =>
+        CompileResult(register, state, isLiteral, typeName, literalValue = literalValue).asRight
+      case Callable(_, target) => compileLocalCallableValue(target, state)
+      case KnownCallable(_, targetId, environment) =>
+        compileKnownCallableValue(targetId, environment, state)
+
+/** Lets binding emission extend lexical scope even when no runtime operand is produced.
+  * CompileResult serves expression consumers that need an operand; a direct-only function binding
+  * instead establishes a Callable entry. Keeping the entry here avoids inventing a register for it.
+  *
+  * @param state
+  *   code generation state after emitting the binding's value or callable entry
+  * @param entry
+  *   the runtime value or known callable to introduce into the enclosing scope
+  * @param exitBlock
+  *   the value's exit block, when needed as a predecessor of an enclosing conditional's phi node
+  */
+case class LocalBindingResult(state: CodeGenState, entry: ScopeEntry, exitBlock: Option[String])
 
 /** Represents the result of compiling a term or expression.
   *
@@ -586,7 +706,9 @@ case class ScopeEntry(
   * @param typeName
   *   the MML type name of the result
   * @param exitBlock
-  *   the block label where control exits (for phi node predecessors in nested conditionals)
+  *   the final block introduced by evaluation, used by enclosing PHIs and loop back edges. None
+  *   means evaluation stays in its incoming block. Sequential evaluation retains the latest
+  *   nonempty exit, including effects whose result has type Unit.
   */
 case class CompileResult(
   register:     Int,
@@ -600,20 +722,6 @@ case class CompileResult(
     literalValue.getOrElse(
       if isLiteral then register.toString else s"%$register"
     )
-}
-
-def getMmlTypeName(typeSpec: Type): Option[String] = typeSpec match {
-  case TypeRef(_, name, _, _) => Some(name)
-  case NativePrimitive(_, "i1", _, _) => Some("Bool")
-  case NativePrimitive(_, "i64", _, _) => Some("Int")
-  case NativePrimitive(_, "void", _, _) => Some("Unit")
-  case NativePointer(_, llvm, _, _) => Some(s"Pointer($llvm)")
-  case NativeStruct(_, _, _, _) => Some("NativeStruct")
-  case TypeUnit(_) => Some("Unit")
-  case TypeFn(_, _, _) => Some("Function")
-  case TypeTuple(_, _) => Some("Tuple")
-  case ts: TypeStruct => Some(ts.name)
-  case _ => None
 }
 
 /** Convert a NativeType AST node to LLVM type definition string.
@@ -667,6 +775,7 @@ def getLlvmType(
 ): Either[CodeGenError, String] =
 
   typeSpec match
+    case TypeGroup(_, List(inner)) => getLlvmType(inner, state)
     case TypeRef(_, name, resolvedId, _) =>
       resolvedId.flatMap(state.resolvables.lookupType) match
         case Some(typeDef: TypeDef) =>
@@ -700,15 +809,14 @@ def getLlvmType(
       Right(np.llvmType)
     case ptr: NativePointer =>
       // Direct pointer type (shouldn't normally happen at this level)
-      Right(ptr.llvmType)
+      Right(s"${ptr.llvmType}*")
     case _: NativeStruct =>
       Left(CodeGenError("Unexpected inline native struct"))
     case ts: TypeStruct =>
       Right(s"%struct.${ts.name}")
-    case TypeFn(_, _, ret) =>
-      // When a function type leaks into places expecting a concrete type (e.g., constructor
-      // return type lookup), fall back to the return type's LLVM mapping.
-      getLlvmType(ret, state)
+    case _: TypeFn =>
+      // Function values are fat pointers: { fn_ptr, env_ptr }
+      Right("{ ptr, ptr }")
     case other =>
       // No LLVM type mapping for this TypeSpec
       Left(

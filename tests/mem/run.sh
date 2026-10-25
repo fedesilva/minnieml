@@ -3,6 +3,7 @@ set -euo pipefail
 
 BUILD_DIR="build/test-mem"
 TESTS_DIR="tests/mem"
+LOG_DIR="build/test-mem-logs"
 
 # Color output (if terminal)
 if [ -t 1 ]; then
@@ -47,6 +48,7 @@ clean_build() {
 run_mem() {
   printf "\n${BOLD}=== ASan+LSan mode ===${RESET}\n\n"
   clean_build
+  mkdir -p "$LOG_DIR"
   local start_ts
   start_ts=$(date +%s)
 
@@ -59,12 +61,13 @@ run_mem() {
   for src in $tests; do
     name=$(basename "$src" .mml)
     binary="$BUILD_DIR/$name"
+    rm -f "$LOG_DIR/$name.run.log"
     current=$((current + 1))
     compile_start=$(date +%s)
     progress "[mem] ($current/$total) compiling $name ..."
 
-    # Compile once with ASan instrumentation; leak detection runs via ASAN_OPTIONS.
-    if mmlc -s -b "$BUILD_DIR" -o "$binary" "$src" > /dev/null 2>&1; then
+    # Instrument generated code and the C runtime; ASAN_OPTIONS also enables leak detection.
+    if mmlc -s -O0 -b "$BUILD_DIR" -o "$binary" "$src" > "$LOG_DIR/$name.compile.log" 2>&1; then
       compile_end=$(date +%s)
       compile_elapsed=$((compile_end - compile_start))
       progress "[mem] ($current/$total) compiled $name (${compile_elapsed}s)"
@@ -73,14 +76,14 @@ run_mem() {
     else
       compile_end=$(date +%s)
       compile_elapsed=$((compile_end - compile_start))
-      fail "$name (compile)"
+      fail "$name (compile; see $LOG_DIR/$name.compile.log)"
       progress "[mem] ($current/$total) compile failed $name (${compile_elapsed}s)"
       failed=$((failed + 1))
       failures="$failures $name"
       continue
     fi
 
-    if ASAN_OPTIONS="$ASAN_OPTS" "$binary" > /dev/null 2>&1; then
+    if ASAN_OPTIONS="$ASAN_OPTS" "$binary" > "$LOG_DIR/$name.run.log" 2>&1; then
       run_end=$(date +%s)
       run_elapsed=$((run_end - run_start))
       progress "[mem] ($current/$total) ran $name (${run_elapsed}s)"
@@ -90,7 +93,7 @@ run_mem() {
       run_end=$(date +%s)
       run_elapsed=$((run_end - run_start))
       progress "[mem] ($current/$total) run failed $name (${run_elapsed}s)"
-      fail "$name"
+      fail "$name (see $LOG_DIR/$name.run.log)"
       failed=$((failed + 1))
       failures="$failures $name"
     fi

@@ -1,0 +1,21 @@
+fn make_reader(~text: String): Unit -> Int =
+  ~{ text.length; };
+;
+
+fn loop(n: Int, total: Int): Int =
+  if n == 0 then
+    total;
+  else
+    let read = make_reader (int_to_str n);
+    loop (n - 1) (total + read ());
+  ;
+;
+
+pub fn main(): Int =
+  let total = loop 1000000 0;
+  if total == 5888896 then
+    0;
+  else
+    1;
+  ;
+;

@@ -5,9 +5,9 @@ let b = 2;
 pub fn main(): Int =
   let x = 
     if a > 1 then
-      a + b 
+      a + b;
     else  
-      2
-    end;
-  x  
+      2;
+    ;
+  x;
 ;

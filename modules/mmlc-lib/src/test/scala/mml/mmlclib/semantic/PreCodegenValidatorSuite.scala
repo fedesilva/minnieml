@@ -10,7 +10,7 @@ class PreCodegenValidatorSuite extends BaseEffFunSuite:
 
   test("binary mode requires a main function") {
     val source          = """
-      fn foo() = 1;
+      fn foo() = 1;;
     """
     val expectedMessage = "No entry point 'main' found for binary compilation"
     FrontEndApi
@@ -30,7 +30,7 @@ class PreCodegenValidatorSuite extends BaseEffFunSuite:
 
   test("binary mode main function with non-StringArray parameter is not a valid entry point") {
     val source          = """
-      fn main(a: Int32) = 1;
+      fn main(a: Int32) = 1;;
     """
     val expectedMessage = "No entry point 'main' found for binary compilation"
     FrontEndApi
@@ -50,7 +50,7 @@ class PreCodegenValidatorSuite extends BaseEffFunSuite:
 
   test("binary mode main function with StringArray parameter is valid") {
     val source = """
-      pub fn main(args: StringArray): Unit = ();
+      pub fn main(args: StringArray): Unit = ();;
     """
     FrontEndApi
       .compile(source, "Test", CompilerConfig.default.copy(mode = CompilationMode.Exe))
@@ -65,7 +65,7 @@ class PreCodegenValidatorSuite extends BaseEffFunSuite:
 
   test("binary mode consuming StringArray main parameter is not a valid entry point") {
     val source          = """
-      fn main(~args: StringArray): Unit = ();
+      fn main(~args: StringArray): Unit = ();;
     """
     val expectedMessage = "No entry point 'main' found for binary compilation"
     FrontEndApi
@@ -83,11 +83,12 @@ class PreCodegenValidatorSuite extends BaseEffFunSuite:
       }
   }
 
-  test("binary mode main function must have Unit or Int64 return type") {
-    val source          = """
-      pub fn main(): String = "hello";
+  test("binary mode main function must have Unit, Int32 or Int64 return type") {
+    val source = """
+      pub fn main(): String = "hello";;
     """
-    val expectedMessage = "Entry point 'main' must have a return type of 'Unit' or 'Int64'"
+    val expectedMessage =
+      "Entry point 'main' must have a return type of 'Unit', 'Int32', or 'Int64'"
     FrontEndApi
       .compile(source, "Test", CompilerConfig.default.copy(mode = CompilationMode.Exe))
       .value
@@ -105,7 +106,7 @@ class PreCodegenValidatorSuite extends BaseEffFunSuite:
 
   test("binary mode main function with Unit return type is valid") {
     val source = """
-      pub fn main(): Unit = ();
+      pub fn main(): Unit = ();;
     """
     FrontEndApi
       .compile(source, "Test", CompilerConfig.default.copy(mode = CompilationMode.Exe))
@@ -120,7 +121,7 @@ class PreCodegenValidatorSuite extends BaseEffFunSuite:
 
   test("binary mode main function with Int return type is valid") {
     val source = """
-      pub fn main(): Int = 0;
+      pub fn main(): Int = 0;;
     """
     FrontEndApi
       .compile(source, "Test", CompilerConfig.default.copy(mode = CompilationMode.Exe))
@@ -135,7 +136,7 @@ class PreCodegenValidatorSuite extends BaseEffFunSuite:
 
   test("library mode does not require a main function") {
     val source = """
-      fn foo() = 1;
+      fn foo() = 1;;
     """
     FrontEndApi
       .compile(source, "Test", CompilerConfig.default.copy(mode = CompilationMode.Library))
@@ -150,7 +151,7 @@ class PreCodegenValidatorSuite extends BaseEffFunSuite:
 
   test("ast mode does not require a main function") {
     val source = """
-      fn foo() = 1;
+      fn foo() = 1;;
     """
     FrontEndApi
       .compile(source, "Test", CompilerConfig.default.copy(mode = CompilationMode.Ast))
@@ -165,7 +166,7 @@ class PreCodegenValidatorSuite extends BaseEffFunSuite:
 
   test("ir mode does not require a main function") {
     val source = """
-      fn foo() = 1;
+      fn foo() = 1;;
     """
     FrontEndApi
       .compile(source, "Test", CompilerConfig.default.copy(mode = CompilationMode.Ir))
@@ -180,7 +181,7 @@ class PreCodegenValidatorSuite extends BaseEffFunSuite:
 
   test("binary mode: fn main without pub emits InvalidEntryPoint error") {
     val source          = """
-      fn main(): Unit = ();
+      fn main(): Unit = ();;
     """
     val expectedMessage = "Entry point 'main' must be declared 'pub'"
     FrontEndApi
@@ -200,7 +201,7 @@ class PreCodegenValidatorSuite extends BaseEffFunSuite:
 
   test("binary mode: pub fn main passes visibility check") {
     val source = """
-      pub fn main(): Unit = ();
+      pub fn main(): Unit = ();;
     """
     FrontEndApi
       .compile(source, "Test", CompilerConfig.default.copy(mode = CompilationMode.Exe))

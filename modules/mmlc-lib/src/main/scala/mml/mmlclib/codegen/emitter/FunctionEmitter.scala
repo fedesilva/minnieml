@@ -4,6 +4,10 @@ import cats.syntax.all.*
 import mml.mmlclib.ast.*
 import mml.mmlclib.codegen.emitter.alias.AliasScopeEmitter
 import mml.mmlclib.codegen.emitter.compileExpr
+import mml.mmlclib.codegen.emitter.expression.{
+  compileFunctionWithTemplate,
+  compileLocalBindingValue
+}
 import mml.mmlclib.codegen.emitter.tbaa.TbaaEmitter
 import mml.mmlclib.errors.CompilerWarning
 
@@ -37,7 +41,7 @@ def compileBinding(bnd: Bnd, state: CodeGenState): Either[CodeGenError, CodeGenS
           val initFnName = s"_init_global_${bnd.name}"
           val state2 = origState
             .emit(s"@${bnd.name} = global $llvmType 0")
-            .emit(s"define internal void @$initFnName() {")
+            .emit(s"define internal void @$initFnName() #0 {")
             .emit(s"entry:")
           compileExpr(bnd.value, state2.withRegister(0)).map { compileRes2 =>
             val (stateWithAlias, aliasTag, noaliasTag) = bnd.typeSpec match
@@ -83,14 +87,15 @@ def compileBndLambda(
     findTailRecBody(lambda, bnd) match
       case Some(body) =>
         compileTailRecursiveLambda(
-          bnd,
           lambda,
           state,
           returnType,
           paramTypes,
           emittedName,
           body,
-          linkage
+          inlineHint = bnd.meta.exists(_.inlineHint),
+          linkage    = linkage,
+          entryAbi   = TailRecEntryAbi.PlainDirect
         )
       case None =>
         // Pattern not recognized - emit warning and fall back to regular codegen
@@ -110,32 +115,116 @@ def compileBndLambda(
         )
   else compileRegularLambda(bnd, lambda, state, returnType, paramTypes, emittedName, linkage)
 
-/** Check if a parameter is a NativePointer type at LLVM level. */
-private def isPointerParam(param: FnParam, resolvables: ResolvablesIndex): Boolean =
+/** Check if a parameter lowers to an LLVM pointer-like native type. */
+def isPointerParam(param: FnParam, resolvables: ResolvablesIndex): Boolean =
   param.typeSpec
     .orElse(param.typeAsc)
-    .flatMap(TypeUtils.getTypeName)
-    .exists(TypeUtils.isPointerType(_, resolvables))
+    .exists(TypeUtils.isPointerLike(_, resolvables))
 
-/** Filter out Unit params (void) — they can't be passed in LLVM. */
-private def filterVoidParams(
-  params:     List[FnParam],
-  paramTypes: List[String]
-): List[(FnParam, String)] =
-  params.zip(paramTypes).filter((_, t) => t != "void")
-
-/** Format LLVM parameter declarations, adding `noalias` for consuming pointer params. */
-private def formatParamDecls(
-  params:      List[(FnParam, String)],
-  resolvables: ResolvablesIndex
+/** Describe storage available at a capturing closure entry. */
+private[emitter] def formatClosureEnvParam(
+  envStruct: TypeStruct,
+  paramIdx:  Int,
+  state:     CodeGenState
 ): String =
-  params.zipWithIndex
-    .map { case ((param, typ), idx) =>
-      if param.consuming && isPointerParam(param, resolvables)
-      then s"$typ noalias %$idx"
-      else s"$typ %$idx"
+  state.layout.of(s"%struct.${envStruct.name}", state) match
+    case Right(layout) if layout.size > 0 =>
+      s"ptr align ${layout.alignment} dereferenceable(${layout.size}) %$paramIdx"
+    case _ => s"ptr %$paramIdx"
+
+/** Loads physical captures in a deferred entry. Known PAP entries combine with loaded environment
+  * pointers or null without a code-pointer field. Field offset is 1 for move environments, whose
+  * first field is the destructor pointer, and 0 for borrow environments.
+  */
+def emitCaptureLoads(
+  envStruct:    TypeStruct,
+  envParamIdx:  Int,
+  captureTypes: List[(Capture, String)],
+  bodyState:    CodeGenState,
+  fieldOffset:  Int = 1
+): (CodeGenState, Map[String, ScopeEntry]) =
+  val envTypeRef = s"%struct.${envStruct.name}"
+  val plan       = envStruct.id.flatMap(bodyState.closureEnvironments.get)
+  val staticScope = plan.toList
+    .flatMap(_.captures)
+    .flatMap { planned =>
+      val ref = planned.capture.ref
+      val entry = planned.storage match
+        case CaptureStorage.Static(targetId) =>
+          ref.resolvedId.map(id => ScopeEntry.KnownCallable(id, targetId, "null"))
+        case CaptureStorage.UnitValue =>
+          ScopeEntry(0, "Unit", isLiteral = true, literalValue = "undef".some).some
+        case _ => none
+      entry.toList.flatMap(value => (ref.name :: ref.resolvedId.toList).map(_ -> value))
     }
-    .mkString(", ")
+    .toMap
+  captureTypes.zipWithIndex.foldLeft((bodyState, staticScope)) {
+    case ((st, scope), ((cap, llvmType), idx)) =>
+      val ref     = cap.ref
+      val gepReg  = st.nextRegister
+      val loadReg = gepReg + 1
+      val gepLine =
+        s"  %$gepReg = getelementptr $envTypeRef, ptr %$envParamIdx, i32 0, i32 ${idx + fieldOffset}"
+      val (stateWithTag, fieldTag) = TbaaEmitter
+        .getTbaaStructFieldTag(envStruct, idx + fieldOffset, st)
+        .getOrElse((st, ""))
+      val loadLine =
+        emitLoad(loadReg, llvmType, s"%$gepReg", Option.when(fieldTag.nonEmpty)(fieldTag))
+      val newState = stateWithTag.withRegister(loadReg + 1).emit(gepLine).emit(loadLine)
+      val mmlType = ref.typeSpec
+        .flatMap(getNominalTypeName(_).toOption)
+        .getOrElse("Unknown")
+
+      val entry = plan.flatMap(_.runtimeCaptures.lift(idx)).map(_.storage) match
+        case Some(CaptureStorage.Environment(_, targetId)) =>
+          ref.resolvedId.fold[ScopeEntry](ScopeEntry(loadReg, mmlType))(id =>
+            ScopeEntry.KnownCallable(id, targetId, s"%$loadReg")
+          )
+        case _ => ScopeEntry(loadReg, mmlType)
+      (newState, scope ++ (ref.name :: ref.resolvedId.toList).map(_ -> entry))
+  }
+
+/** Places hoisted allocations in the entry block before the body. In a loopified function this
+  * allocates their storage once, while capture stores remain at their original evaluation sites.
+  */
+private[emitter] def renderFunctionLines(
+  header: String,
+  state:  CodeGenState
+): List[String] =
+  header :: "entry:" :: state.entryPrologueOutput.reverse ::: state.output.reverse
+
+/** Retains symbols, adapters, and metadata discovered in a function body while restoring the
+  * enclosing output and SSA numbering. Registers belong to one LLVM function; registries serve the
+  * whole module and must survive deferred emission.
+  */
+private[emitter] def mergeFunctionBodyState(
+  parent: CodeGenState,
+  child:  CodeGenState
+): CodeGenState =
+  child.copy(
+    output                  = parent.output,
+    entryPrologueOutput     = parent.entryPrologueOutput,
+    nextRegister            = parent.nextRegister,
+    insideLoopifiedFunction = parent.insideLoopifiedFunction
+  )
+
+/** Resolve the LLVM-level name for a memory function (__free_T, __clone_T). Native/stdlib functions
+  * use their raw name; user-generated functions use mangled name.
+  */
+private[emitter] def resolveMemFnLlvmName(
+  fnName: String,
+  state:  CodeGenState
+): String =
+  val isNative = state.resolvables.resolvables.values.exists:
+    case bnd: Bnd if bnd.name == fnName =>
+      bnd.value.terms match
+        case List(l: Lambda) =>
+          l.body.terms match
+            case List(_: NativeImpl) => true
+            case _ => false
+        case _ => false
+    case _ => false
+  if isNative then fnName else state.mangleName(fnName)
 
 /** Compiles a regular (non-tail-recursive) lambda to LLVM IR. */
 private def compileRegularLambda(
@@ -147,65 +236,46 @@ private def compileRegularLambda(
   emittedName: String,
   linkage:     String = ""
 ): Either[CodeGenError, CodeGenState] =
-  val filteredParamsWithTypes = filterVoidParams(lambda.params, paramTypes)
-  val filteredParams          = filteredParamsWithTypes.map(_._1)
-  val filteredParamTypes      = filteredParamsWithTypes.map(_._2)
-  val paramDecls              = formatParamDecls(filteredParamsWithTypes, state.resolvables)
-
-  val attrGroup    = if bnd.meta.exists(_.inlineHint) then "#1" else "#0"
-  val functionDecl = s"define $linkage$returnType @$emittedName($paramDecls) $attrGroup {"
-  val entryLine    = "entry:"
-
-  // Setup function body state with initial lines
-  val bodyState = state
-    .emit(functionDecl)
-    .emit(entryLine)
-    .withRegister(0) // Reset register counter for local function scope
-
-  // Create a scope map for lambda parameters
-  val paramScope = filteredParams
-    .zip(filteredParamTypes)
-    .zipWithIndex
-    .map { case ((param, typ), idx) =>
-      val regNum    = idx
-      val allocLine = s"  %${param.name}_ptr = alloca $typ"
-      val storeLine = s"  store $typ %$idx, $typ* %${param.name}_ptr"
-      val loadLine  = s"  %${regNum} = load $typ, $typ* %${param.name}_ptr"
-
-      // We'll emit the alloca/store/load sequence for each parameter
-      bodyState.emit(allocLine).emit(storeLine).emit(loadLine)
-
-      val mmlType = param.typeAsc.flatMap(getMmlTypeName).getOrElse("Unknown")
-      (param.name, ScopeEntry(regNum, mmlType))
-    }
-    .toMap
-
-  // Register count starts after parameter setup
-  val updatedState = bodyState.withRegister(filteredParams.size)
-
-  val bodyResult =
-    lambda.body.terms match
+  for
+    lowering <- ParameterLowering.from(lambda, paramTypes)
+    paramScope <- lowering.argumentScope
+    bodyState = state.copy(
+      output                  = List.empty,
+      entryPrologueOutput     = List.empty,
+      nextRegister            = lowering.runtimeCount,
+      insideLoopifiedFunction = false
+    )
+    bodyRes <- lambda.body.terms match
       case List(_: DataConstructor) =>
-        compileStructConstructor(bnd, lambda, updatedState, paramScope)
-      case _ =>
-        compileExpr(lambda.body, updatedState, paramScope)
+        compileStructConstructor(bnd, lambda, bodyState, paramScope)
 
-  // Compile the lambda body with the parameter scope
-  bodyResult.flatMap { bodyRes =>
+      case List(native: NativeImpl) =>
+        for
+          tpl <- native.nativeTpl.toRight(CodeGenError("Missing function template", native.some))
+          fnType <- bnd.typeSpec
+            .flatMap(resolveToTypeFn(_, state.resolvables))
+            .toRight(CodeGenError("Missing template function type", bnd.some))
+          typeName <- getNominalTypeName(fnType.returnType)
+          result <- compileFunctionWithTemplate(
+            tpl,
+            lowering.arguments,
+            returnType,
+            typeName,
+            bodyState
+          )
+        yield result
+
+      case _ => compileExpr(lambda.body, bodyState, paramScope)
+  yield
+    val paramDecls   = lowering.declarations(state.resolvables)
+    val attrGroup    = if bnd.meta.exists(_.inlineHint) then "#1" else "#0"
+    val functionDecl = s"define $linkage$returnType @$emittedName($paramDecls) $attrGroup {"
     val returnLine =
       if returnType == "void" then "  ret void"
-      else
-        val returnOp = bodyRes.operandStr
-        s"  ret $returnType $returnOp"
-
-    // Close function and add empty line
-    Right(
-      bodyRes.state
-        .emit(returnLine)
-        .emit("}")
-        .emit("")
-    )
-  }
+      else s"  ret $returnType ${bodyRes.operandStr}"
+    val finalBodyState = bodyRes.state.emit(returnLine).emit("}").emit("")
+    mergeFunctionBodyState(state, finalBodyState)
+      .emitAll(renderFunctionLines(functionDecl, finalBodyState))
 
 private def compileStructConstructor(
   bnd:           Bnd,
@@ -257,37 +327,39 @@ private def compileStructConstructor(
                         )
                       )
                     case Some(entry) =>
-                      getLlvmType(field.typeSpec, currentState).flatMap { fieldLlvmType =>
-                        val fieldPtrReg = currentState.nextRegister
-                        val ptrLine = emitGetElementPtr(
-                          fieldPtrReg,
-                          structLlvmType,
-                          s"$structLlvmType*",
-                          s"%$allocReg",
-                          List(("i32", "0"), ("i32", fieldIndex.toString))
-                        )
-                        val stateWithPtr =
-                          currentState.withRegister(fieldPtrReg + 1).emit(ptrLine)
+                      ScopeEntry.materialize(entry, currentState).flatMap { value =>
+                        getLlvmType(field.typeSpec, value.state).flatMap { fieldLlvmType =>
+                          val fieldPtrReg = value.state.nextRegister
+                          val ptrLine = emitGetElementPtr(
+                            fieldPtrReg,
+                            structLlvmType,
+                            s"$structLlvmType*",
+                            s"%$allocReg",
+                            List(("i32", "0"), ("i32", fieldIndex.toString))
+                          )
+                          val stateWithPtr =
+                            value.state.withRegister(fieldPtrReg + 1).emit(ptrLine)
 
-                        val valueToStore    = entry.operandStr
-                        val stateAfterClone = stateWithPtr
+                          val valueToStore    = value.operandStr
+                          val stateAfterClone = stateWithPtr
 
-                        TbaaEmitter
-                          .getTbaaStructFieldTag(returnTypeSpec, fieldIndex, stateAfterClone)
-                          .map { case (stateWithTag, tag) =>
-                            val (stateWithAlias, aliasTag, noaliasTag) =
-                              AliasScopeEmitter.getAliasScopeTags(field.typeSpec, stateWithTag)
-                            val storeLine =
-                              emitStore(
-                                valueToStore,
-                                fieldLlvmType,
-                                s"%$fieldPtrReg",
-                                Some(tag),
-                                aliasTag,
-                                noaliasTag
-                              )
-                            stateWithAlias.emit(storeLine)
-                          }
+                          TbaaEmitter
+                            .getTbaaStructFieldTag(returnTypeSpec, fieldIndex, stateAfterClone)
+                            .map { case (stateWithTag, tag) =>
+                              val (stateWithAlias, aliasTag, noaliasTag) =
+                                AliasScopeEmitter.getAliasScopeTags(field.typeSpec, stateWithTag)
+                              val storeLine =
+                                emitStore(
+                                  valueToStore,
+                                  fieldLlvmType,
+                                  s"%$fieldPtrReg",
+                                  Some(tag),
+                                  aliasTag,
+                                  noaliasTag
+                                )
+                              stateWithAlias.emit(storeLine)
+                            }
+                        }
                       }
                 }
             }
@@ -313,12 +385,18 @@ private def compileStructConstructor(
           }
   }
 
-/** A statement in a tail-recursive body, optionally binding a name.
-  *
-  * For sequence lambdas (__stmt), bindingName is None (side-effect only). For let-bindings,
-  * bindingName is Some(name) and the result is bound to that name for use in subsequent code.
+/** Retains the binding while let/sequence chains are flattened for loopification. Keeping FnParam
+  * lets shared binding emission recognize planned callables, aliases, and recursive self references
+  * by semantic identity. A sequence effect has no binding. A witness parameter receives the second
+  * result of an ownership-producing initializer.
   */
-private case class BoundStatement(bindingName: Option[String], expr: Expr)
+private[emitter] case class BoundStatement(
+  binding: Option[FnParam],
+  expr:    Expr,
+  witness: Option[FnParam] = None
+):
+
+  def bindingName: Option[String] = binding.map(_.name)
 
 /** Recursive tree representing the body of a tail-recursive function for loopification.
   *
@@ -326,18 +404,18 @@ private case class BoundStatement(bindingName: Option[String], expr: Expr)
   * condition — both branches may contain recursive calls, enabling patterns like astar2's
   * visit_neighbors where different paths recurse with different arguments.
   */
-sealed private trait TailRecBody
+sealed private[emitter] trait TailRecBody
 
 /** A leaf that exits the loop: compiles preStatements then returns exitExpr. */
-private case class TailRecExit(preStatements: List[BoundStatement], exitExpr: Expr)
+private[emitter] case class TailRecExit(preStatements: List[BoundStatement], exitExpr: Expr)
     extends TailRecBody
 
 /** A leaf that loops back: compiles preStatements then jumps to loop header with new args. */
-private case class TailRecCall(preStatements: List[BoundStatement], args: List[Expr])
+private[emitter] case class TailRecCall(preStatements: List[BoundStatement], args: List[Expr])
     extends TailRecBody
 
 /** A branch: compiles preStatements, evaluates condition, recurses into both subtrees. */
-private case class TailRecBranch(
+private[emitter] case class TailRecBranch(
   preStatements: List[BoundStatement],
   condition:     Expr,
   ifTrue:        TailRecBody,
@@ -347,67 +425,406 @@ private case class TailRecBranch(
 /** A back edge from a recursive call site to the loop header. */
 private case class BackEdge(blockLabel: String, argValues: List[String])
 
-private def compileTailRecursiveLambda(
-  bnd:         Bnd,
-  lambda:      Lambda,
-  state:       CodeGenState,
-  returnType:  String,
-  paramTypes:  List[String],
-  emittedName: String,
-  body:        TailRecBody,
-  linkage:     String = ""
-): Either[CodeGenError, CodeGenState] =
-  val nonVoidIndices          = paramTypes.indices.filter(i => paramTypes(i) != "void").toList
-  val filteredParamsWithTypes = nonVoidIndices.map(i => (lambda.params(i), paramTypes(i)))
-  val filteredParams          = filteredParamsWithTypes.map(_._1)
-  val filteredParamTypes      = filteredParamsWithTypes.map(_._2)
-  val paramDecls              = formatParamDecls(filteredParamsWithTypes, state.resolvables)
+/** Selects whether the loopified entry receives an environment in addition to user parameters. The
+  * loop construction is shared by plain functions and closure entries.
+  */
+private[emitter] enum TailRecEntryAbi derives CanEqual:
+  case PlainDirect
+  case ClosureEntry
 
-  val attrGroup    = if bnd.meta.exists(_.inlineHint) then "#1" else "#0"
-  val functionDecl = s"define $linkage$returnType @$emittedName($paramDecls) $attrGroup {"
-  val loopHeader   = "loop.header"
+private[emitter] def validateLoopifiedBorrowClosures(
+  body: TailRecBody
+): Either[CodeGenError, Unit] =
+  validateTailRecBorrowClosures(body, Set.empty).map(_ => ())
 
-  val baseState       = state.emit(functionDecl).emit("entry:")
-  val stateAfterEntry = baseState.emit(s"  br label %$loopHeader")
-  val headerState     = stateAfterEntry.emit(s"$loopHeader:")
+private def validateTailRecBorrowClosures(
+  body:           TailRecBody,
+  activeClosures: Set[String]
+): Either[CodeGenError, Set[String]] =
+  body match
+    case TailRecExit(preStatements, exitExpr) =>
+      for
+        activeAfterPre <- validateBorrowClosureStatements(preStatements, activeClosures)
+        _ <- validateExprAgainstBorrowClosures(exitExpr, activeAfterPre)
+      yield activeAfterPre
+    case TailRecCall(preStatements, args) =>
+      for
+        activeAfterPre <- validateBorrowClosureStatements(preStatements, activeClosures)
+        _ <- args.foldLeft(Right(()): Either[CodeGenError, Unit]) { (acc, arg) =>
+          acc.flatMap(_ => validateExprAgainstBorrowClosures(arg, activeAfterPre))
+        }
+      yield activeAfterPre
+    case TailRecBranch(preStatements, condition, ifTrue, ifFalse) =>
+      for
+        activeAfterPre <- validateBorrowClosureStatements(preStatements, activeClosures)
+        _ <- validateExprAgainstBorrowClosures(condition, activeAfterPre)
+        _ <- validateTailRecBorrowClosures(ifTrue, activeAfterPre)
+        _ <- validateTailRecBorrowClosures(ifFalse, activeAfterPre)
+      yield activeAfterPre
 
-  val paramCount = filteredParams.size
-  val phiStart   = paramCount
-  val phiRegs    = filteredParams.indices.map(i => phiStart + i).toList
-
-  // Emit placeholder phi lines — replaced after collecting all back edges
-  val phiPlaceholders = phiRegs.zip(filteredParamTypes).map { case (phiReg, llvmType) =>
-    s"  %$phiReg = phi $llvmType __PHI_PLACEHOLDER_$phiReg"
+private def validateBorrowClosureStatements(
+  statements:      List[BoundStatement],
+  initialClosures: Set[String]
+): Either[CodeGenError, Set[String]] =
+  statements.foldLeft(initialClosures.asRight[CodeGenError]) { (activeE, stmt) =>
+    activeE.flatMap(validateBorrowClosureStatement(stmt, _))
   }
 
-  val paramScope = filteredParams
-    .zip(phiRegs)
-    .map { case (param, reg) =>
-      val mmlType = param.typeAsc.flatMap(getMmlTypeName).getOrElse("Unknown")
-      param.name -> ScopeEntry(reg, mmlType)
+private def validateBorrowClosureStatement(
+  statement:      BoundStatement,
+  activeClosures: Set[String]
+): Either[CodeGenError, Set[String]] =
+  borrowClosureBinding(statement.expr) match
+    case Some(lambda) =>
+      statement.bindingName match
+        case Some(bindingName) =>
+          rejectBorrowClosureCaptureOfLoopLocal(lambda, activeClosures)
+            .map(_ => activeClosures + bindingName)
+        case None =>
+          CodeGenError(
+            "Borrow closure on a loopified path must be bound to a local name before use",
+            lambda.some
+          ).asLeft
+    case None =>
+      statement.bindingName match
+        case Some(bindingName) =>
+          aliasSource(statement.expr, activeClosures) match
+            case Some(_) => Right(activeClosures + bindingName)
+            case None =>
+              validateExprAgainstBorrowClosures(statement.expr, activeClosures)
+                .map(_ => activeClosures - bindingName)
+        case None =>
+          validateExprAgainstBorrowClosures(statement.expr, activeClosures)
+            .map(_ => activeClosures)
+
+private def rejectBorrowClosureCaptureOfLoopLocal(
+  lambda:         Lambda,
+  activeClosures: Set[String]
+): Either[CodeGenError, Unit] =
+  activeBorrowRef(lambda.body, activeClosures, lambdaScopedNames(lambda))
+    .orElse(lambda.captures.iterator.map(_.ref).find(ref => activeClosures.contains(ref.name)))
+    .map { ref =>
+      CodeGenError(
+        "Borrow closure on a loopified path cannot capture another loop-local borrow closure",
+        ref.some
+      ).asLeft
     }
-    .toMap
+    .getOrElse(Right(()))
 
-  val stateAfterPhi = headerState.emitAll(phiPlaceholders).withRegister(phiStart + paramCount)
+private def validateExprAgainstBorrowClosures(
+  expr:           Expr,
+  activeClosures: Set[String],
+  shadowedNames:  Set[String] = Set.empty
+): Either[CodeGenError, Unit] =
+  expr.terms.foldLeft(Right(()): Either[CodeGenError, Unit]) { (acc, term) =>
+    acc.flatMap(_ => validateTermAgainstBorrowClosures(term, activeClosures, shadowedNames))
+  }
 
-  compileTailRecBody(
-    body,
-    stateAfterPhi,
-    paramScope,
-    returnType,
-    loopHeader,
-    loopHeader,
-    nonVoidIndices
-  ).map { case (stateAfterBody, backEdges) =>
-    val finalState = stateAfterBody.emit("}").emit("")
-    // Build phi replacements from collected back edges
-    val replacements = phiRegs.zipWithIndex.map { case (phiReg, paramIdx) =>
-      val entryValue  = s"%$paramIdx"
-      val backEntries = backEdges.map(e => s"[ ${e.argValues(paramIdx)}, %${e.blockLabel} ]")
-      val allEntries  = s"[ $entryValue, %entry ]" :: backEntries
-      s"__PHI_PLACEHOLDER_$phiReg" -> allEntries.mkString(", ")
-    }.toMap
-    replacePlaceholders(finalState, replacements)
+private def validateTermAgainstBorrowClosures(
+  term:           Term,
+  activeClosures: Set[String],
+  shadowedNames:  Set[String]
+): Either[CodeGenError, Unit] =
+  term match
+
+    case binding: BindOwnership =>
+      for
+        _ <- validateExprAgainstBorrowClosures(binding.initializer, activeClosures, shadowedNames)
+        _ <- validateExprAgainstBorrowClosures(
+          binding.body,
+          activeClosures,
+          shadowedNames + binding.valueParam.name + binding.witnessParam.name
+        )
+      yield ()
+
+    case result: YieldOwnership =>
+      for
+        _ <- validateExprAgainstBorrowClosures(result.value, activeClosures, shadowedNames)
+        _ <- validateExprAgainstBorrowClosures(result.owns, activeClosures, shadowedNames)
+      yield ()
+
+    case app: App =>
+      collectAppArgs(app) match
+        case Some((ref, args)) =>
+          val directBorrowCall =
+            activeClosures.contains(ref.name) && !shadowedNames.contains(ref.name)
+          for
+            _ <-
+              if directBorrowCall then ().asRight[CodeGenError]
+              else validateCalleeAgainstBorrowClosures(ref, activeClosures, shadowedNames)
+            _ <- args.traverse_ { arg =>
+              // Ownership analysis prevents callee escape; the borrow ends before env reuse.
+              unwrapSingleTerm(arg) match
+                case Some(value: Ref)
+                    if activeClosures.contains(value.name) &&
+                      !shadowedNames.contains(value.name) =>
+                  ().asRight
+                case _ =>
+                  validateExprAgainstBorrowClosures(arg, activeClosures, shadowedNames)
+            }
+          yield ()
+        case _ =>
+          for
+            _ <- validateCalleeAgainstBorrowClosures(app.fn, activeClosures, shadowedNames)
+            _ <- validateExprAgainstBorrowClosures(app.arg, activeClosures, shadowedNames)
+          yield ()
+    case ref: Ref if activeClosures.contains(ref.name) && !shadowedNames.contains(ref.name) =>
+      CodeGenError(
+        "Borrow closure on a loopified path may survive across iterations; use ~{...} or keep it iteration-local",
+        ref.some
+      ).asLeft
+    case ref: Ref =>
+      ref.qualifier match
+        case Some(qualifier) =>
+          validateTermAgainstBorrowClosures(qualifier, activeClosures, shadowedNames)
+        case None => Right(())
+    case lambda: Lambda if lambda.captures.nonEmpty && !lambda.isMove =>
+      CodeGenError(
+        "Borrow closure on a loopified path must stay iteration-local; add ~{...} or restructure",
+        lambda.some
+      ).asLeft
+    case lambda: Lambda =>
+      validateExprAgainstBorrowClosures(
+        lambda.body,
+        activeClosures,
+        shadowedNames ++ lambdaScopedNames(lambda)
+      )
+    case group: TermGroup =>
+      validateExprAgainstBorrowClosures(group.inner, activeClosures, shadowedNames)
+    case cond: Cond =>
+      for
+        _ <- validateExprAgainstBorrowClosures(cond.cond, activeClosures, shadowedNames)
+        _ <- validateExprAgainstBorrowClosures(cond.ifTrue, activeClosures, shadowedNames)
+        _ <- validateExprAgainstBorrowClosures(cond.ifFalse, activeClosures, shadowedNames)
+      yield ()
+    case tuple: Tuple =>
+      tuple.elements.toList.foldLeft(Right(()): Either[CodeGenError, Unit]) { (acc, elem) =>
+        acc.flatMap(_ => validateExprAgainstBorrowClosures(elem, activeClosures, shadowedNames))
+      }
+    case expr: Expr =>
+      validateExprAgainstBorrowClosures(expr, activeClosures, shadowedNames)
+    case _ =>
+      Right(())
+
+private def validateCalleeAgainstBorrowClosures(
+  callee:         Callee,
+  activeClosures: Set[String],
+  shadowedNames:  Set[String]
+): Either[CodeGenError, Unit] =
+  callee match
+    case ref: Ref if activeClosures.contains(ref.name) && !shadowedNames.contains(ref.name) =>
+      CodeGenError(
+        "Borrow closure on a loopified path must be called directly, not forwarded as a value",
+        ref.some
+      ).asLeft
+    case ref: Ref =>
+      ref.qualifier match
+        case Some(qualifier) =>
+          validateTermAgainstBorrowClosures(qualifier, activeClosures, shadowedNames)
+        case None => Right(())
+    case app: App =>
+      validateTermAgainstBorrowClosures(app, activeClosures, shadowedNames)
+    case lambda: Lambda =>
+      validateExprAgainstBorrowClosures(
+        lambda.body,
+        activeClosures,
+        shadowedNames ++ lambdaScopedNames(lambda)
+      )
+
+private def lambdaScopedNames(lambda: Lambda): Set[String] =
+  lambda.params.iterator.map(_.name).toSet
+
+private def borrowClosureBinding(expr: Expr): Option[Lambda] =
+  unwrapSingleTerm(expr).collect {
+    case lambda: Lambda if lambda.captures.nonEmpty && !lambda.isMove => lambda
+  }
+
+private def aliasSource(
+  expr:           Expr,
+  activeClosures: Set[String]
+): Option[String] =
+  unwrapSingleTerm(expr).collect {
+    case ref: Ref if activeClosures.contains(ref.name) => ref.name
+  }
+
+private def unwrapSingleTerm(expr: Expr): Option[Term] =
+  expr.terms match
+    case List(group: TermGroup) => unwrapSingleTerm(group.inner)
+    case List(inner: Expr) => unwrapSingleTerm(inner)
+    case List(result: YieldOwnership) => unwrapSingleTerm(result.value)
+    case List(term) => term.some
+    case _ => None
+
+private def activeBorrowRef(
+  expr:           Expr,
+  activeClosures: Set[String],
+  shadowedNames:  Set[String] = Set.empty
+): Option[Ref] =
+  expr.terms.iterator.collectFirst(
+    Function.unlift(term => activeBorrowRef(term, activeClosures, shadowedNames))
+  )
+
+private def activeBorrowRef(
+  term:           Term,
+  activeClosures: Set[String],
+  shadowedNames:  Set[String]
+): Option[Ref] =
+  term match
+
+    case binding: BindOwnership =>
+      activeBorrowRef(binding.initializer, activeClosures, shadowedNames)
+        .orElse(
+          activeBorrowRef(
+            binding.body,
+            activeClosures,
+            shadowedNames + binding.valueParam.name + binding.witnessParam.name
+          )
+        )
+
+    case result: YieldOwnership =>
+      activeBorrowRef(result.value, activeClosures, shadowedNames)
+        .orElse(activeBorrowRef(result.owns, activeClosures, shadowedNames))
+
+    case ref: Ref if activeClosures.contains(ref.name) && !shadowedNames.contains(ref.name) =>
+      ref.some
+    case ref: Ref => ref.qualifier.flatMap(activeBorrowRef(_, activeClosures, shadowedNames))
+    case app: App =>
+      activeBorrowRef(app.fn, activeClosures, shadowedNames)
+        .orElse(activeBorrowRef(app.arg, activeClosures, shadowedNames))
+    case lambda: Lambda =>
+      activeBorrowRef(lambda.body, activeClosures, shadowedNames ++ lambdaScopedNames(lambda))
+    case group: TermGroup =>
+      activeBorrowRef(group.inner, activeClosures, shadowedNames)
+    case cond: Cond =>
+      activeBorrowRef(cond.cond, activeClosures, shadowedNames)
+        .orElse(activeBorrowRef(cond.ifTrue, activeClosures, shadowedNames))
+        .orElse(activeBorrowRef(cond.ifFalse, activeClosures, shadowedNames))
+    case tuple: Tuple =>
+      tuple.elements.iterator.collectFirst(
+        Function.unlift(elem => activeBorrowRef(elem, activeClosures, shadowedNames))
+      )
+    case expr: Expr =>
+      activeBorrowRef(expr, activeClosures, shadowedNames)
+    case _ =>
+      None
+
+private[emitter] def compileTailRecursiveLambda(
+  lambda:       Lambda,
+  state:        CodeGenState,
+  returnType:   String,
+  paramTypes:   List[String],
+  emittedName:  String,
+  body:         TailRecBody,
+  inlineHint:   Boolean                                       = false,
+  linkage:      String                                        = "",
+  entryAbi:     TailRecEntryAbi                               = TailRecEntryAbi.PlainDirect,
+  captureInfo:  Option[(TypeStruct, List[(Capture, String)])] = None,
+  bindingParam: Option[FnParam]                               = None
+): Either[CodeGenError, CodeGenState] =
+  ParameterLowering.from(lambda, paramTypes).flatMap { lowering =>
+    val nonVoidIndices     = lowering.sourceIndices
+    val filteredParamTypes = lowering.runtimeTypes
+    val userParamDecls     = lowering.declarations(state.resolvables)
+    val envParamIdx        = lowering.runtimeCount
+    val allParamDecls = entryAbi match
+      case TailRecEntryAbi.PlainDirect => userParamDecls
+      case TailRecEntryAbi.ClosureEntry =>
+        val envParamDecl = captureInfo.fold(s"ptr %$envParamIdx") { case (envStruct, _) =>
+          formatClosureEnvParam(envStruct, envParamIdx, state)
+        }
+        if userParamDecls.isEmpty then envParamDecl
+        else s"$userParamDecls, $envParamDecl"
+
+    val attrGroup = if inlineHint then "#1" else "#0"
+    val functionDecl =
+      s"define $linkage$returnType @$emittedName($allParamDecls) $attrGroup {"
+    val loopHeader = "loop.header"
+
+    val baseState = state.copy(
+      output                  = List.empty,
+      entryPrologueOutput     = List.empty,
+      nextRegister            = 0,
+      insideLoopifiedFunction = true
+    )
+    for
+      _ <- validateLoopifiedBorrowClosures(body)
+      _ <-
+        if entryAbi == TailRecEntryAbi.PlainDirect && captureInfo.nonEmpty then
+          CodeGenError(
+            "Plain direct tail-recursive functions cannot load captures from a closure env",
+            lambda.some
+          ).asLeft
+        else ().asRight
+      captureCount       = captureInfo.fold(0)(_._2.size)
+      captureFieldOffset = if lambda.isMove then 1 else 0
+      captureData = captureInfo match
+        case Some((envStruct, captureTypes)) =>
+          val captureStartRegister = entryAbi match
+            case TailRecEntryAbi.PlainDirect => envParamIdx
+            case TailRecEntryAbi.ClosureEntry => envParamIdx + 1
+          val captureStartState = baseState.withRegister(captureStartRegister)
+          emitCaptureLoads(
+            envStruct,
+            envParamIdx,
+            captureTypes,
+            captureStartState,
+            captureFieldOffset
+          )
+        case None =>
+          (baseState, Map.empty[String, ScopeEntry])
+      (stateAfterCaptures, captureScope) = captureData
+      stateAfterEntry                    = stateAfterCaptures.emit(s"  br label %$loopHeader")
+      headerState                        = stateAfterEntry.emit(s"$loopHeader:")
+      paramCount                         = lowering.runtimeCount
+      phiStart = entryAbi match
+        case TailRecEntryAbi.PlainDirect => paramCount + 2 * captureCount
+        case TailRecEntryAbi.ClosureEntry => paramCount + 1 + 2 * captureCount
+      phiRegs = (0 until paramCount).map(i => phiStart + i).toList
+      phiPlaceholders = phiRegs.zip(filteredParamTypes).map { case (phiReg, llvmType) =>
+        s"  %$phiReg = phi $llvmType __PHI_PLACEHOLDER_$phiReg"
+      }
+      paramScope <- lowering.scope(phiRegs)
+      stateAfterPhi = headerState.emitAll(phiPlaceholders).withRegister(phiStart + paramCount)
+      selfBinding = entryAbi match
+        case TailRecEntryAbi.ClosureEntry =>
+          emitRecursiveSelfClosure(emittedName, envParamIdx, stateAfterPhi, bindingParam)
+        case TailRecEntryAbi.PlainDirect =>
+          val selfScope = bindingParam.map { param =>
+            val entry = param.id.flatMap(state.localCallableTargets.get) match
+              case Some(target) => ScopeEntry.Callable(target.bindingId, target)
+              case None =>
+                ScopeEntry(
+                  0,
+                  "Function",
+                  isLiteral    = true,
+                  literalValue = s"{ ptr @${emittedName}__closure_entry, ptr null }".some
+                )
+            param.name -> entry
+          }.toMap
+          (stateAfterPhi, selfScope)
+      (stateWithSelf, selfScope) = selfBinding
+      bodyScope                  = paramScope ++ captureScope ++ selfScope
+      bodyResult <- compileTailRecBody(
+        body,
+        stateWithSelf,
+        bodyScope,
+        returnType,
+        loopHeader,
+        loopHeader,
+        nonVoidIndices
+      )
+      (stateAfterBody, backEdges) = bodyResult
+    yield
+      val finalState = stateAfterBody.emit("}").emit("")
+      val replacements = phiRegs.zipWithIndex.map { case (phiReg, paramIdx) =>
+        val entryValue  = s"%$paramIdx"
+        val backEntries = backEdges.map(e => s"[ ${e.argValues(paramIdx)}, %${e.blockLabel} ]")
+        val allEntries  = s"[ $entryValue, %entry ]" :: backEntries
+        s"__PHI_PLACEHOLDER_$phiReg" -> allEntries.mkString(", ")
+      }.toMap
+      val replacedState = replacePlaceholders(finalState, replacements)
+      val mergedState   = mergeFunctionBodyState(state, replacedState)
+      mergedState.emitAll(renderFunctionLines(functionDecl, replacedState))
   }
 
 /** Compile a tail-recursive body tree into LLVM IR.
@@ -442,9 +859,8 @@ private def compileTailRecBody(
       for
         preResult <- compileBoundStatements(preStmts, state, scope)
         (stateAfterPre, scopeAfterPre, preExitBlock) = preResult
-        filteredArgs                                 = nonVoidIndices.map(args(_))
         argsResult <- compileTailRecArgs(
-          filteredArgs,
+          args,
           stateAfterPre,
           scopeAfterPre,
           preExitBlock
@@ -453,7 +869,7 @@ private def compileTailRecBody(
       yield
         val backBlock   = lastExitBlock.orElse(preExitBlock).getOrElse(currentBlock)
         val stateWithBr = stateAfterArgs.emit(s"  br label %$loopHeader")
-        (stateWithBr, List(BackEdge(backBlock, argValues)))
+        (stateWithBr, List(BackEdge(backBlock, nonVoidIndices.map(argValues(_)))))
 
     case TailRecBranch(preStmts, condition, ifTrue, ifFalse) =>
       for
@@ -542,18 +958,33 @@ private def compileBoundStatements(
   functionScope: Map[String, ScopeEntry]
 ): Either[CodeGenError, (CodeGenState, Map[String, ScopeEntry], Option[String])] =
   statements.foldLeft((state, functionScope, Option.empty[String]).asRight[CodeGenError]) {
-    case (Right((currentState, currentScope, prevExitBlock)), BoundStatement(bindingName, expr)) =>
-      compileExpr(expr, currentState, currentScope).flatMap { res =>
-        // Preserve exit block across statements (like compileTailRecArgs does)
-        val newExitBlock = res.exitBlock.orElse(prevExitBlock)
-        bindingName match
-          case Some(name) =>
-            val entry = ScopeEntry(res.register, res.typeName, res.isLiteral, res.literalValue)
-            Right((res.state, currentScope + (name -> entry), newExitBlock))
-          case None =>
-            // Side-effect only: discard result
-            Right((res.state, currentScope, newExitBlock))
-      }
+    case (Right((currentState, currentScope, prevExitBlock)), statement) =>
+      val expr = statement.expr
+
+      (statement.binding, statement.witness) match
+
+        case (Some(param), Some(witness)) =>
+          compileOwnershipResult(expr, currentState, currentScope).map: result =>
+            val scope = ownershipResultScope(param, witness, result, currentScope)
+            (result.state, scope, result.exitBlock.orElse(prevExitBlock))
+
+        case (None, Some(_)) =>
+          CodeGenError("Ownership witness requires a value binding", expr.some).asLeft
+
+        case (Some(param), None) =>
+          compileLocalBindingValue(param, expr, currentState, currentScope, compileExpr).map {
+            res =>
+              (
+                res.state,
+                currentScope + (param.name -> res.entry),
+                res.exitBlock.orElse(prevExitBlock)
+              )
+          }
+
+        case (None, None) =>
+          compileExpr(expr, currentState, currentScope).map { res =>
+            (res.state, currentScope, res.exitBlock.orElse(prevExitBlock))
+          }
     case (Left(err), _) => Left(err)
   }
 
@@ -561,8 +992,8 @@ private def compileBoundStatements(
 private def mmlTypeNameToLlvm(typeName: String): Either[CodeGenError, String] =
   typeName match
     case "Bool" => Right("i1")
-    case "Int64" | "Int" | "SizeT" => Right("i64")
-    case "Int32" => Right("i32")
+    case "Int64" | "SizeT" => Right("i64")
+    case "Int32" | "Int" => Right("i32")
     case "Int16" => Right("i16")
     case "Int8" | "Byte" | "Word" | "Char" => Right("i8")
     case "Float" => Right("float")
@@ -581,40 +1012,52 @@ private def replacePlaceholders(
   state.copy(output = updatedOutput)
 
 /** Extract a tail-recursive body tree from a lambda. */
-private def findTailRecBody(lambda: Lambda, bnd: Bnd): Option[TailRecBody] =
-  extractBody(lambda.body, lambda, bnd, Nil)
+private[emitter] def findTailRecBody(
+  lambda:  Lambda,
+  binding: Resolvable
+): Option[TailRecBody] =
+  extractBody(lambda.body, lambda, binding, Nil)
 
 /** Walk through let-binding/sequence chains, building TailRecBody tree.
   *
-  * At a Cond, recurse into both branches. Both-recursive is valid — the key improvement over the
-  * old flat model. At a self-call App, produce TailRecCall. Branches without recursive calls are
-  * wrapped as TailRecExit by the caller.
+  * At a Cond, recurse into both branches so each path can supply its own loop arguments or return
+  * value. At a self-call App, produce TailRecCall. Branches without recursive calls are wrapped as
+  * TailRecExit by the caller.
   */
 private def extractBody(
   expr:          Expr,
   lambda:        Lambda,
-  bnd:           Bnd,
+  binding:       Resolvable,
   accStatements: List[BoundStatement]
 ): Option[TailRecBody] =
   expr.terms match
+
+    case List(owned: BindOwnership) =>
+      val statement = BoundStatement(
+        owned.valueParam.some,
+        owned.initializer,
+        owned.witnessParam.some
+      )
+      extractBody(owned.body, lambda, binding, accStatements :+ statement)
+
     case List(app: App) =>
       app.fn match
         case innerLambda: Lambda =>
-          val binding =
+          val boundParam =
             if isSequenceLambda(innerLambda) then None
-            else innerLambda.params.headOption.map(_.name)
-          val stmt = BoundStatement(binding, app.arg)
-          extractBody(innerLambda.body, lambda, bnd, accStatements :+ stmt)
+            else innerLambda.params.headOption
+          val stmt = BoundStatement(boundParam, app.arg)
+          extractBody(innerLambda.body, lambda, binding, accStatements :+ stmt)
         case _ =>
           collectAppArgs(app).flatMap { case (ref, args) =>
-            if isSelfRef(ref, bnd) && args.size == lambda.params.size then
+            if isSelfRef(ref, binding) && arityMatches(args, lambda) then
               TailRecCall(accStatements, args).some
             else None
           }
 
     case List(cond: Cond) =>
-      val trueBody  = extractBody(cond.ifTrue, lambda, bnd, Nil)
-      val falseBody = extractBody(cond.ifFalse, lambda, bnd, Nil)
+      val trueBody  = extractBody(cond.ifTrue, lambda, binding, Nil)
+      val falseBody = extractBody(cond.ifFalse, lambda, binding, Nil)
       (trueBody, falseBody) match
         case (Some(tb), Some(fb)) =>
           TailRecBranch(accStatements, cond.cond, tb, fb).some
@@ -634,7 +1077,41 @@ private def extractBody(
           ).some
         case (None, None) => None
 
+    // Ownership wrapper: the OwnershipAnalyzer may rewrite a tail call into
+    //   let __ownership_result = self_call(args); free_calls...; __ownership_result
+    // Detect when a Ref in tail position refers to a binding whose value is a self-call.
+    // Effects following the self-call keep the call in ordinary recursion.
+    case List(ref: Ref) =>
+      extractSelfCallFromAccumulated(ref, accStatements, lambda, binding)
+
     case _ => None
+
+/** When the tail position is a Ref, check if it refers to a binding in the accumulated statements
+  * whose value is a self-call. This handles the OwnershipAnalyzer's pattern: let __ownership_result =
+  * self_call(args); __ownership_result. A continuation containing effects prevents loopification.
+  */
+private def extractSelfCallFromAccumulated(
+  ref:           Ref,
+  accStatements: List[BoundStatement],
+  lambda:        Lambda,
+  binding:       Resolvable
+): Option[TailRecBody] =
+  val idx = accStatements.indexWhere {
+    case BoundStatement(Some(param), _, None) => isSelfRef(ref, param)
+    case _ => false
+  }
+  if idx < 0 || accStatements.drop(idx + 1).nonEmpty then None
+  else
+    val callExpr = accStatements(idx).expr
+    // The self-call may be wrapped in additional lambda chains (ownership frees).
+    // Recursively extract through the callExpr to find the self-call.
+    extractBody(callExpr, lambda, binding, Nil).flatMap {
+      case TailRecCall(innerStmts, args) =>
+        val stmtsBefore = accStatements.take(idx)
+        val stmtsAfter  = accStatements.drop(idx + 1)
+        TailRecCall(stmtsBefore ++ innerStmts ++ stmtsAfter, args).some
+      case _ => None
+    }
 
 /** Detect sequence lambda: single param named __stmt */
 private def isSequenceLambda(lambda: Lambda): Boolean =
@@ -650,9 +1127,21 @@ private def collectAppArgs(app: App): Option[(Ref, List[Expr])] =
       case _ => None
   loop(app, Nil)
 
-private def isSelfRef(ref: Ref, bnd: Bnd): Boolean =
-  if ref.qualifier.isDefined then return false
-  // Compare by ID if available, otherwise fall back to name
-  ref.resolvedId match
-    case Some(id) => bnd.id.contains(id)
-    case None => ref.name == bnd.name
+/** Check arg count matches params, accounting for nullary functions where the lambda has 0 AST
+  * params but the call passes 1 Unit arg.
+  */
+private def arityMatches(args: List[Expr], lambda: Lambda): Boolean =
+  args.size == lambda.params.size ||
+    (lambda.params.isEmpty && args.forall(isUnitExpr))
+
+private def isUnitExpr(expr: Expr): Boolean =
+  expr.terms match
+    case List(_: LiteralUnit) => true
+    case _ => false
+
+private def isSelfRef(ref: Ref, binding: Resolvable): Boolean =
+  if ref.qualifier.isDefined then false
+  else
+    ref.resolvedId match
+      case Some(id) => binding.id.contains(id)
+      case None => ref.name == binding.name

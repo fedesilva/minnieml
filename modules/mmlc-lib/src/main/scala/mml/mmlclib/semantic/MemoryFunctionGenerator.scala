@@ -1,27 +1,23 @@
 package mml.mmlclib.semantic
 
+import cats.syntax.all.*
 import mml.mmlclib.ast.*
 import mml.mmlclib.compiler.CompilerState
 
-/** Generates memory management functions (`__free_T` and `__clone_T`) for user-defined structs that
-  * contain heap-allocated fields.
+import BindingIds.Allocation
+
+/** Registers destructors and consuming constructors for structs with owned fields.
   *
-  * This phase runs after ConstructorGenerator and before RefResolver. For each user struct with
-  * heap fields, it generates:
-  *   - `__free_StructName(s: StructName): Unit` - frees all heap fields
-  *   - `__clone_StructName(s: StructName): StructName` - deep copies all heap fields
-  *
-  * Native types (String, Buffer, etc.) have their memory functions defined in the C runtime.
+  * Native and nested struct fields get ordinary free calls. Function-bearing destructor bodies are
+  * completed after closure dispatch registration by StructDestructorBodyGenerator. Clone helpers
+  * are generated only for structs without function fields, directly or transitively. Native types
+  * (String, Buffer, etc.) provide their memory functions in the C runtime.
   */
 object MemoryFunctionGenerator:
   private val syntheticSource = SourceOrigin.Synth
 
   private def unitTypeRef(source: SourceOrigin): TypeRef =
     TypeRef(source, "Unit", Some("stdlib::typedef::Unit"), Nil)
-
-  /** Generate a stable ID for generated memory functions */
-  private def genId(moduleName: String, fnName: String): Option[String] =
-    Some(s"$moduleName::bnd::$fnName")
 
   /** Resolve the stable ID for a memory function (free/clone) reference.
     *
@@ -34,19 +30,23 @@ object MemoryFunctionGenerator:
     moduleName:    String,
     resolvables:   ResolvablesIndex
   ): Option[String] =
-    if TypeUtils.isStructWithHeapFields(fieldTypeName, resolvables) then genId(moduleName, fnName)
+    if TypeUtils.isStructWithHeapFields(fieldTypeName, resolvables) then
+      BindingIds.declaration(moduleName, fnName).some
     else
-      val stdlibId = s"stdlib::bnd::$fnName"
+      val stdlibId = BindingIds.declaration("stdlib", fnName)
       if resolvables.lookup(stdlibId).isDefined then Some(stdlibId)
       else
         resolvables.resolvables.collectFirst:
           case (id, bnd: Bnd) if bnd.name == fnName => id
 
   private def isHeapField(field: Field, resolvables: ResolvablesIndex): Boolean =
-    isNativeHeapField(field.typeSpec, resolvables)
+    TypeUtils.requiresDestruction(field.typeSpec, resolvables)
 
   private def isNativeHeapField(fieldType: Type, resolvables: ResolvablesIndex): Boolean =
-    TypeUtils.getTypeName(fieldType).exists(TypeUtils.isHeapType(_, resolvables))
+    TypeUtils
+      .canonical(fieldType, resolvables)
+      .flatMap(TypeUtils.getTypeName)
+      .exists(TypeUtils.isHeapType(_, resolvables))
 
   private def structHasHeapFields(struct: TypeStruct, resolvables: ResolvablesIndex): Boolean =
     struct.fields.exists(isHeapField(_, resolvables))
@@ -63,7 +63,7 @@ object MemoryFunctionGenerator:
     struct:      TypeStruct,
     moduleName:  String,
     resolvables: ResolvablesIndex
-  ): Bnd =
+  ): Allocation[Bnd] =
     val structName = struct.name
     val fnName     = s"__free_$structName"
     val paramName  = "s"
@@ -74,120 +74,90 @@ object MemoryFunctionGenerator:
     val unitTR = unitTypeRef(syntheticSource)
 
     // Parameter - consuming since it takes ownership
-    val param = FnParam(
-      SourceOrigin.Synth,
-      Name.synth(paramName),
+    val allocation = LocalBindings.local(
+      BindingOwner.binding(moduleName, fnName),
+      paramName,
       typeAsc   = Some(structTypeRef),
-      consuming = true
+      consuming = true,
+      purpose   = "destructor"
     )
 
-    // Get heap fields to free
-    val heapFields = heapFieldsOf(struct, resolvables)
+    allocation
+      .flatMap { local =>
+        val param = local.param
+        // Get heap fields to free
+        val heapFields = heapFieldsOf(struct, resolvables)
 
-    // Build free calls for each heap field
-    val freeCalls: List[Term] = heapFields.toList.flatMap { field =>
-      TypeUtils.getTypeName(field.typeSpec).flatMap { typeName =>
-        TypeUtils.freeFnFor(typeName, resolvables).map { freeFnName =>
-          // Build: __free_T s.fieldName
-          val freeFnRef = Ref(
-            SourceOrigin.Synth,
-            freeFnName,
-            resolvedId = resolveMemFnId(typeName, freeFnName, moduleName, resolvables),
-            typeSpec   = Some(TypeFn(syntheticSource, List(field.typeSpec), unitTR))
+        // Build free calls for each heap field
+        val freeCalls: List[Term] = heapFields.toList.flatMap { field =>
+          TypeUtils.canonical(field.typeSpec, resolvables).flatMap(TypeUtils.getTypeName).flatMap {
+            typeName =>
+              TypeUtils.freeFnFor(typeName, resolvables).map { freeFnName =>
+                // Build: __free_T s.fieldName
+                val freeFnRef = Ref(
+                  SourceOrigin.Synth,
+                  freeFnName,
+                  resolvedId = resolveMemFnId(typeName, freeFnName, moduleName, resolvables),
+                  typeSpec = Some(
+                    TypeFn(syntheticSource, cats.data.NonEmptyList.one(field.typeSpec), unitTR)
+                  )
+                )
+                val paramRef = local.ref
+                val fieldRef = Ref(
+                  SourceOrigin.Synth,
+                  field.name,
+                  qualifier = Some(paramRef),
+                  typeSpec  = Some(field.typeSpec)
+                )
+                val argExpr = Expr(syntheticSource, List(fieldRef), typeSpec = Some(field.typeSpec))
+                App(syntheticSource, freeFnRef, argExpr, typeSpec = Some(unitTR))
+              }
+          }
+        }
+
+        val cleanup = LocalBindings.cleanup(
+          freeCalls,
+          BindingOwner.binding(moduleName, fnName),
+          unitTR
+        )
+
+        cleanup.map { body =>
+          // Build the function type: StructName -> Unit
+          val fnType = TypeFn(syntheticSource, cats.data.NonEmptyList.one(structTypeRef), unitTR)
+
+          // Build the lambda
+          val lambda = Lambda(
+            syntheticSource,
+            List(param),
+            body,
+            Nil,
+            typeSpec = Some(fnType),
+            typeAsc  = Some(unitTR)
           )
-          val paramRef = Ref(SourceOrigin.Synth, paramName, typeSpec = Some(structTypeRef))
-          val fieldRef = Ref(
-            SourceOrigin.Synth,
-            field.name,
-            qualifier = Some(paramRef),
-            typeSpec  = Some(field.typeSpec)
+
+          // Build the binding
+          val meta = BindingMeta(
+            origin        = BindingOrigin.Destructor,
+            arity         = CallableArity.Unary,
+            precedence    = Precedence.Function,
+            associativity = None,
+            originalName  = fnName,
+            mangledName   = fnName
           )
-          val argExpr = Expr(syntheticSource, List(fieldRef), typeSpec = Some(field.typeSpec))
-          App(syntheticSource, freeFnRef, argExpr, typeSpec = Some(unitTR))
+
+          Bnd(
+            source     = SourceOrigin.Synth,
+            nameNode   = Name.synth(fnName),
+            value      = Expr(syntheticSource, List(lambda)),
+            typeSpec   = Some(fnType),
+            typeAsc    = Some(unitTR),
+            docComment = None,
+            meta       = Some(meta),
+            id         = BindingIds.declaration(moduleName, fnName).some
+          )
         }
       }
-    }
-
-    // Build the body - sequence of let _ = free; statements ending with unit
-    val body =
-      if freeCalls.isEmpty then
-        Expr(
-          syntheticSource,
-          List(LiteralUnit(syntheticSource, typeSpec = Some(unitTR), typeAsc = None))
-        )
-      else
-        // Chain free calls with let _ = ...; pattern
-        val lastCall  = freeCalls.last
-        val initCalls = freeCalls.init
-
-        val innerBody = Expr(syntheticSource, List(lastCall), typeSpec = Some(unitTR))
-        initCalls.foldRight(innerBody) { (call, acc) =>
-          val discardParam =
-            FnParam(
-              SourceOrigin.Synth,
-              Name.synth("_"),
-              typeSpec = Some(unitTR),
-              typeAsc  = Some(unitTR)
-            )
-          val wrapper =
-            Lambda(syntheticSource, List(discardParam), acc, Nil, typeSpec = Some(unitTR))
-          val callExpr = Expr(syntheticSource, List(call), typeSpec = Some(unitTR))
-          Expr(
-            syntheticSource,
-            List(App(syntheticSource, wrapper, callExpr, typeSpec = Some(unitTR))),
-            typeSpec = Some(unitTR)
-          )
-        }
-
-    // Build the function type: StructName -> Unit
-    val fnType = TypeFn(syntheticSource, List(structTypeRef), unitTR)
-
-    // Build the lambda
-    val lambda = Lambda(
-      syntheticSource,
-      List(param),
-      body,
-      Nil,
-      typeSpec = Some(fnType),
-      typeAsc  = Some(unitTR)
-    )
-
-    // Build the binding
-    val meta = BindingMeta(
-      origin        = BindingOrigin.Destructor,
-      arity         = CallableArity.Unary,
-      precedence    = Precedence.Function,
-      associativity = None,
-      originalName  = fnName,
-      mangledName   = fnName
-    )
-
-    Bnd(
-      source     = SourceOrigin.Synth,
-      nameNode   = Name.synth(fnName),
-      value      = Expr(syntheticSource, List(lambda)),
-      typeSpec   = Some(fnType),
-      typeAsc    = Some(unitTR),
-      docComment = None,
-      meta       = Some(meta),
-      id         = genId(moduleName, fnName)
-    )
-
-  /** Wrap a field access expression with a __clone_T call */
-  private def wrapFieldWithClone(
-    fieldExpr:   Expr,
-    fieldType:   Type,
-    moduleName:  String,
-    resolvables: ResolvablesIndex
-  ): Expr =
-    val typeName    = TypeUtils.getTypeName(fieldType).getOrElse("String")
-    val cloneFnName = TypeUtils.cloneFnFor(typeName, resolvables).getOrElse(s"__clone_$typeName")
-    val cloneFnId   = resolveMemFnId(typeName, cloneFnName, moduleName, resolvables)
-    val cloneFnType = Some(TypeFn(syntheticSource, List(fieldType), fieldType))
-    val cloneFnRef =
-      Ref(SourceOrigin.Synth, cloneFnName, resolvedId = cloneFnId, typeSpec = cloneFnType)
-    val cloneApp = App(syntheticSource, cloneFnRef, fieldExpr, typeSpec = Some(fieldType))
-    Expr(syntheticSource, List(cloneApp), typeSpec = Some(fieldType))
+      .flatTap(BindingIds.reserveDeclaration)
 
   /** Rewrite a __mk_StructName constructor to mark heap-typed params as consuming */
   private def rewriteConstructor(
@@ -243,7 +213,7 @@ object MemoryFunctionGenerator:
     struct:      TypeStruct,
     moduleName:  String,
     resolvables: ResolvablesIndex
-  ): Bnd =
+  ): Allocation[(Bnd, List[SemanticError])] =
     val structName = struct.name
     val fnName     = s"__clone_$structName"
     val paramName  = "s"
@@ -253,86 +223,105 @@ object MemoryFunctionGenerator:
       TypeRef(syntheticSource, structName, struct.id, Nil)
 
     // Parameter - not consuming since we're cloning (borrowing)
-    val param = FnParam(
-      SourceOrigin.Synth,
-      Name.synth(paramName),
+    val allocation = LocalBindings.local(
+      BindingOwner.binding(moduleName, fnName),
+      paramName,
       typeAsc   = Some(structTypeRef),
-      consuming = false
+      consuming = false,
+      purpose   = "clone"
     )
 
-    // Build the constructor type as a curried function: T1 -> T2 -> ... -> StructType
-    val fieldTypes = struct.fields.map(_.typeSpec).toList
-    val constructorType = fieldTypes.foldRight(structTypeRef: Type) { (fieldType, accType) =>
-      TypeFn(syntheticSource, List(fieldType), accType)
-    }
+    allocation
+      .map { local =>
+        val param = local.param
+        // Build the constructor type as a curried function: T1 -> T2 -> ... -> StructType
+        val fieldTypes = struct.fields.map(_.typeSpec).toList
+        val constructorType = fieldTypes.foldRight(structTypeRef: Type) { (fieldType, accType) =>
+          TypeFn(syntheticSource, cats.data.NonEmptyList.one(fieldType), accType)
+        }
 
-    // Constructor reference: __mk_StructName
-    val constructorName = s"__mk_$structName"
-    val constructorRef = Ref(
-      SourceOrigin.Synth,
-      constructorName,
-      resolvedId = Some(s"$moduleName::bnd::$constructorName"),
-      typeSpec   = Some(constructorType)
-    )
+        // Constructor reference: __mk_StructName
+        val constructorName = s"__mk_$structName"
+        val constructorRef = Ref(
+          SourceOrigin.Synth,
+          constructorName,
+          resolvedId = BindingIds.declaration(moduleName, constructorName).some,
+          typeSpec   = Some(constructorType)
+        )
 
-    // Build arguments: extract each field, wrapping heap fields with __clone_T
-    val argExprs: List[Expr] = struct.fields.toList.map { field =>
-      val paramRef    = Ref(SourceOrigin.Synth, paramName, typeSpec = Some(structTypeRef))
-      val fieldRef    = Ref(SourceOrigin.Synth, field.name, qualifier = Some(paramRef))
-      val fieldAccess = Expr(syntheticSource, List(fieldRef), typeSpec = Some(field.typeSpec))
+        // Build arguments: extract each field, wrapping heap fields with __clone_T
+        val fieldResults = struct.fields.toList.map { field =>
+          val paramRef    = local.ref
+          val fieldRef    = Ref(SourceOrigin.Synth, field.name, qualifier = Some(paramRef))
+          val fieldAccess = Expr(syntheticSource, List(fieldRef), typeSpec = Some(field.typeSpec))
 
-      if isHeapField(field, resolvables) then
-        wrapFieldWithClone(fieldAccess, field.typeSpec, moduleName, resolvables)
-      else fieldAccess
-    }
+          val cloned =
+            if isHeapField(field, resolvables) then
+              CloneCalls.build(
+                fieldAccess,
+                field.typeSpec,
+                resolvables,
+                "memory-function-generator",
+                (typeName, function) => resolveMemFnId(typeName, function, moduleName, resolvables)
+              )
+            else fieldAccess.asRight[SemanticError]
+          (cloned.getOrElse(fieldAccess), cloned.left.toOption.toList)
+        }
+        val argExprs = fieldResults.map(_._1)
+        val errors   = fieldResults.flatMap(_._2)
 
-    // Build constructor call: __mk_StructName arg1 arg2 ...
-    // Track the result type through each curried application
-    val (constructorCall, _) =
-      argExprs.foldLeft((constructorRef: Ref | App | Lambda, constructorType)) {
-        case ((fn, currType), arg) =>
-          val resultType = currType match
-            case TypeFn(_, _, ret) => ret
-            case other => other
-          val app = App(syntheticSource, fn, arg, typeSpec = Some(resultType))
-          (app, resultType)
+        // Build constructor call: __mk_StructName arg1 arg2 ...
+        // Track the result type through each curried application
+        val (constructorCall, _) =
+          argExprs.foldLeft((constructorRef: Callee, constructorType)) {
+            case ((fn, currType), arg) =>
+              val resultType = currType match
+                case TypeFn(_, _, ret) => ret
+                case other => other
+              val app = App(syntheticSource, fn, arg, typeSpec = Some(resultType))
+              (app, resultType)
+          }
+
+        val body = Expr(syntheticSource, List(constructorCall), typeSpec = Some(structTypeRef))
+
+        // Build the function type: StructName -> StructName
+        val fnType =
+          TypeFn(syntheticSource, cats.data.NonEmptyList.one(structTypeRef), structTypeRef)
+
+        // Build the lambda
+        val lambda = Lambda(
+          syntheticSource,
+          List(param),
+          body,
+          Nil,
+          typeSpec = Some(fnType),
+          typeAsc  = Some(structTypeRef)
+        )
+
+        // Build the binding
+        val meta = BindingMeta(
+          origin        = BindingOrigin.Function,
+          arity         = CallableArity.Unary,
+          precedence    = Precedence.Function,
+          associativity = None,
+          originalName  = fnName,
+          mangledName   = fnName
+        )
+
+        val binding = Bnd(
+          source     = SourceOrigin.Synth,
+          nameNode   = Name.synth(fnName),
+          value      = Expr(syntheticSource, List(lambda)),
+          typeSpec   = Some(fnType),
+          typeAsc    = Some(structTypeRef),
+          docComment = None,
+          meta       = Some(meta),
+          id         = BindingIds.declaration(moduleName, fnName).some
+        )
+
+        (binding, errors)
       }
-
-    val body = Expr(syntheticSource, List(constructorCall), typeSpec = Some(structTypeRef))
-
-    // Build the function type: StructName -> StructName
-    val fnType = TypeFn(syntheticSource, List(structTypeRef), structTypeRef)
-
-    // Build the lambda
-    val lambda = Lambda(
-      syntheticSource,
-      List(param),
-      body,
-      Nil,
-      typeSpec = Some(fnType),
-      typeAsc  = Some(structTypeRef)
-    )
-
-    // Build the binding
-    val meta = BindingMeta(
-      origin        = BindingOrigin.Function,
-      arity         = CallableArity.Unary,
-      precedence    = Precedence.Function,
-      associativity = None,
-      originalName  = fnName,
-      mangledName   = fnName
-    )
-
-    Bnd(
-      source     = SourceOrigin.Synth,
-      nameNode   = Name.synth(fnName),
-      value      = Expr(syntheticSource, List(lambda)),
-      typeSpec   = Some(fnType),
-      typeAsc    = Some(structTypeRef),
-      docComment = None,
-      meta       = Some(meta),
-      id         = genId(moduleName, fnName)
-    )
+      .flatTap { (binding, _) => BindingIds.reserveDeclaration(binding) }
 
   /** Main entry point - generate memory functions for structs with heap fields */
   def rewriteModule(state: CompilerState): CompilerState =
@@ -380,16 +369,21 @@ object MemoryFunctionGenerator:
       }
 
       // Generate __free_T and __clone_T for user structs only (not native structs)
-      val generatedFns = structsNeedingMemFns.flatMap { struct =>
-        List(
-          mkFreeFunction(struct, moduleName, resolvablesWithCtors),
-          mkCloneFunction(struct, moduleName, resolvablesWithCtors)
-        )
+      val allocation = structsNeedingMemFns.flatTraverse { struct =>
+        for
+          free <- mkFreeFunction(struct, moduleName, resolvablesWithCtors)
+          clone <-
+            if TypeUtils.containsFunction(struct, resolvablesWithCtors) then
+              List.empty[(Bnd, List[SemanticError])].pure[Allocation]
+            else mkCloneFunction(struct, moduleName, resolvablesWithCtors).map(List(_))
+        yield (free, List.empty[SemanticError]) :: clone
       }
+      val (supply, generated) = allocation.run(state.bindingIds.include(module)).value
 
+      val generatedFns = generated.map(_._1)
+      val errors       = generated.flatMap(_._2)
       val finalMembers = membersWithAllCtors ++ generatedFns
-      val finalResolvables = generatedFns.foldLeft(resolvablesWithCtors) { (idx, fn) =>
-        idx.updated(fn)
-      }
-
-      state.withModule(module.copy(members = finalMembers, resolvables = finalResolvables))
+      state
+        .copy(bindingIds = supply)
+        .withModule(ResolvablesIndexer.refresh(module.copy(members = finalMembers)))
+        .addErrors(errors)

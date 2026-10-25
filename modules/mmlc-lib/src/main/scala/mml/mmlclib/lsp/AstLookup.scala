@@ -58,6 +58,11 @@ object AstLookup:
         current ++ ref.qualifier.toList.flatMap(findRefsInTermAt(_, line, col))
       case app: App =>
         findRefsInAppFnAt(app.fn, line, col) ++ findRefsInExprAt(app.arg, line, col)
+      case binding: BindOwnership =>
+        findRefsInExprAt(binding.initializer, line, col) ++
+          findRefsInExprAt(binding.body, line, col)
+      case yielded: YieldOwnership =>
+        findRefsInExprAt(yielded.value, line, col) ++ findRefsInExprAt(yielded.owns, line, col)
       case lambda: Lambda =>
         findRefsInExprAt(lambda.body, line, col)
       case cond: Cond =>
@@ -68,13 +73,16 @@ object AstLookup:
         findRefsInExprAt(group.inner, line, col)
       case tuple: Tuple =>
         tuple.elements.toList.flatMap(findRefsInExprAt(_, line, col))
+      case d: Destruction =>
+        findRefsInExprAt(d.operand, line, col)
+
       case expr: Expr =>
         findRefsInExprAt(expr, line, col)
       case inv: InvalidExpression =>
         findRefsInExprAt(inv.originalExpr, line, col)
       case _ => Nil
 
-  private def findRefsInAppFnAt(fn: Ref | App | Lambda, line: Int, col: Int): List[Ref] =
+  private def findRefsInAppFnAt(fn: Callee, line: Int, col: Int): List[Ref] =
     fn match
       case ref: Ref =>
         findRefsInTermAt(ref, line, col)
@@ -112,14 +120,18 @@ object AstLookup:
   private def containsOrInvalid(span: SrcSpan, line: Int, col: Int): Boolean =
     !isValidSpan(span) || containsPosition(span, line, col)
 
+  private def isGeneratedReference(node: FromSource): Boolean = node match
+    case ref: Ref => !ref.source.isFromSource
+    case _ => false
+
   private def containsPosition(node: FromSource, line: Int, col: Int): Boolean =
-    node.spanOpt.exists(containsPosition(_, line, col))
+    !isGeneratedReference(node) && node.spanOpt.exists(containsPosition(_, line, col))
 
   private def isValidSpan(node: FromSource): Boolean =
     node.spanOpt.exists(isValidSpan)
 
   private def containsOrInvalid(node: FromSource, line: Int, col: Int): Boolean =
-    node.spanOpt.forall(containsOrInvalid(_, line, col))
+    !isGeneratedReference(node) && node.spanOpt.forall(containsOrInvalid(_, line, col))
 
   private sealed trait ReferenceTarget
   private case class ValueTarget(id: String)                            extends ReferenceTarget
@@ -200,6 +212,14 @@ object AstLookup:
       case app: App =>
         findInApp(app, line, col)
 
+      case binding: BindOwnership =>
+        findInExpr(binding.initializer, line, col)
+          .orElse(findInExpr(binding.body, line, col))
+          .orElse(findInParams(List(binding.valueParam, binding.witnessParam), line, col))
+
+      case yielded: YieldOwnership =>
+        findInExpr(yielded.value, line, col).orElse(findInExpr(yielded.owns, line, col))
+
       case cond: Cond =>
         findInExpr(cond.cond, line, col)
           .orElse(findInExpr(cond.ifTrue, line, col))
@@ -245,11 +265,11 @@ object AstLookup:
       case dc: DataConstructor =>
         Some(LookupResult(dc.typeSpec, None, dc.spanOpt))
 
-      case dd: DataDestructor =>
-        Some(LookupResult(dd.typeSpec, None, dd.spanOpt))
+      case d: Destruction =>
+        findInExpr(d.operand, line, col)
 
       case ni: NativeImpl =>
-        Some(LookupResult(ni.typeSpec, Some("@native"), ni.spanOpt))
+        Some(LookupResult(ni.typeSpec, Some(ni.annotationName), ni.spanOpt))
 
       case inv: InvalidExpression =>
         findInExpr(inv.originalExpr, line, col)
@@ -377,6 +397,17 @@ object AstLookup:
       case app: App =>
         findDefinitionInApp(app, line, col, module)
 
+      case binding: BindOwnership =>
+        val definitions = findDefinitionInExpr(binding.initializer, line, col, module) ++
+          findDefinitionInExpr(binding.body, line, col, module)
+        if definitions.nonEmpty then definitions
+        else
+          findDefinitionInParams(List(binding.valueParam, binding.witnessParam), line, col, module)
+
+      case yielded: YieldOwnership =>
+        findDefinitionInExpr(yielded.value, line, col, module) ++
+          findDefinitionInExpr(yielded.owns, line, col, module)
+
       case cond: Cond =>
         val condDefs = findDefinitionInExpr(cond.cond, line, col, module)
         if condDefs.nonEmpty then condDefs
@@ -403,6 +434,9 @@ object AstLookup:
               findDefinitionInExpr(e, line, col, module)
           }
           .getOrElse(Nil)
+
+      case d: Destruction =>
+        findDefinitionInExpr(d.operand, line, col, module)
 
       case expr: Expr =>
         findDefinitionInExpr(expr, line, col, module)
@@ -448,7 +482,7 @@ object AstLookup:
     col:    Int,
     module: Module
   ): List[SrcSpan] =
-    def findFnRefAtCursor(fn: Ref | App | Lambda): Option[Ref] =
+    def findFnRefAtCursor(fn: Callee): Option[Ref] =
       fn match
         case ref:      Ref if isValidSpan(ref) && containsPosition(ref, line, col) => Some(ref)
         case innerApp: App => findFnRefAtCursor(innerApp.fn)
@@ -684,7 +718,7 @@ object AstLookup:
         else ta.id.map(TypeTarget(_))
 
       case ts: TypeStruct =>
-        findReferenceTargetInFields(ts.fields.toList, line, col, module, ts.name)
+        findReferenceTargetInStructFields(ts, line, col, module)
           .orElse(ts.id.map(TypeTarget(_)))
 
       case dm: DuplicateMember =>
@@ -695,18 +729,18 @@ object AstLookup:
 
       case _ => None
 
-  private def findReferenceTargetInFields(
-    fields:     List[Field],
-    line:       Int,
-    col:        Int,
-    module:     Module,
-    structName: String
+  private def findReferenceTargetInStructFields(
+    struct: TypeStruct,
+    line:   Int,
+    col:    Int,
+    module: Module
   ): Option[ReferenceTarget] =
-    fields.collectFirst {
+
+    struct.fields.toList.collectFirst {
       case field if containsPosition(field, line, col) =>
         if containsPosition(field.typeSpec, line, col) then
           findReferenceTargetInType(field.typeSpec, line, col, module)
-        else Some(FieldTarget(structName, field.name))
+        else Some(FieldTarget(struct.name, field.name))
     }.flatten
 
   private def findReferenceTargetInExpr(
@@ -757,6 +791,22 @@ object AstLookup:
       case app: App =>
         findReferenceTargetInApp(app, line, col, module)
 
+      case binding: BindOwnership =>
+        findReferenceTargetInExpr(binding.initializer, line, col, module)
+          .orElse(findReferenceTargetInExpr(binding.body, line, col, module))
+          .orElse(
+            findReferenceTargetInParams(
+              List(binding.valueParam, binding.witnessParam),
+              line,
+              col,
+              module
+            )
+          )
+
+      case yielded: YieldOwnership =>
+        findReferenceTargetInExpr(yielded.value, line, col, module)
+          .orElse(findReferenceTargetInExpr(yielded.owns, line, col, module))
+
       case cond: Cond =>
         findReferenceTargetInExpr(cond.cond, line, col, module) match
           case some @ Some(_) => some
@@ -778,6 +828,9 @@ object AstLookup:
           case e if containsPosition(e, line, col) =>
             findReferenceTargetInExpr(e, line, col, module)
         }.flatten
+
+      case d: Destruction =>
+        findReferenceTargetInExpr(d.operand, line, col, module)
 
       case expr: Expr =>
         findReferenceTargetInExpr(expr, line, col, module)
@@ -857,7 +910,7 @@ object AstLookup:
           }.flatten
 
         case ts: TypeStruct =>
-          findReferenceTargetInFields(ts.fields.toList, line, col, module, ts.name)
+          findReferenceTargetInStructFields(ts, line, col, module)
 
         case NativeStruct(_, fields, _, _) =>
           fields.collectFirst {
@@ -1000,11 +1053,26 @@ object AstLookup:
           )
         val typeRefs = ref.typeAsc.toList.flatMap(collectReferencesInType(_, target, module))
         val refSpan =
-          if matchesReferenceTarget(ref, target, module) then ref.spanOpt.toList else Nil
+          if ref.source.isFromSource && matchesReferenceTarget(ref, target, module) then
+            ref.spanOpt.toList
+          else Nil
         qualifierRefs ++ typeRefs ++ refSpan
 
       case app: App =>
         collectReferencesInApp(app, target, includeDeclaration, module)
+
+      case binding: BindOwnership =>
+        collectReferencesInParams(
+          List(binding.valueParam, binding.witnessParam),
+          target,
+          includeDeclaration,
+          module
+        ) ++ collectReferencesInExpr(binding.initializer, target, includeDeclaration, module) ++
+          collectReferencesInExpr(binding.body, target, includeDeclaration, module)
+
+      case yielded: YieldOwnership =>
+        collectReferencesInExpr(yielded.value, target, includeDeclaration, module) ++
+          collectReferencesInExpr(yielded.owns, target, includeDeclaration, module)
 
       case cond: Cond =>
         collectReferencesInExpr(cond.cond, target, includeDeclaration, module) ++
@@ -1022,6 +1090,9 @@ object AstLookup:
         tuple.elements.toList.flatMap(
           collectReferencesInExpr(_, target, includeDeclaration, module)
         )
+
+      case d: Destruction =>
+        collectReferencesInExpr(d.operand, target, includeDeclaration, module)
 
       case expr: Expr =>
         collectReferencesInExpr(expr, target, includeDeclaration, module)
@@ -1076,7 +1147,7 @@ object AstLookup:
         if matchesTypeTarget(tr, target, module) then tr.spanOpt.toList else Nil
 
       case TypeFn(_, params, ret) =>
-        params.flatMap(collectReferencesInType(_, target, module)) ++
+        params.toList.flatMap(collectReferencesInType(_, target, module)) ++
           collectReferencesInType(ret, target, module)
 
       case TypeTuple(_, elements) =>
@@ -1219,10 +1290,9 @@ object AstLookup:
       case TypeRef(_, name, _, _) => name
 
       case TypeFn(_, params, ret) =>
-        val paramStr = params.map(formatTypeInner).mkString(" -> ")
+        val paramStr = params.toList.map(formatTypeInner).mkString(" -> ")
         val retStr   = formatTypeInner(ret)
-        if params.isEmpty then s"() -> $retStr"
-        else s"$paramStr -> $retStr"
+        s"$paramStr -> $retStr"
 
       case TypeTuple(_, elements) =>
         elements.map(formatTypeInner).mkString("(", ", ", ")")
@@ -1234,7 +1304,7 @@ object AstLookup:
       case ts: TypeStruct =>
         ts.name
 
-      case TypeUnit(_) => "()"
+      case TypeUnit(_) => "Unit"
 
       case TypeVariable(_, name) => name
 
@@ -1254,13 +1324,13 @@ object AstLookup:
       case TypeGroup(_, types) =>
         types.map(formatTypeInner).mkString("(", " ", ")")
 
-      case NativePrimitive(_, llvm, _, _) => s"@native[t=$llvm]"
+      case NativePrimitive(_, llvm, _, _) => s"@metal:repr[t=$llvm]"
 
-      case NativePointer(_, llvm, _, _) => s"@native[t=*$llvm]"
+      case NativePointer(_, llvm, _, _) => s"@metal:repr[t=*$llvm]"
 
       case NativeStruct(_, fields, _, _) =>
         val fieldStr = fields.map { case (n, t) => s"$n: ${formatTypeInner(t)}" }.mkString(", ")
-        s"@native { $fieldStr }"
+        s"@metal:repr { $fieldStr }"
 
       case TypeRefinement(_, id, _) =>
         id.map(i => s"$i refined").getOrElse("refined")

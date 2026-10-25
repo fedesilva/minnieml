@@ -1,0 +1,18 @@
+// Grouped heap fields are destroyed when the enclosing value leaves scope.
+struct Grouped { text: (String), values: (IntArray) };
+
+fn iteration(n: Int): Int =
+  let value = Grouped (int_to_str n) (ar_int_new 4);
+  ar_int_set value.values 0 n;
+  ar_int_get value.values 0;
+;
+
+fn loop(n: Int, total: Int): Int =
+  if n == 0 then
+    total;
+  else
+    loop (n - 1) (total + iteration n);
+  ;
+;
+
+pub fn main(): Int = if loop 1000 0 == 500500 then 0; else 1; ;;

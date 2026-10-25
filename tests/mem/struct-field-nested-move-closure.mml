@@ -1,0 +1,28 @@
+// Mem regression: a struct field holding another struct that holds a move-capturing closure.
+// `Outer inner` moves `Inner` (which owns the closure env) into the outer struct. Dropping the
+// outer struct must free through `__free_Outer` -> `__free_Inner` -> `__free_closure` exactly
+// once. A struct that holds a function value transitively is not clonable, so no `__clone_*` is
+// generated for it. Iterating 1000 times surfaces any leak or double-free under ASan+LSan.
+struct Inner { f: Int -> Int };
+struct Outer { inner: Inner };
+
+fn use_outer(o: Outer, x: Int): Int =
+  o.inner.f x;
+;
+
+fn loop(n: Int, acc: Int): Int =
+  if n > 0 then
+    let add_seed = ~{ x -> x + n; };
+    let inner = Inner add_seed;
+    let o = Outer inner;
+    let r = use_outer o 1;
+    loop (n - 1) r;
+  else
+    acc;
+  ;
+;
+
+pub fn main(): Unit =
+  let result = loop 1000 0;
+  println (int_to_str result);
+;

@@ -1,12 +1,16 @@
 package mml.mmlclib.codegen
 
-import cats.effect.IO
+import cats.effect.{IO, Resource}
 import cats.syntax.all.*
+import mml.mmlclib.ast.LinkEntry
 import mml.mmlclib.compiler.CompilerConfig
 import mml.mmlclib.errors.CompilationError
 
-import java.io.{File, InputStream}
+import java.io.File
+import java.nio.charset.StandardCharsets.UTF_8
 import java.nio.file.{Files, Path, Paths, StandardCopyOption}
+import java.security.MessageDigest
+import java.util.HexFormat
 import scala.jdk.CollectionConverters.*
 import scala.sys.process.{Process, ProcessLogger}
 
@@ -30,6 +34,7 @@ enum LlvmCompilationError extends CompilationError derives CanEqual:
   case LlvmNotInstalled(missingTools: List[String])
   case RuntimeResourceError(msg: String)
   case TripleResolutionError(msg: String)
+  case TargetResolutionError(msg: String)
 
   def message: String = this match
     case TemporaryFileCreationError(msg) => msg
@@ -42,6 +47,7 @@ enum LlvmCompilationError extends CompilationError derives CanEqual:
       s"LLVM tools not installed: ${missingTools.mkString(", ")}"
     case RuntimeResourceError(msg) => msg
     case TripleResolutionError(msg) => msg
+    case TargetResolutionError(msg) => msg
 
 object LlvmToolchain:
 
@@ -55,6 +61,18 @@ object LlvmToolchain:
 
   private def clangAsanFlags(asan: Boolean): List[String] =
     if asan then List("-fsanitize=address", "-fno-omit-frame-pointer") else Nil
+
+  private def clangTargetCpuFlags(targetTriple: String, targetCpu: Option[String]): List[String] =
+    val flag = targetTriple.takeWhile(_ != '-').toLowerCase match
+      case "x86_64" | "amd64" | "i386" | "i486" | "i586" | "i686" => "-march"
+      case _ => "-mcpu"
+    targetCpu.toList.map(cpu => s"$flag=$cpu")
+
+  /** Clang flags shared by the target probe and runtime compilation. */
+  def clangFlags(config: CompilerConfig, triple: String): List[String] =
+    List("-target", triple, "-std=c17", s"-O${config.optLevel}", "-fPIC") ++
+      clangStackProbeFlags(config.noStackCheck) ++ clangAsanFlags(config.asan) ++
+      clangTargetCpuFlags(triple, config.targetCpu)
 
   private def timedStep[A](
     name:         String,
@@ -112,9 +130,9 @@ object LlvmToolchain:
 
   /** Resolves the target triple to use for compilation.
     *
-    * If userProvided is Some, returns that value directly (free-form, no validation). Otherwise,
-    * checks for a cached triple in workingDir/local-target-triple. If not cached, queries clang for
-    * the local triple and caches it.
+    * Explicit targets are preserved. Local macOS targets leave deployment version selection to
+    * Clang. Local triples are cached in workingDir/local-target-triple. Native CPU selection
+    * requires the target architecture to match the local Clang architecture.
     *
     * @param userProvided
     *   user-provided triple from CLI, if any
@@ -125,18 +143,49 @@ object LlvmToolchain:
     */
   def resolveTargetTriple(
     userProvided: Option[String],
-    workingDir:   String
+    workingDir:   String,
+    targetCpu:    Option[String] = None
   ): IO[Either[LlvmCompilationError, String]] =
-    userProvided match
-      case Some(triple) => IO.pure(triple.asRight)
+    val resolved = userProvided match
+      case Some(triple) => IO.pure(triple.asRight[LlvmCompilationError])
       case None => resolveLocalTriple(workingDir)
+
+    resolved.flatMap {
+      case Right(triple) if targetCpu.contains("native") =>
+        queryLocalTriple.map {
+          case Some(host) => validateNativeCpu(triple, host).as(triple)
+          case None =>
+            LlvmCompilationError
+              .TargetResolutionError("Cannot determine host architecture for --cpu native")
+              .asLeft
+        }
+      case result => IO.pure(result)
+    }
+
+  private[codegen] def validateNativeCpu(
+    triple: String,
+    host:   String
+  ): Either[LlvmCompilationError, Unit] =
+    def architecture(value: String): String =
+      value.takeWhile(_ != '-').toLowerCase match
+        case "arm64" | "aarch64" => "aarch64"
+        case "amd64" | "x86_64" => "x86_64"
+        case arch => arch
+
+    Either.cond(
+      architecture(triple) == architecture(host),
+      (),
+      LlvmCompilationError.TargetResolutionError(
+        s"--cpu native requires the host architecture ($host); select an explicit CPU for $triple"
+      )
+    )
 
   private def resolveLocalTriple(workingDir: String): IO[Either[LlvmCompilationError, String]] =
     IO.defer {
       val cacheFile = Paths.get(workingDir).resolve(localTargetTripleFile)
       if Files.exists(cacheFile) then
         IO {
-          try Files.readString(cacheFile).trim.asRight
+          try normalizeTriple(Files.readString(cacheFile).trim).asRight
           catch
             case e: Exception =>
               LlvmCompilationError
@@ -167,13 +216,7 @@ object LlvmToolchain:
           .asLeft
   }
 
-  /** Normalizes a target triple by stripping version suffixes.
-    *
-    * Examples:
-    *   - x86_64-apple-darwin24.6.0 -> x86_64-apple-macosx
-    *   - aarch64-apple-darwin24.6.0 -> aarch64-apple-macosx
-    *   - x86_64-pc-linux-gnu -> x86_64-pc-linux-gnu (unchanged)
-    */
+  /** Leaves local macOS deployment version selection to Clang. */
   private def normalizeTriple(triple: String): String =
     val parts = triple.split("-").toList
     parts match
@@ -206,7 +249,7 @@ object LlvmToolchain:
           .asScala
           .find(_.stripLeading().startsWith(hostCpuPrefix))
           .map(_.stripLeading().stripPrefix(hostCpuPrefix).trim)
-          .filter(_.nonEmpty)
+          .filter(cpu => cpu.nonEmpty && cpu != "(unknown)" && cpu != "unknown")
       catch case _: Exception => None
     }
 
@@ -217,41 +260,34 @@ object LlvmToolchain:
       case moduleName :: _ :: _ => moduleName
       case _ => fileName
 
+  /** Compile native output, collecting pipeline timings only when requested. */
   def compile(
     llvmIrPath:     Path,
     config:         CompilerConfig,
     resolvedTriple: Option[String],
-    targetCpu:      Option[String]
-  ): IO[Either[LlvmCompilationError, Int]] =
-    compileInternal(
-      llvmIrPath,
-      config,
-      resolvedTriple,
-      targetCpu,
-      recordTiming = None
-    )
-
-  def compileWithTimings(
-    llvmIrPath:     Path,
-    config:         CompilerConfig,
-    resolvedTriple: Option[String],
-    targetCpu:      Option[String]
+    target:         ClangTarget,
+    linkEntries:    List[LinkEntry] = Nil
   ): IO[(Either[LlvmCompilationError, Int], Vector[PipelineTiming])] =
-    val timings = Vector.newBuilder[PipelineTiming]
-    val record: TimingRecorder = timing => timings += timing
-    compileInternal(
-      llvmIrPath,
-      config,
-      resolvedTriple,
-      targetCpu,
-      recordTiming = Some(record)
-    ).map(result => result -> timings.result())
+    IO.defer {
+      // Subprocess timing callbacks accumulate observations within one IO evaluation.
+      val timings = Vector.newBuilder[PipelineTiming]
+      val record: TimingRecorder = timing => timings += timing
+      compileInternal(
+        llvmIrPath,
+        config,
+        resolvedTriple,
+        target,
+        linkEntries,
+        recordTiming = Option.when(config.showTimings)(record)
+      ).map(result => result -> timings.result())
+    }
 
   private def compileInternal(
     llvmIrPath:     Path,
     config:         CompilerConfig,
     resolvedTriple: Option[String],
-    targetCpu:      Option[String],
+    target:         ClangTarget,
+    linkEntries:    List[LinkEntry],
     recordTiming:   Option[TimingRecorder]
   ): IO[Either[LlvmCompilationError, Int]] =
     val moduleName = programNameFrom(llvmIrPath)
@@ -268,14 +304,22 @@ object LlvmToolchain:
         _ <- IO(logInfo(s"Working directory: ${config.outputDir}", config.printPhases))
         _ <- IO(logInfo(s"Compilation mode: ${config.mode}", config.printPhases))
         _ <- createOutputDir(config.outputDir, config.printPhases)
-        result <- processLlvmFile(inputFile, config, resolvedTriple, targetCpu, recordTiming)
+        result <- processLlvmFile(
+          inputFile,
+          config,
+          resolvedTriple,
+          target,
+          linkEntries,
+          recordTiming
+        )
       yield result
 
   private def processLlvmFile(
     inputFile:      File,
     config:         CompilerConfig,
     resolvedTriple: Option[String],
-    targetCpu:      Option[String],
+    target:         ClangTarget,
+    linkEntries:    List[LinkEntry],
     recordTiming:   Option[TimingRecorder]
   ): IO[Either[LlvmCompilationError, Int]] =
     val programName   = programNameFrom(inputFile.toPath)
@@ -300,7 +344,8 @@ object LlvmToolchain:
               config,
               outputDir,
               targetDir,
-              targetCpu,
+              target,
+              linkEntries,
               recordTiming
             )
           yield result
@@ -313,7 +358,8 @@ object LlvmToolchain:
     config:       CompilerConfig,
     outputDir:    Path,
     targetDir:    Path,
-    targetCpu:    Option[String],
+    target:       ClangTarget,
+    linkEntries:  List[LinkEntry],
     recordTiming: Option[TimingRecorder]
   ): IO[Either[LlvmCompilationError, Int]] =
     logPhase(s"Starting LLVM compilation pipeline for $programName", config.printPhases)
@@ -326,7 +372,8 @@ object LlvmToolchain:
       config,
       outputDir,
       targetDir,
-      targetCpu,
+      target,
+      linkEntries,
       recordTiming
     )
 
@@ -337,13 +384,13 @@ object LlvmToolchain:
     config:       CompilerConfig,
     outputDir:    Path,
     targetDir:    Path,
-    targetCpu:    Option[String],
+    target:       ClangTarget,
+    linkEntries:  List[LinkEntry],
     recordTiming: Option[TimingRecorder]
   ): IO[Either[LlvmCompilationError, Int]] =
     import cats.data.EitherT
 
     val programBitcode = outputDir.resolve(s"$programName.bc").toAbsolutePath.toString
-    val clangFlags     = clangStackProbeFlags(config.noStackCheck) ++ clangAsanFlags(config.asan)
 
     (for
       _ <- EitherT(
@@ -358,14 +405,14 @@ object LlvmToolchain:
             targetTriple,
             config,
             outputDir,
-            clangFlags,
+            target,
             recordTiming
           )
         else IO.pure(programBitcode.asRight)
       )
       _ <- EitherT(
         timedStep("llvm-opt", recordTiming)(
-          runOptimization(optInputFile, programName, config, outputDir, targetCpu)
+          runOptimization(optInputFile, programName, config, outputDir, target.attributes.cpu)
         )
       )
       _ <- EitherT(
@@ -377,7 +424,7 @@ object LlvmToolchain:
       )
       _ <- EitherT(
         timedStep("llvm-llc", recordTiming)(
-          generateAssembly(programName, targetTriple, config, outputDir, targetCpu)
+          generateAssembly(programName, targetTriple, config, outputDir, target.attributes.cpu)
         )
       )
       result <- EitherT(
@@ -387,7 +434,8 @@ object LlvmToolchain:
           config,
           outputDir,
           targetDir,
-          clangFlags,
+          target,
+          linkEntries,
           recordTiming
         )
       )
@@ -419,16 +467,24 @@ object LlvmToolchain:
     targetCpu:   Option[String]
   ): IO[Either[LlvmCompilationError, Int]] =
     val outputFile = outputDir.resolve(s"${programName}_opt.bc").toAbsolutePath.toString
-    val cpuFlag    = targetCpu.map(cpu => s" --mcpu=$cpu").getOrElse("")
+    val cpuFlags   = targetCpu.toList.map(cpu => s"--mcpu=$cpu")
     val internalize =
       if config.mode == CompilationMode.Exe then ",internalize,globaldce" else ""
     val internalizeFlags =
-      if config.mode == CompilationMode.Exe then " --internalize-public-api-list=main" else ""
+      if config.mode == CompilationMode.Exe then List("--internalize-public-api-list=main")
+      else Nil
+    // Instrument after internalization so sanitizer globals retain their required linkage.
+    val sanitizer      = if config.asan then ",asan" else ""
+    val sanitizerFlags = if config.asan then List("--asan-use-after-scope") else Nil
+    val command =
+      List("opt", s"--passes=default<O${config.optLevel}>$internalize$sanitizer") ++
+        cpuFlags ++ internalizeFlags ++ sanitizerFlags ++ config.llvmOptArgs ++
+        List(inputFile, "-o", outputFile)
     logPhase(s"Optimizing Bitcode", config.printPhases)
     logDebug(s"Input file: $inputFile", config.verbose)
     logDebug(s"Output file: $outputFile", config.verbose)
     executeCommand(
-      s"opt --passes='default<O${config.optLevel}>$internalize'$cpuFlag$internalizeFlags $inputFile -o $outputFile",
+      command,
       "Failed to optimize bitcode",
       config.outputDir,
       config.verbose
@@ -460,12 +516,13 @@ object LlvmToolchain:
   ): IO[Either[LlvmCompilationError, Int]] =
     val inputFile  = outputDir.resolve(s"${programName}_opt.bc").toAbsolutePath.toString
     val outputFile = outputDir.resolve(s"$programName.s").toAbsolutePath.toString
-    val cpuFlag    = targetCpu.map(cpu => s" --mcpu=$cpu").getOrElse("")
+    val cpuFlags   = targetCpu.toList.map(cpu => s"--mcpu=$cpu")
     logPhase(s"Generating assembly", config.printPhases)
     logDebug(s"Input file: $inputFile", config.verbose)
     logDebug(s"Output file: $outputFile", config.verbose)
     executeCommand(
-      s"llc -mtriple=$targetTriple$cpuFlag $inputFile -o $outputFile",
+      List("llc", s"-mtriple=$targetTriple", "-relocation-model=pic") ++ cpuFlags ++
+        List(inputFile, "-o", outputFile),
       "Failed to convert Bitcode to Assembly",
       config.outputDir,
       config.verbose
@@ -477,7 +534,8 @@ object LlvmToolchain:
     config:       CompilerConfig,
     outputDir:    Path,
     targetDir:    Path,
-    clangFlags:   List[String],
+    target:       ClangTarget,
+    linkEntries:  List[LinkEntry],
     recordTiming: Option[TimingRecorder]
   ): IO[Either[LlvmCompilationError, Int]] = config.mode match
     case CompilationMode.Exe =>
@@ -487,7 +545,8 @@ object LlvmToolchain:
         config,
         outputDir,
         targetDir,
-        clangFlags,
+        target,
+        linkEntries,
         recordTiming
       )
     case CompilationMode.Library =>
@@ -497,7 +556,7 @@ object LlvmToolchain:
         config,
         outputDir,
         targetDir,
-        clangFlags,
+        target,
         recordTiming
       )
     case CompilationMode.Ast | CompilationMode.Ir | CompilationMode.Dev =>
@@ -513,158 +572,170 @@ object LlvmToolchain:
   private def mmlRuntimeObjectFilename(targetTriple: String): String =
     s"mml_runtime-$targetTriple.o"
 
-  /** Get the filename for the compiled MML runtime bitcode for a specific target */
-  private def mmlRuntimeBitcodeFilename(targetTriple: String): String =
-    s"mml_runtime-$targetTriple.bc"
+  /** Runtime cache entries are specific to the flags that compile their target code. */
+  private[codegen] def runtimeCacheFilename(
+    targetTriple: String,
+    optLevel:     Int,
+    clangFlags:   List[String],
+    extension:    String,
+    source:       Array[Byte] = Array.emptyByteArray
+  ): String =
+    val options = (s"-O$optLevel" :: clangFlags).mkString("\u0000").getBytes(UTF_8)
+    val digest =
+      HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(options ++ source))
+    s"mml_runtime-$targetTriple-$digest.$extension"
+
+  private def readRuntimeResource: IO[Either[LlvmCompilationError, Array[Byte]]] =
+    Resource
+      .fromAutoCloseable(
+        IO.blocking {
+          Option(getClass.getClassLoader.getResourceAsStream(mmlRuntimeResourcePath))
+        }.flatMap {
+          case Some(stream) => IO.pure(stream)
+          case None =>
+            IO.blocking(
+              Files.newInputStream(
+                Paths.get("modules/mmlc-lib/src/main/resources", mmlRuntimeResourcePath)
+              )
+            )
+        }
+      )
+      .use(stream => IO.blocking(stream.readAllBytes()))
+      .attempt
+      .map {
+        case Right(bytes) => bytes.asRight
+        case Left(error) => LlvmCompilationError.RuntimeResourceError(error.getMessage).asLeft
+      }
 
   private def extractRuntimeResource(
     outputDir:   Path,
+    source:      Array[Byte],
     verbose:     Boolean,
     printPhases: Boolean
-  ): IO[Either[LlvmCompilationError, String]] = IO.defer {
-    val sourcePath = outputDir.resolve(mmlRuntimeFilename).toAbsolutePath
-
-    if Files.exists(sourcePath) then
-      logDebug(s"Runtime source already exists at $sourcePath", verbose)
-      IO.pure(sourcePath.toString.asRight)
-    else
-      IO.blocking {
-        try
-          logPhase("Extracting MML runtime source", printPhases)
-          logDebug(s"Destination: $sourcePath", verbose)
-
-          val resourceStream =
-            val classLoader = getClass.getClassLoader
-            val paths = List(
-              mmlRuntimeResourcePath,
-              s"/$mmlRuntimeResourcePath",
-              s"modules/mmlc-lib/src/main/resources/$mmlRuntimeResourcePath",
-              s"/modules/mmlc-lib/src/main/resources/$mmlRuntimeResourcePath"
-            )
-
-            val stream = paths.foldLeft[Option[InputStream]](None) { (acc, path) =>
-              acc.orElse {
-                val s = Option(classLoader.getResourceAsStream(path))
-                if s.isDefined then logDebug(s"Found resource at path: $path", verbose)
-                s
-              }
-            }
-
-            stream.getOrElse {
-              val localPath =
-                Paths.get("modules/mmlc-lib/src/main/resources", mmlRuntimeResourcePath)
-              logDebug(s"Trying to read from file system at: $localPath", verbose)
-              if Files.exists(localPath) then
-                logDebug(s"Found file at: $localPath", verbose)
-                Files.newInputStream(localPath)
-              else
-                // FIXME:QA: Exceptions are not allowed in this codebase.
-                throw new Exception(
-                  s"Could not find resource: $mmlRuntimeResourcePath (tried multiple paths)"
-                )
-            }
-
-          Files.copy(resourceStream, sourcePath, StandardCopyOption.REPLACE_EXISTING)
-          resourceStream.close()
-          logDebug(s"Successfully extracted runtime source to: $sourcePath", verbose)
-          sourcePath.toString.asRight
-        catch
-          case e: Exception =>
-            val error = LlvmCompilationError.RuntimeResourceError(
-              s"Failed to extract runtime source: ${e.getMessage}"
-            )
-            logError(error.toString)
-            error.asLeft
+  ): IO[Either[LlvmCompilationError, String]] =
+    IO.blocking {
+      val sourcePath = outputDir.resolve(mmlRuntimeFilename).toAbsolutePath
+      logPhase("Extracting MML runtime source", printPhases)
+      logDebug(s"Destination: $sourcePath", verbose)
+      Files.write(sourcePath, source)
+      sourcePath.toString
+    }.attempt
+      .map {
+        case Right(path) => path.asRight
+        case Left(error) => LlvmCompilationError.RuntimeResourceError(error.getMessage).asLeft
       }
-  }
 
   private def compileRuntime(
     outputDir:    Path,
     targetTriple: String,
     config:       CompilerConfig,
-    clangFlags:   List[String]
-  ): IO[Either[LlvmCompilationError, String]] = IO.defer {
-    val runtimeFilename = mmlRuntimeObjectFilename(targetTriple)
-    val objPath         = outputDir.resolve(runtimeFilename).toAbsolutePath
+    target:       ClangTarget
+  ): IO[Either[LlvmCompilationError, String]] = readRuntimeResource.flatMap {
+    case Left(error) => IO.pure(error.asLeft)
+    case Right(source) =>
+      IO.defer {
+        val runtimeFilename =
+          runtimeCacheFilename(targetTriple, config.optLevel, List(target.cacheKey), "o", source)
+        val objPath = outputDir.resolve(runtimeFilename).toAbsolutePath
 
-    logPhase("Compiling runtime", config.printPhases)
-    if Files.exists(objPath) then
-      logInfo(
-        s"Runtime object already exists at $objPath, skipping compilation",
-        config.printPhases
-      )
-      IO.pure(objPath.toString.asRight)
-    else
-      for
-        sourceResult <- extractRuntimeResource(outputDir, config.verbose, config.printPhases)
-        result <- sourceResult match
-          case Left(error) => IO.pure(error.asLeft)
-          case Right(sourcePath) =>
-            logPhase("Compiling MML runtime", config.printPhases)
-            logDebug(s"Input file: $sourcePath", config.verbose)
-            logDebug(s"Output file: $objPath", config.verbose)
+        logPhase("Compiling runtime", config.printPhases)
+        if Files.exists(objPath) then
+          logInfo(
+            s"Runtime object already exists at $objPath, skipping compilation",
+            config.printPhases
+          )
+          IO.pure(objPath.toString.asRight)
+        else
+          for
+            sourceResult <- extractRuntimeResource(
+              outputDir,
+              source,
+              config.verbose,
+              config.printPhases
+            )
+            result <- sourceResult match
+              case Left(error) => IO.pure(error.asLeft)
+              case Right(sourcePath) =>
+                logPhase("Compiling MML runtime", config.printPhases)
+                logDebug(s"Input file: $sourcePath", config.verbose)
+                logDebug(s"Output file: $objPath", config.verbose)
 
-            val cmd = (List(
-              "clang",
-              "-target",
-              targetTriple,
-              "-c",
-              "-std=c17",
-              s"-O${config.optLevel}",
-              "-flto"
-            ) ++ clangFlags ++ List("-fPIC", "-o", objPath.toString, sourcePath)).mkString(" ")
-            executeCommand(cmd, "Failed to compile MML runtime", config.outputDir, config.verbose)
-              .map {
-                case Left(error) => error.asLeft
-                case Right(_) => objPath.toString.asRight
-              }
-      yield result
+                val cmd = (List(
+                  target.executable.toString,
+                  "-c",
+                  "-flto"
+                ) ++ target.flags ++ List("-o", objPath.toString, sourcePath))
+                executeCommand(
+                  cmd,
+                  "Failed to compile MML runtime",
+                  config.outputDir,
+                  config.verbose
+                )
+                  .map {
+                    case Left(error) => error.asLeft
+                    case Right(_) => objPath.toString.asRight
+                  }
+          yield result
+      }
   }
 
   private def compileRuntimeBitcode(
     outputDir:    Path,
     targetTriple: String,
     config:       CompilerConfig,
-    clangFlags:   List[String]
-  ): IO[Either[LlvmCompilationError, String]] = IO.defer {
-    val runtimeFilename = mmlRuntimeBitcodeFilename(targetTriple)
-    val bcPath          = outputDir.resolve(runtimeFilename).toAbsolutePath
+    target:       ClangTarget
+  ): IO[Either[LlvmCompilationError, String]] = readRuntimeResource.flatMap {
+    case Left(error) => IO.pure(error.asLeft)
+    case Right(source) =>
+      IO.defer {
+        // ASan runs once on the linked module; pre-instrumented bitcode would suppress that pass.
+        val deferredPassFlags =
+          if config.asan then List("-Xclang", "-disable-llvm-passes") else Nil
+        val runtimeFilename =
+          runtimeCacheFilename(
+            targetTriple,
+            config.optLevel,
+            target.cacheKey :: deferredPassFlags,
+            "bc",
+            source
+          )
+        val bcPath = outputDir.resolve(runtimeFilename).toAbsolutePath
 
-    logPhase("Compiling runtime bitcode", config.printPhases)
-    if Files.exists(bcPath) then
-      logInfo(s"Runtime bitcode present, skipping", config.printPhases)
-      IO.pure(bcPath.toString.asRight)
-    else
-      for
-        sourceResult <- extractRuntimeResource(outputDir, config.verbose, config.printPhases)
-        result <- sourceResult match
-          case Left(error) => IO.pure(error.asLeft)
-          case Right(sourcePath) =>
-            logPhase("Compiling runtime bitcode", config.printPhases)
-            logDebug(s"Input file: $sourcePath", config.verbose)
-            logDebug(s"Output file: $bcPath", config.verbose)
+        logPhase("Compiling runtime bitcode", config.printPhases)
+        if Files.exists(bcPath) then
+          logInfo(s"Runtime bitcode present, skipping", config.printPhases)
+          IO.pure(bcPath.toString.asRight)
+        else
+          for
+            sourceResult <- extractRuntimeResource(
+              outputDir,
+              source,
+              config.verbose,
+              config.printPhases
+            )
+            result <- sourceResult match
+              case Left(error) => IO.pure(error.asLeft)
+              case Right(sourcePath) =>
+                logPhase("Compiling runtime bitcode", config.printPhases)
+                logDebug(s"Input file: $sourcePath", config.verbose)
+                logDebug(s"Output file: $bcPath", config.verbose)
 
-            val cpuFlags = config.targetCpu.map(cpu => List(s"-mcpu=$cpu")).getOrElse(Nil)
-            val cmd = (List(
-              "clang",
-              "-target",
-              targetTriple,
-              "-emit-llvm",
-              "-c",
-              "-std=c17",
-              s"-O${config.optLevel}"
-            ) ++ cpuFlags ++ clangFlags ++ List("-fPIC", "-o", bcPath.toString, sourcePath))
-              .mkString(" ")
-            executeCommand(
-              cmd,
-              "Failed to compile MML runtime bitcode",
-              config.outputDir,
-              config.verbose
-            ).map {
-              case Left(error) => error.asLeft
-              case Right(_) => bcPath.toString.asRight
-            }
-      yield result
+                val cmd = (List(
+                  target.executable.toString,
+                  "-emit-llvm",
+                  "-c"
+                ) ++ target.flags ++ deferredPassFlags ++ List("-o", bcPath.toString, sourcePath))
+                executeCommand(
+                  cmd,
+                  "Failed to compile MML runtime bitcode",
+                  config.outputDir,
+                  config.verbose
+                ).map {
+                  case Left(error) => error.asLeft
+                  case Right(_) => bcPath.toString.asRight
+                }
+          yield result
+      }
   }
 
   private def linkRuntimeBitcode(
@@ -672,7 +743,7 @@ object LlvmToolchain:
     targetTriple: String,
     config:       CompilerConfig,
     outputDir:    Path,
-    clangFlags:   List[String],
+    target:       ClangTarget,
     recordTiming: Option[TimingRecorder]
   ): IO[Either[LlvmCompilationError, String]] =
     val programBitcode = outputDir.resolve(s"$programName.bc").toAbsolutePath.toString
@@ -680,7 +751,7 @@ object LlvmToolchain:
 
     for
       runtimeResult <- timedStep("llvm-runtime-bitcode", recordTiming)(
-        compileRuntimeBitcode(outputDir, targetTriple, config, clangFlags)
+        compileRuntimeBitcode(outputDir, targetTriple, config, target)
       )
       result <- runtimeResult match
         case Left(error) => IO.pure(error.asLeft)
@@ -709,7 +780,8 @@ object LlvmToolchain:
     config:       CompilerConfig,
     outputDir:    Path,
     targetDir:    Path,
-    clangFlags:   List[String],
+    target:       ClangTarget,
+    linkEntries:  List[LinkEntry],
     recordTiming: Option[TimingRecorder]
   ): IO[Either[LlvmCompilationError, Int]] =
     val targetDirPath = targetDir.toAbsolutePath
@@ -725,6 +797,8 @@ object LlvmToolchain:
           if config.targetTriple.isDefined then s"$baseName-$targetTriple" else baseName
         targetDirPath.resolve(finalName).toString
     val inputFile = outputDir.resolve(s"$programName.s").toAbsolutePath.toString
+    // Frame-pointer selection applies when compiling IR or C, not when linking assembly.
+    val linkFlags = target.flags.filterNot(_ == "-fno-omit-frame-pointer")
 
     val outputPath = Paths.get(finalExecutablePath)
     val parentDir  = outputPath.getParent
@@ -736,14 +810,9 @@ object LlvmToolchain:
 
     timedStep("llvm-compile-binary", recordTiming)(
       executeCommand(
-        (List(
-          "clang",
-          "-target",
-          targetTriple,
-          "-fuse-ld=lld",
-          s"-O${config.optLevel}"
-        ) ++
-          clangFlags ++ List(inputFile, "-o", finalExecutablePath)).mkString(" "),
+        List(target.executable.toString, "-fuse-ld=lld") ++ linkFlags ++
+          List(inputFile) ++ linkEntries.map(entry => s"-l${entry.name}") ++
+          List("-o", finalExecutablePath),
         "Failed to compile and link",
         config.outputDir,
         config.verbose
@@ -761,7 +830,7 @@ object LlvmToolchain:
     config:       CompilerConfig,
     outputDir:    Path,
     targetDir:    Path,
-    clangFlags:   List[String],
+    target:       ClangTarget,
     recordTiming: Option[TimingRecorder]
   ): IO[Either[LlvmCompilationError, Int]] =
     val targetDirPath = targetDir.toAbsolutePath
@@ -780,13 +849,17 @@ object LlvmToolchain:
         targetDirPath.resolve(s"$finalName.o").toString
     val inputFile = outputDir.resolve(s"$programName.s").toAbsolutePath.toString
 
+    val assemblyFlags = target.flags.filterNot { flag =>
+      flag.matches("-O[0-3]") || clangAsanFlags(config.asan).contains(flag)
+    }
+
     val outputPath = Paths.get(finalLibraryPath)
     val parentDir  = outputPath.getParent
     if parentDir != null && !Files.exists(parentDir) then Files.createDirectories(parentDir)
 
     for
       runtimeResult <- timedStep("llvm-runtime-object", recordTiming)(
-        compileRuntime(outputDir, targetTriple, config, clangFlags)
+        compileRuntime(outputDir, targetTriple, config, target)
       )
       result <- runtimeResult match
         case Left(error) => IO.pure(error.asLeft)
@@ -798,8 +871,8 @@ object LlvmToolchain:
 
           timedStep("llvm-compile-library", recordTiming)(
             executeCommand(
-              (List("clang", "-target", targetTriple, "-c") ++ clangFlags ++
-                List(inputFile, "-o", finalLibraryPath)).mkString(" "),
+              (List(target.executable.toString, "-c") ++ assemblyFlags ++
+                List(inputFile, "-o", finalLibraryPath)),
               "Failed to compile library object",
               config.outputDir,
               config.verbose
@@ -865,6 +938,23 @@ object LlvmToolchain:
     workingDir: Path,
     verbose:    Boolean
   ): IO[Either[LlvmCompilationError, Int]] =
+    executeProcess(dir => Process(cmd, dir), cmd, errorMsg, workingDir, verbose)
+
+  private[mmlclib] def executeCommand(
+    args:       Seq[String],
+    errorMsg:   String,
+    workingDir: Path,
+    verbose:    Boolean
+  ): IO[Either[LlvmCompilationError, Int]] =
+    executeProcess(dir => Process(args, dir), args.mkString(" "), errorMsg, workingDir, verbose)
+
+  private def executeProcess(
+    process:    java.io.File => scala.sys.process.ProcessBuilder,
+    cmd:        String,
+    errorMsg:   String,
+    workingDir: Path,
+    verbose:    Boolean
+  ): IO[Either[LlvmCompilationError, Int]] =
     IO.defer {
       val setupDir = IO.blocking {
         val absPath        = workingDir.toAbsolutePath
@@ -878,14 +968,23 @@ object LlvmToolchain:
       }
 
       setupDir.flatMap { workingDirFile =>
-        IO.blocking {
+        IO.blocking[Either[LlvmCompilationError, Int]] {
           try
-            val exitCode = Process(cmd, workingDirFile).!
+            // Process callbacks collect diagnostics until the child exits.
+            val stderr = new StringBuffer
+            val logger = ProcessLogger(
+              line => Console.out.println(line),
+              line =>
+                stderr.append(s"$line\n")
+                ()
+            )
+            val exitCode = process(workingDirFile).!(logger)
             if exitCode != 0 then
-              val error = LlvmCompilationError.CommandExecutionError(cmd, errorMsg, exitCode)
-              logError(s"Command failed with exit code $exitCode: $error")
-              error.asLeft
+              val diagnostics = stderr.toString.stripTrailing()
+              val message     = if diagnostics.isEmpty then errorMsg else s"$errorMsg\n$diagnostics"
+              LlvmCompilationError.CommandExecutionError(cmd, message, exitCode).asLeft
             else
+              Console.err.print(stderr.toString)
               logDebug(s"Command completed successfully with exit code $exitCode", verbose)
               exitCode.asRight
           catch

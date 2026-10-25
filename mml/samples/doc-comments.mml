@@ -1,10 +1,10 @@
 
 /* this is a test function */
-fn test() = "lalala";
+fn test() = "lalala";;
 
 /*
   This is a doc comment for main
 */
-pub fn main() = println "something";
+pub fn main() = println "something";;
 
 

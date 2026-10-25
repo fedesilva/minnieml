@@ -7,7 +7,7 @@ import mml.mmlclib.codegen.emitter.{
   CodeGenState,
   CompileResult,
   getLlvmType,
-  getMmlTypeName
+  getNominalTypeName
 }
 
 // ============================================================================
@@ -93,6 +93,16 @@ def getResolvedName(ref: Ref, state: CodeGenState): String =
       else state.mangleName(bnd.name)
     case _ => ref.name
 
+/** True when a ref resolves to a directly emitted callable symbol rather than a fat-pointer value.
+  */
+def isDirectCallableRef(ref: Ref, state: CodeGenState): Boolean =
+  ref.resolvedId.flatMap(state.resolvables.lookup) match
+    case Some(bnd: Bnd) =>
+      bnd.value.terms match
+        case List(_: Lambda) => true
+        case _ => false
+    case _ => false
+
 /** Checks if a binding is a native function (has NativeImpl body). */
 def isNativeBinding(bnd: Bnd): Boolean =
   bnd.value.terms match
@@ -109,7 +119,8 @@ def isNativeBinding(bnd: Bnd): Boolean =
 /** Gets MML type name for operator return type. */
 def getMmlTypeForOp(opRef: Ref): Option[String] =
   opRef.typeSpec.flatMap {
-    case TypeFn(_, _, returnType) => getMmlTypeName(returnType)
+    case TypeFn(_, _, returnType) =>
+      getNominalTypeName(returnType).toOption
     case _ => None
   }
 
@@ -139,7 +150,8 @@ def applyBinaryOp(
                     resultReg,
                     rightRes.state.withRegister(resultReg + 1).emit(line),
                     false,
-                    typeName
+                    typeName,
+                    exitBlock = rightRes.exitBlock.orElse(leftRes.exitBlock)
                   ).asRight
                 case None =>
                   Left(
@@ -179,7 +191,8 @@ def applyUnaryOp(
                     resultReg,
                     argRes.state.withRegister(resultReg + 1).emit(line),
                     false,
-                    typeName
+                    typeName,
+                    exitBlock = argRes.exitBlock
                   ).asRight
                 case None =>
                   Left(

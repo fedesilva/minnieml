@@ -1,8 +1,26 @@
 CC = clang
 CFLAGS = -O3 -flto -march=native -fomit-frame-pointer -fno-stack-protector  -DNDEBUG
 BINDIR = bin
+JAVA ?= java
+JAVAC ?= javac
+NATIVE_IMAGE ?= native-image
+NATIVE_IMAGE_FLAGS ?= -O3 -march=native --no-fallback
+PYTHON ?= python3
+
+# Include Python in drag races only when BENCH_SLOW=1.
+ifeq ($(BENCH_SLOW),1)
+PYTHON_BENCH = '$(PYTHON) $(1).py'
+endif
+
+# MML optimization level: 3 on all platforms.
+# Override with the MML_OPT env var or `make MML_OPT=...`.
+MML_OPT ?= 3
 BUILDDIR = build
 RESULTSDIR = results/$(shell date +%Y-%m-%d)
+
+# Override measured runs for all Hyperfine targets; unset keeps each target's default.
+# Example: BENCH_RUNS=10 make bench-matmul
+BENCH_RUNS ?=
 
 # Conditional export flags for hyperfine (set LOG_BENCH_RESULTS=1 to enable)
 ifdef LOG_BENCH_RESULTS
@@ -15,14 +33,27 @@ EXPORT_FLAGS =
 RESULTS_DEP =
 endif
 
-all: $(BINDIR)/fizzbuzz-c $(BINDIR)/fizzbuzz2-c $(BINDIR)/fizzbuzz-go $(BINDIR)/fizzbuzz2-go \
+all: $(BINDIR)/fizzbuzz-c $(BINDIR)/fizzbuzz-buffered-c $(BINDIR)/fizzbuzz-go $(BINDIR)/fizzbuzz-buffered-go \
+     $(BINDIR)/fizzbuzz-rs $(BINDIR)/fizzbuzz-buffered-rs \
      $(BINDIR)/ackermann-c $(BINDIR)/ackermann-go $(BINDIR)/ackermann-c-chacho $(BINDIR)/ackermann-unfair-c $(BINDIR)/ackermann-rs \
      $(BINDIR)/sieve-c $(BINDIR)/sieve-go $(BINDIR)/sieve-opt-go $(BINDIR)/sieve-rs \
-     $(BINDIR)/quicksort-c $(BINDIR)/matmul-c $(BINDIR)/matmul-opt-c $(BINDIR)/matmul-restricted-c $(BINDIR)/matmul-go $(BINDIR)/matmul-bce-go $(BINDIR)/matmul-opt-go \
-     $(BINDIR)/nqueens-c $(BINDIR)/nqueens-go $(BINDIR)/euclidean-ext-c
+     $(BINDIR)/quicksort-c $(BINDIR)/quicksort-safe-c $(BINDIR)/quicksort-go $(BINDIR)/quicksort-rs \
+     $(BINDIR)/matmul-c $(BINDIR)/matmul-opt-c $(BINDIR)/matmul-restricted-c $(BINDIR)/matmul-go $(BINDIR)/matmul-bce-go $(BINDIR)/matmul-opt-go \
+     $(BINDIR)/matmul-opt-bce-go $(BINDIR)/matmul-rs $(BINDIR)/matmul-opt-rs \
+     $(BINDIR)/nqueens-c $(BINDIR)/nqueens-go $(BINDIR)/nqueens-rs \
+     $(BINDIR)/euclidean-ext-c $(BINDIR)/euclidean-ext-rs \
+     $(BINDIR)/Sieve.class $(BINDIR)/Quicksort.class $(BINDIR)/Matmul.class \
+     $(BINDIR)/sieve-java-native $(BINDIR)/quicksort-java-native $(BINDIR)/matmul-java-native
 
-mml: $(BINDIR)/sieve-mml $(BINDIR)/quicksort-mml $(BINDIR)/matmul-mml \
-     $(BINDIR)/matmul-opt-mml $(BINDIR)/nqueens-mml $(BINDIR)/euclidean-ext-mml \
+java: $(BINDIR)/Sieve.class $(BINDIR)/Quicksort.class $(BINDIR)/Matmul.class
+
+java-native: $(BINDIR)/sieve-java-native $(BINDIR)/quicksort-java-native $(BINDIR)/matmul-java-native
+
+MML_BINARIES = $(BINDIR)/sieve-mml $(BINDIR)/sieve-safe-mml \
+     $(BINDIR)/quicksort-mml $(BINDIR)/quicksort-safe-mml $(BINDIR)/matmul-mml \
+     $(BINDIR)/matmul-nested-mml $(BINDIR)/matmul-safe-mml \
+     $(BINDIR)/matmul-opt-mml $(BINDIR)/matmul-opt-nested-mml $(BINDIR)/matmul-opt-safe-mml \
+     $(BINDIR)/nqueens-mml $(BINDIR)/euclidean-ext-mml \
      $(BINDIR)/ackermann-mml \
      $(SELF_SIEVE_BINARIES) $(SELF_MATMUL_BINARIES) $(SELF_MATMUL_OPT_BINARIES)
 
@@ -36,14 +67,26 @@ $(RESULTSDIR):
 $(BINDIR)/fizzbuzz-c: fizzbuzz.c | $(BINDIR)
 	$(CC) $(CFLAGS) -o $@ $<
 
-$(BINDIR)/fizzbuzz2-c: fizzbuzz2.c | $(BINDIR)
+$(BINDIR)/fizzbuzz-buffered-c: fizzbuzz-buffered.c | $(BINDIR)
 	$(CC) $(CFLAGS) -o $@ $<
 
 $(BINDIR)/fizzbuzz-go: fizzbuzz.go | $(BINDIR)
 	go build -o $@ $<
 
-$(BINDIR)/fizzbuzz2-go: fizzbuzz2.go | $(BINDIR)
+$(BINDIR)/fizzbuzz-buffered-go: fizzbuzz-buffered.go | $(BINDIR)
 	go build -o $@ $<
+
+$(BINDIR)/fizzbuzz-rs: fizzbuzz.rs | $(BINDIR)
+	rustc -O -o $@ $<
+
+$(BINDIR)/fizzbuzz-buffered-rs: fizzbuzz-buffered.rs | $(BINDIR)
+	rustc -O -o $@ $<
+
+$(BINDIR)/fizzbuzz-mml: fizzbuzz.mml | $(BINDIR)
+	mmlc --cpu native -I -b $(BUILDDIR) -O$(MML_OPT) -o $@ $<
+
+$(BINDIR)/fizzbuzz-buffered-mml: fizzbuzz-buffered.mml | $(BINDIR)
+	mmlc --cpu native -I -b $(BUILDDIR) -O$(MML_OPT) -o $@ $<
 
 # Ackermann
 $(BINDIR)/ackermann-c: ackermann.c | $(BINDIR)
@@ -62,9 +105,15 @@ $(BINDIR)/ackermann-rs: ackermann.rs | $(BINDIR)
 	rustc -O -o $@ $<
 
 $(BINDIR)/ackermann-mml: ackermann.mml | $(BINDIR)
-	mmlc -I -b $(BUILDDIR) -o $@ $<
+	mmlc --cpu native -I -b $(BUILDDIR) -O$(MML_OPT) -o $@ $<
 
 # Sieve
+$(BINDIR)/Sieve.class: Sieve.java | $(BINDIR)
+	$(JAVAC) -d $(BINDIR) $<
+
+$(BINDIR)/sieve-java-native: $(BINDIR)/Sieve.class
+	$(NATIVE_IMAGE) $(NATIVE_IMAGE_FLAGS) -cp $(BINDIR) -o $@ Sieve
+
 $(BINDIR)/sieve-c: sieve.c | $(BINDIR)
 	$(CC) $(CFLAGS) -o $@ $<
 
@@ -78,7 +127,10 @@ $(BINDIR)/sieve-rs: sieve.rs | $(BINDIR)
 	rustc -O -o $@ $<
 
 $(BINDIR)/sieve-mml: sieve.mml | $(BINDIR)
-	mmlc -I -b $(BUILDDIR) -o $@ $<
+	mmlc --cpu native -I -b $(BUILDDIR) -O$(MML_OPT) -o $@ $<
+
+$(BINDIR)/sieve-safe-mml: sieve-safe.mml Makefile | $(BINDIR)
+	mmlc --cpu native -I -b $(BUILDDIR) -O$(MML_OPT) -o $@ $<
 
 # Self benchmark binaries (MML with various opt/TCO knobs)
 SELF_SIEVE_BINARIES = \
@@ -111,38 +163,68 @@ SELF_MATMUL_OPT_BINARIES = \
 	$(BINDIR)/matmul-opt-mml-O3-tco \
 	$(BINDIR)/matmul-opt-mml-O3-no-tco
 
+mml: $(MML_BINARIES)
+
+# CI and local MML measurements share the complete compilation target list.
+bench-mml: mml
+	$(PYTHON) ../scripts/ci/benchmark.py "$(RESULTSDIR)" $(MML_BINARIES)
+
 $(BINDIR)/sieve-mml-O0-tco: sieve.mml | $(BINDIR)
-	mmlc -I -b $(BUILDDIR) -O 0 -o $@ $<
+	mmlc --cpu native -I -b $(BUILDDIR) -O0 -o $@ $<
 
 $(BINDIR)/sieve-mml-O0-no-tco: sieve.mml | $(BINDIR)
-	mmlc -I -b $(BUILDDIR) -O 0 --no-tco -o $@ $<
+	mmlc --cpu native -I -b $(BUILDDIR) -O0 --no-tco -o $@ $<
 
 $(BINDIR)/sieve-mml-O1-tco: sieve.mml | $(BINDIR)
-	mmlc -I -b $(BUILDDIR) -O 1 -o $@ $<
+	mmlc --cpu native -I -b $(BUILDDIR) -O1 -o $@ $<
 
 $(BINDIR)/sieve-mml-O1-no-tco: sieve.mml | $(BINDIR)
-	mmlc -I -b $(BUILDDIR) -O 1 --no-tco -o $@ $<
+	mmlc --cpu native -I -b $(BUILDDIR) -O1 --no-tco -o $@ $<
 
 $(BINDIR)/sieve-mml-O2-tco: sieve.mml | $(BINDIR)
-	mmlc -I -b $(BUILDDIR) -O 2 -o $@ $<
+	mmlc --cpu native -I -b $(BUILDDIR) -O2 -o $@ $<
 
 $(BINDIR)/sieve-mml-O2-no-tco: sieve.mml | $(BINDIR)
-	mmlc -I -b $(BUILDDIR) -O 2 --no-tco -o $@ $<
+	mmlc --cpu native -I -b $(BUILDDIR) -O2 --no-tco -o $@ $<
 
 $(BINDIR)/sieve-mml-O3-tco: sieve.mml | $(BINDIR)
-	mmlc -I -b $(BUILDDIR) -O 3 -o $@ $<
+	mmlc --cpu native -I -b $(BUILDDIR) -O3 -o $@ $<
 
 $(BINDIR)/sieve-mml-O3-no-tco: sieve.mml | $(BINDIR)
-	mmlc -I -b $(BUILDDIR) -O 3 --no-tco -o $@ $<
+	mmlc --cpu native -I -b $(BUILDDIR) -O3 --no-tco -o $@ $<
 
 # Quicksort
+$(BINDIR)/Quicksort.class: Quicksort.java | $(BINDIR)
+	$(JAVAC) -d $(BINDIR) $<
+
+$(BINDIR)/quicksort-java-native: $(BINDIR)/Quicksort.class
+	$(NATIVE_IMAGE) $(NATIVE_IMAGE_FLAGS) -cp $(BINDIR) -o $@ Quicksort
+
 $(BINDIR)/quicksort-c: quicksort.c | $(BINDIR)
 	$(CC) $(CFLAGS) -o $@ $<
 
+$(BINDIR)/quicksort-safe-c: quicksort-safe.c Makefile | $(BINDIR)
+	$(CC) $(CFLAGS) -o $@ $<
+
+$(BINDIR)/quicksort-go: quicksort.go | $(BINDIR)
+	go build -o $@ $<
+
+$(BINDIR)/quicksort-rs: quicksort.rs | $(BINDIR)
+	rustc -O -o $@ $<
+
 $(BINDIR)/quicksort-mml: quicksort.mml | $(BINDIR)
-	mmlc -I -b $(BUILDDIR) -o $@ $<
+	mmlc --cpu native -I -b $(BUILDDIR) -O$(MML_OPT) -o $@ $<
+
+$(BINDIR)/quicksort-safe-mml: quicksort-safe.mml Makefile | $(BINDIR)
+	mmlc --cpu native -I -b $(BUILDDIR) -O$(MML_OPT) -o $@ $<
 
 # Matrix Multiplication
+$(BINDIR)/Matmul.class: Matmul.java | $(BINDIR)
+	$(JAVAC) -d $(BINDIR) $<
+
+$(BINDIR)/matmul-java-native: $(BINDIR)/Matmul.class
+	$(NATIVE_IMAGE) $(NATIVE_IMAGE_FLAGS) -cp $(BINDIR) -o $@ Matmul
+
 $(BINDIR)/matmul-c: matmul.c | $(BINDIR)
 	$(CC) $(CFLAGS) -o $@ $<
 
@@ -151,6 +233,12 @@ $(BINDIR)/matmul-opt-c: matmul-opt.c | $(BINDIR)
 
 $(BINDIR)/matmul-restricted-c: matmul-restricted.c | $(BINDIR)
 	$(CC) $(CFLAGS) -o $@ $<
+
+$(BINDIR)/matmul-rs: matmul.rs | $(BINDIR)
+	rustc -O -o $@ $<
+
+$(BINDIR)/matmul-opt-rs: matmul-opt.rs | $(BINDIR)
+	rustc -O -o $@ $<
 
 $(BINDIR)/matmul-go: matmul.go | $(BINDIR)
 	go build -o $@ $<
@@ -161,59 +249,74 @@ $(BINDIR)/matmul-bce-go: matmul-bce.go | $(BINDIR)
 $(BINDIR)/matmul-opt-go: matmul-opt.go | $(BINDIR)
 	go build -o $@ $<
 
-$(BINDIR)/matmul-mml: mat-mul.mml | $(BINDIR)
-	mmlc -I -b $(BUILDDIR) -o $@ $<
+$(BINDIR)/matmul-opt-bce-go: matmul-opt-bce.go | $(BINDIR)
+	go build -o $@ $<
 
-$(BINDIR)/matmul-opt-mml: mat-mul-opt.mml | $(BINDIR)
-	mmlc -I -b $(BUILDDIR) -o $@ $<
+$(BINDIR)/matmul-mml: mat-mul.mml | $(BINDIR)
+	mmlc --cpu native -I -b $(BUILDDIR) -O$(MML_OPT) -o $@ $<
+
+$(BINDIR)/matmul-nested-mml: mat-mul-nested.mml Makefile | $(BINDIR)
+	mmlc --cpu native -I -b $(BUILDDIR) -O$(MML_OPT) -o $@ $<
+
+$(BINDIR)/matmul-safe-mml: mat-mul-safe.mml Makefile | $(BINDIR)
+	mmlc --cpu native -I -b $(BUILDDIR) -O$(MML_OPT) -o $@ $<
+
+$(BINDIR)/matmul-opt-mml: mat-mul-opt.mml Makefile | $(BINDIR)
+	mmlc --cpu native -I -b $(BUILDDIR) -O$(MML_OPT)  -o $@ $<
+
+$(BINDIR)/matmul-opt-nested-mml: mat-mul-opt-nested.mml Makefile | $(BINDIR)
+	mmlc --cpu native -I -b $(BUILDDIR) -O$(MML_OPT)  -o $@ $<
+
+$(BINDIR)/matmul-opt-safe-mml: mat-mul-opt-safe.mml Makefile | $(BINDIR)
+	mmlc --cpu native -I -b $(BUILDDIR) -O$(MML_OPT)  -o $@ $<
 
 $(BINDIR)/matmul-mml-O0-tco: mat-mul.mml | $(BINDIR)
-	mmlc -I -b $(BUILDDIR) -O 0 -o $@ $<
+	mmlc --cpu native -I -b $(BUILDDIR) -O0 -o $@ $<
 
 $(BINDIR)/matmul-mml-O0-no-tco: mat-mul.mml | $(BINDIR)
-	mmlc -I -b $(BUILDDIR) -O 0 --no-tco -o $@ $<
+	mmlc --cpu native -I -b $(BUILDDIR) -O0 --no-tco -o $@ $<
 
 $(BINDIR)/matmul-mml-O1-tco: mat-mul.mml | $(BINDIR)
-	mmlc -I -b $(BUILDDIR) -O 1 -o $@ $<
+	mmlc --cpu native -I -b $(BUILDDIR) -O1 -o $@ $<
 
 $(BINDIR)/matmul-mml-O1-no-tco: mat-mul.mml | $(BINDIR)
-	mmlc -I -b $(BUILDDIR) -O 1 --no-tco -o $@ $<
+	mmlc --cpu native -I -b $(BUILDDIR) -O1 --no-tco -o $@ $<
 
 $(BINDIR)/matmul-mml-O2-tco: mat-mul.mml | $(BINDIR)
-	mmlc -I -b $(BUILDDIR) -O 2 -o $@ $<
+	mmlc --cpu native -I -b $(BUILDDIR) -O2 -o $@ $<
 
 $(BINDIR)/matmul-mml-O2-no-tco: mat-mul.mml | $(BINDIR)
-	mmlc -I -b $(BUILDDIR) -O 2 --no-tco -o $@ $<
+	mmlc --cpu native -I -b $(BUILDDIR) -O2 --no-tco -o $@ $<
 
 $(BINDIR)/matmul-mml-O3-tco: mat-mul.mml | $(BINDIR)
-	mmlc -I -b $(BUILDDIR) -O 3 -o $@ $<
+	mmlc --cpu native -I -b $(BUILDDIR) -O3 -o $@ $<
 
 $(BINDIR)/matmul-mml-O3-no-tco: mat-mul.mml | $(BINDIR)
-	mmlc -I -b $(BUILDDIR) -O 3 --no-tco -o $@ $<
+	mmlc --cpu native -I -b $(BUILDDIR) -O3 --no-tco -o $@ $<
 
 $(BINDIR)/matmul-opt-mml-O0-tco: mat-mul-opt.mml | $(BINDIR)
-	mmlc -I -b $(BUILDDIR) -O 0 -o $@ $<
+	mmlc --cpu native -I -b $(BUILDDIR) -O0 -o $@ $<
 
 $(BINDIR)/matmul-opt-mml-O0-no-tco: mat-mul-opt.mml | $(BINDIR)
-	mmlc -I -b $(BUILDDIR) -O 0 --no-tco -o $@ $<
+	mmlc --cpu native -I -b $(BUILDDIR) -O0 --no-tco -o $@ $<
 
 $(BINDIR)/matmul-opt-mml-O1-tco: mat-mul-opt.mml | $(BINDIR)
-	mmlc -I -b $(BUILDDIR) -O 1 -o $@ $<
+	mmlc --cpu native -I -b $(BUILDDIR) -O1 -o $@ $<
 
 $(BINDIR)/matmul-opt-mml-O1-no-tco: mat-mul-opt.mml | $(BINDIR)
-	mmlc -I -b $(BUILDDIR) -O 1 --no-tco -o $@ $<
+	mmlc --cpu native -I -b $(BUILDDIR) -O1 --no-tco -o $@ $<
 
 $(BINDIR)/matmul-opt-mml-O2-tco: mat-mul-opt.mml | $(BINDIR)
-	mmlc -I -b $(BUILDDIR) -O 2 -o $@ $<
+	mmlc --cpu native -I -b $(BUILDDIR) -O2 -o $@ $<
 
 $(BINDIR)/matmul-opt-mml-O2-no-tco: mat-mul-opt.mml | $(BINDIR)
-	mmlc -I -b $(BUILDDIR) -O 2 --no-tco -o $@ $<
+	mmlc --cpu native -I -b $(BUILDDIR) -O2 --no-tco -o $@ $<
 
 $(BINDIR)/matmul-opt-mml-O3-tco: mat-mul-opt.mml | $(BINDIR)
-	mmlc -I -b $(BUILDDIR) -O 3 -o $@ $<
+	mmlc --cpu native -I -b $(BUILDDIR) -O3 -o $@ $<
 
 $(BINDIR)/matmul-opt-mml-O3-no-tco: mat-mul-opt.mml | $(BINDIR)
-	mmlc -I -b $(BUILDDIR) -O 3 --no-tco -o $@ $<
+	mmlc --cpu native -I -b $(BUILDDIR) -O3 --no-tco -o $@ $<
 
 # N-Queens
 $(BINDIR)/nqueens-c: nqueens.c | $(BINDIR)
@@ -222,55 +325,107 @@ $(BINDIR)/nqueens-c: nqueens.c | $(BINDIR)
 $(BINDIR)/nqueens-go: nqueens.go | $(BINDIR)
 	go build -o $@ $<
 
+$(BINDIR)/nqueens-rs: nqueens.rs | $(BINDIR)
+	rustc -O -o $@ $<
+
 $(BINDIR)/nqueens-mml: nqueens.mml | $(BINDIR)
-	mmlc -I -b $(BUILDDIR) -o $@ $<
+	mmlc --cpu native -I -b $(BUILDDIR) -O$(MML_OPT) -o $@ $<
 
 # Euclidean Extended GCD
 $(BINDIR)/euclidean-ext-c: euclidean-ext.c | $(BINDIR)
 	$(CC) $(CFLAGS) -o $@ $<
 
+$(BINDIR)/euclidean-ext-rs: euclidean-ext.rs | $(BINDIR)
+	rustc -O -o $@ $<
+
 $(BINDIR)/euclidean-ext-mml: euclidean-ext.mml | $(BINDIR)
-	mmlc -I -b $(BUILDDIR) -o $@ $<
+	mmlc --cpu native -I -b $(BUILDDIR) -O$(MML_OPT) -o $@ $<
 
 # Benchmarks
-bench-sieve: $(BINDIR)/sieve-c $(BINDIR)/sieve-go $(BINDIR)/sieve-rs $(BINDIR)/sieve-mml $(RESULTS_DEP)
-	hyperfine -N --warmup 20 --runs 50 \
+# Each run includes process startup. Java classes and native images are built before
+# timing. JVM entries launch a separate JVM per run, including hyperfine warmups.
+bench-fizzbuzz: $(BINDIR)/fizzbuzz-c $(BINDIR)/fizzbuzz-buffered-c \
+               $(BINDIR)/fizzbuzz-go $(BINDIR)/fizzbuzz-buffered-go \
+               $(BINDIR)/fizzbuzz-rs $(BINDIR)/fizzbuzz-buffered-rs \
+               $(BINDIR)/fizzbuzz-mml $(BINDIR)/fizzbuzz-buffered-mml $(RESULTS_DEP)
+	hyperfine -N --warmup 5 --runs $(or $(BENCH_RUNS),20) \
+		$(call EXPORT_FLAGS,fizzbuzz) \
+		'$(BINDIR)/fizzbuzz-c' \
+		'$(BINDIR)/fizzbuzz-buffered-c' \
+		'$(BINDIR)/fizzbuzz-go' \
+		'$(BINDIR)/fizzbuzz-buffered-go' \
+		'$(BINDIR)/fizzbuzz-rs' \
+		'$(BINDIR)/fizzbuzz-buffered-rs' \
+		'$(BINDIR)/fizzbuzz-mml' \
+		'$(BINDIR)/fizzbuzz-buffered-mml'
+
+bench-fizzbuzz-time: $(BINDIR)/fizzbuzz-c $(BINDIR)/fizzbuzz-buffered-c \
+               $(BINDIR)/fizzbuzz-go $(BINDIR)/fizzbuzz-buffered-go \
+               $(BINDIR)/fizzbuzz-rs $(BINDIR)/fizzbuzz-buffered-rs \
+               $(BINDIR)/fizzbuzz-mml $(BINDIR)/fizzbuzz-buffered-mml
+	/usr/bin/time -l $(BINDIR)/fizzbuzz-c > /dev/null
+	/usr/bin/time -l $(BINDIR)/fizzbuzz-buffered-c > /dev/null
+	/usr/bin/time -l $(BINDIR)/fizzbuzz-go > /dev/null
+	/usr/bin/time -l $(BINDIR)/fizzbuzz-buffered-go > /dev/null
+	/usr/bin/time -l $(BINDIR)/fizzbuzz-rs > /dev/null
+	/usr/bin/time -l $(BINDIR)/fizzbuzz-buffered-rs > /dev/null
+	/usr/bin/time -l $(BINDIR)/fizzbuzz-mml > /dev/null
+	/usr/bin/time -l $(BINDIR)/fizzbuzz-buffered-mml > /dev/null
+
+bench-sieve: $(BINDIR)/sieve-c $(BINDIR)/sieve-go $(BINDIR)/sieve-rs $(BINDIR)/sieve-mml \
+	$(BINDIR)/sieve-safe-mml \
+	$(BINDIR)/Sieve.class $(BINDIR)/sieve-java-native sieve.py $(RESULTS_DEP)
+	hyperfine -N --warmup 20 --runs $(or $(BENCH_RUNS),200) \
 		$(call EXPORT_FLAGS,sieve) \
 		'$(BINDIR)/sieve-c' \
 		'$(BINDIR)/sieve-mml' \
+		'$(BINDIR)/sieve-safe-mml' \
 		'$(BINDIR)/sieve-rs' \
-		'$(BINDIR)/sieve-go'
+		'$(BINDIR)/sieve-go' \
+		'$(JAVA) -cp $(BINDIR) Sieve' \
+		'$(BINDIR)/sieve-java-native' \
+		$(call PYTHON_BENCH,sieve)
 
-bench-sieve-time: $(BINDIR)/sieve-c $(BINDIR)/sieve-go $(BINDIR)/sieve-rs $(BINDIR)/sieve-mml
+bench-sieve-time: $(BINDIR)/sieve-c $(BINDIR)/sieve-go $(BINDIR)/sieve-rs $(BINDIR)/sieve-mml \
+	$(BINDIR)/sieve-safe-mml \
+	$(BINDIR)/Sieve.class $(BINDIR)/sieve-java-native sieve.py
 	/usr/bin/time -l $(BINDIR)/sieve-c
 	/usr/bin/time -l $(BINDIR)/sieve-mml
+	/usr/bin/time -l $(BINDIR)/sieve-safe-mml
 	/usr/bin/time -l $(BINDIR)/sieve-rs
 	/usr/bin/time -l $(BINDIR)/sieve-go
+	/usr/bin/time -l $(JAVA) -cp $(BINDIR) Sieve
+	/usr/bin/time -l $(BINDIR)/sieve-java-native
+ifeq ($(BENCH_SLOW),1)
+	/usr/bin/time -l $(PYTHON) sieve.py
+endif
 
 bench-self-sieve: $(SELF_SIEVE_BINARIES) $(RESULTS_DEP)
-	hyperfine -N --warmup 20 --runs 50 \
-		$(call EXPORT_FLAGS,self) \
-		'$(BINDIR)/sieve-mml-O0-tco' \
-		'$(BINDIR)/sieve-mml-O0-no-tco' \
-		'$(BINDIR)/sieve-mml-O1-tco' \
-		'$(BINDIR)/sieve-mml-O1-no-tco' \
-		'$(BINDIR)/sieve-mml-O2-tco' \
-		'$(BINDIR)/sieve-mml-O2-no-tco' \
-		'$(BINDIR)/sieve-mml-O3-tco' \
-		'$(BINDIR)/sieve-mml-O3-no-tco'
+	hyperfine -N --warmup 20 --runs $(or $(BENCH_RUNS),200) \
+		$(call EXPORT_FLAGS,self-sieve-tco) \
+		'$(BINDIR)/sieve-mml-O0-tco 10000000' \
+		'$(BINDIR)/sieve-mml-O1-tco 10000000' \
+		'$(BINDIR)/sieve-mml-O2-tco 10000000' \
+		'$(BINDIR)/sieve-mml-O3-tco 10000000'
+	hyperfine -N --warmup 20 --runs $(or $(BENCH_RUNS),200) \
+		$(call EXPORT_FLAGS,self-sieve-no-tco) \
+		'$(BINDIR)/sieve-mml-O0-no-tco 100000' \
+		'$(BINDIR)/sieve-mml-O1-no-tco 100000' \
+		'$(BINDIR)/sieve-mml-O2-no-tco 100000' \
+		'$(BINDIR)/sieve-mml-O3-no-tco 100000'
 
 bench-self-sieve-time: $(SELF_SIEVE_BINARIES)
-	/usr/bin/time -l $(BINDIR)/sieve-mml-O0-tco
-	/usr/bin/time -l $(BINDIR)/sieve-mml-O0-no-tco
-	/usr/bin/time -l $(BINDIR)/sieve-mml-O1-tco
-	/usr/bin/time -l $(BINDIR)/sieve-mml-O1-no-tco
-	/usr/bin/time -l $(BINDIR)/sieve-mml-O2-tco
-	/usr/bin/time -l $(BINDIR)/sieve-mml-O2-no-tco
-	/usr/bin/time -l $(BINDIR)/sieve-mml-O3-tco
-	/usr/bin/time -l $(BINDIR)/sieve-mml-O3-no-tco
+	/usr/bin/time -l $(BINDIR)/sieve-mml-O0-tco 10000000
+	/usr/bin/time -l $(BINDIR)/sieve-mml-O0-no-tco 100000
+	/usr/bin/time -l $(BINDIR)/sieve-mml-O1-tco 10000000
+	/usr/bin/time -l $(BINDIR)/sieve-mml-O1-no-tco 100000
+	/usr/bin/time -l $(BINDIR)/sieve-mml-O2-tco 10000000
+	/usr/bin/time -l $(BINDIR)/sieve-mml-O2-no-tco 100000
+	/usr/bin/time -l $(BINDIR)/sieve-mml-O3-tco 10000000
+	/usr/bin/time -l $(BINDIR)/sieve-mml-O3-no-tco 100000
 
 bench-self-matmul: $(SELF_MATMUL_BINARIES) $(RESULTS_DEP)
-	hyperfine -N --warmup 20 --runs 50 \
+	hyperfine -N --warmup 20 --runs $(or $(BENCH_RUNS),200) \
 		$(call EXPORT_FLAGS,self-matmul) \
 		'$(BINDIR)/matmul-mml-O0-tco' \
 		'$(BINDIR)/matmul-mml-O0-no-tco' \
@@ -292,7 +447,7 @@ bench-self-matmul-time: $(SELF_MATMUL_BINARIES)
 	/usr/bin/time -l $(BINDIR)/matmul-mml-O3-no-tco
 
 bench-self-matmul-opt: $(SELF_MATMUL_OPT_BINARIES) $(RESULTS_DEP)
-	hyperfine -N --warmup 20 --runs 50 \
+	hyperfine -N --warmup 20 --runs $(or $(BENCH_RUNS),200) \
 		$(call EXPORT_FLAGS,self-matmul-opt) \
 		'$(BINDIR)/matmul-opt-mml-O0-tco' \
 		'$(BINDIR)/matmul-opt-mml-O0-no-tco' \
@@ -313,66 +468,113 @@ bench-self-matmul-opt-time: $(SELF_MATMUL_OPT_BINARIES)
 	/usr/bin/time -l $(BINDIR)/matmul-opt-mml-O3-tco
 	/usr/bin/time -l $(BINDIR)/matmul-opt-mml-O3-no-tco
 
-bench-quicksort: $(BINDIR)/quicksort-c $(BINDIR)/quicksort-mml $(RESULTS_DEP)
-	hyperfine -N --warmup 10 --runs 50 \
+bench-quicksort: $(BINDIR)/quicksort-c $(BINDIR)/quicksort-safe-c \
+	$(BINDIR)/quicksort-mml $(BINDIR)/quicksort-safe-mml \
+	$(BINDIR)/quicksort-go $(BINDIR)/quicksort-rs $(BINDIR)/Quicksort.class \
+	$(BINDIR)/quicksort-java-native quicksort.py $(RESULTS_DEP)
+	hyperfine -N --warmup 10 --runs $(or $(BENCH_RUNS),200) \
 		$(call EXPORT_FLAGS,quicksort) \
 		'$(BINDIR)/quicksort-c' \
-		'$(BINDIR)/quicksort-mml'
+		'$(BINDIR)/quicksort-safe-c' \
+		'$(BINDIR)/quicksort-mml' \
+		'$(BINDIR)/quicksort-safe-mml' \
+		'$(BINDIR)/quicksort-rs' \
+		'$(BINDIR)/quicksort-go' \
+		'$(JAVA) -cp $(BINDIR) Quicksort' \
+		'$(BINDIR)/quicksort-java-native' \
+		$(call PYTHON_BENCH,quicksort)
 
-bench-quicksort-time: $(BINDIR)/quicksort-c $(BINDIR)/quicksort-mml
+bench-quicksort-time: $(BINDIR)/quicksort-c $(BINDIR)/quicksort-safe-c \
+	$(BINDIR)/quicksort-mml $(BINDIR)/quicksort-safe-mml \
+	$(BINDIR)/quicksort-go $(BINDIR)/quicksort-rs $(BINDIR)/Quicksort.class \
+	$(BINDIR)/quicksort-java-native quicksort.py
 	/usr/bin/time -l $(BINDIR)/quicksort-c
+	/usr/bin/time -l $(BINDIR)/quicksort-safe-c
 	/usr/bin/time -l $(BINDIR)/quicksort-mml
+	/usr/bin/time -l $(BINDIR)/quicksort-safe-mml
+	/usr/bin/time -l $(BINDIR)/quicksort-rs
+	/usr/bin/time -l $(BINDIR)/quicksort-go
+	/usr/bin/time -l $(JAVA) -cp $(BINDIR) Quicksort
+	/usr/bin/time -l $(BINDIR)/quicksort-java-native
+ifeq ($(BENCH_SLOW),1)
+	/usr/bin/time -l $(PYTHON) quicksort.py
+endif
 
 bench-matmul: $(BINDIR)/matmul-c $(BINDIR)/matmul-restricted-c $(BINDIR)/matmul-go \
-	$(BINDIR)/matmul-bce-go $(BINDIR)/matmul-opt-go $(BINDIR)/matmul-mml $(BINDIR)/matmul-opt-mml $(BINDIR)/matmul-opt-c $(RESULTS_DEP)
-	hyperfine -N --warmup 20 --runs 50 \
+	$(BINDIR)/matmul-bce-go $(BINDIR)/matmul-opt-go $(BINDIR)/matmul-mml \
+	$(BINDIR)/matmul-nested-mml $(BINDIR)/matmul-safe-mml $(BINDIR)/matmul-opt-mml \
+	$(BINDIR)/matmul-opt-nested-mml $(BINDIR)/matmul-opt-safe-mml $(BINDIR)/matmul-opt-c \
+	$(BINDIR)/matmul-opt-bce-go $(BINDIR)/matmul-rs $(BINDIR)/matmul-opt-rs $(BINDIR)/matmul-java-native $(RESULTS_DEP)
+	hyperfine -N --warmup 20 --runs $(or $(BENCH_RUNS),50) \
 		$(call EXPORT_FLAGS,matmul) \
 		'$(BINDIR)/matmul-c' \
 		'$(BINDIR)/matmul-opt-c' \
 		'$(BINDIR)/matmul-restricted-c' \
 		'$(BINDIR)/matmul-mml' \
+		'$(BINDIR)/matmul-nested-mml' \
+		'$(BINDIR)/matmul-safe-mml' \
 		'$(BINDIR)/matmul-opt-mml' \
+		'$(BINDIR)/matmul-opt-nested-mml' \
+		'$(BINDIR)/matmul-opt-safe-mml' \
+		'$(BINDIR)/matmul-rs' \
+		'$(BINDIR)/matmul-opt-rs' \
 		'$(BINDIR)/matmul-go' \
 		'$(BINDIR)/matmul-bce-go' \
-		'$(BINDIR)/matmul-opt-go'
+		'$(BINDIR)/matmul-opt-go' \
+		'$(BINDIR)/matmul-opt-bce-go' \
+		'$(BINDIR)/matmul-java-native'
 
 bench-matmul-time: $(BINDIR)/matmul-c $(BINDIR)/matmul-restricted-c $(BINDIR)/matmul-go \
-	$(BINDIR)/matmul-bce-go $(BINDIR)/matmul-opt-go $(BINDIR)/matmul-mml $(BINDIR)/matmul-opt-mml \
-	$(BINDIR)/matmul-opt-c
+	$(BINDIR)/matmul-bce-go $(BINDIR)/matmul-opt-go $(BINDIR)/matmul-mml \
+	$(BINDIR)/matmul-nested-mml $(BINDIR)/matmul-opt-mml $(BINDIR)/matmul-opt-nested-mml \
+	$(BINDIR)/matmul-safe-mml $(BINDIR)/matmul-opt-safe-mml \
+	$(BINDIR)/matmul-opt-bce-go $(BINDIR)/matmul-opt-c $(BINDIR)/matmul-rs $(BINDIR)/matmul-opt-rs $(BINDIR)/matmul-java-native
 	/usr/bin/time -l $(BINDIR)/matmul-c
 	/usr/bin/time -l $(BINDIR)/matmul-opt-c
 	/usr/bin/time -l $(BINDIR)/matmul-restricted-c
 	/usr/bin/time -l $(BINDIR)/matmul-mml
+	/usr/bin/time -l $(BINDIR)/matmul-nested-mml
+	/usr/bin/time -l $(BINDIR)/matmul-safe-mml
 	/usr/bin/time -l $(BINDIR)/matmul-opt-mml
+	/usr/bin/time -l $(BINDIR)/matmul-opt-nested-mml
+	/usr/bin/time -l $(BINDIR)/matmul-opt-safe-mml
+	/usr/bin/time -l $(BINDIR)/matmul-rs
+	/usr/bin/time -l $(BINDIR)/matmul-opt-rs
 	/usr/bin/time -l $(BINDIR)/matmul-go
 	/usr/bin/time -l $(BINDIR)/matmul-bce-go
 	/usr/bin/time -l $(BINDIR)/matmul-opt-go
+	/usr/bin/time -l $(BINDIR)/matmul-opt-bce-go
+	/usr/bin/time -l $(BINDIR)/matmul-java-native
 
-bench-nqueens: $(BINDIR)/nqueens-c $(BINDIR)/nqueens-go $(BINDIR)/nqueens-mml $(RESULTS_DEP)
-	hyperfine -N --warmup 5 --runs 20 \
+bench-nqueens: $(BINDIR)/nqueens-c $(BINDIR)/nqueens-go $(BINDIR)/nqueens-mml $(BINDIR)/nqueens-rs $(RESULTS_DEP)
+	hyperfine -N --warmup 5 --runs $(or $(BENCH_RUNS),20) \
 		$(call EXPORT_FLAGS,nqueens) \
 		'$(BINDIR)/nqueens-c' \
 		'$(BINDIR)/nqueens-go' \
-		'$(BINDIR)/nqueens-mml'
+		'$(BINDIR)/nqueens-mml' \
+		'$(BINDIR)/nqueens-rs'
 
-bench-nqueens-time: $(BINDIR)/nqueens-c $(BINDIR)/nqueens-go $(BINDIR)/nqueens-mml
+bench-nqueens-time: $(BINDIR)/nqueens-c $(BINDIR)/nqueens-go $(BINDIR)/nqueens-mml $(BINDIR)/nqueens-rs
 	/usr/bin/time -l $(BINDIR)/nqueens-c
 	/usr/bin/time -l $(BINDIR)/nqueens-go
 	/usr/bin/time -l $(BINDIR)/nqueens-mml
+	/usr/bin/time -l $(BINDIR)/nqueens-rs
 
-bench-euclidean: $(BINDIR)/euclidean-ext-c $(BINDIR)/euclidean-ext-mml $(RESULTS_DEP)
-	hyperfine -N --warmup 10 --runs 50 \
+bench-euclidean: $(BINDIR)/euclidean-ext-c $(BINDIR)/euclidean-ext-mml $(BINDIR)/euclidean-ext-rs $(RESULTS_DEP)
+	hyperfine -N --warmup 10 --runs $(or $(BENCH_RUNS),200) \
 		$(call EXPORT_FLAGS,euclidean) \
 		'$(BINDIR)/euclidean-ext-c' \
-		'$(BINDIR)/euclidean-ext-mml'
+		'$(BINDIR)/euclidean-ext-mml' \
+		'$(BINDIR)/euclidean-ext-rs'
 
-bench-euclidean-time: $(BINDIR)/euclidean-ext-c $(BINDIR)/euclidean-ext-mml
+bench-euclidean-time: $(BINDIR)/euclidean-ext-c $(BINDIR)/euclidean-ext-mml $(BINDIR)/euclidean-ext-rs
 	/usr/bin/time -l $(BINDIR)/euclidean-ext-c
 	/usr/bin/time -l $(BINDIR)/euclidean-ext-mml
+	/usr/bin/time -l $(BINDIR)/euclidean-ext-rs
 
 bench-ackermann: $(BINDIR)/ackermann-c $(BINDIR)/ackermann-c-chacho $(BINDIR)/ackermann-mml \
                  $(BINDIR)/ackermann-rs $(BINDIR)/ackermann-go $(RESULTS_DEP)
-	hyperfine -N --warmup 5 --runs 20 \
+	hyperfine -N --warmup 5 --runs $(or $(BENCH_RUNS),20) \
 		$(call EXPORT_FLAGS,ackermann) \
 		'$(BINDIR)/ackermann-c' \
 		'$(BINDIR)/ackermann-c-chacho' \
@@ -398,7 +600,7 @@ bench-time: bench-sieve-time bench-quicksort-time bench-matmul-time bench-nqueen
 clean:
 	rm -rf $(BINDIR) $(BUILDDIR)
 
-.PHONY: all mml clean bench bench-time bench-sieve bench-sieve-time bench-quicksort \
+.PHONY: all java java-native mml bench-mml clean bench bench-time bench-fizzbuzz bench-fizzbuzz-time bench-sieve bench-sieve-time bench-quicksort \
 	bench-quicksort-time bench-matmul bench-matmul-time bench-nqueens bench-nqueens-time \
 	bench-euclidean bench-euclidean-time bench-self-sieve bench-self-sieve-time \
 	bench-self-matmul bench-self-matmul-time bench-self-matmul-opt bench-self-matmul-opt-time

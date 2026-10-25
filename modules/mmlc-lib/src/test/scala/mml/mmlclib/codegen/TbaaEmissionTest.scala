@@ -1,15 +1,22 @@
 package mml.mmlclib.codegen
 
+import cats.data.NonEmptyList
 import mml.mmlclib.ast.*
 import mml.mmlclib.codegen.emitter.tbaa.StructLayout
+import mml.mmlclib.compiler.CompilerConfig
 import mml.mmlclib.test.BaseEffFunSuite
+import mml.mmlclib.test.llvm.ClosureAssertions
 
-class TbaaEmissionTest extends BaseEffFunSuite:
+import scala.util.matching.Regex
+
+class TbaaEmissionTest extends BaseEffFunSuite with ClosureAssertions:
 
   test("generates distinct TBAA field tags for struct fields") {
     val source = """
       fn main(): Unit =
-        println "hello"
+        let text = "hello";
+        let show = { println text; };
+        show ();
       ;
     """
 
@@ -34,17 +41,19 @@ class TbaaEmissionTest extends BaseEffFunSuite:
   test("TBAA has proper hierarchy: root, MML types, struct, access tags") {
     val source = """
       fn main(): Unit =
-        println "test"
+        let text = "test";
+        let show = { println text; };
+        show ();
       ;
     """
 
     compileAndGenerate(source).map { llvmIr =>
-      // Verify MML type nodes exist (String fields are Int64 and CharPtr)
-      assert(llvmIr.contains("!{!\"Int64\""), "Missing Int64 TBAA node")
+      // Verify MML type nodes exist (String fields are Int32 and CharPtr)
+      assert(llvmIr.contains("!{!\"Int32\""), "Missing Int32 TBAA node")
       assert(llvmIr.contains("!{!\"CharPtr\""), "Missing CharPtr TBAA node")
 
       // Verify struct node references MML types with correct offsets
-      // String has 2 fields: length (Int64 @ 0), data (CharPtr @ 8)
+      // String has 2 fields: length (Int32 @ 0), data (CharPtr @ 8)
       val stringMatch = """!\{!"String", !(\d+), i64 0, !(\d+), i64 8\}""".r
       assert(
         stringMatch.findFirstIn(llvmIr).isDefined,
@@ -55,44 +64,47 @@ class TbaaEmissionTest extends BaseEffFunSuite:
 
   test("stores to different struct fields use different TBAA tags") {
     val source = """
-      fn main(): Unit =
-        println "hello"
+      struct Pair { length: Int32, data: CharPtr };
+      fn main(): Int32 =
+        let text = "hello";
+        let pair = Pair text.length text.data;
+        pair.length;
       ;
     """
 
     compileAndGenerate(source).map { llvmIr =>
-      // Find store instructions with tbaa tags
-      val storeLines = llvmIr.split("\n").filter(l => l.contains("store") && l.contains("!tbaa"))
+      val pairNode = """!(\d+) = !\{!"Pair", !\d+, i64 0, !\d+, i64 8\}""".r
+        .findFirstMatchIn(llvmIr)
+        .map(_.group(1))
+        .getOrElse(fail(s"Missing Pair TBAA node. IR:\n$llvmIr"))
+      val pairTags = raw"""!(\d+) = !\{!$pairNode, !\d+, i64 (0|8)\}""".r
+        .findAllMatchIn(llvmIr)
+        .map(m => m.group(2) -> m.group(1))
+        .toMap
+      val storeTags = llvmIr
+        .split("\n")
+        .filter(line => line.contains("store") && line.contains("!tbaa"))
+        .flatMap("""!tbaa !(\d+)""".r.findFirstMatchIn(_).map(_.group(1)))
+        .toSet
 
-      // Should have at least 2 stores (length and data fields)
-      assert(
-        storeLines.length >= 2,
-        s"Expected at least 2 stores with TBAA, found: ${storeLines.length}"
-      )
-
-      // Extract tbaa tag references
-      val tbaaRefs = storeLines.flatMap { line =>
-        """!tbaa (!(\d+))""".r.findFirstMatchIn(line).map(_.group(1))
-      }
-
-      // The tags should be different for different fields
-      assert(
-        tbaaRefs.distinct.length >= 2,
-        s"Expected different TBAA tags for different fields, found: ${tbaaRefs.mkString(", ")}"
-      )
+      assertEquals(pairTags.keySet, Set("0", "8"))
+      assert(pairTags.values.toSet.subsetOf(storeTags), s"Missing Pair field stores. IR:\n$llvmIr")
+      assertEquals(pairTags.values.toSet.size, 2)
     }
   }
 
   test("TBAA field offsets honor alignment (String has ptr at offset 8, not 4)") {
     val source = """
       fn main(): Unit =
-        println "test"
+        let text = "test";
+        let show = { println text; };
+        show ();
       ;
     """
 
     compileAndGenerate(source).map { llvmIr =>
-      // String is { i64, ptr } - both fields are 8-byte aligned
-      // Field 0 (i64): offset 0
+      // String is { i32, ptr }; the pointer is 8-byte aligned
+      // Field 0 (i32): offset 0
       // Field 1 (ptr): offset 8 (not 4, because ptr needs 8-byte alignment)
       val stringNode = llvmIr.split("\n").find(_.contains("\"String\""))
       assert(stringNode.isDefined, "Missing String TBAA struct node")
@@ -106,19 +118,23 @@ class TbaaEmissionTest extends BaseEffFunSuite:
         s"String TBAA should have fields at offsets 0 and 8, found: $offsets in: ${stringNode.get}"
       )
     }
+  }
 
-    test("loads and stores include alias scope metadata") {
-      val source = """
+  test("loads and stores include alias scope metadata") {
+    val source = """
       fn main(): Unit =
-        println "alias"
+        let text = "alias";
+        let show = { println text; };
+        show ();
       ;
     """
 
-      compileAndGenerate(source).map { llvmIr =>
+    compileAndGenerate(source, config = CompilerConfig.library("build", emitScopedAlias = true))
+      .map { llvmIr =>
         assert(llvmIr.contains("!alias.scope"), "Alias scope metadata missing")
         assert(llvmIr.contains("!noalias"), "Noalias metadata missing")
         assert(
-          llvmIr.contains("alias.scope:Int64") || llvmIr.contains("alias.scope:String"),
+          llvmIr.contains("alias.scope:Int32") || llvmIr.contains("alias.scope:String"),
           s"Alias scope metadata should mention a known MML type. IR snippet:\n${llvmIr.split("\n").filter(_.contains("alias.scope")).mkString("\n")}"
         )
 
@@ -136,18 +152,220 @@ class TbaaEmissionTest extends BaseEffFunSuite:
           s"Expected at least one load with alias.scope metadata, found: ${loadLines.mkString("\n")}"
         )
       }
-    }
   }
 
   private val span = SrcSpan(SrcPoint(0, 0, 0), SrcPoint(0, 0, 0))
+
+  private val int64Id   = "int64-id"
+  private val int32Id   = "int32-id"
+  private val charPtrId = "charptr-id"
+
+  private val int64Def =
+    TypeDef(
+      source   = SourceOrigin.Loc(span),
+      nameNode = Name.synth("Int64"),
+      typeSpec = Some(NativePrimitive(span, "i64")),
+      id       = Some(int64Id)
+    )
+
+  private val int32Def =
+    TypeDef(
+      source   = SourceOrigin.Loc(span),
+      nameNode = Name.synth("Int32"),
+      typeSpec = Some(NativePrimitive(span, "i32")),
+      id       = Some(int32Id)
+    )
+
+  private val charPtrDef =
+    TypeDef(
+      source   = SourceOrigin.Loc(span),
+      nameNode = Name.synth("CharPtr"),
+      typeSpec = Some(NativePointer(span, "i8")),
+      id       = Some(charPtrId)
+    )
+
+  private val int64   = TypeRef(span, "Int64", Some(int64Id), Nil)
+  private val int32   = TypeRef(span, "Int32", Some(int32Id), Nil)
+  private val charPtr = TypeRef(span, "CharPtr", Some(charPtrId), Nil)
+
+  private val layoutBuiltinTypes =
+    ResolvablesIndex()
+      .updatedType(int64Def)
+      .updatedType(int32Def)
+      .updatedType(charPtrDef)
+
+  test("StructLayout computes size and alignment for TypeFn fat pointers") {
+    val fnType = TypeFn(
+      span,
+      NonEmptyList.one(int64),
+      int64
+    )
+
+    assertEquals(StructLayout.sizeOf(fnType, ResolvablesIndex()), Right(16))
+    assertEquals(StructLayout.alignOf(fnType, ResolvablesIndex()), Right(8))
+  }
+
+  test("closure env TBAA handles captured function values") {
+    val source = """
+      fn apply(g: Int -> Int): Int = g 41;;
+
+      fn main(): Int =
+        fn inc(x: Int): Int = x + 1;;
+        let f = if true then inc; else { x: Int -> x + 10; }; ;
+
+        let g = { x: Int -> f x; };
+
+        apply g;
+      ;
+    """
+
+    compileAndGenerate(source).map { llvmIr =>
+      // Borrow env: no dtor field, just the captured fat pointer
+      val closureEnvTypePattern =
+        """%struct\.__closure_env_\d+ = type \{ \{ ptr, ptr \} \}""".r
+      assert(
+        closureEnvTypePattern.findFirstIn(llvmIr).isDefined,
+        s"Missing borrow closure env type with fat-pointer field. IR:\n$llvmIr"
+      )
+
+      val functionScalarId = """!(\d+) = !\{!"Function", !\d+, i64 0\}""".r
+        .findFirstMatchIn(llvmIr)
+        .map(_.group(1))
+      assert(functionScalarId.isDefined, s"Missing Function TBAA scalar node. IR:\n$llvmIr")
+
+      val closureEnvTbaaLines =
+        llvmIr.split("\n").filter(_.matches("""!\d+ = !\{!"__closure_env_\d+".*"""))
+      assert(
+        closureEnvTbaaLines.nonEmpty,
+        s"Missing closure env TBAA node. IR:\n$llvmIr"
+      )
+      // Borrow env: captured fn at offset 0 (no dtor field)
+      assert(
+        closureEnvTbaaLines.exists(_.contains(s"!${functionScalarId.get}, i64 0")),
+        s"Expected borrow closure env TBAA field at offset 0 to use Function scalar. Nodes:\n${closureEnvTbaaLines.mkString("\n")}"
+      )
+    }
+  }
+
+  test("move closure env TBAA accounts for destructor field offset") {
+    val source = """
+      fn apply(g: Int -> Int): Int = g 41;;
+      fn main(): Int =
+        let a = 1;
+        let f = ~{ x: Int -> x + a; };
+        apply f;
+      ;
+    """
+
+    compileAndGenerate(source).map { llvmIr =>
+      val closureEnvTypePattern =
+        """%struct\.__closure_env_\d+ = type \{ ptr, i32 \}""".r
+      assert(
+        closureEnvTypePattern.findFirstIn(llvmIr).isDefined,
+        s"Missing move closure env type with destructor and capture fields. IR:\n$llvmIr"
+      )
+
+      val closureEnvTbaaLines =
+        llvmIr.split("\n").filter(_.matches("""!\d+ = !\{!"__closure_env_\d+".*"""))
+      assert(
+        closureEnvTbaaLines.exists(line => line.contains("i64 0") && line.contains("i64 8")),
+        s"Expected move closure env TBAA fields at offsets 0 and 8. Nodes:\n${closureEnvTbaaLines.mkString("\n")}"
+      )
+    }
+  }
+
+  test("zero-field closure env TBAA is not emitted") {
+    val source = """
+      pub fn main() =
+        let factorial_tco: Int -> Int -> Int =
+          { n: Int, acc: Int ->
+            if n <= 1 then acc;
+            else factorial_tco (n - 1) (acc * n);
+          }
+        ;
+
+        let fac = { n: Int -> factorial_tco n 1 };
+
+        fac 3;
+      ;
+    """
+
+    compileAndGenerate(source, config = CompilerConfig.default.copy(noTco = false)).map { llvmIr =>
+      val mainBody = functionBody(llvmIr, "test_main")
+      val facBody  = functionBody(llvmIr, closureEntry(mainBody))
+      val capture = uniqueMatch(
+        mainBody,
+        "(?<field>%[^ ]+) = getelementptr (?<layout>%struct\\.[^,]+), " +
+          "ptr %[^,]+, i32 0, i32 0\\n  " +
+          s"store \\{ ptr, ptr \\} $nullEnvironmentClosure, ptr \\k<field>, !tbaa (?<tag>!\\d+)"
+      )
+      val layout      = capture.group("layout")
+      val tag         = capture.group("tag")
+      val wrapperBody = functionBody(llvmIr, capture.group("entry"))
+      val loopName = uniqueMatch(
+        wrapperBody,
+        "call i32 @([^ (]+)\\(i32 %0, i32 %1\\)"
+      ).group(1)
+      val loopBody = functionBody(llvmIr, loopName)
+      val envNodes = """!\d+ = !\{!"__closure_env_[^\n]+""".r.findAllIn(llvmIr).toList
+      val functionScalar = uniqueMatch(
+        llvmIr,
+        "(!\\d+) = !\\{!\"Function\", !\\d+, i64 0\\}"
+      ).group(1)
+      val envNode = assertEnvironmentMetadata(llvmIr, layout, List(tag -> 0))
+
+      assertEquals(envNode.scalarNodes, List(functionScalar))
+      assertEquals(envNodes, List(envNode.matched))
+      assert(llvmIr.contains(s"$layout = type { { ptr, ptr } }"), llvmIr)
+      uniqueMatch(
+        facBody,
+        s"(%[^ ]+) = getelementptr ${Regex.quote(layout)}, ptr %1, i32 0, i32 0\\n  " +
+          s"%[^ ]+ = load \\{ ptr, ptr \\}, ptr \\1, !tbaa $tag"
+      )
+      assert(loopBody.contains("loop.header:"), loopBody)
+      assert(!loopBody.contains("getelementptr") && !loopBody.contains("load "), loopBody)
+      assertPhiPredecessors(loopBody)
+    }
+  }
+
+  test("TBAA preserves alias identity for aliased struct fields") {
+    val source = """
+      type MyInt = Int32;
+      struct Box {
+        value: MyInt
+      };
+
+      fn main(): Int32 =
+        let b = Box 1;
+        0;
+      ;
+    """
+
+    compileAndGenerate(source).map { llvmIr =>
+      val myIntScalarId = """!(\d+) = !\{!"MyInt", !0, i64 0\}""".r
+        .findFirstMatchIn(llvmIr)
+        .map(_.group(1))
+        .getOrElse(fail(s"Expected distinct TBAA node for alias type. IR:\n$llvmIr"))
+
+      val boxNode = llvmIr
+        .split("\n")
+        .find(_.matches("""!\d+ = !\{!"Box", !\d+, i64 0\}"""))
+        .getOrElse(fail(s"Expected Box TBAA node. IR:\n$llvmIr"))
+
+      assert(
+        boxNode.contains(s"!$myIntScalarId, i64 0"),
+        s"Expected Box field TBAA to use alias identity, got: $boxNode"
+      )
+    }
+  }
 
   test("StructLayout computes correct size for nested structs") {
     // Create Inner = { i64, i64 } -> 16 bytes
     val innerStruct = NativeStruct(
       span,
       List(
-        ("a", NativePrimitive(span, "i64")),
-        ("b", NativePrimitive(span, "i64"))
+        ("a", int64),
+        ("b", int64)
       )
     )
     val innerTypeDef =
@@ -160,7 +378,7 @@ class TbaaEmissionTest extends BaseEffFunSuite:
     val innerTypeRef = TypeRef(span, "Inner", Some("inner-id"), Nil)
 
     // Create resolvables index for the lookup
-    val resolvables = ResolvablesIndex().updatedType(innerTypeDef)
+    val resolvables = layoutBuiltinTypes.updatedType(innerTypeDef)
 
     // Create Outer = { i64, Inner, i64 } -> should be 32 bytes
     // Field 0 (i64): offset 0, size 8
@@ -170,9 +388,9 @@ class TbaaEmissionTest extends BaseEffFunSuite:
     val outerStruct = NativeStruct(
       span,
       List(
-        ("x", NativePrimitive(span, "i64")),
+        ("x", int64),
         ("inner", innerTypeRef),
-        ("y", NativePrimitive(span, "i64"))
+        ("y", int64)
       )
     )
 
@@ -190,8 +408,8 @@ class TbaaEmissionTest extends BaseEffFunSuite:
     val innerStruct = NativeStruct(
       span,
       List(
-        ("len", NativePrimitive(span, "i64")),
-        ("data", NativePointer(span, "i8"))
+        ("len", int64),
+        ("data", charPtr)
       )
     )
     val innerTypeDef =
@@ -204,7 +422,7 @@ class TbaaEmissionTest extends BaseEffFunSuite:
     val innerTypeRef = TypeRef(span, "Inner", Some("inner-id"), Nil)
 
     // Create resolvables index for the lookup
-    val resolvables = ResolvablesIndex().updatedType(innerTypeDef)
+    val resolvables = layoutBuiltinTypes.updatedType(innerTypeDef)
 
     // Create Outer = { i32, Inner }
     // Field 0 (i32): offset 0, size 4
@@ -214,11 +432,48 @@ class TbaaEmissionTest extends BaseEffFunSuite:
     val outerStruct = NativeStruct(
       span,
       List(
-        ("tag", NativePrimitive(span, "i32")),
+        ("tag", int32),
         ("inner", innerTypeRef)
       )
     )
 
     assertEquals(StructLayout.sizeOf(outerStruct, resolvables), Right(24))
     assertEquals(StructLayout.alignOf(outerStruct, resolvables), Right(8))
+  }
+
+  test("closure env TBAA handles captured function values [parent c7e9078]") {
+    val source = """
+      fn main(): Int =
+        fn inc(x: Int): Int = x + 1;;
+        fn applyInc(y: Int): Int = inc y;;
+        applyInc 41;
+      ;
+    """
+
+    compileAndGenerate(source).map { llvmIr =>
+      // Borrow env: no dtor field, just the captured fat pointer
+      val closureEnvTypePattern =
+        """%struct\.__closure_env_\d+ = type \{ \{ ptr, ptr \} \}""".r
+      assert(
+        closureEnvTypePattern.findFirstIn(llvmIr).isDefined,
+        s"Missing borrow closure env type with fat-pointer field. IR:\n$llvmIr"
+      )
+
+      val functionScalarId = """!(\d+) = !\{!"Function", !\d+, i64 0\}""".r
+        .findFirstMatchIn(llvmIr)
+        .map(_.group(1))
+      assert(functionScalarId.isDefined, s"Missing Function TBAA scalar node. IR:\n$llvmIr")
+
+      val closureEnvTbaaLines =
+        llvmIr.split("\n").filter(_.matches("""!\d+ = !\{!"__closure_env_\d+".*"""))
+      assert(
+        closureEnvTbaaLines.nonEmpty,
+        s"Missing closure env TBAA node. IR:\n$llvmIr"
+      )
+      // Borrow env: captured fn at offset 0 (no dtor field)
+      assert(
+        closureEnvTbaaLines.exists(_.contains(s"!${functionScalarId.get}, i64 0")),
+        s"Expected borrow closure env TBAA field at offset 0 to use Function scalar. Nodes:\n${closureEnvTbaaLines.mkString("\n")}"
+      )
+    }
   }

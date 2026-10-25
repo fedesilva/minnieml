@@ -8,7 +8,7 @@ class NativeTypeTests extends BaseEffFunSuite:
 
   test("parse native primitive type - i32"):
     val code = """
-      type Int = @native[t=i32];
+      type Int = @metal:repr[t=i32];
     """
 
     Parser
@@ -28,7 +28,7 @@ class NativeTypeTests extends BaseEffFunSuite:
 
   test("parse native primitive type - float"):
     val code = """
-      type Float32 = @native[t=float];
+      type Float32 = @metal:repr[t=float];
     """
 
     Parser
@@ -48,7 +48,7 @@ class NativeTypeTests extends BaseEffFunSuite:
 
   test("parse native pointer type"):
     val code = """
-      type CharPtr = @native[t=*i8];
+      type CharPtr = @metal:repr[t=*i8];
     """
 
     Parser
@@ -66,9 +66,29 @@ class NativeTypeTests extends BaseEffFunSuite:
         }
       )
 
+  test("parse native opaque pointer type"):
+    val code = """
+      type RawPtr = @metal:repr[t=ptr];
+    """
+
+    Parser
+      .parseModule(code, "Test")
+      .fold(
+        e => fail(s"Parser failed: $e"),
+        module => {
+          val typeDef = module.members.collectFirst { case t: TypeDef => t }.get
+          assertEquals(typeDef.name, "RawPtr")
+          typeDef.typeSpec match
+            case Some(NativePrimitive(_, llvmType, _, _)) =>
+              assertEquals(llvmType, "ptr")
+            case _ =>
+              fail("Expected NativePrimitive")
+        }
+      )
+
   test("parse native struct type"):
     val code = """
-      type MyStruct = @native {
+      type MyStruct = @metal:repr {
         length: SomeType,
         data: AnotherType
       };
@@ -116,7 +136,7 @@ class NativeTypeTests extends BaseEffFunSuite:
 
     floatTypes.foreach { floatType =>
       val code = s"""
-        type Test = @native[t=$floatType];
+        type Test = @metal:repr[t=$floatType];
       """
 
       Parser
@@ -139,7 +159,7 @@ class NativeTypeTests extends BaseEffFunSuite:
 
     intBits.foreach { bits =>
       val code = s"""
-        type Test = @native[t=i$bits];
+        type Test = @metal:repr[t=i$bits];
       """
 
       Parser
@@ -162,7 +182,7 @@ class NativeTypeTests extends BaseEffFunSuite:
 
     invalidBits.foreach { bits =>
       val code = s"""
-        type Test = @native[t=i$bits];
+        type Test = @metal:repr[t=i$bits];
       """
 
       Parser.parseModule(code, "Test") match
@@ -187,7 +207,7 @@ class NativeTypeTests extends BaseEffFunSuite:
 
   test("parse complex native struct"):
     val code = """
-      type ComplexStruct = @native {
+      type ComplexStruct = @metal:repr {
         field1: TypeA,
         field2: TypeB,
         ptr: TypeC,
@@ -230,7 +250,7 @@ class NativeTypeTests extends BaseEffFunSuite:
 
   test("parse native pointer with free attribute"):
     val code = """
-      type Handle = @native[t=*i8, mem=heap, free=close_handle];
+      type Handle = @metal:repr[t=*i8, mem=heap, free=close_handle];
     """
 
     Parser
@@ -250,9 +270,31 @@ class NativeTypeTests extends BaseEffFunSuite:
         }
       )
 
+  test("parse native opaque pointer with free attribute"):
+    val code = """
+      type Handle = @metal:repr[t=ptr, mem=heap, free=close_handle];
+    """
+
+    Parser
+      .parseModule(code, "Test")
+      .fold(
+        e => fail(s"Parser failed: $e"),
+        module => {
+          val typeDef = module.members.collectFirst { case t: TypeDef => t }.get
+          assertEquals(typeDef.name, "Handle")
+          typeDef.typeSpec match
+            case Some(NativePrimitive(_, llvmType, memEffect, freeFn)) =>
+              assertEquals(llvmType, "ptr")
+              assertEquals(memEffect, Some(MemEffect.Alloc))
+              assertEquals(freeFn, Some("close_handle"))
+            case _ =>
+              fail("Expected NativePrimitive with free attribute")
+        }
+      )
+
   test("parse native pointer without free attribute has None"):
     val code = """
-      type Buffer = @native[t=*i8, mem=heap];
+      type Buffer = @metal:repr[t=*i8, mem=heap];
     """
 
     Parser
@@ -272,7 +314,7 @@ class NativeTypeTests extends BaseEffFunSuite:
 
   test("parse native struct with free attribute"):
     val code = """
-      type MyStr = @native[mem=heap, free=my_free] {
+      type MyStr = @metal:repr[mem=heap, free=my_free] {
         length: SomeType,
         data: AnotherType
       };
@@ -297,7 +339,7 @@ class NativeTypeTests extends BaseEffFunSuite:
 
   test("parse native bracket attrs in any order"):
     val code = """
-      type H = @native[free=close_it, mem=heap, t=*i8];
+      type H = @metal:repr[free=close_it, mem=heap, t=*i8];
     """
 
     Parser

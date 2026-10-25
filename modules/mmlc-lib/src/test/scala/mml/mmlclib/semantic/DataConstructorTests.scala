@@ -44,7 +44,7 @@ class DataConstructorTests extends BaseEffFunSuite:
   test("native struct constructor is synthesized") {
     val code =
       """
-        type Vec2 = @native { x: Float, y: Float };
+        type Vec2 = @metal:repr { x: Float, y: Float };
       """
 
     semNotFailed(code).map { module =>

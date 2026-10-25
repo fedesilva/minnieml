@@ -1,0 +1,17 @@
+
+fn makeGreeter(~name: String) =
+  ~{
+    println ("Hello, " ++ name);
+  };
+;
+
+fn loop(n: Int): Unit =
+  if true then
+    let greet = makeGreeter ("User" ++ (int_to_str n));
+    greet ();
+    loop (n - 1);
+  ;
+;
+pub fn main(): Unit =
+  loop 100000;
+;

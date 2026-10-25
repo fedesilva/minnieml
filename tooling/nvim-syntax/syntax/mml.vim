@@ -102,8 +102,8 @@ syn match mmlType "\<[A-Z][a-zA-Z0-9]*\>"
 " Native Annotations
 " ============================================================================
 
-" @native keyword
-syn match mmlNative "@native\>"
+" Metal annotations
+syn match mmlNative "@metal:\%(repr\|ffi\|tpl\)\>"
 
 " ============================================================================
 " Identifiers

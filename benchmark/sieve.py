@@ -54,5 +54,5 @@ def run_sieve(limit):
     return count_primes(arr, size)
 
 if __name__ == "__main__":
-    count = run_sieve(1000000)
+    count = run_sieve(10000000)
     print(f"Primes found: {count}")

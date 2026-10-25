@@ -12,8 +12,9 @@ enum UnresolvableTypeContext derives CanEqual:
 private def showType(t: Type): String = t match
   case TypeRef(_, name, _, _) => name
   case ts: TypeStruct => ts.name
-  case TypeFn(_, params, ret) => s"(${params.map(showType).mkString(", ")}) -> ${showType(ret)}"
-  case TypeUnit(_) => "()"
+  case TypeFn(_, params, ret) =>
+    s"(${params.toList.map(showType).mkString(", ")}) -> ${showType(ret)}"
+  case TypeUnit(_) => "Unit"
   case TypeTuple(_, elems) => s"(${elems.map(showType).mkString(", ")})"
   case NativePrimitive(_, llvm, _, _) => llvm
   case NativePointer(_, llvm, _, _) => s"*$llvm"
@@ -60,6 +61,13 @@ enum TypeError extends CompilationError:
     context: String,
     phase:   String
   )
+  case ConflictingLambdaParamInference(
+    param:     FnParam,
+    firstType: Type,
+    nextType:  Type,
+    phase:     String
+  )
+  case UninferrableLambdaParam(param: FnParam, phase: String)
   case UntypedHoleInBinding(bindingName: String, source: SourceOrigin, phase: String)
 
   // TODO:   Why not define this within the members?
@@ -103,6 +111,11 @@ enum TypeError extends CompilationError:
           "Cannot resolve type"
     case IncompatibleTypes(_, type1, type2, ctx, _) =>
       s"Incompatible types in $ctx: ${showType(type1)} and ${showType(type2)}"
+    case ConflictingLambdaParamInference(param, firstType, nextType, _) =>
+      s"Conflicting types inferred for lambda parameter '${param.name}': " +
+        s"${showType(firstType)} vs ${showType(nextType)}. Add a type annotation."
+    case UninferrableLambdaParam(param, _) =>
+      s"Cannot infer type for lambda parameter '${param.name}'. Add a type annotation."
     case UntypedHoleInBinding(name, _, _) =>
       s"Typed hole in '$name' requires type annotation"
 
@@ -114,16 +127,29 @@ enum SemanticError extends CompilationError:
   case DanglingTerms(terms: List[Term], msg: String, phase: String)
   case MemberErrorFound(error: ParsingMemberError, phase: String)
   case ParsingIdErrorFound(error: ParsingIdError, phase: String)
+  case TermErrorFound(error: TermError, phase: String)
   case InvalidExpressionFound(invalidExpr: mml.mmlclib.ast.InvalidExpression, phase: String)
   case TypeCheckingError(error: TypeError)
   case InvalidEntryPoint(msg: String, source: SourceOrigin)
   case VisibilityViolation(ref: Ref, decl: Resolvable, phase: String)
   // Ownership errors
-  case UseAfterMove(ref: Ref, movedAt: SourceOrigin, phase: String)
+  /** The use site and moved storage identity are independent of retained dependency evidence. */
+  case UseAfterMove(
+    ref:        Ref,
+    movedAt:    SourceOrigin,
+    phase:      String,
+    ownerId:    Option[String],
+    source:     SourceOrigin,
+    dependency: Option[Ref] = None
+  )
   case ConsumingParamNotLastUse(param: FnParam, ref: Ref, phase: String)
+  case BorrowedValuePassedToConsumingParam(param: FnParam, ref: Ref, phase: String)
   case PartialApplicationWithConsuming(fn: Term, param: FnParam, phase: String)
   case ConditionalOwnershipMismatch(cond: Cond, phase: String)
   case BorrowEscapeViaReturn(ref: Ref, phase: String)
+  case CapturedBorrowedHeapBinding(ref: Ref, phase: String)
+  case CapturedMovedHeapBinding(ref: Ref, movedAt: SourceOrigin, phase: String)
+  case BorrowClosureEscapeViaReturn(lambda: Lambda, phase: String)
 
   def message: String = this match
     case UndefinedRef(ref, _, _) =>
@@ -140,6 +166,8 @@ enum SemanticError extends CompilationError:
       s"Parse error in member: ${error.message}"
     case ParsingIdErrorFound(error, _) =>
       s"Parse error in identifier: ${error.message}"
+    case TermErrorFound(error, _) =>
+      s"Parse error in expression: ${error.message}"
     case InvalidExpressionFound(_, _) =>
       "Invalid expression"
     case TypeCheckingError(error) =>
@@ -148,20 +176,32 @@ enum SemanticError extends CompilationError:
       msg
     case VisibilityViolation(ref, decl, _) =>
       s"'${ref.name}' is not visible here (declared in '${decl.name}')"
-    case UseAfterMove(ref, movedAt, _) =>
-      movedAt.spanOpt match
+    case error: UseAfterMove =>
+      error.movedAt.spanOpt match
         case Some(span) =>
-          s"Use of '${ref.name}' after move at ${span.start.line}:${span.start.col}"
+          s"Use of '${error.ref.name}' after move at ${span.start.line}:${span.start.col}"
         case None =>
-          s"Use of '${ref.name}' after move"
+          s"Use of '${error.ref.name}' after move"
     case ConsumingParamNotLastUse(param, ref, _) =>
       s"Consuming parameter '${param.name}' must be the last use of '${ref.name}'"
+    case BorrowedValuePassedToConsumingParam(param, ref, _) =>
+      s"Cannot pass borrowed value '${ref.name}' to consuming parameter '${param.name}'"
     case PartialApplicationWithConsuming(_, param, _) =>
       s"Cannot partially apply function with consuming parameter '${param.name}'"
     case ConditionalOwnershipMismatch(_, _) =>
       "Conditional branches have different ownership states"
     case BorrowEscapeViaReturn(ref, _) =>
       s"Cannot return borrowed value '${ref.name}' from a function that returns a heap type"
+    case CapturedBorrowedHeapBinding(ref, _) =>
+      s"Cannot capture borrowed heap binding '${ref.name}' in a closure"
+    case CapturedMovedHeapBinding(ref, movedAt, _) =>
+      movedAt.spanOpt match
+        case Some(span) =>
+          s"Cannot capture moved heap binding '${ref.name}' in a closure; it was already moved at ${span.start.line}:${span.start.col}"
+        case None =>
+          s"Cannot capture moved heap binding '${ref.name}' in a closure"
+    case BorrowClosureEscapeViaReturn(_, _) =>
+      "Cannot return a borrow-capturing closure; use ~{ ... } for a move closure"
 
 /** Generate a stable ID for stdlib members */
 private def stdlibId(declSegment: String, name: String): Option[String] =
@@ -234,12 +274,29 @@ def injectBasicTypes(module: Module): Module =
     ),
     TypeDef(
       source   = SourceOrigin.Synth,
+      nameNode = Name.synth("CString"),
+      typeSpec = NativePointer(
+        syntheticSource,
+        "i8",
+        memEffect = MemEffect.Alloc.some,
+        freeFn    = "free_cstr".some
+      ).some,
+      id = stdlibId("typedef", "CString")
+    ),
+    TypeDef(
+      source   = SourceOrigin.Synth,
+      nameNode = Name.synth("RawPtr"),
+      typeSpec = Some(NativePrimitive(syntheticSource, "ptr")),
+      id       = stdlibId("typedef", "RawPtr")
+    ),
+    TypeDef(
+      source   = SourceOrigin.Synth,
       nameNode = Name.synth("String"),
       typeSpec = Some(
         NativeStruct(
           syntheticSource,
           List(
-            "length" -> stdlibTypeRef("Int64"),
+            "length" -> stdlibTypeRef("Int32"),
             "data" -> stdlibTypeRef("CharPtr")
           ),
           memEffect = Some(MemEffect.Alloc)
@@ -272,7 +329,7 @@ def injectBasicTypes(module: Module): Module =
     TypeAlias(
       source   = SourceOrigin.Synth,
       nameNode = Name.synth("Int"),
-      typeRef  = stdlibTypeRef("Int64"),
+      typeRef  = stdlibTypeRef("Int32"),
       id       = stdlibId("typealias", "Int")
     ),
     TypeAlias(
@@ -294,6 +351,12 @@ def injectBasicTypes(module: Module): Module =
       typeSpec = Some(NativePointer(syntheticSource, "i8", memEffect = Some(MemEffect.Alloc))),
       id       = stdlibId("typedef", "Buffer")
     ),
+    TypeDef(
+      source   = SourceOrigin.Synth,
+      nameNode = Name.synth("Rng"),
+      typeSpec = Some(NativePointer(syntheticSource, "i8", memEffect = Some(MemEffect.Alloc))),
+      id       = stdlibId("typedef", "Rng")
+    ),
 
     // Pointer types for arrays
     TypeDef(
@@ -301,6 +364,12 @@ def injectBasicTypes(module: Module): Module =
       nameNode = Name.synth("Int64Ptr"),
       typeSpec = Some(NativePointer(syntheticSource, "i64")),
       id       = stdlibId("typedef", "Int64Ptr")
+    ),
+    TypeDef(
+      source   = SourceOrigin.Synth,
+      nameNode = Name.synth("Int32Ptr"),
+      typeSpec = Some(NativePointer(syntheticSource, "i32")),
+      id       = stdlibId("typedef", "Int32Ptr")
     ),
     TypeDef(
       source   = SourceOrigin.Synth,
@@ -323,8 +392,8 @@ def injectBasicTypes(module: Module): Module =
         NativeStruct(
           syntheticSource,
           List(
-            "length" -> stdlibTypeRef("Int64"),
-            "data" -> stdlibTypeRef("Int64Ptr")
+            "length" -> stdlibTypeRef("Int32"),
+            "data" -> stdlibTypeRef("Int32Ptr")
           ),
           memEffect = Some(MemEffect.Alloc)
         )
@@ -338,7 +407,7 @@ def injectBasicTypes(module: Module): Module =
         NativeStruct(
           syntheticSource,
           List(
-            "length" -> stdlibTypeRef("Int64"),
+            "length" -> stdlibTypeRef("Int32"),
             "data" -> stdlibTypeRef("StringPtr")
           ),
           memEffect = Some(MemEffect.Alloc)
@@ -353,7 +422,7 @@ def injectBasicTypes(module: Module): Module =
         NativeStruct(
           syntheticSource,
           List(
-            "length" -> stdlibTypeRef("Int64"),
+            "length" -> stdlibTypeRef("Int32"),
             "data" -> stdlibTypeRef("FloatPtr")
           ),
           memEffect = Some(MemEffect.Alloc)
@@ -566,19 +635,22 @@ def injectCommonFunctions(module: Module): Module =
     TypeRef(syntheticSource, name, stdlibTypeId(name), Nil)
 
   // Helper function to create TypeRef for basic types
-  def stringType = stdlibTypeRef("String")
-  def intType    = stdlibTypeRef("Int")
-  def boolType   = stdlibTypeRef("Bool")
-  def floatType  = stdlibTypeRef("Float")
-  def unitType   = stdlibTypeRef("Unit")
-  def bufferType = stdlibTypeRef("Buffer")
+  def stringType  = stdlibTypeRef("String")
+  def cstringType = stdlibTypeRef("CString")
+  def intType     = stdlibTypeRef("Int")
+  def boolType    = stdlibTypeRef("Bool")
+  def floatType   = stdlibTypeRef("Float")
+  def unitType    = stdlibTypeRef("Unit")
+  def bufferType  = stdlibTypeRef("Buffer")
+  def rngType     = stdlibTypeRef("Rng")
 
   // Helper to create a function as Bnd(Lambda)
   def mkFn(
-    name:       String,
-    params:     List[FnParam],
-    returnType: Type,
-    memEffect:  Option[MemEffect] = None
+    name:         String,
+    params:       List[FnParam],
+    returnType:   Type,
+    memEffect:    Option[MemEffect] = None,
+    nativeSymbol: Option[String]    = None
   ): Bnd =
     val arity = params.size match
       case 0 => CallableArity.Nullary
@@ -593,7 +665,10 @@ def injectCommonFunctions(module: Module): Module =
       originalName  = name,
       mangledName   = name
     )
-    val body = Expr(syntheticSource, List(NativeImpl(syntheticSource, memEffect = memEffect)))
+    val body = Expr(
+      syntheticSource,
+      List(NativeImpl(syntheticSource, memEffect = memEffect, nativeSymbol = nativeSymbol))
+    )
     val lambda = Lambda(
       source   = SourceOrigin.Synth,
       params   = params,
@@ -729,6 +804,12 @@ def injectCommonFunctions(module: Module): Module =
       boolType
     ),
     mkFn(
+      "str_strip_margin",
+      List(FnParam(SourceOrigin.Synth, Name.synth("a"), typeAsc = Some(stringType))),
+      stringType,
+      Some(MemEffect.Alloc)
+    ),
+    mkFn(
       "int_to_str",
       List(FnParam(SourceOrigin.Synth, Name.synth("a"), typeAsc = Some(intType))),
       stringType,
@@ -745,11 +826,48 @@ def injectCommonFunctions(module: Module): Module =
       List(FnParam(SourceOrigin.Synth, Name.synth("a"), typeAsc = Some(stringType))),
       intType
     ),
+    mkFn(
+      "to_cstr",
+      List(FnParam(SourceOrigin.Synth, Name.synth("s"), typeAsc = stringType.some)),
+      cstringType,
+      MemEffect.Alloc.some
+    ),
+    // Random number generator
+    mkFn(
+      "rng_new",
+      List(FnParam(SourceOrigin.Synth, Name.synth("seed"), typeAsc = Some(intType))),
+      rngType,
+      Some(MemEffect.Alloc)
+    ),
+    mkFn("rng_new_random", List(), rngType, Some(MemEffect.Alloc)),
+    mkFn(
+      "rng_next",
+      List(FnParam(SourceOrigin.Synth, Name.synth("rng"), typeAsc = Some(rngType))),
+      intType
+    ),
+    mkFn(
+      "rng_between",
+      List(
+        FnParam(SourceOrigin.Synth, Name.synth("rng"), typeAsc = Some(rngType)),
+        FnParam(SourceOrigin.Synth, Name.synth("min"), typeAsc = Some(intType)),
+        FnParam(SourceOrigin.Synth, Name.synth("max"), typeAsc = Some(intType))
+      ),
+      intType
+    ),
     // Buffer functions
     mkFn("mkBuffer", List(), bufferType, Some(MemEffect.Alloc)),
     mkFn(
       "mkBufferWithFd",
       List(FnParam(SourceOrigin.Synth, Name.synth("fd"), typeAsc = Some(intType))),
+      bufferType,
+      Some(MemEffect.Alloc)
+    ),
+    mkFn(
+      "mkBufferWithFdAndSize",
+      List(
+        FnParam(SourceOrigin.Synth, Name.synth("fd"), typeAsc   = Some(intType)),
+        FnParam(SourceOrigin.Synth, Name.synth("size"), typeAsc = Some(intType))
+      ),
       bufferType,
       Some(MemEffect.Alloc)
     ),
@@ -777,6 +895,14 @@ def injectCommonFunctions(module: Module): Module =
       List(
         FnParam(SourceOrigin.Synth, Name.synth("b"), typeAsc = Some(bufferType)),
         FnParam(SourceOrigin.Synth, Name.synth("s"), typeAsc = Some(stringType))
+      ),
+      unitType
+    ),
+    mkFn(
+      "buffer_write_byte",
+      List(
+        FnParam(SourceOrigin.Synth, Name.synth("b"), typeAsc = Some(bufferType)),
+        FnParam(SourceOrigin.Synth, Name.synth("n"), typeAsc = Some(intType))
       ),
       unitType
     ),
@@ -812,18 +938,30 @@ def injectCommonFunctions(module: Module): Module =
       ),
       unitType
     ),
+    mkFn(
+      "int64_to_str",
+      List(FnParam(SourceOrigin.Synth, Name.synth("a"), typeAsc = stdlibTypeRef("Int64").some)),
+      stringType,
+      MemEffect.Alloc.some
+    ),
+    mkFnWithTpl(
+      "int_to_int64",
+      List(FnParam(SourceOrigin.Synth, Name.synth("i"), typeAsc = intType.some)),
+      stdlibTypeRef("Int64"),
+      "sext i32 %operand to i64"
+    ),
     // Conversion functions (template-based)
     mkFnWithTpl(
       "int_to_float",
       List(FnParam(SourceOrigin.Synth, Name.synth("i"), typeAsc = Some(intType))),
       floatType,
-      "sitofp i64 %operand to float"
+      "sitofp i32 %operand to float"
     ),
     mkFnWithTpl(
       "float_to_int",
       List(FnParam(SourceOrigin.Synth, Name.synth("f"), typeAsc = Some(floatType))),
       intType,
-      "fptosi float %operand to i64"
+      "fptosi float %operand to i32"
     ),
     mkFnWithTpl(
       "sqrt",
@@ -866,6 +1004,14 @@ def injectCommonFunctions(module: Module): Module =
     ),
     // Memory management free functions - params are consuming (take ownership)
     mkFn(
+      "free_cstr",
+      List(
+        FnParam(SourceOrigin.Synth, Name.synth("s"), typeAsc = cstringType.some, consuming = true)
+      ),
+      unitType,
+      nativeSymbol = "free".some
+    ),
+    mkFn(
       "__free_String",
       List(
         FnParam(SourceOrigin.Synth, Name.synth("s"), typeAsc = Some(stringType), consuming = true)
@@ -876,6 +1022,20 @@ def injectCommonFunctions(module: Module): Module =
       "__free_Buffer",
       List(
         FnParam(SourceOrigin.Synth, Name.synth("b"), typeAsc = Some(bufferType), consuming = true)
+      ),
+      unitType
+    ),
+    mkFn(
+      "__free_Rng",
+      List(
+        FnParam(SourceOrigin.Synth, Name.synth("rng"), typeAsc = Some(rngType), consuming = true)
+      ),
+      unitType
+    ),
+    mkFn(
+      "mml_free_raw",
+      List(
+        FnParam(SourceOrigin.Synth, Name.synth("p"), typeAsc = Some(stdlibTypeRef("RawPtr")))
       ),
       unitType
     )
@@ -894,6 +1054,14 @@ def injectCommonFunctions(module: Module): Module =
       List(FnParam(SourceOrigin.Synth, Name.synth("size"), typeAsc = Some(intType))),
       intArrayType,
       Some(MemEffect.Alloc)
+    ),
+    mkFn(
+      "ar_int_fill",
+      List(
+        FnParam(SourceOrigin.Synth, Name.synth("arr"), typeAsc   = Some(intArrayType)),
+        FnParam(SourceOrigin.Synth, Name.synth("value"), typeAsc = Some(intType))
+      ),
+      unitType
     ),
     mkFn(
       "ar_int_set",
@@ -1060,6 +1228,12 @@ def injectCommonFunctions(module: Module): Module =
       Some(MemEffect.Alloc)
     ),
     mkFn(
+      "__clone_Rng",
+      List(FnParam(SourceOrigin.Synth, Name.synth("rng"), typeAsc = Some(rngType))),
+      rngType,
+      Some(MemEffect.Alloc)
+    ),
+    mkFn(
       "__clone_IntArray",
       List(FnParam(SourceOrigin.Synth, Name.synth("a"), typeAsc = Some(intArrayType))),
       intArrayType,
@@ -1089,6 +1263,15 @@ def injectCommonFunctions(module: Module): Module =
       "buffer_writeln",
       bufferType,
       stringType,
+      unitType
+    ),
+    mkBinOpExpr(
+      "write_byte",
+      20,
+      Associativity.Left,
+      "buffer_write_byte",
+      bufferType,
+      intType,
       unitType
     ),
     mkBinOpExpr(

@@ -2,5 +2,5 @@
 type AnInt = Int64;
 
 pub fn main(): Int =
-  0
+  0;
 ;

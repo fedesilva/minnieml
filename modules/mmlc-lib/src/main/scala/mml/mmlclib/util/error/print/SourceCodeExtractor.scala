@@ -76,6 +76,12 @@ object SourceCodeExtractor:
           .map(s => s"\n$s")
           .getOrElse("")
 
+      case SemanticError.TermErrorFound(error, _) =>
+        spanOf(error)
+          .flatMap(extractSnippet(sourceInfo, _))
+          .map(s => s"\n$s")
+          .getOrElse("")
+
       case SemanticError.DanglingTerms(terms, _, _) =>
         // Extract snippets for each dangling term
         val snippets = terms.collect { case term: FromSource =>
@@ -109,8 +115,8 @@ object SourceCodeExtractor:
           .map(s => s"\n$s")
           .getOrElse("")
 
-      case SemanticError.UseAfterMove(ref, _, _) =>
-        spanOf(ref)
+      case error: SemanticError.UseAfterMove =>
+        error.source.spanOpt
           .flatMap(extractSnippet(sourceInfo, _))
           .map(s => s"\n$s")
           .getOrElse("")
@@ -135,6 +141,30 @@ object SourceCodeExtractor:
 
       case SemanticError.BorrowEscapeViaReturn(ref, _) =>
         spanOf(ref)
+          .flatMap(extractSnippet(sourceInfo, _))
+          .map(s => s"\n$s")
+          .getOrElse("")
+
+      case SemanticError.BorrowedValuePassedToConsumingParam(_, ref, _) =>
+        spanOf(ref)
+          .flatMap(extractSnippet(sourceInfo, _))
+          .map(s => s"\n$s")
+          .getOrElse("")
+
+      case SemanticError.CapturedBorrowedHeapBinding(ref, _) =>
+        spanOf(ref)
+          .flatMap(extractSnippet(sourceInfo, _))
+          .map(s => s"\n$s")
+          .getOrElse("")
+
+      case SemanticError.CapturedMovedHeapBinding(ref, _, _) =>
+        spanOf(ref)
+          .flatMap(extractSnippet(sourceInfo, _))
+          .map(s => s"\n$s")
+          .getOrElse("")
+
+      case SemanticError.BorrowClosureEscapeViaReturn(lambda, _) =>
+        spanOf(lambda)
           .flatMap(extractSnippet(sourceInfo, _))
           .map(s => s"\n$s")
           .getOrElse("")
@@ -252,6 +282,18 @@ object SourceCodeExtractor:
               .map(s => s"\n$s")
               .getOrElse("")
           case _ => ""
+
+      case TypeError.ConflictingLambdaParamInference(param, _, _, _) =>
+        spanOf(param)
+          .flatMap(extractSnippet(sourceInfo, _))
+          .map(s => s"\n$s")
+          .getOrElse("")
+
+      case TypeError.UninferrableLambdaParam(param, _) =>
+        spanOf(param)
+          .flatMap(extractSnippet(sourceInfo, _))
+          .map(s => s"\n$s")
+          .getOrElse("")
 
       case TypeError.UntypedHoleInBinding(_, source, _) =>
         source.spanOpt

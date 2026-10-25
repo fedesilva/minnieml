@@ -10,5 +10,5 @@ let hola = "hola";
 \\\\
 
 pub fn main(): Unit =
-  println hola
-;
+  println hola;
+;;

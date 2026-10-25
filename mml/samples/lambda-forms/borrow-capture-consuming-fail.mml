@@ -1,0 +1,14 @@
+// Expected compile error.
+//
+// A borrow-capturing closure uses a headerless stack environment. Passing it
+// to a consuming function would eventually route that headerless env through
+// __free_closure, so ownership rejects the call statically.
+
+fn consume_fn(~f: Int -> Int, x: Int): Int =
+  f x;
+;
+
+pub fn main(seed: Int): Int =
+  let add_seed = { x: Int -> x + seed; };
+  consume_fn add_seed 10;
+;

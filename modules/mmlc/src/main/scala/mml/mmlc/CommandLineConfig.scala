@@ -20,10 +20,11 @@ object CommandLineConfig:
       timings:         Boolean        = false,
       outputName:      Option[String] = None,
       printPhases:     Boolean        = false,
-      optLevel:        Int            = 3,
       emitScopedAlias: Boolean        = false,
       targetType:      String         = "exe",
-      asan:            Boolean        = false
+      asan:            Boolean        = false,
+      llvmOptArgs:     List[String]   = Nil,
+      parserMetrics:   Boolean        = false
     )
     case Run(
       file:            Option[Path]   = None,
@@ -38,24 +39,27 @@ object CommandLineConfig:
       timings:         Boolean        = false,
       outputName:      Option[String] = None,
       printPhases:     Boolean        = false,
-      optLevel:        Int            = 3,
       emitScopedAlias: Boolean        = false,
-      asan:            Boolean        = false
+      asan:            Boolean        = false,
+      llvmOptArgs:     List[String]   = Nil,
+      parserMetrics:   Boolean        = false
     )
     case Ast(
-      file:      Option[Path] = None,
-      outputDir: String       = "build",
-      verbose:   Boolean      = false,
-      timings:   Boolean      = false,
-      noTco:     Boolean      = false
+      file:          Option[Path] = None,
+      outputDir:     String       = "build",
+      verbose:       Boolean      = false,
+      timings:       Boolean      = false,
+      noTco:         Boolean      = false,
+      parserMetrics: Boolean      = false
     )
     case Ir(
-      file:      Option[Path] = None,
-      outputDir: String       = "build",
-      outputAst: Boolean      = false,
-      verbose:   Boolean      = false,
-      timings:   Boolean      = false,
-      noTco:     Boolean      = false
+      file:          Option[Path] = None,
+      outputDir:     String       = "build",
+      outputAst:     Boolean      = false,
+      verbose:       Boolean      = false,
+      timings:       Boolean      = false,
+      noTco:         Boolean      = false,
+      parserMetrics: Boolean      = false
     )
     case Clean(
       outputDir: String = "build"
@@ -71,8 +75,10 @@ object CommandLineConfig:
     case Lsp()
 
   case class Config(
-    command: Command = Command.Build()
-  )
+    command:            Command   = Command.Build(),
+    optimizationLevels: List[Int] = Nil
+  ):
+    def optLevel: Int = optimizationLevels.headOption.getOrElse(3)
 
   def createParser: OParser[Unit, Config] =
     val builder = OParser.builder[Config]
@@ -94,10 +100,10 @@ object CommandLineConfig:
       .text("Output the AST to a file in addition to other compilation")
 
     val targetOpt = opt[String]('T', "target")
-      .text("Target triple for cross-compilation (e.g., x86_64-pc-linux-gnu)")
+      .text("Target triple (default: host platform)")
 
     val targetCpuOpt = opt[String]('C', "cpu")
-      .text("Target CPU for cross-compilation (e.g., cortex-a53, apple-m1)")
+      .text("CPU override (default: target baseline; native: host CPU, same architecture only)")
 
     val noStackCheckOpt = opt[Unit]("no-stack-check")
       .text("Pass -fno-stack-check to clang")
@@ -109,17 +115,24 @@ object CommandLineConfig:
       .text("Disable tail-call optimization")
 
     val timingOpt = opt[Unit]('m', "metrics")
-      .text("Print compilation metrics (timings, parser stats)")
+      .text("Print compilation timings")
+
+    val parserMetricsOpt = opt[Unit]('P', "parser-metrics")
+      .text("Print parser metrics")
 
     val printPhasesOpt = opt[Unit]('p', "print-phases")
       .text("Print detailed compilation phase information")
 
-    val optLevelOpt = opt[Int]('O', "opt")
-      .validate(o =>
-        if o >= 0 && o <= 3 then success
-        else failure("Optimization level must be between 0 and 3")
-      )
-      .text("Optimization level (0-3, default: 3)")
+    def optimizationFlag(level: Int) =
+      opt[Unit](s"O$level")
+        .abbr(s"O$level")
+        .action((_, config) => config.copy(optimizationLevels = config.optimizationLevels :+ level))
+        .text(s"Optimization level $level${if level == 3 then " (default)" else ""}")
+
+    val llvmOptArgOpt = opt[String]("llvm-opt-arg")
+      .unbounded()
+      .valueName("<argument>")
+      .text("Forward one argument to LLVM opt (repeatable; use --llvm-opt-arg=-flag=value)")
 
     val emitScopedAliasOpt = opt[Unit]("emit-scoped-alias")
       .text("Emit scoped alias metadata (disabled by default)")
@@ -181,6 +194,12 @@ object CommandLineConfig:
         case _ => c
     )
 
+    def topLevelParserMetricsOpt = parserMetricsOpt.action((_, c) =>
+      c.command match
+        case b: Command.Build => c.copy(command = b.copy(parserMetrics = true))
+        case _ => c
+    )
+
     def topLevelTargetOpt = targetOpt.action((t, c) =>
       c.command match
         case b: Command.Build => c.copy(command = b.copy(targetTriple = Some(t)))
@@ -217,9 +236,9 @@ object CommandLineConfig:
         case _ => c
     )
 
-    def topLevelOptLevelOpt = optLevelOpt.action((l, c) =>
+    def topLevelLlvmOptArgOpt = llvmOptArgOpt.action((arg, c) =>
       c.command match
-        case b: Command.Build => c.copy(command = b.copy(optLevel = l))
+        case b: Command.Build => c.copy(command = b.copy(llvmOptArgs = b.llvmOptArgs :+ arg))
         case _ => c
     )
 
@@ -277,6 +296,12 @@ object CommandLineConfig:
               case cmd => cmd
             })
           ),
+          parserMetricsOpt.action((_, config) =>
+            config.copy(command = config.command match {
+              case run: Command.Run => run.copy(parserMetrics = true)
+              case cmd => cmd
+            })
+          ),
           targetOpt.action((triple, config) =>
             config.copy(command = config.command match {
               case run: Command.Run => run.copy(targetTriple = Some(triple))
@@ -313,11 +338,10 @@ object CommandLineConfig:
               case cmd => cmd
             })
           ),
-          optLevelOpt.action((level, config) =>
-            config.copy(command = config.command match {
-              case run: Command.Run => run.copy(optLevel = level)
-              case cmd => cmd
-            })
+          llvmOptArgOpt.action((arg, config) =>
+            config.copy(command = config.command match
+              case run: Command.Run => run.copy(llvmOptArgs = run.llvmOptArgs :+ arg)
+              case cmd => cmd)
           ),
           emitScopedAliasOpt.action((_, config) =>
             config.copy(command = config.command match {
@@ -363,6 +387,12 @@ object CommandLineConfig:
               case cmd => cmd
             })
           ),
+          parserMetricsOpt.action((_, config) =>
+            config.copy(command = config.command match {
+              case ast: Command.Ast => ast.copy(parserMetrics = true)
+              case cmd => cmd
+            })
+          ),
           noTcoOpt.action((_, config) =>
             config.copy(command = config.command match {
               case ast: Command.Ast => ast.copy(noTco = true)
@@ -404,6 +434,12 @@ object CommandLineConfig:
           timingOpt.action((_, config) =>
             config.copy(command = config.command match {
               case ir: Command.Ir => ir.copy(timings = true)
+              case cmd => cmd
+            })
+          ),
+          parserMetricsOpt.action((_, config) =>
+            config.copy(command = config.command match {
+              case ir: Command.Ir => ir.copy(parserMetrics = true)
               case cmd => cmd
             })
           ),
@@ -493,13 +529,22 @@ object CommandLineConfig:
       topLevelAstOpt,
       topLevelVerboseOpt,
       topLevelTimingOpt,
+      topLevelParserMetricsOpt,
       topLevelTargetOpt,
       topLevelTargetCpuOpt,
       topLevelNoStackCheckOpt,
       topLevelEmitOptIrOpt,
       topLevelNoTcoOpt,
       topLevelPrintPhasesOpt,
-      topLevelOptLevelOpt,
+      optimizationFlag(0),
+      optimizationFlag(1),
+      optimizationFlag(2),
+      optimizationFlag(3),
+      checkConfig(config =>
+        if config.optimizationLevels.size <= 1 then success
+        else failure("Optimization flags -O0, -O1, -O2 and -O3 are mutually exclusive")
+      ),
+      topLevelLlvmOptArgOpt,
       topLevelEmitScopedAliasOpt,
       topLevelAsanOpt,
       // Subcommands (override the default Build when matched)

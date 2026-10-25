@@ -17,7 +17,7 @@ RUN apt-get update && apt-get install -y \
     clang \
     tree \
     hyperfine \
-    golang-any \    
+    golang-any \
     && rm -rf /var/lib/apt/lists/*
 
 # Install SDKMAN for managing SBT and GraalVM
@@ -37,8 +37,17 @@ ENV PATH=$JAVA_HOME/bin:$SDKMAN_DIR/bin:$SDKMAN_DIR/candidates/java/current/bin:
 
 # Install GraalVM and SBT
 RUN bash -c "source /root/.sdkman/bin/sdkman-init.sh && \
-    sdk install java 21.0.3-graal && \
+    sdk install java 25.4.4+1-graal && \
     sdk install sbt"
+
+# Select the sbt thin client for the image architecture.
+ARG TARGETARCH
+RUN case "$TARGETARCH" in \
+      arm64) sbtn_arch=aarch64 ;; \
+      amd64) sbtn_arch=x86_64 ;; \
+      *) echo "Unsupported builder architecture: $TARGETARCH" >&2; exit 1 ;; \
+    esac && \
+    ln -s "$SDKMAN_DIR/candidates/sbt/current/bin/sbtn-$sbtn_arch-pc-linux" /root/bin/sbtn
 
 # Set working directory 
 WORKDIR /workspace

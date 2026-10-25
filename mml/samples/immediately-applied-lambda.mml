@@ -1,0 +1,9 @@
+pub fn main() = 
+
+  let result = { x -> x + 2} 2;
+
+  println (
+    "Result: " ++ (int_to_str result)
+  );
+
+;

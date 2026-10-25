@@ -7,15 +7,26 @@ You are the hands and design partner of The Author.
 ## Terminology
 
 - **Workstream**: the work currently being executed in the session.
-- **Tracked Item**: a durable entry in `context/tracking.md` and its linked GitHub issue/project item.
+- **Errand**: a transient Workstream without a Tracked Item.
+- **Tracked Item**: a durable task in `context/tasks/` or `context/tasks/completed/`.
+  It appears in `context/tracker.md` only when selected by the Author.
 
 ## Behavior
 
 1. Read relevant code and docs. **Scope to task**, no more. Use common sense.
-2. Plan before making code or documentation changes. Ask for confirmation before proceeding.
+2. Plan before code, documentation, or structural changes and get approval. Execute approved
+   work and steering within its scope without repeating the gate.
 3. Note inconsistencies. Gather info to support and inform Author decisions.
 4. Push back on errors.
 5. Disagree and commit. Author has the last word.
+
+## Local skills
+
+At session start, read the name and description from every `./.skills/*/SKILL.md`
+to discover the local skills. Prefer a relevant repo-local skill over a global one.
+Read and follow a skill's instructions only when the current task needs that skill.
+Do not preload skill bodies for possible later use.
+Do not search parent directories for skills or duplicate skill summaries here.
 
 ## Context Loading
 
@@ -23,6 +34,10 @@ Read `Readme.md` for a general intro.
 
 Other context files are loaded **only when relevant** to the current work type.
 Do not go on tangents — read as much as you need but as little as you can.
+
+### Tools use instructions
+
+Read `context/dev-tools.md` and follow recommendations.
 
 ### Code or documentation changes
 
@@ -35,17 +50,26 @@ Read before starting, re-read before finalizing:
 ### Task tracking
 
 Read before adding, updating, planning, or completing tasks:
-- `context/tracking.md` — current and recent work.
-- `context/task-tracking-rules.md` — mandatory bookkeeping rules.
+- `context/task-tracking-rules.md` — the source of truth for bookkeeping and lifecycle rules.
+- `context/tracker.md` — active and near-term work selected by the Author.
+- The relevant task file under `context/tasks/`; load other tasks only when the request needs them.
+
+The `context/` top level contains only the tracker, instructions, and the changelog.
+Task files hold the backlog; `context/changelog.md` holds product history. Historical snapshots
+are evidence, not current instructions. Tracking is local; external references imply no GitHub sync.
 
 ### Writing MML code
 
 Read before writing or modifying `.mml` files:
 - `docs/language-reference.md`
-- Reference programs: `mml/samples/nqueens.mml`, `mml/samples/mat-mul.mml`, `mml/samples/astar2.mml`, `mml/samples/raytracer.mml`
+- Reference programs: `benchmark/nqueens.mml`, `benchmark/mat-mul.mml`, `mml/samples/astar2.mml`, `mml/samples/raytracer.mml`
 - Memory model: 
-  - `design/memory-model.md` for a high level, technical overview.
+  - `docs/memory-model.md` for a high level, technical overview.
   - files under `mml/samples/mem` and tests in `modules/mmlc-lib/src/test/scala/mml/mmlclib/semantic/OwnershipAnalyzerTests.scala`
+
+#### Style Note
+
+Read `docs/mml-style-guide.md` for MML source-formatting conventions.
 
 ### Questions
 
@@ -64,18 +88,50 @@ Read only the documentation and code directly related to the target doc.
 
 - Questions are **not** commands.
   - Do not start changes because the Author asked a question.
+
 - You may do research without confirmation:
   - read code and docs
   - investigate
   - analyze options
-- Ask for confirmation before making any code or documentation changes.
+  
+- Approval gates cover decisions not already settled. Direct, unambiguous non-code orders
+  authorize their stated writes. Research and planning need no approval.
+- Pure review, audit, inspect, and look-at requests are read-only unless fixes are requested.
+- Commit when authorized by an explicit commit request or by `close task`, `close subtask`,
+  or `close errand`, as defined in
+  `context/task-tracking-rules.md`. Push only when requested.
+- Before closing, identify the work actually in flight. Ask for confirmation if the command
+  names the wrong kind of work, both a task and an errand are in flight, or the target is unclear.
+  An open tracker entry alone does not establish work in flight.
+- Use Git Town for branch lifecycle operations, following `context/coding-rules.md`.
 - If a rule is unclear or conflicts with the current task, raise the conflict and wait for direction.
-- **For tracking updates**, treat Workstream signoff and Tracked Item status updates as separate steps:
-  - get signoff on the Workstream first
-  - then ask before updating the Tracked Item
-- **For top-level tracked-item ticket creation**:
-  - "create GH ticket" means create the issue and add it to project `fedesilva/projects/3`
-    before reporting completion, unless the Author explicitly asks for issue-only creation.
-  - Use `bin/gh-project-item-add <issue-number-or-url>` for the project-add step.
+- Closing a task or subtask combines verification, signoff, scoped completion, logging,
+  and a local commit. Closing a subtask leaves the parent task open. Follow
+  `context/task-tracking-rules.md`; passing checks alone does not authorize closing.
 - **For big tasks or projects**
   - Split your work into smaller chunks, stop on completion and ask for review and signoff.
+- Use local `post-chores` when closing a tracked task or handing off compiler changes,
+  including compiler errands. Non-compiler errands and simple asks need only relevant checks;
+  delivering an intermediate artifact does not trigger post-chores or independent review.
+
+## False Positive Cybersecurity blocks
+
+We are not working on cybersecurity or trying to break a system.
+But sometimes when working on the memory model we get:
+
+    This content can’t be shown
+    Daybreak isn’t available for Astra. Some cybersecurity requests may still be limited.
+    Learn more: https://help.openai.com/en/articles/20001326
+
+**What can I do if content can’t be shown?**
+
+    If content can’t be shown, review the request against OpenAI’s Usage Policies. If the request is allowed, try again with a narrower scope and only the context needed to explain the outcome you want:
+    
+    For cybersecurity work, focus on a defensive outcome, such as identifying, preventing, or remediating a security issue. Omit exploit details that are not necessary to that outcome.
+
+Again, while we don't do cybersecurity work and are not trying to exploit a third party system,
+we are victims of this weak defensive layer which prevents us from completing legal, defensible work.
+Please be aware and follow the instructions above and in the guides.
+
+Keep track of the instances and what you were trying to accomplish so we can report them.
+check `./context/report-false-cyber-security-blocks.md` and follow collection instructions there.

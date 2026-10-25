@@ -57,6 +57,7 @@ object ErrorPrinter:
     case SemanticError.InvalidExpression(expr, _, _) => startPosOf(expr)
     case SemanticError.MemberErrorFound(error, _) => startPosOf(error)
     case SemanticError.ParsingIdErrorFound(error, _) => startPosOf(error)
+    case SemanticError.TermErrorFound(error, _) => startPosOf(error)
     case SemanticError.DanglingTerms(terms, _, _) =>
       terms
         .collect { case fs: FromSource => startPosOf(fs) }
@@ -64,11 +65,15 @@ object ErrorPrinter:
         .getOrElse((Int.MaxValue, Int.MaxValue))
     case SemanticError.InvalidExpressionFound(invalidExpr, _) => startPosOf(invalidExpr)
     case SemanticError.InvalidEntryPoint(_, source) => startPosOf(source)
-    case SemanticError.UseAfterMove(ref, _, _) => startPosOf(ref)
+    case error: SemanticError.UseAfterMove => startPosOf(error.source)
     case SemanticError.ConsumingParamNotLastUse(_, ref, _) => startPosOf(ref)
+    case SemanticError.BorrowedValuePassedToConsumingParam(_, ref, _) => startPosOf(ref)
     case SemanticError.PartialApplicationWithConsuming(fn, _, _) => startPosOf(fn)
     case SemanticError.ConditionalOwnershipMismatch(cond, _) => startPosOf(cond)
     case SemanticError.BorrowEscapeViaReturn(ref, _) => startPosOf(ref)
+    case SemanticError.CapturedBorrowedHeapBinding(ref, _) => startPosOf(ref)
+    case SemanticError.CapturedMovedHeapBinding(ref, _, _) => startPosOf(ref)
+    case SemanticError.BorrowClosureEscapeViaReturn(lambda, _) => startPosOf(lambda)
     case SemanticError.VisibilityViolation(ref, _, _) => startPosOf(ref)
     case SemanticError.TypeCheckingError(error) =>
       // For type errors, we need to extract the position from the nested error
@@ -106,6 +111,10 @@ object ErrorPrinter:
             case _ => (Int.MaxValue, Int.MaxValue)
         case mml.mmlclib.semantic.TypeError.IncompatibleTypes(node, _, _, _, _) =>
           startPosOf(node.asInstanceOf[FromSource])
+        case mml.mmlclib.semantic.TypeError.ConflictingLambdaParamInference(param, _, _, _) =>
+          startPosOf(param)
+        case mml.mmlclib.semantic.TypeError.UninferrableLambdaParam(param, _) =>
+          startPosOf(param)
         case mml.mmlclib.semantic.TypeError.UntypedHoleInBinding(_, source, _) =>
           startPosOf(source)
 
@@ -182,6 +191,11 @@ object ErrorPrinter:
         val location = locationOf(error)
         s"${Console.RED}Invalid identifier at $location: ${error.message}${Console.RESET}\n${Console.YELLOW}Phase: $phase${Console.RESET}"
 
+      case SemanticError.TermErrorFound(error, phase) =>
+        val location = locationOf(error)
+        s"${Console.RED}Parser error at $location: ${error.message}${Console.RESET}\n" +
+          s"${Console.YELLOW}Phase: $phase${Console.RESET}"
+
       case SemanticError.DanglingTerms(terms, message, phase) =>
         val locations = terms.collect { case fs: FromSource => locationOf(fs) }.mkString(", ")
         s"${Console.RED}$message at $locations${Console.RESET}\n${Console.YELLOW}Phase: $phase${Console.RESET}"
@@ -196,11 +210,16 @@ object ErrorPrinter:
       case SemanticError.VisibilityViolation(ref, decl, phase) =>
         s"${Console.RED}'${ref.name}' is not visible (declared in '${decl.name}')${Console.RESET}\n${Console.YELLOW}Phase: $phase${Console.RESET}"
 
-      case SemanticError.UseAfterMove(ref, movedAt, phase) =>
-        s"${Console.RED}Use of '${ref.name}' after move at ${locationOf(ref)}${Console.RESET}\n${Console.YELLOW}Moved at: ${locationOf(movedAt)}, Phase: $phase${Console.RESET}"
+      case error: SemanticError.UseAfterMove =>
+        val use  = s"Use of '${error.ref.name}' after move at ${locationOf(error.source)}"
+        val move = s"Moved at: ${locationOf(error.movedAt)}, Phase: ${error.phase}"
+        s"${Console.RED}$use${Console.RESET}\n${Console.YELLOW}$move${Console.RESET}"
 
       case SemanticError.ConsumingParamNotLastUse(param, ref, phase) =>
         s"${Console.RED}Consuming parameter '${param.name}' must be the last use of '${ref.name}' at ${locationOf(ref)}${Console.RESET}\n${Console.YELLOW}Phase: $phase${Console.RESET}"
+
+      case SemanticError.BorrowedValuePassedToConsumingParam(param, ref, phase) =>
+        s"${Console.RED}Cannot pass borrowed value '${ref.name}' to consuming parameter '${param.name}' at ${locationOf(ref)}${Console.RESET}\n${Console.YELLOW}Phase: $phase${Console.RESET}"
 
       case SemanticError.PartialApplicationWithConsuming(fn, param, phase) =>
         val location = locationOf(fn)
@@ -211,6 +230,15 @@ object ErrorPrinter:
 
       case SemanticError.BorrowEscapeViaReturn(ref, phase) =>
         s"${Console.RED}Cannot return borrowed value '${ref.name}' at ${locationOf(ref)}${Console.RESET}\n${Console.YELLOW}Phase: $phase${Console.RESET}"
+
+      case SemanticError.CapturedBorrowedHeapBinding(ref, phase) =>
+        s"${Console.RED}Cannot capture borrowed heap binding '${ref.name}' at ${locationOf(ref)}${Console.RESET}\n${Console.YELLOW}Phase: $phase${Console.RESET}"
+
+      case SemanticError.CapturedMovedHeapBinding(ref, movedAt, phase) =>
+        s"${Console.RED}Cannot capture moved heap binding '${ref.name}' at ${locationOf(ref)}${Console.RESET}\n${Console.YELLOW}Moved at: ${locationOf(movedAt)}, Phase: $phase${Console.RESET}"
+
+      case SemanticError.BorrowClosureEscapeViaReturn(lambda, phase) =>
+        s"${Console.RED}Cannot return borrow-capturing closure at ${locationOf(lambda)}${Console.RESET}\n${Console.YELLOW}Phase: $phase${Console.RESET}"
 
       case SemanticError.TypeCheckingError(error) =>
         // Delegate to SemanticErrorPrinter to avoid duplication
@@ -283,3 +311,6 @@ object ErrorPrinter:
       s"MML runtime resource error: $msg"
     case LlvmCompilationError.TripleResolutionError(msg) =>
       s"Target triple resolution failed: $msg"
+
+    case LlvmCompilationError.TargetResolutionError(msg) =>
+      s"Target attributes resolution failed: $msg"

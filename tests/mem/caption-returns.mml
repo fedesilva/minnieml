@@ -1,0 +1,184 @@
+// Headless caption paths from mml/samples/astar3_animated.mml.
+// Borrowing callers check the result before its owning temporary is destroyed.
+
+let infinity = 999999999;
+
+let event_kind_seed = 1;
+let event_kind_select = 2;
+let event_kind_skip = 3;
+let event_kind_consider = 4;
+let event_kind_accept = 5;
+let event_kind_reject = 6;
+let event_kind_finish = 7;
+let event_kind_found = 8;
+let event_kind_exhausted = 9;
+
+let rejection_outside = 1;
+let rejection_wall = 2;
+let rejection_corner = 3;
+let rejection_closed = 4;
+let rejection_cost = 5;
+
+struct Event {
+  kind: Int,
+  current: Int,
+  x: Int,
+  y: Int,
+  g: Int,
+  f: Int,
+  reason: Int,
+  previous_g: Int
+};
+
+fn is_neighbor_event(kind: Int): Bool =
+  kind == event_kind_consider or kind == event_kind_accept or kind == event_kind_reject;
+;
+
+fn coordinates(x: Int, y: Int): String =
+  "(" ++ (int_to_str x) ++ ", " ++ (int_to_str y) ++ ")";
+;
+
+fn event_caption(event: Event): String =
+  let pos = coordinates event.x event.y;
+  if event.kind == event_kind_seed then "Queue the start " ++ pos ++ ".";
+  elif event.kind == event_kind_select then "Explore " ++ pos ++ ": best priority in the queue.";
+  elif event.kind == event_kind_skip then "Skip stale queue entry for " ++ pos ++ ".";
+  elif event.kind == event_kind_consider then "Try neighbor " ++ pos ++ "?";
+  elif event.kind == event_kind_accept then "Yes, a better route to " ++ pos ++ ". Queue it.";
+  elif event.kind == event_kind_reject then "Reject " ++ pos ++ ": " ++ (reason_text event.reason);
+  elif event.kind == event_kind_finish then "Finished checking neighbors of " ++ pos ++ ".";
+  elif event.kind == event_kind_found then "Goal reached! Reveal the final path.";
+  else "No path found. The queue is empty. Close the window when done.";
+  ;
+;
+
+fn event_detail(event: Event): String =
+  if event.kind == event_kind_exhausted then "All reachable candidates have been processed.";
+  elif event.kind == event_kind_skip then
+    "Already processed; discard queue entry with f = " ++ (int_to_str event.f);
+  else
+    let costs = "g = " ++ (int_to_str event.g) ++ "    h = " ++
+      (int_to_str (event.f - event.g)) ++ "    f = g + h = " ++ (int_to_str event.f);
+    if is_neighbor_event event.kind then
+      let previous =
+        if event.previous_g == infinity then "unreached";
+        else int_to_str event.previous_g;
+        ;
+      "Proposed " ++ costs ++ "    Best known g: " ++ previous;
+    else costs ++ "    (g: cost so far, h: estimate to goal)";
+    ;
+  ;
+;
+
+fn reason_text(reason: Int): String =
+  if reason == rejection_outside then "outside the grid.";
+  elif reason == rejection_wall then "there is a wall.";
+  elif reason == rejection_corner then "the diagonal cuts a blocked corner.";
+  elif reason == rejection_closed then "already processed.";
+  else "this route is no cheaper.";
+  ;
+;
+
+fn caption(allocated: Bool): String =
+  let text = int_to_str 123;
+  if allocated then text ++ "!";
+  else "abc";
+  ;
+;
+
+fn check(actual: String, expected: String): Int =
+  println actual;
+  if str_eq actual expected then 0;
+  else 1;
+  ;
+;
+
+fn sample_event(kind: Int, previous_g: Int, reason: Int): Event =
+  Event kind 0 25 3 10 20 reason previous_g;
+;
+
+fn check_event(kind: Int, expected_caption: String, expected_detail: String): Int =
+  let event = sample_event kind infinity rejection_outside;
+  let caption_errors = check (event_caption event) expected_caption;
+  let detail_errors = check (event_detail event) expected_detail;
+  caption_errors + detail_errors;
+;
+
+fn check_known_neighbor(kind: Int): Int =
+  let event = sample_event kind 42 rejection_outside;
+  check
+    (event_detail event)
+    "Proposed g = 10    h = 10    f = g + h = 20    Best known g: 42"
+  ;
+;
+
+fn check_rejection(reason: Int, expected: String): Int =
+  let event = sample_event event_kind_reject infinity reason;
+  check (event_caption event) expected;
+;
+
+fn check_reduction(allocated: Bool): Int =
+  let expected = if allocated then "123!"; else "abc";;
+  check (caption allocated) expected;
+;
+
+pub fn main(args: StringArray): Int =
+  let ordinary = "g = 10    h = 10    f = g + h = 20    (g: cost so far, h: estimate to goal)";
+  let proposed = "Proposed g = 10    h = 10    f = g + h = 20    Best known g: unreached";
+
+  let seed = check_event event_kind_seed "Queue the start (25, 3)." ordinary;
+  let selected =
+    check_event
+      event_kind_select
+      "Explore (25, 3): best priority in the queue."
+      ordinary
+    ;
+  let skipped =
+    check_event
+      event_kind_skip
+      "Skip stale queue entry for (25, 3)."
+      "Already processed; discard queue entry with f = 20"
+    ;
+  let considered = check_event event_kind_consider "Try neighbor (25, 3)?" proposed;
+  let accepted =
+    check_event
+      event_kind_accept
+      "Yes, a better route to (25, 3). Queue it."
+      proposed
+    ;
+  let rejected = check_event event_kind_reject "Reject (25, 3): outside the grid." proposed;
+  let finished =
+    check_event
+      event_kind_finish
+      "Finished checking neighbors of (25, 3)."
+      ordinary
+    ;
+  let found = check_event event_kind_found "Goal reached! Reveal the final path." ordinary;
+  let exhausted =
+    check_event
+      event_kind_exhausted
+      "No path found. The queue is empty. Close the window when done."
+      "All reachable candidates have been processed."
+    ;
+
+  let known_considered = check_known_neighbor event_kind_consider;
+  let known_accepted = check_known_neighbor event_kind_accept;
+  let known_rejected = check_known_neighbor event_kind_reject;
+
+  let wall = check_rejection rejection_wall "Reject (25, 3): there is a wall.";
+  let corner =
+    check_rejection
+      rejection_corner
+      "Reject (25, 3): the diagonal cuts a blocked corner."
+    ;
+  let closed = check_rejection rejection_closed "Reject (25, 3): already processed.";
+  let cost = check_rejection rejection_cost "Reject (25, 3): this route is no cheaper.";
+
+  let allocated = ar_str_len args > 0;
+  let first_reduction = check_reduction allocated;
+  let second_reduction = check_reduction (not allocated);
+
+  seed + selected + skipped + considered + accepted + rejected + finished + found + exhausted +
+    known_considered + known_accepted + known_rejected + wall + corner + closed + cost +
+    first_reduction + second_reduction;
+;

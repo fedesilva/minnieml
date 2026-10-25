@@ -1,0 +1,496 @@
+==================
+Declarations and function types
+==================
+pub let answer: Int = 42;
+type Transform = (Int -> Int) -> Int;
+struct Box { run: Int -> Int, size: Int };
+inline fn apply(f: Int -> Int, x: Int): Int = f x;;
+
+---
+
+(source_file
+  (let_declaration
+    (visibility)
+    (identifier)
+    (type_ascription
+      (type_identifier))
+    (expression
+      (integer)))
+  (type_declaration
+    (type_identifier)
+    (function_type
+      (grouped_type
+        (function_type
+          (type_identifier)
+          (type_identifier)))
+      (type_identifier)))
+  (struct_declaration
+    (type_identifier)
+    (fields
+      (field
+        (identifier)
+        (type_ascription
+          (function_type
+            (type_identifier)
+            (type_identifier))))
+      (field
+        (identifier)
+        (type_ascription
+          (type_identifier)))))
+  (function_declaration
+    (identifier)
+    (parameters
+      (parameter
+        (identifier)
+        (type_ascription
+          (function_type
+            (type_identifier)
+            (type_identifier))))
+      (parameter
+        (identifier)
+        (type_ascription
+          (type_identifier))))
+    (type_ascription
+      (type_identifier))
+    (body
+      (expression_statement
+        (expression
+          (identifier)
+          (identifier))))))
+
+==================
+Operators and decimal literals
+==================
+op +.(a: Float, b: Float): Float 60 left = @metal:tpl["fadd float %operand1, %operand2", mem=static];;
+let result = - .5 +. 1.25;
+let member = box.size;
+
+---
+
+(source_file
+  (operator_declaration
+    (operator)
+    (parameters
+      (parameter
+        (identifier)
+        (type_ascription
+          (type_identifier)))
+      (parameter
+        (identifier)
+        (type_ascription
+          (type_identifier))))
+    (type_ascription
+      (type_identifier))
+    (integer)
+    (associativity)
+    (body
+      (expression_statement
+        (expression
+          (native_expression
+            (native_template_attributes
+              (string)
+              (native_attribute
+                (identifier)
+                (identifier))))))))
+  (let_declaration
+    (identifier)
+    (expression
+      (operator)
+      (float)
+      (operator)
+      (float)))
+  (let_declaration
+    (identifier)
+    (expression
+      (selection
+        (identifier)
+        (identifier)))))
+
+==================
+Local functions and sequencing
+==================
+fn outer(x: Int): Int =
+  let first = x + 1;
+  fn ~inner(y: Int): Int = first + y;;
+  println "ready";
+  inner first;
+;
+
+---
+
+(source_file
+  (function_declaration
+    (identifier)
+    (parameters
+      (parameter
+        (identifier)
+        (type_ascription
+          (type_identifier))))
+    (type_ascription
+      (type_identifier))
+    (body
+      (local_binding
+        (identifier)
+        (expression
+          (identifier)
+          (operator)
+          (integer)))
+      (local_function
+        (identifier)
+        (parameters
+          (parameter
+            (identifier)
+            (type_ascription
+              (type_identifier))))
+        (type_ascription
+          (type_identifier))
+        (body
+          (expression_statement
+            (expression
+              (identifier)
+              (operator)
+              (identifier)))))
+      (expression_statement
+        (expression
+          (identifier)
+          (string)))
+      (expression_statement
+        (expression
+          (identifier)
+          (identifier))))))
+
+==================
+Lambdas and consuming parameters
+==================
+let f = ~{ ~s: String, x: Int -> print s; x };
+let g = { f: (Int -> Int), x: Int -> f x; };
+let thunk = { println "ready" };
+let nested = { x -> { y -> x + y } };
+
+---
+
+(source_file
+  (let_declaration
+    (identifier)
+    (expression
+      (lambda
+        (parameter
+          (identifier)
+          (type_ascription
+            (type_identifier)))
+        (parameter
+          (identifier)
+          (type_ascription
+            (type_identifier)))
+        (body
+          (expression_statement
+            (expression
+              (identifier)
+              (identifier))))
+        (expression
+          (identifier)))))
+  (let_declaration
+    (identifier)
+    (expression
+      (lambda
+        (parameter
+          (identifier)
+          (type_ascription
+            (grouped_type
+              (function_type
+                (type_identifier)
+                (type_identifier)))))
+        (parameter
+          (identifier)
+          (type_ascription
+            (type_identifier)))
+        (body
+          (expression_statement
+            (expression
+              (identifier)
+              (identifier)))))))
+  (let_declaration
+    (identifier)
+    (expression
+      (lambda
+        (expression
+          (identifier)
+          (string)))))
+  (let_declaration
+    (identifier)
+    (expression
+      (lambda
+        (parameter
+          (identifier))
+        (expression
+          (lambda
+            (parameter
+              (identifier))
+            (expression
+              (identifier)
+              (operator)
+              (identifier))))))))
+
+==================
+Conditional branches
+==================
+fn sign(x: Int): Int =
+ if x < 0 then -1; elif x == 0 then 0; else 1;
+;
+;
+fn emit(x: Int): Unit = if x > 0 then println "yes";;;
+
+---
+
+(source_file
+  (function_declaration
+    (identifier)
+    (parameters
+      (parameter
+        (identifier)
+        (type_ascription
+          (type_identifier))))
+    (type_ascription
+      (type_identifier))
+    (body
+      (expression_statement
+        (expression
+          (conditional
+            (expression
+              (identifier)
+              (operator)
+              (integer))
+            (body
+              (expression_statement
+                (expression
+                  (operator)
+                  (integer))))
+            (elif_clause
+              (expression
+                (identifier)
+                (operator)
+                (integer))
+              (body
+                (expression_statement
+                  (expression
+                    (integer)))))
+            (else_clause
+              (body
+                (expression_statement
+                  (expression
+                    (integer))))))))))
+  (function_declaration
+    (identifier)
+    (parameters
+      (parameter
+        (identifier)
+        (type_ascription
+          (type_identifier))))
+    (type_ascription
+      (type_identifier))
+    (body
+      (expression_statement
+        (expression
+          (conditional
+            (expression
+              (identifier)
+              (operator)
+              (integer))
+            (body
+              (expression_statement
+                (expression
+                  (identifier)
+                  (string))))))))))
+
+==================
+Native types and link header
+==================
+@link["z", "raylib"];
+type BytePtr = @metal:repr[t=*i8];
+type Data = @metal:repr[mem=heap,free=release] { ptr: BytePtr, len: Int };
+fn make(): Data = @metal:ffi[name="new_data",mem=alloc];;
+
+---
+
+(source_file
+  (link_directive
+    (string)
+    (string))
+  (type_declaration
+    (type_identifier)
+    (native_type
+      (native_attributes
+        (native_attribute
+          (identifier)
+          (native_pointer
+            (identifier))))))
+  (type_declaration
+    (type_identifier)
+    (native_type
+      (native_attributes
+        (native_attribute
+          (identifier)
+          (identifier))
+        (native_attribute
+          (identifier)
+          (identifier)))
+      (fields
+        (field
+          (identifier)
+          (type_ascription
+            (type_identifier)))
+        (field
+          (identifier)
+          (type_ascription
+            (type_identifier))))))
+  (function_declaration
+    (identifier)
+    (parameters)
+    (type_ascription
+      (type_identifier))
+    (body
+      (expression_statement
+        (expression
+          (native_expression
+            (native_attributes
+              (native_attribute
+                (identifier)
+                (string))
+              (native_attribute
+                (identifier)
+                (identifier)))))))))
+
+==================
+Nested comments and raw strings
+==================
+/** outer /* inner */ **/
+let text = "first
+second\0A"; // line
+/*/**/*/
+let next = true;
+
+---
+
+(source_file
+  (doc_comment)
+  (let_declaration
+    (identifier)
+    (expression
+      (string)))
+  (line_comment)
+  (doc_comment)
+  (let_declaration
+    (identifier)
+    (expression
+      (boolean))))
+
+==================
+Groups tuples holes and ascriptions
+==================
+let value = (1, 2);
+let next = (let x = 1; x + 2): Int;
+let hole: Int = ???;
+let partial = add _ 2;
+let field = (Box { x -> x } 1).size;
+
+---
+
+(source_file
+  (let_declaration
+    (identifier)
+    (expression
+      (tuple
+        (expression
+          (integer))
+        (expression
+          (integer)))))
+  (let_declaration
+    (identifier)
+    (expression
+      (group
+        (body
+          (local_binding
+            (identifier)
+            (expression
+              (integer))))
+        (expression
+          (identifier)
+          (operator)
+          (integer)))
+      (type_ascription
+        (type_identifier))))
+  (let_declaration
+    (identifier)
+    (type_ascription
+      (type_identifier))
+    (expression
+      (hole)))
+  (let_declaration
+    (identifier)
+    (expression
+      (identifier)
+      (placeholder)
+      (integer)))
+  (let_declaration
+    (identifier)
+    (expression
+      (selection
+        (group
+          (expression
+            (type_identifier)
+            (lambda
+              (parameter
+                (identifier))
+              (expression
+                (identifier)))
+            (integer)))
+        (identifier)))))
+
+==================
+Keyword boundaries
+==================
+let letter = false;
+let then_value = true;
+let inline_value = 2;
+let native_value = ();
+
+---
+
+(source_file
+  (let_declaration
+    (identifier)
+    (expression
+      (boolean)))
+  (let_declaration
+    (identifier)
+    (expression
+      (boolean)))
+  (let_declaration
+    (identifier)
+    (expression
+      (integer)))
+  (let_declaration
+    (identifier)
+    (expression
+      (unit))))
+
+==================
+Representation struct without attributes
+==================
+type Color = @metal:repr { r: Int8, g: Int8 };
+
+---
+
+(source_file
+  (type_declaration
+    (type_identifier)
+    (native_type
+      (fields
+        (field
+          (identifier)
+          (type_ascription
+            (type_identifier)))
+        (field
+          (identifier)
+          (type_ascription
+            (type_identifier)))))))

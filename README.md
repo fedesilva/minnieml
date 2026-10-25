@@ -1,8 +1,7 @@
 # MinnieML
 
 A statically typed, functional language, with an ML inspired syntax, 
-a rich type system, great ergonomics, 
-modern tooling and strong mechanical sympathy.
+a rich type system, great ergonomics, modern tooling and strong mechanical sympathy.
 
 ## Why
 
@@ -53,7 +52,7 @@ A more complex example:
 This examples might not be possible to compile currently, depending on when you read this.
 
 ```rust
-enum Maybe 'T =
+union Maybe 'T =
   | One 'T
   | None
 ;
@@ -108,5 +107,3 @@ let pf = hasPet fede;   // true
 // does not compile
 // let pz = hasPet zur
 ```
-
-

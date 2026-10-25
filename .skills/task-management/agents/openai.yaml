@@ -1,0 +1,6 @@
+interface:
+  display_name: "Task Management"
+  short_description: "Index for task lifecycle skills"
+
+policy:
+  allow_implicit_invocation: false

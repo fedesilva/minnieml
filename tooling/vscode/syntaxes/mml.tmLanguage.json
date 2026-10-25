@@ -142,7 +142,7 @@
             "patterns": [
                 {
                     "name": "entity.name.tag.mml",
-                    "match": "@native"
+                    "match": "@metal:(repr|ffi|tpl)\\b"
                 }
             ]
         }

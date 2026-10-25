@@ -1,0 +1,3 @@
+interface:
+  display_name: "Close Subtask"
+  short_description: "Verify, close, and commit one subtask"

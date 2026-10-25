@@ -1,0 +1,21 @@
+// Focused sample for inspecting optimized closure cleanup IR.
+//
+// The first call passes a non-capturing function value with a null environment.
+// The second call passes a move-capturing closure with a heap environment.
+
+fn consume(~f: Int -> Int, x: Int): Int = f x;;
+
+fn make_adder(base: Int): Int -> Int =
+  ~{ x: Int -> x + base; };
+;
+
+pub fn main(args: StringArray): Unit =
+  let seed = (ar_str_len args) + 10;
+
+  let no_env = consume { x: Int -> x + 1; } seed;
+
+  let add_seed = make_adder seed;
+  let with_env = consume add_seed seed;
+
+  println (int_to_str (no_env + with_env));
+;

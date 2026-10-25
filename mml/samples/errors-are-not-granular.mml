@@ -1,0 +1,16 @@
+// This file failes parsing but the compiler can't point to the exact location of the error.\
+// Keep it around until we reach a state where the compiler can point to it.
+// After that use it as a showcase for the compiler's error handling prowess.
+
+fn lengths(a: String, b: String): Int = a.length + b.length;;
+fn take(~s: String): Int = s.length;;
+fn apply(f: Int -> Int, n: Int): Int = f n;;
+
+pub fn main(): Unit =
+  let x = int_to_str 123;
+  println (int_to_str (lengths x x));
+  println (int_to_str (lengths x (int_to_str 456)));
+  let y = int_to_str 789;
+  println (int_to_str (apply ~{ n: Int -> y.length + n; } 1));
+  println (int_to_str (take x));
+;

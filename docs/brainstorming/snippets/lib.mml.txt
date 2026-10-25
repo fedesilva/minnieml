@@ -1,11 +1,7 @@
 // The following types are a sample of the standard library plus some use examples
-// Maybe could be a type def like: `type Maybe 'T = 'T | ()`
-// But enums are more flexible - with an enum when you need say One x,
-// which inference precise as can be for x.
-// You know it has type Maybe 'T for whatever 'T.
-// With a union type it will be frequently inferred as either unit or the concrete type
-// See usage below
 
+// Represents an optional value
+// You can have maybe one value or none.
 enum Maybe 'T =
   | One: 'T
   | None

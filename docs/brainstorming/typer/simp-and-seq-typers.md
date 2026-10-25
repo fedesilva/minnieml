@@ -1,4 +1,4 @@
-# Two-phase type inference: SimpTyper and SeqTyper
+# SimpSeq: Two-phase type inference: SimpTyper and SeqTyper
 
 ## Motivation
 

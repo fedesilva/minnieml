@@ -132,7 +132,35 @@ def prettyPrintTerm(
         s"${indentStr}  fn:\n$fnStr\n" +
         s"${indentStr}  arg:\n$argStr"
 
-    case Lambda(sp, params, body, captures, typeSpec, typeAsc, meta) =>
+    case yielded: YieldOwnership =>
+      val spanStr = if showSourceSpans then printSourceOrigin(yielded.source) else ""
+      val typeStr =
+        if showTypes then s" typeSpec=${prettyPrintTypeSpec(yielded.typeSpec)}" else ""
+      val valueStr = prettyPrintExpr(yielded.value, indent + 2, showSourceSpans, showTypes)
+      val ownsStr  = prettyPrintExpr(yielded.owns, indent + 2, showSourceSpans, showTypes)
+      s"${indentStr}YieldOwnership $spanStr$typeStr\n" +
+        s"${indentStr}  value:\n$valueStr\n" +
+        s"${indentStr}  owns:\n$ownsStr"
+
+    case binding: BindOwnership =>
+      val spanStr = if showSourceSpans then printSourceOrigin(binding.source) else ""
+      val typeStr =
+        if showTypes then s" typeSpec=${prettyPrintTypeSpec(binding.typeSpec)}" else ""
+      val paramsStr = List(binding.valueParam, binding.witnessParam)
+        .map { param =>
+          s"${indentStr}    ${param.name}: ${prettyPrintTypeSpec(param.typeSpec)}" +
+            s" [${param.id.getOrElse("None")}]"
+        }
+        .mkString("\n")
+      val initializerStr =
+        prettyPrintExpr(binding.initializer, indent + 2, showSourceSpans, showTypes)
+      val bodyStr = prettyPrintExpr(binding.body, indent + 2, showSourceSpans, showTypes)
+      s"${indentStr}BindOwnership $spanStr$typeStr\n" +
+        s"${indentStr}  params:\n$paramsStr\n" +
+        s"${indentStr}  initializer:\n$initializerStr\n" +
+        s"${indentStr}  body:\n$bodyStr"
+
+    case Lambda(sp, params, body, captures, typeSpec, typeAsc, meta, isMove) =>
       val spanStr = if showSourceSpans then printSourceOrigin(sp) else ""
       val typeStr =
         if showTypes then
@@ -148,11 +176,26 @@ def prettyPrintTerm(
         else
           s"${indentStr}  params:\n" +
             params
-              .map(p => s"${indentStr}    ${p.name}: ${prettyPrintTypeSpec(p.typeSpec)}")
+              .map { p =>
+                val consumingPrefix = if p.consuming then "~" else ""
+                s"${indentStr}    $consumingPrefix${p.name}: ${prettyPrintTypeSpec(p.typeSpec)}"
+              }
               .mkString("\n")
       val bodyStr = prettyPrintExpr(body, indent + 2, showSourceSpans, showTypes)
+      val capturesStr = captures.map { capture =>
+        val ownership = capture match
+          case Capture.CapturedConditional(_, witness, cloneFnId) =>
+            s" witness=${witness.resolvedId.getOrElse(witness.name)} clone=$cloneFnId"
+          case Capture.CapturedLiteral(_, cloneFnId) => s" clone=$cloneFnId"
+          case Capture.OwnedClosure(_, targetId) => s" destructor=$targetId"
+          case _ => ""
+        val identity = capture.ref.resolvedId.getOrElse(capture.ref.name)
+        s"\n${indentStr}    ${capture.productPrefix} $identity$ownership"
+      }.mkString
+      val captureDetails =
+        if captures.isEmpty then "" else s"\n${indentStr}  captures:$capturesStr"
       s"${indentStr}Lambda $spanStr$typeStr$metaStr\n" +
-        s"$paramsStr\n" +
+        s"$paramsStr$captureDetails\n" +
         s"${indentStr}  body:\n$bodyStr"
 
     // Literal values
@@ -182,23 +225,33 @@ def prettyPrintTerm(
         if showTypes then s"\n${indentStr}  typeSpec: ${prettyPrintTypeSpec(typeSpec)}" else ""
       s"${indentStr}DataConstructor $spanStr$typeStr"
 
-    case DataDestructor(sp, typeSpec) =>
-      val spanStr = if showSourceSpans then printSourceOrigin(sp) else ""
-      val typeStr =
-        if showTypes then s"\n${indentStr}  typeSpec: ${prettyPrintTypeSpec(typeSpec)}" else ""
-      s"${indentStr}DataDestructor $spanStr$typeStr"
+    case d: Destruction =>
+      val details = d match
+        case c: DestroyClosure => s" target=${c.targetId}"
+        case c: DisarmClosureEnvironment => s" target=${c.targetId}"
+        case e: DestroyClosureEnvironment =>
+          s" layout=${e.layoutId} fields=${e.fields.mkString("[", ", ", "]")}"
+        case _: DispatchClosureDestructor => ""
+      val operand    = prettyPrintTerm(d.operand, indent + 1, showSourceSpans, showTypes)
+      val resultType = if showTypes then s" typeSpec=${prettyPrintTypeSpec(d.typeSpec)}" else ""
+      s"$indentStr${d.getClass.getSimpleName}$details$resultType\n$operand"
 
-    case NativeImpl(sp, typeSpec, typeAsc, _, memEffect, nativeSymbol) =>
+    case native @ NativeImpl(sp, typeSpec, typeAsc, nativeTpl, memEffect, nativeSymbol) =>
       val spanStr = if showSourceSpans then printSourceOrigin(sp) else ""
       val typeStr =
         if showTypes then
           s"\n${indentStr}  typeSpec: ${prettyPrintTypeSpec(typeSpec)}\n" +
             s"${indentStr}  typeAsc: ${prettyPrintTypeSpec(typeAsc)}"
         else ""
-      val memStr  = memEffect.map(e => s" [mem=${e.toString.toLowerCase}]").getOrElse("")
-      val nameStr = nativeSymbol.map(n => s" [name=\"$n\"]").getOrElse("")
+      val attributes = List(
+        nativeTpl.map(t => s"\"$t\""),
+        memEffect.map(e => s"mem=${e.toString.toLowerCase}"),
+        nativeSymbol.map(n => s"name=\"$n\"")
+      ).flatten
+      val annotation = native.annotationName
+      val attrsStr   = if attributes.isEmpty then "" else attributes.mkString("[", ", ", "]")
 
-      s"${indentStr}NativeImpl$memStr$nameStr $spanStr$typeStr"
+      s"$indentStr$annotation$attrsStr $spanStr$typeStr"
 
     case TermError(sp, message, failedCode) =>
       val spanStr = if showSourceSpans then printSourceOrigin(sp) else ""

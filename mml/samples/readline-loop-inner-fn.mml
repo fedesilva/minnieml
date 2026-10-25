@@ -1,0 +1,19 @@
+// Recursive inner function with explicit return type.
+
+pub fn main() =
+
+  let a = "fede";
+  let b = a;
+
+  println a;
+
+  fn loop(): Unit =
+    println "Type a number:";
+    let n = str_to_int (readline());
+    println ("Number is: " ++ (int_to_str n));
+    loop();
+  ;
+
+  loop();
+
+;

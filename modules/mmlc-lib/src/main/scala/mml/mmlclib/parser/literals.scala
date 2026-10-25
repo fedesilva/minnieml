@@ -6,6 +6,15 @@ import mml.mmlclib.ast.*
 
 import MmlWhitespace.*
 
+/** Parses numeric literals.
+  *
+  * Examples:
+  * {{{
+  * 42
+  * 3.14
+  * .5
+  * }}}
+  */
 private[parser] def numericLitP(info: SourceInfo)(using P[Any]): P[LiteralValue] =
   import fastparse.NoWhitespace.*
   P(
@@ -17,28 +26,56 @@ private[parser] def numericLitP(info: SourceInfo)(using P[Any]): P[LiteralValue]
         case (start, s, end, _) =>
           LiteralFloat(span(start, end), s.toFloat)
       } |
-      P(spP(info) ~ CharIn("0-9").rep(1).! ~ spNoWsP(info) ~ spP(info)).map {
+      P(spP(info) ~ CharIn("0-9").rep(1).! ~ spNoWsP(info) ~ spP(info)).flatMap {
         case (start, s, end, _) =>
-          LiteralInt(span(start, end), s.toInt)
+          s.toLongOption.filter(_ <= 2147483648L) match
+            case Some(value) => Pass(LiteralInt(span(start, end), value))
+            case None => Fail
       }
   )
 
+/** Parses string literals enclosed in double quotes.
+  *
+  * Example:
+  * {{{
+  * "hola"
+  * }}}
+  */
 private[parser] def litStringP(info: SourceInfo)(using P[Any]): P[LiteralString] =
   import fastparse.NoWhitespace.*
   P(spP(info) ~ "\"" ~ CharsWhile(_ != '"', 0).! ~ "\"" ~ spNoWsP(info) ~ spP(info))
     .map { case (start, s, end, _) => LiteralString(span(start, end), s) }
 
+/** Parses boolean literals.
+  *
+  * Examples:
+  * {{{
+  * true
+  * false
+  * }}}
+  */
 private[parser] def litBoolP(info: SourceInfo)(using P[Any]): P[LiteralBool] =
   P(spP(info) ~ ("true" | "false").! ~ spNoWsP(info) ~ spP(info))
     .map { (start, b, end, _) =>
       LiteralBool(span(start, end), b.toBoolean)
     }
 
+/** Parses the unit literal `()`. */
 private[parser] def litUnitP(info: SourceInfo)(using P[Any]): P[LiteralUnit] =
   P(spP(info) ~ "()" ~ spNoWsP(info) ~ spP(info)).map { case (start, end, _) =>
     LiteralUnit(span(start, end))
   }
 
+/** Parses a block doc comment that attaches to the following declaration or parameter.
+  *
+  * Example:
+  * {{{
+  * /* Adds one to its input. */
+  * fn inc(x: Int): Int =
+  *   x + 1;
+  * ;
+  * }}}
+  */
 private[parser] def docCommentP[$: P](info: SourceInfo): P[Option[DocComment]] =
   import fastparse.NoWhitespace.*
 
