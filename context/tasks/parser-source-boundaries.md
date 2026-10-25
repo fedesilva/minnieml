@@ -3,7 +3,7 @@
 ## Metadata
 
 - **Owner:** Author
-- **Status:** ready_for_signoff
+- **Status:** complete
 - **Kind:** CORRECTNESS
 - **Priority:** HIGH
 - **Created:** 2026-10-25
@@ -11,13 +11,13 @@
 
 ## Execution Checklist
 
-1. [ ] **ready_for_signoff** — Centralize exact token capture and document the source-boundary contract.
-2. [ ] **ready_for_signoff** — Migrate token, name, and delimiter boundaries throughout the parser.
-3. [ ] **ready_for_signoff** — Compose enclosing spans from owned syntax, carrying annotation endpoints.
-4. [ ] **ready_for_signoff** — Separate successful syntax endpoints from recovery scanner positions.
-5. [ ] **ready_for_signoff** — Add parser, CLI, and LSP regressions and update affected span assertions.
-6. [ ] **ready_for_signoff** — Compiler gates, measurements, QA, and independent correction review pass.
-7. [ ] **ready_for_signoff** — Code tour and verification evidence prepared for Author review.
+1. [x] **complete** — Centralize exact token capture and document the source-boundary contract.
+2. [x] **complete** — Migrate token, name, and delimiter boundaries throughout the parser.
+3. [x] **complete** — Compose enclosing spans from owned syntax, carrying annotation endpoints.
+4. [x] **complete** — Separate successful syntax endpoints from recovery scanner positions.
+5. [x] **complete** — Add parser, CLI, and LSP regressions and update affected span assertions.
+6. [x] **complete** — Compiler gates, measurements, QA, and independent correction review pass.
+7. [x] **complete** — Code tour and verification evidence prepared for Author review.
 
 ## Tags
 
@@ -65,7 +65,7 @@ is narrower. Recovery retains exact malformed text and makes the same progress.
 This follows
 [Error recovery and parser backtracking](error-recovery-and-parser-backtracking.md).
 That task's verified implementation and semantic performance correction provide the starting
-point. Its continuing documentation review and deferred formal closure do not block this plan.
+point. Both implementations and their documentation are accepted.
 
 ## Plan (Approval Gate)
 
@@ -263,7 +263,7 @@ performance, or cross-target claim follows from that one fixture.
   builds establish compatibility, not performance.
 - Complete repository QA enforcement and independent code review. Address confirmed findings
   and rerun affected checks; record actual outcomes in versioned evidence.
-- Provide a code tour and leave this task `ready_for_signoff` until accepted.
+- Code tour and verification evidence are accepted.
 
 ## Risks / Notes
 
@@ -275,22 +275,20 @@ performance, or cross-target claim follows from that one fixture.
 
 ## Signoff
 
-- Workstream signoff: pending.
-- Tracked item completion: pending.
-- Commit authorization: granted for approved parser implementation and verification on the
-  target branch. Push is not authorized.
+- Workstream and documentation signoff: accepted on 2026-10-25.
+- Tracked item completion: accepted on 2026-10-25; all seven execution steps complete.
+- Delivery: squash commit `9d4f4740` on `main` includes the implementation and verification records.
+- Closure bookkeeping: authorized as an amendment to the latest commit; no additional push.
 
 ## Task Working Memory
 
-- Source-boundary implementation on `dev/parser-and-error-improvements`.
-- The approved parser migration and regressions are implemented. Successful syntax endpoints,
-  consumed annotations, and recovery scanner positions are separate. Formatting, lint, the full
-  suite, smoke, publication, benchmark builds, and sanitizer fixtures pass. A clean rebuild
-  after the aborted rebase also passes, as do three replacement parser measurement forks.
-  The independently verified annotation reference-query regression is corrected; the repeated
-  full suite passes 1,946 library and nine CLI tests, smoke passes 8/8, and the compiler is
-  republished. Fresh narrow review and all three dedicated checks pass with no actionable
-  findings. Author review/signoff is the next action.
-- Preserve existing sample edits and unrelated tracking changes. The error-recovery task
-  stays open for documentation review; its implementation handoff is accepted.
-- Local handoff commit is authorized; Author signoff and formal task completion are pending.
+The source-boundary implementation is complete and delivered to `main` in `9d4f4740`.
+Successful syntax endpoints, consumed annotations, and recovery scanner positions are separate.
+The annotation reference-query regression is corrected. Recorded final verification passes
+1,946 library and nine CLI tests, smoke 8/8, 37 benchmark builds, and 52/52 sanitizer fixtures;
+three parser measurement forks and independent correction reviews pass. The compiler is
+published locally. Coverage and platform limits remain documented under Verification.
+
+Closure changes task bookkeeping only. Compiler sources and tests are unchanged from the
+verified delivery; no compiler gates are rerun for closure. Author signoff covers all steps.
+The related [error-recovery task](error-recovery-and-parser-backtracking.md) is also complete.

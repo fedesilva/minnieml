@@ -3,7 +3,7 @@
 ## Metadata
 
 - **Owner:** Author
-- **Status:** ready_for_signoff
+- **Status:** complete
 - **Kind:** improvement
 - **Priority:** HIGH
 - **Created:** 2026-09-25
@@ -11,36 +11,35 @@
 
 ## Execution Checklist
 
-Implementation and compiler verification are finished. The implementation handoff is accepted;
-formal task and checklist status stay open for continuing Author documentation review.
-Local commits on the target branch are authorized. Push is not authorized.
+Implementation, compiler verification, and documentation are accepted. All twelve steps are
+complete; the implementation is delivered to `main` in squash commit `9d4f4740`.
 
 1. [x] **complete** — Rename `TermError` to `ParseTermError`, including its diagnostic
    wrapper, consumers, tests, and current documentation; preserve behavior.
-2. [ ] **ready_for_signoff** — [Define diagnostic causes](#step-2-diagnostic-cause-contract): retain
+2. [x] **complete** — [Define diagnostic causes](#step-2-diagnostic-cause-contract): retain
    the specific source error and location, support multiple causes, and classify ownership/PAP
    suppression versus unavailable-value checks.
-3. [ ] **ready_for_signoff** — Split `InvalidType` into `UndefinedTypeError` and `AmbiguousTypeError`;
+3. [x] **complete** — Split `InvalidType` into `UndefinedTypeError` and `AmbiguousTypeError`;
    preserve the original reference, ambiguous candidates, and source diagnostic relationship.
-4. [ ] **ready_for_signoff** — Preserve local normalization results: retain successful sibling and
+4. [x] **complete** — Preserve local normalization results: retain successful sibling and
    continuation rewrites when another expression fails, with stable IDs, spans, and indexes.
-5. [ ] **ready_for_signoff** — Propagate causes through semantic analysis, bindings, and aliases;
+5. [x] **complete** — Propagate causes through semantic analysis, bindings, and aliases;
    reconcile ownership/PAP suppression, suppress proven consequences in CLI/LSP presentation,
    and preserve independent errors and the codegen gate.
-6. [ ] **ready_for_signoff** — Add `ParseTypeError` and downstream handling, including ingest reporting
+6. [x] **complete** — Add `ParseTypeError` and downstream handling, including ingest reporting
    from type positions; preserve the distinction between missing annotations and malformed ones.
-7. [ ] **ready_for_signoff** — Implement shared context-aware recovery and apply it to type ascriptions:
+7. [x] **complete** — Implement shared context-aware recovery and apply it to type ascriptions:
    preserve complete type syntax, enclosing delimiters, strings/comments, nesting, and progress.
-8. [ ] **ready_for_signoff** — Add local recovery and commitment to local/member `let` and `fn` forms;
+8. [x] **complete** — Add local recovery and commitment to local/member `let` and `fn` forms;
    preserve bindings, lambda/application structure, and independent continuations.
-9. [ ] **ready_for_signoff** — Factor conditional prefixes and add recovery/commitment for `if`/`elif`/`else`
+9. [x] **complete** — Factor conditional prefixes and add recovery/commitment for `if`/`elif`/`else`
    in both expression contexts; preserve valid no-`else` forms and check lambda-cut interactions.
-10. [ ] **ready_for_signoff** — Integrated verification, parser performance comparisons, compiler
+10. [x] **complete** — Integrated verification, parser performance comparisons, compiler
     gates, and final correction review pass. Semantic performance evidence is in step 11.
-11. [ ] **ready_for_signoff** — Correct the semantic performance regression while preserving
+11. [x] **complete** — Correct the semantic performance regression while preserving
     diagnostic causes and unavailable-value behavior. Paired measurements, compiler gates,
     and independent correction review pass.
-12. [ ] **ready_for_signoff** — Explain the complete implementation in
+12. [x] **complete** — Explain the complete implementation in
     [Keeping useful compiler results after an error](../../docs/articles/2026-10/2026-10-25-error-recovery-and-diagnostic-causes.md),
     with Scala/MML walkthroughs, ASCII diagrams, and qualified performance evidence.
 
@@ -154,8 +153,8 @@ no compiler execution or performance measurement is included in this reconciliat
 ## Agreed error model
 
 These decisions define the implemented behavior. The bounded plans below specify the cause
-and parser contracts. Formal checklist signoff is open alongside Author documentation review;
-the source baseline above retains its original names.
+and parser contracts. All execution steps and documentation are signed off; the source
+baseline above retains its original names.
 
 - Add `ParseTypeError` for missing or malformed type syntax. Rename `TermError` to
   `ParseTermError`, including diagnostic wrappers, consumers, tests, and documentation.
@@ -213,8 +212,8 @@ prepared per stage, using the [agreed error model](#agreed-error-model) as the c
 
 Approval covers the diagnostic foundation, accumulating resolvers, failed-result handling,
 propagation, presentation suppression, parser stages 6–10, and semantic performance correction.
-Implementation, chunk reviews, and compiler gates are finished. Local commits are authorized;
-formal task closure is deferred during documentation review. Push is not authorized.
+Implementation, chunk reviews, compiler gates, and documentation review are complete.
+Delivery to `main` is recorded under Signoff.
 
 Step 1 preserves fields, constructors, inheritance, and absent type information. Use
 the new names directly, without compatibility aliases. Preserve CLI/LSP messages,
@@ -387,7 +386,7 @@ record the causal connection. Do not broaden the work to unrelated parser featur
   codegen gate. Cover missing/absent annotations, dangling arrows, nested groups, multiple independent
   errors, exact spans, sibling retention, boundary/EOF progress, and unchanged valid controls.
 - Run formatting, lint, focused/full tests, applicable compiler gates, QA, and independent review.
-  Commit the verified chunk locally, retaining whole-branch Author signoff as pending.
+  Commit the verified chunk locally; whole-branch signoff is recorded under Signoff.
 
 #### Step 8: binding and function recovery chunk
 
@@ -485,9 +484,9 @@ with no actionable findings. All required reports are complete; no fallback is u
 Reviewers inspect source, assertions, and recorded evidence without rerunning compiler gates.
 
 No compiler source or test changes accompany this documentation handoff. The implementation
-verification below applies unchanged. Focused whole-record tracking review reconciles the
-accepted implementation handoff, open documentation review, deferred formal closure, and
-next source-boundary plan. `git diff --check` passes.
+verification below applies unchanged. At this historical handoff checkpoint, tracking review
+covered the accepted implementation and then-open documentation review and source-boundary
+plan. `git diff --check` passed. Final acceptance is recorded under Signoff.
 
 ### Semantic performance baseline: regression confirmed
 
@@ -584,7 +583,8 @@ Reviewed source identities remain unchanged through handoff.
 
 Whole-record tracking review reconciles metadata, execution status, verification, signoff,
 working memory, and tracker focus. Local link paths resolve and `git diff --check` passes.
-The parent task and whole-branch signoff remain open.
+At that verification checkpoint, parent-task and whole-branch signoff were still open;
+final acceptance is recorded under Signoff.
 
 ### Step 1: term parse-error rename
 
@@ -1037,7 +1037,8 @@ Verified on arm64 macOS with GraalVM Java 25.0.4.1 and Homebrew Clang 23.1.1.
 - Root QA finds no remaining rule violations. All 57 local links in the six affected records
   resolve; inspected anchors pass. One existing anchor in the unrelated parenthesized-lambda
   task is excluded from content inspection. `git diff --check` passes. Whole-record tracking
-  review confirms implemented corrections, completed gates and reviews, and pending Author signoff.
+  review confirmed implemented corrections and completed gates and reviews; Author signoff
+  was pending at that checkpoint and is recorded under Signoff.
 - Fresh narrow primary review and three separate fresh QA/style, test-quality, and readability
   checks complete with no actionable findings. Root audited every actual completed report and
   confirmed the reviewed source identities stayed unchanged. No candidate required an atomic
@@ -1048,9 +1049,9 @@ Verified on arm64 macOS with GraalVM Java 25.0.4.1 and Homebrew Clang 23.1.1.
   Native checks cover executed arm64 macOS paths, not every ownership path or other targets.
   The tested and reviewed correction files are committed unchanged as `caee5d76` and `ebe47531`.
 - Final whole-record tracking review reconciles metadata, all execution steps, verification,
-  signoff, working memory, and the existing tracker entry. Steps 2–10 are ready for whole-branch
-  Author review; only step 1 is signed off. The parent remains open. Durable evidence is contained
-  in this task and the versioned parser report, with no required temporary or machine-local files.
+  signoff, working memory, and the existing tracker entry at that checkpoint. Steps 2–10 were
+  ready for whole-branch review; final acceptance is recorded under Signoff. Durable evidence
+  is contained in this task and the versioned parser report, with no required temporary or machine-local files.
 
 ### Historical recovery example
 
@@ -1113,10 +1114,12 @@ synchronization boundaries or EOF.
 
 - Implementation handoff: accepted; implementation and verification finished.
 - Step 1 signoff: accepted on 2026-10-25.
-- Tracked item completion: deferred; retain `ready_for_signoff` and the open checklist.
-- Documentation review: open for Author feedback and related improvements.
-- Commit authorization: completed implementation, article, and handoff records on the target branch;
-  no push.
+- Workstream and documentation signoff: accepted on 2026-10-25.
+- Tracked item completion: accepted on 2026-10-25; all twelve execution steps complete.
+- Delivery: squash commit `9d4f4740` on `main` contains the implementation and documentation.
+- Closure bookkeeping: authorized as an amendment to the latest commit; no additional push.
+- The following implementation commits identify historical development checkpoints; the
+  delivered source and verification evidence are retained in `9d4f4740`.
 - Step 1 commit: `931c6ff`
 - Cause implementation commit: `a2c9832`
 - Parser foundation commit: `4ed9c222`
@@ -1129,25 +1132,22 @@ synchronization boundaries or EOF.
 
 ## Task Working Memory
 
-Compiler implementation and verification are finished on `dev/parser-and-error-improvements`.
-The implementation handoff is accepted; formal task status stays `ready_for_signoff` while the
-Author reviews the article and requests related documentation improvements. Step 1 is signed off;
-the remaining checklist status is intentionally open.
+Diagnostic causes, parser recovery, the semantic performance correction, and the explanatory
+article are complete and accepted. Squash commit `9d4f4740` delivers them to `main` together
+with the accepted [source-boundary correction](parser-source-boundaries.md).
 
-The installed performance correction reuses immutable type and healthy-binding summaries,
-with conservative recomputation for failed/incomplete evidence. Five paired fresh-JVM
-measurements on `astar3_animated.mml` put the whole compile at 2,048.92 ms versus main's
+The performance correction reuses immutable type and healthy-binding summaries, with
+conservative recomputation for failed/incomplete evidence. Five paired fresh-JVM measurements
+on `astar3_animated.mml` put the whole compile at 2,048.92 ms versus the measured main baseline's
 2,088.29 ms, and type checking at 145.93 ms versus 41.30 ms. These local measurements are
 not a general performance guarantee.
 
-Compiler gates pass 1,864 library and nine CLI tests, smoke 8/8, 37 benchmark builds, and
-memory 52/52 ASan+LSan. Independent correction review and its three dedicated checks have
-no actionable findings. The article describes current behavior through code and worked
-examples; compiler-design links to it. A separate known documentation correction is the
-numeric-literal example under compiler-design's Expression parsing strategy: its `Ref`
-nodes should be `LiteralInt`.
+Recorded verification for this task passes 1,864 library and nine CLI tests, smoke 8/8,
+37 benchmark builds, and memory 52/52 ASan+LSan. Independent correction and documentation
+reviews report no actionable findings. The subsequent source-boundary task records the final
+combined suite of 1,946 library and nine CLI tests and repeated smoke checks.
 
-The [source-boundary correction](parser-source-boundaries.md) is verified and ready for Author
-review; article review is independent of its signoff.
-Preserve unrelated sample and tracking edits. Local handoff commits are authorized; push
-and formal task completion are not. Claude coordination is cancelled.
+Closure changes task bookkeeping only; compiler gates are not rerun. All execution steps
+and documentation have Author signoff. The numeric-literal example under compiler-design's
+Expression parsing strategy has a separate known documentation issue: its `Ref` nodes should
+be `LiteralInt`. That correction remains outside this completed task's scope.

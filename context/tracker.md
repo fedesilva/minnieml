@@ -20,20 +20,6 @@ Narrow fixes that do not address the underlying problem are to be shunned.
 
 ## Active Tasks
 
-### Error recovery and parser backtracking
-
-- **Tracker:** [Error recovery and parser backtracking](tasks/error-recovery-and-parser-backtracking.md)
-- **Status:** ready_for_signoff
-- **Current focus:** Implementation and verification finished; handoff accepted. Continuing Author
-  documentation review and related improvements; formal task closure deferred.
-
-### Fix parser source boundaries
-
-- **Tracker:** [Fix parser source boundaries](tasks/parser-source-boundaries.md)
-- **Status:** ready_for_signoff
-- **Current focus:** Author review of source-boundary correction. Compiler gates, parser measurements,
-  and independent review pass; the verified compiler is published locally.
-
 ### Unify type-property alias resolution
 
 - **Tracker:** [Unify type-property alias resolution](tasks/type-property-alias-resolution.md)
