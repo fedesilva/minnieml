@@ -1,0 +1,20 @@
+{
+  "name": "mml-llvm-ir",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "build": "esbuild src/server.ts --bundle --platform=node --format=cjs --outfile=out/server.cjs",
+    "check": "tsc --noEmit",
+    "test": "npm run check && npm run build && esbuild test/index.test.ts --bundle --platform=node --format=cjs --outfile=out/index.test.cjs && node --test out/index.test.cjs test/server.test.cjs"
+  },
+  "dependencies": {
+    "vscode-languageserver": "9.0.1",
+    "vscode-languageserver-textdocument": "1.0.12",
+    "vscode-languageserver-types": "3.17.5"
+  },
+  "devDependencies": {
+    "@types/node": "^20.10.0",
+    "esbuild": "^0.25.0",
+    "typescript": "^5.3.0"
+  }
+}

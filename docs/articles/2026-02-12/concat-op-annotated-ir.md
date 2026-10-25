@@ -9,7 +9,7 @@ Allocates space **on the stack** (not the heap). Returns a pointer to that space
 It's like a local variable declaration in C. The memory is automatically freed
 when the function returns.
 
-```llvm
+```ll
 %4 = alloca %struct.String    ; allocate sizeof(String) bytes on the stack
                               ; %4 is now a String* (pointer to that stack slot)
 ```
@@ -17,7 +17,7 @@ when the function returns.
 ### `getelementptr` (GEP)
 Computes a pointer offset **without reading or writing memory**. It's pure pointer arithmetic. The arguments are:
 
-```
+```ll
 getelementptr <base_type>, <ptr_type> <ptr>, <index0>, <index1>, ...
 ```
 

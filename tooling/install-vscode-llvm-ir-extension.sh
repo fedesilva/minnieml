@@ -17,8 +17,9 @@ VSIX_FILE="${EXTENSION_NAME}-${EXTENSION_VERSION}.vsix"
 echo "--- Installing/Updating LLVM IR VS Code Extension ($EXTENSION_NAME v$EXTENSION_VERSION) ---"
 
 echo "[1/5] Installing dependencies and bundling..."
+npm ci --prefix "$SCRIPT_DIR/llvm-ir"
 cd "$EXTENSION_DIR"
-npm install
+npm ci
 npm run build
 cd "$SCRIPT_DIR"
 

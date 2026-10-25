@@ -4,6 +4,10 @@ Durable product changes belong here. Current task state belongs in task files.
 
 ## 2026-10-25
 
+- Add LLVM IR navigation for Zed with syntax highlighting, outlines, definitions, hover,
+  and references. Share document-local symbol indexing with VS Code, correct parameter
+  positions and comment/string reference scanning, and provide a local installer.
+
 - Remove freezes from native aggregate argument packing so linked literal string operations
   can fold into direct stores. Add a macOS FizzBuzz resource-timing target for all eight variants.
 
