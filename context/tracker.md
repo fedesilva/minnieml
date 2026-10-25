@@ -20,6 +20,14 @@ Narrow fixes that do not address the underlaying problem are to be shunned.
 
 ## Active Tasks
 
+### Error recovery and parser backtracking
+
+- **Tracker:** [Error recovery and parser backtracking](tasks/error-recovery-and-parser-backtracking.md)
+- **Status:** planned
+- **Current focus:** Next workstream after lambda completion and any necessary correctness
+  fixes. Preserve valid expression structure and causal diagnostics, then introduce parser
+  commitment with local recovery using the linked design.
+
 ### Unify type-property alias resolution
 
 - **Tracker:** [Unify type-property alias resolution](tasks/type-property-alias-resolution.md)
@@ -37,15 +45,6 @@ Narrow fixes that do not address the underlaying problem are to be shunned.
 
 Note: We need a separate `Static` mode, which is a specialized `Global` that can't be mutated.
   Probably not for now since we don't track mutability or mutation.
-
-
-### Error recovery and parser backtracking
-
-- **Tracker:** [Error recovery and parser backtracking](tasks/error-recovery-and-parser-backtracking.md)
-- **Status:** planned
-- **Current focus:** Next workstream after lambda completion and any necessary correctness
-  fixes. Preserve valid expression structure and causal diagnostics, then introduce parser
-  commitment with local recovery using the linked design.
 
 ### Module naming
 
