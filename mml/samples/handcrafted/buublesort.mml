@@ -1,0 +1,42 @@
+
+fn bubble_sort(arr: IntArray): Unit =
+
+  fn pass(arr: IntArray, i: Int, swapped: Bool): Bool =
+    if i >= (ar_int_len arr) -1 then
+      swapped;
+    else
+      let left = ar_int_get arr i;
+      let right = ar_int_get arr (i+1);
+      if left > right then
+        ar_int_set arr i right;
+        ar_int_set arr (i+1) left;
+        pass arr (i+1) true;
+      else
+        pass arr (i+1) swapped;
+      ;
+    ;
+  ;
+
+  if (pass arr 0 false) then
+    bubble_sort arr;
+  ;
+;
+
+
+pub fn main() =
+  let arr = ar_int_new 4;
+  ar_int_set arr 0 4;
+  ar_int_set arr 1 2;
+  ar_int_set arr 2 1;
+  ar_int_set arr 3 3;
+
+  bubble_sort arr;
+
+  fn loop(i: Int): Unit =
+    if i < ar_int_len arr then
+      println (int_to_str (ar_int_get arr i));
+      loop(i+1);
+    ;
+  ;
+  loop(0);
+;
