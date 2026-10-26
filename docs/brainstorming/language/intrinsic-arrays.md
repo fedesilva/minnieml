@@ -264,10 +264,16 @@ let n = xs.length;
 ### Code generation
 
 - Element types determine slot size, alignment, and layout.
+- Cache concrete element layout information and reuse generated destruction and clone
+  helpers for the same element type within a compilation. Reads and writes lower directly;
+  they do not require generated accessor functions.
 - Codegen chooses backing storage using size, scope, and escape information.
 - Known-length local storage can use LLVM `alloca [N x T]`.
 - Runtime-length local storage can use `alloca T, count`.
 - Storage that must outlive the invocation requires heap allocation.
+- A candidate heap-allocation interface takes the element count, slot size, and required
+  alignment. The compiler supplies target-derived layout information; the runtime helper
+  allocates backing storage without knowing the source element type.
 - Stack placement requires proof that uses stay within the storage lifetime.
 - A length/data-pointer representation can describe either storage choice.
 - `getelementptr` addresses elements in either representation.
@@ -275,6 +281,10 @@ let n = xs.length;
 - Reads and writes emit loads and stores, plus required element cleanup on replacement.
 - Literals allocate storage and initialize each slot. Scalar constants may use a block
   copy. A block copy must not introduce implicit duplication of non-scalar elements.
+- For a scalar constant literal, codegen may emit a constant data blob, allocate backing
+  storage, and copy the blob with `memcpy`. Element widths, byte counts, and alignment come
+  from the target layout, not fixed assumptions about `Int`. This remains the optional
+  literal optimization listed under Open questions.
 - Operation lowering is specialized to each concrete element type.
 
 ### Memory and ownership
