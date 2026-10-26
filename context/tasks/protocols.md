@@ -70,11 +70,14 @@ is the ordinary declaration shape: name, named parameters, return type, preceden
 associativity, then an optional default body. Required members omit the body; defaults
 use `= body` and ordinary terminators. There is no separate protocol operator signature form.
 
+Instance methods and protocol default bodies follow normal function ownership rules and
+must honor the declared parameter and return ownership contract. There are no separate
+protocol ownership rules; see [Ownership](../../docs/brainstorming/language/protocols.md#ownership).
+
 ## Plan (Approval Gate)
 
 Settle the draft's open questions before choosing implementation stages:
 
-- Parameter and return ownership compatibility between instances and protocol contracts.
 - Equality protocol name and members, including the relationship between `==` and `!=`.
 - Diagnostics for missing instances or insufficient type information.
 - Interaction between explicit instances and compiler derivation.
@@ -105,6 +108,7 @@ integration require design decisions; the draft is not an approved implementatio
 Single instances and ordinary name lookup with type-based candidate and instance
 selection are settled. Protocol requirements use separate instances; own members may have
 overridable defaults. Contract-supplied type annotations may be omitted in instances, and
-operator members use ordinary operator syntax. Explicit imports are out of scope. Next action:
-settle parameter and return ownership compatibility. Implementation scope and planning
-remain open.
+operator members use ordinary operator syntax. Normal function ownership rules apply to
+instance methods and default bodies. Explicit imports are out of scope. Next action: select
+the protocols and concrete instances for the first implementation and settle the remaining
+open details before preparing a bounded plan.

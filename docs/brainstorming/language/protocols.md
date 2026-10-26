@@ -182,6 +182,16 @@ remains a separate design decision.
 
 ---
 
+## Ownership
+
+Instance methods and protocol default bodies follow normal function ownership rules.
+Implementations must honor the declared parameter and return ownership contract.
+Protocols introduce no separate ownership rules. See the
+[normal function ownership rules](../../memory-model.md#non-consuming-parameters-default)
+and [return ownership rules](../../memory-model.md#return-values-and-borrow-escape).
+
+---
+
 ## Derived equality
 
 - Equality protocol name: provisional (`CanEqual`).
@@ -246,8 +256,7 @@ function members.
 
 ## Open questions
 
-1. **Ownership compatibility.** How must instance parameter ownership and return ownership match the protocol contract?
-2. **First implementation scope.** Which protocols and concrete instances ship first? Keep the future polymorphic examples distinct from that deliverable.
+1. **First implementation scope.** Which protocols and concrete instances ship first? Keep the future polymorphic examples distinct from that deliverable.
 
 ### Additional open details
 
