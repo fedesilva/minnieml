@@ -25,7 +25,7 @@ enforces their rules for both user-supplied and derived implementations.
 - Function and operator members; operators use the same protocol mechanism as functions.
 - Compiler-derived equality instances for enums.
 - General polymorphic functions and data types: out of scope.
-- Explicit imports: out of scope; protocol function members use fully qualified names.
+- Explicit imports: out of scope.
 
 ---
 
@@ -118,19 +118,25 @@ There is one instance per protocol and concrete type combination. A second insta
 for the same combination is an error; instance selection never chooses between duplicate
 implementations.
 
-Protocol function members use fully qualified names, like struct names. Explicit imports
-are out of scope:
+Protocol members participate in ordinary function-name lookup without requiring the
+protocol name. Lookup collects matching functions and protocol members as candidates;
+final selection is deferred until the type checker has the necessary type information.
 
 ```text
-let total = Semigroup.combine 2 3;
-let zero: Int = Monoid.empty ();
+let total = combine 2 3;
+let zero: Int = empty ();
 ```
 
-The qualified name identifies the protocol member. Normal type checking determines the
-instance from the arguments and expected result type. In these examples, the integer
+Normal type checking uses argument and expected result types to select the applicable
+member and instance. With the Semigroup and Monoid declarations above, the integer
 arguments select `Semigroup Int`, and the result annotation selects `Monoid Int`.
-Insufficient type information is an error, as in ordinary type checking. A missing
-instance is also an error.
+Insufficient type information, no applicable candidate or instance, and unresolved
+ambiguity are errors.
+
+Functions and operators share this candidate-based resolution model. It permits ordinary
+operator syntax while giving named protocol functions the same lookup behavior. Operator
+grouping still requires compatible precedence and associativity before type checking.
+Explicit imports remain out of scope.
 
 ---
 

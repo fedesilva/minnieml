@@ -38,7 +38,7 @@ The [Protocols draft](../../docs/brainstorming/language/protocols.md) defines th
 - Define the relationship to `Unique` and `Clone` in
   [Memory evolution](../../docs/brainstorming/mem/mem-evolution.md#fundamental-protocols).
 - General polymorphic functions and data types are out of scope.
-- Explicit imports are out of scope; protocol function members use fully qualified names.
+- Explicit imports are out of scope.
 - `FromInt` and compiler-derived integer conversion are deferred.
 
 ## Design
@@ -52,8 +52,10 @@ headers retain parameter constraints using `:` and `&`.
 
 [Instance identity and member resolution](../../docs/brainstorming/language/protocols.md#instance-identity-and-member-resolution)
 requires a single instance per protocol and concrete type combination, rejecting duplicates.
-Protocol function calls use fully qualified member names. Normal type checking uses argument
-and expected result types to select the instance; insufficient information is an error.
+Protocol members join ordinary function-name lookup as candidates without requiring the
+protocol name. The type checker uses argument and expected result types to select the
+applicable member and instance. Insufficient information, missing candidates or instances,
+and unresolved ambiguity are errors. Functions and operators share this resolution model.
 
 ## Plan (Approval Gate)
 
@@ -88,7 +90,7 @@ integration require design decisions; the draft is not an approved implementatio
 
 ## Task Working Memory
 
-Single instances, fully qualified protocol function names, and normal type-based instance
+Single instances and ordinary name lookup with type-based candidate and instance
 selection are settled. Explicit imports are out of scope. Next action: decide whether
 protocol requirements demand separate instances, whether members are inherited, and whether
 default implementations are supported. Implementation scope and planning remain open.
