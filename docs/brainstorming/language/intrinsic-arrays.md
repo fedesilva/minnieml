@@ -69,6 +69,13 @@ This design replaces:
 - Their injected functions and matching `mml_runtime.c` implementations with
   compiler-generated operations.
 
+The typed `ar_*` function families are replaced by one intrinsic per operation, with no
+element type in its name. For example, `array_get arr i` derives its result type and
+lowering from the element type of `arr`. These are compiler operations, not wrappers
+around the existing C implementation. The per-element-type C array implementation is
+removed; array layout, access, initialization, and element cleanup are lowered by the
+compiler. A small runtime allocation helper may remain.
+
 Element access and length are emitted directly. Heap allocation can use a small
 runtime helper. Destruction helpers are generated as needed; clone helpers require
 cloneable elements.
