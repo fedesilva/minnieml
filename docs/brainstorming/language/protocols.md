@@ -24,7 +24,8 @@ enforces their rules for both user-supplied and derived implementations.
 - Protocol declarations, type parameters, instances, and instance resolution.
 - Function and operator members; operators use the same protocol mechanism as functions.
 - Compiler-derived equality instances for enums.
-- General polymorphic functions and data types: out of scope.
+- General polymorphic functions and data types, including higher-kinded parameters
+  such as the sample's Functor parameter: out of scope.
 - Explicit imports: out of scope.
 
 ---
@@ -112,11 +113,15 @@ protocol Monoid 'T: Semigroup =
   fn empty(): 'T;
 ;
 
+// Alternative headers, not coexisting instances:
 instance Semigroup (Option 'T: Semigroup) = ...
 instance Semigroup (Option 'T: Semigroup & Clone) = ...
 ```
 
-The instance headers introduce `'T`; the constraints apply to that element type.
+The alternative instance headers introduce `'T`; the constraints apply to that element type.
+Constraints do not distinguish instance identities: both headers implement
+`Semigroup (Option 'T)` and cannot coexist.
+
 The first requires its Semigroup instance. The second additionally requires its
 Clone instance. In the sample, two `Some` values combine their contents using the
 Semigroup instance for `'T`, while `None` acts as an identity. Union and match syntax
@@ -129,11 +134,15 @@ are future syntax, beyond the initial concrete-instance scope.
 
 There is one instance per protocol and concrete type combination. A second instance
 for the same combination is an error; instance selection never chooses between duplicate
-implementations.
+implementations. Compiler-derived instances participate in the same uniqueness check;
+an explicit instance duplicating an enum's derived equality instance is an error.
 
 Protocol members participate in ordinary function-name lookup without requiring the
 protocol name. Lookup collects matching functions and protocol members as candidates;
 final selection is deferred until the type checker has the necessary type information.
+Different protocols may declare the same member name. That alone is not a declaration
+error; a use must resolve to one applicable candidate. Candidate selection must account
+for partial application and function values, not just count supplied arguments.
 
 ```text
 let total = combine 2 3;
@@ -158,7 +167,8 @@ Explicit imports remain out of scope.
 A protocol constraint requires a separate instance for the same type. For example,
 `Monoid 'T: Semigroup` requires `Semigroup Int` before `Monoid Int` can be satisfied.
 The Monoid instance implements its own members; it cannot replace the Semigroup
-instance's `combine`. There is one meaning for that operation, whether the caller
+instance's `combine`. Defining `combine` inside `instance Monoid Int` is an error.
+There is one meaning for that operation, whether the caller
 requires Semigroup alone or Monoid.
 
 Requirements apply transitively. A future function constrained by `'T: Monoid` can
@@ -244,6 +254,25 @@ function members.
 
 ---
 
+## Implementation considerations
+
+Default bodies require checking with abstract protocol parameters and only the operations
+guaranteed by the contract. Checking a body solely after substituting a concrete instance
+must not admit operations unavailable under those guarantees. This limited abstract checking
+is required for defaults; it does not add general polymorphic functions to the first release.
+
+Expected result types must reach application candidate selection. The current
+[TypeChecker](../../../modules/mmlc-lib/src/main/scala/mml/mmlclib/semantic/TypeChecker.scala)
+passes expected types through expressions, but `checkNormalApplication` does not receive
+the application's expected result type. Extending that path is an implementation prerequisite
+for selecting `Monoid Int` from `let zero: Int = empty ();`.
+
+Choose the lowering strategy during implementation planning. Emitting concrete functions
+for selected instances and specializing default bodies is a candidate for the initial
+concrete-instance scope; runtime dictionaries are not an agreed requirement.
+
+---
+
 ## Deferred integer conversion
 
 - Status: deferred; not a prerequisite for enums.
@@ -262,7 +291,8 @@ function members.
 
 - Equality protocol name and members, including the relationship between `==` and `!=`.
 - Diagnostics for missing or ambiguous instances.
-- Interaction between explicit instances and compiler derivation.
+- Whether instance operators omit precedence and associativity or may restate matching
+  attributes. Instances cannot change the grouping fixed by the protocol declaration.
 - Migration of built-in operators beyond equality to protocol instances.
 - Whether the first implementation supports multiple protocol type parameters.
 

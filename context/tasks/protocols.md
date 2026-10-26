@@ -37,7 +37,8 @@ The [Protocols draft](../../docs/brainstorming/language/protocols.md) defines th
 - Compiler-derived equality for values of the same enum.
 - Define the relationship to `Unique` and `Clone` in
   [Memory evolution](../../docs/brainstorming/mem/mem-evolution.md#fundamental-protocols).
-- General polymorphic functions and data types are out of scope.
+- General polymorphic functions and data types, including higher-kinded parameters,
+  are out of scope.
 - Explicit imports are out of scope.
 - `FromInt` and compiler-derived integer conversion are deferred.
 
@@ -80,9 +81,17 @@ Settle the draft's open questions before choosing implementation stages:
 
 - Equality protocol name and members, including the relationship between `==` and `!=`.
 - Diagnostics for missing instances or insufficient type information.
-- Interaction between explicit instances and compiler derivation.
+- Whether instance operators omit precedence and associativity or may restate matching
+  attributes; they cannot change the protocol declaration's grouping.
 - Migration of built-in operators beyond equality.
 - Support for multiple protocol type parameters in the first implementation.
+
+Implementation planning must cover the draft's
+[implementation considerations](../../docs/brainstorming/language/protocols.md#implementation-considerations):
+abstract checking of defaults under their declared guarantees, expected result types reaching
+application candidate selection, partial applications and function values, and concrete
+instance lowering. The current `checkNormalApplication` path does not receive an expected
+result type. A code-generation strategy is not yet selected.
 
 Approval: Pending for implementation.
 
