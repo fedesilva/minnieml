@@ -7,25 +7,25 @@ import mml.mmlclib.ast.*
 /** Build clone calls only for types with an available duplication contract. */
 private[semantic] object CloneCalls:
   def build(
-    operand: Expr,
-    tpe:     Type,
-    index:   ResolvablesIndex,
-    phase:   String,
-    resolve: (String, String) => Option[String]
+    operand:          Expr,
+    tpe:              Type,
+    index:            ResolvablesIndex,
+    phase:            String,
+    generatingModule: Option[String] = None
   ): Either[SemanticError, Expr] =
-    val target = for
-      canonical <- TypeUtils.canonical(tpe, index)
-      name <- TypeUtils.getTypeName(canonical)
-      function <- TypeUtils.cloneFnFor(name, index)
-      id <- resolve(name, function)
-    yield (function, id)
+    val target = MemoryFunctions.clone(tpe, index, generatingModule)
     target
       .toRight(
         SemanticError.InvalidExpression(operand, "This type cannot be cloned", phase)
       )
-      .map { (name, id) =>
+      .map { target =>
         val functionType = TypeFn(SourceOrigin.Synth, NonEmptyList.one(tpe), tpe)
-        val ref  = Ref(SourceOrigin.Synth, name, resolvedId = id.some, typeSpec = functionType.some)
+        val ref = Ref(
+          SourceOrigin.Synth,
+          target.name,
+          resolvedId = target.id.some,
+          typeSpec   = functionType.some
+        )
         val call = App(SourceOrigin.Synth, ref, operand, typeSpec = tpe.some)
         Expr(SourceOrigin.Synth, List(call), typeSpec = tpe.some)
       }

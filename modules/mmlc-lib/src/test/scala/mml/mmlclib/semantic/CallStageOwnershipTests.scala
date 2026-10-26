@@ -48,7 +48,7 @@ class CallStageOwnershipTests extends BaseEffFunSuite:
 
   private def destructorCalls(module: Module, owner: String, typeName: String): List[App] =
     val destructorId = TypeUtils
-      .freeFnFor(typeName, module.resolvables)
+      .freeFnFor(typeReference(typeName, module.resolvables), module.resolvables)
       .flatMap(DestructionTargets.named(_, module.resolvables))
       .getOrElse(fail(s"Expected destructor for $typeName"))
     TermTraversal

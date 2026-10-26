@@ -51,7 +51,7 @@ class LambdaLiteralBorrowingTests extends BaseEffFunSuite:
 
   private def stringCleanup(module: Module, owner: String): List[App] =
     val destructorId = TypeUtils
-      .freeFnFor("String", module.resolvables)
+      .freeFnFor(typeReference("String", module.resolvables), module.resolvables)
       .flatMap(DestructionTargets.named(_, module.resolvables))
       .getOrElse(fail("Expected String destructor"))
     TermTraversal

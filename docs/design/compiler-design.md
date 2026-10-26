@@ -752,6 +752,14 @@ constructors so ownership transfer is visible in the callable signature.
 - Rewrites constructor params to mark heap fields as consuming
 - Extends the resolvables index with the synthetic helpers
 
+Type-property queries in `TypeUtils` accept typed AST nodes and resolve nominal declarations
+through `ResolvablesIndex`. Alias, group, and scheme unwrapping shares `canonical`; unresolved
+references do not fall back to short-name lookup. Recursive heap queries track declaration IDs.
+`MemoryFunctions` selects clone and destructor bindings in the resolved declaration's owning
+module. Explicit native destructors may also name an injected stdlib binding. Struct generation
+can reference its own pending helpers; later phases require registered bindings. Missing native
+field destructors accumulate diagnostics during generation.
+
 ---
 
 ### Semantic Phase 6: RefResolver

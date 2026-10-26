@@ -28,36 +28,20 @@ item needs its own plan. A cleanup campaign can work through several approved gr
 
 ### QA-001: Preserve resolved type identity in type utilities
 
-- **Status:** planned
-- **Follow-up:** [Unify type-property alias resolution](type-property-alias-resolution.md)
-  reviews the four heap/clone/free query paths after Unify lambdas; implementation is pending.
-- **Source:** [TypeUtils.scala](../../modules/mmlc-lib/src/main/scala/mml/mmlclib/ast/TypeUtils.scala),
-  `findTypeByName`, `requiresDestruction`, `isHeapType`, and related name-based queries.
-- **Problem:** `findTypeByName` receives a bare name, tries
-  `stdlib::typedef::<name>` and `stdlib::typealias::<name>`, then scans indexed declarations
-  for a matching name. Callers that reduce a resolved type to its name discard the declaration
-  identity and force this helper to guess it again. The stdlib preference and first matching
-  declaration are not substitutes for resolving the intended type by its identity.
-- **Context:** [SemanticStage.scala](../../modules/mmlc-lib/src/main/scala/mml/mmlclib/compiler/SemanticStage.scala)
-  injects stdlib declarations into each module. This explains their presence in the index,
-  but does not justify preferring them in a general type-property query.
-  [ResolvablesIndex.lookupType](../../modules/mmlc-lib/src/main/scala/mml/mmlclib/ast/module.scala)
-  already supports lookup by declaration ID. `resolveNativeType` uses `resolvedId` first,
-  while other queries accept only a name.
-- **Phase contract:** the production callers run after type resolution. Valid nominal type
-  references should identify their declarations, including references created by later
-  generators. Verify those producers and handle error placeholders explicitly; an index miss
-  must not silently select another declaration by name.
-- **Evidence:** source inspection establishes identity loss and stdlib-first lookup. Selecting
-  an unintended declaration when names collide is a risk; no failing runtime case is recorded.
-- **Expected outcome:** preserve resolved types or declaration identities through type-property
-  queries and their callers. Eliminate name-based guessing where identity is available.
-  Define any necessary handling of unresolved references explicitly at the appropriate phase.
-- **Verification:** check that distinct declarations with the same short name retain their
-  identity in queries, including stdlib names and aliases. Verify native-type and destruction
-  queries against the selected declaration, and run the applicable compiler gates.
+- **Status:** complete
+- **Implementation and verification:** [Unify type-property alias resolution](type-property-alias-resolution.md).
+- **Source:** [TypeUtils.scala](../../modules/mmlc-lib/src/main/scala/mml/mmlclib/ast/TypeUtils.scala)
+  and [MemoryFunctions.scala](../../modules/mmlc-lib/src/main/scala/mml/mmlclib/ast/MemoryFunctions.scala).
+- **Problem:** Reducing resolved types to short names permits stdlib-first or first-match lookup
+  to select a different declaration. Name-based recursive guards can also conflate declarations.
+- **Repair:** Property queries and callers preserve typed AST inputs and resolved IDs. Shared
+  declaration resolution replaces name guessing, including native representation queries.
+  Shared memory-function selection uses the resolved declaration's owning module; explicit native
+  destructors may name stdlib bindings. Struct generation can reference its pending helpers.
+- **Evidence:** 23 type-query tests and the full compiler suite pass. Collision tests use constructed
+  resolved AST declarations; they do not establish multi-module source-language support.
+- **Resolution:** Compiler gates, independent review, and Author signoff are complete.
 
 ## Working memory
 
-No cleanup group is selected for implementation. Next: continue recording findings, or select
-a bounded group and prepare its plan.
+QA-001 implementation and verification are tracked in the linked alias-resolution task.

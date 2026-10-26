@@ -4,6 +4,11 @@ Durable product changes belong here. Current task state belongs in task files.
 
 ## 2026-10-25
 
+- Preserve resolved type identity across heap, destruction, clone, and native-representation
+  queries, including aliases and recursive structs with colliding names. Share memory-function
+  selection across generation, ownership, and validation, and report missing native field
+  destructors during struct-helper generation.
+
 - End parser source spans at owned tokens, children, and closing delimiters. Exclude trailing
   comments from diagnostic highlights and editor ranges while preserving written annotations
   in expression spans and exact malformed text in recovery.

@@ -300,8 +300,9 @@ class MixedOwnershipTests extends BaseEffFunSuite:
         .headOption
       assert(unrelatedId.nonEmpty)
       assert(selectedId.nonEmpty)
-      val freeName = TypeUtils.freeFnFor("String", module.resolvables).get
-      val freeId   = member(module, freeName).id
+      val freeName =
+        TypeUtils.freeFnFor(typeReference("String", module.resolvables), module.resolvables).get
+      val freeId = member(module, freeName).id
 
       def destructions(term: Term, ownerId: Option[String]): List[App] =
         TermTraversal.collect(term) { case app: App => app }.filter { app =>
@@ -425,9 +426,11 @@ class MixedOwnershipTests extends BaseEffFunSuite:
         second;
       ;
     """).map { module =>
-      val body  = member(module, "relay").value
-      val clone = TypeUtils.cloneFnFor("String", module.resolvables).get
-      val free  = TypeUtils.freeFnFor("String", module.resolvables).get
+      val body = member(module, "relay").value
+      val clone =
+        TypeUtils.cloneFnFor(typeReference("String", module.resolvables), module.resolvables).get
+      val free =
+        TypeUtils.freeFnFor(typeReference("String", module.resolvables), module.resolvables).get
       assertEquals(referencesTo(module, body, clone).size, 0)
       assertEquals(referencesTo(module, body, free).size, 0)
     }
@@ -445,8 +448,10 @@ class MixedOwnershipTests extends BaseEffFunSuite:
         value.length;
       ;
     """).map { module =>
-      val clone = TypeUtils.cloneFnFor("String", module.resolvables).get
-      val free  = TypeUtils.freeFnFor("String", module.resolvables).get
+      val clone =
+        TypeUtils.cloneFnFor(typeReference("String", module.resolvables), module.resolvables).get
+      val free =
+        TypeUtils.freeFnFor(typeReference("String", module.resolvables), module.resolvables).get
       assertEquals(referencesTo(module, member(module, "static_result").value, clone).size, 0)
       assertEquals(referencesTo(module, member(module, "static_result").value, free).size, 1)
       assertEquals(referencesTo(module, member(module, "caller").value, free).size, 0)
@@ -475,7 +480,8 @@ class MixedOwnershipTests extends BaseEffFunSuite:
           if flag then int_to_str 123; else $result;;
         ;
       """).map { module =>
-        val clone = TypeUtils.cloneFnFor("String", module.resolvables).get
+        val clone =
+          TypeUtils.cloneFnFor(typeReference("String", module.resolvables), module.resolvables).get
         assertEquals(referencesTo(module, member(module, "choose").value, clone).size, 1)
         assertEquals(referencesTo(module, member(module, "nested").value, clone).size, 0)
       }
@@ -525,7 +531,8 @@ class MixedOwnershipTests extends BaseEffFunSuite:
           if flag then int_to_str 123; else $result;;
         ;
       """).map { module =>
-        val clone = TypeUtils.cloneFnFor("String", module.resolvables).get
+        val clone =
+          TypeUtils.cloneFnFor(typeReference("String", module.resolvables), module.resolvables).get
         assertEquals(referencesTo(module, member(module, "choose").value, clone).size, 1)
       }
     }

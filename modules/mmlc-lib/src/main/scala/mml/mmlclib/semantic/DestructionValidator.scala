@@ -130,11 +130,11 @@ object DestructionValidator:
                 "Closure layout requires a destructor pointer"
               ) ++
               layout.fields.toList.drop(1).flatMap { field =>
-                TypeUtils.getTypeName(field.typeSpec).flatMap(TypeUtils.freeFnFor(_, index)) match
+                TypeUtils.freeFnFor(field.typeSpec, index) match
                   case None => Nil
                   case Some(_) if field.id.exists(d.borrowedFields.contains) => Nil
                   case Some(name) =>
-                    DestructionTargets.named(name, index) match
+                    DestructionTargets.forType(field.typeSpec, index) match
                       case None =>
                         List(
                           error(s"Missing registered destructor '$name' for field '${field.name}'")

@@ -46,7 +46,7 @@ class FieldQualifierOwnershipTests extends BaseEffFunSuite:
 
   private def destructorCalls(module: Module, typeName: String): List[Ref] =
     val target = TypeUtils
-      .freeFnFor(typeName, module.resolvables)
+      .freeFnFor(typeReference(typeName, module.resolvables), module.resolvables)
       .flatMap(DestructionTargets.named(_, module.resolvables))
       .getOrElse(fail(s"Expected destructor for $typeName"))
     TermTraversal.collect(body(module)) {

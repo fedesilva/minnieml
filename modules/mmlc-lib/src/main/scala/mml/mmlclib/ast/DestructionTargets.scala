@@ -25,8 +25,4 @@ object DestructionTargets:
       })
 
   def forType(tpe: Type, index: ResolvablesIndex): Option[String] =
-    TypeUtils
-      .canonical(tpe, index)
-      .flatMap(TypeUtils.getTypeName)
-      .flatMap(TypeUtils.freeFnFor(_, index))
-      .flatMap(named(_, index))
+    MemoryFunctions.free(tpe, index).map(_.id)

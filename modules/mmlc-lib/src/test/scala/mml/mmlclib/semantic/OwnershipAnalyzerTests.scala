@@ -800,7 +800,13 @@ class OwnershipAnalyzerTests extends BaseEffFunSuite:
           condition
       }
       val freeId = module.members.collectFirst {
-        case value: Bnd if TypeUtils.freeFnFor("String", module.resolvables).contains(value.name) =>
+        case value: Bnd
+            if TypeUtils
+              .freeFnFor(
+                typeReference("String", module.resolvables),
+                module.resolvables
+              )
+              .contains(value.name) =>
           value.id
       }.flatten
       assert(freeId.nonEmpty)

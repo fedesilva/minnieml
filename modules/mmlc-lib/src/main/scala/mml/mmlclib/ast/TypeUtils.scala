@@ -104,182 +104,104 @@ object TypeUtils:
 
     check(tpe)
 
+  /** Resolve nominal declarations without guessing from an unresolved reference's name. */
+  def declaration(tpe: Type, index: ResolvablesIndex): Option[ResolvableType] =
+    canonical(tpe, index).flatMap {
+      case ref:    TypeRef => ref.resolvedId.flatMap(index.lookupType)
+      case struct: TypeStruct => struct.some
+      case _ => none
+    }
+
   def requiresDestruction(tpe: Type, index: ResolvablesIndex): Boolean =
     requiresDestruction(tpe, index, Set.empty)
 
-  private def requiresDestruction(
-    tpe:   Type,
-    index: ResolvablesIndex,
-    seen:  Set[String]
-  ): Boolean =
+  private def requiresDestruction(tpe: Type, index: ResolvablesIndex, seen: Set[String]): Boolean =
     canonical(tpe, index).exists {
       case _: TypeFn => true
-      case other => getTypeName(other).exists(isHeapType(_, index, seen))
+      case other => isHeapType(other, index, seen)
     }
+
   def isPointerNativeType(nativeType: NativeType): Boolean = nativeType match
     case _: NativePointer => true
     case NativePrimitive(_, "ptr", _, _) => true
     case _ => false
 
-  /** Get the type name from a Type */
+  /** The display name of a nominal type; not a declaration lookup key. */
   def getTypeName(t: Type): Option[String] = t match
-    case TypeRef(_, name, _, _) => Some(name)
-    case ts: TypeStruct => Some(ts.name)
-    case _ => None
+    case ref:    TypeRef => ref.name.some
+    case struct: TypeStruct => struct.name.some
+    case _ => none
 
-  /** Find a type definition by name */
-  private def findTypeByName(
-    typeName:    String,
-    resolvables: ResolvablesIndex
-  ): Option[ResolvableType] =
-    resolvables
-      // FIXME:QA: Preserve resolved type identity instead of looking up types by name.
-      // See QA-001 in context/tasks/qa-misses.md.
-      .lookupType(s"stdlib::typedef::$typeName")
-      .orElse(resolvables.lookupType(s"stdlib::typealias::$typeName"))
-      .orElse:
-        resolvables.resolvableTypes.values.find:
-          case td: TypeDef => td.name == typeName
-          case ta: TypeAlias => ta.name == typeName
-          case ts: TypeStruct => ts.name == typeName
-
-  private def underlyingTypeByName(
-    typeName: String,
-    index:    ResolvablesIndex
-  ): Option[ResolvableType] =
-    findTypeByName(typeName, index).flatMap {
-
-      case alias: TypeAlias =>
-        canonical(alias.typeRef, index).flatMap {
-          case ref:    TypeRef => ref.resolvedId.flatMap(index.lookupType)
-          case struct: TypeStruct => struct.some
+  def resolveNativeType(tpe: Type, index: ResolvablesIndex): Option[NativeType] =
+    canonical(tpe, index).flatMap {
+      case native: NativeType => native.some
+      case other =>
+        declaration(other, index).flatMap {
+          case definition: TypeDef =>
+            definition.typeSpec.collect { case native: NativeType => native }
           case _ => none
         }
-
-      case declaration => declaration.some
     }
 
-  def resolveNativeType(
-    typeSpec:    Type,
-    resolvables: ResolvablesIndex
-  ): Option[NativeType] =
-    typeSpec match
-      case nt: NativeType => Some(nt)
-      case TypeGroup(_, types) if types.size == 1 =>
-        resolveNativeType(types.head, resolvables)
-      case TypeRef(_, name, resolvedId, _) =>
-        resolvedId
-          .flatMap(resolvables.lookupType)
-          .orElse(findTypeByName(name, resolvables))
-          .flatMap(resolveNativeType(_, resolvables))
-      case _ => None
-
-  private def resolveNativeType(
-    resolvableType: ResolvableType,
-    resolvables:    ResolvablesIndex
-  ): Option[NativeType] =
-    resolvableType match
-      case TypeDef(_, _, _, Some(nt: NativeType), _, _, _) => Some(nt)
-      case ta: TypeAlias =>
-        ta.typeSpec
-          .flatMap(resolveNativeType(_, resolvables))
-          .orElse(resolveNativeType(ta.typeRef, resolvables))
-      case _ => None
-
-  def isPointerLike(
-    typeSpec:    Type,
-    resolvables: ResolvablesIndex
-  ): Boolean =
-    resolveNativeType(typeSpec, resolvables).exists(isPointerNativeType)
+  def isPointerLike(tpe: Type, index: ResolvablesIndex): Boolean =
+    resolveNativeType(tpe, index).exists(isPointerNativeType)
 
   private def heapNativeType(definition: TypeDef): Option[NativeType] =
     definition.typeSpec.collect {
       case native: NativeType if native.memEffect.contains(MemEffect.Alloc) => native
     }
 
-  /** Check if a type is heap-allocated by looking at its NativeType.memEffect */
-  def isHeapType(typeName: String, resolvables: ResolvablesIndex): Boolean =
-    isHeapType(typeName, resolvables, Set.empty)
+  /** Nominal heap storage, including structs that own values or function environments. */
+  def isHeapType(tpe: Type, index: ResolvablesIndex): Boolean =
+    isHeapType(tpe, index, Set.empty)
 
-  private def isHeapType(
-    typeName:    String,
-    resolvables: ResolvablesIndex,
-    seen:        Set[String]
-  ): Boolean =
-    if seen.contains(typeName) then false
-    else
-      findTypeByName(typeName, resolvables) match
-        case Some(definition: TypeDef) => heapNativeType(definition).isDefined
-        case Some(s: TypeStruct) =>
-          s.fields.exists(field =>
-            requiresDestruction(field.typeSpec, resolvables, seen + typeName)
-          )
-        case Some(alias: TypeAlias) =>
-          canonical(alias.typeRef, resolvables)
-            .flatMap(getTypeName)
-            .filterNot(_ == typeName)
-            .exists(isHeapType(_, resolvables, seen + typeName))
-        case _ => false
-
-  /** Structs own heap values and function environments, including through nested fields. */
-  def hasHeapFields(struct: TypeStruct, resolvables: ResolvablesIndex): Boolean =
-    struct.fields.exists { field =>
-      requiresDestruction(field.typeSpec, resolvables, Set(struct.name))
+  private def isHeapType(tpe: Type, index: ResolvablesIndex, seen: Set[String]): Boolean =
+    declaration(tpe, index).exists {
+      case definition: TypeDef => heapNativeType(definition).isDefined
+      case struct:     TypeStruct if !struct.id.exists(seen.contains) =>
+        struct.fields.exists(field => requiresDestruction(field.typeSpec, index, seen ++ struct.id))
+      case _ => false
     }
 
-  /** Check if a type resolves to a user-defined TypeStruct with heap fields. Unlike isHeapType,
-    * this excludes native TypeDef types (String, IntArray, etc.).
-    */
-  def isStructWithHeapFields(typeName: String, resolvables: ResolvablesIndex): Boolean =
-    underlyingTypeByName(typeName, resolvables) match
-      case Some(s: TypeStruct) => hasHeapFields(s, resolvables)
-      case _ => false
+  /** Structs own heap values and function environments, including through nested fields. */
+  def hasHeapFields(struct: TypeStruct, index: ResolvablesIndex): Boolean =
+    isHeapType(struct, index)
 
-  /** Get free function name for a type, or None if not heap type */
-  def freeFnFor(typeName: String, resolvables: ResolvablesIndex): Option[String] =
-    findTypeByName(typeName, resolvables) match
-      case Some(definition: TypeDef) =>
-        heapNativeType(definition).map(_.freeFn.getOrElse(s"__free_$typeName"))
-      case Some(s: TypeStruct) if hasHeapFields(s, resolvables) =>
-        Some(s"__free_$typeName")
-      case Some(alias: TypeAlias) =>
-        canonical(alias.typeRef, resolvables)
-          .flatMap(getTypeName)
-          .filterNot(_ == typeName)
-          .flatMap(freeFnFor(_, resolvables))
-      case _ => None
+  def isStructWithHeapFields(tpe: Type, index: ResolvablesIndex): Boolean =
+    declaration(tpe, index).exists {
+      case struct: TypeStruct => hasHeapFields(struct, index)
+      case _ => false
+    }
+
+  /** Memory-function names come from the resolved declaration, including explicit destructors. */
+  def freeFnFor(tpe: Type, index: ResolvablesIndex): Option[String] =
+    declaration(tpe, index).flatMap {
+      case definition: TypeDef =>
+        heapNativeType(definition).map(_.freeFn.getOrElse(s"__free_${definition.name}"))
+      case struct: TypeStruct if hasHeapFields(struct, index) => s"__free_${struct.name}".some
+      case _ => none
+    }
 
   /** Function environments cannot be duplicated, including through aggregate fields. */
   def containsFunction(tpe: Type, index: ResolvablesIndex): Boolean =
     def loop(current: Type, seen: Set[String]): Boolean =
       canonical(current, index).exists {
-        case _:      TypeFn => true
-        case struct: TypeStruct => struct.fields.exists(field => loop(field.typeSpec, seen))
-        case ref:    TypeRef if !ref.resolvedId.exists(seen.contains) =>
-          ref.resolvedId.flatMap(index.lookupType).exists {
-            case struct: TypeStruct =>
-              struct.fields.exists(field => loop(field.typeSpec, seen ++ ref.resolvedId))
+        case _: TypeFn => true
+        case other =>
+          declaration(other, index).exists {
+            case struct: TypeStruct if !struct.id.exists(seen.contains) =>
+              struct.fields.exists(field => loop(field.typeSpec, seen ++ struct.id))
             case _ => false
           }
-        case _ => false
       }
     loop(tpe, Set.empty)
 
   /** Get clone function name for a type, or None if its ownership cannot be duplicated. */
-  def cloneFnFor(typeName: String, resolvables: ResolvablesIndex): Option[String] =
-    underlyingTypeByName(typeName, resolvables).flatMap {
+  def cloneFnFor(tpe: Type, index: ResolvablesIndex): Option[String] =
+    declaration(tpe, index).flatMap {
       case definition: TypeDef =>
         heapNativeType(definition).map(_ => s"__clone_${definition.name}")
-
-      case struct: TypeStruct
-          if hasHeapFields(struct, resolvables) && !containsFunction(struct, resolvables) =>
+      case struct: TypeStruct if hasHeapFields(struct, index) && !containsFunction(struct, index) =>
         s"__clone_${struct.name}".some
-
       case _ => none
     }
-
-  /** Check if a named type resolves to an LLVM pointer-like native type. */
-  def isPointerType(typeName: String, resolvables: ResolvablesIndex): Boolean =
-    findTypeByName(typeName, resolvables) match
-      case Some(rt) => resolveNativeType(rt, resolvables).exists(isPointerNativeType)
-      case None => false

@@ -417,17 +417,6 @@ object OwnershipAnalyzer:
 
       loop(Map.empty)
 
-  // Delegate to TypeUtils for type queries
-  def getTypeName(t: Type): Option[String] = TypeUtils.getTypeName(t)
-  def isHeapType(typeName: String, resolvables: ResolvablesIndex): Boolean =
-    TypeUtils.isHeapType(typeName, resolvables)
-  def hasHeapFields(struct: TypeStruct, resolvables: ResolvablesIndex): Boolean =
-    TypeUtils.hasHeapFields(struct, resolvables)
-  def freeFnFor(typeName: String, resolvables: ResolvablesIndex): Option[String] =
-    TypeUtils.freeFnFor(typeName, resolvables)
-  def cloneFnFor(typeName: String, resolvables: ResolvablesIndex): Option[String] =
-    TypeUtils.cloneFnFor(typeName, resolvables)
-
   /** Check if a type is owned (heap type or capturing closure). */
   private def isOwnedType(t: Type, resolvables: ResolvablesIndex): Boolean =
     TypeUtils.requiresDestruction(t, resolvables)
@@ -468,26 +457,6 @@ object OwnershipAnalyzer:
           (lambda.captures.nonEmpty || lambda.meta.exists(_.isPartialApplication)) =>
       lambda.typeSpec
     case _ => None
-
-  /** Look up the resolved ID for a clone function by name.
-    *
-    * For user-defined structs, prefer the generated module-local clone function. For native/stdlib
-    * types, keep preferring stdlib clone symbols.
-    */
-  private def lookupCloneFnId(
-    cloneFn:     String,
-    typeName:    String,
-    resolvables: ResolvablesIndex
-  ): Option[String] =
-    val stdlibId = s"stdlib::bnd::$cloneFn"
-    val userCloneId = resolvables.resolvables.collectFirst:
-      case (id, bnd: Bnd) if bnd.name == cloneFn && !id.startsWith("stdlib::") => id
-
-    if TypeUtils.isStructWithHeapFields(typeName, resolvables) then
-      userCloneId.orElse:
-        if resolvables.lookup(stdlibId).isDefined then Some(stdlibId) else None
-    else if resolvables.lookup(stdlibId).isDefined then Some(stdlibId)
-    else userCloneId
 
   /** Create a free call: App(Ref("__free_T"), Ref(binding)). Returns None when no free function
     * exists for the type.
@@ -619,8 +588,7 @@ object OwnershipAnalyzer:
       expr,
       tpe,
       resolvables,
-      PhaseName,
-      (typeName, function) => lookupCloneFnId(function, typeName, resolvables)
+      PhaseName
     )
 
   private def resourceFree(value: Term, scope: OwnershipScope): Boolean =
@@ -2472,12 +2440,8 @@ object OwnershipAnalyzer:
                     caps :+ cap
                   )
                 else
-                  val cloneId = for
-                    tpe <- ref.typeSpec.flatMap(TypeUtils.canonical(_, s.resolvables))
-                    typeName <- getTypeName(tpe)
-                    function <- cloneFnFor(typeName, s.resolvables)
-                    id <- lookupCloneFnId(function, typeName, s.resolvables)
-                  yield id
+                  val cloneId =
+                    ref.typeSpec.flatMap(MemoryFunctions.clone(_, s.resolvables)).map(_.id)
 
                   cloneId match
 
@@ -2519,12 +2483,8 @@ object OwnershipAnalyzer:
                   if isTransferred && lambda.meta.exists(_.isPartialApplication) =>
                 (s, errs :+ SemanticError.CapturedBorrowedHeapBinding(ref, PhaseName), caps :+ cap)
               case Some(OwnershipState.Literal) =>
-                val cloneId = for
-                  tpe <- ref.typeSpec.flatMap(TypeUtils.canonical(_, s.resolvables))
-                  typeName <- getTypeName(tpe)
-                  function <- cloneFnFor(typeName, s.resolvables)
-                  id <- lookupCloneFnId(function, typeName, s.resolvables)
-                yield id
+                val cloneId =
+                  ref.typeSpec.flatMap(MemoryFunctions.clone(_, s.resolvables)).map(_.id)
                 cloneId match
                   case Some(id) => (s, errs, caps :+ Capture.CapturedLiteral(ref, id))
                   case None =>
@@ -2760,8 +2720,7 @@ object OwnershipAnalyzer:
     val returningOwned = ReturnOwnershipAnalysis.discover(module, callableValues)
 
     val globals = module.members.collect {
-      case bnd: Bnd
-          if bnd.typeSpec.exists(t => getTypeName(t).exists(isHeapType(_, module.resolvables))) =>
+      case bnd: Bnd if bnd.typeSpec.exists(TypeUtils.isHeapType(_, module.resolvables)) =>
         bnd.name -> BindingInfo(OwnershipState.Global, bnd.typeSpec, bnd.id)
     }.toMap
 

@@ -2,7 +2,18 @@ package mml.mmlclib.test
 
 import cats.effect.IO
 import mml.mmlclib.api.{FrontEndApi, ParserApi}
-import mml.mmlclib.ast.{BindOwnership, Bnd, Error, Lambda, Member, Module, TermTraversal}
+import mml.mmlclib.ast.{
+  BindOwnership,
+  Bnd,
+  Error,
+  Lambda,
+  Member,
+  Module,
+  ResolvablesIndex,
+  SourceOrigin,
+  TermTraversal,
+  TypeRef
+}
 import mml.mmlclib.codegen.LlvmToolchain
 import mml.mmlclib.compiler.{CodegenStage, CompilerConfig}
 import mml.mmlclib.semantic.*
@@ -16,6 +27,14 @@ import scala.sys.process.{Process, ProcessLogger}
 
 /** Base trait for effectful tests; adds common MML specific assertions. */
 trait BaseEffFunSuite extends CatsEffectSuite with LlvmAssertions:
+
+  /** Select a uniquely named fixture declaration and preserve its resolved identity. */
+  protected def typeReference(name: String, index: ResolvablesIndex): TypeRef =
+    val declarations = index.resolvableTypes.values.filter(_.name == name).toList
+    assertEquals(declarations.size, 1, s"Expected one fixture type named $name")
+    val declaration = declarations.head
+    assert(declaration.id.nonEmpty)
+    TypeRef(SourceOrigin.Synth, declaration.name, declaration.id)
 
   /** Runs a test with a temporary source file and an initially absent output directory. */
   protected def withSourceFixture[A](

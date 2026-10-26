@@ -132,7 +132,10 @@ class PapStructOwnershipTest extends BaseEffFunSuite:
       val structs = module.members.collect { case s: TypeStruct if s.name == "Outer" => s }
       assertEquals(structs.size, 1)
       assert(TypeUtils.containsFunction(structs.head, module.resolvables))
-      assertEquals(TypeUtils.cloneFnFor("Outer", module.resolvables), None)
+      assertEquals(
+        TypeUtils.cloneFnFor(typeReference("Outer", module.resolvables), module.resolvables),
+        None
+      )
     }
   }
 

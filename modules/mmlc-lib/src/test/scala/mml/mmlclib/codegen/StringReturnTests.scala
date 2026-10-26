@@ -109,10 +109,20 @@ class StringReturnTests extends BaseEffFunSuite:
   cases.foreach { example =>
     test(s"return ownership: ${example.name}") {
       semNotFailed(example.source).map { module =>
-        val cloneName = TypeUtils.cloneFnFor("String", module.resolvables).get
-        val freeName  = TypeUtils.freeFnFor("String", module.resolvables).get
-        val caption   = member(module, "caption").value
-        val main      = member(module, "main").value
+        val cloneName = TypeUtils
+          .cloneFnFor(
+            typeReference("String", module.resolvables),
+            module.resolvables
+          )
+          .get
+        val freeName = TypeUtils
+          .freeFnFor(
+            typeReference("String", module.resolvables),
+            module.resolvables
+          )
+          .get
+        val caption = member(module, "caption").value
+        val main    = member(module, "main").value
         assertEquals(referencesTo(module, caption, cloneName).size, example.clones)
         assertEquals(referencesTo(module, main, freeName).size, if example.owned then 1 else 0)
       }
@@ -182,8 +192,13 @@ class StringReturnTests extends BaseEffFunSuite:
   for allocated <- List(false, true) do
     test(s"returned callable supplies the final String ownership contract, allocated=$allocated") {
       semNotFailed(returnedCallableSource(allocated)).map { module =>
-        val freeName = TypeUtils.freeFnFor("String", module.resolvables).get
-        val main     = member(module, "main").value
+        val freeName = TypeUtils
+          .freeFnFor(
+            typeReference("String", module.resolvables),
+            module.resolvables
+          )
+          .get
+        val main = member(module, "main").value
         assertEquals(referencesTo(module, main, freeName).size, if allocated then 2 else 0)
       }
     }

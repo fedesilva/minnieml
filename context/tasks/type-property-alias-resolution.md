@@ -3,27 +3,27 @@
 ## Metadata
 
 - **Owner:** Author
-- **Status:** design
+- **Status:** complete
 - **Kind:** improvement
 - **Priority:** LOW
 - **Created:** 2026-10-22
-- **Target Branch:** unassigned
-- **Review:** pending; review after Unify lambdas, before implementation planning.
+- **Target Branch:** codex/type-property-alias-resolution
+- **Review:** compiler gates and independent review pass; signed off.
 
 ## Execution Checklist
 
-1. [ ] **design** — Review alias resolution in the four type-property queries and agree on scope.
-2. [ ] **planned** — Approve a bounded repair that preserves resolved declaration identity.
-3. [ ] **planned** — Implement consistent queries and regression coverage.
-4. [ ] **planned** — Run compiler gates and independent review; obtain scoped signoff.
+1. [x] **complete** — Review alias resolution in the four type-property queries and agree on scope.
+2. [x] **complete** — Approve a bounded repair that preserves resolved declaration identity.
+3. [x] **complete** — Implement consistent queries and regression coverage.
+4. [x] **complete** — Run compiler gates and independent review; obtain scoped signoff.
 
 ## Problem
 
-`TypeUtils.cloneFnFor` and `isStructWithHeapFields` follow canonical aliases to their
-resolved declarations. `freeFnFor` and `isHeapType` reduce the alias target to a name and
-look it up again. The queries can select different declarations when short names collide.
-All four entry points also accept names, so sharing the alias resolver alone does not
-settle the broader identity loss described in [QA-001](qa-misses.md#qa-001-preserve-resolved-type-identity-in-type-utilities).
+Type-property queries must preserve declaration identity through aliases and their callers.
+Reducing a resolved type to a short name permits another declaration to be selected when names
+collide, including with stdlib declarations. Name-based recursion guards can also conflate
+separate recursive types. This is the scope of
+[QA-001](qa-misses.md#qa-001-preserve-resolved-type-identity-in-type-utilities).
 
 ## Outcome
 
@@ -43,21 +43,40 @@ or unresolved types do not silently select a declaration with the same short nam
 
 ## Plan (Approval Gate)
 
-- [ ] Reproduce query disagreement with aliases and colliding names, including stdlib names.
-- [ ] Review resolved-type inputs, shared declaration lookup, and handling of unresolved types.
-- [ ] Approve the implementation boundary and regression controls before code changes.
+- [x] Review identity loss in type-property queries and their callers.
+- [x] Approve the implementation boundary and regression controls.
+- [x] Centralize resolved declaration queries across heap, destruction, clone, native representation,
+  and pointer properties; preserve IDs through callers and recursive traversal.
+- [x] Consolidate memory-function selection, including generated struct helpers before registration.
+- [x] Cover aliases, collisions, recursion, missing references and functions, and explicit destructors.
+- [x] Run compiler gates and independent review.
 
-Approval: review and planning only; implementation pending.
+Approval: implementation and associated task bookkeeping approved. Preserve language semantics.
+Larger opportunities require separate PROPOSAL tasks.
 
 ## Verification
 
-Source inspection confirms the split: `underlyingTypeByName` retains a canonical alias
-target's resolved ID, while the alias branches in `freeFnFor` and `isHeapType` call
-`getTypeName` and repeat name lookup. No failing runtime example is established here.
+Baseline source inspection established stdlib-first short-name lookup and identity loss in
+callers, alias branches, and recursive heap classification. Regression tests construct resolved
+AST declarations with colliding names to isolate those query contracts; they do not establish
+source-language support for multiple modules.
 
-Required coverage includes alias chains, same-name nominal declarations, explicit and default
-memory-function names, scalar and heap structs, function-containing fields, and recursive types.
-Run applicable compiler gates and independent review for the approved implementation.
+Verification on 2026-10-25:
+
+- `sbtn "scalafmtAll; scalafixAll; testFull"` passes: 1,955 library tests and 9 CLI tests.
+- `TypeUtilsTests` includes 23 passing tests, covering alias chains, nominal and stdlib-name
+  collisions, recursive struct identities, alias cycles, unresolved and failed types, explicit
+  destructors, missing registrations, and pending generated helpers.
+- `./tests/smoke/run.sh all` passes all 8 fixtures.
+- `sbtn mmlcPublishLocal` succeeds.
+- `make -C benchmark clean` and `make -C benchmark mml` succeed: 37 benchmark builds.
+  This is compilation evidence, not a performance measurement.
+- `./tests/mem/run.sh all` passes 52/52 fixtures with ASan and LSan (71 seconds).
+- Independent primary review and separate fresh-context code-style/QA, test-quality, and
+  readability checks report no actionable findings. No candidate required claim verification.
+- Host verification used macOS arm64, Clang 23.1.1, GraalVM Java 25.0.4.1, and sbt 2.0.10
+  through `sbtn`. No ABI change is included; no Linux-container or cloud verification was run.
+- Author signoff is complete.
 
 ## Risks / Notes
 
@@ -66,12 +85,15 @@ while retaining ambiguous name lookup would leave QA-001 unresolved.
 
 ## Signoff
 
-- Workstream signoff: pending
-- Tracked item completion: pending
-- Commit authorization: not granted
+- Workstream signoff: complete
+- Tracked item completion: complete
+- Commit authorization: granted for the scoped implementation and closure records; push not authorized.
 
 ## Task Working Memory
 
-Review pending after Unify lambdas. Compare the four query paths and reproduce any disagreement,
-then present a bounded plan. Existing lambda alias regressions provide baseline coverage;
-the follow-up needs collision controls and a clear decision on name-based API boundaries.
+Typed queries, caller migration, and regression coverage are implemented. Shared memory-function
+selection distinguishes registered bindings from struct helpers being generated in their owning
+module. Formatting, lint, full tests, smoke, publication, benchmark builds, and memory checks pass.
+Independent primary review and all three dedicated checks pass with no actionable findings.
+Signoff is complete. No implementation or verification work remains. Local commit is authorized;
+push is not authorized.
