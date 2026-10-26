@@ -38,6 +38,7 @@ The [Protocols draft](../../docs/brainstorming/language/protocols.md) defines th
 - Define the relationship to `Unique` and `Clone` in
   [Memory evolution](../../docs/brainstorming/mem/mem-evolution.md#fundamental-protocols).
 - General polymorphic functions and data types are out of scope.
+- Explicit imports are out of scope; protocol function members use fully qualified names.
 - `FromInt` and compiler-derived integer conversion are deferred.
 
 ## Design
@@ -49,14 +50,20 @@ instance headers omit `for`. Function signatures introduce their own type variab
 with constraints in a `where` clause after the return type. Protocol and instance
 headers retain parameter constraints using `:` and `&`.
 
+[Instance identity and member resolution](../../docs/brainstorming/language/protocols.md#instance-identity-and-member-resolution)
+requires a single instance per protocol and concrete type combination, rejecting duplicates.
+Protocol function calls use fully qualified member names. Normal type checking uses argument
+and expected result types to select the instance; insufficient information is an error.
+
 ## Plan (Approval Gate)
 
 Settle the draft's open questions before choosing implementation stages:
 
 - Operator member syntax and optional type annotations in instance implementations.
 - Equality protocol name and members, including the relationship between `==` and `!=`.
-- Instance selection and diagnostics for missing or ambiguous instances.
-- Instance visibility, duplicate instances, and compiler derivation.
+- Protocol requirements, inherited members, and default implementations.
+- Diagnostics for missing instances or insufficient type information.
+- Interaction between explicit instances and compiler derivation.
 - Migration of built-in operators beyond equality.
 - Support for multiple protocol type parameters in the first implementation.
 
@@ -81,5 +88,7 @@ integration require design decisions; the draft is not an approved implementatio
 
 ## Task Working Memory
 
-Next action: resolve the open questions in the Protocols draft and agree on the initial
-implementation scope before preparing a bounded plan.
+Single instances, fully qualified protocol function names, and normal type-based instance
+selection are settled. Explicit imports are out of scope. Next action: decide whether
+protocol requirements demand separate instances, whether members are inherited, and whether
+default implementations are supported. Implementation scope and planning remain open.
