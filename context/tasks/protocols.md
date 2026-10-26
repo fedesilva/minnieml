@@ -63,11 +63,18 @@ Dependent instances cannot replace prerequisite implementations. Protocol member
 default bodies, checked against declared guarantees; instances may override their own
 protocol's defaults and must implement members without defaults.
 
+Instance implementations may omit parameter and return type annotations supplied by the
+contract; explicit annotations must agree with it.
+[Operator syntax](../../docs/brainstorming/language/protocols.md#operator-declaration-syntax)
+is the ordinary declaration shape: name, named parameters, return type, precedence and
+associativity, then an optional default body. Required members omit the body; defaults
+use `= body` and ordinary terminators. There is no separate protocol operator signature form.
+
 ## Plan (Approval Gate)
 
 Settle the draft's open questions before choosing implementation stages:
 
-- Operator member syntax and optional type annotations in instance implementations.
+- Parameter and return ownership compatibility between instances and protocol contracts.
 - Equality protocol name and members, including the relationship between `==` and `!=`.
 - Diagnostics for missing instances or insufficient type information.
 - Interaction between explicit instances and compiler derivation.
@@ -97,6 +104,7 @@ integration require design decisions; the draft is not an approved implementatio
 
 Single instances and ordinary name lookup with type-based candidate and instance
 selection are settled. Protocol requirements use separate instances; own members may have
-overridable defaults. Explicit imports are out of scope. Next action: settle implementation
-checking, including optional annotations and ownership compatibility. Implementation scope
-and planning remain open.
+overridable defaults. Contract-supplied type annotations may be omitted in instances, and
+operator members use ordinary operator syntax. Explicit imports are out of scope. Next action:
+settle parameter and return ownership compatibility. Implementation scope and planning
+remain open.

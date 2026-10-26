@@ -56,6 +56,19 @@ Instance headers apply the protocol to a type directly, without `for`. A bodyles
 member has one declaration terminator; an implementation also terminates its body
 expression. Nullary members use `()`, as in `fn empty(): 'T;`.
 
+Instance implementations may omit parameter and return type annotations supplied by the
+protocol contract. For example, the Semigroup instance above may be written as:
+
+```text
+instance Semigroup Int =
+  fn combine(left, right) = left + right;;
+;
+```
+
+The contract supplies `Int` for both parameters and the result. Explicit annotations
+remain allowed and must agree with the contract. This rule applies to function and
+operator implementations alike.
+
 See the [standard-library syntax sample](../snippets/lib.mml.txt) for the protocol
 family and the full `Option` Semigroup example. The sample explores future features;
 it is not a compilable library or an expansion of the initial implementation scope.
@@ -180,6 +193,32 @@ remains a separate design decision.
 
 ## Operators and protocols
 
+### Operator declaration syntax
+
+Operator member syntax is the ordinary operator declaration syntax. There is no separate
+protocol-specific operator signature form: the name is followed by named, typed parameters,
+the return type, and the normal precedence and associativity attributes.
+
+A required member omits the body:
+
+```text
+op +(left: 'T, right: 'T): 'T 60 left;
+```
+
+A default implementation adds `= body`, with the ordinary expression and declaration
+terminators. For example, a protocol that requires `==` may supply:
+
+```text
+op !=(left: 'T, right: 'T): Bool 40 left = not (left == right);;
+```
+
+Instance operators use that same declaration shape and may omit types supplied by the
+contract. Ordinary operator rules govern precedence and associativity syntax and defaults.
+The required-versus-default distinction and type-annotation rules are the same as for
+function members.
+
+### Operator resolution
+
 - Free operators allow at most one unary and one binary definition per symbol.
 - Within each protocol, the same unary/binary overload limit applies.
 - Operator resolution searches free operators and protocols in scope.
@@ -207,12 +246,11 @@ remains a separate design decision.
 
 ## Open questions
 
-1. **Implementation checking.** Can instances omit annotations supplied by the contract? How must parameter ownership and return types match?
+1. **Ownership compatibility.** How must instance parameter ownership and return ownership match the protocol contract?
 2. **First implementation scope.** Which protocols and concrete instances ship first? Keep the future polymorphic examples distinct from that deliverable.
 
 ### Additional open details
 
-- Operator member syntax.
 - Equality protocol name and members, including the relationship between `==` and `!=`.
 - Diagnostics for missing or ambiguous instances.
 - Interaction between explicit instances and compiler derivation.
