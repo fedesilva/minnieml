@@ -7,7 +7,7 @@
 - **Kind:** feature
 - **Priority:** unassigned
 - **Created:** 2026-10-25
-- **Target Branch:** unassigned
+- **Target Branch:** dev/protocols
 - **External Reference (optional):** None.
 
 ## Execution Checklist
