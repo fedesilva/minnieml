@@ -149,12 +149,46 @@ are future syntax, beyond the initial concrete-instance scope.
 
 ## Open questions
 
-1. Operator member syntax and whether instance implementations may omit type annotations.
-2. Equality protocol name and members, including the relationship between `==` and `!=`.
-3. How calls select instances and report missing or ambiguous instances.
-4. Instance visibility, duplicate instances, and interaction with compiler derivation.
-5. Migration of built-in operators beyond equality to protocol instances.
-6. Whether the first implementation supports multiple protocol type parameters.
+The next decisions are semantic. I’d work through these in order:
+
+1. **Instance identity and selection.** Can a type have more than one instance of a protocol? How does a call choose?
+2. **Names and visibility.** How do `combine`, `Semigroup.combine`, and imported instances resolve? Can the expected return type select an instance, as with `empty ()`?
+3. **Protocol requirements and default implementations.** Does `Monoid 'T: Semigroup` require a separate Semigroup instance? Can protocol members supply default bodies?
+4. **Implementation checking.** Can instances omit annotations supplied by the contract? How must parameter ownership and return types match?
+5. **First implementation scope.** Which protocols and concrete instances ship first? Keep the future polymorphic examples distinct from that deliverable.
+
+The sample already exposes a decision under item 3: `Monoid Int` supplies only `empty`, but `Monad Maybe` repeats implementations from its prerequisite instances. We should settle whether those members are inherited, separately required, or allowed to be reimplemented.
+
+I’d start with **instance identity**, using our Semigroup example:
+
+```text
+instance Semigroup Int =
+  fn combine(left: Int, right: Int): Int = left + right;;
+;
+```
+
+Multiplication could also supply an associative operation:
+
+```text
+instance Semigroup Int =
+  fn combine(left: Int, right: Int): Int = left * right;;
+;
+```
+
+My recommendation is **one instance per protocol and concrete type combination**, with duplicate instances rejected. Then `combine 2 3` has a stable meaning; importing another module cannot silently change it. Distinct wrapper types could represent addition and multiplication when both are needed.
+
+The alternative is named or explicitly selectable instances, which needs additional rules for selection and passing those choices through functions.
+
+Do you want that single-instance rule, or do you want multiple implementations for the same type to be expressible directly?
+
+### Additional open details
+
+- Operator member syntax.
+- Equality protocol name and members, including the relationship between `==` and `!=`.
+- Diagnostics for missing or ambiguous instances.
+- Interaction between explicit instances and compiler derivation.
+- Migration of built-in operators beyond equality to protocol instances.
+- Whether the first implementation supports multiple protocol type parameters.
 
 ---
 
