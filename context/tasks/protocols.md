@@ -57,13 +57,18 @@ protocol name. The type checker uses argument and expected result types to selec
 applicable member and instance. Insufficient information, missing candidates or instances,
 and unresolved ambiguity are errors. Functions and operators share this resolution model.
 
+[Protocol requirements and defaults](../../docs/brainstorming/language/protocols.md#protocol-requirements-and-default-implementations)
+use separate prerequisite instances, with transitive availability of their operations.
+Dependent instances cannot replace prerequisite implementations. Protocol members may have
+default bodies, checked against declared guarantees; instances may override their own
+protocol's defaults and must implement members without defaults.
+
 ## Plan (Approval Gate)
 
 Settle the draft's open questions before choosing implementation stages:
 
 - Operator member syntax and optional type annotations in instance implementations.
 - Equality protocol name and members, including the relationship between `==` and `!=`.
-- Protocol requirements, inherited members, and default implementations.
 - Diagnostics for missing instances or insufficient type information.
 - Interaction between explicit instances and compiler derivation.
 - Migration of built-in operators beyond equality.
@@ -91,6 +96,7 @@ integration require design decisions; the draft is not an approved implementatio
 ## Task Working Memory
 
 Single instances and ordinary name lookup with type-based candidate and instance
-selection are settled. Explicit imports are out of scope. Next action: decide whether
-protocol requirements demand separate instances, whether members are inherited, and whether
-default implementations are supported. Implementation scope and planning remain open.
+selection are settled. Protocol requirements use separate instances; own members may have
+overridable defaults. Explicit imports are out of scope. Next action: settle implementation
+checking, including optional annotations and ownership compatibility. Implementation scope
+and planning remain open.

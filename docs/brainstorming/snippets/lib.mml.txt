@@ -123,20 +123,12 @@ instance Applicative Maybe =
   fn pure(x: 'A): Maybe 'A = One x;;
 ;
 
-// Maybe implements the Monad protocol
+// Monad's requirements are supplied by the separate instances above.
 instance Monad Maybe =
-  fn flatMap(f: 'A -> Maybe 'B, maybe: Maybe 'A): Maybe 'B =
-    match maybe with
-      | One x -> f x;
-      | None  -> None;
-    ;
-  ;
-
-  fn pure(x: 'A): Maybe 'A = One x;;
 ;
 
 protocol Something 'T: Semigroup =
-  fn combine(left: 'T, right: 'T): 'T = left + right;;
+  fn combineWithPlus(left: 'T, right: 'T): 'T = left + right;;
   // Example of operator definitions using protocols
   // Here the precedence and associativity are randomly
   // selected for demonstration only.

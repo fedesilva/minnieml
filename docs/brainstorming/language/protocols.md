@@ -40,7 +40,7 @@ enforces their rules for both user-supplied and derived implementations.
 ## Syntax
 
 Protocol members use the ordinary function declaration shape, with named, typed
-parameters and a return type, but no body:
+parameters and a return type. A member without a default implementation has no body:
 
 ```text
 protocol Semigroup 'T =
@@ -140,6 +140,35 @@ Explicit imports remain out of scope.
 
 ---
 
+## Protocol requirements and default implementations
+
+A protocol constraint requires a separate instance for the same type. For example,
+`Monoid 'T: Semigroup` requires `Semigroup Int` before `Monoid Int` can be satisfied.
+The Monoid instance implements its own members; it cannot replace the Semigroup
+instance's `combine`. There is one meaning for that operation, whether the caller
+requires Semigroup alone or Monoid.
+
+Requirements apply transitively. A future function constrained by `'T: Monoid` can
+also use the operations guaranteed by Semigroup. These operations belong to their
+original protocols and are supplied by the required instances, not reimplemented in
+the dependent instance. The sample's `Monad Maybe` therefore has no member bodies;
+its requirements are supplied by the separate Functor, FlatMap, and Applicative instances.
+
+Protocol members may supply default bodies:
+
+- A member without a body must be implemented by every instance.
+- A member with a body may be omitted by an instance, which uses the default.
+- An instance may override a default for a member declared by its own protocol.
+- A default may use other protocol members and declared requirements. It is checked
+  using only those guarantees, without assuming operations available on a particular
+  concrete type.
+
+Defaults apply to both functions and operators. For example, an equality protocol could
+require `==` and define `!=` as its negation. The equality protocol's exact contract
+remains a separate design decision.
+
+---
+
 ## Derived equality
 
 - Equality protocol name: provisional (`CanEqual`).
@@ -178,13 +207,8 @@ Explicit imports remain out of scope.
 
 ## Open questions
 
-1. **Protocol requirements and default implementations.** Does `Monoid 'T: Semigroup` require a separate Semigroup instance? Can protocol members supply default bodies?
-2. **Implementation checking.** Can instances omit annotations supplied by the contract? How must parameter ownership and return types match?
-3. **First implementation scope.** Which protocols and concrete instances ship first? Keep the future polymorphic examples distinct from that deliverable.
-
-The sample exposes a decision under item 1: `Monoid Int` supplies only `empty`, but
-`Monad Maybe` repeats implementations from its prerequisite instances. Whether those
-members are inherited, separately required, or allowed to be reimplemented remains open.
+1. **Implementation checking.** Can instances omit annotations supplied by the contract? How must parameter ownership and return types match?
+2. **First implementation scope.** Which protocols and concrete instances ship first? Keep the future polymorphic examples distinct from that deliverable.
 
 ### Additional open details
 
