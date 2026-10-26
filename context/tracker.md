@@ -20,16 +20,11 @@ Narrow fixes that do not address the underlying problem are to be shunned.
 
 ## Active Tasks
 
-### Global-origin ownership
+### Protocols
 
-- **Tracker:** [Global-origin ownership](tasks/global-origin-ownership.md)
-- **Status:** planned
-- **Current focus:** Plan a `Global` ownership mode that removes implicit cloning
-  of globals, preserves their provenance through value flow, and prevents their destruction.
-
-
-Note: We need a separate `Static` mode, which is a specialized `Global` that can't be mutated.
-  Probably not for now since we don't track mutability or mutation.
+- **Tracker:** [Implement protocols](tasks/protocols.md)
+- **Status:** design
+- **Current focus:** Settle protocol semantics and the initial implementation scope.
 
 ### Module naming
 

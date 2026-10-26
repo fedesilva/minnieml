@@ -22,7 +22,6 @@ Do not read or act on them unless directed to do so explicitely.
 
 ## Abridged hand-wavy roadmap
 
-* parser fix
 
 * Protocols (required for the new mem stuff and also I have operators for int and float ( +, +.) that are a pain)
 * Intrinsic arrays, make [] work, arrays are an intrinsic type like structs and they can have a type parameter    

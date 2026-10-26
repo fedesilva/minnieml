@@ -151,7 +151,7 @@ requirement to leave specs unchanged. No task implementation or completion is im
 | Former spec | Destination |
 | --- | --- |
 | `238-compile-prelude.md` | [Prelude task](../tasks/compile-prelude.md#retained-prelude-design) |
-| `global-origin-ownership.md` | [Global ownership task](../tasks/global-origin-ownership.md#global-ownership-design) |
+| `global-origin-ownership.md` | [Global ownership task](../tasks/completed/global-origin-ownership.md#global-ownership-design) |
 | `owned-string-literals.md` | [Owned strings proposal](../tasks/owned-strings.md#owned-string-literal-proposal) |
 | `bug-lambda-lifter.md` | [Capture report](../tasks/lambda-lifting-bug.md#duplicate-capture-report) |
 | `pap-ownership-model.md` | [Lambda task PAP contract](../tasks/completed/unify-lambdas.md#partial-application-ownership-contract) |
@@ -183,7 +183,7 @@ with its [JSON inventory](../tasks/unify-lambdas-migration.json). The historical
 [Readability](../tasks/qa-readability.md) and the five QA debt reports have planned tasks:
 [ownership assertions](../tasks/qa-ownership-assertions.md),
 [toolchain errors](../tasks/qa-toolchain-error-boundaries.md),
-[topological ordering](../tasks/qa-topological-order.md),
+[topological ordering](../tasks/completed/qa-topological-order.md),
 [nonempty invariants](../tasks/qa-head-invariants.md), and
 [printer line lengths](../tasks/qa-error-printing-lines.md).
 Source-review status and counts are retained as dated evidence, not fresh findings.

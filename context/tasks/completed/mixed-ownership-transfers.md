@@ -263,7 +263,7 @@ verification limitation, not a passing result or an automatic waiver for this ta
 - The Boolean witness answers whether storage needs destruction. It does not distinguish
   static storage from a borrow or prove that ownership is still available after a move.
 - Existing clone exceptions are documented in [the memory model](../../../docs/memory-model.md#clone-operations).
-  [Ownership rules](../ownership-rules.md), [global-origin ownership](../global-origin-ownership.md),
+  [Ownership rules](../ownership-rules.md), [global-origin ownership](global-origin-ownership.md),
   and [unified ownership policy](../unify-ownership-model.md) are broader proposals; this task
   does not approve those policy changes.
 - The explicit `Mixed` representation and integrated capture scope are approved. Implementation

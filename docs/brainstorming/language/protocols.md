@@ -36,16 +36,57 @@ enforces their rules for both user-supplied and derived implementations.
 
 ---
 
-## Declarations and instances
+## Syntax
 
-Provisional headers:
+Protocol members use the ordinary function declaration shape, with named, typed
+parameters and a return type, but no body:
 
 ```text
-protocol CanEqual 'T = ...
-instance CanEqual for EventKind = ...
+protocol Semigroup 'T =
+  fn combine(left: 'T, right: 'T): 'T;
+;
+
+instance Semigroup Int =
+  fn combine(left: Int, right: Int): Int = left + right;;
+;
 ```
 
-- Member syntax: undecided.
+Instance headers apply the protocol to a type directly, without `for`. A bodyless
+member has one declaration terminator; an implementation also terminates its body
+expression. Nullary members use `()`, as in `fn empty(): 'T;`.
+
+See the [standard-library syntax sample](../snippets/lib.mml.txt) for the protocol
+family and the full `Option` Semigroup example. The sample explores future features;
+it is not a compilable library or an expansion of the initial implementation scope.
+
+### Type parameters and constraints
+
+Type variables have an apostrophe: `'T` is a type variable and `'F 'T` applies a
+type-constructor variable to it. Concrete constructors have no apostrophe, as in
+`Option 'T`.
+
+Constraints follow the parameter they constrain, using `:` and `&`:
+
+```text
+protocol Monoid 'T: Semigroup =
+  fn empty(): 'T;
+;
+
+instance Semigroup (Option 'T: Semigroup) = ...
+instance Semigroup (Option 'T: Semigroup & Clone) = ...
+```
+
+The instance headers introduce `'T`; the constraints apply to that element type.
+The first requires its Semigroup instance. The second additionally requires its
+Clone instance. In the sample, two `Some` values combine their contents using the
+Semigroup instance for `'T`, while `None` acts as an identity. Union and match syntax
+in that example is illustrative. Parameterized instances and multiple constraints
+are future syntax, beyond the initial concrete-instance scope.
+
+---
+
+## Derived equality
+
 - Equality protocol name: provisional (`CanEqual`).
 - The compiler derives an equality instance for each enum.
 - Derived enum equality accepts values of the same enum.
@@ -82,7 +123,7 @@ instance CanEqual for EventKind = ...
 
 ## Open questions
 
-1. Complete declaration, member, and instance syntax.
+1. Operator member syntax and whether instance implementations may omit type annotations.
 2. Equality protocol name and members, including the relationship between `==` and `!=`.
 3. How calls select instances and report missing or ambiguous instances.
 4. Instance visibility, duplicate instances, and interaction with compiler derivation.
