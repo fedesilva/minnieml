@@ -193,6 +193,7 @@ unstated knowledge, or introduces references that it does not explain within the
   `close subtask`, or `close errand`. Follow
   `context/task-tracking-rules.md`.
   Push only when requested; closing does not authorize remote publication.
+- Feature or long lived *branches to be named* `dev/<task-name>`.
 - Use Git Town for the branch lifecycle: `git town hack <name>` creates a feature branch
   and `git town sync` syncs/publishes. Do not use raw branch-creation or merge commands
   instead. Verify the intended parent before changing branch configuration.
