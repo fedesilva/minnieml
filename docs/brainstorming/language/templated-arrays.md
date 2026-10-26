@@ -3,6 +3,8 @@
 Status: Draft
 Goal: Implement a templating mechanism for arrays while we don't have a polymorphic typechecker.
 
+WARNING: superseded by intrinsic arrays.
+
 ---
 
 ## 1. motivation
@@ -94,5 +96,9 @@ For records: same if trivially copyable, otherwise fall back to per-element stor
 ## 6. open questions
 
 - Syntax for array literals: `[1, 2, 3]` vs `Array [1, 2, 3]`?
+  - [1, 2, 3]
 - Bounds checking strategy?
+  - there will be intrinsics, safe and unsafe
 - Mutable vs immutable?
+  - mutable for now, when we get effects mutability will be tracked and restricted 
+    by mode+effect interactions (owned, borrowed, escaping, etc)
