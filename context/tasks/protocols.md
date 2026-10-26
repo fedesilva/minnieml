@@ -45,7 +45,9 @@ The [Protocols draft](../../docs/brainstorming/language/protocols.md) defines th
 See the [Protocols draft](../../docs/brainstorming/language/protocols.md) and its
 [syntax section](../../docs/brainstorming/language/protocols.md#syntax), which links
 to the standard-library examples. Function members use named, typed parameters;
-instance headers omit `for`. Parameter constraints use `:` and `&`.
+instance headers omit `for`. Function signatures introduce their own type variables,
+with constraints in a `where` clause after the return type. Protocol and instance
+headers retain parameter constraints using `:` and `&`.
 
 ## Plan (Approval Gate)
 

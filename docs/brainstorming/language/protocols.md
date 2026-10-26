@@ -65,7 +65,33 @@ Type variables have an apostrophe: `'T` is a type variable and `'F 'T` applies a
 type-constructor variable to it. Concrete constructors have no apostrophe, as in
 `Option 'T`.
 
-Constraints follow the parameter they constrain, using `:` and `&`:
+Function signatures introduce type variables that are not already bound by an enclosing
+protocol or instance. There is no type-parameter list between the function name and
+its value parameters:
+
+```text
+fn empty(x: Maybe 'T): Bool = ...
+
+protocol Functor 'F =
+  fn map(f: 'A -> 'B, values: 'F 'A): 'F 'B;
+;
+```
+
+Here `'F` belongs to the protocol; `'A` and `'B` belong to `map`. Function constraints
+follow the return type in a `where` clause, before `=`:
+
+```text
+fn empty(x: Maybe 'T): Bool
+  where 'T: Clone = ...
+
+fn combine(left: Option 'T, right: Option 'T): Option 'T
+  where 'T: Semigroup & Clone = ...
+```
+
+These headers illustrate constraint placement; checking whether an option is empty
+does not itself require cloning. Multiple constraints on one variable use `&`.
+
+Protocol and instance headers retain constraints on their parameters, using `:` and `&`:
 
 ```text
 protocol Monoid 'T: Semigroup =

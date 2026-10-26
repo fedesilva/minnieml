@@ -14,14 +14,15 @@ union Maybe 'T =
 // (One instead of Maybe.One)
 use Maybe.*;
 
-fn empty 'T(x: Maybe 'T): Bool =
+// Function type variables are introduced by their signatures.
+fn empty(x: Maybe 'T): Bool =
   match x with
     | None -> true;
     | _    -> false;
   ;
 ;
 
-fn nonEmpty 'T(maybe: Maybe 'T): Bool =
+fn nonEmpty(maybe: Maybe 'T): Bool =
   not (empty maybe);
 ;
 
@@ -51,30 +52,30 @@ protocol Monoid 'T: Semigroup =
 
 // Functor represents a structure that can be mapped over.
 protocol Functor 'F =
-  fn map 'A 'B(f: 'A -> 'B, values: 'F 'A): 'F 'B;
+  fn map(f: 'A -> 'B, values: 'F 'A): 'F 'B;
 ;
 
 // Apply requires 'F to also satisfy Functor.
 protocol Apply 'F: Functor =
-  fn ap 'A 'B(functions: 'F ('A -> 'B), values: 'F 'A): 'F 'B;
+  fn ap(functions: 'F ('A -> 'B), values: 'F 'A): 'F 'B;
 ;
 
 // Applicative requires 'F to also satisfy Apply.
 protocol Applicative 'F: Apply =
-  fn pure 'A(value: 'A): 'F 'A;
+  fn pure(value: 'A): 'F 'A;
 ;
 
 // FlatMap requires 'F to also satisfy Functor.
 protocol FlatMap 'F: Functor =
-  fn flatMap 'A 'B(f: 'A -> 'F 'B, values: 'F 'A): 'F 'B;
+  fn flatMap(f: 'A -> 'F 'B, values: 'F 'A): 'F 'B;
 ;
 
 // Monad requires 'M to also satisfy Functor, FlatMap, and Applicative.
 protocol Monad 'M: Functor & FlatMap & Applicative;
 
 protocol Foldable 'F =
-  fn foldLeft 'A 'B(f: 'B -> 'A -> 'B, initial: 'B, values: 'F 'A): 'B;
-  fn foldRight 'A 'B(f: 'A -> 'B -> 'B, initial: 'B, values: 'F 'A): 'B;
+  fn foldLeft(f: 'B -> 'A -> 'B, initial: 'B, values: 'F 'A): 'B;
+  fn foldRight(f: 'A -> 'B -> 'B, initial: 'B, values: 'F 'A): 'B;
 ;
 
 // Int forms a semigroup under addition
@@ -89,7 +90,7 @@ instance Monoid Int =
 
 // Maybe implements the Functor protocol
 instance Functor Maybe =
-  fn map 'A 'B(f: 'A -> 'B, maybe: Maybe 'A): Maybe 'B =
+  fn map(f: 'A -> 'B, maybe: Maybe 'A): Maybe 'B =
     match maybe with
       | One x -> One (f x);
       | None  -> None;
@@ -99,7 +100,7 @@ instance Functor Maybe =
 
 // Maybe implements the Apply protocol
 instance Apply Maybe =
-  fn ap 'A 'B(f: Maybe ('A -> 'B), maybe: Maybe 'A): Maybe 'B =
+  fn ap(f: Maybe ('A -> 'B), maybe: Maybe 'A): Maybe 'B =
     match f with
       | One g -> map g maybe;
       | None  -> None;
@@ -109,7 +110,7 @@ instance Apply Maybe =
 
 // Maybe implements the FlatMap protocol
 instance FlatMap Maybe =
-  fn flatMap 'A 'B(f: 'A -> Maybe 'B, maybe: Maybe 'A): Maybe 'B =
+  fn flatMap(f: 'A -> Maybe 'B, maybe: Maybe 'A): Maybe 'B =
     match maybe with
       | One x -> f x;
       | None  -> None;
@@ -119,19 +120,19 @@ instance FlatMap Maybe =
 
 // Maybe implements the Applicative protocol
 instance Applicative Maybe =
-  fn pure 'A(x: 'A): Maybe 'A = One x;;
+  fn pure(x: 'A): Maybe 'A = One x;;
 ;
 
 // Maybe implements the Monad protocol
 instance Monad Maybe =
-  fn flatMap 'A 'B(f: 'A -> Maybe 'B, maybe: Maybe 'A): Maybe 'B =
+  fn flatMap(f: 'A -> Maybe 'B, maybe: Maybe 'A): Maybe 'B =
     match maybe with
       | One x -> f x;
       | None  -> None;
     ;
   ;
 
-  fn pure 'A(x: 'A): Maybe 'A = One x;;
+  fn pure(x: 'A): Maybe 'A = One x;;
 ;
 
 protocol Something 'T: Semigroup =
@@ -164,3 +165,8 @@ instance Semigroup (Option 'T: Semigroup) =
 
 // Multiple constraints apply to the element type, for example:
 // instance Semigroup (Option 'T: Semigroup & Clone) = ...
+
+// Function constraints follow the signature, for example:
+// fn empty(x: Maybe 'T): Bool
+//   where 'T: Clone = ...
+// Multiple requirements use the same form: where 'T: Semigroup & Clone.
