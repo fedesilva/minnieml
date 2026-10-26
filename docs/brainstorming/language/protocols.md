@@ -24,8 +24,10 @@ enforces their rules for both user-supplied and derived implementations.
 - Protocol declarations, type parameters, instances, and instance resolution.
 - Function and operator members; operators use the same protocol mechanism as functions.
 - Compiler-derived equality instances for enums.
-- General polymorphic functions and data types, including higher-kinded parameters
-  such as the sample's Functor parameter: out of scope.
+- First-order parametric functions and unions are a bounded extension described below;
+  inclusion in the first implementation remains open.
+- Higher-kinded parameters such as the sample's Functor parameter, polymorphic function
+  values, and global type inference are out of scope.
 - Explicit imports: out of scope.
 
 ---
@@ -113,17 +115,18 @@ protocol Monoid 'T: Semigroup =
   fn empty(): 'T;
 ;
 
-// Alternative headers, not coexisting instances:
 instance Semigroup (Option 'T: Semigroup) = ...
-instance Semigroup (Option 'T: Semigroup & Clone) = ...
 ```
 
-The alternative instance headers introduce `'T`; the constraints apply to that element type.
-Constraints do not distinguish instance identities: both headers implement
-`Semigroup (Option 'T)` and cannot coexist.
+The instance header introduces `'T`; the constraint applies to that element type.
+To require both protocols, the constraint syntax is `'T: Semigroup & Clone`. This is
+an illustration of a more specific constraint, not a second instance definition.
 
-The first requires its Semigroup instance. The second additionally requires its
-Clone instance. In the sample, two `Some` values combine their contents using the
+Constraints are minimum requirements, not an exhaustive list of a type's instances.
+`'T: Semigroup` accepts types that also satisfy Clone; omitting Clone does not exclude them.
+Adding Clone narrows applicability but does not create a different instance identity.
+
+In the sample, two `Some` values combine their contents using the
 Semigroup instance for `'T`, while `None` acts as an identity. Union and match syntax
 in that example is illustrative. Parameterized instances and multiple constraints
 are future syntax, beyond the initial concrete-instance scope.
@@ -270,6 +273,52 @@ for selecting `Monoid Int` from `let zero: Int = empty ();`.
 Choose the lowering strategy during implementation planning. Emitting concrete functions
 for selected instances and specializing default bodies is a candidate for the initial
 concrete-instance scope; runtime dictionaries are not an agreed requirement.
+
+---
+
+## First-order parameterization
+
+Parametric functions and unions can share a bounded type-checking scheme without global
+unification. Type variables range over ordinary value types (kind `Type`, also written `*`),
+including concrete structs and function types. They do not range over type constructors:
+`'F 'T` and the sample's Functor abstraction remain outside this extension.
+
+Function bodies are checked independently against their signatures and declared constraints:
+
+```text
+fn merge(left: 'T, right: 'T): 'T
+  where 'T: Semigroup =
+  combine left right;
+;
+```
+
+At each call, argument and expected result types determine a local substitution for the
+signature's type variables. Each candidate has its own substitution. Inconsistent or
+unresolved substitutions are errors; inference does not propagate across function bodies
+or globally generalize definitions. Protocol requirements stay in `where` clauses;
+protocol names are not value types in parameter annotations.
+
+Parameterized unions fit the same scheme:
+
+```text
+union Option 'T =
+  | Some 'T
+  | None
+;
+
+let present = Option.Some 42;          // Option Int
+let absent: Option Int = Option.None;
+```
+
+Constructor arguments or an expected type determine the element type locally. An
+unconstrained `Option.None` is an error because its element type cannot be determined.
+`Option` is a concrete type constructor; its parameter `'T` still ranges only over value
+types. This does not require higher-kinded parameters.
+
+Concrete specialization is a possible implementation: substitute types into functions and
+union layouts, resolve protocol instances, and generate ownership operations for concrete
+payloads such as `Option Int` and `Option String`. The lowering strategy and inclusion of
+this extension in the first implementation remain open.
 
 ---
 
