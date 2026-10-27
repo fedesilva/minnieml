@@ -80,14 +80,21 @@ Declarations include:
 - `TypeDef` - New type definitions
 - `TypeAlias` - Type aliases
 - `TypeStruct` - Nominal record types
-- `Protocol` - A named contract with one type parameter and member declarations
-- `ProtocolMember` - A callable signature with an optional default Lambda body
+- `Protocol` - A protocol with one type parameter and signatures
+- `ProtocolSignature` - A function or operator signature with an optional default Lambda body
 - `ProtocolInstance` - An unnamed declaration supplying a protocol reference, concrete type,
   and ordinary member bindings
 
 Protocol AST definitions await parser and semantic-phase integration. `ProtocolRef` retains
 its source name and an optional resolved protocol ID. Instances carry their own stable IDs
 without inventing source names. Visibility remains on the concrete declarations that expose it.
+
+`ProtocolRegistry` records protocol and signature IDs, unique concrete instances, and the binding
+ID implementing each instance signature. Lookups read current nodes from `ResolvablesIndex`.
+Instance identity follows aliases: if `Count` aliases `Int`, `Num Count` and `Num Int` identify
+the same instance. Distinct nominal types remain distinct even with the same native layout.
+Lexical candidate lookup preserves visible signatures until later phases select an instance.
+The registry awaits integration into those phases.
 
 **Bnd with BindingMeta**: Functions and operators are represented as `Bnd` nodes containing a `Lambda` body and `BindingMeta`:
 ```scala

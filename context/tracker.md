@@ -24,8 +24,7 @@ Narrow fixes that do not address the underlying problem are to be shunned.
 
 - **Tracker:** [Implement protocols](tasks/protocols.md)
 - **Status:** in_progress
-- **Current focus:** Implement approved P0b shared lookups after the signed-off P0 AST definitions.
-  Shared lookup machinery has a separate review checkpoint before phase integration.
+- **Current focus:** Implement P1 parsing using the signed-off AST and shared lookup API.
 
 ### Protocol derivation
 

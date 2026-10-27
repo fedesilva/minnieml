@@ -15,8 +15,8 @@
 1. [x] **complete** — Define the first-slice scope, resolution model, and Num-to-Clone delivery order.
 2. [x] **complete** — Approve the [bounded implementation plan](#plan-approval-gate).
 3. [x] **complete** — [P0: Write the AST nodes, then stop for Author review](#p0-ast-nodes-and-author-review).
-4. [ ] **planned** — [P0b: Build shared lookup machinery, then stop for Author review](#p0b-shared-lookups-and-author-review).
-5. [ ] **planned** — [P1: Parse protocol contracts and concrete instances](#p1-declarations-and-syntax).
+4. [x] **complete** — [P0b: Build shared lookup machinery, then stop for Author review](#p0b-shared-lookups-and-author-review).
+5. [ ] **planned** — [P1: Parse protocol signatures and concrete instances](#p1-declarations-and-syntax).
 6. [ ] **planned** — [P2: Validate contracts and register concrete member functions](#p2-contracts-and-concrete-members).
 7. [ ] **planned** — [P3: Enforce precedence/associativity coherence before grouping; preserve candidates](#p3-lookup-and-operator-grouping).
 8. [ ] **planned** — [P4: Select concrete members using arguments and expected types](#p4-type-directed-selection-and-lowering).
@@ -93,6 +93,8 @@ the plan keeps them as free operators.
 ## Design
 
 The rules below govern the first slice. Deferred language features are identified separately.
+Protocols declare constraints on type parameters; they are not ordinary value types. Future
+`where` clauses will express those constraints on a type parameter. That syntax is deferred.
 
 ### Critical invariant: operator precedence and associativity coherence
 
@@ -202,7 +204,7 @@ Proceed to P0b only after explicit review and signoff of the AST shape.
 
 ### P0b: Shared lookups and Author review
 
-- Provide one shared lookup API for protocols by resolved ID, member contracts by protocol
+- Provide one shared lookup API for protocols by resolved ID, signatures by protocol
   and member identity, instances by protocol ID and concrete type, and instance member bindings
   by instance and member identity.
 - Provide visible candidate lookup by source name and operator arity, with explicit scope input
@@ -471,10 +473,27 @@ P0 verification (2026-10-26):
   this step changes declaration traits and AST definitions, not ownership, lambda execution,
   native calling conventions, or ABI layouts.
 
+P0b verification (2026-10-26):
+
+- The first full-suite attempt failed compilation on stray `lov` text before a test.
+  Removing that typo restored compilation.
+- `sbtn 'scalafmtAll;scalafixAll;testFull'` passed 2,001 library tests and 9 CLI tests,
+  with no failures or errors and no compiler warnings. The launcher reported multiple main classes.
+- `./tests/smoke/run.sh all` passed all eight fixtures.
+- `sbtn mmlcPublishLocal`, `make -C benchmark clean`, and `make -C benchmark mml` passed.
+  The benchmark collection was compiled; runtime performance was not measured.
+- `git diff --check` and the manual QA compliance pass passed. Independent primary review and
+  separate QA/style, test-quality, and readability checks completed. One independently verified
+  finding required doc-comments on three public lookup methods; those comments are added and
+  formatted. Fresh narrow primary review and all three dedicated checks found no actionable
+  findings in the correction.
+- Memory and Linux ABI gates are not applicable: registry identities and AST naming do not
+  change ownership, lambda execution, native calling conventions, or ABI layouts.
+
 The definitions in
 [protocols.scala](../../modules/mmlc-lib/src/main/scala/mml/mmlclib/ast/protocols.scala)
-represent protocols, member contracts, and instances as declarations. P0 is verified and
-signed off; P0b–P9 implementation remains pending.
+represent protocols, signatures, and instances as declarations. P0 is verified and
+signed off. P0b is verified and signed off; P1 parsing is next. P1–P9 implementation remains pending.
 
 ## Risks / Notes
 
@@ -488,9 +507,10 @@ The language draft defines semantics beyond the approved bounded plan.
 
 ## Signoff
 
-- Workstream signoff: Bounded plan and P0 AST shape approved; P0 verification and review complete.
+- Workstream signoff: Bounded plan, P0 AST shape, and P0b lookup API approved. P0 and P0b
+  verification and independent review are complete.
 - Tracked item completion: Pending.
-- Commit authorization: Granted for P0 source changes, documentation, and scoped bookkeeping.
+- Commit authorization: Granted for P0 and P0b source changes, documentation, and scoped bookkeeping.
 
 ## Task Working Memory
 
@@ -505,16 +525,26 @@ as detailed in the implementation reference.
 The first slice has one protocol type parameter and required members only. Defaults,
 prerequisites, and multiple protocol parameters are deferred.
 The bounded P0–P9 plan, including P0b, is approved.
-P0 defines `Protocol`, `ProtocolMember`, `ProtocolRef`, and `ProtocolInstance` in
+P0 defines `Protocol`, `ProtocolSignature`, `ProtocolRef`, and `ProtocolInstance` in
 [protocols.scala](../../modules/mmlc-lib/src/main/scala/mml/mmlclib/ast/protocols.scala).
-Contracts reuse `FnParam`, `Type`, and `BindingMeta`; default bodies use `Option[Lambda]`,
+Signatures reuse `FnParam`, `Type`, and `BindingMeta`; default bodies use `Option[Lambda]`,
 and instance bodies remain ordinary `Bnd` values. Protocols, member signatures, and instances
 extend `Decl`. Named declarations also implement
 `Resolvable`; `Bnd`, `TypeDef`, and `TypeAlias` explicitly implement `Typeable`.
 Instances carry their own optional ID and are unnamed declarations. Protocol references
 retain `Name` plus an optional resolved protocol ID.
-P0 is verified and signed off. Next action: begin the approved P0b shared lookup work.
-P0b requires a separate lookup API review
-before P1. P6 is the Num signoff gate before Clone integration. Literal promotion and mixed
+P0 is verified, signed off, and committed in `c3091ce6`.
+P0b adds an immutable `ProtocolRegistry` with protocol/signature registration, concrete-instance
+keys, member-binding associations, and lexical candidate lookup. Nodes are retrieved from the
+supplied `ResolvablesIndex`. Keys follow aliases and preserve nominal identity; registry comments
+explain the model with alias, Num/Clone, shadowing, and updated-binding examples.
+The public registry API precedes its auxiliary types. Tests share concrete Num declarations but
+show registration, the operation, and explicit expected results individually, without generated-case
+loops or generic fixture wrappers. The signature node and lookup vocabulary use `ProtocolSignature`.
+P0b is verified and signed off, with local commit authorization. Full-suite, smoke, local publish,
+benchmark compilation, and independent review results are recorded under Verification.
+P1 parsing is the next approved step: preserve omitted instance annotations and operator attributes,
+then integrate source-aware traversal, IDs, indexes, diagnostics, printers, and editor consumers.
+P6 is the Num signoff gate before Clone integration. Literal promotion and mixed
 ownership witnesses remain supported; broader implicit-cloning policy belongs to
 [Revisit implicit cloning](implicit-cloning.md).

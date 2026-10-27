@@ -1,21 +1,22 @@
 package mml.mmlclib.ast
 
-/** A named contract over one type parameter. Members describe callable requirements. */
+/** A protocol over one type parameter, with signatures for its required functions and operators. */
 case class Protocol(
   source:        SourceOrigin,
   nameNode:      Name,
   typeParameter: TypeVariable,
-  members:       List[ProtocolMember],
+  signatures:    List[ProtocolSignature],
   visibility:    Visibility         = Visibility.Protected,
   docComment:    Option[DocComment] = None,
   id:            Option[String]     = None
 ) extends Decl,
       Resolvable
 
-/** A callable contract. Parameters retain type annotations and consuming ownership markers.
-  * Required members have no default body; metadata describes function or operator syntax.
+/** A function or operator signature. Parameters retain type annotations and consuming ownership
+  * markers. Required signatures have no default body; metadata describes function or operator
+  * syntax.
   */
-case class ProtocolMember(
+case class ProtocolSignature(
   source:      SourceOrigin,
   nameNode:    Name,
   params:      List[FnParam],
@@ -27,7 +28,7 @@ case class ProtocolMember(
 ) extends Decl,
       Resolvable
 
-/** A protocol name retained alongside its resolved contract identity. */
+/** A protocol name retained alongside its resolved protocol identity. */
 case class ProtocolRef(
   source:     SourceOrigin,
   nameNode:   Name,

@@ -4,6 +4,10 @@ Durable product changes belong here. Current task state belongs in task files.
 
 ## 2026-10-26
 
+- Add immutable shared protocol lookups for signatures, concrete instances, member bindings,
+  and lexical candidates. Resolve aliases while preserving nominal type identity, and retrieve
+  current AST nodes through stable IDs. Name callable requirements `ProtocolSignature`.
+
 - Add AST declarations for protocols, member contracts, and concrete instances. Separate
   declaration identity from optional typing and name lookup; retain type fields on bindings,
   type definitions, and aliases. Document the AST shapes pending protocol phase integration.
