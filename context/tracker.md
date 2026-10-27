@@ -26,6 +26,13 @@ Narrow fixes that do not address the underlying problem are to be shunned.
 - **Status:** in_progress
 - **Current focus:** Implement P1 parsing using the signed-off AST and shared lookup API.
 
+### Operator partial application
+
+- **Tracker:** [Decide what to do with operator partial application](tasks/decide-operator-partial-application.md)
+- **Status:** design
+- **Current focus:** Deferred discussion after Protocols: unary/binary selection, annotation
+  burden, rewriter changes, and whether to keep both operator application and placeholders.
+
 ### Protocol derivation
 
 - **Tracker:** [Protocol derivation](tasks/protocol-derivation.md)
