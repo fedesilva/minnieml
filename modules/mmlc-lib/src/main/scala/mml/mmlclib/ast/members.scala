@@ -11,7 +11,8 @@ case class Bnd(
   meta:       Option[BindingMeta] = None,
   id:         Option[String]      = None
 ) extends Decl,
-      FromSource
+      Typeable,
+      Resolvable
 
 /** Represents a duplicate member declaration. The first occurrence remains valid and referenceable,
   * subsequent duplicates are wrapped in this node.

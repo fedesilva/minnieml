@@ -38,8 +38,8 @@ Nodes that can have types, containing:
 - `typeAsc: Option[TypeSpec]` - **User-declared type** from source
 
 #### `Resolvable`
-Nodes that can be referenced by name (all `Decl` types, `FnParam`). Each `Resolvable` (and
-`ResolvableType`) carries a stable `id: Option[String]` used for soft references.
+Nodes that can be referenced by name (named declarations, `FnParam`, and `Field`).
+Each `Resolvable` (and `ResolvableType`) carries a stable `id: Option[String]` used for soft references.
 
 ### Module structure
 
@@ -69,10 +69,25 @@ Module(
 Top-level declarations in a module:
 
 #### Declarations (`Decl`)
-All declarations extend `Decl` trait and include:
+All declarations extend `Decl`, which provides source information, documentation, and a
+stable ID. Named declarations also extend `Resolvable`. `Typeable` is independent and is
+mixed into `Bnd`, `TypeDef`, and `TypeAlias`; `TypeStruct` is itself a type and does not
+carry computed or ascribed type fields.
+
+Declarations include:
+
 - `Bnd` - All value bindings, functions, and operators (with `Lambda` body and optional `BindingMeta`)
 - `TypeDef` - New type definitions
 - `TypeAlias` - Type aliases
+- `TypeStruct` - Nominal record types
+- `Protocol` - A named contract with one type parameter and member declarations
+- `ProtocolMember` - A callable signature with an optional default Lambda body
+- `ProtocolInstance` - An unnamed declaration supplying a protocol reference, concrete type,
+  and ordinary member bindings
+
+Protocol AST definitions await parser and semantic-phase integration. `ProtocolRef` retains
+its source name and an optional resolved protocol ID. Instances carry their own stable IDs
+without inventing source names. Visibility remains on the concrete declarations that expose it.
 
 **Bnd with BindingMeta**: Functions and operators are represented as `Bnd` nodes containing a `Lambda` body and `BindingMeta`:
 ```scala

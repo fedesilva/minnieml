@@ -88,11 +88,7 @@ object Diagnostics:
       case TypeError.UntypedHoleInBinding(_, source, _) => source.spanOpt.toList
 
   private def declSpan(decl: Decl): Option[SrcSpan] =
-    decl match
-      case bnd: Bnd => bnd.spanOpt
-      case td:  TypeDef => td.spanOpt
-      case ta:  TypeAlias => ta.spanOpt
-      case ts:  TypeStruct => ts.spanOpt
+    decl.spanOpt
 
   private def nodeSpan(node: Typeable): Option[SrcSpan] =
     node match

@@ -4,6 +4,10 @@ Durable product changes belong here. Current task state belongs in task files.
 
 ## 2026-10-26
 
+- Add AST declarations for protocols, member contracts, and concrete instances. Separate
+  declaration identity from optional typing and name lookup; retain type fields on bindings,
+  type definitions, and aliases. Document the AST shapes pending protocol phase integration.
+
 - Clarify the protocol design draft's shared resolution mechanism for calls, function values,
   and partial applications, and its rules for inherited instance types and operator metadata.
   Document explicit Clone operations for globals entering ownership sinks.

@@ -331,10 +331,8 @@ object SemanticTokens:
     val typeSpec =
       ref.typeSpec.orElse {
         resolved match
-          case param: FnParam =>
-            param.typeSpec.orElse(param.typeAsc)
-          case decl: Decl =>
-            decl.typeSpec.orElse(decl.typeAsc)
+          case value: Typeable =>
+            value.typeSpec.orElse(value.typeAsc)
           case field: Field =>
             Some(field.typeSpec)
           case _ =>

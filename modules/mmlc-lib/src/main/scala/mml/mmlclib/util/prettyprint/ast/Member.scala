@@ -127,7 +127,7 @@ def prettyPrintMember(
         else ""
       s"${indentStr}DuplicateMember $spanStr\n" +
         s"${indentStr}  firstOccurrence: ${dup.firstOccurrence.getClass.getSimpleName} ${dup.firstOccurrence match {
-            case d: Decl => d.name
+            case d: Resolvable => d.name
             case _ => "<unnamed>"
           }}\n" +
         s"${indentStr}  original:\n" +

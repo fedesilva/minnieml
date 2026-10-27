@@ -3,7 +3,7 @@
 ## Metadata
 
 - **Owner:** The Author
-- **Status:** planned
+- **Status:** in_progress
 - **Kind:** feature
 - **Priority:** unassigned
 - **Created:** 2026-10-25
@@ -14,7 +14,7 @@
 
 1. [x] **complete** — Define the first-slice scope, resolution model, and Num-to-Clone delivery order.
 2. [x] **complete** — Approve the [bounded implementation plan](#plan-approval-gate).
-3. [ ] **planned** — [P0: Write the AST nodes, then stop for Author review](#p0-ast-nodes-and-author-review).
+3. [x] **complete** — [P0: Write the AST nodes, then stop for Author review](#p0-ast-nodes-and-author-review).
 4. [ ] **planned** — [P0b: Build shared lookup machinery, then stop for Author review](#p0b-shared-lookups-and-author-review).
 5. [ ] **planned** — [P1: Parse protocol contracts and concrete instances](#p1-declarations-and-syntax).
 6. [ ] **planned** — [P2: Validate contracts and register concrete member functions](#p2-contracts-and-concrete-members).
@@ -191,7 +191,10 @@ update the execution checklist before advancing. Stage completion does not autho
 - Write an instance AST node containing a protocol reference, a concrete type node, and
   member bindings whose values contain Lambdas. Allow the protocol reference to retain its
   source name and acquire a resolved protocol ID during resolution.
-- Keep this step limited to the AST definitions and compilation-required adjustments.
+- Model protocols, protocol members, and instances as `Decl`. Keep `Typeable` on declarations
+  that use computed/ascribed types and `Resolvable` on named declarations. Adapt existing
+  declaration consumers to those capabilities and verify existing behavior.
+- Keep this step limited to the AST definitions, declaration-trait refactor, and required adjustments.
   Do not add parsing, resolution, lowering, or library injection yet.
 
 Exit: compile the definitions, present the nodes and their fields to the Author, and **stop**.
@@ -453,7 +456,25 @@ link targets, and `git diff --check` have been checked.
 
 Planning verification: whole-record tracking consistency, local links and heading anchors,
 and `git diff --check` pass. Compiler tests are not applicable to these tracking-only changes.
-Compiler implementation and runtime verification remain pending.
+
+P0 verification (2026-10-26):
+
+- `sbtn 'scalafmtAll;scalafixAll;compile'` passed without compiler warnings.
+- `sbtn testFull` passed 1,955 library tests and 9 CLI tests, with no failures or errors.
+  The test launcher reported multiple main classes; this did not affect the test result.
+- `./tests/smoke/run.sh all` passed all eight fixtures.
+- `sbtn mmlcPublishLocal`, `make -C benchmark clean`, and `make -C benchmark mml` passed.
+  Benchmark verification compiled the collection; it did not measure runtime performance.
+- `git diff --check` and the manual QA compliance pass passed.
+- Independent code review and fresh QA/style, test-quality, and readability checks completed
+  with no actionable findings. Memory and Linux container gates are not applicable:
+  this step changes declaration traits and AST definitions, not ownership, lambda execution,
+  native calling conventions, or ABI layouts.
+
+The definitions in
+[protocols.scala](../../modules/mmlc-lib/src/main/scala/mml/mmlclib/ast/protocols.scala)
+represent protocols, member contracts, and instances as declarations. P0 is verified and
+signed off; P0b–P9 implementation remains pending.
 
 ## Risks / Notes
 
@@ -467,9 +488,9 @@ The language draft defines semantics beyond the approved bounded plan.
 
 ## Signoff
 
-- Workstream signoff: Protocol planning complete; bounded plan approved. Compiler work pending.
+- Workstream signoff: Bounded plan and P0 AST shape approved; P0 verification and review complete.
 - Tracked item completion: Pending.
-- Commit authorization: Granted for the completed plan and associated tracking records.
+- Commit authorization: Granted for P0 source changes, documentation, and scoped bookkeeping.
 
 ## Task Working Memory
 
@@ -483,7 +504,16 @@ applications select concrete members during type checking, before ordinary calla
 as detailed in the implementation reference.
 The first slice has one protocol type parameter and required members only. Defaults,
 prerequisites, and multiple protocol parameters are deferred.
-The bounded P0–P9 plan, including P0b, is approved. Next action: begin P0 and stop for AST review.
+The bounded P0–P9 plan, including P0b, is approved.
+P0 defines `Protocol`, `ProtocolMember`, `ProtocolRef`, and `ProtocolInstance` in
+[protocols.scala](../../modules/mmlc-lib/src/main/scala/mml/mmlclib/ast/protocols.scala).
+Contracts reuse `FnParam`, `Type`, and `BindingMeta`; default bodies use `Option[Lambda]`,
+and instance bodies remain ordinary `Bnd` values. Protocols, member signatures, and instances
+extend `Decl`. Named declarations also implement
+`Resolvable`; `Bnd`, `TypeDef`, and `TypeAlias` explicitly implement `Typeable`.
+Instances carry their own optional ID and are unnamed declarations. Protocol references
+retain `Name` plus an optional resolved protocol ID.
+P0 is verified and signed off. Next action: begin the approved P0b shared lookup work.
 P0b requires a separate lookup API review
 before P1. P6 is the Num signoff gate before Clone integration. Literal promotion and mixed
 ownership witnesses remain supported; broader implicit-cloning policy belongs to

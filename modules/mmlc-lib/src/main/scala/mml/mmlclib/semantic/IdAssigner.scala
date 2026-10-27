@@ -20,7 +20,7 @@ object IdAssigner:
       case _: TypeAlias => Some("typealias")
       case _ => None
 
-  private def topLevelId(moduleName: String, member: Decl): Option[String] =
+  private def topLevelId(moduleName: String, member: Decl & Resolvable): Option[String] =
     declSegment(member).map(segment => BindingIds.declaration(moduleName, member.name, segment))
 
   private def fieldId(moduleName: String, structName: String, fieldName: String): Option[String] =

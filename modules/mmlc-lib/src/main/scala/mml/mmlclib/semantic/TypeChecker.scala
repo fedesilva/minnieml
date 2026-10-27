@@ -722,7 +722,7 @@ object TypeChecker:
   private def resolveRefType(ref: Ref, module: Module): Option[Type] =
     ref.resolvedId.flatMap(module.resolvables.lookup).flatMap {
       case param: FnParam => param.typeSpec.orElse(param.typeAsc)
-      case decl:  Decl => decl.typeSpec
+      case value: Typeable => value.typeSpec
       case _ => None
     }
 
@@ -1044,8 +1044,7 @@ object TypeChecker:
     val directType = ref.typeSpec.flatMap(extractTypeFn(_, module))
     directType.orElse {
       ref.resolvedId.flatMap(module.resolvables.lookup).flatMap {
-        case decl:  Decl => findTypeFnForDecl(decl, module)
-        case param: FnParam => param.typeSpec.flatMap(extractTypeFn(_, module))
+        case value: Typeable => value.typeSpec.flatMap(extractTypeFn(_, module))
         case _ => None
       }
     }
@@ -1055,9 +1054,6 @@ object TypeChecker:
 
   private def extractTypeFn(typeSpec: Type, module: Module): Option[TypeFn] =
     TypeUtils.canonical(typeSpec, module.resolvables).collect { case fn: TypeFn => fn }
-
-  private def findTypeFnForDecl(decl: Decl, module: Module): Option[TypeFn] =
-    decl.typeSpec.flatMap(extractTypeFn(_, module))
 
   private def buildFunctionTypeSpec(
     source:     SourceOrigin,

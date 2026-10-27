@@ -105,9 +105,12 @@ object DocComment:
   def apply(span: SrcSpan, text: String): DocComment =
     new DocComment(SourceOrigin.Loc(span), text)
 
-trait Decl extends Member, Typeable, Resolvable:
+/** A declaration with source information and a stable identity. Named declarations also implement
+  * Resolvable; declarations with type annotations implement Typeable.
+  */
+trait Decl extends Member, FromSource:
   def docComment: Option[DocComment]
-  def visibility: Visibility
+  def id:         Option[String]
 
 case class FnParam(
   source:     SourceOrigin,

@@ -23,8 +23,8 @@ Narrow fixes that do not address the underlying problem are to be shunned.
 ### Protocols
 
 - **Tracker:** [Implement protocols](tasks/protocols.md)
-- **Status:** planned
-- **Current focus:** Execute approved P0: write the AST nodes and stop for Author review.
+- **Status:** in_progress
+- **Current focus:** Implement approved P0b shared lookups after the signed-off P0 AST definitions.
   Shared lookup machinery has a separate review checkpoint before phase integration.
 
 ### Protocol derivation

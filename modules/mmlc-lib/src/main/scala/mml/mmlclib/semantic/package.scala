@@ -23,11 +23,11 @@ private def showType(t: Type): String = t match
 
 enum TypeError extends CompilationError:
   // Function and Operator Definition Errors
-  case MissingParameterType(param: FnParam, decl: Decl, phase: String)
-  case MissingReturnType(decl: Decl, phase: String)
-  case RecursiveFunctionMissingReturnType(decl: Decl, phase: String)
-  case MissingOperatorParameterType(param: FnParam, decl: Decl, phase: String)
-  case MissingOperatorReturnType(decl: Decl, phase: String)
+  case MissingParameterType(param: FnParam, decl: Decl & Resolvable, phase: String)
+  case MissingReturnType(decl: Decl & Resolvable, phase: String)
+  case RecursiveFunctionMissingReturnType(decl: Decl & Resolvable, phase: String)
+  case MissingOperatorParameterType(param: FnParam, decl: Decl & Resolvable, phase: String)
+  case MissingOperatorReturnType(decl: Decl & Resolvable, phase: String)
 
   // Expression and Application Errors
   case TypeMismatch(
