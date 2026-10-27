@@ -27,6 +27,13 @@ Narrow fixes that do not address the underlying problem are to be shunned.
 - **Current focus:** Author review of the verified
   [protocol repairs](tasks/protocols-review-repairs.md) and Num checkpoint before Clone integration.
 
+### Protocol navigation
+
+- **Tracker:** [Extend LSP navigation for protocols](tasks/lsp-protocol-navigation.md)
+- **Status:** planned
+- **Current focus:** After Protocols: calls to signatures, protocols to implementations,
+  and instances or their members to references.
+
 ### Operator partial application
 
 - **Tracker:** [Decide what to do with operator partial application](tasks/decide-operator-partial-application.md)
