@@ -24,8 +24,8 @@ Narrow fixes that do not address the underlying problem are to be shunned.
 
 - **Tracker:** [Implement protocols](tasks/protocols.md)
 - **Status:** planned
-- **Current focus:** Prepare the bounded implementation plan for Num first, followed by
-  generated Clone instances and explicit global cloning through `^`.
+- **Current focus:** Execute approved P0: write the AST nodes and stop for Author review.
+  Shared lookup machinery has a separate review checkpoint before phase integration.
 
 ### Protocol derivation
 
@@ -33,6 +33,13 @@ Narrow fixes that do not address the underlying problem are to be shunned.
 - **Status:** design
 - **Current focus:** General derivation after the initial protocol task; targeted Clone
   generation belongs to that initial task.
+
+### Implicit cloning
+
+- **Tracker:** [Revisit implicit cloning](tasks/implicit-cloning.md)
+- **Status:** design
+- **Current focus:** Revisit implicit cloning and ownership promotion after the initial
+  protocol work, preserving explicit Clone and `^`.
 
 ### Module naming
 
