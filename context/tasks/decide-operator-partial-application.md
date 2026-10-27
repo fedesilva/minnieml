@@ -54,7 +54,7 @@ positions explicit. Its scope and evaluation timing still need design.
 
 ## What changed and why
 
-The comparison baseline is repository commit `14615983`.
+The comparison baseline is repository commit `be195134`.
 
 - Ordinary application grouping is unchanged: `f a b` becomes `App(App(f, a), b)`.
   Arguments are consumed until an operator or the expression's end. This does not require

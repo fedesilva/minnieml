@@ -20,7 +20,8 @@
 
 Valid right-nested expressions such as `1 + (2 + (3 + 4))` are reported to take roughly twice
 as long to parse for each added nesting level. The protocol review reproduced the same behavior
-at commit `14615983` and with the protocol changes, identifying a pre-existing parser problem.
+in the baseline preserved by commit `be195134` and with the protocol changes, identifying a
+pre-existing parser problem.
 
 This is distinct from repeated type checking of an erroneous expression, which belongs to the
 immediate protocol repairs. It is also distinct from the known
@@ -38,7 +39,7 @@ The source family is a function returning `1 + (2 + (... + N))`, with one matche
 per nested suffix. Use fixed literal fixtures for correctness tests and separate controlled workloads
 for timing. Measure the parser independently of type checking, code generation, and process startup.
 
-Review-reported parse totals, with the same observations at `14615983`:
+Review-reported parse totals, with the same observations in the baseline preserved by `be195134`:
 
 | Terms | Parse time |
 |---:|---:|

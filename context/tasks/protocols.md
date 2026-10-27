@@ -706,11 +706,17 @@ Incidental findings and their fix status are collected in [Bug notes](bug-notes.
 
 ## Task Working Memory
 
-P0 and P0b are verified, signed off, and committed in `c3091ce6` and `14615983`.
-P1–P5 are complete. P6 and its
+P0 and P0b are verified, signed off, and committed in `98e4c831` and `be195134`.
+The implemented P1–P6 review checkpoint is committed in `7ce9c5dd`. P1–P5 are complete. P6 and its
 [review repairs](protocols-review-repairs.md) are ready for Author signoff;
 stop before P7 Clone. Commit and synchronization are authorized for this review checkpoint;
 the task remains open.
+
+The separate factorial-sample experiment in `db47e15a` removes grouping from the return annotation.
+`mmlc run mml/samples/partial-fac2-escape.mml` reports expected `Int`, got `(Int) -> Int`;
+the grouped-annotation control prints `120` and `6`. This experiment is preserved for review,
+outside the verified compiler repair scope. The function-type boundary belongs to the
+[callable representation discussion](protocols-design-discussions.md#4-which-callable-operations-should-share-one-api).
 
 Protocols, signatures, and instances are declarations. Protocols constrain a single type
 parameter; they are not ordinary value types. Required signatures and concrete instances are
