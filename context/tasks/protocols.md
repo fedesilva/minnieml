@@ -23,9 +23,10 @@
 9. [x] **complete** — [P5: Deliver Num and migrate numeric operators](#p5-num-and-numeric-migration).
 10. [ ] **ready_for_signoff** — [P6: Review the verified Num deliverable](#p6-num-review-checkpoint).
     - **ready_for_signoff** — [Repair protocol error recovery and integration](protocols-review-repairs.md).
-11. [ ] **planned** — [P7: Integrate explicit Clone and generated instances](#p7-explicit-clone).
-12. [ ] **planned** — [P8: Require explicit cloning for global ownership transfers](#p8-global-ownership-transfers).
-13. [ ] **planned** — [P9: Complete documentation, verification, and final review](#p9-final-verification-and-documentation).
+11. [ ] **planned** — [P6a: Infer concrete protocol functions from local binding uses](#p6a-local-inference-through-bindings).
+12. [ ] **planned** — [P7: Integrate explicit Clone and generated instances](#p7-explicit-clone).
+13. [ ] **planned** — [P8: Require explicit cloning for global ownership transfers](#p8-global-ownership-transfers).
+14. [ ] **planned** — [P9: Complete documentation, verification, and final review](#p9-final-verification-and-documentation).
 
 ## Problem
 
@@ -56,6 +57,9 @@ cloning of globals at ownership sinks, in the order shown in the execution check
   instance binding.
 - Instance uniqueness, signature checking, and type-based candidate and instance selection
   using argument and expected result types, resolving calls to lowered instance member bindings.
+- Best-effort local inference of one concrete protocol function from later uses of a binding,
+  without requiring an annotation or depending on full SimpSeq. If local evidence cannot
+  determine a unique concrete member, stop with a diagnostic.
 - Shared operator precedence and associativity checked before expression rewriting.
 - A provisional `Num` protocol with concrete `Int` and `Float` instances supplies unified
   numeric operators. A fuller numeric hierarchy belongs to a later Spire port:
@@ -147,11 +151,12 @@ and constraints remain outside this plan. Their broader semantics are described 
 
 ## Plan (Approval Gate)
 
-The stages below are approved, subject to their explicit review checkpoints. P0 defines the AST
+P0–P9 are approved, subject to their explicit review checkpoints. The added P6a scope is
+accepted; its bounded implementation design requires approval. P0 defines the AST
 and stops for Author review.
 P0b adds shared lookups and a second Author review checkpoint before compiler-phase integration.
 P1–P6 deliver the protocol mechanism through Num. Stop after P6 for review and signoff before
-P7–P9 integrate Clone and global transfers.
+P6a adds local binding inference, then P7–P9 integrate Clone and global transfers.
 Each stage has a concrete exit condition; record its evidence in Task Working Memory and
 update the execution checklist before advancing. Stage completion does not authorize a commit.
 
@@ -295,7 +300,8 @@ of declaration order, lexical shadowing, and rejection of incompatible grouping 
   back to the expression. Never resolve by declaration order or by preferring a built-in.
 - Diagnose missing instances, incompatible arguments, insufficient information, and ambiguity
   distinctly. Preserve independent source errors without emitting every rejected trial's errors.
-- Reject unresolved overloads at binding boundaries. Use ordinary partial-application,
+- P4 rejects unresolved overloads at binding boundaries; P6a extends local inference across
+  those boundaries before requiring a concrete selection. Use ordinary partial-application,
   ownership, and code-generation paths after selection; validate that no executable protocol
   reference remains unresolved before those phases consume it.
 
@@ -337,6 +343,34 @@ explicitly declared by the program. Current shipped programs use the supported s
 - Obtain review and signoff for the Num deliverable before starting Clone integration.
 
 Exit: Num is verified and signed off; unresolved required checks or findings keep this stage open.
+
+### P6a: Local inference through bindings
+
+- Prepare and approve a bounded design for propagating local use-site type information back
+  to a protocol function binding. Define the local inference boundary and stopping conditions.
+- Accept `let render_int = render;` followed by `render_int "function value: " 5;` in the
+  local body of [protocol-functions.mml](../../mml/samples/protocol-functions.mml), selecting
+  the `Render Int` member without an explicit function-type annotation.
+- Select one concrete member and function type for the binding, consistent with all its local
+  uses. Do not select different instances at different uses of the same binding.
+- Make a best-effort inference attempt within the defined local boundary. Diagnose insufficient
+  information, ambiguity, or incompatible uses when no unique consistent selection is possible.
+  Do not guess by candidate order or require whole-program inference.
+- Reuse the shared candidate-selection machinery and preserve explicit annotations as constraints.
+  Extend the existing bidirectional push/pull technique across local bindings: pull evidence
+  from uses and push the resulting expected function type back into the initializer.
+  Resolve executable protocol references before ordinary callable lowering and ownership analysis.
+- Do not depend on full SimpSeq, let-polymorphism, generalized protocol constraints, or
+  cross-module inference. Document unsupported local propagation cases explicitly.
+- Verify inferred member identity and concrete type, successful execution of the unannotated
+  example, consistent repeated uses, conflicting uses, insufficient evidence, ambiguity,
+  annotation conflicts, and isolation between separately bound or shadowed names.
+- Update the sample's annotation requirement and relevant documentation after implementation;
+  run the applicable compiler verification and review gates before handoff.
+
+Exit: the unannotated local example compiles and executes using `Render Int`; unresolved or
+inconsistent local evidence produces a clear diagnostic. The binding remains monomorphic.
+Implementation plan approval and verification are pending.
 
 ### P7: Explicit Clone
 
@@ -403,6 +437,8 @@ and final review is ready for signoff. No unverified stage is marked complete.
 
 Approval: first-slice scope, delivery order, and P0–P9 plan (including P0b) approved.
 P0, P0b, and P6 retain their explicit review and signoff gates.
+P6a local binding inference is included in scope before Clone; implementation design approval
+is pending. Existing checkpoint verification does not cover P6a.
 
 ## Implementation reference: candidate resolution
 
@@ -418,9 +454,10 @@ one concrete instance member and have a concrete function type.
 - Do not reject an inner application as ambiguous before considering later arguments in the
   enclosing application and its expected result type. A partial application can use the
   expected remaining function type; a function value can use its expected function type.
-- Reject references that remain insufficiently constrained or ambiguous. Do not carry an
-  unresolved overload into a binding and select different implementations at later uses;
-  that would introduce polymorphism beyond this concrete-instance scope.
+- P6a permits deferred selection through a local binding while gathering evidence from its uses.
+  Reject references that remain insufficiently constrained or ambiguous at the local inference
+  boundary. Every use of a binding must agree on one concrete implementation; selecting different
+  implementations at different uses would introduce polymorphism beyond this scope.
 - Once resolved, use the ordinary function-value and partial-application lowering paths.
 
 Implementation anchors:
@@ -680,7 +717,7 @@ signed off. P0b is verified and signed off; P1 parsing and P2 signature checking
 complete. P3 lookup and operator grouping are verified and complete. P4 type-directed selection
 is complete. P5 Num integration is complete. P6 repairs, renewed compiler verification, and
 independent review pass; Author signoff remains pending.
-P7–P9 remain pending.
+P6a and P7–P9 remain pending. The verification above does not cover local binding inference.
 
 ## Risks / Notes
 
@@ -711,6 +748,11 @@ The implemented P1–P6 review checkpoint is committed in `7ce9c5dd`. P1–P5 ar
 [review repairs](protocols-review-repairs.md) are ready for Author signoff;
 stop before P7 Clone. Commit and synchronization are authorized for this review checkpoint;
 the task remains open.
+
+P6a extends the scope with best-effort local inference of one concrete protocol function from
+later binding uses, independent of full SimpSeq. Its implementation design and verification
+are pending. Next action for P6a: define the bounded local propagation strategy and stopping
+conditions for approval. P6 signoff remains a separate pending gate before proceeding.
 
 The separate factorial-sample experiment in `db47e15a` removes grouping from the return annotation.
 `mmlc run mml/samples/partial-fac2-escape.mml` reports expected `Int`, got `(Int) -> Int`;
@@ -755,6 +797,7 @@ Formatting and linting pass. Fresh primary repair review and separate QA/style, 
 and human-readability checks complete with no actionable findings. Author review is next.
 Broader design choices have separate discussion subtasks.
 No ABI layout or calling-convention changes are present.
-P7 integrates Clone; P8 requires explicit cloning for global ownership transfers. Literal
-promotion and mixed ownership witnesses remain supported. General derivation and broader
+P6a adds local binding inference before P7 integrates Clone; P8 requires explicit cloning
+for global ownership transfers. Literal promotion and mixed ownership witnesses remain supported.
+General derivation and broader
 implicit-cloning policy remain separate tasks.
