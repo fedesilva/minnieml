@@ -23,8 +23,16 @@ Narrow fixes that do not address the underlying problem are to be shunned.
 ### Protocols
 
 - **Tracker:** [Implement protocols](tasks/protocols.md)
+- **Status:** planned
+- **Current focus:** Prepare the bounded implementation plan for Num first, followed by
+  generated Clone instances and explicit global cloning through `^`.
+
+### Protocol derivation
+
+- **Tracker:** [Protocol derivation](tasks/protocol-derivation.md)
 - **Status:** design
-- **Current focus:** Settle protocol semantics and the initial implementation scope.
+- **Current focus:** General derivation after the initial protocol task; targeted Clone
+  generation belongs to that initial task.
 
 ### Module naming
 

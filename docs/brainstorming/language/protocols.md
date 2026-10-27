@@ -68,9 +68,10 @@ instance Semigroup Int =
 ;
 ```
 
-The contract supplies `Int` for both parameters and the result. Explicit annotations
-remain allowed and must agree with the contract. This rule applies to function and
-operator implementations alike.
+The contract supplies `Int` for both parameters and the result. Protocols supply all
+member types and metadata. Instances may omit them or repeat them; every explicit
+restatement is checked against the instantiated contract, and divergence is rejected.
+This applies to functions and operators, including operator precedence and associativity.
 
 See the [standard-library syntax sample](../snippets/lib.mml.txt) for the protocol
 family and the full `Option` Semigroup example. The sample explores future features;
@@ -163,6 +164,25 @@ operator syntax while giving named protocol functions the same lookup behavior. 
 grouping still requires compatible precedence and associativity before type checking.
 Explicit imports remain out of scope.
 
+### Resolution mechanism
+
+Resolution collects the candidates visible for a name, checks their applicability using
+the supplied arguments and expected type, and selects one applicable candidate. For a
+protocol member, applicability also requires the corresponding instance. No applicable
+candidate is an error; multiple applicable candidates are ambiguous.
+
+Full calls, partial applications, and function values use this same mechanism. A function
+value's expected function type can select its instance. A partial application uses its
+supplied arguments and, when available, the expected type of the remaining function.
+Resolution considers the enclosing application: an earlier argument need not determine
+the candidate if a later argument or the expected result type disambiguates it.
+
+For concrete instances, a resolved member is an ordinary function with a concrete function
+type. Taking it as a value or partially applying it requires no separate protocol behavior.
+A reference that remains insufficiently constrained is rejected; a binding does not retain
+an unresolved overload to be selected differently at later uses. This does not introduce
+polymorphic function values or inference across separate definitions.
+
 ---
 
 ## Protocol requirements and default implementations
@@ -205,6 +225,19 @@ and [return ownership rules](../../memory-model.md#return-values-and-borrow-esca
 
 ---
 
+## Clone
+
+`Clone` declares unary `^`. The operation borrows its input and returns a separate owned
+value, leaving the original valid. Native implementations and compiler-generated instances
+use the same protocol resolution mechanism as other instances.
+
+Global-backed values cannot be transferred into ownership sinks by implicitly cloning them.
+The programmer must explicitly use `^` to create an owned copy. Ordinary scalar copies do
+not transfer ownership. See [Memory evolution](../mem/mem-evolution.md#layer-2-clone-protocol)
+for the broader cloning contract.
+
+---
+
 ## Derived equality
 
 - Equality protocol name: provisional (`CanEqual`).
@@ -235,8 +268,9 @@ terminators. For example, a protocol that requires `==` may supply:
 op !=(left: 'T, right: 'T): Bool 40 left = not (left == right);;
 ```
 
-Instance operators use that same declaration shape and may omit types supplied by the
-contract. Ordinary operator rules govern precedence and associativity syntax and defaults.
+Instance operators use that same declaration shape. Omitted types, precedence, and
+associativity come from the protocol contract. Explicit restatements must match it;
+divergence is an error. Ordinary free-operator defaults do not replace protocol metadata.
 The required-versus-default distinction and type-annotation rules are the same as for
 function members.
 
@@ -340,8 +374,6 @@ this extension in the first implementation remain open.
 
 - Equality protocol name and members, including the relationship between `==` and `!=`.
 - Diagnostics for missing or ambiguous instances.
-- Whether instance operators omit precedence and associativity or may restate matching
-  attributes. Instances cannot change the grouping fixed by the protocol declaration.
 - Migration of built-in operators beyond equality to protocol instances.
 - Whether the first implementation supports multiple protocol type parameters.
 

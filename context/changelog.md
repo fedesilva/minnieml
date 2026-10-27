@@ -4,6 +4,10 @@ Durable product changes belong here. Current task state belongs in task files.
 
 ## 2026-10-26
 
+- Clarify the protocol design draft's shared resolution mechanism for calls, function values,
+  and partial applications, and its rules for inherited instance types and operator metadata.
+  Document explicit Clone operations for globals entering ownership sinks.
+
 - Add Zed tasks for executable and library compilation, cleaning, AST and IR generation,
   and following the compiler server log. Document the task picker, keybindings, native
   restart and protocol-log actions, and consistent LLVM toolchain setup.

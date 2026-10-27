@@ -192,6 +192,9 @@ protocol Clone for T =
 - Passing a value to a consuming parameter moves it. Later use does not trigger a clone.
 - Non-scalar duplication requires `Clone`, including duplication of literals and globals.
 - Native types supply their clone implementation explicitly.
+- Global-backed values cannot be moved into ownership sinks. The compiler rejects such
+  transfers rather than inserting a clone; the programmer must explicitly use `^` to
+  supply an owned copy. Ordinary scalar copies do not transfer ownership.
 
 ### Aggregate derivation
 
