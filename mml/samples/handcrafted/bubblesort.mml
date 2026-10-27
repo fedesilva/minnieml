@@ -5,7 +5,7 @@ fn bubble_sort(arr: IntArray): Unit =
     if i >= (ar_int_len arr) -1 then
       swapped;
     else
-      let left = ar_int_get arr i;
+      let left  = ar_int_get arr i;
       let right = ar_int_get arr (i+1);
       if left > right then
         ar_int_set arr i right;
